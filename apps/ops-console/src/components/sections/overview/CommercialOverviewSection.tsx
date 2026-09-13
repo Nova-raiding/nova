@@ -11,6 +11,8 @@ import type { OpsDomain } from "../../../navigation/opsNavigation";
 import type { WorkspaceSummary } from "../../../types/ops";
 import type { CommercialCatalogItem } from "../../../api/commercialOperationsClient";
 import { EnterpriseIdentity } from "../../EnterpriseIdentity";
+import { readableBenefits } from "../../commercial/benefitLabels.js";
+import { packageDisplayName } from "../../commercial/packageLabels.js";
 
 interface OverviewSectionProps {
   model: OpsConsoleModel;
@@ -52,6 +54,56 @@ export function currentCommercialCatalog(
     .sort((left, right) => left.skuCode.localeCompare(right.skuCode));
 }
 
+const catalogStatusLabels: Record<string, string> = {
+  draft: "草稿",
+  pending_business_approval: "待业务审批",
+  approved: "已批准待生效",
+  active: "生效可售",
+  retired: "已停售",
+};
+
+export function readableCatalogStatus(item: CommercialCatalogItem): string {
+  if (item.approvalState === "retired") return catalogStatusLabels.retired;
+  if (item.approvalState === "draft") return catalogStatusLabels.draft;
+  if (item.approvalState === "pending_business_approval") return catalogStatusLabels.pending_business_approval;
+  if (item.approvalState === "approved" && item.unresolved.length === 0 && item.validFrom) return catalogStatusLabels.active;
+  return catalogStatusLabels.approved;
+}
+
+/**
+ * Commercial health metrics stay grouped with the commercial ledger rather
+ * than competing with the platform incident and queue KPIs above the fold.
+ * Workspace counts and local test fixtures are intentionally not repeated
+ * here; this surface is reserved for business-facing finance metrics.
+ */
+export function CommercialOverviewKpis({ model }: { model: OpsConsoleModel }) {
+  const finance = model.platformFinanceSummary;
+  const financeAvailable = Boolean(finance);
+
+  return (
+    <Row gutter={[12, 12]} className="ops-overview-kpi-grid" aria-label="平台商业化指标">
+      <Col xs={24} sm={12} xl={6}>
+        <Card className="ops-overview-kpi-card ops-overview-kpi-cyan">
+          <Statistic title="充值到账（已核验）" value={financeAvailable ? (finance!.verifiedRechargeOrderCny ?? "—") : "—"} precision={2} prefix={financeAvailable ? "¥" : <DollarOutlined />} />
+          <span>{financeAvailable ? "已核验的真实支付到账" : "账务汇总尚未取得"}</span>
+        </Card>
+      </Col>
+      <Col xs={24} sm={12} xl={6}>
+        <Card className="ops-overview-kpi-card ops-overview-kpi-amber">
+          <Statistic title="订阅收入（已核验）" value={financeAvailable ? finance!.subscriptionOrderCny : "—"} precision={2} prefix={financeAvailable ? "¥" : <DollarOutlined />} />
+          <span>{financeAvailable ? "已支付且完成核验的订阅订单" : "账务汇总尚未取得"}</span>
+        </Card>
+      </Col>
+      <Col xs={24} sm={12} xl={6}>
+        <Card className="ops-overview-kpi-card ops-overview-kpi-violet">
+          <Statistic title="创意点核销" value="—" prefix={<DollarOutlined />} />
+          <span>服务端暂未提供平台级创意点核销汇总</span>
+        </Card>
+      </Col>
+    </Row>
+  );
+}
+
 const subscriptionLabels: Record<string, string> = {
   active: "订阅有效",
   trialing: "试用中",
@@ -62,19 +114,11 @@ const subscriptionLabels: Record<string, string> = {
 
 export function CommercialOverviewSection({ model, onNavigate }: OverviewSectionProps) {
   const finance = model.platformFinanceSummary;
+  const financeAvailable = Boolean(finance);
   const rows = model.workspaceRows;
   const plans = planDistribution(rows);
-  const workspaceCount = model.workspaceDirectory.total || rows.length;
-  const merchantWorkspaceCount = (model.workspaceDirectory as typeof model.workspaceDirectory & { merchantWorkspaceCount?: number }).merchantWorkspaceCount;
-  const financeAvailable = Boolean(finance);
   const catalog = model.platformCommercialCatalog;
-  const skuRows = currentCommercialCatalog(catalog
-    .filter((item) => item.visibility !== "private"))
-    .map((item) => ({
-      ...item,
-      orderCount: finance?.commercialOrderBySku?.[item.skuCode]?.orderCount ?? 0,
-      workspaceCount: finance?.commercialOrderBySku?.[item.skuCode]?.workspaceCount ?? 0,
-    }));
+  const skuRows = currentCommercialCatalog(catalog.filter((item) => item.visibility !== "private"));
   const openAuthorization = (workspaceId?: string) => {
     model.setAuthorizationTargetWorkspaceId(workspaceId ?? "");
     onNavigate("users");
@@ -123,67 +167,21 @@ export function CommercialOverviewSection({ model, onNavigate }: OverviewSection
 
   return (
     <div className="ops-overview-commercial">
-      <Row gutter={[16, 16]} aria-label="平台经营指标">
-        <Col xs={24} md={6}>
-          <Card>
-            <Statistic title="有效商家" value={merchantWorkspaceCount ?? "—"} suffix={merchantWorkspaceCount !== undefined ? " 家" : undefined} prefix={<SafetyCertificateOutlined />} />
-          </Card>
-        </Col>
-        <Col xs={24} md={6}>
-          <Card>
-            <Statistic
-              title="工作区记录"
-              value={workspaceCount ?? "—"}
-              suffix={workspaceCount !== undefined ? " 条" : undefined}
-              prefix={<TeamOutlined />}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} md={6}>
-          <Card>
-            <Statistic
-              title="月度套餐收入（已核验）"
-              value={financeAvailable ? finance!.subscriptionOrderCny : "—"}
-              precision={2}
-              prefix={financeAvailable ? "¥" : <DollarOutlined />}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} md={6}>
-          <Card>
-            <Statistic
-              title="创意点包收入（已核验）"
-              value={financeAvailable ? (finance!.pointPackOrderCny ?? "—") : "—"}
-              precision={2}
-              prefix={financeAvailable ? "¥" : <DollarOutlined />}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} md={6}>
-          <Card>
-            <Statistic
-              title="真实充值到账"
-              value={financeAvailable ? (finance!.verifiedRechargeOrderCny ?? "—") : "—"}
-              precision={2}
-              prefix={financeAvailable ? "¥" : <DollarOutlined />}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} md={6}>
-          <Card>
-            <Statistic
-              title="本地测试充值"
-              value={financeAvailable ? (finance!.fixtureRechargeOrderCny ?? "—") : "—"}
-              precision={2}
-              prefix={financeAvailable ? "¥" : <DollarOutlined />}
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      <Card title="商业化 SKU 与订购情况" style={{ marginTop: 16 }}>
+      <CommercialOverviewKpis model={model} />
+      <Card
+        title="商业套餐目录"
+        style={{ marginTop: 16 }}
+        extra={
+          <Space wrap>
+            <Button onClick={() => onNavigate("finance")}>查看订单与权益</Button>
+            <Button type="primary" icon={<SafetyCertificateOutlined />} onClick={() => onNavigate("finance")}>
+              管理套餐
+            </Button>
+          </Space>
+        }
+      >
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          价格和权益来自服务端 V2 SKU 快照；订单按月度订阅、创意点包和开通服务分别统计，只有已支付且有核验支付事件的订单才进入收入。
+          这里维护“卖什么”：价格、周期、面向用户的套餐权益和商业生效状态。订单与实际授予的工作区权益请在“订单与权益”中查看；同一套餐可以对应多笔订单。
         </Typography.Paragraph>
         <Table
           rowKey="id"
@@ -193,13 +191,12 @@ export function CommercialOverviewSection({ model, onNavigate }: OverviewSection
           scroll={{ x: 980 }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="商业 SKU 尚未取得" /> }}
           columns={[
-            { title: "SKU", dataIndex: "skuCode", width: 180, render: (value: string, row: CommercialCatalogItem) => <Space orientation="vertical" size={0}><Typography.Text strong>{row.name}</Typography.Text><Typography.Text code>{value}</Typography.Text></Space> },
+            { title: "套餐", dataIndex: "skuCode", width: 220, render: (value: string, row: CommercialCatalogItem) => <Space orientation="vertical" size={0}><Typography.Text strong>{packageDisplayName(value, row.name)}</Typography.Text><Typography.Text type="secondary" code>{value}</Typography.Text></Space> },
             { title: "类型", dataIndex: "type", width: 120, render: (value: string) => ({ onboarding: "正式开通", monthly: "月度订阅", point_pack: "点数包", private_trial: "私测试用" }[value] ?? value) },
             { title: "价格", dataIndex: "priceLabel", width: 150 },
-            { title: "权益", dataIndex: "benefitsSummary", width: 360, render: (value: string) => <Typography.Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>{value}</Typography.Paragraph> },
-            { title: "已付订单", dataIndex: "orderCount", width: 100, align: "right" },
-            { title: "已付商家", dataIndex: "workspaceCount", width: 100, align: "right" },
-            { title: "状态", dataIndex: "approvalState", width: 110, render: (value: string) => <Tag color={value === "approved" ? "green" : "gold"}>{value === "approved" ? "已批准" : value === "draft" ? "草稿" : value}</Tag> },
+            { title: "套餐权益", dataIndex: "benefitsSummary", width: 390, render: (_value: string, row: CommercialCatalogItem) => <Typography.Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>{readableBenefits(row)}</Typography.Paragraph> },
+            { title: "生效周期", dataIndex: "cycleLabel", width: 130, render: (value: string | null) => value || "按合同" },
+            { title: "商业状态", dataIndex: "approvalState", width: 140, render: (_value: string, row: CommercialCatalogItem) => <Tag color={readableCatalogStatus(row) === "生效可售" ? "green" : readableCatalogStatus(row) === "已停售" ? "default" : "gold"}>{readableCatalogStatus(row)}</Tag> },
           ]}
         />
       </Card>
@@ -270,7 +267,7 @@ export function CommercialOverviewSection({ model, onNavigate }: OverviewSection
       </Row>
 
       <Typography.Text type="secondary" style={{ display: "block", marginTop: 12 }}>
-        财务口径：月度订阅、创意点包、开通服务和充值分开核算；本地 fixture 充值单独展示，不计入真实收入。
+        财务口径：充值、订阅与创意点核销分开核算；仅展示已支付且完成核验的业务收入。
         {financeAvailable ? " 金额来自跨企业主体财务汇总。" : " 财务汇总尚未取得，金额不解释为 0。"}
         {!catalog.length ? " 套餐目录尚未取得，SKU 数量不解释为 0。" : ""}
       </Typography.Text>

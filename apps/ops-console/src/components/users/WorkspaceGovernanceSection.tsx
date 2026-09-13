@@ -14,6 +14,9 @@ export function WorkspaceGovernanceSection({ model }: { model: OpsConsoleModel }
   const currentWorkspaceId = model.opsSession?.workspace_id;
   const changingTo = target?.status === "active" ? "disabled" : "active";
   const reasonMinimum = changingTo === "disabled" ? 4 : 1;
+  const unactivatedWorkspaceCount = model.workspaceDirectory.merchantWorkspaceCount === undefined
+    ? undefined
+    : Math.max(0, model.workspaceDirectory.total - model.workspaceDirectory.merchantWorkspaceCount);
   const close = () => { if (!submitting) { setTarget(undefined); setReason(""); } };
   const submit = async () => {
     if (!target || reason.trim().length < reasonMinimum) return;
@@ -25,22 +28,24 @@ export function WorkspaceGovernanceSection({ model }: { model: OpsConsoleModel }
 
   return <>
     <Card title="企业主体治理" extra={<Tag color="blue">仅 platform_ops</Tag>}>
-      <Alert className="ops-inline-alert" showIcon type="info" title="停用只阻断访问，不删除业务数据" description="为防止当前运营会话自锁，必须从另一个路由工作区停用目标企业主体；所有操作写入审计。" />
       <Space wrap style={{ margin: "16px 0" }}>
         <Input.Search allowClear value={query} onChange={(event) => setQuery(event.target.value)} onSearch={() => void model.loadWorkspaceDirectory({ query, status, page: 1, pageSize: model.workspaceDirectory.limit })} placeholder="搜索企业名称、Workspace ID 或套餐" style={{ width: 300 }} />
         <Select allowClear value={status} onChange={(value) => { setStatus(value); void model.loadWorkspaceDirectory({ query, status: value, page: 1, pageSize: model.workspaceDirectory.limit }); }} placeholder="企业主体状态" options={[{ label: "正常", value: "active" }, { label: "已停用", value: "disabled" }]} style={{ width: 140 }} />
-        <Typography.Text type="secondary">已加载 {model.workspaceRows.length} / 共 {model.workspaceDirectory.total} 个企业主体</Typography.Text>
+        <Typography.Text type="secondary">
+          已加载 {model.workspaceRows.length} / 共 {model.workspaceDirectory.total} 条工作区记录
+          {model.workspaceDirectory.merchantWorkspaceCount !== undefined ? ` · 已开通 ${model.workspaceDirectory.merchantWorkspaceCount} · 未开通 ${unactivatedWorkspaceCount}` : ""}
+        </Typography.Text>
       </Space>
       <Table<WorkspaceSummary>
         rowKey="workspaceId"
         dataSource={model.workspaceRows}
-        locale={{ emptyText: "没有可治理的企业主体；请检查 platform_ops 的平台级授权" }}
+        locale={{ emptyText: "没有可治理的工作区记录；请检查 platform_ops 的平台级授权" }}
         loading={model.workspaceDirectoryLoading}
-        pagination={{ current: Math.floor(model.workspaceDirectory.offset / model.workspaceDirectory.limit) + 1, pageSize: model.workspaceDirectory.limit, total: model.workspaceDirectory.total, showSizeChanger: true, showTotal: (total) => `共 ${total} 个企业主体` }}
+        pagination={{ current: Math.floor(model.workspaceDirectory.offset / model.workspaceDirectory.limit) + 1, pageSize: model.workspaceDirectory.limit, total: model.workspaceDirectory.total, showSizeChanger: true, showTotal: (total) => `共 ${total} 条工作区记录` }}
         onChange={(pagination) => void model.loadWorkspaceDirectory({ query, status, page: pagination.current, pageSize: pagination.pageSize })}
         scroll={{ x: 900 }}
         columns={[
-          { title: "企业主体", key: "enterprise", width: 240, render: (_value: unknown, row: WorkspaceSummary) => <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
+          { title: "工作区 / 企业主体", key: "enterprise", width: 240, render: (_value: unknown, row: WorkspaceSummary) => <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
           { title: "状态", dataIndex: "status", width: 100, render: (value: string) => <Tag color={value === "active" ? "green" : "red"}>{value === "active" ? "正常" : "已停用"}</Tag> },
           { title: "套餐", dataIndex: "planName", width: 140 },
           { title: "订阅", dataIndex: "subscriptionStatus", width: 120 },

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { currentCommercialCatalog, formatOverviewMoney, planDistribution } from "../components/sections/overview/CommercialOverviewSection.js";
+import { readableBenefits } from "../components/commercial/benefitLabels.js";
 
 const overviewSource = readFileSync(new URL("./OverviewPage.tsx", import.meta.url), "utf8");
 
@@ -37,6 +38,14 @@ describe("commercial overview helpers", () => {
       { skuCode: "basic", version: "v2", benefitsSummary: "当前权益" },
       { skuCode: "growth", version: "v3" },
     ]);
+  });
+
+  it("translates persisted benefit keys into operator-facing Chinese", () => {
+    expect(readableBenefits({
+      id: "basic-v2", skuCode: "basic", name: "基础版", type: "monthly", visibility: "public", version: "v2",
+      priceLabel: "¥2000.00", cycleLabel: "每月", benefitsSummary: "creative_points:5000 点/月；cloud_storage:50 GB_DECIMAL",
+      approvalState: "approved", validFrom: "2026-09-08T00:00:00.000Z", validTo: null, unresolved: [],
+    })).toBe("创意点：5000 点/月 · 共享存储：50 GB");
   });
 });
 

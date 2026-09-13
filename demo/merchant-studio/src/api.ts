@@ -175,6 +175,11 @@ export interface CatalogCategory {
 export interface ApiError extends Error {
   code?: string
   status?: number
+  requestId?: string
+  traceId?: string
+  details?: Record<string, unknown>
+  nextActions?: string[]
+  retryable?: boolean
 }
 
 let authExpired = false
@@ -764,15 +769,26 @@ export async function requestApi<T>(baseUrl: string, path: string, init: Request
     if (!response.ok || envelope.error) {
       const errorCode = envelope.error?.code
       const errorMessage = envelope.error?.message
+      const requestId = envelope.request_id || response.headers.get('x-request-id') || response.headers.get('x-correlation-id') || undefined
+      const traceId = envelope.trace_id || response.headers.get('x-trace-id') || undefined
+      const details = envelope.error?.details && typeof envelope.error.details === 'object' && !Array.isArray(envelope.error.details)
+        ? envelope.error.details
+        : undefined
       if (isSessionAuthFailure(response.status, errorCode, errorMessage)) {
         authExpired = true
         window.dispatchEvent(new CustomEvent('merchant-auth-expired'))
       } else if (response.status === 403) {
-        window.dispatchEvent(new CustomEvent('merchant-capability-denied', { detail: { code: errorCode, message: errorMessage, requestId: response.headers.get('x-request-id') ?? response.headers.get('x-correlation-id') ?? undefined } }))
+        window.dispatchEvent(new CustomEvent('merchant-capability-denied', { detail: { code: errorCode, message: errorMessage, requestId, traceId, details } }))
       }
-      const error = new Error(envelope.error?.message ?? `API request failed: ${response.status}`) as Error & { code?: string; status?: number }
+      const error = new Error(envelope.error?.message ?? `API request failed: ${response.status}`) as ApiError
       error.code = errorCode
       error.status = response.status
+      error.requestId = requestId
+      error.traceId = traceId
+      error.details = details
+      error.nextActions = envelope.next_actions
+      const retryable = details?.retryable
+      if (typeof retryable === 'boolean') error.retryable = retryable
       throw error
     }
     if (envelope.data === null) throw new Error('API returned no data')

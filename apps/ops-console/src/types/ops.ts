@@ -128,6 +128,8 @@ export type WorkspaceSummary = {
 export type WorkspaceDirectoryPage = {
   items: WorkspaceSummary[];
   total: number;
+  merchantWorkspaceCount?: number;
+  activeMemberWorkspaceCount?: number;
   offset: number;
   limit: number;
   hasMore: boolean;

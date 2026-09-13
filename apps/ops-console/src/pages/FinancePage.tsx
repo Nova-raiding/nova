@@ -7,53 +7,74 @@ import { FinanceSearchSection } from "../components/finance/FinanceSearchSection
 import { ReconciliationSection } from "../components/finance/ReconciliationSection.js";
 import { RechargeOrdersSection } from "../components/finance/RechargeOrdersSection.js";
 import { RefundSection } from "../components/finance/RefundSection.js";
+import { ModelMarkupPanel } from "../components/finance/ModelMarkupPanel.js";
 import { financeSearchClient } from "../api/opsDomainClients.js";
 import { useFinanceSearch } from "../hooks/useFinanceSearch.js";
-import { DollarOutlined, ReloadOutlined, SafetyCertificateOutlined, TransactionOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Col, Input, Row, Space, Statistic, Tag, Typography } from "antd";
+import { ReloadOutlined, SettingOutlined } from "@ant-design/icons";
+import { Alert, Button, Card, Descriptions, Drawer, Empty, Input, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { useEffect, useState } from "react";
-interface FinancePageProps { model: OpsConsoleModel; }
+import { currentCommercialCatalog, readableCatalogStatus } from "../components/sections/overview/CommercialOverviewSection.js";
+import { readableBenefits } from "../components/commercial/benefitLabels.js";
+import { packageCodeLabel, packageDisplayName } from "../components/commercial/packageLabels.js";
+import type { CommercialCatalogItem } from "../api/commercialOperationsClient.js";
 
-function PlatformFinanceOverview({ summary }: { summary: OpsConsoleModel["platformFinanceSummary"] }) {
+function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<CommercialCatalogItem | null>(null);
+  const rows = currentCommercialCatalog(model.platformCommercialCatalog.filter(item => item.visibility !== "private"))
+    .filter(item => !query.trim() || [item.name, item.skuCode, item.priceLabel, readableBenefits(item)].some(value => value.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())));
+  const writeBlocked = "服务端尚未提供套餐草稿、审批、发布或撤销写入接口";
   return (
-    <section className="ops-finance-platform-overview" aria-labelledby="ops-finance-platform-overview-title">
-      <div className="ops-finance-section-heading">
-        <div>
-          <Typography.Text className="ops-finance-section-kicker">PLATFORM FINANCE</Typography.Text>
-          <Typography.Title level={3} id="ops-finance-platform-overview-title">平台账务概览</Typography.Title>
-          <Typography.Text type="secondary">按平台全局范围查看商家订单、钱包流水和模型成本证据。</Typography.Text>
-        </div>
-        <Tag color={summary ? "success" : "default"}>{summary ? "汇总已读取" : "等待数据"}</Tag>
-      </div>
-      <Row gutter={[12, 12]}>
-        <Col xs={24} sm={12} xl={6}>
-          <Card className="ops-finance-platform-metric">
-            <Statistic title="财务记录" value={summary?.totalRecords ?? "—"} prefix={<TransactionOutlined />} />
-            <Typography.Text type="secondary">当前平台检索范围内的记录数</Typography.Text>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} xl={6}>
-          <Card className="ops-finance-platform-metric">
-            <Statistic title="真实充值到账" value={summary?.verifiedRechargeOrderCny ?? "—"} precision={summary?.verifiedRechargeOrderCny === undefined ? undefined : 2} prefix={<DollarOutlined />} suffix={summary?.verifiedRechargeOrderCny === undefined ? undefined : " 元"} />
-            <Typography.Text type="secondary">已支付且非本地 fixture 的充值金额</Typography.Text>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} xl={6}>
-          <Card className="ops-finance-platform-metric">
-            <Statistic title="客户计费" value={summary?.customerChargeCny ?? "—"} precision={summary ? 6 : undefined} prefix={<DollarOutlined />} suffix={summary ? " 元" : undefined} />
-            <Typography.Text type="secondary">模型用量对应的客户计费快照</Typography.Text>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} xl={6}>
-          <Card className="ops-finance-platform-metric">
-            <Statistic title="成本证据" value={summary?.providerCostStatus === "verified" ? "已核验" : summary ? "需关注" : "—"} prefix={<SafetyCertificateOutlined />} />
-            <Typography.Text type="secondary">{summary?.missingCostEvidenceCount ? `${summary.missingCostEvidenceCount} 条记录缺少成本证据` : "平台成本证据状态"}</Typography.Text>
-          </Card>
-        </Col>
-      </Row>
-    </section>
+    <Card
+      className="ops-finance-secondary-panel"
+      title="套餐管理"
+      extra={<Space wrap>
+        <Button onClick={() => void model.load()}>刷新目录</Button>
+        <Tooltip title={writeBlocked}><Button type="primary" disabled>新增套餐</Button></Tooltip>
+      </Space>}
+    >
+      <Alert
+        type="warning"
+        showIcon
+        title="当前为目录只读模式"
+        description="套餐列表来自服务端版本化目录；当前只支持查询和详情核对，增删改、审批发布和撤销需要后端写入契约、revision 与审计证据后才能开放。"
+        style={{ marginBottom: 16 }}
+      />
+      <Space wrap style={{ marginBottom: 12 }}>
+        <Input.Search allowClear value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索套餐名称、SKU、价格或权益" aria-label="搜索套餐目录" style={{ width: 320 }} />
+        <Typography.Text type="secondary">当前显示 {rows.length} 个公开套餐版本</Typography.Text>
+      </Space>
+      {rows.length ? <Table
+        rowKey="id"
+        size="small"
+        dataSource={rows}
+        pagination={{ pageSize: 20, showSizeChanger: false }}
+        scroll={{ x: 1120 }}
+        columns={[
+          { title: "套餐", fixed: "left", width: 210, render: (_: unknown, row: CommercialCatalogItem) => <Space orientation="vertical" size={0}><Typography.Text strong>{packageDisplayName(row.skuCode, row.name)}</Typography.Text><Typography.Text type="secondary" code>{packageCodeLabel(row.skuCode)}</Typography.Text></Space> },
+          { title: "类型", dataIndex: "type", width: 110, render: (value: string) => ({ monthly: "月度订阅", point_pack: "点数包", onboarding: "正式开通", private_trial: "私测" }[value] ?? value) },
+          { title: "价格", dataIndex: "priceLabel", width: 130 },
+          { title: "套餐权益", width: 380, render: (_: unknown, row: CommercialCatalogItem) => <Typography.Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>{readableBenefits(row)}</Typography.Paragraph> },
+          { title: "商业状态", dataIndex: "approvalState", width: 120, render: (_: string, row: CommercialCatalogItem) => <Tag color={readableCatalogStatus(row) === "生效可售" ? "green" : "gold"}>{readableCatalogStatus(row)}</Tag> },
+          { title: "操作", fixed: "right", width: 150, render: (_: unknown, row: CommercialCatalogItem) => <Space><Button size="small" onClick={() => setSelected(row)}>详情</Button><Tooltip title={writeBlocked}><Button size="small" disabled>编辑</Button></Tooltip></Space> },
+        ]}
+      /> : <Empty description={model.platformCommercialCatalog.length ? "没有匹配的套餐" : "服务端尚未返回套餐目录"} />}
+      <Drawer title="套餐详情" open={Boolean(selected)} onClose={() => setSelected(null)} destroyOnHidden>
+        {selected ? <Descriptions bordered size="small" column={1} items={[
+          { key: "sku", label: "套餐 / SKU", children: <Space orientation="vertical" size={0}><Typography.Text strong>{packageDisplayName(selected.skuCode, selected.name)}</Typography.Text><Typography.Text code>{selected.skuCode}</Typography.Text></Space> },
+          { key: "type", label: "售卖类型", children: selected.type },
+          { key: "price", label: "价格 / 周期", children: `${selected.priceLabel} / ${selected.cycleLabel ?? "一次性"}` },
+          { key: "benefits", label: "套餐权益", children: readableBenefits(selected) },
+          { key: "status", label: "商业状态", children: readableCatalogStatus(selected) },
+          { key: "validity", label: "生效窗口", children: `${selected.validFrom ?? "未开始"}${selected.validTo ? ` 至 ${selected.validTo}` : " / 无截止"}` },
+          { key: "unresolved", label: "未决项", children: selected.unresolved.length ? selected.unresolved.join("、") : "无" },
+        ]} /> : null}
+      </Drawer>
+    </Card>
   );
 }
+
+interface FinancePageProps { model: OpsConsoleModel; }
 export function FinancePage({ model }: FinancePageProps) {
   const isPlatformWorkbench = model.opsSession?.workbench
     ? model.opsSession.workbench === "platform"
@@ -65,6 +86,8 @@ export function FinancePage({ model }: FinancePageProps) {
   const canSearchFinance = model.authorization.can("billing.platform.read");
   const isWorkspaceWorkbench = !isPlatformWorkbench;
   const financeSearch = useFinanceSearch(financeSearchClient, { limit: 20 }, canSearchFinance);
+  const [showBillingControl, setShowBillingControl] = useState(false);
+  const [showCommercialReadiness, setShowCommercialReadiness] = useState(false);
   useEffect(() => {
     // Platform sessions must not hydrate workspace-scoped recharge orders.
     // The API correctly rejects that request, but issuing it from the page
@@ -93,10 +116,22 @@ export function FinancePage({ model }: FinancePageProps) {
       nextStep={isPlatformWorkbench ? "先核对跨企业主体财务记录和成本证据，再进入对应企业主体处理具体订单或权益。" : "先处理阻断与待对账事项；支付成功后仍需核验权益发放与新的访问版本。"}
     >
       <div className="ops-finance-page">
-        {isPlatformWorkbench ? <Typography.Title level={3} style={{ margin: 0 }}>账务与商业配置</Typography.Title> : null}
         {isPlatformWorkbench ? <>
-          <PlatformFinanceOverview summary={model.platformFinanceSummary} />
-          {canSearchFinance ? <FinanceSearchSection controller={financeSearch} showProviderStatementStatus={false} /> : (
+          {model.canModelMarkup ? (
+            <Card
+              size="small"
+              className="ops-finance-secondary-panel"
+              title={<Space><SettingOutlined aria-hidden="true" />模型计费倍率<Tag color="gold">高影响配置</Tag></Space>}
+              extra={<Button type="link" onClick={() => setShowBillingControl((visible) => !visible)}>{showBillingControl ? "收起配置" : "调整计费"}</Button>}
+            >
+              <Space wrap size={12}>
+                <Typography.Text type="secondary">平台统一控制模型成本加价；每次变更保留原因、revision 与审计记录。</Typography.Text>
+                <Tag color={model.modelMarkup ? "blue" : "default"}>当前倍率 {model.modelMarkup ? `${model.modelMarkup.multiplier}×` : "读取中"}</Tag>
+              </Space>
+              {showBillingControl ? <div style={{ marginTop: 12 }}><ModelMarkupPanel model={model} /></div> : null}
+            </Card>
+          ) : null}
+          {canSearchFinance ? <FinanceSearchSection controller={financeSearch} showProviderStatementStatus={false} compactSummary /> : (
             <Alert
               type="info"
               showIcon
@@ -104,7 +139,16 @@ export function FinancePage({ model }: FinancePageProps) {
               description="当前会话未获得服务端投影的 billing.platform.read 能力，因此没有发起跨企业主体财务查询。请由平台管理员更新权限后重新登录。"
             />
           )}
-          <CommercialReadinessPanel authorization={model.authorization} />
+          {model.authorization.can("commercial.catalog.read") ? <PlatformCatalogManagementPanel model={model} /> : null}
+          <Card
+            size="small"
+            className="ops-finance-secondary-panel"
+            title="商业化生产门禁"
+            extra={<Button type="link" onClick={() => setShowCommercialReadiness((visible) => !visible)}>{showCommercialReadiness ? "收起证据" : "查看证据"}</Button>}
+          >
+            <Typography.Text type="secondary">仅在核对 SKU、商业规则和费率证据时展开；它不会影响平台账务检索。</Typography.Text>
+            {showCommercialReadiness ? <div style={{ marginTop: 12 }}><CommercialReadinessPanel authorization={model.authorization} /></div> : null}
+          </Card>
         </> : <>
           <ReconciliationSection model={model} />
           <RechargeOrdersSection model={model} />

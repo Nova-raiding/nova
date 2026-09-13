@@ -76,7 +76,7 @@ describe("Ops Console model helpers", () => {
   it("builds unfiltered queue and alert requests without stale fields", () => {
     expect(marketingQueueParams({})).toEqual({ limit: "20" });
     expect(alertListParams({})).toEqual({ status: "open", limit: "20" });
-    expect(alertListParams({}, true)).toEqual({ status: "open", limit: "20", platform_scope: "platform" });
+    expect(alertListParams({}, true)).toEqual({ status: "open", limit: "100", platform_scope: "platform" });
   });
 
   it("clears old automation data and resolves a concrete store scope", () => {

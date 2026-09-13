@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { assertProductTargetIdentity, fetchImageGenerationJobs, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTasks, generateCampaignBatch, importProduct, registerMerchantAccount, type Product } from './src/api.js'
+import { assertProductTargetIdentity, fetchImageGenerationJobs, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTasks, generateCampaignBatch, importProduct, registerMerchantAccount, requestApi, type Product } from './src/api.js'
 import { resolveLibraryData } from './src/library-data.js'
 import { resolveTaskDirections } from './src/task-evidence.js'
 
@@ -73,6 +73,29 @@ describe('merchant product response normalization', () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/v1/products?limit=50&offset=0')
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/v1/products?limit=50&offset=1')
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/v1/tasks?limit=50&offset=0')
+  })
+
+  it('preserves request and trace evidence on API failures', async () => {
+    vi.stubGlobal('window', globalThis)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      request_id: 'req_failure_1',
+      trace_id: 'trace_failure_1',
+      workspace_id: 'ws_demo',
+      data: null,
+      warnings: [],
+      next_actions: ['commercial.access.get'],
+      error: { code: 'MODEL_RELAY_NOT_CONFIGURED', message: '模型中转未配置', details: { retryable: false, provider: 'relay' } },
+    }), { status: 503, headers: { 'content-type': 'application/json' } })))
+
+    await expect(requestApi('/api', '/v1/workspace/health')).rejects.toMatchObject({
+      code: 'MODEL_RELAY_NOT_CONFIGURED',
+      status: 503,
+      requestId: 'req_failure_1',
+      traceId: 'trace_failure_1',
+      details: { retryable: false, provider: 'relay' },
+      nextActions: ['commercial.access.get'],
+      retryable: false,
+    })
   })
 
   it('reads the workspace-scoped image task discovery page without inventing demo rows', async () => {

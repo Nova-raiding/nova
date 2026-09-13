@@ -356,16 +356,10 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-models-page .ant-table-wrapper, .ops-stores-page .ant-table-wrapper, .ops-finance-page .ant-table-wrapper, .ops-knowledge-page .ant-table-wrapper { border-radius: 8px; }
 .ops-finance-page .finance-summary { margin: 0 !important; }
 .ops-finance-page .finance-summary .ant-card { height: 100%; }
-.ops-finance-platform-overview { display: grid; gap: 12px; }
-.ops-finance-section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; padding: 0 2px; }
-.ops-finance-section-heading h3 { margin: 4px 0 0 !important; color: #172554 !important; font-size: 22px; line-height: 1.2; }
-.ops-finance-section-kicker { color: #d97706 !important; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: .12em; }
-.ops-finance-platform-metric { height: 100%; min-height: 122px; border-color: #dbe3ef; border-radius: 10px; box-shadow: 0 3px 14px rgb(15 23 42 / 4%); }
-.ops-finance-platform-metric .ant-card-body { display: grid; align-content: space-between; gap: 12px; height: 100%; padding: 16px; }
-.ops-finance-platform-metric .ant-statistic-title { margin-bottom: 4px; color: #64748b; font-size: 12px; }
-.ops-finance-platform-metric .ant-statistic-content { color: #172554; font-size: 25px; font-weight: 750; line-height: 1.15; }
-.ops-finance-platform-metric .ant-statistic-content-prefix { color: #2563eb; font-size: 18px; }
-.ops-finance-platform-metric .ant-typography { font-size: 12px; }
+.ops-finance-secondary-panel { border-color: #dbe3ef; }
+.ops-finance-secondary-panel .ant-card-head-title { display: flex; align-items: center; gap: 8px; }
+.ops-finance-secondary-panel .ant-card-body { padding-block: 14px; }
+.ops-finance-secondary-panel .ant-btn-link { min-height: 40px; }
 .ops-overview-page .ant-card, .ops-users-page .ant-card, .ops-audit-page .ant-card, .ops-rules-page .ant-card, .ops-storage-page .ant-card, .ops-members-page .ant-card { border-color: #dbe3ef; }
 .ops-incidents-page > .ant-alert { margin: 0; }
 .ops-members-page > .ant-card:first-child { margin-bottom: 0 !important; }
@@ -378,7 +372,6 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
   .ops-overview-snapshot-heading { flex-direction: column; gap: 8px; }
   .ops-overview-readiness-row { grid-template-columns: 8px 72px auto; }
   .ops-overview-readiness-row .ant-typography { grid-column: 2 / -1; white-space: normal; }
-  .ops-finance-section-heading { align-items: flex-start; flex-direction: column; gap: 6px; }
 }
 .config-form { max-width: 980px; }
 .full-width { width: 100%; }

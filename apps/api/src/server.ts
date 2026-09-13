@@ -18,6 +18,7 @@ import { allowedModelUsageSettlementDecisions, AssetScanRedriveError, Authorizat
 import type { OutboxEvent, OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import { ServiceFulfillmentRepositoryError, type ServiceFulfillmentEventRecord } from '../../../packages/persistence/src/service-fulfillment-repository.js'
 import type { SqlClient } from '../../../packages/persistence/src/repository.js'
+import { CommercialCatalogUnavailableError, type CommercialCatalogMutationInput } from '../../../packages/persistence/src/commercial-catalog-repository.js'
 import { IdentityLifecycleError, MemoryIdentityLifecycleRepository, PostgresIdentityLifecycleRepository, type IdentityAuthorizationSnapshot, type IdentityLifecycleRepository, type IdentityOperationsDetail } from '../../../packages/persistence/src/identity-lifecycle-repository.js'
 import { MemoryReconciliationStatusRepository, PostgresReconciliationStatusRepository, type ReconciliationStatusRepository } from '../../../packages/persistence/src/reconciliation-status-repository.js'
 import { MemoryCanonicalBackfillRunRepository, PostgresCanonicalBackfillRunRepository, type CanonicalBackfillRunRepository } from '../../../packages/persistence/src/canonical-backfill-run-repository.js'
@@ -12772,6 +12773,34 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!catalog.length) throw new DomainError('COMMERCIAL_CATALOG_UNAVAILABLE', '没有可读取的 V2 商业目录版本', 503, { catalog: null })
       const page = commercialOpsReadInput(() => paginateCommercialRows(catalog.map(projectCommercialCatalogItem), { kind: 'catalog', cursor: params.cursor, limit: params.limit }))
       return result({ schema_version: 'commercial.catalog.v2', items: page.items, total: page.total, next_cursor: page.nextCursor, private_entries_included: catalogAuthorization.privateEntriesIncluded })
+    }
+    case 'ops.commercial.catalog-v2.mutate': {
+      if (!persistence.commercialCatalog) throw new DomainError('COMMERCIAL_CATALOG_REPOSITORY_UNAVAILABLE', 'V2 商业目录仓储未配置', 503)
+      const action = params.action === 'retire' ? 'retire' : params.action === 'create' ? 'create' : null
+      if (!action) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'action 必须是 create 或 retire', 400)
+      const input: CommercialCatalogMutationInput = {
+        action,
+        code: required(params, 'code'),
+        ...(typeof params.kind === 'string' ? { kind: params.kind as CommercialCatalogMutationInput['kind'] } : {}),
+        ...(typeof params.visibility === 'string' ? { visibility: params.visibility as CommercialCatalogMutationInput['visibility'] } : {}),
+        ...(typeof params.required_capability === 'string' ? { requiredCapability: params.required_capability } : {}),
+        ...(typeof params.price_fen === 'string' ? { priceFen: Number(params.price_fen) } : {}),
+        ...(typeof params.price_mode === 'string' ? { priceMode: params.price_mode as CommercialCatalogMutationInput['priceMode'] } : {}),
+        ...(typeof params.duration_days === 'string' ? { durationDays: Number(params.duration_days) } : {}),
+        ...(params.payload_json ? { payload: parseJsonObjectParameter(params, 'payload_json') } : {}),
+        ...(params.benefits_json ? { benefits: JSON.parse(String(params.benefits_json)) } : {}),
+        actorId: requestActor(req),
+        reason: required(params, 'reason'),
+        evidence: parseJsonObjectParameter(params, 'evidence_json'),
+      }
+      if (input.priceFen !== undefined && (input.priceFen === null || !Number.isSafeInteger(input.priceFen) || input.priceFen < 0)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'price_fen 无效', 400)
+      try {
+        const item = await persistence.commercialCatalog.mutate(input)
+        return result({ schema_version: 'commercial.catalog.v2', item: projectCommercialCatalogItem(item) })
+      } catch (error) {
+        if (error instanceof CommercialCatalogUnavailableError) throw new DomainError(error.code, error.message, 409)
+        throw error
+      }
     }
     case 'ops.commercial.access-blocks.list': {
       if (!persistence.commercialContracts) throw new DomainError('COMMERCIAL_ACCESS_BLOCK_REPOSITORY_UNAVAILABLE', '商业阻断事实仓储尚未配置，不能返回伪造的空列表', 503)

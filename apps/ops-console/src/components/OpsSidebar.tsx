@@ -43,14 +43,15 @@ export const mainItems: Array<{ domain: OpsDomain; label: string; description: s
     { domain: "overview", label: "总览", description: "查看平台健康与待处理事项", icon: <DashboardOutlined /> },
     { domain: "users", label: "用户中心", description: "管理企业账号与授权范围", icon: <TeamOutlined /> },
     { domain: "knowledge", label: "知识库", description: "审核商家商品资料与规则", icon: <DatabaseOutlined /> },
-    { domain: "models", label: "模型服务", description: "检查中转、用量与成本证据", icon: <RobotOutlined /> },
+    // Kept for backwards-compatible tests/bookmarks; intentionally omitted from navigationGroups.
+    { domain: "models", label: "模型服务", description: "模型状态已并入账务中心", icon: <RobotOutlined /> },
     { domain: "finance", label: "账务与退款", description: "核对收款、创意点与退款", icon: <DollarOutlined /> },
   ];
 
 export const navigationGroups: Array<{ key: string; label: string; items: readonly OpsDomain[] }> = [
   { key: "governance", label: "平台治理", items: ["overview", "users"] },
   { key: "merchant-data", label: "商家数据", items: ["knowledge"] },
-  { key: "model-billing", label: "模型与计费", items: ["models", "finance"] },
+  { key: "model-billing", label: "模型与计费", items: ["finance"] },
 ];
 
 export function OpsSidebar({

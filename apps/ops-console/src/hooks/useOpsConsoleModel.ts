@@ -277,7 +277,10 @@ export async function submitDataDeletionDecision(input: {
 export function alertListParams(filters: AlertFilters, platformScope = false): Record<string, string> {
   return {
     status: "open",
-    limit: "20",
+    // The platform pulse card presents a total, not the first page of the
+    // alert table. Keep workspace-scoped tables paginated, but load the
+    // platform aggregate up to the API's supported page size.
+    limit: platformScope ? "100" : "20",
     ...(platformScope ? { platform_scope: "platform" } : {}),
     ...(filters.platform ? { platform: filters.platform } : {}),
     ...(filters.accountId ? { account_id: filters.accountId } : {}),

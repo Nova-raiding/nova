@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from 'node:crypto'
 import { SqlPool } from './repository.js'
 
 export const PRIVATE_COMMERCIAL_SKU_READ_CAPABILITY = 'commercial.private_sku.read' as const
@@ -67,6 +68,22 @@ export interface CommercialCatalogReadOptions {
   capabilities?: readonly string[]
 }
 
+export interface CommercialCatalogMutationInput {
+  action: 'create' | 'retire'
+  code: string
+  kind?: CommercialCatalogSkuSnapshot['kind']
+  visibility?: CommercialCatalogVisibility
+  requiredCapability?: string | null
+  priceFen?: number | null
+  priceMode?: CommercialCatalogSkuSnapshot['priceMode']
+  durationDays?: number | null
+  payload?: Record<string, unknown>
+  benefits?: CommercialCatalogBenefit[]
+  actorId: string
+  reason: string
+  evidence: Record<string, unknown>
+}
+
 export class CommercialCatalogUnavailableError extends Error {
   readonly code = 'COMMERCIAL_CATALOG_UNAVAILABLE'
   constructor(message = 'approved executable commercial catalog entry is unavailable') {
@@ -89,6 +106,7 @@ export interface CommercialCatalogRepository {
   resolveApprovedExecutableSku(code: string, options?: CommercialCatalogReadOptions): Promise<CommercialCatalogSkuSnapshot>
   listRates(): Promise<CreativePointRateSnapshot[]>
   resolveApprovedRate(actionCode: string): Promise<ApprovedCreativePointRate>
+  mutate(input: CommercialCatalogMutationInput): Promise<CommercialCatalogSkuSnapshot>
 }
 
 function canSee(snapshot: CommercialCatalogSkuSnapshot, options: CommercialCatalogReadOptions = {}): boolean {
@@ -103,23 +121,24 @@ function cloneSnapshot(snapshot: CommercialCatalogSkuSnapshot): CommercialCatalo
 }
 
 export class MemoryCommercialCatalogRepository implements CommercialCatalogRepository {
+  private readonly mutableSnapshots: CommercialCatalogSkuSnapshot[]
   constructor(
-    private readonly snapshots: readonly CommercialCatalogSkuSnapshot[],
+    snapshots: readonly CommercialCatalogSkuSnapshot[],
     private readonly rates: readonly (ApprovedCreativePointRate & { lifecycle?: CommercialCatalogLifecycle; executable?: boolean })[] = [],
     private readonly now: () => number = () => Date.now(),
-  ) {}
+  ) { this.mutableSnapshots = snapshots.map(cloneSnapshot) }
 
   async list(options: CommercialCatalogReadOptions = {}): Promise<CommercialCatalogSkuSnapshot[]> {
-    return this.snapshots.filter(snapshot => canSee(snapshot, options)).map(cloneSnapshot)
+    return this.mutableSnapshots.filter(snapshot => canSee(snapshot, options)).map(cloneSnapshot)
   }
 
   async get(code: string, options: CommercialCatalogReadOptions = {}): Promise<CommercialCatalogSkuSnapshot | undefined> {
-    const snapshot = this.snapshots.find(item => item.code === code && canSee(item, options))
+    const snapshot = this.mutableSnapshots.find(item => item.code === code && canSee(item, options))
     return snapshot ? cloneSnapshot(snapshot) : undefined
   }
 
   async resolveApprovedExecutableSku(code: string, options: CommercialCatalogReadOptions = {}): Promise<CommercialCatalogSkuSnapshot> {
-    const candidates = this.snapshots.filter(item => item.code === code && canSee(item, options)
+    const candidates = this.mutableSnapshots.filter(item => item.code === code && canSee(item, options)
       && item.lifecycle === 'approved' && item.executable && item.effectiveAt !== null
       && Number.isFinite(Date.parse(item.effectiveAt)) && Date.parse(item.effectiveAt) <= this.now())
     if (candidates.length !== 1) throw new CommercialCatalogUnavailableError()
@@ -153,6 +172,38 @@ export class MemoryCommercialCatalogRepository implements CommercialCatalogRepos
     if (candidates.length !== 1) throw new CreativePointRateUnavailableError()
     const { lifecycle: _lifecycle, executable: _executable, ...rate } = candidates[0]!
     return structuredClone(rate)
+  }
+
+  async mutate(input: CommercialCatalogMutationInput): Promise<CommercialCatalogSkuSnapshot> {
+    const existing = this.mutableSnapshots.filter(item => item.code === input.code).sort((a, b) => b.version - a.version)[0]
+    if (input.action === 'retire' && !existing) throw new CommercialCatalogUnavailableError('catalog SKU does not exist')
+    const base = existing ?? {
+      id: `sku-${input.code}`,
+      code: input.code,
+      kind: input.kind ?? 'monthly',
+      visibility: input.visibility ?? 'public',
+      requiredCapability: input.requiredCapability ?? null,
+      versionId: '', version: 0, lifecycle: 'draft' as const, executable: false,
+      priceFen: null, currency: 'CNY' as const, priceMode: 'fixed' as const, durationDays: null,
+      payload: {}, checksum: '', effectiveAt: null, benefits: [],
+    }
+    const payload = input.action === 'retire' ? existing!.payload : { ...(existing?.payload ?? {}), ...(input.payload ?? {}) }
+    const snapshot: CommercialCatalogSkuSnapshot = {
+      ...base,
+      versionId: `${base.id}-v${base.version + 1}-${randomUUID()}`,
+      version: base.version + 1,
+      lifecycle: input.action === 'retire' ? 'retired' : 'draft',
+      executable: false,
+      priceFen: input.action === 'retire' ? base.priceFen : (input.priceFen ?? base.priceFen),
+      priceMode: input.action === 'retire' ? base.priceMode : (input.priceMode ?? base.priceMode),
+      durationDays: input.action === 'retire' ? base.durationDays : (input.durationDays ?? base.durationDays),
+      payload,
+      checksum: createHash('sha256').update(JSON.stringify(payload)).digest('hex'),
+      effectiveAt: null,
+      benefits: input.action === 'retire' ? base.benefits : (input.benefits ?? base.benefits),
+    }
+    this.mutableSnapshots.push(snapshot)
+    return cloneSnapshot(snapshot)
   }
 }
 
@@ -387,5 +438,44 @@ export class PostgresCommercialCatalogRepository implements CommercialCatalogRep
     } finally {
       client.release?.()
     }
+  }
+
+  async mutate(input: CommercialCatalogMutationInput): Promise<CommercialCatalogSkuSnapshot> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const current = await client.query<CatalogRow & { skuId: string; code: string }>(`
+        SELECT latest.id, s.id AS "skuId", s.code, s.kind, s.visibility, s.required_capability AS "requiredCapability",
+          latest.version, latest.lifecycle, latest.executable, latest.price_fen AS "priceFen", latest.currency,
+          latest.price_mode AS "priceMode", latest.duration_days AS "durationDays", latest.payload, latest.checksum,
+          latest.effective_at AS "effectiveAt", benefit_rows.benefits
+        FROM commercial_catalog_skus s
+        LEFT JOIN LATERAL (
+          SELECT v.* FROM commercial_catalog_sku_versions v WHERE v.sku_id = s.id ORDER BY v.version DESC LIMIT 1
+        ) latest ON true
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(jsonb_agg(jsonb_build_object('code', b.benefit_code, 'quantity', b.quantity, 'rawValue', b.raw_value, 'rawUnit', b.raw_unit, 'normalizedValue', b.normalized_value, 'policyRef', b.policy_ref, 'metadata', b.metadata) ORDER BY b.benefit_code), '[]'::jsonb) AS benefits
+          FROM commercial_catalog_sku_benefits b WHERE b.sku_version_id = latest.id
+        ) benefit_rows ON true
+        WHERE s.code = $1
+        ORDER BY latest.version DESC LIMIT 1
+      `, [input.code])
+      const row = current.rows[0]
+      if (input.action === 'retire' && !row) throw new CommercialCatalogUnavailableError('catalog SKU does not exist')
+      const skuId = row?.skuId ?? `sku-${input.code}`
+      const baseVersion = row?.version ?? 0
+      const payload = input.action === 'retire' ? row!.payload : { ...(row?.payload ?? {}), ...(input.payload ?? {}) }
+      const checksum = createHash('sha256').update(JSON.stringify(payload)).digest('hex')
+      const versionId = `${skuId}-v${baseVersion + 1}-${randomUUID()}`
+      await client.query(`INSERT INTO commercial_catalog_skus (id, code, kind, visibility, required_capability) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (code) DO NOTHING`, [skuId, input.code, input.kind ?? row?.kind ?? 'monthly', input.visibility ?? row?.visibility ?? 'public', input.requiredCapability ?? row?.requiredCapability ?? null])
+      await client.query(`INSERT INTO commercial_catalog_sku_versions (id, sku_id, version, lifecycle, executable, price_fen, currency, price_mode, duration_days, payload, checksum, effective_at) VALUES ($1,$2,$3,$4,false,$5,'CNY',$6,$7,$8::jsonb,$9,NULL)`, [versionId, skuId, baseVersion + 1, input.action === 'retire' ? 'retired' : 'draft', input.action === 'retire' ? row!.priceFen : (input.priceFen ?? row?.priceFen ?? null), input.action === 'retire' ? row!.priceMode : (input.priceMode ?? row?.priceMode ?? 'fixed'), input.action === 'retire' ? row!.durationDays : (input.durationDays ?? row?.durationDays ?? null), JSON.stringify(payload), checksum])
+      const benefits = input.action === 'retire' ? (row?.benefits ?? []) : (input.benefits ?? row?.benefits ?? [])
+      for (const benefit of benefits) await client.query(`INSERT INTO commercial_catalog_sku_benefits (id, sku_version_id, benefit_code, quantity, raw_value, raw_unit, normalized_value, policy_ref, metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)`, [randomUUID(), versionId, benefit.code, benefit.quantity, benefit.rawValue, benefit.rawUnit, benefit.normalizedValue, benefit.policyRef, JSON.stringify(benefit.metadata ?? {})])
+      await client.query(`INSERT INTO commercial_catalog_events_v2 (id, aggregate_type, aggregate_id, event_type, actor_id, reason, evidence, revision) VALUES ($1,'sku_version',$2,$3,$4,$5,$6::jsonb,$7)`, [randomUUID(), versionId, input.action === 'retire' ? 'retired' : 'source_imported', input.actorId, input.reason, JSON.stringify(input.evidence), baseVersion + 1])
+      await client.query('COMMIT')
+      const rows = await this.queryCatalog('v.id = $1', [versionId])
+      if (!rows[0]) throw new CommercialCatalogUnavailableError('catalog mutation was not readable after commit')
+      return rows[0]
+    } catch (error) { try { await client.query('ROLLBACK') } catch { /* preserve original */ } throw error } finally { client.release?.() }
   }
 }

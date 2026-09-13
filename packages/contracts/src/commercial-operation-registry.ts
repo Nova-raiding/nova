@@ -20,6 +20,7 @@ export const MCP_OPS_CONTROL_METHODS = [
   'ops.commercial.points.adjust.propose',
   'ops.commercial.points.adjust.decide',
   'ops.commercial.catalog-v2.list',
+  'ops.commercial.catalog-v2.mutate',
   'ops.commercial.orders-v2.list',
   'ops.commercial.rate-cards.list',
   'ops.commercial.readiness.report',

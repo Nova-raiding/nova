@@ -24,6 +24,10 @@ export interface WorkspaceDirectoryItem {
 export interface WorkspaceDirectoryPage {
   items: WorkspaceDirectoryItem[]
   total: number
+  /** Workspaces bound to an active merchant account; not equivalent to launched businesses. */
+  merchantWorkspaceCount?: number
+  /** Workspaces with at least one active member; useful as a governance signal only. */
+  activeMemberWorkspaceCount?: number
   offset: number
   limit: number
   hasMore: boolean

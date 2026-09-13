@@ -21,12 +21,17 @@ interface PlatformOverviewSnapshotProps {
 
 const money = (value: number | undefined) => value === undefined ? "—" : `¥${value.toFixed(2)}`;
 
-export function PlatformOverviewSnapshot({ model, onNavigate }: PlatformOverviewSnapshotProps) {
-  const merchantWorkspaceCount = (model.workspaceDirectory as typeof model.workspaceDirectory & { merchantWorkspaceCount?: number }).merchantWorkspaceCount;
+export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProps) {
+  const merchantWorkspaceCount = model.workspaceDirectory.merchantWorkspaceCount;
   const tasks = model.platformTaskSummary;
   const marketing = model.platformMarketingSummary;
   const usage = model.platformModelUsageSummary;
-  const readiness = modelReadinessRows(model.modelStatus);
+  // A failed refresh must not leave the overview presenting stale readiness as
+  // current evidence. The models page follows the same fail-closed rule.
+  const modelStatusError = model.dataSetError("platform.model.status");
+  const displayModelStatus = modelStatusError ? undefined : model.modelStatus;
+  const readiness = modelReadinessRows(displayModelStatus);
+  const blockedReadiness = readiness.filter((row) => !row.ready);
   const readyModels = readiness.filter((row) => row.ready).length;
   const connectedPlatforms = new Set(
     model.platformOperations
@@ -80,8 +85,8 @@ export function PlatformOverviewSnapshot({ model, onNavigate }: PlatformOverview
         </Col>
         <Col xs={24} sm={12} xl={6}>
           <Card className="ops-overview-kpi-card ops-overview-kpi-purple">
-            <Statistic title="模型能力" value={model.modelStatus ? `${readyModels}/${readiness.length}` : "—"} prefix={<RobotOutlined />} />
-            <span>{model.modelStatus ? `${readiness.length - readyModels} 项能力被阻断` : "模型状态尚未取得"}</span>
+            <Statistic title="模型能力" value={displayModelStatus ? `${readyModels}/${readiness.length}` : "—"} prefix={<RobotOutlined />} />
+            <span>{displayModelStatus ? `${blockedReadiness.length} 项能力被阻断` : modelStatusError ? "模型状态读取失败，不能沿用旧状态" : "模型状态尚未取得"}</span>
           </Card>
         </Col>
         <Col xs={24} sm={12} xl={6}>
@@ -104,26 +109,49 @@ export function PlatformOverviewSnapshot({ model, onNavigate }: PlatformOverview
         </Col>
       </Row>
 
-      <Row gutter={[12, 12]} className="ops-overview-status-grid">
-        <Col xs={24}>
-          <Card
-            size="small"
-            title={<span><RobotOutlined /> 模型能力门禁</span>}
-            extra={<Button type="link" onClick={() => onNavigate?.("models")}>查看模型详情</Button>}
-          >
-            <div className="ops-overview-readiness-list">
-              {readiness.length ? readiness.map((row) => (
-                <div className="ops-overview-readiness-row" key={row.key}>
-                  <span className={`ops-overview-status-dot ${row.ready ? "ready" : "blocked"}`} />
-                  <strong>{row.label}</strong>
-                  <Tag color={row.ready ? "green" : "red"}>{row.ready ? "可用" : "阻断"}</Tag>
-                  <Typography.Text type="secondary">{row.ready ? "已通过最终运行时门禁" : row.reasons[0] ?? "等待服务端确认"}</Typography.Text>
-                </div>
-              )) : <Typography.Text type="secondary">模型状态尚未取得，不能把配置状态解释为可用。</Typography.Text>}
-            </div>
-          </Card>
-        </Col>
-      </Row>
     </section>
+  );
+}
+
+/** Detailed model readiness belongs below the first-screen platform pulse. */
+export function ModelLaunchRisk({ model, onNavigate }: PlatformOverviewSnapshotProps) {
+  const modelStatusError = model.dataSetError("platform.model.status");
+  const displayModelStatus = modelStatusError ? undefined : model.modelStatus;
+  const readiness = modelReadinessRows(displayModelStatus);
+  const blockedReadiness = readiness.filter((row) => !row.ready);
+
+  return (
+    <Row gutter={[12, 12]} className="ops-overview-status-grid">
+      <Col xs={24}>
+        <Card
+          size="small"
+          title={<span><RobotOutlined /> 模型上线风险</span>}
+          extra={<Button type="link" onClick={() => onNavigate?.("finance")}>前往账务中心</Button>}
+        >
+          <div className="ops-overview-readiness-list" aria-live="polite">
+            {modelStatusError ? (
+              <Typography.Text type="secondary">模型状态读取失败，当前不能判定能力是否可用；请进入模型详情重试。</Typography.Text>
+            ) : blockedReadiness.length ? (
+              <>
+                <Typography.Text type="secondary">{blockedReadiness.length} 项能力未通过最终运行时门禁，首页仅展示阻断摘要。</Typography.Text>
+                {blockedReadiness.slice(0, 2).map((row) => (
+                  <div className="ops-overview-readiness-row" key={row.key}>
+                    <span className="ops-overview-status-dot blocked" />
+                    <strong>{row.label}</strong>
+                    <Tag color="red">阻断</Tag>
+                    <Typography.Text type="secondary">{row.reasons[0] ?? "等待服务端确认"}</Typography.Text>
+                  </div>
+                ))}
+                {blockedReadiness.length > 2 ? <Typography.Text type="secondary">另有 {blockedReadiness.length - 2} 项阻断，详见平台总览。</Typography.Text> : null}
+              </>
+            ) : displayModelStatus ? (
+              <Typography.Text type="secondary">五模态均已通过最终运行时门禁；具体成本和计费倍率请在账务中心核对。</Typography.Text>
+            ) : (
+              <Typography.Text type="secondary">模型状态尚未取得，不能把配置状态解释为可用。</Typography.Text>
+            )}
+          </div>
+        </Card>
+      </Col>
+    </Row>
   );
 }

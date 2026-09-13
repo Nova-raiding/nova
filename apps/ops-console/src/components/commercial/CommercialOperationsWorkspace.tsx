@@ -38,10 +38,32 @@ import {
 import { refundPolicyApproval } from "../../api/commercialOperationsClient.js";
 import { PointAdjustmentPanel } from "./PointAdjustmentPanel.js";
 import { ServiceFulfillmentPanel } from "./ServiceFulfillmentPanel.js";
+import { readableBenefits } from "./benefitLabels.js";
+import { packageCodeLabel, packageDisplayName } from "./packageLabels.js";
 
 const dash = (value: string | number | null | undefined) => value === null || value === undefined || value === "" ? "—" : String(value);
 const time = (value: string | null | undefined) => value ? new Date(value).toLocaleString() : "—";
 const point = (value: number | null | undefined) => value === null || value === undefined ? "待确认" : value.toLocaleString();
+
+const commercialStateLabels: Record<string, string> = {
+  paid: "已核验支付",
+  pending: "待处理",
+  unpaid: "未支付",
+  failed: "失败",
+  closed: "已关闭",
+  granted: "权益已授予",
+  ungranted: "尚未授予",
+  active: "生效中",
+  expired: "已过期",
+  revoked: "已撤回",
+  suspended: "已暂停",
+  blocked: "已阻断",
+};
+
+const readableCommercialState = (value: string | null | undefined) => {
+  if (!value) return "待确认";
+  return commercialStateLabels[value.toLowerCase()] ?? value;
+};
 
 function StateTag({ value, semanticValue }: { value: string; semanticValue?: string }) {
   const normalized = (semanticValue ?? value).toLowerCase();
@@ -254,22 +276,24 @@ function EntitlementTable({ state, controller }: { state: CommercialOperationsCo
   const items = useMemo(() => filteredRows(state.data?.items ?? [], controller), [state.data?.items, controller.query.query]);
   const selection = useDeepLinkedSelection(items, controller);
   const reload = () => void controller.loadView("entitlements");
-  return <DataBoundary state={state} capability={commercialViewCapability.entitlements} onRetry={reload}>{() => <><MissingRecordAlert record={selection.missingRecord} controller={controller} /><TableToolbar total={items.length} controller={controller} onRefresh={reload} /><Table rowKey="id" size="small" sticky pagination={tablePagination(controller)} onChange={(pagination, filters, sorter) => updateTableState(controller, pagination, filters, sorter)} locale={{ emptyText: emptyForFilter(controller, "Workspace 权益快照") }} dataSource={items} scroll={{ x: 1420 }} columns={[
-    { title: "Workspace", dataIndex: "workspaceId", fixed: "left", width: 190, sorter: (a, b) => a.workspaceId.localeCompare(b.workspaceId), ...controlledSort(controller, "workspaceId"), render: value => <Typography.Text code>{value}</Typography.Text> },
-    { title: "SKU", dataIndex: "skuCode", width: 160, render: value => <Typography.Text code>{value}</Typography.Text> },
+  return <DataBoundary state={state} capability={commercialViewCapability.entitlements} onRetry={reload}>{() => <><MissingRecordAlert record={selection.missingRecord} controller={controller} />
+    <Alert type="info" showIcon title="标准套餐权益由订单自动授予" description="这里展示服务端已经授予企业工作区的权益快照。正常购买不需要运营逐项勾选权限；只有赠送、补偿、退款回收或定制合同等例外，才进入单独的人工审批流程。" />
+    <TableToolbar total={items.length} controller={controller} onRefresh={reload} /><Table rowKey="id" size="small" sticky pagination={tablePagination(controller)} onChange={(pagination, filters, sorter) => updateTableState(controller, pagination, filters, sorter)} locale={{ emptyText: emptyForFilter(controller, "企业工作区权益快照") }} dataSource={items} scroll={{ x: 1530 }} columns={[
+    { title: "企业工作区", dataIndex: "workspaceId", fixed: "left", width: 190, sorter: (a, b) => a.workspaceId.localeCompare(b.workspaceId), ...controlledSort(controller, "workspaceId"), render: value => <Typography.Text code>{value}</Typography.Text> },
+    { title: "套餐", dataIndex: "skuCode", width: 190, render: value => <Space orientation="vertical" size={0}><Typography.Text>{packageDisplayName(value)}</Typography.Text><Typography.Text type="secondary" code>{value}</Typography.Text></Space> },
     { title: "快照版本", dataIndex: "snapshotVersion", width: 150, render: value => <Typography.Text code>{value}</Typography.Text> },
-    { title: "状态", dataIndex: "status", width: 120, render: value => <StateTag value={value} /> },
+    { title: "权益状态", dataIndex: "status", width: 120, render: value => <StateTag value={readableCommercialState(value)} semanticValue={value} /> },
     { title: "品牌", dataIndex: "brandLimit", width: 90, align: "right", render: dash }, { title: "店铺", dataIndex: "storeLimit", width: 90, align: "right", render: dash },
-    { title: "存储标签", dataIndex: "storageLabel", width: 130, render: dash }, { title: "服务权益", dataIndex: "serviceSummary", width: 220, render: dash },
-    { title: "账期", dataIndex: "periodLabel", width: 170, render: dash }, { title: "来源订单", dataIndex: "sourceOrderId", width: 190, render: value => <Typography.Text code>{dash(value)}</Typography.Text> },
+    { title: "存储空间", dataIndex: "storageLabel", width: 130, render: dash }, { title: "服务权益", dataIndex: "serviceSummary", width: 220, render: dash },
+    { title: "有效账期", dataIndex: "periodLabel", width: 170, render: dash }, { title: "授予来源", width: 210, render: (_, row) => row.sourceOrderId ? <Space orientation="vertical" size={0}><Typography.Text>套餐自动授予</Typography.Text><Typography.Text type="secondary" code>{row.sourceOrderId}</Typography.Text></Space> : <Typography.Text type="secondary">人工/合同，待核对</Typography.Text> },
     { title: "更新时间", dataIndex: "updatedAt", width: 180, sorter: (a, b) => String(a.updatedAt).localeCompare(String(b.updatedAt)), ...controlledSort(controller, "updatedAt"), render: time },
     { title: "操作", fixed: "right", width: 100, render: (_, row) => <Button size="small" aria-label={`查看 Workspace 权益 ${row.workspaceId} ${row.skuCode}`} onClick={event => selection.open(row, event.currentTarget)}>详情</Button> },
   ]} />
-  <Drawer title="Workspace 权益快照" open={Boolean(selection.selected)} onClose={selection.close} afterOpenChange={selection.afterOpenChange} destroyOnHidden>{selection.selected ? <Descriptions bordered size="small" column={1} items={[
-    { key: "workspace", label: "Workspace", children: <Typography.Text code>{selection.selected.workspaceId}</Typography.Text> },
-    { key: "sku", label: "SKU / 快照", children: <Typography.Text code>{selection.selected.skuCode} / {selection.selected.snapshotVersion}</Typography.Text> },
+  <Drawer title="企业工作区权益快照" open={Boolean(selection.selected)} onClose={selection.close} afterOpenChange={selection.afterOpenChange} destroyOnHidden>{selection.selected ? <Descriptions bordered size="small" column={1} items={[
+    { key: "workspace", label: "企业工作区", children: <Typography.Text code>{selection.selected.workspaceId}</Typography.Text> },
+    { key: "sku", label: "套餐 / 快照", children: <Space orientation="vertical" size={0}><Typography.Text>{packageDisplayName(selection.selected.skuCode)}</Typography.Text><Typography.Text type="secondary" code>{selection.selected.skuCode} / {selection.selected.snapshotVersion}</Typography.Text></Space> },
     { key: "limits", label: "品牌 / 店铺", children: `${point(selection.selected.brandLimit)} / ${point(selection.selected.storeLimit)}` },
-    { key: "storage", label: "存储原始标签", children: dash(selection.selected.storageLabel) },
+    { key: "storage", label: "存储空间", children: dash(selection.selected.storageLabel) },
     { key: "service", label: "服务权益", children: dash(selection.selected.serviceSummary) },
     { key: "order", label: "来源订单", children: <Typography.Text code>{dash(selection.selected.sourceOrderId)}</Typography.Text> },
   ]} /> : null}</Drawer></>}</DataBoundary>;
@@ -306,10 +330,10 @@ function CatalogTable({ state, controller }: { state: CommercialOperationsContro
   const items = useMemo(() => filteredRows(permittedItems, controller), [permittedItems, controller.query.query]);
   const selection = useDeepLinkedSelection(items, controller);
   return <DataBoundary state={state} capability={commercialViewCapability.catalog} onRetry={() => void controller.loadView("catalog")}>{() => <><MissingRecordAlert record={selection.missingRecord} controller={controller} /><TableToolbar total={items.length} controller={controller} onRefresh={() => void controller.loadView("catalog")} /><Table rowKey="id" size="small" sticky pagination={tablePagination(controller)} onChange={(pagination, filters, sorter) => updateTableState(controller, pagination, filters, sorter)} locale={{ emptyText: emptyForFilter(controller, "商业目录版本") }} dataSource={items} scroll={{ x: 1540 }} columns={[
-    { title: "套餐", dataIndex: "name", fixed: "left", width: 250, sorter: (a, b) => a.name.localeCompare(b.name), ...controlledSort(controller, "name"), render: (value, row) => <Space orientation="vertical" size={0}><Typography.Text strong>{value}</Typography.Text><Typography.Text type="secondary" code copyable={{ text: row.skuCode }}>{row.skuCode}</Typography.Text><Typography.Text type="secondary">版本 {row.version}</Typography.Text></Space> },
+    { title: "套餐", dataIndex: "skuCode", fixed: "left", width: 250, sorter: (a, b) => a.skuCode.localeCompare(b.skuCode), ...controlledSort(controller, "skuCode"), render: (value, row) => <Space orientation="vertical" size={0}><Typography.Text strong>{packageDisplayName(value, row.name)}</Typography.Text><Typography.Text type="secondary" code copyable={{ text: value }}>{packageCodeLabel(value)}</Typography.Text><Typography.Text type="secondary">版本 {row.version}</Typography.Text></Space> },
     { title: "售卖形态", dataIndex: "type", width: 130, render: value => typeLabel(value) },
     { title: "价格方案", width: 190, render: (_, row) => <Space orientation="vertical" size={0}><Typography.Text strong>{row.priceLabel}</Typography.Text><Typography.Text type="secondary">{row.cycleLabel ?? "一次性"}</Typography.Text></Space> },
-    { title: "包含权益", dataIndex: "benefitsSummary", width: 320, render: value => <Typography.Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>{value}</Typography.Paragraph> },
+    { title: "套餐权益", dataIndex: "benefitsSummary", width: 360, render: (_value, row) => <Typography.Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>{readableBenefits(row)}</Typography.Paragraph> },
     { title: "销售状态", dataIndex: "approvalState", width: 130, render: value => <StateTag value={approvalLabel(value)} semanticValue={value} /> },
     { title: "可见范围", dataIndex: "visibility", width: 120, render: value => <StateTag value={visibilityLabel(value)} semanticValue={value} /> },
     { title: "生效窗口", width: 190, render: (_, row) => <Space orientation="vertical" size={0}><Typography.Text>{row.validFrom ? time(row.validFrom) : "未开始"}</Typography.Text><Typography.Text type="secondary">{row.validTo ? `至 ${time(row.validTo)}` : "无截止"}</Typography.Text></Space> },
@@ -317,11 +341,11 @@ function CatalogTable({ state, controller }: { state: CommercialOperationsContro
     { title: "操作", fixed: "right", width: 100, render: (_, row) => <Button size="small" aria-label={`查看目录 SKU ${row.skuCode} 版本 ${row.version}`} onClick={event => selection.open(row, event.currentTarget)}>详情</Button> },
   ]} />
   <Drawer title="目录版本详情" open={Boolean(selection.selected)} onClose={selection.close} afterOpenChange={selection.afterOpenChange} destroyOnHidden>{selection.selected ? <Descriptions bordered size="small" column={1} items={[
-    { key: "sku", label: "SKU", children: <Typography.Text code>{selection.selected.skuCode}</Typography.Text> },
+    { key: "sku", label: "套餐", children: <Space orientation="vertical" size={0}><Typography.Text>{packageDisplayName(selection.selected.skuCode, selection.selected.name)}</Typography.Text><Typography.Text type="secondary" code>{packageCodeLabel(selection.selected.skuCode)}</Typography.Text></Space> },
     { key: "version", label: "版本", children: <Typography.Text code>{selection.selected.version}</Typography.Text> },
     { key: "visibility", label: "可见性", children: <StateTag value={selection.selected.visibility} /> },
     { key: "price", label: "服务端价格 / 周期", children: `${selection.selected.priceLabel}${selection.selected.cycleLabel ? ` / ${selection.selected.cycleLabel}` : ""}` },
-    { key: "benefits", label: "权益摘要", children: selection.selected.benefitsSummary },
+    { key: "benefits", label: "套餐权益", children: readableBenefits(selection.selected) },
     { key: "unresolved", label: "未决项", children: selection.selected.unresolved.length ? selection.selected.unresolved.join("、") : "无" },
   ]} /> : null}</Drawer>
   {!controller.permissions.canDraftCatalog ? <Alert type="info" showIcon title="目录只读" description="当前会话缺少 commercial.catalog.draft；不会渲染编辑表单。" /> : <Alert type="warning" showIcon title="目录写入 API 尚未接入" description="草稿、校验和发布命令在具备独立 capability、revision 与审计契约前保持 BLOCKED。" />}</>}</DataBoundary>;
@@ -332,21 +356,21 @@ function OrdersTable({ state, controller }: { state: CommercialOperationsControl
   const selection = useDeepLinkedSelection(items, controller);
   return <DataBoundary state={state} capability={commercialViewCapability.orders} onRetry={() => void controller.loadView("orders")}>{() => <><MissingRecordAlert record={selection.missingRecord} controller={controller} /><TableToolbar total={items.length} controller={controller} onRefresh={() => void controller.loadView("orders")} /><Table rowKey="id" size="small" sticky pagination={tablePagination(controller)} onChange={(pagination, filters, sorter) => updateTableState(controller, pagination, filters, sorter)} locale={{ emptyText: emptyForFilter(controller, "订单与支付记录") }} dataSource={items} scroll={{ x: 1600 }} columns={[
     { title: "订单号", dataIndex: "id", fixed: "left", width: 210, sorter: (a, b) => a.id.localeCompare(b.id), ...controlledSort(controller, "id"), render: value => <Typography.Text code copyable>{value}</Typography.Text> },
-    { title: "Workspace", dataIndex: "workspaceId", width: 190, render: value => <Typography.Text code>{value}</Typography.Text> }, { title: "SKU / 版本", width: 210, render: (_, row) => <Typography.Text code>{row.skuCode} / {row.skuVersion}</Typography.Text> },
+    { title: "企业工作区", dataIndex: "workspaceId", width: 190, render: value => <Typography.Text code>{value}</Typography.Text> }, { title: "套餐 / 版本", width: 230, render: (_, row) => <Space orientation="vertical" size={0}><Typography.Text>{packageDisplayName(row.skuCode)}</Typography.Text><Typography.Text type="secondary" code>{row.skuCode} / {row.skuVersion}</Typography.Text></Space> },
     { title: "购买点数", dataIndex: "purchasedPoints", width: 110, align: "right", render: point }, { title: "金额", dataIndex: "amountLabel", width: 130, align: "right" },
-    { title: "渠道", dataIndex: "channel", width: 110, render: dash }, { title: "Payment", dataIndex: "paymentState", width: 130, render: value => <StateTag value={value} /> },
-    { title: "Grant", dataIndex: "grantState", width: 130, render: value => <StateTag value={value} /> }, { title: "Access revision", dataIndex: "accessRevision", width: 150, render: value => <Typography.Text code>{dash(value)}</Typography.Text> },
+    { title: "支付渠道", dataIndex: "channel", width: 110, render: dash }, { title: "支付状态", dataIndex: "paymentState", width: 130, render: value => <StateTag value={readableCommercialState(value)} semanticValue={value} /> },
+    { title: "权益发放", dataIndex: "grantState", width: 130, render: value => <StateTag value={readableCommercialState(value)} semanticValue={value} /> }, { title: "权限版本", dataIndex: "accessRevision", width: 150, render: value => <Typography.Text code>{dash(value)}</Typography.Text> },
     { title: "创建时间", dataIndex: "createdAt", width: 180, sorter: (a, b) => a.createdAt.localeCompare(b.createdAt), ...controlledSort(controller, "createdAt"), render: time }, { title: "支付时间", dataIndex: "paidAt", width: 180, render: time },
     { title: "操作", fixed: "right", width: 100, render: (_, row) => <Button size="small" aria-label={`查看订单 ${row.id}`} onClick={event => selection.open(row, event.currentTarget)}>详情</Button> },
   ]} />
-  <Drawer title="订单、支付与 Grant 证据" open={Boolean(selection.selected)} onClose={selection.close} afterOpenChange={selection.afterOpenChange} destroyOnHidden>{selection.selected ? <Space orientation="vertical" className="full-width">
-    {selection.selected.paymentState.toLowerCase() === "paid" && selection.selected.grantState.toLowerCase() !== "granted" ? <Alert role="alert" type="error" showIcon title="PAID_BUT_UNGRANTED" description="支付已确认，但 Grant 尚未到账；必须完成对账并取得新的 access revision 才能恢复。" /> : null}
+  <Drawer title="订单、支付与权益证据" open={Boolean(selection.selected)} onClose={selection.close} afterOpenChange={selection.afterOpenChange} destroyOnHidden>{selection.selected ? <Space orientation="vertical" className="full-width">
+    {selection.selected.paymentState.toLowerCase() === "paid" && selection.selected.grantState.toLowerCase() !== "granted" ? <Alert role="alert" type="error" showIcon title="已支付但权益未到账" description="支付已确认，但套餐权益尚未授予；必须完成对账并取得新的权限版本后才能恢复服务。" /> : null}
     <Descriptions bordered size="small" column={1} items={[
       { key: "order", label: "订单", children: <Typography.Text code>{selection.selected.id}</Typography.Text> },
       { key: "workspace", label: "Workspace", children: <Typography.Text code>{selection.selected.workspaceId}</Typography.Text> },
-      { key: "sku", label: "SKU / 版本", children: <Typography.Text code>{selection.selected.skuCode} / {selection.selected.skuVersion}</Typography.Text> },
-      { key: "payment", label: "Payment / Grant", children: `${selection.selected.paymentState} / ${selection.selected.grantState}` },
-      { key: "revision", label: "Access revision", children: <Typography.Text code>{dash(selection.selected.accessRevision)}</Typography.Text> },
+      { key: "sku", label: "套餐 / 版本", children: <Space orientation="vertical" size={0}><Typography.Text>{packageDisplayName(selection.selected.skuCode)}</Typography.Text><Typography.Text type="secondary" code>{selection.selected.skuCode} / {selection.selected.skuVersion}</Typography.Text></Space> },
+      { key: "payment", label: "支付 / 权益", children: `${readableCommercialState(selection.selected.paymentState)} / ${readableCommercialState(selection.selected.grantState)}` },
+      { key: "revision", label: "权限版本", children: <Typography.Text code>{dash(selection.selected.accessRevision)}</Typography.Text> },
       { key: "request", label: "Request ID", children: <Typography.Text code>{dash(selection.selected.requestId)}</Typography.Text> },
     ]} />
   </Space> : null}</Drawer>
@@ -518,6 +542,12 @@ export function CommercialOperationsWorkspace({ controller }: { controller: Comm
       <CommercialRefundOperationsPanel controller={controller} />
       <PointAdjustmentPanel controller={controller} />
       <ServiceFulfillmentPanel controller={controller} />
+      <Alert
+        type="info"
+        showIcon
+        title="套餐、订单和权益是三类不同记录"
+        description="套餐目录定义卖什么；订单记录谁买了什么以及支付是否核验；权益快照记录实际授予哪个企业工作区、有效多久和还剩多少。支付成功不等于权益已到账。"
+      />
       <Tabs activeKey={controller.view} onChange={key => controller.setView(key as CommercialView)} items={commercialViews.map(view => ({ key: view, label: commercialViewLabels[view] }))} />
       <section className="commercial-view" aria-labelledby={`commercial-view-${controller.view}`}>
         <Typography.Title ref={viewHeadingRef} tabIndex={-1} id={`commercial-view-${controller.view}`} level={4}>{commercialViewLabels[controller.view]}</Typography.Title>

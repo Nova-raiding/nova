@@ -446,6 +446,7 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   write('commercial.point.adjust', 'platform', 'finance', ['ops.commercial.points.adjust.propose'], 'mutation', ['reason', 'revision', 'idempotency']),
   write('commercial.point.adjust.approve', 'platform', 'finance', ['ops.commercial.points.adjust.decide'], 'mutation', ['reason', 'idempotency']),
   read('commercial.catalog.read', 'platform', 'finance', ['ops.commercial.catalog-v2.list']),
+  write('commercial.catalog.draft', 'platform', 'finance', ['ops.commercial.catalog-v2.mutate'], 'mutation', ['reason', 'idempotency']),
   read('commercial.order.read', 'platform', 'finance', ['ops.commercial.orders-v2.list']),
   read('commercial.rate.read', 'platform', 'finance', ['ops.commercial.rate-cards.list', 'ops.commercial.readiness.report']),
   write('commercial.private_trial.workflow', 'platform', 'finance', [

@@ -1,7 +1,7 @@
 import { OpsPage } from "../components/OpsPage";
 import { CommercialOverviewSection } from "../components/sections/overview/CommercialOverviewSection";
 import { ModelServiceSummary } from "../components/models/ModelServiceSummary";
-import { PlatformOverviewSnapshot } from "../components/sections/overview/PlatformOverviewSnapshot";
+import { ModelLaunchRisk, PlatformOverviewSnapshot } from "../components/sections/overview/PlatformOverviewSnapshot";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import type { OpsDomain } from "../navigation/opsNavigation";
 
@@ -18,6 +18,9 @@ export function OverviewPage({ model, onNavigate }: OverviewPageProps) {
       <div className="ops-overview-page">
         <PlatformOverviewSnapshot model={model} onNavigate={onNavigate} />
         <CommercialOverviewSection model={model} onNavigate={onNavigate} />
+        <div style={{ marginTop: 16 }}>
+          <ModelLaunchRisk model={model} onNavigate={onNavigate} />
+        </div>
         <div style={{ marginTop: 16 }}>
           <ModelServiceSummary
             status={model.modelStatus}
