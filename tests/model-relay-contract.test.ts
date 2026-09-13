@@ -65,6 +65,7 @@ describe('production model relay contract', () => {
 
   it('blocks queued and failed async video states until an HTTPS artifact is complete', () => {
     expect(evaluateVideoProbePayload({ task_id: 'job_queued', status: 'queued' })).toMatchObject({ ready: false, providerJobId: 'job_queued', reason: 'video_async_pending' })
+    expect(evaluateVideoProbePayload({ task_id: 'job_in_progress', status: 'IN_PROGRESS' })).toMatchObject({ ready: false, providerJobId: 'job_in_progress', reason: 'video_async_pending' })
     expect(evaluateVideoProbePayload({ task_id: 'job_failed', status: 'failed' })).toMatchObject({ ready: false, providerJobId: 'job_failed', reason: 'video_async_failed' })
     expect(evaluateVideoProbePayload({ task_id: 'job_failure', status: 'FAILURE', result_url: 'task failed' })).toMatchObject({ ready: false, providerJobId: 'job_failure', reason: 'video_async_failed' })
     expect(evaluateVideoProbePayload({ task_id: 'job_done', status: 'completed', output_url: 'https://cdn.example/video.mp4' })).toEqual({ ready: true, providerJobId: 'job_done' })

@@ -6,6 +6,45 @@ SELECT pg_advisory_xact_lock(731942853);
 SELECT set_config('app.workspace_id', 'ws_demo', true);
 SELECT set_config('app.platform_scope', 'platform_ops', true);
 
+-- Local platform operations account. This is the single super-admin fixture
+-- used by the desktop ops-console acceptance flow; production never runs this
+-- seed. Password: Admin@dm2026!
+INSERT INTO platform_identities (id, issuer, external_subject, display_name)
+VALUES (
+  '00000000-0000-4000-8000-000000000104',
+  'damai-password',
+  'admin@dm.com',
+  '平台超级管理员'
+)
+ON CONFLICT (issuer, external_subject) DO UPDATE SET display_name = EXCLUDED.display_name;
+
+INSERT INTO platform_password_accounts (
+  id, identity_id, login_identifier, account_type, enterprise_name,
+  contact_name, password_hash, terms_agreed_at, status, roles, workspace_ids
+)
+SELECT
+  '00000000-0000-4000-8000-000000000105',
+  id,
+  'admin@dm.com',
+  'platform',
+  '大麦运营平台',
+  '平台超级管理员',
+  '$argon2id$v=19$m=19456,p=1,t=2$ZXUxT7YCOQRta+XTdDca0Q$UZVXgJhBHnR3D4IBAZ8cq99CH7j0TAR/NmZodfkd2So',
+  now(),
+  'active',
+  ARRAY['platform_admin']::text[],
+  ARRAY[]::text[]
+FROM platform_identities
+WHERE issuer = 'damai-password' AND external_subject = 'admin@dm.com'
+ON CONFLICT (login_identifier) DO UPDATE SET
+  identity_id = EXCLUDED.identity_id,
+  account_type = EXCLUDED.account_type,
+  password_hash = EXCLUDED.password_hash,
+  status = EXCLUDED.status,
+  roles = EXCLUDED.roles,
+  workspace_ids = EXCLUDED.workspace_ids,
+  updated_at = now();
+
 -- Local browser acceptance account. This is a deterministic, active merchant
 -- fixture for the desktop E2E suite only; production never runs seed-demo.sql.
 INSERT INTO platform_identities (id, issuer, external_subject, display_name)
