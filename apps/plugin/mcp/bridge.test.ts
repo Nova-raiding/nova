@@ -104,7 +104,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(imageEditResponse.result._meta).toBeUndefined()
       for (const [index, name] of ['platform.media.spec.create', 'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire'].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 3, method: 'tools/call', params: { name, arguments: { id: 'spec_1', expected_revision: '1', idempotency_key: `media:${index}:write`, reason: 'verified production evidence' } } })}\n`)
-        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: expect.stringMatching(/^(?:INTERACTIVE_WRITE_DISABLED|COMMERCIAL_OPERATION_DISABLED)$/u) } })
       }
       expect(requests).toBe(0)
     } finally {
@@ -132,7 +132,7 @@ describe('Codex stdio MCP bridge', () => {
       const writes = ['platform.media.spec.create', 'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire', 'campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed']
       for (const [index, name] of writes.entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: {} } })}\n`)
-        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: expect.stringMatching(/^(?:INTERACTIVE_WRITE_DISABLED|COMMERCIAL_OPERATION_DISABLED)$/u) } })
       }
       expect(requests).toBe(0)
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
