@@ -14,7 +14,7 @@ async function discoveredToolNames(root: URL) {
     cwd: fileURLToPath(root),
     env: {
       ...process.env,
-      MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:9',
+      MERCHANT_MCP_BASE_URL: 'https://merchant.example.com',
       MERCHANT_WORKSPACE_ID: 'ws_mirror_runtime_test',
       MERCHANT_MCP_WRITE_ENABLED: 'false',
     },
