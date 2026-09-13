@@ -201,12 +201,8 @@ export class PostgresPasswordAuthRepository implements PasswordAuthRepository {
     const normalized = enterpriseName.trim()
     if (!normalized || !workspaceIds.length) return
     await client.query(
-      `UPDATE enterprises e
-          SET name = $1
-         FROM workspaces w
-        WHERE w.enterprise_id = e.id
-          AND w.id = ANY($2::text[])`,
-      [normalized, workspaceIds],
+      'SELECT public.sync_enterprise_name_for_workspaces($1::text[], $2::text)',
+      [workspaceIds, normalized],
     )
   }
   private async find(client: SqlClient, login: string) { const result = await client.query<any>(`SELECT id, identity_id AS "identityId", login_identifier AS login, account_type AS "accountType", enterprise_name AS "enterpriseName", contact_name AS "contactName", password_hash AS "passwordHash", status, roles, workspace_ids AS "workspaceIds", failed_attempts AS "failedAttempts", locked_until AS "lockedUntil", auth_epoch AS "authEpoch", revision, created_at AS "createdAt", updated_at AS "updatedAt" FROM platform_password_accounts WHERE login_identifier=$1`, [login]); return result.rows[0] as (AccountRecord & { identityId: string }) | undefined }

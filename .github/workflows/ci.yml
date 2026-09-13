@@ -240,6 +240,7 @@ jobs:
           packages/persistence/src/private-trial-invites.release.postgres.test.ts
           packages/persistence/src/private-trial-payment.release.postgres.test.ts
           packages/persistence/src/brand-profile-association.release.postgres.test.ts
+          packages/persistence/src/password-auth-repository.release.postgres.test.ts
           packages/persistence/src/product-rls-tenant-boundary.postgres.test.ts
           packages/persistence/src/resource-id-scope.postgres.test.ts
           packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts

@@ -486,6 +486,8 @@ export async function loadMigrations(): Promise<Migration[]> {
   const registrationRejected = await readFile(new URL('./migrations/190_registration_rejected.sql', import.meta.url), 'utf8')
   const rulePackCategory = await readFile(new URL('./migrations/191_rule_pack_category.sql', import.meta.url), 'utf8')
   const allowCentTestOrders = await readFile(new URL('./migrations/192_allow_cent_test_orders.sql', import.meta.url), 'utf8')
+  const enterpriseNameSyncAcl = await readFile(new URL('./migrations/193_enterprise_name_sync_acl.sql', import.meta.url), 'utf8')
+  const lockWorkspaceEnterpriseBinding = await readFile(new URL('./migrations/194_lock_workspace_enterprise_binding.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -679,6 +681,8 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 190, name: 'registration_rejected', sql: registrationRejected },
     { version: 191, name: 'rule_pack_category', sql: rulePackCategory },
     { version: 192, name: 'allow_cent_test_orders', sql: allowCentTestOrders },
+    { version: 193, name: 'enterprise_name_sync_acl', sql: enterpriseNameSyncAcl },
+    { version: 194, name: 'lock_workspace_enterprise_binding', sql: lockWorkspaceEnterpriseBinding },
   ]
 }
 

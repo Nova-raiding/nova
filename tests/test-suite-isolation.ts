@@ -19,6 +19,7 @@ export const NON_HERMETIC_TEST_FILES = [
   'packages/persistence/src/private-trial-invites.release.postgres.test.ts',
   'packages/persistence/src/private-trial-payment.release.postgres.test.ts',
   'packages/persistence/src/brand-profile-association.release.postgres.test.ts',
+  'packages/persistence/src/password-auth-repository.release.postgres.test.ts',
   'packages/persistence/src/migration-164-release.postgres.test.ts',
   'packages/persistence/src/migration-166-release.postgres.test.ts',
   'apps/api/src/canonical-backfill-contract.test.ts',
