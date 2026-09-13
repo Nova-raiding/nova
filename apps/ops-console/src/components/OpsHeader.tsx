@@ -65,9 +65,10 @@ export function OpsHeader({
   const shouldShowLogin = !hasSession || isDemoSession;
   const merchantNotificationsEnabled = (activeWorkbench ?? session?.workbench) === "workspace" || resolvedAuthorization.scope.kind !== "platform";
   const allNotifications = merchantNotificationsEnabled ? (notifications ?? alerts ?? []) : [];
-  const accountName = session?.account_login ?? (session ? platformLogin.trim() || "平台运营账号" : isDemoSession ? "本机演示账号" : "平台运营账号");
+  const accountName = session?.account_login ?? session?.actor_id ?? (session ? platformLogin.trim() || "平台运营账号" : isDemoSession ? "本机演示账号" : "平台运营账号");
   const accountInitial = Array.from(accountName)[0] ?? "运";
   const workbenchLabel = session?.workbench === "platform" || activeWorkbench === "platform" ? "平台运营" : "商家工作区";
+  const showWorkbenchLabel = !accountName.includes(workbenchLabel) && !workbenchLabel.includes(accountName);
   const roleLabel = roles?.join("、") || session?.roles?.join("、") || "未声明";
 
   function openPlatformLogin() {
@@ -97,7 +98,7 @@ export function OpsHeader({
         <span className="ops-account-popover-avatar" aria-hidden="true">{accountInitial}</span>
         <div className="ops-account-popover-identity">
           <strong>{accountName}</strong>
-          <span>{accountName}</span>
+          <span>{workbenchLabel}</span>
           <em><i />{hasSession ? "已登录" : "未登录"}</em>
         </div>
       </div>
@@ -188,7 +189,7 @@ export function OpsHeader({
               <span className="ops-account-trigger-avatar" aria-hidden="true">{accountInitial}</span>
               <span className="ops-account-trigger-copy">
                 <strong>{accountName}</strong>
-                <small>{workbenchLabel}</small>
+                {showWorkbenchLabel ? <small>{workbenchLabel}</small> : null}
               </span>
               <DownOutlined aria-hidden="true" />
             </button>
