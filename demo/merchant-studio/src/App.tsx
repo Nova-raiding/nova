@@ -904,16 +904,16 @@ function Topbar({
   const points = billing?.available_points
   const balance = billing?.balance_cny
   const walletUnavailable = !billing
-  // Only show actionable risks belonging to a bound store. The API also
-  // returns unbound local/demo records for reconciliation, but those are not
+  // Only show actionable risks belonging to a real bound store. The API also
+  // returns unbound and fixture records for reconciliation, but those are not
   // notifications for the currently signed-in merchant.
-  const issueItems = (issueMetrics?.riskItems ?? []).filter(item => item.evidence?.unboundLocalData !== true)
+  const issueItems = (issueMetrics?.riskItems ?? []).filter(item => item.evidence?.unboundLocalData !== true && item.evidence?.fixtureData !== true)
   const issueCount = issueItems.length
   const notificationPanel = (
     <div className="merchant-notification-panel" role="region" aria-label="待处理问题">
-      {issueMetrics?.dataCoverage?.fixtureDataPresent ? <div className="merchant-notification-fixture-warning">当前结果包含本地演示数据；未绑定店铺的演示记录已隐藏，不计入当前用户通知。</div> : null}
+      {issueMetrics?.dataCoverage?.fixtureDataPresent ? <div className="merchant-notification-fixture-warning">当前工作区包含本地演示数据；未绑定或演示店铺的问题已隐藏，不计入工作区待处理问题。</div> : null}
       <div className="merchant-notification-heading">
-        <div><strong>待处理问题</strong><span>{issueCount ? `${issueCount} 项需要关注` : '当前没有待处理问题'}</span></div>
+        <div><strong>工作区待处理问题</strong><span>{issueCount ? `${issueCount} 项需要关注` : '当前没有待处理问题'}</span></div>
         <button type="button" className="text-button" onClick={onOpenIssues}>查看全部</button>
       </div>
       {issueItems.length ? <List
@@ -977,7 +977,7 @@ function Topbar({
         </button>
         <Dropdown trigger={['click']} placement="bottomRight" dropdownRender={() => notificationPanel}>
           <Badge count={issueCount > 99 ? '99+' : issueCount} overflowCount={99} offset={[-2, 4]}>
-            <button type="button" className="icon-button notification-trigger" aria-label={`待处理问题${issueCount ? `，${issueCount} 项` : '，暂无'}`}>
+            <button type="button" className="icon-button notification-trigger" aria-label={`工作区待处理问题${issueCount ? `，${issueCount} 项` : '，暂无'}`}>
               <Bell size={18} aria-hidden="true" />
             </button>
           </Badge>

@@ -84,6 +84,7 @@ h1,h2,h3,h4 { font-family: 'Manrope', 'PingFang SC', sans-serif; letter-spacing:
 .notification-trigger { position:relative; width:40px; height:40px; display:grid; place-items:center; border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--green-dark); }
 .notification-trigger:hover { background:var(--green-soft); border-color:#c8ded0; }
 .merchant-notification-panel { width:390px; max-height:560px; overflow:auto; padding:0; border:1px solid #dfe8e2; border-radius:14px; background:#fff; box-shadow:0 18px 48px rgba(30,58,45,.18); }
+.merchant-notification-fixture-warning { padding:10px 18px; border-bottom:1px solid #f1e3c5; background:#fff9ed; color:#805d16; font-size:11px; line-height:1.5; }
 .merchant-notification-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 18px; border-bottom:1px solid #edf1ee; background:#fbfdfb; }
 .merchant-notification-heading div { display:grid; gap:3px; }.merchant-notification-heading strong { color:#172b22; font-size:14px; }.merchant-notification-heading span { color:var(--muted); font-size:11px; }
 .merchant-notification-item { padding:0!important; }.merchant-notification-item-button { width:100%; display:flex; align-items:flex-start; gap:10px; padding:13px 16px; border:0; background:#fff; text-align:left; }.merchant-notification-item-button:hover { background:#f7faf7; }.merchant-notification-item-button:focus-visible { outline:3px solid #176b4d; outline-offset:-3px; }
@@ -524,3 +525,14 @@ select:focus-visible,textarea:focus-visible,[role="tab"]:focus-visible,[role="ta
 .page-stack > .metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .page-stack > .metric-grid > :nth-child(3) { display: none; }
 @media (max-width: 760px) { .page-stack > .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Knowledge navigation is a real collapsible second level. */
+.entry-nav { margin: 0 0 10px 12px; padding: 5px 0 4px 12px; border-top: 0; border-left: 1px solid rgba(216,237,122,.28); }
+.entry-nav button { min-height: 38px; margin: 1px 0; padding: 8px 10px; gap: 9px; border-radius: 7px; color: #94aaa0; font-size: 12px; }
+.entry-nav button:hover { background: rgba(255,255,255,.07); color: #f2f7f4; }
+.entry-nav button.active { background: rgba(216,237,122,.14); color: #d8ed7a; font-weight: 700; }
+.entry-nav button.active svg { color: #d8ed7a; }
+.entry-nav button span small { color: #71867c; }
+.entry-nav button.active span small { color: #a8bd93; }
+.nav-chevron { margin-left: auto; transition: transform .18s ease; color: currentColor; }
+.nav-chevron.expanded { transform: rotate(180deg); }
