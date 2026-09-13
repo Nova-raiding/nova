@@ -82,7 +82,7 @@ describe('PostgresOpsDataRepository', () => {
     expect(page).toEqual({ items: [], total: 3, merchantWorkspaceCount: 0, activeMemberWorkspaceCount: 0, offset: 3, limit: 2, hasMore: false })
     const countQuery = client.calls.find(call => call.includes('count(*)::integer'))
     expect(countQuery).toContain('FROM ops_workspace_summaries')
-    expect(client.calls.filter(call => call.includes('FROM ops_workspace_summaries'))).toHaveLength(2)
+    expect(client.calls.filter(call => call.includes('FROM ops_workspace_summaries'))).toHaveLength(3)
   })
 
   it('retries summaries against the migration-073 projection when enterprise schema is absent', async () => {
@@ -120,7 +120,7 @@ describe('PostgresOpsDataRepository', () => {
     expect(client.values[rowQueryIndex]).toEqual(['%Starter%', 0, 10])
     const legacyCount = client.calls.find(call => call.includes('count(*)::integer') && !call.includes('platform_password_accounts'))
     expect(legacyCount).toContain('FROM workspace_members')
-    expect(client.calls.filter(call => call.includes('count(*)::integer'))).toHaveLength(2)
+    expect(client.calls.filter(call => call.includes('count(*)::integer'))).toHaveLength(3)
     expect(client.calls.filter(call => call === 'ROLLBACK')).toHaveLength(1)
     expect(client.calls.at(-1)).toBe('COMMIT')
     expect(client.released).toBe(true)
