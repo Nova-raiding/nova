@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button, Card, Col, Descriptions, Drawer, Empty, Form, Input, Modal, Row, Select, Space, Spin, Statistic, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Descriptions, Drawer, Empty, Form, Input, Modal, Row, Select, Space, Spin, Table, Tag, Typography } from "antd";
 import type { TableProps } from "antd";
 import type { MerchantAccountAuthorizationResult, OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { PlatformUser } from "../../types/ops";
@@ -164,26 +164,15 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   return <>
     {!canReadUserDirectory && <Alert showIcon type="warning" title="当前角色不能读取用户目录" description="跨租户身份与成员关系需要 identity.read；权限由服务端策略决定。" />}
     {canReadUserDirectory && !model.canUserGovernance && <Alert showIcon type="info" title="当前为只读视图" description="可以查询身份、成员关系和审计详情，但停用、恢复、风险策略与会话撤销需要 identity.update。" />}
-    <Row gutter={[16, 16]}>
-      <Col xs={24} md={8}><Card><Statistic title="用户身份" value={model.userDirectory.identityCount} /></Card></Col>
-      <Col xs={24} md={8}><Card><Statistic title="成员关系" value={model.userDirectory.total} /></Card></Col>
-      <Col xs={24} md={8}><Card><Statistic title="涉及企业主体" value={model.userDirectory.workspaceCount} /></Card></Col>
-    </Row>
-          <Alert
-      showIcon
-      type="info"
-      title="用户、成员关系与企业主体的关系"
-      description="用户是一个可认证的平台身份；身份标识是认证系统返回的登录主体，不等于姓名。成员关系表示该用户在某个企业主体中的角色和状态。企业名称是主要识别信息，Workspace ID 仅作为技术范围标识保留。同一个用户可以属于多个企业主体，因此目录中的一行代表一条“用户 × 企业主体”成员关系。品牌信息在企业详情或品牌列中单独展示。"
-    />
-    <Card title="用户目录" aria-busy={model.userDirectoryLoading}>
+    <Card title="用户目录" extra={<Typography.Text type="secondary">共 {model.userDirectory.total} 条成员关系</Typography.Text>} aria-busy={model.userDirectoryLoading}>
       <Form<UserFilters> form={form} layout="inline" onFinish={(values) => void model.loadUsers({ ...values, page: 1 })} aria-label="用户目录筛选">
-        <Form.Item name="query" label="关键词"><Input allowClear aria-label="按关键词筛选用户目录" placeholder="身份、姓名、角色、企业名称或 Workspace ID" /></Form.Item>
+        <Form.Item name="query" label="搜索"><Input allowClear aria-label="按关键词筛选用户目录" placeholder="姓名、身份或企业名称" /></Form.Item>
         <Form.Item name="status" label="状态">
           <Select allowClear aria-label="按成员状态筛选用户目录" placeholder="全部状态" style={{ width: 140 }} options={[
             { value: "active", label: "已激活" }, { value: "invited", label: "待激活" }, { value: "suspended", label: "已停用" },
           ]} />
         </Form.Item>
-        <Form.Item name="workspaceId" label="企业主体"><Input allowClear aria-label="按企业主体筛选用户目录" placeholder="企业名称或 Workspace ID" /></Form.Item>
+        <Form.Item name="workspaceId" label="企业"><Input allowClear aria-label="按企业主体筛选用户目录" placeholder="企业名称或 ID" /></Form.Item>
         <Form.Item><Space>
           <Button type="primary" htmlType="submit" loading={model.userDirectoryLoading}>查询</Button>
           <Button onClick={() => { form.resetFields(); void model.loadUsers({ page: 1 }); }}>清空</Button>
@@ -234,12 +223,8 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
           { title: "用户显示名", dataIndex: "displayName", width: 150, sorter: true, sortOrder: userSort?.field === "displayName" ? userSort.order : null, render: (value: string) => value || "未设置" },
           { title: "企业主体", key: "scope", width: 240, render: (_: unknown, row: PlatformUser) => row.scope === "platform" ? <Tag color="purple">平台级</Tag> : <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
           { title: "角色", dataIndex: "role", width: 140, render: (value: string) => <Tag color="blue">{roleLabels[value] ?? value}</Tag> },
-          { title: "账号类型", key: "accountType", width: 140, render: (_: unknown, row: PlatformUser) => row.accountType === "platform" ? <Tag color="purple">平台运营账号</Tag> : row.invitedBy === "local_compose_seed" ? <Tag color="gold">商家演示成员</Tag> : <Tag color="green">商家成员</Tag> },
-          { title: "套餐 / 消耗", key: "commercial", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial ? <Space orientation="vertical" size={0}><Typography.Text>{row.commercial.planName} · {row.commercial.subscriptionStatus}</Typography.Text><Typography.Text type="secondary">任务 {row.commercial.usedTasks}/{row.commercial.includedTasks} · 余额 ¥{row.commercial.walletBalanceCny}</Typography.Text></Space> : <Typography.Text type="secondary">暂无账务快照</Typography.Text> },
           { title: "成员状态", dataIndex: "status", width: 110, sorter: true, sortOrder: userSort?.field === "status" ? userSort.order : null, render: (value: string) => <Tag color={value === "active" ? "green" : value === "suspended" ? "red" : "gold"}>{memberStatusLabels[value] ?? value}</Tag> },
-          { title: "企业状态", dataIndex: "workspaceStatus", width: 110, render: (value: string) => <Tag color={value === "active" ? "green" : "default"}>{workspaceStatusLabels[value] ?? value}</Tag> },
-          { title: "创建时间", dataIndex: "createdAt", width: 180, sorter: true, sortOrder: userSort?.field === "createdAt" ? userSort.order : null, render: (value?: string) => value ? dateTimeFormatter.format(new Date(value)) : "—" },
-          { title: "操作", key: "actions", width: 170, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { if (node) detailButtonRefs.current.set(row.externalSubject, node); else detailButtonRefs.current.delete(row.externalSubject); }} size="small" aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`} onClick={() => { detailTriggerSubjectRef.current = row.externalSubject; setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button>{row.accountType === "platform" ? <Tag color="purple">由平台身份治理</Tag> : <Button danger={row.status !== "suspended"} size="small" aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`} title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "恢复" : "停用"}</Button>}</Space> },
+          { title: "操作", key: "actions", width: 150, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { if (node) detailButtonRefs.current.set(row.externalSubject, node); else detailButtonRefs.current.delete(row.externalSubject); }} size="small" aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`} onClick={() => { detailTriggerSubjectRef.current = row.externalSubject; setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button>{row.accountType === "platform" ? <Tag color="purple">平台账号</Tag> : <Button danger={row.status !== "suspended"} size="small" aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`} title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "恢复" : "停用"}</Button>}</Space> },
         ]}
       />
     </Card>
