@@ -56,6 +56,14 @@ describe("commercial overview helpers", () => {
       approvalState: "approved", validFrom: "2026-09-08T00:00:00.000Z", validTo: null, unresolved: [],
     })).toEqual(["创意点：2000 点", "店铺数：5 家店铺"]);
   });
+
+  it("explains empty persisted benefits in operator language", () => {
+    expect(readableBenefits({
+      id: "custom-v1", skuCode: "custom", name: "定制版", type: "monthly", visibility: "public", version: "v1",
+      priceLabel: "价格未决", cycleLabel: "按合同", benefitsSummary: "无已持久化权益项",
+      approvalState: "draft", validFrom: null, validTo: null, unresolved: [],
+    })).toBe("暂未配置套餐权益（请编辑补充）");
+  });
 });
 
 describe("overview page structure", () => {

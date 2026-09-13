@@ -8,6 +8,7 @@ const packageLabels: Record<string, string> = {
   custom: "定制版",
   monthly_custom: "定制版",
   "sku-monthly-10000": "定制版",
+  demo_test_package: "演示套餐",
   trial: "7 天试用版",
   private_trial: "私测试用版",
   "sku-trial-1999": "7 天试用版",

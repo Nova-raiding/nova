@@ -9,6 +9,7 @@ const benefitLabels: Record<string, string> = {
   grant_count: "赠送批次",
   points_per_grant: "每批点数",
   monthly_one_to_one_hours: "每月一对一服务",
+  monthly_creative_points: "每月创意点",
   one_to_one_service_hours: "一对一服务",
   outcome_review_count: "复盘次数",
 };
@@ -33,6 +34,7 @@ const benefitDefaultUnits: Record<string, string> = {
   grant_count: "批/月",
   points_per_grant: "点",
   monthly_one_to_one_hours: "小时/月",
+  monthly_creative_points: "点/月",
   one_to_one_service_hours: "小时",
   outcome_review_count: "次",
 };
@@ -46,6 +48,7 @@ export const commercialBenefitDescriptions: Record<string, string> = {
   grant_count: "每月赠送的点数批次数量",
   points_per_grant: "每次赠送批次包含的创意点数",
   monthly_one_to_one_hours: "每月可使用的一对一服务时长",
+  monthly_creative_points: "每月自动发放的创意点额度",
   one_to_one_service_hours: "套餐内包含的一对一服务总时长",
   outcome_review_count: "包含的经营结果复盘次数",
 };
@@ -82,6 +85,7 @@ export function readableBenefits(item: CommercialCatalogItem): string {
 
   const summary = item.benefitsSummary?.trim();
   if (!summary) return "未配置可读权益";
+  if (summary === "无已持久化权益项") return "暂未配置套餐权益（请编辑补充）";
   return summary.split(/[;；]+/u).map((part) => {
     const match = part.trim().match(/^([^:：]+)[:：](.+)$/u);
     return match ? formatPair(match[1].trim(), match[2].trim(), null) : part.trim();
