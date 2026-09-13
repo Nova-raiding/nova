@@ -18,6 +18,7 @@ import { readableBenefits } from "../components/commercial/benefitLabels.js";
 import { packageCodeLabel, packageDisplayName } from "../components/commercial/packageLabels.js";
 import type { CommercialCatalogItem } from "../api/commercialOperationsClient.js";
 import { commercialOperationsClient } from "../api/commercialOperationsClient.js";
+import { fenToYuan, yuanToFen } from "../utils/currency.js";
 
 function latestCatalogVersions(items: readonly CommercialCatalogItem[]): CommercialCatalogItem[] {
   const bySku = new Map<string, CommercialCatalogItem>();
@@ -42,13 +43,13 @@ function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
   const canPublish = model.authorization.can("commercial.catalog.publish");
   const openEditor = (row?: CommercialCatalogItem) => {
     setEditor(row ?? null);
-    form.setFieldsValue({ code: row?.skuCode ?? "", name: row?.name ?? "", kind: row?.type ?? "monthly", priceFen: row ? Number((row.priceLabel.match(/[0-9.]+/)?.[0] ?? "0")) * 100 : 0 });
+    form.setFieldsValue({ code: row?.skuCode ?? "", name: row?.name ?? "", kind: row?.type ?? "monthly", priceYuan: row ? Number((row.priceLabel.match(/[0-9.]+/)?.[0] ?? "0")) : 0 });
   };
   const saveDraft = async () => {
     const values = await form.validateFields();
     setBusy(true);
     try {
-      await commercialOperationsClient.mutateCatalog({ action: "create", code: values.code.trim(), kind: values.kind, priceFen: Math.round(Number(values.priceFen)), payload: { name: values.name.trim(), blockers: [] }, reason: editor ? "运营后台编辑套餐并创建新版本" : "运营后台新增套餐草稿", benefits: [] });
+      await commercialOperationsClient.mutateCatalog({ action: "create", code: values.code.trim(), kind: values.kind, priceFen: yuanToFen(values.priceYuan), payload: { name: values.name.trim(), blockers: [] }, reason: editor ? "运营后台编辑套餐并创建新版本" : "运营后台新增套餐草稿", benefits: [] });
       message.success(editor ? "已创建套餐新版本草稿" : "已创建套餐草稿");
       setEditor(false);
       await model.load();
@@ -121,7 +122,7 @@ function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
           <Form.Item name="code" label="SKU 编码" rules={[{ required: true, pattern: /^[a-z0-9_\-]+$/, message: "仅允许小写字母、数字、下划线和短横线" }]}><Input disabled={Boolean(editor)} /></Form.Item>
           <Form.Item name="name" label="套餐名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="kind" label="套餐类型" rules={[{ required: true }]}><Select options={[{ value: "monthly", label: "月度订阅" }, { value: "point_pack", label: "点数包" }, { value: "onboarding", label: "正式开通" }, { value: "private_trial", label: "私测套餐" }]} /></Form.Item>
-          <Form.Item name="priceFen" label="价格（分）" rules={[{ required: true, type: "number", min: 0 }]}><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item>
+          <Form.Item name="priceYuan" label="价格（元）" extra="按元输入，自动保留两位小数并转换为分提交" rules={[{ required: true, type: "number", min: 0 }]}><InputNumber min={0} precision={2} step={0.01} addonAfter="元" style={{ width: "100%" }} /></Form.Item>
         </Form>
       </Modal>
     </Card>

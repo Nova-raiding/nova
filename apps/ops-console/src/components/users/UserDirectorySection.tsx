@@ -5,6 +5,7 @@ import type { MerchantAccountAuthorizationResult, OpsConsoleModel } from "../../
 import type { PlatformUser } from "../../types/ops";
 import { EnterpriseIdentity } from "../EnterpriseIdentity.js";
 import { packageCodeLabel } from "../commercial/packageLabels.js";
+import { yuanToFen } from "../../utils/currency.js";
 
 type UserFilters = { query?: string; status?: string; workspaceId?: string };
 export type UserDirectorySort = { field: "displayName" | "status" | "createdAt"; order: "ascend" | "descend" };
@@ -67,7 +68,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const [provisionOpen, setProvisionOpen] = useState(false);
   const [provisionSubmitting, setProvisionSubmitting] = useState(false);
   const [provisionResult, setProvisionResult] = useState<{ login: string; onboardingFeeFen: number; authorization?: MerchantAccountAuthorizationResult }>();
-  const [provisionForm] = Form.useForm<{ login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string; reason: string; skuCode: string; amountFen: number; paymentStatus: "pending" | "verified"; paymentReference?: string; paidAt?: string }>();
+  const [provisionForm] = Form.useForm<{ login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string; reason: string; skuCode: string; amountYuan: number; paymentStatus: "pending" | "verified"; paymentReference?: string; paidAt?: string }>();
   const [actionError, setActionError] = useState("");
   const actionErrorRef = useRef<HTMLDivElement>(null);
   const directoryErrorRef = useRef<HTMLDivElement>(null);
@@ -280,7 +281,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
               workspaceId,
               memberRole: "merchant_admin",
               skuCode: values.skuCode,
-              amountFen: Number(values.amountFen),
+              amountFen: yuanToFen(values.amountYuan),
               paymentStatus: values.paymentStatus,
               paymentReference: values.paymentReference,
               paidAt: values.paidAt,
@@ -313,7 +314,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         </Form.Item>
         <Row gutter={12}>
           <Col span={12}><Form.Item label="套餐" name="skuCode" initialValue="sku-onboarding-5000" rules={[{ required: true, message: "请选择套餐" }]}><Select options={["sku-onboarding-5000", "sku-monthly-2000", "sku-monthly-5000", "sku-monthly-10000", "sku-points-500", "sku-points-2000"].map(value => ({ value, label: packageCodeLabel(value) }))} /></Form.Item></Col>
-          <Col span={12}><Form.Item label="实收金额（分）" name="amountFen" initialValue={500000} rules={[{ required: true, message: "请输入实收金额" }]}><Input type="number" min={0} /></Form.Item></Col>
+          <Col span={12}><Form.Item label="实收金额（元）" name="amountYuan" initialValue={5000} rules={[{ required: true, message: "请输入实收金额" }]}><Input type="number" min={0} step="0.01" /></Form.Item></Col>
           <Col span={12}><Form.Item label="收款状态" name="paymentStatus" initialValue="pending" rules={[{ required: true }]}><Select options={[{ value: "pending", label: "待核验（不开放权限）" }, { value: "verified", label: "已核验（立即开通）" }]} /></Form.Item></Col>
           <Col span={12}><Form.Item label="支付凭证号" name="paymentReference"><Input placeholder="微信/支付宝交易号" /></Form.Item></Col>
           <Col span={24}><Form.Item label="支付时间（ISO UTC）" name="paidAt"><Input placeholder="已核验时必填，例如 2026-09-10T12:00:00.000Z" /></Form.Item></Col>
