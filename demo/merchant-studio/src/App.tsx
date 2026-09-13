@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Badge, Breadcrumb, Button, Card, Dropdown, Form, Input, List, Modal, Space, Statistic, Table, Tag } from 'antd'
 import './capability.css'
 import { nextImageJobPollDelay, shouldPollImageJob, visibleImageJobPollDelay, IMAGE_JOB_INITIAL_POLL_DELAY_MS } from './image-job-polling'
@@ -263,6 +263,15 @@ const navItems: Array<{
   { id: 'overview', label: '运营概览', icon: LayoutDashboard },
   // 商品资产不再作为独立工作台；相关能力收敛到知识库二级工作区。
   { id: 'products', label: '知识库', icon: BookOpen, entry: 'knowledge' },
+]
+
+const knowledgeSubItems: Array<{
+  id: Page
+  label: string
+  icon: typeof LayoutDashboard
+  entry?: MerchantEntryPoint
+  description?: string
+}> = [
   { id: 'products', label: '品牌资产', icon: ImageIcon, entry: 'assets' },
   { id: 'products', label: '规则库', icon: ShieldCheck, entry: 'rules' },
   { id: 'task', label: '营销任务', icon: Sparkles, description: '创建并生成商品内容' },
@@ -1302,24 +1311,48 @@ function Sidebar({
           <div className="nav-label">工作台</div>
           {navItems.map((item) => {
             const Icon = item.icon
-            const active = item.entry
-              ? page === item.id && activeEntry === item.entry
-              : page === item.id && !(item.id === 'products' && activeEntry)
+            const active = item.id === 'products'
+              ? page === 'products'
+              : page === item.id
             return (
-              <button
-                key={item.id}
-                className={active ? 'active' : ''}
-                onClick={() => closeForAction(() => item.entry ? onOpenEntry(item.entry) : setPage(item.id))}
-                title={item.description}
-                aria-current={active ? 'page' : undefined}
-              >
-                <Icon size={19} />
-                <span>
-                  {item.label}
-                  {item.description && <small className="nav-description">{item.description}</small>}
-                </span>
-                {item.badge && <em>{item.badge}</em>}
-              </button>
+              <Fragment key={item.id}>
+                <button
+                  className={active ? 'active' : ''}
+                  onClick={() => closeForAction(() => item.entry ? onOpenEntry(item.entry) : setPage(item.id))}
+                  title={item.description}
+                  aria-current={active && item.id !== 'products' ? 'page' : undefined}
+                  aria-expanded={item.id === 'products' ? active : undefined}
+                >
+                  <Icon size={19} />
+                  <span>{item.label}</span>
+                  {item.badge && <em>{item.badge}</em>}
+                </button>
+                {item.id === 'products' && (
+                  <div className="entry-nav" aria-label="知识库二级菜单">
+                    {knowledgeSubItems.map((subItem) => {
+                      const SubIcon = subItem.icon
+                      const subActive = subItem.entry
+                        ? page === subItem.id && activeEntry === subItem.entry
+                        : page === subItem.id
+                      return (
+                        <button
+                          key={subItem.label}
+                          className={subActive ? 'active' : ''}
+                          onClick={() => closeForAction(() => subItem.entry ? onOpenEntry(subItem.entry) : setPage(subItem.id))}
+                          title={subItem.description}
+                          aria-current={subActive ? 'page' : undefined}
+                        >
+                          <SubIcon size={18} />
+                          <span>
+                            {subItem.label}
+                            {subItem.description && <small className="nav-description">{subItem.description}</small>}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </Fragment>
             )
           })}
         </nav>
