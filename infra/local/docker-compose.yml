@@ -177,7 +177,7 @@ services:
       # clear-text password through Compose or commit the hash to source.
       PLATFORM_ACCOUNT_LOGIN: ${PLATFORM_ACCOUNT_LOGIN:-}
       PLATFORM_ACCOUNT_PASSWORD_HASH: ${PLATFORM_ACCOUNT_PASSWORD_HASH:-}
-      API_AUTH_TOKENS: '{"pilot-local-token":{"workspaces":["*"],"actor_id":"actor_demo","bootstrap":true,"workbenches":["platform","workspace"],"roles":["platform_ops","operator","workspace_owner","merchant_admin","rules_admin","knowledge_editor","knowledge_reader","competitor_reviewer"]},"workspace-local-token":{"workspaces":["*"],"actor_id":"workspace_admin_demo","bootstrap":true,"workbenches":["workspace"],"roles":["workspace_owner","merchant_admin"]}}'
+      API_AUTH_TOKENS: '{"pilot-local-token":{"workspaces":["*"],"actor_id":"actor_demo","bootstrap":true,"workbenches":["platform","workspace"],"roles":["platform_admin","platform_ops","operator","workspace_owner","merchant_admin","rules_admin","knowledge_editor","knowledge_reader","competitor_reviewer"]},"workspace-local-token":{"workspaces":["*"],"actor_id":"workspace_admin_demo","bootstrap":true,"workbenches":["workspace"],"roles":["workspace_owner","merchant_admin"]}}'
       SESSION_ID_HASH_SECRET: ${SESSION_ID_HASH_SECRET:-pilot-local-session-hash-secret}
       ALLOW_WILDCARD_WORKSPACE_GRANT: "true"
       # Local ChatGPT/MCP requests arrive directly on the loopback API host;
