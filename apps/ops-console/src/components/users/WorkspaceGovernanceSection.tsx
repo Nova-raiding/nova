@@ -11,6 +11,7 @@ export function WorkspaceGovernanceSection({ model }: { model: OpsConsoleModel }
   const [submitting, setSubmitting] = useState(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"active" | "disabled" | undefined>();
+  const [merchantOnly, setMerchantOnly] = useState(true);
   const currentWorkspaceId = model.opsSession?.workspace_id;
   const changingTo = target?.status === "active" ? "disabled" : "active";
   const reasonMinimum = changingTo === "disabled" ? 4 : 1;
@@ -29,8 +30,9 @@ export function WorkspaceGovernanceSection({ model }: { model: OpsConsoleModel }
   return <>
     <Card title="企业主体治理" extra={<Tag color="blue">仅 platform_ops</Tag>}>
       <Space wrap style={{ margin: "16px 0" }}>
-        <Input.Search allowClear value={query} onChange={(event) => setQuery(event.target.value)} onSearch={() => void model.loadWorkspaceDirectory({ query, status, page: 1, pageSize: model.workspaceDirectory.limit })} placeholder="搜索企业名称、Workspace ID 或套餐" style={{ width: 300 }} />
-        <Select allowClear value={status} onChange={(value) => { setStatus(value); void model.loadWorkspaceDirectory({ query, status: value, page: 1, pageSize: model.workspaceDirectory.limit }); }} placeholder="企业主体状态" options={[{ label: "正常", value: "active" }, { label: "已停用", value: "disabled" }]} style={{ width: 140 }} />
+        <Input.Search allowClear value={query} onChange={(event) => setQuery(event.target.value)} onSearch={() => void model.loadWorkspaceDirectory({ query, status, merchantOnly, page: 1, pageSize: model.workspaceDirectory.limit })} placeholder="搜索企业名称、Workspace ID 或套餐" style={{ width: 300 }} />
+        <Select allowClear value={status} onChange={(value) => { setStatus(value); void model.loadWorkspaceDirectory({ query, status: value, merchantOnly, page: 1, pageSize: model.workspaceDirectory.limit }); }} placeholder="工作区状态" options={[{ label: "正常", value: "active" }, { label: "已停用", value: "disabled" }]} style={{ width: 140 }} />
+        <Button type={merchantOnly ? "primary" : "default"} onClick={() => { const next = !merchantOnly; setMerchantOnly(next); void model.loadWorkspaceDirectory({ query, status, merchantOnly: next, page: 1, pageSize: model.workspaceDirectory.limit }); }}>{merchantOnly ? "仅已开通商家" : "全部工作区记录"}</Button>
         <Typography.Text type="secondary">
           已加载 {model.workspaceRows.length} / 共 {model.workspaceDirectory.total} 条工作区记录
           {model.workspaceDirectory.merchantWorkspaceCount !== undefined ? ` · 已开通 ${model.workspaceDirectory.merchantWorkspaceCount} · 未开通 ${unactivatedWorkspaceCount}` : ""}
@@ -42,7 +44,7 @@ export function WorkspaceGovernanceSection({ model }: { model: OpsConsoleModel }
         locale={{ emptyText: "没有可治理的工作区记录；请检查 platform_ops 的平台级授权" }}
         loading={model.workspaceDirectoryLoading}
         pagination={{ current: Math.floor(model.workspaceDirectory.offset / model.workspaceDirectory.limit) + 1, pageSize: model.workspaceDirectory.limit, total: model.workspaceDirectory.total, showSizeChanger: true, showTotal: (total) => `共 ${total} 条工作区记录` }}
-        onChange={(pagination) => void model.loadWorkspaceDirectory({ query, status, page: pagination.current, pageSize: pagination.pageSize })}
+        onChange={(pagination) => void model.loadWorkspaceDirectory({ query, status, merchantOnly, page: pagination.current, pageSize: pagination.pageSize })}
         scroll={{ x: 900 }}
         columns={[
           { title: "工作区 / 企业主体", key: "enterprise", width: 240, render: (_value: unknown, row: WorkspaceSummary) => <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },

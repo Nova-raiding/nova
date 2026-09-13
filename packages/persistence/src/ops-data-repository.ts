@@ -67,6 +67,14 @@ function directorySqlParts(query: OpsWorkspaceDirectoryQuery, includeEnterprise:
     values.push(query.subscriptionStatus)
     where.push(`s.subscription_status = $${values.length}`)
   }
+  if (query.merchantOnly) {
+    where.push(`EXISTS (
+      SELECT 1 FROM platform_password_accounts a
+       WHERE a.account_type = 'merchant'
+         AND a.status = 'active'
+         AND s.workspace_id = ANY(a.workspace_ids)
+    )`)
+  }
   const filterValues = [...values]
   const offsetIndex = values.push(query.offset)
   const limitIndex = values.push(query.limit)
@@ -139,6 +147,7 @@ export interface OpsWorkspaceDirectoryQuery {
   query?: string
   status?: 'active' | 'disabled'
   subscriptionStatus?: string
+  merchantOnly?: boolean
   offset: number
   limit: number
 }

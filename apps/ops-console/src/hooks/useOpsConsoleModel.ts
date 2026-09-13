@@ -814,7 +814,7 @@ export function useOpsConsoleModel() {
         }),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("ops.members.list"),
         platformOperator && allowedHydrationMethods.has("ops.workspaces.list")
-          ? new Promise<void>((resolve) => window.setTimeout(resolve, 1_500)).then(() => authorizedOptional("ops.workspaces.list", { offset: "0", limit: "20" }))
+          ? new Promise<void>((resolve) => window.setTimeout(resolve, 1_500)).then(() => authorizedOptional("ops.workspaces.list", { offset: "0", limit: "20", merchant_only: "true" }))
           : Promise.resolve(undefined),
         platformStoreScope ? authorizedOptional("ops.stores.list", { platform_scope: "platform" }) : Promise.resolve(undefined),
         platformStoreScope ? deferredOptional("ops.brand-units.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
@@ -1438,7 +1438,7 @@ export function useOpsConsoleModel() {
       }
     }
   };
-  const loadWorkspaceDirectory = async (filters: { query?: string; status?: "active" | "disabled"; subscriptionStatus?: string; page?: number; pageSize?: number } = {}) => {
+  const loadWorkspaceDirectory = async (filters: { query?: string; status?: "active" | "disabled"; subscriptionStatus?: string; merchantOnly?: boolean; page?: number; pageSize?: number } = {}) => {
     if (!hasOpsConnection() || !authorization.can("workspace.directory.read")) return false;
     const controller = userRequestsRef.current.beginWorkspaceDirectory();
     const requestId = ++workspaceDirectoryRequestRef.current;
@@ -1452,6 +1452,7 @@ export function useOpsConsoleModel() {
         ...(filters.query?.trim() ? { query: filters.query.trim() } : {}),
         ...(filters.status ? { status: filters.status } : {}),
         ...(filters.subscriptionStatus?.trim() ? { subscription_status: filters.subscriptionStatus.trim() } : {}),
+        ...(filters.merchantOnly ? { merchant_only: "true" } : {}),
       }, { signal: controller.signal });
       if (requestId !== workspaceDirectoryRequestRef.current) return false;
       const next = value as unknown as WorkspaceDirectoryPage;

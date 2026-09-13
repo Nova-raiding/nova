@@ -1129,7 +1129,7 @@ export interface ApiPersistence {
   ensureWorkspace?: (workspaceId: string) => Promise<void>
   listWorkspaceIds?: () => Promise<string[]>
   listWorkspaceSummaries?: () => Promise<Array<{ workspaceId: string; enterpriseName: string; status: 'active' | 'disabled'; planName: string; monthlyPriceCny: number; usedTasks: number; includedTasks: number; subscriptionStatus: string; memberCount: number }>>
-  listWorkspaceDirectory?: (query: { query?: string; status?: 'active' | 'disabled'; subscriptionStatus?: string; offset: number; limit: number }) => Promise<{ items: Array<{ workspaceId: string; enterpriseName: string; status: 'active' | 'disabled'; planName: string; monthlyPriceCny: number; usedTasks: number; includedTasks: number; subscriptionStatus: string; memberCount: number }>; total: number; offset: number; limit: number; hasMore: boolean }>
+  listWorkspaceDirectory?: (query: { query?: string; status?: 'active' | 'disabled'; subscriptionStatus?: string; merchantOnly?: boolean; offset: number; limit: number }) => Promise<{ items: Array<{ workspaceId: string; enterpriseName: string; status: 'active' | 'disabled'; planName: string; monthlyPriceCny: number; usedTasks: number; includedTasks: number; subscriptionStatus: string; memberCount: number }>; total: number; offset: number; limit: number; hasMore: boolean }>
   getWorkspaceStatus?: (workspaceId: string) => Promise<'active' | 'disabled'>
   setWorkspaceStatus?: (workspaceId: string, status: 'active' | 'disabled') => Promise<void>
   checkHealth?: () => Promise<void>
@@ -12461,18 +12461,19 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'ops.workspaces.list': {
       requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'operator', 'support', 'finance', 'platform_ops', 'platform_admin', 'ops_admin', 'support_agent', 'finance_ops', 'auditor', 'rules_admin', 'model_admin', 'release_admin'])
-      const hasDirectoryParams = ['query', 'status', 'subscription_status', 'offset', 'limit'].some(key => Object.prototype.hasOwnProperty.call(params, key))
+      const hasDirectoryParams = ['query', 'status', 'subscription_status', 'merchant_only', 'offset', 'limit'].some(key => Object.prototype.hasOwnProperty.call(params, key))
       const query = typeof params.query === 'string' ? params.query.trim() : ''
       if (query.length > 200) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'query 最多 200 个字符', 400)
       const status = typeof params.status === 'string' && params.status.trim() ? params.status.trim() : undefined
       if (status && status !== 'active' && status !== 'disabled') throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'status 必须是 active 或 disabled', 400)
       const subscriptionStatus = typeof params.subscription_status === 'string' && params.subscription_status.trim() ? params.subscription_status.trim() : undefined
       if (subscriptionStatus && subscriptionStatus.length > 64) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'subscription_status 最多 64 个字符', 400)
+      const merchantOnly = params.merchant_only === true || params.merchant_only === 'true'
       const requestedLimit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Number(params.limit) : 20
       const offset = typeof params.offset === 'string' && /^\d+$/u.test(params.offset) ? Number(params.offset) : 0
       if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'limit 必须是 1 到 100 的整数', 400)
       if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1_000_000) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'offset 必须是 0 到 1000000 的整数', 400)
-      if (isPlatformOperations(req) && hasDirectoryParams && persistence.listWorkspaceDirectory) return result(await persistence.listWorkspaceDirectory({ query: query || undefined, status: status as 'active' | 'disabled' | undefined, subscriptionStatus, offset, limit: requestedLimit }))
+      if (isPlatformOperations(req) && hasDirectoryParams && persistence.listWorkspaceDirectory) return result(await persistence.listWorkspaceDirectory({ query: query || undefined, status: status as 'active' | 'disabled' | undefined, subscriptionStatus, merchantOnly, offset, limit: requestedLimit }))
       if (isPlatformOperations(req) && persistence.listWorkspaceSummaries && !hasDirectoryParams) return result(await persistence.listWorkspaceSummaries())
       const principal = requestPrincipals.get(req)
       const granted = requiresStrictAuth() ? (principal?.workspaces.filter(id => id !== '*') ?? []) : [...knownWorkspaces]

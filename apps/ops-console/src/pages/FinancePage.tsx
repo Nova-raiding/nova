@@ -11,26 +11,51 @@ import { ModelMarkupPanel } from "../components/finance/ModelMarkupPanel.js";
 import { financeSearchClient } from "../api/opsDomainClients.js";
 import { useFinanceSearch } from "../hooks/useFinanceSearch.js";
 import { ReloadOutlined, SettingOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Descriptions, Drawer, Empty, Input, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { Alert, Button, Card, Descriptions, Drawer, Empty, Form, Input, InputNumber, Modal, Select, Space, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { currentCommercialCatalog, readableCatalogStatus } from "../components/sections/overview/CommercialOverviewSection.js";
 import { readableBenefits } from "../components/commercial/benefitLabels.js";
 import { packageCodeLabel, packageDisplayName } from "../components/commercial/packageLabels.js";
 import type { CommercialCatalogItem } from "../api/commercialOperationsClient.js";
+import { commercialOperationsClient } from "../api/commercialOperationsClient.js";
 
 function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<CommercialCatalogItem | null>(null);
+  const [editor, setEditor] = useState<CommercialCatalogItem | null | false>(false);
+  const [busy, setBusy] = useState(false);
+  const [form] = Form.useForm();
   const rows = currentCommercialCatalog(model.platformCommercialCatalog.filter(item => item.visibility !== "private"))
     .filter(item => !query.trim() || [item.name, item.skuCode, item.priceLabel, readableBenefits(item)].some(value => value.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())));
-  const writeBlocked = "服务端尚未提供套餐草稿、审批、发布或撤销写入接口";
+  const canWrite = model.authorization.can("commercial.catalog.draft");
+  const openEditor = (row?: CommercialCatalogItem) => {
+    setEditor(row ?? null);
+    form.setFieldsValue({ code: row?.skuCode ?? "", name: row?.name ?? "", kind: row?.type ?? "monthly", priceFen: row ? Number((row.priceLabel.match(/[0-9.]+/)?.[0] ?? "0")) * 100 : 0 });
+  };
+  const saveDraft = async () => {
+    const values = await form.validateFields();
+    setBusy(true);
+    try {
+      await commercialOperationsClient.mutateCatalog({ action: "create", code: values.code.trim(), kind: values.kind, priceFen: Math.round(Number(values.priceFen)), payload: { name: values.name.trim(), blockers: [] }, reason: editor ? "运营后台编辑套餐并创建新版本" : "运营后台新增套餐草稿", benefits: [] });
+      message.success(editor ? "已创建套餐新版本草稿" : "已创建套餐草稿");
+      setEditor(false);
+      await model.load();
+    } catch (error) { message.error(error instanceof Error ? error.message : "套餐写入失败"); }
+    finally { setBusy(false); }
+  };
+  const retire = async (row: CommercialCatalogItem) => {
+    setBusy(true);
+    try { await commercialOperationsClient.mutateCatalog({ action: "retire", code: row.skuCode, reason: "运营后台下架套餐", benefits: [] }); message.success("已创建套餐退休版本"); await model.load(); }
+    catch (error) { message.error(error instanceof Error ? error.message : "套餐下架失败"); }
+    finally { setBusy(false); }
+  };
   return (
     <Card
       className="ops-finance-secondary-panel"
       title="套餐管理"
       extra={<Space wrap>
         <Button onClick={() => void model.load()}>刷新目录</Button>
-        <Tooltip title={writeBlocked}><Button type="primary" disabled>新增套餐</Button></Tooltip>
+        <Button type="primary" disabled={!canWrite} onClick={() => openEditor()}>{canWrite ? "新增套餐" : "新增套餐（无权限）"}</Button>
       </Space>}
     >
       <Alert
@@ -56,7 +81,7 @@ function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
           { title: "价格", dataIndex: "priceLabel", width: 130 },
           { title: "套餐权益", width: 380, render: (_: unknown, row: CommercialCatalogItem) => <Typography.Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>{readableBenefits(row)}</Typography.Paragraph> },
           { title: "商业状态", dataIndex: "approvalState", width: 120, render: (_: string, row: CommercialCatalogItem) => <Tag color={readableCatalogStatus(row) === "生效可售" ? "green" : "gold"}>{readableCatalogStatus(row)}</Tag> },
-          { title: "操作", fixed: "right", width: 150, render: (_: unknown, row: CommercialCatalogItem) => <Space><Button size="small" onClick={() => setSelected(row)}>详情</Button><Tooltip title={writeBlocked}><Button size="small" disabled>编辑</Button></Tooltip></Space> },
+          { title: "操作", fixed: "right", width: 210, render: (_: unknown, row: CommercialCatalogItem) => <Space><Button size="small" onClick={() => setSelected(row)}>详情</Button><Button size="small" disabled={!canWrite} onClick={() => openEditor(row)}>编辑新版本</Button><Tooltip title="删除采用不可变目录的退休语义"><Button danger size="small" disabled={!canWrite || readableCatalogStatus(row) === "已停售"} onClick={() => void retire(row)}>下架</Button></Tooltip></Space> },
         ]}
       /> : <Empty description={model.platformCommercialCatalog.length ? "没有匹配的套餐" : "服务端尚未返回套餐目录"} />}
       <Drawer title="套餐详情" open={Boolean(selected)} onClose={() => setSelected(null)} destroyOnHidden>
@@ -70,6 +95,14 @@ function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
           { key: "unresolved", label: "未决项", children: selected.unresolved.length ? selected.unresolved.join("、") : "无" },
         ]} /> : null}
       </Drawer>
+      <Modal title={editor ? "编辑套餐（创建新版本草稿）" : "新增套餐草稿"} open={editor !== false} onCancel={() => setEditor(false)} onOk={() => void saveDraft()} okText="保存草稿" confirmLoading={busy} destroyOnHidden>
+        <Form form={form} layout="vertical">
+          <Form.Item name="code" label="SKU 编码" rules={[{ required: true, pattern: /^[a-z0-9_\-]+$/, message: "仅允许小写字母、数字、下划线和短横线" }]}><Input disabled={Boolean(editor)} /></Form.Item>
+          <Form.Item name="name" label="套餐名称" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="kind" label="套餐类型" rules={[{ required: true }]}><Select options={[{ value: "monthly", label: "月度订阅" }, { value: "point_pack", label: "点数包" }, { value: "onboarding", label: "正式开通" }, { value: "private_trial", label: "私测套餐" }]} /></Form.Item>
+          <Form.Item name="priceFen" label="价格（分）" rules={[{ required: true, type: "number", min: 0 }]}><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item>
+        </Form>
+      </Modal>
     </Card>
   );
 }

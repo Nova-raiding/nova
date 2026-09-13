@@ -13,6 +13,9 @@ interface FinanceDetailDrawerProps {
 }
 
 const time = (value: string) => new Date(value).toLocaleString();
+const statusLabel: Record<string, string> = { refunded: "已退款", settled: "已结算", pending_cost: "待成本核验", consumed: "已消耗", paid: "已支付", pending: "待处理", failed: "失败", manual_attention: "待人工处理" };
+const readableStatus = (value: string) => statusLabel[value.toLowerCase()] ?? value;
+const evidence = (value: number | undefined, precision: number) => value === undefined ? "待核验" : `¥${value.toFixed(precision)}`;
 
 export function FinanceDetailDrawer({ selected, detail, loading, error, onRetry, onClose }: FinanceDetailDrawerProps) {
   const errorRef = useRef<HTMLDivElement>(null);
@@ -39,13 +42,13 @@ export function FinanceDetailDrawer({ selected, detail, loading, error, onRetry,
       {!loading && detail && (
         <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
           <Descriptions.Item label="记录类型"><Tag>{detail.label}</Tag></Descriptions.Item>
-          <Descriptions.Item label="状态"><Tag>{detail.status}</Tag></Descriptions.Item>
+          <Descriptions.Item label="状态"><Tag>{readableStatus(detail.status)}</Tag></Descriptions.Item>
           <Descriptions.Item label="企业主体"><EnterpriseIdentity name={detail.enterpriseName} workspaceId={detail.workspaceId} /></Descriptions.Item>
           <Descriptions.Item label="记录号"><Typography.Text copyable>{detail.id}</Typography.Text></Descriptions.Item>
           <Descriptions.Item label="业务引用">{detail.reference ?? "—"}</Descriptions.Item>
-          <Descriptions.Item label="金额">{detail.amountCny === undefined ? "—" : `¥${detail.amountCny.toFixed(2)}`}</Descriptions.Item>
-          <Descriptions.Item label="Provider 成本">{detail.providerCostCny === undefined ? "—" : `¥${detail.providerCostCny.toFixed(6)}`}</Descriptions.Item>
-          <Descriptions.Item label="客户计费">{detail.customerChargeCny === undefined ? "—" : `¥${detail.customerChargeCny.toFixed(6)}`}</Descriptions.Item>
+          <Descriptions.Item label="金额">{evidence(detail.amountCny, 2)}</Descriptions.Item>
+          <Descriptions.Item label="Provider 成本">{evidence(detail.providerCostCny, 6)}</Descriptions.Item>
+          <Descriptions.Item label="客户计费">{evidence(detail.customerChargeCny, 6)}</Descriptions.Item>
           <Descriptions.Item label="用量">{detail.units ?? "—"}</Descriptions.Item>
           <Descriptions.Item label="发生时间">{time(detail.occurredAt)}</Descriptions.Item>
           <Descriptions.Item label="更新时间">{time(detail.updatedAt)}</Descriptions.Item>

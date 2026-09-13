@@ -355,7 +355,7 @@ const platformRead: readonly CapabilityId[] = [
 
 const commercialOpsRead: readonly CapabilityId[] = [
   'commercial.access.read', 'commercial.entitlement.read', 'commercial.point.read',
-  'commercial.catalog.read', 'commercial.private_sku.read', 'commercial.order.read',
+  'commercial.catalog.read', 'commercial.catalog.draft', 'commercial.private_sku.read', 'commercial.order.read',
   'commercial.rate.read', 'commercial.service_fulfillment.read',
 ]
 const commercialFinanceRead: readonly CapabilityId[] = [

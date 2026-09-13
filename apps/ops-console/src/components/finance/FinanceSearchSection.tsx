@@ -17,7 +17,12 @@ type Filters = { text?: string; workspaceIds?: string; kinds?: FinanceRecordKind
 const kindLabel: Record<FinanceRecordKind, string> = {
   recharge_order: "充值订单", wallet_transaction: "钱包流水", subscription_order: "订阅订单", usage_entry: "任务额度", model_usage: "模型用量",
 };
+const statusLabel: Record<string, string> = {
+  refunded: "已退款", settled: "已结算", pending_cost: "待成本核验", consumed: "已消耗", paid: "已支付", pending: "待处理", failed: "失败", manual_attention: "待人工处理",
+};
+const readableStatus = (value: string) => statusLabel[value.toLowerCase()] ?? value;
 const money = (value: number | undefined, precision = 2) => value === undefined ? "—" : `¥${value.toFixed(precision)}`;
+const moneyEvidence = (value: number | undefined, precision = 2) => value === undefined ? "待核验" : `¥${value.toFixed(precision)}`;
 
 export function FinanceSearchSection({ controller, showProviderStatementStatus = true, compactSummary = false }: FinanceSearchSectionProps) {
   const [form] = Form.useForm<Filters>();
@@ -36,9 +41,9 @@ export function FinanceSearchSection({ controller, showProviderStatementStatus =
     { title: "类型", dataIndex: "kind", width: 120, fixed: "left", render: (kind: FinanceRecordKind) => <Tag>{kindLabel[kind]}</Tag> },
     { title: "企业主体", key: "enterprise", width: 220, render: (_value, record) => <EnterpriseIdentity name={record.enterpriseName} workspaceId={record.workspaceId} /> },
     { title: "记录", key: "record", width: 240, render: (_value, record) => <Space orientation="vertical" size={0}><Typography.Text ellipsis={{ tooltip: record.id }} code>{record.id}</Typography.Text>{record.reference ? <Typography.Text type="secondary" ellipsis={{ tooltip: record.reference }}>引用：{record.reference}</Typography.Text> : null}</Space> },
-    { title: "状态", dataIndex: "status", width: 130, render: value => <Tag color={value === "failed" || value === "manual_attention" ? "red" : "blue"}>{value}</Tag> },
-    { title: "金额", dataIndex: "amountCny", width: 110, align: "right", render: value => money(value) },
-    { title: "成本 / 客户计费", key: "cost", width: 170, align: "right", render: (_value, record) => <Space orientation="vertical" size={0}><Typography.Text type="secondary">成本 {money(record.providerCostCny, 6)}</Typography.Text><Typography.Text>计费 {money(record.customerChargeCny, 6)}</Typography.Text></Space> },
+    { title: "状态", dataIndex: "status", width: 130, render: value => <Tag color={value === "failed" || value === "manual_attention" ? "red" : "blue"}>{readableStatus(value)}</Tag> },
+    { title: "金额", dataIndex: "amountCny", width: 110, align: "right", render: value => moneyEvidence(value) },
+    { title: "成本 / 客户计费", key: "cost", width: 190, align: "right", render: (_value, record) => <Space orientation="vertical" size={0}><Typography.Text type="secondary">成本 {moneyEvidence(record.providerCostCny, 6)}</Typography.Text><Typography.Text>计费 {moneyEvidence(record.customerChargeCny, 6)}</Typography.Text></Space> },
     { title: "发生时间", dataIndex: "occurredAt", width: 180, render: value => new Date(value).toLocaleString() },
     { title: "操作", key: "action", width: 100, fixed: "right", render: (_, record) => <Button type="link" ref={button => { if (controller.selected?.id === record.id) detailTriggerRef.current = button; }} onClick={event => { detailTriggerRef.current = event.currentTarget; void controller.openDetail(record); }} aria-label={`查看 ${record.label} ${record.id} 详情`}>详情</Button> },
   ];
@@ -100,7 +105,7 @@ export function FinanceSearchSection({ controller, showProviderStatementStatus =
         scroll={{ x: 1450 }}
         locale={{ emptyText: controller.loading ? "正在加载" : "当前筛选条件下没有财务记录" }}
       />
-      {controller.page?.nextCursor && <div style={{ display: "flex", justifyContent: "center", paddingTop: 16 }}><Button loading={controller.loadingMore} onClick={() => void controller.loadMore()}>加载更多</Button></div>}</> : (
+      </> : (
         <div role="status" aria-live="polite" style={{ marginTop: 16 }}>
           <Typography.Text type="secondary">财务数据尚未取得，当前状态不能解释为零记录或零金额。</Typography.Text>
         </div>

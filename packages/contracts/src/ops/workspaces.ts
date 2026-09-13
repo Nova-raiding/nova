@@ -5,6 +5,7 @@ export interface WorkspaceDirectoryQuery {
   query?: string
   status?: WorkspaceDirectoryStatus
   subscriptionStatus?: string
+  merchantOnly?: boolean
   offset: number
   limit: number
 }
