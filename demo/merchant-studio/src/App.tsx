@@ -275,7 +275,6 @@ const knowledgeSubItems: Array<{
   { id: 'products', label: '品牌资产', icon: ImageIcon, entry: 'assets' },
   { id: 'products', label: '规则库', icon: ShieldCheck, entry: 'rules' },
   { id: 'task', label: '营销任务', icon: Sparkles, description: '创建并生成商品内容' },
-  { id: 'publish', label: '发布中心', icon: Rocket, description: '审核后发布并查看回执' },
 ]
 // Compatibility marker for deep links that still address id: 'knowledge'.
 
@@ -905,10 +904,14 @@ function Topbar({
   const points = billing?.available_points
   const balance = billing?.balance_cny
   const walletUnavailable = !billing
-  const issueItems = issueMetrics?.riskItems ?? []
-  const issueCount = issueMetrics?.riskSummary.total ?? 0
+  // Only show actionable risks belonging to a bound store. The API also
+  // returns unbound local/demo records for reconciliation, but those are not
+  // notifications for the currently signed-in merchant.
+  const issueItems = (issueMetrics?.riskItems ?? []).filter(item => item.evidence?.unboundLocalData !== true)
+  const issueCount = issueItems.length
   const notificationPanel = (
     <div className="merchant-notification-panel" role="region" aria-label="待处理问题">
+      {issueMetrics?.dataCoverage?.fixtureDataPresent ? <div className="merchant-notification-fixture-warning">当前结果包含本地演示数据；未绑定店铺的演示记录已隐藏，不计入当前用户通知。</div> : null}
       <div className="merchant-notification-heading">
         <div><strong>待处理问题</strong><span>{issueCount ? `${issueCount} 项需要关注` : '当前没有待处理问题'}</span></div>
         <button type="button" className="text-button" onClick={onOpenIssues}>查看全部</button>
@@ -1230,6 +1233,9 @@ function Sidebar({
   target?: Target
 }) {
   const sidebarRef = useRef<HTMLElement>(null)
+  const [knowledgeExpanded, setKnowledgeExpanded] = useState(
+    page === 'products' || page === 'task' || page === 'publish',
+  )
   const closeAction = useRef(close)
   const restoreFocusOnClose = useRef(true)
   closeAction.current = close
@@ -1318,17 +1324,26 @@ function Sidebar({
               <Fragment key={item.id}>
                 <button
                   className={active ? 'active' : ''}
-                  onClick={() => closeForAction(() => item.entry ? onOpenEntry(item.entry) : setPage(item.id))}
+                  onClick={() => closeForAction(() => {
+                    if (item.id === 'products') {
+                      setKnowledgeExpanded((expanded) => !expanded)
+                      if (item.entry && page !== 'products') onOpenEntry(item.entry)
+                    } else {
+                      setPage(item.id)
+                    }
+                  })}
                   title={item.description}
                   aria-current={active && item.id !== 'products' ? 'page' : undefined}
-                  aria-expanded={item.id === 'products' ? active : undefined}
+                  aria-expanded={item.id === 'products' ? knowledgeExpanded : undefined}
+                  aria-controls={item.id === 'products' ? 'merchant-knowledge-subnav' : undefined}
                 >
                   <Icon size={19} />
                   <span>{item.label}</span>
+                  {item.id === 'products' && <ChevronDown className={`nav-chevron ${knowledgeExpanded ? 'expanded' : ''}`} size={16} aria-hidden="true" />}
                   {item.badge && <em>{item.badge}</em>}
                 </button>
-                {item.id === 'products' && (
-                  <div className="entry-nav" aria-label="知识库二级菜单">
+                {item.id === 'products' && knowledgeExpanded && (
+                  <div className="entry-nav" id="merchant-knowledge-subnav" aria-label="知识库二级菜单">
                     {knowledgeSubItems.map((subItem) => {
                       const SubIcon = subItem.icon
                       const subActive = subItem.entry
@@ -11020,16 +11035,6 @@ export default function App() {
                     onBackToProducts={() =>
                       navigateTo('products', { clearContext: true })
                     }
-                  />
-                )}
-                {page === 'publish' && (
-                  <PublishCenter
-                    openPublish={openPublish}
-                    openCorrection={openCorrection}
-                    baseUrl={apiBaseUrl}
-                    canOpenPublish={Boolean(
-                      taskContext?.task && taskContext.version,
-                    )}
                   />
                 )}
                 {page === 'rules' && <Rules baseUrl={apiBaseUrl} />}
