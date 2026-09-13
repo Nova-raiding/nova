@@ -676,7 +676,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260901185628' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260912184110' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -2132,9 +2132,9 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_GATEWAY_ERROR' } })
-      expect(response.result.structuredContent.message).toMatch(/MERCHANT_(?:MCP_BASE_URL|WORKSPACE_ID) is required/u)
-      expect(response.result.structuredContent.message).toContain('refusing to use the local fixture fallback')
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_CONFIGURATION_REQUIRED' } })
+      expect(response.result.structuredContent.message).toMatch(/缺少MERCHANT_(?:MCP_BASE_URL|WORKSPACE_ID)/u)
+      expect(response.result.structuredContent.message).toContain('未向后端发送请求')
     } finally {
       child.kill()
     }
