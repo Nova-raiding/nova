@@ -9,7 +9,7 @@ import {
   TeamOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
-import { Button, Card, Col, Row, Space, Statistic, Tag, Typography } from "antd";
+import { Button, Card, Col, Row, Statistic, Tag, Typography } from "antd";
 import type { OpsConsoleModel } from "../../../hooks/useOpsConsoleModel";
 import type { OpsDomain } from "../../../navigation/opsNavigation";
 import { modelReadinessRows } from "./modelReadiness";
@@ -22,19 +22,18 @@ interface PlatformOverviewSnapshotProps {
 const money = (value: number | undefined) => value === undefined ? "—" : `¥${value.toFixed(2)}`;
 
 export function PlatformOverviewSnapshot({ model, onNavigate }: PlatformOverviewSnapshotProps) {
-  const finance = model.platformFinanceSummary;
   const merchantWorkspaceCount = (model.workspaceDirectory as typeof model.workspaceDirectory & { merchantWorkspaceCount?: number }).merchantWorkspaceCount;
   const tasks = model.platformTaskSummary;
   const marketing = model.platformMarketingSummary;
   const usage = model.platformModelUsageSummary;
   const readiness = modelReadinessRows(model.modelStatus);
   const readyModels = readiness.filter((row) => row.ready).length;
-  const openAlerts = model.alerts.filter((alert) => alert.status === "open").length;
   const connectedPlatforms = new Set(
     model.platformOperations
       .filter((operation) => operation.connectedAccountCount || operation.state === "connected")
       .map((operation) => operation.platform),
   ).size;
+  const openAlerts = model.alerts.filter((alert) => alert.status === "open").length;
   const totalQueue = (tasks?.generationQueueCount ?? 0) + (tasks?.publishQueueCount ?? 0);
   const taskValue = tasks ? tasks.taskCount : undefined;
   const modelUsageValue = usage ? usage.customerChargeCny : undefined;
@@ -106,11 +105,11 @@ export function PlatformOverviewSnapshot({ model, onNavigate }: PlatformOverview
       </Row>
 
       <Row gutter={[12, 12]} className="ops-overview-status-grid">
-        <Col xs={24} xl={14}>
+        <Col xs={24}>
           <Card
             size="small"
             title={<span><RobotOutlined /> 模型能力门禁</span>}
-            extra={<Button type="link" onClick={() => onNavigate("models")}>查看模型详情</Button>}
+            extra={<Button type="link" onClick={() => onNavigate?.("models")}>查看模型详情</Button>}
           >
             <div className="ops-overview-readiness-list">
               {readiness.length ? readiness.map((row) => (
@@ -122,23 +121,6 @@ export function PlatformOverviewSnapshot({ model, onNavigate }: PlatformOverview
                 </div>
               )) : <Typography.Text type="secondary">模型状态尚未取得，不能把配置状态解释为可用。</Typography.Text>}
             </div>
-          </Card>
-        </Col>
-        <Col xs={24} xl={10}>
-          <Card
-            size="small"
-            title={<span><ExclamationCircleOutlined /> 运营待办</span>}
-            extra={<Button type="link" onClick={() => onNavigate("users")}>进入用户中心</Button>}
-          >
-            <div className="ops-overview-action-list">
-              <div><span className="ops-overview-action-number">{openAlerts || "—"}</span><span><strong>开放告警</strong><small>{openAlerts ? "需要平台运营确认或分派" : "告警数据尚未取得"}</small></span></div>
-              <div><span className="ops-overview-action-number">{tasks ? totalQueue : "—"}</span><span><strong>执行队列</strong><small>{tasks ? "生成和发布任务等待处理" : "任务汇总尚未取得"}</small></span></div>
-              <div><span className="ops-overview-action-number">{model.platformBrandUnitSummary?.unboundBrandCount ?? "—"}</span><span><strong>未绑定品牌</strong><small>{model.platformBrandUnitSummary ? "需要补齐品牌与店铺关系" : "品牌汇总尚未取得"}</small></span></div>
-            </div>
-            <Space wrap className="ops-overview-quick-actions">
-              <Button onClick={() => onNavigate("users")}>管理商家授权</Button>
-              <Button onClick={() => onNavigate("finance")}>查看平台账务</Button>
-            </Space>
           </Card>
         </Col>
       </Row>
