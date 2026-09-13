@@ -13,7 +13,6 @@ type UsersPageAuthorization = Pick<OpsConsoleModel["authorization"], "can" | "ca
 export function usersPageCapabilityState(authorization: UsersPageAuthorization) {
   const canReadDirectory = authorization.can("identity.read");
   const canReadWorkspaces = authorization.can("workspace.directory.read");
-  const canReadAuthorization = authorization.canAny(["authorization.role.read", "authorization.grant.read"]);
   const canWrite = authorization.canAny([
     "identity.update",
     "workspace.status.update",
@@ -22,11 +21,10 @@ export function usersPageCapabilityState(authorization: UsersPageAuthorization) 
   ]);
 
   return {
-    canRead: canReadDirectory || canReadWorkspaces || canReadAuthorization,
+    canRead: canReadDirectory || canReadWorkspaces,
     canWrite,
     canReadDirectory,
     canReadWorkspaces,
-    canReadAuthorization,
   };
 }
 

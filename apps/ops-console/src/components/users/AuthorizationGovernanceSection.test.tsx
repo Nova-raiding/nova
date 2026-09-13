@@ -69,6 +69,7 @@ describe("AuthorizationGovernanceSection", () => {
     expect(source).not.toContain("<Tabs");
     expect(workspaceSource).toContain("<Tabs");
     expect(workspaceSource).toContain('className="ops-users-tabs"');
+    expect(workspaceSource).not.toContain('label: "权限与授权"');
     expect(workspaceSource).not.toContain("用户与权限工作台");
     expect(modelSource).toContain("jitRevocationReceipt");
   });

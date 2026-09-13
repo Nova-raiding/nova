@@ -17,7 +17,7 @@ describe("visibleUsersGovernanceSections", () => {
     expect(visibleUsersGovernanceSections(authorization([
       "workspace.directory.read",
       "authorization.grant.read",
-    ]))).toEqual(["workspaces", "authorization"]);
+    ]))).toEqual(["workspaces"]);
   });
 
   it("returns no task area when the session has no governance read capability", () => {

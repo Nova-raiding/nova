@@ -3,7 +3,6 @@ import type { ReactElement } from "react";
 import { Alert, Button, Card, Drawer, Form, Input, Select, Space, Table, Tabs, Tag, Typography, message } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import { OpsPageError } from "../OpsPageError";
-import { AuthorizationGovernanceSection } from "./AuthorizationGovernanceSection";
 import { UserDirectorySection } from "./UserDirectorySection";
 import { WorkspaceGovernanceSection } from "./WorkspaceGovernanceSection";
 import { MembersSection } from "../finance/MembersSection";
@@ -21,7 +20,7 @@ function RegistrationApplications({ model }: { model: OpsConsoleModel }) {
   return <Card title="注册申请" extra={<Button onClick={() => void load()} loading={loading}>刷新申请</Button>} style={{ marginBottom: 16 }}><Table rowKey="application_id" loading={loading} dataSource={items} pagination={{ pageSize: 10 }} columns={[{ title: "申请编号", dataIndex: "application_id", render: (v: string) => <Typography.Text copyable>{v}</Typography.Text> }, { title: "登录邮箱", dataIndex: "login" }, { title: "企业名称", dataIndex: "enterprise_name" }, { title: "联系人", dataIndex: "contact_name" }, { title: "状态", dataIndex: "status", render: (v: string) => <Tag color={v === "merchant_pending" ? "gold" : v === "active" ? "green" : "red"}>{v === "merchant_pending" ? "待审核" : v === "active" ? "已通过" : "已拒绝"}</Tag> }, { title: "操作", render: (_: unknown, row: Registration) => row.status === "merchant_pending" ? <Button onClick={() => { setTarget(row); setDecision("approved"); setWorkspaceIds(""); setMemberRole("merchant_admin"); setSkuCode("sku-onboarding-once"); setAmountFen("500000"); }}>审核</Button> : <Typography.Text type="secondary">已处理</Typography.Text> }]} /><Drawer title={target ? `审核注册申请 · ${target.enterprise_name ?? target.login}` : "审核注册申请"} open={Boolean(target)} onClose={() => setTarget(undefined)} size={460} extra={<Button type="primary" loading={loading} disabled={reason.trim().length < 4 || (decision === "approved" && (!workspaceIds.trim() || !skuCode.trim()))} onClick={() => void submit()}>提交审核</Button>}><Form layout="vertical"><Form.Item label="审核决定"><Select value={decision} onChange={setDecision} options={[{ value: "approved", label: "通过" }, { value: "rejected", label: "拒绝" }]} /></Form.Item>{decision === "approved" && <><Form.Item label="绑定企业工作区" required><Input value={workspaceIds} onChange={e => setWorkspaceIds(e.target.value)} placeholder="workspace_id（可填多个，以空格分隔）" /></Form.Item><Form.Item label="工作区角色" required><Select value={memberRole} onChange={setMemberRole} options={[{ value: "merchant_admin", label: "企业管理员" }, { value: "operator", label: "运营" }, { value: "support", label: "支持" }, { value: "finance", label: "财务" }]} /></Form.Item><Form.Item label="套餐 SKU" required><Select value={skuCode} onChange={(value) => { setSkuCode(value); setAmountFen(value === "sku-monthly-2000" ? "200000" : value === "sku-monthly-5000" ? "500000" : value === "sku-monthly-10000" ? "1000000" : "500000"); }} options={[{ value: "sku-onboarding-once", label: "系统接入服务 · ¥5,000" }, { value: "sku-monthly-2000", label: "基础版 · ¥2,000" }, { value: "sku-monthly-5000", label: "成长版 · ¥5,000" }, { value: "sku-monthly-10000", label: "定制版起 · ¥10,000" }]} /></Form.Item><Form.Item label="套餐金额（分）" required><Input value={amountFen} onChange={e => setAmountFen(e.target.value)} inputMode="numeric" /></Form.Item><Alert type="info" showIcon title="审核通过后立即绑定工作区角色和套餐，但收款状态保持待核验，不开放已付权益。" /></>}<Form.Item label="审核原因" required><Input.TextArea value={reason} onChange={e => setReason(e.target.value)} minLength={4} rows={4} placeholder="至少填写 4 个字符" /></Form.Item></Form></Drawer></Card>;
 }
 
-export type UsersGovernanceSectionKey = "directory" | "workspaces" | "authorization" | "members";
+export type UsersGovernanceSectionKey = "directory" | "workspaces" | "members";
 
 type CapabilityReader = Pick<OpsConsoleModel["authorization"], "can">;
 
@@ -29,7 +28,6 @@ export function visibleUsersGovernanceSections(authorization: CapabilityReader):
   const sections: UsersGovernanceSectionKey[] = [];
   if (authorization.can("identity.read")) sections.push("directory");
   if (authorization.can("workspace.directory.read")) sections.push("workspaces");
-  if (authorization.can("authorization.role.read") || authorization.can("authorization.grant.read")) sections.push("authorization");
   if (authorization.can("workspace.member.read")) sections.push("members");
   return sections;
 }
@@ -42,11 +40,6 @@ export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConso
   useEffect(() => {
     if (!sectionKeys.length) unavailableRef.current?.focus({ preventScroll: true });
   }, [sectionKeys.length]);
-
-  useEffect(() => {
-    if (!model.authorizationTargetWorkspaceId?.trim() || !sectionKeys.includes("authorization")) return;
-    setActiveSection("authorization");
-  }, [model.authorizationTargetWorkspaceId, sectionKeys]);
 
   useEffect(() => {
     if (sectionKeys.length && !sectionKeys.includes(activeSection as UsersGovernanceSectionKey)) setActiveSection(sectionKeys[0]);
@@ -75,7 +68,6 @@ export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConso
   if (sectionKeys.includes("directory")) tabs.push({ key: "directory", label: "用户目录", children: <section id="user-directory" className="ops-users-section" aria-labelledby="user-directory-heading"><OpsPageError error={model.userDirectoryError} onRetry={() => void model.loadUsers()} /><UserDirectorySection model={model} /></section> });
   if (sectionKeys.includes("workspaces")) tabs.push({ key: "workspaces", label: "企业主体", children: <section id="workspace-governance" className="ops-users-section"><WorkspaceGovernanceSection model={model} /></section> });
   if (sectionKeys.includes("members")) tabs.push({ key: "members", label: "成员管理", children: <section id="member-governance" className="ops-users-section"><MembersSection model={model} /></section> });
-  if (sectionKeys.includes("authorization")) tabs.push({ key: "authorization", label: "权限与授权", children: <section id="authorization-governance" className="ops-users-section"><AuthorizationGovernanceSection model={model} /></section> });
   if (model.authorization.can("identity.read")) tabs.push({ key: "registrations", label: "注册申请", children: <section className="ops-users-section"><RegistrationApplications model={model} /></section> });
 
   return (
