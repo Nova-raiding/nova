@@ -1249,6 +1249,21 @@ describe('Codex stdio MCP bridge', () => {
         expect(html).toContain('@media(prefers-reduced-motion:reduce)')
         expect(html).not.toContain('context-v2')
         expect(html).not.toContain('大麦商家工作台')
+        if (uri === 'ui://merchant-marketing/publish-confirm-v1.html') {
+          expect(html).toContain("code==='INTERACTIVE_CONFIRMATION_TICKET_REQUIRED'")
+          expect(html).toContain("code==='INTERACTIVE_CONFIRMATION_TICKET_INVALID'")
+          expect(html).toContain("code==='INTERACTIVE_CONFIRMATION_INTENT_MISMATCH'")
+          expect(html).toContain("primary.textContent='重新核对并确认'")
+          expect(html).toContain('本次确认已失效，发布请求未提交。请重新核对以上内容，勾选确认后再提交。')
+          expect(html).toContain('ackInput.checked=false')
+          expect(html).toContain('ackInput.focus()')
+          expect(html).toContain("publishIdempotencyKey=publishIdempotencyKey||'publish-card-'")
+          expect(html).toContain("primary.dataset.recovery='status'")
+          expect(html).toContain("primary.textContent='查询发布状态'")
+          expect(html).toContain('提交结果尚未确认，请先查询发布状态，不要重复提交。')
+          expect(html).toContain("primary.dataset.recovery==='status'")
+          expect(html).toContain("window.openai.sendFollowUpMessage({prompt:prompt})")
+        }
       }
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'catalog.search', arguments: { scope: 'store', platform: 'taobao', account_id: 'acct_1' } } })}\n`)
       const response = await nextLine(child.stdout)
@@ -2012,7 +2027,14 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.approve', arguments: { content_version_id: 'version_1', expected_version: '1' } } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_GATEWAY_ERROR' } })
+      expect(response.result).toMatchObject({
+        isError: true,
+        structuredContent: {
+          code: 'API_UNAVAILABLE',
+          details: { operation_status: 'unknown', retryable: false },
+        },
+      })
+      expect(response.result.content[0].text).toBe('服务连接中断，尚未确认操作是否完成。请先查看任务状态，再决定是否重试。')
       expect(attempts).toBe(1)
     } finally {
       child.kill()
