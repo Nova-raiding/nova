@@ -11,7 +11,7 @@ import type { OpsDomain } from "../../../navigation/opsNavigation";
 import type { WorkspaceSummary } from "../../../types/ops";
 import type { CommercialCatalogItem } from "../../../api/commercialOperationsClient";
 import { EnterpriseIdentity } from "../../EnterpriseIdentity";
-import { readableBenefits } from "../../commercial/benefitLabels.js";
+import { readableBenefitItems } from "../../commercial/benefitLabels.js";
 import { packageDisplayName } from "../../commercial/packageLabels.js";
 
 interface OverviewSectionProps {
@@ -175,7 +175,7 @@ export function CommercialOverviewSection({ model, onNavigate }: OverviewSection
           <Space wrap>
             <Button onClick={() => onNavigate("finance")}>查看订单与权益</Button>
             <Button type="primary" icon={<SafetyCertificateOutlined />} onClick={() => onNavigate("finance")}>
-              管理套餐
+              套餐管理（新增 / 编辑 / 删除）
             </Button>
           </Space>
         }
@@ -194,7 +194,8 @@ export function CommercialOverviewSection({ model, onNavigate }: OverviewSection
             { title: "套餐", dataIndex: "skuCode", width: 220, render: (value: string, row: CommercialCatalogItem) => <Space orientation="vertical" size={0}><Typography.Text strong>{packageDisplayName(value, row.name)}</Typography.Text><Typography.Text type="secondary" code>{value}</Typography.Text></Space> },
             { title: "类型", dataIndex: "type", width: 120, render: (value: string) => ({ onboarding: "正式开通", monthly: "月度订阅", point_pack: "点数包", private_trial: "私测试用" }[value] ?? value) },
             { title: "价格", dataIndex: "priceLabel", width: 150 },
-            { title: "套餐权益", dataIndex: "benefitsSummary", width: 390, render: (_value: string, row: CommercialCatalogItem) => <Typography.Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>{readableBenefits(row)}</Typography.Paragraph> },
+            { title: "套餐权益（中文明细）", dataIndex: "benefitsSummary", width: 390, render: (_value: string, row: CommercialCatalogItem) => <Space direction="vertical" size={2}>{readableBenefitItems(row).map((benefit) => <Typography.Text key={benefit} style={{ fontSize: 12 }}>• {benefit}</Typography.Text>)}</Space> },
+            { title: "操作", key: "catalog-action", width: 170, render: () => <Button type="link" onClick={() => onNavigate("finance")}>进入套餐管理</Button> },
             { title: "生效周期", dataIndex: "cycleLabel", width: 130, render: (value: string | null) => value || "按合同" },
             { title: "商业状态", dataIndex: "approvalState", width: 140, render: (_value: string, row: CommercialCatalogItem) => <Tag color={readableCatalogStatus(row) === "生效可售" ? "green" : readableCatalogStatus(row) === "已停售" ? "default" : "gold"}>{readableCatalogStatus(row)}</Tag> },
           ]}

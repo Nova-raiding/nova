@@ -14,7 +14,7 @@ import { ReloadOutlined, SettingOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Descriptions, Drawer, Empty, Form, Input, InputNumber, Modal, Select, Space, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { readableCatalogStatus } from "../components/sections/overview/CommercialOverviewSection.js";
-import { readableBenefits } from "../components/commercial/benefitLabels.js";
+import { commercialBenefitDescriptions, commercialBenefitOptions, readableBenefitItems, readableBenefits } from "../components/commercial/benefitLabels.js";
 import { packageCodeLabel, packageDisplayName } from "../components/commercial/packageLabels.js";
 import type { CommercialCatalogItem } from "../api/commercialOperationsClient.js";
 import { commercialOperationsClient } from "../api/commercialOperationsClient.js";
@@ -43,13 +43,18 @@ function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
   const canPublish = model.authorization.can("commercial.catalog.publish");
   const openEditor = (row?: CommercialCatalogItem) => {
     setEditor(row ?? null);
-    form.setFieldsValue({ code: row?.skuCode ?? "", name: row?.name ?? "", kind: row?.type ?? "monthly", priceYuan: row ? Number((row.priceLabel.match(/[0-9.]+/)?.[0] ?? "0")) : 0 });
+    form.setFieldsValue({ code: row?.skuCode ?? "", name: row?.name ?? "", kind: row?.type ?? "monthly", priceYuan: row ? Number((row.priceLabel.match(/[0-9.]+/)?.[0] ?? "0")) : 0, benefits: row?.benefits?.map((benefit) => ({ code: benefit.code, value: benefit.rawValue ?? (benefit.quantity === null ? "" : String(benefit.quantity)), unit: benefit.rawUnit ?? "" })) ?? [] });
   };
   const saveDraft = async () => {
     const values = await form.validateFields();
     setBusy(true);
     try {
-      await commercialOperationsClient.mutateCatalog({ action: "create", code: values.code.trim(), kind: values.kind, priceFen: yuanToFen(values.priceYuan), payload: { name: values.name.trim(), blockers: [] }, reason: editor ? "运营后台编辑套餐并创建新版本" : "运营后台新增套餐草稿", benefits: [] });
+      const benefits = (values.benefits ?? []).filter((benefit: { code?: string; value?: string }) => benefit.code?.trim() && benefit.value?.trim()).map((benefit: { code: string; value: string; unit?: string }) => {
+        const value = benefit.value.trim();
+        const numeric = /^-?\d+(?:\.\d+)?$/u.test(value) ? Number(value) : null;
+        return { code: benefit.code.trim(), quantity: numeric, rawValue: numeric === null ? value : null, rawUnit: benefit.unit?.trim() || null, normalizedValue: null, policyRef: null, metadata: {} };
+      });
+      await commercialOperationsClient.mutateCatalog({ action: "create", code: values.code.trim(), kind: values.kind, priceFen: yuanToFen(values.priceYuan), payload: { name: values.name.trim(), blockers: [] }, reason: editor ? "运营后台编辑套餐并创建新版本" : "运营后台新增套餐草稿", benefits });
       message.success(editor ? "已创建套餐新版本草稿" : "已创建套餐草稿");
       setEditor(false);
       await model.load();
@@ -58,9 +63,19 @@ function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
   };
   const retire = async (row: CommercialCatalogItem) => {
     setBusy(true);
-    try { await commercialOperationsClient.mutateCatalog({ action: "retire", code: row.skuCode, reason: "运营后台下架套餐", benefits: [] }); message.success("已创建套餐退休版本"); await model.load(); }
+    try { await commercialOperationsClient.mutateCatalog({ action: "retire", code: row.skuCode, reason: "运营后台删除套餐（版本化停售）", benefits: [] }); message.success("已创建套餐停售版本"); await model.load(); }
     catch (error) { message.error(error instanceof Error ? error.message : "套餐下架失败"); }
     finally { setBusy(false); }
+  };
+  const confirmRetire = (row: CommercialCatalogItem) => {
+    Modal.confirm({
+      title: `确认删除 / 停售“${packageDisplayName(row.skuCode, row.name)}”？`,
+      content: "停售后新用户不能再购买该套餐；历史订单、已授予权益和审计记录会继续保留。",
+      okText: "确认停售",
+      okButtonProps: { danger: true },
+      cancelText: "取消",
+      onOk: () => retire(row),
+    });
   };
   const transition = async (row: CommercialCatalogItem, action: "approve" | "publish") => {
     setBusy(true);
@@ -84,7 +99,7 @@ function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
         type="warning"
         showIcon
         title="目录采用版本化生命周期"
-        description="新增和编辑会创建新版本草稿；审批通过、发布生效与下架都会追加不可变版本并写入审计事件。"
+        description="新增和编辑会创建新版本草稿；审批通过、发布生效与删除/停售都会追加不可变版本并写入审计事件，历史订单不会被破坏。"
         style={{ marginBottom: 16 }}
       />
       <Space wrap style={{ marginBottom: 12 }}>
@@ -101,9 +116,9 @@ function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
           { title: "套餐", fixed: "left", width: 210, render: (_: unknown, row: CommercialCatalogItem) => <Space orientation="vertical" size={0}><Typography.Text strong>{packageDisplayName(row.skuCode, row.name)}</Typography.Text><Typography.Text type="secondary" code>{packageCodeLabel(row.skuCode)}</Typography.Text></Space> },
           { title: "类型", dataIndex: "type", width: 110, render: (value: string) => ({ monthly: "月度订阅", point_pack: "点数包", onboarding: "正式开通", private_trial: "私测" }[value] ?? value) },
           { title: "价格", dataIndex: "priceLabel", width: 130 },
-          { title: "套餐权益", width: 380, render: (_: unknown, row: CommercialCatalogItem) => <Typography.Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>{readableBenefits(row)}</Typography.Paragraph> },
+          { title: "套餐权益（中文）", width: 380, render: (_: unknown, row: CommercialCatalogItem) => <Space direction="vertical" size={2}>{readableBenefitItems(row).map((benefit) => <Typography.Text key={benefit} style={{ fontSize: 12 }}>• {benefit}</Typography.Text>)}</Space> },
           { title: "商业状态", dataIndex: "approvalState", width: 120, render: (_: string, row: CommercialCatalogItem) => <Tag color={row.executable ? "green" : row.approvalState === "approved" ? "blue" : "gold"}>{readableCatalogStatus(row)}</Tag> },
-          { title: "操作", fixed: "right", width: 360, render: (_: unknown, row: CommercialCatalogItem) => <Space wrap><Button size="small" onClick={() => setSelected(row)}>详情</Button><Button size="small" disabled={!canWrite} onClick={() => openEditor(row)}>编辑新版本</Button>{row.approvalState === "draft" && <Button size="small" type="primary" disabled={!canPublish || busy} onClick={() => void transition(row, "approve")}>审批通过</Button>}{row.approvalState === "approved" && !row.executable && <Button size="small" type="primary" disabled={!canPublish || busy} onClick={() => void transition(row, "publish")}>发布生效</Button>}<Tooltip title="删除采用不可变目录的退休语义"><Button danger size="small" disabled={!canPublish || busy || readableCatalogStatus(row) === "已停售"} onClick={() => void retire(row)}>下架</Button></Tooltip></Space> },
+          { title: "操作", fixed: "right", width: 390, render: (_: unknown, row: CommercialCatalogItem) => <Space wrap><Button size="small" onClick={() => setSelected(row)}>查看权益</Button><Button size="small" disabled={!canWrite} onClick={() => openEditor(row)}>编辑新版本</Button>{row.approvalState === "draft" && <Button size="small" type="primary" disabled={!canPublish || busy} onClick={() => void transition(row, "approve")}>审批通过</Button>}{row.approvalState === "approved" && !row.executable && <Button size="small" type="primary" disabled={!canPublish || busy} onClick={() => void transition(row, "publish")}>发布生效</Button>}<Tooltip title="目录采用不可变版本，删除会生成停售版本并保留历史订单引用"><Button danger size="small" disabled={!canPublish || busy || readableCatalogStatus(row) === "已停售"} onClick={() => confirmRetire(row)}>删除 / 停售</Button></Tooltip></Space> },
         ]}
       /> : <Empty description={model.platformCommercialCatalog.length ? "没有匹配的套餐" : "服务端尚未返回套餐目录"} />}
       <Drawer title="套餐详情" open={Boolean(selected)} onClose={() => setSelected(null)} destroyOnHidden>
@@ -111,7 +126,7 @@ function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
           { key: "sku", label: "套餐 / SKU", children: <Space orientation="vertical" size={0}><Typography.Text strong>{packageDisplayName(selected.skuCode, selected.name)}</Typography.Text><Typography.Text code>{selected.skuCode}</Typography.Text></Space> },
           { key: "type", label: "售卖类型", children: selected.type },
           { key: "price", label: "价格 / 周期", children: `${selected.priceLabel} / ${selected.cycleLabel ?? "一次性"}` },
-          { key: "benefits", label: "套餐权益", children: readableBenefits(selected) },
+          { key: "benefits", label: "套餐权益（中文明细）", children: <Space direction="vertical" size={2}>{readableBenefitItems(selected).map((benefit) => <Typography.Text key={benefit}>• {benefit}</Typography.Text>)}</Space> },
           { key: "status", label: "商业状态", children: readableCatalogStatus(selected) },
           { key: "validity", label: "生效窗口", children: `${selected.validFrom ?? "未开始"}${selected.validTo ? ` 至 ${selected.validTo}` : " / 无截止"}` },
           { key: "unresolved", label: "未决项", children: selected.unresolved.length ? selected.unresolved.join("、") : "无" },
@@ -123,6 +138,25 @@ function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
           <Form.Item name="name" label="套餐名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="kind" label="套餐类型" rules={[{ required: true }]}><Select options={[{ value: "monthly", label: "月度订阅" }, { value: "point_pack", label: "点数包" }, { value: "onboarding", label: "正式开通" }, { value: "private_trial", label: "私测套餐" }]} /></Form.Item>
           <Form.Item name="priceYuan" label="价格（元）" extra="按元输入，自动保留两位小数并转换为分提交" rules={[{ required: true, type: "number", min: 0 }]}><InputNumber min={0} precision={2} step={0.01} addonAfter="元" style={{ width: "100%" }} /></Form.Item>
+          <Typography.Text strong>套餐权益（运营可读中文明细）</Typography.Text>
+          <Typography.Paragraph type="secondary" style={{ marginTop: 4 }}>每行填写一项，例如：创意点 / 2000 / 点；共享存储 / 50 / GB。保存后会同步到套餐目录和用户购买权益。</Typography.Paragraph>
+          <Alert type="info" showIcon style={{ marginBottom: 12 }} title="权益含义" description={<Space direction="vertical" size={2}>{commercialBenefitOptions.map((option) => <Typography.Text key={option.code} type="secondary" style={{ fontSize: 12 }}>{option.label}：{commercialBenefitDescriptions[option.code]}</Typography.Text>)}</Space>} />
+          <Form.List name="benefits" rules={[{ validator: async (_, benefits: Array<{ code?: string }> = []) => {
+            if (!benefits.length) throw new Error("请至少配置一项套餐权益");
+            const codes = benefits.map((benefit) => benefit?.code).filter(Boolean);
+            if (new Set(codes).size !== codes.length) throw new Error("同一项权益不能重复添加");
+          } }] }>
+            {(fields, { add, remove }, { errors }) => <Space direction="vertical" style={{ width: "100%" }}>
+              {fields.map((field) => <Space key={field.key} align="baseline" style={{ width: "100%" }}>
+                <Form.Item {...field} name={[field.name, "code"]} rules={[{ required: true, message: "请选择权益" }]}><Select placeholder="选择权益" style={{ width: 180 }} options={commercialBenefitOptions.map((option) => ({ value: option.code, label: option.label }))} onChange={(code: string) => form.setFieldValue(["benefits", field.name, "unit"], commercialBenefitOptions.find((option) => option.code === code)?.defaultUnit ?? "")} /></Form.Item>
+                <Form.Item {...field} name={[field.name, "value"]} rules={[{ required: true, message: "请输入权益数值" }]}><Input placeholder="数值，如 2000" /></Form.Item>
+                <Form.Item {...field} name={[field.name, "unit"]}><Input placeholder="单位，如 点 / GB / 月" /></Form.Item>
+                <Button type="link" danger onClick={() => remove(field.name)}>移除</Button>
+              </Space>)}
+              <Form.ErrorList errors={errors} />
+              <Button type="dashed" onClick={() => add({ unit: "" })} block>添加一项权益</Button>
+            </Space>}
+          </Form.List>
         </Form>
       </Modal>
     </Card>

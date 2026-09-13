@@ -531,14 +531,17 @@ describe('API HTTP vertical slice', () => {
     await call('personal-billing-member', 4, 'billing.recharge.get', { order_id: memberOrder.id, confirm_test_payment: 'true' })
 
     const memberMine = await call('personal-billing-member', 5, 'billing.recharge.list')
-    expect(memberMine.data?.result).toMatchObject({ scope: 'mine', total: 1, orders: [expect.objectContaining({ id: memberOrder.id })] })
+    expect(memberMine.data?.result).toMatchObject({ scope: 'mine', total: 1, orders: [expect.objectContaining({ id: memberOrder.id, workspace_id: workspaceId, created_by_actor_id: memberId, attribution_status: 'attributed' })] })
     expect((await call('personal-billing-member', 6, 'billing.recharge.list', { scope: 'workspace' })).error?.code).toBe('FORBIDDEN')
     expect((await call('personal-billing-member', 7, 'billing.recharge.get', { order_id: ownerOrder.id })).error?.code).toBe('BILLING_ORDER_NOT_FOUND')
     expect((await call('personal-billing-owner', 7.1, 'billing.recharge.get', { order_id: memberOrder.id })).error?.code).toBe('BILLING_ORDER_NOT_FOUND')
     expect((await call('personal-billing-owner', 7.2, 'billing.recharge.get', { order_id: memberOrder.id, scope: 'workspace' })).data?.result).toMatchObject({ id: memberOrder.id })
 
     const ownerWorkspace = await call('personal-billing-owner', 8, 'billing.recharge.list', { scope: 'workspace' })
-    expect(ownerWorkspace.data?.result).toMatchObject({ scope: 'workspace', total: 2 })
+    expect(ownerWorkspace.data?.result).toMatchObject({ scope: 'workspace', total: 2, orders: expect.arrayContaining([
+      expect.objectContaining({ id: ownerOrder.id, created_by_actor_id: ownerId, workspace_id: workspaceId }),
+      expect.objectContaining({ id: memberOrder.id, created_by_actor_id: memberId, workspace_id: workspaceId }),
+    ]) })
     const paidWorkspace = await call('personal-billing-owner', 8.1, 'billing.recharge.list', { scope: 'workspace', states: 'paid' })
     expect(paidWorkspace.data?.result).toMatchObject({ scope: 'workspace', total: 2, returned: 2, summary: { pending: 0, paid: 2 } })
     const memberTransactions = await call('personal-billing-member', 9, 'billing.transactions')

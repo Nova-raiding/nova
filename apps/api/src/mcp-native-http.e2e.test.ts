@@ -32,7 +32,7 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(payload.result.tools.length).toBeGreaterThan(0)
     expect(payload.result.tools.every(tool => !tool.name.startsWith('ops.'))).toBe(true)
     expect(payload.result.tools.some(tool => tool.name === 'asset.scan')).toBe(false)
-    expect(payload.result.tools.some(tool => tool.name === 'billing.recharge.create')).toBe(false)
+    expect(payload.result.tools.some(tool => tool.name === 'billing.recharge.create')).toBe(true)
     expect(payload.result.tools.some(tool => tool.name === 'content.generate')).toBe(true)
     expect(payload.result.tools.some(tool => tool.name === 'commercial.access.get')).toBe(true)
     const orderCreate = payload.result.tools.find(tool => tool.name === 'commercial.order.create')
@@ -112,7 +112,7 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(compatibilityTool.status).toBe(200)
     expect(await compatibilityTool.json()).toMatchObject({ jsonrpc: '2.0', id: 7, error: { code: -32601 } })
 
-    const disabledCommercialTool = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'billing.recharge.create', arguments: {} } }) })
+    const disabledCommercialTool = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'subscription.order.create', arguments: {} } }) })
     expect(disabledCommercialTool.status).toBe(200)
     expect(await disabledCommercialTool.json()).toMatchObject({ jsonrpc: '2.0', id: 8, error: { code: -32601 } })
   })

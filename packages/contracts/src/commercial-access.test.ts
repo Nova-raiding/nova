@@ -35,7 +35,7 @@ describe('commercial operation registry E1 contract', () => {
     for (const operation of ['subscription.get', 'subscription.orders.list', 'billing.status', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.export', 'workspace.data.export.request', 'workspace.data.export.get', 'workspace.data.delete.request', 'workspace.bootstrap', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list']) {
       expect(policy(operation)).toMatchObject({ outcome: 'REGISTERED', policy: { classification: 'RECOVERY_CONTROL' } })
     }
-    for (const operation of ['subscription.order.create', 'subscription.change', 'billing.recharge.create']) {
+    for (const operation of ['subscription.order.create', 'subscription.change']) {
       expect(policy(operation)).toMatchObject({ outcome: 'DENY_DISABLED', policy: { classification: 'RECOVERY_CONTROL' } })
     }
     for (const operation of ['merchant.start', 'platform.connect', 'catalog.sync', 'content.export']) {

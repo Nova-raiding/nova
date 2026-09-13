@@ -116,7 +116,7 @@ const COMMERCIAL_DISABLED_METHODS = new Set([
   'ops.commercial.coupon.upsert', 'ops.commercial.rollouts.list',
   'ops.commercial.rollout.upsert', 'ops.commercial.model-markup.get',
   'ops.commercial.model-markup.update',
-  'subscription.order.create', 'subscription.change', 'billing.recharge.create',
+  'subscription.order.create', 'subscription.change',
   // Image generation/editing stay visible to the merchant bridge. The API
   // performs the authoritative entitlement, relay, cost and rights gates;
   // hiding them here makes a configured local/relay workflow impossible.

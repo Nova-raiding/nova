@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { currentCommercialCatalog, formatOverviewMoney, planDistribution } from "../components/sections/overview/CommercialOverviewSection.js";
-import { readableBenefits } from "../components/commercial/benefitLabels.js";
+import { commercialBenefitOptions, readableBenefitItems, readableBenefits } from "../components/commercial/benefitLabels.js";
 
 const overviewSource = readFileSync(new URL("./OverviewPage.tsx", import.meta.url), "utf8");
 
@@ -46,6 +46,15 @@ describe("commercial overview helpers", () => {
       priceLabel: "¥2000.00", cycleLabel: "每月", benefitsSummary: "creative_points:5000 点/月；cloud_storage:50 GB_DECIMAL",
       approvalState: "approved", validFrom: "2026-09-08T00:00:00.000Z", validTo: null, unresolved: [],
     })).toBe("创意点：5000 点/月 · 共享存储：50 GB");
+  });
+
+  it("provides Chinese benefit choices and separate readable rows for operators", () => {
+    expect(commercialBenefitOptions).toContainEqual({ code: "cloud_storage", label: "共享存储", defaultUnit: "GB" });
+    expect(readableBenefitItems({
+      id: "growth-v1", skuCode: "growth", name: "成长版", type: "monthly", visibility: "public", version: "v1",
+      priceLabel: "¥5000.00", cycleLabel: "每月", benefitsSummary: "creative_points:2000 creative_points；max_stores:5 store",
+      approvalState: "approved", validFrom: "2026-09-08T00:00:00.000Z", validTo: null, unresolved: [],
+    })).toEqual(["创意点：2000 点", "店铺数：5 家店铺"]);
   });
 });
 

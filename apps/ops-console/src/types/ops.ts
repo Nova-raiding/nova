@@ -846,6 +846,7 @@ export type AutomationScan = {
 export type OpsWorkbench = "platform" | "workspace";
 export type OpsSession = {
   actor_id: string;
+  account_login?: string | null;
   workspace_id: string;
   identity_id?: string | null;
   session_id?: string | null;

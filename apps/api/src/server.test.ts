@@ -106,7 +106,7 @@ describe('central commercial access gate', () => {
     expect(isNativeMcpToolEnabled('creative-points.balance.get')).toBe(true)
     expect(isNativeMcpToolEnabled('commercial.order.create')).toBe(true)
     expect(isNativeMcpToolEnabled('commercial.order.payment.get')).toBe(true)
-    expect(isNativeMcpToolEnabled('billing.recharge.create')).toBe(false)
+    expect(isNativeMcpToolEnabled('billing.recharge.create')).toBe(true)
     expect(isNativeMcpToolEnabled('content.generate')).toBe(true)
     expect(isNativeMcpToolEnabled('ops.finance.export')).toBe(false)
     expect(isNativeMcpToolEnabled('unregistered.business.action')).toBe(false)

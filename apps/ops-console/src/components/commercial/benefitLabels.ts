@@ -24,6 +24,38 @@ const benefitUnits: Record<string, string> = {
   review: "次",
 };
 
+const benefitDefaultUnits: Record<string, string> = {
+  creative_points: "点",
+  cloud_storage: "GB",
+  max_brands: "个品牌",
+  max_stores: "家店铺",
+  first_response_business_hours: "个工作小时",
+  grant_count: "批/月",
+  points_per_grant: "点",
+  monthly_one_to_one_hours: "小时/月",
+  one_to_one_service_hours: "小时",
+  outcome_review_count: "次",
+};
+
+export const commercialBenefitDescriptions: Record<string, string> = {
+  creative_points: "用于图片、文本等创意生成的点数额度",
+  cloud_storage: "当前企业主体可使用的共享文件存储空间",
+  max_brands: "可维护的品牌档案数量上限",
+  max_stores: "可绑定并管理的店铺数量上限",
+  first_response_business_hours: "服务团队首次响应时限",
+  grant_count: "每月赠送的点数批次数量",
+  points_per_grant: "每次赠送批次包含的创意点数",
+  monthly_one_to_one_hours: "每月可使用的一对一服务时长",
+  one_to_one_service_hours: "套餐内包含的一对一服务总时长",
+  outcome_review_count: "包含的经营结果复盘次数",
+};
+
+export const commercialBenefitOptions = Object.entries(benefitLabels).map(([code, label]) => ({
+  code,
+  label,
+  defaultUnit: benefitDefaultUnits[code] ?? "",
+}));
+
 const labelFor = (code: string) => benefitLabels[code] ?? `未翻译权益（${code}）`;
 const unitFor = (unit: string | null) => unit ? benefitUnits[unit] ?? unit : "";
 
@@ -54,4 +86,9 @@ export function readableBenefits(item: CommercialCatalogItem): string {
     const match = part.trim().match(/^([^:：]+)[:：](.+)$/u);
     return match ? formatPair(match[1].trim(), match[2].trim(), null) : part.trim();
   }).filter(Boolean).join(" · ");
+}
+
+/** Individual operator-facing lines for tables and detail drawers. */
+export function readableBenefitItems(item: CommercialCatalogItem): string[] {
+  return readableBenefits(item).split(" · ").map((value) => value.trim()).filter(Boolean);
 }

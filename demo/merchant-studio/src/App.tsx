@@ -21,6 +21,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   CircleHelp,
   Clock3,
   CreditCard,
@@ -272,8 +273,10 @@ const knowledgeSubItems: Array<{
   entry?: MerchantEntryPoint
   description?: string
 }> = [
-  { id: 'products', label: '品牌资产', icon: ImageIcon, entry: 'assets' },
-  { id: 'products', label: '规则库', icon: ShieldCheck, entry: 'rules' },
+  { id: 'products', label: '资料库', icon: BookOpen, entry: 'knowledge', description: '上传、确认并引用资料' },
+  { id: 'products', label: '店铺素材', icon: ImageIcon, entry: 'images', description: '查看已授权素材' },
+  { id: 'products', label: '品牌资产', icon: FolderOpen, entry: 'assets', description: '维护品牌资料与素材' },
+  { id: 'products', label: '规则库', icon: ShieldCheck, entry: 'rules', description: '检查发布前的平台规则' },
   { id: 'task', label: '营销任务', icon: Sparkles, description: '创建并生成商品内容' },
 ]
 // Compatibility marker for deep links that still address id: 'knowledge'.
@@ -1388,7 +1391,7 @@ function Sidebar({
               </small>
             </div>
           ) : (
-            <p>尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。</p>
+            <p>尚未选择商品。进入资料库后，按商品、平台和店铺建立任务。</p>
           )}
         </section>
       </aside>
@@ -3533,12 +3536,18 @@ function AssetLibrary({
       aria-label="知识、图片与素材"
       tabIndex={-1}
     >
+      <div className="knowledge-context-bar" aria-label="当前位置">
+        <div className="knowledge-breadcrumb">
+          <span>工作台</span><ChevronRight size={14} aria-hidden="true" /><span>知识库</span><ChevronRight size={14} aria-hidden="true" /><strong>{assetEntry === 'knowledge' ? '资料库' : assetEntry === 'images' ? '店铺素材' : assetEntry === 'assets' ? '品牌资产' : '规则库'}</strong>
+        </div>
+        <span className="knowledge-context-status"><span className="status-dot" aria-hidden="true" />当前工作区</span>
+      </div>
       <div className="panel-heading">
         <div>
         <span className="section-kicker">KNOWLEDGE WORKSPACE</span>
           <h3>知识库</h3>
           <p className="panel-subtitle">
-            统一管理商品资料、店铺授权素材与品牌规范；通过二级方案完成导入、检验和引用。
+            统一管理商品资料、店铺授权素材与品牌规范；从左侧知识库分区进入对应工作流。
           </p>
           <div className="asset-brand-actions" aria-label="品牌管理">
             <span className="asset-brand-actions-label">品牌管理</span>
@@ -3590,7 +3599,7 @@ function AssetLibrary({
           </div>
         </div>
       </div>
-      <div className="asset-entry-tabs" role="tablist" aria-label="素材类型">
+      <div className="asset-entry-tabs" role="tablist" aria-label="知识库分区">
         <button
           id="asset-knowledge-tab"
           role="tab"
@@ -3609,7 +3618,7 @@ function AssetLibrary({
           onClick={() => setAssetEntry('knowledge')}
         >
           <BookOpen size={15} aria-hidden="true" />
-          方案一：上传素材包
+          资料库
         </button>
         <button
           id="asset-images-tab"
@@ -3629,7 +3638,7 @@ function AssetLibrary({
           onClick={() => setAssetEntry('images')}
         >
           <ImageIcon size={15} aria-hidden="true" />
-          方案二：店铺授权获取
+          店铺素材
         </button>
         <button
           id="asset-rules-tab"
@@ -3642,7 +3651,7 @@ function AssetLibrary({
           onClick={() => setAssetEntry('rules')}
         >
           <ShieldCheck size={15} aria-hidden="true" />
-          方案三：结果检验
+          规则库
         </button>
         <button
           id="asset-assets-tab"
@@ -3681,7 +3690,7 @@ function AssetLibrary({
         <div className="knowledge-plan-step">{assetEntry === 'knowledge' ? '01' : assetEntry === 'images' ? '02' : assetEntry === 'rules' ? '03' : '04'}</div>
         <div className="knowledge-plan-copy">
           <strong>
-            {assetEntry === 'knowledge' ? '上传商品资料与素材包' : assetEntry === 'images' ? '获取已授权店铺素材' : assetEntry === 'rules' ? '检验内容是否符合平台规则' : '查看全部知识与素材'}
+            {assetEntry === 'knowledge' ? '资料库：上传并确认知识' : assetEntry === 'images' ? '店铺素材：查看已授权内容' : assetEntry === 'rules' ? '规则库：检查发布前约束' : '全部资料：统一检索工作区内容'}
           </strong>
           <span>
             {assetEntry === 'knowledge' ? '上传 Excel、图片或文档；完成扫描、读取和权益确认后，才会进入生成上下文。' : assetEntry === 'images' ? '店铺同步后，系统只展示当前工作区已授权且可读取的素材，不会混用其他企业数据。' : assetEntry === 'rules' ? '查看广告、促销、品类和平台规则命中结果；未通过的内容不能直接发布。' : '按来源、状态和权益快速查找工作区资料。'}

@@ -82,7 +82,7 @@ export const COMMERCIAL_MCP_FOUNDATION_POLICIES = defineCommercialOperationRegis
   { surface: 'MCP', operation: 'creative-points.statement.list', domain: 'COMMERCIAL', enabled: true, classification: 'RECOVERY_CONTROL', rate_action: null },
   { surface: 'MCP', operation: 'subscription.order.create', domain: 'COMMERCIAL', enabled: false, classification: 'RECOVERY_CONTROL', rate_action: null },
   { surface: 'MCP', operation: 'subscription.change', domain: 'COMMERCIAL', enabled: false, classification: 'RECOVERY_CONTROL', rate_action: null },
-  { surface: 'MCP', operation: 'billing.recharge.create', domain: 'COMMERCIAL', enabled: false, classification: 'RECOVERY_CONTROL', rate_action: null },
+  { surface: 'MCP', operation: 'billing.recharge.create', domain: 'COMMERCIAL', enabled: true, classification: 'RECOVERY_CONTROL', rate_action: null },
   { surface: 'MCP', operation: 'merchant.start', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_REQUIRED_NO_CHARGE', rate_action: null },
   { surface: 'MCP', operation: 'platform.connect', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_REQUIRED_NO_CHARGE', rate_action: null },
   { surface: 'MCP', operation: 'catalog.sync', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_REQUIRED_NO_CHARGE', rate_action: null },

@@ -169,6 +169,7 @@ export const MCP_RECOVERY_ENABLED_METHODS = [
   'billing.status',
   'billing.recharge.get',
   'billing.recharge.list',
+  'billing.recharge.create',
   'billing.transactions',
   'workspace.data.export.request',
   'workspace.data.export.get',
@@ -179,7 +180,6 @@ export const MCP_RECOVERY_ENABLED_METHODS = [
 export const MCP_RECOVERY_DISABLED_METHODS = [
   'subscription.order.create',
   'subscription.change',
-  'billing.recharge.create',
 ] as const satisfies readonly McpMethod[]
 
 export const MCP_POINT_CHARGED_ENABLED_METHODS = [
