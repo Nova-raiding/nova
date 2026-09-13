@@ -40,8 +40,15 @@ export function mergeFinanceRecords(current: readonly FinanceSearchRecord[], inc
   return [...current, ...incoming.filter(record => !seen.has(`${record.kind}:${record.workspaceId}:${record.id}`))];
 }
 
-export const financeErrorMessage = (error: unknown, fallback: string) =>
-  error instanceof Error && error.message ? error.message : fallback;
+export const financeErrorMessage = (error: unknown, fallback: string) => {
+  const candidate = error as { code?: string } | undefined;
+  if (candidate?.code === "FORBIDDEN") return "当前平台管理员会话没有读取这条财务记录的权限，请刷新会话后重试。";
+  if (candidate?.code === "UNAUTHENTICATED" || candidate?.code === "SESSION_EXPIRED") return "运营登录已失效，请重新登录后重试。";
+  if (error instanceof Error && ["Failed to fetch", "NetworkError", "Load failed"].includes(error.message)) {
+    return "无法连接财务详情接口，请确认本地 API 与运营后台都已启动后重试。";
+  }
+  return error instanceof Error && error.message ? error.message : fallback;
+};
 
 export class LatestFinanceRequest {
   private sequence = 0;

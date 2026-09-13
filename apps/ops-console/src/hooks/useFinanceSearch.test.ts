@@ -29,6 +29,8 @@ describe("finance search hook helpers", () => {
       .toBe("params.limit must be a non-empty string");
     expect(financeErrorMessage({ code: "INVALID_REQUEST" }, "财务记录加载失败，请重试。"))
       .toBe("财务记录加载失败，请重试。");
+    expect(financeErrorMessage(new Error("Failed to fetch"), "fallback"))
+      .toContain("无法连接财务详情接口");
   });
 });
 
