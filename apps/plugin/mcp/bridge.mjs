@@ -9,10 +9,10 @@ import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { assertRelayEvidence } from './relay-evidence.mjs'
 
-// ChatGPT.app may launch the JavaScript entrypoint directly instead of the
-// POSIX wrapper. On macOS, recover only missing configuration from launchd;
+// ChatGPT/Codex may launch the JavaScript entrypoint with a bundled Node binary.
+// On macOS, recover only missing configuration from launchd;
 // explicit process environment always wins and production remains fail-closed.
-if (process.platform === 'darwin' && process.execPath.includes('/ChatGPT.app/')) {
+if (process.platform === 'darwin') {
   const launchdNames = [
     'NODE_ENV', 'DEPLOY_ENV', 'MERCHANT_MCP_BASE_URL', 'MERCHANT_WORKSPACE_ID',
     'MERCHANT_MCP_TOKEN', 'MERCHANT_STRICT_AUTH', 'MERCHANT_ALLOW_FIXTURE_FALLBACK',
