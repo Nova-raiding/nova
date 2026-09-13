@@ -67,8 +67,8 @@ describe("AuthorizationGovernanceSection", () => {
     const modelSource = readFileSync(new URL("../../hooks/useOpsConsoleModel.ts", import.meta.url), "utf8");
     expect(source).toContain("model.recordJitRevocation");
     expect(source).not.toContain("<Tabs");
-    expect(workspaceSource).not.toContain("<Tabs");
-    expect(workspaceSource).toContain('className="ops-users-sections"');
+    expect(workspaceSource).toContain("<Tabs");
+    expect(workspaceSource).toContain('className="ops-users-tabs"');
     expect(workspaceSource).not.toContain("用户与权限工作台");
     expect(modelSource).toContain("jitRevocationReceipt");
   });
