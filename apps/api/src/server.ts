@@ -12486,7 +12486,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const enterpriseNames = await loadPlatformWorkspaceEnterpriseNames(workspaceIds)
       const summaries = await mapWithConcurrency(workspaceIds, 16, async id => { const [status, settings, usage, subscription, members] = await Promise.all([getWorkspaceStatus(id), (persistence.commercial ?? memoryCommercial).getSettings(id), (persistence.usage ?? memoryUsage).get(id), (persistence.subscriptions ?? memorySubscriptions).get(id), (persistence.members ?? memoryMembers).list(id)]); return { workspaceId: id, enterpriseName: enterpriseNames.get(id) ?? '未命名企业主体', status, planName: settings.planName, monthlyPriceCny: settings.monthlyPriceCny, usedTasks: usage.usedTasks, includedTasks: usage.includedTasks, subscriptionStatus: subscription.status, memberCount: members.length } })
       if (!hasDirectoryParams) return result(summaries)
-      const filtered = summaries.filter(item => (!query || [item.workspaceId, item.planName].some(value => value.toLocaleLowerCase().includes(query.toLocaleLowerCase()))) && (!status || item.status === status) && (!subscriptionStatus || item.subscriptionStatus === subscriptionStatus))
+      const activeMerchantWorkspaceIds = merchantOnly
+        ? new Set((await passwordAuthRepository.listAccounts()).filter(account => account.accountType === 'merchant' && account.status === 'active').flatMap(account => account.workspaceIds))
+        : undefined
+      const filtered = summaries.filter(item => (!merchantOnly || activeMerchantWorkspaceIds?.has(item.workspaceId)) && (!query || [item.workspaceId, item.planName].some(value => value.toLocaleLowerCase().includes(query.toLocaleLowerCase()))) && (!status || item.status === status) && (!subscriptionStatus || item.subscriptionStatus === subscriptionStatus))
       return result({ items: filtered.slice(offset, offset + requestedLimit), total: filtered.length, offset, limit: requestedLimit, hasMore: offset + requestedLimit < filtered.length })
     }
     case 'ops.stores.list': {
