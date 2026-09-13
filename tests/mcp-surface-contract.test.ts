@@ -38,7 +38,7 @@ const commercialDisabledMethods = new Set([
   'ops.commercial.offers.list', 'ops.commercial.offer.upsert', 'ops.commercial.addons.list', 'ops.commercial.addon.upsert',
   'ops.commercial.coupons.list', 'ops.commercial.export', 'ops.commercial.coupon.upsert', 'ops.commercial.rollouts.list',
   'ops.commercial.rollout.upsert', 'ops.commercial.model-markup.get', 'ops.commercial.model-markup.update',
-  'subscription.order.create', 'subscription.change', 'billing.recharge.create', 'ops.marketing.generation.retry',
+  'subscription.order.create', 'subscription.change', 'ops.marketing.generation.retry',
   'campaign.batch.generate', 'campaign.batch.retry_failed', 'catalog.title.optimize', 'catalog.image.retry',
   'brand.tone.preview', 'task.understand', 'creative.directions',
   'content.generate', 'content.codex.prepare', 'content.codex.commit', 'content.review', 'content.modify',
@@ -70,7 +70,7 @@ describe('MCP surface coverage', () => {
     const installedReadme = readFileSync(new URL('../.codex-marketplace/plugins/merchant-marketing/README.md', import.meta.url), 'utf8')
 
     expect(installedReadme).toBe(pluginReadme)
-    expect(merchantMethodCount).toBe(146)
+    expect(merchantMethodCount).toBe(147)
     expect(rootReadme).toContain(`商家插件当前实测为 ${merchantMethodCount} 个 MCP 工具`)
     expect(status).toContain(`bridge 当前实测为 ${merchantMethodCount} 个工具`)
     expect(pluginReadme).toContain(`当前 \`tools/list\` 实测为 ${merchantMethodCount} 个 MCP 工具`)
