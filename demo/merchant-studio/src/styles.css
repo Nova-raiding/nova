@@ -536,3 +536,10 @@ select:focus-visible,textarea:focus-visible,[role="tab"]:focus-visible,[role="ta
 .entry-nav button.active span small { color: #a8bd93; }
 .nav-chevron { margin-left: auto; transition: transform .18s ease; color: currentColor; }
 .nav-chevron.expanded { transform: rotate(180deg); }
+
+/* Knowledge workspace hierarchy: breadcrumb and status keep the page aligned
+   with the sidebar's four explicit knowledge sections. */
+.knowledge-context-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 12px;padding:0 2px;color:var(--muted);font-size:10px}
+.knowledge-breadcrumb{display:flex;align-items:center;gap:5px}.knowledge-breadcrumb svg{color:#9aaba0}.knowledge-breadcrumb strong{color:var(--ink);font-weight:800}
+.knowledge-context-status{display:flex;align-items:center;gap:6px;color:var(--green-dark);font-weight:700}.knowledge-context-status .status-dot{width:7px;height:7px;border-radius:50%;background:#28a46b;box-shadow:0 0 0 3px #e1f3e8}
+@media(max-width:700px){.knowledge-context-bar{align-items:flex-start;flex-direction:column;gap:8px}}
