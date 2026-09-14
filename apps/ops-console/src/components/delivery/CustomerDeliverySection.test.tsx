@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACCEPTANCE_ITEMS, INTEGRATION_ITEMS, deliveryCompletion, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
+import { ACCEPTANCE_ITEMS, INTEGRATION_ITEMS, buildChecklistItems, deliveryCompletion, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
 
 const base: CustomerDeliveryRecord = {
   id: "c-1", companyName: "示例企业", paymentStatus: "paid", profile: true,
@@ -48,5 +48,16 @@ describe("customer delivery completion", () => {
     }
     expect(isDeliveryStepBlocked("unpaid", "profile")).toBe(false);
     expect(isDeliveryStepBlocked("unpaid", "video")).toBe(false);
+  });
+
+  it("builds one durable item payload per checklist entry and preserves explicit empty evidence", () => {
+    expect(buildChecklistItems(["插件账号", "店铺连接"], ["插件账号"], { "插件账号": "  登录截图 #42  ", "店铺连接": null })).toEqual([
+      { itemKey: "插件账号", completed: true, evidence: "登录截图 #42" },
+      { itemKey: "店铺连接", completed: false, evidence: "" },
+    ]);
+  });
+
+  it("fails closed for malformed form values instead of marking items complete", () => {
+    expect(buildChecklistItems(INTEGRATION_ITEMS, undefined, undefined).every((item) => !item.completed && item.evidence === "")).toBe(true);
   });
 });

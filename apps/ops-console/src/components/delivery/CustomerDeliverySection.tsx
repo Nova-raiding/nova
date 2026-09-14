@@ -23,10 +23,36 @@ export interface CustomerDeliveryRecord {
   acceptanceItems?: string[];
   trainingCompletedAt?: string;
   videoUrls?: string[];
+  /** Per-item evidence returned by the delivery API. Keys are item labels. */
+  integrationEvidence?: Record<string, string>;
+  acceptanceEvidence?: Record<string, string>;
+}
+
+export interface CustomerDeliveryChecklistItem {
+  itemKey: string;
+  completed: boolean;
+  /** Explicitly empty when an item has no evidence yet; the API may reject it. */
+  evidence: string;
+}
+
+export interface CustomerDeliveryChecklistSave {
+  record: CustomerDeliveryRecord;
+  checklistKey: "system_integration" | "functional_acceptance";
+  items: CustomerDeliveryChecklistItem[];
 }
 
 export const INTEGRATION_ITEMS = ["插件账号", "店铺连接", "商品扫描", "知识库", "平台规则", "创意点数", "企业信息", "品牌资产", "商品资料", "客户偏好"];
 export const ACCEPTANCE_ITEMS = ["文案生成", "图片生成", "标注编辑", "自动检查", "视频生成", "店铺/商品读取", "技术验收", "内容验收"];
+
+export function buildChecklistItems(itemKeys: string[], selectedItems: unknown, evidence: unknown): CustomerDeliveryChecklistItem[] {
+  const selected = Array.isArray(selectedItems) ? selectedItems.filter((value): value is string => typeof value === "string") : [];
+  const evidenceMap = evidence && typeof evidence === "object" && !Array.isArray(evidence) ? evidence as Record<string, unknown> : {};
+  return itemKeys.map((itemKey) => ({
+    itemKey,
+    completed: selected.includes(itemKey),
+    evidence: typeof evidenceMap[itemKey] === "string" ? evidenceMap[itemKey].trim() : "",
+  }));
+}
 
 const stepLabels: Record<DeliveryStepKey, string> = {
   profile: "客户档案", integration: "系统接入", acceptance: "功能测试及验收", training: "客户培训", video: "交付视频",
@@ -44,7 +70,7 @@ export function deliveryCompletion(record: CustomerDeliveryRecord) {
   return { completed, total: 5, ready: record.paymentStatus === "paid" && completed === 5 };
 }
 
-export function CustomerDeliverySection({ records = [], onOpen, onSave }: { records?: CustomerDeliveryRecord[]; onOpen?: (record: CustomerDeliveryRecord, step: DeliveryStepKey) => void; onSave?: (record: CustomerDeliveryRecord) => Promise<void> | void }) {
+export function CustomerDeliverySection({ records = [], onOpen, onSave, onChecklistSave }: { records?: CustomerDeliveryRecord[]; onOpen?: (record: CustomerDeliveryRecord, step: DeliveryStepKey) => void; onSave?: (record: CustomerDeliveryRecord) => Promise<void> | void; onChecklistSave?: (payload: CustomerDeliveryChecklistSave) => Promise<void> | void }) {
   const [selected, setSelected] = useState<CustomerDeliveryRecord>();
   const [step, setStep] = useState<DeliveryStepKey>("profile");
   const [blockedCompany, setBlockedCompany] = useState<string>();
@@ -66,7 +92,16 @@ export function CustomerDeliverySection({ records = [], onOpen, onSave }: { reco
       acceptance: step === "acceptance" ? (values.acceptanceItems as string[] ?? []).length === ACCEPTANCE_ITEMS.length : selected.acceptance,
       training: step === "training" ? Boolean(values.training) : selected.training,
       videos: step === "video" ? ((values.videoUrls as string[] ?? []).length) : selected.videos };
-    setSaving(true); try { await onSave?.(next); setSelected(next); message.success("已保存"); } finally { setSaving(false); }
+    setSaving(true); try {
+      if (step === "integration" || step === "acceptance") {
+        const itemKeys = step === "integration" ? INTEGRATION_ITEMS : ACCEPTANCE_ITEMS;
+        const selectedItems = (step === "integration" ? values.integrationItems : values.acceptanceItems) as string[] ?? [];
+        const evidence = (step === "integration" ? values.integrationEvidence : values.acceptanceEvidence) as Record<string, unknown> | undefined;
+        const items = buildChecklistItems(itemKeys, selectedItems, evidence);
+        await onChecklistSave?.({ record: next, checklistKey: step === "integration" ? "system_integration" : "functional_acceptance", items });
+      }
+      await onSave?.(next); setSelected(next); message.success("已保存");
+    } finally { setSaving(false); }
   };
   const columns = useMemo(() => [
     { title: "序号", width: 72, render: (_: unknown, __: CustomerDeliveryRecord, index: number) => String(index + 1).padStart(2, "0") },
@@ -84,8 +119,8 @@ export function CustomerDeliverySection({ records = [], onOpen, onSave }: { reco
       {selected ? <Space orientation="vertical" size="large" style={{ width: "100%" }}><Steps current={Object.keys(stepLabels).indexOf(step)} items={Object.values(stepLabels).map((title, index) => ({ title, status: index < deliveryCompletion(selected).completed ? "finish" : index === Object.keys(stepLabels).indexOf(step) ? "process" : "wait" }))} />
         <Form form={form} layout="vertical" onFinish={save} initialValues={selected}>
           {step === "profile" && <><Form.Item name="companyName" label="公司名称" rules={[{ required: true, message: "请输入公司名称" }]}><Input /></Form.Item><Form.Item name="contractNo" label="合同编号" rules={[{ required: true, message: "请输入合同编号" }]}><Input /></Form.Item><Form.Item name="paymentStatus" label="付款状态" rules={[{ required: true }]}><Select options={[{ label: "已完成付款核验", value: "paid" }, { label: "未支付", value: "unpaid" }]} /></Form.Item><Form.Item name="paymentDate" label="付款日期" rules={[{ required: true, message: "请选择付款日期" }]}><Input type="date" /></Form.Item><Form.Item name="contractFile" label="合同文件" rules={[{ required: true, message: "请上传合同文件" }]}><Upload beforeUpload={() => false} maxCount={1}><Button>上传合同</Button></Upload></Form.Item><Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input /></Form.Item><Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input /></Form.Item><Form.Item name="requiredLaunchAt" label="要求上线时间" rules={[{ required: true, message: "请选择要求上线时间" }]}><Input type="datetime-local" /></Form.Item></>}
-          {step === "integration" && <Form.Item name="integrationItems" label="系统接入清单"><Checkbox.Group options={INTEGRATION_ITEMS} /></Form.Item>}
-          {step === "acceptance" && <Form.Item name="acceptanceItems" label="功能测试及验收清单"><Checkbox.Group options={ACCEPTANCE_ITEMS} /></Form.Item>}
+          {step === "integration" && <><Form.Item name="integrationItems" label="系统接入清单"><Checkbox.Group options={INTEGRATION_ITEMS} /></Form.Item><Typography.Text type="secondary">为已完成项填写证据（链接、截图说明或记录编号）。</Typography.Text>{INTEGRATION_ITEMS.map((item) => <Form.Item key={item} name={["integrationEvidence", item]} label={`${item} · 证据`}><Input placeholder="可填写链接、截图说明或记录编号" /></Form.Item>)}</>}
+          {step === "acceptance" && <><Form.Item name="acceptanceItems" label="功能测试及验收清单"><Checkbox.Group options={ACCEPTANCE_ITEMS} /></Form.Item><Typography.Text type="secondary">为已完成项填写证据（链接、截图说明或记录编号）。</Typography.Text>{ACCEPTANCE_ITEMS.map((item) => <Form.Item key={item} name={["acceptanceEvidence", item]} label={`${item} · 证据`}><Input placeholder="可填写链接、截图说明或记录编号" /></Form.Item>)}</>}
           {step === "training" && <Form.Item name="training" valuePropName="checked"><Checkbox>客户培训已完成（与功能验收结果同步记录）</Checkbox></Form.Item>}
           {step === "video" && <Form.Item name="videoUrls" label="交付视频（支持多段）"><Upload multiple beforeUpload={() => false} listType="text"><Button icon={<PlusOutlined />}>选择视频</Button></Upload></Form.Item>}
           <Button type="primary" htmlType="submit" loading={saving}>保存当前环节</Button>
