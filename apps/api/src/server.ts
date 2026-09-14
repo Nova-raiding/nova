@@ -2569,7 +2569,7 @@ async function persistedRuleHasBlockingRisk(workspaceId: string, product: { plat
   return (await persistedRuleEvaluation(workspaceId, product)).findings.some(finding => finding.severity === 'error')
 }
 
-const MAX_ASSET_BYTES = 50 * 1024 * 1024
+const MAX_ASSET_BYTES = 100 * 1024 * 1024
 
 function configuredAssetLimit(): number {
   const configured = Number(process.env.ASSET_UPLOAD_MAX_BYTES ?? MAX_ASSET_BYTES)
@@ -6650,7 +6650,7 @@ async function resolveActiveWorkspaceMember(req: IncomingMessage, workspaceId: s
   const principal = requestPrincipals.get(req)
   if (!principal?.actorId) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '生产工作区访问必须绑定可识别的成员身份', 401)
   if (!workspaceId) throw new DomainError(ERROR_CODES.FORBIDDEN, '生产工作区访问缺少工作区范围', 403)
-  const member = (await (persistence.members ?? memoryMembers).list(workspaceId)).find(item => item.externalSubject === principal.actorId)
+  const member = (await (persistence.members ?? memoryMembers).list(workspaceId)).find(item => item.externalSubject === principal.actorId || (principal.accountLogin && item.externalSubject === principal.accountLogin))
   if (!member) {
     if (required) throw new DomainError('WORKSPACE_MEMBERSHIP_REQUIRED', '当前身份不是该工作区的有效成员，请由工作区所有者邀请后重试', 403, { workspace_id: workspaceId })
     return false
@@ -10950,6 +10950,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
   const request = input as unknown as McpRequest
   const method = typeof request.method === 'string' ? request.method : ''
   const params = paramsOf(input)
+  if (method.startsWith('ops.customer-delivery.')) {
+    const target = typeof params.target_workspace_id === 'string' ? params.target_workspace_id.trim() : ''
+    if (!target) throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_REQUIRED, '客户交付平台操作必须明确 target_workspace_id', 400)
+    const headerWorkspace = header(req, 'x-workspace-id')?.trim()
+    if (headerWorkspace && headerWorkspace !== target) throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_MISMATCH, '客户交付请求的工作区范围不一致', 403)
+  }
   const isPlatformWideUserGovernance = isPlatformScopeMethod(method, params)
   const requestWorkbench = requestPrincipals.get(req)?.workbench ?? 'workspace'
   const bypassWorkspaceLifecycleGate = isPlatformScopeMethod(method, params) || (method === 'ops.session' && requestWorkbench === 'platform') || method === 'workspace.invitations.list' || method === 'workspace.invitation.accept'
@@ -17704,6 +17710,9 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   if (isPasswordAuthRoute) {
     res.setHeader('cache-control', 'no-store')
     if (req.method === 'POST' && path === '/v1/auth/register') {
+      if (process.env.ALLOW_MERCHANT_SELF_REGISTRATION !== 'true') {
+        throw new DomainError('AUTH_PUBLIC_REGISTRATION_DISABLED', '商家账号由平台运营创建，请联系平台运营获取登录账号', 403)
+      }
       const input = await body(req, 64 * 1024)
       try {
         const registered = await passwordAuthRepository.register({ login: String(input.login ?? input.account ?? ''), password: String(input.password ?? ''), enterpriseName: String(input.enterprise_name ?? input.enterpriseName ?? ''), contactName: String(input.contact_name ?? input.contactName ?? ''), termsAgreed: input.terms_agreed === true || input.termsAgreed === true })
@@ -17903,6 +17912,25 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
         actorId: requestPrincipals.get(req)?.actorId ?? 'platform_ops',
         reason: String(input.reason ?? ''),
       })
+      // Provisioning creates the initial active workspace membership as part
+      // of the same operator action. Password sessions use the immutable
+      // identity UUID as actor_id while legacy member rows may use the login;
+      // resolveActiveWorkspaceMember binds the identity on first access.
+      const members = persistence.members ?? memoryMembers
+      for (const targetWorkspaceId of account.workspaceIds) {
+        const existing = (await members.list(targetWorkspaceId)).find(member => member.externalSubject === account.login || member.identityId === account.identityId)
+        await members.upsertWithAudit({
+          workspaceId: targetWorkspaceId,
+          externalSubject: existing?.externalSubject ?? account.login,
+          displayName: account.contactName || account.enterpriseName || account.login,
+          role: existing?.role ?? 'merchant_admin',
+          status: 'active',
+          ...(existing ? { expectedRevision: existing.revision } : {}),
+          actorId: requestPrincipals.get(req)?.actorId ?? 'platform_ops',
+          action: 'merchant.account.provision',
+          reason: String(input.reason ?? '').trim(),
+        })
+      }
       return send(res, 201, 'unknown', { account: { ...account, workspaceIds: account.workspaceIds }, onboarding_fee_fen: 500000, vip_access: 'pending_billing_verification' }, null, req)
     } catch (error) {
       const code = (error as { code?: string }).code

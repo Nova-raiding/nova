@@ -96,6 +96,8 @@ export const MCP_OPS_CONTROL_METHODS = [
   'ops.customer-delivery.create',
   'ops.customer-delivery.update',
   'ops.customer-delivery.checklist.update',
+  'ops.customer-delivery.checklist-items.list',
+  'ops.customer-delivery.checklist-item.update',
   'ops.customer-delivery.training.complete',
   'ops.customer-delivery.videos.list',
   'ops.customer-delivery.videos.add',

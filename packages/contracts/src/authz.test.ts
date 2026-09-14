@@ -71,6 +71,15 @@ describe('authorization policy registry', () => {
     expect(getMcpMethodPolicy('ops.canonical.backfill.conflicts.list')).toMatchObject({ capability: 'canonical.backfill.read', scope: 'platform', dataClass: 'customer_metadata', effect: 'read' })
     expect(getMcpMethodPolicy('ops.canonical.backfill.conflict.claim')).toMatchObject({ capability: 'canonical.backfill.update', scope: 'platform', dataClass: 'customer_metadata', effect: 'write', audit: 'allow_and_deny' })
     expect(getMcpMethodPolicy('ops.canonical.backfill.conflict.resolve')).toMatchObject({ capability: 'canonical.backfill.update', scope: 'platform', dataClass: 'customer_metadata', effect: 'write', audit: 'allow_and_deny' })
+    for (const method of ['ops.customer-delivery.list', 'ops.customer-delivery.get', 'ops.customer-delivery.checklist-items.list', 'ops.customer-delivery.videos.list'] as const) {
+      expect(getMcpMethodPolicy(method)).toMatchObject({ capability: 'customer.delivery.read', scope: 'platform', workbench: 'platform', dataClass: 'customer_metadata', effect: 'read' })
+    }
+    for (const method of ['ops.customer-delivery.update', 'ops.customer-delivery.checklist.update', 'ops.customer-delivery.checklist-item.update', 'ops.customer-delivery.training.complete'] as const) {
+      expect(getMcpMethodPolicy(method)).toMatchObject({ capability: 'customer.delivery.update', scope: 'platform', workbench: 'platform', dataClass: 'customer_metadata', effect: 'write', obligations: ['revision'] })
+    }
+    for (const method of ['ops.customer-delivery.create', 'ops.customer-delivery.videos.add'] as const) {
+      expect(getMcpMethodPolicy(method)).toMatchObject({ capability: 'customer.delivery.update', scope: 'platform', workbench: 'platform', dataClass: 'customer_metadata', effect: 'write', obligations: [] })
+    }
   })
 
   it('normalizes legacy roles at one boundary without elevating ops_admin to platform_admin', () => {
