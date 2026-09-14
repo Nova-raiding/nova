@@ -316,20 +316,14 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         </Row>
       </Form>
     </Modal>
-    <Drawer title={`用户详情 · ${detailSubject ?? ""}`} aria-label="用户目录详情抽屉" size="large" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden>
+    <Drawer title="用户详情" aria-label="用户目录详情抽屉" size="large" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden>
       <Spin spinning={model.userDetailLoading} tip="正在加载用户详情…" aria-label="正在加载用户详情">
         {!model.userDetailLoading && !model.userDetail ? <Empty description="用户详情尚未取得，请重试或关闭后重新打开" /> : null}
         {model.userDetail && <Space orientation="vertical" size="large" className="full-width">
           <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} items={[
-            { key: "subject", label: "登录身份", children: <Typography.Text className="ops-token" copyable>{model.userDetail.identity.externalSubject}</Typography.Text> },
-            { key: "name", label: "用户显示名", children: model.userDetail.identity.displayName || "未设置" },
-            { key: "members", label: "成员关系", children: `${model.userDetail.identity.activeMembershipCount} 个有效 / ${model.userDetail.identity.membershipCount} 个总计` },
-            { key: "first", label: "首次出现", children: dateTimeFormatter.format(new Date(model.userDetail.identity.firstSeenAt)) },
-            { key: "updated", label: "最近更新", children: dateTimeFormatter.format(new Date(model.userDetail.identity.lastUpdatedAt)) },
-            { key: "access", label: "平台身份状态", children: model.userDetail.identity.accessStatus ? <Tag color={model.userDetail.identity.accessStatus === "active" ? "green" : "red"}>{model.userDetail.identity.accessStatus === "active" ? "正常" : "全局停用"}</Tag> : "尚未绑定持久身份" },
-            { key: "risk", label: "风险策略", children: model.userDetail.identity.riskDecision ? <Tag color={model.userDetail.identity.riskDecision === "allow" ? "green" : model.userDetail.identity.riskDecision === "step_up" ? "gold" : "red"}>{model.userDetail.identity.riskLevel} / {model.userDetail.identity.riskDecision}</Tag> : "—" },
+            { key: "name", label: "用户名", children: model.userDetail.identity.displayName || model.userDetail.identity.externalSubject },
+            { key: "first", label: "开通时间", children: dateTimeFormatter.format(new Date(model.userDetail.identity.firstSeenAt)) },
           ]} />
-          {model.userDetail.identity.id ? <Alert showIcon type="warning" title="平台身份操作会影响所有租户" description={<Space wrap><Button aria-label={`${model.userDetail.identity.accessStatus === "active" ? "全局停用并撤销会话" : "恢复平台身份"} ${model.userDetail.identity.externalSubject}`} disabled={identityWritesDisabled} danger={model.userDetail.identity.accessStatus === "active"} onClick={() => setIdentityAction(model.userDetail!.identity.accessStatus === "active" ? "suspended" : "active")}>{model.userDetail.identity.accessStatus === "active" ? "全局停用并撤销会话" : "恢复平台身份"}</Button><Button aria-label={`调整 ${model.userDetail.identity.externalSubject} 的风险策略`} disabled={identityWritesDisabled} onClick={() => { setRiskLevel(model.userDetail!.identity.riskLevel ?? "low"); setRiskDecision(model.userDetail!.identity.riskDecision ?? "allow"); }}>调整风险策略</Button></Space>} /> : <Alert showIcon type="info" title="该成员尚未绑定持久平台身份" description="用户下次通过严格认证登录后，系统会绑定身份和会话；当前只能治理单个工作区成员关系。" />}
           <div><Typography.Title level={5}>认证会话（已脱敏）</Typography.Title><Table size="small" rowKey="id" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "暂无认证会话；用户完成严格认证后会在此留痕" }} scroll={{ x: 1080 }} dataSource={model.userDetail.sessions} columns={[
             { title: "类型", dataIndex: "sessionKind", width: 100 },
             { title: "状态", dataIndex: "status", width: 100, render: (value: string) => <Tag color={value === "active" ? "green" : value === "revoked" ? "red" : "default"}>{({ active: "有效", revoked: "已撤销", expired: "已过期" } as Record<string, string>)[value] ?? value}</Tag> },
@@ -339,25 +333,17 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "最后访问", dataIndex: "lastSeenAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
             { title: "操作", key: "action", width: 110, render: (_: unknown, row: { id: string; revision: number; status: string }) => <Button danger size="small" aria-label={`撤销认证会话 ${row.id}`} disabled={identityWritesDisabled || row.status !== "active"} onClick={() => setSessionTarget({ id: row.id, revision: row.revision })}>撤销</Button> },
           ]} /></div>
-          <div><Typography.Title level={5}>平台身份生命周期</Typography.Title><Table size="small" rowKey="id" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "暂无平台身份生命周期事件" }} scroll={{ x: 780 }} dataSource={model.userDetail.lifecycleEvents} columns={[
-            { title: "时间", dataIndex: "createdAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
-            { title: "事件", dataIndex: "eventType", width: 180, render: (value: string) => lifecycleEventLabels[value] ?? value },
-            { title: "操作者", dataIndex: "actorId", width: 160, render: (value: string) => value || "系统" },
-            { title: "原因与证据", dataIndex: "reason", width: 260, render: (value: string) => value || "系统观测" },
+          <div><Typography.Title level={5}>店铺详情</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={{ pageSize: 20, showSizeChanger: false }} scroll={{ x: 620 }} dataSource={model.userDetail.memberships} columns={[
+            { title: "序号", key: "index", width: 70, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
+            { title: "店铺名称", key: "name", width: 220, render: (_: unknown, row: PlatformUser) => <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
+            { title: "店铺状态", key: "status", width: 150, render: (_: unknown, row: PlatformUser) => <Tag color={row.workspaceStatus === "active" ? "green" : "red"}>{row.workspaceStatus === "active" ? "正常" : "风险"}</Tag> },
+            { title: "开通时间", key: "openedAt", width: 180, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
-          <div><Typography.Title level={5}>所属租户与角色（企业主体）</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 620 }} dataSource={model.userDetail.memberships} columns={[
-            { title: "企业主体", key: "enterprise", width: 220, render: (_: unknown, row: PlatformUser) => <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
-            { title: "角色", dataIndex: "role", width: 140, render: (value: string) => roleLabels[value] ?? value },
-            { title: "成员状态", dataIndex: "status", width: 110, render: (value: string) => memberStatusLabels[value] ?? value },
-            { title: "企业状态", dataIndex: "workspaceStatus", width: 110, render: (value: string) => workspaceStatusLabels[value] ?? value },
-          ]} /></div>
-          <div><Typography.Title level={5}>商业、钱包与任务状态</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:commercial`} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 920 }} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无商业快照；不会把缺失账务数据解释为余额为零" }} columns={[
-            { title: "企业主体", key: "enterprise", width: 220, render: (_: unknown, row: PlatformUser) => <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
-            { title: "套餐", width: 160, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "未配置" },
-            { title: "订阅 / 权益", width: 150, render: (_: unknown, row: PlatformUser) => row.commercial?.subscriptionStatus ?? "未确认" },
-            { title: "任务用量", width: 130, render: (_: unknown, row: PlatformUser) => row.commercial ? `${row.commercial.usedTasks} / ${row.commercial.includedTasks}` : "未确认" },
-            { title: "钱包余额", width: 130, render: (_: unknown, row: PlatformUser) => row.commercial ? `¥${row.commercial.walletBalanceCny}` : "未确认" },
-            { title: "扣款与账单", width: 200, render: (_: unknown, row: PlatformUser) => row.commercial ? <Tag color={row.commercial.subscriptionStatus === "active" ? "blue" : "gold"}>{row.commercial.subscriptionStatus === "active" ? "订阅有效，账务仍需门禁核验" : "需核对订单/账单"}</Tag> : <Tag>未取得账务快照</Tag> },
+          <div><Typography.Title level={5}>钱包</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:wallet`} pagination={{ pageSize: 20, showSizeChanger: false }} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无充值记录" }} columns={[
+            { title: "用户名", key: "name", width: 220, render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
+            { title: "充值金额", key: "amount", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
+            { title: "实际到账创意点", key: "points", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial ? row.commercial.includedTasks : "—" },
+            { title: "充值时间", key: "time", width: 180, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
           <div><Typography.Title level={5}>成员操作历史</Typography.Title><Table size="small" rowKey="id" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "暂无成员操作记录" }} scroll={{ x: 680 }} dataSource={model.userDetail.audits} columns={[
             { title: "时间", dataIndex: "createdAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
