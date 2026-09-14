@@ -68,6 +68,16 @@ function parseChecklistItems(value: unknown): CustomerDeliveryChecklistItem[] {
   });
 }
 
+export function parseCustomerDeliveryVideos(value: unknown): Array<{ id: string; title: string; assetRef: string; sortOrder: number }> {
+  if (!object(value) || !Array.isArray(value.items)) throw new Error("客户交付视频接口返回了无效响应");
+  return value.items.map((row, index) => {
+    if (!object(row) || !text(row.id) || !text(row.title) || !text(row.assetRef ?? row.asset_ref)) throw new Error(`客户交付视频响应无效（第 ${index + 1} 项）`);
+    const sortOrder = Number(row.sortOrder ?? row.sort_order ?? 0);
+    if (!Number.isSafeInteger(sortOrder) || sortOrder < 0) throw new Error(`客户交付视频排序字段无效（第 ${index + 1} 项）`);
+    return { id: row.id, title: row.title, assetRef: String(row.assetRef ?? row.asset_ref), sortOrder };
+  });
+}
+
 /** Parse the server's snake_case aggregate without allowing malformed data to
  * silently appear as an empty customer list. */
 export function parseCustomerDeliveryList(value: unknown): CustomerDeliveryRecord[] {
@@ -167,13 +177,7 @@ export const customerDeliveryClient: CustomerDeliveryClient = {
   },
   async listVideos(targetWorkspaceId, deliveryId, signal) {
     const value = await rpc<unknown>("ops.customer-delivery.videos.list", { target_workspace_id: targetWorkspaceId, delivery_id: deliveryId }, { signal });
-    const rows = object(value) && Array.isArray(value.items) ? value.items : [];
-    return rows.map((row, index) => {
-      if (!object(row) || !text(row.id) || !text(row.title) || !text(row.assetRef ?? row.asset_ref)) throw new Error(`客户交付视频响应无效（第 ${index + 1} 项）`);
-      const sortOrder = Number(row.sortOrder ?? row.sort_order ?? 0);
-      if (!Number.isSafeInteger(sortOrder) || sortOrder < 0) throw new Error(`客户交付视频排序字段无效（第 ${index + 1} 项）`);
-      return { id: row.id, title: row.title, assetRef: String(row.assetRef ?? row.asset_ref), sortOrder };
-    });
+    return parseCustomerDeliveryVideos(value);
   },
   async addVideo(input, signal) {
     return rpc("ops.customer-delivery.videos.add", { target_workspace_id: input.targetWorkspaceId, delivery_id: input.deliveryId, title: input.title, asset_ref: input.assetRef, sort_order: String(input.sortOrder ?? 0) }, { signal });

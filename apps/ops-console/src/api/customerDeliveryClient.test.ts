@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildChecklistUpdateParams, parseCustomerDeliveryList } from "./customerDeliveryClient.js";
+import { buildChecklistUpdateParams, parseCustomerDeliveryList, parseCustomerDeliveryVideos } from "./customerDeliveryClient.js";
 
 describe("customer delivery client", () => {
   it("parses aggregate snake_case response", () => {
@@ -18,5 +18,9 @@ describe("customer delivery client", () => {
     });
     expect(params.items_json).toContain("插件账号");
     expect(params).not.toHaveProperty("completed");
+  });
+  it("fails closed when the video list response is missing", () => {
+    expect(() => parseCustomerDeliveryVideos(null)).toThrow("客户交付视频接口返回了无效响应");
+    expect(() => parseCustomerDeliveryVideos({})).toThrow("客户交付视频接口返回了无效响应");
   });
 });
