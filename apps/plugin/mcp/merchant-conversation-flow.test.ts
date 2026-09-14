@@ -57,7 +57,18 @@ async function withBridge(handler: (request: Json, res: ServerResponse<IncomingM
   const address = await listen(server)
   const child = spawn(process.execPath, ['apps/plugin/mcp/bridge.mjs'], {
     cwd: process.cwd(),
-    env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: '${MERCHANT_MCP_WRITE_ENABLED}' },
+    // Keep host launchd credentials out of this local transport harness. An
+    // unset token is otherwise recovered from macOS launchd by the bridge,
+    // turning local confirmation into an extra remote MCP request.
+    env: {
+      ...process.env,
+      MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
+      MERCHANT_WORKSPACE_ID: 'ws_test',
+      MERCHANT_MCP_TOKEN: '${MERCHANT_MCP_TOKEN}',
+      MERCHANT_ALLOW_FIXTURE_FALLBACK: 'true',
+      MERCHANT_STRICT_AUTH: '${MERCHANT_STRICT_AUTH}',
+      MERCHANT_MCP_WRITE_ENABLED: '${MERCHANT_MCP_WRITE_ENABLED}',
+    },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   try {
