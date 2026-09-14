@@ -12,7 +12,7 @@ import { assertRelayEvidence } from './relay-evidence.mjs'
 // ChatGPT/Codex may launch the JavaScript entrypoint with a bundled Node binary.
 // On macOS, recover only missing configuration from launchd;
 // explicit process environment always wins and production remains fail-closed.
-if (process.platform === 'darwin') {
+if (process.platform === 'darwin' && process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') {
   const launchdNames = [
     'NODE_ENV', 'DEPLOY_ENV', 'MERCHANT_MCP_BASE_URL', 'MERCHANT_WORKSPACE_ID',
     'MERCHANT_MCP_TOKEN', 'MERCHANT_STRICT_AUTH', 'MERCHANT_ALLOW_FIXTURE_FALLBACK',
@@ -1356,6 +1356,25 @@ function userFacingToolText(method, result) {
 // desktop merchant console only.
 function merchantBillingProjection(method, result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) return result
+  const rechargeOrder = order => {
+    if (!order || typeof order !== 'object' || Array.isArray(order)) return order
+    const keys = ['id', 'channel', 'amount_cny', 'state', 'payment_mode', 'expires_at', 'paid_at', 'created_at', 'updated_at', 'warning', 'test_payment_confirmed', 'replayed']
+    const projected = Object.fromEntries(keys.filter(key => Object.prototype.hasOwnProperty.call(order, key)).map(key => [key, order[key]]))
+    const state = typeof order.state === 'string' ? order.state : ''
+    if (state === 'pending') {
+      if (typeof order.payment_url === 'string') projected.payment_url = order.payment_url
+      if (typeof order.paymentUrl === 'string') projected.paymentUrl = order.paymentUrl
+    }
+    return projected
+  }
+  if (method === 'billing.recharge.create' || method === 'billing.recharge.get') return rechargeOrder(result)
+  if (method === 'billing.recharge.list') {
+    const keys = ['scope', 'summary', 'returned', 'total', 'legacy_unattributed_hidden']
+    return {
+      ...Object.fromEntries(keys.filter(key => Object.prototype.hasOwnProperty.call(result, key)).map(key => [key, result[key]])),
+      orders: Array.isArray(result.orders) ? result.orders.map(rechargeOrder) : [],
+    }
+  }
   if (method === 'billing.status' || method === 'creative-points.balance.get') {
     const allowedKeys = ['schema_version', 'balance_state', 'availability', 'allowed', 'access_revision', 'updated_at', 'next_actions', 'point_reservation_status', 'settlement_status', 'viewer']
     const available = Number.isSafeInteger(result.available_points) ? result.available_points : undefined

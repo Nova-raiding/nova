@@ -22,12 +22,11 @@ const profiles = Object.freeze({
     includeRootMetadata: true,
     requiredRootMetadata: Object.freeze(['package.json', 'package-lock.json', 'tsconfig.json']),
   }),
-  // The gateway image runs the checked-in ESM service directly and does not
-  // install the workspace or invoke the TypeScript build. Its provenance is
-  // therefore intentionally scoped to the service directory, without root
-  // package/tsconfig metadata that is not part of that image's build inputs.
+  // The gateway image runs the checked-in ESM service and the shared billing
+  // callback protocol directly. It does not install the workspace or invoke
+  // the TypeScript build, so root package/tsconfig metadata remains excluded.
   gateway: Object.freeze({
-    scopes: Object.freeze(['services/payment-gateway']),
+    scopes: Object.freeze(['services/payment-gateway', 'packages/billing/src']),
     includeRootMetadata: false,
     requiredRootMetadata: Object.freeze([]),
   }),

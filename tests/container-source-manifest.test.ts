@@ -23,6 +23,8 @@ function sourceFixture() {
   write(root, 'services/payment-gateway/Dockerfile', 'gateway dockerfile\n')
   write(root, 'services/payment-gateway/alipay.mjs', 'gateway helper\n')
   write(root, 'services/payment-gateway/index.mjs', 'gateway\n')
+  write(root, 'packages/billing/src/callback-envelope.mjs', 'callback protocol\n')
+  write(root, 'packages/billing/src/callback-envelope.d.mts', 'callback protocol types\n')
   write(root, 'packages/shared/src/index.ts', 'shared\n')
   write(root, 'package.json', '{}\n')
   write(root, 'package-lock.json', '{}\n')
@@ -43,7 +45,7 @@ afterEach(() => {
 })
 
 describe('deterministic container source manifest', () => {
-  it('uses fixed app-specific profiles while the gateway profile is isolated to its service tree', () => {
+  it('uses fixed app-specific profiles while the gateway profile includes only its service and callback protocol', () => {
     const root = sourceFixture()
     const api = readFileSync(generate(root, 'api').manifest, 'utf8')
     const worker = readFileSync(generate(root, 'worker').manifest, 'utf8')
@@ -63,6 +65,8 @@ describe('deterministic container source manifest', () => {
     expect(gateway).toContain('services/payment-gateway/Dockerfile')
     expect(gateway).toContain('services/payment-gateway/alipay.mjs')
     expect(gateway).toContain('services/payment-gateway/index.mjs')
+    expect(gateway).toContain('packages/billing/src/callback-envelope.mjs')
+    expect(gateway).not.toContain('packages/shared/src/index.ts')
     expect(gateway).not.toContain('apps/api/src/server.ts')
     expect(gateway).not.toContain('apps/worker/src/main.ts')
     expect(gateway).not.toContain('package-lock.json')
@@ -70,7 +74,7 @@ describe('deterministic container source manifest', () => {
     expect(gateway).not.toContain('tsconfig.json')
   })
 
-  it('allows the gateway image to build from a service-only source root and fails closed when that scope is missing', () => {
+  it('allows the gateway image to omit workspace metadata and fails closed when a required scope is missing', () => {
     const root = sourceFixture()
     for (const metadata of ['package.json', 'package-lock.json', 'tsconfig.json']) rmSync(join(root, metadata))
     const generated = generate(root, 'gateway')
@@ -157,6 +161,7 @@ describe('deterministic container source manifest', () => {
     for (const file of ['Dockerfile', 'index.mjs', 'alipay.mjs', 'alipay.d.mts']) {
       expect(dockerfile).toContain(`COPY services/payment-gateway/${file} ./services/payment-gateway/${file}`)
     }
+    for (const file of ['callback-envelope.mjs', 'callback-envelope.d.mts']) expect(dockerfile).toContain(`COPY packages/billing/src/${file} ./packages/billing/src/${file}`)
     expect(dockerfile).not.toContain('COPY services/payment-gateway ./services/payment-gateway')
     expect(dockerfile).toContain('COPY infra/scripts/generate-container-source-manifest.mjs ./infra/scripts/generate-container-source-manifest.mjs')
     expect(dockerfile).toContain('generate-container-source-manifest.mjs generate gateway /source')

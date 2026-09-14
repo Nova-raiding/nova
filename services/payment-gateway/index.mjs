@@ -13,6 +13,7 @@ import {
   verifyNotifySignature,
   verifyResponseSignature,
 } from './alipay.mjs'
+import { signPaymentCallback } from '../../packages/billing/src/callback-envelope.mjs'
 
 const env = name => { const value = process.env[name]?.trim(); if (!value) throw new Error(`${name} is required`); return value }
 const port = Number(process.env.PORT || 8790)
@@ -69,11 +70,12 @@ async function callAlipay(method, content) {
   }
 }
 async function forward(input) {
-  const timestamp = String(Math.floor(Date.now() / 1000)); const nonce = crypto.randomBytes(18).toString('base64url'); const canonical = ['alipay', input.workspaceId, input.orderId, input.tradeNo, input.amountFen, input.state, timestamp, nonce].join('|')
+  const timestamp = String(Math.floor(Date.now() / 1000)); const nonce = crypto.randomBytes(18).toString('base64url'); const currency = 'CNY'
   const request = requestContext()
   try {
     const callbackPath = ['/v1/billing/callback/alipay', '/v1/subscriptions/callback/alipay', '/v1/commercial/callback/alipay'].includes(input.callbackPath) ? input.callbackPath : '/v1/billing/callback/alipay'
-    return await fetch(`${apiBase}${callbackPath}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-payment-signature': crypto.createHmac('sha256', callbackSecret).update(canonical).digest('hex'), 'x-payment-timestamp': timestamp, 'x-payment-nonce': nonce }, body: JSON.stringify({ order_id: input.orderId, workspace_id: input.workspaceId, provider_trade_id: input.tradeNo, amount_fen: input.amountFen, state: input.state }), signal: request.controller.signal })
+    const signature = signPaymentCallback({ secret: callbackSecret, channel: 'alipay', workspaceId: input.workspaceId, orderId: input.orderId, providerTradeId: input.tradeNo, amountFen: input.amountFen, currency, state: input.state, timestamp, nonce })
+    return await fetch(`${apiBase}${callbackPath}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-payment-signature': signature, 'x-payment-timestamp': timestamp, 'x-payment-nonce': nonce }, body: JSON.stringify({ order_id: input.orderId, workspace_id: input.workspaceId, provider_trade_id: input.tradeNo, amount_fen: input.amountFen, currency, state: input.state }), signal: request.controller.signal })
   } catch (error) {
     throw upstreamError(error, request.controller)
   } finally {

@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { inspectOutboundUrl } from '../../connectors/src/outbound-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
+import { paymentCallbackCanonical } from './callback-envelope.mjs'
 
 export type PaymentChannel = 'alipay' | 'wechat'
 
@@ -104,7 +105,7 @@ export function verifyPaymentCallbackSignature(input: {
   const nowMs = input.nowMs ?? Date.now()
   const maxAgeMs = input.maxAgeMs ?? 5 * 60_000
   if (!Number.isSafeInteger(timestampMs) || !Number.isFinite(nowMs) || Math.abs(nowMs - timestampMs) > maxAgeMs) throw new Error('payment callback is expired')
-  const canonical = [input.channel, input.workspaceId, input.payload.orderId, input.payload.providerTradeId, input.payload.amountFen, input.payload.currency, input.payload.state, input.timestamp, input.nonce].join('|')
+  const canonical = paymentCallbackCanonical({ channel: input.channel, workspaceId: input.workspaceId, orderId: input.payload.orderId, providerTradeId: input.payload.providerTradeId, amountFen: input.payload.amountFen, currency: input.payload.currency, state: input.payload.state, timestamp: input.timestamp, nonce: input.nonce })
   const expected = createHmac('sha256', input.secret).update(canonical).digest('hex')
   const provided = input.signature.trim().toLowerCase()
   if (!/^[0-9a-f]{64}$/u.test(provided) || !timingSafeEqual(Buffer.from(provided, 'utf8'), Buffer.from(expected, 'utf8'))) throw new Error('payment callback signature is invalid')

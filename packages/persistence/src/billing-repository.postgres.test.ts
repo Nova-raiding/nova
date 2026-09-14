@@ -52,6 +52,9 @@ describe('billing PostgreSQL bigint release acceptance', () => {
       const created = await repository.createOrder(intent)
       expect(created).toMatchObject({ id: intent.id, amountFen: 1000, state: 'pending' })
       expect(await repository.createOrder({ ...intent, id: 'order_retry' })).toEqual(created)
+      expect(await repository.getOrderForActor(workspaceId, created.id, 'merchant_roundtrip')).toEqual(created)
+      expect(await repository.getOrderForActor(workspaceId, created.id, 'merchant_other')).toBeUndefined()
+      expect(await repository.getOrderForActor('ws_other_billing', created.id, 'merchant_roundtrip')).toBeUndefined()
 
       const payment = { workspaceId, orderId: created.id, providerTradeId: 'trade_roundtrip', amountFen: 1000, eventSource: 'release_test' }
       const paid = await repository.markPaid(payment)

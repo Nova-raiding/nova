@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { FixturePaymentProvider, HttpPaymentProvider, PaymentProviderRefundOutcomeUnknownError, PaymentProviderRefundRejectedError, createPaymentProviderFromEnv, verifyPaymentCallbackSignature } from './payment-provider.js'
 import { createHmac } from 'node:crypto'
+import { paymentCallbackCanonical, signPaymentCallback } from './callback-envelope.mjs'
 
 describe('payment provider adapter', () => {
+  it('keeps the production callback canonical contract stable and currency-bound', () => {
+    const envelope = { channel: 'alipay' as const, workspaceId: 'ws-1', orderId: 'order-1', providerTradeId: 'trade-1', amountFen: 200000, currency: 'CNY' as const, state: 'paid' as const, timestamp: '1799614800', nonce: 'nonce-123456789012' }
+    expect(paymentCallbackCanonical(envelope)).toBe('alipay|ws-1|order-1|trade-1|200000|CNY|paid|1799614800|nonce-123456789012')
+    expect(signPaymentCallback({ secret: 'server-secret', ...envelope })).toBe(createHmac('sha256', 'server-secret').update(paymentCallbackCanonical(envelope)).digest('hex'))
+  })
+
   it('verifies a short-lived signed callback and returns a deduplication proof', () => {
     const timestamp = '1799614800'
     const payload = { orderId: 'order-1', providerTradeId: 'trade-1', amountFen: 200000, currency: 'CNY' as const, state: 'paid' as const }

@@ -91,6 +91,14 @@ export class PostgresBillingRepository {
     })
   }
 
+  async getOrderForActor(workspaceId: string, id: string, actorId: string) {
+    if (!actorId.trim()) throw new TypeError('actorId is required')
+    return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => {
+      const result = await client.query<OrderRow>('SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND id=$2 AND created_by_actor_id=$3', [workspaceId, id, actorId])
+      return result.rows[0] ? order(result.rows[0]) : undefined
+    })
+  }
+
   async getOrderByIdempotencyKey(workspaceId: string, idempotencyKey: string) {
     return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => {
       const result = await client.query<OrderRow>('SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND idempotency_key=$2', [workspaceId, idempotencyKey])
