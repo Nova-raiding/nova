@@ -12,7 +12,8 @@ interface PlatformOverviewSnapshotProps {
 type MonthlySeries = { key: string; label: string; values: number[] };
 
 function MonthlyTrendChart({ series, bars = [], ariaLabel }: { series: MonthlySeries[]; bars?: string[]; ariaLabel: string }) {
-  const max = Math.max(20, ...series.flatMap((item) => item.values), 1);
+  const peak = Math.max(...series.flatMap((item) => item.values), 0);
+  const max = peak <= 2 ? 2 : peak <= 5 ? 5 : Math.ceil(peak / 5) * 5;
   const x = (index: number) => 54 + (688 * index) / 11;
   const y = (value: number) => 192 - (Math.min(value, max) / max) * 164;
   return <div className="ops-dashboard-trend-chart" role="img" aria-label={ariaLabel}>
@@ -20,7 +21,7 @@ function MonthlyTrendChart({ series, bars = [], ariaLabel }: { series: MonthlySe
     <svg viewBox="0 0 760 220" preserveAspectRatio="none" aria-hidden="true">
       {[24, 66, 108, 150].map((lineY) => <line key={lineY} x1="54" y1={lineY} x2="742" y2={lineY} className="ops-dashboard-trend-grid" />)}
       <line x1="54" y1="192" x2="742" y2="192" className="ops-dashboard-trend-axis" />
-      <text x="10" y="28" className="ops-dashboard-trend-tick">{Math.round(max)}</text><text x="10" y="112" className="ops-dashboard-trend-tick">{Math.round(max / 2)}</text><text x="18" y="196" className="ops-dashboard-trend-tick">0</text>
+      <text x="10" y="28" className="ops-dashboard-trend-tick">{max}</text><text x="10" y="112" className="ops-dashboard-trend-tick">{max / 2}</text><text x="18" y="196" className="ops-dashboard-trend-tick">0</text>
       {series.map((item, seriesIndex) => item.values.map((value, index) => bars.includes(item.key) ? <g key={`${item.key}-${index}`}><rect x={x(index) - 8} y={y(value)} width="16" height={Math.max(0, 192 - y(value))} rx="3" className={`${item.key}-bar`} />{value > 0 ? <text x={x(index)} y={Math.max(16, y(value) - 6 - seriesIndex * 12)} textAnchor="middle" className="ops-dashboard-trend-value">{value}</text> : null}</g> : null))}
       {series.map((item, seriesIndex) => !bars.includes(item.key) ? <g key={item.key}><polyline points={item.values.map((value, index) => `${x(index)},${y(value)}`).join(" ")} className={`${item.key}-line`} />{item.values.map((value, index) => value > 0 ? <text key={`${item.key}-label-${index}`} x={x(index)} y={Math.max(16, y(value) - 6 - seriesIndex * 12)} textAnchor="middle" className="ops-dashboard-trend-value">{value}</text> : null)}</g> : null)}
     </svg>
