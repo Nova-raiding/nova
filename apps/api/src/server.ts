@@ -12037,8 +12037,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!delivery) throw new DomainError('CUSTOMER_DELIVERY_NOT_FOUND', 'customer delivery not found', 404)
       return result({ items: delivery.videos })
     }
-    case 'ops.customer-delivery.videos.add':
-      return result(await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).addVideo({ workspaceId, deliveryId: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), title: requiredStringValue(params, 'title'), assetRef: requiredStringValue(params, 'assetRef', 'asset_ref'), ...(params.sort_order !== undefined ? { sortOrder: Number(params.sort_order) } : {}) })))
+    case 'ops.customer-delivery.videos.add': {
+      const assetRef = requiredStringValue(params, 'assetRef', 'asset_ref')
+      const asset = service.assets.get(assetRef)
+      if (!asset || asset.workspaceId !== workspaceId || asset.scanStatus !== 'clean' || !asset.storageKey.startsWith(`clean/${workspaceId}/`)) throw new DomainError('CUSTOMER_DELIVERY_VIDEO_ASSET_NOT_READY', '交付视频必须引用当前工作区内已通过安全扫描的素材', 409, { asset_ref: assetRef, scan_status: asset?.scanStatus ?? 'missing' })
+      return result(await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).addVideo({ workspaceId, deliveryId: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), title: requiredStringValue(params, 'title'), assetRef, ...(params.sort_order !== undefined ? { sortOrder: Number(params.sort_order) } : {}) })))
+    }
     case 'ops.support.sla.report': {
       const repository = persistence.support
       if (!repository) throw new DomainError('SUPPORT_REPOSITORY_UNAVAILABLE', '客服工单仓储未配置', 503)
