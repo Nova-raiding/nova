@@ -12047,7 +12047,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result(orders)
     }
     case 'subscription.order.create': {
-      const actorId = requireOperationsRole(req, ['platform_admin', 'ops_admin', 'finance_ops', 'platform_ops'])
+      const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'finance'])
       requireProviderPaymentConfigured()
       const channel = paymentChannel(params)
       const cycle = required(params, 'billing_cycle') as BillingCycle
@@ -14728,7 +14728,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result({ scope, wallet_scope: 'workspace', balance_cny: (walletBalanceFen(workspaceId) / 100).toFixed(2), transactions: transactions.map(publicMoneyRecord), offset, limit, total: allTransactions.length, has_more: offset + transactions.length < allTransactions.length, legacy_unattributed_hidden: scope === 'mine' })
     }
     case 'billing.refund': {
-      const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'finance'])
+      const actorId = requireOperationsRole(req, ['platform_admin', 'ops_admin', 'finance_ops', 'platform_ops'])
       const orderId = required(params, 'order_id')
       const reason = required(params, 'reason')
       await persistenceReady
