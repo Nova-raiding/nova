@@ -83,6 +83,8 @@
 
 ## GO 前置条件
 
+支付宝真实接入按[生产接入 runbook](./payment-provider-production-runbook.md)执行；未完成六类 provider canary 证据时，支付能力保持 fail-closed。
+
 - 真实支付 provider、callback、签名密钥、查询/退款/对账接口和生产 canary 全部通过。
 - PostgreSQL/RLS/worker 创意点与知识库 release tests 在隔离生产等价环境通过。
 - OpenAPI、MCP contracts、source/marketplace mirror、release metadata 和镜像 digest 全部一致。
