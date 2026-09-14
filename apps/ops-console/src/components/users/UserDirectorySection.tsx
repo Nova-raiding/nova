@@ -5,7 +5,6 @@ import type { MerchantAccountAuthorizationResult, OpsConsoleModel } from "../../
 import type { PlatformUser } from "../../types/ops";
 import { EnterpriseIdentity } from "../EnterpriseIdentity.js";
 import { packageCodeLabel } from "../commercial/packageLabels.js";
-import { yuanToFen } from "../../utils/currency.js";
 
 type UserFilters = { query?: string; status?: string; workspaceId?: string };
 export type UserDirectorySort = { field: "displayName" | "status" | "createdAt"; order: "ascend" | "descend" };
@@ -68,7 +67,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const [provisionOpen, setProvisionOpen] = useState(false);
   const [provisionSubmitting, setProvisionSubmitting] = useState(false);
   const [provisionResult, setProvisionResult] = useState<{ login: string; onboardingFeeFen: number; authorization?: MerchantAccountAuthorizationResult }>();
-  const [provisionForm] = Form.useForm<{ login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string; reason: string; skuCode: string; amountYuan: number; paymentStatus: "pending" | "verified"; paymentReference?: string; paidAt?: string }>();
+  const [provisionForm] = Form.useForm<{ login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string; reason: string; skuCode: string; amountFen: number; paymentStatus: "pending" | "verified"; paymentReference?: string; paidAt?: string }>();
   const [actionError, setActionError] = useState("");
   const actionErrorRef = useRef<HTMLDivElement>(null);
   const directoryErrorRef = useRef<HTMLDivElement>(null);
@@ -166,7 +165,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   return <>
     {!canReadUserDirectory && <Alert showIcon type="warning" title="当前角色不能读取用户目录" description="跨租户身份与成员关系需要 identity.read；权限由服务端策略决定。" />}
     {canReadUserDirectory && !model.canUserGovernance && <Alert showIcon type="info" title="当前为只读视图" description="可以查询身份、成员关系和审计详情，但停用、恢复、风险策略与会话撤销需要 identity.update。" />}
-    <Card title="已开通用户" extra={<Typography.Text type="secondary">共 {model.userDirectory.total} 条成员关系</Typography.Text>} aria-busy={model.userDirectoryLoading}>
+    <Card title="已接入用户" extra={<Typography.Text type="secondary">共 {model.userDirectory.workspaceCount} 家接入用户</Typography.Text>} aria-busy={model.userDirectoryLoading}>
       <Form<UserFilters> form={form} layout="inline" onFinish={(values) => void model.loadUsers({ ...values, page: 1 })} aria-label="用户目录筛选">
         <Form.Item name="query" label="搜索"><Input allowClear aria-label="按关键词筛选用户目录" placeholder="姓名、身份或企业名称" /></Form.Item>
         <Form.Item name="status" label="状态">
@@ -281,7 +280,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
               workspaceId,
               memberRole: "merchant_admin",
               skuCode: values.skuCode,
-              amountFen: yuanToFen(values.amountYuan),
+              amountFen: Number(values.amountFen),
               paymentStatus: values.paymentStatus,
               paymentReference: values.paymentReference,
               paidAt: values.paidAt,
@@ -314,7 +313,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         </Form.Item>
         <Row gutter={12}>
           <Col span={12}><Form.Item label="套餐" name="skuCode" initialValue="sku-onboarding-5000" rules={[{ required: true, message: "请选择套餐" }]}><Select options={["sku-onboarding-5000", "sku-monthly-2000", "sku-monthly-5000", "sku-monthly-10000", "sku-points-500", "sku-points-2000"].map(value => ({ value, label: packageCodeLabel(value) }))} /></Form.Item></Col>
-          <Col span={12}><Form.Item label="实收金额（元）" name="amountYuan" initialValue={5000} rules={[{ required: true, message: "请输入实收金额" }]}><Input type="number" min={0} step="0.01" /></Form.Item></Col>
+          <Col span={12}><Form.Item label="实收金额（分）" name="amountFen" initialValue={500000} rules={[{ required: true, message: "请输入实收金额" }]}><Input type="number" min={0} /></Form.Item></Col>
           <Col span={12}><Form.Item label="收款状态" name="paymentStatus" initialValue="pending" rules={[{ required: true }]}><Select options={[{ value: "pending", label: "待核验（不开放权限）" }, { value: "verified", label: "已核验（立即开通）" }]} /></Form.Item></Col>
           <Col span={12}><Form.Item label="支付凭证号" name="paymentReference"><Input placeholder="微信/支付宝交易号" /></Form.Item></Col>
           <Col span={24}><Form.Item label="支付时间（ISO UTC）" name="paidAt"><Input placeholder="已核验时必填，例如 2026-09-10T12:00:00.000Z" /></Form.Item></Col>

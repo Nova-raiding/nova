@@ -81,26 +81,23 @@ export function CommercialOverviewKpis({ model }: { model: OpsConsoleModel }) {
   const financeAvailable = Boolean(finance);
 
   return (
-    <Row gutter={[12, 12]} className="ops-overview-kpi-grid" aria-label="平台商业化指标">
+    <>
       <Col xs={24} sm={12} xl={6}>
         <Card className="ops-overview-kpi-card ops-overview-kpi-cyan">
-          <Statistic title="充值到账（已核验）" value={financeAvailable ? (finance!.verifiedRechargeOrderCny ?? "—") : "—"} precision={2} prefix={financeAvailable ? "¥" : <DollarOutlined />} />
-          <span>{financeAvailable ? "已核验的真实支付到账" : "账务汇总尚未取得"}</span>
+          <Statistic title="总接入费收入" value={financeAvailable ? (finance!.verifiedRechargeOrderCny ?? "—") : "—"} precision={2} prefix={financeAvailable ? "¥" : <DollarOutlined />} />
         </Card>
       </Col>
       <Col xs={24} sm={12} xl={6}>
         <Card className="ops-overview-kpi-card ops-overview-kpi-amber">
-          <Statistic title="订阅收入（已核验）" value={financeAvailable ? finance!.subscriptionOrderCny : "—"} precision={2} prefix={financeAvailable ? "¥" : <DollarOutlined />} />
-          <span>{financeAvailable ? "已支付且完成核验的订阅订单" : "账务汇总尚未取得"}</span>
+          <Statistic title="月度套餐销售量" value={financeAvailable ? finance!.subscriptionOrderWorkspaceCount : "—"} suffix={financeAvailable ? " 单" : undefined} prefix={financeAvailable ? undefined : <DollarOutlined />} />
         </Card>
       </Col>
       <Col xs={24} sm={12} xl={6}>
         <Card className="ops-overview-kpi-card ops-overview-kpi-violet">
-          <Statistic title="创意点核销" value="—" prefix={<DollarOutlined />} />
-          <span>服务端暂未提供平台级创意点核销汇总</span>
+          <Statistic title="月度套餐销售额" value={financeAvailable ? finance!.subscriptionOrderCny : "—"} precision={2} prefix={financeAvailable ? "¥" : <DollarOutlined />} />
         </Card>
       </Col>
-    </Row>
+    </>
   );
 }
 
@@ -167,7 +164,6 @@ export function CommercialOverviewSection({ model, onNavigate }: OverviewSection
 
   return (
     <div className="ops-overview-commercial">
-      <CommercialOverviewKpis model={model} />
       <Card
         title="商业套餐目录"
         style={{ marginTop: 16 }}

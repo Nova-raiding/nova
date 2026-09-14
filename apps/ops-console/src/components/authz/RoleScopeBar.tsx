@@ -1,6 +1,6 @@
 import { BellOutlined, ClockCircleOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
 import { Badge, Button, Dropdown, Empty, List, Space, Tag, Typography } from "antd";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { AuthorizationProjection } from "../../authz/authorization.js";
 import type { OpsSession } from "../../types/ops.js";
 import type { OpsWorkbench } from "../../types/ops.js";
@@ -49,6 +49,7 @@ export function RoleScopeBar({
   alerts,
   notifications,
   onAcknowledgeAlert,
+  compact = false,
 }: {
   session?: OpsSession;
   authorization: AuthorizationProjection;
@@ -61,11 +62,11 @@ export function RoleScopeBar({
   alerts?: readonly OperationalAlert[];
   notifications?: readonly OperationalAlert[];
   onAcknowledgeAlert?: (alert: OperationalAlert) => void;
+  compact?: boolean;
 }) {
   const roles = authorization.roles;
   const primaryRole = roles[0] ? roleLabels[roles[0]] ?? roles[0] : "权限未验证";
   const [rolesOpen, setRolesOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const rolesPanelId = useId();
   const jitStatusId = useId();
   const [now, setNow] = useState(() => Date.now());
@@ -96,37 +97,34 @@ export function RoleScopeBar({
   const availableWorkbenches = session?.available_workbenches ?? projectedWorkbenches ?? [workbench];
   const authorizationVerified = Boolean(session);
   const merchantNotificationsEnabled = workbench === "workspace" || authorization.scope.kind !== "platform";
-  const allNotifications = useMemo(() => {
-    if (!merchantNotificationsEnabled) return [];
-    const list = [...(notifications ?? []), ...(alerts ?? [])];
-    const deduped = new Map<string, OperationalAlert>();
-    for (const item of list) deduped.set(item.id, item);
-    return [...deduped.values()].sort((left, right) => String(right.observedAt).localeCompare(String(left.observedAt)) || right.id.localeCompare(left.id));
-  }, [alerts, merchantNotificationsEnabled, notifications]);
+  const allNotifications = merchantNotificationsEnabled ? (notifications ?? alerts ?? []) : [];
   const unreadNotifications = allNotifications.filter((alert) => alert.status === "open");
+  if (compact && !merchantNotificationsEnabled && roles.length <= 1 && !activeGrant) return null;
   return (
     <section className="role-scope-bar" aria-label="当前身份与权限范围" aria-describedby="role-scope-verification role-scope-boundary">
       <Space size={8} wrap>
-        <SafetyCertificateOutlined aria-hidden="true" />
-        <Typography.Text strong>{primaryRole}</Typography.Text>
-        <Typography.Text
-          id="role-scope-verification"
-          className="role-scope-verification"
-          type={authorizationVerified ? "success" : "warning"}
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          {authorizationVerified ? "授权状态：已由服务端验证" : "授权状态：未验证，正在等待服务端授权"}
-        </Typography.Text>
-    {merchantNotificationsEnabled ? <Dropdown trigger={["click"]} placement="bottomLeft" open={notificationsOpen} onOpenChange={setNotificationsOpen} popupRender={() => (
+        {!compact ? <>
+          <SafetyCertificateOutlined aria-hidden="true" />
+          <Typography.Text strong>{primaryRole}</Typography.Text>
+          <Typography.Text
+            id="role-scope-verification"
+            className="role-scope-verification"
+            type={authorizationVerified ? "success" : "warning"}
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            {authorizationVerified ? "授权状态：已由服务端验证" : "授权状态：未验证，正在等待服务端授权"}
+          </Typography.Text>
+        </> : null}
+    {merchantNotificationsEnabled ? <Dropdown trigger={["click"]} placement="bottomLeft" popupRender={() => (
       <div className="ops-notification-panel" role="region" aria-label="未读通知消息">
         <div className="ops-notification-heading">
           <Typography.Text strong>通知消息</Typography.Text>
           <Typography.Text type="secondary">{unreadNotifications.length ? `${unreadNotifications.length} 条未读` : "暂无未读消息"}</Typography.Text>
         </div>
         {unreadNotifications.length ? <List size="small" dataSource={unreadNotifications.slice(0, 8)} renderItem={(alert) => (
-          <List.Item actions={onAcknowledgeAlert ? [<Button key="ack" type="link" size="small" onClick={() => { setNotificationsOpen(false); onAcknowledgeAlert(alert); }}>确认</Button>] : undefined}>
+          <List.Item actions={onAcknowledgeAlert ? [<Button key="ack" type="link" size="small" onClick={() => onAcknowledgeAlert(alert)}>确认</Button>] : undefined}>
             <List.Item.Meta title={<span className={`ops-notification-severity ${alert.severity}`}>{alert.title}</span>} description={<span>{alert.platform ? `${alert.platform} · ` : ""}{new Date(alert.observedAt).toLocaleString("zh-CN")}</span>} />
           </List.Item>
         )} /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无未读通知" />}
@@ -162,8 +160,10 @@ export function RoleScopeBar({
             ) : null}
           </span>
         ) : null}
-        <Typography.Text>{scopeLabel(authorization)}</Typography.Text>
-        <Typography.Text type="secondary">策略 {authorization.policyVersion ?? "未返回"}</Typography.Text>
+        {!compact ? <>
+          <Typography.Text>{scopeLabel(authorization)}</Typography.Text>
+          <Typography.Text type="secondary">策略 {authorization.policyVersion ?? "未返回"}</Typography.Text>
+        </> : null}
         {activeGrant ? (
           <span className="ops-jit-status" role="region" aria-label="当前临时授权" aria-describedby={jitStatusId}>
             <span id={jitStatusId} className="sr-only" role="status" aria-live="polite" aria-atomic="true">
@@ -183,9 +183,9 @@ export function RoleScopeBar({
           </span>
         ) : null}
       </Space>
-      <Typography.Text id="role-scope-boundary" className="ops-workbench-boundary" type="secondary" role="status">
+      {!compact ? <Typography.Text id="role-scope-boundary" className="ops-workbench-boundary" type="secondary" role="status">
         {workbenchBoundaryMessage(workbench)}
-      </Typography.Text>
+      </Typography.Text> : null}
     </section>
   );
 }

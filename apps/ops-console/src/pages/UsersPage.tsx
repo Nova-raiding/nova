@@ -33,9 +33,7 @@ export function UsersPage({ model }: UsersPageProps) {
 
   return (
     <OpsPage
-      eyebrow="PLATFORM GOVERNANCE"
       title="用户中心"
-      description="集中管理用户、企业和授权；详细账务、审计与风险信息在用户详情中查看。"
       actions={<Button type="primary" disabled={!capabilityState.canRead} loading={model.loading} title={!capabilityState.canRead ? "当前会话没有用户治理读取能力" : undefined} onClick={() => void model.load()}>刷新目录</Button>}
     >
       <div className="ops-users-page">

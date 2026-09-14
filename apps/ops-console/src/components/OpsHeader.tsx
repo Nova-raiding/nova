@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { DownOutlined, LogoutOutlined, SafetyCertificateOutlined, UserOutlined } from "@ant-design/icons";
-import { Alert, Button, Dropdown, Input, Layout, Modal, Space, Tag, Typography } from "antd";
+import { Alert, Button, Dropdown, Empty, Input, Layout, List, Modal, Space, Typography } from "antd";
 import { describeOpsError, localOpsSessionEnabled, loginPlatformOps, logoutPlatformOps, suppressLocalOpsSession } from "../api/opsClient.js";
 import type { OperationalAlert, OpsDataSource, OpsSession, OpsWorkbench } from "../types/ops.js";
 import { createAuthorizationProjection, type AuthorizationProjection } from "../authz/authorization.js";
 import { RoleScopeBar } from "./authz/RoleScopeBar.js";
-import { accountLabel } from "../authz/accountLabel.js";
 
 interface OpsHeaderProps {
   managedSession: boolean;
@@ -64,7 +63,10 @@ export function OpsHeader({
   );
   const hasSession = Boolean(sessionLoaded && session);
   const shouldShowLogin = !hasSession || isDemoSession;
-  const accountName = isDemoSession ? "本机演示账号" : accountLabel(session);
+  const merchantNotificationsEnabled = (activeWorkbench ?? session?.workbench) === "workspace" || resolvedAuthorization.scope.kind !== "platform";
+  const allNotifications = merchantNotificationsEnabled ? (notifications ?? alerts ?? []) : [];
+  const accountName = session?.actor_id ?? (isDemoSession ? "本机演示账号" : "平台运营账号");
+  const accountDisplayName = accountName.length > 12 ? `${accountName.slice(0, 8)}…` : accountName;
   const accountInitial = Array.from(accountName)[0] ?? "运";
   const workbenchLabel = session?.workbench === "platform" || activeWorkbench === "platform" ? "平台运营" : "商家工作区";
   const roleLabel = roles?.join("、") || session?.roles?.join("、") || "未声明";
@@ -96,14 +98,14 @@ export function OpsHeader({
         <span className="ops-account-popover-avatar" aria-hidden="true">{accountInitial}</span>
         <div className="ops-account-popover-identity">
           <strong>{accountName}</strong>
-          <span>{workbenchLabel}</span>
+          <span>{session?.actor_id ?? "当前为本机演示账号"}</span>
           <em><i />{hasSession ? "已登录" : "未登录"}</em>
         </div>
       </div>
       <div className="ops-account-popover-section">
         <div className="ops-account-popover-section-title"><UserOutlined />账号信息</div>
         <dl className="ops-account-popover-facts">
-          <div><dt>当前账号</dt><dd>{accountName}</dd></div>
+          <div><dt>当前账号</dt><dd>{session?.actor_id ?? (isDemoSession ? "本机演示账号" : "未登录")}</dd></div>
           <div><dt>当前工作台</dt><dd>{workbenchLabel}</dd></div>
           <div><dt>账号角色</dt><dd>{roleLabel}</dd></div>
         </dl>
@@ -116,6 +118,28 @@ export function OpsHeader({
         </div>
         {connectionError ? <Alert type="error" showIcon title="运营服务连接异常" description={connectionError} /> : null}
       </div>
+      {merchantNotificationsEnabled ? (
+        <div className="ops-account-message-center" aria-label="消息中心">
+          <div className="ops-account-message-heading">
+            <Typography.Text strong>消息中心</Typography.Text>
+            <Typography.Text type="secondary">{allNotifications.length ? `${allNotifications.length} 条消息` : "暂无消息"}</Typography.Text>
+          </div>
+          {allNotifications.length ? (
+            <List
+              size="small"
+              dataSource={allNotifications.slice(0, 8)}
+              renderItem={(alert) => (
+                <List.Item actions={onAcknowledgeAlert && alert.status === "open" ? [<Button key="ack" type="link" size="small" onClick={() => onAcknowledgeAlert(alert)}>确认</Button>] : undefined}>
+                  <List.Item.Meta
+                    title={<span className={`ops-notification-severity ${alert.severity}`}>{alert.title}</span>}
+                    description={<span>{alert.status === "acknowledged" ? "已读" : "未读"} · {new Date(alert.observedAt).toLocaleString("zh-CN")}</span>}
+                  />
+                </List.Item>
+              )}
+            />
+          ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无消息" />}
+        </div>
+      ) : null}
       <div className="ops-account-popover-actions">
         {shouldShowLogin ? <Button type="primary" onClick={openPlatformLogin}>平台运营账号登录</Button> : null}
         {hasSession ? <Button danger icon={<LogoutOutlined />} onClick={() => void handleLogout()} loading={logoutPending}>退出登录</Button> : null}
@@ -126,7 +150,6 @@ export function OpsHeader({
   return (
     <Layout.Header className="ops-header">
       <div className="ops-header-identity">
-        <Typography.Title level={2}>{workbenchLabel === "平台运营" ? "平台运营控制台" : "商家运营工作台"}</Typography.Title>
         <RoleScopeBar
           session={session}
           authorization={resolvedAuthorization}
@@ -139,22 +162,11 @@ export function OpsHeader({
           alerts={alerts}
           notifications={notifications}
           onAcknowledgeAlert={onAcknowledgeAlert}
+          compact
         />
       </div>
       <div className="ops-header-actions">
         <div className="ops-connection-toolbar">
-          <div className="ops-connection-summary">
-            <span className="ops-connection-summary-label">当前状态</span>
-            <Tag
-              role="status"
-              aria-live="polite"
-              aria-busy={refreshing || undefined}
-              className="ops-status-tag"
-              color={connectionError ? "orange" : hasSession ? "green" : "blue"}
-            >
-              {refreshing ? "正在刷新" : isDemoSession ? "演示环境" : hasSession ? "已登录" : "未登录"}
-            </Tag>
-          </div>
           {shouldShowLogin ? (
             <Button type="primary" className="ops-platform-login-trigger" onClick={openPlatformLogin}>
               平台运营账号登录
@@ -164,7 +176,7 @@ export function OpsHeader({
             <button type="button" className="ops-account-trigger" aria-label="打开账号信息" aria-haspopup="dialog" aria-expanded={accountOpen}>
               <span className="ops-account-trigger-avatar" aria-hidden="true">{accountInitial}</span>
               <span className="ops-account-trigger-copy">
-                <strong>{accountName}</strong>
+                <strong title={accountName}>{accountDisplayName}</strong>
               </span>
               <DownOutlined aria-hidden="true" />
             </button>
