@@ -69,7 +69,7 @@ export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConso
   if (sectionKeys.includes("directory")) tabs.push({ key: "directory", label: "接入详情", children: <section id="user-directory" className="ops-users-section" aria-labelledby="user-directory-heading"><OpsPageError error={model.userDirectoryError} onRetry={() => void model.loadUsers()} /><UserDirectorySection model={model} /></section> });
   if (sectionKeys.includes("workspaces")) tabs.push({ key: "workspaces", label: "月费详情", children: <section id="workspace-governance" className="ops-users-section"><WorkspaceGovernanceSection model={model} /></section> });
   if (sectionKeys.includes("members")) tabs.push({ key: "members", label: "创意点详情", children: <section id="member-governance" className="ops-users-section"><MembersSection model={model} /></section> });
-  if (model.authorization.can("identity.read")) tabs.push({ key: "registrations", label: "入驻申请", children: <section className="ops-users-section"><RegistrationApplications model={model} /></section> });
+  if (model.authorization.can("identity.read")) tabs.push({ key: "registrations", label: "创意点详情", children: <section className="ops-users-section"><RegistrationApplications model={model} /></section> });
 
   return (
     <div className="ops-users-workspace" aria-label="用户治理工作区">

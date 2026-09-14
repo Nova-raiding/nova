@@ -173,7 +173,6 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { value: "active", label: "已激活" }, { value: "invited", label: "待激活" }, { value: "suspended", label: "已停用" },
           ]} />
         </Form.Item>
-        <Form.Item name="workspaceId" label="企业"><Input allowClear aria-label="按企业主体筛选用户目录" placeholder="企业名称或 ID" /></Form.Item>
         <Form.Item><Space>
           <Button type="primary" htmlType="submit" loading={model.userDirectoryLoading}>查询</Button>
           <Button onClick={() => { form.resetFields(); void model.loadUsers({ page: 1 }); }}>清空</Button>
@@ -220,11 +219,10 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         onChange={handleDirectoryChange}
         scroll={{ x: "max-content" }}
         columns={[
-          { title: "登录身份", dataIndex: "externalSubject", width: 220, render: (value: string) => <Typography.Text className="ops-token" copyable>{value}</Typography.Text> },
-          { title: "用户显示名", dataIndex: "displayName", width: 150, sorter: true, sortOrder: userSort?.field === "displayName" ? userSort.order : null, render: (value: string) => value || "未设置" },
-          { title: "企业主体", key: "scope", width: 240, render: (_: unknown, row: PlatformUser) => row.scope === "platform" ? <Tag color="purple">平台级</Tag> : <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
-          { title: "角色", dataIndex: "role", width: 140, render: (value: string) => <Tag color="blue">{roleLabels[value] ?? value}</Tag> },
-          { title: "成员状态", dataIndex: "status", width: 110, sorter: true, sortOrder: userSort?.field === "status" ? userSort.order : null, render: (value: string) => <Tag color={value === "active" ? "green" : value === "suspended" ? "red" : "gold"}>{memberStatusLabels[value] ?? value}</Tag> },
+          { title: "用户名", dataIndex: "externalSubject", width: 220, render: (value: string) => <Typography.Text className="ops-token" copyable>{value}</Typography.Text> },
+          { title: "店铺名", dataIndex: "displayName", width: 180, sorter: true, sortOrder: userSort?.field === "displayName" ? userSort.order : null, render: (value: string) => value || "未设置" },
+          { title: "激活状态", dataIndex: "status", width: 110, sorter: true, sortOrder: userSort?.field === "status" ? userSort.order : null, render: (value: string) => <Tag color={value === "active" ? "green" : value === "suspended" ? "red" : "gold"}>{memberStatusLabels[value] ?? value}</Tag> },
+          { title: "用户属性", dataIndex: "role", width: 150, render: (value: string) => <Tag color="blue">{roleLabels[value] ?? value}</Tag> },
           { title: "操作", key: "actions", width: 150, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { if (node) detailButtonRefs.current.set(row.externalSubject, node); else detailButtonRefs.current.delete(row.externalSubject); }} size="small" aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`} onClick={() => { detailTriggerSubjectRef.current = row.externalSubject; setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button>{row.accountType === "platform" ? <Tag color="purple">平台账号</Tag> : <Button danger={row.status !== "suspended"} size="small" aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`} title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "恢复" : "停用"}</Button>}</Space> },
         ]}
       />
