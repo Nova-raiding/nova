@@ -63,8 +63,6 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const [identityReason, setIdentityReason] = useState("");
   const [riskDecision, setRiskDecision] = useState<"allow" | "step_up" | "block">();
   const [riskLevel, setRiskLevel] = useState<"low" | "medium" | "high" | "critical">("low");
-  const [sessionTarget, setSessionTarget] = useState<{ id: string; revision: number }>();
-  const [sessionReason, setSessionReason] = useState("");
   const [selectedUserKeys, setSelectedUserKeys] = useState<string[]>([]);
   const [bulkSuspendOpen, setBulkSuspendOpen] = useState(false);
   const [bulkSuspendReason, setBulkSuspendReason] = useState("");
@@ -324,18 +322,9 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { key: "name", label: "用户名", children: model.userDetail.identity.displayName || model.userDetail.identity.externalSubject },
             { key: "first", label: "开通时间", children: dateTimeFormatter.format(new Date(model.userDetail.identity.firstSeenAt)) },
           ]} />
-          <div><Typography.Title level={5}>认证会话（已脱敏）</Typography.Title><Table size="small" rowKey="id" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "暂无认证会话；用户完成严格认证后会在此留痕" }} scroll={{ x: 1080 }} dataSource={model.userDetail.sessions} columns={[
-            { title: "类型", dataIndex: "sessionKind", width: 100 },
-            { title: "状态", dataIndex: "status", width: 100, render: (value: string) => <Tag color={value === "active" ? "green" : value === "revoked" ? "red" : "default"}>{({ active: "有效", revoked: "已撤销", expired: "已过期" } as Record<string, string>)[value] ?? value}</Tag> },
-            { title: "MFA", dataIndex: "mfaVerified", width: 80, render: (value: boolean) => value ? "已验证" : "否" },
-            { title: "签发时间", dataIndex: "issuedAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
-            { title: "过期时间", dataIndex: "expiresAt", width: 180, render: (value?: string) => value ? dateTimeFormatter.format(new Date(value)) : "未提供" },
-            { title: "最后访问", dataIndex: "lastSeenAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
-            { title: "操作", key: "action", width: 110, render: (_: unknown, row: { id: string; revision: number; status: string }) => <Button danger size="small" aria-label={`撤销认证会话 ${row.id}`} disabled={identityWritesDisabled || row.status !== "active"} onClick={() => setSessionTarget({ id: row.id, revision: row.revision })}>撤销</Button> },
-          ]} /></div>
-          <div><Typography.Title level={5}>店铺详情</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={{ pageSize: 20, showSizeChanger: false }} scroll={{ x: 620 }} dataSource={model.userDetail.memberships} columns={[
+          <div><Typography.Title level={5}>店铺详情</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={false} scroll={{ x: 620 }} dataSource={model.userDetail.memberships} columns={[
             { title: "序号", key: "index", width: 70, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
-            { title: "店铺名称", key: "name", width: 220, render: (_: unknown, row: PlatformUser) => <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
+            { title: "店铺名称", key: "name", width: 220, render: (_: unknown, row: PlatformUser) => row.enterpriseName || row.workspaceId },
             { title: "店铺状态", key: "status", width: 150, render: (_: unknown, row: PlatformUser) => <Tag color={row.workspaceStatus === "active" ? "green" : "red"}>{row.workspaceStatus === "active" ? "正常" : "风险"}</Tag> },
             { title: "开通时间", key: "openedAt", width: 180, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
@@ -344,12 +333,6 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "充值金额", key: "amount", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
             { title: "实际到账创意点", key: "points", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial ? row.commercial.includedTasks : "—" },
             { title: "充值时间", key: "time", width: 180, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
-          ]} /></div>
-          <div><Typography.Title level={5}>成员操作历史</Typography.Title><Table size="small" rowKey="id" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "暂无成员操作记录" }} scroll={{ x: 680 }} dataSource={model.userDetail.audits} columns={[
-            { title: "时间", dataIndex: "createdAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
-            { title: "操作", dataIndex: "action", width: 140 },
-            { title: "操作者", dataIndex: "actorId", width: 150 },
-            { title: "原因", dataIndex: "reason", width: 220, render: (value: string) => value || "—" },
           ]} /></div>
         </Space>}
       </Spin>
@@ -372,7 +355,6 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
     <Modal title="调整身份风险策略" open={Boolean(riskDecision)} okText="保存风险策略" okButtonProps={{ danger: riskDecision === "block", disabled: identityWritesDisabled || identityReason.trim().length < 4 }} onCancel={() => { setRiskDecision(undefined); setIdentityReason(""); }} onOk={async () => { if (riskDecision && await model.transitionIdentityRisk(riskLevel, riskDecision, identityReason.trim())) { setRiskDecision(undefined); setIdentityReason(""); } }}>
       <Space orientation="vertical" className="full-width"><Select value={riskLevel} onChange={setRiskLevel} options={[{ value: "low" }, { value: "medium" }, { value: "high" }, { value: "critical" }]} /><Select value={riskDecision} onChange={setRiskDecision} options={[{ value: "allow", label: "允许" }, { value: "step_up", label: "要求 MFA" }, { value: "block", label: "阻断并撤销会话" }]} /><Input.TextArea aria-label="风险策略原因" rows={4} value={identityReason} onChange={(event) => setIdentityReason(event.target.value)} placeholder="填写风险证据或工单原因" /></Space>
     </Modal>
-    <Modal title="撤销认证会话" open={Boolean(sessionTarget)} okText="确认撤销" okButtonProps={{ danger: true, disabled: identityWritesDisabled || sessionReason.trim().length < 4 }} onCancel={() => { setSessionTarget(undefined); setSessionReason(""); }} onOk={async () => { if (sessionTarget && await model.revokeIdentitySession(sessionTarget.id, sessionTarget.revision, sessionReason.trim())) { setSessionTarget(undefined); setSessionReason(""); } }}><Input.TextArea aria-label="会话撤销原因" rows={4} value={sessionReason} onChange={(event) => setSessionReason(event.target.value)} placeholder="填写会话撤销原因或工单号" /></Modal>
     <Modal title={`批量停用用户（${selectedUsers.length}）`} open={bulkSuspendOpen} okText="逐条执行停用" cancelText="取消" transitionName="" maskTransitionName="" confirmLoading={bulkSuspending} okButtonProps={{ danger: true, disabled: bulkSuspendReason.trim().length < 4 || !selectedUsers.length }} onCancel={() => { if (!bulkSuspending) { setBulkSuspendOpen(false); setBulkSuspendReason(""); setActionError(""); } }} onOk={() => void submitBulkSuspend()}>
       <Alert showIcon type="warning" title="操作会逐条写入真实成员状态和审计记录" description="系统不会把部分成功伪装成全部成功；失败成员会保留在刷新后的目录中，需要单独处理。当前登录账号和已停用成员不可勾选。" />
       {actionError && <div ref={actionErrorRef} className="ops-form-error-summary" role="alert" tabIndex={-1} aria-labelledby="bulk-suspend-error-title" aria-describedby="bulk-suspend-error-description"><Typography.Text strong id="bulk-suspend-error-title">批量操作结果</Typography.Text><Typography.Paragraph id="bulk-suspend-error-description">{actionError}</Typography.Paragraph></div>}
