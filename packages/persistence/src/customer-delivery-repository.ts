@@ -320,9 +320,10 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       if (
         !candidate.contractNumber?.trim() ||
         !candidate.contractRef?.trim() ||
+        !/^(https:\/\/|asset[:_])/u.test(candidate.contractRef.trim()) ||
         !candidate.projectOwner?.trim() ||
         !candidate.supportOwner?.trim() ||
-        !candidate.paymentDate ||
+        (candidate.paymentStatus === "paid" && !candidate.paymentDate) ||
         !candidate.plannedGoLiveAt
       )
         throw new CustomerDeliveryError(
@@ -1103,10 +1104,13 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       if (
         p.customerProfileStatus === "complete" &&
         (!String(p.contractNumber ?? row.contract_number ?? "").trim() ||
-          !String(p.contractRef ?? row.contract_ref ?? "").trim() ||
+          !/^(https:\/\/|asset[:_])/u.test(
+            String(p.contractRef ?? row.contract_ref ?? "").trim(),
+          ) ||
           !String(p.projectOwner ?? row.project_owner ?? "").trim() ||
           !String(p.supportOwner ?? row.support_owner ?? "").trim() ||
-          !(p.paymentDate ?? row.payment_date) ||
+          ((p.paymentStatus ?? row.payment_status) === "paid" &&
+            !(p.paymentDate ?? row.payment_date)) ||
           !(p.plannedGoLiveAt ?? row.planned_go_live_at))
       )
         throw new CustomerDeliveryError(
