@@ -91,6 +91,22 @@ export const ACCEPTANCE_ITEMS = [
   "内容验收",
 ];
 
+/**
+ * Persisted checklist keys intentionally remain stable for API compatibility.
+ * These display labels follow the customer-delivery brief without requiring a
+ * data migration for records that already use the original keys.
+ */
+export const CHECKLIST_DISPLAY_LABELS: Record<string, string> = {
+  插件账号: "插件账户",
+  知识库: "知识库功能",
+  创意点数: "创作点",
+  标注编辑: "批注修改",
+};
+
+export function checklistDisplayLabel(itemKey: string) {
+  return CHECKLIST_DISPLAY_LABELS[itemKey] ?? itemKey;
+}
+
 export function buildChecklistItems(
   itemKeys: string[],
   selectedItems: unknown,
@@ -369,7 +385,11 @@ export function CustomerDeliverySection({
           dataIndex: key,
           render: (value: boolean, row: CustomerDeliveryRecord) => (
             <Button type="link" size="small" onClick={() => openStep(row, key)}>
-              {value ? <Tag color="success">已完成</Tag> : <Tag>未填写</Tag>}
+              {value ? (
+                <Tag color="success">已完成</Tag>
+              ) : (
+                <Tag>{key === "training" ? "未完成" : "未填写"}</Tag>
+              )}
             </Button>
           ),
         }),
@@ -625,7 +645,12 @@ export function CustomerDeliverySection({
               {step === "integration" && (
                 <>
                   <Form.Item name="integrationItems" label="系统接入清单">
-                    <Checkbox.Group options={INTEGRATION_ITEMS} />
+                    <Checkbox.Group
+                      options={INTEGRATION_ITEMS.map((value) => ({
+                        value,
+                        label: checklistDisplayLabel(value),
+                      }))}
+                    />
                   </Form.Item>
                   <Typography.Text type="secondary">
                     为已完成项填写证据（链接、截图说明或记录编号）。
@@ -634,7 +659,7 @@ export function CustomerDeliverySection({
                     <Form.Item
                       key={item}
                       name={["integrationEvidence", item]}
-                      label={`${item} · 证据`}
+                      label={`${checklistDisplayLabel(item)} · 证据`}
                     >
                       <Input placeholder="可填写链接、截图说明或记录编号" />
                     </Form.Item>
@@ -644,7 +669,12 @@ export function CustomerDeliverySection({
               {step === "acceptance" && (
                 <>
                   <Form.Item name="acceptanceItems" label="功能测试及验收清单">
-                    <Checkbox.Group options={ACCEPTANCE_ITEMS} />
+                    <Checkbox.Group
+                      options={ACCEPTANCE_ITEMS.map((value) => ({
+                        value,
+                        label: checklistDisplayLabel(value),
+                      }))}
+                    />
                   </Form.Item>
                   <Typography.Text type="secondary">
                     为已完成项填写证据（链接、截图说明或记录编号）。
@@ -653,7 +683,7 @@ export function CustomerDeliverySection({
                     <Form.Item
                       key={item}
                       name={["acceptanceEvidence", item]}
-                      label={`${item} · 证据`}
+                      label={`${checklistDisplayLabel(item)} · 证据`}
                     >
                       <Input placeholder="可填写链接、截图说明或记录编号" />
                     </Form.Item>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACCEPTANCE_ITEMS, INTEGRATION_ITEMS, buildChecklistItems, deliveryCompletion, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
+import { ACCEPTANCE_ITEMS, CHECKLIST_DISPLAY_LABELS, INTEGRATION_ITEMS, buildChecklistItems, checklistDisplayLabel, deliveryCompletion, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
 
 const base: CustomerDeliveryRecord = {
   id: "c-1", companyName: "示例企业", paymentStatus: "paid", profile: true,
@@ -59,5 +59,19 @@ describe("customer delivery completion", () => {
 
   it("fails closed for malformed form values instead of marking items complete", () => {
     expect(buildChecklistItems(INTEGRATION_ITEMS, undefined, undefined).every((item) => !item.completed && item.evidence === "")).toBe(true);
+  });
+
+  it("keeps durable keys while using the delivery brief's display labels", () => {
+    expect(checklistDisplayLabel("插件账号")).toBe("插件账户");
+    expect(checklistDisplayLabel("知识库")).toBe("知识库功能");
+    expect(checklistDisplayLabel("创意点数")).toBe("创作点");
+    expect(checklistDisplayLabel("标注编辑")).toBe("批注修改");
+    expect(checklistDisplayLabel("店铺连接")).toBe("店铺连接");
+    expect(CHECKLIST_DISPLAY_LABELS).toMatchObject({
+      插件账号: "插件账户",
+      知识库: "知识库功能",
+      创意点数: "创作点",
+      标注编辑: "批注修改",
+    });
   });
 });
