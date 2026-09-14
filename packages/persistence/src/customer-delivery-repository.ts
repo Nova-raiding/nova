@@ -989,7 +989,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
         );
       else
         await c.query(
-          `UPDATE workspace_customer_deliveries SET functional_acceptance_status=$3,revision=revision+1,updated_at=now(),updated_by_actor_id=$4 WHERE workspace_id=$1 AND id=$2`,
+          `UPDATE workspace_customer_deliveries SET functional_acceptance_status=$3,training_completed=($3='complete'),revision=revision+1,updated_at=now(),updated_by_actor_id=$4 WHERE workspace_id=$1 AND id=$2`,
           [scope, input.deliveryId, status, input.actorId],
         );
       await c.query(
