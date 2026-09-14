@@ -90,4 +90,18 @@ describe('customer delivery platform authorization and API flow', () => {
     expect(mixed.response.status).toBe(400)
     expect(mixed.body.error?.code).toBe('INVALID_REQUEST')
   })
+
+  it('rejects invalid checklist completion values before repository dispatch', async () => {
+    const base = await start()
+    const invalid = await call(base, 'customer-delivery-platform-token', 'ops.customer-delivery.checklist-item.update', {
+      target_workspace_id: `ws_delivery_authz_${Date.now()}`,
+      delivery_id: 'delivery_missing',
+      checklist_key: 'system_integration',
+      item_key: '插件账号',
+      completed: 'yes',
+      expected_revision: '1',
+    })
+    expect(invalid.response.status).toBe(400)
+    expect(invalid.body.error?.code).toBe('INVALID_REQUEST')
+  })
 })
