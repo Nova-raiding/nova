@@ -20,6 +20,7 @@ const paymentEnvironment = {
   ALIPAY_APP_ID: 'test-alipay-app',
   MERCHANT_API_TOKEN: 'test-merchant-token',
   MERCHANT_WORKSPACE_ID: 'ws_pilot_parity',
+  MCP_OAUTH_CLIENTS: JSON.stringify({ 'chatgpt-test': ['https://chatgpt.example.test/oauth/callback'] }),
   CAPABILITY_EVIDENCE_PATH: '/tmp/test-capability-evidence.json',
 }
 
@@ -63,9 +64,11 @@ describe('ECS pilot API replica parity', () => {
     const replica = services['api-replica']?.environment
     const invariantKeys = [
       'PUBLIC_APP_BASE_URL',
+      'MCP_OAUTH_REQUIRED',
       'MCP_OAUTH_ISSUER',
       'MCP_OAUTH_AUTHORIZATION_ENDPOINT',
       'MCP_OAUTH_TOKEN_ENDPOINT',
+      'MCP_OAUTH_CLIENTS',
       'OPENAI_APPS_CHALLENGE_TOKEN',
       'PUBLIC_ASSET_BASE_URL',
       'PUBLIC_OAUTH_REDIRECT_URI',

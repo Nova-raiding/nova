@@ -62,9 +62,13 @@ services:
       VAULT_KV_MOUNT: ${VAULT_KV_MOUNT:-}
       VAULT_CREDENTIAL_PATH_PREFIX: ${VAULT_CREDENTIAL_PATH_PREFIX:-}
       PUBLIC_APP_BASE_URL: ${PUBLIC_APP_BASE_URL:-https://yxsona.com}
-      MCP_OAUTH_ISSUER: ${MCP_OAUTH_ISSUER:-}
-      MCP_OAUTH_AUTHORIZATION_ENDPOINT: ${MCP_OAUTH_AUTHORIZATION_ENDPOINT:-}
-      MCP_OAUTH_TOKEN_ENDPOINT: ${MCP_OAUTH_TOKEN_ENDPOINT:-}
+      MCP_OAUTH_REQUIRED: "true"
+      MCP_OAUTH_ISSUER: ${MCP_OAUTH_ISSUER:-https://yxsona.com}
+      MCP_OAUTH_AUTHORIZATION_ENDPOINT: ${MCP_OAUTH_AUTHORIZATION_ENDPOINT:-https://yxsona.com/oauth/authorize}
+      MCP_OAUTH_TOKEN_ENDPOINT: ${MCP_OAUTH_TOKEN_ENDPOINT:-https://yxsona.com/oauth/token}
+      # Inject through the ECS secret environment, never a checked-in env file.
+      # Missing registration intentionally prevents the production stack from rendering.
+      MCP_OAUTH_CLIENTS: ${MCP_OAUTH_CLIENTS:?MCP_OAUTH_CLIENTS secret JSON callback allowlist is required}
       OPENAI_APPS_CHALLENGE_TOKEN: ${OPENAI_APPS_CHALLENGE_TOKEN:-}
       PUBLIC_ASSET_BASE_URL: ${PUBLIC_ASSET_BASE_URL:-https://yxsona.com}
       PUBLIC_OAUTH_REDIRECT_URI: ${PUBLIC_OAUTH_REDIRECT_URI:-https://yxsona.com/v1/oauth/callback/{platform}}

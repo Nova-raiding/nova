@@ -36,6 +36,29 @@ export interface PasswordSessionPrincipal {
   issuedAt: string
   expiresAt: string
 }
+export interface McpOAuthContext {
+  clientId: string
+  issuer: string
+  audience: string
+  resource: string
+  scope: string[]
+}
+export interface McpOAuthPrincipal {
+  identityId: string
+  accountId: string
+  accountLogin: string
+  workspaceId: string
+  scope: string[]
+  tokenId: string
+  issuedAt: string
+  expiresAt: string
+}
+export interface McpOAuthTokenPair {
+  accessToken: string
+  refreshToken: string
+  expiresIn: number
+  scope: string[]
+}
 export interface PasswordAuthRepository {
   register(input: { login: string; password: string; enterpriseName: string; contactName: string; termsAgreed: boolean }): Promise<{ account: PasswordAccount; applicationId: string }>
   createMerchantAccount(input: { login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string[]; actorId: string; reason: string }): Promise<PasswordAccount>
@@ -50,17 +73,29 @@ export interface PasswordAuthRepository {
   ensurePlatformAccount(input: { login: string; passwordHash: string; roles?: string[] }): Promise<void>
   activateMerchantAccount(input: { login: string; workspaceIds: string[]; actorId?: string; reason?: string }): Promise<PasswordAccount>
   reviewMerchantRegistration(input: { login: string; decision: 'approved' | 'rejected'; workspaceIds?: string[]; actorId?: string; reason: string }): Promise<PasswordAccount>
+  issueMcpAuthorizationCode(input: McpOAuthContext & { account: PasswordAccount; redirectUri: string; codeChallenge: string }): Promise<{ code: string; expiresAt: string; workspaceId: string }>
+  exchangeMcpAuthorizationCode(input: McpOAuthContext & { redirectUri: string; code: string; codeVerifier: string }): Promise<McpOAuthTokenPair>
+  refreshMcpOAuthToken(input: McpOAuthContext & { refreshToken: string }): Promise<McpOAuthTokenPair>
+  authenticateMcpAccessToken(input: McpOAuthContext & { accessToken: string }): Promise<McpOAuthPrincipal | undefined>
 }
 
 type AccountRecord = PasswordAccount & { passwordHash: string; authEpoch: number }
 type SessionRecord = PasswordSessionPrincipal & { tokenHash: string; authEpoch: number; status: 'active' | 'revoked' }
 type ResetRecord = { accountId: string; tokenHash: string; expiresAt: number; used: boolean }
+type McpCodeRecord = McpOAuthContext & { accountId: string; identityId: string; workspaceId: string; redirectUri: string; codeHash: string; codeChallenge: string; accountAuthEpoch: number; identityAuthEpoch: number; expiresAt: number; used: boolean }
+type McpTokenRecord = McpOAuthContext & { id: string; familyId: string; accountId: string; identityId: string; workspaceId: string; tokenHash: string; kind: 'access' | 'refresh'; accountAuthEpoch: number; identityAuthEpoch: number; issuedAt: number; expiresAt: number; status: 'active' | 'rotated' | 'revoked' }
 
 const GENERIC_LOGIN_ERROR = '账号或密码错误'
 const LOCK_MS = 15 * 60_000
 const SESSION_MS = 8 * 60 * 60_000
 const RESET_MS = 15 * 60_000
+const MCP_CODE_MS = 5 * 60_000
+const MCP_ACCESS_MS = 10 * 60_000
+const MCP_REFRESH_MS = 30 * 24 * 60 * 60_000
 const loginError = () => Object.assign(new Error(GENERIC_LOGIN_ERROR), { code: 'AUTH_INVALID_CREDENTIALS' })
+const mcpOAuthError = (code: string) => Object.assign(new Error(code), { code })
+const pkceChallenge = (verifier: string) => createHash('sha256').update(verifier).digest('base64url')
+const validPkceVerifier = (verifier: string) => /^[A-Za-z0-9._~-]{43,128}$/u.test(verifier)
 const iso = (value: Date | string) => value instanceof Date ? value.toISOString() : new Date(value).toISOString()
 
 function accountPublic(value: AccountRecord): PasswordAccount {
@@ -83,6 +118,8 @@ export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
   private readonly accounts = new Map<string, AccountRecord>()
   private readonly sessions = new Map<string, SessionRecord>()
   private readonly resets = new Map<string, ResetRecord>()
+  private readonly mcpCodes = new Map<string, McpCodeRecord>()
+  private readonly mcpTokens = new Map<string, McpTokenRecord>()
   readonly events: Array<Record<string, unknown>> = []
 
   async register(input: { login: string; password: string; enterpriseName: string; contactName: string; termsAgreed: boolean }) {
@@ -190,6 +227,52 @@ export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
   async refresh(token: string) { const current = await this.authenticate(token); if (!current) throw Object.assign(new Error('AUTH_SESSION_INVALID'), { code: 'AUTH_SESSION_INVALID' }); await this.logout(token, 'session_refresh'); const account = this.accounts.get(current.account.login)!; const raw = newOpaqueToken(); const now = Date.now(); const session: SessionRecord = { tokenHash: tokenDigest(raw), sessionId: randomUUID(), account: accountPublic(account), issuedAt: new Date(now).toISOString(), expiresAt: new Date(now + SESSION_MS).toISOString(), authEpoch: account.authEpoch, status: 'active' }; this.sessions.set(session.tokenHash, session); auditMemory(this.events, 'auth.refresh', account.id, { session_id: session.sessionId }); return { token: raw, principal: { account: session.account, sessionId: session.sessionId, issuedAt: session.issuedAt, expiresAt: session.expiresAt } } }
   async requestPasswordReset(loginInput: string) { const login = normalizeLogin(loginInput); const account = this.accounts.get(login); if (!account) return { accepted: true as const }; const token = newOpaqueToken(32); this.resets.set(tokenDigest(token), { accountId: account.id, tokenHash: tokenDigest(token), expiresAt: Date.now() + RESET_MS, used: false }); auditMemory(this.events, 'auth.password_reset_requested', account.id); return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true' ? { accepted: true as const, token } : { accepted: true as const } }
   async confirmPasswordReset(token: string, password: string) { const record = this.resets.get(tokenDigest(token)); if (!record || record.used || record.expiresAt <= Date.now()) throw Object.assign(new Error('AUTH_RESET_TOKEN_INVALID'), { code: 'AUTH_RESET_TOKEN_INVALID' }); const account = [...this.accounts.values()].find(item => item.id === record.accountId)!; account.passwordHash = await hashPassword(password); account.authEpoch += 1; account.failedAttempts = 0; account.lockedUntil = undefined; account.revision += 1; account.updatedAt = new Date().toISOString(); record.used = true; for (const session of this.sessions.values()) if (session.account.id === account.id) session.status = 'revoked'; auditMemory(this.events, 'auth.password_reset_confirmed', account.id, { sessions_revoked: true }) }
+  async issueMcpAuthorizationCode(input: McpOAuthContext & { account: PasswordAccount; redirectUri: string; codeChallenge: string }) {
+    const account = this.accounts.get(input.account.login)
+    if (!account || account.id !== input.account.id || account.accountType !== 'merchant' || account.status !== 'active') throw mcpOAuthError('MCP_OAUTH_ACCOUNT_INVALID')
+    const workspaceIds = [...new Set(account.workspaceIds.filter(Boolean))]
+    if (workspaceIds.length !== 1) throw mcpOAuthError('MCP_OAUTH_WORKSPACE_AMBIGUOUS')
+    const code = newOpaqueToken()
+    const expiresAt = Date.now() + MCP_CODE_MS
+    this.mcpCodes.set(tokenDigest(code), { ...input, accountId: account.id, identityId: account.identityId, workspaceId: workspaceIds[0]!, codeHash: tokenDigest(code), accountAuthEpoch: account.authEpoch, identityAuthEpoch: account.authEpoch, expiresAt, used: false })
+    return { code, expiresAt: new Date(expiresAt).toISOString(), workspaceId: workspaceIds[0]! }
+  }
+  private issueMemoryMcpTokenPair(code: McpCodeRecord | McpTokenRecord, familyId: string = randomUUID()): McpOAuthTokenPair {
+    const now = Date.now(); const accessToken = newOpaqueToken(); const refreshToken = newOpaqueToken()
+    const common = { clientId: code.clientId, issuer: code.issuer, audience: code.audience, resource: code.resource, scope: [...code.scope], accountId: code.accountId, identityId: code.identityId, workspaceId: code.workspaceId, accountAuthEpoch: code.accountAuthEpoch, identityAuthEpoch: code.identityAuthEpoch, familyId, issuedAt: now, status: 'active' as const }
+    const access: McpTokenRecord = { ...common, id: randomUUID(), kind: 'access', tokenHash: tokenDigest(accessToken), expiresAt: now + MCP_ACCESS_MS }
+    const refresh: McpTokenRecord = { ...common, id: randomUUID(), kind: 'refresh', tokenHash: tokenDigest(refreshToken), expiresAt: now + MCP_REFRESH_MS }
+    this.mcpTokens.set(access.tokenHash, access); this.mcpTokens.set(refresh.tokenHash, refresh)
+    return { accessToken, refreshToken, expiresIn: MCP_ACCESS_MS / 1000, scope: [...code.scope] }
+  }
+  async exchangeMcpAuthorizationCode(input: McpOAuthContext & { redirectUri: string; code: string; codeVerifier: string }) {
+    if (!validPkceVerifier(input.codeVerifier)) throw mcpOAuthError('MCP_OAUTH_INVALID_GRANT')
+    const record = this.mcpCodes.get(tokenDigest(input.code))
+    if (!record || record.used || record.expiresAt <= Date.now() || record.clientId !== input.clientId || record.redirectUri !== input.redirectUri || record.issuer !== input.issuer || record.audience !== input.audience || record.resource !== input.resource || !record.scope.includes('merchant') || pkceChallenge(input.codeVerifier) !== record.codeChallenge) throw mcpOAuthError('MCP_OAUTH_INVALID_GRANT')
+    const account = [...this.accounts.values()].find(item => item.id === record.accountId)
+    if (!account || account.status !== 'active' || account.authEpoch !== record.accountAuthEpoch || account.workspaceIds.length !== 1 || account.workspaceIds[0] !== record.workspaceId) throw mcpOAuthError('MCP_OAUTH_INVALID_GRANT')
+    record.used = true
+    return this.issueMemoryMcpTokenPair(record)
+  }
+  private activeMemoryMcpToken(record: McpTokenRecord, input: McpOAuthContext) {
+    const account = [...this.accounts.values()].find(item => item.id === record.accountId)
+    return record.status === 'active' && record.expiresAt > Date.now() && record.clientId === input.clientId && record.issuer === input.issuer && record.audience === input.audience && record.resource === input.resource && record.scope.includes('merchant') && Boolean(account && account.status === 'active' && account.authEpoch === record.accountAuthEpoch && account.workspaceIds.length === 1 && account.workspaceIds[0] === record.workspaceId)
+  }
+  async refreshMcpOAuthToken(input: McpOAuthContext & { refreshToken: string }) {
+    const record = this.mcpTokens.get(tokenDigest(input.refreshToken))
+    if (!record || record.kind !== 'refresh' || !this.activeMemoryMcpToken(record, input)) {
+      if (record) for (const token of this.mcpTokens.values()) if (token.familyId === record.familyId && token.status === 'active') token.status = 'revoked'
+      throw mcpOAuthError('MCP_OAUTH_INVALID_GRANT')
+    }
+    record.status = 'rotated'
+    return this.issueMemoryMcpTokenPair(record, record.familyId)
+  }
+  async authenticateMcpAccessToken(input: McpOAuthContext & { accessToken: string }) {
+    const record = this.mcpTokens.get(tokenDigest(input.accessToken))
+    const account = record ? [...this.accounts.values()].find(item => item.id === record.accountId) : undefined
+    if (!record || record.kind !== 'access' || record.status !== 'active' || record.expiresAt <= Date.now() || record.clientId !== input.clientId || record.issuer !== input.issuer || record.audience !== input.audience || record.resource !== input.resource || input.scope.some(scope => !record.scope.includes(scope)) || !record.scope.includes('merchant') || !account || account.status !== 'active' || account.authEpoch !== record.accountAuthEpoch || account.workspaceIds.length !== 1 || account.workspaceIds[0] !== record.workspaceId) return undefined
+    return { identityId: record.identityId, accountId: record.accountId, accountLogin: account.login, workspaceId: record.workspaceId, scope: [...record.scope], tokenId: record.id, issuedAt: new Date(record.issuedAt).toISOString(), expiresAt: new Date(record.expiresAt).toISOString() }
+  }
 }
 
 /** PostgreSQL adapter. All auth tables live in the isolated control-plane
@@ -348,4 +431,66 @@ export class PostgresPasswordAuthRepository implements PasswordAuthRepository {
   async refresh(token: string) { const current = await this.authenticate(token); if (!current) throw Object.assign(new Error('AUTH_SESSION_INVALID'), { code: 'AUTH_SESSION_INVALID' }); await this.logout(token, 'session_refresh'); return this.withClient(async client => { const account = await this.find(client, current.account.login); if (!account) throw Object.assign(new Error('AUTH_SESSION_INVALID'), { code: 'AUTH_SESSION_INVALID' }); const raw = newOpaqueToken(); const issuedAt = new Date().toISOString(); const expiresAt = new Date(Date.now() + SESSION_MS).toISOString(); const sessionId = randomUUID(); await client.query(`INSERT INTO platform_password_sessions (id,account_id,token_hash,auth_epoch,issued_at,expires_at) VALUES ($1,$2,$3,$4,$5,$6)`, [sessionId, account.id, tokenDigest(raw), account.authEpoch, issuedAt, expiresAt]); return { token: raw, principal: { account: this.public(account), sessionId, issuedAt, expiresAt } } }) }
   async requestPasswordReset(loginInput: string) { const login = normalizeLogin(loginInput); return this.withClient(async client => { const account = await this.find(client, login); if (!account) return { accepted: true as const }; const raw = newOpaqueToken(); await client.query(`INSERT INTO platform_password_reset_tokens (id,account_id,token_hash,expires_at) VALUES ($1,$2,$3,now()+interval '15 minutes')`, [randomUUID(), account.id, tokenDigest(raw)]); await client.query(`INSERT INTO platform_identity_events (id,identity_id,event_type,actor_id,reason) SELECT $1,identity_id,'auth.password_reset_requested',login_identifier,'password reset requested' FROM platform_password_accounts WHERE id=$2`, [randomUUID(), account.id]); return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true' ? { accepted: true as const, token: raw } : { accepted: true as const } }) }
   async confirmPasswordReset(token: string, password: string) { const hash = await hashPassword(password); await this.withClient(async client => { const row = await client.query<{id:string;account_id:string;identity_id:string}>(`UPDATE platform_password_reset_tokens SET used_at=now() WHERE token_hash=$1 AND used_at IS NULL AND expires_at>now() RETURNING id,account_id,(SELECT identity_id FROM platform_password_accounts WHERE id=account_id) AS identity_id`, [tokenDigest(token)]); if (!row.rows[0]) throw Object.assign(new Error('AUTH_RESET_TOKEN_INVALID'), { code: 'AUTH_RESET_TOKEN_INVALID' }); await client.query(`UPDATE platform_password_accounts SET password_hash=$2,auth_epoch=auth_epoch+1,failed_attempts=0,locked_until=NULL,revision=revision+1,updated_at=now() WHERE id=$1`, [row.rows[0].account_id, hash]); await client.query(`UPDATE platform_identities SET auth_epoch=auth_epoch+1,revision=revision+1,updated_at=now() WHERE id=$1`, [row.rows[0].identity_id]); await client.query(`UPDATE platform_password_sessions SET status='revoked',revoked_at=now(),revoke_reason='password_reset' WHERE account_id=$1 AND status='active'`, [row.rows[0].account_id]); await client.query(`INSERT INTO platform_identity_events (id,identity_id,event_type,actor_id,reason,evidence_json) VALUES ($1,$2,'auth.password_reset_confirmed','system','password reset confirmed',$3)`, [randomUUID(), row.rows[0].identity_id, { sessions_revoked: true }]) }) }
+  async issueMcpAuthorizationCode(input: McpOAuthContext & { account: PasswordAccount; redirectUri: string; codeChallenge: string }) {
+    return this.withClient(async client => {
+      const accountResult = await client.query<any>(`SELECT a.id,a.identity_id AS "identityId",a.login_identifier AS login,a.workspace_ids AS "workspaceIds",a.auth_epoch AS "accountAuthEpoch",i.auth_epoch AS "identityAuthEpoch",a.status,i.access_status AS "identityStatus",i.risk_decision AS "riskDecision" FROM platform_password_accounts a JOIN platform_identities i ON i.id=a.identity_id WHERE a.id=$1 AND a.identity_id=$2 AND a.account_type='merchant' FOR UPDATE OF a,i`, [input.account.id, input.account.identityId])
+      const account = accountResult.rows[0]
+      if (!account || account.status !== 'active' || account.identityStatus !== 'active' || account.riskDecision !== 'allow') throw mcpOAuthError('MCP_OAUTH_ACCOUNT_INVALID')
+      const workspaceId = Array.isArray(account.workspaceIds) && account.workspaceIds.length === 1 ? account.workspaceIds[0] : undefined
+      if (!workspaceId) throw mcpOAuthError('MCP_OAUTH_WORKSPACE_AMBIGUOUS')
+      await client.query(`SELECT set_config('app.workspace_id', $1, true)`, [workspaceId])
+      const memberResult = await client.query<any>(`SELECT m.id,m.workspace_id AS "workspaceId",m.identity_id AS "identityId" FROM workspace_members m JOIN workspaces w ON w.id=m.workspace_id WHERE m.workspace_id=$3 AND m.status='active' AND w.status='active' AND (m.identity_id=$1 OR (m.identity_id IS NULL AND m.external_subject=$2)) ORDER BY m.workspace_id FOR UPDATE OF m`, [account.identityId, account.login, workspaceId])
+      if (memberResult.rows.length !== 1) throw mcpOAuthError('MCP_OAUTH_WORKSPACE_AMBIGUOUS')
+      const member = memberResult.rows[0]
+      if (!member.identityId) {
+        const bound = await client.query(`UPDATE workspace_members SET identity_id=$2,revision=revision+1,updated_at=now() WHERE id=$1 AND identity_id IS NULL`, [member.id, account.identityId])
+        if (bound.rowCount !== 1) throw mcpOAuthError('MCP_OAUTH_MEMBERSHIP_CONFLICT')
+      }
+      const code = newOpaqueToken(); const expiresAt = new Date(Date.now() + MCP_CODE_MS).toISOString()
+      await client.query(`INSERT INTO mcp_oauth_authorization_codes (id,code_hash,client_id,redirect_uri,account_id,identity_id,workspace_id,code_challenge,scope,issuer,audience,resource,account_auth_epoch,identity_auth_epoch,expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::text[],$10,$11,$12,$13,$14,$15)`, [randomUUID(), tokenDigest(code), input.clientId, input.redirectUri, account.id, account.identityId, member.workspaceId, input.codeChallenge, input.scope, input.issuer, input.audience, input.resource, account.accountAuthEpoch, account.identityAuthEpoch, expiresAt])
+      return { code, expiresAt, workspaceId: member.workspaceId as string }
+    })
+  }
+  private async insertMcpTokenPair(client: SqlClient, input: McpOAuthContext & { accountId: string; identityId: string; workspaceId: string; accountAuthEpoch: number; identityAuthEpoch: number }, familyId: string = randomUUID()): Promise<McpOAuthTokenPair> {
+    const now = new Date(); const accessToken = newOpaqueToken(); const refreshToken = newOpaqueToken(); const accessId = randomUUID(); const refreshId = randomUUID()
+    await client.query(`INSERT INTO mcp_oauth_tokens (id,family_id,token_kind,token_hash,client_id,account_id,identity_id,workspace_id,scope,issuer,audience,resource,account_auth_epoch,identity_auth_epoch,issued_at,expires_at) VALUES ($1,$2,'access',$3,$4,$5,$6,$7,$8::text[],$9,$10,$11,$12,$13,$14,$15),($16,$2,'refresh',$17,$4,$5,$6,$7,$8::text[],$9,$10,$11,$12,$13,$14,$18)`, [accessId, familyId, tokenDigest(accessToken), input.clientId, input.accountId, input.identityId, input.workspaceId, input.scope, input.issuer, input.audience, input.resource, input.accountAuthEpoch, input.identityAuthEpoch, now.toISOString(), new Date(now.getTime() + MCP_ACCESS_MS).toISOString(), refreshId, tokenDigest(refreshToken), new Date(now.getTime() + MCP_REFRESH_MS).toISOString()])
+    return { accessToken, refreshToken, expiresIn: MCP_ACCESS_MS / 1000, scope: [...input.scope] }
+  }
+  async exchangeMcpAuthorizationCode(input: McpOAuthContext & { redirectUri: string; code: string; codeVerifier: string }) {
+    if (!validPkceVerifier(input.codeVerifier)) throw mcpOAuthError('MCP_OAUTH_INVALID_GRANT')
+    return this.withClient(async client => {
+      const result = await client.query<any>(`SELECT c.*,a.status AS account_status,a.auth_epoch AS current_account_auth_epoch,a.login_identifier,i.access_status AS identity_status,i.risk_decision,i.auth_epoch AS current_identity_auth_epoch,m.status AS member_status,w.status AS workspace_status FROM mcp_oauth_authorization_codes c JOIN platform_password_accounts a ON a.id=c.account_id JOIN platform_identities i ON i.id=c.identity_id JOIN workspace_members m ON m.workspace_id=c.workspace_id AND m.identity_id=c.identity_id JOIN workspaces w ON w.id=c.workspace_id WHERE c.code_hash=$1 FOR UPDATE OF c`, [tokenDigest(input.code)])
+      const row = result.rows[0]
+      const valid = row && !row.used_at && Date.parse(iso(row.expires_at)) > Date.now() && row.client_id === input.clientId && row.redirect_uri === input.redirectUri && row.issuer === input.issuer && row.audience === input.audience && row.resource === input.resource && Array.isArray(row.scope) && row.scope.includes('merchant') && row.code_challenge === pkceChallenge(input.codeVerifier) && row.account_status === 'active' && row.identity_status === 'active' && row.risk_decision === 'allow' && row.member_status === 'active' && row.workspace_status === 'active' && Number(row.account_auth_epoch) === Number(row.current_account_auth_epoch) && Number(row.identity_auth_epoch) === Number(row.current_identity_auth_epoch)
+      if (!valid) throw mcpOAuthError('MCP_OAUTH_INVALID_GRANT')
+      await client.query(`UPDATE mcp_oauth_authorization_codes SET used_at=now() WHERE id=$1 AND used_at IS NULL`, [row.id])
+      return this.insertMcpTokenPair(client, { clientId: row.client_id, issuer: row.issuer, audience: row.audience, resource: row.resource, scope: row.scope, accountId: row.account_id, identityId: row.identity_id, workspaceId: row.workspace_id, accountAuthEpoch: Number(row.account_auth_epoch), identityAuthEpoch: Number(row.identity_auth_epoch) })
+    })
+  }
+  async refreshMcpOAuthToken(input: McpOAuthContext & { refreshToken: string }) {
+    const outcome = await this.withClient(async client => {
+      const result = await client.query<any>(`SELECT t.*,a.status AS account_status,a.auth_epoch AS current_account_auth_epoch,a.login_identifier,i.access_status AS identity_status,i.risk_decision,i.auth_epoch AS current_identity_auth_epoch,m.status AS member_status,w.status AS workspace_status FROM mcp_oauth_tokens t JOIN platform_password_accounts a ON a.id=t.account_id JOIN platform_identities i ON i.id=t.identity_id JOIN workspace_members m ON m.workspace_id=t.workspace_id AND m.identity_id=t.identity_id JOIN workspaces w ON w.id=t.workspace_id WHERE t.token_hash=$1 AND t.token_kind='refresh' FOR UPDATE OF t`, [tokenDigest(input.refreshToken)])
+      const row = result.rows[0]
+      const valid = row && row.status === 'active' && Date.parse(iso(row.expires_at)) > Date.now() && row.client_id === input.clientId && row.issuer === input.issuer && row.audience === input.audience && row.resource === input.resource && Array.isArray(row.scope) && row.scope.includes('merchant') && row.account_status === 'active' && row.identity_status === 'active' && row.risk_decision === 'allow' && row.member_status === 'active' && row.workspace_status === 'active' && Number(row.account_auth_epoch) === Number(row.current_account_auth_epoch) && Number(row.identity_auth_epoch) === Number(row.current_identity_auth_epoch)
+      if (!valid) {
+        if (row?.family_id) await client.query(`UPDATE mcp_oauth_tokens SET status='revoked',revoked_at=now(),revoke_reason='refresh_replay_or_principal_invalid' WHERE family_id=$1 AND status='active'`, [row.family_id])
+        return { error: true as const }
+      }
+      const pair = await this.insertMcpTokenPair(client, { clientId: row.client_id, issuer: row.issuer, audience: row.audience, resource: row.resource, scope: row.scope, accountId: row.account_id, identityId: row.identity_id, workspaceId: row.workspace_id, accountAuthEpoch: Number(row.account_auth_epoch), identityAuthEpoch: Number(row.identity_auth_epoch) }, row.family_id)
+      const next = await client.query<{ id: string }>(`SELECT id FROM mcp_oauth_tokens WHERE token_hash=$1`, [tokenDigest(pair.refreshToken)])
+      await client.query(`UPDATE mcp_oauth_tokens SET status='rotated',rotated_to_id=$2,revoked_at=now(),revoke_reason='refresh_rotated' WHERE id=$1 AND status='active'`, [row.id, next.rows[0]?.id])
+      return { error: false as const, pair }
+    })
+    if (outcome.error) throw mcpOAuthError('MCP_OAUTH_INVALID_GRANT')
+    return outcome.pair
+  }
+  async authenticateMcpAccessToken(input: McpOAuthContext & { accessToken: string }) {
+    return this.withClient(async client => {
+      const result = await client.query<any>(`SELECT t.id,t.identity_id AS "identityId",t.account_id AS "accountId",a.login_identifier AS "accountLogin",t.workspace_id AS "workspaceId",t.scope,t.issued_at AS "issuedAt",t.expires_at AS "expiresAt",t.status,a.status AS "accountStatus",a.auth_epoch AS "currentAccountAuthEpoch",t.account_auth_epoch AS "accountAuthEpoch",i.access_status AS "identityStatus",i.risk_decision AS "riskDecision",i.auth_epoch AS "currentIdentityAuthEpoch",t.identity_auth_epoch AS "identityAuthEpoch",m.status AS "memberStatus",w.status AS "workspaceStatus",t.client_id AS "clientId",t.issuer,t.audience,t.resource FROM mcp_oauth_tokens t JOIN platform_password_accounts a ON a.id=t.account_id JOIN platform_identities i ON i.id=t.identity_id JOIN workspace_members m ON m.workspace_id=t.workspace_id AND m.identity_id=t.identity_id JOIN workspaces w ON w.id=t.workspace_id WHERE t.token_hash=$1 AND t.token_kind='access'`, [tokenDigest(input.accessToken)])
+      const row = result.rows[0]
+      const valid = row && row.status === 'active' && Date.parse(iso(row.expiresAt)) > Date.now() && row.clientId === input.clientId && row.issuer === input.issuer && row.audience === input.audience && row.resource === input.resource && Array.isArray(row.scope) && input.scope.every(scope => row.scope.includes(scope)) && row.scope.includes('merchant') && row.accountStatus === 'active' && row.identityStatus === 'active' && row.riskDecision === 'allow' && row.memberStatus === 'active' && row.workspaceStatus === 'active' && Number(row.accountAuthEpoch) === Number(row.currentAccountAuthEpoch) && Number(row.identityAuthEpoch) === Number(row.currentIdentityAuthEpoch)
+      if (!valid) return undefined
+      return { identityId: row.identityId as string, accountId: row.accountId as string, accountLogin: row.accountLogin as string, workspaceId: row.workspaceId as string, scope: row.scope as string[], tokenId: row.id as string, issuedAt: iso(row.issuedAt), expiresAt: iso(row.expiresAt) }
+    })
+  }
 }

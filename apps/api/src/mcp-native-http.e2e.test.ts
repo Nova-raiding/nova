@@ -186,7 +186,7 @@ describe('native ChatGPT MCP HTTP transport', () => {
     const base = await start()
     const protectedResource = await fetch(`${base}/.well-known/oauth-protected-resource`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
     expect(protectedResource.status).toBe(200)
-    await expect(protectedResource.json()).resolves.toEqual({ resource: 'https://yxsona.com/mcp', authorization_servers: ['https://accounts.example.com'], scopes_supported: ['openid', 'profile', 'merchant'] })
+    await expect(protectedResource.json()).resolves.toEqual({ resource: 'https://yxsona.com/mcp', authorization_servers: ['https://accounts.example.com'], scopes_supported: ['merchant'] })
 
     const authorizationServer = await fetch(`${base}/.well-known/oauth-authorization-server`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
     expect(authorizationServer.status).toBe(200)
