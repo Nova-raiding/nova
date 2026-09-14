@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS, MemoryCustomerDeliveryRepository } from './customer-delivery-repository.js'
+import { CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS, MemoryCustomerDeliveryRepository, PostgresCustomerDeliveryRepository } from './customer-delivery-repository.js'
+import type { SqlClient, SqlPool } from './repository.js'
+
+class RecordingClient implements SqlClient {
+  readonly calls: Array<{ text: string; values?: readonly unknown[] }> = []
+  private readonly responses: Array<{ rows: Record<string, unknown>[] }> = []
+  enqueue(...rows: Record<string, unknown>[]) { this.responses.push({ rows }) }
+  async query<T = Record<string, unknown>>(text: string, values?: readonly unknown[]) {
+    this.calls.push({ text, values })
+    return (this.responses.shift() ?? { rows: [] }) as { rows: T[] }
+  }
+  release() {}
+}
+
+class RecordingPool implements SqlPool {
+  constructor(readonly client: RecordingClient) {}
+  async connect() { return this.client }
+}
 
 describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
   it('writes audit events for create/update/video and synchronizes training with acceptance', async () => {
@@ -34,5 +51,28 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     expect(saved[0]).toMatchObject({ itemKey: CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS.system_integration[0], completed: true, evidence: { note: '证据-0' } })
     expect((await repo.listChecklistItems!({ workspaceId: paid.workspaceId, deliveryId: paid.id, checklistKey: 'system_integration' }))).toHaveLength(10)
     expect((await repo.get(paid.workspaceId, paid.id))!.systemIntegrationStatus).toBe('complete')
+  })
+
+  it('records the persisted checklist item as the audit before snapshot', async () => {
+    const client = new RecordingClient()
+    const previous = {
+      workspace_id: 'ws_pg_audit', delivery_id: 'cd_1', checklist_key: 'system_integration',
+      item_key: '店铺连接', completed: false, evidence: { note: '旧证据' },
+      completed_by_actor_id: null, completed_at: null, revision: 2,
+      updated_at: '2026-09-14T00:00:00.000Z',
+    }
+    const saved = { ...previous, completed: true, evidence: { note: '新证据' },
+      completed_by_actor_id: 'operator-1', completed_at: '2026-09-14T00:01:00.000Z', revision: 3,
+      updated_at: '2026-09-14T00:01:00.000Z' }
+    // BEGIN, scope, delivery lock, previous item, upsert, count, delivery update, audit, COMMIT
+    client.enqueue(); client.enqueue(); client.enqueue({ revision: 4, payment_status: 'paid' });
+    client.enqueue(previous); client.enqueue(saved); client.enqueue({ total: 1, done: 1 });
+    client.enqueue(); client.enqueue(); client.enqueue()
+    const repo = new PostgresCustomerDeliveryRepository(new RecordingPool(client))
+    await repo.updateChecklistItem({ workspaceId: 'ws_pg_audit', deliveryId: 'cd_1', checklistKey: 'system_integration', itemKey: '店铺连接', completed: true, evidence: { note: '新证据' }, actorId: 'operator-1', expectedRevision: 4 })
+    const audit = client.calls.find((call) => call.text.includes('INSERT INTO workspace_operation_audit'))
+    expect(audit).toBeDefined()
+    expect(JSON.parse(String(audit?.values?.[6]))).toMatchObject({ completed: false, revision: 2, evidence: { note: '旧证据' } })
+    expect(JSON.parse(String(audit?.values?.[7]))).toMatchObject({ completed: true, revision: 3, evidence: { note: '新证据' } })
   })
 })

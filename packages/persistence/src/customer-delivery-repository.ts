@@ -835,6 +835,14 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           "PAYMENT_REQUIRED",
           "customer has not paid",
         );
+      // Capture the persisted item before the upsert so the audit trail
+      // contains the actual prior state (or an empty object for first write).
+      // The delivery row is locked above, serializing checklist mutations for
+      // this customer while we read and update the item.
+      const previous = await c.query(
+        `SELECT * FROM workspace_customer_delivery_checklist_items WHERE workspace_id=$1 AND delivery_id=$2 AND checklist_key=$3 AND item_key=$4 LIMIT 1`,
+        [scope, input.deliveryId, input.checklistKey, input.itemKey.trim()],
+      );
       const q = await c.query(
         `INSERT INTO workspace_customer_delivery_checklist_items (workspace_id,delivery_id,checklist_key,item_key,completed,evidence,completed_by_actor_id,completed_at,revision,updated_at) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,CASE WHEN $5 THEN now() ELSE NULL END,1,now()) ON CONFLICT (workspace_id,delivery_id,checklist_key,item_key) DO UPDATE SET completed=EXCLUDED.completed,evidence=EXCLUDED.evidence,completed_by_actor_id=EXCLUDED.completed_by_actor_id,completed_at=EXCLUDED.completed_at,revision=workspace_customer_delivery_checklist_items.revision+1,updated_at=now() RETURNING *`,
         [
@@ -871,7 +879,9 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
         action: "customer_delivery.checklist_item.update",
         resourceType: "customer_delivery_checklist_item",
         resourceId: `${input.deliveryId}:${input.checklistKey}:${input.itemKey}`,
-        before: {},
+        before: previous.rows[0]
+          ? (this.mapItem(previous.rows[0]) as any)
+          : {},
         after: this.mapItem(q.rows[0]!) as any,
         reason: "更新客户交付清单项",
       });
