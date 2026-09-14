@@ -18,16 +18,9 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
   const monthLabel = `${new Date().getMonth() + 1}月`;
   const basicSales = finance?.subscriptionOrderBySku?.basic?.orderCount;
   const growthSales = finance?.subscriptionOrderBySku?.growth?.orderCount;
-  const trendMonths = Array.from({ length: 12 }, (_, index) => `${index + 1}月`);
   const currentMonthIndex = new Date().getMonth();
   const monthDays = new Date(new Date().getFullYear(), currentMonthIndex + 1, 0).getDate();
   const dayLabels = Array.from({ length: monthDays }, (_, index) => index + 1).filter((day) => day === 1 || day % 5 === 0 || day === monthDays);
-  const trendSeries = [
-    { key: "customers", label: "客户数", value: merchantWorkspaceCount ?? 0 },
-    { key: "revenue", label: "收入", value: finance?.onboardingOrderCny ?? 0 },
-    { key: "points", label: "创意点消耗", value: 0 },
-    { key: "cost", label: "平台消耗金额", value: usage?.totalTokens ?? 0 },
-  ];
   const metric = (title: string, value: string | number, unit: string, tone = "") => (
     <article className={`ops-dashboard-metric ${tone}`} key={title}>
       <span className="ops-dashboard-metric-label">{title}</span>
@@ -48,19 +41,6 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
           <section><h4>套餐月度</h4><div className="ops-dashboard-metric-list">{metric("套餐销量", finance?.subscriptionOrderWorkspaceCount ?? 0, "单")}{metric("套餐销售额", finance?.subscriptionOrderCny ?? 0, "元", "revenue")}{metric("2000 版本销量", basicSales ?? 0, "单")}{metric("5000 版本销量", growthSales ?? 0, "单")}</div></section>
           <section><h4>创意点月度</h4><div className="ops-dashboard-metric-list">{metric("客户消耗创意点", 0, "点")}{metric("平台消耗金额", usage?.totalTokens ?? 0, "元")}{metric("额外创意点充值", 0, "点", "full")}</div></section>
         </div></article>
-      </section>
-      <section className="ops-dashboard-panel ops-dashboard-trend" aria-label="年度经营趋势">
-        <header><div><h3>2026年经营趋势</h3></div><small>按月</small></header>
-        <div className="ops-dashboard-trend-chart" role="img" aria-label="2026年经营趋势柱状图">
-          <div className="ops-dashboard-trend-legend"><span className="customers">客户数</span><span className="revenue">收入</span><span className="points">创意点消耗</span><span className="cost">平台消耗金额</span></div>
-          <svg viewBox="0 0 760 220" preserveAspectRatio="none" aria-hidden="true">
-            {[24, 66, 108, 150].map((y) => <line key={y} x1="54" y1={y} x2="742" y2={y} className="ops-dashboard-trend-grid" />)}
-            <line x1="54" y1="192" x2="742" y2="192" className="ops-dashboard-trend-axis" />
-            <text x="10" y="28" className="ops-dashboard-trend-tick">20</text><text x="10" y="70" className="ops-dashboard-trend-tick">15</text><text x="10" y="112" className="ops-dashboard-trend-tick">10</text><text x="10" y="154" className="ops-dashboard-trend-tick">5</text><text x="18" y="196" className="ops-dashboard-trend-tick">0</text>
-            {trendMonths.map((_, monthIndex) => trendSeries.map((series, seriesIndex) => { const value = monthIndex === currentMonthIndex ? Number(series.value) : 0; const barHeight = Math.min(164, (value / 20) * 164); const x = 66 + monthIndex * 56 + seriesIndex * 10; return <rect key={`${series.key}-${monthIndex}`} x={x} y={192 - barHeight} width="8" height={barHeight} rx="2" className={`${series.key}-bar`} />; }))}
-          </svg>
-          <div className="ops-dashboard-trend-labels">{trendMonths.map((month) => <span key={month}>{month}</span>)}</div>
-        </div>
       </section>
       <section className="ops-dashboard-panel ops-dashboard-trend" aria-label="当月经营趋势">
         <header><div><h3>{monthLabel}经营趋势</h3></div><small>按天</small></header>
