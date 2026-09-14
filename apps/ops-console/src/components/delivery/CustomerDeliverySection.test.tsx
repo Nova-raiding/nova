@@ -11,4 +11,22 @@ describe("customer delivery completion", () => {
     expect(deliveryCompletion(base)).toEqual({ completed: 5, total: 5, ready: true });
     expect(deliveryCompletion({ ...base, videos: 0 })).toEqual({ completed: 4, total: 5, ready: false });
   });
+
+  it("counts each checklist item independently (not by a partial percentage)", () => {
+    const keys = ["profile", "integration", "acceptance", "training"] as const;
+    for (const key of keys) {
+      expect(deliveryCompletion({ ...base, [key]: false })).toEqual({ completed: 4, total: 5, ready: false });
+    }
+    expect(deliveryCompletion({ ...base, videos: -1 })).toEqual({ completed: 4, total: 5, ready: false });
+  });
+
+  it("requires a positive video count and all four checklist states before activation", () => {
+    expect(deliveryCompletion({ ...base, videos: 0 }).ready).toBe(false);
+    expect(deliveryCompletion({ ...base, videos: Number.NaN }).ready).toBe(false);
+    expect(deliveryCompletion({ ...base, profile: false, integration: false, acceptance: false, training: false, videos: 99 })).toEqual({ completed: 1, total: 5, ready: false });
+  });
+
+  it("fails closed when all checkboxes are set on an unpaid customer", () => {
+    expect(deliveryCompletion({ ...base, paymentStatus: "unpaid" })).toEqual({ completed: 5, total: 5, ready: false });
+  });
 });
