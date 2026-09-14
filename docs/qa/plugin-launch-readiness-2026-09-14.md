@@ -50,9 +50,9 @@
 
 ### 真实上线阻断
 
-1. **P0：真实充值/支付未完成**
+1. **P0：真实支付 canary 证据未完成（配置已恢复）**
 
-   `billing.recharge.create` 在本地 fixture 条件下可以创建 pending 订单；真实微信/支付宝 provider、HTTPS callback、签名校验、到账 grant、对账和退款证据尚未形成完整生产链路。不能把 fixture 订单或支付成功响应当作到账。该接口必须保持生产 fail-closed，直到 provider readiness 和真实 canary 完成。
+   101 主机的支付宝生产配置、私钥/公钥、provider checkout/query/refund、HTTPS callback、对账和退款开关均已确认存在，payment-gateway 健康检查返回 200。当前缺的是一笔真实小额支付及其 callback、查单、退款、对账回执；本地 fixture 订单不能替代该证据。`billing.recharge.create` 在真实 canary 完成前继续保持 fail-closed。
 
 2. **P0：知识库生产索引与检索证据不足**
 
