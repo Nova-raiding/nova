@@ -176,7 +176,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
     {canReadUserDirectory && !model.canUserGovernance && <Alert showIcon type="info" title="当前为只读视图" description="可以查询身份、成员关系和审计详情，但停用、恢复、风险策略与会话撤销需要 identity.update。" />}
     <Card title="已接入用户" extra={<Typography.Text type="secondary">共 {model.userDirectory.workspaceCount} 家接入用户</Typography.Text>} aria-busy={model.userDirectoryLoading}>
       <Form<UserFilters> form={form} layout="inline" initialValues={{ status: "", attribute: "" }} onFinish={(values) => { const { attribute, ...filters } = values; setAttributeFilter(attribute || ""); void model.loadUsers({ ...filters, status: values.status || undefined, page: 1 }); }} aria-label="用户目录筛选">
-        <Form.Item name="query" label="搜索"><Input allowClear aria-label="按关键词筛选用户目录" /></Form.Item>
+        <Form.Item name="query" label="搜索"><Input allowClear maxLength={64} aria-label="按关键词筛选用户目录" /></Form.Item>
         <Form.Item name="status" label="状态">
           <Select aria-label="按成员状态筛选用户目录" style={{ width: 140 }} options={[
             { value: "", label: "全部" }, { value: "active", label: "已激活" }, { value: "suspended", label: "已停用" },

@@ -234,7 +234,7 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-users-section .ant-form-item:first-child .ant-form-item-control,
 .ops-users-section .ant-form-item:first-child .ant-form-item-control-input,
 .ops-users-section .ant-form-item:first-child .ant-input,
-.ops-users-section .ant-form-item:first-child .ant-input-affix-wrapper { width: 140px !important; min-width: 140px; max-width: 140px; }
+.ops-users-section .ant-form-item:first-child .ant-input-affix-wrapper { width: 200px !important; min-width: 200px; max-width: 200px; }
 .ops-users-section .ant-form-item-control-input-content > .ant-select { width: 140px !important; }
 .ops-users-section .ant-form-item-control-input-content > .ant-input,
 .ops-users-section .ant-form-item-control-input-content > .ant-input-affix-wrapper,
