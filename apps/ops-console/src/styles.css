@@ -327,7 +327,6 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-dashboard-trend-legend .revenue::before { background: #059669; }
 .ops-dashboard-trend-legend .points::before { background: #d97706; }
 .ops-dashboard-trend-legend .cost::before { background: #7c3aed; }
-.ops-dashboard-trend-current { margin-bottom: 6px; color: #475569; font-size: 12px; }
 .ops-dashboard-trend-chart svg { display: block; width: 100%; height: 180px; }
 .ops-dashboard-trend-axis { stroke: #94a3b8; stroke-width: 1; }
 .ops-dashboard-trend-grid { stroke: #e2e8f0; stroke-width: 1; stroke-dasharray: 4 5; }

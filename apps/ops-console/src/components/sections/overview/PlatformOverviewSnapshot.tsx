@@ -53,7 +53,6 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
         <header><div><h3>2026年经营趋势</h3></div><small>按月</small></header>
         <div className="ops-dashboard-trend-chart" role="img" aria-label="2026年经营趋势柱状图">
           <div className="ops-dashboard-trend-legend"><span className="customers">客户数</span><span className="revenue">收入</span><span className="points">创意点消耗</span><span className="cost">平台消耗金额</span></div>
-          <div className="ops-dashboard-trend-current">本月：客户 {trendSeries[0].value} 家 · 收入 {trendSeries[1].value} 元 · 创意点消耗 {trendSeries[2].value} 点 · 平台消耗 {trendSeries[3].value} 元</div>
           <svg viewBox="0 0 760 220" preserveAspectRatio="none" aria-hidden="true">
             {[24, 66, 108, 150].map((y) => <line key={y} x1="54" y1={y} x2="742" y2={y} className="ops-dashboard-trend-grid" />)}
             <line x1="54" y1="192" x2="742" y2="192" className="ops-dashboard-trend-axis" />
