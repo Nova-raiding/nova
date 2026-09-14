@@ -319,6 +319,7 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-dashboard-monthly-groups section:first-child .ops-dashboard-metric-list { grid-template-columns: 1fr; }
 .ops-dashboard-monthly-groups h4 { margin: 0; color: #2563eb; font-size: 13px; font-weight: 800; }
 .ops-dashboard-trend { margin-top: 14px; }
+.ops-dashboard-trend-subtitle { margin: 14px 0 8px; color: #334155; font-size: 14px; font-weight: 700; }
 .ops-dashboard-trend-chart { padding: 14px 16px 10px; border: 1px solid #dbe3ef; border-radius: 11px; background: #f8fafc; }
 .ops-dashboard-trend-legend { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 8px; color: #64748b; font-size: 12px; font-weight: 650; }
 .ops-dashboard-trend-legend span::before { display: inline-block; width: 9px; height: 9px; margin-right: 6px; border-radius: 50%; content: ""; }
@@ -334,6 +335,11 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-dashboard-trend-chart .revenue-bar { fill: #059669; }
 .ops-dashboard-trend-chart .points-bar { fill: #d97706; }
 .ops-dashboard-trend-chart .cost-bar { fill: #7c3aed; }
+.ops-dashboard-trend-chart .customers-line, .ops-dashboard-trend-chart .active-line, .ops-dashboard-trend-chart .revenue-line, .ops-dashboard-trend-chart .points-line, .ops-dashboard-trend-chart .cost-line { fill: none; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+.ops-dashboard-trend-chart .customers-line, .ops-dashboard-trend-chart .active-line { stroke: #2563eb; }
+.ops-dashboard-trend-chart .revenue-line { stroke: #059669; }
+.ops-dashboard-trend-chart .points-line { stroke: #d97706; }
+.ops-dashboard-trend-chart .cost-line { stroke: #7c3aed; }
 .ops-dashboard-trend-labels { display: flex; justify-content: space-between; margin-left: 54px; color: #64748b; font-size: 11px; }
 .ops-dashboard-metric.full { grid-column: 1 / -1; }
 .ops-dashboard-usage { display: grid; }

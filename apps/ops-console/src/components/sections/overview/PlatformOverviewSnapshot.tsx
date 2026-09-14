@@ -9,6 +9,25 @@ interface PlatformOverviewSnapshotProps {
   onNavigate: (domain: OpsDomain) => void;
 }
 
+type MonthlySeries = { key: string; label: string; values: number[] };
+
+function MonthlyTrendChart({ series, bars = [], ariaLabel }: { series: MonthlySeries[]; bars?: string[]; ariaLabel: string }) {
+  const max = Math.max(20, ...series.flatMap((item) => item.values), 1);
+  const x = (index: number) => 54 + (688 * index) / 11;
+  const y = (value: number) => 192 - (Math.min(value, max) / max) * 164;
+  return <div className="ops-dashboard-trend-chart" role="img" aria-label={ariaLabel}>
+    <div className="ops-dashboard-trend-legend">{series.map((item) => <span className={item.key} key={item.key}>{item.label}</span>)}</div>
+    <svg viewBox="0 0 760 220" preserveAspectRatio="none" aria-hidden="true">
+      {[24, 66, 108, 150].map((lineY) => <line key={lineY} x1="54" y1={lineY} x2="742" y2={lineY} className="ops-dashboard-trend-grid" />)}
+      <line x1="54" y1="192" x2="742" y2="192" className="ops-dashboard-trend-axis" />
+      <text x="10" y="28" className="ops-dashboard-trend-tick">{Math.round(max)}</text><text x="10" y="112" className="ops-dashboard-trend-tick">{Math.round(max / 2)}</text><text x="18" y="196" className="ops-dashboard-trend-tick">0</text>
+      {series.filter((item) => bars.includes(item.key)).map((item) => item.values.map((value, index) => <rect key={`${item.key}-${index}`} x={x(index) - 8} y={y(value)} width="16" height={Math.max(0, 192 - y(value))} rx="3" className={`${item.key}-bar`} />))}
+      {series.filter((item) => !bars.includes(item.key)).map((item) => <polyline key={item.key} points={item.values.map((value, index) => `${x(index)},${y(value)}`).join(" ")} className={`${item.key}-line`} />)}
+    </svg>
+    <div className="ops-dashboard-trend-labels">{Array.from({ length: 12 }, (_, index) => <span key={index}>{index + 1}月</span>)}</div>
+  </div>;
+}
+
 export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProps) {
   const merchantWorkspaceCount = model.workspaceDirectory.merchantWorkspaceCount;
   const totalWorkspaceCount = model.workspaceDirectory.total;
@@ -21,6 +40,8 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
   const currentMonthIndex = new Date().getMonth();
   const monthDays = new Date(new Date().getFullYear(), currentMonthIndex + 1, 0).getDate();
   const dayLabels = Array.from({ length: monthDays }, (_, index) => index + 1).filter((day) => day === 1 || day % 5 === 0 || day === monthDays);
+  const monthLabels = Array.from({ length: 12 }, (_, index) => `${index + 1}月`);
+  const currentValue = (value: number) => monthLabels.map((_, index) => index === currentMonthIndex ? value : 0);
   const metric = (title: string, value: string | number, unit: string, tone = "") => (
     <article className={`ops-dashboard-metric ${tone}`} key={title}>
       <span className="ops-dashboard-metric-label">{title}</span>
@@ -41,6 +62,15 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
           <section><h4>套餐月度</h4><div className="ops-dashboard-metric-list">{metric("套餐销量", finance?.subscriptionOrderWorkspaceCount ?? 0, "单")}{metric("套餐销售额", finance?.subscriptionOrderCny ?? 0, "元", "revenue")}{metric("2000 版本销量", basicSales ?? 0, "单")}{metric("5000 版本销量", growthSales ?? 0, "单")}</div></section>
           <section><h4>创意点月度</h4><div className="ops-dashboard-metric-list">{metric("客户消耗创意点", 0, "点")}{metric("平台消耗金额", usage?.totalTokens ?? 0, "元")}{metric("额外创意点充值", 0, "点", "full")}</div></section>
         </div></article>
+      </section>
+      <section className="ops-dashboard-panel ops-dashboard-trend" aria-label="月度经营趋势">
+        <header><div><h3>月度经营趋势</h3></div><small>按月</small></header>
+        <h4 className="ops-dashboard-trend-subtitle">客户累计数</h4>
+        <MonthlyTrendChart ariaLabel="客户累计数月度柱状折线图" bars={["customers"]} series={[{ key: "customers", label: "客户总数", values: currentValue(totalWorkspaceCount ?? 0) }, { key: "active", label: "有效客户数", values: currentValue(merchantWorkspaceCount ?? 0) }]} />
+        <h4 className="ops-dashboard-trend-subtitle">接入费收入</h4>
+        <MonthlyTrendChart ariaLabel="接入费收入月度柱状折线图" bars={["revenue"]} series={[{ key: "revenue", label: "接入费收入", values: currentValue(finance?.onboardingOrderCny ?? 0) }]} />
+        <h4 className="ops-dashboard-trend-subtitle">客户与平台消耗</h4>
+        <MonthlyTrendChart ariaLabel="客户与平台消耗月度折线图" series={[{ key: "points", label: "客户消耗创意点", values: currentValue(0) }, { key: "cost", label: "平台消耗金额", values: currentValue(usage?.totalTokens ?? 0) }]} />
       </section>
       <section className="ops-dashboard-panel ops-dashboard-trend" aria-label="当月经营趋势">
         <header><div><h3>{monthLabel}经营趋势</h3></div><small>按天</small></header>
