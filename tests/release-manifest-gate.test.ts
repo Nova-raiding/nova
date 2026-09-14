@@ -48,6 +48,8 @@ describe('release manifest production gate', () => {
       'services/payment-gateway/index.mjs',
       'services/payment-gateway/alipay.mjs',
       'services/payment-gateway/alipay.d.mts',
+      'packages/billing/src/callback-envelope.mjs',
+      'packages/billing/src/callback-envelope.d.mts',
       'services/payment-gateway/Dockerfile',
     ]
     const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })

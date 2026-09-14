@@ -79,7 +79,7 @@ import { aggregateScannerHeartbeats, SCANNER_HEARTBEAT_INDEX_KEY, SCANNER_HEARTB
 import { parseWorkerAuthorizationSnapshot, type CriticalWorkerOperation, type WorkerAuthorizationSnapshot } from '../../../packages/workers/src/execution-authorization.js'
 import { createImageEditCandidate, createOneSentenceGenerationRequest, createVideoGenerationRequest, createVideoRenderingRequest, type GenerationContext } from '../../../packages/multimodal/src/index.js'
 import { generateSeoGeoSuggestions } from '../../../packages/seo/src/index.js'
-import { classifyPaymentRefundState, createPaymentProviderFromEnv, FixturePaymentProvider, type PaymentProvider } from '../../../packages/billing/src/payment-provider.js'
+import { classifyPaymentRefundState, createPaymentProviderFromEnv, FixturePaymentProvider, verifyPaymentCallbackSignature, type PaymentProvider } from '../../../packages/billing/src/payment-provider.js'
 import { paymentFixturePolicy } from '../../../packages/application/src/payment-fixture-guard.js'
 import { platformRuleSyncStatus } from '../../../packages/review/src/platform-rule-sync.js'
 import { verifyAndParsePlatformRuleManifest } from '../../../packages/review/src/platform-rule-manifest.js'
@@ -2188,7 +2188,7 @@ async function runPaymentReconciliation(input: { workspaceId: string; actorId: s
   }
 }
 
-function verifyPaymentCallback(req: IncomingMessage, input: { channel: RechargeChannel; workspaceId: string; payload: { order_id: string; provider_trade_id: string; amount_fen: number; state: string } }) {
+function verifyPaymentCallback(req: IncomingMessage, input: { channel: RechargeChannel; workspaceId: string; payload: { order_id: string; provider_trade_id: string; amount_fen: number; currency?: string; state: string } }) {
   requireProviderPaymentConfigured()
   const secret = process.env.PAYMENT_CALLBACK_SECRET?.trim()
   const testCallbackCompatibility = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test'
@@ -2202,15 +2202,26 @@ function verifyPaymentCallback(req: IncomingMessage, input: { channel: RechargeC
   const nonce = header(req, 'x-payment-nonce')?.trim()
   const legacyAllowed = localUnsignedCallback && !timestampHeader && !nonce
   if (!legacyAllowed && (!timestampHeader || !/^\d{10,13}$/u.test(timestampHeader) || !nonce || !/^[A-Za-z0-9_-]{16,128}$/u.test(nonce))) throw new DomainError('PAYMENT_CALLBACK_PROOF_REQUIRED', '支付回调必须携带有效时间戳和一次性 nonce', 401)
-  const timestampMs = timestampHeader ? (timestampHeader.length === 10 ? Number(timestampHeader) * 1000 : Number(timestampHeader)) : Date.now()
-  if (!legacyAllowed && (!Number.isSafeInteger(timestampMs) || Math.abs(Date.now() - timestampMs) > 5 * 60_000)) throw new DomainError('PAYMENT_CALLBACK_EXPIRED', '支付回调已超过五分钟有效窗口', 401)
-  const canonical = legacyAllowed
-    ? `${input.payload.order_id}|${input.payload.provider_trade_id}|${input.payload.amount_fen}|${input.payload.state}`
-    : `${input.channel}|${input.workspaceId}|${input.payload.order_id}|${input.payload.provider_trade_id}|${input.payload.amount_fen}|${input.payload.state}|${timestampHeader}|${nonce}`
-  const expected = createHmac('sha256', secret).update(canonical).digest('hex')
-  if (!provided || provided.length !== expected.length || !timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) throw new DomainError('PAYMENT_CALLBACK_SIGNATURE_INVALID', '支付回调验签失败', 401)
-  if (legacyAllowed) return undefined
-  return { nonce: nonce!, signedAt: new Date(timestampMs).toISOString(), payloadHash: createHash('sha256').update(canonical).digest('hex') }
+  if (legacyAllowed) {
+    const canonical = `${input.payload.order_id}|${input.payload.provider_trade_id}|${input.payload.amount_fen}|${input.payload.state}`
+    const expected = createHmac('sha256', secret).update(canonical).digest('hex')
+    if (!provided || provided.length !== expected.length || !timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) throw new DomainError('PAYMENT_CALLBACK_SIGNATURE_INVALID', '支付回调验签失败', 401)
+    return undefined
+  }
+  try {
+    return verifyPaymentCallbackSignature({
+      secret,
+      channel: input.channel,
+      workspaceId: input.workspaceId,
+      payload: { orderId: input.payload.order_id, providerTradeId: input.payload.provider_trade_id, amountFen: input.payload.amount_fen, currency: input.payload.currency as 'CNY', state: input.payload.state as 'pending' | 'paid' | 'closed' | 'failed' },
+      signature: provided,
+      timestamp: timestampHeader!,
+      nonce: nonce!,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('expired')) throw new DomainError('PAYMENT_CALLBACK_EXPIRED', '支付回调已超过五分钟有效窗口', 401)
+    throw new DomainError('PAYMENT_CALLBACK_SIGNATURE_INVALID', '支付回调验签失败', 401)
+  }
 }
 
 async function consumePaymentCallbackProof(input: { workspaceId: string; channel: RechargeChannel; nonce: string; signedAt: string; payloadHash: string }) {
@@ -14783,7 +14794,11 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await persistenceReady
       const { scope, actorId } = billingReadScope(req, params)
       const orderId = required(params, 'order_id')
-      const order = persistence.billing ? await persistence.billing.getOrder(workspaceId, orderId) : rechargeOrders.get(orderId)
+      const order = persistence.billing
+        ? scope === 'mine'
+          ? await persistence.billing.getOrderForActor(workspaceId, orderId, actorId)
+          : await persistence.billing.getOrder(workspaceId, orderId)
+        : rechargeOrders.get(orderId)
       if (!order || order.workspaceId !== workspaceId) throw new DomainError('BILLING_ORDER_NOT_FOUND', '充值订单不存在或不属于当前工作区', 404)
       if (scope === 'mine' && order.createdByActorId !== actorId) throw new DomainError('BILLING_ORDER_NOT_FOUND', '充值订单不存在或不属于当前用户', 404)
       if (params.confirm_test_payment === 'true') {
@@ -19053,9 +19068,10 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const providerTradeId = required(input, 'provider_trade_id')
     const amountFen = Number(input.amount_fen)
     const state = typeof input.state === 'string' ? input.state : ''
+    const currency = typeof input.currency === 'string' ? input.currency : undefined
     const workspaceId = typeof input.workspace_id === 'string' && input.workspace_id.trim() ? input.workspace_id.trim() : ''
     if (!workspaceId || !Number.isSafeInteger(amountFen) || amountFen < 0) throw new DomainError('PAYMENT_CALLBACK_INVALID', '支付回调缺少有效订单、工作区或金额', 400)
-    const callbackProof = verifyPaymentCallback(req, { channel: paymentCallbackMatch[2] as RechargeChannel, workspaceId, payload: { order_id: orderId, provider_trade_id: providerTradeId, amount_fen: amountFen, state } })
+    const callbackProof = verifyPaymentCallback(req, { channel: paymentCallbackMatch[2] as RechargeChannel, workspaceId, payload: { order_id: orderId, provider_trade_id: providerTradeId, amount_fen: amountFen, currency, state } })
     const freshCallbackProof = callbackProof ? await consumePaymentCallbackProof({ workspaceId, channel: paymentCallbackMatch[2] as RechargeChannel, ...callbackProof }) : true
     if (paymentCallbackMatch[1] === 'commercial') {
       await persistenceReady
