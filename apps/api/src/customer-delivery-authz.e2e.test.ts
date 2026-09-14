@@ -76,4 +76,18 @@ describe('customer delivery platform authorization and API flow', () => {
     expect(conflict.status).toBe(403)
     expect(['WORKSPACE_SCOPE_MISMATCH', 'FORBIDDEN']).toContain(body.error?.code)
   })
+
+  it('rejects checklist updates that mix scalar and batch modes', async () => {
+    const base = await start()
+    const mixed = await call(base, 'customer-delivery-platform-token', 'ops.customer-delivery.checklist.update', {
+      target_workspace_id: `ws_delivery_authz_${Date.now()}`,
+      delivery_id: 'delivery_missing',
+      checklist_key: 'system_integration',
+      expected_revision: '1',
+      completed: 'true',
+      items_json: '[]',
+    })
+    expect(mixed.response.status).toBe(400)
+    expect(mixed.body.error?.code).toBe('INVALID_REQUEST')
+  })
 })
