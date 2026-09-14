@@ -322,13 +322,14 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { key: "name", label: "用户名", children: model.userDetail.identity.displayName || model.userDetail.identity.externalSubject },
             { key: "first", label: "开通时间", children: dateTimeFormatter.format(new Date(model.userDetail.identity.firstSeenAt)) },
           ]} />
-          <div><Typography.Title level={5}>店铺详情</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={false} scroll={{ x: 620 }} dataSource={model.userDetail.memberships} columns={[
+          <div><Typography.Title level={5}>店铺详情</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={false} scroll={{ x: 760 }} dataSource={model.userDetail.memberships} columns={[
             { title: "序号", key: "index", width: 70, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
             { title: "店铺名称", key: "name", width: 220, render: (_: unknown, row: PlatformUser) => row.enterpriseName || row.workspaceId },
             { title: "店铺状态", key: "status", width: 150, render: (_: unknown, row: PlatformUser) => <Tag color={row.workspaceStatus === "active" ? "green" : "red"}>{row.workspaceStatus === "active" ? "正常" : "风险"}</Tag> },
             { title: "开通时间", key: "openedAt", width: 180, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
+            { title: "操作", key: "action", width: 100, render: (_: unknown, row: PlatformUser) => <Button danger size="small" disabled={row.status === "suspended" || !model.canUserGovernance} onClick={() => { setActionError(""); setAccessTarget(row); }}>停用</Button> },
           ]} /></div>
-          <div><Typography.Title level={5}>钱包</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:wallet`} pagination={{ pageSize: 20, showSizeChanger: false }} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无充值记录" }} columns={[
+          <div><Typography.Title level={5}>钱包</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:wallet`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无充值记录" }} columns={[
             { title: "用户名", key: "name", width: 220, render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
             { title: "充值金额", key: "amount", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
             { title: "实际到账创意点", key: "points", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial ? row.commercial.includedTasks : "—" },
