@@ -22,3 +22,10 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 CREATE INDEX IF NOT EXISTS customer_delivery_checklist_items_delivery_idx
   ON workspace_customer_delivery_checklist_items(workspace_id, delivery_id, checklist_key, item_key);
+
+-- Videos are retained for audit/recovery; removal is a reversible soft delete.
+ALTER TABLE workspace_customer_delivery_videos
+  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS customer_delivery_videos_active_idx
+  ON workspace_customer_delivery_videos(workspace_id, delivery_id, sort_order, id)
+  WHERE deleted_at IS NULL;
