@@ -5,7 +5,7 @@ spec:
   replicas: 1
   selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-sync}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: merchant-worker-sync, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:ce7cbcf3fab2466ab03d8d59a1f341d95dc618908d27e7948755e35340d60c48"}}
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-sync, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:dbd96f579ae01b73f771135dfa5eea5b1fdf0d65afeee4b93dbd2430cc8be5bd"}}
     spec:
       terminationGracePeriodSeconds: 45
       automountServiceAccountToken: false
@@ -20,7 +20,7 @@ spec:
   replicas: 1
   selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-generation}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: merchant-worker-generation, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:ce7cbcf3fab2466ab03d8d59a1f341d95dc618908d27e7948755e35340d60c48"}}
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-generation, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:dbd96f579ae01b73f771135dfa5eea5b1fdf0d65afeee4b93dbd2430cc8be5bd"}}
     spec:
       terminationGracePeriodSeconds: 45
       automountServiceAccountToken: false
@@ -35,7 +35,7 @@ spec:
   replicas: 2
   selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-publish}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: merchant-worker-publish, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:ce7cbcf3fab2466ab03d8d59a1f341d95dc618908d27e7948755e35340d60c48"}}
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-publish, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:dbd96f579ae01b73f771135dfa5eea5b1fdf0d65afeee4b93dbd2430cc8be5bd"}}
     spec:
       terminationGracePeriodSeconds: 45
       automountServiceAccountToken: false
@@ -50,7 +50,7 @@ spec:
   replicas: 2
   selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-reconcile}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: merchant-worker-reconcile, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:ce7cbcf3fab2466ab03d8d59a1f341d95dc618908d27e7948755e35340d60c48"}}
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-reconcile, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:dbd96f579ae01b73f771135dfa5eea5b1fdf0d65afeee4b93dbd2430cc8be5bd"}}
     spec:
       terminationGracePeriodSeconds: 45
       automountServiceAccountToken: false
@@ -72,7 +72,7 @@ spec:
   replicas: 1
   selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-automation}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: merchant-worker-automation, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:ce7cbcf3fab2466ab03d8d59a1f341d95dc618908d27e7948755e35340d60c48"}}
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-automation, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:dbd96f579ae01b73f771135dfa5eea5b1fdf0d65afeee4b93dbd2430cc8be5bd"}}
     spec:
       terminationGracePeriodSeconds: 45
       automountServiceAccountToken: false
@@ -97,7 +97,7 @@ spec:
     rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
   selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-scan}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: merchant-worker-scan, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:ce7cbcf3fab2466ab03d8d59a1f341d95dc618908d27e7948755e35340d60c48"}}
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-scan, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:dbd96f579ae01b73f771135dfa5eea5b1fdf0d65afeee4b93dbd2430cc8be5bd"}}
     spec:
       terminationGracePeriodSeconds: 90
       nodeSelector: {kubernetes.io/arch: amd64}

@@ -41,6 +41,8 @@ export interface WorkerConfig {
   autoDiscoverWorkspaces: boolean
   pollIntervalMs: number
   storageReconciliationIntervalMs: number
+  paymentReconciliationIntervalMs: number
+  paymentReconciliationBatchSize: number
   modelUsageReconciliationIntervalMs: number
   supportSlaScanIntervalMs: number
   supportSlaReportIntervalMs: number
@@ -141,6 +143,86 @@ export async function allSettledWithConcurrency<T, R>(
   return results
 }
 
+export type PaymentReconciliationResult = {
+  state: string
+  checked?: number
+  payment_checked?: number
+  refund_checked?: number
+  settled?: unknown[]
+  pending?: unknown[]
+  failed?: unknown[]
+  refund_settled?: unknown[]
+  refund_pending?: unknown[]
+  refund_failed?: unknown[]
+}
+
+export type PaymentReconciliationSweepSummary = {
+  completed: number
+  failed: number
+  businessWarnings: number
+  checked: number
+  paymentChecked: number
+  refundChecked: number
+  paymentSettled: number
+  paymentPending: number
+  paymentFailed: number
+  refundSettled: number
+  refundPending: number
+  refundFailed: number
+}
+
+/** Payment provider maintenance is a least-privilege reconcile responsibility.
+ * The local `all` dispatcher has no corresponding signed worker role and must
+ * not acquire provider-facing maintenance work. Advance before starting I/O so
+ * an unexpected sweep failure cannot turn the poll interval into retry cadence. */
+export function planPaymentReconciliationRun(input: { role: WorkerRole; startedAt: number; nextRunAt: number; intervalMs: number }): { run: boolean; nextRunAt: number } {
+  const run = input.role === 'reconcile' && input.startedAt >= input.nextRunAt
+  return { run, nextRunAt: run ? input.startedAt + input.intervalMs : input.nextRunAt }
+}
+
+function nonNegativeInteger(value: unknown): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0
+}
+
+function itemCount(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0
+}
+
+/** Run a bounded, workspace-scoped payment sweep and retain business-level
+ * attention separately from transport failures. Reconcile deployments run
+ * multiple replicas, so this client-side cap complements the API's durable
+ * per-workspace lease without pretending to provide distributed exclusion. */
+export async function runPaymentReconciliationSweep(input: {
+  workspaces: readonly string[]
+  reconcile: (workspaceId: string) => Promise<PaymentReconciliationResult>
+  workspaceConcurrency?: number
+}): Promise<PaymentReconciliationSweepSummary> {
+  const concurrency = Math.min(2, Math.max(1, Math.floor(input.workspaceConcurrency ?? 2)))
+  const results = await allSettledWithConcurrency(input.workspaces, concurrency, workspaceId => input.reconcile(workspaceId))
+  const summary: PaymentReconciliationSweepSummary = {
+    completed: 0, failed: 0, businessWarnings: 0, checked: 0, paymentChecked: 0, refundChecked: 0,
+    paymentSettled: 0, paymentPending: 0, paymentFailed: 0, refundSettled: 0, refundPending: 0, refundFailed: 0,
+  }
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      summary.failed += 1
+      continue
+    }
+    summary.completed += 1
+    if (result.value.state === 'attention_required') summary.businessWarnings += 1
+    summary.checked += nonNegativeInteger(result.value.checked)
+    summary.paymentChecked += nonNegativeInteger(result.value.payment_checked)
+    summary.refundChecked += nonNegativeInteger(result.value.refund_checked)
+    summary.paymentSettled += itemCount(result.value.settled)
+    summary.paymentPending += itemCount(result.value.pending)
+    summary.paymentFailed += itemCount(result.value.failed)
+    summary.refundSettled += itemCount(result.value.refund_settled)
+    summary.refundPending += itemCount(result.value.refund_pending)
+    summary.refundFailed += itemCount(result.value.refund_failed)
+  }
+  return summary
+}
+
 export function imageReconciliationQueryTimeoutMs(workerApiTimeoutMs: number): number {
   if (!Number.isSafeInteger(workerApiTimeoutMs) || workerApiTimeoutMs < 1) throw new RangeError('worker API timeout must be a positive integer')
   return Math.min(workerApiTimeoutMs, 5 * 60 * 1000)
@@ -203,6 +285,8 @@ const workerRouting: Record<Exclude<WorkerRole, 'all' | 'automation'>, { eventTy
 const DEFAULT_WORKER_API_TIMEOUT_MS = 10_000
 const DEFAULT_WORKER_DEPENDENCY_CHECK_INTERVAL_MS = 10_000
 const DEFAULT_STORAGE_RECONCILIATION_INTERVAL_MS = 15 * 60_000
+const DEFAULT_PAYMENT_RECONCILIATION_INTERVAL_MS = 5 * 60_000
+const DEFAULT_PAYMENT_RECONCILIATION_BATCH_SIZE = 10
 const DEFAULT_MODEL_USAGE_RECONCILIATION_INTERVAL_MS = 5 * 60_000
 const DEFAULT_SUPPORT_SLA_SCAN_INTERVAL_MS = 60_000
 const DEFAULT_SUPPORT_SLA_REPORT_INTERVAL_MS = 60 * 60_000
@@ -311,6 +395,7 @@ function workerAuthIntent(signingSecret: string, workerId = resolveWorkerId()): 
 function workerRoleForRequest(method: string, requestTarget: string, body?: string | Uint8Array): WorkerRequestRole {
   const path = new URL(requestTarget, 'http://worker.internal').pathname
   if (/^\/v1\/sync-jobs\//u.test(path)) return 'sync'
+  if (path === '/v1/internal/billing/reconciliation') return 'reconcile'
   if (path === '/v1/internal/image-generation-jobs/reconciliation') return 'reconcile'
   if (/^\/v1\/(?:generation-jobs|internal\/image-generation-jobs|internal\/image-generation-continuations)\//u.test(path)) return 'generation'
   if (/^\/v1\/publish-jobs\/[^/]+\/observation$/u.test(path)) {
@@ -735,6 +820,25 @@ export async function postModelUsageReconciliation(input: { apiBaseUrl: string; 
   })
   if (!response.ok) throw new Error(`model usage reconciliation API returned ${response.status}`)
   return await parseWorkerApiJson(response)
+}
+
+export async function postPaymentReconciliation(input: { apiBaseUrl: string; apiToken: string; workspaceId: string; limit?: number; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }): Promise<PaymentReconciliationResult> {
+  const workspaceId = input.workspaceId.trim()
+  if (!workspaceId || /[\u0000-\u001f\u007f]/u.test(workspaceId)) throw new Error('payment reconciliation requires a valid workspaceId')
+  const limit = input.limit ?? DEFAULT_PAYMENT_RECONCILIATION_BATCH_SIZE
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) throw new Error('payment reconciliation limit must be 1..20')
+  const path = '/v1/internal/billing/reconciliation'
+  const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret) : {}) },
+    body: JSON.stringify({ workspace_id: workspaceId, limit }),
+    redirect: 'error',
+    signal: input.signal,
+  })
+  if (!response.ok) throw new Error(`payment reconciliation API returned ${response.status}`)
+  const envelope = await parseWorkerApiJson(response) as { data?: unknown }
+  if (!isObject(envelope.data) || typeof envelope.data.state !== 'string') throw new Error('payment reconciliation API returned an invalid response')
+  return envelope.data as PaymentReconciliationResult
 }
 
 export type ImageGenerationReconciliationCandidate = {
@@ -1180,6 +1284,8 @@ export function readWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     autoDiscoverWorkspaces,
     pollIntervalMs: positiveInt(env.WORKER_POLL_INTERVAL_MS, 1_000, 'WORKER_POLL_INTERVAL_MS'),
     storageReconciliationIntervalMs: positiveInt(env.STORAGE_RECONCILIATION_INTERVAL_MS, DEFAULT_STORAGE_RECONCILIATION_INTERVAL_MS, 'STORAGE_RECONCILIATION_INTERVAL_MS'),
+    paymentReconciliationIntervalMs: positiveInt(env.PAYMENT_RECONCILIATION_INTERVAL_MS, DEFAULT_PAYMENT_RECONCILIATION_INTERVAL_MS, 'PAYMENT_RECONCILIATION_INTERVAL_MS'),
+    paymentReconciliationBatchSize: boundedPositiveInt(env.PAYMENT_RECONCILIATION_BATCH_SIZE, DEFAULT_PAYMENT_RECONCILIATION_BATCH_SIZE, 20, 'PAYMENT_RECONCILIATION_BATCH_SIZE'),
     modelUsageReconciliationIntervalMs: positiveInt(env.MODEL_USAGE_RECONCILIATION_INTERVAL_MS, DEFAULT_MODEL_USAGE_RECONCILIATION_INTERVAL_MS, 'MODEL_USAGE_RECONCILIATION_INTERVAL_MS'),
     supportSlaScanIntervalMs: positiveInt(env.SUPPORT_SLA_SCAN_INTERVAL_MS, DEFAULT_SUPPORT_SLA_SCAN_INTERVAL_MS, 'SUPPORT_SLA_SCAN_INTERVAL_MS'),
     supportSlaReportIntervalMs: positiveInt(env.SUPPORT_SLA_REPORT_INTERVAL_MS, DEFAULT_SUPPORT_SLA_REPORT_INTERVAL_MS, 'SUPPORT_SLA_REPORT_INTERVAL_MS'),
@@ -1618,6 +1724,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
   }
   let stopping = false
   let nextStorageReconciliationAt = 0
+  let nextPaymentReconciliationAt = 0
   let nextModelUsageReconciliationAt = 0
   let nextImageGenerationReconciliationAt = 0
   let nextSupportSlaScanAt = 0
@@ -1728,11 +1835,23 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
             })
           })()
           : await pollOnce(repository, dispatchers, { ...config, workspaces, ...(scannerHeartbeat ? { claimAdmission: () => scannerHeartbeat!.canProcessScans() } : {}) }, queueFactory, { executionAuthorization, commercialAccess, deliveryScanAdmission, publishRequested, reconcileRequested, generationRequested, imageGenerationRequested, syncRequested, scanRequested, imageContinuationRequested, onGenerationResult, onGenerationDeferred, onPublishObservation })
+        const paymentReconciliationSchedule = planPaymentReconciliationRun({ role: config.role, startedAt, nextRunAt: nextPaymentReconciliationAt, intervalMs: config.paymentReconciliationIntervalMs })
+        nextPaymentReconciliationAt = paymentReconciliationSchedule.nextRunAt
         if (config.role === 'reconcile' && startedAt >= nextStorageReconciliationAt) {
           if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for storage reconciliation')
           const reconciliation = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => postStorageReconciliation({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }))
           nextStorageReconciliationAt = Date.now() + config.storageReconciliationIntervalMs
           Object.assign(result as unknown as Record<string, unknown>, { storageReconciliation: { completed: reconciliation.filter(item => item.status === 'fulfilled').length, failed: reconciliation.filter(item => item.status === 'rejected').length } })
+        }
+        if (paymentReconciliationSchedule.run) {
+          if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for payment reconciliation')
+          const paymentReconciliation = await runPaymentReconciliationSweep({
+            workspaces,
+            workspaceConcurrency: config.workspaceBatchSize,
+            reconcile: workspaceId => postPaymentReconciliation({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, limit: config.paymentReconciliationBatchSize, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }),
+          })
+          Object.assign(result as unknown as Record<string, unknown>, { paymentReconciliation })
+          if (paymentReconciliation.businessWarnings > 0) log({ level: 'warn', message: 'payment reconciliation completed with business warnings', paymentReconciliation })
         }
         if ((config.role === 'reconcile' || config.role === 'all') && workspaces.length > 0) {
           const onboardingDispatches = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => onboardingGrantDispatch.dispatchDue({ workspaceId, limit: Math.min(100, config.batchSize) }))
@@ -1795,6 +1914,12 @@ function positiveInt(raw: string | undefined, fallback: number, name: string): n
   if (raw === undefined || raw === '') return fallback
   const value = Number(raw)
   if (!Number.isInteger(value) || value < 1) throw new Error(`${name} must be a positive integer`)
+  return value
+}
+
+function boundedPositiveInt(raw: string | undefined, fallback: number, maximum: number, name: string): number {
+  const value = positiveInt(raw, fallback, name)
+  if (value > maximum) throw new Error(`${name} must be at most ${maximum}`)
   return value
 }
 

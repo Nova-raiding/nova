@@ -391,6 +391,8 @@ services:
     environment:
       <<: *worker-environment
       WORKER_ROLE: reconcile
+      PAYMENT_RECONCILIATION_INTERVAL_MS: ${PAYMENT_RECONCILIATION_INTERVAL_MS:-300000}
+      PAYMENT_RECONCILIATION_BATCH_SIZE: ${PAYMENT_RECONCILIATION_BATCH_SIZE:-10}
       WORKER_API_TOKEN: ${WORKER_RECONCILE_API_TOKEN:-reconcile-local-token}
       WORKER_API_SIGNING_SECRET: ${WORKER_RECONCILE_API_SIGNING_SECRET:-reconcile-local-signing-secret}
       WORKER_READY_FILE: /tmp/merchant-worker-reconcile-ready

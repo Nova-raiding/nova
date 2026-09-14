@@ -1080,10 +1080,12 @@ describe('API HTTP vertical slice', () => {
     expect(created.error).toBeNull()
     const first = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.reconciliation.run', params: { workspace_id: workspaceId, limit: '10' } }) }).then(json)
     expect(first.error).toBeNull()
-    expect(first.data?.result).toMatchObject({ state: 'completed', checked: 1, provider_orders: 1, settled: [{ provider_trade_id: providerTradeId }], pending: [], failed: [], idempotent_settlement: true })
-    const second = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'billing.reconciliation.run', params: { workspace_id: workspaceId, limit: '10' } }) }).then(json)
+    expect(first.data?.result).toMatchObject({ state: 'completed', checked: 1, provider_orders: 1, settled: [{ provider_trade_id: providerTradeId }], pending: [], failed: [], idempotent_settlement: true, total_query_budget: 10 })
+    const second = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'billing.reconciliation.run', params: { workspace_id: workspaceId } }) }).then(json)
     expect(second.error).toBeNull()
-    expect(second.data?.result).toMatchObject({ state: 'completed', checked: 0, settled: [], pending: [], failed: [] })
+    expect(second.data?.result).toMatchObject({ state: 'completed', checked: 0, settled: [], pending: [], failed: [], total_query_budget: 10 })
+    const invalidLimit = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'billing.reconciliation.run', params: { workspace_id: workspaceId, limit: '21' } }) }).then(json)
+    expect(invalidLimit.error?.code).toBe('INVALID_REQUEST')
   })
 
   it('does not settle a paid query when the provider omits the amount', async () => {

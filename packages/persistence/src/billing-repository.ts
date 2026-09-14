@@ -110,6 +110,16 @@ export class PostgresBillingRepository {
     })
   }
 
+  /** Oldest-first provider queue used by recurring reconciliation so newer
+   * checkout traffic cannot starve an older ambiguous payment forever. */
+  async listPendingProviderOrdersForReconciliation(workspaceId: string, limit = 100): Promise<BillingOrder[]> {
+    return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => {
+      const safeLimit = Math.min(100, Math.max(1, Number.isSafeInteger(limit) ? limit : 100))
+      const result = await client.query<OrderRow>("SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND state='pending' AND payment_mode='provider' ORDER BY created_at,id LIMIT $2", [workspaceId, safeLimit])
+      return result.rows.map(order)
+    })
+  }
+
   /** Refund debits without a matching release are durable provider queries.
    * Keep this lookup in SQL so reconciliation cannot silently miss a hold when
    * the workspace has more transactions than the public history page limit. */

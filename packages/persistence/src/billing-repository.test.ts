@@ -237,6 +237,15 @@ describe('PostgresBillingRepository recharge order reporting', () => {
     client.enqueue(); client.enqueue(); client.enqueue({ state: 'pending', count: '101' }, { state: 'paid', count: '7' }); client.enqueue()
     await expect(repository.countOrdersByState('ws_wallet')).resolves.toEqual({ pending: 101, paid: 7, closed: 0, failed: 0 })
   })
+
+  it('uses an oldest-first provider-only queue for automated reconciliation', async () => {
+    const client = new RecordingClient()
+    const pending = { id: 'recharge_oldest', workspace_id: 'ws_wallet', channel: 'alipay', amount_fen: 1000, state: 'pending', payment_mode: 'provider', payment_url: null, provider_trade_id: null, created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:00:00.000Z' }
+    client.enqueue(); client.enqueue(); client.enqueue(pending); client.enqueue()
+    await expect(new PostgresBillingRepository(new RecordingPool(client)).listPendingProviderOrdersForReconciliation('ws_wallet', 7)).resolves.toMatchObject([{ id: 'recharge_oldest' }])
+    const query = client.calls.find(call => call.text.includes("payment_mode='provider'") && call.text.includes('ORDER BY created_at,id'))
+    expect(query?.values).toEqual(['ws_wallet', 7])
+  })
 })
 
 describe('PostgresBillingRepository recharge settlement atomicity', () => {

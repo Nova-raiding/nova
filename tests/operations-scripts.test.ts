@@ -99,6 +99,8 @@ describe('deployment operation scripts', () => {
   it('ships the explicit 15-minute storage reconciliation interval to Kubernetes workers', () => {
     const config = readFileSync('infra/kubernetes/base/configmap.yaml', 'utf8')
     expect(config).toContain('STORAGE_RECONCILIATION_INTERVAL_MS: "900000"')
+    expect(config).toContain('PAYMENT_RECONCILIATION_INTERVAL_MS: "300000"')
+    expect(config).toContain('PAYMENT_RECONCILIATION_BATCH_SIZE: "10"')
   })
 
   it('protects every isolated worker pool from voluntary disruption', () => {
