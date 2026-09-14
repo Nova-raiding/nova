@@ -130,6 +130,19 @@ describe('MCP method contract', () => {
     expect(MCP_METHOD_SCHEMAS['campaign.batch.resume'].properties).not.toHaveProperty('item_ids_json')
   })
 
+  it('requires exactly one checklist update mode and always scopes customer delivery to a target workspace', () => {
+    const schema = MCP_METHOD_SCHEMAS['ops.customer-delivery.checklist.update']
+    expect(schema.required).toEqual(['target_workspace_id', 'delivery_id', 'checklist_key', 'expected_revision'])
+    expect(schema.requiredAnyOf).toEqual(['completed', 'items_json'])
+    expect(schema.mutuallyExclusive).toEqual([['completed', 'items_json']])
+    const base = { target_workspace_id: 'ws_delivery', delivery_id: 'delivery_1', checklist_key: 'system_integration', expected_revision: '1' }
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-completed', method: 'ops.customer-delivery.checklist.update', params: { ...base, completed: 'false' } })).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-items', method: 'ops.customer-delivery.checklist.update', params: { ...base, items_json: '[]' } })).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-neither', method: 'ops.customer-delivery.checklist.update', params: base }).errors).toContain('params.completed or items_json is required')
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-both', method: 'ops.customer-delivery.checklist.update', params: { ...base, completed: 'true', items_json: '[]' } }).errors).toContain('params.completed and items_json are mutually exclusive')
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-no-target', method: 'ops.customer-delivery.checklist.update', params: { ...base, target_workspace_id: '', completed: 'true' } }).errors).toContain('params.target_workspace_id is required')
+  })
+
   it('defines an explicit parameter schema for every method', () => {
     expect(MCP_METHOD_CONTRACTS).toHaveLength(MCP_METHODS.length)
     for (const method of MCP_METHODS) {
