@@ -76,6 +76,9 @@ describe('PostgresCommercialContractRepository', () => {
     const repository = new PostgresCommercialContractRepository(pool(client))
     const checkout = await repository.attachCheckout({ workspaceId: 'ws-1', orderId: row.id, channel: 'alipay', idempotencyKey: 'checkout-1', paymentUrl: 'https://pay.example/orders/1', providerOrderId: 'provider-order-1', expiresAt: '2026-09-02T01:00:00Z' })
     expect(checkout).toMatchObject({ channel: 'alipay', paymentUrl: 'https://pay.example/orders/1', providerOrderId: 'provider-order-1', replayed: false })
+    const loadSql = client.calls.find(call => call.sql.includes('FROM commercial_orders_v2 o'))?.sql ?? ''
+    expect(loadSql).toContain('JOIN commercial_order_snapshots_v2')
+    expect(loadSql).not.toContain('JOIN commercial_catalog_skus')
     const update = client.calls.find(call => call.sql.includes('UPDATE commercial_orders_v2'))
     expect(update?.values).not.toContain(200001)
     expect(update?.values).not.toContain('USD')
