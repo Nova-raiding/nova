@@ -62,6 +62,8 @@ export const CAPABILITIES = [
   'commercial.rate.publish',
   'commercial.service_fulfillment.read',
   'commercial.service_fulfillment.write',
+  'customer.delivery.read',
+  'customer.delivery.update',
   'commercial.service_boundary.accept',
   'platform.summary.read',
   'platform.settings.read',
@@ -358,17 +360,18 @@ const commercialOpsRead: readonly CapabilityId[] = [
   'commercial.catalog.read', 'commercial.catalog.draft', 'commercial.catalog.approve', 'commercial.catalog.publish', 'commercial.private_sku.read', 'commercial.order.read',
   'commercial.rate.read', 'commercial.service_fulfillment.read',
 ]
+const customerDeliveryRead: readonly CapabilityId[] = ['customer.delivery.read']
 const commercialFinanceRead: readonly CapabilityId[] = [
   'commercial.access.read', 'commercial.entitlement.read', 'commercial.point.read',
   'commercial.catalog.read', 'commercial.order.read', 'commercial.rate.read',
 ]
 
 export const ROLE_CAPABILITIES: Readonly<Record<CanonicalRole, readonly CapabilityId[]>> = {
-  platform_admin: [...platformRead, ...commercialOpsRead, 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.point.adjust.approve', 'authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.status.update', 'workspace.delete.execute', 'feature_flag.update', 'feature_flag.administer', 'audit.export', 'billing.platform.read', 'billing.export'],
+  platform_admin: [...platformRead, ...commercialOpsRead, ...customerDeliveryRead, 'customer.delivery.update', 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.point.adjust.approve', 'authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.status.update', 'workspace.delete.execute', 'feature_flag.update', 'feature_flag.administer', 'audit.export', 'billing.platform.read', 'billing.export'],
   // P0 compatibility: legacy platform_ops resolves here, so existing identity/member/delete
   // enforcement remains intact until durable platform-role assignments replace that alias.
-  ops_admin: [...platformRead, ...commercialOpsRead, 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.service_fulfillment.write', 'authorization.role.read', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.delete.execute', 'workspace.member.read', 'workspace.member.manage', 'support.ticket.update', 'support.sla.update', 'support.sla.approve', 'incident.update', 'incident.administer', 'feature_flag.update', 'commercial.update', 'commercial.export', 'platform.settings.update', 'platform.media_spec.update', 'platform.media_spec.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.export', 'canonical.backfill.read', 'canonical.backfill.update', 'marketing.alert.update', 'store.connection.update'],
-  support_agent: ['platform.summary.read', 'workspace.directory.read', 'support.ticket.read', 'support.ticket.update', 'support.sla.update', 'incident.read', 'incident.update', 'audit.read', 'feature_flag.read', 'commercial.access.read', 'commercial.entitlement.read', 'commercial.service_fulfillment.read'],
+  ops_admin: [...platformRead, ...commercialOpsRead, ...customerDeliveryRead, 'customer.delivery.update', 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.service_fulfillment.write', 'authorization.role.read', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.delete.execute', 'workspace.member.read', 'workspace.member.manage', 'support.ticket.update', 'support.sla.update', 'support.sla.approve', 'incident.update', 'incident.administer', 'feature_flag.update', 'commercial.update', 'commercial.export', 'platform.settings.update', 'platform.media_spec.update', 'platform.media_spec.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.export', 'canonical.backfill.read', 'canonical.backfill.update', 'marketing.alert.update', 'store.connection.update'],
+  support_agent: ['platform.summary.read', 'workspace.directory.read', 'support.ticket.read', 'support.ticket.update', 'support.sla.update', 'incident.read', 'incident.update', 'audit.read', 'feature_flag.read', 'commercial.access.read', 'commercial.entitlement.read', 'commercial.service_fulfillment.read', 'customer.delivery.read'],
   finance_ops: ['platform.summary.read', 'workspace.directory.read', 'commercial.private_trial.workflow', 'commercial.point.adjust.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.refund.execute', 'billing.export', 'model.cost.read', 'commercial.read', 'audit.read', ...commercialFinanceRead],
   security_admin: ['authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'audit.read', 'audit.export', 'feature_flag.read'],
   auditor: [...platformRead, 'audit.export'],
@@ -425,8 +428,11 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   read('audit.read', 'workspace', 'secret_metadata', ['ops.audit.list', 'ops.audit.detail']),
   read('audit.read', 'platform', 'secret_metadata', ['ops.audit.platform.list']),
   read('audit.export', 'workspace', 'secret_metadata', ['ops.audit.export']),
-  read('support.ticket.read', 'workspace', 'customer_metadata', ['ops.support.tickets.list', 'ops.support.ticket.get', 'ops.support.sla.report', 'ops.customer-delivery.list', 'ops.customer-delivery.get', 'ops.customer-delivery.videos.list']),
-  write('support.ticket.update', 'workspace', 'customer_metadata', ['ops.support.ticket.create', 'ops.support.ticket.assign', 'ops.support.ticket.transition', 'ops.support.ticket.comment', 'ops.customer-delivery.create', 'ops.customer-delivery.update', 'ops.customer-delivery.checklist.update', 'ops.customer-delivery.training.complete', 'ops.customer-delivery.videos.add']),
+  read('support.ticket.read', 'workspace', 'customer_metadata', ['ops.support.tickets.list', 'ops.support.ticket.get', 'ops.support.sla.report']),
+  write('support.ticket.update', 'workspace', 'customer_metadata', ['ops.support.ticket.create', 'ops.support.ticket.assign', 'ops.support.ticket.transition', 'ops.support.ticket.comment']),
+  read('customer.delivery.read', 'platform', 'customer_metadata', ['ops.customer-delivery.list', 'ops.customer-delivery.get', 'ops.customer-delivery.checklist-items.list', 'ops.customer-delivery.videos.list']),
+  write('customer.delivery.update', 'platform', 'customer_metadata', ['ops.customer-delivery.create', 'ops.customer-delivery.videos.add']),
+  write('customer.delivery.update', 'platform', 'customer_metadata', ['ops.customer-delivery.update', 'ops.customer-delivery.checklist.update', 'ops.customer-delivery.checklist-item.update', 'ops.customer-delivery.training.complete'], 'mutation', ['revision']),
   write('support.sla.update', 'workspace', 'customer_metadata', ['ops.support.sla.correction.create'], 'mutation', ['reason', 'idempotency']),
   write('support.sla.approve', 'workspace', 'customer_metadata', ['ops.support.sla.correction.decide'], 'mutation', ['reason', 'idempotency', 'approval']),
   read('incident.read', 'workspace', 'customer_metadata', ['ops.incidents.list', 'ops.incident.get', 'ops.incident.timeline']),
