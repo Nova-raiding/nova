@@ -6,7 +6,7 @@ import type { PlatformUser } from "../../types/ops";
 import { EnterpriseIdentity } from "../EnterpriseIdentity.js";
 import { packageCodeLabel } from "../commercial/packageLabels.js";
 
-type UserFilters = { query?: string; status?: string; workspaceId?: string };
+type UserFilters = { query?: string; status?: string; workspaceId?: string; attribute?: string };
 export type UserDirectorySort = { field: "displayName" | "status" | "createdAt"; order: "ascend" | "descend" };
 type DirectoryUser = PlatformUser & { createdAt?: string };
 const roleLabels: Record<string, string> = { workspace_owner: "企业所有者", merchant_admin: "企业管理员", operator: "运营", support: "支持", finance: "财务", platform_ops: "平台运营" };
@@ -77,9 +77,13 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const actionErrorRef = useRef<HTMLDivElement>(null);
   const directoryErrorRef = useRef<HTMLDivElement>(null);
   const [userSort, setUserSort] = useState<UserDirectorySort>();
+  const [attributeFilter, setAttributeFilter] = useState("");
   const detailTriggerSubjectRef = useRef<string | undefined>(undefined);
   const detailButtonRefs = useRef(new Map<string, HTMLElement>());
-  const sortedUsers = useMemo(() => sortUserDirectoryRows(model.userDirectory.items, userSort), [model.userDirectory.items, userSort]);
+  const sortedUsers = useMemo(() => {
+    const filtered = attributeFilter ? model.userDirectory.items.filter((row) => userAttributeLabel(row) === attributeFilter) : model.userDirectory.items;
+    return sortUserDirectoryRows(filtered, userSort);
+  }, [attributeFilter, model.userDirectory.items, userSort]);
   const identityWritesDisabled = !canWriteLoadedIdentity(model);
   const initialDirectoryLoadFailed = Boolean(model.userDirectoryError && !model.userDirectoryLoading && model.userDirectory.items.length === 0);
 
@@ -171,11 +175,16 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
     {!canReadUserDirectory && <Alert showIcon type="warning" title="当前角色不能读取用户目录" description="跨租户身份与成员关系需要 identity.read；权限由服务端策略决定。" />}
     {canReadUserDirectory && !model.canUserGovernance && <Alert showIcon type="info" title="当前为只读视图" description="可以查询身份、成员关系和审计详情，但停用、恢复、风险策略与会话撤销需要 identity.update。" />}
     <Card title="已接入用户" extra={<Typography.Text type="secondary">共 {model.userDirectory.workspaceCount} 家接入用户</Typography.Text>} aria-busy={model.userDirectoryLoading}>
-      <Form<UserFilters> form={form} layout="inline" initialValues={{ status: "" }} onFinish={(values) => void model.loadUsers({ ...values, status: values.status || undefined, page: 1 })} aria-label="用户目录筛选">
+      <Form<UserFilters> form={form} layout="inline" initialValues={{ status: "", attribute: "" }} onFinish={(values) => { const { attribute, ...filters } = values; setAttributeFilter(attribute || ""); void model.loadUsers({ ...filters, status: values.status || undefined, page: 1 }); }} aria-label="用户目录筛选">
         <Form.Item name="query" label="搜索"><Input allowClear aria-label="按关键词筛选用户目录" /></Form.Item>
         <Form.Item name="status" label="状态">
           <Select aria-label="按成员状态筛选用户目录" style={{ width: 140 }} options={[
             { value: "", label: "全部" }, { value: "active", label: "已激活" }, { value: "suspended", label: "已停用" },
+          ]} />
+        </Form.Item>
+        <Form.Item name="attribute" label="属性">
+          <Select aria-label="按用户属性筛选用户目录" style={{ width: 140 }} options={[
+            { value: "", label: "全部" }, { value: "正常版本", label: "正常版本" }, { value: "赠送版本", label: "赠送版本" }, { value: "演示版本", label: "演示版本" },
           ]} />
         </Form.Item>
         <Form.Item><Space>
@@ -213,7 +222,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         dataSource={sortedUsers}
         locale={{ emptyText: "没有符合条件的用户成员关系" }}
         rowSelection={{ selectedRowKeys: selectedUserKeys, onChange: (keys) => setSelectedUserKeys(keys.map((key) => String(key))), getCheckboxProps: (row) => ({ disabled: row.accountType === "platform" || row.externalSubject === model.opsSession?.actor_id || row.status === "suspended" }) }}
-        pagination={{ current: Math.floor(model.userDirectory.offset / model.userDirectory.limit) + 1, pageSize: model.userDirectory.limit, total: model.userDirectory.total, showSizeChanger: true, showTotal: (total) => `共 ${total} 条成员关系` }}
+        pagination={{ current: Math.floor(model.userDirectory.offset / model.userDirectory.limit) + 1, pageSize: model.userDirectory.limit, total: attributeFilter ? sortedUsers.length : model.userDirectory.total, showSizeChanger: true, showTotal: (total) => `共 ${total} 条成员关系` }}
         onChange={handleDirectoryChange}
         scroll={{ x: "max-content" }}
         columns={[
