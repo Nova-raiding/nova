@@ -37,6 +37,7 @@ const PLUGIN_VERSION = (() => {
   catch { return '' }
 })()
 const RECHARGE_UI_URI = 'ui://merchant-marketing/recharge-v1.html'
+const ONBOARDING_UI_URI = 'ui://merchant-marketing/onboarding-v1.html'
 const CREATIVE_CHOICE_UI_URI = 'ui://merchant-marketing/creative-choice-v1.html'
 const CONTENT_DIFF_UI_URI = 'ui://merchant-marketing/content-diff-v1.html'
 const PUBLISH_CONFIRM_UI_URI = 'ui://merchant-marketing/publish-confirm-v1.html'
@@ -45,7 +46,7 @@ const IMAGE_CANDIDATE_CHOICE_UI_URI = 'ui://merchant-marketing/image-candidate-c
 // These methods may contribute structured context for the model's native
 // conversation without necessarily rendering an embedded component.
 const MERCHANT_CONTEXT_METADATA_METHODS = new Set([
-  'merchant.start', 'workspace.health', 'catalog.search', 'catalog.import.batch',
+  'onboarding.status', 'merchant.start', 'workspace.health', 'catalog.search', 'catalog.import.batch',
   'task.group.create', 'publish.batch.prepare', 'publish.batch.get',
 ])
 // Only results that materially benefit from selection, review, or confirmation
@@ -80,6 +81,7 @@ let interactiveWriteUntil = 0
 let bootstrappedWorkspaceId = ''
 let commercialRecoveryOnlySnapshot
 const READ_ONLY_METHODS = new Set([
+  'onboarding.status',
   'merchant.first_value',
   'brand-unit.list', 'brand-unit.listing.list', 'canonical.product.consistency', 'campaign.batch.list', 'campaign.batch.get',
   'workspace.health', 'catalog.search', 'catalog.categories', 'catalog.image.get',
@@ -191,6 +193,10 @@ const DESTRUCTIVE_WRITE_METHODS = new Set([
   'catalog.product.disable', 'automation.pause', 'publish.confirm', 'publish.batch.confirm',
 ])
 const METHODS = {
+  'onboarding.status': {
+    description: '查看安装后的系统引导进度、当前阻断、需要绑定的对象和下一步动作。只读。',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
   'commercial.service-boundary.accept': {
     description: '确认 commercial.service-boundary.v1（校验和 94cd78089cf960d4b556ed9990fcd653c03473bd143b94d0203ab978ea84d685）：包含系统指导、常规排障、品牌配置、生成指导、拒审分析、流程优化；不包含无限修改、全套代做、完整营销策略、日常运营、7×24/非工作时段应急、内部开发；结果不保证。客户身份由已认证会话派生。',
     inputSchema: { type: 'object', properties: { policy_version: boundedString(128), policy_checksum: boundedString(128), acceptance_ref: boundedString(256), accepted_at: boundedString(64), idempotency_key: idempotencyKeyProperty }, required: ['policy_version', 'policy_checksum', 'acceptance_ref', 'accepted_at', 'idempotency_key'], additionalProperties: false },
@@ -637,6 +643,18 @@ const METHODS = {
   'asset.upload.batch': {
     description: '批量上传素材到隔离区；单批最多20个、总大小最多250MB。assets_json 必须是 JSON 数组字符串，每项至少包含 name、mime_type、content_base64，可选 rights_scope、applicable_platforms_json、applicable_regions_json、usage_scopes_json、valid_from、valid_to、ai_modification_allowed（true/false 字符串）。',
     inputSchema: { type: 'object', properties: { assets_json: { type: 'string' } }, required: ['assets_json'], additionalProperties: false },
+  },
+  'upload.session.create': {
+    description: '为大文件创建分片上传会话；需要服务端对象存储配置。',
+    inputSchema: { type: 'object', properties: { file_name: { type: 'string' }, content_type: { type: 'string' }, size_bytes: { type: 'string' }, sha256: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['file_name', 'content_type', 'size_bytes', 'sha256'], additionalProperties: false },
+  },
+  'upload.session.part': {
+    description: '登记分片上传内容。',
+    inputSchema: { type: 'object', properties: { session_id: { type: 'string' }, part_number: { type: 'string' }, content_base64: { type: 'string' } }, required: ['session_id', 'part_number', 'content_base64'], additionalProperties: false },
+  },
+  'upload.session.complete': {
+    description: '完成并校验分片上传会话。',
+    inputSchema: { type: 'object', properties: { session_id: { type: 'string' }, parts_json: { type: 'string' } }, required: ['session_id'], additionalProperties: false },
   },
   'asset.scan': {
     description: '平台安全扫描服务内部回调；商家和 ChatGPT 不应调用或提交扫描证据。',
@@ -1185,6 +1203,18 @@ function detailDecisionSummary(method, result) {
 }
 
 function userFacingToolText(method, result) {
+  if (method === 'onboarding.status') {
+    const card = result?.onboarding_card
+    if (card && typeof card === 'object') {
+      return [
+        `安装引导：${card.status ?? '进行中'}`,
+        `当前步骤：${card.current_step ?? '待检查'}`,
+        card.binding ? `需要绑定：${card.binding}` : '',
+        card.progress ? `进度：${card.progress}` : '',
+        card.guidance ? `下一步：${card.guidance}` : '',
+      ].filter(Boolean).join('\n')
+    }
+  }
   const points = result && typeof result === 'object' && !Array.isArray(result) && result.creative_points && typeof result.creative_points === 'object'
     ? result.creative_points
     : undefined
@@ -1890,6 +1920,23 @@ function merchantConversationProjection(method, result, args = {}) {
 
 function merchantUiMetadata(method, result, args = {}) {
   if (!result || typeof result !== 'object' || Array.isArray(result) || !MERCHANT_CONTEXT_METADATA_METHODS.has(method)) return result
+  if (method === 'onboarding.status') {
+    const current = result.current_step && typeof result.current_step === 'object' ? result.current_step : {}
+    const steps = Array.isArray(result.steps) ? result.steps : []
+    const labels = steps.map(step => `${step.state === 'complete' ? '✓' : '○'} ${step.title}: ${step.summary}`).join('；')
+    return {
+      onboarding_card: {
+        title: '大麦插件安装引导',
+        status: result.status === 'ready' ? '已完成' : '进行中',
+        current_step: current.title ?? '待检查',
+        binding: result.binding,
+        next_action: result.next_action,
+        guidance: result.guidance,
+        progress: labels,
+      },
+      ...result,
+    }
+  }
   if (method === 'merchant.start' || method === 'workspace.health') return merchantConversationProjection(method, result, args)
   const explicitContext = method === 'merchant.start' ? merchantStartContext(args) : {}
   const ui = merchantContextMetadata(result, explicitContext)
@@ -1951,6 +1998,10 @@ function toolAnnotations(name) {
   if (name === 'content.visual.select') return { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   if (name === 'content.export') return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
   return { readOnlyHint: false, destructiveHint: DESTRUCTIVE_WRITE_METHODS.has(name), idempotentHint: false, openWorldHint: DESTRUCTIVE_WRITE_METHODS.has(name) }
+}
+
+function onboardingUiHtml() {
+  return `<!doctype html><meta charset="utf-8"><title>大麦安装引导</title><style>body{font:15px system-ui,sans-serif;color:#172554;margin:24px;line-height:1.6}h1{font-size:22px;margin:0 0 16px}.step{border:1px solid #dbe4f0;border-radius:12px;padding:12px 14px;margin:8px 0}.muted{color:#64748b}</style><h1>大麦插件安装引导</h1><p class="muted">这是只读状态卡。完成当前步骤后重新检查，不会自动生成或发布内容。</p><div id="steps">请先调用 onboarding.status 获取最新状态。</div><script>const root=document.getElementById('steps');const data=window.openai?.toolOutput;if(data?.steps){root.innerHTML=data.steps.map(s=>'<div class="step"><strong>'+(s.state==='complete'?'✓':'○')+' '+s.title+'</strong><br><span class="muted">'+s.summary+'</span></div>').join('')}else if(data?.onboarding_card){root.textContent=data.onboarding_card.progress||'请先调用 onboarding.status'}</script>`
 }
 
 function toolContent(method, result) {
@@ -2997,11 +3048,12 @@ async function handle(request) {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: { tools: {}, resources: {}, resourceTemplates: {} },
       serverInfo: { name: 'merchant-marketing', version: PLUGIN_VERSION || 'unversioned' },
-      instructions: '先调用 merchant.start；需要诊断时再调用 workspace.health。发布前必须人工确认并调用 publish.prepare。',
+      instructions: '首次使用先调用 onboarding.status；按返回的步骤完成工作区、身份、平台店铺和数据读取配置。需要完整诊断时调用 workspace.health；发布前必须人工确认并调用 publish.prepare。',
     })
   }
   if (request.method === 'resources/list') {
     return jsonRpc(id, { resources: [
+      { uri: ONBOARDING_UI_URI, name: '安装引导', title: '大麦插件安装引导', description: '展示工作区、身份、店铺、商品、素材和发布步骤；只读。', mimeType: 'text/html;profile=mcp-app' },
       { uri: RECHARGE_UI_URI, name: '创意点恢复', title: '大麦创意点恢复中心', description: '显示创意点准入、服务端授权恢复入口及历史账务证据；不接受客户端自填金额。', mimeType: 'text/html;profile=mcp-app' },
       { uri: CREATIVE_CHOICE_UI_URI, name: '创意方向选择', title: '选择创意方向', description: '比较三个创意方向并明确确认其中一个；初始不默认选择。', mimeType: 'text/html;profile=mcp-app' },
       { uri: CONTENT_DIFF_UI_URI, name: '内容版本差异', title: '比较内容版本', description: '逐字段比较两个内容版本并明确保留其中一个。', mimeType: 'text/html;profile=mcp-app' },
@@ -3014,6 +3066,7 @@ async function handle(request) {
     return jsonRpc(id, { resourceTemplates: [] })
   }
   if (request.method === 'resources/read') {
+    if (request.params?.uri === ONBOARDING_UI_URI) return jsonRpc(id, { contents: [{ uri: ONBOARDING_UI_URI, mimeType: 'text/html;profile=mcp-app', text: onboardingUiHtml(), _meta: { ui: { prefersBorder: true } } }] })
     if (request.params?.uri === CREATIVE_CHOICE_UI_URI) return jsonRpc(id, { contents: [{ uri: CREATIVE_CHOICE_UI_URI, mimeType: 'text/html;profile=mcp-app', text: creativeChoiceUiHtml(), _meta: { ui: { prefersBorder: true } } }] })
     if (request.params?.uri === CONTENT_DIFF_UI_URI) return jsonRpc(id, { contents: [{ uri: CONTENT_DIFF_UI_URI, mimeType: 'text/html;profile=mcp-app', text: contentDiffUiHtml(), _meta: { ui: { prefersBorder: true } } }] })
     if (request.params?.uri === PUBLISH_CONFIRM_UI_URI) return jsonRpc(id, { contents: [{ uri: PUBLISH_CONFIRM_UI_URI, mimeType: 'text/html;profile=mcp-app', text: publishConfirmUiHtml(), _meta: { ui: { prefersBorder: true } } }] })

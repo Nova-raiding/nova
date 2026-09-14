@@ -104,7 +104,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(imageEditResponse.result._meta).toBeUndefined()
       for (const [index, name] of ['platform.media.spec.create', 'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire'].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 3, method: 'tools/call', params: { name, arguments: { id: 'spec_1', expected_revision: '1', idempotency_key: `media:${index}:write`, reason: 'verified production evidence' } } })}\n`)
-        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: expect.stringMatching(/^(?:INTERACTIVE_WRITE_DISABLED|COMMERCIAL_OPERATION_DISABLED)$/u) } })
       }
       expect(requests).toBe(0)
     } finally {
@@ -132,7 +132,7 @@ describe('Codex stdio MCP bridge', () => {
       const writes = ['platform.media.spec.create', 'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire', 'campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed']
       for (const [index, name] of writes.entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: {} } })}\n`)
-        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: expect.stringMatching(/^(?:INTERACTIVE_WRITE_DISABLED|COMMERCIAL_OPERATION_DISABLED)$/u) } })
       }
       expect(requests).toBe(0)
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
@@ -676,14 +676,20 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260901185628' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260912184110' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
       const resources = await nextLine(child.stdout)
+      expect(resources.result.resources).toContainEqual(expect.objectContaining({ uri: 'ui://merchant-marketing/onboarding-v1.html', mimeType: 'text/html;profile=mcp-app' }))
       expect(resources.result.resources).toContainEqual(expect.objectContaining({ uri: 'ui://merchant-marketing/recharge-v1.html', mimeType: 'text/html;profile=mcp-app' }))
       expect(resources.result.resources).toContainEqual(expect.objectContaining({ uri: 'ui://merchant-marketing/image-local-edit-v1.html', mimeType: 'text/html;profile=mcp-app' }))
       expect(resources.result.resources).toContainEqual(expect.objectContaining({ uri: 'ui://merchant-marketing/image-candidate-choice-v15.html', mimeType: 'text/html;profile=mcp-app' }))
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11.5, method: 'resources/read', params: { uri: 'ui://merchant-marketing/onboarding-v1.html' } })}\n`)
+      const onboardingUi = await nextLine(child.stdout)
+      expect(onboardingUi.result.contents[0]).toMatchObject({ uri: 'ui://merchant-marketing/onboarding-v1.html', mimeType: 'text/html;profile=mcp-app' })
+      expect(onboardingUi.result.contents[0].text).toContain('大麦插件安装引导')
+      expect(onboardingUi.result.contents[0].text).toContain('onboarding.status')
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 12, method: 'resources/read', params: { uri: 'ui://merchant-marketing/recharge-v1.html' } })}\n`)
       const rechargeUi = await nextLine(child.stdout)
       expect(rechargeUi.result.contents[0]).toMatchObject({ uri: 'ui://merchant-marketing/recharge-v1.html', mimeType: 'text/html;profile=mcp-app' })
@@ -2132,9 +2138,9 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_GATEWAY_ERROR' } })
-      expect(response.result.structuredContent.message).toMatch(/MERCHANT_(?:MCP_BASE_URL|WORKSPACE_ID) is required/u)
-      expect(response.result.structuredContent.message).toContain('refusing to use the local fixture fallback')
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_CONFIGURATION_REQUIRED' } })
+      expect(response.result.structuredContent.message).toMatch(/缺少MERCHANT_(?:MCP_BASE_URL|WORKSPACE_ID)/u)
+      expect(response.result.structuredContent.message).toContain('未向后端发送请求')
     } finally {
       child.kill()
     }

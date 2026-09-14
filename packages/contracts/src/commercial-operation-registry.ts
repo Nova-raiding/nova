@@ -179,6 +179,9 @@ export const MCP_RECOVERY_ENABLED_METHODS = [
   'billing.recharge.list',
   'billing.recharge.create',
   'billing.transactions',
+  'upload.session.create',
+  'upload.session.part',
+  'upload.session.complete',
   'workspace.data.export.request',
   'workspace.data.export.get',
   'workspace.data.delete.request',
@@ -213,6 +216,7 @@ export const MCP_POINT_CHARGED_DISABLED_METHODS = [
 ] as const satisfies readonly McpMethod[]
 
 export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
+  'onboarding.status',
   'merchant.first_value',
   'brand.extract',
   'creative.brief',
