@@ -62,6 +62,8 @@
 
    `test:release-gates` 当前出现生产配置、Kubernetes digest/ConfigMap/Secret、release metadata、迁移尾、UI 契约等失败。部分失败是仓库测试与当前变更漂移，部分是实际配置缺失；在逐项复核和重新通过前不得发布。
 
+   本地容器复核另外发现 6 个 worker 均为 unhealthy；日志显示数据库迁移链期望到 198、实际已到 199，导致 worker 持续重试。该迁移尾漂移必须在隔离数据库和 release gate 中统一后才能上线。
+
 4. **P1：浏览器全链路未通过**
 
    Merchant browser suite 22 项仅 4 项通过；主要是旧测试寻找已删除的旧导航/标题，但仍需更新测试基线并重新验证真实页面。Ops browser suite 被 `ISOLATED_FIXTURE_MIGRATION_CHAIN_MISMATCH` 阻断，尚未形成平台运营后台真实验收证据。
@@ -87,4 +89,3 @@
 - 商家与 Ops 浏览器套件在新基线下全绿；所有 console error、5xx、错误权限提示完成归因。
 - 运营后台五个失败数据集有真实 API/数据库修复证据，不再依赖上次成功快照。
 - 最终运行 `infra:launch-preflight`、`test:release-gates`、生产 canary，并保存 request/trace、支付、模型成本、RLS 和发布回执证据。
-
