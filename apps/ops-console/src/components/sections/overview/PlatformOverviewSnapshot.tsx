@@ -65,12 +65,11 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
       </section>
       <section className="ops-dashboard-panel ops-dashboard-trend" aria-label="月度经营趋势">
         <header><div><h3>月度经营趋势</h3></div><small>按月</small></header>
-        <h4 className="ops-dashboard-trend-subtitle">客户累计数</h4>
-        <MonthlyTrendChart ariaLabel="客户累计数月度柱状折线图" bars={["customers"]} series={[{ key: "customers", label: "客户总数", values: currentValue(totalWorkspaceCount ?? 0) }, { key: "active", label: "有效客户数", values: currentValue(merchantWorkspaceCount ?? 0) }]} />
-        <h4 className="ops-dashboard-trend-subtitle">接入费收入</h4>
-        <MonthlyTrendChart ariaLabel="接入费收入月度柱状折线图" bars={["revenue"]} series={[{ key: "revenue", label: "接入费收入", values: currentValue(finance?.onboardingOrderCny ?? 0) }]} />
-        <h4 className="ops-dashboard-trend-subtitle">客户与平台消耗</h4>
-        <MonthlyTrendChart ariaLabel="客户与平台消耗月度折线图" series={[{ key: "points", label: "客户消耗创意点", values: currentValue(0) }, { key: "cost", label: "平台消耗金额", values: currentValue(usage?.totalTokens ?? 0) }]} />
+        <div className="ops-dashboard-trend-grid">
+          <article><h4 className="ops-dashboard-trend-subtitle">客户累计数</h4><MonthlyTrendChart ariaLabel="客户累计数月度柱状折线图" bars={["customers"]} series={[{ key: "customers", label: "客户总数", values: currentValue(totalWorkspaceCount ?? 0) }, { key: "active", label: "有效客户数", values: currentValue(merchantWorkspaceCount ?? 0) }]} /></article>
+          <article><h4 className="ops-dashboard-trend-subtitle">接入费收入</h4><MonthlyTrendChart ariaLabel="接入费收入月度柱状折线图" bars={["revenue"]} series={[{ key: "revenue", label: "接入费收入", values: currentValue(finance?.onboardingOrderCny ?? 0) }]} /></article>
+          <article><h4 className="ops-dashboard-trend-subtitle">客户与平台消耗</h4><MonthlyTrendChart ariaLabel="客户与平台消耗月度折线图" series={[{ key: "points", label: "客户消耗创意点", values: currentValue(0) }, { key: "cost", label: "平台消耗金额", values: currentValue(usage?.totalTokens ?? 0) }]} /></article>
+        </div>
       </section>
       <section className="ops-dashboard-panel ops-dashboard-trend" aria-label="当月经营趋势">
         <header><div><h3>{monthLabel}经营趋势</h3></div><small>按天</small></header>
