@@ -18,6 +18,12 @@ describe('platform-owned model gate', () => {
     expect(evaluatePlatformModelTaskRequestCost(0.500001, source)).toMatchObject({ ready: false, reasons: ['request_cost_exceeds_task_limit'] })
     expect(evaluatePlatformModelTaskCostLimit({ MODEL_MAX_TASK_COST_CNY: '101', MODEL_DAILY_CNY_LIMIT: '100' })).toMatchObject({ ready: false, reasons: ['task_cny_limit_exceeds_daily_limit'] })
   })
+
+  it('accepts a realistic video reservation without weakening the daily batch ceiling', () => {
+    const source = { MODEL_MAX_TASK_COST_CNY: '2000', MODEL_DAILY_CNY_LIMIT: '5000' }
+    expect(evaluatePlatformModelTaskRequestCost(20, source)).toMatchObject({ ready: true, costCny: 20, limitCny: 2000 })
+    expect(evaluatePlatformModelTaskRequestCost(2000.01, source)).toMatchObject({ ready: false, reasons: ['request_cost_exceeds_task_limit'] })
+  })
   it('requires HTTPS, platform credential and pinned model', () => {
     expect(evaluatePlatformModelGate({ AI_BASE_URL: 'https://model.example', AI_API_KEY: 'platform-secret', AI_MODEL: 'text-v1' }, 'text')).toMatchObject({ ready: false, reasons: ['endpoint_missing', 'api_key_missing'] })
     expect(evaluatePlatformModelGate({ MODEL_RELAY_BASE_URL: 'http://relay.example', MODEL_RELAY_API_KEY: 'platform-secret', AI_MODEL: 'text-v1' }, 'text')).toMatchObject({ ready: false, reasons: ['endpoint_must_use_https'] })

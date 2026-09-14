@@ -5,7 +5,12 @@
   <key>Label</key><string>com.merchant.codex.api</string>
   <key>WorkingDirectory</key><string>/Users/lixiaomei/Desktop/code/codexSkills</string>
   <key>ProgramArguments</key>
-  <array><string>/opt/homebrew/opt/node@22/bin/node</string><string>/Users/lixiaomei/Desktop/code/codexSkills/node_modules/tsx/dist/cli.mjs</string><string>apps/api/src/server.ts</string></array>
+  <array>
+    <string>/opt/homebrew/opt/node@22/bin/node</string>
+    <string>--import</string>
+    <string>/Users/lixiaomei/Desktop/code/codexSkills/node_modules/tsx/dist/loader.mjs</string>
+    <string>/Users/lixiaomei/Desktop/code/codexSkills/scripts/start-api-launchagent.mjs</string>
+  </array>
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key><string>/Users/lixiaomei</string>
