@@ -330,14 +330,14 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "开通时间", key: "openedAt", width: 170, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
           <div><Typography.Title level={5}>钱包</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:wallet`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无充值记录" }} columns={[
-            { title: "用户名", key: "name", width: 180, render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
-            { title: "充值金额", key: "amount", width: 150, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
-            { title: "实际到账创意点", key: "points", width: 170, render: (_: unknown, row: PlatformUser) => row.commercial ? row.commercial.includedTasks : "—" },
-            { title: "充值时间", key: "time", width: 160, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
+            { title: "用户名", key: "name", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
+            { title: "充值金额", key: "amount", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
+            { title: "实际到账创意点", key: "points", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial ? row.commercial.includedTasks : "—" },
+            { title: "充值时间", key: "time", width: "25%", render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
           <div><Typography.Title level={5}>当月消耗表</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:monthly-usage`} pagination={false} dataSource={model.userDetail.memberships} columns={[
-            { title: "用户名", key: "name", width: "28%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
-            { title: "本月消耗创意点", key: "used", width: "18%", render: (_: unknown, row: PlatformUser) => row.commercial?.usedTasks ?? "—" },
+            { title: "用户名", key: "name", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
+            { title: "本月消耗创意点", key: "used", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.usedTasks ?? "—" },
             { title: "剩余创意点", key: "remaining", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.remainingTasks ?? "—" },
             { title: "更新时间", key: "updated", width: "25%", render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
