@@ -35,6 +35,16 @@ export interface PaymentRefundResult {
   state?: string
 }
 
+export class PaymentProviderRefundRejectedError extends Error {
+  readonly code = 'PAYMENT_PROVIDER_REFUND_REJECTED'
+  constructor(message = 'payment provider refund was rejected') { super(message); this.name = 'PaymentProviderRefundRejectedError' }
+}
+
+export class PaymentProviderRefundOutcomeUnknownError extends Error {
+  readonly code = 'PAYMENT_PROVIDER_REFUND_OUTCOME_UNKNOWN'
+  constructor(message = 'payment provider refund outcome is unknown') { super(message); this.name = 'PaymentProviderRefundOutcomeUnknownError' }
+}
+
 export interface PaymentStatusInput {
   channel: PaymentChannel
   orderId: string
@@ -203,6 +213,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const MAX_PAYMENT_PROVIDER_RESPONSE_BYTES = 1 * 1024 * 1024
 
+export function classifyPaymentRefundState(state: string | undefined): 'accepted' | 'rejected' | 'unknown' {
+  if (state === undefined || !state.trim()) return 'accepted'
+  const normalized = state.trim().toLowerCase()
+  if (['accepted', 'success', 'succeeded', 'completed'].includes(normalized)) return 'accepted'
+  if (['rejected', 'failed', 'failure', 'closed', 'cancelled', 'canceled', 'denied'].includes(normalized)) return 'rejected'
+  return 'unknown'
+}
+
 export class HttpPaymentProvider implements PaymentProvider {
   private readonly fetchImpl: typeof fetch
 
@@ -280,11 +298,31 @@ export class HttpPaymentProvider implements PaymentProvider {
         signal: controller.signal,
         redirect: 'error',
       })
-      if (!response.ok) throw new Error(`payment provider refund returned HTTP ${response.status}`)
-      const payload = JSON.parse(await readBoundedResponseText(response, MAX_PAYMENT_PROVIDER_RESPONSE_BYTES, 'payment provider response')) as unknown
+      const responseText = await readBoundedResponseText(response, MAX_PAYMENT_PROVIDER_RESPONSE_BYTES, 'payment provider response')
+      if (!response.ok) {
+        let rejected = response.status >= 400 && response.status < 500
+        try {
+          const errorPayload = JSON.parse(responseText) as unknown
+          const errorState = isRecord(errorPayload) && typeof errorPayload.state === 'string' ? errorPayload.state : undefined
+          const classification = classifyPaymentRefundState(errorState)
+          if (classification === 'unknown') rejected = false
+          else if (classification === 'rejected') rejected = true
+        } catch {}
+        if (rejected) throw new PaymentProviderRefundRejectedError(`payment provider refund returned HTTP ${response.status}`)
+        throw new PaymentProviderRefundOutcomeUnknownError(`payment provider refund outcome unknown after HTTP ${response.status}`)
+      }
+      let payload: unknown
+      try { payload = JSON.parse(responseText) as unknown } catch { throw new PaymentProviderRefundOutcomeUnknownError('payment provider refund response was not valid JSON') }
       const providerRefundId = isRecord(payload) && typeof payload.provider_refund_id === 'string' ? payload.provider_refund_id : isRecord(payload) && typeof payload.refund_id === 'string' ? payload.refund_id : undefined
-      if (!providerRefundId) throw new Error('payment provider returned no refund id')
-      return { providerRefundId, ...(isRecord(payload) && typeof payload.state === 'string' ? { state: payload.state } : {}) }
+      const state = isRecord(payload) && typeof payload.state === 'string' ? payload.state : undefined
+      const classification = classifyPaymentRefundState(state)
+      if (classification === 'rejected') throw new PaymentProviderRefundRejectedError(`payment provider refund was rejected: ${state}`)
+      if (classification === 'unknown') throw new PaymentProviderRefundOutcomeUnknownError(`payment provider refund outcome unknown: ${state}`)
+      if (!providerRefundId) throw new PaymentProviderRefundOutcomeUnknownError('payment provider returned no refund id')
+      return { providerRefundId, ...(state ? { state } : {}) }
+    } catch (error) {
+      if (error instanceof PaymentProviderRefundRejectedError || error instanceof PaymentProviderRefundOutcomeUnknownError) throw error
+      throw new PaymentProviderRefundOutcomeUnknownError(error instanceof Error ? error.message : 'payment provider refund outcome is unknown')
     } finally { clearTimeout(timeout) }
   }
 }

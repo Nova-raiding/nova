@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FixturePaymentProvider, HttpPaymentProvider, createPaymentProviderFromEnv, verifyPaymentCallbackSignature } from './payment-provider.js'
+import { FixturePaymentProvider, HttpPaymentProvider, PaymentProviderRefundOutcomeUnknownError, PaymentProviderRefundRejectedError, createPaymentProviderFromEnv, verifyPaymentCallbackSignature } from './payment-provider.js'
 import { createHmac } from 'node:crypto'
 
 describe('payment provider adapter', () => {
@@ -105,6 +105,17 @@ describe('payment provider adapter', () => {
     expect(requestBody).toContain('"idempotency_key":"refund:recharge-1"')
     expect(requestBody).not.toContain('server-only-key')
     await expect(new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', apiKey: 'key', merchantId: 'merchant' }).refund({ channel: 'wechat', orderId: 'r', providerTradeId: 't', workspaceId: 'w', amountFen: 100, reason: 'r' })).rejects.toThrow('refund endpoint is not configured')
+  })
+
+  it('classifies refund rejection separately from unknown provider outcomes', async () => {
+    const rejected = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ provider_refund_id: 'refund-rejected', state: 'rejected' }), { status: 200 }) })
+    await expect(rejected.refund({ channel: 'alipay', orderId: 'recharge-rejected', providerTradeId: 'trade-rejected', workspaceId: 'ws-1', amountFen: 1000, reason: '拒绝退款' })).rejects.toBeInstanceOf(PaymentProviderRefundRejectedError)
+
+    const processing = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ provider_refund_id: 'refund-processing', state: 'processing' }), { status: 200 }) })
+    await expect(processing.refund({ channel: 'alipay', orderId: 'recharge-processing', providerTradeId: 'trade-processing', workspaceId: 'ws-1', amountFen: 1000, reason: '处理中' })).rejects.toBeInstanceOf(PaymentProviderRefundOutcomeUnknownError)
+
+    const timeout = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => { throw new DOMException('timeout', 'AbortError') } })
+    await expect(timeout.refund({ channel: 'alipay', orderId: 'recharge-timeout', providerTradeId: 'trade-timeout', workspaceId: 'ws-1', amountFen: 1000, reason: '超时' })).rejects.toBeInstanceOf(PaymentProviderRefundOutcomeUnknownError)
   })
 
   it('queries provider order status without exposing credentials and normalizes success states', async () => {

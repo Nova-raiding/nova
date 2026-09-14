@@ -79,7 +79,7 @@ import { aggregateScannerHeartbeats, SCANNER_HEARTBEAT_INDEX_KEY, SCANNER_HEARTB
 import { parseWorkerAuthorizationSnapshot, type CriticalWorkerOperation, type WorkerAuthorizationSnapshot } from '../../../packages/workers/src/execution-authorization.js'
 import { createImageEditCandidate, createOneSentenceGenerationRequest, createVideoGenerationRequest, createVideoRenderingRequest, type GenerationContext } from '../../../packages/multimodal/src/index.js'
 import { generateSeoGeoSuggestions } from '../../../packages/seo/src/index.js'
-import { createPaymentProviderFromEnv, FixturePaymentProvider, type PaymentProvider } from '../../../packages/billing/src/payment-provider.js'
+import { classifyPaymentRefundState, createPaymentProviderFromEnv, FixturePaymentProvider, type PaymentProvider } from '../../../packages/billing/src/payment-provider.js'
 import { paymentFixturePolicy } from '../../../packages/application/src/payment-fixture-guard.js'
 import { platformRuleSyncStatus } from '../../../packages/review/src/platform-rule-sync.js'
 import { verifyAndParsePlatformRuleManifest } from '../../../packages/review/src/platform-rule-manifest.js'
@@ -14745,12 +14745,21 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (order.paymentMode === 'provider') {
         try {
           const providerRefund = await paymentProvider!.refund({ channel: order.channel, orderId: order.id, providerTradeId: order.providerTradeId!, workspaceId, amountFen: order.amountFen, reason })
-          const state = providerRefund.state?.trim().toLowerCase()
-          if (state && !['accepted', 'success', 'succeeded', 'completed'].includes(state)) throw new Error(`payment provider refund was not accepted: ${providerRefund.state}`)
+          const classification = classifyPaymentRefundState(providerRefund.state)
+          if (classification === 'rejected') {
+            await releaseRechargeRefund({ workspaceId, orderId, reservationKey: reservation.orderId!, actorId, reason: `provider rejected refund: ${providerRefund.state ?? 'rejected'}` })
+            throw new DomainError('PAYMENT_PROVIDER_REFUND_REJECTED', `支付服务商拒绝退款：${providerRefund.state ?? 'rejected'}`, 409, { order_id: orderId, reservation_key: reservation.orderId, reservation_released: true })
+          }
+          if (classification === 'unknown') throw new DomainError('PAYMENT_PROVIDER_REFUND_OUTCOME_UNKNOWN', `支付服务商退款结果未知：${providerRefund.state ?? 'unknown'}`, 503, { order_id: orderId, reservation_key: reservation.orderId, reservation_released: false, next_actions: ['billing.reconciliation'] })
           providerRefundId = providerRefund.providerRefundId
         } catch (error) {
-          await releaseRechargeRefund({ workspaceId, orderId, reservationKey: reservation.orderId!, actorId, reason: error instanceof Error ? error.message : '支付服务商退款失败' })
-          throw new DomainError('PAYMENT_PROVIDER_REFUND_FAILED', error instanceof Error ? error.message : '支付服务商退款失败', 503)
+          if (error instanceof DomainError) throw error
+          const code = (error as { code?: string })?.code
+          if (code === 'PAYMENT_PROVIDER_REFUND_REJECTED') {
+            await releaseRechargeRefund({ workspaceId, orderId, reservationKey: reservation.orderId!, actorId, reason: error instanceof Error ? error.message : '支付服务商拒绝退款' })
+            throw new DomainError('PAYMENT_PROVIDER_REFUND_REJECTED', error instanceof Error ? error.message : '支付服务商拒绝退款', 409, { order_id: orderId, reservation_key: reservation.orderId, reservation_released: true })
+          }
+          throw new DomainError('PAYMENT_PROVIDER_REFUND_OUTCOME_UNKNOWN', error instanceof Error ? error.message : '支付服务商退款结果未知，已保留钱包预留并等待对账', 503, { order_id: orderId, reservation_key: reservation.orderId, reservation_released: false, next_actions: ['billing.reconciliation'] })
         }
       }
       const refund = await completeRechargeRefund({ workspaceId, orderId, reservationKey: reservation.orderId!, actorId, reason, providerRefundId })
