@@ -67,10 +67,10 @@ data:
   CLAMAV_MAX_FILE_BYTES: "104857600"
   CLAMAV_SIGNATURE_MAX_AGE_MINUTES: "1440"
   # Alibaba Cloud OSS (S3-compatible API)
-  ASSET_STORAGE_BUCKET: merchant-production-assets
-  ASSET_STORAGE_REGION: cn
+  ASSET_STORAGE_BUCKET: codex-image-20260914
+  ASSET_STORAGE_REGION: cn-beijing
   # OSS S3 compatibility requires virtual-hosted-style requests.
-  ASSET_STORAGE_ENDPOINT: https://s3.cn.example-provider.com
+  ASSET_STORAGE_ENDPOINT: https://s3.oss-cn-beijing.aliyuncs.com
   ASSET_STORAGE_FORCE_PATH_STYLE: "false"
   ASSET_STORAGE_PREFIX: merchant-assets
   PUBLIC_ASSET_BASE_URL: https://yxsona.com
