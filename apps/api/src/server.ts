@@ -12031,6 +12031,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'ops.customer-delivery.checklist-item.update': {
       const repository = persistence.customerDeliveries ?? memoryCustomerDeliveries
       if (!repository.updateChecklistItem) throw new DomainError('CUSTOMER_DELIVERY_NOT_IMPLEMENTED', '客户交付清单项写入未实现', 501)
+      if (params.completed === undefined) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'completed 必须提供', 400)
       let evidence: Record<string, unknown> = {}
       if (params.evidence_json) { try { const parsed = JSON.parse(String(params.evidence_json)); if (!isObject(parsed)) throw new Error(); evidence = parsed } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'evidence_json 必须是有效 JSON 对象', 400) } }
       return result(await invokeOpsDomain(() => repository.updateChecklistItem!({ workspaceId, deliveryId: requiredStringValue(params, 'deliveryId', 'delivery_id'), checklistKey: requiredStringValue(params, 'checklistKey', 'checklist_key') as 'system_integration'|'functional_acceptance', itemKey: requiredStringValue(params, 'itemKey', 'item_key'), completed: params.completed === true || params.completed === 'true', evidence, actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')) })))
