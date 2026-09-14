@@ -132,7 +132,7 @@ describe('Ops HTTP/MCP authorization parity', () => {
     expect(http.body.error?.details?.capability).toBe(mcp.body.error?.details?.capability)
   })
 
-  it('allows finance to reach payment reconciliation under strict MCP authorization', async () => {
+  it('keeps provider payment reconciliation out of the merchant finance workbench', async () => {
     const workspaceId = `ws_finance_reconcile_${Date.now()}`
     const actorId = `finance-reconcile-${Date.now()}`
     await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'finance', status: 'active', invitedBy: 'ops-http-mcp-parity' })
@@ -143,6 +143,19 @@ describe('Ops HTTP/MCP authorization parity', () => {
     const base = await start()
 
     const result = await callMcp(base, 'finance-reconcile-token', workspaceId, 'billing.reconciliation.run', { limit: '1' })
+    expect(result.response.status, JSON.stringify(result.body)).toBe(403)
+    expect(result.body.error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH', workbench: 'workspace' } })
+  })
+
+  it('allows a platform super administrator to reach payment reconciliation', async () => {
+    const workspaceId = `ws_platform_reconcile_${Date.now()}`
+    service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `platform-reconcile-store-${workspaceId}`, credentialRef: `vault://platform-reconcile/${workspaceId}` })
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
+    configureToken('platform-reconcile-token', `platform-reconcile-${Date.now()}`, workspaceId, 'platform_admin', ['platform'])
+    const base = await start()
+
+    const result = await callMcp(base, 'platform-reconcile-token', workspaceId, 'billing.reconciliation.run', { limit: '1' })
     expect(result.response.status, JSON.stringify(result.body)).toBe(503)
     expect(result.body.error).toMatchObject({ code: 'PAYMENT_RECONCILIATION_UNAVAILABLE' })
     expect(result.body.error?.code).not.toBe('FORBIDDEN')

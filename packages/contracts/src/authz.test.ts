@@ -96,6 +96,9 @@ describe('authorization policy registry', () => {
     expect(getMcpMethodPolicy('commercial.order.payment.get')).toMatchObject({ capability: 'billing.workspace.read', scope: 'workspace' })
     expect(getMcpMethodPolicy('creative-points.balance.get')).toMatchObject({ capability: 'billing.workspace.read', scope: 'workspace' })
     expect(capabilitiesForRoles(['platform_admin'])).toContain('billing.platform.read')
+    expect(capabilitiesForRoles(['platform_admin'])).toEqual(expect.arrayContaining(['billing.reconcile.execute', 'billing.refund.execute']))
+    expect(getMcpMethodPolicy('billing.refund')).toMatchObject({ capability: 'billing.refund.execute', scope: 'platform', workbench: 'platform' })
+    expect(getMcpMethodPolicy('billing.reconciliation.run')).toMatchObject({ capability: 'billing.reconcile.execute', scope: 'platform', workbench: 'platform' })
     for (const role of CANONICAL_ROLES) {
       expect(capabilitiesForRoles([role]), `${role} must be able to load its own authorization session`).toContain('authorization.session.read')
     }
