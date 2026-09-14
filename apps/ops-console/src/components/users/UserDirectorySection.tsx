@@ -338,17 +338,16 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
           <div><Typography.Title level={5}>当月消耗表</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:monthly-usage`} pagination={false} dataSource={model.userDetail.memberships} columns={[
             { title: "用户名", key: "name", width: "28%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
             { title: "本月消耗创意点", key: "used", width: "18%", render: (_: unknown, row: PlatformUser) => row.commercial?.usedTasks ?? "—" },
-            { title: "本月额度", key: "included", width: "18%", render: (_: unknown, row: PlatformUser) => row.commercial?.includedTasks ?? "—" },
-            { title: "剩余创意点", key: "remaining", width: "18%", render: (_: unknown, row: PlatformUser) => row.commercial?.remainingTasks ?? "—" },
-            { title: "更新时间", key: "updated", width: "18%", render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
+            { title: "剩余创意点", key: "remaining", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.remainingTasks ?? "—" },
+            { title: "更新时间", key: "updated", width: "25%", render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
           <div><Typography.Title level={5}>2026年用户总消耗金额</Typography.Title><div className="ops-usage-chart" role="img" aria-label="2026年用户总消耗金额月度折线图">
-            <svg viewBox="0 0 720 190" preserveAspectRatio="none" aria-hidden="true">
-              <line x1="48" y1="20" x2="48" y2="148" className="ops-usage-chart-axis" /><line x1="48" y1="148" x2="700" y2="148" className="ops-usage-chart-axis" />
-              {[20, 52, 84, 116].map((y) => <line key={y} x1="48" y1={y} x2="700" y2={y} className="ops-usage-chart-grid" />)}
+            <svg viewBox="0 0 720 155" preserveAspectRatio="none" aria-hidden="true">
+              <line x1="48" y1="18" x2="48" y2="130" className="ops-usage-chart-axis" /><line x1="48" y1="130" x2="700" y2="130" className="ops-usage-chart-axis" />
+              {[18, 46, 74, 102].map((y) => <line key={y} x1="48" y1={y} x2="700" y2={y} className="ops-usage-chart-grid" />)}
               <text x="6" y="24" className="ops-usage-chart-tick">2000元</text><text x="6" y="56" className="ops-usage-chart-tick">1500元</text><text x="6" y="88" className="ops-usage-chart-tick">1000元</text><text x="6" y="120" className="ops-usage-chart-tick">500元</text>
-              <polyline points="48,148 178,148 308,148 438,148 568,148 698,148" className="ops-usage-chart-line" />
-              <circle cx="698" cy="148" r="5" className="ops-usage-chart-point" />
+              <polyline points="48,130 178,130 308,130 438,130 568,130 698,130" className="ops-usage-chart-line" />
+              <circle cx="698" cy="130" r="5" className="ops-usage-chart-point" />
             </svg>
             <div className="ops-usage-chart-labels"><span>1月</span><span>2月</span><span>3月</span><span>4月</span><span>5月</span><span>6月</span><span>7月</span><span>8月</span><span>9月</span><span>10月</span><span>11月</span><span>12月</span></div>
           </div></div>
