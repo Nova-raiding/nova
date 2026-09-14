@@ -91,7 +91,6 @@ export function OpsSidebar({
     }} className="ops-sider">
       <div className="brand-mark">
         <img src="/assets/store-nova-primary-horizontal.png" alt="Store Nova" />
-        <strong>平台运营后台</strong>
       </div>
       <nav className="ops-nav-groups" aria-label="平台运营功能导航">
         {navigationGroups.map((group) => {
