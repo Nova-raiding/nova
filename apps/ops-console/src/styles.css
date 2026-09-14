@@ -237,8 +237,11 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-users-section .ant-form-item:first-child .ant-input-affix-wrapper { width: 110px !important; min-width: 110px; max-width: 110px; }
 .ops-users-section .ant-form-item-control-input-content > .ant-select { width: 110px !important; }
 .ops-users-section .ant-form-item-control-input-content > .ant-input,
+.ops-users-section .ant-form-item-control-input-content > .ant-input-affix-wrapper,
 .ops-users-section .ant-form-item-control-input-content > .ant-select .ant-select-selector,
 .ops-users-section .ant-form-item-control-input-content > .ant-btn { min-height: 32px; height: 32px; }
+.ops-users-section .ant-form-item:first-child .ant-input-affix-wrapper { padding-block: 0; }
+.ops-users-section .ant-form-item:first-child .ant-input-affix-wrapper .ant-input { height: 30px; padding-block: 4px; }
 .ops-users-section .ant-btn { min-height: 32px; height: 32px; padding-block: 2px; }
 .ops-users-section .ant-form-item { margin-bottom: 8px; }
 .ops-users-section .ant-table-thead > tr > th, .ops-users-section .ant-table-tbody > tr > td { padding: 9px 10px; }
