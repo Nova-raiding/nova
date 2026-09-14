@@ -131,6 +131,13 @@ describe('MCP method contract', () => {
   })
 
   it('requires exactly one checklist update mode and always scopes customer delivery to a target workspace', () => {
+    const customerDeliveryMethods = [
+      'ops.customer-delivery.list', 'ops.customer-delivery.get', 'ops.customer-delivery.create',
+      'ops.customer-delivery.update', 'ops.customer-delivery.checklist.update',
+      'ops.customer-delivery.checklist-items.list', 'ops.customer-delivery.checklist-item.update',
+      'ops.customer-delivery.training.complete', 'ops.customer-delivery.videos.list', 'ops.customer-delivery.videos.add',
+    ] as const
+    for (const method of customerDeliveryMethods) expect(MCP_METHOD_SCHEMAS[method].required).toContain('target_workspace_id')
     const schema = MCP_METHOD_SCHEMAS['ops.customer-delivery.checklist.update']
     expect(schema.required).toEqual(['target_workspace_id', 'delivery_id', 'checklist_key', 'expected_revision'])
     expect(schema.requiredAnyOf).toEqual(['completed', 'items_json'])
