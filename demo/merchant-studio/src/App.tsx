@@ -273,6 +273,7 @@ const knowledgeSubItems: Array<{
   entry?: MerchantEntryPoint
   description?: string
 }> = [
+  { id: 'products', label: '商品目录', icon: PackageSearch, entry: 'products', description: '选择商品、平台和店铺后创建营销任务' },
   { id: 'products', label: '资料库', icon: BookOpen, entry: 'knowledge', description: '上传、确认并引用资料' },
   { id: 'products', label: '店铺素材', icon: ImageIcon, entry: 'images', description: '查看已授权素材' },
   { id: 'products', label: '品牌资产', icon: FolderOpen, entry: 'assets', description: '维护品牌资料与素材' },
@@ -913,6 +914,10 @@ function Topbar({
   // notifications for the currently signed-in merchant.
   const issueItems = (issueMetrics?.riskItems ?? []).filter(item => item.evidence?.unboundLocalData !== true && item.evidence?.fixtureData !== true)
   const issueCount = issueItems.length
+  const openIssueDetail = (item: WorkspaceMetrics['riskItems'][number]) => {
+    setNotificationOpen(false)
+    setIssueDetail(item)
+  }
   const notificationPanel = (
     <div className="merchant-notification-panel" role="region" aria-label="待处理问题">
       {issueMetrics?.dataCoverage?.fixtureDataPresent ? <div className="merchant-notification-fixture-warning">当前工作区包含本地演示数据；未绑定或演示店铺的问题已隐藏，不计入工作区待处理问题。</div> : null}
@@ -923,8 +928,14 @@ function Topbar({
       {issueItems.length ? <List
         size="small"
         dataSource={issueItems.slice(0, 8)}
-        renderItem={(item, index) => <List.Item className="merchant-notification-item" onClick={() => { setNotificationOpen(false); setIssueDetail(item) }}>
-          <button type="button" className="merchant-notification-item-button" aria-label={`查看问题：${item.title ?? item.type}`}>
+        renderItem={(item, index) => <List.Item className="merchant-notification-item">
+          <button
+            type="button"
+            className="merchant-notification-item-button"
+            aria-label={`查看问题：${item.title ?? item.type}`}
+            onMouseDown={() => setNotificationOpen(false)}
+            onClick={() => { openIssueDetail(item) }}
+          >
             <span className={`merchant-notification-dot ${item.severity}`} aria-hidden="true" />
             <span className="merchant-notification-copy"><strong>{item.title ?? item.type}</strong><small>{[item.platform ? platformNames[item.platform] : '', item.storeName ?? '', item.status ?? ''].filter(Boolean).join(' · ') || '当前工作区'}</small><em>{item.nextAction ?? '查看详情并处理'}</em></span>
             <span className="merchant-notification-index">{index + 1}</span>

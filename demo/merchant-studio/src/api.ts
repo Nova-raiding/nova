@@ -851,9 +851,10 @@ export async function loginMerchantAccount(baseUrl: string, input: { login: stri
 }
 
 export async function registerMerchantAccount(baseUrl: string, input: { login: string; password: string; enterpriseName: string; contactName: string }): Promise<{ applicationId: string; status: string; login: string }> {
+  // 兼容旧有开通入口调用；主流程应由平台侧运营创建商家账号并绑定工作区后登录使用。
   const result = await requestApi<{ application_id?: string; applicationId?: string; status: string; login: string }>(baseUrl, '/v1/auth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: input.login, password: input.password, enterprise_name: input.enterpriseName, contact_name: input.contactName, terms_agreed: true }) }, '')
   const applicationId = result.applicationId ?? result.application_id
-  if (!applicationId) throw new Error('注册申请接口未返回申请编号')
+  if (!applicationId) throw new Error('开通申请接口未返回申请编号')
   return { applicationId, status: result.status, login: result.login }
 }
 

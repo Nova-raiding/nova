@@ -1,10 +1,9 @@
 import { useState } from 'react'
-import { Alert, Button, Card, Form, Input, Modal, Typography } from 'antd'
+import { Alert, Button, Card, Form, Input, Typography } from 'antd'
 import { LockKeyhole } from 'lucide-react'
 import {
   describeApiError,
   loginMerchantAccount,
-  registerMerchantAccount,
   type MerchantAuthAccount,
 } from './api'
 
@@ -25,8 +24,6 @@ export function MerchantLoginPage({
 }: MerchantLoginPageProps) {
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
-  const [registerOpen, setRegisterOpen] = useState(false)
-  const [registerResult, setRegisterResult] = useState('')
   const submit = async (values: { login: string; password: string }) => {
     setSubmitting(true)
     setFormError('')
@@ -108,7 +105,7 @@ export function MerchantLoginPage({
             </Button>
           </Form>
           <Typography.Text type="secondary" className="merchant-login-helper">
-            没有账号？<Button type="link" size="small" onClick={() => { setRegisterResult(''); setRegisterOpen(true) }}>提交注册申请</Button>
+            没有账号？请联系平台运营创建商家账号并分配企业工作区。
           </Typography.Text>
           <div className="merchant-login-footer">
             <span>商家账号</span>
@@ -117,14 +114,6 @@ export function MerchantLoginPage({
           </div>
         </Card>
       </section>
-      <Modal title="提交商家注册申请" open={registerOpen} okText="提交申请" cancelText="取消" onCancel={() => setRegisterOpen(false)} footer={registerResult ? <Button type="primary" onClick={() => setRegisterOpen(false)}>完成</Button> : <Button type="primary" onClick={() => (document.getElementById("merchant-registration-form") as HTMLFormElement | null)?.requestSubmit()}>提交申请</Button>}>
-        {registerResult ? <Alert showIcon type="success" title="申请已提交" description={registerResult} /> : <Form id="merchant-registration-form" layout="vertical" onFinish={async (values) => { try { const result = await registerMerchantAccount(apiBaseUrl, values); setRegisterResult(`申请编号：${result.applicationId}。当前状态为待平台审核，审核通过后才可以登录。`) } catch (cause) { setFormError(describeApiError(cause)) } }}>
-          <Form.Item label="登录邮箱" name="login" rules={[{ required: true, type: 'email', message: '请输入有效邮箱' }]}><Input autoComplete="email" /></Form.Item>
-          <Form.Item label="企业名称" name="enterpriseName" rules={[{ required: true, message: '请输入企业名称' }]}><Input /></Form.Item>
-          <Form.Item label="联系人" name="contactName" rules={[{ required: true, message: '请输入联系人' }]}><Input /></Form.Item>
-          <Form.Item label="登录密码" name="password" rules={[{ required: true, min: 8, message: '密码至少 8 位' }]}><Input.Password autoComplete="new-password" /></Form.Item>
-        </Form>}
-      </Modal>
     </main>
   )
 }
