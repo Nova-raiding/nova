@@ -314,7 +314,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         </Row>
       </Form>
     </Modal>
-    <Drawer title="用户详情" aria-label="用户目录详情抽屉" size="large" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden>
+    <Drawer title="用户详情" aria-label="用户目录详情抽屉" size="large" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden footer={<div style={{ textAlign: "right" }}><Button danger disabled={!model.canUserGovernance || !model.userDetail?.memberships.length} onClick={() => { const row = model.userDetail?.memberships[0]; if (row) { setActionError(""); setAccessTarget(row); } }}>停用</Button></div>}>
       <Spin spinning={model.userDetailLoading} tip="正在加载用户详情…" aria-label="正在加载用户详情">
         {!model.userDetailLoading && !model.userDetail ? <Empty description="用户详情尚未取得，请重试或关闭后重新打开" /> : null}
         {model.userDetail && <Space orientation="vertical" size="large" className="full-width">
@@ -327,7 +327,6 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "店铺名称", key: "name", width: 220, render: (_: unknown, row: PlatformUser) => row.enterpriseName || row.workspaceId },
             { title: "店铺状态", key: "status", width: 150, render: (_: unknown, row: PlatformUser) => <Tag color={row.workspaceStatus === "active" ? "green" : "red"}>{row.workspaceStatus === "active" ? "正常" : "风险"}</Tag> },
             { title: "开通时间", key: "openedAt", width: 180, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
-            { title: "操作", key: "action", width: 100, render: (_: unknown, row: PlatformUser) => <Button danger size="small" disabled={row.status === "suspended" || !model.canUserGovernance} onClick={() => { setActionError(""); setAccessTarget(row); }}>停用</Button> },
           ]} /></div>
           <div><Typography.Title level={5}>钱包</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:wallet`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无充值记录" }} columns={[
             { title: "用户名", key: "name", width: 220, render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
