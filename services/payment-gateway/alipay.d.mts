@@ -25,3 +25,11 @@ export function decodePassbackParams(value: string): Record<string, unknown>
 export function responseSignContent(raw: string, method: string): string
 export function verifyResponseSignature(raw: string, method: string, publicKey: string): boolean
 export function responseMatchesOrder(response: Record<string, unknown>, orderId: string): boolean
+export function alipayAmountFen(value: unknown): number | undefined
+export function refundQueryResponseMatchesRequest(
+  response: Record<string, unknown>,
+  orderId: string,
+  refundRequestId: string,
+  amountFen: number,
+): boolean
+export function normalizeRefundQueryState(response: Record<string, unknown>): 'succeeded' | 'failed' | 'pending' | 'unknown'

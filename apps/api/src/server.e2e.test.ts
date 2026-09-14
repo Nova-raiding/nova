@@ -1221,9 +1221,10 @@ describe('API HTTP vertical slice', () => {
     vi.stubEnv('PAYMENT_RECONCILIATION_ENABLED', 'true')
     vi.stubEnv('NODE_ENV', 'test')
     const workspaceId = `ws_refund_unknown_${Date.now()}`
+    const providerRefund = vi.fn(async () => ({ providerRefundId: 'refund-unknown', state: 'processing' }))
     setPaymentProviderForTests({
       createCheckout: async () => ({ paymentUrl: 'https://payments.example/pay/order' }),
-      refund: async () => ({ providerRefundId: 'refund-unknown', state: 'processing' }),
+      refund: providerRefund,
     })
     const base = await start()
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'finance_1' }
@@ -1237,6 +1238,7 @@ describe('API HTTP vertical slice', () => {
 
     const refund = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.refund', params: { workspace_id: workspaceId, order_id: order.id, reason: 'provider unknown test' } }) }).then(json)
     expect(refund.error).toMatchObject({ code: 'PAYMENT_PROVIDER_REFUND_OUTCOME_UNKNOWN', details: { reservation_released: false, next_actions: ['billing.reconciliation'] } })
+    expect(providerRefund).toHaveBeenCalledWith(expect.objectContaining({ refundRequestId: expect.stringMatching(/^billing_tx_/u) }))
 
     const transactions = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'billing.transactions', params: { workspace_id: workspaceId } }) }).then(json)
     const wallet = transactions.data?.result as { balance_cny: string; transactions: Array<{ type: string; orderId?: string; description: string }> }

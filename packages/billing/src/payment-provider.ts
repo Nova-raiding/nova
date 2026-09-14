@@ -24,6 +24,8 @@ export interface PaymentCheckoutResult {
 export interface PaymentRefundInput {
   channel: PaymentChannel
   orderId: string
+  /** Durable server-side request id reused for provider retries and queries. */
+  refundRequestId?: string
   providerTradeId: string
   workspaceId: string
   amountFen: number
@@ -33,6 +35,21 @@ export interface PaymentRefundInput {
 export interface PaymentRefundResult {
   providerRefundId: string
   state?: string
+}
+
+export interface PaymentRefundStatusInput {
+  channel: PaymentChannel
+  orderId: string
+  refundRequestId: string
+  workspaceId: string
+  amountFen: number
+  providerRefundId?: string
+}
+
+export interface PaymentRefundStatusResult {
+  state: 'succeeded' | 'failed' | 'pending' | 'unknown'
+  providerRefundId?: string
+  amountFen?: number
 }
 
 export class PaymentProviderRefundRejectedError extends Error {
@@ -114,6 +131,7 @@ export function verifyPaymentCallbackSignature(input: {
 export interface PaymentProvider {
   createCheckout(input: PaymentCheckoutInput): Promise<PaymentCheckoutResult>
   queryStatus?(input: PaymentStatusInput): Promise<PaymentStatusResult>
+  queryRefundStatus?(input: PaymentRefundStatusInput): Promise<PaymentRefundStatusResult>
   refund(input: PaymentRefundInput): Promise<PaymentRefundResult>
 }
 
@@ -156,6 +174,15 @@ function validateRefundInput(input: PaymentRefundInput): void {
   requiredText(input.reason, 'refund reason')
 }
 
+function validateRefundStatusInput(input: PaymentRefundStatusInput): void {
+  validChannel(input.channel)
+  requiredText(input.orderId, 'order id')
+  requiredText(input.refundRequestId, 'refund request id')
+  requiredText(input.workspaceId, 'workspace id')
+  validAmount(input.amountFen)
+  if (input.providerRefundId !== undefined) requiredText(input.providerRefundId, 'provider refund id')
+}
+
 /** Deterministic local checkout used only by explicit fixture environments. */
 export class FixturePaymentProvider implements PaymentProvider {
   private readonly orders = new Map<string, { amountFen: number; idempotencyKey: string; state: PaymentStatusResult['state']; tradeId?: string }>()
@@ -186,6 +213,13 @@ export class FixturePaymentProvider implements PaymentProvider {
     return { providerRefundId: `fixture-refund-${input.orderId}`, state: 'accepted' }
   }
 
+  async queryRefundStatus(input: PaymentRefundStatusInput): Promise<PaymentRefundStatusResult> {
+    validateRefundStatusInput(input)
+    const order = this.orders.get(this.orderKey(input))
+    if (!order || order.amountFen !== input.amountFen) return { state: 'unknown' }
+    return { state: order.state === 'closed' ? 'succeeded' : order.state === 'paid' ? 'pending' : 'unknown', providerRefundId: `fixture-refund-${input.orderId}`, amountFen: order.amountFen }
+  }
+
   /** Test/local checkout confirmation; never exposed through production configuration. */
   confirm(input: { workspaceId: string; channel: PaymentChannel; orderId: string; providerTradeId?: string }) {
     validateStatusInput(input)
@@ -200,6 +234,7 @@ export class FixturePaymentProvider implements PaymentProvider {
 export interface HttpPaymentProviderOptions {
   endpoint: string
   refundEndpoint?: string
+  refundQueryEndpoint?: string
   queryEndpoint?: string
   apiKey: string
   merchantId: string
@@ -221,11 +256,20 @@ export function classifyPaymentRefundState(state: string | undefined): 'accepted
   return 'unknown'
 }
 
+export function normalizePaymentRefundQueryState(state: string | undefined): PaymentRefundStatusResult['state'] {
+  if (state === undefined || !state.trim()) return 'unknown'
+  const normalized = state.trim().toLowerCase()
+  if (['succeeded', 'success', 'completed', 'refunded', 'refund_success'].includes(normalized)) return 'succeeded'
+  if (['failed', 'failure', 'rejected', 'closed', 'cancelled', 'canceled', 'denied', 'refund_failed', 'refund_closed'].includes(normalized)) return 'failed'
+  if (['pending', 'processing', 'wait', 'waiting', 'refund_processing'].includes(normalized)) return 'pending'
+  return 'unknown'
+}
+
 export class HttpPaymentProvider implements PaymentProvider {
   private readonly fetchImpl: typeof fetch
 
   constructor(private readonly options: HttpPaymentProviderOptions) {
-    for (const [label, endpoint] of [['provider', options.endpoint], ['refund', options.refundEndpoint], ['query', options.queryEndpoint]] as const) {
+    for (const [label, endpoint] of [['provider', options.endpoint], ['refund', options.refundEndpoint], ['refund query', options.refundQueryEndpoint], ['query', options.queryEndpoint]] as const) {
       if (!endpoint) continue
       let parsed: URL
       try { parsed = new URL(endpoint) } catch { throw new Error(`payment provider ${label} endpoint is invalid`) }
@@ -291,10 +335,11 @@ export class HttpPaymentProvider implements PaymentProvider {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 15_000)
     try {
+      const refundRequestId = input.refundRequestId?.trim() || `refund:${input.orderId}`
       const response = await this.fetchImpl(this.options.refundEndpoint, {
         method: 'POST',
         headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}` },
-        body: JSON.stringify({ merchant_id: this.options.merchantId, channel: input.channel, order_id: input.orderId, provider_trade_id: input.providerTradeId, workspace_id: input.workspaceId, amount_fen: input.amountFen, reason: input.reason, idempotency_key: `refund:${input.orderId}` }),
+        body: JSON.stringify({ merchant_id: this.options.merchantId, channel: input.channel, order_id: input.orderId, refund_request_id: refundRequestId, provider_trade_id: input.providerTradeId, workspace_id: input.workspaceId, amount_fen: input.amountFen, reason: input.reason, idempotency_key: refundRequestId }),
         signal: controller.signal,
         redirect: 'error',
       })
@@ -325,11 +370,45 @@ export class HttpPaymentProvider implements PaymentProvider {
       throw new PaymentProviderRefundOutcomeUnknownError(error instanceof Error ? error.message : 'payment provider refund outcome is unknown')
     } finally { clearTimeout(timeout) }
   }
+
+  async queryRefundStatus(input: PaymentRefundStatusInput): Promise<PaymentRefundStatusResult> {
+    validateRefundStatusInput(input)
+    if (!this.options.refundQueryEndpoint) throw new Error('payment provider refund query endpoint is not configured')
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 15_000)
+    try {
+      const response = await this.fetchImpl(this.options.refundQueryEndpoint, {
+        method: 'POST',
+        headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}` },
+        body: JSON.stringify({ merchant_id: this.options.merchantId, channel: input.channel, order_id: input.orderId, refund_request_id: input.refundRequestId, ...(input.providerRefundId ? { provider_refund_id: input.providerRefundId } : {}), workspace_id: input.workspaceId, amount_fen: input.amountFen }),
+        signal: controller.signal,
+        redirect: 'error',
+      })
+      if (!response.ok) return { state: 'unknown' }
+      let payload: unknown
+      try { payload = JSON.parse(await readBoundedResponseText(response, MAX_PAYMENT_PROVIDER_RESPONSE_BYTES, 'payment provider response')) as unknown } catch { return { state: 'unknown' } }
+      if (!isRecord(payload)) return { state: 'unknown' }
+      const returnedOrderId = typeof payload.order_id === 'string' ? payload.order_id : undefined
+      if (returnedOrderId !== undefined && returnedOrderId !== input.orderId) return { state: 'unknown' }
+      const returnedRefundRequestId = typeof payload.refund_request_id === 'string' ? payload.refund_request_id : undefined
+      if (returnedRefundRequestId !== undefined && returnedRefundRequestId !== input.refundRequestId) return { state: 'unknown' }
+      const rawAmountFen = payload.amount_fen
+      const amountFen = typeof rawAmountFen === 'number' && Number.isSafeInteger(rawAmountFen) && rawAmountFen > 0 ? rawAmountFen : undefined
+      const state = normalizePaymentRefundQueryState(typeof payload.state === 'string' ? payload.state : undefined)
+      if (state !== 'unknown' && amountFen !== input.amountFen) return { state: 'unknown' }
+      const providerRefundId = typeof payload.provider_refund_id === 'string' ? payload.provider_refund_id : typeof payload.refund_id === 'string' ? payload.refund_id : input.providerRefundId
+      if (state === 'unknown') return { state }
+      return { state, ...(providerRefundId ? { providerRefundId } : {}), ...(amountFen !== undefined ? { amountFen } : {}) }
+    } catch {
+      return { state: 'unknown' }
+    } finally { clearTimeout(timeout) }
+  }
 }
 
 export function createPaymentProviderFromEnv(source: Record<string, string | undefined> = process.env): PaymentProvider | undefined {
   const endpoint = source.PAYMENT_PROVIDER_CHECKOUT_API_URL?.trim()
   const refundEndpoint = source.PAYMENT_PROVIDER_REFUND_API_URL?.trim()
+  const refundQueryEndpoint = source.PAYMENT_PROVIDER_REFUND_QUERY_API_URL?.trim()
   const queryEndpoint = source.PAYMENT_PROVIDER_QUERY_API_URL?.trim()
   const apiKey = source.PAYMENT_PROVIDER_API_KEY?.trim()
   const merchantId = source.PAYMENT_PROVIDER_MERCHANT_ID?.trim()
@@ -337,5 +416,5 @@ export function createPaymentProviderFromEnv(source: Record<string, string | und
   const timeoutText = source.PAYMENT_PROVIDER_TIMEOUT_MS?.trim()
   const timeoutMs = timeoutText === undefined || timeoutText === '' ? 15_000 : Number(timeoutText)
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 120_000) return undefined
-  try { return new HttpPaymentProvider({ endpoint, ...(refundEndpoint ? { refundEndpoint } : {}), ...(queryEndpoint ? { queryEndpoint } : {}), apiKey, merchantId, timeoutMs }) } catch { return undefined }
+  try { return new HttpPaymentProvider({ endpoint, ...(refundEndpoint ? { refundEndpoint } : {}), ...(refundQueryEndpoint ? { refundQueryEndpoint } : {}), ...(queryEndpoint ? { queryEndpoint } : {}), apiKey, merchantId, timeoutMs }) } catch { return undefined }
 }

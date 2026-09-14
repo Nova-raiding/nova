@@ -7,7 +7,9 @@ import {
   encodePassbackParams,
   formatAlipayTimestamp,
   normalizePublicKey,
+  normalizeRefundQueryState,
   parseRequestBody,
+  refundQueryResponseMatchesRequest,
   responseMatchesOrder,
   signAlipayParams,
   verifyNotifySignature,
@@ -96,13 +98,26 @@ async function handle(req, res) {
   if (req.method === 'POST' && req.url === '/v1/refund') {
     const input = await body(req)
     const orderId = typeof input.order_id === 'string' ? input.order_id.trim() : ''
+    const refundRequestId = typeof input.refund_request_id === 'string' ? input.refund_request_id.trim() : ''
     const amountFen = Number(input.amount_fen)
-    if (!orderId || !Number.isSafeInteger(amountFen) || amountFen <= 0) return json(res, 400, { error: 'INVALID_REFUND' })
-    const node = (await callAlipay('alipay.trade.refund', { out_trade_no: orderId, refund_amount: (amountFen / 100).toFixed(2), refund_reason: input.reason || 'merchant refund', out_request_no: `refund_${orderId}` })).alipay_trade_refund_response || {}
+    if (!orderId || !refundRequestId || !Number.isSafeInteger(amountFen) || amountFen <= 0) return json(res, 400, { error: 'INVALID_REFUND' })
+    const node = (await callAlipay('alipay.trade.refund', { out_trade_no: orderId, refund_amount: (amountFen / 100).toFixed(2), refund_reason: input.reason || 'merchant refund', out_request_no: refundRequestId })).alipay_trade_refund_response || {}
     if (!responseMatchesOrder(node, orderId)) throw new Error('alipay_response_order_mismatch')
-    return json(res, 200, { provider_refund_id: node.trade_no || orderId, state: node.code === '10000' ? 'accepted' : 'failed' })
+    return json(res, 200, { provider_refund_id: node.trade_no || orderId, refund_request_id: refundRequestId, amount_fen: amountFen, state: node.code === '10000' ? 'accepted' : 'failed' })
+  }
+  if (req.method === 'POST' && req.url === '/v1/refund/query') {
+    const input = await body(req)
+    if (input.channel !== 'alipay') return json(res, 503, { error: 'UNSUPPORTED_PAYMENT_CHANNEL' })
+    const orderId = typeof input.order_id === 'string' ? input.order_id.trim() : ''
+    const refundRequestId = typeof input.refund_request_id === 'string' ? input.refund_request_id.trim() : ''
+    const amountFen = Number(input.amount_fen)
+    if (!orderId || !refundRequestId || !Number.isSafeInteger(amountFen) || amountFen <= 0) return json(res, 400, { error: 'INVALID_REFUND_QUERY' })
+    const node = (await callAlipay('alipay.trade.fastpay.refund.query', { out_trade_no: orderId, out_request_no: refundRequestId })).alipay_trade_fastpay_refund_query_response || {}
+    if (!refundQueryResponseMatchesRequest(node, orderId, refundRequestId, amountFen)) throw new Error('alipay_refund_query_mismatch')
+    const state = normalizeRefundQueryState(node)
+    return json(res, 200, { state, ...(state === 'unknown' ? {} : { provider_refund_id: node.trade_no || orderId, refund_request_id: refundRequestId, amount_fen: amountFen }) })
   }
   if (req.method === 'POST' && req.url === '/v1/notify/alipay') { const input = await body(req); if (!verifyNotifySignature(input, publicKey, appId)) return json(res, 400, { error: 'INVALID_ALIPAY_SIGNATURE' }); const context = decodePassbackParams(String(input.passback_params || '')); const amountFen = Math.round(Number(input.total_amount) * 100); const state = input.trade_status === 'TRADE_SUCCESS' || input.trade_status === 'TRADE_FINISHED' ? 'paid' : 'pending'; if (!context.workspace_id || !input.out_trade_no || !input.trade_no || !Number.isSafeInteger(amountFen)) return json(res, 400, { error: 'INVALID_NOTIFY' }); const response = await forward({ workspaceId: String(context.workspace_id), orderId: String(input.out_trade_no), tradeNo: String(input.trade_no), amountFen, state, callbackPath: String(context.callback_path || '') }); if (!response.ok) return json(res, 502, { error: 'API_CALLBACK_FAILED' }); res.writeHead(200, { 'content-type': 'text/plain' }); res.end('success'); return }
   return json(res, 404, { error: 'NOT_FOUND' })
 }
-http.createServer((req, res) => handle(req, res).catch(error => json(res, 500, { error: 'GATEWAY_ERROR', code: error instanceof Error && /^(?:alipay_http_\d{3}|alipay_request_timeout|alipay_request_failed|alipay_invalid_response_signature|alipay_invalid_response|alipay_response_order_mismatch)$/u.test(error.message) ? error.message : 'gateway_failure' }))).listen(port, '0.0.0.0')
+http.createServer((req, res) => handle(req, res).catch(error => json(res, 500, { error: 'GATEWAY_ERROR', code: error instanceof Error && /^(?:alipay_http_\d{3}|alipay_request_timeout|alipay_request_failed|alipay_invalid_response_signature|alipay_invalid_response|alipay_response_order_mismatch|alipay_refund_query_mismatch)$/u.test(error.message) ? error.message : 'gateway_failure' }))).listen(port, '0.0.0.0')

@@ -14744,7 +14744,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       let providerRefundId = `fixture-refund:${order.id}`
       if (order.paymentMode === 'provider') {
         try {
-          const providerRefund = await paymentProvider!.refund({ channel: order.channel, orderId: order.id, providerTradeId: order.providerTradeId!, workspaceId, amountFen: order.amountFen, reason })
+          const providerRefund = await paymentProvider!.refund({ channel: order.channel, orderId: order.id, refundRequestId: reservation.id, providerTradeId: order.providerTradeId!, workspaceId, amountFen: order.amountFen, reason })
           const classification = classifyPaymentRefundState(providerRefund.state)
           if (classification === 'rejected') {
             await releaseRechargeRefund({ workspaceId, orderId, reservationKey: reservation.orderId!, actorId, reason: `provider rejected refund: ${providerRefund.state ?? 'rejected'}` })

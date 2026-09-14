@@ -323,3 +323,41 @@ export function responseMatchesOrder(response, orderId) {
   if (['trade_no', 'trade_status', 'total_amount'].some(key => response[key] !== undefined && response[key] !== null && String(response[key]) !== '')) return false
   return String(response.code ?? '') !== '10000'
 }
+
+export function alipayAmountFen(value) {
+  if (value === undefined || value === null || value === '') return undefined
+  const text = String(value).trim()
+  if (!/^\d+(?:\.\d{1,2})?$/u.test(text)) return undefined
+  const [yuanText = '0', fractionText = ''] = text.split('.')
+  const yuan = Number(yuanText)
+  const fraction = Number((fractionText + '00').slice(0, 2))
+  const amountFen = yuan * 100 + fraction
+  return Number.isSafeInteger(amountFen) ? amountFen : undefined
+}
+
+export function refundQueryResponseMatchesRequest(response, orderId, refundRequestId, amountFen) {
+  const expectedRefundRequestId = typeof refundRequestId === 'string' ? refundRequestId.trim() : ''
+  if (!expectedRefundRequestId || !Number.isSafeInteger(amountFen) || amountFen <= 0) return false
+  if (!responseMatchesOrder(response, orderId)) return false
+  if (!response || typeof response !== 'object' || Array.isArray(response)) return false
+  const returnedRefundRequestId = response.out_request_no
+  if (returnedRefundRequestId !== undefined && returnedRefundRequestId !== null && String(returnedRefundRequestId) !== '') {
+    if (String(returnedRefundRequestId) !== expectedRefundRequestId) return false
+  } else if (String(response.code ?? '') === '10000') {
+    return false
+  }
+  const returnedAmountFen = alipayAmountFen(response.refund_amount)
+  if (response.refund_amount !== undefined && returnedAmountFen === undefined) return false
+  if (returnedAmountFen !== undefined && returnedAmountFen !== amountFen) return false
+  return true
+}
+
+export function normalizeRefundQueryState(response) {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) return 'unknown'
+  const status = String(response.refund_status ?? response.status ?? '').trim().toUpperCase()
+  if (['REFUND_SUCCESS', 'SUCCESS', 'SUCCEEDED', 'COMPLETED'].includes(status)) return 'succeeded'
+  if (['REFUND_FAILED', 'FAILED', 'FAILURE', 'REJECTED', 'DENIED', 'REFUND_CLOSED', 'CLOSED', 'CANCELLED', 'CANCELED'].includes(status)) return 'failed'
+  if (['PROCESSING', 'PENDING', 'REFUND_PROCESSING', 'WAIT', 'WAITING'].includes(status)) return 'pending'
+  if (String(response.code ?? '') === '10000' && alipayAmountFen(response.refund_amount) !== undefined) return 'succeeded'
+  return 'unknown'
+}
