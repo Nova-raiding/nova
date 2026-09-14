@@ -24,7 +24,8 @@ function MonthlyTrendChart({ series, bars = [], ariaLabel }: { series: MonthlySe
       {series.map((item, seriesIndex) => item.values.map((value, index) => bars.includes(item.key) ? <g key={`${item.key}-${index}`}><rect x={x(index) - 8} y={y(value)} width="16" height={Math.max(0, 192 - y(value))} rx="3" className={`${item.key}-bar`} />{value > 0 ? <text x={x(index)} y={Math.max(16, y(value) - 6 - seriesIndex * 12)} textAnchor="middle" className="ops-dashboard-trend-value">{value}</text> : null}</g> : null))}
       {series.map((item, seriesIndex) => !bars.includes(item.key) ? <g key={item.key}><polyline points={item.values.map((value, index) => `${x(index)},${y(value)}`).join(" ")} className={`${item.key}-line`} />{item.values.map((value, index) => value > 0 ? <text key={`${item.key}-label-${index}`} x={x(index)} y={Math.max(16, y(value) - 6 - seriesIndex * 12)} textAnchor="middle" className="ops-dashboard-trend-value">{value}</text> : null)}</g> : null)}
     </svg>
-    <div className="ops-dashboard-trend-labels">{Array.from({ length: 12 }, (_, index) => <span key={index}>{index + 1}月</span>)}</div>
+    <div className="ops-dashboard-trend-axis-caption">月份</div>
+    <div className="ops-dashboard-trend-labels">{Array.from({ length: 12 }, (_, index) => <span key={index}>{index + 1}</span>)}</div>
   </div>;
 }
 
