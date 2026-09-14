@@ -45,7 +45,7 @@ data:
   # Override per environment after the platform/model quota evidence is signed.
   WORKER_PLATFORM_QUOTA_PER_MINUTE: "60"
   WORKER_MODEL_QUOTA_PER_MINUTE: "60"
-  REQUEST_BODY_LIMIT_BYTES: "52428800"
+  REQUEST_BODY_LIMIT_BYTES: "167772160"
   # Production scanning is always delegated to the isolated scan worker. Any
   # missing scanner dependency must retain the object in quarantine.
   ALLOW_LOCAL_ASSET_SCAN_FIXTURE: "false"
@@ -64,15 +64,18 @@ data:
   CLAMAV_HOST: "127.0.0.1"
   CLAMAV_PORT: "3310"
   CLAMAV_TIMEOUT_MS: "30000"
-  CLAMAV_MAX_FILE_BYTES: "52428800"
+  CLAMAV_MAX_FILE_BYTES: "104857600"
   CLAMAV_SIGNATURE_MAX_AGE_MINUTES: "1440"
+  # Alibaba Cloud OSS (S3-compatible API)
   ASSET_STORAGE_BUCKET: merchant-production-assets
   ASSET_STORAGE_REGION: cn
+  # OSS S3 compatibility requires virtual-hosted-style requests.
   ASSET_STORAGE_ENDPOINT: https://s3.cn.example-provider.com
+  ASSET_STORAGE_FORCE_PATH_STYLE: "false"
   ASSET_STORAGE_PREFIX: merchant-assets
   PUBLIC_ASSET_BASE_URL: https://yxsona.com
   ASSET_DISPLAY_URL_SIGNING_KEY_ID: display-active
-  ASSET_UPLOAD_MAX_BYTES: "52428800"
+  ASSET_UPLOAD_MAX_BYTES: "104857600"
   OBJECT_STORAGE_VERSIONING: "true"
   DATA_RETENTION_DAYS: "90"
   ASSET_QUARANTINE_RETENTION_DAYS: "7"
