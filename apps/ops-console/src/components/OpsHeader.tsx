@@ -3,8 +3,7 @@ import { DownOutlined, LogoutOutlined, SafetyCertificateOutlined, UserOutlined }
 import { Alert, Button, Dropdown, Empty, Input, Layout, List, Modal, Space, Typography } from "antd";
 import { describeOpsError, localOpsSessionEnabled, loginPlatformOps, logoutPlatformOps, suppressLocalOpsSession } from "../api/opsClient.js";
 import type { OperationalAlert, OpsDataSource, OpsSession, OpsWorkbench } from "../types/ops.js";
-import { createAuthorizationProjection, type AuthorizationProjection } from "../authz/authorization.js";
-import { RoleScopeBar } from "./authz/RoleScopeBar.js";
+import type { AuthorizationProjection } from "../authz/authorization.js";
 
 interface OpsHeaderProps {
   managedSession: boolean;
@@ -49,7 +48,6 @@ export function OpsHeader({
   notifications,
   onAcknowledgeAlert,
 }: OpsHeaderProps) {
-  const resolvedAuthorization = authorization ?? createAuthorizationProjection(session, managedSession);
   const [accountOpen, setAccountOpen] = useState(false);
   const [platformLoginOpen, setPlatformLoginOpen] = useState(false);
   const [platformLogin, setPlatformLogin] = useState("");
@@ -63,7 +61,7 @@ export function OpsHeader({
   );
   const hasSession = Boolean(sessionLoaded && session);
   const shouldShowLogin = !hasSession || isDemoSession;
-  const merchantNotificationsEnabled = (activeWorkbench ?? session?.workbench) === "workspace" || resolvedAuthorization.scope.kind !== "platform";
+  const merchantNotificationsEnabled = (activeWorkbench ?? session?.workbench) === "workspace" || authorization?.scope.kind !== "platform";
   const allNotifications = merchantNotificationsEnabled ? (notifications ?? alerts ?? []) : [];
   const accountName = session?.actor_id ?? (isDemoSession ? "本机演示账号" : "平台运营账号");
   const accountDisplayName = accountName.length > 12 ? `${accountName.slice(0, 8)}…` : accountName;
@@ -149,22 +147,6 @@ export function OpsHeader({
 
   return (
     <Layout.Header className="ops-header">
-      <div className="ops-header-identity">
-        <RoleScopeBar
-          session={session}
-          authorization={resolvedAuthorization}
-          activeWorkbench={activeWorkbench}
-          availableWorkbenches={availableWorkbenches}
-          switching={switchingWorkbench}
-          onWorkbenchChange={onWorkbenchChange}
-          onJitExpired={onJitExpired}
-          onJitExit={onJitExit}
-          alerts={alerts}
-          notifications={notifications}
-          onAcknowledgeAlert={onAcknowledgeAlert}
-          compact
-        />
-      </div>
       <div className="ops-header-actions">
         <div className="ops-connection-toolbar">
           {shouldShowLogin ? (
