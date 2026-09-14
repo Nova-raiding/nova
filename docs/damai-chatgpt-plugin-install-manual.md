@@ -114,11 +114,13 @@
 如果团队还要求 ChatGPT/Codex 的宿主对话也经大麦中转，由管理员在安装人员的用户环境执行：
 
     CODEX_RELAY_BASE_URL="https://<Responses兼容中转站>/v1" \
-    CODEX_RELAY_MODEL="<Responses兼容模型>" \
+    CODEX_RELAY_MODEL="<必须出现在 /v1/models data[] 的模型 ID>" \
     CODEX_RELAY_API_KEY_ENV="WORMHOLE_API_KEY" \
     npm run codex:relay:configure
 
     npm run codex:relay:validate
+
+`CODEX_RELAY_MODEL` 不能直接填 ChatGPT 当前显示的默认模型名。它必须是中转站 `/v1/models` 返回的真实 ID，并且声明 `openai` 或 `openai-response` 能力；否则校验会 fail-closed。当前这台安装机已验证使用 `deepseek-v4-pro`，而 `gpt-5.6-sol` 未被该中转站声明，不能作为宿主 relay model。
 
 命令只写入用户级 `~/.codex/config.toml` 的 provider、模型、地址和本地模型目录，不写入 Key。Key 必须由系统密钥管理器注入 `WORMHOLE_API_KEY`，然后完全重启 ChatGPT 并开启新会话。
 
@@ -169,6 +171,7 @@
 | `401/403`、角色无权限 | OIDC/Bearer 映射失败或 token 过期 | 管理员检查网关身份映射和 token，不要改客户端角色变量 |
 | 工具列表少、旧入口仍出现 | 本地插件缓存未更新，或对话保存了旧快照 | 重新执行 `codex plugin add`，重启 ChatGPT，开启新会话 |
 | `Selected model is at capacity` | 宿主模型尚未把消息交给插件 | 在 ChatGPT 模型选择器切换可用宿主模型后重试 |
+| `Codex host relay /models 未声明当前 host model` | `CODEX_RELAY_MODEL` 不是中转站实际提供的模型 ID，或缺少 Responses 能力声明 | 管理员先检查 `/v1/models`，用真实 ID 重新执行 `codex:relay:configure`，再通过 `codex:relay:validate` |
 | `codex:relay:validate` 失败 | 宿主或业务 relay 缺少 HTTPS、Key、模型 ID 或 `/models` 目录声明 | 仅管理员补齐中转配置；商家不填写模型 Key |
 | 能看到示例商品但不能读取真实商品 | 使用了 fixture 或平台 OAuth/API 尚未配置 | 标记为演示/待配置，完成官方授权和真实 connector 后再验收 |
 | 生成/支付按钮不可用 | 创意点准入、模型成本证据或支付 provider 未通过 | 只查看服务端返回的阻断原因；不要改前端金额或绕过门禁 |
