@@ -61,6 +61,13 @@ export interface CustomerDeliveryChecklistSave {
   items: CustomerDeliveryChecklistItem[];
 }
 
+export interface CustomerDeliveryVideoItem {
+  id: string;
+  title: string;
+  assetRef: string;
+  sortOrder: number;
+}
+
 export const INTEGRATION_ITEMS = [
   "插件账号",
   "店铺连接",
@@ -153,6 +160,7 @@ export function CustomerDeliverySection({
   onChecklistLoad,
   onTrainingSave,
   onVideoAdd,
+  onVideoList,
 }: {
   records?: CustomerDeliveryRecord[];
   onOpen?: (
@@ -178,12 +186,17 @@ export function CustomerDeliverySection({
     record: CustomerDeliveryRecord,
     input: { title: string; assetRef: string; sortOrder: number },
   ) => Promise<CustomerDeliveryRecord | void>;
+  /** Load persisted segments when opening the video step. */
+  onVideoList?: (
+    record: CustomerDeliveryRecord,
+  ) => Promise<CustomerDeliveryVideoItem[]>;
 }) {
   const [selected, setSelected] = useState<CustomerDeliveryRecord>();
   const [step, setStep] = useState<DeliveryStepKey>("profile");
   const [blockedCompany, setBlockedCompany] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [videoItems, setVideoItems] = useState<CustomerDeliveryVideoItem[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [createForm] = Form.useForm();
   const [form] = Form.useForm();
@@ -198,6 +211,7 @@ export function CustomerDeliverySection({
     setBlockedCompany(undefined);
     setSelected(row);
     setStep(next);
+    setVideoItems([]);
     form.setFieldsValue({
       ...row,
       requiredLaunchAt: row.requiredLaunchAt
@@ -230,6 +244,15 @@ export function CustomerDeliverySection({
           ? { integrationItems: selectedItems, integrationEvidence: evidence }
           : { acceptanceItems: selectedItems, acceptanceEvidence: evidence },
       );
+    }
+    if (next === "video" && onVideoList) {
+      try {
+        setVideoItems(await onVideoList(row));
+      } catch (error) {
+        // Keep the add form usable, but surface that the persisted list could
+        // not be read instead of presenting an empty list as fact.
+        message.error(error instanceof Error ? error.message : "视频列表读取失败");
+      }
     }
     await onOpen?.(row, next);
   };
@@ -312,6 +335,7 @@ export function CustomerDeliverySection({
             assetRef,
             sortOrder: selected.videos + index,
           });
+        if (onVideoList) setVideoItems(await onVideoList(selected));
       } else if (step === "profile") {
         if (!onSave) throw new Error("客户档案保存接口未配置");
         persisted = await onSave(next);
@@ -643,6 +667,25 @@ export function CustomerDeliverySection({
               )}
               {step === "video" && (
                 <>
+                  {videoItems.length ? (
+                    <Card size="small" title={`已登记视频（${videoItems.length} 段）`}>
+                      <Space orientation="vertical" size="small" style={{ width: "100%" }}>
+                        {videoItems
+                          .slice()
+                          .sort((a, b) => a.sortOrder - b.sortOrder)
+                          .map((video) => (
+                            <div key={video.id}>
+                              <Typography.Text strong>{video.title}</Typography.Text>
+                              <Typography.Text type="secondary" style={{ display: "block", wordBreak: "break-all" }}>
+                                {video.assetRef}
+                              </Typography.Text>
+                            </div>
+                          ))}
+                      </Space>
+                    </Card>
+                  ) : (
+                    <Alert type="info" showIcon message="尚未登记交付视频" description="请填写已完成安全扫描的 asset_ref；保存后会显示在这里。" />
+                  )}
                   <Form.Item name="videoAssetRefs" label="交付视频（支持多段）">
                     <Input.TextArea
                       rows={4}

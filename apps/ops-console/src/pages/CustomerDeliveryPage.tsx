@@ -76,6 +76,14 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     try { await customerDeliveryClient.addVideo({ targetWorkspaceId, deliveryId: record.id, ...input }); const refreshedList = await customerDeliveryClient.list(targetWorkspaceId); const refreshed = refreshedList?.find((candidate) => candidate.id === record.id); await load(); return refreshed; }
     catch (cause) { setMutationError(describeOpsError(cause)); throw cause; }
   };
+  const listVideos = async (record: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord) => {
+    try {
+      return await customerDeliveryClient.listVideos(targetWorkspaceId, record.id);
+    } catch (cause) {
+      setMutationError(describeOpsError(cause));
+      throw cause;
+    }
+  };
   return (
     <OpsPage
       eyebrow="CUSTOMER DELIVERY"
@@ -87,7 +95,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       {canRead && !targetWorkspaceId ? <Alert type="warning" showIcon message="请先选择目标企业工作区" description="客户交付是平台运营能力，必须在明确的 target_workspace_id 下读取或修改。" /> : null}
       {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
       {mutationError ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
-      <CustomerDeliverySection records={records} onCreate={createRecord} onSave={saveProfile} onChecklistSave={saveChecklist} onChecklistLoad={loadChecklist} onTrainingSave={saveTraining} onVideoAdd={addVideo} />
+      <CustomerDeliverySection records={records} onCreate={createRecord} onSave={saveProfile} onChecklistSave={saveChecklist} onChecklistLoad={loadChecklist} onTrainingSave={saveTraining} onVideoAdd={addVideo} onVideoList={listVideos} />
     </OpsPage>
   );
 }
