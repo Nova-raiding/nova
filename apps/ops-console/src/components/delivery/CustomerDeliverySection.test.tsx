@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deliveryCompletion, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
+import { ACCEPTANCE_ITEMS, INTEGRATION_ITEMS, deliveryCompletion, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
 
 const base: CustomerDeliveryRecord = {
   id: "c-1", companyName: "示例企业", paymentStatus: "paid", profile: true,
@@ -7,6 +7,17 @@ const base: CustomerDeliveryRecord = {
 };
 
 describe("customer delivery completion", () => {
+  it("exposes the complete checklist required by the delivery brief", () => {
+    expect(INTEGRATION_ITEMS).toEqual([
+      "插件账号", "店铺连接", "商品扫描", "知识库", "平台规则",
+      "创意点数", "企业信息", "品牌资产", "商品资料", "客户偏好",
+    ]);
+    expect(ACCEPTANCE_ITEMS).toEqual([
+      "文案生成", "图片生成", "标注编辑", "自动检查", "视频生成",
+      "店铺/商品读取", "技术验收", "内容验收",
+    ]);
+  });
+
   it("only marks a customer effective after every delivery item is complete", () => {
     expect(deliveryCompletion(base)).toEqual({ completed: 5, total: 5, ready: true });
     expect(deliveryCompletion({ ...base, videos: 0 })).toEqual({ completed: 4, total: 5, ready: false });
