@@ -1,4 +1,4 @@
-import { opsRestGet } from "./opsClient.js";
+import { rpc } from "./opsClient.js";
 import type { CustomerDeliveryRecord } from "../components/delivery/CustomerDeliverySection.js";
 
 export interface CustomerDeliveryClient {
@@ -43,7 +43,7 @@ export function parseCustomerDeliveryList(value: unknown): CustomerDeliveryRecor
 
 export const customerDeliveryClient: CustomerDeliveryClient = {
   async list(signal) {
-    const value = await opsRestGet<unknown>("/v1/customer-deliveries", { signal });
+    const value = await rpc<unknown>("ops.customer-delivery.list", {}, { signal });
     return value === null ? null : parseCustomerDeliveryList(value);
   },
 };
