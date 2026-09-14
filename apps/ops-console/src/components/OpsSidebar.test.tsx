@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { mainItems, OpsSidebar } from "./OpsSidebar.js";
 
 describe("OpsSidebar navigation", () => {
-  it("uses platform-governance wording for merchant workspace management", () => {
+  it("uses Store Nova branding for platform operations", () => {
     expect(mainItems.map(({ domain }) => domain)).not.toEqual(expect.arrayContaining(["tasks", "stores", "rules"]));
     const markup = renderToStaticMarkup(
       <OpsSidebar
@@ -15,11 +15,13 @@ describe("OpsSidebar navigation", () => {
         onSelectStore={() => undefined}
       />,
     );
-    expect(markup).toContain("Store Nova运营中心");
-    expect(markup).toContain("平台治理");
+    expect(markup).toContain("Store Nova");
+    expect(markup).toContain("平台运营后台");
+    expect(markup).not.toContain("平台运营控制面");
+    expect(markup).not.toContain("平台治理");
     expect(markup).not.toContain("商家工作区治理");
     expect(markup).not.toContain(">商家运营</h2>");
-    expect(markup).toContain("模型与计费");
+    expect(markup).not.toContain("模型与计费");
     expect(markup).not.toContain("风险与系统");
     expect(markup).not.toContain("当前操作范围");
     expect(markup).not.toContain("受控支持入口");
@@ -104,8 +106,8 @@ describe("OpsSidebar navigation", () => {
       />,
     );
     expect(markup).not.toContain("当前操作范围");
-    expect(markup).toContain("平台治理");
-    expect(markup).toContain("模型与计费");
+    expect(markup).not.toContain("平台治理");
+    expect(markup).not.toContain("模型与计费");
     expect(markup).not.toContain("商家工作区治理");
     expect(markup).not.toContain("风险与系统");
     expect(markup).not.toContain("受控支持入口");

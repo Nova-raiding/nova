@@ -90,19 +90,14 @@ export function OpsSidebar({
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }} className="ops-sider">
       <div className="brand-mark">
-        <span>Store Nova</span>
-        <div>
-          <strong>Store Nova运营中心</strong>
-          <small>平台运营后台</small>
-        </div>
+        <img src="/assets/store-nova-primary-horizontal.png" alt="Store Nova" />
+        <strong>平台运营后台</strong>
       </div>
-      <div className="sider-caption">平台运营控制面</div>
       <nav className="ops-nav-groups" aria-label="平台运营功能导航">
         {navigationGroups.map((group) => {
           const groupItems = group.items.map((domain) => itemsByDomain.get(domain)).filter(Boolean) as typeof visibleItems;
           if (!groupItems.length) return null;
-          return <section className="ops-nav-group" key={group.key} aria-labelledby={`ops-nav-group-${group.key}`}>
-            <h2 id={`ops-nav-group-${group.key}`} className="ops-nav-group-title">{group.label}</h2>
+          return <section className="ops-nav-group" key={group.key} aria-label="运营导航分组">
             {groupItems.map((item) => <button key={item.domain} className={`sider-item${activeDomain === item.domain ? " active" : ""}`} type="button" aria-label={item.label} title={`${item.label}：${item.description}`} aria-description={item.description} aria-current={activeDomain === item.domain ? "page" : undefined} onClick={() => navigate(item.domain)}>{item.icon}<span className="sider-item-copy">{item.label}</span></button>)}
           </section>;
         })}
