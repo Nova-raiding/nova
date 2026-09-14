@@ -11,6 +11,11 @@ export type UserDirectorySort = { field: "displayName" | "status" | "createdAt";
 type DirectoryUser = PlatformUser & { createdAt?: string };
 const roleLabels: Record<string, string> = { workspace_owner: "企业所有者", merchant_admin: "企业管理员", operator: "运营", support: "支持", finance: "财务", platform_ops: "平台运营" };
 const memberStatusLabels: Record<string, string> = { active: "已激活", invited: "待激活", suspended: "已停用" };
+function userAttributeLabel(row: PlatformUser) {
+  if (row.accountType === "platform") return "正常版本";
+  if (row.externalSubject.includes("demo") || row.enterpriseName?.includes("演示")) return "演示版本";
+  return row.commercial?.subscriptionStatus === "active" ? "正常版本" : "赠送版本";
+}
 const memberStatusOrder: Record<string, number> = { active: 0, invited: 1, suspended: 2 };
 const workspaceStatusLabels: Record<string, string> = { active: "正常", disabled: "已停用" };
 const lifecycleEventLabels: Record<string, string> = {
@@ -222,8 +227,8 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
           { title: "用户名", dataIndex: "externalSubject", width: 220, render: (value: string) => <Typography.Text className="ops-token" copyable>{value}</Typography.Text> },
           { title: "店铺名", dataIndex: "displayName", width: 180, sorter: true, sortOrder: userSort?.field === "displayName" ? userSort.order : null, render: (value: string) => value || "未设置" },
           { title: "激活状态", dataIndex: "status", width: 110, sorter: true, sortOrder: userSort?.field === "status" ? userSort.order : null, render: (value: string) => <Tag color={value === "active" ? "green" : value === "suspended" ? "red" : "gold"}>{memberStatusLabels[value] ?? value}</Tag> },
-          { title: "用户属性", dataIndex: "role", width: 150, render: (value: string) => <Tag color="blue">{roleLabels[value] ?? value}</Tag> },
-          { title: "操作", key: "actions", width: 150, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { if (node) detailButtonRefs.current.set(row.externalSubject, node); else detailButtonRefs.current.delete(row.externalSubject); }} size="small" aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`} onClick={() => { detailTriggerSubjectRef.current = row.externalSubject; setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button>{row.accountType === "platform" ? <Tag color="purple">平台账号</Tag> : <Button danger={row.status !== "suspended"} size="small" aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`} title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "恢复" : "停用"}</Button>}</Space> },
+          { title: "用户属性", key: "attribute", width: 150, render: (_: unknown, row: PlatformUser) => <Tag color={userAttributeLabel(row) === "演示版本" ? "gold" : userAttributeLabel(row) === "赠送版本" ? "cyan" : "blue"}>{userAttributeLabel(row)}</Tag> },
+          { title: "操作", key: "actions", width: 150, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { if (node) detailButtonRefs.current.set(row.externalSubject, node); else detailButtonRefs.current.delete(row.externalSubject); }} size="small" aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`} onClick={() => { detailTriggerSubjectRef.current = row.externalSubject; setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button>{row.accountType === "platform" ? <Button size="small" disabled title="平台账号不能停用">停用</Button> : <Button danger={row.status !== "suspended"} size="small" aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`} title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "恢复" : "停用"}</Button>}</Space> },
         ]}
       />
     </Card>
