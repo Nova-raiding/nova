@@ -319,6 +319,23 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-dashboard-monthly-groups section { display: grid; align-content: start; gap: 8px; padding: 12px; border: 1px solid #dbe3ef; border-radius: 11px; background: #f8fafc; }
 .ops-dashboard-monthly-groups section:first-child .ops-dashboard-metric-list { grid-template-columns: 1fr; }
 .ops-dashboard-monthly-groups h4 { margin: 0; color: #2563eb; font-size: 13px; font-weight: 800; }
+.ops-dashboard-trend { margin-top: 14px; }
+.ops-dashboard-trend-chart { padding: 14px 16px 10px; border: 1px solid #dbe3ef; border-radius: 11px; background: #f8fafc; }
+.ops-dashboard-trend-legend { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 8px; color: #64748b; font-size: 12px; font-weight: 650; }
+.ops-dashboard-trend-legend span::before { display: inline-block; width: 9px; height: 9px; margin-right: 6px; border-radius: 50%; content: ""; }
+.ops-dashboard-trend-legend .customers::before { background: #2563eb; }
+.ops-dashboard-trend-legend .revenue::before { background: #059669; }
+.ops-dashboard-trend-legend .points::before { background: #d97706; }
+.ops-dashboard-trend-legend .cost::before { background: #7c3aed; }
+.ops-dashboard-trend-chart svg { display: block; width: 100%; height: 180px; }
+.ops-dashboard-trend-axis { stroke: #94a3b8; stroke-width: 1; }
+.ops-dashboard-trend-grid { stroke: #e2e8f0; stroke-width: 1; stroke-dasharray: 4 5; }
+.ops-dashboard-trend-chart polyline { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.ops-dashboard-trend-chart .customers-line { stroke: #2563eb; }
+.ops-dashboard-trend-chart .revenue-line { stroke: #059669; }
+.ops-dashboard-trend-chart .points-line { stroke: #d97706; }
+.ops-dashboard-trend-chart .cost-line { stroke: #7c3aed; }
+.ops-dashboard-trend-labels { display: flex; justify-content: space-between; margin-left: 54px; color: #64748b; font-size: 11px; }
 .ops-dashboard-metric.full { grid-column: 1 / -1; }
 .ops-dashboard-usage { display: grid; }
 .ops-dashboard-usage-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
