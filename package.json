@@ -1,7 +1,7 @@
 {
   "name": "merchant-marketing-codex",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.2.0",
   "type": "module",
   "packageManager": "npm@10.9.8",
   "engines": {

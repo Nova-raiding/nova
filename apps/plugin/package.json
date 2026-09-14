@@ -1,7 +1,7 @@
 {
   "name": "@merchant-marketing/plugin",
   "private": true,
-  "version": "0.1.0+codex.20260912184110",
+  "version": "0.1.0+codex.20260914105424",
   "type": "module",
   "engines": {
     "node": ">=18"

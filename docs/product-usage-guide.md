@@ -374,7 +374,7 @@ flowchart LR
 
 | 项目 | 当前状态 |
 |---|---|
-| Repository / Plugin | `0.1.2` / `0.1.0+codex.20260912184110` |
+| Repository / Plugin | `0.2.0` / `0.1.0+codex.20260914105424` |
 | MCP 契约 | 共享注册表与当前代码为准；当前商家 Bridge 的真实 `tools/list` 返回 146 个工具，且不含 `ops.*` |
 | Ops Console | 11 个一级域，平台/工作区双工作台 |
 | PostgreSQL / Redis | 本地与候选远端运行就绪；当前探针迁移版本 192（发布基线以 `release-metadata.json` 为准） |
