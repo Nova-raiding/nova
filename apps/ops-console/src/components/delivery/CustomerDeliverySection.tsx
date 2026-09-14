@@ -23,6 +23,7 @@ export interface CustomerDeliveryRecord {
   acceptanceItems?: string[];
   trainingCompletedAt?: string;
   videoUrls?: string[];
+  revision?: number;
   /** Per-item evidence returned by the delivery API. Keys are item labels. */
   integrationEvidence?: Record<string, string>;
   acceptanceEvidence?: Record<string, string>;

@@ -3,6 +3,12 @@ import type { CustomerDeliveryRecord } from "../components/delivery/CustomerDeli
 
 export interface CustomerDeliveryClient {
   list(signal?: AbortSignal): Promise<CustomerDeliveryRecord[] | null>;
+  updateChecklist(input: {
+    deliveryId: string;
+    checklistKey: "system_integration" | "functional_acceptance";
+    items: Array<{ itemKey: string; completed: boolean; evidence: string }>;
+    expectedRevision: number;
+  }, signal?: AbortSignal): Promise<unknown>;
 }
 
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -37,6 +43,7 @@ export function parseCustomerDeliveryList(value: unknown): CustomerDeliveryRecor
       ...(text(row.contractFile ?? row.contractRef ?? row.contract_ref) ? { contractFile: (row.contractFile ?? row.contractRef ?? row.contract_ref) as string } : {}),
       ...(text(row.effectiveAt ?? row.effective_at) ? { goLiveAt: (row.effectiveAt ?? row.effective_at) as string } : {}),
       ...(Array.isArray(row.videoUrls) ? { videoUrls: row.videoUrls.filter(text) } : {}),
+      ...(typeof row.revision === "number" ? { revision: row.revision } : {}),
     };
   });
 }
@@ -45,5 +52,16 @@ export const customerDeliveryClient: CustomerDeliveryClient = {
   async list(signal) {
     const value = await rpc<unknown>("ops.customer-delivery.list", {}, { signal });
     return value === null ? null : parseCustomerDeliveryList(value);
+  },
+  async updateChecklist(input, signal) {
+    return rpc("ops.customer-delivery.checklist.update", {
+      delivery_id: input.deliveryId,
+      checklist_key: input.checklistKey,
+      items_json: JSON.stringify(input.items),
+      // Keep the aggregate flag for backwards-compatible servers. The server
+      // must still validate and persist each item from items_json.
+      completed: String(input.items.length > 0 && input.items.every((item) => item.completed)),
+      expected_revision: String(input.expectedRevision),
+    }, { signal });
   },
 };
