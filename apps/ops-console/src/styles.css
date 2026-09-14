@@ -44,7 +44,7 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-skip-link:focus-visible { transform: translateY(0); outline: 3px solid #fbbf24; outline-offset: 2px; }
 .mobile-menu-trigger, .ops-nav-backdrop { display: none; }
 .brand-mark { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; color: #fff; padding: 4px 10px 20px; }
-.brand-mark img { display: block; width: 140px; height: auto; max-height: 32px; object-fit: contain; object-position: left center; }
+.brand-mark img { display: block; width: 160px; height: 42px; padding: 7px 9px; border-radius: 8px; background: #fff; object-fit: contain; object-position: left center; }
 .brand-mark strong { color: #d6def0; font-size: 13px; font-weight: 600; letter-spacing: .02em; }
 .sider-caption, .eyebrow { letter-spacing: .12em; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; }
 .sider-caption { color: var(--ops-nav-text-muted); padding: 10px; }
