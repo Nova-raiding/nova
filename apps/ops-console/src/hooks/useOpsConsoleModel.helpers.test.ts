@@ -77,6 +77,7 @@ describe("Ops Console model helpers", () => {
     expect(marketingQueueParams({})).toEqual({ limit: "20" });
     expect(alertListParams({})).toEqual({ status: "open", limit: "20" });
     expect(alertListParams({}, true)).toEqual({ status: "open", limit: "100", platform_scope: "platform" });
+    expect(alertListParams({}, false, "ws-1")).toEqual({ status: "open", limit: "20", workspace_id: "ws-1" });
   });
 
   it("clears old automation data and resolves a concrete store scope", () => {

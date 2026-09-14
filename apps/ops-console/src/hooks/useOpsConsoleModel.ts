@@ -274,7 +274,7 @@ export async function submitDataDeletionDecision(input: {
   void input.refresh().catch(() => undefined);
 }
 
-export function alertListParams(filters: AlertFilters, platformScope = false): Record<string, string> {
+export function alertListParams(filters: AlertFilters, platformScope = false, workspaceId?: string): Record<string, string> {
   return {
     status: "open",
     // The platform pulse card presents a total, not the first page of the
@@ -287,6 +287,7 @@ export function alertListParams(filters: AlertFilters, platformScope = false): R
     ...(filters.code ? { code: filters.code } : {}),
     ...(filters.entityType ? { entity_type: filters.entityType } : {}),
     ...(filters.entityId ? { entity_id: filters.entityId } : {}),
+    ...(workspaceId ? { workspace_id: workspaceId } : {}),
   };
 }
 
@@ -726,7 +727,17 @@ export function useOpsConsoleModel() {
         resolvedSession = value as unknown as OpsSession;
         loadCoordinatorRef.current.commit(loadRequest, () => { acceptLoadedSession(resolvedSession!); });
       } else if (firstOptionalError && ["SESSION_EXPIRED", "UNAUTHENTICATED"].includes(String((firstOptionalError as { code?: string }).code))) {
-        loadCoordinatorRef.current.commit(loadRequest, clearAuthorizationScopedData);
+        loadCoordinatorRef.current.commit(loadRequest, () => {
+          // Clearing the authorization boundary invalidates this load. Commit
+          // its terminal authentication error here, before the stale-load guard
+          // below can discard it and leave the console permanently loading.
+          clearAuthorizationScopedData();
+          setDataSetErrors(failedDataSetErrors);
+          setDataSetErrorEvidence(failedDataSetErrorEvidence);
+          setLoading(false);
+          setModelStatusLoading(false);
+        });
+        return;
       }
       const resolvedAuthorization = createAuthorizationProjection(resolvedSession, managedOpsSession);
       const allowedHydrationMethods = allowedBackgroundHydrationMethods(resolvedAuthorization);
@@ -748,6 +759,13 @@ export function useOpsConsoleModel() {
       const platformAlertScope = platformOperator && resolvedAuthorization.can("marketing.summary.read");
       const platformStoreScope = platformOperator && resolvedAuthorization.can("platform.settings.read");
       const commercialAccessAvailable = resolvedAuthorization.can("commercial.access.read");
+      const workspaceAlertParams = alertListParams(
+        activeAlertFilters,
+        platformAlertScope,
+        resolvedSession?.workspace_id?.trim()
+        || (managedOpsSession ? sessionStorage : localStorage).getItem("ops_workspace_id")?.trim()
+        || undefined,
+      );
       const commercialTargetWorkspaceId = resolvedSession?.workspace_id?.trim()
         || (managedOpsSession ? sessionStorage : localStorage).getItem("ops_workspace_id")?.trim()
         || "";
@@ -840,8 +858,8 @@ export function useOpsConsoleModel() {
         platformOperator && commercialOperationAvailable ? authorizedOptional("ops.commercial.rollouts.list") : Promise.resolve(undefined),
         platformOperator ? deferredOptional("ops.growth.funnel", { platform_scope: "platform" }) : Promise.resolve(undefined),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("workspace.health"),
-        platformOperator ? deferredOptional("ops.alerts.list", alertListParams(activeAlertFilters, platformAlertScope)) : Promise.resolve(undefined),
-        !platformOperator ? authorizedOptional("ops.alerts.list", { limit: "20" }) : Promise.resolve(undefined),
+        platformOperator ? deferredOptional("ops.alerts.list", workspaceAlertParams) : Promise.resolve(undefined),
+        !platformOperator ? authorizedOptional("ops.alerts.list", workspaceAlertParams) : Promise.resolve(undefined),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("ops.data.delete.list", { limit: "50" }),
         (platformOperator || allowedHydrationMethods.has("platform.model.status")) ? (async () => {
           try {

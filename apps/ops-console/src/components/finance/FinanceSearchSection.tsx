@@ -101,10 +101,22 @@ export function FinanceSearchSection({ controller, showProviderStatementStatus =
         loading={controller.loading}
         columns={columns}
         dataSource={controller.records}
-        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
+        pagination={false}
         scroll={{ x: 1450 }}
         locale={{ emptyText: controller.loading ? "正在加载" : "当前筛选条件下没有财务记录" }}
       />
+      {controller.page?.nextCursor ? (
+        <Button
+          block
+          style={{ marginTop: 12 }}
+          type="default"
+          loading={controller.loadingMore}
+          disabled={controller.loading}
+          onClick={() => void controller.loadMore()}
+        >
+          加载更多财务记录
+        </Button>
+      ) : null}
       </> : (
         <div role="status" aria-live="polite" style={{ marginTop: 16 }}>
           <Typography.Text type="secondary">财务数据尚未取得，当前状态不能解释为零记录或零金额。</Typography.Text>

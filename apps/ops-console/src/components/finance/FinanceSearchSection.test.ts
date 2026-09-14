@@ -62,6 +62,55 @@ describe("FinanceSearchSection", () => {
     expect(html).not.toContain("当前状态不能解释为零记录或零金额");
   });
 
+  it("shows a load-more trigger when finance search has a next cursor", () => {
+    const html = render(controller({
+      page: {
+        records: [],
+        summary: {
+          totalRecords: 40,
+          rechargeOrderCny: 0,
+          subscriptionOrderCny: 0,
+          subscriptionOrderWorkspaceCount: 0,
+          subscriptionOrderBySku: {},
+          walletNetCny: 0,
+          walletCreditCny: 0,
+          walletDebitCny: 0,
+          usageUnits: 0,
+          providerCostCny: 0,
+          customerChargeCny: 0,
+          byKind: { recharge_order: 0, wallet_transaction: 0, subscription_order: 0, usage_entry: 0, model_usage: 0 },
+        },
+        nextCursor: "finance-next",
+        snapshotAt: "2026-08-29T00:00:00.000Z",
+        scope: { role: "platform_ops", workspaceCount: 1 },
+      },
+    }));
+    expect(html).toContain("加载更多财务记录");
+  });
+
+  it("does not render load-more when search is fully paged", () => {
+    const html = render(controller({ page: {
+      records: [],
+      summary: {
+        totalRecords: 20,
+        rechargeOrderCny: 0,
+        subscriptionOrderCny: 0,
+        subscriptionOrderWorkspaceCount: 0,
+        subscriptionOrderBySku: {},
+        walletNetCny: 0,
+        walletCreditCny: 0,
+        walletDebitCny: 0,
+        usageUnits: 0,
+        providerCostCny: 0,
+        customerChargeCny: 0,
+        byKind: { recharge_order: 0, wallet_transaction: 0, subscription_order: 0, usage_entry: 0, model_usage: 0 },
+      },
+      snapshotAt: "2026-08-29T00:00:00.000Z",
+      scope: { role: "platform_ops", workspaceCount: 1 },
+    } }));
+    expect(html).not.toContain("加载更多财务记录");
+  });
+
   it("does not present a local cost snapshot as Provider-reconciled", () => {
     const html = render(controller({ page: {
       records: [],

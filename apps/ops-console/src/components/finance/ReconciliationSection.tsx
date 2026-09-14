@@ -231,7 +231,11 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
           <span aria-hidden="true"> · </span>
           模型用量：{reconciliation.model_usage_scope === "workspace" ? "工作区" : "本人"}
         </Typography.Text>
-        {reconciliation.has_more_transactions && <Tag color="blue">流水已分页 · 共 {reconciliation.transaction_count} 条</Tag>}
+        {reconciliation.has_more_transactions && (
+          <Tag color="blue">
+            本次显示 {reconciliation.returned_transaction_count ?? reconciliation.transactions.length} 条，共 {reconciliation.transaction_count} 条
+          </Tag>
+        )}
       </div>
       <Row gutter={[16, 16]} className="finance-summary">
         <Col xs={12} md={6}>
@@ -469,7 +473,7 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
       />
       <Table
         rowKey="id"
-        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
+        pagination={false}
         dataSource={reconciliation?.transactions ?? []}
         locale={{ emptyText: "当前没有交易记录；这表示本次查询为空，不代表读取失败。" }}
         aria-label="财务交易对账记录"
