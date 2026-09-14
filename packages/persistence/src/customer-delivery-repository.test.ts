@@ -19,6 +19,20 @@ class RecordingPool implements SqlPool {
 }
 
 describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
+  it('preserves PostgreSQL DATE calendar values separately from timestamp instants', async () => {
+    for (const paymentDate of [new Date(2026, 8, 14), '2026-09-14']) {
+      const client = new RecordingClient()
+      client.enqueue(); client.enqueue();
+      client.enqueue({ id: 'cd_date', workspace_id: 'ws_date', payment_date: paymentDate,
+        planned_go_live_at: new Date('2026-10-01T09:00:00+08:00'),
+        created_at: new Date(), updated_at: new Date(), revision: 1 })
+      client.enqueue(); client.enqueue()
+      const result = await new PostgresCustomerDeliveryRepository(new RecordingPool(client)).get('ws_date', 'cd_date')
+      expect(result?.paymentDate).toBe('2026-09-14')
+      expect(result?.plannedGoLiveAt).toBe('2026-10-01T01:00:00.000Z')
+    }
+  })
+
   it('accepts only HTTPS or asset_ref contract evidence', async () => {
     expect(isValidCustomerDeliveryContractRef('https://example.com/contracts/acme.pdf')).toBe(true)
     expect(isValidCustomerDeliveryContractRef('http://example.com/contracts/acme.pdf')).toBe(false)
@@ -37,17 +51,17 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     await expect(repo.update({ workspaceId: d.workspaceId, id: d.id, actorId: 'operator-1', expectedRevision: complete.revision, patch: { contractRef: 'not-a-reference' } })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
   })
 
-  it('writes audit events for create/update/video and synchronizes training with acceptance', async () => {
+  it('writes audit events without inventing training completion from acceptance', async () => {
     const events: any[] = []
     const repo = new MemoryCustomerDeliveryRepository((event) => { events.push(event) })
     const d = await repo.create({ workspaceId: 'ws_audit', companyName: 'Acme', actorId: 'operator-1' })
     const paid = await repo.update({ workspaceId: d.workspaceId, id: d.id, actorId: 'operator-1', expectedRevision: d.revision, patch: { paymentStatus: 'paid' } })
     const updated = await repo.update({ workspaceId: d.workspaceId, id: d.id, actorId: 'operator-1', expectedRevision: paid.revision, patch: { functionalAcceptanceStatus: 'complete' } })
-    expect(updated.trainingCompleted).toBe(true)
+    expect(updated.trainingCompleted).toBe(false)
     const video = await repo.addVideo({ workspaceId: d.workspaceId, deliveryId: d.id, actorId: 'operator-1', title: '交付视频', assetRef: 'asset://video-1' })
     expect(events.map((e) => e.action)).toEqual(['customer_delivery.create', 'customer_delivery.update', 'customer_delivery.update', 'customer_delivery.video.add'])
     expect(events[0]).toMatchObject({ actorId: 'operator-1', before: {}, after: { id: d.id, companyName: 'Acme' }, reason: expect.any(String) })
-    expect(events[2]).toMatchObject({ before: { paymentStatus: 'paid' }, after: { functionalAcceptanceStatus: 'complete', trainingCompleted: true } })
+    expect(events[2]).toMatchObject({ before: { paymentStatus: 'paid' }, after: { functionalAcceptanceStatus: 'complete', trainingCompleted: false } })
     await repo.removeVideo!({ workspaceId: d.workspaceId, deliveryId: d.id, videoId: video.id, actorId: 'operator-1' })
     expect((await repo.get(d.workspaceId, d.id))!.videos[0]!.deletedAt).toMatch(/T/)
     expect(events.at(-1)).toMatchObject({ action: 'customer_delivery.video.remove', evidence: { softDelete: true } })

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -11,7 +11,6 @@ import {
   Progress,
   Select,
   Space,
-  Steps,
   Table,
   Tag,
   Typography,
@@ -19,6 +18,7 @@ import {
   message,
 } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
+import { deliveryDateTimeInputValue } from "./deliveryDateTime.js";
 
 export type DeliveryStepKey =
   "profile" | "integration" | "acceptance" | "training" | "video";
@@ -212,6 +212,8 @@ export function CustomerDeliverySection({
   const [step, setStep] = useState<DeliveryStepKey>("profile");
   const [blockedCompany, setBlockedCompany] = useState<string>();
   const [saving, setSaving] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(false);
+  const detailRequest = useRef(0);
   const [creating, setCreating] = useState(false);
   const [videoItems, setVideoItems] = useState<CustomerDeliveryVideoItem[]>([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -226,14 +228,15 @@ export function CustomerDeliverySection({
       return;
     }
     setBlockedCompany(undefined);
+    const request = ++detailRequest.current;
+    setLoadingStep(true);
     setSelected(row);
     setStep(next);
     setVideoItems([]);
+    form.resetFields();
     form.setFieldsValue({
       ...row,
-      requiredLaunchAt: row.requiredLaunchAt
-        ? row.requiredLaunchAt.slice(0, 16)
-        : undefined,
+      requiredLaunchAt: deliveryDateTimeInputValue(row.requiredLaunchAt),
       integrationItems: row.integrationItems ?? [],
       acceptanceItems: row.acceptanceItems ?? [],
       integrationEvidence: row.integrationEvidence ?? {},
@@ -246,10 +249,13 @@ export function CustomerDeliverySection({
       try {
         items = await onChecklistLoad(row, key);
       } catch (error) {
+        if (request !== detailRequest.current) return;
+        setLoadingStep(false);
         setSelected(undefined);
         message.error(error instanceof Error ? error.message : "清单读取失败");
         return;
       }
+      if (request !== detailRequest.current) return;
       const selectedItems = items
         .filter((item) => item.completed)
         .map((item) => item.itemKey);
@@ -264,14 +270,18 @@ export function CustomerDeliverySection({
     }
     if (next === "video" && onVideoList) {
       try {
-        setVideoItems(await onVideoList(row));
+        const videos = await onVideoList(row);
+        if (request !== detailRequest.current) return;
+        setVideoItems(videos);
       } catch (error) {
+        if (request !== detailRequest.current) return;
         // Keep the add form usable, but surface that the persisted list could
         // not be read instead of presenting an empty list as fact.
         message.error(error instanceof Error ? error.message : "视频列表读取失败");
       }
     }
-    await onOpen?.(row, next);
+    try { await onOpen?.(row, next); }
+    finally { if (request === detailRequest.current) setLoadingStep(false); }
   };
   const create = async (values: { companyName?: string }) => {
     if (!onCreate || !values.companyName?.trim()) return;
@@ -280,9 +290,13 @@ export function CustomerDeliverySection({
       const record = await onCreate(values.companyName.trim());
       setSelected(record);
       setStep("profile");
+      form.resetFields();
       form.setFieldsValue(record);
       createForm.resetFields();
+      setShowCreate(false);
       message.success("客户档案已创建");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "客户档案创建失败");
     } finally {
       setCreating(false);
     }
@@ -359,8 +373,10 @@ export function CustomerDeliverySection({
       }
       const finalRecord =
         persisted && typeof persisted === "object" ? persisted : next;
-      setSelected(finalRecord);
+      setSelected((current) => current?.id === selected.id ? finalRecord : current);
       message.success("已保存");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "客户交付保存失败");
     } finally {
       setSaving(false);
     }
@@ -377,7 +393,7 @@ export function CustomerDeliverySection({
     setSaving(true);
     try {
       const persisted = await onTrainingSave(row, completed);
-      if (persisted) setSelected(persisted);
+      if (persisted) setSelected((current) => current?.id === row.id ? persisted : current);
       message.success(completed ? "客户培训已完成" : "客户培训已取消");
     } catch (error) {
       message.error(error instanceof Error ? error.message : "客户培训保存失败");
@@ -415,9 +431,6 @@ export function CustomerDeliverySection({
                   >
                     {value ? "已完成" : "未完成"}
                   </Checkbox>
-                  <Button type="link" size="small" onClick={() => openStep(row, key)}>
-                    详情
-                  </Button>
                 </Space>
               );
             }
@@ -480,7 +493,7 @@ export function CustomerDeliverySection({
       extra={
         <Space>
           <Typography.Text type="secondary">
-            完成全部交付项后，客户主体才会变为生效
+            完成全部交付项后，交付状态才会变为已生效
           </Typography.Text>
           <Button
             type="primary"
@@ -516,6 +529,7 @@ export function CustomerDeliverySection({
             <Form form={createForm} layout="inline" onFinish={create}>
               <Form.Item
                 name="companyName"
+                label="公司名称"
                 rules={[{ required: true, message: "请输入公司名称" }]}
               >
                 <Input placeholder="公司名称" />
@@ -549,32 +563,17 @@ export function CustomerDeliverySection({
             : "客户交付详情"
         }
         open={Boolean(selected)}
-        onClose={() => setSelected(undefined)}
+        onClose={() => { detailRequest.current++; setLoadingStep(false); setSelected(undefined); }}
         width={560}
       >
         {selected ? (
           <Space orientation="vertical" size="large" style={{ width: "100%" }}>
-            <Steps
-              current={Object.keys(stepLabels).indexOf(step)}
-              items={Object.values(stepLabels).map((title, index) => {
-                const key = Object.keys(stepLabels)[index] as DeliveryStepKey;
-                const complete =
-                  key === "video" ? selected.videos > 0 : selected[key];
-                return {
-                  title,
-                  status: complete
-                    ? "finish"
-                    : index === Object.keys(stepLabels).indexOf(step)
-                      ? "process"
-                      : "wait",
-                };
-              })}
-            />
             <Form
               form={form}
               layout="vertical"
+              disabled={loadingStep || saving}
+              aria-busy={loadingStep}
               onFinish={save}
-              initialValues={selected}
             >
               {step === "profile" && (
                 <>
@@ -776,7 +775,7 @@ export function CustomerDeliverySection({
                   </Upload>
                 </>
               )}
-              <Button type="primary" htmlType="submit" loading={saving}>
+              <Button type="primary" htmlType="submit" loading={saving || loadingStep}>
                 保存当前环节
               </Button>
             </Form>

@@ -326,10 +326,6 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       throw new CustomerDeliveryError("INVALID_INPUT", "companyName required");
     const before = clone(d);
     const patch = { ...input.patch };
-    if (patch.functionalAcceptanceStatus === "complete")
-      patch.trainingCompleted = true;
-    if (patch.functionalAcceptanceStatus === "incomplete")
-      patch.trainingCompleted = false;
     if ("contractRef" in patch && patch.contractRef != null && !isValidCustomerDeliveryContractRef(patch.contractRef))
       throw new CustomerDeliveryError("INVALID_INPUT", "合同必须是 HTTPS 链接或 asset_ref");
     if (patch.customerProfileStatus === "complete" || (d.customerProfileStatus === "complete" && patch.customerProfileStatus !== "incomplete")) {
@@ -457,7 +453,6 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       d.systemIntegrationStatus = status;
     else {
       d.functionalAcceptanceStatus = status;
-      d.trainingCompleted = status === "complete";
     }
     if (complete(d)) d.effectiveAt = d.effectiveAt ?? now;
     else d.effectiveAt = null;
@@ -565,7 +560,6 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       d.systemIntegrationStatus = status;
     else {
       d.functionalAcceptanceStatus = status;
-      d.trainingCompleted = status === "complete";
     }
     d.effectiveAt = complete(d) ? (d.effectiveAt ?? now) : null;
     await this.auditWriter({
@@ -696,9 +690,11 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       contractRef: r.contract_ref,
       projectOwner: r.project_owner,
       supportOwner: r.support_owner,
-      paymentDate: r.payment_date
-        ? new Date(r.payment_date).toISOString().slice(0, 10)
-        : null,
+      // pg parses DATE as local midnight, not an instant. Converting that to
+      // UTC loses a calendar day in positive-offset server time zones.
+      paymentDate: r.payment_date instanceof Date
+        ? `${r.payment_date.getFullYear()}-${String(r.payment_date.getMonth() + 1).padStart(2, "0")}-${String(r.payment_date.getDate()).padStart(2, "0")}`
+        : r.payment_date ? String(r.payment_date).slice(0, 10) : null,
       plannedGoLiveAt: r.planned_go_live_at
         ? new Date(r.planned_go_live_at).toISOString()
         : null,
@@ -884,7 +880,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       const sets =
         input.checklistKey === "system_integration"
           ? `system_integration_status='${status}'`
-          : `functional_acceptance_status='${status}', training_completed=${status === "complete"}`;
+          : `functional_acceptance_status='${status}'`;
       await c.query(
         `UPDATE workspace_customer_deliveries SET ${sets},revision=revision+1,updated_at=now(),updated_by_actor_id=$3 WHERE workspace_id=$1 AND id=$2`,
         [scope, input.deliveryId, input.actorId],
@@ -1021,7 +1017,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
         );
       else
         await c.query(
-          `UPDATE workspace_customer_deliveries SET functional_acceptance_status=$3,training_completed=($3='complete'),revision=revision+1,updated_at=now(),updated_by_actor_id=$4 WHERE workspace_id=$1 AND id=$2`,
+          `UPDATE workspace_customer_deliveries SET functional_acceptance_status=$3,revision=revision+1,updated_at=now(),updated_by_actor_id=$4 WHERE workspace_id=$1 AND id=$2`,
           [scope, input.deliveryId, status, input.actorId],
         );
       await c.query(

@@ -5,6 +5,7 @@ import { CustomerDeliverySection } from "../components/delivery/CustomerDelivery
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel.js";
 import { customerDeliveryClient } from "../api/customerDeliveryClient.js";
 import { describeOpsError } from "../api/opsClient.js";
+import { deliveryDateTimeIsoValue } from "../components/delivery/deliveryDateTime.js";
 
 export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const canRead = model.authorization.can("customer.delivery.read");
@@ -59,7 +60,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       projectOwner: record.owner,
       supportOwner: record.afterSalesOwner,
       paymentDate: record.paymentDate || undefined,
-      plannedGoLiveAt: record.requiredLaunchAt,
+      plannedGoLiveAt: deliveryDateTimeIsoValue(record.requiredLaunchAt),
       customerProfileStatus: "complete",
     };
     try { const updated = await customerDeliveryClient.update({ targetWorkspaceId, deliveryId: record.id, patch, expectedRevision: revision }); await load(); return updated; }

@@ -41,6 +41,13 @@ try {
   stage = 'unpaid gate'
   await assert.rejects(repository.updateChecklistItem({ workspaceId, deliveryId: record.id, actorId, checklistKey: 'system_integration', itemKey: '店铺连接', completed: true, expectedRevision: record.revision }), { code: 'PAYMENT_REQUIRED' })
   record = await repository.update({ workspaceId, id: record.id, actorId, expectedRevision: record.revision, patch: { paymentStatus: 'paid', contractNumber: 'QA-C-1', contractRef: 'https://example.com/qa-contract.pdf', projectOwner: 'QA owner', supportOwner: 'QA support', paymentDate: '2026-09-14', plannedGoLiveAt: '2026-10-01T09:00:00+08:00', customerProfileStatus: 'complete' } })
+  stage = 'profile field round-trip'
+  assert.equal(record.paymentDate, '2026-09-14')
+  assert.equal(record.plannedGoLiveAt, '2026-10-01T01:00:00.000Z')
+  assert.equal(record.contractNumber, 'QA-C-1')
+  assert.equal(record.contractRef, 'https://example.com/qa-contract.pdf')
+  assert.equal(record.projectOwner, 'QA owner')
+  assert.equal(record.supportOwner, 'QA support')
   observations.push('unpaid checklist is blocked; full profile round-trips through PostgreSQL')
 
   stage = 'checklist persistence'
@@ -53,6 +60,9 @@ try {
     record = (await repository.get(workspaceId, record.id))!
   }
   assert.equal(record.effectiveAt, null)
+  assert.equal(record.trainingCompleted, false)
+  record = await repository.update({ workspaceId, id: record.id, actorId, expectedRevision: record.revision, patch: { trainingCompleted: true } })
+  assert.equal(record.trainingCompleted, true)
   observations.push('10 integration and 8 acceptance items persist with evidence; no video means inactive')
 
   stage = 'video and activation'
