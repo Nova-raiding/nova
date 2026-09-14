@@ -335,13 +335,6 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "实际到账创意点", key: "points", width: 170, render: (_: unknown, row: PlatformUser) => row.commercial ? row.commercial.includedTasks : "—" },
             { title: "充值时间", key: "time", width: 160, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
-          <div><Typography.Title level={5}>用户总消耗表</Typography.Title><Typography.Text type="secondary">基于当前可用额度快照展示</Typography.Text><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:total-usage`} pagination={false} dataSource={model.userDetail.memberships} columns={[
-            { title: "用户名", key: "name", width: "28%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
-            { title: "累计消耗创意点", key: "used", width: "18%", render: (_: unknown, row: PlatformUser) => row.commercial?.usedTasks ?? "—" },
-            { title: "套餐额度", key: "included", width: "18%", render: (_: unknown, row: PlatformUser) => row.commercial?.includedTasks ?? "—" },
-            { title: "剩余创意点", key: "remaining", width: "18%", render: (_: unknown, row: PlatformUser) => row.commercial?.remainingTasks ?? "—" },
-            { title: "更新时间", key: "updated", width: "18%", render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
-          ]} /></div>
           <div><Typography.Title level={5}>当月消耗表</Typography.Title><Typography.Text type="secondary">按当前计费周期展示消耗快照</Typography.Text><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:monthly-usage`} pagination={false} dataSource={model.userDetail.memberships} columns={[
             { title: "用户名", key: "name", width: "28%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
             { title: "本月消耗创意点", key: "used", width: "18%", render: (_: unknown, row: PlatformUser) => row.commercial?.usedTasks ?? "—" },
@@ -349,6 +342,16 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "剩余创意点", key: "remaining", width: "18%", render: (_: unknown, row: PlatformUser) => row.commercial?.remainingTasks ?? "—" },
             { title: "更新时间", key: "updated", width: "18%", render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
+          <div><Typography.Title level={5}>用户总消耗</Typography.Title><Typography.Text type="secondary">按月份记录累计消耗（当前仅提供最新额度快照）</Typography.Text><div className="ops-usage-chart" role="img" aria-label="用户总消耗月度折线图">
+            <svg viewBox="0 0 720 190" preserveAspectRatio="none" aria-hidden="true">
+              <line x1="48" y1="20" x2="48" y2="148" className="ops-usage-chart-axis" /><line x1="48" y1="148" x2="700" y2="148" className="ops-usage-chart-axis" />
+              {[20, 52, 84, 116].map((y) => <line key={y} x1="48" y1={y} x2="700" y2={y} className="ops-usage-chart-grid" />)}
+              <polyline points="48,148 178,148 308,148 438,148 568,148 698,148" className="ops-usage-chart-line" />
+              <circle cx="698" cy="148" r="5" className="ops-usage-chart-point" />
+            </svg>
+            <div className="ops-usage-chart-labels"><span>5个月前</span><span>4个月前</span><span>3个月前</span><span>2个月前</span><span>上月</span><span>本月</span></div>
+            <Typography.Text type="secondary">历史月度明细待接入后，折线将按实际消耗记录更新。</Typography.Text>
+          </div></div>
         </Space>}
       </Spin>
     </Drawer>
