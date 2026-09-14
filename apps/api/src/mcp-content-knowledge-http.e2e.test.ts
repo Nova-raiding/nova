@@ -255,13 +255,40 @@ describe('content and knowledge MCP methods over real HTTP', () => {
     }))
     expect(reference).toMatchObject({ referenceMode: 'differentiation_only', compliance: { originalTextCopied: false, competitorBrandReused: false } })
 
-    const recharge = await callMcp(tokens.rules, workspaceId, 'billing.recharge.create', {
+    const recharge = resultOf<any>(await callMcp(tokens.rules, workspaceId, 'billing.recharge.create', {
       channel: 'alipay',
       amount_cny: '10.00',
       idempotency_key: `video-wallet-${suffix}`,
+    }))
+    expect(recharge).toMatchObject({
+      id: expect.any(String),
+      channel: 'alipay',
+      amount_cny: '10.00',
+      state: 'pending',
+      warning: '当前为本地 fixture，不会产生真实扣款',
     })
-    expect(recharge.status).toBe(503)
-    expect(recharge.body.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
+    const rechargeReplay = resultOf<any>(await callMcp(tokens.rules, workspaceId, 'billing.recharge.create', {
+      channel: 'alipay',
+      amount_cny: '10.00',
+      idempotency_key: `video-wallet-${suffix}`,
+    }))
+    expect(rechargeReplay).toEqual(recharge)
+    const paidRecharge = resultOf<any>(await callMcp(tokens.rules, workspaceId, 'billing.recharge.get', {
+      order_id: recharge.id,
+      confirm_test_payment: 'true',
+    }))
+    expect(paidRecharge).toMatchObject({
+      id: recharge.id,
+      state: 'paid',
+      amount_cny: '10.00',
+      test_payment_confirmed: true,
+      replayed: false,
+    })
+    const wallet = resultOf<any>(await callMcp(tokens.rules, workspaceId, 'billing.transactions', {}))
+    expect(wallet).toMatchObject({
+      balance_cny: '10.00',
+      transactions: [expect.objectContaining({ type: 'recharge', orderId: recharge.id, amount_cny: '10.00' })],
+    })
     const videoRequest = await callMcp(tokens.rules, workspaceId, 'multimodal.video.request', {
       prompt: '生成基于已确认商品事实的通勤场景短视频',
       output: 'rendering',

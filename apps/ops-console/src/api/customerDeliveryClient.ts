@@ -3,6 +3,7 @@ import type { CustomerDeliveryRecord } from "../components/delivery/CustomerDeli
 
 export interface CustomerDeliveryClient {
   list(targetWorkspaceId: string, signal?: AbortSignal): Promise<CustomerDeliveryRecord[] | null>;
+  get(targetWorkspaceId: string, deliveryId: string, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
   create(targetWorkspaceId: string, companyName: string, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
   update(input: { targetWorkspaceId: string; deliveryId: string; patch: Record<string, unknown>; expectedRevision: number }, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
   updateChecklist(input: {
@@ -13,6 +14,15 @@ export interface CustomerDeliveryClient {
     targetWorkspaceId: string;
   }, signal?: AbortSignal): Promise<{ items: CustomerDeliveryChecklistItem[]; revision?: number }>;
   listChecklistItems(input: { targetWorkspaceId: string; deliveryId: string; checklistKey: "system_integration" | "functional_acceptance" }, signal?: AbortSignal): Promise<CustomerDeliveryChecklistItem[]>;
+  updateChecklistItem(input: {
+    targetWorkspaceId: string;
+    deliveryId: string;
+    checklistKey: "system_integration" | "functional_acceptance";
+    itemKey: string;
+    completed: boolean;
+    evidence?: Record<string, unknown>;
+    expectedRevision: number;
+  }, signal?: AbortSignal): Promise<CustomerDeliveryChecklistItem>;
   completeTraining(input: { targetWorkspaceId: string; deliveryId: string; completed: boolean; expectedRevision: number }, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
   listVideos(targetWorkspaceId: string, deliveryId: string, signal?: AbortSignal): Promise<Array<{ id: string; title: string; assetRef: string; sortOrder: number }>>;
   addVideo(input: { targetWorkspaceId: string; deliveryId: string; title: string; assetRef: string; sortOrder?: number }, signal?: AbortSignal): Promise<unknown>;
@@ -94,6 +104,11 @@ export const customerDeliveryClient: CustomerDeliveryClient = {
     const value = await rpc<unknown>("ops.customer-delivery.list", { target_workspace_id: targetWorkspaceId }, { signal });
     return value === null ? null : parseCustomerDeliveryList(value);
   },
+  async get(targetWorkspaceId, deliveryId, signal) {
+    const value = await rpc<unknown>("ops.customer-delivery.get", { target_workspace_id: targetWorkspaceId, delivery_id: deliveryId }, { signal });
+    if (value === null) throw new Error("客户交付详情接口未返回记录");
+    return parseRecord(value);
+  },
   async create(targetWorkspaceId, companyName, signal) {
     const value = await rpc<unknown>("ops.customer-delivery.create", { target_workspace_id: targetWorkspaceId, company_name: companyName.trim() }, { signal });
     if (value === null) throw new Error("客户交付创建接口未返回记录");
@@ -122,6 +137,21 @@ export const customerDeliveryClient: CustomerDeliveryClient = {
     const value = await rpc<unknown>("ops.customer-delivery.checklist-items.list", { target_workspace_id: input.targetWorkspaceId, delivery_id: input.deliveryId, checklist_key: input.checklistKey }, { signal });
     if (value === null) throw new Error("客户交付清单读取接口未返回结果");
     return parseChecklistItems(value);
+  },
+  async updateChecklistItem(input, signal) {
+    const value = await rpc<unknown>("ops.customer-delivery.checklist-item.update", {
+      target_workspace_id: input.targetWorkspaceId,
+      delivery_id: input.deliveryId,
+      checklist_key: input.checklistKey,
+      item_key: input.itemKey,
+      completed: String(input.completed),
+      ...(input.evidence ? { evidence_json: JSON.stringify(input.evidence) } : {}),
+      expected_revision: String(input.expectedRevision),
+    }, { signal });
+    if (value === null) throw new Error("客户交付清单项保存接口未返回结果");
+    const item = parseChecklistItems({ items: [value] })[0];
+    if (!item) throw new Error("客户交付清单项保存接口返回了空结果");
+    return item;
   },
   async completeTraining(input, signal) {
     const value = await rpc<unknown>("ops.customer-delivery.training.complete", { target_workspace_id: input.targetWorkspaceId, delivery_id: input.deliveryId, completed: String(input.completed), expected_revision: String(input.expectedRevision) }, { signal });
