@@ -32,6 +32,14 @@ describe('Merchant Studio production UI contract', () => {
     expect(merchantEntrypoint).toContain('MERCHANT_WORKSPACE_ID must be injected')
   })
 
+  it('does not cache the SPA shell across merchant UI rollouts', () => {
+    expect(merchantNginx).toContain('location = / {')
+    expect(merchantNginx).toContain('location = /index.html {')
+    expect(merchantNginx).toContain('try_files $uri $uri/ @merchant_spa')
+    expect(merchantNginx).toContain('location @merchant_spa {')
+    expect(merchantNginx.match(/add_header Cache-Control "no-store" always;/gu)).toHaveLength(3)
+  })
+
   it('projects read-only merchant roles into disabled write controls', () => {
     expect(app).toContain("new Set(['viewer', 'knowledge_reader'])")
     expect(app).toContain("data-testid=\"merchant-read-only-banner\"")
