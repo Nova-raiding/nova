@@ -57,6 +57,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const [form] = Form.useForm<UserFilters>();
   const [accessTarget, setAccessTarget] = useState<PlatformUser>();
   const [suspendReason, setSuspendReason] = useState("");
+  const [suspendApprover, setSuspendApprover] = useState("");
   const [suspending, setSuspending] = useState(false);
   const [detailSubject, setDetailSubject] = useState<string>();
   const [identityAction, setIdentityAction] = useState<"active" | "suspended">();
@@ -99,17 +100,17 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   }, [canReadUserDirectory]);
 
   const submitAccessChange = async () => {
-    if (!accessTarget || suspendReason.trim().length < 4) {
-      setActionError("请填写至少 4 个字符的操作原因。");
+    if (!accessTarget || suspendReason.trim().length < 4 || !suspendApprover.trim()) {
+      setActionError(!suspendApprover.trim() ? "请填写审批人。" : "请填写至少 4 个字符的操作原因。");
       return;
     }
     setActionError("");
     setSuspending(true);
     const saved = accessTarget.status === "suspended"
-      ? await model.activateUser(accessTarget.workspaceId, accessTarget.externalSubject, suspendReason.trim())
-      : await model.suspendUser(accessTarget.workspaceId, accessTarget.externalSubject, suspendReason.trim());
+      ? await model.activateUser(accessTarget.workspaceId, accessTarget.externalSubject, `审批人：${suspendApprover.trim()}；${suspendReason.trim()}`)
+      : await model.suspendUser(accessTarget.workspaceId, accessTarget.externalSubject, `审批人：${suspendApprover.trim()}；${suspendReason.trim()}`);
     setSuspending(false);
-    if (saved) { setAccessTarget(undefined); setSuspendReason(""); }
+    if (saved) { setAccessTarget(undefined); setSuspendReason(""); setSuspendApprover(""); }
     else setActionError("用户访问状态未更新。请检查权限、版本冲突或连接状态后重试；已保留操作原因。");
   };
   const closeUserDetail = () => {
@@ -338,15 +339,17 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
       </Spin>
     </Drawer>
     <Modal
-      title={accessTarget?.status === "suspended" ? "恢复用户访问" : "停用用户访问"} open={Boolean(accessTarget)} okText={accessTarget?.status === "suspended" ? "确认恢复" : "确认停用"}
-      okButtonProps={{ danger: accessTarget?.status !== "suspended", disabled: suspendReason.trim().length < 4 }}
+      title={accessTarget?.status === "suspended" ? "恢复用户访问" : "停用用户访问"} width={460} open={Boolean(accessTarget)} okText={accessTarget?.status === "suspended" ? "确认恢复" : "确认停用"}
+      okButtonProps={{ danger: accessTarget?.status !== "suspended", disabled: suspendReason.trim().length < 4 || !suspendApprover.trim() }}
       confirmLoading={suspending} transitionName="" maskTransitionName="" onOk={() => void submitAccessChange()}
-      onCancel={() => { if (!suspending) { setAccessTarget(undefined); setSuspendReason(""); } }}
+      onCancel={() => { if (!suspending) { setAccessTarget(undefined); setSuspendReason(""); setSuspendApprover(""); } }}
     >
       {actionError && <div ref={actionErrorRef} className="ops-form-error-summary" role="alert" tabIndex={-1} aria-labelledby="user-access-error-title" aria-describedby="user-access-error-description"><Typography.Text strong id="user-access-error-title">操作未完成</Typography.Text><Typography.Paragraph id="user-access-error-description">{actionError}</Typography.Paragraph></div>}
-      <Typography.Paragraph>{accessTarget?.status === "suspended" ? "恢复" : "仅停用"} <Typography.Text code>{accessTarget?.externalSubject}</Typography.Text> 在企业主体 <Typography.Text code>{accessTarget?.workspaceId}</Typography.Text> 的访问，不会删除业务数据。</Typography.Paragraph>
+      <Typography.Paragraph>{accessTarget?.status === "suspended" ? "恢复" : "停用"} <Typography.Text code>{accessTarget?.displayName || accessTarget?.externalSubject}</Typography.Text> 的所有系统操作权限，不会删除其云端数据。</Typography.Paragraph>
+      <label htmlFor="suspend-approver">审批人</label>
+      <Input id="suspend-approver" maxLength={100} value={suspendApprover} onChange={(event) => { setSuspendApprover(event.target.value); if (actionError) setActionError(""); }} placeholder="请输入审批人" />
       <label htmlFor="suspend-reason">操作原因（至少 4 个字符）</label>
-      <Input.TextArea id="suspend-reason" aria-describedby={actionError ? "user-access-error-title" : undefined} autoFocus rows={4} maxLength={500} showCount value={suspendReason} onChange={(event) => { setSuspendReason(event.target.value); if (actionError) setActionError(""); }} placeholder="例如：按工单 OPS-123 撤销或恢复访问" />
+      <Input.TextArea id="suspend-reason" aria-describedby={actionError ? "user-access-error-title" : undefined} autoFocus rows={3} maxLength={500} showCount value={suspendReason} onChange={(event) => { setSuspendReason(event.target.value); if (actionError) setActionError(""); }} placeholder="例如：按工单 OPS-123 撤销或恢复访问" />
     </Modal>
     <Modal title={identityAction === "suspended" ? "全局停用平台身份" : "恢复平台身份"} open={Boolean(identityAction)} okText="确认执行" okButtonProps={{ danger: identityAction === "suspended", disabled: identityWritesDisabled || identityReason.trim().length < 4 }} onCancel={() => { setIdentityAction(undefined); setIdentityReason(""); }} onOk={async () => { if (identityAction && await model.changeIdentityAccess(identityAction, identityReason.trim())) { setIdentityAction(undefined); setIdentityReason(""); } }}>
       <Alert showIcon type={identityAction === "suspended" ? "error" : "warning"} title={identityAction === "suspended" ? "该用户在所有租户的访问将立即失效，活动会话会被撤销。" : "只恢复身份状态；旧会话不会复活，用户必须重新登录。"} />
