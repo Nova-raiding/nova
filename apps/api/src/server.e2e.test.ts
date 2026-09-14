@@ -1,10 +1,11 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
-import { createHash, createHmac } from 'node:crypto'
+import { createHash, createHmac, randomUUID } from 'node:crypto'
 import { enableCommercialFixtureHarnessForTests, fixturePaymentAllowed, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setPasswordAuthRepositoryForTests, setPaymentProviderForTests, setRuleRepositoryForTests, workspaceMembers } from './server.js'
 import type { McpCanonicalProductConsistencyResult } from '../../../packages/contracts/src/index.js'
 import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
 import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
 import { hashPassword } from '../../../packages/security/src/password-auth.js'
+import { signPaymentCallback } from '../../../packages/billing/src/callback-envelope.mjs'
 
 type Envelope<T = unknown> = { request_id: string; trace_id: string; workspace_id: string; data: T | null; warnings: unknown[]; next_actions: unknown[]; error: { code: string; message: string } | null }
 
@@ -947,6 +948,29 @@ describe('API HTTP vertical slice', () => {
     expect(orderList.data?.result).toMatchObject({ summary: { pending: 0, paid: 1, closed: 0, failed: 0 }, returned: 1, total: 1, orders: [{ id: order.id, workspace_id: workspaceId, channel: 'wechat', amount_cny: '10.00', state: 'paid', provider_trade_id: callbackBody.provider_trade_id }] })
     const transactions = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'billing.transactions', params: { workspace_id: workspaceId } }) }).then(json)
     expect((transactions.data as { result: { transactions: unknown[] } }).result.transactions).toHaveLength(1)
+  })
+
+  it('accepts the production timestamp/nonce/currency callback envelope and rejects currency omission', async () => {
+    vi.stubEnv('PAYMENT_CALLBACK_SECRET', 'callback-secret')
+    const base = await start()
+    const workspaceId = `ws_billing_signed_${Date.now()}`
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+    const create = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'alipay', amount_cny: '10.00', idempotency_key: `billing-signed-${workspaceId}` } }) }).then(json)
+    expect(create.error).toBeNull()
+    const order = (create.data as { result: { id: string } }).result
+    const timestamp = String(Math.floor(Date.now() / 1000))
+    const nonce = `nonce-${randomUUID().replaceAll('-', '')}`
+    const callback = { channel: 'alipay' as const, workspaceId, orderId: order.id, providerTradeId: `trade-${workspaceId}`, amountFen: 1000, currency: 'CNY' as const, state: 'paid' as const, timestamp, nonce }
+    const signature = signPaymentCallback({ secret: 'callback-secret', ...callback })
+    const stale = { ...callback, timestamp: String(Math.floor(Date.now() / 1000) - 301), nonce: `nonce-${randomUUID().replaceAll('-', '')}` }
+    const staleSignature = signPaymentCallback({ secret: 'callback-secret', ...stale })
+    const expired = await fetch(`${base}/v1/billing/callback/alipay`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-payment-signature': staleSignature, 'x-payment-timestamp': stale.timestamp, 'x-payment-nonce': stale.nonce }, body: JSON.stringify({ workspace_id: workspaceId, order_id: order.id, provider_trade_id: stale.providerTradeId, amount_fen: stale.amountFen, currency: stale.currency, state: stale.state }) }).then(json)
+    expect(expired.error?.code).toBe('PAYMENT_CALLBACK_EXPIRED')
+    const missingCurrency = await fetch(`${base}/v1/billing/callback/alipay`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-payment-signature': signature, 'x-payment-timestamp': timestamp, 'x-payment-nonce': nonce }, body: JSON.stringify({ workspace_id: workspaceId, order_id: order.id, provider_trade_id: callback.providerTradeId, amount_fen: callback.amountFen, state: callback.state }) }).then(json)
+    expect(missingCurrency.error?.code).toBe('PAYMENT_CALLBACK_SIGNATURE_INVALID')
+    const paid = await fetch(`${base}/v1/billing/callback/alipay`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-payment-signature': signature, 'x-payment-timestamp': timestamp, 'x-payment-nonce': nonce }, body: JSON.stringify({ workspace_id: workspaceId, order_id: order.id, provider_trade_id: callback.providerTradeId, amount_fen: callback.amountFen, currency: callback.currency, state: callback.state }) }).then(json)
+    expect(paid.error).toBeNull()
+    expect(paid.data).toMatchObject({ accepted: true, order_id: order.id, state: 'paid' })
   })
 
   it('reports exact recharge totals beyond the 100-row display limit', async () => {
