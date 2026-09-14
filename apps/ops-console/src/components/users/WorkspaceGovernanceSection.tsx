@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Card, Descriptions, Input, Select, Space, Table, Tag, Typography } from "antd";
+import { Button, Card, Descriptions, Form, Input, Select, Space, Table, Tag, Typography } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { WorkspaceSummary } from "../../types/ops";
 import { EnterpriseIdentity } from "../EnterpriseIdentity.js";
@@ -16,11 +16,11 @@ export function WorkspaceGovernanceSection({ model }: { model: OpsConsoleModel }
   });
   return <>
     <Card title="用户月费详情" extra={<Typography.Text type="secondary">共 {rows.length} 个工作区</Typography.Text>}>
-      <Space wrap style={{ marginBottom: 16 }}>
-        <Input.Search allowClear value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索企业名称、Workspace ID 或套餐" style={{ width: 320 }} />
-        <Select allowClear value={status} onChange={setStatus} placeholder="工作区状态" options={[{ label: "正常", value: "active" }, { label: "已停用", value: "disabled" }]} style={{ width: 140 }} />
-        <Button onClick={() => void model.loadWorkspaceDirectory({ query: query.trim() || undefined, status, merchantOnly: true, page: 1, pageSize: model.workspaceDirectory.limit })} loading={model.workspaceDirectoryLoading}>刷新列表</Button>
-      </Space>
+      <Form layout="inline" style={{ marginBottom: 16 }} onFinish={() => void model.loadWorkspaceDirectory({ query: query.trim() || undefined, status, merchantOnly: true, page: 1, pageSize: model.workspaceDirectory.limit })}>
+        <Form.Item label="搜索"><Input allowClear value={query} onChange={(event) => setQuery(event.target.value)} placeholder="用户名或店铺名" style={{ width: 240 }} /></Form.Item>
+        <Form.Item label="状态"><Select allowClear value={status} onChange={setStatus} placeholder="全部" options={[{ label: "正常", value: "active" }, { label: "已停用", value: "disabled" }]} style={{ width: 140 }} /></Form.Item>
+        <Space><Button type="primary" htmlType="submit" loading={model.workspaceDirectoryLoading}>查询</Button><Button onClick={() => void model.loadWorkspaceDirectory({ query: query.trim() || undefined, status, merchantOnly: true, page: 1, pageSize: model.workspaceDirectory.limit })} loading={model.workspaceDirectoryLoading}>刷新列表</Button></Space>
+      </Form>
       <Table<WorkspaceSummary> rowKey="workspaceId" loading={model.workspaceDirectoryLoading} dataSource={rows} locale={{ emptyText: "暂无月费工作区记录" }} pagination={{ pageSize: model.workspaceDirectory.limit, showTotal: (total) => `共 ${total} 条记录` }} scroll={{ x: 900 }} columns={[
         { title: "用户 / 企业主体", key: "enterprise", width: 260, render: (_: unknown, row) => <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
         { title: "套餐", dataIndex: "planName", width: 160 },
