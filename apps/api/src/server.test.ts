@@ -212,7 +212,7 @@ describe('commercial access HTTP/MCP operation parity', () => {
   it('dispatches the HTTP and native MCP access reads under their registered operation', () => {
     const httpPolicy = getHttpOperationPolicy('GET', '/v1/commercial/access')
     expect(httpPolicy).toMatchObject({ mcpMethod: 'commercial.access.get', authentication: 'identity' })
-    expect(getMcpMethodPolicy('commercial.access.get')).toMatchObject({ effect: 'read', scope: 'workspace' })
+    expect(getMcpMethodPolicy('commercial.access.get')).toMatchObject({ effect: 'read', capability: 'billing.self.read', scope: 'self' })
 
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     expect(source).toContain("case 'commercial.access.get': {")

@@ -8,6 +8,7 @@ import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2
 import { MerchantService, assetReadiness, imageArchiveReceiptDigest, imageGenerationCandidateUsability, isTrustedCleanAsset, DomainError, type AssetRegistrationResult, type BrandVisualRules, type KnowledgeGenerationContext, type Platform, type PlatformAccount, type PlatformRejection, type Product, type Task } from '../../../packages/application/src/service.js'
 import { CommercialAccessService, type CommercialAccessServiceResult } from '../../../packages/application/src/commercial-access-service.js'
 import { CommercialPurchaseError, CommercialPurchaseService } from '../../../packages/application/src/commercial-purchase-service.js'
+import { CommercialPaymentError, CommercialPaymentService } from '../../../packages/application/src/commercial-payment-service.js'
 import type { ContinuousFeatureEntitlementSnapshotV2 } from '../../../packages/application/src/continuous-feature-entitlement.js'
 import { CommercialCountCapacityError, resolveCommercialCountBenefit, type CommercialCountBenefitCode } from './commercial-count-capacity.js'
 import { canonicalBackfillConflictQueueFailure, canonicalBackfillRunCanRetry } from '../../../packages/application/src/canonical-backfill-queue.js'
@@ -3206,10 +3207,55 @@ function commercialOrderView(order: Awaited<ReturnType<PostgresCommercialContrac
     amount_fen: order.amountFen,
     currency: order.currency,
     payment_provider: order.paymentProvider,
+    payment_url: order.checkoutUrl,
+    provider_order_id: order.providerOrderId,
+    checkout_expires_at: order.checkoutExpiresAt,
     access_revision: accessRevision,
     created_at: order.createdAt,
     paid_at: order.paidAt,
   }
+}
+
+function commercialCheckoutService() {
+  const callbackBase = process.env.PAYMENT_CALLBACK_BASE_URL?.trim().replace(/\/$/u, '')
+  return new CommercialPaymentService({
+    async getPaymentStatus(workspaceId, orderId) {
+      await persistenceReady
+      return persistence.commercialContracts?.getPaymentStatus(workspaceId, orderId) ?? null
+    },
+    async attachCheckout(input) {
+      await persistenceReady
+      if (!persistence.commercialContracts) throw new CommercialPaymentError('COMMERCIAL_PAYMENT_NOT_CONFIGURED', 'commercial order repository is unavailable')
+      return persistence.commercialContracts.attachCheckout(input)
+    },
+  }, process.env.PAYMENT_MODE === 'provider' ? paymentProvider : undefined, channel => {
+    if (!callbackBase) throw new CommercialPaymentError('COMMERCIAL_PAYMENT_NOT_CONFIGURED', 'commercial payment callback URL is not configured')
+    return `${callbackBase}/commercial/callback/${channel}`
+  })
+}
+
+function rethrowCommercialPaymentError(error: unknown): never {
+  if (error instanceof DomainError) throw error
+  if (error instanceof CommercialPaymentError) {
+    const status = error.code === 'COMMERCIAL_ORDER_NOT_FOUND' ? 404 : error.code === 'COMMERCIAL_ORDER_NOT_PAYABLE' || error.code === 'COMMERCIAL_CHECKOUT_CONFLICT' ? 409 : 503
+    throw new DomainError(error.code, error.message, status)
+  }
+  if (error instanceof CommercialContractError) {
+    const status = error.code === 'COMMERCIAL_ORDER_NOT_FOUND' ? 404 : 409
+    throw new DomainError(error.code, error.message, status)
+  }
+  throw error
+}
+
+function commercialMonthlyPeriod(paidAt: string) {
+  const start = new Date(paidAt)
+  const originalDay = start.getUTCDate()
+  const end = new Date(start)
+  end.setUTCDate(1)
+  end.setUTCMonth(end.getUTCMonth() + 1)
+  const lastDay = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 0)).getUTCDate()
+  end.setUTCDate(Math.min(originalDay, lastDay))
+  return { start: start.toISOString(), end: end.toISOString() }
 }
 
 const commercialPurchaseService = new CommercialPurchaseService({
@@ -11174,8 +11220,15 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'commercial.order.create': {
       try {
-        return result(await commercialPurchaseService.create({ workspace_id: workspaceId, actor_id: requestActor(req), purchase_kind: required(params, 'purchase_kind') as 'purchase' | 'onboarding_once' | 'upgrade' | 'point_pack', sku_code: required(params, 'sku_code'), idempotency_key: required(params, 'idempotency_key'), reason: required(params, 'reason') }))
-      } catch (error) { rethrowCommercialPurchaseError(error) }
+        const idempotencyKey = required(params, 'idempotency_key')
+        const order = await commercialPurchaseService.create({ workspace_id: workspaceId, actor_id: requestActor(req), purchase_kind: required(params, 'purchase_kind') as 'purchase' | 'onboarding_once' | 'upgrade' | 'point_pack', sku_code: required(params, 'sku_code'), idempotency_key: idempotencyKey, reason: required(params, 'reason') })
+        if (order.payment_provider !== 'alipay' && order.payment_provider !== 'wechat') return result(order)
+        const checkout = await commercialCheckoutService().createCheckout({ workspaceId, orderId: order.order_id, channel: order.payment_provider, idempotencyKey })
+        return result({ ...order, payment_url: checkout.paymentUrl, provider_order_id: checkout.providerOrderId, checkout_expires_at: checkout.expiresAt, checkout_replayed: checkout.replayed })
+      } catch (error) {
+        if (error instanceof CommercialPaymentError || error instanceof CommercialContractError) rethrowCommercialPaymentError(error)
+        rethrowCommercialPurchaseError(error)
+      }
     }
     case 'commercial.order.payment.get': {
       try {
@@ -17910,7 +17963,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   if (req.method === 'GET' && signedAssetDisplayMatch) return serveSignedAssetDisplay(req, res, url, decodeURIComponent(signedAssetDisplayMatch[1]!))
   const isOAuthCallback = /^\/v1\/oauth\/callback\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)$/.test(path)
   const isOAuthAuthorization = req.method === 'POST' && /^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)\/authorize$/.test(path)
-  const paymentCallbackMatch = path.match(/^\/v1\/(billing|subscriptions)\/callback\/(alipay|wechat)$/)
+  const paymentCallbackMatch = path.match(/^\/v1\/(billing|subscriptions|commercial)\/callback\/(alipay|wechat)$/)
   const isWorkerAutomationTick = req.method === 'POST' && path === '/v1/internal/automation/tick'
   const workerRoute = isWorkerRoute(req.method, path)
   // These worker callbacks still read the durable business projection through
@@ -18729,6 +18782,33 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     if (!workspaceId || !Number.isSafeInteger(amountFen) || amountFen < 0) throw new DomainError('PAYMENT_CALLBACK_INVALID', '支付回调缺少有效订单、工作区或金额', 400)
     const callbackProof = verifyPaymentCallback(req, { channel: paymentCallbackMatch[2] as RechargeChannel, workspaceId, payload: { order_id: orderId, provider_trade_id: providerTradeId, amount_fen: amountFen, state } })
     const freshCallbackProof = callbackProof ? await consumePaymentCallbackProof({ workspaceId, channel: paymentCallbackMatch[2] as RechargeChannel, ...callbackProof }) : true
+    if (paymentCallbackMatch[1] === 'commercial') {
+      await persistenceReady
+      const status = await persistence.commercialContracts?.getPaymentStatus(workspaceId, orderId)
+      if (!status) throw new DomainError('COMMERCIAL_ORDER_NOT_FOUND', '支付回调对应的商业订单不存在', 404)
+      if (status.order.paymentProvider !== paymentCallbackMatch[2]) throw new DomainError('PAYMENT_CALLBACK_CHANNEL_MISMATCH', '支付回调渠道与商业订单渠道不一致', 400)
+      if (status.order.amountFen !== amountFen || status.order.currency !== 'CNY') throw new DomainError('COMMERCIAL_CALLBACK_AMOUNT_MISMATCH', '支付回调金额与商业订单不可变快照不一致', 400)
+      if (state !== 'paid' && state !== 'SUCCESS') return send(res, 200, workspaceId, { accepted: true, order_id: orderId, state }, null, req)
+      if (!freshCallbackProof && status.order.status !== 'paid') throw new DomainError('PAYMENT_CALLBACK_NONCE_REPLAY', '支付回调 nonce 已被使用，且商业订单尚未进入已支付状态', 409)
+      const paidAt = callbackProof?.signedAt ?? new Date().toISOString()
+      const stablePayloadHash = createHash('sha256').update([paymentCallbackMatch[2], workspaceId, orderId, providerTradeId, amountFen, 'CNY', 'paid'].join('|')).digest('hex')
+      try {
+        const payment = await persistence.commercialContracts!.recordVerifiedPaymentAndGrant({
+          workspaceId,
+          orderId,
+          provider: paymentCallbackMatch[2],
+          providerEventId: providerTradeId,
+          providerOrderId: providerTradeId,
+          nonce: callbackProof?.nonce ?? `legacy-${providerTradeId}`,
+          payloadHash: stablePayloadHash,
+          amountFen,
+          currency: 'CNY',
+          paidAt,
+          ...(status.skuCode && (await persistence.commercialCatalog?.get(status.skuCode, { includePrivate: false, capabilities: [] }))?.kind === 'monthly' ? { period: commercialMonthlyPeriod(paidAt) } : {}),
+        })
+        return send(res, 200, workspaceId, { accepted: true, order_id: orderId, state: 'paid', replayed: payment.replayed, grant_id: payment.grantId, available_points: payment.availablePoints, access_revision: payment.accessRevision }, null, req)
+      } catch (error) { rethrowCommercialPaymentError(error) }
+    }
     if (paymentCallbackMatch[1] === 'subscriptions') {
       const order = await (persistence.subscriptions ?? memorySubscriptions).getOrderByOrderNo(workspaceId, orderId)
       if (!order) throw new DomainError('SUBSCRIPTION_ORDER_NOT_FOUND', '支付回调对应的订阅订单不存在', 404)
