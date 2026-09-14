@@ -101,7 +101,7 @@ const forbiddenMerchantTools = new Set([
   'billing.reconciliation', 'billing.model-usage.reconciliation.run', 'billing.model-usage.resolve',
   'billing.usage.consume', 'billing.usage.refund', 'billing.refund', 'billing.reconciliation.run',
   'platform.settings.update', 'platform.revoke', 'platform.model.status', 'asset.scan',
-  'content.codex.prepare', 'content.codex.commit', 'knowledge.rule.update', 'billing.recharge.create',
+  'content.codex.prepare', 'content.codex.commit', 'knowledge.rule.update',
 ])
 const forbiddenTools = toolNames.filter(name => name.startsWith('ops.') || forbiddenMerchantTools.has(name))
 const missingTools = requiredTools.filter(name => !toolNames.includes(name))

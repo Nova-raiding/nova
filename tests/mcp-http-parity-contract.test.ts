@@ -82,8 +82,8 @@ describe('MCP/HTTP parity contract', () => {
   })
 
   it('fails closed when a parity source is malformed instead of silently accepting a partial set', () => {
-    expect(() => parseOpenApiMcpMethods(openApiSource.replace('enum: [merchant.start,', 'enum: [merchant.start, merchant.start,'))).toThrow()
-    expect(() => parseOpenApiMcpMethods(openApiSource.replace('enum: [merchant.start,', 'enum: [merchant.start,'))).not.toThrow()
+    expect(() => parseOpenApiMcpMethods(openApiSource.replace('enum: [onboarding.status,', 'enum: [onboarding.status, onboarding.status,'))).toThrow()
+    expect(() => parseOpenApiMcpMethods(openApiSource.replace('enum: [onboarding.status,', 'enum: [onboarding.status,'))).not.toThrow()
     expect(() => parseOpenApiMcpMethods(openApiSource.replace(/\n\s{8}method:\s*\n/u, '\n'))).toThrow()
   })
 })

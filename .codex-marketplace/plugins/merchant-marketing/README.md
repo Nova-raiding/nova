@@ -51,7 +51,7 @@ OpenAI Apps 域名验证由 API 的 `/.well-known/openai-apps-challenge` 路由�
 
 商家身份与角色由服务端 Bearer/OIDC 授权映射决定。安装包不会静态声明 `MERCHANT_ACTOR_ID` 或 `MERCHANT_MCP_ROLE`，也不会用客户端角色覆盖服务端成员权限；本地非严格鉴权测试需要模拟身份时，应在独立测试进程中显式注入，不能写进正式插件清单。
 
-`MERCHANT_MCP_BASE_URL` 必须是商家服务的根 origin（例如 `https://merchant.example.com`），不能包含 `/mcp`；bridge 会自行请求 `${MERCHANT_MCP_BASE_URL}/mcp`。生产环境必须使用 HTTPS（本地开发可用 HTTP），并与已通过发布门禁的商家 Ingress 域名一致，不能指向独立示例网关或 Ops 域名。首次运行可不设置 `MERCHANT_WORKSPACE_ID`，先调用 `workspace.bootstrap` 创建工作区；bridge 会将脱敏的 workspace binding 保存到用户级 `CODEX_HOME/merchant-marketing/workspace-binding.json`，新会话自动恢复，也可按需改用环境变量覆盖。后续 `MERCHANT_WORKSPACE_ID` 是租户边界，不是平台授权凭证。生产网关必须校验 Codex/用户身份后再允许该工作区访问，不能仅相信客户端传入的工作区字符串。
+`MERCHANT_MCP_BASE_URL` 必须是商家服务的根 origin（例如 `https://merchant.example.com`），不能包含 `/mcp`；bridge 会自行请求 `${MERCHANT_MCP_BASE_URL}/mcp`。生产环境必须使用 HTTPS（本地开发可用 HTTP），并与已通过发布门禁的商家 Ingress 域名一致，不能指向独立示例网关或 Ops 域名。商家工作区由平台运营预先创建并分配；插件首次连接只读取并绑定该工作区，不允许商家自行注册或创建工作区。bridge 会将脱敏的 workspace binding 保存到用户级 `CODEX_HOME/merchant-marketing/workspace-binding.json`，新会话自动恢复，也可按需用环境变量覆盖。后续 `MERCHANT_WORKSPACE_ID` 是租户边界，不是平台授权凭证。生产网关必须校验 Codex/用户身份后再允许该工作区访问，不能仅相信客户端传入的工作区字符串。
 
 bridge 对缺失或未解析的 `${MERCHANT_MCP_BASE_URL}`、`${MERCHANT_WORKSPACE_ID}` 默认失败关闭，避免 Codex App 或 Automation 静默分析错误工作区。只有本地 fixture 开发可以显式设置 `MERCHANT_ALLOW_FIXTURE_FALLBACK=true`，此时才回退到 `http://127.0.0.1:8790` 和 `ws_demo`；Automation 与生产环境禁止开启该选项。
 

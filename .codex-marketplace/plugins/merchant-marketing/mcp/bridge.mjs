@@ -291,7 +291,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { expected_revision: { type: 'string' }, reason: { type: 'string' } }, required: ['expected_revision'], additionalProperties: false },
   },
   'workspace.bootstrap': {
-    description: '首次运行创建商家工作区并返回绑定信息；不会使用演示工作区。',
+    description: '读取平台运营已分配的商家工作区并返回插件绑定信息；商家不能自行创建工作区，无绑定时请联系平台运营。',
     inputSchema: { type: 'object', properties: { display_name: { type: 'string' }, external_subject: { type: 'string' } }, required: ['display_name'], additionalProperties: false },
   },
   'workspace.interactive.confirm': {
