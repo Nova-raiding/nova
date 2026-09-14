@@ -9,27 +9,6 @@ interface PlatformOverviewSnapshotProps {
   onNavigate: (domain: OpsDomain) => void;
 }
 
-type MonthlySeries = { key: string; label: string; values: number[] };
-
-function MonthlyTrendChart({ series, bars = [], ariaLabel }: { series: MonthlySeries[]; bars?: string[]; ariaLabel: string }) {
-  const peak = Math.max(...series.flatMap((item) => item.values), 0);
-  const max = peak <= 2 ? 2 : peak <= 5 ? 5 : Math.ceil(peak / 5) * 5;
-  const x = (index: number) => 54 + (688 * index) / 11;
-  const y = (value: number) => 192 - (Math.min(value, max) / max) * 164;
-  return <div className="ops-dashboard-trend-chart" role="img" aria-label={ariaLabel}>
-    <div className="ops-dashboard-trend-legend">{series.map((item) => <span className={item.key} key={item.key}>{item.label}</span>)}</div>
-    <svg viewBox="0 0 760 220" preserveAspectRatio="none" aria-hidden="true">
-      {[24, 66, 108, 150].map((lineY) => <line key={lineY} x1="54" y1={lineY} x2="742" y2={lineY} className="ops-dashboard-trend-grid" />)}
-      <line x1="54" y1="192" x2="742" y2="192" className="ops-dashboard-trend-axis" />
-      <text x="10" y="28" className="ops-dashboard-trend-tick">{max}</text><text x="10" y="112" className="ops-dashboard-trend-tick">{max / 2}</text><text x="18" y="196" className="ops-dashboard-trend-tick">0</text>
-      {series.map((item, seriesIndex) => item.values.map((value, index) => bars.includes(item.key) ? <g key={`${item.key}-${index}`}><rect x={x(index) - 8} y={y(value)} width="16" height={Math.max(0, 192 - y(value))} rx="3" className={`${item.key}-bar`} />{value > 0 ? <text x={x(index)} y={Math.max(16, y(value) - 6 - seriesIndex * 12)} textAnchor="middle" className="ops-dashboard-trend-value">{value}</text> : null}</g> : null))}
-      {series.map((item, seriesIndex) => !bars.includes(item.key) ? <g key={item.key}><polyline points={item.values.map((value, index) => `${x(index)},${y(value)}`).join(" ")} className={`${item.key}-line`} />{item.values.map((value, index) => value > 0 ? <text key={`${item.key}-label-${index}`} x={x(index)} y={Math.max(16, y(value) - 6 - seriesIndex * 12)} textAnchor="middle" className="ops-dashboard-trend-value">{value}</text> : null)}</g> : null)}
-    </svg>
-    <div className="ops-dashboard-trend-axis-caption">月份</div>
-    <div className="ops-dashboard-trend-labels">{Array.from({ length: 12 }, (_, index) => <span key={index}>{index + 1}</span>)}</div>
-  </div>;
-}
-
 export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProps) {
   const merchantWorkspaceCount = model.workspaceDirectory.merchantWorkspaceCount;
   const totalWorkspaceCount = model.workspaceDirectory.total;
@@ -39,11 +18,6 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
   const monthLabel = `${new Date().getMonth() + 1}月`;
   const basicSales = finance?.subscriptionOrderBySku?.basic?.orderCount;
   const growthSales = finance?.subscriptionOrderBySku?.growth?.orderCount;
-  const currentMonthIndex = new Date().getMonth();
-  const monthDays = new Date(new Date().getFullYear(), currentMonthIndex + 1, 0).getDate();
-  const dayLabels = Array.from({ length: monthDays }, (_, index) => index + 1).filter((day) => day === 1 || day % 5 === 0 || day === monthDays);
-  const monthLabels = Array.from({ length: 12 }, (_, index) => `${index + 1}月`);
-  const currentValue = (value: number) => monthLabels.map((_, index) => index === currentMonthIndex ? value : 0);
   const metric = (title: string, value: string | number, unit: string, tone = "") => (
     <article className={`ops-dashboard-metric ${tone}`} key={title}>
       <span className="ops-dashboard-metric-label">{title}</span>
@@ -65,27 +39,6 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
           <section><h4>创意点月度</h4><div className="ops-dashboard-metric-list">{metric("客户消耗创意点", 0, "点")}{metric("平台消耗金额", usage?.totalTokens ?? 0, "元")}{metric("额外创意点充值", 0, "点", "full")}</div></section>
         </div></article>
       </section>
-      <section className="ops-dashboard-panel ops-dashboard-trend" aria-label="月度经营趋势">
-        <header><div><h3>月度经营趋势</h3></div><small>按月</small></header>
-        <div className="ops-dashboard-trend-cards">
-          <article><h4 className="ops-dashboard-trend-subtitle">客户累计数</h4><MonthlyTrendChart ariaLabel="客户累计数月度柱状折线图" bars={["customers"]} series={[{ key: "customers", label: "客户总数", values: currentValue(totalWorkspaceCount ?? 0) }, { key: "active", label: "有效客户数", values: currentValue(merchantWorkspaceCount ?? 0) }]} /></article>
-          <article><h4 className="ops-dashboard-trend-subtitle">接入费收入</h4><MonthlyTrendChart ariaLabel="接入费收入月度柱状折线图" bars={["revenue"]} series={[{ key: "revenue", label: "接入费收入", values: currentValue(finance?.onboardingOrderCny ?? 0) }]} /></article>
-          <article><h4 className="ops-dashboard-trend-subtitle">客户与平台消耗</h4><MonthlyTrendChart ariaLabel="客户与平台消耗月度折线图" series={[{ key: "points", label: "客户消耗创意点", values: currentValue(0) }, { key: "cost", label: "平台消耗金额", values: currentValue(usage?.totalTokens ?? 0) }]} /></article>
-        </div>
-      </section>
-      <section className="ops-dashboard-panel ops-dashboard-trend" aria-label="当月经营趋势">
-        <header><div><h3>{monthLabel}经营趋势</h3></div><small>按天</small></header>
-        <div className="ops-dashboard-trend-chart ops-dashboard-trend-chart-daily" role="img" aria-label={`${monthLabel}经营趋势折线图`}>
-          <div className="ops-dashboard-trend-empty">
-            <div className="ops-dashboard-trend-empty-icon">⌁</div>
-            <strong>暂无按日明细</strong>
-            <span>产生实际记录后，将按日期展示客户数、收入与消耗趋势</span>
-          </div>
-          <div className="ops-dashboard-trend-axis-caption">日期</div>
-          <div className="ops-dashboard-trend-labels">{dayLabels.map((day) => <span key={day}>{day}</span>)}</div>
-        </div>
-      </section>
-
     </section>
   );
 }

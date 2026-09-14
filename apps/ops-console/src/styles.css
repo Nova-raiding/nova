@@ -318,42 +318,6 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-dashboard-monthly-groups section { display: grid; align-content: start; gap: 8px; padding: 12px; border: 1px solid #dbe3ef; border-radius: 11px; background: #f8fafc; }
 .ops-dashboard-monthly-groups section:first-child .ops-dashboard-metric-list { grid-template-columns: 1fr; }
 .ops-dashboard-monthly-groups h4 { margin: 0; color: #2563eb; font-size: 13px; font-weight: 800; }
-.ops-dashboard-trend { margin-top: 14px; }
-.ops-dashboard-trend-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.ops-dashboard-trend-cards > article { min-width: 0; }
-.ops-dashboard-trend-subtitle { margin: 0 0 8px; padding-left: 10px; border-left: 3px solid #2563eb; color: #172554; font-size: 14px; font-weight: 800; }
-.ops-dashboard-trend-cards > article:nth-child(2) .ops-dashboard-trend-subtitle { border-left-color: #059669; }
-.ops-dashboard-trend-cards > article:nth-child(3) .ops-dashboard-trend-subtitle { border-left-color: #7c3aed; }
-.ops-dashboard-trend-chart { padding: 14px 14px 10px; border: 1px solid #dbe3ef; border-radius: 12px; background: #fff; box-shadow: 0 4px 14px rgba(15, 23, 42, .04); }
-.ops-dashboard-trend-legend { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 8px; color: #64748b; font-size: 12px; font-weight: 650; }
-.ops-dashboard-trend-legend span::before { display: inline-block; width: 9px; height: 9px; margin-right: 6px; border-radius: 50%; content: ""; }
-.ops-dashboard-trend-legend .customers::before { background: #2563eb; }
-.ops-dashboard-trend-legend .revenue::before { background: #059669; }
-.ops-dashboard-trend-legend .points::before { background: #d97706; }
-.ops-dashboard-trend-legend .cost::before { background: #7c3aed; }
-.ops-dashboard-trend-chart svg { display: block; width: 100%; height: 210px; }
-.ops-dashboard-trend-axis { stroke: #94a3b8; stroke-width: 1; }
-.ops-dashboard-trend-grid { stroke: #e2e8f0; stroke-width: 1; stroke-dasharray: 4 5; }
-.ops-dashboard-trend-tick { fill: #0f172a; font-size: 14px; font-weight: 850; }
-.ops-dashboard-trend-value { fill: #1e293b; font-size: 11px; font-weight: 800; }
-.ops-dashboard-trend-chart .customers-bar { fill: #2563eb; }
-.ops-dashboard-trend-chart .revenue-bar { fill: #059669; }
-.ops-dashboard-trend-chart .points-bar { fill: #d97706; }
-.ops-dashboard-trend-chart .cost-bar { fill: #7c3aed; }
-.ops-dashboard-trend-chart .customers-line, .ops-dashboard-trend-chart .active-line, .ops-dashboard-trend-chart .revenue-line, .ops-dashboard-trend-chart .points-line, .ops-dashboard-trend-chart .cost-line { fill: none; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
-.ops-dashboard-trend-chart .customers-line, .ops-dashboard-trend-chart .active-line { stroke: #2563eb; }
-.ops-dashboard-trend-chart .revenue-line { stroke: #059669; }
-.ops-dashboard-trend-chart .points-line { stroke: #d97706; }
-.ops-dashboard-trend-chart .cost-line { stroke: #7c3aed; }
-.ops-dashboard-trend-axis-caption { margin: 2px 0 0 54px; color: #475569; font-size: 11px; font-weight: 700; }
-.ops-dashboard-trend-labels { display: flex; justify-content: space-between; margin-left: 54px; color: #475569; font-size: 12px; font-weight: 650; }
-.ops-dashboard-trend-note { margin: 8px 0 0 54px; color: #94a3b8; font-size: 11px; }
-.ops-dashboard-trend-chart-daily { background: #f8fafc; }
-.ops-dashboard-trend-empty { display: grid; place-items: center; align-content: center; min-height: 210px; gap: 6px; color: #64748b; text-align: center; }
-.ops-dashboard-trend-empty-icon { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid #cbd5e1; border-radius: 50%; color: #94a3b8; font-size: 22px; line-height: 1; }
-.ops-dashboard-trend-empty strong { color: #334155; font-size: 14px; }
-.ops-dashboard-trend-empty span { max-width: 360px; color: #94a3b8; font-size: 12px; }
-@media (max-width: 1100px) { .ops-dashboard-trend-cards { grid-template-columns: 1fr; } }
 .ops-dashboard-metric.full { grid-column: 1 / -1; }
 .ops-dashboard-usage { display: grid; }
 .ops-dashboard-usage-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
