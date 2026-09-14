@@ -25,7 +25,7 @@ describe('MigrationRunner', () => {
   it('loads the ordered production migration set', async () => {
     const migrations = await loadMigrations()
     const latestVersion = migrations.at(-1)?.version ?? 0
-    expect(latestVersion).toBe(199)
+    expect(latestVersion).toBe(200)
     expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(migrations[1]?.sql).toContain('FORCE ROW LEVEL SECURITY')
     const byVersion = new Map(migrations.map(migration => [migration.version, migration]))
@@ -38,6 +38,7 @@ describe('MigrationRunner', () => {
     expect(byVersion.get(197)).toMatchObject({ name: 'customer_delivery_checklist_items' })
     expect(byVersion.get(198)).toMatchObject({ name: 'canonical_catalog_knowledge' })
     expect(byVersion.get(199)).toMatchObject({ name: 'customer_delivery_retention_fk' })
+    expect(byVersion.get(200)).toMatchObject({ name: 'customer_delivery_control_plane_acl' })
     expect(byVersion.get(100)).toMatchObject({ name: 'operation_alert_notifications' })
     expect(byVersion.get(101)).toMatchObject({ name: 'canonical_backfill_runs' })
     expect(byVersion.get(102)).toMatchObject({ name: 'canonical_backfill_conflicts' })

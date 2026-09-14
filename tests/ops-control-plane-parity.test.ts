@@ -53,7 +53,7 @@ const uiMethods = [...new Set(
 )].sort()
 
 function openapiMethods(): string[] {
-  const enumBody = openapiSource.match(/^\s+enum:\s*\[(merchant\.start[^\]]+)\]\s*$/mu)?.[1]
+  const enumBody = openapiSource.match(/^    McpRequest:\s*$[\s\S]*?^          enum:\s*\[([^\]]+)\]\s*$/mu)?.[1]
   expect(enumBody, 'OpenAPI McpRequest.method enum is missing').toBeDefined()
   return enumBody!.split(',').map(value => value.trim())
 }
