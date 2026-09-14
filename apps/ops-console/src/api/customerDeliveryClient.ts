@@ -56,7 +56,17 @@ export function parseCustomerDeliveryList(value: unknown): CustomerDeliveryRecor
     const acceptance = row.acceptance ?? row.functionalAcceptanceStatus === "complete";
     const training = row.training ?? row.trainingCompleted;
     if (![profile, integration, acceptance, training].every(bool)) throw new Error(`客户交付接口返回了无效响应（清单状态，第 ${index + 1} 条）`);
-    const videos = Array.isArray(row.videos) ? row.videos.length : typeof row.videos === "number" ? row.videos : Array.isArray(row.videoUrls) ? row.videoUrls.length : 0;
+    let videos = 0;
+    if (Array.isArray(row.videos)) {
+      if (row.videos.some((video) => !object(video) || !text(video.id ?? video.assetRef ?? video.asset_ref))) throw new Error(`客户交付接口返回了无效视频（第 ${index + 1} 条）`);
+      videos = row.videos.filter((video) => object(video) && !video.deletedAt && !video.deleted_at).length;
+    } else if (typeof row.videos === "number") {
+      if (!Number.isSafeInteger(row.videos) || row.videos < 0) throw new Error(`客户交付接口返回了无效视频数量（第 ${index + 1} 条）`);
+      videos = row.videos;
+    } else if (Array.isArray(row.videoUrls)) {
+      if (row.videoUrls.some((url) => !text(url))) throw new Error(`客户交付接口返回了无效视频链接（第 ${index + 1} 条）`);
+      videos = row.videoUrls.length;
+    }
     return {
       id: row.id,
       companyName: (row.companyName ?? row.company_name) as string,
