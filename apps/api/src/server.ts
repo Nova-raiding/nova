@@ -1476,6 +1476,8 @@ export function grantContinuousFeatureEntitlementForTests(workspaceId: string) {
 const memoryCustomerDeliveries = new MemoryCustomerDeliveryRepository()
 
 const memoryPersistence: ApiPersistence = { mode: 'memory', creativePoints: memoryCreativePoints, commercialCatalog: memoryCommercialCatalog, commercial: memoryCommercial, usage: memoryUsage, modelUsage: memoryModelUsage, actionLedger: memoryActionLedger, entitlements: memoryEntitlements, operations: memoryOperations, subscriptions: memorySubscriptions, members: memoryMembers, commercialExtensions: memoryCommercialExtensions, growth: memoryGrowth, alerts: memoryAlerts, dataLifecycle: memoryDataLifecycle, workspaceDataExport: memoryWorkspaceDataExport, brandUnits: memoryBrandUnits, objectOrphans: memoryObjectOrphans, contextSnapshots: memoryContextSnapshots, identities: memoryIdentities, authorization: memoryAuthorization, paymentCallbackNonces: memoryPaymentCallbackNonces, support: memorySupport, supportSlaReporting: memorySupportSlaReporting, incidents: memoryIncidents, featureFlags: memoryFeatureFlags, auditCenter: memoryAuditCenter, workspaceBootstrap: memoryWorkspaceBootstrap, assetParse: memoryAssetParse, assetScanReceipts: memoryAssetScanReceipts, assetPromotionCleanup: memoryAssetPromotionCleanup, imageContinuationLeases: memoryImageContinuationLeases, imageGenerationExecutions: new MemoryImageGenerationExecutionRepository(), reconciliationEvidence: new MemoryReconciliationEvidenceRepository(), unifiedLinkAudit: new MemoryUnifiedLinkAuditRepository(), platformAuthorizationAudit: memoryPlatformAuthorizationAudit, platformMediaSpecs: memoryPlatformMediaSpecs, mappingPreflightApprovals: memoryMappingPreflightApprovals, knowledgeHydration: memoryKnowledgeHydration, knowledge: memoryKnowledge, storageQuota: memoryStorageQuota, storageReconciliation: memoryStorageReconciliation, reconciliationStatuses: memoryReconciliationStatuses, canonicalBackfillRuns: memoryCanonicalBackfillRuns, canonicalBackfillConflicts: memoryCanonicalBackfillConflicts, interactiveConfirmationTickets: memoryInteractiveConfirmationTickets }
+// Customer delivery is workspace-scoped and uses the in-memory adapter in test/fixture mode.
+memoryPersistence.customerDeliveries = memoryCustomerDeliveries
 let persistence: ApiPersistence = memoryPersistence
 let persistenceError: unknown
 const workspaceEventSequences = new Map<string, number>()
@@ -2876,6 +2878,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const privateTrialConversion = new PostgresPrivateTrialConversionRepository(sqlPool)
     const commercialRefunds = new PostgresCommercialRefundRepository(sqlPool)
     const serviceFulfillment = new PostgresServiceFulfillmentRepository(sqlPool)
+    const customerDeliveries = new PostgresCustomerDeliveryRepository(sqlPool)
     const usage = new PostgresUsageRepository(sqlPool)
     const modelUsage = new PostgresModelUsageRepository(sqlPool)
     const actionLedger = new PostgresActionLedgerRepository(sqlPool)
@@ -3059,7 +3062,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', creativePoints, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, privateTrialConversion, commercialRefunds, serviceFulfillment, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', creativePoints, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -10197,6 +10200,7 @@ const OPS_DOMAIN_METHODS = new Set([
   'ops.canonical.backfill.create', 'ops.canonical.backfill.get', 'ops.canonical.backfill.pause', 'ops.canonical.backfill.resume', 'ops.canonical.backfill.run',
   'ops.canonical.backfill.conflicts.list', 'ops.canonical.backfill.conflict.claim', 'ops.canonical.backfill.conflict.resolve',
   'ops.support.tickets.list', 'ops.support.ticket.get', 'ops.support.ticket.create', 'ops.support.ticket.assign', 'ops.support.ticket.transition', 'ops.support.ticket.comment', 'ops.support.sla.report', 'ops.support.sla.correction.create', 'ops.support.sla.correction.decide',
+  'ops.customer-delivery.list', 'ops.customer-delivery.get', 'ops.customer-delivery.create', 'ops.customer-delivery.update', 'ops.customer-delivery.checklist.update', 'ops.customer-delivery.training.complete', 'ops.customer-delivery.videos.list', 'ops.customer-delivery.videos.add',
   'ops.incidents.list', 'ops.incident.get', 'ops.incident.timeline', 'ops.incident.create', 'ops.incident.transition', 'ops.incident.comment', 'ops.incident.commander.assign', 'ops.incident.scope.update',
   'ops.feature-flags.list', 'ops.feature-flag.upsert', 'ops.feature-flag.emergency.set', 'ops.feature-flag.events', 'ops.feature-flag.evaluate',
   'ops.finance.search', 'ops.finance.detail', 'ops.finance.export',
@@ -10532,6 +10536,12 @@ function stringArrayValue(input: JsonObject, camel: string, snake = camel): stri
 
 function opsDomainError(error: unknown): never {
   if (error instanceof DomainError) throw error
+  if (error instanceof CustomerDeliveryError) {
+    const status = error.code === 'NOT_FOUND' ? 404
+      : error.code === 'REVISION_CONFLICT' || error.code === 'DUPLICATE_COMPANY' || error.code === 'PAYMENT_REQUIRED' ? 409
+        : error.code === 'NOT_IMPLEMENTED' ? 501 : 400
+    throw new DomainError(`CUSTOMER_DELIVERY_${error.code}`, error.message, status)
+  }
   if (error instanceof SupportAuthorizationError || error instanceof FeatureFlagAuthorizationError || error instanceof FinanceSearchAccessError || (error instanceof IncidentServiceError && error.code === 'INCIDENT_FORBIDDEN') || (error instanceof FinanceSearchServiceError && error.code === 'FINANCE_SEARCH_FORBIDDEN') || (error instanceof AuditCenterServiceError && error.code === 'AUDIT_CENTER_FORBIDDEN')) {
     throw new DomainError((error as { code?: string }).code ?? ERROR_CODES.FORBIDDEN, '当前身份无权执行该运营操作', 403)
   }
@@ -11921,6 +11931,41 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'workspace.usage.get':
       return result(await (persistence.usage ?? memoryUsage).get(workspaceId))
+    case 'ops.customer-delivery.list':
+      return result({ items: await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).list(workspaceId)) })
+    case 'ops.customer-delivery.get': {
+      const deliveryId = requiredStringValue(params, 'deliveryId', 'delivery_id')
+      const delivery = await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).get(workspaceId, deliveryId))
+      if (!delivery) throw new DomainError('CUSTOMER_DELIVERY_NOT_FOUND', 'customer delivery not found', 404)
+      return result(delivery)
+    }
+    case 'ops.customer-delivery.create':
+      return result(await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).create({ workspaceId, companyName: requiredStringValue(params, 'companyName', 'company_name'), actorId: requestActor(req) })))
+    case 'ops.customer-delivery.update': {
+      const rawPatch = requiredStringValue(params, 'patchJson', 'patch_json')
+      let parsed: unknown
+      try { parsed = JSON.parse(rawPatch) } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'patch_json 必须是有效 JSON 对象', 400) }
+      if (!isObject(parsed)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'patch_json 必须是 JSON 对象', 400)
+      const allowed = new Set(['companyName', 'contractNumber', 'paymentStatus', 'contractRef', 'projectOwner', 'supportOwner', 'paymentDate', 'plannedGoLiveAt', 'customerProfileStatus', 'systemIntegrationStatus', 'functionalAcceptanceStatus', 'trainingCompleted'])
+      if (Object.keys(parsed).some(key => !allowed.has(key))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'patch_json 包含不支持的字段', 400)
+      return result(await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).update({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')), patch: parsed })))
+    }
+    case 'ops.customer-delivery.checklist.update': {
+      const checklistKey = requiredStringValue(params, 'checklistKey', 'checklist_key')
+      const status: 'complete' | 'incomplete' = params.completed === true || params.completed === 'true' ? 'complete' : 'incomplete'
+      const patch = checklistKey === 'customer_profile' ? { customerProfileStatus: status } : checklistKey === 'system_integration' ? { systemIntegrationStatus: status } : checklistKey === 'functional_acceptance' ? { functionalAcceptanceStatus: status } : null
+      if (!patch) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'checklist_key 无效', 400)
+      return result(await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).update({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')), patch })))
+    }
+    case 'ops.customer-delivery.training.complete':
+      return result(await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).update({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')), patch: { trainingCompleted: params.completed === true || params.completed === 'true' } })))
+    case 'ops.customer-delivery.videos.list': {
+      const delivery = await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).get(workspaceId, requiredStringValue(params, 'deliveryId', 'delivery_id')))
+      if (!delivery) throw new DomainError('CUSTOMER_DELIVERY_NOT_FOUND', 'customer delivery not found', 404)
+      return result({ items: delivery.videos })
+    }
+    case 'ops.customer-delivery.videos.add':
+      return result(await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).addVideo({ workspaceId, deliveryId: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), title: requiredStringValue(params, 'title'), assetRef: requiredStringValue(params, 'assetRef', 'asset_ref'), ...(params.sort_order !== undefined ? { sortOrder: Number(params.sort_order) } : {}) })))
     case 'ops.support.sla.report': {
       const repository = persistence.support
       if (!repository) throw new DomainError('SUPPORT_REPOSITORY_UNAVAILABLE', '客服工单仓储未配置', 503)
