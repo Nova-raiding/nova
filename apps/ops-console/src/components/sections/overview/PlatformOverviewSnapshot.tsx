@@ -19,6 +19,13 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
   const basicSales = finance?.subscriptionOrderBySku?.basic?.orderCount;
   const growthSales = finance?.subscriptionOrderBySku?.growth?.orderCount;
   const trendMonths = Array.from({ length: 12 }, (_, index) => `${index + 1}月`);
+  const currentMonthIndex = new Date().getMonth();
+  const trendSeries = [
+    { key: "customers", label: "客户数", value: merchantWorkspaceCount ?? 0 },
+    { key: "revenue", label: "收入", value: finance?.onboardingOrderCny ?? 0 },
+    { key: "points", label: "创意点消耗", value: 0 },
+    { key: "cost", label: "平台消耗金额", value: usage?.totalTokens ?? 0 },
+  ];
   const metric = (title: string, value: string | number, unit: string, tone = "") => (
     <article className={`ops-dashboard-metric ${tone}`} key={title}>
       <span className="ops-dashboard-metric-label">{title}</span>
@@ -42,15 +49,14 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
       </section>
       <section className="ops-dashboard-panel ops-dashboard-trend" aria-label="年度经营趋势">
         <header><div><h3>2026年经营趋势</h3></div><small>按月</small></header>
-        <div className="ops-dashboard-trend-chart" role="img" aria-label="2026年经营趋势折线图">
+        <div className="ops-dashboard-trend-chart" role="img" aria-label="2026年经营趋势柱状图">
           <div className="ops-dashboard-trend-legend"><span className="customers">客户数</span><span className="revenue">收入</span><span className="points">创意点消耗</span><span className="cost">平台消耗金额</span></div>
+          <div className="ops-dashboard-trend-current">本月：客户 {trendSeries[0].value} 家 · 收入 {trendSeries[1].value} 元 · 创意点消耗 {trendSeries[2].value} 点 · 平台消耗 {trendSeries[3].value} 元</div>
           <svg viewBox="0 0 760 220" preserveAspectRatio="none" aria-hidden="true">
             {[24, 66, 108, 150].map((y) => <line key={y} x1="54" y1={y} x2="742" y2={y} className="ops-dashboard-trend-grid" />)}
             <line x1="54" y1="192" x2="742" y2="192" className="ops-dashboard-trend-axis" />
-            <polyline points="54,164 116,164 178,164 240,164 302,164 364,164 426,164 488,164 550,164 612,164 674,164 736,164" className="customers-line" />
-            <polyline points="54,176 116,176 178,176 240,176 302,176 364,176 426,176 488,176 550,176 612,176 674,176 736,176" className="revenue-line" />
-            <polyline points="54,184 116,184 178,184 240,184 302,184 364,184 426,184 488,184 550,184 612,184 674,184 736,184" className="points-line" />
-            <polyline points="54,152 116,152 178,152 240,152 302,152 364,152 426,152 488,152 550,152 612,152 674,152 736,152" className="cost-line" />
+            <text x="10" y="28" className="ops-dashboard-trend-tick">20</text><text x="10" y="70" className="ops-dashboard-trend-tick">15</text><text x="10" y="112" className="ops-dashboard-trend-tick">10</text><text x="10" y="154" className="ops-dashboard-trend-tick">5</text><text x="18" y="196" className="ops-dashboard-trend-tick">0</text>
+            {trendMonths.map((_, monthIndex) => trendSeries.map((series, seriesIndex) => { const value = monthIndex === currentMonthIndex ? Number(series.value) : 0; const barHeight = Math.min(164, (value / 20) * 164); const x = 66 + monthIndex * 56 + seriesIndex * 10; return <rect key={`${series.key}-${monthIndex}`} x={x} y={192 - barHeight} width="8" height={barHeight} rx="2" className={`${series.key}-bar`} />; }))}
           </svg>
           <div className="ops-dashboard-trend-labels">{trendMonths.map((month) => <span key={month}>{month}</span>)}</div>
         </div>
