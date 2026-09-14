@@ -139,6 +139,9 @@ describe('MCP method contract', () => {
     ] as const
     for (const method of customerDeliveryMethods) expect(MCP_METHOD_SCHEMAS[method].required).toContain('target_workspace_id')
     const schema = MCP_METHOD_SCHEMAS['ops.customer-delivery.checklist.update']
+    expect(schema.properties.items_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'array', maxLength: 16_384 })
+    expect(MCP_METHOD_SCHEMAS['ops.customer-delivery.update'].properties.patch_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'object', maxLength: 16_384 })
+    expect(MCP_METHOD_SCHEMAS['ops.customer-delivery.checklist-item.update'].properties.evidence_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'object', maxLength: 16_384 })
     expect(schema.required).toEqual(['target_workspace_id', 'delivery_id', 'checklist_key', 'expected_revision'])
     expect(schema.requiredAnyOf).toEqual(['completed', 'items_json'])
     expect(schema.mutuallyExclusive).toEqual([['completed', 'items_json']])
