@@ -341,7 +341,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
             { title: "用户名", key: "name", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
             { title: "月费版本", key: "plan", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
-            { title: "生效周期", key: "period", width: "50%", render: (_: unknown, row: PlatformUser) => monthlyEffectivePeriod(row) },
+            { title: "生效周期", key: "period", align: "center", width: "50%", render: (_: unknown, row: PlatformUser) => monthlyEffectivePeriod(row) },
           ]} /></div>
           <div><Typography.Title level={5}>钱包</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:wallet`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无充值记录" }} columns={[
             { title: "序号", key: "index", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => <span className="ops-table-index">{index + 1}</span> },
