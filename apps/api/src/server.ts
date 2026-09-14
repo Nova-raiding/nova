@@ -11994,8 +11994,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'ops.customer-delivery.checklist.update': {
       const checklistKey = requiredStringValue(params, 'checklistKey', 'checklist_key')
+      if (!['customer_profile', 'system_integration', 'functional_acceptance'].includes(checklistKey)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'checklist_key 无效', 400)
       const repository = persistence.customerDeliveries ?? memoryCustomerDeliveries
       const rawItems = params.itemsJson ?? params.items_json
+      if (rawItems !== undefined && params.completed !== undefined) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'completed 与 items_json 不能同时提供', 400)
       if (rawItems !== undefined) {
         if (checklistKey === 'customer_profile' || !repository.updateChecklistItems) throw new DomainError('CUSTOMER_DELIVERY_NOT_IMPLEMENTED', '该客户交付清单暂不支持批量逐项写入', 501)
         let parsed: unknown
@@ -12013,6 +12015,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         })
         return result(await invokeOpsDomain(() => repository.updateChecklistItems!({ workspaceId, deliveryId: requiredStringValue(params, 'deliveryId', 'delivery_id'), checklistKey: checklistKey as 'system_integration'|'functional_acceptance', items, actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')) })))
       }
+      if (params.completed === undefined) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'completed 或 items_json 至少提供一个', 400)
       const status: 'complete' | 'incomplete' = params.completed === true || params.completed === 'true' ? 'complete' : 'incomplete'
       const patch = checklistKey === 'customer_profile' ? { customerProfileStatus: status } : checklistKey === 'system_integration' ? { systemIntegrationStatus: status } : checklistKey === 'functional_acceptance' ? { functionalAcceptanceStatus: status } : null
       if (!patch) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'checklist_key 无效', 400)
@@ -12021,7 +12024,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'ops.customer-delivery.checklist-items.list': {
       const repository = persistence.customerDeliveries ?? memoryCustomerDeliveries
       if (!repository.listChecklistItems) throw new DomainError('CUSTOMER_DELIVERY_NOT_IMPLEMENTED', '客户交付清单项读取未实现', 501)
-      return result({ items: await invokeOpsDomain(() => repository.listChecklistItems!({ workspaceId, deliveryId: requiredStringValue(params, 'deliveryId', 'delivery_id'), checklistKey: requiredStringValue(params, 'checklistKey', 'checklist_key') as 'system_integration'|'functional_acceptance' })) })
+      const checklistKey = requiredStringValue(params, 'checklistKey', 'checklist_key')
+      if (!['system_integration', 'functional_acceptance'].includes(checklistKey)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'checklist_key 无效', 400)
+      return result({ items: await invokeOpsDomain(() => repository.listChecklistItems!({ workspaceId, deliveryId: requiredStringValue(params, 'deliveryId', 'delivery_id'), checklistKey: checklistKey as 'system_integration'|'functional_acceptance' })) })
     }
     case 'ops.customer-delivery.checklist-item.update': {
       const repository = persistence.customerDeliveries ?? memoryCustomerDeliveries
