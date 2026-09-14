@@ -323,17 +323,31 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { key: "name", label: "用户名", children: model.userDetail.identity.displayName || model.userDetail.identity.externalSubject },
             { key: "first", label: "开通时间", children: dateTimeFormatter.format(new Date(model.userDetail.identity.firstSeenAt)) },
           ]} />
-          <div><Typography.Title level={5}>店铺详情</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={false} scroll={{ x: 760 }} dataSource={model.userDetail.memberships} columns={[
-            { title: "序号", key: "index", width: 70, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
+          <div><Typography.Title level={5}>店铺详情</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={false} dataSource={model.userDetail.memberships} columns={[
+            { title: "序号", key: "index", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
             { title: "店铺名称", key: "name", width: 220, render: (_: unknown, row: PlatformUser) => row.enterpriseName || row.workspaceId },
-            { title: "店铺状态", key: "status", width: 150, render: (_: unknown, row: PlatformUser) => <Tag color={row.workspaceStatus === "active" ? "green" : "red"}>{row.workspaceStatus === "active" ? "正常" : "风险"}</Tag> },
-            { title: "开通时间", key: "openedAt", width: 180, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
+            { title: "店铺状态", key: "status", width: 120, render: (_: unknown, row: PlatformUser) => <Tag color={row.workspaceStatus === "active" ? "green" : "red"}>{row.workspaceStatus === "active" ? "正常" : "风险"}</Tag> },
+            { title: "开通时间", key: "openedAt", width: 170, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
-          <div><Typography.Title level={5}>钱包</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:wallet`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无充值记录" }} columns={[
-            { title: "用户名", key: "name", width: 220, render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
-            { title: "充值金额", key: "amount", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
-            { title: "实际到账创意点", key: "points", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial ? row.commercial.includedTasks : "—" },
-            { title: "充值时间", key: "time", width: 180, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
+          <div><Typography.Title level={5}>钱包</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:wallet`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无充值记录" }} columns={[
+            { title: "用户名", key: "name", width: 180, render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
+            { title: "充值金额", key: "amount", width: 150, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
+            { title: "实际到账创意点", key: "points", width: 170, render: (_: unknown, row: PlatformUser) => row.commercial ? row.commercial.includedTasks : "—" },
+            { title: "充值时间", key: "time", width: 160, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
+          ]} /></div>
+          <div><Typography.Title level={5}>用户总消耗表</Typography.Title><Typography.Text type="secondary">基于当前可用额度快照展示</Typography.Text><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:total-usage`} pagination={false} dataSource={model.userDetail.memberships} columns={[
+            { title: "用户名", key: "name", width: "28%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
+            { title: "累计消耗创意点", key: "used", width: "18%", render: (_: unknown, row: PlatformUser) => row.commercial?.usedTasks ?? "—" },
+            { title: "套餐额度", key: "included", width: "18%", render: (_: unknown, row: PlatformUser) => row.commercial?.includedTasks ?? "—" },
+            { title: "剩余创意点", key: "remaining", width: "18%", render: (_: unknown, row: PlatformUser) => row.commercial?.remainingTasks ?? "—" },
+            { title: "更新时间", key: "updated", width: "18%", render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
+          ]} /></div>
+          <div><Typography.Title level={5}>当月消耗表</Typography.Title><Typography.Text type="secondary">按当前计费周期展示消耗快照</Typography.Text><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:monthly-usage`} pagination={false} dataSource={model.userDetail.memberships} columns={[
+            { title: "用户名", key: "name", width: "28%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
+            { title: "本月消耗创意点", key: "used", width: "18%", render: (_: unknown, row: PlatformUser) => row.commercial?.usedTasks ?? "—" },
+            { title: "本月额度", key: "included", width: "18%", render: (_: unknown, row: PlatformUser) => row.commercial?.includedTasks ?? "—" },
+            { title: "剩余创意点", key: "remaining", width: "18%", render: (_: unknown, row: PlatformUser) => row.commercial?.remainingTasks ?? "—" },
+            { title: "更新时间", key: "updated", width: "18%", render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
         </Space>}
       </Spin>
