@@ -76,19 +76,13 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
       <section className="ops-dashboard-panel ops-dashboard-trend" aria-label="当月经营趋势">
         <header><div><h3>{monthLabel}经营趋势</h3></div><small>按天</small></header>
         <div className="ops-dashboard-trend-chart ops-dashboard-trend-chart-daily" role="img" aria-label={`${monthLabel}经营趋势折线图`}>
-          <div className="ops-dashboard-trend-legend"><span className="customers">客户数</span><span className="revenue">收入</span><span className="points">创意点消耗</span><span className="cost">平台消耗金额</span></div>
-          <svg viewBox="0 0 760 220" preserveAspectRatio="none" aria-hidden="true">
-            {[24, 66, 108, 150].map((y) => <line key={y} x1="54" y1={y} x2="742" y2={y} className="ops-dashboard-trend-grid" />)}
-            <line x1="54" y1="192" x2="742" y2="192" className="ops-dashboard-trend-axis" />
-            <text x="10" y="28" className="ops-dashboard-trend-tick">20</text><text x="10" y="70" className="ops-dashboard-trend-tick">15</text><text x="10" y="112" className="ops-dashboard-trend-tick">10</text><text x="18" y="154" className="ops-dashboard-trend-tick">5</text><text x="18" y="196" className="ops-dashboard-trend-tick">0</text>
-            <polyline points="54,184 170,184 286,184 402,184 518,184 634,184 736,184" className="customers-line" />
-            <polyline points="54,192 170,192 286,192 402,192 518,192 634,192 736,192" className="revenue-line" />
-            <polyline points="54,192 170,192 286,192 402,192 518,192 634,192 736,192" className="points-line" />
-            <polyline points="54,174 170,174 286,174 402,174 518,174 634,174 736,174" className="cost-line" />
-          </svg>
+          <div className="ops-dashboard-trend-empty">
+            <div className="ops-dashboard-trend-empty-icon">⌁</div>
+            <strong>暂无按日明细</strong>
+            <span>产生实际记录后，将按日期展示客户数、收入与消耗趋势</span>
+          </div>
           <div className="ops-dashboard-trend-axis-caption">日期</div>
           <div className="ops-dashboard-trend-labels">{dayLabels.map((day) => <span key={day}>{day}</span>)}</div>
-          <div className="ops-dashboard-trend-note">按日明细将在产生实际记录后展示</div>
         </div>
       </section>
 

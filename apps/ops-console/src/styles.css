@@ -349,6 +349,10 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-dashboard-trend-labels { display: flex; justify-content: space-between; margin-left: 54px; color: #475569; font-size: 12px; font-weight: 650; }
 .ops-dashboard-trend-note { margin: 8px 0 0 54px; color: #94a3b8; font-size: 11px; }
 .ops-dashboard-trend-chart-daily { background: #f8fafc; }
+.ops-dashboard-trend-empty { display: grid; place-items: center; align-content: center; min-height: 210px; gap: 6px; color: #64748b; text-align: center; }
+.ops-dashboard-trend-empty-icon { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid #cbd5e1; border-radius: 50%; color: #94a3b8; font-size: 22px; line-height: 1; }
+.ops-dashboard-trend-empty strong { color: #334155; font-size: 14px; }
+.ops-dashboard-trend-empty span { max-width: 360px; color: #94a3b8; font-size: 12px; }
 @media (max-width: 1100px) { .ops-dashboard-trend-cards { grid-template-columns: 1fr; } }
 .ops-dashboard-metric.full { grid-column: 1 / -1; }
 .ops-dashboard-usage { display: grid; }
