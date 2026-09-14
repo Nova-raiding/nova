@@ -14359,7 +14359,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (!existing) rechargeIdempotency.delete(rechargeKey)
         else {
           if (existing.channel !== channel || existing.amountFen !== amountFen || existing.createdByActorId !== actorId) throw new DomainError('BILLING_ORDER_IDEMPOTENCY_CONFLICT', '充值订单幂等键已被其他支付意图使用', 409)
-          return result(publicMoneyRecord(existing))
+          return result({ ...publicMoneyRecord(existing), warning: existing.paymentMode === 'provider' ? '请完成支付，系统只接受支付服务商签名回调后入账' : '当前为本地 fixture，不会产生真实扣款' })
         }
       }
       const inFlight = rechargeCreationInFlight.get(rechargeKey)
