@@ -1,7 +1,8 @@
 FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS build
 WORKDIR /app
 COPY demo/merchant-studio/package.json demo/merchant-studio/package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,id=merchant-npm-cache,target=/root/.npm,sharing=locked \
+  npm ci --prefer-offline --no-audit --fund=false
 COPY demo/merchant-studio ./
 ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
