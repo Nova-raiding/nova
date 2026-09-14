@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACCEPTANCE_ITEMS, INTEGRATION_ITEMS, deliveryCompletion, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
+import { ACCEPTANCE_ITEMS, INTEGRATION_ITEMS, deliveryCompletion, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
 
 const base: CustomerDeliveryRecord = {
   id: "c-1", companyName: "示例企业", paymentStatus: "paid", profile: true,
@@ -39,5 +39,14 @@ describe("customer delivery completion", () => {
 
   it("fails closed when all checkboxes are set on an unpaid customer", () => {
     expect(deliveryCompletion({ ...base, paymentStatus: "unpaid" })).toEqual({ completed: 5, total: 5, ready: false });
+  });
+
+  it("blocks only controlled delivery steps until payment is verified", () => {
+    for (const step of ["integration", "acceptance", "training"] as const) {
+      expect(isDeliveryStepBlocked("unpaid", step)).toBe(true);
+      expect(isDeliveryStepBlocked("paid", step)).toBe(false);
+    }
+    expect(isDeliveryStepBlocked("unpaid", "profile")).toBe(false);
+    expect(isDeliveryStepBlocked("unpaid", "video")).toBe(false);
   });
 });
