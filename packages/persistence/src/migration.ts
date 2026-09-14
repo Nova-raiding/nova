@@ -492,6 +492,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const customerDeliveryWorkspace = await readFile(new URL('./migrations/196_customer_delivery_workspace.sql', import.meta.url), 'utf8')
   const customerDeliveryChecklistItems = await readFile(new URL('./migrations/197_customer_delivery_checklist_items.sql', import.meta.url), 'utf8')
   const canonicalCatalogKnowledge = await readFile(new URL('./migrations/198_canonical_catalog_knowledge.sql', import.meta.url), 'utf8')
+  const customerDeliveryRetentionFk = await readFile(new URL('./migrations/199_customer_delivery_retention_fk.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -691,6 +692,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 196, name: 'customer_delivery_workspace', sql: customerDeliveryWorkspace },
     { version: 197, name: 'customer_delivery_checklist_items', sql: customerDeliveryChecklistItems },
     { version: 198, name: 'canonical_catalog_knowledge', sql: canonicalCatalogKnowledge },
+    { version: 199, name: 'customer_delivery_retention_fk', sql: customerDeliveryRetentionFk },
   ]
 }
 
