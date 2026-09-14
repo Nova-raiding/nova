@@ -117,14 +117,19 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     const saved = { ...previous, completed: true, evidence: { note: '新证据' },
       completed_by_actor_id: 'operator-1', completed_at: '2026-09-14T00:01:00.000Z', revision: 3,
       updated_at: '2026-09-14T00:01:00.000Z' }
-    // BEGIN, scope, delivery lock, previous item, upsert, count, delivery update, audit, COMMIT
+    // BEGIN, scope, delivery lock, previous item, upsert, count, status update,
+    // effective-time recalculation, audit, COMMIT.
     client.enqueue(); client.enqueue(); client.enqueue({ revision: 4, payment_status: 'paid' });
     client.enqueue(previous); client.enqueue(saved); client.enqueue({ total: 1, done: 1 });
-    client.enqueue(); client.enqueue(); client.enqueue()
+    client.enqueue(); client.enqueue(); client.enqueue(); client.enqueue()
     const repo = new PostgresCustomerDeliveryRepository(new RecordingPool(client))
     await repo.updateChecklistItem({ workspaceId: 'ws_pg_audit', deliveryId: 'cd_1', checklistKey: 'system_integration', itemKey: '店铺连接', completed: true, evidence: { note: '新证据' }, actorId: 'operator-1', expectedRevision: 4 })
     const audit = client.calls.find((call) => call.text.includes('INSERT INTO workspace_operation_audit'))
     expect(audit).toBeDefined()
+    expect(audit?.values?.[0]).toMatch(/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u)
+    const statusWrite = client.calls.findIndex(call => call.text.includes('SET system_integration_status='))
+    const effectiveWrite = client.calls.findIndex(call => call.text.includes('SET effective_at=CASE'))
+    expect(effectiveWrite).toBeGreaterThan(statusWrite)
     expect(JSON.parse(String(audit?.values?.[6]))).toMatchObject({ completed: false, revision: 2, evidence: { note: '旧证据' } })
     expect(JSON.parse(String(audit?.values?.[7]))).toMatchObject({ completed: true, revision: 3, evidence: { note: '新证据' } })
   })

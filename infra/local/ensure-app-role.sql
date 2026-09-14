@@ -243,4 +243,19 @@ BEGIN
 END
 $$;
 
+-- Do not undo customer-delivery control-plane ACLs when this compatibility
+-- bootstrap is rerun after migrations. Check separately for prefix databases.
+DO $$
+DECLARE relation_name TEXT;
+BEGIN
+  FOREACH relation_name IN ARRAY ARRAY[
+    'workspace_customer_deliveries', 'workspace_customer_delivery_videos',
+    'workspace_customer_delivery_checklist_items'
+  ] LOOP
+    IF to_regclass(format('public.%I', relation_name)) IS NOT NULL THEN
+      EXECUTE format('REVOKE ALL ON TABLE %I FROM merchant_app', relation_name);
+    END IF;
+  END LOOP;
+END $$;
+
 COMMIT;

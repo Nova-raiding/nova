@@ -2892,7 +2892,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const privateTrialConversion = new PostgresPrivateTrialConversionRepository(sqlPool)
     const commercialRefunds = new PostgresCommercialRefundRepository(sqlPool)
     const serviceFulfillment = new PostgresServiceFulfillmentRepository(sqlPool)
-    const customerDeliveries = new PostgresCustomerDeliveryRepository(sqlPool)
+    const customerDeliveries = new PostgresCustomerDeliveryRepository(opsSqlPool)
     const usage = new PostgresUsageRepository(sqlPool)
     const modelUsage = new PostgresModelUsageRepository(sqlPool)
     const actionLedger = new PostgresActionLedgerRepository(sqlPool)

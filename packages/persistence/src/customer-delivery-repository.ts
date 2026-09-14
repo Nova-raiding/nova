@@ -674,7 +674,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
     await c.query(
       `INSERT INTO workspace_operation_audit (id,workspace_id,actor_id,action,resource_type,resource_id,before_json,after_json,reason) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9)`,
       [
-        `audit_${randomUUID()}`,
+        randomUUID(),
         e.workspaceId,
         e.actorId,
         e.action,
@@ -886,8 +886,14 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           ? `system_integration_status='${status}'`
           : `functional_acceptance_status='${status}', training_completed=${status === "complete"}`;
       await c.query(
-        `UPDATE workspace_customer_deliveries SET ${sets},revision=revision+1,updated_at=now(),updated_by_actor_id=$3,effective_at=CASE WHEN payment_status='paid' AND customer_profile_status='complete' AND system_integration_status='complete' AND functional_acceptance_status='complete' AND training_completed AND EXISTS (SELECT 1 FROM workspace_customer_delivery_videos v WHERE v.workspace_id=workspace_customer_deliveries.workspace_id AND v.delivery_id=workspace_customer_deliveries.id AND v.deleted_at IS NULL) THEN COALESCE(effective_at,now()) ELSE NULL END WHERE workspace_id=$1 AND id=$2`,
+        `UPDATE workspace_customer_deliveries SET ${sets},revision=revision+1,updated_at=now(),updated_by_actor_id=$3 WHERE workspace_id=$1 AND id=$2`,
         [scope, input.deliveryId, input.actorId],
+      );
+      // SET expressions read the pre-update row in PostgreSQL. Recalculate
+      // only after writing the new checklist state, within the same lock/tx.
+      await c.query(
+        `UPDATE workspace_customer_deliveries SET effective_at=CASE WHEN payment_status='paid' AND customer_profile_status='complete' AND system_integration_status='complete' AND functional_acceptance_status='complete' AND training_completed AND EXISTS (SELECT 1 FROM workspace_customer_delivery_videos v WHERE v.workspace_id=workspace_customer_deliveries.workspace_id AND v.delivery_id=workspace_customer_deliveries.id AND v.deleted_at IS NULL) THEN COALESCE(effective_at,now()) ELSE NULL END WHERE workspace_id=$1 AND id=$2`,
+        [scope, input.deliveryId],
       );
       await this.audit(c, {
         workspaceId: scope,

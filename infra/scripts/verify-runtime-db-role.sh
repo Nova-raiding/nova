@@ -271,6 +271,21 @@ EOF
       WHERE NOT has_table_privilege(current_user, 'public.' || name, 'SELECT,INSERT,UPDATE,DELETE')")
   [ -z "$ops_missing_control_access" ] || { echo "Ops database role lacks platform control-plane access: $ops_missing_control_access" >&2; exit 1; }
 
+  delivery_acl_failures=$(psql "$OPS_DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+    "SELECT coalesce(string_agg(name, ','), '')
+       FROM unnest(ARRAY['workspace_customer_deliveries','workspace_customer_delivery_checklist_items','workspace_customer_delivery_videos']) AS name
+      WHERE has_table_privilege('$runtime_role', 'public.' || name, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE')
+         OR NOT has_table_privilege(current_user, 'public.' || name, 'SELECT')
+         OR NOT has_table_privilege(current_user, 'public.' || name, 'INSERT')
+         OR (name <> 'workspace_customer_delivery_videos' AND NOT has_table_privilege(current_user, 'public.' || name, 'UPDATE'))
+         OR has_table_privilege(current_user, 'public.' || name, 'DELETE,TRUNCATE,REFERENCES,TRIGGER')")
+  [ -z "$delivery_acl_failures" ] || { echo "Customer delivery control-plane ACL mismatch: $delivery_acl_failures" >&2; exit 1; }
+  delivery_audit_access=$(psql "$OPS_DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+    "SELECT has_table_privilege(current_user, 'public.workspace_operation_audit', 'INSERT')
+        AND NOT has_table_privilege(current_user, 'public.workspace_operation_audit', 'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+        AND has_column_privilege(current_user, 'public.workspace_customer_delivery_videos', 'deleted_at', 'UPDATE')")
+  [ "$delivery_audit_access" = t ] || { echo 'Customer delivery audit must be append-only and video removal must remain soft-delete' >&2; exit 1; }
+
   ops_missing_reservation_access=$(psql "$OPS_DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
     "SELECT CASE WHEN has_table_privilege(current_user, 'public.authorization_execution_reservations', 'SELECT,INSERT') THEN '' ELSE 'authorization_execution_reservations' END")
   [ -z "$ops_missing_reservation_access" ] || { echo "Ops database role lacks authorization reservation access: $ops_missing_reservation_access" >&2; exit 1; }
@@ -293,7 +308,8 @@ EOF
        JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
         AND has_table_privilege(current_user, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
-        AND c.relname NOT IN ('platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','platform_identities','platform_auth_sessions','platform_identity_events','platform_password_accounts','platform_password_sessions','platform_password_reset_tokens','platform_media_specs','platform_media_spec_audit','platform_authorization_audit','authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events','commercial_offers','commercial_addons','commercial_coupons','commercial_rollouts','model_markup_policy','commercial_catalog_skus','commercial_catalog_sku_versions','commercial_catalog_sku_benefits','commercial_catalog_events_v2')")
+        AND c.relname NOT IN ('platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','platform_identities','platform_auth_sessions','platform_identity_events','platform_password_accounts','platform_password_sessions','platform_password_reset_tokens','platform_media_specs','platform_media_spec_audit','platform_authorization_audit','authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events','workspace_customer_deliveries','workspace_customer_delivery_videos','workspace_customer_delivery_checklist_items','commercial_offers','commercial_addons','commercial_coupons','commercial_rollouts','model_markup_policy','commercial_catalog_skus','commercial_catalog_sku_versions','commercial_catalog_sku_benefits','commercial_catalog_events_v2')
+        AND NOT (c.relname = 'workspace_operation_audit' AND NOT has_table_privilege(current_user, c.oid, 'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'))")
   [ -z "$ops_tenant_access" ] || { echo "Ops database role has unexpected tenant write access: $ops_tenant_access" >&2; exit 1; }
   echo "Ops database role verified: role=$ops_role control_plane=allowed tenant_reads=bounded tenant_writes=denied"
 fi
