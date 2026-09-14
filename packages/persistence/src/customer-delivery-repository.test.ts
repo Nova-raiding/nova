@@ -59,6 +59,41 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     await expect(repo.update({ workspaceId: d.workspaceId, id: d.id, actorId: 'operator-1', expectedRevision: d.revision, patch: { trainingCompleted: true } })).rejects.toMatchObject({ code: 'PAYMENT_REQUIRED' })
   })
 
+  it('never marks an otherwise complete delivery effective while unpaid', async () => {
+    const repo = new MemoryCustomerDeliveryRepository()
+    const draft = await repo.create({ workspaceId: 'ws_effective_payment', companyName: 'Payment Gate Co', actorId: 'operator-1' })
+    const paid = await repo.update({
+      workspaceId: draft.workspaceId,
+      id: draft.id,
+      actorId: 'operator-1',
+      expectedRevision: draft.revision,
+      patch: { paymentStatus: 'paid' },
+    })
+    const ready = await repo.update({
+      workspaceId: paid.workspaceId,
+      id: paid.id,
+      actorId: 'operator-1',
+      expectedRevision: paid.revision,
+      patch: {
+        contractNumber: 'C-1',
+        contractRef: 'asset_ref_contract-1',
+        projectOwner: 'owner',
+        supportOwner: 'support',
+        paymentDate: '2026-09-14',
+        plannedGoLiveAt: '2026-10-01',
+        customerProfileStatus: 'complete',
+        systemIntegrationStatus: 'complete',
+        functionalAcceptanceStatus: 'complete',
+        trainingCompleted: true,
+      },
+    })
+    await repo.addVideo({ workspaceId: ready.workspaceId, deliveryId: ready.id, actorId: 'operator-1', title: '交付视频', assetRef: 'asset://video-payment-gate' })
+    const effective = (await repo.get(ready.workspaceId, ready.id))!
+    expect(effective.effectiveAt).toBeTruthy()
+    const unpaid = await repo.update({ workspaceId: ready.workspaceId, id: ready.id, actorId: 'operator-1', expectedRevision: effective.revision, patch: { paymentStatus: 'unpaid' } })
+    expect(unpaid.effectiveAt).toBeNull()
+  })
+
   it('persists batch checklist items and derives aggregate status without dropping evidence', async () => {
     const repo = new MemoryCustomerDeliveryRepository()
     const draft = await repo.create({ workspaceId: 'ws_batch', companyName: 'Batch Co', actorId: 'operator-1' })

@@ -189,6 +189,7 @@ export function isValidCustomerDeliveryContractRef(value: string | null | undefi
   return /^(?:asset:\/\/|asset_ref[:_]|asset[:_])[A-Za-z0-9][A-Za-z0-9._:/-]*$/u.test(ref);
 }
 const complete = (d: CustomerDelivery) =>
+  d.paymentStatus === "paid" &&
   d.customerProfileStatus === "complete" &&
   d.systemIntegrationStatus === "complete" &&
   d.functionalAcceptanceStatus === "complete" &&
