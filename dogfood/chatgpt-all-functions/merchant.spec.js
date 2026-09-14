@@ -50,7 +50,11 @@ test('inventory merchant studio as a user', async () => {
 
   try {
     const consoleErrors = messages.filter(message => (message.type === 'error' || message.type === 'pageerror') && !message.text.includes('status of 401'))
-    const expectedAuthProbe = badResponses.filter(item => item.url.endsWith('/v1/auth/session') && item.status === 401 && item.body.includes('AUTH_SESSION_INVALID'))
+    // The initial unauthenticated session probe is expected before the helper
+    // establishes the local merchant session. Chromium can dispose the first
+    // response body during the subsequent authenticated reload, so classify
+    // this probe by its exact endpoint and status instead of body availability.
+    const expectedAuthProbe = badResponses.filter(item => item.url.endsWith('/v1/auth/session') && item.method === 'GET' && item.status === 401)
     expect(response?.ok(), 'Merchant Studio entry page should return a successful response').toBe(true)
     expect(badResponses.filter(item => !expectedAuthProbe.includes(item)), 'Merchant Studio inventory should not observe HTTP error responses').toEqual([])
     expect(failedRequests, 'Merchant Studio inventory should not observe failed network requests').toEqual([])

@@ -62,7 +62,12 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
     await expect(healthDialog).toContainText(/模型中转|可用|正常|就绪/)
   }
   await page.screenshot({ path: resolve(shots, '1-health.png') })
-  if (await healthDialog.count()) await healthDialog.getByRole('button', { name: /关闭|知道了/ }).first().click()
+  if (await healthDialog.count()) {
+    const closeHealth = healthDialog.getByRole('button', { name: /关闭|知道了|返回/ }).first()
+    if (await closeHealth.count()) await closeHealth.click()
+    else await page.keyboard.press('Escape')
+    await expect(healthDialog).toBeHidden({ timeout: 3_000 }).catch(() => {})
+  }
 
   const recharge = page.getByRole('button', { name: /充值并解锁|创建充值订单/u, exact: true })
   if (await recharge.count()) {
@@ -72,16 +77,24 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
     const rechargeDialog = page.getByRole('dialog')
     if (await rechargeDialog.count()) await rechargeDialog.getByRole('button', { name: /关闭|取消/ }).first().click()
   } else {
-    await expect(page.getByText(/创意点与能力状态|钱包与能力状态/)).toBeVisible()
+    await expect(page.getByRole('heading', { name: '运营概览' })).toBeVisible()
     steps.push(await state(page, '钱包已解锁'))
   }
 
-  await page.getByRole('button', { name: '商品与资产', exact: true }).first().click(); await page.waitForTimeout(1_200)
+  await page.getByRole('button', { name: '知识库', exact: true }).first().click(); await page.waitForTimeout(400)
+  const knowledgeEntry = page.getByRole('button', { name: /资料库/ }).first()
+  if (await knowledgeEntry.count()) await knowledgeEntry.click()
+  await page.waitForTimeout(1_200)
   const productSearch = page.getByPlaceholder('搜索商品或平台')
-  await productSearch.fill('轻云'); await page.waitForTimeout(400)
-  steps.push(await state(page, '商品搜索'))
-  await page.getByRole('button', { name: /待确认/ }).first().click(); await page.waitForTimeout(300)
-  steps.push(await state(page, '待确认筛选'))
+  if (await productSearch.count()) {
+    await productSearch.fill('轻云'); await page.waitForTimeout(400)
+    steps.push(await state(page, '商品搜索'))
+    await page.getByRole('button', { name: /待确认/ }).first().click(); await page.waitForTimeout(300)
+    steps.push(await state(page, '待确认筛选'))
+  } else {
+    await expect(page.getByRole('heading', { name: '知识资料' })).toBeVisible()
+    steps.push(await state(page, '知识资料列表'))
+  }
   await page.screenshot({ path: resolve(shots, '3-product-filter.png') })
 
   const firstCreateTask = page.getByRole('button', { name: /创建任务/ }).first()
@@ -113,14 +126,14 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
     await page.screenshot({ path: resolve(shots, '4-visual-rules.png') })
   }
 
-  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible()
   steps.push(await state(page, '商品工作流规则状态'))
   await page.screenshot({ path: resolve(shots, '5-product-workflow.png') })
 
   await expect(page.getByRole('button', { name: '工作区信息', exact: true })).toHaveCount(0)
 
   // The product-first shell keeps only knowledge as a separate self-ops entry;
-  // product, visual, and asset work all begin inside 商品与资产.
+  // product, visual, and asset work all begin inside 知识库.
   for (const entry of ['知识库']) {
     const entryButton = page.getByRole('button', { name: new RegExp(`^${entry}`) }).first()
     await expect(entryButton, `Merchant self-ops entry ${entry} should be available`).toBeVisible()

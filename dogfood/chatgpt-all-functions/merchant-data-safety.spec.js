@@ -63,6 +63,11 @@ async function confirmTaskFromConversation(page, productId, requestText = '准�
   await page.getByRole('button', { name: '确认需求并创建任务' }).click()
 }
 
+async function openKnowledgeEntry(page, name) {
+  await page.getByRole('button', { name: '知识库', exact: true }).first().click()
+  await page.getByRole('button', { name: new RegExp(`^${name}`) }).first().click()
+}
+
 test('model relay readiness is visible before a merchant starts a task', async ({ page }) => {
   await page.route('**/api/healthz', async route => {
     return fulfillJson(route, { setup: {
@@ -148,7 +153,7 @@ test('final publish confirms once, binds all evidence, and returns to the produc
   release()
 
   await expect(page.getByRole('status').filter({ hasText: 'publish-job-real-742' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible()
   await expect(page.getByRole('status').filter({ hasText: 'publish-job-real-742' })).toBeVisible()
   expect(requests[0].body).toEqual({ task_id: finalPublishTask.id, content_version_id: finalPublishContent.id, account_id: finalPublishProduct.accountId, confirmation_hash: finalPublishPreview.confirmationHash, remote_snapshot_hash: finalPublishPreview.remoteSnapshotHash })
   expect(requests[0].idempotencyKey).toContain('merchant-studio-publish-v1:')
@@ -223,7 +228,7 @@ test('non-fashion draft task renders only server direction, server state, and ex
   await page.route('**/api/v1/tasks/understand', route => fulfillJson(route, singleTaskUnderstanding(kitchenProduct.id)))
 
   await page.goto(appUrl)
-  await page.getByRole('button', { name: '商品与资产', exact: true }).first().click()
+  await page.getByRole('button', { name: '知识库', exact: true }).first().click(); await page.getByRole('button', { name: /商品目录/ }).first().click()
   await page.locator('tbody tr').filter({ hasText: '厨房收纳盒' }).getByRole('button', { name: /创建任务/ }).click()
   await confirmTaskFromConversation(page, kitchenProduct.id)
 
@@ -254,7 +259,7 @@ test('API task with no server directions shows an empty state without demo direc
   await page.route('**/api/v1/tasks/understand', route => fulfillJson(route, singleTaskUnderstanding(kitchenProduct.id)))
 
   await page.goto(appUrl)
-  await page.getByRole('button', { name: '商品与资产', exact: true }).first().click()
+  await page.getByRole('button', { name: '知识库', exact: true }).first().click(); await page.getByRole('button', { name: /商品目录/ }).first().click()
   await page.locator('tbody tr').filter({ hasText: '厨房收纳盒（无方向）' }).getByRole('button', { name: /创建任务/ }).click()
   await confirmTaskFromConversation(page, kitchenProduct.id)
 
@@ -283,7 +288,7 @@ test('accepted task answers remain visible in the conversation thread', async ({
   await page.route('**/api/v1/tasks/task-kitchen-reply/directions', route => fulfillJson(route, []))
 
   await page.goto(appUrl)
-  await page.getByRole('button', { name: '商品与资产', exact: true }).first().click()
+  await page.getByRole('button', { name: '知识库', exact: true }).first().click(); await page.getByRole('button', { name: /商品目录/ }).first().click()
   await page.locator('tbody tr').filter({ hasText: '厨房收纳盒（回答留痕）' }).getByRole('button', { name: /创建任务/ }).click()
   await confirmTaskFromConversation(page, kitchenProduct.id, '准备商品详情页营销内容', understanding)
   await expect(page.getByRole('textbox', { name: '描述你的营销任务' })).toHaveAttribute('readonly', '')
@@ -301,8 +306,7 @@ test('accepted task answers remain visible in the conversation thread', async ({
 
 test('rule and category API failures never reveal demos and independent retries recover real data', async ({ page }) => {
   await page.goto(new URL('merchant/rules', appUrl).toString())
-  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
-  return
+  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible()
   let rulesMode = 'error'
   let categoriesMode = 'error'
   const realRule = { id: 'rule-real', name: '真实平台规则包', version: 'real-1.0.0', scope: '全平台', status: 'active', revision: 4, updatedAt: '2026-08-28T00:00:00.000Z', source: { reference: '管理员规则中心', checkedAt: '2026-08-28T00:00:00.000Z' } }
@@ -318,7 +322,7 @@ test('rule and category API failures never reveal demos and independent retries 
   })
 
   await page.goto(appUrl)
-  await page.getByRole('button', { name: '规则与检查', exact: true }).first().click()
+  await openKnowledgeEntry(page, '规则库')
   const rulesError = page.getByRole('alert').filter({ hasText: '规则库读取失败' })
   await expect(rulesError).toBeVisible()
   await expect(page.getByText('中国电商广告表达', { exact: true })).toHaveCount(0)
@@ -335,7 +339,7 @@ test('rule and category API failures never reveal demos and independent retries 
   await expect(page.getByText('真实平台类目', { exact: true })).toBeVisible()
   await expect(page.getByText('服装 / 防晒外套', { exact: true })).toHaveCount(0)
 
-  await page.getByRole('tab', { name: /规则库/ }).click()
+  await page.locator('#library-rules-tab').click()
   await expect(rulesError).toBeVisible()
   rulesMode = 'success'
   await rulesError.getByRole('button', { name: '重新读取' }).click()
@@ -345,13 +349,12 @@ test('rule and category API failures never reveal demos and independent retries 
 
 test('successful empty rule and category APIs show true empty states without demos', async ({ page }) => {
   await page.goto(new URL('merchant/rules', appUrl).toString())
-  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
-  return
+  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible()
   await page.route('**/api/v1/rules*', route => fulfillJson(route, []))
   await page.route('**/api/v1/catalog/categories', route => fulfillJson(route, []))
 
   await page.goto(appUrl)
-  await page.getByRole('button', { name: '规则与检查', exact: true }).first().click()
+  await openKnowledgeEntry(page, '规则库')
   await expect(page.getByTestId('rules-api-empty')).toContainText('API 暂无生效规则包')
   await expect(page.getByText('中国电商广告表达', { exact: true })).toHaveCount(0)
   await expect(page.getByRole('alert').filter({ hasText: /规则|类目/ })).toHaveCount(0)
@@ -370,7 +373,7 @@ test('API product failure never falls back to fixtures and retry recovers to rea
   })
 
   await page.goto(appUrl)
-  await page.getByRole('button', { name: '商品与资产', exact: true }).first().click()
+  await page.getByRole('button', { name: '知识库', exact: true }).first().click(); await page.getByRole('button', { name: /商品目录/ }).first().click()
   const productError = page.getByRole('alert').filter({ hasText: '不会执行任何外部写入' })
   await expect(productError).toBeVisible()
   await expect(page.getByTestId('products-unavailable')).toBeVisible()
@@ -411,7 +414,7 @@ test('same-platform same-name selection preserves store identity through task fa
   await page.route('**/api/v1/tasks/understand', route => fulfillJson(route, singleTaskUnderstanding(sameNameProducts[1].id)))
 
   await page.goto(appUrl)
-  await page.getByRole('button', { name: '商品与资产', exact: true }).first().click()
+  await page.getByRole('button', { name: '知识库', exact: true }).first().click(); await page.getByRole('button', { name: /商品目录/ }).first().click()
   const storeBRow = page.locator('tbody tr').filter({ hasText: '淘宝 B 店' })
   await expect(storeBRow).toContainText('同名双店商品')
   await storeBRow.getByRole('button', { name: /创建任务/ }).click()
@@ -454,7 +457,7 @@ test('missing or changed store identity blocks same-name task creation', async (
   })
 
   await page.goto(appUrl)
-  await page.getByRole('button', { name: '商品与资产', exact: true }).first().click()
+  await page.getByRole('button', { name: '知识库', exact: true }).first().click(); await page.getByRole('button', { name: /商品目录/ }).first().click()
   const missingRow = page.locator('tbody tr').filter({ hasText: '目标商品缺少完整店铺身份' })
   await expect(missingRow.getByRole('button', { name: /创建任务/ })).toBeDisabled()
 
@@ -469,15 +472,15 @@ test('missing or changed store identity blocks same-name task creation', async (
 
 test('task list shows loading, then a true empty state only after a successful response', async ({ page }) => {
   await page.goto(new URL('merchant/tasks', appUrl).toString())
-  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
-  return
+  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible()
+
   let release
   const responseGate = new Promise(resolve => { release = resolve })
   await page.route(/\/api\/v1\/tasks(?:\?.*)?$/, async route => { await responseGate; await fulfillPageJson(route, []) })
   await page.route(/\/api\/v1\/products(?:\?.*)?$/, route => fulfillPageJson(route, []))
 
   await page.goto(appUrl)
-  await page.getByRole('button', { name: '营销任务', exact: true }).first().click()
+  await openKnowledgeEntry(page, '营销任务')
   await expect(page.getByText('正在读取营销任务…', { exact: true })).toBeVisible()
   await expect(page.getByText('暂无营销任务', { exact: true })).toHaveCount(0)
 
@@ -488,8 +491,8 @@ test('task list shows loading, then a true empty state only after a successful r
 
 test('task list keeps error distinct from empty and retry can recover to data', async ({ page }) => {
   await page.goto(new URL('merchant/tasks', appUrl).toString())
-  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
-  return
+  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible()
+
   let mode = 'error'
   await page.route(/\/api\/v1\/tasks(?:\?.*)?$/, route => {
     if (mode === 'error') return fulfillJson(route, null, 500, { code: 'TASK_LIST_FAILED', message: '任务列表读取失败' })
@@ -499,7 +502,7 @@ test('task list keeps error distinct from empty and retry can recover to data', 
   await page.route('**/api/v1/products/prod-safe', route => fulfillJson(route, product))
 
   await page.goto(appUrl)
-  await page.getByRole('button', { name: '营销任务', exact: true }).first().click()
+  await openKnowledgeEntry(page, '营销任务')
   await expect(page.getByRole('alert').filter({ hasText: '任务列表读取失败' })).toBeVisible()
   await expect(page.getByText('暂无营销任务', { exact: true })).toHaveCount(0)
   mode = 'success'
@@ -510,8 +513,8 @@ test('task list keeps error distinct from empty and retry can recover to data', 
 
 test('task list remains visible when auxiliary product identity fails and retry recovers', async ({ page }) => {
   await page.goto(new URL('merchant/tasks', appUrl).toString())
-  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
-  return
+  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible()
+
   let productMode = 'error'
   const productModesSeen = []
   const task = { id: 'task-aux-safe', workspaceId: 'ws_demo', productId: product.id, platform: 'taobao', accountId: 'store-a', state: 'draft', version: 1, createdAt: '2026-08-28T00:00:00.000Z' }
@@ -525,7 +528,7 @@ test('task list remains visible when auxiliary product identity fails and retry 
   })
 
   await page.goto(appUrl)
-  await page.getByRole('button', { name: '营销任务', exact: true }).first().click()
+  await openKnowledgeEntry(page, '营销任务')
   const taskRow = page.locator('.task-list-row').first()
   await expect(page.getByText('1 个任务', { exact: true })).toBeVisible()
   await expect(taskRow).toBeVisible()
@@ -547,51 +550,29 @@ test('task list remains visible when auxiliary product identity fails and retry 
   await expect(auxiliaryError).toHaveCount(0)
 })
 
-test('publish lists show loading and never render empty while the request failed', async ({ page }) => {
-  await page.goto(new URL('merchant/publish', appUrl).toString())
-  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
-  return
-  let release
-  let mode = 'error'
-  const responseGate = new Promise(resolve => { release = resolve })
-  await page.route('**/api/v1/publish-jobs**', async route => {
-    if (mode === 'error') {
-      await responseGate
-      return fulfillJson(route, null, 500, { code: 'PUBLISH_LIST_FAILED', message: '发布任务读取失败' })
-    }
-    return fulfillJson(route, [])
+test('legacy publish route returns to knowledge without loading the retired publish center', async ({ page }) => {
+  let publishListRequests = 0
+  await page.route('**/api/v1/publish-jobs**', route => {
+    publishListRequests += 1
+    return fulfillJson(route, null, 500, { code: 'PUBLISH_LIST_FAILED', message: '发布任务读取失败' })
   })
 
-  await page.goto(appUrl)
-  await page.getByRole('button', { name: '发布中心', exact: true }).first().click()
-  await expect(page.getByText('正在读取发布任务…', { exact: true })).toBeVisible()
+  await page.goto(new URL('merchant/publish', appUrl).toString())
+  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible()
+  await expect(page).toHaveURL(/\/merchant\/products(?:\?section=knowledge)?$/)
+  await expect(page.getByRole('button', { name: '发布中心', exact: true })).toHaveCount(0)
   await expect(page.getByText('暂无真实发布任务', { exact: true })).toHaveCount(0)
-
-  release()
-  await expect(page.getByRole('alert').filter({ hasText: '发布任务读取失败' })).toBeVisible()
-  await expect(page.getByText('暂无真实发布任务', { exact: true })).toHaveCount(0)
-  await expect(page.getByText('暂无回执', { exact: true })).toHaveCount(0)
-
-  mode = 'empty'
-  await page.getByRole('alert').getByRole('button', { name: '重新读取' }).click()
-  await expect(page.getByText('暂无真实发布任务', { exact: true })).toBeVisible()
-  await expect(page.getByText('暂无回执', { exact: true })).toBeVisible()
+  await expect.poll(() => publishListRequests).toBe(0)
 })
 
-test('publish list renders successful jobs after loading', async ({ page }) => {
-  await page.goto(new URL('merchant/publish', appUrl).toString())
-  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
-  return
-  await page.route('**/api/v1/publish-jobs**', route => fulfillJson(route, [{
-    id: 'publish-safe', workspaceId: 'ws_demo', taskId: 'task-safe', contentVersionId: 'content-safe', platform: 'taobao',
-    idempotencyKey: 'safe', state: 'published', confirmationHash: 'confirm', remoteSnapshotHash: 'snapshot', remoteState: 'ONLINE', createdAt: '2026-08-28T00:00:00.000Z',
-  }]))
-
+test('knowledge navigation keeps publishing inside the marketing task workflow', async ({ page }) => {
+  await page.route(/\/api\/v1\/tasks(?:\?.*)?$/, route => fulfillPageJson(route, []))
   await page.goto(appUrl)
-  await page.getByRole('button', { name: '发布中心', exact: true }).first().click()
-  await expect(page.getByText('淘宝 · 发布任务', { exact: true })).toBeVisible()
-  await expect(page.getByText('淘宝 · 已生效', { exact: true })).toBeVisible()
-  await expect(page.getByText('暂无真实发布任务', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: '知识库', exact: true }).first().click()
+  await expect(page.getByRole('button', { name: /^营销任务/ }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: '发布中心', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: /^营销任务/ }).first().click()
+  await expect(page.getByText('暂无营销任务', { exact: true })).toBeVisible()
 })
 
 test('both sync-all entry points target every readable store including same-platform stores', async ({ page }) => {
@@ -616,7 +597,7 @@ test('both sync-all entry points target every readable store including same-plat
   expect(syncRequests.map(item => item.body.account_id).sort()).toEqual(['store-a', 'store-b', 'store-c'])
   syncRequests.length = 0
 
-  await page.getByRole('button', { name: '商品与资产', exact: true }).first().click()
+  await page.getByRole('button', { name: '知识库', exact: true }).first().click(); await page.getByRole('button', { name: /商品目录/ }).first().click()
   await expect(page.getByText(/已发现 3 家可同步店铺/)).toBeVisible()
   const syncButton = page.getByRole('button', { name: '同步全部店铺', exact: true })
   await expect(syncButton).toBeEnabled()
@@ -637,7 +618,7 @@ test('store discovery failure disables sync and sends no sync request', async ({
   await page.goto(appUrl)
   await expect(page.getByRole('button', { name: /同步全部店铺|等待店铺连接/, exact: true }).first()).toBeDisabled()
   await expect(page.getByText(/店铺发现失败|店铺服务不可用|当前店铺数据暂不可用/).first()).toBeVisible()
-  await page.getByRole('button', { name: '商品与资产', exact: true }).first().click()
+  await openKnowledgeEntry(page, '商品目录')
   await expect(page.getByRole('button', { name: /同步全部店铺|等待店铺连接/, exact: true }).first()).toBeDisabled()
   await expect(page.getByText(/店铺发现失败|店铺服务不可用|当前店铺数据暂不可用/).first()).toBeVisible()
   await expect.poll(() => syncRequests).toBe(0)
