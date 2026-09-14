@@ -60,3 +60,5 @@ export * from './private-trial-conversion-repository.js'
 export * from './onboarding-grant-dispatch-repository.js'
 export * from './commercial-refund-repository.js'
 export * from './creative-point-lifecycle-repository.js'
+
+export * from "./customer-delivery-repository.js"
