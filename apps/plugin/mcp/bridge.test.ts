@@ -543,8 +543,8 @@ describe('Codex stdio MCP bridge', () => {
   })
 
   it.each([
-    ['merchant.start', { currentStep: { id: 'automatic-scan', state: 'in_progress' }, capabilityCards: { title: '大麦工作台' }, context_bar: { labels: {} }, action_cards: [{ method: 'asset.scan', label: '请管理员在运营后台提交扫描证据' }], automation: { asset_scan: 'automatic' } }, { requested_platform: 'jd', requested_goal: 'generate_white_background_image', attachment_count: 1 }, '图片已收到，正在自动检查。通过后会等待你的确认再继续生成。'],
-    ['workspace.health', { status: 'ok', workspace: { status: 'ready' }, storeDirectory: [{ platform: 'jd', label: '京东旗舰店' }], capabilityCards: { title: '大麦工作台' }, context_bar: { labels: {} }, action_cards: [{ method: 'asset.scan', label: '请管理员扫描' }] }, {}, '已更新 1 家店铺的连接状态。'],
+    ['merchant.start', { currentStep: { id: 'automatic-scan', state: 'in_progress' }, capabilityCards: { title: 'Store Nova工作台' }, context_bar: { labels: {} }, action_cards: [{ method: 'asset.scan', label: '请管理员在运营后台提交扫描证据' }], automation: { asset_scan: 'automatic' } }, { requested_platform: 'jd', requested_goal: 'generate_white_background_image', attachment_count: 1 }, '图片已收到，正在自动检查。通过后会等待你的确认再继续生成。'],
+    ['workspace.health', { status: 'ok', workspace: { status: 'ready' }, storeDirectory: [{ platform: 'jd', label: '京东旗舰店' }], capabilityCards: { title: 'Store Nova工作台' }, context_bar: { labels: {} }, action_cards: [{ method: 'asset.scan', label: '请管理员扫描' }] }, {}, '已更新 1 家店铺的连接状态。'],
   ])('removes dashboard and administrator-scan guidance from %s', async (method, upstreamResult, args, expectedSummary) => {
     const server = createServer(async (_req, res) => {
       res.setHeader('content-type', 'application/json')
@@ -688,7 +688,7 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11.5, method: 'resources/read', params: { uri: 'ui://merchant-marketing/onboarding-v1.html' } })}\n`)
       const onboardingUi = await nextLine(child.stdout)
       expect(onboardingUi.result.contents[0]).toMatchObject({ uri: 'ui://merchant-marketing/onboarding-v1.html', mimeType: 'text/html;profile=mcp-app' })
-      expect(onboardingUi.result.contents[0].text).toContain('大麦插件安装引导')
+      expect(onboardingUi.result.contents[0].text).toContain('Store Nova插件安装引导')
       expect(onboardingUi.result.contents[0].text).toContain('onboarding.status')
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 12, method: 'resources/read', params: { uri: 'ui://merchant-marketing/recharge-v1.html' } })}\n`)
       const rechargeUi = await nextLine(child.stdout)
@@ -1248,7 +1248,7 @@ describe('Codex stdio MCP bridge', () => {
         expect(html).toContain('@media(prefers-color-scheme:dark)')
         expect(html).toContain('@media(prefers-reduced-motion:reduce)')
         expect(html).not.toContain('context-v2')
-        expect(html).not.toContain('大麦商家工作台')
+        expect(html).not.toContain('Store Nova商家工作台')
         if (uri === 'ui://merchant-marketing/publish-confirm-v1.html') {
           expect(html).toContain("code==='INTERACTIVE_CONFIRMATION_TICKET_REQUIRED'")
           expect(html).toContain("code==='INTERACTIVE_CONFIRMATION_TICKET_INVALID'")
@@ -2213,7 +2213,7 @@ describe('Codex stdio MCP bridge', () => {
       res.setHeader('content-type', 'application/json')
       const result = body.method === 'workspace.bootstrap'
         ? { workspaceId: 'ws_auto_start_1', status: 'active' }
-        : { greeting: '欢迎使用大麦。', workspace: { id: 'ws_auto_start_1', status: 'ready' } }
+        : { greeting: '欢迎使用Store Nova。', workspace: { id: 'ws_auto_start_1', status: 'ready' } }
       res.end(JSON.stringify({ data: { jsonrpc: '2.0', id: body.id, result }, warnings: [], next_actions: [], error: null }))
     })
     const address = await listen(server)
@@ -2226,7 +2226,7 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.start', arguments: {} } })}\n`)
       expect((await nextLine(child.stdout)).result.structuredContent).toEqual({
         conversation_state: { stage: 'start', status: 'needs_input' },
-        completed_summary: '欢迎使用大麦。',
+        completed_summary: '欢迎使用Store Nova。',
         question: '你想先完成什么营销任务？',
         expected_input: { kind: 'task_goal', accepts: ['natural_language'] },
       })

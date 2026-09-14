@@ -91,6 +91,9 @@ describe('payment provider adapter', () => {
     expect(createPaymentProviderFromEnv({ PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://payments.example/checkout', PAYMENT_PROVIDER_MERCHANT_ID: 'merchant' })).toBeUndefined()
     expect(createPaymentProviderFromEnv({ PAYMENT_PROVIDER_CHECKOUT_API_URL: 'http://payments.example/checkout', PAYMENT_PROVIDER_API_KEY: 'key', PAYMENT_PROVIDER_MERCHANT_ID: 'merchant' })).toBeUndefined()
     expect(createPaymentProviderFromEnv({ PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://payments.example/checkout', PAYMENT_PROVIDER_API_KEY: 'key', PAYMENT_PROVIDER_MERCHANT_ID: 'merchant' })).toBeDefined()
+    expect(createPaymentProviderFromEnv({ PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://payments.example/checkout', PAYMENT_PROVIDER_API_KEY: 'key', PAYMENT_PROVIDER_MERCHANT_ID: 'merchant', PAYMENT_PROVIDER_TIMEOUT_MS: 'invalid' })).toBeUndefined()
+    expect(createPaymentProviderFromEnv({ PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://payments.example/checkout', PAYMENT_PROVIDER_API_KEY: 'key', PAYMENT_PROVIDER_MERCHANT_ID: 'merchant', PAYMENT_PROVIDER_TIMEOUT_MS: '999' })).toBeUndefined()
+    expect(createPaymentProviderFromEnv({ PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://payments.example/checkout', PAYMENT_PROVIDER_API_KEY: 'key', PAYMENT_PROVIDER_MERCHANT_ID: 'merchant', PAYMENT_PROVIDER_TIMEOUT_MS: '120001' })).toBeUndefined()
   })
 
   it('calls the server-side refund endpoint with an idempotency key and never exposes the API key', async () => {

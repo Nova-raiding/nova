@@ -72,6 +72,9 @@ data:
   # OSS S3 compatibility requires virtual-hosted-style requests.
   ASSET_STORAGE_ENDPOINT: https://s3.oss-cn-beijing.aliyuncs.com
   ASSET_STORAGE_FORCE_PATH_STYLE: "false"
+  # OSS-managed AES256 avoids a paid KMS instance. Set to aws:kms only when a
+  # customer-managed KMS key is explicitly required and provisioned.
+  ASSET_STORAGE_SSE_MODE: AES256
   ASSET_STORAGE_PREFIX: merchant-assets
   PUBLIC_ASSET_BASE_URL: https://yxsona.com
   ASSET_DISPLAY_URL_SIGNING_KEY_ID: display-active

@@ -44,7 +44,7 @@ describe('quality entrypoint coverage', () => {
     })
 
     expect(uncovered).toEqual([])
-    expect(script('test')).toContain('scripts/run-safe-tests.ts')
+    expect(script('test')).toContain('scripts/run-safe-tests-sharded.ts')
     expect(check).toContain('npm run typecheck')
     expect(check).toContain('npm run release:metadata:validate')
     expect(check).toContain('npm run build:ops-console')

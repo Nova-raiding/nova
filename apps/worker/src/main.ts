@@ -27,6 +27,7 @@ import { createClamAvScanner, type ClamAvScanner } from './clamav-scanner.js'
 import { ScannerHeartbeatController } from './scanner-heartbeat.js'
 import { createExecutionAuthorizationGuard, WorkerExecutionAuthorizationError, type WorkerAuthorizationRecheck } from '../../../packages/workers/src/execution-authorization.js'
 import { createCommercialAccessGuard, WorkerCommercialAccessError, type WorkerCommercialAccessRecheck } from '../../../packages/workers/src/commercial-access.js'
+import { CUSTOMER_DELIVERY_SCAN_EVENT, CUSTOMER_DELIVERY_SCAN_OPERATION, createDeliveryScanAdmissionGuard, DeliveryScanAdmissionError } from '../../../packages/workers/src/customer-delivery-scan-admission.js'
 import { assertClamAvExecutionAdmission } from '../../../packages/workers/src/scanner-heartbeat.js'
 import { planSupportSlaReportSchedule } from '../../../packages/workers/src/support-sla-scan.js'
 import { validateImageGenerationCallbackResult } from '../../../packages/contracts/src/index.js'
@@ -195,7 +196,7 @@ const workerRouting: Record<Exclude<WorkerRole, 'all' | 'automation'>, { eventTy
     generation: { eventTypes: ['task.created', 'state.snapshot', 'generation.requested', 'image.generation.requested', 'asset.generation_continuations.ready', 'asset.generation_continuation.waiting_scan', 'asset.generation_continuation.awaiting_rights', 'asset.generation_continuations.awaiting_confirmation'], snapshotEntityTypes: ['task', 'content_version'] },
   publish: { eventTypes: ['publish.requested'] },
   reconcile: { eventTypes: ['publish.reconcile_requested'] },
-  scan: { eventTypes: ['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested'] },
+  scan: { eventTypes: ['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested', CUSTOMER_DELIVERY_SCAN_EVENT] },
 }
 
 const DEFAULT_WORKER_API_TIMEOUT_MS = 10_000
@@ -319,7 +320,7 @@ function workerRoleForRequest(method: string, requestTarget: string, body?: stri
     const operation = new URL(requestTarget, 'http://worker.internal').searchParams.get('operation')
     if (operation === 'publish.reconcile') return 'reconcile'
     if (operation === 'catalog.sync.execute') return 'sync'
-    if (operation === 'asset.scan.execute') return 'scan'
+    if (operation === 'asset.scan.execute' || operation === CUSTOMER_DELIVERY_SCAN_OPERATION) return 'scan'
     return 'generation'
   }
   if (path === '/v1/internal/automation/tick' || path === '/v1/ops/data-deletion/complete' || path === '/v1/internal/storage/orphans/cleanup') return 'automation'
@@ -583,6 +584,29 @@ export function createApiCommercialAccessGuard(config: Pick<WorkerConfig, 'apiBa
       ...(typeof raw.reservation_id === 'string' ? { reservationId: raw.reservation_id } : {}), reservationState: String(raw.reservation_state ?? '') as WorkerCommercialAccessRecheck['reservationState'],
       allowed: raw.allowed === true, ready: raw.ready === true, checkedAt: String(raw.checked_at ?? ''),
     }
+  })
+}
+
+/** Reuses the signed scan-machine transport while keeping platform admission
+ * separate from merchant authorization and point snapshots. */
+export function createApiDeliveryScanAdmissionGuard(config: Pick<WorkerConfig, 'apiBaseUrl' | 'apiToken' | 'apiSigningSecret'> & Partial<Pick<WorkerConfig, 'workerId'>>, fetcher: typeof fetch = fetch) {
+  return createDeliveryScanAdmissionGuard(async ({ event, signal }) => {
+    if (!config.apiBaseUrl || !config.apiToken || !config.apiSigningSecret) throw new DeliveryScanAdmissionError('DELIVERY_SCAN_EXECUTION_RECHECK_UNAVAILABLE', 'delivery scan requires API endpoint and signed machine credentials', true)
+    const path = `/v1/worker-events/${encodeURIComponent(event.id)}/execution-check?aggregate_id=${encodeURIComponent(event.aggregateId)}&operation=${encodeURIComponent(CUSTOMER_DELIVERY_SCAN_OPERATION)}`
+    const response = await fetchWorkerApi(fetcher, `${config.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
+      headers: { accept: 'application/json', authorization: `Bearer ${config.apiToken}`, 'x-workspace-id': event.workspaceId, ...workerAuthIntent(config.apiSigningSecret, config.workerId ?? resolveWorkerId()) },
+      redirect: 'error', signal,
+    })
+    if (!response.ok) {
+      let apiError: { code?: unknown; message?: unknown } | undefined
+      try { apiError = (await parseWorkerApiJson(response) as { error?: typeof apiError }).error } catch { /* preserve bounded HTTP fallback */ }
+      const retryable = response.status === 429 || response.status >= 500
+      const code = typeof apiError?.code === 'string' && /^DELIVERY_SCAN_[A-Z0-9_]{2,63}$/u.test(apiError.code)
+        ? apiError.code : retryable ? 'DELIVERY_SCAN_EXECUTION_RECHECK_UNAVAILABLE' : 'DELIVERY_SCAN_EXECUTION_DENIED'
+      throw new DeliveryScanAdmissionError(code, `delivery scan admission API returned ${response.status}`, retryable)
+    }
+    const envelope = await parseWorkerApiJson(response) as { data?: { delivery_scan_recheck?: unknown } }
+    return envelope.data?.delivery_scan_recheck
   })
 }
 
@@ -1279,6 +1303,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
   const quotaAdmission = new FixedWindowQuotaAdmission(quotaConnection.store)
   const executionAuthorization = createApiExecutionAuthorizationGuard(config)
   const commercialAccess = createApiCommercialAccessGuard(config)
+  const deliveryScanAdmission = createApiDeliveryScanAdmissionGuard(config)
   const queueFactory = redisConnection
     ? (workspaceId: string) => new RedisQueueAdapter<DurableOutboxEvent>(redisConnection.transport, workerQueueKey(config.role, workspaceId))
     : undefined
@@ -1690,7 +1715,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
               onError: (workspaceId, operation, error) => log({ level: 'error', message: 'automation workspace maintenance failed; continuing', workspaceId, operation, error: serializeError(error) }),
             })
           })()
-          : await pollOnce(repository, dispatchers, { ...config, workspaces, ...(scannerHeartbeat ? { claimAdmission: () => scannerHeartbeat!.canProcessScans() } : {}) }, queueFactory, { executionAuthorization, commercialAccess, publishRequested, reconcileRequested, generationRequested, imageGenerationRequested, syncRequested, scanRequested, imageContinuationRequested, onGenerationResult, onGenerationDeferred, onPublishObservation })
+          : await pollOnce(repository, dispatchers, { ...config, workspaces, ...(scannerHeartbeat ? { claimAdmission: () => scannerHeartbeat!.canProcessScans() } : {}) }, queueFactory, { executionAuthorization, commercialAccess, deliveryScanAdmission, publishRequested, reconcileRequested, generationRequested, imageGenerationRequested, syncRequested, scanRequested, imageContinuationRequested, onGenerationResult, onGenerationDeferred, onPublishObservation })
         if (config.role === 'reconcile' && startedAt >= nextStorageReconciliationAt) {
           if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for storage reconciliation')
           const reconciliation = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => postStorageReconciliation({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }))

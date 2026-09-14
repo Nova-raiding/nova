@@ -92,9 +92,9 @@ describe('authorization policy registry', () => {
     expect(capabilitiesForRoles(['rules_admin'])).toContain('rule.publish.approve')
     expect(capabilitiesForRoles(['finance'])).toEqual(expect.arrayContaining(['billing.workspace.read', 'billing.reconcile.execute', 'billing.refund.execute']))
     expect(capabilitiesForRoles(['operator'])).toContain('billing.self.read')
-    expect(getMcpMethodPolicy('commercial.catalog.get')).toMatchObject({ capability: 'billing.self.read', scope: 'self' })
-    expect(getMcpMethodPolicy('commercial.order.payment.get')).toMatchObject({ capability: 'billing.self.read', scope: 'self' })
-    expect(getMcpMethodPolicy('creative-points.balance.get')).toMatchObject({ capability: 'billing.self.read', scope: 'self' })
+    expect(getMcpMethodPolicy('commercial.catalog.get')).toMatchObject({ capability: 'billing.workspace.read', scope: 'workspace' })
+    expect(getMcpMethodPolicy('commercial.order.payment.get')).toMatchObject({ capability: 'billing.workspace.read', scope: 'workspace' })
+    expect(getMcpMethodPolicy('creative-points.balance.get')).toMatchObject({ capability: 'billing.workspace.read', scope: 'workspace' })
     expect(capabilitiesForRoles(['platform_admin'])).toContain('billing.platform.read')
     for (const role of CANONICAL_ROLES) {
       expect(capabilitiesForRoles([role]), `${role} must be able to load its own authorization session`).toContain('authorization.session.read')

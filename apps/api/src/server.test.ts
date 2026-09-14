@@ -212,7 +212,7 @@ describe('commercial access HTTP/MCP operation parity', () => {
   it('dispatches the HTTP and native MCP access reads under their registered operation', () => {
     const httpPolicy = getHttpOperationPolicy('GET', '/v1/commercial/access')
     expect(httpPolicy).toMatchObject({ mcpMethod: 'commercial.access.get', authentication: 'identity' })
-    expect(getMcpMethodPolicy('commercial.access.get')).toMatchObject({ effect: 'read', capability: 'billing.self.read', scope: 'self' })
+    expect(getMcpMethodPolicy('commercial.access.get')).toMatchObject({ effect: 'read', capability: 'billing.workspace.read', scope: 'workspace' })
 
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     expect(source).toContain("case 'commercial.access.get': {")
@@ -616,7 +616,7 @@ describe('API application wiring', () => {
   it('routes every real quarantine object write through quota and atomic asset persistence', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     expect((source.match(/const stored = await putQuarantineObject\(/gu) ?? [])).toHaveLength(6)
-    expect((source.match(/await persistAssetSnapshotAndEvent\(workspaceId,/gu) ?? [])).toHaveLength(5)
+    expect((source.match(/await persistAssetSnapshotAndEvent\(workspaceId,/gu) ?? [])).toHaveLength(6)
     expect((source.match(/compensateStoredAsset\(/gu) ?? [])).toHaveLength(7)
     expect(source).toContain('const quota = persistence.storageQuota')
     expect(source).toContain('onDeleted: async row =>')

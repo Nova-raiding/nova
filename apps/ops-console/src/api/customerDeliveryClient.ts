@@ -2,6 +2,8 @@ import { rpc } from "./opsClient.js";
 import type { CustomerDeliveryRecord } from "../components/delivery/CustomerDeliverySection.js";
 
 export interface CustomerDeliveryClient {
+  uploadAsset(input: { targetWorkspaceId: string; deliveryId: string; purpose: CustomerDeliveryAssetPurpose; file: File }, signal?: AbortSignal): Promise<CustomerDeliveryAsset>;
+  getAsset(input: { targetWorkspaceId: string; deliveryId: string; purpose: CustomerDeliveryAssetPurpose; assetRef: string }, signal?: AbortSignal): Promise<CustomerDeliveryAsset>;
   list(targetWorkspaceId: string, signal?: AbortSignal): Promise<CustomerDeliveryRecord[] | null>;
   get(targetWorkspaceId: string, deliveryId: string, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
   create(targetWorkspaceId: string, companyName: string, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
@@ -31,6 +33,76 @@ export interface CustomerDeliveryClient {
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 const text = (value: unknown): value is string => typeof value === "string";
 const bool = (value: unknown): value is boolean => typeof value === "boolean";
+
+export type CustomerDeliveryAssetPurpose = "contract" | "video";
+export interface CustomerDeliveryAsset {
+  assetRef: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  scanStatus: "pending" | "clean" | "blocked";
+  ready: boolean;
+}
+export const CUSTOMER_DELIVERY_MAX_FILE_BYTES = 50 * 1024 * 1024;
+const deliveryFileTypes: Record<CustomerDeliveryAssetPurpose, Record<string, string>> = {
+  contract: { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg" },
+  video: { mp4: "video/mp4", webm: "video/webm" },
+};
+
+export function validateCustomerDeliveryFile(file: Pick<File, "name" | "size" | "type">, purpose: CustomerDeliveryAssetPurpose): string {
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const mimeType = deliveryFileTypes[purpose][extension];
+  if (!mimeType) throw new Error(purpose === "contract" ? "合同仅支持 PDF、DOCX、PNG、JPG、JPEG 文件" : "交付视频仅支持 MP4、WebM 文件");
+  if (!file.name.trim() || /[\u0000-\u001f/\\]/u.test(file.name)) throw new Error("文件名无效，请重命名后重试");
+  if (!Number.isSafeInteger(file.size) || file.size <= 0) throw new Error("不能上传空文件");
+  if (file.size > CUSTOMER_DELIVERY_MAX_FILE_BYTES) throw new Error("单个文件不能超过 50 MiB");
+  const declaredType = file.type.toLowerCase();
+  if (declaredType && declaredType !== "application/octet-stream" && declaredType !== mimeType && !(mimeType === "image/jpeg" && declaredType === "image/jpg")) throw new Error("文件类型与扩展名不一致，请检查文件后重试");
+  return mimeType;
+}
+
+export function parseCustomerDeliveryAsset(value: unknown): CustomerDeliveryAsset {
+  if (!object(value) || !text(value.assetRef) || !/^asset[:_]\S+$/u.test(value.assetRef) || !text(value.name) || !value.name.trim() || !text(value.mimeType) || !value.mimeType.trim() || !Number.isSafeInteger(value.sizeBytes) || Number(value.sizeBytes) <= 0 || Number(value.sizeBytes) > CUSTOMER_DELIVERY_MAX_FILE_BYTES || !["pending", "clean", "blocked"].includes(String(value.scanStatus)) || !bool(value.ready) || (value.ready && value.scanStatus !== "clean")) {
+    throw new Error("客户交付素材接口返回了无效的文件或安全检查状态");
+  }
+  return value as unknown as CustomerDeliveryAsset;
+}
+
+/** Use an abortable FileReader: closing a drawer must stop local file reading. */
+export async function readCustomerDeliveryFile(file: File, purpose: CustomerDeliveryAssetPurpose, signal?: AbortSignal) {
+  const mimeType = validateCustomerDeliveryFile(file, purpose);
+  signal?.throwIfAborted();
+  const bytes = await new Promise<ArrayBuffer>((resolve, reject) => {
+    const reader = new FileReader();
+    const cleanup = () => signal?.removeEventListener("abort", abort);
+    const abort = () => {
+      cleanup();
+      reader.abort();
+      reject(new DOMException("文件读取已取消", "AbortError"));
+    };
+    reader.onload = () => {
+      cleanup();
+      if (!(reader.result instanceof ArrayBuffer)) reject(new Error("无法读取文件内容，请重新选择文件"));
+      else resolve(reader.result);
+    };
+    reader.onerror = () => { cleanup(); reject(new Error("文件读取失败，请检查文件后重试")); };
+    reader.onabort = () => { cleanup(); reject(new DOMException("文件读取已取消", "AbortError")); };
+    signal?.addEventListener("abort", abort, { once: true });
+    reader.readAsArrayBuffer(file);
+  });
+  signal?.throwIfAborted();
+  if (bytes.byteLength !== file.size) throw new Error("文件读取不完整，请重新选择文件");
+  if (!globalThis.crypto?.subtle) throw new Error("当前连接不支持文件安全校验，请使用 HTTPS 或本机地址");
+  const hash = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  signal?.throwIfAborted();
+  const sha256 = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const parts: string[] = [];
+  const data = new Uint8Array(bytes);
+  // Chunked conversion avoids overflowing the call stack for a 50 MiB video.
+  for (let index = 0; index < data.length; index += 0x8000) parts.push(String.fromCharCode(...data.subarray(index, index + 0x8000)));
+  signal?.throwIfAborted();
+  return { name: file.name, mimeType, contentBase64: btoa(parts.join("")), sha256 };
+}
 
 export interface CustomerDeliveryChecklistItem { itemKey: string; completed: boolean; evidence: string }
 
@@ -126,6 +198,30 @@ export function parseCustomerDeliveryList(value: unknown): CustomerDeliveryRecor
 }
 
 export const customerDeliveryClient: CustomerDeliveryClient = {
+  async uploadAsset(input, signal) {
+    const file = await readCustomerDeliveryFile(input.file, input.purpose, signal);
+    const value = await rpc<unknown>("ops.customer-delivery.assets.upload", {
+      target_workspace_id: input.targetWorkspaceId,
+      delivery_id: input.deliveryId,
+      purpose: input.purpose,
+      name: file.name,
+      mime_type: file.mimeType,
+      content_base64: file.contentBase64,
+      sha256: file.sha256,
+    }, { signal, timeoutMs: 120_000 });
+    return parseCustomerDeliveryAsset(value);
+  },
+  async getAsset(input, signal) {
+    const value = await rpc<unknown>("ops.customer-delivery.assets.get", {
+      target_workspace_id: input.targetWorkspaceId,
+      delivery_id: input.deliveryId,
+      purpose: input.purpose,
+      asset_ref: input.assetRef,
+    }, { signal });
+    const asset = parseCustomerDeliveryAsset(value);
+    if (asset.assetRef !== input.assetRef) throw new Error("安全检查返回了其他素材，请重新检查当前文件");
+    return asset;
+  },
   async list(targetWorkspaceId, signal) {
     const value = await rpc<unknown>("ops.customer-delivery.list", { target_workspace_id: targetWorkspaceId }, { signal });
     return value === null ? null : parseCustomerDeliveryList(value);

@@ -67,9 +67,9 @@ describe('developer doctor runtime checks', () => {
         payment: { mode: 'provider', configured: true },
         objectStorage: { configured: true, mode: 's3' },
         assetScanner: { ready: true, mode: 'clamav_worker' },
-        alertNotifications: { ready: true },
+        alertNotifications: { enabled: false, ready: true },
       },
-    } })).toMatchObject({ paymentReady: true, modelRelayReady: true, objectStorageReady: true, scannerReady: true, productionGate: true })
+    } })).toMatchObject({ paymentReady: true, modelRelayReady: true, objectStorageReady: true, scannerReady: true, alertEnabled: false, alertReady: true, productionGate: true })
     expect(commercialRuntimeReadiness({ data: {} })).toBeUndefined()
   })
 

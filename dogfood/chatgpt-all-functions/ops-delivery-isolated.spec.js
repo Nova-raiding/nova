@@ -4,19 +4,43 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 
 // This spec is intentionally runner-only. The managed runner supplies an
 // isolated PG17/Redis/OIDC stack and refuses shared bearer fixtures.
 const baseUrl = process.env.OPS_OIDC_BASE_URL
 const workspaceId = process.env.OPS_E2E_WORKSPACE_ID
 const outputDir = process.env.OPS_E2E_OUTPUT_DIR
+const realDeliveryScan = process.env.OPS_E2E_REAL_DELIVERY_SCAN === 'true'
 if (!baseUrl || !workspaceId || !outputDir) throw new Error('Run through scripts/run-ops-oidc-e2e.ts with OPS_OIDC_BASE_URL, OPS_E2E_WORKSPACE_ID and OPS_E2E_OUTPUT_DIR')
 const origin = new URL(baseUrl)
 if (origin.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(origin.hostname) || !origin.port || origin.pathname !== '/') throw new Error('OPS_OIDC_BASE_URL must be an explicit loopback origin')
 
 test.describe.configure({ mode: 'serial', retries: 0 })
 test.use({ channel: 'chrome', timezoneId: 'Asia/Shanghai', viewport: { width: 1440, height: 900 }, trace: 'off', video: 'off', screenshot: 'off' })
-test.setTimeout(180_000)
+test.setTimeout(realDeliveryScan ? 600_000 : 180_000)
+
+// Self-contained, genuine media fixtures: one 16x16 black frame, no audio.
+// These bytes are only sent to the isolated upload endpoint, never to evidence.
+const tinyMp4 = Buffer.from('AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMUbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAj90cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAAAAABAAAAAAG3bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAQABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABYm1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAASJzdGJsAAAAvnN0c2QAAAAAAAAAAQAAAK5hdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFExhdmM2My4xLjEwMSBsaWJ4MjY0AAAAAAAAAAAAAAAAGP//AAAANGF2Y0MBZAAK/+EAF2dkAAqs2V7ARAAAAwAEAAADAAg8SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAABYoAAAAAAAAABhzdHRzAAAAAAAAAAEAAAABAABAAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAALFAAAAAQAAABRzdGNvAAAAAAAAAAEAAANEAAAAYXVkdGEAAABZbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAsaWxzdAAAACSpdG9vAAAAHGRhdGEAAAABAAAAAExhdmY2My4xLjEwMQAAAAhmcmVlAAACzW1kYXQAAAKtBgX//6ncRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY1IHIzMjIyIGIzNTYwNWEgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDI1IC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MSByZWY9MyBkZWJsb2NrPTE6MDowIGFuYWx5c2U9MHgzOjB4MTEzIG1lPWhleCBzdWJtZT03IHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0xIDh4OGRjdD0xIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PS0yIHRocmVhZHM9MSBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTMgYl9weXJhbWlkPTIgYl9hZGFwdD0xIGJfYmlhcz0wIGRpcmVjdD0xIHdlaWdodGI9MSBvcGVuX2dvcD0wIHdlaWdodHA9MiBrZXlpbnQ9MjUwIGtleWludF9taW49MSBzY2VuZWN1dD00MCBpbnRyYV9yZWZyZXNoPTAgcmNfbG9va2FoZWFkPTQwIHJjPWNyZiBtYnRyZWU9MSBjcmY9MjMuMCBxY29tcD0wLjYwIHFwbWluPTAgcXBtYXg9NjkgcXBzdGVwPTQgaXBfcmF0aW89MS40MCBhcT0xOjEuMDAAgAAAABBliIQAFf/+98nvwKbr29+B', 'base64')
+const tinyWebm = Buffer.from('GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwEAAAAAAAH1EU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHWTbuMU6uEElTDZ1OsggEyTbuMU6uEHFO7a1OsggHf7AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsCrXsYMPQkBNgIxMYXZmNjMuMS4xMDFXQYxMYXZmNjMuMS4xMDFEiYhAj0AAAAAAABZUrmvXrgEAAAAAAABO14EBc8WIYT3yctz/s1ycgQAitZyDdW5kiIEAhoVWX1ZQOYOBASPjg4Q7msoA4JCwgRC6gRCagQJVsIRVuYEBVe6BAOwBAAAAAAAAAgAAElTDZ/5zc59jwIBnyJlFo4dFTkNPREVSRIeMTGF2ZjYzLjEuMTAxc3PZY8CLY8WIYT3yctz/s1xnyKRFo4dFTkNPREVSRIeXTGF2YzYzLjEuMTAxIGxpYnZweC12cDlnyKFFo4hEVVJBVElPTkSHkzAwOjAwOjAxLjAwMDAwMDAwMAAfQ7Z1peeBAKOggQAAgIJJg0IAAPAA9gA4JBwYSgAAMGAAABC///1IjAAcU7trkbuPs4EAt4r3gQHxggG18IED', 'base64')
+const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
+function contractPdf(text = 'Isolated delivery contract fixture') {
+  const stream = `BT /F1 12 Tf 36 72 Td (${text}) Tj ET\n`
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}endstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ]
+  let pdf = '%PDF-1.4\n'
+  const offsets = [0]
+  for (const [index, object] of objects.entries()) { offsets.push(Buffer.byteLength(pdf)); pdf += `${index + 1} 0 obj\n${object}\nendobj\n` }
+  const xref = Buffer.byteLength(pdf)
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.slice(1).map(offset => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+  return Buffer.from(pdf)
+}
 
 const parse = value => { try { return JSON.parse(value) } catch { return null } }
 const rpcPayload = request => {
@@ -49,6 +73,171 @@ async function rpcAfter(page, method, action, evidence, expectedStatus = 200) {
   expect(response.status(), `${method} status`).toBe(expectedStatus)
   if (expectedStatus === 200) expect(error, `${method} RPC error`).toBeFalsy()
   return { payload, body, error, result }
+}
+
+async function uploadAndWaitForRealScan(page, dialog, deliveryId, purpose, files, evidence) {
+  const cleanRefs = new Set()
+  const observations = []
+  const observationErrors = []
+  const observe = response => {
+    const payload = rpcPayload(response.request())
+    if (payload?.method !== 'ops.customer-delivery.assets.get' || payload.params?.delivery_id !== deliveryId || payload.params?.purpose !== purpose) return
+    observations.push((async () => {
+      const body = parse(await response.text())
+      const asset = body?.result ?? body?.data?.result
+      evidence.events.push({ event: 'real_asset_scan', asset_ref: payload.params.asset_ref, scan_status: asset?.scanStatus ?? null, ready: asset?.ready ?? false, status: response.status() })
+      expect(response.status()).toBe(200)
+      if (asset?.scanStatus === 'clean' && asset.ready === true) cleanRefs.add(asset.assetRef)
+    })().catch(error => { observationErrors.push(error) }))
+  }
+  page.on('response', observe)
+  try {
+    const uploads = files.map(file => {
+      const hash = sha256(file.buffer)
+      return page.waitForResponse(response => {
+        const payload = rpcPayload(response.request())
+        return payload?.method === 'ops.customer-delivery.assets.upload' && payload.params?.delivery_id === deliveryId && payload.params?.purpose === purpose && payload.params?.sha256 === hash
+      }, { timeout: 240_000 }).then(async response => {
+        const body = parse(await response.text())
+        const asset = body?.result ?? body?.data?.result
+        evidence.events.push({ event: 'real_asset_upload', sha256: hash, asset_ref: asset?.assetRef ?? null, scan_status: asset?.scanStatus ?? null, ready: asset?.ready ?? false, status: response.status() })
+        expect(response.status()).toBe(200)
+        expect(asset?.assetRef).toMatch(/^asset[:_]/u)
+        expect(asset?.scanStatus).toBe('pending')
+        expect(asset?.ready).toBe(false)
+        return asset
+      })
+    })
+    const exchanges = await Promise.all([...uploads, dialog.getByLabel(purpose === 'contract' ? '上传合同文件' : '上传交付视频', { exact: true }).setInputFiles(files)])
+    const assets = exchanges.slice(0, -1)
+    const refs = assets.map(asset => asset.assetRef)
+    await expect(dialog.getByLabel(purpose === 'contract' ? '合同文件' : '交付视频（支持多段）', { exact: true })).toHaveValue(purpose === 'contract' ? refs[0] : refs.join('\n'), { timeout: 210_000 })
+    await expect(dialog.getByRole('button', { name: '保存当前环节', exact: true })).toBeEnabled()
+    await Promise.all(observations)
+    if (observationErrors.length) throw observationErrors[0]
+    for (const ref of refs) expect(cleanRefs.has(ref), 'the visible usable reference must have a real clean scanner response').toBe(true)
+    return assets
+  } finally {
+    page.off('response', observe)
+    await Promise.all(observations)
+  }
+}
+
+async function registerRealVideoSegments(page, dialog, deliveryId, assets, evidence) {
+  const responses = assets.map(asset => page.waitForResponse(response => {
+    const payload = rpcPayload(response.request())
+    return payload?.method === 'ops.customer-delivery.videos.add' && payload.params?.delivery_id === deliveryId && payload.params?.asset_ref === asset.assetRef
+  }, { timeout: 45_000 }).then(async response => {
+    const body = parse(await response.text())
+    evidence.events.push({ event: 'real_video_registered', asset_ref: asset.assetRef, status: response.status(), error_code: body?.error?.code ?? body?.data?.error?.code ?? null })
+    expect(response.status()).toBe(200)
+    expect(body?.error ?? body?.data?.error).toBeFalsy()
+  }))
+  await Promise.all([...responses, dialog.getByRole('button', { name: '保存当前环节', exact: true }).click()])
+  await expect(dialog.getByRole('button', { name: '保存当前环节', exact: true })).not.toHaveClass(/ant-btn-loading/u)
+  await expect(dialog.getByText('已登记视频（2 段）', { exact: true })).toBeVisible()
+  await expect(dialog.getByLabel('交付视频（支持多段）')).toHaveValue('')
+}
+
+async function verifyCleanContractReuse(page, targetWorkspaceId, file, assetRef, company, evidence) {
+  let requestNumber = 0
+  const hash = sha256(file.buffer)
+  const call = async (method, params) => {
+    // The context request shares the current signed OIDC cookie jar. No bearer,
+    // copied credentials, or mocked repository is introduced for this PG check.
+    let response
+    try {
+      response = await page.request.post(new URL('/api/mcp', origin).toString(), {
+        headers: { 'content-type': 'application/json', 'x-ops-workbench': 'platform' },
+        data: { jsonrpc: '2.0', id: `clean-contract-reuse-${++requestNumber}`, method, params },
+        timeout: 45_000,
+      })
+    } catch { throw new Error('CLEAN_CONTRACT_REUSE_API_REQUEST_FAILED') }
+    const body = parse(await response.text())
+    const result = body?.result ?? body?.data?.result
+    const error = body?.error ?? body?.data?.error
+    evidence.events.push({ event: 'clean_contract_reuse_rpc', method, delivery_id: params.delivery_id ?? result?.id ?? null, sha256: hash, asset_ref: result?.assetRef ?? null, scan_status: result?.scanStatus ?? null, ready: result?.ready ?? null, status: response.status(), error_code: error?.code ?? null })
+    expect(response.status(), `${method} clean reuse status`).toBe(200)
+    expect(error?.code, `${method} clean reuse error code`).toBeUndefined()
+    return result
+  }
+  const deliveryIds = []
+  for (let index = 1; index <= 3; index++) {
+    const created = await call('ops.customer-delivery.create', { target_workspace_id: targetWorkspaceId, company_name: `${company}-clean-reuse-${index}` })
+    expect(typeof created?.id).toBe('string')
+    deliveryIds.push(created.id)
+    const uploaded = await call('ops.customer-delivery.assets.upload', {
+      target_workspace_id: targetWorkspaceId, delivery_id: created.id, purpose: 'contract',
+      name: file.name, mime_type: file.mimeType, content_base64: file.buffer.toString('base64'), sha256: hash,
+    })
+    expect(uploaded?.assetRef).toBe(assetRef)
+    expect(uploaded?.scanStatus).toBe('clean')
+    expect(uploaded?.ready).toBe(true)
+  }
+  expect(new Set(deliveryIds).size).toBe(3)
+  // Re-read all three after the last bind to catch overwritten earlier bindings,
+  // not just the historical third-bind revision/outbox collision.
+  for (const deliveryId of deliveryIds) {
+    const bound = await call('ops.customer-delivery.assets.get', { target_workspace_id: targetWorkspaceId, delivery_id: deliveryId, purpose: 'contract', asset_ref: assetRef })
+    expect(bound?.assetRef).toBe(assetRef)
+    expect(bound?.scanStatus).toBe('clean')
+    expect(bound?.ready).toBe(true)
+  }
+}
+
+async function verifyClosedUploadCannotFillAnotherCustomer(page, deliveryId, originalRow, originalContractRef, secondCompany, evidence) {
+  let releaseResponse
+  const heldResponse = new Promise(resolve => { releaseResponse = resolve })
+  let scanFinished
+  const scanSettled = new Promise(resolve => { scanFinished = resolve })
+  let scanFailure
+  let intercepted = false
+  // Only delay the real GET response to exercise a late network completion.
+  // No scanner result is fabricated, and no write is cancelled/rolled back here.
+  const holdScan = async route => {
+    const payload = rpcPayload(route.request())
+    if (intercepted || payload?.method !== 'ops.customer-delivery.assets.get' || payload.params?.delivery_id !== deliveryId || payload.params?.purpose !== 'contract') { await route.continue(); return }
+    intercepted = true
+    try {
+      let response
+      await expect.poll(async () => {
+        response = await route.fetch({ timeout: 30_000 })
+        const body = await response.json()
+        const asset = body?.result ?? body?.data?.result
+        evidence.events.push({ event: 'cancelled_upload_real_scan', asset_ref: payload.params.asset_ref, scan_status: asset?.scanStatus ?? null, ready: asset?.ready ?? false, status: response.status() })
+        return response.status() === 200 && asset?.scanStatus === 'clean' && asset.ready === true
+      }, { timeout: 180_000, intervals: [1000, 2000] }).toBe(true)
+      await heldResponse
+      // Closing the drawer aborts its browser request, so Chromium may already
+      // have discarded this response. The server-side asset remains audited.
+      await route.fulfill({ response }).catch(() => undefined)
+    } catch (error) { scanFailure = error }
+    finally { scanFinished() }
+  }
+  await page.route('**/api/mcp', holdScan)
+  try {
+    const file = { name: 'cancelled-contract.pdf', mimeType: 'application/pdf', buffer: contractPdf('Cancelled drawer upload fixture') }
+    const uploaded = await rpcAfter(page, 'ops.customer-delivery.assets.upload', () => page.getByRole('dialog').getByLabel('上传合同文件', { exact: true }).setInputFiles(file), evidence)
+    evidence.events.push({ event: 'cancelled_upload_received_by_server', sha256: sha256(file.buffer), asset_ref: uploaded.result?.assetRef ?? null, scan_status: uploaded.result?.scanStatus ?? null, status: 200 })
+    expect(uploaded.result?.scanStatus).toBe('pending')
+    await expect(page.getByRole('dialog').getByText('安全检查中', { exact: true })).toBeVisible()
+    await expect.poll(() => intercepted, { timeout: 15_000 }).toBe(true)
+    await closeDrawer(page)
+    await originalRow.locator('td').nth(2).getByRole('button').click()
+    await expect(page.getByRole('dialog').getByLabel('合同文件', { exact: true })).toHaveValue(originalContractRef)
+    releaseResponse()
+    await scanSettled
+    if (scanFailure) throw scanFailure
+    await expect(page.getByRole('dialog').getByLabel('合同文件', { exact: true })).toHaveValue(originalContractRef)
+    await closeDrawer(page)
+    await page.getByRole('row').filter({ hasText: secondCompany }).locator('td').nth(2).getByRole('button').click()
+    await expect(page.getByRole('dialog').getByLabel('合同文件', { exact: true })).toHaveValue('')
+    evidence.events.push({ event: 'pending_upload_closed_and_switched_without_form_pollution', asset_ref: uploaded.result?.assetRef ?? null, server_asset_may_persist: true, delivery_profile_saved: false })
+  } finally {
+    releaseResponse()
+    await page.unroute('**/api/mcp', holdScan)
+    if (intercepted) await scanSettled
+  }
 }
 
 async function login(page) {
@@ -120,13 +309,13 @@ async function captureTrainingInteraction(page, evidenceDir, testInfo) {
   await testInfo.attach('training-inline-video', { path: videoPath, contentType: 'video/webm' })
 }
 
-test('isolated customer delivery end-to-end fields, gates, checklists and clean-video rejection', async ({ page }, testInfo) => {
+test('isolated customer delivery end-to-end fields, gates, checklists and scanned assets', async ({ page }, testInfo) => {
   page.setDefaultTimeout(15_000)
   const pageErrors = []
   page.on('pageerror', error => pageErrors.push(error.name))
   const evidenceDir = join(outputDir, `delivery-${Date.now()}`)
   await mkdir(evidenceDir, { recursive: true })
-  const evidence = { schema_version: 1, evidence_kind: 'isolated_live_customer_delivery_ui_rpc', raw_browser_trace_saved: false, viewport: { width: 1440, height: 900 }, timezone: 'Asia/Shanghai', fixture: { workspace_id: workspaceId }, events: [] }
+  const evidence = { schema_version: 1, evidence_kind: 'isolated_live_customer_delivery_ui_rpc', raw_browser_trace_saved: false, real_delivery_scan: realDeliveryScan, viewport: { width: 1440, height: 900 }, timezone: 'Asia/Shanghai', fixture: { workspace_id: workspaceId }, events: [] }
   const screenshot = async name => {
     const path = join(evidenceDir, `${name}.png`)
     await page.screenshot({ path, fullPage: false, mask: [page.locator('input[type="password"]')] })
@@ -138,15 +327,17 @@ test('isolated customer delivery end-to-end fields, gates, checklists and clean-
     await login(page)
     await page.getByRole('button', { name: '新建客户', exact: true }).click()
     await page.getByRole('textbox', { name: /公司名称/u }).fill(company)
-    await rpcAfter(page, 'ops.customer-delivery.create', () => page.getByRole('button', { name: /创\s*建/u }).click(), evidence)
-    const row = page.getByRole('row').filter({ hasText: company })
+    const created = await rpcAfter(page, 'ops.customer-delivery.create', () => page.getByRole('button', { name: /创\s*建/u }).click(), evidence)
+    const deliveryId = created.result?.id
+    expect(typeof deliveryId).toBe('string')
+    const row = page.getByRole('row').filter({ has: page.getByRole('cell', { name: company, exact: true }) })
     await expect(row).toBeVisible()
     await screenshot('customer-created')
 
     // Profile is fillable while unpaid, but controlled delivery steps are not.
     const profile = page.getByRole('dialog')
     await profile.getByLabel('合同编号').fill(`C-${Date.now()}`)
-    await profile.getByLabel('合同文件').fill('asset_ref_missing_contract')
+    await profile.getByLabel('合同文件', { exact: true }).fill('asset_ref_missing_contract')
     await profile.getByLabel('项目负责人').fill('隔离项目负责人')
     await profile.getByLabel('售后负责人').fill('隔离售后负责人')
     await profile.getByLabel('要求上线时间').fill('2026-10-01T09:00')
@@ -155,7 +346,14 @@ test('isolated customer delivery end-to-end fields, gates, checklists and clean-
     await expect(profile).toBeVisible()
     await expect(row.locator('td').nth(2)).toContainText('未填写')
     await screenshot('missing-contract-rejected')
-    await profile.getByLabel('合同文件').fill('https://example.com/delivery-contract.pdf')
+    let savedContractRef = 'https://example.com/delivery-contract.pdf'
+    const savedContractFile = { name: 'delivery-contract.pdf', mimeType: 'application/pdf', buffer: contractPdf() }
+    if (realDeliveryScan) {
+      await profile.getByLabel('合同文件', { exact: true }).fill('')
+      const [contract] = await uploadAndWaitForRealScan(page, profile, deliveryId, 'contract', [savedContractFile], evidence)
+      savedContractRef = contract.assetRef
+      await screenshot('real-contract-scan-ready')
+    } else await profile.getByLabel('合同文件', { exact: true }).fill(savedContractRef)
     await rpcAfter(page, 'ops.customer-delivery.update', () => profile.getByRole('button', { name: '保存当前环节', exact: true }).click(), evidence)
     await expect(profile).toBeVisible()
     await closeDrawer(page)
@@ -177,11 +375,12 @@ test('isolated customer delivery end-to-end fields, gates, checklists and clean-
     await closeDrawer(page)
     await page.reload({ waitUntil: 'domcontentloaded' })
     await expect(page.getByRole('heading', { name: '客户交付', exact: true })).toBeVisible({ timeout: 30_000 })
-    const refreshedRow = page.getByRole('row').filter({ hasText: company })
+    const refreshedRow = page.getByRole('row').filter({ has: page.getByRole('cell', { name: company, exact: true }) })
     await expect(refreshedRow).toBeVisible()
     await refreshedRow.locator('td').nth(2).getByRole('button').click()
     await expect(page.getByRole('dialog').getByLabel('付款日期')).toHaveValue('2026-09-14')
     await expect(page.getByRole('dialog').getByLabel('要求上线时间')).toHaveValue('2026-10-01T09:00')
+    await expect(page.getByRole('dialog').getByLabel('合同文件', { exact: true })).toHaveValue(savedContractRef)
     await screenshot('profile-fields-reloaded')
     await closeDrawer(page)
 
@@ -219,8 +418,8 @@ test('isolated customer delivery end-to-end fields, gates, checklists and clean-
     expect(await page.getByRole('dialog').count()).toBe(beforeDialogs)
     await expect(trainingBox).toBeChecked()
 
-    // No clean scanned asset exists in the isolated fixture: the API must reject
-    // the video reference instead of allowing the repository to claim success.
+    // A nonexistent/unscanned reference must remain blocked even when the real
+    // scanner is enabled; success must come from uploaded file bytes instead.
     await refreshedRow.getByRole('button', { name: /未上传|\d+ 段/u }).click()
     const videoDialog = page.getByRole('dialog')
     await expect(videoDialog.getByRole('button', { name: '选择视频（需安全上传）', exact: true })).toHaveCount(0)
@@ -231,16 +430,43 @@ test('isolated customer delivery end-to-end fields, gates, checklists and clean-
     await expect(refreshedRow).not.toContainText('交付已完成')
     await expect(refreshedRow).not.toContainText('已生效')
     await screenshot('customer-delivery-gates')
+    if (realDeliveryScan) {
+      await expect(videoDialog.getByRole('button', { name: '保存当前环节', exact: true })).not.toHaveClass(/ant-btn-loading/u)
+      await videoDialog.getByLabel('交付视频（支持多段）').fill('')
+      expect(sha256(tinyMp4)).not.toBe(sha256(tinyWebm))
+      const assets = await uploadAndWaitForRealScan(page, videoDialog, deliveryId, 'video', [
+        { name: 'delivery-first.mp4', mimeType: 'video/mp4', buffer: tinyMp4 },
+        { name: 'delivery-second.webm', mimeType: 'video/webm', buffer: tinyWebm },
+      ], evidence)
+      expect(new Set(assets.map(asset => asset.assetRef)).size).toBe(2)
+      await screenshot('real-videos-scan-ready')
+      await registerRealVideoSegments(page, videoDialog, deliveryId, assets, evidence)
+      await closeDrawer(page)
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await expect(refreshedRow).toBeVisible({ timeout: 30_000 })
+      await expect(refreshedRow).toContainText('交付已完成')
+      await refreshedRow.getByRole('button', { name: '2 段', exact: true }).click()
+      await expect(page.getByRole('dialog').getByText('已登记视频（2 段）', { exact: true })).toBeVisible()
+      for (const asset of assets) await expect(page.getByRole('dialog').getByText(asset.assetRef, { exact: true })).toBeVisible()
+      await screenshot('real-video-segments-reloaded')
+      evidence.events.push({ event: 'real_contract_and_two_videos_persisted', delivery_id: deliveryId, asset_refs: [savedContractRef, ...assets.map(asset => asset.assetRef)], points_granted: false })
+    }
     await captureTrainingInteraction(page, evidenceDir, testInfo)
     await closeDrawer(page)
     await page.getByRole('button', { name: '新建客户', exact: true }).click()
-    await page.getByRole('textbox', { name: /公司名称/u }).fill(`${company}-second`)
-    await rpcAfter(page, 'ops.customer-delivery.create', () => page.getByRole('button', { name: /创\s*建/u }).click(), evidence)
+    const secondCompany = `${company}-second`
+    await page.getByRole('textbox', { name: /公司名称/u }).fill(secondCompany)
+    const secondCreated = await rpcAfter(page, 'ops.customer-delivery.create', () => page.getByRole('button', { name: /创\s*建/u }).click(), evidence)
     const newProfile = page.getByRole('dialog')
     for (const label of ['合同编号', '合同文件', '项目负责人', '售后负责人', '付款日期', '要求上线时间']) {
-      await expect(newProfile.getByLabel(label)).toHaveValue('')
+      await expect(newProfile.getByLabel(label, { exact: true })).toHaveValue('')
     }
     evidence.events.push({ event: 'new_customer_has_no_previous_profile_fields' })
+    if (realDeliveryScan) {
+      await verifyClosedUploadCannotFillAnotherCustomer(page, secondCreated.result.id, refreshedRow, savedContractRef, secondCompany, evidence)
+      await screenshot('cancelled-upload-does-not-populate-new-customer')
+      await verifyCleanContractReuse(page, created.payload.params.target_workspace_id, savedContractFile, savedContractRef, company, evidence)
+    }
     expect(pageErrors).toEqual([])
     evidence.status = 'passed'
   } catch (error) {

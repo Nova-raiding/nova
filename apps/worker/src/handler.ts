@@ -6,6 +6,7 @@ import type { GeneratedContent } from '../../../packages/ai/src/generator.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
 import { createUnavailableExecutionAuthorizationGuard, parseWorkerAuthorizationSnapshot, type CriticalWorkerOperation, type WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
 import { createUnavailableCommercialAccessGuard, normalizeCommercialAccessFailure, parseWorkerCommercialAccessSnapshot, type WorkerCommercialAccessGuard } from '../../../packages/workers/src/commercial-access.js'
+import { CUSTOMER_DELIVERY_SCAN_EVENT, createUnavailableDeliveryScanAdmissionGuard, type DeliveryScanAdmissionGuard } from '../../../packages/workers/src/customer-delivery-scan-admission.js'
 
 export interface WorkerProjection {
   snapshots: Map<string, { sequence: number; payload: Record<string, unknown> }>
@@ -36,6 +37,8 @@ export interface WorkerHandlerOptions {
   /** Required for every merchant business side effect. Pure system
    * projections intentionally bypass this gate. */
   commercialAccess?: WorkerCommercialAccessGuard
+  /** Dedicated platform security admission; never a merchant point bypass. */
+  deliveryScanAdmission?: DeliveryScanAdmissionGuard
 }
 
 export function createWorkerProjection(): WorkerProjection {
@@ -51,6 +54,7 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
   const projection = options.projection ?? createWorkerProjection()
   const executionAuthorization = options.executionAuthorization ?? createUnavailableExecutionAuthorizationGuard()
   const commercialAccess = options.commercialAccess ?? createUnavailableCommercialAccessGuard()
+  const deliveryScanAdmission = options.deliveryScanAdmission ?? createUnavailableDeliveryScanAdmissionGuard()
   const commercialize = async (event: DurableOutboxEvent, operation: CriticalWorkerOperation, signal?: AbortSignal) => {
     try {
       return await commercialAccess.assertCommercialAccess(event, operation, signal)
@@ -234,9 +238,11 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
       }
     }
 
-    if (['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested'].includes(event.eventType) && options.scanRequested) {
+    if (['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested', CUSTOMER_DELIVERY_SCAN_EVENT].includes(event.eventType) && options.scanRequested) {
       try {
-        if (event.eventType === 'asset.scan_redrive_requested') {
+        if (event.eventType === CUSTOMER_DELIVERY_SCAN_EVENT) {
+          await deliveryScanAdmission.assertAdmitted(event, signal)
+        } else if (event.eventType === 'asset.scan_redrive_requested') {
           // Redrives have an explicit persisted authorization snapshot. Keep
           // its live check first so a malformed/expired authorization envelope
           // fails with the authorization error before any commercial lookup.

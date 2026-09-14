@@ -5,6 +5,7 @@ import { alertNotificationReadiness, notifyOperationalAlert } from './alert-noti
 import { Pool } from 'pg'
 import { createClient } from 'redis'
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { aliyunEcsRamRoleCredentialProvider } from './aliyun-ecs-role-credentials.js'
 import { MerchantService, assetReadiness, imageArchiveReceiptDigest, imageGenerationCandidateUsability, isTrustedCleanAsset, DomainError, type AssetRegistrationResult, type BrandVisualRules, type KnowledgeGenerationContext, type Platform, type PlatformAccount, type PlatformRejection, type Product, type Task } from '../../../packages/application/src/service.js'
 import { CommercialAccessService, type CommercialAccessServiceResult } from '../../../packages/application/src/commercial-access-service.js'
 import { CommercialPurchaseError, CommercialPurchaseService } from '../../../packages/application/src/commercial-purchase-service.js'
@@ -19,7 +20,9 @@ import { allowedModelUsageSettlementDecisions, AssetScanRedriveError, Authorizat
 import type { OutboxEvent, OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import { ServiceFulfillmentRepositoryError, type ServiceFulfillmentEventRecord } from '../../../packages/persistence/src/service-fulfillment-repository.js'
 import { CustomerDeliveryError, MemoryCustomerDeliveryRepository, PostgresCustomerDeliveryRepository, type CustomerDeliveryRepository } from '../../../packages/persistence/src/customer-delivery-repository.js'
-import { requireCustomerDeliveryAsset } from './customer-delivery-assets.js'
+import { loadCustomerDeliveryAsset, requireCustomerDeliveryAsset } from './customer-delivery-assets.js'
+import { customerDeliveryUploadPurpose, customerDeliveryUploadView, validateCustomerDeliveryUpload } from './customer-delivery-upload.js'
+import { CUSTOMER_DELIVERY_SCAN_EVENT, CUSTOMER_DELIVERY_SCAN_OPERATION, parseDeliveryScanAdmission, type DeliveryScanAdmission } from '../../../packages/workers/src/customer-delivery-scan-admission.js'
 import type { SqlClient } from '../../../packages/persistence/src/repository.js'
 import { CommercialCatalogUnavailableError, type CommercialCatalogMutationInput } from '../../../packages/persistence/src/commercial-catalog-repository.js'
 import { IdentityLifecycleError, MemoryIdentityLifecycleRepository, PostgresIdentityLifecycleRepository, type IdentityAuthorizationSnapshot, type IdentityLifecycleRepository, type IdentityOperationsDetail } from '../../../packages/persistence/src/identity-lifecycle-repository.js'
@@ -680,7 +683,19 @@ const connectorMappingPreflight = createApiConnectorMappingPreflightAdapter({
     return matches.length === 1 ? matches[0] : undefined
   },
 })
-export const connectorRuntime = new ConnectorRuntime({ fixtureMode, allowFixtureWrites: process.env.PLUGIN_WRITE_ENABLED === 'true', credentialProvider: createVaultCredentialProviderFromEnv(), mappingPreflight: connectorMappingPreflight, environment: process.env.NODE_ENV === 'production' ? 'production' : process.env.NODE_ENV === 'test' ? 'test' : 'development' })
+function connectorConfigSource(): NodeJS.ProcessEnv {
+  const evidencePath = process.env.CAPABILITY_EVIDENCE_PATH?.trim()
+  if (!evidencePath || process.env.PLATFORM_CAPABILITY_EVIDENCE_JSON?.trim()) return process.env
+  try {
+    const evidence = readFileSync(evidencePath, 'utf8')
+    return { ...process.env, PLATFORM_CAPABILITY_EVIDENCE_JSON: evidence }
+  } catch {
+    // Missing/unreadable evidence remains absent and therefore fail-closed in
+    // connector readiness as well as the public production readiness report.
+    return process.env
+  }
+}
+export const connectorRuntime = new ConnectorRuntime({ fixtureMode, allowFixtureWrites: process.env.PLUGIN_WRITE_ENABLED === 'true', configSource: connectorConfigSource(), credentialProvider: createVaultCredentialProviderFromEnv(), mappingPreflight: connectorMappingPreflight, environment: process.env.NODE_ENV === 'production' ? 'production' : process.env.NODE_ENV === 'test' ? 'test' : 'development' })
 export const oauthStates = new OAuthStateStore()
 const redisOAuthPort = createRedisOAuthPort(process.env.REDIS_URL)
 type OAuthStateRuntimeStore = Pick<OAuthStateStore, 'issue' | 'consume' | 'consumeCallback'> | Pick<RedisOAuthStateStore, 'issue' | 'consume' | 'consumeCallback'>
@@ -2088,6 +2103,10 @@ function paymentProviderReadiness(source: NodeJS.ProcessEnv = process.env) {
   if (!source.PAYMENT_CALLBACK_SECRET?.trim()) reasons.push('callback_secret_missing')
   if (source.PAYMENT_RECONCILIATION_ENABLED !== 'true') reasons.push('reconciliation_disabled')
   if (source.PAYMENT_REFUND_ENABLED !== 'true') reasons.push('refund_disabled')
+  // Diagnostics must match the adapter that will execute the charge. A URL
+  // can pass the HTTPS prefix checks while the adapter rejects it as unsafe;
+  // malformed timeout values likewise make the provider unusable.
+  if (!createPaymentProviderFromEnv(source)) reasons.push('provider_configuration_invalid')
   return { ready: reasons.length === 0, reasons }
 }
 
@@ -2608,8 +2627,11 @@ function getAssetStorage(): ObjectStoragePort {
     const region = process.env.ASSET_STORAGE_REGION?.trim()
     const endpoint = process.env.ASSET_STORAGE_ENDPOINT?.trim()
     const kmsKeyId = process.env.ASSET_STORAGE_KMS_KEY_ID?.trim()
-    if (!bucket || !region || !endpoint || !kmsKeyId || !/^https:\/\//u.test(endpoint)) throw new DomainError('ASSET_STORAGE_NOT_CONFIGURED', '生产环境对象存储必须配置 bucket、region、HTTPS endpoint 和 KMS key', 503)
-    const client = new S3Client({ region, endpoint, forcePathStyle: process.env.ASSET_STORAGE_FORCE_PATH_STYLE === 'true' })
+    const sseMode = (process.env.ASSET_STORAGE_SSE_MODE?.trim() || (kmsKeyId ? 'aws:kms' : 'AES256')).toLowerCase()
+    if (!bucket || !region || !endpoint || !/^https:\/\//u.test(endpoint) || !['aes256', 'aws:kms'].includes(sseMode) || (sseMode === 'aws:kms' && !kmsKeyId)) throw new DomainError('ASSET_STORAGE_NOT_CONFIGURED', '生产环境对象存储必须配置 bucket、region、HTTPS endpoint 和有效的加密模式', 503)
+    const credentialMode = process.env.ASSET_STORAGE_CREDENTIAL_MODE?.trim().toLowerCase()
+    const credentials = credentialMode === 'aliyun_ecs_ram_role' ? aliyunEcsRamRoleCredentialProvider() : undefined
+    const client = new S3Client({ region, endpoint, forcePathStyle: process.env.ASSET_STORAGE_FORCE_PATH_STYLE === 'true', ...(credentials ? { credentials } : {}) })
     const request = (key: string) => ({ Bucket: bucket, Key: key })
     const transport: CloudObjectTransport = {
       async head(key) {
@@ -2637,7 +2659,7 @@ function getAssetStorage(): ObjectStoragePort {
         return { body: new Uint8Array(await result.Body.transformToByteArray()), contentType: result.ContentType, metadata: result.Metadata }
       },
       async put(key, input) {
-        await client.send(new PutObjectCommand({ ...request(key), Body: input.body, ContentType: input.contentType, Metadata: input.metadata, ...(input.ifAbsent ? { IfNoneMatch: '*' } : {}), ServerSideEncryption: 'aws:kms', SSEKMSKeyId: kmsKeyId }))
+        await client.send(new PutObjectCommand({ ...request(key), Body: input.body, ContentType: input.contentType, Metadata: input.metadata, ...(input.ifAbsent ? { IfNoneMatch: '*' } : {}), ServerSideEncryption: sseMode === 'aws:kms' ? 'aws:kms' : 'AES256', ...(sseMode === 'aws:kms' ? { SSEKMSKeyId: kmsKeyId } : {}) }))
       },
       async delete(key) { await client.send(new DeleteObjectCommand(request(key))) },
     }
@@ -5291,7 +5313,7 @@ function sendOAuthCallbackPage(res: ServerResponse, status: number, input: { sta
   const title = input.state === 'success' ? '店铺授权成功' : '店铺授权未完成'
   const heading = input.state === 'success' ? `已连接${platform}` : '授权失败'
   const body = input.state === 'success'
-    ? `<p>店铺已安全绑定到大麦工作区。</p><p>状态：${escapeHtml(input.syncState === 'queued' ? '首轮商品同步已排队' : '等待同步配置')}</p><p>请返回 Codex App，刷新店铺状态后选择具体店铺继续。</p>`
+    ? `<p>店铺已安全绑定到Store Nova工作区。</p><p>状态：${escapeHtml(input.syncState === 'queued' ? '首轮商品同步已排队' : '等待同步配置')}</p><p>请返回 Codex App，刷新店铺状态后选择具体店铺继续。</p>`
     : `<p>${escapeHtml(input.message ?? '授权回调未完成，请返回 Codex App 重试。')}</p><p>请重新发起授权，不要重复使用当前页面参数。</p>`
   const request = req ? requestId(req) : 'oauth-callback'
   res.statusCode = status
@@ -5572,6 +5594,9 @@ function exactConsumedGrantForRequest(req: IncomingMessage, workspaceId: string,
   return grant
 }
 const workerAuthorizedRequests = new WeakSet<IncomingMessage>()
+// Unlike development auth bypasses, this map is populated only after a real
+// role-bound request signature and nonce have been verified.
+const verifiedWorkerRequestRoles = new WeakMap<IncomingMessage, WorkerRequestRole>()
 // Authentication is read-heavy, but the durable identity boundary also
 // refreshes the identity/session row. Coalesce cold-start observations for
 // the same session so a burst of UI requests cannot queue on the same unique
@@ -6365,8 +6390,9 @@ async function authenticateOidcGateway(req: IncomingMessage): Promise<RequestPri
   const requested = header(req, 'x-workspace-id')?.trim()
   if (workbench === 'workspace' && !requested && !bootstrapRequested) throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_REQUIRED, 'workspace 工作台必须携带 X-Workspace-Id', 401)
   if (requested && requested !== workspaceId) throw new DomainError(ERROR_CODES.FORBIDDEN, '请求工作区与 OIDC 会话工作区不一致', 403)
-  const configuredMax = Number(process.env.OIDC_PROXY_MAX_BODY_BYTES ?? 50 * 1024 * 1024)
-  const maxBodyBytes = Number.isSafeInteger(configuredMax) && configuredMax > 0 ? configuredMax : 50 * 1024 * 1024
+  const defaultMaxBodyBytes = req.method === 'POST' && new URL(req.url ?? '/', 'http://oidc.internal').pathname === '/mcp' ? MCP_BODY_LIMIT : 50 * 1024 * 1024
+  const configuredMax = Number(process.env.OIDC_PROXY_MAX_BODY_BYTES ?? defaultMaxBodyBytes)
+  const maxBodyBytes = Number.isSafeInteger(configuredMax) && configuredMax > 0 ? configuredMax : defaultMaxBodyBytes
   const actualBodyDigest = createHash('sha256').update(await requestBodyBytes(req, maxBodyBytes)).digest('hex')
   if (!safeEqual(actualBodyDigest, bodyDigest)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'OIDC 网关请求体摘要不一致', 401)
   if (!await consumeOidcNonce(nonce)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'OIDC 网关身份断言已使用', 401)
@@ -7317,9 +7343,13 @@ function productionIdentityReadiness(source: NodeJS.ProcessEnv): ProductionReadi
 
 function productionObjectStorageReadiness(source: NodeJS.ProcessEnv): ProductionReadinessGate {
   const reasons: string[] = []
-  for (const key of ['ASSET_STORAGE_BUCKET', 'ASSET_STORAGE_REGION', 'ASSET_STORAGE_KMS_KEY_ID'] as const) {
+  for (const key of ['ASSET_STORAGE_BUCKET', 'ASSET_STORAGE_REGION'] as const) {
     if (!source[key]?.trim()) reasons.push(`${key.toLowerCase()}_missing`)
   }
+  const kmsKeyId = source.ASSET_STORAGE_KMS_KEY_ID?.trim()
+  const sseMode = (source.ASSET_STORAGE_SSE_MODE?.trim() || (kmsKeyId ? 'aws:kms' : 'AES256')).toLowerCase()
+  if (!['aes256', 'aws:kms'].includes(sseMode)) reasons.push('asset_storage_sse_mode_invalid')
+  if (sseMode === 'aws:kms' && !kmsKeyId) reasons.push('asset_storage_kms_key_id_missing')
   const endpoint = source.ASSET_STORAGE_ENDPOINT?.trim()
   if (!endpoint) reasons.push('asset_storage_endpoint_missing')
   else {
@@ -7610,8 +7640,9 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
   const modelCostGateConfigured = evaluatePlatformModelCostGate(process.env).ready && Object.values(modelCostEvidenceByModality()).every(Boolean)
   const vaultConfigured = connectorRuntime.credentialProviderConfigured && !fixtureMode
   const localAcceptanceObjectStorage = production && process.env.DEPLOYMENT_PROFILE === 'local_acceptance' && process.env.ALLOW_LOCAL_DURABLE_OBJECT_STORAGE === 'true' && (process.env.ASSET_STORAGE_ROOT?.startsWith('/var/lib/merchant-assets/') ?? false)
+  const configuredSseMode = String(process.env.ASSET_STORAGE_SSE_MODE?.trim() || (configuredEnv('ASSET_STORAGE_KMS_KEY_ID') ? 'aws:kms' : 'AES256')).toLowerCase()
   const objectStorageConfigured = production
-    ? localAcceptanceObjectStorage || (configuredEnv('ASSET_STORAGE_BUCKET') && configuredEnv('ASSET_STORAGE_REGION') && configuredEnv('ASSET_STORAGE_ENDPOINT') && configuredEnv('ASSET_STORAGE_KMS_KEY_ID'))
+    ? localAcceptanceObjectStorage || (configuredEnv('ASSET_STORAGE_BUCKET') && configuredEnv('ASSET_STORAGE_REGION') && configuredEnv('ASSET_STORAGE_ENDPOINT') && ['aes256', 'aws:kms'].includes(configuredSseMode) && (configuredSseMode !== 'aws:kms' || configuredEnv('ASSET_STORAGE_KMS_KEY_ID')))
     : true
   const dataLifecycle = lifecycleDiagnostics()
   const alertNotifications = alertNotificationReadiness()
@@ -7643,9 +7674,9 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
   if (!modelCostGateConfigured) nextActions.push('配置平台模型 RPM、TPM 和每日人民币成本上限；成本门禁未通过时生产模型请求保持阻断')
   if (production && !paymentReadiness.ready) nextActions.push('配置支付宝/微信服务端 checkout provider、商户号、回调验签、对账和退款能力：' + paymentReadiness.reasons.join('、'))
   if (!vaultConfigured) nextActions.push('配置 VAULT_ADDR 和 VAULT_TOKEN（或接入外部凭据服务），让 Codex 安全读取商家授权凭据；不要把平台 token 放进插件参数')
-  if (!objectStorageConfigured) nextActions.push('配置生产对象存储 bucket、region、HTTPS endpoint 和 KMS key，素材上传才可切换到云端持久化')
+  if (!objectStorageConfigured) nextActions.push('配置生产对象存储 bucket、region、HTTPS endpoint、AES256（或显式 aws:kms）及可用凭据链，真实鉴权预检通过后素材上传才可切换到云端持久化')
   if (!dataLifecycle.configured) nextActions.push('补齐生产数据生命周期、对象版本化和告警通道配置；缺少删除与告警门禁时禁止接收真实商家数据')
-  if (production && !alertNotifications.ready) nextActions.push(`配置可验证的告警 Webhook、允许主机和签名密钥：${alertNotifications.reason}`)
+  if (production && alertNotifications.enabled && !alertNotifications.ready) nextActions.push(`已启用的告警通知未就绪；请修复 Webhook、允许主机和签名密钥：${alertNotifications.reason}`)
   if (production && !controlPlaneReadiness.ready) {
     for (const [name, gate] of Object.entries(controlPlaneReadiness.gates)) {
       if (!gate.ready) nextActions.push(`生产控制面 ${name} 未就绪：${gate.reasons.join('、')}`)
@@ -7752,13 +7783,16 @@ function runtimeHealth() {
     },
     writesEnabled: SUPPORTED_PLATFORMS.some(platform => platformWriteReady(platform)),
       setup: setupDiagnostics(),
-    connectors: {
-      ...base.connectors,
-      jd: connectorRuntime.isOAuthConfigured('jd') ? 'configured_provider_required' : base.connectors.jd,
-      taobao: connectorRuntime.isOAuthConfigured('taobao') ? 'configured_provider_required' : base.connectors.taobao,
-      tmall: connectorRuntime.isOAuthConfigured('tmall') ? 'configured_provider_required' : base.connectors.tmall,
-      pinduoduo: connectorRuntime.isOAuthConfigured('pinduoduo') ? 'configured_provider_required' : base.connectors.pinduoduo,
-    },
+    // Keep the health projection aligned with the complete supported-platform
+    // registry. Previously only the first four platforms were overridden here,
+    // so configured Douyin/Xiaohongshu OAuth could be reported as the stale
+    // value from service.health().
+    connectors: Object.fromEntries(SUPPORTED_PLATFORMS.map(platform => [
+      platform,
+      connectorRuntime.isOAuthConfigured(platform)
+        ? 'configured_provider_required'
+        : base.connectors[platform],
+    ])),
   }
 }
 
@@ -8844,7 +8878,7 @@ async function applySignedAssetScanResult(workspaceId: string, asset: import('..
     ? await persistence.outbox.listAggregateEvents(workspaceId, asset.id, 100)
     : (inMemoryTimelineEvents.get(workspaceId) ?? []).filter(event => event.aggregateId === asset.id)
   const scanJob = scanEvents.find(event => event.id === receipt.scan_job_id)
-  const approvedEventTypes = new Set(['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested'])
+  const approvedEventTypes = new Set(['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested', CUSTOMER_DELIVERY_SCAN_EVENT])
   const scanJobSourceRevision = Number(scanJob?.payload.source_revision ?? 1)
   const scanJobMimeType = typeof scanJob?.payload.mime_type === 'string' ? scanJob.payload.mime_type.toLowerCase() : undefined
   if (!scanJob || !approvedEventTypes.has(scanJob.eventType) || scanJob.aggregateId !== asset.id
@@ -8854,6 +8888,7 @@ async function applySignedAssetScanResult(workspaceId: string, asset: import('..
     || (scanJobMimeType !== undefined && scanJobMimeType !== subject.mime_type)) {
     throw new DomainError('ASSET_SCAN_RECEIPT_JOB_BINDING_INVALID', 'asset scan receipt is not bound to the real quarantine outbox event', 409)
   }
+  if (scanJob.eventType === CUSTOMER_DELIVERY_SCAN_EVENT) await recheckCustomerDeliveryScan(scanJob, !hasPersistedReceipt)
   if (hasPersistedReceipt) {
     if (receipt.scan.verdict === 'clean') await resumePromotionCleanup(workspaceId, receipt.receipt_id)
     return asset
@@ -9326,15 +9361,78 @@ async function persistUploadedAssetAndContinuation(
   })
 }
 
-async function uploadAssetForMcp(workspaceId: string, params: JsonObject, req?: IncomingMessage, batchIndex?: number, securityPreflighted = false) {
+type DeliveryUploadContext = { deliveryId: string; purpose: 'contract' | 'video' }
+
+function deliveryUploadBindingId(workspaceId: string, deliveryId: string, purpose: 'contract' | 'video', assetId: string) {
+  return `delivery_asset_binding_${createHash('sha256').update(JSON.stringify([workspaceId, deliveryId, purpose, assetId])).digest('hex')}`
+}
+
+function deliveryUploadAdmission(req: IncomingMessage, workspaceId: string, asset: import('../../../packages/application/src/service.js').AssetMetadata, context: DeliveryUploadContext): DeliveryScanAdmission {
+  const decision = requestAuthorizationDecisions.get(req)
+  const principal = requestPrincipals.get(req)
+  if (!decision?.authorized || !decision.allowed || decision.method !== 'ops.customer-delivery.assets.upload'
+    || decision.capability !== 'customer.delivery.update' || decision.workbench !== 'platform' || decision.scope.required !== 'platform'
+    || principal?.workbench !== 'platform' || !principal.actorId || !principal.identityId) {
+    throw new DomainError('CUSTOMER_DELIVERY_UPLOAD_ADMISSION_DENIED', '交付上传需要已验证的平台授权决策', 403)
+  }
+  return {
+    schema_version: 1, operation: CUSTOMER_DELIVERY_SCAN_OPERATION, decision_id: decision.decision_id,
+    actor_id: principal.actorId, identity_id: principal.identityId, workbench: 'platform', context_id: 'platform:global',
+    capability: 'customer.delivery.update', authorized: true, workspace_id: workspaceId,
+    delivery_id: context.deliveryId, purpose: context.purpose, asset_id: asset.id, asset_revision: asset.revision,
+    source_revision: asset.sourceRevision ?? 1, storage_key: asset.storageKey, sha256: asset.sha256,
+    size_bytes: asset.sizeBytes, mime_type: asset.mimeType.toLowerCase(), request_id: requestId(req),
+    trace_id: getRequestCorrelation(req).traceId, admitted_at: new Date().toISOString(),
+  }
+}
+
+async function recheckCustomerDeliveryScan(event: Parameters<typeof parseDeliveryScanAdmission>[0], requireQuarantine = true) {
+  let admission: DeliveryScanAdmission
+  try { admission = parseDeliveryScanAdmission(event) }
+  catch { throw new DomainError('CUSTOMER_DELIVERY_SCAN_ADMISSION_INVALID', '交付扫描事件缺少精确绑定的平台准入证据', 403) }
+  const repository = persistence.customerDeliveries ?? memoryCustomerDeliveries
+  const delivery = await repository.get(event.workspaceId, admission.delivery_id)
+  const asset = await loadCustomerDeliveryAsset({ workspaceId: event.workspaceId, assetRef: event.aggregateId, business: persistence.business, memoryAssets: service.assets })
+  const expectedKey = !requireQuarantine && asset?.scanStatus === 'clean' ? admission.storage_key.replace(/^quarantine\//u, 'clean/') : admission.storage_key
+  if (!delivery || !asset || asset.storageKey !== expectedKey || asset.sha256 !== admission.sha256
+    || asset.sizeBytes !== admission.size_bytes || asset.mimeType?.toLowerCase() !== admission.mime_type
+    || (asset.sourceRevision ?? 1) !== admission.source_revision
+    || requireQuarantine && asset.scanStatus !== 'quarantined') {
+    throw new DomainError('CUSTOMER_DELIVERY_SCAN_SOURCE_STALE', '交付扫描对象已变化或不属于当前交付档案', 409)
+  }
+  if (!requireQuarantine && asset.scanStatus !== 'quarantined') {
+    const admittedReceipt = typeof asset.scanReceiptId === 'string'
+      ? await (persistence.assetScanReceipts ?? memoryAssetScanReceipts).getByReceiptId(event.workspaceId, asset.scanReceiptId) : undefined
+    const receipt = admittedReceipt?.receipt
+    if (!receipt || !['clean', 'blocked'].includes(asset.scanStatus ?? '') || receipt.scan_job_id !== event.id
+      || admittedReceipt.receiptDigest !== asset.scanReceiptDigest || receipt.subject.asset_id !== asset.id
+      || receipt.subject.workspace_id !== event.workspaceId || receipt.subject.asset_source_revision !== admission.source_revision
+      || receipt.subject.object_key !== admission.storage_key || receipt.subject.sha256 !== admission.sha256
+      || receipt.subject.size_bytes !== admission.size_bytes || receipt.subject.mime_type !== admission.mime_type
+      || receipt.scan.verdict !== asset.scanVerdict || (asset.scanStatus === 'clean') !== (receipt.scan.verdict === 'clean')) {
+      throw new DomainError('CUSTOMER_DELIVERY_SCAN_REPLAY_UNPROVEN', '交付扫描重放缺少本事件已接纳的持久回执', 409)
+    }
+  }
+  return admission
+}
+
+async function uploadAssetForMcp(workspaceId: string, params: JsonObject, req?: IncomingMessage, batchIndex?: number, securityPreflighted = false, deliveryContext?: DeliveryUploadContext) {
   const encoded = required(params, 'content_base64')
-  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(encoded)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'content_base64 无效', 400)
+  if (encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(encoded)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'content_base64 无效', 400)
   let bytes: Uint8Array
   try { bytes = new Uint8Array(Buffer.from(encoded, 'base64')) } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'content_base64 无效', 400) }
   if (!bytes.byteLength) throw new DomainError('ASSET_UPLOAD_LIMIT', 'Codex MCP 单个素材上传限制为 1 字节到 50MB', 413)
   const assetName = required(params, 'name')
   const assetMime = required(params, 'mime_type')
   if (!securityPreflighted) await requireAssetUploadSecurity(workspaceId, assetName, assetMime, bytes, req, batchIndex)
+  const persistQuarantine = async (asset: import('../../../packages/application/src/service.js').AssetMetadata, payload: Record<string, unknown>, continuation?: import('../../../packages/application/src/service.js').ImageGenerationJob) => {
+    if (!deliveryContext) return persistUploadedAssetAndContinuation(workspaceId, asset, 'asset.uploaded', payload, continuation)
+    if (!req || continuation) throw new DomainError('CUSTOMER_DELIVERY_UPLOAD_ADMISSION_DENIED', '交付上传不能携带商家生成续作', 403)
+    const admission = deliveryUploadAdmission(req, workspaceId, asset, deliveryContext)
+    const eventPayload = { ...payload, source_revision: admission.source_revision, mime_type: admission.mime_type, delivery_scan_admission: admission }
+    parseDeliveryScanAdmission({ id: `admission:${admission.decision_id}`, workspaceId, aggregateId: asset.id, eventType: CUSTOMER_DELIVERY_SCAN_EVENT, sequence: asset.revision, payload: eventPayload })
+    await persistAssetSnapshotAndEvent(workspaceId, asset, CUSTOMER_DELIVERY_SCAN_EVENT, eventPayload, asset as unknown as Record<string, unknown>)
+  }
   let applicablePlatforms: Platform[] | undefined
   if (typeof params.applicable_platforms_json === 'string') {
     try { const parsed = JSON.parse(params.applicable_platforms_json); if (!Array.isArray(parsed) || parsed.some(value => !SUPPORTED_PLATFORMS.includes(String(value) as Platform))) throw new Error('applicable_platforms_json'); applicablePlatforms = parsed as Platform[] } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'applicable_platforms_json 必须是支持平台字符串数组 JSON', 400) }
@@ -9354,7 +9452,13 @@ async function uploadAssetForMcp(workspaceId: string, params: JsonObject, req?: 
       const eventType = continuation.continuation?.state === 'awaiting_confirmation' ? 'asset.generation_continuations.awaiting_confirmation' : continuation.continuation?.state === 'awaiting_rights' ? 'asset.generation_continuation.awaiting_rights' : 'asset.generation_continuation.waiting_scan'
       await persistUploadedAssetAndContinuation(workspaceId, provisional, eventType, { asset_id: provisional.id, continuation_job_ids: [] }, continuation)
     } else await persistAssetReference(workspaceId, provisional)
-    if (isTrustedCleanAsset(provisional)) return { ...provisional, ...(continuation ? { generationContinuation: { jobId: continuation.id, state: continuation.continuation!.state } } : {}) }
+    if (isTrustedCleanAsset(provisional)) {
+      if (deliveryContext && req) {
+        const admission = deliveryUploadAdmission(req, workspaceId, provisional, deliveryContext)
+        await persistEvent(workspaceId, deliveryUploadBindingId(workspaceId, deliveryContext.deliveryId, deliveryContext.purpose, provisional.id), 'customer_delivery.asset.upload_reused', provisional.sourceRevision ?? 1, { asset_id: provisional.id, delivery_id: deliveryContext.deliveryId, purpose: deliveryContext.purpose, actor_id: admission.actor_id, decision_id: admission.decision_id })
+      }
+      return { ...provisional, ...(continuation ? { generationContinuation: { jobId: continuation.id, state: continuation.continuation!.state } } : {}) }
+    }
     // A duplicate may still be quarantined even though its original durable
     // scan event has already reached a terminal failure. Treat every
     // non-trusted duplicate as a fresh source revision so re-uploading the
@@ -9365,7 +9469,7 @@ async function uploadAssetForMcp(workspaceId: string, params: JsonObject, req?: 
       const stored = await putQuarantineObject({ workspaceId, assetId: provisional.id, fileName: assetName, contentType: assetMime, body: bytes, expectedSizeBytes: bytes.byteLength, expectedSha256: provisional.sha256 })
       try {
         const rescanning = service.prepareAssetRescan({ workspaceId, assetId: provisional.id, storageKey: stored.key, sizeBytes: stored.sizeBytes, sha256: stored.sha256, mimeType: assetMime })
-        await persistUploadedAssetAndContinuation(workspaceId, rescanning, 'asset.uploaded', { asset_id: rescanning.id, storage_key: stored.key, size_bytes: stored.sizeBytes, sha256: stored.sha256, rescan: true, source_revision: rescanning.sourceRevision }, continuation)
+        await persistQuarantine(rescanning, { asset_id: rescanning.id, storage_key: stored.key, size_bytes: stored.sizeBytes, sha256: stored.sha256, rescan: true, source_revision: rescanning.sourceRevision }, continuation)
         const automated = await automaticallyScanLocalFixture(workspaceId, rescanning)
         return { ...automated.asset, scanAutomation: automated.scanAutomation, ...(continuation ? { generationContinuation: { jobId: continuation.id, state: continuation.continuation!.state } } : {}) }
       } catch (error) {
@@ -9380,7 +9484,7 @@ async function uploadAssetForMcp(workspaceId: string, params: JsonObject, req?: 
     const stored = await putQuarantineObject({ workspaceId, assetId: provisional.id, fileName: provisional.name, contentType: provisional.mimeType, body: bytes, expectedSizeBytes: bytes.byteLength, expectedSha256: provisional.sha256 })
     storedKey = stored.key
     provisional.storageKey = stored.key
-    await persistUploadedAssetAndContinuation(workspaceId, provisional, 'asset.uploaded', { asset_id: provisional.id, storage_key: stored.key, size_bytes: stored.sizeBytes, sha256: stored.sha256 }, continuation)
+    await persistQuarantine(provisional, { asset_id: provisional.id, storage_key: stored.key, size_bytes: stored.sizeBytes, sha256: stored.sha256 }, continuation)
     const automated = await automaticallyScanLocalFixture(workspaceId, provisional)
     return { ...automated.asset, scanAutomation: automated.scanAutomation, ...(continuation ? { generationContinuation: { jobId: continuation.id, state: continuation.continuation!.state } } : {}) }
   } catch (error) {
@@ -9570,6 +9674,7 @@ async function requireWorkerAuthorization(req: IncomingMessage) {
     workerNonceSha256: createHash('sha256').update(nonce).digest('hex'),
     workerVerifiedAt: new Date().toISOString(),
   })
+  verifiedWorkerRequestRoles.set(req, role)
   workerAuthorizedRequests.add(req)
 }
 
@@ -10266,6 +10371,7 @@ async function requireActiveCommercialOffer(repository: CommercialExtensionsRepo
 }
 
 const OPS_DOMAIN_METHODS = new Set([
+  'ops.customer-delivery.assets.upload', 'ops.customer-delivery.assets.get',
   'ops.canonical.backfill.create', 'ops.canonical.backfill.get', 'ops.canonical.backfill.pause', 'ops.canonical.backfill.resume', 'ops.canonical.backfill.run',
   'ops.canonical.backfill.conflicts.list', 'ops.canonical.backfill.conflict.claim', 'ops.canonical.backfill.conflict.resolve',
   'ops.support.tickets.list', 'ops.support.ticket.get', 'ops.support.ticket.create', 'ops.support.ticket.assign', 'ops.support.ticket.transition', 'ops.support.ticket.comment', 'ops.support.sla.report', 'ops.support.sla.correction.create', 'ops.support.sla.correction.decide',
@@ -11068,7 +11174,13 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     const validation = validateMcpRequest(input)
     if (!validation.valid) throw new DomainError(ERROR_CODES.INVALID_REQUEST, validation.errors.join('; '), 400)
   }
-  if (isOpsDomainMethod) assertBoundedOpsParams(params)
+  if (isOpsDomainMethod) {
+    // File bytes have their own 50 MiB upload limit and the shared 70 MiB
+    // transport cap; every other ops field retains the 128 KiB control cap.
+    const boundedParams = method === 'ops.customer-delivery.assets.upload'
+      ? Object.fromEntries(Object.entries(params).filter(([key]) => key !== 'content_base64')) : params
+    assertBoundedOpsParams(boundedParams)
+  }
   if (isCampaignLifecycleMethod) assertCampaignLifecycleParams(method, params)
   await enforceMcpWorkbenchBoundary(req, workspaceId, method, params)
   if (method !== 'workspace.bootstrap' && !bypassWorkspaceLifecycleGate) {
@@ -11768,8 +11880,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
                 ? '查看这个商品的发布前检查'
                 : '查看当前工作区状态'
       return result({
-        greeting: '欢迎使用大麦。',
-        productName: '大麦商家营销助手',
+        greeting: '欢迎使用Store Nova。',
+        productName: 'Store Nova商家营销助手',
         workspace: { id: workspaceId, status: (await getWorkspaceStatus(workspaceId)) === 'active' ? 'ready' : 'disabled' },
         currentStep: { ...current, primaryAction: onboardingV2.current_step.primary_action },
         onboarding_v2: onboardingV2,
@@ -11862,7 +11974,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       onboarding_v2: onboardingV2,
       storeSelection: { requiredForStoreActions: true, key: 'platform + accountId', warning: '别名和店铺名只用于展示与候选匹配，不能替代账号范围确认' },
       capabilityCards: {
-        title: '大麦工作台',
+        title: 'Store Nova工作台',
         presentation: 'conversation_cards',
         instruction: '优先展示这些卡片；商家选择卡片后再调用 entryMethod，不要求商家记忆工具名或内部 ID。店铺级操作先展示导航列表并确认平台与账号范围。',
         navigation: {
@@ -12051,6 +12163,42 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result(await (persistence.usage ?? memoryUsage).get(workspaceId))
     case 'ops.customer-delivery.list':
       return result({ items: await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).list(workspaceId)) })
+    case 'ops.customer-delivery.assets.upload': {
+      await persistenceReady
+      const deliveryId = requiredStringValue(params, 'deliveryId', 'delivery_id')
+      const delivery = await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).get(workspaceId, deliveryId))
+      if (!delivery) throw new DomainError('CUSTOMER_DELIVERY_NOT_FOUND', '客户交付档案不存在', 404)
+      const validated = validateCustomerDeliveryUpload(params)
+      if (persistence.business) await hydrateWorkspaceFromPersistence(workspaceId)
+      const asset = await uploadAssetForMcp(workspaceId, {
+        name: requiredStringValue(params, 'name'), mime_type: validated.mimeType,
+        content_base64: requiredStringValue(params, 'content_base64'), sha256: validated.sha256,
+        rights_scope: 'internal_only', usage_scopes_json: JSON.stringify([`customer_delivery_${validated.purpose}`]),
+      }, req, undefined, false, { deliveryId, purpose: validated.purpose })
+      const view = customerDeliveryUploadView(asset, validated.purpose)
+      await recordOperationAudit({ workspaceId, actorId: requestActor(req), action: 'customer_delivery.asset.upload', resourceType: 'customer_delivery', resourceId: deliveryId, before: {}, after: { asset_ref: view.assetRef, purpose: validated.purpose, sha256: validated.sha256, size_bytes: view.sizeBytes, scan_status: view.scanStatus }, reason: '上传客户交付文件到隔离区，扫描通过后才可登记使用' })
+      return result(view)
+    }
+    case 'ops.customer-delivery.assets.get': {
+      await persistenceReady
+      const deliveryId = requiredStringValue(params, 'deliveryId', 'delivery_id')
+      const delivery = await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).get(workspaceId, deliveryId))
+      if (!delivery) throw new DomainError('CUSTOMER_DELIVERY_NOT_FOUND', '客户交付档案不存在', 404)
+      const assetRef = requiredStringValue(params, 'assetRef', 'asset_ref')
+      const purpose = customerDeliveryUploadPurpose(params.purpose)
+      const uploadEvents = persistence.outbox ? await persistence.outbox.listAggregateEvents(workspaceId, assetRef, 1000)
+        : (inMemoryTimelineEvents.get(workspaceId) ?? []).filter(event => event.aggregateId === assetRef)
+      const bindingId = deliveryUploadBindingId(workspaceId, deliveryId, purpose, assetRef)
+      const bindingEvents = persistence.outbox ? await persistence.outbox.listAggregateEvents(workspaceId, bindingId, 1)
+        : (inMemoryTimelineEvents.get(workspaceId) ?? []).filter(event => event.aggregateId === bindingId)
+      const belongsToDelivery = bindingEvents.some(event => event.eventType === 'customer_delivery.asset.upload_reused' && event.payload.asset_id === assetRef && event.payload.delivery_id === deliveryId && event.payload.purpose === purpose) || uploadEvents.some(event => {
+        if (event.eventType !== CUSTOMER_DELIVERY_SCAN_EVENT) return false
+        try { const admission = parseDeliveryScanAdmission(event); return admission.delivery_id === deliveryId && admission.purpose === purpose } catch { return false }
+      })
+      if (!belongsToDelivery) throw new DomainError('CUSTOMER_DELIVERY_UPLOAD_NOT_FOUND', '文件不存在或不属于当前交付档案', 404)
+      const asset = await loadCustomerDeliveryAsset({ workspaceId, assetRef, business: persistence.business, memoryAssets: service.assets })
+      return result(customerDeliveryUploadView(asset, purpose))
+    }
     case 'ops.customer-delivery.get': {
       const deliveryId = requiredStringValue(params, 'deliveryId', 'delivery_id')
       const delivery = await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).get(workspaceId, deliveryId))
@@ -14562,12 +14710,16 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'billing.transactions': {
       const { scope, actorId } = billingReadScope(req, params)
       const limit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Math.min(100, Math.max(1, Number(params.limit))) : 20
+      const offset = typeof params.offset === 'string' && /^\d+$/u.test(params.offset) ? Math.max(0, Number(params.offset)) : 0
       await persistenceReady
       if (persistence.billing) {
-        const [balanceFen, transactions] = await Promise.all([persistence.billing.balanceFen(workspaceId), persistence.billing.listTransactions(workspaceId, limit, scope === 'mine' ? actorId : undefined)])
-        return result({ scope, wallet_scope: 'workspace', balance_cny: (balanceFen / 100).toFixed(2), transactions: transactions.map(publicMoneyRecord), legacy_unattributed_hidden: scope === 'mine' })
+        const [balanceFen, allTransactions] = await Promise.all([persistence.billing.balanceFen(workspaceId), persistence.billing.listTransactions(workspaceId, 10000, scope === 'mine' ? actorId : undefined)])
+        const transactions = allTransactions.slice(offset, offset + limit)
+        return result({ scope, wallet_scope: 'workspace', balance_cny: (balanceFen / 100).toFixed(2), transactions: transactions.map(publicMoneyRecord), offset, limit, total: allTransactions.length, has_more: offset + transactions.length < allTransactions.length, legacy_unattributed_hidden: scope === 'mine' })
       }
-      return result({ scope, wallet_scope: 'workspace', balance_cny: (walletBalanceFen(workspaceId) / 100).toFixed(2), transactions: walletTransactions.filter(item => item.workspaceId === workspaceId && (scope === 'workspace' || item.actorId === actorId)).slice(-limit).reverse().map(publicMoneyRecord), legacy_unattributed_hidden: scope === 'mine' })
+      const allTransactions = walletTransactions.filter(item => item.workspaceId === workspaceId && (scope === 'workspace' || item.actorId === actorId)).sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      const transactions = allTransactions.slice(offset, offset + limit)
+      return result({ scope, wallet_scope: 'workspace', balance_cny: (walletBalanceFen(workspaceId) / 100).toFixed(2), transactions: transactions.map(publicMoneyRecord), offset, limit, total: allTransactions.length, has_more: offset + transactions.length < allTransactions.length, legacy_unattributed_hidden: scope === 'mine' })
     }
     case 'billing.refund': {
       const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'finance'])
@@ -18042,7 +18194,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     try {
       const account = await passwordAuthRepository.reviewMerchantRegistration({ login, decision, workspaceIds, actorId: requestActor(req), reason })
       return send(res, 200, 'unknown', { application_id: account.id, login: account.login, status: account.status, workspace_ids: account.workspaceIds, revision: account.revision }, null, req)
-    } catch (error) { const code = (error as { code?: string }).code; throw new DomainError(code ?? 'AUTH_REGISTRATION_REVIEW_FAILED', code === 'AUTH_ACCOUNT_NOT_FOUND' ? '注册申请不存在' : code === 'AUTH_REGISTRATION_STATE_INVALID' ? '该申请已审核，不能重复操作' : '注册申请审核失败', code === 'AUTH_ACCOUNT_NOT_FOUND' ? 404 : 400) }
+    } catch (error) { const code = (error as { code?: string }).code; throw new DomainError(code ?? 'AUTH_REGISTRATION_REVIEW_FAILED', code === 'AUTH_ACCOUNT_NOT_FOUND' ? '开通申请不存在' : code === 'AUTH_REGISTRATION_STATE_INVALID' ? '该申请已处理，不能重复操作' : '开通审核失败', code === 'AUTH_ACCOUNT_NOT_FOUND' ? 404 : 400) }
   }
   if (req.method === 'POST' && path === '/v1/ops/merchant-accounts/authorize') {
     requireOperationsRole(req, ['platform_ops'])
@@ -18075,7 +18227,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     }
     const accounts = await passwordAuthRepository.listAccounts()
     const account = accounts.find(item => item.login === login && item.accountType === 'merchant')
-    if (!account) throw new DomainError('AUTH_ACCOUNT_NOT_FOUND', '商家账号不存在，请先创建或提交注册申请', 404)
+    if (!account) throw new DomainError('AUTH_ACCOUNT_NOT_FOUND', '商家账号不存在，请先由平台运营创建账号并分配工作区', 404)
     if (account.status === 'suspended' || account.status === 'revoked') throw new DomainError('AUTH_ACCOUNT_NOT_ACTIVE', '商家账号当前已停用，不能授权开通', 403)
     if ((await getWorkspaceStatus(workspaceId)) !== 'active') throw new DomainError('AUTH_WORKSPACE_NOT_FOUND', '企业工作区不存在或未启用', 400)
     const resourceId = `${login.replaceAll('@', '_at_')}:${workspaceId}`
@@ -20437,6 +20589,15 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     await requireWorkerCredentialAuthorization(req)
     const workspaceId = resolveWorkspace(req)
     const aggregateId = url.searchParams.get('aggregate_id')?.trim() ?? ''
+    if (url.searchParams.get('operation')?.trim() === CUSTOMER_DELIVERY_SCAN_OPERATION) {
+      if (verifiedWorkerRequestRoles.get(req) !== 'scan') throw new DomainError(ERROR_CODES.FORBIDDEN, '交付扫描只允许已验证签名的 scan worker', 403)
+      if (!aggregateId) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'aggregate_id 无效', 400)
+      if (!persistence.outbox || !persistence.business || !persistence.customerDeliveries) throw new DomainError('CUSTOMER_DELIVERY_SCAN_REPOSITORY_UNAVAILABLE', '交付扫描持久仓储不可用', 503)
+      const event = (await persistence.outbox.listAggregateEvents(workspaceId, aggregateId, 1000)).find(candidate => candidate.id === workerExecutionCheckMatch[1])
+      if (!event) throw new DomainError('AUTHORIZATION_EVENT_NOT_FOUND', '交付扫描事件不存在或不属于当前工作区', 404)
+      const admission = await recheckCustomerDeliveryScan(event, false)
+      return send(res, 200, workspaceId, { delivery_scan_recheck: { ...admission, recheck_id: `delivery_recheck_${randomUUID()}`, event_id: event.id, allowed: true, ready: true, checked_at: new Date().toISOString() } }, null, req)
+    }
     const requestedOperation = url.searchParams.get('operation')?.trim() as CriticalWorkerOperation
     if (!aggregateId || !Object.values(workerEventOperations).includes(requestedOperation)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'aggregate_id 或 operation 无效', 400)
     if (!persistence.outbox) throw new DomainError('AUTHORIZATION_EVENT_REPOSITORY_UNAVAILABLE', '持久事件仓储不可用，已拒绝执行', 503)

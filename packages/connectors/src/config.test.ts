@@ -27,6 +27,37 @@ describe('platform HTTP configuration', () => {
     expect(result.configs.jd).toBeUndefined()
   })
 
+  it('loads release-bound production capability evidence into runtime readiness', () => {
+    const verifiedAt = new Date(Date.now() - 60_000).toISOString()
+    const capabilities = Object.fromEntries(['authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'].map(capability => [capability, {
+      state: 'production_canary', evidence_ref: `artifact://production/jd/${capability}#${'a'.repeat(64)}`, verified_by: 'platform-qa', verified_at: verifiedAt, api_version: 'v1', scope: 'item.read',
+    }]))
+    const source = {
+      ...base, NODE_ENV: 'production', RELEASE_ID: 'release-1', JD_APP_SECRET: 'signer-secret',
+      JD_SYNC_PATH: '/products', JD_CREATE_PATH: '/products/create', JD_UPDATE_PATH: '/products/update', JD_QUERY_PATH: '/products/status',
+      JD_MEDIA_UPLOAD_PATH: '/media/upload', JD_MEDIA_ID_PATH: 'data.media_id',
+      JD_MEDIA_UPLOAD_EVIDENCE_VERSION: 'media-v1', JD_MEDIA_UPLOAD_EVIDENCE_REF: 'artifact://production/jd/media', JD_MEDIA_UPLOAD_EVIDENCE_VERIFIED_BY: 'platform-qa', JD_MEDIA_UPLOAD_EVIDENCE_VERIFIED_AT: verifiedAt,
+      JD_MAPPING_EVIDENCE_VERSION: 'mapping-v1', JD_MAPPING_EVIDENCE_REF: 'artifact://production/jd/mapping', JD_MAPPING_EVIDENCE_VERIFIED_BY: 'platform-qa', JD_MAPPING_EVIDENCE_VERIFIED_AT: verifiedAt,
+      PLATFORM_CAPABILITY_EVIDENCE_JSON: JSON.stringify({ schema_version: '1', release_id: 'release-1', environment: 'production', simulated: false, platforms: [{ platform: 'jd', application_id: 'jd-app', test_store_id: 'jd-store', capabilities }] }),
+    }
+    const result = buildHttpConnectorConfigs(source)
+    expect(result.allConfigs.jd?.capabilityEvidence).toHaveLength(9)
+    expect(result.readiness.jd.reasons).not.toContain('CAPABILITY_EVIDENCE_MISSING')
+    expect(result.readiness.jd.reasons).not.toContain('MEDIA_UPLOAD_MAPPING_MISSING')
+  })
+
+  it('rejects capability evidence from another release or a simulated run', () => {
+    const common = { ...base, NODE_ENV: 'production', RELEASE_ID: 'release-1', JD_SYNC_PATH: '/products', JD_CREATE_PATH: '/products/create', JD_UPDATE_PATH: '/products/update', JD_QUERY_PATH: '/products/status' }
+    for (const document of [
+      { schema_version: '1', release_id: 'release-2', environment: 'production', simulated: false, platforms: [] },
+      { schema_version: '1', release_id: 'release-1', environment: 'production', simulated: true, platforms: [] },
+    ]) {
+      const result = buildHttpConnectorConfigs({ ...common, PLATFORM_CAPABILITY_EVIDENCE_JSON: JSON.stringify(document) })
+      expect(result.allConfigs.jd?.capabilityEvidence).toBeUndefined()
+      expect(result.readiness.jd.reasons).toContain('CAPABILITY_EVIDENCE_MISSING')
+    }
+  })
+
   it('builds four independent configs and does not merge taobao with tmall', () => {
     const result = buildHttpConnectorConfigs(base)
     expect(Object.keys(result.configs)).toEqual([])

@@ -1,8 +1,8 @@
-# 大麦商家工作台 v2 架构设计
+# Store Nova商家工作台 v2 架构设计
 
 **版本**：v2.0  
 **日期**：2026-09-11  
-**对应需求**：[damai-merchant-studio-prd-v2.md](damai-merchant-studio-prd-v2.md)
+**对应需求**：[store-nova-merchant-studio-prd-v2.md](store-nova-merchant-studio-prd-v2.md)
 
 ## 1. 架构目标
 

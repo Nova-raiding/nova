@@ -1,4 +1,4 @@
-# 大麦 Codex 插件
+# Store Nova Codex 插件
 
 当前 `tools/list` 实测为 151 个 MCP 工具（即当前 `tools/list` 为 151 个 MCP 工具），以运行态契约测试为准；数量可能随共享注册表变化，不作为生产就绪证明。
 
@@ -9,7 +9,7 @@
 - `.mcp.json`：Codex 标准 stdio MCP 配置；`mcp/bridge.mjs` 将标准 `tools/list`、`tools/call` 转发到现有 API 的 `/mcp` 业务方法。
 - `mcp/bridge.mjs`：插件侧传输适配器，固定注入 `X-Workspace-Id`，并将 API 的统一 envelope 解包为 Codex MCP 响应。
 
-交给技术安装人员或商家时，先阅读仓库根目录的[安装与配置手册](../../docs/damai-chatgpt-plugin-install-manual.md)。手册包含 marketplace 安装、macOS launchd 环境、工作区绑定、模型中转边界、重启验收和 `MCP_CONFIGURATION_REQUIRED` 排障；不要把下面的开发环境示例直接复制到生产商家电脑。
+交给技术安装人员或商家时，先阅读仓库根目录的[安装与配置手册](../../docs/store-nova-chatgpt-plugin-install-manual.md)。手册包含 marketplace 安装、macOS launchd 环境、工作区绑定、模型中转边界、重启验收和 `MCP_CONFIGURATION_REQUIRED` 排障；不要把下面的开发环境示例直接复制到生产商家电脑。
 
 ## 商品视频策划
 
@@ -63,11 +63,11 @@ bridge 对缺失或未解析的 `${MERCHANT_MCP_BASE_URL}`、`${MERCHANT_WORKSPA
 
 ## 安装后第一步
 
-### ChatGPT 宿主模型与大麦业务模型
+### ChatGPT 宿主模型与Store Nova业务模型
 
-聊天编排使用 ChatGPT/Codex 的宿主模型；商品文案、OCR、主图、图片编辑和视频使用服务端配置的大麦业务中转。插件不能替宿主模型申请容量，也不会把业务模型伪装成 ChatGPT 的模型选项。宿主出现 `Selected model is at capacity` 时，消息尚未进入插件 MCP，需等待容量恢复或在 ChatGPT 模型选择器切换可用模型。
+聊天编排使用 ChatGPT/Codex 的宿主模型；商品文案、OCR、主图、图片编辑和视频使用服务端配置的Store Nova业务中转。插件不能替宿主模型申请容量，也不会把业务模型伪装成 ChatGPT 的模型选项。宿主出现 `Selected model is at capacity` 时，消息尚未进入插件 MCP，需等待容量恢复或在 ChatGPT 模型选择器切换可用模型。
 
-如果团队要让宿主对话也经过大麦中转站，安装后由管理员在启动 ChatGPT 的用户环境执行一次：
+如果团队要让宿主对话也经过Store Nova中转站，安装后由管理员在启动 ChatGPT 的用户环境执行一次：
 
 ```bash
 CODEX_RELAY_BASE_URL="https://ai.wormholexyz.xyz/v1" \

@@ -90,9 +90,9 @@ export function OpsSidebar({
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }} className="ops-sider">
       <div className="brand-mark">
-        <span>大麦</span>
+        <span>Store Nova</span>
         <div>
-          <strong>大麦运营中心</strong>
+          <strong>Store Nova运营中心</strong>
           <small>平台运营后台</small>
         </div>
       </div>

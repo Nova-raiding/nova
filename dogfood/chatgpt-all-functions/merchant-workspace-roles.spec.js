@@ -64,7 +64,7 @@ test('browser merchant workbench preserves role-specific session context', async
   for (const role of roles) {
     activeToken = role.token
     await page.goto(studioUrl, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('body')).toContainText('大麦')
+    await expect(page.locator('body')).toContainText('Store Nova')
     await expect(page.locator('.environment-banner')).toBeVisible()
     expect(observedAuth.at(-1)).toBe(`Bearer ${role.token}`)
   }

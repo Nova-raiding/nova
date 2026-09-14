@@ -17,6 +17,8 @@ import {
   message,
 } from "antd";
 import { deliveryDateTimeInputValue } from "./deliveryDateTime.js";
+import { CustomerDeliveryUpload } from "./CustomerDeliveryUpload.js";
+import type { CustomerDeliveryAsset, CustomerDeliveryAssetPurpose } from "../../api/customerDeliveryClient.js";
 
 export type DeliveryStepKey =
   "profile" | "integration" | "acceptance" | "training" | "video";
@@ -181,6 +183,8 @@ export function CustomerDeliverySection({
   onTrainingSave,
   onVideoAdd,
   onVideoList,
+  onAssetUpload,
+  onAssetGet,
 }: {
   disabled?: boolean;
   records?: CustomerDeliveryRecord[];
@@ -211,12 +215,15 @@ export function CustomerDeliverySection({
   onVideoList?: (
     record: CustomerDeliveryRecord,
   ) => Promise<CustomerDeliveryVideoItem[]>;
+  onAssetUpload?: (record: CustomerDeliveryRecord, file: File, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
+  onAssetGet?: (record: CustomerDeliveryRecord, assetRef: string, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
 }) {
   const [selected, setSelected] = useState<CustomerDeliveryRecord>();
   const [step, setStep] = useState<DeliveryStepKey>("profile");
   const [blockedCompany, setBlockedCompany] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [loadingStep, setLoadingStep] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const detailRequest = useRef(0);
   const [creating, setCreating] = useState(false);
   const [videoItems, setVideoItems] = useState<CustomerDeliveryVideoItem[]>([]);
@@ -233,6 +240,7 @@ export function CustomerDeliverySection({
     }
     setBlockedCompany(undefined);
     const request = ++detailRequest.current;
+    setUploading(false);
     setLoadingStep(true);
     setSelected(row);
     setStep(next);
@@ -306,7 +314,8 @@ export function CustomerDeliverySection({
     }
   };
   const save = async (values: Record<string, unknown>) => {
-    if (!selected) return;
+    if (!selected || uploading) return;
+    const request = detailRequest.current;
     const next = {
       ...selected,
       ...values,
@@ -323,10 +332,7 @@ export function CustomerDeliverySection({
           : selected.acceptance,
       training:
         step === "training" ? Boolean(values.training) : selected.training,
-      videos:
-        step === "video"
-          ? ((values.videoUrls as string[]) ?? []).length
-          : selected.videos,
+      videos: selected.videos,
     };
     setSaving(true);
     try {
@@ -364,23 +370,49 @@ export function CustomerDeliverySection({
           .filter(Boolean);
         if (!refs.length)
           throw new Error("请填写至少一个已上传视频的 asset_ref");
-        for (const [index, assetRef] of refs.entries())
+        for (const [index, assetRef] of refs.entries()) {
           persisted = await onVideoAdd(selected, {
             title: `${selected.companyName} 交付视频 ${selected.videos + index + 1}`,
             assetRef,
             sortOrder: selected.videos + index,
           });
-        if (onVideoList) setVideoItems(await onVideoList(selected));
+          next.videos = selected.videos + index + 1;
+          if (!persisted) next.revision = undefined;
+          if (request === detailRequest.current) {
+            // Keep only unregistered references so a partial failure is safely
+            // retryable without registering earlier successful segments twice.
+            form.setFieldValue("videoAssetRefs", refs.slice(index + 1).join("\n"));
+            const savedRecord = persisted ?? { ...selected, videos: next.videos, revision: undefined };
+            setSelected((current) => current?.id === selected.id ? savedRecord : current);
+          }
+        }
+        if (onVideoList) {
+          const videos = await onVideoList(selected);
+          if (request === detailRequest.current) setVideoItems(videos);
+        }
       } else if (step === "profile") {
         if (!onSave) throw new Error("客户档案保存接口未配置");
         persisted = await onSave(next);
       }
       const finalRecord =
         persisted && typeof persisted === "object" ? persisted : next;
-      setSelected((current) => current?.id === selected.id ? finalRecord : current);
+      if (request === detailRequest.current) setSelected((current) => current?.id === selected.id ? finalRecord : current);
       message.success("已保存");
     } catch (error) {
       message.error(error instanceof Error ? error.message : "客户交付保存失败");
+      if (step === "video" && onVideoList && request === detailRequest.current) {
+        try {
+          const videos = await onVideoList(selected);
+          if (request === detailRequest.current) {
+            setVideoItems(videos);
+            // A response can be lost after a successful write. Reconcile
+            // persisted references before offering a retry of pending ones.
+            const registeredRefs = new Set(videos.map((video) => video.assetRef));
+            const remainingRefs = String(form.getFieldValue("videoAssetRefs") ?? "").split(/[\n,]/u).map((value) => value.trim()).filter((value) => value && !registeredRefs.has(value));
+            form.setFieldValue("videoAssetRefs", remainingRefs.join("\n"));
+          }
+        } catch { /* The original save error remains visible; do not replace it. */ }
+      }
     } finally {
       setSaving(false);
     }
@@ -650,6 +682,15 @@ export function CustomerDeliverySection({
                   >
                     <Input placeholder="asset_ref 或 https://... 合同链接" />
                   </Form.Item>
+                  <CustomerDeliveryUpload
+                    key={`${selected.id}:contract:${detailRequest.current}`}
+                    purpose="contract"
+                    disabled={loadingStep || saving}
+                    onUpload={onAssetUpload ? (file, purpose, signal) => onAssetUpload(selected, file, purpose, signal) : undefined}
+                    onGetAsset={onAssetGet ? (assetRef, purpose, signal) => onAssetGet(selected, assetRef, purpose, signal) : undefined}
+                    onReady={(asset) => form.setFieldValue("contractFile", asset.assetRef)}
+                    onBusyChange={setUploading}
+                  />
                   <Typography.Text type="secondary">
                     素材编号须通过服务端安全核验；HTTPS 链接作为外部合同凭证保存，不代表已完成平台扫描。
                   </Typography.Text>
@@ -748,8 +789,20 @@ export function CustomerDeliverySection({
                       </Space>
                     </Card>
                   ) : (
-                    <Alert type="info" showIcon message="尚未登记交付视频" description="请填写已完成安全扫描的 asset_ref；保存后会显示在这里。" />
+                    <Alert type="info" showIcon message="尚未登记交付视频" description="上传视频或填写已完成安全扫描的素材编号；保存后会显示在这里。" />
                   )}
+                  <CustomerDeliveryUpload
+                    key={`${selected.id}:video:${detailRequest.current}`}
+                    purpose="video"
+                    disabled={loadingStep || saving}
+                    onUpload={onAssetUpload ? (file, purpose, signal) => onAssetUpload(selected, file, purpose, signal) : undefined}
+                    onGetAsset={onAssetGet ? (assetRef, purpose, signal) => onAssetGet(selected, assetRef, purpose, signal) : undefined}
+                    onReady={(asset) => {
+                      const refs = String(form.getFieldValue("videoAssetRefs") ?? "").split(/[\n,]/u).map((value) => value.trim()).filter(Boolean);
+                      form.setFieldValue("videoAssetRefs", [...new Set([...refs, asset.assetRef])].join("\n"));
+                    }}
+                    onBusyChange={setUploading}
+                  />
                   <Form.Item name="videoAssetRefs" label="交付视频（支持多段）">
                     <Input.TextArea
                       rows={4}
@@ -757,11 +810,11 @@ export function CustomerDeliverySection({
                     />
                   </Form.Item>
                   <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-                    本页仅登记已有视频素材编号，不执行文件上传；素材须属于当前工作区且已通过可信安全扫描。
+                    也可手工登记已有视频素材编号；素材须属于当前工作区且已通过可信安全扫描。
                   </Typography.Paragraph>
                 </>
               )}
-              <Button type="primary" htmlType="submit" loading={saving || loadingStep}>
+              <Button type="primary" htmlType="submit" loading={saving || loadingStep} disabled={uploading}>
                 保存当前环节
               </Button>
             </Form>

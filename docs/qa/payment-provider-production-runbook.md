@@ -11,7 +11,6 @@
 - `ALIPAY_APP_ID`
 - `ALIPAY_APP_PRIVATE_KEY` 或 `ALIPAY_APP_PRIVATE_KEY_PATH`
 - `ALIPAY_PUBLIC_KEY` 或 `ALIPAY_PUBLIC_KEY_PATH`
-- `PAYMENT_GATEWAY_API_KEY`
 - `PAYMENT_CALLBACK_SECRET`
 - `PAYMENT_PROVIDER_API_KEY`
 - `PAYMENT_PROVIDER_MERCHANT_ID`
@@ -26,6 +25,14 @@
 - `PAYMENT_CALLBACK_BASE_URL=https://<merchant-host>/v1`
 - `PAYMENT_RECONCILIATION_ENABLED=true`
 - `PAYMENT_REFUND_ENABLED=true`
+
+`PAYMENT_PROVIDER_API_KEY` 是 API 调用支付网关与网关校验请求共同使用的服务端 Bearer 密钥，ECS Compose 会把同一个 Secret 注入两端。不要再创建独立的 `PAYMENT_GATEWAY_API_KEY`，否则两个值漂移后所有 checkout/query/refund 都会返回 401。
+
+当前 ECS HTTPS 网关对外暴露支付服务时，三个 provider URL 应为：
+
+- `https://<merchant-host>/payment-gateway/v1/checkout`
+- `https://<merchant-host>/payment-gateway/v1/query`
+- `https://<merchant-host>/payment-gateway/v1/refund`
 
 回调地址必须是公网 HTTPS，并且只允许：
 

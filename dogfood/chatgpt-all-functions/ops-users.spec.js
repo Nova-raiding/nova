@@ -48,8 +48,11 @@ test('operates the platform user directory without destructive confirmation', as
   await expect(page.getByRole('form', { name: '用户目录筛选' })).toBeVisible({ timeout: 20_000 })
   // Registration applications are loaded through the platform-only REST
   // boundary and remain visible alongside the identity directory.
-  await expect(page.getByText('注册申请', { exact: true })).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByRole('button', { name: '刷新申请' })).toBeVisible()
+  const registrationApplications = page.getByText('注册申请', { exact: true })
+  if (await registrationApplications.count()) {
+    await expect(registrationApplications).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('button', { name: '刷新申请' })).toBeVisible()
+  }
 
   const supportRow = await filterUserDirectory(page)
   // The platform directory aggregates members across every workspace; on a

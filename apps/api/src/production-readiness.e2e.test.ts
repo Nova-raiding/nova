@@ -40,6 +40,7 @@ const productionEnvironment = (): NodeJS.ProcessEnv => ({
   ASSET_STORAGE_BUCKET: 'merchant-assets',
   ASSET_STORAGE_REGION: 'cn-test-1',
   ASSET_STORAGE_ENDPOINT: 'https://storage.example.test',
+  ASSET_STORAGE_SSE_MODE: 'aws:kms',
   ASSET_STORAGE_KMS_KEY_ID: 'kms-key-ref',
   PUBLIC_ASSET_BASE_URL: 'https://merchant.example.test',
   ASSET_DISPLAY_URL_SIGNING_SECRET: 'production-display-signing-secret-32-bytes-minimum',
@@ -207,6 +208,17 @@ describe('production readiness fail-closed', () => {
     const result = productionReadinessDiagnostics(environment)
     expect(result.ready).toBe(false)
     expect(result.gates[gate]).toMatchObject({ ready: false })
+  })
+
+  it('does not block production when optional alert notifications are entirely disabled', () => {
+    const environment = productionEnvironment()
+    delete environment.OPS_ALERT_WEBHOOK_URL
+    delete environment.OPS_ALERT_WEBHOOK_ALLOWED_HOSTS
+    delete environment.OPS_ALERT_WEBHOOK_SECRET
+    environment.OPS_ALERT_NOTIFICATIONS_ENABLED = 'false'
+    const result = productionReadinessDiagnostics(environment)
+    expect(result.gates.alerts).toEqual({ ready: true, reasons: [] })
+    expect(result.ready).toBe(true)
   })
 
   it.each([

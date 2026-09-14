@@ -20,6 +20,7 @@ const paymentEnvironment = {
   ALIPAY_APP_ID: 'test-alipay-app',
   MERCHANT_API_TOKEN: 'test-merchant-token',
   MERCHANT_WORKSPACE_ID: 'ws_pilot_parity',
+  CAPABILITY_EVIDENCE_PATH: '/tmp/test-capability-evidence.json',
 }
 
 const requiredPaymentKeys = [
@@ -70,6 +71,10 @@ describe('ECS pilot API replica parity', () => {
       'PUBLIC_OAUTH_REDIRECT_URI',
       'MERCHANT_BEARER_HOSTNAME',
       'ALLOWED_ORIGINS',
+      'OPS_ALERT_NOTIFICATIONS_ENABLED',
+      'OPS_ALERT_WEBHOOK_URL',
+      'OPS_ALERT_WEBHOOK_ALLOWED_HOSTS',
+      'OPS_ALERT_WEBHOOK_SECRET',
       'PAYMENT_MODE',
       'PAYMENT_PROVIDER_ADAPTERS',
       'PAYMENT_CHECKOUT_BASE_URL',
@@ -85,11 +90,24 @@ describe('ECS pilot API replica parity', () => {
       'PAYMENT_ONE_FEN_TEST_ENABLED',
       'PAYMENT_ONE_FEN_TEST_WORKSPACE_ID',
       'COMMERCIAL_PAYMENT_PROVIDER',
+      'NODE_ENV',
+      'CONNECTOR_FIXTURE_MODE',
+      'PLUGIN_WRITE_ENABLED',
+      'CAPABILITY_EVIDENCE_PATH',
+      'VAULT_ADDR',
+      'JD_APP_KEY',
+      'JD_API_BASE_URL',
+      'TAOBAO_APP_KEY',
+      'TMALL_APP_KEY',
+      'PDD_CLIENT_ID',
+      'XHS_CLIENT_ID',
+      'DOUYIN_CLIENT_ID',
     ]
 
     expect(api).toBeDefined()
     expect(replica).toBeDefined()
     for (const key of invariantKeys) expect(replica?.[key]).toBe(api?.[key])
+    expect(api).toMatchObject({ NODE_ENV: 'production', CONNECTOR_FIXTURE_MODE: 'false', PLUGIN_WRITE_ENABLED: 'false', CAPABILITY_EVIDENCE_PATH: '/run/release-evidence/platform-capability.json' })
     expect(services['payment-gateway']?.environment?.PAYMENT_GATEWAY_API_KEY)
       .toBe(api?.PAYMENT_PROVIDER_API_KEY)
   })

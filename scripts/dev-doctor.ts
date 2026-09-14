@@ -226,7 +226,7 @@ try {
     : 'relay runtime contract 不可解析', '逐模态补齐 provider 配置与成本门禁；未就绪时阻断真实模型调用。')
   add('commercial:object_storage', level(readiness?.objectStorageReady), `对象存储 mode=${readiness?.objectStorageMode ?? 'unknown'}, ready=${String(readiness?.objectStorageReady)}`, '配置真实对象存储/KMS/scanner 证据；local 模式不满足生产门禁。')
   add('commercial:scanner', level(readiness?.scannerReady), `scanner ready=${String(readiness?.scannerReady)}`, '配置非 fixture scanner、签名回执和新鲜度证据；仅容器存活不满足生产门禁。')
-  add('commercial:alerts', level(readiness?.alertReady), `生产告警 ready=${String(readiness?.alertReady)}`, '注入告警 webhook/secret 并验证真实投递。')
+  add('commercial:alerts', level(readiness?.alertReady), `可选告警通知 enabled=${String(readiness?.alertEnabled)}, ready=${String(readiness?.alertReady)}`, '如启用告警通知，必须注入安全的 webhook/secret 并验证真实投递；未启用不阻断上线。')
   add('commercial:production_gate', level(readiness?.productionGate), `mode=${readiness?.mode ?? 'unknown'}, writes=${String(readiness?.writesEnabled)}, productionGate=${String(readiness?.productionGate)}`, '未满足真实支付、平台、存储、容量和证据前保持 writes disabled / NO-GO。')
 } catch {
   add('commercial:runtime', production ? 'fail' : 'warn', '无法读取商业运行时 readiness', '启动 API，并确认 /readyz 返回非敏感的支付、五模态、存储和生产门禁状态。')

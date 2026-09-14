@@ -1,8 +1,8 @@
-# 大麦 ChatGPT 插件安装与配置手册
+# Store Nova ChatGPT 插件安装与配置手册
 
 这份手册给技术安装人员、平台管理员和商家使用。目标是把一台新的桌面 ChatGPT 电脑配置到：
 
-1. ChatGPT 能加载大麦插件；
+1. ChatGPT 能加载Store Nova插件；
 2. 插件能连接商家 API/MCP；
 3. 服务端能识别正确的工作区和用户身份；
 4. 商家能在新会话中查看工作区状态或上传资料；
@@ -28,7 +28,7 @@
   - 商家 API 根地址，例如 `https://merchant.example.com`；地址不能带 `/mcp`、查询参数或凭据。
   - 管理员分配的工作区标识，例如 `ws_xxx`。
   - 如果网关没有使用宿主 OIDC，才需要一个由网关签发的 Bearer token。
-- 已拿到大麦插件 marketplace 的来源。来源可以是公司内部 Git marketplace，也可以是本机的 marketplace 目录。
+- 已拿到Store Nova插件 marketplace 的来源。来源可以是公司内部 Git marketplace，也可以是本机的 marketplace 目录。
 
 ### A2. 注册 marketplace 并安装插件
 
@@ -89,7 +89,7 @@
 
 在新会话中输入：
 
-> 启动大麦插件并检查连接状态
+> 启动Store Nova插件并检查连接状态
 
 首次调用会读取工作区和准入状态。正常结果应继续询问上传资料、选择平台或查看工作区；不应出现 `MCP_CONFIGURATION_REQUIRED`、`MERCHANT_MCP_BASE_URL is required` 或“插件连接配置未加载”。
 
@@ -111,7 +111,7 @@
 
 普通商家不执行本节。商品文案、图片、图片编辑、OCR 和视频请求由服务端使用 `MODEL_RELAY_*`；商家不需要填写这些值。
 
-如果团队还要求 ChatGPT/Codex 的宿主对话也经大麦中转，由管理员在安装人员的用户环境执行：
+如果团队还要求 ChatGPT/Codex 的宿主对话也经Store Nova中转，由管理员在安装人员的用户环境执行：
 
     CODEX_RELAY_BASE_URL="https://<Responses兼容中转站>/v1" \
     CODEX_RELAY_MODEL="<必须出现在 /v1/models data[] 的模型 ID>" \
@@ -141,7 +141,7 @@
 技术人员完成 A 节后，商家只需：
 
 1. 打开新的 ChatGPT 会话；
-2. 说“启动大麦插件并检查连接状态”；
+2. 说“启动Store Nova插件并检查连接状态”；
 3. 按对话提示选择平台和店铺，或上传商品图片/资料；
 4. 需要生成、审核、批准或发布时，按对话中的一次性确认继续。
 

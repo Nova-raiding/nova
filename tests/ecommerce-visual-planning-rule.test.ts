@@ -31,7 +31,7 @@ describe('e-commerce visual planning rule', () => {
   it('embeds the adapted open-source planning reference without adding a second generation path', async () => {
     const reference = readFileSync(resolve(root, 'apps/plugin/skills/merchant-marketing/references/ecommerce-detail-page-generator.md'), 'utf8')
     expect(reference).toContain('MCP、创意点、租户权限、人工审核和发布门禁')
-    expect(reference).toContain('六类模块到大麦流程的映射')
+    expect(reference).toContain('六类模块到Store Nova流程的映射')
     expect(reference).toContain('unconfirmed')
     expect(reference).toContain('不得调用宿主 `image_gen`')
     expect(reference).toContain('没有真实性 gate、人工审阅、内容审核和哈希校验')

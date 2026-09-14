@@ -13,7 +13,7 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: merchant-api, app.kubernetes.io/part-of: merchant-marketing-codex}
       annotations:
-        merchant.example.com/config-sha256: sha256:a5b7bc8e5e97d63ae844829aa681d755d5eac178f9225043a6d17c471a7d9747
+        merchant.example.com/config-sha256: sha256:118dae0cb79126de433e19f6c9eff9524d3d22bfb5bc3b7afb3e79da2403b8a8
     spec:
       terminationGracePeriodSeconds: 30
       automountServiceAccountToken: false
@@ -37,7 +37,6 @@ spec:
             - {name: ASSET_SCANNER_API_TOKEN, valueFrom: {secretKeyRef: {name: merchant-scanner-secrets, key: ASSET_SCANNER_API_TOKEN}}}
             - {name: ASSET_SCANNER_WORKSPACE_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-scanner-secrets, key: ASSET_SCANNER_WORKSPACE_SIGNING_SECRET}}}
             - {name: ASSET_SCAN_TRUSTED_PUBLIC_KEYS, valueFrom: {secretKeyRef: {name: merchant-scanner-secrets, key: ASSET_SCAN_TRUSTED_PUBLIC_KEYS}}}
-            - {name: ASSET_STORAGE_KMS_KEY_ID, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: ASSET_STORAGE_KMS_KEY_ID}}}
             - {name: ASSET_DISPLAY_URL_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: ASSET_DISPLAY_URL_SIGNING_SECRET}}}
             - {name: ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON}}}
             - {name: VAULT_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: VAULT_TOKEN}}}

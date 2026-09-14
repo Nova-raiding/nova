@@ -817,7 +817,7 @@ export function describeApiError(error: unknown) {
   if (code === 'AUTH_MERCHANT_ACCOUNT_REQUIRED') return '该账号尚未绑定可用商家工作区，请联系平台管理员完成审核和工作区授权。'
   if (code === 'GENERATION_JOB_NOT_FOUND' || code === 'IMAGE_GENERATION_JOB_NOT_FOUND') return '找不到这条图片任务，可能已过期或链接无效；请返回任务列表重新选择。'
   if (code === 'API_REQUEST_TIMEOUT') return 'API 请求超时。请检查 API、数据库和网关状态后重试。'
-  if (code === 'MCP_TRANSPORT_CLOSED' || /\btransport closed\b|\beconnreset\b/iu.test(message)) return '大麦连接已中断。已有任务和商品数据已保留；请重新连接后先确认任务状态，避免重复提交。'
+  if (code === 'MCP_TRANSPORT_CLOSED' || /\btransport closed\b|\beconnreset\b/iu.test(message)) return 'Store Nova连接已中断。已有任务和商品数据已保留；请重新连接后先确认任务状态，避免重复提交。'
   if (code === 'MODEL_RELAY_NO_CHANNEL') return '当前模型没有可用的中转通道。当前操作未确认完成；请切换到已验证可用的模型并新建会话。'
   if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') return '模型请求结果尚未确认，可能已经产生结果；请先查询模型状态或提交人工对账，确认前不会重复生成、扣费或发布。'
   if ([

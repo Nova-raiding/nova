@@ -101,6 +101,8 @@ export const MCP_OPS_CONTROL_METHODS = [
   'ops.customer-delivery.training.complete',
   'ops.customer-delivery.videos.list',
   'ops.customer-delivery.videos.add',
+  'ops.customer-delivery.assets.upload',
+  'ops.customer-delivery.assets.get',
   'ops.incidents.list',
   'ops.incident.get',
   'ops.incident.timeline',
@@ -487,12 +489,14 @@ export const WORKER_RUNTIME_OPERATIONS = [
   'image_generation.execute',
   'catalog.sync.execute',
   'asset.scan.execute',
+  'customer_delivery.asset.scan.execute',
   'asset.continuation.execute',
   'publish.execute',
   'publish.reconcile',
 ] as const
 
 const workerRegistry = defineCommercialOperationRegistry([
+  { surface: 'WORKER' as const, operation: 'customer_delivery.asset.scan.execute', domain: 'OPS_CONTROL' as const, enabled: true, classification: null, rate_action: null, authorization_policy_ref: 'ops.customer-delivery.assets.upload' },
   { surface: 'WORKER' as const, operation: 'generation.execute', domain: 'COMMERCIAL' as const, enabled: true, classification: 'POINT_CHARGED' as const, rate_action: 'generation.execute' },
   { surface: 'WORKER' as const, operation: 'image_generation.execute', domain: 'COMMERCIAL' as const, enabled: true, classification: 'POINT_CHARGED' as const, rate_action: 'image_generation.execute' },
   ...['catalog.sync.execute', 'asset.scan.execute', 'asset.continuation.execute', 'publish.execute'].map(operation => ({

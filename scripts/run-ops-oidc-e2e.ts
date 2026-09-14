@@ -6,6 +6,8 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createLocalOidcGateway } from '../tests/local-oidc-gateway.js'
 import { createIsolatedOpsFixture, type IsolatedOpsFixture } from '../tests/isolated-ops-fixture.js'
+import { startCustomerDeliveryScanFixture, prepareCustomerDeliveryScanEnvironment, type CustomerDeliveryScanFixture } from './customer-delivery-scan-fixture.js'
+import { collectCustomerDeliveryScanEvidence } from './customer-delivery-scan-evidence.js'
 
 // Own all persistence and identities; never copy a business container or .env.
 export function opsChildEnvironment(source: NodeJS.ProcessEnv, additions: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -53,6 +55,8 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
   const children: ChildProcess[] = []
   let fixture: IsolatedOpsFixture | undefined
   let fixtureSetup: Promise<IsolatedOpsFixture> | undefined
+  let scanner: CustomerDeliveryScanFixture | undefined
+  let scannerSetup: Promise<CustomerDeliveryScanFixture | undefined> | undefined
   let gateway: ReturnType<typeof createLocalOidcGateway> | undefined
   let workspaceGateway: ReturnType<typeof createLocalOidcGateway> | undefined
   let cleanupPromise: Promise<void> | undefined
@@ -62,6 +66,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     // A signal can arrive while Docker/migrations are still provisioning. Do
     // not exit before that promise yields the exact resources we must dispose.
     if (!fixture && fixtureSetup) fixture = await fixtureSetup.catch(() => undefined)
+    if (!scanner && scannerSetup) scanner = await scannerSetup.catch(() => undefined)
     gateway?.closeAllConnections?.()
     workspaceGateway?.closeAllConnections?.()
     if (gateway?.listening) await new Promise<void>(closed => gateway!.close(() => closed()))
@@ -72,10 +77,16 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       await Promise.race([exited(child).catch(() => 1), new Promise<void>(done => setTimeout(done, 5_000))])
       if (child.exitCode === null && child.signalCode === null) { child.kill('SIGKILL'); await exited(child).catch(() => 1) }
     }))
+    let scannerCleanupUnconfirmed = false
+    if (scanner) {
+      const disposed = await scanner.stop()
+      scannerCleanupUnconfirmed = disposed.leftRunning.length > 0
+    }
     if (fixture) {
       const disposed = await fixture.dispose()
       if (disposed.leftRunning.length) throw new Error('OPS_E2E_FIXTURE_CLEANUP_REQUIRES_REVIEW')
     }
+    if (scannerCleanupUnconfirmed) throw new Error('OPS_E2E_SCANNER_CLEANUP_REQUIRES_REVIEW')
   })()
   const onInterrupt = () => { void cleanup().finally(() => process.exit(130)) }
   const onTerminate = () => { void cleanup().finally(() => process.exit(143)) }
@@ -110,6 +121,12 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     const workspaceGatewayPort = await freeLoopbackPort()
     if (new Set([apiPort, uiPort, workspaceUiPort, gatewayPort, workspaceGatewayPort]).size !== 5) throw new Error('OPS_E2E_LISTENER_PORT_COLLISION')
     const baseUrl = `http://127.0.0.1:${gatewayPort}`
+    if (source.OPS_E2E_DELIVERY_SCAN === 'true') {
+      scannerSetup = startCustomerDeliveryScanFixture({ enabled: true, evidenceDir, startupTimeoutMs: 120_000 })
+      scanner = await scannerSetup
+      if (stopping) throw new Error('OPS_E2E_INTERRUPTED_DURING_SCANNER_SETUP')
+    }
+    const scanEnvironment = scanner ? prepareCustomerDeliveryScanEnvironment(scanner, { fixture, apiBaseUrl: `http://127.0.0.1:${apiPort}`, apiPort }) : undefined
     const signingSecret = randomBytes(32).toString('hex')
     const username = 'ops-isolated-e2e'
     const password = randomBytes(24).toString('hex')
@@ -136,6 +153,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       RUN_MIGRATIONS_ON_STARTUP: 'false', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
       CONNECTOR_FIXTURE_MODE: 'false', REQUEST_OBSERVABILITY_LOGS: 'true',
       ALLOWED_ORIGINS: baseUrl, ASSET_STORAGE_ROOT: resolve(evidenceDir, 'local-objects'),
+      ...scanEnvironment?.apiEnvironment,
     })
     const api = launch(process.execPath, ['--import', 'tsx', 'apps/api/src/server.ts'], apiEnvironment, 'api')
     const uiEnvironment = opsChildEnvironment(source, {
@@ -154,6 +172,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     await Promise.all([ready(`http://127.0.0.1:${apiPort}/healthz`, api), ready(`http://127.0.0.1:${uiPort}/`, ui), ready(`http://127.0.0.1:${workspaceUiPort}/`, workspaceUi)])
     const health = await (await fetch(`http://127.0.0.1:${apiPort}/healthz`)).json() as { data?: { persistence?: { mode?: string; ready?: boolean }; redis?: { ready?: boolean } } }
     if (health.data?.persistence?.mode !== 'postgres' || !health.data.persistence.ready || !health.data.redis?.ready) throw new Error('OPS_E2E_DURABLE_RUNTIME_REQUIRED')
+    if (scanEnvironment) launch(process.execPath, ['--import', 'tsx', 'apps/worker/src/main.ts'], scanEnvironment.workerEnvironment, 'scan-worker')
     await new Promise<void>((done, reject) => { gateway!.once('error', reject); gateway!.listen(gatewayPort, '127.0.0.1', done) })
     const activeWorkspaceGateway = workspaceGateway
     if (!activeWorkspaceGateway) throw new Error('OPS_E2E_WORKSPACE_GATEWAY_NOT_READY')
@@ -166,16 +185,30 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       LOCAL_OIDC_SUBJECT: fixture.actorSubject, OPS_E2E_WORKSPACE_ID: fixture.workspaceId,
       OPS_E2E_SUBJECT_IDENTITY_ID: fixture.subjectIdentityId, OPS_E2E_APPROVER_ID: fixture.approverId,
       OPS_E2E_OUTPUT_DIR: evidenceDir, PLAYWRIGHT_JSON_OUTPUT_NAME: resolve(evidenceDir, 'playwright.json'),
+      ...(scanner ? { OPS_E2E_REAL_DELIVERY_SCAN: 'true' } : {}),
     })
     writeFileSync(resolve(evidenceDir, 'runtime.json'), JSON.stringify({
       runId: fixture.runId, evidenceDir, baseUrl, apiPort, uiPort, gatewayPort,
       persistence: health.data.persistence, redis: health.data.redis,
       authorization: { mode: 'enforce', durableAssignmentsRequired: true, identityProvider: 'local signed OIDC fixture' },
       models: { configured: false, called: false }, sharedConfigurationRead: false,
+      ...(scanner ? { scanner: { runId: scanner.runId, evidenceDir: scanner.evidenceDir, readiness: scanner.readiness, real: true, pointsGranted: false } } : {}),
     }, null, 2), { mode: 0o600, flag: 'wx' })
     console.log(JSON.stringify({ evidenceDir, runId: fixture.runId, isolated: true, persistence: 'postgres', testFiles: args.filter(argument => argument.endsWith('.spec.js')) }))
     const run = launch(process.execPath, ['node_modules/@playwright/test/cli.js', 'test', ...args, '--workers=1', '--reporter=line,json', '--output', resolve(evidenceDir, 'test-results')], environment, 'browser', true)
-    const exitCode = await exited(run)
+    // Bound the browser child independently so a stuck Playwright test cannot
+    // prevent fixture teardown or leave detached processes behind forever.
+    const browserTimeout = Number(source.OPS_E2E_BROWSER_TIMEOUT_MS ?? 180_000)
+    let browserTimer: ReturnType<typeof setTimeout> | undefined
+    const exitCode = await Promise.race([
+      exited(run),
+      new Promise<number>(resolveTimeout => { browserTimer = setTimeout(() => {
+        run.kill('SIGTERM')
+        setTimeout(() => { if (run.exitCode === null && run.signalCode === null) run.kill('SIGKILL') }, 2_000).unref()
+        resolveTimeout(124)
+      }, Number.isFinite(browserTimeout) ? Math.max(10_000, browserTimeout) : 180_000) }),
+    ]).finally(() => clearTimeout(browserTimer))
+    if (scanner && exitCode === 0) await collectCustomerDeliveryScanEvidence({ fixture, evidenceDir })
     if (afterRun) await afterRun({ fixture, baseUrl, username, password, evidenceDir, environment })
     return exitCode
   } finally {

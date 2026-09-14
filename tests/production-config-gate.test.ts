@@ -86,7 +86,7 @@ function config(overrides: Record<string, boolean> = {}) {
     'asset_clean_retention_days: 90',
     'deletion_request_grace_days: 7',
     'backup_retention_days: 30',
-    'alert_channel_secret_ref: vault://merchant-alert-channel',
+    'alert_notifications_enabled: false',
   ].join('\n')
 }
 
@@ -206,9 +206,11 @@ describe('production config gate', () => {
     expect(() => run(config().replace('asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/workspace-signing-secret', 'asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/api-token'))()).toThrow(/isolated/)
   })
 
-  it('rejects incomplete lifecycle and alert-channel policy', () => {
+  it('accepts disabled optional alerts and rejects incomplete enabled alert policy', () => {
     expect(() => run(config().replace('object_storage_versioning: true\n', ''))()).toThrow(/versioning/)
-    expect(() => run(config().replace('alert_channel_secret_ref: vault://merchant-alert-channel', ''))()).toThrow(/alert_channel/)
+    expect(run(config())()).toContain('production config gate passed')
+    expect(() => run(config().replace('alert_notifications_enabled: false', 'alert_notifications_enabled: true'))()).toThrow(/alert_channel/)
+    expect(run(config().replace('alert_notifications_enabled: false', 'alert_notifications_enabled: true\nalert_channel_secret_ref: vault://merchant-alert-channel'))()).toContain('production config gate passed')
   })
 
   it('requires HTTPS signed asset-display configuration', () => {

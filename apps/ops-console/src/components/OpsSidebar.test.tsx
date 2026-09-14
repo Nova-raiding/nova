@@ -15,7 +15,7 @@ describe("OpsSidebar navigation", () => {
         onSelectStore={() => undefined}
       />,
     );
-    expect(markup).toContain("大麦运营中心");
+    expect(markup).toContain("Store Nova运营中心");
     expect(markup).toContain("平台治理");
     expect(markup).not.toContain("商家工作区治理");
     expect(markup).not.toContain(">商家运营</h2>");
@@ -27,7 +27,7 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain("全部平台连接");
     expect(markup).not.toContain("京东一店");
     expect(markup).not.toContain("我的店铺");
-    expect(markup).not.toContain("大麦商家中心");
+    expect(markup).not.toContain("Store Nova商家中心");
   });
 
   it("exposes the independent model services destination", () => {

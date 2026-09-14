@@ -16,7 +16,7 @@ describe('ChatGPT Host/OIDC/Automation local evidence contract', () => {
       environmentRecovery: 'macOS launchctl user session',
     })
     expect(runtime.otherPlatforms).toMatch(/outside the current desktop support boundary/u)
-    expect(readJson('.codex-plugin/plugin.json').interface.displayName).toBe('大麦')
+    expect(readJson('.codex-plugin/plugin.json').interface.displayName).toBe('Store Nova')
   })
 
   it('keeps OIDC identity host-provided and prevents static identity or secret injection', () => {

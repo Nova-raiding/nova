@@ -202,7 +202,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { policy_version: boundedString(128), policy_checksum: boundedString(128), acceptance_ref: boundedString(256), accepted_at: boundedString(64), idempotency_key: idempotencyKeyProperty }, required: ['policy_version', 'policy_checksum', 'acceptance_ref', 'accepted_at', 'idempotency_key'], additionalProperties: false },
   },
   'merchant.start': {
-    description: '开始使用大麦；服务端先完成商业准入判定，通过后才会幂等记当前意图并返回下一步。零点或状态待确认时仅返回服务端授权的恢复操作。',
+    description: '开始使用Store Nova；服务端先完成商业准入判定，通过后才会幂等记当前意图并返回下一步。零点或状态待确认时仅返回服务端授权的恢复操作。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1053,9 +1053,9 @@ function actionLink(method, result) {
     return {
       type: 'resource_link',
       name: field === 'authorizationUrl' ? (method === 'merchant.start' ? 'merchant-authorization' : 'platform-authorization') : 'payment-checkout',
-      title: field === 'authorizationUrl' ? (method === 'merchant.start' ? '登录并授权大麦' : '立即授权店铺') : '打开支付页',
+      title: field === 'authorizationUrl' ? (method === 'merchant.start' ? '登录并授权Store Nova' : '立即授权店铺') : '打开支付页',
       uri: url.toString(),
-      description: field === 'authorizationUrl' ? (method === 'merchant.start' ? '在大麦官方授权页使用账号和密码登录；密码不会进入插件、模型或日志。' : '官方平台授权入口；插件不会接触店铺密码。') : '支付完成后请回到 Codex 查询订单状态；待支付不等于已到账。',
+      description: field === 'authorizationUrl' ? (method === 'merchant.start' ? '在Store Nova官方授权页使用账号和密码登录；密码不会进入插件、模型或日志。' : '官方平台授权入口；插件不会接触店铺密码。') : '支付完成后请回到 Codex 查询订单状态；待支付不等于已到账。',
       annotations: { audience: ['user'] },
     }
   } catch { return undefined }
@@ -1436,7 +1436,7 @@ function toolErrorPresentation(method, args, code, details) {
       ? details.missing.join('、')
       : '服务地址或工作区配置'
     return {
-      text: `大麦连接配置未加载（缺少${missing}）。请重新加载插件连接或重启 ChatGPT；已保存的商品、SKU 和素材不会丢失。本次未向后端发送请求。`,
+      text: `Store Nova连接配置未加载（缺少${missing}）。请重新加载插件连接或重启 ChatGPT；已保存的商品、SKU 和素材不会丢失。本次未向后端发送请求。`,
       recovery: {
         state: 'configuration_required',
         user_action_required: true,
@@ -1926,7 +1926,7 @@ function merchantUiMetadata(method, result, args = {}) {
     const labels = steps.map(step => `${step.state === 'complete' ? '✓' : '○'} ${step.title}: ${step.summary}`).join('；')
     return {
       onboarding_card: {
-        title: '大麦插件安装引导',
+        title: 'Store Nova插件安装引导',
         status: result.status === 'ready' ? '已完成' : '进行中',
         current_step: current.title ?? '待检查',
         binding: result.binding,
@@ -2001,7 +2001,7 @@ function toolAnnotations(name) {
 }
 
 function onboardingUiHtml() {
-  return `<!doctype html><meta charset="utf-8"><title>大麦安装引导</title><style>body{font:15px system-ui,sans-serif;color:#172554;margin:24px;line-height:1.6}h1{font-size:22px;margin:0 0 16px}.step{border:1px solid #dbe4f0;border-radius:12px;padding:12px 14px;margin:8px 0}.muted{color:#64748b}</style><h1>大麦插件安装引导</h1><p class="muted">这是只读状态卡。完成当前步骤后重新检查，不会自动生成或发布内容。</p><div id="steps">请先调用 onboarding.status 获取最新状态。</div><script>const root=document.getElementById('steps');const data=window.openai?.toolOutput;if(data?.steps){root.innerHTML=data.steps.map(s=>'<div class="step"><strong>'+(s.state==='complete'?'✓':'○')+' '+s.title+'</strong><br><span class="muted">'+s.summary+'</span></div>').join('')}else if(data?.onboarding_card){root.textContent=data.onboarding_card.progress||'请先调用 onboarding.status'}</script>`
+  return `<!doctype html><meta charset="utf-8"><title>Store Nova安装引导</title><style>body{font:15px system-ui,sans-serif;color:#172554;margin:24px;line-height:1.6}h1{font-size:22px;margin:0 0 16px}.step{border:1px solid #dbe4f0;border-radius:12px;padding:12px 14px;margin:8px 0}.muted{color:#64748b}</style><h1>Store Nova插件安装引导</h1><p class="muted">这是只读状态卡。完成当前步骤后重新检查，不会自动生成或发布内容。</p><div id="steps">请先调用 onboarding.status 获取最新状态。</div><script>const root=document.getElementById('steps');const data=window.openai?.toolOutput;if(data?.steps){root.innerHTML=data.steps.map(s=>'<div class="step"><strong>'+(s.state==='complete'?'✓':'○')+' '+s.title+'</strong><br><span class="muted">'+s.summary+'</span></div>').join('')}else if(data?.onboarding_card){root.textContent=data.onboarding_card.progress||'请先调用 onboarding.status'}</script>`
 }
 
 function toolContent(method, result) {
@@ -2409,7 +2409,7 @@ async function callRemote(method, params) {
   // merchant-facing entry point. Production never falls back to ws_demo.
   assertTransportConfiguration()
   if (method === 'merchant.start' && !configuredEnv('MERCHANT_WORKSPACE_ID') && !loadWorkspaceBinding() && !allowsLocalFixtureFallback()) {
-    await callRemote('workspace.bootstrap', { display_name: '大麦商家工作区' })
+    await callRemote('workspace.bootstrap', { display_name: 'Store Nova商家工作区' })
   }
   const scopedWorkspaceId = method === 'workspace.bootstrap' ? '' : workspaceId()
   const requestedWorkspaceId = typeof params?.workspace_id === 'string' ? params.workspace_id.trim() : ''
@@ -3053,12 +3053,12 @@ async function handle(request) {
   }
   if (request.method === 'resources/list') {
     return jsonRpc(id, { resources: [
-      { uri: ONBOARDING_UI_URI, name: '安装引导', title: '大麦插件安装引导', description: '展示工作区、身份、店铺、商品、素材和发布步骤；只读。', mimeType: 'text/html;profile=mcp-app' },
-      { uri: RECHARGE_UI_URI, name: '创意点恢复', title: '大麦创意点恢复中心', description: '显示创意点准入、服务端授权恢复入口及历史账务证据；不接受客户端自填金额。', mimeType: 'text/html;profile=mcp-app' },
+      { uri: ONBOARDING_UI_URI, name: '安装引导', title: 'Store Nova插件安装引导', description: '展示工作区、身份、店铺、商品、素材和发布步骤；只读。', mimeType: 'text/html;profile=mcp-app' },
+      { uri: RECHARGE_UI_URI, name: '创意点恢复', title: 'Store Nova创意点恢复中心', description: '显示创意点准入、服务端授权恢复入口及历史账务证据；不接受客户端自填金额。', mimeType: 'text/html;profile=mcp-app' },
       { uri: CREATIVE_CHOICE_UI_URI, name: '创意方向选择', title: '选择创意方向', description: '比较三个创意方向并明确确认其中一个；初始不默认选择。', mimeType: 'text/html;profile=mcp-app' },
       { uri: CONTENT_DIFF_UI_URI, name: '内容版本差异', title: '比较内容版本', description: '逐字段比较两个内容版本并明确保留其中一个。', mimeType: 'text/html;profile=mcp-app' },
       { uri: PUBLISH_CONFIRM_UI_URI, name: '最终发布确认', title: '确认发布内容', description: '核对单项或批量发布对象、变化、费用和影响后最终确认。', mimeType: 'text/html;profile=mcp-app' },
-      { uri: IMAGE_EDIT_UI_URI, name: '大麦图片局部编辑', title: '图片局部编辑区域标注', description: '在图片预览上拖拽或用键盘标注归一化编辑区域，并避开不可修改区域。', mimeType: 'text/html;profile=mcp-app' },
+      { uri: IMAGE_EDIT_UI_URI, name: 'Store Nova图片局部编辑', title: '图片局部编辑区域标注', description: '在图片预览上拖拽或用键盘标注归一化编辑区域，并避开不可修改区域。', mimeType: 'text/html;profile=mcp-app' },
       { uri: IMAGE_CANDIDATE_CHOICE_UI_URI, name: '主图候选选择', title: '选择主图候选', description: '展示已归档且通过自动检查的主图候选；单张可直接确认，多张可选择一张。', mimeType: 'text/html;profile=mcp-app' },
     ] })
   }

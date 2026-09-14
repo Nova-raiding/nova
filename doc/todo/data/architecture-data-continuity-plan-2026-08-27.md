@@ -1,6 +1,6 @@
 <!-- AUTOPLAN_RESTORE: /Users/lixiaomei/.gstack/projects/codexSkills/autoplan-restore/20260827-architecture-data-continuity-plan.md | sha256 187410af2ea2f9b08e633baaf4a68854ff8bf6bd98be82c1f9c0271521f11695 -->
 
-# 大麦统一架构、上下文成本与数据连续性计划
+# Store Nova统一架构、上下文成本与数据连续性计划
 
 状态：路线 B 已于 2026-08-28 批准；设计、工程与开发体验评审完成，进入分阶段实施  
 日期：2026-08-27（2026-08-28 更新）  

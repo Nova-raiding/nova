@@ -7,11 +7,19 @@ const alert: OperationalAlert = {
 }
 
 describe('alert notifier', () => {
-  it('fails closed when the channel is not configured or is insecure in production', () => {
-    expect(alertNotificationReadiness({ NODE_ENV: 'production' })).toMatchObject({ configured: false, ready: false })
+  it('keeps absent optional notifications ready and fails closed after opt-in', () => {
+    expect(alertNotificationReadiness({ NODE_ENV: 'production' })).toMatchObject({ enabled: false, configured: false, ready: true })
+    expect(alertNotificationReadiness({ NODE_ENV: 'production', OPS_ALERT_NOTIFICATIONS_ENABLED: 'true' })).toMatchObject({ enabled: true, configured: true, ready: false })
+    expect(alertNotificationReadiness({ NODE_ENV: 'production', OPS_ALERT_NOTIFICATIONS_ENABLED: 'sometimes' })).toMatchObject({ enabled: true, configured: true, ready: false })
     expect(alertNotificationReadiness({ NODE_ENV: 'production', OPS_ALERT_WEBHOOK_URL: 'http://alerts.test', OPS_ALERT_WEBHOOK_SECRET: 'secret' })).toMatchObject({ configured: true, ready: false })
     expect(alertNotificationReadiness({ NODE_ENV: 'production', OPS_ALERT_WEBHOOK_URL: 'https://alerts.test/hook', OPS_ALERT_WEBHOOK_SECRET: 'secret' })).toMatchObject({ configured: true, ready: false, reason: '安全环境必须配置 OPS_ALERT_WEBHOOK_ALLOWED_HOSTS' })
     expect(alertNotificationReadiness({ NODE_ENV: 'production', OPS_ALERT_WEBHOOK_URL: 'https://127.0.0.1/hook', OPS_ALERT_WEBHOOK_ALLOWED_HOSTS: '127.0.0.1', OPS_ALERT_WEBHOOK_SECRET: 'secret' })).toMatchObject({ configured: true, ready: false })
+  })
+
+  it('does not call the network when optional notifications are disabled', async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+    await expect(notifyOperationalAlert(alert, { env: { NODE_ENV: 'production' }, fetchImpl })).resolves.toMatchObject({ delivery: 'disabled', attempts: 0 })
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it('signs a sanitized alert and retries transient webhook failures', async () => {

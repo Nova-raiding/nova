@@ -39,9 +39,9 @@ export function PlatformOpsLoginPage({
     <main className="ops-login-page" aria-labelledby="ops-login-title">
       <section className="ops-login-brand-panel" aria-label="平台运营后台说明">
         <div className="ops-login-brand">
-          <span className="ops-login-brand-mark" aria-hidden="true">大麦</span>
+          <span className="ops-login-brand-mark" aria-hidden="true">Store Nova</span>
           <div>
-            <Typography.Text className="ops-login-brand-name">大麦运营中心</Typography.Text>
+            <Typography.Text className="ops-login-brand-name">Store Nova运营中心</Typography.Text>
             <Typography.Text className="ops-login-brand-caption">平台运营后台</Typography.Text>
           </div>
         </div>

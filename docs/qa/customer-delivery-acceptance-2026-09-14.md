@@ -42,7 +42,7 @@ node --import tsx scripts/run-ops-oidc-e2e.ts dogfood/chatgpt-all-functions/ops-
 
 ## 尚未完成的上线条件
 
-1. 客户交付页尚未接入直接文件上传，当前仅登记已有素材编号或 HTTPS 合同链接。通用素材上传类型策略也尚未支持视频；真实合同/视频安全上传、扫描及多段视频登记全链路未完成。拒绝测试不代表上传成功。
+1. 客户交付直接文件上传已接入，隔离环境真实合同/视频扫描与登记链路已通过（见下方补验）。仍需在目标部署环境确认对象存储、scanner 配置、真实运营会话与目标企业，不能把本地验收当作生产已部署。
 2. “交付已完成”当前仅表示交付档案的清单、培训和视频条件已满足；尚未验证其他业务区域的实际生效联动，不能据此宣称账号/权限已启用，也不能自动恢复被管理员停用的主体。
 3. 共享环境的运行版本、迁移 200 和登录后的企业验收尚未在本轮确认。仍需已登录运营会话及明确的测试企业；隔离验收不替代共享部署确认。
 4. 本次未调用商业模型、中转或真实支付，因此不构成 ChatGPT 插件五模态、成本/账务及生产发布门禁的全面通过证据。
@@ -58,3 +58,29 @@ node --import tsx scripts/run-ops-oidc-e2e.ts dogfood/chatgpt-all-functions/ops-
 - 所有验证使用本轮独立 PostgreSQL/Redis；仅停止经过身份校验的测试容器，未修改共享容器或业务数据。
 
 最终截图/录像与 RPC 结果：`artifacts/customer-delivery-acceptance/run-df4238a8/`。其中 `video-registration-shot-scraper.png` 展示实际打开的视频登记抽屉，`training-inline.webm` 包含培训取消/完成及打开视频抽屉的真实操作。
+
+## 直接上传与真实扫描补验
+
+2026-09-14 的最终隔离运行 `f6677f9a-ca5b-4a36-86a3-490b6f606dbe` 通过，证据目录为 `artifacts/customer-delivery-acceptance/run-f6677f9a/`。
+
+- 表单支持合同 PDF/DOCX/PNG/JPEG、交付视频 MP4/WebM，单文件不超过 50 MiB；真实读取文件并计算 SHA256。显示上传、安全检查、可使用、失败和取消状态，失败可单独重试；扫描通过仅填入引用，保存后才登记。
+- 平台上传为独立非商业安全扫描任务，准入绑定平台授权决策、企业、档案、文件用途和字节版本。商家原有扫描商业门禁不变。该运行无点数授予、预占、结算或账本事件，余额未初始化，如实保留为 unknown/null。
+- 桌面真实生产构建 UI → 签名 OIDC → MCP/API → PostgreSQL/隔离对象存储 → 原生 scan worker → ClamAV → 签名回执 → clean 对象 → 合同/两段视频登记及刷新回显，完整用例通过（48.7 秒，不含环境准备）。
+- ClamAV `1.4.6`，真实病毒库 `28123`，发布时间 `2026-09-14T06:24:19Z`；普通内容探针和 EICAR 自检通过。未使用 fixture clean、手工扫描回执、共享病毒库或共享容器凭据。
+- 只读取证核对 1 份 PDF、1 段 MP4、1 段 WebM 的准入、真实 outbox、durable attempt、已接纳回执、对象字节 SHA256、上传/登记审计和 worker 最终确认。三个任务均一次回调接纳、无先前失败且已完成。
+- 保留未扫描素材 409、跨租户/跨档案读取拒绝、普通商家素材不可借交付接口读取、文件摘要/MIME/格式错误、签名篡改/错 worker 角色/nonce 重放等回归。
+- 实际关闭待扫描抽屉并切换客户，迟到的真实扫描响应不会污染另一客户；同一运营将同一 clean 合同复用于三份档案后，各自绑定查询均成功，覆盖 PostgreSQL 事件序号冲突修复。
+- 网关实际代理并签名 40 MiB 文件的 base64 JSON；MCP 请求体上限与 API 的 70 MiB 传输限额对齐，其他路由维持 50 MiB；文件本体仍限制 50 MiB，并覆盖满额及超额边界。
+- 早期独立 ClamAV 启动因并发加载/更新病毒库发生 OOM；测试组件改为先运行真实 freshclam 更新，再启动 clamd。没有降低病毒库新鲜度、关闭签名核验或修改共享服务。
+- 所有本轮临时容器按精确 ID 与标签确认后停止；最终 PG、Redis 和 ClamAV 清理结果均 `leftRunning: []`。证据没有保存 cookie、密码、私钥、上传正文或扫描签名。
+
+复跑真实扫描（需要已缓存的固定 ClamAV 镜像、Docker、Chrome 和 shot-scraper）：
+
+```sh
+OPS_E2E_DELIVERY_SCAN=true OPS_E2E_BROWSER_TIMEOUT_MS=360000 \
+  node --import tsx scripts/run-ops-oidc-e2e.ts dogfood/chatgpt-all-functions/ops-delivery-isolated.spec.js
+```
+
+`scan-result.json` 为数据库/对象链路证据，`browser-result.json` 为桌面操作证据；`scanner-readiness.json`、两份 disposal 文件及 shot-scraper PNG/WebM 是对应运行的配套证据。扫描类型识别不等于合同内容语义解析，也不代表真实模型、支付或账号生效联动已验收。
+
+后续工程项：新扫描事件执行查询仍沿用按素材读取有限历史事件的接口，长期大量重扫应改为按事件 ID 精确读取。客户档案完成与账号/权限实际启用仍是独立未验收项；不得据此自动恢复已被管理员停用的主体。

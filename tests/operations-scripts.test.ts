@@ -12,6 +12,55 @@ function run(script: string, args: string[] = [], env: Record<string, string> = 
 }
 
 describe('deployment operation scripts', () => {
+  it('keeps the ECS production preflight fail-closed', () => {
+    const preflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
+    expect(preflight).toContain('IMAGE_DIGESTS_JSON is required')
+    expect(preflight).toContain('production REDIS_URL must use rediss://')
+    expect(preflight).toContain('local endpoint is not allowed')
+    expect(preflight).toContain('RENDERED_COMPOSE_PATH')
+    expect(readFileSync('infra/local/docker-compose.ecs-pilot-release.yml', 'utf8')).toContain('PAYMENT_GATEWAY_IMAGE_REF')
+    expect(preflight).toContain('OBJECT_STORAGE_VERSIONING must be true')
+    expect(preflight).toContain('ASSET_STORAGE_KMS_KEY_ID is required when aws:kms is selected')
+    expect(preflight).toContain('validate-production-config.sh')
+    expect(preflight).toContain('merchant-api')
+    expect(preflight).toContain('merchant-worker')
+    expect(readFileSync('infra/scripts/validate-ecs-compose-release.rb', 'utf8')).toContain("'payment-gateway'")
+    expect(preflight).toContain('validate-ecs-compose-release.rb')
+    expect(preflight).toContain('--require-signed-production')
+    expect(preflight).toContain('--deployment-nonce')
+    expect(preflight).toContain('release-manifest-gate.ts')
+    expect(preflight).toContain('verify-container-source-freshness.sh')
+    expect(preflight).toContain('release preflight requires a clean git worktree')
+  })
+
+  it('keeps the ECS payment gateway and API on one fail-closed credential contract', () => {
+    const compose = readFileSync('infra/local/docker-compose.ecs-pilot.yml', 'utf8')
+    expect(compose).toContain('PAYMENT_GATEWAY_API_KEY: ${PAYMENT_PROVIDER_API_KEY:?PAYMENT_PROVIDER_API_KEY is required}')
+    expect(compose).toContain('PAYMENT_PROVIDER_API_KEY: ${PAYMENT_PROVIDER_API_KEY:?PAYMENT_PROVIDER_API_KEY is required}')
+    expect(compose).not.toContain('${PAYMENT_GATEWAY_API_KEY:')
+    for (const key of [
+      'PAYMENT_MODE', 'PAYMENT_PROVIDER_ADAPTERS', 'PAYMENT_CHECKOUT_BASE_URL',
+      'PAYMENT_PROVIDER_CHECKOUT_API_URL', 'PAYMENT_PROVIDER_QUERY_API_URL',
+      'PAYMENT_PROVIDER_REFUND_API_URL', 'PAYMENT_PROVIDER_MERCHANT_ID',
+      'PAYMENT_CALLBACK_BASE_URL', 'PAYMENT_CALLBACK_SECRET',
+      'PAYMENT_RECONCILIATION_ENABLED', 'PAYMENT_REFUND_ENABLED',
+    ]) expect(compose).toContain(`${key}: \${${key}:?`)
+  })
+
+  it('makes ECS OSS storage production-only with AES256 by default and optional KMS', () => {
+    const compose = readFileSync('infra/local/docker-compose.oss.yml', 'utf8')
+    expect(compose).toContain('NODE_ENV: production')
+    expect(compose).toContain('LOCAL_COMPOSE: "false"')
+    expect(compose).toContain('ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: "false"')
+    expect(compose).toContain('ASSET_STORAGE_SSE_MODE: ${ASSET_STORAGE_SSE_MODE:-AES256}')
+    expect(compose).toContain('ASSET_STORAGE_KMS_KEY_ID: ${ASSET_STORAGE_KMS_KEY_ID:-}')
+    expect(compose).toContain('OBJECT_STORAGE_VERSIONING: ${OBJECT_STORAGE_VERSIONING:?OBJECT_STORAGE_VERSIONING=true is required}')
+    expect(compose).toContain('ASSET_STORAGE_QUOTA_BYTES: ${ASSET_STORAGE_QUOTA_BYTES:?ASSET_STORAGE_QUOTA_BYTES is required}')
+    expect(compose).toContain('ASSET_STORAGE_CREDENTIAL_MODE: ${ASSET_STORAGE_CREDENTIAL_MODE:-aliyun_ecs_ram_role}')
+    expect(compose).not.toContain('OSS_ACCESS_KEY_ID')
+    expect(compose).not.toContain('OSS_ACCESS_KEY_SECRET')
+  })
+
   it('requires an explicit pilot release identity before compose can start', () => {
     const preflight = readFileSync('infra/scripts/pilot-compose-preflight.sh', 'utf8')
     expect(preflight).toContain(': "${PILOT_RELEASE_ID:?PILOT_RELEASE_ID is required}"')
@@ -252,7 +301,7 @@ describe('deployment operation scripts', () => {
       'douyin_auth_enabled: true', 'douyin_read_enabled: true', 'douyin_write_enabled: true',
       'point_in_time_recovery_enabled: true', 'database_pooler_enabled: true', 'database_max_backend_connections: 300', 'database_connection_utilization_alert_percent: 80', 'secret_provider: vault', 'worker_api_credentials_ref: vault://worker-api-credentials', ...['sync', 'generation', 'publish', 'reconcile', 'automation'].flatMap(role => [`worker_${role}_api_token_ref: vault://worker-${role}-token`, `worker_${role}_api_signing_secret_ref: vault://worker-${role}-signing`]), 'payment_mode: provider', 'payment_provider_adapters: alipay,wechat', 'payment_checkout_base_url: https://payments.example.com/checkout', 'payment_provider_checkout_api_url: https://payments.example.com/v1/checkout', 'payment_provider_query_api_url: https://payments.example.com/v1/query', 'payment_provider_refund_api_url: https://payments.example.com/v1/refund', 'payment_provider_api_key_ref: vault://merchant-payment/provider-api-key', 'payment_provider_merchant_id: merchant-example', 'payment_callback_base_url: https://merchant.example.com/v1', 'payment_callback_secret_ref: vault://merchant-payment-callback', 'payment_reconciliation_enabled: true', 'payment_refund_enabled: true', 'model_relay_base_url: https://relay.example.com', 'model_relay_api_key_ref: vault://merchant-model/relay-api-key', 'text_model: merchant-text-v1', 'image_model: merchant-image-v1', 'image_edit_model: merchant-image-edit-v1', 'ocr_model: merchant-ocr-v1', 'video_model: merchant-video-v1', 'approved_requests_per_minute: "100"', 'approved_tokens_per_minute: "100000"', 'maximum_task_cost_cny: "0.50"', 'platform_rule_sync_manifest_url: https://rules.example.com/platform-rules/v1/manifest.json', 'platform_rule_sync_signing_secret_ref: vault://merchant-rules/manifest-signing-secret', 'platform_rule_sync_interval_hours: "24"',
       'asset_scanner_mode: clamav_worker', 'allow_local_asset_scan_fixture: false', 'asset_scanner_api_token_ref: vault://merchant-scanner/api-token', 'asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/workspace-signing', 'asset_scan_receipt_key_id: scanner-production-2026-08', 'asset_scan_receipt_private_key_ref: vault://merchant-scanner/receipt-private-key', 'asset_scan_trusted_public_keys_ref: vault://merchant-scanner/trusted-public-keys', 'asset_scan_policy_version: scan-policy-2026-08-30', `clamav_image_digest: ${imageDigests.clamav}`, 'clamav_signature_max_age_minutes: 1440', 'clamav_max_file_bytes: 104857600',
-      'object_storage_bucket: merchant-assets', 'object_storage_region: cn', 'object_storage_endpoint: https://s3.example.com', 'object_storage_kms_key: vault://kms', 'asset_display_base_url: https://merchant.example.com', 'asset_display_url_signing_secret_ref: vault://merchant-assets/display-url-signing-secret', 'merchant_ui_api_token_ref: vault://merchant-ui/api-token', 'merchant_ui_workspace_id_ref: vault://merchant-ui/workspace-id', 'object_storage_versioning: true', 'lifecycle_policy_ref: vault://asset-lifecycle-policy', 'asset_quarantine_retention_days: 7', 'asset_clean_retention_days: 90', 'deletion_request_grace_days: 7', 'backup_retention_days: 30', 'alert_channel_secret_ref: vault://merchant-alert-channel',
+      'object_storage_bucket: merchant-assets', 'object_storage_region: cn', 'object_storage_endpoint: https://s3.example.com', 'object_storage_kms_key: vault://kms', 'asset_display_base_url: https://merchant.example.com', 'asset_display_url_signing_secret_ref: vault://merchant-assets/display-url-signing-secret', 'merchant_ui_api_token_ref: vault://merchant-ui/api-token', 'merchant_ui_workspace_id_ref: vault://merchant-ui/workspace-id', 'object_storage_versioning: true', 'lifecycle_policy_ref: vault://asset-lifecycle-policy', 'asset_quarantine_retention_days: 7', 'asset_clean_retention_days: 90', 'deletion_request_grace_days: 7', 'backup_retention_days: 30', 'alert_notifications_enabled: false',
     ].join('\n'))
     writeFileSync(evidence, JSON.stringify({
       schema_version: '1', release_id: 'release-1', environment: 'production', generated_at: '2026-08-23T00:00:00Z',

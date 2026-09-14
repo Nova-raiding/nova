@@ -3708,7 +3708,7 @@ function AssetLibrary({
           </span>
         </div>
         <span className="knowledge-plan-output">产出：{assetEntry === 'rules' ? '可发布 / 需修复' : assetEntry === 'images' ? '可引用素材' : '可供生成引用的知识'}</span>
-        {assetEntry === 'images' && <span className="knowledge-plan-external">请在大麦 ChatGPT 插件中绑定店铺</span>}
+        {assetEntry === 'images' && <span className="knowledge-plan-external">请在Store Nova ChatGPT 插件中绑定店铺</span>}
       </section>
       <div className="embedded-rules" id="asset-rules-panel" role="tabpanel" aria-label="规则说明与规则列表">
         {assetEntry === 'rules' && <Rules baseUrl={baseUrl} />}
@@ -5165,7 +5165,7 @@ function Products({
               : `创建独立任务组${selectedTargets.length ? `（${selectedTargets.length}）` : ''}`}
           </button>
           {baseUrl && !accountsLoading && !accountsError && accounts && syncableAccountCount === 0 && (
-            <span className="knowledge-plan-external">请在大麦 ChatGPT 插件中绑定店铺后再同步</span>
+            <span className="knowledge-plan-external">请在Store Nova ChatGPT 插件中绑定店铺后再同步</span>
           )}
           <button
             className="primary"
@@ -5309,7 +5309,7 @@ function Products({
           <Store size={16} />
           {syncableAccountCount
             ? `已发现 ${syncableAccountCount} 家可同步店铺；同步会逐店执行，不会默认选择同平台第一家店。`
-            : '未发现已授权且可读取的店铺；请先在大麦 ChatGPT 插件中绑定店铺，再回来同步商品。'}
+            : '未发现已授权且可读取的店铺；请先在Store Nova ChatGPT 插件中绑定店铺，再回来同步商品。'}
         </div>
       )}
       {groupMessage && (

@@ -11,6 +11,8 @@ export type AssetSignatureClass =
   | 'jpeg'
   | 'gif'
   | 'webp'
+  | 'mp4'
+  | 'webm'
   | 'svg'
   | 'postscript'
   | 'json'
@@ -71,7 +73,7 @@ interface AssetTypePolicy {
   signatures: readonly AssetSignatureClass[]
 }
 
-const MAX_ASSET_BYTES = 50 * 1024 * 1024
+const MAX_ASSET_BYTES = 100 * 1024 * 1024
 const extensionPolicies = new Map<string, AssetTypePolicy>([
   ['.pdf', { mimes: ['application/pdf'], signatures: ['pdf'] }],
   ['.docx', { mimes: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'], signatures: ['zip'] }],
@@ -85,6 +87,8 @@ const extensionPolicies = new Map<string, AssetTypePolicy>([
   ['.jpeg', { mimes: ['image/jpeg'], signatures: ['jpeg'] }],
   ['.gif', { mimes: ['image/gif'], signatures: ['gif'] }],
   ['.webp', { mimes: ['image/webp'], signatures: ['webp'] }],
+  ['.mp4', { mimes: ['video/mp4'], signatures: ['mp4'] }],
+  ['.webm', { mimes: ['video/webm'], signatures: ['webm'] }],
   ['.svg', { mimes: ['image/svg+xml', 'text/xml', 'application/xml'], signatures: ['svg'] }],
   ['.ai', { mimes: ['application/pdf', 'application/postscript', 'application/illustrator'], signatures: ['pdf', 'postscript'] }],
   ['.eps', { mimes: ['application/postscript'], signatures: ['postscript'] }],
@@ -97,6 +101,8 @@ const signatureMimes = new Map<AssetSignatureClass, readonly string[]>([
   ['jpeg', ['image/jpeg']],
   ['gif', ['image/gif']],
   ['webp', ['image/webp']],
+  ['mp4', ['video/mp4']],
+  ['webm', ['video/webm']],
   ['svg', ['image/svg+xml', 'text/xml', 'application/xml']],
   ['postscript', ['application/postscript', 'application/illustrator']],
   ['json', ['application/json', 'text/json']],
@@ -183,12 +189,216 @@ function classifySignature(bytes: Uint8Array): AssetSignatureClass {
   if (hasPrefix(bytes, ascii('GIF87a')) || hasPrefix(bytes, ascii('GIF89a'))) return 'gif'
   if (hasPrefix(bytes, ascii('RIFF')) && bytes.length >= 12 && hasPrefix(bytes.slice(8), ascii('WEBP'))) return 'webp'
   if (hasPrefix(bytes, ascii('%!PS-Adobe'))) return 'postscript'
+  if (hasPrefix(bytes, [0x1a, 0x45, 0xdf, 0xa3])) return isWebmContainer(bytes) ? 'webm' : 'unknown'
+  if (bytes.length >= 8 && ['ftyp', 'free', 'skip', 'wide'].includes(fourCc(bytes, 4))) return isMp4Container(bytes) ? 'mp4' : 'unknown'
 
   const text = decodeText(bytes)
   if (text !== null && /^(?:\uFEFF|\s)*(?:<\?xml\b[^>]*>\s*)?<svg(?:\s|>)/iu.test(text)) return 'svg'
   if (text !== null && isJson(text)) return 'json'
   if (text !== null && isSafeText(text)) return 'text'
   return 'unknown'
+}
+
+// Container identification only: this does not decode frames or replace the
+// quarantine/antimalware scan. Parse bounded headers, never search raw payloads
+// for magic strings (which would admit ftyp/DocType text inside arbitrary data).
+// Format references: https://www.w3.org/TR/mse-byte-stream-format-isobmff/
+// https://www.webmproject.org/docs/container/ and RFC 8794 sections 4-6.
+interface ContainerBudget { remaining: number; maxIdWidth?: number; maxSizeWidth?: number }
+interface Mp4Box { type: string; start: number; end: number }
+
+function fourCc(bytes: Uint8Array, offset: number): string {
+  return String.fromCharCode(bytes[offset]!, bytes[offset + 1]!, bytes[offset + 2]!, bytes[offset + 3]!)
+}
+
+function mp4Boxes(bytes: Uint8Array, start: number, end: number, budget: ContainerBudget, topLevel = false): Mp4Box[] | null {
+  const boxes: Mp4Box[] = []
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  while (start < end) {
+    if (--budget.remaining < 0 || end - start < 8) return null
+    const shortSize = view.getUint32(start)
+    const type = fourCc(bytes, start + 4)
+    let headerSize = 8
+    let size = shortSize
+    if (shortSize === 1) {
+      if (end - start < 16) return null
+      const largeSize = view.getBigUint64(start + 8)
+      if (largeSize > BigInt(end - start)) return null
+      size = Number(largeSize)
+      headerSize = 16
+    } else if (shortSize === 0) {
+      // Size zero consumes the rest of the file, not an enclosing metadata box.
+      if (!topLevel || type !== 'mdat') return null
+      size = end - start
+    }
+    if (type === 'uuid') headerSize += 16
+    if (size < headerSize || size > end - start) return null
+    boxes.push({ type, start: start + headerSize, end: start + size })
+    start += size
+  }
+  return boxes
+}
+
+function isMp4Container(bytes: Uint8Array): boolean {
+  const budget = { remaining: 4096 }
+  const boxes = mp4Boxes(bytes, 0, bytes.length, budget, true)
+  if (!boxes) return false
+  const fileTypes = boxes.filter(box => box.type === 'ftyp')
+  const movies = boxes.filter(box => box.type === 'moov')
+  if (fileTypes.length !== 1 || movies.length !== 1 || !boxes.some(box => box.type === 'mdat' && box.end > box.start)) return false
+  const fileType = fileTypes[0]!
+  if (fileType.end - fileType.start < 8 || (fileType.end - fileType.start) % 4 !== 0 || fileType.end - fileType.start > 4096) return false
+  // This upload policy accepts MP4 video, not all ISO-BMFF relatives (HEIF/MOV).
+  const brands = new Set(['isom', 'iso2', 'iso3', 'iso4', 'iso5', 'iso6', 'iso7', 'iso8', 'iso9', 'mp41', 'mp42', 'avc1', 'dash', 'M4V '])
+  if (!brands.has(fourCc(bytes, fileType.start))) return false
+  const movie = movies[0]!
+  const movieChildren = mp4Boxes(bytes, movie.start, movie.end, budget)
+  const movieHeaders = movieChildren?.filter(box => box.type === 'mvhd')
+  if (!movieChildren || movieHeaders?.length !== 1) return false
+  const movieHeader = movieHeaders[0]!
+  const movieVersion = bytes[movieHeader.start]
+  if (movieVersion !== 0 && movieVersion !== 1 || movieHeader.end - movieHeader.start < (movieVersion === 1 ? 112 : 100)) return false
+  let hasVideoTrack = false
+  for (const track of movieChildren.filter(box => box.type === 'trak')) {
+    const trackChildren = mp4Boxes(bytes, track.start, track.end, budget)
+    if (!trackChildren) return false
+    for (const media of trackChildren.filter(box => box.type === 'mdia')) {
+      const mediaChildren = mp4Boxes(bytes, media.start, media.end, budget)
+      if (!mediaChildren) return false
+      for (const handler of mediaChildren.filter(box => box.type === 'hdlr')) {
+        // FullBox header, pre_defined, handler_type and three reserved uint32s.
+        if (handler.end - handler.start < 24 || bytes[handler.start] !== 0) return false
+        if (fourCc(bytes, handler.start + 8) === 'vide') hasVideoTrack = true
+      }
+    }
+  }
+  return hasVideoTrack
+}
+
+interface EbmlElement { id: number; start: number; end: number; unknownSize: boolean }
+
+function ebmlVint(bytes: Uint8Array, offset: number, end: number, id: boolean): { value: bigint; width: number; unknown: boolean } | null {
+  const first = bytes[offset]
+  if (offset >= end || first === undefined || first === 0) return null
+  let width = 1
+  let marker = 0x80
+  while ((first & marker) === 0) { width++; marker >>= 1 }
+  if (width > (id ? 4 : 8) || offset + width > end) return null
+  let data = BigInt(first & (marker - 1))
+  for (let index = 1; index < width; index++) data = data * 256n + BigInt(bytes[offset + index]!)
+  const unknown = data === (1n << BigInt(7 * width)) - 1n
+  if (id && (data === 0n || unknown || width > 1 && data < (1n << BigInt(7 * (width - 1))) - 1n)) return null
+  return { value: id ? data + (1n << BigInt(7 * width)) : data, width, unknown }
+}
+
+function ebmlElement(bytes: Uint8Array, offset: number, end: number, budget: ContainerBudget): EbmlElement | null {
+  if (--budget.remaining < 0) return null
+  const id = ebmlVint(bytes, offset, end, true)
+  if (!id || id.width > (budget.maxIdWidth ?? 4)) return null
+  const size = ebmlVint(bytes, offset + id.width, end, false)
+  if (!size || size.width > (budget.maxSizeWidth ?? 8)) return null
+  const start = offset + id.width + size.width
+  if (!size.unknown && size.value > BigInt(end - start)) return null
+  return { id: Number(id.value), start, end: size.unknown ? end : start + Number(size.value), unknownSize: size.unknown }
+}
+
+function ebmlChildren(bytes: Uint8Array, start: number, end: number, budget: ContainerBudget): EbmlElement[] | null {
+  const children: EbmlElement[] = []
+  while (start < end) {
+    const child = ebmlElement(bytes, start, end, budget)
+    if (!child || child.unknownSize) return null
+    children.push(child)
+    start = child.end
+  }
+  return children
+}
+
+function webmClusterEnd(bytes: Uint8Array, cluster: EbmlElement, budget: ContainerBudget): number | null {
+  let offset = cluster.start
+  let hasTimecode = false
+  let hasBlock = false
+  while (offset < cluster.end) {
+    const child = ebmlElement(bytes, offset, cluster.end, budget)
+    if (!child) return null
+    if (cluster.unknownSize && [0x1f43b675, 0x1c53bb6b, 0x114d9b74, 0x1254c367, 0x1549a966, 0x1654ae6b].includes(child.id)) break
+    if (child.unknownSize) return null
+    if (child.id === 0xe7) {
+      if (child.end - child.start < 1 || child.end - child.start > 8) return null
+      hasTimecode = true
+    }
+    const blocks = child.id === 0xa0 ? ebmlChildren(bytes, child.start, child.end, budget) : [child]
+    if (!blocks) return null
+    for (const block of blocks.filter(field => field.id === 0xa3 || field.id === 0xa1)) {
+      const track = ebmlVint(bytes, block.start, block.end, false)
+      // Track number + int16 timecode + flags + nonempty encoded frame. This
+      // validates the Block header only; codec and lacing validation is separate.
+      if (!hasTimecode || !track || track.unknown || track.value === 0n || block.end - block.start <= track.width + 3) return null
+      hasBlock = true
+    }
+    offset = child.end
+  }
+  return hasTimecode && hasBlock ? offset : null
+}
+
+function isWebmContainer(bytes: Uint8Array): boolean {
+  const budget: ContainerBudget = { remaining: 65536 }
+  const header = ebmlElement(bytes, 0, bytes.length, budget)
+  if (!header || header.id !== 0x1a45dfa3 || header.unknownSize || header.end > 4096) return false
+  const headerFields = ebmlChildren(bytes, header.start, header.end, budget)
+  const docTypes = headerFields?.filter(field => field.id === 0x4282)
+  if (!headerFields || docTypes?.length !== 1 || decodeText(bytes.subarray(docTypes[0]!.start, docTypes[0]!.end)) !== 'webm') return false
+  for (const [id, maximum] of [[0x42f2, 4], [0x42f3, 8], [0x42f7, 1], [0x4286, 1], [0x4285, 4]] as const) {
+    const limits = headerFields.filter(field => field.id === id)
+    if (limits.length > 1 || limits.some(field => field.end - field.start !== 1 || bytes[field.start]! < 1 || bytes[field.start]! > maximum)) return false
+  }
+  const idLimit = headerFields.find(field => field.id === 0x42f2)
+  const sizeLimit = headerFields.find(field => field.id === 0x42f3)
+  budget.maxIdWidth = idLimit ? bytes[idLimit.start]! : 4
+  budget.maxSizeWidth = sizeLimit ? bytes[sizeLimit.start]! : 8
+  const segment = ebmlElement(bytes, header.end, bytes.length, budget)
+  if (!segment || segment.id !== 0x18538067 || segment.end !== bytes.length) return false
+  let hasInfo = false
+  let hasVideoTrack = false
+  let hasCluster = false
+  let offset = segment.start
+  while (offset < segment.end) {
+    const child = ebmlElement(bytes, offset, segment.end, budget)
+    if (!child) return false
+    if (child.id === 0x1f43b675) {
+      if (!hasInfo || !hasVideoTrack || child.start === child.end) return false
+      const clusterEnd = webmClusterEnd(bytes, child, budget)
+      if (clusterEnd === null) return false
+      hasCluster = true
+      // Live/browser recordings may have unknown-size Clusters. Resume at the
+      // next level-1 header, having skipped encoded payloads by declared length.
+      offset = clusterEnd
+      continue
+    } else {
+      if (child.unknownSize) return false
+      if (child.id === 0x1549a966) {
+        const fields = ebmlChildren(bytes, child.start, child.end, budget)
+        if (!fields?.length) return false
+        hasInfo = true
+      }
+      if (child.id === 0x1654ae6b) {
+        const tracks = ebmlChildren(bytes, child.start, child.end, budget)
+        if (!tracks) return false
+        for (const track of tracks.filter(field => field.id === 0xae)) {
+          const fields = ebmlChildren(bytes, track.start, track.end, budget)
+          if (!fields) return false
+          const types = fields.filter(field => field.id === 0x83)
+          const codecs = fields.filter(field => field.id === 0x86)
+          if (types.length !== 1 || codecs.length !== 1) return false
+          const type = types[0]!
+          const codec = codecs[0]!
+          if (type.end - type.start === 1 && bytes[type.start] === 1
+            && /^V_(?:VP8|VP9|AV1)$/u.test(decodeText(bytes.subarray(codec.start, codec.end)) ?? '')) hasVideoTrack = true
+        }
+      }
+    }
+    offset = child.end
+  }
+  return hasInfo && hasVideoTrack && hasCluster
 }
 
 function inspectSvg(bytes: Uint8Array): AssetUploadReasonCode[] {

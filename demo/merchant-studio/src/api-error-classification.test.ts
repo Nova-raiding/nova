@@ -20,7 +20,7 @@ describe('merchant API error classification', () => {
   })
 
   it('gives a safe recovery path for closed MCP transports and unknown 503 responses', () => {
-    expect(describeApiError(apiError('Transport closed', undefined, 503))).toContain('大麦连接已中断')
+    expect(describeApiError(apiError('Transport closed', undefined, 503))).toContain('Store Nova连接已中断')
     expect(describeApiError(apiError('upstream unavailable', undefined, 503))).toContain('服务暂不可用')
   })
 

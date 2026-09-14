@@ -21,17 +21,33 @@ export interface AlertNotificationOptions {
 const configuredUrl = (env: Record<string, string | undefined>) => env.OPS_ALERT_WEBHOOK_URL?.trim() ?? ''
 const configuredAllowedHosts = (env: Record<string, string | undefined>) => (env.OPS_ALERT_WEBHOOK_ALLOWED_HOSTS ?? '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean)
 
+const configuredSecret = (env: Record<string, string | undefined>) => env.OPS_ALERT_WEBHOOK_SECRET?.trim() ?? ''
+
+/** Alert delivery is an optional production integration. An entirely absent
+ * configuration is healthy and disabled. Once the operator opts in, or any
+ * webhook setting is present, the complete secure contract is fail-closed. */
+const alertNotificationsEnabled = (env: Record<string, string | undefined>) => {
+  const flag = env.OPS_ALERT_NOTIFICATIONS_ENABLED?.trim()
+  const hasWebhookConfiguration = Boolean(configuredUrl(env) || configuredAllowedHosts(env).length || configuredSecret(env))
+  return (flag !== undefined && flag !== 'false') || hasWebhookConfiguration
+}
+
 export function alertNotificationReadiness(env: Record<string, string | undefined> = process.env) {
+  const enabled = alertNotificationsEnabled(env)
+  if (!enabled) return { enabled: false, configured: false, ready: true, reason: '告警通知未启用（可选）' }
+  if (env.OPS_ALERT_NOTIFICATIONS_ENABLED !== undefined && !['true', 'false'].includes(env.OPS_ALERT_NOTIFICATIONS_ENABLED.trim())) {
+    return { enabled: true, configured: true, ready: false, reason: 'OPS_ALERT_NOTIFICATIONS_ENABLED 必须为 true 或 false' }
+  }
   const url = configuredUrl(env)
-  if (!url) return { configured: false, ready: false, reason: 'OPS_ALERT_WEBHOOK_URL 未配置' }
+  if (!url) return { enabled: true, configured: true, ready: false, reason: 'OPS_ALERT_WEBHOOK_URL 未配置' }
   let parsed: URL
-  try { parsed = new URL(url) } catch { return { configured: true, ready: false, reason: 'OPS_ALERT_WEBHOOK_URL 不是合法 URL' } }
+  try { parsed = new URL(url) } catch { return { enabled: true, configured: true, ready: false, reason: 'OPS_ALERT_WEBHOOK_URL 不是合法 URL' } }
   const allowedHosts = configuredAllowedHosts(env)
-  if (isSecureEnvironment(env.NODE_ENV) && !allowedHosts.length) return { configured: true, ready: false, reason: '安全环境必须配置 OPS_ALERT_WEBHOOK_ALLOWED_HOSTS' }
+  if (isSecureEnvironment(env.NODE_ENV) && !allowedHosts.length) return { enabled: true, configured: true, ready: false, reason: '安全环境必须配置 OPS_ALERT_WEBHOOK_ALLOWED_HOSTS' }
   const outboundReason = inspectOutboundUrl(url, { environment: env.NODE_ENV, ...(allowedHosts.length ? { allowedHosts } : {}) })
-  if (outboundReason) return { configured: true, ready: false, reason: `告警 Webhook 地址不安全：${outboundReason}` }
-  if (!env.OPS_ALERT_WEBHOOK_SECRET?.trim()) return { configured: true, ready: false, reason: 'OPS_ALERT_WEBHOOK_SECRET 未配置' }
-  return { configured: true, ready: true, protocol: parsed.protocol }
+  if (outboundReason) return { enabled: true, configured: true, ready: false, reason: `告警 Webhook 地址不安全：${outboundReason}` }
+  if (!configuredSecret(env)) return { enabled: true, configured: true, ready: false, reason: 'OPS_ALERT_WEBHOOK_SECRET 未配置' }
+  return { enabled: true, configured: true, ready: true, protocol: parsed.protocol }
 }
 
 export function alertNotificationBody(alert: OperationalAlert, requestId: string, timestamp: number) {
@@ -62,7 +78,7 @@ export function alertNotificationBody(alert: OperationalAlert, requestId: string
 export async function notifyOperationalAlert(alert: OperationalAlert, options: AlertNotificationOptions = {}): Promise<AlertNotificationResult> {
   const env = options.env ?? process.env
   const readiness = alertNotificationReadiness(env)
-  if (!readiness.configured) return { delivery: 'disabled', attempts: 0, reason: readiness.reason }
+  if (!readiness.enabled) return { delivery: 'disabled', attempts: 0, reason: readiness.reason }
   if (!readiness.ready) return { delivery: 'blocked', attempts: 0, reason: readiness.reason }
   const requestId = options.requestId ?? `alert_notify_${randomUUID()}`
   const timestamp = options.now?.() ?? Date.now()

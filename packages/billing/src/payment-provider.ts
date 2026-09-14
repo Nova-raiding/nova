@@ -296,5 +296,8 @@ export function createPaymentProviderFromEnv(source: Record<string, string | und
   const apiKey = source.PAYMENT_PROVIDER_API_KEY?.trim()
   const merchantId = source.PAYMENT_PROVIDER_MERCHANT_ID?.trim()
   if (!endpoint || !apiKey || !merchantId) return undefined
-  try { return new HttpPaymentProvider({ endpoint, ...(refundEndpoint ? { refundEndpoint } : {}), ...(queryEndpoint ? { queryEndpoint } : {}), apiKey, merchantId, timeoutMs: Number(source.PAYMENT_PROVIDER_TIMEOUT_MS ?? 15_000) }) } catch { return undefined }
+  const timeoutText = source.PAYMENT_PROVIDER_TIMEOUT_MS?.trim()
+  const timeoutMs = timeoutText === undefined || timeoutText === '' ? 15_000 : Number(timeoutText)
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 120_000) return undefined
+  try { return new HttpPaymentProvider({ endpoint, ...(refundEndpoint ? { refundEndpoint } : {}), ...(queryEndpoint ? { queryEndpoint } : {}), apiKey, merchantId, timeoutMs }) } catch { return undefined }
 }

@@ -692,7 +692,7 @@ describe('API HTTP vertical slice', () => {
     const startCard = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2.5, method: 'merchant.start', params: { workspace_id: workspaceId } }) }).then(json)
     expect(startCard.error).toBeNull()
     const startResult = (startCard.data as { result: { greeting: string; currentStep: { id: string; entryMethod: string }; nextPrompt: string; modelAccess: { userKeyRequired: boolean }; brandNavigation: { presentation: string; hierarchy: string[]; items: unknown[] }; platformOptions: Array<{ platform: string; label: string; state: string; action: string; readiness: { mediaUpload: { ready: boolean; configured: boolean; evidence: boolean; reason?: string } } }>; cards: Array<{ id: string; state: string; cta: string; action: { method: string }; blocked_by: string[]; next_actions?: Array<{ required_inputs?: string[] }>; capabilityGate?: { unlocked: boolean; method: string; reason: string } }>; wallet: { balance_cny: string; unlocked: boolean; status_method: string; purchase_method: string; order_method: string; payment_status_method: string; payment_channels: string[]; message: string } } }).result
-    expect(startResult).toMatchObject({ greeting: '欢迎使用大麦。', currentStep: { id: 'bind-store', entryMethod: 'platform.connect' }, nextPrompt: '选择一个平台连接我的店铺', modelAccess: { userKeyRequired: false }, wallet: { balance_cny: '0.00', unlocked: true } })
+    expect(startResult).toMatchObject({ greeting: '欢迎使用Store Nova。', currentStep: { id: 'bind-store', entryMethod: 'platform.connect' }, nextPrompt: '选择一个平台连接我的店铺', modelAccess: { userKeyRequired: false }, wallet: { balance_cny: '0.00', unlocked: true } })
     expect(startResult.wallet).toMatchObject({ purchase_method: 'commercial.catalog.get', order_method: 'commercial.order.create', payment_status_method: 'commercial.order.payment.get', payment_channels: [] })
     expect(startResult.wallet).not.toHaveProperty('recharge_method', 'billing.recharge.create')
     expect(startResult.brandNavigation).toMatchObject({ presentation: 'tree', hierarchy: ['brand', 'platform', 'store'], items: [] })
@@ -2175,6 +2175,7 @@ describe('API HTTP vertical slice', () => {
   })
 
   it('lists and reviews merchant registration applications over the platform HTTP boundary', async () => {
+    vi.stubEnv('ALLOW_MERCHANT_SELF_REGISTRATION', 'true')
     const auth = new MemoryPasswordAuthRepository()
     await auth.ensurePlatformAccount({ login: 'platform-registration-review@example.com', passwordHash: await hashPassword('PlatformPass123'), roles: ['platform_ops'] })
     setPasswordAuthRepositoryForTests(auth)
@@ -2190,6 +2191,19 @@ describe('API HTTP vertical slice', () => {
       expect(reviewed.error).toBeNull(); expect(reviewed.data).toMatchObject({ login: 'applicant@example.com', status: 'active', workspace_ids: ['ws_demo'] })
       const replay = await fetch(`${base}/v1/ops/merchant-registration-applications/review`, { method: 'POST', headers: { cookie, 'x-ops-workbench': 'platform', 'content-type': 'application/json' }, body: JSON.stringify({ login: 'applicant@example.com', decision: 'rejected', reason: '重复审核' }) }).then(json)
       expect(replay.error?.code).toBe('AUTH_REGISTRATION_STATE_INVALID')
-    } finally { setPasswordAuthRepositoryForTests() }
+    } finally { setPasswordAuthRepositoryForTests(); vi.unstubAllEnvs() }
+  })
+
+  it('blocks public merchant registration unless explicitly enabled for a compatibility test', async () => {
+    vi.stubEnv('ALLOW_MERCHANT_SELF_REGISTRATION', 'false')
+    const base = await start()
+    try {
+      const response = await fetch(`${base}/v1/auth/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ login: 'self-register-blocked@example.com', password: 'MerchantPass123', enterprise_name: '不应自助注册', contact_name: '测试', terms_agreed: true }),
+      }).then(json)
+      expect(response.error).toMatchObject({ code: 'AUTH_PUBLIC_REGISTRATION_DISABLED' })
+    } finally { vi.unstubAllEnvs() }
   })
 })
