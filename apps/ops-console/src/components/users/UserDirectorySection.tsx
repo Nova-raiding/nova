@@ -333,29 +333,29 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
           ]} />
           <div><Typography.Title level={5}>店铺详情</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={false} dataSource={model.userDetail.memberships} columns={[
             { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
-            { title: "店铺名称", key: "name", width: 220, render: (_: unknown, row: PlatformUser) => row.enterpriseName || row.workspaceId },
-            { title: "店铺状态", key: "status", width: 120, render: (_: unknown, row: PlatformUser) => <Tag color={row.workspaceStatus === "active" ? "green" : "red"}>{row.workspaceStatus === "active" ? "正常" : "风险"}</Tag> },
-            { title: "开通时间", key: "openedAt", width: 170, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
+            { title: "店铺名称", key: "name", align: "center", width: 220, render: (_: unknown, row: PlatformUser) => row.enterpriseName || row.workspaceId },
+            { title: "店铺状态", key: "status", align: "center", width: 120, render: (_: unknown, row: PlatformUser) => <Tag color={row.workspaceStatus === "active" ? "green" : "red"}>{row.workspaceStatus === "active" ? "正常" : "风险"}</Tag> },
+            { title: "开通时间", key: "openedAt", align: "center", width: 170, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
           <div><Typography.Title level={5}>月费详情</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:monthly-fee`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无月费记录" }} columns={[
             { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
-            { title: "用户名", key: "name", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
-            { title: "月费版本", key: "plan", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
+            { title: "用户名", key: "name", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
+            { title: "月费版本", key: "plan", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
             { title: "生效周期", key: "period", align: "center", width: "50%", render: (_: unknown, row: PlatformUser) => monthlyEffectivePeriod(row) },
           ]} /></div>
           <div><Typography.Title level={5}>钱包</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:wallet`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无充值记录" }} columns={[
-            { title: "序号", key: "index", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => <span className="ops-table-index">{index + 1}</span> },
-            { title: "用户名", key: "name", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
-            { title: "充值金额", key: "amount", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
+            { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => <span className="ops-table-index">{index + 1}</span> },
+            { title: "用户名", key: "name", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
+            { title: "充值金额", key: "amount", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
             { title: "实际到账创意点", key: "points", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial ? row.commercial.includedTasks : "—" },
-            { title: "充值时间", key: "time", width: "25%", render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
+            { title: "充值时间", key: "time", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
           <div><Typography.Title level={5}>当月消耗表</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:monthly-usage`} pagination={false} dataSource={model.userDetail.memberships} columns={[
             { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
-            { title: "用户名", key: "name", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
+            { title: "用户名", key: "name", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
             { title: "本月消耗创意点", key: "used", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.usedTasks ?? "—" },
             { title: "剩余创意点", key: "remaining", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.remainingTasks ?? "—" },
-            { title: "更新时间", key: "updated", width: "25%", render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
+            { title: "更新时间", key: "updated", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
           <div><Typography.Title level={5}>2026年用户总消耗金额</Typography.Title><div className="ops-usage-chart" role="img" aria-label="2026年用户总消耗金额月度折线图">
             <svg viewBox="0 0 720 170" preserveAspectRatio="none" aria-hidden="true">
