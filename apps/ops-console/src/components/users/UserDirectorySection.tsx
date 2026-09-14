@@ -171,22 +171,15 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
     {!canReadUserDirectory && <Alert showIcon type="warning" title="当前角色不能读取用户目录" description="跨租户身份与成员关系需要 identity.read；权限由服务端策略决定。" />}
     {canReadUserDirectory && !model.canUserGovernance && <Alert showIcon type="info" title="当前为只读视图" description="可以查询身份、成员关系和审计详情，但停用、恢复、风险策略与会话撤销需要 identity.update。" />}
     <Card title="已接入用户" extra={<Typography.Text type="secondary">共 {model.userDirectory.workspaceCount} 家接入用户</Typography.Text>} aria-busy={model.userDirectoryLoading}>
-      <Form<UserFilters> form={form} layout="inline" onFinish={(values) => void model.loadUsers({ ...values, page: 1 })} aria-label="用户目录筛选">
+      <Form<UserFilters> form={form} layout="inline" initialValues={{ status: "" }} onFinish={(values) => void model.loadUsers({ ...values, status: values.status || undefined, page: 1 })} aria-label="用户目录筛选">
         <Form.Item name="query" label="搜索"><Input allowClear aria-label="按关键词筛选用户目录" /></Form.Item>
         <Form.Item name="status" label="状态">
-          <Select allowClear aria-label="按成员状态筛选用户目录" placeholder="全部状态" style={{ width: 140 }} options={[
-            { value: "active", label: "已激活" }, { value: "invited", label: "待激活" }, { value: "suspended", label: "已停用" },
+          <Select aria-label="按成员状态筛选用户目录" style={{ width: 140 }} options={[
+            { value: "", label: "全部" }, { value: "active", label: "已激活" }, { value: "suspended", label: "已停用" },
           ]} />
         </Form.Item>
         <Form.Item><Space>
           <Button type="primary" htmlType="submit" loading={model.userDirectoryLoading}>查询</Button>
-          <Button onClick={() => { form.resetFields(); void model.loadUsers({ page: 1 }); }}>清空</Button>
-          <Button
-            onClick={() => void model.exportUsers(form.getFieldsValue())}
-            disabled={!model.canUserGovernance || model.userExporting}
-            loading={model.userExporting}
-            aria-busy={model.userExporting}
-          >{model.userExporting ? "正在导出" : "导出当前筛选"}</Button>
           <Button
             onClick={() => {
               setActionError("");
