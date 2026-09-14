@@ -364,6 +364,26 @@ export function CustomerDeliverySection({
       setSaving(false);
     }
   };
+  const toggleTraining = async (row: CustomerDeliveryRecord, completed: boolean) => {
+    if (!onTrainingSave) {
+      await openStep(row, "training");
+      return;
+    }
+    if (isDeliveryStepBlocked(row.paymentStatus, "training")) {
+      setBlockedCompany(row.companyName);
+      return;
+    }
+    setSaving(true);
+    try {
+      const persisted = await onTrainingSave(row, completed);
+      if (persisted) setSelected(persisted);
+      message.success(completed ? "客户培训已完成" : "客户培训已取消");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "客户培训保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
   const columns = useMemo(
     () => [
       {
@@ -383,15 +403,29 @@ export function CustomerDeliverySection({
         (key) => ({
           title: stepLabels[key],
           dataIndex: key,
-          render: (value: boolean, row: CustomerDeliveryRecord) => (
-            <Button type="link" size="small" onClick={() => openStep(row, key)}>
-              {value ? (
-                <Tag color="success">已完成</Tag>
-              ) : (
-                <Tag>{key === "training" ? "未完成" : "未填写"}</Tag>
-              )}
-            </Button>
-          ),
+          render: (value: boolean, row: CustomerDeliveryRecord) => {
+            if (key === "training" && onTrainingSave && row.paymentStatus === "paid") {
+              return (
+                <Space size="small">
+                  <Checkbox
+                    checked={value}
+                    disabled={saving}
+                    onChange={(event) => void toggleTraining(row, event.target.checked)}
+                  >
+                    {value ? "已完成" : "未完成"}
+                  </Checkbox>
+                  <Button type="link" size="small" onClick={() => openStep(row, key)}>
+                    详情
+                  </Button>
+                </Space>
+              );
+            }
+            return (
+              <Button type="link" size="small" onClick={() => openStep(row, key)}>
+                {value ? <Tag color="success">已完成</Tag> : <Tag>{key === "training" ? "未完成" : "未填写"}</Tag>}
+              </Button>
+            );
+          },
         }),
       ),
       {
@@ -437,7 +471,7 @@ export function CustomerDeliverySection({
         },
       },
     ],
-    [onOpen],
+    [onOpen, onTrainingSave, saving],
   );
   return (
     <Card
