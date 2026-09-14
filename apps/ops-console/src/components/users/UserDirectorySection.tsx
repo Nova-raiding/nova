@@ -166,7 +166,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   return <>
     {!canReadUserDirectory && <Alert showIcon type="warning" title="当前角色不能读取用户目录" description="跨租户身份与成员关系需要 identity.read；权限由服务端策略决定。" />}
     {canReadUserDirectory && !model.canUserGovernance && <Alert showIcon type="info" title="当前为只读视图" description="可以查询身份、成员关系和审计详情，但停用、恢复、风险策略与会话撤销需要 identity.update。" />}
-    <Card title="已入驻用户" extra={<Typography.Text type="secondary">共 {model.userDirectory.total} 条成员关系</Typography.Text>} aria-busy={model.userDirectoryLoading}>
+    <Card title="已开通用户" extra={<Typography.Text type="secondary">共 {model.userDirectory.total} 条成员关系</Typography.Text>} aria-busy={model.userDirectoryLoading}>
       <Form<UserFilters> form={form} layout="inline" onFinish={(values) => void model.loadUsers({ ...values, page: 1 })} aria-label="用户目录筛选">
         <Form.Item name="query" label="搜索"><Input allowClear aria-label="按关键词筛选用户目录" placeholder="姓名、身份或企业名称" /></Form.Item>
         <Form.Item name="status" label="状态">
