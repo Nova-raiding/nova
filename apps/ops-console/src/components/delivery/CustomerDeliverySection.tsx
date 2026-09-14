@@ -14,10 +14,8 @@ import {
   Table,
   Tag,
   Typography,
-  Upload,
   message,
 } from "antd";
-import { PlusOutlined } from "@ant-design/icons";
 import { deliveryDateTimeInputValue } from "./deliveryDateTime.js";
 
 export type DeliveryStepKey =
@@ -173,6 +171,7 @@ export function deliveryStatusLabel(result: ReturnType<typeof deliveryCompletion
 }
 
 export function CustomerDeliverySection({
+  disabled = false,
   records = [],
   onOpen,
   onSave,
@@ -183,6 +182,7 @@ export function CustomerDeliverySection({
   onVideoAdd,
   onVideoList,
 }: {
+  disabled?: boolean;
   records?: CustomerDeliveryRecord[];
   onOpen?: (
     record: CustomerDeliveryRecord,
@@ -497,6 +497,7 @@ export function CustomerDeliverySection({
           </Typography.Text>
           <Button
             type="primary"
+            disabled={disabled}
             onClick={() => {
               createForm.resetFields();
               setShowCreate(true);
@@ -650,8 +651,7 @@ export function CustomerDeliverySection({
                     <Input placeholder="asset_ref 或 https://... 合同链接" />
                   </Form.Item>
                   <Typography.Text type="secondary">
-                    合同文件请先通过素材中心安全上传；此处只保存已验证的
-                    asset_ref/HTTPS 链接。
+                    素材编号须通过服务端安全核验；HTTPS 链接作为外部合同凭证保存，不代表已完成平台扫描。
                   </Typography.Text>
                   <Form.Item
                     name="owner"
@@ -756,23 +756,9 @@ export function CustomerDeliverySection({
                       placeholder="每行一个已上传视频的 asset_ref；支持多段"
                     />
                   </Form.Item>
-                  <Typography.Text type="secondary">
-                    视频必须先通过素材中心安全上传并完成扫描，再填写
-                    asset_ref。页面不会把本地选文件误报为已上传。
-                  </Typography.Text>
-                  <Upload
-                    beforeUpload={() => {
-                      message.info(
-                        "请先通过素材中心安全上传，再填写 asset_ref",
-                      );
-                      return Upload.LIST_IGNORE;
-                    }}
-                    showUploadList={false}
-                  >
-                    <Button icon={<PlusOutlined />}>
-                      选择视频（需安全上传）
-                    </Button>
-                  </Upload>
+                  <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+                    本页仅登记已有视频素材编号，不执行文件上传；素材须属于当前工作区且已通过可信安全扫描。
+                  </Typography.Paragraph>
                 </>
               )}
               <Button type="primary" htmlType="submit" loading={saving || loadingStep}>

@@ -77,8 +77,11 @@ async function closeDrawer(page) {
 }
 
 async function captureTrainingInteraction(page, evidenceDir, testInfo) {
+  const videoButtonSelector = 'tbody tr[data-row-key] td:nth-child(7) button'
+  await expect(page.locator(videoButtonSelector)).toHaveCount(1)
   const url = new URL('/ops/customer-delivery?workbench=platform', origin).toString()
   const screenshotPath = join(evidenceDir, 'training-confirmed-shot-scraper.png')
+  const videoRegistrationPath = join(evidenceDir, 'video-registration-shot-scraper.png')
   const videoPath = join(evidenceDir, 'training-inline.webm')
   const storyboard = join(evidenceDir, 'training-storyboard.json')
   // JSON is valid YAML. Only fixture UI preferences are written to the driver;
@@ -95,6 +98,10 @@ async function captureTrainingInteraction(page, evidenceDir, testInfo) {
         { wait_for: 'tbody input[type="checkbox"]:checked' },
         { pause: 1 },
         { screenshot: screenshotPath },
+        { click: videoButtonSelector },
+        { wait_for: '.ant-drawer-body textarea' },
+        { pause: 1 },
+        { screenshot: videoRegistrationPath },
       ] }],
   }), { mode: 0o600 })
   const localBinary = join(homedir(), '.local/bin/shot-scraper')
@@ -109,6 +116,7 @@ async function captureTrainingInteraction(page, evidenceDir, testInfo) {
     child.stdin.end(JSON.stringify(authState))
   })
   await testInfo.attach('training-inline-shot-scraper', { path: screenshotPath, contentType: 'image/png' })
+  await testInfo.attach('video-registration-shot-scraper', { path: videoRegistrationPath, contentType: 'image/png' })
   await testInfo.attach('training-inline-video', { path: videoPath, contentType: 'video/webm' })
 }
 
@@ -138,10 +146,16 @@ test('isolated customer delivery end-to-end fields, gates, checklists and clean-
     // Profile is fillable while unpaid, but controlled delivery steps are not.
     const profile = page.getByRole('dialog')
     await profile.getByLabel('合同编号').fill(`C-${Date.now()}`)
-    await profile.getByLabel('合同文件').fill('https://example.com/delivery-contract.pdf')
+    await profile.getByLabel('合同文件').fill('asset_ref_missing_contract')
     await profile.getByLabel('项目负责人').fill('隔离项目负责人')
     await profile.getByLabel('售后负责人').fill('隔离售后负责人')
     await profile.getByLabel('要求上线时间').fill('2026-10-01T09:00')
+    const rejectedContract = await rpcAfter(page, 'ops.customer-delivery.update', () => profile.getByRole('button', { name: '保存当前环节', exact: true }).click(), evidence, 409)
+    expect(rejectedContract.error?.code).toBe('CUSTOMER_DELIVERY_CONTRACT_ASSET_NOT_READY')
+    await expect(profile).toBeVisible()
+    await expect(row.locator('td').nth(2)).toContainText('未填写')
+    await screenshot('missing-contract-rejected')
+    await profile.getByLabel('合同文件').fill('https://example.com/delivery-contract.pdf')
     await rpcAfter(page, 'ops.customer-delivery.update', () => profile.getByRole('button', { name: '保存当前环节', exact: true }).click(), evidence)
     await expect(profile).toBeVisible()
     await closeDrawer(page)
@@ -209,6 +223,7 @@ test('isolated customer delivery end-to-end fields, gates, checklists and clean-
     // the video reference instead of allowing the repository to claim success.
     await refreshedRow.getByRole('button', { name: /未上传|\d+ 段/u }).click()
     const videoDialog = page.getByRole('dialog')
+    await expect(videoDialog.getByRole('button', { name: '选择视频（需安全上传）', exact: true })).toHaveCount(0)
     await videoDialog.getByLabel('交付视频（支持多段）').fill('asset_ref_not_scanned')
     const rejected = await rpcAfter(page, 'ops.customer-delivery.videos.add', () => videoDialog.getByRole('button', { name: '保存当前环节', exact: true }).click(), evidence, 409)
     expect(rejected.error?.code).toBe('CUSTOMER_DELIVERY_VIDEO_ASSET_NOT_READY')

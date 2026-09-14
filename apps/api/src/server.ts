@@ -18,6 +18,7 @@ import { allowedModelUsageSettlementDecisions, AssetScanRedriveError, Authorizat
 import type { OutboxEvent, OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import { ServiceFulfillmentRepositoryError, type ServiceFulfillmentEventRecord } from '../../../packages/persistence/src/service-fulfillment-repository.js'
 import { CustomerDeliveryError, MemoryCustomerDeliveryRepository, PostgresCustomerDeliveryRepository, type CustomerDeliveryRepository } from '../../../packages/persistence/src/customer-delivery-repository.js'
+import { requireCustomerDeliveryAsset } from './customer-delivery-assets.js'
 import type { SqlClient } from '../../../packages/persistence/src/repository.js'
 import { CommercialCatalogUnavailableError, type CommercialCatalogMutationInput } from '../../../packages/persistence/src/commercial-catalog-repository.js'
 import { IdentityLifecycleError, MemoryIdentityLifecycleRepository, PostgresIdentityLifecycleRepository, type IdentityAuthorizationSnapshot, type IdentityLifecycleRepository, type IdentityOperationsDetail } from '../../../packages/persistence/src/identity-lifecycle-repository.js'
@@ -10718,6 +10719,20 @@ export function shouldHydrateKnowledgeForMethod(method: string, bypassWorkspaceL
   return method !== 'workspace.bootstrap' && !bypassWorkspaceLifecycleGate && (!isOpsDomainMethod || method.startsWith('knowledge.'))
 }
 
+async function updateCustomerDeliveryWithContractEvidence(input: Parameters<CustomerDeliveryRepository['update']>[0]) {
+  await persistenceReady
+  const repository = persistence.customerDeliveries ?? memoryCustomerDeliveries
+  // The scalar profile-complete endpoint must validate existing evidence too,
+  // otherwise a legacy unscanned reference could bypass the new attach gate.
+  const contractRef = input.patch.contractRef === undefined && input.patch.customerProfileStatus === 'complete'
+    ? (await invokeOpsDomain(() => repository.get(input.workspaceId, input.id)))?.contractRef
+    : input.patch.contractRef
+  if (typeof contractRef === 'string' && /^asset[:_]/u.test(contractRef.trim())) {
+    await requireCustomerDeliveryAsset({ workspaceId: input.workspaceId, assetRef: contractRef.trim(), purpose: 'contract', business: persistence.business, memoryAssets: service.assets })
+  }
+  return invokeOpsDomain(() => repository.update(input))
+}
+
 /**
  * API-owned evidence wrapper. The application checker remains authoritative
  * for statuses, blocking details, relations, and next actions. Two passes
@@ -11990,7 +12005,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!isObject(parsed)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'patch_json 必须是 JSON 对象', 400)
       const allowed = new Set(['companyName', 'contractNumber', 'paymentStatus', 'contractRef', 'projectOwner', 'supportOwner', 'paymentDate', 'plannedGoLiveAt', 'customerProfileStatus', 'systemIntegrationStatus', 'functionalAcceptanceStatus', 'trainingCompleted'])
       if (Object.keys(parsed).some(key => !allowed.has(key))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'patch_json 包含不支持的字段', 400)
-      return result(await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).update({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')), patch: parsed })))
+      return result(await updateCustomerDeliveryWithContractEvidence({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')), patch: parsed }))
     }
     case 'ops.customer-delivery.checklist.update': {
       const checklistKey = requiredStringValue(params, 'checklistKey', 'checklist_key')
@@ -12020,7 +12035,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const status: 'complete' | 'incomplete' = params.completed === true || params.completed === 'true' ? 'complete' : 'incomplete'
       const patch = checklistKey === 'customer_profile' ? { customerProfileStatus: status } : checklistKey === 'system_integration' ? { systemIntegrationStatus: status } : checklistKey === 'functional_acceptance' ? { functionalAcceptanceStatus: status } : null
       if (!patch) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'checklist_key 无效', 400)
-      return result(await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).update({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')), patch })))
+      return result(await updateCustomerDeliveryWithContractEvidence({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')), patch }))
     }
     case 'ops.customer-delivery.checklist-items.list': {
       const repository = persistence.customerDeliveries ?? memoryCustomerDeliveries
@@ -12047,8 +12062,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'ops.customer-delivery.videos.add': {
       const assetRef = requiredStringValue(params, 'assetRef', 'asset_ref')
-      const asset = service.assets.get(assetRef)
-      if (!asset || asset.workspaceId !== workspaceId || asset.scanStatus !== 'clean' || !asset.storageKey.startsWith(`clean/${workspaceId}/`)) throw new DomainError('CUSTOMER_DELIVERY_VIDEO_ASSET_NOT_READY', '交付视频必须引用当前工作区内已通过安全扫描的素材', 409, { asset_ref: assetRef, scan_status: asset?.scanStatus ?? 'missing' })
+      await persistenceReady
+      await requireCustomerDeliveryAsset({ workspaceId, assetRef, purpose: 'video', business: persistence.business, memoryAssets: service.assets })
       return result(await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).addVideo({ workspaceId, deliveryId: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), title: requiredStringValue(params, 'title'), assetRef, ...(params.sort_order !== undefined ? { sortOrder: Number(params.sort_order) } : {}) })))
     }
     case 'ops.support.sla.report': {
