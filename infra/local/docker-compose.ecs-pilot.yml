@@ -246,6 +246,7 @@ services:
       DOUYIN_MEDIA_UPLOAD_EVIDENCE_VERIFIED_AT: ${DOUYIN_MEDIA_UPLOAD_EVIDENCE_VERIFIED_AT:-}
     volumes:
       - ${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required}:/run/release-evidence/platform-capability.json:ro
+      - /run/release-security/evidence-trust:/run/release-security/evidence-trust:ro
 
   api-replica:
     ports: !override []
@@ -255,6 +256,7 @@ services:
     environment: *ecs-production-api-environment
     volumes:
       - ${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required}:/run/release-evidence/platform-capability.json:ro
+      - /run/release-security/evidence-trust:/run/release-security/evidence-trust:ro
 
   pilot-gateway:
     restart: unless-stopped

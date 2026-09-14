@@ -40,6 +40,7 @@ const productionEnvironment = (): NodeJS.ProcessEnv => ({
   ASSET_STORAGE_BUCKET: 'merchant-assets',
   ASSET_STORAGE_REGION: 'cn-test-1',
   ASSET_STORAGE_ENDPOINT: 'https://storage.example.test',
+  ASSET_STORAGE_CREDENTIAL_MODE: 'aliyun_ecs_ram_role',
   ASSET_STORAGE_SSE_MODE: 'aws:kms',
   ASSET_STORAGE_KMS_KEY_ID: 'kms-key-ref',
   PUBLIC_ASSET_BASE_URL: 'https://merchant.example.test',

@@ -15,7 +15,11 @@ export function aliyunEcsRamRoleCredentialProvider(options: {
   metadataBaseUrl?: string
 } = {}) {
   const fetchImpl = options.fetchImpl ?? fetch
-  const baseUrl = (options.metadataBaseUrl ?? process.env.ALIYUN_ECS_METADATA_BASE_URL ?? DEFAULT_METADATA_BASE_URL).replace(/\/$/u, '')
+  const configuredBaseUrl = (options.metadataBaseUrl ?? process.env.ALIYUN_ECS_METADATA_BASE_URL ?? DEFAULT_METADATA_BASE_URL).replace(/\/$/u, '')
+  if (options.metadataBaseUrl === undefined && configuredBaseUrl !== DEFAULT_METADATA_BASE_URL) {
+    throw new Error('ALIYUN_ECS_METADATA_BASE_URL_INVALID')
+  }
+  const baseUrl = configuredBaseUrl
 
   return async () => {
     const headers: Record<string, string> = { Metadata: 'true' }
@@ -43,11 +47,13 @@ export function aliyunEcsRamRoleCredentialProvider(options: {
     if (document.Code !== 'Success' || !document.AccessKeyId || !document.AccessKeySecret || !document.SecurityToken) {
       throw new Error('ALIYUN_ECS_RAM_ROLE_CREDENTIALS_INVALID')
     }
+    const expiration = document.Expiration ? new Date(document.Expiration) : undefined
+    if (expiration && !Number.isFinite(expiration.getTime())) throw new Error('ALIYUN_ECS_RAM_ROLE_CREDENTIALS_INVALID')
     return {
       accessKeyId: document.AccessKeyId,
       secretAccessKey: document.AccessKeySecret,
       sessionToken: document.SecurityToken,
-      ...(document.Expiration ? { expiration: new Date(document.Expiration) } : {}),
+      ...(expiration ? { expiration } : {}),
     }
   }
 }

@@ -39,8 +39,7 @@ config_path=${1:-${PRODUCTION_CONFIG_PATH:-}}
 : "${ASSET_STORAGE_BUCKET:?ASSET_STORAGE_BUCKET is required}"
 : "${ASSET_STORAGE_REGION:?ASSET_STORAGE_REGION is required}"
 : "${ASSET_STORAGE_ENDPOINT:?ASSET_STORAGE_ENDPOINT is required}"
-: "${OSS_ACCESS_KEY_ID:?OSS_ACCESS_KEY_ID is required}"
-: "${OSS_ACCESS_KEY_SECRET:?OSS_ACCESS_KEY_SECRET is required}"
+: "${ASSET_STORAGE_CREDENTIAL_MODE:?ASSET_STORAGE_CREDENTIAL_MODE=aliyun_ecs_ram_role is required}"
 : "${OBJECT_STORAGE_VERSIONING:?OBJECT_STORAGE_VERSIONING=true is required}"
 : "${LIFECYCLE_POLICY_REF:?LIFECYCLE_POLICY_REF is required}"
 : "${ASSET_STORAGE_QUOTA_BYTES:?ASSET_STORAGE_QUOTA_BYTES is required}"
@@ -54,6 +53,7 @@ node "$(dirname "$0")/validate-production-database-url.mjs" DATABASE_URL
 node "$(dirname "$0")/validate-production-database-url.mjs" OPS_DATABASE_URL
 case "$DATABASE_URL $OPS_DATABASE_URL $REDIS_URL" in *localhost*|*127.0.0.1*) echo 'local endpoint is not allowed' >&2; exit 1 ;; esac
 case "$ASSET_STORAGE_ENDPOINT" in https://*) ;; *) echo 'production ASSET_STORAGE_ENDPOINT must use https://' >&2; exit 1 ;; esac
+[ "$ASSET_STORAGE_CREDENTIAL_MODE" = aliyun_ecs_ram_role ] || { echo 'production ECS object storage must use aliyun_ecs_ram_role credentials' >&2; exit 1; }
 [ "$OBJECT_STORAGE_VERSIONING" = true ] || { echo 'OBJECT_STORAGE_VERSIONING must be true' >&2; exit 1; }
 case "${ASSET_STORAGE_SSE_MODE:-AES256}" in
   AES256|aes256) ;;

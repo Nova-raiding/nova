@@ -1,5 +1,5 @@
 import type { GenericResponseMapping, HttpConnectorConfig, Platform, RawProduct, RequestSigner, WriteIdentity, WriteReceipt, WriteStatus } from './types.js'
-import type { CapabilityEvidence, CapabilityEvidenceState, CapabilityName } from './capability-evidence.js'
+import { validateProductionCapabilityEvidenceTrust, type CapabilityEvidence, type CapabilityEvidenceState, type CapabilityName, type ProductionCapabilityEvidenceTrust } from './capability-evidence.js'
 import { validateConnectorReadiness, type ConnectorReadiness } from './readiness.js'
 import { createAlibabaTopSigner, mapAlibabaTopProducts, mapAlibabaTopWriteReceipt, mapAlibabaTopWriteStatus } from './platform-adapters/alibaba-top.js'
 import { createJdSigner, mapJdProducts, mapJdWriteReceipt, mapJdWriteStatus } from './platform-adapters/jd.js'
@@ -182,12 +182,13 @@ const capabilityStates = new Set<CapabilityEvidenceState>(['unverified', 'docume
  * this loader additionally binds it to the running release and refuses to
  * consume evidence in non-production processes.
  */
-function capabilityEvidenceFromSource(source: ConfigSource): Partial<Record<Platform, readonly CapabilityEvidence[]>> {
-  const raw = value(source, 'PLATFORM_CAPABILITY_EVIDENCE_JSON')
+function capabilityEvidenceFromSource(source: ConfigSource, trust?: ProductionCapabilityEvidenceTrust): Partial<Record<Platform, readonly CapabilityEvidence[]>> {
+  const raw = trust?.documentJson
   const releaseId = value(source, 'RELEASE_ID')
   if (value(source, 'NODE_ENV') !== 'production' || !raw || raw.length > 1024 * 1024 || !releaseId) return {}
   try {
     const document = JSON.parse(raw) as Record<string, unknown>
+    if (!trust || validateProductionCapabilityEvidenceTrust(document, source, trust).length) return {}
     if (document.schema_version !== '1' || document.release_id !== releaseId || !['preproduction', 'production'].includes(String(document.environment)) || document.simulated !== false || !Array.isArray(document.platforms)) return {}
     const result: Partial<Record<Platform, CapabilityEvidence[]>> = {}
     for (const candidate of document.platforms) {
@@ -315,13 +316,13 @@ function buildOne(platform: Platform, source: ConfigSource): { config?: HttpConn
   }
 }
 
-export function buildHttpConnectorConfigs(source: ConfigSource = process.env): PlatformConfigBuildResult {
+export function buildHttpConnectorConfigs(source: ConfigSource = process.env, options: { capabilityEvidenceTrust?: ProductionCapabilityEvidenceTrust } = {}): PlatformConfigBuildResult {
   const configs: Partial<Record<Platform, HttpConnectorConfig>> = {}
   const allConfigs: Partial<Record<Platform, HttpConnectorConfig>> = {}
   const candidates: Record<string, HttpConnectorConfig | undefined> = {}
   const missing = {} as Record<Platform, string[]>
   const readiness = {} as Record<Platform, ConnectorReadiness>
-  const capabilityEvidence = capabilityEvidenceFromSource(source)
+  const capabilityEvidence = capabilityEvidenceFromSource(source, options.capabilityEvidenceTrust)
   for (const platform of Object.keys(platformPrefixes) as Platform[]) {
     const result = buildOne(platform, source)
     if (result.config && capabilityEvidence[platform]) result.config.capabilityEvidence = capabilityEvidence[platform]

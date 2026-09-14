@@ -5,7 +5,7 @@ import type { FetchLike } from '../../../packages/connectors/src/http-connector.
 import { createPublishWorker } from '../../../packages/workers/src/factories.js'
 import { createPublishHandler } from '../../../packages/workers/src/publish-adapter.js'
 import type { ConnectorContext, MediaUploadInput, PlatformWriteDraft, RawProduct } from '../../../packages/connectors/src/types.js'
-import type { CapabilityEvidence } from '../../../packages/connectors/src/capability-evidence.js'
+import type { CapabilityEvidence, ProductionCapabilityEvidenceTrust } from '../../../packages/connectors/src/capability-evidence.js'
 import { REQUIRED_CONNECTOR_CAPABILITIES } from '../../../packages/connectors/src/readiness.js'
 import { evaluatePlatformFieldMapping, type PlatformFieldMappingGateInput, type PlatformFieldMappingGateResult } from './platform-field-mapping-gate.js'
 
@@ -43,7 +43,7 @@ export class ConnectorRuntime {
   private readonly productionWrites: boolean
   private readonly fixtureMode: boolean
   private readonly allowFixtureWrites: boolean
-  constructor(options: { fixtureMode?: boolean; allowFixtureWrites?: boolean; connectorConfigs?: Partial<Record<Platform, HttpConnectorConfig>>; configSource?: ConfigSource; structuredConfig?: Partial<Record<Platform, StructuredPlatformConfig>>; credentialProvider?: CredentialProvider; fetch?: FetchLike; mappingPreflight?: ConnectorRuntimeMappingPreflightAdapter; environment?: 'development' | 'test' | 'production' } = {}) {
+  constructor(options: { fixtureMode?: boolean; allowFixtureWrites?: boolean; connectorConfigs?: Partial<Record<Platform, HttpConnectorConfig>>; configSource?: ConfigSource; capabilityEvidenceTrust?: ProductionCapabilityEvidenceTrust; structuredConfig?: Partial<Record<Platform, StructuredPlatformConfig>>; credentialProvider?: CredentialProvider; fetch?: FetchLike; mappingPreflight?: ConnectorRuntimeMappingPreflightAdapter; environment?: 'development' | 'test' | 'production' } = {}) {
     const fixtureMode = options.fixtureMode ?? false
     this.fixtureMode = fixtureMode
     this.allowFixtureWrites = options.allowFixtureWrites ?? fixtureMode
@@ -56,7 +56,7 @@ export class ConnectorRuntime {
       ? { configs: {}, allConfigs: {}, candidates: {}, readiness: Object.fromEntries((Object.keys(profiles) as Platform[]).map(platform => [platform, validateConnectorReadiness(platform, undefined)])) as Record<Platform, ConnectorReadiness> }
         : options.structuredConfig
         ? buildHttpConnectorConfigsFromStructured(options.structuredConfig)
-        : buildHttpConnectorConfigs(options.configSource)
+        : buildHttpConnectorConfigs(options.configSource, { capabilityEvidenceTrust: options.capabilityEvidenceTrust })
     // Instantiate OAuth-capable candidates even while catalog/publish evidence
     // is incomplete. Full read/write operations remain guarded by readiness.
     const configs = options.connectorConfigs ?? discovered.allConfigs

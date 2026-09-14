@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import { unlink, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { Pool } from 'pg'
 import { contextEnvelopeHash, loadMigrations, PostgresAssetScanAttemptRepository, PostgresCreativePointLifecycleRepository, PostgresCreativePointRepository, PostgresOnboardingGrantDispatchRepository, PostgresOutboxRepository, withWorkspaceTransaction, type AssetScanAttemptRecord, type AssetScanAttemptRepository, type Migration, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { PostgresMappingPreflightApprovalRepository } from '../../../packages/persistence/src/mapping-preflight-approval-repository.js'
@@ -1316,6 +1317,17 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
   const relayPricing = createRelayPricingClientFromEnv(process.env)
   const runtime = new ConnectorRuntime({
     configSource: process.env,
+    capabilityEvidenceTrust: (() => {
+      const evidencePath = process.env.CAPABILITY_EVIDENCE_PATH?.trim()
+      if (process.env.NODE_ENV !== 'production' || !evidencePath) return undefined
+      try {
+        return {
+          documentJson: readFileSync(evidencePath, 'utf8'),
+          publicKeyPem: readFileSync('/run/release-security/evidence-trust/production-evidence-public.pem', 'utf8'),
+          trustedKeyId: readFileSync('/run/release-security/evidence-trust/production-evidence-key-id', 'utf8').trim(),
+        }
+      } catch { return undefined }
+    })(),
     credentialProvider: createVaultCredentialProviderFromEnv(),
     mappingPreflight: createPersistentWorkerMappingPreflightAdapter({ approvals: mappingApprovals, scopes: createPostgresWorkerMappingScopeLoader(pool), execution: mappingExecution }),
   })

@@ -18,7 +18,9 @@ describe("customer delivery workspace selection", () => {
   it("provides an explicit accessible selector instead of an unactionable scope warning", () => {
     expect(pageSource).toContain('aria-label="客户交付目标企业工作区"');
     expect(pageSource).toContain("model.setAuthorizationTargetWorkspaceId");
-    expect(pageSource).toContain("disabled={!canRead || !targetWorkspaceId}");
+    expect(pageSource).toContain('model.authorization.can("customer.delivery.update")');
+    expect(pageSource).toContain("disabled={!canUpdate || !targetWorkspaceId}");
+    expect(pageSource).toContain('const targetWorkspaceId = canBrowseWorkspaces ? model.authorizationTargetWorkspaceId?.trim() || "" : ""');
     expect(pageSource).toContain('key={targetWorkspaceId || "unselected"}');
     expect(pageSource).toContain("setRecords([])");
   });

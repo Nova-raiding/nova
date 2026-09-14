@@ -684,18 +684,22 @@ const connectorMappingPreflight = createApiConnectorMappingPreflightAdapter({
   },
 })
 function connectorConfigSource(): NodeJS.ProcessEnv {
+  return process.env
+}
+function connectorCapabilityEvidenceTrust() {
   const evidencePath = process.env.CAPABILITY_EVIDENCE_PATH?.trim()
-  if (!evidencePath || process.env.PLATFORM_CAPABILITY_EVIDENCE_JSON?.trim()) return process.env
+  if (process.env.NODE_ENV !== 'production' || !evidencePath) return undefined
   try {
-    const evidence = readFileSync(evidencePath, 'utf8')
-    return { ...process.env, PLATFORM_CAPABILITY_EVIDENCE_JSON: evidence }
+    return {
+      documentJson: readFileSync(evidencePath, 'utf8'),
+      publicKeyPem: readFileSync('/run/release-security/evidence-trust/production-evidence-public.pem', 'utf8'),
+      trustedKeyId: readFileSync('/run/release-security/evidence-trust/production-evidence-key-id', 'utf8').trim(),
+    }
   } catch {
-    // Missing/unreadable evidence remains absent and therefore fail-closed in
-    // connector readiness as well as the public production readiness report.
-    return process.env
+    return undefined
   }
 }
-export const connectorRuntime = new ConnectorRuntime({ fixtureMode, allowFixtureWrites: process.env.PLUGIN_WRITE_ENABLED === 'true', configSource: connectorConfigSource(), credentialProvider: createVaultCredentialProviderFromEnv(), mappingPreflight: connectorMappingPreflight, environment: process.env.NODE_ENV === 'production' ? 'production' : process.env.NODE_ENV === 'test' ? 'test' : 'development' })
+export const connectorRuntime = new ConnectorRuntime({ fixtureMode, allowFixtureWrites: process.env.PLUGIN_WRITE_ENABLED === 'true', configSource: connectorConfigSource(), capabilityEvidenceTrust: connectorCapabilityEvidenceTrust(), credentialProvider: createVaultCredentialProviderFromEnv(), mappingPreflight: connectorMappingPreflight, environment: process.env.NODE_ENV === 'production' ? 'production' : process.env.NODE_ENV === 'test' ? 'test' : 'development' })
 export const oauthStates = new OAuthStateStore()
 const redisOAuthPort = createRedisOAuthPort(process.env.REDIS_URL)
 type OAuthStateRuntimeStore = Pick<OAuthStateStore, 'issue' | 'consume' | 'consumeCallback'> | Pick<RedisOAuthStateStore, 'issue' | 'consume' | 'consumeCallback'>
@@ -2630,8 +2634,9 @@ function getAssetStorage(): ObjectStoragePort {
     const sseMode = (process.env.ASSET_STORAGE_SSE_MODE?.trim() || (kmsKeyId ? 'aws:kms' : 'AES256')).toLowerCase()
     if (!bucket || !region || !endpoint || !/^https:\/\//u.test(endpoint) || !['aes256', 'aws:kms'].includes(sseMode) || (sseMode === 'aws:kms' && !kmsKeyId)) throw new DomainError('ASSET_STORAGE_NOT_CONFIGURED', '生产环境对象存储必须配置 bucket、region、HTTPS endpoint 和有效的加密模式', 503)
     const credentialMode = process.env.ASSET_STORAGE_CREDENTIAL_MODE?.trim().toLowerCase()
-    const credentials = credentialMode === 'aliyun_ecs_ram_role' ? aliyunEcsRamRoleCredentialProvider() : undefined
-    const client = new S3Client({ region, endpoint, forcePathStyle: process.env.ASSET_STORAGE_FORCE_PATH_STYLE === 'true', ...(credentials ? { credentials } : {}) })
+    if (credentialMode !== 'aliyun_ecs_ram_role') throw new DomainError('ASSET_STORAGE_CREDENTIAL_MODE_INVALID', '生产环境对象存储必须显式使用 aliyun_ecs_ram_role 凭据模式', 503)
+    const credentials = aliyunEcsRamRoleCredentialProvider()
+    const client = new S3Client({ region, endpoint, forcePathStyle: process.env.ASSET_STORAGE_FORCE_PATH_STYLE === 'true', credentials })
     const request = (key: string) => ({ Bucket: bucket, Key: key })
     const transport: CloudObjectTransport = {
       async head(key) {
@@ -7350,6 +7355,7 @@ function productionObjectStorageReadiness(source: NodeJS.ProcessEnv): Production
   const sseMode = (source.ASSET_STORAGE_SSE_MODE?.trim() || (kmsKeyId ? 'aws:kms' : 'AES256')).toLowerCase()
   if (!['aes256', 'aws:kms'].includes(sseMode)) reasons.push('asset_storage_sse_mode_invalid')
   if (sseMode === 'aws:kms' && !kmsKeyId) reasons.push('asset_storage_kms_key_id_missing')
+  if (source.ASSET_STORAGE_CREDENTIAL_MODE?.trim().toLowerCase() !== 'aliyun_ecs_ram_role') reasons.push('asset_storage_credential_mode_must_be_aliyun_ecs_ram_role')
   const endpoint = source.ASSET_STORAGE_ENDPOINT?.trim()
   if (!endpoint) reasons.push('asset_storage_endpoint_missing')
   else {

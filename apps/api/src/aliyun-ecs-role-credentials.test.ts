@@ -24,4 +24,18 @@ describe('aliyunEcsRamRoleCredentialProvider', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ Code: 'Success', AccessKeyId: 'id' })))
     await expect(aliyunEcsRamRoleCredentialProvider({ fetchImpl })()).rejects.toThrow('ALIYUN_ECS_RAM_ROLE_CREDENTIALS_INVALID')
   })
+
+  it('rejects an environment override of the fixed metadata endpoint', () => {
+    vi.stubEnv('ALIYUN_ECS_METADATA_BASE_URL', 'http://127.0.0.1/latest')
+    expect(() => aliyunEcsRamRoleCredentialProvider()).toThrow('ALIYUN_ECS_METADATA_BASE_URL_INVALID')
+    vi.unstubAllEnvs()
+  })
+
+  it('rejects an invalid credential expiration', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response('metadata-token'))
+      .mockResolvedValueOnce(new Response('role'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ Code: 'Success', AccessKeyId: 'id', AccessKeySecret: 'secret', SecurityToken: 'token', Expiration: 'not-a-date' })))
+    await expect(aliyunEcsRamRoleCredentialProvider({ fetchImpl })()).rejects.toThrow('ALIYUN_ECS_RAM_ROLE_CREDENTIALS_INVALID')
+  })
 })

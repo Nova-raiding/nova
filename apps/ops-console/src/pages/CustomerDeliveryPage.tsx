@@ -20,8 +20,11 @@ export function customerDeliveryWorkspaceOptions(workspaces: WorkspaceSummary[])
 
 export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const canRead = model.authorization.can("customer.delivery.read");
+  const canUpdate = model.authorization.can("customer.delivery.update");
   const canBrowseWorkspaces = model.authorization.can("workspace.directory.read");
-  const targetWorkspaceId = model.authorizationTargetWorkspaceId?.trim() || model.opsWorkspaceId?.trim() || model.opsSession?.workspace_id?.trim() || "";
+  // Platform delivery work must always use the explicitly selected enterprise
+  // scope. Clearing the selector must not fall back to an ambient workspace.
+  const targetWorkspaceId = canBrowseWorkspaces ? model.authorizationTargetWorkspaceId?.trim() || "" : "";
   const [workspaceQuery, setWorkspaceQuery] = useState("");
   const deferredWorkspaceQuery = useDeferredValue(workspaceQuery);
   const [records, setRecords] = useState<import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord[]>([]);
@@ -30,6 +33,9 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const [mutationError, setMutationError] = useState("");
   const currentWorkspace = useRef(targetWorkspaceId);
   currentWorkspace.current = targetWorkspaceId;
+  const reportMutationError = (cause: unknown) => {
+    if (currentWorkspace.current === targetWorkspaceId) setMutationError(describeOpsError(cause));
+  };
   const loadRequest = useRef<{ generation: number; controller?: AbortController }>({ generation: 0 });
   const load = async () => {
     if (!canRead || !targetWorkspaceId || currentWorkspace.current !== targetWorkspaceId) return;
@@ -83,13 +89,13 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       return refreshed;
     } catch (cause) {
       const message = describeOpsError(cause);
-      setMutationError(message);
+      if (currentWorkspace.current === targetWorkspaceId) setMutationError(message);
       throw cause;
     }
   };
   const createRecord = async (companyName: string) => {
     try { const record = await customerDeliveryClient.create(targetWorkspaceId, companyName); await load(); return record; }
-    catch (cause) { setMutationError(describeOpsError(cause)); throw cause; }
+    catch (cause) { reportMutationError(cause); throw cause; }
   };
   const saveProfile = async (record: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord) => {
     if (!Number.isSafeInteger(record.revision) || (record.revision ?? 0) < 1) throw new Error("客户交付记录缺少有效 revision，请刷新后重试");
@@ -106,18 +112,18 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       customerProfileStatus: "complete",
     };
     try { const updated = await customerDeliveryClient.update({ targetWorkspaceId, deliveryId: record.id, patch, expectedRevision: revision }); await load(); return updated; }
-    catch (cause) { setMutationError(describeOpsError(cause)); throw cause; }
+    catch (cause) { reportMutationError(cause); throw cause; }
   };
   const loadChecklist = async (record: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord, checklistKey: "system_integration" | "functional_acceptance") => customerDeliveryClient.listChecklistItems({ targetWorkspaceId, deliveryId: record.id, checklistKey });
   const saveTraining = async (record: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord, completed: boolean) => {
     if (!Number.isSafeInteger(record.revision) || (record.revision ?? 0) < 1) throw new Error("客户交付记录缺少有效 revision，请刷新后重试");
     const revision = record.revision as number;
     try { const updated = await customerDeliveryClient.completeTraining({ targetWorkspaceId, deliveryId: record.id, completed, expectedRevision: revision }); await load(); return updated; }
-    catch (cause) { setMutationError(describeOpsError(cause)); throw cause; }
+    catch (cause) { reportMutationError(cause); throw cause; }
   };
   const addVideo = async (record: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord, input: { title: string; assetRef: string; sortOrder: number }) => {
     try { await customerDeliveryClient.addVideo({ targetWorkspaceId, deliveryId: record.id, ...input }); }
-    catch (cause) { if (currentWorkspace.current === targetWorkspaceId) setMutationError(describeOpsError(cause)); throw cause; }
+    catch (cause) { reportMutationError(cause); throw cause; }
     // Registration has succeeded. A failed read must not make this segment
     // look unsaved and cause the operator to submit it for a second time.
     try {
@@ -133,7 +139,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     try {
       return await customerDeliveryClient.listVideos(targetWorkspaceId, record.id);
     } catch (cause) {
-      setMutationError(describeOpsError(cause));
+      reportMutationError(cause);
       throw cause;
     }
   };
@@ -145,6 +151,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       actions={<Button onClick={() => void load()} loading={loading} disabled={!canRead || !targetWorkspaceId}>刷新交付档案</Button>}
     >
       {!canRead ? <Alert type="warning" showIcon message="当前会话没有客户交付读取权限" description="请切换到具备 customer.delivery.read 的平台运营工作区。" /> : null}
+      {canRead && !canUpdate ? <Alert style={{ marginBottom: 16 }} type="info" showIcon message="当前会话仅可查看客户交付" description="保存、上传和流程变更需要 customer.delivery.update 权限。" /> : null}
       {canRead && !canBrowseWorkspaces ? <Alert type="warning" showIcon message="当前会话不能读取企业工作区目录" description="请为平台运营账号补充 workspace.directory.read，才能选择客户并进入交付流程。" /> : null}
       {canRead && canBrowseWorkspaces ? (
         <Card size="small" title="目标企业工作区（必选）" style={{ marginBottom: 16 }}>
@@ -174,7 +181,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       {mutationError ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
       <CustomerDeliverySection
         key={targetWorkspaceId || "unselected"}
-        disabled={!canRead || !targetWorkspaceId}
+        disabled={!canUpdate || !targetWorkspaceId}
         records={records}
         onCreate={createRecord}
         onSave={saveProfile}
