@@ -32,6 +32,10 @@ const stepLabels: Record<DeliveryStepKey, string> = {
   profile: "客户档案", integration: "系统接入", acceptance: "功能测试及验收", training: "客户培训", video: "交付视频",
 };
 
+export function isDeliveryStepBlocked(paymentStatus: CustomerDeliveryRecord["paymentStatus"], step: DeliveryStepKey) {
+  return paymentStatus !== "paid" && ["integration", "acceptance", "training"].includes(step);
+}
+
 export function deliveryCompletion(record: CustomerDeliveryRecord) {
   const completed = [record.profile, record.integration, record.acceptance, record.training, record.videos > 0].filter(Boolean).length;
   // Payment is a prerequisite for activation. The UI gate prevents unpaid
@@ -47,7 +51,7 @@ export function CustomerDeliverySection({ records = [], onOpen, onSave }: { reco
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
   const openStep = (row: CustomerDeliveryRecord, next: DeliveryStepKey) => {
-    if (row.paymentStatus !== "paid" && ["integration", "acceptance", "training"].includes(next)) {
+    if (isDeliveryStepBlocked(row.paymentStatus, next)) {
       setBlockedCompany(row.companyName);
       return;
     }
@@ -79,7 +83,7 @@ export function CustomerDeliverySection({ records = [], onOpen, onSave }: { reco
     <Drawer title={selected ? `${selected.companyName} · ${stepLabels[step]}` : "客户交付详情"} open={Boolean(selected)} onClose={() => setSelected(undefined)} width={560}>
       {selected ? <Space orientation="vertical" size="large" style={{ width: "100%" }}><Steps current={Object.keys(stepLabels).indexOf(step)} items={Object.values(stepLabels).map((title, index) => ({ title, status: index < deliveryCompletion(selected).completed ? "finish" : index === Object.keys(stepLabels).indexOf(step) ? "process" : "wait" }))} />
         <Form form={form} layout="vertical" onFinish={save} initialValues={selected}>
-          {step === "profile" && <><Form.Item name="companyName" label="公司名称" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="contractNo" label="合同编号"><Input /></Form.Item><Form.Item name="paymentStatus" label="付款状态"><Select options={[{ label: "已完成付款核验", value: "paid" }, { label: "未支付", value: "unpaid" }]} /></Form.Item><Form.Item name="paymentDate" label="付款日期"><Input type="date" /></Form.Item><Form.Item name="contractFile" label="合同文件"><Upload beforeUpload={() => false} maxCount={1}><Button>上传合同</Button></Upload></Form.Item><Form.Item name="owner" label="项目负责人"><Input /></Form.Item><Form.Item name="afterSalesOwner" label="售后负责人"><Input /></Form.Item><Form.Item name="requiredLaunchAt" label="要求上线时间"><Input type="datetime-local" /></Form.Item></>}
+          {step === "profile" && <><Form.Item name="companyName" label="公司名称" rules={[{ required: true, message: "请输入公司名称" }]}><Input /></Form.Item><Form.Item name="contractNo" label="合同编号" rules={[{ required: true, message: "请输入合同编号" }]}><Input /></Form.Item><Form.Item name="paymentStatus" label="付款状态" rules={[{ required: true }]}><Select options={[{ label: "已完成付款核验", value: "paid" }, { label: "未支付", value: "unpaid" }]} /></Form.Item><Form.Item name="paymentDate" label="付款日期" rules={[{ required: true, message: "请选择付款日期" }]}><Input type="date" /></Form.Item><Form.Item name="contractFile" label="合同文件" rules={[{ required: true, message: "请上传合同文件" }]}><Upload beforeUpload={() => false} maxCount={1}><Button>上传合同</Button></Upload></Form.Item><Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input /></Form.Item><Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input /></Form.Item><Form.Item name="requiredLaunchAt" label="要求上线时间" rules={[{ required: true, message: "请选择要求上线时间" }]}><Input type="datetime-local" /></Form.Item></>}
           {step === "integration" && <Form.Item name="integrationItems" label="系统接入清单"><Checkbox.Group options={INTEGRATION_ITEMS} /></Form.Item>}
           {step === "acceptance" && <Form.Item name="acceptanceItems" label="功能测试及验收清单"><Checkbox.Group options={ACCEPTANCE_ITEMS} /></Form.Item>}
           {step === "training" && <Form.Item name="training" valuePropName="checked"><Checkbox>客户培训已完成（与功能验收结果同步记录）</Checkbox></Form.Item>}
