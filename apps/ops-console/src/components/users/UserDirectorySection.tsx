@@ -26,6 +26,14 @@ const lifecycleEventLabels: Record<string, string> = {
   "session.revoked": "撤销认证会话",
 };
 const dateTimeFormatter = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+const dateOnlyFormatter = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
+function monthlyEffectivePeriod(row: PlatformUser) {
+  if (!row.updatedAt) return "—";
+  const start = new Date(row.updatedAt);
+  const end = new Date(start);
+  end.setMonth(end.getMonth() + 1);
+  return `${dateOnlyFormatter.format(start)} - ${dateOnlyFormatter.format(end)}（月度）`;
+}
 const userNameCollator = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
 
 export function compareUserDirectoryRows(left: PlatformUser, right: PlatformUser, field: UserDirectorySort["field"]) {
@@ -329,13 +337,21 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "店铺状态", key: "status", width: 120, render: (_: unknown, row: PlatformUser) => <Tag color={row.workspaceStatus === "active" ? "green" : "red"}>{row.workspaceStatus === "active" ? "正常" : "风险"}</Tag> },
             { title: "开通时间", key: "openedAt", width: 170, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
+          <div><Typography.Title level={5}>月费详情</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:monthly-fee`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无月费记录" }} columns={[
+            { title: "序号", key: "index", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
+            { title: "用户名", key: "name", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
+            { title: "月费版本", key: "plan", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
+            { title: "生效周期", key: "period", width: "50%", render: (_: unknown, row: PlatformUser) => monthlyEffectivePeriod(row) },
+          ]} /></div>
           <div><Typography.Title level={5}>钱包</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:wallet`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无充值记录" }} columns={[
+            { title: "序号", key: "index", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
             { title: "用户名", key: "name", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
             { title: "充值金额", key: "amount", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
             { title: "实际到账创意点", key: "points", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial ? row.commercial.includedTasks : "—" },
             { title: "充值时间", key: "time", width: "25%", render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
           <div><Typography.Title level={5}>当月消耗表</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:monthly-usage`} pagination={false} dataSource={model.userDetail.memberships} columns={[
+            { title: "序号", key: "index", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
             { title: "用户名", key: "name", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
             { title: "本月消耗创意点", key: "used", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.usedTasks ?? "—" },
             { title: "剩余创意点", key: "remaining", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.remainingTasks ?? "—" },
