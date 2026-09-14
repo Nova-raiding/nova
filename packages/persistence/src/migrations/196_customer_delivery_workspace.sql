@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS workspace_customer_delivery_videos (
 
 CREATE INDEX IF NOT EXISTS customer_deliveries_workspace_updated_idx
   ON workspace_customer_deliveries(workspace_id, updated_at DESC, id DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS customer_deliveries_workspace_company_unique_idx
+  ON workspace_customer_deliveries(workspace_id, lower(btrim(company_name)));
 CREATE INDEX IF NOT EXISTS customer_delivery_videos_delivery_idx
   ON workspace_customer_delivery_videos(workspace_id, delivery_id, sort_order, id);
 
@@ -73,4 +75,3 @@ BEGIN
   END IF;
 END
 $customer_delivery_acl$;
-

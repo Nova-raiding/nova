@@ -64,7 +64,7 @@ describe("operations navigation", () => {
   });
 
   it("lets platform operations reach every domain and local owner mode stay compatible", () => {
-    const all = authorization(["platform.summary.read", "identity.read", "workspace.member.read", "marketing.summary.read", "customer.content.read", "platform.settings.read", "rule.read", "model.status.read", "storage.reconciliation.read", "billing.platform.read", "audit.read"]);
+    const all = authorization(["platform.summary.read", "identity.read", "workspace.member.read", "workspace.directory.read", "marketing.summary.read", "customer.content.read", "platform.settings.read", "rule.read", "model.status.read", "storage.reconciliation.read", "billing.platform.read", "audit.read"]);
     expect(visibleOpsDomains(all)).toEqual(opsDomains);
     expect(visibleOpsDomains(authorization([], false))).toEqual([]);
   });

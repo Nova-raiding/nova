@@ -15,6 +15,7 @@ export const opsPageRegistry: Record<OpsDomain, OpsDomainPage> = {
     import("../pages/OverviewPage.js").then(({ OverviewPage }) => ({ default: OverviewPage })),
   ),
   users: lazy(async () => ({ default: UsersPage })),
+  "customer-delivery": lazy(() => import("../pages/CustomerDeliveryPage.js").then(({ CustomerDeliveryPage }) => ({ default: CustomerDeliveryPage }))),
   members: lazy(() =>
     import("../pages/MembersPage.js").then(({ MembersPage }) => ({ default: MembersPage })),
   ),

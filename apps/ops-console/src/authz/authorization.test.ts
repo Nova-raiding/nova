@@ -116,7 +116,7 @@ describe("authorization projection", () => {
     const capabilities = [
       "platform.summary.read", "identity.read", "workspace.member.read", "support.ticket.read",
       "incident.read", "marketing.summary.read", "customer.content.read", "platform.settings.read", "rule.read",
-      "model.status.read", "feature_flag.read", "storage.reconciliation.read", "billing.platform.read", "audit.read",
+      "model.status.read", "feature_flag.read", "storage.reconciliation.read", "billing.platform.read", "audit.read", "customer.delivery.read",
     ];
     const authorization = createAuthorizationProjection(session(["platform_ops"], {
       canonical_roles: ["ops_admin"],

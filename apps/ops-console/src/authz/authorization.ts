@@ -36,6 +36,7 @@ const platformRoles = new Set([
 export const domainReadCapabilities: Readonly<Record<OpsDomain, readonly OpsCapability[]>> = {
   overview: ["platform.summary.read", "workspace.summary.read"],
   users: ["identity.read"],
+  "customer-delivery": ["customer.delivery.read", "workspace.directory.read"],
   members: ["workspace.member.read", "workspace.member.manage"],
   tasks: ["marketing.summary.read", "marketing.queue.read", "customer.content.read"],
   knowledge: ["customer.content.read"],

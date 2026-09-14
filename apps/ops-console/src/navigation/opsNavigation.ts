@@ -3,6 +3,7 @@ import { canViewDomain, type AuthorizationProjection } from "../authz/authorizat
 export const opsDomains = [
   "overview",
   "users",
+  "customer-delivery",
   "members",
   "tasks",
   "knowledge",
@@ -19,7 +20,7 @@ export type OpsDomain = (typeof opsDomains)[number];
 /** Domains served by the platform operations console. Merchant operations are
  * handled by Merchant Studio, so the Ops Console never switches workbench. */
 export function requiredWorkbenchForDomain(domain: OpsDomain): "platform" | "workspace" | undefined {
-  if (["users", "stores", "models", "storage", "audit"].includes(domain)) return "platform";
+  if (["users", "customer-delivery", "stores", "models", "storage", "audit"].includes(domain)) return "platform";
   if (["members", "tasks", "knowledge", "rules"].includes(domain)) return "workspace";
   return undefined;
 }
@@ -48,7 +49,7 @@ export function domainFromLocation(
   // the finance route. Keep them usable, but canonicalize to /ops/tasks.
   if (/\/ops\/finance\/merchant\/tasks\/?$/u.test(location.pathname)) return "tasks";
   const pathDomain = location.pathname
-    .match(/\/ops\/(?:governance|overview|users|members|tasks|knowledge|stores|rules|models|storage|finance|audit)\/?$/u)?.[0]
+    .match(/\/ops\/(?:governance|overview|users|customer-delivery|members|tasks|knowledge|stores|rules|models|storage|finance|audit)\/?$/u)?.[0]
     .split("/")
     .filter(Boolean)
     .at(-1);
@@ -67,7 +68,7 @@ export function urlForDomain(
   domain: OpsDomain,
 ): string {
   const currentOpsRoute =
-    /\/ops\/(?:governance|overview|users|members|tasks|knowledge|stores|rules|models|storage|finance|audit)\/?$/u;
+    /\/ops\/(?:governance|overview|users|customer-delivery|members|tasks|knowledge|stores|rules|models|storage|finance|audit)\/?$/u;
   const legacyMerchantTasksRoute = /\/ops\/finance\/merchant\/tasks\/?$/u;
   const basePath = currentOpsRoute.test(location.pathname)
     ? location.pathname.replace(currentOpsRoute, "")

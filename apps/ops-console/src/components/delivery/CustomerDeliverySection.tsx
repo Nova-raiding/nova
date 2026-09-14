@@ -28,16 +28,26 @@ export function deliveryCompletion(record: CustomerDeliveryRecord) {
 export function CustomerDeliverySection({ records = [], onOpen }: { records?: CustomerDeliveryRecord[]; onOpen?: (record: CustomerDeliveryRecord, step: DeliveryStepKey) => void }) {
   const [selected, setSelected] = useState<CustomerDeliveryRecord>();
   const [step, setStep] = useState<DeliveryStepKey>("profile");
+  const [blockedCompany, setBlockedCompany] = useState<string>();
+  const openStep = (row: CustomerDeliveryRecord, next: DeliveryStepKey) => {
+    if (row.paymentStatus !== "paid" && ["integration", "acceptance", "training"].includes(next)) {
+      setBlockedCompany(row.companyName);
+      return;
+    }
+    setBlockedCompany(undefined);
+    setSelected(row); setStep(next); onOpen?.(row, next);
+  };
   const columns = useMemo(() => [
     { title: "序号", width: 72, render: (_: unknown, __: CustomerDeliveryRecord, index: number) => String(index + 1).padStart(2, "0") },
     { title: "公司名", dataIndex: "companyName", render: (value: string) => <Typography.Text strong>{value}</Typography.Text> },
-    ...(["profile", "integration", "acceptance", "training"] as const).map((key) => ({ title: stepLabels[key], dataIndex: key, render: (value: boolean, row: CustomerDeliveryRecord) => <Button type="link" size="small" onClick={() => { setSelected(row); setStep(key); onOpen?.(row, key); }}>{value ? <Tag color="success">已完成</Tag> : <Tag>未填写</Tag>}</Button> })),
-    { title: "交付视频", dataIndex: "videos", render: (value: number, row: CustomerDeliveryRecord) => <Button type="link" size="small" onClick={() => { setSelected(row); setStep("video"); onOpen?.(row, "video"); }}>{value ? `${value} 段` : <Tag>未上传</Tag>}</Button> },
+    ...(["profile", "integration", "acceptance", "training"] as const).map((key) => ({ title: stepLabels[key], dataIndex: key, render: (value: boolean, row: CustomerDeliveryRecord) => <Button type="link" size="small" onClick={() => openStep(row, key)}>{value ? <Tag color="success">已完成</Tag> : <Tag>未填写</Tag>}</Button> })),
+    { title: "交付视频", dataIndex: "videos", render: (value: number, row: CustomerDeliveryRecord) => <Button type="link" size="small" onClick={() => openStep(row, "video")}>{value ? `${value} 段` : <Tag>未上传</Tag>}</Button> },
     { title: "上线时间", dataIndex: "goLiveAt", render: (value?: string) => value || "系统生成" },
     { title: "交付状态", render: (_: unknown, row: CustomerDeliveryRecord) => { const result = deliveryCompletion(row); return <Space><Progress type="circle" size={28} percent={result.completed / result.total * 100} showInfo={false} status={result.ready ? "success" : "normal"} /><span>{result.ready ? <Tag color="success">已生效</Tag> : `${result.completed}/${result.total}`}</span></Space>; } },
   ], [onOpen]);
   return <Card title="客户建档" extra={<Typography.Text type="secondary">完成全部交付项后，客户主体才会变为生效</Typography.Text>}>
     <Alert type="info" showIcon message="交付状态由各环节真实填写结果决定；未付款客户的系统接入、功能验收和培训入口保持阻断。" />
+    {blockedCompany ? <Alert style={{ marginTop: 12 }} type="warning" showIcon message="用户尚未完成付款" description={`${blockedCompany} 的系统接入、功能测试及培训已阻断；完成付款核验后才可继续。`} closable onClose={() => setBlockedCompany(undefined)} /> : null}
     <div style={{ marginTop: 16 }}>{records.length ? <Table rowKey="id" size="small" scroll={{ x: 1180 }} columns={columns} dataSource={records} pagination={false} /> : <Empty description="暂无客户交付档案；请先创建客户档案" />}</div>
     <Drawer title={selected ? `${selected.companyName} · ${stepLabels[step]}` : "客户交付详情"} open={Boolean(selected)} onClose={() => setSelected(undefined)} width={560}>
       {selected ? <Space orientation="vertical" size="large" style={{ width: "100%" }}><Steps current={Object.keys(stepLabels).indexOf(step)} items={Object.values(stepLabels).map((title, index) => ({ title, status: index < deliveryCompletion(selected).completed ? "finish" : index === Object.keys(stepLabels).indexOf(step) ? "process" : "wait" }))} /><Descriptions column={1} bordered size="small"><Descriptions.Item label="合同编号">{selected.contractNo || "未填写"}</Descriptions.Item><Descriptions.Item label="付款状态">{selected.paymentStatus === "paid" ? <Tag color="success">已支付</Tag> : <Tag color="warning">未支付</Tag>}</Descriptions.Item><Descriptions.Item label="项目负责人">{selected.owner || "未分配"}</Descriptions.Item></Descriptions><Typography.Text type="secondary">此处仅展示当前环节状态；保存动作由接入的客户交付 API 完成。</Typography.Text></Space> : null}
