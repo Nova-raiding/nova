@@ -339,7 +339,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
       </Spin>
     </Drawer>
     <Modal
-      title={accessTarget?.status === "suspended" ? "恢复用户访问" : "停用用户访问"} width={460} open={Boolean(accessTarget)} okText={accessTarget?.status === "suspended" ? "确认恢复" : "确认停用"}
+      title={accessTarget?.status === "suspended" ? "恢复用户访问" : "停用用户访问"} width={420} open={Boolean(accessTarget)} okText={accessTarget?.status === "suspended" ? "确认恢复" : "确认停用"}
       okButtonProps={{ danger: accessTarget?.status !== "suspended", disabled: suspendReason.trim().length < 4 || !suspendApprover.trim() }}
       confirmLoading={suspending} transitionName="" maskTransitionName="" onOk={() => void submitAccessChange()}
       onCancel={() => { if (!suspending) { setAccessTarget(undefined); setSuspendReason(""); setSuspendApprover(""); } }}
@@ -347,9 +347,9 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
       {actionError && <div ref={actionErrorRef} className="ops-form-error-summary" role="alert" tabIndex={-1} aria-labelledby="user-access-error-title" aria-describedby="user-access-error-description"><Typography.Text strong id="user-access-error-title">操作未完成</Typography.Text><Typography.Paragraph id="user-access-error-description">{actionError}</Typography.Paragraph></div>}
       <Typography.Paragraph>{accessTarget?.status === "suspended" ? "恢复" : "停用"} <Typography.Text code>{accessTarget?.displayName || accessTarget?.externalSubject}</Typography.Text> 的所有系统操作权限，不会删除其云端数据。</Typography.Paragraph>
       <label htmlFor="suspend-approver">审批人</label>
-      <Input id="suspend-approver" maxLength={100} value={suspendApprover} onChange={(event) => { setSuspendApprover(event.target.value); if (actionError) setActionError(""); }} placeholder="请输入审批人" />
+      <Select id="suspend-approver" aria-label="审批人" value={suspendApprover || undefined} onChange={(value) => { setSuspendApprover(value); if (actionError) setActionError(""); }} placeholder="请选择审批人" options={[{ value: "姜伟", label: "姜伟" }, { value: "侯沿平", label: "侯沿平" }, { value: "韩先晓", label: "韩先晓" }]} />
       <label htmlFor="suspend-reason">操作原因（至少 4 个字符）</label>
-      <Input.TextArea id="suspend-reason" aria-describedby={actionError ? "user-access-error-title" : undefined} autoFocus rows={3} maxLength={500} showCount value={suspendReason} onChange={(event) => { setSuspendReason(event.target.value); if (actionError) setActionError(""); }} placeholder="例如：按工单 OPS-123 撤销或恢复访问" />
+      <Input.TextArea id="suspend-reason" aria-describedby={actionError ? "user-access-error-title" : undefined} autoFocus rows={2} maxLength={500} value={suspendReason} onChange={(event) => { setSuspendReason(event.target.value); if (actionError) setActionError(""); }} placeholder="例如：按工单 OPS-123 撤销或恢复访问" />
     </Modal>
     <Modal title={identityAction === "suspended" ? "全局停用平台身份" : "恢复平台身份"} open={Boolean(identityAction)} okText="确认执行" okButtonProps={{ danger: identityAction === "suspended", disabled: identityWritesDisabled || identityReason.trim().length < 4 }} onCancel={() => { setIdentityAction(undefined); setIdentityReason(""); }} onOk={async () => { if (identityAction && await model.changeIdentityAccess(identityAction, identityReason.trim())) { setIdentityAction(undefined); setIdentityReason(""); } }}>
       <Alert showIcon type={identityAction === "suspended" ? "error" : "warning"} title={identityAction === "suspended" ? "该用户在所有租户的访问将立即失效，活动会话会被撤销。" : "只恢复身份状态；旧会话不会复活，用户必须重新登录。"} />
