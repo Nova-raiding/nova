@@ -1894,13 +1894,21 @@ async function runModelUsageReconciliation(input: { workspaceId: string; actorId
       const code = (error as { code?: string })?.code ?? (error instanceof Error ? error.message : 'MODEL_USAGE_RECONCILIATION_FAILED')
       const terminal = usage.attemptCount >= 5
       const status = terminal ? 'manual_attention' as const : usage.costCny === undefined ? 'pending_cost' as const : 'pending_wallet' as const
-    try {
+      let actionTransitionError: string | undefined
       if (usage.actionId) {
+        try {
           const actionLookup = await getActionLedgerWithHistoricalImageCompat(input.workspaceId, usage.actionId)
-        const actionKey = actionLookup?.actionKey ?? usage.actionId
-        await persistence.actionLedger?.transitionSettlementStatus({ workspaceId: input.workspaceId, actionKey, from: ['authorized', 'pending_receipt'], to: terminal ? 'manual_attention' : 'pending_receipt' })
+          const action = actionLookup?.action
+          const targetStatus = terminal ? 'manual_attention' as const : 'pending_receipt' as const
+          if (action && action.settlementStatus !== targetStatus && ['authorized', 'pending_receipt'].includes(action.settlementStatus ?? '')) {
+            await persistence.actionLedger?.transitionSettlementStatus({ workspaceId: input.workspaceId, actionKey: actionLookup?.actionKey ?? usage.actionId, from: ['authorized', 'pending_receipt'], to: targetStatus })
+          }
+        } catch (transitionError) {
+          actionTransitionError = transitionError instanceof Error ? transitionError.message : String(transitionError)
+        }
       }
-        await persistence.modelUsage.resolve({ workspaceId: input.workspaceId, id: usage.id, expectedRevision: usage.revision, status, actorId: input.actorId, reason: terminal ? '自动重试达到上限，转人工核对' : '自动对账尚未完成', lastError: { code, message: error instanceof Error ? error.message : String(error) }, ...(terminal ? {} : { nextAttemptAt: new Date(Date.now() + Math.min(3600, 60 * 2 ** Math.min(usage.attemptCount, 5)) * 1000).toISOString() }) })
+      try {
+        await persistence.modelUsage.resolve({ workspaceId: input.workspaceId, id: usage.id, expectedRevision: usage.revision, status, actorId: input.actorId, reason: terminal ? '自动重试达到上限，转人工核对' : '自动对账尚未完成', lastError: { code, message: error instanceof Error ? error.message : String(error), ...(actionTransitionError ? { action_transition_error: actionTransitionError } : {}) }, ...(terminal ? {} : { nextAttemptAt: new Date(Date.now() + Math.min(3600, 60 * 2 ** Math.min(usage.attemptCount, 5)) * 1000).toISOString() }) })
       } catch { /* another reconciler won the optimistic lock */ }
       pending.push({ usage_id: usage.id, status, code })
     }

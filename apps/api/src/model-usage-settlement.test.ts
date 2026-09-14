@@ -609,4 +609,53 @@ describe('API model usage settlement invariants', () => {
       vi.stubEnv('NODE_ENV', 'production')
     }
   })
+
+  it('terminalizes exhausted cost reconciliation even when the action ledger is already settled', async () => {
+    const workspaceId = `ws_reconciliation_terminal_${Date.now()}`
+    const actionId = `model:already-settled-${Date.now()}`
+    await api.grantCreativePointsForTests(workspaceId)
+    api.grantContinuousFeatureEntitlementForTests(workspaceId)
+    await harness.actionLedger!.record({
+      workspaceId,
+      actionKey: actionId,
+      actionKind: 'model_text',
+      settlement: 'included_quota',
+      state: 'settled',
+      units: 1,
+      amountFen: 0,
+      actorId: 'settlement-test',
+      description: '已结算的历史模型调用',
+      settlementStatus: 'settled',
+    })
+    const pending = await harness.modelUsage!.record({
+      workspaceId,
+      actionId,
+      modality: 'text',
+      model: 'relay-text',
+      providerRequestId: `req-exhausted-${Date.now()}`,
+      settlementStatus: 'pending_cost',
+      attemptCount: 5,
+    })
+    vi.stubEnv('NODE_ENV', 'test')
+    const base = await startApi()
+    try {
+      const reconciliation = await callMcp(base, workspaceId, 'billing.model-usage.reconciliation.run', { limit: '10' })
+      expect(reconciliation.error).toBeNull()
+      expect(reconciliation.data?.result).toMatchObject({
+        state: 'attention_required',
+        checked: 1,
+        pending: [{ usage_id: pending.id, status: 'manual_attention', code: 'MODEL_USAGE_COST_MISSING' }],
+      })
+      expect((await harness.modelUsage!.list(workspaceId, 10))[0]).toMatchObject({
+        id: pending.id,
+        settlementStatus: 'manual_attention',
+        attemptCount: 6,
+        resolutionReason: '自动重试达到上限，转人工核对',
+      })
+      expect(await harness.actionLedger!.get(workspaceId, actionId)).toMatchObject({ settlementStatus: 'settled' })
+    } finally {
+      await new Promise<void>(resolve => api.server.close(() => resolve()))
+      vi.stubEnv('NODE_ENV', 'production')
+    }
+  })
 })
