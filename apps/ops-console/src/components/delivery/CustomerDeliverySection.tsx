@@ -158,7 +158,7 @@ export function deliveryCompletion(record: CustomerDeliveryRecord) {
     record.training,
     record.videos > 0,
   ].filter(Boolean).length;
-  // Payment is a prerequisite for activation. The UI gate prevents unpaid
+  // Payment is a prerequisite for delivery completion. The UI gate prevents unpaid
   // operators from entering controlled steps, but the aggregate must also be
   // fail-closed when data is imported or updated through another route.
   return {
@@ -166,6 +166,10 @@ export function deliveryCompletion(record: CustomerDeliveryRecord) {
     total: 5,
     ready: record.paymentStatus === "paid" && completed === 5,
   };
+}
+
+export function deliveryStatusLabel(result: ReturnType<typeof deliveryCompletion>) {
+  return result.ready ? "交付已完成" : `${result.completed}/${result.total}`;
 }
 
 export function CustomerDeliverySection({
@@ -456,9 +460,9 @@ export function CustomerDeliverySection({
         ),
       },
       {
-        title: "上线时间",
+        title: "交付完成时间",
         dataIndex: "goLiveAt",
-        render: (value?: string) => value || "系统生成",
+        render: (value?: string) => value || "尚未完成",
       },
       {
         title: "交付状态",
@@ -474,11 +478,7 @@ export function CustomerDeliverySection({
                 status={result.ready ? "success" : "normal"}
               />
               <span>
-                {result.ready ? (
-                  <Tag color="success">已生效</Tag>
-                ) : (
-                  `${result.completed}/${result.total}`
-                )}
+                {result.ready ? <Tag color="success">{deliveryStatusLabel(result)}</Tag> : deliveryStatusLabel(result)}
               </span>
             </Space>
           );
@@ -493,7 +493,7 @@ export function CustomerDeliverySection({
       extra={
         <Space>
           <Typography.Text type="secondary">
-            完成全部交付项后，交付状态才会变为已生效
+            完成全部交付项后，交付档案才会标记为已完成
           </Typography.Text>
           <Button
             type="primary"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACCEPTANCE_ITEMS, CHECKLIST_DISPLAY_LABELS, INTEGRATION_ITEMS, buildChecklistItems, checklistDisplayLabel, deliveryCompletion, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
+import { ACCEPTANCE_ITEMS, CHECKLIST_DISPLAY_LABELS, INTEGRATION_ITEMS, buildChecklistItems, checklistDisplayLabel, deliveryCompletion, deliveryStatusLabel, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
 
 const base: CustomerDeliveryRecord = {
   id: "c-1", companyName: "示例企业", paymentStatus: "paid", profile: true,
@@ -18,9 +18,14 @@ describe("customer delivery completion", () => {
     ]);
   });
 
-  it("only marks a customer effective after every delivery item is complete", () => {
+  it("only marks a delivery record complete after every delivery item is complete", () => {
     expect(deliveryCompletion(base)).toEqual({ completed: 5, total: 5, ready: true });
     expect(deliveryCompletion({ ...base, videos: 0 })).toEqual({ completed: 4, total: 5, ready: false });
+  });
+
+  it("labels the aggregate as delivery completion, never account activation", () => {
+    expect(deliveryStatusLabel(deliveryCompletion(base))).toBe("交付已完成");
+    expect(deliveryStatusLabel(deliveryCompletion({ ...base, videos: 0 }))).toBe("4/5");
   });
 
   it("counts each checklist item independently (not by a partial percentage)", () => {
@@ -31,7 +36,7 @@ describe("customer delivery completion", () => {
     expect(deliveryCompletion({ ...base, videos: -1 })).toEqual({ completed: 4, total: 5, ready: false });
   });
 
-  it("requires a positive video count and all four checklist states before activation", () => {
+  it("requires a positive video count and all four checklist states before completion", () => {
     expect(deliveryCompletion({ ...base, videos: 0 }).ready).toBe(false);
     expect(deliveryCompletion({ ...base, videos: Number.NaN }).ready).toBe(false);
     expect(deliveryCompletion({ ...base, profile: false, integration: false, acceptance: false, training: false, videos: 99 })).toEqual({ completed: 1, total: 5, ready: false });

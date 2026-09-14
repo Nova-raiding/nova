@@ -213,6 +213,7 @@ test('isolated customer delivery end-to-end fields, gates, checklists and clean-
     const rejected = await rpcAfter(page, 'ops.customer-delivery.videos.add', () => videoDialog.getByRole('button', { name: '保存当前环节', exact: true }).click(), evidence, 409)
     expect(rejected.error?.code).toBe('CUSTOMER_DELIVERY_VIDEO_ASSET_NOT_READY')
     await expect(videoDialog.getByText('尚未登记交付视频', { exact: true })).toBeVisible()
+    await expect(refreshedRow).not.toContainText('交付已完成')
     await expect(refreshedRow).not.toContainText('已生效')
     await screenshot('customer-delivery-gates')
     await captureTrainingInteraction(page, evidenceDir, testInfo)
