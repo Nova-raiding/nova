@@ -136,10 +136,10 @@ describe('Merchant Studio production UI contract', () => {
   })
 
   it('makes the global product search actionable and honest about its scope', () => {
-    expect(app).toContain('placeholder="搜索商品"')
-    expect(app).toContain("event.metaKey || event.ctrlKey")
-    expect(app).toContain("if (event.key === 'Enter') onSearch()")
-    expect(app).toContain('initialQuery={globalSearch}')
+    expect(app).toContain('placeholder="搜索商品或平台"')
+    expect(app).toContain('onSearchQuery={setGlobalSearch}')
+    expect(app).toContain('onSearch={searchProducts}')
+    expect(app).toContain("navigateTo('products', { searchQuery: query, clearContext: true })")
     expect(app).not.toContain('搜索商品、任务或版本')
   })
 
