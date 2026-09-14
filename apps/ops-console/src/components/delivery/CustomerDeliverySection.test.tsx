@@ -66,6 +66,7 @@ describe("customer delivery completion", () => {
     expect(checklistDisplayLabel("知识库")).toBe("知识库功能");
     expect(checklistDisplayLabel("创意点数")).toBe("创作点");
     expect(checklistDisplayLabel("标注编辑")).toBe("批注修改");
+    expect(checklistDisplayLabel("店铺/商品读取")).toBe("店铺与商品资料读取");
     expect(checklistDisplayLabel("店铺连接")).toBe("店铺连接");
     expect(CHECKLIST_DISPLAY_LABELS).toMatchObject({
       插件账号: "插件账户",

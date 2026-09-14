@@ -101,6 +101,7 @@ export const CHECKLIST_DISPLAY_LABELS: Record<string, string> = {
   知识库: "知识库功能",
   创意点数: "创作点",
   标注编辑: "批注修改",
+  "店铺/商品读取": "店铺与商品资料读取",
 };
 
 export function checklistDisplayLabel(itemKey: string) {
