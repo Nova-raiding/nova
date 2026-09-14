@@ -63,6 +63,7 @@ import { buildCanonicalChainConsistencyReport, canonicalProductReadModeFromFlag,
 import { CampaignDeliveryOrchestratorAdapter, type CampaignDeliveryLifecycleOperation } from '../../../packages/application/src/campaign-delivery-orchestrator.js'
 import { CampaignManifestError, type CampaignDeliveryManifestInput } from '../../../packages/application/src/campaign-delivery-manifest.js'
 import { LocalObjectStorage, ObjectStorageError, ObjectStoragePartialWriteError, S3CompatibleObjectStorage, withObjectStorageReadRetry, runReconciliationCycle, type CloudObjectTransport, type ObjectStoragePort, type PutQuarantineObjectInput, MemoryReconciliationStatusStore, type ReconciliationReport, type ReconciliationStatusStore, type DurableObjectReference, type ObjectInventoryEntry } from '../../../packages/storage/src/index.js'
+import { UploadSessionManager } from '../../../packages/storage/src/upload-session.js'
 import { checkDurableArchiveReference } from '../../../packages/storage/src/archive-lifecycle-contract.js'
 import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, CAPABILITIES, COMMERCIAL_OPERATION_REGISTRY, COMMERCIAL_OPERATION_REGISTRY_VERSION, MCP_METHODS, MCP_METHOD_CONTRACTS, MCP_METHOD_POLICIES, MCP_NON_PRODUCTION_METHODS, MCP_POINT_CHARGED_ENABLED_METHODS, MCP_POINT_CHARGED_DISABLED_METHODS, MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS, MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS, MCP_RECOVERY_ENABLED_METHODS, MCP_RECOVERY_DISABLED_METHODS, MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS, capabilitiesForRoles, canonicalizeRole, evaluateAuthorizationDecision, evaluatePermissionAtoms, getHttpOperationPolicy, getMcpMethodPolicy, resolveCanonicalRoles, resolveCommercialOperation, ERROR_CODES, isCommercialAccessErrorCode, isCommercialPurchaseErrorCode, isMcpMethod, validateMcpRequest, validateImageGenerationCallbackResult, type ApiEnvelope, type AuthorizationDecision, type AuthorizationDecisionMode, type AuthorizationObligation, type CanonicalRole, type CapabilityId, type CommercialAccessDecision, type HttpOperationPolicy, type McpRequest, type OpsWorkbench, type PermissionAtom } from '../../../packages/contracts/src/index.js'
 import { KnowledgeError, KnowledgeModule, type AssetEntry, type LearningSuggestion, type RuleEntry } from '../../../packages/knowledge/src/index.js'
@@ -123,6 +124,7 @@ import { MemoryKnowledgeRepository, PostgresKnowledgeRepository, type KnowledgeR
 import { projectImportedProductsToKnowledge } from '../../../packages/application/src/knowledge-import.js'
 
 const port = Number(process.env.PORT ?? 8787)
+const uploadSessions = new UploadSessionManager()
 const fixtureMode = process.env.CONNECTOR_FIXTURE_MODE === 'true'
 const fixtureCommercialTestMode = fixtureMode && process.env.MERCHANT_TEST_APPROVED_RATES === 'true'
 const testCommercialFixtureMode = process.env.VITEST === 'true' || process.env.VITEST_WORKER_ID !== undefined || process.argv.some(argument => /(?:^|[/\\])vitest(?:[/\\]|$)/u.test(argument))
@@ -16093,6 +16095,22 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'brand.tone.preview': {
       return result(service.previewBrandTone(workspaceId, { ...(typeof params.topic === 'string' ? { topic: params.topic } : {}), ...(typeof params.product_id === 'string' ? { productId: params.product_id } : {}) }))
+    }
+    case 'upload.session.create': {
+      // A session without a configured transport must fail closed; never report a fake upload.
+      const size = Number(required(params, 'size_bytes'))
+      try {
+        const session = uploadSessions.create({ workspaceId, fileName: required(params, 'file_name'), contentType: required(params, 'content_type'), sizeBytes: size, sha256: required(params, 'sha256'), ...(typeof params.idempotency_key === 'string' ? { idempotencyKey: params.idempotency_key } : {}) })
+        return result(session)
+      } catch (error) { throw new DomainError('UPLOAD_TRANSPORT_NOT_CONFIGURED', error instanceof Error ? error.message : '上传服务未配置', 503) }
+    }
+    case 'upload.session.part': {
+      try { const bytes = Buffer.from(required(params, 'content_base64'), 'base64'); return result(uploadSessions.putPart(required(params, 'session_id'), Number(required(params, 'part_number')), bytes)) }
+      catch (error) { throw new DomainError('UPLOAD_TRANSPORT_NOT_CONFIGURED', error instanceof Error ? error.message : '上传服务未配置', 503) }
+    }
+    case 'upload.session.complete': {
+      try { return result(await uploadSessions.complete(required(params, 'session_id'))) }
+      catch (error) { throw new DomainError('UPLOAD_TRANSPORT_NOT_CONFIGURED', error instanceof Error ? error.message : '上传服务未配置', 503) }
     }
     case 'asset.upload': {
       return result(await uploadAssetForMcp(workspaceId, params, req))

@@ -252,6 +252,9 @@ export const MCP_METHODS = [
   'brand.tone.preview',
   'asset.upload',
   'asset.upload.batch',
+  'upload.session.create',
+  'upload.session.part',
+  'upload.session.complete',
   'asset.scan',
   'asset.generation.confirm',
   'asset.rights.update',
@@ -1110,6 +1113,21 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     method: 'asset.upload.batch',
     description: 'Upload up to 20 quarantined assets in one Codex operation with a 250MB batch limit.',
     params: params({ assets_json: { type: 'string' } }, ['assets_json']),
+  },
+  {
+    method: 'upload.session.create',
+    description: 'Create a presigned multipart upload session for a large source image. Requires configured object storage transport.',
+    params: params({ file_name: { type: 'string' }, content_type: { type: 'string' }, size_bytes: { type: 'string' }, sha256: { type: 'string' }, idempotency_key: { type: 'string' } }, ['file_name', 'content_type', 'size_bytes', 'sha256']),
+  },
+  {
+    method: 'upload.session.part',
+    description: 'Register a multipart upload part against an existing upload session.',
+    params: params({ session_id: { type: 'string' }, part_number: { type: 'string' }, content_base64: { type: 'string' } }, ['session_id', 'part_number', 'content_base64']),
+  },
+  {
+    method: 'upload.session.complete',
+    description: 'Complete and verify a multipart upload session.',
+    params: params({ session_id: { type: 'string' } }, ['session_id']),
   },
   {
     method: 'asset.scan' as const,
