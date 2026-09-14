@@ -353,6 +353,8 @@ export interface McpParamsSchema {
   readonly required?: readonly string[]
   /** At least one of these fields must be supplied for mutually exclusive input modes. */
   readonly requiredAnyOf?: readonly string[]
+  /** Fields that cannot be supplied together (at most one non-empty value). */
+  readonly mutuallyExclusive?: readonly (readonly string[])[]
   readonly additionalProperties: false
 }
 
@@ -528,11 +530,13 @@ const params = (
   properties: Readonly<Record<string, McpFieldSchema>>,
   required: readonly string[] = [],
   requiredAnyOf: readonly string[] = [],
+  mutuallyExclusive: readonly (readonly string[])[] = [],
 ): McpParamsSchema => ({
   type: 'object',
   properties: { workspace_id: workspaceProperty, ...properties },
   ...(required.length ? { required } : {}),
   ...(requiredAnyOf.length ? { requiredAnyOf } : {}),
+  ...(mutuallyExclusive.length ? { mutuallyExclusive } : {}),
   additionalProperties: false,
 })
 
@@ -737,7 +741,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'ops.customer-delivery.get', description: 'Get one customer delivery record and its videos.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256) }, ['target_workspace_id', 'delivery_id']) },
   { method: 'ops.customer-delivery.create', description: 'Create a customer delivery record.', params: params({ target_workspace_id: boundedString(200, 1), company_name: boundedString(200, 1) }, ['target_workspace_id', 'company_name']) },
   { method: 'ops.customer-delivery.update', description: 'Update customer delivery profile fields with optimistic revision.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), expected_revision: positiveIntegerString, patch_json: boundedString(16_384) }, ['target_workspace_id', 'delivery_id', 'expected_revision', 'patch_json']) },
-  { method: 'ops.customer-delivery.checklist.update', description: 'Update a delivery checklist completion state, or persist batch per-item completion and evidence via items_json.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), checklist_key: { type: 'string', enum: ['customer_profile', 'system_integration', 'functional_acceptance'] }, completed: booleanString, items_json: boundedString(16_384), expected_revision: positiveIntegerString }, ['target_workspace_id', 'delivery_id', 'checklist_key', 'expected_revision']) },
+  { method: 'ops.customer-delivery.checklist.update', description: 'Update a delivery checklist completion state, or persist batch per-item completion and evidence via items_json. completed and items_json are mutually exclusive.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), checklist_key: { type: 'string', enum: ['customer_profile', 'system_integration', 'functional_acceptance'] }, completed: booleanString, items_json: boundedString(16_384), expected_revision: positiveIntegerString }, ['target_workspace_id', 'delivery_id', 'checklist_key', 'expected_revision'], [], [['completed', 'items_json']]) },
   { method: 'ops.customer-delivery.checklist-items.list', description: 'List persisted per-item checklist evidence for a customer delivery.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), checklist_key: { type: 'string', enum: ['system_integration', 'functional_acceptance'] } }, ['target_workspace_id', 'delivery_id', 'checklist_key']) },
   { method: 'ops.customer-delivery.checklist-item.update', description: 'Update one persisted checklist item with operator evidence and optimistic revision.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), checklist_key: { type: 'string', enum: ['system_integration', 'functional_acceptance'] }, item_key: boundedString(256, 1), completed: booleanString, evidence_json: boundedString(16_384), expected_revision: positiveIntegerString }, ['target_workspace_id', 'delivery_id', 'checklist_key', 'item_key', 'completed', 'expected_revision']) },
   { method: 'ops.customer-delivery.training.complete', description: 'Mark customer training complete with optimistic revision.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), completed: booleanString, expected_revision: positiveIntegerString }, ['target_workspace_id', 'delivery_id', 'completed', 'expected_revision']) },
@@ -1549,6 +1553,19 @@ export function getMcpMethodContract(method: string): McpMethodContract | undefi
     : undefined
 }
 
+function validCustomerDeliveryContractRef(value: unknown): boolean {
+  if (typeof value !== 'string') return false
+  const ref = value.trim()
+  if (!ref) return false
+  if (ref.startsWith('https://')) {
+    try {
+      const url = new URL(ref)
+      return url.protocol === 'https:' && Boolean(url.hostname)
+    } catch { return false }
+  }
+  return /^(?:asset:\/\/|asset_ref[:_]|asset[:_])[A-Za-z0-9][A-Za-z0-9._:/-]*$/u.test(ref)
+}
+
 /** Validate the JSON shape before dispatching it to an MCP handler. */
 export function validateMcpRequest(value: unknown): McpValidationResult {
   const errors: string[] = []
@@ -1582,6 +1599,22 @@ export function validateMcpRequest(value: unknown): McpValidationResult {
     return typeof value === 'string' && Boolean(value.trim())
   })) {
     errors.push(`params.${schema.requiredAnyOf.join(' or ')} is required`)
+  }
+  for (const group of schema.mutuallyExclusive ?? []) {
+    const supplied = group.filter(key => {
+      const value = paramsObject[key]
+      return typeof value === 'string' ? Boolean(value.trim()) : value !== undefined && value !== null
+    })
+    if (supplied.length > 1) errors.push(`params.${supplied.join(' and ')} are mutually exclusive`)
+  }
+  if (request.method === 'ops.customer-delivery.update' && typeof paramsObject.patch_json === 'string') {
+    try {
+      const patch = JSON.parse(paramsObject.patch_json)
+      if (!patch || typeof patch !== 'object' || Array.isArray(patch)) errors.push('params.patch_json must be a JSON object')
+      else if ('contractRef' in patch && patch.contractRef !== null && !validCustomerDeliveryContractRef(patch.contractRef)) errors.push('params.patch_json.contractRef must be an HTTPS URL or asset_ref')
+    } catch {
+      errors.push('params.patch_json must be valid JSON')
+    }
   }
   for (const [key, field] of Object.entries(paramsObject)) {
     const definition = schema.properties[key]

@@ -64,6 +64,14 @@ describe('MCP method contract', () => {
     expect(isMcpMethod('admin.raw_sql')).toBe(false)
   })
 
+  it('fails closed for malformed customer delivery contract evidence', () => {
+    const base = { jsonrpc: '2.0' as const, id: 'contract', method: 'ops.customer-delivery.update', params: { target_workspace_id: 'ws_1', delivery_id: 'cd_1', expected_revision: '1' } }
+    expect(validateMcpRequest({ ...base, params: { ...base.params, patch_json: '{"contractRef":"http://insecure.example/contract.pdf"}' } }).valid).toBe(false)
+    expect(validateMcpRequest({ ...base, params: { ...base.params, patch_json: '{"contractRef":"https://example.com/contract.pdf"}' } })).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({ ...base, params: { ...base.params, patch_json: '{"contractRef":"asset_ref_contract-1"}' } })).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({ ...base, params: { ...base.params, patch_json: '{"contractRef":"not-a-ref"}' } }).valid).toBe(false)
+  })
+
   it('keeps legacy asset.scan explicitly non-production while exposing the safe retry contract', () => {
     expect(MCP_NON_PRODUCTION_METHODS).toEqual(['asset.scan'])
     expect(MCP_METHODS).toContain('asset.scan')

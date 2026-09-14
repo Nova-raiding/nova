@@ -174,6 +174,20 @@ export class CustomerDeliveryError extends Error {
   }
 }
 const clone = <T>(v: T): T => structuredClone(v);
+/** Contract evidence must be a secure URL or a durable asset reference. */
+export function isValidCustomerDeliveryContractRef(value: string | null | undefined): boolean {
+  const ref = typeof value === "string" ? value.trim() : "";
+  if (!ref) return false;
+  if (ref.startsWith("https://")) {
+    try {
+      const url = new URL(ref);
+      return url.protocol === "https:" && Boolean(url.hostname);
+    } catch {
+      return false;
+    }
+  }
+  return /^(?:asset:\/\/|asset_ref[:_]|asset[:_])[A-Za-z0-9][A-Za-z0-9._:/-]*$/u.test(ref);
+}
 const complete = (d: CustomerDelivery) =>
   d.customerProfileStatus === "complete" &&
   d.systemIntegrationStatus === "complete" &&
@@ -315,12 +329,13 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       patch.trainingCompleted = true;
     if (patch.functionalAcceptanceStatus === "incomplete")
       patch.trainingCompleted = false;
-    if (patch.customerProfileStatus === "complete") {
+    if ("contractRef" in patch && patch.contractRef != null && !isValidCustomerDeliveryContractRef(patch.contractRef))
+      throw new CustomerDeliveryError("INVALID_INPUT", "合同必须是 HTTPS 链接或 asset_ref");
+    if (patch.customerProfileStatus === "complete" || (d.customerProfileStatus === "complete" && patch.customerProfileStatus !== "incomplete")) {
       const candidate = { ...d, ...patch };
       if (
         !candidate.contractNumber?.trim() ||
-        !candidate.contractRef?.trim() ||
-        !/^(https:\/\/|asset[:_])/u.test(candidate.contractRef.trim()) ||
+        !isValidCustomerDeliveryContractRef(candidate.contractRef) ||
         !candidate.projectOwner?.trim() ||
         !candidate.supportOwner?.trim() ||
         (candidate.paymentStatus === "paid" && !candidate.paymentDate) ||
@@ -1111,12 +1126,12 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           "REVISION_CONFLICT",
           "revision changed",
         );
+      if ("contractRef" in p && p.contractRef != null && !isValidCustomerDeliveryContractRef(p.contractRef))
+        throw new CustomerDeliveryError("INVALID_INPUT", "合同必须是 HTTPS 链接或 asset_ref");
       if (
-        p.customerProfileStatus === "complete" &&
+        (p.customerProfileStatus === "complete" || (row.customer_profile_status === "complete" && p.customerProfileStatus !== "incomplete")) &&
         (!String(p.contractNumber ?? row.contract_number ?? "").trim() ||
-          !/^(https:\/\/|asset[:_])/u.test(
-            String(p.contractRef ?? row.contract_ref ?? "").trim(),
-          ) ||
+          !isValidCustomerDeliveryContractRef(String(p.contractRef ?? row.contract_ref ?? "")) ||
           !String(p.projectOwner ?? row.project_owner ?? "").trim() ||
           !String(p.supportOwner ?? row.support_owner ?? "").trim() ||
           ((p.paymentStatus ?? row.payment_status) === "paid" &&

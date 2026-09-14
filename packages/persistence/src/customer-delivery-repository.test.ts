@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS, MemoryCustomerDeliveryRepository, PostgresCustomerDeliveryRepository } from './customer-delivery-repository.js'
+import { CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS, isValidCustomerDeliveryContractRef, MemoryCustomerDeliveryRepository, PostgresCustomerDeliveryRepository } from './customer-delivery-repository.js'
 import type { SqlClient, SqlPool } from './repository.js'
 
 class RecordingClient implements SqlClient {
@@ -19,6 +19,24 @@ class RecordingPool implements SqlPool {
 }
 
 describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
+  it('accepts only HTTPS or asset_ref contract evidence', async () => {
+    expect(isValidCustomerDeliveryContractRef('https://example.com/contracts/acme.pdf')).toBe(true)
+    expect(isValidCustomerDeliveryContractRef('http://example.com/contracts/acme.pdf')).toBe(false)
+    expect(isValidCustomerDeliveryContractRef('https://')).toBe(false)
+    expect(isValidCustomerDeliveryContractRef('asset_ref_contract-1')).toBe(true)
+    expect(isValidCustomerDeliveryContractRef('local-file.pdf')).toBe(false)
+    const repo = new MemoryCustomerDeliveryRepository()
+    const d = await repo.create({ workspaceId: 'ws_contract', companyName: 'Acme', actorId: 'operator-1' })
+    await expect(repo.update({ workspaceId: d.workspaceId, id: d.id, actorId: 'operator-1', expectedRevision: d.revision, patch: { contractRef: 'http://insecure.example/contract.pdf' } })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+  })
+
+  it('fails closed when an already-complete profile receives an invalid contract reference', async () => {
+    const repo = new MemoryCustomerDeliveryRepository()
+    const d = await repo.create({ workspaceId: 'ws_contract_complete', companyName: 'Acme', actorId: 'operator-1' })
+    const complete = await repo.update({ workspaceId: d.workspaceId, id: d.id, actorId: 'operator-1', expectedRevision: d.revision, patch: { contractNumber: 'C-1', contractRef: 'asset_ref_contract-1', projectOwner: 'owner', supportOwner: 'support', plannedGoLiveAt: '2026-10-01', customerProfileStatus: 'complete' } })
+    await expect(repo.update({ workspaceId: d.workspaceId, id: d.id, actorId: 'operator-1', expectedRevision: complete.revision, patch: { contractRef: 'not-a-reference' } })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+  })
+
   it('writes audit events for create/update/video and synchronizes training with acceptance', async () => {
     const events: any[] = []
     const repo = new MemoryCustomerDeliveryRepository((event) => { events.push(event) })
