@@ -189,15 +189,6 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         </Form.Item>
         <Form.Item><Space>
           <Button type="primary" htmlType="submit" loading={model.userDirectoryLoading}>查询</Button>
-          <Button
-            onClick={() => {
-              setActionError("");
-              setProvisionResult(undefined);
-              provisionForm.resetFields();
-              setProvisionOpen(true);
-            }}
-            disabled={!model.canPlatformOps}
-          >开通商家账号</Button>
           <Button danger onClick={() => { setActionError(""); setBulkSuspendOpen(true); }} disabled={!selectedUsers.length}>批量停用（{selectedUsers.length}）</Button>
         </Space></Form.Item>
       </Form>
