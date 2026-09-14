@@ -2062,6 +2062,23 @@ async function releaseRechargeRefund(input: { workspaceId: string; orderId: stri
   return release
 }
 
+async function listActiveRechargeRefunds(workspaceId: string, limit: number): Promise<Array<{ order: RechargeOrder; reservation: WalletTransaction }>> {
+  await persistenceReady
+  if (persistence.billing) return persistence.billing.listActiveRechargeRefunds(workspaceId, limit)
+  const candidates: Array<{ order: RechargeOrder; reservation: WalletTransaction }> = []
+  for (const order of rechargeOrders.values()) {
+    if (candidates.length >= limit) break
+    if (order.workspaceId !== workspaceId || order.state !== 'paid' || order.paymentMode !== 'provider') continue
+    const prefix = `recharge-refund:${order.id}:`
+    const released = new Set(walletTransactions
+      .filter(item => item.workspaceId === workspaceId && item.type === 'refund' && item.orderId?.startsWith(`release:${prefix}`))
+      .map(item => item.orderId?.replace(/^release:/u, '')))
+    const reservation = walletTransactions.find(item => item.workspaceId === workspaceId && item.type === 'debit' && item.orderId?.startsWith(prefix) && !released.has(item.orderId))
+    if (reservation) candidates.push({ order, reservation })
+  }
+  return candidates
+}
+
 function verifyPaymentCallback(req: IncomingMessage, input: { channel: RechargeChannel; workspaceId: string; payload: { order_id: string; provider_trade_id: string; amount_fen: number; state: string } }) {
   requireProviderPaymentConfigured()
   const secret = process.env.PAYMENT_CALLBACK_SECRET?.trim()
@@ -2100,6 +2117,7 @@ function paymentProviderReadiness(source: NodeJS.ProcessEnv = process.env) {
   if (!/^https:\/\//iu.test(source.PAYMENT_CHECKOUT_BASE_URL?.trim() ?? '')) reasons.push('checkout_endpoint_must_use_https')
   if (!/^https:\/\//iu.test(source.PAYMENT_PROVIDER_CHECKOUT_API_URL?.trim() ?? '')) reasons.push('provider_checkout_api_must_use_https')
   if (!/^https:\/\//iu.test(source.PAYMENT_PROVIDER_QUERY_API_URL?.trim() ?? '')) reasons.push('provider_query_api_must_use_https')
+  if (!/^https:\/\//iu.test(source.PAYMENT_PROVIDER_REFUND_QUERY_API_URL?.trim() ?? '')) reasons.push('provider_refund_query_api_must_use_https')
   if (!source.PAYMENT_PROVIDER_API_KEY?.trim()) reasons.push('provider_api_key_missing')
   if (!source.PAYMENT_PROVIDER_MERCHANT_ID?.trim()) reasons.push('provider_merchant_id_missing')
   if (!/^https:\/\//iu.test(source.PAYMENT_PROVIDER_REFUND_API_URL?.trim() ?? '')) reasons.push('provider_refund_api_must_use_https')
@@ -14854,11 +14872,15 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const orders = persistence.billing
         ? await persistence.billing.listOrders(workspaceId, ['pending'], limit)
         : [...rechargeOrders.values()].filter(order => order.workspaceId === workspaceId && order.state === 'pending').slice(0, limit)
+      const activeRefunds = await listActiveRechargeRefunds(workspaceId, limit)
       const providerOrders = orders.filter(item => item.paymentMode === 'provider')
       const skippedFixtureOrders = orders.length - providerOrders.length
       const settled: Array<{ order_id: string; provider_trade_id: string }> = []
       const pending: Array<{ order_id: string; state: string }> = []
       const failed: Array<{ order_id: string; code: string; message: string }> = []
+      const refundSettled: Array<{ order_id: string; refund_request_id: string }> = []
+      const refundPending: Array<{ order_id: string; refund_request_id: string; state: string }> = []
+      const refundFailed: Array<{ order_id: string; refund_request_id: string; code: string; message: string; reservation_released: boolean }> = []
       for (const order of providerOrders) {
         try {
           const providerStatus = await paymentProvider.queryStatus({ channel: order.channel, orderId: order.id, workspaceId })
@@ -14897,7 +14919,40 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           failed.push({ order_id: order.id, code: error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'PAYMENT_RECONCILIATION_FAILED', message: error instanceof Error ? error.message : '支付服务商查单失败' })
         }
       }
-      return result({ state: failed.length || pending.length ? 'attention_required' : 'completed', checked: providerOrders.length, provider_orders: providerOrders.length, skipped_fixture_orders: skippedFixtureOrders, settled, pending, failed, actor_id: actorId, idempotent_settlement: true })
+      for (const { order, reservation } of activeRefunds) {
+        const refundRequestId = reservation.id
+        if (!paymentProvider.queryRefundStatus) {
+          refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_REFUND_RECONCILIATION_UNAVAILABLE', message: '支付 provider 未配置退款查单能力', reservation_released: false })
+          continue
+        }
+        try {
+          const providerRefund = await paymentProvider.queryRefundStatus({ channel: order.channel, orderId: order.id, refundRequestId, workspaceId, amountFen: order.amountFen })
+          if (providerRefund.state === 'succeeded') {
+            if (providerRefund.amountFen !== order.amountFen) {
+              refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_REFUND_QUERY_AMOUNT_MISMATCH', message: '支付服务商退款查单金额缺失或不一致', reservation_released: false })
+              continue
+            }
+            if (!providerRefund.providerRefundId) {
+              refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_REFUND_QUERY_ID_MISSING', message: '支付服务商已退款但未返回退款交易凭据', reservation_released: false })
+              continue
+            }
+            await completeRechargeRefund({ workspaceId, orderId: order.id, reservationKey: reservation.orderId!, actorId, reason: '支付服务商退款查单确认成功', providerRefundId: providerRefund.providerRefundId })
+            await recordOperationAudit({ workspaceId, actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: order as unknown as Record<string, unknown>, after: { ...order, state: 'closed', refund_request_id: refundRequestId } as unknown as Record<string, unknown>, reason: '支付服务商退款查单确认成功' })
+            refundSettled.push({ order_id: order.id, refund_request_id: refundRequestId })
+            continue
+          }
+          if (providerRefund.state === 'failed') {
+            await releaseRechargeRefund({ workspaceId, orderId: order.id, reservationKey: reservation.orderId!, actorId, reason: '支付服务商退款查单确认失败' })
+            await recordOperationAudit({ workspaceId, actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: { ...order, refund_request_id: refundRequestId } as unknown as Record<string, unknown>, after: order as unknown as Record<string, unknown>, reason: '支付服务商退款查单确认失败并释放钱包预留' })
+            refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_PROVIDER_REFUND_FAILED', message: '支付服务商确认退款失败，钱包预留已释放', reservation_released: true })
+            continue
+          }
+          refundPending.push({ order_id: order.id, refund_request_id: refundRequestId, state: providerRefund.state })
+        } catch (error) {
+          refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'PAYMENT_REFUND_RECONCILIATION_FAILED', message: error instanceof Error ? error.message : '支付服务商退款查单失败', reservation_released: false })
+        }
+      }
+      return result({ state: failed.length || pending.length || refundFailed.length || refundPending.length ? 'attention_required' : 'completed', checked: providerOrders.length + activeRefunds.length, payment_checked: providerOrders.length, refund_checked: activeRefunds.length, provider_orders: providerOrders.length, skipped_fixture_orders: skippedFixtureOrders, settled, pending, failed, refund_settled: refundSettled, refund_pending: refundPending, refund_failed: refundFailed, actor_id: actorId, idempotent_settlement: true })
     }
     case 'billing.model-usage.reconciliation.run': {
       const actorId = requireOperationsRole(req, ['finance_ops', 'ops_admin', 'platform_admin', 'platform_ops'])

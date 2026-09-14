@@ -1730,8 +1730,8 @@ export function useOpsConsoleModel() {
     }
     const confirmed = await new Promise<boolean>((resolve) => {
       modal.confirm({
-        title: "确认查询支付服务商的待支付订单？",
-        content: "已确认支付的订单会幂等入账，金额或交易号异常只会进入失败列表。",
+        title: "确认查询支付服务商的充值与退款状态？",
+        content: "已支付充值会幂等入账；结果未知的退款仅在服务商返回可信终态后关单或释放预留。",
         okText: "确认查单",
         cancelText: "取消",
         onOk: () => resolve(true),

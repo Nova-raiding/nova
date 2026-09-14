@@ -410,7 +410,7 @@ const METHODS = {
   },
   'billing.refund': { description: '退款一笔已到账充值并记录原因。', inputSchema: { type: 'object', properties: { order_id: { type: 'string' }, reason: { type: 'string' } }, required: ['order_id', 'reason'], additionalProperties: false } },
   'billing.reconciliation': { description: '查看余额、充值、消费和退款汇总。只读。', inputSchema: { type: 'object', properties: { limit: { type: 'string' } }, additionalProperties: false } },
-  'billing.reconciliation.run': { description: '由 finance/merchant_admin/platform_ops 运行支付服务商查单对账；已支付订单幂等入账，未知状态保持待处理。', inputSchema: { type: 'object', properties: { limit: { type: 'string' } }, additionalProperties: false } },
+  'billing.reconciliation.run': { description: '由财务或平台运营运行支付服务商对账；待支付充值与结果未知的原路退款按真实查单证据幂等结算，歧义状态继续保留待处理。', inputSchema: { type: 'object', properties: { limit: { type: 'string' } }, additionalProperties: false } },
   'billing.export': { description: '默认导出本人账务流水；工作区范围需要账务管理权限。金额为人民币元。只读。', inputSchema: { type: 'object', properties: { limit: { type: 'string' }, format: { type: 'string', enum: ['csv', 'json'] }, from_at: { type: 'string' }, to_at: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] } }, additionalProperties: false } },
   'workspace.data.export.request': { description: '申请导出当前工作区全部自有数据；仅登记可恢复申请，不以内容导出代替，也不伪造外部存储交付。', inputSchema: { type: 'object', properties: { reason: reasonProperty, idempotency_key: boundedString(200) }, required: ['reason', 'idempotency_key'], additionalProperties: false } },
   'workspace.data.export.get': { description: '查询当前工作区一份完整数据导出申请及交付状态；只读。', inputSchema: { type: 'object', properties: { request_id: boundedString(200) }, required: ['request_id'], additionalProperties: false } },

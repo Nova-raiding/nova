@@ -278,6 +278,24 @@ describe('PostgresBillingRepository external recharge refund', () => {
   const paidOrder = { id: 'recharge_100', workspace_id: 'ws_wallet', channel: 'wechat', amount_fen: 10_000, state: 'paid', payment_mode: 'provider', payment_url: null, provider_trade_id: 'trade_100', created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:01:00.000Z' }
   const reservation = { id: 'refund_reservation_1', workspace_id: 'ws_wallet', type: 'debit', amount_fen: 10_000, order_id: 'recharge-refund:recharge_100:1', description: '充值原路退款预留（finance）：客户申请', created_at: '2026-08-28T01:02:00.000Z' }
 
+  it('lists active provider refund reservations without applying transaction-page truncation', async () => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue(); client.enqueue({
+      ...paidOrder,
+      reservation_id: reservation.id,
+      reservation_type: reservation.type,
+      reservation_amount_fen: reservation.amount_fen,
+      reservation_order_id: reservation.order_id,
+      reservation_actor_id: 'finance',
+      reservation_description: reservation.description,
+      reservation_created_at: reservation.created_at,
+    }); client.enqueue()
+    const result = await new PostgresBillingRepository(new RecordingPool(client)).listActiveRechargeRefunds('ws_wallet', 10)
+    expect(result).toMatchObject([{ order: { id: 'recharge_100', state: 'paid', paymentMode: 'provider' }, reservation: { id: 'refund_reservation_1', orderId: 'recharge-refund:recharge_100:1', amountFen: 10_000 } }])
+    const query = client.calls.find(call => call.text.includes('NOT EXISTS') && call.text.includes("released.order_id='release:' || r.order_id"))
+    expect(query?.values).toEqual(['ws_wallet', 10])
+  })
+
   it('atomically deducts the recharge value instead of crediting the wallet', async () => {
     const client = new RecordingClient()
     client.enqueue(); client.enqueue(); client.enqueue(paidOrder); client.enqueue(); client.enqueue(); client.enqueue(); client.enqueue({ balance_fen: '10000' }); client.enqueue(reservation); client.enqueue()

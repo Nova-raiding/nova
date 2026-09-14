@@ -352,12 +352,21 @@ export function refundQueryResponseMatchesRequest(response, orderId, refundReque
   return true
 }
 
+export function normalizeRefundSubmissionState(response) {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) return 'processing'
+  return String(response.code ?? '') === '10000' && String(response.fund_change ?? '').trim().toUpperCase() === 'Y'
+    ? 'completed'
+    : 'processing'
+}
+
 export function normalizeRefundQueryState(response) {
   if (!response || typeof response !== 'object' || Array.isArray(response)) return 'unknown'
   const status = String(response.refund_status ?? response.status ?? '').trim().toUpperCase()
   if (['REFUND_SUCCESS', 'SUCCESS', 'SUCCEEDED', 'COMPLETED'].includes(status)) return 'succeeded'
-  if (['REFUND_FAILED', 'FAILED', 'FAILURE', 'REJECTED', 'DENIED', 'REFUND_CLOSED', 'CLOSED', 'CANCELLED', 'CANCELED'].includes(status)) return 'failed'
   if (['PROCESSING', 'PENDING', 'REFUND_PROCESSING', 'WAIT', 'WAITING'].includes(status)) return 'pending'
-  if (String(response.code ?? '') === '10000' && alipayAmountFen(response.refund_amount) !== undefined) return 'succeeded'
+  // Alipay documents only REFUND_SUCCESS as final success. A successful query
+  // response without that field may mean the refund was not received, failed,
+  // or was queried too early and can still succeed later. Keep the reservation
+  // held instead of inventing a terminal failure or success.
   return 'unknown'
 }

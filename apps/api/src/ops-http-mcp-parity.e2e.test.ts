@@ -168,6 +168,7 @@ describe('Ops HTTP/MCP authorization parity', () => {
     vi.stubEnv('PAYMENT_CHECKOUT_BASE_URL', 'https://payments.example/checkout')
     vi.stubEnv('PAYMENT_PROVIDER_CHECKOUT_API_URL', 'https://payments.example/api/checkout')
     vi.stubEnv('PAYMENT_PROVIDER_QUERY_API_URL', 'https://payments.example/api/query')
+    vi.stubEnv('PAYMENT_PROVIDER_REFUND_QUERY_API_URL', 'https://payments.example/api/refund/query')
     vi.stubEnv('PAYMENT_PROVIDER_REFUND_API_URL', 'https://payments.example/api/refund')
     vi.stubEnv('PAYMENT_PROVIDER_API_KEY', 'test-provider-key')
     vi.stubEnv('PAYMENT_PROVIDER_MERCHANT_ID', 'merchant-test')

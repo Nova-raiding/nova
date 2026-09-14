@@ -54,6 +54,7 @@ function config(overrides: Record<string, boolean> = {}) {
     'payment_checkout_base_url: https://payments.example.com/checkout',
     'payment_provider_checkout_api_url: https://payments.example.com/v1/checkout',
     'payment_provider_query_api_url: https://payments.example.com/v1/query',
+    'payment_provider_refund_query_api_url: https://payments.example.com/v1/refund/query',
     'payment_provider_refund_api_url: https://payments.example.com/v1/refund',
     'payment_provider_api_key_ref: vault://merchant-payment/provider-api-key',
     'payment_provider_merchant_id: merchant-example',

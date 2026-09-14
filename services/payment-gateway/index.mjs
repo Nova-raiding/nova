@@ -8,6 +8,7 @@ import {
   formatAlipayTimestamp,
   normalizePublicKey,
   normalizeRefundQueryState,
+  normalizeRefundSubmissionState,
   parseRequestBody,
   refundQueryResponseMatchesRequest,
   responseMatchesOrder,
@@ -103,7 +104,8 @@ async function handle(req, res) {
     if (!orderId || !refundRequestId || !Number.isSafeInteger(amountFen) || amountFen <= 0) return json(res, 400, { error: 'INVALID_REFUND' })
     const node = (await callAlipay('alipay.trade.refund', { out_trade_no: orderId, refund_amount: (amountFen / 100).toFixed(2), refund_reason: input.reason || 'merchant refund', out_request_no: refundRequestId })).alipay_trade_refund_response || {}
     if (!responseMatchesOrder(node, orderId)) throw new Error('alipay_response_order_mismatch')
-    return json(res, 200, { provider_refund_id: node.trade_no || orderId, refund_request_id: refundRequestId, amount_fen: amountFen, state: node.code === '10000' ? 'accepted' : 'failed' })
+    const state = normalizeRefundSubmissionState(node)
+    return json(res, 200, { order_id: orderId, provider_refund_id: node.trade_no || orderId, refund_request_id: refundRequestId, amount_fen: amountFen, state })
   }
   if (req.method === 'POST' && req.url === '/v1/refund/query') {
     const input = await body(req)

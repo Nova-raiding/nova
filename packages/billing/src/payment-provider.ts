@@ -183,6 +183,13 @@ function validateRefundStatusInput(input: PaymentRefundStatusInput): void {
   if (input.providerRefundId !== undefined) requiredText(input.providerRefundId, 'provider refund id')
 }
 
+function refundResponseMatchesInput(payload: unknown, input: PaymentRefundInput, refundRequestId: string): payload is Record<string, unknown> {
+  if (!isRecord(payload)) return false
+  return payload.order_id === input.orderId
+    && payload.refund_request_id === refundRequestId
+    && payload.amount_fen === input.amountFen
+}
+
 /** Deterministic local checkout used only by explicit fixture environments. */
 export class FixturePaymentProvider implements PaymentProvider {
   private readonly orders = new Map<string, { amountFen: number; idempotencyKey: string; state: PaymentStatusResult['state']; tradeId?: string }>()
@@ -345,19 +352,19 @@ export class HttpPaymentProvider implements PaymentProvider {
       })
       const responseText = await readBoundedResponseText(response, MAX_PAYMENT_PROVIDER_RESPONSE_BYTES, 'payment provider response')
       if (!response.ok) {
-        let rejected = response.status >= 400 && response.status < 500
+        let rejected = false
         try {
           const errorPayload = JSON.parse(responseText) as unknown
           const errorState = isRecord(errorPayload) && typeof errorPayload.state === 'string' ? errorPayload.state : undefined
           const classification = classifyPaymentRefundState(errorState)
-          if (classification === 'unknown') rejected = false
-          else if (classification === 'rejected') rejected = true
+          rejected = classification === 'rejected' && refundResponseMatchesInput(errorPayload, input, refundRequestId)
         } catch {}
         if (rejected) throw new PaymentProviderRefundRejectedError(`payment provider refund returned HTTP ${response.status}`)
         throw new PaymentProviderRefundOutcomeUnknownError(`payment provider refund outcome unknown after HTTP ${response.status}`)
       }
       let payload: unknown
       try { payload = JSON.parse(responseText) as unknown } catch { throw new PaymentProviderRefundOutcomeUnknownError('payment provider refund response was not valid JSON') }
+      if (!refundResponseMatchesInput(payload, input, refundRequestId)) throw new PaymentProviderRefundOutcomeUnknownError('payment provider refund response did not match the request')
       const providerRefundId = isRecord(payload) && typeof payload.provider_refund_id === 'string' ? payload.provider_refund_id : isRecord(payload) && typeof payload.refund_id === 'string' ? payload.refund_id : undefined
       const state = isRecord(payload) && typeof payload.state === 'string' ? payload.state : undefined
       const classification = classifyPaymentRefundState(state)

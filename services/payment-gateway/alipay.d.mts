@@ -33,3 +33,4 @@ export function refundQueryResponseMatchesRequest(
   amountFen: number,
 ): boolean
 export function normalizeRefundQueryState(response: Record<string, unknown>): 'succeeded' | 'failed' | 'pending' | 'unknown'
+export function normalizeRefundSubmissionState(response: Record<string, unknown>): 'completed' | 'processing'
