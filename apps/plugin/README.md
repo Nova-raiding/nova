@@ -4,7 +4,7 @@
 
 这是可安装的 Codex Plugin 源目录，包含：
 
-- `.codex-plugin/plugin.json`：正式 manifest，版本 `0.1.0+codex.20260912184110`。
+- `.codex-plugin/plugin.json`：正式 manifest，版本 `0.1.0+codex.20260914201137`。
 - `skills/merchant-marketing/SKILL.md`：唯一入口 Skill。
 - `.mcp.json`：Codex 标准 stdio MCP 配置；`mcp/bridge.mjs` 将标准 `tools/list`、`tools/call` 转发到现有 API 的 `/mcp` 业务方法。
 - `mcp/bridge.mjs`：插件侧传输适配器，固定注入 `X-Workspace-Id`，并将 API 的统一 envelope 解包为 Codex MCP 响应。
@@ -37,6 +37,8 @@ export MERCHANT_MCP_BASE_URL=https://merchant.example.com
 export MERCHANT_WORKSPACE_ID=<workspace-id>
 # 可选：由网关校验的 Bearer token；插件不会保存平台账号密码或 access token
 export MERCHANT_MCP_TOKEN=<mcp-token>
+# 连接非本机 API 时必须开启；否则 bridge 会在发送请求前失败关闭
+export MERCHANT_STRICT_AUTH=true
 # 仅本地 fixture 开发可显式开启；Automation 和生产环境禁止设置
 # export MERCHANT_ALLOW_FIXTURE_FALLBACK=true
 # 仅已明确确认的交互会话按需开启；Automation 禁止设置

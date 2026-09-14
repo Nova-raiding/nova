@@ -54,6 +54,8 @@
 
     launchctl setenv MERCHANT_MCP_BASE_URL "https://<商家API根地址>"
     launchctl setenv MERCHANT_WORKSPACE_ID "ws_<管理员分配的工作区>"
+    launchctl setenv MERCHANT_STRICT_AUTH "true"
+    launchctl setenv DEPLOY_ENV "production"
 
 只有网关明确要求静态 Bearer token 时才设置：
 
@@ -66,7 +68,7 @@
 
 检查变量是否存在，但不要打印 token：
 
-    for name in MERCHANT_MCP_BASE_URL MERCHANT_WORKSPACE_ID MERCHANT_MCP_TOKEN; do
+    for name in MERCHANT_MCP_BASE_URL MERCHANT_WORKSPACE_ID MERCHANT_MCP_TOKEN MERCHANT_STRICT_AUTH DEPLOY_ENV; do
       value=$(launchctl getenv "$name" 2>/dev/null || true)
       if [ -n "$value" ]; then
         case "$name" in
@@ -131,6 +133,8 @@
 | `MERCHANT_MCP_BASE_URL` | ChatGPT 插件 → 商家 API/MCP | 技术安装人员/平台管理员 |
 | `MERCHANT_WORKSPACE_ID` | 请求的租户边界 | 平台管理员分配 |
 | `MERCHANT_MCP_TOKEN` | 插件到网关的可选 Bearer 身份 | 网关管理员注入 |
+| `MERCHANT_STRICT_AUTH` | 非本机 API 的强制鉴权门禁；生产必须为 `true` | 技术安装人员/平台管理员 |
+| `DEPLOY_ENV` | bridge 的部署环境判定；生产必须为 `production` | 技术安装人员/平台管理员 |
 | `MODEL_RELAY_BASE_URL`、`MODEL_RELAY_API_KEY`、`AI_MODEL` 等 | 商家 API → 业务模型 | 服务端密钥管理器 |
 | `CODEX_RELAY_BASE_URL`、`CODEX_RELAY_MODEL`、`WORMHOLE_API_KEY` | ChatGPT/Codex 宿主 → 宿主模型中转 | 平台管理员 |
 
@@ -169,6 +173,7 @@
 | `MCP_CONFIGURATION_REQUIRED`，缺少 `MERCHANT_MCP_BASE_URL` | ChatGPT 进程没有收到插件 API 根地址 | 执行 A3，确认 `launchctl getenv` 有值，完全退出并重启 ChatGPT |
 | `MERCHANT_WORKSPACE_ID is required` | 未分配工作区或环境注入到错误用户 | 让管理员分配工作区，在启动 ChatGPT 的同一用户会话执行 A3 |
 | `401/403`、角色无权限 | OIDC/Bearer 映射失败或 token 过期 | 管理员检查网关身份映射和 token，不要改客户端角色变量 |
+| `MCP_STRICT_AUTH_REQUIRED` | 连接远程 API 时没有启用严格鉴权 | 执行 A3 设置 `MERCHANT_STRICT_AUTH=true`，完全退出并重启 ChatGPT |
 | 工具列表少、旧入口仍出现 | 本地插件缓存未更新，或对话保存了旧快照 | 重新执行 `codex plugin add`，重启 ChatGPT，开启新会话 |
 | `Selected model is at capacity` | 宿主模型尚未把消息交给插件 | 在 ChatGPT 模型选择器切换可用宿主模型后重试 |
 | `Codex host relay /models 未声明当前 host model` | `CODEX_RELAY_MODEL` 不是中转站实际提供的模型 ID，或缺少 Responses 能力声明 | 管理员先检查 `/v1/models`，用真实 ID 重新执行 `codex:relay:configure`，再通过 `codex:relay:validate` |
@@ -189,7 +194,7 @@
 技术人员交付前逐项确认：
 
 - [ ] `codex plugin list` 显示插件 `installed, enabled`。
-- [ ] `MERCHANT_MCP_BASE_URL`、`MERCHANT_WORKSPACE_ID` 在启动 ChatGPT 的用户 launchd 环境中存在。
+- [ ] `MERCHANT_MCP_BASE_URL`、`MERCHANT_WORKSPACE_ID`、`MERCHANT_STRICT_AUTH=true`、`DEPLOY_ENV=production` 在启动 ChatGPT 的用户 launchd 环境中存在。
 - [ ] 生产没有开启 `MERCHANT_ALLOW_FIXTURE_FALLBACK=true` 或全局 `MERCHANT_MCP_WRITE_ENABLED=true`。
 - [ ] ChatGPT 已完全重启，并在新会话中重新加载工具。
 - [ ] 首个只读入口能返回工作区/引导状态，而不是 MCP 配置缺失。
