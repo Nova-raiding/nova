@@ -35,10 +35,10 @@ function parseChecklistItems(value: unknown): CustomerDeliveryChecklistItem[] {
   const rows = object(value) && Array.isArray(value.items) ? value.items : Array.isArray(value) ? value : null;
   if (!rows) throw new Error("客户交付接口返回了无效清单响应");
   return rows.map((item, index) => {
-    if (!object(item) || !text(item.itemKey ?? item.item_key) || typeof (item.completed ?? false) !== "boolean") throw new Error(`客户交付清单响应无效（第 ${index + 1} 项）`);
+    if (!object(item) || !text(item.itemKey ?? item.item_key) || typeof item.completed !== "boolean") throw new Error(`客户交付清单响应无效（第 ${index + 1} 项）`);
     const rawEvidence = item.evidence ?? item.evidence_json;
     const evidence = typeof rawEvidence === "string" ? rawEvidence : object(rawEvidence) ? (typeof rawEvidence.note === "string" ? rawEvidence.note : JSON.stringify(rawEvidence)) : "";
-    return { itemKey: String(item.itemKey ?? item.item_key), completed: Boolean(item.completed), evidence };
+    return { itemKey: String(item.itemKey ?? item.item_key), completed: item.completed, evidence };
   });
 }
 
@@ -121,7 +121,12 @@ export const customerDeliveryClient: CustomerDeliveryClient = {
   async listVideos(targetWorkspaceId, deliveryId, signal) {
     const value = await rpc<unknown>("ops.customer-delivery.videos.list", { target_workspace_id: targetWorkspaceId, delivery_id: deliveryId }, { signal });
     const rows = object(value) && Array.isArray(value.items) ? value.items : [];
-    return rows.filter(object).map((row) => ({ id: String(row.id ?? ""), title: String(row.title ?? ""), assetRef: String(row.assetRef ?? row.asset_ref ?? ""), sortOrder: Number(row.sortOrder ?? row.sort_order ?? 0) })).filter((row) => row.id && row.assetRef);
+    return rows.map((row, index) => {
+      if (!object(row) || !text(row.id) || !text(row.title) || !text(row.assetRef ?? row.asset_ref)) throw new Error(`客户交付视频响应无效（第 ${index + 1} 项）`);
+      const sortOrder = Number(row.sortOrder ?? row.sort_order ?? 0);
+      if (!Number.isSafeInteger(sortOrder) || sortOrder < 0) throw new Error(`客户交付视频排序字段无效（第 ${index + 1} 项）`);
+      return { id: row.id, title: row.title, assetRef: String(row.assetRef ?? row.asset_ref), sortOrder };
+    });
   },
   async addVideo(input, signal) {
     return rpc("ops.customer-delivery.videos.add", { target_workspace_id: input.targetWorkspaceId, delivery_id: input.deliveryId, title: input.title, asset_ref: input.assetRef, sort_order: String(input.sortOrder ?? 0) }, { signal });
