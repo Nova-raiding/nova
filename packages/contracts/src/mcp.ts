@@ -14,6 +14,7 @@ export const MCP_NON_PRODUCTION_METHODS = ['asset.scan'] as const
 export const exposeNonProductionMethods = true
 
 export const MCP_METHODS = [
+  'onboarding.status',
   'merchant.start',
   'commercial.service-boundary.accept',
   'merchant.first_value',
@@ -93,6 +94,8 @@ export const MCP_METHODS = [
   'ops.customer-delivery.create',
   'ops.customer-delivery.update',
   'ops.customer-delivery.checklist.update',
+  'ops.customer-delivery.checklist-items.list',
+  'ops.customer-delivery.checklist-item.update',
   'ops.customer-delivery.training.complete',
   'ops.customer-delivery.videos.list',
   'ops.customer-delivery.videos.add',
@@ -536,6 +539,11 @@ const params = (
 /** Canonical wire-level parameter schemas shared by the plugin, API and tests. */
 export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
+    method: 'onboarding.status',
+    description: '查看插件安装后的系统引导进度、当前阻断、所需绑定和下一步动作。只读，不改变权限或业务数据。',
+    params: params({}),
+  },
+  {
     method: 'merchant.start',
     description: 'Start or resume a merchant task intent from the user\'s explicit platform, goal, and attachment count. Optional idempotency_key remains stable when the same intent is retried.',
     params: params({
@@ -729,7 +737,9 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'ops.customer-delivery.get', description: 'Get one customer delivery record and its videos.', params: params({ delivery_id: boundedString(256) }, ['delivery_id']) },
   { method: 'ops.customer-delivery.create', description: 'Create a customer delivery record.', params: params({ company_name: boundedString(200, 1) }, ['company_name']) },
   { method: 'ops.customer-delivery.update', description: 'Update customer delivery profile fields with optimistic revision.', params: params({ delivery_id: boundedString(256), expected_revision: positiveIntegerString, patch_json: boundedString(16_384) }, ['delivery_id', 'expected_revision', 'patch_json']) },
-  { method: 'ops.customer-delivery.checklist.update', description: 'Update a delivery checklist completion state.', params: params({ delivery_id: boundedString(256), checklist_key: { type: 'string', enum: ['customer_profile', 'system_integration', 'functional_acceptance'] }, completed: booleanString, expected_revision: positiveIntegerString }, ['delivery_id', 'checklist_key', 'completed', 'expected_revision']) },
+  { method: 'ops.customer-delivery.checklist.update', description: 'Update a delivery checklist completion state, or persist batch per-item completion and evidence via items_json.', params: params({ delivery_id: boundedString(256), checklist_key: { type: 'string', enum: ['customer_profile', 'system_integration', 'functional_acceptance'] }, completed: booleanString, items_json: boundedString(16_384), expected_revision: positiveIntegerString }, ['delivery_id', 'checklist_key', 'expected_revision']) },
+  { method: 'ops.customer-delivery.checklist-items.list', description: 'List persisted per-item checklist evidence for a customer delivery.', params: params({ delivery_id: boundedString(256), checklist_key: { type: 'string', enum: ['system_integration', 'functional_acceptance'] } }, ['delivery_id', 'checklist_key']) },
+  { method: 'ops.customer-delivery.checklist-item.update', description: 'Update one persisted checklist item with operator evidence and optimistic revision.', params: params({ delivery_id: boundedString(256), checklist_key: { type: 'string', enum: ['system_integration', 'functional_acceptance'] }, item_key: boundedString(256, 1), completed: booleanString, evidence_json: boundedString(16_384), expected_revision: positiveIntegerString }, ['delivery_id', 'checklist_key', 'item_key', 'completed', 'expected_revision']) },
   { method: 'ops.customer-delivery.training.complete', description: 'Mark customer training complete with optimistic revision.', params: params({ delivery_id: boundedString(256), completed: booleanString, expected_revision: positiveIntegerString }, ['delivery_id', 'completed', 'expected_revision']) },
   { method: 'ops.customer-delivery.videos.list', description: 'List delivery videos.', params: params({ delivery_id: boundedString(256) }, ['delivery_id']) },
   { method: 'ops.customer-delivery.videos.add', description: 'Attach one uploaded delivery video asset reference.', params: params({ delivery_id: boundedString(256), title: boundedString(200, 1), asset_ref: boundedString(1_000, 1), sort_order: nonNegativeIntegerString }, ['delivery_id', 'title', 'asset_ref']) },

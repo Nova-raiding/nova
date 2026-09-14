@@ -23,4 +23,16 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     const d = await repo.create({ workspaceId: 'ws_unpaid', companyName: 'Acme', actorId: 'operator-1' })
     await expect(repo.update({ workspaceId: d.workspaceId, id: d.id, actorId: 'operator-1', expectedRevision: d.revision, patch: { trainingCompleted: true } })).rejects.toMatchObject({ code: 'PAYMENT_REQUIRED' })
   })
+
+  it('persists batch checklist items and derives aggregate status without dropping evidence', async () => {
+    const repo = new MemoryCustomerDeliveryRepository()
+    const draft = await repo.create({ workspaceId: 'ws_batch', companyName: 'Batch Co', actorId: 'operator-1' })
+    const paid = await repo.update({ workspaceId: draft.workspaceId, id: draft.id, actorId: 'operator-1', expectedRevision: draft.revision, patch: { paymentStatus: 'paid' } })
+    const items = Array.from({ length: 10 }, (_, i) => ({ itemKey: `接入-${i}`, completed: true, evidence: { note: `证据-${i}` } }))
+    const saved = await repo.updateChecklistItems!({ workspaceId: paid.workspaceId, deliveryId: paid.id, checklistKey: 'system_integration', items, actorId: 'operator-1', expectedRevision: paid.revision })
+    expect(saved).toHaveLength(10)
+    expect(saved[0]).toMatchObject({ itemKey: '接入-0', completed: true, evidence: { note: '证据-0' } })
+    expect((await repo.listChecklistItems!({ workspaceId: paid.workspaceId, deliveryId: paid.id, checklistKey: 'system_integration' }))).toHaveLength(10)
+    expect((await repo.get(paid.workspaceId, paid.id))!.systemIntegrationStatus).toBe('complete')
+  })
 })

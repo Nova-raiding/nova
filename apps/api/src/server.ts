@@ -125,6 +125,7 @@ import { projectImportedProductsToKnowledge } from '../../../packages/applicatio
 
 const port = Number(process.env.PORT ?? 8787)
 const uploadSessions = new UploadSessionManager()
+
 const fixtureMode = process.env.CONNECTOR_FIXTURE_MODE === 'true'
 const fixtureCommercialTestMode = fixtureMode && process.env.MERCHANT_TEST_APPROVED_RATES === 'true'
 const testCommercialFixtureMode = process.env.VITEST === 'true' || process.env.VITEST_WORKER_ID !== undefined || process.argv.some(argument => /(?:^|[/\\])vitest(?:[/\\]|$)/u.test(argument))
@@ -3659,12 +3660,12 @@ async function setWorkspaceStatus(workspaceId: string, status: 'active' | 'disab
 }
 
 async function requireActiveWorkspace(workspaceId: string, method: string) {
-  if (method === 'workspace.health' || method === 'workspace.activate' || method === 'workspace.deactivate') return
+  if (method === 'onboarding.status' || method === 'workspace.health' || method === 'workspace.activate' || method === 'workspace.deactivate') return
   if (await getWorkspaceStatus(workspaceId) !== 'active') throw new DomainError('WORKSPACE_DISABLED', '工作区已停用；请先重新启用后再执行商家操作', 423)
 }
 
 const ONBOARDING_METHODS = new Set([
-  'merchant.start', 'workspace.health', 'platform.connect', 'billing.status', 'billing.recharge.create', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.reconciliation', 'billing.model-usage.statement',
+  'onboarding.status', 'merchant.start', 'workspace.health', 'platform.connect', 'billing.status', 'billing.recharge.create', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.reconciliation', 'billing.model-usage.statement',
   'subscription.get', 'subscription.orders.list', 'subscription.order.create', 'subscription.change', 'platform.model.status',
   'platform.media.spec.list', 'platform.media.spec.get', 'platform.media.spec.create', 'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire', 'platform.mapping.preflight', 'delivery.bundle.verify',
   'asset.scan',
@@ -10213,7 +10214,7 @@ const OPS_DOMAIN_METHODS = new Set([
   'ops.canonical.backfill.create', 'ops.canonical.backfill.get', 'ops.canonical.backfill.pause', 'ops.canonical.backfill.resume', 'ops.canonical.backfill.run',
   'ops.canonical.backfill.conflicts.list', 'ops.canonical.backfill.conflict.claim', 'ops.canonical.backfill.conflict.resolve',
   'ops.support.tickets.list', 'ops.support.ticket.get', 'ops.support.ticket.create', 'ops.support.ticket.assign', 'ops.support.ticket.transition', 'ops.support.ticket.comment', 'ops.support.sla.report', 'ops.support.sla.correction.create', 'ops.support.sla.correction.decide',
-  'ops.customer-delivery.list', 'ops.customer-delivery.get', 'ops.customer-delivery.create', 'ops.customer-delivery.update', 'ops.customer-delivery.checklist.update', 'ops.customer-delivery.training.complete', 'ops.customer-delivery.videos.list', 'ops.customer-delivery.videos.add',
+  'ops.customer-delivery.list', 'ops.customer-delivery.get', 'ops.customer-delivery.create', 'ops.customer-delivery.update', 'ops.customer-delivery.checklist.update', 'ops.customer-delivery.checklist-items.list', 'ops.customer-delivery.checklist-item.update', 'ops.customer-delivery.training.complete', 'ops.customer-delivery.videos.list', 'ops.customer-delivery.videos.add',
   'ops.incidents.list', 'ops.incident.get', 'ops.incident.timeline', 'ops.incident.create', 'ops.incident.transition', 'ops.incident.comment', 'ops.incident.commander.assign', 'ops.incident.scope.update',
   'ops.feature-flags.list', 'ops.feature-flag.upsert', 'ops.feature-flag.emergency.set', 'ops.feature-flag.events', 'ops.feature-flag.evaluate',
   'ops.finance.search', 'ops.finance.detail', 'ops.finance.export',
@@ -11733,11 +11734,33 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         }),
       })
     }
+    case 'onboarding.status':
     case 'workspace.health': {
       const directory = workspaceStoreDirectory(workspaceId)
       const onboardingState = workspaceOnboarding(workspaceId, directory)
       const onboarding = onboardingState.steps
       const onboardingV2 = merchantOnboardingProjection(onboardingState)
+      if (method === 'onboarding.status') {
+        const current = onboardingV2.current_step
+        const bindingByStep: Record<string, string> = {
+          workspace: '工作区：绑定 MERCHANT_WORKSPACE_ID；身份由当前认证会话提供。',
+          connect_store: '店铺：选择平台后通过官方 OAuth 授权，不需要提供平台密码。',
+          select_product: '商品：绑定 platform + account_id 后同步或导入商品。',
+          add_assets: '素材：上传图片/资料，等待扫描、权益和事实确认。',
+          generate_review: '内容：确认商品事实后创建任务，生成结果仍需审核。',
+          publish: '发布：通过审核后查看预检，必须单独确认才能发布。',
+        }
+        return result({
+          schema_version: 'onboarding.status.v1',
+          status: current.state === 'complete' ? 'ready' : 'in_progress',
+          current_step: current,
+          steps: onboardingV2.steps,
+          binding: bindingByStep[current.id] ?? '按当前步骤完成配置。',
+          next_action: current.primary_action,
+          summary: onboardingState.summary,
+          guidance: '完成当前步骤后重新检查引导状态；未完成前不会执行生成或发布。',
+        })
+      }
       const brandNavigation = await accessibleBrandNavigation(req, workspaceId)
       return result({
       ...runtimeHealth(),
@@ -11965,10 +11988,41 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'ops.customer-delivery.checklist.update': {
       const checklistKey = requiredStringValue(params, 'checklistKey', 'checklist_key')
+      const repository = persistence.customerDeliveries ?? memoryCustomerDeliveries
+      const rawItems = params.itemsJson ?? params.items_json
+      if (rawItems !== undefined) {
+        if (checklistKey === 'customer_profile' || !repository.updateChecklistItems) throw new DomainError('CUSTOMER_DELIVERY_NOT_IMPLEMENTED', '该客户交付清单暂不支持批量逐项写入', 501)
+        let parsed: unknown
+        try { parsed = JSON.parse(String(rawItems)) } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'items_json 必须是有效 JSON 数组', 400) }
+        if (!Array.isArray(parsed)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'items_json 必须是 JSON 数组', 400)
+        const items = parsed.map((item, index) => {
+          if (!isObject(item) || typeof item.itemKey !== 'string' || typeof item.completed !== 'boolean' && item.completed !== 'true' && item.completed !== 'false') throw new DomainError(ERROR_CODES.INVALID_REQUEST, `items_json 第 ${index + 1} 项格式无效`, 400)
+          let evidence: Record<string, unknown> = {}
+          if (item.evidence !== undefined) {
+            if (typeof item.evidence === 'string') evidence = item.evidence.trim() ? { note: item.evidence.trim() } : {}
+            else if (isObject(item.evidence)) evidence = item.evidence
+            else throw new DomainError(ERROR_CODES.INVALID_REQUEST, `items_json 第 ${index + 1} 项 evidence 格式无效`, 400)
+          }
+          return { itemKey: item.itemKey, completed: item.completed === true || item.completed === 'true', evidence }
+        })
+        return result(await invokeOpsDomain(() => repository.updateChecklistItems!({ workspaceId, deliveryId: requiredStringValue(params, 'deliveryId', 'delivery_id'), checklistKey: checklistKey as 'system_integration'|'functional_acceptance', items, actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')) })))
+      }
       const status: 'complete' | 'incomplete' = params.completed === true || params.completed === 'true' ? 'complete' : 'incomplete'
       const patch = checklistKey === 'customer_profile' ? { customerProfileStatus: status } : checklistKey === 'system_integration' ? { systemIntegrationStatus: status } : checklistKey === 'functional_acceptance' ? { functionalAcceptanceStatus: status } : null
       if (!patch) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'checklist_key 无效', 400)
       return result(await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).update({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')), patch })))
+    }
+    case 'ops.customer-delivery.checklist-items.list': {
+      const repository = persistence.customerDeliveries ?? memoryCustomerDeliveries
+      if (!repository.listChecklistItems) throw new DomainError('CUSTOMER_DELIVERY_NOT_IMPLEMENTED', '客户交付清单项读取未实现', 501)
+      return result({ items: await invokeOpsDomain(() => repository.listChecklistItems!({ workspaceId, deliveryId: requiredStringValue(params, 'deliveryId', 'delivery_id'), checklistKey: requiredStringValue(params, 'checklistKey', 'checklist_key') as 'system_integration'|'functional_acceptance' })) })
+    }
+    case 'ops.customer-delivery.checklist-item.update': {
+      const repository = persistence.customerDeliveries ?? memoryCustomerDeliveries
+      if (!repository.updateChecklistItem) throw new DomainError('CUSTOMER_DELIVERY_NOT_IMPLEMENTED', '客户交付清单项写入未实现', 501)
+      let evidence: Record<string, unknown> = {}
+      if (params.evidence_json) { try { const parsed = JSON.parse(String(params.evidence_json)); if (!isObject(parsed)) throw new Error(); evidence = parsed } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'evidence_json 必须是有效 JSON 对象', 400) } }
+      return result(await invokeOpsDomain(() => repository.updateChecklistItem!({ workspaceId, deliveryId: requiredStringValue(params, 'deliveryId', 'delivery_id'), checklistKey: requiredStringValue(params, 'checklistKey', 'checklist_key') as 'system_integration'|'functional_acceptance', itemKey: requiredStringValue(params, 'itemKey', 'item_key'), completed: params.completed === true || params.completed === 'true', evidence, actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')) })))
     }
     case 'ops.customer-delivery.training.complete':
       return result(await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).update({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')), patch: { trainingCompleted: params.completed === true || params.completed === 'true' } })))
@@ -16110,6 +16164,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'upload.session.create': {
       // A session without a configured transport must fail closed; never report a fake upload.
       const size = Number(required(params, 'size_bytes'))
+      if (!uploadSessions.configured) throw new DomainError('UPLOAD_TRANSPORT_NOT_CONFIGURED', '上传服务未配置真实对象存储 transport', 503)
       try {
         const session = uploadSessions.create({ workspaceId, fileName: required(params, 'file_name'), contentType: required(params, 'content_type'), sizeBytes: size, sha256: required(params, 'sha256'), ...(typeof params.idempotency_key === 'string' ? { idempotencyKey: params.idempotency_key } : {}) })
         return result(session)
