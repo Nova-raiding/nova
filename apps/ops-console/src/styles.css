@@ -312,6 +312,7 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-dashboard-panel header h3 { margin: 3px 0 0; color: #172554; font-size: 20px; font-weight: 800; }
 .ops-dashboard-panel header small { color: #94a3b8; font-size: 12px; font-weight: 650; }
 .ops-dashboard-metric-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ops-table-index { display: block; width: 100%; text-align: center; }
 .ops-modal-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: rgba(15, 23, 42, .38); }
 .ops-modal-card { width: min(460px, 100%); padding: 20px; border: 1px solid #dbe3ef; border-radius: 14px; background: #fff; box-shadow: 0 20px 60px rgba(15, 23, 42, .2); }
 .ops-modal-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; color: #172554; font-size: 18px; }

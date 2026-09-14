@@ -32,7 +32,7 @@ function monthlyEffectivePeriod(row: PlatformUser) {
   const start = new Date(row.updatedAt);
   const end = new Date(start);
   end.setMonth(end.getMonth() + 1);
-  return `${dateOnlyFormatter.format(start)} - ${dateOnlyFormatter.format(end)}（月度）`;
+  return `${dateOnlyFormatter.format(start)} - ${dateOnlyFormatter.format(end)}`;
 }
 const userNameCollator = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
 
@@ -332,19 +332,19 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { key: "first", label: "开通时间", children: dateTimeFormatter.format(new Date(model.userDetail.identity.firstSeenAt)) },
           ]} />
           <div><Typography.Title level={5}>店铺详情</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={false} dataSource={model.userDetail.memberships} columns={[
-            { title: "序号", key: "index", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
+            { title: "序号", key: "index", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => <span className="ops-table-index">{index + 1}</span> },
             { title: "店铺名称", key: "name", width: 220, render: (_: unknown, row: PlatformUser) => row.enterpriseName || row.workspaceId },
             { title: "店铺状态", key: "status", width: 120, render: (_: unknown, row: PlatformUser) => <Tag color={row.workspaceStatus === "active" ? "green" : "red"}>{row.workspaceStatus === "active" ? "正常" : "风险"}</Tag> },
             { title: "开通时间", key: "openedAt", width: 170, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
           <div><Typography.Title level={5}>月费详情</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:monthly-fee`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无月费记录" }} columns={[
-            { title: "序号", key: "index", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
+            { title: "序号", key: "index", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => <span className="ops-table-index">{index + 1}</span> },
             { title: "用户名", key: "name", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
             { title: "月费版本", key: "plan", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
             { title: "生效周期", key: "period", width: "50%", render: (_: unknown, row: PlatformUser) => monthlyEffectivePeriod(row) },
           ]} /></div>
           <div><Typography.Title level={5}>钱包</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:wallet`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无充值记录" }} columns={[
-            { title: "序号", key: "index", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
+            { title: "序号", key: "index", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => <span className="ops-table-index">{index + 1}</span> },
             { title: "用户名", key: "name", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
             { title: "充值金额", key: "amount", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
             { title: "实际到账创意点", key: "points", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial ? row.commercial.includedTasks : "—" },
