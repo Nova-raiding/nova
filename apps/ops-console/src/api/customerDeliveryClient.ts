@@ -34,6 +34,22 @@ const bool = (value: unknown): value is boolean => typeof value === "boolean";
 
 export interface CustomerDeliveryChecklistItem { itemKey: string; completed: boolean; evidence: string }
 
+export function buildChecklistUpdateParams(input: {
+  targetWorkspaceId: string;
+  deliveryId: string;
+  checklistKey: "system_integration" | "functional_acceptance";
+  items: Array<{ itemKey: string; completed: boolean; evidence: string }>;
+  expectedRevision: number;
+}) {
+  return {
+    delivery_id: input.deliveryId,
+    target_workspace_id: input.targetWorkspaceId,
+    checklist_key: input.checklistKey,
+    items_json: JSON.stringify(input.items),
+    expected_revision: String(input.expectedRevision),
+  };
+}
+
 function parseRecord(value: unknown): CustomerDeliveryRecord {
   const rows = parseCustomerDeliveryList({ items: [value] });
   const row = rows[0];
@@ -120,16 +136,7 @@ export const customerDeliveryClient: CustomerDeliveryClient = {
     return parseRecord(value);
   },
   async updateChecklist(input, signal) {
-    const value = await rpc<unknown>("ops.customer-delivery.checklist.update", {
-      delivery_id: input.deliveryId,
-      target_workspace_id: input.targetWorkspaceId,
-      checklist_key: input.checklistKey,
-      items_json: JSON.stringify(input.items),
-      // Keep the aggregate flag for backwards-compatible servers. The server
-      // must still validate and persist each item from items_json.
-      completed: String(input.items.length > 0 && input.items.every((item) => item.completed)),
-      expected_revision: String(input.expectedRevision),
-    }, { signal });
+    const value = await rpc<unknown>("ops.customer-delivery.checklist.update", buildChecklistUpdateParams(input), { signal });
     if (value === null) throw new Error("客户交付清单保存接口未返回结果");
     return { items: parseChecklistItems(value), revision: object(value) && typeof value.revision === "number" ? value.revision : undefined };
   },

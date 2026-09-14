@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { parseCustomerDeliveryList } from "./customerDeliveryClient.js";
+import { buildChecklistUpdateParams, parseCustomerDeliveryList } from "./customerDeliveryClient.js";
 
 describe("customer delivery client", () => {
   it("parses aggregate snake_case response", () => {
@@ -7,5 +7,16 @@ describe("customer delivery client", () => {
   });
   it("rejects malformed rows instead of returning empty state", () => {
     expect(() => parseCustomerDeliveryList({ items: [{ id: "cd_1" }] })).toThrow("客户交付接口返回了无效响应");
+  });
+  it("sends exactly one checklist update mode", () => {
+    const params = buildChecklistUpdateParams({
+      targetWorkspaceId: "workspace-1",
+      deliveryId: "delivery-1",
+      checklistKey: "system_integration",
+      items: [{ itemKey: "插件账号", completed: true, evidence: "asset_ref:1" }],
+      expectedRevision: 3,
+    });
+    expect(params.items_json).toContain("插件账号");
+    expect(params).not.toHaveProperty("completed");
   });
 });
