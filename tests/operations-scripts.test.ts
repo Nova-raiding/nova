@@ -599,17 +599,26 @@ describe('deployment operation scripts', () => {
   it('routes the public pilot API directly to the API without replacing caller identity', () => {
     const gateway = readFileSync('infra/nginx/pilot-gateway.conf', 'utf8')
     const apiLocation = gateway.split('location ^~ /api/ {')[1]?.split('}')[0] ?? ''
-    expect(apiLocation).toContain('proxy_pass http://api:8787')
+    expect(gateway).toContain('resolver 127.0.0.11 valid=10s ipv6=off')
+    expect(gateway).toContain('server api:8787 resolve')
+    expect(gateway).toContain('server ui:8080 resolve')
+    expect(gateway).toContain('server ops-ui:8080 resolve')
+    expect(apiLocation).toContain('proxy_pass http://pilot_api')
     expect(apiLocation).toContain('proxy_set_header Authorization $http_authorization')
     expect(apiLocation).toContain('proxy_set_header X-Ops-Workbench $http_x_ops_workbench')
     expect(apiLocation).not.toContain('MERCHANT_API_TOKEN')
     const challengeLocation = gateway.split('location = /.well-known/openai-apps-challenge {')[1]?.split('}')[0] ?? ''
-    expect(challengeLocation).toContain('proxy_pass http://api:8787')
+    expect(challengeLocation).toContain('proxy_pass http://pilot_api')
     expect(challengeLocation).toContain('proxy_set_header X-Forwarded-Proto $scheme')
 
     const httpsGateway = readFileSync('infra/nginx/pilot-gateway-https.conf', 'utf8')
+    expect(httpsGateway).toContain('resolver 127.0.0.11 valid=10s ipv6=off')
+    expect(httpsGateway).toContain('server api:8787 resolve')
+    expect(httpsGateway).toContain('server ui:8080 resolve')
+    expect(httpsGateway).toContain('server ops-ui:8080 resolve')
+    expect(httpsGateway).toContain('server payment-gateway:8790 resolve')
     const httpsChallengeLocation = httpsGateway.split('location = /.well-known/openai-apps-challenge {')[1]?.split('}')[0] ?? ''
-    expect(httpsChallengeLocation).toContain('proxy_pass http://api:8787')
+    expect(httpsChallengeLocation).toContain('proxy_pass http://pilot_api')
     expect(httpsChallengeLocation).toContain('proxy_set_header X-Forwarded-Proto https')
   })
 
