@@ -4439,7 +4439,7 @@ export class MerchantService {
     const task = this.mustTask(taskId)
     const prepared = await this.prepareGenerationContext(taskId, usageActionId)
     if (!this.options.contentGenerator) {
-      if (!this.options.fixtureMode) throw new DomainError('AI_GENERATION_NOT_CONFIGURED', '真实生成路径未配置内容生成模型；只有显式 fixtureMode 可使用本地模板', 503)
+      if (!this.options.fixtureMode) throw new DomainError('AI_GENERATION_NOT_CONFIGURED', '平台文案模型中转未就绪，正式商品任务暂不能生成内容版本；请联系平台运营配置模型', 503)
       return this.createDraft(taskId)
     }
     const { snapshot, product, input: boundedInput } = prepared
@@ -4495,7 +4495,7 @@ export class MerchantService {
     if (!product.factsConfirmed) throw new DomainError('PRODUCT_FACTS_CONFIRMATION_REQUIRED', '一句话文案生成需要先确认商品事实', 409)
     assertProductionReleaseMetadata()
     if (!this.options.contentGenerator) {
-      if (process.env.NODE_ENV === 'production') throw new DomainError('AI_GENERATION_NOT_CONFIGURED', '生产环境未配置内容生成模型', 503)
+      if (process.env.NODE_ENV === 'production') throw new DomainError('AI_GENERATION_NOT_CONFIGURED', '平台文案模型中转未就绪，正式商品任务暂不能生成内容版本；请联系平台运营配置模型', 503)
       return { title: `${product.title}｜${input.prompt}`, detail: `基于已确认商品事实生成：${product.title}。`, sellingPoints: [`适配${product.platform}商品信息`, '关键事实可追溯'] }
     }
     try {

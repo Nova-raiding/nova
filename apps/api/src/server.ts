@@ -8230,7 +8230,10 @@ function billingCapabilityEntitlements(input: {
       : { state: 'exhausted' as const, label: '套餐额度已用尽', remaining: input.usage?.remainingTasks ?? null, reason: pointsReady ? '后续模型行动将直接扣除创意点' : '创意点不足，无法执行模型行动', code: 'package_quota' },
     generation: generationReady
       ? { state: 'available' as const, label: '生成能力可用', reason: '仍需素材事实、权益和人工确认门禁', code: null }
-      : blocked(!pointsReady ? '创意点不足或余额未知' : '模型中转或内容生成配置未就绪', !pointsReady ? 'creative_points' : 'model_configuration'),
+      : blocked(
+        !pointsReady ? '创意点不足或余额未知' : '平台文案模型未配置，暂不能生成正式内容',
+        !pointsReady ? 'creative_points' : 'model_configuration',
+      ),
     platform_publish: publishReady
       ? { state: 'available' as const, label: '平台发布可用', platform: writableStore!.platform, store: writableStore!.label, reason: '发布前仍需商品范围、内容审核和交互确认', code: null }
       : blocked(!pointsReady ? '创意点不足或余额未知' : !readableStore ? '没有可读取的已授权店铺' : '已授权店铺尚未通过平台写入门禁', !pointsReady ? 'creative_points' : !readableStore ? 'store_authorization' : 'platform_write_readiness'),
