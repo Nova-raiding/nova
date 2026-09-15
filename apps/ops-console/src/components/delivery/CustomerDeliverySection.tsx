@@ -17,7 +17,10 @@ import {
 } from "antd";
 import { deliveryDateTimeInputValue } from "./deliveryDateTime.js";
 import { CustomerDeliveryUpload } from "./CustomerDeliveryUpload.js";
-import type { CustomerDeliveryAsset, CustomerDeliveryAssetPurpose } from "../../api/customerDeliveryClient.js";
+
+import { CustomerDeliveryAccountBinding } from "./CustomerDeliveryAccountBinding.js";
+import { parseCustomerDeliveryEvidenceRefs } from "../../api/customerDeliveryClient.js";
+import type { CustomerDeliveryAccount, CustomerDeliveryAccountPage, CustomerDeliveryAsset, CustomerDeliveryAssetPurpose, CustomerDeliveryUploadSource } from "../../api/customerDeliveryClient.js";
 
 export type DeliveryStepKey =
   "profile" | "integration" | "acceptance" | "training" | "video";
@@ -36,6 +39,7 @@ export interface CustomerDeliveryRecord {
   afterSalesOwner?: string;
   paymentDate?: string;
   paymentEvidenceRefs?: string[];
+  trainingEvidenceRefs?: string[];
   requiredLaunchAt?: string;
   contractFile?: string;
   integrationItems?: string[];
@@ -43,9 +47,13 @@ export interface CustomerDeliveryRecord {
   trainingCompletedAt?: string;
   videoUrls?: string[];
   revision?: number;
+
   createdAt?: string;
   createdByActorId?: string;
   updatedByActorId?: string;
+  targetAccountId?: string | null;
+  targetIdentityId?: string | null;
+  targetAccountLogin?: string | null;
   /** Per-item evidence returned by the delivery API. Keys are item labels. */
   integrationEvidence?: Record<string, string>;
   acceptanceEvidence?: Record<string, string>;
@@ -208,6 +216,7 @@ export function isDeliveryChecklistComplete(record: CustomerDeliveryRecord, key:
   return Array.isArray(selected) && expected.every((item) => selected.includes(item));
 }
 
+
 export function deliveryLaunchDateLabel(record: Pick<CustomerDeliveryRecord, "createdAt">) {
   const value = record.createdAt;
   if (!value) return "未填写";
@@ -218,9 +227,63 @@ export function deliveryLaunchDateLabel(record: Pick<CustomerDeliveryRecord, "cr
 export function hasDeliveryVideo(record: CustomerDeliveryRecord) {
   return record.videos > 0 || Boolean(record.videoUrls?.length);
 }
+export function CustomerDeliveryTrainingEvidence({ record, disabled, readOnly = false, onUpload, onGetAsset, onConfirm, onClose }: {
+  record: CustomerDeliveryRecord;
+  disabled?: boolean;
+  readOnly?: boolean;
+  onUpload?: (source: CustomerDeliveryUploadSource, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
+  onGetAsset?: (assetRef: string, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
+  onConfirm: (refs: string[]) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [refs, setRefs] = useState(record.trainingEvidenceRefs ?? []);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const confirm = async () => {
+    if (busy || disabled || readOnly) return;
+    try {
+      const valid = parseCustomerDeliveryEvidenceRefs(refs, "培训凭证");
+      if (!valid.length) throw new Error("完成客户培训前请上传培训凭证");
+      setError("");
+      await onConfirm(valid);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "培训确认失败，请重试"); }
+  };
+  return <section aria-label={`${record.companyName} 培训凭证`} style={{ padding: "8px 0", minWidth: 0 }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 12 }}>
+      <div style={{ minWidth: 0 }}>
+        <Typography.Text strong>培训凭证</Typography.Text>
+        <Typography.Paragraph type="secondary" style={{ margin: "4px 0 0" }}>{readOnly ? "查看已登记的培训凭证，当前会话不可修改。" : "上传签到表、培训记录或确认截图，安全检查通过后确认。"}</Typography.Paragraph>
+      </div>
+      <Space style={{ flexShrink: 0 }}>
+        {!readOnly ? <Button type="primary" disabled={busy || disabled} onClick={() => void confirm()}>确认培训完成</Button> : null}
+        <Button aria-label="收起" onClick={onClose}>收起</Button>
+      </Space>
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(320px, 1fr)", alignItems: "start", gap: 16 }}>
+      <div style={{ minWidth: 0 }}>
+        <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8 }}>已上传培训凭证</Typography.Text>
+        <Select
+          aria-label="已上传培训凭证"
+          mode="tags"
+          open={false}
+          value={refs}
+          onChange={setRefs}
+          disabled={disabled || readOnly}
+          placeholder="上传后自动填入，也可填写已绑定素材编号"
+          style={{ width: "100%" }}
+        />
+        {error ? <Typography.Paragraph type="danger" role="alert" style={{ margin: "8px 0 0" }}>{error}</Typography.Paragraph> : null}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        {!readOnly ? <CustomerDeliveryUpload purpose="training" disabled={disabled} onUpload={disabled ? undefined : onUpload} onGetAsset={onGetAsset} onReady={(asset) => setRefs((current) => [...new Set([...current, asset.assetRef])])} onBusyChange={setBusy} /> : null}
+      </div>
+    </div>
+  </section>;
+}
 
 export function CustomerDeliverySection({
   disabled = false,
+  readOnly = false,
   records = [],
   onOpen,
   onSave,
@@ -233,12 +296,17 @@ export function CustomerDeliverySection({
   onVideoList,
   onAssetUpload,
   onAssetGet,
+
   onAssetOpen,
   onArchive,
   operatorActorId,
   operatorName,
+  onAccountList,
+  onAccountBind,
 }: {
   disabled?: boolean;
+  /** Keeps delivery details readable while removing every mutation entry. */
+  readOnly?: boolean;
   records?: CustomerDeliveryRecord[];
   onOpen?: (
     record: CustomerDeliveryRecord,
@@ -269,12 +337,15 @@ export function CustomerDeliverySection({
   onVideoList?: (
     record: CustomerDeliveryRecord,
   ) => Promise<CustomerDeliveryVideoItem[]>;
-  onAssetUpload?: (record: CustomerDeliveryRecord, file: File, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
+  onAssetUpload?: (record: CustomerDeliveryRecord, source: CustomerDeliveryUploadSource, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
   onAssetGet?: (record: CustomerDeliveryRecord, assetRef: string, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
+
   onAssetOpen?: (record: CustomerDeliveryRecord, assetRef: string, purpose: "contract" | "video", mode: "open" | "download") => Promise<void>;
   onArchive?: (record: CustomerDeliveryRecord) => Promise<void>;
   operatorActorId?: string;
   operatorName?: string;
+  onAccountList?: (input: { search?: string; cursor?: string }, signal: AbortSignal) => Promise<CustomerDeliveryAccountPage>;
+  onAccountBind?: (record: CustomerDeliveryRecord, account: CustomerDeliveryAccount, reason: string, signal: AbortSignal) => Promise<CustomerDeliveryRecord>;
 }) {
   const [selected, setSelected] = useState<CustomerDeliveryRecord>();
   const [detailsRecord, setDetailsRecord] = useState<CustomerDeliveryRecord>();
@@ -282,6 +353,8 @@ export function CustomerDeliverySection({
   const [saving, setSaving] = useState(false);
   const [loadingStep, setLoadingStep] = useState(false);
   const [uploading, setUploading] = useState(false);
+
+  const [bindingAccount, setBindingAccount] = useState(false);
   const detailRequest = useRef(0);
   const [creating, setCreating] = useState(false);
   const [videoItems, setVideoItems] = useState<CustomerDeliveryVideoItem[]>([]);
@@ -375,11 +448,13 @@ export function CustomerDeliverySection({
     }
   };
   const save = async (values: Record<string, unknown>) => {
-    if (!selected || uploading) return;
+
+    if (!selected || disabled || readOnly || saving || loadingStep || uploading || bindingAccount) return;
     const request = detailRequest.current;
     const next = {
       ...selected,
       ...values,
+      revision: selected.revision,
       profile: step === "profile" ? true : selected.profile,
       integration:
         step === "integration"
@@ -732,10 +807,24 @@ export function CustomerDeliverySection({
       >
         {selected ? (
           <Space orientation="vertical" size="large" style={{ width: "100%" }}>
+            {step === "profile" ? <CustomerDeliveryAccountBinding
+              key={`${selected.id}:${detailRequest.current}`}
+              record={selected}
+              readOnly={readOnly}
+              disabled={disabled || loadingStep || saving || uploading}
+              onList={onAccountList}
+              onBind={onAccountBind}
+              onBusyChange={setBindingAccount}
+              onBound={(record) => {
+                setSelected((current) => current?.id === record.id ? { ...current, targetAccountId: record.targetAccountId, targetIdentityId: record.targetIdentityId, targetAccountLogin: record.targetAccountLogin, revision: record.revision } : current);
+                form.setFieldValue("revision", record.revision);
+              }}
+            /> : null}
             <Form
               form={form}
               layout="vertical"
-              disabled={loadingStep || saving}
+
+              disabled={disabled || readOnly || loadingStep || saving || bindingAccount}
               aria-busy={loadingStep}
               onFinish={save}
             >
@@ -938,9 +1027,12 @@ export function CustomerDeliverySection({
                   </Typography.Paragraph>
                 </>
               )}
-              <Button type="primary" htmlType="submit" loading={saving || loadingStep} disabled={uploading}>
-                保存当前环节
-              </Button>
+
+              {!readOnly ? (
+                <Button type="primary" htmlType="submit" loading={saving || loadingStep} disabled={uploading || bindingAccount}>
+                  保存当前环节
+                </Button>
+              ) : null}
             </Form>
           </Space>
         ) : null}

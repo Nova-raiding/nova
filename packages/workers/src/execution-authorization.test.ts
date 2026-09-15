@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { DurableOutboxEvent } from './durable.js'
-import { createExecutionAuthorizationGuard, createUnavailableExecutionAuthorizationGuard, executeAfterAuthorizationCheck, parseWorkerAuthorizationSnapshot, type WorkerAuthorizationSnapshot } from './execution-authorization.js'
+import { createExecutionAuthorizationGuard, createUnavailableExecutionAuthorizationGuard, executeAfterAuthorizationCheck, parseWorkerAuthorizationSnapshot, type CriticalWorkerOperation, type WorkerAuthorizationSnapshot } from './execution-authorization.js'
 
 const now = Date.parse('2026-08-31T10:00:00.000Z')
 function event(overrides: Record<string, unknown> = {}): DurableOutboxEvent {
@@ -31,6 +31,43 @@ describe('worker execution-time authorization', () => {
       code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID',
       retryable: false,
     }))
+  })
+
+  it('preserves a strictly bound brand publish context through the final recheck', async () => {
+    const publishEvent = event({ context_id: 'brand:brand_a' })
+    expect(parseWorkerAuthorizationSnapshot(publishEvent, 'publish.execute')).toMatchObject({ contextId: 'brand:brand_a', workspaceId: 'ws_a', resourceId: 'publish_1' })
+    let recheckedContext = 'brand:brand_a'
+    const guard = createExecutionAuthorizationGuard(async ({ snapshot }) => ({
+      ...snapshot, contextId: recheckedContext, recheckId: 'brand_recheck', checkedAt: '2026-08-31T09:59:59.000Z',
+    }), { now: () => now })
+    const provider = vi.fn(async () => 'sent')
+    await expect(executeAfterAuthorizationCheck({ guard, event: publishEvent, operation: 'publish.execute', providerCall: provider })).resolves.toBe('sent')
+    expect(provider).toHaveBeenCalledOnce()
+    recheckedContext = 'brand:brand_other'
+    await expect(executeAfterAuthorizationCheck({ guard, event: publishEvent, operation: 'publish.execute', providerCall: provider })).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_RECHECK_INVALID' })
+    expect(provider).toHaveBeenCalledOnce()
+  })
+
+  it.each(['brand:', 'brand: ', 'brand:\t', 'brand: brand_a', 'brand:brand_a ', 'brand:brand\u0000a', 'platform:brand_a'])('rejects malformed brand context %j', contextId => {
+    expect(() => parseWorkerAuthorizationSnapshot(event({ context_id: contextId }), 'publish.execute')).toThrowError(expect.objectContaining({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' }))
+  })
+
+  it.each<CriticalWorkerOperation>(['publish.reconcile', 'generation.execute', 'image_generation.execute', 'catalog.sync.execute', 'asset.scan.execute', 'asset.continuation.execute'])('never admits brand context for %s', operation => {
+    expect(() => parseWorkerAuthorizationSnapshot(event({ context_id: 'brand:brand_a', capability: operation }), operation)).toThrowError(expect.objectContaining({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' }))
+    expect(parseWorkerAuthorizationSnapshot(event({ capability: operation }), operation)).toMatchObject({ contextId: 'workspace:ws_a', capability: operation })
+  })
+
+  it.each([
+    ['workspace', { workspace_id: 'ws_other' }],
+    ['resource', { resource_id: 'publish_other' }],
+    ['capability', { capability: 'generation.execute' }],
+    ['workbench', { workbench: 'platform' }],
+  ])('brand context never weakens the durable %s binding', (_field, mismatch) => {
+    expect(() => parseWorkerAuthorizationSnapshot(event({ context_id: 'brand:brand_a', ...mismatch }), 'publish.execute')).toThrowError(expect.objectContaining({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' }))
+  })
+
+  it('only admits brand context on the actual publish request event', () => {
+    expect(() => parseWorkerAuthorizationSnapshot({ ...event({ context_id: 'brand:brand_a' }), eventType: 'generation.requested' }, 'publish.execute')).toThrowError(expect.objectContaining({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' }))
   })
 
   it('binds the enqueue snapshot to fresh authoritative execution evidence', async () => {

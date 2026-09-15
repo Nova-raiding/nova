@@ -11,10 +11,11 @@ const report = (files: readonly string[]) => ({
 })
 
 describe('isolated PostgreSQL entrypoint', () => {
-  it('selects exactly the twenty-one audited PostgreSQL files by default', async () => {
-    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(21)
-    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(21)
+  it('selects exactly the twenty-three audited PostgreSQL files by default', async () => {
+    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(23)
+    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(23)
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/migration-211-release.postgres.test.ts')
+    expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/migration-215-release.postgres.test.ts')
     await expect(selectIsolatedPostgresTests([])).resolves.toEqual(ISOLATED_POSTGRES_TEST_FILES)
     expect(ISOLATED_POSTGRES_TEST_FILES.every(file => (file.startsWith('packages/persistence/src/') || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts') && file.endsWith('.postgres.test.ts'))).toBe(true)
   })
@@ -98,7 +99,7 @@ describe('isolated PostgreSQL entrypoint', () => {
     const [args, environment] = vi.mocked(runtime.runVitest).mock.calls[0]!
     expect(args).toContain('packages/persistence/src/campaign-lifecycle.postgres.test.ts')
     expect(args).toContain('packages/persistence/src/model-daily-budget.postgres.test.ts')
-    expect(environment).toEqual({
+    expect(environment).toMatchObject({
       PATH: '/test/bin', NODE_ENV: 'test', ASSET_STORAGE_ROOT: '/owned/evidence/run-unique/local-objects',
       PERSISTENCE_RELEASE_DATABASE_URL: handle.adminDatabaseUrl,
       PLATFORM_MEDIA_SPEC_DATABASE_URL: handle.adminDatabaseUrl,

@@ -5,6 +5,7 @@ import {
   describeOpsError,
   hasOpsConnection,
   opsRestGetWithMeta,
+  opsRestPost,
   purgeLocalOpsCredentialsForManagedSession,
   readOpsConnectionConfig,
   resolveManagedOpsSession,
@@ -215,6 +216,25 @@ describe("workspace RPC boundary", () => {
     await expect(opsRestGetWithMeta<{ status: string; items: unknown[] }>("/v1/delivery-readiness")).resolves.toMatchObject({ state: "data", data: { status: "unverified", items: [] }, meta: { requestId: "req-rest", workspaceId: "ws-rest" } });
     expect(fetchMock).toHaveBeenNthCalledWith(1, "http://ops.test/v1/delivery-readiness", expect.objectContaining({ method: "GET", credentials: "same-origin", headers: expect.objectContaining({ authorization: "Bearer token-rest", "x-actor-id": "actor-rest", "x-workspace-id": "ws-rest", "x-ops-workbench": "workspace" }) }));
     await expect(opsRestGetWithMeta("/v1/delivery-readiness")).resolves.toMatchObject({ state: "empty", data: null });
+  });
+
+  it("does not leak a stale workspace header into platform REST requests", async () => {
+    const values = new Map<string, string>([["ops_connection_config_v1", JSON.stringify({ apiBase: "http://ops.test", workspaceId: "stale-workspace", actorId: "actor-ops", token: "token-ops", workbench: "platform" })]]);
+    const local = storage();
+    vi.spyOn(local, "getItem").mockImplementation((key) => values.get(key) ?? "");
+    vi.stubGlobal("localStorage", local);
+    vi.stubGlobal("sessionStorage", storage());
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ request_id: "req-platform", data: { ok: true }, warnings: [], next_actions: [], error: null }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await opsRestGetWithMeta("/v1/ops/merchant-registration-applications");
+    await opsRestPost("/v1/canonical-backfill/conflicts/scan", { reason: "平台复查" });
+
+    for (const [, init] of fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>) {
+      const headers = init?.headers as Record<string, string>;
+      expect(headers["x-ops-workbench"]).toBe("platform");
+      expect(headers).not.toHaveProperty("x-workspace-id");
+    }
   });
 
   it("rejects malformed REST paths and success envelopes", async () => {

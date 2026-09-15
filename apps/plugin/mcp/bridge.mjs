@@ -8,6 +8,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { assertRelayEvidence } from './relay-evidence.mjs'
+import { loadManagedToken } from './managed-token.mjs'
 
 // ChatGPT/Codex may launch the JavaScript entrypoint with a bundled Node binary.
 // On macOS, recover only missing configuration from launchd;
@@ -15,7 +16,7 @@ import { assertRelayEvidence } from './relay-evidence.mjs'
 if (process.platform === 'darwin' && process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') {
   const launchdNames = [
     'NODE_ENV', 'DEPLOY_ENV', 'MERCHANT_MCP_BASE_URL', 'MERCHANT_WORKSPACE_ID',
-    'MERCHANT_MCP_TOKEN', 'MERCHANT_STRICT_AUTH', 'MERCHANT_ALLOW_FIXTURE_FALLBACK',
+    'MERCHANT_MCP_TOKEN', 'MERCHANT_MCP_TOKEN_SOURCE', 'MERCHANT_STRICT_AUTH', 'MERCHANT_ALLOW_FIXTURE_FALLBACK',
     'MERCHANT_MCP_WRITE_ENABLED', 'MERCHANT_RULE_APPROVAL_TOKEN', 'MERCHANT_ARTIFACT_DIR',
     'MERCHANT_MCP_TIMEOUT_MS', 'MERCHANT_MCP_RETRY_ATTEMPTS', 'MERCHANT_MCP_RETRY_DELAY_MS',
     'MERCHANT_ASSET_RESOURCE_DOMAINS', 'MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES',
@@ -30,6 +31,10 @@ if (process.platform === 'darwin' && process.env.NODE_ENV !== 'test' && process.
     }
   }
 }
+
+loadManagedToken(process.env, process.platform, name => execFileSync('launchctl', ['getenv', name], {
+  encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000,
+}))
 
 const PROTOCOL_VERSION = '2025-06-18'
 const PLUGIN_VERSION = (() => {

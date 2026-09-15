@@ -199,6 +199,8 @@ jobs:
           packages/persistence/src/migration-209-release.postgres.test.ts
           packages/persistence/src/migration-210-release.postgres.test.ts
           packages/persistence/src/migration-211-release.postgres.test.ts
+          packages/persistence/src/migration-215-release.postgres.test.ts
+          packages/persistence/src/image-generation-before-provider.release.postgres.test.ts
           packages/persistence/src/migration-167.test.ts
           packages/persistence/src/migration-168.test.ts
           packages/persistence/src/migration-169.test.ts

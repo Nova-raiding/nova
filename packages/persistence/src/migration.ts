@@ -507,6 +507,8 @@ export async function loadMigrations(): Promise<Migration[]> {
   const mcpOauthWorkspaceRls = await readFile(new URL('./migrations/211_mcp_oauth_workspace_rls.sql', import.meta.url), 'utf8')
   const customerDeliveryTrainingWithoutEvidence = await readFile(new URL('./migrations/212_customer_delivery_training_without_evidence.sql', import.meta.url), 'utf8')
   const customerDeliveryManualVerification = await readFile(new URL('./migrations/213_customer_delivery_manual_verification.sql', import.meta.url), 'utf8')
+  const customerDeliveryArchival = await readFile(new URL('./migrations/214_customer_delivery_archival.sql', import.meta.url), 'utf8')
+  const customerDeliveryAccountBinding = await readFile(new URL('./migrations/215_customer_delivery_account_binding.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -721,6 +723,8 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 211, name: 'mcp_oauth_workspace_rls', sql: mcpOauthWorkspaceRls },
     { version: 212, name: 'customer_delivery_training_without_evidence', sql: customerDeliveryTrainingWithoutEvidence },
     { version: 213, name: 'customer_delivery_manual_verification', sql: customerDeliveryManualVerification },
+    { version: 214, name: 'customer_delivery_archival', sql: customerDeliveryArchival },
+    { version: 215, name: 'customer_delivery_account_binding', sql: customerDeliveryAccountBinding },
   ]
 }
 

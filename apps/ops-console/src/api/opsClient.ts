@@ -665,7 +665,10 @@ export async function opsRestGetWithMeta<T>(
     throw error;
   }
   const headers: Record<string, string> = { "x-ops-workbench": connection.workbench };
-  if (connection.workspaceId) headers["x-workspace-id"] = connection.workspaceId;
+  // Platform requests are aggregate and must not inherit a stale tenant from
+  // the previous workspace route. The API treats a tenant header on a
+  // platform workbench as a scope mismatch; keep REST consistent with RPC.
+  if (connection.workspaceId && connection.workbench === "workspace") headers["x-workspace-id"] = connection.workspaceId;
   if (!managedOpsSession) {
     if (connection.actorId) headers["x-actor-id"] = connection.actorId;
     if (connection.token) headers.authorization = `Bearer ${connection.token}`;
@@ -747,7 +750,9 @@ export async function opsRestPost<T>(path: string, body: Record<string, unknown>
   const connection = readOpsConnectionConfig();
   if (!connection.workspaceId && connection.workbench === "workspace") { const error = new Error("请先配置真实工作区 ID") as OpsRequestError; error.code = "OPS_WORKSPACE_REQUIRED"; throw error; }
   const headers: Record<string, string> = { "content-type": "application/json", "x-ops-workbench": connection.workbench };
-  if (connection.workspaceId) headers["x-workspace-id"] = connection.workspaceId;
+  // Keep platform REST mutations aggregate-scoped as well. A workspace id is
+  // only valid when the active workbench is workspace-scoped.
+  if (connection.workspaceId && connection.workbench === "workspace") headers["x-workspace-id"] = connection.workspaceId;
   if (!managedOpsSession) { if (connection.actorId) headers["x-actor-id"] = connection.actorId; if (connection.token) headers.authorization = `Bearer ${connection.token}`; }
   const controller = new AbortController(); const requestEpoch = opsRequestEpoch; activeOpsRequests.add(controller);
   const abortFromCaller = () => controller.abort(options.signal?.reason);

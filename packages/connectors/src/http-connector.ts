@@ -18,10 +18,21 @@ import type {
 
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>
 
+/** Trusted host admission, executed after credential/signing/DNS work and
+ * before each actual request. Correlation IDs are not proof of authorization. */
+export type ConnectorBeforeRequest = (context: Readonly<{
+  operation: 'exchange_code' | 'refresh_credential' | 'revoke' | 'sync_products' | 'create_product' | 'update_product' | 'query_write' | 'upload_media'
+  platform: Platform
+  workspaceId?: string
+  accountId?: string
+  signal?: AbortSignal
+}>) => void | Promise<void>
+
 export interface HttpPlatformConnectorOptions {
   config?: HttpConnectorConfig
   credentials?: CredentialProvider
   fetch?: FetchLike
+  beforeRequest?: ConnectorBeforeRequest
   /** Explicit test-only escape hatch for an in-memory provider. */
   allowTestCredentials?: boolean
   /** Explicit test-only escape hatch for test signer/mapping adapters. */
@@ -231,7 +242,7 @@ export class HttpPlatformConnector implements PlatformConnector {
   async exchangeCode(input: { code: string; state: string; codeVerifier?: string; workspaceId?: string }): Promise<CredentialRef> {
     const config = this.requireOAuthConfig()
     const provider = this.requireProvider()
-    const payload = await this.request('POST', config.oauth.tokenUrl, undefined, { grant_type: 'authorization_code', code: input.code, ...(input.codeVerifier ? { code_verifier: input.codeVerifier } : {}), client_id: config.clientId, ...(config.clientSecret ? { client_secret: config.clientSecret } : {}), ...config.oauth.extraTokenParams }, config.oauth.tokenBodyEncoding ?? 'form')
+    const payload = await this.request('exchange_code', 'POST', config.oauth.tokenUrl, undefined, { grant_type: 'authorization_code', code: input.code, ...(input.codeVerifier ? { code_verifier: input.codeVerifier } : {}), client_id: config.clientId, ...(config.clientSecret ? { client_secret: config.clientSecret } : {}), ...config.oauth.extraTokenParams }, config.oauth.tokenBodyEncoding ?? 'form', false, undefined, input)
     const credential = this.parseCredential(payload)
     // The credential exists only for this call. A production provider must
     // persist it in Vault/KMS and return an opaque reference.
@@ -259,7 +270,7 @@ export class HttpPlatformConnector implements PlatformConnector {
     const current = await provider.resolve(ref)
     signal?.throwIfAborted()
     if (!current?.refreshToken || !config.oauth.refreshUrl) throw new ConnectorFailure(this.normalizeError({ code: 'UNAUTHORIZED', message: 'refresh credential or refresh endpoint is unavailable' }))
-    const payload = await this.request('POST', config.oauth.refreshUrl, undefined, { grant_type: 'refresh_token', refresh_token: current.refreshToken, client_id: config.clientId, ...(config.clientSecret ? { client_secret: config.clientSecret } : {}) }, config.oauth.tokenBodyEncoding ?? 'form', false, signal)
+    const payload = await this.request('refresh_credential', 'POST', config.oauth.refreshUrl, undefined, { grant_type: 'refresh_token', refresh_token: current.refreshToken, client_id: config.clientId, ...(config.clientSecret ? { client_secret: config.clientSecret } : {}) }, config.oauth.tokenBodyEncoding ?? 'form', false, signal, ref)
     const next = this.parseCredential(payload, current)
     try {
       signal?.throwIfAborted()
@@ -290,7 +301,7 @@ export class HttpPlatformConnector implements PlatformConnector {
     try { await provider.revoke(ref) } catch {
       throw new ConnectorFailure(this.normalizeError({ code: 'NOT_CONFIGURED', message: 'credential vault is unavailable' }))
     }
-    if (config.oauth.revokeUrl) await this.request('POST', config.oauth.revokeUrl, credential, { token: credential.accessToken, client_id: config.clientId }, config.oauth.tokenBodyEncoding ?? 'form', true)
+    if (config.oauth.revokeUrl) await this.request('revoke', 'POST', config.oauth.revokeUrl, credential, { token: credential.accessToken, client_id: config.clientId }, config.oauth.tokenBodyEncoding ?? 'form', true, undefined, ref)
   }
 
   async syncProducts(ctx: ConnectorContext, cursor?: Cursor): Promise<ProductPage> {
@@ -309,7 +320,7 @@ export class HttpPlatformConnector implements PlatformConnector {
     if (syncWindow?.updatedUntil) url.searchParams.set('updated_until', syncWindow.updatedUntil)
     let payload: unknown
     try {
-      payload = await this.request('GET', url.toString(), await this.resolveCredential(ctx), undefined, 'json', false, ctx.signal)
+      payload = await this.request('sync_products', 'GET', url.toString(), await this.resolveCredential(ctx), undefined, 'json', false, ctx.signal, ctx)
     } catch (error) {
       if (error instanceof ConnectorFailure && error.normalized.code === 'TIMEOUT') {
         throw new ConnectorFailure({ ...error.normalized, unknown: true, retryable: true, details: { ...(error.normalized.details ?? {}), reconcileRequired: true, syncCursor: requestedCursor ?? null } })
@@ -335,7 +346,7 @@ export class HttpPlatformConnector implements PlatformConnector {
 
   async queryWrite(ctx: ConnectorContext, request: WriteIdentity): Promise<WriteStatus> {
     const config = this.requireConfig()
-    const payload = await this.request('POST', joinUrl(config.api.baseUrl, config.api.queryPath), await this.resolveCredential(ctx), request, 'json', false, ctx.signal)
+    const payload = await this.request('query_write', 'POST', joinUrl(config.api.baseUrl, config.api.queryPath), await this.resolveCredential(ctx), request, 'json', false, ctx.signal, ctx)
     const mapped = config.mapWriteStatus?.(payload, request, this.platform) ?? { found: isRecord(payload) && payload.found === true, state: isRecord(payload) && ['submitted', 'published', 'rejected', 'unknown'].includes(String(payload.state)) ? payload.state as WriteStatus['state'] : 'unknown', remoteId: isRecord(payload) ? readString(payload.remoteId) : undefined, requestId: isRecord(payload) ? readRequestId(payload.requestId) : undefined, ...(this.parseRejection(payload) ? { rejection: this.parseRejection(payload) } : {}), simulated: false }
     const result = normalizeWriteStatus(mapped, request)
     this.writes.set(request.idempotencyKey, result)
@@ -345,9 +356,9 @@ export class HttpPlatformConnector implements PlatformConnector {
   async uploadMedia(ctx: ConnectorContext, input: MediaUploadInput): Promise<MediaUploadReceipt> {
     const config = this.requireConfig()
     if (!config.mediaUploadPath || !config.mapMediaUpload || !config.mediaUploadEvidence) throw new ConnectorFailure(this.normalizeError({ code: 'NOT_CONFIGURED', message: 'media upload adapter is not configured' }))
-    const payload = await this.request('POST', joinUrl(config.api.baseUrl, config.mediaUploadPath), await this.resolveCredential(ctx), {
+    const payload = await this.request('upload_media', 'POST', joinUrl(config.api.baseUrl, config.mediaUploadPath), await this.resolveCredential(ctx), {
       visualRef: input.visualRef, role: input.role, mimeType: input.mimeType, sha256: input.sha256, idempotencyKey: input.idempotencyKey, contentBase64: Buffer.from(input.bytes).toString('base64'),
-    }, 'json', false, ctx.signal)
+    }, 'json', false, ctx.signal, ctx)
     const mapped = config.mapMediaUpload(payload, input, this.platform)
     const record = isRecord(payload) ? payload : {}
     const mediaId = mapped?.mediaId ?? readString(record.mediaId) ?? readString(record.id)
@@ -395,7 +406,7 @@ export class HttpPlatformConnector implements PlatformConnector {
     const existing = this.writes.get(input.idempotencyKey)
     if (existing?.requestId) return { platform: this.platform, operation, remoteId: existing.remoteId ?? input.remoteId ?? '', requestId: existing.requestId, status: existing.state === 'published' ? 'published' : 'submitted', simulated: false, idempotencyKey: input.idempotencyKey }
     const path = operation === 'create' ? config.api.createPath : config.api.updatePath
-    const payload = await this.request('POST', joinUrl(config.api.baseUrl, path), await this.resolveCredential(ctx), { ...input.fields, ...(input.remoteId ? { remoteId: input.remoteId } : {}), idempotencyKey: input.idempotencyKey }, 'json', false, ctx.signal)
+    const payload = await this.request(operation === 'create' ? 'create_product' : 'update_product', 'POST', joinUrl(config.api.baseUrl, path), await this.resolveCredential(ctx), { ...input.fields, ...(input.remoteId ? { remoteId: input.remoteId } : {}), idempotencyKey: input.idempotencyKey }, 'json', false, ctx.signal, ctx)
     const mapped = config.mapWriteReceipt?.(payload, input, operation, this.platform) ?? { platform: this.platform, operation, remoteId: isRecord(payload) ? readString(payload.remoteId) ?? input.remoteId ?? '' : input.remoteId ?? '', requestId: isRecord(payload) ? readRequestId(payload.requestId) : undefined, status: 'submitted', simulated: false, idempotencyKey: input.idempotencyKey }
     const requestId = readRequestId(mapped.requestId)
     if (!requestId) {
@@ -423,8 +434,10 @@ export class HttpPlatformConnector implements PlatformConnector {
       if (!credential.refreshToken || !this.config?.oauth.refreshUrl) {
         throw new ConnectorFailure(this.normalizeError({ code: 'UNAUTHORIZED', message: 'access credential is expired and cannot be refreshed' }))
       }
+      // Dispatch admission failures from refresh must retain their original
+      // identity; only vault lookup failures are credential failures.
+      const refreshed = await this.refreshCredential({ workspaceId: ctx.workspaceId, accountId: ctx.accountId, credentialRef: ctx.credentialRef ?? '' }, ctx.signal)
       try {
-        const refreshed = await this.refreshCredential({ workspaceId: ctx.workspaceId, accountId: ctx.accountId, credentialRef: ctx.credentialRef ?? '' }, ctx.signal)
         credential = await this.requireProvider().resolve(refreshed)
         ctx.signal?.throwIfAborted()
       } catch {
@@ -443,7 +456,7 @@ export class HttpPlatformConnector implements PlatformConnector {
     return { accessToken, tokenType: readCredentialToken(tokenPayload.token_type) ?? readCredentialToken(previous?.tokenType), refreshToken: readCredentialToken(tokenPayload.refresh_token) ?? readCredentialToken(previous?.refreshToken), scope: readCredentialToken(tokenPayload.scope) ?? readCredentialToken(previous?.scope), expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : previous?.expiresAt }
   }
 
-  private async request(method: string, url: string, credential?: AccessCredential, body?: unknown, encoding: HttpRequestBodyEncoding = 'json', revokeOnly = false, signal?: AbortSignal): Promise<unknown> {
+  private async request(operation: Parameters<ConnectorBeforeRequest>[0]['operation'], method: string, url: string, credential?: AccessCredential, body?: unknown, encoding: HttpRequestBodyEncoding = 'json', revokeOnly = false, signal?: AbortSignal, context?: { workspaceId?: string; accountId?: string }): Promise<unknown> {
     const config = revokeOnly ? this.requireRevokeConfig() : this.requireConfig()
     const headers: Record<string, string> = { accept: 'application/json' }
     if (credential) headers.authorization = `${credential.tokenType ?? 'Bearer'} ${credential.accessToken}`
@@ -471,6 +484,10 @@ export class HttpPlatformConnector implements PlatformConnector {
         allowedHosts: config.allowedHosts ?? officialHostsFor(this.platform),
       })
     }
+    // Deliberately outside the provider-error catch: a local admission denial
+    // means nothing was dispatched and must never become an unknown outcome.
+    if (this.options.beforeRequest) await this.options.beforeRequest({ operation, platform: this.platform, workspaceId: context?.workspaceId, accountId: context?.accountId, signal })
+    signal?.throwIfAborted()
     const controller = new AbortController()
     const abortFromCaller = () => controller.abort(signal?.reason)
     if (signal?.aborted) abortFromCaller()

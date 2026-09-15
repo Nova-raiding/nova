@@ -90,6 +90,8 @@ export const MCP_METHODS = [
   'ops.support.sla.correction.create',
   'ops.support.sla.correction.decide',
   'ops.customer-delivery.list',
+  'ops.customer-delivery.accounts.list',
+  'ops.customer-delivery.account.bind',
   'ops.customer-delivery.get',
   'ops.customer-delivery.create',
   'ops.customer-delivery.update',
@@ -357,6 +359,8 @@ export interface McpParamsSchema {
   readonly requiredAnyOf?: readonly string[]
   /** Fields that cannot be supplied together (at most one non-empty value). */
   readonly mutuallyExclusive?: readonly (readonly string[])[]
+  /** Standard JSON Schema alternatives exposed to native MCP clients. */
+  readonly oneOf?: readonly Readonly<Record<string, unknown>>[]
   readonly additionalProperties: false
 }
 
@@ -740,6 +744,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'ops.storage.reconciliation.list', description: 'List redacted storage reconciliation summaries for all workspaces visible to platform operations; requires explicit platform scope and never returns object keys, asset content, or download URLs.', params: params({ platform_scope: { type: 'string', enum: ['platform'] } }) },
   { method: 'ops.support.tickets.list', description: 'List a bounded page of support tickets in one authorized workspace, or a redacted platform-wide aggregate for platform_ops.', params: params({ platform_scope: { type: 'string', enum: ['platform'] }, status: { type: 'string', enum: ['open', 'in_progress', 'waiting_customer', 'resolved', 'closed'] }, priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] }, sla_state: { type: 'string', enum: ['on_track', 'at_risk', 'breached', 'met'] }, assignee_id: boundedString(256), customer_id: boundedString(256), query: boundedString(200), cursor_json: boundedString(2_000), limit: pageLimit100 }) },
   { method: 'ops.customer-delivery.list', description: 'List customer delivery records in the authorized workspace.', params: params({ target_workspace_id: boundedString(200, 1) }, ['target_workspace_id']) },
+  { method: 'ops.customer-delivery.accounts.list', description: 'List a bounded page of eligible merchant login accounts with an active identity and actual membership in the explicitly selected workspace. Never returns credentials.', params: params({ target_workspace_id: boundedString(200, 1), search: boundedString(200), cursor: boundedString(1_000), limit: { type: 'string', pattern: '^(?:[1-9]|[1-4][0-9]|50)$' } }, ['target_workspace_id']) },
+  { method: 'ops.customer-delivery.account.bind', description: 'Immutably associate this delivery with one explicitly selected merchant account using current revision and audit reason. Does not change suspension, membership, roles, subscriptions or points.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), target_account_id: boundedString(256), expected_revision: positiveIntegerString, reason: reasonProperty }, ['target_workspace_id', 'delivery_id', 'target_account_id', 'expected_revision', 'reason']) },
   { method: 'ops.customer-delivery.get', description: 'Get one customer delivery record and its videos.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256) }, ['target_workspace_id', 'delivery_id']) },
   { method: 'ops.customer-delivery.create', description: 'Create a customer delivery record.', params: params({ target_workspace_id: boundedString(200, 1), company_name: boundedString(200, 1) }, ['target_workspace_id', 'company_name']) },
   { method: 'ops.customer-delivery.update', description: 'Update customer delivery profile fields with optimistic revision. Derived integration/acceptance summaries and training fields are not accepted; use checklist item or training endpoints. Paid status requires scanned payment evidence.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), expected_revision: positiveIntegerString, patch_json: { ...jsonObject('Profile JSON object accepting only companyName, contractNumber, paymentStatus, contractRef, projectOwner, supportOwner, paymentDate, paymentEvidenceRefs, plannedGoLiveAt and customerProfileStatus. contractRef is an uploaded contract asset reference or null, never an external URL. paymentEvidenceRefs is an array of uploaded payment asset references; server ownership, purpose and clean-scan checks remain required.'), maxLength: 16_384 } }, ['target_workspace_id', 'delivery_id', 'expected_revision', 'patch_json']) },
@@ -751,16 +757,21 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'ops.customer-delivery.videos.add', description: 'Attach one uploaded delivery video asset reference.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), title: boundedString(200, 1), asset_ref: boundedString(1_000, 1), sort_order: nonNegativeIntegerString }, ['target_workspace_id', 'delivery_id', 'title', 'asset_ref']) },
   {
     method: 'ops.customer-delivery.assets.upload',
-    description: 'Upload customer delivery contract, payment, integration, acceptance, training, or video evidence into quarantine for automatic platform scanning. Upload acceptance does not assert a clean scan or attach the asset as delivery evidence.',
-    params: params({
+    description: 'Upload customer delivery contract, payment, integration, acceptance, training, or video evidence into quarantine for automatic platform scanning. For contracts only, source_url may replace all local file fields: a public HTTPS direct file URL, without redirects or authentication. Upload acceptance does not assert a clean scan or attach the asset as delivery evidence.',
+    params: { ...params({
       target_workspace_id: boundedString(200),
       delivery_id: boundedString(256),
       purpose: { type: 'string', enum: ['contract', 'payment', 'system_integration', 'functional_acceptance', 'training', 'video'] },
       name: boundedString(255),
       mime_type: boundedString(100),
       content_base64: boundedString(69_905_068),
+      source_url: boundedString(2_000),
       sha256: { type: 'string', minLength: 64, maxLength: 64, pattern: '^[a-f0-9]{64}$' },
-    }, ['target_workspace_id', 'delivery_id', 'purpose', 'name', 'mime_type', 'content_base64']),
+    }, ['target_workspace_id', 'delivery_id', 'purpose'], ['content_base64', 'source_url'], [['content_base64', 'source_url']]),
+    oneOf: [
+      { required: ['name', 'mime_type', 'content_base64'], not: { required: ['source_url'] } },
+      { required: ['source_url'], properties: { purpose: { enum: ['contract'] } }, not: { anyOf: ['name', 'mime_type', 'content_base64', 'sha256'].map(key => ({ required: [key] })) } },
+    ] },
   },
   {
     method: 'ops.customer-delivery.assets.get',
@@ -1627,6 +1638,29 @@ export function validateMcpRequest(value: unknown): McpValidationResult {
       return typeof value === 'string' ? Boolean(value.trim()) : value !== undefined && value !== null
     })
     if (supplied.length > 1) errors.push(`params.${supplied.join(' and ')} are mutually exclusive`)
+  }
+  if (request.method === 'ops.customer-delivery.assets.upload') {
+    if ('source_url' in paramsObject) {
+      if (paramsObject.purpose !== 'contract') errors.push('params.source_url is only accepted for contract purpose')
+      for (const key of ['name', 'mime_type', 'content_base64', 'sha256']) {
+        if (key in paramsObject) errors.push(`params.${key} is not accepted with source_url`)
+      }
+      try {
+        const raw = paramsObject.source_url
+        if (typeof raw !== 'string' || raw !== raw.trim() || !/^https:\/\//iu.test(raw)
+          || /[\u0000-\u0020\u007f-\u009f\\#]/u.test(raw) || /%(?:0[0-9a-f]|1[0-9a-f]|7f)/iu.test(raw)) throw new Error()
+        const url = new URL(raw)
+        const authority = raw.slice(raw.indexOf('//') + 2).split(/[/?#]/u, 1)[0] ?? ''
+        if (url.protocol !== 'https:' || url.username || url.password || authority.includes('@') || url.hash || (url.port && url.port !== '443')) throw new Error()
+      } catch {
+        // Never echo signed URLs or credentials in validation errors.
+        errors.push('params.source_url must be a public HTTPS direct URL without credentials, fragment or custom port')
+      }
+    } else {
+      for (const key of ['name', 'mime_type', 'content_base64']) {
+        if (typeof paramsObject[key] !== 'string' || !(paramsObject[key] as string).trim()) errors.push(`params.${key} is required`)
+      }
+    }
   }
   if (request.method === 'ops.customer-delivery.update' && typeof paramsObject.patch_json === 'string') {
     try {

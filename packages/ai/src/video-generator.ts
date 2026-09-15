@@ -1,7 +1,7 @@
 import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
-import { assertProviderResponseAccepted, ProviderRequestFailedError, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry } from './provider-request.js'
+import { assertProviderResponseAccepted, ProviderRequestFailedError, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface VideoGenerationInput {
@@ -39,6 +39,7 @@ export interface OpenAICompatibleVideoGeneratorOptions {
   durationSeconds?: number
   timeoutMs?: number
   fetch?: typeof fetch
+  beforeRequest?: ProviderBeforeRequest
   usageSink?: RelayUsageSink
   relaySecurity?: RelaySecurityPolicy
 }
@@ -127,21 +128,23 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
           form.set('metadata', JSON.stringify({ img_url: input.sourceImage, ...(this.options.resolution ? { resolution: this.options.resolution } : {}) }))
         }
       }
-      let response: Response
-      try {
-        response = await withProviderRequestRetry(async () => {
-          if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
-          const candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${this.options.path ?? '/video/generations'}`, {
+      const response = await withProviderRequestRetry(async () => {
+        if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
+        if (this.options.beforeRequest) await this.options.beforeRequest({ operation: 'video_generate', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, signal: controller.signal })
+        controller.signal.throwIfAborted()
+        let candidate: Response
+        try {
+          candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${this.options.path ?? '/video/generations'}`, {
             method: 'POST',
             headers: { accept: 'application/json', ...(!form ? { 'content-type': 'application/json' } : {}), authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': providerKey },
             body: form ?? requestBody,
             signal: controller.signal,
             redirect: 'error',
           })
-          if (candidate.status === 429) assertProviderResponseAccepted(candidate, providerKey, 'video provider')
-          return candidate
-        }, { signal: controller.signal })
-      } catch (error) { rethrowProviderTransportFailure(error, providerKey, 'video provider request') }
+        } catch (error) { rethrowProviderTransportFailure(error, providerKey, 'video provider request') }
+        if (candidate.status === 429) assertProviderResponseAccepted(candidate, providerKey, 'video provider')
+        return candidate
+      }, { signal: controller.signal })
       let responseText: string
       try { responseText = await readBoundedResponseText(response, MAX_VIDEO_RELAY_RESPONSE_BYTES, 'video provider response') }
       catch (error) { rethrowProviderTransportFailure(error, providerKey, 'video provider response') }
@@ -172,9 +175,11 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
       const usesPathParameter = statusTemplate.includes('{job_id}')
       const requestBody = JSON.stringify({ job_id: jobId })
       const providerKey = providerIdempotencyKey({ operation: 'video_generate', model: this.options.model, actionId: `status:${jobId}`, requestBody })
+      if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
+      if (this.options.beforeRequest) await this.options.beforeRequest({ operation: 'video_query', signal: controller.signal })
+      controller.signal.throwIfAborted()
       let response: Response
       try {
-        if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
         response = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${statusPath}`, {
           method: usesPathParameter ? 'GET' : 'POST',
           headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}` },
@@ -233,7 +238,7 @@ function parseVideoResult(payload: unknown, providerKey?: string): VideoGenerati
   return { status: videoUrl ? 'completed' : 'queued', ...(videoUrl ? { videoUrl } : {}), ...(providerJobId ? { providerJobId } : {}) }
 }
 
-export function createVideoGeneratorFromEnv(source: Record<string, string | undefined> = process.env, usageSink?: RelayUsageSink): VideoGenerator | undefined {
+export function createVideoGeneratorFromEnv(source: Record<string, string | undefined> = process.env, usageSink?: RelayUsageSink, beforeRequest?: ProviderBeforeRequest): VideoGenerator | undefined {
   const relayUrl = source.MODEL_RELAY_BASE_URL?.trim()
   const apiKey = source.VIDEO_MODEL_RELAY_API_KEY?.trim() || source.MODEL_RELAY_API_KEY?.trim()
   const model = source.VIDEO_MODEL?.trim() || source.AI_VIDEO_MODEL?.trim()
@@ -255,5 +260,6 @@ export function createVideoGeneratorFromEnv(source: Record<string, string | unde
     durationSeconds: videoDurationSeconds(source.VIDEO_DURATION_SECONDS),
     timeoutMs: Number(source.VIDEO_TIMEOUT_MS ?? 180_000),
     ...(usageSink ? { usageSink } : {}),
+    ...(beforeRequest ? { beforeRequest } : {}),
   })
 }

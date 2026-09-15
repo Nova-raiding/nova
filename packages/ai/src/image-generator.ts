@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
-import { assertProviderResponseAccepted, ProviderRequestFailedError, ProviderOutcomeUnknownError, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry } from './provider-request.js'
+import { assertProviderResponseAccepted, ProviderRequestFailedError, ProviderOutcomeUnknownError, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 import { composeMarketingImages } from './image-marketing-compositor.js'
 
@@ -83,6 +83,7 @@ export interface OpenAICompatibleImageGeneratorOptions {
   responseFormat?: 'url' | 'b64_json'
   statusPath?: string
   fetch?: typeof fetch
+  beforeRequest?: ProviderBeforeRequest
   usageSink?: RelayUsageSink
   relaySecurity?: RelaySecurityPolicy
 }
@@ -322,7 +323,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       // OpenAI-compatible edits require multipart image files. JSON image
       // fields on /images/generations may be silently ignored by relays.
       const editing = input.mode === 'optimize' && !nativeQwen
-      imageTrace('provider.request', {
+      const requestTrace = {
         model: this.options.model,
         operation: editing ? 'image_edit' : 'image_generate',
         provider_request_id: providerKey,
@@ -338,7 +339,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         promotion_label_count: promotionLabels.length,
         logo_asset_count: logoAssetIds.length,
         marketing_copy_count: copy.length,
-      })
+      }
       const editBody = editing ? new FormData() : undefined
       if (editBody) {
         editBody.set('model', this.options.model)
@@ -352,23 +353,26 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
           editBody.append(sourceImages.length === 1 ? 'image' : 'image[]', new Blob([Buffer.from(encoded!, 'base64')], { type: mime }), `source-${index}.${mime.split('/')[1]}`)
         }
       }
-      let response: Response
-      try {
-        response = await withProviderRequestRetry(async () => {
-          if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
-          const candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${editing ? this.options.editPath ?? '/images/edits' : this.options.path ?? '/images/generations'}`, {
+      const response = await withProviderRequestRetry(async () => {
+        if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
+        if (this.options.beforeRequest) await this.options.beforeRequest({ operation: editing ? 'image_edit' : 'image_generate', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, signal: controller.signal })
+        controller.signal.throwIfAborted()
+        imageTrace('provider.request', requestTrace)
+        let candidate: Response
+        try {
+          candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${editing ? this.options.editPath ?? '/images/edits' : this.options.path ?? '/images/generations'}`, {
             method: 'POST',
             headers: { accept: 'application/json', ...(!editing ? { 'content-type': 'application/json' } : {}), authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': providerKey },
             body: editBody ?? requestBody,
             signal: controller.signal,
             redirect: 'error',
           })
-          // Defer non-429 error parsing below so provider diagnostics remain
-          // available; 429 must be classified before its body is consumed.
-          if (candidate.status === 429) assertProviderResponseAccepted(candidate, providerKey, 'image provider')
-          return candidate
-        }, { signal: controller.signal })
-      } catch (error) { rethrowProviderTransportFailure(error, providerKey, 'image provider request') }
+        } catch (error) { rethrowProviderTransportFailure(error, providerKey, 'image provider request') }
+        // Defer non-429 error parsing below so provider diagnostics remain
+        // available; 429 must be classified before its body is consumed.
+        if (candidate.status === 429) assertProviderResponseAccepted(candidate, providerKey, 'image provider')
+        return candidate
+      }, { signal: controller.signal })
       let responseText: string
       try { responseText = await readBoundedResponseText(response, MAX_IMAGE_RELAY_RESPONSE_BYTES, 'image provider response') }
       catch (error) { rethrowProviderTransportFailure(error, providerKey, 'image provider response') }
@@ -427,6 +431,8 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const path = template.replace(/\{request_id\}/gu, encodeURIComponent(requestId))
       const usesPathParameter = template.includes('{request_id}')
       if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
+      if (this.options.beforeRequest) await this.options.beforeRequest({ operation: 'image_query', signal: controller.signal })
+      controller.signal.throwIfAborted()
       const response = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${path}`, {
         method: usesPathParameter ? 'GET' : 'POST',
         headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}` },
@@ -467,7 +473,7 @@ function parseImageGenerationStatus(payload: unknown, providerRequestId: string)
   throwProviderOutcomeUnknown(providerRequestId, 'image provider status response contains no recognized state')
 }
 
-export function createImageGeneratorFromEnv(source: Record<string, string | undefined> = process.env, usageSink?: RelayUsageSink): ImageGenerator | undefined {
+export function createImageGeneratorFromEnv(source: Record<string, string | undefined> = process.env, usageSink?: RelayUsageSink, beforeRequest?: ProviderBeforeRequest): ImageGenerator | undefined {
   const relayUrl = source.MODEL_RELAY_BASE_URL?.trim()
   const apiKey = source.MODEL_RELAY_API_KEY?.trim()
   const model = source.IMAGE_MODEL?.trim() || source.AI_IMAGE_MODEL?.trim()
@@ -490,5 +496,6 @@ export function createImageGeneratorFromEnv(source: Record<string, string | unde
     ...(outputFormat ? { outputFormat } : {}),
     responseFormat,
     ...(usageSink ? { usageSink } : {}),
+    ...(beforeRequest ? { beforeRequest } : {}),
   })
 }

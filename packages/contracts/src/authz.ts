@@ -431,7 +431,8 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   read('audit.export', 'workspace', 'secret_metadata', ['ops.audit.export']),
   read('support.ticket.read', 'workspace', 'customer_metadata', ['ops.support.tickets.list', 'ops.support.ticket.get', 'ops.support.sla.report']),
   write('support.ticket.update', 'workspace', 'customer_metadata', ['ops.support.ticket.create', 'ops.support.ticket.assign', 'ops.support.ticket.transition', 'ops.support.ticket.comment']),
-  read('customer.delivery.read', 'platform', 'customer_metadata', ['ops.customer-delivery.list', 'ops.customer-delivery.get', 'ops.customer-delivery.checklist-items.list', 'ops.customer-delivery.videos.list', 'ops.customer-delivery.assets.get']),
+  read('customer.delivery.read', 'platform', 'customer_metadata', ['ops.customer-delivery.accounts.list', 'ops.customer-delivery.list', 'ops.customer-delivery.get', 'ops.customer-delivery.checklist-items.list', 'ops.customer-delivery.videos.list', 'ops.customer-delivery.assets.get']),
+  write('customer.delivery.update', 'platform', 'customer_metadata', ['ops.customer-delivery.account.bind'], 'mutation', ['revision']),
   write('customer.delivery.update', 'platform', 'customer_metadata', ['ops.customer-delivery.create', 'ops.customer-delivery.videos.add']),
   // Uploaded evidence is later admitted by a DB-level predicate that binds
   // the exact allow decision to the delivery, purpose and scanner receipt.

@@ -106,7 +106,7 @@ describe('quality entrypoint coverage', () => {
   })
 
   it('keeps non-hermetic coverage explicit instead of silently passing it in the default suite', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(26)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(28)
     expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/migration-211-release.postgres.test.ts')
     expect(script('test:runtime:isolated')).toContain('--config vitest.runtime.config.ts')
     expect(script('test:postgres:isolated')).toContain('scripts/run-isolated-postgres-tests.ts')

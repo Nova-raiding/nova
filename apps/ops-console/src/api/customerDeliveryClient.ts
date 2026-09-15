@@ -2,7 +2,9 @@ import { managedOpsSession, opsApiBase, readOpsConnectionConfig, rpc } from "./o
 import type { CustomerDeliveryRecord } from "../components/delivery/CustomerDeliverySection.js";
 
 export interface CustomerDeliveryClient {
-  uploadAsset(input: { targetWorkspaceId: string; deliveryId: string; purpose: CustomerDeliveryAssetPurpose; file: File }, signal?: AbortSignal): Promise<CustomerDeliveryAsset>;
+  listAccounts(input: { targetWorkspaceId: string; search?: string; cursor?: string; limit?: number }, signal?: AbortSignal): Promise<CustomerDeliveryAccountPage>;
+  bindAccount(input: { targetWorkspaceId: string; deliveryId: string; targetAccountId: string; expectedRevision: number; reason: string }, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
+  uploadAsset(input: CustomerDeliveryAssetUploadInput, signal?: AbortSignal): Promise<CustomerDeliveryAsset>;
   getAsset(input: { targetWorkspaceId: string; deliveryId: string; purpose: CustomerDeliveryAssetPurpose; assetRef: string }, signal?: AbortSignal): Promise<CustomerDeliveryAsset>;
   list(targetWorkspaceId: string, signal?: AbortSignal): Promise<CustomerDeliveryRecord[] | null>;
   get(targetWorkspaceId: string, deliveryId: string, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
@@ -35,7 +37,35 @@ const object = (value: unknown): value is Record<string, unknown> => Boolean(val
 const text = (value: unknown): value is string => typeof value === "string";
 const bool = (value: unknown): value is boolean => typeof value === "boolean";
 
+export interface CustomerDeliveryAccount { workspaceId: string; accountId: string; identityId: string; login: string }
+export interface CustomerDeliveryAccountPage { items: CustomerDeliveryAccount[]; nextCursor?: string }
+const nonempty = (value: unknown): value is string => text(value) && Boolean(value.trim()) && !/[\p{Cc}\p{Cf}]/u.test(value);
+
+export function parseCustomerDeliveryAccounts(value: unknown, workspaceId: string): CustomerDeliveryAccountPage {
+  if (!object(value) || !Array.isArray(value.items) || value.items.length > 50 || (value.nextCursor !== undefined && !nonempty(value.nextCursor))) throw new Error("生效账号目录响应无效，请重试");
+  const accounts = new Set<string>();
+  const identities = new Set<string>();
+  const items = value.items.map((row) => {
+    if (!object(row) || row.workspaceId !== workspaceId || !nonempty(row.accountId) || !nonempty(row.identityId) || !nonempty(row.login) || accounts.has(row.accountId) || identities.has(row.identityId)) throw new Error("生效账号目录返回了无效或不属于当前企业的账号，请重试");
+    accounts.add(row.accountId); identities.add(row.identityId);
+    return { workspaceId, accountId: row.accountId, identityId: row.identityId, login: row.login };
+  });
+  return { items, ...(value.nextCursor !== undefined ? { nextCursor: String(value.nextCursor) } : {}) };
+}
+
+export function parseCustomerDeliveryAccountBinding(row: Record<string, unknown>) {
+  const values = [row.targetAccountId, row.targetIdentityId, row.targetAccountLogin];
+  if (values.every((value) => value === undefined || value === null)) return { targetAccountId: null, targetIdentityId: null, targetAccountLogin: null };
+  if (!values.every(nonempty)) throw new Error("生效账号关联信息不完整，请刷新档案；不能据此判断账号已启用");
+  return { targetAccountId: values[0] as string, targetIdentityId: values[1] as string, targetAccountLogin: values[2] as string };
+}
+
 export type CustomerDeliveryAssetPurpose = "contract" | "payment" | "system_integration" | "functional_acceptance" | "training" | "video";
+export type CustomerDeliveryUploadSource = File | { sourceUrl: string };
+export type CustomerDeliveryAssetUploadInput = { targetWorkspaceId: string; deliveryId: string } & (
+  | { purpose: CustomerDeliveryAssetPurpose; file: File; sourceUrl?: never }
+  | { purpose: "contract"; sourceUrl: string; file?: never }
+);
 export interface CustomerDeliveryAsset {
   assetRef: string;
   name: string;
@@ -45,6 +75,19 @@ export interface CustomerDeliveryAsset {
   ready: boolean;
 }
 export const CUSTOMER_DELIVERY_MAX_FILE_BYTES = 50 * 1024 * 1024;
+/** Syntax-only feedback. The server must independently enforce DNS/IP and download safety. */
+export function validateCustomerDeliveryContractUrl(sourceUrl: string): string {
+  const value = sourceUrl.trim();
+  if (!value) throw new Error("请填写合同文件直链");
+  if (value.length > 2000) throw new Error("合同链接不能超过 2000 个字符，请下载文件后本地上传");
+  if (/[\s\p{Cc}\p{Cf}\\]/u.test(value)) throw new Error("合同链接不能包含空白、控制字符或反斜线");
+  if (/%(?:0[0-9a-f]|1[0-9a-f]|7f|5c)/iu.test(value)) throw new Error("合同链接不能包含编码后的控制字符或反斜线");
+  let url: URL;
+  try { url = new URL(value); } catch { throw new Error("请填写完整的 HTTPS 合同文件直链"); }
+  if (!/^https:\/\//iu.test(value) || url.protocol !== "https:" || (url.port && url.port !== "443")) throw new Error("合同链接必须使用 HTTPS 默认端口（443）");
+  if (url.username || url.password || /^https:\/\/[^/?#]*@/iu.test(value) || url.hash || value.includes("#")) throw new Error("合同链接不能包含登录凭据或片段标记");
+  return value;
+}
 const deliveryFileTypes: Record<CustomerDeliveryAssetPurpose, Record<string, string>> = {
   contract: { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg" },
   payment: { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg" },
@@ -206,6 +249,7 @@ export function parseCustomerDeliveryList(value: unknown): CustomerDeliveryRecor
     }
     return {
       id: row.id,
+      ...parseCustomerDeliveryAccountBinding(row),
       companyName: (row.companyName ?? row.company_name) as string,
       paymentStatus: status,
       profile: profile as boolean, integration: integration as boolean, acceptance: acceptance as boolean, training: training as boolean, videos,
@@ -234,7 +278,49 @@ export function parseCustomerDeliveryList(value: unknown): CustomerDeliveryRecor
 }
 
 export const customerDeliveryClient: CustomerDeliveryClient = {
+  async listAccounts(input, signal) {
+    signal?.throwIfAborted();
+    const limit = input.limit ?? 25;
+    if (!input.targetWorkspaceId.trim() || !Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new Error("请选择有效企业工作区，账号每页数量须为 1–50");
+    const value = await rpc<unknown>("ops.customer-delivery.accounts.list", {
+      target_workspace_id: input.targetWorkspaceId,
+      ...(input.search?.trim() ? { search: input.search.trim() } : {}),
+      ...(input.cursor ? { cursor: input.cursor } : {}),
+      limit: String(limit),
+    }, { signal });
+    signal?.throwIfAborted();
+    return parseCustomerDeliveryAccounts(value, input.targetWorkspaceId);
+  },
+  async bindAccount(input, signal) {
+    signal?.throwIfAborted();
+    if (!input.targetWorkspaceId.trim() || !input.deliveryId.trim() || !input.targetAccountId.trim() || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) throw new Error("生效账号关联参数无效，请刷新档案后重试");
+    const reason = input.reason.trim();
+    if (Array.from(reason).length < 3 || reason.length > 1000) throw new Error("请填写 3–1000 字的关联原因");
+    const value = await rpc<unknown>("ops.customer-delivery.account.bind", {
+      target_workspace_id: input.targetWorkspaceId, delivery_id: input.deliveryId,
+      target_account_id: input.targetAccountId, expected_revision: String(input.expectedRevision), reason,
+    }, { signal });
+    signal?.throwIfAborted();
+    const record = parseRecord(value);
+    if (record.id !== input.deliveryId || record.targetAccountId !== input.targetAccountId || !Number.isSafeInteger(record.revision) || Number(record.revision) <= input.expectedRevision) throw new Error("生效账号关联返回了不匹配的记录，请刷新档案核对，不要重复关联");
+    if (object(value) && value.workspaceId !== input.targetWorkspaceId) throw new Error("生效账号关联返回了其他企业的记录，请刷新档案核对");
+    return record;
+  },
   async uploadAsset(input, signal) {
+    signal?.throwIfAborted();
+    if (("sourceUrl" in input) === ("file" in input)) throw new Error("请选择文件上传或合同链接导入，不能同时提交两种来源");
+    if ("sourceUrl" in input) {
+      if (input.purpose !== "contract" || typeof input.sourceUrl !== "string") throw new Error("仅合同凭证支持链接导入");
+      const sourceUrl = validateCustomerDeliveryContractUrl(input.sourceUrl);
+      const value = await rpc<unknown>("ops.customer-delivery.assets.upload", {
+        target_workspace_id: input.targetWorkspaceId,
+        delivery_id: input.deliveryId,
+        purpose: "contract",
+        source_url: sourceUrl,
+      }, { signal, timeoutMs: 120_000 });
+      signal?.throwIfAborted();
+      return parseCustomerDeliveryAsset(value);
+    }
     const file = await readCustomerDeliveryFile(input.file, input.purpose, signal);
     const value = await rpc<unknown>("ops.customer-delivery.assets.upload", {
       target_workspace_id: input.targetWorkspaceId,

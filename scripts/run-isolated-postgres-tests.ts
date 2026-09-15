@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
 import { dirname, join, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,6 +10,17 @@ import { buildSafeTestEnvironment } from './run-safe-tests.js'
 
 export { ISOLATED_POSTGRES_TEST_FILES }
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+
+function matchingPostgres17Tools(): NodeJS.ProcessEnv {
+  // The owned fixture pins PostgreSQL 17. Restore tests must not accidentally
+  // pick up an older Homebrew client from PATH on a developer machine.
+  for (const dir of ['/opt/homebrew/opt/postgresql@17/bin', '/usr/local/opt/postgresql@17/bin', '/usr/lib/postgresql/17/bin']) {
+    if (existsSync(join(dir, 'pg_dump')) && existsSync(join(dir, 'pg_restore'))) {
+      return { PG_DUMP_BIN: join(dir, 'pg_dump'), PG_RESTORE_BIN: join(dir, 'pg_restore') }
+    }
+  }
+  return {}
+}
 
 async function discoverPostgresTests(directory: string, prefix = ''): Promise<string[]> {
   const entries = await readdir(join(projectRoot, directory, prefix), { withFileTypes: true })
@@ -31,7 +43,7 @@ export async function selectIsolatedPostgresTests(args: readonly string[]): Prom
   if (args.length === 1 && args[0] === '--all') return allPostgresTests()
   const selected = args.map(argument => posix.normalize(argument.replaceAll('\\', '/')))
   if (selected.some(file => !ISOLATED_POSTGRES_TEST_FILES.some(expected => file === expected)) || new Set(selected).size !== selected.length) {
-    throw new Error('This entrypoint accepts only exact audited PostgreSQL test files or --all; omit arguments to run the audited twenty-one files.')
+    throw new Error('This entrypoint accepts only exact audited PostgreSQL test files or --all; omit arguments to run the audited twenty-three files.')
   }
   return selected
 }
@@ -137,15 +149,17 @@ export async function runIsolatedPostgresTests(args: readonly string[], source: 
     if (runtime.cancelled?.()) throw new Error('ISOLATED_POSTGRES_INTERRUPTED')
     await runtime.prepareTestRoles(fixture.adminDatabaseUrl)
     if (runtime.cancelled?.()) throw new Error('ISOLATED_POSTGRES_INTERRUPTED')
+    const allMode = args.length === 1 && args[0] === '--all'
     const environment = {
       ...buildSafeTestEnvironment(source, join(evidenceDir, 'local-objects')),
       PERSISTENCE_RELEASE_DATABASE_URL: fixture.adminDatabaseUrl,
       MERCHANT_ISOLATED_POSTGRES_RUN_ID: fixture.runId,
-      ...(args.length === 1 && args[0] === '--all' ? {
+      ...(allMode ? {
         // Historical integration suites use these aliases. Bind them only
         // after ownership validation, never to the caller's environment.
         PLATFORM_MEDIA_SPEC_DATABASE_URL: fixture.adminDatabaseUrl,
         MODEL_BUDGET_DATABASE_URL: fixture.adminDatabaseUrl,
+        ...matchingPostgres17Tools(),
       } : {}),
       ...(selectedFiles.length !== ISOLATED_POSTGRES_TEST_FILES.length ? { MERCHANT_ISOLATED_POSTGRES_ALL: 'true' } : {}),
     }
