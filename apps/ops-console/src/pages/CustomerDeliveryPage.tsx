@@ -274,7 +274,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
           </div>
         </Card>
         <Card title="功能测试及验收" className="customer-delivery-acceptance-card">
-          <div className="customer-delivery-check-grid customer-delivery-check-grid-five">
+          <div className="customer-delivery-check-grid customer-delivery-check-grid-four">
             {["文案生成", "图片生成", "批注修改", "自动检查", "视频生成", "店铺与商品资料读取", "技术验收", "内容验收"].map((label) => (
               <label className="customer-delivery-check-item" key={label}><span>{label}</span><Checkbox checked={acceptanceChecks.includes(label)} onChange={(event) => setAcceptanceChecks((current) => event.target.checked ? [...current, label] : current.filter((item) => item !== label))} /></label>
             ))}
