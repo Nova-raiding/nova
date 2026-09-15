@@ -273,14 +273,14 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             </div>
         </Card>
         <div className="customer-delivery-check-card-row">
-        <Card title="系统接入确认">
+        <Card title={<span>系统接入确认 <em className="customer-delivery-required-mark">*</em></span>}>
           <div className="customer-delivery-check-grid customer-delivery-check-grid-five">
             {["插件账户", "店铺连接", "商品扫描", "知识库功能", "平台规则", "创作点", "企业信息", "品牌资产", "商品资料", "客户偏好"].map((label) => (
-              <label className="customer-delivery-check-item" key={label}><span>{label}</span><Checkbox checked={integrationChecks.includes(label)} onChange={(event) => setIntegrationChecks((current) => event.target.checked ? [...current, label] : current.filter((item) => item !== label))} /></label>
+              <label className="customer-delivery-check-item" key={label}><span>{label === "创作点" || label === "商品资料" ? `${label}\u00a0` : label}</span><Checkbox checked={integrationChecks.includes(label)} onChange={(event) => setIntegrationChecks((current) => event.target.checked ? [...current, label] : current.filter((item) => item !== label))} /></label>
             ))}
           </div>
         </Card>
-        <Card title="功能测试及验收">
+        <Card title={<span>功能测试及验收 <em className="customer-delivery-required-mark">*</em></span>}>
           <div className="customer-delivery-check-grid customer-delivery-check-grid-four">
             {["文案生成", "图片生成", "批注修改", "自动检查", "视频生成", "资料读取", "技术验收", "内容验收"].map((label) => (
               <label className="customer-delivery-check-item" key={label}><span>{label}</span><Checkbox checked={acceptanceChecks.includes(label)} onChange={(event) => setAcceptanceChecks((current) => event.target.checked ? [...current, label] : current.filter((item) => item !== label))} /></label>
@@ -288,7 +288,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
           </div>
         </Card>
         </div>
-        <Card title="最终交付" style={{ marginTop: 16 }}>
+        <Card title={<span>最终交付 <em className="customer-delivery-required-mark">*</em></span>} style={{ marginTop: 16 }}>
           <div className="customer-delivery-final-fields">
             <Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input placeholder="例如：姜伟" /></Form.Item>
             <Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input placeholder="例如：韩先晓" /></Form.Item>

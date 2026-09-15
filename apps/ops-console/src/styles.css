@@ -38,6 +38,7 @@
 .customer-delivery-uploaded-file { display: flex; align-items: center; gap: 4px; margin-top: 6px; color: #475569; font-size: 12px; }
 .customer-delivery-clear-upload { flex: 0 0 auto; width: 22px; height: 22px; padding: 0; color: #64748b; }
 .customer-delivery-check-card-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+.customer-delivery-required-mark { color: #dc2626; font-style: normal; }
 .customer-delivery-check-grid { display: grid; gap: 12px 14px; }
 .customer-delivery-check-grid-five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .customer-delivery-check-grid-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
