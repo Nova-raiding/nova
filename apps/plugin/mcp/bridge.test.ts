@@ -2323,6 +2323,35 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('normalizes a FastAPI-style bare 400 response instead of exposing detail Bad Request', async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(400, { 'content-type': 'application/json', 'x-request-id': 'gateway-request-400' })
+      res.end(JSON.stringify({ detail: 'Bad Request' }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({
+        isError: true,
+        structuredContent: {
+          code: 'MCP_GATEWAY_BAD_REQUEST',
+          details: { gateway_status: 400, operation_status: 'rejected', retryable: false, request_id: 'gateway-request-400' },
+        },
+      })
+      expect(JSON.stringify(response)).not.toContain('"detail":"Bad Request"')
+      expect(JSON.stringify(response)).not.toContain('HTTP_400')
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('blocks production generation results that omit relay evidence', async () => {
     const server = createServer(async (_req, res) => {
       res.setHeader('content-type', 'application/json')

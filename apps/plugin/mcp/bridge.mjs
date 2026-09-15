@@ -1405,6 +1405,7 @@ function userFacingErrorText(code, details) {
   }
   if (code === 'PERMISSION_DENIED') return '当前账号没有执行这一步的权限。任务和已有内容已保留。'
   if (code === 'MCP_AUTH_REQUIRED') return '当前服务配置尚未就绪。任务和已有内容已保留，没有扣费或发布；平台恢复后可继续处理。'
+  if (code === 'MCP_GATEWAY_BAD_REQUEST') return '插件请求被网关拒绝。当前任务和已有产物已保留；请根据请求 ID 排查网关路由、请求格式或插件连接配置。'
   if (code === 'MODEL_RELAY_EVIDENCE_REQUIRED') {
     const missing = Array.isArray(details?.missing) ? details.missing : []
     if (missing.includes('cost_cny') || missing.includes('settlement')) return '平台正在核对本次生成记录，暂时不能继续。没有生成新内容、扣费或发布；当前任务和已有产物已保留，核对完成后可继续。'
@@ -1518,7 +1519,7 @@ function safeErrorDetails(details) {
     if (value && typeof value === 'object') {
       const nested = {}
       for (const [key, item] of Object.entries(value)) {
-        if (['code', 'field', 'message', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'timeout', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'provider_error_summary', 'reconciliation_required', 'next_action', 'issues', 'missing', 'required', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'availability', 'access_revision', 'rate_card_version'].includes(key)) {
+        if (['code', 'field', 'message', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'timeout', 'gateway_status', 'gateway_error_summary', 'malformed_error_response', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'provider_error_summary', 'reconciliation_required', 'next_action', 'issues', 'missing', 'required', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'availability', 'access_revision', 'rate_card_version'].includes(key)) {
           const sanitized = sanitize(item, depth + 1)
           if (sanitized !== undefined) nested[key] = sanitized
         }
@@ -1527,7 +1528,7 @@ function safeErrorDetails(details) {
     }
     return undefined
   }
-  for (const key of ['issues', 'missing', 'required', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'timeout', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'provider_error_summary', 'reconciliation_required', 'next_action', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'availability', 'access_revision', 'rate_card_version', ...authorizationEvidenceKeys]) {
+  for (const key of ['issues', 'missing', 'required', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'timeout', 'gateway_status', 'gateway_error_summary', 'malformed_error_response', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'provider_error_summary', 'reconciliation_required', 'next_action', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'availability', 'access_revision', 'rate_card_version', ...authorizationEvidenceKeys]) {
     const value = authorizationEvidenceKeys.includes(key) || correlationEvidenceKeys.includes(key)
       ? key === 'explicit_deny'
         ? evidenceBoolean(details[key])
@@ -2133,6 +2134,24 @@ async function responseJsonWithLimit(response) {
   try { return { payload: JSON.parse(rawResponseText), rawResponseText } } catch { return { payload: null, rawResponseText } }
 }
 
+function bareGatewayError(response, payload, rawResponseText) {
+  if (response.status !== 400 || (payload?.error ?? payload?.data?.error)) return undefined
+  const detail = typeof payload?.detail === 'string' ? payload.detail.trim() : ''
+  const requestId = response.headers.get('x-request-id')?.trim()
+  return {
+    code: 'MCP_GATEWAY_BAD_REQUEST',
+    message: 'MCP gateway rejected the request',
+    details: {
+      gateway_status: response.status,
+      retryable: false,
+      operation_status: 'rejected',
+      ...(requestId ? { request_id: requestId.slice(0, 256) } : {}),
+      ...(detail && detail.toLowerCase() !== 'bad request' ? { gateway_error_summary: detail.slice(0, 240) } : {}),
+      ...(!detail && rawResponseText.trim() ? { malformed_error_response: true } : {}),
+    },
+  }
+}
+
 function materializeImageFiles(images) {
   const root = process.env.MERCHANT_ARTIFACT_DIR?.trim()
   const directory = resolve(root && !/^\$\{[^}]+\}$/u.test(root) ? root : join(process.cwd(), 'artifacts', 'codex-output'))
@@ -2494,7 +2513,7 @@ async function callRemote(method, params) {
         // gateways may also return a top-level error. Treat both locations as
         // the same protocol boundary so authz/evidence details are not
         // downgraded to a generic missing-result error.
-        const remoteError = payload?.error ?? payload?.data?.error
+        const remoteError = payload?.error ?? payload?.data?.error ?? bareGatewayError(response, payload, rawResponseText)
         // Some relay gateways expose their provider outage as a bare 503
         // message instead of the canonical error code. That response still
         // sits after the provider boundary: retrying an idempotent tool can

@@ -107,6 +107,8 @@ describe('API HTTP vertical slice', () => {
       }).then(json)
       expect(session.error).toBeNull()
       expect(session.data?.result).toMatchObject({
+        actor_id: account.identityId,
+        account_login: account.login,
         identity_id: account.identityId,
         authorization_revision: grant.authorizationRevision,
         temporary_grants: [expect.objectContaining({ id: grant.id, authorization_revision: grant.authorizationRevision })],
