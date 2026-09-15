@@ -1,4 +1,4 @@
-import { Alert, Button } from "antd";
+import { Alert, Button, Card, Form, Input, Space } from "antd";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { OpsPage } from "../components/OpsPage.js";
 import { CustomerDeliverySection } from "../components/delivery/CustomerDeliverySection.js";
@@ -45,6 +45,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [mutationError, setMutationError] = useState("");
+  const [createPage, setCreatePage] = useState(false);
+  const [createForm] = Form.useForm<{ companyName: string }>();
   const currentWorkspace = useRef(targetWorkspaceId);
   currentWorkspace.current = targetWorkspaceId;
   const currentCanRead = useRef(canRead);
@@ -148,6 +150,11 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     try { const record = await customerDeliveryClient.create(targetWorkspaceId, companyName); await load(); return record; }
     catch (cause) { reportMutationError(cause); throw cause; }
   };
+  const submitCreatePage = async ({ companyName }: { companyName: string }) => {
+    await createRecord(companyName);
+    createForm.resetFields();
+    setCreatePage(false);
+  };
   const saveProfile = async (record: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord) => {
     if (!Number.isSafeInteger(record.revision) || (record.revision ?? 0) < 1) throw new Error("客户交付记录缺少有效 revision，请刷新后重试");
     const revision = record.revision as number;
@@ -217,11 +224,24 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       {!targetWorkspaceId && canRead ? <Alert style={{ marginBottom: 16 }} type="info" showIcon message="正在加载客户交付档案" description="请稍候，运营数据加载完成后即可新建客户。" /> : null}
       {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
       {mutationError ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
-      <CustomerDeliverySection
+      {createPage ? (
+        <Card title="新建客户" extra={<Button onClick={() => setCreatePage(false)}>返回客户建档</Button>}>
+          <Form form={createForm} layout="vertical" onFinish={submitCreatePage}>
+            <Form.Item name="companyName" label="公司名称" rules={[{ required: true, message: "请输入公司名称" }]}>
+              <Input placeholder="请输入公司名称" autoFocus />
+            </Form.Item>
+            <Space>
+              <Button onClick={() => setCreatePage(false)}>取消</Button>
+              <Button type="primary" htmlType="submit">创建客户</Button>
+            </Space>
+          </Form>
+        </Card>
+      ) : <CustomerDeliverySection
         key={targetWorkspaceId || "unselected"}
         disabled={!canRead || !targetWorkspaceId}
         records={records}
         onCreate={canUpdate && canRead ? createRecord : undefined}
+        onCreateNavigate={canUpdate && canRead ? () => setCreatePage(true) : undefined}
         onSave={canUpdate && canRead ? saveProfile : undefined}
         onChecklistSave={canUpdate && canRead ? saveChecklist : undefined}
         onChecklistLoad={loadChecklist}
@@ -230,7 +250,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         onVideoList={listVideos}
         onAssetUpload={canUpdate && canRead ? (record, file, purpose, signal) => customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: record.id, file, purpose }, signal) : undefined}
         onAssetGet={(record, assetRef, purpose, signal) => customerDeliveryClient.getAsset({ targetWorkspaceId, deliveryId: record.id, assetRef, purpose }, signal)}
-      />
+      />}
     </OpsPage>
   );
 }

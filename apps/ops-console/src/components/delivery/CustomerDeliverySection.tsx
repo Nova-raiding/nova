@@ -179,6 +179,7 @@ export function CustomerDeliverySection({
   onOpen,
   onSave,
   onCreate,
+  onCreateNavigate,
   onChecklistSave,
   onChecklistLoad,
   onTrainingSave,
@@ -197,6 +198,7 @@ export function CustomerDeliverySection({
     record: CustomerDeliveryRecord,
   ) => Promise<CustomerDeliveryRecord | void> | CustomerDeliveryRecord | void;
   onCreate?: (companyName: string) => Promise<CustomerDeliveryRecord>;
+  onCreateNavigate?: () => void;
   onChecklistSave?: (
     payload: CustomerDeliveryChecklistSave,
   ) => Promise<CustomerDeliveryRecord | void> | CustomerDeliveryRecord | void;
@@ -515,6 +517,7 @@ export function CustomerDeliverySection({
             type="primary"
             disabled={disabled}
             onClick={() => {
+              if (onCreateNavigate) { onCreateNavigate(); return; }
               createForm.resetFields();
               setShowCreate(true);
             }}
