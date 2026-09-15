@@ -226,8 +226,9 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
       const callbackHeaders = { 'content-type': 'application/json', 'x-payment-signature': signature, 'x-payment-timestamp': timestamp, 'x-payment-nonce': nonce }
       for (const replayed of [false, true]) {
         const response = await fetch(`${running.base}/v1/commercial/callback/alipay`, { method: 'POST', headers: callbackHeaders, body: JSON.stringify(callbackPayload) })
-        expect(response.status).toBe(200)
-        await expect(response.json()).resolves.toMatchObject({ data: { state: 'paid', replayed }, error: null })
+        const callbackResult = await response.json()
+        expect(response.status, JSON.stringify({ callbackResult, logs: running.logs() })).toBe(200)
+        expect(callbackResult).toMatchObject({ data: { state: 'paid', replayed }, error: null })
       }
 
       const paidViaBridge = await bridgeCall(bridgeA, 3, 'commercial.order.payment.get', { order_id: order.order_id })
