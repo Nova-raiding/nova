@@ -53,6 +53,13 @@
 .customer-delivery-video-list { display: grid; gap: 6px; margin-top: 10px; max-width: 520px; }
 .customer-delivery-video-item { display: flex; width: min(100%, 360px); align-items: center; justify-content: space-between; gap: 8px; padding: 5px 8px; border: 1px solid #e2e8f0; border-radius: 6px; color: #475569; font-size: 12px; }
 .customer-delivery-video-item span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.customer-delivery-filter-form .ant-input-affix-wrapper,
+.customer-delivery-filter-form .ant-select-single,
+.customer-delivery-filter-form .ant-select-selector,
+.customer-delivery-filter-form .ant-btn { box-sizing: border-box; height: 32px !important; min-height: 32px !important; }
+.customer-delivery-filter-form .ant-input-affix-wrapper,
+.customer-delivery-filter-form .ant-select-selector { display: flex; align-items: center; }
+.customer-delivery-filter-form .ant-input-affix-wrapper .ant-input { height: auto; min-height: 0; padding-block: 0; }
 .customer-delivery-final-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 16px; align-items: start; }
 .customer-delivery-final-video { margin-bottom: 24px; }
 @media (max-width: 1100px) { .customer-delivery-check-card-row { grid-template-columns: 1fr; } }

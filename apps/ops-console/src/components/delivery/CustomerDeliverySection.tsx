@@ -633,6 +633,7 @@ export function CustomerDeliverySection({
       </Drawer>
       <Form
         form={filterForm}
+        className="customer-delivery-filter-form"
         layout="inline"
         style={{ marginBottom: 16, rowGap: 12 }}
         onFinish={(values) => {
