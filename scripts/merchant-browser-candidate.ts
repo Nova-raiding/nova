@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 type Environment = Record<string, string | undefined>
 const activeChildren = new Set<ChildProcess>()
 const candidateServices = ['api', 'ui', 'ops-ui', 'postgres', 'redis', 'migrate']
+export const CANDIDATE_POSTGRES_IMAGE = 'postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73'
 const toolingEnvironmentKeys = ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'TERM', 'CI', 'DOCKER_CONFIG', 'DOCKER_CONTEXT', 'DOCKER_HOST', 'MERCHANT_E2E_LOGIN', 'MERCHANT_E2E_PASSWORD'] as const
 
 export function isolatedCandidateEnvironment(source: Environment): Environment {
@@ -30,6 +31,7 @@ export interface BrowserCandidate {
   project?: string
   apiImage?: string
   opsImage?: string
+  migrationImage?: string
   ports: number[]
   env: Environment
 }
@@ -57,11 +59,13 @@ export function candidateConfiguration(source: Environment, sha: string, ports: 
   const releaseId = `browser-${key}`
   const apiImage = `merchant-browser-api:${key}`
   const opsImage = `merchant-browser-ops-ui:${key}`
+  const migrationImage = `merchant-browser-migrate:${key}`
   const [ui, ops, api, postgres, redis] = ports
   const merchantUrl = `http://127.0.0.1:${ui}/`
   const opsUrl = `http://127.0.0.1:${ops}/`
-  return { mode, sha, releaseId, project, apiImage, opsImage, merchantUrl, opsUrl, ports, env: {
+  return { mode, sha, releaseId, project, apiImage, opsImage, migrationImage, merchantUrl, opsUrl, ports, env: {
     ...isolatedCandidateEnvironment(source), COMPOSE_PROJECT_NAME: project, LOCAL_API_IMAGE: apiImage, LOCAL_OPS_UI_IMAGE: opsImage,
+    BROWSER_MIGRATION_IMAGE: migrationImage,
     LOCAL_UI_PORT: String(ui), LOCAL_OPS_UI_PORT: String(ops), LOCAL_API_PORT: String(api),
     LOCAL_POSTGRES_PORT: String(postgres), LOCAL_REDIS_PORT: String(redis),
     MERCHANT_STUDIO_URL: merchantUrl, OPS_BASE_URL: opsUrl,
@@ -107,11 +111,31 @@ export async function assertUnoccupiedPorts(ports: number[]): Promise<void> {
 
 export function assertContainerOwnership(inspected: { Config: { Labels: Record<string, string>; Image: string } }, candidate: BrowserCandidate, service: string): void {
   if (inspected.Config.Labels['com.docker.compose.project'] !== candidate.project || inspected.Config.Labels['com.docker.compose.service'] !== service) throw new Error(`candidate service ${service} has incorrect Compose ownership labels`)
-  if ((service === 'api' && inspected.Config.Image !== candidate.apiImage) || (service === 'ops-ui' && inspected.Config.Image !== candidate.opsImage)) throw new Error(`candidate service ${service} has incorrect image tag`)
+  const expectedImage = service === 'api' ? candidate.apiImage : service === 'ops-ui' ? candidate.opsImage : service === 'migrate' ? candidate.migrationImage : service === 'postgres' ? CANDIDATE_POSTGRES_IMAGE : undefined
+  if (expectedImage && inspected.Config.Image !== expectedImage) throw new Error(`candidate service ${service} has incorrect image tag`)
+}
+
+export function candidateComposeArgs(candidate: BrowserCandidate): string[] {
+  if (candidate.mode !== 'candidate' || !candidate.project) throw new Error('external mode must never render or start candidate Compose')
+  return ['compose', '-p', candidate.project, '-f', 'infra/local/docker-compose.yml', '-f', 'infra/local/docker-compose.browser-candidate.yml', '--env-file', '/dev/null']
+}
+
+export function assertCandidateComposeRender(rendered: { services?: Record<string, { image?: string; volumes?: Array<{ type?: string }> }> }, candidate: BrowserCandidate): void {
+  for (const service of candidateServices) {
+    const config = rendered.services?.[service]
+    if (!config) throw new Error(`candidate Compose is missing ${service}`)
+    if (config.volumes?.some(volume => volume.type !== 'volume')) throw new Error(`candidate ${service} refuses host bind or unclassified mounts`)
+  }
+  if (rendered.services?.postgres.image !== CANDIDATE_POSTGRES_IMAGE || rendered.services?.migrate.image !== candidate.migrationImage || rendered.services?.migrate.volumes?.length) throw new Error('candidate requires pinned PG17 and built migration artifacts without runtime mounts')
 }
 
 export function assertContainerHealthy(inspected: { State?: { Running?: boolean; Health?: { Status?: string } } }, service: string): void {
   if (!inspected.State?.Running || inspected.State.Health?.Status !== 'healthy') throw new Error(`candidate service ${service} is not running and healthy`)
+}
+
+export function assertMigrationCompleted(inspected: { Config: { Labels: Record<string, string>; Image: string }; State?: { Running?: boolean; ExitCode?: number; Status?: string } }, candidate: BrowserCandidate): void {
+  assertContainerOwnership(inspected, candidate, 'migrate')
+  if (inspected.State?.Running || inspected.State?.Status !== 'exited' || inspected.State?.ExitCode !== 0) throw new Error('candidate built migration artifacts did not complete successfully')
 }
 
 async function command(binary: string, args: string[], env: Environment): Promise<void> {
@@ -148,7 +172,9 @@ export async function ensureBrowserCandidate(candidate: BrowserCandidate, onStar
   // Pin the checked local context for startup, inspection and exact-ID cleanup.
   candidate.env.DOCKER_CONTEXT = dockerContext
   await assertUnoccupiedPorts(candidate.ports)
-  const args = ['compose', '-p', candidate.project!, '-f', 'infra/local/docker-compose.yml', '--env-file', '/dev/null']
+  const args = candidateComposeArgs(candidate)
+  const rendered = JSON.parse(execFileSync('docker', [...args, 'config', '--format', 'json'], { env: candidate.env, encoding: 'utf8' }))
+  assertCandidateComposeRender(rendered, candidate)
   signal?.throwIfAborted()
   onStartup?.()
   await command('docker', [...args, 'up', '-d', '--build', '--force-recreate', '--wait', '--wait-timeout', '180', 'api', 'ui', 'ops-ui'], candidate.env)
@@ -159,6 +185,9 @@ export async function ensureBrowserCandidate(candidate: BrowserCandidate, onStar
     assertContainerOwnership(inspected, candidate, service)
     assertContainerHealthy(inspected, service)
   }
+  const migrationId = execFileSync('docker', [...args, 'ps', '-a', '-q', 'migrate'], { env: candidate.env, encoding: 'utf8' }).trim()
+  if (!migrationId || migrationId.includes('\n')) throw new Error('candidate must resolve exactly one migration container')
+  assertMigrationCompleted(JSON.parse(execFileSync('docker', ['inspect', migrationId], { env: candidate.env, encoding: 'utf8' }))[0], candidate)
   let lastError: unknown
   for (let attempt = 0; attempt < 30; attempt += 1) {
     signal?.throwIfAborted()

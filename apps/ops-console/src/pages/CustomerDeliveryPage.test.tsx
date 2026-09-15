@@ -112,10 +112,24 @@ describe("customer delivery read-only desktop interaction", () => {
   }, 60_000);
 
   afterAll(async () => {
-    try { await browser?.close(); }
+    const logCleanupStage = async (stage: string, action: () => Promise<void>) => {
+      const startedAt = Date.now();
+      console.info(`[customer-delivery-test-cleanup] stage=${stage} status=started duration_ms=0`);
+      try {
+        await action();
+        console.info(`[customer-delivery-test-cleanup] stage=${stage} status=completed duration_ms=${Date.now() - startedAt}`);
+      } catch (error) {
+        console.error(`[customer-delivery-test-cleanup] stage=${stage} status=failed duration_ms=${Date.now() - startedAt}`);
+        throw error;
+      }
+    };
+    try { await logCleanupStage("browser.close", async () => { await browser?.close(); }); }
     finally {
-      try { await vite?.close(); }
-      finally { if (cacheDirectory) await rm(cacheDirectory, { recursive: true, force: true }); }
+      try { await logCleanupStage("vite.close", async () => { await vite?.close(); }); }
+      finally {
+        const directory = cacheDirectory;
+        if (directory) await logCleanupStage("cache.rm", async () => { await rm(directory, { recursive: true, force: true }); });
+      }
     }
   }, 60_000);
 
