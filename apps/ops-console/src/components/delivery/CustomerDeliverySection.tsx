@@ -456,6 +456,7 @@ export function CustomerDeliverySection({
       {
         title: "序号",
         width: 48,
+        align: "center" as const,
         render: (_: unknown, __: CustomerDeliveryRecord, index: number) =>
           String(index + 1).padStart(2, "0"),
       },
@@ -471,6 +472,7 @@ export function CustomerDeliverySection({
         (key) => ({
           title: stepLabels[key],
           width: key === "acceptance" ? 120 : key === "profile" ? 76 : 86,
+          align: "center" as const,
           dataIndex: key,
           render: (_value: boolean, row: CustomerDeliveryRecord) => {
             const value = key === "profile" ? isCustomerProfileFilled(row) : isDeliveryChecklistComplete(row, key);
@@ -484,6 +486,7 @@ export function CustomerDeliverySection({
       {
         title: "客户培训",
         width: 108,
+        align: "center" as const,
         dataIndex: "training",
         render: (value: boolean, row: CustomerDeliveryRecord) => (
           <Select
@@ -503,6 +506,7 @@ export function CustomerDeliverySection({
       {
         title: "交付视频",
         width: 86,
+        align: "center" as const,
         dataIndex: "videos",
         render: (_value: number, row: CustomerDeliveryRecord) =>
           hasDeliveryVideo(row) ? <Tag color="success">已上传</Tag> : <Tag>未上传</Tag>,
@@ -510,18 +514,21 @@ export function CustomerDeliverySection({
       {
         title: "上线时间",
         width: 100,
+        align: "center" as const,
         dataIndex: "goLiveAt",
         render: (value?: string) => value || "未上线",
       },
       {
         title: "销售负责人",
         width: 110,
+        align: "center" as const,
         dataIndex: "owner",
         render: (value?: string) => value?.trim() || "-",
       },
       {
         title: "售后负责人",
         width: 110,
+        align: "center" as const,
         dataIndex: "afterSalesOwner",
         render: (value?: string) => value?.trim() || "-",
       },
