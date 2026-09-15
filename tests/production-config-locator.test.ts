@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -20,5 +21,33 @@ describe('production config locator safety', () => {
     })
     expect(result.status).not.toBe(0)
     expect(result.stdout + result.stderr).not.toContain('launch preflight passed')
+  })
+
+  it('resolves locator paths without executing shell text and preserves argument precedence', () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'production-locator-'))
+    try {
+      const scripts = resolve(root, 'infra/scripts')
+      mkdirSync(scripts, { recursive: true })
+      writeFileSync(resolve(scripts, 'launch-preflight.sh'), readFileSync(resolve('infra/scripts/launch-preflight.sh')))
+      // Stop immediately after resolution: no local or external deploy runs.
+      writeFileSync(resolve(scripts, 'validate-production-config.sh'), '#!/bin/sh\nprintf "%s\\n" "$1"\nexit 42\n')
+      const env = { ...process.env }
+      delete env.PRODUCTION_CONFIG_PATH
+      delete env.SKIP_LOCAL_OPS_GATE
+      const run = (args: string[] = [], explicit?: string) => spawnSync('sh', [resolve(scripts, 'launch-preflight.sh'), ...args], {
+        cwd: tmpdir(), encoding: 'utf8', env: { ...env, ...(explicit === undefined ? {} : { PRODUCTION_CONFIG_PATH: explicit }) },
+      })
+      const locator = 'private config/$(exit 99).yaml'
+      writeFileSync(resolve(root, '.env.production-config-path'), `${locator}\n`)
+      const fallback = run()
+      expect(fallback.status).toBe(42)
+      expect(fallback.stdout).toContain(`${root}/${locator}`)
+      expect(run([], '/explicit config.yaml').stdout).toContain('/explicit config.yaml')
+      expect(run(['/argument config.yaml'], '/ignored.yaml').stdout).toContain('/argument config.yaml')
+      writeFileSync(resolve(root, '.env.production-config-path'), '')
+      expect(run().status).not.toBe(0)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
