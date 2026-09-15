@@ -84,7 +84,9 @@ async function probeInvalidation(context: OpsE2eContext, beforeSources: Awaited<
     assert.equal(scan.status, 'passed')
     assert.equal(scan.attachments.length, 7)
     assert.deepEqual(await fingerprint(), beforeSources, 'source changed before live probe; rerun stable snapshot')
-    const deliveryId = scan.delivery.id as string
+    const deliveryIds = [...new Set(scan.attachments.map((attachment: { deliveryId: unknown }) => attachment.deliveryId))]
+    assert.equal(deliveryIds.length, 1, 'all seven verified attachments must belong to one delivery')
+    const deliveryId = deliveryIds[0] as string
     const assetId = scan.attachments.find((attachment: { purpose: string }) => attachment.purpose === 'payment')?.assetId
     assert.equal(typeof deliveryId, 'string'); assert.equal(typeof assetId, 'string')
     assert(fixture.containerEvidence.some(container => container.kind === 'postgres' && container.runId === fixture.runId && container.dataStorage === 'tmpfs'))
