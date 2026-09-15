@@ -110,7 +110,7 @@ test('shows controlled-support scope and exits a JIT grant from the keyboard', a
   await expect(exit).toBeFocused()
   await page.keyboard.press('Enter')
   await expect(exit).toHaveCount(0)
-  await expect(page.getByText('工作区 · ws_demo', { exact: true })).toBeVisible()
+  await expect(page.getByText('企业主体 · ws_demo', { exact: true })).toBeVisible()
 })
 
 test('expires a controlled-support JIT grant and removes the action surface', async ({ page }) => {

@@ -5,7 +5,7 @@ import { assertCandidateGitState, assertContainerOwnership, assertLocalDockerEnd
 
 // Regression: ISSUE-001 — HTTP-success SSH tunnels were accepted as the current browser candidate.
 // Found by /qa on 2026-09-15
-// Report: .gstack/qa-reports/qa-report-local-browser-2026-09-15.md
+// Report: .gstack/qa-reports/qa-report-merchant-candidate-2026-09-15.md
 const sha = 'a'.repeat(40)
 const ports = [28081, 28082, 28787, 15439, 16389]
 const candidate = () => candidateConfiguration({}, sha, ports, '0123456789ab')

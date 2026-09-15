@@ -624,6 +624,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
     const row = this.rows.get(`${d.workspaceId}:${d.id}`)!;
     row.videos.push(v);
     row.updatedAt = new Date().toISOString();
+    row.updatedByActorId = input.actorId;
     row.revision++;
     row.effectiveAt = this.isComplete(row) ? (row.effectiveAt ?? row.updatedAt) : null;
     await this.auditWriter({
@@ -653,6 +654,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
     const before = clone(video);
     video.deletedAt = new Date().toISOString();
     row.updatedAt = video.deletedAt;
+    row.updatedByActorId = input.actorId;
     row.revision++;
     row.effectiveAt = this.isComplete(row) ? (row.effectiveAt ?? row.updatedAt) : null;
     await this.auditWriter({

@@ -4,7 +4,7 @@ import { assertContainerHealthy, candidateConfiguration, cleanupBrowserCandidate
 
 // Regression: ISSUE-001 — inherited provider credentials and abandoned candidate containers escaped isolation.
 // Found by /qa on 2026-09-15
-// Report: .gstack/qa-reports/qa-report-local-browser-2026-09-15.md
+// Report: .gstack/qa-reports/qa-report-merchant-candidate-2026-09-15.md
 const candidate = () => candidateConfiguration(process.env, 'a'.repeat(40), [28081, 28082, 28787, 15439, 16389], '0123456789ab')
 
 describe('candidate environment and lifecycle', () => {

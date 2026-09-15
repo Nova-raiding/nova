@@ -5,6 +5,15 @@ import { describe, expect, it } from 'vitest'
 const scriptPath = 'infra/scripts/verify-runtime-db-role.sh'
 
 describe('runtime database role verification', () => {
+  it('checks the complete forced OAuth RLS policy family, including unexpected policies and commands', () => {
+    const source = readFileSync(scriptPath, 'utf8')
+    const block = source.slice(source.indexOf('mcp_oauth_rls_failures='), source.indexOf('# These tables intentionally'))
+    expect(block).toContain('FULL JOIN actual a')
+    expect(block).toContain('e.policyname IS NULL OR a.policyname IS NULL')
+    expect(block).toContain("a.cmd IS DISTINCT FROM 'ALL'")
+    expect(block).toContain('NOT c.relrowsecurity OR NOT c.relforcerowsecurity')
+    expect(block).toContain("to_regclass('public.'")
+  })
   it('validates the special workspaces and workspace_members policy shapes explicitly', () => {
     const source = readFileSync(scriptPath, 'utf8')
 

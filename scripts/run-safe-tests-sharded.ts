@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { buildSafeTestEnvironment, runSafeTests } from './run-safe-tests.js'
 
-const DEFAULT_SHARD_COUNT = 4
+// The suite now contains enough browser/API-heavy files that four sequential
+// buckets can exceed runSafeTests' five-minute per-process safety limit.
+const DEFAULT_SHARD_COUNT = 8
 const MAX_SHARD_COUNT = 16
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const execFileAsync = promisify(execFile)

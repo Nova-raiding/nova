@@ -31,7 +31,7 @@ export async function selectIsolatedPostgresTests(args: readonly string[]): Prom
   if (args.length === 1 && args[0] === '--all') return allPostgresTests()
   const selected = args.map(argument => posix.normalize(argument.replaceAll('\\', '/')))
   if (selected.some(file => !ISOLATED_POSTGRES_TEST_FILES.some(expected => file === expected)) || new Set(selected).size !== selected.length) {
-    throw new Error('This entrypoint accepts only exact audited PostgreSQL test files or --all; omit arguments to run the audited twenty files.')
+    throw new Error('This entrypoint accepts only exact audited PostgreSQL test files or --all; omit arguments to run the audited twenty-one files.')
   }
   return selected
 }
@@ -141,6 +141,12 @@ export async function runIsolatedPostgresTests(args: readonly string[], source: 
       ...buildSafeTestEnvironment(source, join(evidenceDir, 'local-objects')),
       PERSISTENCE_RELEASE_DATABASE_URL: fixture.adminDatabaseUrl,
       MERCHANT_ISOLATED_POSTGRES_RUN_ID: fixture.runId,
+      ...(args.length === 1 && args[0] === '--all' ? {
+        // Historical integration suites use these aliases. Bind them only
+        // after ownership validation, never to the caller's environment.
+        PLATFORM_MEDIA_SPEC_DATABASE_URL: fixture.adminDatabaseUrl,
+        MODEL_BUDGET_DATABASE_URL: fixture.adminDatabaseUrl,
+      } : {}),
       ...(selectedFiles.length !== ISOLATED_POSTGRES_TEST_FILES.length ? { MERCHANT_ISOLATED_POSTGRES_ALL: 'true' } : {}),
     }
     const vitestArgs = ['run', ...selectedFiles, '--config', join(projectRoot, 'vitest.postgres.config.ts'), '--no-file-parallelism', '--reporter=default', '--reporter=json', `--outputFile=${reportPath}`, '--passWithNoTests=false']

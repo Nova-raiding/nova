@@ -29,6 +29,18 @@ const add = (id: string, level: Level, message: string, next?: string) => checks
 const run = (command: string, commandArgs: string[] = []) => spawnSync(command, commandArgs, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 const commandReady = (command: string, commandArgs: string[] = []) => run(command, commandArgs).status === 0
 const root = process.cwd()
+// This ignored file contains only a config locator, never dotenv assignments
+// or secrets. Production still does not inherit workstation credentials.
+const productionConfigLocator = resolve(root, '.env.production-config-path')
+if (!process.env.PRODUCTION_CONFIG_PATH?.trim() && existsSync(productionConfigLocator)) {
+  try {
+    process.env.PRODUCTION_CONFIG_PATH = readFileSync(productionConfigLocator, 'utf8').split(/\r?\n/u)[0]?.trim() || ''
+  } catch {
+    // Filesystem errors can contain private paths. Keep diagnostics structured
+    // and leave configuration absent rather than printing the underlying error.
+    add('production_config_locator', 'fail', '生产配置定位文件不可读。', '将定位文件修复为可读的普通文件，或显式设置 PRODUCTION_CONFIG_PATH。')
+  }
+}
 const parseJsonFile = (path: string) => JSON.parse(readFileSync(resolve(root, path), 'utf8')) as unknown
 // Local doctor runs should inspect the same root .env that compose uses. Keep
 // production fail-closed: production checks must come from the deployment
@@ -53,8 +65,8 @@ if (!production) {
 // The desktop plugin is launched by ChatGPT.app through the macOS user
 // launchd session. Mirror bridge.sh here so a local doctor run observes the
 // same endpoint/token contract without printing secret values. Production
-// still requires a public HTTPS endpoint below.
-if (process.platform === 'darwin') {
+// must use deployment-provided configuration, never workstation launchd values.
+if (!production && process.platform === 'darwin') {
   for (const name of ['MERCHANT_MCP_BASE_URL', 'MERCHANT_WORKSPACE_ID', 'MERCHANT_MCP_TOKEN']) {
     if (process.env[name]?.trim()) continue
     try {
@@ -166,7 +178,8 @@ const productionConfigPath = productionConfig ? resolve(root, productionConfig) 
 const productionConfigReady = (() => {
   if (!productionConfigPath || !existsSync(productionConfigPath) || /example/iu.test(productionConfigPath)) return false
   try {
-    return !/REPLACE_ME|SET_[A-Z_]+|example\.com/iu.test(readFileSync(productionConfigPath, 'utf8'))
+    if (/REPLACE_ME|SET_[A-Z_]+|BLOCKED_UNTIL_|example\.com/iu.test(readFileSync(productionConfigPath, 'utf8'))) return false
+    return !production || ecsProduction || run('sh', [resolve(root, 'infra/scripts/validate-production-config.sh'), productionConfigPath]).status === 0
   } catch {
     // A directory, unreadable path, or disappearing secret-rendered file is a
     // production configuration failure, not a reason for the doctor itself to

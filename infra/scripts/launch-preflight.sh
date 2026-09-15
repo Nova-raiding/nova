@@ -3,6 +3,14 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 config_path=${1:-${PRODUCTION_CONFIG_PATH:-}}
+if [ -z "$config_path" ] && [ -f "$root/.env.production-config-path" ]; then
+  IFS= read -r config_path < "$root/.env.production-config-path" || [ -n "$config_path" ]
+fi
+case "$config_path" in
+  ''|/*) ;;
+  *) config_path="$root/$config_path" ;;
+esac
+export PRODUCTION_CONFIG_PATH="$config_path"
 
 if [ "${SKIP_LOCAL_OPS_GATE+x}" = x ]; then
   echo 'SKIP_LOCAL_OPS_GATE is forbidden for the production launch entrypoint' >&2

@@ -72,7 +72,7 @@ export class ReplayGuard {
   size(): number { return this.entries.size }
 }
 
-const SENSITIVE_KEY = /(?:access|refresh)[_-]?token|client[_-]?secret|app[_-]?secret|authorization|cookie|set-cookie|password|passphrase|private[_-]?key|credential|api[_-]?key|signature|raw[_-]?(?:body|payload|response)|prompt(?:_?text)?/iu
+const SENSITIVE_KEY = /(?:access|refresh|session|reset|bearer|mcp|metrics|webhook|worker|scanner|oidc)[_-]?token|(?:client|app|signing|webhook|worker|scanner|oidc)[_-]?secret|^(?:token|secret)$|authorization|cookie|set-cookie|password|passphrase|private[_-]?key|credential|api[_-]?key|signature|raw[_-]?(?:body|payload|response)|prompt(?:_?text)?/iu
 const MAX_DEPTH = 8
 const MAX_STRING = 2048
 

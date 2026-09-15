@@ -1,6 +1,6 @@
 # 支付对账恢复与资金安全验收 · 2026-09-15
 
-状态：支付恢复、整合回归及真实数据库锁超时恢复验证已完成。全量交付仍被分工外的权限契约冲突阻断；不是生产支付放行声明。
+状态：支付恢复及真实数据库锁超时恢复验证已完成。下文 11:02 的权限断言失败是历史快照，后续提交已更新对应测试，本轮重新验证通过；未完成项见文末。本记录不是生产支付放行声明。
 
 ## 范围与根因
 
@@ -34,7 +34,7 @@ owner 负责根因、API 恢复、交错调度、整合和最终运行；独立 
 | 独立 agent 最终 API 三文件 | 181/181 通过（45 + 68 + 68） |
 | 仓储单元测试 | 62/62 通过，含 16 个写前／提交前／回滚／非对账兼容检查 |
 
-owner 最终整合：12 个文件、451 项，**450 passed / 1 failed / 0 skipped**，61.15 秒。失败仅为下文说明的余额权限契约冲突；没有跳过、改断言或移除该测试。报告：`artifacts/payment-reconciliation/run-DXaOt3/owner-final-vitest.json`。
+前轮 owner 整合（11:02:33 开始，早于后续权限测试提交）：12 个文件、451 项，**450 passed / 1 failed / 0 skipped**，61.15 秒。失败为当时的余额权限契约冲突；该轮 owner 没有跳过、改断言或移除该测试。这是历史证据，不代表最新状态。报告：`artifacts/payment-reconciliation/run-DXaOt3/owner-final-vitest.json`。
 
 其中 API 三文件 181、worker 90、支付 provider 19、账务仓储 62、worker 签名 5 均通过；OIDC 26、OAuth 5、native MCP 13、MCP 契约 17 通过；authz 32 通过、1 失败。上述数量为同一次运行的唯一用例，不累计重复执行次数。最终 `npm run typecheck`（根项目、ops-console、merchant-studio）退出码 0，`git diff --check` 通过。未更改 UI，因此不重复声称本轮做了桌面视觉验收。
 
@@ -55,13 +55,30 @@ owner 最终整合：12 个文件、451 项，**450 passed / 1 failed / 0 skippe
 
 共享桌面 `/api/readyz` 返回 200，13 个既有项目服务健康；StoryForge 原 11 个完整容器 ID 均重新核对为 exited，没有自动恢复。此健康检查不表示新代码已经部署。
 
-## 仍未解决、未冒充完成的事项
+## 后续复核与尚未完成的事项
 
-1. **共享目录权限语义冲突。** 前轮通过时 `authz.ts` 指纹为 `94e7a9ed…`；本轮未分配的后续修改将 `creative-points.balance.get` 从 `billing.self.read / self` 改为 `billing.workspace.read / workspace`，当前对应指纹 `b054d3fb…`。现有 `authz.test.ts:110` 仍要求原语义，owner 实际复现失败。该改变影响普通租户角色是否可看余额，不是修复 signed worker 所必需，不能通过改断言掩盖，也不能擅自回退他人权限变更。同一外部分工变更还涉及平台退款／对账策略，需要独立协调。
-2. **合同外链尚未实现。** 原需求明确“文件／链接”，当前可信合同附件只接受已扫描的 asset_ref；MCP 层仍宣称接受 HTTPS，而 API 拒绝。未放宽安全门禁，也未将参考外链冒充已扫描合同。需要明确链接只供查看还是要下载并扫描后替代上传。
+1. **共享目录权限语义已完成代码对齐，但产品决定仍需留档。** 后续提交已把 `creative-points.balance.get` 与 `creative-points.statement.list` 统一为 `billing.workspace.read / workspace`，当前 authz 与商业注册表回归均通过；本条不再是现行测试失败。该语义会影响普通租户角色能否读取工作区余额，正式发布前仍需把 workspace 级读取作为明确的产品／安全决定留档，不能只以断言已经更新代替需求确认。
+2. **合同外链尚未实现；解析契约偏差已修复。** 原需求明确“文件／链接”，当前可信合同附件只接受已扫描的 asset_ref。本轮移除 MCP 层对 HTTPS 的错误接受分支，与 API 既有拒绝行为对齐，并保留合法素材引用及 null 草稿兼容。未放宽安全门禁，也未将此修正冒充外链功能完成。链接只供查看还是下载扫描后替代上传，仍须明确。
 3. **交付完成后自动生效范围尚未确认。** 不擅自给整个企业或某个账号开通，不解除管理员停用、角色和付费限制。
 4. 无真实支付商验收、真实模型调用或生产发布证据。本轮没有部署；StoryForge 按用户要求保持停止。
 
-并行写入收尾记录：本会话未执行 `git commit`／push，但收尾时 HEAD 已从起始 `b6d23e78` 前进到 `468d7e82`（`fix: close release blockers from full QA`），上述支付源码和权限文件已被另一写入流程纳入提交。owner 随后复核支付 server、repository 和验证脚本指纹仍与最终验收一致；权限文件也仍为 `b054d3fb…`，因此那一项失败并未因提交而消失。保留此记录，不回退或改写其他会话提交，也不能依据提交标题把全量验收认定为通过。
+并行写入收尾记录：本会话未执行 `git commit`／push，但前轮收尾时 HEAD 已从起始 `b6d23e78` 前进到 `468d7e82`（`fix: close release blockers from full QA`），上述支付源码和权限文件已被另一写入流程纳入提交。owner 当时仅复核生产文件指纹，未再次核对 `authz.test.ts`，据此推断“失败并未消失”不成立，现已纠正：该提交于 11:05:28 更新了测试，11:13 重跑 authz 33/33 通过。本轮同时检查源码和测试指纹，不回退或改写其他会话提交，也不依据提交标题判断验收通过。
 
 技能影响：investigate 要求先证据定位再修复，识别到 SQL 等锁之后的第二个失租窗口；verify-feature 要求在真实 HTTP／数据库／Redis 运行面验证，避免把测试 seam 或类型通过当作真实支付证明。
+
+## 11:31 后续验收：余额权限与合同字段解析
+
+本轮修改仅限 MCP 合同字段契约／测试、余额 HTTP/MCP 角色回归、新增隔离运行脚本和本记录，共五个文件；没有改动余额生产权限策略。并行 agent 分别核对权限语义、修复合同字段和编写运行脚本，owner 复核修改、补角色用例并亲自运行整合测试与隔离验收。
+
+- 合同根因：同一个 HTTPS `contractRef` 原先通过 MCP 解析，却被 API 拒绝。先复现两个 HTTPS 接受用例失败，再移除错误接受分支；合法素材引用格式、空草稿、扫描及归属门禁保持不变。这不是外链功能、下载或 OCR 实现。
+- 角色回归新增七项：五个真实成员角色、外部租户 header、未登录。token 不携带网关角色，避免财务别名额外赋权；仅用合成店铺元数据满足既有 onboarding 前置条件。所有者／管理员／财务允许，运营／客服拒绝；现有读取策略只审计拒绝，显式 deny 回归保留。
+- owner 整合 **18 文件、537/537 通过**，另一个不重叠的合同字段输入文件 **123/123 通过**，合计 **19 文件、660 个不重复用例，零失败、零跳过**。报告分别为 `artifacts/creative-point-owner-AiJajj/owner-tests.json` 和 `owner-input-tests.json`。首条命令的一项文件过滤器写错，因此真实选中 18 文件；已用准确路径单独补跑缺少的 123 项，没有按请求的文件数量冒报结果。
+- 实际运行脚本：`node --import tsx scripts/verify-creative-point-access.ts`。两台独立 loopback API、全新 PostgreSQL 17／Redis，真实密码登录、OAuth 授权码与 PKCE、native `tools/call`、严格持久权限；应用数据库角色非 superuser、无 BYPASSRLS。账号、店铺和积分为隔离合成种子，不代表真实平台授权、商业权益发放或真实支付。
+- 第一轮 `artifacts/creative-point-access/run-2iJnw7/run-result.json` 在审计核对失败：脚本只查询租户 A，却尝试匹配发生在租户 B 的拒绝。修正为只查询本轮创建的 A/B 两个租户，保留全部逐请求断言，并加入审计租户核验及脱敏匹配证据；没有过滤失败项或修改生产代码。
+- 最终复跑 **通过**：`artifacts/creative-point-access/run-URTYrX/run-result.json`，2026-09-15 **11:31:36–11:31:45**，run ID `859df0de-809c-4de8-953a-f2d576d76d19`。24 项运行观测；8 条能力拒绝逐一匹配唯一审计、租户、身份、方法及原因；真实 `ops.member.upsert` 撤销财务角色后，原密码会话及原 OAuth token 立即拒绝余额读取，所有者不受影响。撤权前后角色审计正确，五类积分账本及余额／revision 均未改变。
+- 运行前后 **237 个关联文件指纹一致**，owner 再次读取当前文件也全部匹配。脚本 SHA256 为 `b2d3a68e4d2b57f4c42a85b2e1ecd129227493f802dde2f2fa7dccba2bb038de`；MCP 契约 `0c78dec1…`、契约测试 `c2ec68b5…`、余额角色测试 `5d9381ad…`。根项目、桌面运营后台及商家演示的类型检查通过，限定修改 diff 检查通过。
+- 两轮创建的四个临时容器均按完整 ID、标签与存储归属校验后停止，owner 独立确认均不存在；未触碰其他会话的 fixture、共享业务容器或卷。13 个既有项目服务健康，桌面 `/api/readyz` HTTP 200；StoryForge 保持停止。本轮未改 UI，因此没有将旧桌面截图当作本轮视觉验收，也未部署代码。
+
+验证边界：`viewer` 不是持久成员合法角色，未伪造；显式 deny 仍由既有 token-fixture 回归覆盖。运营账号调用邻近 `billing.status` 本轮得到 `COMMERCIAL_ENTITLEMENT_REQUIRED`，未获得余额字段；因此不能据本次运行声称整个系统都禁止运营角色读取任何余额。余额接口的允许／拒绝矩阵已经验证，生产角色可见性决定、合同外链方案和交付后的自动生效范围仍不能用测试通过代替确认。
+
+本轮技能影响：investigate 将首轮审计失败定位为验收脚本的租户查询范围错误，而非直接修改业务策略；verify-feature 推动使用真实会话、native MCP 和数据库审计验证即时撤权，没有以静态角色表或改绿断言代替运行证据。
