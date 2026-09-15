@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -23,6 +24,7 @@ describe('authorization decision audit PostgreSQL reconstruction boundary', () =
     let app: Pool | undefined
     let ops: Pool | undefined
 
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: databaseConnection(base, databaseName) })
@@ -88,13 +90,18 @@ describe('authorization decision audit PostgreSQL reconstruction boundary', () =
       await ops.query('COMMIT')
 
       expect((await database.query<{ count: number }>('SELECT count(*)::int AS count FROM workspace_operation_audit')).rows).toEqual([{ count: 2 }])
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await app?.end()
-      await ops?.end()
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await app?.end()
+        await ops?.end()
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -26,6 +27,7 @@ describe('migration 211 MCP OAuth workspace RLS release gate', () => {
     let ops: Pool | undefined
     let app: Pool | undefined
     let opsClient: PoolClient | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: connection(base, databaseName), max: 1 })
@@ -124,15 +126,20 @@ describe('migration 211 MCP OAuth workspace RLS release gate', () => {
           expect(await failures()).toBe('')
         }
       }
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      catalog?.release()
-      opsClient?.release()
-      await app?.end()
-      await ops?.end()
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        catalog?.release()
+        opsClient?.release()
+        await app?.end()
+        await ops?.end()
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 300_000)
 })

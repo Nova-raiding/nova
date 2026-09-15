@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -16,6 +17,7 @@ describe('migration name/checksum release verifier', () => {
       { version: 1, name: 'initial', sql: 'SELECT 1' },
       { version: 2, name: 'second', sql: 'SELECT 2' },
     ]
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const isolated = new URL(base)
@@ -30,11 +32,16 @@ describe('migration name/checksum release verifier', () => {
 
       await database.query("UPDATE schema_migrations SET checksum = repeat('0', 64) WHERE version = 1")
       await expect(new MigrationRunner(database, migrations).run()).rejects.toMatchObject({ code: 'MIGRATION_CHECKSUM_MISMATCH', version: 1 })
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

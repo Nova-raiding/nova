@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from '../packages/persistence/src/postgres-scope-fixture-cleanup.js'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
@@ -135,6 +136,7 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
     let application: Pool | undefined
     let operations: Pool | undefined
     let api: ChildProcessWithoutNullStreams | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const isolatedAdminUrl = databaseUrl(baseDatabase, databaseName)
@@ -276,14 +278,19 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
       ].sort((a, b) => a.external_subject.localeCompare(b.external_subject)))
       stopBridge(bridgeA)
       stopBridge(bridgeB)
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      if (api) await stopApi(api)
-      await application?.end()
-      await operations?.end()
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        if (api) await stopApi(api)
+        await application?.end()
+        await operations?.end()
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

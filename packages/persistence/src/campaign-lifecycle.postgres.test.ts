@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -14,6 +15,7 @@ describe('durable campaign lifecycle across repository instances', () => {
     let database: Pool | undefined
     let appA: Pool | undefined
     let appB: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const databaseUrl = new URL(adminUrl); databaseUrl.pathname = `/${databaseName}`
@@ -53,10 +55,16 @@ describe('durable campaign lifecycle across repository instances', () => {
       await expect(reconnected.transitionCampaignLifecycle({ workspaceId: 'ws_campaign_a', id: 'campaign_durable', operation: 'pause', expectedRevision: 1, ...winnerInput })).resolves.toMatchObject({ replayed: true, campaign: { state: 'paused', revision: 2 } })
       await expect(reconnected.getCampaign({ workspaceId: 'ws_campaign_b', id: 'campaign_durable' })).resolves.toBeUndefined()
       await expect(reconnected.transitionCampaignLifecycle({ workspaceId: 'ws_campaign_a', id: 'campaign_durable', operation: 'resume', expectedRevision: 2, idempotencyKey: 'resume-reconnected', reason: 'resume after reconnect' })).resolves.toMatchObject({ campaign: { state: 'draft', revision: 3, items: [{ state: 'pending' }] } })
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await Promise.all([appA?.end(), appB?.end()]); await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`); await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await Promise.all([appA?.end(), appB?.end()]); await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName);
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 120_000)
 })

@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -14,6 +15,7 @@ describe('persistence migration 079 knowledge hydration acceptance', () => {
     const admin = new Pool({ connectionString: base.toString() })
     let pool: Pool | undefined
     let app: Pool | undefined
+    let primaryFailure: unknown
     try {
       const role = await admin.query<{ rolsuper: boolean; rolbypassrls: boolean; rolcanlogin: boolean }>(
         `SELECT rolsuper, rolbypassrls, rolcanlogin FROM pg_roles WHERE rolname='merchant_app'`,
@@ -66,12 +68,17 @@ describe('persistence migration 079 knowledge hydration acceptance', () => {
       } finally {
         scoped.release()
       }
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await app?.end()
-      await pool?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await app?.end()
+        await pool?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

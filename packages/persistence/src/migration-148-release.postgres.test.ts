@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { Pool } from 'pg'
@@ -12,6 +13,7 @@ describe('creative-point PostgreSQL upgrade release evidence', () => {
     const databaseName = `creative_points_148_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const isolated = new URL(base)
@@ -57,11 +59,16 @@ describe('creative-point PostgreSQL upgrade release evidence', () => {
       expect((await database.query<{ allocated: string }>(
         `SELECT sum(points_delta)::text AS allocated FROM creative_point_allocations WHERE workspace_id='ws-a'`,
       )).rows).toEqual([{ allocated: '0' }])
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

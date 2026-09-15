@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -13,6 +14,7 @@ describe('persistence migration 129 campaign item listing scope', () => {
     const databaseName = `release_129_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const databaseUrl = new URL(base); databaseUrl.pathname = `/${databaseName}`
@@ -31,11 +33,16 @@ describe('persistence migration 129 campaign item listing scope', () => {
       await expect(database.query(`INSERT INTO batch_campaign_items (id,workspace_id,campaign_id,brand_id,canonical_product_id,listing_id,platform,platform_account_id,ordinal) VALUES ('item_129_scope','ws_129','campaign_129','brand_129','canonical_129','listing_129','jd','acct_129',2)`)).rejects.toMatchObject({ code: '23514' })
       await expect(database.query(`INSERT INTO batch_campaign_items (id,workspace_id,campaign_id,brand_id,canonical_product_id,listing_id,platform,platform_account_id,ordinal) VALUES ('item_129_ok','ws_129','campaign_129','brand_129','canonical_129','listing_129','taobao','acct_129',3)`)).resolves.toMatchObject({ rowCount: 1 })
       await expect(database.query(`INSERT INTO batch_campaign_items (id,workspace_id,campaign_id,brand_id,legacy_product_id,platform,platform_account_id,ordinal) VALUES ('item_129_legacy','ws_129','campaign_129','brand_129','missing_legacy','taobao','acct_129',4)`)).rejects.toMatchObject({ code: '23503' })
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

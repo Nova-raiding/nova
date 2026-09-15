@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -12,6 +13,7 @@ describe('persistence migration 130 canonical legacy identity uniqueness', () =>
     const databaseName = `release_130_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const databaseUrl = new URL(base)
@@ -30,11 +32,16 @@ describe('persistence migration 130 canonical legacy identity uniqueness', () =>
       await expect(database.query(`INSERT INTO canonical_products (id,workspace_id,brand_id,title,legacy_product_id) VALUES ('canonical_130_duplicate','ws_130_a','brand_130_a','Duplicate','legacy_130_a')`)).rejects.toMatchObject({ code: '23505' })
       await expect(database.query(`INSERT INTO canonical_products (id,workspace_id,brand_id,title,legacy_product_id) VALUES ('canonical_130_other_workspace','ws_130_b','brand_130_b','Canonical 130 B','legacy_130_b')`)).resolves.toMatchObject({ rowCount: 1 })
       await expect(database.query(`INSERT INTO canonical_products (id,workspace_id,brand_id,title) VALUES ('canonical_130_native_a','ws_130_a','brand_130_a','Native A'),('canonical_130_native_b','ws_130_a','brand_130_a','Native B')`)).resolves.toMatchObject({ rowCount: 2 })
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

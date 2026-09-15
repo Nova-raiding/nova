@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -25,6 +26,7 @@ describe('private trial payment PostgreSQL release evidence', () => {
     let database: Pool | undefined
     let application: Pool | undefined
     let operations: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const isolated = new URL(base)
@@ -154,13 +156,18 @@ describe('private trial payment PostgreSQL release evidence', () => {
         expect.objectContaining({ code: 'max_stores', quantity: 1 }),
         expect.objectContaining({ code: 'creative_points', quantity: 500 }),
       ]))
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await application?.end()
-      await operations?.end()
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await application?.end()
+        await operations?.end()
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

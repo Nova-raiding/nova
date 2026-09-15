@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -20,6 +21,7 @@ describe('PostgresBusinessRepository normalized projections', () => {
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
 
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: databaseUrl(base, databaseName) })
@@ -67,11 +69,16 @@ describe('PostgresBusinessRepository normalized projections', () => {
       await expect(database.query(`SELECT brand_id FROM tasks
         WHERE workspace_id='ws_business_repository' AND id='task_business_repository'`))
         .resolves.toMatchObject({ rows: [{ brand_id: null }] })
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 120_000)
 })

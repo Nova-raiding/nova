@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -15,6 +16,7 @@ describe('migration 109 PostgreSQL asset scan redrive acceptance', () => {
     const databaseName = `release_109_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const isolated = new URL(base); isolated.pathname = `/${databaseName}`
@@ -73,11 +75,16 @@ describe('migration 109 PostgreSQL asset scan redrive acceptance', () => {
       await expect(withWorkspaceTransaction(pool, 'ws_redrive_a', client => client.query(`DELETE FROM asset_scan_redrives WHERE workspace_id='ws_redrive_a'`))).rejects.toThrow(/cannot be deleted/u)
       await expect(database.query('TRUNCATE TABLE asset_scan_redrives')).rejects.toThrow(/cannot be truncated/u)
       await expect(database.query('TRUNCATE TABLE outbox_events')).rejects.toThrow(/cannot (?:be truncated|truncate)/u)
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })
