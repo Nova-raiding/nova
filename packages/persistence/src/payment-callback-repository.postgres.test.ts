@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
 import { PostgresBillingRepository } from './billing-repository.js'
@@ -31,8 +32,24 @@ describe('payment callback nonce PostgreSQL recovery', () => {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       createdDatabase = true
       database = new Pool({ connectionString: connection(base, databaseName) })
+      const roleSql = await readFile(new URL('../../../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
+      await database.query(roleSql)
       const migrations = await loadMigrations()
       expect(await new MigrationRunner(database, migrations).run()).toEqual(migrations.map(item => item.version))
+      await database.query(roleSql)
+      await expect(database.query(`
+        SELECT rolname AS role, rolsuper, rolbypassrls, rolcreatedb, rolcreaterole
+        FROM pg_roles
+        WHERE rolname='merchant_app'
+      `)).resolves.toMatchObject({
+        rows: [{
+          role: 'merchant_app',
+          rolsuper: false,
+          rolbypassrls: false,
+          rolcreatedb: false,
+          rolcreaterole: false
+        }]
+      })
       await database.query("INSERT INTO workspaces (id,status) VALUES ('ws_callback_retry','active')")
 
       app = new Pool({ connectionString: connection(base, databaseName, 'merchant_app', 'merchant_app_local_only'), max: 3 })

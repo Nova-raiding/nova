@@ -37,9 +37,9 @@ async function start() {
 
 async function json(response: Response) { return await response.json() as Envelope<any> }
 
-function signedPaymentCallback(input: { channel: 'alipay' | 'wechat'; workspaceId: string; orderId: string; providerTradeId: string; amountFen: number; state: string; nonce: string; timestamp?: string }) {
+function signedPaymentCallback(input: { channel: 'alipay' | 'wechat'; workspaceId: string; orderId: string; providerTradeId: string; amountFen: number; state: string; nonce: string; timestamp?: string; currency?: string }) {
   const timestamp = input.timestamp ?? `${Math.floor(Date.now() / 1000)}`
-  const currency = 'CNY'
+  const currency = input.currency ?? 'CNY'
   const signature = createHmac('sha256', 'callback-secret')
     .update(`${input.channel}|${input.workspaceId}|${input.orderId}|${input.providerTradeId}|${input.amountFen}|${currency}|${input.state}|${timestamp}|${input.nonce}`)
     .digest('hex')
@@ -1073,6 +1073,44 @@ describe('API HTTP vertical slice', () => {
     expect(orderList.data?.result).toMatchObject({ summary: { pending: 0, paid: 1, closed: 0, failed: 0 }, returned: 1, total: 1, orders: [{ id: order.id, workspace_id: workspaceId, channel: 'wechat', amount_cny: '10.00', state: 'paid', provider_trade_id: callbackBody.provider_trade_id }] })
     const transactions = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'billing.transactions', params: { workspace_id: workspaceId } }) }).then(json)
     expect((transactions.data as { result: { transactions: unknown[] } }).result.transactions).toHaveLength(1)
+  })
+
+  it.each([
+    { label: 'USD', currency: 'USD', omitCurrency: false },
+    { label: 'empty', currency: '', omitCurrency: false },
+    { label: 'missing', currency: '', omitCurrency: true },
+  ])('rejects correctly signed modern callback currency $label before consuming its nonce', async ({ label, currency, omitCurrency }) => {
+    vi.stubEnv('PAYMENT_CALLBACK_SECRET', 'callback-secret')
+    const base = await start()
+    const workspaceId = `ws_callback_currency_${label}_${Date.now()}`
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+    const call = (id: number, method: string, params: Record<string, unknown> = {}) => fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { workspace_id: workspaceId, ...params } }) }).then(json)
+    const create = await call(1, 'billing.recharge.create', { channel: 'alipay', amount_cny: '10.00', idempotency_key: `callback-currency-${workspaceId}` })
+    expect(create.error).toBeNull()
+    const order = create.data!.result as { id: string }
+    const proofInput = { channel: 'alipay' as const, workspaceId, orderId: order.id, providerTradeId: `trade-${workspaceId}`, amountFen: 1000, state: 'paid', nonce: `currencyNonce${label}${Date.now()}` }
+    const invalidProof = signedPaymentCallback({ ...proofInput, currency })
+    // Missing currency is canonically the empty string in the HTTP route.
+    // Sign that value first, rather than tampering with a CNY-signed body.
+    const { currency: _currency, ...bodyWithoutCurrency } = invalidProof.body
+    const rejectedResponse = await fetch(`${base}/v1/billing/callback/alipay`, { method: 'POST', headers: invalidProof.headers, body: JSON.stringify(omitCurrency ? bodyWithoutCurrency : invalidProof.body) })
+    expect(rejectedResponse.status).toBe(400)
+    expect((await json(rejectedResponse)).error?.code).toBe('PAYMENT_CALLBACK_CURRENCY_UNSUPPORTED')
+    expect((await call(2, 'billing.recharge.get', { order_id: order.id })).data?.result).toMatchObject({ state: 'pending' })
+    const before = await call(3, 'billing.transactions')
+    expect(before.error).toBeNull()
+    expect(before.data?.result).toMatchObject({ balance_cny: '0.00', transactions: [] })
+
+    const validProof = signedPaymentCallback({ ...proofInput, currency: 'CNY' })
+    const paid = await fetch(`${base}/v1/billing/callback/alipay`, { method: 'POST', headers: validProof.headers, body: JSON.stringify(validProof.body) }).then(json)
+    expect(paid.error).toBeNull()
+    const replay = await fetch(`${base}/v1/billing/callback/alipay`, { method: 'POST', headers: validProof.headers, body: JSON.stringify(validProof.body) }).then(json)
+    expect(replay.error).toBeNull()
+    expect((await call(4, 'billing.recharge.get', { order_id: order.id })).data?.result).toMatchObject({ state: 'paid' })
+    const after = await call(5, 'billing.transactions')
+    expect(after.error).toBeNull()
+    expect(after.data?.result.balance_cny).toBe('10.00')
+    expect((after.data?.result.transactions as Array<{ type: string }>).filter(item => item.type === 'recharge')).toHaveLength(1)
   })
 
   it('binds payment callback nonce replay to the signed payload hash', async () => {

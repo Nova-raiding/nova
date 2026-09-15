@@ -2333,6 +2333,7 @@ function verifyPaymentCallback(req: IncomingMessage, input: { channel: RechargeC
   const expected = createHmac('sha256', secret).update(canonical).digest('hex')
   if (!provided || provided.length !== expected.length || !timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) throw new DomainError('PAYMENT_CALLBACK_SIGNATURE_INVALID', '支付回调验签失败', 401)
   if (legacyAllowed) return undefined
+  if (input.payload.currency !== 'CNY') throw new DomainError('PAYMENT_CALLBACK_CURRENCY_UNSUPPORTED', '支付回调币种必须为 CNY', 400)
   return { nonce: nonce!, signedAt: new Date(timestampMs).toISOString(), payloadHash: createHash('sha256').update(canonical).digest('hex') }
 }
 

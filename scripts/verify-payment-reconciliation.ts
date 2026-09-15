@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
@@ -71,7 +71,7 @@ async function apiChild() {
   }
   const api = await import('../apps/api/src/server.js')
   api.setPaymentProviderForTests({
-    createCheckout: async () => { throw new Error('VERIFY_PAYMENT_UNEXPECTED_CHECKOUT') },
+    createCheckout: async input => ({ paymentUrl: `https://payments.example/checkout/${encodeURIComponent(input.orderId)}`, providerOrderId: `provider-${input.orderId}`, expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() }),
     refund: async () => { throw new Error('VERIFY_PAYMENT_UNEXPECTED_REFUND_DISPATCH') },
     queryStatus: async input => await call('/status', input) as PaymentStatusResult,
     queryRefundStatus: async input => await call('/refund-status', input) as PaymentRefundStatusResult,
@@ -120,6 +120,7 @@ async function main() {
     reconcile: { token: randomBytes(32).toString('hex'), signing_secret: randomBytes(32).toString('hex') },
     generation: { token: randomBytes(32).toString('hex'), signing_secret: randomBytes(32).toString('hex') },
   }
+  const callbackSecret = randomBytes(32).toString('hex')
   const stub = createServer((req, res) => {
     void (async () => {
       assert(req.method === 'POST' && req.headers.authorization === `Bearer ${stubToken}`, 'VERIFY_PAYMENT_STUB_UNAUTHORIZED')
@@ -172,6 +173,7 @@ async function main() {
     }
     const initialA = await snapshot(wsA); const initialB = await snapshot(wsB)
     assert.equal(initialA.balanceFen, 0, 'VERIFY_PAYMENT_INITIAL_BALANCE_INVALID')
+    await pool.query("ALTER ROLE merchant_app SET lock_timeout='750ms'")
     stage = 'api_startup'
     const environment: NodeJS.ProcessEnv = {
       PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C.UTF-8',
@@ -179,7 +181,15 @@ async function main() {
       PORT: '0', API_BIND_HOST: '127.0.0.1', DATABASE_URL: fixture.databaseUrl, OPS_DATABASE_URL: fixture.opsDatabaseUrl,
       REDIS_URL: fixture.redisUrl, RUN_MIGRATIONS_ON_STARTUP: 'false', CONNECTOR_FIXTURE_MODE: 'false',
       SESSION_ID_HASH_SECRET: randomBytes(32).toString('hex'), REQUEST_OBSERVABILITY_LOGS: 'false',
-      WORKER_API_CREDENTIALS: JSON.stringify(credentials), PAYMENT_RECONCILIATION_ENABLED: 'true',
+      WORKER_API_CREDENTIALS: JSON.stringify(credentials), PAYMENT_RECONCILIATION_ENABLED: 'true', PAYMENT_REFUND_ENABLED: 'true',
+      PAYMENT_MODE: 'provider', PAYMENT_PROVIDER_ADAPTERS: 'alipay,wechat',
+      PAYMENT_CHECKOUT_BASE_URL: 'https://payments.example/checkout',
+      PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://payments.example/api/checkout',
+      PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.example/api/query',
+      PAYMENT_PROVIDER_REFUND_QUERY_API_URL: 'https://payments.example/api/refund-query',
+      PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.example/api/refund',
+      PAYMENT_PROVIDER_API_KEY: 'synthetic-provider-key', PAYMENT_PROVIDER_MERCHANT_ID: 'synthetic-merchant',
+      PAYMENT_CALLBACK_BASE_URL: 'https://merchant.example/v1', PAYMENT_CALLBACK_SECRET: callbackSecret,
       ASSET_STORAGE_ROOT: join(evidenceDir, 'local-objects'), MCP_AUTHZ_MODE: 'enforce',
       VERIFY_PAYMENT_CHILD: 'isolated-fixture', VERIFY_PAYMENT_STUB_URL: `http://127.0.0.1:${stubAddress.port}`,
       VERIFY_PAYMENT_STUB_TOKEN: stubToken,
@@ -204,6 +214,123 @@ async function main() {
       checks.push({ stage, status: response.status, body: envelope })
       return { status: response.status, envelope }
     }
+    const callbackProof = (input: { channel: 'alipay' | 'wechat'; workspaceId: string; orderId: string; providerTradeId: string; amountFen: number; nonce: string; state?: 'paid' | 'SUCCESS'; timestamp?: string }) => {
+      const stateValue = input.state ?? 'paid'
+      const timestamp = input.timestamp ?? `${Math.floor(Date.now() / 1000)}`
+      const currency = 'CNY'
+      const body = JSON.stringify({ workspace_id: input.workspaceId, order_id: input.orderId, provider_trade_id: input.providerTradeId, amount_fen: input.amountFen, currency, state: stateValue })
+      const canonical = `${input.channel}|${input.workspaceId}|${input.orderId}|${input.providerTradeId}|${input.amountFen}|${currency}|${stateValue}|${timestamp}|${input.nonce}`
+      return {
+        body,
+        nonce: input.nonce,
+        payloadHash: digest(canonical),
+        headers: {
+          'content-type': 'application/json',
+          'x-payment-timestamp': timestamp,
+          'x-payment-nonce': input.nonce,
+          'x-payment-signature': createHmac('sha256', callbackSecret).update(canonical).digest('hex'),
+        },
+      }
+    }
+    const postCallback = async (kind: 'billing' | 'commercial', channel: 'alipay' | 'wechat', proof: ReturnType<typeof callbackProof>) => {
+      const response = await fetch(`${base}/v1/${kind}/callback/${channel}`, { method: 'POST', headers: proof.headers, body: proof.body, redirect: 'error', signal: AbortSignal.any([abort.signal, AbortSignal.timeout(20_000)]) })
+      return { status: response.status, envelope: await response.json() as Envelope }
+    }
+    const withLockedRow = async <T>(query: string, values: unknown[], work: () => Promise<T>) => {
+      const locker = await pool!.connect()
+      try {
+        await locker.query('BEGIN')
+        await locker.query("SET LOCAL idle_in_transaction_session_timeout='30s'")
+        const locked = await locker.query(query, values)
+        assert.equal(locked.rowCount, 1, 'VERIFY_PAYMENT_CALLBACK_LOCK_TARGET_MISSING')
+        return await work()
+      } finally {
+        try { await locker.query('ROLLBACK') } finally { locker.release() }
+      }
+    }
+    const nonceRows = async (workspaceId: string, channel: 'alipay' | 'wechat', nonce: string) =>
+      (await pool!.query('SELECT payload_hash FROM payment_callback_nonces WHERE workspace_id=$1 AND channel=$2 AND nonce=$3 ORDER BY received_at', [workspaceId, channel, nonce])).rows
+    const callbackRechargeSnapshot = async (workspaceId: string) => ({
+      orders: (await pool!.query('SELECT id,state,amount_fen::text,provider_trade_id FROM billing_orders WHERE workspace_id=$1 ORDER BY id', [workspaceId])).rows,
+      ledger: (await pool!.query('SELECT type,amount_fen::text,order_id FROM billing_transactions WHERE workspace_id=$1 ORDER BY id', [workspaceId])).rows,
+      balanceFen: Number((await pool!.query("SELECT COALESCE(SUM(CASE WHEN type='debit' THEN -amount_fen ELSE amount_fen END),0)::text AS value FROM billing_transactions WHERE workspace_id=$1", [workspaceId])).rows[0]?.value),
+    })
+    const callbackCommercialSnapshot = async (workspaceId: string, orderId: string) => ({
+      orders: (await pool!.query('SELECT id,status,amount_fen::text,provider_order_id FROM commercial_orders_v2 WHERE workspace_id=$1 AND id=$2 ORDER BY id', [workspaceId, orderId])).rows,
+      paymentEvents: (await pool!.query('SELECT provider_event_id,payload_hash,amount_fen::text FROM commercial_payment_events_v2 WHERE workspace_id=$1 AND order_id=$2 ORDER BY received_at,id', [workspaceId, orderId])).rows,
+      grants: (await pool!.query("SELECT id,points::text,source_id FROM creative_point_grants WHERE workspace_id=$1 AND source_type='commercial_order_v2' AND source_id=$2 ORDER BY created_at,id", [workspaceId, orderId])).rows,
+      ledger: (await pool!.query('SELECT event_type,points_delta::text,available_after::text,operation_id FROM creative_point_ledger_events WHERE workspace_id=$1 ORDER BY created_at,id', [workspaceId])).rows,
+      accessState: (await pool!.query('SELECT available_points::text,reserved_points::text,settled_points::text,revision::text FROM creative_point_access_state WHERE workspace_id=$1', [workspaceId])).rows,
+    })
+    stage = 'payment_callback_same_proof_recovery_recharge'
+    const callbackRechargeWorkspace = `ws_callback_recharge_${fixture.runId.replaceAll('-', '')}`
+    await pool.query("INSERT INTO workspaces (id,status) VALUES ($1,'active')", [callbackRechargeWorkspace])
+    await seed(callbackRechargeWorkspace, 'callback_recharge_order', 1_100)
+    const rechargeProof = callbackProof({ channel: 'alipay', workspaceId: callbackRechargeWorkspace, orderId: 'callback_recharge_order', providerTradeId: `trade-${callbackRechargeWorkspace}`, amountFen: 1_100, nonce: `nonceRecharge${fixture.runId.replaceAll('-', '').slice(0, 20)}` })
+    const rechargeBefore = await callbackRechargeSnapshot(callbackRechargeWorkspace)
+    const rechargeFirst = await withLockedRow('SELECT id FROM billing_orders WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [callbackRechargeWorkspace, 'callback_recharge_order'], async () => await postCallback('billing', 'alipay', rechargeProof))
+    const rechargeAfterFailure = await callbackRechargeSnapshot(callbackRechargeWorkspace)
+    const rechargeNonceAfterFailure = await nonceRows(callbackRechargeWorkspace, 'alipay', rechargeProof.nonce)
+    assert.notEqual(rechargeFirst.status, 200, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_LOCK_FAILURE_NOT_OBSERVED')
+    assert.deepEqual(rechargeAfterFailure, rechargeBefore, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_FAILURE_CHANGED_FINANCE')
+    assert.deepEqual(rechargeNonceAfterFailure, [{ payload_hash: rechargeProof.payloadHash }], 'VERIFY_PAYMENT_CALLBACK_RECHARGE_NONCE_NOT_RECORDED')
+    const rechargeSecond = await postCallback('billing', 'alipay', rechargeProof)
+    const rechargeAfterSuccess = await callbackRechargeSnapshot(callbackRechargeWorkspace)
+    assert.equal(rechargeSecond.status, 200, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_RETRY_HTTP_FAILED')
+    assert.equal(rechargeAfterSuccess.orders[0]?.state, 'paid', 'VERIFY_PAYMENT_CALLBACK_RECHARGE_NOT_PAID')
+    assert.equal(rechargeAfterSuccess.balanceFen, 1_100, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_BALANCE_INVALID')
+    assert.equal(rechargeAfterSuccess.ledger.filter(row => row.type === 'recharge' && row.order_id === 'callback_recharge_order').length, 1, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_NOT_ONCE')
+    const rechargeThird = await postCallback('billing', 'alipay', rechargeProof)
+    assert.equal(rechargeThird.status, 200, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_IDEMPOTENT_HTTP_FAILED')
+    assert.deepEqual(await callbackRechargeSnapshot(callbackRechargeWorkspace), rechargeAfterSuccess, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_IDEMPOTENT_CHANGED_FINANCE')
+    const rechargeConflict = await postCallback('billing', 'alipay', callbackProof({ channel: 'alipay', workspaceId: callbackRechargeWorkspace, orderId: 'callback_recharge_order', providerTradeId: `trade-conflict-${callbackRechargeWorkspace}`, amountFen: 1_100, nonce: rechargeProof.nonce, timestamp: rechargeProof.headers['x-payment-timestamp'] }))
+    assert.equal(rechargeConflict.status, 409, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_CONFLICT_STATUS_INVALID')
+    assert.equal(rechargeConflict.envelope.error?.code, 'PAYMENT_CALLBACK_NONCE_REPLAY', 'VERIFY_PAYMENT_CALLBACK_RECHARGE_CONFLICT_CODE_INVALID')
+    assert.deepEqual(await callbackRechargeSnapshot(callbackRechargeWorkspace), rechargeAfterSuccess, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_CONFLICT_CHANGED_FINANCE')
+    checks.push({ stage, first: rechargeFirst, before: rechargeBefore, afterFailure: rechargeAfterFailure, afterSuccess: rechargeAfterSuccess, sameProofRetry: rechargeSecond, idempotentReplay: rechargeThird, conflict: rechargeConflict })
+    stage = 'payment_callback_same_proof_recovery_commercial_point_pack'
+    const callbackCommercialWorkspace = `ws_callback_commercial_${fixture.runId.replaceAll('-', '')}`
+    const commercialOrderId = 'callback_commercial_order'
+    const commercialSkuId = `sku-callback-${fixture.runId.replaceAll('-', '')}`
+    const commercialSkuVersionId = `skuv-callback-${fixture.runId.replaceAll('-', '')}`
+    const commercialPayload = { expiryRule: 'purchase_plus_30_natural_days', expiryDays: 30, blockers: [] }
+    const commercialBenefit = { code: 'creative_points', quantity: 500, rawValue: null, rawUnit: null, normalizedValue: null, policyRef: null, metadata: {} }
+    const commercialSku = {
+      id: commercialSkuId, code: `callback_points_${fixture.runId.replaceAll('-', '').slice(0, 12)}`, kind: 'point_pack', visibility: 'public', requiredCapability: null,
+      versionId: commercialSkuVersionId, version: 1, lifecycle: 'approved', executable: true, priceFen: 1_200, currency: 'CNY', priceMode: 'fixed', durationDays: null,
+      payload: commercialPayload, checksum: digest(JSON.stringify(commercialPayload)), effectiveAt: new Date(Date.now() - 60_000).toISOString(), benefits: [commercialBenefit],
+    }
+    const commercialSnapshot = { schema_version: 'commercial-order.v2', sku: commercialSku, private_eligibility_id: null }
+    await pool.query("INSERT INTO workspaces (id,status) VALUES ($1,'active')", [callbackCommercialWorkspace])
+    await pool.query('INSERT INTO commercial_catalog_skus (id,code,kind,visibility,required_capability) VALUES ($1,$2,\'point_pack\',\'public\',NULL)', [commercialSku.id, commercialSku.code])
+    await pool.query('INSERT INTO commercial_catalog_sku_versions (id,sku_id,version,lifecycle,executable,price_fen,currency,price_mode,duration_days,payload,checksum,effective_at) VALUES ($1,$2,1,\'approved\',true,$3,\'CNY\',\'fixed\',NULL,$4::jsonb,$5,$6::timestamptz)', [commercialSku.versionId, commercialSku.id, commercialSku.priceFen, JSON.stringify(commercialSku.payload), commercialSku.checksum, commercialSku.effectiveAt])
+    await pool.query('INSERT INTO commercial_catalog_sku_benefits (id,sku_version_id,benefit_code,quantity,raw_value,raw_unit,normalized_value,policy_ref,metadata) VALUES ($1,$2,\'creative_points\',500,NULL,NULL,NULL,NULL,\'{}\'::jsonb)', [`benefit-${commercialSku.id}`, commercialSku.versionId])
+    await pool.query('INSERT INTO commercial_orders_v2 (id,workspace_id,sku_id,sku_version_id,amount_fen,currency,payment_provider,status,idempotency_key,request_hash,created_by_actor_id) VALUES ($1,$2,$3,$4,1200,\'CNY\',\'alipay\',\'pending\',\'callback-commercial\', $5, \'fixture-callback\')', [commercialOrderId, callbackCommercialWorkspace, commercialSku.id, commercialSku.versionId, digest('callback-commercial-request')])
+    await pool.query('INSERT INTO commercial_order_snapshots_v2 (id,workspace_id,order_id,sku_id,sku_version_id,catalog_checksum,snapshot,checksum) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)', [`snapshot-${commercialOrderId}`, callbackCommercialWorkspace, commercialOrderId, commercialSku.id, commercialSku.versionId, commercialSku.checksum, JSON.stringify(commercialSnapshot), digest(JSON.stringify(commercialSnapshot))])
+    const commercialProof = callbackProof({ channel: 'alipay', workspaceId: callbackCommercialWorkspace, orderId: commercialOrderId, providerTradeId: `trade-${callbackCommercialWorkspace}`, amountFen: 1_200, nonce: `nonceCommercial${fixture.runId.replaceAll('-', '').slice(0, 18)}` })
+    const commercialBefore = await callbackCommercialSnapshot(callbackCommercialWorkspace, commercialOrderId)
+    const commercialFirst = await withLockedRow('SELECT id FROM commercial_orders_v2 WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [callbackCommercialWorkspace, commercialOrderId], async () => await postCallback('commercial', 'alipay', commercialProof))
+    const commercialAfterFailure = await callbackCommercialSnapshot(callbackCommercialWorkspace, commercialOrderId)
+    const commercialNonceAfterFailure = await nonceRows(callbackCommercialWorkspace, 'alipay', commercialProof.nonce)
+    assert.notEqual(commercialFirst.status, 200, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_LOCK_FAILURE_NOT_OBSERVED')
+    assert.deepEqual(commercialAfterFailure, commercialBefore, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_FAILURE_CHANGED_FINANCE')
+    assert.deepEqual(commercialNonceAfterFailure, [{ payload_hash: commercialProof.payloadHash }], 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_NONCE_NOT_RECORDED')
+    const commercialSecond = await postCallback('commercial', 'alipay', commercialProof)
+    const commercialAfterSuccess = await callbackCommercialSnapshot(callbackCommercialWorkspace, commercialOrderId)
+    assert.equal(commercialSecond.status, 200, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_RETRY_HTTP_FAILED')
+    assert.equal(commercialAfterSuccess.orders[0]?.status, 'paid', 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_NOT_PAID')
+    assert.equal(commercialAfterSuccess.paymentEvents.length, 1, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_PAYMENT_EVENT_NOT_ONCE')
+    assert.equal(commercialAfterSuccess.grants.length, 1, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_GRANT_NOT_ONCE')
+    assert.equal(commercialAfterSuccess.ledger.filter(row => row.event_type === 'granted' && row.points_delta === '500').length, 1, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_LEDGER_NOT_ONCE')
+    assert.deepEqual(commercialAfterSuccess.accessState, [{ available_points: '500', reserved_points: '0', settled_points: '0', revision: '1' }], 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_BALANCE_INVALID')
+    const commercialThird = await postCallback('commercial', 'alipay', commercialProof)
+    assert.equal(commercialThird.status, 200, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_IDEMPOTENT_HTTP_FAILED')
+    assert.deepEqual(await callbackCommercialSnapshot(callbackCommercialWorkspace, commercialOrderId), commercialAfterSuccess, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_IDEMPOTENT_CHANGED_FINANCE')
+    const commercialConflict = await postCallback('commercial', 'alipay', callbackProof({ channel: 'alipay', workspaceId: callbackCommercialWorkspace, orderId: commercialOrderId, providerTradeId: `trade-conflict-${callbackCommercialWorkspace}`, amountFen: 1_200, nonce: commercialProof.nonce, timestamp: commercialProof.headers['x-payment-timestamp'] }))
+    assert.equal(commercialConflict.status, 409, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_CONFLICT_STATUS_INVALID')
+    assert.equal(commercialConflict.envelope.error?.code, 'PAYMENT_CALLBACK_NONCE_REPLAY', 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_CONFLICT_CODE_INVALID')
+    assert.deepEqual(await callbackCommercialSnapshot(callbackCommercialWorkspace, commercialOrderId), commercialAfterSuccess, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_CONFLICT_CHANGED_FINANCE')
+    checks.push({ stage, first: commercialFirst, before: commercialBefore, afterFailure: commercialAfterFailure, afterSuccess: commercialAfterSuccess, sameProofRetry: commercialSecond, idempotentReplay: commercialThird, conflict: commercialConflict })
     stage = 'signed_worker_boundary'
     assert.equal((await post(wsA, { unsigned: true })).status, 403, 'VERIFY_PAYMENT_UNSIGNED_ACCEPTED')
     assert.equal((await post(wsA, { role: 'generation' })).status, 403, 'VERIFY_PAYMENT_WRONG_ROLE_ACCEPTED')

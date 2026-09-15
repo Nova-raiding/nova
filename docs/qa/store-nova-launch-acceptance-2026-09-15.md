@@ -35,6 +35,9 @@
 - `npm run check` 退出 0：八组共 5,932 项通过、72 项跳过，另桌面运营后台 615 项通过，metadata/前端契约及两个 UI 构建通过。日志 `/tmp/merchant-owner-899a6eff-final-check-20260915.log`。执行末期新增了后述缺陷补丁，故这是中间检查，不作为最终同源验收。
 - 第三轮 PG `--all`：`artifacts/isolated-postgres/run-ygJriO/`，run ID `ac0daf7b-96ad-47fc-b81d-386f799cc630`，71 文件/94 断言通过但迁移 210 清理产生未处理 57P01，整体退出 1。两个精确 fixture 容器复查不存在。已确认多个独立测试库采用同一强杀竞态，统一改为精确 UUID 前缀校验、连接有界归零再 DROP，超时不强删；owner 独立核验 51 个修改文件中 71 个原 try 代码块逐字不变（包含嵌套 try），不改迁移/RLS 业务断言。最终 PG 复验待执行。
 - 新发现两项 P1：`merchant.start` 的引导权限不能替代工作区财务权限，普通运营成员/显式拒绝身份不应读取工作区余额；临时授权须经专用读取端点计次。支付 nonce 独立消费后若入账事务暂态失败，同一有效签名不能被永久拒绝；恢复仅允许与持久记录完全相同的签名载荷，不同载荷仍须拒绝。两项均在补充红绿回归与 owner 复核中，未宣称最终通过。
+- 以上两项源修复已纳入 `84d16cc2`，owner 六文件 285 项目标检查通过。之后 PG `run-zhWcV7` 的原 71 文件/94 项全部通过、无未处理 57P01，但新增 callback fixture 未执行真实数据库级角色初始化，因 `billing_orders` 权限不足失败；全量仍退出 1，不算通过。两个精确容器复查不存在。已改为复用运行环境的 `infra/local/ensure-app-role.sql` 在迁移前后初始化，并验证应用角色非 superuser/bypass，不手工追加验收专用 GRANT；须 fresh 重验。
+- 现代回调币种又确认 P1：正确重签 USD/空串/缺失币种的真实 HTTP red 三项均错误返回 200。共同验签入口现于 nonce 消费前拒绝非 CNY，旧本地测试签名兼容保留；green 三项及相关六文件 215 项通过。同 nonce 的有效 CNY 恢复通知可成功且重放只入账一次。owner 最终同源验收待完成。
+- 桌面运营后台独立 OIDC/PG/Redis 浏览器检查点 10/10 通过、零跳过/重试；`artifacts/ops-jit-isolation/2026-09-15T05-11-06.050Z-9b2558a4-b60c-4a9d-ac7a-de2e30ac5af0/playwright.json`，run ID `737268de-9cb1-40ac-9df0-7983494d4ca4`。只验证该独立候选，不代表 101/真实 ChatGPT。owner 查看用户目录桌面截图，保留本轮八项生成产物于 `browser-output/` 并恢复旧 tracked 测试产物，不改 UI 源；两个精确 fixture 容器复查不存在。
 
 ## 真实上线阻断
 
