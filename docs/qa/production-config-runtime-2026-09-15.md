@@ -54,3 +54,22 @@ present in an environment file do not verify their availability or correctness.
 Release additionally requires immutable images and signed, same-release runtime
 evidence, including real ChatGPT host, payment, relay, restore and capacity
 checks. A filled YAML file alone cannot satisfy these gates.
+
+## Subsequent server-side configuration
+
+The owner prepared a separate mode-600 YAML from the real server-side `.env`:
+`/opt/merchant-deploy/deploy/production-config/production.yaml`. Raw credentials
+were neither included in the generated YAML nor downloaded. Unavailable inputs
+are null and an explicit `BLOCKED_UNTIL_REQUIRED_PRODUCTION_INPUTS` marker
+ensures the production gate rejects the entire draft.
+
+The root locator now links to the generated path record. Only its loading block
+was inserted into the old server launch script; the previous entrypoint was
+backed up in the mode-700 production-config directory. The runtime `.env`,
+database and running service containers were unchanged.
+
+The actual server launch entrypoint read this locator. On the host it exited
+127 because Ruby is absent. Inside the pinned Ruby validation container, with
+network disabled and the project mounted read-only, it exited 1 with
+`production config contains unresolved placeholder or local-only value`.
+Configuration preparation is complete; full production validation is not.
