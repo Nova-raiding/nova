@@ -161,6 +161,10 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     catch (cause) { reportMutationError(cause); throw cause; }
   };
   const submitCreatePage = async (values: { companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid"; paymentDate: string; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: string }) => {
+    if (integrationChecks.length < 10 || acceptanceChecks.length < 8 || deliveryVideoFiles.length === 0) {
+      message.error("请完成系统接入、功能验收全部勾选，并上传至少一段交付视频");
+      return;
+    }
     const created = await createRecord(values.companyName);
     for (const [index, file] of deliveryVideoFiles.entries()) {
       const asset = await customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: created.id, purpose: "video", file });
@@ -254,13 +258,13 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       {createPage ? (<>
         <Form id="customer-create-form" className="customer-delivery-create-form" form={createForm} layout="vertical" onFinish={submitCreatePage}>
         <Card title="用户建档">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "0 16px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: "0 16px" }}>
             <Form.Item name="companyName" label="公司名称" rules={[{ required: true, message: "请输入公司名称" }]}>
               <Input placeholder="请输入公司名称" autoFocus />
             </Form.Item>
             <Form.Item name="contractNumber" label="合同编号" rules={[{ required: true, message: "请输入合同编号" }]}><Input placeholder="例如：2026090801" /></Form.Item>
             <Form.Item name="paymentStatus" label="付款形式" rules={[{ required: true, message: "请选择付款形式" }]}><Select className="customer-delivery-payment-select" options={[{ value: "paid", label: "接入费" }, { value: "unpaid", label: "赠送" }]} /></Form.Item>
-            <Form.Item name="paymentDate" label="付款时间" rules={[{ required: true, message: "请选择付款日期" }]}><Input type="date" /></Form.Item>
+            <Form.Item name="paymentDate" label="付款时间" rules={[{ required: true, message: "请选择付款日期" }]}><Input type="date" onClick={(event) => event.currentTarget.showPicker?.()} /></Form.Item>
             <Form.Item name="contractFile" label="合同文件或链接" rules={[{ required: true, message: "请上传合同或填写合同链接" }]}>
               <Input placeholder="" suffix={<Button type="text" className="customer-delivery-upload-button" aria-label="上传合同文件" title="上传合同文件" icon={<UploadOutlined />} onClick={() => contractFileInput.current?.click()} />} />
               <input ref={contractFileInput} hidden type="file" onChange={(event) => { const file = event.target.files?.[0]; if (file) { createForm.setFieldValue("contractFile", file.name); setUploadedContractName(file.name); } }} />
@@ -278,7 +282,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         </Card>
         <Card title="功能测试及验收">
           <div className="customer-delivery-check-grid customer-delivery-check-grid-four">
-            {["文案生成", "图片生成", "批注修改", "自动检查", "视频生成", "店铺与商品资料读取", "技术验收", "内容验收"].map((label) => (
+            {["文案生成", "图片生成", "批注修改", "自动检查", "视频生成", "资料读取", "技术验收", "内容验收"].map((label) => (
               <label className="customer-delivery-check-item" key={label}><span>{label}</span><Checkbox checked={acceptanceChecks.includes(label)} onChange={(event) => setAcceptanceChecks((current) => event.target.checked ? [...current, label] : current.filter((item) => item !== label))} /></label>
             ))}
           </div>
@@ -288,7 +292,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
           <div className="customer-delivery-final-fields">
             <Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input placeholder="例如：姜伟" /></Form.Item>
             <Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input placeholder="例如：韩先晓" /></Form.Item>
-            <Form.Item name="requiredLaunchAt" label="需求上线时间" rules={[{ required: true, message: "请选择上线日期" }]}><Input type="date" /></Form.Item>
+            <Form.Item name="requiredLaunchAt" label="需求上线时间" rules={[{ required: true, message: "请选择上线日期" }]}><Input type="date" onClick={(event) => event.currentTarget.showPicker?.()} /></Form.Item>
           </div>
           <input ref={deliveryVideoInput} hidden type="file" accept="video/*" multiple onChange={(event) => { const files = Array.from(event.target.files ?? []); if (files.length) setDeliveryVideoFiles((current) => [...current, ...files]); event.target.value = ""; }} />
           <Button size="small" icon={<UploadOutlined />} onClick={() => deliveryVideoInput.current?.click()}>上传交付视频</Button>
