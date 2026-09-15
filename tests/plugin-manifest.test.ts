@@ -84,7 +84,7 @@ describe('Codex plugin package', () => {
   it('keeps the installable marketplace mirror byte-identical to the source package', () => {
     const mirroredFiles = [
       '.codex-plugin/plugin.json', '.mcp.json', 'README.md', 'install-smoke.test.ts',
-      'mcp/bridge.mjs', 'mcp/bridge.sh', 'mcp/bridge.test.ts', 'package.json',
+      'mcp/bridge.mjs', 'mcp/bridge.sh', 'mcp/bridge.test.ts', 'mcp/merchant-conversation-flow.test.ts', 'package.json',
       'scheduled/daily-store-risk-scan.json', 'scheduled/weekly-six-platform-digest.json',
       'skills/merchant-marketing/SKILL.md', 'skills/merchant-marketing/references/automations.md',
       'skills/merchant-marketing/references/ecommerce-detail-page-generator.md',

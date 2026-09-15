@@ -146,7 +146,7 @@ data:
   # Provider payment configuration is non-secret runtime state. Credentials
   # remain explicit Secret key references on the API Deployment.
   PAYMENT_MODE: provider
-  PAYMENT_PROVIDER_ADAPTERS: alipay,wechat
+  PAYMENT_PROVIDER_ADAPTERS: alipay
   PAYMENT_CHECKOUT_BASE_URL: https://payments.example.com/checkout
   PAYMENT_PROVIDER_CHECKOUT_API_URL: https://payments.example.com/v1/checkout
   PAYMENT_PROVIDER_QUERY_API_URL: https://payments.example.com/v1/query

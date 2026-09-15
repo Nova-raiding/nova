@@ -6971,7 +6971,11 @@ async function resolveActiveWorkspaceMember(req: IncomingMessage, workspaceId: s
   if (!principal?.actorId) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '生产工作区访问必须绑定可识别的成员身份', 401)
   if (!workspaceId) throw new DomainError(ERROR_CODES.FORBIDDEN, '生产工作区访问缺少工作区范围', 403)
   const identityMemberships = persistence.identityMemberships ?? persistence.members ?? memoryMembers
-  const member = (await identityMemberships.list(workspaceId)).find(item => item.externalSubject === principal.actorId || (principal.accountLogin && item.externalSubject === principal.accountLogin))
+  const member = (await identityMemberships.list(workspaceId)).find(item =>
+    (principal.identityId && item.identityId === principal.identityId)
+    || item.externalSubject === principal.actorId
+    || (principal.accountLogin && item.externalSubject === principal.accountLogin),
+  )
   if (!member) {
     if (required) throw new DomainError('WORKSPACE_MEMBERSHIP_REQUIRED', '当前身份不是该工作区的有效成员，请由工作区所有者邀请后重试', 403, { workspace_id: workspaceId })
     return false
@@ -18280,8 +18284,10 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       res.statusCode = 302; res.setHeader('location', target.toString()); res.setHeader('cache-control', 'no-store'); res.end()
     }
     if (req.method === 'GET') {
-      const current = await passwordAuthRepository.authenticate(passwordSessionToken())
-      if (current?.account.accountType === 'merchant' && current.account.status === 'active') return redirectWithCode(current.account)
+      // A browser session proves authentication, not consent to the OAuth
+      // transaction selected by the current client/state/PKCE tuple. Always
+      // require an explicit credentialed POST so a cross-site top-level GET
+      // cannot bind the signed-in merchant to an attacker's ChatGPT session.
       return sendMcpOAuthLogin(res, authorization)
     }
     try {

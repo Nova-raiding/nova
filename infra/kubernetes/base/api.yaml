@@ -13,7 +13,7 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: merchant-api, app.kubernetes.io/part-of: merchant-marketing-codex}
       annotations:
-        merchant.example.com/config-sha256: sha256:dbd96f579ae01b73f771135dfa5eea5b1fdf0d65afeee4b93dbd2430cc8be5bd
+        merchant.example.com/config-sha256: sha256:5594dda8f223a7d4f488f2fa13876836bd37683408c774b6948bdd91f3b55dd8
     spec:
       terminationGracePeriodSeconds: 30
       automountServiceAccountToken: false

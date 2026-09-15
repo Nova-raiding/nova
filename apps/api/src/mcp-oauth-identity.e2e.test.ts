@@ -36,7 +36,9 @@ describe('canonical password identity MCP OAuth', () => {
     const login = `oauth-${Date.now()}@example.test`
     const password = 'OauthPass1234!'
     const account = await repository.createMerchantAccount({ login, password, enterpriseName: 'OAuth merchant', contactName: 'OAuth owner', workspaceIds: [workspaceId], actorId: 'platform-operator', reason: 'MCP OAuth acceptance account' })
-    await workspaceMembers.upsert({ workspaceId, externalSubject: login, displayName: 'OAuth owner', role: 'workspace_owner', status: 'active', invitedBy: 'mcp-oauth-e2e' })
+    const legacySubject = `legacy-oidc-${Date.now()}`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: legacySubject, displayName: 'OAuth owner', role: 'workspace_owner', status: 'active', invitedBy: 'mcp-oauth-e2e' })
+    await workspaceMembers.bindIdentity({ workspaceId, externalSubject: legacySubject, identityId: account.identityId })
     const base = await start()
     const resource = `${base}/mcp`
     const authorize = new URL(`${base}/oauth/authorize`)
@@ -56,11 +58,12 @@ describe('canonical password identity MCP OAuth', () => {
     expect(redirect.searchParams.get('state')).toBe('state-one')
     const code = redirect.searchParams.get('code')!
 
-    const firstPartySso = new URL(authorize); firstPartySso.searchParams.set('state', 'state-two')
-    const ssoRedirect = await fetch(firstPartySso, { headers: { cookie: passwordCookie }, redirect: 'manual' })
-    expect(ssoRedirect.status).toBe(302)
-    expect(new URL(ssoRedirect.headers.get('location')!).searchParams.get('state')).toBe('state-two')
-    const unknownClient = new URL(firstPartySso); unknownClient.searchParams.set('client_id', 'unknown-client')
+    const crossSiteCandidate = new URL(authorize); crossSiteCandidate.searchParams.set('state', 'attacker-controlled-state')
+    const consentPage = await fetch(crossSiteCandidate, { headers: { cookie: passwordCookie }, redirect: 'manual' })
+    expect(consentPage.status).toBe(200)
+    expect(consentPage.headers.get('location')).toBeNull()
+    expect(await consentPage.text()).toContain('登录 Store Nova')
+    const unknownClient = new URL(crossSiteCandidate); unknownClient.searchParams.set('client_id', 'unknown-client')
     expect((await fetch(unknownClient, { headers: { cookie: passwordCookie }, redirect: 'manual' })).status).toBe(400)
 
     const shortVerifier = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', client_id: clientId, redirect_uri: callback, code, code_verifier: 'a'.repeat(42), resource }) })

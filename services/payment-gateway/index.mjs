@@ -91,6 +91,7 @@ async function handle(req, res) {
   if (req.method === 'POST' && req.url === '/v1/checkout') { const input = await body(req); if (input.channel !== 'alipay') return json(res, 503, { error: 'UNSUPPORTED_PAYMENT_CHANNEL' }); const amountFen = Number(input.amount_fen); if (!input.order_id || !input.workspace_id || !Number.isSafeInteger(amountFen) || amountFen <= 0) return json(res, 400, { error: 'INVALID_CHECKOUT' }); let callbackPath = '/v1/billing/callback/alipay'; try { const callback = new URL(String(input.callback_url || `${publicBaseUrl}${callbackPath}`)); if (callback.protocol !== 'https:' || callback.origin !== publicBaseUrl || !['/v1/billing/callback/alipay', '/v1/subscriptions/callback/alipay', '/v1/commercial/callback/alipay'].includes(callback.pathname)) return json(res, 400, { error: 'INVALID_CALLBACK_URL' }); callbackPath = callback.pathname } catch { return json(res, 400, { error: 'INVALID_CALLBACK_URL' }) } const notify = new URL('/payment-gateway/v1/notify/alipay', publicBaseUrl).toString(); const params = signedParams('alipay.trade.page.pay', { out_trade_no: String(input.order_id), total_amount: (amountFen / 100).toFixed(2), subject: String(input.description || 'merchant-marketing').slice(0, 256), product_code: 'FAST_INSTANT_TRADE_PAY', passback_params: encodePassbackParams({ workspace_id: String(input.workspace_id), callback_path: callbackPath }) }, notify); return json(res, 200, { payment_url: urlFor(params), provider_order_id: String(input.order_id) }) }
   if (req.method === 'POST' && req.url === '/v1/query') {
     const input = await body(req)
+    if (input.channel !== 'alipay') return json(res, 503, { error: 'UNSUPPORTED_PAYMENT_CHANNEL' })
     const orderId = typeof input.order_id === 'string' ? input.order_id.trim() : ''
     if (!orderId) return json(res, 400, { error: 'INVALID_QUERY' })
     const node = (await callAlipay('alipay.trade.query', { out_trade_no: orderId })).alipay_trade_query_response || {}
@@ -100,6 +101,7 @@ async function handle(req, res) {
   }
   if (req.method === 'POST' && req.url === '/v1/refund') {
     const input = await body(req)
+    if (input.channel !== 'alipay') return json(res, 503, { error: 'UNSUPPORTED_PAYMENT_CHANNEL' })
     const orderId = typeof input.order_id === 'string' ? input.order_id.trim() : ''
     const refundRequestId = typeof input.refund_request_id === 'string' ? input.refund_request_id.trim() : ''
     const amountFen = Number(input.amount_fen)

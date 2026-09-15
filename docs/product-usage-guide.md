@@ -370,14 +370,14 @@ flowchart LR
 
 ## 当前运行状态
 
-以下是截至 2026-09-13 候选版本的本地/远端真实探针结果，不代表生产环境已经上线：
+以下是截至 2026-09-15 候选版本的本地/远端真实探针结果，不代表生产环境已经上线：
 
 | 项目 | 当前状态 |
 |---|---|
-| Repository / Plugin | `0.2.0` / `0.1.0+codex.20260914201137` |
-| MCP 契约 | 共享注册表与当前代码为准；当前商家 Bridge 的真实 `tools/list` 返回 146 个工具，且不含 `ops.*` |
-| Ops Console | 11 个一级域，平台/工作区双工作台 |
-| PostgreSQL / Redis | 本地与候选远端运行就绪；当前探针迁移版本 192（发布基线以 `release-metadata.json` 为准） |
+| Repository / Plugin | `0.2.0` / `0.1.0+codex.20260915075456` |
+| MCP 契约 | 共享注册表与当前代码为准；当前商家 Bridge 的真实 `tools/list` 返回 151 个工具，且不含 `ops.*` |
+| Ops Console | 12 个一级域，平台/工作区双工作台 |
+| PostgreSQL / Redis | 本地与候选远端运行就绪；当前发布基线迁移版本 201（以 `release-metadata.json` 为准） |
 | 五模态模型中转 | 本地 relay contract 可解析，但五模态生产配置/成本证据尚未就绪 |
 | 六平台连接器 | 当前为 `fixture_ready`；官方 OAuth/API 未配置 |
 | 平台写入 | 关闭 |

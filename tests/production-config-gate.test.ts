@@ -50,7 +50,7 @@ function config(overrides: Record<string, boolean> = {}) {
     'clamav_signature_max_age_minutes: 1440',
     'clamav_max_file_bytes: 104857600',
     'payment_mode: provider',
-    'payment_provider_adapters: alipay,wechat',
+    'payment_provider_adapters: alipay',
     'payment_checkout_base_url: https://payments.example.com/checkout',
     'payment_provider_checkout_api_url: https://payments.example.com/v1/checkout',
     'payment_provider_query_api_url: https://payments.example.com/v1/query',

@@ -125,7 +125,7 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: 'true' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
@@ -160,7 +160,7 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: '${MERCHANT_MCP_WRITE_ENABLED}' },
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: '${MERCHANT_MCP_WRITE_ENABLED}' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
@@ -211,7 +211,7 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: '${MERCHANT_MCP_WRITE_ENABLED}' },
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: '${MERCHANT_MCP_WRITE_ENABLED}' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
@@ -283,6 +283,59 @@ describe('Codex stdio MCP bridge', () => {
         const response = await nextLine(child.stdout)
         expect(response.result.content).toContainEqual(expect.objectContaining({ type: 'resource_link', uri: expect.stringMatching(/^https:\/\//u), annotations: { audience: ['user'] } }))
       }
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('keeps pending checkout links but redacts settled recharge identity and provider evidence', async () => {
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      const { method } = JSON.parse(body)
+      const common = {
+        id: 'order_1', workspace_id: 'ws_secret', channel: 'alipay', amount_cny: '0.01', payment_mode: 'provider',
+        created_by_actor_id: 'actor_secret', provider_trade_id: 'trade_secret', created_at: '2026-09-14T00:00:00.000Z', updated_at: '2026-09-14T00:01:00.000Z',
+      }
+      const result = method === 'billing.recharge.list'
+        ? { scope: 'mine', total: 1, returned: 1, summary: { paid: 1 }, orders: [{ ...common, state: 'paid', payment_url: 'https://pay.example.com/stale', paid_at: '2026-09-14T00:01:00.000Z' }] }
+        : method === 'billing.recharge.create'
+          ? { ...common, state: 'pending', paymentUrl: 'https://pay.example.com/checkout' }
+          : { ...common, state: 'paid', payment_url: null, paid_at: '2026-09-14T00:01:00.000Z', providerStatus: { providerTradeId: 'trade_secret' } }
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'billing.recharge.create', arguments: { channel: 'alipay', amount_cny: '0.01' } } })}\n`)
+      const pending = (await nextLine(child.stdout)).result
+      expect(pending.structuredContent).toMatchObject({ id: 'order_1', state: 'pending', paymentUrl: 'https://pay.example.com/checkout' })
+      expect(pending.content).toContainEqual(expect.objectContaining({ type: 'resource_link', uri: 'https://pay.example.com/checkout' }))
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'billing.recharge.get', arguments: { order_id: 'order_1' } } })}\n`)
+      const paid = (await nextLine(child.stdout)).result.structuredContent
+      expect(paid).toMatchObject({ id: 'order_1', state: 'paid', paid_at: '2026-09-14T00:01:00.000Z' })
+      expect(paid).not.toHaveProperty('workspace_id')
+      expect(paid).not.toHaveProperty('created_by_actor_id')
+      expect(paid).not.toHaveProperty('provider_trade_id')
+      expect(paid).not.toHaveProperty('providerStatus')
+      expect(paid).not.toHaveProperty('payment_url')
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'billing.recharge.list', arguments: {} } })}\n`)
+      const listed = (await nextLine(child.stdout)).result.structuredContent
+      expect(listed).toMatchObject({ scope: 'mine', total: 1, orders: [{ id: 'order_1', state: 'paid' }] })
+      expect(listed.orders[0]).not.toHaveProperty('workspace_id')
+      expect(listed.orders[0]).not.toHaveProperty('created_by_actor_id')
+      expect(listed.orders[0]).not.toHaveProperty('provider_trade_id')
+      expect(listed.orders[0]).not.toHaveProperty('payment_url')
     } finally {
       child.kill()
       await close(server)
@@ -676,7 +729,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260914201137' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260915075456' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -2219,7 +2272,7 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
-      env: { ...process.env, CODEX_HOME: codexHome, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: '${MERCHANT_WORKSPACE_ID}', MERCHANT_ALLOW_FIXTURE_FALLBACK: '${MERCHANT_ALLOW_FIXTURE_FALLBACK}' },
+      env: { ...process.env, CODEX_HOME: codexHome, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: '${MERCHANT_WORKSPACE_ID}', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_ALLOW_FIXTURE_FALLBACK: '${MERCHANT_ALLOW_FIXTURE_FALLBACK}' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {

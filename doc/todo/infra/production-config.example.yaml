@@ -56,7 +56,7 @@ payments:
   # callback verifier, reconciliation and refund controls. Fixture payment is
   # never allowed by the production gate.
   payment_mode: "provider"
-  payment_provider_adapters: "alipay,wechat"
+  payment_provider_adapters: "alipay"
   payment_checkout_base_url: "https://payments.example.com/checkout"
   # Server-side checkout adapter. The API calls this endpoint to create the
   # actual Alipay/WeChat order; it never constructs a fake payment URL.
