@@ -7,10 +7,9 @@ import { FinanceSearchSection } from "../components/finance/FinanceSearchSection
 import { ReconciliationSection } from "../components/finance/ReconciliationSection.js";
 import { RechargeOrdersSection } from "../components/finance/RechargeOrdersSection.js";
 import { RefundSection } from "../components/finance/RefundSection.js";
-import { ModelMarkupPanel } from "../components/finance/ModelMarkupPanel.js";
 import { financeSearchClient } from "../api/opsDomainClients.js";
 import { useFinanceSearch } from "../hooks/useFinanceSearch.js";
-import { ReloadOutlined, SettingOutlined } from "@ant-design/icons";
+import { ReloadOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Descriptions, Drawer, Empty, Form, Input, InputNumber, Modal, Select, Space, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { readableCatalogStatus } from "../components/sections/overview/CommercialOverviewSection.js";
@@ -175,7 +174,6 @@ export function FinancePage({ model }: FinancePageProps) {
   const canSearchFinance = model.authorization.can("billing.platform.read");
   const isWorkspaceWorkbench = !isPlatformWorkbench;
   const financeSearch = useFinanceSearch(financeSearchClient, { limit: 20 }, canSearchFinance);
-  const [showBillingControl, setShowBillingControl] = useState(false);
   const [showCommercialReadiness, setShowCommercialReadiness] = useState(false);
   useEffect(() => {
     // Platform sessions must not hydrate workspace-scoped recharge orders.
@@ -185,13 +183,11 @@ export function FinancePage({ model }: FinancePageProps) {
   }, [canSearchFinance, isWorkspaceWorkbench]);
   return (
     <OpsPage
-      eyebrow="COMMERCIAL OPERATIONS"
       title={isPlatformWorkbench ? "平台财务中心" : "账务与商业配置"}
       headingLevel={2}
-      description={isPlatformWorkbench ? "查看全平台财务记录、企业主体商业化开通状态和成本证据，平台范围由服务端权限投影决定。" : "处理企业主体商业准入、权益、创意点账本、版本化目录、支付、费率与服务履约。"}
+      description={isPlatformWorkbench ? undefined : "处理企业主体商业准入、权益、创意点账本、版本化目录、支付、费率与服务履约。"}
       actions={isPlatformWorkbench ? (
         <Space wrap>
-          <Tag color="blue">平台工作台</Tag>
           <Button type="primary" icon={<ReloadOutlined />} loading={financeSearch.loading} disabled={!canSearchFinance} onClick={() => void Promise.all([financeSearch.search(), model.load()])}>刷新平台账务</Button>
         </Space>
       ) : (
@@ -202,24 +198,10 @@ export function FinancePage({ model }: FinancePageProps) {
           <Button type="primary" disabled={!canRefresh} loading={commercial.summary.status === "loading" || commercial.data[commercial.view].status === "loading"} onClick={() => void Promise.all([commercial.loadSummary(), commercial.loadView()])}>刷新账务</Button>
         </Space>
       )}
-      nextStep={isPlatformWorkbench ? "先核对跨企业主体财务记录和成本证据，再进入对应企业主体处理具体订单或权益。" : "先处理阻断与待对账事项；支付成功后仍需核验权益发放与新的访问版本。"}
+      nextStep={isPlatformWorkbench ? undefined : "先处理阻断与待对账事项；支付成功后仍需核验权益发放与新的访问版本。"}
     >
       <div className="ops-finance-page">
         {isPlatformWorkbench ? <>
-          {model.canModelMarkup ? (
-            <Card
-              size="small"
-              className="ops-finance-secondary-panel"
-              title={<Space><SettingOutlined aria-hidden="true" />模型计费倍率<Tag color="gold">高影响配置</Tag></Space>}
-              extra={<Button type="link" onClick={() => setShowBillingControl((visible) => !visible)}>{showBillingControl ? "收起配置" : "调整计费"}</Button>}
-            >
-              <Space wrap size={12}>
-                <Typography.Text type="secondary">平台统一控制模型成本加价；每次变更保留原因、revision 与审计记录。</Typography.Text>
-                <Tag color={model.modelMarkup ? "blue" : "default"}>当前倍率 {model.modelMarkup ? `${model.modelMarkup.multiplier}×` : "读取中"}</Tag>
-              </Space>
-              {showBillingControl ? <div style={{ marginTop: 12 }}><ModelMarkupPanel model={model} /></div> : null}
-            </Card>
-          ) : null}
           {canSearchFinance ? <FinanceSearchSection controller={financeSearch} showProviderStatementStatus={false} compactSummary /> : (
             <Alert
               type="info"
