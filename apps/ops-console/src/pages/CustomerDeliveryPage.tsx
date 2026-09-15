@@ -1,5 +1,5 @@
-import { Alert, Button, Card, Select, Space, Typography } from "antd";
-import { useDeferredValue, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Alert, Button } from "antd";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { OpsPage } from "../components/OpsPage.js";
 import { CustomerDeliverySection } from "../components/delivery/CustomerDeliverySection.js";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel.js";
@@ -37,12 +37,10 @@ export function customerDeliveryWorkspaceOptions(workspaces: WorkspaceSummary[])
 export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const canRead = model.authorization.can("customer.delivery.read");
   const canUpdate = model.authorization.can("customer.delivery.update");
-  const canBrowseWorkspaces = model.authorization.can("workspace.directory.read");
-  // Platform delivery work must always use the explicitly selected enterprise
-  // scope. Clearing the selector must not fall back to an ambient workspace.
-  const targetWorkspaceId = canBrowseWorkspaces ? model.authorizationTargetWorkspaceId?.trim() || "" : "";
-  const [workspaceQuery, setWorkspaceQuery] = useState("");
-  const deferredWorkspaceQuery = useDeferredValue(workspaceQuery);
+  // Customer delivery is a shared operations workflow. Keep using the
+  // platform's active workspace context for API compatibility, but do not
+  // expose a tenant-switching control to sales/operations users.
+  const targetWorkspaceId = model.authorizationTargetWorkspaceId?.trim() || model.workspaceRows[0]?.workspaceId || "";
   const [records, setRecords] = useState<import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -91,15 +89,14 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     finally { if (request.isCurrent()) setLoading(false); }
   };
   useEffect(() => {
-    if (!canRead || !canBrowseWorkspaces) return;
+    if (!canRead) return;
     void model.loadWorkspaceDirectory({
-      query: deferredWorkspaceQuery.trim() || undefined,
       status: "active",
       merchantOnly: true,
       page: 1,
       pageSize: 100,
     });
-  }, [canRead, canBrowseWorkspaces, deferredWorkspaceQuery]);
+  }, [canRead]);
   useEffect(() => {
     setRecords([]);
     setError("");
@@ -217,31 +214,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     >
       {!canRead ? <Alert type="warning" showIcon message="当前会话没有客户交付读取权限" description="请切换到具备 customer.delivery.read 的平台运营工作区。" /> : null}
       {canRead && !canUpdate ? <Alert style={{ marginBottom: 16 }} type="info" showIcon message="当前会话仅可查看客户交付" description="保存、上传和流程变更需要 customer.delivery.update 权限。" /> : null}
-      {canRead && !canBrowseWorkspaces ? <Alert type="warning" showIcon message="当前会话不能读取企业工作区目录" description="请为平台运营账号补充 workspace.directory.read，才能选择客户并进入交付流程。" /> : null}
-      {canRead && canBrowseWorkspaces ? (
-        <Card size="small" title="目标企业工作区（必选）" style={{ marginBottom: 16 }}>
-          <Space orientation="vertical" size="small" className="full-width">
-            <Select
-              showSearch
-              allowClear
-              aria-label="客户交付目标企业工作区"
-              placeholder="搜索并选择企业名称或 Workspace ID"
-              value={targetWorkspaceId || undefined}
-              loading={model.workspaceDirectoryLoading}
-              filterOption={false}
-              onSearch={setWorkspaceQuery}
-              onChange={(workspaceId) => model.setAuthorizationTargetWorkspaceId(workspaceId ?? "")}
-              options={customerDeliveryWorkspaceOptions(model.workspaceRows)}
-              notFoundContent={model.workspaceDirectoryLoading ? "正在加载企业工作区…" : "没有找到可用的企业工作区"}
-              style={{ width: "min(100%, 560px)" }}
-            />
-            <Typography.Text type="secondary">
-              交付档案只会在当前选中的企业工作区内读取和修改，切换后会重新加载。
-            </Typography.Text>
-          </Space>
-        </Card>
-      ) : null}
-      {canRead && canBrowseWorkspaces && !targetWorkspaceId ? <Alert style={{ marginBottom: 16 }} type="info" showIcon message="请选择目标企业工作区后开始客户交付" description="平台管理员不会默认进入任何商家数据范围。" /> : null}
+      {!targetWorkspaceId && canRead ? <Alert style={{ marginBottom: 16 }} type="info" showIcon message="正在加载客户交付档案" description="请稍候，运营数据加载完成后即可新建客户。" /> : null}
       {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
       {mutationError ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
       <CustomerDeliverySection
