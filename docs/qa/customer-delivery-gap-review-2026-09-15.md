@@ -38,9 +38,10 @@
 
 命令：先 `npm run build --workspace @merchant-marketing/persistence`，再 `node scripts/verify-customer-delivery-video-actor.mjs`。脚本从已构建包的 index 导出调用，不导入源码或 Vitest mock；只创建进程内存记录。
 
-- 保留首轮失败：`artifacts/customer-delivery-video-actor/run-fmpcEY/run-result.json`。该次运行使用本轮较早构建、尚未重新编译两行修复的 dist；报告明确记录了当时源码和旧 dist 的不同指纹。不能把这条失败解释为修复源码无效。
-- 重建后的运行 **通过**：`artifacts/customer-delivery-video-actor/run-RLZsel/run-result.json`。五项观测覆盖建档、不同操作者添加、另一操作者移除、重复移除不改记录／不重复审计、外部租户移除返回 NOT_FOUND。创建人保持不变，未付款档案未被激活。
+- 历史首轮失败的工具输出已捕获：`run-fmpcEY` 在添加后得到 `VIDEO_ACTOR_DETAIL_MISMATCH`，实际最后更新人为 fixture-creator，审计人为 fixture-uploader。该次使用本轮较早构建、尚未重新编译修复的 dist；不能把它解释为修复源码无效。
+- 重建后 `run-RLZsel` 已通过。随后 owner 复核发现该运行目录及首轮目录均已不存在，未查明清理来源，本会话未执行删除；因此不再将两份磁盘报告当作仍可访问的交付证据。重新执行后 **通过**：`artifacts/customer-delivery-video-actor/run-gmTSa9/run-result.json`，2026-09-15 11:46:44。五项观测依次为：创建人 fixture-creator/revision 1，添加后更新人及审计均 fixture-uploader/revision 2，移除后均 fixture-remover/revision 3，重复移除不改记录或审计，外部租户移除返回 NOT_FOUND 且原记录不变。创建人不变，未付款档案未被激活。
 - 本轮运行面仅为内存仓储库，不是 API、真实文件上传、扫描、PostgreSQL 或生产生效证明。零数据库写入、零账号启用、零外站访问；没有删除任何用户业务数据。
 - 修复源码 SHA256：`1df3241c2d9ae9e6554867bf952899dd16d769cbfebff4691445a996664b83f3`；测试：`2fe8eaa624e3b7bdbee0a61ff6aa4c8f4184d3f1ac5a235f33ff51ec25f39f00`。
+- owner 重新核对五个源码／测试／构建文件的前后指纹和当前指纹一致；`npm run typecheck`（根项目、ops-console、merchant-studio）退出 0，限定 diff 及脚本语法检查通过。13 个项目服务健康，桌面 `/api/readyz` HTTP 200，原 11 个 StoryForge 服务均 exited。本轮无 UI 改动、无新部署或容器变更，不将健康检查解释为源码已发布。
 
 技能影响：investigate 要求先复现并对照 Memory／PG 的更新路径，避免把缺少业务决策的自动生效当成普通 bug 修补；verify-feature 要求验证实际构建产物，并明确旧 dist、源码和真实上传／数据库证据的区别。
