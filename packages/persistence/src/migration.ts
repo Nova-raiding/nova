@@ -506,6 +506,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const mcpOauthIdentity = await readFile(new URL('./migrations/210_mcp_oauth_identity.sql', import.meta.url), 'utf8')
   const mcpOauthWorkspaceRls = await readFile(new URL('./migrations/211_mcp_oauth_workspace_rls.sql', import.meta.url), 'utf8')
   const customerDeliveryTrainingWithoutEvidence = await readFile(new URL('./migrations/212_customer_delivery_training_without_evidence.sql', import.meta.url), 'utf8')
+  const customerDeliveryManualVerification = await readFile(new URL('./migrations/213_customer_delivery_manual_verification.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -719,6 +720,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 210, name: 'mcp_oauth_identity', sql: mcpOauthIdentity },
     { version: 211, name: 'mcp_oauth_workspace_rls', sql: mcpOauthWorkspaceRls },
     { version: 212, name: 'customer_delivery_training_without_evidence', sql: customerDeliveryTrainingWithoutEvidence },
+    { version: 213, name: 'customer_delivery_manual_verification', sql: customerDeliveryManualVerification },
   ]
 }
 

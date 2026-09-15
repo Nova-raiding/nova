@@ -2,7 +2,7 @@ import { Alert, Button, Card, Checkbox, DatePicker, Form, Input, Select, Space, 
 import { CloseOutlined, UploadOutlined } from "@ant-design/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { OpsPage } from "../components/OpsPage.js";
-import { CustomerDeliverySection } from "../components/delivery/CustomerDeliverySection.js";
+import { ACCEPTANCE_ITEMS, CustomerDeliverySection, INTEGRATION_ITEMS, checklistDisplayLabel } from "../components/delivery/CustomerDeliverySection.js";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel.js";
 import type { WorkspaceSummary } from "../types/ops.js";
 import { customerDeliveryClient, type CustomerDeliveryAsset } from "../api/customerDeliveryClient.js";
@@ -11,19 +11,21 @@ import { deliveryDateTimeIsoValue } from "../components/delivery/deliveryDateTim
 import type { CustomerDeliveryRecord } from "../components/delivery/CustomerDeliverySection.js";
 import { waitForDeliveryScan } from "../components/delivery/CustomerDeliveryUpload.js";
 
-async function waitForCleanDeliveryVideo(initialAsset: CustomerDeliveryAsset, input: {
+async function waitForCleanDeliveryAsset(initialAsset: CustomerDeliveryAsset, input: {
   targetWorkspaceId: string;
   deliveryId: string;
   signal: AbortSignal;
+  purpose: "contract" | "video";
+  label: string;
 }) {
   let asset = initialAsset;
   for (let poll = 0; !asset.ready; poll++) {
-    if (asset.scanStatus === "blocked") throw new Error("交付视频未通过安全检查，请更换文件后重试");
-    if (poll >= 90) throw new Error("交付视频安全检查尚未完成，请稍后再次点击创建，无需重新选择文件");
+    if (asset.scanStatus === "blocked") throw new Error(`${input.label}未通过安全检查，请更换文件后重试`);
+    if (poll >= 15) throw new Error(`${input.label}安全检查暂未完成，已停止等待；请稍后再次点击创建，无需重新选择文件`);
     await waitForDeliveryScan(2000, input.signal);
-    asset = await customerDeliveryClient.getAsset({ ...input, purpose: "video", assetRef: asset.assetRef }, input.signal);
+    asset = await customerDeliveryClient.getAsset({ ...input, assetRef: asset.assetRef }, input.signal);
   }
-  if (asset.scanStatus !== "clean") throw new Error("交付视频缺少可信安全检查结果，暂时无法创建客户");
+  if (asset.scanStatus !== "clean") throw new Error(`${input.label}缺少可信安全检查结果，暂时无法创建客户`);
   return asset;
 }
 
@@ -67,6 +69,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const contractFileInput = useRef<HTMLInputElement>(null);
   const deliveryVideoInput = useRef<HTMLInputElement>(null);
   const [uploadedContractName, setUploadedContractName] = useState("");
+  const [uploadedContractFile, setUploadedContractFile] = useState<File>();
   const [deliveryVideoFiles, setDeliveryVideoFiles] = useState<File[]>([]);
   const [integrationChecks, setIntegrationChecks] = useState<string[]>([]);
   const [acceptanceChecks, setAcceptanceChecks] = useState<string[]>([]);
@@ -76,6 +79,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const pendingCreate = useRef<{
     companyName: string;
     record: CustomerDeliveryRecord;
+    contract?: { file: File; assetRef: string };
     videos: Map<File, { assetRef: string; registered: boolean }>;
   } | undefined>(undefined);
   const [createForm] = Form.useForm<{
@@ -188,8 +192,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   };
   const submitCreatePage = async (values: { companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid"; paymentDate: { format: (pattern: string) => string }; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: { format: (pattern: string) => string } }) => {
     if (createSubmissionController.current) return;
-    if (integrationChecks.length < 10 || acceptanceChecks.length < 8 || deliveryVideoFiles.length === 0) {
-      message.error("请完成系统接入、功能验收全部勾选，并上传至少一段交付视频");
+    if (integrationChecks.length < INTEGRATION_ITEMS.length || acceptanceChecks.length < ACCEPTANCE_ITEMS.length || deliveryVideoFiles.length === 0 || !uploadedContractFile) {
+      message.error("请上传合同和交付视频，并完成系统接入、功能验收全部勾选");
       return;
     }
     const companyName = values.companyName.trim();
@@ -200,37 +204,63 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     try {
       let attempt = pendingCreate.current;
       if (!attempt || attempt.companyName !== companyName) {
-        const record = await createRecord(companyName);
+        // A previous attempt may already have created the draft before an
+        // upload or scan failed. Resume that draft so a retry does not fail on
+        // the unique company-name constraint.
+        const existingDraft = records.find((record) => record.companyName.trim() === companyName && !record.profile);
+        const record = existingDraft ?? await createRecord(companyName);
         attempt = { companyName, record, videos: new Map() };
         pendingCreate.current = attempt;
       }
-      for (const [index, file] of deliveryVideoFiles.entries()) {
+      if (!attempt.contract || attempt.contract.file !== uploadedContractFile) {
+        const uploaded = await customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: attempt.record.id, purpose: "contract", file: uploadedContractFile }, controller.signal);
+        const asset = await waitForCleanDeliveryAsset(uploaded, { targetWorkspaceId, deliveryId: attempt.record.id, signal: controller.signal, purpose: "contract", label: "合同文件" });
+        attempt.contract = { file: uploadedContractFile, assetRef: asset.assetRef };
+      }
+      for (const file of deliveryVideoFiles) {
         let video = attempt.videos.get(file);
         if (!video) {
           const uploaded = await customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: attempt.record.id, purpose: "video", file }, controller.signal);
-          const asset = await waitForCleanDeliveryVideo(uploaded, { targetWorkspaceId, deliveryId: attempt.record.id, signal: controller.signal });
+          const asset = await waitForCleanDeliveryAsset(uploaded, { targetWorkspaceId, deliveryId: attempt.record.id, signal: controller.signal, purpose: "video", label: "交付视频" });
           video = { assetRef: asset.assetRef, registered: false };
           attempt.videos.set(file, video);
         }
-        if (!video.registered) {
-          await customerDeliveryClient.addVideo({ targetWorkspaceId, deliveryId: attempt.record.id, title: file.name, assetRef: video.assetRef, sortOrder: index }, controller.signal);
-          video.registered = true;
-        }
       }
-      await saveProfile({
+      attempt.record = await saveProfile({
         ...attempt.record,
         companyName,
         contractNo: values.contractNumber,
         paymentStatus: values.paymentStatus,
         paymentDate: values.paymentDate.format("YYYY-MM-DD"),
-        contractFile: values.contractFile,
+        contractFile: attempt.contract.assetRef,
         owner: values.owner,
         afterSalesOwner: values.afterSalesOwner,
         requiredLaunchAt: values.requiredLaunchAt.format("YYYY-MM-DD"),
         profile: true,
       });
+      const integration = await customerDeliveryClient.updateChecklist({
+        targetWorkspaceId, deliveryId: attempt.record.id, checklistKey: "system_integration",
+        items: INTEGRATION_ITEMS.map(itemKey => ({ itemKey, completed: true, evidence: "", evidenceAssetRefs: [] })),
+        expectedRevision: attempt.record.revision as number,
+      }, controller.signal);
+      attempt.record = { ...attempt.record, integration: true, revision: integration.revision ?? (attempt.record.revision as number) + 1 };
+      const acceptance = await customerDeliveryClient.updateChecklist({
+        targetWorkspaceId, deliveryId: attempt.record.id, checklistKey: "functional_acceptance",
+        items: ACCEPTANCE_ITEMS.map(itemKey => ({ itemKey, completed: true, evidence: "", evidenceAssetRefs: [] })),
+        expectedRevision: attempt.record.revision as number,
+      }, controller.signal);
+      attempt.record = { ...attempt.record, acceptance: true, revision: acceptance.revision ?? (attempt.record.revision as number) + 1 };
+      for (const [index, file] of deliveryVideoFiles.entries()) {
+        const video = attempt.videos.get(file)!;
+        if (!video.registered) {
+          await customerDeliveryClient.addVideo({ targetWorkspaceId, deliveryId: attempt.record.id, title: file.name, assetRef: video.assetRef, sortOrder: index }, controller.signal);
+          video.registered = true;
+        }
+      }
       pendingCreate.current = undefined;
       createForm.resetFields();
+      setUploadedContractFile(undefined);
+      setUploadedContractName("");
       setDeliveryVideoFiles([]);
       setCreatePage(false);
       message.success("客户创建成功");
@@ -332,24 +362,22 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             <Form.Item name="paymentDate" label="付款时间" rules={[{ required: true, message: "请选择付款日期" }]}><DatePicker classNames={{ popup: { root: "customer-delivery-date-popup" } }} format="YYYY-MM-DD" placeholder="请选择付款日期" style={{ width: "100%" }} /></Form.Item>
             <Form.Item name="contractFile" label="合同文件或链接" rules={[{ required: true, message: "请上传合同或填写合同链接" }]}>
               <Input placeholder="" suffix={<Button type="text" className="customer-delivery-upload-button" aria-label="上传合同文件" title="上传合同文件" icon={<UploadOutlined />} onClick={() => contractFileInput.current?.click()} />} />
-              <input ref={contractFileInput} hidden type="file" onChange={(event) => { const file = event.target.files?.[0]; if (file) { createForm.setFieldValue("contractFile", file.name); setUploadedContractName(file.name); } }} />
-              {uploadedContractName ? <div className="customer-delivery-uploaded-file">已选择：{uploadedContractName}<Button type="text" size="small" className="customer-delivery-clear-upload" aria-label="取消已选合同文件" title="取消已选文件" icon={<CloseOutlined />} onClick={() => { createForm.setFieldValue("contractFile", ""); setUploadedContractName(""); if (contractFileInput.current) contractFileInput.current.value = ""; }} /></div> : null}
+              <input ref={contractFileInput} hidden type="file" accept=".pdf,.docx,.png,.jpg,.jpeg" onChange={(event) => { const file = event.target.files?.[0]; if (file) { createForm.setFieldValue("contractFile", file.name); setUploadedContractName(file.name); setUploadedContractFile(file); } }} />
+              {uploadedContractName ? <div className="customer-delivery-uploaded-file">已选择：{uploadedContractName}<Button type="text" size="small" className="customer-delivery-clear-upload" aria-label="取消已选合同文件" title="取消已选文件" icon={<CloseOutlined />} onClick={() => { createForm.setFieldValue("contractFile", ""); setUploadedContractName(""); setUploadedContractFile(undefined); if (contractFileInput.current) contractFileInput.current.value = ""; }} /></div> : null}
             </Form.Item>
             </div>
         </Card>
         <div className="customer-delivery-check-card-row">
         <Card title={<span>系统接入确认 <em className="customer-delivery-required-mark">*</em></span>}>
           <div className="customer-delivery-check-grid customer-delivery-check-grid-five">
-            {["插件账户", "店铺连接", "商品扫描", "知识库功能", "平台规则", "创作点", "企业信息", "品牌资产", "商品资料", "客户偏好"].map((label) => (
-              <label className="customer-delivery-check-item" key={label}><span>{label === "创作点" || label === "商品资料" ? `${label}\u00a0` : label}</span><Checkbox checked={integrationChecks.includes(label)} onChange={(event) => setIntegrationChecks((current) => event.target.checked ? [...current, label] : current.filter((item) => item !== label))} /></label>
-            ))}
+            {INTEGRATION_ITEMS.map((itemKey) => { const label = checklistDisplayLabel(itemKey); return (
+              <label className="customer-delivery-check-item" key={itemKey}><span>{label === "创作点" || label === "商品资料" ? `${label}\u00a0` : label}</span><Checkbox checked={integrationChecks.includes(itemKey)} onChange={(event) => setIntegrationChecks((current) => event.target.checked ? [...current, itemKey] : current.filter((item) => item !== itemKey))} /></label>
+            ); })}
           </div>
         </Card>
         <Card title={<span>功能测试及验收 <em className="customer-delivery-required-mark">*</em></span>}>
           <div className="customer-delivery-check-grid customer-delivery-check-grid-four">
-            {["文案生成", "图片生成", "批注修改", "自动检查", "视频生成", "资料读取", "技术验收", "内容验收"].map((label) => (
-              <label className="customer-delivery-check-item" key={label}><span>{label}</span><Checkbox checked={acceptanceChecks.includes(label)} onChange={(event) => setAcceptanceChecks((current) => event.target.checked ? [...current, label] : current.filter((item) => item !== label))} /></label>
-            ))}
+            {ACCEPTANCE_ITEMS.map((itemKey) => <label className="customer-delivery-check-item" key={itemKey}><span>{checklistDisplayLabel(itemKey)}</span><Checkbox checked={acceptanceChecks.includes(itemKey)} onChange={(event) => setAcceptanceChecks((current) => event.target.checked ? [...current, itemKey] : current.filter((item) => item !== itemKey))} /></label>)}
           </div>
         </Card>
         </div>

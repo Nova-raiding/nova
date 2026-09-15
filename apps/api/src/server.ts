@@ -11454,8 +11454,7 @@ async function updateCustomerDeliveryWithRequiredEvidence(input: Parameters<Cust
   // Legacy paid/trained facts may predate the required evidence fields. Repair
   // each group independently; unrelated edits must not deadlock the repair.
   const paymentChanged = ['paymentStatus', 'paymentEvidenceRefs', 'paymentDate'].some(key => Object.hasOwn(input.patch, key))
-  if (paymentChanged && paymentStatus === 'paid') {
-    if (!paymentRefs.length) throw new DomainError('CUSTOMER_DELIVERY_PAYMENT_EVIDENCE_REQUIRED', '标记已付款前必须上传付款凭证', 409)
+  if (paymentChanged && paymentStatus === 'paid' && paymentRefs.length) {
     await Promise.all(paymentRefs.map(ref => requireBoundCustomerDeliveryAsset(input.workspaceId, input.id, 'payment', ref)))
   }
   const trainingCompleted = input.patch.trainingCompleted ?? current?.trainingCompleted
@@ -12825,8 +12824,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         for (const [index, item] of items.entries()) {
           if (!item.completed) continue
           const refs = evidenceRefs(item.evidence.asset_refs, `items_json 第 ${index + 1} 项 asset_refs`)
-          if (!refs.length) throw new DomainError('CUSTOMER_DELIVERY_CHECKLIST_EVIDENCE_REQUIRED', `已完成项“${item.itemKey}”必须上传凭证`, 409)
-          await Promise.all(refs.map(ref => requireBoundCustomerDeliveryAsset(workspaceId, deliveryId, purpose, ref)))
+          if (refs.length) await Promise.all(refs.map(ref => requireBoundCustomerDeliveryAsset(workspaceId, deliveryId, purpose, ref)))
         }
         return result(await invokeCustomerDeliveryDomain(() => repository.updateChecklistItems!({ workspaceId, deliveryId, checklistKey: purpose, items, actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')) })))
       }
@@ -12857,8 +12855,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const checklistKey = requiredStringValue(params, 'checklistKey', 'checklist_key') as 'system_integration'|'functional_acceptance'
       if (completed) {
         const refs = evidenceRefs(evidence.asset_refs, 'asset_refs')
-        if (!refs.length) throw new DomainError('CUSTOMER_DELIVERY_CHECKLIST_EVIDENCE_REQUIRED', '已完成项必须上传凭证', 409)
-        await Promise.all(refs.map(ref => requireBoundCustomerDeliveryAsset(workspaceId, deliveryId, checklistKey, ref)))
+        if (refs.length) await Promise.all(refs.map(ref => requireBoundCustomerDeliveryAsset(workspaceId, deliveryId, checklistKey, ref)))
       }
       return result(await invokeCustomerDeliveryDomain(() => repository.updateChecklistItem!({ workspaceId, deliveryId, checklistKey, itemKey: requiredStringValue(params, 'itemKey', 'item_key'), completed, evidence, actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')) })))
     }

@@ -21,15 +21,22 @@ describe("customer delivery workspace selection", () => {
     ]);
   });
 
-  it("provides an explicit accessible selector instead of an unactionable scope warning", () => {
-    expect(pageSource).toContain('aria-label="客户交付目标企业工作区"');
-    expect(pageSource).toContain("model.setAuthorizationTargetWorkspaceId");
+  it("uses the shared platform workspace without exposing a tenant selector", () => {
+    expect(pageSource).not.toContain('aria-label="客户交付目标企业工作区"');
+    expect(pageSource).not.toContain("model.setAuthorizationTargetWorkspaceId");
     expect(pageSource).toContain('model.authorization.can("customer.delivery.update")');
     expect(pageSource).toContain("disabled={!canRead || !targetWorkspaceId}");
-    expect(pageSource).toContain("readOnly={!canUpdate}");
-    expect(pageSource).toContain('const targetWorkspaceId = canBrowseWorkspaces ? model.authorizationTargetWorkspaceId?.trim() || "" : ""');
+    expect(pageSource).toContain('const targetWorkspaceId = model.authorizationTargetWorkspaceId?.trim() || model.workspaceRows[0]?.workspaceId || ""');
     expect(pageSource).toContain('key={targetWorkspaceId || "unselected"}');
     expect(pageSource).toContain("setRecords([])");
+  });
+
+  it("uploads real contract and video assets and resumes an interrupted draft", () => {
+    expect(pageSource).toContain('purpose: "contract"');
+    expect(pageSource).toContain('purpose: "video"');
+    expect(pageSource).toContain("const existingDraft = records.find");
+    expect(pageSource).toContain("pendingCreate.current = attempt");
+    expect(pageSource).toContain("poll >= 15");
   });
 });
 
