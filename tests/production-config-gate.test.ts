@@ -136,6 +136,10 @@ describe('production config gate', () => {
     expect(() => run(config().replace('model_relay_api_key_ref: vault://merchant-model/relay-api-key', 'model_relay_api_key_ref: vault://REPLACE_ME'))()).toThrow(/placeholder|local-only/)
   })
 
+  it.each(['null', '~', '"null"', '""', '"   "', 'false', '123', '[]'])('rejects an absent or non-string secret reference: %s', value => {
+    expect(() => run(config().replace('model_relay_api_key_ref: vault://merchant-model/relay-api-key', `model_relay_api_key_ref: ${value}`))()).toThrow(/required production config value|secret reference/)
+  })
+
   it('requires flat contract keys at the top level', () => {
     const nestedRelayRef = config().replace(
       'model_relay_api_key_ref: vault://merchant-model/relay-api-key',
