@@ -20,6 +20,14 @@ describe("operations navigation", () => {
     )).toBe(`/console/ops/${domain}?tenant=demo&tab=active`);
   });
 
+  it.each([
+    ["/ops", "/ops/overview"],
+    ["/ops/", "/ops/overview"],
+    ["/console/ops/", "/console/ops/overview"],
+  ])("canonicalizes the Ops root %s without nesting a second ops segment", (pathname, expected) => {
+    expect(urlForDomain({ pathname, search: "" }, "overview")).toBe(expected);
+  });
+
   it.each(opsDomains)("keeps the legacy #%s bookmark compatible", (domain) => {
     expect(domainFromLocation({ pathname: "/", hash: `#${domain}` })).toBe(domain);
   });

@@ -70,10 +70,13 @@ export function urlForDomain(
   const currentOpsRoute =
     /\/ops\/(?:governance|overview|users|customer-delivery|members|tasks|knowledge|stores|rules|models|storage|finance|audit)\/?$/u;
   const legacyMerchantTasksRoute = /\/ops\/finance\/merchant\/tasks\/?$/u;
+  const opsRootRoute = /\/ops\/?$/u;
   const basePath = currentOpsRoute.test(location.pathname)
     ? location.pathname.replace(currentOpsRoute, "")
     : legacyMerchantTasksRoute.test(location.pathname)
       ? location.pathname.replace(legacyMerchantTasksRoute, "")
-    : location.pathname.replace(/\/$/u, "");
+      : opsRootRoute.test(location.pathname)
+        ? location.pathname.replace(opsRootRoute, "")
+        : location.pathname.replace(/\/$/u, "");
   return `${basePath}/ops/${domain}${location.search}`;
 }
