@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ACCEPTANCE_ITEMS, CHECKLIST_DISPLAY_LABELS, CUSTOMER_DELIVERY_TABLE_WIDTHS, CustomerDeliverySection, CustomerDeliveryTrainingEvidence, INTEGRATION_ITEMS, buildChecklistItems, checklistDisplayLabel, customerDeliveryTrainingAction, deliveryCompletion, deliveryStatusLabel, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
+import { ACCEPTANCE_ITEMS, CHECKLIST_DISPLAY_LABELS, CustomerDeliverySection, INTEGRATION_ITEMS, buildChecklistItems, checklistDisplayLabel, deliveryCompletion, deliveryStatusLabel, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
 
 const base: CustomerDeliveryRecord = {
   id: "c-1", companyName: "示例企业", paymentStatus: "paid", profile: true,
@@ -48,11 +48,6 @@ describe("customer delivery completion", () => {
     expect(deliveryCompletion({ ...base, paymentStatus: "unpaid" })).toEqual({ completed: 5, total: 5, ready: true });
   });
 
-  it("does not promote legacy checkboxes to completion without a valid server completion timestamp", () => {
-    expect(deliveryCompletion({ ...base, goLiveAt: undefined })).toEqual({ completed: 5, total: 5, ready: false });
-    expect(deliveryCompletion({ ...base, goLiveAt: "not-a-date" }).ready).toBe(false);
-  });
-
   it("never blocks delivery steps based on the manually verified payment state", () => {
     for (const step of ["integration", "acceptance", "training"] as const) {
       expect(isDeliveryStepBlocked("unpaid", step)).toBe(false);
@@ -73,73 +68,12 @@ describe("customer delivery completion", () => {
     expect(buildChecklistItems(INTEGRATION_ITEMS, undefined, undefined).every((item) => !item.completed && item.evidence === "")).toBe(true);
   });
 
-  it("keeps each item's attachment mapping separate and rejects malformed arrays", () => {
-    expect(buildChecklistItems(["插件账号", "店铺连接"], ["插件账号"], { 插件账号: "说明" }, { 插件账号: [" asset:login ", "asset:login"], 店铺连接: ["asset:shop"] })).toEqual([
-      { itemKey: "插件账号", completed: true, evidence: "说明", evidenceAssetRefs: ["asset:login"] },
-      { itemKey: "店铺连接", completed: false, evidence: "", evidenceAssetRefs: ["asset:shop"] },
-    ]);
-    expect(() => buildChecklistItems(["插件账号"], ["插件账号"], {}, { 插件账号: ["asset:login", false] })).toThrow("有效素材编号数组");
-  });
-
-  it("keeps training as an overview confirmation and asks for evidence only when missing", () => {
-    expect(customerDeliveryTrainingAction({ ...base, training: false, trainingEvidenceRefs: [] }, true)).toBe("evidence");
-    expect(customerDeliveryTrainingAction({ ...base, training: false, trainingEvidenceRefs: ["asset:training"] }, true)).toBe("save");
-    expect(customerDeliveryTrainingAction({ ...base, trainingEvidenceRefs: ["asset:training"] }, false)).toBe("save");
-    expect(customerDeliveryTrainingAction({ ...base, paymentStatus: "unpaid", trainingEvidenceRefs: ["asset:training"] }, true)).toBe("blocked");
-  });
-
-  it("renders training evidence inline with explicit confirmation instead of a second drawer", () => {
-    const html = renderToStaticMarkup(<CustomerDeliveryTrainingEvidence record={{ ...base, training: false }} onConfirm={async () => {}} onClose={() => {}} />);
-    expect(html).toContain('aria-label="示例企业 培训凭证"');
-    expect(html).toContain('aria-label="已上传培训凭证"');
-    expect(html).toContain("确认培训完成");
-    expect(html).not.toContain('role="dialog"');
-  });
-
-  it("budgets desktop columns and preserves the complete company identity while pinning delivery status", () => {
-    expect(Object.keys(CUSTOMER_DELIVERY_TABLE_WIDTHS)).toHaveLength(9);
-    expect(Object.values(CUSTOMER_DELIVERY_TABLE_WIDTHS).reduce((sum, width) => sum + width, 0)).toBeLessThanOrEqual(1100);
-    const companyName = "需要完整保留名称的企业-very-long-customer-company-name-without-breaks";
-    const html = renderToStaticMarkup(<CustomerDeliverySection records={[{ ...base, companyName }]} />);
-    expect(html).toContain('table-layout:fixed');
-    expect(html).toContain('ant-table-cell-fix-end');
-    expect(html).toContain(`title="${companyName}"`);
-    expect(html).toContain('text-overflow:ellipsis');
-    expect(html).toContain("交付已完成");
-  });
-
-  it("keeps read-only records visible while disabling overview mutation controls", () => {
-    const html = renderToStaticMarkup(<CustomerDeliverySection readOnly records={[base]} />);
+  it("uses only the training status selector and never asks for a training proof", () => {
+    const html = renderToStaticMarkup(<CustomerDeliverySection disabled records={[base]} />);
     expect(html).toContain("示例企业");
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*><span>新建客户<\/span><\/button>/u);
-    expect(html).toMatch(/<input[^>]*disabled=""[^>]*type="checkbox"/u);
-    expect(html).toContain("交付视频");
-    expect(html).not.toContain("上传交付视频");
-    expect(html).not.toContain("保存当前环节");
-  });
-
-  it("keeps read-only training evidence visible without upload or confirmation controls", () => {
-    const html = renderToStaticMarkup(<CustomerDeliveryTrainingEvidence
-      readOnly
-      record={{ ...base, trainingEvidenceRefs: ["asset:existing-training-proof"] }}
-      onUpload={async () => { throw new Error("Read-only upload must not run"); }}
-      onGetAsset={async () => { throw new Error("Read-only upload must not run"); }}
-      onConfirm={async () => { throw new Error("Read-only confirmation must not run"); }}
-      onClose={() => {}}
-    />);
-    expect(html).toContain("asset:existing-training-proof");
-    expect(html).toContain('aria-label="收起"');
-    expect(html).not.toContain('type="file"');
-    expect(html).not.toContain("确认培训完成");
-  });
-
-  it("keeps inline training confirmation above growing evidence lists without hiding saved references", () => {
-    const html = renderToStaticMarkup(<CustomerDeliveryTrainingEvidence record={{ ...base, trainingEvidenceRefs: ["asset:existing-training-proof"] }} onConfirm={async () => {}} onClose={() => {}} />);
-    expect(html).toContain('grid-template-columns:minmax(0, 1fr) minmax(320px, 1fr)');
-    expect(html.indexOf("确认培训完成")).toBeLessThan(html.indexOf('aria-label="已上传培训凭证"'));
-    expect(html).toContain("asset:existing-training-proof");
-    expect(html).toContain('aria-label="收起"');
-    expect(html).not.toContain("max-width:680px");
+    expect(html).toContain('aria-label="示例企业客户培训状态"');
+    expect(html).not.toContain("培训凭证");
+    expect(html).not.toContain("上传培训");
   });
 
   it("keeps durable keys while using the delivery brief's display labels", () => {

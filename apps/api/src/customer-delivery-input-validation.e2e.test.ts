@@ -177,8 +177,9 @@ describe('customer delivery input validation over loopback HTTP', () => {
     await rejectedWithoutMutation('ops.customer-delivery.training.complete', { ...mutationParams(), completed: 'false', evidence_refs_json })
   })
 
-  it('does not complete training from a valid but empty evidence array', async () => {
-    await rejectedWithoutMutation('ops.customer-delivery.training.complete', { ...mutationParams(), completed: 'true', evidence_refs_json: '[]' }, 409, 'CUSTOMER_DELIVERY_TRAINING_EVIDENCE_REQUIRED')
+  it('completes manually confirmed training without an evidence upload', async () => {
+    const trained = successful(await call<CustomerDelivery>('ops.customer-delivery.training.complete', { ...mutationParams(), completed: 'true', evidence_refs_json: '[]' }))
+    expect(trained).toMatchObject({ trainingCompleted: true, trainingEvidenceRefs: [] })
   })
 
   it('does not complete an unfilled customer profile through the scalar endpoint', async () => {

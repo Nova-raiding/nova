@@ -184,6 +184,7 @@ describe('MCP method contract', () => {
     const request = { jsonrpc: '2.0', id: 'training-evidence', method: 'ops.customer-delivery.training.complete', params: { target_workspace_id: 'ws_delivery', delivery_id: 'delivery_1', expected_revision: '1', completed } }
     expect(validateMcpRequest(request).errors).toContain('params.evidence_refs_json is required')
     expect(MCP_METHOD_SCHEMAS['ops.customer-delivery.training.complete'].properties.evidence_refs_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'array', maxLength: 16_384 })
+    expect(validateMcpRequest({ ...request, params: { ...request.params, evidence_refs_json: '[]' } })).toEqual({ valid: true, errors: [] })
     expect(validateMcpRequest({ ...request, params: { ...request.params, evidence_refs_json: '["asset_ref_training_1"]' } })).toEqual({ valid: true, errors: [] })
     for (const evidence_refs_json of ['not-json', '["asset_ref_training_1",]']) expect(validateMcpRequest({ ...request, params: { ...request.params, evidence_refs_json } }).errors).toContain('params.evidence_refs_json must be valid JSON')
     for (const evidence_refs_json of ['{}', 'null', '"asset_ref_training_1"']) expect(validateMcpRequest({ ...request, params: { ...request.params, evidence_refs_json } }).errors).toContain('params.evidence_refs_json must be a JSON array')
@@ -192,7 +193,7 @@ describe('MCP method contract', () => {
   it('publishes completion evidence requirements without claiming static validation proves clean scans', () => {
     expect(getMcpMethodContract('ops.customer-delivery.checklist.update')?.description).toContain('evidence.asset_refs')
     expect(getMcpMethodContract('ops.customer-delivery.checklist-item.update')?.description).toContain('evidence_json.asset_refs')
-    expect(getMcpMethodContract('ops.customer-delivery.training.complete')?.description).toContain('Functional acceptance never completes training automatically')
+    expect(getMcpMethodContract('ops.customer-delivery.training.complete')?.description).toContain('proof is not required')
     for (const checklist_key of ['system_integration', 'functional_acceptance']) {
       const params = { target_workspace_id: 'ws_delivery', delivery_id: 'delivery_1', checklist_key, expected_revision: '1' }
       expect(validateMcpRequest({ jsonrpc: '2.0', id: 'item-evidence', method: 'ops.customer-delivery.checklist-item.update', params: { ...params, item_key: 'test-item', completed: 'true', evidence_json: '{"asset_refs":["asset_ref_evidence_1"]}' } })).toEqual({ valid: true, errors: [] })

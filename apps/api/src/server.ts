@@ -11461,8 +11461,7 @@ async function updateCustomerDeliveryWithRequiredEvidence(input: Parameters<Cust
   const trainingCompleted = input.patch.trainingCompleted ?? current?.trainingCompleted
   const trainingRefs = input.patch.trainingEvidenceRefs === undefined ? current?.trainingEvidenceRefs ?? [] : evidenceRefs(input.patch.trainingEvidenceRefs, '培训凭证')
   const trainingChanged = ['trainingCompleted', 'trainingEvidenceRefs'].some(key => Object.hasOwn(input.patch, key))
-  if (trainingChanged && trainingCompleted) {
-    if (!trainingRefs.length) throw new DomainError('CUSTOMER_DELIVERY_TRAINING_EVIDENCE_REQUIRED', '完成培训前必须上传培训凭证', 409)
+  if (trainingChanged && trainingCompleted && trainingRefs.length) {
     await Promise.all(trainingRefs.map(ref => requireBoundCustomerDeliveryAsset(input.workspaceId, input.id, 'training', ref)))
   }
   return invokeCustomerDeliveryDomain(() => repository.update(input))

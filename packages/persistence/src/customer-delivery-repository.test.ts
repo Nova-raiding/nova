@@ -383,7 +383,7 @@ describe('PostgreSQL delivery evidence preflight transaction protocol', () => {
     const before = structuredClone({ row: client.row, videos: client.videos, items: client.items })
     // Inject an impossible-under-correct-parent-locking body snapshot to test
     // the defensive guard itself, not claim a live concurrent DB reproduction.
-    client.lockedBodyChange = current => { current.row.training_evidence_refs = ['asset_unlocked_late'] }
+    client.lockedBodyChange = current => { current.items[0]!.evidence.asset_refs = ['asset_unlocked_late'] }
     await expect(mutatePostgres(new PostgresCustomerDeliveryRepository(new RecordingPool(client)), kind))
       .rejects.toMatchObject({ code: 'REVISION_CONFLICT' })
     expectAssetsBeforeParent(client)
@@ -397,7 +397,7 @@ describe('PostgreSQL delivery evidence preflight transaction protocol', () => {
   it.each(['parent', 'item', 'video'] as const)('rejects same-revision %s evidence changes between preflight and parent recheck', async changed => {
     const client = new EvidenceTransactionClient()
     client.recheckChange = current => {
-      if (changed === 'parent') current.row.training_evidence_refs = ['asset_changed_between_reads']
+      if (changed === 'parent') current.row.payment_evidence_refs = ['asset_changed_between_reads']
       else if (changed === 'item') current.items[0]!.evidence.asset_refs = ['asset_changed_between_reads']
       else current.videos[0]!.asset_ref = 'asset_changed_between_reads'
     }
@@ -539,7 +539,7 @@ describe('PostgreSQL delivery evidence read protocol', () => {
   it.each(['parent', 'item', 'video'] as const)('restarts when %s evidence changes without a revision increment', async changed => {
     const client = activeClient()
     client.recheckChange = current => {
-      if (changed === 'parent') current.row.training_evidence_refs = []
+      if (changed === 'parent') current.row.payment_evidence_refs = []
       else if (changed === 'item') current.items[0]!.evidence.asset_refs = []
       else current.videos = []
     }
@@ -824,13 +824,13 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     ])
   })
 
-  it('fails closed for unpaid checklist changes', async () => {
+  it('allows manual training confirmation without payment or evidence', async () => {
     const repo = new MemoryCustomerDeliveryRepository()
     const d = await repo.create({ workspaceId: 'ws_unpaid', companyName: 'Acme', actorId: 'operator-1' })
-    await expect(repo.update({ workspaceId: d.workspaceId, id: d.id, actorId: 'operator-1', expectedRevision: d.revision, patch: { trainingCompleted: true } })).rejects.toMatchObject({ code: 'PAYMENT_REQUIRED' })
+    await expect(repo.update({ workspaceId: d.workspaceId, id: d.id, actorId: 'operator-1', expectedRevision: d.revision, patch: { trainingCompleted: true } })).resolves.toMatchObject({ trainingCompleted: true, trainingEvidenceRefs: [] })
   })
 
-  it('rejects downstream completion for legacy paid rows without payment evidence in memory single, batch and training paths', async () => {
+  it('still rejects evidenced checklist completion for legacy paid rows without payment evidence', async () => {
     const repo = new MemoryCustomerDeliveryRepository()
     const d = await repo.create({ workspaceId: 'ws_legacy_payment_gate', companyName: 'Legacy paid', actorId: 'operator-1' })
     const rows = (repo as unknown as { rows: Map<string, CustomerDelivery> }).rows
@@ -844,38 +844,31 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     await expect(repo.updateChecklistItems({ workspaceId: d.workspaceId, deliveryId: d.id, checklistKey: 'system_integration',
       items: completedItems, actorId: 'operator-1', expectedRevision: d.revision,
     })).rejects.toMatchObject({ code: 'PAYMENT_REQUIRED' })
-    await expect(repo.update({ workspaceId: d.workspaceId, id: d.id, actorId: 'operator-1', expectedRevision: d.revision,
-      patch: { trainingCompleted: true, trainingEvidenceRefs: ['asset_training'] },
-    })).rejects.toMatchObject({ code: 'PAYMENT_REQUIRED' })
     expect((await repo.get(d.workspaceId, d.id))?.revision).toBe(d.revision)
   })
 
-  it.each(['single', 'batch', 'training'] as const)('rejects downstream %s writes for PostgreSQL legacy paid rows without payment evidence', async path => {
+  it.each(['single', 'batch'] as const)('rejects downstream %s writes for PostgreSQL legacy paid rows without payment evidence', async path => {
     const client = new RecordingClient()
     client.enqueue(); client.enqueue(); client.enqueue(postgresRow({ payment_evidence_refs: [], training_completed: false })); client.enqueue()
     const repo = new PostgresCustomerDeliveryRepository(new RecordingPool(client))
     const request = path === 'single'
       ? repo.updateChecklistItem({ workspaceId: 'ws_pg', deliveryId: 'cd_pg', checklistKey: 'system_integration', itemKey: '店铺连接',
         completed: true, evidence: { asset_refs: ['asset_store'] }, actorId: 'operator-1', expectedRevision: 4 })
-      : path === 'batch'
-        ? repo.updateChecklistItems({ workspaceId: 'ws_pg', deliveryId: 'cd_pg', checklistKey: 'system_integration', actorId: 'operator-1', expectedRevision: 4,
-          items: CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS.system_integration.map(itemKey => ({ itemKey, completed: true, evidence: { asset_refs: [`asset_${itemKey}`] } })),
-        })
-        : repo.update({ workspaceId: 'ws_pg', id: 'cd_pg', actorId: 'operator-1', expectedRevision: 4,
-          patch: { trainingCompleted: true, trainingEvidenceRefs: ['asset_training'] },
-        })
+      : repo.updateChecklistItems({ workspaceId: 'ws_pg', deliveryId: 'cd_pg', checklistKey: 'system_integration', actorId: 'operator-1', expectedRevision: 4,
+        items: CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS.system_integration.map(itemKey => ({ itemKey, completed: true, evidence: { asset_refs: [`asset_${itemKey}`] } })),
+      })
     await expect(request).rejects.toMatchObject({ code: 'PAYMENT_REQUIRED' })
     expect(client.calls.some(call => call.text.startsWith('UPDATE') || call.text.startsWith('INSERT INTO workspace_customer_delivery_checklist_items'))).toBe(false)
     expect(client.calls.at(-1)?.text).toBe('ROLLBACK')
   })
 
-  it('requires payment, checklist and training evidence before completion facts can be saved', async () => {
+  it('requires payment and checklist evidence but not training evidence', async () => {
     const repo = new MemoryCustomerDeliveryRepository()
     const draft = await repo.create({ workspaceId: 'ws_required_evidence', companyName: 'Evidence Co', actorId: 'operator-1' })
     await expect(repo.update({ workspaceId: draft.workspaceId, id: draft.id, actorId: 'operator-1', expectedRevision: draft.revision, patch: { paymentStatus: 'paid', paymentDate: '2026-09-14' } })).rejects.toMatchObject({ code: 'EVIDENCE_REQUIRED' })
     const paid = await repo.update({ workspaceId: draft.workspaceId, id: draft.id, actorId: 'operator-1', expectedRevision: draft.revision, patch: { paymentStatus: 'paid', paymentDate: '2026-09-14', paymentEvidenceRefs: ['asset_payment'] } })
     await expect(repo.updateChecklistItem!({ workspaceId: paid.workspaceId, deliveryId: paid.id, checklistKey: 'system_integration', itemKey: '店铺连接', completed: true, evidence: { note: '只有文字' }, actorId: 'operator-1', expectedRevision: paid.revision })).rejects.toMatchObject({ code: 'EVIDENCE_REQUIRED' })
-    await expect(repo.update({ workspaceId: paid.workspaceId, id: paid.id, actorId: 'operator-1', expectedRevision: paid.revision, patch: { trainingCompleted: true } })).rejects.toMatchObject({ code: 'EVIDENCE_REQUIRED' })
+    await expect(repo.update({ workspaceId: paid.workspaceId, id: paid.id, actorId: 'operator-1', expectedRevision: paid.revision, patch: { trainingCompleted: true } })).resolves.toMatchObject({ trainingCompleted: true, trainingEvidenceRefs: [] })
   })
 
   it('never marks an otherwise complete delivery effective while unpaid', async () => {
@@ -1048,7 +1041,7 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
       client.videos = state === 'video' ? [] : [postgresVideo()]
       client.items = items
       const result = await new PostgresCustomerDeliveryRepository(new RecordingPool(client)).get('ws_pg', 'cd_pg')
-      expect(result?.effectiveAt).toBe(state === 'ready' ? row.effective_at : null)
+      expect(result?.effectiveAt).toBe(state === 'ready' || state === 'training' ? row.effective_at : null)
       expect(result?.systemIntegrationStatus).toBe('complete')
       expect(row.effective_at).toBe('2026-09-13T00:00:00.000Z')
       expect(client.calls.some(call => call.text.startsWith('UPDATE'))).toBe(false)

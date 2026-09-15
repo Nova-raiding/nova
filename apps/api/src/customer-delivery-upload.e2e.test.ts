@@ -205,7 +205,7 @@ describe('customer delivery uploads over strict loopback HTTP with real quaranti
     expect(paid).toMatchObject({ paymentStatus: 'paid', paymentEvidenceRefs: [pending.assetRef] })
   })
 
-  it('requires purpose-bound scanned evidence for checklist items and training completion', async () => {
+  it('requires purpose-bound scanned evidence for checklist items but not manual training confirmation', async () => {
     const delivery = await createDelivery()
     const uploadAndTrust = async (purpose: Purpose) => {
       const uploaded = successfulResult(await call<UploadView>('ops.customer-delivery.assets.upload', uploadParams(delivery.id, purpose)))
@@ -224,11 +224,8 @@ describe('customer delivery uploads over strict loopback HTTP with real quaranti
     successfulResult(await call('ops.customer-delivery.checklist-item.update', { delivery_id: delivery.id, checklist_key: 'system_integration', item_key: '店铺连接', completed: 'true', evidence_json: JSON.stringify({ note: '接入记录', asset_refs: [integrationRef] }), expected_revision: String(paid.revision) }))
     const afterChecklist = await getDelivery(delivery.id)
 
-    const missingTraining = await call('ops.customer-delivery.training.complete', { delivery_id: delivery.id, completed: 'true', evidence_refs_json: '[]', expected_revision: String(afterChecklist.revision) })
-    expect(missingTraining.status).toBe(409)
-    const trainingRef = await uploadAndTrust('training')
-    const trained = successfulResult(await call<CustomerDelivery>('ops.customer-delivery.training.complete', { delivery_id: delivery.id, completed: 'true', evidence_refs_json: JSON.stringify([trainingRef]), expected_revision: String(afterChecklist.revision) }))
-    expect(trained).toMatchObject({ trainingCompleted: true, trainingEvidenceRefs: [trainingRef] })
+    const trained = successfulResult(await call<CustomerDelivery>('ops.customer-delivery.training.complete', { delivery_id: delivery.id, completed: 'true', evidence_refs_json: '[]', expected_revision: String(afterChecklist.revision) }))
+    expect(trained).toMatchObject({ trainingCompleted: true, trainingEvidenceRefs: [] })
   })
 
   beforeEach(async () => {
