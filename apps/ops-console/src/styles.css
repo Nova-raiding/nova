@@ -31,7 +31,8 @@
 .customer-delivery-create-form .ant-input-affix-wrapper,
 .customer-delivery-create-form .ant-picker,
 .customer-delivery-create-form .ant-select-selector { height: 40px !important; min-height: 40px !important; }
-.customer-delivery-create-form .ant-input-affix-wrapper .ant-input { height: auto !important; padding-block: 0 !important; line-height: 1.5; }
+.customer-delivery-create-form .ant-input-affix-wrapper { display: flex; align-items: center; }
+.customer-delivery-create-form .ant-input-affix-wrapper .ant-input { height: auto !important; padding-block: 0 !important; line-height: 40px; }
 .customer-delivery-create-form input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0; width: 100%; cursor: pointer; }
 .customer-delivery-upload-button { width: 32px; height: 28px !important; min-height: 28px !important; padding: 0; border: 0; border-radius: 6px !important; }
 .customer-delivery-uploaded-file { margin-top: 6px; color: #475569; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
