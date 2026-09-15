@@ -419,7 +419,7 @@ export function useOpsConsoleModel() {
     identityCount: 0,
     workspaceCount: 0,
     offset: 0,
-    limit: 20,
+    limit: 10,
     truncated: false,
   });
   const [userDirectoryLoading, setUserDirectoryLoading] = useState(false);
@@ -602,7 +602,7 @@ export function useOpsConsoleModel() {
     setSubscription(undefined);
     setOrders([]);
     setMembers([]);
-    setUserDirectory({ items: [], total: 0, identityCount: 0, workspaceCount: 0, offset: 0, limit: 20, truncated: false });
+    setUserDirectory({ items: [], total: 0, identityCount: 0, workspaceCount: 0, offset: 0, limit: 10, truncated: false });
     setUserDirectoryError("");
     setUserDetail(undefined);
     setWorkspaceRows([]);
