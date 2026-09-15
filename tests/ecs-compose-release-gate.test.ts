@@ -12,9 +12,11 @@ const digests = {
   'merchant-ops-ui': digest('d'),
   'payment-gateway': digest('e'),
   clamav: digest('f'),
+  'postgres-migration': digest('0'),
 }
 const groups: Record<string, string[]> = {
-  'merchant-api': ['api', 'api-replica', 'migrate'],
+  'merchant-api': ['api', 'api-replica'],
+  'postgres-migration': ['migrate'],
   'merchant-worker': ['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan'],
   'merchant-ui': ['ui'],
   'merchant-ops-ui': ['ops-ui'],
@@ -25,7 +27,11 @@ const groups: Record<string, string[]> = {
 function fixture() {
   const services: Record<string, unknown> = {}
   for (const [artifact, names] of Object.entries(groups)) {
-    for (const name of names) services[name] = { image: `registry.example.com/${artifact}@${digests[artifact as keyof typeof digests]}` }
+    for (const name of names) services[name] = {
+      image: artifact === 'postgres-migration'
+        ? `registry.example.com/library/postgres:16-alpine@${digests[artifact as keyof typeof digests]}`
+        : `registry.example.com/${artifact}@${digests[artifact as keyof typeof digests]}`,
+    }
   }
   return { services }
 }
@@ -49,6 +55,16 @@ describe('ECS Compose release gate', () => {
     expect(run(fixture())).toMatch(/^sha256:[0-9a-f]{64}$/)
     const { ['payment-gateway']: _, ...missingPayment } = digests
     expect(() => run(fixture(), missingPayment)).toThrow(/payment-gateway digest/)
+  })
+
+  it('requires migrate to use its own immutable psql-capable PostgreSQL image', () => {
+    const apiBackedMigration = fixture() as any
+    apiBackedMigration.services.migrate.image = apiBackedMigration.services.api.image
+    expect(() => run(apiBackedMigration)).toThrow(/migrate image must be an immutable psql-capable PostgreSQL image/)
+
+    const taggedMigration = fixture() as any
+    taggedMigration.services.migrate.image = 'postgres:16-alpine'
+    expect(() => run(taggedMigration)).toThrow(/migrate image must be an immutable/)
   })
 
   it('rejects tag images and build directives', () => {

@@ -6858,7 +6858,12 @@ async function resolveActiveWorkspaceMember(req: IncomingMessage, workspaceId: s
   const principal = requestPrincipals.get(req)
   if (!principal?.actorId) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '生产工作区访问必须绑定可识别的成员身份', 401)
   if (!workspaceId) throw new DomainError(ERROR_CODES.FORBIDDEN, '生产工作区访问缺少工作区范围', 403)
-  const member = (await (persistence.members ?? memoryMembers).list(workspaceId)).find(item => item.externalSubject === principal.actorId || (principal.accountLogin && item.externalSubject === principal.accountLogin))
+  const members = persistence.members ?? memoryMembers
+  const member = (await members.list(workspaceId)).find(item =>
+    (principal.identityId && item.identityId === principal.identityId)
+    || item.externalSubject === principal.actorId
+    || (principal.accountLogin && item.externalSubject === principal.accountLogin),
+  )
   if (!member) {
     if (required) throw new DomainError('WORKSPACE_MEMBERSHIP_REQUIRED', '当前身份不是该工作区的有效成员，请由工作区所有者邀请后重试', 403, { workspace_id: workspaceId })
     return false
@@ -6868,7 +6873,7 @@ async function resolveActiveWorkspaceMember(req: IncomingMessage, workspaceId: s
   if (member.status === 'suspended') throw new DomainError('MEMBER_SUSPENDED', '该运营成员已被暂停，当前工作区访问已撤销', 403)
   if (member.status !== 'active') throw new DomainError('MEMBER_NOT_ACTIVE', '该运营成员尚未激活，当前工作区访问未开放', 403)
   if (principal.identityId && member.identityId !== principal.identityId) {
-    try { await (persistence.members ?? memoryMembers).bindIdentity({ workspaceId, externalSubject: member.externalSubject, identityId: principal.identityId }) }
+    try { await members.bindIdentity({ workspaceId, externalSubject: member.externalSubject, identityId: principal.identityId }) }
     catch (error) { if (String(error).includes('MEMBER_IDENTITY_CONFLICT')) throw new DomainError('MEMBER_IDENTITY_CONFLICT', '成员关系已绑定到其他平台身份，访问已拒绝', 403); throw error }
   }
   const gatewayMemberRoles = principal.roles.filter(role => {

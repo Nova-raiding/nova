@@ -85,6 +85,10 @@ describe('canonical password identity MCP OAuth', () => {
     expect(initialized.status).toBe(200)
     await expect(initialized.json()).resolves.toMatchObject({ jsonrpc: '2.0', id: 1, result: { serverInfo: { name: 'merchant-marketing' } } })
 
+    const health = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${tokens.access_token}`, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1.1, method: 'workspace.health', params: {} }) })
+    expect(health.status).toBe(200)
+    await expect(health.json()).resolves.toMatchObject({ data: { jsonrpc: '2.0', id: 1.1, result: expect.any(Object) } })
+
     const switched = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${tokens.access_token}`, 'content-type': 'application/json', 'x-workspace-id': 'ws_other' }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'initialize', params: {} }) })
     expect(switched.status).toBe(403)
 

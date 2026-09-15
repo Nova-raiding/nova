@@ -16,7 +16,8 @@ rescue StandardError => e
 end
 
 required = {
-  'merchant-api' => %w[api api-replica migrate],
+  'merchant-api' => %w[api api-replica],
+  'postgres-migration' => %w[migrate],
   'merchant-worker' => %w[worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan],
   'merchant-ui' => %w[ui],
   'merchant-ops-ui' => %w[ops-ui],
@@ -42,6 +43,11 @@ required.each do |artifact, service_names|
     image = service['image']
     errors << "#{service_name} image must be an immutable repository@#{digest} reference" unless image.is_a?(String) && image.end_with?("@#{digest}")
   end
+end
+
+migration_image = services.dig('migrate', 'image')
+unless migration_image.is_a?(String) && migration_image.match?(%r{(?:\A|/)postgres(?::[^@/]+)?@sha256:[0-9a-f]{64}\z})
+  errors << 'migrate image must be an immutable psql-capable PostgreSQL image'
 end
 
 abort(errors.map { |error| "- #{error}" }.join("\n")) unless errors.empty?
