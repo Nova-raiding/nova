@@ -52,7 +52,8 @@ describe('payment callback nonce PostgreSQL recovery', () => {
       })
       await database.query("INSERT INTO workspaces (id,status) VALUES ('ws_callback_retry','active')")
 
-      app = new Pool({ connectionString: connection(base, databaseName, 'merchant_app', 'merchant_app_local_only'), max: 3 })
+      // Inject a bounded transient write failure without weakening ACL/RLS.
+      app = new Pool({ connectionString: connection(base, databaseName, 'merchant_app', 'merchant_app_local_only'), max: 3, options: '-c lock_timeout=750ms -c statement_timeout=5000ms' })
       const billing = new PostgresBillingRepository(app)
       const nonces = new PostgresPaymentCallbackNonceRepository(app)
       const workspaceId = 'ws_callback_retry'
