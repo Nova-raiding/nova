@@ -19201,6 +19201,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const orderId = required(input, 'order_id')
     const providerTradeId = required(input, 'provider_trade_id')
     const amountFen = Number(input.amount_fen)
+    const currency = typeof input.currency === 'string' ? input.currency : ''
     const state = typeof input.state === 'string' ? input.state : ''
     const workspaceId = typeof input.workspace_id === 'string' && input.workspace_id.trim() ? input.workspace_id.trim() : ''
     if (!workspaceId || !Number.isSafeInteger(amountFen) || amountFen < 0) throw new DomainError('PAYMENT_CALLBACK_INVALID', '支付回调缺少有效订单、工作区或金额', 400)
