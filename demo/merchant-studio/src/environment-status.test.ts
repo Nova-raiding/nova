@@ -43,13 +43,39 @@ describe('resolveMerchantEnvironmentStatus', () => {
     expect(`${result.title}${result.topbarLabel}`).not.toContain('在线')
   })
 
-  it('blocks a production-shaped environment when the production gate fails', () => {
-    const result = resolve(health({
-      setup: { mode: 'production', productionGate: false },
-    }))
+  it.each([
+    {
+      caseName: 'fixture mode',
+      apiHealth: health({ setup: { mode: 'fixture', productionGate: true } }),
+      expectedState: 'demo',
+      evidence: '当前是本地演示环境',
+    },
+    {
+      caseName: 'failed production gate',
+      apiHealth: health({ setup: { mode: 'production', productionGate: false } }),
+      expectedState: 'blocked',
+      evidence: '生产上线门禁未通过',
+    },
+    {
+      caseName: 'closed external writes',
+      apiHealth: health({
+        writesEnabled: false,
+        setup: { mode: 'production', productionGate: true },
+      }),
+      expectedState: 'blocked',
+      evidence: '外部平台写入已关闭',
+    },
+  ] as const)('blocks production readiness when only $caseName is unmet', ({
+    apiHealth,
+    expectedState,
+    evidence,
+  }) => {
+    const result = resolve(apiHealth)
 
-    expect(result).toMatchObject({ state: 'blocked', tone: 'warning' })
+    expect(result).toMatchObject({ state: expectedState, tone: 'warning' })
     expect(result.title).toContain('不可上线')
+    expect(result.detail).toContain(evidence)
+    expect(result.topbarLabel).not.toBe('生产就绪')
   })
 
   it('fails closed when write or gate evidence is missing', () => {
