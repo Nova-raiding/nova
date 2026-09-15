@@ -2,6 +2,8 @@
 
 当前发布元数据同步基线（2026-09-14）：商家 bridge 当前实测为 151 个工具、11 个 Ops 一级域、迁移链已到 192；具体以共享注册表、`release-metadata.json` 和发布门禁为准。
 
+> 2026-09-14 支付退款证据链校正：退款请求使用持久化钱包预留交易 ID 作为支付宝 `out_request_no`，网络超时或歧义响应不释放预留、不重复生成请求号；新增退款查询 endpoint 与 API 对账收口。严格按支付宝契约，直接退款只有 `fund_change=Y` 才确认完成，退款查询只有 `refund_status=REFUND_SUCCESS` 且订单号、退款请求号、金额全部匹配才关单；查询返回码 `10000` 本身不再被误判为退款成功。生产配置与发布门禁要求独立 HTTPS 退款查询地址。该实现仍须在部署后完成自动 worker 调度、真实一分订单复验和正式上线门禁，不能仅凭代码测试标记 GO。
+
 ### 2026-08-31 桌面运行态增量
 
 - Ops 连接诊断默认折叠已落地并经 Compose Chrome 桌面入口验收：`ops.spec.js` 1 passed，0 HTTP 错误、0 请求失败、0 console/page 错误。
@@ -990,11 +992,11 @@ npm run dev:api
 - UI 复核发现顶部固定显示“系统健康 98”、侧栏固定显示“23/50 容量”，连接真实 API 时会把演示状态误认为线上监控/套餐容量。
 - 已改为健康状态“在线/离线/未读取”，容量显示“实时读取”并说明以套餐与云端配置为准；没有真实数据时不展示伪造数字。demo 前端 production build 通过。
 
-### 继续审理（2026-08-27，Codex 插件缓存与大麦入口）
+### 继续审理（2026-08-27，Codex 插件缓存与Store Nova入口）
 
 - CodeGraph/运行态复核发现源码 bridge 已有 158 个 MCP 工具，但当前 Codex 会话仍加载旧缓存，工具列表只有 72 个，导致 `merchant.start` 等入口在 App 中不可见。
 - 已刷新插件 cachebuster 至 `0.1.0+codex.20260826182016`，同步开发插件、marketplace 镜像和安装包版本，并从 `merchant-local` 重新安装；缓存 bridge 的 `tools/list` 实测为 158 个，首两个工具为 `merchant.start`、`merchant.first_value`。
-- manifest 用户可见名已保持为“ 大麦 ”，技术 ID 继续保持 `merchant-marketing` 以兼容已安装配置；当前旧会话不会热刷新，需新建 Codex 会话读取新缓存。App 真实工作区调用仍需配置 `MERCHANT_MCP_BASE_URL` 与 `MERCHANT_WORKSPACE_ID`，未配置时安全拒绝。
+- manifest 用户可见名已保持为“ Store Nova ”，技术 ID 继续保持 `merchant-marketing` 以兼容已安装配置；当前旧会话不会热刷新，需新建 Codex 会话读取新缓存。App 真实工作区调用仍需配置 `MERCHANT_MCP_BASE_URL` 与 `MERCHANT_WORKSPACE_ID`，未配置时安全拒绝。
 
 ### 继续审理（2026-08-27，Kubernetes worker YAML 门禁）
 

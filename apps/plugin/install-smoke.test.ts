@@ -33,7 +33,7 @@ describe('Codex plugin installation package', () => {
   it('contains the required manifest, skill entry, and MCP companion file', () => {
     const manifest = readJson('.codex-plugin/plugin.json')
     expect(manifest.name).toBe('merchant-marketing')
-    expect(manifest.interface.displayName).toBe('大麦')
+    expect(manifest.interface.displayName).toBe('Store Nova')
     expect(manifest.version).toMatch(/^0\.1\.0\+codex\.[0-9]{14}$/)
     expect(manifest.skills).toBe('./skills/')
     expect(manifest.mcpServers).toBe('./.mcp.json')

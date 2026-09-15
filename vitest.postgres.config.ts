@@ -3,7 +3,7 @@ import { readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { NON_HERMETIC_TEST_FILES } from './tests/test-suite-isolation.js'
 
-export const ISOLATED_POSTGRES_TEST_FILES = NON_HERMETIC_TEST_FILES.filter(file => file.startsWith('packages/persistence/src/') && file.endsWith('.postgres.test.ts'))
+export const ISOLATED_POSTGRES_TEST_FILES = NON_HERMETIC_TEST_FILES.filter(file => (file.startsWith('packages/persistence/src/') || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts') && file.endsWith('.postgres.test.ts'))
 
 const projectRoot = resolve(import.meta.dirname)
 function discover(directory: string, prefix = ''): string[] {
@@ -25,7 +25,7 @@ export function createIsolatedPostgresConfig(environment: NodeJS.ProcessEnv) {
       && !database.search && !database.hash
       && /^[a-f0-9-]{36}$/u.test(environment.MERCHANT_ISOLATED_POSTGRES_RUN_ID ?? '')
   } catch { /* missing or malformed binding must not activate a localhost fallback */ }
-  if (!valid || ISOLATED_POSTGRES_TEST_FILES.length !== 18 || ALL_POSTGRES_TEST_FILES.length < ISOLATED_POSTGRES_TEST_FILES.length) throw new Error('Use the isolated PostgreSQL launcher; generated local fixture bindings and the PostgreSQL manifest are required.')
+  if (!valid || ISOLATED_POSTGRES_TEST_FILES.length !== 16 || ALL_POSTGRES_TEST_FILES.length < ISOLATED_POSTGRES_TEST_FILES.length) throw new Error('Use the isolated PostgreSQL launcher; generated local fixture bindings and the PostgreSQL manifest are required.')
   const files = environment.MERCHANT_ISOLATED_POSTGRES_ALL === 'true' ? ALL_POSTGRES_TEST_FILES : ISOLATED_POSTGRES_TEST_FILES
   return {
     test: {

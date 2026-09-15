@@ -1,10 +1,10 @@
-# Codex App 与大麦模型中转站配置
+# Codex App 与Store Nova模型中转站配置
 
 日期：2026-08-26
 
 > 当前校正（2026-09-06）：本地 Docker API 已实际读取到业务 relay 地址、密钥和五类模型配置；用户级 `~/.codex/config.toml` 已将宿主 provider 对齐为 `damai_relay`，模型为真实目录中的 `glm-5.2`。这不等于正式生产成本结算和发布证据已完成，生产环境仍必须提供正式配置、签名证据和 settled cost receipt。
 
-> 实际协议探测（2026-09-06）：中转站 `/v1/models` 返回 `glm-5.2`（标准 `openai` 能力标记），使用 Keychain 中的中转凭据发送最小标准 `/v1/responses` 请求返回 HTTP 200，并带 usage。Codex CLI 使用同一配置完成最小真实对话；ChatGPT 桌面端完全重启后读取到 `glm-5.2 (大麦中转)`。配置命令同时写入仅包含该已验证模型的本地 `model_catalog_json` 快照，避免中转站缺少 Codex 专用 `models[]` 镜像时产生刷新警告。
+> 实际协议探测（2026-09-06）：中转站 `/v1/models` 返回 `glm-5.2`（标准 `openai` 能力标记），使用 Keychain 中的中转凭据发送最小标准 `/v1/responses` 请求返回 HTTP 200，并带 usage。Codex CLI 使用同一配置完成最小真实对话；ChatGPT 桌面端完全重启后读取到 `glm-5.2 (Store Nova中转)`。配置命令同时写入仅包含该已验证模型的本地 `model_catalog_json` 快照，避免中转站缺少 Codex 专用 `models[]` 镜像时产生刷新警告。
 
 > 2026-08-31 真实业务 relay 探测：`/chat/completions` 的 text 与 OCR 均返回 HTTP 200，并取得 provider request ID、usage 和 pricing snapshot 成本证据；image、image_edit、video 按脚本的成本保护保持 `not_run_cost_guard`，因此五模态仍不能标记为完整通过。
 
@@ -13,9 +13,9 @@
 要做到“使用 Codex App 的交互和工具能力，但模型费用全部走自有中转站”，必须同时配置两条彼此独立的模型链路：
 
 1. **Codex Agent 链路**：负责理解用户消息、决定调用哪个 Skill/MCP、组织回复。它由 Codex 的用户级 `model_provider` 控制。
-2. **大麦业务模型链路**：负责商品文案、生图、OCR、图片编辑和视频渲染。它由服务端 `MODEL_RELAY_*` 控制。
+2. **Store Nova业务模型链路**：负责商品文案、生图、OCR、图片编辑和视频渲染。它由服务端 `MODEL_RELAY_*` 控制。
 
-只配置第二条链路，不能消除 Codex App 自身的模型消耗；只配置第一条链路，也不能证明业务模型、钱包和成本审计都经过大麦服务端。
+只配置第二条链路，不能消除 Codex App 自身的模型消耗；只配置第一条链路，也不能证明业务模型、钱包和成本审计都经过Store Nova服务端。
 
 ## 中转站必须提供的能力
 
@@ -26,7 +26,7 @@
 | 商品图片 | `/images/generations` | 主图候选和图片编辑 |
 | 视频 | `POST /video/generations`、`GET /video/generations/{task_id}` | 成片请求和异步状态查询 |
 
-如果中转站只有 Chat Completions、没有 Responses API，它可以承载大麦业务模型，但不能作为 Codex App 的自定义模型 provider。
+如果中转站只有 Chat Completions、没有 Responses API，它可以承载Store Nova业务模型，但不能作为 Codex App 的自定义模型 provider。
 
 ## Codex 用户级配置
 
@@ -39,7 +39,7 @@ model = "REPLACE_WITH_CODEX_COMPATIBLE_MODEL"
 model_provider = "damai_relay"
 
 [model_providers.damai_relay]
-name = "大麦模型中转（非插件）"
+name = "Store Nova模型中转（非插件）"
 base_url = "https://REPLACE_WITH_RELAY_HOST/v1"
 env_key = "DAMAI_CODEX_RELAY_API_KEY"
 wire_api = "responses"
@@ -56,7 +56,7 @@ export DAMAI_CODEX_RELAY_API_KEY="由中转站签发的密钥"
 
 不要把真实密钥写进仓库、插件 manifest、MCP 参数或工作区级配置。修改后需要完全退出并重启 Codex App，再用一个新会话验证 provider。
 
-> 该 `name` 是宿主左下角显示的**模型供应商**标签，不是插件名称。大麦插件由 `apps/plugin/.codex-plugin/plugin.json` 的 `interface.displayName` 定义，在聊天中显示为 `@大麦`。两者必须保持可区分，避免把模型出口误认为插件入口。
+> 该 `name` 是宿主左下角显示的**模型供应商**标签，不是插件名称。Store Nova插件由 `apps/plugin/.codex-plugin/plugin.json` 的 `interface.displayName` 定义，在聊天中显示为 `@Store Nova`。两者必须保持可区分，避免把模型出口误认为插件入口。
 
 仓库提供一条 fail-closed 配置路径：先用 `codex:relay:configure` 写入 Codex 用户级 host-model provider，再注入该 provider 的 `env_key`，最后运行 `codex:relay:validate`。验证器同时检查 host-model relay 和业务-model relay；任一缺失或占位值都会返回非零退出码，不能回退到直连模型。
 
@@ -81,7 +81,7 @@ npm run codex:relay:configure
 
 命令完成后，再通过当前 shell 或系统密钥管理器注入 `DAMAI_CODEX_RELAY_API_KEY`，运行 `npm run codex:relay:validate`。没有真实地址、模型或合法环境变量名时命令会失败，不会写入示例配置。
 
-## 大麦服务端配置
+## Store Nova服务端配置
 
 ```dotenv
 MODEL_RELAY_BASE_URL=https://REPLACE_WITH_RELAY_HOST/v1
@@ -102,13 +102,13 @@ VIDEO_MODEL=REPLACE_WITH_VIDEO_MODEL
 
 ## 验收清单
 
-插件 Skill 不调用 Codex 宿主原生 `image_gen`；主图和图片编辑统一经过大麦业务 relay，以便钱包门禁、usage 计量、退款和审计保持同一条链路。
+插件 Skill 不调用 Codex 宿主原生 `image_gen`；主图和图片编辑统一经过Store Nova业务 relay，以便钱包门禁、usage 计量、退款和审计保持同一条链路。
 
 - 中转站日志能看到 Codex 的 `/responses` 请求，并能按用户/工作区归集输入、输出、缓存和总 token。
-- 中转站日志能看到大麦服务端的文案、图片、OCR、编辑和视频请求。
-- 断开中转站后，Codex 自定义 provider 和大麦生产生成都 fail-closed，不回退到 OpenAI 会员或直连供应商。
+- 中转站日志能看到Store Nova服务端的文案、图片、OCR、编辑和视频请求。
+- 断开中转站后，Codex 自定义 provider 和Store Nova生产生成都 fail-closed，不回退到 OpenAI 会员或直连供应商。
 - `content.codex.prepare/commit` 在生产返回 `PLATFORM_GENERATION_REQUIRED`。
-- 大麦账务记录中转请求 ID、模型、计量单位、供应商成本、商家收费和退款状态，但不记录原始 Key。
+- Store Nova账务记录中转请求 ID、模型、计量单位、供应商成本、商家收费和退款状态，但不记录原始 Key。
 - 重复请求命中同一幂等键，不重复扣费；provider 失败会自动退款。
 
 ## 目前还缺什么

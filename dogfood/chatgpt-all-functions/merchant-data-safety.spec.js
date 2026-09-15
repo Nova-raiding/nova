@@ -109,6 +109,55 @@ test('model relay readiness is visible before a merchant starts a task', async (
   await expect(health).toContainText('配置平台模型中转站后重新检查')
 })
 
+test('fixture health never presents the merchant workspace as production ready', async ({ page }) => {
+  const readyModels = Object.fromEntries(
+    ['text', 'image', 'image_edit', 'ocr', 'video'].map(name => [name, { ready: true, reasons: [] }]),
+  )
+  await page.route('**/api/healthz', route => fulfillJson(route, {
+    status: 'ok',
+    writesEnabled: false,
+    connectors: {},
+    persistence: { mode: 'postgres', ready: true },
+    setup: {
+      mode: 'fixture',
+      productionGate: false,
+      ai: { costGate: 'ready' },
+      modelReadiness: readyModels,
+    },
+  }))
+  await page.route('**/api/mcp', async route => {
+    const request = route.request().postDataJSON()
+    if (request?.method !== 'platform.model.status') return route.continue()
+    return fulfillJson(route, { result: {
+      state: 'ready',
+      relay: { configured: true, host: 'relay.test', reasons: [] },
+      capabilities: { text_generation: true, image_generation: true, image_editing: true, image_fact_ocr: true, video_rendering: true },
+      next_actions: [],
+      cost_control_ready: true,
+      cost_evidence_ready: true,
+      release_metadata_ready: true,
+    } })
+  })
+
+  await page.goto(appUrl)
+  const banner = page.locator('.environment-banner[role="status"]')
+  await expect(banner).toHaveAttribute('data-environment-state', 'demo')
+  await expect(banner).toHaveClass(/warning/u)
+  await expect(banner).not.toHaveClass(/ready/u)
+  await expect(banner).toContainText('演示环境 · 不可上线')
+  await expect(banner).toContainText('外部平台写入已关闭')
+
+  const trigger = page.getByRole('button', { name: '查看系统健康' })
+  await expect(trigger).toContainText('演示环境')
+  await expect(trigger).not.toContainText('生产就绪')
+  await trigger.click()
+  const health = page.getByRole('dialog', { name: '系统健康与上线状态' })
+  await expect(health).toContainText('API 连通：正常')
+  await expect(health).toContainText('运行模式：本地演示')
+  await expect(health).toContainText('外部写入：已关闭')
+  await expect(health).toContainText('生产门禁：未通过')
+})
+
 async function openFinalPublishConfirmation(page, publishRoute) {
   await page.route(/\/api\/v1\/products(?:\?.*)?$/, route => fulfillPageJson(route, [finalPublishProduct]))
   await page.route('**/api/v1/products/prod-final-publish', route => fulfillJson(route, finalPublishProduct))

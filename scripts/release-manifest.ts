@@ -91,6 +91,8 @@ export function buildReleaseManifest(input: {
     resolve(root, 'services/payment-gateway/index.mjs'),
     resolve(root, 'services/payment-gateway/alipay.mjs'),
     resolve(root, 'services/payment-gateway/alipay.d.mts'),
+    resolve(root, 'packages/billing/src/callback-envelope.mjs'),
+    resolve(root, 'packages/billing/src/callback-envelope.d.mts'),
     resolve(root, 'services/payment-gateway/Dockerfile'),
   ]
   const artifacts = artifactPaths.map(path => {

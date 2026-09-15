@@ -40,10 +40,11 @@ data:
   worker_automation_api_signing_secret_ref: "secret://merchant-staging/worker-automation-signing"
   redis_url: "${SECRET:STAGING_REDIS_URL}"
   object_storage_bucket: "merchant-staging-assets"
-  object_storage_region: "cn"
-  object_storage_endpoint: "https://s3.cn.example-provider.com"
+  object_storage_region: "cn-beijing"
+  object_storage_endpoint: "https://s3.oss-cn-beijing.aliyuncs.com"
   object_storage_prefix: "merchant-assets"
   object_storage_sse_mode: "AES256"
+  object_storage_kms_key: "${SECRET:STAGING_OBJECT_STORAGE_KMS_KEY_ID}"
   migration_source: "packages/persistence/src/migrations"
   migration_lock_timeout_seconds: 60
   backup_retention_days: 14

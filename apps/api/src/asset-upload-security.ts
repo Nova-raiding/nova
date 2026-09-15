@@ -73,7 +73,7 @@ interface AssetTypePolicy {
   signatures: readonly AssetSignatureClass[]
 }
 
-const MAX_ASSET_BYTES = 50 * 1024 * 1024
+const MAX_ASSET_BYTES = 100 * 1024 * 1024
 const extensionPolicies = new Map<string, AssetTypePolicy>([
   ['.pdf', { mimes: ['application/pdf'], signatures: ['pdf'] }],
   ['.docx', { mimes: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'], signatures: ['zip'] }],

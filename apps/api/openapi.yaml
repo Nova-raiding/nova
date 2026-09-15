@@ -1813,78 +1813,15 @@ components:
         files_json: { type: string, contentMediaType: application/json, x-json-shape: array }
         expected_manifest_hash: { type: string, pattern: '^(?:sha256:)?[A-Fa-f0-9]{64}$' }
       additionalProperties: false
-    McpCustomerDeliveryProfileUpdateParams:
-      type: object
-      description: Update ordinary customer delivery profile fields with optimistic revision. Derived integration/acceptance summaries and training fields are not accepted. Paid status requires scanned payment evidence bound to this delivery and payment purpose.
-      required: [target_workspace_id, delivery_id, expected_revision, patch_json]
-      properties:
-        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
-        target_workspace_id: { type: string, minLength: 1, maxLength: 200 }
-        delivery_id: { type: string, minLength: 1, maxLength: 256 }
-        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
-        patch_json:
-          type: string
-          contentMediaType: application/json
-          x-json-shape: object
-          maxLength: 16384
-          x-json-allowed-properties: [companyName, contractNumber, paymentStatus, contractRef, projectOwner, supportOwner, paymentDate, paymentEvidenceRefs, plannedGoLiveAt, customerProfileStatus]
-          description: Strict JSON object limited to the listed profile fields. paymentEvidenceRefs is an array of uploaded payment asset references. contractRef must be an HTTPS URL or asset reference; server ownership and clean-scan checks still apply. systemIntegrationStatus, functionalAcceptanceStatus, trainingCompleted and trainingEvidenceRefs are rejected.
-      additionalProperties: false
-    McpCustomerDeliveryChecklistUpdateParams:
-      type: object
-      description: Exactly one update mode is required. Scalar completed, whether true or false, is allowed only for customer_profile. System integration and functional acceptance use items_json or checklist-item.update. Completed items require evidence.asset_refs bound to this delivery and checklist purpose with a trusted clean scan; missing or untrusted completion evidence fails the runtime gate.
-      required: [target_workspace_id, delivery_id, checklist_key, expected_revision]
-      properties:
-        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
-        target_workspace_id: { type: string, minLength: 1, maxLength: 200 }
-        delivery_id: { type: string, minLength: 1, maxLength: 256 }
-        checklist_key: { type: string, enum: [customer_profile, system_integration, functional_acceptance] }
-        completed: { type: string, enum: ['true', 'false'], description: Scalar profile completion only. }
-        items_json: { type: string, contentMediaType: application/json, x-json-shape: array, maxLength: 16384, description: System integration or functional acceptance items with itemKey and completed; completed items require evidence.asset_refs containing scanned uploaded asset references. }
-        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
-      oneOf:
-        - required: [completed]
-          properties:
-            checklist_key: { type: string, enum: [customer_profile] }
-          not: { required: [items_json] }
-        - required: [items_json]
-          not: { required: [completed] }
-      additionalProperties: false
-    McpCustomerDeliveryChecklistItemUpdateParams:
-      type: object
-      description: Update one checklist item with optimistic revision. completed=true requires evidence_json.asset_refs to contain scanned uploaded references bound to this delivery and checklist purpose. Missing or untrusted completion evidence fails the runtime gate.
-      required: [target_workspace_id, delivery_id, checklist_key, item_key, completed, expected_revision]
-      properties:
-        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
-        target_workspace_id: { type: string, minLength: 1, maxLength: 200 }
-        delivery_id: { type: string, minLength: 1, maxLength: 256 }
-        checklist_key: { type: string, enum: [system_integration, functional_acceptance] }
-        item_key: { type: string, minLength: 1, maxLength: 256 }
-        completed: { type: string, enum: ['true', 'false'] }
-        evidence_json: { type: string, contentMediaType: application/json, x-json-shape: object, maxLength: 16384, description: Evidence object; completed=true requires a nonempty asset_refs array of scanned uploaded evidence references. }
-        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
-      additionalProperties: false
-    McpCustomerDeliveryTrainingCompleteParams:
-      type: object
-      description: Independently update training completion. Functional acceptance never completes training automatically. evidence_refs_json is required for both completion states; completed=true requires at least one uploaded training reference bound to this delivery with a trusted clean scan.
-      required: [target_workspace_id, delivery_id, completed, evidence_refs_json, expected_revision]
-      properties:
-        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
-        target_workspace_id: { type: string, minLength: 1, maxLength: 200 }
-        delivery_id: { type: string, minLength: 1, maxLength: 256 }
-        completed: { type: string, enum: ['true', 'false'] }
-        evidence_refs_json: { type: string, contentMediaType: application/json, x-json-shape: array, maxLength: 16384, description: Strict JSON array of nonempty training asset reference strings. An empty array cannot complete training. }
-        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
-      additionalProperties: false
     McpCustomerDeliveryAssetUploadParams:
       type: object
-      description: Platform-only upload of customer delivery contract, payment, integration, acceptance, training, or video evidence into quarantine for automatic scanning. Acceptance does not assert a clean scan or attach unscanned delivery evidence.
+      description: Platform-only upload of a customer delivery contract or video into quarantine for automatic scanning. Acceptance does not assert a clean scan or attach unscanned delivery evidence.
       required: [target_workspace_id, delivery_id, purpose, name, mime_type, content_base64]
       properties:
         workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
         target_workspace_id: { type: string, minLength: 1, maxLength: 200 }
         delivery_id: { type: string, minLength: 1, maxLength: 256 }
-        purpose: { type: string, enum: [contract, payment, system_integration, functional_acceptance, training, video] }
+        purpose: { type: string, enum: [contract, video] }
         name: { type: string, minLength: 1, maxLength: 255 }
         mime_type: { type: string, minLength: 1, maxLength: 100 }
         content_base64: { type: string, minLength: 1, maxLength: 69905068, description: Base64-encoded source bytes with a 50 MiB decoded upload limit. }
@@ -1898,7 +1835,7 @@ components:
         workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
         target_workspace_id: { type: string, minLength: 1, maxLength: 200 }
         delivery_id: { type: string, minLength: 1, maxLength: 256 }
-        purpose: { type: string, enum: [contract, payment, system_integration, functional_acceptance, training, video] }
+        purpose: { type: string, enum: [contract, video] }
         asset_ref: { type: string, minLength: 1, maxLength: 1000 }
       additionalProperties: false
     McpRequest:
@@ -1925,10 +1862,6 @@ components:
             ops.canonical.backfill.conflicts.list: '#/components/schemas/McpCanonicalBackfillConflictListParams'
             ops.canonical.backfill.conflict.claim: '#/components/schemas/McpCanonicalBackfillConflictClaimParams'
             ops.canonical.backfill.conflict.resolve: '#/components/schemas/McpCanonicalBackfillConflictResolveParams'
-            ops.customer-delivery.update: '#/components/schemas/McpCustomerDeliveryProfileUpdateParams'
-            ops.customer-delivery.checklist.update: '#/components/schemas/McpCustomerDeliveryChecklistUpdateParams'
-            ops.customer-delivery.checklist-item.update: '#/components/schemas/McpCustomerDeliveryChecklistItemUpdateParams'
-            ops.customer-delivery.training.complete: '#/components/schemas/McpCustomerDeliveryTrainingCompleteParams'
             ops.customer-delivery.assets.upload: '#/components/schemas/McpCustomerDeliveryAssetUploadParams'
             ops.customer-delivery.assets.get: '#/components/schemas/McpCustomerDeliveryAssetGetParams'
             ops.marketing.image.reconcile: '#/components/schemas/McpMarketingImageReconcileParams'

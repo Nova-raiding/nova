@@ -4,7 +4,7 @@
 
 当前仓库包含一个可运行的工程 RC：桌面 ChatGPT 插件 manifest/入口 Skill、MCP/API、统一契约、任务/内容/发布领域状态机、六平台 fixture profile 与可配置 HTTP connector、同步/生成/发布/对账 Worker、租户隔离 Outbox、OAuth state 安全组件，以及仅供开发调试的 Merchant Studio。小红书和抖音在官方 OAuth/API、字段映射与 canary 未完成前保持 fixture/API 或只读，不宣称生产可写。
 
-当前发布验收基线以 `release-metadata.json` 和运行时门禁为唯一权威：Repository 0.1.2、plugin 0.1.0+codex.20260912184110、151 个商家 Bridge 工具、11 个 Ops 一级域和迁移 192。正式发布仍须由 metadata、真实宿主证据和生产发布门禁共同通过。
+当前发布验收基线以 `release-metadata.json` 和运行时门禁为唯一权威：Repository 0.2.0、plugin 0.1.0+codex.20260915075456、151 个商家 Bridge 工具、12 个 Ops 一级域和迁移 201。正式发布仍须由 metadata、真实宿主证据和生产发布门禁共同通过。
 
 2026-08-29 桌面 ChatGPT 真实宿主只读验收中，`merchant.start`、`workspace.health`、`catalog.search`、`billing.status` 四项均通过。该结果证明桌面宿主 → 插件 → MCP → 本地 API 的四个核心只读入口可工作；本次店铺、商品和余额来自本地 `ws_demo`/fixture，不能替代真实六平台 OAuth、真实商户余额或生产 release 证据。
 
@@ -55,8 +55,8 @@ UI Demo：见 [demo/merchant-studio/README.md](demo/merchant-studio/README.md)�
 
 ## 代码入口
 
-- 产品总文档（主链路、账号密码、知识库、账务与上线门禁）：[docs/damai-product-master-document.md](docs/damai-product-master-document.md)
-- 安装与交付手册（技术安装人员、管理员和商家）：[docs/damai-chatgpt-plugin-install-manual.md](docs/damai-chatgpt-plugin-install-manual.md)
+- 产品总文档（主链路、账号密码、知识库、账务与上线门禁）：[docs/store-nova-product-master-document.md](docs/store-nova-product-master-document.md)
+- 安装与交付手册（技术安装人员、管理员和商家）：[docs/store-nova-chatgpt-plugin-install-manual.md](docs/store-nova-chatgpt-plugin-install-manual.md)
 - 产品使用介绍：[docs/product-usage-guide.md](docs/product-usage-guide.md)
 - 测试架构与上线验收：[docs/test-architecture-and-release-readiness-2026-09-08.md](docs/test-architecture-and-release-readiness-2026-09-08.md)
 

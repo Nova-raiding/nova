@@ -1,4 +1,4 @@
-# 大麦商家营销插件综合 PM / gstack / CodeGraph 审理
+# Store Nova商家营销插件综合 PM / gstack / CodeGraph 审理
 
 > 最新本地复核（2026-08-27）：在前述闭环基础上补齐商业 workspace 设置的 FORCE RLS、视频 provider 任务归属、商业灰度管理边界、订阅支付 checkout 持久化（迁移 041）和 Redis 恢复脚本 workspace 复用，并清理 Docker 悬空对象约 2.4GB；当前全量为 96 个测试文件、651 项测试通过，备份恢复已验证迁移 001→041，Redis 丢失恢复验收通过，最新 CodeGraph 为 253 个文件、4,078 个节点、17,856 条边。下文更早的统计均为历史证据。
 
@@ -278,7 +278,7 @@
 
 - 发现源码工具清单为 158 个，而当前 App 会话的旧插件缓存仅暴露 72 个，解释了“插件安装了但入口/功能看不到”的用户问题。
 - 已按插件更新流程刷新 cachebuster、同步 marketplace 镜像并重装 `merchant-marketing@merchant-local`；安装 smoke 9/9、JSON parity 校验通过，缓存 bridge `tools/list` 实测 158 个且包含 `merchant.start`。
-- “大麦”是 manifest 的用户显示名，`merchant-marketing` 是兼容性的技术 ID；新会话才能加载更新后的工具清单。真实工作区环境变量缺失时仍会 fail-closed，不会误用 `ws_demo`。
+- “Store Nova”是 manifest 的用户显示名，`merchant-marketing` 是兼容性的技术 ID；新会话才能加载更新后的工具清单。真实工作区环境变量缺失时仍会 fail-closed，不会误用 `ws_demo`。
 
 ### 继续审理（2026-08-27，部署配置回归）
 

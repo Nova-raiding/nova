@@ -174,6 +174,7 @@ begin
     'payment_checkout_base_url' => 'PAYMENT_CHECKOUT_BASE_URL',
     'payment_provider_checkout_api_url' => 'PAYMENT_PROVIDER_CHECKOUT_API_URL',
     'payment_provider_query_api_url' => 'PAYMENT_PROVIDER_QUERY_API_URL',
+    'payment_provider_refund_query_api_url' => 'PAYMENT_PROVIDER_REFUND_QUERY_API_URL',
     'payment_provider_refund_api_url' => 'PAYMENT_PROVIDER_REFUND_API_URL',
     'payment_provider_merchant_id' => 'PAYMENT_PROVIDER_MERCHANT_ID',
     'payment_callback_base_url' => 'PAYMENT_CALLBACK_BASE_URL',
@@ -211,7 +212,7 @@ begin
   payment_callback_base_url = required_config_leaf(config, 'payment_callback_base_url')
   canonical_https_url(payment_callback_base_url, 'payment_callback_base_url')
   raise ProductionManifestBindingError, 'payment_callback_base_url must match the merchant /v1 route' unless payment_callback_base_url == "https://#{merchant_host}/v1"
-  %w[payment_checkout_base_url payment_provider_checkout_api_url payment_provider_query_api_url payment_provider_refund_api_url].each do |field|
+  %w[payment_checkout_base_url payment_provider_checkout_api_url payment_provider_query_api_url payment_provider_refund_query_api_url payment_provider_refund_api_url].each do |field|
     uri = canonical_https_url(required_config_leaf(config, field), field)
     raise ProductionManifestBindingError, "#{field} must not target a local or private literal host" unless public_hostname?(uri.host)
   end

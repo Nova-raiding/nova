@@ -3,6 +3,8 @@ import { writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { openPlatformConsole } from './ops-auth.js'
 
+const closeWithDeadline = async (close) => { await Promise.race([close(), new Promise(resolve => setTimeout(resolve, 2000))]) }
+
 test.setTimeout(120_000)
 const configuredBaseUrl = process.env.OPS_OIDC_BASE_URL ?? process.env.OPS_BASE_URL ?? 'http://127.0.0.1:18082/'
 const baseUrl = configuredBaseUrl.endsWith('/') ? configuredBaseUrl : `${configuredBaseUrl}/`
@@ -51,7 +53,7 @@ test('inventory Ops Console through the real browser UI', async () => {
     expect(consoleErrors, 'Ops Console inventory should not observe console or page errors').toEqual([])
   } finally {
     await context.close()
-    await browser.close()
+    await closeWithDeadline(() => browser.close())
   }
 })
 
@@ -69,12 +71,15 @@ test('fails closed with no local connection credentials and exposes platform log
   await context.route('**/api/mcp', async route => {
     await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: '运营会话已失效或尚未登录' } }) })
   })
+  await context.route('**/api/v1/ops/local-session', async route => {
+    await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: '运营会话已失效或尚未登录' } }) })
+  })
   const page = await context.newPage()
   await page.goto(noAuthBaseUrl, { waitUntil: 'domcontentloaded' })
   // With no local credential, the production-shaped console intentionally
   // lands on the dedicated platform login page rather than the post-session
   // recovery result. Both paths fail closed; this one must expose login.
-  await expect(page.getByRole('heading', { name: '登录平台运营后台' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText('登录平台运营后台', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
   await expect(page.getByPlaceholder('例如 ops@example.com')).toBeVisible()
   await expect(page.getByPlaceholder('请输入平台运营密码')).toBeVisible()
   await expect(page.getByRole('button', { name: '登录平台运营后台', exact: true })).toBeVisible()
@@ -83,7 +88,7 @@ test('fails closed with no local connection credentials and exposes platform log
   // the contract is that no local bearer credential is attached to it.
   expect(requests.filter(request => request.url.includes('/api/mcp')).every(request => !request.authorization)).toBe(true)
   await context.close()
-  await browser.close()
+  await closeWithDeadline(() => browser.close())
 })
 
 test('turns an authenticated-session 401 into a reauthentication form', async () => {
@@ -109,12 +114,12 @@ test('turns an authenticated-session 401 into a reauthentication form', async ()
   })
   const page = await context.newPage()
   await page.goto(noAuthBaseUrl, { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: '登录平台运营后台' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText('登录平台运营后台', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
   await expect(page.getByText('当前尚未登录', { exact: true })).not.toBeVisible()
   await expect(page.getByPlaceholder('请输入平台运营密码', { exact: true })).toBeVisible()
   expect(sessionRequests).toBe(1)
   await context.close()
-  await browser.close()
+  await closeWithDeadline(() => browser.close())
 })
 
 test('renders the real workspace brand tree with revision and store navigation', async () => {
@@ -143,7 +148,7 @@ test('renders the real workspace brand tree with revision and store navigation',
     await expect(page.getByText('当前身份尚未通过运营权限验证', { exact: false })).toBeVisible()
     expect(await page.getByRole('heading', { name: '平台连接汇总' }).count()).toBe(0)
     await context.close()
-    await browser.close()
+    await closeWithDeadline(() => browser.close())
     return
   }
   await expect(workspaceSummary).toBeVisible({ timeout: 20_000 })
@@ -159,7 +164,7 @@ test('renders the real workspace brand tree with revision and store navigation',
   await expect(taobaoTaskLink.or(emptyBrandState)).toBeVisible({ timeout: 20_000 })
   expect(badResponses).toEqual([])
   await context.close()
-  await browser.close()
+  await closeWithDeadline(() => browser.close())
 })
 
 test('ops/tasks long list scrolling keeps page stable (no white-screen)', async () => {
@@ -203,7 +208,7 @@ test('ops/tasks long list scrolling keeps page stable (no white-screen)', async 
   if (unauthorized) {
     await expect(page.getByText('当前身份尚未通过运营权限验证', { exact: false })).toBeVisible()
     await context.close()
-    await browser.close()
+    await closeWithDeadline(() => browser.close())
     return
   }
 
@@ -246,5 +251,5 @@ test('ops/tasks long list scrolling keeps page stable (no white-screen)', async 
   await page.screenshot({ path: resolve('screenshots', 'ops-tasks-scroll-stability.png'), fullPage: false })
 
   await context.close()
-  await browser.close()
+  await closeWithDeadline(() => browser.close())
 })

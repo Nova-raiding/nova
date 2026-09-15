@@ -1,33 +1,59 @@
-import Credential, { Config } from '@alicloud/credentials'
+const DEFAULT_METADATA_BASE_URL = 'http://100.100.100.200/latest'
 
-type AliyunCredential = {
-  accessKeyId?: string
-  accessKeySecret?: string
-  securityToken?: string
+type FetchLike = typeof fetch
+
+interface AliyunRoleCredentialDocument {
+  Code?: string
+  AccessKeyId?: string
+  AccessKeySecret?: string
+  SecurityToken?: string
+  Expiration?: string
 }
 
-type AliyunCredentialClient = { getCredential(): Promise<AliyunCredential> }
+export function aliyunEcsRamRoleCredentialProvider(options: {
+  fetchImpl?: FetchLike
+  metadataBaseUrl?: string
+} = {}) {
+  const fetchImpl = options.fetchImpl ?? fetch
+  const configuredBaseUrl = (options.metadataBaseUrl ?? process.env.ALIYUN_ECS_METADATA_BASE_URL ?? DEFAULT_METADATA_BASE_URL).replace(/\/$/u, '')
+  if (options.metadataBaseUrl === undefined && configuredBaseUrl !== DEFAULT_METADATA_BASE_URL) {
+    throw new Error('ALIYUN_ECS_METADATA_BASE_URL_INVALID')
+  }
+  const baseUrl = configuredBaseUrl
 
-export function createAliyunEcsRoleCredentials(
-  roleName: string,
-  createClient: (config: Config) => AliyunCredentialClient = config => new Credential.default(config),
-) {
-  const normalizedRoleName = roleName.trim()
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u.test(normalizedRoleName)) throw new Error('ASSET_STORAGE_ECS_RAM_ROLE_INVALID')
-  const client = createClient(new Config({
-    type: 'ecs_ram_role',
-    roleName: normalizedRoleName,
-    disableIMDSv1: true,
-    asyncCredentialUpdateEnabled: true,
-    connectTimeout: 1_000,
-    timeout: 2_000,
-  }))
   return async () => {
-    const value = await client.getCredential()
-    const accessKeyId = value.accessKeyId?.trim()
-    const secretAccessKey = value.accessKeySecret?.trim()
-    const sessionToken = value.securityToken?.trim()
-    if (!accessKeyId || !secretAccessKey || !sessionToken) throw new Error('ALIYUN_ECS_RAM_ROLE_CREDENTIALS_INVALID')
-    return { accessKeyId, secretAccessKey, sessionToken }
+    const headers: Record<string, string> = { Metadata: 'true' }
+    const tokenResponse = await fetchImpl(`${baseUrl}/api/token`, {
+      method: 'PUT',
+      headers: { 'X-aliyun-ecs-metadata-token-ttl-seconds': '21600' },
+      signal: AbortSignal.timeout(2_000),
+    }).catch(() => null)
+    if (tokenResponse?.ok) headers['X-aliyun-ecs-metadata-token'] = await tokenResponse.text()
+
+    const roleResponse = await fetchImpl(`${baseUrl}/meta-data/ram/security-credentials/`, {
+      headers,
+      signal: AbortSignal.timeout(2_000),
+    })
+    if (!roleResponse.ok) throw new Error(`ALIYUN_ECS_RAM_ROLE_UNAVAILABLE:${roleResponse.status}`)
+    const roleName = (await roleResponse.text()).trim().split('\n')[0]?.trim()
+    if (!roleName) throw new Error('ALIYUN_ECS_RAM_ROLE_UNAVAILABLE:empty_role')
+
+    const credentialResponse = await fetchImpl(`${baseUrl}/meta-data/ram/security-credentials/${encodeURIComponent(roleName)}`, {
+      headers,
+      signal: AbortSignal.timeout(2_000),
+    })
+    if (!credentialResponse.ok) throw new Error(`ALIYUN_ECS_RAM_ROLE_CREDENTIALS_UNAVAILABLE:${credentialResponse.status}`)
+    const document = await credentialResponse.json() as AliyunRoleCredentialDocument
+    if (document.Code !== 'Success' || !document.AccessKeyId || !document.AccessKeySecret || !document.SecurityToken) {
+      throw new Error('ALIYUN_ECS_RAM_ROLE_CREDENTIALS_INVALID')
+    }
+    const expiration = document.Expiration ? new Date(document.Expiration) : undefined
+    if (expiration && !Number.isFinite(expiration.getTime())) throw new Error('ALIYUN_ECS_RAM_ROLE_CREDENTIALS_INVALID')
+    return {
+      accessKeyId: document.AccessKeyId,
+      secretAccessKey: document.AccessKeySecret,
+      sessionToken: document.SecurityToken,
+      ...(expiration ? { expiration } : {}),
+    }
   }
 }

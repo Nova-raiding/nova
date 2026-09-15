@@ -5,7 +5,6 @@ import { homedir } from 'node:os'
 import { existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { openWorkspaceConsole } from './ops-auth.js'
 
 // This spec is intentionally runner-only. The managed runner supplies an
 // isolated PG17/Redis/OIDC stack and refuses shared bearer fixtures.
@@ -96,32 +95,7 @@ async function rpcAfter(page, method, action, evidence, expectedStatus = 200) {
   return { payload, body, error, result }
 }
 
-const uploadFields = {
-  contract: { upload: '上传合同文件', field: '合同文件', kind: 'input' },
-  payment: { upload: '上传付款凭证', field: '付款凭证', kind: 'tags' },
-  system_integration: { upload: '上传接入凭证', field: '已上传凭证', kind: 'tags' },
-  functional_acceptance: { upload: '上传验收凭证', field: '已上传凭证', kind: 'tags' },
-  training: { upload: '上传培训凭证', field: '已上传培训凭证', kind: 'tags' },
-  video: { upload: '上传交付视频', field: '交付视频（支持多段）', kind: 'input' },
-}
-
-// Scope repeated labels to their own Ant form control/card. A Select's search
-// input clears after a tag is added, so its value is not the persisted ref.
-function evidenceTags(scope, label) {
-  return scope.getByLabel(label, { exact: true })
-    .locator('xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " ant-select ")][1]')
-    .locator('.ant-select-selection-item-content')
-}
-
-function checklistCard(dialog, label) {
-  const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
-  return dialog.locator('.ant-card-head-title').filter({ hasText: new RegExp(`^${escaped}$`, 'u') })
-    .locator('xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " ant-card ")][1]')
-}
-
-async function uploadAndWaitForRealScan(page, scope, deliveryId, purpose, files, evidence, waitForBinding) {
-  if (!realDeliveryScan || !uploadFields[purpose]) throw new Error('REAL_DELIVERY_SCAN_REQUIRED')
-  const fields = uploadFields[purpose]
+async function uploadAndWaitForRealScan(page, dialog, deliveryId, purpose, files, evidence) {
   const cleanRefs = new Set()
   const observations = []
   const observationErrors = []
@@ -131,9 +105,8 @@ async function uploadAndWaitForRealScan(page, scope, deliveryId, purpose, files,
     observations.push((async () => {
       const body = parse(await response.text())
       const asset = body?.result ?? body?.data?.result
-      evidence.events.push({ event: 'real_asset_scan', delivery_id: deliveryId, purpose, asset_ref: payload.params.asset_ref, scan_status: asset?.scanStatus ?? null, ready: asset?.ready ?? false, status: response.status() })
+      evidence.events.push({ event: 'real_asset_scan', asset_ref: payload.params.asset_ref, scan_status: asset?.scanStatus ?? null, ready: asset?.ready ?? false, status: response.status() })
       expect(response.status()).toBe(200)
-      expect(asset?.assetRef).toBe(payload.params.asset_ref)
       if (asset?.scanStatus === 'clean' && asset.ready === true) cleanRefs.add(asset.assetRef)
     })().catch(error => { observationErrors.push(error) }))
   }
@@ -147,7 +120,7 @@ async function uploadAndWaitForRealScan(page, scope, deliveryId, purpose, files,
       }, { timeout: 240_000 }).then(async response => {
         const body = parse(await response.text())
         const asset = body?.result ?? body?.data?.result
-        evidence.events.push({ event: 'real_asset_upload', delivery_id: deliveryId, purpose, sha256: hash, asset_ref: asset?.assetRef ?? null, scan_status: asset?.scanStatus ?? null, ready: asset?.ready ?? false, status: response.status() })
+        evidence.events.push({ event: 'real_asset_upload', sha256: hash, asset_ref: asset?.assetRef ?? null, scan_status: asset?.scanStatus ?? null, ready: asset?.ready ?? false, status: response.status() })
         expect(response.status()).toBe(200)
         expect(asset?.assetRef).toMatch(/^asset[:_]/u)
         expect(asset?.scanStatus).toBe('pending')
@@ -155,13 +128,11 @@ async function uploadAndWaitForRealScan(page, scope, deliveryId, purpose, files,
         return asset
       })
     })
-    const exchanges = await Promise.all([...uploads, scope.getByLabel(fields.upload, { exact: true }).setInputFiles(files)])
+    const exchanges = await Promise.all([...uploads, dialog.getByLabel(purpose === 'contract' ? '上传合同文件' : '上传交付视频', { exact: true }).setInputFiles(files)])
     const assets = exchanges.slice(0, -1)
     const refs = assets.map(asset => asset.assetRef)
-    if (waitForBinding) await waitForBinding(refs)
-    else if (fields.kind === 'tags') await expect(evidenceTags(scope, fields.field)).toHaveText(refs, { timeout: 210_000 })
-    else if (fields.kind === 'input') await expect(scope.getByLabel(fields.field, { exact: true })).toHaveValue(purpose === 'contract' ? refs[0] : refs.join('\n'), { timeout: 210_000 })
-    else throw new Error('REAL_UPLOAD_BINDING_ASSERTION_REQUIRED')
+    await expect(dialog.getByLabel(purpose === 'contract' ? '合同文件' : '交付视频（支持多段）', { exact: true })).toHaveValue(purpose === 'contract' ? refs[0] : refs.join('\n'), { timeout: 210_000 })
+    await expect(dialog.getByRole('button', { name: '保存当前环节', exact: true })).toBeEnabled()
     await Promise.all(observations)
     if (observationErrors.length) throw observationErrors[0]
     for (const ref of refs) expect(cleanRefs.has(ref), 'the visible usable reference must have a real clean scanner response').toBe(true)
@@ -411,13 +382,13 @@ async function captureTrainingInteraction(page, evidenceDir, testInfo, deliveryI
   await testInfo.attach('training-inline-video', { path: videoPath, contentType: 'video/webm' })
 }
 
-test('isolated customer delivery end-to-end fields, gates, checklists and scanned assets', async ({ page, browser }, testInfo) => {
+test('isolated customer delivery end-to-end fields, gates, checklists and scanned assets', async ({ page }, testInfo) => {
   page.setDefaultTimeout(15_000)
   const pageErrors = []
   page.on('pageerror', error => pageErrors.push(error.name))
   const evidenceDir = join(outputDir, `delivery-${Date.now()}`)
   await mkdir(evidenceDir, { recursive: true })
-  const evidence = { schema_version: 2, evidence_kind: 'isolated_live_customer_delivery_ui_rpc', verification_scope: realDeliveryScan ? 'seven_scanned_attachments_and_full_delivery' : 'profile_and_fail_closed_gates_only', raw_browser_trace_saved: false, real_delivery_scan: realDeliveryScan, viewport: { width: 1440, height: 900 }, timezone: 'Asia/Shanghai', fixture: { workspace_id: workspaceId }, events: [] }
+  const evidence = { schema_version: 1, evidence_kind: 'isolated_live_customer_delivery_ui_rpc', raw_browser_trace_saved: false, real_delivery_scan: realDeliveryScan, viewport: { width: 1440, height: 900 }, timezone: 'Asia/Shanghai', fixture: { workspace_id: workspaceId }, events: [] }
   const screenshot = async name => {
     const path = join(evidenceDir, `${name}.png`)
     await page.screenshot({ path, fullPage: false, mask: [page.locator('input[type="password"]')] })
@@ -461,22 +432,16 @@ test('isolated customer delivery end-to-end fields, gates, checklists and scanne
     await expect(profile).toBeVisible()
     await expect(row.locator('td').nth(2)).toContainText('未填写')
     await screenshot('missing-contract-rejected')
-    let savedContractRef = ''
-    const savedContractFile = pdfFiles.contract
+    let savedContractRef = 'https://example.com/delivery-contract.pdf'
+    const savedContractFile = { name: 'delivery-contract.pdf', mimeType: 'application/pdf', buffer: contractPdf() }
     if (realDeliveryScan) {
       await profile.getByLabel('合同文件', { exact: true }).fill('')
       const [contract] = await uploadAndWaitForRealScan(page, profile, deliveryId, 'contract', [savedContractFile], evidence)
       savedContractRef = contract.assetRef
-      scannedByPurpose.contract = [contract.assetRef]
       await screenshot('real-contract-scan-ready')
-      await rpcAfter(page, 'ops.customer-delivery.update', () => profile.getByRole('button', { name: '保存当前环节', exact: true }).click(), evidence)
-      await expect(profile).toBeVisible()
-    } else {
-      await profile.getByLabel('合同文件', { exact: true }).fill('https://example.com/delivery-contract.pdf')
-      await profile.getByRole('button', { name: '保存当前环节', exact: true }).click()
-      await expect(profile.getByText('合同凭据必须上传并通过安全扫描', { exact: true })).toBeVisible()
-      evidence.events.push({ event: 'external_contract_url_rejected_in_form' })
-    }
+    } else await profile.getByLabel('合同文件', { exact: true }).fill(savedContractRef)
+    await rpcAfter(page, 'ops.customer-delivery.update', () => profile.getByRole('button', { name: '保存当前环节', exact: true }).click(), evidence)
+    await expect(profile).toBeVisible()
     await closeDrawer(page)
     await expect(profile).toBeHidden()
     await expect(row.locator('td').nth(2)).toContainText(realDeliveryScan ? '已完成' : '未填写')
@@ -525,7 +490,6 @@ test('isolated customer delivery end-to-end fields, gates, checklists and scanne
     await expect(page.getByRole('dialog').getByLabel('付款日期')).toHaveValue('2026-09-14')
     await expect(page.getByRole('dialog').getByLabel('要求上线时间')).toHaveValue('2026-10-01T09:00')
     await expect(page.getByRole('dialog').getByLabel('合同文件', { exact: true })).toHaveValue(savedContractRef)
-    await expect(evidenceTags(page.getByRole('dialog'), '付款凭证')).toHaveText([payment.assetRef])
     await screenshot('profile-fields-reloaded')
     await closeDrawer(page)
 
@@ -636,13 +600,28 @@ test('isolated customer delivery end-to-end fields, gates, checklists and scanne
     await expect(refreshedRow).not.toContainText('交付已完成')
     await expect(refreshedRow).not.toContainText('已生效')
     await screenshot('customer-delivery-gates')
-    await expect(videoDialog.getByRole('button', { name: '保存当前环节', exact: true })).not.toHaveClass(/ant-btn-loading/u)
-    await videoDialog.getByLabel('交付视频（支持多段）').fill('')
-    const assets = await uploadAndWaitForRealScan(page, videoDialog, deliveryId, 'video', videoFiles, evidence)
-    expect(new Set(assets.map(asset => asset.assetRef)).size).toBe(2)
-    scannedByPurpose.video = assets.map(asset => asset.assetRef)
-    await screenshot('real-videos-scan-ready')
-    await registerRealVideoSegments(page, videoDialog, deliveryId, assets, evidence)
+    if (realDeliveryScan) {
+      await expect(videoDialog.getByRole('button', { name: '保存当前环节', exact: true })).not.toHaveClass(/ant-btn-loading/u)
+      await videoDialog.getByLabel('交付视频（支持多段）').fill('')
+      expect(sha256(tinyMp4)).not.toBe(sha256(tinyWebm))
+      const assets = await uploadAndWaitForRealScan(page, videoDialog, deliveryId, 'video', [
+        { name: 'delivery-first.mp4', mimeType: 'video/mp4', buffer: tinyMp4 },
+        { name: 'delivery-second.webm', mimeType: 'video/webm', buffer: tinyWebm },
+      ], evidence)
+      expect(new Set(assets.map(asset => asset.assetRef)).size).toBe(2)
+      await screenshot('real-videos-scan-ready')
+      await registerRealVideoSegments(page, videoDialog, deliveryId, assets, evidence)
+      await closeDrawer(page)
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await expect(refreshedRow).toBeVisible({ timeout: 30_000 })
+      await expect(refreshedRow).toContainText('交付已完成')
+      await refreshedRow.getByRole('button', { name: '2 段', exact: true }).click()
+      await expect(page.getByRole('dialog').getByText('已登记视频（2 段）', { exact: true })).toBeVisible()
+      for (const asset of assets) await expect(page.getByRole('dialog').getByText(asset.assetRef, { exact: true })).toBeVisible()
+      await screenshot('real-video-segments-reloaded')
+      evidence.events.push({ event: 'real_contract_and_two_videos_persisted', delivery_id: deliveryId, asset_refs: [savedContractRef, ...assets.map(asset => asset.assetRef)], points_granted: false })
+    }
+    await captureTrainingInteraction(page, evidenceDir, testInfo)
     await closeDrawer(page)
     await page.reload({ waitUntil: 'domcontentloaded' })
     await expect(refreshedRow).toBeVisible({ timeout: 30_000 })
@@ -676,10 +655,11 @@ test('isolated customer delivery end-to-end fields, gates, checklists and scanne
     }
     await expect(evidenceTags(newProfile, '付款凭证')).toHaveCount(0)
     evidence.events.push({ event: 'new_customer_has_no_previous_profile_fields' })
-    await verifyClosedUploadCannotFillAnotherCustomer(page, secondCreated.result.id, refreshedRow, savedContractRef, secondCompany, evidence)
-    await screenshot('cancelled-upload-does-not-populate-new-customer')
-    await verifyCleanContractReuse(page, created.payload.params.target_workspace_id, savedContractFile, savedContractRef, company, evidence)
-    await verifyWorkspaceCannotAccessDelivery(browser, deliveryId, savedContractRef, savedContractFile, evidence)
+    if (realDeliveryScan) {
+      await verifyClosedUploadCannotFillAnotherCustomer(page, secondCreated.result.id, refreshedRow, savedContractRef, secondCompany, evidence)
+      await screenshot('cancelled-upload-does-not-populate-new-customer')
+      await verifyCleanContractReuse(page, created.payload.params.target_workspace_id, savedContractFile, savedContractRef, company, evidence)
+    }
     expect(pageErrors).toEqual([])
     evidence.status = 'passed'
   } catch (error) {

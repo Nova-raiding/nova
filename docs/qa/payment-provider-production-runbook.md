@@ -11,7 +11,6 @@
 - `ALIPAY_APP_ID`
 - `ALIPAY_APP_PRIVATE_KEY` 或 `ALIPAY_APP_PRIVATE_KEY_PATH`
 - `ALIPAY_PUBLIC_KEY` 或 `ALIPAY_PUBLIC_KEY_PATH`
-- `PAYMENT_GATEWAY_API_KEY`
 - `PAYMENT_CALLBACK_SECRET`
 - `PAYMENT_PROVIDER_API_KEY`
 - `PAYMENT_PROVIDER_MERCHANT_ID`
@@ -22,10 +21,20 @@
 - `PAYMENT_PROVIDER_ADAPTERS=alipay`
 - `PAYMENT_PROVIDER_CHECKOUT_API_URL=https://<payment-host>/v1/checkout`
 - `PAYMENT_PROVIDER_QUERY_API_URL=https://<payment-host>/v1/query`
+- `PAYMENT_PROVIDER_REFUND_QUERY_API_URL=https://<payment-host>/v1/refund/query`
 - `PAYMENT_PROVIDER_REFUND_API_URL=https://<payment-host>/v1/refund`
 - `PAYMENT_CALLBACK_BASE_URL=https://<merchant-host>/v1`
 - `PAYMENT_RECONCILIATION_ENABLED=true`
 - `PAYMENT_REFUND_ENABLED=true`
+
+`PAYMENT_PROVIDER_API_KEY` 是 API 调用支付网关与网关校验请求共同使用的服务端 Bearer 密钥，ECS Compose 会把同一个 Secret 注入两端。不要再创建独立的 `PAYMENT_GATEWAY_API_KEY`，否则两个值漂移后所有 checkout/query/refund 都会返回 401。
+
+当前 ECS HTTPS 网关对外暴露支付服务时，四个 provider URL 应为：
+
+- `https://<merchant-host>/payment-gateway/v1/checkout`
+- `https://<merchant-host>/payment-gateway/v1/query`
+- `https://<merchant-host>/payment-gateway/v1/refund`
+- `https://<merchant-host>/payment-gateway/v1/refund/query`
 
 回调地址必须是公网 HTTPS，并且只允许：
 
@@ -39,8 +48,9 @@
 3. 保存订单号哈希、provider 交易号哈希、金额、时间、request/trace id 和回调验签结果。
 4. 验证重复回调不会重复到账，金额或 workspace 不匹配会拒绝。
 5. 使用 provider query 确认订单状态与本地账务一致。
-6. 对同一订单执行退款，确认 provider 状态、本地流水和余额补偿一致。
-7. 执行 reconciliation，确认无 pending、unknown 或金额差异记录。
+6. 对同一订单执行退款；只有同步响应包含支付宝 `fund_change=Y` 才可直接关单，否则保留钱包预留。
+7. 等待至少 10 秒后执行 reconciliation；只有退款查询返回 `refund_status=REFUND_SUCCESS` 且订单号、退款请求号、金额均匹配，才确认退款成功。
+8. 确认无 pending、unknown、金额差异或未释放退款预留。
 
 ## Fail-closed 条件
 

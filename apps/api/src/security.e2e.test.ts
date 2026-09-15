@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
-import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, platformAuthorizationAuditForTests, productionAuthorizationReadiness, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, setOAuthStateStoreForTests, setRuleRepositoryForTests, trustedDashScopeImageArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
+import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, platformAuthorizationAuditForTests, productionAuthorizationReadiness, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, setOAuthStateStoreForTests, setPaymentProviderForTests, setRuleRepositoryForTests, trustedDashScopeImageArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
 import { hashPkceVerifier, OAuthStateStore, redactSecrets } from '../../../packages/security/src/oauth.js'
 import { RedisOAuthStateStore, type OAuthRedisPort } from '../../../packages/security/src/redis-oauth.js'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
@@ -118,6 +118,7 @@ afterEach(async () => {
   if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()))
   setAuthorizationRepositoryForTests(undefined)
   setRuleRepositoryForTests(undefined)
+  setPaymentProviderForTests(undefined)
   setOAuthStateStoreForTests(undefined)
   vi.useRealTimers()
   vi.unstubAllEnvs()
@@ -1818,6 +1819,51 @@ describe('security and access-control acceptance gates', () => {
     const signed = await fetch(`${base}${path}`, { method: 'POST', headers: { ...headers, authorization: 'Bearer reconcile-token', ...workerProofHeaders({ role: 'reconcile', secret: 'reconcile-secret', method: 'POST', path, workspaceId, body }) }, body })
     expect(signed.status).toBe(200)
     expect((await signed.json() as Envelope<{ attention: unknown[]; next_cursor: string | null }>).data).toMatchObject({ attention: [], next_cursor: null })
+  })
+
+  it('runs payment reconciliation only through a signed, tenant-bound reconcile worker request', async () => {
+    vi.stubEnv('NODE_ENV', 'staging')
+    vi.stubEnv('PAYMENT_RECONCILIATION_ENABLED', 'true')
+    vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({ reconcile: { token: 'reconcile-token', signing_secret: 'reconcile-secret' }, generation: { token: 'generation-token', signing_secret: 'generation-secret' } }))
+    setPaymentProviderForTests({
+      createCheckout: async () => ({ paymentUrl: 'https://payments.example/unused' }),
+      queryStatus: async () => ({ state: 'pending' }),
+      refund: async () => ({ providerRefundId: 'unused' }),
+    })
+    const base = await start()
+    const workspaceId = `ws_payment_reconcile_${Date.now()}`
+    const path = '/v1/internal/billing/reconciliation'
+    const validBody = JSON.stringify({ workspace_id: workspaceId, limit: 10 })
+    const common = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+
+    const unsigned = await fetch(`${base}${path}`, { method: 'POST', headers: { ...common, authorization: 'Bearer reconcile-token' }, body: validBody })
+    expect(unsigned.status).toBe(403)
+
+    const crossRole = await fetch(`${base}${path}`, { method: 'POST', headers: { ...common, authorization: 'Bearer generation-token', ...workerProofHeaders({ role: 'generation', secret: 'generation-secret', method: 'POST', path, workspaceId, body: validBody }) }, body: validBody })
+    expect(crossRole.status).toBe(403)
+
+    const mismatchedBody = JSON.stringify({ workspace_id: `${workspaceId}_other`, limit: 10 })
+    const mismatched = await fetch(`${base}${path}`, { method: 'POST', headers: { ...common, authorization: 'Bearer reconcile-token', ...workerProofHeaders({ role: 'reconcile', secret: 'reconcile-secret', method: 'POST', path, workspaceId, body: mismatchedBody }) }, body: mismatchedBody })
+    expect(mismatched.status).toBe(403)
+    expect((await mismatched.json() as Envelope).error?.code).toBe('TENANT_SCOPE_DENIED')
+
+    const invalidLimitBody = JSON.stringify({ workspace_id: workspaceId, limit: 21 })
+    const invalidLimit = await fetch(`${base}${path}`, { method: 'POST', headers: { ...common, authorization: 'Bearer reconcile-token', ...workerProofHeaders({ role: 'reconcile', secret: 'reconcile-secret', method: 'POST', path, workspaceId, body: invalidLimitBody }) }, body: invalidLimitBody })
+    expect(invalidLimit.status).toBe(400)
+
+    vi.stubEnv('PAYMENT_RECONCILIATION_ENABLED', 'false')
+    const disabled = await fetch(`${base}${path}`, { method: 'POST', headers: { ...common, authorization: 'Bearer reconcile-token', ...workerProofHeaders({ role: 'reconcile', secret: 'reconcile-secret', method: 'POST', path, workspaceId, body: validBody }) }, body: validBody })
+    expect(disabled.status).toBe(503)
+    expect((await disabled.json() as Envelope).error?.code).toBe('PAYMENT_RECONCILIATION_DISABLED')
+
+    vi.stubEnv('PAYMENT_RECONCILIATION_ENABLED', 'true')
+    const signed = await fetch(`${base}${path}`, { method: 'POST', headers: { ...common, authorization: 'Bearer reconcile-token', ...workerProofHeaders({ role: 'reconcile', secret: 'reconcile-secret', method: 'POST', path, workspaceId, body: validBody }) }, body: validBody })
+    const signedEnvelope = await signed.json() as Envelope<{ state: string; checked: number; total_query_budget: number }>
+    expect({ status: signed.status, error: signedEnvelope.error }).toEqual({ status: 200, error: null })
+    expect(signedEnvelope.data).toMatchObject({ state: 'completed', checked: 0, total_query_budget: 10 })
+    const audits = (await operationAudits.list(workspaceId, 100)).filter(item => item.action === 'billing.reconciliation.worker')
+    expect(audits).toHaveLength(1)
+    expect(audits[0]).toMatchObject({ actorId: 'worker:legacy-worker', resourceType: 'billing_reconciliation', resourceId: workspaceId, after: { state: 'completed', limit: 10, checked: 0, payment_checked: 0, refund_checked: 0, settled: 0, pending: 0, failed: 0, refund_settled: 0, refund_pending: 0, refund_failed: 0 } })
   })
 
   it('fails closed when worker role credentials are shared or a rotation window exceeds two credentials', async () => {

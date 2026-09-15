@@ -34,7 +34,7 @@ const object = (value: unknown): value is Record<string, unknown> => Boolean(val
 const text = (value: unknown): value is string => typeof value === "string";
 const bool = (value: unknown): value is boolean => typeof value === "boolean";
 
-export type CustomerDeliveryAssetPurpose = "contract" | "payment" | "system_integration" | "functional_acceptance" | "training" | "video";
+export type CustomerDeliveryAssetPurpose = "contract" | "video";
 export interface CustomerDeliveryAsset {
   assetRef: string;
   name: string;
@@ -46,17 +46,13 @@ export interface CustomerDeliveryAsset {
 export const CUSTOMER_DELIVERY_MAX_FILE_BYTES = 50 * 1024 * 1024;
 const deliveryFileTypes: Record<CustomerDeliveryAssetPurpose, Record<string, string>> = {
   contract: { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg" },
-  payment: { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg" },
-  system_integration: { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg" },
-  functional_acceptance: { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg" },
-  training: { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg" },
   video: { mp4: "video/mp4", webm: "video/webm" },
 };
 
 export function validateCustomerDeliveryFile(file: Pick<File, "name" | "size" | "type">, purpose: CustomerDeliveryAssetPurpose): string {
   const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
   const mimeType = deliveryFileTypes[purpose][extension];
-  if (!mimeType) throw new Error(purpose === "video" ? "交付视频仅支持 MP4、WebM 文件" : purpose === "contract" ? "合同仅支持 PDF、DOCX、PNG、JPG、JPEG 文件" : "交付凭证仅支持 PDF、DOCX、PNG、JPG、JPEG 文件");
+  if (!mimeType) throw new Error(purpose === "contract" ? "合同仅支持 PDF、DOCX、PNG、JPG、JPEG 文件" : "交付视频仅支持 MP4、WebM 文件");
   if (!file.name.trim() || /[\u0000-\u001f/\\]/u.test(file.name)) throw new Error("文件名无效，请重命名后重试");
   if (!Number.isSafeInteger(file.size) || file.size <= 0) throw new Error("不能上传空文件");
   if (file.size > CUSTOMER_DELIVERY_MAX_FILE_BYTES) throw new Error("单个文件不能超过 50 MiB");
@@ -108,19 +104,7 @@ export async function readCustomerDeliveryFile(file: File, purpose: CustomerDeli
   return { name: file.name, mimeType, contentBase64: btoa(parts.join("")), sha256 };
 }
 
-export interface CustomerDeliveryChecklistItem { itemKey: string; completed: boolean; evidence: string; evidenceAssetRefs: string[] }
-
-export function parseCustomerDeliveryEvidenceRefs(value: unknown, label = "交付凭证"): string[] {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value) || value.some((ref) => typeof ref !== "string" || !/^asset[:_]\S+$/u.test(ref.trim()))) throw new Error(`${label}必须是有效素材编号数组`);
-  return [...new Set(value.map((ref) => String(ref).trim()))];
-}
-
-function parseEvidenceRefMap(value: unknown, label: string): Record<string, string[]> | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (!object(value)) throw new Error(`${label}必须是按清单项保存的凭证对象`);
-  return Object.fromEntries(Object.entries(value).map(([key, refs]) => [key, parseCustomerDeliveryEvidenceRefs(refs, `${label} · ${key}`)]));
-}
+export interface CustomerDeliveryChecklistItem { itemKey: string; completed: boolean; evidence: string }
 
 export function buildChecklistUpdateParams(input: {
   targetWorkspaceId: string;

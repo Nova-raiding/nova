@@ -18,7 +18,7 @@ yaml_validator=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)/validate-production-
 # Every required setting must be an actual YAML key. The value checks below
 # intentionally remain dependency-free, but an unanchored grep can otherwise
 # mistake text such as `note: "plugin_enabled: true"` for configuration.
-required_keys='plugin_enabled merchant_bearer_hostname auth_enforcement session_id_hash_secret_ref jd_auth_enabled jd_read_enabled jd_write_enabled taobao_tmall_auth_enabled taobao_tmall_read_enabled taobao_tmall_write_enabled pinduoduo_auth_enabled pinduoduo_read_enabled pinduoduo_write_enabled object_storage_versioning lifecycle_policy_ref asset_quarantine_retention_days asset_clean_retention_days deletion_request_grace_days backup_retention_days point_in_time_recovery_enabled database_pooler_enabled database_max_backend_connections database_connection_utilization_alert_percent secret_provider worker_api_credentials_ref worker_sync_api_token_ref worker_sync_api_signing_secret_ref worker_generation_api_token_ref worker_generation_api_signing_secret_ref worker_publish_api_token_ref worker_publish_api_signing_secret_ref worker_reconcile_api_token_ref worker_reconcile_api_signing_secret_ref worker_automation_api_token_ref worker_automation_api_signing_secret_ref merchant_ui_api_token_ref merchant_ui_workspace_id_ref payment_mode payment_provider_adapters payment_checkout_base_url payment_provider_checkout_api_url payment_provider_query_api_url payment_provider_refund_api_url payment_provider_api_key_ref payment_provider_merchant_id payment_callback_base_url payment_callback_secret_ref payment_reconciliation_enabled payment_refund_enabled model_relay_base_url model_relay_api_key_ref text_model image_model image_edit_model ocr_model video_model approved_requests_per_minute approved_tokens_per_minute maximum_task_cost_cny object_storage_bucket object_storage_region object_storage_endpoint object_storage_sse_mode asset_display_base_url asset_display_url_signing_secret_ref platform_rule_sync_manifest_url platform_rule_sync_signing_secret_ref platform_rule_sync_interval_hours asset_scanner_mode allow_local_asset_scan_fixture asset_scanner_api_token_ref asset_scanner_workspace_signing_secret_ref asset_scan_receipt_key_id asset_scan_receipt_private_key_ref asset_scan_trusted_public_keys_ref asset_scan_policy_version clamav_image_digest clamav_signature_max_age_minutes clamav_max_file_bytes'
+required_keys='plugin_enabled merchant_bearer_hostname auth_enforcement session_id_hash_secret_ref jd_auth_enabled jd_read_enabled jd_write_enabled taobao_tmall_auth_enabled taobao_tmall_read_enabled taobao_tmall_write_enabled pinduoduo_auth_enabled pinduoduo_read_enabled pinduoduo_write_enabled object_storage_versioning lifecycle_policy_ref asset_quarantine_retention_days asset_clean_retention_days deletion_request_grace_days backup_retention_days alert_notifications_enabled point_in_time_recovery_enabled database_pooler_enabled database_max_backend_connections database_connection_utilization_alert_percent secret_provider worker_api_credentials_ref worker_sync_api_token_ref worker_sync_api_signing_secret_ref worker_generation_api_token_ref worker_generation_api_signing_secret_ref worker_publish_api_token_ref worker_publish_api_signing_secret_ref worker_reconcile_api_token_ref worker_reconcile_api_signing_secret_ref worker_automation_api_token_ref worker_automation_api_signing_secret_ref merchant_ui_api_token_ref merchant_ui_workspace_id_ref payment_mode payment_provider_adapters payment_checkout_base_url payment_provider_checkout_api_url payment_provider_query_api_url payment_provider_refund_query_api_url payment_provider_refund_api_url payment_provider_api_key_ref payment_provider_merchant_id payment_callback_base_url payment_callback_secret_ref payment_reconciliation_enabled payment_refund_enabled model_relay_base_url model_relay_api_key_ref text_model image_model image_edit_model ocr_model video_model approved_requests_per_minute approved_tokens_per_minute maximum_task_cost_cny object_storage_bucket object_storage_region object_storage_endpoint asset_display_base_url asset_display_url_signing_secret_ref platform_rule_sync_manifest_url platform_rule_sync_signing_secret_ref platform_rule_sync_interval_hours asset_scanner_mode allow_local_asset_scan_fixture asset_scanner_api_token_ref asset_scanner_workspace_signing_secret_ref asset_scan_receipt_key_id asset_scan_receipt_private_key_ref asset_scan_policy_version clamav_image_digest clamav_signature_max_age_minutes clamav_max_file_bytes'
 required_keys="$required_keys mcp_authorization_mode durable_platform_assignments_required"
 REQUIRED_PRODUCTION_CONFIG_KEYS="$required_keys" ruby "$yaml_validator" "$rendered_config_path"
 filtered_config_path=$(mktemp "${TMPDIR:-/tmp}/merchant-production-config.XXXXXX")
@@ -110,8 +110,9 @@ grep -Eq 'asset_quarantine_retention_days:[[:space:]]*([7-9]|[1-9][0-9]|[12][0-9
 grep -Eq 'asset_clean_retention_days:[[:space:]]*(3[0-9]|[4-9][0-9]|[1-9][0-9][0-9])$' "$config_path" || { echo 'asset_clean_retention_days must be at least 30 days' >&2; exit 1; }
 grep -Eq 'deletion_request_grace_days:[[:space:]]*(7|[89]|[12][0-9]|30)$' "$config_path" || { echo 'deletion_request_grace_days must be between 7 and 30 days' >&2; exit 1; }
 grep -Eq 'backup_retention_days:[[:space:]]*(3[0-9]|[4-9][0-9]|[12][0-9][0-9])$' "$config_path" || { echo 'backup_retention_days must be at least 30 days' >&2; exit 1; }
-if ! grep -Eq '^[[:space:]]*alert_notifications_enabled:[[:space:]]*false[[:space:]]*$' "$config_path"; then
-  grep -Eq 'alert_channel_secret_ref:[[:space:]]*"?[^"[:space:]]+"?$' "$config_path" || { echo 'alert_channel_secret_ref must be configured unless alert notifications are explicitly disabled' >&2; exit 1; }
+grep -Eq '^[[:space:]]*alert_notifications_enabled:[[:space:]]*(true|false)[[:space:]]*$' "$config_path" || { echo 'alert_notifications_enabled must be explicitly true or false' >&2; exit 1; }
+if grep -Eq '^[[:space:]]*alert_notifications_enabled:[[:space:]]*true[[:space:]]*$' "$config_path"; then
+  grep -Eq 'alert_channel_secret_ref:[[:space:]]*"?[^"[:space:]]+"?$' "$config_path" || { echo 'alert_channel_secret_ref must be configured when alert notifications are enabled' >&2; exit 1; }
 fi
 grep -Eq '^[[:space:]]*point_in_time_recovery_enabled:[[:space:]]*true[[:space:]]*$' "$config_path" || { echo 'PITR must be explicitly enabled' >&2; exit 1; }
 grep -Eq 'secret_provider:[[:space:]]*[^"'"'"' ]+' "$config_path" || { echo 'managed secret provider must be configured' >&2; exit 1; }
@@ -144,7 +145,7 @@ done
 grep -Eq '^[[:space:]]*asset_scan_receipt_key_id:[[:space:]]*"?[A-Za-z0-9][A-Za-z0-9._-]{2,127}"?[[:space:]]*$' "$config_path" || { echo 'asset_scan_receipt_key_id must be a stable non-empty key id' >&2; exit 1; }
 grep -Eq '^[[:space:]]*asset_scan_policy_version:[[:space:]]*"?[A-Za-z0-9][A-Za-z0-9._-]{2,127}"?[[:space:]]*$' "$config_path" || { echo 'asset_scan_policy_version must be an immutable policy version' >&2; exit 1; }
 grep -Eq '^[[:space:]]*clamav_image_digest:[[:space:]]*"?sha256:[0-9a-f]{64}"?[[:space:]]*$' "$config_path" || { echo 'clamav_image_digest must be an immutable lowercase SHA-256 digest' >&2; exit 1; }
-grep -Eq '^[[:space:]]*clamav_max_file_bytes:[[:space:]]*"?52428800"?[[:space:]]*$' "$config_path" || { echo 'clamav_max_file_bytes must match the 50 MiB upload boundary' >&2; exit 1; }
+grep -Eq '^[[:space:]]*clamav_max_file_bytes:[[:space:]]*"?104857600"?[[:space:]]*$' "$config_path" || { echo 'clamav_max_file_bytes must match the 100 MiB upload boundary' >&2; exit 1; }
 scanner_signature_max_age=$(awk '/^[[:space:]]*clamav_signature_max_age_minutes[[:space:]]*:/ { value=$0; sub(/^[^:]*:[[:space:]]*/, "", value); gsub(/["[:space:]]/, "", value); print value; exit }' "$config_path")
 case "$scanner_signature_max_age" in ''|*[!0-9]*) echo 'clamav_signature_max_age_minutes must be an integer from 1 to 1440' >&2; exit 1;; esac
 if [ "$scanner_signature_max_age" -lt 1 ] || [ "$scanner_signature_max_age" -gt 1440 ]; then
@@ -174,6 +175,7 @@ grep -Eq 'payment_provider_adapters:[[:space:]]*[^[:space:]]+' "$config_path" ||
 grep -Eq 'payment_checkout_base_url:[[:space:]]*https://' "$config_path" || { echo 'payment_checkout_base_url must be HTTPS' >&2; exit 1; }
 grep -Eq 'payment_provider_checkout_api_url:[[:space:]]*https://' "$config_path" || { echo 'payment_provider_checkout_api_url must be HTTPS' >&2; exit 1; }
 grep -Eq 'payment_provider_query_api_url:[[:space:]]*https://' "$config_path" || { echo 'payment_provider_query_api_url must be HTTPS' >&2; exit 1; }
+grep -Eq 'payment_provider_refund_query_api_url:[[:space:]]*https://' "$config_path" || { echo 'payment_provider_refund_query_api_url must be HTTPS' >&2; exit 1; }
 grep -Eq 'payment_provider_refund_api_url:[[:space:]]*https://' "$config_path" || { echo 'payment_provider_refund_api_url must be HTTPS' >&2; exit 1; }
 grep -Eq 'payment_provider_api_key_ref:[[:space:]]*[^"'"'"' ]+' "$config_path" || { echo 'payment_provider_api_key_ref must be configured' >&2; exit 1; }
 grep -Eq 'payment_provider_merchant_id:[[:space:]]*[^"'"'"' ]+' "$config_path" || { echo 'payment_provider_merchant_id must be configured' >&2; exit 1; }
@@ -201,9 +203,15 @@ grep -Eq 'platform_rule_sync_interval_hours:[[:space:]]*"?[1-9][0-9]*\"?$' "$con
 for storage_field in object_storage_bucket object_storage_region object_storage_endpoint; do
   grep -Eq "${storage_field}:[[:space:]]*\"?[^\"[:space:]]+\"?$" "$config_path" || { echo "${storage_field} must be configured" >&2; exit 1; }
 done
-grep -Eqi 'object_storage_sse_mode:[[:space:]]*"?(AES256|aws:kms)"?$' "$config_path" || { echo 'object_storage_sse_mode must be AES256 or aws:kms' >&2; exit 1; }
-if grep -Eqi 'object_storage_sse_mode:[[:space:]]*"?aws:kms"?$' "$config_path"; then
-  grep -Eq 'object_storage_kms_key:[[:space:]]*"?[^"[:space:]]+"?$' "$config_path" || { echo 'object_storage_kms_key must be configured when object_storage_sse_mode is aws:kms' >&2; exit 1; }
+storage_sse_mode=$(sed -n 's/^[[:space:]]*object_storage_sse_mode:[[:space:]]*\"\?\([^\"[:space:]]*\)\"\?[[:space:]]*$/\1/p' "$config_path" | head -n 1)
+storage_kms_key=$(sed -n 's/^[[:space:]]*object_storage_kms_key:[[:space:]]*\"\?\([^\"[:space:]]*\)\"\?[[:space:]]*$/\1/p' "$config_path" | head -n 1)
+if ! grep -Eq 'object_storage_sse_mode:[[:space:]]*"?(AES256|aws:kms)' "$config_path" && ! grep -Eq 'object_storage_kms_key:[[:space:]]*"?[^"[:space:]]+' "$config_path"; then
+  echo 'object storage requires object_storage_sse_mode or object_storage_kms_key' >&2
+  exit 1
+fi
+if grep -Eq 'object_storage_sse_mode:[[:space:]]*"?aws:kms' "$config_path" && ! grep -Eq 'object_storage_kms_key:[[:space:]]*"?[^"[:space:]]+' "$config_path"; then
+  echo 'object_storage_kms_key is required when object_storage_sse_mode is aws:kms' >&2
+  exit 1
 fi
 grep -Eq '^[[:space:]]*asset_display_base_url:[[:space:]]*"?https://' "$config_path" || { echo 'asset_display_base_url must be HTTPS' >&2; exit 1; }
 grep -Eq "^[[:space:]]*asset_display_url_signing_secret_ref:[[:space:]]*[^\"'[:space:]]+" "$config_path" || { echo 'asset_display_url_signing_secret_ref must be configured' >&2; exit 1; }

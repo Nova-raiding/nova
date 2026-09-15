@@ -4,7 +4,7 @@
 
 商家运营后台、平台运营后台和 ChatGPT MCP 使用同一套服务端身份模型。浏览器只持有 HttpOnly 会话 Cookie，API/MCP 依据服务端投影的 identity、membership、workspace、role、capability 和 commercial entitlement 决策；前端不再把 Bearer token、workspace ID 或 actor ID 当作用户凭据。
 
-商家账号采用邀请制。平台运营账号由平台预配并分配角色。当前阶段不开放未经审批的公共密码注册，避免创建没有工作区、没有账务归属和没有权限来源的孤立账号；“注册”入口统一表现为“登录 / 接受邀请”。
+商家账号由平台运营创建并分配角色，不对外开放公共注册。当前阶段不开放未经审批的公共密码注册，避免创建没有工作区、没有账务归属和没有权限来源的孤立账号；“开通/邀请”入口统一表现为“登录 / 接受邀请”。
 
 ## 已有真实数据关系
 
@@ -36,10 +36,10 @@
 5. 商家业务页把当前工作区作为钱包、扣款、任务、账单、店铺和审计的唯一数据范围。
 6. ChatGPT 通过独立 MCP OAuth client 绑定同一 identity；不能从对话中提交他人的 workspace ID 或运营 token。
 
-## 注册、邀请和权限规则
+## 开通、邀请和权限规则
 
-- 商家注册：平台管理员创建邀请，邀请包含目标 workspace、预期角色、过期时间和审计原因；用户登录后接受邀请，服务端才创建/激活 membership。
-- 平台注册：不提供公共注册；由平台 owner/security admin 预配 identity 并授予 platform role。
+- 商家开通：平台管理员创建邀请，邀请包含目标 workspace、预期角色、过期时间和审计原因；用户登录后接受邀请，服务端才创建/激活 membership。
+- 平台账号创建：不提供公共注册；由平台 owner/security admin 预配 identity 并授予 platform role。
 - 邀请过期、撤销、身份 suspended、成员 suspended、workspace disabled 均 fail-closed。
 - `workspace_owner`、`merchant_admin`、`operator`、`support`、`finance` 和 `platform_ops` 由服务端 capability projection 映射；前端隐藏入口不能代替 API/RLS 鉴权。
 - 钱包充值不是开通权限的替代品；正式开通必须经过批准 SKU、verified payment、entitlement、grant、ledger 和 access revision 的事务闭环。

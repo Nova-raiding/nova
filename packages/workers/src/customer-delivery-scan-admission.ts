@@ -19,7 +19,7 @@ export interface DeliveryScanAdmission {
   authorized: true
   workspace_id: string
   delivery_id: string
-  purpose: 'contract' | 'payment' | 'system_integration' | 'functional_acceptance' | 'training' | 'video'
+  purpose: 'contract' | 'video'
   asset_id: string
   asset_revision: number
   source_revision: number
@@ -66,7 +66,7 @@ export function parseDeliveryScanAdmission(event: DeliveryScanEvent, options: { 
   if (event.eventType !== CUSTOMER_DELIVERY_SCAN_EVENT || !nonEmpty(event.id) || !record(raw)) throw invalid('delivery scan event or admission is missing')
   if (raw.schema_version !== 1 || raw.operation !== CUSTOMER_DELIVERY_SCAN_OPERATION || raw.workbench !== 'platform'
     || raw.context_id !== 'platform:global' || raw.capability !== 'customer.delivery.update' || raw.authorized !== true
-    || !['contract', 'payment', 'system_integration', 'functional_acceptance', 'training', 'video'].includes(String(raw.purpose))) throw invalid('delivery scan admission authority is invalid')
+    || (raw.purpose !== 'contract' && raw.purpose !== 'video')) throw invalid('delivery scan admission authority is invalid')
   const admission: DeliveryScanAdmission = {
     schema_version: 1,
     operation: CUSTOMER_DELIVERY_SCAN_OPERATION,
@@ -79,7 +79,7 @@ export function parseDeliveryScanAdmission(event: DeliveryScanEvent, options: { 
     authorized: true,
     workspace_id: textField(raw.workspace_id, 'workspace_id'),
     delivery_id: textField(raw.delivery_id, 'delivery_id'),
-    purpose: raw.purpose as DeliveryScanAdmission['purpose'],
+    purpose: raw.purpose,
     asset_id: textField(raw.asset_id, 'asset_id'),
     asset_revision: positiveInteger(raw.asset_revision, 'asset_revision'),
     source_revision: positiveInteger(raw.source_revision, 'source_revision'),
@@ -100,7 +100,7 @@ export function parseDeliveryScanAdmission(event: DeliveryScanEvent, options: { 
     || admission.storage_key.split('/').some(part => part === '.' || part === '..' || !part)
     || admission.storage_key.includes('\\') || !/^[a-f0-9]{64}$/u.test(admission.sha256)
     || admission.size_bytes > 50 * 1024 * 1024
-    || !(admission.purpose === 'video' ? VIDEO_MIMES : CONTRACT_MIMES).has(admission.mime_type)) throw invalid('delivery scan admission asset binding is invalid')
+    || !(admission.purpose === 'contract' ? CONTRACT_MIMES : VIDEO_MIMES).has(admission.mime_type)) throw invalid('delivery scan admission asset binding is invalid')
   const admittedAt = Date.parse(admission.admitted_at)
   // Durable work may wait in the queue. Only the authoritative recheck, not
   // the immutable enqueue decision, has a short freshness window.

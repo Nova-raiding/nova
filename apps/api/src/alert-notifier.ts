@@ -22,36 +22,32 @@ export interface AlertNotificationOptions {
 const configuredUrl = (env: Record<string, string | undefined>) => env.OPS_ALERT_WEBHOOK_URL?.trim() ?? ''
 const configuredAllowedHosts = (env: Record<string, string | undefined>) => (env.OPS_ALERT_WEBHOOK_ALLOWED_HOSTS ?? '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean)
 
-function configuredSecret(env: Record<string, string | undefined>): { secret?: string; reason?: string } {
-  const direct = env.OPS_ALERT_WEBHOOK_SECRET?.trim()
-  const file = env.OPS_ALERT_WEBHOOK_SECRET_FILE?.trim()
-  if (direct && file) return { reason: 'OPS_ALERT_WEBHOOK_SECRET 与 OPS_ALERT_WEBHOOK_SECRET_FILE 不能同时配置' }
-  if (file) {
-    try {
-      if (lstatSync(file).isSymbolicLink()) return { reason: 'OPS_ALERT_WEBHOOK_SECRET_FILE 不能是符号链接' }
-      const secret = readFileSync(file, 'utf8').trim()
-      return secret ? { secret } : { reason: 'OPS_ALERT_WEBHOOK_SECRET_FILE 为空' }
-    } catch {
-      return { reason: 'OPS_ALERT_WEBHOOK_SECRET_FILE 不可读取' }
-    }
-  }
-  return direct ? { secret: direct } : { reason: 'OPS_ALERT_WEBHOOK_SECRET 未配置' }
+const configuredSecret = (env: Record<string, string | undefined>) => env.OPS_ALERT_WEBHOOK_SECRET?.trim() ?? ''
+
+/** Alert delivery is an optional production integration. An entirely absent
+ * configuration is healthy and disabled. Once the operator opts in, or any
+ * webhook setting is present, the complete secure contract is fail-closed. */
+const alertNotificationsEnabled = (env: Record<string, string | undefined>) => {
+  const flag = env.OPS_ALERT_NOTIFICATIONS_ENABLED?.trim()
+  const hasWebhookConfiguration = Boolean(configuredUrl(env) || configuredAllowedHosts(env).length || configuredSecret(env))
+  return (flag !== undefined && flag !== 'false') || hasWebhookConfiguration
 }
 
 export function alertNotificationReadiness(env: Record<string, string | undefined> = process.env) {
-  const enabled = env.OPS_ALERT_NOTIFICATIONS_ENABLED?.trim()
-  if (enabled === 'false') return { enabled: false, configured: false, ready: true }
-  if (enabled && enabled !== 'true') return { enabled: false, configured: false, ready: false, reason: 'OPS_ALERT_NOTIFICATIONS_ENABLED 必须为 true 或 false' }
+  const enabled = alertNotificationsEnabled(env)
+  if (!enabled) return { enabled: false, configured: false, ready: true, reason: '告警通知未启用（可选）' }
+  if (env.OPS_ALERT_NOTIFICATIONS_ENABLED !== undefined && !['true', 'false'].includes(env.OPS_ALERT_NOTIFICATIONS_ENABLED.trim())) {
+    return { enabled: true, configured: true, ready: false, reason: 'OPS_ALERT_NOTIFICATIONS_ENABLED 必须为 true 或 false' }
+  }
   const url = configuredUrl(env)
-  if (!url) return { enabled: true, configured: false, ready: false, reason: 'OPS_ALERT_WEBHOOK_URL 未配置' }
+  if (!url) return { enabled: true, configured: true, ready: false, reason: 'OPS_ALERT_WEBHOOK_URL 未配置' }
   let parsed: URL
   try { parsed = new URL(url) } catch { return { enabled: true, configured: true, ready: false, reason: 'OPS_ALERT_WEBHOOK_URL 不是合法 URL' } }
   const allowedHosts = configuredAllowedHosts(env)
   if (isSecureEnvironment(env.NODE_ENV) && !allowedHosts.length) return { enabled: true, configured: true, ready: false, reason: '安全环境必须配置 OPS_ALERT_WEBHOOK_ALLOWED_HOSTS' }
   const outboundReason = inspectOutboundUrl(url, { environment: env.NODE_ENV, ...(allowedHosts.length ? { allowedHosts } : {}) })
   if (outboundReason) return { enabled: true, configured: true, ready: false, reason: `告警 Webhook 地址不安全：${outboundReason}` }
-  const secret = configuredSecret(env)
-  if (!secret.secret) return { enabled: true, configured: true, ready: false, reason: secret.reason }
+  if (!configuredSecret(env)) return { enabled: true, configured: true, ready: false, reason: 'OPS_ALERT_WEBHOOK_SECRET 未配置' }
   return { enabled: true, configured: true, ready: true, protocol: parsed.protocol }
 }
 
@@ -83,6 +79,7 @@ export function alertNotificationBody(alert: OperationalAlert, requestId: string
 export async function notifyOperationalAlert(alert: OperationalAlert, options: AlertNotificationOptions = {}): Promise<AlertNotificationResult> {
   const env = options.env ?? process.env
   const readiness = alertNotificationReadiness(env)
+  if (!readiness.enabled) return { delivery: 'disabled', attempts: 0, reason: readiness.reason }
   if (!readiness.ready) return { delivery: 'blocked', attempts: 0, reason: readiness.reason }
   if (!readiness.enabled) return { delivery: 'disabled', attempts: 0, reason: readiness.reason }
   const configured = configuredSecret(env)

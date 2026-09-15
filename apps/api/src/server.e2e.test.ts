@@ -1,11 +1,12 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
-import { createHash, createHmac } from 'node:crypto'
-import { enableCommercialFixtureHarnessForTests, fixturePaymentAllowed, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, setPaymentProviderForTests, setRuleRepositoryForTests, workspaceMembers } from './server.js'
+import { createHash, createHmac, randomUUID } from 'node:crypto'
+import { enableCommercialFixtureHarnessForTests, fixturePaymentAllowed, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setPasswordAuthRepositoryForTests, setPaymentProviderForTests, setRuleRepositoryForTests, workspaceMembers } from './server.js'
 import type { McpCanonicalProductConsistencyResult } from '../../../packages/contracts/src/index.js'
 import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
 import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
 import { hashPassword } from '../../../packages/security/src/password-auth.js'
+import { signPaymentCallback } from '../../../packages/billing/src/callback-envelope.mjs'
 
 type Envelope<T = unknown> = { request_id: string; trace_id: string; workspace_id: string; data: T | null; warnings: unknown[]; next_actions: unknown[]; error: { code: string; message: string } | null }
 
@@ -568,6 +569,7 @@ describe('API HTTP vertical slice', () => {
   beforeEach(() => {
     vi.stubEnv('NODE_ENV', 'test')
     vi.stubEnv('API_RATE_LIMIT_PER_MINUTE', '10000')
+    vi.stubEnv('PAYMENT_PROVIDER_REFUND_QUERY_API_URL', 'https://payments.example/api/refund/query')
   })
   afterEach(async () => { if (server.listening) await new Promise<void>(resolve => server.close(() => resolve())); setPaymentProviderForTests(); setRuleRepositoryForTests(); vi.unstubAllEnvs() })
 
@@ -755,7 +757,7 @@ describe('API HTTP vertical slice', () => {
     const startCard = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2.5, method: 'merchant.start', params: { workspace_id: workspaceId } }) }).then(json)
     expect(startCard.error).toBeNull()
     const startResult = (startCard.data as { result: { greeting: string; currentStep: { id: string; entryMethod: string }; nextPrompt: string; modelAccess: { userKeyRequired: boolean }; brandNavigation: { presentation: string; hierarchy: string[]; items: unknown[] }; platformOptions: Array<{ platform: string; label: string; state: string; action: string; readiness: { mediaUpload: { ready: boolean; configured: boolean; evidence: boolean; reason?: string } } }>; cards: Array<{ id: string; state: string; cta: string; action: { method: string }; blocked_by: string[]; next_actions?: Array<{ required_inputs?: string[] }>; capabilityGate?: { unlocked: boolean; method: string; reason: string } }>; wallet: { balance_cny: string; unlocked: boolean; status_method: string; purchase_method: string; order_method: string; payment_status_method: string; payment_channels: string[]; message: string } } }).result
-    expect(startResult).toMatchObject({ greeting: '欢迎使用大麦。', currentStep: { id: 'bind-store', entryMethod: 'platform.connect' }, nextPrompt: '选择一个平台连接我的店铺', modelAccess: { userKeyRequired: false }, wallet: { balance_cny: '0.00', unlocked: true } })
+    expect(startResult).toMatchObject({ greeting: '欢迎使用Store Nova。', currentStep: { id: 'bind-store', entryMethod: 'platform.connect' }, nextPrompt: '选择一个平台连接我的店铺', modelAccess: { userKeyRequired: false }, wallet: { balance_cny: '0.00', unlocked: true } })
     expect(startResult.wallet).toMatchObject({ purchase_method: 'commercial.catalog.get', order_method: 'commercial.order.create', payment_status_method: 'commercial.order.payment.get', payment_channels: [] })
     expect(startResult.wallet).not.toHaveProperty('recharge_method', 'billing.recharge.create')
     expect(startResult.brandNavigation).toMatchObject({ presentation: 'tree', hierarchy: ['brand', 'platform', 'store'], items: [] })
@@ -1011,6 +1013,29 @@ describe('API HTTP vertical slice', () => {
     expect((transactions.data as { result: { transactions: unknown[] } }).result.transactions).toHaveLength(1)
   })
 
+  it('accepts the production timestamp/nonce/currency callback envelope and rejects currency omission', async () => {
+    vi.stubEnv('PAYMENT_CALLBACK_SECRET', 'callback-secret')
+    const base = await start()
+    const workspaceId = `ws_billing_signed_${Date.now()}`
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+    const create = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'alipay', amount_cny: '10.00', idempotency_key: `billing-signed-${workspaceId}` } }) }).then(json)
+    expect(create.error).toBeNull()
+    const order = (create.data as { result: { id: string } }).result
+    const timestamp = String(Math.floor(Date.now() / 1000))
+    const nonce = `nonce-${randomUUID().replaceAll('-', '')}`
+    const callback = { channel: 'alipay' as const, workspaceId, orderId: order.id, providerTradeId: `trade-${workspaceId}`, amountFen: 1000, currency: 'CNY' as const, state: 'paid' as const, timestamp, nonce }
+    const signature = signPaymentCallback({ secret: 'callback-secret', ...callback })
+    const stale = { ...callback, timestamp: String(Math.floor(Date.now() / 1000) - 301), nonce: `nonce-${randomUUID().replaceAll('-', '')}` }
+    const staleSignature = signPaymentCallback({ secret: 'callback-secret', ...stale })
+    const expired = await fetch(`${base}/v1/billing/callback/alipay`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-payment-signature': staleSignature, 'x-payment-timestamp': stale.timestamp, 'x-payment-nonce': stale.nonce }, body: JSON.stringify({ workspace_id: workspaceId, order_id: order.id, provider_trade_id: stale.providerTradeId, amount_fen: stale.amountFen, currency: stale.currency, state: stale.state }) }).then(json)
+    expect(expired.error?.code).toBe('PAYMENT_CALLBACK_EXPIRED')
+    const missingCurrency = await fetch(`${base}/v1/billing/callback/alipay`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-payment-signature': signature, 'x-payment-timestamp': timestamp, 'x-payment-nonce': nonce }, body: JSON.stringify({ workspace_id: workspaceId, order_id: order.id, provider_trade_id: callback.providerTradeId, amount_fen: callback.amountFen, state: callback.state }) }).then(json)
+    expect(missingCurrency.error?.code).toBe('PAYMENT_CALLBACK_SIGNATURE_INVALID')
+    const paid = await fetch(`${base}/v1/billing/callback/alipay`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-payment-signature': signature, 'x-payment-timestamp': timestamp, 'x-payment-nonce': nonce }, body: JSON.stringify({ workspace_id: workspaceId, order_id: order.id, provider_trade_id: callback.providerTradeId, amount_fen: callback.amountFen, currency: callback.currency, state: callback.state }) }).then(json)
+    expect(paid.error).toBeNull()
+    expect(paid.data).toMatchObject({ accepted: true, order_id: order.id, state: 'paid' })
+  })
+
   it('reports exact recharge totals beyond the 100-row display limit', async () => {
     const base = await start()
     const workspaceId = `ws_billing_volume_${Date.now()}`
@@ -1142,10 +1167,12 @@ describe('API HTTP vertical slice', () => {
     expect(created.error).toBeNull()
     const first = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.reconciliation.run', params: { workspace_id: workspaceId, limit: '10' } }) }).then(json)
     expect(first.error).toBeNull()
-    expect(first.data?.result).toMatchObject({ state: 'completed', checked: 1, provider_orders: 1, settled: [{ provider_trade_id: providerTradeId }], pending: [], failed: [], idempotent_settlement: true })
-    const second = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'billing.reconciliation.run', params: { workspace_id: workspaceId, limit: '10' } }) }).then(json)
+    expect(first.data?.result).toMatchObject({ state: 'completed', checked: 1, provider_orders: 1, settled: [{ provider_trade_id: providerTradeId }], pending: [], failed: [], idempotent_settlement: true, total_query_budget: 10 })
+    const second = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'billing.reconciliation.run', params: { workspace_id: workspaceId } }) }).then(json)
     expect(second.error).toBeNull()
-    expect(second.data?.result).toMatchObject({ state: 'completed', checked: 0, settled: [], pending: [], failed: [] })
+    expect(second.data?.result).toMatchObject({ state: 'completed', checked: 0, settled: [], pending: [], failed: [], total_query_budget: 10 })
+    const invalidLimit = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'billing.reconciliation.run', params: { workspace_id: workspaceId, limit: '21' } }) }).then(json)
+    expect(invalidLimit.error?.code).toBe('INVALID_REQUEST')
   })
 
   it('does not settle a paid query when the provider omits the amount', async () => {
@@ -1263,10 +1290,101 @@ describe('API HTTP vertical slice', () => {
     const paid = await fetch(`${base}/v1/billing/callback/wechat`, { method: 'POST', headers: { ...headers, 'x-payment-signature': callbackSignature }, body: JSON.stringify({ workspace_id: workspaceId, order_id: order.id, provider_trade_id: providerTradeId, amount_fen: 1000, state: 'SUCCESS' }) }).then(json)
     expect(paid.error).toBeNull()
     const refund = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.refund', params: { workspace_id: workspaceId, order_id: order.id, reason: 'provider reject test' } }) }).then(json)
-    expect(refund.error?.code).toBe('PAYMENT_PROVIDER_REFUND_FAILED')
+    expect(refund.error).toMatchObject({ code: 'PAYMENT_PROVIDER_REFUND_REJECTED', details: { reservation_released: true } })
     const transactions = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'billing.transactions', params: { workspace_id: workspaceId } }) }).then(json)
     expect((transactions.data?.result as { balance_cny: string; transactions: Array<{ type: string }> }).balance_cny).toBe('10.00')
     expect((transactions.data?.result as { transactions: Array<{ type: string; description: string }> }).transactions.filter(item => item.type === 'refund')).toEqual([expect.objectContaining({ description: expect.stringContaining('充值退款失败释放预留') })])
+  })
+
+  it('keeps the refund reservation locked when the provider outcome is unknown', async () => {
+    vi.stubEnv('PAYMENT_MODE', 'provider')
+    vi.stubEnv('PAYMENT_PROVIDER_ADAPTERS', 'alipay,wechat')
+    vi.stubEnv('PAYMENT_CHECKOUT_BASE_URL', 'https://payments.example/checkout')
+    vi.stubEnv('PAYMENT_PROVIDER_CHECKOUT_API_URL', 'https://payments.example/api/checkout')
+    vi.stubEnv('PAYMENT_PROVIDER_QUERY_API_URL', 'https://payments.example/api/query')
+    vi.stubEnv('PAYMENT_PROVIDER_REFUND_API_URL', 'https://payments.example/api/refund')
+    vi.stubEnv('PAYMENT_PROVIDER_API_KEY', 'test-provider-key')
+    vi.stubEnv('PAYMENT_PROVIDER_MERCHANT_ID', 'merchant-test')
+    vi.stubEnv('PAYMENT_CALLBACK_BASE_URL', 'https://merchant.example/v1')
+    vi.stubEnv('PAYMENT_CALLBACK_SECRET', 'callback-secret')
+    vi.stubEnv('PAYMENT_REFUND_ENABLED', 'true')
+    vi.stubEnv('PAYMENT_RECONCILIATION_ENABLED', 'true')
+    vi.stubEnv('NODE_ENV', 'test')
+    const workspaceId = `ws_refund_unknown_${Date.now()}`
+    const providerRefund = vi.fn(async () => ({ providerRefundId: 'refund-unknown', state: 'processing' }))
+    const providerRefundQuery = vi.fn(async () => ({ state: 'succeeded' as const, providerRefundId: 'refund-confirmed', amountFen: 1000 }))
+    setPaymentProviderForTests({
+      createCheckout: async () => ({ paymentUrl: 'https://payments.example/pay/order' }),
+      refund: providerRefund,
+      queryStatus: async () => ({ state: 'pending' }),
+      queryRefundStatus: providerRefundQuery,
+    })
+    const base = await start()
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'finance_1' }
+    const created = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'alipay', amount_cny: '10.00', idempotency_key: `refund-unknown-${workspaceId}` } }) }).then(json)
+    expect(created.error).toBeNull()
+    const order = (created.data as { result: { id: string } }).result
+    const providerTradeId = `trade-${workspaceId}`
+    const callbackSignature = createHmac('sha256', 'callback-secret').update(`${order.id}|${providerTradeId}|1000|SUCCESS`).digest('hex')
+    const paid = await fetch(`${base}/v1/billing/callback/alipay`, { method: 'POST', headers: { ...headers, 'x-payment-signature': callbackSignature }, body: JSON.stringify({ workspace_id: workspaceId, order_id: order.id, provider_trade_id: providerTradeId, amount_fen: 1000, state: 'SUCCESS' }) }).then(json)
+    expect(paid.error).toBeNull()
+
+    const refund = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.refund', params: { workspace_id: workspaceId, order_id: order.id, reason: 'provider unknown test' } }) }).then(json)
+    expect(refund.error).toMatchObject({ code: 'PAYMENT_PROVIDER_REFUND_OUTCOME_UNKNOWN', details: { reservation_released: false, next_actions: ['billing.reconciliation'] } })
+    expect(providerRefund).toHaveBeenCalledWith(expect.objectContaining({ refundRequestId: expect.stringMatching(/^billing_tx_/u) }))
+
+    const transactions = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'billing.transactions', params: { workspace_id: workspaceId } }) }).then(json)
+    const wallet = transactions.data?.result as { balance_cny: string; transactions: Array<{ type: string; orderId?: string; description: string }> }
+    expect(wallet.balance_cny).toBe('0.00')
+    expect(wallet.transactions.filter(item => item.type === 'debit' && item.orderId?.startsWith(`recharge-refund:${order.id}:`))).toHaveLength(1)
+    expect(wallet.transactions.filter(item => item.type === 'refund')).toHaveLength(0)
+
+    const reconciliation = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'billing.reconciliation.run', params: { workspace_id: workspaceId, limit: '10' } }) }).then(json)
+    expect(reconciliation.error).toBeNull()
+    expect(reconciliation.data?.result).toMatchObject({ state: 'completed', checked: 1, payment_checked: 0, refund_checked: 1, refund_settled: [{ order_id: order.id }], refund_pending: [], refund_failed: [] })
+    expect(providerRefundQuery).toHaveBeenCalledWith(expect.objectContaining({ orderId: order.id, refundRequestId: expect.stringMatching(/^billing_tx_/u), amountFen: 1000 }))
+
+    const replay = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'billing.reconciliation.run', params: { workspace_id: workspaceId, limit: '10' } }) }).then(json)
+    expect(replay.data?.result).toMatchObject({ state: 'completed', checked: 0, refund_checked: 0, refund_settled: [] })
+    expect(providerRefundQuery).toHaveBeenCalledOnce()
+  })
+
+  it('releases a held refund only after provider reconciliation proves failure', async () => {
+    vi.stubEnv('PAYMENT_MODE', 'provider')
+    vi.stubEnv('PAYMENT_PROVIDER_ADAPTERS', 'alipay')
+    vi.stubEnv('PAYMENT_CHECKOUT_BASE_URL', 'https://payments.example/checkout')
+    vi.stubEnv('PAYMENT_PROVIDER_CHECKOUT_API_URL', 'https://payments.example/api/checkout')
+    vi.stubEnv('PAYMENT_PROVIDER_QUERY_API_URL', 'https://payments.example/api/query')
+    vi.stubEnv('PAYMENT_PROVIDER_REFUND_API_URL', 'https://payments.example/api/refund')
+    vi.stubEnv('PAYMENT_PROVIDER_API_KEY', 'test-provider-key')
+    vi.stubEnv('PAYMENT_PROVIDER_MERCHANT_ID', 'merchant-test')
+    vi.stubEnv('PAYMENT_CALLBACK_BASE_URL', 'https://merchant.example/v1')
+    vi.stubEnv('PAYMENT_CALLBACK_SECRET', 'callback-secret')
+    vi.stubEnv('PAYMENT_REFUND_ENABLED', 'true')
+    vi.stubEnv('PAYMENT_RECONCILIATION_ENABLED', 'true')
+    vi.stubEnv('NODE_ENV', 'test')
+    const workspaceId = `ws_refund_reconciled_failed_${Date.now()}`
+    setPaymentProviderForTests({
+      createCheckout: async () => ({ paymentUrl: 'https://payments.example/pay/order' }),
+      refund: async () => ({ providerRefundId: 'refund-unknown', state: 'processing' }),
+      queryStatus: async () => ({ state: 'pending' }),
+      queryRefundStatus: async () => ({ state: 'failed', providerRefundId: 'refund-failed', amountFen: 1000 }),
+    })
+    const base = await start()
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'finance_1' }
+    const created = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'alipay', amount_cny: '10.00', idempotency_key: `refund-reconciled-failed-${workspaceId}` } }) }).then(json)
+    const order = (created.data as { result: { id: string } }).result
+    const providerTradeId = `trade-${workspaceId}`
+    const callbackSignature = createHmac('sha256', 'callback-secret').update(`${order.id}|${providerTradeId}|1000|SUCCESS`).digest('hex')
+    expect((await fetch(`${base}/v1/billing/callback/alipay`, { method: 'POST', headers: { ...headers, 'x-payment-signature': callbackSignature }, body: JSON.stringify({ workspace_id: workspaceId, order_id: order.id, provider_trade_id: providerTradeId, amount_fen: 1000, state: 'SUCCESS' }) }).then(json)).error).toBeNull()
+    expect((await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.refund', params: { workspace_id: workspaceId, order_id: order.id, reason: 'unknown then failed' } }) }).then(json)).error?.code).toBe('PAYMENT_PROVIDER_REFUND_OUTCOME_UNKNOWN')
+
+    const reconciliation = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'billing.reconciliation.run', params: { workspace_id: workspaceId, limit: '10' } }) }).then(json)
+    expect(reconciliation.data?.result).toMatchObject({ state: 'attention_required', refund_checked: 1, refund_failed: [{ order_id: order.id, code: 'PAYMENT_PROVIDER_REFUND_FAILED', reservation_released: true }] })
+    const transactions = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'billing.transactions', params: { workspace_id: workspaceId } }) }).then(json)
+    const wallet = transactions.data?.result as { balance_cny: string; transactions: Array<{ type: string; orderId?: string }> }
+    expect(wallet.balance_cny).toBe('10.00')
+    expect(wallet.transactions.filter(item => item.type === 'refund' && item.orderId?.startsWith('release:recharge-refund:'))).toHaveLength(1)
   })
 
   it('deducts an external recharge refund once and leaves no wallet credit on retry', async () => {
@@ -2254,9 +2372,19 @@ describe('API HTTP vertical slice', () => {
       expect(reviewed.error).toBeNull(); expect(reviewed.data).toMatchObject({ login: 'applicant@example.com', status: 'active', workspace_ids: ['ws_demo'] })
       const replay = await fetch(`${base}/v1/ops/merchant-registration-applications/review`, { method: 'POST', headers: { cookie, 'x-ops-workbench': 'platform', 'content-type': 'application/json' }, body: JSON.stringify({ login: 'applicant@example.com', decision: 'rejected', reason: '重复审核' }) }).then(json)
       expect(replay.error?.code).toBe('AUTH_REGISTRATION_STATE_INVALID')
-    } finally {
-      setPasswordAuthRepositoryForTests()
-      vi.unstubAllEnvs()
-    }
+    } finally { setPasswordAuthRepositoryForTests(); vi.unstubAllEnvs() }
+  })
+
+  it('blocks public merchant registration unless explicitly enabled for a compatibility test', async () => {
+    vi.stubEnv('ALLOW_MERCHANT_SELF_REGISTRATION', 'false')
+    const base = await start()
+    try {
+      const response = await fetch(`${base}/v1/auth/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ login: 'self-register-blocked@example.com', password: 'MerchantPass123', enterprise_name: '不应自助注册', contact_name: '测试', terms_agreed: true }),
+      }).then(json)
+      expect(response.error).toMatchObject({ code: 'AUTH_PUBLIC_REGISTRATION_DISABLED' })
+    } finally { vi.unstubAllEnvs() }
   })
 })

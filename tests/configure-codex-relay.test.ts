@@ -63,7 +63,7 @@ describe('Codex relay configuration renderer', () => {
       model_messages: { instructions_template: 'full instructions', permissions: { shell: true } },
       context_window: 272000,
     })
-    expect(catalog.models[0]).toMatchObject({ slug: 'glm-5.2', display_name: 'glm-5.2 (大麦中转)', service_tiers: [], model_messages: { instructions_template: 'full instructions', permissions: { shell: true } }, context_window: 272000 })
+    expect(catalog.models[0]).toMatchObject({ slug: 'glm-5.2', display_name: 'glm-5.2 (Store Nova中转)', service_tiers: [], model_messages: { instructions_template: 'full instructions', permissions: { shell: true } }, context_window: 272000 })
     expect(catalog.models[0]).toHaveProperty('experimental_supported_tools', [])
     expect(catalog.models[0]).not.toHaveProperty('use_responses_lite')
     expect(catalog.models[0]).not.toHaveProperty('tool_mode')

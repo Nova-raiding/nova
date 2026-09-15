@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { ApiHealth, PlatformModelStatus } from './api.js'
-import { resolveMerchantEnvironmentStatus } from './environment-status.js'
+import type { ApiHealth, PlatformModelStatus } from './api'
+import { resolveMerchantEnvironmentStatus } from './environment-status'
 
 const readyModel: PlatformModelStatus = { state: 'ready' }
 
@@ -14,80 +14,62 @@ function health(overrides: Partial<ApiHealth> = {}): ApiHealth {
   }
 }
 
-describe('merchant environment status', () => {
-  it('never presents a fixture environment as online even when its model relay is ready', () => {
-    const result = resolveMerchantEnvironmentStatus({
-      apiConfigured: true,
-      apiOnline: true,
-      health: health({
-        writesEnabled: false,
-        setup: {
-          mode: 'fixture',
-          productionGate: false,
-          nextActions: ['配置真实平台 OAuth 后重新检查'],
-        },
-      }),
-      modelStatus: readyModel,
-      modelStatusRead: true,
-    })
+function resolve(apiHealth: ApiHealth) {
+  return resolveMerchantEnvironmentStatus({
+    apiBaseUrl: '/api',
+    apiOnline: true,
+    apiHealth,
+    modelStatus: readyModel,
+    modelStatusRead: true,
+  })
+}
+
+describe('resolveMerchantEnvironmentStatus', () => {
+  it('never presents fixture mode with closed writes and a failed gate as online', () => {
+    const result = resolve(health({
+      writesEnabled: false,
+      setup: { mode: 'fixture', productionGate: false },
+    }))
 
     expect(result).toMatchObject({
       state: 'demo',
       tone: 'warning',
-      topbarPrefix: '系统状态',
       topbarLabel: '演示环境',
       title: '演示环境 · 不可上线',
     })
-    expect(result.detail).toContain('环境模式：fixture')
-    expect(result.detail).toContain('写入能力：已关闭')
-    expect(result.detail).toContain('生产门禁：未通过')
+    expect(result.detail).toContain('外部平台写入已关闭')
+    expect(result.detail).toContain('生产上线门禁未通过')
     expect(result.detail).toContain('不代表生产就绪')
-    expect(result.detail).not.toContain('模型中转已就绪')
-    expect(result.nextActions).toEqual(['配置真实平台 OAuth 后重新检查'])
+    expect(`${result.title}${result.topbarLabel}`).not.toContain('在线')
   })
 
-  it('shows an explicit launch block for a non-fixture environment with a failed production gate', () => {
-    const result = resolveMerchantEnvironmentStatus({
-      apiConfigured: true,
-      apiOnline: true,
-      health: health({ setup: { mode: 'production', productionGate: false } }),
-      modelStatus: readyModel,
-      modelStatusRead: true,
-    })
+  it('blocks a production-shaped environment when the production gate fails', () => {
+    const result = resolve(health({
+      setup: { mode: 'production', productionGate: false },
+    }))
 
-    expect(result.state).toBe('blocked')
-    expect(result.topbarLabel).toBe('不可上线')
-    expect(result.detail).toContain('生产门禁：未通过')
+    expect(result).toMatchObject({ state: 'blocked', tone: 'warning' })
+    expect(result.title).toContain('不可上线')
   })
 
-  it('fails closed when the health response omits write or production-gate evidence', () => {
-    const result = resolveMerchantEnvironmentStatus({
-      apiConfigured: true,
-      apiOnline: true,
-      health: { status: 'ok', connectors: {}, setup: { mode: 'production' } },
-      modelStatus: readyModel,
-      modelStatusRead: true,
-    })
+  it('fails closed when write or gate evidence is missing', () => {
+    const result = resolve(health({
+      writesEnabled: undefined,
+      setup: { mode: 'production' },
+    }))
 
-    expect(result.state).toBe('checking')
-    expect(result.topbarLabel).toBe('待确认')
-    expect(result.detail).toContain('不会显示生产在线')
+    expect(result).toMatchObject({ state: 'blocked', tone: 'warning' })
+    expect(result.detail).toContain('未返回外部写入能力证据')
+    expect(result.detail).toContain('未返回生产上线门禁证据')
   })
 
-  it('only reports online after production, write, and model gates all pass', () => {
-    const result = resolveMerchantEnvironmentStatus({
-      apiConfigured: true,
-      apiOnline: true,
-      health: health(),
-      modelStatus: readyModel,
-      modelStatusRead: true,
-    })
+  it('shows production ready only after all server gates pass', () => {
+    const result = resolve(health())
 
     expect(result).toMatchObject({
       state: 'ready',
       tone: 'ready',
-      topbarPrefix: '系统健康',
-      topbarLabel: '在线',
+      topbarLabel: '生产就绪',
       title: '生产环境已就绪',
     })
   })

@@ -25,7 +25,7 @@ export function OpsSessionRecoveryGuidance({ managed: _managed, error }: { manag
     <p>当前身份尚未通过运营权限验证，暂时无法打开运营页面或执行操作。</p>
     <p>请点击顶部“平台运营账号登录”，使用管理员提供的平台运营账号和密码登录。商家登录凭据不能用于平台运营控制台。</p>
     <p><strong>账号分配方式：</strong>平台运营账号采用预配或邀请制；请由平台管理员在“用户与成员”中完成账号和角色配置。</p>
-    <p><strong>绑定 ChatGPT 插件：</strong>在 ChatGPT 中启用“大麦商家营销”后回复“开始使用大麦”。插件会用当前登录身份创建或恢复工作区，并返回绑定状态；不要手工填写他人的工作区 ID 或 Token。</p>
+    <p><strong>绑定 ChatGPT 插件：</strong>在 ChatGPT 中启用“Store Nova商家营销”后回复“开始使用Store Nova”。插件会用当前登录身份创建或恢复工作区，并返回绑定状态；不要手工填写他人的工作区 ID 或 Token。</p>
     <p>若刚刚恢复网络或管理员已更新权限，可直接重试。</p>
     <details><summary>查看失败详情（供管理员排查）</summary><p>{error ?? "权限会话加载失败"}</p></details>
   </div>;

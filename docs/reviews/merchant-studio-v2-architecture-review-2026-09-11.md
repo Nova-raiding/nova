@@ -2,7 +2,7 @@
 
 日期：2026-09-11
 
-本轮对 damai-merchant-studio-prd-v2.md 与 damai-merchant-studio-architecture-v2.md 进行了 CEO、工程、桌面 UX、开发者体验四个视角的评审。
+本轮对 store-nova-merchant-studio-prd-v2.md 与 store-nova-merchant-studio-architecture-v2.md 进行了 CEO、工程、桌面 UX、开发者体验四个视角的评审。
 
 ## 结论
 

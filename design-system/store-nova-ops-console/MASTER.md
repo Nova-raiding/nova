@@ -6,7 +6,7 @@
 
 ---
 
-**Project:** DaMai Ops Console
+**Project:** Store Nova Ops Console
 **Generated:** 2026-09-09 09:43:44
 **Category:** Analytics Dashboard
 **Design Dials:** Variance 4/10 (Balanced / Modern) | Motion 3/10 (Subtle) | Density 8/10 (Dense / Dashboard)

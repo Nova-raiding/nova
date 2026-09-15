@@ -1,4 +1,5 @@
 import type { GenericResponseMapping, HttpConnectorConfig, Platform, RawProduct, RequestSigner, WriteIdentity, WriteReceipt, WriteStatus } from './types.js'
+import { validateProductionCapabilityEvidenceTrust, type CapabilityEvidence, type CapabilityEvidenceState, type CapabilityName, type ProductionCapabilityEvidenceTrust } from './capability-evidence.js'
 import { validateConnectorReadiness, type ConnectorReadiness } from './readiness.js'
 import { createAlibabaTopSigner, mapAlibabaTopProducts, mapAlibabaTopWriteReceipt, mapAlibabaTopWriteStatus } from './platform-adapters/alibaba-top.js'
 import { createJdSigner, mapJdProducts, mapJdWriteReceipt, mapJdWriteStatus } from './platform-adapters/jd.js'
@@ -172,6 +173,54 @@ function numberValue(source: ConfigSource, key: string): number | undefined {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
 }
 
+const capabilityNames = new Set<CapabilityName>(['authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'])
+const capabilityStates = new Set<CapabilityEvidenceState>(['unverified', 'documented', 'fixture_verified', 'test_e2e', 'production_canary'])
+
+/**
+ * Load only the non-secret capability projection needed by runtime readiness.
+ * The deploy preflight independently verifies the complete signed artifact;
+ * this loader additionally binds it to the running release and refuses to
+ * consume evidence in non-production processes.
+ */
+function capabilityEvidenceFromSource(source: ConfigSource, trust?: ProductionCapabilityEvidenceTrust): Partial<Record<Platform, readonly CapabilityEvidence[]>> {
+  const raw = trust?.documentJson
+  const releaseId = value(source, 'RELEASE_ID')
+  if (value(source, 'NODE_ENV') !== 'production' || !raw || raw.length > 1024 * 1024 || !releaseId) return {}
+  try {
+    const document = JSON.parse(raw) as Record<string, unknown>
+    if (!trust || validateProductionCapabilityEvidenceTrust(document, source, trust).length) return {}
+    if (document.schema_version !== '1' || document.release_id !== releaseId || !['preproduction', 'production'].includes(String(document.environment)) || document.simulated !== false || !Array.isArray(document.platforms)) return {}
+    const result: Partial<Record<Platform, CapabilityEvidence[]>> = {}
+    for (const candidate of document.platforms) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue
+      const item = candidate as Record<string, unknown>
+      const platform = item.platform
+      if (!Object.hasOwn(platformPrefixes, String(platform)) || !item.capabilities || typeof item.capabilities !== 'object' || Array.isArray(item.capabilities)) continue
+      const entries: CapabilityEvidence[] = []
+      for (const [capability, rawEvidence] of Object.entries(item.capabilities as Record<string, unknown>)) {
+        if (!capabilityNames.has(capability as CapabilityName) || !rawEvidence || typeof rawEvidence !== 'object' || Array.isArray(rawEvidence)) continue
+        const evidence = rawEvidence as Record<string, unknown>
+        if (!capabilityStates.has(evidence.state as CapabilityEvidenceState)) continue
+        const optional = (name: string) => typeof evidence[name] === 'string' && evidence[name].trim() ? evidence[name].trim() : undefined
+        entries.push({
+          platform: platform as Platform,
+          capability: capability as CapabilityName,
+          state: evidence.state as CapabilityEvidenceState,
+          ...(typeof item.application_id === 'string' && item.application_id.trim() ? { applicationId: item.application_id.trim() } : {}),
+          ...(typeof item.test_store_id === 'string' && item.test_store_id.trim() ? { testAccountId: item.test_store_id.trim() } : {}),
+          ...(optional('scope') ? { scope: optional('scope') } : {}),
+          ...(optional('api_version') ? { apiVersion: optional('api_version') } : {}),
+          ...(optional('evidence_ref') ? { evidenceRef: optional('evidence_ref') } : {}),
+          ...(optional('verified_by') ? { verifiedBy: optional('verified_by') } : {}),
+          ...(optional('verified_at') ? { verifiedAt: optional('verified_at') } : {}),
+        })
+      }
+      result[platform as Platform] = entries
+    }
+    return result
+  } catch { return {} }
+}
+
 function validUrl(raw: string | undefined): raw is string {
   if (!raw) return false
   try {
@@ -222,6 +271,7 @@ function buildOne(platform: Platform, source: ConfigSource): { config?: HttpConn
     const verifiedAt = value(source, `${prefix}_MEDIA_UPLOAD_EVIDENCE_VERIFIED_AT`)
     return version && evidenceRef && verifiedBy && verifiedAt ? { version, evidenceRef, verifiedBy, verifiedAt } : undefined
   })()
+  const responseMapping = responseMappingFromEnv(source, prefix)
   return {
     config: {
       clientId: clientId!,
@@ -238,10 +288,12 @@ function buildOne(platform: Platform, source: ConfigSource): { config?: HttpConn
       ...(value(source, `${prefix}_MEDIA_UPLOAD_PATH`) ? { mediaUploadPath: value(source, `${prefix}_MEDIA_UPLOAD_PATH`) } : {}),
       ...(mediaUploadEvidence ? { mediaUploadEvidence } : {}),
       ...(mappingEvidence ? { mappingEvidence } : {}),
+      ...(responseMapping ? { responseMapping } : {}),
+      ...(value(source, `${prefix}_MEDIA_UPLOAD_PATH`) && responseMapping?.mediaIdPath ? { mapMediaUpload: (payload: unknown, input: import('./types.js').MediaUploadInput, current: Platform) => genericMediaUpload(payload, input, current, responseMapping) } : {}),
       ...(clientSecret && platform === 'jd' ? { signer: createJdSigner({ appKey: clientId!, appSecret: clientSecret }) } : {}),
       ...(clientSecret && (platform === 'taobao' || platform === 'tmall') ? { signer: createAlibabaTopSigner({ appKey: clientId!, appSecret: clientSecret }) } : {}),
       ...(clientSecret && platform === 'pinduoduo' ? { signer: createPinduoduoSigner({ clientId: clientId!, clientSecret }) } : {}),
-      ...(platform === 'xiaohongshu' || platform === 'douyin' ? (() => { const responseMapping = responseMappingFromEnv(source, prefix); return { signer: createBearerSigner(), ...(responseMapping ? { responseMapping } : {}), mapProducts: (payload: unknown, current: Platform) => genericProducts(payload, current, responseMapping), mapWriteReceipt: (payload: unknown, input: import('./types.js').PlatformWriteDraft, operation: 'create' | 'update', current: Platform) => genericWriteReceipt(payload, input, operation, current, responseMapping), mapWriteStatus: (payload: unknown, request: WriteIdentity, current: Platform) => genericWriteStatus(payload, request, current, responseMapping), ...(value(source, `${prefix}_MEDIA_UPLOAD_PATH`) ? { mapMediaUpload: (payload: unknown, input: import('./types.js').MediaUploadInput, current: Platform) => genericMediaUpload(payload, input, current, responseMapping) } : {}) } })() : {}),
+      ...(platform === 'xiaohongshu' || platform === 'douyin' ? { signer: createBearerSigner(), mapProducts: (payload: unknown, current: Platform) => genericProducts(payload, current, responseMapping), mapWriteReceipt: (payload: unknown, input: import('./types.js').PlatformWriteDraft, operation: 'create' | 'update', current: Platform) => genericWriteReceipt(payload, input, operation, current, responseMapping), mapWriteStatus: (payload: unknown, request: WriteIdentity, current: Platform) => genericWriteStatus(payload, request, current, responseMapping) } : {}),
       ...(platform === 'jd' ? {
         mapProducts: mapJdProducts,
         mapWriteReceipt: mapJdWriteReceipt,
@@ -264,14 +316,16 @@ function buildOne(platform: Platform, source: ConfigSource): { config?: HttpConn
   }
 }
 
-export function buildHttpConnectorConfigs(source: ConfigSource = process.env): PlatformConfigBuildResult {
+export function buildHttpConnectorConfigs(source: ConfigSource = process.env, options: { capabilityEvidenceTrust?: ProductionCapabilityEvidenceTrust } = {}): PlatformConfigBuildResult {
   const configs: Partial<Record<Platform, HttpConnectorConfig>> = {}
   const allConfigs: Partial<Record<Platform, HttpConnectorConfig>> = {}
   const candidates: Record<string, HttpConnectorConfig | undefined> = {}
   const missing = {} as Record<Platform, string[]>
   const readiness = {} as Record<Platform, ConnectorReadiness>
+  const capabilityEvidence = capabilityEvidenceFromSource(source, options.capabilityEvidenceTrust)
   for (const platform of Object.keys(platformPrefixes) as Platform[]) {
     const result = buildOne(platform, source)
+    if (result.config && capabilityEvidence[platform]) result.config.capabilityEvidence = capabilityEvidence[platform]
     const state = validateConnectorReadiness(platform, result.config)
     readiness[platform] = state
     if (result.config) allConfigs[platform] = result.config

@@ -112,8 +112,20 @@ for (const [index, name] of workerServices.entries()) {
   assert.equal(workerEnv.WORKER_LEASE_MS, '1200000')
   assert.equal(workerEnv.WORKER_API_TIMEOUT_MS, '360000')
   assert.equal(workerEnv.WORKER_DEPENDENCY_CHECK_INTERVAL_MS, '10000')
+  for (const apiOnlyPaymentInput of ['PAYMENT_PROVIDER_API_KEY', 'PAYMENT_CALLBACK_SECRET', 'PAYMENT_PROVIDER_QUERY_API_URL', 'PAYMENT_PROVIDER_REFUND_QUERY_API_URL', 'PAYMENT_PROVIDER_REFUND_API_URL']) {
+    assert.equal(workerEnv[apiOnlyPaymentInput], undefined, `${name} must not receive API-only payment provider input ${apiOnlyPaymentInput}`)
+  }
   assert.ok(workerEnv.DATABASE_URL?.startsWith('postgres://'), `Worker ${index} must use PostgreSQL`)
   assert.ok(workerEnv.REDIS_URL?.startsWith('redis://'), `Worker ${index} must use Redis`)
+}
+
+const reconcileEnv = environment(services['worker-reconcile']!)
+assert.equal(reconcileEnv.PAYMENT_RECONCILIATION_INTERVAL_MS, '300000')
+assert.equal(reconcileEnv.PAYMENT_RECONCILIATION_BATCH_SIZE, '10')
+for (const name of workerServices.filter(name => name !== 'worker-reconcile')) {
+  const workerEnv = environment(services[name]!)
+  assert.equal(workerEnv.PAYMENT_RECONCILIATION_INTERVAL_MS, undefined, `${name} must not schedule payment reconciliation`)
+  assert.equal(workerEnv.PAYMENT_RECONCILIATION_BATCH_SIZE, undefined, `${name} must not schedule payment reconciliation`)
 }
 
 const scannerEnv = environment(services['worker-scan']!)

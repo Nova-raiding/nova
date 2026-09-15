@@ -64,7 +64,7 @@ async function withBridge(handler: (request: Json, res: ServerResponse<IncomingM
     // unset token is otherwise recovered from macOS launchd by the bridge,
     // turning local confirmation into an extra remote MCP request.
     env: {
-      ...TEST_PROCESS_ENV,
+      ...process.env,
       MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
       MERCHANT_WORKSPACE_ID: 'ws_test',
       MERCHANT_MCP_TOKEN: '${MERCHANT_MCP_TOKEN}',
@@ -95,7 +95,7 @@ describe('Codex App merchant conversation flow', () => {
     await withBridge((request, res) => {
       res.setHeader('content-type', 'application/json')
       res.end(json(ok(request, {
-        greeting: '欢迎使用大麦',
+        greeting: '欢迎使用Store Nova',
         onboarding: { currentStep: 'connect_store', steps: ['connect_store', 'choose_product', 'add_assets', 'start_task'] },
         next_actions: [{ label: '选择平台和店铺', tool: 'platform.connect', required_inputs: ['platform'] }],
         action_cards: [{ method: 'platform.connect', label: '连接淘宝', description: '先绑定一家店铺' }],
@@ -106,7 +106,7 @@ describe('Codex App merchant conversation flow', () => {
       expect(result.isError).toBe(false)
       expect(result.structuredContent).toEqual({
         conversation_state: { stage: 'start', status: 'needs_input', primary_action: { method: 'platform.connect', label: '连接店铺' } },
-        completed_summary: '欢迎使用大麦',
+        completed_summary: '欢迎使用Store Nova',
         question: '你想先连接哪个平台？',
         expected_input: { kind: 'platform_selection', accepts: ['natural_language'] },
       })

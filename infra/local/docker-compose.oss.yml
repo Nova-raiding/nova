@@ -1,0 +1,28 @@
+# Opt-in OSS overlay for the ECS/pilot Compose deployment.
+#
+# This file must be applied in addition to docker-compose.yml. It deliberately
+# uses the ECS-bound RAM role and never falls back to local disk or long-lived
+# access keys.
+services:
+  api:
+    environment: &oss-environment
+      NODE_ENV: production
+      LOCAL_COMPOSE: "false"
+      DEPLOYMENT_PROFILE: ecs_oss
+      ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: "false"
+      ASSET_STORAGE_BUCKET: ${ASSET_STORAGE_BUCKET:?ASSET_STORAGE_BUCKET is required}
+      ASSET_STORAGE_REGION: ${ASSET_STORAGE_REGION:?ASSET_STORAGE_REGION is required}
+      ASSET_STORAGE_ENDPOINT: ${ASSET_STORAGE_ENDPOINT:?ASSET_STORAGE_ENDPOINT is required}
+      ASSET_STORAGE_FORCE_PATH_STYLE: ${ASSET_STORAGE_FORCE_PATH_STYLE:-false}
+      ASSET_STORAGE_CREDENTIAL_MODE: ${ASSET_STORAGE_CREDENTIAL_MODE:-aliyun_ecs_ram_role}
+      ASSET_STORAGE_SSE_MODE: ${ASSET_STORAGE_SSE_MODE:-AES256}
+      ASSET_STORAGE_KMS_KEY_ID: ${ASSET_STORAGE_KMS_KEY_ID:-}
+      OBJECT_STORAGE_VERSIONING: ${OBJECT_STORAGE_VERSIONING:?OBJECT_STORAGE_VERSIONING=true is required}
+      ASSET_STORAGE_PREFIX: ${ASSET_STORAGE_PREFIX:-merchant-assets}
+      ASSET_QUARANTINE_RETENTION_DAYS: ${ASSET_QUARANTINE_RETENTION_DAYS:-7}
+      ASSET_CLEAN_RETENTION_DAYS: ${ASSET_CLEAN_RETENTION_DAYS:-90}
+      DELETION_REQUEST_GRACE_DAYS: ${DELETION_REQUEST_GRACE_DAYS:-7}
+      ASSET_STORAGE_QUOTA_BYTES: ${ASSET_STORAGE_QUOTA_BYTES:?ASSET_STORAGE_QUOTA_BYTES is required}
+
+  api-replica:
+    environment: *oss-environment

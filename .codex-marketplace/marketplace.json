@@ -8,7 +8,7 @@
       "name": "merchant-marketing",
       "source": {
         "source": "local",
-        "path": "../apps/plugin"
+        "path": "./plugins/merchant-marketing"
       },
       "policy": {
         "installation": "AVAILABLE",

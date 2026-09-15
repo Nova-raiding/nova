@@ -838,9 +838,9 @@ function Topbar({
   apiOnline,
   apiMode,
   apiHealth,
+  apiBaseUrl,
   modelStatus,
   modelStatusRead,
-  apiBaseUrl,
   account,
   billing,
   onLogout,
@@ -859,9 +859,9 @@ function Topbar({
   apiOnline: boolean | null
   apiMode: string | null
   apiHealth: ApiHealth | null
+  apiBaseUrl?: string
   modelStatus: PlatformModelStatus | null
   modelStatusRead: boolean
-  apiBaseUrl?: string
   account: MerchantAuthAccount | null
   billing: BillingStatus | null
   onLogout: () => void
@@ -929,6 +929,13 @@ function Topbar({
   // notifications for the currently signed-in merchant.
   const issueItems = (issueMetrics?.riskItems ?? []).filter(item => item.evidence?.unboundLocalData !== true && item.evidence?.fixtureData !== true)
   const issueCount = issueItems.length
+  const environmentStatus = resolveMerchantEnvironmentStatus({
+    apiBaseUrl,
+    apiOnline,
+    apiHealth,
+    modelStatus,
+    modelStatusRead,
+  })
   const openIssueDetail = (item: WorkspaceMetrics['riskItems'][number]) => {
     setNotificationOpen(false)
     setIssueDetail(item)
@@ -994,10 +1001,9 @@ function Topbar({
           aria-label="查看系统健康与上线状态"
         >
           <span
-            className={`pulse-dot ${environmentStatus.state === 'unavailable' ? 'offline' : environmentStatus.tone === 'warning' ? 'warning' : ''}`}
+            className={`pulse-dot ${environmentStatus.tone === 'warning' ? 'warning' : ''}`}
           />
-          {environmentStatus.topbarPrefix}{' '}
-          <b>{environmentStatus.topbarLabel}</b>
+          环境状态 <b>{environmentStatus.topbarLabel}</b>
         </button>
         <Dropdown trigger={['click']} placement="bottomRight" open={notificationOpen} onOpenChange={setNotificationOpen} dropdownRender={() => notificationPanel}>
           <Badge count={issueCount > 99 ? '99+' : issueCount} overflowCount={99} offset={[-2, 4]}>
@@ -1152,6 +1158,7 @@ function DescriptionsIssue({ item }: { item: WorkspaceMetrics['riskItems'][numbe
 
 function EnvironmentStatusBanner({
   apiOnline,
+  apiHealth,
   apiBaseUrl,
   apiHealth,
   modelStatus,
@@ -1159,30 +1166,31 @@ function EnvironmentStatusBanner({
   onOpenHealth,
 }: {
   apiOnline: boolean | null
+  apiHealth: ApiHealth | null
   apiBaseUrl?: string
   apiHealth: ApiHealth | null
   modelStatus: PlatformModelStatus | null
   modelStatusRead: boolean
   onOpenHealth: () => void
 }) {
-  const status = resolveMerchantEnvironmentStatus({
-    apiConfigured: Boolean(apiBaseUrl),
+  const environmentStatus = resolveMerchantEnvironmentStatus({
+    apiBaseUrl,
     apiOnline,
-    health: apiHealth,
+    apiHealth,
     modelStatus,
     modelStatusRead,
   })
   return (
     <div
-      className={`environment-banner ${status.tone}`}
-      data-environment-state={status.state}
+      className={`environment-banner ${environmentStatus.tone}`}
+      data-environment-state={environmentStatus.state}
       role="status"
       aria-live="polite"
     >
       <span className="environment-dot" aria-hidden="true" />
       <div>
-        <b>{status.title}</b>
-        <span>{status.detail}</span>
+        <b>{environmentStatus.title}</b>
+        <span>{environmentStatus.detail}</span>
       </div>
       <button className="text-button" onClick={onOpenHealth}>
         {!apiBaseUrl ? '查看连接说明' : '查看状态原因'}
@@ -1406,20 +1414,22 @@ function Sidebar({
 function UtilityPanel({
   panel,
   apiOnline,
+  apiHealth,
   apiBaseUrl,
   apiHealth,
   modelStatus,
   modelStatusRead,
-  onRefreshModelStatus,
+  onRefreshEnvironmentStatus,
   onClose,
 }: {
   panel: UtilityPanel
   apiOnline: boolean | null
+  apiHealth: ApiHealth | null
   apiBaseUrl?: string
   apiHealth: ApiHealth | null
   modelStatus: PlatformModelStatus | null
   modelStatusRead: boolean
-  onRefreshModelStatus?: () => void
+  onRefreshEnvironmentStatus?: () => void
   onClose: () => void
 }) {
   const modalRef = useRef<HTMLDivElement>(null)
@@ -1427,18 +1437,18 @@ function UtilityPanel({
   const closeAction = useRef(onClose)
   closeAction.current = onClose
   const environmentStatus = resolveMerchantEnvironmentStatus({
-    apiConfigured: Boolean(apiBaseUrl),
+    apiBaseUrl,
     apiOnline,
-    health: apiHealth,
+    apiHealth,
     modelStatus,
     modelStatusRead,
   })
-  const rawStatusActions = environmentStatus.nextActions.length
-    ? environmentStatus.nextActions
-    : modelStatus?.next_actions ?? []
-  const statusActions = rawStatusActions
+  const statusActions = [
+    ...environmentStatus.actions,
+    ...(modelStatus?.next_actions ?? []).map(userFacingModelAction),
+  ]
+    .filter((action, index, actions) => actions.indexOf(action) === index)
     .slice(0, 2)
-    .map(userFacingModelAction)
     .filter(Boolean)
   const content =
     panel === 'help'
@@ -1459,16 +1469,11 @@ function UtilityPanel({
             title: '系统健康与上线状态',
             body: environmentStatus.detail,
             items: [
-              `API 连通：${apiOnline === true ? '正常' : apiOnline === false ? '失败' : '未读取'}`,
               ...environmentStatus.facts,
-              `模型中转：${modelStatus?.state === 'ready' ? (environmentStatus.state === 'ready' ? '生产环境已就绪' : '仅当前环境可用，不代表生产就绪') : modelStatus ? '未就绪，服务端会阻止生成' : modelStatusRead ? '读取失败，服务端不会放行生成' : '未读取'}`,
-              ...(modelStatus && modelStatus.state !== 'ready' ? ['配置平台模型中转站后重新检查。'] : []),
               `API 地址：${apiBaseUrl ?? '未配置'}`,
-              ...(statusActions.length ? statusActions : [
-                modelStatusRead
-                  ? '请检查 API 鉴权后重新打开页面'
-                  : '外部平台、模型和支付 provider 仍需在部署环境单独验收',
-              ]),
+              ...(statusActions.length
+                ? statusActions
+                : ['外部平台、模型和支付能力仍需按服务端上线门禁验收。']),
             ],
           }
   const Icon = content.icon
@@ -1537,13 +1542,13 @@ function UtilityPanel({
           </div>
         </div>
         <div className="modal-actions">
-          {panel === 'health' && onRefreshModelStatus && (
+          {panel === 'health' && onRefreshEnvironmentStatus && (
             <button
               className="secondary"
-              onClick={onRefreshModelStatus}
+              onClick={onRefreshEnvironmentStatus}
               disabled={!apiBaseUrl || !modelStatusRead}
             >
-              {modelStatusRead ? '重新检查模型中转' : '检查中…'}
+              {modelStatusRead ? '重新检查环境状态' : '检查中…'}
             </button>
           )}
           <button className="primary" onClick={onClose}>
@@ -3711,7 +3716,7 @@ function AssetLibrary({
           </span>
         </div>
         <span className="knowledge-plan-output">产出：{assetEntry === 'rules' ? '可发布 / 需修复' : assetEntry === 'images' ? '可引用素材' : '可供生成引用的知识'}</span>
-        {assetEntry === 'images' && <span className="knowledge-plan-external">请在大麦 ChatGPT 插件中绑定店铺</span>}
+        {assetEntry === 'images' && <span className="knowledge-plan-external">请在Store Nova ChatGPT 插件中绑定店铺</span>}
       </section>
       <div className="embedded-rules" id="asset-rules-panel" role="tabpanel" aria-label="规则说明与规则列表">
         {assetEntry === 'rules' && <Rules baseUrl={baseUrl} />}
@@ -5168,7 +5173,7 @@ function Products({
               : `创建独立任务组${selectedTargets.length ? `（${selectedTargets.length}）` : ''}`}
           </button>
           {baseUrl && !accountsLoading && !accountsError && accounts && syncableAccountCount === 0 && (
-            <span className="knowledge-plan-external">请在大麦 ChatGPT 插件中绑定店铺后再同步</span>
+            <span className="knowledge-plan-external">请在Store Nova ChatGPT 插件中绑定店铺后再同步</span>
           )}
           <button
             className="primary"
@@ -5312,7 +5317,7 @@ function Products({
           <Store size={16} />
           {syncableAccountCount
             ? `已发现 ${syncableAccountCount} 家可同步店铺；同步会逐店执行，不会默认选择同平台第一家店。`
-            : '未发现已授权且可读取的店铺；请先在大麦 ChatGPT 插件中绑定店铺，再回来同步商品。'}
+            : '未发现已授权且可读取的店铺；请先在Store Nova ChatGPT 插件中绑定店铺，再回来同步商品。'}
         </div>
       )}
       {groupMessage && (
@@ -10466,26 +10471,38 @@ export default function App() {
     return () => window.removeEventListener('merchant-auth-expired', handleAuthExpired)
   }, [])
   useEffect(() => {
-    const baseUrl = import.meta.env.VITE_API_BASE_URL
-    if (!baseUrl || authState !== 'authenticated') return
-    fetchApiHealth(baseUrl)
-      .then((health) => {
-        setApiHealth(health)
+    if (!apiBaseUrl || authState !== 'authenticated') {
+      setApiOnline(null)
+      setApiMode(null)
+      setApiHealth(null)
+      setModelStatus(null)
+      setModelStatusRead(false)
+      return
+    }
+    let cancelled = false
+    setApiOnline(null)
+    setApiMode(null)
+    setApiHealth(null)
+    setModelStatus(null)
+    setModelStatusRead(false)
+    void Promise.allSettled([
+      fetchApiHealth(apiBaseUrl),
+      fetchPlatformModelStatus(apiBaseUrl),
+    ]).then(([healthResult, modelResult]) => {
+      if (cancelled) return
+      if (healthResult.status === 'fulfilled' && healthResult.value) {
+        setApiHealth(healthResult.value)
         setApiOnline(true)
-        setApiMode(health?.setup?.mode ?? null)
-      })
-      .catch(() => {
+        setApiMode(healthResult.value.setup?.mode ?? null)
+      } else {
         setApiHealth(null)
         setApiOnline(false)
         setApiMode(null)
-      })
-    fetchPlatformModelStatus(baseUrl)
-      .then(status => {
-        setModelStatus(status)
-        setApiOnline(true)
-      })
-      .catch(() => setModelStatus(null))
-      .finally(() => setModelStatusRead(true))
+      }
+      setModelStatus(modelResult.status === 'fulfilled' ? modelResult.value : null)
+      setModelStatusRead(true)
+    })
+    return () => { cancelled = true }
   }, [apiBaseUrl, authState])
   useEffect(() => {
     if (!apiBaseUrl || authState !== 'authenticated') {
@@ -10504,13 +10521,25 @@ export default function App() {
       cancelled = true
     }
   }, [apiBaseUrl, authState])
-  const refreshModelStatus = () => {
+  const refreshEnvironmentStatus = () => {
     if (!apiBaseUrl || !modelStatusRead) return
     setModelStatusRead(false)
-    fetchPlatformModelStatus(apiBaseUrl)
-      .then(setModelStatus)
-      .catch(() => setModelStatus(null))
-      .finally(() => setModelStatusRead(true))
+    void Promise.allSettled([
+      fetchApiHealth(apiBaseUrl),
+      fetchPlatformModelStatus(apiBaseUrl),
+    ]).then(([healthResult, modelResult]) => {
+      if (healthResult.status === 'fulfilled' && healthResult.value) {
+        setApiHealth(healthResult.value)
+        setApiOnline(true)
+        setApiMode(healthResult.value.setup?.mode ?? null)
+      } else {
+        setApiHealth(null)
+        setApiOnline(false)
+        setApiMode(null)
+      }
+      setModelStatus(modelResult.status === 'fulfilled' ? modelResult.value : null)
+      setModelStatusRead(true)
+    })
   }
   const applyLocation = (
     location: Pick<Location, 'hash' | 'pathname' | 'search'>,
@@ -10966,6 +10995,7 @@ export default function App() {
           />
           <EnvironmentStatusBanner
             apiOnline={apiOnline}
+            apiHealth={apiHealth}
             apiBaseUrl={apiBaseUrl}
             apiHealth={apiHealth}
             modelStatus={modelStatus}
@@ -10975,7 +11005,7 @@ export default function App() {
           <main
             ref={mainContentRef}
             tabIndex={-1}
-            className={`page ${page === 'task' ? 'task-page' : ''}`}
+            className={`page ${page === 'task' ? 'task-page' : ''} ${page === 'overview' ? 'overview-page' : ''}`}
           >
             {routeTargetLoading ? (
               <LoadingState label="正在从链接安全恢复商品与任务上下文…" />
@@ -11032,7 +11062,7 @@ export default function App() {
                     baseUrl={apiBaseUrl}
                     modelStatus={modelStatus}
                     modelStatusRead={modelStatusRead}
-                    onRefreshModelStatus={refreshModelStatus}
+                    onRefreshModelStatus={refreshEnvironmentStatus}
                     initialQuery={globalSearch}
                     initialEntry={activeEntry}
                     onSelectTarget={(next) =>
@@ -11101,11 +11131,12 @@ export default function App() {
         <UtilityPanel
           panel={utilityPanel}
           apiOnline={apiOnline}
+          apiHealth={apiHealth}
           apiBaseUrl={apiBaseUrl}
           apiHealth={apiHealth}
           modelStatus={modelStatus}
           modelStatusRead={modelStatusRead}
-          onRefreshModelStatus={refreshModelStatus}
+          onRefreshEnvironmentStatus={refreshEnvironmentStatus}
           onClose={closeUtility}
         />
       )}

@@ -110,6 +110,7 @@ PAYMENT_MODE=provider
 PAYMENT_CALLBACK_BASE_URL=https://yxsona.com/v1
 PAYMENT_PROVIDER_CHECKOUT_API_URL=https://payments.your-company.com/v1/checkout
 PAYMENT_PROVIDER_QUERY_API_URL=https://payments.your-company.com/v1/query
+PAYMENT_PROVIDER_REFUND_QUERY_API_URL=https://payments.your-company.com/v1/refund/query
 PAYMENT_PROVIDER_REFUND_API_URL=https://payments.your-company.com/v1/refund
 PAYMENT_PROVIDER_MERCHANT_ID=<gateway-merchant-id>
 PAYMENT_PROVIDER_API_KEY=<secret-manager-ref>

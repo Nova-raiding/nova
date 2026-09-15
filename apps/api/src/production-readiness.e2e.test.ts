@@ -33,13 +33,19 @@ const productionEnvironment = (): NodeJS.ProcessEnv => ({
   OPS_AUTH_MODE: 'oidc',
   OIDC_PROXY_SIGNING_SECRET: 'oidc-signing-secret',
   SESSION_ID_HASH_SECRET: 'session-hash-secret',
+  OPS_DATABASE_URL: 'postgres://merchant_ops@database/store_nova',
   MERCHANT_BEARER_HOSTNAME: 'merchant.example.test',
+  MCP_OAUTH_REQUIRED: 'true',
+  PUBLIC_APP_BASE_URL: 'https://merchant.example.test',
+  MCP_OAUTH_CLIENTS: JSON.stringify({ 'chatgpt-production': ['https://chatgpt.com/oauth/callback'] }),
   API_AUTH_TOKENS: JSON.stringify({
     'merchant-token': { actor_id: 'merchant-owner', workspaces: ['ws_production'], roles: ['workspace_owner'] },
   }),
   ASSET_STORAGE_BUCKET: 'merchant-assets',
   ASSET_STORAGE_REGION: 'cn-test-1',
   ASSET_STORAGE_ENDPOINT: 'https://storage.example.test',
+  ASSET_STORAGE_CREDENTIAL_MODE: 'aliyun_ecs_ram_role',
+  ASSET_STORAGE_SSE_MODE: 'aws:kms',
   ASSET_STORAGE_KMS_KEY_ID: 'kms-key-ref',
   ASSET_STORAGE_CREDENTIAL_PROVIDER: 'aliyun_ecs_ram_role',
   ASSET_STORAGE_ECS_RAM_ROLE: 'merchant-oss-role',
@@ -58,6 +64,7 @@ const productionEnvironment = (): NodeJS.ProcessEnv => ({
   PAYMENT_CHECKOUT_BASE_URL: 'https://payments.example.test/checkout',
   PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://payments.example.test/v1/checkout',
   PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.example.test/v1/query',
+  PAYMENT_PROVIDER_REFUND_QUERY_API_URL: 'https://payments.example.test/v1/refund/query',
   PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.example.test/v1/refund',
   PAYMENT_PROVIDER_API_KEY: 'payment-provider-key',
   PAYMENT_PROVIDER_MERCHANT_ID: 'merchant-production',
@@ -166,7 +173,11 @@ describe('production readiness fail-closed', () => {
       { gate: 'authorization', key: 'MCP_AUTHZ_MODE' },
       { gate: 'authorization', key: 'AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED' },
       { gate: 'identity', key: 'OIDC_PROXY_SIGNING_SECRET' },
-      { gate: 'object_storage', key: 'ASSET_STORAGE_ECS_RAM_ROLE' },
+      { gate: 'identity', key: 'OPS_DATABASE_URL' },
+      { gate: 'identity', key: 'MCP_OAUTH_REQUIRED' },
+      { gate: 'identity', key: 'MCP_OAUTH_CLIENTS' },
+      { gate: 'identity', key: 'PUBLIC_APP_BASE_URL' },
+      { gate: 'object_storage', key: 'ASSET_STORAGE_KMS_KEY_ID' },
       { gate: 'object_storage', key: 'ASSET_DISPLAY_URL_SIGNING_SECRET' },
       { gate: 'asset_scanner', key: 'ASSET_SCAN_APPROVED_SCANNER_SERVICE_IDS' },
       { gate: 'asset_scanner', key: 'ASSET_SCAN_MIN_DEFINITIONS_VERSION' },
@@ -275,6 +286,7 @@ describe('production readiness fail-closed', () => {
     ['payment', 'PAYMENT_MODE', 'fixture'],
     ['payment', 'PAYMENT_PROVIDER_ADAPTERS', ''],
     ['payment', 'PAYMENT_PROVIDER_QUERY_API_URL', 'http://payments.example.test/query'],
+    ['payment', 'PAYMENT_PROVIDER_REFUND_QUERY_API_URL', 'http://payments.example.test/refund/query'],
     ['payment', 'PAYMENT_REFUND_ENABLED', 'false'],
     ['rule_sync', 'PLATFORM_RULE_SYNC_MANIFEST_URL', 'https://127.0.0.1/manifest.json'],
     ['rule_sync', 'PLATFORM_RULE_SYNC_MANIFEST_URL', 'https://rules.example.test/manifest.json?token=secret'],
@@ -285,6 +297,17 @@ describe('production readiness fail-closed', () => {
     const result = productionReadinessDiagnostics(environment)
     expect(result.ready).toBe(false)
     expect(result.gates[gate]).toMatchObject({ ready: false })
+  })
+
+  it('does not block production when optional alert notifications are entirely disabled', () => {
+    const environment = productionEnvironment()
+    delete environment.OPS_ALERT_WEBHOOK_URL
+    delete environment.OPS_ALERT_WEBHOOK_ALLOWED_HOSTS
+    delete environment.OPS_ALERT_WEBHOOK_SECRET
+    environment.OPS_ALERT_NOTIFICATIONS_ENABLED = 'false'
+    const result = productionReadinessDiagnostics(environment)
+    expect(result.gates.alerts).toEqual({ ready: true, reasons: [] })
+    expect(result.ready).toBe(true)
   })
 
   it.each([

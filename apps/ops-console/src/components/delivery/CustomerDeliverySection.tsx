@@ -16,9 +16,9 @@ import {
   Typography,
   message,
 } from "antd";
-import { deliveryCompletionTimeLabel, deliveryDateTimeInputValue } from "./deliveryDateTime.js";
-import { CustomerDeliveryUpload, createDeliveryUploadTracker } from "./CustomerDeliveryUpload.js";
-import { parseCustomerDeliveryEvidenceRefs, type CustomerDeliveryAsset, type CustomerDeliveryAssetPurpose } from "../../api/customerDeliveryClient.js";
+import { deliveryDateTimeInputValue } from "./deliveryDateTime.js";
+import { CustomerDeliveryUpload } from "./CustomerDeliveryUpload.js";
+import type { CustomerDeliveryAsset, CustomerDeliveryAssetPurpose } from "../../api/customerDeliveryClient.js";
 
 export type DeliveryStepKey =
   "profile" | "integration" | "acceptance" | "training" | "video";
@@ -316,7 +316,6 @@ export function CustomerDeliverySection({
   const [saving, setSaving] = useState(false);
   const [loadingStep, setLoadingStep] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const uploadTracker = useRef(createDeliveryUploadTracker());
   const detailRequest = useRef(0);
   const [creating, setCreating] = useState(false);
   const [videoItems, setVideoItems] = useState<CustomerDeliveryVideoItem[]>([]);
@@ -335,7 +334,6 @@ export function CustomerDeliverySection({
     setBlockedCompany(undefined);
     setTrainingRowId(undefined);
     const request = ++detailRequest.current;
-    uploadTracker.current.beginScope(`${row.id}:${next}:${request}`);
     setUploading(false);
     setLoadingStep(true);
     setSelected(row);
@@ -419,7 +417,7 @@ export function CustomerDeliverySection({
     }
   };
   const save = async (values: Record<string, unknown>) => {
-    if (disabled || readOnly || !selected || uploadTracker.current.isBusy()) return;
+    if (!selected || uploading) return;
     const request = detailRequest.current;
     const next = {
       ...selected,
@@ -849,7 +847,15 @@ export function CustomerDeliverySection({
                   >
                     <Input placeholder="上传通过安全检查后自动填入" />
                   </Form.Item>
-                  {evidenceUpload("contract", "contractFile")}
+                  <CustomerDeliveryUpload
+                    key={`${selected.id}:contract:${detailRequest.current}`}
+                    purpose="contract"
+                    disabled={loadingStep || saving}
+                    onUpload={onAssetUpload ? (file, purpose, signal) => onAssetUpload(selected, file, purpose, signal) : undefined}
+                    onGetAsset={onAssetGet ? (assetRef, purpose, signal) => onAssetGet(selected, assetRef, purpose, signal) : undefined}
+                    onReady={(asset) => form.setFieldValue("contractFile", asset.assetRef)}
+                    onBusyChange={setUploading}
+                  />
                   <Typography.Text type="secondary">
                     合同完成仅接受与当前企业工作区和交付记录精确绑定、且安全扫描通过的上传文件。
                   </Typography.Text>
@@ -942,7 +948,18 @@ export function CustomerDeliverySection({
                   ) : (
                     <Alert type="info" showIcon message="尚未登记交付视频" description="上传视频或填写已完成安全扫描的素材编号；保存后会显示在这里。" />
                   )}
-                  {evidenceUpload("video", "videoAssetRefs")}
+                  <CustomerDeliveryUpload
+                    key={`${selected.id}:video:${detailRequest.current}`}
+                    purpose="video"
+                    disabled={loadingStep || saving}
+                    onUpload={onAssetUpload ? (file, purpose, signal) => onAssetUpload(selected, file, purpose, signal) : undefined}
+                    onGetAsset={onAssetGet ? (assetRef, purpose, signal) => onAssetGet(selected, assetRef, purpose, signal) : undefined}
+                    onReady={(asset) => {
+                      const refs = String(form.getFieldValue("videoAssetRefs") ?? "").split(/[\n,]/u).map((value) => value.trim()).filter(Boolean);
+                      form.setFieldValue("videoAssetRefs", [...new Set([...refs, asset.assetRef])].join("\n"));
+                    }}
+                    onBusyChange={setUploading}
+                  />
                   <Form.Item name="videoAssetRefs" label="交付视频（支持多段）">
                     <Input.TextArea
                       rows={4}
@@ -954,7 +971,7 @@ export function CustomerDeliverySection({
                   </Typography.Paragraph>
                 </>
               )}
-              {!readOnly ? <Button type="primary" htmlType="submit" loading={saving || loadingStep} disabled={disabled || uploading}>
+              <Button type="primary" htmlType="submit" loading={saving || loadingStep} disabled={uploading}>
                 保存当前环节
               </Button> : null}
             </Form>

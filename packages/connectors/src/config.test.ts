@@ -1,3 +1,4 @@
+import { generateKeyPairSync, sign } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildHttpConnectorConfigs, buildHttpConnectorConfigsFromStructured } from './config.js'
 
@@ -6,6 +7,13 @@ const base = {
   TAOBAO_APP_KEY: 'taobao-app', TAOBAO_OAUTH_AUTHORIZE_URL: 'https://taobao.test/authorize', TAOBAO_OAUTH_TOKEN_URL: 'https://taobao.test/token', TAOBAO_API_BASE_URL: 'https://taobao.test/api',
   TMALL_APP_KEY: 'tmall-app', TMALL_OAUTH_AUTHORIZE_URL: 'https://tmall.test/authorize', TMALL_OAUTH_TOKEN_URL: 'https://tmall.test/token', TMALL_API_BASE_URL: 'https://tmall.test/api',
   PDD_CLIENT_ID: 'pdd-app', PDD_OAUTH_AUTHORIZE_URL: 'https://pdd.test/authorize', PDD_OAUTH_TOKEN_URL: 'https://pdd.test/token', PDD_API_BASE_URL: 'https://pdd.test/api',
+}
+
+const compare = ([left]: [string, unknown], [right]: [string, unknown]) => left < right ? -1 : left > right ? 1 : 0
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
+  if (value && typeof value === 'object') return `{${Object.entries(value as Record<string, unknown>).filter(([key]) => key !== 'signature_base64').sort(compare).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}`
+  return JSON.stringify(value) ?? 'null'
 }
 
 describe('platform HTTP configuration', () => {
@@ -25,6 +33,46 @@ describe('platform HTTP configuration', () => {
     ]))
     expect(result.readiness.jd.reasons).toContain('CONFIG_MISSING')
     expect(result.configs.jd).toBeUndefined()
+  })
+
+  it('loads release-bound production capability evidence into runtime readiness', () => {
+    const verifiedAt = new Date(Date.now() - 60_000).toISOString()
+    const capabilities = Object.fromEntries(['authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'].map(capability => [capability, {
+      state: 'production_canary', evidence_ref: `artifact://production/jd/${capability}#${'a'.repeat(64)}`, verified_by: 'platform-qa', verified_at: verifiedAt, api_version: 'v1', scope: 'item.read',
+    }]))
+    const source = {
+      ...base, NODE_ENV: 'production', RELEASE_ID: 'release-1', RELEASE_GIT_SHA: 'a'.repeat(40), RELEASE_MANIFEST_SHA256: 'b'.repeat(64), RELEASE_IMAGE_SET_DIGEST: `sha256:${'c'.repeat(64)}`, JD_APP_SECRET: 'signer-secret',
+      JD_SYNC_PATH: '/products', JD_CREATE_PATH: '/products/create', JD_UPDATE_PATH: '/products/update', JD_QUERY_PATH: '/products/status',
+      JD_MEDIA_UPLOAD_PATH: '/media/upload', JD_MEDIA_ID_PATH: 'data.media_id',
+      JD_MEDIA_UPLOAD_EVIDENCE_VERSION: 'media-v1', JD_MEDIA_UPLOAD_EVIDENCE_REF: 'artifact://production/jd/media', JD_MEDIA_UPLOAD_EVIDENCE_VERIFIED_BY: 'platform-qa', JD_MEDIA_UPLOAD_EVIDENCE_VERIFIED_AT: verifiedAt,
+      JD_MAPPING_EVIDENCE_VERSION: 'mapping-v1', JD_MAPPING_EVIDENCE_REF: 'artifact://production/jd/mapping', JD_MAPPING_EVIDENCE_VERIFIED_BY: 'platform-qa', JD_MAPPING_EVIDENCE_VERIFIED_AT: verifiedAt,
+    }
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+    const document: Record<string, unknown> = { schema_version: '1', release_id: 'release-1', release_git_sha: source.RELEASE_GIT_SHA, manifest_sha256: source.RELEASE_MANIFEST_SHA256, image_set_digest: source.RELEASE_IMAGE_SET_DIGEST, deployment_nonce: 'deployment_nonce_abcdefghijklmnop', key_id: 'release-key', environment: 'production', simulated: false, platforms: [{ platform: 'jd', application_id: 'jd-app', test_store_id: 'jd-store', capabilities }] }
+    document.signature_base64 = sign(null, Buffer.from(canonical(document)), privateKey).toString('base64')
+    const result = buildHttpConnectorConfigs(source, { capabilityEvidenceTrust: { documentJson: JSON.stringify(document), publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString(), trustedKeyId: 'release-key' } })
+    expect(result.allConfigs.jd?.capabilityEvidence).toHaveLength(9)
+    expect(result.readiness.jd.reasons).not.toContain('CAPABILITY_EVIDENCE_MISSING')
+    expect(result.readiness.jd.reasons).not.toContain('MEDIA_UPLOAD_MAPPING_MISSING')
+  })
+
+  it('rejects capability evidence from another release or a simulated run', () => {
+    const common = { ...base, NODE_ENV: 'production', RELEASE_ID: 'release-1', JD_SYNC_PATH: '/products', JD_CREATE_PATH: '/products/create', JD_UPDATE_PATH: '/products/update', JD_QUERY_PATH: '/products/status' }
+    for (const document of [
+      { schema_version: '1', release_id: 'release-2', environment: 'production', simulated: false, platforms: [] },
+      { schema_version: '1', release_id: 'release-1', environment: 'production', simulated: true, platforms: [] },
+    ]) {
+      const result = buildHttpConnectorConfigs({ ...common, PLATFORM_CAPABILITY_EVIDENCE_JSON: JSON.stringify(document) })
+      expect(result.allConfigs.jd?.capabilityEvidence).toBeUndefined()
+      expect(result.readiness.jd.reasons).toContain('CAPABILITY_EVIDENCE_MISSING')
+    }
+  })
+
+  it('rejects unsigned or tampered inline production capability evidence', () => {
+    const source = { ...base, NODE_ENV: 'production', RELEASE_ID: 'release-1', JD_SYNC_PATH: '/products', JD_CREATE_PATH: '/products/create', JD_UPDATE_PATH: '/products/update', JD_QUERY_PATH: '/products/status', PLATFORM_CAPABILITY_EVIDENCE_JSON: JSON.stringify({ schema_version: '1', release_id: 'release-1', environment: 'production', simulated: false, platforms: [] }) }
+    const result = buildHttpConnectorConfigs(source)
+    expect(result.allConfigs.jd?.capabilityEvidence).toBeUndefined()
+    expect(result.readiness.jd.reasons).toContain('CAPABILITY_EVIDENCE_MISSING')
   })
 
   it('builds four independent configs and does not merge taobao with tmall', () => {

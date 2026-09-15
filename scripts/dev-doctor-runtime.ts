@@ -57,6 +57,7 @@ export type CommercialRuntimeReadiness = {
   objectStorageReady?: boolean
   objectStorageMode?: string
   scannerReady?: boolean
+  alertEnabled?: boolean
   alertReady?: boolean
   productionGate?: boolean
 }
@@ -124,6 +125,7 @@ export function commercialRuntimeReadiness(payload: unknown): CommercialRuntimeR
     objectStorageReady: objectStorage?.configured === true && objectStorageMode !== 'local',
     ...(objectStorageMode ? { objectStorageMode } : {}),
     scannerReady: scanner?.ready === true && scanner?.mode !== 'fixture' && scanner?.mode !== 'local',
+    ...(typeof alerts?.enabled === 'boolean' ? { alertEnabled: alerts.enabled } : {}),
     alertReady: alerts?.ready === true,
     ...(typeof setup.productionGate === 'boolean' ? { productionGate: setup.productionGate } : {}),
   }

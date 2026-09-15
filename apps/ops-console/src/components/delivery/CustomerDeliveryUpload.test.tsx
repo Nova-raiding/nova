@@ -10,7 +10,7 @@ import {
   type CustomerDeliveryAsset,
 } from "../../api/customerDeliveryClient.js";
 import { rpc } from "../../api/opsClient.js";
-import { CustomerDeliveryUpload, createDeliveryUploadTracker, runCustomerDeliveryUploadBatch, waitForDeliveryScan, type DeliveryUploadItem } from "./CustomerDeliveryUpload.js";
+import { CustomerDeliveryUpload, runCustomerDeliveryUploadBatch, waitForDeliveryScan, type DeliveryUploadItem } from "./CustomerDeliveryUpload.js";
 
 vi.mock("../../api/opsClient.js", () => ({ rpc: vi.fn() }));
 
@@ -32,17 +32,6 @@ describe("delivery upload file boundary", () => {
     expect(() => validateCustomerDeliveryFile(video, "contract")).toThrow("合同仅支持");
     expect(() => validateCustomerDeliveryFile({ name: "demo.pdf", type: "application/pdf", size: 1 }, "video")).toThrow("交付视频仅支持");
     expect(() => validateCustomerDeliveryFile({ name: "demo.pdf", type: "text/html", size: 1 }, "contract")).toThrow("不一致");
-  });
-
-  it("supports the four evidence purposes without permitting video payloads as proof documents", () => {
-    for (const purpose of ["payment", "system_integration", "functional_acceptance", "training"] as const) {
-      expect(validateCustomerDeliveryFile({ name: "evidence.pdf", type: "application/pdf", size: 20 }, purpose)).toBe("application/pdf");
-      expect(validateCustomerDeliveryFile({ name: "evidence.png", type: "image/png", size: 20 }, purpose)).toBe("image/png");
-      expect(() => validateCustomerDeliveryFile(video, purpose)).toThrow("交付凭证仅支持");
-      const html = renderToStaticMarkup(<CustomerDeliveryUpload purpose={purpose} onUpload={options().upload} onGetAsset={options().getAsset} onReady={() => {}} />);
-      expect(html).toContain('accept=".pdf,.docx,.png,.jpg,.jpeg"');
-      expect(html).toContain("multiple");
-    }
   });
 
   it("rejects empty, oversized, and invalidly named files before reading them", () => {
@@ -117,30 +106,6 @@ describe("delivery upload file boundary", () => {
 });
 
 describe("delivery upload lifecycle", () => {
-  it("keeps the save gate closed until every independently running evidence uploader finishes", () => {
-    const tracker = createDeliveryUploadTracker();
-    tracker.beginScope("customer-a:profile:1");
-    expect(tracker.setBusy("customer-a:profile:1", "payment", true)).toBe(true);
-    expect(tracker.setBusy("customer-a:profile:1", "contract", true)).toBe(true);
-    expect(tracker.setBusy("customer-a:profile:1", "payment", false)).toBe(true);
-    expect(tracker.isBusy()).toBe(true);
-    expect(tracker.setBusy("customer-a:profile:1", "contract", false)).toBe(false);
-  });
-
-  it("does not let cleanup or late completion from an old customer clear a new customer's busy gate", () => {
-    const tracker = createDeliveryUploadTracker();
-    tracker.beginScope("customer-a:integration:1");
-    tracker.setBusy("customer-a:integration:1", "item-one", true);
-    tracker.beginScope("customer-b:integration:2");
-    tracker.setBusy("customer-b:integration:2", "item-one", true);
-    expect(tracker.setBusy("customer-a:integration:1", "item-one", false)).toBeUndefined();
-    expect(tracker.isCurrent("customer-a:integration:1")).toBe(false);
-    expect(tracker.isBusy()).toBe(true);
-    tracker.beginScope();
-    expect(tracker.isCurrent("customer-b:integration:2")).toBe(false);
-    expect(tracker.isBusy()).toBe(false);
-  });
-
   it("reports upload then scan then ready, and only publishes an accepted asset", async () => {
     const callbacks = options();
     await runCustomerDeliveryUploadBatch([item()], callbacks);
@@ -192,85 +157,6 @@ describe("delivery upload lifecycle", () => {
     await runCustomerDeliveryUploadBatch([failed], callbacks);
     expect(callbacks.upload).not.toHaveBeenCalled();
     expect(callbacks.onReady).toHaveBeenCalledExactlyOnceWith(ready);
-  });
-
-  it.each(["API_REQUEST_TIMEOUT", "API_NETWORK_ERROR"])("retries two consecutive transient scan reads for %s without uploading again", async (code) => {
-    const callbacks = options();
-    const transient = Object.assign(new Error("temporary read failure"), { code });
-    callbacks.getAsset.mockRejectedValueOnce(transient).mockRejectedValueOnce(transient).mockResolvedValueOnce(ready);
-    await runCustomerDeliveryUploadBatch([item()], callbacks);
-    expect(callbacks.upload).toHaveBeenCalledOnce();
-    expect(callbacks.getAsset).toHaveBeenCalledTimes(3);
-    expect(callbacks.onChange).toHaveBeenCalledWith(expect.objectContaining({
-      asset: pending,
-      status: "scanning",
-      error: "连接暂时中断，正在重试检查（1/2）",
-    }));
-    expect(callbacks.onReady).toHaveBeenCalledExactlyOnceWith(ready);
-  });
-
-  it("resets the consecutive transient-read budget after a successful pending response", async () => {
-    const callbacks = options();
-    const timeout = Object.assign(new Error("timeout"), { code: "API_REQUEST_TIMEOUT" });
-    callbacks.getAsset
-      .mockRejectedValueOnce(timeout).mockResolvedValueOnce(pending)
-      .mockRejectedValueOnce(timeout).mockRejectedValueOnce(timeout).mockResolvedValueOnce(ready);
-    await runCustomerDeliveryUploadBatch([item()], callbacks);
-    expect(callbacks.getAsset).toHaveBeenCalledTimes(5);
-    expect(callbacks.onReady).toHaveBeenCalledExactlyOnceWith(ready);
-  });
-
-  it.each(["FORBIDDEN", "UNAUTHENTICATED", "API_INVALID_RESPONSE"])("does not retry non-transient scan error %s", async (code) => {
-    const callbacks = options();
-    callbacks.getAsset.mockRejectedValue(Object.assign(new Error("do not retry"), { code }));
-    await runCustomerDeliveryUploadBatch([item()], callbacks);
-    expect(callbacks.getAsset).toHaveBeenCalledOnce();
-    expect(callbacks.onReady).not.toHaveBeenCalled();
-    expect(callbacks.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ status: "failed", asset: pending, error: "do not retry" }));
-  });
-
-  it.each([401, 403, 409])("does not retry an explicit HTTP %s response even with a timeout-shaped code", async (httpStatus) => {
-    const callbacks = options();
-    callbacks.getAsset.mockRejectedValue(Object.assign(new Error("server rejected"), { code: "API_REQUEST_TIMEOUT", httpStatus }));
-    await runCustomerDeliveryUploadBatch([item()], callbacks);
-    expect(callbacks.getAsset).toHaveBeenCalledOnce();
-    expect(callbacks.onReady).not.toHaveBeenCalled();
-    expect(callbacks.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ status: "failed", asset: pending }));
-  });
-
-  it("stops after two transient scan-read retries and preserves the uploaded asset", async () => {
-    const callbacks = options();
-    callbacks.getAsset.mockRejectedValue(Object.assign(new Error("network down"), { code: "API_NETWORK_ERROR" }));
-    await runCustomerDeliveryUploadBatch([item()], callbacks);
-    expect(callbacks.upload).toHaveBeenCalledOnce();
-    expect(callbacks.getAsset).toHaveBeenCalledTimes(3);
-    expect(callbacks.onReady).not.toHaveBeenCalled();
-    expect(callbacks.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ status: "failed", asset: pending, error: "network down" }));
-  });
-
-  it("does not retry a transient-looking read after the user aborts", async () => {
-    const controller = new AbortController();
-    const callbacks = options();
-    callbacks.getAsset.mockImplementationOnce(async () => {
-      controller.abort();
-      throw Object.assign(new Error("timeout after cancel"), { code: "API_REQUEST_TIMEOUT" });
-    });
-    await runCustomerDeliveryUploadBatch([item()], { ...callbacks, signal: controller.signal });
-    expect(callbacks.getAsset).toHaveBeenCalledOnce();
-    expect(callbacks.onReady).not.toHaveBeenCalled();
-    expect(callbacks.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ status: "cancelled", asset: pending }));
-  });
-
-  it("counts transient retries toward the existing total poll limit", async () => {
-    const callbacks = options();
-    callbacks.getAsset.mockRejectedValue(Object.assign(new Error("timeout"), { code: "API_REQUEST_TIMEOUT" }));
-    await runCustomerDeliveryUploadBatch([item()], { ...callbacks, maxPolls: 2 });
-    expect(callbacks.getAsset).toHaveBeenCalledTimes(2);
-    expect(callbacks.onChange).toHaveBeenLastCalledWith(expect.objectContaining({
-      status: "failed",
-      asset: pending,
-      error: expect.stringContaining("尚未完成"),
-    }));
   });
 
   it("rejects a scan response for a different asset", async () => {

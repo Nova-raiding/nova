@@ -16,9 +16,9 @@ const config = () => ({
   object_storage_bucket: 'merchant-production-assets', object_storage_region: 'cn-prod-1', object_storage_endpoint: 'https://storage.production.test', object_storage_versioning: true,
   asset_display_base_url: 'https://merchant.production.test', asset_quarantine_retention_days: 7, asset_clean_retention_days: 90, deletion_request_grace_days: 7, backup_retention_days: 30,
   lifecycle_policy_ref: 'policy://production/assets-v1', asset_scanner_mode: 'clamav_worker', allow_local_asset_scan_fixture: false,
-  asset_scan_policy_version: 'scan-policy-v1', clamav_signature_max_age_minutes: 1440, clamav_max_file_bytes: 52428800,
-  payment_mode: 'provider', payment_provider_adapters: 'alipay,wechat', payment_checkout_base_url: 'https://payments.production.test/checkout',
-  payment_provider_checkout_api_url: 'https://payments.production.test/v1/checkout', payment_provider_query_api_url: 'https://payments.production.test/v1/query', payment_provider_refund_api_url: 'https://payments.production.test/v1/refund',
+  asset_scan_policy_version: 'scan-policy-v1', clamav_signature_max_age_minutes: 1440, clamav_max_file_bytes: 104857600,
+  payment_mode: 'provider', payment_provider_adapters: 'alipay', payment_checkout_base_url: 'https://payments.production.test/checkout',
+  payment_provider_checkout_api_url: 'https://payments.production.test/v1/checkout', payment_provider_query_api_url: 'https://payments.production.test/v1/query', payment_provider_refund_query_api_url: 'https://payments.production.test/v1/refund/query', payment_provider_refund_api_url: 'https://payments.production.test/v1/refund',
   payment_provider_merchant_id: 'merchant-production', payment_callback_base_url: 'https://merchant.production.test/v1', payment_reconciliation_enabled: true, payment_refund_enabled: true,
   platform_rule_sync_manifest_url: 'https://rules.production.test/platform-rules/v1/manifest.json', platform_rule_sync_interval_hours: 24,
 })
@@ -31,9 +31,9 @@ const manifest = () => ({ apiVersion: 'v1', kind: 'List', items: [
     ASSET_STORAGE_BUCKET: 'merchant-production-assets', ASSET_STORAGE_REGION: 'cn-prod-1', ASSET_STORAGE_ENDPOINT: 'https://storage.production.test', OBJECT_STORAGE_VERSIONING: 'true',
     PUBLIC_ASSET_BASE_URL: 'https://merchant.production.test', PUBLIC_OAUTH_REDIRECT_URI: 'https://merchant.production.test/v1/oauth/callback/{platform}',
     ASSET_QUARANTINE_RETENTION_DAYS: '7', ASSET_CLEAN_RETENTION_DAYS: '90', DELETION_REQUEST_GRACE_DAYS: '7', BACKUP_RETENTION_DAYS: '30', LIFECYCLE_POLICY_REF: 'policy://production/assets-v1',
-    ASSET_SCANNER_MODE: 'clamav_worker', ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ASSET_SCAN_POLICY_VERSION: 'scan-policy-v1', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440', CLAMAV_MAX_FILE_BYTES: '52428800', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
-    PAYMENT_MODE: 'provider', PAYMENT_PROVIDER_ADAPTERS: 'alipay,wechat', PAYMENT_CHECKOUT_BASE_URL: 'https://payments.production.test/checkout',
-    PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://payments.production.test/v1/checkout', PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.production.test/v1/query', PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.production.test/v1/refund',
+    ASSET_SCANNER_MODE: 'clamav_worker', ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ASSET_SCAN_POLICY_VERSION: 'scan-policy-v1', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440', CLAMAV_MAX_FILE_BYTES: '104857600', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
+    PAYMENT_MODE: 'provider', PAYMENT_PROVIDER_ADAPTERS: 'alipay', PAYMENT_CHECKOUT_BASE_URL: 'https://payments.production.test/checkout',
+    PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://payments.production.test/v1/checkout', PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.production.test/v1/query', PAYMENT_PROVIDER_REFUND_QUERY_API_URL: 'https://payments.production.test/v1/refund/query', PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.production.test/v1/refund',
     PAYMENT_PROVIDER_MERCHANT_ID: 'merchant-production', PAYMENT_CALLBACK_BASE_URL: 'https://merchant.production.test/v1', PAYMENT_RECONCILIATION_ENABLED: 'true', PAYMENT_REFUND_ENABLED: 'true',
     PLATFORM_RULE_SYNC_MANIFEST_URL: 'https://rules.production.test/platform-rules/v1/manifest.json',
   } },
@@ -70,7 +70,7 @@ describe('production config and rendered manifest binding gate', () => {
       approved_requests_per_minute: 0, approved_tokens_per_minute: 0, maximum_task_cost_cny: '0.00',
       object_storage_bucket: 'codex-image-20260914', object_storage_region: 'cn-beijing', object_storage_endpoint: 'https://s3.oss-cn-beijing.aliyuncs.com', asset_display_base_url: 'https://yxsona.com',
       lifecycle_policy_ref: 'vault://merchant-asset-lifecycle-policy', asset_scan_policy_version: '2026-08-30',
-      payment_checkout_base_url: 'https://payments.example.com/checkout', payment_provider_checkout_api_url: 'https://payments.example.com/v1/checkout', payment_provider_query_api_url: 'https://payments.example.com/v1/query', payment_provider_refund_api_url: 'https://payments.example.com/v1/refund', payment_provider_merchant_id: 'merchant-example', payment_callback_base_url: 'https://yxsona.com/v1',
+      payment_checkout_base_url: 'https://payments.example.com/checkout', payment_provider_checkout_api_url: 'https://payments.example.com/v1/checkout', payment_provider_query_api_url: 'https://payments.example.com/v1/query', payment_provider_refund_query_api_url: 'https://payments.example.com/v1/refund/query', payment_provider_refund_api_url: 'https://payments.example.com/v1/refund', payment_provider_merchant_id: 'merchant-example', payment_callback_base_url: 'https://yxsona.com/v1',
       platform_rule_sync_manifest_url: 'https://rules.example.com/platform-rules/v1/manifest.json',
     }
     for (const overlay of ['pilot-50', 'wave-100', 'wave-250', 'target-500']) {
@@ -94,6 +94,7 @@ describe('production config and rendered manifest binding gate', () => {
     ['payment_checkout_base_url', 'PAYMENT_CHECKOUT_BASE_URL'],
     ['payment_provider_checkout_api_url', 'PAYMENT_PROVIDER_CHECKOUT_API_URL'],
     ['payment_provider_query_api_url', 'PAYMENT_PROVIDER_QUERY_API_URL'],
+    ['payment_provider_refund_query_api_url', 'PAYMENT_PROVIDER_REFUND_QUERY_API_URL'],
     ['payment_provider_refund_api_url', 'PAYMENT_PROVIDER_REFUND_API_URL'],
     ['payment_provider_merchant_id', 'PAYMENT_PROVIDER_MERCHANT_ID'],
     ['payment_callback_base_url', 'PAYMENT_CALLBACK_BASE_URL'],
@@ -109,7 +110,7 @@ describe('production config and rendered manifest binding gate', () => {
 
   it.each([
     'PAYMENT_MODE', 'PAYMENT_PROVIDER_ADAPTERS', 'PAYMENT_CHECKOUT_BASE_URL',
-    'PAYMENT_PROVIDER_CHECKOUT_API_URL', 'PAYMENT_PROVIDER_QUERY_API_URL', 'PAYMENT_PROVIDER_REFUND_API_URL',
+    'PAYMENT_PROVIDER_CHECKOUT_API_URL', 'PAYMENT_PROVIDER_QUERY_API_URL', 'PAYMENT_PROVIDER_REFUND_QUERY_API_URL', 'PAYMENT_PROVIDER_REFUND_API_URL',
     'PAYMENT_PROVIDER_MERCHANT_ID', 'PAYMENT_CALLBACK_BASE_URL', 'PAYMENT_RECONCILIATION_ENABLED', 'PAYMENT_REFUND_ENABLED',
     'PLATFORM_RULE_SYNC_MANIFEST_URL',
   ])('rejects a missing required runtime projection %s', runtimeKey => {

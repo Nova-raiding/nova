@@ -58,7 +58,6 @@ describe('private trial invite PostgreSQL release evidence', () => {
     } finally {
       await application?.end()
       await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
       await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
       await admin.end()
     }

@@ -80,6 +80,33 @@ export interface CloudObjectTransport {
   get(key: string): Promise<{ body: Uint8Array; contentType?: string; metadata?: Record<string, string> }>
   put(key: string, input: { body: Uint8Array; contentType: string; metadata: Record<string, string>; ifAbsent?: boolean }): Promise<void>
   delete(key: string): Promise<void>
+  /** Create a provider-signed URL for one upload part. The URL must be short-lived. */
+  createMultipartUpload?(input: { key: string; contentType: string; metadata: Record<string, string> }): Promise<{ uploadId: string }>
+  presignUploadPart?(input: { key: string; uploadId: string; partNumber: number; expiresInSeconds: number }): Promise<{ url: string; expiresAt: string }>
+  completeMultipartUpload?(input: { key: string; uploadId: string; parts: readonly { partNumber: number; etag: string }[] }): Promise<void>
+  abortMultipartUpload?(input: { key: string; uploadId: string }): Promise<void>
+}
+
+export interface MultipartUploadTransport {
+  createMultipartUpload: NonNullable<CloudObjectTransport['createMultipartUpload']>
+  presignUploadPart: NonNullable<CloudObjectTransport['presignUploadPart']>
+  completeMultipartUpload: NonNullable<CloudObjectTransport['completeMultipartUpload']>
+  abortMultipartUpload: NonNullable<CloudObjectTransport['abortMultipartUpload']>
+}
+
+/** Fail closed when the deployment has only the small-object transport. */
+export function requireMultipartUploadTransport(transport: CloudObjectTransport): MultipartUploadTransport {
+  if (!transport.createMultipartUpload || !transport.presignUploadPart || !transport.completeMultipartUpload || !transport.abortMultipartUpload) {
+    throw new ObjectStorageError('OBJECT_MULTIPART_TRANSPORT_REQUIRED', '对象存储未配置 multipart/presigned 上传能力', 503)
+  }
+  return transport as MultipartUploadTransport
+}
+
+export function validatePresignedUploadUrl(value: string): string {
+  let url: URL
+  try { url = new URL(value) } catch { throw new ObjectStorageError('OBJECT_PRESIGNED_URL_INVALID', '对象存储签名上传地址无效', 502) }
+  if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw new ObjectStorageError('OBJECT_PRESIGNED_URL_INVALID', '对象存储签名上传地址必须是 HTTPS 且不得包含凭证', 502)
+  return url.toString()
 }
 
 /** A transport may use this error to distinguish a missing object from an
@@ -113,7 +140,8 @@ export interface S3CompatibleObjectStorageConfig {
   endpoint: string
   bucket: string
   region: string
-  kmsKeyId: string
+  kmsKeyId?: string
+  sseMode?: 'AES256' | 'aws:kms'
   keyPrefix?: string
   maxObjectBytes?: number
   versioningRequired?: boolean
@@ -175,6 +203,9 @@ export function parseS3CompatibleObjectStorageConfig(input: unknown, options: { 
   const bucket = typeof value.bucket === 'string' ? value.bucket.trim() : ''
   const region = typeof value.region === 'string' ? value.region.trim() : ''
   const kmsKeyId = typeof value.kmsKeyId === 'string' ? value.kmsKeyId.trim() : ''
+  const rawSseMode = typeof value.sseMode === 'string' ? value.sseMode.trim().toLowerCase() : 'aes256'
+  if (!['aes256', 'aws:kms'].includes(rawSseMode)) throw new ObjectStorageError('OBJECT_STORAGE_SSE_INVALID', '对象存储加密模式必须是 AES256 或 aws:kms', 500)
+  const sseMode = rawSseMode === 'aws:kms' ? 'aws:kms' : 'AES256'
   if (!endpoint || PLACEHOLDER.test(endpoint)) throw new ObjectStorageError('OBJECT_STORAGE_ENDPOINT_REQUIRED', '对象存储 endpoint 未配置', 500)
   let parsedEndpoint: URL
   try { parsedEndpoint = new URL(endpoint) } catch { throw new ObjectStorageError('OBJECT_STORAGE_ENDPOINT_INVALID', '对象存储 endpoint 必须是有效 URL', 500) }
@@ -184,13 +215,13 @@ export function parseS3CompatibleObjectStorageConfig(input: unknown, options: { 
   }
   if (!BUCKET.test(bucket) || bucket.includes('..')) throw new ObjectStorageError('OBJECT_STORAGE_BUCKET_INVALID', '对象存储 bucket 无效', 500)
   if (!REGION.test(region)) throw new ObjectStorageError('OBJECT_STORAGE_REGION_INVALID', '对象存储 region 无效', 500)
-  if (!kmsKeyId || kmsKeyId.length > 512 || PLACEHOLDER.test(kmsKeyId) || /[\u0000-\u001f\u007f\r\n]/u.test(kmsKeyId)) throw new ObjectStorageError('OBJECT_STORAGE_KMS_REQUIRED', '生产对象存储必须配置 KMS key', 500)
-  const maxObjectBytes = value.maxObjectBytes === undefined ? 50 * 1024 * 1024 : value.maxObjectBytes
-  if (typeof maxObjectBytes !== 'number' || !Number.isSafeInteger(maxObjectBytes) || maxObjectBytes < 1 || maxObjectBytes > 50 * 1024 * 1024) throw new ObjectStorageError('OBJECT_LIMIT_INVALID', '对象大小限制必须为 1 至 50 MiB 的整数', 500)
+  if (sseMode === 'aws:kms' && (!kmsKeyId || kmsKeyId.length > 512 || PLACEHOLDER.test(kmsKeyId) || /[\u0000-\u001f\u007f\r\n]/u.test(kmsKeyId))) throw new ObjectStorageError('OBJECT_STORAGE_KMS_REQUIRED', 'aws:kms 模式必须配置有效 KMS key', 500)
+  const maxObjectBytes = value.maxObjectBytes === undefined ? 100 * 1024 * 1024 : value.maxObjectBytes
+  if (typeof maxObjectBytes !== 'number' || !Number.isSafeInteger(maxObjectBytes) || maxObjectBytes < 1 || maxObjectBytes > 100 * 1024 * 1024) throw new ObjectStorageError('OBJECT_LIMIT_INVALID', '对象大小限制必须为 1 至 100 MiB 的整数', 500)
   for (const [field, defaultValue] of [['versioningRequired', true], ['publicAccessBlocked', true], ['scanEvidenceRequired', true] ] as const) {
     if ((value[field] ?? defaultValue) !== true) throw new ObjectStorageError(`OBJECT_STORAGE_${field.toUpperCase()}_REQUIRED`, `${field} 必须显式为 true`, 500)
   }
-  return { endpoint, bucket, region, kmsKeyId, keyPrefix: validateKeyPrefix(typeof value.keyPrefix === 'string' ? value.keyPrefix : undefined), maxObjectBytes, versioningRequired: true, publicAccessBlocked: true, scanEvidenceRequired: true }
+  return { endpoint, bucket, region, ...(kmsKeyId ? { kmsKeyId } : {}), sseMode, keyPrefix: validateKeyPrefix(typeof value.keyPrefix === 'string' ? value.keyPrefix : undefined), maxObjectBytes, versioningRequired: true, publicAccessBlocked: true, scanEvidenceRequired: true }
 }
 
 function isCloudNotFound(error: unknown): boolean {
@@ -361,7 +392,7 @@ export class LocalObjectStorage implements ObjectStoragePort {
 
   constructor(readonly rootDir: string, options: { maxObjectBytes?: number } = {}) {
     if (!isAbsolute(rootDir)) throw new ObjectStorageError('OBJECT_ROOT_INVALID', '本地对象存储 root 必须是绝对路径', 500)
-    this.maxObjectBytes = options.maxObjectBytes ?? 50 * 1024 * 1024
+    this.maxObjectBytes = options.maxObjectBytes ?? 100 * 1024 * 1024
     if (!Number.isSafeInteger(this.maxObjectBytes) || this.maxObjectBytes < 1) throw new ObjectStorageError('OBJECT_LIMIT_INVALID', '对象大小限制无效', 500)
   }
 
@@ -670,7 +701,7 @@ export class S3CompatibleObjectStorage implements ObjectStoragePort {
   private readonly cleanupBaseDelayMs: number
   constructor(private readonly transport: CloudObjectTransport, options: { keyPrefix?: string; maxObjectBytes?: number; cleanupAttempts?: number; cleanupBaseDelayMs?: number } = {}) {
     this.keyPrefix = validateKeyPrefix(options.keyPrefix)
-    this.maxObjectBytes = options.maxObjectBytes ?? 50 * 1024 * 1024
+    this.maxObjectBytes = options.maxObjectBytes ?? 100 * 1024 * 1024
     if (!Number.isSafeInteger(this.maxObjectBytes) || this.maxObjectBytes < 1) throw new ObjectStorageError('OBJECT_LIMIT_INVALID', '对象大小限制无效', 500)
     const retry = validateRetryOptions({ attempts: options.cleanupAttempts ?? 1, baseDelayMs: options.cleanupBaseDelayMs ?? 25 })
     this.cleanupAttempts = retry.attempts

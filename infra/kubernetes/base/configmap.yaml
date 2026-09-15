@@ -35,6 +35,8 @@ data:
   WORKER_WORKSPACES: auto
   WORKER_POLL_INTERVAL_MS: "500"
   STORAGE_RECONCILIATION_INTERVAL_MS: "900000"
+  PAYMENT_RECONCILIATION_INTERVAL_MS: "300000"
+  PAYMENT_RECONCILIATION_BATCH_SIZE: "10"
   WORKER_BATCH_SIZE: "100"
   WORKER_WORKSPACE_BATCH_SIZE: "10"
   # Must exceed the maximum model call plus worker callback timeout and margin.
@@ -72,6 +74,10 @@ data:
   # OSS S3 compatibility requires virtual-hosted-style requests.
   ASSET_STORAGE_ENDPOINT: https://s3.oss-cn-beijing.aliyuncs.com
   ASSET_STORAGE_FORCE_PATH_STYLE: "false"
+  ASSET_STORAGE_CREDENTIAL_MODE: aliyun_ecs_ram_role
+  # OSS-managed AES256 avoids a paid KMS instance. Set to aws:kms only when a
+  # customer-managed KMS key is explicitly required and provisioned.
+  ASSET_STORAGE_SSE_MODE: AES256
   ASSET_STORAGE_PREFIX: merchant-assets
   # ACK pods must use pod-scoped RRSA. The admission webhook injects the role,
   # OIDC provider and projected token environment; absence keeps /readyz 503.
@@ -145,10 +151,11 @@ data:
   # Provider payment configuration is non-secret runtime state. Credentials
   # remain explicit Secret key references on the API Deployment.
   PAYMENT_MODE: provider
-  PAYMENT_PROVIDER_ADAPTERS: alipay,wechat
+  PAYMENT_PROVIDER_ADAPTERS: alipay
   PAYMENT_CHECKOUT_BASE_URL: https://payments.example.com/checkout
   PAYMENT_PROVIDER_CHECKOUT_API_URL: https://payments.example.com/v1/checkout
   PAYMENT_PROVIDER_QUERY_API_URL: https://payments.example.com/v1/query
+  PAYMENT_PROVIDER_REFUND_QUERY_API_URL: https://payments.example.com/v1/refund/query
   PAYMENT_PROVIDER_REFUND_API_URL: https://payments.example.com/v1/refund
   PAYMENT_PROVIDER_MERCHANT_ID: merchant-example
   PAYMENT_CALLBACK_BASE_URL: https://yxsona.com/v1

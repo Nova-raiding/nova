@@ -132,7 +132,7 @@ describe('Ops HTTP/MCP authorization parity', () => {
     expect(http.body.error?.details?.capability).toBe(mcp.body.error?.details?.capability)
   })
 
-  it('allows finance to reach payment reconciliation under strict MCP authorization', async () => {
+  it('keeps provider payment reconciliation out of the merchant finance workbench', async () => {
     const workspaceId = `ws_finance_reconcile_${Date.now()}`
     const actorId = `finance-reconcile-${Date.now()}`
     await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'finance', status: 'active', invitedBy: 'ops-http-mcp-parity' })
@@ -143,8 +143,48 @@ describe('Ops HTTP/MCP authorization parity', () => {
     const base = await start()
 
     const result = await callMcp(base, 'finance-reconcile-token', workspaceId, 'billing.reconciliation.run', { limit: '1' })
+    expect(result.response.status, JSON.stringify(result.body)).toBe(403)
+    expect(result.body.error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH', workbench: 'workspace' } })
+  })
+
+  it('allows a platform super administrator to reach payment reconciliation', async () => {
+    const workspaceId = `ws_platform_reconcile_${Date.now()}`
+    service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `platform-reconcile-store-${workspaceId}`, credentialRef: `vault://platform-reconcile/${workspaceId}` })
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
+    configureToken('platform-reconcile-token', `platform-reconcile-${Date.now()}`, workspaceId, 'platform_admin', ['platform'])
+    const base = await start()
+
+    const result = await callMcp(base, 'platform-reconcile-token', workspaceId, 'billing.reconciliation.run', { limit: '1' })
     expect(result.response.status, JSON.stringify(result.body)).toBe(503)
     expect(result.body.error).toMatchObject({ code: 'PAYMENT_RECONCILIATION_UNAVAILABLE' })
+    expect(result.body.error?.code).not.toBe('FORBIDDEN')
+  })
+
+  it('allows a platform super administrator to reach provider refund handling', async () => {
+    const workspaceId = `ws_platform_refund_${Date.now()}`
+    vi.stubEnv('PAYMENT_MODE', 'provider')
+    vi.stubEnv('PAYMENT_PROVIDER_ADAPTERS', 'alipay')
+    vi.stubEnv('PAYMENT_CHECKOUT_BASE_URL', 'https://payments.example/checkout')
+    vi.stubEnv('PAYMENT_PROVIDER_CHECKOUT_API_URL', 'https://payments.example/api/checkout')
+    vi.stubEnv('PAYMENT_PROVIDER_QUERY_API_URL', 'https://payments.example/api/query')
+    vi.stubEnv('PAYMENT_PROVIDER_REFUND_QUERY_API_URL', 'https://payments.example/api/refund/query')
+    vi.stubEnv('PAYMENT_PROVIDER_REFUND_API_URL', 'https://payments.example/api/refund')
+    vi.stubEnv('PAYMENT_PROVIDER_API_KEY', 'test-provider-key')
+    vi.stubEnv('PAYMENT_PROVIDER_MERCHANT_ID', 'merchant-test')
+    vi.stubEnv('PAYMENT_CALLBACK_BASE_URL', 'https://merchant.example/v1')
+    vi.stubEnv('PAYMENT_CALLBACK_SECRET', 'callback-secret')
+    vi.stubEnv('PAYMENT_RECONCILIATION_ENABLED', 'true')
+    vi.stubEnv('PAYMENT_REFUND_ENABLED', 'true')
+    service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `platform-refund-store-${workspaceId}`, credentialRef: `vault://platform-refund/${workspaceId}` })
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
+    configureToken('platform-refund-token', `platform-refund-${Date.now()}`, workspaceId, 'platform_admin', ['platform'])
+    const base = await start()
+
+    const result = await callMcp(base, 'platform-refund-token', workspaceId, 'billing.refund', { order_id: 'missing-order', reason: 'verify platform refund authorization' })
+    expect(result.response.status, JSON.stringify(result.body)).toBe(503)
+    expect(result.body.error).toMatchObject({ code: 'COMMERCIAL_OPERATION_DISABLED' })
     expect(result.body.error?.code).not.toBe('FORBIDDEN')
   })
 })

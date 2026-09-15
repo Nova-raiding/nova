@@ -17,31 +17,6 @@ export interface DeliveryUploadItem {
 type Upload = (file: File, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
 type GetAsset = (assetRef: string, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
 
-function isTransientScanReadError(error: unknown) {
-  const candidate = error as { code?: unknown; httpStatus?: unknown } | undefined;
-  // These codes are produced locally when no HTTP response was received.
-  // A server rejection is authoritative, even if its code resembles a timeout.
-  return candidate?.httpStatus === undefined
-    && (candidate?.code === "API_REQUEST_TIMEOUT" || candidate?.code === "API_NETWORK_ERROR");
-}
-
-/** Multiple evidence uploaders share a form, but finish independently. */
-export function createDeliveryUploadTracker() {
-  let currentScope: string | undefined;
-  const active = new Set<string>();
-  return {
-    beginScope(scope?: string) { currentScope = scope; active.clear(); },
-    isCurrent(scope: string) { return scope === currentScope; },
-    isBusy() { return active.size > 0; },
-    setBusy(scope: string, uploader: string, busy: boolean) {
-      if (scope !== currentScope) return undefined;
-      if (busy) active.add(uploader);
-      else active.delete(uploader);
-      return active.size > 0;
-    },
-  };
-}
-
 export function waitForDeliveryScan(delayMs: number, signal: AbortSignal): Promise<void> {
   signal.throwIfAborted();
   return new Promise((resolve, reject) => {
@@ -77,41 +52,15 @@ export async function runCustomerDeliveryUploadBatch(items: DeliveryUploadItem[]
       }
       const assetRef = asset.assetRef;
       let polls = 0;
-      let consecutiveScanReadFailures = 0;
       while (!asset.ready) {
         if (asset.scanStatus === "blocked") throw new Error("文件未通过安全检查，不能使用；请检查文件后重试");
-        options.onChange({
-          ...item,
-          asset,
-          status: "scanning",
-          error: consecutiveScanReadFailures
-            ? `连接暂时中断，正在重试检查（${consecutiveScanReadFailures}/2）`
-            : undefined,
-        });
+        options.onChange({ ...item, asset, status: "scanning", error: undefined });
         if (polls++ >= (options.maxPolls ?? 90)) throw new Error("安全检查尚未完成；可稍后重试检查，无需重复上传");
-        const pollDelay = options.pollDelayMs ?? 2000;
-        await waitForDeliveryScan(consecutiveScanReadFailures ? Math.min(pollDelay, 500) : pollDelay, options.signal);
-        let checkedAsset: CustomerDeliveryAsset;
-        try {
-          checkedAsset = await options.getAsset(assetRef, options.purpose, options.signal);
-        } catch (error) {
-          options.signal.throwIfAborted();
-          if (isTransientScanReadError(error) && consecutiveScanReadFailures < 2) {
-            consecutiveScanReadFailures += 1;
-            options.onChange({
-              ...item,
-              asset,
-              status: "scanning",
-              error: `连接暂时中断，正在重试检查（${consecutiveScanReadFailures}/2）`,
-            });
-            continue;
-          }
-          throw error;
-        }
+        await waitForDeliveryScan(options.pollDelayMs ?? 2000, options.signal);
+        const checkedAsset = await options.getAsset(assetRef, options.purpose, options.signal);
         options.signal.throwIfAborted();
         if (checkedAsset.assetRef !== assetRef) throw new Error("安全检查素材不匹配，已阻止登记");
         asset = checkedAsset;
-        consecutiveScanReadFailures = 0;
       }
       if (asset.scanStatus !== "clean") throw new Error("文件缺少可信安全检查结果，不能使用");
       options.signal.throwIfAborted();
@@ -185,7 +134,7 @@ export function CustomerDeliveryUpload({ purpose, disabled = false, onUpload, on
       if (mounted.current) { setBusy(false); busyCallback.current?.(false); }
     }
   };
-  const label = ({ contract: "上传合同文件", payment: "上传付款凭证", system_integration: "上传接入凭证", functional_acceptance: "上传验收凭证", training: "上传培训凭证", video: "上传交付视频" } as const)[purpose];
+  const label = purpose === "contract" ? "上传合同文件" : "上传交付视频";
   return (
     <div style={{ marginBottom: 16 }} aria-busy={busy}>
       <input
@@ -193,8 +142,8 @@ export function CustomerDeliveryUpload({ purpose, disabled = false, onUpload, on
         type="file"
         aria-label={label}
         style={{ display: "none" }}
-        accept={purpose === "video" ? ".mp4,.webm" : ".pdf,.docx,.png,.jpg,.jpeg"}
-        multiple={purpose !== "contract"}
+        accept={purpose === "contract" ? ".pdf,.docx,.png,.jpg,.jpeg" : ".mp4,.webm"}
+        multiple={purpose === "video"}
         disabled={disabled || busy}
         onChange={(event) => {
           const files = Array.from(event.currentTarget.files ?? []);
@@ -209,7 +158,7 @@ export function CustomerDeliveryUpload({ purpose, disabled = false, onUpload, on
         {busy ? <Button onClick={() => controller.current?.abort()}>取消上传与检查</Button> : null}
       </Space>
       <Typography.Text type="secondary" style={{ display: "block", marginTop: 8 }}>
-        {purpose === "video" ? "MP4、WebM，可多选并逐段上传" : "PDF、DOCX、PNG、JPG、JPEG"}；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
+        {purpose === "contract" ? "PDF、DOCX、PNG、JPG、JPEG" : "MP4、WebM，可多选并逐段上传"}；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
       </Typography.Text>
       <div role="status" aria-live="polite" aria-atomic="false">
         {items.map((item) => (

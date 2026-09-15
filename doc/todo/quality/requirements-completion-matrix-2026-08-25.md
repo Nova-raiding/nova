@@ -46,7 +46,7 @@
 
 | 用户说法 | 当前状态 | 代码/文档证据 | 对外口径 |
 |---|---|---|---|
-| Codex App 插件，不要求用户充值 Codex | 代码完成，待中转运行时验收 | `apps/plugin/`、插件 bridge、`doc/codex-app-relay-setup.md`、`MODEL_RELAY_BASE_URL` 生产门禁、`codex:relay:validate` 双链路配置门禁；生产 Skill 禁止宿主 `image_gen` 旁路，业务生成请求走服务端 relay；`platform.model.status` 在 bridge 中保持只读可用 | 用户不需要配置业务模型 Key；Codex App 自身仍必须在用户级配置中切换到大麦 Responses provider，真实 Responses 兼容性、供应商额度/账单和断链 fail-closed 仍需部署验收 |
+| Codex App 插件，不要求用户充值 Codex | 代码完成，待中转运行时验收 | `apps/plugin/`、插件 bridge、`doc/codex-app-relay-setup.md`、`MODEL_RELAY_BASE_URL` 生产门禁、`codex:relay:validate` 双链路配置门禁；生产 Skill 禁止宿主 `image_gen` 旁路，业务生成请求走服务端 relay；`platform.model.status` 在 bridge 中保持只读可用 | 用户不需要配置业务模型 Key；Codex App 自身仍必须在用户级配置中切换到Store Nova Responses provider，真实 Responses 兼容性、供应商额度/账单和断链 fail-closed 仍需部署验收 |
 | 用户自己充值，充值后开放全部能力 | 部分完成 | `billing.status`、`billing.recharge.create`、`billing.recharge.get` provider 查单与 paid 入账、`billing.reconciliation.run` 角色保护的待支付订单查单入账；provider `closed/failed` 查单结果会转为订单终态并进入异常列表，不会重复查单；服务端 payment provider checkout/refund/query adapter、HTTPS 支付链接、回调验签/幂等入账、金额/渠道/交易号重放校验、钱包账本、bridge 零余额放行授权/充值订单/只读同步；平台授权和商品只读同步不再被钱包或平台/同步加购强制阻断；钱包余额是生成、图片、视频、OCR、SEO-GEO、REST/MCP 单项发布和批量发布的统一门禁，内容生成不再被过期订阅二次拦截；模型、图片、图片编辑、单项/批量发布失败会按原扣款幂等键写入钱包退款流水；REST、MCP、批量确认/重试均先恢复持久化幂等任务再扣款；多模态和视频 rendering 先预扣再调用 provider，失败按同一扣款键退款；图片生成和视频请求重复重试不重复扣费；插件首次进入固定展示余额/充值入口/解锁状态，明确操作时由 `workspace.interactive.confirm` 开启 15 分钟交互写会话，不要求用户手工配置环境变量；Merchant Studio 提供运营账务入口；bridge/API 回归覆盖充值、零余额同步、交互写入与只读 Automation 边界 | 钱包余额可解锁受控能力；支付宝/微信真实商户 provider、查单/对账、退款接口凭证和生产回调仍需配置与验收 |
 | 知识库：平台固定/品类/大促规则 | 已完成 | `packages/knowledge`、`knowledge.rule.*`、规则版本/审计 | 规则可追溯，发布前检查；不承诺平台规则永不变化 |
 | 知识库：品牌资产/客户资产 | 已完成 | `knowledge.asset.*`、品牌资产 API、资产权限检查 | 生成前读取已确认的品牌与客户资产 |

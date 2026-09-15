@@ -6,7 +6,10 @@ import {
   encodePassbackParams,
   formatAlipayTimestamp,
   normalizePublicKey,
+  normalizeRefundQueryState,
+  normalizeRefundSubmissionState,
   parseRequestBody,
+  refundQueryResponseMatchesRequest,
   responseMatchesOrder,
   responseSignContent,
   signAlipayParams,
@@ -113,5 +116,29 @@ describe('payment gateway Alipay protocol helpers', () => {
     expect(responseMatchesOrder({ code: '40004', msg: 'Order not found' }, 'order-1')).toBe(true)
     expect(responseMatchesOrder({}, 'order-1')).toBe(true)
     expect(responseMatchesOrder({}, '')).toBe(false)
+  })
+
+  it('binds refund query responses to order, refund request, and amount', () => {
+    expect(refundQueryResponseMatchesRequest({ code: '10000', out_trade_no: 'order-1', out_request_no: 'refund-order-1', refund_amount: '10.00' }, 'order-1', 'refund-order-1', 1000)).toBe(true)
+    expect(refundQueryResponseMatchesRequest({ code: '10000', out_trade_no: 'order-2', out_request_no: 'refund-order-1', refund_amount: '10.00' }, 'order-1', 'refund-order-1', 1000)).toBe(false)
+    expect(refundQueryResponseMatchesRequest({ code: '10000', out_trade_no: 'order-1', out_request_no: 'refund-other', refund_amount: '10.00' }, 'order-1', 'refund-order-1', 1000)).toBe(false)
+    expect(refundQueryResponseMatchesRequest({ code: '10000', out_trade_no: 'order-1', out_request_no: 'refund-order-1', refund_amount: '10.01' }, 'order-1', 'refund-order-1', 1000)).toBe(false)
+    expect(refundQueryResponseMatchesRequest({ code: '10000', out_trade_no: 'order-1', refund_amount: '10.00' }, 'order-1', 'refund-order-1', 1000)).toBe(false)
+  })
+
+  it('normalizes Alipay refund query outcomes without treating ambiguous responses as success', () => {
+    expect(normalizeRefundQueryState({ code: '10000', refund_status: 'REFUND_SUCCESS', refund_amount: '10.00' })).toBe('succeeded')
+    expect(normalizeRefundQueryState({ code: '10000', refund_status: 'REFUND_FAILED', refund_amount: '10.00' })).toBe('unknown')
+    expect(normalizeRefundQueryState({ code: '10000', refund_status: 'PROCESSING', refund_amount: '10.00' })).toBe('pending')
+    expect(normalizeRefundQueryState({ code: '10000', refund_amount: '10.00' })).toBe('unknown')
+    expect(normalizeRefundQueryState({ code: '10000' })).toBe('unknown')
+    expect(normalizeRefundQueryState({ code: '40004', sub_code: 'ACQ.SYSTEM_ERROR' })).toBe('unknown')
+  })
+
+  it('completes a direct refund only with Alipay fund-change proof', () => {
+    expect(normalizeRefundSubmissionState({ code: '10000', fund_change: 'Y' })).toBe('completed')
+    expect(normalizeRefundSubmissionState({ code: '10000', fund_change: 'N' })).toBe('processing')
+    expect(normalizeRefundSubmissionState({ code: '10000' })).toBe('processing')
+    expect(normalizeRefundSubmissionState({ code: '40004', sub_code: 'ACQ.SYSTEM_ERROR' })).toBe('processing')
   })
 })

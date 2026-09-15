@@ -13,7 +13,7 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: merchant-api, app.kubernetes.io/part-of: merchant-marketing-codex}
       annotations:
-        merchant.example.com/config-sha256: sha256:3c74b3d880440c4cc432e519f6eb1b112e94ef6fa631b35803103d257c473b2e
+        merchant.example.com/config-sha256: sha256:5594dda8f223a7d4f488f2fa13876836bd37683408c774b6948bdd91f3b55dd8
     spec:
       serviceAccountName: merchant-api-rrsa
       terminationGracePeriodSeconds: 30
@@ -28,6 +28,14 @@ spec:
             - configMapRef: {name: merchant-runtime}
           env:
             - {name: OTEL_SERVICE_NAME, value: merchant-api}
+            # ChatGPT MCP OAuth is mandatory on the public merchant host. The
+            # client/callback allowlist remains a managed Secret so a missing
+            # production registration keeps /readyz fail-closed.
+            - {name: MCP_OAUTH_REQUIRED, value: "true"}
+            - {name: MCP_OAUTH_ISSUER, value: https://yxsona.com}
+            - {name: MCP_OAUTH_AUTHORIZATION_ENDPOINT, value: https://yxsona.com/oauth/authorize}
+            - {name: MCP_OAUTH_TOKEN_ENDPOINT, value: https://yxsona.com/oauth/token}
+            - {name: MCP_OAUTH_CLIENTS, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: MCP_OAUTH_CLIENTS}}}
             - {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: DATABASE_URL}}}
             - {name: OPS_DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: OPS_DATABASE_URL}}}
             - {name: REDIS_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: REDIS_URL}}}

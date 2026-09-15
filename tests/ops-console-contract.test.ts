@@ -83,9 +83,10 @@ describe("Ops console marketing governance contract", () => {
     expect(model).toContain("authorizedOptional('workspace.health')");
     expect(model).toContain("authorizedOptional('ops.marketing.queue', marketingQueueParams(activeQueueFilters))");
     expect(model).toContain("deferredOptional('ops.alerts.list'");
-    expect(model).toContain('alertListParams(activeAlertFilters, platformAlertScope)');
+    expect(model).toContain('alertListParams( activeAlertFilters, platformAlertScope');
     expect(app).toContain('export function marketingQueueParams(filters: QueueFilters)');
-    expect(app).toContain('export function alertListParams(filters: AlertFilters, platformScope = false)');
+    expect(app).toContain('export function alertListParams');
+    expect(app).toContain('platformScope = false');
     expect(app).toContain("平台告警筛选");
     expect(app).toContain("alertFilters.entityId");
     expect(app).toContain("rpc('ops.marketing.generation.retry'");

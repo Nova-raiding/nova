@@ -32,7 +32,7 @@ export function renderCodexRelayConfig(input: CodexRelayConfigInput) {
   const providerHeader = `[model_providers.${input.provider}]`
   const providerBlock = [
     providerHeader,
-    `name = ${tomlString('大麦中转站')}`,
+    `name = ${tomlString('Store Nova中转站')}`,
     `base_url = ${tomlString(input.baseUrl.replace(/\/$/u, ''))}`,
     `env_key = ${tomlString(input.apiKeyEnv)}`,
     'wire_api = "responses"',
@@ -98,8 +98,8 @@ export function renderCodexRelayCatalog(model: string, seed?: Record<string, unk
       models: [{
         ...compatibleSeed,
         slug: model,
-        display_name: `${model} (大麦中转)`,
-        description: '大麦模型中转站的 Responses 兼容宿主模型。',
+        display_name: `${model} (Store Nova中转)`,
+        description: 'Store Nova模型中转站的 Responses 兼容宿主模型。',
         // The relay catalog does not advertise priority service tiers.  Keep
         // the local descriptor honest so Codex does not request an unsupported
         // tier and fall back at runtime.
@@ -112,8 +112,8 @@ export function renderCodexRelayCatalog(model: string, seed?: Record<string, unk
   return {
     models: [{
       slug: model,
-      display_name: `${model} (大麦中转)`,
-      description: '大麦模型中转站的 Responses 兼容宿主模型。',
+      display_name: `${model} (Store Nova中转)`,
+      description: 'Store Nova模型中转站的 Responses 兼容宿主模型。',
       default_reasoning_level: 'medium',
       supported_reasoning_levels: [
         { effort: 'low', description: '快速响应' },

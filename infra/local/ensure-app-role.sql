@@ -173,7 +173,8 @@ BEGIN
   -- is absent; revoke each relation only after checking that it exists.
   FOREACH relation_name IN ARRAY ARRAY[
     'platform_identities', 'platform_identity_events', 'platform_auth_sessions',
-    'platform_password_accounts', 'platform_password_sessions', 'platform_password_reset_tokens'
+    'platform_password_accounts', 'platform_password_sessions', 'platform_password_reset_tokens',
+    'mcp_oauth_authorization_codes', 'mcp_oauth_tokens'
   ] LOOP
     IF to_regclass(format('public.%I', relation_name)) IS NOT NULL THEN
       EXECUTE format('REVOKE ALL ON TABLE %I FROM merchant_app', relation_name);

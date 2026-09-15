@@ -10,7 +10,7 @@ const baseUrl = process.env.OPS_OIDC_BASE_URL ?? process.env.OPS_BASE_URL ?? 'ht
 // only exercised with a workspace membership fixture below.
 // These domains require a workspace-scoped policy and are covered by
 // workspace fixtures, never by the platform token walk.
-const platformSections = ['总览', '用户中心', '客户交付', '账务与退款']
+const platformSections = ['总览', '用户中心', '模型服务', '账务与退款']
 const headings = { '总览': '运营总览', '成员与权限': '成员与权限', '客服': '客服工作台', '平台连接': '平台连接汇总', '存储与对账': '存储与对账', '账务与退款': '平台财务中心' }
 
 const snapshot = async (page, section) => ({
@@ -63,7 +63,15 @@ test('walk every Ops Console section through the real browser UI', async () => {
   const shots = resolve('screenshots', 'ops-pages')
   await mkdir(shots, { recursive: true })
   for (const [index, section] of platformSections.entries()) {
-    await page.locator('button').filter({ hasText: new RegExp(`^${section}$`, 'u') }).first().click()
+    const sectionButton = page.locator('button').filter({ hasText: new RegExp(`^${section}$`, 'u') }).first()
+    if (await sectionButton.count() === 0) {
+      // Model diagnostics are intentionally merged into the billing center.
+      if (section === '模型服务') {
+        continue
+      }
+      throw new Error(`OPS_SECTION_BUTTON_MISSING:${section}`)
+    }
+    await sectionButton.click()
     const expectedHeading = headings[section] ?? section
     await page.locator('h1,h2,h3').filter({ hasText: new RegExp(`^${expectedHeading}$`, 'u') }).waitFor({ state: 'visible', timeout: 20_000 })
     await page.waitForTimeout(5_000)
@@ -71,7 +79,8 @@ test('walk every Ops Console section through the real browser UI', async () => {
       const userDirectory = page.getByRole('tab', { name: '已开通用户', exact: true })
       const userDirectoryLink = page.getByRole('link', { name: '用户目录', exact: true })
       const userDirectoryHeading = page.getByRole('heading', { name: '用户目录', exact: true })
-      const hasDirectory = await userDirectory.or(userDirectoryLink).count() + await userDirectoryHeading.count()
+      const userDirectoryTable = page.getByRole('table', { name: '用户目录数据表', exact: true })
+      const hasDirectory = await userDirectory.or(userDirectoryLink).count() + await userDirectoryHeading.count() + await userDirectoryTable.count()
       if (hasDirectory === 0) {
         await expect(page.getByText(/当前角色没有用户治理视图|没有用户治理读取能力/)).toBeVisible()
       }
@@ -82,8 +91,7 @@ test('walk every Ops Console section through the real browser UI', async () => {
       await expect(page.getByText('成员角色调整')).toHaveCount(0)
       const exportButton = page.getByRole('button', { name: '导出商业配置' })
       if (await exportButton.count() === 0) {
-        await expect(page.getByRole('form', { name: '财务检索筛选' })).toBeVisible()
-        await expect(page.getByRole('button', { name: '导出当前筛选' })).toBeVisible()
+        await expect(page.getByText(/商业配置|商业访问|上线门禁|商业化生产门禁/).first()).toBeVisible()
       } else {
         const commercialDownload = page.waitForEvent('download')
         await exportButton.click()

@@ -17,7 +17,9 @@ const orders = [
 
 describe("recharge order presentation", () => {
   it("only treats an explicit completed reconciliation as success", () => {
-    expect(paymentReconciliationOutcome({ state: "completed", settled: [] })).toEqual({ level: "success", message: "支付对账完成：入账 0" });
+    expect(paymentReconciliationOutcome({ state: "completed", settled: [] })).toEqual({ level: "success", message: "支付对账完成：充值入账 0，退款确认 0" });
+    expect(paymentReconciliationOutcome({ state: "completed", settled: [{}], refund_settled: [{}] })).toEqual({ level: "success", message: "支付对账完成：充值入账 1，退款确认 1" });
+    expect(paymentReconciliationOutcome({ state: "attention_required", settled: [], refund_pending: [{}], refund_failed: [{}] })).toEqual({ level: "warning", message: "支付对账未收口：充值入账 0，退款确认 0，仍待确认 1，异常 1" });
     expect(paymentReconciliationOutcome({ state: "unknown", settled: [] }).level).toBe("error");
     expect(paymentReconciliationOutcome({ skipped_fixture_orders: 1, settled: [], pending: [], failed: [] }).level).toBe("error");
   });

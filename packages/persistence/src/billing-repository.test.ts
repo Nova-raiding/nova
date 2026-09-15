@@ -237,6 +237,15 @@ describe('PostgresBillingRepository recharge order reporting', () => {
     client.enqueue(); client.enqueue(); client.enqueue({ state: 'pending', count: '101' }, { state: 'paid', count: '7' }); client.enqueue()
     await expect(repository.countOrdersByState('ws_wallet')).resolves.toEqual({ pending: 101, paid: 7, closed: 0, failed: 0 })
   })
+
+  it('uses an oldest-first provider-only queue for automated reconciliation', async () => {
+    const client = new RecordingClient()
+    const pending = { id: 'recharge_oldest', workspace_id: 'ws_wallet', channel: 'alipay', amount_fen: 1000, state: 'pending', payment_mode: 'provider', payment_url: null, provider_trade_id: null, created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:00:00.000Z' }
+    client.enqueue(); client.enqueue(); client.enqueue(pending); client.enqueue()
+    await expect(new PostgresBillingRepository(new RecordingPool(client)).listPendingProviderOrdersForReconciliation('ws_wallet', 7)).resolves.toMatchObject([{ id: 'recharge_oldest' }])
+    const query = client.calls.find(call => call.text.includes("payment_mode='provider'") && call.text.includes('ORDER BY created_at,id'))
+    expect(query?.values).toEqual(['ws_wallet', 7])
+  })
 })
 
 describe('PostgresBillingRepository recharge settlement atomicity', () => {
@@ -277,6 +286,24 @@ describe('PostgresBillingRepository recharge settlement atomicity', () => {
 describe('PostgresBillingRepository external recharge refund', () => {
   const paidOrder = { id: 'recharge_100', workspace_id: 'ws_wallet', channel: 'wechat', amount_fen: 10_000, state: 'paid', payment_mode: 'provider', payment_url: null, provider_trade_id: 'trade_100', created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:01:00.000Z' }
   const reservation = { id: 'refund_reservation_1', workspace_id: 'ws_wallet', type: 'debit', amount_fen: 10_000, order_id: 'recharge-refund:recharge_100:1', description: '充值原路退款预留（finance）：客户申请', created_at: '2026-08-28T01:02:00.000Z' }
+
+  it('lists active provider refund reservations without applying transaction-page truncation', async () => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue(); client.enqueue({
+      ...paidOrder,
+      reservation_id: reservation.id,
+      reservation_type: reservation.type,
+      reservation_amount_fen: reservation.amount_fen,
+      reservation_order_id: reservation.order_id,
+      reservation_actor_id: 'finance',
+      reservation_description: reservation.description,
+      reservation_created_at: reservation.created_at,
+    }); client.enqueue()
+    const result = await new PostgresBillingRepository(new RecordingPool(client)).listActiveRechargeRefunds('ws_wallet', 10)
+    expect(result).toMatchObject([{ order: { id: 'recharge_100', state: 'paid', paymentMode: 'provider' }, reservation: { id: 'refund_reservation_1', orderId: 'recharge-refund:recharge_100:1', amountFen: 10_000 } }])
+    const query = client.calls.find(call => call.text.includes('NOT EXISTS') && call.text.includes("released.order_id='release:' || r.order_id"))
+    expect(query?.values).toEqual(['ws_wallet', 10])
+  })
 
   it('atomically deducts the recharge value instead of crediting the wallet', async () => {
     const client = new RecordingClient()

@@ -60,12 +60,6 @@ describe('platform customer delivery scan admission', () => {
     expect(parseDeliveryScanAdmission(event, { now })).toMatchObject({ purpose: 'video', mime_type: mime })
   })
 
-  it.each(['payment', 'system_integration', 'functional_acceptance', 'training'] as const)('accepts document evidence scoped to %s', purpose => {
-    const event = fixture()
-    Object.assign(event.payload.delivery_scan_admission!, { purpose })
-    expect(parseDeliveryScanAdmission(event, { now })).toMatchObject({ purpose, mime_type: 'application/pdf' })
-  })
-
   it('validates every recheck field against the immutable admission', () => {
     const event = fixture()
     const admission = parseDeliveryScanAdmission(event, { now })

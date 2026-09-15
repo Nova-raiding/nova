@@ -20,6 +20,7 @@ cd "$repo_root"
 printf '%s' "${PAYMENT_CALLBACK_BASE_URL:-}" | grep -Eq '^https://' || { echo "PAYMENT_CALLBACK_BASE_URL must be HTTPS" >&2; exit 1; }
 [ -n "${PAYMENT_CALLBACK_SECRET_REF:-}" ] || { echo "PAYMENT_CALLBACK_SECRET_REF is required" >&2; exit 1; }
 printf '%s' "${PAYMENT_PROVIDER_QUERY_API_URL:-}" | grep -Eq '^https://' || { echo "PAYMENT_PROVIDER_QUERY_API_URL must be HTTPS" >&2; exit 1; }
+printf '%s' "${PAYMENT_PROVIDER_REFUND_QUERY_API_URL:-}" | grep -Eq '^https://' || { echo "PAYMENT_PROVIDER_REFUND_QUERY_API_URL must be HTTPS" >&2; exit 1; }
 printf '%s' "${PAYMENT_PROVIDER_REFUND_API_URL:-}" | grep -Eq '^https://' || { echo "PAYMENT_PROVIDER_REFUND_API_URL must be HTTPS" >&2; exit 1; }
 [ -f "$PLATFORM_CANARY_BASE_EVIDENCE" ] || { echo "base evidence not found" >&2; exit 1; }
 [ -n "${PRODUCTION_API_BASE_URL:-}" ] || { echo "PRODUCTION_API_BASE_URL is required so the canary is bound to the deployed application" >&2; exit 1; }

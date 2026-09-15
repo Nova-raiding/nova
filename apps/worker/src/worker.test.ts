@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, rethrowPollFailureInOnceMode, runAutomationMaintenance, scannerOperationalMetrics, workerQueueKey } from './main.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, workerQueueKey } from './main.js'
 import type { PostgresOutboxRepository, SqlPool } from '../../../packages/persistence/src/index.js'
 import { DurableOutboxDispatcher, InMemoryQueue, type DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
@@ -232,6 +232,64 @@ describe('worker production entry', () => {
     expect(requestHeaders?.get('x-worker-role')).toBe('reconcile')
   })
 
+  it('posts payment reconciliation through the signed reconcile API boundary', async () => {
+    let requestUrl = ''
+    let requestHeaders: Headers | undefined
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      requestUrl = String(url)
+      requestHeaders = new Headers(init?.headers)
+      expect(init?.method).toBe('POST')
+      expect(JSON.parse(String(init?.body))).toEqual({ workspace_id: 'ws_a', limit: 7 })
+      return new Response(JSON.stringify({ data: { state: 'completed', checked: 0, payment_checked: 0, refund_checked: 0 } }), { status: 200 })
+    }) as unknown as typeof fetch
+
+    await expect(postPaymentReconciliation({ apiBaseUrl: 'http://api:8787/', apiToken: 'worker-token', signingSecret: 'reconcile-signing-secret', workspaceId: ' ws_a ', limit: 7, fetcher })).resolves.toMatchObject({ state: 'completed', checked: 0 })
+    expect(requestUrl).toBe('http://api:8787/v1/internal/billing/reconciliation')
+    expect(requestHeaders?.get('authorization')).toBe('Bearer worker-token')
+    expect(requestHeaders?.get('x-workspace-id')).toBe('ws_a')
+    expect(requestHeaders?.get('x-worker-role')).toBe('reconcile')
+    expect(requestHeaders?.get('x-worker-workspace-signature')).toMatch(/^[a-f0-9]{64}$/u)
+  })
+
+  it('rejects unsafe payment reconciliation inputs before network I/O', async () => {
+    const fetcher = vi.fn(async () => new Response('{}', { status: 200 })) as unknown as typeof fetch
+    await expect(postPaymentReconciliation({ apiBaseUrl: 'http://api:8787', apiToken: 'token', workspaceId: ' ', fetcher })).rejects.toThrow('workspaceId')
+    await expect(postPaymentReconciliation({ apiBaseUrl: 'http://api:8787', apiToken: 'token', workspaceId: 'ws_a\u0000', fetcher })).rejects.toThrow('workspaceId')
+    await expect(postPaymentReconciliation({ apiBaseUrl: 'http://api:8787', apiToken: 'token', workspaceId: 'ws_a', limit: 0, fetcher })).rejects.toThrow('limit')
+    await expect(postPaymentReconciliation({ apiBaseUrl: 'http://api:8787', apiToken: 'token', workspaceId: 'ws_a', limit: 21, fetcher })).rejects.toThrow('limit')
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('caps payment workspace concurrency at two and counts attention as business warnings', async () => {
+    let active = 0
+    let peak = 0
+    const summary = await runPaymentReconciliationSweep({
+      workspaces: ['ws_1', 'ws_2', 'ws_3', 'ws_4', 'ws_5'],
+      workspaceConcurrency: 20,
+      reconcile: async workspaceId => {
+        active += 1
+        peak = Math.max(peak, active)
+        await new Promise(resolve => setTimeout(resolve, 5))
+        active -= 1
+        if (workspaceId === 'ws_4') throw new Error('API unavailable')
+        if (workspaceId === 'ws_2') return { state: 'attention_required', checked: 3, payment_checked: 1, refund_checked: 2, pending: [{}], failed: [{}], refund_pending: [{}], refund_failed: [{}] }
+        return { state: 'completed', checked: 2, payment_checked: 1, refund_checked: 1, settled: [{}], refund_settled: [{}] }
+      },
+    })
+
+    expect(peak).toBe(2)
+    expect(summary).toEqual({
+      completed: 4, failed: 1, businessWarnings: 1, checked: 9, paymentChecked: 4, refundChecked: 5,
+      paymentSettled: 3, paymentPending: 1, paymentFailed: 1, refundSettled: 3, refundPending: 1, refundFailed: 1,
+    })
+  })
+
+  it('advances the payment deadline before a due sweep and keeps payment work reconcile-only', () => {
+    expect(planPaymentReconciliationRun({ role: 'reconcile', startedAt: 1_000, nextRunAt: 900, intervalMs: 300_000 })).toEqual({ run: true, nextRunAt: 301_000 })
+    expect(planPaymentReconciliationRun({ role: 'reconcile', startedAt: 1_000, nextRunAt: 2_000, intervalMs: 300_000 })).toEqual({ run: false, nextRunAt: 2_000 })
+    expect(planPaymentReconciliationRun({ role: 'all', startedAt: 1_000, nextRunAt: 0, intervalMs: 300_000 })).toEqual({ run: false, nextRunAt: 0 })
+  })
+
   it('signs the image reconciliation listing as the reconcile worker', async () => {
     let requestHeaders: Headers | undefined
     await postImageGenerationReconciliation({
@@ -255,7 +313,7 @@ describe('worker production entry', () => {
   })
 
   it('requires explicit tenant scope and deduplicates configured workspaces', () => {
-    expect(readWorkerConfig(baseEnv)).toMatchObject({ workspaces: ['ws_a', 'ws_b'], batchSize: 100, workspaceBatchSize: 10, leaseMs: 180_000, storageReconciliationIntervalMs: 900_000, modelUsageReconciliationIntervalMs: 300_000, dependencyCheckIntervalMs: 10_000 })
+    expect(readWorkerConfig(baseEnv)).toMatchObject({ workspaces: ['ws_a', 'ws_b'], batchSize: 100, workspaceBatchSize: 10, leaseMs: 180_000, storageReconciliationIntervalMs: 900_000, paymentReconciliationIntervalMs: 300_000, paymentReconciliationBatchSize: 10, modelUsageReconciliationIntervalMs: 300_000, dependencyCheckIntervalMs: 10_000 })
     expect(() => readWorkerConfig({ DATABASE_URL: baseEnv.DATABASE_URL })).toThrow('WORKER_WORKSPACES')
     expect(readWorkerConfig({ DATABASE_URL: baseEnv.DATABASE_URL, WORKER_WORKSPACES: 'auto' })).toMatchObject({ workspaces: [], autoDiscoverWorkspaces: true })
   })
@@ -720,6 +778,12 @@ describe('worker production entry', () => {
   it('keeps reconciliation on a 15-minute default and accepts an explicit deployment override', () => {
     expect(readWorkerConfig(baseEnv).storageReconciliationIntervalMs).toBe(15 * 60_000)
     expect(readWorkerConfig({ ...baseEnv, STORAGE_RECONCILIATION_INTERVAL_MS: '1800000' }).storageReconciliationIntervalMs).toBe(1_800_000)
+  })
+
+  it('bounds automatic payment reconciliation configuration', () => {
+    expect(readWorkerConfig(baseEnv)).toMatchObject({ paymentReconciliationIntervalMs: 300_000, paymentReconciliationBatchSize: 10 })
+    expect(readWorkerConfig({ ...baseEnv, PAYMENT_RECONCILIATION_INTERVAL_MS: '600000', PAYMENT_RECONCILIATION_BATCH_SIZE: '20' })).toMatchObject({ paymentReconciliationIntervalMs: 600_000, paymentReconciliationBatchSize: 20 })
+    expect(() => readWorkerConfig({ ...baseEnv, PAYMENT_RECONCILIATION_BATCH_SIZE: '21' })).toThrow('at most 20')
   })
 
   it('enforces a global batch cap while sharing work fairly across tenants', async () => {

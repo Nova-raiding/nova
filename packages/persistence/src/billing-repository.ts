@@ -31,6 +31,10 @@ export interface BillingTransaction {
 export interface WalletDebitResult extends BillingTransaction { created: boolean }
 export interface WalletDebitInput { workspaceId: string; amountFen: number; idempotencyKey: string; actorId: string; description: string }
 export interface RechargeRefundReservation extends WalletDebitResult { completed: boolean }
+export interface ActiveRechargeRefund {
+  order: BillingOrder
+  reservation: BillingTransaction
+}
 
 export class WalletDebitIdempotencyConflictError extends Error {
   readonly code = 'WALLET_DEBIT_IDEMPOTENCY_CONFLICT'
@@ -91,6 +95,14 @@ export class PostgresBillingRepository {
     })
   }
 
+  async getOrderForActor(workspaceId: string, id: string, actorId: string) {
+    if (!actorId.trim()) throw new TypeError('actorId is required')
+    return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => {
+      const result = await client.query<OrderRow>('SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND id=$2 AND created_by_actor_id=$3', [workspaceId, id, actorId])
+      return result.rows[0] ? order(result.rows[0]) : undefined
+    })
+  }
+
   async getOrderByIdempotencyKey(workspaceId: string, idempotencyKey: string) {
     return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => {
       const result = await client.query<OrderRow>('SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND idempotency_key=$2', [workspaceId, idempotencyKey])
@@ -103,6 +115,57 @@ export class PostgresBillingRepository {
       const safeStates = states.length ? states : ['pending' as const]
       const result = await client.query<OrderRow>('SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND state = ANY($2::text[]) AND ($4::text IS NULL OR created_by_actor_id=$4) ORDER BY created_at DESC,id DESC LIMIT $3', [workspaceId, safeStates, Math.min(100, Math.max(1, limit)), actorId ?? null])
       return result.rows.map(order)
+    })
+  }
+
+  /** Oldest-first provider queue used by recurring reconciliation so newer
+   * checkout traffic cannot starve an older ambiguous payment forever. */
+  async listPendingProviderOrdersForReconciliation(workspaceId: string, limit = 100): Promise<BillingOrder[]> {
+    return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => {
+      const safeLimit = Math.min(100, Math.max(1, Number.isSafeInteger(limit) ? limit : 100))
+      const result = await client.query<OrderRow>("SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND state='pending' AND payment_mode='provider' ORDER BY created_at,id LIMIT $2", [workspaceId, safeLimit])
+      return result.rows.map(order)
+    })
+  }
+
+  /** Refund debits without a matching release are durable provider queries.
+   * Keep this lookup in SQL so reconciliation cannot silently miss a hold when
+   * the workspace has more transactions than the public history page limit. */
+  async listActiveRechargeRefunds(workspaceId: string, limit = 100): Promise<ActiveRechargeRefund[]> {
+    return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => {
+      const safeLimit = Math.min(100, Math.max(1, Number.isSafeInteger(limit) ? limit : 100))
+      const result = await client.query<OrderRow & {
+        reservation_id: string
+        reservation_type: BillingTransaction['type']
+        reservation_amount_fen: string | number
+        reservation_order_id: string
+        reservation_actor_id: string | null
+        reservation_description: string
+        reservation_created_at: string | Date
+      }>(`SELECT o.id,o.workspace_id,o.channel,o.amount_fen,o.state,o.payment_mode,o.payment_url,o.provider_trade_id,o.created_by_actor_id,o.created_at,o.updated_at,
+        r.id AS reservation_id,r.type AS reservation_type,r.amount_fen AS reservation_amount_fen,r.order_id AS reservation_order_id,r.actor_id AS reservation_actor_id,r.description AS reservation_description,r.created_at AS reservation_created_at
+        FROM billing_orders o
+        JOIN billing_transactions r ON r.workspace_id=o.workspace_id AND r.type='debit' AND left(r.order_id,length('recharge-refund:' || o.id || ':'))='recharge-refund:' || o.id || ':'
+        WHERE o.workspace_id=$1 AND o.state='paid' AND o.payment_mode='provider'
+          AND NOT EXISTS (
+            SELECT 1 FROM billing_transactions released
+            WHERE released.workspace_id=r.workspace_id AND released.type='refund' AND released.order_id='release:' || r.order_id
+          )
+        ORDER BY r.created_at,r.id
+        LIMIT $2`, [workspaceId, safeLimit])
+      return result.rows.map(row => ({
+        order: order(row),
+        reservation: transaction({
+          id: row.reservation_id,
+          workspace_id: row.workspace_id,
+          type: row.reservation_type,
+          amount_fen: row.reservation_amount_fen,
+          order_id: row.reservation_order_id,
+          actor_id: row.reservation_actor_id,
+          description: row.reservation_description,
+          created_at: row.reservation_created_at,
+        }),
+      }))
     })
   }
 

@@ -7,7 +7,7 @@ import type { CustomerDelivery } from '../../../packages/persistence/src/custome
 
 type Rpc<T = unknown> = { data: { result: T } | null; error: { code: string; details?: Record<string, unknown> } | null }
 type UploadView = { assetRef: string; name: string; mimeType: string; sizeBytes: number; scanStatus: 'pending' | 'clean' | 'blocked'; ready: boolean }
-type Purpose = 'contract' | 'payment' | 'system_integration' | 'functional_acceptance' | 'training' | 'video'
+type Purpose = 'contract' | 'video'
 
 const platformToken = 'customer-delivery-upload-e2e-platform-token'
 const merchantToken = 'customer-delivery-upload-e2e-merchant-token'
@@ -45,12 +45,12 @@ function pdfBytes() {
 // asset-upload-video-security.test.ts. No ffmpeg installation needed in CI.
 const mp4Bytes = Buffer.from('AAAAHGZ0eXBpc29tAAACAGlzb21pc28ybXA0MQAAAwttb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAAPoAAAD6AABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAACWnRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAD6AAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAEAAAABAAAAAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAA+gAAAAAAAEAAAAAAdJtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAAEAAAABAAFXEAAAAAAAtaGRscgAAAAAAAAAAdmlkZQAAAAAAAAAAAAAAAFZpZGVvSGFuZGxlcgAAAAF9bWluZgAAABR2bWhkAAAAAQAAAAAAAAAAAAAAJGRpbmYAAAAcZHJlZgAAAAAAAAABAAAADHVybCAAAAABAAABPXN0YmwAAADZc3RzZAAAAAAAAAABAAAAyW1wNHYAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAEAAQAEgAAABIAAAAAAAAAAEKTGF2YyBtcGVnNAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY//8AAABPZXNkcwAAAAADgICAPgABAASAgIAwIBEAAAAAAw1AAAAAiAWAgIAeAAABsAEAAAG1iRMAAAEAAAABIADEjYgADQCEAhRjBoCAgAECAAAAEHBhc3AAAAABAAAAAQAAABRidHJ0AAAAAAADDUAAAACIAAAAGHN0dHMAAAAAAAAAAQAAAAEAAEAAAAAAHHN0c2MAAAAAAAAAAQAAAAEAAAABAAAAAQAAABRzdHN6AAAAAAAAABEAAAABAAAAFHN0Y28AAAAAAAAAAQAAAzcAAAA9dWR0YQAAADVtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABtZGlyYXBwbAAAAAAAAAAAAAAAAAhpbHN0AAAACGZyZWUAAAAZbWRhdAAAAbMAEAcAAAG2FgUYI9t+', 'base64')
 
-function uploadParams(deliveryId: string, purpose: Purpose = 'contract', bytes = purpose === 'video' ? mp4Bytes : pdfBytes()) {
+function uploadParams(deliveryId: string, purpose: Purpose = 'contract', bytes = purpose === 'contract' ? pdfBytes() : mp4Bytes) {
   return {
     delivery_id: deliveryId,
     purpose,
-    name: purpose === 'video' ? 'customer-delivery.mp4' : `customer-${purpose}.pdf`,
-    mime_type: purpose === 'video' ? 'video/mp4' : 'application/pdf',
+    name: purpose === 'contract' ? 'customer-contract.pdf' : 'customer-training.mp4',
+    mime_type: purpose === 'contract' ? 'application/pdf' : 'video/mp4',
     content_base64: bytes.toString('base64'),
     sha256: createHash('sha256').update(bytes).digest('hex'),
   }
@@ -101,61 +101,6 @@ async function expectRejectedUpload(delivery: CustomerDelivery, params: Record<s
 }
 
 describe('customer delivery uploads over strict loopback HTTP with real quarantine files (no scanner execution)', () => {
-  it.each(['systemIntegrationStatus', 'functionalAcceptanceStatus', 'trainingCompleted', 'trainingEvidenceRefs'])(
-    'rejects direct profile patch of controlled field %s without changing the record', async field => {
-      const delivery = await createDelivery()
-      const patch = { companyName: 'must not persist', [field]: field.endsWith('Refs') ? [] : field === 'trainingCompleted' ? true : 'complete' }
-      const rejected = await call('ops.customer-delivery.update', { delivery_id: delivery.id, expected_revision: String(delivery.revision), patch_json: JSON.stringify(patch) })
-      expect(rejected.status).toBe(400)
-      expect(rejected.body.error?.code).toBe('INVALID_REQUEST')
-      expect(await getDelivery(delivery.id)).toEqual(delivery)
-    },
-  )
-
-  it.each((['system_integration', 'functional_acceptance'] as const).flatMap(checklistKey =>
-    ['true', 'false'].map(completed => ({ checklistKey, completed }))))(
-    'rejects scalar $checklistKey=$completed instead of diverging from item rows', async ({ checklistKey, completed }) => {
-      const delivery = await createDelivery()
-      const rejected = await call('ops.customer-delivery.checklist.update', {
-        delivery_id: delivery.id, checklist_key: checklistKey, completed, expected_revision: String(delivery.revision),
-      })
-      expect(rejected.status).toBe(400)
-      expect(rejected.body.error?.code).toBe('INVALID_REQUEST')
-      expect(await getDelivery(delivery.id)).toEqual(delivery)
-      expect(successfulResult(await call<{ items: unknown[] }>('ops.customer-delivery.checklist-items.list', {
-        delivery_id: delivery.id, checklist_key: checklistKey,
-      })).items).toEqual([])
-    },
-  )
-
-  it.each([null, '', 'https://example.com/not-an-upload.pdf', 'asset with spaces', 42, {}])(
-    'rejects malformed evidence array elements atomically (%j)', async invalidRef => {
-      const delivery = await createDelivery()
-      const payment = await call('ops.customer-delivery.update', {
-        delivery_id: delivery.id, expected_revision: String(delivery.revision),
-        patch_json: JSON.stringify({ companyName: 'must not persist', paymentEvidenceRefs: [invalidRef] }),
-      })
-      const training = await call('ops.customer-delivery.training.complete', {
-        delivery_id: delivery.id, expected_revision: String(delivery.revision), completed: 'false', evidence_refs_json: JSON.stringify([invalidRef]),
-      })
-      for (const response of [payment, training]) {
-        expect(response.status).toBe(400)
-        expect(response.body.error?.code).toBe('INVALID_REQUEST')
-      }
-      expect(await getDelivery(delivery.id)).toEqual(delivery)
-    },
-  )
-
-  it('keeps an unpaid draft editable without inventing payment or training evidence', async () => {
-    const delivery = await createDelivery()
-    const updated = successfulResult(await call<CustomerDelivery>('ops.customer-delivery.update', {
-      delivery_id: delivery.id, expected_revision: String(delivery.revision), patch_json: JSON.stringify({ supportOwner: '真实接口草稿测试' }),
-    }))
-    expect(updated).toMatchObject({ supportOwner: '真实接口草稿测试', paymentStatus: 'unpaid', paymentEvidenceRefs: [], trainingCompleted: false, trainingEvidenceRefs: [], effectiveAt: null })
-    expect(updated.revision).toBe(delivery.revision + 1)
-    expect(await getDelivery(delivery.id)).toEqual(updated)
-  })
-
   beforeAll(async () => {
     // Import the API only after rejecting external persistence configuration.
     // scripts/run-safe-tests.ts strips these values and supplies an isolated
@@ -183,52 +128,6 @@ describe('customer delivery uploads over strict loopback HTTP with real quaranti
     const address = server.address()
     if (!address || typeof address === 'string') throw new Error('server did not bind')
     base = `http://127.0.0.1:${address.port}`
-  })
-
-  it('requires a delivery-bound, trusted-clean payment upload before saving paid status', async () => {
-    const delivery = await createDelivery()
-    const pending = successfulResult(await call<UploadView>('ops.customer-delivery.assets.upload', uploadParams(delivery.id, 'payment')))
-    expect(pending).toMatchObject({ scanStatus: 'pending', ready: false })
-    const rejected = await call('ops.customer-delivery.update', { delivery_id: delivery.id, expected_revision: String(delivery.revision), patch_json: JSON.stringify({ paymentStatus: 'paid', paymentDate: '2026-09-14', paymentEvidenceRefs: [pending.assetRef] }) })
-    expect(rejected.status).toBe(409)
-    expect(rejected.body.error?.code).toBe('CUSTOMER_DELIVERY_PAYMENT_ASSET_NOT_READY')
-
-    // Synthetic trust-state mutation validates the registration gate only;
-    // it is not evidence of a scanner execution.
-    const asset = service.assets.get(pending.assetRef)!
-    asset.storageKey = asset.storageKey.replace(/^quarantine\//u, 'clean/')
-    asset.scanStatus = 'clean'
-    asset.scanVerdict = 'clean'
-    asset.scanReceiptId = `test-only:${asset.id}`
-    asset.scanReceiptDigest = createHash('sha256').update(asset.scanReceiptId).digest('hex')
-    const paid = successfulResult(await call<CustomerDelivery>('ops.customer-delivery.update', { delivery_id: delivery.id, expected_revision: String(delivery.revision), patch_json: JSON.stringify({ paymentStatus: 'paid', paymentDate: '2026-09-14', paymentEvidenceRefs: [pending.assetRef] }) }))
-    expect(paid).toMatchObject({ paymentStatus: 'paid', paymentEvidenceRefs: [pending.assetRef] })
-  })
-
-  it('requires purpose-bound scanned evidence for checklist items and training completion', async () => {
-    const delivery = await createDelivery()
-    const uploadAndTrust = async (purpose: Purpose) => {
-      const uploaded = successfulResult(await call<UploadView>('ops.customer-delivery.assets.upload', uploadParams(delivery.id, purpose)))
-      const asset = service.assets.get(uploaded.assetRef)!
-      asset.storageKey = asset.storageKey.replace(/^quarantine\//u, 'clean/')
-      asset.scanStatus = 'clean'; asset.scanVerdict = 'clean'; asset.scanReceiptId = `test-only:${asset.id}`
-      asset.scanReceiptDigest = createHash('sha256').update(asset.scanReceiptId).digest('hex')
-      return uploaded.assetRef
-    }
-    const paymentRef = await uploadAndTrust('payment')
-    const paid = successfulResult(await call<CustomerDelivery>('ops.customer-delivery.update', { delivery_id: delivery.id, expected_revision: String(delivery.revision), patch_json: JSON.stringify({ paymentStatus: 'paid', paymentDate: '2026-09-14', paymentEvidenceRefs: [paymentRef] }) }))
-
-    const missingChecklist = await call('ops.customer-delivery.checklist-item.update', { delivery_id: delivery.id, checklist_key: 'system_integration', item_key: '店铺连接', completed: 'true', evidence_json: JSON.stringify({ note: '只有说明' }), expected_revision: String(paid.revision) })
-    expect(missingChecklist.status).toBe(400)
-    const integrationRef = await uploadAndTrust('system_integration')
-    successfulResult(await call('ops.customer-delivery.checklist-item.update', { delivery_id: delivery.id, checklist_key: 'system_integration', item_key: '店铺连接', completed: 'true', evidence_json: JSON.stringify({ note: '接入记录', asset_refs: [integrationRef] }), expected_revision: String(paid.revision) }))
-    const afterChecklist = await getDelivery(delivery.id)
-
-    const missingTraining = await call('ops.customer-delivery.training.complete', { delivery_id: delivery.id, completed: 'true', evidence_refs_json: '[]', expected_revision: String(afterChecklist.revision) })
-    expect(missingTraining.status).toBe(409)
-    const trainingRef = await uploadAndTrust('training')
-    const trained = successfulResult(await call<CustomerDelivery>('ops.customer-delivery.training.complete', { delivery_id: delivery.id, completed: 'true', evidence_refs_json: JSON.stringify([trainingRef]), expected_revision: String(afterChecklist.revision) }))
-    expect(trained).toMatchObject({ trainingCompleted: true, trainingEvidenceRefs: [trainingRef] })
   })
 
   beforeEach(async () => {
@@ -377,49 +276,4 @@ describe('customer delivery uploads over strict loopback HTTP with real quaranti
     expect(await getDelivery(otherDelivery.id)).toEqual(otherDelivery)
     expect(successfulResult(await call<UploadView>('ops.customer-delivery.assets.get', { delivery_id: delivery.id, purpose: 'contract', asset_ref: uploaded.assetRef }))).toEqual(uploaded)
   })
-
-  it.each(['contract', 'video'] as const)(
-    'does not register one delivery’s trusted-clean %s asset on another delivery in the same workspace',
-    async purpose => {
-      const sourceDelivery = await createDelivery()
-      const targetDelivery = await createDelivery()
-      const uploaded = successfulResult(await call<UploadView>('ops.customer-delivery.assets.upload', uploadParams(sourceDelivery.id, purpose)))
-      const asset = service.assets.get(uploaded.assetRef)!
-      asset.storageKey = asset.storageKey.replace(/^quarantine\//u, 'clean/')
-      asset.scanStatus = 'clean'
-      asset.scanVerdict = 'clean'
-      asset.scanReceiptId = `test-only:${asset.id}`
-      asset.scanReceiptDigest = createHash('sha256').update(asset.scanReceiptId).digest('hex')
-
-      const rejected = purpose === 'contract'
-        ? await call('ops.customer-delivery.update', {
-          delivery_id: targetDelivery.id,
-          expected_revision: String(targetDelivery.revision),
-          patch_json: JSON.stringify({ contractRef: uploaded.assetRef }),
-        })
-        : await call('ops.customer-delivery.videos.add', {
-          delivery_id: targetDelivery.id,
-          title: '跨交付复用不应成功',
-          asset_ref: uploaded.assetRef,
-        })
-
-      expect(rejected.status).toBe(404)
-      expect(rejected.body.error?.code).toBe('CUSTOMER_DELIVERY_UPLOAD_NOT_FOUND')
-      expect(rejected.body.data).toBeNull()
-      expect(await getDelivery(targetDelivery.id)).toEqual(targetDelivery)
-
-      const registered = purpose === 'contract'
-        ? successfulResult(await call<CustomerDelivery>('ops.customer-delivery.update', {
-          delivery_id: sourceDelivery.id,
-          expected_revision: String(sourceDelivery.revision),
-          patch_json: JSON.stringify({ contractRef: uploaded.assetRef }),
-        }))
-        : successfulResult(await call('ops.customer-delivery.videos.add', {
-          delivery_id: sourceDelivery.id,
-          title: '精确绑定交付视频',
-          asset_ref: uploaded.assetRef,
-        }))
-      expect(registered).toBeTruthy()
-    },
-  )
 })

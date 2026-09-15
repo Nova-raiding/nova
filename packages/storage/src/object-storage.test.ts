@@ -215,6 +215,15 @@ describe('S3CompatibleObjectStorage', () => {
     }
   })
 
+  it('allows AES256 cloud encryption without a KMS key', () => {
+    expect(parseS3CompatibleObjectStorageConfig({ endpoint: 'https://s3.example.test', bucket: 'merchant-assets', region: 'cn-shanghai', sseMode: 'AES256' })).toMatchObject({ sseMode: 'AES256' })
+    expect(() => parseS3CompatibleObjectStorageConfig({ endpoint: 'https://s3.example.test', bucket: 'merchant-assets', region: 'cn-shanghai', sseMode: 'none' })).toThrowError('对象存储加密模式必须是 AES256 或 aws:kms')
+  })
+
+  it('requires a KMS key when aws:kms encryption is selected', () => {
+    expect(() => parseS3CompatibleObjectStorageConfig({ endpoint: 'https://s3.example.test', bucket: 'merchant-assets', region: 'cn-shanghai', sseMode: 'aws:kms' })).toThrowError('aws:kms 模式必须配置有效 KMS key')
+  })
+
   it('rejects unsafe key prefixes even when the transport is injected directly', () => {
     const transport: CloudObjectTransport = { async head() { return null }, async get() { throw new Error('unused') }, async put() {}, async delete() {} }
     expect(() => new S3CompatibleObjectStorage(transport, { keyPrefix: '../outside' })).toThrowError('对象存储 key 前缀无效')

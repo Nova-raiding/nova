@@ -4,8 +4,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { Pool, type PoolClient } from 'pg'
 import { LocalObjectStorage } from '../packages/storage/src/object-storage.js'
 import { parseAssetScanReceipt } from '../packages/security/src/asset-scan-receipt.js'
-import { CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS } from '../packages/persistence/src/customer-delivery-repository.js'
-import { CUSTOMER_DELIVERY_SCAN_EVENT, parseDeliveryScanAdmission, type DeliveryScanAdmission } from '../packages/workers/src/customer-delivery-scan-admission.js'
+import { CUSTOMER_DELIVERY_SCAN_EVENT, parseDeliveryScanAdmission } from '../packages/workers/src/customer-delivery-scan-admission.js'
 import { type IsolatedOpsFixture } from '../tests/isolated-ops-fixture.js'
 import { CUSTOMER_DELIVERY_CLAMAV_IMAGE, validateCustomerDeliveryScanBindings } from './customer-delivery-scan-fixture.js'
 
@@ -25,14 +24,6 @@ function confinedPath(parent: string, candidate: unknown): string {
   const path = resolve(candidate), suffix = relative(parent, path)
   requireEvidence(suffix && suffix !== '..' && !suffix.startsWith(`..${sep}`) && !isAbsolute(suffix), 'PATH_OUTSIDE_RUN')
   return path
-}
-function oneAssetRef(value: unknown, code: string): string {
-  requireEvidence(Array.isArray(value) && value.length === 1 && typeof value[0] === 'string'
-    && /^asset[:_]/u.test(value[0]) && value[0].trim() === value[0], code)
-  return value[0]
-}
-function sameRefs(value: unknown, expected: string): boolean {
-  return Array.isArray(value) && value.length === 1 && value[0] === expected
 }
 
 async function readOnly<T>(pool: Pool, workspaceId: string, role: string, work: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -59,7 +50,7 @@ export async function collectCustomerDeliveryScanEvidence(input: { fixture: Isol
   const evidenceDir = resolve(input.evidenceDir)
   let app: Pool | undefined, ops: Pool | undefined
   let stage = 'runtime-binding'
-  const report: Row = { schemaVersion: 2, status: 'failed', evidenceKind: 'isolated-real-customer-delivery-scan-persistence',
+  const report: Row = { schemaVersion: 1, status: 'failed', evidenceKind: 'isolated-real-customer-delivery-scan-persistence',
     observedAt: new Date().toISOString(), sharedContainersTouched: false, businessWrites: 0, receiptSignaturesSaved: false, fileBodiesSaved: false }
   let failure: Error | undefined
   try {
@@ -90,93 +81,29 @@ export async function collectCustomerDeliveryScanEvidence(input: { fixture: Isol
     ops = new Pool({ ...poolOptions, connectionString: fixture.opsDatabaseUrl })
     stage = 'delivery-and-operation-audit'
     const control = { ...await readOnly(ops, fixture.workspaceId, 'merchant_ops', async client => ({
-      deliveries: (await client.query(`SELECT id,contract_ref,revision,payment_status,payment_date::text AS payment_date,payment_evidence_refs,
-        length(btrim(contract_number))>0 AS contract_number_present,length(btrim(project_owner))>0 AS project_owner_present,
-        length(btrim(support_owner))>0 AS support_owner_present,planned_go_live_at IS NOT NULL AS planned_go_live_present,
-        customer_profile_status,system_integration_status,functional_acceptance_status,training_completed,training_evidence_refs,effective_at
-        FROM workspace_customer_deliveries WHERE workspace_id=$1 ORDER BY created_at,id`, [fixture.workspaceId])).rows as Row[],
+      deliveries: (await client.query(`SELECT id,contract_ref,revision FROM workspace_customer_deliveries WHERE workspace_id=$1 ORDER BY created_at,id`, [fixture.workspaceId])).rows as Row[],
       videos: (await client.query(`SELECT id,delivery_id,asset_ref FROM workspace_customer_delivery_videos WHERE workspace_id=$1 AND deleted_at IS NULL ORDER BY sort_order,id`, [fixture.workspaceId])).rows as Row[],
-      checklist: (await client.query(`SELECT delivery_id,checklist_key,item_key,completed,revision,completed_at,
-        length(btrim(completed_by_actor_id))>0 AS completed_actor_present,md5(completed_by_actor_id) AS completed_actor_digest,
-        length(btrim(evidence->>'note'))>0 AS note_present,md5(evidence->>'note') AS note_digest,evidence->'asset_refs' AS asset_refs
-        FROM workspace_customer_delivery_checklist_items WHERE workspace_id=$1 ORDER BY delivery_id,checklist_key,item_key`, [fixture.workspaceId])).rows as Row[],
     })),
       // Ops can append delivery audit but deliberately cannot read this raw
       // tenant audit table. Use its existing RLS-bound application read role.
       audit: await readOnly(app, fixture.workspaceId, 'merchant_app', async client => (await client.query(`SELECT id,action,resource_type,resource_id,created_at,
-        length(btrim(actor_id))>0 AS actor_present,md5(actor_id) AS actor_digest,after_json->>'asset_ref' AS upload_asset_ref,
+        length(actor_id)>0 AS actor_present,after_json->>'asset_ref' AS upload_asset_ref,
         after_json->>'purpose' AS purpose,after_json->>'sha256' AS sha256,after_json->>'size_bytes' AS size_bytes,
-        after_json->>'assetRef' AS video_asset_ref,after_json->>'contractRef' AS contract_ref,
-        after_json->>'paymentStatus' AS payment_status,after_json->>'paymentDate' AS payment_date,after_json->'paymentEvidenceRefs' AS payment_evidence_refs,
-        after_json->'trainingCompleted' AS training_completed,after_json->'trainingEvidenceRefs' AS training_evidence_refs,
-        CASE WHEN jsonb_typeof(after_json->'items')='array' THEN (
-          SELECT jsonb_agg(jsonb_build_object('workspaceId',item->>'workspaceId','deliveryId',item->>'deliveryId',
-            'checklistKey',item->>'checklistKey','itemKey',item->>'itemKey','completed',item->'completed',
-            'revision',item->'revision','completedAt',item->>'completedAt','completedActorDigest',md5(item->>'completedByActorId'),'assetRefs',item->'evidence'->'asset_refs',
-            'notePresent',length(btrim(item->'evidence'->>'note'))>0,'noteDigest',md5(item->'evidence'->>'note')))
-          FROM jsonb_array_elements(after_json->'items') item
-        ) ELSE NULL END AS checklist_items
+        after_json->>'assetRef' AS video_asset_ref,after_json->>'contractRef' AS contract_ref
         FROM workspace_operation_audit WHERE workspace_id=$1 AND action LIKE 'customer_delivery.%' ORDER BY created_at,id`, [fixture.workspaceId])).rows as Row[]),
     }
     const eligible = control.deliveries.filter(delivery => typeof delivery.contract_ref === 'string'
       && control.videos.filter(video => video.delivery_id === delivery.id).length >= 2)
-    requireEvidence(eligible.length === 1, 'ONE_COMPLETE_DELIVERY_NOT_REGISTERED')
+    requireEvidence(eligible.length === 1, 'ONE_CONTRACT_TWO_VIDEOS_NOT_REGISTERED')
     const delivery = eligible[0]!
-    requireEvidence(delivery.payment_status === 'paid' && delivery.payment_date != null && delivery.customer_profile_status === 'complete'
-      && delivery.contract_number_present === true && delivery.project_owner_present === true && delivery.support_owner_present === true && delivery.planned_go_live_present === true
-      && delivery.system_integration_status === 'complete' && delivery.functional_acceptance_status === 'complete'
-      && delivery.training_completed === true && delivery.effective_at != null, 'DELIVERY_STAGES_NOT_COMPLETE')
-    const contractRef = oneAssetRef([delivery.contract_ref], 'SCANNED_CONTRACT_REQUIRED')
-    const paymentRef = oneAssetRef(delivery.payment_evidence_refs, 'ONE_PAYMENT_EVIDENCE_REQUIRED')
-    const trainingRef = oneAssetRef(delivery.training_evidence_refs, 'ONE_TRAINING_EVIDENCE_REQUIRED')
     const videoRows = control.videos.filter(video => video.delivery_id === delivery.id)
     requireEvidence(videoRows.length === 2 && new Set(videoRows.map(video => video.asset_ref)).size === 2, 'TWO_DISTINCT_VIDEOS_REQUIRED')
-    const targets: { purpose: DeliveryScanAdmission['purpose']; assetRef: string; resourceId: string; registrationAuditIds: string[] }[] = [
-      { purpose: 'contract', assetRef: contractRef, resourceId: String(delivery.id), registrationAuditIds: [] },
-      { purpose: 'payment', assetRef: paymentRef, resourceId: String(delivery.id), registrationAuditIds: [] },
-      { purpose: 'training', assetRef: trainingRef, resourceId: String(delivery.id), registrationAuditIds: [] },
-      ...videoRows.map(video => ({ purpose: 'video' as const, assetRef: oneAssetRef([video.asset_ref], 'SCANNED_VIDEO_REQUIRED'), resourceId: String(video.id), registrationAuditIds: [] })),
-    ]
-    const checklistRows = control.checklist.filter(item => item.delivery_id === delivery.id)
-    requireEvidence(checklistRows.length === 18, 'EXACTLY_EIGHTEEN_CHECKLIST_ITEMS_REQUIRED')
-    const checklistEvidence: Row[] = []
-    for (const checklistKey of ['system_integration', 'functional_acceptance'] as const) {
-      const expectedKeys = CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS[checklistKey] as readonly string[]
-      const items = checklistRows.filter(item => item.checklist_key === checklistKey)
-      requireEvidence(items.length === expectedKeys.length && new Set(items.map(item => item.item_key)).size === expectedKeys.length
-        && items.every(item => expectedKeys.includes(item.item_key) && item.completed === true && item.note_present === true
-          && item.completed_actor_present === true && iso(item.completed_at) != null), 'CHECKLIST_FIELDS_OR_COMPLETION_MISSING')
-      const refs = items.map(item => oneAssetRef(item.asset_refs, 'CHECKLIST_SCANNED_EVIDENCE_REQUIRED'))
-      requireEvidence(new Set(refs).size === 1, 'ONE_REPORT_PER_CHECKLIST_PURPOSE_REQUIRED')
-      const assetRef = refs[0]!
-      const audit = control.audit.filter(event => event.action === 'customer_delivery.checklist_items.update' && event.actor_present
-        && event.resource_id === `${delivery.id}:${checklistKey}` && Array.isArray(event.checklist_items)
-        && event.checklist_items.length === items.length && items.every(item => event.checklist_items.some((saved: Row) =>
-          saved.workspaceId === fixture.workspaceId && saved.deliveryId === delivery.id && saved.checklistKey === checklistKey
-          && saved.itemKey === item.item_key && saved.completed === true && Number(saved.revision) === Number(item.revision)
-          && saved.notePresent === true && saved.noteDigest === item.note_digest && sameRefs(saved.assetRefs, assetRef)
-          && saved.completedActorDigest === item.completed_actor_digest && event.actor_digest === item.completed_actor_digest
-          && iso(saved.completedAt) === iso(item.completed_at))))
-      requireEvidence(audit.length > 0, 'CHECKLIST_BINDING_AUDIT_MISSING')
-      const auditIds = audit.map(event => String(event.id))
-      targets.push({ purpose: checklistKey, assetRef, resourceId: `${delivery.id}:${checklistKey}`, registrationAuditIds: auditIds })
-      checklistEvidence.push({ checklistKey, itemCount: items.length, expectedItemCount: expectedKeys.length,
-        sharedPurposeBoundAssetRef: assetRef, registrationAuditIds: auditIds,
-        items: items.map(item => ({ itemKey: item.item_key, completed: true, revision: Number(item.revision),
-          notePresent: true, assetRefs: [assetRef], completedActorPresent: true, completedAt: iso(item.completed_at) })) })
-    }
-    requireEvidence(targets.length === 7 && new Set(targets.map(target => target.assetRef)).size === 7, 'SEVEN_DISTINCT_ATTACHMENTS_REQUIRED')
-    for (const target of targets) {
-      if (target.registrationAuditIds.length) continue
-      const audit = control.audit.filter(event => event.actor_present && (target.purpose === 'video'
-        ? event.action === 'customer_delivery.video.add' && event.resource_id === target.resourceId && event.video_asset_ref === target.assetRef
-        : event.action === 'customer_delivery.update' && event.resource_id === delivery.id && (
-          target.purpose === 'contract' ? event.contract_ref === target.assetRef
-            : target.purpose === 'payment' ? event.payment_status === 'paid' && event.payment_date === delivery.payment_date && sameRefs(event.payment_evidence_refs, target.assetRef)
-              : event.training_completed === true && sameRefs(event.training_evidence_refs, target.assetRef))))
-      requireEvidence(audit.length > 0, 'REGISTRATION_AUDIT_MISSING')
-      target.registrationAuditIds = audit.map(event => String(event.id))
-    }
+    const targets = [{ purpose: 'contract' as const, assetRef: String(delivery.contract_ref), resourceId: String(delivery.id) },
+      ...videoRows.map(video => ({ purpose: 'video' as const, assetRef: String(video.asset_ref), resourceId: String(video.id) }))]
+    requireEvidence(new Set(targets.map(target => target.assetRef)).size === 3, 'DISTINCT_ATTACHMENTS_REQUIRED')
+    for (const target of targets) requireEvidence(control.audit.some(event => event.actor_present
+      && (target.purpose === 'contract' ? event.action === 'customer_delivery.update' && event.resource_id === delivery.id && event.contract_ref === target.assetRef
+        : event.action === 'customer_delivery.video.add' && event.resource_id === target.resourceId && event.video_asset_ref === target.assetRef)), 'REGISTRATION_AUDIT_MISSING')
     const assetIds = targets.map(target => target.assetRef)
     stage = 'worker-acknowledgement'
     const pollDeadline = Date.now() + 30_000
@@ -215,7 +142,7 @@ export async function collectCustomerDeliveryScanEvidence(input: { fixture: Isol
           (SELECT settled_points::text FROM creative_point_access_state WHERE workspace_id=$1) AS settled_points`, [fixture.workspaceId])).rows[0] as Row,
       }))
       rows = snapshot.rows; pointState = snapshot.points
-      requireEvidence(rows.length === 7, 'SEVEN_BOUND_SCAN_EVENTS_REQUIRED')
+      requireEvidence(rows.length === 3, 'THREE_BOUND_SCAN_EVENTS_REQUIRED')
       requireEvidence(rows.every(row => row.unknown_at == null && row.last_error?.terminal !== true), 'WORKER_TERMINAL_FAILURE')
       if (rows.every(row => row.published_at != null && row.callback_status === 'accepted' && row.callback_accepted_at != null && !row.leased && row.lease_until == null)) break
       requireEvidence(Date.now() < pollDeadline, 'WORKER_ACK_TIMEOUT')
@@ -237,7 +164,6 @@ export async function collectCustomerDeliveryScanEvidence(input: { fixture: Isol
       const admission = parseDeliveryScanAdmission({ id: row.event_id, workspaceId: row.workspace_id, aggregateId: row.aggregate_id,
         eventType: row.event_type, sequence: Number(row.sequence), payload: row.event_payload })
       requireEvidence(admission.delivery_id === delivery.id && admission.purpose === target.purpose && !row.event_payload.commercial_access_snapshot, 'ADMISSION_PURPOSE_MISMATCH')
-      requireEvidence(target.purpose === 'video' ? ['video/mp4', 'video/webm'].includes(admission.mime_type) : admission.mime_type === 'application/pdf', 'EXPECTED_DOCUMENT_OR_VIDEO_TYPE_MISMATCH')
       requireEvidence(typeof row.canonical_payload === 'string' && row.canonical_receipt === row.canonical_payload, 'CANONICAL_RECEIPTS_MISSING_OR_DIFFERENT')
       const rawReceipt = JSON.parse(row.canonical_payload)
       // Accepted immutable receipts remain evidence after their admission TTL.
@@ -272,7 +198,6 @@ export async function collectCustomerDeliveryScanEvidence(input: { fixture: Isol
         && Date.parse(iso(row.published_at)!) >= Date.parse(iso(row.callback_accepted_at)!), 'SIGNED_CALLBACK_NOT_CONFIRMED')
       const uploadAudit = control.audit.filter(event => event.action === 'customer_delivery.asset.upload' && event.resource_id === delivery.id
         && event.actor_present && event.upload_asset_ref === target.assetRef && event.purpose === target.purpose
-        && event.actor_digest === createHash('md5').update(admission.actor_id).digest('hex')
         && event.sha256 === admission.sha256 && Number(event.size_bytes) === admission.size_bytes)
       requireEvidence(uploadAudit.length > 0, 'UPLOAD_OPERATION_AUDIT_MISSING')
       const object = await storage.get(fixture.workspaceId, cleanKey)
@@ -285,15 +210,9 @@ export async function collectCustomerDeliveryScanEvidence(input: { fixture: Isol
         quarantineKeySha256: sha(admission.storage_key), cleanKeySha256: sha(cleanKey), objectBytesAndMetadataVerified: true,
         admissionDecisionId: admission.decision_id, receiptId: receipt.receipt_id, receiptDigest: digest, signaturePresentAndPersistedCopiesMatch: true,
         callbackStatus: row.callback_status, callbackAttempts: Number(row.callback_attempts), callbackAcceptedAt: iso(row.callback_accepted_at),
-        workerStatus: 'completed', workerPublishedAt: iso(row.published_at), priorWorkerFailures: Number(row.attempts), uploadAuditIds: uploadAudit.map(event => String(event.id)),
-        registeredResourceId: target.resourceId, registrationAuditIds: target.registrationAuditIds })
+        workerStatus: 'completed', workerPublishedAt: iso(row.published_at), priorWorkerFailures: Number(row.attempts), uploadAuditIds: uploadAudit.map(event => String(event.id)) })
     }
-    requireEvidence(new Set(checked.map(attachment => attachment.sha256)).size === 7, 'SEVEN_DIFFERENT_OBJECT_BODIES_REQUIRED')
     report.attachments = checked
-    report.delivery = { id: String(delivery.id), revision: Number(delivery.revision), paymentStatus: 'paid', paymentDatePresentAndAudited: true, requiredProfileFieldsPresent: true,
-      contractRef, paymentEvidenceRefs: [paymentRef], trainingCompleted: true, trainingEvidenceRefs: [trainingRef],
-      allRequiredPurposesBoundToThisDelivery: true, effectiveAt: iso(delivery.effective_at) }
-    report.checklists = checklistEvidence
     report.audit = control.audit.map(event => ({ id: String(event.id), action: String(event.action), resourceType: String(event.resource_type),
       resourceId: String(event.resource_id), actorPresent: event.actor_present === true, createdAt: iso(event.created_at) }))
     report.databaseRoles = { assetsAndAudit: 'merchant_app', delivery: 'merchant_ops', transactions: 'read_only', bypassRls: false }

@@ -1,4 +1,4 @@
-import type { ApiHealth, PlatformModelStatus } from './api.js'
+import type { ApiHealth, PlatformModelStatus } from './api'
 
 export type MerchantEnvironmentState =
   | 'offline'
@@ -11,146 +11,138 @@ export type MerchantEnvironmentState =
 export interface MerchantEnvironmentPresentation {
   state: MerchantEnvironmentState
   tone: 'ready' | 'warning'
-  topbarPrefix: '系统健康' | '系统状态'
   topbarLabel: string
   title: string
   detail: string
   facts: string[]
-  nextActions: string[]
+  actions: string[]
+}
+
+interface MerchantEnvironmentInput {
+  apiBaseUrl?: string
+  apiOnline: boolean | null
+  apiHealth: ApiHealth | null
+  modelStatus: PlatformModelStatus | null
+  modelStatusRead: boolean
+}
+
+const modeLabels: Record<string, string> = {
+  fixture: '本地演示',
+  demo: '演示',
+  test: '测试',
+  local: '本地开发',
+  production: '生产',
 }
 
 const demoModes = new Set(['fixture', 'demo', 'test', 'local'])
 
-function modelSummary(
+function modelFact(
   modelStatus: PlatformModelStatus | null,
   modelStatusRead: boolean,
-  productionReady: boolean,
-): string {
-  if (modelStatus?.state === 'ready')
-    return productionReady
-      ? '模型中转已就绪。'
-      : '模型中转仅在当前环境可用，不代表生产就绪。'
-  if (modelStatus)
-    return '模型中转未就绪，生成、图片、OCR 和视频能力会由服务端阻止。'
-  return modelStatusRead
-    ? '模型中转状态读取失败，生成能力不会被放行。'
-    : '正在读取模型中转状态。'
+) {
+  if (!modelStatusRead) return '模型中转：读取中'
+  if (!modelStatus) return '模型中转：读取失败，服务端不会放行生成'
+  return `模型中转：${modelStatus.state === 'ready' ? '当前环境可用' : '未就绪，服务端会阻止生成'}`
 }
 
 export function resolveMerchantEnvironmentStatus({
-  apiConfigured,
+  apiBaseUrl,
   apiOnline,
-  health,
+  apiHealth,
   modelStatus,
   modelStatusRead,
-}: {
-  apiConfigured: boolean
-  apiOnline: boolean | null
-  health: ApiHealth | null
-  modelStatus: PlatformModelStatus | null
-  modelStatusRead: boolean
-}): MerchantEnvironmentPresentation {
-  if (!apiConfigured)
+}: MerchantEnvironmentInput): MerchantEnvironmentPresentation {
+  if (!apiBaseUrl) {
     return {
       state: 'offline',
       tone: 'warning',
-      topbarPrefix: '系统状态',
       topbarLabel: '离线演示',
-      title: '当前为离线演示模式',
-      detail: '未配置 API 地址，不会读取或写入真实店铺数据；配置后再开始真实操作。',
-      facts: ['API：未配置', '真实店铺读写：未启用'],
-      nextActions: [],
+      title: '离线演示 · 不可上线',
+      detail: '未配置工作区 API，不会读取或写入真实店铺数据。',
+      facts: ['API 连通：未配置', '生产门禁：未确认', modelFact(modelStatus, modelStatusRead)],
+      actions: ['配置工作区 API 后重新检查上线状态。'],
     }
+  }
 
-  if (apiOnline === false)
+  if (apiOnline === false) {
     return {
       state: 'unavailable',
       tone: 'warning',
-      topbarPrefix: '系统状态',
       topbarLabel: 'API 不可用',
       title: 'API 暂不可用',
-      detail: '当前不会伪造同步、生成或发布成功；请检查 API 地址和服务状态。',
-      facts: ['API 连通：失败', '真实操作：已阻止'],
-      nextActions: [],
-    }
-
-  if (apiOnline !== true || !health)
-    return {
-      state: 'checking',
-      tone: 'warning',
-      topbarPrefix: '系统状态',
-      topbarLabel: '检查中',
-      title: '正在核验环境状态',
-      detail: '尚未取得服务端生产门禁结果；在状态明确前不会标记在线或生产就绪。',
-      facts: ['生产门禁：待确认', '写入能力：待确认'],
-      nextActions: [],
-    }
-
-  const mode = health.setup?.mode?.trim() || '未声明'
-  const demoMode = demoModes.has(mode.toLowerCase())
-  const writesBlocked = health.writesEnabled === false
-  const gateBlocked = health.setup?.productionGate === false
-  const gateUnknown = health.setup?.productionGate !== true
-  const writesUnknown = health.writesEnabled !== true
-  const explicitBlock = demoMode || writesBlocked || gateBlocked
-  const facts = [
-    `环境模式：${mode}`,
-    `写入能力：${writesBlocked ? '已关闭' : writesUnknown ? '待确认' : '已开启'}`,
-    `生产门禁：${gateBlocked ? '未通过' : gateUnknown ? '待确认' : '已通过'}`,
-  ]
-  const nextActions = (health.setup?.nextActions ?? [])
-    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-    .map((item) => item.trim())
-
-  if (explicitBlock) {
-    const title = demoMode ? '演示环境 · 不可上线' : '当前环境不可上线'
-    return {
-      state: demoMode ? 'demo' : 'blocked',
-      tone: 'warning',
-      topbarPrefix: '系统状态',
-      topbarLabel: demoMode ? '演示环境' : '不可上线',
-      title,
-      detail: `${facts.join('；')}。${modelSummary(modelStatus, modelStatusRead, false)}`,
-      facts,
-      nextActions,
+      detail: '无法读取服务端健康状态；同步、生成和发布不会在离线状态下伪造成功。',
+      facts: ['API 连通：失败', '生产门禁：无法确认', modelFact(modelStatus, modelStatusRead)],
+      actions: ['检查 API 地址、鉴权和服务状态后重新检查。'],
     }
   }
 
-  if (gateUnknown || writesUnknown) {
+  if (apiOnline !== true || !apiHealth) {
     return {
       state: 'checking',
       tone: 'warning',
-      topbarPrefix: '系统状态',
-      topbarLabel: '待确认',
-      title: '生产状态待确认',
-      detail: `${facts.join('；')}。在服务端明确通过门禁前，不会显示生产在线。`,
-      facts,
-      nextActions,
+      topbarLabel: '状态待确认',
+      title: '正在确认环境状态',
+      detail: '尚未取得完整的服务端健康证据，当前不会标记为生产就绪。',
+      facts: ['API 连通：检查中', '生产门禁：待确认', modelFact(modelStatus, modelStatusRead)],
+      actions: ['等待健康检查完成；若长时间无结果，请检查 API 鉴权。'],
     }
   }
 
+  const mode = apiHealth.setup?.mode?.trim().toLowerCase() || 'unknown'
+  const modeLabel = modeLabels[mode] ?? mode
+  const isDemo = demoModes.has(mode)
+  const productionGate = apiHealth.setup?.productionGate
+  const writesEnabled = apiHealth.writesEnabled
   const modelReady = modelStatusRead && modelStatus?.state === 'ready'
-  if (!modelReady) {
+  const blockers: string[] = []
+
+  if (isDemo) blockers.push(`当前是${modeLabel}环境`)
+  else if (mode !== 'production') blockers.push('未确认当前为生产环境')
+  if (writesEnabled === false) blockers.push('外部平台写入已关闭')
+  else if (writesEnabled !== true) blockers.push('未返回外部写入能力证据')
+  if (productionGate === false) blockers.push('生产上线门禁未通过')
+  else if (productionGate !== true) blockers.push('未返回生产上线门禁证据')
+  if (!modelStatusRead) blockers.push('模型中转状态仍在读取')
+  else if (!modelReady) blockers.push('模型中转未就绪')
+
+  const facts = [
+    'API 连通：正常',
+    `运行模式：${modeLabel}`,
+    `外部写入：${writesEnabled === true ? '已开放' : writesEnabled === false ? '已关闭' : '未确认'}`,
+    `生产门禁：${productionGate === true ? '已通过' : productionGate === false ? '未通过' : '未确认'}`,
+    modelFact(modelStatus, modelStatusRead),
+  ]
+  const actions: string[] = []
+  if (isDemo)
+    actions.push('如需上线，请管理员切换到生产模式，并完成平台官方授权与生产门禁。')
+  if (writesEnabled !== true)
+    actions.push('请管理员完成可写平台连接；当前页面不会提交真实平台写入。')
+  if (!isDemo && productionGate !== true)
+    actions.push('请管理员在运营后台查看并处理未通过或缺失的生产门禁。')
+
+  if (blockers.length === 0) {
     return {
-      state: 'blocked',
-      tone: 'warning',
-      topbarPrefix: '系统状态',
-      topbarLabel: '能力受限',
-      title: '模型中转未就绪',
-      detail: `${facts.join('；')}。${modelSummary(modelStatus, modelStatusRead, true)}`,
+      state: 'ready',
+      tone: 'ready',
+      topbarLabel: '生产就绪',
+      title: '生产环境已就绪',
+      detail: '生产上线门禁、外部平台写入和模型中转均已通过服务端检查。',
       facts,
-      nextActions: [...(modelStatus?.next_actions ?? []), ...nextActions],
+      actions,
     }
   }
+
+  const modelDetail = modelReady
+    ? '模型中转仅在当前环境可用，不代表生产就绪。'
+    : '生成、图片、OCR 和视频能力将继续受服务端门禁限制。'
 
   return {
-    state: 'ready',
-    tone: 'ready',
-    topbarPrefix: '系统健康',
-    topbarLabel: '在线',
-    title: '生产环境已就绪',
-    detail: `商品、店铺、任务和发布状态以当前工作区的服务端数据为准。${modelSummary(modelStatus, modelStatusRead, true)}`,
+    state: isDemo ? 'demo' : 'blocked',
+    tone: 'warning',
+    topbarLabel: isDemo ? '演示环境' : '不可上线',
+    title: isDemo ? '演示环境 · 不可上线' : '当前环境不可上线',
+    detail: `${blockers.join('；')}。${modelDetail}`,
     facts,
-    nextActions,
+    actions,
   }
 }

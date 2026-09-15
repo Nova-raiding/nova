@@ -250,6 +250,7 @@ jobs:
           packages/persistence/src/resource-id-scope.postgres.test.ts
           packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts
           packages/persistence/src/workspace-data-export-repository.release.postgres.test.ts
+          tests/mcp-oauth-commercial-payment.postgres.test.ts
           tests/outbox-retry.postgres.test.ts
       - name: Run mandatory authorization PostgreSQL acceptance
         env:

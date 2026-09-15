@@ -152,7 +152,6 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       ['workspace.usage.get', {}, tokens.ownerA],
       ['billing.usage.consume', { task_id: 'legacy-task', idempotency_key: 'legacy-consume' }, tokens.ownerA],
       ['billing.usage.refund', { task_id: 'legacy-task', idempotency_key: 'legacy-consume', reason: 'legacy refund' }, tokens.financeA],
-      ['billing.refund', { order_id: 'legacy-order', reason: 'legacy refund' }, tokens.financeA],
       ['ops.commercial.offers.list', {}, tokens.commercialFinance],
       ['ops.commercial.addons.list', {}, tokens.commercialFinance],
       ['ops.commercial.coupons.list', {}, tokens.commercialFinance],
@@ -165,6 +164,13 @@ describe('MCP completion operations per-method HTTP evidence', () => {
         details: { next_actions: ['commercial.access.get', 'creative-points.balance.get'] },
       })
     }
+
+    const workspaceRefund = await callMcp(base, tokens.financeA, workspaceA, 'billing.refund', { order_id: 'legacy-order', reason: 'legacy refund' })
+    expect(workspaceRefund.status).toBe(403)
+    expect(workspaceRefund.body.error).toMatchObject({
+      code: 'FORBIDDEN',
+      message: '当前身份授权决策拒绝 billing.refund.execute',
+    })
 
     await Promise.all([workspaceA, workspaceB].map(workspaceId => creativePointsForTests.grant({
       workspaceId,
@@ -194,8 +200,8 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       filename: 'my-billing.json',
       contentType: 'application/json',
     })
-    expect(resultOf<any>(await callMcp(base, tokens.financeA, workspaceA, 'billing.model-usage.reconciliation.run', { limit: '10' }))).toMatchObject({
-      state: 'completed', checked: 0, settled: [], pending: [], actor_id: `finance-a-${suffix}`,
+    expect(resultOf<any>(await callMcp(base, tokens.commercialFinance, workspaceA, 'billing.model-usage.reconciliation.run', { limit: '10' }))).toMatchObject({
+      state: 'completed', checked: 0, settled: [], pending: [], actor_id: `commercial-finance-${suffix}`,
     })
 
     const alerts = resultOf<any[]>(await callMcp(base, tokens.commercialOps, workspaceA, 'ops.alerts.list', {

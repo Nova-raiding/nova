@@ -54,6 +54,45 @@ test('walk every Merchant Studio section through the real browser UI', async () 
     activeSection = section
     await page.getByRole('button', { name: section, exact: true }).first().click()
     await page.waitForTimeout(1_500)
+    if (section === '运营概览') {
+      const platformPanel = page.locator('article.platform-panel')
+      await expect(platformPanel).toHaveAttribute('aria-busy', 'false')
+      await expect(page.locator('.data-integrity-panel')).toBeVisible()
+      await page.evaluate(async () => {
+        await document.fonts.ready
+        await new Promise(resolveFrame => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)))
+      })
+      const layout = await platformPanel.evaluate(panel => {
+        const grid = panel.parentElement
+        const pageNode = document.querySelector('main.page')
+        if (!(grid instanceof HTMLElement) || !(pageNode instanceof HTMLElement)) throw new Error('merchant overview layout root missing')
+        const platformRect = panel.getBoundingClientRect()
+        const gridRect = grid.getBoundingClientRect()
+        const visibleChildren = [...grid.children].filter(node => {
+          const rect = node.getBoundingClientRect()
+          return getComputedStyle(node).display !== 'none' && rect.width > 0 && rect.height > 0
+        })
+        return {
+          viewportWidth: innerWidth,
+          viewportHeight: innerHeight,
+          scrollWidth: document.documentElement.scrollWidth,
+          scrollHeight: document.documentElement.scrollHeight,
+          visibleDashboardChildren: visibleChildren.length,
+          platformShare: platformRect.width / gridRect.width,
+          leftDelta: Math.abs(platformRect.left - gridRect.left),
+          rightDelta: Math.abs(platformRect.right - gridRect.right),
+          platformBottom: platformRect.bottom,
+          safeBottom: innerHeight - Number.parseFloat(getComputedStyle(pageNode).paddingBottom),
+        }
+      })
+      expect(layout).toMatchObject({ viewportWidth: 1440, viewportHeight: 1000, visibleDashboardChildren: 1 })
+      expect(layout.platformShare).toBeGreaterThanOrEqual(0.98)
+      expect(layout.leftDelta).toBeLessThanOrEqual(2)
+      expect(layout.rightDelta).toBeLessThanOrEqual(2)
+      expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewportWidth + 1)
+      expect(layout.scrollHeight).toBeLessThanOrEqual(layout.viewportHeight + 1)
+      expect(layout.platformBottom).toBeLessThanOrEqual(layout.safeBottom + 2)
+    }
     await page.screenshot({ path: resolve(screenshots, `${slug.get(section)}.png`) })
     pages.push({ section, ...(await snapshot(page)) })
     const dialog = page.getByRole('dialog')
