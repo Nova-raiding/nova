@@ -28,6 +28,7 @@
 .customer-delivery-payment-select.ant-select { height: 40px !important; }
 .customer-delivery-payment-select.ant-select .ant-select-selector { height: 40px !important; min-height: 40px !important; align-items: center; }
 .customer-delivery-create-form .ant-input,
+.customer-delivery-create-form .ant-input-affix-wrapper,
 .customer-delivery-create-form .ant-picker,
 .customer-delivery-create-form .ant-select-selector { height: 40px !important; min-height: 40px !important; }
 .customer-delivery-create-form input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0; width: 100%; cursor: pointer; }
