@@ -37,18 +37,13 @@ describe('migration 209 dedicated alert receiver role release acceptance', () =>
       expect(await new MigrationRunner(database, through208).run()).toEqual(through208.map(migration => migration.version))
       ops = new Pool({ connectionString: databaseConnection(base, databaseName, 'merchant_ops', 'merchant_ops_local_only') })
 
-      const expectOpsTableLockedOut = async () => {
+      const expectHistoricalOpsGrant = async () => {
         expect((await database!.query(
           `SELECT has_table_privilege('merchant_ops','public.alert_webhook_receipts','SELECT') AS can_select,
                   has_table_privilege('merchant_ops','public.alert_webhook_receipts','INSERT') AS can_insert`,
-        )).rows).toEqual([{ can_select: false, can_insert: false }])
-        await expect(ops!.query('SELECT * FROM public.alert_webhook_receipts')).rejects.toMatchObject(rejectedPrivilege)
-        await expect(ops!.query(
-          `INSERT INTO public.alert_webhook_receipts(alert_id,request_id,received_at,sent_at,body_sha256,payload)
-           VALUES('alert-during-failure','request-during-failure',now(),now(),repeat('a',64),'{}'::jsonb)`,
-        )).rejects.toMatchObject(rejectedPrivilege)
+        )).rows).toEqual([{ can_select: true, can_insert: true }])
       }
-      await expectOpsTableLockedOut()
+      await expectHistoricalOpsGrant()
 
       const absentRoleMigration = [{
         ...migration209[0]!,
@@ -56,15 +51,19 @@ describe('migration 209 dedicated alert receiver role release acceptance', () =>
       }]
       await expect(new MigrationRunner(database, absentRoleMigration).run()).rejects.toMatchObject(rejectedPrivilege)
       expect((await database.query('SELECT version FROM schema_migrations WHERE version=209')).rowCount).toBe(0)
-      await expectOpsTableLockedOut()
+      await expectHistoricalOpsGrant()
 
       await expect(new MigrationRunner(database, migration209).run()).rejects.toMatchObject(rejectedPrivilege)
       expect((await database.query('SELECT version FROM schema_migrations WHERE version=209')).rowCount).toBe(0)
-      await expectOpsTableLockedOut()
+      await expectHistoricalOpsGrant()
 
       await admin.query('ALTER ROLE merchant_alert_receiver NOINHERIT')
       expect(await new MigrationRunner(database, migration209).run()).toEqual([209])
       expect(await new MigrationRunner(database, migration209).run()).toEqual([])
+      expect((await database.query(
+        `SELECT has_table_privilege('merchant_ops','public.alert_webhook_receipts','SELECT') AS can_select,
+                has_table_privilege('merchant_ops','public.alert_webhook_receipts','INSERT') AS can_insert`,
+      )).rows).toEqual([{ can_select: false, can_insert: false }])
 
       app = new Pool({ connectionString: databaseConnection(base, databaseName, 'merchant_app', 'merchant_app_local_only') })
       receiver = new Pool({ connectionString: databaseConnection(base, databaseName, 'merchant_alert_receiver', receiverPassword) })

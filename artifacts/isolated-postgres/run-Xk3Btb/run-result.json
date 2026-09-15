@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-15T01:13:50.754Z",
+  "endedAt": "2026-09-15T01:13:58.968Z",
+  "runId": "8487f9fc-acce-4da6-8044-bff9ab762825",
+  "selectedFiles": [
+    "packages/persistence/src/migration-208-release.postgres.test.ts",
+    "packages/persistence/src/migration-209-release.postgres.test.ts"
+  ],
+  "childExitCode": 1,
+  "status": "failed",
+  "report": "vitest.json",
+  "errors": [
+    "ISOLATED_POSTGRES_TEST_PROCESS_NONZERO",
+    "POSTGRES_REPORT_NOT_SUCCESSFUL",
+    "POSTGRES_REPORT_FAILED_OR_SKIPPED_ASSERTIONS",
+    "POSTGRES_REPORT_FAILED_OR_EMPTY_FILE",
+    "POSTGRES_REPORT_ASSERTION_NOT_PASSED",
+    "POSTGRES_REPORT_ASSERTION_COUNTS_MISMATCH"
+  ],
+  "fixtureOnly": true,
+  "databaseSource": "newly-created-isolated-fixture",
+  "rolePasswordCompatibility": "isolated-test-fixture-only",
+  "inheritedBusinessEnvironment": false,
+  "sharedContainersTouched": false,
+  "disposal": {
+    "stopped": [
+      "f8abb61893e7802b532f5b7b0bed80883c4a0b2f7b0a541bc578a39df43e3256",
+      "a022f727aec9aed9c08b54c1f35b2adfca5d37f2ec8a251e608f3b680be5226f"
+    ],
+    "leftRunning": []
+  }
+}

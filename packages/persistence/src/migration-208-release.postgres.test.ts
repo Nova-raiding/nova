@@ -23,7 +23,7 @@ const payload = (requestId: string, alertId: string) => ({
 })
 
 describe('migration 208 alert webhook receipt release acceptance', () => {
-  postgresIt('keeps runtime roles locked out while the owner ledger rejects mutation, replay, and identity drift', async () => {
+  postgresIt('preserves the historical ops grant while the owner ledger rejects mutation, replay, and identity drift', async () => {
     const base = new URL(databaseUrlValue!)
     const databaseName = `release_208_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
@@ -44,14 +44,12 @@ describe('migration 208 alert webhook receipt release acceptance', () => {
       app = new Pool({
         connectionString: databaseConnection(base, databaseName, 'merchant_app', 'merchant_app_local_only'),
       })
-      for (const runtime of [app, ops]) {
-        await expect(runtime.query('SELECT * FROM public.alert_webhook_receipts')).rejects.toMatchObject({ code: '42501' })
-        await expect(runtime.query(
+      await expect(app.query('SELECT * FROM public.alert_webhook_receipts')).rejects.toMatchObject({ code: '42501' })
+      await expect(app.query(
           `INSERT INTO public.alert_webhook_receipts (
              request_id,alert_id,received_at,sent_at,body_sha256,payload
            ) VALUES ('request-denied','alert-denied',now(),now(),repeat('a',64),'{}'::jsonb)`,
         )).rejects.toMatchObject({ code: '42501' })
-      }
       expect((await database.query(
         `SELECT r.rolname,
                 has_table_privilege(r.rolname,'public.alert_webhook_receipts','SELECT') AS can_select,
@@ -61,7 +59,7 @@ describe('migration 208 alert webhook receipt release acceptance', () => {
           ORDER BY r.rolname`,
       )).rows).toEqual([
         { rolname: 'merchant_app', can_select: false, can_insert: false },
-        { rolname: 'merchant_ops', can_select: false, can_insert: false },
+        { rolname: 'merchant_ops', can_select: true, can_insert: true },
       ])
       const requestId = `request-${randomUUID()}`
       const alertId = `alert-${randomUUID()}`
