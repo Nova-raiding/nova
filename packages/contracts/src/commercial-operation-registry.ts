@@ -169,6 +169,8 @@ export const MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS = [
 
 export const MCP_RECOVERY_ENABLED_METHODS = [
   'workspace.bootstrap',
+  'onboarding.status',
+  'workspace.content_setup.confirm',
   'workspace.health',
   'canonical.product.consistency',
   'commercial.access.get',
@@ -222,7 +224,6 @@ export const MCP_POINT_CHARGED_DISABLED_METHODS = [
 ] as const satisfies readonly McpMethod[]
 
 export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
-  'onboarding.status',
   'merchant.first_value',
   'brand.extract',
   'creative.brief',

@@ -24,6 +24,13 @@ describe('central commercial access gate', () => {
     })
   })
 
+  it('keeps first-use status readable with unknown points without admitting merchant work', async () => {
+    await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'onboarding.status')).resolves.toMatchObject({
+      classification: 'RECOVERY_CONTROL', allowed: true, available_points: null,
+    })
+    await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'merchant.start')).rejects.toMatchObject({ code: 'CREATIVE_POINTS_UNAVAILABLE' })
+  })
+
   it('fails unknown point-required access closed without projecting null as zero', async () => {
     await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'merchant.start')).rejects.toMatchObject({
       code: 'CREATIVE_POINTS_UNAVAILABLE',
