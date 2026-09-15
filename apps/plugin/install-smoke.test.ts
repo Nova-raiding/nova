@@ -174,6 +174,9 @@ printf '%s\n' Darwin
 
   it('renders an accessible ChatGPT creative-point recovery card without client-authored payment actions', () => {
     const recharge = readFileSync(resolve(root, 'ui/recharge.html'), 'utf8')
+    const catalogStart = recharge.indexOf('function catalogHtml')
+    const catalogEnd = recharge.indexOf('function safePaymentUrl', catalogStart)
+    const catalogRenderer = recharge.slice(catalogStart, catalogEnd)
     expect(recharge).toContain('支付成功也必须等待 grant 到账和新 access revision')
     expect(recharge).not.toContain('call("billing.recharge.create"')
     expect(recharge).not.toMatch(/data-amount|customAmount|createOrder/u)
@@ -198,7 +201,31 @@ printf '%s\n' Darwin
     expect(recharge).toContain('role="status"')
     expect(recharge).toContain('aria-busy="false"')
     expect(recharge).not.toMatch(/role="radio(group)?"|aria-checked|checkoutTitle|data-channel|payment_mode/u)
+    expect(catalogStart).toBeGreaterThanOrEqual(0)
+    expect(catalogEnd).toBeGreaterThan(catalogStart)
+    expect(catalogRenderer).toContain('item?.lifecycle === "approved"')
+    expect(catalogRenderer).toContain('item?.visibility === "public"')
+    expect(catalogRenderer).toContain('item.code')
+    expect(catalogRenderer).toContain('item.kind')
+    expect(recharge).toContain('item.priceFen')
+    expect(catalogRenderer).not.toMatch(/item\?\.approval_state|item\.(?:sku_code|type|price_label|benefits_summary)/u)
     for (const status of ['已到账', '待支付', '未成功', '已关闭', '已退款']) expect(recharge).toContain(status)
+  })
+
+  it('marks the platform account list as a read-only MCP operation', () => {
+    const response = spawnSync(process.execPath, [resolve(root, 'mcp/bridge.mjs')], {
+      encoding: 'utf8',
+      input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })}\n`,
+      env: {
+        ...process.env,
+        MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8790',
+        MERCHANT_WORKSPACE_ID: 'ws_install_verify',
+      },
+    })
+    expect(response.status).toBe(0)
+    const listed = JSON.parse(response.stdout.trim())
+    const tool = listed.result.tools.find((item: { name: string }) => item.name === 'platform.store.list')
+    expect(tool.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
   })
 
   it('documents store authorization before wallet and product-material onboarding', () => {
