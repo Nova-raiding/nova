@@ -212,7 +212,6 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
           action={<Button htmlType="button" size="small" style={{ minHeight: 44 }} aria-label="刷新用户目录" onClick={() => void model.loadUsers(form.getFieldsValue())}>刷新用户目录</Button>}
         />
       </div>}
-      {model.userDirectory.truncated && <Alert className="ops-inline-alert" showIcon type="info" title="结果超过 500 条，请增加筛选条件。" />}
       <Table<PlatformUser>
         aria-label="用户目录数据表"
         rowKey={(row) => `${row.accountType ?? "merchant"}:${row.workspaceId}:${row.externalSubject}`}
@@ -220,7 +219,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         dataSource={sortedUsers}
         locale={{ emptyText: "没有符合条件的用户成员关系" }}
         rowSelection={{ selectedRowKeys: selectedUserKeys, onChange: (keys) => setSelectedUserKeys(keys.map((key) => String(key))), getCheckboxProps: (row) => ({ disabled: row.accountType === "platform" || row.externalSubject === model.opsSession?.actor_id || row.status === "suspended" }) }}
-        pagination={{ current: Math.floor(model.userDirectory.offset / model.userDirectory.limit) + 1, pageSize: model.userDirectory.limit, total: attributeFilter ? sortedUsers.length : model.userDirectory.total, showSizeChanger: false, showTotal: (total) => `共 ${total} 条成员关系` }}
+        pagination={{ current: Math.floor(model.userDirectory.offset / model.userDirectory.limit) + 1, pageSize: model.userDirectory.limit, total: attributeFilter ? sortedUsers.length : model.userDirectory.total, showSizeChanger: false }}
         onChange={handleDirectoryChange}
         scroll={{ x: "max-content" }}
         columns={[

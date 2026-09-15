@@ -1,4 +1,3 @@
-import { Button } from "antd";
 import { OpsPage } from "../components/OpsPage";
 import { OpsPageError } from "../components/OpsPageError";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
@@ -29,12 +28,10 @@ export function usersPageCapabilityState(authorization: UsersPageAuthorization) 
 }
 
 export function UsersPage({ model }: UsersPageProps) {
-  const capabilityState = usersPageCapabilityState(model.authorization);
-
   return (
     <OpsPage
       title="用户中心"
-      actions={<Button type="primary" disabled={!capabilityState.canRead} loading={model.loading} title={!capabilityState.canRead ? "当前会话没有用户治理读取能力" : undefined} onClick={() => void model.load()}>刷新目录</Button>}
+      hideTitle
     >
       <div className="ops-users-page">
       <OpsPageError error={model.error} onRetry={() => void model.load()} />
