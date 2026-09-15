@@ -58,6 +58,27 @@ if missing_required_key
   exit 1
 end
 
+invalid_required_value = required_keys.find do |key|
+  value = config[key]
+  value.nil? || (value.is_a?(String) && (value.strip.empty? || value.strip.match?(/\A(?:null|~)\z/i)))
+end
+if invalid_required_value
+  warn "required production config value is missing: #{invalid_required_value}"
+  exit 1
+end
+
+reference_keys = required_keys.select { |key| key.end_with?('_ref') || key == 'secret_provider' }
+reference_keys << 'asset_scan_trusted_public_keys_ref' if config.key?('asset_scan_trusted_public_keys_ref')
+reference_keys << 'alert_channel_secret_ref' if config['alert_notifications_enabled'] == true
+invalid_reference = reference_keys.find do |key|
+  value = config[key]
+  !value.is_a?(String) || value.strip.empty? || value.strip.match?(/\A(?:null|~)\z/i)
+end
+if invalid_reference
+  warn "production secret reference must be a non-empty string: #{invalid_reference}"
+  exit 1
+end
+
 unsafe_placeholder = /(?:SET_[A-Z0-9_]+|BLOCKED_UNTIL_|\$\{[^}]+\}|\b(?:REPLACE_ME|CHANGE_ME|TODO|TBD)\b)/
 contains_unsafe_scalar = lambda do |value|
   case value
