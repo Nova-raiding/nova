@@ -211,6 +211,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     <OpsPage
       eyebrow="CUSTOMER DELIVERY"
       title="客户交付"
+      hideTitle
       description="以客户为中心跟进建档、系统接入、功能验收、培训和上线。付款未核验时，受控环节会保持阻断。"
       actions={<Button onClick={() => void load()} loading={loading} disabled={!canRead || !targetWorkspaceId}>刷新交付档案</Button>}
     >
