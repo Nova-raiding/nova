@@ -287,6 +287,7 @@ describe('production readiness fail-closed', () => {
     ['payment', 'PAYMENT_PROVIDER_ADAPTERS', ''],
     ['payment', 'PAYMENT_PROVIDER_QUERY_API_URL', 'http://payments.example.test/query'],
     ['payment', 'PAYMENT_PROVIDER_REFUND_QUERY_API_URL', 'http://payments.example.test/refund/query'],
+    ['payment', 'PAYMENT_PROVIDER_TIMEOUT_MS', 'invalid'],
     ['payment', 'PAYMENT_REFUND_ENABLED', 'false'],
     ['rule_sync', 'PLATFORM_RULE_SYNC_MANIFEST_URL', 'https://127.0.0.1/manifest.json'],
     ['rule_sync', 'PLATFORM_RULE_SYNC_MANIFEST_URL', 'https://rules.example.test/manifest.json?token=secret'],
@@ -297,6 +298,16 @@ describe('production readiness fail-closed', () => {
     const result = productionReadinessDiagnostics(environment)
     expect(result.ready).toBe(false)
     expect(result.gates[gate]).toMatchObject({ ready: false })
+  })
+
+  it('requires a safe refund-query endpoint and a constructible payment provider', () => {
+    const withoutRefundQuery = productionEnvironment()
+    delete withoutRefundQuery.PAYMENT_PROVIDER_REFUND_QUERY_API_URL
+    expect(productionReadinessDiagnostics(withoutRefundQuery).gates.payment?.reasons).toContain('provider_refund_query_api_must_use_https')
+
+    const invalidProvider = productionEnvironment()
+    invalidProvider.PAYMENT_PROVIDER_TIMEOUT_MS = 'invalid'
+    expect(productionReadinessDiagnostics(invalidProvider).gates.payment?.reasons).toContain('provider_configuration_invalid')
   })
 
   it('does not block production when optional alert notifications are entirely disabled', () => {
