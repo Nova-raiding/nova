@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Form, Input, Select, Space } from "antd";
+import { Alert, Button, Card, Checkbox, Form, Input, Select, Space, message } from "antd";
 import { CloseOutlined, UploadOutlined } from "@ant-design/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { OpsPage } from "../components/OpsPage.js";
@@ -49,6 +49,9 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const [createPage, setCreatePage] = useState(false);
   const contractFileInput = useRef<HTMLInputElement>(null);
   const [uploadedContractName, setUploadedContractName] = useState("");
+  const [integrationChecks, setIntegrationChecks] = useState<string[]>([]);
+  const [acceptanceChecks, setAcceptanceChecks] = useState<string[]>([]);
+  const [trainingChecked, setTrainingChecked] = useState(false);
   const [createForm] = Form.useForm<{
     companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid";
     paymentDate: string; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: string;
@@ -242,7 +245,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       {!targetWorkspaceId && canRead ? <Alert style={{ marginBottom: 16 }} type="info" showIcon message="正在加载客户交付档案" description="请稍候，运营数据加载完成后即可新建客户。" /> : null}
       {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
       {mutationError ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
-      {createPage ? (
+      {createPage ? (<>
         <Card title="用户建档" extra={<Button onClick={() => setCreatePage(false)}>返回客户建档</Button>}>
           <Form className="customer-delivery-create-form" form={createForm} layout="vertical" onFinish={submitCreatePage}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "0 16px" }}>
@@ -267,6 +270,10 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             </Space>
           </Form>
         </Card>
+        <Card title="系统接入确认" style={{ marginTop: 16 }}><Checkbox.Group value={integrationChecks} onChange={(values) => setIntegrationChecks(values as string[])} options={["插件账户", "店铺连接", "商品扫描", "知识库功能", "平台规则", "创作点", "企业信息", "品牌资产", "商品资料", "客户偏好"].map(label => ({ label, value: label }))} /></Card>
+        <Card title="功能测试及验收" style={{ marginTop: 16 }}><Checkbox.Group value={acceptanceChecks} onChange={(values) => setAcceptanceChecks(values as string[])} options={["文案生成", "图片生成", "批注修改", "自动检查", "视频生成", "店铺与商品资料读取", "技术验收", "内容验收"].map(label => ({ label, value: label }))} /></Card>
+        <Card title="客户培训与交付确认" style={{ marginTop: 16 }}><Space orientation="vertical"><Checkbox checked={trainingChecked} onChange={(event) => setTrainingChecked(event.target.checked)}>客户培训</Checkbox><Button icon={<UploadOutlined />} onClick={() => message.info("创建客户后可上传交付视频")}>上传交付视频</Button></Space></Card>
+        </>
       ) : <CustomerDeliverySection
         key={targetWorkspaceId || "unselected"}
         disabled={!canRead || !targetWorkspaceId}
