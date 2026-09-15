@@ -241,7 +241,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       {mutationError ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
       {createPage ? (
         <Card title="用户建档" extra={<Button onClick={() => setCreatePage(false)}>返回客户建档</Button>}>
-          <Form form={createForm} layout="vertical" onFinish={submitCreatePage}>
+          <Form className="customer-delivery-create-form" form={createForm} layout="vertical" onFinish={submitCreatePage}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "0 16px" }}>
             <Form.Item name="companyName" label="公司名称" rules={[{ required: true, message: "请输入公司名称" }]}>
               <Input placeholder="请输入公司名称" autoFocus />
