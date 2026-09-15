@@ -8464,7 +8464,11 @@ function merchantPlatformOptions(workspaceId: string, directory = workspaceStore
 
 function workspaceOnboarding(workspaceId: string, directory = workspaceStoreDirectory(workspaceId)) {
   const products = service.listProducts(workspaceId)
-  const selectedStoreKeys = new Set(directory.map(store => `${store.platform}:${store.accountId}`))
+  // Fixture accounts remain visible for demos, but never satisfy the formal
+  // merchant onboarding gate. Only readable accounts backed by the official
+  // platform API can unlock product selection and downstream tasks.
+  const realDirectory = directory.filter(store => store.dataMode === 'official_api' && store.readable)
+  const selectedStoreKeys = new Set(realDirectory.map(store => `${store.platform}:${store.accountId}`))
   const boundProducts = products.filter(product => product.accountId ? selectedStoreKeys.has(`${product.platform}:${product.accountId}`) : false)
   const assets = service.listAssets(workspaceId)
   const tasks = service.listTasks(workspaceId).filter(task => task.accountId ? selectedStoreKeys.has(`${task.platform}:${task.accountId}`) : false)
@@ -8473,14 +8477,14 @@ function workspaceOnboarding(workspaceId: string, directory = workspaceStoreDire
   const deliverableTasks = tasks.filter(task => service.listContentVersions(workspaceId, task.id).some(version => version.state === 'approved' || version.state === 'delivered'))
   const steps = [
     { id: 'workspace', title: '工作区', summary: '当前工作区已建立，后续状态按工作区隔离', state: 'complete', entryMethod: 'workspace.health', nextMethod: 'workspace.health' },
-    { id: 'bind-store', title: '连接店铺', summary: directory.length ? `已绑定 ${directory.length} 家店铺` : '先选择平台并完成官方授权', state: directory.length ? 'complete' : 'required', entryMethod: 'platform.connect', nextMethod: 'platform.connect' },
-    { id: 'choose-product', title: '选择商品', summary: boundProducts.length ? `已找到 ${boundProducts.length} 个商品，可按店铺选择` : '绑定店铺后同步或导入商品', state: !directory.length ? 'blocked' : boundProducts.length ? 'next' : 'required', entryMethod: 'catalog.search', nextMethod: 'catalog.search' },
+    { id: 'bind-store', title: '连接店铺', summary: realDirectory.length ? `已绑定 ${realDirectory.length} 家真实店铺` : directory.length ? '当前只有演示店铺，正式商品任务需要先连接真实店铺' : '先选择平台并完成官方授权', state: realDirectory.length ? 'complete' : 'required', entryMethod: 'platform.connect', nextMethod: 'platform.connect' },
+    { id: 'choose-product', title: '选择商品', summary: boundProducts.length ? `已找到 ${boundProducts.length} 个商品，可按店铺选择` : '绑定真实店铺后同步或导入商品', state: !realDirectory.length ? 'blocked' : boundProducts.length ? 'next' : 'required', entryMethod: 'catalog.search', nextMethod: 'catalog.search' },
     { id: 'add-assets', title: '上传素材与资料', summary: readyAssets.length ? `已确认 ${readyAssets.length} 份可用素材` : assets.length ? '素材已上传，仍需完成扫描、权益和事实确认' : '添加商品图片、品牌资料和知识库文件', state: !boundProducts.length ? 'blocked' : readyAssets.length ? 'complete' : assets.length ? 'next' : 'required', entryMethod: 'asset.upload', nextMethod: 'asset.upload' },
     { id: 'start-content', title: '生成并审核', summary: deliverableTasks.length ? `已有 ${deliverableTasks.length} 个内容交付` : confirmedProducts.length ? '商品事实已确认，可以开始文案、主图或视频分镜' : '先确认商品、价格、库存和图片事实', state: !boundProducts.length || !confirmedProducts.length ? 'blocked' : deliverableTasks.length ? 'complete' : 'next', entryMethod: 'task.understand', nextMethod: 'task.understand' },
     { id: 'publish', title: '发布', summary: deliverableTasks.length ? '已有已批准交付物，可查看发布前预检' : '完成内容审核后才能进入发布预检', state: deliverableTasks.length ? 'next' : 'blocked', entryMethod: 'publish.prepare', nextMethod: 'publish.prepare' },
   ] as const
   const current = steps.find(step => step.state === 'required' || step.state === 'next' || step.state === 'blocked') ?? steps.at(-1)!
-  return { steps, currentStep: { id: current.id, title: current.title, state: current.state, entryMethod: current.entryMethod }, summary: { stores: directory.length, products: boundProducts.length, unboundProducts: products.length - boundProducts.length, confirmedProducts: confirmedProducts.length, assets: assets.length, readyAssets: readyAssets.length, tasks: tasks.length, deliverableTasks: deliverableTasks.length } }
+  return { steps, currentStep: { id: current.id, title: current.title, state: current.state, entryMethod: current.entryMethod }, summary: { stores: realDirectory.length, fixtureStores: directory.length - realDirectory.length, products: boundProducts.length, unboundProducts: products.length - boundProducts.length, confirmedProducts: confirmedProducts.length, assets: assets.length, readyAssets: readyAssets.length, tasks: tasks.length, deliverableTasks: deliverableTasks.length } }
 }
 
 function onboardingPrimaryAction(step: ReturnType<typeof workspaceOnboarding>['steps'][number]) {
@@ -8514,7 +8518,8 @@ function merchantCapabilityCardAction(card: typeof MERCHANT_CAPABILITY_CARDS[num
   const { summary } = onboarding
   if (card.id === 'first-value') return { method: 'merchant.first_value', arguments: { example: 'true' }, required_inputs: [], reason: '先查看安全示例预览；如需真实商品，请先选择 platform + account_id + product_id', blocked_by: [] as string[] }
   if (card.id === 'stores-products') {
-    if (!directory.length) return { method: 'platform.connect', arguments: {}, required_inputs: ['platform'], reason: '先绑定一个平台店铺', blocked_by: [] as string[] }
+    const realStoreCount = directory.filter(store => store.dataMode === 'official_api' && store.readable).length
+    if (!realStoreCount) return { method: 'platform.connect', arguments: {}, required_inputs: ['platform'], reason: directory.length ? '当前只有演示店铺，正式商品任务需要先连接真实店铺' : '先绑定一个平台店铺', blocked_by: [] as string[] }
     return { method: 'catalog.search', arguments: { scope: 'store' }, required_inputs: ['platform', 'account_id'], reason: '先选择具体平台和店铺，再查看商品', blocked_by: summary.products ? [] : ['product_sync_or_import'] }
   }
   if (card.id === 'knowledge-assets') {
