@@ -2338,7 +2338,13 @@ function verifyPaymentCallback(req: IncomingMessage, input: { channel: RechargeC
 
 async function consumePaymentCallbackProof(input: { workspaceId: string; channel: RechargeChannel; nonce: string; signedAt: string; payloadHash: string }) {
   await persistenceReady
-  return (persistence.paymentCallbackNonces ?? memoryPaymentCallbackNonces).consume(input)
+  const repository = persistence.paymentCallbackNonces ?? memoryPaymentCallbackNonces
+  if (await repository.consume(input)) return 'fresh'
+  return await repository.replayPayloadMatches?.(input) ? 'replay_same_payload' : 'replay_conflict'
+}
+
+function assertPaymentCallbackProofReplayAllowed(decision: Awaited<ReturnType<typeof consumePaymentCallbackProof>>) {
+  if (decision === 'replay_conflict') throw new DomainError('PAYMENT_CALLBACK_NONCE_REPLAY', '支付回调 nonce 已被不同载荷使用', 409)
 }
 
 function paymentProviderReadiness(source: NodeJS.ProcessEnv = process.env) {
@@ -6557,6 +6563,20 @@ export function registeredMcpAuthorizationDecision(input: {
     mode: input.mode,
     now: input.now,
   })
+}
+
+export function merchantEntryBillingReadAllowed(input: { atoms: readonly PermissionAtom[]; workspaceId: string; workbench: OpsWorkbench }) {
+  return registeredMcpAuthorizationDecision({
+    decisionId: `authz_${randomUUID()}`,
+    method: 'creative-points.balance.get',
+    // A nested entry projection must not bypass finite grant consumption.
+    // Temporary access uses the dedicated balance endpoint and its durable
+    // consumeGrant path; all deny atoms remain authoritative here.
+    atoms: input.atoms.filter(atom => atom.effect === 'deny' || atom.source !== 'temporary_grant'),
+    resourceScope: { type: 'workspace', id: input.workspaceId },
+    workbench: input.workbench,
+    mode: 'enforce',
+  }).authorized
 }
 
 export function httpAuthorizationPathParams(pathTemplate: string, pathname: string, mcpMethod: string): Record<string, string> {
@@ -12410,11 +12430,20 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await persistenceReady
       const brandNavigation = await accessibleBrandNavigation(req, workspaceId)
       const pointBalance = await persistence.creativePoints?.getBalance(workspaceId)
+      const principal = requestPrincipals.get(req)
+      // Onboarding permission does not grant workspace financial visibility.
+      // Evaluate the same scoped atoms as the balance endpoint, including
+      // explicit denies, rather than inferring access from a role name.
+      const canReadWorkspaceBilling = !requiresStrictAuth() || merchantEntryBillingReadAllowed({
+        atoms: effectiveAuthorizationProjection(principal, workspaceId).atoms,
+        workspaceId,
+        workbench: principal?.workbench ?? 'workspace',
+      })
       // Billing is the authoritative monetary source for commercial access.
       // The legacy wallet projection is retained only for historical
       // reconciliation and must not disagree with billing.status in the
       // merchant entry card.
-      const authoritativeBalanceFen = persistence.billing
+      const authoritativeBalanceFen = !canReadWorkspaceBilling ? null : persistence.billing
         ? await persistence.billing.balanceFen(workspaceId)
         : walletBalanceFen(workspaceId)
       const pointAccessAllowed = pointBalance?.availablePoints !== null && pointBalance !== undefined && pointBalance.availablePoints > 0
@@ -12441,14 +12470,15 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         nextInstruction: `你可以直接说：“${nextPrompt}”。`,
         onboarding: onboarding.steps,
         summary: onboarding.summary,
-        creative_points: { balance_state: pointBalance?.availablePoints === null || !pointBalance ? 'unknown' : 'known', available_points: pointBalance?.availablePoints ?? null, reserved_points: pointBalance?.reservedPoints ?? null, access_revision: pointBalance?.availablePoints === null || !pointBalance ? null : String(pointBalance.revision), allowed: pointAccessAllowed, recovery_methods: ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'] },
+        creative_points: { balance_state: !canReadWorkspaceBilling ? 'restricted' : pointBalance?.availablePoints === null || !pointBalance ? 'unknown' : 'known', available_points: canReadWorkspaceBilling ? pointBalance?.availablePoints ?? null : null, reserved_points: canReadWorkspaceBilling ? pointBalance?.reservedPoints ?? null : null, access_revision: !canReadWorkspaceBilling || pointBalance?.availablePoints === null || !pointBalance ? null : String(pointBalance.revision), allowed: pointAccessAllowed, recovery_methods: ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'] },
         // Keep the merchant entry card aligned with the V2 commercial flow.
         // The legacy arbitrary-amount recharge endpoint is intentionally not
         // advertised here: it is a compatibility surface, not a supported
         // point-pack purchase path. Payment channels are only exposed by a
         // configured V2 checkout (which is not part of this response yet).
         wallet: {
-          balance_cny: (authoritativeBalanceFen / 100).toFixed(2),
+          balance_cny: authoritativeBalanceFen === null ? null : (authoritativeBalanceFen / 100).toFixed(2),
+          balance_state: canReadWorkspaceBilling ? 'known' : 'restricted',
           // This compatibility field reflects commercial access, which is
           // unlocked by creative points rather than the legacy RMB wallet.
           unlocked: pointAccessAllowed,
@@ -12457,7 +12487,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           order_method: 'commercial.order.create',
           payment_status_method: 'commercial.order.payment.get',
           payment_channels: [],
-          message: authoritativeBalanceFen > 0
+          message: authoritativeBalanceFen === null
+            ? '当前身份不可查看工作区钱包余额；商业访问状态仍可用于选择服务端恢复入口'
+            : authoritativeBalanceFen > 0
             ? '钱包余额可用于历史兼容对账；购买创意点请使用服务端可售套餐'
             : '当前未解锁商业操作，请先查看商业访问和可售套餐',
         },
@@ -19521,7 +19553,8 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const workspaceId = typeof input.workspace_id === 'string' && input.workspace_id.trim() ? input.workspace_id.trim() : ''
     if (!workspaceId || !Number.isSafeInteger(amountFen) || amountFen < 0) throw new DomainError('PAYMENT_CALLBACK_INVALID', '支付回调缺少有效订单、工作区或金额', 400)
     const callbackProof = verifyPaymentCallback(req, { channel: paymentCallbackMatch[2] as RechargeChannel, workspaceId, payload: { order_id: orderId, provider_trade_id: providerTradeId, amount_fen: amountFen, currency, state } })
-    const freshCallbackProof = callbackProof ? await consumePaymentCallbackProof({ workspaceId, channel: paymentCallbackMatch[2] as RechargeChannel, ...callbackProof }) : true
+    const callbackProofDecision = callbackProof ? await consumePaymentCallbackProof({ workspaceId, channel: paymentCallbackMatch[2] as RechargeChannel, ...callbackProof }) : 'fresh'
+    assertPaymentCallbackProofReplayAllowed(callbackProofDecision)
     if (paymentCallbackMatch[1] === 'commercial') {
       await persistenceReady
       const status = await persistence.commercialContracts?.getPaymentStatus(workspaceId, orderId)
@@ -19529,7 +19562,6 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       if (status.order.paymentProvider !== paymentCallbackMatch[2]) throw new DomainError('PAYMENT_CALLBACK_CHANNEL_MISMATCH', '支付回调渠道与商业订单渠道不一致', 400)
       if (status.order.amountFen !== amountFen || status.order.currency !== 'CNY') throw new DomainError('COMMERCIAL_CALLBACK_AMOUNT_MISMATCH', '支付回调金额与商业订单不可变快照不一致', 400)
       if (state !== 'paid' && state !== 'SUCCESS') return send(res, 200, workspaceId, { accepted: true, order_id: orderId, state }, null, req)
-      if (!freshCallbackProof && status.order.status !== 'paid') throw new DomainError('PAYMENT_CALLBACK_NONCE_REPLAY', '支付回调 nonce 已被使用，且商业订单尚未进入已支付状态', 409)
       const paidAt = callbackProof?.signedAt ?? new Date().toISOString()
       const stablePayloadHash = createHash('sha256').update([paymentCallbackMatch[2], workspaceId, orderId, providerTradeId, amountFen, 'CNY', 'paid'].join('|')).digest('hex')
       try {
@@ -19555,7 +19587,6 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       if (order.paymentProvider !== paymentCallbackMatch[2]) throw new DomainError('PAYMENT_CALLBACK_CHANNEL_MISMATCH', '支付回调渠道与订阅订单渠道不一致', 400)
       if (Math.round(order.paymentAmountCny * 100) !== amountFen) throw new DomainError('SUBSCRIPTION_CALLBACK_AMOUNT_MISMATCH', '支付回调金额与订阅订单支付金额快照不一致', 400)
       if (state !== 'paid' && state !== 'SUCCESS') return send(res, 200, workspaceId, { accepted: true, order_id: orderId, state }, null, req)
-      if (!freshCallbackProof && order.status !== 'paid') throw new DomainError('PAYMENT_CALLBACK_NONCE_REPLAY', '支付回调 nonce 已被使用，且订单尚未进入已支付状态', 409)
       if (order.status === 'paid') {
         if (order.providerTradeId !== providerTradeId) throw new DomainError('SUBSCRIPTION_CALLBACK_REPLAY_CONFLICT', '已支付订阅订单不能使用不同的支付交易号重复入账', 409)
         await synchronizeCommercialQuotaFromSubscription(order)
@@ -19576,7 +19607,6 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     if (rechargeOrder.amountFen !== amountFen) throw new DomainError('BILLING_CALLBACK_AMOUNT_MISMATCH', '支付回调金额与订单金额不一致', 400)
     if (isProduction() && rechargeOrder.paymentMode !== 'provider') throw new DomainError('PAYMENT_ORDER_MODE_MISMATCH', '生产环境不能为 fixture 充值订单入账', 409)
     if (state !== 'paid' && state !== 'SUCCESS') return send(res, 200, workspaceId, { accepted: true, order_id: orderId, state }, null, req)
-    if (!freshCallbackProof && rechargeOrder.state !== 'paid') throw new DomainError('PAYMENT_CALLBACK_NONCE_REPLAY', '支付回调 nonce 已被使用，且订单尚未进入已支付状态', 409)
     if (rechargeOrder.state === 'paid' && rechargeOrder.providerTradeId && rechargeOrder.providerTradeId !== providerTradeId) throw new DomainError('PAYMENT_CALLBACK_REPLAY_CONFLICT', '已到账订单不能使用不同的支付交易号重复入账', 409)
     const paid = await markRechargePaid({ workspaceId, orderId, providerTradeId, amountFen, eventSource: 'provider_callback' })
     if (!paid) throw new DomainError('BILLING_ORDER_NOT_FOUND', '支付回调对应的充值订单不存在', 404)

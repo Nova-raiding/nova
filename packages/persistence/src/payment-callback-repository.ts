@@ -2,15 +2,20 @@ import { requireWorkspaceScope, type SqlPool, withWorkspaceTransaction } from '.
 
 export interface PaymentCallbackNonceRepository {
   consume(input: { workspaceId: string; channel: 'alipay' | 'wechat'; nonce: string; signedAt: string; payloadHash: string }): Promise<boolean>
+  replayPayloadMatches?(input: { workspaceId: string; channel: 'alipay' | 'wechat'; nonce: string; payloadHash: string }): Promise<boolean>
 }
 
 export class MemoryPaymentCallbackNonceRepository implements PaymentCallbackNonceRepository {
-  private readonly consumed = new Set<string>()
+  private readonly consumed = new Map<string, string>()
   async consume(input: { workspaceId: string; channel: 'alipay' | 'wechat'; nonce: string; signedAt: string; payloadHash: string }) {
     const key = `${requireWorkspaceScope(input.workspaceId)}:${input.channel}:${input.nonce}`
     if (this.consumed.has(key)) return false
-    this.consumed.add(key)
+    this.consumed.set(key, input.payloadHash)
     return true
+  }
+  async replayPayloadMatches(input: { workspaceId: string; channel: 'alipay' | 'wechat'; nonce: string; payloadHash: string }) {
+    const key = `${requireWorkspaceScope(input.workspaceId)}:${input.channel}:${input.nonce}`
+    return this.consumed.get(key) === input.payloadHash
   }
 }
 
@@ -25,6 +30,16 @@ export class PostgresPaymentCallbackNonceRepository implements PaymentCallbackNo
         [input.workspaceId, input.channel, input.nonce, input.signedAt, input.payloadHash],
       )
       return result.rowCount === 1
+    })
+  }
+
+  async replayPayloadMatches(input: { workspaceId: string; channel: 'alipay' | 'wechat'; nonce: string; payloadHash: string }) {
+    return withWorkspaceTransaction(this.pool, requireWorkspaceScope(input.workspaceId), async client => {
+      const existing = await client.query<{ payload_hash: string }>(
+        'SELECT payload_hash FROM payment_callback_nonces WHERE workspace_id=$1 AND channel=$2 AND nonce=$3',
+        [input.workspaceId, input.channel, input.nonce],
+      )
+      return existing.rows[0]?.payload_hash === input.payloadHash
     })
   }
 }

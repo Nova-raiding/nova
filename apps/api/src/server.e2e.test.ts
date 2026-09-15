@@ -37,6 +37,18 @@ async function start() {
 
 async function json(response: Response) { return await response.json() as Envelope<any> }
 
+function signedPaymentCallback(input: { channel: 'alipay' | 'wechat'; workspaceId: string; orderId: string; providerTradeId: string; amountFen: number; state: string; nonce: string; timestamp?: string }) {
+  const timestamp = input.timestamp ?? `${Math.floor(Date.now() / 1000)}`
+  const currency = 'CNY'
+  const signature = createHmac('sha256', 'callback-secret')
+    .update(`${input.channel}|${input.workspaceId}|${input.orderId}|${input.providerTradeId}|${input.amountFen}|${currency}|${input.state}|${timestamp}|${input.nonce}`)
+    .digest('hex')
+  return {
+    body: { workspace_id: input.workspaceId, order_id: input.orderId, provider_trade_id: input.providerTradeId, amount_fen: input.amountFen, currency, state: input.state },
+    headers: { 'content-type': 'application/json', 'x-payment-timestamp': timestamp, 'x-payment-nonce': input.nonce, 'x-payment-signature': signature },
+  }
+}
+
 function generatedDecisionBody(title: string, detail: string, sellingPoints: string[]) {
   const factSourceId = 'product:prod_fixture_1:v1'
   return {
@@ -628,6 +640,57 @@ describe('API HTTP vertical slice', () => {
     expect(personalStatement.data?.result).toMatchObject({ statement: { scope: 'mine', balance_scope: 'workspace', transaction_scope: 'mine', model_usage_scope: 'mine' }, balance_scope: 'workspace', transaction_scope: 'mine', model_usage_scope: 'mine', model_usage: { provider_cost_cny: null, external_provider_statement: { status: 'not_applicable_personal_scope' } } })
   })
 
+  it('does not let merchant.start bypass workspace billing permission or an explicit deny', async () => {
+    const workspaceId = `ws_entry_billing_${crypto.randomUUID()}`
+    const ownerId = `entry-owner-${crypto.randomUUID()}`
+    const operatorId = `entry-operator-${crypto.randomUUID()}`
+    const financeId = `entry-finance-${crypto.randomUUID()}`
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
+    vi.stubEnv('SESSION_ID_HASH_SECRET', 'entry-billing-session-secret')
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'entry-owner': { workspaces: [workspaceId], actor_id: ownerId, roles: ['workspace_owner'] },
+      'entry-operator': { workspaces: [workspaceId], actor_id: operatorId, roles: ['operator'] },
+      'entry-finance': { workspaces: [workspaceId], actor_id: financeId, roles: ['finance', 'merchant_operator'] },
+      'entry-owner-denied': { workspaces: [workspaceId], actor_id: ownerId, roles: ['workspace_owner'], denied_capabilities: ['billing.workspace.read'] },
+    }))
+    for (const [actorId, role] of [[ownerId, 'workspace_owner'], [operatorId, 'operator'], [financeId, 'finance']] as const) {
+      await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role, status: 'active', invitedBy: ownerId })
+    }
+    const base = await start()
+    const call = (token: string, method: string, params: Record<string, unknown> = {}) => fetch(`${base}/mcp`, {
+      method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method, params: { workspace_id: workspaceId, ...params } }),
+    }).then(json)
+    const created = await call('entry-owner', 'billing.recharge.create', { channel: 'alipay', amount_cny: '12.34', idempotency_key: `entry-wallet-${workspaceId}` })
+    expect(created.error).toBeNull()
+    const orderId = created.data?.result.id
+    const paid = await fetch(`${base}/v1/billing/callback/alipay`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ workspace_id: workspaceId, order_id: orderId, provider_trade_id: `entry-paid-${workspaceId}`, amount_fen: 1234, currency: 'CNY', state: 'paid' }),
+    }).then(json)
+    expect(paid.error).toBeNull()
+    for (const token of ['entry-operator', 'entry-owner-denied']) {
+      expect((await call(token, 'creative-points.balance.get')).error?.code).toBe('FORBIDDEN')
+      const entry = await call(token, 'merchant.start')
+      expect(entry.error).toBeNull()
+      expect(entry.data?.result.creative_points).toMatchObject({ balance_state: 'restricted', available_points: null, reserved_points: null, access_revision: null })
+      expect(entry.data?.result.wallet).toMatchObject({ balance_cny: null, balance_state: 'restricted' })
+      // Access state remains usable without disclosing workspace quantities.
+      expect(entry.data?.result.creative_points.allowed).toBe(true)
+      expect((await call(token, 'workspace.health')).data?.result).not.toHaveProperty('wallet')
+    }
+    for (const token of ['entry-owner', 'entry-finance']) {
+      const balance = await call(token, 'creative-points.balance.get')
+      expect(balance.error).toBeNull()
+      expect(balance.data?.result.available_points).toBeGreaterThan(0)
+      const entry = await call(token, 'merchant.start')
+      expect(entry.error).toBeNull()
+      expect(entry.data?.result.creative_points.available_points).toBe(balance.data?.result.available_points)
+      expect(entry.data?.result.wallet).toMatchObject({ balance_cny: '12.34' })
+    }
+  })
+
   it('keeps ops.session platform and workspace scopes separate and rejects conflicting platform scope declarations', async () => {
     vi.stubEnv('NODE_ENV', 'staging')
     vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
@@ -1010,6 +1073,30 @@ describe('API HTTP vertical slice', () => {
     expect(orderList.data?.result).toMatchObject({ summary: { pending: 0, paid: 1, closed: 0, failed: 0 }, returned: 1, total: 1, orders: [{ id: order.id, workspace_id: workspaceId, channel: 'wechat', amount_cny: '10.00', state: 'paid', provider_trade_id: callbackBody.provider_trade_id }] })
     const transactions = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'billing.transactions', params: { workspace_id: workspaceId } }) }).then(json)
     expect((transactions.data as { result: { transactions: unknown[] } }).result.transactions).toHaveLength(1)
+  })
+
+  it('binds payment callback nonce replay to the signed payload hash', async () => {
+    vi.stubEnv('PAYMENT_CALLBACK_SECRET', 'callback-secret')
+    const base = await start()
+    const workspaceId = `ws_callback_nonce_${Date.now()}`
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+    const create = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'alipay', amount_cny: '10.00', idempotency_key: `callback-nonce-${workspaceId}` } }) }).then(json)
+    const order = (create.data as { result: { id: string; amount_cny: string } }).result
+    const amountFen = Math.round(Number(order.amount_cny) * 100)
+    const nonce = `callbackNonce${Date.now()}`
+    const firstProof = signedPaymentCallback({ channel: 'alipay', workspaceId, orderId: order.id, providerTradeId: `trade-${workspaceId}`, amountFen, state: 'paid', nonce })
+    const first = await fetch(`${base}/v1/billing/callback/alipay`, { method: 'POST', headers: firstProof.headers, body: JSON.stringify(firstProof.body) }).then(json)
+    expect(first.error).toBeNull()
+
+    const replay = await fetch(`${base}/v1/billing/callback/alipay`, { method: 'POST', headers: firstProof.headers, body: JSON.stringify(firstProof.body) }).then(json)
+    expect(replay.error).toBeNull()
+    const conflictingProof = signedPaymentCallback({ channel: 'alipay', workspaceId, orderId: order.id, providerTradeId: `trade-${workspaceId}-other`, amountFen, state: 'paid', nonce })
+    const conflict = await fetch(`${base}/v1/billing/callback/alipay`, { method: 'POST', headers: conflictingProof.headers, body: JSON.stringify(conflictingProof.body) }).then(json)
+    expect(conflict.error?.code).toBe('PAYMENT_CALLBACK_NONCE_REPLAY')
+
+    const transactions = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.transactions', params: { workspace_id: workspaceId } }) }).then(json)
+    expect((transactions.data as { result: { balance_cny: string; transactions: Array<{ type: string }> } }).result.balance_cny).toBe('10.00')
+    expect((transactions.data as { result: { transactions: Array<{ type: string }> } }).result.transactions.filter(item => item.type === 'recharge')).toHaveLength(1)
   })
 
   it('reports exact recharge totals beyond the 100-row display limit', async () => {
