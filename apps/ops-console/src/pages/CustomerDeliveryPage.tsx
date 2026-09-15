@@ -51,7 +51,6 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const [uploadedContractName, setUploadedContractName] = useState("");
   const [integrationChecks, setIntegrationChecks] = useState<string[]>([]);
   const [acceptanceChecks, setAcceptanceChecks] = useState<string[]>([]);
-  const [trainingChecked, setTrainingChecked] = useState(false);
   const [createForm] = Form.useForm<{
     companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid";
     paymentDate: string; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: string;
@@ -266,26 +265,23 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             </div>
           </Form>
         </Card>
-        <Card title="系统接入确认" style={{ marginTop: 16 }}>
+        <div className="customer-delivery-check-card-row">
+        <Card title="系统接入确认">
           <div className="customer-delivery-check-grid customer-delivery-check-grid-five">
             {["插件账户", "店铺连接", "商品扫描", "知识库功能", "平台规则", "创作点", "企业信息", "品牌资产", "商品资料", "客户偏好"].map((label) => (
               <label className="customer-delivery-check-item" key={label}><span>{label}</span><Checkbox checked={integrationChecks.includes(label)} onChange={(event) => setIntegrationChecks((current) => event.target.checked ? [...current, label] : current.filter((item) => item !== label))} /></label>
             ))}
           </div>
         </Card>
-        <Card title="功能测试及验收" style={{ marginTop: 16 }}>
+        <Card title="功能测试及验收">
           <div className="customer-delivery-check-grid customer-delivery-check-grid-five">
             {["文案生成", "图片生成", "批注修改", "自动检查", "视频生成", "店铺与商品资料读取", "技术验收", "内容验收"].map((label) => (
               <label className="customer-delivery-check-item" key={label}><span>{label}</span><Checkbox checked={acceptanceChecks.includes(label)} onChange={(event) => setAcceptanceChecks((current) => event.target.checked ? [...current, label] : current.filter((item) => item !== label))} /></label>
             ))}
           </div>
+          <div className="customer-delivery-inline-upload"><Button icon={<UploadOutlined />} onClick={() => message.info("创建客户后可上传交付视频")}>上传交付视频</Button></div>
         </Card>
-        <Card title="客户培训与交付确认" style={{ marginTop: 16 }}>
-          <div className="customer-delivery-confirm-row">
-            <label className="customer-delivery-check-item"><span>客户培训</span><Checkbox checked={trainingChecked} onChange={(event) => setTrainingChecked(event.target.checked)} /></label>
-            <Button icon={<UploadOutlined />} onClick={() => message.info("创建客户后可上传交付视频")}>上传交付视频</Button>
-          </div>
-        </Card>
+        </div>
         <div className="customer-delivery-create-actions">
           <Button onClick={() => setCreatePage(false)}>返回客户建档</Button>
           <Space>
