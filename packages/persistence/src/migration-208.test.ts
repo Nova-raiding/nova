@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { loadMigrations } from './migration.js'
 
 describe('alert webhook receipt migration', () => {
-  it('creates an append-only audit ledger with durable replay keys', async () => {
+  it('creates the historical append-only audit ledger with durable replay keys', async () => {
     const migration = (await loadMigrations()).find(item => item.version === 208)
     expect(migration).toMatchObject({ name: 'alert_webhook_receipts' })
     const sql = migration!.sql
@@ -16,6 +16,8 @@ describe('alert webhook receipt migration', () => {
     expect(sql).toContain('BEFORE UPDATE OR DELETE')
     expect(sql).toContain('BEFORE TRUNCATE ON alert_webhook_receipts FOR EACH STATEMENT')
     expect(sql).toContain('REVOKE ALL ON alert_webhook_receipts FROM PUBLIC')
+    // Migration 208 is immutable after production application. Migration 209
+    // removes this historical grant and isolates the receiver role.
     expect(sql).toContain('GRANT SELECT, INSERT ON alert_webhook_receipts TO merchant_ops')
     expect(sql).toContain('REVOKE ALL ON FUNCTION reject_alert_webhook_receipt_mutation() FROM PUBLIC')
   })

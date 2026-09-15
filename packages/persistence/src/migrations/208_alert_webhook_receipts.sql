@@ -14,7 +14,8 @@ CREATE TABLE alert_webhook_receipts (
 REVOKE ALL ON alert_webhook_receipts FROM PUBLIC;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'merchant_ops') THEN
-    REVOKE ALL PRIVILEGES ON alert_webhook_receipts FROM merchant_ops;
+    GRANT SELECT, INSERT ON alert_webhook_receipts TO merchant_ops;
+    REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON alert_webhook_receipts FROM merchant_ops;
   END IF;
 END $$;
 
