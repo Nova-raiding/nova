@@ -160,6 +160,7 @@ export function CustomerDeliveryUpload({ purpose, disabled = false, onUpload, on
         ref={input}
         type="file"
         aria-label={label}
+        data-testid={`customer-delivery-upload-${purpose}`}
         style={{ display: "none" }}
         accept={uploadAccept[purpose]}
         multiple={isVideo}

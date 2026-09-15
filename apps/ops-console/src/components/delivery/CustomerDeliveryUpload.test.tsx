@@ -218,6 +218,7 @@ describe("delivery upload lifecycle", () => {
       />,
     );
     expect(html).toContain(`aria-label="${label}"`);
+    expect(html).toContain(`data-testid="customer-delivery-upload-${purpose}"`);
     expect(html).toContain(`<span>${label}</span>`);
     expect(html).toContain(`accept="${accept}"`);
   });

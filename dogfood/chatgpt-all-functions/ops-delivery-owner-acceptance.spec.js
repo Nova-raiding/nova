@@ -193,12 +193,12 @@ async function rpcAfter(page, method, action, evidence, expectedStatus = 200) {
 }
 
 const uploadFields = {
-  contract: { upload: '上传合同文件', field: '合同文件', kind: 'input' },
-  payment: { upload: '上传付款凭证', field: '付款凭证', kind: 'tags' },
-  system_integration: { upload: '上传接入凭证', field: '已上传凭证', kind: 'tags' },
-  functional_acceptance: { upload: '上传验收凭证', field: '已上传凭证', kind: 'tags' },
-  training: { upload: '上传培训凭证', field: '已上传培训凭证', kind: 'tags' },
-  video: { upload: '上传交付视频', field: '交付视频（支持多段）', kind: 'input' },
+  contract: { testId: 'customer-delivery-upload-contract', field: '合同文件', kind: 'input' },
+  payment: { testId: 'customer-delivery-upload-payment', field: '付款凭证', kind: 'tags' },
+  system_integration: { testId: 'customer-delivery-upload-system_integration', field: '已上传凭证', kind: 'tags' },
+  functional_acceptance: { testId: 'customer-delivery-upload-functional_acceptance', field: '已上传凭证', kind: 'tags' },
+  training: { testId: 'customer-delivery-upload-training', field: '已上传培训凭证', kind: 'tags' },
+  video: { testId: 'customer-delivery-upload-video', field: '交付视频（支持多段）', kind: 'input' },
 }
 
 // Scope repeated labels to their own Ant form control/card. A Select's search
@@ -251,7 +251,7 @@ async function uploadAndWaitForRealScan(page, scope, deliveryId, purpose, files,
         return asset
       })
     })
-    const exchanges = await Promise.all([...uploads, scope.getByLabel(fields.upload, { exact: true }).setInputFiles(files)])
+    const exchanges = await Promise.all([...uploads, scope.getByTestId(fields.testId).setInputFiles(files)])
     const assets = exchanges.slice(0, -1)
     const refs = assets.map(asset => asset.assetRef)
     if (waitForBinding) await waitForBinding(refs)
@@ -372,7 +372,7 @@ async function verifyClosedUploadCannotFillAnotherCustomer(page, deliveryId, ori
   await page.route('**/api/mcp', holdScan)
   try {
     const file = { name: 'cancelled-contract.pdf', mimeType: 'application/pdf', buffer: contractPdf('Cancelled drawer upload fixture') }
-    const uploaded = await rpcAfter(page, 'ops.customer-delivery.assets.upload', () => page.getByRole('dialog').getByLabel('上传合同文件', { exact: true }).setInputFiles(file), evidence)
+    const uploaded = await rpcAfter(page, 'ops.customer-delivery.assets.upload', () => page.getByRole('dialog').getByTestId('customer-delivery-upload-contract').setInputFiles(file), evidence)
     evidence.events.push({ event: 'cancelled_upload_received_by_server', sha256: sha256(file.buffer), asset_ref: uploaded.result?.assetRef ?? null, scan_status: uploaded.result?.scanStatus ?? null, status: 200 })
     expect(uploaded.result?.scanStatus).toBe('pending')
     await expect(page.getByRole('dialog').getByText('安全检查中', { exact: true })).toBeVisible()
@@ -455,7 +455,7 @@ async function verifyWorkspaceCannotAccessDelivery(browser, deliveryId, assetRef
     await expect(memberPage.getByRole('heading', { name: '无权访问“客户交付”', exact: true })).toBeVisible()
     await expect(memberPage.getByRole('alert', { name: '权限拒绝详情', exact: true }).getByText('customer.delivery.read', { exact: true })).toBeVisible()
     await expect(memberPage.getByRole('button', { name: '新建客户', exact: true })).toHaveCount(0)
-    await expect(memberPage.getByLabel('上传合同文件', { exact: true })).toHaveCount(0)
+    await expect(memberPage.getByTestId('customer-delivery-upload-contract')).toHaveCount(0)
     const requests = [
       ['ops.customer-delivery.assets.get', 'customer.delivery.read', { target_workspace_id: workspaceId, delivery_id: deliveryId, purpose: 'contract', asset_ref: assetRef }],
       ['ops.customer-delivery.assets.upload', 'customer.delivery.update', { target_workspace_id: workspaceId, delivery_id: deliveryId, purpose: 'contract', name: file.name, mime_type: file.mimeType, content_base64: file.buffer.toString('base64'), sha256: sha256(file.buffer) }],
