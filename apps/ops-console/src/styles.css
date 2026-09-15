@@ -43,7 +43,9 @@
 .customer-delivery-check-item { display: flex; min-width: 0; min-height: 32px; align-items: center; justify-content: flex-start; gap: 6px; color: #172554; cursor: pointer; line-height: 1.25; }
 .customer-delivery-check-item span { min-width: 0; overflow-wrap: anywhere; }
 .customer-delivery-check-item .ant-checkbox { order: 2; }
-.customer-delivery-inline-upload { display: flex; justify-content: flex-end; margin-top: 16px; }
+.customer-delivery-acceptance-card .ant-card-body { position: relative; padding-right: 132px; }
+.customer-delivery-inline-upload { position: absolute; top: 16px; right: 20px; }
+.customer-delivery-inline-upload .ant-btn { height: 28px; padding: 0 9px; font-size: 12px; }
 .customer-delivery-create-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 16px; }
 @media (max-width: 1100px) { .customer-delivery-check-card-row { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .customer-delivery-check-grid-five { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
