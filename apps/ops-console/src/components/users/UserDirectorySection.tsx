@@ -220,7 +220,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         dataSource={sortedUsers}
         locale={{ emptyText: "没有符合条件的用户成员关系" }}
         rowSelection={{ selectedRowKeys: selectedUserKeys, onChange: (keys) => setSelectedUserKeys(keys.map((key) => String(key))), getCheckboxProps: (row) => ({ disabled: row.accountType === "platform" || row.externalSubject === model.opsSession?.actor_id || row.status === "suspended" }) }}
-        pagination={{ current: Math.floor(model.userDirectory.offset / model.userDirectory.limit) + 1, pageSize: model.userDirectory.limit, total: attributeFilter ? sortedUsers.length : model.userDirectory.total, showSizeChanger: true, showTotal: (total) => `共 ${total} 条成员关系` }}
+        pagination={{ current: Math.floor(model.userDirectory.offset / model.userDirectory.limit) + 1, pageSize: model.userDirectory.limit, total: attributeFilter ? sortedUsers.length : model.userDirectory.total, showSizeChanger: false, showTotal: (total) => `共 ${total} 条成员关系` }}
         onChange={handleDirectoryChange}
         scroll={{ x: "max-content" }}
         columns={[

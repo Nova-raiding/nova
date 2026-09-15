@@ -1433,7 +1433,7 @@ export function useOpsConsoleModel() {
     userDirectoryInFlightKeysRef.current.add(requestKey);
     const requestId = ++userDirectoryRequestRef.current;
     const page = filters.page ?? 1;
-    const pageSize = filters.pageSize ?? 20;
+    const pageSize = filters.pageSize ?? 10;
     setUserDirectoryFilters(filters);
     setUserDirectoryLoading(true);
     setUserDirectoryError("");
