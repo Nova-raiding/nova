@@ -367,7 +367,7 @@ const commercialFinanceRead: readonly CapabilityId[] = [
 ]
 
 export const ROLE_CAPABILITIES: Readonly<Record<CanonicalRole, readonly CapabilityId[]>> = {
-  platform_admin: [...platformRead, ...commercialOpsRead, ...customerDeliveryRead, 'customer.delivery.update', 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.point.adjust.approve', 'authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.status.update', 'workspace.delete.execute', 'feature_flag.update', 'feature_flag.administer', 'audit.export', 'billing.platform.read', 'billing.export'],
+  platform_admin: [...platformRead, ...commercialOpsRead, ...customerDeliveryRead, 'customer.delivery.update', 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.point.adjust.approve', 'authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.status.update', 'workspace.delete.execute', 'feature_flag.update', 'feature_flag.administer', 'audit.export', 'billing.platform.read', 'billing.reconcile.execute', 'billing.refund.execute', 'billing.export'],
   // P0 compatibility: legacy platform_ops resolves here, so existing identity/member/delete
   // enforcement remains intact until durable platform-role assignments replace that alias.
   ops_admin: [...platformRead, ...commercialOpsRead, ...customerDeliveryRead, 'customer.delivery.update', 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.service_fulfillment.write', 'authorization.role.read', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.delete.execute', 'workspace.member.read', 'workspace.member.manage', 'support.ticket.update', 'support.sla.update', 'support.sla.approve', 'incident.update', 'incident.administer', 'feature_flag.update', 'commercial.update', 'commercial.export', 'platform.settings.update', 'platform.media_spec.update', 'platform.media_spec.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.export', 'canonical.backfill.read', 'canonical.backfill.update', 'marketing.alert.update', 'store.connection.update'],
@@ -487,14 +487,16 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   write('canonical.backfill.update', 'platform', 'customer_metadata', ['ops.canonical.backfill.create', 'ops.canonical.backfill.run', 'ops.canonical.backfill.pause', 'ops.canonical.backfill.resume', 'ops.canonical.backfill.conflict.claim', 'ops.canonical.backfill.conflict.resolve'], 'allow_and_deny'),
   read('rule.read', 'platform', 'customer_metadata', ['rule.audit']),
   read('rule.read', 'workspace', 'customer_metadata', ['ops.rules.workspace.audit']),
-  read('billing.self.read', 'self', 'finance', ['subscription.get', 'subscription.orders.list', 'billing.status', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'commercial.access.get', 'commercial.catalog.get', 'commercial.order.payment.get', 'creative-points.balance.get']),
+  read('billing.self.read', 'self', 'finance', ['subscription.get', 'subscription.orders.list', 'billing.status', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions']),
   write('billing.workspace.update', 'workspace', 'finance', ['subscription.order.create', 'subscription.change', 'billing.usage.consume', 'billing.recharge.create', 'commercial.order.create']),
   write('billing.refund.execute', 'workspace', 'finance', ['billing.usage.refund'], 'allow_and_deny', ['reason', 'idempotency']),
-  write('billing.refund.execute', 'workspace', 'finance', ['billing.refund'], 'allow_and_deny', ['reason']),
-  // The V2 statement returns workspace-wide operation intent and grant evidence;
-  // it is not an actor-filtered personal statement like legacy transactions.
-  read('billing.workspace.read', 'workspace', 'finance', ['billing.reconciliation', 'billing.model-usage.statement', 'creative-points.statement.list']),
-  write('billing.reconcile.execute', 'workspace', 'finance', ['billing.reconciliation.run', 'billing.model-usage.reconciliation.run', 'billing.model-usage.resolve']),
+  // Provider-backed recharge refunds and reconciliation are platform-operated
+  // actions. Merchant surfaces intentionally hide them; keeping their policy
+  // workspace-scoped made the desktop Ops console advertise controls that no
+  // platform administrator could execute.
+  write('billing.refund.execute', 'platform', 'finance', ['billing.refund'], 'allow_and_deny', ['reason']),
+  read('billing.workspace.read', 'workspace', 'finance', ['commercial.access.get', 'commercial.catalog.get', 'commercial.order.payment.get', 'creative-points.balance.get', 'creative-points.statement.list', 'billing.reconciliation', 'billing.model-usage.statement']),
+  write('billing.reconcile.execute', 'platform', 'finance', ['billing.reconciliation.run', 'billing.model-usage.reconciliation.run', 'billing.model-usage.resolve']),
   read('billing.export', 'workspace', 'finance', ['billing.export']),
   read('platform.settings.read', 'platform', 'platform_summary', ['platform.settings.get']),
   write('platform.settings.update', 'platform', 'platform_summary', ['platform.settings.update']),
