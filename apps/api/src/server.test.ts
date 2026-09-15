@@ -770,6 +770,9 @@ describe('API application wiring', () => {
     expect(reconciliation).toContain('reconciliation_required: true')
     expect(reconciliation).toContain('API 禁止直接查询 Provider')
     expect(reconciliation).not.toContain('queryStatus')
+    expect(reconciliation).toContain("const providerSettlementPending = ['MODEL_USAGE_SETTLEMENT_PENDING', 'MODEL_USAGE_COST_MISSING'].includes(job.errorCode ?? '')")
+    expect(reconciliation).toContain("job.state === 'failed' && !providerSettlementPending")
+    expect(reconciliation).toContain("reason: 'provider_result_or_usage_settlement_pending'")
 
     // Completion is compare-and-set guarded by the execution repository; a
     // replayed page cannot create a second terminal transition.

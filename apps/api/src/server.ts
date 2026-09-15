@@ -19480,10 +19480,17 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const attention: Array<Record<string, unknown>> = []
     for (const execution of executions) {
       const job = service.getImageGenerationJob(workspaceId, execution.jobId)
+      // A provider response may already exist while usage settlement or
+      // artifact archiving is still pending. Such jobs must remain
+      // reconcilable; treating the user-facing failed projection as a
+      // terminal provider failure would permanently close the execution lease
+      // and make a safe evidence-based recovery impossible.
+      const providerSettlementPending = ['MODEL_USAGE_SETTLEMENT_PENDING', 'MODEL_USAGE_COST_MISSING'].includes(job.errorCode ?? '')
+        || Boolean(execution.providerRequestId && job.state === 'failed' && job.archiveState !== 'archived')
       if (job.state === 'succeeded' && job.archiveState === 'archived' && Boolean(job.outputs?.length)) {
         const settled = await repository.reconcileCompleted({ workspaceId, jobId: job.id })
         repaired.push({ job_id: job.id, from: execution.state, to: settled.state, reason: 'job_archive_is_authoritative' })
-      } else if (job.state === 'failed') {
+      } else if (job.state === 'failed' && !providerSettlementPending) {
         const settled = await repository.reconcileFailed({ workspaceId, jobId: job.id, errorCode: job.errorCode ?? 'IMAGE_GENERATION_FAILED', errorMessage: job.errorMessage ?? '图片生成任务已失败' })
         repaired.push({ job_id: job.id, from: execution.state, to: settled.state, reason: 'job_failure_is_authoritative' })
       } else {
@@ -19491,7 +19498,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
         if (latestEvidence?.nextAttemptAt && Date.parse(latestEvidence.nextAttemptAt) > Date.now()) continue
         const requestedEvents = persistence.outbox ? await persistence.outbox.listAggregateEvents(workspaceId, job.id, 100) : []
         const requested = requestedEvents.find(event => event.eventType === 'image.generation.requested' && event.payload.intent_hash === job.intentHash)
-        attention.push({ job_id: job.id, event_id: execution.eventId, intent_hash: job.intentHash, execution_attempt: execution.attempt, query_attempt: (latestEvidence?.queryAttempt ?? 0) + 1, execution_state: execution.state, provider_request_id: execution.providerRequestId ?? null, reconciliation_required: true, next_action: 'Worker 必须查询真实 Provider 后提交 reconciliation-evidence；API 禁止直接查询 Provider' })
+        attention.push({ job_id: job.id, event_id: execution.eventId, intent_hash: job.intentHash, execution_attempt: execution.attempt, query_attempt: (latestEvidence?.queryAttempt ?? 0) + 1, execution_state: execution.state, provider_request_id: execution.providerRequestId ?? null, reconciliation_required: true, next_action: 'Worker 必须查询真实 Provider 后提交 reconciliation-evidence；API 禁止直接查询 Provider', ...(providerSettlementPending ? { reason: 'provider_result_or_usage_settlement_pending' } : {}) })
         if (requested?.payload.action_id) attention.at(-1)!.action_id = requested.payload.action_id
       }
     }
