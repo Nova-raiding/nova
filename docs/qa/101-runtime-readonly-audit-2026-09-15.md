@@ -19,7 +19,16 @@
 - `/opt/merchant-validation/20260915T0820Z-worker209-rollout/worker-candidate.override.yml`
 - Ops UI 和 payment gateway 使用 `/opt/merchant-releases/9506d7bf/` 下的配置。
 
-生产配置 locator 缺失不等于支付密钥丢失；目前只能确认 provider 校验未通过，不能据此声称昨日的配置已被删除。
+上述 12:30 核验时的生产配置 locator 缺失不等于支付密钥丢失，不能据此声称昨日的配置已被删除。该 locator 状态随后已变化，见下节；旧窗口的版本/支付观察不是后续部署验收。
+
+## 13:49–13:50 只读增量核验
+
+owner 在合并其他并行工作的配置准备提交后，再次通过 SSH `101` 只读核验，两个命令均退出 0。本次只输出布尔、权限和状态，不读取/输出原始 dotenv、YAML、URL 或秘密。
+
+- `/opt/merchant-deploy/.env.production-config-path` 当前已存在，是受控 symlink，不是 lstat 意义的普通文件；其 canonical target 位于 `/opt/merchant-deploy` 内，目标为普通文件、mode 600。symlink 的 lstat mode 777 不等于目标文件可被任意写入。
+- locator 解出的 YAML 路径与预期部署 root 内目标一致，YAML 为普通文件、mode 600，配置目录为 mode 700。
+- `configuration_status=BLOCKED_UNTIL_REQUIRED_PRODUCTION_INPUTS`。已有持久化路径/draft 不代表真实秘密引用、生产配置、支付或发布门禁通过。
+- 本增量未重新核验 API/数据库版本，不以 locator 检查替代 PG17/211 升级证据。未执行 installer、renderer、preflight、备份、迁移、重启、支付或模型调用。
 
 ## 发布前置条件
 

@@ -2,6 +2,8 @@
 
 状态：本文记录较早检查点的支付恢复及数据库锁超时验证，不能替代当前集成版本的最终验收。下文 11:02 的权限断言失败是历史快照。本轮 owner 又发现批次为 1 的跨队列公平性及并发关闭后虚报释放问题，最终修复与真实复验证据统一见 [owner 上线续验记录](store-nova-launch-acceptance-2026-09-15.md)。本记录不是生产支付放行声明。
 
+最新独立支付 probe `artifacts/payment-reconciliation/run-VdLoqk/run-result.json` 通过，9 个业务源指纹与 `dab10890` 一致；充值与商业点包签名回调在真实事务首次失败后均可同载荷恢复且只入账一次，篡改载荷仍 409。现代回调验签后、nonce 消费前拒绝非 CNY。该 probe 使用 localhost synthetic provider，真实支付/退款发送为 0；不等于真实支付宝已放行。
+
 ## 范围与根因
 
 本轮只恢复既有支付／退款对账链路，不新增商业订单、开通权限、合同外链下载、OCR 或 StoryForge 功能。业务实现限于 `apps/api/src/server.ts` 与 `packages/persistence/src/billing-repository.ts`；保留工作区原有未提交修改，不提交、不推送、不部署。
