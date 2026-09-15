@@ -32,7 +32,7 @@ SELECT
   '$argon2id$v=19$m=19456,p=1,t=2$ZXUxT7YCOQRta+XTdDca0Q$UZVXgJhBHnR3D4IBAZ8cq99CH7j0TAR/NmZodfkd2So',
   now(),
   'active',
-  ARRAY['platform_admin']::text[],
+  ARRAY['platform_admin','platform_ops']::text[],
   ARRAY[]::text[]
 FROM platform_identities
 WHERE issuer = 'damai-password' AND external_subject = 'admin@dm.com'
