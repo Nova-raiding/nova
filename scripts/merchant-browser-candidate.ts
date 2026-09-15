@@ -126,7 +126,9 @@ export function assertCandidateComposeRender(rendered: { services?: Record<strin
     if (!config) throw new Error(`candidate Compose is missing ${service}`)
     if (config.volumes?.some(volume => volume.type !== 'volume')) throw new Error(`candidate ${service} refuses host bind or unclassified mounts`)
   }
-  if (rendered.services?.postgres.image !== CANDIDATE_POSTGRES_IMAGE || rendered.services?.migrate.image !== candidate.migrationImage || rendered.services?.migrate.volumes?.length) throw new Error('candidate requires pinned PG17 and built migration artifacts without runtime mounts')
+  const postgres = rendered.services?.postgres
+  const migrate = rendered.services?.migrate
+  if (!postgres || !migrate || postgres.image !== CANDIDATE_POSTGRES_IMAGE || migrate.image !== candidate.migrationImage || migrate.volumes?.length) throw new Error('candidate requires pinned PG17 and built migration artifacts without runtime mounts')
 }
 
 export function assertContainerHealthy(inspected: { State?: { Running?: boolean; Health?: { Status?: string } } }, service: string): void {
