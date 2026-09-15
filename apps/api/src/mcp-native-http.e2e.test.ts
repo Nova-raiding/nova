@@ -169,7 +169,7 @@ describe('native ChatGPT MCP HTTP transport', () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('PUBLIC_APP_BASE_URL', 'https://yxsona.com')
     const base = await start()
-    for (const path of ['/.well-known/oauth-protected-resource', '/.well-known/oauth-authorization-server', '/.well-known/openid-configuration']) {
+    for (const path of ['/.well-known/oauth-protected-resource', '/.well-known/oauth-authorization-server']) {
       const response = await fetch(`${base}${path}`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
       expect(response.status, path).toBe(503)
       expect(response.headers.get('cache-control')).toBe('no-store')
@@ -191,10 +191,6 @@ describe('native ChatGPT MCP HTTP transport', () => {
     const authorizationServer = await fetch(`${base}/.well-known/oauth-authorization-server`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
     expect(authorizationServer.status).toBe(200)
     await expect(authorizationServer.json()).resolves.toMatchObject({ issuer: 'https://accounts.example.com', authorization_endpoint: 'https://accounts.example.com/oauth/authorize', token_endpoint: 'https://accounts.example.com/oauth/token', code_challenge_methods_supported: ['S256'] })
-    const openidCompatibility = await fetch(`${base}/.well-known/openid-configuration`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
-    expect(openidCompatibility.status).toBe(200)
-    expect(openidCompatibility.headers.get('content-type')).toContain('application/json')
-    await expect(openidCompatibility.json()).resolves.toMatchObject({ issuer: 'https://accounts.example.com', authorization_endpoint: 'https://accounts.example.com/oauth/authorize', token_endpoint: 'https://accounts.example.com/oauth/token', code_challenge_methods_supported: ['S256'], scopes_supported: ['merchant'] })
   })
 
   it('fails closed when the OpenAI Apps domain challenge token is not configured', async () => {

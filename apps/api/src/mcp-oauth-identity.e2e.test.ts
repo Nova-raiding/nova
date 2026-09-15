@@ -52,6 +52,7 @@ describe('canonical password identity MCP OAuth', () => {
     form.set('login', login); form.set('password', password)
     const authorized = await fetch(`${base}/oauth/authorize`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form, redirect: 'manual' })
     expect(authorized.status).toBe(302)
+    expect(authorized.headers.get('set-cookie')).toBeNull()
     const passwordCookie = authorized.headers.get('set-cookie')?.split(';')[0] ?? ''
     const redirect = new URL(authorized.headers.get('location')!)
     expect(redirect.origin + redirect.pathname).toBe(callback)
@@ -84,6 +85,8 @@ describe('canonical password identity MCP OAuth', () => {
     const initialized = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${tokens.access_token}`, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) })
     expect(initialized.status).toBe(200)
     await expect(initialized.json()).resolves.toMatchObject({ jsonrpc: '2.0', id: 1, result: { serverInfo: { name: 'merchant-marketing' } } })
+    const cookieOnly = await fetch(`${base}/mcp`, { method: 'POST', headers: { cookie: 'damai_session=browser-session-must-not-authenticate-mcp', 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1.1, method: 'initialize', params: {} }) })
+    expect(cookieOnly.status).toBe(401)
 
     const switched = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${tokens.access_token}`, 'content-type': 'application/json', 'x-workspace-id': 'ws_other' }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'initialize', params: {} }) })
     expect(switched.status).toBe(403)
@@ -91,6 +94,8 @@ describe('canonical password identity MCP OAuth', () => {
     const ops = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${tokens.access_token}`, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'ops.session', params: {} }) })
     expect(ops.status).toBe(403)
     await expect(ops.json()).resolves.toMatchObject({ error: { code: 'FORBIDDEN' } })
+    const legacyOps = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${tokens.access_token}`, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 3.1, method: 'ops.users.list', params: {} }) })
+    expect(legacyOps.status).toBe(403)
 
     const refreshed = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'refresh_token', client_id: clientId, refresh_token: tokens.refresh_token, resource }) })
     expect(refreshed.status).toBe(200)
@@ -231,6 +236,17 @@ describe('canonical password identity MCP OAuth', () => {
     expect((await fetch(unsupportedOidcScope)).status).toBe(400)
   })
 
+  it('fails closed before static-token fallback when required OAuth clients are invalid', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_OAUTH_REQUIRED', 'true')
+    vi.stubEnv('MCP_OAUTH_CLIENTS', '{invalid-json')
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ 'legacy-token': { actor_id: 'legacy', workspaces: ['ws_legacy'], roles: ['workspace_owner'] } }))
+    const base = await start()
+    const response = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: 'Bearer legacy-token', 'x-workspace-id': 'ws_legacy', 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'initialize', params: {} }) })
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toMatchObject({ error: { code: 'MCP_OAUTH_NOT_CONFIGURED' } })
+  })
+
   it('makes production identity readiness depend on self-hosted MCP OAuth instead of static bearer grants', () => {
     const identityEnvironment: NodeJS.ProcessEnv = {
       NODE_ENV: 'production', OPS_AUTH_MODE: 'oidc', OIDC_PROXY_SIGNING_SECRET: 'oidc-secret', SESSION_ID_HASH_SECRET: 'session-secret', OPS_DATABASE_URL: 'postgres://control-plane', MERCHANT_BEARER_HOSTNAME: 'yxsona.com', MCP_OAUTH_REQUIRED: 'true', PUBLIC_APP_BASE_URL: 'https://yxsona.com', MCP_OAUTH_CLIENTS: JSON.stringify({ chatgpt: ['https://chatgpt.com/oauth/callback'] }),
@@ -238,5 +254,13 @@ describe('canonical password identity MCP OAuth', () => {
     expect(productionReadinessDiagnostics(identityEnvironment).gates.identity).toEqual({ ready: true, reasons: [] })
     delete identityEnvironment.MCP_OAUTH_CLIENTS
     expect(productionReadinessDiagnostics(identityEnvironment).gates.identity).toMatchObject({ ready: false, reasons: expect.arrayContaining(['mcp_oauth_clients_missing_or_invalid']) })
+    for (const redirect of ['ftp://localhost/callback', 'https://user@example.test/callback', 'https://example.test/callback#fragment', 'http://example.test/callback']) {
+      identityEnvironment.MCP_OAUTH_CLIENTS = JSON.stringify({ chatgpt: [redirect] })
+      expect(productionReadinessDiagnostics(identityEnvironment).gates.identity).toMatchObject({ ready: false, reasons: expect.arrayContaining(['mcp_oauth_clients_missing_or_invalid']) })
+    }
+    for (const redirect of ['http://localhost/callback', 'http://127.0.0.1/callback', 'http://[::1]/callback']) {
+      identityEnvironment.MCP_OAUTH_CLIENTS = JSON.stringify({ chatgpt: [redirect] })
+      expect(productionReadinessDiagnostics(identityEnvironment).gates.identity).toEqual({ ready: true, reasons: [] })
+    }
   })
 })

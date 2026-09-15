@@ -84,6 +84,17 @@ describe('authorization policy registry', () => {
     expect(getMcpMethodPolicy('ops.customer-delivery.assets.upload')).toMatchObject({ capability: 'customer.delivery.update', scope: 'platform', workbench: 'platform', dataClass: 'customer_metadata', effect: 'write', audit: 'allow_and_deny', obligations: [] })
   })
 
+  it('recognizes a durable support_agent assignment without granting delivery writes or tenant support privileges', () => {
+    const roles = resolveCanonicalRoles({ gatewayRoles: ['support_agent'] })
+    expect(roles).toEqual(['support_agent'])
+    expect(capabilitiesForRoles(roles)).toContain('customer.delivery.read')
+    expect(capabilitiesForRoles(roles)).not.toContain('customer.delivery.update')
+    expect(capabilitiesForRoles(roles)).not.toContain('authorization.role.manage')
+    expect(canonicalizeRole('support_agent', 'membership')).toBeUndefined()
+    expect(canonicalizeRole('support', 'membership')).toBe('workspace_support')
+    expect(resolveCanonicalRoles({ gatewayRoles: ['support_agent_unknown'] })).toEqual([])
+  })
+
   it('normalizes legacy roles at one boundary without elevating ops_admin to platform_admin', () => {
     expect(canonicalizeRole('platform_ops')).toBe('ops_admin')
     expect(canonicalizeRole('merchant_admin', 'membership')).toBe('workspace_admin')
@@ -96,7 +107,7 @@ describe('authorization policy registry', () => {
     expect(capabilitiesForRoles(['operator'])).toContain('billing.self.read')
     expect(getMcpMethodPolicy('commercial.catalog.get')).toMatchObject({ capability: 'billing.self.read', scope: 'self' })
     expect(getMcpMethodPolicy('commercial.order.payment.get')).toMatchObject({ capability: 'billing.self.read', scope: 'self' })
-    expect(getMcpMethodPolicy('creative-points.balance.get')).toMatchObject({ capability: 'billing.self.read', scope: 'self' })
+    expect(getMcpMethodPolicy('creative-points.balance.get')).toMatchObject({ capability: 'billing.workspace.read', scope: 'workspace' })
     expect(getMcpMethodPolicy('creative-points.statement.list')).toMatchObject({ capability: 'billing.workspace.read', scope: 'workspace' })
     expect(capabilitiesForRoles(['operator'])).not.toContain('billing.workspace.read')
     expect(capabilitiesForRoles(['platform_admin'])).toContain('billing.platform.read')

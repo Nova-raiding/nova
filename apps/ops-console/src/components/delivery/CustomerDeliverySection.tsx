@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -223,9 +223,10 @@ function createUploadTracker() {
   };
 }
 
-export function CustomerDeliveryTrainingEvidence({ record, disabled, onUpload, onGetAsset, onConfirm, onClose }: {
+export function CustomerDeliveryTrainingEvidence({ record, disabled, readOnly = false, onUpload, onGetAsset, onConfirm, onClose }: {
   record: CustomerDeliveryRecord;
   disabled?: boolean;
+  readOnly?: boolean;
   onUpload?: (file: File, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
   onGetAsset?: (assetRef: string, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
   onConfirm: (refs: string[]) => Promise<void>;
@@ -235,7 +236,7 @@ export function CustomerDeliveryTrainingEvidence({ record, disabled, onUpload, o
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const confirm = async () => {
-    if (busy || disabled) return;
+    if (busy || disabled || readOnly) return;
     try {
       const valid = parseCustomerDeliveryEvidenceRefs(refs, "培训凭证");
       if (!valid.length) throw new Error("完成客户培训前请上传培训凭证");
@@ -247,10 +248,10 @@ export function CustomerDeliveryTrainingEvidence({ record, disabled, onUpload, o
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 12 }}>
       <div style={{ minWidth: 0 }}>
         <Typography.Text strong>培训凭证</Typography.Text>
-        <Typography.Paragraph type="secondary" style={{ margin: "4px 0 0" }}>上传签到表、培训记录或确认截图，安全检查通过后确认。</Typography.Paragraph>
+        <Typography.Paragraph type="secondary" style={{ margin: "4px 0 0" }}>{readOnly ? "查看已登记的培训凭证，当前会话不可修改。" : "上传签到表、培训记录或确认截图，安全检查通过后确认。"}</Typography.Paragraph>
       </div>
       <Space style={{ flexShrink: 0 }}>
-        <Button type="primary" disabled={busy || disabled} onClick={() => void confirm()}>确认培训完成</Button>
+        {!readOnly ? <Button type="primary" disabled={busy || disabled} onClick={() => void confirm()}>确认培训完成</Button> : null}
         <Button aria-label="收起" onClick={onClose}>收起</Button>
       </Space>
     </div>
@@ -263,14 +264,14 @@ export function CustomerDeliveryTrainingEvidence({ record, disabled, onUpload, o
           open={false}
           value={refs}
           onChange={setRefs}
-          disabled={disabled}
+          disabled={disabled || readOnly}
           placeholder="上传后自动填入，也可填写已绑定素材编号"
           style={{ width: "100%" }}
         />
         {error ? <Typography.Paragraph type="danger" role="alert" style={{ margin: "8px 0 0" }}>{error}</Typography.Paragraph> : null}
       </div>
       <div style={{ minWidth: 0 }}>
-        <CustomerDeliveryUpload purpose="training" disabled={disabled} onUpload={onUpload} onGetAsset={onGetAsset} onReady={(asset) => setRefs((current) => [...new Set([...current, asset.assetRef])])} onBusyChange={setBusy} />
+        {!readOnly ? <CustomerDeliveryUpload purpose="training" disabled={disabled} onUpload={disabled ? undefined : onUpload} onGetAsset={onGetAsset} onReady={(asset) => setRefs((current) => [...new Set([...current, asset.assetRef])])} onBusyChange={setBusy} /> : null}
       </div>
     </div>
   </section>;
@@ -334,16 +335,48 @@ export function CustomerDeliverySection({
   const [uploading, setUploading] = useState(false);
   const uploadTracker = useRef(createUploadTracker());
   const detailRequest = useRef(0);
+  const mounted = useRef(true);
+  // An awaited segment must never continue with the permission/callback props
+  // captured when the batch started. Re-check the latest render before every
+  // new write, including permission revocation without a workspace change.
+  const currentVideoAccess = useRef({ disabled, readOnly, onVideoAdd });
+  currentVideoAccess.current = { disabled, readOnly, onVideoAdd };
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      detailRequest.current++;
+      uploadTracker.current.beginScope();
+    };
+  }, []);
   const [creating, setCreating] = useState(false);
   const [videoItems, setVideoItems] = useState<CustomerDeliveryVideoItem[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [trainingRowId, setTrainingRowId] = useState<string>();
   const [createForm] = Form.useForm();
   const [form] = Form.useForm();
+  useLayoutEffect(() => {
+    if (!disabled) return;
+    // Loss of read scope removes previously visible detail data, not merely
+    // its controls. Do not apply this to readOnly: losing only write access
+    // must keep saved details available for inspection.
+    detailRequest.current++;
+    uploadTracker.current.beginScope();
+    setSelected(undefined);
+    setVideoItems([]);
+    setTrainingRowId(undefined);
+    setBlockedCompany(undefined);
+    setShowCreate(false);
+    setLoadingStep(false);
+    setUploading(false);
+    form.resetFields();
+    createForm.resetFields();
+  }, [disabled, form, createForm]);
   const openStep = async (
     row: CustomerDeliveryRecord,
     next: DeliveryStepKey,
   ) => {
+    if (disabled || saving) return;
     if (!readOnly && isDeliveryStepBlocked(row.paymentStatus, next)) {
       setBlockedCompany(row.companyName);
       return;
@@ -414,9 +447,13 @@ export function CustomerDeliverySection({
   };
   const create = async (values: { companyName?: string }) => {
     if (disabled || readOnly || !onCreate || !values.companyName?.trim()) return;
+    const creationRequest = detailRequest.current;
     setCreating(true);
     try {
       const record = await onCreate(values.companyName.trim());
+      // The server may have created the record before read access was lost.
+      // Preserve that success without reopening a now-invalid detail scope.
+      if (!mounted.current || creationRequest !== detailRequest.current) return;
       setTrainingRowId(undefined);
       const request = ++detailRequest.current;
       uploadTracker.current.beginScope(`${record.id}:profile:${request}`);
@@ -435,8 +472,13 @@ export function CustomerDeliverySection({
     }
   };
   const save = async (values: Record<string, unknown>) => {
-    if (!selected || uploading) return;
+    if (!selected || disabled || readOnly || saving || loadingStep || uploading) return;
     const request = detailRequest.current;
+    const currentVideoAction = () => {
+      const access = currentVideoAccess.current;
+      return mounted.current && request === detailRequest.current && !access.disabled && !access.readOnly
+        ? access.onVideoAdd : undefined;
+    };
     const next = {
       ...selected,
       ...values,
@@ -497,7 +539,9 @@ export function CustomerDeliverySection({
         if (!refs.length)
           throw new Error("请填写至少一个已上传视频的 asset_ref");
         for (const [index, assetRef] of refs.entries()) {
-          persisted = await onVideoAdd(selected, {
+          const addCurrentVideo = currentVideoAction();
+          if (!addCurrentVideo) return;
+          persisted = await addCurrentVideo(selected, {
             title: `${selected.companyName} 交付视频 ${selected.videos + index + 1}`,
             assetRef,
             sortOrder: selected.videos + index,
@@ -512,6 +556,9 @@ export function CustomerDeliverySection({
             setSelected((current) => current?.id === selected.id ? savedRecord : current);
           }
         }
+        // Keep an acknowledged segment; stop the batch without rolling it
+        // back or reading again through a stale drawer/authorization scope.
+        if (!currentVideoAction()) return;
         if (onVideoList) {
           const videos = await onVideoList(selected);
           if (request === detailRequest.current) setVideoItems(videos);
@@ -526,7 +573,7 @@ export function CustomerDeliverySection({
       message.success("已保存");
     } catch (error) {
       message.error(error instanceof Error ? error.message : "客户交付保存失败");
-      if (step === "video" && onVideoList && request === detailRequest.current) {
+      if (step === "video" && onVideoList && currentVideoAction()) {
         try {
           const videos = await onVideoList(selected);
           if (request === detailRequest.current) {
@@ -540,11 +587,11 @@ export function CustomerDeliverySection({
         } catch { /* The original save error remains visible; do not replace it. */ }
       }
     } finally {
-      setSaving(false);
+      if (mounted.current) setSaving(false);
     }
   };
   const evidenceUpload = (purpose: CustomerDeliveryAssetPurpose, field: string | string[]) => {
-    if (!selected || readOnly) return null;
+    if (!selected || disabled || readOnly) return null;
     const scope = `${selected.id}:${step}:${detailRequest.current}`;
     const uploader = JSON.stringify(field);
     return <CustomerDeliveryUpload
@@ -744,6 +791,7 @@ export function CustomerDeliverySection({
                 key={row.id}
                 record={row}
                 disabled={disabled || readOnly || saving}
+                readOnly={readOnly}
                 onUpload={!readOnly && onAssetUpload ? (file, purpose, signal) => onAssetUpload(row, file, purpose, signal) : undefined}
                 onGetAsset={onAssetGet ? (assetRef, purpose, signal) => onAssetGet(row, assetRef, purpose, signal) : undefined}
                 onConfirm={(refs) => confirmTraining(row, true, refs)}
@@ -865,15 +913,7 @@ export function CustomerDeliverySection({
                   >
                     <Input placeholder="上传通过安全检查后自动填入" />
                   </Form.Item>
-                  <CustomerDeliveryUpload
-                    key={`${selected.id}:contract:${detailRequest.current}`}
-                    purpose="contract"
-                    disabled={loadingStep || saving}
-                    onUpload={onAssetUpload ? (file, purpose, signal) => onAssetUpload(selected, file, purpose, signal) : undefined}
-                    onGetAsset={onAssetGet ? (assetRef, purpose, signal) => onAssetGet(selected, assetRef, purpose, signal) : undefined}
-                    onReady={(asset) => form.setFieldValue("contractFile", asset.assetRef)}
-                    onBusyChange={setUploading}
-                  />
+                  {evidenceUpload("contract", "contractFile")}
                   <Typography.Text type="secondary">
                     合同完成仅接受与当前企业工作区和交付记录精确绑定、且安全扫描通过的上传文件。
                   </Typography.Text>
@@ -966,18 +1006,7 @@ export function CustomerDeliverySection({
                   ) : (
                     <Alert type="info" showIcon message="尚未登记交付视频" description="上传视频或填写已完成安全扫描的素材编号；保存后会显示在这里。" />
                   )}
-                  <CustomerDeliveryUpload
-                    key={`${selected.id}:video:${detailRequest.current}`}
-                    purpose="video"
-                    disabled={loadingStep || saving}
-                    onUpload={onAssetUpload ? (file, purpose, signal) => onAssetUpload(selected, file, purpose, signal) : undefined}
-                    onGetAsset={onAssetGet ? (assetRef, purpose, signal) => onAssetGet(selected, assetRef, purpose, signal) : undefined}
-                    onReady={(asset) => {
-                      const refs = String(form.getFieldValue("videoAssetRefs") ?? "").split(/[\n,]/u).map((value) => value.trim()).filter(Boolean);
-                      form.setFieldValue("videoAssetRefs", [...new Set([...refs, asset.assetRef])].join("\n"));
-                    }}
-                    onBusyChange={setUploading}
-                  />
+                  {evidenceUpload("video", "videoAssetRefs")}
                   <Form.Item name="videoAssetRefs" label="交付视频（支持多段）">
                     <Input.TextArea
                       rows={4}

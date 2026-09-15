@@ -1,5 +1,5 @@
 import { Alert, Button, Card, Select, Space, Typography } from "antd";
-import { useDeferredValue, useEffect, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { OpsPage } from "../components/OpsPage.js";
 import { CustomerDeliverySection } from "../components/delivery/CustomerDeliverySection.js";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel.js";
@@ -49,11 +49,22 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const [mutationError, setMutationError] = useState("");
   const currentWorkspace = useRef(targetWorkspaceId);
   currentWorkspace.current = targetWorkspaceId;
+  const currentCanRead = useRef(canRead);
+  currentCanRead.current = canRead;
+  const mounted = useRef(true);
   const reportMutationError = (cause: unknown) => {
     if (currentWorkspace.current === targetWorkspaceId) setMutationError(describeOpsError(cause));
   };
   const loadRequest = useRef<{ generation: number; controller?: AbortController }>({ generation: 0 });
-  const hasCurrentReadAccess = (workspaceId: string, generation?: number) => Boolean(canRead && workspaceId && currentWorkspace.current === workspaceId && (generation === undefined || loadRequest.current.generation === generation));
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      loadRequest.current.controller?.abort();
+      loadRequest.current.generation++;
+    };
+  }, []);
+  const hasCurrentReadAccess = (workspaceId: string, generation?: number) => Boolean(mounted.current && currentCanRead.current && workspaceId && currentWorkspace.current === workspaceId && (generation === undefined || loadRequest.current.generation === generation));
   const startCurrentRead = (workspaceId: string, expectedGeneration?: number) => {
     if (!hasCurrentReadAccess(workspaceId, expectedGeneration)) return undefined;
     loadRequest.current.controller?.abort();
@@ -66,20 +77,18 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     };
   };
   const load = async () => {
-    if (!canRead || !targetWorkspaceId || currentWorkspace.current !== targetWorkspaceId) return;
-    loadRequest.current.controller?.abort();
-    const controller = new AbortController();
-    const generation = ++loadRequest.current.generation;
-    loadRequest.current.controller = controller;
-    const isCurrent = () => !controller.signal.aborted && currentWorkspace.current === targetWorkspaceId && loadRequest.current.generation === generation;
+    // A completed mutation may call an older load closure. Its payload remains
+    // unchanged, but any follow-up read must use today's permission/lifecycle.
+    const request = startCurrentRead(targetWorkspaceId);
+    if (!request) return;
     setLoading(true); setError("");
     try {
-      const result = await customerDeliveryClient.list(targetWorkspaceId, controller.signal);
+      const result = await customerDeliveryClient.list(targetWorkspaceId, request.controller.signal);
       if (result === null) throw new Error("客户交付 API 未返回数据");
-      if (isCurrent()) setRecords(result);
+      if (request.isCurrent()) setRecords(result);
     }
-    catch (cause) { if (isCurrent()) { setRecords([]); setError(describeOpsError(cause)); } }
-    finally { if (isCurrent()) setLoading(false); }
+    catch (cause) { if (request.isCurrent()) { setRecords([]); setError(describeOpsError(cause)); } }
+    finally { if (request.isCurrent()) setLoading(false); }
   };
   useEffect(() => {
     if (!canRead || !canBrowseWorkspaces) return;
@@ -168,16 +177,22 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     catch (cause) { reportMutationError(cause); throw cause; }
   };
   const addVideo = async (record: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord, input: { title: string; assetRef: string; sortOrder: number }) => {
+    const mutationWorkspaceId = targetWorkspaceId;
+    const mutationGeneration = loadRequest.current.generation;
     try { await customerDeliveryClient.addVideo({ targetWorkspaceId, deliveryId: record.id, ...input }); }
     catch (cause) { reportMutationError(cause); throw cause; }
     // Registration has succeeded. A failed read must not make this segment
     // look unsaved and cause the operator to submit it for a second time.
+    // Reconcile only while the initiating read scope is still current; this
+    // also rejects A -> B -> A and unmounts without undoing the acknowledged write.
+    const request = startCurrentRead(mutationWorkspaceId, mutationGeneration);
+    if (!request) return undefined;
     try {
-      const refreshed = await customerDeliveryClient.get(targetWorkspaceId, record.id);
-      if (currentWorkspace.current === targetWorkspaceId) setRecords((previous) => previous.map((candidate) => candidate.id === record.id ? refreshed : candidate));
-      return refreshed;
+      const refreshed = await customerDeliveryClient.get(mutationWorkspaceId, record.id, request.controller.signal);
+      if (request.isCurrent()) setRecords((previous) => previous.map((candidate) => candidate.id === record.id ? refreshed : candidate));
+      return request.isCurrent() ? refreshed : undefined;
     } catch (cause) {
-      if (currentWorkspace.current === targetWorkspaceId) setError(`视频已登记，但最新档案读取失败。请刷新档案，不要重复登记。${describeOpsError(cause)}`);
+      if (request.isCurrent()) setError(`视频已登记，但最新档案读取失败。请刷新档案，不要重复登记。${describeOpsError(cause)}`);
       return undefined;
     }
   };
@@ -230,16 +245,17 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       {mutationError ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
       <CustomerDeliverySection
         key={targetWorkspaceId || "unselected"}
-        disabled={!canUpdate || !targetWorkspaceId}
+        disabled={!canRead || !targetWorkspaceId}
+        readOnly={!canUpdate}
         records={records}
-        onCreate={createRecord}
-        onSave={saveProfile}
-        onChecklistSave={saveChecklist}
+        onCreate={canUpdate && canRead ? createRecord : undefined}
+        onSave={canUpdate && canRead ? saveProfile : undefined}
+        onChecklistSave={canUpdate && canRead ? saveChecklist : undefined}
         onChecklistLoad={loadChecklist}
-        onTrainingSave={saveTraining}
-        onVideoAdd={addVideo}
+        onTrainingSave={canUpdate && canRead ? saveTraining : undefined}
+        onVideoAdd={canUpdate && canRead ? addVideo : undefined}
         onVideoList={listVideos}
-        onAssetUpload={(record, file, purpose, signal) => customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: record.id, file, purpose }, signal)}
+        onAssetUpload={canUpdate && canRead ? (record, file, purpose, signal) => customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: record.id, file, purpose }, signal) : undefined}
         onAssetGet={(record, assetRef, purpose, signal) => customerDeliveryClient.getAsset({ targetWorkspaceId, deliveryId: record.id, assetRef, purpose }, signal)}
       />
     </OpsPage>

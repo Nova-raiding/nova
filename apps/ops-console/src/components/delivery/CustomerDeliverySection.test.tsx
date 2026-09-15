@@ -118,6 +118,21 @@ describe("customer delivery completion", () => {
     expect(html).not.toContain("保存当前环节");
   });
 
+  it("keeps read-only training evidence visible without upload or confirmation controls", () => {
+    const html = renderToStaticMarkup(<CustomerDeliveryTrainingEvidence
+      readOnly
+      record={{ ...base, trainingEvidenceRefs: ["asset:existing-training-proof"] }}
+      onUpload={async () => { throw new Error("Read-only upload must not run"); }}
+      onGetAsset={async () => { throw new Error("Read-only upload must not run"); }}
+      onConfirm={async () => { throw new Error("Read-only confirmation must not run"); }}
+      onClose={() => {}}
+    />);
+    expect(html).toContain("asset:existing-training-proof");
+    expect(html).toContain('aria-label="收起"');
+    expect(html).not.toContain('type="file"');
+    expect(html).not.toContain("确认培训完成");
+  });
+
   it("keeps inline training confirmation above growing evidence lists without hiding saved references", () => {
     const html = renderToStaticMarkup(<CustomerDeliveryTrainingEvidence record={{ ...base, trainingEvidenceRefs: ["asset:existing-training-proof"] }} onConfirm={async () => {}} onClose={() => {}} />);
     expect(html).toContain('grid-template-columns:minmax(0, 1fr) minmax(320px, 1fr)');

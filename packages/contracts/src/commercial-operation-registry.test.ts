@@ -46,10 +46,10 @@ describe('complete commercial operation registry E1 totality', () => {
     )).toThrow('missing classifications: MCP:new.method.requires.review')
   })
 
-  it('publishes exact personal-summary and workspace-statement policies for the four V2 recovery reads', () => {
+  it('publishes exact personal-commercial and workspace-creative-point policies for the four V2 recovery reads', () => {
     for (const method of ['commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list'] as const) {
       expect(MCP_METHOD_SCHEMAS[method].additionalProperties).toBe(false)
-      expect(getMcpMethodPolicy(method)).toMatchObject(method === 'creative-points.statement.list'
+      expect(getMcpMethodPolicy(method)).toMatchObject(method.startsWith('creative-points.')
         ? { effect: 'read', scope: 'workspace', capability: 'billing.workspace.read' }
         : { effect: 'read', scope: 'self', capability: 'billing.self.read' })
       expect(resolveMcp(method)).toMatchObject({ outcome: 'REGISTERED', policy: { classification: 'RECOVERY_CONTROL' } })
@@ -186,8 +186,8 @@ describe('complete commercial operation registry E1 totality', () => {
         policy: { domain: 'COMMERCIAL', enabled: true, classification: 'RECOVERY_CONTROL', authorization_policy_ref: method },
       })
       expect(getMcpMethodPolicy(method)).toMatchObject({
-        scope: method === 'creative-points.statement.list' ? 'workspace' : 'self',
-        capability: method === 'creative-points.statement.list' ? 'billing.workspace.read' : 'billing.self.read',
+        scope: method.startsWith('creative-points.') ? 'workspace' : 'self',
+        capability: method.startsWith('creative-points.') ? 'billing.workspace.read' : 'billing.self.read',
         workbench: 'workspace', effect: 'read',
       })
     }

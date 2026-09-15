@@ -9,6 +9,18 @@
 
 已通过的本地证据不能替代真实生产证据。当前必须先解决真实支付、知识库生产检索和生产配置/发布门禁问题，再进行最终 canary。
 
+### 2026-09-15 续验更新（11:05 +08:00）
+
+结论仍为 **NO-GO**，但此前“支付对账 worker 路由缺失”和本地确定性发布门禁失败已在当前工作区得到修复与复验：
+
+- 当前源码指纹下，真实 API HTTP → 签名 reconcile worker → PostgreSQL application role → Redis 工作区租约的隔离验收通过。覆盖未签名／错误角色／跨租户拒绝、支付只入账一次、退款成功／失败／未知、并发互斥、租约替换后 fail-closed 和持久审计。外部支付边界为本轮独立 localhost 状态 stub，真实支付和真实退款调用均为 0，因此不构成支付宝生产 canary。证据：`artifacts/payment-reconciliation/run-DhXjCp/run-result.json`；自建 PostgreSQL／Redis 已清理，`leftRunning=[]`，未触碰共享容器。
+- 定向回归 9 文件 229 项通过；全项目 `npm run typecheck` 通过；`npm run test:release-gates` 退出 0，共 128 文件／597 项通过。该默认入口中的 7 个 PostgreSQL 文件按设计跳过，不能算真实数据库证据。
+- 新建隔离 PostgreSQL 17 后，完整 `npm run test:postgres:isolated` 共 20 文件／21 项全部通过，包含迁移 210 的 MCP OAuth 主体绑定、RLS／ACL 最小权限和跨成员商业支付隔离。证据：`artifacts/isolated-postgres/run-Yr6axi/`，自建容器已全部清理。
+- 当前源码重新执行桌面 Chrome 1440×900 验收，账号签名展示、工作台跨租户拒绝、平台只读客服查看客户交付共 4 项通过，无跳过／重试，并生成 shot-scraper PNG 和 WebM。证据：`artifacts/ops-jit-isolation/2026-09-15T03-02-20.977Z-6fdfe3fd-650b-4cf9-a7ba-04c9e81ededd/`；自建 PostgreSQL／Redis `leftRunning=[]`。
+- 共享本地 API、replica、六类 worker、PostgreSQL、Redis、ClamAV 和两个 UI 当前均为 healthy，但共享数据库迁移尾仍是 209，而工作区新增迁移尾为 210；这只证明旧部署健康，不证明本轮源码已经部署。
+
+仍阻断上线的事实：真实 ChatGPT 插件连接读取引导状态和历史任务均返回权限拒绝，无法恢复商家任务；本轮源码／迁移 210 尚未部署到共享或生产环境；支付宝真实小额支付、回调、查单、退款和对账证据仍缺；知识库生产索引／跨副本检索与五模态真实中转成本证据仍缺；没有目标生产配置文件，因此未执行最终 `infra:launch-preflight` 和生产 canary。以上任一项未补齐前不得给 GO。
+
 ## 测试矩阵
 
 | 模块 | 核心场景 | 必须验证的事实 | 通过门槛 |

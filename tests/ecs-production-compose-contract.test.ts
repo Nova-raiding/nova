@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -14,6 +14,12 @@ const valid = {
       OPS_ALERT_NOTIFICATIONS_ENABLED: 'false',
       ALERT_CHANNEL_SECRET_REF: '', OPS_ALERT_WEBHOOK_URL: '',
       OPS_ALERT_WEBHOOK_ALLOWED_HOSTS: '', OPS_ALERT_WEBHOOK_SECRET_FILE: '',
+      API_AUTH_TOKENS: '{"production":{"workspaces":["ws_prod"]}}', SESSION_ID_HASH_SECRET: 'session-secret',
+      WORKER_API_CREDENTIALS: JSON.stringify(Object.fromEntries(['sync', 'generation', 'publish', 'reconcile', 'automation', 'scan'].map(role => [role, { token: `worker-${role}-token`, signing_secret: `worker-${role}-signing` }]))),
+      ASSET_DISPLAY_URL_SIGNING_SECRET: 'display-secret', ASSET_DISPLAY_URL_SIGNING_KEY_ID: 'display-production',
+      ALLOW_WILDCARD_WORKSPACE_GRANT: 'false',
+      OPS_LOCAL_SESSION_WORKSPACE_ID: '', DATABASE_URL: 'postgres://app:opaque@db/merchant',
+      OPS_DATABASE_URL: 'postgres://ops:opaque@db/merchant', MODEL_COST_ESTIMATE_VERSION: 'production-v1',
     } },
     'api-replica': { environment: {
       NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', LOCAL_COMPOSE: 'false',
@@ -23,7 +29,16 @@ const valid = {
       OPS_ALERT_NOTIFICATIONS_ENABLED: 'false',
       ALERT_CHANNEL_SECRET_REF: '', OPS_ALERT_WEBHOOK_URL: '',
       OPS_ALERT_WEBHOOK_ALLOWED_HOSTS: '', OPS_ALERT_WEBHOOK_SECRET_FILE: '',
+      API_AUTH_TOKENS: '{"production":{"workspaces":["ws_prod"]}}', SESSION_ID_HASH_SECRET: 'session-secret',
+      WORKER_API_CREDENTIALS: JSON.stringify(Object.fromEntries(['sync', 'generation', 'publish', 'reconcile', 'automation', 'scan'].map(role => [role, { token: `worker-${role}-token`, signing_secret: `worker-${role}-signing` }]))),
+      ASSET_DISPLAY_URL_SIGNING_SECRET: 'display-secret', ASSET_DISPLAY_URL_SIGNING_KEY_ID: 'display-production',
+      ALLOW_WILDCARD_WORKSPACE_GRANT: 'false',
+      OPS_LOCAL_SESSION_WORKSPACE_ID: '', DATABASE_URL: 'postgres://app:opaque@db/merchant',
+      OPS_DATABASE_URL: 'postgres://ops:opaque@db/merchant', MODEL_COST_ESTIMATE_VERSION: 'production-v1',
     } },
+    ...Object.fromEntries(['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan'].map(name => [name, { environment: {
+      NODE_ENV: 'production', DATABASE_URL: 'postgres://app:opaque@db/merchant', WORKER_WORKSPACES: 'auto', WORKER_API_TOKEN: `${name}-token`, WORKER_API_SIGNING_SECRET: `${name}-signing`,
+    } }])),
     migrate: {
       entrypoint: ['/bin/sh', '-c', '/bin/sh /ops/apply-migrations.sh && /bin/sh /ops/verify-runtime-db-role.sh'],
       volumes: ['/migrations:/migrations:ro'],
@@ -40,9 +55,59 @@ function validate(value: unknown) {
   })
 }
 
+function renderFinalProductionCompose() {
+  const files = [
+    'infra/local/docker-compose.yml',
+    'infra/local/docker-compose.ecs-pilot.yml',
+    'infra/local/docker-compose.ecs-oss-cutover.yml',
+    'infra/local/docker-compose.ecs-production-migration.yml',
+    'infra/local/docker-compose.ecs-pilot-release.yml',
+  ]
+  const env: NodeJS.ProcessEnv = { ...process.env }
+  for (const file of files) {
+    const source = readFileSync(file, 'utf8')
+    for (const match of source.matchAll(/\$\{([A-Z0-9_]+):\?[^}]+\}/gu)) {
+      const name = match[1]
+      if (name) env[name] = 'production-test-value'
+    }
+  }
+  const roles = ['sync', 'generation', 'publish', 'reconcile', 'automation', 'scan'] as const
+  type WorkerRole = typeof roles[number]
+  type WorkerCredential = { token: string; signing_secret: string }
+  const credentials = Object.fromEntries(roles.map(role => [role, { token: `worker-${role}-token`, signing_secret: `worker-${role}-signing` }])) as Record<WorkerRole, WorkerCredential>
+  Object.assign(env, {
+    API_AUTH_TOKENS: '{"production":{"workspaces":["ws_prod"],"bootstrap":false}}',
+    WORKER_API_CREDENTIALS: JSON.stringify(credentials),
+    WORKER_WORKSPACES: 'auto',
+    MODEL_COST_ESTIMATE_VERSION: 'production-v1',
+    DATABASE_URL: 'postgres://app:opaque@postgres:5432/merchant',
+    OPS_DATABASE_URL: 'postgres://ops:opaque@postgres:5432/merchant',
+    ASSET_STORAGE_SSE_MODE: 'AES256', ASSET_STORAGE_KMS_KEY_ID: '',
+    ASSET_STORAGE_ECS_RAM_ROLE: 'production-role',
+    ASSET_SCANNER_API_TOKEN: credentials.scan.token,
+    ASSET_SCANNER_WORKSPACE_SIGNING_SECRET: credentials.scan.signing_secret,
+    CAPABILITY_EVIDENCE_PATH: '/tmp/production-capability-evidence.json',
+  })
+  for (const role of roles.filter(role => role !== 'scan')) {
+    env[`WORKER_${role.toUpperCase()}_API_TOKEN`] = credentials[role].token
+    env[`WORKER_${role.toUpperCase()}_API_SIGNING_SECRET`] = credentials[role].signing_secret
+  }
+  return JSON.parse(execFileSync('docker', ['compose', ...files.flatMap(file => ['-f', file]), 'config', '--format', 'json'], {
+    cwd: process.cwd(), encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'],
+  }))
+}
+
 describe('ECS production Compose contract', () => {
   it('accepts a production render without demo seeding', () => {
     expect(validate(valid)).toContain('contract passed')
+  })
+
+  it('accepts the real final five-layer production render and proves demo seed removal', () => {
+    const rendered = renderFinalProductionCompose()
+    const migrate = rendered.services.migrate
+    expect(JSON.stringify(migrate.entrypoint)).not.toContain('seed-demo.sql')
+    expect(JSON.stringify(migrate.volumes)).not.toContain('seed-demo.sql')
+    expect(validate(rendered)).toContain('contract passed')
   })
 
   it.each([
@@ -89,5 +154,44 @@ describe('ECS production Compose contract', () => {
     const receiver = structuredClone(valid) as any
     receiver.services['alert-receiver'] = { profiles: [] }
     expect(() => validate(receiver)).toThrow(/isolated behind the alerts profile/)
+  })
+
+  it('rejects local bootstrap identities and demo worker credentials', () => {
+    const api = structuredClone(valid) as any
+    api.services.api.environment.API_AUTH_TOKENS = '{"pilot-local-token":{"workspaces":["*"]}}'
+    expect(() => validate(api)).toThrow(/local\/demo production configuration|wildcard workspace grant/)
+
+    const worker = structuredClone(valid) as any
+    worker.services['worker-sync'].environment.WORKER_API_TOKEN = 'sync-local-token'
+    expect(() => validate(worker)).toThrow(/worker-sync contains a local\/demo identity/)
+  })
+
+  it('rejects demo session, local cost metadata, and predictable local database credentials', () => {
+    for (const [key, value] of [
+      ['OPS_LOCAL_SESSION_WORKSPACE_ID', 'ws_demo'],
+      ['MODEL_COST_ESTIMATE_VERSION', 'local-acceptance-2026-09-14'],
+      ['DATABASE_URL', 'postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant'],
+      ['OPS_DATABASE_URL', 'postgres://merchant_ops:merchant_ops_local_only@postgres:5432/merchant'],
+    ] as const) {
+      const rendered = structuredClone(valid) as any
+      rendered.services.api.environment[key] = value
+      expect(() => validate(rendered)).toThrow(/must be empty|local\/demo production configuration/)
+    }
+  })
+
+  it('rejects bootstrap grants and worker credential sets that are incomplete or do not match injection', () => {
+    const bootstrap = structuredClone(valid) as any
+    bootstrap.services.api.environment.API_AUTH_TOKENS = '{"opaque":{"workspaces":["ws_prod"],"bootstrap":true}}'
+    expect(() => validate(bootstrap)).toThrow(/bootstrap=true/)
+
+    const incomplete = structuredClone(valid) as any
+    incomplete.services.api.environment.WORKER_API_CREDENTIALS = '{"sync":{"token":"worker-sync-token","signing_secret":"worker-sync-signing"}}'
+    expect(() => validate(incomplete)).toThrow(/exactly the six production worker roles/)
+
+    const mismatch = structuredClone(valid) as any
+    const credentials = JSON.parse(mismatch.services.api.environment.WORKER_API_CREDENTIALS)
+    credentials.generation.token = 'different-token'
+    mismatch.services.api.environment.WORKER_API_CREDENTIALS = JSON.stringify(credentials)
+    expect(() => validate(mismatch)).toThrow(/generation.token must match worker-generation/)
   })
 })

@@ -568,6 +568,7 @@ describe('API HTTP vertical slice', () => {
   beforeEach(() => {
     vi.stubEnv('NODE_ENV', 'test')
     vi.stubEnv('API_RATE_LIMIT_PER_MINUTE', '10000')
+    vi.stubEnv('PAYMENT_PROVIDER_REFUND_QUERY_API_URL', 'https://payments.example/api/refund/query')
   })
   afterEach(async () => { if (server.listening) await new Promise<void>(resolve => server.close(() => resolve())); setPaymentProviderForTests(); setRuleRepositoryForTests(); vi.unstubAllEnvs() })
 
@@ -1263,7 +1264,7 @@ describe('API HTTP vertical slice', () => {
     const paid = await fetch(`${base}/v1/billing/callback/wechat`, { method: 'POST', headers: { ...headers, 'x-payment-signature': callbackSignature }, body: JSON.stringify({ workspace_id: workspaceId, order_id: order.id, provider_trade_id: providerTradeId, amount_fen: 1000, state: 'SUCCESS' }) }).then(json)
     expect(paid.error).toBeNull()
     const refund = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.refund', params: { workspace_id: workspaceId, order_id: order.id, reason: 'provider reject test' } }) }).then(json)
-    expect(refund.error?.code).toBe('PAYMENT_PROVIDER_REFUND_FAILED')
+    expect(refund.error).toMatchObject({ code: 'PAYMENT_PROVIDER_REFUND_REJECTED', details: { reservation_released: true } })
     const transactions = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'billing.transactions', params: { workspace_id: workspaceId } }) }).then(json)
     expect((transactions.data?.result as { balance_cny: string; transactions: Array<{ type: string }> }).balance_cny).toBe('10.00')
     expect((transactions.data?.result as { transactions: Array<{ type: string; description: string }> }).transactions.filter(item => item.type === 'refund')).toEqual([expect.objectContaining({ description: expect.stringContaining('充值退款失败释放预留') })])
