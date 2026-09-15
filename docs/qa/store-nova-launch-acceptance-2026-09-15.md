@@ -1,11 +1,11 @@
 # Store Nova 上线续验记录 · 2026-09-15
 
-时间：2026-09-15 13:48 +08:00（owner 多 agent 整合复验，尚未推送或部署）
+时间：2026-09-15 13:58 +08:00（owner 多 agent 仓库验收收口，未部署）
 范围：真实 ChatGPT 插件/MCP、支付与账务、租户权限、桌面后台、知识库、五模态中转及发布门禁。
 
 ## 判定
 
-**NO-GO。** 已保留远端 UI、迁移 211、七附件收集器、ECS 配置审计及后续商家提示/支付模块打包修复，远端固定增量整合到 `7af498b4`。主业务冻结检查点为 `dab10890`，全仓检查及后续定向/独立运行证据见“最新 owner 收口检查点”；生产配置准备工具还在有界契约复验。尚未推送或部署。以下早期失败和“待复验”文字保留为历史快照，不替代最新状态。旧分支/共享部署/不可用 artifact 不代表当前候选。本次整合既有 0.2.0，不另行发布或回退插件版本。
+**NO-GO。** 已保留远端 UI、迁移 211、七附件收集器、ECS 配置审计及后续商家提示/支付模块打包修复，远端固定增量整合到 `e130c234`。主业务冻结检查点为 `dab10890`；全仓检查、后续增量和独立运行证据见“最新 owner 收口检查点”，生产配置准备工具及引用门禁已完成有界契约复验。未部署，不声明真实 ChatGPT 或支付宝已放行。以下早期失败和“待复验”文字保留为历史快照，不替代最新状态。旧分支/共享部署/不可用 artifact 不代表当前候选。本次整合既有 0.2.0，不另行发布或回退插件版本。
 
 ## owner 已验证的第一检查点
 
@@ -49,6 +49,7 @@
 - `dab1089079429f4e6215317546b37a1a798b65fd` 新镜像实际启动通过；API/商家 UI/运营 UI/PG/Redis 五服务均 healthy，migrate 退出 0，API 和两个 UI 的 SHA/release identity 一致。实际 PG17.11，迁移尾/数量均 211；owner 在精确自有 API 容器中导入编译后的 payment-provider 与 callback-envelope，并验证合成签名稳定，零真实支付/模型调用。启动检查与浏览器使用不同随机独立 project，精确容器停止后无 leftRunning/failures，数据卷保留。
 - 商家桌面浏览器四文件 **24/24 passed**，2.1 分钟，包括三个真实候选页面巡检和 21 项前端故障注入/交互检查；后者不能替代真实业务 provider、知识库检索或 ChatGPT 宿主验收。三个巡检 inventory 各保留登录前 `/v1/auth/session` 的预期 401，不宣称浏览器 console/network 全部为零。owner 查看桌面概览和健康弹窗截图，CSS 正常、概览一屏、知识库折叠菜单保留；八项新生成 tracked 测试产物及 last-run 已另存 `artifacts/owner-integration/dab108907942-20260915/browser-output/`，再精确恢复旧测试产物，不回滚 UI 源。
 - 独立审查确认相对早期远端的 21,147 项删除全部溯源至既有 `39efae4b` 生成产物清理提交，仅 artifacts/screenshots/dogfood/tmp/output；无 apps/packages/services/demo/infra/scripts/tests 或 CSS/迁移源删除。原用户工作区的实际产物与未提交业务修改仍保留，不把 git untracking 称为删除业务数据。
+- 配置工具先由 owner 联合验证十二文件 278 项，再整合 `e130c234` 引用空值/非字符串拒绝补丁，于干净冻结 `0b07ff78adfee52a695dcdc2ba35bf57480fed14` fresh 复验 **12 文件/286 项通过**；根级类型、两个脚本语法和 metadata 校验均退出 0。完整合成输入→真实 Ruby/shell 门禁正向通过，启用告警/KMS/social 条件、真实部署别名、矛盾拒绝及受控 locator 链接均有回归。旧输出/locator/备份保持独占写入，不删除现有配置来重试；安装器只读取 root 内安全链接，越界/悬空/目录/部分补丁拒绝。日志 `artifacts/owner-integration/dab108907942-20260915/merchant-owner-final-ref-guard-integration-check-20260915.log`；支付 9 个业务源指纹仍全部匹配。该轮未重新运行未变更的六千项整库/桌面业务用例，不将增量验证夸大成最后树的全仓重跑；合成引用语法通过不等于真实 secret-provider 可解析或生产 GO。
 
 ## 真实上线阻断
 
