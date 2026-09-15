@@ -293,7 +293,13 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             <Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input placeholder="例如：姜伟" /></Form.Item>
             <Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input placeholder="例如：韩先晓" /></Form.Item>
             <Form.Item name="requiredLaunchAt" label="需求上线时间" rules={[{ required: true, message: "请选择上线日期" }]}><DatePicker classNames={{ popup: { root: "customer-delivery-date-popup" } }} format="YYYY-MM-DD" placeholder="请选择上线日期" style={{ width: "100%" }} /></Form.Item>
-            <Form.Item label={<span aria-hidden="true">&nbsp;</span>} className="customer-delivery-final-video"><input ref={deliveryVideoInput} hidden type="file" accept="video/*" multiple onChange={(event) => { const files = Array.from(event.target.files ?? []); if (files.length) setDeliveryVideoFiles((current) => [...current, ...files]); event.target.value = ""; }} /><Button size="small" icon={<UploadOutlined />} onClick={() => deliveryVideoInput.current?.click()}>上传交付视频</Button>{deliveryVideoFiles.length ? <div className="customer-delivery-video-list">{deliveryVideoFiles.map((file, index) => <div className="customer-delivery-video-item" key={`${file.name}-${index}`}><span>{file.name}</span><Button type="text" size="small" icon={<CloseOutlined />} aria-label={`移除${file.name}`} onClick={() => setDeliveryVideoFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} /></div>)}</div> : null}</Form.Item>
+            <Form.Item label="交付视频" htmlFor="deliveryVideo" required className="customer-delivery-final-video">
+              <div>
+                <Input id="deliveryVideo" readOnly aria-label="交付视频（支持多段）" value={deliveryVideoFiles.map((file) => file.name).join("、")} placeholder="请选择交付视频" suffix={<Button type="text" className="customer-delivery-upload-button" aria-label="上传交付视频" title="上传交付视频" icon={<UploadOutlined />} onClick={() => deliveryVideoInput.current?.click()} />} />
+                <input ref={deliveryVideoInput} hidden type="file" accept="video/*" multiple onChange={(event) => { const files = Array.from(event.target.files ?? []); if (files.length) setDeliveryVideoFiles((current) => [...current, ...files]); event.target.value = ""; }} />
+                {deliveryVideoFiles.length ? <div className="customer-delivery-video-list">{deliveryVideoFiles.map((file, index) => <div className="customer-delivery-video-item" key={`${file.name}-${index}`}><span>{file.name}</span><Button type="text" size="small" icon={<CloseOutlined />} aria-label={`移除${file.name}`} onClick={() => setDeliveryVideoFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} /></div>)}</div> : null}
+              </div>
+            </Form.Item>
           </div>
         </Card>
         <div className="customer-delivery-create-actions">
