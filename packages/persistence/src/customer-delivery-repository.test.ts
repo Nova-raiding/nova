@@ -750,6 +750,15 @@ describe('Canonical evidence writes and profile withdrawal', () => {
 })
 
 describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
+  it('archives records recoverably and permits a replacement with the same company name', async () => {
+    const repo = new MemoryCustomerDeliveryRepository()
+    const original = await repo.create({ workspaceId: 'ws_archive', companyName: 'Acme', actorId: 'creator' })
+    const archived = await repo.update({ workspaceId: original.workspaceId, id: original.id, actorId: 'operator', expectedRevision: original.revision, patch: { archivedAt: '2026-09-15T12:00:00.000Z' } })
+    expect(archived).toMatchObject({ archivedAt: '2026-09-15T12:00:00.000Z', archivedByActorId: 'operator', updatedByActorId: 'operator' })
+    expect(await repo.list(original.workspaceId)).toEqual([])
+    await expect(repo.create({ workspaceId: original.workspaceId, companyName: 'Acme', actorId: 'creator-2' })).resolves.toMatchObject({ companyName: 'Acme', archivedAt: null })
+  })
+
   it('preserves PostgreSQL DATE calendar values separately from timestamp instants', async () => {
     for (const paymentDate of [new Date(2026, 8, 14), '2026-09-14']) {
       const client = new EvidenceTransactionClient()

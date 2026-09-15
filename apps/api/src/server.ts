@@ -12792,7 +12792,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       let parsed: unknown
       try { parsed = JSON.parse(rawPatch) } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'patch_json 必须是有效 JSON 对象', 400) }
       if (!isObject(parsed)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'patch_json 必须是 JSON 对象', 400)
-      const allowed = new Set(['companyName', 'contractNumber', 'paymentStatus', 'contractRef', 'projectOwner', 'supportOwner', 'paymentDate', 'paymentEvidenceRefs', 'plannedGoLiveAt', 'customerProfileStatus'])
+      const allowed = new Set(['companyName', 'contractNumber', 'paymentStatus', 'contractRef', 'projectOwner', 'supportOwner', 'paymentDate', 'paymentEvidenceRefs', 'plannedGoLiveAt', 'customerProfileStatus', 'archivedAt'])
       if (Object.keys(parsed).some(key => !allowed.has(key))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'patch_json 包含不支持的字段', 400)
       validateCustomerDeliveryProfileValues(parsed)
       return result(await updateCustomerDeliveryWithRequiredEvidence({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')), patch: parsed }))
@@ -18982,6 +18982,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const requiresFreshAssetRead = Boolean(
       (mcpMethodForHydration?.startsWith('asset.') && mcpMethodForHydration !== 'asset.upload')
       || /^\/v1\/assets\/[^/]+\/(?:download|parse|rights|facts|preference)$/u.test(path)
+      || /^\/v1\/ops\/customer-deliveries\/workspaces\/[^/]+\/[^/]+\/assets\/[^/]+\/download$/u.test(path)
       || assetScannerRoute,
     )
     // Asset mutations commonly follow upload immediately. A different API
@@ -20101,6 +20102,28 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       throw new DomainError('ASSET_BINARY_INTEGRITY_FAILED', '素材对象与已扫描快照不一致，已阻止下载', 409, { asset_id: asset.id })
     }
     return sendAssetDownload(res, asset, stored, req)
+  }
+  const customerDeliveryAssetDownloadMatch = path.match(/^\/v1\/ops\/customer-deliveries\/workspaces\/([^/]+)\/([^/]+)\/assets\/([^/]+)\/download$/)
+  if (req.method === 'GET' && customerDeliveryAssetDownloadMatch) {
+    const workspaceId = decodeURIComponent(customerDeliveryAssetDownloadMatch[1]!)
+    const deliveryId = decodeURIComponent(customerDeliveryAssetDownloadMatch[2]!)
+    const assetRef = decodeURIComponent(customerDeliveryAssetDownloadMatch[3]!)
+    const purpose = customerDeliveryUploadPurpose(url.searchParams.get('purpose'))
+    const delivery = await invokeCustomerDeliveryDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).get(workspaceId, deliveryId))
+    if (!delivery) throw new DomainError('CUSTOMER_DELIVERY_NOT_FOUND', '客户交付档案不存在', 404)
+    await assertCustomerDeliveryAssetBound(workspaceId, deliveryId, purpose, assetRef)
+    const asset = await loadCustomerDeliveryAsset({ workspaceId, assetRef, business: persistence.business, memoryAssets: service.assets })
+    if (!asset || !isTrustedCleanAsset(asset as import('../../../packages/application/src/service.js').AssetMetadata)) throw new DomainError('QUARANTINE_ACCESS_DENIED', '客户交付文件尚未通过可信安全扫描，暂不可下载', 403)
+    let stored: Awaited<ReturnType<typeof getStoredObjectWithRetry>>
+    try { stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey!) }
+    catch (error) {
+      if (error instanceof ObjectStorageError && error.code === 'OBJECT_NOT_FOUND') throw new DomainError('ASSET_BINARY_UNAVAILABLE', '客户交付文件不可用，请重新上传', 410)
+      throw error
+    }
+    const storedDigest = createHash('sha256').update(stored.body).digest('hex')
+    if (stored.metadata.sha256 !== asset.sha256 || stored.metadata.sizeBytes !== asset.sizeBytes || stored.metadata.contentType.toLowerCase() !== asset.mimeType!.toLowerCase() || storedDigest !== asset.sha256)
+      throw new DomainError('ASSET_BINARY_INTEGRITY_FAILED', '客户交付文件与已扫描快照不一致，已阻止下载', 409, { asset_id: asset.id })
+    return sendAssetDownload(res, asset as import('../../../packages/application/src/service.js').AssetMetadata, stored, req)
   }
   const assetScanContentMatch = path.match(/^\/v1\/internal\/assets\/([^/]+)\/scan-content$/)
   if (req.method === 'GET' && assetScanContentMatch) {

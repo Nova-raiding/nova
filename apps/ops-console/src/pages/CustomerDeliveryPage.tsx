@@ -7,6 +7,7 @@ import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel.js";
 import type { WorkspaceSummary } from "../types/ops.js";
 import { customerDeliveryClient, type CustomerDeliveryAsset } from "../api/customerDeliveryClient.js";
 import { describeOpsError } from "../api/opsClient.js";
+import { accountLabel } from "../authz/accountLabel.js";
 import { deliveryDateTimeIsoValue } from "../components/delivery/deliveryDateTime.js";
 import type { CustomerDeliveryRecord } from "../components/delivery/CustomerDeliverySection.js";
 import { waitForDeliveryScan } from "../components/delivery/CustomerDeliveryUpload.js";
@@ -364,6 +365,49 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       throw cause;
     }
   };
+  const openDeliveryAsset = async (record: CustomerDeliveryRecord, assetRef: string, purpose: "contract" | "video", mode: "open" | "download") => {
+    if (/^https:\/\//iu.test(assetRef)) {
+      window.open(assetRef, "_blank", "noopener,noreferrer");
+      return;
+    }
+    const preview = mode === "open" ? window.open("", "_blank") : null;
+    try {
+      const asset = await customerDeliveryClient.downloadAsset({ targetWorkspaceId, deliveryId: record.id, purpose, assetRef });
+      const url = URL.createObjectURL(asset.blob);
+      if (mode === "open") {
+        if (preview) preview.location.href = url;
+        else window.open(url, "_blank", "noopener,noreferrer");
+      } else {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = asset.fileName;
+        link.click();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (cause) {
+      preview?.close();
+      const messageText = describeOpsError(cause);
+      setMutationError(messageText);
+      message.error(messageText);
+    }
+  };
+  const archiveRecord = async (record: CustomerDeliveryRecord) => {
+    const persist = (candidate: CustomerDeliveryRecord) => {
+      if (!Number.isSafeInteger(candidate.revision) || (candidate.revision ?? 0) < 1) throw new Error("客户交付记录缺少有效版本，请刷新后重试");
+      return customerDeliveryClient.update({ targetWorkspaceId, deliveryId: candidate.id, patch: { archivedAt: new Date().toISOString() }, expectedRevision: candidate.revision as number });
+    };
+    try {
+      try { await persist(record); }
+      catch (cause) {
+        if (!isCustomerDeliveryRevisionConflict(cause)) throw cause;
+        await persist(await customerDeliveryClient.get(targetWorkspaceId, record.id));
+      }
+      setRecords((current) => current.filter((candidate) => candidate.id !== record.id));
+    } catch (cause) {
+      reportMutationError(cause);
+      throw cause;
+    }
+  };
   return (
     <OpsPage
       eyebrow="CUSTOMER DELIVERY"
@@ -445,6 +489,10 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         onVideoList={listVideos}
         onAssetUpload={canUpdate && canRead ? (record, file, purpose, signal) => customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: record.id, file, purpose }, signal) : undefined}
         onAssetGet={(record, assetRef, purpose, signal) => customerDeliveryClient.getAsset({ targetWorkspaceId, deliveryId: record.id, assetRef, purpose }, signal)}
+        onAssetOpen={openDeliveryAsset}
+        onArchive={canUpdate && canRead ? archiveRecord : undefined}
+        operatorActorId={model.opsSession?.actor_id}
+        operatorName={accountLabel(model.opsSession)}
       />}
     </OpsPage>
   );

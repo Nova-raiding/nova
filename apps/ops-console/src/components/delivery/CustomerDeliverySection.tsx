@@ -8,6 +8,7 @@ import {
   Drawer,
   Form,
   Input,
+  Modal,
   Select,
   Space,
   Table,
@@ -42,6 +43,8 @@ export interface CustomerDeliveryRecord {
   trainingCompletedAt?: string;
   videoUrls?: string[];
   revision?: number;
+  createdByActorId?: string;
+  updatedByActorId?: string;
   /** Per-item evidence returned by the delivery API. Keys are item labels. */
   integrationEvidence?: Record<string, string>;
   acceptanceEvidence?: Record<string, string>;
@@ -213,6 +216,10 @@ export function CustomerDeliverySection({
   onVideoList,
   onAssetUpload,
   onAssetGet,
+  onAssetOpen,
+  onArchive,
+  operatorActorId,
+  operatorName,
 }: {
   disabled?: boolean;
   records?: CustomerDeliveryRecord[];
@@ -247,6 +254,10 @@ export function CustomerDeliverySection({
   ) => Promise<CustomerDeliveryVideoItem[]>;
   onAssetUpload?: (record: CustomerDeliveryRecord, file: File, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
   onAssetGet?: (record: CustomerDeliveryRecord, assetRef: string, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
+  onAssetOpen?: (record: CustomerDeliveryRecord, assetRef: string, purpose: "contract" | "video", mode: "open" | "download") => Promise<void>;
+  onArchive?: (record: CustomerDeliveryRecord) => Promise<void>;
+  operatorActorId?: string;
+  operatorName?: string;
 }) {
   const [selected, setSelected] = useState<CustomerDeliveryRecord>();
   const [detailsRecord, setDetailsRecord] = useState<CustomerDeliveryRecord>();
@@ -257,6 +268,8 @@ export function CustomerDeliverySection({
   const detailRequest = useRef(0);
   const [creating, setCreating] = useState(false);
   const [videoItems, setVideoItems] = useState<CustomerDeliveryVideoItem[]>([]);
+  const [detailsVideos, setDetailsVideos] = useState<CustomerDeliveryVideoItem[]>([]);
+  const [detailsLoading, setDetailsLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [createForm] = Form.useForm();
   const [form] = Form.useForm();
@@ -458,6 +471,15 @@ export function CustomerDeliverySection({
       setSaving(false);
     }
   };
+  const openDetails = async (row: CustomerDeliveryRecord) => {
+    setDetailsRecord(row);
+    setDetailsVideos([]);
+    if (!onVideoList) return;
+    setDetailsLoading(true);
+    try { setDetailsVideos(await onVideoList(row)); }
+    catch (error) { message.error(error instanceof Error ? error.message : "视频列表读取失败"); }
+    finally { setDetailsLoading(false); }
+  };
   const columns = useMemo(
     () => [
       {
@@ -470,6 +492,7 @@ export function CustomerDeliverySection({
       {
         title: "公司名",
         width: 190,
+        align: "center" as const,
         dataIndex: "companyName",
         render: (value: string) => (
           <Typography.Text strong>{value}</Typography.Text>
@@ -542,11 +565,11 @@ export function CustomerDeliverySection({
         align: "center" as const,
         fixed: "right" as const,
         render: (_: unknown, row: CustomerDeliveryRecord) => (
-          <Button size="small" onClick={() => setDetailsRecord(row)}>查看详情</Button>
+          <Button size="small" onClick={() => void openDetails(row)}>查看详情</Button>
         ),
       },
     ],
-    [onTrainingSave, saving],
+    [onTrainingSave, onVideoList, saving],
   );
   return (
     <Card
@@ -608,16 +631,22 @@ export function CustomerDeliverySection({
             <Descriptions.Item label="合同编号">{detailsRecord.contractNo || "未填写"}</Descriptions.Item>
             <Descriptions.Item label="付款形式">{detailsRecord.paymentStatus === "paid" ? "接入费" : "赠送"}</Descriptions.Item>
             <Descriptions.Item label="付款时间">{detailsRecord.paymentDate || "未填写"}</Descriptions.Item>
-            <Descriptions.Item label="合同文件"><Typography.Text style={{ wordBreak: "break-all" }}>{detailsRecord.contractFile || "未上传"}</Typography.Text></Descriptions.Item>
+            <Descriptions.Item label="合同文件">{detailsRecord.contractFile ? <Space wrap><Typography.Text style={{ wordBreak: "break-all" }}>{detailsRecord.contractFile}</Typography.Text><Button size="small" onClick={() => void onAssetOpen?.(detailsRecord, detailsRecord.contractFile!, "contract", "open")}>打开</Button><Button size="small" onClick={() => void onAssetOpen?.(detailsRecord, detailsRecord.contractFile!, "contract", "download")}>下载</Button></Space> : "未上传"}</Descriptions.Item>
             <Descriptions.Item label="系统接入">{isDeliveryChecklistComplete(detailsRecord, "integration") ? "已完成" : "未完成"}</Descriptions.Item>
             <Descriptions.Item label="功能测试及验收">{isDeliveryChecklistComplete(detailsRecord, "acceptance") ? "已完成" : "未完成"}</Descriptions.Item>
             <Descriptions.Item label="客户培训">{detailsRecord.training ? "已培训" : "未培训"}</Descriptions.Item>
             <Descriptions.Item label="销售负责人">{detailsRecord.owner || "未填写"}</Descriptions.Item>
             <Descriptions.Item label="售后负责人">{detailsRecord.afterSalesOwner || "未填写"}</Descriptions.Item>
             <Descriptions.Item label="上线时间">{deliveryLaunchDateLabel(detailsRecord)}</Descriptions.Item>
-            <Descriptions.Item label="交付视频">{hasDeliveryVideo(detailsRecord) ? `已上传（${detailsRecord.videos} 段）` : "未上传"}</Descriptions.Item>
+            <Descriptions.Item label="交付视频">{detailsLoading ? "正在读取…" : detailsVideos.length ? <Space orientation="vertical" size="small">{detailsVideos.map((video) => <Space key={video.id} wrap><Typography.Text>{video.title}</Typography.Text><Button size="small" onClick={() => void onAssetOpen?.(detailsRecord, video.assetRef, "video", "open")}>打开</Button><Button size="small" onClick={() => void onAssetOpen?.(detailsRecord, video.assetRef, "video", "download")}>下载</Button></Space>)}</Space> : "未上传"}</Descriptions.Item>
+            <Descriptions.Item label="操作人">
+              {detailsRecord.updatedByActorId === operatorActorId
+                ? operatorName || "账号名称未提供"
+                : detailsRecord.updatedByActorId || "未记录"}
+            </Descriptions.Item>
           </Descriptions>
         ) : null}
+        {detailsRecord && onArchive ? <div style={{ marginTop: 24, textAlign: "right" }}><Button danger onClick={() => Modal.confirm({ title: `停用并删除“${detailsRecord.companyName}”记录？`, content: "该记录会从当前列表移除，但业务数据会保留，管理员仍可恢复。", okText: "确认停用并删除", cancelText: "取消", okButtonProps: { danger: true }, onOk: async () => { await onArchive(detailsRecord); setDetailsRecord(undefined); message.success("记录已停用并从列表移除"); } })}>停用并删除记录</Button></div> : null}
       </Drawer>
       <Drawer
         title={

@@ -56,6 +56,8 @@ export interface CustomerDelivery {
   revision: number;
   createdByActorId: string;
   updatedByActorId: string;
+  archivedAt?: string | null;
+  archivedByActorId?: string | null;
   createdAt: string;
   updatedAt: string;
   videos: CustomerDeliveryVideo[];
@@ -79,6 +81,7 @@ export type CustomerDeliveryPatch = Partial<Pick<CustomerDelivery,
   | "companyName" | "contractNumber" | "paymentStatus" | "contractRef"
   | "projectOwner" | "supportOwner" | "paymentDate" | "paymentEvidenceRefs"
   | "plannedGoLiveAt" | "customerProfileStatus" | "trainingCompleted" | "trainingEvidenceRefs"
+  | "archivedAt"
 >>;
 export const CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS = {
   system_integration: [
@@ -234,7 +237,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
   async list(workspaceId: string) {
     const s = requireWorkspaceScope(workspaceId);
     return [...this.rows.values()]
-      .filter((x) => x.workspaceId === s)
+      .filter((x) => x.workspaceId === s && !x.archivedAt)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .map(row => this.readable(row));
   }
@@ -254,6 +257,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       [...this.rows.values()].some(
         (x) =>
           x.workspaceId === ws &&
+          !x.archivedAt &&
           x.companyName.toLowerCase() ===
             input.companyName.trim().toLowerCase(),
       )
@@ -284,6 +288,8 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       revision: 1,
       createdByActorId: input.actorId,
       updatedByActorId: input.actorId,
+      archivedAt: null,
+      archivedByActorId: null,
       createdAt: now,
       updatedAt: now,
       videos: [],
@@ -343,6 +349,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
         );
     }
     Object.assign(d, patch);
+    if (patch.archivedAt !== undefined) d.archivedByActorId = patch.archivedAt ? input.actorId : null;
     d.updatedByActorId = input.actorId;
     d.updatedAt = new Date().toISOString();
     d.revision++;
@@ -909,6 +916,8 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       revision: Number(r.revision),
       createdByActorId: r.created_by_actor_id,
       updatedByActorId: r.updated_by_actor_id,
+      archivedAt: r.archived_at ? new Date(r.archived_at).toISOString() : null,
+      archivedByActorId: r.archived_by_actor_id ?? null,
       createdAt: new Date(r.created_at).toISOString(),
       updatedAt: new Date(r.updated_at).toISOString(),
       videos,
@@ -1021,7 +1030,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
     const scope = requireWorkspaceScope(workspaceId);
     const ids = await withWorkspaceTransaction(this.pool, scope, async c =>
       (await c.query<{ id: string }>(
-        `SELECT id FROM workspace_customer_deliveries WHERE workspace_id=$1 ORDER BY updated_at DESC,id DESC /* delivery_evidence_list_ids */`,
+        `SELECT id FROM workspace_customer_deliveries WHERE workspace_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC,id DESC /* delivery_evidence_list_ids */`,
         [scope],
       )).rows);
     const result: CustomerDelivery[] = [];
@@ -1412,6 +1421,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
         customerProfileStatus: "customer_profile_status",
         trainingCompleted: "training_completed",
         trainingEvidenceRefs: "training_evidence_refs",
+        archivedAt: "archived_at",
       };
       for (const k of keys) {
         sets.push(`${col[k]}=$${vals.length + 1}`);
@@ -1420,6 +1430,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       if (!sets.length) return (await this.withVideos(c, [row]))[0]!;
       sets.push(
         `updated_by_actor_id=$3`,
+        ...(Object.hasOwn(p, "archivedAt") ? [`archived_by_actor_id=CASE WHEN archived_at IS NULL THEN $3 ELSE NULL END`] : []),
         `updated_at=now()`,
         `revision=revision+1`,
       );

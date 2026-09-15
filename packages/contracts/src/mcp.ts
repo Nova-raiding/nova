@@ -1633,7 +1633,7 @@ export function validateMcpRequest(value: unknown): McpValidationResult {
       const patch = JSON.parse(paramsObject.patch_json)
       if (!patch || typeof patch !== 'object' || Array.isArray(patch)) errors.push('params.patch_json must be a JSON object')
       else {
-        const allowedFields = new Set(['companyName', 'contractNumber', 'paymentStatus', 'contractRef', 'projectOwner', 'supportOwner', 'paymentDate', 'paymentEvidenceRefs', 'plannedGoLiveAt', 'customerProfileStatus'])
+        const allowedFields = new Set(['companyName', 'contractNumber', 'paymentStatus', 'contractRef', 'projectOwner', 'supportOwner', 'paymentDate', 'paymentEvidenceRefs', 'plannedGoLiveAt', 'customerProfileStatus', 'archivedAt'])
         for (const key of Object.keys(patch)) if (!allowedFields.has(key)) errors.push(`params.patch_json.${key} is not accepted for customer delivery profile updates`)
         if ('contractRef' in patch && patch.contractRef !== null && !validCustomerDeliveryContractRef(patch.contractRef)) errors.push('params.patch_json.contractRef must be an uploaded asset_ref or null; external URLs are not accepted')
       }
