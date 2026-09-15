@@ -798,6 +798,32 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     expect(events.at(-1)).toMatchObject({ action: 'customer_delivery.video.remove', evidence: { softDelete: true } })
   })
 
+  it('keeps video mutation actor metadata aligned with audit in get and list', async () => {
+    const events: any[] = []
+    const repo = new MemoryCustomerDeliveryRepository(event => { events.push(event) })
+    const draft = await repo.create({ workspaceId: 'ws_video_actor', companyName: 'Video actors', actorId: 'profile-creator' })
+    const video = await repo.addVideo({ workspaceId: draft.workspaceId, deliveryId: draft.id, actorId: 'video-uploader', title: '交付视频', assetRef: 'asset_video_actor' })
+    const added = { get: await repo.get(draft.workspaceId, draft.id), list: (await repo.list(draft.workspaceId))[0] }
+    await repo.removeVideo!({ workspaceId: draft.workspaceId, deliveryId: draft.id, videoId: video.id, actorId: 'video-remover' })
+    const removed = { get: await repo.get(draft.workspaceId, draft.id), list: (await repo.list(draft.workspaceId))[0] }
+
+    expect(added).toMatchObject({
+      get: { createdByActorId: 'profile-creator', updatedByActorId: 'video-uploader', revision: draft.revision + 1 },
+      list: { createdByActorId: 'profile-creator', updatedByActorId: 'video-uploader', revision: draft.revision + 1 },
+    })
+    expect(removed).toMatchObject({
+      get: { createdByActorId: 'profile-creator', updatedByActorId: 'video-remover', revision: draft.revision + 2 },
+      list: { createdByActorId: 'profile-creator', updatedByActorId: 'video-remover', revision: draft.revision + 2 },
+    })
+    expect(video.uploadedByActorId).toBe('video-uploader')
+    expect(removed.get!.videos[0]).toMatchObject({ uploadedByActorId: 'video-uploader', deletedAt: expect.any(String) })
+    expect(events.map(event => ({ action: event.action, actorId: event.actorId }))).toEqual([
+      { action: 'customer_delivery.create', actorId: 'profile-creator' },
+      { action: 'customer_delivery.video.add', actorId: added.get!.updatedByActorId },
+      { action: 'customer_delivery.video.remove', actorId: removed.get!.updatedByActorId },
+    ])
+  })
+
   it('fails closed for unpaid checklist changes', async () => {
     const repo = new MemoryCustomerDeliveryRepository()
     const d = await repo.create({ workspaceId: 'ws_unpaid', companyName: 'Acme', actorId: 'operator-1' })
