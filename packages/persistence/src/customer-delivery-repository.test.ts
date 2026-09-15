@@ -783,6 +783,12 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     await expect(repo.update({ workspaceId: d.workspaceId, id: d.id, actorId: 'operator-1', expectedRevision: d.revision, patch: { contractRef: 'https://example.com/contracts/acme.pdf' } })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
   })
 
+  it('accepts a complete customer profile without a manually planned launch date', async () => {
+    const repo = new MemoryCustomerDeliveryRepository()
+    const draft = await repo.create({ workspaceId: 'ws_auto_launch', companyName: 'Auto launch', actorId: 'operator-1' })
+    await expect(repo.update({ workspaceId: draft.workspaceId, id: draft.id, actorId: 'operator-1', expectedRevision: draft.revision, patch: { contractNumber: 'AUTO-1', contractRef: 'asset_ref_contract-1', projectOwner: 'owner', supportOwner: 'support', customerProfileStatus: 'complete' } })).resolves.toMatchObject({ customerProfileStatus: 'complete', plannedGoLiveAt: null })
+  })
+
   it('fails closed when an already-complete profile receives an invalid contract reference', async () => {
     const repo = new MemoryCustomerDeliveryRepository()
     const d = await repo.create({ workspaceId: 'ws_contract_complete', companyName: 'Acme', actorId: 'operator-1' })

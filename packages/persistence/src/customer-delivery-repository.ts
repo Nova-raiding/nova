@@ -210,7 +210,7 @@ const complete = (d: CustomerDelivery, items: readonly CustomerDeliveryChecklist
   d.paymentStatus === "paid" &&
   Boolean(d.paymentDate) &&
   d.customerProfileStatus === "complete" &&
-  Boolean(d.contractNumber?.trim() && d.projectOwner?.trim() && d.supportOwner?.trim() && d.plannedGoLiveAt) &&
+  Boolean(d.contractNumber?.trim() && d.projectOwner?.trim() && d.supportOwner?.trim()) &&
   isValidCustomerDeliveryContractRef(d.contractRef) &&
   d.systemIntegrationStatus === "complete" &&
   d.functionalAcceptanceStatus === "complete" &&
@@ -340,8 +340,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
         !isValidCustomerDeliveryContractRef(candidate.contractRef) ||
         !candidate.projectOwner?.trim() ||
         !candidate.supportOwner?.trim() ||
-        (candidate.paymentStatus === "paid" && !candidate.paymentDate) ||
-        !candidate.plannedGoLiveAt
+        (candidate.paymentStatus === "paid" && !candidate.paymentDate)
       )
         throw new CustomerDeliveryError(
           "INVALID_INPUT",
@@ -1394,8 +1393,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           !isValidCustomerDeliveryContractRef(candidate.contractRef) ||
           !candidate.projectOwner?.trim() ||
           !candidate.supportOwner?.trim() ||
-          (candidate.paymentStatus === "paid" && !candidate.paymentDate) ||
-          !candidate.plannedGoLiveAt)
+          (candidate.paymentStatus === "paid" && !candidate.paymentDate))
       )
         throw new CustomerDeliveryError(
           "INVALID_INPUT",

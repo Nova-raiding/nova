@@ -53,7 +53,8 @@ export function sortUserDirectoryRows(items: PlatformUser[], sort?: UserDirector
 }
 
 export function userDirectoryPageRequest(filters: UserFilters, current?: number, pageSize?: number) {
-  return { ...filters, page: current ?? 1, pageSize: pageSize ?? 10 };
+  const { attribute: _attribute, ...serverFilters } = filters;
+  return { ...serverFilters, page: current ?? 1, pageSize: pageSize ?? 10 };
 }
 
 export function canWriteLoadedIdentity(model: Pick<OpsConsoleModel, "canUserGovernance" | "userDetail" | "userDetailLoading">) {
@@ -219,7 +220,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         dataSource={sortedUsers}
         locale={{ emptyText: "没有符合条件的用户成员关系" }}
         rowSelection={{ selectedRowKeys: selectedUserKeys, onChange: (keys) => setSelectedUserKeys(keys.map((key) => String(key))), getCheckboxProps: (row) => ({ disabled: row.accountType === "platform" || row.externalSubject === model.opsSession?.actor_id || row.status === "suspended" }) }}
-        pagination={{ current: Math.floor(model.userDirectory.offset / model.userDirectory.limit) + 1, pageSize: model.userDirectory.limit, total: attributeFilter ? sortedUsers.length : model.userDirectory.total, showSizeChanger: false }}
+        pagination={{ current: Math.floor(model.userDirectory.offset / model.userDirectory.limit) + 1, pageSize: model.userDirectory.limit, total: model.userDirectory.total, showSizeChanger: false }}
         onChange={handleDirectoryChange}
         scroll={{ x: "max-content" }}
         columns={[

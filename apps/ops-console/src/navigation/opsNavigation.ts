@@ -11,7 +11,6 @@ export const opsDomains = [
   "rules",
   "models",
   "storage",
-  "finance",
   "audit",
 ] as const;
 
@@ -48,6 +47,7 @@ export function domainFromLocation(
   // Older finance links incorrectly nested the operations task queue under
   // the finance route. Keep them usable, but canonicalize to /ops/tasks.
   if (/\/ops\/finance\/merchant\/tasks\/?$/u.test(location.pathname)) return "tasks";
+  if (/\/ops\/finance\/?$/u.test(location.pathname)) return "overview";
   const pathDomain = location.pathname
     .match(/\/ops\/(?:governance|overview|users|customer-delivery|members|tasks|knowledge|stores|rules|models|storage|finance|audit)\/?$/u)?.[0]
     .split("/")

@@ -8,7 +8,6 @@ import type { WorkspaceSummary } from "../types/ops.js";
 import { customerDeliveryClient, type CustomerDeliveryAsset } from "../api/customerDeliveryClient.js";
 import { describeOpsError } from "../api/opsClient.js";
 import { accountLabel } from "../authz/accountLabel.js";
-import { deliveryDateTimeIsoValue } from "../components/delivery/deliveryDateTime.js";
 import type { CustomerDeliveryRecord } from "../components/delivery/CustomerDeliverySection.js";
 import { waitForDeliveryScan } from "../components/delivery/CustomerDeliveryUpload.js";
 
@@ -44,7 +43,6 @@ export function buildCustomerDeliveryProfilePatch(record: CustomerDeliveryRecord
     supportOwner: record.afterSalesOwner?.trim() ?? "",
     paymentDate: record.paymentDate || null,
     paymentEvidenceRefs: record.paymentEvidenceRefs ?? [],
-    plannedGoLiveAt: deliveryDateTimeIsoValue(record.requiredLaunchAt) ?? null,
     customerProfileStatus: record.profile ? "complete" : "incomplete",
   };
 }
@@ -89,7 +87,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   } | undefined>(undefined);
   const [createForm] = Form.useForm<{
     companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid";
-    paymentDate: { format: (pattern: string) => string }; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: { format: (pattern: string) => string };
+    paymentDate: { format: (pattern: string) => string }; contractFile: string; owner: string; afterSalesOwner: string;
   }>();
   const currentWorkspace = useRef(targetWorkspaceId);
   currentWorkspace.current = targetWorkspaceId;
@@ -205,7 +203,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     try { const record = await customerDeliveryClient.create(targetWorkspaceId, companyName); await load(); return record; }
     catch (cause) { reportMutationError(cause); throw cause; }
   };
-  const submitCreatePage = async (values: { companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid"; paymentDate: { format: (pattern: string) => string }; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: { format: (pattern: string) => string } }) => {
+  const submitCreatePage = async (values: { companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid"; paymentDate: { format: (pattern: string) => string }; contractFile: string; owner: string; afterSalesOwner: string }) => {
     if (createSubmissionController.current) return;
     if (integrationChecks.length < INTEGRATION_ITEMS.length || acceptanceChecks.length < ACCEPTANCE_ITEMS.length || deliveryVideoFiles.length === 0 || !uploadedContractFile) {
       message.error("请上传合同和交付视频，并完成系统接入、功能验收全部勾选");
@@ -250,7 +248,6 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         contractFile: attempt.contract.assetRef,
         owner: values.owner,
         afterSalesOwner: values.afterSalesOwner,
-        requiredLaunchAt: values.requiredLaunchAt.format("YYYY-MM-DD"),
         profile: true,
       });
       const integration = await customerDeliveryClient.updateChecklist({
@@ -448,7 +445,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         </Card>
         <Card title={<span>功能测试及验收 <em className="customer-delivery-required-mark">*</em></span>}>
           <div className="customer-delivery-check-grid customer-delivery-check-grid-four">
-            {ACCEPTANCE_ITEMS.map((itemKey) => <label className="customer-delivery-check-item" key={itemKey}><span>{checklistDisplayLabel(itemKey)}</span><Checkbox checked={acceptanceChecks.includes(itemKey)} onChange={(event) => setAcceptanceChecks((current) => event.target.checked ? [...current, itemKey] : current.filter((item) => item !== itemKey))} /></label>)}
+            {ACCEPTANCE_ITEMS.map((itemKey) => <label className="customer-delivery-check-item" key={itemKey}><span className={itemKey === "店铺/商品读取" ? "customer-delivery-four-char-label" : undefined}>{checklistDisplayLabel(itemKey)}</span><Checkbox checked={acceptanceChecks.includes(itemKey)} onChange={(event) => setAcceptanceChecks((current) => event.target.checked ? [...current, itemKey] : current.filter((item) => item !== itemKey))} /></label>)}
           </div>
         </Card>
         </div>
@@ -456,7 +453,6 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
           <div className="customer-delivery-final-fields">
             <Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input placeholder="例如：姜伟" /></Form.Item>
             <Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input placeholder="例如：韩先晓" /></Form.Item>
-            <Form.Item name="requiredLaunchAt" label="需求上线时间" rules={[{ required: true, message: "请选择上线日期" }]}><DatePicker classNames={{ popup: { root: "customer-delivery-date-popup" } }} format="YYYY-MM-DD" placeholder="请选择上线日期" style={{ width: "100%" }} /></Form.Item>
             <Form.Item label="交付视频" htmlFor="deliveryVideo" required className="customer-delivery-final-video">
               <div>
                 <Input id="deliveryVideo" readOnly aria-label="交付视频（支持多段）" value={deliveryVideoFiles.map((file) => file.name).join("、")} placeholder="请选择交付视频" suffix={<Button type="text" className="customer-delivery-upload-button" aria-label="上传交付视频" title="上传交付视频" icon={<UploadOutlined />} onClick={() => deliveryVideoInput.current?.click()} />} />

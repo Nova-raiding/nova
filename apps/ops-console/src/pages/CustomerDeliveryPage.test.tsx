@@ -46,6 +46,12 @@ describe("customer delivery workspace selection", () => {
     expect(pageSource).toContain("currentRecord = await customerDeliveryClient.get");
     expect(pageSource).toContain("const latest = await customerDeliveryClient.get");
   });
+
+  it("uses creation time for launch display and removes the manual launch field", () => {
+    expect(pageSource).not.toContain('name="requiredLaunchAt"');
+    expect(pageSource).not.toContain("plannedGoLiveAt:");
+    expect(pageSource).toContain("customer-delivery-four-char-label");
+  });
 });
 
 // Real Chromium mounts the page, Ant Design drawers and opsClient. Only RPC

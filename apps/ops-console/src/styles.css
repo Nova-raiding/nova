@@ -45,6 +45,7 @@
 .customer-delivery-check-grid-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .customer-delivery-check-item { display: flex; min-width: 0; min-height: 32px; align-items: center; justify-content: flex-start; gap: 6px; color: #172554; cursor: pointer; line-height: 1.25; }
 .customer-delivery-check-item span { min-width: 0; overflow-wrap: anywhere; }
+.customer-delivery-check-item .customer-delivery-four-char-label { flex: 0 0 4em; width: 4em; word-break: break-all; }
 .customer-delivery-check-item .ant-checkbox { order: 2; }
 .customer-delivery-create-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 16px; }
 .customer-delivery-create-error { margin-top: 16px; border-radius: 8px; }

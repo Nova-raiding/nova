@@ -43,6 +43,7 @@ export interface CustomerDeliveryRecord {
   trainingCompletedAt?: string;
   videoUrls?: string[];
   revision?: number;
+  createdAt?: string;
   createdByActorId?: string;
   updatedByActorId?: string;
   /** Per-item evidence returned by the delivery API. Keys are item labels. */
@@ -196,8 +197,7 @@ export function isCustomerProfileFilled(record: CustomerDeliveryRecord) {
     record.paymentDate &&
     record.contractFile?.trim() &&
     record.owner?.trim() &&
-    record.afterSalesOwner?.trim() &&
-    record.requiredLaunchAt,
+    record.afterSalesOwner?.trim(),
   );
 }
 
@@ -208,8 +208,8 @@ export function isDeliveryChecklistComplete(record: CustomerDeliveryRecord, key:
   return Array.isArray(selected) && expected.every((item) => selected.includes(item));
 }
 
-export function deliveryLaunchDateLabel(record: Pick<CustomerDeliveryRecord, "goLiveAt" | "requiredLaunchAt">) {
-  const value = record.requiredLaunchAt || record.goLiveAt;
+export function deliveryLaunchDateLabel(record: Pick<CustomerDeliveryRecord, "createdAt">) {
+  const value = record.createdAt;
   if (!value) return "未填写";
   const local = deliveryDateTimeInputValue(value);
   return local ? local.slice(0, 10) : value;
@@ -310,7 +310,6 @@ export function CustomerDeliverySection({
     form.resetFields();
     form.setFieldsValue({
       ...row,
-      requiredLaunchAt: deliveryDateTimeInputValue(row.requiredLaunchAt),
       integrationItems: row.integrationItems ?? [],
       acceptanceItems: row.acceptanceItems ?? [],
       integrationEvidence: row.integrationEvidence ?? {},
@@ -839,13 +838,6 @@ export function CustomerDeliverySection({
                     rules={[{ required: true, message: "请输入售后负责人" }]}
                   >
                     <Input />
-                  </Form.Item>
-                  <Form.Item
-                    name="requiredLaunchAt"
-                    label="要求上线时间"
-                    rules={[{ required: true, message: "请选择要求上线时间" }]}
-                  >
-                    <Input type="datetime-local" />
                   </Form.Item>
                 </>
               )}

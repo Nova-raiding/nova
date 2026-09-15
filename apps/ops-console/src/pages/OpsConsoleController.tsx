@@ -191,7 +191,7 @@ function Dashboard({
     navigateToRoute(domain);
   };
   const canAutoLoadModelMarkup =
-    (activeDomain === "models" || activeDomain === "finance") &&
+    activeDomain === "models" &&
     model.canModelMarkup &&
     model.modelStatus?.state === "ready" &&
     model.modelStatus.relay?.configured === true &&

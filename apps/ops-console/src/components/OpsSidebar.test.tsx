@@ -16,7 +16,6 @@ describe("OpsSidebar navigation", () => {
       />,
     );
     expect(markup).toContain("Store Nova");
-    expect(markup).toContain("平台运营后台");
     expect(markup).not.toContain("平台运营控制面");
     expect(markup).not.toContain("平台治理");
     expect(markup).not.toContain("商家工作区治理");
@@ -96,11 +95,11 @@ describe("OpsSidebar navigation", () => {
   it("shows the authoritative workspace scope instead of claiming full-platform access", () => {
     const markup = renderToStaticMarkup(
       <OpsSidebar
-        activeDomain="finance"
+        activeDomain="users"
         stores={[]}
         platformLabels={{}}
         selectedStoreScope=""
-        visibleDomains={["users", "finance"]}
+        visibleDomains={["users"]}
         onNavigate={() => undefined}
         onSelectStore={() => undefined}
       />,

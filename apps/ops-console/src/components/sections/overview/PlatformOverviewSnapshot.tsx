@@ -56,7 +56,7 @@ export function ModelLaunchRisk({ model, onNavigate }: PlatformOverviewSnapshotP
         <Card
           size="small"
           title={<span><RobotOutlined /> 模型上线风险</span>}
-          extra={<Button type="link" onClick={() => onNavigate?.("finance")}>前往账务中心</Button>}
+          extra={<Button type="link" onClick={() => onNavigate("models")}>查看模型设置</Button>}
         >
           <div className="ops-overview-readiness-list" aria-live="polite">
             {modelStatusError ? (
@@ -75,7 +75,7 @@ export function ModelLaunchRisk({ model, onNavigate }: PlatformOverviewSnapshotP
                 {blockedReadiness.length > 2 ? <Typography.Text type="secondary">另有 {blockedReadiness.length - 2} 项阻断，详见平台总览。</Typography.Text> : null}
               </>
             ) : displayModelStatus ? (
-              <Typography.Text type="secondary">五模态均已通过最终运行时门禁；具体成本和计费倍率请在账务中心核对。</Typography.Text>
+              <Typography.Text type="secondary">五模态均已通过最终运行时门禁；具体成本和计费倍率请在模型设置中核对。</Typography.Text>
             ) : (
               <Typography.Text type="secondary">模型状态尚未取得，不能把配置状态解释为可用。</Typography.Text>
             )}

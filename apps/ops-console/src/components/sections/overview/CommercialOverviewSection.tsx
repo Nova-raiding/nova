@@ -1,7 +1,6 @@
 import {
   ArrowRightOutlined,
   DollarOutlined,
-  SafetyCertificateOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
 import { Button, Card, Col, Empty, Row, Space, Statistic, Table, Tag, Typography } from "antd";
@@ -167,14 +166,6 @@ export function CommercialOverviewSection({ model, onNavigate }: OverviewSection
       <Card
         title="商业套餐目录"
         style={{ marginTop: 16 }}
-        extra={
-          <Space wrap>
-            <Button onClick={() => onNavigate("finance")}>查看订单与权益</Button>
-            <Button type="primary" icon={<SafetyCertificateOutlined />} onClick={() => onNavigate("finance")}>
-              套餐管理（新增 / 编辑 / 删除）
-            </Button>
-          </Space>
-        }
       >
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
           这里维护“卖什么”：价格、周期、面向用户的套餐权益和商业生效状态。订单与实际授予的工作区权益请在“订单与权益”中查看；同一套餐可以对应多笔订单。
@@ -191,7 +182,6 @@ export function CommercialOverviewSection({ model, onNavigate }: OverviewSection
             { title: "类型", dataIndex: "type", width: 120, render: (value: string) => ({ onboarding: "正式开通", monthly: "月度订阅", point_pack: "点数包", private_trial: "私测试用" }[value] ?? value) },
             { title: "价格", dataIndex: "priceLabel", width: 150 },
             { title: "套餐权益（中文明细）", dataIndex: "benefitsSummary", width: 390, render: (_value: string, row: CommercialCatalogItem) => <Space direction="vertical" size={2}>{readableBenefitItems(row).map((benefit) => <Typography.Text key={benefit} style={{ fontSize: 12 }}>• {benefit}</Typography.Text>)}</Space> },
-            { title: "操作", key: "catalog-action", width: 170, render: () => <Button type="link" onClick={() => onNavigate("finance")}>进入套餐管理</Button> },
             { title: "生效周期", dataIndex: "cycleLabel", width: 130, render: (value: string | null) => value || "按合同" },
             { title: "商业状态", dataIndex: "approvalState", width: 140, render: (_value: string, row: CommercialCatalogItem) => <Tag color={readableCatalogStatus(row) === "生效可售" ? "green" : readableCatalogStatus(row) === "已停售" ? "default" : "gold"}>{readableCatalogStatus(row)}</Tag> },
           ]}
@@ -206,14 +196,11 @@ export function CommercialOverviewSection({ model, onNavigate }: OverviewSection
             <Button icon={<TeamOutlined />} onClick={() => openAuthorization()}>
               管理企业授权
             </Button>
-            <Button type="primary" icon={<SafetyCertificateOutlined />} onClick={() => onNavigate("finance")}>
-              配置套餐
-            </Button>
           </Space>
         }
       >
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          查看企业主体当前套餐和订阅状态；授权变更统一在用户中心完成，服务端 SKU 价格、权益和订单统一在账务与退款中维护。企业名称作为主识别信息，Workspace ID 只用于技术范围和审计。
+          查看企业主体当前套餐和订阅状态；授权变更统一在用户中心完成，服务端继续保存 SKU 价格、权益和订单数据。企业名称作为主识别信息，Workspace ID 只用于技术范围和审计。
         </Typography.Paragraph>
         <Table<WorkspaceSummary>
           rowKey="workspaceId"
@@ -248,12 +235,6 @@ export function CommercialOverviewSection({ model, onNavigate }: OverviewSection
             <Space wrap>
               <Button icon={<TeamOutlined />} onClick={() => openAuthorization()}>
                 给企业授权
-              </Button>
-              <Button icon={<SafetyCertificateOutlined />} onClick={() => onNavigate("finance")}>
-                管理套餐
-              </Button>
-              <Button icon={<DollarOutlined />} onClick={() => onNavigate("finance")}>
-                查看财务流水
               </Button>
             </Space>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0, marginTop: 16 }}>

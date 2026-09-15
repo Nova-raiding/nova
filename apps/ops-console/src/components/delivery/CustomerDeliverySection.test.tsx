@@ -74,8 +74,8 @@ describe("customer delivery completion", () => {
   });
 
   it("shows the requested launch date before the customer is actually live", () => {
-    expect(deliveryLaunchDateLabel({ requiredLaunchAt: "2026-09-16T00:00:00.000Z" })).toBe("2026-09-16");
-    expect(deliveryLaunchDateLabel({ requiredLaunchAt: "2026-09-16T00:00:00.000Z", goLiveAt: "2026-09-15T00:00:00.000Z" })).toBe("2026-09-16");
+    expect(deliveryLaunchDateLabel({ createdAt: "2026-09-16T00:00:00.000Z" })).toBe("2026-09-16");
+    expect(deliveryLaunchDateLabel({ createdAt: undefined })).toBe("未填写");
     expect(deliveryLaunchDateLabel({})).toBe("未填写");
   });
 

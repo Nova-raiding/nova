@@ -222,6 +222,7 @@ export function parseCustomerDeliveryList(value: unknown): CustomerDeliveryRecor
       ...(text(row.effectiveAt ?? row.effective_at) ? { goLiveAt: (row.effectiveAt ?? row.effective_at) as string } : {}),
       ...(Array.isArray(row.videoUrls) ? { videoUrls: row.videoUrls.filter(text) } : {}),
       ...(typeof row.revision === "number" ? { revision: row.revision } : {}),
+      ...(text(row.createdAt ?? row.created_at) ? { createdAt: String(row.createdAt ?? row.created_at) } : {}),
       ...(text(row.createdByActorId ?? row.created_by_actor_id) ? { createdByActorId: String(row.createdByActorId ?? row.created_by_actor_id) } : {}),
       ...(text(row.updatedByActorId ?? row.updated_by_actor_id) ? { updatedByActorId: String(row.updatedByActorId ?? row.updated_by_actor_id) } : {}),
       ...(Array.isArray(row.integrationItems) ? { integrationItems: row.integrationItems.filter(text) } : {}),
