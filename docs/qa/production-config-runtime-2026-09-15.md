@@ -25,15 +25,31 @@ plugin changes; they are not covered by this configuration check.
 
 ## Missing external input
 
-No production deployment target or accessible Secret Manager binding was found
-in the inspected project/process configuration. Repository default domains are
-not proof that those endpoints are deployed or authorized.
+The initial process-variable audit did not discover the deployment target. A
+subsequent project-script audit located the existing SSH alias `101` and project
+directory `/opt/merchant-deploy`. A strict-host-key, batch-mode, read-only SSH
+connection succeeded. Repository default domains alone remain insufficient
+proof of endpoint readiness.
 
-To render the real configuration, provide the production server/cluster target
-and the controlled configuration-file location or Secret Manager access
-location. Do not paste credentials in chat. The authorized deployment environment
-must supply the actual database, Redis, object storage, OIDC/MCP, payment and
-five-modality relay configuration and approved limits.
+The server's actual configuration source is `/opt/merchant-deploy/.env` (mode
+600), with relay, five-modality model selection, provider payment, signed
+scanning and ECS RAM-role object storage configuration present. No credentials
+were copied locally or included in audit output. All observed server containers
+reported healthy. This is server configuration/health evidence, not proof of
+successful production payment, model usage/cost or ChatGPT host canaries.
+
+The remote project and release directories contained only example production
+YAML, not a rendered production config. The remote environment has no
+`PRODUCTION_CONFIG_PATH`, `SECRET_PROVIDER` or `RELEASE_ID`; the current pilot
+Compose contract instead uses `PILOT_RELEASE_ID`. Neither the `.env` nor the
+example YAML should be relabeled as validated production configuration.
+
+The next configuration step can use the existing server-side source, without
+asking for a server address again. Render a separate controlled production
+configuration on that server, retaining unresolved secret-provider, independent
+credential-reference, PITR/pooler and release-evidence requirements as blockers.
+Do not paste credentials in chat or download the environment file. Values being
+present in an environment file do not verify their availability or correctness.
 
 Release additionally requires immutable images and signed, same-release runtime
 evidence, including real ChatGPT host, payment, relay, restore and capacity
