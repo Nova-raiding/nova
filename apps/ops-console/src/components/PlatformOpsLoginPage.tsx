@@ -44,18 +44,6 @@ export function PlatformOpsLoginPage({
             <Typography.Text className="ops-login-brand-caption">平台运营后台</Typography.Text>
           </div>
         </div>
-        <div className="ops-login-brand-copy">
-          <Typography.Text className="ops-login-kicker">PLATFORM OPERATIONS</Typography.Text>
-          <Typography.Title level={1}>登录平台运营后台</Typography.Title>
-          <Typography.Paragraph>
-            管理平台规则、商家账号、授权范围、创意点账务和模型服务。登录后只显示当前账号被授权的运营能力。
-          </Typography.Paragraph>
-        </div>
-        <div className="ops-login-trust-list" aria-label="平台后台能力">
-          <div><span aria-hidden="true">✓</span><span>平台级用户与角色管理</span></div>
-          <div><span aria-hidden="true">✓</span><span>商家工作区和授权审计</span></div>
-          <div><span aria-hidden="true">✓</span><span>创意点、模型用量和运营规则</span></div>
-        </div>
       </section>
 
       <section className="ops-login-form-panel">
