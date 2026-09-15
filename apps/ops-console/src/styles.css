@@ -187,7 +187,7 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-session-error { width: min(100%, 760px); margin: 20px auto; padding: 20px; border: 1px solid #dbe3ef; border-radius: 14px; background: #fff; box-shadow: 0 8px 24px rgb(15 23 42 / 6%); }
 .ops-session-error .ant-result { padding: 16px 12px 8px; }
 .ops-session-error .ant-result-image { margin-bottom: 10px; }
-.ops-login-page { display: grid; grid-template-columns: minmax(360px, .9fr) minmax(460px, 1.1fr); min-height: 100dvh; overflow: auto; background: #f8fafc; }
+.ops-login-page { display: grid; grid-template-columns: 1fr; min-height: 100dvh; overflow: auto; background: #f8fafc; }
 .ops-login-brand-panel { display: flex; min-height: 100%; flex-direction: column; padding: clamp(32px, 6vw, 92px) clamp(28px, 6vw, 96px); color: #fff; background: linear-gradient(145deg, #132858 0%, #1e40af 68%, #2563eb 100%); }
 .ops-login-brand { display: flex; width: 100%; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
 .ops-login-brand-logo { display: block; width: min(100%, 380px); height: auto; object-fit: contain; }

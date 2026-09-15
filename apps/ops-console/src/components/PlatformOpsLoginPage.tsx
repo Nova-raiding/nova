@@ -37,15 +37,6 @@ export function PlatformOpsLoginPage({
 
   return (
     <main className="ops-login-page" aria-labelledby="ops-login-title">
-      <section className="ops-login-brand-panel" aria-label="平台运营后台说明">
-        <div className="ops-login-brand">
-          <img className="ops-login-brand-logo" src="/assets/store-nova-primary-horizontal.png" alt="Store Nova" />
-          <div>
-            <Typography.Text className="ops-login-brand-caption">平台运营后台</Typography.Text>
-          </div>
-        </div>
-      </section>
-
       <section className="ops-login-form-panel">
         <Card className="ops-login-card" variant="borderless">
           <div className="ops-login-card-heading">
