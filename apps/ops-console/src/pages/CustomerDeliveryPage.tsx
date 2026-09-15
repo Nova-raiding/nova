@@ -246,8 +246,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
       {mutationError ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
       {createPage ? (<>
-        <Card title="用户建档" extra={<Button onClick={() => setCreatePage(false)}>返回客户建档</Button>}>
-          <Form className="customer-delivery-create-form" form={createForm} layout="vertical" onFinish={submitCreatePage}>
+        <Card title="用户建档">
+          <Form id="customer-create-form" className="customer-delivery-create-form" form={createForm} layout="vertical" onFinish={submitCreatePage}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "0 16px" }}>
             <Form.Item name="companyName" label="公司名称" rules={[{ required: true, message: "请输入公司名称" }]}>
               <Input placeholder="请输入公司名称" autoFocus />
@@ -264,15 +264,35 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             <Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input placeholder="例如：韩先晓" /></Form.Item>
             <Form.Item name="requiredLaunchAt" label="需求上线时间" rules={[{ required: true, message: "请选择上线日期" }]}><Input type="date" /></Form.Item>
             </div>
-            <Space>
-              <Button onClick={() => setCreatePage(false)}>取消</Button>
-              <Button type="primary" htmlType="submit">创建客户</Button>
-            </Space>
           </Form>
         </Card>
-        <Card title="系统接入确认" style={{ marginTop: 16 }}><Checkbox.Group value={integrationChecks} onChange={(values) => setIntegrationChecks(values as string[])} options={["插件账户", "店铺连接", "商品扫描", "知识库功能", "平台规则", "创作点", "企业信息", "品牌资产", "商品资料", "客户偏好"].map(label => ({ label, value: label }))} /></Card>
-        <Card title="功能测试及验收" style={{ marginTop: 16 }}><Checkbox.Group value={acceptanceChecks} onChange={(values) => setAcceptanceChecks(values as string[])} options={["文案生成", "图片生成", "批注修改", "自动检查", "视频生成", "店铺与商品资料读取", "技术验收", "内容验收"].map(label => ({ label, value: label }))} /></Card>
-        <Card title="客户培训与交付确认" style={{ marginTop: 16 }}><Space orientation="vertical"><Checkbox checked={trainingChecked} onChange={(event) => setTrainingChecked(event.target.checked)}>客户培训</Checkbox><Button icon={<UploadOutlined />} onClick={() => message.info("创建客户后可上传交付视频")}>上传交付视频</Button></Space></Card>
+        <Card title="系统接入确认" style={{ marginTop: 16 }}>
+          <div className="customer-delivery-check-grid customer-delivery-check-grid-five">
+            {["插件账户", "店铺连接", "商品扫描", "知识库功能", "平台规则", "创作点", "企业信息", "品牌资产", "商品资料", "客户偏好"].map((label) => (
+              <label className="customer-delivery-check-item" key={label}><span>{label}</span><Checkbox checked={integrationChecks.includes(label)} onChange={(event) => setIntegrationChecks((current) => event.target.checked ? [...current, label] : current.filter((item) => item !== label))} /></label>
+            ))}
+          </div>
+        </Card>
+        <Card title="功能测试及验收" style={{ marginTop: 16 }}>
+          <div className="customer-delivery-check-grid customer-delivery-check-grid-five">
+            {["文案生成", "图片生成", "批注修改", "自动检查", "视频生成", "店铺与商品资料读取", "技术验收", "内容验收"].map((label) => (
+              <label className="customer-delivery-check-item" key={label}><span>{label}</span><Checkbox checked={acceptanceChecks.includes(label)} onChange={(event) => setAcceptanceChecks((current) => event.target.checked ? [...current, label] : current.filter((item) => item !== label))} /></label>
+            ))}
+          </div>
+        </Card>
+        <Card title="客户培训与交付确认" style={{ marginTop: 16 }}>
+          <div className="customer-delivery-confirm-row">
+            <label className="customer-delivery-check-item"><span>客户培训</span><Checkbox checked={trainingChecked} onChange={(event) => setTrainingChecked(event.target.checked)} /></label>
+            <Button icon={<UploadOutlined />} onClick={() => message.info("创建客户后可上传交付视频")}>上传交付视频</Button>
+          </div>
+        </Card>
+        <div className="customer-delivery-create-actions">
+          <Button onClick={() => setCreatePage(false)}>返回客户建档</Button>
+          <Space>
+            <Button onClick={() => setCreatePage(false)}>取消</Button>
+            <Button type="primary" htmlType="submit" form="customer-create-form">创建客户</Button>
+          </Space>
+        </div>
         </>
       ) : <CustomerDeliverySection
         key={targetWorkspaceId || "unselected"}

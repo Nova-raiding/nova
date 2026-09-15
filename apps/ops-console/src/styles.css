@@ -37,6 +37,14 @@
 .customer-delivery-upload-button { width: 32px; height: 28px !important; min-height: 28px !important; padding: 0; border: 0; border-radius: 6px !important; }
 .customer-delivery-uploaded-file { display: flex; align-items: center; gap: 4px; margin-top: 6px; color: #475569; font-size: 12px; }
 .customer-delivery-clear-upload { flex: 0 0 auto; width: 22px; height: 22px; padding: 0; color: #64748b; }
+.customer-delivery-check-grid { display: grid; gap: 12px 20px; }
+.customer-delivery-check-grid-five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.customer-delivery-check-item { display: inline-flex; min-height: 32px; align-items: center; justify-content: space-between; gap: 8px; color: #172554; cursor: pointer; }
+.customer-delivery-check-item .ant-checkbox { order: 2; }
+.customer-delivery-confirm-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.customer-delivery-create-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 16px; }
+@media (max-width: 900px) { .customer-delivery-check-grid-five { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .customer-delivery-check-grid-five { grid-template-columns: 1fr; } .customer-delivery-confirm-row { align-items: stretch; flex-direction: column; } .customer-delivery-create-actions { align-items: stretch; flex-direction: column-reverse; } }
 html { height: 100%; scroll-padding-top: 16px; }
 /* Keep keyboard focus visible for AntD controls as well as custom desktop controls. */
 :where(.ant-btn, .ant-input, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-tabs-tab, .ant-menu-item, .ant-drawer-close, .ant-modal-close):focus-visible {
