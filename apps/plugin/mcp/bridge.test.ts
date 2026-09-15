@@ -346,6 +346,49 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('returns known and unknown creative-point balances without exposing billing evidence', async () => {
+    let balanceCalls = 0
+    const server = createServer(async (_req, res) => {
+      balanceCalls += 1
+      const known = balanceCalls === 1
+      const result = {
+        schema_version: 'creative-points.balance.v1',
+        balance_state: known ? 'known' : 'unknown',
+        available_points: known ? 500 : null,
+        reserved_points: known ? 0 : null,
+        settled_points: known ? 0 : null,
+        access_revision: known ? '1' : null,
+        updated_at: known ? '2026-09-15T00:00:00.000Z' : null,
+        workspace_id: 'ws_secret',
+        provider_cost_cny: '12.34',
+        ledger_entries: [{ ledger_event_id: 'ledger_secret' }],
+      }
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'creative-points.balance.get', arguments: {} } })}\n`)
+      const known = (await nextLine(child.stdout)).result.structuredContent
+      expect(known).toMatchObject({ balance_state: 'known', availability: 'available', available_points: 500, reserved_points: 0, settled_points: 0, access_revision: '1' })
+      expect(known).not.toHaveProperty('workspace_id')
+      expect(known).not.toHaveProperty('provider_cost_cny')
+      expect(known).not.toHaveProperty('ledger_entries')
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'creative-points.balance.get', arguments: {} } })}\n`)
+      const unknown = (await nextLine(child.stdout)).result.structuredContent
+      expect(unknown).toMatchObject({ balance_state: 'unknown', availability: 'unknown', available_points: null, reserved_points: null, settled_points: null, access_revision: null })
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('renders trusted payment deep links without turning arbitrary schemes into links', async () => {
     const server = createServer(async (req, res) => {
       let body = ''

@@ -1350,10 +1350,10 @@ function userFacingToolText(method, result) {
 }
 
 // The ChatGPT surface is a capability/recovery surface, not the merchant's
-// financial statement.  Keep only the server-authored state needed to decide
-// whether an action may continue.  Amounts, point quantities, token counts,
-// provider costs and exports remain available through the authenticated
-// desktop merchant console only.
+// financial statement. Keep the current creative-point balance required to
+// verify recharge and consumption, while payment amounts, ledger entries,
+// token counts, provider costs and exports remain in the authenticated desktop
+// merchant console only.
 function merchantBillingProjection(method, result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) return result
   const rechargeOrder = order => {
@@ -1375,7 +1375,15 @@ function merchantBillingProjection(method, result) {
       orders: Array.isArray(result.orders) ? result.orders.map(rechargeOrder) : [],
     }
   }
-  if (method === 'billing.status' || method === 'creative-points.balance.get') {
+  if (method === 'creative-points.balance.get') {
+    const allowedKeys = ['schema_version', 'balance_state', 'availability', 'available_points', 'reserved_points', 'settled_points', 'access_revision', 'updated_at']
+    const available = Number.isSafeInteger(result.available_points) ? result.available_points : undefined
+    const availability = result.availability ?? (result.balance_state !== 'known' || available === undefined
+      ? 'unknown'
+      : available === 0 ? 'exhausted' : 'available')
+    return Object.fromEntries(allowedKeys.filter(key => Object.prototype.hasOwnProperty.call(result, key) || key === 'availability').map(key => [key, key === 'availability' ? availability : result[key]]))
+  }
+  if (method === 'billing.status') {
     const allowedKeys = ['schema_version', 'balance_state', 'availability', 'allowed', 'access_revision', 'updated_at', 'next_actions', 'point_reservation_status', 'settlement_status', 'viewer']
     const available = Number.isSafeInteger(result.available_points) ? result.available_points : undefined
     const availability = result.availability ?? (result.balance_state !== 'known' || available === undefined
