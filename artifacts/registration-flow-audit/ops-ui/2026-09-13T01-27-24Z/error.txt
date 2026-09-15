@@ -1,5 +1,0 @@
-locator.click: Timeout 5000ms exceeded.
-Call log:
-[2m  - waiting for locator('tr').filter({ hasText: 'E2E 审计企业' }).first().getByRole('button', { name: /审核/ })[22m
-
-    at /Users/lixiaomei/Desktop/code/codexSkills/[eval1]:11:95
