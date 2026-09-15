@@ -32,9 +32,9 @@ describe('request correlation and audit evidence', () => {
   })
 
   it('isolates secrets, raw payloads, circular values and oversized strings', () => {
-    const value: Record<string, unknown> = { authorization: 'Bearer secret', nested: { api_key: 'key', safe: 'ok' }, raw_payload: { pii: 'do not retain' }, long: 'x'.repeat(2050) }
+    const value: Record<string, unknown> = { authorization: 'Bearer secret', nested: { api_key: 'key', session_token: 'session', webhook_secret: 'webhook', safe: 'ok' }, resetToken: 'reset', raw_payload: { pii: 'do not retain' }, long: 'x'.repeat(2050) }
     value.self = value
-    expect(isolateSensitiveFields(value)).toEqual({ authorization: '[REDACTED]', nested: { api_key: '[REDACTED]', safe: 'ok' }, raw_payload: '[REDACTED]', long: `${'x'.repeat(2048)}...[TRUNCATED]`, self: '[CIRCULAR]' })
+    expect(isolateSensitiveFields(value)).toEqual({ authorization: '[REDACTED]', nested: { api_key: '[REDACTED]', session_token: '[REDACTED]', webhook_secret: '[REDACTED]', safe: 'ok' }, resetToken: '[REDACTED]', raw_payload: '[REDACTED]', long: `${'x'.repeat(2048)}...[TRUNCATED]`, self: '[CIRCULAR]' })
     expect(auditPayloadDigest(value)).toMatch(/^[a-f0-9]{64}$/u)
   })
 })

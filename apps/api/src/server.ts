@@ -13702,7 +13702,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const rate = rateFor(actionCode)
         return rate ? projectCreativePointRate(rate) : { action_code: actionCode, approval_state: 'missing', executable: false, blocking_reason: 'RATE_CARD_MISSING' }
       }
-      const modelGates = { text: evaluatePlatformModelGate(process.env, 'text'), image: evaluatePlatformModelGate(process.env, 'image'), image_edit: evaluatePlatformModelGate(process.env, 'image_edit'), video: evaluatePlatformModelGate(process.env, 'video') }
+      const modelGates = { text: evaluatePlatformModelGate(process.env, 'text'), image: evaluatePlatformModelGate(process.env, 'image'), image_edit: evaluatePlatformModelGate(process.env, 'image_edit'), ocr: evaluatePlatformModelGate(process.env, 'ocr'), video: evaluatePlatformModelGate(process.env, 'video') }
       const relay = evaluatePlatformModelRelayGate(process.env)
       const costEvidence = modelCostEvidenceByModality()
       const providerEvidence = Object.fromEntries(Object.entries(modelGates).map(([modality, gate]) => [modality, { configured: gate.ready, https: gate.https, reasons: gate.reasons, cost_evidence: costEvidence[modality as keyof typeof costEvidence] ?? false }]))

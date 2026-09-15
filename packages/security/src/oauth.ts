@@ -55,7 +55,7 @@ export class OAuthStateStore {
 // OAuth clients and provider SDKs. Redaction is deliberately key-based: the
 // value is never inspected or partially retained once a secret-shaped field
 // is encountered.
-const SECRET_KEYS = /(?:access[\s_-]?token|refresh[\s_-]?token|client[\s_-]?secret|app[\s_-]?secret|(?:authorization|auth)[\s_-]?(?:code|token)|api[\s_-]?key|private[\s_-]?key|code[\s_-]?(?:verifier|challenge)|credential|password|passphrase)/iu
+const SECRET_KEYS = /(?:(?:access|refresh|session|reset|bearer|mcp|metrics|webhook|worker|scanner|oidc)[\s_-]?token|(?:client|app|signing|webhook|worker|scanner|oidc)[\s_-]?secret|^(?:token|secret)$|(?:authorization|auth)[\s_-]?(?:code|token)|api[\s_-]?key|private[\s_-]?key|code[\s_-]?(?:verifier|challenge)|credential|password|passphrase)/iu
 const REDACTION_MAX_DEPTH = 8
 const REDACTION_MAX_STRING = 2048
 export function redactSecrets(value: unknown): unknown {

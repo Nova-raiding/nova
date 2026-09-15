@@ -64,12 +64,17 @@ describe('MCP method contract', () => {
     expect(isMcpMethod('admin.raw_sql')).toBe(false)
   })
 
-  it('fails closed for malformed customer delivery contract evidence', () => {
+  it.each(['https://example.com/contract.pdf', ' https://example.com/contract.pdf ', 'http://insecure.example/contract.pdf', '//example.com/contract.pdf', 'data:application/pdf;base64,JVBERg==', 'not-a-ref', '', 'asset:', 123, false, {}, []].map(contractRef => ({ contractRef })))('rejects external URLs and malformed customer delivery contract evidence: $contractRef', ({ contractRef }) => {
     const base = { jsonrpc: '2.0' as const, id: 'contract', method: 'ops.customer-delivery.update', params: { target_workspace_id: 'ws_1', delivery_id: 'cd_1', expected_revision: '1' } }
-    expect(validateMcpRequest({ ...base, params: { ...base.params, patch_json: '{"contractRef":"http://insecure.example/contract.pdf"}' } }).valid).toBe(false)
-    expect(validateMcpRequest({ ...base, params: { ...base.params, patch_json: '{"contractRef":"https://example.com/contract.pdf"}' } })).toEqual({ valid: true, errors: [] })
-    expect(validateMcpRequest({ ...base, params: { ...base.params, patch_json: '{"contractRef":"asset_ref_contract-1"}' } })).toEqual({ valid: true, errors: [] })
-    expect(validateMcpRequest({ ...base, params: { ...base.params, patch_json: '{"contractRef":"not-a-ref"}' } }).valid).toBe(false)
+    const validation = validateMcpRequest({ ...base, params: { ...base.params, patch_json: JSON.stringify({ contractRef }) } })
+    expect(validation).toEqual({ valid: false, errors: ['params.patch_json.contractRef must be an uploaded asset_ref or null; external URLs are not accepted'] })
+  })
+
+  it.each(['asset_ref_contract-1', 'asset_ref:contract-1', 'asset_contract-1', 'asset:contract-1', 'asset://contract-1', ' \tasset_ref_contract-1\u00a0', null, undefined])('preserves contract asset references and nullable draft fields: %j', contractRef => {
+    const request = { jsonrpc: '2.0' as const, id: 'contract', method: 'ops.customer-delivery.update', params: { target_workspace_id: 'ws_1', delivery_id: 'cd_1', expected_revision: '1', patch_json: JSON.stringify({ contractRef }) } }
+    // Format validation is not proof of upload, binding, or a clean scan. The
+    // API and persistence evidence gates remain authoritative after parsing.
+    expect(validateMcpRequest(request)).toEqual({ valid: true, errors: [] })
   })
 
   it('keeps legacy asset.scan explicitly non-production while exposing the safe retry contract', () => {

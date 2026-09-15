@@ -129,7 +129,7 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: 'true' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
@@ -164,7 +164,7 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: '${MERCHANT_MCP_WRITE_ENABLED}' },
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: '${MERCHANT_MCP_WRITE_ENABLED}' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
@@ -215,7 +215,7 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: '${MERCHANT_MCP_WRITE_ENABLED}' },
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: '${MERCHANT_MCP_WRITE_ENABLED}' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
@@ -313,7 +313,7 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
@@ -2276,7 +2276,7 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
-      env: { ...process.env, CODEX_HOME: codexHome, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: '${MERCHANT_WORKSPACE_ID}', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_ALLOW_FIXTURE_FALLBACK: '${MERCHANT_ALLOW_FIXTURE_FALLBACK}' },
+      env: { ...TEST_PROCESS_ENV, CODEX_HOME: codexHome, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: '${MERCHANT_WORKSPACE_ID}', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_ALLOW_FIXTURE_FALLBACK: '${MERCHANT_ALLOW_FIXTURE_FALLBACK}' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {

@@ -70,6 +70,74 @@ afterEach(async () => {
 })
 
 describe('creative points HTTP/MCP authorization parity', () => {
+  it.each([
+    { role: 'workspace_owner', allowed: true },
+    { role: 'merchant_admin', allowed: true },
+    { role: 'finance', allowed: true },
+    { role: 'operator', allowed: false },
+    { role: 'support', allowed: false },
+  ] as const)('uses current workspace membership for $role over both transports', async ({ role, allowed }) => {
+    const workspaceId = `ws_points_role_${crypto.randomUUID()}`
+    const actorId = `points-role-${crypto.randomUUID()}`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role, status: 'active', invitedBy: 'acceptance-test' })
+    // Satisfy the existing store-onboarding prerequisite with synthetic
+    // metadata; this fixture is not evidence of a real platform connection.
+    service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `points-role-store-${workspaceId}`, credentialRef: `vault://points-role/${workspaceId}` })
+    // The token establishes identity and tenant scope, not a gateway role that
+    // could independently grant access (notably the gateway finance alias).
+    configureTokens({ member: { workspaces: [workspaceId], actor_id: actorId, roles: [], workbenches: ['workspace'] } })
+    const base = await start()
+
+    for (const result of await Promise.all([callHttp(base, 'member', workspaceId), callMcp(base, 'member', workspaceId)])) {
+      expect(result.response.status, JSON.stringify(result.body)).toBe(allowed ? 200 : 403)
+      if (allowed) {
+        expect(result.body.error).toBeNull()
+        expect(resultOf(result.body)).toMatchObject({ schema_version: 'creative-points.balance.v1', workspace_id: workspaceId })
+      } else {
+        expect(result.body.data).toBeNull()
+        expect(result.body.error).toMatchObject({ code: 'FORBIDDEN', details: { capability: 'billing.workspace.read', reason_code: 'AUTHZ_CAPABILITY_MISSING' } })
+        expect(JSON.stringify(result.body)).not.toContain('available_points')
+      }
+    }
+    const decisions = (await operationAudits.list(workspaceId)).filter(audit => audit.action === 'authz.decision' && audit.actorId === actorId)
+    // The existing balance-read policy audits denials, not successful reads.
+    expect(decisions).toHaveLength(allowed ? 0 : 2)
+    for (const audit of decisions) expect(audit.after).toMatchObject({ capability: 'billing.workspace.read', result: 'deny', reason_code: 'AUTHZ_CAPABILITY_MISSING' })
+  })
+
+  it('rejects a foreign workspace header even when the actor is an admin there', async () => {
+    const workspaceId = `ws_points_header_${crypto.randomUUID()}`
+    const foreignWorkspaceId = `${workspaceId}_foreign`
+    const actorId = `points-header-${crypto.randomUUID()}`
+    for (const target of [workspaceId, foreignWorkspaceId]) await workspaceMembers.upsert({ workspaceId: target, externalSubject: actorId, displayName: actorId, role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
+    configureTokens({ scoped: { workspaces: [workspaceId], actor_id: actorId, roles: [], workbenches: ['workspace'] } })
+    const base = await start()
+
+    for (const result of await Promise.all([callHttp(base, 'scoped', foreignWorkspaceId), callMcp(base, 'scoped', foreignWorkspaceId)])) {
+      expect(result.response.status, JSON.stringify(result.body)).toBe(403)
+      expect(result.body.data).toBeNull()
+      expect(result.body.error?.code).toBe('FORBIDDEN')
+      expect(JSON.stringify(result.body)).not.toContain('available_points')
+    }
+  })
+
+  it('does not expose a balance without authentication on either transport', async () => {
+    configureTokens({})
+    const base = await start()
+    const workspaceId = `ws_points_unauth_${crypto.randomUUID()}`
+    const responses = await Promise.all([
+      fetch(`${base}/v1/creative-points/balance`, { headers: { 'x-workspace-id': workspaceId } }),
+      fetch(`${base}/mcp`, { method: 'POST', headers: { 'x-workspace-id': workspaceId, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method: 'creative-points.balance.get', params: {} }) }),
+    ])
+    for (const response of responses) {
+      const body = await response.json() as Envelope
+      expect(response.status, JSON.stringify(body)).toBe(401)
+      expect(body.data).toBeNull()
+      expect(body.error?.code).toBe('UNAUTHENTICATED')
+      expect(JSON.stringify(body)).not.toContain('available_points')
+    }
+  })
+
   it('returns the same authenticated workspace balance over HTTP and MCP', async () => {
     const workspaceId = `ws_points_parity_allow_${Date.now()}`
     const actorId = `points-parity-allow-${Date.now()}`
