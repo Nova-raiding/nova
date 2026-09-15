@@ -1,3 +1,7 @@
+import { createHash } from 'node:crypto'
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
@@ -52,5 +56,19 @@ describe('model relay evidence gate', () => {
 
     const invalidWindow = { ...evidence, expires_at: '2026-08-25T12:00:00Z' }
     expect(validateModelRelayEvidence(invalidWindow, { requireProduction: true, now: new Date('2026-08-24T00:00:00Z') })).toContain('expires_at must be after generated_at')
+  })
+
+  it('rejects immutable receipts copied from another release', () => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-binding-'))
+    mkdirSync(join(root, 'relay'), { recursive: true })
+    const bound = structuredClone(evidence)
+    ;(bound as typeof bound & { expires_at: string }).expires_at = '2026-08-28T01:00:00Z'
+    bound.results = bound.results.map(result => {
+      const body = JSON.stringify({ schema_version: '1', release_id: result.modality === 'text' ? 'older-release' : bound.release_id, modality: result.modality, result })
+      const digest = createHash('sha256').update(body).digest('hex')
+      writeFileSync(join(root, 'relay', `${result.modality}.json`), body)
+      return { ...result, costSource: 'provider_receipt', evidence_ref: `artifact://production/relay/${result.modality}.json#${digest}` }
+    })
+    expect(validateModelRelayEvidence(bound, { requireProduction: true, artifactRoot: root, now: new Date('2026-08-27T00:00:00Z') })).toContain('text.evidence_ref release_id must match the evidence release_id')
   })
 })

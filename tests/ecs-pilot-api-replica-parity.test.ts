@@ -23,6 +23,20 @@ const paymentEnvironment = {
   MERCHANT_WORKSPACE_ID: 'ws_pilot_parity',
   MCP_OAUTH_CLIENTS: JSON.stringify({ 'chatgpt-test': ['https://chatgpt.example.test/oauth/callback'] }),
   CAPABILITY_EVIDENCE_PATH: '/tmp/test-capability-evidence.json',
+  ASSET_STORAGE_BUCKET: 'test-production-bucket',
+  ASSET_STORAGE_REGION: 'cn-test',
+  ASSET_STORAGE_ENDPOINT: 'https://s3.oss-cn-test.aliyuncs.com',
+  ASSET_STORAGE_ECS_RAM_ROLE: 'test-production-role',
+  ASSET_STORAGE_QUOTA_BYTES: '50000000000',
+  ASSET_SCANNER_API_TOKEN: 'test-production-scanner-token',
+  ASSET_SCANNER_WORKSPACE_SIGNING_SECRET: 'test-production-scanner-signing-secret',
+  ASSET_SCAN_TRUSTED_PUBLIC_KEYS: '{"prod-scanner-key":"test-public-key"}',
+  ASSET_SCAN_APPROVED_SCANNER_SERVICE_IDS: 'merchant-asset-scanner-production',
+  ASSET_SCAN_MIN_DEFINITIONS_VERSION: '28000',
+  ASSET_SCAN_POLICY_VERSION: 'scan-policy-2026-09-14',
+  ASSET_SCAN_RECEIPT_KEY_ID: 'prod-scanner-key',
+  ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM_B64: 'dGVzdC1wcml2YXRlLWtleQ==',
+  ASSET_SCANNER_SERVICE_ID: 'merchant-asset-scanner-production',
 }
 
 const requiredPaymentKeys = [

@@ -16,7 +16,7 @@ const relayOrigin = (value: string): string | undefined => {
   } catch { return undefined }
 }
 const immutableArtifact = /^artifact:\/\/production\/[A-Za-z0-9._/-]+#([a-f0-9]{64})$/u
-function validateArtifact(reference: string | undefined, root: string, label: string): string[] {
+function validateArtifact(reference: string | undefined, root: string, label: string, expected?: { releaseId?: string; result?: RelayResult }): string[] {
   const match = immutableArtifact.exec(reference ?? '')
   if (!match) return [`${label} must be an immutable production artifact with SHA-256 fragment`]
   const relative = reference!.slice('artifact://production/'.length).split('#')[0]!
@@ -30,6 +30,17 @@ function validateArtifact(reference: string | undefined, root: string, label: st
     try { for (let bytes = readSync(descriptor, buffer, 0, buffer.length, null); bytes > 0; bytes = readSync(descriptor, buffer, 0, buffer.length, null)) hash.update(buffer.subarray(0, bytes)) }
     finally { closeSync(descriptor) }
     if (hash.digest('hex') !== match[1]) return [`${label} SHA-256 does not match the referenced artifact`]
+    if (expected) {
+      let artifactValue: Record<string, any>
+      try { artifactValue = JSON.parse(readFileSync(realCandidate, 'utf8')) as Record<string, any> }
+      catch { return [`${label} must contain a JSON relay receipt`] }
+      if (artifactValue.release_id !== expected.releaseId) return [`${label} release_id must match the evidence release_id`]
+      if (artifactValue.modality !== expected.result?.modality) return [`${label} modality must match ${expected.result?.modality}`]
+      const receipt = artifactValue.result
+      if (!receipt || typeof receipt !== 'object' || receipt.providerRequestId !== expected.result?.providerRequestId || receipt.model !== expected.result?.model || receipt.state !== expected.result?.state) {
+        return [`${label} receipt must match the summarized model, state and provider request id`]
+      }
+    }
   } catch { return [`${label} referenced artifact does not exist or cannot be read`] }
   return []
 }
@@ -88,7 +99,7 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
       if (!nonEmpty(result.pricingVersion)) errors.push(`${modality}.pricingVersion is required for relay_pricing_snapshot`)
       if (!nonEmpty(result.pricingGroup)) errors.push(`${modality}.pricingGroup is required for relay_pricing_snapshot`)
     }
-    if (options.requireProduction || options.artifactRoot) errors.push(...validateArtifact(result.evidence_ref, options.artifactRoot ?? '', `${modality}.evidence_ref`))
+    if (options.requireProduction || options.artifactRoot) errors.push(...validateArtifact(result.evidence_ref, options.artifactRoot ?? '', `${modality}.evidence_ref`, { releaseId: value.release_id, result }))
   }
   return errors
 }

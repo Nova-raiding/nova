@@ -26,5 +26,6 @@ export const NON_HERMETIC_TEST_FILES = [
   'packages/persistence/src/migration-207-release.postgres.test.ts',
   'packages/persistence/src/migration-208-release.postgres.test.ts',
   'packages/persistence/src/migration-209-release.postgres.test.ts',
+  'packages/persistence/src/migration-210-release.postgres.test.ts',
   'apps/api/src/canonical-backfill-contract.test.ts',
 ] as const

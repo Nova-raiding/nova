@@ -2,7 +2,7 @@
 
 ## 目的
 
-在设置 `AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED=true` 前，为真实 OIDC 身份建立至少一个可恢复的平台授权管理员，避免平台工作台因持久角色表为空而全部失权。
+在设置 `AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED=true` 前，为两名独立的真实 OIDC 身份分别建立可恢复的平台授权管理员，避免平台工作台因持久角色表为空、单一管理员失效或误撤权而全部失权。
 
 初始化必须走现有运营后台或 MCP 的 `ops.authorization.role.assign`。该入口会使用乐观并发 revision，并在同一数据库事务写入 `platform_role_assignments` 与 append-only `platform_role_assignment_events`。禁止直接改表、运行 seed SQL、复用本地 `API_AUTH_TOKENS`，或临时关闭生产鉴权来补角色。
 
