@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { customerDeliveryWorkspaceOptions } from "./CustomerDeliveryPage.js";
+import { customerDeliveryWorkspaceOptions, isCustomerDeliveryRevisionConflict } from "./CustomerDeliveryPage.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -37,6 +37,14 @@ describe("customer delivery workspace selection", () => {
     expect(pageSource).toContain("const existingDraft = records.find");
     expect(pageSource).toContain("pendingCreate.current = attempt");
     expect(pageSource).toContain("poll >= 15");
+  });
+
+  it("recognizes stale-record conflicts so checklist and training saves can refresh once", () => {
+    expect(isCustomerDeliveryRevisionConflict(new Error("revision changed"))).toBe(true);
+    expect(isCustomerDeliveryRevisionConflict(new Error("REVISION_CONFLICT"))).toBe(true);
+    expect(isCustomerDeliveryRevisionConflict(new Error("network unavailable"))).toBe(false);
+    expect(pageSource).toContain("currentRecord = await customerDeliveryClient.get");
+    expect(pageSource).toContain("const latest = await customerDeliveryClient.get");
   });
 });
 

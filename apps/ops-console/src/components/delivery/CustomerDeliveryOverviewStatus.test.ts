@@ -33,13 +33,14 @@ describe("customer delivery overview status", () => {
     expect(isCustomerProfileFilled({ ...record, owner: "" })).toBe(false);
   });
 
-  it("only derives checklist completion from every selected item with evidence", () => {
+  it("derives manually verified checklist completion from every selected item", () => {
     expect(isDeliveryChecklistComplete({
       ...record,
       integrationItems: INTEGRATION_ITEMS,
       integrationEvidenceAssetRefs: Object.fromEntries(INTEGRATION_ITEMS.map((item) => [item, [`asset:${item}`]])),
     }, "integration")).toBe(true);
-    expect(isDeliveryChecklistComplete({ ...record, acceptanceItems: ACCEPTANCE_ITEMS }, "acceptance")).toBe(false);
+    expect(isDeliveryChecklistComplete({ ...record, acceptanceItems: ACCEPTANCE_ITEMS }, "acceptance")).toBe(true);
+    expect(isDeliveryChecklistComplete({ ...record, acceptanceItems: ACCEPTANCE_ITEMS.slice(0, -1) }, "acceptance")).toBe(false);
   });
 
   it("recognizes persisted video counts and legacy video URL records", () => {

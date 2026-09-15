@@ -11,6 +11,10 @@ import { deliveryDateTimeIsoValue } from "../components/delivery/deliveryDateTim
 import type { CustomerDeliveryRecord } from "../components/delivery/CustomerDeliverySection.js";
 import { waitForDeliveryScan } from "../components/delivery/CustomerDeliveryUpload.js";
 
+export function isCustomerDeliveryRevisionConflict(cause: unknown) {
+  return /revision(?:[_ ]changed|[_ ]conflict)|版本.*(?:变化|冲突)/iu.test(describeOpsError(cause));
+}
+
 async function waitForCleanDeliveryAsset(initialAsset: CustomerDeliveryAsset, input: {
   targetWorkspaceId: string;
   deliveryId: string;
@@ -151,15 +155,25 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     const mutationWorkspaceId = targetWorkspaceId;
     const mutationGeneration = loadRequest.current.generation;
     let revision: number | undefined;
+    let currentRecord = payload.record;
     try {
-      if (!Number.isSafeInteger(payload.record.revision) || (payload.record.revision ?? 0) < 1) throw new Error("客户交付记录缺少有效 revision，请刷新后重试");
-      const result = await customerDeliveryClient.updateChecklist({
-        targetWorkspaceId: mutationWorkspaceId,
-        deliveryId: payload.record.id,
-        checklistKey: payload.checklistKey,
-        items: payload.items,
-        expectedRevision: payload.record.revision as number,
-      });
+      const persist = (record: CustomerDeliveryRecord) => {
+        if (!Number.isSafeInteger(record.revision) || (record.revision ?? 0) < 1) throw new Error("客户交付记录缺少有效版本，请刷新后重试");
+        return customerDeliveryClient.updateChecklist({
+          targetWorkspaceId: mutationWorkspaceId,
+          deliveryId: record.id,
+          checklistKey: payload.checklistKey,
+          items: payload.items,
+          expectedRevision: record.revision as number,
+        });
+      };
+      let result;
+      try { result = await persist(currentRecord); }
+      catch (cause) {
+        if (!isCustomerDeliveryRevisionConflict(cause)) throw cause;
+        currentRecord = await customerDeliveryClient.get(mutationWorkspaceId, payload.record.id);
+        result = await persist(currentRecord);
+      }
       revision = result.revision;
     } catch (cause) {
       const message = describeOpsError(cause);
@@ -170,7 +184,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     // The checklist write is already durable. Only reconcile its aggregate
     // while the exact authorization generation that initiated it is current;
     // otherwise a late completion must not read the old tenant.
-    const fallback = { ...payload.record, revision };
+    const fallback = { ...currentRecord, revision };
     if (!hasCurrentReadAccess(mutationWorkspaceId, mutationGeneration)) return fallback;
     const request = startCurrentRead(mutationWorkspaceId, mutationGeneration);
     if (!request) return fallback;
@@ -257,6 +271,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
           video.registered = true;
         }
       }
+      await load();
       pendingCreate.current = undefined;
       createForm.resetFields();
       setUploadedContractFile(undefined);
@@ -301,9 +316,21 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     }
   };
   const saveTraining = async (record: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord, completed: boolean, evidenceAssetRefs: string[]) => {
-    if (!Number.isSafeInteger(record.revision) || (record.revision ?? 0) < 1) throw new Error("客户交付记录缺少有效 revision，请刷新后重试");
-    const revision = record.revision as number;
-    try { const updated = await customerDeliveryClient.completeTraining({ targetWorkspaceId, deliveryId: record.id, completed, evidenceAssetRefs, expectedRevision: revision }); await load(); return updated; }
+    const persist = (candidate: CustomerDeliveryRecord) => {
+      if (!Number.isSafeInteger(candidate.revision) || (candidate.revision ?? 0) < 1) throw new Error("客户交付记录缺少有效版本，请刷新后重试");
+      return customerDeliveryClient.completeTraining({ targetWorkspaceId, deliveryId: candidate.id, completed, evidenceAssetRefs, expectedRevision: candidate.revision as number });
+    };
+    try {
+      let updated;
+      try { updated = await persist(record); }
+      catch (cause) {
+        if (!isCustomerDeliveryRevisionConflict(cause)) throw cause;
+        const latest = await customerDeliveryClient.get(targetWorkspaceId, record.id);
+        updated = await persist(latest);
+      }
+      await load();
+      return updated;
+    }
     catch (cause) { reportMutationError(cause); throw cause; }
   };
   const addVideo = async (record: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord, input: { title: string; assetRef: string; sortOrder: number }) => {

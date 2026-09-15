@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ACCEPTANCE_ITEMS, CHECKLIST_DISPLAY_LABELS, CustomerDeliverySection, INTEGRATION_ITEMS, buildChecklistItems, checklistDisplayLabel, deliveryCompletion, deliveryStatusLabel, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
+import { ACCEPTANCE_ITEMS, CHECKLIST_DISPLAY_LABELS, CustomerDeliverySection, INTEGRATION_ITEMS, buildChecklistItems, checklistDisplayLabel, deliveryCompletion, deliveryLaunchDateLabel, deliveryStatusLabel, isDeliveryChecklistComplete, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
 
 const base: CustomerDeliveryRecord = {
   id: "c-1", companyName: "示例企业", paymentStatus: "paid", profile: true,
@@ -68,10 +68,22 @@ describe("customer delivery completion", () => {
     expect(buildChecklistItems(INTEGRATION_ITEMS, undefined, undefined).every((item) => !item.completed && item.evidence === "")).toBe(true);
   });
 
+  it("marks fully selected manually verified checklists complete without uploaded evidence", () => {
+    expect(isDeliveryChecklistComplete({ ...base, integration: false, integrationItems: [...INTEGRATION_ITEMS] }, "integration")).toBe(true);
+    expect(isDeliveryChecklistComplete({ ...base, acceptance: false, acceptanceItems: [...ACCEPTANCE_ITEMS] }, "acceptance")).toBe(true);
+  });
+
+  it("shows the requested launch date before the customer is actually live", () => {
+    expect(deliveryLaunchDateLabel({ requiredLaunchAt: "2026-09-16T00:00:00.000Z" })).toBe("2026-09-16");
+    expect(deliveryLaunchDateLabel({ requiredLaunchAt: "2026-09-16T00:00:00.000Z", goLiveAt: "2026-09-15T00:00:00.000Z" })).toBe("2026-09-16");
+    expect(deliveryLaunchDateLabel({})).toBe("未填写");
+  });
+
   it("uses only the training status selector and never asks for a training proof", () => {
     const html = renderToStaticMarkup(<CustomerDeliverySection disabled records={[base]} />);
     expect(html).toContain("示例企业");
     expect(html).toContain('aria-label="示例企业客户培训状态"');
+    expect(html).toContain("查看详情");
     expect(html).not.toContain("培训凭证");
     expect(html).not.toContain("上传培训");
   });

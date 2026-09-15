@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   Checkbox,
+  Descriptions,
   Drawer,
   Form,
   Input,
@@ -184,8 +185,14 @@ export function isDeliveryChecklistComplete(record: CustomerDeliveryRecord, key:
   if (record[key]) return true;
   const expected = key === "integration" ? INTEGRATION_ITEMS : ACCEPTANCE_ITEMS;
   const selected = key === "integration" ? record.integrationItems : record.acceptanceItems;
-  const evidence = key === "integration" ? record.integrationEvidenceAssetRefs : record.acceptanceEvidenceAssetRefs;
-  return Array.isArray(selected) && expected.every((item) => selected.includes(item) && Boolean(evidence?.[item]?.length));
+  return Array.isArray(selected) && expected.every((item) => selected.includes(item));
+}
+
+export function deliveryLaunchDateLabel(record: Pick<CustomerDeliveryRecord, "goLiveAt" | "requiredLaunchAt">) {
+  const value = record.requiredLaunchAt || record.goLiveAt;
+  if (!value) return "未填写";
+  const local = deliveryDateTimeInputValue(value);
+  return local ? local.slice(0, 10) : value;
 }
 
 export function hasDeliveryVideo(record: CustomerDeliveryRecord) {
@@ -242,6 +249,7 @@ export function CustomerDeliverySection({
   onAssetGet?: (record: CustomerDeliveryRecord, assetRef: string, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
 }) {
   const [selected, setSelected] = useState<CustomerDeliveryRecord>();
+  const [detailsRecord, setDetailsRecord] = useState<CustomerDeliveryRecord>();
   const [step, setStep] = useState<DeliveryStepKey>("profile");
   const [saving, setSaving] = useState(false);
   const [loadingStep, setLoadingStep] = useState(false);
@@ -510,10 +518,9 @@ export function CustomerDeliverySection({
       },
       {
         title: "上线时间",
-        width: 100,
+        width: 110,
         align: "center" as const,
-        dataIndex: "goLiveAt",
-        render: (value?: string) => value || "未上线",
+        render: (_: unknown, row: CustomerDeliveryRecord) => deliveryLaunchDateLabel(row),
       },
       {
         title: "销售负责人",
@@ -528,6 +535,15 @@ export function CustomerDeliverySection({
         align: "center" as const,
         dataIndex: "afterSalesOwner",
         render: (value?: string) => value?.trim() || "-",
+      },
+      {
+        title: "操作",
+        width: 92,
+        align: "center" as const,
+        fixed: "right" as const,
+        render: (_: unknown, row: CustomerDeliveryRecord) => (
+          <Button size="small" onClick={() => setDetailsRecord(row)}>查看详情</Button>
+        ),
       },
     ],
     [onTrainingSave, saving],
@@ -572,7 +588,7 @@ export function CustomerDeliverySection({
         <Table
           rowKey="id"
           size="small"
-          scroll={{ x: 1034 }}
+          scroll={{ x: 1140 }}
           tableLayout="fixed"
           columns={columns}
           dataSource={records}
@@ -580,6 +596,29 @@ export function CustomerDeliverySection({
           locale={{ emptyText: "暂无客户交付档案；请先创建客户档案" }}
         />
       </div>
+      <Drawer
+        title={detailsRecord ? `${detailsRecord.companyName} · 客户详情` : "客户详情"}
+        open={Boolean(detailsRecord)}
+        onClose={() => setDetailsRecord(undefined)}
+        width={620}
+      >
+        {detailsRecord ? (
+          <Descriptions bordered column={1} size="small">
+            <Descriptions.Item label="公司名称">{detailsRecord.companyName}</Descriptions.Item>
+            <Descriptions.Item label="合同编号">{detailsRecord.contractNo || "未填写"}</Descriptions.Item>
+            <Descriptions.Item label="付款形式">{detailsRecord.paymentStatus === "paid" ? "接入费" : "赠送"}</Descriptions.Item>
+            <Descriptions.Item label="付款时间">{detailsRecord.paymentDate || "未填写"}</Descriptions.Item>
+            <Descriptions.Item label="合同文件"><Typography.Text style={{ wordBreak: "break-all" }}>{detailsRecord.contractFile || "未上传"}</Typography.Text></Descriptions.Item>
+            <Descriptions.Item label="系统接入">{isDeliveryChecklistComplete(detailsRecord, "integration") ? "已完成" : "未完成"}</Descriptions.Item>
+            <Descriptions.Item label="功能测试及验收">{isDeliveryChecklistComplete(detailsRecord, "acceptance") ? "已完成" : "未完成"}</Descriptions.Item>
+            <Descriptions.Item label="客户培训">{detailsRecord.training ? "已培训" : "未培训"}</Descriptions.Item>
+            <Descriptions.Item label="销售负责人">{detailsRecord.owner || "未填写"}</Descriptions.Item>
+            <Descriptions.Item label="售后负责人">{detailsRecord.afterSalesOwner || "未填写"}</Descriptions.Item>
+            <Descriptions.Item label="上线时间">{deliveryLaunchDateLabel(detailsRecord)}</Descriptions.Item>
+            <Descriptions.Item label="交付视频">{hasDeliveryVideo(detailsRecord) ? `已上传（${detailsRecord.videos} 段）` : "未上传"}</Descriptions.Item>
+          </Descriptions>
+        ) : null}
+      </Drawer>
       <Drawer
         title={
           selected
