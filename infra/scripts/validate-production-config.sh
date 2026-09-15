@@ -145,7 +145,7 @@ done
 grep -Eq '^[[:space:]]*asset_scan_receipt_key_id:[[:space:]]*"?[A-Za-z0-9][A-Za-z0-9._-]{2,127}"?[[:space:]]*$' "$config_path" || { echo 'asset_scan_receipt_key_id must be a stable non-empty key id' >&2; exit 1; }
 grep -Eq '^[[:space:]]*asset_scan_policy_version:[[:space:]]*"?[A-Za-z0-9][A-Za-z0-9._-]{2,127}"?[[:space:]]*$' "$config_path" || { echo 'asset_scan_policy_version must be an immutable policy version' >&2; exit 1; }
 grep -Eq '^[[:space:]]*clamav_image_digest:[[:space:]]*"?sha256:[0-9a-f]{64}"?[[:space:]]*$' "$config_path" || { echo 'clamav_image_digest must be an immutable lowercase SHA-256 digest' >&2; exit 1; }
-grep -Eq '^[[:space:]]*clamav_max_file_bytes:[[:space:]]*"?104857600"?[[:space:]]*$' "$config_path" || { echo 'clamav_max_file_bytes must match the 100 MiB upload boundary' >&2; exit 1; }
+grep -Eq '^[[:space:]]*clamav_max_file_bytes:[[:space:]]*"?52428800"?[[:space:]]*$' "$config_path" || { echo 'clamav_max_file_bytes must match the 50 MiB upload boundary' >&2; exit 1; }
 scanner_signature_max_age=$(awk '/^[[:space:]]*clamav_signature_max_age_minutes[[:space:]]*:/ { value=$0; sub(/^[^:]*:[[:space:]]*/, "", value); gsub(/["[:space:]]/, "", value); print value; exit }' "$config_path")
 case "$scanner_signature_max_age" in ''|*[!0-9]*) echo 'clamav_signature_max_age_minutes must be an integer from 1 to 1440' >&2; exit 1;; esac
 if [ "$scanner_signature_max_age" -lt 1 ] || [ "$scanner_signature_max_age" -gt 1440 ]; then
