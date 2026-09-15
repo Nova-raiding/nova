@@ -1,5 +1,5 @@
 import { Alert, Button, Card, Form, Input, Select, Space } from "antd";
-import { UploadOutlined } from "@ant-design/icons";
+import { CloseOutlined, UploadOutlined } from "@ant-design/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { OpsPage } from "../components/OpsPage.js";
 import { CustomerDeliverySection } from "../components/delivery/CustomerDeliverySection.js";
@@ -255,7 +255,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             <Form.Item name="contractFile" label="合同文件或链接" rules={[{ required: true, message: "请上传合同或填写合同链接" }]}>
               <Input placeholder="" suffix={<Button type="text" className="customer-delivery-upload-button" aria-label="上传合同文件" title="上传合同文件" icon={<UploadOutlined />} onClick={() => contractFileInput.current?.click()} />} />
               <input ref={contractFileInput} hidden type="file" onChange={(event) => { const file = event.target.files?.[0]; if (file) { createForm.setFieldValue("contractFile", file.name); setUploadedContractName(file.name); } }} />
-              {uploadedContractName ? <div className="customer-delivery-uploaded-file">已选择：{uploadedContractName}</div> : null}
+              {uploadedContractName ? <div className="customer-delivery-uploaded-file">已选择：{uploadedContractName}<Button type="text" size="small" className="customer-delivery-clear-upload" aria-label="取消已选合同文件" title="取消已选文件" icon={<CloseOutlined />} onClick={() => { createForm.setFieldValue("contractFile", ""); setUploadedContractName(""); if (contractFileInput.current) contractFileInput.current.value = ""; }} /></div> : null}
             </Form.Item>
             <Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input placeholder="例如：姜伟" /></Form.Item>
             <Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input placeholder="例如：韩先晓" /></Form.Item>
