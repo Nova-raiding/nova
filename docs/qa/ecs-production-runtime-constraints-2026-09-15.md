@@ -10,9 +10,11 @@ project `/opt/merchant-deploy`. No credentials were printed or downloaded.
 - Database `max_connections=100`, below the gate's 300-backend contract.
 - No pooler appeared in container, process or systemd listings or common host
   listen ports. Connection pooling cannot be declared enabled on this evidence.
-- Scanner worker sets `CLAMAV_MAX_FILE_BYTES=104857600` (100MiB); the production
-  gate requires 52428800 (50MiB). The generated config records the actual value,
-  not the compliant target.
+- Scanner worker sets `CLAMAV_MAX_FILE_BYTES=104857600` (100MiB). The older
+  server gate/checklist in this observation expected 52428800 (50MiB); the
+  integrated candidate explicitly requires 104857600 for the delivery scanner.
+  Product uploads remain limited to 50MiB. Preserve the actual recorded value;
+  do not lower the scanner limit or restart services to match the older gate.
 - API declares scanner mode `clamav_worker`, local scan fixture disabled,
   merchant bearer hostname `yxsona.com`, and policy `local-real-scan-v1`.
 - ClamAV repository digest observed:
@@ -42,5 +44,6 @@ is a blocked configuration check, not a successful release gate.
 
 Further runtime changes require an approved backup destination/retention and
 recovery plan, real pooler deployment, compatible connection budgets, and a
-controlled scanner update. Do not enable PITR by declaration, fabricate refs,
+scanner identity/definitions/policy verification against the current candidate.
+Do not enable PITR by declaration, fabricate refs,
 raise database limits without capacity evidence, or silently restart services.
