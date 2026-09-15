@@ -81,7 +81,7 @@ rls_failures=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
        JOIN pg_attribute a ON a.attrelid = c.oid
         AND a.attname = 'workspace_id' AND NOT a.attisdropped
       WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
-        AND c.relname NOT IN ('commercial_rollouts', 'workspace_members', 'workspace_identity_bindings', 'workspace_commercial_settings', 'workspace_subscriptions', 'ops_access_grants', 'ops_access_grant_events', 'authorization_execution_reservations')
+        AND c.relname NOT IN ('commercial_rollouts', 'workspace_members', 'workspace_identity_bindings', 'workspace_commercial_settings', 'workspace_subscriptions', 'ops_access_grants', 'ops_access_grant_events', 'authorization_execution_reservations', 'mcp_oauth_authorization_codes', 'mcp_oauth_tokens')
    ), scoped_policies AS (
      SELECT schemaname, tablename, count(*) AS policy_count,
             bool_or(
@@ -113,6 +113,25 @@ backfill_rls_failures=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
        OR p.qual <> '(workspace_id = current_setting(''app.workspace_id''::text, true))'
        OR p.with_check <> '(workspace_id = current_setting(''app.workspace_id''::text, true))'")
 [ -z "$backfill_rls_failures" ] || { echo "canonical backfill tables missing forced workspace RLS policy: $backfill_rls_failures" >&2; exit 1; }
+
+mcp_oauth_rls_failures=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+  "WITH expected(tablename, policyname, qual, with_check) AS (
+     VALUES
+       ('mcp_oauth_authorization_codes', 'mcp_oauth_authorization_codes_workspace_isolation', '(workspace_id = current_setting(''app.workspace_id''::text, true))', '(workspace_id = current_setting(''app.workspace_id''::text, true))'),
+       ('mcp_oauth_tokens', 'mcp_oauth_tokens_workspace_isolation', '(workspace_id = current_setting(''app.workspace_id''::text, true))', '(workspace_id = current_setting(''app.workspace_id''::text, true))'),
+       ('mcp_oauth_authorization_codes', 'mcp_oauth_authorization_codes_ops', '((CURRENT_USER = ''merchant_ops''::name) AND (current_setting(''app.platform_scope''::text, true) = ''platform_ops''::text))', '((CURRENT_USER = ''merchant_ops''::name) AND (current_setting(''app.platform_scope''::text, true) = ''platform_ops''::text))'),
+       ('mcp_oauth_tokens', 'mcp_oauth_tokens_ops', '((CURRENT_USER = ''merchant_ops''::name) AND (current_setting(''app.platform_scope''::text, true) = ''platform_ops''::text))', '((CURRENT_USER = ''merchant_ops''::name) AND (current_setting(''app.platform_scope''::text, true) = ''platform_ops''::text))')
+   ), actual AS (
+     SELECT tablename, policyname, permissive, roles, qual, with_check
+       FROM pg_policies WHERE schemaname = 'public'
+         AND tablename IN ('mcp_oauth_authorization_codes', 'mcp_oauth_tokens')
+   )
+   SELECT coalesce(string_agg(e.tablename || '.' || e.policyname, ',' ORDER BY e.tablename, e.policyname), '')
+     FROM expected e LEFT JOIN actual a USING (tablename, policyname)
+    WHERE a.policyname IS NULL OR a.permissive <> 'PERMISSIVE' OR a.roles <> ARRAY['public']::name[]
+       OR replace(a.qual, ' ', '') IS DISTINCT FROM replace(e.qual, ' ', '')
+       OR replace(a.with_check, ' ', '') IS DISTINCT FROM replace(e.with_check, ' ', '')")
+[ -z "$mcp_oauth_rls_failures" ] || { echo "MCP OAuth tables missing workspace/platform RLS policies: $mcp_oauth_rls_failures" >&2; exit 1; }
 
 # These tables intentionally use policy shapes that differ from the ordinary
 # workspace_id equality: identity bindings scope by issuer/subject, while
@@ -332,7 +351,7 @@ EOF
        JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
         AND has_table_privilege(current_user, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
-        AND c.relname NOT IN ('platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','platform_identities','platform_auth_sessions','platform_identity_events','platform_password_accounts','platform_password_sessions','platform_password_reset_tokens','platform_media_specs','platform_media_spec_audit','platform_authorization_audit','authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events','workspace_customer_deliveries','workspace_customer_delivery_videos','workspace_customer_delivery_checklist_items','commercial_offers','commercial_addons','commercial_coupons','commercial_rollouts','model_markup_policy','commercial_catalog_skus','commercial_catalog_sku_versions','commercial_catalog_sku_benefits','commercial_catalog_events_v2')
+        AND c.relname NOT IN ('platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','platform_identities','platform_auth_sessions','platform_identity_events','platform_password_accounts','platform_password_sessions','platform_password_reset_tokens','platform_media_specs','platform_media_spec_audit','platform_authorization_audit','authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events','workspace_customer_deliveries','workspace_customer_delivery_videos','workspace_customer_delivery_checklist_items','mcp_oauth_authorization_codes','mcp_oauth_tokens','commercial_offers','commercial_addons','commercial_coupons','commercial_rollouts','model_markup_policy','commercial_catalog_skus','commercial_catalog_sku_versions','commercial_catalog_sku_benefits','commercial_catalog_events_v2')
         AND NOT (c.relname = 'workspace_operation_audit' AND NOT has_table_privilege(current_user, c.oid, 'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'))")
   [ -z "$ops_tenant_access" ] || { echo "Ops database role has unexpected tenant write access: $ops_tenant_access" >&2; exit 1; }
   ops_alert_receipt_exposure=$(psql "$OPS_DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \

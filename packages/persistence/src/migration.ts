@@ -504,6 +504,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const alertWebhookReceipts = await readFile(new URL('./migrations/208_alert_webhook_receipts.sql', import.meta.url), 'utf8')
   const isolateAlertWebhookReceiverRole = await readFile(new URL('./migrations/209_isolate_alert_webhook_receiver_role.sql', import.meta.url), 'utf8')
   const mcpOauthIdentity = await readFile(new URL('./migrations/210_mcp_oauth_identity.sql', import.meta.url), 'utf8')
+  const mcpOauthWorkspaceRls = await readFile(new URL('./migrations/211_mcp_oauth_workspace_rls.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -715,6 +716,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 208, name: 'alert_webhook_receipts', sql: alertWebhookReceipts },
     { version: 209, name: 'isolate_alert_webhook_receiver_role', sql: isolateAlertWebhookReceiverRole },
     { version: 210, name: 'mcp_oauth_identity', sql: mcpOauthIdentity },
+    { version: 211, name: 'mcp_oauth_workspace_rls', sql: mcpOauthWorkspaceRls },
   ]
 }
 
