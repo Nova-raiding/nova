@@ -15,7 +15,7 @@
     "dev:stack": "sh scripts/ensure-local-scanner-key.sh && sh scripts/start-local-compose.sh && npm run dev:ops-console",
     "dev:stack:relay": "sh scripts/start-local-with-relay.sh",
     "dev:stack:demo": "sh scripts/start-local-demo.sh",
-    "dev:stack:relay:build": "sh scripts/start-local-with-relay.sh --build api ui worker-generation",
+    "dev:stack:relay:build": "sh scripts/start-local-with-relay.sh --build api api-replica ui worker-generation",
     "dev:api": "tsx apps/api/src/server.ts",
     "build": "npm run build:packages && tsc -b --force",
     "build:packages": "npm run build --workspace @merchant-marketing/config && npm run build --workspace @merchant-marketing/contracts && npm run build --workspace @merchant-marketing/domain && npm run build --workspace @merchant-marketing/connectors && npm run build --workspace @merchant-marketing/application && npm run build --workspace @merchant-marketing/knowledge && npm run build --workspace @merchant-marketing/multimodal && npm run build --workspace @merchant-marketing/persistence && npm run build --workspace @merchant-marketing/security && npm run build --workspace @merchant-marketing/storage && npm run build --workspace @merchant-marketing/workers",

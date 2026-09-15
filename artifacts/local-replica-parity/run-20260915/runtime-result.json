@@ -1,0 +1,529 @@
+{
+  "startedAt": "2026-09-15T06:48:55.866Z",
+  "status": "passed-replica-configuration-parity",
+  "phases": [
+    {
+      "services": [
+        "api",
+        "api-replica"
+      ],
+      "exitCode": 0,
+      "completedAt": "2026-09-15T06:49:35.613Z"
+    },
+    {
+      "services": [
+        "worker-sync",
+        "worker-generation",
+        "worker-publish",
+        "worker-reconcile",
+        "worker-automation",
+        "worker-scan"
+      ],
+      "exitCode": 0,
+      "completedAt": "2026-09-15T06:50:09.203Z"
+    }
+  ],
+  "probes": [
+    {
+      "port": 8787,
+      "httpStatus": 200,
+      "platform": false,
+      "code": "FORBIDDEN",
+      "reasonCode": "AUTHZ_CAPABILITY_MISSING"
+    },
+    {
+      "port": 8787,
+      "path": "/v1/products",
+      "status": 401,
+      "code": "UNAUTHENTICATED",
+      "requestId": "req_e547e070-e70e-40a0-a3ef-99603ae12073"
+    },
+    {
+      "port": 8787,
+      "path": "/v1/internal/assets/replica-parity-nonexistent/scan-result",
+      "status": 403,
+      "code": "FORBIDDEN",
+      "requestId": "req_2301fd04-fcab-4604-8bbc-f6ec565bc577"
+    },
+    {
+      "port": 8787,
+      "path": "/releasez",
+      "status": 200,
+      "releaseReady": false
+    },
+    {
+      "port": 8788,
+      "httpStatus": 200,
+      "platform": false,
+      "code": "FORBIDDEN",
+      "reasonCode": "AUTHZ_CAPABILITY_MISSING"
+    },
+    {
+      "port": 8788,
+      "path": "/v1/products",
+      "status": 401,
+      "code": "UNAUTHENTICATED",
+      "requestId": "req_ec90c0f3-68fe-4f16-8cf3-89db970e4992"
+    },
+    {
+      "port": 8788,
+      "path": "/v1/internal/assets/replica-parity-nonexistent/scan-result",
+      "status": 403,
+      "code": "FORBIDDEN",
+      "requestId": "req_7c2fd2b6-67fb-496f-8e71-65cb116f416b"
+    },
+    {
+      "port": 8788,
+      "path": "/releasez",
+      "status": 200,
+      "releaseReady": false
+    }
+  ],
+  "before": [
+    {
+      "name": "/local-api-1",
+      "id": "c71ad14baab6c9e6e13f5232cba520472ad3a627ed9bb6331647884e7df91964",
+      "image": "sha256:f8248a12d9dce3477531a5196b72f74233947cc516cca3b1d04ee3ca6f7b9d8c",
+      "state": "running",
+      "health": "healthy",
+      "startedAt": "2026-09-15T06:10:59.166398705Z",
+      "mounts": [
+        {
+          "type": "volume",
+          "name": "local_merchant-assets",
+          "target": "/var/lib/merchant-assets",
+          "rw": true
+        }
+      ],
+      "ports": {
+        "8787/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "8787"
+          }
+        ]
+      },
+      "aliases": {
+        "local_default": [
+          "local-api-1",
+          "api",
+          "merchant-api"
+        ]
+      }
+    },
+    {
+      "name": "/local-api-replica-1",
+      "id": "ba28df9671fa52714f195a7989412689880a2551b3eb98d512de64a4e1aae99f",
+      "image": "sha256:f8248a12d9dce3477531a5196b72f74233947cc516cca3b1d04ee3ca6f7b9d8c",
+      "state": "running",
+      "health": "healthy",
+      "startedAt": "2026-09-15T06:10:59.165735539Z",
+      "mounts": [
+        {
+          "type": "volume",
+          "name": "local_merchant-assets",
+          "target": "/var/lib/merchant-assets",
+          "rw": true
+        }
+      ],
+      "ports": {
+        "8787/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "8788"
+          }
+        ]
+      },
+      "aliases": {
+        "local_default": [
+          "local-api-replica-1",
+          "api-replica",
+          "api-replica"
+        ]
+      }
+    },
+    {
+      "name": "/local-worker-sync-1",
+      "id": "7a84df98e3abcdbc7feb6f154933716e0d557113ced14d29d2e85f6bef145ac6",
+      "image": "sha256:86e79559dc63d656ff176959ca6bad1c4a38a3831932babe5a94e088f4399d41",
+      "state": "running",
+      "health": "healthy",
+      "startedAt": "2026-09-15T06:11:09.842689669Z",
+      "mounts": [],
+      "ports": {},
+      "aliases": {
+        "local_default": [
+          "local-worker-sync-1",
+          "worker-sync"
+        ]
+      }
+    },
+    {
+      "name": "/local-worker-generation-1",
+      "id": "9cddc0d7fe0c4174b5b593bc93028a1c88854cbc68d33bbec3633eee4c29dd16",
+      "image": "sha256:86e79559dc63d656ff176959ca6bad1c4a38a3831932babe5a94e088f4399d41",
+      "state": "running",
+      "health": "healthy",
+      "startedAt": "2026-09-15T06:11:09.825147252Z",
+      "mounts": [],
+      "ports": {},
+      "aliases": {
+        "local_default": [
+          "local-worker-generation-1",
+          "worker-generation"
+        ]
+      }
+    },
+    {
+      "name": "/local-worker-publish-1",
+      "id": "91bd84b550398cee9854083bf3ff67acc11e0b0dd54f39135623e0e2d7917e94",
+      "image": "sha256:86e79559dc63d656ff176959ca6bad1c4a38a3831932babe5a94e088f4399d41",
+      "state": "running",
+      "health": "healthy",
+      "startedAt": "2026-09-15T06:11:09.817621669Z",
+      "mounts": [],
+      "ports": {},
+      "aliases": {
+        "local_default": [
+          "local-worker-publish-1",
+          "worker-publish"
+        ]
+      }
+    },
+    {
+      "name": "/local-worker-reconcile-1",
+      "id": "336b48c8c297027523cadd3dcfa85996757c697e20941a8a8bf459bc13033818",
+      "image": "sha256:86e79559dc63d656ff176959ca6bad1c4a38a3831932babe5a94e088f4399d41",
+      "state": "running",
+      "health": "healthy",
+      "startedAt": "2026-09-15T06:11:09.827278252Z",
+      "mounts": [],
+      "ports": {},
+      "aliases": {
+        "local_default": [
+          "local-worker-reconcile-1",
+          "worker-reconcile"
+        ]
+      }
+    },
+    {
+      "name": "/local-worker-automation-1",
+      "id": "c1199e35ba79f438a8c687d0b407bcd957bc0f90c68db868b43dfd6b7fb32df3",
+      "image": "sha256:86e79559dc63d656ff176959ca6bad1c4a38a3831932babe5a94e088f4399d41",
+      "state": "running",
+      "health": "healthy",
+      "startedAt": "2026-09-15T06:11:09.831397627Z",
+      "mounts": [],
+      "ports": {},
+      "aliases": {
+        "local_default": [
+          "local-worker-automation-1",
+          "worker-automation"
+        ]
+      }
+    },
+    {
+      "name": "/local-worker-scan-1",
+      "id": "f8049a33fee0493494689e815863ca30c5d0d39c361c93a86c5cd13b9132a7fa",
+      "image": "sha256:86e79559dc63d656ff176959ca6bad1c4a38a3831932babe5a94e088f4399d41",
+      "state": "running",
+      "health": "healthy",
+      "startedAt": "2026-09-15T06:11:09.840350752Z",
+      "mounts": [],
+      "ports": {},
+      "aliases": {
+        "local_default": [
+          "local-worker-scan-1",
+          "worker-scan"
+        ]
+      }
+    }
+  ],
+  "deadLetterBefore": {
+    "event": "9bf6f7e26d05102911f67ecea6eb470e",
+    "asset": "f0269dfd78a86d1549fa0bd2dcbc54d0",
+    "attempt": "eeec462af0ea96538f416a78215d85ac",
+    "acceptedReceipts": 0
+  },
+  "claimableBefore": {
+    "count": 0
+  },
+  "changedReplicaEnvironmentKeys": [
+    "ASSET_SCAN_TRUSTED_PUBLIC_KEYS",
+    "IMAGE_EDIT_PATH",
+    "MODEL_COST_ESTIMATE_VERSION",
+    "MODEL_DAILY_CNY_LIMIT",
+    "MODEL_MAX_TASK_COST_CNY",
+    "MODEL_RELAY_API_KEY",
+    "MODEL_RELAY_LOG_BASE_URL",
+    "MODEL_RELAY_LOG_REFRESH_COOKIE",
+    "MODEL_RELAY_LOG_USER_ID",
+    "MODEL_RPM_LIMIT",
+    "OCR_MODEL",
+    "REQUEST_BODY_LIMIT_BYTES",
+    "VIDEO_DURATION_SECONDS",
+    "VIDEO_IMAGE_MODEL",
+    "VIDEO_MODEL",
+    "VIDEO_RESOLUTION"
+  ],
+  "modelsBefore": [
+    {
+      "port": 8787,
+      "httpStatus": 200,
+      "platform": true,
+      "state": "ready",
+      "capabilities": {
+        "text_generation": true,
+        "image_generation": true,
+        "image_editing": true,
+        "image_fact_ocr": true,
+        "video_rendering": true
+      },
+      "quotas": {
+        "rpm": 100,
+        "tpm": 100000,
+        "daily_cny_limit": "5000.00"
+      },
+      "costControlReady": true,
+      "dataSha256": "c7a7c4130b39cece8c57e8a2d698c1d2e4ffd1b39497616012d09de1acfc0525"
+    },
+    {
+      "port": 8788,
+      "httpStatus": 200,
+      "platform": true,
+      "state": "not_configured",
+      "capabilities": {
+        "text_generation": false,
+        "image_generation": false,
+        "image_editing": false,
+        "image_fact_ocr": false,
+        "video_rendering": false
+      },
+      "quotas": {
+        "rpm": 30,
+        "tpm": 100000,
+        "daily_cny_limit": "5000.00"
+      },
+      "costControlReady": true,
+      "dataSha256": "bdd21342baed6ff9bd431331d5c5ba5dd2286d4ad48eb06edaffa21fb7b96a26"
+    }
+  ],
+  "images": {
+    "api": "sha256:b22abcedc708f450e7936876c1f4c6e8372cf8dd6d2d03e2e206e26734a7a8b4",
+    "worker": "sha256:02cd9e743294f96cc118226bf316b7e94d0f750e42f590d09b20512380917c12"
+  },
+  "sourceFreshness": {
+    "exitCode": 0,
+    "output": "API image freshness passed: image_id=sha256:b22abcedc708f450e7936876c1f4c6e8372cf8dd6d2d03e2e206e26734a7a8b4 migration=212_customer_delivery_account_binding.sql sha256=f15f31e0c123521b5096d5c65f172a5b94aa6638f8db392dc90a489a8bf96e04 source_manifest=sha256:bdb73c81814856ddd6c3350131618bab405205063335f0080b24fabf6b797594\nWorker image freshness passed: image_id=sha256:02cd9e743294f96cc118226bf316b7e94d0f750e42f590d09b20512380917c12 migration=212_customer_delivery_account_binding.sql sha256=f15f31e0c123521b5096d5c65f172a5b94aa6638f8db392dc90a489a8bf96e04 source_manifest=sha256:4a7637583c7b2a2d90703b1f2acd4a711b8fb6adf3ddf83326b44396d62842a2\ncontainer source freshness gate passed: migration=212_customer_delivery_account_binding.sql sha256=f15f31e0c123521b5096d5c65f172a5b94aa6638f8db392dc90a489a8bf96e04\n"
+  },
+  "after": [
+    {
+      "name": "/local-api-1",
+      "id": "7dda422e0dbb08e1198c39e47fbc6f84cc6876d82317fd10af61852c91a2f70c",
+      "image": "sha256:b22abcedc708f450e7936876c1f4c6e8372cf8dd6d2d03e2e206e26734a7a8b4",
+      "state": "running",
+      "health": "healthy",
+      "startedAt": "2026-09-15T06:49:35.344159644Z",
+      "mounts": [
+        {
+          "type": "volume",
+          "name": "local_merchant-assets",
+          "target": "/var/lib/merchant-assets",
+          "rw": true
+        }
+      ],
+      "ports": {
+        "8787/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "8787"
+          }
+        ]
+      },
+      "aliases": {
+        "local_default": [
+          "local-api-1",
+          "api",
+          "merchant-api"
+        ]
+      }
+    },
+    {
+      "name": "/local-api-replica-1",
+      "id": "d2df14ad1013b529aea7a55383b3c9b2836db09e8b64183ec2bde01c7d7c0d03",
+      "image": "sha256:b22abcedc708f450e7936876c1f4c6e8372cf8dd6d2d03e2e206e26734a7a8b4",
+      "state": "running",
+      "health": "healthy",
+      "startedAt": "2026-09-15T06:49:35.344878811Z",
+      "mounts": [
+        {
+          "type": "volume",
+          "name": "local_merchant-assets",
+          "target": "/var/lib/merchant-assets",
+          "rw": true
+        }
+      ],
+      "ports": {
+        "8787/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "8788"
+          }
+        ]
+      },
+      "aliases": {
+        "local_default": [
+          "local-api-replica-1",
+          "api-replica",
+          "api-replica"
+        ]
+      }
+    },
+    {
+      "name": "/local-worker-sync-1",
+      "id": "7061c841a6f700e32a98b1664bd3473665644fc1c651b970871786c5e5ee891f",
+      "image": "sha256:02cd9e743294f96cc118226bf316b7e94d0f750e42f590d09b20512380917c12",
+      "state": "running",
+      "health": "healthy",
+      "startedAt": "2026-09-15T06:50:08.543694535Z",
+      "mounts": [],
+      "ports": {},
+      "aliases": {
+        "local_default": [
+          "local-worker-sync-1",
+          "worker-sync"
+        ]
+      }
+    },
+    {
+      "name": "/local-worker-generation-1",
+      "id": "e1f90e77885d4eea3c1ce6dbed353da8ad20dcfb875780f620d0f65a52529d68",
+      "image": "sha256:02cd9e743294f96cc118226bf316b7e94d0f750e42f590d09b20512380917c12",
+      "state": "running",
+      "health": "healthy",
+      "startedAt": "2026-09-15T06:50:08.540802869Z",
+      "mounts": [],
+      "ports": {},
+      "aliases": {
+        "local_default": [
+          "local-worker-generation-1",
+          "worker-generation"
+        ]
+      }
+    },
+    {
+      "name": "/local-worker-publish-1",
+      "id": "7baecf7a6b7f2a044a72b13a268ce45c54af4ff0933eada8e5689443f6716122",
+      "image": "sha256:02cd9e743294f96cc118226bf316b7e94d0f750e42f590d09b20512380917c12",
+      "state": "running",
+      "health": "healthy",
+      "startedAt": "2026-09-15T06:50:08.546251244Z",
+      "mounts": [],
+      "ports": {},
+      "aliases": {
+        "local_default": [
+          "local-worker-publish-1",
+          "worker-publish"
+        ]
+      }
+    },
+    {
+      "name": "/local-worker-reconcile-1",
+      "id": "c251798ddb53d28a2c36d37dbc1ff839cbb50bcd1d4d945f9f3014e5a247671c",
+      "image": "sha256:02cd9e743294f96cc118226bf316b7e94d0f750e42f590d09b20512380917c12",
+      "state": "running",
+      "health": "healthy",
+      "startedAt": "2026-09-15T06:50:08.554506452Z",
+      "mounts": [],
+      "ports": {},
+      "aliases": {
+        "local_default": [
+          "local-worker-reconcile-1",
+          "worker-reconcile"
+        ]
+      }
+    },
+    {
+      "name": "/local-worker-automation-1",
+      "id": "16cfd477781f007933a324226ddb6b219b7c70419321ae5ad642a64f2efa12ed",
+      "image": "sha256:02cd9e743294f96cc118226bf316b7e94d0f750e42f590d09b20512380917c12",
+      "state": "running",
+      "health": "healthy",
+      "startedAt": "2026-09-15T06:50:08.562445452Z",
+      "mounts": [],
+      "ports": {},
+      "aliases": {
+        "local_default": [
+          "local-worker-automation-1",
+          "worker-automation"
+        ]
+      }
+    },
+    {
+      "name": "/local-worker-scan-1",
+      "id": "e5c7574e904e709868af0fb7dcab0453fdcb4eeb52b132359c6b0626d6d9affb",
+      "image": "sha256:02cd9e743294f96cc118226bf316b7e94d0f750e42f590d09b20512380917c12",
+      "state": "running",
+      "health": "healthy",
+      "startedAt": "2026-09-15T06:50:08.559649452Z",
+      "mounts": [],
+      "ports": {},
+      "aliases": {
+        "local_default": [
+          "local-worker-scan-1",
+          "worker-scan"
+        ]
+      }
+    }
+  ],
+  "modelsAfter": [
+    {
+      "port": 8787,
+      "httpStatus": 200,
+      "platform": true,
+      "state": "ready",
+      "capabilities": {
+        "text_generation": true,
+        "image_generation": true,
+        "image_editing": true,
+        "image_fact_ocr": true,
+        "video_rendering": true
+      },
+      "quotas": {
+        "rpm": 100,
+        "tpm": 100000,
+        "daily_cny_limit": "5000.00"
+      },
+      "costControlReady": true,
+      "dataSha256": "c7a7c4130b39cece8c57e8a2d698c1d2e4ffd1b39497616012d09de1acfc0525"
+    },
+    {
+      "port": 8788,
+      "httpStatus": 200,
+      "platform": true,
+      "state": "ready",
+      "capabilities": {
+        "text_generation": true,
+        "image_generation": true,
+        "image_editing": true,
+        "image_fact_ocr": true,
+        "video_rendering": true
+      },
+      "quotas": {
+        "rpm": 100,
+        "tpm": 100000,
+        "daily_cny_limit": "5000.00"
+      },
+      "costControlReady": true,
+      "dataSha256": "c7a7c4130b39cece8c57e8a2d698c1d2e4ffd1b39497616012d09de1acfc0525"
+    }
+  ],
+  "deadLetterAfter": {
+    "event": "9bf6f7e26d05102911f67ecea6eb470e",
+    "asset": "f0269dfd78a86d1549fa0bd2dcbc54d0",
+    "attempt": "eeec462af0ea96538f416a78215d85ac",
+    "acceptedReceipts": 0
+  },
+  "secretValuesWritten": false,
+  "completedAt": "2026-09-15T06:50:16.416Z"
+}
