@@ -31,7 +31,7 @@ if [ -n "$video_relay_api_key" ]; then
 fi
 export MODEL_RELAY_BASE_URL=${MODEL_RELAY_BASE_URL:-https://ai.wormholexyz.xyz/v1}
 sh scripts/ensure-local-scanner-key.sh
-export AI_MODEL=${AI_MODEL:-deepseek-v4-pro}
+export AI_MODEL=${AI_MODEL:-glm-4.7-flash}
 export AI_THINKING_MODE=${AI_THINKING_MODE:-disabled}
 export AI_TIMEOUT_MS=${AI_TIMEOUT_MS:-180000}
 export WORKER_LEASE_MS=${WORKER_LEASE_MS:-1200000}
