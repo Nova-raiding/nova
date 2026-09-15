@@ -113,9 +113,9 @@ INSERT INTO workspace_members (
 VALUES
   ('00000000-0000-4000-8000-000000000004','ws_demo','finance_demo','本地演示财务专员','finance','active','local_compose_seed'),
   ('00000000-0000-4000-8000-000000000005','ws_demo','operator_demo','本地演示运营专员','operator','active','local_compose_seed'),
-  ('00000000-0000-4000-8000-000000000006','ws_demo','rules_demo','本地演示规则管理员','rules_admin','active','local_compose_seed'),
-  ('00000000-0000-4000-8000-000000000007','ws_demo','knowledge_demo','本地演示知识编辑','knowledge_editor','active','local_compose_seed'),
-  ('00000000-0000-4000-8000-000000000008','ws_demo','reviewer_demo','本地演示审核专员','competitor_reviewer','active','local_compose_seed')
+  ('00000000-0000-4000-8000-000000000006','ws_demo','merchant_admin_demo','本地演示商家管理员','merchant_admin','active','local_compose_seed'),
+  ('00000000-0000-4000-8000-000000000007','ws_demo','support_demo_2','本地演示客户支持二号','support','active','local_compose_seed'),
+  ('00000000-0000-4000-8000-000000000008','ws_demo','finance_demo_2','本地演示财务二号','finance','active','local_compose_seed')
 ON CONFLICT (workspace_id, external_subject) DO UPDATE SET
   display_name = EXCLUDED.display_name,
   role = EXCLUDED.role,
