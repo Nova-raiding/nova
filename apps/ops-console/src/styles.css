@@ -34,6 +34,7 @@
 .customer-delivery-create-form .ant-input-affix-wrapper { display: flex; align-items: center; }
 .customer-delivery-create-form .ant-input-affix-wrapper .ant-input { height: auto !important; padding-block: 0 !important; line-height: 40px; }
 .customer-delivery-create-form input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0; width: 100%; cursor: pointer; }
+.customer-delivery-create-form input[type="date"] { color: #172554 !important; -webkit-text-fill-color: #172554 !important; color-scheme: light; }
 .customer-delivery-upload-button { width: 32px; height: 28px !important; min-height: 28px !important; padding: 0; border: 0; border-radius: 6px !important; }
 .customer-delivery-uploaded-file { display: flex; align-items: center; gap: 4px; margin-top: 6px; color: #475569; font-size: 12px; }
 .customer-delivery-clear-upload { flex: 0 0 auto; width: 22px; height: 22px; padding: 0; color: #64748b; }

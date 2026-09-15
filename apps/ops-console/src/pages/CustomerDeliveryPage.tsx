@@ -299,7 +299,6 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         <div className="customer-delivery-create-actions">
           <Button onClick={() => setCreatePage(false)}>返回客户建档</Button>
           <Space>
-            <Button onClick={() => setCreatePage(false)}>取消</Button>
             <Button type="primary" htmlType="submit" form="customer-create-form">创建客户</Button>
           </Space>
         </div>
