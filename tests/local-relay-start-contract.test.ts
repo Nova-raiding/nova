@@ -6,8 +6,8 @@ const script = readFileSync(new URL('../scripts/start-local-with-relay.sh', impo
 const compose = readFileSync(new URL('../infra/local/docker-compose.yml', import.meta.url), 'utf8')
 
 describe('local relay start contract', () => {
-  it('provides one rebuild command that cannot bypass the relay environment loader', () => {
-    expect(packageJson.scripts['dev:stack:relay:build']).toBe('sh scripts/start-local-with-relay.sh --build api ui worker-generation')
+  it('rebuilds both API instances through the same relay environment loader', () => {
+    expect(packageJson.scripts['dev:stack:relay:build']).toBe('sh scripts/start-local-with-relay.sh --build api api-replica ui worker-generation')
     expect(packageJson.scripts['dev:stack:relay:build']).not.toContain('docker compose')
   })
 
