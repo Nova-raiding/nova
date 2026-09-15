@@ -292,7 +292,7 @@ const DEFAULT_MODEL_USAGE_RECONCILIATION_INTERVAL_MS = 5 * 60_000
 const DEFAULT_SUPPORT_SLA_SCAN_INTERVAL_MS = 60_000
 const DEFAULT_SUPPORT_SLA_REPORT_INTERVAL_MS = 60 * 60_000
 const MAX_WORKER_API_RESPONSE_BYTES = 24 * 1024 * 1024
-export const DEFAULT_CLAMAV_MAX_FILE_BYTES = 50 * 1024 * 1024
+export const DEFAULT_CLAMAV_MAX_FILE_BYTES = 100 * 1024 * 1024
 
 function assetScanContentTooLarge(maxBytes: number): Error & { code: string; retryable: false } {
   return Object.assign(new Error(`asset scan content exceeds the ${maxBytes}-byte scanner limit`), {

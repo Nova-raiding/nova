@@ -48,7 +48,7 @@ function config(overrides: Record<string, boolean> = {}) {
     'asset_scan_policy_version: scan-policy-2026-08-30',
     `clamav_image_digest: sha256:${'a'.repeat(64)}`,
     'clamav_signature_max_age_minutes: 1440',
-    'clamav_max_file_bytes: 52428800',
+    'clamav_max_file_bytes: 104857600',
     'payment_mode: provider',
     'payment_provider_adapters: alipay',
     'payment_checkout_base_url: https://payments.example.com/checkout',

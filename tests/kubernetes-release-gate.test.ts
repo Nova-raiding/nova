@@ -81,7 +81,7 @@ function productionScannerManifest(mutate?: (manifest: Record<string, any>) => v
     MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
     ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ASSET_SCANNER_MODE: 'clamav_worker', ASSET_SCAN_POLICY_VERSION: 'scan-policy-2026-08-30',
     ASSET_SCANNER_SERVICE_ID: 'merchant-asset-scanner-production', ASSET_SCAN_APPROVED_SCANNER_SERVICE_IDS: 'merchant-asset-scanner-production', ASSET_SCAN_MIN_DEFINITIONS_VERSION: '28000',
-    CLAMAV_HOST: '127.0.0.1', CLAMAV_PORT: '3310', CLAMAV_MAX_FILE_BYTES: '52428800', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440',
+    CLAMAV_HOST: '127.0.0.1', CLAMAV_PORT: '3310', CLAMAV_MAX_FILE_BYTES: '104857600', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440',
   }
   const secret = (name: string, key = name) => ({ name, valueFrom: { secretKeyRef: { name: 'merchant-scanner-secrets', key } } })
   const runtimeSecret = (name: string, key = name) => ({ name, valueFrom: { secretKeyRef: { name: 'merchant-runtime-secrets', key } } })
