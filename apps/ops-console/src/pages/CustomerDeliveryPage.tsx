@@ -46,7 +46,10 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const [error, setError] = useState("");
   const [mutationError, setMutationError] = useState("");
   const [createPage, setCreatePage] = useState(false);
-  const [createForm] = Form.useForm<{ companyName: string }>();
+  const [createForm] = Form.useForm<{
+    companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid";
+    paymentDate: string; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: string;
+  }>();
   const currentWorkspace = useRef(targetWorkspaceId);
   currentWorkspace.current = targetWorkspaceId;
   const currentCanRead = useRef(canRead);
@@ -150,8 +153,20 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     try { const record = await customerDeliveryClient.create(targetWorkspaceId, companyName); await load(); return record; }
     catch (cause) { reportMutationError(cause); throw cause; }
   };
-  const submitCreatePage = async ({ companyName }: { companyName: string }) => {
-    await createRecord(companyName);
+  const submitCreatePage = async (values: { companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid"; paymentDate: string; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: string }) => {
+    const created = await createRecord(values.companyName);
+    await saveProfile({
+      ...created,
+      companyName: values.companyName,
+      contractNo: values.contractNumber,
+      paymentStatus: values.paymentStatus,
+      paymentDate: values.paymentDate,
+      contractFile: values.contractFile,
+      owner: values.owner,
+      afterSalesOwner: values.afterSalesOwner,
+      requiredLaunchAt: values.requiredLaunchAt,
+      profile: true,
+    });
     createForm.resetFields();
     setCreatePage(false);
   };
@@ -225,11 +240,18 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
       {mutationError ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
       {createPage ? (
-        <Card title="新建客户" extra={<Button onClick={() => setCreatePage(false)}>返回客户建档</Button>}>
+        <Card title="用户建档" extra={<Button onClick={() => setCreatePage(false)}>返回客户建档</Button>}>
           <Form form={createForm} layout="vertical" onFinish={submitCreatePage}>
             <Form.Item name="companyName" label="公司名称" rules={[{ required: true, message: "请输入公司名称" }]}>
               <Input placeholder="请输入公司名称" autoFocus />
             </Form.Item>
+            <Form.Item name="contractNumber" label="合同编号" rules={[{ required: true, message: "请输入合同编号" }]}><Input placeholder="例如：2026090801" /></Form.Item>
+            <Form.Item name="paymentStatus" label="付款形式" rules={[{ required: true, message: "请选择付款形式" }]}><select style={{ width: "100%", height: 32 }}><option value="paid">接入费</option><option value="unpaid">赠送</option></select></Form.Item>
+            <Form.Item name="paymentDate" label="付款时间" rules={[{ required: true, message: "请输入付款时间" }]}><Input type="datetime-local" /></Form.Item>
+            <Form.Item name="contractFile" label="合同文件或链接" rules={[{ required: true, message: "请上传合同或填写合同链接" }]}><Input placeholder="填写合同链接或文件地址" /></Form.Item>
+            <Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input placeholder="例如：姜伟" /></Form.Item>
+            <Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input placeholder="例如：韩先晓" /></Form.Item>
+            <Form.Item name="requiredLaunchAt" label="需求上线时间" rules={[{ required: true, message: "请输入需求上线时间" }]}><Input type="datetime-local" /></Form.Item>
             <Space>
               <Button onClick={() => setCreatePage(false)}>取消</Button>
               <Button type="primary" htmlType="submit">创建客户</Button>
