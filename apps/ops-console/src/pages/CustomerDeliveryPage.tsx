@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Checkbox, Form, Input, Select, Space, message } from "antd";
+import { Alert, Button, Card, Checkbox, DatePicker, Form, Input, Select, Space, message } from "antd";
 import { CloseOutlined, UploadOutlined } from "@ant-design/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { OpsPage } from "../components/OpsPage.js";
@@ -55,7 +55,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const [acceptanceChecks, setAcceptanceChecks] = useState<string[]>([]);
   const [createForm] = Form.useForm<{
     companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid";
-    paymentDate: string; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: string;
+    paymentDate: { format: (pattern: string) => string }; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: { format: (pattern: string) => string };
   }>();
   const currentWorkspace = useRef(targetWorkspaceId);
   currentWorkspace.current = targetWorkspaceId;
@@ -160,7 +160,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     try { const record = await customerDeliveryClient.create(targetWorkspaceId, companyName); await load(); return record; }
     catch (cause) { reportMutationError(cause); throw cause; }
   };
-  const submitCreatePage = async (values: { companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid"; paymentDate: string; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: string }) => {
+  const submitCreatePage = async (values: { companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid"; paymentDate: { format: (pattern: string) => string }; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: { format: (pattern: string) => string } }) => {
     if (integrationChecks.length < 10 || acceptanceChecks.length < 8 || deliveryVideoFiles.length === 0) {
       message.error("请完成系统接入、功能验收全部勾选，并上传至少一段交付视频");
       return;
@@ -175,11 +175,11 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       companyName: values.companyName,
       contractNo: values.contractNumber,
       paymentStatus: values.paymentStatus,
-      paymentDate: values.paymentDate,
+      paymentDate: values.paymentDate.format("YYYY-MM-DD"),
       contractFile: values.contractFile,
       owner: values.owner,
       afterSalesOwner: values.afterSalesOwner,
-      requiredLaunchAt: values.requiredLaunchAt,
+      requiredLaunchAt: values.requiredLaunchAt.format("YYYY-MM-DD"),
       profile: true,
     });
     createForm.resetFields();
@@ -264,7 +264,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             </Form.Item>
             <Form.Item name="contractNumber" label="合同编号" rules={[{ required: true, message: "请输入合同编号" }]}><Input placeholder="例如：2026090801" /></Form.Item>
             <Form.Item name="paymentStatus" label="付款形式" rules={[{ required: true, message: "请选择付款形式" }]}><Select className="customer-delivery-payment-select" options={[{ value: "paid", label: "接入费" }, { value: "unpaid", label: "赠送" }]} /></Form.Item>
-            <Form.Item name="paymentDate" label="付款时间" rules={[{ required: true, message: "请选择付款日期" }]}><Input type="date" onClick={(event) => event.currentTarget.showPicker?.()} /></Form.Item>
+            <Form.Item name="paymentDate" label="付款时间" rules={[{ required: true, message: "请选择付款日期" }]}><DatePicker format="YYYY-MM-DD" placeholder="请选择付款日期" style={{ width: "100%" }} /></Form.Item>
             <Form.Item name="contractFile" label="合同文件或链接" rules={[{ required: true, message: "请上传合同或填写合同链接" }]}>
               <Input placeholder="" suffix={<Button type="text" className="customer-delivery-upload-button" aria-label="上传合同文件" title="上传合同文件" icon={<UploadOutlined />} onClick={() => contractFileInput.current?.click()} />} />
               <input ref={contractFileInput} hidden type="file" onChange={(event) => { const file = event.target.files?.[0]; if (file) { createForm.setFieldValue("contractFile", file.name); setUploadedContractName(file.name); } }} />
@@ -292,7 +292,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
           <div className="customer-delivery-final-fields">
             <Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input placeholder="例如：姜伟" /></Form.Item>
             <Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input placeholder="例如：韩先晓" /></Form.Item>
-            <Form.Item name="requiredLaunchAt" label="需求上线时间" rules={[{ required: true, message: "请选择上线日期" }]}><Input type="date" onClick={(event) => event.currentTarget.showPicker?.()} /></Form.Item>
+            <Form.Item name="requiredLaunchAt" label="需求上线时间" rules={[{ required: true, message: "请选择上线日期" }]}><DatePicker format="YYYY-MM-DD" placeholder="请选择上线日期" style={{ width: "100%" }} /></Form.Item>
             <Form.Item label={<span aria-hidden="true">&nbsp;</span>} className="customer-delivery-final-video"><input ref={deliveryVideoInput} hidden type="file" accept="video/*" multiple onChange={(event) => { const files = Array.from(event.target.files ?? []); if (files.length) setDeliveryVideoFiles((current) => [...current, ...files]); event.target.value = ""; }} /><Button size="small" icon={<UploadOutlined />} onClick={() => deliveryVideoInput.current?.click()}>上传交付视频</Button>{deliveryVideoFiles.length ? <div className="customer-delivery-video-list">{deliveryVideoFiles.map((file, index) => <div className="customer-delivery-video-item" key={`${file.name}-${index}`}><span>{file.name}</span><Button type="text" size="small" icon={<CloseOutlined />} aria-label={`移除${file.name}`} onClick={() => setDeliveryVideoFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} /></div>)}</div> : null}</Form.Item>
           </div>
         </Card>
