@@ -25,6 +25,17 @@ package.json
 package-lock.json
 apps/api/src/server.ts
 apps/api/src/aliyun-ecs-role-credentials.ts
+apps/api/src/customer-delivery-contract-download.ts
+packages/persistence/src/migration.ts
+packages/persistence/src/migration-210.test.ts
+packages/persistence/src/migration-210-release.postgres.test.ts
+release-metadata.json
+infra/docker/api.Dockerfile
+infra/docker/worker.Dockerfile
+infra/scripts/apply-migrations.sh
+infra/scripts/verify-runtime-db-role.sh
+infra/scripts/generate-container-source-manifest.mjs
+infra/local/ensure-app-role.sql
 infra/local/docker-compose.ecs-pilot.yml
 infra/local/docker-compose.ecs-oss-cutover.yml
 infra/local/docker-compose.ecs-production-migration.yml
@@ -49,6 +60,10 @@ docs/runbooks/aliyun-oss-canary-delete-version-authorization.md
 docs/runbooks/durable-platform-authorization-bootstrap.md
 EOF
 
+# The migration registry loads the entire chain, so review all SQL assets
+# together rather than shipping only its newest entry.
+git -C "$root" ls-files packages/persistence/src/migrations >> "$manifest"
+
 while IFS= read -r path; do
   [ -f "$root/$path" ] || {
     echo "candidate file is missing locally: $path" >&2
@@ -57,10 +72,14 @@ while IFS= read -r path; do
 done < "$manifest"
 
 printf 'status\tlocal_sha256\tremote_sha256\tpath\n' > "$report"
+# Read all remote checksums through one SSH connection. A full migration
+# inventory otherwise establishes hundreds of connections for one review.
+remote_checksums="$output_dir/remote-checksums.txt"
+ssh "$remote_alias" "cd '$remote_root' && while IFS= read -r path; do if [ -f \"\$path\" ]; then sha256sum \"\$path\"; else printf 'MISSING  %s\\n' \"\$path\"; fi; done" < "$manifest" > "$remote_checksums"
 while IFS= read -r path; do
   local_sha=$(shasum -a 256 "$root/$path" | awk '{print $1}')
-  # -n prevents ssh from consuming the manifest that feeds this loop.
-  remote_line=$(ssh -n "$remote_alias" "cd '$remote_root' && if [ -f '$path' ]; then sha256sum '$path'; else printf 'MISSING  %s\\n' '$path'; fi")
+  remote_line=$(awk -v wanted="$path" '$2 == wanted { print; exit }' "$remote_checksums")
+  [ -n "$remote_line" ] || { echo "remote checksum missing: $path" >&2; exit 1; }
   remote_sha=$(printf '%s\n' "$remote_line" | awk '{print $1}')
   if [ "$remote_sha" = MISSING ]; then
     status=missing_remote

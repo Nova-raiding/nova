@@ -4,7 +4,8 @@ import type { TableProps } from "antd";
 import type { MerchantAccountAuthorizationResult, OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { PlatformUser } from "../../types/ops";
 import { EnterpriseIdentity } from "../EnterpriseIdentity.js";
-import { packageCodeLabel } from "../commercial/packageLabels.js";
+import { packageDisplayName } from "../commercial/packageLabels.js";
+import { provisionableCatalogItems } from "../../api/commercialOperationsClient.js";
 import { yuanToFen } from "../../utils/currency.js";
 
 type UserFilters = { query?: string; status?: string; workspaceId?: string };
@@ -78,6 +79,8 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const sortedUsers = useMemo(() => sortUserDirectoryRows(model.userDirectory.items, userSort), [model.userDirectory.items, userSort]);
   const identityWritesDisabled = !canWriteLoadedIdentity(model);
   const initialDirectoryLoadFailed = Boolean(model.userDirectoryError && !model.userDirectoryLoading && model.userDirectory.items.length === 0);
+  const provisionableCatalog = useMemo(() => provisionableCatalogItems(model.platformCommercialCatalog ?? []), [model.platformCommercialCatalog]);
+  const provisionableCatalogBySku = useMemo(() => new Map(provisionableCatalog.map((item) => [item.skuCode, item])), [provisionableCatalog]);
 
   useEffect(() => {
     if (actionError) actionErrorRef.current?.focus({ preventScroll: true });
@@ -189,9 +192,14 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
               setActionError("");
               setProvisionResult(undefined);
               provisionForm.resetFields();
+              const first = provisionableCatalog[0];
+              provisionForm.setFieldsValue({
+                skuCode: first?.skuCode,
+                amountYuan: first?.priceFen === null || first?.priceFen === undefined ? undefined : first.priceFen / 100,
+              });
               setProvisionOpen(true);
             }}
-            disabled={!model.canPlatformOps}
+            disabled={!model.canPlatformOps || provisionableCatalog.length === 0}
           >开通商家账号</Button>
           <Button danger onClick={() => { setActionError(""); setBulkSuspendOpen(true); }} disabled={!selectedUsers.length}>批量停用（{selectedUsers.length}）</Button>
         </Space></Form.Item>
@@ -313,8 +321,8 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
           <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} placeholder="例如：合同已签，等待财务核验首期接入费" />
         </Form.Item>
         <Row gutter={12}>
-          <Col span={12}><Form.Item label="套餐" name="skuCode" initialValue="sku-onboarding-5000" rules={[{ required: true, message: "请选择套餐" }]}><Select options={["sku-onboarding-5000", "sku-monthly-2000", "sku-monthly-5000", "sku-monthly-10000", "sku-points-500", "sku-points-2000"].map(value => ({ value, label: packageCodeLabel(value) }))} /></Form.Item></Col>
-          <Col span={12}><Form.Item label="实收金额（元）" name="amountYuan" initialValue={5000} rules={[{ required: true, message: "请输入实收金额" }]}><Input type="number" min={0} step="0.01" /></Form.Item></Col>
+          <Col span={12}><Form.Item label="套餐" name="skuCode" rules={[{ required: true, message: "请选择服务端已发布套餐" }]}><Select options={provisionableCatalog.map((item) => ({ value: item.skuCode, label: `${packageDisplayName(item.skuCode, item.name)} · ${item.priceLabel}` }))} onChange={(value) => provisionForm.setFieldValue("amountYuan", provisionableCatalogBySku.get(value)?.priceFen === null || provisionableCatalogBySku.get(value)?.priceFen === undefined ? undefined : (provisionableCatalogBySku.get(value)!.priceFen! / 100))} /></Form.Item></Col>
+          <Col span={12}><Form.Item label="实收金额（元）" name="amountYuan" extra="价格来自服务端已发布 SKU" rules={[{ required: true, message: "服务端未返回套餐价格" }]}><Input type="number" min={0} step="0.01" readOnly /></Form.Item></Col>
           <Col span={12}><Form.Item label="收款状态" name="paymentStatus" initialValue="pending" rules={[{ required: true }]}><Select options={[{ value: "pending", label: "待核验（不开放权限）" }, { value: "verified", label: "已核验（立即开通）" }]} /></Form.Item></Col>
           <Col span={12}><Form.Item label="支付凭证号" name="paymentReference"><Input placeholder="微信/支付宝交易号" /></Form.Item></Col>
           <Col span={24}><Form.Item label="支付时间（ISO UTC）" name="paidAt"><Input placeholder="已核验时必填，例如 2026-09-10T12:00:00.000Z" /></Form.Item></Col>

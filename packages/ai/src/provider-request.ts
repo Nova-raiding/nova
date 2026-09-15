@@ -2,6 +2,16 @@ import { createHash } from 'node:crypto'
 
 export type ProviderRequestOutcome = 'unknown' | 'failed'
 
+/** Host-owned dispatch admission. This is not provider input and carries no
+ * credentials. Hosts must obtain identity/authority from their trusted request
+ * or durable job context, not from the optional usage correlation fields. */
+export type ProviderBeforeRequest = (context: Readonly<{
+  operation: 'text_generate' | 'image_generate' | 'image_edit' | 'ocr' | 'video_generate' | 'image_query' | 'video_query'
+  workspaceId?: string
+  actionId?: string
+  signal?: AbortSignal
+}>) => void | Promise<void>
+
 /**
  * The request may have reached the provider, so callers must not refund or
  * retry it blindly. `providerSucceeded` is the existing server compatibility

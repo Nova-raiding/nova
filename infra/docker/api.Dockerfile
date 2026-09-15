@@ -43,6 +43,12 @@ COPY packages/persistence/src/migrations ./dist/packages/persistence/src/migrati
 COPY --from=build /app/apps/plugin ./apps/plugin
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/dist/packages/contracts/src ./packages/contracts/dist
+# Billing callback signing is intentionally kept as a checked-in ESM asset
+# rather than compiled TypeScript. The compiled payment provider imports it at
+# runtime, so the API image must carry the exact source asset alongside the
+# generated package output.
+COPY packages/billing/src/callback-envelope.mjs ./dist/packages/billing/src/callback-envelope.mjs
+COPY packages/billing/src/callback-envelope.d.mts ./dist/packages/billing/src/callback-envelope.d.mts
 # The runtime install happens before workspace sources are copied, so npm
 # cannot create links for private @merchant-marketing packages. Compiled code
 # may legitimately import their public exports; wire those package roots after

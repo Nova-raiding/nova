@@ -1,5 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { readFileSync } from 'node:fs'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { requiresCustomerDeliveryAccess } from '../../../packages/contracts/src/customer-delivery-access.js'
+import { readCustomerDeliveryAccess, assertCustomerDeliveryAllowed, pendingCustomerDeliveryProjection } from './customer-delivery-access.js'
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { alertNotificationReadiness, notifyOperationalAlert } from './alert-notifier.js'
 import { Pool } from 'pg'
@@ -18,11 +21,12 @@ import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError, 
 import { allowedModelUsageSettlementDecisions, AssetScanRedriveError, AuthorizationRepositoryError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, CommercialContractError, loadMigrations, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialCatalogRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryCreativePointRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialCatalogRepository, PostgresCommercialContractRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresCreativePointRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresServiceFulfillmentRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialCatalogRepository, type CommercialCatalogSkuSnapshot, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type CreativePointRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ModelUsageSettlementDecision, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type ServiceFulfillmentRepository, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
 import type { OutboxEvent, OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import { ServiceFulfillmentRepositoryError, type ServiceFulfillmentEventRecord } from '../../../packages/persistence/src/service-fulfillment-repository.js'
-import { CustomerDeliveryError, MemoryCustomerDeliveryRepository, PostgresCustomerDeliveryRepository, type CustomerDeliveryRepository } from '../../../packages/persistence/src/customer-delivery-repository.js'
+import { CustomerDeliveryError, MemoryCustomerDeliveryRepository, PostgresCustomerDeliveryRepository, normalizeCustomerDeliveryAccountListInput, customerDeliveryAccountCursor, type CustomerDeliveryRepository } from '../../../packages/persistence/src/customer-delivery-repository.js'
 import { loadCustomerDeliveryAsset, requireCustomerDeliveryAsset } from './customer-delivery-assets.js'
 import { validateCustomerDeliveryJsonNoNul, validateCustomerDeliveryProfileValues } from './customer-delivery-profile-validation.js'
 import { readOwnCommercialPaymentStatus } from './commercial-payment-status-reader.js'
 import { customerDeliveryUploadPurpose, customerDeliveryUploadView, validateCustomerDeliveryUpload, type CustomerDeliveryUploadPurpose } from './customer-delivery-upload.js'
+import { downloadCustomerDeliveryContract } from './customer-delivery-contract-download.js'
 import { CUSTOMER_DELIVERY_SCAN_EVENT, CUSTOMER_DELIVERY_SCAN_OPERATION, parseDeliveryScanAdmission, type DeliveryScanAdmission } from '../../../packages/workers/src/customer-delivery-scan-admission.js'
 import type { SqlClient } from '../../../packages/persistence/src/repository.js'
 import { CommercialCatalogUnavailableError, type CommercialCatalogMutationInput } from '../../../packages/persistence/src/commercial-catalog-repository.js'
@@ -371,8 +375,16 @@ async function recordRelayUsage(usage: RelayUsageRecord) {
   return { recorded: true as const, costEvidence: true as const }
 }
 
-const rawContentGenerator = createContentGeneratorFromEnv(process.env, recordRelayUsage)
-const rawImageGenerator = createImageGeneratorFromEnv(process.env, recordRelayUsage)
+const deliveryDispatchContext = new AsyncLocalStorage<{
+  request?: IncomingMessage
+  workspaceId?: string
+  recheck?: () => Promise<unknown>
+  onDispatch?: () => Promise<void>
+  resourceRechecks?: Map<string, () => Promise<void>>
+  recheckingResources?: boolean
+}>()
+const rawContentGenerator = createContentGeneratorFromEnv(process.env, recordRelayUsage, recheckDeliveryBeforeProvider)
+const rawImageGenerator = createImageGeneratorFromEnv(process.env, recordRelayUsage, recheckDeliveryBeforeProvider)
 const protectedProductPromptConstraints = validateProtectedProductIntent('').promptConstraints
 
 export function appendProtectedProductConstraints(prompt: string) {
@@ -518,9 +530,9 @@ function invalidateWorkspaceHydration(workspaceId: string) {
   for (const key of workspaceHydratedAt.keys()) if (key === workspaceId || key.startsWith(`${workspaceId}:`)) workspaceHydratedAt.delete(key)
   workspaceHydrationGeneration.set(workspaceId, (workspaceHydrationGeneration.get(workspaceId) ?? 0) + 1)
 }
-const rawImageFactsExtractor = createImageFactsExtractorFromEnv(process.env, recordRelayUsage)
-const rawImageEditGenerator = createImageEditGeneratorFromEnv(process.env, recordRelayUsage)
-const rawVideoGenerator = createVideoGeneratorFromEnv(process.env, recordRelayUsage)
+const rawImageFactsExtractor = createImageFactsExtractorFromEnv(process.env, recordRelayUsage, recheckDeliveryBeforeProvider)
+const rawImageEditGenerator = createImageEditGeneratorFromEnv(process.env, recordRelayUsage, recheckDeliveryBeforeProvider)
+const rawVideoGenerator = createVideoGeneratorFromEnv(process.env, recordRelayUsage, recheckDeliveryBeforeProvider)
 const imageFactsExtractor = rawImageFactsExtractor ? { extract: (input: Parameters<typeof rawImageFactsExtractor.extract>[0]) => withDailyModelBudget('ocr', input.usageContext, () => rawImageFactsExtractor.extract(input)) } : undefined
 const imageEditGenerator = rawImageEditGenerator ? { generate: (input: Parameters<typeof rawImageEditGenerator.generate>[0]) => withDailyModelBudget('image_edit', input.usageContext, () => rawImageEditGenerator.generate(input)) } : undefined
 const videoGenerator = rawVideoGenerator ? { generate: (input: Parameters<typeof rawVideoGenerator.generate>[0]) => withDailyModelBudget('video', input.usageContext, () => rawVideoGenerator.generate(input)), getStatus: rawVideoGenerator.getStatus.bind(rawVideoGenerator) } : undefined
@@ -687,7 +699,7 @@ const connectorMappingPreflight = createApiConnectorMappingPreflightAdapter({
     return matches.length === 1 ? matches[0] : undefined
   },
 })
-export const connectorRuntime = new ConnectorRuntime({ fixtureMode, allowFixtureWrites: process.env.PLUGIN_WRITE_ENABLED === 'true', credentialProvider: createVaultCredentialProviderFromEnv(), mappingPreflight: connectorMappingPreflight, environment: process.env.NODE_ENV === 'production' ? 'production' : process.env.NODE_ENV === 'test' ? 'test' : 'development' })
+export const connectorRuntime = new ConnectorRuntime({ fixtureMode, allowFixtureWrites: process.env.PLUGIN_WRITE_ENABLED === 'true', credentialProvider: createVaultCredentialProviderFromEnv(), beforeRequest: recheckDeliveryBeforeProvider, mappingPreflight: connectorMappingPreflight, environment: process.env.NODE_ENV === 'production' ? 'production' : process.env.NODE_ENV === 'test' ? 'test' : 'development' })
 export const oauthStates = new OAuthStateStore()
 const redisOAuthPort = createRedisOAuthPort(process.env.REDIS_URL)
 type OAuthStateRuntimeStore = Pick<OAuthStateStore, 'issue' | 'consume' | 'consumeCallback'> | Pick<RedisOAuthStateStore, 'issue' | 'consume' | 'consumeCallback'>
@@ -1485,6 +1497,17 @@ export function grantContinuousFeatureEntitlementForTests(workspaceId: string) {
   return snapshot
 }
 
+async function memoryDeliveryAccount(workspaceId: string, accountId: string) {
+  const account = (await memoryPasswordAuth.listAccounts()).find(candidate => candidate.id === accountId)
+  if (!account) return null
+  const identity = (await memoryIdentities.detailForOperations(account.identityId)).identity
+  const member = (await memoryMembers.list(workspaceId)).find(candidate => candidate.identityId === account.identityId)
+  return { workspaceId, accountId: account.id, identityId: account.identityId, login: account.login,
+    bindable: account.accountType === 'merchant' && account.status === 'active' && account.workspaceIds.includes(workspaceId)
+      && identity.accessStatus === 'active' && identity.riskDecision === 'allow' && member?.status === 'active'
+      && (await getWorkspaceStatus(workspaceId)) === 'active' }
+}
+
 const memoryCustomerDeliveries = new MemoryCustomerDeliveryRepository(async event => {
   await memoryOperations.append({
     workspaceId: event.workspaceId,
@@ -1496,7 +1519,18 @@ const memoryCustomerDeliveries = new MemoryCustomerDeliveryRepository(async even
     after: event.after ?? { evidence: event.evidence ?? {} },
     reason: event.reason ?? '客户交付操作',
   })
-})
+}, { accountDirectory: {
+  get: ({ workspaceId, accountId }) => memoryDeliveryAccount(workspaceId, accountId),
+  async list(input) {
+    const { workspaceId, search, after, limit } = normalizeCustomerDeliveryAccountListInput(input)
+    const candidates = await Promise.all((await memoryPasswordAuth.listAccounts()).map(account => memoryDeliveryAccount(workspaceId, account.id)))
+    const eligible = candidates.filter((account): account is NonNullable<typeof account> => Boolean(account?.bindable))
+      .filter(account => (!search || account.login.toLowerCase().includes(search)) && (!after || account.login > after.login || (account.login === after.login && account.accountId > after.accountId)))
+      .sort((a, b) => a.login === b.login ? (a.accountId < b.accountId ? -1 : a.accountId > b.accountId ? 1 : 0) : (a.login < b.login ? -1 : 1))
+    const items = eligible.slice(0, limit).map(({ bindable: _bindable, ...account }) => account)
+    return { items, ...(eligible.length > limit ? { nextCursor: customerDeliveryAccountCursor({ workspaceId, search }, items.at(-1)!) } : {}) }
+  },
+} })
 
 const memoryPersistence: ApiPersistence = { mode: 'memory', creativePoints: memoryCreativePoints, commercialCatalog: memoryCommercialCatalog, commercial: memoryCommercial, usage: memoryUsage, modelUsage: memoryModelUsage, actionLedger: memoryActionLedger, entitlements: memoryEntitlements, operations: memoryOperations, subscriptions: memorySubscriptions, members: memoryMembers, commercialExtensions: memoryCommercialExtensions, growth: memoryGrowth, alerts: memoryAlerts, dataLifecycle: memoryDataLifecycle, workspaceDataExport: memoryWorkspaceDataExport, brandUnits: memoryBrandUnits, objectOrphans: memoryObjectOrphans, contextSnapshots: memoryContextSnapshots, identities: memoryIdentities, authorization: memoryAuthorization, paymentCallbackNonces: memoryPaymentCallbackNonces, support: memorySupport, supportSlaReporting: memorySupportSlaReporting, incidents: memoryIncidents, featureFlags: memoryFeatureFlags, auditCenter: memoryAuditCenter, workspaceBootstrap: memoryWorkspaceBootstrap, assetParse: memoryAssetParse, assetScanReceipts: memoryAssetScanReceipts, assetPromotionCleanup: memoryAssetPromotionCleanup, imageContinuationLeases: memoryImageContinuationLeases, imageGenerationExecutions: new MemoryImageGenerationExecutionRepository(), reconciliationEvidence: new MemoryReconciliationEvidenceRepository(), unifiedLinkAudit: new MemoryUnifiedLinkAuditRepository(), platformAuthorizationAudit: memoryPlatformAuthorizationAudit, platformMediaSpecs: memoryPlatformMediaSpecs, mappingPreflightApprovals: memoryMappingPreflightApprovals, knowledgeHydration: memoryKnowledgeHydration, knowledge: memoryKnowledge, storageQuota: memoryStorageQuota, storageReconciliation: memoryStorageReconciliation, reconciliationStatuses: memoryReconciliationStatuses, canonicalBackfillRuns: memoryCanonicalBackfillRuns, canonicalBackfillConflicts: memoryCanonicalBackfillConflicts, interactiveConfirmationTickets: memoryInteractiveConfirmationTickets }
 // Customer delivery is workspace-scoped and uses the in-memory adapter in test/fixture mode.
@@ -1767,12 +1801,100 @@ async function releaseDailyModelBudget(workspaceId: string, reservationKey: stri
   await persistence.modelUsage?.releaseDailyBudget({ workspaceId, reservationKey })
 }
 
+async function requestDeliveryAccess(req: IncomingMessage, workspaceId: string) {
+  const identityId = requestPrincipals.get(req)?.identityId
+  // The explicit development fixture has no durable identity. A real password
+  // or OAuth identity still goes through the gate in development and tests.
+  if (!identityId && !requiresStrictAuth()) return { state: 'unbound' as const, allowed: true }
+  await persistenceReady
+  return readCustomerDeliveryAccess(persistence.customerDeliveries ?? memoryCustomerDeliveries, workspaceId, identityId ?? '')
+}
+
+function rememberProviderResourceAccess(req: IncomingMessage, scope: readonly string[], recheck: () => Promise<void>) {
+  const dispatch = deliveryDispatchContext.getStore()
+  if (!requiresStrictAuth() || dispatch?.request !== req || dispatch.recheckingResources) return
+  // Keep the trusted resource and minimum role established by the real access
+  // check. Method-level workspace capabilities alone cannot represent an
+  // asset's product/brand bindings or a subsequently downgraded brand grant.
+  const checks = dispatch.resourceRechecks ??= new Map()
+  checks.set(JSON.stringify(scope), recheck)
+}
+
+async function recheckDeliveryBeforeProvider(context: { operation: string; workspaceId?: string }, actualDispatch = true) {
+  if (['image_query', 'video_query', 'query_write', 'exchange_code', 'refresh_credential', 'revoke'].includes(context.operation)) return
+  const dispatch = deliveryDispatchContext.getStore()
+  if (dispatch?.recheck) {
+    await dispatch.recheck()
+    if (actualDispatch && dispatch.onDispatch) {
+      await dispatch.onDispatch()
+      await dispatch.recheck()
+    }
+    return
+  }
+  if (!dispatch?.request) {
+    if (requiresStrictAuth()) throw new DomainError('CUSTOMER_DELIVERY_ACCESS_UNAVAILABLE', '模型或平台调用缺少可信执行身份，已阻断', 503)
+    return
+  }
+  const req = dispatch.request
+  const previousIdentity = requestPrincipals.get(req)?.identityId
+  const previousRevision = requestPrincipals.get(req)?.authorizationRevision
+  if (requestPrincipals.get(req)?.issuer) await observeAuthenticatedPrincipal(req, requestPrincipals.get(req)!)
+  else await authenticate(req)
+  if (previousIdentity !== requestPrincipals.get(req)?.identityId) throw new DomainError('AUTHZ_EXECUTION_REVOKED', '调用前身份已变化，已阻断', 403)
+  if (previousRevision !== undefined && previousRevision !== requestPrincipals.get(req)?.authorizationRevision) throw new DomainError('AUTHZ_EXECUTION_REVOKED', '调用前权限已变化，已阻断', 403)
+  const decision = requestAuthorizationDecisions.get(req)
+  if (decision?.authorized && decision.workbench === 'platform' && decision.scope.required === 'platform') return
+  const workspaceId = dispatch.workspaceId || resolveWorkspace(req)
+  if (context.workspaceId && context.workspaceId !== workspaceId) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '调用工作区与可信请求范围不一致', 403)
+  if (requestPrincipals.get(req)?.workbench === 'workspace') {
+    const consumedGrant = exactConsumedGrantForRequest(req, workspaceId)
+    if (consumedGrant) {
+      // A max-use=1 grant disappears from the active directory after its
+      // legitimate consumption. Recheck that exact receipt without spending
+      // it again or substituting another currently active grant.
+      const current = await authorizationRepository()?.getGrant(consumedGrant.id, consumedGrant.subjectIdentityId)
+      if (!current || current.revision !== consumedGrant.revision || current.revokedAt
+        || current.scopeHash !== consumedGrant.scopeHash || current.workspaceId !== workspaceId
+        || current.subjectIdentityId !== previousIdentity || !current.capabilities.includes(decision!.capability)
+        || Date.parse(current.issuedAt) > Date.now() || Date.parse(current.expiresAt) <= Date.now()) {
+        throw new DomainError('AUTHZ_EXECUTION_REVOKED', '调用前临时授权已失效或范围变化，已阻断', 403)
+      }
+    }
+    requestMemberChecks.delete(req)
+    const member = await resolveActiveWorkspaceMember(req, workspaceId, false)
+    if (!member && !consumedGrant) await enforceActiveWorkspaceMember(req, workspaceId)
+    if (requiresStrictAuth() && !consumedGrant) {
+      // Membership edits have their own revision and need not change the
+      // identity's authorization revision. Re-reading an active member alone
+      // must not preserve capabilities lost while awaiting quota or preflight.
+      const role = canonicalizeRole(requestPrincipals.get(req)?.memberRole ?? '', 'membership')
+      if (!decision?.authorized || !role || !capabilitiesForRoles([role]).includes(decision.capability)) {
+        throw new DomainError('AUTHZ_EXECUTION_REVOKED', '调用前成员角色已不具备本次操作权限，已阻断', 403)
+      }
+    }
+    await requireActiveWorkspace(workspaceId, 'provider.dispatch')
+  }
+  dispatch.recheckingResources = true
+  try {
+    for (const recheck of dispatch.resourceRechecks?.values() ?? []) await recheck()
+  } finally {
+    dispatch.recheckingResources = false
+  }
+  assertCustomerDeliveryAllowed(await requestDeliveryAccess(req, workspaceId))
+}
+
 async function withDailyModelBudget<T>(kind: PlatformModelKind, usageContext: { workspaceId?: string; actionId?: string; runKey?: string } | undefined, invoke: () => Promise<T>): Promise<T> {
-  if (!isProduction()) return invoke()
+  if (!isProduction()) {
+    await recheckDeliveryBeforeProvider({ operation: kind, workspaceId: usageContext?.workspaceId }, false)
+    return invoke()
+  }
   const workspaceId = usageContext?.workspaceId?.trim(); const actionId = usageContext?.actionId?.trim(); const runKey = usageContext?.runKey?.trim()
   if (!workspaceId || !actionId || !runKey) throw new DomainError('MODEL_COST_BUDGET_CONTEXT_REQUIRED', '生产模型调用缺少工作区、幂等动作标识或任务预算标识，已阻断上游请求', 503)
   await reserveDailyModelBudget(workspaceId, actionId, runKey, kind)
-  try { return await invoke() }
+  try {
+    await recheckDeliveryBeforeProvider({ operation: kind, workspaceId }, false)
+    return await invoke()
+  }
   catch (error) {
     if (!providerSucceededButSettlementPending(error)) await releaseDailyModelBudget(workspaceId, actionId)
     throw error
@@ -4798,7 +4920,7 @@ export function hydrateOutboxSnapshot(workspaceId: string, snapshot: DurableStat
   }
 }
 
-async function hydrateWorkspaceFromPersistence(workspaceId: string, options: { excludeEntityTypes?: readonly BusinessEntityType[] } = {}) {
+async function hydrateWorkspaceFromPersistence(workspaceId: string, options: { excludeEntityTypes?: readonly BusinessEntityType[]; readOnly?: boolean } = {}) {
   await persistenceReady
   if (!persistence.business) return
   const durable = await persistence.business.loadWorkspace(workspaceId, options)
@@ -4835,11 +4957,11 @@ async function hydrateWorkspaceFromPersistence(workspaceId: string, options: { e
       hydrateOutboxSnapshot(workspaceId, snapshot)
     }
   }
-  await reconcileAutomationClaims(workspaceId)
+  if (!options.readOnly) await reconcileAutomationClaims(workspaceId)
 }
 
-async function hydrateWorkspace(workspaceId: string, options: { excludeEntityTypes?: readonly BusinessEntityType[] } = {}) {
-  const cacheKey = `${workspaceId}:${[...(options.excludeEntityTypes ?? [])].sort().join(',')}`
+async function hydrateWorkspace(workspaceId: string, options: { excludeEntityTypes?: readonly BusinessEntityType[]; readOnly?: boolean } = {}) {
+  const cacheKey = `${workspaceId}:${[...(options.excludeEntityTypes ?? [])].sort().join(',')}:${options.readOnly ? 'read-only' : 'reconcile'}`
   const active = workspaceHydrationInFlight.get(cacheKey)
   if (active) return active
   const hydratedAt = workspaceHydratedAt.get(cacheKey)
@@ -5046,15 +5168,23 @@ export async function recheckWorkerAuthorizationSnapshot(snapshot: WorkerAuthori
   if (!authzRepository) throw new DomainError('AUTHORIZATION_REPOSITORY_UNAVAILABLE', '执行前授权仓储不可用，已拒绝执行', 503)
   const currentAuthorizationRevision = await authzRepository.getAuthorizationRevision(subjectIdentityId)
   if (currentAuthorizationRevision !== expectedAuthorizationRevision) throw new DomainError('AUTHZ_EXECUTION_REVOKED', '入队后授权修订已变化，已拒绝执行', 403)
+  // Already-dispatched receipts and security scans must still converge. New
+  // merchant execution checks use the currently bound account's live evidence.
+  if (!['publish.reconcile', 'asset.scan.execute'].includes(snapshot.capability)) {
+    await requireActiveWorkspace(workspaceId, 'worker.dispatch')
+    assertCustomerDeliveryAllowed(await readCustomerDeliveryAccess(persistence.customerDeliveries ?? memoryCustomerDeliveries, workspaceId, subjectIdentityId))
+  }
   if (membershipMatch) {
-    const member = (await (persistence.members ?? memoryMembers).list(workspaceId)).find(candidate => candidate.externalSubject === snapshot.actorId)
+    const members = (await (persistence.members ?? memoryMembers).list(workspaceId)).filter(candidate => candidate.identityId === subjectIdentityId)
+    if (members.length !== 1) throw new DomainError('AUTHZ_EXECUTION_REVOKED', '执行身份缺少唯一的当前工作区成员关系，已拒绝执行', 403)
+    const member = members[0]!
     if (!member || member.status !== 'active' || member.identityId !== subjectIdentityId) throw new DomainError('AUTHZ_EXECUTION_REVOKED', '入队成员资格已失效，已拒绝执行', 403)
     const canonicalMemberRole = canonicalizeRole(member.role, 'membership')
     const requiredCapability = workerOperationCapabilities[snapshot.capability]
     if (!canonicalMemberRole || !capabilitiesForRoles([canonicalMemberRole]).includes(requiredCapability)) throw new DomainError('AUTHZ_EXECUTION_REVOKED', '当前成员角色不再具备该 worker 操作能力，已拒绝执行', 403)
     const brandContext = snapshot.capability === 'publish.execute' ? /^brand:(.+)$/u.exec(snapshot.contextId) : undefined
     if (brandContext && member.role !== 'workspace_owner') {
-      const stillPublisher = await (persistence.brandUnits ?? memoryBrandUnits).hasBrandAccess({ workspaceId, brandId: brandContext[1]!, externalSubject: snapshot.actorId, minimumRole: 'publisher' })
+      const stillPublisher = await (persistence.brandUnits ?? memoryBrandUnits).hasBrandAccess({ workspaceId, brandId: brandContext[1]!, externalSubject: member.externalSubject, minimumRole: 'publisher' })
       if (!stillPublisher) throw new DomainError('AUTHZ_EXECUTION_REVOKED', '入队后品牌发布权限已撤销，已拒绝执行', 403)
     }
   } else {
@@ -6778,6 +6908,7 @@ async function authenticate(req: IncomingMessage) {
         if (requestedWorkspace && requestedWorkspace !== oauthPrincipal.workspaceId) throw new DomainError(ERROR_CODES.FORBIDDEN, 'MCP OAuth token 无权切换到其他工作区', 403)
         const principal: RequestPrincipal = { credentialSource: 'mcp_oauth', actorId: oauthPrincipal.identityId, accountLogin: oauthPrincipal.accountLogin, identityId: oauthPrincipal.identityId, sessionId: oauthPrincipal.tokenId, sessionSubject: oauthPrincipal.tokenId, sessionKind: 'api_token', sessionIssuedAt: oauthPrincipal.issuedAt, sessionExpiresAt: oauthPrincipal.expiresAt, roles: ['merchant'], workspaces: [oauthPrincipal.workspaceId], workbench: 'workspace', availableWorkbenches: ['workspace'], identityStatus: 'active', mfaVerified: false }
         requestPrincipals.set(req, principal)
+        await hydrateDurableAuthorizationContext(req, principal)
         return
       }
       throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'MCP OAuth access token 无效或已过期', 401)
@@ -6849,6 +6980,16 @@ function requireOperationsRole(req: IncomingMessage, allowed: readonly string[])
   const allowedCanonical = new Set(allowed.flatMap(role => [canonicalizeRole(role, 'gateway'), canonicalizeRole(role, 'membership')]).filter((role): role is CanonicalRole => role !== undefined))
   if (requiresStrictAuth() && (!principal?.actorId || (!roles.some(role => allowed.includes(role)) && !canonicalRoles.some(role => allowedCanonical.has(role))))) throw new DomainError(ERROR_CODES.FORBIDDEN, '该运营操作需要对应的工作区或平台运营权限', 403)
   return principal?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'actor_demo'
+}
+
+function requirePlatformIdentityMutationRole(req: IncomingMessage, capability: 'identity.update' | 'identity.session.revoke') {
+  if (requiresStrictAuth() && requestPrincipals.get(req)?.workbench !== 'platform') {
+    throw new DomainError(ERROR_CODES.FORBIDDEN, '身份管理操作必须在平台工作台执行', 403)
+  }
+  // The registered capability decision remains authoritative (including deny
+  // atoms and obligations). Do not contradict it with a legacy platform_ops
+  // alias that excludes the platform/security administrators in that contract.
+  return requireOperationsRole(req, CANONICAL_ROLES.filter(role => platformCanonicalRoles.has(role) && capabilitiesForRoles([role]).includes(capability)))
 }
 
 // Platform read surfaces are available to canonical platform roles carrying
@@ -7104,6 +7245,11 @@ function hasWorkspaceWideBrandAccess(req: IncomingMessage) {
 }
 
 async function enforceBrandAccess(req: IncomingMessage, workspaceId: string, brandId: string, minimumRole: BrandAccessRole = 'viewer') {
+  await assertBrandAccess(req, workspaceId, brandId, minimumRole)
+  rememberProviderResourceAccess(req, ['brand', workspaceId, brandId, minimumRole], () => assertBrandAccess(req, workspaceId, brandId, minimumRole))
+}
+
+async function assertBrandAccess(req: IncomingMessage, workspaceId: string, brandId: string, minimumRole: BrandAccessRole) {
   if (!requiresStrictAuth() || hasWorkspaceWideBrandAccess(req)) return
   const principal = requestPrincipals.get(req)
   if (!principal?.actorId) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '品权限校验缺少成员身份', 401)
@@ -9465,6 +9611,23 @@ async function executeReadyImageContinuationOnce(workspaceId: string, jobId: str
     catch { /* the expired lease is already safely reclaimable */ }
   }
   try {
+  const readyEvents = persistence.outbox
+    ? await persistence.outbox.listAggregateEvents(workspaceId, continuation.sourceAssetId, 1000)
+    : inMemoryTimelineEvents.get(workspaceId) ?? []
+  const readyEvent = [...readyEvents].reverse().find(event => event.aggregateId === continuation!.sourceAssetId && event.eventType === 'asset.generation_continuations.ready' && event.payload.job_id === jobId)
+  const continuationRecheck = async () => {
+    // Compatibility-only in-memory fixture events have no authenticated
+    // identity. Durable/strict execution never inherits this fixture exception.
+    if (!requiresStrictAuth() && !persistence.business && !readyEvent?.payload.authorization_snapshot) return
+    if (!readyEvent) {
+      throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '图片续跑缺少当前任务的持久授权证据', 403)
+    }
+    let snapshot: WorkerAuthorizationSnapshot
+    try { snapshot = parseWorkerAuthorizationSnapshot(readyEvent, 'asset.continuation.execute') }
+    catch { throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '图片续跑的持久身份授权证据无效', 403) }
+    await recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, readyEvent.aggregateId, { eventId: readyEvent.id })
+  }
+  await continuationRecheck()
   const product = service.products.get(job.productId)
   if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
   if ((await canonicalProductReadControl(workspaceId)).mode === 'canonical_read') await resolveCanonicalTaskScope({ workspaceId, productId: product.id, platform: product.platform, ...(product.accountId ? { accountId: product.accountId } : {}), requireCanonical: true, requireListing: true })
@@ -9501,12 +9664,15 @@ async function executeReadyImageContinuationOnce(workspaceId: string, jobId: str
   job.revision += 1
   await persistSnapshot(workspaceId, 'image_generation_job', job, job as unknown as Record<string, unknown>)
 
-  await leases.markProviderStarted({ workspaceId, jobId, ownerToken: lease.ownerToken })
-  providerStarted = true
-
   let completed: Awaited<ReturnType<typeof service.completeImageGeneration>>
   try {
-    completed = await service.completeImageGeneration({ workspaceId, jobId: job.id })
+    await continuationRecheck()
+    completed = await deliveryDispatchContext.run({ recheck: continuationRecheck, onDispatch: async () => {
+      if (!providerStarted) {
+        await leases.markProviderStarted({ workspaceId, jobId, ownerToken: lease.ownerToken })
+        providerStarted = true
+      }
+    } }, () => service.completeImageGeneration({ workspaceId, jobId: job.id }))
   } catch (error) {
     if (imageContinuationProviderOutcomeUnknown(error)) {
       const code = (error as { code?: string })?.code ?? 'MODEL_PROVIDER_OUTCOME_UNKNOWN'
@@ -9534,7 +9700,8 @@ async function executeReadyImageContinuationOnce(workspaceId: string, jobId: str
       job.revision += 1
     }
     await persistSnapshot(workspaceId, 'image_generation_job', job, job as unknown as Record<string, unknown>)
-    await leases.markFailed({ workspaceId, jobId, ownerToken: lease.ownerToken, errorCode: (error as { code?: string })?.code ?? 'IMAGE_GENERATION_FAILED', errorMessage: error instanceof Error ? error.message.slice(0, 500) : 'image generation failed' })
+    if (providerStarted) await leases.markFailed({ workspaceId, jobId, ownerToken: lease.ownerToken, errorCode: (error as { code?: string })?.code ?? 'IMAGE_GENERATION_FAILED', errorMessage: error instanceof Error ? error.message.slice(0, 500) : 'image generation failed' })
+    else await releaseBeforeProvider()
     throw error
   }
   let archived: Awaited<ReturnType<typeof archiveGeneratedImages>>
@@ -10328,6 +10495,12 @@ function scopeTask(req: IncomingMessage, taskId: string) {
 }
 
 async function enforceTaskBrandAccess(req: IncomingMessage, task: { workspaceId: string; brandId?: string }, minimumRole: BrandAccessRole = 'viewer') {
+  const target = { workspaceId: task.workspaceId, brandId: task.brandId }
+  await assertTaskBrandAccess(req, target, minimumRole)
+  rememberProviderResourceAccess(req, ['task-brand', target.workspaceId, target.brandId ?? '', minimumRole], () => assertTaskBrandAccess(req, target, minimumRole))
+}
+
+async function assertTaskBrandAccess(req: IncomingMessage, task: { workspaceId: string; brandId?: string }, minimumRole: BrandAccessRole) {
   if (task.brandId) return enforceBrandAccess(req, task.workspaceId, task.brandId, minimumRole)
   if (requiresStrictAuth() && !hasWorkspaceWideBrandAccess(req)) throw new DomainError('TASK_BRAND_ACCESS_DENIED', '任务未绑定可访问的品', 404)
 }
@@ -10515,6 +10688,11 @@ async function accessibleAssetIds(req: IncomingMessage, workspaceId: string): Pr
 }
 
 async function enforceAssetAccess(req: IncomingMessage, workspaceId: string, assetId: string, minimumRole: BrandAccessRole = 'viewer') {
+  await assertAssetAccess(req, workspaceId, assetId, minimumRole)
+  rememberProviderResourceAccess(req, ['asset', workspaceId, assetId, minimumRole], () => assertAssetAccess(req, workspaceId, assetId, minimumRole))
+}
+
+async function assertAssetAccess(req: IncomingMessage, workspaceId: string, assetId: string, minimumRole: BrandAccessRole) {
   const localAsset = service.assets.get(assetId)
   if (localAsset && localAsset.workspaceId !== workspaceId) throw new DomainError('ASSET_NOT_FOUND', '素材不存在或不属于当前工作区', 404)
   const accessible = await accessibleAssetIds(req, workspaceId)
@@ -10538,6 +10716,11 @@ async function enforceAssetAccess(req: IncomingMessage, workspaceId: string, ass
 }
 
 async function enforceProductBrandAccess(req: IncomingMessage, workspaceId: string, productId: string, minimumRole: BrandAccessRole = 'viewer') {
+  await assertProductBrandAccess(req, workspaceId, productId, minimumRole)
+  rememberProviderResourceAccess(req, ['product', workspaceId, productId, minimumRole], () => assertProductBrandAccess(req, workspaceId, productId, minimumRole))
+}
+
+async function assertProductBrandAccess(req: IncomingMessage, workspaceId: string, productId: string, minimumRole: BrandAccessRole) {
   const accessible = await accessibleProductIds(req, workspaceId)
   if (accessible !== undefined && !accessible.has(productId)) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前可访问品', 404)
   if (minimumRole === 'viewer' || !requiresStrictAuth() || hasWorkspaceWideBrandAccess(req)) return
@@ -10727,7 +10910,7 @@ const OPS_DOMAIN_METHODS = new Set([
   'ops.canonical.backfill.create', 'ops.canonical.backfill.get', 'ops.canonical.backfill.pause', 'ops.canonical.backfill.resume', 'ops.canonical.backfill.run',
   'ops.canonical.backfill.conflicts.list', 'ops.canonical.backfill.conflict.claim', 'ops.canonical.backfill.conflict.resolve',
   'ops.support.tickets.list', 'ops.support.ticket.get', 'ops.support.ticket.create', 'ops.support.ticket.assign', 'ops.support.ticket.transition', 'ops.support.ticket.comment', 'ops.support.sla.report', 'ops.support.sla.correction.create', 'ops.support.sla.correction.decide',
-  'ops.customer-delivery.list', 'ops.customer-delivery.get', 'ops.customer-delivery.create', 'ops.customer-delivery.update', 'ops.customer-delivery.checklist.update', 'ops.customer-delivery.checklist-items.list', 'ops.customer-delivery.checklist-item.update', 'ops.customer-delivery.training.complete', 'ops.customer-delivery.videos.list', 'ops.customer-delivery.videos.add',
+  'ops.customer-delivery.accounts.list', 'ops.customer-delivery.account.bind', 'ops.customer-delivery.list', 'ops.customer-delivery.get', 'ops.customer-delivery.create', 'ops.customer-delivery.update', 'ops.customer-delivery.checklist.update', 'ops.customer-delivery.checklist-items.list', 'ops.customer-delivery.checklist-item.update', 'ops.customer-delivery.training.complete', 'ops.customer-delivery.videos.list', 'ops.customer-delivery.videos.add',
   'ops.incidents.list', 'ops.incident.get', 'ops.incident.timeline', 'ops.incident.create', 'ops.incident.transition', 'ops.incident.comment', 'ops.incident.commander.assign', 'ops.incident.scope.update',
   'ops.feature-flags.list', 'ops.feature-flag.upsert', 'ops.feature-flag.emergency.set', 'ops.feature-flag.events', 'ops.feature-flag.evaluate',
   'ops.finance.search', 'ops.finance.detail', 'ops.finance.export',
@@ -11065,8 +11248,8 @@ function opsDomainError(error: unknown): never {
   if (error instanceof DomainError) throw error
   if (error instanceof CustomerDeliveryError) {
     const status = error.code === 'NOT_FOUND' ? 404
-      : error.code === 'REVISION_CONFLICT' || error.code === 'DUPLICATE_COMPANY' || error.code === 'PAYMENT_REQUIRED' || error.code === 'EVIDENCE_REQUIRED' ? 409
-        : error.code === 'NOT_IMPLEMENTED' ? 501 : 400
+      : ['REVISION_CONFLICT', 'DUPLICATE_COMPANY', 'PAYMENT_REQUIRED', 'EVIDENCE_REQUIRED', 'ACCOUNT_ALREADY_BOUND', 'ACCOUNT_NOT_BINDABLE'].includes(error.code) ? 409
+        : error.code === 'ACCOUNT_DIRECTORY_UNAVAILABLE' ? 503 : error.code === 'NOT_IMPLEMENTED' ? 501 : 400
     throw new DomainError(`CUSTOMER_DELIVERY_${error.code}`, error.message, status)
   }
   if (error instanceof SupportAuthorizationError || error instanceof FeatureFlagAuthorizationError || error instanceof FinanceSearchAccessError || (error instanceof IncidentServiceError && error.code === 'INCIDENT_FORBIDDEN') || (error instanceof FinanceSearchServiceError && error.code === 'FINANCE_SEARCH_FORBIDDEN') || (error instanceof AuditCenterServiceError && error.code === 'AUDIT_CENTER_FORBIDDEN')) {
@@ -11627,6 +11810,13 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     await enforceActiveWorkspaceMember(req, workspaceId)
   }
   await enforceCustomerDataAccess(req, workspaceId, method, params)
+  const dispatchContext = deliveryDispatchContext.getStore()
+  if (dispatchContext) dispatchContext.workspaceId = workspaceId
+  if (requiresCustomerDeliveryAccess('MCP', method, params)) assertCustomerDeliveryAllowed(await requestDeliveryAccess(req, workspaceId))
+  if (['merchant.start', 'workspace.health', 'onboarding.status'].includes(method) && workspaceId) {
+    const access = await requestDeliveryAccess(req, workspaceId)
+    if (!access.allowed) return result(pendingCustomerDeliveryProjection(access))
+  }
   if (testCommercialFixtureHarnessEnabled && workspaceId.trim() && workspaceId !== 'unknown' && !['workspace.bootstrap', 'workspace.health', 'merchant.start'].includes(method) && header(req, 'x-test-commercial-fixture') === 'server-e2e') {
     await grantCreativePointsForTests(workspaceId)
     grantContinuousFeatureEntitlementForTests(workspaceId)
@@ -12593,6 +12783,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'workspace.usage.get':
       return result(await (persistence.usage ?? memoryUsage).get(workspaceId))
+    case 'ops.customer-delivery.accounts.list':
+      return result(await invokeCustomerDeliveryDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).listBindableAccounts({ workspaceId, ...(typeof params.search === 'string' ? { search: params.search } : {}), ...(typeof params.cursor === 'string' ? { cursor: params.cursor } : {}), ...(params.limit !== undefined ? { limit: Number(params.limit) } : {}) })))
+    case 'ops.customer-delivery.account.bind':
+      return result(await invokeCustomerDeliveryDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).bindAccount({ workspaceId, deliveryId: requiredStringValue(params, 'delivery_id'), targetAccountId: requiredStringValue(params, 'target_account_id'), expectedRevision: Number(requiredStringValue(params, 'expected_revision')), reason: requiredStringValue(params, 'reason'), actorId: requestActor(req) })))
     case 'ops.customer-delivery.list':
       return result({ items: await invokeCustomerDeliveryDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).list(workspaceId)) })
     case 'ops.customer-delivery.assets.upload': {
@@ -12600,15 +12794,48 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const deliveryId = requiredStringValue(params, 'deliveryId', 'delivery_id')
       const delivery = await invokeCustomerDeliveryDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).get(workspaceId, deliveryId))
       if (!delivery) throw new DomainError('CUSTOMER_DELIVERY_NOT_FOUND', '客户交付档案不存在', 404)
-      const validated = validateCustomerDeliveryUpload(params)
+      // Schema + exact workspace/RBAC + delivery existence precede outbound I/O.
+      // Only downloaded bytes enter the existing quarantine/scan admission path;
+      // a URL is never a contract reference or a trusted scan result.
+      let fileParams = params
+      if (params.source_url !== undefined) {
+        if (params.purpose !== 'contract' || ['name', 'mime_type', 'content_base64', 'sha256'].some(key => key in params)) {
+          throw new DomainError(ERROR_CODES.INVALID_REQUEST, '合同链接不能与本地文件字段同时提供', 400)
+        }
+        const controller = new AbortController()
+        const abort = () => controller.abort()
+        req.once('aborted', abort)
+        req.socket.once('close', abort)
+        try {
+          if (req.socket.destroyed || req.aborted) controller.abort()
+          const downloaded = await downloadCustomerDeliveryContract(requiredStringValue(params, 'source_url'), { signal: controller.signal })
+          controller.signal.throwIfAborted()
+          // Download can take tens of seconds. Recheck the durable identity and
+          // platform capability before creating any asset or scan admission.
+          // Do not replay the gateway's one-time OIDC nonce.
+          if (requiresStrictAuth()) {
+            const principal = requestPrincipals.get(req)
+            if (principal?.issuer) await observeAuthenticatedPrincipal(req, principal)
+            else await authenticate(req)
+            await enforceRegisteredMcpCapability(req, workspaceId, 'ops.customer-delivery.assets.upload', params)
+            controller.signal.throwIfAborted()
+          }
+          const { source_url: _sourceUrl, ...scopeParams } = params
+          fileParams = { ...scopeParams, ...downloaded }
+        } finally {
+          req.removeListener('aborted', abort)
+          req.socket.removeListener('close', abort)
+        }
+      }
+      const validated = validateCustomerDeliveryUpload(fileParams)
       if (persistence.business) await hydrateWorkspaceFromPersistence(workspaceId)
       const asset = await uploadAssetForMcp(workspaceId, {
-        name: requiredStringValue(params, 'name'), mime_type: validated.mimeType,
-        content_base64: requiredStringValue(params, 'content_base64'), sha256: validated.sha256,
+        name: requiredStringValue(fileParams, 'name'), mime_type: validated.mimeType,
+        content_base64: requiredStringValue(fileParams, 'content_base64'), sha256: validated.sha256,
         rights_scope: 'internal_only', usage_scopes_json: JSON.stringify([`customer_delivery_${validated.purpose}`]),
       }, req, undefined, false, { deliveryId, purpose: validated.purpose })
       const view = customerDeliveryUploadView(asset, validated.purpose)
-      await recordOperationAudit({ workspaceId, actorId: requestActor(req), action: 'customer_delivery.asset.upload', resourceType: 'customer_delivery', resourceId: deliveryId, before: {}, after: { asset_ref: view.assetRef, purpose: validated.purpose, sha256: validated.sha256, size_bytes: view.sizeBytes, scan_status: view.scanStatus }, reason: '上传客户交付文件到隔离区，扫描通过后才可登记使用' })
+      await recordOperationAudit({ workspaceId, actorId: requestActor(req), action: 'customer_delivery.asset.upload', resourceType: 'customer_delivery', resourceId: deliveryId, before: {}, after: { asset_ref: view.assetRef, purpose: validated.purpose, sha256: validated.sha256, size_bytes: view.sizeBytes, scan_status: view.scanStatus, source_kind: params.source_url === undefined ? 'file' : 'https_download' }, reason: '上传客户交付文件到隔离区，扫描通过后才可登记使用' })
       return result(view)
     }
     case 'ops.customer-delivery.assets.get': {
@@ -14556,7 +14783,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result(member)
     }
     case 'ops.user.suspend': {
-      const actorId = requireOperationsRole(req, ['platform_ops'])
+      const actorId = requirePlatformIdentityMutationRole(req, 'identity.update')
       if (params.scope === 'identity') {
         const identityId = required(params, 'identity_id')
         if (identityId === requestPrincipals.get(req)?.identityId) throw new DomainError('SELF_SUSPENSION_DENIED', '不能停用当前登录账号；请由另一名平台运营人员执行', 409)
@@ -14573,7 +14800,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result(member)
     }
     case 'ops.user.activate': {
-      const actorId = requireOperationsRole(req, ['platform_ops'])
+      const actorId = requirePlatformIdentityMutationRole(req, 'identity.update')
       if (params.scope === 'identity') {
         try { return result(await (persistence.identities ?? memoryIdentities).transitionAccess({ identityId: required(params, 'identity_id'), target: 'active', expectedRevision: Number(required(params, 'expected_revision')), actorId, reason: required(params, 'reason'), idempotencyKey: required(params, 'idempotency_key') })) }
         catch (error) { mapIdentityLifecycleError(error) }
@@ -14587,7 +14814,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result(member)
     }
     case 'ops.user.risk.transition': {
-      const actorId = requireOperationsRole(req, ['platform_ops'])
+      const actorId = requirePlatformIdentityMutationRole(req, 'identity.update')
       let evidence: Record<string, unknown> = {}
       if (typeof params.evidence_json === 'string' && params.evidence_json.trim()) {
         try { const parsed: unknown = JSON.parse(params.evidence_json); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid'); evidence = parsed as Record<string, unknown> }
@@ -14597,7 +14824,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       catch (error) { mapIdentityLifecycleError(error) }
     }
     case 'ops.user.session.revoke': {
-      const actorId = requireOperationsRole(req, ['platform_ops'])
+      const actorId = requirePlatformIdentityMutationRole(req, 'identity.session.revoke')
       try { return result(await (persistence.identities ?? memoryIdentities).revokeSession({ identityId: required(params, 'identity_id'), sessionId: required(params, 'session_id'), expectedRevision: Number(required(params, 'expected_revision')), actorId, reason: required(params, 'reason'), idempotencyKey: required(params, 'idempotency_key') })) }
       catch (error) { mapIdentityLifecycleError(error) }
     }
@@ -18341,6 +18568,10 @@ export function imageGenerationReconciliationIdempotencyKey(input: {
 }
 
 export async function route(req: IncomingMessage, res: ServerResponse) {
+  return deliveryDispatchContext.run({ request: req }, () => routeWithRequestContext(req, res))
+}
+
+async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', `${publicRequestOrigin(req)}/`)
   const path = url.pathname
   const isPasswordAuthRoute = path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm' || path === '/v1/auth/password/change'
@@ -18742,11 +18973,13 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       && requestWorkspace !== 'unknown'
       && /^\/v1\/tasks\/[^/]+(?:\/|$)/u.test(path),
   )
-  if (requiresDurableTaskAuthorizationHydration) await hydrateWorkspace(requestWorkspace)
+  if (requiresDurableTaskAuthorizationHydration) await hydrateWorkspace(requestWorkspace, { readOnly: true })
   const platformRateScope = requestPrincipals.get(req)?.workbench === 'platform' && requestWorkspace === 'unknown'
     ? `platform:${requestPrincipals.get(req)?.identityId || requestPrincipals.get(req)?.actorId || 'unidentified'}`
     : undefined
   const httpOperationPolicy = getHttpOperationPolicy(req.method, path)
+  const requestDispatchContext = deliveryDispatchContext.getStore()
+  if (requestDispatchContext && path !== '/mcp') requestDispatchContext.workspaceId = requestWorkspace
   if (httpOperationPolicy?.authentication === 'identity' && requestWorkspace !== 'unknown' && requestPrincipals.get(req)?.workbench === 'workspace') {
     await resolveActiveWorkspaceMember(req, requestWorkspace, false)
   }
@@ -18760,7 +18993,14 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     && !requestMemberChecks.has(req) && !exactConsumedGrantForRequest(req, requestWorkspace)) {
     await enforceActiveWorkspaceMember(req, requestWorkspace)
   }
-  if (process.env.NODE_ENV === 'test' && header(req, 'x-test-commercial-fixture') === 'server-e2e' && requestWorkspace !== 'unknown' && !['/health', '/healthz', '/readyz'].includes(path)) {
+  if (httpOperationPolicy?.authentication === 'identity' && requiresCustomerDeliveryAccess('HTTP', httpOperationPolicy.operation)) {
+    assertCustomerDeliveryAllowed(await requestDeliveryAccess(req, requestWorkspace))
+  }
+  if (httpOperationPolicy?.mcpMethod === 'workspace.health' && requestPrincipals.get(req)?.workbench === 'workspace') {
+    const access = await requestDeliveryAccess(req, requestWorkspace)
+    if (!access.allowed) return send(res, 200, requestWorkspace, pendingCustomerDeliveryProjection(access), null, req)
+  }
+  if (process.env.NODE_ENV === 'test' && header(req, 'x-test-commercial-fixture') === 'server-e2e' && requestWorkspace !== 'unknown' && !['/mcp', '/health', '/healthz', '/readyz'].includes(path)) {
     await grantCreativePointsForTests(requestWorkspace)
     grantContinuousFeatureEntitlementForTests(requestWorkspace)
   }
@@ -18812,8 +19052,12 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     // Asset mutations commonly follow upload immediately. A different API
     // replica may still have a warm one-second workspace cache from before the
     // upload, so correctness requires a durable read-through here.
-    if (requiresFreshAssetRead && persistence.business) await hydrateWorkspaceFromPersistence(hydrateRequestWorkspace)
-    else await hydrateWorkspace(hydrateRequestWorkspace, normalizedPagedCollection || normalizedPagedMcpCollection ? { excludeEntityTypes: ['product', 'task'] } : {})
+    // Request hydration precedes MCP capability/delivery admission. Loading
+    // snapshots must not also requeue automation or mutate policy revisions.
+    // Worker/scheduler-owned hydration retains its explicit recovery behavior.
+    const hydrationOptions = { readOnly: !workerRoute && !assetScannerRoute, ...(normalizedPagedCollection || normalizedPagedMcpCollection ? { excludeEntityTypes: ['product', 'task'] as const } : {}) }
+    if (requiresFreshAssetRead && persistence.business) await hydrateWorkspaceFromPersistence(hydrateRequestWorkspace, hydrationOptions)
+    else await hydrateWorkspace(hydrateRequestWorkspace, hydrationOptions)
   }
   if (req.method === 'GET' && path === '/v1/commercial/access') {
     const workspaceId = resolveWorkspace(req)
@@ -19084,7 +19328,19 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
         return send(res, 200, workspaceId, { execution }, null, req)
       }
       if (operation === 'begin_provider_dispatch') {
+        const current = await repository.get({ workspaceId, jobId })
+        const event = current && persistence.outbox ? (await persistence.outbox.listAggregateEvents(workspaceId, jobId, 1000)).find(candidate => candidate.id === current.eventId && candidate.eventType === 'image.generation.requested') : undefined
+        if (!event) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '图片调用缺少持久请求及授权证据', 403)
+        let snapshot: WorkerAuthorizationSnapshot
+        try { snapshot = parseWorkerAuthorizationSnapshot(event, 'image_generation.execute') }
+        catch { throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '图片调用的持久身份授权证据无效', 403) }
+        await recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, jobId, { eventId: event.id })
         const execution = await repository.beginProviderDispatch({ workspaceId, jobId, ownerToken })
+        return send(res, 200, workspaceId, { execution }, null, req)
+      }
+      if (operation === 'fail_before_provider') {
+        const eventId = requiredStringValue(input, 'event_id')
+        const execution = await repository.failBeforeProvider({ workspaceId, jobId, eventId, ownerToken, errorCode: requiredStringValue(input, 'error_code'), errorMessage: requiredStringValue(input, 'error_message') })
         return send(res, 200, workspaceId, { execution }, null, req)
       }
       if (operation === 'provider_started') {
@@ -19304,10 +19560,17 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const attention: Array<Record<string, unknown>> = []
     for (const execution of executions) {
       const job = service.getImageGenerationJob(workspaceId, execution.jobId)
+      // A provider response may already exist while usage settlement or
+      // artifact archiving is still pending. Such jobs must remain
+      // reconcilable; treating the user-facing failed projection as a
+      // terminal provider failure would permanently close the execution lease
+      // and make a safe evidence-based recovery impossible.
+      const providerSettlementPending = ['MODEL_USAGE_SETTLEMENT_PENDING', 'MODEL_USAGE_COST_MISSING'].includes(job.errorCode ?? '')
+        || Boolean(execution.providerRequestId && job.state === 'failed' && job.archiveState !== 'archived')
       if (job.state === 'succeeded' && job.archiveState === 'archived' && Boolean(job.outputs?.length)) {
         const settled = await repository.reconcileCompleted({ workspaceId, jobId: job.id })
         repaired.push({ job_id: job.id, from: execution.state, to: settled.state, reason: 'job_archive_is_authoritative' })
-      } else if (job.state === 'failed') {
+      } else if (job.state === 'failed' && !providerSettlementPending) {
         const settled = await repository.reconcileFailed({ workspaceId, jobId: job.id, errorCode: job.errorCode ?? 'IMAGE_GENERATION_FAILED', errorMessage: job.errorMessage ?? '图片生成任务已失败' })
         repaired.push({ job_id: job.id, from: execution.state, to: settled.state, reason: 'job_failure_is_authoritative' })
       } else {
@@ -19315,7 +19578,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
         if (latestEvidence?.nextAttemptAt && Date.parse(latestEvidence.nextAttemptAt) > Date.now()) continue
         const requestedEvents = persistence.outbox ? await persistence.outbox.listAggregateEvents(workspaceId, job.id, 100) : []
         const requested = requestedEvents.find(event => event.eventType === 'image.generation.requested' && event.payload.intent_hash === job.intentHash)
-        attention.push({ job_id: job.id, event_id: execution.eventId, intent_hash: job.intentHash, execution_attempt: execution.attempt, query_attempt: (latestEvidence?.queryAttempt ?? 0) + 1, execution_state: execution.state, provider_request_id: execution.providerRequestId ?? null, reconciliation_required: true, next_action: 'Worker 必须查询真实 Provider 后提交 reconciliation-evidence；API 禁止直接查询 Provider' })
+        attention.push({ job_id: job.id, event_id: execution.eventId, intent_hash: job.intentHash, execution_attempt: execution.attempt, query_attempt: (latestEvidence?.queryAttempt ?? 0) + 1, execution_state: execution.state, provider_request_id: execution.providerRequestId ?? null, reconciliation_required: true, next_action: 'Worker 必须查询真实 Provider 后提交 reconciliation-evidence；API 禁止直接查询 Provider', ...(providerSettlementPending ? { reason: 'provider_result_or_usage_settlement_pending' } : {}) })
         if (requested?.payload.action_id) attention.at(-1)!.action_id = requested.payload.action_id
       }
     }

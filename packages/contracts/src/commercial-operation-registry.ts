@@ -92,6 +92,8 @@ export const MCP_OPS_CONTROL_METHODS = [
   'ops.support.sla.correction.create',
   'ops.support.sla.correction.decide',
   'ops.customer-delivery.list',
+  'ops.customer-delivery.accounts.list',
+  'ops.customer-delivery.account.bind',
   'ops.customer-delivery.get',
   'ops.customer-delivery.create',
   'ops.customer-delivery.update',

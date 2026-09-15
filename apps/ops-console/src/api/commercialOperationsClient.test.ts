@@ -7,6 +7,7 @@ import {
   parseCommercialTimeline,
   commercialRefundEvidence,
   refundPolicyApproval,
+  provisionableCatalogItems,
 } from "./commercialOperationsClient.js";
 
 describe("commercial operations DTO parsers", () => {
@@ -44,6 +45,19 @@ describe("commercial operations DTO parsers", () => {
       benefits_summary: "服务端权益", approval_state: "draft",
     }] });
     expect(result.items[0]?.visibility).toBe("private");
+  });
+
+  it("uses server-priced executable public catalog entries for provisioning", () => {
+    const result = parseCatalog({ items: [
+      { id: "draft", sku_code: "draft", name: "草稿", type: "monthly", visibility: "public", version: "v1", price_fen: 200000, price_label: "¥2000.00", benefits_summary: "草稿权益", approval_state: "draft", executable: true, unresolved: [] },
+      { id: "blocked", sku_code: "blocked", name: "阻断", type: "monthly", visibility: "public", version: "v1", price_fen: 200000, price_label: "¥2000.00", benefits_summary: "待补充条款", approval_state: "approved", executable: true, unresolved: ["ORDER_TERMS_REQUIRED"] },
+      { id: "private", sku_code: "private", name: "私测", type: "trial", visibility: "private", version: "v1", price_fen: 199900, price_label: "¥1999.00", benefits_summary: "私测权益", approval_state: "approved", executable: true, unresolved: [] },
+      { id: "ready", sku_code: "ready", name: "正式", type: "onboarding", visibility: "public", version: "v2", price_fen: 500000, price_label: "¥5000.00", benefits_summary: "正式权益", approval_state: "approved", executable: true, unresolved: [] },
+      { id: "unpriced", sku_code: "unpriced", name: "定制", type: "monthly", visibility: "public", version: "v1", price_fen: null, price_label: "按合同定价", benefits_summary: "合同定价", approval_state: "approved", executable: true, unresolved: [] },
+    ] });
+
+    expect(result.items.find((item) => item.skuCode === "ready")?.priceFen).toBe(500000);
+    expect(provisionableCatalogItems(result.items).map((item) => item.skuCode)).toEqual(["ready"]);
   });
 
   it("requires correlation and audit-safe fields on timeline events", () => {

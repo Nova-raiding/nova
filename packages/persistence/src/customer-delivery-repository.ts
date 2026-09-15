@@ -38,6 +38,10 @@ export interface CustomerDeliveryVideo {
 export interface CustomerDelivery {
   id: string;
   workspaceId: string;
+  targetAccountId: string | null;
+  targetIdentityId: string | null;
+  /** Live account login projection; never persisted as a credential/snapshot. */
+  targetAccountLogin: string | null;
   companyName: string;
   contractNumber: string | null;
   paymentStatus: "unpaid" | "paid";
@@ -75,6 +79,36 @@ export interface CustomerDeliveryChecklistBatchItem {
   completed: boolean;
   evidence?: Record<string, unknown>;
 }
+export interface CustomerDeliveryBindableAccount {
+  workspaceId: string;
+  accountId: string;
+  identityId: string;
+  login: string;
+}
+export interface CustomerDeliveryAccountListInput {
+  workspaceId: string;
+  search?: string;
+  cursor?: string;
+  limit?: number;
+}
+export interface CustomerDeliveryAccountPage {
+  items: CustomerDeliveryBindableAccount[];
+  nextCursor?: string;
+}
+export interface CustomerDeliveryAccountDirectory {
+  /** Returns only active merchant / identity / membership / workspace intersections. */
+  list(input: CustomerDeliveryAccountListInput): Promise<CustomerDeliveryAccountPage>;
+  /** Ineligible existing accounts remain readable for their current login only. */
+  get(input: { workspaceId: string; accountId: string }): Promise<(CustomerDeliveryBindableAccount & { bindable: boolean }) | null>;
+}
+export interface CustomerDeliveryAccountBindingInput {
+  workspaceId: string;
+  deliveryId: string;
+  targetAccountId: string;
+  actorId: string;
+  expectedRevision: number;
+  reason: string;
+}
 export type CustomerDeliveryPatch = Partial<Pick<CustomerDelivery,
   | "companyName" | "contractNumber" | "paymentStatus" | "contractRef"
   | "projectOwner" | "supportOwner" | "paymentDate" | "paymentEvidenceRefs"
@@ -107,6 +141,9 @@ export const CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS = {
 export interface CustomerDeliveryRepository {
   list(workspaceId: string): Promise<CustomerDelivery[]>;
   get(workspaceId: string, id: string): Promise<CustomerDelivery | null>;
+  getByIdentity(workspaceId: string, identityId: string): Promise<CustomerDelivery | null>;
+  listBindableAccounts(input: CustomerDeliveryAccountListInput): Promise<CustomerDeliveryAccountPage>;
+  bindAccount(input: CustomerDeliveryAccountBindingInput): Promise<CustomerDelivery>;
   create(input: {
     workspaceId: string;
     companyName: string;
@@ -171,6 +208,8 @@ export function customerDeliveryEvidenceRefs(value: unknown): string[] {
   return [...new Set(value.map((ref: string) => ref.trim()))];
 }
 function normalizeDeliveryPatch(input: CustomerDeliveryPatch): CustomerDeliveryPatch {
+  if (["targetAccountId", "targetIdentityId", "targetAccountLogin"].some(key => key in input))
+    throw new CustomerDeliveryError("INVALID_INPUT", "登录账号只能通过专用绑定操作设置");
   if ("systemIntegrationStatus" in input || "functionalAcceptanceStatus" in input)
     throw new CustomerDeliveryError("INVALID_INPUT", "清单汇总状态只能由真实清单项推导");
   const patch = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as CustomerDeliveryPatch;
@@ -182,6 +221,38 @@ function normalizeDeliveryPatch(input: CustomerDeliveryPatch): CustomerDeliveryP
     patch[key] = customerDeliveryEvidenceRefs(patch[key]);
   }
   return patch;
+}
+export function normalizeCustomerDeliveryAccountListInput(input: CustomerDeliveryAccountListInput): {
+  workspaceId: string; search: string; limit: number; after?: { login: string; accountId: string };
+} {
+  const workspaceId = requireWorkspaceScope(input.workspaceId);
+  const search = input.search?.trim().toLowerCase() ?? "";
+  if (search.length > 128 || /[\u0000-\u001f\u007f]/u.test(search)
+    || (input.limit !== undefined && (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 50)))
+    throw new CustomerDeliveryError("INVALID_INPUT", "账号搜索条件无效");
+  let after: { login: string; accountId: string } | undefined;
+  if (input.cursor !== undefined) {
+    try {
+      if (!input.cursor || input.cursor.length > 1024 || !/^[A-Za-z0-9_-]+$/u.test(input.cursor)) throw new Error();
+      const value = JSON.parse(Buffer.from(input.cursor, "base64url").toString("utf8"));
+      if (value.workspaceId !== workspaceId || value.search !== search || typeof value.login !== "string"
+        || value.login.length > 128 || !value.login || typeof value.accountId !== "string"
+        || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(value.accountId)) throw new Error();
+      after = { login: value.login, accountId: value.accountId };
+    } catch { throw new CustomerDeliveryError("INVALID_INPUT", "账号分页游标无效，请重新搜索"); }
+  }
+  return { workspaceId, search, limit: input.limit ?? 20, after };
+}
+export function customerDeliveryAccountCursor(input: { workspaceId: string; search: string }, account: Pick<CustomerDeliveryBindableAccount, "login" | "accountId">): string {
+  return Buffer.from(JSON.stringify({ workspaceId: input.workspaceId, search: input.search,
+    login: account.login, accountId: account.accountId })).toString("base64url");
+}
+function validateAccountBinding(input: CustomerDeliveryAccountBindingInput) {
+  requireWorkspaceScope(input.workspaceId);
+  if (!input.deliveryId?.trim() || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(input.targetAccountId ?? "") || !input.actorId?.trim()
+    || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1
+    || !input.reason?.trim() || input.reason.trim().length > 2000)
+    throw new CustomerDeliveryError("INVALID_INPUT", "账号绑定参数无效");
 }
 function normalizeChecklistEvidence(evidence: Record<string, unknown> | undefined) {
   if (!evidence || !Array.isArray(evidence.asset_refs)) return evidence;
@@ -243,29 +314,101 @@ const complete = (d: CustomerDelivery, items: readonly CustomerDeliveryChecklist
 export class MemoryCustomerDeliveryRepository implements CustomerDeliveryRepository {
   private rows = new Map<string, CustomerDelivery>();
   private items = new Map<string, CustomerDeliveryChecklistItem>();
+  private bindingTail: Promise<void> = Promise.resolve();
+  private readonly pendingBindings = new Set<string>();
   constructor(
     private readonly auditWriter: (
       event: CustomerDeliveryAuditEvent,
     ) => Promise<void> | void = () => {},
+    private readonly options: { accountDirectory?: CustomerDeliveryAccountDirectory } = {},
   ) {}
   private isComplete(delivery: CustomerDelivery) {
     return complete(delivery, [...this.items.values()]);
   }
-  private readable(delivery: CustomerDelivery) {
-    const result = clone(delivery);
-    if (!this.isComplete(delivery)) result.effectiveAt = null;
-    return result;
+  private async readable(delivery: CustomerDelivery) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const result = clone(delivery);
+      result.targetAccountLogin = null;
+      if (result.targetAccountId) {
+        if (!this.options.accountDirectory) throw new CustomerDeliveryError("ACCOUNT_DIRECTORY_UNAVAILABLE", "已绑定账号暂不可读取");
+        const account = await this.options.accountDirectory.get({ workspaceId: result.workspaceId, accountId: result.targetAccountId });
+        if (account?.workspaceId === result.workspaceId && account.accountId === result.targetAccountId
+          && account.identityId === result.targetIdentityId) result.targetAccountLogin = account.login;
+        else throw new CustomerDeliveryError("ACCOUNT_DIRECTORY_UNAVAILABLE", "已绑定账号暂不可读取");
+      }
+      // Account resolution may yield. Never return the pre-await readiness if
+      // another writer changed the checklist/payment/evidence in that interval.
+      const current = this.rows.get(`${delivery.workspaceId}:${delivery.id}`) ?? delivery;
+      if (current.revision !== result.revision || current.targetAccountId !== result.targetAccountId
+        || current.targetIdentityId !== result.targetIdentityId) { delivery = current; continue; }
+      if (!this.isComplete(current)) result.effectiveAt = null;
+      return result;
+    }
+    throw new CustomerDeliveryError("REVISION_CONFLICT", "delivery changed during account resolution; refresh and retry");
+  }
+  private assertNotBinding(workspaceId: string, deliveryId: string) {
+    if (this.pendingBindings.has(`${workspaceId}:${deliveryId}`))
+      throw new CustomerDeliveryError("REVISION_CONFLICT", "账号绑定正在保存，请刷新后重试");
   }
   async list(workspaceId: string) {
     const s = requireWorkspaceScope(workspaceId);
-    return [...this.rows.values()]
+    return Promise.all([...this.rows.values()]
       .filter((x) => x.workspaceId === s)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      .map(row => this.readable(row));
+      .map(row => this.readable(row)));
   }
   async get(workspaceId: string, id: string) {
     const r = this.rows.get(`${requireWorkspaceScope(workspaceId)}:${id}`);
     return r ? this.readable(r) : null;
+  }
+  async getByIdentity(workspaceId: string, identityId: string) {
+    const scope = requireWorkspaceScope(workspaceId);
+    if (!identityId?.trim()) throw new CustomerDeliveryError("INVALID_INPUT", "identityId required");
+    const row = [...this.rows.values()].find(candidate => candidate.workspaceId === scope && candidate.targetIdentityId === identityId);
+    return row ? this.readable(row) : null;
+  }
+  async listBindableAccounts(input: CustomerDeliveryAccountListInput) {
+    const normalized = normalizeCustomerDeliveryAccountListInput(input);
+    if (!this.options.accountDirectory) throw new CustomerDeliveryError("ACCOUNT_DIRECTORY_UNAVAILABLE", "账号目录暂不可用");
+    const page = await this.options.accountDirectory.list({ ...input, workspaceId: normalized.workspaceId,
+      search: normalized.search, limit: normalized.limit });
+    if (page.items.length > normalized.limit || page.items.some(account => account.workspaceId !== normalized.workspaceId
+      || !account.accountId || !account.identityId || !account.login))
+      throw new CustomerDeliveryError("ACCOUNT_DIRECTORY_UNAVAILABLE", "账号目录返回了无效范围");
+    return clone({ ...page, items: page.items.filter(account => ![...this.rows.values()].some(row =>
+      row.workspaceId === normalized.workspaceId && row.targetIdentityId === account.identityId)) });
+  }
+  async bindAccount(input: CustomerDeliveryAccountBindingInput) {
+    validateAccountBinding(input);
+    const directory = this.options.accountDirectory;
+    if (!directory) throw new CustomerDeliveryError("ACCOUNT_DIRECTORY_UNAVAILABLE", "账号目录暂不可用");
+    let release!: () => void;
+    const previous = this.bindingTail;
+    this.bindingTail = new Promise<void>(resolve => { release = resolve; });
+    await previous;
+    const key = `${input.workspaceId}:${input.deliveryId}`;
+    try {
+      const account = await directory.get({ workspaceId: input.workspaceId, accountId: input.targetAccountId });
+      const row = this.rows.get(key);
+      if (!row) throw new CustomerDeliveryError("NOT_FOUND", "customer delivery not found");
+      if (row.revision !== input.expectedRevision) throw new CustomerDeliveryError("REVISION_CONFLICT", "revision changed");
+      if (row.targetAccountId) throw new CustomerDeliveryError("ACCOUNT_ALREADY_BOUND", "交付账号已绑定，不可更换");
+      if (!account?.bindable || account.workspaceId !== input.workspaceId || account.accountId !== input.targetAccountId
+        || !account.identityId || !account.login)
+        throw new CustomerDeliveryError("ACCOUNT_NOT_BINDABLE", "请选择本工作区有效的商家登录账号");
+      if ([...this.rows.values()].some(value => value.workspaceId === input.workspaceId && value.targetIdentityId === account.identityId))
+        throw new CustomerDeliveryError("ACCOUNT_ALREADY_BOUND", "该登录账号已有交付档案");
+      const updated = { ...clone(row), targetAccountId: account.accountId, targetIdentityId: account.identityId,
+        targetAccountLogin: null, revision: row.revision + 1, updatedByActorId: input.actorId, updatedAt: new Date().toISOString() };
+      this.pendingBindings.add(key);
+      await this.auditWriter({ workspaceId: input.workspaceId, actorId: input.actorId, action: "customer_delivery.account.bind",
+        resourceId: row.id, before: clone(row) as unknown as Record<string, unknown>,
+        after: clone(updated) as unknown as Record<string, unknown>, reason: input.reason.trim(),
+        evidence: { targetAccountId: account.accountId, targetIdentityId: account.identityId, revision: updated.revision } });
+      this.rows.set(key, updated);
+      return { ...clone(updated), targetAccountLogin: account.login,
+        effectiveAt: this.isComplete(updated) ? updated.effectiveAt : null };
+    } finally { this.pendingBindings.delete(key); release(); }
   }
   async create(input: {
     workspaceId: string;
@@ -291,6 +434,9 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
     const d: CustomerDelivery = {
       id: `cd_${randomUUID()}`,
       workspaceId: ws,
+      targetAccountId: null,
+      targetIdentityId: null,
+      targetAccountLogin: null,
       companyName: input.companyName.trim(),
       contractNumber: null,
       paymentStatus: "unpaid",
@@ -334,6 +480,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
     patch: CustomerDeliveryPatch;
   }) {
     const patch = normalizeDeliveryPatch(input.patch);
+    this.assertNotBinding(input.workspaceId, input.id);
     const ws = requireWorkspaceScope(input.workspaceId),
       d = this.rows.get(`${ws}:${input.id}`);
     if (!d)
@@ -420,6 +567,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
     expectedRevision: number;
   }) {
     input = { ...input, evidence: normalizeChecklistEvidence(input.evidence) };
+    this.assertNotBinding(input.workspaceId, input.deliveryId);
     const ws = requireWorkspaceScope(input.workspaceId),
       d = this.rows.get(`${ws}:${input.deliveryId}`);
     if (!d)
@@ -497,6 +645,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
     expectedRevision: number;
   }) {
     input = { ...input, items: input.items.map(item => ({ ...item, evidence: normalizeChecklistEvidence(item.evidence) })) };
+    this.assertNotBinding(input.workspaceId, input.deliveryId);
     const ws = requireWorkspaceScope(input.workspaceId),
       d = this.rows.get(`${ws}:${input.deliveryId}`);
     if (!d)
@@ -621,6 +770,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       createdAt: new Date().toISOString(),
       deletedAt: null,
     };
+    this.assertNotBinding(input.workspaceId, input.deliveryId);
     const row = this.rows.get(`${d.workspaceId}:${d.id}`)!;
     row.videos.push(v);
     row.updatedAt = new Date().toISOString();
@@ -645,6 +795,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
     videoId: string;
     actorId: string;
   }) {
+    this.assertNotBinding(input.workspaceId, input.deliveryId);
     const ws = requireWorkspaceScope(input.workspaceId),
       row = this.rows.get(`${ws}:${input.deliveryId}`),
       video = row?.videos.find((v) => v.id === input.videoId);
@@ -840,15 +991,16 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
     }
     throw new CustomerDeliveryError("REVISION_CONFLICT", "delivery evidence verification changed repeatedly");
   }
-  private async readWithEvidence(workspaceId: string, deliveryId: string): Promise<CustomerDelivery | null> {
+  private async readWithEvidence(workspaceId: string, selector: string, column: "id" | "target_identity_id" = "id"): Promise<CustomerDelivery | null> {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         return await withWorkspaceTransaction(this.pool, workspaceId, async c => {
           const initial = await c.query(
-            `SELECT * FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2 /* delivery_evidence_read_parent */`,
-            [workspaceId, deliveryId],
+            `SELECT * FROM workspace_customer_deliveries WHERE workspace_id=$1 AND ${column}=$2 /* delivery_evidence_read_parent */`,
+            [workspaceId, selector],
           );
           if (!initial.rows[0]) return null;
+          const deliveryId = String((initial.rows[0] as { id: string }).id);
           const snapshot = await this.evidenceSnapshot(c, workspaceId, deliveryId, initial.rows[0], "read");
           let ready = complete(snapshot.delivery, snapshot.items);
           if (snapshot.delivery.effectiveAt && ready) {
@@ -878,6 +1030,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
             throw new DeliveryEvidenceSnapshotChanged("delivery references changed during evidence read");
           const result = locked.delivery;
           if (!ready) result.effectiveAt = null;
+          await this.projectAccountLogin(c, result);
           return result;
         });
       } catch (error) {
@@ -919,6 +1072,9 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
     return {
       id: r.id,
       workspaceId: r.workspace_id,
+      targetAccountId: r.target_account_id ?? null,
+      targetIdentityId: r.target_identity_id ?? null,
+      targetAccountLogin: null,
       companyName: r.company_name,
       contractNumber: r.contract_number,
       paymentStatus: r.payment_status,
@@ -949,6 +1105,16 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       updatedAt: new Date(r.updated_at).toISOString(),
       videos,
     };
+  }
+  private async projectAccountLogin(c: SqlClient, delivery: CustomerDelivery) {
+    if (!delivery.targetAccountId) return;
+    await c.query("SELECT set_config('app.platform_scope', 'platform_ops', true)");
+    const result = await c.query<{ login: string }>(
+      `SELECT login_identifier AS login FROM platform_password_accounts
+       WHERE id=$1 AND identity_id=$2 /* delivery_account_login */`,
+      [delivery.targetAccountId, delivery.targetIdentityId]);
+    if (!result.rows[0]) throw new CustomerDeliveryError("ACCOUNT_DIRECTORY_UNAVAILABLE", "已绑定账号暂不可读取");
+    delivery.targetAccountLogin = result.rows[0].login;
   }
   private mapVideo(r: any): CustomerDeliveryVideo {
     return {
@@ -1000,11 +1166,13 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       [rows[0].workspace_id, candidates.map(row => row.id)],
     ) : { rows: [] };
     const mappedItems = items.rows.map((item: any) => this.mapItem(item));
-    return rows.map((r) => {
+    const mapped = rows.map((r) => {
       const mapped = this.map(r, by.get(r.id) || []);
       if (mapped.effectiveAt && !complete(mapped, mappedItems)) mapped.effectiveAt = null;
       return mapped;
     });
+    for (const delivery of mapped) await this.projectAccountLogin(c, delivery);
+    return mapped;
   }
   private async refreshEffectiveAt(c: any, workspaceId: string, deliveryId: string) {
     // Every managed checklist/video writer takes this same parent lock before
@@ -1073,6 +1241,74 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
   async get(workspaceId: string, id: string) {
     const scope = requireWorkspaceScope(workspaceId);
     return this.readWithEvidence(scope, id);
+  }
+  async getByIdentity(workspaceId: string, identityId: string) {
+    const scope = requireWorkspaceScope(workspaceId);
+    if (!identityId?.trim()) throw new CustomerDeliveryError("INVALID_INPUT", "identityId required");
+    return this.readWithEvidence(scope, identityId, "target_identity_id");
+  }
+  async listBindableAccounts(input: CustomerDeliveryAccountListInput): Promise<CustomerDeliveryAccountPage> {
+    const normalized = normalizeCustomerDeliveryAccountListInput(input);
+    return withWorkspaceTransaction(this.pool, normalized.workspaceId, async c => {
+      await c.query("SELECT set_config('app.platform_scope', 'platform_ops', true)");
+      const result = await c.query<CustomerDeliveryBindableAccount>(
+        `SELECT m.workspace_id AS "workspaceId", a.id AS "accountId", a.identity_id AS "identityId", a.login_identifier AS login
+         FROM platform_password_accounts a JOIN platform_identities i ON i.id=a.identity_id
+         JOIN workspace_members m ON m.identity_id=a.identity_id AND m.workspace_id=$1
+         JOIN workspaces w ON w.id=m.workspace_id
+         WHERE a.account_type='merchant' AND a.status='active' AND $1=ANY(a.workspace_ids)
+           AND i.access_status='active' AND i.risk_decision='allow' AND m.status='active' AND w.status='active'
+           AND strpos(lower(a.login_identifier),$2)>0
+           AND ($3::text IS NULL OR (a.login_identifier COLLATE "C",a.id)>($3::text COLLATE "C",$4::uuid))
+           AND NOT EXISTS (SELECT 1 FROM workspace_customer_deliveries d WHERE d.workspace_id=$1 AND d.target_identity_id=a.identity_id)
+         ORDER BY a.login_identifier COLLATE "C",a.id LIMIT $5 /* delivery_bindable_accounts */`,
+        [normalized.workspaceId, normalized.search, normalized.after?.login ?? null, normalized.after?.accountId ?? null, normalized.limit + 1]);
+      const items = result.rows.slice(0, normalized.limit);
+      return { items, ...(result.rows.length > normalized.limit
+        ? { nextCursor: customerDeliveryAccountCursor(normalized, items[items.length - 1]!) } : {}) };
+    });
+  }
+  async bindAccount(input: CustomerDeliveryAccountBindingInput): Promise<CustomerDelivery> {
+    validateAccountBinding(input);
+    try {
+      // Reuse the established asset -> parent lock order. Binding changes no
+      // completion evidence, but a ready response must still verify that evidence.
+      return await this.withEvidenceTransaction(input.workspaceId, input.deliveryId,
+        { kind: "update", expectedRevision: input.expectedRevision, patch: {} }, async c => {
+          await c.query("SELECT set_config('app.platform_scope', 'platform_ops', true)");
+          const current = await c.query<any>(
+            `SELECT * FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2 FOR UPDATE /* delivery_account_bind_parent */`,
+            [input.workspaceId, input.deliveryId]);
+          const row = current.rows[0];
+          if (!row) throw new CustomerDeliveryError("NOT_FOUND", "customer delivery not found");
+          if (Number(row.revision) !== input.expectedRevision) throw new CustomerDeliveryError("REVISION_CONFLICT", "revision changed");
+          if (row.target_account_id) throw new CustomerDeliveryError("ACCOUNT_ALREADY_BOUND", "交付账号已绑定，不可更换");
+          const accountResult = await c.query<{ accountId: string; identityId: string; login: string }>(
+            `SELECT account_id AS "accountId",identity_id AS "identityId",login
+             FROM public.lock_customer_delivery_account_target($1,$2::uuid) /* delivery_account_bind_target */`,
+            [input.workspaceId, input.targetAccountId]);
+          const account = accountResult.rows[0];
+          if (!account) throw new CustomerDeliveryError("ACCOUNT_NOT_BINDABLE", "请选择本工作区有效的商家登录账号");
+          const result = await c.query<any>(
+            `UPDATE workspace_customer_deliveries SET target_account_id=$3,target_identity_id=$4,
+               revision=revision+1,updated_by_actor_id=$5,updated_at=now()
+             WHERE workspace_id=$1 AND id=$2 AND revision=$6 AND target_account_id IS NULL
+             RETURNING * /* delivery_account_bind_write */`,
+            [input.workspaceId, input.deliveryId, account.accountId, account.identityId, input.actorId, input.expectedRevision]);
+          if (!result.rows[0]) throw new CustomerDeliveryError("REVISION_CONFLICT", "revision changed");
+          const after = (await this.withVideos(c, result.rows))[0]!;
+          await this.audit(c, { workspaceId: input.workspaceId, actorId: input.actorId,
+            action: "customer_delivery.account.bind", resourceType: "customer_delivery", resourceId: input.deliveryId,
+            before: this.map(row) as unknown as Record<string, unknown>,
+            after: after as unknown as Record<string, unknown>, reason: input.reason.trim() });
+          return after;
+        });
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "23505"
+        && "constraint" in error && error.constraint === "customer_deliveries_workspace_identity_unique")
+        throw new CustomerDeliveryError("ACCOUNT_ALREADY_BOUND", "该登录账号已有交付档案");
+      throw error;
+    }
   }
   async listChecklistItems(input: {
     workspaceId: string;

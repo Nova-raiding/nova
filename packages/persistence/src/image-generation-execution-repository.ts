@@ -30,6 +30,16 @@ export type ProviderReservedImageGenerationExecution = ImageGenerationExecution 
 export type ProviderDispatchingImageGenerationExecution = ImageGenerationExecution & { state: 'provider_dispatching'; ownerToken: string; leaseExpiresAt: string; providerOperationKey: string }
 export type ProviderStartedImageGenerationExecution = ImageGenerationExecution & { state: 'provider_started'; ownerToken: string; leaseExpiresAt: string; providerStartedAt: string }
 
+export interface FailImageGenerationBeforeProviderInput {
+  workspaceId: string
+  jobId: string
+  eventId: string
+  ownerToken: string
+  errorCode: string
+  errorMessage: string
+  now?: string
+}
+
 export class ImageGenerationExecutionError extends Error {
   constructor(readonly code: 'IMAGE_GENERATION_EXECUTION_BUSY' | 'IMAGE_GENERATION_EXECUTION_LEASE_LOST' | 'IMAGE_GENERATION_PROVIDER_OUTCOME_UNKNOWN' | 'IMAGE_GENERATION_EXECUTION_COMPLETED' | 'IMAGE_GENERATION_EXECUTION_FAILED', readonly execution?: ImageGenerationExecution) {
     super(code)
@@ -45,6 +55,11 @@ export interface ImageGenerationExecutionRepository {
   markOutcomeUnknown(input: { workspaceId: string; jobId: string; ownerToken: string; errorCode: string; errorMessage: string; now?: string }): Promise<ImageGenerationExecution>
   markCompleted(input: { workspaceId: string; jobId: string; ownerToken: string; now?: string }): Promise<ImageGenerationExecution>
   markFailed(input: { workspaceId: string; jobId: string; ownerToken: string; errorCode: string; errorMessage: string; now?: string }): Promise<ImageGenerationExecution>
+  /** Caller must know the provider was never invoked (for example its final
+   * authorization guard refused dispatch). Never use for a timeout/network
+   * error after invoking the provider. Consumes exact event ownership once;
+   * preserves the operation fence and cannot clear real start/unknown evidence. */
+  failBeforeProvider(input: FailImageGenerationBeforeProviderInput): Promise<ImageGenerationExecution>
   reconcileCompleted(input: { workspaceId: string; jobId: string; now?: string }): Promise<ImageGenerationExecution>
   reconcileFailed(input: { workspaceId: string; jobId: string; errorCode: string; errorMessage: string; now?: string }): Promise<ImageGenerationExecution>
   get(input: { workspaceId: string; jobId: string }): Promise<ImageGenerationExecution | undefined>
@@ -95,10 +110,10 @@ export class MemoryImageGenerationExecutionRepository implements ImageGeneration
     const workspaceId = workspace(input.workspaceId); const jobId = normalizedId(input.jobId, 'JOB_ID'); const eventId = normalizedId(input.eventId, 'EVENT_ID'); const now = instant(input.now); const leaseMs = leaseDuration(input.leaseMs); const key = keyOf(workspaceId, jobId); const current = this.rows.get(key)
     if (current && current.eventId !== eventId) throw new ImageGenerationExecutionError('IMAGE_GENERATION_EXECUTION_BUSY', current)
     if (current?.state === 'leased' && Date.parse(current.leaseExpiresAt!) > now) throw new ImageGenerationExecutionError('IMAGE_GENERATION_EXECUTION_BUSY', current)
-    if (current?.providerOperationKey) throw new ImageGenerationExecutionError('IMAGE_GENERATION_PROVIDER_OUTCOME_UNKNOWN', current)
-    if (current?.state === 'provider_started' || current?.state === 'outcome_unknown') throw new ImageGenerationExecutionError('IMAGE_GENERATION_PROVIDER_OUTCOME_UNKNOWN', current)
     if (current?.state === 'completed') throw new ImageGenerationExecutionError('IMAGE_GENERATION_EXECUTION_COMPLETED', current)
     if (current?.state === 'failed') throw new ImageGenerationExecutionError('IMAGE_GENERATION_EXECUTION_FAILED', current)
+    if (current?.providerOperationKey) throw new ImageGenerationExecutionError('IMAGE_GENERATION_PROVIDER_OUTCOME_UNKNOWN', current)
+    if (current?.state === 'provider_started' || current?.state === 'outcome_unknown') throw new ImageGenerationExecutionError('IMAGE_GENERATION_PROVIDER_OUTCOME_UNKNOWN', current)
     const ownerToken = `image_generation_${randomUUID()}`
     const row: LeasedImageGenerationExecution = { workspaceId, jobId, eventId, state: 'leased', attempt: current?.providerOperationKey ? current.attempt : (current?.attempt ?? 0) + 1, ownerToken, leaseExpiresAt: new Date(now + leaseMs).toISOString(), ...(current?.providerOperationKey ? { providerOperationKey: current.providerOperationKey } : {}), updatedAt: new Date(now).toISOString() }
     this.rows.set(key, row)
@@ -131,6 +146,16 @@ export class MemoryImageGenerationExecutionRepository implements ImageGeneration
   async markOutcomeUnknown(input: { workspaceId: string; jobId: string; ownerToken: string; errorCode: string; errorMessage: string; now?: string }) { return this.terminal(input, 'outcome_unknown', ['provider_started', 'provider_dispatching']) }
   async markCompleted(input: { workspaceId: string; jobId: string; ownerToken: string; now?: string }) { return this.terminal(input, 'completed') }
   async markFailed(input: { workspaceId: string; jobId: string; ownerToken: string; errorCode: string; errorMessage: string; now?: string }) { return this.terminal(input, 'failed', ['provider_started']) }
+  async failBeforeProvider(input: FailImageGenerationBeforeProviderInput) {
+    const workspaceId = workspace(input.workspaceId); const jobId = normalizedId(input.jobId, 'JOB_ID'); const eventId = normalizedId(input.eventId, 'EVENT_ID'); const ownerToken = normalizedId(input.ownerToken, 'OWNER_TOKEN')
+    const errorCode = normalizedId(input.errorCode, 'ERROR_CODE'); const errorMessage = normalizedId(input.errorMessage, 'ERROR_MESSAGE'); const at = new Date(instant(input.now)).toISOString()
+    const current = this.rows.get(keyOf(workspaceId, jobId))
+    if (!current || current.eventId !== eventId || current.ownerToken !== ownerToken || !['provider_reserved', 'provider_dispatching'].includes(current.state)
+      || current.providerRequestId != null || current.providerStartedAt != null) throw new ImageGenerationExecutionError('IMAGE_GENERATION_EXECUTION_LEASE_LOST', current)
+    const row: ImageGenerationExecution = { ...current, state: 'failed', ownerToken: undefined, leaseExpiresAt: undefined, errorCode, errorMessage, updatedAt: at }
+    this.rows.set(keyOf(workspaceId, jobId), row)
+    return row
+  }
   async reconcileCompleted(input: { workspaceId: string; jobId: string; now?: string }) { return this.reconcile(input, 'completed') }
   async reconcileFailed(input: { workspaceId: string; jobId: string; errorCode: string; errorMessage: string; now?: string }) { return this.reconcile(input, 'failed', input.errorCode, input.errorMessage) }
   async get(input: { workspaceId: string; jobId: string }) { return this.rows.get(keyOf(workspace(input.workspaceId), normalizedId(input.jobId, 'JOB_ID'))) }
@@ -211,6 +236,22 @@ export class PostgresImageGenerationExecutionRepository implements ImageGenerati
   async markOutcomeUnknown(input: { workspaceId: string; jobId: string; ownerToken: string; errorCode: string; errorMessage: string; now?: string }) { return this.transition(input, ['provider_started', 'provider_dispatching'], 'outcome_unknown', undefined, input.errorCode, input.errorMessage) }
   async markCompleted(input: { workspaceId: string; jobId: string; ownerToken: string; now?: string }) { return this.transition(input, 'provider_started', 'completed') }
   async markFailed(input: { workspaceId: string; jobId: string; ownerToken: string; errorCode: string; errorMessage: string; now?: string }) { return this.transition(input, 'provider_started', 'failed', undefined, input.errorCode, input.errorMessage) }
+  async failBeforeProvider(input: FailImageGenerationBeforeProviderInput) {
+    const workspaceId = workspace(input.workspaceId); const jobId = normalizedId(input.jobId, 'JOB_ID'); const eventId = normalizedId(input.eventId, 'EVENT_ID'); const ownerToken = normalizedId(input.ownerToken, 'OWNER_TOKEN')
+    const errorCode = normalizedId(input.errorCode, 'ERROR_CODE'); const errorMessage = normalizedId(input.errorMessage, 'ERROR_MESSAGE'); const at = new Date(instant(input.now)).toISOString()
+    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      // Atomic CAS: concurrent markProviderStarted/markOutcomeUnknown wins or
+      // loses the same row lock. No read-then-write gap or fence reset.
+      const result = await client.query<ExecutionRow>(`UPDATE image_generation_executions
+        SET state='failed',owner_token=NULL,lease_expires_at=NULL,error_code=$5,error_message=$6,updated_at=$7
+        WHERE workspace_id=$1 AND job_id=$2 AND event_id=$3 AND owner_token=$4
+          AND state IN ('provider_reserved','provider_dispatching')
+          AND provider_request_id IS NULL AND provider_started_at IS NULL
+        RETURNING ${executionProjection}`, [workspaceId, jobId, eventId, ownerToken, errorCode, errorMessage, at])
+      if (!result.rows[0]) throw new ImageGenerationExecutionError('IMAGE_GENERATION_EXECUTION_LEASE_LOST', await this.getWithin(client, workspaceId, jobId))
+      return mapExecution(result.rows[0])
+    })
+  }
   async reconcileCompleted(input: { workspaceId: string; jobId: string; now?: string }) { return this.reconcile(input, 'completed') }
   async reconcileFailed(input: { workspaceId: string; jobId: string; errorCode: string; errorMessage: string; now?: string }) { return this.reconcile(input, 'failed', input.errorCode, input.errorMessage) }
   async get(input: { workspaceId: string; jobId: string }) { const workspaceId = workspace(input.workspaceId); const jobId = normalizedId(input.jobId, 'JOB_ID'); return withWorkspaceTransaction(this.pool, workspaceId, async client => { const row = (await client.query<ExecutionRow>(`SELECT ${executionProjection} FROM image_generation_executions WHERE workspace_id=$1 AND job_id=$2`, [workspaceId, jobId])).rows[0]; return row ? mapExecution(row) : undefined }) }

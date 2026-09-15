@@ -49,7 +49,7 @@ describe('customer delivery upload and status MCP contracts', () => {
   it('publishes explicit bounded upload fields and a lowercase SHA-256 constraint', () => {
     expect(MCP_METHOD_SCHEMAS[uploadMethod]).toMatchObject({
       additionalProperties: false,
-      required: ['target_workspace_id', 'delivery_id', 'purpose', 'name', 'mime_type', 'content_base64'],
+      required: ['target_workspace_id', 'delivery_id', 'purpose'],
       properties: {
         target_workspace_id: { type: 'string', minLength: 1, maxLength: 200 },
         delivery_id: { type: 'string', minLength: 1, maxLength: 256 },
@@ -57,11 +57,33 @@ describe('customer delivery upload and status MCP contracts', () => {
         name: { type: 'string', minLength: 1, maxLength: 255 },
         mime_type: { type: 'string', minLength: 1, maxLength: 100 },
         content_base64: { type: 'string', minLength: 1, maxLength: maxContentLength },
+        source_url: { type: 'string', minLength: 1, maxLength: 2000 },
         sha256: { type: 'string', minLength: 64, maxLength: 64, pattern: '^[a-f0-9]{64}$' },
       },
     })
     expect(MCP_METHOD_SCHEMAS[uploadMethod].required).not.toContain('sha256')
     expect(getMcpMethodContract(uploadMethod)?.description).toContain('does not assert a clean scan')
+  })
+
+  it('accepts only contract HTTPS links as an alternative source without client file metadata', () => {
+    const link = { target_workspace_id: uploadParams.target_workspace_id, delivery_id: uploadParams.delivery_id, purpose: 'contract', source_url: 'https://files.example.com/contract.pdf?signature=private' }
+    expect(validate(uploadMethod, link)).toEqual({ valid: true, errors: [] })
+    for (const purpose of ['payment', 'system_integration', 'functional_acceptance', 'training', 'video']) {
+      expect(validate(uploadMethod, { ...link, purpose }).valid).toBe(false)
+    }
+    for (const [field, value] of Object.entries({ name: 'contract.pdf', mime_type: 'application/pdf', sha256: 'a'.repeat(64), content_base64: uploadParams.content_base64 })) {
+      expect(validate(uploadMethod, { ...link, [field]: value }).valid).toBe(false)
+    }
+    const schema = MCP_METHOD_SCHEMAS[uploadMethod]
+    expect(schema.requiredAnyOf).toEqual(['content_base64', 'source_url'])
+    expect(schema.mutuallyExclusive).toContainEqual(['content_base64', 'source_url'])
+    expect(schema).toHaveProperty('oneOf')
+  })
+
+  it.each(['http://files.example.com/a.pdf', 'https://user:password@files.example.com/a.pdf', 'https://@files.example.com/a.pdf', 'https://files.example.com/a.pdf#fragment', 'https://files.example.com/a.pdf#', 'https://files.example.com:8443/a.pdf', 'https://files.example.com/a\n.pdf', 'https://files.example.com/%0a.pdf', 'file:///contract.pdf', 'https://files.example.com/' + 'x'.repeat(2000)])('rejects an unsafe contract source URL without echoing it: %#', source_url => {
+    const response = validate(uploadMethod, { target_workspace_id: uploadParams.target_workspace_id, delivery_id: uploadParams.delivery_id, purpose: 'contract', source_url })
+    expect(response.valid).toBe(false)
+    expect(response.errors.join(' ')).not.toContain(source_url)
   })
 
   it.each(['contract', 'video'])('accepts %s purpose for both upload and status reads', purpose => {

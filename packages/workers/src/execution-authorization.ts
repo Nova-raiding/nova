@@ -203,10 +203,16 @@ export function parseWorkerAuthorizationSnapshot(event: DurableOutboxEvent, oper
     decidedAt: requireTimestamp(raw.decided_at, 'decided_at'),
   }
   if (snapshot.workspaceId !== event.workspaceId) throw snapshotError('authorization snapshot workspace binding mismatch')
-  if (snapshot.contextId !== `workspace:${event.workspaceId}`) throw snapshotError('authorization snapshot context binding mismatch')
   if (snapshot.resourceId !== event.aggregateId) throw snapshotError('authorization snapshot resource binding mismatch')
   if (snapshot.capability !== operation) throw snapshotError('authorization snapshot capability binding mismatch')
   if (snapshot.workbench !== 'workspace') throw snapshotError('authorization snapshot workbench binding mismatch')
+  // A brand-scoped publish decision remains bound to this exact workspace,
+  // event and job. The authoritative recheck must verify that same brand's
+  // current publisher membership; no other operation inherits this context.
+  const brandPublishContext = operation === 'publish.execute'
+    && event.eventType === 'publish.requested'
+    && /^brand:[^\s\u0000-\u001f\u007f]+$/u.test(snapshot.contextId)
+  if (snapshot.contextId !== `workspace:${event.workspaceId}` && !brandPublishContext) throw snapshotError('authorization snapshot context binding mismatch')
   return snapshot
 }
 

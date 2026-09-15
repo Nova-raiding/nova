@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createConfiguredConnector, type AccessCredential, type CredentialProvider, type HttpConnectorConfig } from './index.js'
+import { createConfiguredConnector, type AccessCredential, type CredentialProvider, type HttpConnectorConfig, type PlatformConnector, type ConnectorBeforeRequest } from './index.js'
 
 const config: HttpConnectorConfig = {
   clientId: 'app-test',
@@ -34,6 +34,88 @@ function credentials(): CredentialProvider & { saved: AccessCredential[] } {
 }
 
 function response(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }) }
+
+describe('HTTP connector trusted final dispatch admission', () => {
+  const context = { workspaceId: 'ws-admission', accountId: 'account-admission', credentialRef: 'vault://admission' }
+  const draft = { fields: { title: 'Product', category: 'cat', price: 10, stock: 1 }, idempotencyKey: 'admission-write', remoteId: 'remote-admission' }
+  const operations: Array<{ operation: Parameters<ConnectorBeforeRequest>[0]['operation']; call(connector: PlatformConnector): Promise<unknown> }> = [
+    { operation: 'exchange_code', call: connector => connector.exchangeCode({ code: 'local-code', state: 'local-state', workspaceId: context.workspaceId }) },
+    { operation: 'refresh_credential', call: connector => connector.refreshCredential(context) },
+    { operation: 'revoke', call: connector => connector.revoke(context) },
+    { operation: 'sync_products', call: connector => connector.syncProducts(context) },
+    { operation: 'create_product', call: connector => connector.createProduct(context, draft) },
+    { operation: 'update_product', call: connector => connector.updateProduct(context, draft) },
+    { operation: 'query_write', call: connector => connector.queryWrite(context, { idempotencyKey: draft.idempotencyKey, remoteId: draft.remoteId }) },
+    { operation: 'upload_media', call: connector => connector.uploadMedia!(context, { visualRef: 'visual-a', role: 'main', mimeType: 'image/png', sha256: 'a'.repeat(64), idempotencyKey: 'media-a', bytes: new Uint8Array([1]) }) },
+  ]
+
+  it.each(operations)('$operation preserves host denial and never invokes fetch', async ({ operation, call }) => {
+    const denial = Object.assign(new TypeError('local access revoked'), { code: 'CUSTOMER_DELIVERY_REQUIRED', retryable: false })
+    const fetchMock = vi.fn()
+    const beforeRequest = vi.fn<ConnectorBeforeRequest>(() => { throw denial })
+    const connector = createConfiguredConnector('jd', { config: readyConfig, credentials: credentials(), allowTestCredentials: true, allowTestAdapters: true, fetch: fetchMock, beforeRequest })
+    await expect(call(connector)).rejects.toBe(denial)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(beforeRequest).toHaveBeenCalledExactlyOnceWith({ operation, platform: 'jd', workspaceId: context.workspaceId, accountId: operation === 'exchange_code' ? undefined : context.accountId, signal: undefined })
+    expect(denial).not.toHaveProperty('normalized')
+    expect(denial).not.toHaveProperty('providerSucceeded')
+  })
+
+  it.each(['sync', 'create', 'update', 'media'] as const)('%s admission occurs after credential resolution and delayed signing', async operation => {
+    let release!: () => void
+    let signEntered!: () => void
+    const signing = new Promise<void>(resolve => { release = resolve })
+    const entered = new Promise<void>(resolve => { signEntered = resolve })
+    let allowed = true
+    const denial = new Error('revoked while signing')
+    const events: string[] = []
+    const store = credentials()
+    const resolve = store.resolve.bind(store)
+    store.resolve = async ref => { events.push('credentials'); return resolve(ref) }
+    const beforeRequest = vi.fn<ConnectorBeforeRequest>(() => { events.push('admission'); if (!allowed) throw denial })
+    const fetchMock = vi.fn()
+    const connector = createConfiguredConnector('jd', {
+      config: { ...readyConfig, signer: { kind: 'test', async sign() { events.push('signing'); signEntered(); await signing; return {} } } },
+      credentials: store, allowTestCredentials: true, allowTestAdapters: true, fetch: fetchMock, beforeRequest,
+    })
+    const call = operations.find(item => item.operation === ({ sync: 'sync_products', create: 'create_product', update: 'update_product', media: 'upload_media' } as const)[operation])!.call
+    const pending = expect(call(connector)).rejects.toBe(denial)
+    await entered
+    expect(beforeRequest).not.toHaveBeenCalled()
+    allowed = false
+    release()
+    await pending
+    expect(events).toEqual(['credentials', 'signing', 'admission'])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('checks each sync page and leaves status reads classifiable for reconciliation', async () => {
+    let allowed = true
+    const denial = new Error('revoked after first page')
+    const beforeRequest = vi.fn<ConnectorBeforeRequest>(request => { if (request.operation === 'sync_products' && !allowed) throw denial })
+    const fetchMock = vi.fn(async () => response({ items: [] }))
+    const connector = createConfiguredConnector('jd', { config: readyConfig, credentials: credentials(), allowTestCredentials: true, allowTestAdapters: true, fetch: fetchMock, beforeRequest })
+    await connector.syncProducts(context)
+    allowed = false
+    await expect(connector.syncProducts(context, { value: 'next-page' })).rejects.toBe(denial)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    await connector.queryWrite(context, { idempotencyKey: 'prior-write' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(beforeRequest.mock.calls.map(([request]) => request.operation)).toEqual(['sync_products', 'sync_products', 'query_write'])
+  })
+
+  it('does not relabel an automatic credential-refresh admission denial', async () => {
+    const denial = new TypeError('refresh locally denied')
+    const store = credentials()
+    store.resolve = async () => ({ accessToken: 'expired', refreshToken: 'refresh', expiresAt: '2020-01-01T00:00:00Z' })
+    const fetchMock = vi.fn()
+    const beforeRequest = vi.fn<ConnectorBeforeRequest>(() => { throw denial })
+    const connector = createConfiguredConnector('jd', { config: readyConfig, credentials: store, allowTestCredentials: true, allowTestAdapters: true, fetch: fetchMock, beforeRequest })
+    await expect(connector.syncProducts(context)).rejects.toBe(denial)
+    expect(beforeRequest.mock.calls.map(([request]) => request.operation)).toEqual(['refresh_credential'])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
 
 describe('HttpPlatformConnector', () => {
   it('allows OAuth setup before catalog evidence while keeping sync closed', async () => {

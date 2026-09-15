@@ -18,8 +18,9 @@ import {
 } from "antd";
 import { deliveryCompletionTimeLabel, deliveryDateTimeInputValue } from "./deliveryDateTime.js";
 import { CustomerDeliveryUpload } from "./CustomerDeliveryUpload.js";
+import { CustomerDeliveryAccountBinding } from "./CustomerDeliveryAccountBinding.js";
 import { parseCustomerDeliveryEvidenceRefs } from "../../api/customerDeliveryClient.js";
-import type { CustomerDeliveryAsset, CustomerDeliveryAssetPurpose } from "../../api/customerDeliveryClient.js";
+import type { CustomerDeliveryAccount, CustomerDeliveryAccountPage, CustomerDeliveryAsset, CustomerDeliveryAssetPurpose, CustomerDeliveryUploadSource } from "../../api/customerDeliveryClient.js";
 
 export type DeliveryStepKey =
   "profile" | "integration" | "acceptance" | "training" | "video";
@@ -46,6 +47,9 @@ export interface CustomerDeliveryRecord {
   trainingCompletedAt?: string;
   videoUrls?: string[];
   revision?: number;
+  targetAccountId?: string | null;
+  targetIdentityId?: string | null;
+  targetAccountLogin?: string | null;
   /** Per-item evidence returned by the delivery API. Keys are item labels. */
   integrationEvidence?: Record<string, string>;
   acceptanceEvidence?: Record<string, string>;
@@ -227,7 +231,7 @@ export function CustomerDeliveryTrainingEvidence({ record, disabled, readOnly = 
   record: CustomerDeliveryRecord;
   disabled?: boolean;
   readOnly?: boolean;
-  onUpload?: (file: File, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
+  onUpload?: (source: CustomerDeliveryUploadSource, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
   onGetAsset?: (assetRef: string, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
   onConfirm: (refs: string[]) => Promise<void>;
   onClose: () => void;
@@ -291,6 +295,8 @@ export function CustomerDeliverySection({
   onVideoList,
   onAssetUpload,
   onAssetGet,
+  onAccountList,
+  onAccountBind,
 }: {
   disabled?: boolean;
   /** Keeps delivery details readable while removing every mutation entry. */
@@ -324,8 +330,10 @@ export function CustomerDeliverySection({
   onVideoList?: (
     record: CustomerDeliveryRecord,
   ) => Promise<CustomerDeliveryVideoItem[]>;
-  onAssetUpload?: (record: CustomerDeliveryRecord, file: File, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
+  onAssetUpload?: (record: CustomerDeliveryRecord, source: CustomerDeliveryUploadSource, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
   onAssetGet?: (record: CustomerDeliveryRecord, assetRef: string, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
+  onAccountList?: (input: { search?: string; cursor?: string }, signal: AbortSignal) => Promise<CustomerDeliveryAccountPage>;
+  onAccountBind?: (record: CustomerDeliveryRecord, account: CustomerDeliveryAccount, reason: string, signal: AbortSignal) => Promise<CustomerDeliveryRecord>;
 }) {
   const [selected, setSelected] = useState<CustomerDeliveryRecord>();
   const [step, setStep] = useState<DeliveryStepKey>("profile");
@@ -333,6 +341,7 @@ export function CustomerDeliverySection({
   const [saving, setSaving] = useState(false);
   const [loadingStep, setLoadingStep] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [bindingAccount, setBindingAccount] = useState(false);
   const uploadTracker = useRef(createUploadTracker());
   const detailRequest = useRef(0);
   const mounted = useRef(true);
@@ -472,7 +481,7 @@ export function CustomerDeliverySection({
     }
   };
   const save = async (values: Record<string, unknown>) => {
-    if (!selected || disabled || readOnly || saving || loadingStep || uploading) return;
+    if (!selected || disabled || readOnly || saving || loadingStep || uploading || bindingAccount) return;
     const request = detailRequest.current;
     const currentVideoAction = () => {
       const access = currentVideoAccess.current;
@@ -482,6 +491,7 @@ export function CustomerDeliverySection({
     const next = {
       ...selected,
       ...values,
+      revision: selected.revision,
       profile: step === "profile" ? true : selected.profile,
       integration:
         step === "integration"
@@ -815,10 +825,23 @@ export function CustomerDeliverySection({
       >
         {selected ? (
           <Space orientation="vertical" size="large" style={{ width: "100%" }}>
+            {step === "profile" ? <CustomerDeliveryAccountBinding
+              key={`${selected.id}:${detailRequest.current}`}
+              record={selected}
+              readOnly={readOnly}
+              disabled={disabled || loadingStep || saving || uploading}
+              onList={onAccountList}
+              onBind={onAccountBind}
+              onBusyChange={setBindingAccount}
+              onBound={(record) => {
+                setSelected((current) => current?.id === record.id ? { ...current, targetAccountId: record.targetAccountId, targetIdentityId: record.targetIdentityId, targetAccountLogin: record.targetAccountLogin, revision: record.revision } : current);
+                form.setFieldValue("revision", record.revision);
+              }}
+            /> : null}
             <Form
               form={form}
               layout="vertical"
-              disabled={disabled || readOnly || loadingStep || saving}
+              disabled={disabled || readOnly || loadingStep || saving || bindingAccount}
               aria-busy={loadingStep}
               onFinish={save}
             >
@@ -1019,7 +1042,7 @@ export function CustomerDeliverySection({
                 </>
               )}
               {!readOnly ? (
-                <Button type="primary" htmlType="submit" loading={saving || loadingStep} disabled={uploading}>
+                <Button type="primary" htmlType="submit" loading={saving || loadingStep} disabled={uploading || bindingAccount}>
                   保存当前环节
                 </Button>
               ) : null}

@@ -106,7 +106,7 @@ describe('quality entrypoint coverage', () => {
   })
 
   it('keeps non-hermetic coverage explicit instead of silently passing it in the default suite', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(25)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(27)
     expect(script('test:runtime:isolated')).toContain('--config vitest.runtime.config.ts')
     expect(script('test:postgres:isolated')).toContain('scripts/run-isolated-postgres-tests.ts')
     expect(script('test:browser:ops:jit')).toContain('scripts/run-ops-oidc-e2e.ts')

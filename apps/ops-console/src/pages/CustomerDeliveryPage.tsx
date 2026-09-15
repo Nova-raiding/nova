@@ -51,6 +51,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   currentWorkspace.current = targetWorkspaceId;
   const currentCanRead = useRef(canRead);
   currentCanRead.current = canRead;
+  const currentCanUpdate = useRef(canUpdate);
+  currentCanUpdate.current = canUpdate;
   const mounted = useRef(true);
   const reportMutationError = (cause: unknown) => {
     if (currentWorkspace.current === targetWorkspaceId) setMutationError(describeOpsError(cause));
@@ -255,7 +257,33 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         onTrainingSave={canUpdate && canRead ? saveTraining : undefined}
         onVideoAdd={canUpdate && canRead ? addVideo : undefined}
         onVideoList={listVideos}
-        onAssetUpload={canUpdate && canRead ? (record, file, purpose, signal) => customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: record.id, file, purpose }, signal) : undefined}
+        onAccountList={canUpdate && canRead ? async (input, signal) => {
+          signal.throwIfAborted();
+          if (!hasCurrentReadAccess(targetWorkspaceId) || !currentCanUpdate.current) throw new DOMException("账号查询权限已变更", "AbortError");
+          const result = await customerDeliveryClient.listAccounts({ targetWorkspaceId, ...input }, signal);
+          signal.throwIfAborted();
+          if (!hasCurrentReadAccess(targetWorkspaceId) || !currentCanUpdate.current) throw new DOMException("账号查询范围已变更", "AbortError");
+          return result;
+        } : undefined}
+        onAccountBind={canUpdate && canRead ? async (record, account, reason, signal) => {
+          signal.throwIfAborted();
+          if (!hasCurrentReadAccess(targetWorkspaceId) || !currentCanUpdate.current) throw new DOMException("账号关联权限已变更", "AbortError");
+          if (!Number.isSafeInteger(record.revision) || Number(record.revision) < 1) throw new Error("档案版本无效，请刷新后再关联账号");
+          if (account.workspaceId !== targetWorkspaceId) throw new Error("所选账号不属于当前企业，请重新查询");
+          const updated = await customerDeliveryClient.bindAccount({ targetWorkspaceId, deliveryId: record.id, targetAccountId: account.accountId, reason, expectedRevision: record.revision as number }, signal);
+          signal.throwIfAborted();
+          if (!hasCurrentReadAccess(targetWorkspaceId) || !currentCanUpdate.current) throw new DOMException("账号关联范围已变更", "AbortError");
+          if (updated.targetIdentityId !== account.identityId) throw new Error("关联响应与所选账号身份不一致，请刷新档案核对");
+          setRecords((previous) => previous.map((candidate) => candidate.id === record.id ? updated : candidate));
+          return updated;
+        } : undefined}
+        onAssetUpload={canUpdate && canRead ? (record, source, purpose, signal) => {
+          if ("sourceUrl" in source) {
+            if (purpose !== "contract") return Promise.reject(new Error("仅合同凭证支持链接导入"));
+            return customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: record.id, sourceUrl: source.sourceUrl, purpose }, signal);
+          }
+          return customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: record.id, file: source, purpose }, signal);
+        } : undefined}
         onAssetGet={(record, assetRef, purpose, signal) => customerDeliveryClient.getAsset({ targetWorkspaceId, deliveryId: record.id, assetRef, purpose }, signal)}
       />
     </OpsPage>

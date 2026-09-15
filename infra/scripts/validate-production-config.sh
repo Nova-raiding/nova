@@ -1,9 +1,17 @@
 #!/bin/sh
 set -eu
 
+root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd -P)
 config_path=${1:-${PRODUCTION_CONFIG_PATH:-}}
+if [ -z "$config_path" ] && [ -f "$root/.env.production-config-path" ]; then
+  IFS= read -r config_path < "$root/.env.production-config-path" || [ -n "$config_path" ]
+fi
+case "$config_path" in
+  ''|/*) ;;
+  *) config_path="$root/$config_path" ;;
+esac
 if [ -z "$config_path" ] || [ ! -f "$config_path" ]; then
-  echo "production config gate requires an explicit rendered config path (PRODUCTION_CONFIG_PATH or argv[1])" >&2
+  echo "production config gate requires a rendered config path (argv[1], PRODUCTION_CONFIG_PATH, or .env.production-config-path)" >&2
   exit 2
 fi
 

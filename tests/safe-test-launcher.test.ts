@@ -40,8 +40,8 @@ describe('safe default test launcher', () => {
   })
 
   it('keeps the explicit isolation manifest unique and limited to the audited files', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(25)
-    expect(new Set(NON_HERMETIC_TEST_FILES).size).toBe(25)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(27)
+    expect(new Set(NON_HERMETIC_TEST_FILES).size).toBe(27)
     expect(NON_HERMETIC_TEST_FILES).toContain('apps/api/src/canonical-backfill-contract.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/local-creative-points-seed-runtime.test.ts')
   })

@@ -4,7 +4,7 @@ import type { PublishHandlerResult } from '../../../packages/workers/src/publish
 import { buildPublishObservationRequest, PublishObservationReportError } from '../../../packages/workers/src/publish-observation.js'
 import type { GeneratedContent } from '../../../packages/ai/src/generator.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
-import { createUnavailableExecutionAuthorizationGuard, parseWorkerAuthorizationSnapshot, type CriticalWorkerOperation, type WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
+import { createUnavailableExecutionAuthorizationGuard, parseWorkerAuthorizationSnapshot, WorkerExecutionAuthorizationError, type CriticalWorkerOperation, type WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
 import { createUnavailableCommercialAccessGuard, normalizeCommercialAccessFailure, parseWorkerCommercialAccessSnapshot, type WorkerCommercialAccessGuard } from '../../../packages/workers/src/commercial-access.js'
 import { CUSTOMER_DELIVERY_SCAN_EVENT, createUnavailableDeliveryScanAdmissionGuard, type DeliveryScanAdmissionGuard } from '../../../packages/workers/src/customer-delivery-scan-admission.js'
 
@@ -163,6 +163,13 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         return { value: content }
       } catch (error) {
         throwIfLeaseLost(signal)
+        if (error instanceof WorkerExecutionAuthorizationError) {
+          // A final check can fail after callback-local quota/preflight waits.
+          // Keep unavailable authorization retryable without fabricating a
+          // provider failure or settling its point reservation. Main preserves
+          // any earlier usage from repair attempts as reconciliation-required.
+          throw new WorkerFailure({ code: error.code, message: error.message, retryable: error.retryable, unknown: false, eventId: event.id, workspaceId: event.workspaceId })
+        }
         // Quota exhaustion is backpressure, not a terminal generation failure.
         // Leave the outbox event retryable so the user-facing job remains
         // queued while the provider's window resets.
@@ -312,6 +319,11 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         if (executionCompleted) {
           const reportError = error instanceof PublishObservationReportError ? error : undefined
           throw new WorkerFailure({ code: 'OBSERVATION_REPORT_FAILED', message: error instanceof Error ? error.message : 'publish observation reporting failed', retryable: reportError?.retryable ?? true, unknown: false })
+        }
+        if (error instanceof WorkerExecutionAuthorizationError) {
+          // No platform write occurred: do not create a synthetic unknown
+          // observation merely because the final authorization was denied.
+          throw new WorkerFailure({ code: error.code, message: error.message, retryable: error.retryable, unknown: false, eventId: event.id, workspaceId: event.workspaceId })
         }
         if (error instanceof QuotaExceededError) {
           throw new WorkerFailure({ code: error.code, message: error.message, retryable: true, unknown: false })

@@ -955,6 +955,7 @@ export function useOpsConsoleModel() {
           type: String(item.type ?? ""),
           visibility: String(item.visibility ?? ""),
           version: String(item.version ?? ""),
+          priceFen: typeof item.price_fen === "number" && Number.isSafeInteger(item.price_fen) ? item.price_fen : null,
           priceLabel: String(item.price_label ?? ""),
           cycleLabel: typeof item.cycle_label === "string" ? item.cycle_label : null,
           benefitsSummary: String(item.benefits_summary ?? ""),

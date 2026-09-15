@@ -1,7 +1,7 @@
 import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
-import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry } from './provider-request.js'
+import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface ImageFactsExtractor {
@@ -14,6 +14,7 @@ export interface ImageFactsExtractorOptions {
   model: string
   timeoutMs?: number
   fetch?: typeof fetch
+  beforeRequest?: ProviderBeforeRequest
   usageSink?: RelayUsageSink
   relaySecurity?: RelaySecurityPolicy
 }
@@ -69,15 +70,17 @@ export class OpenAICompatibleImageFactsExtractor implements ImageFactsExtractor 
           ] }],
         })
       const providerKey = providerIdempotencyKey({ operation: 'ocr', model: this.options.model, workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, requestBody })
-      if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
-      let response: Response
-      try {
-        response = await withProviderRequestRetry(async () => {
-          const candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}/chat/completions`, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': providerKey }, body: requestBody, signal: controller.signal, redirect: 'error' })
-          assertProviderResponseAccepted(candidate, providerKey, 'OCR provider')
-          return candidate
-        }, { signal: controller.signal })
-      } catch (error) { rethrowProviderTransportFailure(error, providerKey, 'OCR provider request') }
+      const response = await withProviderRequestRetry(async () => {
+        if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
+        if (this.options.beforeRequest) await this.options.beforeRequest({ operation: 'ocr', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, signal: controller.signal })
+        controller.signal.throwIfAborted()
+        let candidate: Response
+        try {
+          candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}/chat/completions`, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': providerKey }, body: requestBody, signal: controller.signal, redirect: 'error' })
+        } catch (error) { rethrowProviderTransportFailure(error, providerKey, 'OCR provider request') }
+        assertProviderResponseAccepted(candidate, providerKey, 'OCR provider')
+        return candidate
+      }, { signal: controller.signal })
       let responseText: string
       try { responseText = await readBoundedResponseText(response, MAX_OCR_RELAY_RESPONSE_BYTES, 'OCR response') }
       catch (error) { rethrowProviderTransportFailure(error, providerKey, 'OCR provider response') }
@@ -90,12 +93,12 @@ export class OpenAICompatibleImageFactsExtractor implements ImageFactsExtractor 
   }
 }
 
-export function createImageFactsExtractorFromEnv(source: Record<string, string | undefined> = process.env, usageSink?: RelayUsageSink): ImageFactsExtractor | undefined {
+export function createImageFactsExtractorFromEnv(source: Record<string, string | undefined> = process.env, usageSink?: RelayUsageSink, beforeRequest?: ProviderBeforeRequest): ImageFactsExtractor | undefined {
   const relayUrl = source.MODEL_RELAY_BASE_URL?.trim()
   const apiKey = relayUrl ? source.MODEL_RELAY_API_KEY?.trim() : undefined
   const model = source.OCR_MODEL?.trim() || source.AI_VISION_MODEL?.trim()
   if (!relayUrl || !apiKey || !model || isPlaceholderModelConfiguration(relayUrl) || isPlaceholderModelConfiguration(apiKey) || isPlaceholderModelConfiguration(model)) return undefined
   const relaySecurity = relaySecurityFromEnv(source)
   if (!relaySecurity) return undefined
-  return new OpenAICompatibleImageFactsExtractor({ baseUrl: relayUrl, apiKey, model, relaySecurity, timeoutMs: Number(source.OCR_TIMEOUT_MS ?? 90_000), ...(usageSink ? { usageSink } : {}) })
+  return new OpenAICompatibleImageFactsExtractor({ baseUrl: relayUrl, apiKey, model, relaySecurity, timeoutMs: Number(source.OCR_TIMEOUT_MS ?? 90_000), ...(usageSink ? { usageSink } : {}), ...(beforeRequest ? { beforeRequest } : {}) })
 }

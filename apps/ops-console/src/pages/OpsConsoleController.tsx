@@ -78,6 +78,17 @@ export function workbenchSwitchWarning(
   return `当前在${labels[current]}，切换到${labels[next]}将清除未保存内容：${dirtyContent}。该内容无法恢复。`;
 }
 
+export function initialOpsWorkbench(
+  location: Pick<Location, "pathname" | "search" | "hash">,
+  storedWorkbench?: string | null,
+): OpsWorkbench {
+  const fromUrl = new URLSearchParams(location.search).get("workbench");
+  if (fromUrl === "workspace" || fromUrl === "platform") return fromUrl;
+  const routeWorkbench = requiredWorkbenchForDomain(domainFromLocation(location));
+  if (routeWorkbench) return routeWorkbench;
+  return storedWorkbench === "workspace" ? "workspace" : "platform";
+}
+
 export function opsSessionGateState(
   managed: boolean,
   sessionLoaded: boolean,
@@ -358,10 +369,8 @@ function OpsConsoleControllerContent() {
     // The gateway workbench is part of the signed route boundary. Bootstrap
     // from the route-scoped context before the first MCP call so a workspace
     // gateway is never probed with the platform workbench by default.
-    const fromUrl = new URLSearchParams(window.location.search).get("workbench");
-    if (fromUrl === "workspace" || fromUrl === "platform") return fromUrl;
     const stored = sessionStorage.getItem("ops_workbench") || localStorage.getItem("ops_workbench");
-    return stored === "workspace" ? "workspace" : "platform";
+    return initialOpsWorkbench(window.location, stored);
   });
   const [contextReady, setContextReady] = useState(false);
   const [switchingWorkbench, setSwitchingWorkbench] = useState(false);

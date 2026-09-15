@@ -3,7 +3,7 @@ import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './r
 import { inspectOutboundUrl } from '../../connectors/src/outbound-security.js'
 import { assertRelayBaseUrl, assertRelayUrl, relaySecurityFromEnv, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
-import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry } from './provider-request.js'
+import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface ContentGenerationInput {
@@ -122,6 +122,7 @@ export interface OpenAICompatibleGeneratorOptions {
   model: string
   timeoutMs?: number
   fetch?: typeof fetch
+  beforeRequest?: ProviderBeforeRequest
   usageSink?: RelayUsageSink
   relaySecurity?: RelaySecurityPolicy
   maxInputTokens?: number
@@ -424,21 +425,23 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
         const logicalAttemptKey = input.usageContext?.actionId?.trim()
           ? `mm-${createHash('sha256').update(JSON.stringify([input.usageContext.workspaceId?.trim() ?? '', input.usageContext.actionId.trim(), this.options.model.trim(), attempt, requestBody]), 'utf8').digest('hex')}`
           : providerIdempotencyKey({ operation: 'text_generate', model: this.options.model, workspaceId: input.usageContext?.workspaceId, requestBody })
-        let response: Response
-        try {
-          response = await withProviderRequestRetry(async () => {
-            if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
-            const candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+        const response = await withProviderRequestRetry(async () => {
+          if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
+          if (this.options.beforeRequest) await this.options.beforeRequest({ operation: 'text_generate', workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, signal: controller.signal })
+          controller.signal.throwIfAborted()
+          let candidate: Response
+          try {
+            candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/, '')}/chat/completions`, {
               method: 'POST',
               headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': logicalAttemptKey },
               body: requestBody,
               signal: controller.signal,
               redirect: 'error',
             })
-            assertProviderResponseAccepted(candidate, logicalAttemptKey, 'text provider')
-            return candidate
-          }, { signal: controller.signal })
-        } catch (error) { rethrowProviderTransportFailure(error, logicalAttemptKey, 'text provider request') }
+          } catch (error) { rethrowProviderTransportFailure(error, logicalAttemptKey, 'text provider request') }
+          assertProviderResponseAccepted(candidate, logicalAttemptKey, 'text provider')
+          return candidate
+        }, { signal: controller.signal })
         let responseText: string
         try { responseText = await readBoundedResponseText(response, MAX_TEXT_RELAY_RESPONSE_BYTES, 'model response') }
         catch (error) { rethrowProviderTransportFailure(error, logicalAttemptKey, 'text provider response') }
@@ -464,7 +467,7 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
   }
 }
 
-export function createContentGeneratorFromEnv(source: Record<string, string | undefined> = process.env, usageSink?: RelayUsageSink): ContentGenerator | undefined {
+export function createContentGeneratorFromEnv(source: Record<string, string | undefined> = process.env, usageSink?: RelayUsageSink, beforeRequest?: ProviderBeforeRequest): ContentGenerator | undefined {
   const relayUrl = source.MODEL_RELAY_BASE_URL?.trim()
   const apiKey = source.MODEL_RELAY_API_KEY?.trim()
   const model = source.AI_MODEL?.trim() || source.MODEL_ID?.trim()
@@ -476,5 +479,5 @@ export function createContentGeneratorFromEnv(source: Record<string, string | un
   const maxInputTokens = resolveTokenBudget(source.AI_MAX_INPUT_TOKENS, 4_000, 'input')
   const maxOutputTokens = resolveTokenBudget(source.AI_MAX_OUTPUT_TOKENS, 2_500, 'output')
   if (isPlaceholderModelConfiguration(relayUrl) || isPlaceholderModelConfiguration(apiKey) || isPlaceholderModelConfiguration(model)) return undefined
-  return new OpenAICompatibleContentGenerator({ baseUrl: relayUrl, apiKey, model, relaySecurity, timeoutMs: Number(source.AI_TIMEOUT_MS ?? 90_000), maxInputTokens, maxOutputTokens, ...(thinkingMode === 'disabled' ? { disableThinking: true } : {}), ...(usageSink ? { usageSink } : {}) })
+  return new OpenAICompatibleContentGenerator({ baseUrl: relayUrl, apiKey, model, relaySecurity, timeoutMs: Number(source.AI_TIMEOUT_MS ?? 90_000), maxInputTokens, maxOutputTokens, ...(thinkingMode === 'disabled' ? { disableThinking: true } : {}), ...(usageSink ? { usageSink } : {}), ...(beforeRequest ? { beforeRequest } : {}) })
 }
