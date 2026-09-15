@@ -25,8 +25,14 @@ async function fixture(overrides: Partial<LocalOidcGatewayConfig> = {}) {
     observed.push({ target: req.url ?? '', headers: req.headers, body })
     const fields = ['x-oidc-workspace', 'x-oidc-workbench', 'x-oidc-issuer', 'x-oidc-sub', 'x-oidc-sid', 'x-oidc-roles', 'x-oidc-amr', 'x-oidc-auth-time', 'x-oidc-session-expires-at', 'x-oidc-timestamp', 'x-oidc-body-sha256', 'x-oidc-nonce'] as const
     const values = Object.fromEntries(fields.map(name => [name, String(req.headers[name] ?? '')]))
-    const canonical = [req.method, req.url, values['x-oidc-workspace'], values['x-oidc-workbench'], values['x-oidc-issuer'], values['x-oidc-sub'], values['x-oidc-sid'], values['x-oidc-roles'], values['x-oidc-amr'], values['x-oidc-auth-time'], values['x-oidc-session-expires-at'], values['x-oidc-timestamp'], values['x-oidc-body-sha256'], values['x-oidc-nonce']].join('\n')
-    const valid = createHash('sha256').update(body).digest('hex') === values['x-oidc-body-sha256'] && createHmac('sha256', signingSecret).update(canonical).digest('hex') === req.headers['x-oidc-signature']
+    const legacyCanonical = [req.method, req.url, values['x-oidc-workspace'], values['x-oidc-workbench'], values['x-oidc-issuer'], values['x-oidc-sub'], values['x-oidc-sid'], values['x-oidc-roles'], values['x-oidc-amr'], values['x-oidc-auth-time'], values['x-oidc-session-expires-at'], values['x-oidc-timestamp'], values['x-oidc-body-sha256'], values['x-oidc-nonce']].join('\n')
+    const proofVersion = req.headers['x-oidc-proof-version']
+    const displayLogin = req.headers['x-oidc-display-login']
+    const extensionValid = (proofVersion === undefined && displayLogin === undefined) || (proofVersion === '2' && typeof displayLogin === 'string' && displayLogin.length > 0)
+    const canonical = proofVersion === '2' && typeof displayLogin === 'string'
+      ? ['oidc-v2', legacyCanonical, displayLogin].join('\n')
+      : legacyCanonical
+    const valid = extensionValid && createHash('sha256').update(body).digest('hex') === values['x-oidc-body-sha256'] && createHmac('sha256', signingSecret).update(canonical).digest('hex') === req.headers['x-oidc-signature']
     res.writeHead(valid ? 200 : 401, { 'content-type': 'application/json' })
     res.end(JSON.stringify(valid && req.headers['x-workspace-bootstrap'] === 'true'
       ? { data: { result: { workspaceId: 'ws_bootstrapped' } } }
@@ -43,11 +49,11 @@ function cookieFrom(response: Response, name: string): string {
   return raw.split(';', 1)[0] ?? ''
 }
 
-async function login(gateway: string, password = 'correct horse battery'): Promise<{ response: Response; sessionCookie?: string }> {
+async function login(gateway: string, password = 'correct horse battery', username = 'ops@example.test'): Promise<{ response: Response; sessionCookie?: string }> {
   const wall = await fetch(`${gateway}/auth/login?return_to=%2Ftasks`, { redirect: 'manual' })
   const csrfCookie = cookieFrom(wall, 'ops_local_oidc_login_csrf')
   const csrf = (await wall.text()).match(/name="csrf" value="([^"]+)"/u)?.[1]
-  const response = await fetch(`${gateway}/auth/login`, { method: 'POST', redirect: 'manual', headers: { cookie: csrfCookie, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf: csrf ?? '', return_to: '/tasks', username: 'ops@example.test', password }) })
+  const response = await fetch(`${gateway}/auth/login`, { method: 'POST', redirect: 'manual', headers: { cookie: csrfCookie, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf: csrf ?? '', return_to: '/tasks', username, password }) })
   const sessionCookie = response.status === 303 ? cookieFrom(response, 'ops_local_oidc_session') : undefined
   return { response, sessionCookie }
 }
@@ -95,7 +101,7 @@ describe('local authenticated OIDC gateway', () => {
     const page = await fetch(`${gateway}/tasks`, { headers: { cookie: authenticated.sessionCookie ?? '' } })
     expect(await page.text()).toContain('Authenticated Ops')
     const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'workspace.health', params: {} })
-    const api = await fetch(`${gateway}/api/mcp?evidence=1`, { method: 'POST', headers: { cookie: authenticated.sessionCookie ?? '', authorization: 'Bearer browser-injected', 'content-type': 'application/json', 'x-workspace-id': 'ws_demo', 'x-oidc-sub': 'attacker' }, body })
+    const api = await fetch(`${gateway}/api/mcp?evidence=1`, { method: 'POST', headers: { cookie: authenticated.sessionCookie ?? '', authorization: 'Bearer browser-injected', 'content-type': 'application/json', 'x-workspace-id': 'ws_demo', 'x-oidc-sub': 'attacker', 'x-oidc-proof-version': 'attacker', 'x-oidc-display-login': Buffer.from('attacker@example.test').toString('base64url') }, body })
     expect(api.status).toBe(200)
     expect(await api.json()).toEqual({ valid: true })
     expect(observed[0]).toMatchObject({ target: '/mcp?evidence=1', body })
@@ -103,6 +109,33 @@ describe('local authenticated OIDC gateway', () => {
     expect(observed[0]?.headers['x-oidc-sub']).toBe('actor_demo')
     expect(observed[0]?.headers['x-oidc-roles']).toBe('platform_ops,rules_admin')
     expect(observed[0]?.headers['x-oidc-workbench']).toBe('platform')
+    expect(observed[0]?.headers['x-oidc-proof-version']).toBe('2')
+    expect(observed[0]?.headers['x-oidc-display-login']).toBe(Buffer.from('ops@example.test').toString('base64url'))
+  })
+
+  it('signs the exact authenticated Unicode login without normalizing its UTF-8 bytes', async () => {
+    const username = '运营-e\u0301@example.test'
+    const { gateway, observed } = await fixture({ username })
+    const authenticated = await login(gateway, 'correct horse battery', username)
+    expect(authenticated.response.status).toBe(303)
+    const response = await fetch(`${gateway}/api/mcp`, { method: 'POST', headers: { cookie: authenticated.sessionCookie ?? '', 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }, body: '{}' })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ valid: true })
+    const encoded = observed[0]?.headers['x-oidc-display-login']
+    expect(encoded).toBe(Buffer.from(username, 'utf8').toString('base64url'))
+    expect(Buffer.from(String(encoded), 'base64url').toString('utf8')).toBe(username)
+    expect(username).not.toBe(username.normalize('NFC'))
+  })
+
+  it('keeps the original 14-field proof when display-login extension is explicitly disabled', async () => {
+    const { gateway, observed } = await fixture({ includeDisplayLogin: false })
+    const authenticated = await login(gateway)
+    expect(authenticated.response.status).toBe(303)
+    const response = await fetch(`${gateway}/api/mcp`, { method: 'POST', headers: { cookie: authenticated.sessionCookie ?? '', 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }, body: '{}' })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ valid: true })
+    expect(observed[0]?.headers['x-oidc-proof-version']).toBeUndefined()
+    expect(observed[0]?.headers['x-oidc-display-login']).toBeUndefined()
   })
 
   it('actually proxies and signs a 40 MiB file encoded in an upload-shaped MCP request', async () => {

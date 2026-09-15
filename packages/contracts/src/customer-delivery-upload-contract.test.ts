@@ -39,8 +39,8 @@ describe('customer delivery upload and status MCP contracts', () => {
   })
 
   it('reuses customer delivery read/write capabilities without inventing upload revision obligations', () => {
-    expect(getMcpMethodPolicy(uploadMethod)).toEqual({ ...getMcpMethodPolicy('ops.customer-delivery.create'), method: uploadMethod })
-    expect(getMcpMethodPolicy(uploadMethod)).toMatchObject({ capability: 'customer.delivery.update', effect: 'write', audit: 'mutation', obligations: [] })
+    expect(getMcpMethodPolicy(uploadMethod)).toEqual({ ...getMcpMethodPolicy('ops.customer-delivery.create'), method: uploadMethod, audit: 'allow_and_deny' })
+    expect(getMcpMethodPolicy(uploadMethod)).toMatchObject({ capability: 'customer.delivery.update', effect: 'write', audit: 'allow_and_deny', obligations: [] })
     expect(getMcpMethodPolicy(getMethod)).toEqual({ ...getMcpMethodPolicy('ops.customer-delivery.get'), method: getMethod })
     expect(getMcpMethodPolicy(getMethod)).toMatchObject({ capability: 'customer.delivery.read', effect: 'read' })
     expect(assertMcpMethodPolicyCoverage()).toMatchObject({ declared: MCP_METHODS.length, registered: MCP_METHODS.length })
@@ -53,7 +53,7 @@ describe('customer delivery upload and status MCP contracts', () => {
       properties: {
         target_workspace_id: { type: 'string', minLength: 1, maxLength: 200 },
         delivery_id: { type: 'string', minLength: 1, maxLength: 256 },
-        purpose: { type: 'string', enum: ['contract', 'video'] },
+        purpose: { type: 'string', enum: ['contract', 'payment', 'system_integration', 'functional_acceptance', 'training', 'video'] },
         name: { type: 'string', minLength: 1, maxLength: 255 },
         mime_type: { type: 'string', minLength: 1, maxLength: 100 },
         content_base64: { type: 'string', minLength: 1, maxLength: maxContentLength },
@@ -105,7 +105,7 @@ describe('customer delivery upload and status MCP contracts', () => {
       properties: {
         target_workspace_id: { minLength: 1, maxLength: 200 },
         delivery_id: { minLength: 1, maxLength: 256 },
-        purpose: { type: 'string', enum: ['contract', 'video'] },
+        purpose: { type: 'string', enum: ['contract', 'payment', 'system_integration', 'functional_acceptance', 'training', 'video'] },
         asset_ref: { minLength: 1, maxLength: 1000 },
       },
     })

@@ -16,8 +16,9 @@ import {
   Typography,
   message,
 } from "antd";
-import { deliveryDateTimeInputValue } from "./deliveryDateTime.js";
+import { deliveryCompletionTimeLabel, deliveryDateTimeInputValue } from "./deliveryDateTime.js";
 import { CustomerDeliveryUpload } from "./CustomerDeliveryUpload.js";
+import { parseCustomerDeliveryEvidenceRefs } from "../../api/customerDeliveryClient.js";
 import type { CustomerDeliveryAsset, CustomerDeliveryAssetPurpose } from "../../api/customerDeliveryClient.js";
 
 export type DeliveryStepKey =
@@ -207,6 +208,21 @@ export function customerDeliveryTrainingAction(record: CustomerDeliveryRecord, c
   return completed && !record.trainingEvidenceRefs?.length ? "evidence" : "save";
 }
 
+function createUploadTracker() {
+  let scope = "";
+  const busyUploaders = new Set<string>();
+  return {
+    beginScope(nextScope = "") { scope = nextScope; busyUploaders.clear(); },
+    isCurrent(candidate: string) { return candidate === scope; },
+    setBusy(candidate: string, uploader: string, busy: boolean) {
+      if (candidate !== scope) return undefined;
+      if (busy) busyUploaders.add(uploader);
+      else busyUploaders.delete(uploader);
+      return busyUploaders.size > 0;
+    },
+  };
+}
+
 export function CustomerDeliveryTrainingEvidence({ record, disabled, onUpload, onGetAsset, onConfirm, onClose }: {
   record: CustomerDeliveryRecord;
   disabled?: boolean;
@@ -316,6 +332,7 @@ export function CustomerDeliverySection({
   const [saving, setSaving] = useState(false);
   const [loadingStep, setLoadingStep] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const uploadTracker = useRef(createUploadTracker());
   const detailRequest = useRef(0);
   const [creating, setCreating] = useState(false);
   const [videoItems, setVideoItems] = useState<CustomerDeliveryVideoItem[]>([]);
@@ -334,6 +351,7 @@ export function CustomerDeliverySection({
     setBlockedCompany(undefined);
     setTrainingRowId(undefined);
     const request = ++detailRequest.current;
+    uploadTracker.current.beginScope(`${row.id}:${next}:${request}`);
     setUploading(false);
     setLoadingStep(true);
     setSelected(row);
@@ -971,9 +989,11 @@ export function CustomerDeliverySection({
                   </Typography.Paragraph>
                 </>
               )}
-              <Button type="primary" htmlType="submit" loading={saving || loadingStep} disabled={uploading}>
-                保存当前环节
-              </Button> : null}
+              {!readOnly ? (
+                <Button type="primary" htmlType="submit" loading={saving || loadingStep} disabled={uploading}>
+                  保存当前环节
+                </Button>
+              ) : null}
             </Form>
           </Space>
         ) : null}

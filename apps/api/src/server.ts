@@ -5,7 +5,6 @@ import { alertNotificationReadiness, notifyOperationalAlert } from './alert-noti
 import { Pool } from 'pg'
 import { createClient } from 'redis'
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
-import { aliyunEcsRamRoleCredentialProvider } from './aliyun-ecs-role-credentials.js'
 import { MerchantService, assetReadiness, imageArchiveReceiptDigest, imageGenerationCandidateUsability, isTrustedCleanAsset, DomainError, type AssetRegistrationResult, type BrandVisualRules, type KnowledgeGenerationContext, type Platform, type PlatformAccount, type PlatformRejection, type Product, type Task } from '../../../packages/application/src/service.js'
 import { CommercialAccessService, type CommercialAccessServiceResult } from '../../../packages/application/src/commercial-access-service.js'
 import { CommercialPurchaseError, CommercialPurchaseService } from '../../../packages/application/src/commercial-purchase-service.js'
@@ -21,7 +20,9 @@ import type { OutboxEvent, OutboxRepository } from '../../../packages/persistenc
 import { ServiceFulfillmentRepositoryError, type ServiceFulfillmentEventRecord } from '../../../packages/persistence/src/service-fulfillment-repository.js'
 import { CustomerDeliveryError, MemoryCustomerDeliveryRepository, PostgresCustomerDeliveryRepository, type CustomerDeliveryRepository } from '../../../packages/persistence/src/customer-delivery-repository.js'
 import { loadCustomerDeliveryAsset, requireCustomerDeliveryAsset } from './customer-delivery-assets.js'
-import { customerDeliveryUploadPurpose, customerDeliveryUploadView, validateCustomerDeliveryUpload } from './customer-delivery-upload.js'
+import { validateCustomerDeliveryJsonNoNul, validateCustomerDeliveryProfileValues } from './customer-delivery-profile-validation.js'
+import { readOwnCommercialPaymentStatus } from './commercial-payment-status-reader.js'
+import { customerDeliveryUploadPurpose, customerDeliveryUploadView, validateCustomerDeliveryUpload, type CustomerDeliveryUploadPurpose } from './customer-delivery-upload.js'
 import { CUSTOMER_DELIVERY_SCAN_EVENT, CUSTOMER_DELIVERY_SCAN_OPERATION, parseDeliveryScanAdmission, type DeliveryScanAdmission } from '../../../packages/workers/src/customer-delivery-scan-admission.js'
 import type { SqlClient } from '../../../packages/persistence/src/repository.js'
 import { CommercialCatalogUnavailableError, type CommercialCatalogMutationInput } from '../../../packages/persistence/src/commercial-catalog-repository.js'
@@ -48,6 +49,7 @@ import { RedisOAuthStateStore, type OAuthRedisPort } from '../../../packages/sec
 import { assetScanReceiptDigest, parseAssetScanReceipt, verifyAssetScanReceiptSignature, type SignedAssetScanReceipt } from '../../../packages/security/src/asset-scan-receipt.js'
 import { verifyScannerRequestProof } from '../../../packages/security/src/scanner-request-proof.js'
 import { verifyWorkerRequestProof, WORKER_ROLES, type WorkerRequestRole } from '../../../packages/security/src/worker-request-proof.js'
+import { bindOidcDisplayLoginProof } from '../../../packages/security/src/oidc-login-proof.js'
 import { ConnectorFailure, createVaultCredentialProviderFromEnv, isProductionCanaryReady, validatePlatformCapabilityEvidence } from '../../../packages/connectors/src/index.js'
 import { platformWriteAllowed } from '../../../packages/connectors/src/write-boundary.js'
 import { runFencedSinglePublish, PublishCommitStatusUnknownError } from './publish-fenced-orchestrator.js'
@@ -81,7 +83,7 @@ import { aggregateScannerHeartbeats, SCANNER_HEARTBEAT_INDEX_KEY, SCANNER_HEARTB
 import { parseWorkerAuthorizationSnapshot, type CriticalWorkerOperation, type WorkerAuthorizationSnapshot } from '../../../packages/workers/src/execution-authorization.js'
 import { createImageEditCandidate, createOneSentenceGenerationRequest, createVideoGenerationRequest, createVideoRenderingRequest, type GenerationContext } from '../../../packages/multimodal/src/index.js'
 import { generateSeoGeoSuggestions } from '../../../packages/seo/src/index.js'
-import { classifyPaymentRefundState, createPaymentProviderFromEnv, FixturePaymentProvider, verifyPaymentCallbackSignature, type PaymentProvider } from '../../../packages/billing/src/payment-provider.js'
+import { createPaymentProviderFromEnv, FixturePaymentProvider, type PaymentProvider } from '../../../packages/billing/src/payment-provider.js'
 import { paymentFixturePolicy } from '../../../packages/application/src/payment-fixture-guard.js'
 import { platformRuleSyncStatus } from '../../../packages/review/src/platform-rule-sync.js'
 import { verifyAndParsePlatformRuleManifest } from '../../../packages/review/src/platform-rule-manifest.js'
@@ -685,23 +687,7 @@ const connectorMappingPreflight = createApiConnectorMappingPreflightAdapter({
     return matches.length === 1 ? matches[0] : undefined
   },
 })
-function connectorConfigSource(): NodeJS.ProcessEnv {
-  return process.env
-}
-function connectorCapabilityEvidenceTrust() {
-  const evidencePath = process.env.CAPABILITY_EVIDENCE_PATH?.trim()
-  if (process.env.NODE_ENV !== 'production' || !evidencePath) return undefined
-  try {
-    return {
-      documentJson: readFileSync(evidencePath, 'utf8'),
-      publicKeyPem: readFileSync('/run/release-security/evidence-trust/production-evidence-public.pem', 'utf8'),
-      trustedKeyId: readFileSync('/run/release-security/evidence-trust/production-evidence-key-id', 'utf8').trim(),
-    }
-  } catch {
-    return undefined
-  }
-}
-export const connectorRuntime = new ConnectorRuntime({ fixtureMode, allowFixtureWrites: process.env.PLUGIN_WRITE_ENABLED === 'true', configSource: connectorConfigSource(), capabilityEvidenceTrust: connectorCapabilityEvidenceTrust(), credentialProvider: createVaultCredentialProviderFromEnv(), mappingPreflight: connectorMappingPreflight, environment: process.env.NODE_ENV === 'production' ? 'production' : process.env.NODE_ENV === 'test' ? 'test' : 'development' })
+export const connectorRuntime = new ConnectorRuntime({ fixtureMode, allowFixtureWrites: process.env.PLUGIN_WRITE_ENABLED === 'true', credentialProvider: createVaultCredentialProviderFromEnv(), mappingPreflight: connectorMappingPreflight, environment: process.env.NODE_ENV === 'production' ? 'production' : process.env.NODE_ENV === 'test' ? 'test' : 'development' })
 export const oauthStates = new OAuthStateStore()
 const redisOAuthPort = createRedisOAuthPort(process.env.REDIS_URL)
 type OAuthStateRuntimeStore = Pick<OAuthStateStore, 'issue' | 'consume' | 'consumeCallback'> | Pick<RedisOAuthStateStore, 'issue' | 'consume' | 'consumeCallback'>
@@ -1113,8 +1099,6 @@ export interface ApiPersistence {
   dataLifecycle?: DataLifecycleRepository
   workspaceDataExport?: WorkspaceDataExportRepository
   members?: MembersRepository
-  /** Narrow control-plane reader used only to resolve/bind canonical OAuth membership. */
-  identityMemberships?: MembersRepository
   rules?: RuleRepositoryPort
   brandUnits?: import('../../../packages/persistence/src/index.js').BrandUnitRepository
   objectOrphans?: ObjectOrphanRepository
@@ -2066,133 +2050,7 @@ async function releaseRechargeRefund(input: { workspaceId: string; orderId: stri
   return release
 }
 
-async function listActiveRechargeRefunds(workspaceId: string, limit: number): Promise<Array<{ order: RechargeOrder; reservation: WalletTransaction }>> {
-  await persistenceReady
-  if (persistence.billing) return persistence.billing.listActiveRechargeRefunds(workspaceId, limit)
-  const candidates: Array<{ order: RechargeOrder; reservation: WalletTransaction }> = []
-  for (const order of rechargeOrders.values()) {
-    if (candidates.length >= limit) break
-    if (order.workspaceId !== workspaceId || order.state !== 'paid' || order.paymentMode !== 'provider') continue
-    const prefix = `recharge-refund:${order.id}:`
-    const released = new Set(walletTransactions
-      .filter(item => item.workspaceId === workspaceId && item.type === 'refund' && item.orderId?.startsWith(`release:${prefix}`))
-      .map(item => item.orderId?.replace(/^release:/u, '')))
-    const reservation = walletTransactions.find(item => item.workspaceId === workspaceId && item.type === 'debit' && item.orderId?.startsWith(prefix) && !released.has(item.orderId))
-    if (reservation) candidates.push({ order, reservation })
-  }
-  return candidates
-}
-
-async function runPaymentReconciliation(input: { workspaceId: string; actorId: string; limit: number }) {
-  await persistenceReady
-  if (!paymentProvider?.queryStatus) {
-    if (isProduction()) throw new DomainError('PAYMENT_RECONCILIATION_UNAVAILABLE', '生产支付 provider 未配置查单能力', 503)
-    return { state: 'not_configured', checked: 0, payment_checked: 0, refund_checked: 0, settled: [], pending: [], failed: [], refund_settled: [], refund_pending: [], refund_failed: [], next_action: '配置支付 provider query endpoint 后再运行对账' }
-  }
-  if (isProduction()) {
-    const readiness = paymentProviderReadiness()
-    if (!readiness.ready) throw new DomainError('PAYMENT_RECONCILIATION_UNAVAILABLE', `生产支付 provider 未就绪：${readiness.reasons.join('、')}`, 503, { reasons: readiness.reasons })
-    if (!redisAutomationLease) throw new DomainError('PAYMENT_RECONCILIATION_LEASE_UNAVAILABLE', '生产支付对账必须配置 Redis 工作区互斥租约', 503)
-  }
-  const leaseKey = `payment-reconciliation:${createHash('sha256').update(input.workspaceId).digest('hex')}`
-  const leaseToken = randomUUID()
-  const leaseTtlMs = 7 * 60_000
-  const acquired = redisAutomationLease ? await redisAutomationLease.acquire(leaseKey, leaseToken, leaseTtlMs) : true
-  if (!acquired) throw new DomainError('PAYMENT_RECONCILIATION_IN_PROGRESS', '该工作区已有支付对账任务正在执行，请稍后重试', 409, { retryable: true })
-  try {
-    const refundBudget = Math.max(1, Math.ceil(input.limit / 2))
-    const activeRefunds = await listActiveRechargeRefunds(input.workspaceId, refundBudget)
-    const paymentBudget = Math.max(0, input.limit - activeRefunds.length)
-    const providerOrders = paymentBudget === 0
-      ? []
-      : persistence.billing
-        ? await persistence.billing.listPendingProviderOrdersForReconciliation(input.workspaceId, paymentBudget)
-        : [...rechargeOrders.values()]
-          .filter(order => order.workspaceId === input.workspaceId && order.state === 'pending' && order.paymentMode === 'provider')
-          .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
-          .slice(0, paymentBudget)
-    const settled: Array<{ order_id: string; provider_trade_id: string }> = []
-    const pending: Array<{ order_id: string; state: string }> = []
-    const failed: Array<{ order_id: string; code: string; message: string }> = []
-    const refundSettled: Array<{ order_id: string; refund_request_id: string }> = []
-    const refundPending: Array<{ order_id: string; refund_request_id: string; state: string }> = []
-    const refundFailed: Array<{ order_id: string; refund_request_id: string; code: string; message: string; reservation_released: boolean }> = []
-    for (const order of providerOrders) {
-      try {
-        const providerStatus = await paymentProvider.queryStatus({ channel: order.channel, orderId: order.id, workspaceId: input.workspaceId })
-        if (providerStatus.state !== 'paid') {
-          if (providerStatus.state === 'closed' || providerStatus.state === 'failed') {
-            const terminal = await markRechargeProviderState({ workspaceId: input.workspaceId, orderId: order.id, state: providerStatus.state })
-            if (!terminal) {
-              failed.push({ order_id: order.id, code: 'BILLING_ORDER_NOT_FOUND', message: '充值订单在对账期间不可见' })
-              continue
-            }
-            const code = providerStatus.state === 'closed' ? 'PAYMENT_PROVIDER_ORDER_CLOSED' : 'PAYMENT_PROVIDER_ORDER_FAILED'
-            await persistEvent(input.workspaceId, order.id, 'billing.recharge.reconciled', 1, { order_id: order.id, state: providerStatus.state, source: 'provider_reconciliation' })
-            await recordOperationAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: order as unknown as Record<string, unknown>, after: terminal as unknown as Record<string, unknown>, reason: '支付服务商查单确认订单终态' })
-            failed.push({ order_id: order.id, code, message: providerStatus.state === 'closed' ? '支付服务商已关闭该充值订单' : '支付服务商报告该充值订单失败' })
-          } else pending.push({ order_id: order.id, state: providerStatus.state })
-          continue
-        }
-        if (providerStatus.amountFen !== order.amountFen) {
-          failed.push({ order_id: order.id, code: 'PAYMENT_QUERY_AMOUNT_MISMATCH', message: '支付服务商查单金额缺失或与充值订单不一致' })
-          continue
-        }
-        if (!providerStatus.providerTradeId) {
-          failed.push({ order_id: order.id, code: 'PAYMENT_QUERY_TRADE_ID_MISSING', message: '支付服务商已支付但未返回交易号' })
-          continue
-        }
-        const paid = await markRechargePaid({ workspaceId: input.workspaceId, orderId: order.id, providerTradeId: providerStatus.providerTradeId, amountFen: order.amountFen, eventSource: 'provider_reconciliation' })
-        if (!paid) {
-          failed.push({ order_id: order.id, code: 'BILLING_ORDER_NOT_FOUND', message: '充值订单在对账期间不可见' })
-          continue
-        }
-        await recordOperationAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: order as unknown as Record<string, unknown>, after: paid as unknown as Record<string, unknown>, reason: '执行支付服务商查单对账' })
-        settled.push({ order_id: order.id, provider_trade_id: providerStatus.providerTradeId })
-      } catch (error) {
-        failed.push({ order_id: order.id, code: error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'PAYMENT_RECONCILIATION_FAILED', message: error instanceof Error ? error.message : '支付服务商查单失败' })
-      }
-    }
-    for (const { order, reservation } of activeRefunds) {
-      const refundRequestId = reservation.id
-      if (!paymentProvider.queryRefundStatus) {
-        refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_REFUND_RECONCILIATION_UNAVAILABLE', message: '支付 provider 未配置退款查单能力', reservation_released: false })
-        continue
-      }
-      try {
-        const providerRefund = await paymentProvider.queryRefundStatus({ channel: order.channel, orderId: order.id, refundRequestId, workspaceId: input.workspaceId, amountFen: order.amountFen })
-        if (providerRefund.state === 'succeeded') {
-          if (providerRefund.amountFen !== order.amountFen) {
-            refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_REFUND_QUERY_AMOUNT_MISMATCH', message: '支付服务商退款查单金额缺失或不一致', reservation_released: false })
-            continue
-          }
-          if (!providerRefund.providerRefundId) {
-            refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_REFUND_QUERY_ID_MISSING', message: '支付服务商已退款但未返回退款交易凭据', reservation_released: false })
-            continue
-          }
-          await completeRechargeRefund({ workspaceId: input.workspaceId, orderId: order.id, reservationKey: reservation.orderId!, actorId: input.actorId, reason: '支付服务商退款查单确认成功', providerRefundId: providerRefund.providerRefundId })
-          await recordOperationAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: order as unknown as Record<string, unknown>, after: { ...order, state: 'closed', refund_request_id: refundRequestId } as unknown as Record<string, unknown>, reason: '支付服务商退款查单确认成功' })
-          refundSettled.push({ order_id: order.id, refund_request_id: refundRequestId })
-          continue
-        }
-        if (providerRefund.state === 'failed') {
-          await releaseRechargeRefund({ workspaceId: input.workspaceId, orderId: order.id, reservationKey: reservation.orderId!, actorId: input.actorId, reason: '支付服务商退款查单确认失败' })
-          await recordOperationAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: { ...order, refund_request_id: refundRequestId } as unknown as Record<string, unknown>, after: order as unknown as Record<string, unknown>, reason: '支付服务商退款查单确认失败并释放钱包预留' })
-          refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_PROVIDER_REFUND_FAILED', message: '支付服务商确认退款失败，钱包预留已释放', reservation_released: true })
-          continue
-        }
-        refundPending.push({ order_id: order.id, refund_request_id: refundRequestId, state: providerRefund.state })
-      } catch (error) {
-        refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'PAYMENT_REFUND_RECONCILIATION_FAILED', message: error instanceof Error ? error.message : '支付服务商退款查单失败', reservation_released: false })
-      }
-    }
-    return { state: failed.length || pending.length || refundFailed.length || refundPending.length ? 'attention_required' : 'completed', checked: providerOrders.length + activeRefunds.length, payment_checked: providerOrders.length, refund_checked: activeRefunds.length, provider_orders: providerOrders.length, skipped_fixture_orders: 0, settled, pending, failed, refund_settled: refundSettled, refund_pending: refundPending, refund_failed: refundFailed, actor_id: input.actorId, idempotent_settlement: true, total_query_budget: input.limit }
-  } finally {
-    if (redisAutomationLease) await redisAutomationLease.release(leaseKey, leaseToken).catch(() => undefined)
-  }
-}
-
-function verifyPaymentCallback(req: IncomingMessage, input: { channel: RechargeChannel; workspaceId: string; payload: { order_id: string; provider_trade_id: string; amount_fen: number; currency?: string; state: string } }) {
+function verifyPaymentCallback(req: IncomingMessage, input: { channel: RechargeChannel; workspaceId: string; payload: { order_id: string; provider_trade_id: string; amount_fen: number; state: string } }) {
   requireProviderPaymentConfigured()
   const secret = process.env.PAYMENT_CALLBACK_SECRET?.trim()
   const testCallbackCompatibility = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test'
@@ -2206,26 +2064,15 @@ function verifyPaymentCallback(req: IncomingMessage, input: { channel: RechargeC
   const nonce = header(req, 'x-payment-nonce')?.trim()
   const legacyAllowed = localUnsignedCallback && !timestampHeader && !nonce
   if (!legacyAllowed && (!timestampHeader || !/^\d{10,13}$/u.test(timestampHeader) || !nonce || !/^[A-Za-z0-9_-]{16,128}$/u.test(nonce))) throw new DomainError('PAYMENT_CALLBACK_PROOF_REQUIRED', '支付回调必须携带有效时间戳和一次性 nonce', 401)
-  if (legacyAllowed) {
-    const canonical = `${input.payload.order_id}|${input.payload.provider_trade_id}|${input.payload.amount_fen}|${input.payload.state}`
-    const expected = createHmac('sha256', secret).update(canonical).digest('hex')
-    if (!provided || provided.length !== expected.length || !timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) throw new DomainError('PAYMENT_CALLBACK_SIGNATURE_INVALID', '支付回调验签失败', 401)
-    return undefined
-  }
-  try {
-    return verifyPaymentCallbackSignature({
-      secret,
-      channel: input.channel,
-      workspaceId: input.workspaceId,
-      payload: { orderId: input.payload.order_id, providerTradeId: input.payload.provider_trade_id, amountFen: input.payload.amount_fen, currency: input.payload.currency as 'CNY', state: input.payload.state as 'pending' | 'paid' | 'closed' | 'failed' },
-      signature: provided,
-      timestamp: timestampHeader!,
-      nonce: nonce!,
-    })
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('expired')) throw new DomainError('PAYMENT_CALLBACK_EXPIRED', '支付回调已超过五分钟有效窗口', 401)
-    throw new DomainError('PAYMENT_CALLBACK_SIGNATURE_INVALID', '支付回调验签失败', 401)
-  }
+  const timestampMs = timestampHeader ? (timestampHeader.length === 10 ? Number(timestampHeader) * 1000 : Number(timestampHeader)) : Date.now()
+  if (!legacyAllowed && (!Number.isSafeInteger(timestampMs) || Math.abs(Date.now() - timestampMs) > 5 * 60_000)) throw new DomainError('PAYMENT_CALLBACK_EXPIRED', '支付回调已超过五分钟有效窗口', 401)
+  const canonical = legacyAllowed
+    ? `${input.payload.order_id}|${input.payload.provider_trade_id}|${input.payload.amount_fen}|${input.payload.state}`
+    : `${input.channel}|${input.workspaceId}|${input.payload.order_id}|${input.payload.provider_trade_id}|${input.payload.amount_fen}|${input.payload.state}|${timestampHeader}|${nonce}`
+  const expected = createHmac('sha256', secret).update(canonical).digest('hex')
+  if (!provided || provided.length !== expected.length || !timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) throw new DomainError('PAYMENT_CALLBACK_SIGNATURE_INVALID', '支付回调验签失败', 401)
+  if (legacyAllowed) return undefined
+  return { nonce: nonce!, signedAt: new Date(timestampMs).toISOString(), payloadHash: createHash('sha256').update(canonical).digest('hex') }
 }
 
 async function consumePaymentCallbackProof(input: { workspaceId: string; channel: RechargeChannel; nonce: string; signedAt: string; payloadHash: string }) {
@@ -2241,7 +2088,6 @@ function paymentProviderReadiness(source: NodeJS.ProcessEnv = process.env) {
   if (!/^https:\/\//iu.test(source.PAYMENT_CHECKOUT_BASE_URL?.trim() ?? '')) reasons.push('checkout_endpoint_must_use_https')
   if (!/^https:\/\//iu.test(source.PAYMENT_PROVIDER_CHECKOUT_API_URL?.trim() ?? '')) reasons.push('provider_checkout_api_must_use_https')
   if (!/^https:\/\//iu.test(source.PAYMENT_PROVIDER_QUERY_API_URL?.trim() ?? '')) reasons.push('provider_query_api_must_use_https')
-  if (!/^https:\/\//iu.test(source.PAYMENT_PROVIDER_REFUND_QUERY_API_URL?.trim() ?? '')) reasons.push('provider_refund_query_api_must_use_https')
   if (!source.PAYMENT_PROVIDER_API_KEY?.trim()) reasons.push('provider_api_key_missing')
   if (!source.PAYMENT_PROVIDER_MERCHANT_ID?.trim()) reasons.push('provider_merchant_id_missing')
   if (!/^https:\/\//iu.test(source.PAYMENT_PROVIDER_REFUND_API_URL?.trim() ?? '')) reasons.push('provider_refund_api_must_use_https')
@@ -2249,10 +2095,6 @@ function paymentProviderReadiness(source: NodeJS.ProcessEnv = process.env) {
   if (!source.PAYMENT_CALLBACK_SECRET?.trim()) reasons.push('callback_secret_missing')
   if (source.PAYMENT_RECONCILIATION_ENABLED !== 'true') reasons.push('reconciliation_disabled')
   if (source.PAYMENT_REFUND_ENABLED !== 'true') reasons.push('refund_disabled')
-  // Diagnostics must match the adapter that will execute the charge. A URL
-  // can pass the HTTPS prefix checks while the adapter rejects it as unsafe;
-  // malformed timeout values likewise make the provider unusable.
-  if (!createPaymentProviderFromEnv(source)) reasons.push('provider_configuration_invalid')
   return { ready: reasons.length === 0, reasons }
 }
 
@@ -2775,9 +2617,18 @@ function getAssetStorage(): ObjectStoragePort {
     const kmsKeyId = process.env.ASSET_STORAGE_KMS_KEY_ID?.trim()
     const sseMode = (process.env.ASSET_STORAGE_SSE_MODE?.trim() || (kmsKeyId ? 'aws:kms' : 'AES256')).toLowerCase()
     if (!bucket || !region || !endpoint || !/^https:\/\//u.test(endpoint) || !['aes256', 'aws:kms'].includes(sseMode) || (sseMode === 'aws:kms' && !kmsKeyId)) throw new DomainError('ASSET_STORAGE_NOT_CONFIGURED', '生产环境对象存储必须配置 bucket、region、HTTPS endpoint 和有效的加密模式', 503)
-    const credentialMode = process.env.ASSET_STORAGE_CREDENTIAL_MODE?.trim().toLowerCase()
-    if (credentialMode !== 'aliyun_ecs_ram_role') throw new DomainError('ASSET_STORAGE_CREDENTIAL_MODE_INVALID', '生产环境对象存储必须显式使用 aliyun_ecs_ram_role 凭据模式', 503)
-    const credentials = aliyunEcsRamRoleCredentialProvider()
+    const credentialProvider = process.env.ASSET_STORAGE_CREDENTIAL_PROVIDER?.trim()
+    let credentials
+    if (credentialProvider === 'aliyun_ecs_ram_role') {
+      const roleName = process.env.ASSET_STORAGE_ECS_RAM_ROLE?.trim()
+      if (!roleName) throw new DomainError('ASSET_STORAGE_ECS_RAM_ROLE_REQUIRED', 'ECS 生产对象存储必须配置 RAM 实例角色名', 503)
+      credentials = createAliyunEcsRoleCredentials(roleName)
+    } else if (credentialProvider === 'aliyun_ack_rrsa') {
+      try { credentials = createAliyunAckRrsaCredentials(process.env) }
+      catch { throw new DomainError('ASSET_STORAGE_ACK_RRSA_REQUIRED', 'ACK 生产对象存储必须由 RRSA 注入 Pod 专属 OIDC 身份', 503) }
+    } else {
+      throw new DomainError('ASSET_STORAGE_CREDENTIAL_PROVIDER_INVALID', '生产对象存储凭证提供方必须与 ECS 或 ACK 部署目标匹配', 503)
+    }
     const client = new S3Client({ region, endpoint, forcePathStyle: process.env.ASSET_STORAGE_FORCE_PATH_STYLE === 'true', credentials })
     const request = (key: string) => ({ Bucket: bucket, Key: key })
     const transport: CloudObjectTransport = {
@@ -3079,7 +2930,6 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const operations = new PostgresOperationsRepository(sqlPool)
     const subscriptions = new PostgresSubscriptionRepository(sqlPool, (client, event) => outbox.appendInTransaction(client, event))
     const members = new PostgresMembersRepository(sqlPool)
-    const identityMemberships = new PostgresMembersRepository(opsSqlPool)
     const commercialExtensions = new PostgresCommercialExtensionsRepository(sqlPool, opsSqlPool)
     const growth = new PostgresGrowthRepository(sqlPool)
     const alerts = new PostgresOperationalAlertsRepository(sqlPool)
@@ -3256,7 +3106,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', creativePoints, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, identityMemberships, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', creativePoints, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -3469,10 +3319,10 @@ const commercialPurchaseService = new CommercialPurchaseService({
   async getPaymentStatus(input) {
     await persistenceReady
     if (!persistence.commercialContracts) return null
-    const status = await persistence.commercialContracts.getPaymentStatus(input.workspace_id, input.order_id)
-    return status?.order.createdByActorId === input.actor_id
-      ? commercialOrderView(status.order, status.skuCode, status.accessRevision)
-      : null
+    const status = await readOwnCommercialPaymentStatus(persistence.commercialContracts, {
+      workspaceId: input.workspace_id, orderId: input.order_id, actorId: input.actor_id,
+    })
+    return status ? commercialOrderView(status.order, status.skuCode, status.accessRevision) : null
   },
 })
 
@@ -5345,9 +5195,8 @@ function publicRequestOrigin(req: IncomingMessage) {
 function mcpOAuthDiscovery(req: IncomingMessage) {
   const serviceOrigin = publicRequestOrigin(req)
   const issuer = process.env.MCP_OAUTH_ISSUER?.trim() || serviceOrigin
-  const selfHosted = Boolean(process.env.MCP_OAUTH_CLIENTS?.trim()) && issuer === serviceOrigin
-  const authorizationEndpoint = process.env.MCP_OAUTH_AUTHORIZATION_ENDPOINT?.trim() || (selfHosted || !isProduction() ? `${serviceOrigin}/oauth/authorize` : '')
-  const tokenEndpoint = process.env.MCP_OAUTH_TOKEN_ENDPOINT?.trim() || (selfHosted || !isProduction() ? `${serviceOrigin}/oauth/token` : '')
+  const authorizationEndpoint = process.env.MCP_OAUTH_AUTHORIZATION_ENDPOINT?.trim() || (!isProduction() ? `${issuer}/oauth/authorize` : '')
+  const tokenEndpoint = process.env.MCP_OAUTH_TOKEN_ENDPOINT?.trim() || (!isProduction() ? `${issuer}/oauth/token` : '')
   const validEndpoint = (value: string) => {
     try {
       const parsed = new URL(value)
@@ -5371,76 +5220,8 @@ function mcpOAuthDiscovery(req: IncomingMessage) {
     authorizationEndpoint,
     tokenEndpoint,
     resource: `${serviceOrigin}/mcp`,
-    scopes: ['merchant'],
+    scopes: ['openid', 'profile', 'merchant'],
   }
-}
-
-const MCP_OAUTH_SCOPES = ['merchant'] as const
-
-function configuredMcpOAuthClients(): Map<string, Set<string>> {
-  const raw = process.env.MCP_OAUTH_CLIENTS?.trim()
-  if (!raw) return new Map()
-  let parsed: unknown
-  try { parsed = JSON.parse(raw) } catch { throw new DomainError('MCP_OAUTH_CLIENTS_INVALID', 'MCP OAuth 客户端配置不是有效 JSON', 503) }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new DomainError('MCP_OAUTH_CLIENTS_INVALID', 'MCP OAuth 客户端配置必须是 redirect URI allowlist', 503)
-  const clients = new Map<string, Set<string>>()
-  for (const [clientId, redirects] of Object.entries(parsed as Record<string, unknown>)) {
-    if (!clientId.trim() || clientId.length > 256 || !Array.isArray(redirects) || !redirects.length) throw new DomainError('MCP_OAUTH_CLIENTS_INVALID', 'MCP OAuth 客户端或回调 allowlist 无效', 503)
-    const allowed = new Set<string>()
-    for (const redirect of redirects) {
-      if (typeof redirect !== 'string') throw new DomainError('MCP_OAUTH_CLIENTS_INVALID', 'MCP OAuth 回调 allowlist 只能包含 URI', 503)
-      let parsedRedirect: URL
-      try { parsedRedirect = new URL(redirect) } catch { throw new DomainError('MCP_OAUTH_CLIENTS_INVALID', 'MCP OAuth 回调 allowlist 包含无效 URI', 503) }
-      const loopback = parsedRedirect.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(parsedRedirect.hostname)
-      if (parsedRedirect.username || parsedRedirect.password || parsedRedirect.hash || (parsedRedirect.protocol !== 'https:' && !(loopback && !isProduction()))) throw new DomainError('MCP_OAUTH_CLIENTS_INVALID', 'MCP OAuth 回调 URI 必须是 HTTPS（本地测试可用 loopback HTTP）', 503)
-      allowed.add(redirect)
-    }
-    clients.set(clientId, allowed)
-  }
-  return clients
-}
-
-type ValidatedMcpOAuthAuthorization = {
-  clientId: string
-  redirectUri: string
-  state: string
-  codeChallenge: string
-  scope: string[]
-  issuer: string
-  audience: string
-  resource: string
-}
-
-function validateMcpOAuthAuthorization(req: IncomingMessage, params: URLSearchParams): ValidatedMcpOAuthAuthorization {
-  for (const key of ['response_type', 'client_id', 'redirect_uri', 'state', 'code_challenge', 'code_challenge_method', 'scope', 'resource']) {
-    if (params.getAll(key).length !== 1) throw new DomainError('MCP_OAUTH_INVALID_REQUEST', `OAuth 参数 ${key} 必须且只能出现一次`, 400)
-  }
-  const discovery = mcpOAuthDiscovery(req)
-  if (!discovery) throw new DomainError('MCP_OAUTH_NOT_CONFIGURED', 'MCP OAuth 尚未配置', 503)
-  const clients = configuredMcpOAuthClients()
-  const clientId = params.get('client_id') ?? ''
-  const redirectUri = params.get('redirect_uri') ?? ''
-  try { new URL(redirectUri) } catch { throw new DomainError('MCP_OAUTH_INVALID_REQUEST', 'redirect_uri 无效', 400) }
-  if (!clients.get(clientId)?.has(redirectUri)) throw new DomainError('MCP_OAUTH_INVALID_CLIENT', 'OAuth 客户端或回调地址未获准', 400)
-  if (params.get('response_type') !== 'code') throw new DomainError('MCP_OAUTH_UNSUPPORTED_RESPONSE_TYPE', '只支持 authorization code', 400)
-  const state = params.get('state') ?? ''
-  if (!state || state.length > 2048) throw new DomainError('MCP_OAUTH_INVALID_REQUEST', 'state 缺失或过长', 400)
-  const codeChallenge = params.get('code_challenge') ?? ''
-  if (params.get('code_challenge_method') !== 'S256' || !/^[A-Za-z0-9_-]{43}$/u.test(codeChallenge)) throw new DomainError('MCP_OAUTH_PKCE_REQUIRED', '必须使用 PKCE S256', 400)
-  const requestedScope = [...new Set((params.get('scope') ?? '').split(/\s+/u).filter(Boolean))]
-  if (!requestedScope.includes('merchant') || requestedScope.some(scope => !MCP_OAUTH_SCOPES.includes(scope as (typeof MCP_OAUTH_SCOPES)[number]))) throw new DomainError('MCP_OAUTH_INVALID_SCOPE', 'OAuth scope 未获准', 400)
-  const resource = params.get('resource')?.trim() ?? ''
-  if (resource !== discovery.resource) throw new DomainError('MCP_OAUTH_INVALID_RESOURCE', 'OAuth resource 与 MCP 资源不一致', 400)
-  return { clientId, redirectUri, state, codeChallenge, scope: requestedScope, issuer: discovery.issuer, audience: discovery.resource, resource: discovery.resource }
-}
-
-function escapeOAuthHtml(value: string) { return value.replace(/[&<>"']/gu, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!) }
-
-function sendMcpOAuthLogin(res: ServerResponse, authorization: ValidatedMcpOAuthAuthorization, status = 200, message = '') {
-  const hidden = Object.entries({ response_type: 'code', client_id: authorization.clientId, redirect_uri: authorization.redirectUri, state: authorization.state, code_challenge: authorization.codeChallenge, code_challenge_method: 'S256', scope: authorization.scope.join(' '), resource: authorization.resource })
-    .map(([name, value]) => `<input type="hidden" name="${name}" value="${escapeOAuthHtml(value)}">`).join('')
-  res.statusCode = status; res.setHeader('content-type', 'text/html; charset=utf-8'); res.setHeader('cache-control', 'no-store'); res.setHeader('x-frame-options', 'DENY'); res.setHeader('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
-  res.end(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>登录 Store Nova</title><style>body{font:16px system-ui;max-width:420px;margin:10vh auto;padding:24px;color:#14234b}label,input,button{display:block;width:100%;box-sizing:border-box}input{padding:12px;margin:6px 0 16px;border:1px solid #bbc5d9;border-radius:8px}button{padding:12px;border:0;border-radius:8px;background:#2146d0;color:white;font-weight:700}.error{color:#b42318}</style><h1>登录 Store Nova</h1><p>使用平台已开通的商家账号授权 ChatGPT 插件。我们不会读取店铺密码。</p>${message ? `<p class="error">${escapeOAuthHtml(message)}</p>` : ''}<form method="post" action="/oauth/authorize">${hidden}<label>账号<input name="login" autocomplete="username" required></label><label>密码<input type="password" name="password" autocomplete="current-password" required></label><button type="submit">登录并授权</button></form></html>`)
 }
 
 type RequestObservationState = RequestLogInput & { startedAt: bigint; failed: boolean }
@@ -5556,7 +5337,7 @@ function sendOAuthCallbackPage(res: ServerResponse, status: number, input: { sta
   const title = input.state === 'success' ? '店铺授权成功' : '店铺授权未完成'
   const heading = input.state === 'success' ? `已连接${platform}` : '授权失败'
   const body = input.state === 'success'
-    ? `<p>店铺已安全绑定到Store Nova工作区。</p><p>状态：${escapeHtml(input.syncState === 'queued' ? '首轮商品同步已排队' : '等待同步配置')}</p><p>请返回 Codex App，刷新店铺状态后选择具体店铺继续。</p>`
+    ? `<p>店铺已安全绑定到大麦工作区。</p><p>状态：${escapeHtml(input.syncState === 'queued' ? '首轮商品同步已排队' : '等待同步配置')}</p><p>请返回 Codex App，刷新店铺状态后选择具体店铺继续。</p>`
     : `<p>${escapeHtml(input.message ?? '授权回调未完成，请返回 Codex App 重试。')}</p><p>请重新发起授权，不要重复使用当前页面参数。</p>`
   const request = req ? requestId(req) : 'oauth-callback'
   res.statusCode = status
@@ -5784,6 +5565,8 @@ function requiresStrictAuth() {
 type RequestPrincipal = {
   actorId: string
   accountLogin?: string
+  /** Verified display metadata only; never use for membership or identity lookup. */
+  displayAccountLogin?: string
   workspaces: string[]
   roles: string[]
   workbench: OpsWorkbench
@@ -5804,7 +5587,6 @@ type RequestPrincipal = {
   authorizationRevision?: number
   activeAuthorizationGrants?: AuthorizationGrant[]
   platformRoleAssignments?: PlatformRoleAssignment[]
-  authenticationMethod?: 'mcp_oauth'
 }
 const requestPrincipals = new WeakMap<IncomingMessage, RequestPrincipal>()
 const requestAuthorizationDecisions = new WeakMap<IncomingMessage, AuthorizationDecision>()
@@ -6629,8 +6411,14 @@ async function authenticateOidcGateway(req: IncomingMessage): Promise<RequestPri
   // Sign the exact request-target, including the raw query string. The gateway
   // and API must agree on bytes before any URL decoding or parameter sorting.
   const requestTarget = req.url ?? '/'
-  const canonical = [req.method ?? 'GET', requestTarget, workspaceId, workbench, issuer, subject, sessionId, roles.join(','), amr.join(','), authTime, sessionExpiresAt, timestamp, bodyDigest, nonce].join('\n')
-  const expected = createHmac('sha256', secret).update(canonical).digest('hex')
+  const legacyCanonical = [req.method ?? 'GET', requestTarget, workspaceId, workbench, issuer, subject, sessionId, roles.join(','), amr.join(','), authTime, sessionExpiresAt, timestamp, bodyDigest, nonce].join('\n')
+  let proof: ReturnType<typeof bindOidcDisplayLoginProof>
+  try {
+    proof = bindOidcDisplayLoginProof(legacyCanonical, req.headers['x-oidc-proof-version'], req.headers['x-oidc-display-login'])
+  } catch {
+    throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'OIDC 网关账号展示断言无效', 401)
+  }
+  const expected = createHmac('sha256', secret).update(proof.canonical).digest('hex')
   if (!safeEqual(expected, signature)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'OIDC 网关身份签名无效', 401)
   const hasPlatformRole = roles.some(role => {
     const canonicalRole = canonicalizeRole(role, 'gateway')
@@ -6646,23 +6434,18 @@ async function authenticateOidcGateway(req: IncomingMessage): Promise<RequestPri
   const actualBodyDigest = createHash('sha256').update(await requestBodyBytes(req, maxBodyBytes)).digest('hex')
   if (!safeEqual(actualBodyDigest, bodyDigest)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'OIDC 网关请求体摘要不一致', 401)
   if (!await consumeOidcNonce(nonce)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'OIDC 网关身份断言已使用', 401)
-  return { actorId: subject, workspaces: workspaceId ? [workspaceId] : [], roles, workbench: workbench as OpsWorkbench, availableWorkbenches: hasPlatformRole ? ['platform'] : [], issuer, sessionSubject: sessionId, sessionKind: 'oidc', sessionIssuedAt: new Date(authTimeSeconds * 1000).toISOString(), sessionExpiresAt: new Date(expiresAtSeconds * 1000).toISOString(), mfaVerified: amr.includes('mfa') }
+  return { actorId: subject, displayAccountLogin: proof.displayAccountLogin, workspaces: workspaceId ? [workspaceId] : [], roles, workbench: workbench as OpsWorkbench, availableWorkbenches: hasPlatformRole ? ['platform'] : [], issuer, sessionSubject: sessionId, sessionKind: 'oidc', sessionIssuedAt: new Date(authTimeSeconds * 1000).toISOString(), sessionExpiresAt: new Date(expiresAtSeconds * 1000).toISOString(), mfaVerified: amr.includes('mfa') }
 }
 
 /** Production identity boundary: opaque bearer token -> permitted workspaces. */
 async function authenticate(req: IncomingMessage) {
-  const requestPath = new URL(req.url ?? '/', 'http://merchant.internal').pathname
-  const merchantBearerHostname = process.env.MERCHANT_BEARER_HOSTNAME?.trim().toLowerCase()
-  const requestHostname = (header(req, 'host')?.trim().toLowerCase().split(':')[0] ?? '')
-  const merchantBearerRequest = Boolean(merchantBearerHostname && requestHostname === merchantBearerHostname)
-  const mcpOAuthRequired = requestPath === '/mcp' && (process.env.MCP_OAUTH_REQUIRED === 'true' || (isProduction() && merchantBearerRequest))
   // A valid password session is an explicit identity assertion and must take
   // precedence over the local fixture adapter. Otherwise development mode
   // silently replaces a real platform login with actor_demo, making the
   // login cookie appear accepted while every API call still runs as demo.
   const passwordCookie = (header(req, 'cookie') ?? '').split(';').map(value => value.trim()).find(value => value.startsWith('damai_session='))?.slice('damai_session='.length)
   let invalidPasswordSession = false
-  if (passwordCookie && !mcpOAuthRequired) {
+  if (passwordCookie) {
     let rawToken = ''
     try { rawToken = decodeURIComponent(passwordCookie) } catch { rawToken = '' }
     if (rawToken) {
@@ -6703,6 +6486,9 @@ async function authenticate(req: IncomingMessage) {
   // in the Kubernetes baseline, but intentionally have different identity
   // boundaries. Only the explicitly configured merchant host may use the
   // bearer-token branch; every other production host remains OIDC-only.
+  const merchantBearerHostname = process.env.MERCHANT_BEARER_HOSTNAME?.trim().toLowerCase()
+  const requestHostname = (header(req, 'host')?.trim().toLowerCase().split(':')[0] ?? '')
+  const merchantBearerRequest = Boolean(merchantBearerHostname && requestHostname === merchantBearerHostname)
   if (process.env.OPS_AUTH_MODE === 'oidc' && !merchantBearerRequest) {
     const principal = await authenticateOidcGateway(req)
     requestPrincipals.set(req, principal)
@@ -6721,25 +6507,6 @@ async function authenticate(req: IncomingMessage) {
   try { cookieToken = encodedCookieToken ? decodeURIComponent(encodedCookieToken) : undefined } catch { cookieToken = undefined }
   const token = authorization?.match(/^Bearer\s+([^\s]+)$/i)?.[1] ?? cookieToken
   if (!token) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '生产请求必须携带有效 Bearer token', 401)
-  if (mcpOAuthRequired) {
-    const discovery = mcpOAuthDiscovery(req)
-    const clients = configuredMcpOAuthClients()
-    if (!discovery || !clients.size) throw new DomainError('MCP_OAUTH_NOT_CONFIGURED', '商家 MCP OAuth 尚未完整配置', 503)
-    let authenticated: Awaited<ReturnType<PasswordAuthRepository['authenticateMcpAccessToken']>>
-    for (const clientId of clients.keys()) {
-      authenticated = await passwordAuthRepository.authenticateMcpAccessToken({ accessToken: token, clientId, issuer: discovery.issuer, audience: discovery.resource, resource: discovery.resource, scope: ['merchant'] })
-      if (authenticated) break
-    }
-    if (!authenticated) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'MCP OAuth access token 无效或已失效', 401)
-    const requestedWorkspace = header(req, 'x-workspace-id')?.trim()
-    if (requestedWorkspace && requestedWorkspace !== authenticated.workspaceId) throw new DomainError(ERROR_CODES.FORBIDDEN, 'MCP OAuth 会话禁止切换工作区', 403)
-    const requestedWorkbench = header(req, 'x-ops-workbench')?.trim()
-    if (requestedWorkbench && requestedWorkbench !== 'workspace') throw new DomainError('AUTHZ_WORKBENCH_FORBIDDEN', 'MCP OAuth 会话固定为商家工作区', 403)
-    const claimedActor = header(req, 'x-actor-id')?.trim()
-    if (claimedActor && claimedActor !== authenticated.identityId) throw new DomainError(ERROR_CODES.FORBIDDEN, 'X-Actor-Id 与 OAuth 身份不一致', 403)
-    requestPrincipals.set(req, { actorId: authenticated.identityId, accountLogin: authenticated.accountLogin, identityId: authenticated.identityId, sessionId: authenticated.tokenId, sessionSubject: authenticated.tokenId, sessionKind: 'api_token', sessionIssuedAt: authenticated.issuedAt, sessionExpiresAt: authenticated.expiresAt, roles: [], workspaces: [authenticated.workspaceId], workbench: 'workspace', availableWorkbenches: ['workspace'], identityStatus: 'active', riskDecision: 'allow', mfaVerified: false, authenticationMethod: 'mcp_oauth' })
-    return
-  }
   let grants: Record<string, unknown>
   try {
     const parsed: unknown = JSON.parse(process.env.API_AUTH_TOKENS ?? '{}')
@@ -7003,12 +6770,7 @@ async function resolveActiveWorkspaceMember(req: IncomingMessage, workspaceId: s
   const principal = requestPrincipals.get(req)
   if (!principal?.actorId) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '生产工作区访问必须绑定可识别的成员身份', 401)
   if (!workspaceId) throw new DomainError(ERROR_CODES.FORBIDDEN, '生产工作区访问缺少工作区范围', 403)
-  const identityMemberships = persistence.identityMemberships ?? persistence.members ?? memoryMembers
-  const member = (await identityMemberships.list(workspaceId)).find(item =>
-    (principal.identityId && item.identityId === principal.identityId)
-    || item.externalSubject === principal.actorId
-    || (principal.accountLogin && item.externalSubject === principal.accountLogin),
-  )
+  const member = (await (persistence.members ?? memoryMembers).list(workspaceId)).find(item => item.externalSubject === principal.actorId || (principal.accountLogin && item.externalSubject === principal.accountLogin))
   if (!member) {
     if (required) throw new DomainError('WORKSPACE_MEMBERSHIP_REQUIRED', '当前身份不是该工作区的有效成员，请由工作区所有者邀请后重试', 403, { workspace_id: workspaceId })
     return false
@@ -7018,7 +6780,7 @@ async function resolveActiveWorkspaceMember(req: IncomingMessage, workspaceId: s
   if (member.status === 'suspended') throw new DomainError('MEMBER_SUSPENDED', '该运营成员已被暂停，当前工作区访问已撤销', 403)
   if (member.status !== 'active') throw new DomainError('MEMBER_NOT_ACTIVE', '该运营成员尚未激活，当前工作区访问未开放', 403)
   if (principal.identityId && member.identityId !== principal.identityId) {
-    try { await identityMemberships.bindIdentity({ workspaceId, externalSubject: member.externalSubject, identityId: principal.identityId }) }
+    try { await (persistence.members ?? memoryMembers).bindIdentity({ workspaceId, externalSubject: principal.actorId, identityId: principal.identityId }) }
     catch (error) { if (String(error).includes('MEMBER_IDENTITY_CONFLICT')) throw new DomainError('MEMBER_IDENTITY_CONFLICT', '成员关系已绑定到其他平台身份，访问已拒绝', 403); throw error }
   }
   const gatewayMemberRoles = principal.roles.filter(role => {
@@ -7629,31 +7391,24 @@ function productionIdentityReadiness(source: NodeJS.ProcessEnv): ProductionReadi
   if (source.OPS_AUTH_MODE !== 'oidc') reasons.push('ops_auth_mode_must_be_oidc')
   if (!source.OIDC_PROXY_SIGNING_SECRET?.trim()) reasons.push('oidc_proxy_signing_secret_missing')
   if (!source.SESSION_ID_HASH_SECRET?.trim()) reasons.push('session_id_hash_secret_missing')
-  if (!source.OPS_DATABASE_URL?.trim()) reasons.push('canonical_password_identity_store_missing')
   const merchantHostname = source.MERCHANT_BEARER_HOSTNAME?.trim().toLowerCase()
   if (!merchantHostname) reasons.push('merchant_bearer_hostname_missing')
   else if (merchantHostname.includes('*') || merchantHostname.includes('://') || merchantHostname.includes('/')) reasons.push('merchant_bearer_hostname_invalid')
-  if (source.MCP_OAUTH_REQUIRED !== 'true') reasons.push('mcp_oauth_must_be_required')
-  let publicOrigin = ''
+  let grantsReady = false
   try {
-    const publicUrl = new URL(source.PUBLIC_APP_BASE_URL ?? '')
-    if (publicUrl.protocol !== 'https:' || publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash) throw new Error('unsafe public origin')
-    publicOrigin = publicUrl.origin
-  } catch { reasons.push('mcp_oauth_public_origin_missing_or_invalid') }
-  const issuer = source.MCP_OAUTH_ISSUER?.trim() || publicOrigin
-  if (!publicOrigin || issuer !== publicOrigin) reasons.push('mcp_oauth_issuer_must_be_self_hosted')
-  const authorizationEndpoint = source.MCP_OAUTH_AUTHORIZATION_ENDPOINT?.trim() || `${issuer}/oauth/authorize`
-  const tokenEndpoint = source.MCP_OAUTH_TOKEN_ENDPOINT?.trim() || `${issuer}/oauth/token`
-  if (!issuer || authorizationEndpoint !== `${issuer}/oauth/authorize` || tokenEndpoint !== `${issuer}/oauth/token`) reasons.push('mcp_oauth_endpoints_must_be_self_hosted')
-  let clientsReady = false
-  try {
-    const parsed: unknown = JSON.parse(source.MCP_OAUTH_CLIENTS ?? '{}')
-    clientsReady = Boolean(parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.entries(parsed as Record<string, unknown>).length > 0 && Object.entries(parsed as Record<string, unknown>).every(([clientId, redirects]) => clientId.trim().length > 0 && clientId.length <= 256 && Array.isArray(redirects) && redirects.length > 0 && redirects.every(redirect => {
-      if (typeof redirect !== 'string') return false
-      try { const value = new URL(redirect); return value.protocol === 'https:' && !value.username && !value.password && !value.hash } catch { return false }
-    })))
-  } catch { /* reported below without exposing client identifiers */ }
-  if (!clientsReady) reasons.push('mcp_oauth_clients_missing_or_invalid')
+    const parsed: unknown = JSON.parse(source.API_AUTH_TOKENS ?? '{}')
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      grantsReady = Object.values(parsed as Record<string, unknown>).some(value => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+        const grant = value as Record<string, unknown>
+        return typeof grant.actor_id === 'string'
+          && grant.actor_id.trim().length > 0
+          && Array.isArray(grant.workspaces)
+          && grant.workspaces.some(workspace => typeof workspace === 'string' && workspace.trim().length > 0 && workspace !== '*')
+      })
+    }
+  } catch { /* reported below without exposing the configured token map */ }
+  if (!grantsReady) reasons.push('merchant_api_token_grants_missing_or_invalid')
   return { ready: reasons.length === 0, reasons }
 }
 
@@ -7666,7 +7421,13 @@ function productionObjectStorageReadiness(source: NodeJS.ProcessEnv): Production
   const sseMode = (source.ASSET_STORAGE_SSE_MODE?.trim() || (kmsKeyId ? 'aws:kms' : 'AES256')).toLowerCase()
   if (!['aes256', 'aws:kms'].includes(sseMode)) reasons.push('asset_storage_sse_mode_invalid')
   if (sseMode === 'aws:kms' && !kmsKeyId) reasons.push('asset_storage_kms_key_id_missing')
-  if (source.ASSET_STORAGE_CREDENTIAL_MODE?.trim().toLowerCase() !== 'aliyun_ecs_ram_role') reasons.push('asset_storage_credential_mode_must_be_aliyun_ecs_ram_role')
+  const credentialProvider = source.ASSET_STORAGE_CREDENTIAL_PROVIDER?.trim()
+  if (credentialProvider === 'aliyun_ecs_ram_role') {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u.test(source.ASSET_STORAGE_ECS_RAM_ROLE?.trim() ?? '')) reasons.push('asset_storage_ecs_ram_role_missing_or_invalid')
+  } else if (credentialProvider === 'aliyun_ack_rrsa') {
+    try { validateAliyunAckRrsaEnvironment(source) }
+    catch (error) { reasons.push(error instanceof Error ? error.message.toLowerCase() : 'asset_storage_ack_rrsa_invalid') }
+  } else reasons.push('asset_storage_credential_provider_invalid')
   const endpoint = source.ASSET_STORAGE_ENDPOINT?.trim()
   if (!endpoint) reasons.push('asset_storage_endpoint_missing')
   else {
@@ -7991,9 +7752,9 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
   if (!modelCostGateConfigured) nextActions.push('配置平台模型 RPM、TPM 和每日人民币成本上限；成本门禁未通过时生产模型请求保持阻断')
   if (production && !paymentReadiness.ready) nextActions.push('配置支付宝/微信服务端 checkout provider、商户号、回调验签、对账和退款能力：' + paymentReadiness.reasons.join('、'))
   if (!vaultConfigured) nextActions.push('配置 VAULT_ADDR 和 VAULT_TOKEN（或接入外部凭据服务），让 Codex 安全读取商家授权凭据；不要把平台 token 放进插件参数')
-  if (!objectStorageConfigured) nextActions.push('配置生产对象存储 bucket、region、HTTPS endpoint、AES256（或显式 aws:kms）及可用凭据链，真实鉴权预检通过后素材上传才可切换到云端持久化')
-  if (!dataLifecycle.configured) nextActions.push('补齐生产数据生命周期、对象版本化和告警通道配置；缺少删除与告警门禁时禁止接收真实商家数据')
-  if (production && alertNotifications.enabled && !alertNotifications.ready) nextActions.push(`已启用的告警通知未就绪；请修复 Webhook、允许主机和签名密钥：${alertNotifications.reason}`)
+  if (!objectStorageConfigured) nextActions.push('配置生产对象存储 bucket、region、HTTPS endpoint 和 KMS key，素材上传才可切换到云端持久化')
+  if (!dataLifecycle.configured) nextActions.push('补齐生产数据生命周期、对象版本化和存储控制引用；缺少删除与保留门禁时禁止接收真实商家数据')
+  if (production && alertNotifications.enabled && !alertNotifications.ready) nextActions.push(`配置可验证的告警 Webhook、允许主机和签名密钥：${alertNotifications.reason}`)
   if (production && !controlPlaneReadiness.ready) {
     for (const [name, gate] of Object.entries(controlPlaneReadiness.gates)) {
       if (!gate.ready) nextActions.push(`生产控制面 ${name} 未就绪：${gate.reasons.join('、')}`)
@@ -8100,16 +7861,13 @@ function runtimeHealth() {
     },
     writesEnabled: SUPPORTED_PLATFORMS.some(platform => platformWriteReady(platform)),
       setup: setupDiagnostics(),
-    // Keep the health projection aligned with the complete supported-platform
-    // registry. Previously only the first four platforms were overridden here,
-    // so configured Douyin/Xiaohongshu OAuth could be reported as the stale
-    // value from service.health().
-    connectors: Object.fromEntries(SUPPORTED_PLATFORMS.map(platform => [
-      platform,
-      connectorRuntime.isOAuthConfigured(platform)
-        ? 'configured_provider_required'
-        : base.connectors[platform],
-    ])),
+    connectors: {
+      ...base.connectors,
+      jd: connectorRuntime.isOAuthConfigured('jd') ? 'configured_provider_required' : base.connectors.jd,
+      taobao: connectorRuntime.isOAuthConfigured('taobao') ? 'configured_provider_required' : base.connectors.taobao,
+      tmall: connectorRuntime.isOAuthConfigured('tmall') ? 'configured_provider_required' : base.connectors.tmall,
+      pinduoduo: connectorRuntime.isOAuthConfigured('pinduoduo') ? 'configured_provider_required' : base.connectors.pinduoduo,
+    },
   }
 }
 
@@ -9678,9 +9436,9 @@ async function persistUploadedAssetAndContinuation(
   })
 }
 
-type DeliveryUploadContext = { deliveryId: string; purpose: 'contract' | 'video' }
+type DeliveryUploadContext = { deliveryId: string; purpose: CustomerDeliveryUploadPurpose }
 
-function deliveryUploadBindingId(workspaceId: string, deliveryId: string, purpose: 'contract' | 'video', assetId: string) {
+function deliveryUploadBindingId(workspaceId: string, deliveryId: string, purpose: CustomerDeliveryUploadPurpose, assetId: string) {
   return `delivery_asset_binding_${createHash('sha256').update(JSON.stringify([workspaceId, deliveryId, purpose, assetId])).digest('hex')}`
 }
 
@@ -9823,7 +9581,6 @@ function headerRequired(req: IncomingMessage, name: string): string {
 function isWorkerRoute(method: string | undefined, path: string): boolean {
   if (method === 'POST') {
     return path === '/v1/internal/automation/tick'
-      || path === '/v1/internal/billing/reconciliation'
       || path === '/v1/internal/model-usage'
       || path === '/v1/internal/model-usage/reconciliation'
       || path === '/v1/ops/data-deletion/complete'
@@ -9904,7 +9661,6 @@ function workerRouteRoles(method: string | undefined, path: string): WorkerReque
   }
   if (method === 'POST') {
     if (/^\/v1\/sync-jobs\/[^/]+\/(?:progress|result)$/u.test(path)) return ['sync']
-    if (path === '/v1/internal/billing/reconciliation') return ['reconcile']
     if (path === '/v1/internal/image-generation-jobs/reconciliation') return ['reconcile']
     if (/^\/v1\/(?:generation-jobs|internal\/image-generation-jobs|internal\/image-generation-continuations)\//u.test(path)) return ['generation']
     if (/^\/v1\/publish-jobs\/[^/]+\/observation$/u.test(path)) return ['publish', 'reconcile']
@@ -11522,7 +11278,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
   assertMcpEnvelope(input)
   const request = input as unknown as McpRequest
   const method = typeof request.method === 'string' ? request.method : ''
-  if (requestPrincipals.get(req)?.authenticationMethod === 'mcp_oauth' && method.startsWith('ops.')) throw new DomainError(ERROR_CODES.FORBIDDEN, 'ChatGPT 商家 OAuth 会话不能访问运营后台工具', 403)
   const params = paramsOf(input)
   if (method.startsWith('ops.customer-delivery.')) {
     const target = typeof params.target_workspace_id === 'string' ? params.target_workspace_id.trim() : ''
@@ -12279,8 +12034,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
                 ? '查看这个商品的发布前检查'
                 : '查看当前工作区状态'
       return result({
-        greeting: '欢迎使用Store Nova。',
-        productName: 'Store Nova商家营销助手',
+        greeting: '欢迎使用大麦。',
+        productName: '大麦商家营销助手',
         workspace: { id: workspaceId, status: (await getWorkspaceStatus(workspaceId)) === 'active' ? 'ready' : 'disabled' },
         currentStep: { ...current, primaryAction: onboardingV2.current_step.primary_action },
         onboarding_v2: onboardingV2,
@@ -12373,7 +12128,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       onboarding_v2: onboardingV2,
       storeSelection: { requiredForStoreActions: true, key: 'platform + accountId', warning: '别名和店铺名只用于展示与候选匹配，不能替代账号范围确认' },
       capabilityCards: {
-        title: 'Store Nova工作台',
+        title: '大麦工作台',
         presentation: 'conversation_cards',
         instruction: '优先展示这些卡片；商家选择卡片后再调用 entryMethod，不要求商家记忆工具名或内部 ID。店铺级操作先展示导航列表并确认平台与账号范围。',
         navigation: {
@@ -12561,11 +12316,11 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'workspace.usage.get':
       return result(await (persistence.usage ?? memoryUsage).get(workspaceId))
     case 'ops.customer-delivery.list':
-      return result({ items: await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).list(workspaceId)) })
+      return result({ items: await invokeCustomerDeliveryDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).list(workspaceId)) })
     case 'ops.customer-delivery.assets.upload': {
       await persistenceReady
       const deliveryId = requiredStringValue(params, 'deliveryId', 'delivery_id')
-      const delivery = await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).get(workspaceId, deliveryId))
+      const delivery = await invokeCustomerDeliveryDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).get(workspaceId, deliveryId))
       if (!delivery) throw new DomainError('CUSTOMER_DELIVERY_NOT_FOUND', '客户交付档案不存在', 404)
       const validated = validateCustomerDeliveryUpload(params)
       if (persistence.business) await hydrateWorkspaceFromPersistence(workspaceId)
@@ -12581,20 +12336,11 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'ops.customer-delivery.assets.get': {
       await persistenceReady
       const deliveryId = requiredStringValue(params, 'deliveryId', 'delivery_id')
-      const delivery = await invokeOpsDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).get(workspaceId, deliveryId))
+      const delivery = await invokeCustomerDeliveryDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).get(workspaceId, deliveryId))
       if (!delivery) throw new DomainError('CUSTOMER_DELIVERY_NOT_FOUND', '客户交付档案不存在', 404)
       const assetRef = requiredStringValue(params, 'assetRef', 'asset_ref')
       const purpose = customerDeliveryUploadPurpose(params.purpose)
-      const uploadEvents = persistence.outbox ? await persistence.outbox.listAggregateEvents(workspaceId, assetRef, 1000)
-        : (inMemoryTimelineEvents.get(workspaceId) ?? []).filter(event => event.aggregateId === assetRef)
-      const bindingId = deliveryUploadBindingId(workspaceId, deliveryId, purpose, assetRef)
-      const bindingEvents = persistence.outbox ? await persistence.outbox.listAggregateEvents(workspaceId, bindingId, 1)
-        : (inMemoryTimelineEvents.get(workspaceId) ?? []).filter(event => event.aggregateId === bindingId)
-      const belongsToDelivery = bindingEvents.some(event => event.eventType === 'customer_delivery.asset.upload_reused' && event.payload.asset_id === assetRef && event.payload.delivery_id === deliveryId && event.payload.purpose === purpose) || uploadEvents.some(event => {
-        if (event.eventType !== CUSTOMER_DELIVERY_SCAN_EVENT) return false
-        try { const admission = parseDeliveryScanAdmission(event); return admission.delivery_id === deliveryId && admission.purpose === purpose } catch { return false }
-      })
-      if (!belongsToDelivery) throw new DomainError('CUSTOMER_DELIVERY_UPLOAD_NOT_FOUND', '文件不存在或不属于当前交付档案', 404)
+      await assertCustomerDeliveryAssetBound(workspaceId, deliveryId, purpose, assetRef)
       const asset = await loadCustomerDeliveryAsset({ workspaceId, assetRef, business: persistence.business, memoryAssets: service.assets })
       return result(customerDeliveryUploadView(asset, purpose))
     }
@@ -13179,7 +12925,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const member = (await (persistence.members ?? memoryMembers).list(workspaceId)).find(item => item.externalSubject === actorId && item.status === 'active')
         if (member) available.add('workspace')
       }
-      return result({ schema_version: 2, actor_id: actorId, account_login: principal?.accountLogin ?? null, workspace_id: principal?.workbench === 'platform' ? null : workspaceId, workbench: principal?.workbench ?? 'workspace', available_workbenches: [...available].sort(), context_id: principal?.workbench === 'platform' ? 'platform:global' : `workspace:${workspaceId}`, context_version: contextVersion, authorization_revision: authorizationRevision, context: { id: principal?.workbench === 'platform' ? 'platform:global' : `workspace:${workspaceId}`, workbench: principal?.workbench ?? 'workspace', workspace_id: principal?.workbench === 'platform' ? null : workspaceId, access_mode: principal?.memberStatus === 'active' || principal?.workbench === 'platform' ? 'direct' : principal?.activeAuthorizationGrants?.length ? 'temporary_support' : 'direct', authorization_revision: authorizationRevision }, roles: authorization.roles, canonical_roles: authorization.canonicalRoles, capabilities: authorization.capabilities, assignable_roles: assignableRoles, denied_capabilities: principal?.explicitDeniedCapabilities ?? [], scopes: authorization.scopes, effective_permissions: authorization.atoms.map(atom => ({ capability: atom.capability, effect: atom.effect, scope: atom.scope, source: atom.source, source_id: atom.sourceId, obligations: atom.obligations, ...(atom.effectLimit ? { effect_limit: atom.effectLimit } : {}), ...(atom.expiresAt ? { expires_at: atom.expiresAt } : {}), ...(atom.revision ? { revision: atom.revision } : {}) })), temporary_grants: (principal?.activeAuthorizationGrants ?? []).map(grant => ({ id: grant.id, access_mode: grant.accessMode, workspace_id: grant.workspaceId, capabilities: grant.capabilities, resource_scope: grant.resourceScope, expires_at: grant.expiresAt, max_uses: grant.maxUses, use_count: grant.useCount, revision: grant.revision, authorization_revision: grant.authorizationRevision })), policy_version: AUTHZ_POLICY_VERSION, workspace_granted: principal?.workspaces.includes('*') || (workspaceId ? principal?.workspaces.includes(workspaceId) : false) || !requiresStrictAuth(), identity_id: principal?.identityId ?? null, session_id: principal?.sessionId ?? null, identity_status: principal?.identityStatus ?? null, risk_decision: principal?.riskDecision ?? null, mfa_verified: principal?.mfaVerified ?? false, session_expires_at: principal?.sessionExpiresAt ?? null })
+      return result({ schema_version: 2, actor_id: actorId, account_login: principal?.displayAccountLogin ?? principal?.accountLogin ?? null, workspace_id: principal?.workbench === 'platform' ? null : workspaceId, workbench: principal?.workbench ?? 'workspace', available_workbenches: [...available].sort(), context_id: principal?.workbench === 'platform' ? 'platform:global' : `workspace:${workspaceId}`, context_version: contextVersion, authorization_revision: authorizationRevision, context: { id: principal?.workbench === 'platform' ? 'platform:global' : `workspace:${workspaceId}`, workbench: principal?.workbench ?? 'workspace', workspace_id: principal?.workbench === 'platform' ? null : workspaceId, access_mode: principal?.memberStatus === 'active' || principal?.workbench === 'platform' ? 'direct' : principal?.activeAuthorizationGrants?.length ? 'temporary_support' : 'direct', authorization_revision: authorizationRevision }, roles: authorization.roles, canonical_roles: authorization.canonicalRoles, capabilities: authorization.capabilities, assignable_roles: assignableRoles, denied_capabilities: principal?.explicitDeniedCapabilities ?? [], scopes: authorization.scopes, effective_permissions: authorization.atoms.map(atom => ({ capability: atom.capability, effect: atom.effect, scope: atom.scope, source: atom.source, source_id: atom.sourceId, obligations: atom.obligations, ...(atom.effectLimit ? { effect_limit: atom.effectLimit } : {}), ...(atom.expiresAt ? { expires_at: atom.expiresAt } : {}), ...(atom.revision ? { revision: atom.revision } : {}) })), temporary_grants: (principal?.activeAuthorizationGrants ?? []).map(grant => ({ id: grant.id, access_mode: grant.accessMode, workspace_id: grant.workspaceId, capabilities: grant.capabilities, resource_scope: grant.resourceScope, expires_at: grant.expiresAt, max_uses: grant.maxUses, use_count: grant.useCount, revision: grant.revision, authorization_revision: grant.authorizationRevision })), policy_version: AUTHZ_POLICY_VERSION, workspace_granted: principal?.workspaces.includes('*') || (workspaceId ? principal?.workspaces.includes(workspaceId) : false) || !requiresStrictAuth(), identity_id: principal?.identityId ?? null, session_id: principal?.sessionId ?? null, identity_status: principal?.identityStatus ?? null, risk_decision: principal?.riskDecision ?? null, mfa_verified: principal?.mfaVerified ?? false, session_expires_at: principal?.sessionExpiresAt ?? null })
     }
     case 'ops.authorization.matrix.get': {
       const roles = [...CANONICAL_ROLES]
@@ -15078,11 +14824,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await persistenceReady
       const { scope, actorId } = billingReadScope(req, params)
       const orderId = required(params, 'order_id')
-      const order = persistence.billing
-        ? scope === 'mine'
-          ? await persistence.billing.getOrderForActor(workspaceId, orderId, actorId)
-          : await persistence.billing.getOrder(workspaceId, orderId)
-        : rechargeOrders.get(orderId)
+      const order = persistence.billing ? await persistence.billing.getOrder(workspaceId, orderId) : rechargeOrders.get(orderId)
       if (!order || order.workspaceId !== workspaceId) throw new DomainError('BILLING_ORDER_NOT_FOUND', '充值订单不存在或不属于当前工作区', 404)
       if (scope === 'mine' && order.createdByActorId !== actorId) throw new DomainError('BILLING_ORDER_NOT_FOUND', '充值订单不存在或不属于当前用户', 404)
       if (params.confirm_test_payment === 'true') {
@@ -15144,19 +14886,15 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'billing.transactions': {
       const { scope, actorId } = billingReadScope(req, params)
       const limit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Math.min(100, Math.max(1, Number(params.limit))) : 20
-      const offset = typeof params.offset === 'string' && /^\d+$/u.test(params.offset) ? Math.max(0, Number(params.offset)) : 0
       await persistenceReady
       if (persistence.billing) {
-        const [balanceFen, allTransactions] = await Promise.all([persistence.billing.balanceFen(workspaceId), persistence.billing.listTransactions(workspaceId, 10000, scope === 'mine' ? actorId : undefined)])
-        const transactions = allTransactions.slice(offset, offset + limit)
-        return result({ scope, wallet_scope: 'workspace', balance_cny: (balanceFen / 100).toFixed(2), transactions: transactions.map(publicMoneyRecord), offset, limit, total: allTransactions.length, has_more: offset + transactions.length < allTransactions.length, legacy_unattributed_hidden: scope === 'mine' })
+        const [balanceFen, transactions] = await Promise.all([persistence.billing.balanceFen(workspaceId), persistence.billing.listTransactions(workspaceId, limit, scope === 'mine' ? actorId : undefined)])
+        return result({ scope, wallet_scope: 'workspace', balance_cny: (balanceFen / 100).toFixed(2), transactions: transactions.map(publicMoneyRecord), legacy_unattributed_hidden: scope === 'mine' })
       }
-      const allTransactions = walletTransactions.filter(item => item.workspaceId === workspaceId && (scope === 'workspace' || item.actorId === actorId)).sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-      const transactions = allTransactions.slice(offset, offset + limit)
-      return result({ scope, wallet_scope: 'workspace', balance_cny: (walletBalanceFen(workspaceId) / 100).toFixed(2), transactions: transactions.map(publicMoneyRecord), offset, limit, total: allTransactions.length, has_more: offset + transactions.length < allTransactions.length, legacy_unattributed_hidden: scope === 'mine' })
+      return result({ scope, wallet_scope: 'workspace', balance_cny: (walletBalanceFen(workspaceId) / 100).toFixed(2), transactions: walletTransactions.filter(item => item.workspaceId === workspaceId && (scope === 'workspace' || item.actorId === actorId)).slice(-limit).reverse().map(publicMoneyRecord), legacy_unattributed_hidden: scope === 'mine' })
     }
     case 'billing.refund': {
-      const actorId = requireOperationsRole(req, ['platform_admin', 'ops_admin', 'finance_ops', 'platform_ops'])
+      const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'finance'])
       const orderId = required(params, 'order_id')
       const reason = required(params, 'reason')
       await persistenceReady
@@ -15172,22 +14910,13 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       let providerRefundId = `fixture-refund:${order.id}`
       if (order.paymentMode === 'provider') {
         try {
-          const providerRefund = await paymentProvider!.refund({ channel: order.channel, orderId: order.id, refundRequestId: reservation.id, providerTradeId: order.providerTradeId!, workspaceId, amountFen: order.amountFen, reason })
-          const classification = classifyPaymentRefundState(providerRefund.state)
-          if (classification === 'rejected') {
-            await releaseRechargeRefund({ workspaceId, orderId, reservationKey: reservation.orderId!, actorId, reason: `provider rejected refund: ${providerRefund.state ?? 'rejected'}` })
-            throw new DomainError('PAYMENT_PROVIDER_REFUND_REJECTED', `支付服务商拒绝退款：${providerRefund.state ?? 'rejected'}`, 409, { order_id: orderId, reservation_key: reservation.orderId, reservation_released: true })
-          }
-          if (classification === 'unknown') throw new DomainError('PAYMENT_PROVIDER_REFUND_OUTCOME_UNKNOWN', `支付服务商退款结果未知：${providerRefund.state ?? 'unknown'}`, 503, { order_id: orderId, reservation_key: reservation.orderId, reservation_released: false, next_actions: ['billing.reconciliation'] })
+          const providerRefund = await paymentProvider!.refund({ channel: order.channel, orderId: order.id, providerTradeId: order.providerTradeId!, workspaceId, amountFen: order.amountFen, reason })
+          const state = providerRefund.state?.trim().toLowerCase()
+          if (state && !['accepted', 'success', 'succeeded', 'completed'].includes(state)) throw new Error(`payment provider refund was not accepted: ${providerRefund.state}`)
           providerRefundId = providerRefund.providerRefundId
         } catch (error) {
-          if (error instanceof DomainError) throw error
-          const code = (error as { code?: string })?.code
-          if (code === 'PAYMENT_PROVIDER_REFUND_REJECTED') {
-            await releaseRechargeRefund({ workspaceId, orderId, reservationKey: reservation.orderId!, actorId, reason: error instanceof Error ? error.message : '支付服务商拒绝退款' })
-            throw new DomainError('PAYMENT_PROVIDER_REFUND_REJECTED', error instanceof Error ? error.message : '支付服务商拒绝退款', 409, { order_id: orderId, reservation_key: reservation.orderId, reservation_released: true })
-          }
-          throw new DomainError('PAYMENT_PROVIDER_REFUND_OUTCOME_UNKNOWN', error instanceof Error ? error.message : '支付服务商退款结果未知，已保留钱包预留并等待对账', 503, { order_id: orderId, reservation_key: reservation.orderId, reservation_released: false, next_actions: ['billing.reconciliation'] })
+          await releaseRechargeRefund({ workspaceId, orderId, reservationKey: reservation.orderId!, actorId, reason: error instanceof Error ? error.message : '支付服务商退款失败' })
+          throw new DomainError('PAYMENT_PROVIDER_REFUND_FAILED', error instanceof Error ? error.message : '支付服务商退款失败', 503)
         }
       }
       const refund = await completeRechargeRefund({ workspaceId, orderId, reservationKey: reservation.orderId!, actorId, reason, providerRefundId })
@@ -15272,20 +15001,70 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result({ currency: 'CNY', statement: { from_at: fromAt ?? null, to_at: toAt ?? null, scope: billingScope.scope, balance_scope: 'workspace', transaction_scope: billingScope.scope, model_usage_scope: billingScope.scope, wallet_scope: 'workspace', source: 'model_usage_ledger' }, balance_scope: 'workspace', transaction_scope: billingScope.scope, model_usage_scope: billingScope.scope, balance_cny: (balanceFen / 100).toFixed(2), recharge_cny: ((totals.recharge ?? 0) / 100).toFixed(2), debit_cny: ((totals.debit ?? 0) / 100).toFixed(2), refund_cny: ((totals.refund ?? 0) / 100).toFixed(2), transaction_count: periodTransactions.length, returned_transaction_count: transactions.length, transaction_limit: limit, has_more_transactions: periodTransactions.length > transactions.length, transactions: transactions.map(publicMoneyRecord), model_usage: { record_count: modelUsage.length, total_tokens: modelUsageTotals.totalTokens, provider_cost_cny: canViewProviderCosts && billingScope.scope === 'workspace' && missingCostEvidenceCount === 0 ? modelUsageTotals.costCny.toFixed(6) : null, missing_cost_evidence_count: missingCostEvidenceCount, customer_charge_cny: modelUsageTotals.customerChargeCny.toFixed(6), unsettled_records: unsettledModelUsage.length, reconciliation_status: reconciliationStatus, reconciliation_checks: { unknown_actor_count: unknownActorCount, orphan_action_count: orphanActionCount, wallet_amount_mismatch_count: walletMismatchCount, missing_run_key_count: missingRunKeyCount, budget_link_mismatch_count: budgetLinkMismatchCount }, external_provider_statement: externalProviderStatement, by_actor: byActor, unsettled: billingScope.scope === 'workspace' ? unsettledModelUsage.slice(0, 100).map(item => ({ id: item.id, revision: item.revision, action_id: item.actionId ?? null, run_key: item.budgetRunKey ?? null, modality: item.modality, model: item.model, settlement_status: item.settlementStatus, allowed_decisions: allowedModelUsageSettlementDecisions(item), attempt_count: item.attemptCount, provider_request_id: canViewProviderCosts ? item.providerRequestId ?? null : null, observed_at: item.observedAt, next_attempt_at: item.nextAttemptAt ?? null, last_error: item.lastError ?? null, settlement_reason: typeof item.metadata?.settlement_reason === 'string' ? item.metadata.settlement_reason : item.settlementStatus })) : [], by_modality: modelUsageTotals.byModality }, action_ledger: { record_count: actionLedger.length, by_kind_settlement_state: actionSummary }, provider: { mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : 'fixture', ready: process.env.PAYMENT_MODE === 'provider' && provider.ready, reasons: provider.reasons } })
     }
     case 'billing.reconciliation.run': {
-      const actorId = requireOperationsRole(req, ['finance_ops', 'ops_admin', 'platform_admin', 'platform_ops'])
-      const limit = params.limit === undefined ? 10 : typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Number(params.limit) : Number.NaN
-      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'limit 必须是 1 至 20 的整数', 400)
-      return result(await runPaymentReconciliation({ workspaceId, actorId, limit }))
+      const actorId = requireOperationsRole(req, ['finance', 'finance_ops', 'ops_admin', 'platform_admin', 'platform_ops'])
+      const limit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Math.min(100, Math.max(1, Number(params.limit))) : 50
+      await persistenceReady
+      if (!paymentProvider?.queryStatus) {
+        if (isProduction()) throw new DomainError('PAYMENT_RECONCILIATION_UNAVAILABLE', '生产支付 provider 未配置查单能力', 503)
+        return result({ state: 'not_configured', checked: 0, settled: [], pending: [], failed: [], next_action: '配置支付 provider query endpoint 后再运行对账' })
+      }
+      const orders = persistence.billing
+        ? await persistence.billing.listOrders(workspaceId, ['pending'], limit)
+        : [...rechargeOrders.values()].filter(order => order.workspaceId === workspaceId && order.state === 'pending').slice(0, limit)
+      const providerOrders = orders.filter(item => item.paymentMode === 'provider')
+      const skippedFixtureOrders = orders.length - providerOrders.length
+      const settled: Array<{ order_id: string; provider_trade_id: string }> = []
+      const pending: Array<{ order_id: string; state: string }> = []
+      const failed: Array<{ order_id: string; code: string; message: string }> = []
+      for (const order of providerOrders) {
+        try {
+          const providerStatus = await paymentProvider.queryStatus({ channel: order.channel, orderId: order.id, workspaceId })
+          if (providerStatus.state !== 'paid') {
+            if (providerStatus.state === 'closed' || providerStatus.state === 'failed') {
+              const terminal = await markRechargeProviderState({ workspaceId, orderId: order.id, state: providerStatus.state })
+              if (!terminal) {
+                failed.push({ order_id: order.id, code: 'BILLING_ORDER_NOT_FOUND', message: '充值订单在对账期间不可见' })
+                continue
+              }
+              const code = providerStatus.state === 'closed' ? 'PAYMENT_PROVIDER_ORDER_CLOSED' : 'PAYMENT_PROVIDER_ORDER_FAILED'
+              await persistEvent(workspaceId, order.id, 'billing.recharge.reconciled', 1, { order_id: order.id, state: providerStatus.state, source: 'provider_reconciliation' })
+              await recordOperationAudit({ workspaceId, actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: order as unknown as Record<string, unknown>, after: terminal as unknown as Record<string, unknown>, reason: '支付服务商查单确认订单终态' })
+              failed.push({ order_id: order.id, code, message: providerStatus.state === 'closed' ? '支付服务商已关闭该充值订单' : '支付服务商报告该充值订单失败' })
+            } else {
+              pending.push({ order_id: order.id, state: providerStatus.state })
+            }
+            continue
+          }
+          if (providerStatus.amountFen !== order.amountFen) {
+            failed.push({ order_id: order.id, code: 'PAYMENT_QUERY_AMOUNT_MISMATCH', message: '支付服务商查单金额缺失或与充值订单不一致' })
+            continue
+          }
+          if (!providerStatus.providerTradeId) {
+            failed.push({ order_id: order.id, code: 'PAYMENT_QUERY_TRADE_ID_MISSING', message: '支付服务商已支付但未返回交易号' })
+            continue
+          }
+          const paid = await markRechargePaid({ workspaceId, orderId: order.id, providerTradeId: providerStatus.providerTradeId, amountFen: order.amountFen, eventSource: 'provider_reconciliation' })
+          if (!paid) {
+            failed.push({ order_id: order.id, code: 'BILLING_ORDER_NOT_FOUND', message: '充值订单在对账期间不可见' })
+            continue
+          }
+          await recordOperationAudit({ workspaceId, actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: order as unknown as Record<string, unknown>, after: paid as unknown as Record<string, unknown>, reason: '运营人员执行支付服务商查单对账' })
+          settled.push({ order_id: order.id, provider_trade_id: providerStatus.providerTradeId })
+        } catch (error) {
+          failed.push({ order_id: order.id, code: error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'PAYMENT_RECONCILIATION_FAILED', message: error instanceof Error ? error.message : '支付服务商查单失败' })
+        }
+      }
+      return result({ state: failed.length || pending.length ? 'attention_required' : 'completed', checked: providerOrders.length, provider_orders: providerOrders.length, skipped_fixture_orders: skippedFixtureOrders, settled, pending, failed, actor_id: actorId, idempotent_settlement: true })
     }
     case 'billing.model-usage.reconciliation.run': {
-      const actorId = requireOperationsRole(req, ['finance_ops', 'ops_admin', 'platform_admin', 'platform_ops'])
+      const actorId = requireOperationsRole(req, ['finance', 'platform_ops'])
       const limit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Math.min(100, Math.max(1, Number(params.limit))) : 50
       const reconciliation = await runModelUsageReconciliation({ workspaceId, actorId, limit })
       await recordOperationAudit({ workspaceId, actorId, action: 'billing.model-usage.reconciliation.run', resourceType: 'model_usage', resourceId: workspaceId, before: {}, after: reconciliation, reason: '运营人员执行模型用量结算重试' })
       return result(reconciliation)
     }
     case 'billing.model-usage.resolve': {
-      const actorId = requireOperationsRole(req, ['finance_ops', 'ops_admin', 'platform_admin', 'platform_ops'])
+      const actorId = requireOperationsRole(req, ['finance', 'platform_ops'])
       if (!persistence.modelUsage) throw new DomainError('MODEL_USAGE_LEDGER_NOT_CONFIGURED', '模型用量结算台账未配置', 503)
       const usageId = required(params, 'usage_id')
       const revisionText = required(params, 'revision')
@@ -18448,57 +18227,17 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     res.end(JSON.stringify({ workspace_id: workspaceId, workbench: 'workspace' }))
     return
   }
-  if (path === '/oauth/authorize' && (req.method === 'GET' || req.method === 'POST')) {
-    const form = req.method === 'GET'
-      ? url.searchParams
-      : new URLSearchParams(Buffer.from(await requestBodyBytes(req, 64 * 1024)).toString('utf8'))
-    const authorization = validateMcpOAuthAuthorization(req, form)
-    const redirectWithCode = async (account: PasswordAccount) => {
-      const issued = await passwordAuthRepository.issueMcpAuthorizationCode({ ...authorization, account, redirectUri: authorization.redirectUri, codeChallenge: authorization.codeChallenge })
-      const target = new URL(authorization.redirectUri); target.searchParams.set('code', issued.code); target.searchParams.set('state', authorization.state)
-      res.statusCode = 302; res.setHeader('location', target.toString()); res.setHeader('cache-control', 'no-store'); res.end()
-    }
-    if (req.method === 'GET') {
-      // A browser session proves authentication, not consent to the OAuth
-      // transaction selected by the current client/state/PKCE tuple. Always
-      // require an explicit credentialed POST so a cross-site top-level GET
-      // cannot bind the signed-in merchant to an attacker's ChatGPT session.
-      return sendMcpOAuthLogin(res, authorization)
-    }
-    try {
-      const logged = await passwordAuthRepository.login({ login: form.get('login') ?? '', password: form.get('password') ?? '', ip: header(req, 'x-forwarded-for')?.split(',')[0]?.trim() ?? req.socket.remoteAddress, userAgent: header(req, 'user-agent') })
-      if (logged.principal.account.accountType !== 'merchant') { await passwordAuthRepository.logout(logged.token, 'mcp_oauth_account_type_mismatch'); return sendMcpOAuthLogin(res, authorization, 403, '该账号不能授权商家插件') }
-      res.setHeader('set-cookie', passwordCookie(logged.token))
-      return redirectWithCode(logged.principal.account)
-    } catch {
-      return sendMcpOAuthLogin(res, authorization, 401, '账号或密码错误，或账号尚未开通')
-    }
+  if (path === '/oauth/authorize' && req.method === 'GET') {
+    if (isProduction()) { res.statusCode = 404; res.end('not found'); return }
+    const redirect = url.searchParams.get('redirect_uri'); const state = url.searchParams.get('state') ?? ''
+    if (!redirect) { res.statusCode = 400; res.end('redirect_uri required'); return }
+    const target = new URL(redirect); target.searchParams.set('code', 'fixture-code'); if (state) target.searchParams.set('state', state)
+    res.statusCode = 302; res.setHeader('location', target.toString()); res.end(); return
   }
   if (path === '/oauth/token' && req.method === 'POST') {
-    res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store'); res.setHeader('pragma', 'no-cache')
-    if ((header(req, 'content-type') ?? '').split(';')[0]?.trim().toLowerCase() !== 'application/x-www-form-urlencoded') { res.statusCode = 415; res.end(JSON.stringify({ error: 'invalid_request' })); return }
-    const discovery = mcpOAuthDiscovery(req)
-    if (!discovery) { res.statusCode = 503; res.end(JSON.stringify({ error: 'temporarily_unavailable' })); return }
-    const form = new URLSearchParams(Buffer.from(await requestBodyBytes(req, 64 * 1024)).toString('utf8'))
-    for (const key of ['grant_type', 'client_id', 'resource']) if (form.getAll(key).length !== 1) { res.statusCode = 400; res.end(JSON.stringify({ error: 'invalid_request' })); return }
-    const grantType = form.get('grant_type')
-    const grantFields = grantType === 'authorization_code' ? ['code', 'code_verifier', 'redirect_uri'] : grantType === 'refresh_token' ? ['refresh_token'] : []
-    if (grantFields.some(key => form.getAll(key).length !== 1)) { res.statusCode = 400; res.end(JSON.stringify({ error: 'invalid_request' })); return }
-    const clientId = form.get('client_id') ?? ''
-    if (!configuredMcpOAuthClients().has(clientId)) { res.statusCode = 401; res.end(JSON.stringify({ error: 'invalid_client' })); return }
-    if (form.get('resource') !== discovery.resource) { res.statusCode = 400; res.end(JSON.stringify({ error: 'invalid_target' })); return }
-    const context = { clientId, issuer: discovery.issuer, audience: discovery.resource, resource: discovery.resource, scope: ['merchant'] }
-    try {
-      const pair = grantType === 'authorization_code'
-        ? await passwordAuthRepository.exchangeMcpAuthorizationCode({ ...context, code: form.get('code') ?? '', codeVerifier: form.get('code_verifier') ?? '', redirectUri: form.get('redirect_uri') ?? '' })
-        : grantType === 'refresh_token'
-          ? await passwordAuthRepository.refreshMcpOAuthToken({ ...context, refreshToken: form.get('refresh_token') ?? '' })
-          : undefined
-      if (!pair) { res.statusCode = 400; res.end(JSON.stringify({ error: 'unsupported_grant_type' })); return }
-      res.statusCode = 200; res.end(JSON.stringify({ access_token: pair.accessToken, refresh_token: pair.refreshToken, token_type: 'Bearer', expires_in: pair.expiresIn, scope: pair.scope.join(' ') })); return
-    } catch {
-      res.statusCode = 400; res.end(JSON.stringify({ error: 'invalid_grant' })); return
-    }
+    if (isProduction()) { res.statusCode = 404; res.end('not found'); return }
+    const fixture = process.env.MERCHANT_MCP_TOKEN?.trim() || 'fixture-token'
+    res.statusCode = 200; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ access_token: fixture, token_type: 'Bearer', expires_in: 3600, scope: 'openid profile merchant' })); return
   }
   // OAuth discovery endpoints used by ChatGPT/MCP clients. Keep these public
   // so an unauthenticated client can discover where to sign in.
@@ -18518,7 +18257,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       res.end(JSON.stringify({ error: 'MCP_OAUTH_NOT_CONFIGURED' })); return
     }
     res.statusCode = 200; res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store')
-    res.end(JSON.stringify({ issuer: discovery.issuer, authorization_endpoint: discovery.authorizationEndpoint, token_endpoint: discovery.tokenEndpoint, response_types_supported: ['code'], grant_types_supported: ['authorization_code', 'refresh_token'], token_endpoint_auth_methods_supported: ['none'], code_challenge_methods_supported: ['S256'], scopes_supported: discovery.scopes })); return
+    res.end(JSON.stringify({ issuer: discovery.issuer, authorization_endpoint: discovery.authorizationEndpoint, token_endpoint: discovery.tokenEndpoint, response_types_supported: ['code'], grant_types_supported: ['authorization_code'], code_challenge_methods_supported: ['S256'], scopes_supported: discovery.scopes })); return
   }
   if (req.method === 'GET' && path === '/.well-known/openai-apps-challenge') {
     const challenge = process.env.OPENAI_APPS_CHALLENGE_TOKEN?.trim()
@@ -18627,7 +18366,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     try {
       const account = await passwordAuthRepository.reviewMerchantRegistration({ login, decision, workspaceIds, actorId: requestActor(req), reason })
       return send(res, 200, 'unknown', { application_id: account.id, login: account.login, status: account.status, workspace_ids: account.workspaceIds, revision: account.revision }, null, req)
-    } catch (error) { const code = (error as { code?: string }).code; throw new DomainError(code ?? 'AUTH_REGISTRATION_REVIEW_FAILED', code === 'AUTH_ACCOUNT_NOT_FOUND' ? '开通申请不存在' : code === 'AUTH_REGISTRATION_STATE_INVALID' ? '该申请已处理，不能重复操作' : '开通审核失败', code === 'AUTH_ACCOUNT_NOT_FOUND' ? 404 : 400) }
+    } catch (error) { const code = (error as { code?: string }).code; throw new DomainError(code ?? 'AUTH_REGISTRATION_REVIEW_FAILED', code === 'AUTH_ACCOUNT_NOT_FOUND' ? '注册申请不存在' : code === 'AUTH_REGISTRATION_STATE_INVALID' ? '该申请已审核，不能重复操作' : '注册申请审核失败', code === 'AUTH_ACCOUNT_NOT_FOUND' ? 404 : 400) }
   }
   if (req.method === 'POST' && path === '/v1/ops/merchant-accounts/authorize') {
     requireOperationsRole(req, ['platform_ops'])
@@ -18660,7 +18399,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     }
     const accounts = await passwordAuthRepository.listAccounts()
     const account = accounts.find(item => item.login === login && item.accountType === 'merchant')
-    if (!account) throw new DomainError('AUTH_ACCOUNT_NOT_FOUND', '商家账号不存在，请先由平台运营创建账号并分配工作区', 404)
+    if (!account) throw new DomainError('AUTH_ACCOUNT_NOT_FOUND', '商家账号不存在，请先创建或提交注册申请', 404)
     if (account.status === 'suspended' || account.status === 'revoked') throw new DomainError('AUTH_ACCOUNT_NOT_ACTIVE', '商家账号当前已停用，不能授权开通', 403)
     if ((await getWorkspaceStatus(workspaceId)) !== 'active') throw new DomainError('AUTH_WORKSPACE_NOT_FOUND', '企业工作区不存在或未启用', 400)
     const resourceId = `${login.replaceAll('@', '_at_')}:${workspaceId}`
@@ -19146,35 +18885,6 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const report = await runWorkspaceStorageReconciliation(workspaceId)
     return send(res, 200, workspaceId, { report, read_only: true, workspace_id: workspaceId }, null, req)
   }
-  if (req.method === 'POST' && path === '/v1/internal/billing/reconciliation') {
-    await requireWorkerAuthorization(req)
-    const workspaceId = headerRequired(req, 'x-workspace-id')
-    const workerId = headerRequired(req, 'x-worker-id')
-    const input = await body(req)
-    const bodyWorkspaceId = typeof input.workspace_id === 'string' ? input.workspace_id.trim() : ''
-    if (!bodyWorkspaceId) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'workspace_id 必须是非空字符串', 400)
-    if (bodyWorkspaceId !== workspaceId) throw new DomainError(ERROR_CODES.TENANT_SCOPE_DENIED, '支付对账工作区不匹配', 403)
-    const limit = input.limit === undefined ? 10 : Number(input.limit)
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'limit 必须是 1 至 20 的整数', 400)
-    if (process.env.PAYMENT_RECONCILIATION_ENABLED !== 'true') throw new DomainError('PAYMENT_RECONCILIATION_DISABLED', '支付对账自动执行未启用', 503)
-    const actorId = `worker:${workerId}`
-    const reconciliation = await runPaymentReconciliation({ workspaceId, actorId, limit })
-    const summary = {
-      state: reconciliation.state,
-      limit,
-      checked: reconciliation.checked,
-      payment_checked: reconciliation.payment_checked,
-      refund_checked: reconciliation.refund_checked,
-      settled: reconciliation.settled.length,
-      pending: reconciliation.pending.length,
-      failed: reconciliation.failed.length,
-      refund_settled: reconciliation.refund_settled.length,
-      refund_pending: reconciliation.refund_pending.length,
-      refund_failed: reconciliation.refund_failed.length,
-    }
-    await recordOperationAudit({ workspaceId, actorId, action: 'billing.reconciliation.worker', resourceType: 'billing_reconciliation', resourceId: workspaceId, before: {}, after: summary, reason: 'reconcile worker 自动执行支付与退款对账' })
-    return send(res, 200, workspaceId, reconciliation, null, req)
-  }
   if (req.method === 'POST' && path === '/v1/internal/support/sla-scan') {
     await requireWorkerAuthorization(req)
     const workspaceId = headerRequired(req, 'x-workspace-id')
@@ -19392,10 +19102,9 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const providerTradeId = required(input, 'provider_trade_id')
     const amountFen = Number(input.amount_fen)
     const state = typeof input.state === 'string' ? input.state : ''
-    const currency = typeof input.currency === 'string' ? input.currency : undefined
     const workspaceId = typeof input.workspace_id === 'string' && input.workspace_id.trim() ? input.workspace_id.trim() : ''
     if (!workspaceId || !Number.isSafeInteger(amountFen) || amountFen < 0) throw new DomainError('PAYMENT_CALLBACK_INVALID', '支付回调缺少有效订单、工作区或金额', 400)
-    const callbackProof = verifyPaymentCallback(req, { channel: paymentCallbackMatch[2] as RechargeChannel, workspaceId, payload: { order_id: orderId, provider_trade_id: providerTradeId, amount_fen: amountFen, currency, state } })
+    const callbackProof = verifyPaymentCallback(req, { channel: paymentCallbackMatch[2] as RechargeChannel, workspaceId, payload: { order_id: orderId, provider_trade_id: providerTradeId, amount_fen: amountFen, state } })
     const freshCallbackProof = callbackProof ? await consumePaymentCallbackProof({ workspaceId, channel: paymentCallbackMatch[2] as RechargeChannel, ...callbackProof }) : true
     if (paymentCallbackMatch[1] === 'commercial') {
       await persistenceReady

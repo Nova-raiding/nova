@@ -45,15 +45,16 @@ describe('customer delivery real-scan harness safety guards (not live scan accep
     await expect(startCustomerDeliveryScanFixture({ enabled: 'true' as unknown as boolean })).resolves.toBeUndefined()
     await expect(stopCustomerDeliveryScanFixture(undefined)).resolves.toEqual({ stopped: [], leftRunning: [] })
   })
-  it.each([0, -1, 120_001, Number.NaN, Number.POSITIVE_INFINITY, 1.5])('rejects unsafe timeout %s', value => {
+  it.each([0, -1, 300_001, Number.NaN, Number.POSITIVE_INFINITY, 1.5])('rejects unsafe timeout %s', value => {
     expect(() => customerDeliveryScanTimeout(value)).toThrow('CUSTOMER_DELIVERY_SCAN_TIMEOUT_INVALID')
   })
   it('accepts only bounded startup deadlines', () => {
     expect(customerDeliveryScanTimeout()).toBe(120_000)
     expect(customerDeliveryScanTimeout(5000)).toBe(5000)
+    expect(customerDeliveryScanTimeout(300_000)).toBe(300_000)
   })
   it('validates enabled inputs before touching runtime services', async () => {
-    await expect(startCustomerDeliveryScanFixture({ enabled: true, evidenceDir: '/tmp/unused-scan-guard', startupTimeoutMs: 120_001 })).rejects.toThrow('TIMEOUT_INVALID')
+    await expect(startCustomerDeliveryScanFixture({ enabled: true, evidenceDir: '/tmp/unused-scan-guard', startupTimeoutMs: 300_001 })).rejects.toThrow('TIMEOUT_INVALID')
     await expect(startCustomerDeliveryScanFixture({ enabled: true, evidenceDir: '../shared' })).rejects.toThrow('EVIDENCE_DIRECTORY_INVALID')
     await expect(startCustomerDeliveryScanFixture({ enabled: true, evidenceDir: '/unused/scan-guard-test', signal: AbortSignal.abort('private cancellation reason') })).rejects.toThrow('CUSTOMER_DELIVERY_SCAN_ABORTED')
   })

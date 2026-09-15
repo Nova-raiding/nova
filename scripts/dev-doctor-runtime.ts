@@ -62,6 +62,15 @@ export type CommercialRuntimeReadiness = {
   productionGate?: boolean
 }
 
+/**
+ * Alert delivery is an optional production capability.  An explicit disabled
+ * state is healthy for a deployment whose approved scope excludes alerts;
+ * unknown configuration and an enabled-but-unready channel remain blocked.
+ */
+export function alertNotificationReady(enabled: boolean | undefined, ready: boolean | undefined): boolean {
+  return enabled === false || (enabled === true && ready === true)
+}
+
 const REQUIRED_PLATFORM_KEYS = ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] as const
 const REQUIRED_RELAY_MODALITIES = ['text', 'image', 'image_edit', 'ocr', 'video'] as const
 

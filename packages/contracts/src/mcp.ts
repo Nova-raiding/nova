@@ -751,11 +751,11 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'ops.customer-delivery.videos.add', description: 'Attach one uploaded delivery video asset reference.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), title: boundedString(200, 1), asset_ref: boundedString(1_000, 1), sort_order: nonNegativeIntegerString }, ['target_workspace_id', 'delivery_id', 'title', 'asset_ref']) },
   {
     method: 'ops.customer-delivery.assets.upload',
-    description: 'Upload a customer delivery contract or video into quarantine for automatic platform scanning. Upload acceptance does not assert a clean scan or attach the asset as delivery evidence.',
+    description: 'Upload customer delivery contract, payment, integration, acceptance, training, or video evidence into quarantine for automatic platform scanning. Upload acceptance does not assert a clean scan or attach the asset as delivery evidence.',
     params: params({
       target_workspace_id: boundedString(200),
       delivery_id: boundedString(256),
-      purpose: { type: 'string', enum: ['contract', 'video'] },
+      purpose: { type: 'string', enum: ['contract', 'payment', 'system_integration', 'functional_acceptance', 'training', 'video'] },
       name: boundedString(255),
       mime_type: boundedString(100),
       content_base64: boundedString(69_905_068),
@@ -764,11 +764,11 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'ops.customer-delivery.assets.get',
-    description: 'Read the upload and scan status of an asset bound to the explicit customer delivery, workspace and contract or video purpose. Does not mark an asset clean.',
+    description: 'Read the upload and scan status of an asset bound to the explicit customer delivery, workspace and evidence purpose. Does not mark an asset clean.',
     params: params({
       target_workspace_id: boundedString(200),
       delivery_id: boundedString(256),
-      purpose: { type: 'string', enum: ['contract', 'video'] },
+      purpose: { type: 'string', enum: ['contract', 'payment', 'system_integration', 'functional_acceptance', 'training', 'video'] },
       asset_ref: boundedString(1_000),
     }, ['target_workspace_id', 'delivery_id', 'purpose', 'asset_ref']),
   },
@@ -886,7 +886,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'billing.refund', description: 'Refund a paid wallet recharge exactly once with an auditable reason.', params: params({ order_id: { type: 'string' }, reason: { type: 'string' } }, ['order_id', 'reason']) },
   { method: 'billing.reconciliation', description: 'Return workspace wallet totals and transaction evidence for reconciliation.', params: params({ limit: { type: 'string' } }) },
   { method: 'billing.model-usage.statement', description: 'Return the authenticated member token usage statement by default; workspace scope requires a billing administration role.', params: params({ from_at: { type: 'string', description: 'Inclusive ISO-8601 period start.' }, to_at: { type: 'string', description: 'Exclusive ISO-8601 period end.' }, limit: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] } }) },
-  { method: 'billing.reconciliation.run', description: 'Run role-protected provider reconciliation for pending wallet payments and unresolved recharge refunds; proven outcomes settle idempotently and ambiguous results remain held for review.', params: params({ limit: { type: 'string' } }) },
+  { method: 'billing.reconciliation.run', description: 'Run a role-protected provider status reconciliation for pending wallet orders; paid orders settle idempotently and ambiguous results remain visible.', params: params({ limit: { type: 'string' } }) },
   { method: 'billing.model-usage.reconciliation.run', description: 'Claim and retry a bounded batch of pending model usage settlements; unresolved or ambiguous records remain visible for later operations handling.', params: params({ limit: { type: 'string' } }) },
   { method: 'billing.model-usage.resolve', description: 'Apply an optimistic-concurrency operations decision to one model usage settlement with an authenticated actor, audit reason, and evidence reference.', params: params({ usage_id: { type: 'string' }, revision: { type: 'string' }, decision: { type: 'string', enum: ['retry', 'waive', 'manual_attention'] }, reason: { type: 'string' }, evidence_ref: { type: 'string' } }, ['usage_id', 'revision', 'decision', 'reason', 'evidence_ref']) },
   { method: 'billing.export', description: 'Export the authenticated member billing transactions by default; workspace scope requires a billing administration role.', params: params({ limit: { type: 'string' }, format: { type: 'string', enum: ['csv', 'json'] }, from_at: { type: 'string' }, to_at: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] } }) },

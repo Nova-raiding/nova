@@ -15,6 +15,9 @@ describe('customer delivery upload admission and public projection (no scanner e
     const sha256 = createHash('sha256').update(Buffer.from(params.content_base64, 'base64')).digest('hex')
     expect(validateCustomerDeliveryUpload({ ...params, mime_type: ' Application/PDF ', sha256 })).toEqual({ purpose: 'contract', mimeType: 'application/pdf', sha256 })
   })
+  it.each(['payment', 'system_integration', 'functional_acceptance', 'training'] as const)('admits document evidence for %s', purpose => {
+    expect(validateCustomerDeliveryUpload({ ...upload(), purpose })).toMatchObject({ purpose, mimeType: 'application/pdf' })
+  })
   it.each([undefined, '', 'image', 'CONTRACT'])('rejects invalid purpose %s', purpose => {
     expect(() => customerDeliveryUploadPurpose(purpose)).toThrowError(expect.objectContaining({ code: 'INVALID_REQUEST' }))
   })

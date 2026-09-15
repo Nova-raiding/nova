@@ -7,6 +7,22 @@ import type { WorkspaceSummary } from "../types/ops.js";
 import { customerDeliveryClient } from "../api/customerDeliveryClient.js";
 import { describeOpsError } from "../api/opsClient.js";
 import { deliveryDateTimeIsoValue } from "../components/delivery/deliveryDateTime.js";
+import type { CustomerDeliveryRecord } from "../components/delivery/CustomerDeliverySection.js";
+
+export function buildCustomerDeliveryProfilePatch(record: CustomerDeliveryRecord) {
+  return {
+    companyName: record.companyName.trim(),
+    contractNumber: record.contractNo?.trim() ?? "",
+    paymentStatus: record.paymentStatus,
+    contractRef: record.contractFile?.trim() ?? "",
+    projectOwner: record.owner?.trim() ?? "",
+    supportOwner: record.afterSalesOwner?.trim() ?? "",
+    paymentDate: record.paymentDate || null,
+    paymentEvidenceRefs: record.paymentEvidenceRefs ?? [],
+    plannedGoLiveAt: deliveryDateTimeIsoValue(record.requiredLaunchAt) ?? null,
+    customerProfileStatus: record.profile ? "complete" : "incomplete",
+  };
+}
 
 export function customerDeliveryWorkspaceOptions(workspaces: WorkspaceSummary[]) {
   return workspaces.map((workspace) => ({
@@ -37,6 +53,18 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     if (currentWorkspace.current === targetWorkspaceId) setMutationError(describeOpsError(cause));
   };
   const loadRequest = useRef<{ generation: number; controller?: AbortController }>({ generation: 0 });
+  const hasCurrentReadAccess = (workspaceId: string, generation?: number) => Boolean(canRead && workspaceId && currentWorkspace.current === workspaceId && (generation === undefined || loadRequest.current.generation === generation));
+  const startCurrentRead = (workspaceId: string, expectedGeneration?: number) => {
+    if (!hasCurrentReadAccess(workspaceId, expectedGeneration)) return undefined;
+    loadRequest.current.controller?.abort();
+    const controller = new AbortController();
+    const generation = ++loadRequest.current.generation;
+    loadRequest.current.controller = controller;
+    return {
+      controller,
+      isCurrent: () => !controller.signal.aborted && hasCurrentReadAccess(workspaceId, generation),
+    };
+  };
   const load = async () => {
     if (!canRead || !targetWorkspaceId || currentWorkspace.current !== targetWorkspaceId) return;
     loadRequest.current.controller?.abort();
@@ -136,7 +164,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const saveTraining = async (record: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord, completed: boolean, evidenceAssetRefs: string[]) => {
     if (!Number.isSafeInteger(record.revision) || (record.revision ?? 0) < 1) throw new Error("客户交付记录缺少有效 revision，请刷新后重试");
     const revision = record.revision as number;
-    try { const updated = await customerDeliveryClient.completeTraining({ targetWorkspaceId, deliveryId: record.id, completed, expectedRevision: revision }); await load(); return updated; }
+    try { const updated = await customerDeliveryClient.completeTraining({ targetWorkspaceId, deliveryId: record.id, completed, evidenceAssetRefs, expectedRevision: revision }); await load(); return updated; }
     catch (cause) { reportMutationError(cause); throw cause; }
   };
   const addVideo = async (record: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord, input: { title: string; assetRef: string; sortOrder: number }) => {

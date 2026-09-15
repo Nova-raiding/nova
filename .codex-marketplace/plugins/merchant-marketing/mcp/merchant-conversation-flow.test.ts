@@ -64,7 +64,7 @@ async function withBridge(handler: (request: Json, res: ServerResponse<IncomingM
     // unset token is otherwise recovered from macOS launchd by the bridge,
     // turning local confirmation into an extra remote MCP request.
     env: {
-      ...process.env,
+      ...TEST_PROCESS_ENV,
       MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
       MERCHANT_WORKSPACE_ID: 'ws_test',
       MERCHANT_MCP_TOKEN: '${MERCHANT_MCP_TOKEN}',

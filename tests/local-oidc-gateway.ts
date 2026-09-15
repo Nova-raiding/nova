@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { pathToFileURL } from 'node:url'
+import { bindOidcDisplayLoginProof, encodeOidcDisplayLogin } from '../packages/security/src/oidc-login-proof.js'
 
 // This fixture is deliberately HTTP loopback-only. The __Host- prefix would
 // require Secure/TLS and Chromium would correctly discard such cookies here.
@@ -33,6 +34,8 @@ export interface LocalOidcGatewayConfig {
   workbench?: OpsWorkbench
   amr?: readonly string[]
   sessionTtlSeconds?: number
+  /** Exercise the legacy proof only in compatibility tests. Normal fixtures emit v2. */
+  includeDisplayLogin?: boolean
 }
 
 interface GatewaySession {
@@ -67,7 +70,9 @@ function validatedConfig(input: LocalOidcGatewayConfig): Required<LocalOidcGatew
   const sessionTtlSeconds = input.sessionTtlSeconds ?? 900
   if (!Number.isSafeInteger(sessionTtlSeconds) || sessionTtlSeconds < 60 || sessionTtlSeconds > 3600)
     fail('sessionTtlSeconds must be between 60 and 3600')
-  return { ...input, uiUpstream, apiUpstream, issuer: issuer.toString().replace(/\/$/u, ''), roles, workbench, amr, sessionTtlSeconds }
+  const includeDisplayLogin = input.includeDisplayLogin ?? true
+  if (includeDisplayLogin) encodeOidcDisplayLogin(input.username)
+  return { ...input, uiUpstream, apiUpstream, issuer: issuer.toString().replace(/\/$/u, ''), roles, workbench, amr, sessionTtlSeconds, includeDisplayLogin }
 }
 
 function loopbackUrl(raw: string, name: string): string {
@@ -201,7 +206,11 @@ function oidcProofHeaders(config: Required<LocalOidcGatewayConfig>, input: { met
   const bodyDigest = createHash('sha256').update(input.body).digest('hex')
   const roles = config.roles.join(',')
   const amr = config.amr.join(',')
-  const canonical = [input.method, input.target, input.workspace, input.workbench, config.issuer, input.subject, input.sid, roles, amr, String(input.authTime), String(input.expiresAt), timestamp, bodyDigest, nonce].join('\n')
+  const legacyCanonical = [input.method, input.target, input.workspace, input.workbench, config.issuer, input.subject, input.sid, roles, amr, String(input.authTime), String(input.expiresAt), timestamp, bodyDigest, nonce].join('\n')
+  const encodedDisplayLogin = config.includeDisplayLogin ? encodeOidcDisplayLogin(config.username) : undefined
+  const canonical = encodedDisplayLogin
+    ? bindOidcDisplayLoginProof(legacyCanonical, '2', encodedDisplayLogin).canonical
+    : legacyCanonical
   const headers = new Headers({
     'content-type': 'application/json',
     'x-oidc-issuer': config.issuer,
@@ -218,6 +227,10 @@ function oidcProofHeaders(config: Required<LocalOidcGatewayConfig>, input: { met
     'x-oidc-nonce': nonce,
     'x-oidc-signature': createHmac('sha256', config.oidcSigningSecret).update(canonical).digest('hex'),
   })
+  if (encodedDisplayLogin) {
+    headers.set('x-oidc-proof-version', '2')
+    headers.set('x-oidc-display-login', encodedDisplayLogin)
+  }
   return headers
 }
 

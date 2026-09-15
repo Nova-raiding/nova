@@ -220,7 +220,7 @@ describe('commercial access HTTP/MCP operation parity', () => {
   it('dispatches the HTTP and native MCP access reads under their registered operation', () => {
     const httpPolicy = getHttpOperationPolicy('GET', '/v1/commercial/access')
     expect(httpPolicy).toMatchObject({ mcpMethod: 'commercial.access.get', authentication: 'identity' })
-    expect(getMcpMethodPolicy('commercial.access.get')).toMatchObject({ effect: 'read', capability: 'billing.workspace.read', scope: 'workspace' })
+    expect(getMcpMethodPolicy('commercial.access.get')).toMatchObject({ effect: 'read', capability: 'billing.self.read', scope: 'self' })
 
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     expect(source).toContain("case 'commercial.access.get': {")
@@ -624,7 +624,10 @@ describe('API application wiring', () => {
   it('routes every real quarantine object write through quota and atomic asset persistence', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     expect((source.match(/const stored = await putQuarantineObject\(/gu) ?? [])).toHaveLength(6)
+    // Customer-delivery quarantine adds one independently authorized atomic
+    // event; it must retain the same asset/outbox transaction boundary.
     expect((source.match(/await persistAssetSnapshotAndEvent\(workspaceId,/gu) ?? [])).toHaveLength(6)
+    expect(source).toContain('await persistAssetSnapshotAndEvent(workspaceId, asset, CUSTOMER_DELIVERY_SCAN_EVENT, eventPayload, asset as unknown as Record<string, unknown>)')
     expect((source.match(/compensateStoredAsset\(/gu) ?? [])).toHaveLength(7)
     expect(source).toContain('const quota = persistence.storageQuota')
     expect(source).toContain('onDeleted: async row =>')
@@ -645,18 +648,6 @@ describe('API application wiring', () => {
     expect(source).toContain("action: 'billing.model-usage.reconciliation.worker'")
     expect(source).toContain("if (req.method === 'POST' && path === '/v1/internal/model-usage/reconciliation')")
     expect(source).toContain('requireWorkerAuthorization(req)')
-  })
-
-  it('shares one payment reconciliation implementation across MCP and the signed worker route', () => {
-    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
-    const mcpStart = source.indexOf("case 'billing.reconciliation.run':")
-    const mcpEnd = source.indexOf("case 'billing.model-usage.reconciliation.run':", mcpStart)
-    const mcp = source.slice(mcpStart, mcpEnd)
-    expect(mcp).toContain('runPaymentReconciliation({ workspaceId, actorId, limit })')
-    expect(mcp).not.toContain('paymentProvider.queryStatus')
-    expect(mcp).not.toContain('listActiveRechargeRefunds')
-    expect(source).toContain("path === '/v1/internal/billing/reconciliation'")
-    expect(source).toContain("action: 'billing.reconciliation.worker'")
   })
 
   it('projects SLA scan actions into durable operational alerts without coupling webhook latency', () => {

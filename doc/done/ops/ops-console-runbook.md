@@ -14,8 +14,23 @@
 - Kubernetes 生产清单独立部署 `merchant-ops-ui`，访问域名为 `https://ops.merchant.example.com`；API 同时配置 `OPS_AUTH_MODE=oidc`，签名密钥由 `merchant-runtime-secrets` 的 `OIDC_PROXY_SIGNING_SECRET` 注入。商家演示站 `merchant-ui` 与运营台镜像不是同一个应用。
 - 本地/演示环境可在页面输入工作区 ID、操作员 ID 和 Bearer token；token 仅保存在当前浏览器 localStorage，不写入构建产物。生产环境必须由 OIDC/SSO 网关建立短时、httpOnly、secure 会话，禁止让运营人员在页面输入或持久化长期 Bearer token。
 - 网关下发的 Bearer token 必须包含目标工作区 grant，生产环境不能使用 `*` wildcard。
-- OIDC 模式下 API 不信任浏览器直接提交的身份头。SSO 网关必须使用 `OIDC_PROXY_SIGNING_SECRET` 对以下 13 个换行分隔字段做 HMAC-SHA256（hex）签名，顺序不可改变：`HTTP 方法`、`原始 request-target（path 与原始 query，不能重新排序或规范化）`、`workspace_id`、`issuer`、`subject`、`session_id`、逗号分隔且稳定排序的角色、逗号分隔且稳定排序的 AMR、认证 Unix 秒、会话过期 Unix 秒、请求 Unix 秒、原始请求体 SHA-256（空请求体也必须计算）、一次性随机 nonce。请求必须携带 `X-OIDC-Issuer`、`X-OIDC-Sub`、`X-OIDC-Sid`、`X-OIDC-Workspace`、`X-OIDC-Roles`、`X-OIDC-Amr`、`X-OIDC-Auth-Time`、`X-OIDC-Session-Expires-At`、`X-OIDC-Timestamp`、`X-OIDC-Body-SHA256`、`X-OIDC-Nonce`、`X-OIDC-Signature`；请求时间戳容差为 60 秒，会话必须尚未过期，nonce 必须为 16–128 位 URL-safe 随机值并由 Redis 原子消费。query、请求体摘要不一致，nonce 重放或生产 Redis 不可用均拒绝请求。首次 `workspace.bootstrap` 是唯一 workspace 例外：请求必须携带 `X-Workspace-Bootstrap: true`，此时 `workspace_id` 与 `X-OIDC-Workspace` 为空，并将空值纳入签名。创建成功后所有请求都必须携带已绑定 workspace。API 生产配置需同时设置 `OPS_AUTH_MODE=oidc`、`REDIS_URL` 和该密钥；缺少任一项会拒绝请求。
+- OIDC 模式下 API 不信任浏览器直接提交的身份头。SSO 网关必须使用 `OIDC_PROXY_SIGNING_SECRET` 对以下 14 个换行分隔字段做 HMAC-SHA256（hex）签名，顺序不可改变：`HTTP 方法`、`原始 request-target（path 与原始 query，不能重新排序或规范化）`、`workspace_id`、`workbench（platform 或 workspace）`、`issuer`、`subject`、`session_id`、逗号分隔且稳定排序的角色、逗号分隔且稳定排序的 AMR、认证 Unix 秒、会话过期 Unix 秒、请求 Unix 秒、原始请求体 SHA-256（空请求体也必须计算）、一次性随机 nonce。请求必须携带 `X-OIDC-Issuer`、`X-OIDC-Sub`、`X-OIDC-Sid`、`X-OIDC-Workspace`、`X-OIDC-Workbench`、`X-OIDC-Roles`、`X-OIDC-Amr`、`X-OIDC-Auth-Time`、`X-OIDC-Session-Expires-At`、`X-OIDC-Timestamp`、`X-OIDC-Body-SHA256`、`X-OIDC-Nonce`、`X-OIDC-Signature`；请求时间戳容差为 60 秒，会话必须尚未过期，nonce 必须为 16–128 位 URL-safe 随机值并由 Redis 原子消费。query、请求体摘要不一致，nonce 重放或生产 Redis 不可用均拒绝请求。平台工作台可使用空工作区表示全局范围；在 workspace 工作台，首次 `workspace.bootstrap` 是唯一空工作区例外：请求必须携带 `X-Workspace-Bootstrap: true`，此时 `workspace_id` 与 `X-OIDC-Workspace` 为空，并将空值纳入签名。创建成功后所有请求都必须携带已绑定 workspace。API 生产配置需同时设置 `OPS_AUTH_MODE=oidc`、`REDIS_URL` 和该密钥；缺少任一项会拒绝请求。
 - 当商家 UI 与运营台共用 API Service 时，必须额外设置 `MERCHANT_BEARER_HOSTNAME=merchant.example.com`，并在渲染生产配置中声明 `merchant_bearer_hostname`；只有精确匹配该 Host 的生产请求才允许进入商家 Bearer 授权分支，`ops.merchant.example.com` 仍只接受 OIDC 网关断言。该配置不能使用通配符，也不能替代 API token 的工作区授权。
+
+## OIDC 登录账号展示扩展（网关证明 v2）
+
+这不是 OIDC 标准令牌格式变更，而是本项目网关到 API 的 HMAC 证明扩展。外部 SSO 网关必须在认证完成后取可信登录名，不能信任浏览器提交的 `X-OIDC-*` 头；转发前先剥离，再写入以下两个头：
+
+- `X-OIDC-Proof-Version: 2`
+- `X-OIDC-Display-Login: <登录名原始 UTF-8 字节的无 padding base64url>`
+
+将上节原有 14 字段组成的字符串记为 `legacyCanonical`，新签名输入严格为 `['oidc-v2', legacyCanonical, encodedDisplayLogin].join('\n')`，HMAC-SHA256、hex 输出与原密钥不变。版本标记和登录名必须同时纳入证明。两个扩展头都缺失时 API 才使用原 14 字段验证；只有一个头、空值、未知版本、篡改或从 v2 删除扩展头均不能回退验签。
+
+登录名最多 256 个 Unicode 码点且最多 512 字节 UTF-8；不允许前后空白或 Unicode Cc/Cf/Cs/Zl/Zp 字符（包括换行、NUL、双向文字控制和孤立代理项）。编码最多 683 个 ASCII 字符，只接受 `[A-Za-z0-9_-]`，要求解码后 UTF-8 和编码完整往返一致；不自动 NFC 规范化，保留身份提供方认证过的文本。base64url 不是脱敏，不应把该头或证明全文写入日志。
+
+API 验证签名、请求体摘要和一次性 nonce 后，才将登录名作为独立的 `displayAccountLogin` 投影到 `ops.session.account_login`。它不参与主体 ID、成员别名、角色、租户或授权查询；OIDC `sub` 始终是稳定身份依据。旧网关没有此字段时，当前账号显示“账号名称未提供”，不回退显示内部 ID。密码登录仍显示其原有、服务端验证过的账号。
+
+升级顺序：先部署兼容新旧证明的 API，再升级外部网关签名器。仓库内的 `tests/local-oidc-gateway.ts` 仅是回环验收网关，默认发送 v2；测试中可显式关闭扩展验证旧协议。它不替代生产 IdP、TLS、会话或外部网关的部署验收。发布前至少核对合法登录名、刷新、字段篡改／删除、nonce 重放、同名成员不得提权以及两种工作台隔离。
 
 ## 运营能力
 

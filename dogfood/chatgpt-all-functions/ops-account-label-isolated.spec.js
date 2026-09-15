@@ -19,39 +19,43 @@ test.describe.configure({ retries: 0 })
 test.setTimeout(90_000)
 
 for (const workbench of ['platform', 'workspace']) {
-  test(`${workbench} hides internal subjects when the signed session has no login claim`, async ({ page }, testInfo) => {
+  test(`${workbench} displays the authenticated login from the signed v2 proof`, async ({ page }, testInfo) => {
     const evidenceDir = join(outputDir, `account-label-${workbench}`)
     await mkdir(evidenceDir, { recursive: true })
-    const evidence = { status: 'failed', kind: 'real_signed_oidc_missing_login_claim', workbench, businessMutations: false, sessionForged: false, credentialsSaved: false }
+    const expectedLogin = workbench === 'platform' ? process.env.LOCAL_OIDC_TEST_USERNAME : process.env.OPS_WORKSPACE_OIDC_USERNAME
+    if (!expectedLogin) throw new Error('ISOLATED_ACCOUNT_LOGIN_REQUIRED')
+    const evidence = { status: 'failed', kind: 'real_signed_oidc_login_claim_v2', workbench, businessMutations: false, sessionForged: false, credentialsSaved: false }
     try {
       if (workbench === 'workspace') await openWorkspaceConsole(page, '/ops/members?workbench=workspace')
       else await openPlatformConsole(page, '/ops/customer-delivery?workbench=platform')
       const response = await page.request.post(new URL('/api/mcp', page.url()).toString(), {
-        headers: { 'x-ops-workbench': workbench, 'x-workspace-id': workspaceId },
+        // Browser-supplied display metadata must not override the authenticated
+        // gateway value. The gateway removes these and signs its own login.
+        headers: { 'x-ops-workbench': workbench, 'x-workspace-id': workspaceId, 'x-oidc-proof-version': '2', 'x-oidc-display-login': Buffer.from('forged-browser-login').toString('base64url') },
         data: { jsonrpc: '2.0', id: 'account-label-read', method: 'ops.session', params: {} },
       })
       expect(response.status()).toBe(200)
       const envelope = await response.json()
       const session = envelope.data?.result ?? envelope.result
       expect(session?.actor_id).toBeTruthy()
-      expect(session?.account_login).toBeNull()
+      expect(session?.account_login).toBe(expectedLogin)
       expect(session?.workbench).toBe(workbench)
       const trigger = page.getByRole('button', { name: '打开账号信息', exact: true })
-      await expect(trigger).toContainText('账号名称未提供')
+      await expect(trigger).toContainText(expectedLogin)
       await expect(trigger).not.toContainText(session.actor_id)
       if (workbench === 'workspace') {
         await expect(page.getByRole('heading', { name: '成员与权限', exact: true })).toBeVisible()
         const currentAccount = page.locator('.ops-members-page .ant-card').filter({ has: page.getByText('当前账号权限', { exact: true }) }).first()
-        await expect(currentAccount).toContainText('当前账号：账号名称未提供')
+        await expect(currentAccount).toContainText(`当前账号：${expectedLogin}`)
         await expect(currentAccount).not.toContainText(session.actor_id)
       }
       await trigger.click()
       const panel = page.getByRole('dialog', { name: '账号信息', exact: true })
-      await expect(panel).toContainText('账号名称未提供')
+      await expect(panel).toContainText(expectedLogin)
       await expect(panel).not.toContainText(session.actor_id)
       await trigger.click()
       await page.reload({ waitUntil: 'domcontentloaded' })
-      await expect(trigger).toContainText('账号名称未提供')
+      await expect(trigger).toContainText(expectedLogin)
       await expect(trigger).not.toContainText(session.actor_id)
 
       const screenshot = join(evidenceDir, 'account-panel-shot-scraper.png')
@@ -61,11 +65,11 @@ for (const workbench of ['platform', 'workspace']) {
         javascript: `sessionStorage.setItem('ops_connection_config_v1', ${JSON.stringify(JSON.stringify({ apiBase: '/api', workspaceId, workbench }))}); sessionStorage.setItem('ops_workspace_id', ${JSON.stringify(workspaceId)}); sessionStorage.setItem('ops_workbench', ${JSON.stringify(workbench)});`,
         scenes: [{ name: 'Open verified account identity', open: page.url(), wait_for: '[aria-label="当前身份与权限范围"]:has-text("已由服务端验证")', do: [
           { wait_for: workbench === 'workspace' ? 'h1:has-text("成员与权限")' : 'h1:has-text("客户交付")' },
-          ...(workbench === 'workspace' ? [{ wait_for: '.ops-members-page:has-text("当前账号：账号名称未提供")' }] : []),
+          ...(workbench === 'workspace' ? [{ wait_for: `.ops-members-page:has-text(${JSON.stringify(`当前账号：${expectedLogin}`)})` }] : []),
           { wait_for: '.ops-status-tag:has-text("已登录")' },
-          { wait_for: '[aria-label="打开账号信息"]:has-text("账号名称未提供")' },
+          { wait_for: `[aria-label="打开账号信息"]:has-text(${JSON.stringify(expectedLogin)})` },
           { click: '[aria-label="打开账号信息"]' },
-          { wait_for: '[role="dialog"][aria-label="账号信息"]:has-text("账号名称未提供")' },
+          { wait_for: `[role="dialog"][aria-label="账号信息"]:has-text(${JSON.stringify(expectedLogin)})` },
           { pause: 0.5 },
           { screenshot },
         ] }],
@@ -85,6 +89,9 @@ for (const workbench of ['platform', 'workspace']) {
       evidence.screenshot = 'account-panel-shot-scraper.png'
       evidence.video = 'account-panel.webm'
       evidence.reloadChecked = true
+      evidence.forgedBrowserLoginIgnored = true
+      evidence.loginMatchesAuthenticatedInput = true
+      evidence.nonNfcUnicode = expectedLogin !== expectedLogin.normalize('NFC')
     } finally {
       await writeFile(join(evidenceDir, 'result.json'), JSON.stringify(evidence, null, 2), { mode: 0o600, flag: 'wx' })
     }

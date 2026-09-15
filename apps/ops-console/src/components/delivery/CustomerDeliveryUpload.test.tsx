@@ -29,7 +29,7 @@ describe("delivery upload file boundary", () => {
     }
     expect(validateCustomerDeliveryFile(video, "video")).toBe("video/mp4");
     expect(validateCustomerDeliveryFile({ name: "demo.webm", type: "", size: 1 }, "video")).toBe("video/webm");
-    expect(() => validateCustomerDeliveryFile(video, "contract")).toThrow("合同仅支持");
+    expect(() => validateCustomerDeliveryFile(video, "contract")).toThrow("交付凭证仅支持");
     expect(() => validateCustomerDeliveryFile({ name: "demo.pdf", type: "application/pdf", size: 1 }, "video")).toThrow("交付视频仅支持");
     expect(() => validateCustomerDeliveryFile({ name: "demo.pdf", type: "text/html", size: 1 }, "contract")).toThrow("不一致");
   });

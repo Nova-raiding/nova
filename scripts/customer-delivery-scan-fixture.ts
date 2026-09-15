@@ -28,6 +28,16 @@ export type ScanContainerEvidence = ScanContainerIdentity & { hostPort: number; 
 export type ScanDisposal = { stopped: string[]; leftRunning: { id: string; reason: string }[] }
 export type ScanStartupState = { running: boolean; status: string; exitCode: number; oomKilled: boolean }
 export type ScanStartupDiagnostics = { containerId?: string; state?: ScanStartupState; logs?: string; failures: string[] }
+type ScanRuntimePhase = 'inspect' | 'identity' | 'connectivity'
+
+/** Stage-specific fixed codes only. Failed inspection does not prove deletion or OOM. */
+export function customerDeliveryScanRuntimeFailure(phase: ScanRuntimePhase, error: unknown) {
+  const message = error instanceof Error ? error.message : ''
+  const knownIdentityCodes = ['CONTAINER_IDENTITY_MISMATCH', 'CONTAINER_ENDPOINT_CHANGED', 'DIAGNOSTIC_STATE_INVALID']
+  const identityCode = knownIdentityCodes.find(code => message === `CUSTOMER_DELIVERY_SCAN_${code}`)
+  return { phase, causeCode: phase === 'inspect' ? 'INSPECTION_UNAVAILABLE'
+    : phase === 'connectivity' ? 'CONNECTIVITY_UNAVAILABLE' : identityCode ?? 'IDENTITY_CHECK_FAILED' }
+}
 export type ScanReadinessEvidence = {
   observedAt: string; rawVersion: string; engineVersion: string; definitionsVersion: string
   definitionsPublishedAt: string; definitionsAgeSeconds: number; cleanProbe: 'clean'; eicarSignature: 'Eicar-Test-Signature'
@@ -41,13 +51,15 @@ export interface CustomerDeliveryScanFixture {
   readiness: ScanReadinessEvidence
   /** Contains generated secrets: pass to child processes only; do not serialize. */
   prepareEnvironment(bindings: ScanEnvironmentBindings): ScanEnvironments
+  /** Independently bounded exact-ID and connectivity check; never a scan verdict. */
+  checkRuntime(): Promise<void>
   stop(): Promise<ScanDisposal>
 }
 
 function fail(code: string): never { throw new Error(`CUSTOMER_DELIVERY_SCAN_${code}`) }
 
 export function customerDeliveryScanTimeout(value = 120_000): number {
-  if (!Number.isSafeInteger(value) || value < 1 || value > 120_000) fail('TIMEOUT_INVALID')
+  if (!Number.isSafeInteger(value) || value < 1 || value > 300_000) fail('TIMEOUT_INVALID')
   return value
 }
 
@@ -204,7 +216,9 @@ async function localSocket(): Promise<string> {
 }
 
 /** Default-off. No Docker or filesystem action happens unless enabled is true.
- * Startup is bounded to at most 120 seconds, followed by bounded owned cleanup.
+ * Startup defaults to 120 seconds and is bounded to at most 300 seconds,
+ * followed by bounded owned cleanup. A longer startup budget never relaxes
+ * the fresh definitions, clean probe or EICAR readiness requirements.
  * This starts only ClamAV. The owner launches the real API/worker/browser and
  * must retain their event, signed-receipt and download-gate evidence separately. */
 export async function startCustomerDeliveryScanFixture(input: {
@@ -270,12 +284,37 @@ export async function startCustomerDeliveryScanFixture(input: {
     }
     if (!readiness) throw new Error(`CUSTOMER_DELIVERY_SCAN_STARTUP_TIMEOUT:${lastProbeCode}`)
     if (verifyCustomerDeliveryScanContainer(await inspect(), owned).hostPort !== container.hostPort) fail('CONTAINER_ENDPOINT_CHANGED')
-    await writeFile(join(evidenceDir, 'readiness.json'), JSON.stringify({ runId, container, readiness, scanner: 'real-clamav', sharedConfigurationRead: false, fixtureScanVerdictsUsed: false }, null, 2), { mode: 0o600, flag: 'wx' })
+    await writeFile(join(evidenceDir, 'readiness.json'), JSON.stringify({ runId, startupTimeoutMs: timeout, container, readiness, scanner: 'real-clamav', sharedConfigurationRead: false, fixtureScanVerdictsUsed: false }, null, 2), { mode: 0o600, flag: 'wx' })
     const { publicKey, privateKey } = generateKeyPairSync('ed25519')
     const scannerToken = randomBytes(32).toString('hex'), scannerSecret = randomBytes(32).toString('hex')
     const workerToken = randomBytes(32).toString('hex'), workerSecret = randomBytes(32).toString('hex')
     const keyId = `delivery-scan-${runId}`, serviceId = `delivery-scanner-${runId}`, policy = 'isolated-customer-delivery-real-scan-v1'
-    return { runId, evidenceDir, container, readiness, stop, prepareEnvironment(bindings) {
+    let runtimeFailure: Error | undefined
+    const checkRuntime = async () => {
+      if (runtimeFailure) throw runtimeFailure
+      if (disposal) fail('ALREADY_STOPPED')
+      let state: ScanStartupState | undefined
+      let phase: ScanRuntimePhase = 'inspect'
+      try {
+        // Cleanup/diagnostic mode uses a fresh bounded call, not the expired startup deadline.
+        const actual = JSON.parse(await docker(['inspect', '--format', '{"id":{{json .Id}},"name":{{json .Name}},"image":{{json .Config.Image}},"labels":{{json .Config.Labels}},"autoRemove":{{json .HostConfig.AutoRemove}},"running":{{json .State.Running}},"mounts":{{json .Mounts}},"tmpfs":{{json .HostConfig.Tmpfs}},"ports":{{json .NetworkSettings.Ports}},"state":{"running":{{json .State.Running}},"status":{{json .State.Status}},"exitCode":{{json .State.ExitCode}},"oomKilled":{{json .State.OOMKilled}}}}', container.id], true, true)) as ScanContainerInspection & { state: unknown }
+        phase = 'identity'
+        if (actual.id === container.id && actual.name === `/${container.name}` && actual.image === container.image
+          && actual.labels?.['merchant.fixture.run-id'] === runId && actual.labels?.['merchant.fixture.purpose'] === PURPOSE
+          && actual.labels?.['merchant.fixture.kind'] === 'clamav') {
+          state = projectCustomerDeliveryScanState(actual.state)
+        }
+        if (verifyCustomerDeliveryScanContainer(actual, container).hostPort !== container.hostPort) fail('CONTAINER_ENDPOINT_CHANGED')
+        phase = 'connectivity'
+        await createClamAvScanner({ host: '127.0.0.1', port: container.hostPort, timeoutMs: 3_000 }).ping()
+      } catch (error) {
+        runtimeFailure = new Error('CUSTOMER_DELIVERY_SCAN_RUNTIME_UNAVAILABLE')
+        try { await writeFile(join(evidenceDir, 'runtime-failure.json'), JSON.stringify({ status: 'failed', runId, containerId: container.id, observedAt: new Date().toISOString(), errorCode: runtimeFailure.message, ...customerDeliveryScanRuntimeFailure(phase, error), state, sharedContainersTouched: false }, null, 2), { mode: 0o600, flag: 'wx' }) }
+        catch { /* The original runtime failure remains blocking even if evidence cannot be written. */ }
+        throw runtimeFailure
+      }
+    }
+    return { runId, evidenceDir, container, readiness, stop, checkRuntime, prepareEnvironment(bindings) {
       if (disposal) fail('ALREADY_STOPPED')
       validateCustomerDeliveryScanBindings(bindings)
       const scanEnvironment = { ASSET_SCANNER_MODE: 'clamav_worker', ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false',
@@ -312,7 +351,7 @@ export async function startCustomerDeliveryScanFixture(input: {
     } catch { /* Diagnostics are best effort; even a write failure must not skip owned cleanup. */ }
     const disposed = await stop()
     const message = error instanceof Error && /^CUSTOMER_DELIVERY_SCAN_[A-Z_:]+$/u.test(error.message) ? error.message : 'CUSTOMER_DELIVERY_SCAN_STARTUP_FAILED'
-    await writeFile(join(evidenceDir, 'failure.json'), JSON.stringify({ runId, error: message, disposal: disposed, sharedContainersTouched: false }, null, 2), { mode: 0o600, flag: 'wx' })
+    await writeFile(join(evidenceDir, 'failure.json'), JSON.stringify({ runId, startupTimeoutMs: timeout, error: message, disposal: disposed, sharedContainersTouched: false }, null, 2), { mode: 0o600, flag: 'wx' })
     throw new Error(`${message}${disposed.leftRunning.length ? ':CLEANUP_REQUIRES_REVIEW' : ''}`)
   }
 }

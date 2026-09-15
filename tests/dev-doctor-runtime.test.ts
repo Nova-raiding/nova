@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { apiProbeReady, codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, releaseReadiness } from '../scripts/dev-doctor-runtime.js'
+import { alertNotificationReady, apiProbeReady, codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, releaseReadiness } from '../scripts/dev-doctor-runtime.js'
 
 describe('developer doctor runtime checks', () => {
   it('parses Docker Compose newline-delimited JSON', () => {
@@ -71,6 +71,15 @@ describe('developer doctor runtime checks', () => {
       },
     } })).toMatchObject({ paymentReady: true, modelRelayReady: true, objectStorageReady: true, scannerReady: true, alertEnabled: false, alertReady: true, productionGate: true })
     expect(commercialRuntimeReadiness({ data: {} })).toBeUndefined()
+  })
+
+  it('treats explicitly disabled optional alerts as in scope while failing closed otherwise', () => {
+    expect(alertNotificationReady(false, false)).toBe(true)
+    expect(alertNotificationReady(false, undefined)).toBe(true)
+    expect(alertNotificationReady(true, true)).toBe(true)
+    expect(alertNotificationReady(true, false)).toBe(false)
+    expect(alertNotificationReady(undefined, true)).toBe(false)
+    expect(alertNotificationReady(undefined, undefined)).toBe(false)
   })
 
   it('audits payment fixture and missing OAuth platforms as fail-closed blockers', () => {
@@ -213,5 +222,13 @@ describe('developer doctor runtime checks', () => {
     const source = readFileSync('scripts/dev-doctor.ts', 'utf8')
     expect(source).toContain("process.env.VITE_API_BASE?.trim()")
     expect(source).toContain("受支持的 npm run dev:ops-console 会注入 /api")
+  })
+
+  it('binds ECS production diagnosis to the real HTTPS endpoint and excludes local Compose evidence', () => {
+    const source = readFileSync('scripts/dev-doctor.ts', 'utf8')
+    expect(source).toContain("deploymentTarget === 'ecs'")
+    expect(source).toContain('PRODUCTION_API_BASE_URL')
+    expect(source).toContain('ECS 范围不以开发机 Compose 容器状态判断生产健康')
+    expect(source).toContain('deploy-preflight-ecs.sh')
   })
 })

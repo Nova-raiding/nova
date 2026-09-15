@@ -494,7 +494,15 @@ export async function loadMigrations(): Promise<Migration[]> {
   const canonicalCatalogKnowledge = await readFile(new URL('./migrations/198_canonical_catalog_knowledge.sql', import.meta.url), 'utf8')
   const customerDeliveryRetentionFk = await readFile(new URL('./migrations/199_customer_delivery_retention_fk.sql', import.meta.url), 'utf8')
   const customerDeliveryControlPlaneAcl = await readFile(new URL('./migrations/200_customer_delivery_control_plane_acl.sql', import.meta.url), 'utf8')
-  const mcpOauthIdentity = await readFile(new URL('./migrations/201_mcp_oauth_identity.sql', import.meta.url), 'utf8')
+  const customerDeliveryRequiredEvidence = await readFile(new URL('./migrations/201_customer_delivery_required_evidence.sql', import.meta.url), 'utf8')
+  const customerDeliveryEvidenceTransition = await readFile(new URL('./migrations/202_customer_delivery_evidence_transition.sql', import.meta.url), 'utf8')
+  const workspaceIdentityBindingMemberFk = await readFile(new URL('./migrations/203_workspace_identity_binding_member_fk.sql', import.meta.url), 'utf8')
+  const customerDeliveryAtomicEvidence = await readFile(new URL('./migrations/204_customer_delivery_atomic_evidence.sql', import.meta.url), 'utf8')
+  const customerDeliveryEvidenceIdentityInvalidation = await readFile(new URL('./migrations/205_customer_delivery_evidence_identity_invalidation.sql', import.meta.url), 'utf8')
+  const customerDeliveryEvidenceInvalidationLockOrder = await readFile(new URL('./migrations/206_customer_delivery_evidence_invalidation_lock_order.sql', import.meta.url), 'utf8')
+  const customerDeliveryEvidenceReceiptIdentity = await readFile(new URL('./migrations/207_customer_delivery_evidence_receipt_identity.sql', import.meta.url), 'utf8')
+  const alertWebhookReceipts = await readFile(new URL('./migrations/208_alert_webhook_receipts.sql', import.meta.url), 'utf8')
+  const isolateAlertWebhookReceiverRole = await readFile(new URL('./migrations/209_isolate_alert_webhook_receiver_role.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -696,7 +704,15 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 198, name: 'canonical_catalog_knowledge', sql: canonicalCatalogKnowledge },
     { version: 199, name: 'customer_delivery_retention_fk', sql: customerDeliveryRetentionFk },
     { version: 200, name: 'customer_delivery_control_plane_acl', sql: customerDeliveryControlPlaneAcl },
-    { version: 201, name: 'mcp_oauth_identity', sql: mcpOauthIdentity },
+    { version: 201, name: 'customer_delivery_required_evidence', sql: customerDeliveryRequiredEvidence },
+    { version: 202, name: 'customer_delivery_evidence_transition', sql: customerDeliveryEvidenceTransition },
+    { version: 203, name: 'workspace_identity_binding_member_fk', sql: workspaceIdentityBindingMemberFk },
+    { version: 204, name: 'customer_delivery_atomic_evidence', sql: customerDeliveryAtomicEvidence },
+    { version: 205, name: 'customer_delivery_evidence_identity_invalidation', sql: customerDeliveryEvidenceIdentityInvalidation },
+    { version: 206, name: 'customer_delivery_evidence_invalidation_lock_order', sql: customerDeliveryEvidenceInvalidationLockOrder },
+    { version: 207, name: 'customer_delivery_evidence_receipt_identity', sql: customerDeliveryEvidenceReceiptIdentity },
+    { version: 208, name: 'alert_webhook_receipts', sql: alertWebhookReceipts },
+    { version: 209, name: 'isolate_alert_webhook_receiver_role', sql: isolateAlertWebhookReceiverRole },
   ]
 }
 

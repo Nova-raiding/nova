@@ -881,13 +881,6 @@ function Topbar({
   const [issueDetail, setIssueDetail] = useState<WorkspaceMetrics['riskItems'][number] | null>(null)
   const [passwordForm] = Form.useForm<{ current_password: string; new_password: string; confirm_password: string }>()
   const accountMenuRef = useRef<HTMLDivElement>(null)
-  const environmentStatus = resolveMerchantEnvironmentStatus({
-    apiConfigured: Boolean(apiBaseUrl),
-    apiOnline,
-    health: apiHealth,
-    modelStatus,
-    modelStatusRead,
-  })
   useEffect(() => {
     if (!accountMenuOpen) return
     const closeOnOutside = (event: MouseEvent) => {
@@ -1158,7 +1151,6 @@ function DescriptionsIssue({ item }: { item: WorkspaceMetrics['riskItems'][numbe
 
 function EnvironmentStatusBanner({
   apiOnline,
-  apiHealth,
   apiBaseUrl,
   apiHealth,
   modelStatus,
@@ -1166,7 +1158,6 @@ function EnvironmentStatusBanner({
   onOpenHealth,
 }: {
   apiOnline: boolean | null
-  apiHealth: ApiHealth | null
   apiBaseUrl?: string
   apiHealth: ApiHealth | null
   modelStatus: PlatformModelStatus | null
@@ -1414,7 +1405,6 @@ function Sidebar({
 function UtilityPanel({
   panel,
   apiOnline,
-  apiHealth,
   apiBaseUrl,
   apiHealth,
   modelStatus,
@@ -1424,7 +1414,6 @@ function UtilityPanel({
 }: {
   panel: UtilityPanel
   apiOnline: boolean | null
-  apiHealth: ApiHealth | null
   apiBaseUrl?: string
   apiHealth: ApiHealth | null
   modelStatus: PlatformModelStatus | null
@@ -10995,7 +10984,6 @@ export default function App() {
           />
           <EnvironmentStatusBanner
             apiOnline={apiOnline}
-            apiHealth={apiHealth}
             apiBaseUrl={apiBaseUrl}
             apiHealth={apiHealth}
             modelStatus={modelStatus}
@@ -11131,7 +11119,6 @@ export default function App() {
         <UtilityPanel
           panel={utilityPanel}
           apiOnline={apiOnline}
-          apiHealth={apiHealth}
           apiBaseUrl={apiBaseUrl}
           apiHealth={apiHealth}
           modelStatus={modelStatus}

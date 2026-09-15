@@ -2,7 +2,7 @@ import { accessSync, constants, existsSync, readFileSync, readdirSync } from 'no
 import { execFileSync, spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
-import { apiProbeReady, codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, releaseReadiness } from './dev-doctor-runtime.js'
+import { alertNotificationReady, apiProbeReady, codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, releaseReadiness } from './dev-doctor-runtime.js'
 
 const REQUIRED_CREATIVE_POINT_FORCE_RLS_TABLES = [
   'creative_point_access_state',
@@ -22,6 +22,8 @@ type Check = { id: string; level: Level; message: string; next?: string }
 const args = new Set(process.argv.slice(2))
 const production = args.has('--production')
 const json = args.has('--json')
+const deploymentTarget = process.env.DOCTOR_DEPLOYMENT_TARGET?.trim().toLowerCase() || 'local-compose'
+const ecsProduction = production && deploymentTarget === 'ecs'
 const checks: Check[] = []
 const add = (id: string, level: Level, message: string, next?: string) => checks.push({ id, level, message, ...(next && level !== 'pass' ? { next } : {}) })
 const run = (command: string, commandArgs: string[] = []) => spawnSync(command, commandArgs, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
@@ -172,9 +174,11 @@ const productionConfigReady = (() => {
     return false
   }
 })()
-add('production_config', productionConfigReady ? 'pass' : production ? 'fail' : 'warn', productionConfigReady ? '显式生产配置路径存在' : '未提供非示例 PRODUCTION_CONFIG_PATH', '渲染真实生产配置并运行 npm run infra:launch-preflight。')
+add('production_config', productionConfigReady ? 'pass' : production ? 'fail' : 'warn', productionConfigReady ? '显式生产配置路径存在' : '未提供非示例 PRODUCTION_CONFIG_PATH', ecsProduction ? '渲染真实 ECS Compose，并运行 infra/scripts/deploy-preflight-ecs.sh。' : '渲染真实生产配置并运行 npm run infra:launch-preflight。')
 
-if (composeReady) {
+add('deployment_scope', deploymentTarget === 'local-compose' || deploymentTarget === 'ecs' || deploymentTarget === 'kubernetes' ? 'pass' : 'fail', `部署诊断范围=${deploymentTarget}`, 'DOCTOR_DEPLOYMENT_TARGET 仅支持 local-compose、ecs 或 kubernetes。')
+
+if (composeReady && !ecsProduction) {
   const compose = run('docker', [...composeArgs, 'ps', '--format', 'json'])
   const rows = compose.status === 0 ? parseComposeServiceStates(compose.stdout) : []
   const requiredServices = [
@@ -188,9 +192,21 @@ if (composeReady) {
   }
 }
 
-for (const [id, url] of [['api', 'http://127.0.0.1:8787/healthz'], ['api_ready', 'http://127.0.0.1:8787/readyz'], ['merchant_ui', 'http://127.0.0.1:18081/'], ['ops_ui', 'http://127.0.0.1:18082/']] as const) {
+if (ecsProduction) add('ecs_local_compose', 'pass', 'ECS 范围不以开发机 Compose 容器状态判断生产健康')
+
+const productionApiBaseUrl = process.env.PRODUCTION_API_BASE_URL?.trim().replace(/\/$/u, '')
+const probeTimeoutMs = production ? 5000 : 1500
+const runtimeProbes: ReadonlyArray<readonly [string, string]> = ecsProduction
+  ? productionApiBaseUrl
+    ? [['api', `${productionApiBaseUrl}/livez`], ['api_ready', `${productionApiBaseUrl}/readyz`]]
+    : []
+  : [['api', 'http://127.0.0.1:8787/healthz'], ['api_ready', 'http://127.0.0.1:8787/readyz'], ['merchant_ui', 'http://127.0.0.1:18081/'], ['ops_ui', 'http://127.0.0.1:18082/']]
+if (ecsProduction && (!productionApiBaseUrl || !/^https:\/\//u.test(productionApiBaseUrl))) {
+  add('runtime:ecs_endpoint', 'fail', 'ECS 生产探测需要显式 HTTPS PRODUCTION_API_BASE_URL', '注入当前 ECS 服务的公开 HTTPS API 地址；不得用 localhost 代替生产证据。')
+}
+for (const [id, url] of runtimeProbes) {
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(1500) })
+    const response = await fetch(url, { signal: AbortSignal.timeout(probeTimeoutMs) })
     const payload = id === 'api_ready' ? await response.clone().json().catch(() => undefined) : undefined
     const probeReady = id === 'api_ready' ? apiProbeReady(payload, response.ok, production) : response.ok
     add(`runtime:${id}`, probeReady ? 'pass' : production ? 'fail' : 'warn', `${id} ${url} -> HTTP ${response.status}${id === 'api_ready' && production ? `, production_ready=${String(probeReady)}` : ''}`, '生产模式必须由真实 production setup 与 productionGate=true 的 /readyz 响应证明；本地/fixture 200 不足以放行。')
@@ -201,7 +217,9 @@ for (const [id, url] of [['api', 'http://127.0.0.1:8787/healthz'], ['api_ready',
 }
 
 try {
-  const response = await fetch('http://127.0.0.1:8787/readyz', { signal: AbortSignal.timeout(1500) })
+  if (ecsProduction && !productionApiBaseUrl) throw new Error('ECS endpoint missing')
+  const readinessUrl = ecsProduction ? `${productionApiBaseUrl}/readyz` : 'http://127.0.0.1:8787/readyz'
+  const response = await fetch(readinessUrl, { signal: AbortSignal.timeout(probeTimeoutMs) })
   const payload = await response.json() as unknown
   const readiness = commercialRuntimeReadiness(payload)
   const runtimeAudit = commercialRuntimeAudit(payload)
@@ -226,13 +244,14 @@ try {
     : 'relay runtime contract 不可解析', '逐模态补齐 provider 配置与成本门禁；未就绪时阻断真实模型调用。')
   add('commercial:object_storage', level(readiness?.objectStorageReady), `对象存储 mode=${readiness?.objectStorageMode ?? 'unknown'}, ready=${String(readiness?.objectStorageReady)}`, '配置真实对象存储/KMS/scanner 证据；local 模式不满足生产门禁。')
   add('commercial:scanner', level(readiness?.scannerReady), `scanner ready=${String(readiness?.scannerReady)}`, '配置非 fixture scanner、签名回执和新鲜度证据；仅容器存活不满足生产门禁。')
-  add('commercial:alerts', level(readiness?.alertReady), `可选告警通知 enabled=${String(readiness?.alertEnabled)}, ready=${String(readiness?.alertReady)}`, '如启用告警通知，必须注入安全的 webhook/secret 并验证真实投递；未启用不阻断上线。')
+  const alertsReady = alertNotificationReady(readiness?.alertEnabled, readiness?.alertReady)
+  add('commercial:alerts', level(alertsReady), `可选告警通知 enabled=${String(readiness?.alertEnabled)}, ready=${String(readiness?.alertReady)}, scopeReady=${String(alertsReady)}`, '如启用告警通知，必须注入安全的 webhook/secret 并验证真实投递；未启用不阻断上线。')
   add('commercial:production_gate', level(readiness?.productionGate), `mode=${readiness?.mode ?? 'unknown'}, writes=${String(readiness?.writesEnabled)}, productionGate=${String(readiness?.productionGate)}`, '未满足真实支付、平台、存储、容量和证据前保持 writes disabled / NO-GO。')
 } catch {
-  add('commercial:runtime', production ? 'fail' : 'warn', '无法读取商业运行时 readiness', '启动 API，并确认 /readyz 返回非敏感的支付、五模态、存储和生产门禁状态。')
+  add('commercial:runtime', production ? 'fail' : 'warn', '无法读取商业运行时 readiness', ecsProduction ? '确认 PRODUCTION_API_BASE_URL 指向当前 ECS release，且 /readyz 返回非敏感商业门禁状态。' : '启动 API，并确认 /readyz 返回非敏感的支付、五模态、存储和生产门禁状态。')
 }
 
-if (composeReady) {
+if (composeReady && !ecsProduction) {
   const sourceTail = Math.max(...readdirSync(resolve(root, 'packages/persistence/src/migrations'))
     .map(name => /^(\d{3})_.+\.sql$/u.exec(name)?.[1]).filter((value): value is string => Boolean(value)).map(Number))
   const sql = `SELECT json_build_object(
@@ -275,13 +294,15 @@ if (composeReady) {
 }
 
 try {
-  const response = await fetch('http://127.0.0.1:8787/releasez', { signal: AbortSignal.timeout(1500) })
+  if (ecsProduction && !productionApiBaseUrl) throw new Error('ECS endpoint missing')
+  const releaseUrl = ecsProduction ? `${productionApiBaseUrl}/releasez` : 'http://127.0.0.1:8787/releasez'
+  const response = await fetch(releaseUrl, { signal: AbortSignal.timeout(probeTimeoutMs) })
   const payload = await response.json() as unknown
   const releaseReady = releaseReadiness(payload)
   const ready = response.ok && releaseReady === true
   add('runtime:release', ready ? 'pass' : production ? 'fail' : 'warn', `releasez -> HTTP ${response.status}, ready=${String(releaseReady)}`, '注入与当前不可变发布一致的版本、迁移、图像 digest 和证据元数据。')
 } catch {
-  add('runtime:release', production ? 'fail' : 'warn', 'releasez 未运行或返回无效 JSON', '启动 API 并确认 /releasez 可达。')
+  add('runtime:release', production ? 'fail' : 'warn', 'releasez 未运行或返回无效 JSON', ecsProduction ? '确认 PRODUCTION_API_BASE_URL 指向当前 ECS release，且 /releasez 可达。' : '启动 API 并确认 /releasez 可达。')
 }
 
 const modelRelayEvidencePath = process.env.MODEL_RELAY_EVIDENCE_PATH?.trim()

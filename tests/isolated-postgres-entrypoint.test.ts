@@ -11,9 +11,9 @@ const report = (files: readonly string[]) => ({
 })
 
 describe('isolated PostgreSQL entrypoint', () => {
-  it('selects exactly the sixteen audited PostgreSQL files by default', async () => {
-    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(16)
-    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(16)
+  it('selects exactly the nineteen audited PostgreSQL files by default', async () => {
+    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(19)
+    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(19)
     await expect(selectIsolatedPostgresTests([])).resolves.toEqual(ISOLATED_POSTGRES_TEST_FILES)
     expect(ISOLATED_POSTGRES_TEST_FILES.every(file => (file.startsWith('packages/persistence/src/') || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts') && file.endsWith('.postgres.test.ts'))).toBe(true)
   })
