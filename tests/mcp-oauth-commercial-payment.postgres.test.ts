@@ -234,7 +234,10 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
       const paidViaBridge = await bridgeCall(bridgeA, 3, 'commercial.order.payment.get', { order_id: order.order_id })
       expect(paidViaBridge.result).toMatchObject({ isError: false, structuredContent: { order_id: order.order_id, status: 'paid', access_revision: 1 } })
       const balanceViaBridge = await bridgeCall(bridgeA, 4, 'creative-points.balance.get', {})
-      expect(balanceViaBridge.result).toMatchObject({ isError: false, structuredContent: { balance_state: 'known', available_points: 500, reserved_points: 0, settled_points: 0, access_revision: '1' } })
+      // The bridge exposes the authenticated state/revision needed for the
+      // next action, while point quantities remain console-only by contract.
+      expect(balanceViaBridge.result).toMatchObject({ isError: false, structuredContent: { balance_state: 'known', access_revision: '1' } })
+      expect(balanceViaBridge.result?.structuredContent).not.toHaveProperty('available_points')
 
       const hiddenFromB = await bridgeCall(bridgeB, 5, 'commercial.order.payment.get', { order_id: order.order_id })
       expect(hiddenFromB.result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_ORDER_NOT_FOUND' } })
