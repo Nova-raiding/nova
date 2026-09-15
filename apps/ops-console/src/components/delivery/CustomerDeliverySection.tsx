@@ -631,14 +631,14 @@ export function CustomerDeliverySection({
             <Descriptions.Item label="合同编号">{detailsRecord.contractNo || "未填写"}</Descriptions.Item>
             <Descriptions.Item label="付款形式">{detailsRecord.paymentStatus === "paid" ? "接入费" : "赠送"}</Descriptions.Item>
             <Descriptions.Item label="付款时间">{detailsRecord.paymentDate || "未填写"}</Descriptions.Item>
-            <Descriptions.Item label="合同文件">{detailsRecord.contractFile ? <Space wrap><Typography.Text style={{ wordBreak: "break-all" }}>{detailsRecord.contractFile}</Typography.Text><Button size="small" onClick={() => void onAssetOpen?.(detailsRecord, detailsRecord.contractFile!, "contract", "open")}>打开</Button><Button size="small" onClick={() => void onAssetOpen?.(detailsRecord, detailsRecord.contractFile!, "contract", "download")}>下载</Button></Space> : "未上传"}</Descriptions.Item>
+            <Descriptions.Item label="合同文件">{detailsRecord.contractFile ? <Space wrap><Typography.Link style={{ wordBreak: "break-all" }} onClick={() => void onAssetOpen?.(detailsRecord, detailsRecord.contractFile!, "contract", "open")}>{detailsRecord.contractFile}</Typography.Link><Button size="small" onClick={() => void onAssetOpen?.(detailsRecord, detailsRecord.contractFile!, "contract", "download")}>下载</Button></Space> : "未上传"}</Descriptions.Item>
             <Descriptions.Item label="系统接入">{isDeliveryChecklistComplete(detailsRecord, "integration") ? "已完成" : "未完成"}</Descriptions.Item>
             <Descriptions.Item label="功能测试及验收">{isDeliveryChecklistComplete(detailsRecord, "acceptance") ? "已完成" : "未完成"}</Descriptions.Item>
             <Descriptions.Item label="客户培训">{detailsRecord.training ? "已培训" : "未培训"}</Descriptions.Item>
             <Descriptions.Item label="销售负责人">{detailsRecord.owner || "未填写"}</Descriptions.Item>
             <Descriptions.Item label="售后负责人">{detailsRecord.afterSalesOwner || "未填写"}</Descriptions.Item>
             <Descriptions.Item label="上线时间">{deliveryLaunchDateLabel(detailsRecord)}</Descriptions.Item>
-            <Descriptions.Item label="交付视频">{detailsLoading ? "正在读取…" : detailsVideos.length ? <Space orientation="vertical" size="small">{detailsVideos.map((video) => <Space key={video.id} wrap><Typography.Text>{video.title}</Typography.Text><Button size="small" onClick={() => void onAssetOpen?.(detailsRecord, video.assetRef, "video", "open")}>打开</Button><Button size="small" onClick={() => void onAssetOpen?.(detailsRecord, video.assetRef, "video", "download")}>下载</Button></Space>)}</Space> : "未上传"}</Descriptions.Item>
+            <Descriptions.Item label="交付视频">{detailsLoading ? "正在读取…" : detailsVideos.length ? <Space orientation="vertical" size="small">{detailsVideos.map((video) => <Space key={video.id} wrap><Typography.Link onClick={() => void onAssetOpen?.(detailsRecord, video.assetRef, "video", "open")}>{video.title}</Typography.Link><Button size="small" onClick={() => void onAssetOpen?.(detailsRecord, video.assetRef, "video", "download")}>下载</Button></Space>)}</Space> : "未上传"}</Descriptions.Item>
             <Descriptions.Item label="操作人">
               {detailsRecord.updatedByActorId === operatorActorId
                 ? operatorName || "账号名称未提供"
