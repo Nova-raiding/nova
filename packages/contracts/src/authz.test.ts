@@ -94,6 +94,8 @@ describe('authorization policy registry', () => {
     expect(capabilitiesForRoles(['rules_admin'])).toContain('rule.publish.approve')
     expect(capabilitiesForRoles(['finance'])).toEqual(expect.arrayContaining(['billing.workspace.read', 'billing.reconcile.execute', 'billing.refund.execute']))
     expect(capabilitiesForRoles(['operator'])).toContain('billing.self.read')
+    expect(capabilitiesForRoles(['operator'])).not.toContain('billing.workspace.read')
+    expect(getMcpMethodPolicy('commercial.access.get')).toMatchObject({ capability: 'billing.self.read', scope: 'self', workbench: 'workspace' })
     expect(getMcpMethodPolicy('commercial.catalog.get')).toMatchObject({ capability: 'billing.workspace.read', scope: 'workspace' })
     expect(getMcpMethodPolicy('commercial.order.payment.get')).toMatchObject({ capability: 'billing.workspace.read', scope: 'workspace' })
     expect(getMcpMethodPolicy('creative-points.balance.get')).toMatchObject({ capability: 'billing.workspace.read', scope: 'workspace' })
@@ -104,6 +106,22 @@ describe('authorization policy registry', () => {
     for (const role of CANONICAL_ROLES) {
       expect(capabilitiesForRoles([role]), `${role} must be able to load its own authorization session`).toContain('authorization.session.read')
     }
+  })
+
+  it('lets a tenant operator read its recovery decision without granting a platform support role billing access', () => {
+    const policy = getMcpMethodPolicy('commercial.access.get')!
+    const decide = (role: 'operator' | 'support_agent') => evaluateAuthorizationDecision({
+      decisionId: `commercial-access-${role}`,
+      policy,
+      capabilities: capabilitiesForRoles([role]),
+      scopes: [{ type: 'self', ids: [`actor-${role}`] }],
+      resourceScope: { type: 'self', id: `actor-${role}` },
+      workbench: 'workspace',
+      mode: 'enforce',
+    })
+
+    expect(decide('operator')).toMatchObject({ allowed: true, authorized: true, reason_code: 'AUTHZ_ALLOWED', capability: 'billing.self.read', scope: { required: 'self' } })
+    expect(decide('support_agent')).toMatchObject({ allowed: false, authorized: false, reason_code: 'AUTHZ_CAPABILITY_MISSING', capability: 'billing.self.read', scope: { required: 'self' } })
   })
 
   it.each([

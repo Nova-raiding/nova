@@ -487,7 +487,7 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   write('canonical.backfill.update', 'platform', 'customer_metadata', ['ops.canonical.backfill.create', 'ops.canonical.backfill.run', 'ops.canonical.backfill.pause', 'ops.canonical.backfill.resume', 'ops.canonical.backfill.conflict.claim', 'ops.canonical.backfill.conflict.resolve'], 'allow_and_deny'),
   read('rule.read', 'platform', 'customer_metadata', ['rule.audit']),
   read('rule.read', 'workspace', 'customer_metadata', ['ops.rules.workspace.audit']),
-  read('billing.self.read', 'self', 'finance', ['subscription.get', 'subscription.orders.list', 'billing.status', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions']),
+  read('billing.self.read', 'self', 'finance', ['subscription.get', 'subscription.orders.list', 'billing.status', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'commercial.access.get']),
   write('billing.workspace.update', 'workspace', 'finance', ['subscription.order.create', 'subscription.change', 'billing.usage.consume', 'billing.recharge.create', 'commercial.order.create']),
   write('billing.refund.execute', 'workspace', 'finance', ['billing.usage.refund'], 'allow_and_deny', ['reason', 'idempotency']),
   // Provider-backed recharge refunds and reconciliation are platform-operated
@@ -495,7 +495,7 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   // workspace-scoped made the desktop Ops console advertise controls that no
   // platform administrator could execute.
   write('billing.refund.execute', 'platform', 'finance', ['billing.refund'], 'allow_and_deny', ['reason']),
-  read('billing.workspace.read', 'workspace', 'finance', ['commercial.access.get', 'commercial.catalog.get', 'commercial.order.payment.get', 'creative-points.balance.get', 'creative-points.statement.list', 'billing.reconciliation', 'billing.model-usage.statement']),
+  read('billing.workspace.read', 'workspace', 'finance', ['commercial.catalog.get', 'commercial.order.payment.get', 'creative-points.balance.get', 'creative-points.statement.list', 'billing.reconciliation', 'billing.model-usage.statement']),
   write('billing.reconcile.execute', 'platform', 'finance', ['billing.reconciliation.run', 'billing.model-usage.reconciliation.run', 'billing.model-usage.resolve']),
   read('billing.export', 'workspace', 'finance', ['billing.export']),
   read('platform.settings.read', 'platform', 'platform_summary', ['platform.settings.get']),
