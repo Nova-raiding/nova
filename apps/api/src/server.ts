@@ -5773,6 +5773,8 @@ type RequestPrincipal = {
   issuer?: string
   sessionSubject?: string
   sessionKind?: 'oidc' | 'api_token'
+  /** Request-local credential provenance; MCP OAuth remains an API-token session in persistence. */
+  mcpOAuth?: true
   sessionIssuedAt?: string
   sessionExpiresAt?: string
   mfaVerified?: boolean
@@ -6718,7 +6720,7 @@ async function authenticate(req: IncomingMessage) {
         if (!oauthPrincipal) continue
         const requestedWorkspace = header(req, 'x-workspace-id')?.trim()
         if (requestedWorkspace && requestedWorkspace !== oauthPrincipal.workspaceId) throw new DomainError(ERROR_CODES.FORBIDDEN, 'MCP OAuth token 无权切换到其他工作区', 403)
-        const principal: RequestPrincipal = { actorId: oauthPrincipal.identityId, accountLogin: oauthPrincipal.accountLogin, identityId: oauthPrincipal.identityId, sessionId: oauthPrincipal.tokenId, sessionSubject: oauthPrincipal.tokenId, sessionKind: 'api_token', sessionIssuedAt: oauthPrincipal.issuedAt, sessionExpiresAt: oauthPrincipal.expiresAt, roles: ['merchant'], workspaces: [oauthPrincipal.workspaceId], workbench: 'workspace', availableWorkbenches: ['workspace'], identityStatus: 'active', mfaVerified: false }
+        const principal: RequestPrincipal = { actorId: oauthPrincipal.identityId, accountLogin: oauthPrincipal.accountLogin, identityId: oauthPrincipal.identityId, sessionId: oauthPrincipal.tokenId, sessionSubject: oauthPrincipal.tokenId, sessionKind: 'api_token', mcpOAuth: true, sessionIssuedAt: oauthPrincipal.issuedAt, sessionExpiresAt: oauthPrincipal.expiresAt, roles: ['merchant'], workspaces: [oauthPrincipal.workspaceId], workbench: 'workspace', availableWorkbenches: ['workspace'], identityStatus: 'active', mfaVerified: false }
         requestPrincipals.set(req, principal)
         return
       }
@@ -11550,7 +11552,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
   const isFirstValueMethod = method === 'merchant.first_value'
   const isOpsDomainMethod = OPS_DOMAIN_METHODS.has(method)
   const isCampaignLifecycleMethod = CAMPAIGN_LIFECYCLE_METHODS.has(method)
-  if (method === 'ops.session' && requestWorkbench !== 'platform') throw new DomainError(ERROR_CODES.FORBIDDEN, '商家 OAuth 会话不能访问平台运营工作台', 403)
+  if (method === 'ops.session' && requestPrincipals.get(req)?.mcpOAuth) throw new DomainError(ERROR_CODES.FORBIDDEN, '商家 OAuth 会话不能访问平台运营工作台', 403)
   if (!isMcpMethod(method) && !isFirstValueMethod && !isOpsDomainMethod && !isCampaignLifecycleMethod) throw new DomainError(ERROR_CODES.MCP_METHOD_NOT_FOUND, `不支持的 MCP 方法: ${method}`, 404)
   if (isMcpMethod(method) && !OPS_MCP_SCHEMA_OVERRIDE_METHODS.has(method)) {
     const validation = validateMcpRequest(input)
