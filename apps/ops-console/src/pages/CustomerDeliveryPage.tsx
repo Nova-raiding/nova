@@ -46,6 +46,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const [error, setError] = useState("");
   const [mutationError, setMutationError] = useState("");
   const [createPage, setCreatePage] = useState(false);
+  const contractFileInput = useRef<HTMLInputElement>(null);
   const [createForm] = Form.useForm<{
     companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid";
     paymentDate: string; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: string;
@@ -248,11 +249,13 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             </Form.Item>
             <Form.Item name="contractNumber" label="合同编号" rules={[{ required: true, message: "请输入合同编号" }]}><Input placeholder="例如：2026090801" /></Form.Item>
             <Form.Item name="paymentStatus" label="付款形式" rules={[{ required: true, message: "请选择付款形式" }]}><Select className="customer-delivery-payment-select" options={[{ value: "paid", label: "接入费" }, { value: "unpaid", label: "赠送" }]} /></Form.Item>
-            <Form.Item name="paymentDate" label="付款时间" rules={[{ required: true, message: "请输入付款时间" }]}><Input type="datetime-local" /></Form.Item>
-            <Form.Item name="contractFile" label="合同文件或链接" rules={[{ required: true, message: "请上传合同或填写合同链接" }]}><Input placeholder="填写合同链接或文件地址" /></Form.Item>
+            <Form.Item name="paymentDate" label="付款时间" rules={[{ required: true, message: "请选择付款日期" }]}><Input type="date" /></Form.Item>
+            <Form.Item name="contractFile" label="合同文件或链接" rules={[{ required: true, message: "请上传合同或填写合同链接" }]}>
+              <Space.Compact style={{ width: "100%" }}><Input placeholder="填写合同链接或文件地址" /><Button onClick={() => contractFileInput.current?.click()}>上传文件</Button><input ref={contractFileInput} hidden type="file" onChange={(event) => { const file = event.target.files?.[0]; if (file) createForm.setFieldValue("contractFile", file.name); }} /></Space.Compact>
+            </Form.Item>
             <Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input placeholder="例如：姜伟" /></Form.Item>
             <Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input placeholder="例如：韩先晓" /></Form.Item>
-            <Form.Item name="requiredLaunchAt" label="需求上线时间" rules={[{ required: true, message: "请输入需求上线时间" }]}><Input type="datetime-local" /></Form.Item>
+            <Form.Item name="requiredLaunchAt" label="需求上线时间" rules={[{ required: true, message: "请选择上线日期" }]}><Input type="date" /></Form.Item>
             </div>
             <Space>
               <Button onClick={() => setCreatePage(false)}>取消</Button>

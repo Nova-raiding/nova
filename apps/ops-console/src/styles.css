@@ -30,6 +30,7 @@
 .customer-delivery-create-form .ant-input,
 .customer-delivery-create-form .ant-picker,
 .customer-delivery-create-form .ant-select-selector { height: 40px !important; min-height: 40px !important; }
+.customer-delivery-create-form input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0; width: 100%; cursor: pointer; }
 html { height: 100%; scroll-padding-top: 16px; }
 /* Keep keyboard focus visible for AntD controls as well as custom desktop controls. */
 :where(.ant-btn, .ant-input, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-tabs-tab, .ant-menu-item, .ant-drawer-close, .ant-modal-close):focus-visible {
