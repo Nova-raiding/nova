@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFileSync } from 'node:fs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { requiresCustomerDeliveryAccess } from '../../../packages/contracts/src/customer-delivery-access.js'
+import { inspectStoreLinks } from '../../../packages/domain/src/onboarding.js'
 import { readCustomerDeliveryAccess, assertCustomerDeliveryAllowed, pendingCustomerDeliveryProjection } from './customer-delivery-access.js'
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { alertNotificationReadiness, notifyOperationalAlert } from './alert-notifier.js'
@@ -9,6 +10,7 @@ import { Pool } from 'pg'
 import { createClient } from 'redis'
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { MerchantService, assetReadiness, imageArchiveReceiptDigest, imageGenerationCandidateUsability, isTrustedCleanAsset, DomainError, type AssetRegistrationResult, type BrandVisualRules, type KnowledgeGenerationContext, type Platform, type PlatformAccount, type PlatformRejection, type Product, type Task } from '../../../packages/application/src/service.js'
+import { confirmedStoreBrandClues } from '../../../packages/application/src/brand-extractor.js'
 import { CommercialAccessService, type CommercialAccessServiceResult } from '../../../packages/application/src/commercial-access-service.js'
 import { CommercialPurchaseError, CommercialPurchaseService } from '../../../packages/application/src/commercial-purchase-service.js'
 import { CommercialPaymentError, CommercialPaymentService } from '../../../packages/application/src/commercial-payment-service.js'
@@ -114,6 +116,7 @@ import { FeatureFlagRepositoryError, MemoryFeatureFlagsRepository, PostgresFeatu
 import { FinanceRecordVersionConflictError, FinanceSearchAccessError, FinanceSearchCursorError, PostgresFinanceSearchRepository, type FinanceSearchRepository } from '../../../packages/persistence/src/finance-search-repository.js'
 import { AuditCenterCursorError } from '../../../packages/persistence/src/audit-center-repository.js'
 import { MemoryWorkspaceBootstrapRepository, PostgresWorkspaceBootstrapRepository, WorkspaceBootstrapError, type WorkspaceBootstrapRepository } from '../../../packages/persistence/src/workspace-bootstrap-repository.js'
+import { MemoryWorkspaceContentSetupRepository, PostgresWorkspaceContentSetupRepository, type WorkspaceContentSetupRepository } from '../../../packages/persistence/src/workspace-content-setup-repository.js'
 import { buildRequestLogEvent, getRequestCorrelation, serializeRequestLogEvent, type RequestLogInput } from './request-observability.js'
 import { classifyAssetUpload, classifyAssetUploadBatch, type AssetUploadSecurityResult } from './asset-upload-security.js'
 import { assetScanWaitingState, localAssetScanFixture } from './asset-scan-automation.js'
@@ -1126,6 +1129,7 @@ export interface ApiPersistence {
   auditCenter?: AuditCenterRepository
   opsData?: import('../../../packages/persistence/src/index.js').OpsDataRepository
   workspaceBootstrap?: WorkspaceBootstrapRepository
+  workspaceContentSetup?: WorkspaceContentSetupRepository
   assetParse?: AssetParseRepository
   assetScanReceipts?: AssetScanReceiptRepository
   assetScanRedrive?: AssetScanRedriveRepository
@@ -1200,6 +1204,7 @@ const memoryModelUsage = new MemoryModelUsageRepository()
 const memoryActionLedger = new MemoryActionLedgerRepository()
 const memoryEntitlements = new MemoryEntitlementRepository()
 const memoryOperations = new MemoryOperationsRepository()
+const memoryWorkspaceContentSetup = new MemoryWorkspaceContentSetupRepository(memoryOperations)
 const memorySubscriptions = new MemorySubscriptionRepository()
 const memoryPaymentCallbackNonces = new MemoryPaymentCallbackNonceRepository()
 const memoryMembers = new MemoryMembersRepository()
@@ -1532,7 +1537,7 @@ const memoryCustomerDeliveries = new MemoryCustomerDeliveryRepository(async even
   },
 } })
 
-const memoryPersistence: ApiPersistence = { mode: 'memory', creativePoints: memoryCreativePoints, commercialCatalog: memoryCommercialCatalog, commercial: memoryCommercial, usage: memoryUsage, modelUsage: memoryModelUsage, actionLedger: memoryActionLedger, entitlements: memoryEntitlements, operations: memoryOperations, subscriptions: memorySubscriptions, members: memoryMembers, commercialExtensions: memoryCommercialExtensions, growth: memoryGrowth, alerts: memoryAlerts, dataLifecycle: memoryDataLifecycle, workspaceDataExport: memoryWorkspaceDataExport, brandUnits: memoryBrandUnits, objectOrphans: memoryObjectOrphans, contextSnapshots: memoryContextSnapshots, identities: memoryIdentities, authorization: memoryAuthorization, paymentCallbackNonces: memoryPaymentCallbackNonces, support: memorySupport, supportSlaReporting: memorySupportSlaReporting, incidents: memoryIncidents, featureFlags: memoryFeatureFlags, auditCenter: memoryAuditCenter, workspaceBootstrap: memoryWorkspaceBootstrap, assetParse: memoryAssetParse, assetScanReceipts: memoryAssetScanReceipts, assetPromotionCleanup: memoryAssetPromotionCleanup, imageContinuationLeases: memoryImageContinuationLeases, imageGenerationExecutions: new MemoryImageGenerationExecutionRepository(), reconciliationEvidence: new MemoryReconciliationEvidenceRepository(), unifiedLinkAudit: new MemoryUnifiedLinkAuditRepository(), platformAuthorizationAudit: memoryPlatformAuthorizationAudit, platformMediaSpecs: memoryPlatformMediaSpecs, mappingPreflightApprovals: memoryMappingPreflightApprovals, knowledgeHydration: memoryKnowledgeHydration, knowledge: memoryKnowledge, storageQuota: memoryStorageQuota, storageReconciliation: memoryStorageReconciliation, reconciliationStatuses: memoryReconciliationStatuses, canonicalBackfillRuns: memoryCanonicalBackfillRuns, canonicalBackfillConflicts: memoryCanonicalBackfillConflicts, interactiveConfirmationTickets: memoryInteractiveConfirmationTickets }
+const memoryPersistence: ApiPersistence = { mode: 'memory', creativePoints: memoryCreativePoints, commercialCatalog: memoryCommercialCatalog, commercial: memoryCommercial, usage: memoryUsage, modelUsage: memoryModelUsage, actionLedger: memoryActionLedger, entitlements: memoryEntitlements, operations: memoryOperations, subscriptions: memorySubscriptions, members: memoryMembers, commercialExtensions: memoryCommercialExtensions, growth: memoryGrowth, alerts: memoryAlerts, dataLifecycle: memoryDataLifecycle, workspaceDataExport: memoryWorkspaceDataExport, brandUnits: memoryBrandUnits, objectOrphans: memoryObjectOrphans, contextSnapshots: memoryContextSnapshots, identities: memoryIdentities, authorization: memoryAuthorization, paymentCallbackNonces: memoryPaymentCallbackNonces, support: memorySupport, supportSlaReporting: memorySupportSlaReporting, incidents: memoryIncidents, featureFlags: memoryFeatureFlags, auditCenter: memoryAuditCenter, workspaceBootstrap: memoryWorkspaceBootstrap, workspaceContentSetup: memoryWorkspaceContentSetup, assetParse: memoryAssetParse, assetScanReceipts: memoryAssetScanReceipts, assetPromotionCleanup: memoryAssetPromotionCleanup, imageContinuationLeases: memoryImageContinuationLeases, imageGenerationExecutions: new MemoryImageGenerationExecutionRepository(), reconciliationEvidence: new MemoryReconciliationEvidenceRepository(), unifiedLinkAudit: new MemoryUnifiedLinkAuditRepository(), platformAuthorizationAudit: memoryPlatformAuthorizationAudit, platformMediaSpecs: memoryPlatformMediaSpecs, mappingPreflightApprovals: memoryMappingPreflightApprovals, knowledgeHydration: memoryKnowledgeHydration, knowledge: memoryKnowledge, storageQuota: memoryStorageQuota, storageReconciliation: memoryStorageReconciliation, reconciliationStatuses: memoryReconciliationStatuses, canonicalBackfillRuns: memoryCanonicalBackfillRuns, canonicalBackfillConflicts: memoryCanonicalBackfillConflicts, interactiveConfirmationTickets: memoryInteractiveConfirmationTickets }
 // Customer delivery is workspace-scoped and uses the in-memory adapter in test/fixture mode.
 memoryPersistence.customerDeliveries = memoryCustomerDeliveries
 let persistence: ApiPersistence = memoryPersistence
@@ -3338,6 +3343,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     passwordAuthRepository = passwordAuth
     const authorization = new PostgresAuthorizationRepository(opsSqlPool)
     const workspaceBootstrap = new PostgresWorkspaceBootstrapRepository(sqlPool)
+    const workspaceContentSetup = new PostgresWorkspaceContentSetupRepository(sqlPool)
     const paymentCallbackNonces = new PostgresPaymentCallbackNonceRepository(sqlPool)
     const support = new PostgresSupportRepository(sqlPool)
     const supportSlaReporting = new PostgresSupportSlaReportingRepository(sqlPool)
@@ -3500,7 +3506,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', creativePoints, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', creativePoints, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -4162,7 +4168,7 @@ const ONBOARDING_METHODS = new Set([
 // them usable before commercial activation so an unconfigured workspace can
 // still reach the real onboarding and permission evidence.
 const COMMERCIAL_READ_ONLY_METHODS = new Set([
-  'ops.session', 'workspace.health', 'workspace.metrics',
+  'ops.session', 'onboarding.status', 'workspace.health', 'workspace.metrics',
   'billing.status', 'billing.transactions', 'billing.reconciliation', 'billing.model-usage.statement',
   'subscription.get', 'subscription.orders.list', 'platform.model.status',
   'platform.media.spec.list', 'platform.media.spec.get',
@@ -12533,6 +12539,18 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         throw error
       }
     }
+    case 'workspace.content_setup.confirm': {
+      const principal = requestPrincipals.get(req)
+      if (principal?.memberRole !== 'workspace_owner') throw new DomainError(ERROR_CODES.FORBIDDEN, '只有当前工作区 owner 可以确认首次内容工作区设置', 403)
+      const displayName = required(params, 'display_name').normalize('NFKC').trim()
+      if (!displayName || displayName.length > 120 || /[\u0000-\u001f\u007f\u200b-\u200f]/u.test(displayName)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '工作区名称不能为空、过长或包含控制字符', 400)
+      const platform = required(params, 'platform')
+      const accountId = required(params, 'account_id')
+      const store = workspaceStoreDirectory(workspaceId).find(candidate => candidate.platform === platform && candidate.accountId === accountId && candidate.dataMode === 'official_api' && candidate.readable)
+      if (!store) throw new DomainError(ERROR_CODES.FORBIDDEN, '只能用当前工作区已核验的官方可读店铺建立内容工作区', 403)
+      const saved = await (persistence.workspaceContentSetup ?? memoryWorkspaceContentSetup).confirm({ workspaceId, displayName, platform, accountId, actorId: requestActor(req) })
+      return result({ display_name: saved.displayName, store: { platform: saved.platform, label: store.label }, confirmed_at: saved.confirmedAt, status: 'confirmed', message: '内容工作区设置已保存；完成进度仍以店铺扫描及生产门禁重新核验为准' })
+    }
     case 'workspace.interactive.confirm':
       {
         const principal = requestPrincipals.get(req)
@@ -12716,6 +12734,46 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const onboarding = onboardingState.steps
       const onboardingV2 = merchantOnboardingProjection(onboardingState)
       if (method === 'onboarding.status') {
+        const officialStores = directory.filter(store => store.dataMode === 'official_api' && store.readable)
+        const storeKeys = new Set(officialStores.map(store => `${store.platform}:${store.accountId}`))
+        const succeededSyncKeys = new Set(service.listSyncJobs(workspaceId).filter(job => job.state === 'succeeded' && storeKeys.has(`${job.platform}:${job.accountId}`)).map(job => `${job.platform}:${job.accountId}`))
+        const scannedProducts = service.listProducts(workspaceId).filter(product => product.source === 'official_api' && product.accountId && succeededSyncKeys.has(`${product.platform}:${product.accountId}`))
+        const allStoresSynced = officialStores.length > 0 && succeededSyncKeys.size === officialStores.length
+        const allStoresScanned = allStoresSynced && scannedProducts.length > 0
+        const confirmedProducts = scannedProducts.filter(product => product.factsConfirmed)
+        const brandClues = confirmedStoreBrandClues(confirmedProducts)
+        const knowledgeReady = allStoresScanned && confirmedProducts.length === scannedProducts.length
+        const brandReady = Boolean(service.getBrandProfile(workspaceId))
+        const ruleStatuses = await trustedPlatformRuleSyncStatuses(workspaceId)
+        const selectedPlatforms = new Set(officialStores.map(store => store.platform))
+        const rulesReady = selectedPlatforms.size > 0 && [...selectedPlatforms].every(platform => ruleStatuses.some(rule => rule.platform === platform && rule.state === 'ready'))
+        const relayReady = evaluatePlatformModelRelayGate(process.env).ready
+        const modalitiesReady = (['text', 'image', 'video'] as const).every(kind => evaluatePlatformModelGate(process.env, kind).ready)
+        const setup = setupDiagnostics()
+        const costReady = setup.ai.costGate === 'ready'
+        const storageReady = setup.objectStorage.configured
+        const pointBalance = await persistence.creativePoints?.getBalance(workspaceId)
+        const pointsReady = pointBalance?.availablePoints !== null && pointBalance !== undefined && pointBalance.availablePoints > 0
+        const configurationReady = knowledgeReady && brandReady && rulesReady && relayReady && modalitiesReady && costReady && storageReady && pointsReady
+        const contentSetup = await (persistence.workspaceContentSetup ?? memoryWorkspaceContentSetup).get(workspaceId)
+        const contentSetupStoreReady = Boolean(contentSetup && officialStores.some(store => store.platform === contentSetup.platform && store.accountId === contentSetup.accountId))
+        const trustedBrandMaterials = service.listAssets(workspaceId).filter(asset => isTrustedCleanAsset(asset) && asset.parseStatus === 'succeeded')
+        const configurationNextAction = !knowledgeReady
+          ? { method: 'catalog.search', label: '核对商品事实', required_inputs: ['platform', 'account_id'] }
+          : !brandReady && trustedBrandMaterials.length
+            ? { method: 'brand.extract', label: '核对品牌资料', required_inputs: [] }
+            : !brandReady && brandClues.totalCandidates
+              ? { method: 'brand.upsert', label: '确认品牌名称', required_inputs: ['name'] }
+              : !brandReady
+                ? { method: 'asset.upload', label: '补充品牌资料', required_inputs: ['name', 'mime_type'] }
+                : { method: 'workspace.health', label: '检查并恢复系统配置', required_inputs: [] }
+        const initializationSteps = [
+          { id: 'connect_stores', title: '连接平台及店铺', state: officialStores.length ? 'complete' : 'required', summary: officialStores.length ? `已核验 ${officialStores.length} 家官方授权、可读取的店铺` : '还没有可核验的官方授权店铺；店铺链接只用于识别', next_action: { method: 'platform.connect', label: '开始配置店铺', required_inputs: ['platform'] } },
+          { id: 'scan_catalog', title: '扫描商品至知识库', state: !officialStores.length ? 'pending' : allStoresSynced ? 'complete' : 'required', summary: !officialStores.length ? '等待店铺授权' : allStoresSynced ? `已完成 ${officialStores.length} 家店铺的官方同步，读取 ${scannedProducts.length} 件商品${scannedProducts.length ? '' : '；暂无可核验商品'}` : `已完成 ${succeededSyncKeys.size}/${officialStores.length} 家店铺的官方同步；待继续扫描`, next_action: { method: 'catalog.sync.start', label: '扫描店铺商品', required_inputs: ['platform', 'account_id'] } },
+          { id: 'check_configuration', title: '检查系统配置', state: !allStoresSynced ? 'pending' : configurationReady ? 'complete' : 'blocked', summary: !allStoresSynced ? '等待全部店铺商品扫描' : !scannedProducts.length ? '店铺同步已完成，但暂无可核验商品；请核对授权读取范围或补充商品，内容生产保持阻断' : configurationReady ? '商品事实、品牌档案、平台签名规则、创意点、中转模型、成本与存储门禁已核验；正式生成仍要检查实际调用' : `待处理：${!knowledgeReady ? `商品事实 ${confirmedProducts.length}/${scannedProducts.length}；` : ''}${!brandReady ? '品牌基础档案；' : ''}${!rulesReady ? '平台签名规则；' : ''}${!pointsReady ? '创意点；' : ''}${!relayReady ? '模型中转；' : ''}${!modalitiesReady ? '文案/图片/视频模型；' : ''}${!costReady ? '模型成本门禁；' : ''}${!storageReady ? '对象存储；' : ''}`.replace(/；$/u, ''), next_action: configurationNextAction },
+          { id: 'build_workspace', title: '建立工作区', state: !configurationReady || !allStoresSynced ? 'pending' : contentSetupStoreReady ? 'complete' : 'required', summary: configurationReady && allStoresSynced ? contentSetupStoreReady ? `「${contentSetup!.displayName}」已由商家确认，店铺范围已核验；可以选择首个商品任务` : `当前身份已安全绑定工作区；建议名称：${officialStores[0]?.label || '首家店铺'}内容工作区。请确认名称和对应店铺；未保存前不能宣称 4/4。` : '等待前述检查；已有工作区绑定会安全保留', next_action: { method: 'workspace.content_setup.confirm', label: '确认内容工作区', required_inputs: ['display_name', 'platform', 'account_id'] } },
+        ] as const
+        const initializationCurrent = initializationSteps.find(step => step.state !== 'complete') ?? initializationSteps.at(-1)!
         const current = onboardingV2.current_step
         const bindingByStep: Record<string, string> = {
           workspace: '工作区：绑定 MERCHANT_WORKSPACE_ID；身份由当前认证会话提供。',
@@ -12733,6 +12791,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           binding: bindingByStep[current.id] ?? '按当前步骤完成配置。',
           next_action: current.primary_action,
           summary: onboardingState.summary,
+          ...(typeof params.store_links_text === 'string' ? { store_link_inspection: inspectStoreLinks(params.store_links_text) } : {}),
+          initialization: { schema_version: 'store-nova.initialization.v1', status: initializationSteps.every(step => step.state === 'complete') ? 'ready' : initializationCurrent.state === 'blocked' ? 'blocked' : 'in_progress', completed: initializationSteps.filter(step => step.state === 'complete').length, total: 4, current_step: initializationCurrent, steps: initializationSteps, security_notice: '请通过平台官方页面授权，不要在对话中发送店铺密码或验证码。', brand_clues: brandClues, evidence: { official_stores: officialStores.length, successful_sync_stores: succeededSyncKeys.size, scanned_products: scannedProducts.length, confirmed_products: confirmedProducts.length, brand_candidate_count: brandClues.totalCandidates, sku_records: scannedProducts.reduce((sum, product) => sum + (product.skus?.length ?? 0), 0), image_references: scannedProducts.reduce((sum, product) => sum + (product.images?.length ?? 0), 0), products_missing_images: scannedProducts.filter(product => !product.images?.length).length, brand_profile_present: brandReady, content_workspace_confirmed: contentSetupStoreReady, points_state: pointBalance?.availablePoints === null || !pointBalance ? 'unknown' : pointsReady ? 'ready' : 'insufficient', rules_ready: rulesReady, relay_ready: relayReady, modalities_ready: modalitiesReady, cost_ready: costReady, storage_ready: storageReady } },
           guidance: '完成当前步骤后重新检查引导状态；未完成前不会执行生成或发布。',
         })
       }
@@ -18905,7 +18965,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       res.end(JSON.stringify({ error: 'MCP_OAUTH_NOT_CONFIGURED' })); return
     }
     res.statusCode = 200; res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store')
-    res.end(JSON.stringify({ issuer: discovery.issuer, authorization_endpoint: discovery.authorizationEndpoint, token_endpoint: discovery.tokenEndpoint, response_types_supported: ['code'], grant_types_supported: ['authorization_code', 'refresh_token'], code_challenge_methods_supported: ['S256'], scopes_supported: discovery.scopes })); return
+    res.end(JSON.stringify({ issuer: discovery.issuer, authorization_endpoint: discovery.authorizationEndpoint, token_endpoint: discovery.tokenEndpoint, response_types_supported: ['code'], grant_types_supported: ['authorization_code', 'refresh_token'], token_endpoint_auth_methods_supported: ['none'], code_challenge_methods_supported: ['S256'], scopes_supported: discovery.scopes })); return
   }
   if (req.method === 'GET' && path === '/.well-known/openai-apps-challenge') {
     const challenge = process.env.OPENAI_APPS_CHALLENGE_TOKEN?.trim()

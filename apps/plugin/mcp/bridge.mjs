@@ -131,7 +131,6 @@ const COMMERCIAL_DISABLED_METHODS = new Set([
   'campaign.batch.generate', 'campaign.batch.retry_failed',
   'catalog.title.optimize', 'catalog.image.retry',
   'brand.tone.preview', 'task.understand', 'creative.directions',
-  'content.generate',
   'content.codex.prepare', 'content.codex.commit', 'content.review',
   'content.modify',
   'multimodal.generate',
@@ -199,8 +198,12 @@ const DESTRUCTIVE_WRITE_METHODS = new Set([
 ])
 const METHODS = {
   'onboarding.status': {
-    description: '查看安装后的系统引导进度、当前阻断、需要绑定的对象和下一步动作。只读。',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    description: '查看首次使用四步进度；可附上平台、店铺名称和店铺首页链接，仅检查格式并生成待确认候选，不读取网页或代替官方授权。只读。',
+    inputSchema: { type: 'object', properties: { store_links_text: boundedString(8192, 1, '用户逐行提供的平台｜店铺名称｜HTTPS店铺首页；仅作格式检查') }, additionalProperties: false },
+  },
+  'workspace.content_setup.confirm': {
+    description: '商家明确确认内容工作区名称及已官方授权店铺后保存设置；须先开启当前交互写会话，服务端核验 owner 与店铺并写入审计。',
+    inputSchema: { type: 'object', properties: { display_name: boundedString(120), platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: boundedString(200) }, required: ['display_name', 'platform', 'account_id'], additionalProperties: false },
   },
   'commercial.service-boundary.accept': {
     description: '确认 commercial.service-boundary.v1（校验和 94cd78089cf960d4b556ed9990fcd653c03473bd143b94d0203ab978ea84d685）：包含系统指导、常规排障、品牌配置、生成指导、拒审分析、流程优化；不包含无限修改、全套代做、完整营销策略、日常运营、7×24/非工作时段应急、内部开发；结果不保证。客户身份由已认证会话派生。',
@@ -1209,6 +1212,38 @@ function detailDecisionSummary(method, result) {
 
 function userFacingToolText(method, result) {
   if (method === 'onboarding.status') {
+    const inspection = result?.store_link_inspection
+    if (inspection && Array.isArray(inspection.candidates)) {
+      const issueText = Array.isArray(inspection.issues) && inspection.issues.length
+        ? inspection.issues.map(issue => `第 ${issue.line || '?'} 行：${issue.message}`).join('\n')
+        : ''
+      return [
+        inspection.candidates.length ? `已整理 ${inspection.candidates.length} 家店铺的接入候选；链接格式已检查，店铺身份和授权仍待核验。` : '这次没有识别出可用的店铺候选。',
+        ...inspection.candidates.map((store, index) => `${index + 1}. ${store.platformLabel}｜${store.storeName}｜${store.shopUrl}`),
+        issueText,
+        inspection.candidates.length ? '请确认这份店铺名单是否正确；需要修改或继续添加，也可以直接告诉我。' : '请按“淘宝｜店铺名称｜https://店铺首页”重新发送。',
+      ].filter(Boolean).join('\n')
+    }
+    const initialization = result?.initialization
+    if (initialization && Array.isArray(initialization.steps)) {
+      const current = initialization.current_step ?? {}
+      const progress = initialization.steps.map(step => `${step.state === 'complete' ? '✓' : '○'} ${step.title}`).join('  ·  ')
+      const brandClues = initialization.brand_clues?.candidates
+      const brandHint = current.id === 'check_configuration' && !initialization.evidence?.brand_profile_present && Array.isArray(brandClues) && brandClues.length
+        ? brandClues.length === 1
+          ? `已确认商品中出现「${brandClues[0].brandName}」品牌线索。请确认这是否是你要使用的品牌名称；确认后才会保存品牌档案。`
+          : `已确认商品中出现 ${initialization.brand_clues.totalCandidates} 条不同店铺或品牌的线索。请先选定要建立档案的品牌，不会自动合并。`
+        : ''
+      return [
+        initialization.completed === 0 ? '您好，欢迎使用 Store Nova。本地系统已经部署完成。接下来，我会陪你把官方店铺、商品知识与内容生产能力连接成专属工作流；四个步骤都会给出真实核验结果。' : '',
+        initialization.completed === 0 || initialization.status === 'ready' ? `首次配置 ${initialization.completed}/4｜${progress}` : `首次配置 ${initialization.completed}/4｜${current.title ?? '下一步'}`,
+        initialization.status === 'ready'
+          ? '配置完成。你的内容工作区已就位；告诉我想先为哪件商品制作素材。生成和发布仍需独立确认。'
+          : `现在进行「${current.title ?? '连接平台及店铺'}」：${current.summary ?? '等待核验'}。${current.id === 'connect_stores' ? '下一步：开始配置店铺。请按“平台｜店铺名称｜店铺首页链接”发送，一店一行；我会先整理名单，再引导你到平台官方页面授权。' : current.next_action?.label ? `下一步：${current.next_action.label}。` : ''}`,
+        brandHint,
+        initialization.completed === 0 ? initialization.security_notice : '',
+      ].filter(Boolean).join('\n')
+    }
     const card = result?.onboarding_card
     if (card && typeof card === 'object') {
       return [
@@ -1954,6 +1989,12 @@ function merchantConversationProjection(method, result, args = {}) {
 function merchantUiMetadata(method, result, args = {}) {
   if (!result || typeof result !== 'object' || Array.isArray(result) || !MERCHANT_CONTEXT_METADATA_METHODS.has(method)) return result
   if (method === 'onboarding.status') {
+    if (result.initialization && Array.isArray(result.initialization.steps)) {
+      // The four-step first-use journey is delivered in ChatGPT's native
+      // conversation. Keep the server facts available without attaching the
+      // legacy six-step dashboard card or an HTML output template.
+      return result
+    }
     const current = result.current_step && typeof result.current_step === 'object' ? result.current_step : {}
     const steps = Array.isArray(result.steps) ? result.steps : []
     const labels = steps.map(step => `${step.state === 'complete' ? '✓' : '○'} ${step.title}: ${step.summary}`).join('；')
