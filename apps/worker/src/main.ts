@@ -856,7 +856,17 @@ export async function postModelUsage(input: { apiBaseUrl: string; apiToken: stri
     signal: input.signal,
   })
   if (!response.ok) {
-    const error = Object.assign(new Error(`model usage API returned ${response.status}`), { code: response.status === 409 || response.status === 503 ? 'MODEL_USAGE_SETTLEMENT_PENDING' : 'MODEL_USAGE_CALLBACK_REJECTED' })
+    let apiError: { code?: unknown; message?: unknown } | undefined
+    try {
+      const payload = await parseWorkerApiJson(response)
+      if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+        const candidate = (payload as { error?: unknown }).error
+        if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) apiError = candidate as { code?: unknown; message?: unknown }
+      }
+    } catch { /* preserve the HTTP fallback when the API response is not JSON */ }
+    const apiCode = typeof apiError?.code === 'string' && apiError.code.trim() ? apiError.code.trim() : undefined
+    const apiMessage = typeof apiError?.message === 'string' && apiError.message.trim() ? apiError.message.trim() : undefined
+    const error = Object.assign(new Error(apiMessage ?? `model usage API returned ${response.status}`), { code: apiCode ?? (response.status === 409 || response.status === 503 ? 'MODEL_USAGE_SETTLEMENT_PENDING' : 'MODEL_USAGE_CALLBACK_REJECTED'), ...(apiCode ? { apiErrorCode: apiCode } : {}) })
     throw error
   }
   const envelope = await parseWorkerApiJson(response) as { data?: { recorded?: unknown } }
