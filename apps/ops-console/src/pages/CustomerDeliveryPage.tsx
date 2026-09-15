@@ -242,6 +242,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       {createPage ? (
         <Card title="用户建档" extra={<Button onClick={() => setCreatePage(false)}>返回客户建档</Button>}>
           <Form form={createForm} layout="vertical" onFinish={submitCreatePage}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: "0 16px" }}>
             <Form.Item name="companyName" label="公司名称" rules={[{ required: true, message: "请输入公司名称" }]}>
               <Input placeholder="请输入公司名称" autoFocus />
             </Form.Item>
@@ -252,6 +253,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             <Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input placeholder="例如：姜伟" /></Form.Item>
             <Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input placeholder="例如：韩先晓" /></Form.Item>
             <Form.Item name="requiredLaunchAt" label="需求上线时间" rules={[{ required: true, message: "请输入需求上线时间" }]}><Input type="datetime-local" /></Form.Item>
+            </div>
             <Space>
               <Button onClick={() => setCreatePage(false)}>取消</Button>
               <Button type="primary" htmlType="submit">创建客户</Button>
