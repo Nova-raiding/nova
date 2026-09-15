@@ -1,0 +1,64 @@
+vite v8.2.2 building client environment for production...
+transforming...
+✓ 3220 modules transformed.
+rendering chunks...
+computing gzip size...
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/index.html                                     3.12 kB │ gzip:   0.87 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-runtime-B5BXDqMa.css               2.98 kB │ gzip:   1.13 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/index--aFrBaF7.css                     25.68 kB │ gzip:   5.75 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-row-D3cqtphD.js                    0.06 kB │ gzip:   0.07 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-button-ChFi9OH_.js                 0.06 kB │ gzip:   0.08 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/react-Bd5ulOAF.js                       0.43 kB │ gzip:   0.30 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/modelReadiness-CNPBOKHX.js              0.74 kB │ gzip:   0.50 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/rolldown-runtime-W7wSyTde.js            0.97 kB │ gzip:   0.56 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-modal-BUSNqD2S.js                  1.38 kB │ gzip:   0.75 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-layout-X6iFxnMN.js                 1.55 kB │ gzip:   0.80 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/OpsDataState-BS5QE8IA.js                2.04 kB │ gzip:   0.96 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-flex-DpIFjlaF.js                   2.08 kB │ gzip:   0.99 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-col-F4QYtzlY.js                    2.74 kB │ gzip:   1.42 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-statistic-T6gL3p1f.js              4.14 kB │ gzip:   1.92 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/MembersPage-ZrGJ0oq2.js                 4.22 kB │ gzip:   2.15 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-divider-mNd8uCBQ.js                4.59 kB │ gzip:   1.75 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-runtime-DUldMNl7.js                5.11 kB │ gzip:   2.24 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-config-provider-BO1gT_9L.js        5.18 kB │ gzip:   2.20 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-timeline-BpfgPHQd.js               6.63 kB │ gzip:   2.52 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-switch-DaDIoX2s.js                 7.50 kB │ gzip:   2.62 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-checkbox-BDYTjsEZ.js               7.54 kB │ gzip:   3.14 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-descriptions-DXFNjHle.js           7.86 kB │ gzip:   2.79 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/StoragePage-D5KlljQ7.js                 7.91 kB │ gzip:   3.47 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-tag-J2kBXpSy.js                    8.50 kB │ gzip:   3.32 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-alert-10l3fiOL.js                  8.67 kB │ gzip:   3.38 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-segmented-D_nLd4jH.js              9.24 kB │ gzip:   3.54 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-radio-CFN9fooj.js                 10.94 kB │ gzip:   3.72 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/ModelsPage-Car92kWL.js                 11.54 kB │ gzip:   4.38 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-badge-Bx6hgtD1.js                 11.60 kB │ gzip:   4.27 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/RulesPage-B2j8mEAt.js                  11.86 kB │ gzip:   4.79 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-drawer-cS91h5jN.js                14.33 kB │ gzip:   5.54 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-progress-DAkOGypN.js              14.90 kB │ gzip:   5.76 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/KnowledgePage-9fqUT0lG.js              16.62 kB │ gzip:   5.57 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-typography-DeBHQ1fY.js            17.24 kB │ gzip:   6.79 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/IncidentsRoute-BwB_t2gs.js             17.50 kB │ gzip:   5.88 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/AuditPage-DNNUcU30.js                  17.63 kB │ gzip:   6.17 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/FeatureFlagsRoute-C8MeVbH_.js          18.75 kB │ gzip:   6.97 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-input-number-BBpNiV7g.js          19.60 kB │ gzip:   7.11 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/OverviewPage-a4ofmdDA.js               25.09 kB │ gzip:   8.68 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/SupportRoute-BXRO4LN6.js               26.53 kB │ gzip:   8.70 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-form-DW8KHQG-.js                  26.57 kB │ gzip:  10.29 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/CommercialReadinessPanel-BwC0wqj9.js   26.72 kB │ gzip:   7.82 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-upload-Cx06KsQR.js                27.74 kB │ gzip:   9.89 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-steps-gCVUGHV1.js                 29.96 kB │ gzip:   8.57 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-result-CONrGOlf.js                33.84 kB │ gzip:  10.41 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-input-C7U0rtLN.js                 43.32 kB │ gzip:  13.15 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/StoresPage-BdFzYcX8.js                 48.13 kB │ gzip:  14.48 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-icons-cwxdPv9q.js                 57.99 kB │ gzip:  13.29 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-dropdown-DCFtUfkv.js              58.55 kB │ gzip:  17.21 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-app-xAU45EtY.js                   65.63 kB │ gzip:  21.36 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-card-_RHtgBQq.js                  74.28 kB │ gzip:  23.09 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/FinancePage-CmrnY-_x.js                90.38 kB │ gzip:  24.77 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-list-Drzjye_r.js                 105.08 kB │ gzip:  33.73 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-table-CYJbnX1y.js                133.94 kB │ gzip:  42.79 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/TasksPage-B6qNSmuz.js                 181.88 kB │ gzip:  54.35 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/index-BLIl50W0.js                     213.17 kB │ gzip:  63.27 kB
+artifacts/ops-jit-isolation/2026-09-10T02-08-49.962Z-eb400cb5-7681-4ab7-9e01-7a4f8f576c6b/ui-dist/assets/antd-_util-Cx8ZCuHy.js                404.39 kB │ gzip: 135.25 kB
+
+✓ built in 448ms

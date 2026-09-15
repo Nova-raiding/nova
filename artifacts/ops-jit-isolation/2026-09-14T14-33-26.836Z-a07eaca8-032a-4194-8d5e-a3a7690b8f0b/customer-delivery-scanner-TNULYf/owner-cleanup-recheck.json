@@ -1,0 +1,12 @@
+{
+  "status": "confirmed_absent",
+  "runId": "0041c59f-e6a3-4f2d-859b-3ebdee62bf1a",
+  "containerId": "c945a8e55d3a988f74ab79a21298065971effc1701c00f1fa1157552c43a1453",
+  "checkedAtUtcMinute": "2026-09-14T14:42Z",
+  "dockerHost": "unix:///Users/lixiaomei/.colima/default/docker.sock",
+  "check": "exact-ID docker inspect returned no such object",
+  "ownerMutation": false,
+  "historicalFailurePreserved": true,
+  "sharedContainersTouched": false,
+  "runtimeFailure": "scanner absent during browser acceptance; exit cause not established"
+}

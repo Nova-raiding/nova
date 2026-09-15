@@ -14,6 +14,35 @@ function clamAvVersion(definitionsPublishedAt: Date): string {
 }
 
 describe('durable scanner callback', () => {
+  it('rejects an event whose bound size exceeds the scanner limit before content fetch', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+    const event: DurableOutboxEvent = { id: 'evt_scan_too_large', workspaceId: 'ws_scan', aggregateId: 'asset_large', eventType: 'asset.uploaded', sequence: 1, payload: { asset_id: 'asset_large', storage_key: 'quarantine/ws_scan/asset_large/source.bin', sha256: 'a'.repeat(64), size_bytes: 5 }, createdAt: new Date().toISOString() }
+
+    await expect(executeAssetScan({ apiBaseUrl: 'http://api:8787', apiToken: 'token', apiSigningSecret: 'secret', receiptPrivateKeyPem: 'unused', receiptKeyId: 'key-1', scannerServiceId: 'scanner', scannerInstanceId: 'replica-a', policyVersion: 'v1', clamavHost: 'clamav', clamavPort: 3310, clamavTimeoutMs: 1000, clamavMaxFileBytes: 4, attemptRepository: new MemoryAssetScanAttemptRepository(), event, fetcher }))
+      .rejects.toMatchObject({ code: 'ASSET_SCAN_CONTENT_TOO_LARGE', retryable: false })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('enforces the configured limit on a streamed response with no Content-Length before ClamAV access', async () => {
+    const cancel = vi.fn()
+    const version = vi.fn(async () => 'unused')
+    const scan = vi.fn(async () => ({ status: 'clean' as const, target: 'stream', raw: 'stream: OK' }))
+    const event: DurableOutboxEvent = { id: 'evt_scan_stream_too_large', workspaceId: 'ws_scan', aggregateId: 'asset_stream_large', eventType: 'asset.uploaded', sequence: 1, payload: { asset_id: 'asset_stream_large', storage_key: 'quarantine/ws_scan/asset_stream_large/source.bin', sha256: 'a'.repeat(64), size_bytes: 4 }, createdAt: new Date().toISOString() }
+    const fetcher: typeof fetch = async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(Uint8Array.from([1, 2, 3]))
+        controller.enqueue(Uint8Array.from([4, 5]))
+      },
+      cancel,
+    }), { status: 200, headers: { 'content-type': 'application/octet-stream', 'x-asset-source-revision': '1', 'x-asset-object-key': encodeURIComponent(String(event.payload.storage_key)) } })
+
+    await expect(executeAssetScan({ apiBaseUrl: 'http://api:8787', apiToken: 'token', apiSigningSecret: 'secret', receiptPrivateKeyPem: 'unused', receiptKeyId: 'key-1', scannerServiceId: 'scanner', scannerInstanceId: 'replica-a', policyVersion: 'v1', clamavHost: 'clamav', clamavPort: 3310, clamavTimeoutMs: 1000, clamavMaxFileBytes: 4, attemptRepository: new MemoryAssetScanAttemptRepository(), scanner: { version, scan }, event, fetcher }))
+      .rejects.toMatchObject({ code: 'ASSET_SCAN_CONTENT_TOO_LARGE', retryable: false })
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(version).not.toHaveBeenCalled()
+    expect(scan).not.toHaveBeenCalled()
+  })
+
   it('replays byte-identical signed evidence after an accepted API response is lost, without rescanning', async () => {
     const testNow = new Date()
     const definitionsPublishedAt = new Date(testNow.getTime() - 60 * 60_000)

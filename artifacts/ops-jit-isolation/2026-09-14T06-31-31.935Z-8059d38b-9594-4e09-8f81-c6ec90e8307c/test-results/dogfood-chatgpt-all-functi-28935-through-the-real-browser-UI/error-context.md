@@ -1,0 +1,345 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营后台
+      - generic [ref=e14]: 平台运营控制面
+      - navigation "平台运营功能导航" [ref=e15]:
+        - region "平台治理" [ref=e16]:
+          - heading "平台治理" [level=2] [ref=e17]
+          - button "总览" [ref=e18] [cursor=pointer]:
+            - img "dashboard" [ref=e19] [cursor=pointer]:
+              - img [ref=e20] [cursor=pointer]
+            - generic [ref=e22] [cursor=pointer]: 总览
+          - button "用户中心" [ref=e23] [cursor=pointer]:
+            - img "team" [ref=e24] [cursor=pointer]:
+              - img [ref=e25] [cursor=pointer]
+            - generic [ref=e27] [cursor=pointer]: 用户中心
+          - button "客户交付" [ref=e28] [cursor=pointer]:
+            - img "team" [ref=e29] [cursor=pointer]:
+              - img [ref=e30] [cursor=pointer]
+            - generic [ref=e32] [cursor=pointer]: 客户交付
+        - region "模型与计费" [ref=e33]:
+          - heading "模型与计费" [level=2] [ref=e34]
+          - button "账务与退款" [ref=e35] [cursor=pointer]:
+            - img "dollar" [ref=e36] [cursor=pointer]:
+              - img [ref=e37] [cursor=pointer]
+            - generic [ref=e39] [cursor=pointer]: 账务与退款
+  - generic [ref=e40]:
+    - banner [ref=e41]:
+      - generic [ref=e42]:
+        - heading "平台运营控制台" [level=2] [ref=e43]
+        - region "当前身份与权限范围" [ref=e44]:
+          - generic [ref=e45]:
+            - img [ref=e47]:
+              - img [ref=e48]
+            - strong [ref=e52]: 平台管理员
+            - status [ref=e54]: 授权状态：已由服务端验证
+            - button "展开其余 1 个已验证角色" [ref=e57] [cursor=pointer]:
+              - generic [ref=e58] [cursor=pointer]: +1 个角色
+            - generic [ref=e60]: 平台全局
+            - generic [ref=e62]: 策略 2026-09-08.v1
+          - status [ref=e63]: 平台运营视图：仅显示服务端授权的平台能力；企业主体操作需切换到对应企业主体。
+      - generic [ref=e65]:
+        - generic [ref=e66]:
+          - generic [ref=e67]: 当前状态
+          - status [ref=e68]: 已登录
+        - button "打开账号信息" [ref=e69] [cursor=pointer]:
+          - generic [ref=e70] [cursor=pointer]: o
+          - strong [ref=e72] [cursor=pointer]: ops-fixture-actor-28c44c8f-a0bf-44b6-96ab-584d921ee855
+          - img [ref=e73] [cursor=pointer]:
+            - img [ref=e74] [cursor=pointer]
+    - main [ref=e76]:
+      - status [ref=e77]
+      - region "平台财务中心" [active] [ref=e78]:
+        - generic [ref=e79]:
+          - generic [ref=e81]:
+            - generic [ref=e82]:
+              - generic [ref=e83]: COMMERCIAL OPERATIONS
+              - heading "平台财务中心" [level=2] [ref=e84]
+              - generic [ref=e85]: 查看全平台财务记录、企业主体商业化开通状态和成本证据，平台范围由服务端权限投影决定。
+              - generic [ref=e86]: 先核对跨企业主体财务记录和成本证据，再进入对应企业主体处理具体订单或权益。
+            - generic [ref=e88]:
+              - generic [ref=e90]: 平台工作台
+              - button "reload 刷新平台账务" [ref=e92] [cursor=pointer]:
+                - img "reload" [ref=e94] [cursor=pointer]:
+                  - img [ref=e95] [cursor=pointer]
+                - generic [ref=e97] [cursor=pointer]: 刷新平台账务
+          - generic [ref=e99]:
+            - generic [ref=e100]:
+              - generic [ref=e102]:
+                - generic [ref=e104]:
+                  - img [ref=e106]:
+                    - img [ref=e107]
+                  - generic [ref=e109]: 模型计费倍率
+                  - generic [ref=e111]: 高影响配置
+                - button "调整计费" [ref=e113] [cursor=pointer]:
+                  - generic [ref=e114] [cursor=pointer]: 调整计费
+              - generic [ref=e116]:
+                - generic [ref=e118]: 平台统一控制模型成本加价；每次变更保留原因、revision 与审计记录。
+                - generic [ref=e120]: 当前倍率 读取中
+            - generic [ref=e121]:
+              - generic [ref=e123]:
+                - generic [ref=e124]: 跨企业主体财务检索
+                - generic [ref=e126]:
+                  - button "刷新财务检索结果" [ref=e128] [cursor=pointer]:
+                    - img "reload" [ref=e130] [cursor=pointer]:
+                      - img [ref=e131] [cursor=pointer]
+                    - generic [ref=e133] [cursor=pointer]: 刷新
+                  - button "download 导出当前筛选" [disabled] [ref=e135]:
+                    - generic:
+                      - img "download":
+                        - img
+                    - generic: 导出当前筛选
+              - generic [ref=e136]:
+                - form "财务检索筛选" [ref=e137]:
+                  - generic [ref=e138]:
+                    - textbox "关键词" [ref=e148]
+                    - textbox "企业主体" [ref=e159]
+                    - generic [ref=e169]:
+                      - button "search 检索" [ref=e170] [cursor=pointer]:
+                        - img "search" [ref=e172] [cursor=pointer]:
+                          - img [ref=e173] [cursor=pointer]
+                        - generic [ref=e175] [cursor=pointer]: 检索
+                      - button "高级筛选" [ref=e176] [cursor=pointer]:
+                        - generic [ref=e177] [cursor=pointer]: 高级筛选
+                - generic "财务检索汇总" [ref=e178]:
+                  - generic [ref=e180]:
+                    - generic [ref=e182]: 记录数
+                    - generic [ref=e185]: "0"
+                  - generic [ref=e187]:
+                    - generic [ref=e189]: 真实充值到账
+                    - generic [ref=e190]:
+                      - generic [ref=e191]: ¥
+                      - generic [ref=e192]:
+                        - generic [ref=e193]: "0"
+                        - generic [ref=e194]: ".00"
+                  - generic [ref=e196]:
+                    - generic [ref=e198]: 本地成本快照
+                    - generic [ref=e199]:
+                      - generic [ref=e200]: ¥
+                      - generic [ref=e201]:
+                        - generic [ref=e202]: "0"
+                        - generic [ref=e203]: ".000000"
+                  - generic [ref=e205]:
+                    - generic [ref=e207]: 客户计费
+                    - generic [ref=e208]:
+                      - generic [ref=e209]: ¥
+                      - generic [ref=e210]:
+                        - generic [ref=e211]: "0"
+                        - generic [ref=e212]: ".000000"
+                - generic [ref=e213]: 已加载 0 条财务记录
+                - table [ref=e220]:
+                  - rowgroup [ref=e230]:
+                    - row "类型 企业主体 记录 状态 金额 成本 / 客户计费 发生时间 操作" [ref=e231]:
+                      - columnheader "类型" [ref=e232]
+                      - columnheader "企业主体" [ref=e233]
+                      - columnheader "记录" [ref=e234]
+                      - columnheader "状态" [ref=e235]
+                      - columnheader "金额" [ref=e236]
+                      - columnheader "成本 / 客户计费" [ref=e237]
+                      - columnheader "发生时间" [ref=e238]
+                      - columnheader "操作" [ref=e239]
+                  - rowgroup [ref=e240]:
+                    - row "当前筛选条件下没有财务记录" [ref=e241]:
+                      - cell "当前筛选条件下没有财务记录" [ref=e242]:
+                        - generic [ref=e243]: 当前筛选条件下没有财务记录
+            - generic [ref=e244]:
+              - generic [ref=e246]:
+                - generic [ref=e247]: 套餐管理
+                - generic [ref=e249]:
+                  - button "刷新目录" [ref=e251] [cursor=pointer]:
+                    - generic [ref=e252] [cursor=pointer]: 刷新目录
+                  - button "新增套餐" [ref=e254] [cursor=pointer]:
+                    - generic [ref=e255] [cursor=pointer]: 新增套餐
+              - generic [ref=e256]:
+                - alert [ref=e257]:
+                  - img "exclamation-circle" [ref=e259]:
+                    - img [ref=e260]
+                  - generic [ref=e262]:
+                    - generic [ref=e263]: 目录采用版本化生命周期
+                    - generic [ref=e264]: 新增和编辑会创建新版本草稿；审批通过、发布生效与删除/停售都会追加不可变版本并写入审计事件，历史订单不会被破坏。
+                - generic [ref=e265]:
+                  - generic [ref=e267]:
+                    - searchbox "搜索套餐目录" [ref=e269]
+                    - button "search" [ref=e271] [cursor=pointer]:
+                      - img "search" [ref=e273] [cursor=pointer]:
+                        - img [ref=e274] [cursor=pointer]
+                  - generic [ref=e277]: 当前显示 6 个公开套餐版本
+                - generic [ref=e280]:
+                  - table [ref=e284]:
+                    - rowgroup [ref=e292]:
+                      - row "套餐 类型 价格 套餐权益（中文） 商业状态 操作" [ref=e293]:
+                        - columnheader "套餐" [ref=e294]
+                        - columnheader "类型" [ref=e295]
+                        - columnheader "价格" [ref=e296]
+                        - columnheader "套餐权益（中文）" [ref=e297]
+                        - columnheader "商业状态" [ref=e298]
+                        - columnheader "操作" [ref=e299]
+                    - rowgroup [ref=e300]:
+                      - row "基础版 基础版 · basic 月度订阅 ¥2000.00 • 共享存储：50 GB • 首响时间：4 个工作小时 • 品牌数：1 个品牌 • 店铺数：5 家店铺 • 每月创意点：5000 点 • 每月一对一服务：5 小时 生效可售 查看权益 编辑新版本 发布生效 删除 / 停售" [ref=e301]:
+                        - cell "基础版 基础版 · basic" [ref=e302]:
+                          - generic [ref=e303]:
+                            - strong [ref=e306]: 基础版
+                            - code [ref=e309]: 基础版 · basic
+                        - cell "月度订阅" [ref=e310]
+                        - cell "¥2000.00" [ref=e311]
+                        - cell "• 共享存储：50 GB • 首响时间：4 个工作小时 • 品牌数：1 个品牌 • 店铺数：5 家店铺 • 每月创意点：5000 点 • 每月一对一服务：5 小时" [ref=e312]:
+                          - generic [ref=e313]:
+                            - generic [ref=e315]: • 共享存储：50 GB
+                            - generic [ref=e317]: • 首响时间：4 个工作小时
+                            - generic [ref=e319]: • 品牌数：1 个品牌
+                            - generic [ref=e321]: • 店铺数：5 家店铺
+                            - generic [ref=e323]: • 每月创意点：5000 点
+                            - generic [ref=e325]: • 每月一对一服务：5 小时
+                        - cell "生效可售" [ref=e326]:
+                          - generic [ref=e327]: 生效可售
+                        - cell "查看权益 编辑新版本 发布生效 删除 / 停售" [ref=e328]:
+                          - generic [ref=e329]:
+                            - button "查看权益" [ref=e331] [cursor=pointer]:
+                              - generic [ref=e332] [cursor=pointer]: 查看权益
+                            - button "编辑新版本" [ref=e334] [cursor=pointer]:
+                              - generic [ref=e335] [cursor=pointer]: 编辑新版本
+                            - button "发布生效" [ref=e337] [cursor=pointer]:
+                              - generic [ref=e338] [cursor=pointer]: 发布生效
+                            - button "删除 / 停售" [ref=e340] [cursor=pointer]:
+                              - generic [ref=e341] [cursor=pointer]: 删除 / 停售
+                      - row "定制版 定制版 · custom 月度订阅 价格未决 • 暂未配置套餐权益（请编辑补充） 草稿 查看权益 编辑新版本 审批通过 删除 / 停售" [ref=e342]:
+                        - cell "定制版 定制版 · custom" [ref=e343]:
+                          - generic [ref=e344]:
+                            - strong [ref=e347]: 定制版
+                            - code [ref=e350]: 定制版 · custom
+                        - cell "月度订阅" [ref=e351]
+                        - cell "价格未决" [ref=e352]
+                        - cell "• 暂未配置套餐权益（请编辑补充）" [ref=e353]:
+                          - generic [ref=e356]: • 暂未配置套餐权益（请编辑补充）
+                        - cell "草稿" [ref=e357]:
+                          - generic [ref=e358]: 草稿
+                        - cell "查看权益 编辑新版本 审批通过 删除 / 停售" [ref=e359]:
+                          - generic [ref=e360]:
+                            - button "查看权益" [ref=e362] [cursor=pointer]:
+                              - generic [ref=e363] [cursor=pointer]: 查看权益
+                            - button "编辑新版本" [ref=e365] [cursor=pointer]:
+                              - generic [ref=e366] [cursor=pointer]: 编辑新版本
+                            - button "审批通过" [ref=e368] [cursor=pointer]:
+                              - generic [ref=e369] [cursor=pointer]: 审批通过
+                            - button "删除 / 停售" [ref=e371] [cursor=pointer]:
+                              - generic [ref=e372] [cursor=pointer]: 删除 / 停售
+                      - row "成长版 成长版 · growth 月度订阅 ¥5000.00 • 共享存储：50 GB • 首响时间：2 个工作小时 • 品牌数：3 个品牌 • 店铺数：15 家店铺 • 每月创意点：12500 点 • 每月一对一服务：10 小时 生效可售 查看权益 编辑新版本 发布生效 删除 / 停售" [ref=e373]:
+                        - cell "成长版 成长版 · growth" [ref=e374]:
+                          - generic [ref=e375]:
+                            - strong [ref=e378]: 成长版
+                            - code [ref=e381]: 成长版 · growth
+                        - cell "月度订阅" [ref=e382]
+                        - cell "¥5000.00" [ref=e383]
+                        - cell "• 共享存储：50 GB • 首响时间：2 个工作小时 • 品牌数：3 个品牌 • 店铺数：15 家店铺 • 每月创意点：12500 点 • 每月一对一服务：10 小时" [ref=e384]:
+                          - generic [ref=e385]:
+                            - generic [ref=e387]: • 共享存储：50 GB
+                            - generic [ref=e389]: • 首响时间：2 个工作小时
+                            - generic [ref=e391]: • 品牌数：3 个品牌
+                            - generic [ref=e393]: • 店铺数：15 家店铺
+                            - generic [ref=e395]: • 每月创意点：12500 点
+                            - generic [ref=e397]: • 每月一对一服务：10 小时
+                        - cell "生效可售" [ref=e398]:
+                          - generic [ref=e399]: 生效可售
+                        - cell "查看权益 编辑新版本 发布生效 删除 / 停售" [ref=e400]:
+                          - generic [ref=e401]:
+                            - button "查看权益" [ref=e403] [cursor=pointer]:
+                              - generic [ref=e404] [cursor=pointer]: 查看权益
+                            - button "编辑新版本" [ref=e406] [cursor=pointer]:
+                              - generic [ref=e407] [cursor=pointer]: 编辑新版本
+                            - button "发布生效" [ref=e409] [cursor=pointer]:
+                              - generic [ref=e410] [cursor=pointer]: 发布生效
+                            - button "删除 / 停售" [ref=e412] [cursor=pointer]:
+                              - generic [ref=e413] [cursor=pointer]: 删除 / 停售
+                      - row "正式开通服务 正式开通服务 · onboarding_once 正式开通 ¥5000.00 • 赠送批次：6 批/月 • 每批点数：500 点 生效可售 查看权益 编辑新版本 发布生效 删除 / 停售" [ref=e414]:
+                        - cell "正式开通服务 正式开通服务 · onboarding_once" [ref=e415]:
+                          - generic [ref=e416]:
+                            - strong [ref=e419]: 正式开通服务
+                            - code [ref=e422]: 正式开通服务 · onboarding_once
+                        - cell "正式开通" [ref=e423]
+                        - cell "¥5000.00" [ref=e424]
+                        - cell "• 赠送批次：6 批/月 • 每批点数：500 点" [ref=e425]:
+                          - generic [ref=e426]:
+                            - generic [ref=e428]: • 赠送批次：6 批/月
+                            - generic [ref=e430]: • 每批点数：500 点
+                        - cell "生效可售" [ref=e431]:
+                          - generic [ref=e432]: 生效可售
+                        - cell "查看权益 编辑新版本 发布生效 删除 / 停售" [ref=e433]:
+                          - generic [ref=e434]:
+                            - button "查看权益" [ref=e436] [cursor=pointer]:
+                              - generic [ref=e437] [cursor=pointer]: 查看权益
+                            - button "编辑新版本" [ref=e439] [cursor=pointer]:
+                              - generic [ref=e440] [cursor=pointer]: 编辑新版本
+                            - button "发布生效" [ref=e442] [cursor=pointer]:
+                              - generic [ref=e443] [cursor=pointer]: 发布生效
+                            - button "删除 / 停售" [ref=e445] [cursor=pointer]:
+                              - generic [ref=e446] [cursor=pointer]: 删除 / 停售
+                      - row "2,000 创意点包 2,000 创意点包 · points_2000 点数包 ¥1000.00 • 创意点：2000 点 生效可售 查看权益 编辑新版本 发布生效 删除 / 停售" [ref=e447]:
+                        - cell "2,000 创意点包 2,000 创意点包 · points_2000" [ref=e448]:
+                          - generic [ref=e449]:
+                            - strong [ref=e452]: 2,000 创意点包
+                            - code [ref=e455]: 2,000 创意点包 · points_2000
+                        - cell "点数包" [ref=e456]
+                        - cell "¥1000.00" [ref=e457]
+                        - cell "• 创意点：2000 点" [ref=e458]:
+                          - generic [ref=e461]: • 创意点：2000 点
+                        - cell "生效可售" [ref=e462]:
+                          - generic [ref=e463]: 生效可售
+                        - cell "查看权益 编辑新版本 发布生效 删除 / 停售" [ref=e464]:
+                          - generic [ref=e465]:
+                            - button "查看权益" [ref=e467] [cursor=pointer]:
+                              - generic [ref=e468] [cursor=pointer]: 查看权益
+                            - button "编辑新版本" [ref=e470] [cursor=pointer]:
+                              - generic [ref=e471] [cursor=pointer]: 编辑新版本
+                            - button "发布生效" [ref=e473] [cursor=pointer]:
+                              - generic [ref=e474] [cursor=pointer]: 发布生效
+                            - button "删除 / 停售" [ref=e476] [cursor=pointer]:
+                              - generic [ref=e477] [cursor=pointer]: 删除 / 停售
+                      - row "500 创意点包 500 创意点包 · points_500 点数包 ¥300.00 • 创意点：500 点 生效可售 查看权益 编辑新版本 发布生效 删除 / 停售" [ref=e478]:
+                        - cell "500 创意点包 500 创意点包 · points_500" [ref=e479]:
+                          - generic [ref=e480]:
+                            - strong [ref=e483]: 500 创意点包
+                            - code [ref=e486]: 500 创意点包 · points_500
+                        - cell "点数包" [ref=e487]
+                        - cell "¥300.00" [ref=e488]
+                        - cell "• 创意点：500 点" [ref=e489]:
+                          - generic [ref=e492]: • 创意点：500 点
+                        - cell "生效可售" [ref=e493]:
+                          - generic [ref=e494]: 生效可售
+                        - cell "查看权益 编辑新版本 发布生效 删除 / 停售" [ref=e495]:
+                          - generic [ref=e496]:
+                            - button "查看权益" [ref=e498] [cursor=pointer]:
+                              - generic [ref=e499] [cursor=pointer]: 查看权益
+                            - button "编辑新版本" [ref=e501] [cursor=pointer]:
+                              - generic [ref=e502] [cursor=pointer]: 编辑新版本
+                            - button "发布生效" [ref=e504] [cursor=pointer]:
+                              - generic [ref=e505] [cursor=pointer]: 发布生效
+                            - button "删除 / 停售" [ref=e507] [cursor=pointer]:
+                              - generic [ref=e508] [cursor=pointer]: 删除 / 停售
+                  - list [ref=e509]:
+                    - listitem "上一页" [ref=e510]:
+                      - button "left" [disabled] [ref=e511]:
+                        - img "left" [ref=e512]:
+                          - img [ref=e513]
+                    - listitem "1" [ref=e515] [cursor=pointer]:
+                      - generic [ref=e516] [cursor=pointer]: "1"
+                    - listitem "下一页" [ref=e517]:
+                      - button "right" [disabled] [ref=e518]:
+                        - img "right" [ref=e519]:
+                          - img [ref=e520]
+            - generic [ref=e522]:
+              - generic [ref=e524]:
+                - generic [ref=e525]: 商业化生产门禁
+                - button "查看证据" [ref=e527] [cursor=pointer]:
+                  - generic [ref=e528] [cursor=pointer]: 查看证据
+              - generic [ref=e530]: 仅在核对 SKU、商业规则和费率证据时展开；它不会影响平台账务检索。
+```

@@ -1,0 +1,13 @@
+{
+  "runId": "68ce6a7e-e09f-4016-aaa7-cd1a2844629e",
+  "failures": [],
+  "containerId": "3df7f6041cd67f60d8e8ae42438abedc58b1e83723e2181b81ec9fb4d706e493",
+  "state": {
+    "running": true,
+    "status": "running",
+    "exitCode": 0,
+    "oomKilled": false
+  },
+  "logs": "ClamAV update process started at Mon Sep 14 14:12:32 2026\ndaily database available for update (local version: 28108, remote version: 28123)\nTesting database: '/var/lib/clamav/tmp.c0760a05e3/clamav-4a5c6819f847e4af53c13473e9960504.tmp-daily.cld' ...\nDatabase test passed.\ndaily.cld updated (version: 28123, sigs: 355660, f-level: 90, builder: svc.clamav-publisher)\nmain.cvd database is up-to-date (version: 63, sigs: 3287027, f-level: 90, builder: tomjudge)\nbytecode.cvd database is up-to-date (version: 339, sigs: 80, f-level: 90, builder: nrandolp)\nWARNING: Clamd was NOT notified: Can't connect to clamd through /tmp/clamd.sock: No such file or directory\n\n",
+  "sharedContainersTouched": false
+}

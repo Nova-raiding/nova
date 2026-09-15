@@ -28,3 +28,6 @@ images:
   - name: merchant-ops-ui
     newName: REPLACE_ME/merchant-ops-ui
     digest: SET_OPS_UI_IMAGE_DIGEST
+  - name: merchant-alert-receiver
+    newName: REPLACE_ME/merchant-alert-receiver
+    digest: SET_ALERT_RECEIVER_IMAGE_DIGEST

@@ -1,0 +1,11 @@
+{
+  "runId": "5c0c2d29-3304-4742-a254-b1c7fe1442d7",
+  "error": "ISOLATED_FIXTURE_MIGRATION_CHAIN_MISMATCH",
+  "cleanup": {
+    "stopped": [
+      "a4513cafb024a9a1cf3735578c70feb7f88f40d76128cb6069c1b0a2e506f959",
+      "6cbcd06ee26ec0b49c1218e714ce270de45722f301a229dbf7cc8813b4884014"
+    ],
+    "leftRunning": []
+  }
+}

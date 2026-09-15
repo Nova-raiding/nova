@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "evidence_kind": "isolated_live_customer_delivery_ui_rpc",
+  "raw_browser_trace_saved": false,
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "timezone": "Asia/Shanghai",
+  "fixture": {
+    "workspace_id": "ws_ops_fixture_6cee993503584199906d34cf88760ea2"
+  },
+  "events": [
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.create",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_6cee993503584199906d34cf88760ea2",
+        "company_name": "隔离交付验收-1789376442116"
+      },
+      "error_code": null
+    },
+    {
+      "event": "screenshot",
+      "name": "customer-created.png"
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.update",
+      "status": 409,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_6cee993503584199906d34cf88760ea2",
+        "delivery_id": "cd_1771b764-855b-448a-a50b-2c43956908bb",
+        "expected_revision": "1"
+      },
+      "error_code": "CUSTOMER_DELIVERY_CONTRACT_ASSET_NOT_READY"
+    },
+    {
+      "event": "screenshot",
+      "name": "missing-contract-rejected.png"
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.update",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_6cee993503584199906d34cf88760ea2",
+        "delivery_id": "cd_1771b764-855b-448a-a50b-2c43956908bb",
+        "expected_revision": "1"
+      },
+      "error_code": null
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.update",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_6cee993503584199906d34cf88760ea2",
+        "delivery_id": "cd_1771b764-855b-448a-a50b-2c43956908bb",
+        "expected_revision": "2"
+      },
+      "error_code": null
+    },
+    {
+      "event": "screenshot",
+      "name": "profile-fields-reloaded.png"
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.checklist.update",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_6cee993503584199906d34cf88760ea2",
+        "delivery_id": "cd_1771b764-855b-448a-a50b-2c43956908bb",
+        "checklist_key": "system_integration",
+        "expected_revision": "3"
+      },
+      "error_code": null
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.checklist.update",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_6cee993503584199906d34cf88760ea2",
+        "delivery_id": "cd_1771b764-855b-448a-a50b-2c43956908bb",
+        "checklist_key": "functional_acceptance",
+        "expected_revision": "4"
+      },
+      "error_code": null
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.training.complete",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_6cee993503584199906d34cf88760ea2",
+        "delivery_id": "cd_1771b764-855b-448a-a50b-2c43956908bb",
+        "expected_revision": "5",
+        "completed": "true"
+      },
+      "error_code": null
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.videos.add",
+      "status": 409,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_6cee993503584199906d34cf88760ea2",
+        "delivery_id": "cd_1771b764-855b-448a-a50b-2c43956908bb",
+        "sort_order": "0"
+      },
+      "error_code": "CUSTOMER_DELIVERY_VIDEO_ASSET_NOT_READY"
+    },
+    {
+      "event": "screenshot",
+      "name": "customer-delivery-gates.png"
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.create",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_6cee993503584199906d34cf88760ea2",
+        "company_name": "隔离交付验收-1789376442116-second"
+      },
+      "error_code": null
+    },
+    {
+      "event": "new_customer_has_no_previous_profile_fields"
+    }
+  ],
+  "status": "passed"
+}

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
 import { OpenAICompatibleVideoGenerator } from '../packages/ai/src/video-generator.js'
-import { blockHttpProbe, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, writeRelayResponseArtifact } from '../scripts/model-relay-canary.js'
+import { blockHttpProbe, buildVideoProbeRequest, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, writeRelayResponseArtifact } from '../scripts/model-relay-canary.js'
 import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
 describe('production model relay contract', () => {
@@ -75,6 +75,30 @@ describe('production model relay contract', () => {
     expect(evaluateVideoProbePayload({ code: 'success', data: { task_id: 'job_new_api', data: { task_status: 'RUNNING', task_id: 'upstream-task' } } })).toEqual({ ready: false, providerJobId: 'job_new_api', reason: 'video_async_pending' })
     expect(evaluateVideoProbePayload({ code: 'success', data: { task_id: 'job_real_new_api', data: { output: { task_status: 'RUNNING', task_id: 'upstream-task' } } } })).toEqual({ ready: false, providerJobId: 'job_real_new_api', reason: 'video_async_pending' })
     expect(evaluateVideoProbePayload({ code: 5001, data: { task_id: 'job_error', status: 'SUCCESS', result_url: 'https://cdn.example/stale.mp4' } })).toEqual({ ready: false, providerJobId: 'job_error', reason: 'video_relay_error_code' })
+  })
+
+  it('builds the existing openai-video multipart contract without overriding its boundary', () => {
+    const request = buildVideoProbeRequest({
+      model: 'wan3.0-video',
+      prompt: 'canary',
+      durationSeconds: 5,
+      resolution: '720P',
+      requestFormat: 'openai-video',
+    })
+    expect(request.contentType).toBeUndefined()
+    expect(request.body).toBeInstanceOf(FormData)
+    const form = request.body as FormData
+    expect(form.get('model')).toBe('wan3.0-video')
+    expect(form.get('prompt')).toBe('canary')
+    expect(form.get('seconds')).toBe('5')
+    expect(form.get('size')).toBe('720P')
+    expect(form.get('duration')).toBeNull()
+  })
+
+  it('preserves the legacy JSON video contract when openai-video is not configured', () => {
+    const request = buildVideoProbeRequest({ model: 'video-v1', prompt: 'canary', durationSeconds: 5 })
+    expect(request.contentType).toBe('application/json')
+    expect(JSON.parse(request.body as string)).toEqual({ model: 'video-v1', prompt: 'canary', duration: 5 })
   })
 
   it('keeps an async pending video canary blocked even when usage and cost exist', () => {

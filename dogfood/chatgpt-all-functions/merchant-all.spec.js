@@ -8,7 +8,7 @@ const root = resolve('.')
 const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:18081/'
 const screenshots = resolve(root, 'screenshots', 'merchant-pages')
 const sections = ['运营概览', '知识库']
-const utilitySections = ['查看系统健康']
+const utilitySections = ['查看系统健康与上线状态']
 const slug = new Map(sections.map((name, index) => [name, `${index + 1}-${['overview', 'catalog'][index]}`]))
 
 const snapshot = async page => page.evaluate(() => ({

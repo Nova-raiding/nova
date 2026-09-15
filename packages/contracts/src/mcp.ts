@@ -99,6 +99,8 @@ export const MCP_METHODS = [
   'ops.customer-delivery.training.complete',
   'ops.customer-delivery.videos.list',
   'ops.customer-delivery.videos.add',
+  'ops.customer-delivery.assets.upload',
+  'ops.customer-delivery.assets.get',
   'ops.incidents.list',
   'ops.incident.get',
   'ops.incident.timeline',
@@ -740,13 +742,36 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'ops.customer-delivery.list', description: 'List customer delivery records in the authorized workspace.', params: params({ target_workspace_id: boundedString(200, 1) }, ['target_workspace_id']) },
   { method: 'ops.customer-delivery.get', description: 'Get one customer delivery record and its videos.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256) }, ['target_workspace_id', 'delivery_id']) },
   { method: 'ops.customer-delivery.create', description: 'Create a customer delivery record.', params: params({ target_workspace_id: boundedString(200, 1), company_name: boundedString(200, 1) }, ['target_workspace_id', 'company_name']) },
-  { method: 'ops.customer-delivery.update', description: 'Update customer delivery profile fields with optimistic revision.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), expected_revision: positiveIntegerString, patch_json: { ...jsonObject('Customer delivery profile merge-patch JSON object.'), maxLength: 16_384 } }, ['target_workspace_id', 'delivery_id', 'expected_revision', 'patch_json']) },
-  { method: 'ops.customer-delivery.checklist.update', description: 'Update a delivery checklist completion state, or persist batch per-item completion and evidence via items_json. Exactly one of completed or items_json must be supplied.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), checklist_key: { type: 'string', enum: ['customer_profile', 'system_integration', 'functional_acceptance'] }, completed: booleanString, items_json: { ...jsonArray('Customer delivery checklist items JSON array.'), maxLength: 16_384 }, expected_revision: positiveIntegerString }, ['target_workspace_id', 'delivery_id', 'checklist_key', 'expected_revision'], ['completed', 'items_json'], [['completed', 'items_json']]) },
+  { method: 'ops.customer-delivery.update', description: 'Update customer delivery profile fields with optimistic revision. Derived integration/acceptance summaries and training fields are not accepted; use checklist item or training endpoints. Paid status requires scanned payment evidence.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), expected_revision: positiveIntegerString, patch_json: { ...jsonObject('Profile JSON object accepting only companyName, contractNumber, paymentStatus, contractRef, projectOwner, supportOwner, paymentDate, paymentEvidenceRefs, plannedGoLiveAt and customerProfileStatus. paymentEvidenceRefs is an array of uploaded payment asset references; server ownership, purpose and clean-scan checks remain required.'), maxLength: 16_384 } }, ['target_workspace_id', 'delivery_id', 'expected_revision', 'patch_json']) },
+  { method: 'ops.customer-delivery.checklist.update', description: 'Exactly one of completed or items_json must be supplied. Scalar completed (true or false) is allowed only for customer_profile. System integration and functional acceptance use items_json or checklist-item.update; completed items require evidence.asset_refs bound to this delivery and purpose with a trusted clean scan.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), checklist_key: { type: 'string', enum: ['customer_profile', 'system_integration', 'functional_acceptance'] }, completed: { ...booleanString, description: 'Scalar profile completion only; system_integration and functional_acceptance reject both true and false.' }, items_json: { ...jsonArray('System integration or functional acceptance items array. Each item has itemKey, completed and optional evidence; completed items require evidence.asset_refs containing scanned uploaded asset references.'), maxLength: 16_384 }, expected_revision: positiveIntegerString }, ['target_workspace_id', 'delivery_id', 'checklist_key', 'expected_revision'], ['completed', 'items_json'], [['completed', 'items_json']]) },
   { method: 'ops.customer-delivery.checklist-items.list', description: 'List persisted per-item checklist evidence for a customer delivery.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), checklist_key: { type: 'string', enum: ['system_integration', 'functional_acceptance'] } }, ['target_workspace_id', 'delivery_id', 'checklist_key']) },
-  { method: 'ops.customer-delivery.checklist-item.update', description: 'Update one persisted checklist item with operator evidence and optimistic revision.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), checklist_key: { type: 'string', enum: ['system_integration', 'functional_acceptance'] }, item_key: boundedString(256, 1), completed: booleanString, evidence_json: { ...jsonObject('Checklist item evidence JSON object.'), maxLength: 16_384 }, expected_revision: positiveIntegerString }, ['target_workspace_id', 'delivery_id', 'checklist_key', 'item_key', 'completed', 'expected_revision']) },
-  { method: 'ops.customer-delivery.training.complete', description: 'Mark customer training complete with optimistic revision.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), completed: booleanString, expected_revision: positiveIntegerString }, ['target_workspace_id', 'delivery_id', 'completed', 'expected_revision']) },
+  { method: 'ops.customer-delivery.checklist-item.update', description: 'Update one persisted checklist item with optimistic revision. completed=true requires evidence_json.asset_refs; each reference must belong to this delivery and checklist purpose and have a trusted clean scan. Missing or untrusted completion evidence is rejected by the runtime gate.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), checklist_key: { type: 'string', enum: ['system_integration', 'functional_acceptance'] }, item_key: boundedString(256, 1), completed: booleanString, evidence_json: { ...jsonObject('Checklist item evidence JSON object. For completed=true, asset_refs must be a nonempty array of scanned uploaded evidence references.'), maxLength: 16_384 }, expected_revision: positiveIntegerString }, ['target_workspace_id', 'delivery_id', 'checklist_key', 'item_key', 'completed', 'expected_revision']) },
+  { method: 'ops.customer-delivery.training.complete', description: 'Independently update customer training completion with optimistic revision. evidence_refs_json is always a strict JSON array; completed=true requires at least one uploaded training reference bound to this delivery with a trusted clean scan. Functional acceptance never completes training automatically.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), completed: booleanString, evidence_refs_json: { ...jsonArray('Strict JSON array of nonempty training asset reference strings. Required for both completion states; an empty array cannot complete training.'), maxLength: 16_384 }, expected_revision: positiveIntegerString }, ['target_workspace_id', 'delivery_id', 'completed', 'evidence_refs_json', 'expected_revision']) },
   { method: 'ops.customer-delivery.videos.list', description: 'List delivery videos.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256) }, ['target_workspace_id', 'delivery_id']) },
   { method: 'ops.customer-delivery.videos.add', description: 'Attach one uploaded delivery video asset reference.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), title: boundedString(200, 1), asset_ref: boundedString(1_000, 1), sort_order: nonNegativeIntegerString }, ['target_workspace_id', 'delivery_id', 'title', 'asset_ref']) },
+  {
+    method: 'ops.customer-delivery.assets.upload',
+    description: 'Upload customer delivery contract, payment, integration, acceptance, training, or video evidence into quarantine for automatic platform scanning. Upload acceptance does not assert a clean scan or attach the asset as delivery evidence.',
+    params: params({
+      target_workspace_id: boundedString(200),
+      delivery_id: boundedString(256),
+      purpose: { type: 'string', enum: ['contract', 'payment', 'system_integration', 'functional_acceptance', 'training', 'video'] },
+      name: boundedString(255),
+      mime_type: boundedString(100),
+      content_base64: boundedString(69_905_068),
+      sha256: { type: 'string', minLength: 64, maxLength: 64, pattern: '^[a-f0-9]{64}$' },
+    }, ['target_workspace_id', 'delivery_id', 'purpose', 'name', 'mime_type', 'content_base64']),
+  },
+  {
+    method: 'ops.customer-delivery.assets.get',
+    description: 'Read the upload and scan status of an asset bound to the explicit customer delivery, workspace and evidence purpose. Does not mark an asset clean.',
+    params: params({
+      target_workspace_id: boundedString(200),
+      delivery_id: boundedString(256),
+      purpose: { type: 'string', enum: ['contract', 'payment', 'system_integration', 'functional_acceptance', 'training', 'video'] },
+      asset_ref: boundedString(1_000),
+    }, ['target_workspace_id', 'delivery_id', 'purpose', 'asset_ref']),
+  },
   { method: 'ops.support.ticket.get', description: 'Return one support ticket and its append-only event history in an authorized workspace.', params: params({ ticket_id: boundedString(36) }, ['ticket_id']) },
   { method: 'support.customer.replies.list', description: 'Return only customer-visible support replies in the authenticated merchant workspace. Use ticket_id when a ticket is known, or related_task_id/related_order_id to discover tickets attached to the current task or order. Internal notes and raw event payloads are never returned.', params: params({ ticket_id: boundedString(36), related_task_id: boundedString(256), related_order_id: boundedString(256), limit: pageLimit100, cursor: boundedString(1_000) }) },
   { method: 'ops.support.ticket.create', description: 'Create a support ticket with bounded customer context and an idempotency key.', params: params({ subject: boundedString(200, 3), description: boundedString(10_000), priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] }, customer_id: boundedString(256), customer_name: boundedString(200), customer_email: boundedString(320), related_order_id: boundedString(256), related_task_id: boundedString(256), tags_json: boundedString(2_000), idempotency_key: idempotencyKeyProperty }, ['subject', 'description', 'priority', 'customer_id', 'customer_name', 'idempotency_key']) },
@@ -1611,10 +1636,17 @@ export function validateMcpRequest(value: unknown): McpValidationResult {
     try {
       const patch = JSON.parse(paramsObject.patch_json)
       if (!patch || typeof patch !== 'object' || Array.isArray(patch)) errors.push('params.patch_json must be a JSON object')
-      else if ('contractRef' in patch && patch.contractRef !== null && !validCustomerDeliveryContractRef(patch.contractRef)) errors.push('params.patch_json.contractRef must be an HTTPS URL or asset_ref')
+      else {
+        const allowedFields = new Set(['companyName', 'contractNumber', 'paymentStatus', 'contractRef', 'projectOwner', 'supportOwner', 'paymentDate', 'paymentEvidenceRefs', 'plannedGoLiveAt', 'customerProfileStatus'])
+        for (const key of Object.keys(patch)) if (!allowedFields.has(key)) errors.push(`params.patch_json.${key} is not accepted for customer delivery profile updates`)
+        if ('contractRef' in patch && patch.contractRef !== null && !validCustomerDeliveryContractRef(patch.contractRef)) errors.push('params.patch_json.contractRef must be an HTTPS URL or asset_ref')
+      }
     } catch {
       errors.push('params.patch_json must be valid JSON')
     }
+  }
+  if (request.method === 'ops.customer-delivery.checklist.update' && paramsObject.completed !== undefined && paramsObject.checklist_key !== 'customer_profile') {
+    errors.push('params.completed is only accepted for checklist_key customer_profile; use items_json or checklist-item.update')
   }
   for (const [key, field] of Object.entries(paramsObject)) {
     const definition = schema.properties[key]

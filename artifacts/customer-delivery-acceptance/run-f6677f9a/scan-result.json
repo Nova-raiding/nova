@@ -1,0 +1,288 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "evidenceKind": "isolated-real-customer-delivery-scan-persistence",
+  "observedAt": "2026-09-14T10:09:15.817Z",
+  "sharedContainersTouched": false,
+  "businessWrites": 0,
+  "receiptSignaturesSaved": false,
+  "fileBodiesSaved": false,
+  "runId": "f6677f9a-ca5b-4a36-86a3-490b6f606dbe",
+  "workspaceId": "ws_ops_fixture_f6677f9aca5b4a3686a3490b6f606dbe",
+  "scanner": {
+    "runId": "588b28d3-8d34-49fe-9c88-8d38999bac54",
+    "image": "clamav/clamav-debian@sha256:bcfc3d6117a6cfbeb6cd041c00164097916291b870c6183e06def6fed7fb740b",
+    "engineVersion": "1.4.6",
+    "definitionsVersion": "28123",
+    "definitionsPublishedAt": "2026-09-14T06:24:19.000Z",
+    "eicarSelfTestPassed": true,
+    "ordinaryContentProbePassed": true
+  },
+  "points": {
+    "grants": 0,
+    "grantedPoints": 0,
+    "operations": 0,
+    "reservations": 0,
+    "ledgerEvents": 0,
+    "balanceState": "uninitialized",
+    "availablePoints": null,
+    "noPointsGrantedOrConsumed": true
+  },
+  "attachments": [
+    {
+      "purpose": "contract",
+      "deliveryId": "cd_2e9f6456-6f19-4038-aa95-ee3c13eb817b",
+      "assetId": "asset_af74b492-8cb0-4d57-b781-3ddeb560d17f",
+      "eventId": "evt_c3eb9013-4793-4e90-b59f-766879351c29",
+      "sourceRevision": 1,
+      "sha256": "490093336b25d6f1e5e072489564ad0c6f247f766249e011d7cd228cecf10dfa",
+      "sizeBytes": 608,
+      "mimeType": "application/pdf",
+      "quarantineKeySha256": "8c97ba7aeb995c2f1c3d61eb21acceca2d3dd5659991f5f62e2200eeeceda8cc",
+      "cleanKeySha256": "7855ad01780779b8e539537b3c1cf11b12f7f2f313d6887667da991971a9f6be",
+      "objectBytesAndMetadataVerified": true,
+      "admissionDecisionId": "authz_5e2bc921-d63a-4c75-a026-435c08be946a",
+      "receiptId": "scan_4a0d19fb9bbd81945a9607f2eceeaf0e8375dd7e6c34a5923c3d94390d2b8a67",
+      "receiptDigest": "bb056a3a07f3966c8ae3af8f016b6e39504bc1902a54cbfa8a1db67cd0c91afd",
+      "signaturePresentAndPersistedCopiesMatch": true,
+      "callbackStatus": "accepted",
+      "callbackAttempts": 1,
+      "callbackAcceptedAt": "2026-09-14T10:08:32.301Z",
+      "workerStatus": "completed",
+      "workerPublishedAt": "2026-09-14T10:08:32.308Z",
+      "priorWorkerFailures": 0,
+      "uploadAuditIds": [
+        "ef8efab6-e1b7-451c-ab51-5a92bd106c37"
+      ]
+    },
+    {
+      "purpose": "video",
+      "deliveryId": "cd_2e9f6456-6f19-4038-aa95-ee3c13eb817b",
+      "assetId": "asset_c52dc245-58f0-4280-bf1a-72dad4d74365",
+      "eventId": "evt_83d16209-a967-4fb3-85bc-d3c535a74be4",
+      "sourceRevision": 1,
+      "sha256": "672abe0dad77d36c280a3154286ee0afcb58a6f3ff0ed55187969da149b796b8",
+      "sizeBytes": 1545,
+      "mimeType": "video/mp4",
+      "quarantineKeySha256": "2c99af83044da6f29599849d24af8617f542c2b88fd7b8eb6f11a6bc2124084e",
+      "cleanKeySha256": "a0106a76ae099f5d4826cb36766f1c250c8467546480c86d4ae368df820b8e4f",
+      "objectBytesAndMetadataVerified": true,
+      "admissionDecisionId": "authz_4d2afacf-f199-4ab8-bbfd-cc8c7b322d43",
+      "receiptId": "scan_f9b58b074146c9a372de9da8ceebdcd9d782e97d94259ea5b60f2023ee152e6d",
+      "receiptDigest": "c9cd78d0696f5d5662ffe5ccdb082ac80eca9bd71d5a05f4702fa4cfdea75160",
+      "signaturePresentAndPersistedCopiesMatch": true,
+      "callbackStatus": "accepted",
+      "callbackAttempts": 1,
+      "callbackAcceptedAt": "2026-09-14T10:08:52.202Z",
+      "workerStatus": "completed",
+      "workerPublishedAt": "2026-09-14T10:08:52.207Z",
+      "priorWorkerFailures": 0,
+      "uploadAuditIds": [
+        "13b7cdcb-78e7-41a5-9e71-9b0a6dbb0e48"
+      ]
+    },
+    {
+      "purpose": "video",
+      "deliveryId": "cd_2e9f6456-6f19-4038-aa95-ee3c13eb817b",
+      "assetId": "asset_6bc1174b-8ecb-4cf4-9ad0-84d383e461e7",
+      "eventId": "evt_3b43d8d9-79fb-4e07-a1be-0854128bc8b3",
+      "sourceRevision": 1,
+      "sha256": "5d1e62b9412d2dbd0138abee356f5d15ae776eb3c6e507aa2de5af579d2a10d8",
+      "sizeBytes": 549,
+      "mimeType": "video/webm",
+      "quarantineKeySha256": "facb98156fcaa7e98946ad93176a2a27435b51a8829507b6ff6396a95433f513",
+      "cleanKeySha256": "56049266f44f0b50f9c5a95262bc979e4fe6ad2807848b9d8610f317348466cb",
+      "objectBytesAndMetadataVerified": true,
+      "admissionDecisionId": "authz_5d300d2a-4622-43b1-8803-5850a6954372",
+      "receiptId": "scan_2bb8e950daa2a23d7afe67b95160a7798427fa15be8f075e1aa94e02abdfab0c",
+      "receiptDigest": "fc25fa0c7c63a17b27d82b3eac02d8624072d65775d38e659360ddd4ac8cbaad",
+      "signaturePresentAndPersistedCopiesMatch": true,
+      "callbackStatus": "accepted",
+      "callbackAttempts": 1,
+      "callbackAcceptedAt": "2026-09-14T10:08:54.178Z",
+      "workerStatus": "completed",
+      "workerPublishedAt": "2026-09-14T10:08:54.182Z",
+      "priorWorkerFailures": 0,
+      "uploadAuditIds": [
+        "a125049d-e9a0-4787-a353-5b9cfb00b4fb"
+      ]
+    }
+  ],
+  "audit": [
+    {
+      "id": "6d9de290-6906-49b7-bfc8-b12c27606bab",
+      "action": "customer_delivery.create",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_2e9f6456-6f19-4038-aa95-ee3c13eb817b",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:08:30.635Z"
+    },
+    {
+      "id": "ef8efab6-e1b7-451c-ab51-5a92bd106c37",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_2e9f6456-6f19-4038-aa95-ee3c13eb817b",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:08:31.732Z"
+    },
+    {
+      "id": "1857754f-fcf5-474c-a624-6ba36a0c5f52",
+      "action": "customer_delivery.update",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_2e9f6456-6f19-4038-aa95-ee3c13eb817b",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:08:34.925Z"
+    },
+    {
+      "id": "28c15a0e-a716-4b31-988c-b94e32cfc73f",
+      "action": "customer_delivery.update",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_2e9f6456-6f19-4038-aa95-ee3c13eb817b",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:08:37.292Z"
+    },
+    {
+      "id": "39226afb-0880-4402-ac80-3c8e4aa431b4",
+      "action": "customer_delivery.checklist_items.update",
+      "resourceType": "customer_delivery_checklist_items",
+      "resourceId": "cd_2e9f6456-6f19-4038-aa95-ee3c13eb817b:system_integration",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:08:42.575Z"
+    },
+    {
+      "id": "301cea47-9a2a-4a59-9697-71138e485550",
+      "action": "customer_delivery.checklist_items.update",
+      "resourceType": "customer_delivery_checklist_items",
+      "resourceId": "cd_2e9f6456-6f19-4038-aa95-ee3c13eb817b:functional_acceptance",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:08:46.883Z"
+    },
+    {
+      "id": "bd3de482-662e-4127-ba34-e41cd06f52cf",
+      "action": "customer_delivery.update",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_2e9f6456-6f19-4038-aa95-ee3c13eb817b",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:08:50.239Z"
+    },
+    {
+      "id": "13b7cdcb-78e7-41a5-9e71-9b0a6dbb0e48",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_2e9f6456-6f19-4038-aa95-ee3c13eb817b",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:08:51.734Z"
+    },
+    {
+      "id": "a125049d-e9a0-4787-a353-5b9cfb00b4fb",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_2e9f6456-6f19-4038-aa95-ee3c13eb817b",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:08:53.864Z"
+    },
+    {
+      "id": "988f99ba-93b7-4644-a976-e476828d7e13",
+      "action": "customer_delivery.video.add",
+      "resourceType": "customer_delivery_video",
+      "resourceId": "cdv_df2079c4-b32a-4b91-af3b-42d915073cd2",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:08:56.877Z"
+    },
+    {
+      "id": "b3eaacdd-88b4-4567-848e-c96a32acf1ae",
+      "action": "customer_delivery.video.add",
+      "resourceType": "customer_delivery_video",
+      "resourceId": "cdv_3dfc0224-2e6d-42ac-bceb-48a7305eba89",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:08:56.995Z"
+    },
+    {
+      "id": "fcb707c0-9410-40f8-aa8b-84285ccf155b",
+      "action": "customer_delivery.update",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_2e9f6456-6f19-4038-aa95-ee3c13eb817b",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:09:03.337Z"
+    },
+    {
+      "id": "cbf07da0-2544-4a3e-b2ad-99b07bbee116",
+      "action": "customer_delivery.update",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_2e9f6456-6f19-4038-aa95-ee3c13eb817b",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:09:04.490Z"
+    },
+    {
+      "id": "f2bf21d4-07a9-4d55-beba-377fb7a14154",
+      "action": "customer_delivery.create",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_d139bb97-7492-4e76-bcce-bf833ba55325",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:09:09.492Z"
+    },
+    {
+      "id": "2e90d52c-ee35-440b-b72c-b01e07d0332d",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_d139bb97-7492-4e76-bcce-bf833ba55325",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:09:09.885Z"
+    },
+    {
+      "id": "ed0b0b43-ed38-4ec5-b283-199e9bf0f7d7",
+      "action": "customer_delivery.create",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_b0c6b44f-eef8-4fd8-a64d-eabaac9b9a36",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:09:15.186Z"
+    },
+    {
+      "id": "1d06bd35-2039-4dc9-9a2a-9a2418e4d8fb",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_b0c6b44f-eef8-4fd8-a64d-eabaac9b9a36",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:09:15.256Z"
+    },
+    {
+      "id": "31b3e01d-3dbf-4962-b1ef-01fbb6565a7d",
+      "action": "customer_delivery.create",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_243056b9-8dae-4dfa-acce-98bc2bd9a381",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:09:15.284Z"
+    },
+    {
+      "id": "c624bc2c-fdb8-47a5-98a4-07ca2cee4cb0",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_243056b9-8dae-4dfa-acce-98bc2bd9a381",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:09:15.348Z"
+    },
+    {
+      "id": "8ecbb215-5990-4d5b-a90c-dfcceb33f87d",
+      "action": "customer_delivery.create",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_ec869945-5ea6-4add-9f8d-e771dd7359ea",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:09:15.374Z"
+    },
+    {
+      "id": "dee5a869-d15b-47cc-b5cf-d9f5d46f1460",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_ec869945-5ea6-4add-9f8d-e771dd7359ea",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T10:09:15.445Z"
+    }
+  ],
+  "databaseRoles": {
+    "assetsAndAudit": "merchant_app",
+    "delivery": "merchant_ops",
+    "transactions": "read_only",
+    "bypassRls": false
+  },
+  "signatureVerificationScope": "Collector checks persisted signature presence and equality; the real API performed cryptographic admission. No private key or signature was exported."
+}

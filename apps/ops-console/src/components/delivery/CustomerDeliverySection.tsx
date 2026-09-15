@@ -16,7 +16,9 @@ import {
   Typography,
   message,
 } from "antd";
-import { deliveryDateTimeInputValue } from "./deliveryDateTime.js";
+import { deliveryCompletionTimeLabel, deliveryDateTimeInputValue } from "./deliveryDateTime.js";
+import { CustomerDeliveryUpload, createDeliveryUploadTracker } from "./CustomerDeliveryUpload.js";
+import { parseCustomerDeliveryEvidenceRefs, type CustomerDeliveryAsset, type CustomerDeliveryAssetPurpose } from "../../api/customerDeliveryClient.js";
 
 export type DeliveryStepKey =
   "profile" | "integration" | "acceptance" | "training" | "video";
@@ -36,6 +38,8 @@ export interface CustomerDeliveryRecord {
   paymentDate?: string;
   requiredLaunchAt?: string;
   contractFile?: string;
+  paymentEvidenceRefs?: string[];
+  trainingEvidenceRefs?: string[];
   integrationItems?: string[];
   acceptanceItems?: string[];
   trainingCompletedAt?: string;
@@ -44,6 +48,8 @@ export interface CustomerDeliveryRecord {
   /** Per-item evidence returned by the delivery API. Keys are item labels. */
   integrationEvidence?: Record<string, string>;
   acceptanceEvidence?: Record<string, string>;
+  integrationEvidenceAssetRefs?: Record<string, string[]>;
+  acceptanceEvidenceAssetRefs?: Record<string, string[]>;
 }
 
 export interface CustomerDeliveryChecklistItem {
@@ -51,6 +57,7 @@ export interface CustomerDeliveryChecklistItem {
   completed: boolean;
   /** Explicitly empty when an item has no evidence yet; the API may reject it. */
   evidence: string;
+  evidenceAssetRefs: string[];
 }
 
 export interface CustomerDeliveryChecklistSave {
@@ -89,6 +96,19 @@ export const ACCEPTANCE_ITEMS = [
   "内容验收",
 ];
 
+/** Fits the 1440px desktop workbench without hiding the final status column. */
+export const CUSTOMER_DELIVERY_TABLE_WIDTHS = {
+  sequence: 56,
+  company: 196,
+  profile: 88,
+  integration: 88,
+  acceptance: 122,
+  training: 148,
+  video: 82,
+  completedAt: 172,
+  status: 136,
+} as const;
+
 /**
  * Persisted checklist keys intentionally remain stable for API compatibility.
  * These display labels follow the customer-delivery brief without requiring a
@@ -110,6 +130,7 @@ export function buildChecklistItems(
   itemKeys: string[],
   selectedItems: unknown,
   evidence: unknown,
+  evidenceAssetRefs: unknown = {},
 ): CustomerDeliveryChecklistItem[] {
   const selected = Array.isArray(selectedItems)
     ? selectedItems.filter(
@@ -120,6 +141,8 @@ export function buildChecklistItems(
     evidence && typeof evidence === "object" && !Array.isArray(evidence)
       ? (evidence as Record<string, unknown>)
       : {};
+  const assetMap = evidenceAssetRefs && typeof evidenceAssetRefs === "object" && !Array.isArray(evidenceAssetRefs)
+    ? evidenceAssetRefs as Record<string, unknown> : {};
   return itemKeys.map((itemKey) => ({
     itemKey,
     completed: selected.includes(itemKey),
@@ -127,7 +150,14 @@ export function buildChecklistItems(
       typeof evidenceMap[itemKey] === "string"
         ? evidenceMap[itemKey].trim()
         : "",
+    evidenceAssetRefs: parseCustomerDeliveryEvidenceRefs(assetMap[itemKey], `${checklistDisplayLabel(itemKey)}凭证`),
   }));
+}
+
+function appendEvidenceRef(form: ReturnType<typeof Form.useForm>[0], field: string | (string | number)[], assetRef: string) {
+  const current = form.getFieldValue(field);
+  const refs = Array.isArray(current) ? current.filter((value): value is string => typeof value === "string") : [];
+  form.setFieldValue(field, [...new Set([...refs, assetRef])]);
 }
 
 const stepLabels: Record<DeliveryStepKey, string> = {
@@ -162,7 +192,9 @@ export function deliveryCompletion(record: CustomerDeliveryRecord) {
   return {
     completed,
     total: 5,
-    ready: record.paymentStatus === "paid" && completed === 5,
+    // Only the server can verify that all attached files and checklist evidence
+    // are usable. Legacy checkboxes alone must not claim completed delivery.
+    ready: record.paymentStatus === "paid" && completed === 5 && Boolean(record.goLiveAt) && Number.isFinite(Date.parse(record.goLiveAt ?? "")),
   };
 }
 
@@ -170,8 +202,67 @@ export function deliveryStatusLabel(result: ReturnType<typeof deliveryCompletion
   return result.ready ? "交付已完成" : `${result.completed}/${result.total}`;
 }
 
+export function customerDeliveryTrainingAction(record: CustomerDeliveryRecord, completed: boolean) {
+  if (record.paymentStatus !== "paid") return "blocked";
+  return completed && !record.trainingEvidenceRefs?.length ? "evidence" : "save";
+}
+
+export function CustomerDeliveryTrainingEvidence({ record, disabled, onUpload, onGetAsset, onConfirm, onClose }: {
+  record: CustomerDeliveryRecord;
+  disabled?: boolean;
+  onUpload?: (file: File, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
+  onGetAsset?: (assetRef: string, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
+  onConfirm: (refs: string[]) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [refs, setRefs] = useState(record.trainingEvidenceRefs ?? []);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const confirm = async () => {
+    if (busy || disabled) return;
+    try {
+      const valid = parseCustomerDeliveryEvidenceRefs(refs, "培训凭证");
+      if (!valid.length) throw new Error("完成客户培训前请上传培训凭证");
+      setError("");
+      await onConfirm(valid);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "培训确认失败，请重试"); }
+  };
+  return <section aria-label={`${record.companyName} 培训凭证`} style={{ padding: "8px 0", minWidth: 0 }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 12 }}>
+      <div style={{ minWidth: 0 }}>
+        <Typography.Text strong>培训凭证</Typography.Text>
+        <Typography.Paragraph type="secondary" style={{ margin: "4px 0 0" }}>上传签到表、培训记录或确认截图，安全检查通过后确认。</Typography.Paragraph>
+      </div>
+      <Space style={{ flexShrink: 0 }}>
+        <Button type="primary" disabled={busy || disabled} onClick={() => void confirm()}>确认培训完成</Button>
+        <Button aria-label="收起" onClick={onClose}>收起</Button>
+      </Space>
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(320px, 1fr)", alignItems: "start", gap: 16 }}>
+      <div style={{ minWidth: 0 }}>
+        <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8 }}>已上传培训凭证</Typography.Text>
+        <Select
+          aria-label="已上传培训凭证"
+          mode="tags"
+          open={false}
+          value={refs}
+          onChange={setRefs}
+          disabled={disabled}
+          placeholder="上传后自动填入，也可填写已绑定素材编号"
+          style={{ width: "100%" }}
+        />
+        {error ? <Typography.Paragraph type="danger" role="alert" style={{ margin: "8px 0 0" }}>{error}</Typography.Paragraph> : null}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <CustomerDeliveryUpload purpose="training" disabled={disabled} onUpload={onUpload} onGetAsset={onGetAsset} onReady={(asset) => setRefs((current) => [...new Set([...current, asset.assetRef])])} onBusyChange={setBusy} />
+      </div>
+    </div>
+  </section>;
+}
+
 export function CustomerDeliverySection({
   disabled = false,
+  readOnly = false,
   records = [],
   onOpen,
   onSave,
@@ -181,8 +272,12 @@ export function CustomerDeliverySection({
   onTrainingSave,
   onVideoAdd,
   onVideoList,
+  onAssetUpload,
+  onAssetGet,
 }: {
   disabled?: boolean;
+  /** Keeps delivery details readable while removing every mutation entry. */
+  readOnly?: boolean;
   records?: CustomerDeliveryRecord[];
   onOpen?: (
     record: CustomerDeliveryRecord,
@@ -202,6 +297,7 @@ export function CustomerDeliverySection({
   onTrainingSave?: (
     record: CustomerDeliveryRecord,
     completed: boolean,
+    evidenceAssetRefs: string[],
   ) => Promise<CustomerDeliveryRecord | void>;
   onVideoAdd?: (
     record: CustomerDeliveryRecord,
@@ -211,28 +307,36 @@ export function CustomerDeliverySection({
   onVideoList?: (
     record: CustomerDeliveryRecord,
   ) => Promise<CustomerDeliveryVideoItem[]>;
+  onAssetUpload?: (record: CustomerDeliveryRecord, file: File, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
+  onAssetGet?: (record: CustomerDeliveryRecord, assetRef: string, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
 }) {
   const [selected, setSelected] = useState<CustomerDeliveryRecord>();
   const [step, setStep] = useState<DeliveryStepKey>("profile");
   const [blockedCompany, setBlockedCompany] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [loadingStep, setLoadingStep] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const uploadTracker = useRef(createDeliveryUploadTracker());
   const detailRequest = useRef(0);
   const [creating, setCreating] = useState(false);
   const [videoItems, setVideoItems] = useState<CustomerDeliveryVideoItem[]>([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [trainingRowId, setTrainingRowId] = useState<string>();
   const [createForm] = Form.useForm();
   const [form] = Form.useForm();
   const openStep = async (
     row: CustomerDeliveryRecord,
     next: DeliveryStepKey,
   ) => {
-    if (isDeliveryStepBlocked(row.paymentStatus, next)) {
+    if (!readOnly && isDeliveryStepBlocked(row.paymentStatus, next)) {
       setBlockedCompany(row.companyName);
       return;
     }
     setBlockedCompany(undefined);
+    setTrainingRowId(undefined);
     const request = ++detailRequest.current;
+    uploadTracker.current.beginScope(`${row.id}:${next}:${request}`);
+    setUploading(false);
     setLoadingStep(true);
     setSelected(row);
     setStep(next);
@@ -245,6 +349,10 @@ export function CustomerDeliverySection({
       acceptanceItems: row.acceptanceItems ?? [],
       integrationEvidence: row.integrationEvidence ?? {},
       acceptanceEvidence: row.acceptanceEvidence ?? {},
+      integrationEvidenceAssetRefs: row.integrationEvidenceAssetRefs ?? {},
+      acceptanceEvidenceAssetRefs: row.acceptanceEvidenceAssetRefs ?? {},
+      paymentEvidenceRefs: row.paymentEvidenceRefs ?? [],
+      trainingEvidenceRefs: row.trainingEvidenceRefs ?? [],
     });
     if ((next === "integration" || next === "acceptance") && onChecklistLoad) {
       const key =
@@ -266,10 +374,11 @@ export function CustomerDeliverySection({
       const evidence = Object.fromEntries(
         items.map((item) => [item.itemKey, item.evidence]),
       );
+      const evidenceAssetRefs = Object.fromEntries(items.map((item) => [item.itemKey, item.evidenceAssetRefs]));
       form.setFieldsValue(
         next === "integration"
-          ? { integrationItems: selectedItems, integrationEvidence: evidence }
-          : { acceptanceItems: selectedItems, acceptanceEvidence: evidence },
+          ? { integrationItems: selectedItems, integrationEvidence: evidence, integrationEvidenceAssetRefs: evidenceAssetRefs }
+          : { acceptanceItems: selectedItems, acceptanceEvidence: evidence, acceptanceEvidenceAssetRefs: evidenceAssetRefs },
       );
     }
     if (next === "video" && onVideoList) {
@@ -288,10 +397,14 @@ export function CustomerDeliverySection({
     finally { if (request === detailRequest.current) setLoadingStep(false); }
   };
   const create = async (values: { companyName?: string }) => {
-    if (!onCreate || !values.companyName?.trim()) return;
+    if (disabled || readOnly || !onCreate || !values.companyName?.trim()) return;
     setCreating(true);
     try {
       const record = await onCreate(values.companyName.trim());
+      setTrainingRowId(undefined);
+      const request = ++detailRequest.current;
+      uploadTracker.current.beginScope(`${record.id}:profile:${request}`);
+      setUploading(false);
       setSelected(record);
       setStep("profile");
       form.resetFields();
@@ -306,7 +419,8 @@ export function CustomerDeliverySection({
     }
   };
   const save = async (values: Record<string, unknown>) => {
-    if (!selected) return;
+    if (disabled || readOnly || !selected || uploadTracker.current.isBusy()) return;
+    const request = detailRequest.current;
     const next = {
       ...selected,
       ...values,
@@ -323,10 +437,7 @@ export function CustomerDeliverySection({
           : selected.acceptance,
       training:
         step === "training" ? Boolean(values.training) : selected.training,
-      videos:
-        step === "video"
-          ? ((values.videoUrls as string[]) ?? []).length
-          : selected.videos,
+      videos: selected.videos,
     };
     setSaving(true);
     try {
@@ -344,7 +455,10 @@ export function CustomerDeliverySection({
             ? values.integrationEvidence
             : values.acceptanceEvidence
         ) as Record<string, unknown> | undefined;
-        const items = buildChecklistItems(itemKeys, selectedItems, evidence);
+        const evidenceAssetRefs = (step === "integration" ? values.integrationEvidenceAssetRefs : values.acceptanceEvidenceAssetRefs) as Record<string, unknown> | undefined;
+        const items = buildChecklistItems(itemKeys, selectedItems, evidence, evidenceAssetRefs);
+        const missing = items.filter((item) => item.completed && item.evidenceAssetRefs.length === 0);
+        if (missing.length) throw new Error(`已完成项必须上传凭证：${missing.map((item) => checklistDisplayLabel(item.itemKey)).join("、")}`);
         persisted = await onChecklistSave({
           record: next,
           checklistKey:
@@ -355,7 +469,9 @@ export function CustomerDeliverySection({
         });
       } else if (step === "training") {
         if (!onTrainingSave) throw new Error("客户培训保存接口未配置");
-        persisted = await onTrainingSave(selected, Boolean(values.training));
+        const refs = parseCustomerDeliveryEvidenceRefs(values.trainingEvidenceRefs, "培训凭证");
+        if (Boolean(values.training) && !refs.length) throw new Error("完成客户培训前请上传培训凭证");
+        persisted = await onTrainingSave(selected, Boolean(values.training), refs);
       } else if (step === "video") {
         if (!onVideoAdd) throw new Error("交付视频保存接口未配置");
         const refs = String(values.videoAssetRefs ?? "")
@@ -364,83 +480,128 @@ export function CustomerDeliverySection({
           .filter(Boolean);
         if (!refs.length)
           throw new Error("请填写至少一个已上传视频的 asset_ref");
-        for (const [index, assetRef] of refs.entries())
+        for (const [index, assetRef] of refs.entries()) {
           persisted = await onVideoAdd(selected, {
             title: `${selected.companyName} 交付视频 ${selected.videos + index + 1}`,
             assetRef,
             sortOrder: selected.videos + index,
           });
-        if (onVideoList) setVideoItems(await onVideoList(selected));
+          next.videos = selected.videos + index + 1;
+          if (!persisted) next.revision = undefined;
+          if (request === detailRequest.current) {
+            // Keep only unregistered references so a partial failure is safely
+            // retryable without registering earlier successful segments twice.
+            form.setFieldValue("videoAssetRefs", refs.slice(index + 1).join("\n"));
+            const savedRecord = persisted ?? { ...selected, videos: next.videos, revision: undefined };
+            setSelected((current) => current?.id === selected.id ? savedRecord : current);
+          }
+        }
+        if (onVideoList) {
+          const videos = await onVideoList(selected);
+          if (request === detailRequest.current) setVideoItems(videos);
+        }
       } else if (step === "profile") {
         if (!onSave) throw new Error("客户档案保存接口未配置");
         persisted = await onSave(next);
       }
       const finalRecord =
         persisted && typeof persisted === "object" ? persisted : next;
-      setSelected((current) => current?.id === selected.id ? finalRecord : current);
+      if (request === detailRequest.current) setSelected((current) => current?.id === selected.id ? finalRecord : current);
       message.success("已保存");
     } catch (error) {
       message.error(error instanceof Error ? error.message : "客户交付保存失败");
+      if (step === "video" && onVideoList && request === detailRequest.current) {
+        try {
+          const videos = await onVideoList(selected);
+          if (request === detailRequest.current) {
+            setVideoItems(videos);
+            // A response can be lost after a successful write. Reconcile
+            // persisted references before offering a retry of pending ones.
+            const registeredRefs = new Set(videos.map((video) => video.assetRef));
+            const remainingRefs = String(form.getFieldValue("videoAssetRefs") ?? "").split(/[\n,]/u).map((value) => value.trim()).filter((value) => value && !registeredRefs.has(value));
+            form.setFieldValue("videoAssetRefs", remainingRefs.join("\n"));
+          }
+        } catch { /* The original save error remains visible; do not replace it. */ }
+      }
     } finally {
       setSaving(false);
     }
   };
-  const toggleTraining = async (row: CustomerDeliveryRecord, completed: boolean) => {
-    if (!onTrainingSave) {
-      await openStep(row, "training");
-      return;
-    }
-    if (isDeliveryStepBlocked(row.paymentStatus, "training")) {
-      setBlockedCompany(row.companyName);
-      return;
-    }
+  const evidenceUpload = (purpose: CustomerDeliveryAssetPurpose, field: string | string[]) => {
+    if (!selected || readOnly) return null;
+    const scope = `${selected.id}:${step}:${detailRequest.current}`;
+    const uploader = JSON.stringify(field);
+    return <CustomerDeliveryUpload
+      key={`${scope}:${uploader}`}
+      purpose={purpose}
+      disabled={disabled || loadingStep || saving}
+      onUpload={onAssetUpload ? (file, assetPurpose, signal) => onAssetUpload(selected, file, assetPurpose, signal) : undefined}
+      onGetAsset={onAssetGet ? (assetRef, assetPurpose, signal) => onAssetGet(selected, assetRef, assetPurpose, signal) : undefined}
+      onReady={(asset) => {
+        if (!uploadTracker.current.isCurrent(scope)) return;
+        if (purpose === "contract") form.setFieldValue(field, asset.assetRef);
+        else if (purpose === "video") {
+          const refs = String(form.getFieldValue(field) ?? "").split(/[\n,]/u).map((value) => value.trim()).filter(Boolean);
+          form.setFieldValue(field, [...new Set([...refs, asset.assetRef])].join("\n"));
+        } else appendEvidenceRef(form, field, asset.assetRef);
+      }}
+      onBusyChange={(busy) => {
+        const state = uploadTracker.current.setBusy(scope, uploader, busy);
+        if (state !== undefined) setUploading(state);
+      }}
+    />;
+  };
+  const confirmTraining = async (row: CustomerDeliveryRecord, completed: boolean, refs: string[]) => {
+    if (disabled || readOnly || !onTrainingSave) throw new Error("当前会话没有客户交付修改权限");
     setSaving(true);
     try {
-      const persisted = await onTrainingSave(row, completed);
-      if (persisted) setSelected((current) => current?.id === row.id ? persisted : current);
-      message.success(completed ? "客户培训已完成" : "客户培训已取消");
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : "客户培训保存失败");
-    } finally {
-      setSaving(false);
-    }
+      const updated = await onTrainingSave(row, completed, refs);
+      if (updated) setSelected((current) => current?.id === row.id ? updated : current);
+      setTrainingRowId((current) => current === row.id ? undefined : current);
+      message.success({ key: "customer-delivery-training", content: completed ? "客户培训已完成" : "客户培训已取消" });
+    } finally { setSaving(false); }
+  };
+  const toggleTraining = async (row: CustomerDeliveryRecord, completed: boolean) => {
+    if (disabled || readOnly) return;
+    const action = customerDeliveryTrainingAction(row, completed);
+    if (action === "blocked") { setBlockedCompany(row.companyName); return; }
+    if (action === "evidence") { setTrainingRowId(row.id); return; }
+    try { await confirmTraining(row, completed, parseCustomerDeliveryEvidenceRefs(row.trainingEvidenceRefs, "培训凭证")); }
+    catch (cause) { message.error(cause instanceof Error ? cause.message : "客户培训保存失败"); }
   };
   const columns = useMemo(
     () => [
       {
         title: "序号",
-        width: 72,
+        width: CUSTOMER_DELIVERY_TABLE_WIDTHS.sequence,
         render: (_: unknown, __: CustomerDeliveryRecord, index: number) =>
           String(index + 1).padStart(2, "0"),
       },
       {
         title: "公司名",
         dataIndex: "companyName",
+        width: CUSTOMER_DELIVERY_TABLE_WIDTHS.company,
+        ellipsis: true,
         render: (value: string) => (
-          <Typography.Text strong>{value}</Typography.Text>
+          <Typography.Text strong title={value} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</Typography.Text>
         ),
       },
       ...(["profile", "integration", "acceptance", "training"] as const).map(
         (key) => ({
           title: stepLabels[key],
           dataIndex: key,
+          width: CUSTOMER_DELIVERY_TABLE_WIDTHS[key],
           render: (value: boolean, row: CustomerDeliveryRecord) => {
-            if (key === "training" && onTrainingSave && row.paymentStatus === "paid") {
-              return (
-                <Space size="small">
-                  <Checkbox
-                    checked={value}
-                    disabled={saving}
-                    onChange={(event) => void toggleTraining(row, event.target.checked)}
-                  >
-                    {value ? "已完成" : "未完成"}
-                  </Checkbox>
-                </Space>
-              );
-            }
+            if (key === "training") return <Space size="small" style={{ whiteSpace: "nowrap" }}>
+              <Checkbox checked={value} disabled={disabled || readOnly || saving || !onTrainingSave} onChange={(event) => void toggleTraining(row, event.target.checked)}>{value ? "已完成" : "未完成"}</Checkbox>
+              <Button type="link" size="small" disabled={disabled || saving} onClick={() => {
+                if (!readOnly && row.paymentStatus !== "paid") setBlockedCompany(row.companyName);
+                else setTrainingRowId((current) => current === row.id ? undefined : row.id);
+              }}>凭证</Button>
+            </Space>;
             return (
-              <Button type="link" size="small" onClick={() => openStep(row, key)}>
-                {value ? <Tag color="success">已完成</Tag> : <Tag>{key === "training" ? "未完成" : "未填写"}</Tag>}
+              <Button type="link" size="small" disabled={disabled || saving} onClick={() => openStep(row, key)}>
+                {value ? <Tag color="success">已完成</Tag> : <Tag>未填写</Tag>}
               </Button>
             );
           },
@@ -449,10 +610,12 @@ export function CustomerDeliverySection({
       {
         title: "交付视频",
         dataIndex: "videos",
+        width: CUSTOMER_DELIVERY_TABLE_WIDTHS.video,
         render: (value: number, row: CustomerDeliveryRecord) => (
           <Button
             type="link"
             size="small"
+            disabled={disabled || saving}
             onClick={() => openStep(row, "video")}
           >
             {value ? `${value} 段` : <Tag>未上传</Tag>}
@@ -462,30 +625,34 @@ export function CustomerDeliverySection({
       {
         title: "交付完成时间",
         dataIndex: "goLiveAt",
-        render: (value?: string) => value || "尚未完成",
+        width: CUSTOMER_DELIVERY_TABLE_WIDTHS.completedAt,
+        ellipsis: true,
+        render: deliveryCompletionTimeLabel,
       },
       {
         title: "交付状态",
+        width: CUSTOMER_DELIVERY_TABLE_WIDTHS.status,
+        fixed: "right" as const,
         render: (_: unknown, row: CustomerDeliveryRecord) => {
           const result = deliveryCompletion(row);
           return (
-            <Space>
+            <Space size={8} style={{ whiteSpace: "nowrap" }}>
               <Progress
                 type="circle"
-                size={28}
+                size={24}
                 percent={(result.completed / result.total) * 100}
                 showInfo={false}
                 status={result.ready ? "success" : "normal"}
               />
               <span>
-                {result.ready ? <Tag color="success">{deliveryStatusLabel(result)}</Tag> : deliveryStatusLabel(result)}
+                {result.ready ? <Tag color="success" style={{ marginInlineEnd: 0 }}>{deliveryStatusLabel(result)}</Tag> : deliveryStatusLabel(result)}
               </span>
             </Space>
           );
         },
       },
     ],
-    [onOpen, onTrainingSave, saving],
+    [onOpen, onTrainingSave, saving, disabled, readOnly],
   );
   return (
     <Card
@@ -497,7 +664,7 @@ export function CustomerDeliverySection({
           </Typography.Text>
           <Button
             type="primary"
-            disabled={disabled}
+            disabled={disabled || readOnly}
             onClick={() => {
               createForm.resetFields();
               setShowCreate(true);
@@ -520,11 +687,12 @@ export function CustomerDeliverySection({
           showIcon
           message="用户尚未完成付款"
           description={`${blockedCompany} 的系统接入、功能测试及培训已阻断；完成付款核验后才可继续。`}
+          action={!readOnly ? <Button size="small" onClick={() => { const row = records.find((record) => record.companyName === blockedCompany); if (row) void openStep(row, "profile"); }}>去上传付款凭证</Button> : undefined}
           closable
           onClose={() => setBlockedCompany(undefined)}
         />
       ) : null}
-      {showCreate ? (
+      {showCreate && !readOnly ? (
         <div style={{ marginTop: 12 }}>
           <Card size="small" title="新建客户档案">
             <Form form={createForm} layout="inline" onFinish={create}>
@@ -548,10 +716,24 @@ export function CustomerDeliverySection({
           <Table
             rowKey="id"
             size="small"
-            scroll={{ x: 1180 }}
+            tableLayout="fixed"
+            scroll={{ x: Object.values(CUSTOMER_DELIVERY_TABLE_WIDTHS).reduce((sum, width) => sum + width, 0) }}
             columns={columns}
             dataSource={records}
             pagination={false}
+            expandable={{
+              showExpandColumn: false,
+              expandedRowKeys: trainingRowId ? [trainingRowId] : [],
+              expandedRowRender: (row) => trainingRowId === row.id ? <CustomerDeliveryTrainingEvidence
+                key={row.id}
+                record={row}
+                disabled={disabled || readOnly || saving}
+                onUpload={!readOnly && onAssetUpload ? (file, purpose, signal) => onAssetUpload(row, file, purpose, signal) : undefined}
+                onGetAsset={onAssetGet ? (assetRef, purpose, signal) => onAssetGet(row, assetRef, purpose, signal) : undefined}
+                onConfirm={(refs) => confirmTraining(row, true, refs)}
+                onClose={() => setTrainingRowId(undefined)}
+              /> : null,
+            }}
           />
         ) : (
           <Empty description="暂无客户交付档案；请先创建客户档案" />
@@ -564,7 +746,7 @@ export function CustomerDeliverySection({
             : "客户交付详情"
         }
         open={Boolean(selected)}
-        onClose={() => { detailRequest.current++; setLoadingStep(false); setSelected(undefined); }}
+        onClose={() => { detailRequest.current++; uploadTracker.current.beginScope(); setUploading(false); setLoadingStep(false); setSelected(undefined); }}
         width={560}
       >
         {selected ? (
@@ -572,7 +754,7 @@ export function CustomerDeliverySection({
             <Form
               form={form}
               layout="vertical"
-              disabled={loadingStep || saving}
+              disabled={disabled || readOnly || loadingStep || saving}
               aria-busy={loadingStep}
               onFinish={save}
             >
@@ -626,32 +808,50 @@ export function CustomerDeliverySection({
                     )}
                   </Form.Item>
                   <Form.Item
+                    noStyle
+                    shouldUpdate={(prev, cur) => prev.paymentStatus !== cur.paymentStatus || prev.paymentEvidenceRefs !== cur.paymentEvidenceRefs}
+                  >
+                    {({ getFieldValue }) => (
+                      <Form.Item
+                        name="paymentEvidenceRefs"
+                        label="付款凭证"
+                        rules={[{ validator: async (_, value) => {
+                          if (getFieldValue("paymentStatus") !== "paid" || Array.isArray(value) && value.length > 0) return;
+                          throw new Error("标记已付款前必须上传付款凭证");
+                        } }]}
+                      >
+                        <Select mode="tags" open={false} placeholder="上传通过安全检查后自动填入" />
+                      </Form.Item>
+                    )}
+                  </Form.Item>
+                  {evidenceUpload("payment", "paymentEvidenceRefs")}
+                  <Form.Item
                     name="contractFile"
                     label="合同文件"
                     rules={[
                       {
                         required: true,
-                        message: "请填写合同 asset_ref 或 HTTPS 链接",
+                        message: "请上传合同文件",
                       },
                       {
                         validator: async (_, value) => {
                           if (
                             typeof value === "string" &&
-                            (/^https:\/\//u.test(value.trim()) ||
-                              /^asset[:_]/u.test(value.trim()))
+                            /^asset[:_]/u.test(value.trim())
                           )
                             return;
                           throw new Error(
-                            "合同必须是 HTTPS 链接或已扫描的 asset_ref",
+                            "合同凭据必须上传并通过安全扫描",
                           );
                         },
                       },
                     ]}
                   >
-                    <Input placeholder="asset_ref 或 https://... 合同链接" />
+                    <Input placeholder="上传通过安全检查后自动填入" />
                   </Form.Item>
+                  {evidenceUpload("contract", "contractFile")}
                   <Typography.Text type="secondary">
-                    素材编号须通过服务端安全核验；HTTPS 链接作为外部合同凭证保存，不代表已完成平台扫描。
+                    合同完成仅接受与当前企业工作区和交付记录精确绑定、且安全扫描通过的上传文件。
                   </Typography.Text>
                   <Form.Item
                     name="owner"
@@ -686,17 +886,13 @@ export function CustomerDeliverySection({
                       }))}
                     />
                   </Form.Item>
-                  <Typography.Text type="secondary">
-                    为已完成项填写证据（链接、截图说明或记录编号）。
-                  </Typography.Text>
+                  <Typography.Text type="secondary">每个勾选为已完成的项目都必须上传至少一份凭证；文字说明不能代替文件。</Typography.Text>
                   {INTEGRATION_ITEMS.map((item) => (
-                    <Form.Item
-                      key={item}
-                      name={["integrationEvidence", item]}
-                      label={`${checklistDisplayLabel(item)} · 证据`}
-                    >
-                      <Input placeholder="可填写链接、截图说明或记录编号" />
-                    </Form.Item>
+                    <Card key={item} size="small" title={checklistDisplayLabel(item)} style={{ marginTop: 12 }}>
+                      <Form.Item name={["integrationEvidence", item]} label="凭证说明"><Input placeholder="可选：记录链接、单号或补充说明" /></Form.Item>
+                      <Form.Item name={["integrationEvidenceAssetRefs", item]} label="已上传凭证"><Select mode="tags" open={false} placeholder="尚未上传" /></Form.Item>
+                      {evidenceUpload("system_integration", ["integrationEvidenceAssetRefs", item])}
+                    </Card>
                   ))}
                 </>
               )}
@@ -710,25 +906,21 @@ export function CustomerDeliverySection({
                       }))}
                     />
                   </Form.Item>
-                  <Typography.Text type="secondary">
-                    为已完成项填写证据（链接、截图说明或记录编号）。
-                  </Typography.Text>
+                  <Typography.Text type="secondary">每个勾选为已完成的项目都必须上传至少一份凭证；文字说明不能代替文件。</Typography.Text>
                   {ACCEPTANCE_ITEMS.map((item) => (
-                    <Form.Item
-                      key={item}
-                      name={["acceptanceEvidence", item]}
-                      label={`${checklistDisplayLabel(item)} · 证据`}
-                    >
-                      <Input placeholder="可填写链接、截图说明或记录编号" />
-                    </Form.Item>
+                    <Card key={item} size="small" title={checklistDisplayLabel(item)} style={{ marginTop: 12 }}>
+                      <Form.Item name={["acceptanceEvidence", item]} label="凭证说明"><Input placeholder="可选：记录链接、单号或补充说明" /></Form.Item>
+                      <Form.Item name={["acceptanceEvidenceAssetRefs", item]} label="已上传凭证"><Select mode="tags" open={false} placeholder="尚未上传" /></Form.Item>
+                      {evidenceUpload("functional_acceptance", ["acceptanceEvidenceAssetRefs", item])}
+                    </Card>
                   ))}
                 </>
               )}
-              {step === "training" && (
-                <Form.Item name="training" valuePropName="checked">
-                  <Checkbox>客户培训已完成（独立记录培训结果）</Checkbox>
-                </Form.Item>
-              )}
+              {step === "training" && (<>
+                <Form.Item name="training" valuePropName="checked"><Checkbox>客户培训已完成</Checkbox></Form.Item>
+                <Form.Item name="trainingEvidenceRefs" label="已上传培训凭证"><Select mode="tags" open={false} placeholder="上传签到表、培训记录或确认截图" /></Form.Item>
+                {evidenceUpload("training", "trainingEvidenceRefs")}
+              </>)}
               {step === "video" && (
                 <>
                   {videoItems.length ? (
@@ -748,8 +940,9 @@ export function CustomerDeliverySection({
                       </Space>
                     </Card>
                   ) : (
-                    <Alert type="info" showIcon message="尚未登记交付视频" description="请填写已完成安全扫描的 asset_ref；保存后会显示在这里。" />
+                    <Alert type="info" showIcon message="尚未登记交付视频" description="上传视频或填写已完成安全扫描的素材编号；保存后会显示在这里。" />
                   )}
+                  {evidenceUpload("video", "videoAssetRefs")}
                   <Form.Item name="videoAssetRefs" label="交付视频（支持多段）">
                     <Input.TextArea
                       rows={4}
@@ -757,13 +950,13 @@ export function CustomerDeliverySection({
                     />
                   </Form.Item>
                   <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-                    本页仅登记已有视频素材编号，不执行文件上传；素材须属于当前工作区且已通过可信安全扫描。
+                    也可手工登记已有视频素材编号；素材须属于当前工作区且已通过可信安全扫描。
                   </Typography.Paragraph>
                 </>
               )}
-              <Button type="primary" htmlType="submit" loading={saving || loadingStep}>
+              {!readOnly ? <Button type="primary" htmlType="submit" loading={saving || loadingStep} disabled={disabled || uploading}>
                 保存当前环节
-              </Button>
+              </Button> : null}
             </Form>
           </Space>
         ) : null}

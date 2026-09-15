@@ -1,0 +1,163 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e5]:
+    - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+      - /url: "#ops-main-content"
+    - complementary "运营主导航" [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - generic [ref=e10]: 大麦
+          - generic [ref=e11]:
+            - strong [ref=e12]: 大麦运营中心
+            - generic [ref=e13]: 平台运营后台
+        - generic [ref=e14]: 平台运营控制面
+        - navigation "平台运营功能导航" [ref=e15]:
+          - region "平台治理" [ref=e16]:
+            - heading "平台治理" [level=2] [ref=e17]
+            - button "总览" [ref=e18] [cursor=pointer]:
+              - img "dashboard" [ref=e19] [cursor=pointer]:
+                - img [ref=e20] [cursor=pointer]
+              - generic [ref=e22] [cursor=pointer]: 总览
+            - button "用户中心" [ref=e23] [cursor=pointer]:
+              - img "team" [ref=e24] [cursor=pointer]:
+                - img [ref=e25] [cursor=pointer]
+              - generic [ref=e27] [cursor=pointer]: 用户中心
+            - button "客户交付" [ref=e28] [cursor=pointer]:
+              - img "team" [ref=e29] [cursor=pointer]:
+                - img [ref=e30] [cursor=pointer]
+              - generic [ref=e32] [cursor=pointer]: 客户交付
+          - region "模型与计费" [ref=e33]:
+            - heading "模型与计费" [level=2] [ref=e34]
+            - button "账务与退款" [ref=e35] [cursor=pointer]:
+              - img "dollar" [ref=e36] [cursor=pointer]:
+                - img [ref=e37] [cursor=pointer]
+              - generic [ref=e39] [cursor=pointer]: 账务与退款
+    - generic [ref=e40]:
+      - banner [ref=e41]:
+        - generic [ref=e42]:
+          - heading "平台运营控制台" [level=2] [ref=e43]
+          - region "当前身份与权限范围" [ref=e44]:
+            - generic [ref=e45]:
+              - img [ref=e47]:
+                - img [ref=e48]
+              - strong [ref=e52]: 平台管理员
+              - status [ref=e54]: 授权状态：已由服务端验证
+              - button "展开其余 1 个已验证角色" [ref=e57] [cursor=pointer]:
+                - generic [ref=e58] [cursor=pointer]: +1 个角色
+              - generic [ref=e60]: 平台全局
+              - generic [ref=e62]: 策略 2026-09-08.v1
+            - status [ref=e63]: 平台运营视图：仅显示服务端授权的平台能力；企业主体操作需切换到对应企业主体。
+        - generic [ref=e65]:
+          - generic [ref=e66]:
+            - generic [ref=e67]: 当前状态
+            - status [ref=e68]: 已登录
+          - button "打开账号信息" [ref=e69] [cursor=pointer]:
+            - generic [ref=e70] [cursor=pointer]: o
+            - strong [ref=e72] [cursor=pointer]: ops-fixture-actor-d744c498-041d-4c61-a026-22abe19221c5
+            - img [ref=e73] [cursor=pointer]:
+              - img [ref=e74] [cursor=pointer]
+      - main [ref=e76]:
+        - status [ref=e77]
+        - region "客户交付" [ref=e78]:
+          - generic [ref=e79]:
+            - generic [ref=e81]:
+              - generic [ref=e82]:
+                - generic [ref=e83]: CUSTOMER DELIVERY
+                - heading "客户交付" [level=1] [ref=e84]
+                - generic [ref=e85]: 以客户为中心跟进建档、系统接入、功能验收、培训和上线。付款未核验时，受控环节会保持阻断。
+              - button "刷新交付档案" [ref=e87] [cursor=pointer]:
+                - generic [ref=e88] [cursor=pointer]: 刷新交付档案
+            - generic [ref=e90]:
+              - generic [ref=e93]: 目标企业工作区（必选）
+              - generic [ref=e95]:
+                - generic [ref=e97]:
+                  - generic "隔离验收企业 · ws_ops_fixture_d744c498041d4c61a02622abe19221c5" [ref=e98]:
+                    - text: 隔离验收企业 · ws_ops_fixture_d744c498041d4c61a02622abe19221c5
+                    - combobox "客户交付目标企业工作区" [ref=e99]
+                  - img "down" [ref=e101]:
+                    - img [ref=e102]
+                  - button "Clear" [ref=e104] [cursor=pointer]:
+                    - img "close-circle" [ref=e105] [cursor=pointer]:
+                      - img [ref=e106] [cursor=pointer]
+                - generic [ref=e109]: 交付档案只会在当前选中的企业工作区内读取和修改，切换后会重新加载。
+            - generic [ref=e111]:
+              - generic [ref=e113]:
+                - generic [ref=e114]: 客户建档
+                - generic [ref=e116]:
+                  - generic [ref=e118]: 完成全部交付项后，交付档案才会标记为已完成
+                  - button "新建客户" [ref=e120] [cursor=pointer]:
+                    - generic [ref=e121] [cursor=pointer]: 新建客户
+              - generic [ref=e122]:
+                - alert [ref=e123]:
+                  - img "info-circle" [ref=e125]:
+                    - img [ref=e126]
+                  - generic [ref=e129]: 交付状态由各环节真实填写结果决定；未付款客户的系统接入、功能验收和培训入口保持阻断。
+                - table [ref=e137]:
+                  - rowgroup [ref=e148]:
+                    - row "序号 公司名 客户档案 系统接入 功能测试及验收 客户培训 交付视频 交付完成时间 交付状态" [ref=e149]:
+                      - columnheader "序号" [ref=e150]
+                      - columnheader "公司名" [ref=e151]
+                      - columnheader "客户档案" [ref=e152]
+                      - columnheader "系统接入" [ref=e153]
+                      - columnheader "功能测试及验收" [ref=e154]
+                      - columnheader "客户培训" [ref=e155]
+                      - columnheader "交付视频" [ref=e156]
+                      - columnheader "交付完成时间" [ref=e157]
+                      - columnheader "交付状态" [ref=e158]
+                  - rowgroup [ref=e159]:
+                    - row "01 隔离交付验收-1789396570663 已完成 已完成 已完成 已完成 凭证 2 段 2026-09-14 22:37 100 交付已完成" [ref=e160]:
+                      - cell "01" [ref=e161]
+                      - cell "隔离交付验收-1789396570663" [ref=e162]:
+                        - strong [ref=e164]: 隔离交付验收-1789396570663
+                      - cell "已完成" [ref=e165]:
+                        - button "已完成" [ref=e166] [cursor=pointer]:
+                          - generic [ref=e167] [cursor=pointer]: 已完成
+                      - cell "已完成" [ref=e168]:
+                        - button "已完成" [ref=e169] [cursor=pointer]:
+                          - generic [ref=e170] [cursor=pointer]: 已完成
+                      - cell "已完成" [ref=e171]:
+                        - button "已完成" [ref=e172] [cursor=pointer]:
+                          - generic [ref=e173] [cursor=pointer]: 已完成
+                      - cell "已完成 凭证" [ref=e174]:
+                        - generic [ref=e175]:
+                          - generic [ref=e177] [cursor=pointer]:
+                            - checkbox "已完成" [checked] [ref=e179] [cursor=pointer]
+                            - generic [ref=e180] [cursor=pointer]: 已完成
+                          - button "凭证" [ref=e182] [cursor=pointer]:
+                            - generic [ref=e183] [cursor=pointer]: 凭证
+                      - cell "2 段" [ref=e184]:
+                        - button "2 段" [ref=e185] [cursor=pointer]:
+                          - generic [ref=e186] [cursor=pointer]: 2 段
+                      - cell "2026-09-14 22:37" [ref=e187]
+                      - cell "100 交付已完成" [ref=e188]:
+                        - generic [ref=e189]:
+                          - progressbar [ref=e191]
+                          - generic [ref=e198]: 交付已完成
+  - dialog "隔离交付验收-1789396570663 · 交付视频" [ref=e200]:
+    - generic [ref=e202]:
+      - button "关闭" [ref=e203] [cursor=pointer]:
+        - img "close" [ref=e204] [cursor=pointer]:
+          - img [ref=e205] [cursor=pointer]
+      - generic [ref=e207]: 隔离交付验收-1789396570663 · 交付视频
+    - generic [ref=e211]:
+      - generic [ref=e212]:
+        - generic [ref=e215]: 已登记视频（2 段）
+        - generic [ref=e217]:
+          - generic [ref=e219]:
+            - strong [ref=e221]: 隔离交付验收-1789396570663 交付视频 1
+            - generic [ref=e222]: asset_d1acaeb4-f3fa-4d12-8c14-ad8746e2652d
+          - generic [ref=e224]:
+            - strong [ref=e226]: 隔离交付验收-1789396570663 交付视频 2
+            - generic [ref=e227]: asset_d1abe14d-a63e-4363-aff0-d4aab8988b02
+      - generic [ref=e228]:
+        - button "上传交付视频" [ref=e231] [cursor=pointer]:
+          - generic [ref=e232] [cursor=pointer]: 上传交付视频
+        - generic [ref=e233]: MP4、WebM，可多选并逐段上传；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
+        - status
+      - textbox "交付视频（支持多段）" [ref=e241]
+      - generic [ref=e242]: 也可手工登记已有视频素材编号；素材须属于当前工作区且已通过可信安全扫描。
+      - button "保存当前环节" [ref=e243] [cursor=pointer]:
+        - generic [ref=e244] [cursor=pointer]: 保存当前环节
+```

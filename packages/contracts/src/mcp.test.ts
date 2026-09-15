@@ -136,23 +136,64 @@ describe('MCP method contract', () => {
       'ops.customer-delivery.update', 'ops.customer-delivery.checklist.update',
       'ops.customer-delivery.checklist-items.list', 'ops.customer-delivery.checklist-item.update',
       'ops.customer-delivery.training.complete', 'ops.customer-delivery.videos.list', 'ops.customer-delivery.videos.add',
+      'ops.customer-delivery.assets.upload', 'ops.customer-delivery.assets.get',
     ] as const
     for (const method of customerDeliveryMethods) expect(MCP_METHOD_SCHEMAS[method].required).toContain('target_workspace_id')
     const schema = MCP_METHOD_SCHEMAS['ops.customer-delivery.checklist.update']
     expect(schema.properties.items_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'array', maxLength: 16_384 })
     expect(MCP_METHOD_SCHEMAS['ops.customer-delivery.update'].properties.patch_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'object', maxLength: 16_384 })
     expect(MCP_METHOD_SCHEMAS['ops.customer-delivery.checklist-item.update'].properties.evidence_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'object', maxLength: 16_384 })
+    expect(MCP_METHOD_SCHEMAS['ops.customer-delivery.training.complete'].required).toContain('evidence_refs_json')
+    expect(MCP_METHOD_SCHEMAS['ops.customer-delivery.assets.upload']!.properties.purpose?.enum).toEqual(['contract', 'payment', 'system_integration', 'functional_acceptance', 'training', 'video'])
     expect(schema.required).toEqual(['target_workspace_id', 'delivery_id', 'checklist_key', 'expected_revision'])
     expect(schema.requiredAnyOf).toEqual(['completed', 'items_json'])
     expect(schema.mutuallyExclusive).toEqual([['completed', 'items_json']])
     const base = { target_workspace_id: 'ws_delivery', delivery_id: 'delivery_1', checklist_key: 'system_integration', expected_revision: '1' }
-    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-completed', method: 'ops.customer-delivery.checklist.update', params: { ...base, completed: 'false' } })).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-completed', method: 'ops.customer-delivery.checklist.update', params: { ...base, checklist_key: 'customer_profile', completed: 'false' } })).toEqual({ valid: true, errors: [] })
     expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-items', method: 'ops.customer-delivery.checklist.update', params: { ...base, items_json: '[]' } })).toEqual({ valid: true, errors: [] })
     expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-wrong-shape', method: 'ops.customer-delivery.checklist.update', params: { ...base, items_json: '{}' } }).errors).toContain('params.items_json must be a JSON array')
     expect(validateMcpRequest({ jsonrpc: '2.0', id: 'patch-wrong-shape', method: 'ops.customer-delivery.update', params: { target_workspace_id: 'ws_delivery', delivery_id: 'delivery_1', expected_revision: '1', patch_json: '[]' } }).errors).toContain('params.patch_json must be a JSON object')
     expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-neither', method: 'ops.customer-delivery.checklist.update', params: base }).errors).toContain('params.completed or items_json is required')
     expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-both', method: 'ops.customer-delivery.checklist.update', params: { ...base, completed: 'true', items_json: '[]' } }).errors).toContain('params.completed and items_json are mutually exclusive')
     expect(validateMcpRequest({ jsonrpc: '2.0', id: 'checklist-no-target', method: 'ops.customer-delivery.checklist.update', params: { ...base, target_workspace_id: '', completed: 'true' } }).errors).toContain('params.target_workspace_id is required')
+  })
+
+  it.each(['true', 'false'])('restricts scalar checklist completed=%s to customer_profile', completed => {
+    const params = { target_workspace_id: 'ws_delivery', delivery_id: 'delivery_1', expected_revision: '1', completed }
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'profile-scalar', method: 'ops.customer-delivery.checklist.update', params: { ...params, checklist_key: 'customer_profile' } })).toEqual({ valid: true, errors: [] })
+    for (const checklist_key of ['system_integration', 'functional_acceptance']) {
+      expect(validateMcpRequest({ jsonrpc: '2.0', id: 'derived-scalar', method: 'ops.customer-delivery.checklist.update', params: { ...params, checklist_key } }).errors).toContain('params.completed is only accepted for checklist_key customer_profile; use items_json or checklist-item.update')
+    }
+  })
+
+  it('accepts ordinary profile fields and payment references but rejects derived or training patch fields', () => {
+    const base = { jsonrpc: '2.0', id: 'profile-patch', method: 'ops.customer-delivery.update', params: { target_workspace_id: 'ws_delivery', delivery_id: 'delivery_1', expected_revision: '1' } }
+    const profile = { companyName: '客户企业', contractNumber: 'C-2026-01', paymentStatus: 'paid', contractRef: 'asset_ref_contract_1', projectOwner: '负责人', supportOwner: '支持人', paymentDate: '2026-09-14', paymentEvidenceRefs: ['asset_ref_payment_1'], plannedGoLiveAt: '2026-10-01T01:00:00.000Z', customerProfileStatus: 'incomplete' }
+    expect(validateMcpRequest({ ...base, params: { ...base.params, patch_json: JSON.stringify(profile) } })).toEqual({ valid: true, errors: [] })
+    for (const field of ['systemIntegrationStatus', 'functionalAcceptanceStatus', 'trainingCompleted', 'trainingEvidenceRefs', 'effectiveAt', 'unknown']) {
+      expect(validateMcpRequest({ ...base, params: { ...base.params, patch_json: JSON.stringify({ ...profile, [field]: null }) } }).errors).toContain(`params.patch_json.${field} is not accepted for customer delivery profile updates`)
+    }
+  })
+
+  it.each(['true', 'false'])('requires strict training evidence JSON even for completed=%s', completed => {
+    const request = { jsonrpc: '2.0', id: 'training-evidence', method: 'ops.customer-delivery.training.complete', params: { target_workspace_id: 'ws_delivery', delivery_id: 'delivery_1', expected_revision: '1', completed } }
+    expect(validateMcpRequest(request).errors).toContain('params.evidence_refs_json is required')
+    expect(MCP_METHOD_SCHEMAS['ops.customer-delivery.training.complete'].properties.evidence_refs_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'array', maxLength: 16_384 })
+    expect(validateMcpRequest({ ...request, params: { ...request.params, evidence_refs_json: '["asset_ref_training_1"]' } })).toEqual({ valid: true, errors: [] })
+    for (const evidence_refs_json of ['not-json', '["asset_ref_training_1",]']) expect(validateMcpRequest({ ...request, params: { ...request.params, evidence_refs_json } }).errors).toContain('params.evidence_refs_json must be valid JSON')
+    for (const evidence_refs_json of ['{}', 'null', '"asset_ref_training_1"']) expect(validateMcpRequest({ ...request, params: { ...request.params, evidence_refs_json } }).errors).toContain('params.evidence_refs_json must be a JSON array')
+  })
+
+  it('publishes completion evidence requirements without claiming static validation proves clean scans', () => {
+    expect(getMcpMethodContract('ops.customer-delivery.checklist.update')?.description).toContain('evidence.asset_refs')
+    expect(getMcpMethodContract('ops.customer-delivery.checklist-item.update')?.description).toContain('evidence_json.asset_refs')
+    expect(getMcpMethodContract('ops.customer-delivery.training.complete')?.description).toContain('Functional acceptance never completes training automatically')
+    for (const checklist_key of ['system_integration', 'functional_acceptance']) {
+      const params = { target_workspace_id: 'ws_delivery', delivery_id: 'delivery_1', checklist_key, expected_revision: '1' }
+      expect(validateMcpRequest({ jsonrpc: '2.0', id: 'item-evidence', method: 'ops.customer-delivery.checklist-item.update', params: { ...params, item_key: 'test-item', completed: 'true', evidence_json: '{"asset_refs":["asset_ref_evidence_1"]}' } })).toEqual({ valid: true, errors: [] })
+      expect(validateMcpRequest({ jsonrpc: '2.0', id: 'batch-evidence', method: 'ops.customer-delivery.checklist.update', params: { ...params, items_json: '[{"itemKey":"test-item","completed":true,"evidence":{"asset_refs":["asset_ref_evidence_1"]}}]' } })).toEqual({ valid: true, errors: [] })
+      expect(validateMcpRequest({ jsonrpc: '2.0', id: 'wrong-item-evidence', method: 'ops.customer-delivery.checklist-item.update', params: { ...params, item_key: 'test-item', completed: 'true', evidence_json: '[]' } }).errors).toContain('params.evidence_json must be a JSON object')
+    }
   })
 
   it('defines an explicit parameter schema for every method', () => {

@@ -13,6 +13,25 @@ BEGIN
 END
 $$;
 
+-- The alert receiver is a separate trust domain from both the tenant runtime
+-- and the Ops control plane. This password is intentionally local-only;
+-- production provisioning must create the role and credential out of band.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'merchant_alert_receiver') THEN
+    CREATE ROLE merchant_alert_receiver LOGIN PASSWORD 'merchant_alert_receiver_local_only'
+      NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+  ELSE
+    ALTER ROLE merchant_alert_receiver LOGIN PASSWORD 'merchant_alert_receiver_local_only'
+      NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+  END IF;
+END
+$$;
+
+GRANT CONNECT ON DATABASE merchant TO merchant_alert_receiver;
+GRANT USAGE ON SCHEMA public TO merchant_alert_receiver;
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM merchant_alert_receiver;
+
 DO $$
 BEGIN
   IF to_regclass('public.workspace_service_allocations') IS NOT NULL THEN
@@ -257,5 +276,31 @@ BEGIN
     END IF;
   END LOOP;
 END $$;
+
+-- Re-apply the alert-receiver boundary after the broad merchant_app
+-- compatibility grant. The receiver never receives direct table privileges;
+-- it can only use the two SECURITY DEFINER functions installed by migration
+-- 209. Keep this block prefix-safe so bootstrap can run before that migration.
+DO $$
+BEGIN
+  IF to_regclass('public.alert_webhook_receipts') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON TABLE public.alert_webhook_receipts FROM PUBLIC, merchant_app, merchant_ops, merchant_alert_receiver';
+  END IF;
+
+  IF to_regprocedure('public.append_alert_webhook_receipt(text,text,timestamp with time zone,timestamp with time zone,text,jsonb)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.append_alert_webhook_receipt(text,text,timestamptz,timestamptz,text,jsonb)
+      FROM PUBLIC, merchant_app, merchant_ops, merchant_alert_receiver;
+    GRANT EXECUTE ON FUNCTION public.append_alert_webhook_receipt(text,text,timestamptz,timestamptz,text,jsonb)
+      TO merchant_alert_receiver;
+  END IF;
+
+  IF to_regprocedure('public.alert_webhook_receipts_ready()') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.alert_webhook_receipts_ready()
+      FROM PUBLIC, merchant_app, merchant_ops, merchant_alert_receiver;
+    GRANT EXECUTE ON FUNCTION public.alert_webhook_receipts_ready()
+      TO merchant_alert_receiver;
+  END IF;
+END
+$$;
 
 COMMIT;

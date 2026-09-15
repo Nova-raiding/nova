@@ -43,7 +43,7 @@ data:
   object_storage_region: "cn"
   object_storage_endpoint: "https://s3.cn.example-provider.com"
   object_storage_prefix: "merchant-assets"
-  object_storage_kms_key: "${SECRET:STAGING_OBJECT_STORAGE_KMS_KEY_ID}"
+  object_storage_sse_mode: "AES256"
   migration_source: "packages/persistence/src/migrations"
   migration_lock_timeout_seconds: 60
   backup_retention_days: 14
@@ -73,6 +73,7 @@ feature_flags:
   douyin_write_enabled: false
   unattended_publish_enabled: false
 observability:
+  alert_notifications_enabled: false
   otel_endpoint: "${SECRET:STAGING_OTEL_EXPORTER_OTLP_ENDPOINT}"
   error_reporting_dsn: "${SECRET:STAGING_ERROR_REPORTING_DSN}"
   log_level: info

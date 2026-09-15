@@ -101,7 +101,7 @@ describe('customer delivery asset registration gates over loopback HTTP (synthet
   })
 
   it.each(['missing', 'wrong-workspace', 'quarantined', 'legacy-clean-without-receipt'] as const)(
-    'rejects a %s contract asset without changing the delivery revision or profile',
+    'rejects an unbound %s contract asset without changing the delivery revision or profile',
     async state => {
       const delivery = await createDelivery()
       let assetRef = `asset_missing_${randomUUID()}`
@@ -121,79 +121,36 @@ describe('customer delivery asset registration gates over loopback HTTP (synthet
         expected_revision: String(delivery.revision),
         patch_json: JSON.stringify({ contractRef: assetRef, companyName: '不应保存的名称' }),
       })
-      expect(rejected.status).toBe(409)
-      expect(rejected.body.error?.code).toBe('CUSTOMER_DELIVERY_CONTRACT_ASSET_NOT_READY')
+      expect(rejected.status).toBe(404)
+      expect(rejected.body.error?.code).toBe('CUSTOMER_DELIVERY_UPLOAD_NOT_FOUND')
       expect(await getDelivery(delivery.id)).toEqual(delivery)
     },
   )
 
-  it('saves a current-workspace PDF contract with trusted-clean test metadata and reads it back', async () => {
+  it('rejects current-workspace trusted-clean contract metadata without a delivery upload binding', async () => {
     const delivery = await createDelivery()
     const asset = markTrustedCleanMetadata(registerAssetMetadata(workspaceId))
-    const saved = successfulResult(await call<CustomerDelivery>('ops.customer-delivery.update', {
+    const rejected = await call<CustomerDelivery>('ops.customer-delivery.update', {
       delivery_id: delivery.id,
       expected_revision: String(delivery.revision),
       patch_json: JSON.stringify({ contractRef: asset.id }),
-    }))
-    expect(saved.contractRef).toBe(asset.id)
-    expect(saved.revision).toBe(delivery.revision + 1)
-    expect(await getDelivery(delivery.id)).toEqual(saved)
-  })
-
-  it('rechecks a saved contract when the independent profile-completion endpoint is called after scan trust is revoked', async () => {
-    const delivery = await createDelivery()
-    const asset = markTrustedCleanMetadata(registerAssetMetadata(workspaceId))
-    // Keep payment and every required profile field valid so asset trust is
-    // the only reason the subsequent completion request must be rejected.
-    const saved = successfulResult(await call<CustomerDelivery>('ops.customer-delivery.update', {
-      delivery_id: delivery.id,
-      expected_revision: String(delivery.revision),
-      patch_json: JSON.stringify({
-        contractRef: asset.id,
-        contractNumber: 'CONTRACT-RESCAN-TEST',
-        paymentStatus: 'paid',
-        paymentDate: '2026-09-14',
-        projectOwner: '项目负责人',
-        supportOwner: '客服负责人',
-        plannedGoLiveAt: '2026-10-01T01:00:00.000Z',
-      }),
-    }))
-    expect(saved.contractRef).toBe(asset.id)
-    expect(saved.customerProfileStatus).toBe('incomplete')
-    expect(saved.revision).toBe(delivery.revision + 1)
-
-    // Synthetic rescan state only, not an actual scanner execution.
-    asset.scanStatus = 'quarantined'
-    asset.storageKey = `quarantine/${asset.workspaceId}/${asset.id}/source`
-    asset.sourceRevision = (asset.sourceRevision ?? 1) + 1
-    delete asset.scanReceiptId
-    delete asset.scanReceiptDigest
-    delete asset.scanVerdict
-    delete asset.scanCompletedAt
-    delete asset.scanFindings
-
-    const rejected = await call<CustomerDelivery>('ops.customer-delivery.checklist.update', {
-      delivery_id: delivery.id,
-      checklist_key: 'customer_profile',
-      completed: 'true',
-      expected_revision: String(saved.revision),
     })
-    expect(rejected.status).toBe(409)
-    expect(rejected.body.error?.code).toBe('CUSTOMER_DELIVERY_CONTRACT_ASSET_NOT_READY')
-    expect(await getDelivery(delivery.id)).toEqual(saved)
+    expect(rejected.status).toBe(404)
+    expect(rejected.body.error?.code).toBe('CUSTOMER_DELIVERY_UPLOAD_NOT_FOUND')
+    expect(await getDelivery(delivery.id)).toEqual(delivery)
   })
 
-  it('still saves an HTTPS contract as an external reference without claiming an asset scan', async () => {
+  it('rejects an HTTPS contract because an external URL cannot prove upload binding or a clean scan', async () => {
     const delivery = await createDelivery()
     const contractRef = 'https://example.com/external-contract.pdf'
-    const saved = successfulResult(await call<CustomerDelivery>('ops.customer-delivery.update', {
+    const rejected = await call<CustomerDelivery>('ops.customer-delivery.update', {
       delivery_id: delivery.id,
       expected_revision: String(delivery.revision),
       patch_json: JSON.stringify({ contractRef }),
-    }))
-    expect(saved.contractRef).toBe(contractRef)
-    expect(saved.revision).toBe(delivery.revision + 1)
-    expect(await getDelivery(delivery.id)).toEqual(saved)
+    })
+    expect(rejected.status).toBe(400)
+    expect(rejected.body.error?.code).toBe('INVALID_REQUEST')
+    expect(await getDelivery(delivery.id)).toEqual(delivery)
   })
 
   it('rejects a trusted-clean image as a delivery video without changing the revision or videos', async () => {
@@ -204,25 +161,24 @@ describe('customer delivery asset registration gates over loopback HTTP (synthet
       title: '不是视频的图片',
       asset_ref: image.id,
     })
-    expect(rejected.status).toBe(409)
-    expect(rejected.body.error?.code).toBe('CUSTOMER_DELIVERY_VIDEO_ASSET_NOT_READY')
+    expect(rejected.status).toBe(404)
+    expect(rejected.body.error?.code).toBe('CUSTOMER_DELIVERY_UPLOAD_NOT_FOUND')
     expect(await getDelivery(delivery.id)).toEqual(delivery)
     expect(successfulResult(await call<{ items: CustomerDeliveryVideo[] }>('ops.customer-delivery.videos.list', { delivery_id: delivery.id })).items).toEqual([])
   })
 
-  it('registers a current-workspace video with trusted-clean test metadata and reads it back', async () => {
+  it('rejects current-workspace trusted-clean video metadata without a delivery upload binding', async () => {
     const delivery = await createDelivery()
     const asset = markTrustedCleanMetadata(registerAssetMetadata(workspaceId, 'video/mp4'))
-    const saved = successfulResult(await call<CustomerDeliveryVideo>('ops.customer-delivery.videos.add', {
+    const rejected = await call<CustomerDeliveryVideo>('ops.customer-delivery.videos.add', {
       delivery_id: delivery.id,
       title: '交付视频登记测试',
       asset_ref: asset.id,
       sort_order: '0',
-    }))
-    expect(saved).toMatchObject({ workspaceId, deliveryId: delivery.id, assetRef: asset.id, title: '交付视频登记测试', sortOrder: 0, uploadedByActorId: actorId })
-    const reloaded = await getDelivery(delivery.id)
-    expect(reloaded.revision).toBe(delivery.revision + 1)
-    expect(reloaded.videos).toEqual([saved])
-    expect(successfulResult(await call<{ items: CustomerDeliveryVideo[] }>('ops.customer-delivery.videos.list', { delivery_id: delivery.id })).items).toEqual([saved])
+    })
+    expect(rejected.status).toBe(404)
+    expect(rejected.body.error?.code).toBe('CUSTOMER_DELIVERY_UPLOAD_NOT_FOUND')
+    expect(await getDelivery(delivery.id)).toEqual(delivery)
+    expect(successfulResult(await call<{ items: CustomerDeliveryVideo[] }>('ops.customer-delivery.videos.list', { delivery_id: delivery.id })).items).toEqual([])
   })
 })

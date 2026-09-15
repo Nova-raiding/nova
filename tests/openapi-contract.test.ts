@@ -128,4 +128,58 @@ describe('OpenAPI security contract', () => {
     const mcp = source.slice(source.indexOf('  /mcp:'), source.indexOf('components:'))
     expect(mcp).toContain("- { $ref: '#/components/parameters/WorkspaceBootstrap' }")
   })
+
+  it('documents the distinct worker-event execution-check response variants', () => {
+    const source = readFileSync(resolve(process.cwd(), 'apps/api/openapi.yaml'), 'utf8')
+    const publishPath = source.slice(
+      source.indexOf('  /v1/publish-jobs/{jobId}/execution-check:'),
+      source.indexOf('  /v1/worker-events/{eventId}/execution-check:'),
+    )
+    const workerEventPath = source.slice(
+      source.indexOf('  /v1/worker-events/{eventId}/execution-check:'),
+      source.indexOf('  /v1/publish-jobs/{jobId}/observation:'),
+    )
+    const workerSchemas = source.slice(
+      source.indexOf('    WorkerExecutionCheckEnvelope:'),
+      source.indexOf('    ApiWarning:'),
+    )
+    const fullEnvelope = workerSchemas.slice(
+      workerSchemas.indexOf('    WorkerExecutionCheckEnvelope:'),
+      workerSchemas.indexOf('    WorkerCommercialOnlyExecutionCheckEnvelope:'),
+    )
+    const commercialOnlyEnvelope = workerSchemas.slice(
+      workerSchemas.indexOf('    WorkerCommercialOnlyExecutionCheckEnvelope:'),
+      workerSchemas.indexOf('    DeliveryScanRecheck:'),
+    )
+    const deliveryScanEnvelope = workerSchemas.slice(
+      workerSchemas.indexOf('    WorkerDeliveryScanExecutionCheckEnvelope:'),
+      workerSchemas.indexOf('    WorkerEventExecutionCheckEnvelope:'),
+    )
+
+    expect(publishPath).toContain("$ref: '#/components/schemas/WorkerExecutionCheckEnvelope'")
+    expect(workerEventPath).toContain("$ref: '#/components/schemas/WorkerEventExecutionCheckEnvelope'")
+    expect(workerEventPath).toContain('Automatic initial merchant asset scans return the commercial-only response variant')
+    expect(workerEventPath).toContain('Platform-owned customer-delivery scans return the delivery-scan response variant')
+    expect(workerEventPath).toContain('customer_delivery.asset.scan.execute')
+    expect(workerEventPath).toContain('rechecks completed')
+    expect(workerEventPath).not.toContain('rechecks passed')
+    expect(workerSchemas).toContain('required: [authorization_recheck, commercial_access_recheck]')
+    expect(workerSchemas).toContain('    WorkerCommercialOnlyExecutionCheckEnvelope:')
+    expect(workerSchemas).toContain('required: [commercial_access_recheck]')
+    expect(workerSchemas).toContain('    DeliveryScanRecheck:')
+    expect(workerSchemas).toContain('operation: { type: string, enum: [customer_delivery.asset.scan.execute] }')
+    expect(workerSchemas).toContain('required: [schema_version, operation, decision_id, actor_id, identity_id, workbench, context_id, capability, authorized, workspace_id, delivery_id, purpose, asset_id, asset_revision, source_revision, storage_key, sha256, size_bytes, mime_type, request_id, trace_id, admitted_at, recheck_id, event_id, allowed, ready, checked_at]')
+    expect(workerSchemas).toContain('    WorkerDeliveryScanExecutionCheckEnvelope:')
+    expect(workerSchemas).toContain('required: [delivery_scan_recheck]')
+    expect(workerSchemas).toContain("delivery_scan_recheck: { $ref: '#/components/schemas/DeliveryScanRecheck' }")
+    expect(workerSchemas).toContain('    WorkerEventExecutionCheckEnvelope:')
+    expect(workerSchemas).toContain("- { $ref: '#/components/schemas/WorkerExecutionCheckEnvelope' }")
+    expect(workerSchemas).toContain("- { $ref: '#/components/schemas/WorkerCommercialOnlyExecutionCheckEnvelope' }")
+    expect(workerSchemas).toContain("- { $ref: '#/components/schemas/WorkerDeliveryScanExecutionCheckEnvelope' }")
+    expect(fullEnvelope).toContain('not: { required: [delivery_scan_recheck] }')
+    expect(commercialOnlyEnvelope).toContain('- { required: [authorization_recheck] }')
+    expect(commercialOnlyEnvelope).toContain('- { required: [delivery_scan_recheck] }')
+    expect(deliveryScanEnvelope).toContain('- { required: [authorization_recheck] }')
+    expect(deliveryScanEnvelope).toContain('- { required: [commercial_access_recheck] }')
+  })
 })

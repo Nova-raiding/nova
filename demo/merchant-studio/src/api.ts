@@ -2,11 +2,13 @@ import type { ImageGenerationExecutionState } from './image-generation-state.js'
 
 export interface ApiHealth {
   status: string
-  writesEnabled: boolean
+  writesEnabled?: boolean
   connectors: Record<string, string>
   persistence?: { mode: string; ready: boolean }
   setup?: {
     mode?: string
+    productionGate?: boolean
+    nextActions?: string[]
     objectStorage?: { configured: boolean; mode: string }
     /** Workspace health currently exposes readiness at setup.modelReadiness. */
     modelReadiness?: Record<string, { ready?: boolean; providerConfigured?: boolean; reasons?: string[] }>

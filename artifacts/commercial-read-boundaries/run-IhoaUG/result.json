@@ -1,0 +1,270 @@
+{
+  "status": "passed",
+  "stage": "read-only-commercial-state",
+  "at": "2026-09-14T10:39:46.734Z",
+  "evidenceDir": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/commercial-read-boundaries/run-IhoaUG",
+  "runtime": {
+    "runId": "cd63151f-090a-4307-a3e7-6ce95b1e8352",
+    "postgres": "real-17",
+    "redis": "ready",
+    "api": "loopback-real-server",
+    "auth": "strict-signed-oidc",
+    "authorization": "enforce-durable",
+    "role": {
+      "role": "merchant_app",
+      "database": "merchant",
+      "read_only": "on",
+      "rolsuper": false,
+      "rolbypassrls": false
+    },
+    "sharedContainersTouched": false
+  },
+  "syntheticCommercialSeed": true,
+  "realPaymentsCalled": false,
+  "modelCalls": 0,
+  "sharedContainersTouched": false,
+  "nullCreatorScope": "Real PostgreSQL NOT NULL constraint rejects storage; schema unchanged; no fabricated NULL repository result.",
+  "observations": [
+    {
+      "surface": "postgres-schema",
+      "case": "null-creator",
+      "result": "insert-rejected",
+      "sqlState": "23502",
+      "schemaNotWeakened": true
+    },
+    {
+      "surface": "postgres-reader",
+      "case": "creator",
+      "result": "allowed",
+      "syntheticCheckoutRecovered": true
+    },
+    {
+      "surface": "postgres-reader",
+      "case": "same-workspace-other-actor",
+      "result": "denied",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "postgres-reader",
+      "case": "other-actor-order",
+      "result": "denied",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "postgres-reader",
+      "case": "cross-workspace-order",
+      "result": "denied",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "postgres-reader",
+      "case": "wrong-workspace",
+      "result": "denied",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "postgres-reader",
+      "case": "wrong-id",
+      "result": "denied",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "postgres-reader",
+      "case": "missing-actor",
+      "result": "denied",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "postgres-reader",
+      "case": "null-actor",
+      "result": "denied",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "postgres-reader",
+      "case": "empty-actor",
+      "result": "denied",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "postgres-reader",
+      "case": "whitespace-actor",
+      "result": "denied",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "postgres-reader",
+      "case": "blank-persisted-creator",
+      "result": "denied",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "postgres-reader",
+      "case": "null-creator-not-stored",
+      "result": "denied",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "postgres-rls",
+      "case": "cross-workspace-without-explicit-workspace-predicate",
+      "result": "hidden"
+    },
+    {
+      "surface": "http",
+      "case": "creator",
+      "result": "allowed",
+      "status": 200,
+      "syntheticCheckoutRecovered": true
+    },
+    {
+      "surface": "http",
+      "case": "same-workspace-other-actor",
+      "result": "denied",
+      "status": 404,
+      "code": "COMMERCIAL_ORDER_NOT_FOUND",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "http",
+      "case": "other-actor-order",
+      "result": "denied",
+      "status": 404,
+      "code": "COMMERCIAL_ORDER_NOT_FOUND",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "http",
+      "case": "cross-workspace-order",
+      "result": "denied",
+      "status": 404,
+      "code": "COMMERCIAL_ORDER_NOT_FOUND",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "http",
+      "case": "wrong-workspace",
+      "result": "denied",
+      "status": 404,
+      "code": "COMMERCIAL_ORDER_NOT_FOUND",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "http",
+      "case": "wrong-id",
+      "result": "denied",
+      "status": 404,
+      "code": "COMMERCIAL_ORDER_NOT_FOUND",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "http",
+      "case": "missing-actor",
+      "result": "denied",
+      "status": 401,
+      "code": "AUTHZ_WORKBENCH_ASSERTION_INVALID",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "http",
+      "case": "blank-persisted-creator",
+      "result": "denied",
+      "status": 404,
+      "code": "COMMERCIAL_ORDER_NOT_FOUND",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "http",
+      "case": "null-creator-not-stored",
+      "result": "denied",
+      "status": 404,
+      "code": "COMMERCIAL_ORDER_NOT_FOUND",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "mcp",
+      "case": "creator",
+      "result": "allowed",
+      "status": 200,
+      "syntheticCheckoutRecovered": true
+    },
+    {
+      "surface": "mcp",
+      "case": "same-workspace-other-actor",
+      "result": "denied",
+      "status": 200,
+      "code": "COMMERCIAL_ORDER_NOT_FOUND",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "mcp",
+      "case": "other-actor-order",
+      "result": "denied",
+      "status": 200,
+      "code": "COMMERCIAL_ORDER_NOT_FOUND",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "mcp",
+      "case": "cross-workspace-order",
+      "result": "denied",
+      "status": 200,
+      "code": "COMMERCIAL_ORDER_NOT_FOUND",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "mcp",
+      "case": "wrong-workspace",
+      "result": "denied",
+      "status": 200,
+      "code": "COMMERCIAL_ORDER_NOT_FOUND",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "mcp",
+      "case": "wrong-id",
+      "result": "denied",
+      "status": 200,
+      "code": "COMMERCIAL_ORDER_NOT_FOUND",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "mcp",
+      "case": "missing-actor",
+      "result": "denied",
+      "status": 401,
+      "code": "AUTHZ_WORKBENCH_ASSERTION_INVALID",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "mcp",
+      "case": "blank-persisted-creator",
+      "result": "denied",
+      "status": 200,
+      "code": "COMMERCIAL_ORDER_NOT_FOUND",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "mcp",
+      "case": "null-creator-not-stored",
+      "result": "denied",
+      "status": 200,
+      "code": "COMMERCIAL_ORDER_NOT_FOUND",
+      "checkoutDisclosed": false
+    },
+    {
+      "surface": "postgres-after-http-and-mcp",
+      "commercialOrdersAndSnapshotsUnchanged": true,
+      "payment_events": 0,
+      "point_grants": 0,
+      "point_operations": 0,
+      "point_ledger_events": 0
+    }
+  ],
+  "disposal": {
+    "stopped": [
+      "2466695d420da338289ae9e6d39a1fdf3f5e4829e2cc8b7e21bf3939e1d39570",
+      "84f5b99d795d199bb499e718247f0f3e29686ff6df3fb939fe1e896c52543905"
+    ],
+    "leftRunning": []
+  }
+}

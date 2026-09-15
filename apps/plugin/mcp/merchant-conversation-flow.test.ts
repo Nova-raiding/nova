@@ -6,6 +6,9 @@ import { describe, expect, it } from 'vitest'
 type Json = Record<string, unknown>
 
 const json = (value: Json) => JSON.stringify(value)
+// Keep the transport harness independent from release-suite environment.
+// Restricted-environment behavior is covered by bridge.test.ts explicitly.
+const TEST_PROCESS_ENV = { ...process.env, NODE_ENV: 'test', DEPLOY_ENV: '${DEPLOY_ENV}' }
 
 async function listen(server: ReturnType<typeof createServer>) {
   server.listen(0, '127.0.0.1')
@@ -61,7 +64,7 @@ async function withBridge(handler: (request: Json, res: ServerResponse<IncomingM
     // unset token is otherwise recovered from macOS launchd by the bridge,
     // turning local confirmation into an extra remote MCP request.
     env: {
-      ...process.env,
+      ...TEST_PROCESS_ENV,
       MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
       MERCHANT_WORKSPACE_ID: 'ws_test',
       MERCHANT_MCP_TOKEN: '${MERCHANT_MCP_TOKEN}',

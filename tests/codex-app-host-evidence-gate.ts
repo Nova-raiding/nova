@@ -44,6 +44,7 @@ const forbidden = /(?:fixture|mock|local|localhost|127\.0\.0\.1|test_e2e)/iu
 const supportedHostIdentifier = /^(?:codex-app|chatgpt)(?:[-_.][A-Za-z0-9][A-Za-z0-9._-]*)?$/u
 const immutableArtifact = /^artifact:\/\/production\/[A-Za-z0-9._/-]+#[a-f0-9]{64}$/u
 const sha256 = /^[a-f0-9]{64}$/u
+const strictUtcInstant = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u
 
 function canonicalPublicOrigin(value: unknown): string | undefined {
   if (!nonEmpty(value)) return undefined
@@ -85,7 +86,7 @@ export function validateCodexAppHostEvidence(document: unknown, options: { expec
   if (!nonEmpty(value.release_id)) errors.push('release_id is required')
   if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push(`release_id must match ${options.expectedReleaseId}`)
   if (value.environment !== 'preproduction' && value.environment !== 'production') errors.push('environment must be preproduction or production')
-  if (!nonEmpty(value.generated_at) || Number.isNaN(Date.parse(value.generated_at))) errors.push('generated_at must be an ISO instant')
+  if (!nonEmpty(value.generated_at) || !strictUtcInstant.test(value.generated_at) || Number.isNaN(Date.parse(value.generated_at))) errors.push('generated_at must be a strict UTC ISO timestamp')
   for (const [field, label] of [['host', 'host'], ['app_version', 'app_version'], ['plugin_version', 'plugin_version']] as const) {
     if (!nonEmpty(value[field])) errors.push(`${label} is required`)
     else if (forbidden.test(value[field]!)) errors.push(`${label} must identify a real Codex App host, not fixture/local evidence`)

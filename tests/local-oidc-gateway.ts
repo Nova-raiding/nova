@@ -7,7 +7,17 @@ import { pathToFileURL } from 'node:url'
 const SESSION_COOKIE = 'ops_local_oidc_session'
 const LOGIN_CSRF_COOKIE = 'ops_local_oidc_login_csrf'
 const MAX_PROXY_BODY_BYTES = 50 * 1024 * 1024
+const MAX_MCP_PROXY_BODY_BYTES = 70 * 1024 * 1024
 type OpsWorkbench = 'platform' | 'workspace'
+
+/** Mirror the API's exact MCP transport route, including base64 overhead. */
+export function localOidcProxyBodyLimit(method: string | undefined, target: string): number {
+  return method === 'POST' && target.split('?', 1)[0] === '/mcp' ? MAX_MCP_PROXY_BODY_BYTES : MAX_PROXY_BODY_BYTES
+}
+
+class GatewayRequestBodyTooLarge extends Error {
+  constructor() { super('request body exceeds gateway limit') }
+}
 
 export interface LocalOidcGatewayConfig {
   uiUpstream: string
@@ -122,10 +132,15 @@ function readSession(req: IncomingMessage, config: Required<LocalOidcGatewayConf
 async function bodyBytes(req: IncomingMessage, maxBytes = MAX_PROXY_BODY_BYTES): Promise<Buffer> {
   const chunks: Buffer[] = []
   let total = 0
-  for await (const chunk of req) {
+  // Keep the socket writable on rejection so clients get a deterministic 413,
+  // not a reset (the default async iterator destroys the stream on early exit).
+  for await (const chunk of req.iterator({ destroyOnReturn: false })) {
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
     total += bytes.length
-    if (total > maxBytes) throw new Error('request body exceeds gateway limit')
+    if (total > maxBytes) {
+      req.resume()
+      throw new GatewayRequestBodyTooLarge()
+    }
     chunks.push(bytes)
   }
   return Buffer.concat(chunks)
@@ -290,7 +305,7 @@ export function createLocalOidcGateway(rawConfig: LocalOidcGatewayConfig): Serve
         }
         const target = `${requestUrl.pathname.slice(4) || '/'}${requestUrl.search}`
         audit('proxy_api', { path: requestUrl.pathname, target, workbench: config.workbench, workspace: session.workspace || undefined })
-        const bytes = await bodyBytes(req)
+        const bytes = await bodyBytes(req, localOidcProxyBodyLimit(req.method, target))
         const headers = forwardedHeaders(req.headers)
         const proof = oidcProofHeaders(config, { method: req.method ?? 'GET', target, workspace: session.workspace, workbench: config.workbench, subject: session.sub, sid: session.sid, authTime: session.authTime, expiresAt: session.expiresAt, body: bytes })
         proof.forEach((value, name) => headers.set(name, value))
@@ -300,6 +315,11 @@ export function createLocalOidcGateway(rawConfig: LocalOidcGatewayConfig): Serve
       }
       await proxy(req, res, config.uiUpstream, `${requestUrl.pathname}${requestUrl.search}`, forwardedHeaders(req.headers)); return
     } catch (error) {
+      if (error instanceof GatewayRequestBodyTooLarge) {
+        res.writeHead(413, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+        res.end(JSON.stringify({ error: { code: 'REQUEST_BODY_TOO_LARGE', message: error.message } }))
+        return
+      }
       res.writeHead(502, { 'content-type': 'application/json', 'cache-control': 'no-store' })
       res.end(JSON.stringify({ error: { code: 'LOCAL_OIDC_GATEWAY_ERROR', message: error instanceof Error ? error.message : 'gateway failure' } }))
     }

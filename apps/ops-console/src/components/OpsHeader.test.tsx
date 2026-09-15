@@ -26,7 +26,8 @@ describe("OpsHeader account authentication UX", () => {
         managedSession={false}
         sessionLoaded
         session={{
-          actor_id: "ops@example.com",
+          actor_id: "5902c96f-508f-420c-a82a-ef4c69de59db",
+          account_login: "ops@example.com",
           workspace_id: "",
           roles: ["platform_ops"],
           workbench: "platform",
@@ -37,13 +38,23 @@ describe("OpsHeader account authentication UX", () => {
       />,
     );
     expect(markup).toContain("ops@example.com");
+    expect(markup).not.toContain("5902c96f-508f-420c-a82a-ef4c69de59db");
     expect(markup).toContain("打开账号信息");
     const source = await import("node:fs/promises").then(({ readFile }) =>
       readFile(new URL("./OpsHeader.tsx", import.meta.url), "utf8"),
     );
-    expect(source).toContain("session?.actor_id");
+    expect(source).toContain("accountLabel(session)");
     expect(source).toContain("当前账号");
     expect(source).toContain("退出登录");
+  });
+
+  it.each([undefined, null, "", "   "])("never uses an internal subject as a missing account label (%s)", (login) => {
+    const markup = renderToStaticMarkup(
+      <OpsHeader managedSession sessionLoaded onRefresh={() => undefined}
+        session={{ actor_id: "oidc-private-subject", account_login: login, workspace_id: "ws", roles: ["merchant_admin"], workspace_granted: true, session_id: "sid" }} />,
+    );
+    expect(markup).toContain("账号名称未提供");
+    expect(markup).not.toContain("oidc-private-subject");
   });
 
   it("keeps account identity and workbench label on one horizontal row", async () => {

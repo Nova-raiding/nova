@@ -48,6 +48,62 @@ describe('runtime database role verification', () => {
     expect(source).toContain("'workspace_subscriptions', 'ops_access_grants', 'ops_access_grant_events'")
   })
 
+  it('requires and verifies a third least-privilege alert receiver role', () => {
+    const source = readFileSync(scriptPath, 'utf8')
+
+    expect(source).toContain('ALERT_RECEIVER_DATABASE_URL or ALERT_RECEIVER_DATABASE_URL_FILE is required')
+    expect(source).toContain('Set only one of ALERT_RECEIVER_DATABASE_URL or ALERT_RECEIVER_DATABASE_URL_FILE')
+    expect(source).toContain('Alert receiver database role must be merchant_alert_receiver')
+    expect(source).toContain('Alert receiver and tenant runtime database roles must be distinct')
+    expect(source).toContain('Alert receiver and Ops database roles must be distinct')
+    expect(source).toContain('Alert receiver database role must not be a superuser')
+    expect(source).toContain('Alert receiver database role must not bypass RLS')
+    expect(source).toContain('Alert receiver database role must be NOINHERIT')
+    expect(source).toContain('Alert receiver database role must not create databases')
+    expect(source).toContain('Alert receiver database role must not create roles')
+    expect(source).toContain('Alert receiver database role must not have replication privileges')
+    expect(source).toContain('Alert receiver database role must not be a member of another role')
+    expect(source).toContain('Alert receiver database role must not own public application tables')
+    expect(source).toContain('Alert receiver database role has direct application table access')
+    expect(source).toContain('Alert receiver database role has unexpected explicit function grants')
+    expect(source).toContain('r.rolcreatedb')
+    expect(source).toContain('r.rolcreaterole')
+    expect(source).toContain('r.rolreplication')
+    expect(source).toContain('FROM pg_auth_members membership WHERE membership.member = r.oid')
+  })
+
+  it('fails closed before database access when the receiver credential is missing or ambiguous', () => {
+    const baseEnvironment = { ...process.env, DATABASE_URL: 'postgres://unused/merchant' }
+
+    expect(() => execFileSync('sh', [scriptPath], {
+      encoding: 'utf8',
+      env: { ...baseEnvironment, ALERT_RECEIVER_DATABASE_URL: '', ALERT_RECEIVER_DATABASE_URL_FILE: '' },
+      stdio: 'pipe',
+    })).toThrow(/ALERT_RECEIVER_DATABASE_URL or ALERT_RECEIVER_DATABASE_URL_FILE is required/)
+    expect(() => execFileSync('sh', [scriptPath], {
+      encoding: 'utf8',
+      env: {
+        ...baseEnvironment,
+        ALERT_RECEIVER_DATABASE_URL: 'postgres://receiver/merchant',
+        ALERT_RECEIVER_DATABASE_URL_FILE: '/run/secrets/alert-receiver-database-url',
+      },
+      stdio: 'pipe',
+    })).toThrow(/Set only one of ALERT_RECEIVER_DATABASE_URL or ALERT_RECEIVER_DATABASE_URL_FILE/)
+  })
+
+  it('probes alert receipt append, replay, readiness, and direct ACL denial transactionally', () => {
+    const source = readFileSync(scriptPath, 'utf8')
+
+    expect(source).toContain('public.append_alert_webhook_receipt(text,text,timestamp with time zone,timestamp with time zone,text,jsonb)')
+    expect(source).toContain('public.alert_webhook_receipts_ready()')
+    expect(source).toContain('first alert receipt append was not accepted')
+    expect(source).toContain('alert receipt replay was not rejected')
+    expect(source).toContain('direct alert receipt read was allowed')
+    expect(source).toContain('direct alert receipt insert was allowed')
+    expect(source).toContain('Alert receiver transactional function/ACL probe failed')
+    expect(source).toContain('ROLLBACK;')
+  })
+
   it('re-applies the migration 105 tenant-role deny after local compatibility grants', () => {
     const bootstrap = readFileSync('infra/local/ensure-app-role.sql', 'utf8')
 
@@ -91,6 +147,17 @@ describe('runtime database role verification', () => {
     const bootstrap = readFileSync('infra/local/ensure-app-role.sql', 'utf8')
     expect(bootstrap).toContain('REVOKE UPDATE, DELETE, TRUNCATE ON TABLE interactive_confirmation_tickets FROM merchant_app')
     expect(bootstrap).toContain('GRANT UPDATE (consumed_at,consumed_operation_id,reservation_id,reservation_token,reserved_at,reservation_expires_at,reservation_revision) ON TABLE interactive_confirmation_tickets TO merchant_app')
+  })
+
+  it('bootstraps the local receiver role and re-applies its deny-by-default boundary', () => {
+    const bootstrap = readFileSync('infra/local/ensure-app-role.sql', 'utf8')
+
+    expect(bootstrap).toContain('CREATE ROLE merchant_alert_receiver')
+    expect(bootstrap).toContain('NOINHERIT NOBYPASSRLS')
+    expect(bootstrap).toContain('REVOKE ALL ON TABLE public.alert_webhook_receipts FROM PUBLIC, merchant_app, merchant_ops, merchant_alert_receiver')
+    expect(bootstrap).toContain('REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM merchant_alert_receiver')
+    expect(bootstrap).toContain('GRANT EXECUTE ON FUNCTION public.append_alert_webhook_receipt(text,text,timestamptz,timestamptz,text,jsonb)')
+    expect(bootstrap).toContain('GRANT EXECUTE ON FUNCTION public.alert_webhook_receipts_ready()')
   })
 
   it('remains valid POSIX shell', () => {

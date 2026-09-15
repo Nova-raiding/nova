@@ -64,7 +64,7 @@ data:
   CLAMAV_HOST: "127.0.0.1"
   CLAMAV_PORT: "3310"
   CLAMAV_TIMEOUT_MS: "30000"
-  CLAMAV_MAX_FILE_BYTES: "104857600"
+  CLAMAV_MAX_FILE_BYTES: "52428800"
   CLAMAV_SIGNATURE_MAX_AGE_MINUTES: "1440"
   # Alibaba Cloud OSS (S3-compatible API)
   ASSET_STORAGE_BUCKET: codex-image-20260914
@@ -73,9 +73,14 @@ data:
   ASSET_STORAGE_ENDPOINT: https://s3.oss-cn-beijing.aliyuncs.com
   ASSET_STORAGE_FORCE_PATH_STYLE: "false"
   ASSET_STORAGE_PREFIX: merchant-assets
+  # ACK pods must use pod-scoped RRSA. The admission webhook injects the role,
+  # OIDC provider and projected token environment; absence keeps /readyz 503.
+  ASSET_STORAGE_CREDENTIAL_PROVIDER: aliyun_ack_rrsa
+  # Published basic/growth plans include 50 decimal GB per workspace.
+  ASSET_STORAGE_QUOTA_BYTES: "50000000000"
   PUBLIC_ASSET_BASE_URL: https://yxsona.com
   ASSET_DISPLAY_URL_SIGNING_KEY_ID: display-active
-  ASSET_UPLOAD_MAX_BYTES: "104857600"
+  ASSET_UPLOAD_MAX_BYTES: "52428800"
   OBJECT_STORAGE_VERSIONING: "true"
   DATA_RETENTION_DAYS: "90"
   ASSET_QUARANTINE_RETENTION_DAYS: "7"

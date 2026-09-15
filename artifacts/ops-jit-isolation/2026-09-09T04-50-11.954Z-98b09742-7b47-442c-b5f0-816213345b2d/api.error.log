@@ -1,0 +1,4 @@
+{"event":"asset.promotion_cleanup_drain_failed","error":{"code":"OBJECT_PROMOTION_CLEANUP_FAILED","message":"Connection terminated due to connection timeout","observed_at":"2026-09-09T04:51:40.188Z"}}
+{"event":"asset.promotion_cleanup_drain_failed","error":{"code":"OBJECT_PROMOTION_CLEANUP_FAILED","message":"Connection terminated due to connection timeout","observed_at":"2026-09-09T04:51:55.191Z"}}
+(node:18169) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)

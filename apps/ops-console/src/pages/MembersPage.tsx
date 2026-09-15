@@ -2,6 +2,7 @@ import { Alert, Button, Card, Space, Tag, Typography } from "antd";
 import { MembersSection } from "../components/finance/MembersSection";
 import { OpsPage } from "../components/OpsPage";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
+import { accountLabel } from "../authz/accountLabel.js";
 
 interface MembersPageProps {
   model: OpsConsoleModel;
@@ -77,7 +78,7 @@ export function MembersPage({ model }: MembersPageProps) {
       <Card title="当前账号权限" size="small" style={{ marginBottom: 16 }}>
         <Space direction="vertical" size={8} className="full-width">
           <Typography.Text>
-            当前账号：<Typography.Text strong>{model.opsSession?.actor_id ?? "未验证"}</Typography.Text>
+            当前账号：<Typography.Text strong>{accountLabel(model.opsSession)}</Typography.Text>
             <Tag color="blue" style={{ marginLeft: 8 }}>{model.opsSession?.roles?.[0] ?? "未返回角色"}</Tag>
           </Typography.Text>
           {capabilities.length ? (

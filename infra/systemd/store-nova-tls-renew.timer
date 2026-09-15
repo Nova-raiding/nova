@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Store Nova TLS certificate renewal twice daily
+
+[Timer]
+OnCalendar=*-*-* 03,15:17:00
+RandomizedDelaySec=1800
+Persistent=true
+Unit=store-nova-tls-renew.service
+
+[Install]
+WantedBy=timers.target

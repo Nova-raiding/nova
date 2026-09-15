@@ -1,0 +1,14 @@
+{
+  "runId": "c75ca445-aaf6-469f-b657-a5ad86eb9919",
+  "error": "CUSTOMER_DELIVERY_SCAN_STARTUP_TIMEOUT:CUSTOMER_DELIVERY_SCAN_CLAMAV_NOT_READY",
+  "disposal": {
+    "stopped": [],
+    "leftRunning": [
+      {
+        "id": "a40563e442a1bd35d876f9b39c6a5aafaa49b5603227945eec72a1392e8c125f",
+        "reason": "Exact-ID ownership/stop unconfirmed; no name, label or broad cleanup fallback was attempted."
+      }
+    ]
+  },
+  "sharedContainersTouched": false
+}

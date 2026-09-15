@@ -4,6 +4,24 @@ set -eu
 : "${DATABASE_URL:?DATABASE_URL is required}"
 command -v psql >/dev/null 2>&1 || { echo 'psql is required to verify the runtime database role' >&2; exit 1; }
 
+alert_receiver_database_url=${ALERT_RECEIVER_DATABASE_URL:-}
+alert_receiver_database_url_file=${ALERT_RECEIVER_DATABASE_URL_FILE:-}
+if [ -n "$alert_receiver_database_url" ] && [ -n "$alert_receiver_database_url_file" ]; then
+  echo 'Set only one of ALERT_RECEIVER_DATABASE_URL or ALERT_RECEIVER_DATABASE_URL_FILE' >&2
+  exit 1
+fi
+if [ -n "$alert_receiver_database_url_file" ]; then
+  [ -f "$alert_receiver_database_url_file" ] && [ ! -L "$alert_receiver_database_url_file" ] && [ -r "$alert_receiver_database_url_file" ] || {
+    echo 'ALERT_RECEIVER_DATABASE_URL_FILE must be a readable regular non-symbolic-link file' >&2
+    exit 1
+  }
+  alert_receiver_database_url=$(sed -n '1p' "$alert_receiver_database_url_file")
+fi
+[ -n "$alert_receiver_database_url" ] || {
+  echo 'ALERT_RECEIVER_DATABASE_URL or ALERT_RECEIVER_DATABASE_URL_FILE is required' >&2
+  exit 1
+}
+
 role_state=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
   "SELECT current_user || '|' || rolsuper || '|' || rolbypassrls
      FROM pg_roles
@@ -29,6 +47,12 @@ platform_acl_exposure=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
      FROM unnest(ARRAY['platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','platform_authorization_audit','authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events']) AS name
     WHERE has_table_privilege(current_user, 'public.' || name, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')")
 [ -z "$platform_acl_exposure" ] || { echo "tenant runtime role can access platform control-plane tables: $platform_acl_exposure" >&2; exit 1; }
+
+alert_receipt_runtime_exposure=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+  "SELECT CASE WHEN to_regclass('public.alert_webhook_receipts') IS NOT NULL
+                    AND has_table_privilege(current_user, 'public.alert_webhook_receipts', 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+               THEN 'alert_webhook_receipts' ELSE '' END")
+[ -z "$alert_receipt_runtime_exposure" ] || { echo 'tenant runtime role must not access alert webhook receipts' >&2; exit 1; }
 
 ops_directory_exposure=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
   "SELECT CASE WHEN has_table_privilege(current_user, 'public.ops_workspace_summaries', 'SELECT') THEN 'ops_workspace_summaries' ELSE '' END")
@@ -311,5 +335,117 @@ EOF
         AND c.relname NOT IN ('platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','platform_identities','platform_auth_sessions','platform_identity_events','platform_password_accounts','platform_password_sessions','platform_password_reset_tokens','platform_media_specs','platform_media_spec_audit','platform_authorization_audit','authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events','workspace_customer_deliveries','workspace_customer_delivery_videos','workspace_customer_delivery_checklist_items','commercial_offers','commercial_addons','commercial_coupons','commercial_rollouts','model_markup_policy','commercial_catalog_skus','commercial_catalog_sku_versions','commercial_catalog_sku_benefits','commercial_catalog_events_v2')
         AND NOT (c.relname = 'workspace_operation_audit' AND NOT has_table_privilege(current_user, c.oid, 'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'))")
   [ -z "$ops_tenant_access" ] || { echo "Ops database role has unexpected tenant write access: $ops_tenant_access" >&2; exit 1; }
+  ops_alert_receipt_exposure=$(psql "$OPS_DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+    "SELECT CASE WHEN has_table_privilege(current_user, 'public.alert_webhook_receipts', 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+                 THEN 'alert_webhook_receipts' ELSE '' END")
+  [ -z "$ops_alert_receipt_exposure" ] || { echo 'Ops database role must not access alert webhook receipts' >&2; exit 1; }
   echo "Ops database role verified: role=$ops_role control_plane=allowed tenant_reads=bounded tenant_writes=denied"
 fi
+
+alert_receiver_state=$(psql "$alert_receiver_database_url" -X -A -t -v ON_ERROR_STOP=1 -c \
+  "SELECT current_user || '|' || session_user || '|' || r.rolsuper || '|' || r.rolbypassrls || '|' || r.rolinherit || '|' ||
+          r.rolcreatedb || '|' || r.rolcreaterole || '|' || r.rolreplication || '|' ||
+          (SELECT count(*) FROM pg_auth_members membership WHERE membership.member = r.oid) || '|' ||
+          (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relkind IN ('r','p') AND n.nspname = 'public' AND pg_get_userbyid(c.relowner) = current_user)
+     FROM pg_roles r WHERE r.rolname = current_user")
+IFS='|' read -r alert_receiver_role alert_receiver_session_role alert_receiver_super alert_receiver_bypass alert_receiver_inherit alert_receiver_createdb alert_receiver_createrole alert_receiver_replication alert_receiver_memberships alert_receiver_owned_tables <<EOF
+$alert_receiver_state
+EOF
+[ "$alert_receiver_role" = merchant_alert_receiver ] || { echo 'Alert receiver database role must be merchant_alert_receiver' >&2; exit 1; }
+[ "$alert_receiver_session_role" = "$alert_receiver_role" ] || { echo 'Alert receiver session role must not use SET ROLE impersonation' >&2; exit 1; }
+[ "$alert_receiver_role" != "$runtime_role" ] || { echo 'Alert receiver and tenant runtime database roles must be distinct' >&2; exit 1; }
+if [ -n "${ops_role:-}" ]; then
+  [ "$alert_receiver_role" != "$ops_role" ] || { echo 'Alert receiver and Ops database roles must be distinct' >&2; exit 1; }
+fi
+case "$alert_receiver_super" in f|false) ;; *) echo 'Alert receiver database role must not be a superuser' >&2; exit 1 ;; esac
+case "$alert_receiver_bypass" in f|false) ;; *) echo 'Alert receiver database role must not bypass RLS' >&2; exit 1 ;; esac
+case "$alert_receiver_inherit" in f|false) ;; *) echo 'Alert receiver database role must be NOINHERIT' >&2; exit 1 ;; esac
+case "$alert_receiver_createdb" in f|false) ;; *) echo 'Alert receiver database role must not create databases' >&2; exit 1 ;; esac
+case "$alert_receiver_createrole" in f|false) ;; *) echo 'Alert receiver database role must not create roles' >&2; exit 1 ;; esac
+case "$alert_receiver_replication" in f|false) ;; *) echo 'Alert receiver database role must not have replication privileges' >&2; exit 1 ;; esac
+[ "$alert_receiver_memberships" = 0 ] || { echo 'Alert receiver database role must not be a member of another role' >&2; exit 1; }
+[ "$alert_receiver_owned_tables" = 0 ] || { echo 'Alert receiver database role must not own public application tables' >&2; exit 1; }
+
+alert_receiver_table_exposure=$(psql "$alert_receiver_database_url" -X -A -t -v ON_ERROR_STOP=1 -c \
+  "SELECT coalesce(string_agg(c.relname, ',' ORDER BY c.relname), '')
+     FROM pg_class c
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
+      AND has_table_privilege(current_user, c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')")
+[ -z "$alert_receiver_table_exposure" ] || { echo "Alert receiver database role has direct application table access: $alert_receiver_table_exposure" >&2; exit 1; }
+
+alert_receiver_missing_functions=$(psql "$alert_receiver_database_url" -X -A -t -v ON_ERROR_STOP=1 -c \
+  "SELECT coalesce(string_agg(signature, ',' ORDER BY signature), '')
+     FROM unnest(ARRAY[
+       'public.append_alert_webhook_receipt(text,text,timestamp with time zone,timestamp with time zone,text,jsonb)',
+       'public.alert_webhook_receipts_ready()'
+     ]) AS signature
+    WHERE to_regprocedure(signature) IS NULL OR NOT has_function_privilege(current_user, signature, 'EXECUTE')")
+[ -z "$alert_receiver_missing_functions" ] || { echo "Alert receiver database role lacks required function access: $alert_receiver_missing_functions" >&2; exit 1; }
+
+# Explicit grants to the receiver role must be limited to the two narrow
+# SECURITY DEFINER entry points. PUBLIC/extension functions are not counted as
+# receiver grants here and cannot grant direct application-table access.
+alert_receiver_unexpected_function_grants=$(psql "$alert_receiver_database_url" -X -A -t -v ON_ERROR_STOP=1 -c \
+  "SELECT coalesce(string_agg(p.oid::regprocedure::text, ',' ORDER BY p.oid::regprocedure::text), '')
+     FROM pg_proc p
+     JOIN pg_namespace n ON n.oid = p.pronamespace
+     CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+     JOIN pg_roles granted_role ON granted_role.oid = acl.grantee
+    WHERE n.nspname = 'public' AND granted_role.rolname = current_user AND acl.privilege_type = 'EXECUTE'
+      AND p.oid NOT IN (
+        'public.append_alert_webhook_receipt(text,text,timestamp with time zone,timestamp with time zone,text,jsonb)'::regprocedure,
+        'public.alert_webhook_receipts_ready()'::regprocedure
+      )")
+[ -z "$alert_receiver_unexpected_function_grants" ] || { echo "Alert receiver database role has unexpected explicit function grants: $alert_receiver_unexpected_function_grants" >&2; exit 1; }
+
+alert_probe_suffix="$$"
+alert_probe_request_id="runtime-role-probe-$alert_probe_suffix"
+alert_probe_alert_id="runtime-alert-probe-$alert_probe_suffix"
+if ! psql "$alert_receiver_database_url" -X -q -v ON_ERROR_STOP=1 >/dev/null <<SQL
+BEGIN;
+DO \$probe\$
+DECLARE
+  inserted boolean;
+BEGIN
+  IF NOT public.alert_webhook_receipts_ready() THEN
+    RAISE EXCEPTION 'alert receipt readiness function returned false';
+  END IF;
+  inserted := public.append_alert_webhook_receipt(
+    '$alert_probe_alert_id', '$alert_probe_request_id',
+    '2026-09-14T08:00:00Z'::timestamptz, '2026-09-14T07:59:00Z'::timestamptz,
+    repeat('a', 64),
+    jsonb_build_object('request_id', '$alert_probe_request_id', 'alert', jsonb_build_object('id', '$alert_probe_alert_id'))
+  );
+  IF inserted IS DISTINCT FROM true THEN RAISE EXCEPTION 'first alert receipt append was not accepted'; END IF;
+  inserted := public.append_alert_webhook_receipt(
+    '$alert_probe_alert_id', '$alert_probe_request_id',
+    '2026-09-14T08:00:00Z'::timestamptz, '2026-09-14T07:59:00Z'::timestamptz,
+    repeat('a', 64),
+    jsonb_build_object('request_id', '$alert_probe_request_id', 'alert', jsonb_build_object('id', '$alert_probe_alert_id'))
+  );
+  IF inserted IS DISTINCT FROM false THEN RAISE EXCEPTION 'alert receipt replay was not rejected'; END IF;
+
+  BEGIN
+    PERFORM request_id FROM public.alert_webhook_receipts LIMIT 1;
+    RAISE EXCEPTION 'direct alert receipt read was allowed';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO public.alert_webhook_receipts(request_id, alert_id, received_at, sent_at, body_sha256, payload)
+    VALUES ('direct-$alert_probe_request_id', 'direct-$alert_probe_alert_id', now(), now(), repeat('b', 64),
+      jsonb_build_object('request_id', 'direct-$alert_probe_request_id', 'alert', jsonb_build_object('id', 'direct-$alert_probe_alert_id')));
+    RAISE EXCEPTION 'direct alert receipt insert was allowed';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+END
+\$probe\$;
+ROLLBACK;
+SQL
+then
+  echo 'Alert receiver transactional function/ACL probe failed' >&2
+  exit 1
+fi
+
+echo "Alert receiver database role verified: role=$alert_receiver_role table_access=denied function_access=append_and_ready"

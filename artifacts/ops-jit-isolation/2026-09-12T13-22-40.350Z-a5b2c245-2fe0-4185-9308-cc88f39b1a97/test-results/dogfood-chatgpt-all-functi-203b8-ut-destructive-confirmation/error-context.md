@@ -1,0 +1,442 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营后台
+      - generic [ref=e14]: 平台运营控制面
+      - navigation "平台运营功能导航" [ref=e15]:
+        - region "平台治理" [ref=e16]:
+          - heading "平台治理" [level=2] [ref=e17]
+          - button "总览：查看平台健康与待处理事项" [ref=e18] [cursor=pointer]:
+            - img "dashboard" [ref=e19] [cursor=pointer]:
+              - img [ref=e20] [cursor=pointer]
+            - generic [ref=e22] [cursor=pointer]: 总览
+          - button "用户中心：管理企业账号与授权范围" [ref=e23] [cursor=pointer]:
+            - img "team" [ref=e24] [cursor=pointer]:
+              - img [ref=e25] [cursor=pointer]
+            - generic [ref=e27] [cursor=pointer]: 用户中心
+        - region "模型与计费" [ref=e28]:
+          - heading "模型与计费" [level=2] [ref=e29]
+          - button "模型服务：检查中转、用量与成本证据" [ref=e30] [cursor=pointer]:
+            - img "robot" [ref=e31] [cursor=pointer]:
+              - img [ref=e32] [cursor=pointer]
+            - generic [ref=e34] [cursor=pointer]: 模型服务
+          - button "账务与退款：核对收款、创意点与退款" [ref=e35] [cursor=pointer]:
+            - img "dollar" [ref=e36] [cursor=pointer]:
+              - img [ref=e37] [cursor=pointer]
+            - generic [ref=e39] [cursor=pointer]: 账务与退款
+  - generic [ref=e40]:
+    - banner [ref=e41]:
+      - generic [ref=e42]:
+        - heading "商业与平台控制台" [level=2] [ref=e43]
+        - region "当前身份与权限范围" [ref=e44]:
+          - generic [ref=e45]:
+            - img [ref=e47]:
+              - img [ref=e48]
+            - strong [ref=e52]: 平台管理员
+            - status [ref=e54]: 授权状态：已由服务端验证
+            - button "展开其余 1 个已验证角色" [ref=e57] [cursor=pointer]:
+              - generic [ref=e58] [cursor=pointer]: +1 个角色
+            - generic [ref=e60]: 平台全局
+            - generic [ref=e62]: 策略 2026-09-08.v1
+          - status [ref=e63]: 平台运营视图：仅显示服务端授权的平台能力；企业主体操作需切换到对应企业主体。
+      - generic [ref=e65]:
+        - generic [ref=e66]:
+          - generic [ref=e67]: 当前状态
+          - status [ref=e68]: 已登录
+        - button "打开账号信息" [ref=e69] [cursor=pointer]:
+          - generic [ref=e70] [cursor=pointer]: o
+          - generic [ref=e71] [cursor=pointer]:
+            - strong [ref=e72] [cursor=pointer]: ops-fixture-actor-7f497ce4-4fbb-4482-a3ee-023efd509df5
+            - generic [ref=e73] [cursor=pointer]: 平台运营
+          - img [ref=e74] [cursor=pointer]:
+            - img [ref=e75] [cursor=pointer]
+    - main [ref=e77]:
+      - status [ref=e78]
+      - region "运营总览" [active] [ref=e79]:
+        - generic [ref=e80]:
+          - heading "运营总览" [level=1] [ref=e84]
+          - generic [ref=e86]:
+            - region "平台运营实时概况" [ref=e87]:
+              - generic [ref=e88]:
+                - generic [ref=e89]:
+                  - generic [ref=e90]: PLATFORM PULSE
+                  - heading "平台运营实时概况" [level=2] [ref=e91]
+                  - generic [ref=e92]: 先看平台整体状态，再进入对应工作台处理异常、商家、模型或账务。
+                - generic [ref=e93]:
+                  - img "check-circle" [ref=e94]:
+                    - img [ref=e95]
+                  - generic [ref=e98]: 数据已读取
+              - generic "平台核心运营指标" [ref=e99]:
+                - generic [ref=e102]:
+                  - generic [ref=e103]:
+                    - generic [ref=e105]: 有效商家
+                    - generic [ref=e106]:
+                      - img "shop" [ref=e108]:
+                        - img [ref=e109]
+                      - generic [ref=e112]: "0"
+                      - generic [ref=e113]: 家
+                  - generic [ref=e114]: 有有效商家账号绑定的工作区
+                - generic [ref=e117]:
+                  - generic [ref=e118]:
+                    - generic [ref=e120]: 工作区记录
+                    - generic [ref=e121]:
+                      - img "team" [ref=e123]:
+                        - img [ref=e124]
+                      - generic [ref=e127]: "1"
+                  - generic [ref=e128]: 含历史、测试和未绑定记录，不作为商家数量
+                - generic [ref=e131]:
+                  - generic [ref=e132]:
+                    - generic [ref=e134]: 平台任务
+                    - generic [ref=e135]:
+                      - img "project" [ref=e137]:
+                        - img [ref=e138]
+                      - generic [ref=e141]: "0"
+                  - generic [ref=e142]: 生成 0 · 发布 0 处理中
+                - generic [ref=e145]:
+                  - generic [ref=e146]:
+                    - generic [ref=e148]: 待处理队列
+                    - generic [ref=e149]:
+                      - img "thunderbolt" [ref=e151]:
+                        - img [ref=e152]
+                      - generic [ref=e155]: "0"
+                  - generic [ref=e156]: 生成队列 0 · 发布队列 0
+                - generic [ref=e159]:
+                  - generic [ref=e160]:
+                    - generic [ref=e162]: 模型能力
+                    - generic [ref=e163]:
+                      - img "robot" [ref=e165]:
+                        - img [ref=e166]
+                      - generic [ref=e168]: 0/5
+                  - generic [ref=e169]: 5 项能力被阻断
+                - generic [ref=e172]:
+                  - generic [ref=e173]:
+                    - generic [ref=e175]: 开放告警
+                    - generic [ref=e176]:
+                      - img "exclamation-circle" [ref=e178]:
+                        - img [ref=e179]
+                      - generic [ref=e182]: —
+                  - generic [ref=e183]: 告警数据尚未取得
+                - generic [ref=e186]:
+                  - generic [ref=e187]:
+                    - generic [ref=e189]: 平台连接
+                    - generic [ref=e190]:
+                      - img "shop" [ref=e192]:
+                        - img [ref=e193]
+                      - generic [ref=e195]: —
+                  - generic [ref=e196]: 连接数据尚未取得
+                - generic [ref=e199]:
+                  - generic [ref=e200]:
+                    - generic [ref=e202]: 模型客户计费
+                    - generic [ref=e203]:
+                      - img "dollar" [ref=e205]:
+                        - img [ref=e206]
+                      - generic [ref=e208]: ¥0.00
+                  - generic [ref=e209]: 0 条用量记录 · 0 条未结算
+              - generic [ref=e210]:
+                - generic [ref=e212]:
+                  - generic [ref=e214]:
+                    - generic [ref=e216]:
+                      - img "robot" [ref=e217]:
+                        - img [ref=e218]
+                      - text: 模型能力门禁
+                    - button "查看模型详情" [ref=e221] [cursor=pointer]:
+                      - generic [ref=e222] [cursor=pointer]: 查看模型详情
+                  - generic [ref=e224]:
+                    - generic [ref=e225]:
+                      - strong [ref=e227]: 文案
+                      - generic [ref=e228]: 阻断
+                      - generic [ref=e229]: endpoint_missing
+                    - generic [ref=e230]:
+                      - strong [ref=e232]: 图片
+                      - generic [ref=e233]: 阻断
+                      - generic [ref=e234]: endpoint_missing
+                    - generic [ref=e235]:
+                      - strong [ref=e237]: 局部编辑
+                      - generic [ref=e238]: 阻断
+                      - generic [ref=e239]: endpoint_missing
+                    - generic [ref=e240]:
+                      - strong [ref=e242]: OCR
+                      - generic [ref=e243]: 阻断
+                      - generic [ref=e244]: endpoint_missing
+                    - generic [ref=e245]:
+                      - strong [ref=e247]: 视频
+                      - generic [ref=e248]: 阻断
+                      - generic [ref=e249]: endpoint_missing
+                - generic [ref=e251]:
+                  - generic [ref=e253]:
+                    - generic [ref=e255]:
+                      - img "exclamation-circle" [ref=e256]:
+                        - img [ref=e257]
+                      - text: 运营待办
+                    - button "进入用户中心" [ref=e261] [cursor=pointer]:
+                      - generic [ref=e262] [cursor=pointer]: 进入用户中心
+                  - generic [ref=e263]:
+                    - generic [ref=e264]:
+                      - generic [ref=e265]:
+                        - generic [ref=e266]: —
+                        - generic [ref=e267]:
+                          - strong [ref=e268]: 开放告警
+                          - generic [ref=e269]: 告警数据尚未取得
+                      - generic [ref=e270]:
+                        - generic [ref=e271]: "0"
+                        - generic [ref=e272]:
+                          - strong [ref=e273]: 执行队列
+                          - generic [ref=e274]: 生成和发布任务等待处理
+                      - generic [ref=e275]:
+                        - generic [ref=e276]: "0"
+                        - generic [ref=e277]:
+                          - strong [ref=e278]: 未绑定品牌
+                          - generic [ref=e279]: 需要补齐品牌与店铺关系
+                    - generic [ref=e280]:
+                      - button "管理商家授权" [ref=e282] [cursor=pointer]:
+                        - generic [ref=e283] [cursor=pointer]: 管理商家授权
+                      - button "查看平台账务" [ref=e285] [cursor=pointer]:
+                        - generic [ref=e286] [cursor=pointer]: 查看平台账务
+            - generic [ref=e287]:
+              - generic "平台经营指标" [ref=e288]:
+                - generic [ref=e292]:
+                  - generic [ref=e294]: 有效商家
+                  - generic [ref=e295]:
+                    - img "safety-certificate" [ref=e297]:
+                      - img [ref=e298]
+                    - generic [ref=e301]: "0"
+                    - generic [ref=e302]: 家
+                - generic [ref=e306]:
+                  - generic [ref=e308]: 工作区记录
+                  - generic [ref=e309]:
+                    - img "team" [ref=e311]:
+                      - img [ref=e312]
+                    - generic [ref=e315]: "1"
+                    - generic [ref=e316]: 条
+                - generic [ref=e320]:
+                  - generic [ref=e322]: 月度套餐收入（已核验）
+                  - generic [ref=e323]:
+                    - generic [ref=e324]: ¥
+                    - generic [ref=e325]:
+                      - generic [ref=e326]: "0"
+                      - generic [ref=e327]: ".00"
+                - generic [ref=e331]:
+                  - generic [ref=e333]: 创意点包收入（已核验）
+                  - generic [ref=e334]:
+                    - generic [ref=e335]: ¥
+                    - generic [ref=e336]:
+                      - generic [ref=e337]: "0"
+                      - generic [ref=e338]: ".00"
+                - generic [ref=e342]:
+                  - generic [ref=e344]: 真实充值到账
+                  - generic [ref=e345]:
+                    - generic [ref=e346]: ¥
+                    - generic [ref=e347]:
+                      - generic [ref=e348]: "0"
+                      - generic [ref=e349]: ".00"
+                - generic [ref=e353]:
+                  - generic [ref=e355]: 本地测试充值
+                  - generic [ref=e356]:
+                    - generic [ref=e357]: ¥
+                    - generic [ref=e358]:
+                      - generic [ref=e359]: "0"
+                      - generic [ref=e360]: ".00"
+              - generic [ref=e361]:
+                - generic [ref=e364]: 商业化 SKU 与订购情况
+                - generic [ref=e365]:
+                  - generic [ref=e366]: 价格和权益来自服务端 V2 SKU 快照；订单按月度订阅、创意点包和开通服务分别统计，只有已支付且有核验支付事件的订单才进入收入。
+                  - table [ref=e373]:
+                    - rowgroup [ref=e382]:
+                      - row "SKU 类型 价格 权益 已付订单 已付商家 状态" [ref=e383]:
+                        - columnheader "SKU" [ref=e384]
+                        - columnheader "类型" [ref=e385]
+                        - columnheader "价格" [ref=e386]
+                        - columnheader "权益" [ref=e387]
+                        - columnheader "已付订单" [ref=e388]
+                        - columnheader "已付商家" [ref=e389]
+                        - columnheader "状态" [ref=e390]
+                    - rowgroup [ref=e391]:
+                      - row "basic basic 月度订阅 ¥2000.00 cloud_storage:50 GB_DECIMAL；first_response_business_hours:4 business_hour；max_brands:1 brand；max_stores:5 store；monthly_creative_points:5000 creative_points；monthly_one_to_one_hours:5 hour 0 0 已批准" [ref=e392]:
+                        - cell "basic basic" [ref=e393]:
+                          - generic [ref=e394]:
+                            - strong [ref=e397]: basic
+                            - code [ref=e400]: basic
+                        - cell "月度订阅" [ref=e401]
+                        - cell "¥2000.00" [ref=e402]
+                        - cell "cloud_storage:50 GB_DECIMAL；first_response_business_hours:4 business_hour；max_brands:1 brand；max_stores:5 store；monthly_creative_points:5000 creative_points；monthly_one_to_one_hours:5 hour" [ref=e403]:
+                          - generic [ref=e404]: cloud_storage:50 GB_DECIMAL；first_response_business_hours:4 business_hour；max_brands:1 brand；max_stores:5 store；monthly_creative_points:5000 creative_points；monthly_one_to_one_hours:5 hour
+                        - cell "0" [ref=e405]
+                        - cell "0" [ref=e406]
+                        - cell "已批准" [ref=e407]:
+                          - generic [ref=e408]: 已批准
+                      - row "custom custom 月度订阅 价格未决 无已持久化权益项 0 0 草稿" [ref=e409]:
+                        - cell "custom custom" [ref=e410]:
+                          - generic [ref=e411]:
+                            - strong [ref=e414]: custom
+                            - code [ref=e417]: custom
+                        - cell "月度订阅" [ref=e418]
+                        - cell "价格未决" [ref=e419]
+                        - cell "无已持久化权益项" [ref=e420]:
+                          - generic [ref=e421]: 无已持久化权益项
+                        - cell "0" [ref=e422]
+                        - cell "0" [ref=e423]
+                        - cell "草稿" [ref=e424]:
+                          - generic [ref=e425]: 草稿
+                      - row "growth growth 月度订阅 ¥5000.00 cloud_storage:50 GB_DECIMAL；first_response_business_hours:2 business_hour；max_brands:3 brand；max_stores:15 store；monthly_creative_points:12500 creative_points；monthly_one_to_one_hours:10 hour 0 0 已批准" [ref=e426]:
+                        - cell "growth growth" [ref=e427]:
+                          - generic [ref=e428]:
+                            - strong [ref=e431]: growth
+                            - code [ref=e434]: growth
+                        - cell "月度订阅" [ref=e435]
+                        - cell "¥5000.00" [ref=e436]
+                        - cell "cloud_storage:50 GB_DECIMAL；first_response_business_hours:2 business_hour；max_brands:3 brand；max_stores:15 store；monthly_creative_points:12500 creative_points；monthly_one_to_one_hours:10 hour" [ref=e437]:
+                          - generic [ref=e438]: cloud_storage:50 GB_DECIMAL；first_response_business_hours:2 business_hour；max_brands:3 brand；max_stores:15 store；monthly_creative_points:12500 creative_points；monthly_one_to_one_hours:10 hour
+                        - cell "0" [ref=e439]
+                        - cell "0" [ref=e440]
+                        - cell "已批准" [ref=e441]:
+                          - generic [ref=e442]: 已批准
+                      - row "onboarding_once onboarding_once 正式开通 ¥5000.00 grant_count:6 monthly_grants；points_per_grant:500 creative_points 0 0 已批准" [ref=e443]:
+                        - cell "onboarding_once onboarding_once" [ref=e444]:
+                          - generic [ref=e445]:
+                            - strong [ref=e448]: onboarding_once
+                            - code [ref=e451]: onboarding_once
+                        - cell "正式开通" [ref=e452]
+                        - cell "¥5000.00" [ref=e453]
+                        - cell "grant_count:6 monthly_grants；points_per_grant:500 creative_points" [ref=e454]:
+                          - generic [ref=e455]: grant_count:6 monthly_grants；points_per_grant:500 creative_points
+                        - cell "0" [ref=e456]
+                        - cell "0" [ref=e457]
+                        - cell "已批准" [ref=e458]:
+                          - generic [ref=e459]: 已批准
+                      - row "points_2000 points_2000 点数包 ¥1000.00 creative_points:2000 creative_points 0 0 已批准" [ref=e460]:
+                        - cell "points_2000 points_2000" [ref=e461]:
+                          - generic [ref=e462]:
+                            - strong [ref=e465]: points_2000
+                            - code [ref=e468]: points_2000
+                        - cell "点数包" [ref=e469]
+                        - cell "¥1000.00" [ref=e470]
+                        - cell "creative_points:2000 creative_points" [ref=e471]:
+                          - generic [ref=e472]: creative_points:2000 creative_points
+                        - cell "0" [ref=e473]
+                        - cell "0" [ref=e474]
+                        - cell "已批准" [ref=e475]:
+                          - generic [ref=e476]: 已批准
+                      - row "points_500 points_500 点数包 ¥300.00 creative_points:500 creative_points 0 0 已批准" [ref=e477]:
+                        - cell "points_500 points_500" [ref=e478]:
+                          - generic [ref=e479]:
+                            - strong [ref=e482]: points_500
+                            - code [ref=e485]: points_500
+                        - cell "点数包" [ref=e486]
+                        - cell "¥300.00" [ref=e487]
+                        - cell "creative_points:500 creative_points" [ref=e488]:
+                          - generic [ref=e489]: creative_points:500 creative_points
+                        - cell "0" [ref=e490]
+                        - cell "0" [ref=e491]
+                        - cell "已批准" [ref=e492]:
+                          - generic [ref=e493]: 已批准
+              - generic [ref=e494]:
+                - generic [ref=e496]:
+                  - generic [ref=e497]: 商家经营台账
+                  - generic [ref=e499]:
+                    - button "team 管理企业授权" [ref=e501] [cursor=pointer]:
+                      - img "team" [ref=e503] [cursor=pointer]:
+                        - img [ref=e504] [cursor=pointer]
+                      - generic [ref=e506] [cursor=pointer]: 管理企业授权
+                    - button "safety-certificate 配置套餐" [ref=e508] [cursor=pointer]:
+                      - img "safety-certificate" [ref=e510] [cursor=pointer]:
+                        - img [ref=e511] [cursor=pointer]
+                      - generic [ref=e513] [cursor=pointer]: 配置套餐
+                - generic [ref=e514]:
+                  - generic [ref=e515]: 查看企业主体当前套餐和订阅状态；授权变更统一在用户中心完成，服务端 SKU 价格、权益和订单统一在账务与退款中维护。企业名称作为主识别信息，Workspace ID 只用于技术范围和审计。
+                  - generic [ref=e518]:
+                    - table [ref=e522]:
+                      - rowgroup [ref=e530]:
+                        - row "企业主体 套餐 订阅状态 月费 成员 操作" [ref=e531]:
+                          - columnheader "企业主体" [ref=e532]
+                          - columnheader "套餐" [ref=e533]
+                          - columnheader "订阅状态" [ref=e534]
+                          - columnheader "月费" [ref=e535]
+                          - columnheader "成员" [ref=e536]
+                          - columnheader "操作" [ref=e537]
+                      - rowgroup [ref=e538]:
+                        - row "Enterprise ws_ops_fixture_7f497ce44fbb4482a3ee023efd509df5 Workspace ID：ws_ops_fixture_7f497ce44fbb4482a3ee023efd509df5 复制 Starter 试用中 ¥199.00 1 arrow-right 查看该企业授权" [ref=e539]:
+                          - cell "Enterprise ws_ops_fixture_7f497ce44fbb4482a3ee023efd509df5 Workspace ID：ws_ops_fixture_7f497ce44fbb4482a3ee023efd509df5 复制" [ref=e540]:
+                            - generic [ref=e543]:
+                              - strong [ref=e546]: Enterprise ws_ops_fixture_7f497ce44fbb4482a3ee023efd509df5
+                              - generic [ref=e548]:
+                                - text: Workspace ID：ws_ops_fixture_7f497ce44fbb4482a3ee023efd509df5
+                                - button "复制" [ref=e550] [cursor=pointer]:
+                                  - img "copy" [ref=e551] [cursor=pointer]:
+                                    - img [ref=e552] [cursor=pointer]
+                          - cell "Starter" [ref=e554]
+                          - cell "试用中" [ref=e555]:
+                            - generic [ref=e556]: 试用中
+                          - cell "¥199.00" [ref=e557]
+                          - cell "1" [ref=e558]
+                          - cell "arrow-right 查看该企业授权" [ref=e559]:
+                            - button "arrow-right 查看该企业授权" [ref=e560] [cursor=pointer]:
+                              - img "arrow-right" [ref=e562] [cursor=pointer]:
+                                - img [ref=e563] [cursor=pointer]
+                              - generic [ref=e565] [cursor=pointer]: 查看该企业授权
+                    - list [ref=e566]:
+                      - listitem [ref=e567]: 共 1 条
+                      - listitem "上一页" [ref=e568]:
+                        - button "left" [disabled] [ref=e569]:
+                          - img "left" [ref=e570]:
+                            - img [ref=e571]
+                      - listitem "1" [ref=e573] [cursor=pointer]:
+                        - generic [ref=e574] [cursor=pointer]: "1"
+                      - listitem "下一页" [ref=e575]:
+                        - button "right" [disabled] [ref=e576]:
+                          - img "right" [ref=e577]:
+                            - img [ref=e578]
+              - generic [ref=e580]:
+                - generic [ref=e582]:
+                  - generic [ref=e584]:
+                    - generic [ref=e585]: 当前页套餐分布
+                    - generic [ref=e587]: 台账页 1 家
+                  - generic [ref=e591]:
+                    - generic [ref=e592]: Starter
+                    - strong [ref=e594]: 1 个企业主体
+                - generic [ref=e596]:
+                  - generic [ref=e599]: 运营动作
+                  - generic [ref=e600]:
+                    - generic [ref=e601]:
+                      - button "team 给企业授权" [ref=e603] [cursor=pointer]:
+                        - img "team" [ref=e605] [cursor=pointer]:
+                          - img [ref=e606] [cursor=pointer]
+                        - generic [ref=e608] [cursor=pointer]: 给企业授权
+                      - button "safety-certificate 管理套餐" [ref=e610] [cursor=pointer]:
+                        - img "safety-certificate" [ref=e612] [cursor=pointer]:
+                          - img [ref=e613] [cursor=pointer]
+                        - generic [ref=e615] [cursor=pointer]: 管理套餐
+                      - button "dollar 查看财务流水" [ref=e617] [cursor=pointer]:
+                        - img "dollar" [ref=e619] [cursor=pointer]:
+                          - img [ref=e620] [cursor=pointer]
+                        - generic [ref=e622] [cursor=pointer]: 查看财务流水
+                    - generic [ref=e623]: 总览只保留经营决策需要的数据。模型、平台连接、规则、存储和系统风险请在各自工作台处理。
+              - generic [ref=e624]: 财务口径：月度订阅、创意点包、开通服务和充值分开核算；本地 fixture 充值单独展示，不计入真实收入。 金额来自跨企业主体财务汇总。
+            - generic [ref=e626]:
+              - generic [ref=e628]:
+                - generic [ref=e629]: 模型服务
+                - button "进入模型服务" [ref=e631] [cursor=pointer]:
+                  - generic [ref=e632] [cursor=pointer]: 进入模型服务
+                  - img [ref=e633] [cursor=pointer]:
+                    - img [ref=e634] [cursor=pointer]
+              - generic [ref=e637]:
+                - generic [ref=e639]:
+                  - generic [ref=e641]: 已就绪能力
+                  - generic [ref=e642]:
+                    - generic [ref=e644]: "0"
+                    - generic [ref=e645]: / 5
+                - generic [ref=e647]:
+                  - generic [ref=e649]: 阻断能力
+                  - generic [ref=e652]: "5"
+                - generic [ref=e653]:
+                  - generic [ref=e654]: 状态待确认
+                  - generic [ref=e655]: 运行时状态与发布证据分别核验；Provider 配置不代表生产可用。当前 release metadata 已就绪，完整发布门禁仍由服务端决定。
+```

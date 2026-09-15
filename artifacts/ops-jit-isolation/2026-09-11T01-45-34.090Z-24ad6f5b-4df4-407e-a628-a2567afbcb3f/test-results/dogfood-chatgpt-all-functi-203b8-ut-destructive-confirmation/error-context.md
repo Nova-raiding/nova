@@ -1,0 +1,1351 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e5]:
+    - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+      - /url: "#ops-main-content"
+    - complementary "运营主导航" [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - generic [ref=e10]: 大麦
+          - generic [ref=e11]:
+            - strong [ref=e12]: 大麦运营中心
+            - generic [ref=e13]: 平台运营与商家服务
+        - generic [ref=e14]: 平台运营控制面
+        - navigation "平台运营功能导航" [ref=e15]:
+          - region "平台治理" [ref=e16]:
+            - heading "平台治理" [level=2] [ref=e17]
+            - button "总览" [ref=e18] [cursor=pointer]:
+              - img "dashboard" [ref=e19] [cursor=pointer]:
+                - img [ref=e20] [cursor=pointer]
+              - text: 总览
+            - button "用户中心" [ref=e22] [cursor=pointer]:
+              - img "team" [ref=e23] [cursor=pointer]:
+                - img [ref=e24] [cursor=pointer]
+              - text: 用户中心
+          - region "模型与计费" [ref=e26]:
+            - heading "模型与计费" [level=2] [ref=e27]
+            - button "模型服务" [ref=e28] [cursor=pointer]:
+              - img "robot" [ref=e29] [cursor=pointer]:
+                - img [ref=e30] [cursor=pointer]
+              - text: 模型服务
+            - button "账务与退款" [ref=e32] [cursor=pointer]:
+              - img "dollar" [ref=e33] [cursor=pointer]:
+                - img [ref=e34] [cursor=pointer]
+              - text: 账务与退款
+    - generic [ref=e36]:
+      - banner [ref=e37]:
+        - generic [ref=e38]:
+          - heading "商业与平台控制台" [level=2] [ref=e39]
+          - region "当前身份与权限范围" [ref=e40]:
+            - generic [ref=e41]:
+              - img [ref=e43]:
+                - img [ref=e44]
+              - strong [ref=e48]: 平台管理员
+              - status [ref=e50]: 授权状态：已由服务端验证
+              - button "展开其余 1 个已验证角色" [ref=e53] [cursor=pointer]:
+                - generic [ref=e54] [cursor=pointer]: +1 个角色
+              - generic [ref=e56]: 平台全局
+              - generic [ref=e58]: 策略 2026-09-08.v1
+            - status [ref=e59]: 平台运营视图：仅显示服务端授权的平台能力；企业主体操作需切换到对应企业主体。
+        - generic [ref=e61]:
+          - generic [ref=e62]:
+            - generic [ref=e63]: 当前状态
+            - status [ref=e64]: 已登录
+          - button "打开账号信息" [ref=e65] [cursor=pointer]:
+            - generic [ref=e66] [cursor=pointer]: o
+            - generic [ref=e67] [cursor=pointer]:
+              - strong [ref=e68] [cursor=pointer]: ops-fixture-actor-ebb2ddf2-fdfc-4e7f-8eea-e9f9e8c00df7
+              - generic [ref=e69] [cursor=pointer]: 平台运营
+            - img [ref=e70] [cursor=pointer]:
+              - img [ref=e71] [cursor=pointer]
+      - main [ref=e73]:
+        - status [ref=e74]
+        - region "用户中心" [ref=e75]:
+          - generic [ref=e76]:
+            - generic [ref=e78]:
+              - generic [ref=e79]:
+                - generic [ref=e80]: PLATFORM GOVERNANCE
+                - heading "用户中心" [level=1] [ref=e81]
+                - generic [ref=e82]: 按任务管理用户身份、企业主体状态与平台授权；用户详情同时关联成员角色、权限、钱包余额、扣款/账单状态、任务用量、订单权益、店铺范围和审计记录。只展示当前角色可读取的治理区域，所有写入仍由服务端逐次鉴权并审计。
+              - button "刷新目录" [ref=e84] [cursor=pointer]:
+                - generic [ref=e85] [cursor=pointer]: 刷新目录
+            - generic "用户治理工作区" [ref=e88]:
+              - generic [ref=e89]:
+                - generic [ref=e91]:
+                  - generic [ref=e92]: 注册申请
+                  - button "刷新申请" [ref=e94] [cursor=pointer]:
+                    - generic [ref=e95] [cursor=pointer]: 刷新申请
+                - table [ref=e103]:
+                  - rowgroup [ref=e104]:
+                    - row "申请编号 登录邮箱 企业名称 联系人 状态 操作" [ref=e105]:
+                      - columnheader "申请编号" [ref=e106]
+                      - columnheader "登录邮箱" [ref=e107]
+                      - columnheader "企业名称" [ref=e108]
+                      - columnheader "联系人" [ref=e109]
+                      - columnheader "状态" [ref=e110]
+                      - columnheader "操作" [ref=e111]
+                  - rowgroup [ref=e112]:
+                    - row "暂无数据 暂无数据" [ref=e113]:
+                      - cell "暂无数据 暂无数据" [ref=e114]:
+                        - generic [ref=e115]:
+                          - img "暂无数据" [ref=e117]
+                          - generic [ref=e123]: 暂无数据
+              - generic [ref=e124]:
+                - region "用户目录" [ref=e125]:
+                  - generic [ref=e127]:
+                    - generic [ref=e128]: IDENTITY DIRECTORY
+                    - heading "用户目录" [level=4] [ref=e129]
+                    - generic [ref=e130]: 查询用户身份、成员关系、角色、企业主体和商业快照。
+                  - generic [ref=e131]:
+                    - generic [ref=e135]:
+                      - generic [ref=e137]: 用户身份
+                      - generic [ref=e140]: "1"
+                    - generic [ref=e144]:
+                      - generic [ref=e146]: 成员关系
+                      - generic [ref=e149]: "1"
+                    - generic [ref=e153]:
+                      - generic [ref=e155]: 涉及企业主体
+                      - generic [ref=e158]: "1"
+                  - alert [ref=e159]:
+                    - img "info-circle" [ref=e161]:
+                      - img [ref=e162]
+                    - generic [ref=e164]:
+                      - generic [ref=e165]: 用户、成员关系与企业主体的关系
+                      - generic [ref=e166]: 用户是一个可认证的平台身份；身份标识是认证系统返回的登录主体，不等于姓名。成员关系表示该用户在某个企业主体中的角色和状态。企业名称是主要识别信息，Workspace ID 仅作为技术范围标识保留。同一个用户可以属于多个企业主体，因此目录中的一行代表一条“用户 × 企业主体”成员关系。品牌信息在企业详情或品牌列中单独展示。
+                  - generic [ref=e167]:
+                    - generic [ref=e170]: 用户目录
+                    - generic [ref=e171]:
+                      - form "用户目录筛选" [ref=e172]:
+                        - generic [ref=e174]:
+                          - generic "关键词" [ref=e176]: "关键词 :"
+                          - textbox "按关键词筛选用户目录" [ref=e181]
+                        - generic [ref=e184]:
+                          - generic "状态" [ref=e186]: "状态 :"
+                          - generic [ref=e190] [cursor=pointer]:
+                            - generic [ref=e191] [cursor=pointer]:
+                              - generic: 全部状态
+                              - combobox "按成员状态筛选用户目录" [ref=e192] [cursor=pointer]
+                            - img "down" [ref=e194] [cursor=pointer]:
+                              - img [ref=e195] [cursor=pointer]
+                        - generic [ref=e198]:
+                          - generic "企业主体" [ref=e200]: "企业主体 :"
+                          - textbox "按企业主体筛选用户目录" [ref=e205]
+                        - generic [ref=e212]:
+                          - button "查 询" [ref=e214] [cursor=pointer]:
+                            - generic [ref=e215] [cursor=pointer]: 查 询
+                          - button "清 空" [ref=e217] [cursor=pointer]:
+                            - generic [ref=e218] [cursor=pointer]: 清 空
+                          - button "导出当前筛选" [ref=e220] [cursor=pointer]:
+                            - generic [ref=e221] [cursor=pointer]: 导出当前筛选
+                          - button "开通商家账号" [disabled] [ref=e223]:
+                            - generic: 开通商家账号
+                          - button "批量停用（1）" [ref=e225] [cursor=pointer]:
+                            - generic [ref=e226] [cursor=pointer]: 批量停用（1）
+                      - generic [ref=e230]:
+                        - table "用户目录数据表" [ref=e234]:
+                          - rowgroup [ref=e247]:
+                            - row "Select all 登录身份 用户显示名 企业主体 角色 账号类型 套餐 / 消耗 成员状态 企业状态 创建时间 操作" [ref=e248]:
+                              - columnheader "Select all" [ref=e249]:
+                                - checkbox "Select all" [checked] [ref=e253] [cursor=pointer]
+                              - columnheader "登录身份" [ref=e254]
+                              - columnheader "用户显示名" [ref=e255] [cursor=pointer]:
+                                - generic [ref=e256] [cursor=pointer]:
+                                  - generic [ref=e257] [cursor=pointer]: 用户显示名
+                                  - generic [ref=e259] [cursor=pointer]:
+                                    - img [ref=e260] [cursor=pointer]:
+                                      - img [ref=e261] [cursor=pointer]
+                                    - img [ref=e263] [cursor=pointer]:
+                                      - img [ref=e264] [cursor=pointer]
+                              - columnheader "企业主体" [ref=e266]
+                              - columnheader "角色" [ref=e267]
+                              - columnheader "账号类型" [ref=e268]
+                              - columnheader "套餐 / 消耗" [ref=e269]
+                              - columnheader "成员状态" [ref=e270] [cursor=pointer]:
+                                - generic [ref=e271] [cursor=pointer]:
+                                  - generic [ref=e272] [cursor=pointer]: 成员状态
+                                  - generic [ref=e274] [cursor=pointer]:
+                                    - img [ref=e275] [cursor=pointer]:
+                                      - img [ref=e276] [cursor=pointer]
+                                    - img [ref=e278] [cursor=pointer]:
+                                      - img [ref=e279] [cursor=pointer]
+                              - columnheader "企业状态" [ref=e281]
+                              - columnheader "创建时间" [ref=e282] [cursor=pointer]:
+                                - generic [ref=e283] [cursor=pointer]:
+                                  - generic [ref=e284] [cursor=pointer]: 创建时间
+                                  - generic [ref=e286] [cursor=pointer]:
+                                    - img [ref=e287] [cursor=pointer]:
+                                      - img [ref=e288] [cursor=pointer]
+                                    - img [ref=e290] [cursor=pointer]:
+                                      - img [ref=e291] [cursor=pointer]
+                              - columnheader "操作" [ref=e293]
+                          - rowgroup [ref=e294]:
+                            - checkbox [checked] [ref=e298] [cursor=pointer]
+                            - generic [ref=e299]:
+                              - generic [ref=e300]: 用户显示名
+                              - generic [ref=e302]:
+                                - img [ref=e303]:
+                                  - img [ref=e304]
+                                - img [ref=e306]:
+                                  - img [ref=e307]
+                            - generic [ref=e309]:
+                              - generic [ref=e310]: 成员状态
+                              - generic [ref=e312]:
+                                - img [ref=e313]:
+                                  - img [ref=e314]
+                                - img [ref=e316]:
+                                  - img [ref=e317]
+                            - generic [ref=e319]:
+                              - generic [ref=e320]: 创建时间
+                              - generic [ref=e322]:
+                                - img [ref=e323]:
+                                  - img [ref=e324]
+                                - img [ref=e326]:
+                                  - img [ref=e327]
+                            - row "Row 1 selected ops-fixture-target-ebb2ddf2-fdfc-4e7f-8eea-e9f9e8c00df7 复制 Isolated Directory Target Enterprise ws_ops_fixture_ebb2ddf2fdfc4e7f8eeae9f9e8c00df7 Workspace ID：ws_ops_fixture_ebb2ddf2fdfc4e7f8eeae9f9e8c00df7 复制 企业管理员 商家成员 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/09/11 09:45 查看 Isolated Directory Target 的用户详情 停用 Isolated Directory Target 的访问" [ref=e329]:
+                              - cell "Row 1 selected" [ref=e330]:
+                                - checkbox "Row 1 selected" [checked] [ref=e333] [cursor=pointer]
+                              - cell "ops-fixture-target-ebb2ddf2-fdfc-4e7f-8eea-e9f9e8c00df7 复制" [ref=e334]:
+                                - generic [ref=e335]:
+                                  - text: ops-fixture-target-ebb2ddf2-fdfc-4e7f-8eea-e9f9e8c00df7
+                                  - button "复制" [ref=e337] [cursor=pointer]:
+                                    - img "copy" [ref=e338] [cursor=pointer]:
+                                      - img [ref=e339] [cursor=pointer]
+                              - cell "Isolated Directory Target" [ref=e341]
+                              - cell "Enterprise ws_ops_fixture_ebb2ddf2fdfc4e7f8eeae9f9e8c00df7 Workspace ID：ws_ops_fixture_ebb2ddf2fdfc4e7f8eeae9f9e8c00df7 复制" [ref=e342]:
+                                - generic [ref=e343]:
+                                  - strong [ref=e346]: Enterprise ws_ops_fixture_ebb2ddf2fdfc4e7f8eeae9f9e8c00df7
+                                  - generic [ref=e348]:
+                                    - text: Workspace ID：ws_ops_fixture_ebb2ddf2fdfc4e7f8eeae9f9e8c00df7
+                                    - button "复制" [ref=e350] [cursor=pointer]:
+                                      - img "copy" [ref=e351] [cursor=pointer]:
+                                        - img [ref=e352] [cursor=pointer]
+                              - cell "企业管理员" [ref=e354]:
+                                - generic [ref=e355]: 企业管理员
+                              - cell "商家成员" [ref=e356]:
+                                - generic [ref=e357]: 商家成员
+                              - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e358]:
+                                - generic [ref=e359]:
+                                  - generic [ref=e361]: Trial · trialing
+                                  - generic [ref=e363]: 任务 0/30 · 余额 ¥0.00
+                              - cell "已激活" [ref=e364]:
+                                - generic [ref=e365]: 已激活
+                              - cell "正常" [ref=e366]:
+                                - generic [ref=e367]: 正常
+                              - cell "2026/09/11 09:45" [ref=e368]
+                              - cell "查看 Isolated Directory Target 的用户详情 停用 Isolated Directory Target 的访问" [ref=e369]:
+                                - generic [ref=e370]:
+                                  - button "查看 Isolated Directory Target 的用户详情" [ref=e372] [cursor=pointer]:
+                                    - generic [ref=e373] [cursor=pointer]: 详 情
+                                  - button "停用 Isolated Directory Target 的访问" [active] [ref=e375] [cursor=pointer]:
+                                    - generic [ref=e376] [cursor=pointer]: 停 用
+                        - list [ref=e377]:
+                          - listitem [ref=e378]: 共 1 条成员关系
+                          - listitem "上一页" [ref=e379]:
+                            - button "left" [disabled] [ref=e380]:
+                              - img "left" [ref=e381]:
+                                - img [ref=e382]
+                          - listitem "1" [ref=e384] [cursor=pointer]:
+                            - generic [ref=e385] [cursor=pointer]: "1"
+                          - listitem "下一页" [ref=e386]:
+                            - button "right" [disabled] [ref=e387]:
+                              - img "right" [ref=e388]:
+                                - img [ref=e389]
+                          - listitem [ref=e391]:
+                            - generic [ref=e392]:
+                              - generic "20 条/页" [ref=e393]:
+                                - text: 20 条/页
+                                - combobox "页码" [ref=e394]
+                              - img "down" [ref=e396]:
+                                - img [ref=e397]
+                - region "企业主体治理" [ref=e399]:
+                  - generic [ref=e401]:
+                    - generic [ref=e402]: ENTERPRISE GOVERNANCE
+                    - heading "企业主体治理" [level=4] [ref=e403]
+                    - generic [ref=e404]: 管理企业主体状态和平台级访问边界。
+                  - generic [ref=e405]:
+                    - generic [ref=e407]:
+                      - generic [ref=e408]: 企业主体治理
+                      - generic [ref=e410]: 仅 platform_ops
+                    - generic [ref=e411]:
+                      - alert [ref=e412]:
+                        - img "info-circle" [ref=e414]:
+                          - img [ref=e415]
+                        - generic [ref=e417]:
+                          - generic [ref=e418]: 停用只阻断访问，不删除业务数据
+                          - generic [ref=e419]: 为防止当前运营会话自锁，必须从另一个路由工作区停用目标企业主体；所有操作写入审计。
+                      - generic [ref=e420]:
+                        - generic [ref=e422]:
+                          - searchbox "搜索企业名称、Workspace ID 或套餐" [ref=e424]
+                          - button "search" [ref=e426] [cursor=pointer]:
+                            - img "search" [ref=e428] [cursor=pointer]:
+                              - img [ref=e429] [cursor=pointer]
+                        - generic [ref=e432] [cursor=pointer]:
+                          - generic [ref=e433] [cursor=pointer]:
+                            - generic: 企业主体状态
+                            - combobox [ref=e434] [cursor=pointer]
+                          - img "down" [ref=e436] [cursor=pointer]:
+                            - img [ref=e437] [cursor=pointer]
+                        - generic [ref=e440]: 已加载 1 / 共 1 个企业主体
+                      - generic [ref=e443]:
+                        - table [ref=e447]:
+                          - rowgroup [ref=e456]:
+                            - row "企业主体 状态 套餐 订阅 任务用量 成员 操作" [ref=e457]:
+                              - columnheader "企业主体" [ref=e458]
+                              - columnheader "状态" [ref=e459]
+                              - columnheader "套餐" [ref=e460]
+                              - columnheader "订阅" [ref=e461]
+                              - columnheader "任务用量" [ref=e462]
+                              - columnheader "成员" [ref=e463]
+                              - columnheader "操作" [ref=e464]
+                          - rowgroup [ref=e465]:
+                            - row "Enterprise ws_ops_fixture_ebb2ddf2fdfc4e7f8eeae9f9e8c00df7 Workspace ID：ws_ops_fixture_ebb2ddf2fdfc4e7f8eeae9f9e8c00df7 复制 正常 Starter trialing 0 / 30 1 停用企业主体" [ref=e466]:
+                              - cell "Enterprise ws_ops_fixture_ebb2ddf2fdfc4e7f8eeae9f9e8c00df7 Workspace ID：ws_ops_fixture_ebb2ddf2fdfc4e7f8eeae9f9e8c00df7 复制" [ref=e467]:
+                                - generic [ref=e468]:
+                                  - strong [ref=e471]: Enterprise ws_ops_fixture_ebb2ddf2fdfc4e7f8eeae9f9e8c00df7
+                                  - generic [ref=e473]:
+                                    - text: Workspace ID：ws_ops_fixture_ebb2ddf2fdfc4e7f8eeae9f9e8c00df7
+                                    - button "复制" [ref=e475] [cursor=pointer]:
+                                      - img "copy" [ref=e476] [cursor=pointer]:
+                                        - img [ref=e477] [cursor=pointer]
+                              - cell "正常" [ref=e479]:
+                                - generic [ref=e480]: 正常
+                              - cell "Starter" [ref=e481]
+                              - cell "trialing" [ref=e482]
+                              - cell "0 / 30" [ref=e483]
+                              - cell "1" [ref=e484]
+                              - cell "停用企业主体" [ref=e485]:
+                                - button "停用企业主体" [ref=e486] [cursor=pointer]:
+                                  - generic [ref=e487] [cursor=pointer]: 停用企业主体
+                        - list [ref=e488]:
+                          - listitem [ref=e489]: 共 1 个企业主体
+                          - listitem "上一页" [ref=e490]:
+                            - button "left" [disabled] [ref=e491]:
+                              - img "left" [ref=e492]:
+                                - img [ref=e493]
+                          - listitem "1" [ref=e495] [cursor=pointer]:
+                            - generic [ref=e496] [cursor=pointer]: "1"
+                          - listitem "下一页" [ref=e497]:
+                            - button "right" [disabled] [ref=e498]:
+                              - img "right" [ref=e499]:
+                                - img [ref=e500]
+                          - listitem [ref=e502]:
+                            - generic [ref=e503]:
+                              - generic "20 条/页" [ref=e504]:
+                                - text: 20 条/页
+                                - combobox "页码" [ref=e505]
+                              - img "down" [ref=e507]:
+                                - img [ref=e508]
+                - region "权限与授权" [ref=e510]:
+                  - generic [ref=e512]:
+                    - generic [ref=e513]: AUTHORIZATION CENTER
+                    - heading "权限与授权" [level=4] [ref=e514]
+                    - generic [ref=e515]: 查看功能权限矩阵、平台角色和精确范围的临时授权。
+                  - generic [ref=e516]:
+                    - generic [ref=e518]:
+                      - generic [ref=e519]: 角色与商家授权中心
+                      - generic [ref=e521]: 平台控制面
+                    - generic [ref=e522]:
+                      - alert [ref=e523]:
+                        - img "info-circle" [ref=e525]:
+                          - img [ref=e526]
+                        - generic [ref=e528]:
+                          - generic [ref=e529]: 所有变更由服务端重新授权并写入持久审计
+                          - generic [ref=e530]: 平台角色不授予客户正文访问；进入指定商家主体必须使用精确主体、能力、有效期、工单和审批人绑定的临时授权。platform_owner 不在日常入口开放。
+                      - region "功能权限矩阵" [ref=e531]:
+                        - heading "功能权限矩阵" [level=5] [ref=e532]
+                        - generic [ref=e533]:
+                          - alert [ref=e535]:
+                            - img "info-circle" [ref=e537]:
+                              - img [ref=e538]
+                            - generic [ref=e540]:
+                              - generic [ref=e541]: 插件功能权限矩阵
+                              - generic [ref=e542]: 数据直接生成自服务端 MCP_METHOD_POLICIES；不可见表示该角色没有对应能力，最终执行仍由当前工作台、资源范围、显式 deny 和义务条件共同决定。
+                          - generic "权限矩阵筛选" [ref=e544]:
+                            - generic [ref=e546]:
+                              - searchbox "搜索插件方法或能力" [ref=e548]
+                              - button "search" [ref=e550] [cursor=pointer]:
+                                - img "search" [ref=e552] [cursor=pointer]:
+                                  - img [ref=e553] [cursor=pointer]
+                            - generic [ref=e556] [cursor=pointer]:
+                              - generic [ref=e557] [cursor=pointer]:
+                                - generic: 全部工作台
+                                - combobox "筛选工作台" [ref=e558] [cursor=pointer]
+                              - img "down" [ref=e560] [cursor=pointer]:
+                                - img [ref=e561] [cursor=pointer]
+                            - generic [ref=e564] [cursor=pointer]:
+                              - generic [ref=e565] [cursor=pointer]:
+                                - generic: 全部动作
+                                - combobox "筛选读写动作" [ref=e566] [cursor=pointer]
+                              - img "down" [ref=e568] [cursor=pointer]:
+                                - img [ref=e569] [cursor=pointer]
+                            - generic [ref=e572]:
+                              - generic [ref=e573]:
+                                - generic "平台管理员" [ref=e575]:
+                                  - generic [ref=e576]: 平台管理员
+                                  - img [ref=e578] [cursor=pointer]:
+                                    - img [ref=e579] [cursor=pointer]
+                                - generic "运营管理员" [ref=e582]:
+                                  - generic [ref=e583]: 运营管理员
+                                  - img [ref=e585] [cursor=pointer]:
+                                    - img [ref=e586] [cursor=pointer]
+                                - generic:
+                                  - generic: 平台客服
+                                  - generic:
+                                    - img:
+                                      - img
+                                - generic:
+                                  - generic: 平台财务
+                                  - generic:
+                                    - img:
+                                      - img
+                                - generic:
+                                  - generic: 安全管理员
+                                  - generic:
+                                    - img:
+                                      - img
+                                - generic:
+                                  - generic: 商家所有者
+                                  - generic:
+                                    - img:
+                                      - img
+                                - generic:
+                                  - generic: 商家管理员
+                                  - generic:
+                                    - img:
+                                      - img
+                                - generic:
+                                  - generic: 商家运营
+                                  - generic:
+                                    - img:
+                                      - img
+                                - generic:
+                                  - generic: 审核员
+                                  - generic:
+                                    - img:
+                                      - img
+                                - generic:
+                                  - generic: 只读成员
+                                  - generic:
+                                    - img:
+                                      - img
+                                - generic [ref=e590]: + 8 ...
+                                - combobox "选择对比角色" [ref=e592]
+                              - img "down" [ref=e594]:
+                                - img [ref=e595]
+                            - button "reload 刷新矩阵" [ref=e598] [cursor=pointer]:
+                              - img "reload" [ref=e600] [cursor=pointer]:
+                                - img [ref=e601] [cursor=pointer]
+                              - generic [ref=e603] [cursor=pointer]: 刷新矩阵
+                          - generic [ref=e605]: 策略 2026-09-08.v1 · 303/303 个插件方法 · 当前显示 10 个角色
+                          - generic [ref=e609]:
+                            - generic [ref=e611]:
+                              - table [ref=e613]:
+                                - rowgroup [ref=e629]:
+                                  - row "插件方法 能力 边界 动作与审计 平台管理员 运营管理员 平台客服 平台财务 安全管理员 商家所有者 商家管理员 商家运营 审核员 只读成员" [ref=e630]:
+                                    - columnheader "插件方法" [ref=e631]
+                                    - columnheader "能力" [ref=e632]
+                                    - columnheader "边界" [ref=e633]
+                                    - columnheader "动作与审计" [ref=e634]
+                                    - columnheader "平台管理员" [ref=e635]
+                                    - columnheader "运营管理员" [ref=e636]
+                                    - columnheader "平台客服" [ref=e637]
+                                    - columnheader "平台财务" [ref=e638]
+                                    - columnheader "安全管理员" [ref=e639]
+                                    - columnheader "商家所有者" [ref=e640]
+                                    - columnheader "商家管理员" [ref=e641]
+                                    - columnheader "商家运营" [ref=e642]
+                                    - columnheader "审核员" [ref=e643]
+                                    - columnheader "只读成员" [ref=e644]
+                              - table [ref=e646]:
+                                - rowgroup [ref=e662]:
+                                  - row "merchant.start 复制 merchant.onboarding.execute 商家工作台 workspace 写入 mutation 不可见 不可见 不可见 不可见 不可见 操作 操作 操作 不可见 不可见" [ref=e663]:
+                                    - cell "merchant.start 复制" [ref=e664]:
+                                      - code [ref=e666]:
+                                        - text: merchant.start
+                                        - button "复制" [ref=e668] [cursor=pointer]:
+                                          - img "copy" [ref=e669] [cursor=pointer]:
+                                            - img [ref=e670] [cursor=pointer]
+                                    - cell "merchant.onboarding.execute" [ref=e672]:
+                                      - generic [ref=e673]: merchant.onboarding.execute
+                                    - cell "商家工作台 workspace" [ref=e674]:
+                                      - generic [ref=e675]:
+                                        - generic [ref=e677]: 商家工作台
+                                        - generic [ref=e679]: workspace
+                                    - cell "写入 mutation" [ref=e680]:
+                                      - generic [ref=e681]:
+                                        - generic [ref=e683]: 写入
+                                        - generic [ref=e685]: mutation
+                                    - cell "不可见" [ref=e686]:
+                                      - generic [ref=e687]: 不可见
+                                    - cell "不可见" [ref=e688]:
+                                      - generic [ref=e689]: 不可见
+                                    - cell "不可见" [ref=e690]:
+                                      - generic [ref=e691]: 不可见
+                                    - cell "不可见" [ref=e692]:
+                                      - generic [ref=e693]: 不可见
+                                    - cell "不可见" [ref=e694]:
+                                      - generic [ref=e695]: 不可见
+                                    - cell "操作" [ref=e696]:
+                                      - generic [ref=e697]: 操作
+                                    - cell "操作" [ref=e698]:
+                                      - generic [ref=e699]: 操作
+                                    - cell "操作" [ref=e700]:
+                                      - generic [ref=e701]: 操作
+                                    - cell "不可见" [ref=e702]:
+                                      - generic [ref=e703]: 不可见
+                                    - cell "不可见" [ref=e704]:
+                                      - generic [ref=e705]: 不可见
+                                  - row "commercial.service-boundary.accept 复制 commercial.service_boundary.accept 商家工作台 workspace 写入 mutation idempotency 不可见 不可见 不可见 不可见 不可见 操作 操作 操作 不可见 不可见" [ref=e706]:
+                                    - cell "commercial.service-boundary.accept 复制" [ref=e707]:
+                                      - code [ref=e709]:
+                                        - text: commercial.service-boundary.accept
+                                        - button "复制" [ref=e711] [cursor=pointer]:
+                                          - img "copy" [ref=e712] [cursor=pointer]:
+                                            - img [ref=e713] [cursor=pointer]
+                                    - cell "commercial.service_boundary.accept" [ref=e715]:
+                                      - generic [ref=e716]: commercial.service_boundary.accept
+                                    - cell "商家工作台 workspace" [ref=e717]:
+                                      - generic [ref=e718]:
+                                        - generic [ref=e720]: 商家工作台
+                                        - generic [ref=e722]: workspace
+                                    - cell "写入 mutation idempotency" [ref=e723]:
+                                      - generic [ref=e724]:
+                                        - generic [ref=e726]: 写入
+                                        - generic [ref=e728]: mutation
+                                        - generic [ref=e730]: idempotency
+                                    - cell "不可见" [ref=e731]:
+                                      - generic [ref=e732]: 不可见
+                                    - cell "不可见" [ref=e733]:
+                                      - generic [ref=e734]: 不可见
+                                    - cell "不可见" [ref=e735]:
+                                      - generic [ref=e736]: 不可见
+                                    - cell "不可见" [ref=e737]:
+                                      - generic [ref=e738]: 不可见
+                                    - cell "不可见" [ref=e739]:
+                                      - generic [ref=e740]: 不可见
+                                    - cell "操作" [ref=e741]:
+                                      - generic [ref=e742]: 操作
+                                    - cell "操作" [ref=e743]:
+                                      - generic [ref=e744]: 操作
+                                    - cell "操作" [ref=e745]:
+                                      - generic [ref=e746]: 操作
+                                    - cell "不可见" [ref=e747]:
+                                      - generic [ref=e748]: 不可见
+                                    - cell "不可见" [ref=e749]:
+                                      - generic [ref=e750]: 不可见
+                                  - row "merchant.first_value 复制 merchant.onboarding.execute 商家工作台 workspace 写入 mutation 不可见 不可见 不可见 不可见 不可见 操作 操作 操作 不可见 不可见" [ref=e751]:
+                                    - cell "merchant.first_value 复制" [ref=e752]:
+                                      - code [ref=e754]:
+                                        - text: merchant.first_value
+                                        - button "复制" [ref=e756] [cursor=pointer]:
+                                          - img "copy" [ref=e757] [cursor=pointer]:
+                                            - img [ref=e758] [cursor=pointer]
+                                    - cell "merchant.onboarding.execute" [ref=e760]:
+                                      - generic [ref=e761]: merchant.onboarding.execute
+                                    - cell "商家工作台 workspace" [ref=e762]:
+                                      - generic [ref=e763]:
+                                        - generic [ref=e765]: 商家工作台
+                                        - generic [ref=e767]: workspace
+                                    - cell "写入 mutation" [ref=e768]:
+                                      - generic [ref=e769]:
+                                        - generic [ref=e771]: 写入
+                                        - generic [ref=e773]: mutation
+                                    - cell "不可见" [ref=e774]:
+                                      - generic [ref=e775]: 不可见
+                                    - cell "不可见" [ref=e776]:
+                                      - generic [ref=e777]: 不可见
+                                    - cell "不可见" [ref=e778]:
+                                      - generic [ref=e779]: 不可见
+                                    - cell "不可见" [ref=e780]:
+                                      - generic [ref=e781]: 不可见
+                                    - cell "不可见" [ref=e782]:
+                                      - generic [ref=e783]: 不可见
+                                    - cell "操作" [ref=e784]:
+                                      - generic [ref=e785]: 操作
+                                    - cell "操作" [ref=e786]:
+                                      - generic [ref=e787]: 操作
+                                    - cell "操作" [ref=e788]:
+                                      - generic [ref=e789]: 操作
+                                    - cell "不可见" [ref=e790]:
+                                      - generic [ref=e791]: 不可见
+                                    - cell "不可见" [ref=e792]:
+                                      - generic [ref=e793]: 不可见
+                                  - row "brand-unit.list 复制 customer.content.read 商家工作台 workspace 读取 deny_only 不可见 不可见 不可见 不可见 不可见 只读 只读 只读 只读 只读" [ref=e794]:
+                                    - cell "brand-unit.list 复制" [ref=e795]:
+                                      - code [ref=e797]:
+                                        - text: brand-unit.list
+                                        - button "复制" [ref=e799] [cursor=pointer]:
+                                          - img "copy" [ref=e800] [cursor=pointer]:
+                                            - img [ref=e801] [cursor=pointer]
+                                    - cell "customer.content.read" [ref=e803]:
+                                      - generic [ref=e804]: customer.content.read
+                                    - cell "商家工作台 workspace" [ref=e805]:
+                                      - generic [ref=e806]:
+                                        - generic [ref=e808]: 商家工作台
+                                        - generic [ref=e810]: workspace
+                                    - cell "读取 deny_only" [ref=e811]:
+                                      - generic [ref=e812]:
+                                        - generic [ref=e814]: 读取
+                                        - generic [ref=e816]: deny_only
+                                    - cell "不可见" [ref=e817]:
+                                      - generic [ref=e818]: 不可见
+                                    - cell "不可见" [ref=e819]:
+                                      - generic [ref=e820]: 不可见
+                                    - cell "不可见" [ref=e821]:
+                                      - generic [ref=e822]: 不可见
+                                    - cell "不可见" [ref=e823]:
+                                      - generic [ref=e824]: 不可见
+                                    - cell "不可见" [ref=e825]:
+                                      - generic [ref=e826]: 不可见
+                                    - cell "只读" [ref=e827]:
+                                      - generic [ref=e828]: 只读
+                                    - cell "只读" [ref=e829]:
+                                      - generic [ref=e830]: 只读
+                                    - cell "只读" [ref=e831]:
+                                      - generic [ref=e832]: 只读
+                                    - cell "只读" [ref=e833]:
+                                      - generic [ref=e834]: 只读
+                                    - cell "只读" [ref=e835]:
+                                      - generic [ref=e836]: 只读
+                                  - row "brand-unit.create 复制 customer.content.update 商家工作台 workspace 写入 mutation 不可见 不可见 不可见 不可见 不可见 操作 操作 操作 不可见 不可见" [ref=e837]:
+                                    - cell "brand-unit.create 复制" [ref=e838]:
+                                      - code [ref=e840]:
+                                        - text: brand-unit.create
+                                        - button "复制" [ref=e842] [cursor=pointer]:
+                                          - img "copy" [ref=e843] [cursor=pointer]:
+                                            - img [ref=e844] [cursor=pointer]
+                                    - cell "customer.content.update" [ref=e846]:
+                                      - generic [ref=e847]: customer.content.update
+                                    - cell "商家工作台 workspace" [ref=e848]:
+                                      - generic [ref=e849]:
+                                        - generic [ref=e851]: 商家工作台
+                                        - generic [ref=e853]: workspace
+                                    - cell "写入 mutation" [ref=e854]:
+                                      - generic [ref=e855]:
+                                        - generic [ref=e857]: 写入
+                                        - generic [ref=e859]: mutation
+                                    - cell "不可见" [ref=e860]:
+                                      - generic [ref=e861]: 不可见
+                                    - cell "不可见" [ref=e862]:
+                                      - generic [ref=e863]: 不可见
+                                    - cell "不可见" [ref=e864]:
+                                      - generic [ref=e865]: 不可见
+                                    - cell "不可见" [ref=e866]:
+                                      - generic [ref=e867]: 不可见
+                                    - cell "不可见" [ref=e868]:
+                                      - generic [ref=e869]: 不可见
+                                    - cell "操作" [ref=e870]:
+                                      - generic [ref=e871]: 操作
+                                    - cell "操作" [ref=e872]:
+                                      - generic [ref=e873]: 操作
+                                    - cell "操作" [ref=e874]:
+                                      - generic [ref=e875]: 操作
+                                    - cell "不可见" [ref=e876]:
+                                      - generic [ref=e877]: 不可见
+                                    - cell "不可见" [ref=e878]:
+                                      - generic [ref=e879]: 不可见
+                                  - row "brand-unit.bind-store 复制 customer.content.update 商家工作台 account 写入 mutation 不可见 不可见 不可见 不可见 不可见 操作 操作 操作 不可见 不可见" [ref=e880]:
+                                    - cell "brand-unit.bind-store 复制" [ref=e881]:
+                                      - code [ref=e883]:
+                                        - text: brand-unit.bind-store
+                                        - button "复制" [ref=e885] [cursor=pointer]:
+                                          - img "copy" [ref=e886] [cursor=pointer]:
+                                            - img [ref=e887] [cursor=pointer]
+                                    - cell "customer.content.update" [ref=e889]:
+                                      - generic [ref=e890]: customer.content.update
+                                    - cell "商家工作台 account" [ref=e891]:
+                                      - generic [ref=e892]:
+                                        - generic [ref=e894]: 商家工作台
+                                        - generic [ref=e896]: account
+                                    - cell "写入 mutation" [ref=e897]:
+                                      - generic [ref=e898]:
+                                        - generic [ref=e900]: 写入
+                                        - generic [ref=e902]: mutation
+                                    - cell "不可见" [ref=e903]:
+                                      - generic [ref=e904]: 不可见
+                                    - cell "不可见" [ref=e905]:
+                                      - generic [ref=e906]: 不可见
+                                    - cell "不可见" [ref=e907]:
+                                      - generic [ref=e908]: 不可见
+                                    - cell "不可见" [ref=e909]:
+                                      - generic [ref=e910]: 不可见
+                                    - cell "不可见" [ref=e911]:
+                                      - generic [ref=e912]: 不可见
+                                    - cell "操作" [ref=e913]:
+                                      - generic [ref=e914]: 操作
+                                    - cell "操作" [ref=e915]:
+                                      - generic [ref=e916]: 操作
+                                    - cell "操作" [ref=e917]:
+                                      - generic [ref=e918]: 操作
+                                    - cell "不可见" [ref=e919]:
+                                      - generic [ref=e920]: 不可见
+                                    - cell "不可见" [ref=e921]:
+                                      - generic [ref=e922]: 不可见
+                                  - row "brand-unit.product.create 复制 customer.content.update 商家工作台 brand 写入 mutation 不可见 不可见 不可见 不可见 不可见 操作 操作 操作 不可见 不可见" [ref=e923]:
+                                    - cell "brand-unit.product.create 复制" [ref=e924]:
+                                      - code [ref=e926]:
+                                        - text: brand-unit.product.create
+                                        - button "复制" [ref=e928] [cursor=pointer]:
+                                          - img "copy" [ref=e929] [cursor=pointer]:
+                                            - img [ref=e930] [cursor=pointer]
+                                    - cell "customer.content.update" [ref=e932]:
+                                      - generic [ref=e933]: customer.content.update
+                                    - cell "商家工作台 brand" [ref=e934]:
+                                      - generic [ref=e935]:
+                                        - generic [ref=e937]: 商家工作台
+                                        - generic [ref=e939]: brand
+                                    - cell "写入 mutation" [ref=e940]:
+                                      - generic [ref=e941]:
+                                        - generic [ref=e943]: 写入
+                                        - generic [ref=e945]: mutation
+                                    - cell "不可见" [ref=e946]:
+                                      - generic [ref=e947]: 不可见
+                                    - cell "不可见" [ref=e948]:
+                                      - generic [ref=e949]: 不可见
+                                    - cell "不可见" [ref=e950]:
+                                      - generic [ref=e951]: 不可见
+                                    - cell "不可见" [ref=e952]:
+                                      - generic [ref=e953]: 不可见
+                                    - cell "不可见" [ref=e954]:
+                                      - generic [ref=e955]: 不可见
+                                    - cell "操作" [ref=e956]:
+                                      - generic [ref=e957]: 操作
+                                    - cell "操作" [ref=e958]:
+                                      - generic [ref=e959]: 操作
+                                    - cell "操作" [ref=e960]:
+                                      - generic [ref=e961]: 操作
+                                    - cell "不可见" [ref=e962]:
+                                      - generic [ref=e963]: 不可见
+                                    - cell "不可见" [ref=e964]:
+                                      - generic [ref=e965]: 不可见
+                                  - row "brand-unit.listing.create 复制 customer.content.update 商家工作台 account 写入 mutation 不可见 不可见 不可见 不可见 不可见 操作 操作 操作 不可见 不可见" [ref=e966]:
+                                    - cell "brand-unit.listing.create 复制" [ref=e967]:
+                                      - code [ref=e969]:
+                                        - text: brand-unit.listing.create
+                                        - button "复制" [ref=e971] [cursor=pointer]:
+                                          - img "copy" [ref=e972] [cursor=pointer]:
+                                            - img [ref=e973] [cursor=pointer]
+                                    - cell "customer.content.update" [ref=e975]:
+                                      - generic [ref=e976]: customer.content.update
+                                    - cell "商家工作台 account" [ref=e977]:
+                                      - generic [ref=e978]:
+                                        - generic [ref=e980]: 商家工作台
+                                        - generic [ref=e982]: account
+                                    - cell "写入 mutation" [ref=e983]:
+                                      - generic [ref=e984]:
+                                        - generic [ref=e986]: 写入
+                                        - generic [ref=e988]: mutation
+                                    - cell "不可见" [ref=e989]:
+                                      - generic [ref=e990]: 不可见
+                                    - cell "不可见" [ref=e991]:
+                                      - generic [ref=e992]: 不可见
+                                    - cell "不可见" [ref=e993]:
+                                      - generic [ref=e994]: 不可见
+                                    - cell "不可见" [ref=e995]:
+                                      - generic [ref=e996]: 不可见
+                                    - cell "不可见" [ref=e997]:
+                                      - generic [ref=e998]: 不可见
+                                    - cell "操作" [ref=e999]:
+                                      - generic [ref=e1000]: 操作
+                                    - cell "操作" [ref=e1001]:
+                                      - generic [ref=e1002]: 操作
+                                    - cell "操作" [ref=e1003]:
+                                      - generic [ref=e1004]: 操作
+                                    - cell "不可见" [ref=e1005]:
+                                      - generic [ref=e1006]: 不可见
+                                    - cell "不可见" [ref=e1007]:
+                                      - generic [ref=e1008]: 不可见
+                                  - row "brand-unit.listing.list 复制 customer.content.read 商家工作台 workspace 读取 deny_only 不可见 不可见 不可见 不可见 不可见 只读 只读 只读 只读 只读" [ref=e1009]:
+                                    - cell "brand-unit.listing.list 复制" [ref=e1010]:
+                                      - code [ref=e1012]:
+                                        - text: brand-unit.listing.list
+                                        - button "复制" [ref=e1014] [cursor=pointer]:
+                                          - img "copy" [ref=e1015] [cursor=pointer]:
+                                            - img [ref=e1016] [cursor=pointer]
+                                    - cell "customer.content.read" [ref=e1018]:
+                                      - generic [ref=e1019]: customer.content.read
+                                    - cell "商家工作台 workspace" [ref=e1020]:
+                                      - generic [ref=e1021]:
+                                        - generic [ref=e1023]: 商家工作台
+                                        - generic [ref=e1025]: workspace
+                                    - cell "读取 deny_only" [ref=e1026]:
+                                      - generic [ref=e1027]:
+                                        - generic [ref=e1029]: 读取
+                                        - generic [ref=e1031]: deny_only
+                                    - cell "不可见" [ref=e1032]:
+                                      - generic [ref=e1033]: 不可见
+                                    - cell "不可见" [ref=e1034]:
+                                      - generic [ref=e1035]: 不可见
+                                    - cell "不可见" [ref=e1036]:
+                                      - generic [ref=e1037]: 不可见
+                                    - cell "不可见" [ref=e1038]:
+                                      - generic [ref=e1039]: 不可见
+                                    - cell "不可见" [ref=e1040]:
+                                      - generic [ref=e1041]: 不可见
+                                    - cell "只读" [ref=e1042]:
+                                      - generic [ref=e1043]: 只读
+                                    - cell "只读" [ref=e1044]:
+                                      - generic [ref=e1045]: 只读
+                                    - cell "只读" [ref=e1046]:
+                                      - generic [ref=e1047]: 只读
+                                    - cell "只读" [ref=e1048]:
+                                      - generic [ref=e1049]: 只读
+                                    - cell "只读" [ref=e1050]:
+                                      - generic [ref=e1051]: 只读
+                                  - row "brand-unit.access.grant 复制 customer.content.update 商家工作台 brand 写入 mutation 不可见 不可见 不可见 不可见 不可见 操作 操作 操作 不可见 不可见" [ref=e1052]:
+                                    - cell "brand-unit.access.grant 复制" [ref=e1053]:
+                                      - code [ref=e1055]:
+                                        - text: brand-unit.access.grant
+                                        - button "复制" [ref=e1057] [cursor=pointer]:
+                                          - img "copy" [ref=e1058] [cursor=pointer]:
+                                            - img [ref=e1059] [cursor=pointer]
+                                    - cell "customer.content.update" [ref=e1061]:
+                                      - generic [ref=e1062]: customer.content.update
+                                    - cell "商家工作台 brand" [ref=e1063]:
+                                      - generic [ref=e1064]:
+                                        - generic [ref=e1066]: 商家工作台
+                                        - generic [ref=e1068]: brand
+                                    - cell "写入 mutation" [ref=e1069]:
+                                      - generic [ref=e1070]:
+                                        - generic [ref=e1072]: 写入
+                                        - generic [ref=e1074]: mutation
+                                    - cell "不可见" [ref=e1075]:
+                                      - generic [ref=e1076]: 不可见
+                                    - cell "不可见" [ref=e1077]:
+                                      - generic [ref=e1078]: 不可见
+                                    - cell "不可见" [ref=e1079]:
+                                      - generic [ref=e1080]: 不可见
+                                    - cell "不可见" [ref=e1081]:
+                                      - generic [ref=e1082]: 不可见
+                                    - cell "不可见" [ref=e1083]:
+                                      - generic [ref=e1084]: 不可见
+                                    - cell "操作" [ref=e1085]:
+                                      - generic [ref=e1086]: 操作
+                                    - cell "操作" [ref=e1087]:
+                                      - generic [ref=e1088]: 操作
+                                    - cell "操作" [ref=e1089]:
+                                      - generic [ref=e1090]: 操作
+                                    - cell "不可见" [ref=e1091]:
+                                      - generic [ref=e1092]: 不可见
+                                    - cell "不可见" [ref=e1093]:
+                                      - generic [ref=e1094]: 不可见
+                                  - row "canonical.product.consistency 复制 customer.content.read 商家工作台 workspace 读取 deny_only 不可见 不可见 不可见 不可见 不可见 只读 只读 只读 只读 只读" [ref=e1095]:
+                                    - cell "canonical.product.consistency 复制" [ref=e1096]:
+                                      - code [ref=e1098]:
+                                        - text: canonical.product.consistency
+                                        - button "复制" [ref=e1100] [cursor=pointer]:
+                                          - img "copy" [ref=e1101] [cursor=pointer]:
+                                            - img [ref=e1102] [cursor=pointer]
+                                    - cell "customer.content.read" [ref=e1104]:
+                                      - generic [ref=e1105]: customer.content.read
+                                    - cell "商家工作台 workspace" [ref=e1106]:
+                                      - generic [ref=e1107]:
+                                        - generic [ref=e1109]: 商家工作台
+                                        - generic [ref=e1111]: workspace
+                                    - cell "读取 deny_only" [ref=e1112]:
+                                      - generic [ref=e1113]:
+                                        - generic [ref=e1115]: 读取
+                                        - generic [ref=e1117]: deny_only
+                                    - cell "不可见" [ref=e1118]:
+                                      - generic [ref=e1119]: 不可见
+                                    - cell "不可见" [ref=e1120]:
+                                      - generic [ref=e1121]: 不可见
+                                    - cell "不可见" [ref=e1122]:
+                                      - generic [ref=e1123]: 不可见
+                                    - cell "不可见" [ref=e1124]:
+                                      - generic [ref=e1125]: 不可见
+                                    - cell "不可见" [ref=e1126]:
+                                      - generic [ref=e1127]: 不可见
+                                    - cell "只读" [ref=e1128]:
+                                      - generic [ref=e1129]: 只读
+                                    - cell "只读" [ref=e1130]:
+                                      - generic [ref=e1131]: 只读
+                                    - cell "只读" [ref=e1132]:
+                                      - generic [ref=e1133]: 只读
+                                    - cell "只读" [ref=e1134]:
+                                      - generic [ref=e1135]: 只读
+                                    - cell "只读" [ref=e1136]:
+                                      - generic [ref=e1137]: 只读
+                                  - row "ops.canonical.backfill.create 复制 canonical.backfill.update 平台工作台 platform 写入 allow_and_deny 不可见 治理 不可见 不可见 不可见 不可见 不可见 不可见 不可见 不可见" [ref=e1138]:
+                                    - cell "ops.canonical.backfill.create 复制" [ref=e1139]:
+                                      - code [ref=e1141]:
+                                        - text: ops.canonical.backfill.create
+                                        - button "复制" [ref=e1143] [cursor=pointer]:
+                                          - img "copy" [ref=e1144] [cursor=pointer]:
+                                            - img [ref=e1145] [cursor=pointer]
+                                    - cell "canonical.backfill.update" [ref=e1147]:
+                                      - generic [ref=e1148]: canonical.backfill.update
+                                    - cell "平台工作台 platform" [ref=e1149]:
+                                      - generic [ref=e1150]:
+                                        - generic [ref=e1152]: 平台工作台
+                                        - generic [ref=e1154]: platform
+                                    - cell "写入 allow_and_deny" [ref=e1155]:
+                                      - generic [ref=e1156]:
+                                        - generic [ref=e1158]: 写入
+                                        - generic [ref=e1160]: allow_and_deny
+                                    - cell "不可见" [ref=e1161]:
+                                      - generic [ref=e1162]: 不可见
+                                    - cell "治理" [ref=e1163]:
+                                      - generic [ref=e1164]: 治理
+                                    - cell "不可见" [ref=e1165]:
+                                      - generic [ref=e1166]: 不可见
+                                    - cell "不可见" [ref=e1167]:
+                                      - generic [ref=e1168]: 不可见
+                                    - cell "不可见" [ref=e1169]:
+                                      - generic [ref=e1170]: 不可见
+                                    - cell "不可见" [ref=e1171]:
+                                      - generic [ref=e1172]: 不可见
+                                    - cell "不可见" [ref=e1173]:
+                                      - generic [ref=e1174]: 不可见
+                                    - cell "不可见" [ref=e1175]:
+                                      - generic [ref=e1176]: 不可见
+                                    - cell "不可见" [ref=e1177]:
+                                      - generic [ref=e1178]: 不可见
+                                    - cell "不可见" [ref=e1179]:
+                                      - generic [ref=e1180]: 不可见
+                                  - row "ops.canonical.backfill.get 复制 canonical.backfill.read 平台工作台 platform 读取 deny_only 不可见 只读 不可见 不可见 不可见 不可见 不可见 不可见 不可见 不可见" [ref=e1181]:
+                                    - cell "ops.canonical.backfill.get 复制" [ref=e1182]:
+                                      - code [ref=e1184]:
+                                        - text: ops.canonical.backfill.get
+                                        - button "复制" [ref=e1186] [cursor=pointer]:
+                                          - img "copy" [ref=e1187] [cursor=pointer]:
+                                            - img [ref=e1188] [cursor=pointer]
+                                    - cell "canonical.backfill.read" [ref=e1190]:
+                                      - generic [ref=e1191]: canonical.backfill.read
+                                    - cell "平台工作台 platform" [ref=e1192]:
+                                      - generic [ref=e1193]:
+                                        - generic [ref=e1195]: 平台工作台
+                                        - generic [ref=e1197]: platform
+                                    - cell "读取 deny_only" [ref=e1198]:
+                                      - generic [ref=e1199]:
+                                        - generic [ref=e1201]: 读取
+                                        - generic [ref=e1203]: deny_only
+                                    - cell "不可见" [ref=e1204]:
+                                      - generic [ref=e1205]: 不可见
+                                    - cell "只读" [ref=e1206]:
+                                      - generic [ref=e1207]: 只读
+                                    - cell "不可见" [ref=e1208]:
+                                      - generic [ref=e1209]: 不可见
+                                    - cell "不可见" [ref=e1210]:
+                                      - generic [ref=e1211]: 不可见
+                                    - cell "不可见" [ref=e1212]:
+                                      - generic [ref=e1213]: 不可见
+                                    - cell "不可见" [ref=e1214]:
+                                      - generic [ref=e1215]: 不可见
+                                    - cell "不可见" [ref=e1216]:
+                                      - generic [ref=e1217]: 不可见
+                                    - cell "不可见" [ref=e1218]:
+                                      - generic [ref=e1219]: 不可见
+                                    - cell "不可见" [ref=e1220]:
+                                      - generic [ref=e1221]: 不可见
+                                    - cell "不可见" [ref=e1222]:
+                                      - generic [ref=e1223]: 不可见
+                                  - row "ops.canonical.backfill.pause 复制 canonical.backfill.update 平台工作台 platform 写入 allow_and_deny 不可见 治理 不可见 不可见 不可见 不可见 不可见 不可见 不可见 不可见" [ref=e1224]:
+                                    - cell "ops.canonical.backfill.pause 复制" [ref=e1225]:
+                                      - code [ref=e1227]:
+                                        - text: ops.canonical.backfill.pause
+                                        - button "复制" [ref=e1229] [cursor=pointer]:
+                                          - img "copy" [ref=e1230] [cursor=pointer]:
+                                            - img [ref=e1231] [cursor=pointer]
+                                    - cell "canonical.backfill.update" [ref=e1233]:
+                                      - generic [ref=e1234]: canonical.backfill.update
+                                    - cell "平台工作台 platform" [ref=e1235]:
+                                      - generic [ref=e1236]:
+                                        - generic [ref=e1238]: 平台工作台
+                                        - generic [ref=e1240]: platform
+                                    - cell "写入 allow_and_deny" [ref=e1241]:
+                                      - generic [ref=e1242]:
+                                        - generic [ref=e1244]: 写入
+                                        - generic [ref=e1246]: allow_and_deny
+                                    - cell "不可见" [ref=e1247]:
+                                      - generic [ref=e1248]: 不可见
+                                    - cell "治理" [ref=e1249]:
+                                      - generic [ref=e1250]: 治理
+                                    - cell "不可见" [ref=e1251]:
+                                      - generic [ref=e1252]: 不可见
+                                    - cell "不可见" [ref=e1253]:
+                                      - generic [ref=e1254]: 不可见
+                                    - cell "不可见" [ref=e1255]:
+                                      - generic [ref=e1256]: 不可见
+                                    - cell "不可见" [ref=e1257]:
+                                      - generic [ref=e1258]: 不可见
+                                    - cell "不可见" [ref=e1259]:
+                                      - generic [ref=e1260]: 不可见
+                                    - cell "不可见" [ref=e1261]:
+                                      - generic [ref=e1262]: 不可见
+                                    - cell "不可见" [ref=e1263]:
+                                      - generic [ref=e1264]: 不可见
+                                    - cell "不可见" [ref=e1265]:
+                                      - generic [ref=e1266]: 不可见
+                                  - row "ops.canonical.backfill.resume 复制 canonical.backfill.update 平台工作台 platform 写入 allow_and_deny 不可见 治理 不可见 不可见 不可见 不可见 不可见 不可见 不可见 不可见" [ref=e1267]:
+                                    - cell "ops.canonical.backfill.resume 复制" [ref=e1268]:
+                                      - code [ref=e1270]:
+                                        - text: ops.canonical.backfill.resume
+                                        - button "复制" [ref=e1272] [cursor=pointer]:
+                                          - img "copy" [ref=e1273] [cursor=pointer]:
+                                            - img [ref=e1274] [cursor=pointer]
+                                    - cell "canonical.backfill.update" [ref=e1276]:
+                                      - generic [ref=e1277]: canonical.backfill.update
+                                    - cell "平台工作台 platform" [ref=e1278]:
+                                      - generic [ref=e1279]:
+                                        - generic [ref=e1281]: 平台工作台
+                                        - generic [ref=e1283]: platform
+                                    - cell "写入 allow_and_deny" [ref=e1284]:
+                                      - generic [ref=e1285]:
+                                        - generic [ref=e1287]: 写入
+                                        - generic [ref=e1289]: allow_and_deny
+                                    - cell "不可见" [ref=e1290]:
+                                      - generic [ref=e1291]: 不可见
+                                    - cell "治理" [ref=e1292]:
+                                      - generic [ref=e1293]: 治理
+                                    - cell "不可见" [ref=e1294]:
+                                      - generic [ref=e1295]: 不可见
+                                    - cell "不可见" [ref=e1296]:
+                                      - generic [ref=e1297]: 不可见
+                                    - cell "不可见" [ref=e1298]:
+                                      - generic [ref=e1299]: 不可见
+                                    - cell "不可见" [ref=e1300]:
+                                      - generic [ref=e1301]: 不可见
+                                    - cell "不可见" [ref=e1302]:
+                                      - generic [ref=e1303]: 不可见
+                                    - cell "不可见" [ref=e1304]:
+                                      - generic [ref=e1305]: 不可见
+                                    - cell "不可见" [ref=e1306]:
+                                      - generic [ref=e1307]: 不可见
+                                    - cell "不可见" [ref=e1308]:
+                                      - generic [ref=e1309]: 不可见
+                                  - row "ops.canonical.backfill.run 复制 canonical.backfill.update 平台工作台 platform 写入 allow_and_deny 不可见 治理 不可见 不可见 不可见 不可见 不可见 不可见 不可见 不可见" [ref=e1310]:
+                                    - cell "ops.canonical.backfill.run 复制" [ref=e1311]:
+                                      - code [ref=e1313]:
+                                        - text: ops.canonical.backfill.run
+                                        - button "复制" [ref=e1315] [cursor=pointer]:
+                                          - img "copy" [ref=e1316] [cursor=pointer]:
+                                            - img [ref=e1317] [cursor=pointer]
+                                    - cell "canonical.backfill.update" [ref=e1319]:
+                                      - generic [ref=e1320]: canonical.backfill.update
+                                    - cell "平台工作台 platform" [ref=e1321]:
+                                      - generic [ref=e1322]:
+                                        - generic [ref=e1324]: 平台工作台
+                                        - generic [ref=e1326]: platform
+                                    - cell "写入 allow_and_deny" [ref=e1327]:
+                                      - generic [ref=e1328]:
+                                        - generic [ref=e1330]: 写入
+                                        - generic [ref=e1332]: allow_and_deny
+                                    - cell "不可见" [ref=e1333]:
+                                      - generic [ref=e1334]: 不可见
+                                    - cell "治理" [ref=e1335]:
+                                      - generic [ref=e1336]: 治理
+                                    - cell "不可见" [ref=e1337]:
+                                      - generic [ref=e1338]: 不可见
+                                    - cell "不可见" [ref=e1339]:
+                                      - generic [ref=e1340]: 不可见
+                                    - cell "不可见" [ref=e1341]:
+                                      - generic [ref=e1342]: 不可见
+                                    - cell "不可见" [ref=e1343]:
+                                      - generic [ref=e1344]: 不可见
+                                    - cell "不可见" [ref=e1345]:
+                                      - generic [ref=e1346]: 不可见
+                                    - cell "不可见" [ref=e1347]:
+                                      - generic [ref=e1348]: 不可见
+                                    - cell "不可见" [ref=e1349]:
+                                      - generic [ref=e1350]: 不可见
+                                    - cell "不可见" [ref=e1351]:
+                                      - generic [ref=e1352]: 不可见
+                                  - row "ops.canonical.backfill.conflicts.list 复制 canonical.backfill.read 平台工作台 platform 读取 deny_only 不可见 只读 不可见 不可见 不可见 不可见 不可见 不可见 不可见 不可见" [ref=e1353]:
+                                    - cell "ops.canonical.backfill.conflicts.list 复制" [ref=e1354]:
+                                      - code [ref=e1356]:
+                                        - text: ops.canonical.backfill.conflicts.list
+                                        - button "复制" [ref=e1358] [cursor=pointer]:
+                                          - img "copy" [ref=e1359] [cursor=pointer]:
+                                            - img [ref=e1360] [cursor=pointer]
+                                    - cell "canonical.backfill.read" [ref=e1362]:
+                                      - generic [ref=e1363]: canonical.backfill.read
+                                    - cell "平台工作台 platform" [ref=e1364]:
+                                      - generic [ref=e1365]:
+                                        - generic [ref=e1367]: 平台工作台
+                                        - generic [ref=e1369]: platform
+                                    - cell "读取 deny_only" [ref=e1370]:
+                                      - generic [ref=e1371]:
+                                        - generic [ref=e1373]: 读取
+                                        - generic [ref=e1375]: deny_only
+                                    - cell "不可见" [ref=e1376]:
+                                      - generic [ref=e1377]: 不可见
+                                    - cell "只读" [ref=e1378]:
+                                      - generic [ref=e1379]: 只读
+                                    - cell "不可见" [ref=e1380]:
+                                      - generic [ref=e1381]: 不可见
+                                    - cell "不可见" [ref=e1382]:
+                                      - generic [ref=e1383]: 不可见
+                                    - cell "不可见" [ref=e1384]:
+                                      - generic [ref=e1385]: 不可见
+                                    - cell "不可见" [ref=e1386]:
+                                      - generic [ref=e1387]: 不可见
+                                    - cell "不可见" [ref=e1388]:
+                                      - generic [ref=e1389]: 不可见
+                                    - cell "不可见" [ref=e1390]:
+                                      - generic [ref=e1391]: 不可见
+                                    - cell "不可见" [ref=e1392]:
+                                      - generic [ref=e1393]: 不可见
+                                    - cell "不可见" [ref=e1394]:
+                                      - generic [ref=e1395]: 不可见
+                                  - row "ops.canonical.backfill.conflict.claim 复制 canonical.backfill.update 平台工作台 platform 写入 allow_and_deny 不可见 治理 不可见 不可见 不可见 不可见 不可见 不可见 不可见 不可见" [ref=e1396]:
+                                    - cell "ops.canonical.backfill.conflict.claim 复制" [ref=e1397]:
+                                      - code [ref=e1399]:
+                                        - text: ops.canonical.backfill.conflict.claim
+                                        - button "复制" [ref=e1401] [cursor=pointer]:
+                                          - img "copy" [ref=e1402] [cursor=pointer]:
+                                            - img [ref=e1403] [cursor=pointer]
+                                    - cell "canonical.backfill.update" [ref=e1405]:
+                                      - generic [ref=e1406]: canonical.backfill.update
+                                    - cell "平台工作台 platform" [ref=e1407]:
+                                      - generic [ref=e1408]:
+                                        - generic [ref=e1410]: 平台工作台
+                                        - generic [ref=e1412]: platform
+                                    - cell "写入 allow_and_deny" [ref=e1413]:
+                                      - generic [ref=e1414]:
+                                        - generic [ref=e1416]: 写入
+                                        - generic [ref=e1418]: allow_and_deny
+                                    - cell "不可见" [ref=e1419]:
+                                      - generic [ref=e1420]: 不可见
+                                    - cell "治理" [ref=e1421]:
+                                      - generic [ref=e1422]: 治理
+                                    - cell "不可见" [ref=e1423]:
+                                      - generic [ref=e1424]: 不可见
+                                    - cell "不可见" [ref=e1425]:
+                                      - generic [ref=e1426]: 不可见
+                                    - cell "不可见" [ref=e1427]:
+                                      - generic [ref=e1428]: 不可见
+                                    - cell "不可见" [ref=e1429]:
+                                      - generic [ref=e1430]: 不可见
+                                    - cell "不可见" [ref=e1431]:
+                                      - generic [ref=e1432]: 不可见
+                                    - cell "不可见" [ref=e1433]:
+                                      - generic [ref=e1434]: 不可见
+                                    - cell "不可见" [ref=e1435]:
+                                      - generic [ref=e1436]: 不可见
+                                    - cell "不可见" [ref=e1437]:
+                                      - generic [ref=e1438]: 不可见
+                                  - row "ops.canonical.backfill.conflict.resolve 复制 canonical.backfill.update 平台工作台 platform 写入 allow_and_deny 不可见 治理 不可见 不可见 不可见 不可见 不可见 不可见 不可见 不可见" [ref=e1439]:
+                                    - cell "ops.canonical.backfill.conflict.resolve 复制" [ref=e1440]:
+                                      - code [ref=e1442]:
+                                        - text: ops.canonical.backfill.conflict.resolve
+                                        - button "复制" [ref=e1444] [cursor=pointer]:
+                                          - img "copy" [ref=e1445] [cursor=pointer]:
+                                            - img [ref=e1446] [cursor=pointer]
+                                    - cell "canonical.backfill.update" [ref=e1448]:
+                                      - generic [ref=e1449]: canonical.backfill.update
+                                    - cell "平台工作台 platform" [ref=e1450]:
+                                      - generic [ref=e1451]:
+                                        - generic [ref=e1453]: 平台工作台
+                                        - generic [ref=e1455]: platform
+                                    - cell "写入 allow_and_deny" [ref=e1456]:
+                                      - generic [ref=e1457]:
+                                        - generic [ref=e1459]: 写入
+                                        - generic [ref=e1461]: allow_and_deny
+                                    - cell "不可见" [ref=e1462]:
+                                      - generic [ref=e1463]: 不可见
+                                    - cell "治理" [ref=e1464]:
+                                      - generic [ref=e1465]: 治理
+                                    - cell "不可见" [ref=e1466]:
+                                      - generic [ref=e1467]: 不可见
+                                    - cell "不可见" [ref=e1468]:
+                                      - generic [ref=e1469]: 不可见
+                                    - cell "不可见" [ref=e1470]:
+                                      - generic [ref=e1471]: 不可见
+                                    - cell "不可见" [ref=e1472]:
+                                      - generic [ref=e1473]: 不可见
+                                    - cell "不可见" [ref=e1474]:
+                                      - generic [ref=e1475]: 不可见
+                                    - cell "不可见" [ref=e1476]:
+                                      - generic [ref=e1477]: 不可见
+                                    - cell "不可见" [ref=e1478]:
+                                      - generic [ref=e1479]: 不可见
+                                    - cell "不可见" [ref=e1480]:
+                                      - generic [ref=e1481]: 不可见
+                                  - row "ops.rules.workspace.audit 复制 rule.read 商家工作台 workspace 读取 deny_only 不可见 不可见 不可见 不可见 不可见 只读 只读 只读 只读 只读" [ref=e1482]:
+                                    - cell "ops.rules.workspace.audit 复制" [ref=e1483]:
+                                      - code [ref=e1485]:
+                                        - text: ops.rules.workspace.audit
+                                        - button "复制" [ref=e1487] [cursor=pointer]:
+                                          - img "copy" [ref=e1488] [cursor=pointer]:
+                                            - img [ref=e1489] [cursor=pointer]
+                                    - cell "rule.read" [ref=e1491]:
+                                      - generic [ref=e1492]: rule.read
+                                    - cell "商家工作台 workspace" [ref=e1493]:
+                                      - generic [ref=e1494]:
+                                        - generic [ref=e1496]: 商家工作台
+                                        - generic [ref=e1498]: workspace
+                                    - cell "读取 deny_only" [ref=e1499]:
+                                      - generic [ref=e1500]:
+                                        - generic [ref=e1502]: 读取
+                                        - generic [ref=e1504]: deny_only
+                                    - cell "不可见" [ref=e1505]:
+                                      - generic [ref=e1506]: 不可见
+                                    - cell "不可见" [ref=e1507]:
+                                      - generic [ref=e1508]: 不可见
+                                    - cell "不可见" [ref=e1509]:
+                                      - generic [ref=e1510]: 不可见
+                                    - cell "不可见" [ref=e1511]:
+                                      - generic [ref=e1512]: 不可见
+                                    - cell "不可见" [ref=e1513]:
+                                      - generic [ref=e1514]: 不可见
+                                    - cell "只读" [ref=e1515]:
+                                      - generic [ref=e1516]: 只读
+                                    - cell "只读" [ref=e1517]:
+                                      - generic [ref=e1518]: 只读
+                                    - cell "只读" [ref=e1519]:
+                                      - generic [ref=e1520]: 只读
+                                    - cell "只读" [ref=e1521]:
+                                      - generic [ref=e1522]: 只读
+                                    - cell "只读" [ref=e1523]:
+                                      - generic [ref=e1524]: 只读
+                            - list [ref=e1525]:
+                              - listitem [ref=e1526]: 共 303 个方法
+                              - listitem "上一页" [ref=e1527]:
+                                - button "left" [disabled] [ref=e1528]:
+                                  - img "left" [ref=e1529]:
+                                    - img [ref=e1530]
+                              - listitem "1" [ref=e1532] [cursor=pointer]:
+                                - generic [ref=e1533] [cursor=pointer]: "1"
+                              - listitem "2" [ref=e1534] [cursor=pointer]:
+                                - generic [ref=e1535] [cursor=pointer]: "2"
+                              - listitem "3" [ref=e1536] [cursor=pointer]:
+                                - generic [ref=e1537] [cursor=pointer]: "3"
+                              - listitem "4" [ref=e1538] [cursor=pointer]:
+                                - generic [ref=e1539] [cursor=pointer]: "4"
+                              - listitem "5" [ref=e1540] [cursor=pointer]:
+                                - generic [ref=e1541] [cursor=pointer]: "5"
+                              - listitem "向后 5 页" [ref=e1542] [cursor=pointer]:
+                                - generic [ref=e1544] [cursor=pointer]:
+                                  - img "double-right" [ref=e1545] [cursor=pointer]:
+                                    - img [ref=e1546] [cursor=pointer]
+                                  - img "ellipsis" [ref=e1549] [cursor=pointer]:
+                                    - img [ref=e1550] [cursor=pointer]
+                              - listitem "16" [ref=e1552] [cursor=pointer]:
+                                - generic [ref=e1553] [cursor=pointer]: "16"
+                              - listitem "下一页" [ref=e1554] [cursor=pointer]:
+                                - button "right" [ref=e1555] [cursor=pointer]:
+                                  - img "right" [ref=e1556] [cursor=pointer]:
+                                    - img [ref=e1557] [cursor=pointer]
+                      - region "平台角色" [ref=e1559]:
+                        - separator [ref=e1560]:
+                          - generic [ref=e1563]: 平台角色
+                        - generic [ref=e1565]:
+                          - generic [ref=e1567]:
+                            - textbox "平台角色目标身份 ID" [ref=e1569]
+                            - button "读取当前分配" [disabled] [ref=e1571]:
+                              - generic: 读取当前分配
+                          - table [ref=e1579]:
+                            - rowgroup [ref=e1580]:
+                              - row "角色 到期 修订 操作" [ref=e1581]:
+                                - columnheader "角色" [ref=e1582]
+                                - columnheader "到期" [ref=e1583]
+                                - columnheader "修订" [ref=e1584]
+                                - columnheader "操作" [ref=e1585]
+                            - rowgroup [ref=e1586]:
+                              - row "输入身份 ID 后读取平台角色" [ref=e1587]:
+                                - cell "输入身份 ID 后读取平台角色" [ref=e1588]
+                          - form "分配平台角色" [ref=e1590]:
+                            - generic [ref=e1592]:
+                              - generic "平台角色" [ref=e1594]: "* 平台角色 :"
+                              - generic [ref=e1598] [cursor=pointer]:
+                                - generic [ref=e1599] [cursor=pointer]:
+                                  - generic: 选择平台角色
+                                  - combobox "* 平台角色 :" [ref=e1600] [cursor=pointer]
+                                - img "down" [ref=e1602] [cursor=pointer]:
+                                  - img [ref=e1603] [cursor=pointer]
+                            - generic [ref=e1606]:
+                              - generic "到期时间" [ref=e1608]: "到期时间 :"
+                              - 'textbox "到期时间 : * 到期时间（读≤15m / 写≤5m）" [ref=e1612]'
+                            - generic [ref=e1614]:
+                              - generic "分配原因" [ref=e1616]: "* 分配原因 :"
+                              - 'textbox "* 分配原因 : * 授权原因" [ref=e1620]'
+                            - button "分配角色" [disabled] [ref=e1621]:
+                              - generic: 分配角色
+                      - region "JIT 临时授权" [ref=e1622]:
+                        - separator [ref=e1623]:
+                          - generic [ref=e1626]: JIT 临时授权
+                        - generic [ref=e1628]:
+                          - generic [ref=e1630]:
+                            - textbox "JIT 目标身份 ID" [ref=e1632]
+                            - textbox "JIT 目标商家主体 ID" [ref=e1634]
+                            - button "读取有效 JIT" [disabled] [ref=e1636]:
+                              - generic: 读取有效 JIT
+                          - table [ref=e1644]:
+                            - rowgroup [ref=e1645]:
+                              - row "状态 授权模式 授权能力 工单 使用 到期 操作" [ref=e1646]:
+                                - columnheader "状态" [ref=e1647]
+                                - columnheader "授权模式" [ref=e1648]
+                                - columnheader "授权能力" [ref=e1649]
+                                - columnheader "工单" [ref=e1650]
+                                - columnheader "使用" [ref=e1651]
+                                - columnheader "到期" [ref=e1652]
+                                - columnheader "操作" [ref=e1653]
+                            - rowgroup [ref=e1654]:
+                              - row "输入身份与工作区后读取 JIT" [ref=e1655]:
+                                - cell "输入身份与工作区后读取 JIT" [ref=e1656]:
+                                  - generic [ref=e1657]: 输入身份与工作区后读取 JIT
+                          - status [ref=e1659]:
+                            - img "info-circle" [ref=e1661]:
+                              - img [ref=e1662]
+                            - generic [ref=e1664]:
+                              - generic [ref=e1665]: 精确商家授权范围
+                              - generic [ref=e1666]: 填写商家主体 ID 后，这里会显示精确授权范围。
+                          - form "签发 JIT 授权" [ref=e1668]:
+                            - generic [ref=e1669]:
+                              - generic [ref=e1672]:
+                                - generic "权限模式" [ref=e1674]: "* 权限模式"
+                                - generic [ref=e1678] [cursor=pointer]:
+                                  - generic "只读" [ref=e1679] [cursor=pointer]:
+                                    - text: 只读
+                                    - combobox "* 权限模式" [ref=e1680] [cursor=pointer]
+                                  - img "down" [ref=e1682] [cursor=pointer]:
+                                    - img [ref=e1683] [cursor=pointer]
+                              - generic [ref=e1687]:
+                                - generic "能力（逗号分隔）" [ref=e1689]: "* 能力（逗号分隔）"
+                                - textbox "* 能力（逗号分隔）" [ref=e1693]
+                              - generic [ref=e1696]:
+                                - generic "工单/事故" [ref=e1698]: "* 工单/事故"
+                                - textbox "* 工单/事故" [ref=e1702]
+                              - generic [ref=e1705]:
+                                - generic "最大使用次数" [ref=e1707]: "* 最大使用次数"
+                                - generic [ref=e1711]:
+                                  - spinbutton "* 最大使用次数" [ref=e1712]: "1"
+                                  - generic:
+                                    - button "Increase Value" [ref=e1713] [cursor=pointer]:
+                                      - img "up" [ref=e1714] [cursor=pointer]:
+                                        - img [ref=e1715] [cursor=pointer]
+                                    - button "Decrease Value" [disabled] [ref=e1717]:
+                                      - img "down" [ref=e1718]:
+                                        - img [ref=e1719]
+                              - generic [ref=e1723]:
+                                - generic "审批人" [ref=e1725]: "* 审批人"
+                                - textbox "* 审批人" [ref=e1729]
+                              - generic [ref=e1732]:
+                                - generic "审批时间（ISO UTC）" [ref=e1734]: "* 审批时间（ISO UTC）"
+                                - textbox "* 审批时间（ISO UTC）" [ref=e1738]
+                              - generic [ref=e1739]:
+                                - generic [ref=e1741]:
+                                  - generic "到期时间（读≤15m / 写≤5m）" [ref=e1743]: "* 到期时间（读≤15m / 写≤5m）"
+                                  - generic [ref=e1744]:
+                                    - textbox [ref=e1747]
+                                    - generic [ref=e1749]: 使用 ISO 时间；提交前会校验有效期与权限模式
+                                - generic [ref=e1750]: 只读权限最多 15 分钟，写入权限最多 5 分钟
+                              - generic [ref=e1753]:
+                                - generic "授权原因" [ref=e1755]: "* 授权原因"
+                                - textbox [ref=e1759]
+                            - button "签发 JIT" [disabled] [ref=e1760]:
+                              - generic: 签发 JIT
+  - alert [ref=e1761]:
+    - generic [ref=e1762]:
+      - img "close-circle" [ref=e1764]:
+        - img [ref=e1765]
+      - generic [ref=e1767]: 当前账号没有访问部分运营数据的权限；请切换具备对应角色的运营账号。
+  - alert [ref=e1768]:
+    - generic [ref=e1769]:
+      - img "check-circle" [ref=e1771]:
+        - img [ref=e1772]
+      - generic [ref=e1774]: 用户目录已导出
+```

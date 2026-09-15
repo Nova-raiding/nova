@@ -103,6 +103,8 @@ describe('isolated Ops fixture safety boundary', () => {
     expect(source).toContain("new URL('../release-metadata.json', import.meta.url)")
     expect(source).not.toMatch(/migrations\.length !== \d+/u)
     expect(source).toContain('new PostgresAuthorizationRepository(ops)')
+    expect(source).toContain('new PostgresPasswordAuthRepository(ops).createMerchantAccount')
+    expect(source).toContain('ISOLATED_FIXTURE_MERCHANT_DIRECTORY_SEED_MISMATCH')
     expect(source).toContain("new URL('../infra/local/ensure-app-role.sql', import.meta.url)")
     expect(source).not.toContain('...process.env')
     expect(source).not.toContain('.Config.Env')

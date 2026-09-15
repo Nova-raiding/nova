@@ -1,0 +1,56 @@
+{
+  "schema_version": "1",
+  "release_id": "f98c69daca2b",
+  "modality": "text",
+  "observed_at": "2026-09-14T09:29:18.546Z",
+  "http_status": 200,
+  "response_headers": {
+    "x-oneapi-request-id": "202609140929115386513538268d9d6ewmDLUan"
+  },
+  "result": {
+    "modality": "text",
+    "endpoint": "/chat/completions",
+    "model": "deepseek-v4-pro",
+    "httpStatus": 200,
+    "providerRequestId": "202609140929115386513538268d9d6ewmDLUan",
+    "usageObserved": true,
+    "costObserved": true,
+    "costSource": "relay_pricing_snapshot",
+    "costCny": 0.04092536,
+    "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+    "pricingGroup": "VIP",
+    "state": "ready"
+  },
+  "relay_response": {
+    "id": "dd7d9a22-6b9c-4d32-b703-0bf1ff40e991",
+    "object": "chat.completion",
+    "created": 1789378153,
+    "model": "deepseek-v4-pro",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "",
+          "reasoning_content": "We need answer user: \"只返回"
+        },
+        "logprobs": null,
+        "finish_reason": "length"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 86,
+      "completion_tokens": 8,
+      "total_tokens": 94,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 8
+      },
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 86
+    },
+    "system_fingerprint": "a307abda487cd1b463329ccb945ce396"
+  }
+}

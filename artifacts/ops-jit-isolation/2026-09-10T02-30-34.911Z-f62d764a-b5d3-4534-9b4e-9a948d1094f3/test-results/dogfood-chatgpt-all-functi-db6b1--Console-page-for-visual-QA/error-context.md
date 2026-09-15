@@ -1,0 +1,431 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营与商家服务
+      - generic [ref=e14]: 平台运营控制面
+      - navigation "平台运营功能导航" [ref=e15]:
+        - region "平台治理" [ref=e16]:
+          - heading "平台治理" [level=2] [ref=e17]
+          - button "总览" [ref=e18] [cursor=pointer]:
+            - img "safety-certificate" [ref=e19] [cursor=pointer]:
+              - img [ref=e20] [cursor=pointer]
+            - text: 总览
+        - region "模型与计费" [ref=e22]:
+          - heading "模型与计费" [level=2] [ref=e23]
+          - button "账务与退款" [ref=e24] [cursor=pointer]:
+            - img "dollar" [ref=e25] [cursor=pointer]:
+              - img [ref=e26] [cursor=pointer]
+            - text: 账务与退款
+  - generic [ref=e28]:
+    - banner [ref=e29]:
+      - generic [ref=e30]:
+        - heading "商业与平台控制台" [level=2] [ref=e31]
+        - region "当前身份与权限范围" [ref=e32]:
+          - generic [ref=e33]:
+            - img [ref=e35]:
+              - img [ref=e36]
+            - strong [ref=e40]: 商家管理员
+            - status [ref=e42]: 授权状态：已由服务端验证
+            - button "通知消息，暂无未读" [ref=e45] [cursor=pointer]:
+              - img "bell" [ref=e47] [cursor=pointer]:
+                - img [ref=e48] [cursor=pointer]
+            - button "打开账号菜单" [ref=e51] [cursor=pointer]:
+              - generic [ref=e52] [cursor=pointer]: 身份 ops-fixture-target-c53269ad-6b6b-4204-9068-3ed8d0487d80
+            - generic [ref=e54]: 工作区 · ws_ops_fixture_c53269ad6b6b420490683ed8d0487d80
+            - generic [ref=e56]: 策略 2026-09-08.v1
+          - status [ref=e57]: 商家自运营视图：仅作用于当前授权工作区；不包含平台运营能力。
+      - button "连接诊断 / 登录配置" [ref=e60] [cursor=pointer]:
+        - generic [ref=e61] [cursor=pointer]: 登录 / 连接
+    - main [ref=e62]:
+      - status [ref=e63]
+      - region "运营总览" [active] [ref=e64]:
+        - generic [ref=e65]:
+          - generic [ref=e66]:
+            - generic [ref=e67]:
+              - generic [ref=e68]: OVERVIEW
+              - generic [ref=e69]: 当前工作区数据
+            - heading "运营总览" [level=3] [ref=e70]
+            - generic [ref=e71]: 查看套餐、模型、平台告警和上线状态。
+          - button "刷新总览" [ref=e73] [cursor=pointer]:
+            - generic [ref=e74] [cursor=pointer]: 刷新总览
+        - generic [ref=e77]:
+          - generic [ref=e78]:
+            - generic [ref=e82]:
+              - generic [ref=e84]: 当前套餐
+              - generic [ref=e85]:
+                - img "safety-certificate" [ref=e87]:
+                  - img [ref=e88]
+                - generic [ref=e90]: "-"
+            - generic [ref=e94]:
+              - generic [ref=e96]: 订阅状态
+              - generic [ref=e97]:
+                - img "cloud-sync" [ref=e99]:
+                  - img [ref=e100]
+                - generic [ref=e103]: "-"
+            - generic [ref=e107]:
+              - generic [ref=e109]: 真实平台接入
+              - generic [ref=e110]:
+                - img "global" [ref=e112]:
+                  - img [ref=e113]
+                - generic [ref=e115]: 0 / 6
+            - generic [ref=e119]:
+              - generic [ref=e121]: 钱包余额
+              - generic [ref=e122]:
+                - img "dollar" [ref=e124]:
+                  - img [ref=e125]
+                - generic [ref=e127]: ¥0.00
+          - alert [ref=e128]:
+            - img "info-circle" [ref=e130]:
+              - img [ref=e131]
+            - generic [ref=e133]:
+              - generic [ref=e134]: 商业生产就绪状态只读
+              - generic [ref=e135]: 当前会话缺少 commercial.rate.read，未发起报告请求。
+          - generic [ref=e136]:
+            - generic [ref=e139]: ChatGPT 插件接入
+            - generic [ref=e141]:
+              - generic [ref=e143]: 插件绑定跟随当前工作区和认证身份完成，不需要把 Token 粘贴到对话中。
+              - generic [ref=e145]:
+                - text: 当前工作区：
+                - code [ref=e147]:
+                  - text: ws_ops_fixture_c53269ad6b6b420490683ed8d0487d80
+                  - button "复制" [ref=e149] [cursor=pointer]:
+                    - img "copy" [ref=e150] [cursor=pointer]:
+                      - img [ref=e151] [cursor=pointer]
+              - generic [ref=e154]: 使用方式：在 ChatGPT 中启用“大麦商家营销”，发送“开始使用大麦”；插件会调用 workspace.bootstrap（首次）或 workspace.health（恢复）并返回绑定状态。
+          - generic [ref=e155]:
+            - generic [ref=e158]: 工作区与财务总览
+            - table [ref=e166]:
+              - rowgroup [ref=e167]:
+                - row "工作区 状态 套餐 订阅 任务用量 成员数" [ref=e168]:
+                  - columnheader "工作区" [ref=e169]
+                  - columnheader "状态" [ref=e170]
+                  - columnheader "套餐" [ref=e171]
+                  - columnheader "订阅" [ref=e172]
+                  - columnheader "任务用量" [ref=e173]
+                  - columnheader "成员数" [ref=e174]
+              - rowgroup [ref=e175]:
+                - row "暂无数据 暂无数据" [ref=e176]:
+                  - cell "暂无数据 暂无数据" [ref=e177]:
+                    - generic [ref=e178]:
+                      - img "暂无数据" [ref=e180]
+                      - generic [ref=e186]: 暂无数据
+          - generic [ref=e187]:
+            - generic [ref=e189]:
+              - generic [ref=e190]: 渠道转化漏斗
+              - generic [ref=e192]: 仅统计业务事件
+            - generic [ref=e196]:
+              - generic [ref=e198]: 事件总数
+              - generic [ref=e201]: "0"
+          - generic [ref=e202]:
+            - generic [ref=e204]:
+              - generic [ref=e205]: 数据覆盖与完整性
+              - generic [ref=e207]: 完整
+            - generic [ref=e209]:
+              - generic [ref=e211]:
+                - generic [ref=e213]: 商品事实
+                - generic [ref=e216]: "0"
+              - generic [ref=e218]:
+                - generic [ref=e220]: 内容任务
+                - generic [ref=e223]: "0"
+              - generic [ref=e225]:
+                - generic [ref=e227]: 同步作业
+                - generic [ref=e230]: "0"
+              - generic [ref=e232]:
+                - generic [ref=e234]: 发布作业
+                - generic [ref=e237]: "0"
+          - generic [ref=e238]:
+            - generic [ref=e240]:
+              - generic [ref=e241]: 模型服务
+              - button "进入模型服务" [ref=e243] [cursor=pointer]:
+                - generic [ref=e244] [cursor=pointer]: 进入模型服务
+                - img [ref=e245] [cursor=pointer]:
+                  - img [ref=e246] [cursor=pointer]
+            - generic [ref=e249]:
+              - generic [ref=e251]:
+                - generic [ref=e253]: 已就绪能力
+                - generic [ref=e255]: 暂无数据
+              - generic [ref=e257]:
+                - generic [ref=e259]: 阻断能力
+                - generic [ref=e261]: 暂无数据
+              - generic [ref=e262]:
+                - generic [ref=e263]: 状态不可用
+                - generic [ref=e264]: 运行时状态与发布证据分别核验；Provider 配置不代表生产可用。当前 release metadata 未就绪，完整发布门禁仍由服务端决定。
+          - generic [ref=e265]:
+            - generic [ref=e267]:
+              - generic [ref=e268]: 存储与对账
+              - button "查看对账" [ref=e270] [cursor=pointer]:
+                - generic [ref=e271] [cursor=pointer]: 查看对账
+                - img [ref=e272] [cursor=pointer]:
+                  - img [ref=e273] [cursor=pointer]
+            - generic [ref=e275]:
+              - generic [ref=e276]:
+                - generic [ref=e278]:
+                  - generic [ref=e280]: 已使用
+                  - generic [ref=e282]: —
+                - generic [ref=e284]:
+                  - generic [ref=e286]: 预计占用
+                  - generic [ref=e288]: —
+                - generic [ref=e290]: 状态不可验证
+                - generic [ref=e292]: 仅展示 workspace 汇总
+              - generic [ref=e293]: 暂无最近对账时间；不展示客户对象、key 或下载入口。
+          - generic [ref=e294]:
+            - generic [ref=e296]:
+              - generic [ref=e297]: 待处理平台告警
+              - generic [ref=e299]:
+                - generic [ref=e301]: 0 条未确认
+                - button "刷新告警" [ref=e303] [cursor=pointer]:
+                  - generic [ref=e304] [cursor=pointer]: 刷新告警
+            - table [ref=e312]:
+              - rowgroup [ref=e313]:
+                - row "级别 平台 告警 对象 下一步 通知 操作" [ref=e314]:
+                  - columnheader "级别" [ref=e315]
+                  - columnheader "平台" [ref=e316]
+                  - columnheader "告警" [ref=e317]
+                  - columnheader "对象" [ref=e318]
+                  - columnheader "下一步" [ref=e319]
+                  - columnheader "通知" [ref=e320]
+                  - columnheader "操作" [ref=e321]
+              - rowgroup [ref=e322]:
+                - row "暂无数据 暂无数据" [ref=e323]:
+                  - cell "暂无数据 暂无数据" [ref=e324]:
+                    - generic [ref=e325]:
+                      - img "暂无数据" [ref=e327]
+                      - generic [ref=e333]: 暂无数据
+          - generic [ref=e334]:
+            - generic [ref=e336]:
+              - generic [ref=e337]: 平台上线 readiness
+              - generic [ref=e339]: 真实 canary 前保持只读
+            - generic [ref=e343]:
+              - table [ref=e347]:
+                - rowgroup [ref=e348]:
+                  - row "平台 店铺授权 读取 写入 能力证据 生产发布 主/副图媒体 阻断原因" [ref=e349]:
+                    - columnheader "平台" [ref=e350]
+                    - columnheader "店铺授权" [ref=e351]
+                    - columnheader "读取" [ref=e352]
+                    - columnheader "写入" [ref=e353]
+                    - columnheader "能力证据" [ref=e354]
+                    - columnheader "生产发布" [ref=e355]
+                    - columnheader "主/副图媒体" [ref=e356]
+                    - columnheader "阻断原因" [ref=e357]
+                - rowgroup [ref=e358]:
+                  - row "JD not_configured 未开启 已阻断 0/9 生产 canary 生产发布阻断 媒体阻断 CONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置" [ref=e359]:
+                    - cell "JD" [ref=e360]:
+                      - generic [ref=e361]: JD
+                    - cell "not_configured" [ref=e362]:
+                      - generic [ref=e363]: not_configured
+                    - cell "未开启" [ref=e364]:
+                      - generic [ref=e365]: 未开启
+                    - cell "已阻断" [ref=e366]:
+                      - generic [ref=e367]: 已阻断
+                    - cell "0/9 生产 canary" [ref=e368]:
+                      - generic [ref=e369]: 0/9 生产 canary
+                    - cell "生产发布阻断" [ref=e370]:
+                      - generic [ref=e371]: 生产发布阻断
+                    - cell "媒体阻断" [ref=e372]:
+                      - generic [ref=e373]: 媒体阻断
+                    - cell "CONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置" [ref=e374]
+                  - row "TAOBAO not_configured 未开启 已阻断 0/9 生产 canary 生产发布阻断 媒体阻断 CONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置" [ref=e375]:
+                    - cell "TAOBAO" [ref=e376]:
+                      - generic [ref=e377]: TAOBAO
+                    - cell "not_configured" [ref=e378]:
+                      - generic [ref=e379]: not_configured
+                    - cell "未开启" [ref=e380]:
+                      - generic [ref=e381]: 未开启
+                    - cell "已阻断" [ref=e382]:
+                      - generic [ref=e383]: 已阻断
+                    - cell "0/9 生产 canary" [ref=e384]:
+                      - generic [ref=e385]: 0/9 生产 canary
+                    - cell "生产发布阻断" [ref=e386]:
+                      - generic [ref=e387]: 生产发布阻断
+                    - cell "媒体阻断" [ref=e388]:
+                      - generic [ref=e389]: 媒体阻断
+                    - cell "CONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置" [ref=e390]
+                  - row "TMALL not_configured 未开启 已阻断 0/9 生产 canary 生产发布阻断 媒体阻断 CONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置" [ref=e391]:
+                    - cell "TMALL" [ref=e392]:
+                      - generic [ref=e393]: TMALL
+                    - cell "not_configured" [ref=e394]:
+                      - generic [ref=e395]: not_configured
+                    - cell "未开启" [ref=e396]:
+                      - generic [ref=e397]: 未开启
+                    - cell "已阻断" [ref=e398]:
+                      - generic [ref=e399]: 已阻断
+                    - cell "0/9 生产 canary" [ref=e400]:
+                      - generic [ref=e401]: 0/9 生产 canary
+                    - cell "生产发布阻断" [ref=e402]:
+                      - generic [ref=e403]: 生产发布阻断
+                    - cell "媒体阻断" [ref=e404]:
+                      - generic [ref=e405]: 媒体阻断
+                    - cell "CONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置" [ref=e406]
+                  - row "PINDUODUO not_configured 未开启 已阻断 0/9 生产 canary 生产发布阻断 媒体阻断 CONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置" [ref=e407]:
+                    - cell "PINDUODUO" [ref=e408]:
+                      - generic [ref=e409]: PINDUODUO
+                    - cell "not_configured" [ref=e410]:
+                      - generic [ref=e411]: not_configured
+                    - cell "未开启" [ref=e412]:
+                      - generic [ref=e413]: 未开启
+                    - cell "已阻断" [ref=e414]:
+                      - generic [ref=e415]: 已阻断
+                    - cell "0/9 生产 canary" [ref=e416]:
+                      - generic [ref=e417]: 0/9 生产 canary
+                    - cell "生产发布阻断" [ref=e418]:
+                      - generic [ref=e419]: 生产发布阻断
+                    - cell "媒体阻断" [ref=e420]:
+                      - generic [ref=e421]: 媒体阻断
+                    - cell "CONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置" [ref=e422]
+                  - row "XIAOHONGSHU not_configured 未开启 已阻断 0/9 生产 canary 生产发布阻断 媒体阻断 CONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置" [ref=e423]:
+                    - cell "XIAOHONGSHU" [ref=e424]:
+                      - generic [ref=e425]: XIAOHONGSHU
+                    - cell "not_configured" [ref=e426]:
+                      - generic [ref=e427]: not_configured
+                    - cell "未开启" [ref=e428]:
+                      - generic [ref=e429]: 未开启
+                    - cell "已阻断" [ref=e430]:
+                      - generic [ref=e431]: 已阻断
+                    - cell "0/9 生产 canary" [ref=e432]:
+                      - generic [ref=e433]: 0/9 生产 canary
+                    - cell "生产发布阻断" [ref=e434]:
+                      - generic [ref=e435]: 生产发布阻断
+                    - cell "媒体阻断" [ref=e436]:
+                      - generic [ref=e437]: 媒体阻断
+                    - cell "CONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置" [ref=e438]
+                  - row "DOUYIN not_configured 未开启 已阻断 0/9 生产 canary 生产发布阻断 媒体阻断 CONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置" [ref=e439]:
+                    - cell "DOUYIN" [ref=e440]:
+                      - generic [ref=e441]: DOUYIN
+                    - cell "not_configured" [ref=e442]:
+                      - generic [ref=e443]: not_configured
+                    - cell "未开启" [ref=e444]:
+                      - generic [ref=e445]: 未开启
+                    - cell "已阻断" [ref=e446]:
+                      - generic [ref=e447]: 已阻断
+                    - cell "0/9 生产 canary" [ref=e448]:
+                      - generic [ref=e449]: 0/9 生产 canary
+                    - cell "生产发布阻断" [ref=e450]:
+                      - generic [ref=e451]: 生产发布阻断
+                    - cell "媒体阻断" [ref=e452]:
+                      - generic [ref=e453]: 媒体阻断
+                    - cell "CONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置" [ref=e454]
+              - list [ref=e455]:
+                - listitem [ref=e456]: 共 6 条
+                - listitem "上一页" [ref=e457]:
+                  - button "left" [disabled] [ref=e458]:
+                    - img "left" [ref=e459]:
+                      - img [ref=e460]
+                - listitem "1" [ref=e462] [cursor=pointer]:
+                  - generic [ref=e463] [cursor=pointer]: "1"
+                - listitem "下一页" [ref=e464]:
+                  - button "right" [disabled] [ref=e465]:
+                    - img "right" [ref=e466]:
+                      - img [ref=e467]
+          - generic [ref=e469]:
+            - generic [ref=e471]:
+              - generic [ref=e472]: 数据生命周期 readiness
+              - generic [ref=e474]: 非生产模式
+            - generic [ref=e475]:
+              - generic [ref=e476]:
+                - generic [ref=e478]:
+                  - generic [ref=e480]: 业务保留
+                  - generic [ref=e481]:
+                    - generic [ref=e483]: "90"
+                    - generic [ref=e484]: 天
+                - generic [ref=e486]:
+                  - generic [ref=e488]: 隔离区
+                  - generic [ref=e489]:
+                    - generic [ref=e491]: "7"
+                    - generic [ref=e492]: 天
+                - generic [ref=e494]:
+                  - generic [ref=e496]: Clean
+                  - generic [ref=e497]:
+                    - generic [ref=e499]: "30"
+                    - generic [ref=e500]: 天
+                - generic [ref=e502]:
+                  - generic [ref=e504]: 删除宽限
+                  - generic [ref=e505]:
+                    - generic [ref=e507]: "7"
+                    - generic [ref=e508]: 天
+                - generic [ref=e510]:
+                  - generic [ref=e512]: 备份保留
+                  - generic [ref=e513]:
+                    - generic [ref=e515]: "30"
+                    - generic [ref=e516]: 天
+                - generic [ref=e518]:
+                  - generic [ref=e520]: 对象版本化
+                  - generic [ref=e522]: 开启
+              - generic [ref=e523]: 生命周期数值和策略引用不包含 Secret，仅用于上线门禁和运营核对。
+          - generic [ref=e524]:
+            - generic [ref=e526]:
+              - generic [ref=e527]: 生产证据 readiness
+              - generic [ref=e529]: 未通过门禁
+            - generic [ref=e530]:
+              - generic [ref=e533]:
+                - table [ref=e537]:
+                  - rowgroup [ref=e538]:
+                    - row "证据类型 状态 环境 Release 版本/Profile 核验人/时间 阻断原因" [ref=e539]:
+                      - columnheader "证据类型" [ref=e540]
+                      - columnheader "状态" [ref=e541]
+                      - columnheader "环境" [ref=e542]
+                      - columnheader "Release" [ref=e543]
+                      - columnheader "版本/Profile" [ref=e544]
+                      - columnheader "核验人/时间" [ref=e545]
+                      - columnheader "阻断原因" [ref=e546]
+                  - rowgroup [ref=e547]:
+                    - row "六平台 capability not_required - - - - CAPABILITY_EVIDENCE_PATH is not configured" [ref=e548]:
+                      - cell "六平台 capability" [ref=e549]
+                      - cell "not_required" [ref=e550]:
+                        - generic [ref=e551]: not_required
+                      - cell "-" [ref=e552]
+                      - cell "-" [ref=e553]
+                      - cell "-" [ref=e554]
+                      - cell "-" [ref=e555]
+                      - cell "CAPABILITY_EVIDENCE_PATH is not configured" [ref=e556]
+                    - row "容量压测 not_required - - - - CAPACITY_REPORT_PATH is not configured" [ref=e557]:
+                      - cell "容量压测" [ref=e558]
+                      - cell "not_required" [ref=e559]:
+                        - generic [ref=e560]: not_required
+                      - cell "-" [ref=e561]
+                      - cell "-" [ref=e562]
+                      - cell "-" [ref=e563]
+                      - cell "-" [ref=e564]
+                      - cell "CAPACITY_REPORT_PATH is not configured" [ref=e565]
+                - list [ref=e566]:
+                  - listitem [ref=e567]: 共 2 条
+                  - listitem "上一页" [ref=e568]:
+                    - button "left" [disabled] [ref=e569]:
+                      - img "left" [ref=e570]:
+                        - img [ref=e571]
+                  - listitem "1" [ref=e573] [cursor=pointer]:
+                    - generic [ref=e574] [cursor=pointer]: "1"
+                  - listitem "下一页" [ref=e575]:
+                    - button "right" [disabled] [ref=e576]:
+                      - img "right" [ref=e577]:
+                        - img [ref=e578]
+              - generic [ref=e580]: 仅显示脱敏元数据；示例、fixture、test_e2e 或本地容量结果不会被计为生产通过。
+          - generic [ref=e581]:
+            - generic [ref=e583]:
+              - generic [ref=e584]: 数据删除申请
+              - generic [ref=e586]: 双人审批后仍需外部删除证明
+            - table [ref=e594]:
+              - rowgroup [ref=e595]:
+                - row "范围 原因 申请人 审批数 计划执行 状态 操作" [ref=e596]:
+                  - columnheader "范围" [ref=e597]
+                  - columnheader "原因" [ref=e598]
+                  - columnheader "申请人" [ref=e599]
+                  - columnheader "审批数" [ref=e600]
+                  - columnheader "计划执行" [ref=e601]
+                  - columnheader "状态" [ref=e602]
+                  - columnheader "操作" [ref=e603]
+              - rowgroup [ref=e604]:
+                - row "暂无数据 暂无数据" [ref=e605]:
+                  - cell "暂无数据 暂无数据" [ref=e606]:
+                    - generic [ref=e607]:
+                      - img "暂无数据" [ref=e609]
+                      - generic [ref=e615]: 暂无数据
+```

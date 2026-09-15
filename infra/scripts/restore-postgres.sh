@@ -26,10 +26,13 @@ case "${RESTORE_ALLOW_UNSIGNED_LOCAL:-}" in
   '')
   [ "$RESTORE_TARGET_ENVIRONMENT" = production ] || { echo "signed restore requires RESTORE_TARGET_ENVIRONMENT=production" >&2; exit 1; }
     [ "${RESTORE_TARGET_ISOLATED:-}" = YES ] || { echo "signed restore requires RESTORE_TARGET_ISOLATED=YES after independent-target review" >&2; exit 2; }
+    [ -n "${ALERT_RECEIVER_DATABASE_URL:-}" ] || [ -n "${ALERT_RECEIVER_DATABASE_URL_FILE:-}" ] || { echo "ALERT_RECEIVER_DATABASE_URL or ALERT_RECEIVER_DATABASE_URL_FILE is required for production restore" >&2; exit 1; }
+    [ -z "${ALERT_RECEIVER_DATABASE_URL:-}" ] || [ -z "${ALERT_RECEIVER_DATABASE_URL_FILE:-}" ] || { echo "Set only one of ALERT_RECEIVER_DATABASE_URL or ALERT_RECEIVER_DATABASE_URL_FILE" >&2; exit 1; }
     : "${BACKUP_ATTESTATION_PATH:?production restore requires BACKUP_ATTESTATION_PATH}"
     : "${EXPECTED_SOURCE_DATABASE_ID_SHA256:?EXPECTED_SOURCE_DATABASE_ID_SHA256 is required}"
     command -v node >/dev/null 2>&1 || { echo "node is required for production target preflight" >&2; exit 1; }
     node "$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)/validate-production-database-url.mjs" DATABASE_URL
+    node "$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)/validate-production-database-url.mjs" ALERT_RECEIVER_DATABASE_URL
     target_database_id=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT system_identifier::text FROM pg_control_system()')
   target_database_id=$(printf '%s' "$target_database_id" | tr -d '[:space:]')
   [ -n "$target_database_id" ] || { echo "target database identity could not be read" >&2; exit 1; }

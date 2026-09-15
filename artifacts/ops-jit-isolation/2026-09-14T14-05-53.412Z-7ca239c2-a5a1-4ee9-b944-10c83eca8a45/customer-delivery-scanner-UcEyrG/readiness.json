@@ -1,0 +1,26 @@
+{
+  "runId": "528499a4-bf7a-486c-aa29-b5d4a3912ab2",
+  "startupTimeoutMs": 300000,
+  "container": {
+    "id": "644c81b4567385b61d4deb1c2c7dbedcf4204baa3657c77dffe313767ea6104b",
+    "name": "merchant-delivery-scan-528499a4-bf7a-486c-aa29-b5d4a3912ab2",
+    "runId": "528499a4-bf7a-486c-aa29-b5d4a3912ab2",
+    "image": "clamav/clamav-debian@sha256:bcfc3d6117a6cfbeb6cd041c00164097916291b870c6183e06def6fed7fb740b",
+    "hostPort": 32982,
+    "dataStorage": "ephemeral-container-layer",
+    "autoRemove": true
+  },
+  "readiness": {
+    "observedAt": "2026-09-14T14:07:36.310Z",
+    "rawVersion": "ClamAV 1.4.6/28123/Mon Sep 14 06:24:19 2026",
+    "engineVersion": "1.4.6",
+    "definitionsVersion": "28123",
+    "definitionsPublishedAt": "2026-09-14T06:24:19.000Z",
+    "definitionsAgeSeconds": 27797,
+    "cleanProbe": "clean",
+    "eicarSignature": "Eicar-Test-Signature"
+  },
+  "scanner": "real-clamav",
+  "sharedConfigurationRead": false,
+  "fixtureScanVerdictsUsed": false
+}

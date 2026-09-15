@@ -1,9 +1,10 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
-import { enableCommercialFixtureHarnessForTests, fixturePaymentAllowed, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setPasswordAuthRepositoryForTests, setPaymentProviderForTests, setRuleRepositoryForTests, workspaceMembers } from './server.js'
+import { enableCommercialFixtureHarnessForTests, fixturePaymentAllowed, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, setPaymentProviderForTests, setRuleRepositoryForTests, workspaceMembers } from './server.js'
 import type { McpCanonicalProductConsistencyResult } from '../../../packages/contracts/src/index.js'
 import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
 import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
+import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
 import { hashPassword } from '../../../packages/security/src/password-auth.js'
 
 type Envelope<T = unknown> = { request_id: string; trace_id: string; workspace_id: string; data: T | null; warnings: unknown[]; next_actions: unknown[]; error: { code: string; message: string } | null }
@@ -57,6 +58,66 @@ function generatedDecisionBody(title: string, detail: string, sellingPoints: str
 }
 
 describe('API HTTP vertical slice', () => {
+  it('hydrates durable authorization context for password-authenticated merchant sessions', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('SESSION_ID_HASH_SECRET', 'password-authz-context-e2e-secret')
+    const auth = new MemoryPasswordAuthRepository()
+    const account = await auth.createMerchantAccount({
+      login: 'merchant-password-authz@example.com',
+      password: 'MerchantPassword123',
+      enterpriseName: '密码会话授权企业',
+      contactName: '授权管理员',
+      workspaceIds: ['ws_password_authz'],
+      actorId: 'seed-platform',
+      reason: '验证密码会话持久授权上下文',
+    })
+    const authorization = new MemoryAuthorizationRepository()
+    const approvedAt = new Date(Date.now() - 1_000).toISOString()
+    const grant = await authorization.issueGrant({
+      grantKind: 'support',
+      accessMode: 'read',
+      subjectIdentityId: account.identityId,
+      workspaceId: 'ws_password_authz',
+      capabilities: ['customer.content.read'],
+      resourceScope: { workspace_ids: ['ws_password_authz'] },
+      reason: '验证密码会话装载当前授权版本与临时授权',
+      ticketRef: 'password-authz-context-e2e',
+      issuedBy: 'support-issuer',
+      approvedBy: 'support-approver',
+      approvedAt,
+      expectedAuthorizationRevision: 0,
+      expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      maxUses: 2,
+    })
+    setPasswordAuthRepositoryForTests(auth)
+    setAuthorizationRepositoryForTests(authorization)
+    const base = await start()
+    try {
+      const login = await fetch(`${base}/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ login: account.login, password: 'MerchantPassword123', account_type: 'merchant' }),
+      })
+      expect(login.status).toBe(200)
+      const cookie = login.headers.get('set-cookie')!.split(';', 1)[0]!
+      const session = await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json', 'x-workspace-id': 'ws_password_authz', 'x-ops-workbench': 'workspace' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 'password-authz-context', method: 'ops.session', params: { workspace_id: 'ws_password_authz' } }),
+      }).then(json)
+      expect(session.error).toBeNull()
+      expect(session.data?.result).toMatchObject({
+        identity_id: account.identityId,
+        authorization_revision: grant.authorizationRevision,
+        temporary_grants: [expect.objectContaining({ id: grant.id, authorization_revision: grant.authorizationRevision })],
+      })
+    } finally {
+      setPasswordAuthRepositoryForTests()
+      setAuthorizationRepositoryForTests()
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('closes the platform-provisioned merchant account and password-rotation HTTP loop', async () => {
     const auth = new MemoryPasswordAuthRepository()
     await auth.ensurePlatformAccount({ login: 'platform-e2e@example.com', passwordHash: await hashPassword('PlatformPass123'), roles: ['platform_admin'] })
@@ -2175,6 +2236,7 @@ describe('API HTTP vertical slice', () => {
   })
 
   it('lists and reviews merchant registration applications over the platform HTTP boundary', async () => {
+    vi.stubEnv('ALLOW_MERCHANT_SELF_REGISTRATION', 'true')
     const auth = new MemoryPasswordAuthRepository()
     await auth.ensurePlatformAccount({ login: 'platform-registration-review@example.com', passwordHash: await hashPassword('PlatformPass123'), roles: ['platform_ops'] })
     setPasswordAuthRepositoryForTests(auth)
@@ -2190,6 +2252,9 @@ describe('API HTTP vertical slice', () => {
       expect(reviewed.error).toBeNull(); expect(reviewed.data).toMatchObject({ login: 'applicant@example.com', status: 'active', workspace_ids: ['ws_demo'] })
       const replay = await fetch(`${base}/v1/ops/merchant-registration-applications/review`, { method: 'POST', headers: { cookie, 'x-ops-workbench': 'platform', 'content-type': 'application/json' }, body: JSON.stringify({ login: 'applicant@example.com', decision: 'rejected', reason: '重复审核' }) }).then(json)
       expect(replay.error?.code).toBe('AUTH_REGISTRATION_STATE_INVALID')
-    } finally { setPasswordAuthRepositoryForTests() }
+    } finally {
+      setPasswordAuthRepositoryForTests()
+      vi.unstubAllEnvs()
+    }
   })
 })

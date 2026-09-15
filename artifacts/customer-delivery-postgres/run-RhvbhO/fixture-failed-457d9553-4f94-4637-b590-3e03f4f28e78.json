@@ -1,0 +1,13 @@
+{
+  "runId": "457d9553-4f94-4637-b590-3e03f4f28e78",
+  "error": "ISOLATED_FIXTURE_DOCKER_RUN_FAILED",
+  "cleanup": {
+    "stopped": [],
+    "leftRunning": [
+      {
+        "id": "ba074d171db82a64d8406aee466800010183b53c7af933e62b24f36bc6ab4175",
+        "reason": "identity verification or exact-ID stop failed; not retried destructively"
+      }
+    ]
+  }
+}

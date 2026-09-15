@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-08T19:05:10.650Z",
+  "endedAt": "2026-09-08T19:05:14.763Z",
+  "runId": "8414b048-79f1-47d4-82e7-325c73270723",
+  "selectedFiles": [
+    "packages/persistence/src/brand-profile-association.release.postgres.test.ts"
+  ],
+  "childExitCode": 1,
+  "status": "failed",
+  "report": "vitest.json",
+  "errors": [
+    "ISOLATED_POSTGRES_TEST_PROCESS_NONZERO",
+    "POSTGRES_REPORT_NOT_SUCCESSFUL",
+    "POSTGRES_REPORT_FAILED_OR_SKIPPED_ASSERTIONS",
+    "POSTGRES_REPORT_FAILED_OR_EMPTY_FILE",
+    "POSTGRES_REPORT_ASSERTION_NOT_PASSED",
+    "POSTGRES_REPORT_ASSERTION_COUNTS_MISMATCH"
+  ],
+  "fixtureOnly": true,
+  "databaseSource": "newly-created-isolated-fixture",
+  "rolePasswordCompatibility": "isolated-test-fixture-only",
+  "inheritedBusinessEnvironment": false,
+  "sharedContainersTouched": false,
+  "disposal": {
+    "stopped": [
+      "ad64e92001594a01d3dff0ab264abb4028d97a8bb338b0ceabaf458dc916fa21",
+      "fcd21aa42f564aecf48fc7aced170c88b35756d7deee634e395627a2543c034f"
+    ],
+    "leftRunning": []
+  }
+}

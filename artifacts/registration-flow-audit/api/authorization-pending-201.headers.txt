@@ -1,0 +1,12 @@
+HTTP/1.1 201 Created
+content-type: application/json; charset=utf-8
+access-control-allow-headers: authorization, content-type, idempotency-key, x-workspace-id, x-ops-workbench, x-account-id, x-actor-id, x-request-id, x-trace-id, x-role, x-rule-approval-token
+access-control-allow-methods: DELETE,GET,POST,PUT,OPTIONS
+access-control-expose-headers: x-request-id, x-trace-id
+x-request-id: req_f7b496b4-62af-44e0-abe9-5ef2ad84b9ed
+x-trace-id: req_f7b496b4-62af-44e0-abe9-5ef2ad84b9ed
+Date: Sun, 13 Sep 2026 01:25:14 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Content-Length: 901
+

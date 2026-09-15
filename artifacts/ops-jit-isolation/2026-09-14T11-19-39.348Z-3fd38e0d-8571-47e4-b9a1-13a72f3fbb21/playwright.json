@@ -1,0 +1,147 @@
+{
+  "config": {
+    "rootDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T11-19-39.348Z-3fd38e0d-8571-47e4-b9a1-13a72f3fbb21/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-delivery-isolated.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-delivery-isolated.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "isolated customer delivery end-to-end fields, gates, checklists and scanned assets",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 600000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 50644,
+                  "error": {
+                    "message": "TimeoutError: page.waitForResponse: Timeout 45000ms exceeded while waiting for event \"response\"",
+                    "stack": "TimeoutError: page.waitForResponse: Timeout 45000ms exceeded while waiting for event \"response\"\n    at rpcAfter (/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-isolated.spec.js:66:32)\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-isolated.spec.js:445:36",
+                    "location": {
+                      "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-isolated.spec.js",
+                      "column": 32,
+                      "line": 66
+                    },
+                    "snippet": "  64 |     return false\n  65 |   })\n> 66 |   const responsePromise = page.waitForResponse(response => response.request() === requestRef, { timeout: 45_000 })\n     |                                ^\n  67 |     .then(async response => {\n  68 |       try { return { response, body: parse(await response.text()), bodyUnavailable: false } }\n  69 |       catch (error) {"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-isolated.spec.js",
+                        "column": 32,
+                        "line": 66
+                      },
+                      "message": "TimeoutError: page.waitForResponse: Timeout 45000ms exceeded while waiting for event \"response\"\n\n  64 |     return false\n  65 |   })\n> 66 |   const responsePromise = page.waitForResponse(response => response.request() === requestRef, { timeout: 45_000 })\n     |                                ^\n  67 |     .then(async response => {\n  68 |       try { return { response, body: parse(await response.text()), bodyUnavailable: false } }\n  69 |       catch (error) {\n    at rpcAfter (/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-isolated.spec.js:66:32)\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-isolated.spec.js:445:36"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-14T11:21:44.249Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "customer-created",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T11-19-39.348Z-3fd38e0d-8571-47e4-b9a1-13a72f3fbb21/test-results/dogfood-chatgpt-all-functi-b3755-ecklists-and-scanned-assets/attachments/customer-created-ae92fcdec85fed5eee24271bda11d2c1123c062e.png"
+                    },
+                    {
+                      "name": "failure-masked",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T11-19-39.348Z-3fd38e0d-8571-47e4-b9a1-13a72f3fbb21/test-results/dogfood-chatgpt-all-functi-b3755-ecklists-and-scanned-assets/attachments/failure-masked-4d96e2c85291d04b9b55a770d5784b2062f57f4c.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T11-19-39.348Z-3fd38e0d-8571-47e4-b9a1-13a72f3fbb21/test-results/dogfood-chatgpt-all-functi-b3755-ecklists-and-scanned-assets/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-isolated.spec.js",
+                    "column": 32,
+                    "line": 66
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "28f39ff0541484776fc4-9c83966135bf270132a1",
+          "file": "dogfood/chatgpt-all-functions/ops-delivery-isolated.spec.js",
+          "line": 400,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-14T11:21:40.095Z",
+    "duration": 55535.871,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

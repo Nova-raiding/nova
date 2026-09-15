@@ -28,7 +28,7 @@ NON_WORKLOAD_KINDS = %w[
 CONTAINER_FIELDS = %w[containers initContainers ephemeralContainers].freeze
 IMAGE_PATTERN = /\A[^\s@]+@sha256:[0-9a-f]{64}\z/i.freeze
 DIGEST_PATTERN = /\Asha256:[0-9a-f]{64}\z/i.freeze
-REQUIRED_IMAGE_NAMES = %w[clamav merchant-api merchant-ops-ui merchant-ui merchant-worker].freeze
+REQUIRED_IMAGE_NAMES = %w[clamav merchant-alert-receiver merchant-api merchant-ops-ui merchant-ui merchant-worker].freeze
 CONFIG_DIGEST_ANNOTATION = 'merchant.example.com/config-sha256'
 SECRET_LIKE_CONFIG_KEY = /(?:\A|_)(?:TOKEN|SECRET|PASSWORD|API_KEY|PRIVATE_KEY|DATABASE_URL|REDIS_URL|CONNECTION_STRING|CREDENTIALS?)\z/i.freeze
 WORKLOAD_SECRET_KEYS = {
@@ -68,6 +68,9 @@ WORKLOAD_SECRET_KEYS = {
   },
   'merchant-schema-migration' => {
     'merchant-migration-secrets' => %w[DATABASE_URL],
+  },
+  'merchant-alert-receiver' => {
+    'merchant-alert-receiver-secrets' => %w[DATABASE_URL HMAC_SECRET],
   },
 }.freeze
 KNOWN_SECRET_KEYS = WORKLOAD_SECRET_KEYS.values.flat_map { |secrets| secrets.values }.flatten.uniq.freeze
@@ -243,6 +246,31 @@ def validate_authorization_contract(documents, config_maps)
     reference.is_a?(Hash) && reference['name'] == 'merchant-runtime' && !optional_reference?(reference)
   end
   raise ReleaseManifestError, 'merchant-api/api must import production authorization settings from ConfigMap/merchant-runtime' unless bound
+end
+
+def validate_ack_rrsa_object_storage_contract(documents, config_maps)
+  resources = flattened_resources(documents)
+  runtime = config_maps['merchant-runtime']
+  data = runtime&.fetch('data', nil)
+  # Narrow scanner/authorization unit manifests do not model object storage.
+  # Once a Kubernetes manifest declares storage, its identity contract is mandatory.
+  return unless data.is_a?(Hash) && data.key?('ASSET_STORAGE_BUCKET')
+  raise ReleaseManifestError, 'merchant-runtime must set ASSET_STORAGE_CREDENTIAL_PROVIDER=aliyun_ack_rrsa for Kubernetes' unless data.is_a?(Hash) && data['ASSET_STORAGE_CREDENTIAL_PROVIDER'] == 'aliyun_ack_rrsa'
+  raise ReleaseManifestError, 'Kubernetes object storage must not declare an ECS metadata role' if data.key?('ASSET_STORAGE_ECS_RAM_ROLE')
+
+  namespace = named_resource(resources, 'Namespace', 'merchant')
+  unless namespace&.dig('metadata', 'labels', 'pod-identity.alibabacloud.com/injection') == 'on'
+    raise ReleaseManifestError, 'Namespace/merchant must enable ACK pod identity injection'
+  end
+  account = named_resource(resources, 'ServiceAccount', 'merchant-api-rrsa')
+  role_name = account&.dig('metadata', 'annotations', 'pod-identity.alibabacloud.com/role-name')
+  unless role_name.is_a?(String) && role_name.match?(/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/)
+    raise ReleaseManifestError, 'ServiceAccount/merchant-api-rrsa must declare a valid dedicated ACK RRSA role name'
+  end
+  api = named_resource(resources, 'Deployment', 'merchant-api')
+  unless api&.dig('spec', 'template', 'spec', 'serviceAccountName') == 'merchant-api-rrsa'
+    raise ReleaseManifestError, 'Deployment/merchant-api must bind ServiceAccount/merchant-api-rrsa'
+  end
 end
 
 def validate_secret_volume_reference(reference, workload_name, context)
@@ -571,6 +599,7 @@ begin
   config_maps = collect_config_maps(documents)
   if !rollback_mode && !expected_digests.key?('*')
     validate_authorization_contract(documents, config_maps)
+    validate_ack_rrsa_object_storage_contract(documents, config_maps)
     validate_asset_scanner_contract(documents, config_maps)
   end
   image_count = documents.each_with_index.sum { |document, index| validate_resource(document, expected_digests, observed_images, config_maps, "document[#{index}]", rollback_mode) }

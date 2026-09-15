@@ -12,6 +12,18 @@ function run(script: string, args: string[] = [], env: Record<string, string> = 
 }
 
 describe('deployment operation scripts', () => {
+  it('documents a non-SQL, auditable durable-authorization bootstrap before enforcement', () => {
+    const runbook = readFileSync('docs/runbooks/durable-platform-authorization-bootstrap.md', 'utf8')
+    expect(runbook).toContain('AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED=false')
+    expect(runbook).toContain('ops.authorization.role.assign')
+    expect(runbook).toContain('expected_authorization_revision')
+    expect(runbook).toContain('platform_role_assignment_events')
+    expect(runbook).toContain('platform_admin')
+    expect(runbook).toContain('security_admin')
+    expect(runbook).toContain('禁止直接改表')
+    expect(runbook).toContain('立即回滚本次配置发布至 `false`')
+  })
+
   it('requires an explicit pilot release identity before compose can start', () => {
     const preflight = readFileSync('infra/scripts/pilot-compose-preflight.sh', 'utf8')
     expect(preflight).toContain(': "${PILOT_RELEASE_ID:?PILOT_RELEASE_ID is required}"')
@@ -19,6 +31,19 @@ describe('deployment operation scripts', () => {
     expect(preflight).toContain("PILOT_RELEASE_GIT_SHA must be a full lowercase Git SHA")
     expect(preflight).toContain("PILOT_RELEASE_MANIFEST_SHA256 must be lowercase SHA-256")
     expect(preflight).toContain("PILOT_RELEASE_IMAGE_SET_DIGEST must be sha256 plus 64 lowercase hex characters")
+    expect(preflight).toContain(': "${OBJECT_STORAGE_EVIDENCE_PATH:?OBJECT_STORAGE_EVIDENCE_PATH is required}"')
+    expect(preflight).toContain('tests/object-storage-evidence-gate.ts')
+    expect(preflight).toContain('--expected-bucket "$ASSET_STORAGE_BUCKET"')
+    expect(preflight).toContain('--expected-endpoint "$ASSET_STORAGE_ENDPOINT"')
+    expect(preflight).toContain('--artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT"')
+    expect(preflight).toContain('--env-file .env')
+    expect(preflight).toContain('-f infra/local/docker-compose.ecs-oss-cutover.yml')
+    expect(preflight).toContain('-f infra/local/docker-compose.ecs-production-migration.yml')
+    expect(preflight).toContain('validate-ecs-production-compose.mjs')
+    expect(preflight).toContain(': "${PILOT_RELEASE_CONFIG_SHA256:?PILOT_RELEASE_CONFIG_SHA256 is required}"')
+    expect(preflight).toContain(': "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"')
+    expect(preflight).toContain("trust_dir='/run/release-security/evidence-trust'")
+    for (const binding of ['--release-git-sha', '--manifest-sha256', '--image-set-digest', '--deployment-nonce', '--expected-config-checksum', '--public-key', '--key-id']) expect(preflight).toContain(binding)
     expect(readFileSync('infra/local/docker-compose.ecs-pilot-release.yml', 'utf8')).toContain('${PILOT_RELEASE_ID:?PILOT_RELEASE_ID is required}')
   })
 
@@ -88,6 +113,9 @@ describe('deployment operation scripts', () => {
     expect(compose).toContain('/bin/sh /ops/verify-runtime-db-role.sh')
     expect(compose.indexOf('/ops/ensure-app-role.sql')).toBeLessThan(compose.indexOf('/ops/verify-runtime-db-role.sh'))
     expect(compose.indexOf('/ops/verify-runtime-db-role.sh')).toBeLessThan(compose.indexOf('/ops/seed-demo.sql'))
+    expect(compose).toContain('ALERT_RECEIVER_DATABASE_URL: postgres://merchant_alert_receiver:merchant_alert_receiver_local_only@postgres:5432/merchant')
+    expect(roleSql).toContain("CREATE ROLE merchant_alert_receiver LOGIN PASSWORD 'merchant_alert_receiver_local_only'")
+    expect(roleSql.indexOf('REVOKE ALL ON TABLE public.alert_webhook_receipts')).toBeGreaterThan(roleSql.indexOf('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO merchant_app'))
   })
 
   it('grants the runtime role only the worker workspace catalog function', () => {
@@ -206,7 +234,7 @@ describe('deployment operation scripts', () => {
     writeFileSync(psql, `#!/bin/sh\nprintf '%s\\n' '${systemIdentifier}'\n`)
     chmodSync(psql, 0o755)
     expect(() => run('infra/scripts/restore-postgres.sh', [], {
-      DATABASE_URL: 'postgresql://merchant@db.internal/merchant?sslmode=verify-full', BACKUP_FILE: backup, CONFIRM_RESTORE: 'YES', RESTORE_TARGET_ENVIRONMENT: 'production', RESTORE_TARGET_ISOLATED: 'YES', BACKUP_ATTESTATION_PATH: join(directory, 'missing-attestation.json'), EXPECTED_SOURCE_DATABASE_ID_SHA256: sourceIdentity, PATH: `${bin}:${process.env.PATH ?? ''}`,
+      DATABASE_URL: 'postgresql://merchant@db.internal/merchant?sslmode=verify-full', ALERT_RECEIVER_DATABASE_URL: 'postgresql://receiver@receiver-db.internal/merchant?sslmode=verify-full', BACKUP_FILE: backup, CONFIRM_RESTORE: 'YES', RESTORE_TARGET_ENVIRONMENT: 'production', RESTORE_TARGET_ISOLATED: 'YES', BACKUP_ATTESTATION_PATH: join(directory, 'missing-attestation.json'), EXPECTED_SOURCE_DATABASE_ID_SHA256: sourceIdentity, PATH: `${bin}:${process.env.PATH ?? ''}`,
     })).toThrow(/matches approved source/)
   })
 
@@ -218,7 +246,7 @@ describe('deployment operation scripts', () => {
       DATABASE_URL: 'postgresql://merchant@127.0.0.1:5432/merchant?sslmode=require', BACKUP_FILE: backup, CONFIRM_RESTORE: 'YES', RESTORE_ALLOW_UNSIGNED_LOCAL: 'YES',
     })).toThrow(/RESTORE_TARGET_ENVIRONMENT/)
     expect(() => run('infra/scripts/restore-postgres.sh', [], {
-      DATABASE_URL: 'postgresql://merchant@127.0.0.1:5432/merchant?sslmode=require', BACKUP_FILE: backup, CONFIRM_RESTORE: 'YES', RESTORE_TARGET_ENVIRONMENT: 'production', RESTORE_TARGET_ISOLATED: 'YES', BACKUP_ATTESTATION_PATH: join(directory, 'missing-attestation.json'), EXPECTED_SOURCE_DATABASE_ID_SHA256: 'a'.repeat(64),
+      DATABASE_URL: 'postgresql://merchant@127.0.0.1:5432/merchant?sslmode=require', ALERT_RECEIVER_DATABASE_URL: 'postgresql://receiver@receiver-db.internal/merchant?sslmode=verify-full', BACKUP_FILE: backup, CONFIRM_RESTORE: 'YES', RESTORE_TARGET_ENVIRONMENT: 'production', RESTORE_TARGET_ISOLATED: 'YES', BACKUP_ATTESTATION_PATH: join(directory, 'missing-attestation.json'), EXPECTED_SOURCE_DATABASE_ID_SHA256: 'a'.repeat(64),
     })).toThrow(/must not use localhost|loopback|unspecified/)
   })
 
@@ -240,6 +268,7 @@ describe('deployment operation scripts', () => {
       'merchant-worker': 'sha256:' + 'b'.repeat(64),
       'merchant-ui': 'sha256:' + 'c'.repeat(64),
       'merchant-ops-ui': 'sha256:' + 'd'.repeat(64),
+      'merchant-alert-receiver': 'sha256:' + 'e'.repeat(64),
       clamav: 'sha256:' + 'f'.repeat(64),
     }
     writeFileSync(config, [
@@ -251,8 +280,8 @@ describe('deployment operation scripts', () => {
       'xiaohongshu_auth_enabled: true', 'xiaohongshu_read_enabled: true', 'xiaohongshu_write_enabled: true',
       'douyin_auth_enabled: true', 'douyin_read_enabled: true', 'douyin_write_enabled: true',
       'point_in_time_recovery_enabled: true', 'database_pooler_enabled: true', 'database_max_backend_connections: 300', 'database_connection_utilization_alert_percent: 80', 'secret_provider: vault', 'worker_api_credentials_ref: vault://worker-api-credentials', ...['sync', 'generation', 'publish', 'reconcile', 'automation'].flatMap(role => [`worker_${role}_api_token_ref: vault://worker-${role}-token`, `worker_${role}_api_signing_secret_ref: vault://worker-${role}-signing`]), 'payment_mode: provider', 'payment_provider_adapters: alipay,wechat', 'payment_checkout_base_url: https://payments.example.com/checkout', 'payment_provider_checkout_api_url: https://payments.example.com/v1/checkout', 'payment_provider_query_api_url: https://payments.example.com/v1/query', 'payment_provider_refund_api_url: https://payments.example.com/v1/refund', 'payment_provider_api_key_ref: vault://merchant-payment/provider-api-key', 'payment_provider_merchant_id: merchant-example', 'payment_callback_base_url: https://merchant.example.com/v1', 'payment_callback_secret_ref: vault://merchant-payment-callback', 'payment_reconciliation_enabled: true', 'payment_refund_enabled: true', 'model_relay_base_url: https://relay.example.com', 'model_relay_api_key_ref: vault://merchant-model/relay-api-key', 'text_model: merchant-text-v1', 'image_model: merchant-image-v1', 'image_edit_model: merchant-image-edit-v1', 'ocr_model: merchant-ocr-v1', 'video_model: merchant-video-v1', 'approved_requests_per_minute: "100"', 'approved_tokens_per_minute: "100000"', 'maximum_task_cost_cny: "0.50"', 'platform_rule_sync_manifest_url: https://rules.example.com/platform-rules/v1/manifest.json', 'platform_rule_sync_signing_secret_ref: vault://merchant-rules/manifest-signing-secret', 'platform_rule_sync_interval_hours: "24"',
-      'asset_scanner_mode: clamav_worker', 'allow_local_asset_scan_fixture: false', 'asset_scanner_api_token_ref: vault://merchant-scanner/api-token', 'asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/workspace-signing', 'asset_scan_receipt_key_id: scanner-production-2026-08', 'asset_scan_receipt_private_key_ref: vault://merchant-scanner/receipt-private-key', 'asset_scan_trusted_public_keys_ref: vault://merchant-scanner/trusted-public-keys', 'asset_scan_policy_version: scan-policy-2026-08-30', `clamav_image_digest: ${imageDigests.clamav}`, 'clamav_signature_max_age_minutes: 1440', 'clamav_max_file_bytes: 104857600',
-      'object_storage_bucket: merchant-assets', 'object_storage_region: cn', 'object_storage_endpoint: https://s3.example.com', 'object_storage_kms_key: vault://kms', 'asset_display_base_url: https://merchant.example.com', 'asset_display_url_signing_secret_ref: vault://merchant-assets/display-url-signing-secret', 'merchant_ui_api_token_ref: vault://merchant-ui/api-token', 'merchant_ui_workspace_id_ref: vault://merchant-ui/workspace-id', 'object_storage_versioning: true', 'lifecycle_policy_ref: vault://asset-lifecycle-policy', 'asset_quarantine_retention_days: 7', 'asset_clean_retention_days: 90', 'deletion_request_grace_days: 7', 'backup_retention_days: 30', 'alert_channel_secret_ref: vault://merchant-alert-channel',
+      'asset_scanner_mode: clamav_worker', 'allow_local_asset_scan_fixture: false', 'asset_scanner_api_token_ref: vault://merchant-scanner/api-token', 'asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/workspace-signing', 'asset_scan_receipt_key_id: scanner-production-2026-08', 'asset_scan_receipt_private_key_ref: vault://merchant-scanner/receipt-private-key', 'asset_scan_trusted_public_keys_ref: vault://merchant-scanner/trusted-public-keys', 'asset_scan_policy_version: scan-policy-2026-08-30', `clamav_image_digest: ${imageDigests.clamav}`, 'clamav_signature_max_age_minutes: 1440', 'clamav_max_file_bytes: 52428800',
+      'object_storage_bucket: merchant-assets', 'object_storage_region: cn', 'object_storage_endpoint: https://s3.example.com', 'object_storage_credential_provider: aliyun_ack_rrsa', 'object_storage_sse_mode: AES256', 'asset_display_base_url: https://merchant.example.com', 'asset_display_url_signing_secret_ref: vault://merchant-assets/display-url-signing-secret', 'merchant_ui_api_token_ref: vault://merchant-ui/api-token', 'merchant_ui_workspace_id_ref: vault://merchant-ui/workspace-id', 'object_storage_versioning: true', 'lifecycle_policy_ref: vault://asset-lifecycle-policy', 'asset_quarantine_retention_days: 7', 'asset_clean_retention_days: 90', 'deletion_request_grace_days: 7', 'backup_retention_days: 30', 'alert_channel_secret_ref: vault://merchant-alert-channel',
     ].join('\n'))
     writeFileSync(evidence, JSON.stringify({
       schema_version: '1', release_id: 'release-1', environment: 'production', generated_at: '2026-08-23T00:00:00Z',
@@ -285,9 +314,9 @@ describe('deployment operation scripts', () => {
     const scannerRuntime = {
       MERCHANT_BEARER_HOSTNAME: 'merchant.example.com', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
       MODEL_RELAY_BASE_URL: 'https://relay.example.com', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example.com', AI_MODEL: 'merchant-text-v1', IMAGE_MODEL: 'merchant-image-v1', IMAGE_EDIT_MODEL: 'merchant-image-edit-v1', OCR_MODEL: 'merchant-ocr-v1', VIDEO_MODEL: 'merchant-video-v1', MODEL_RPM_LIMIT: '100', MODEL_TPM_LIMIT: '100000', MODEL_MAX_TASK_COST_CNY: '0.50',
-      ASSET_STORAGE_BUCKET: 'merchant-assets', ASSET_STORAGE_REGION: 'cn', ASSET_STORAGE_ENDPOINT: 'https://s3.example.com', OBJECT_STORAGE_VERSIONING: 'true', PUBLIC_ASSET_BASE_URL: 'https://merchant.example.com', PUBLIC_OAUTH_REDIRECT_URI: 'https://merchant.example.com/v1/oauth/callback/{platform}',
+      ASSET_STORAGE_BUCKET: 'merchant-assets', ASSET_STORAGE_REGION: 'cn', ASSET_STORAGE_ENDPOINT: 'https://s3.example.com', ASSET_STORAGE_CREDENTIAL_PROVIDER: 'aliyun_ack_rrsa', OBJECT_STORAGE_VERSIONING: 'true', PUBLIC_ASSET_BASE_URL: 'https://merchant.example.com', PUBLIC_OAUTH_REDIRECT_URI: 'https://merchant.example.com/v1/oauth/callback/{platform}',
       ASSET_QUARANTINE_RETENTION_DAYS: '7', ASSET_CLEAN_RETENTION_DAYS: '90', DELETION_REQUEST_GRACE_DAYS: '7', BACKUP_RETENTION_DAYS: '30', LIFECYCLE_POLICY_REF: 'vault://asset-lifecycle-policy',
-      ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ASSET_SCANNER_MODE: 'clamav_worker', ASSET_SCAN_POLICY_VERSION: 'scan-policy-2026-08-30', CLAMAV_HOST: '127.0.0.1', CLAMAV_PORT: '3310', CLAMAV_MAX_FILE_BYTES: '104857600', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
+      ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ASSET_SCANNER_MODE: 'clamav_worker', ASSET_SCAN_POLICY_VERSION: 'scan-policy-2026-08-30', CLAMAV_HOST: '127.0.0.1', CLAMAV_PORT: '3310', CLAMAV_MAX_FILE_BYTES: '52428800', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
       PAYMENT_MODE: 'provider', PAYMENT_PROVIDER_ADAPTERS: 'alipay,wechat', PAYMENT_CHECKOUT_BASE_URL: 'https://payments.example.com/checkout', PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://payments.example.com/v1/checkout', PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.example.com/v1/query', PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.example.com/v1/refund', PAYMENT_PROVIDER_MERCHANT_ID: 'merchant-example', PAYMENT_CALLBACK_BASE_URL: 'https://merchant.example.com/v1', PAYMENT_RECONCILIATION_ENABLED: 'true', PAYMENT_REFUND_ENABLED: 'true', PLATFORM_RULE_SYNC_MANIFEST_URL: 'https://rules.example.com/platform-rules/v1/manifest.json',
     }
     const scannerSecret = (name: string, key = name) => ({ name, valueFrom: { secretKeyRef: { name: 'merchant-scanner-secrets', key } } })
@@ -296,6 +325,8 @@ describe('deployment operation scripts', () => {
     const scannerConfigAnnotation = { 'merchant.example.com/config-sha256': `sha256:${createHash('sha256').update(scannerConfigCanonical).digest('hex')}` }
     writeFileSync(manifest, JSON.stringify({ apiVersion: 'v1', kind: 'List', items: [
       { apiVersion: 'v1', kind: 'ConfigMap', metadata: { name: 'merchant-runtime' }, data: scannerRuntime },
+      { apiVersion: 'v1', kind: 'Namespace', metadata: { name: 'merchant', labels: { 'pod-identity.alibabacloud.com/injection': 'on' } } },
+      { apiVersion: 'v1', kind: 'ServiceAccount', metadata: { name: 'merchant-api-rrsa', annotations: { 'pod-identity.alibabacloud.com/role-name': 'StoreNovaAckOssRole' } } },
       { apiVersion: 'networking.k8s.io/v1', kind: 'Ingress', metadata: { name: 'merchant' }, spec: { tls: [{ hosts: ['merchant.example.com', 'ops.merchant.example.com'], secretName: 'merchant-tls' }], rules: [
         { host: 'merchant.example.com', http: { paths: [
           { path: '/mcp', pathType: 'Exact', backend: { service: { name: 'merchant-api', port: { name: 'http' } } } },
@@ -306,17 +337,18 @@ describe('deployment operation scripts', () => {
           { path: '/', pathType: 'Prefix', backend: { service: { name: 'merchant-ops-ui', port: { name: 'http' } } } },
         ] } },
       ] } },
-      { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-api' }, spec: { template: { metadata: { annotations: scannerConfigAnnotation }, spec: { containers: [{ name: 'api', image: `registry.example.com/merchant-api@${imageDigests['merchant-api']}`, envFrom: [{ configMapRef: { name: 'merchant-runtime' } }], env: [scannerSecret('ASSET_SCANNER_API_TOKEN'), scannerSecret('ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), scannerSecret('ASSET_SCAN_TRUSTED_PUBLIC_KEYS'), runtimeSecret('MODEL_RELAY_API_KEY'), runtimeSecret('PLATFORM_RULE_SYNC_SIGNING_SECRET'), runtimeSecret('PAYMENT_PROVIDER_API_KEY'), runtimeSecret('PAYMENT_CALLBACK_SECRET')] }] } } } },
+      { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-api' }, spec: { template: { metadata: { annotations: scannerConfigAnnotation }, spec: { serviceAccountName: 'merchant-api-rrsa', containers: [{ name: 'api', image: `registry.example.com/merchant-api@${imageDigests['merchant-api']}`, envFrom: [{ configMapRef: { name: 'merchant-runtime' } }], env: [scannerSecret('ASSET_SCANNER_API_TOKEN'), scannerSecret('ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), scannerSecret('ASSET_SCAN_TRUSTED_PUBLIC_KEYS'), runtimeSecret('MODEL_RELAY_API_KEY'), runtimeSecret('PLATFORM_RULE_SYNC_SIGNING_SECRET'), runtimeSecret('PAYMENT_PROVIDER_API_KEY'), runtimeSecret('PAYMENT_CALLBACK_SECRET')] }] } } } },
       { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-worker-scan' }, spec: { template: { metadata: { annotations: scannerConfigAnnotation }, spec: { nodeSelector: { 'kubernetes.io/arch': 'amd64' }, containers: [
         { name: 'worker', image: `registry.example.com/merchant-worker@${imageDigests['merchant-worker']}`, envFrom: [{ configMapRef: { name: 'merchant-runtime' } }], env: [{ name: 'WORKER_ROLE', value: 'scan' }, scannerSecret('WORKER_API_TOKEN', 'ASSET_SCANNER_API_TOKEN'), scannerSecret('WORKER_API_SIGNING_SECRET', 'ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), scannerSecret('ASSET_SCANNER_API_TOKEN'), scannerSecret('ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), scannerSecret('ASSET_SCAN_RECEIPT_KEY_ID'), scannerSecret('ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM')] },
         { name: 'clamav', image: `registry.example.com/clamav@${imageDigests.clamav}`, startupProbe: { exec: { command: ['sh', '-c', 'clamdscan --ping 1'] } }, readinessProbe: { exec: { command: ['sh', '-c', 'clamdscan --ping 1 && find /var/lib/clamav -mmin -1440'] } }, livenessProbe: { exec: { command: ['sh', '-c', 'clamdscan --ping 1'] } } },
       ] } } } },
       { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-ui' }, spec: { template: { spec: { containers: [{ name: 'ui', image: `registry.example.com/merchant-ui@${imageDigests['merchant-ui']}` }] } } } },
       { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-ops-ui' }, spec: { template: { spec: { containers: [{ name: 'ops-ui', image: `registry.example.com/merchant-ops-ui@${imageDigests['merchant-ops-ui']}` }] } } } },
+      { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-alert-receiver' }, spec: { template: { spec: { containers: [{ name: 'alert-receiver', image: `registry.example.com/merchant-alert-receiver@${imageDigests['merchant-alert-receiver']}` }] } } } },
     ] }))
     const script = 'infra/scripts/deploy-preflight.sh'
-    const base = { PRODUCTION_CONFIG_PATH: config, CAPABILITY_EVIDENCE_PATH: evidence, CAPACITY_REPORT_PATH: capacity, MODEL_RELAY_EVIDENCE_PATH: relayEvidence, CODEX_APP_HOST_EVIDENCE_PATH: hostEvidence, OBJECT_STORAGE_EVIDENCE_PATH: storageEvidence, CANONICAL_CUTOVER_EVIDENCE_PATH: canonicalCutoverEvidence, PRODUCTION_EVIDENCE_ARTIFACT_ROOT: directory, EXPECTED_MIGRATION_VERSION: '078', RELEASE_MANIFEST_PATH: releaseManifest, PAYMENT_EVIDENCE_PATH: paymentEvidence, RESTORE_EVIDENCE_PATH: restoreEvidence, RENDERED_MANIFEST_PATH: manifest, RELEASE_ID: 'release-1', IMAGE_DIGESTS_JSON: JSON.stringify(imageDigests), API_IMAGE_REF: `registry.example.com/merchant-api@${imageDigests['merchant-api']}`, WORKER_IMAGE_REF: `registry.example.com/merchant-worker@${imageDigests['merchant-worker']}`, DATABASE_URL: 'postgresql://db.internal/merchant?sslmode=verify-full', OPS_DATABASE_URL: 'postgresql://ops-db.internal/merchant?sslmode=verify-full', REDIS_URL: 'rediss://redis.internal', SECRET_PROVIDER: 'vault' }
-    expect(() => run(script, [config], base)).toThrow(/scanner|merchant-worker-scan|ConfigMap\/merchant-runtime/i)
+    const base = { PRODUCTION_CONFIG_PATH: config, CAPABILITY_EVIDENCE_PATH: evidence, CAPACITY_REPORT_PATH: capacity, MODEL_RELAY_EVIDENCE_PATH: relayEvidence, CODEX_APP_HOST_EVIDENCE_PATH: hostEvidence, OBJECT_STORAGE_EVIDENCE_PATH: storageEvidence, CANONICAL_CUTOVER_EVIDENCE_PATH: canonicalCutoverEvidence, PRODUCTION_EVIDENCE_ARTIFACT_ROOT: directory, EXPECTED_MIGRATION_VERSION: '078', RELEASE_MANIFEST_PATH: releaseManifest, PAYMENT_EVIDENCE_PATH: paymentEvidence, RESTORE_EVIDENCE_PATH: restoreEvidence, RENDERED_MANIFEST_PATH: manifest, RELEASE_ID: 'release-1', IMAGE_DIGESTS_JSON: JSON.stringify(imageDigests), API_IMAGE_REF: `registry.example.com/merchant-api@${imageDigests['merchant-api']}`, WORKER_IMAGE_REF: `registry.example.com/merchant-worker@${imageDigests['merchant-worker']}`, DATABASE_URL: 'postgresql://db.internal/merchant?sslmode=verify-full', OPS_DATABASE_URL: 'postgresql://ops-db.internal/merchant?sslmode=verify-full', ALERT_RECEIVER_DATABASE_URL: 'postgresql://alert-db.internal/merchant?sslmode=verify-full', REDIS_URL: 'rediss://redis.internal', SECRET_PROVIDER: 'vault' }
+    expect(() => run(script, [config], base)).toThrow(/scanner|merchant-worker-scan|ConfigMap\/merchant-runtime|ASSET_STORAGE_CREDENTIAL_PROVIDER|ACK pod identity|Namespace\/merchant/i)
     const matchingManifest = readFileSync(manifest, 'utf8')
     const driftedManifest = JSON.parse(matchingManifest)
     driftedManifest.items[0].data.MODEL_RELAY_BASE_URL = 'https://different-relay.example.com'
@@ -341,6 +373,9 @@ describe('deployment operation scripts', () => {
     expect(() => run(script, [config], { ...base, OPS_DATABASE_URL: 'postgresql://ops-db.internal/merchant' })).toThrow(/OPS_DATABASE_URL.*TLS/)
     expect(() => run(script, [config], { ...base, OPS_DATABASE_URL: 'postgresql:\/\/localhost\/merchant?sslmode=verify-full' })).toThrow(/OPS_DATABASE_URL.*local/)
     expect(() => run(script, [config], { ...base, OPS_DATABASE_URL: 'postgresql://127.0.0.9/merchant?sslmode=verify-full' })).toThrow(/OPS_DATABASE_URL.*local/)
+    expect(() => run(script, [config], { ...base, ALERT_RECEIVER_DATABASE_URL: '' })).toThrow(/ALERT_RECEIVER_DATABASE_URL.*required/)
+    expect(() => run(script, [config], { ...base, ALERT_RECEIVER_DATABASE_URL: 'postgresql://alert-db.internal/merchant' })).toThrow(/ALERT_RECEIVER_DATABASE_URL.*TLS/)
+    expect(() => run(script, [config], { ...base, ALERT_RECEIVER_DATABASE_URL: 'postgresql://127.0.0.8/merchant?sslmode=verify-full' })).toThrow(/ALERT_RECEIVER_DATABASE_URL.*local/)
     expect(() => run(script, [config], { ...base, REDIS_URL: 'redis://redis.internal' })).toThrow()
     writeFileSync(relayEvidence, readFileSync(relayEvidence, 'utf8').replace('https://relay.example.com', 'https://other-relay.example.com'))
     expect(() => run(script, [config], base)).toThrow(/scanner|merchant-worker-scan|ConfigMap\/merchant-runtime/i)
@@ -361,6 +396,7 @@ describe('deployment operation scripts', () => {
     expect(deployPreflight).toContain('--expected-mcp-base-url')
     expect(deployPreflight).toContain('--expected-bridge-sha256')
     expect(deployPreflight).toContain('release-manifest-gate.ts')
+    for (const binding of ['--release-git-sha', '--manifest-sha256', '--image-set-digest', '--deployment-nonce', '--expected-config-checksum', '--public-key', '--key-id']) expect(deployPreflight).toContain(binding)
     expect(deployPreflight).toContain('validate-rendered-production-config.rb')
     expect(deployPreflight).toContain('validate-scanner-contract.rb')
     expect(deployPreflight.indexOf('validate-rendered-production-config.rb')).toBeLessThan(deployPreflight.indexOf('capability-evidence-gate.ts'))
@@ -440,13 +476,14 @@ describe('deployment operation scripts', () => {
     expect(readFileSync('infra/kubernetes/base/ui.yaml', 'utf8')).toContain('secretKeyRef: {name: merchant-runtime-secrets, key: MERCHANT_UI_API_TOKEN}')
     expect(readFileSync('infra/kubernetes/secret-contract.example.yaml', 'utf8')).toContain('neverExposeSecretAsConfigMap')
     expect(readFileSync('infra/kubernetes/base/kustomization.yaml', 'utf8')).toContain('- migration.yaml')
-    expect(readFileSync('infra/kubernetes/base/ingress.yaml', 'utf8')).toContain('hosts: [yxsona.com, ops.yxsona.com]')
+    expect(readFileSync('infra/kubernetes/base/ingress.yaml', 'utf8')).toContain('hosts: [yxsona.com, ops.yxsona.com, alerts.yxsona.com]')
     for (const profile of ['pilot-50', 'wave-100', 'wave-250', 'target-500']) {
       const overlay = readFileSync(`infra/kubernetes/overlays/${profile}/kustomization.yaml`, 'utf8')
       expect(overlay).toContain('digest: SET_API_IMAGE_DIGEST')
       expect(overlay).toContain('digest: SET_WORKER_IMAGE_DIGEST')
       expect(overlay).toContain('digest: SET_UI_IMAGE_DIGEST')
       expect(overlay).toContain('digest: SET_OPS_UI_IMAGE_DIGEST')
+      expect(overlay).toContain('digest: SET_ALERT_RECEIVER_IMAGE_DIGEST')
     }
   })
 
@@ -554,16 +591,32 @@ describe('deployment operation scripts', () => {
     const challengeLocation = gateway.split('location = /.well-known/openai-apps-challenge {')[1]?.split('}')[0] ?? ''
     expect(challengeLocation).toContain('proxy_pass http://api:8787')
     expect(challengeLocation).toContain('proxy_set_header X-Forwarded-Proto $scheme')
+    const releaseLocation = gateway.split('location = /releasez {')[1]?.split('}')[0] ?? ''
+    expect(releaseLocation).toContain('proxy_pass http://api:8787/releasez')
+    expect(releaseLocation).toContain('proxy_set_header X-Forwarded-Proto $scheme')
 
     const httpsGateway = readFileSync('infra/nginx/pilot-gateway-https.conf', 'utf8')
+    const alertServerStart = httpsGateway.indexOf('server_name alerts.yxsona.com;')
+    const alertServer = httpsGateway.slice(alertServerStart, httpsGateway.indexOf('server_name yxsona.com', alertServerStart))
+    expect(alertServer).toContain('set $alert_receiver_upstream http://alert-receiver:8791;')
+    expect(alertServer).toContain('location = /internal/v1/alerts')
+    expect(alertServer).toContain('location / { return 404; }')
     const httpsChallengeLocation = httpsGateway.split('location = /.well-known/openai-apps-challenge {')[1]?.split('}')[0] ?? ''
     expect(httpsChallengeLocation).toContain('proxy_pass http://api:8787')
     expect(httpsChallengeLocation).toContain('proxy_set_header X-Forwarded-Proto https')
+    const httpsReleaseLocation = httpsGateway.split('location = /releasez {')[1]?.split('}')[0] ?? ''
+    expect(httpsReleaseLocation).toContain('proxy_pass http://api:8787/releasez')
+    expect(httpsReleaseLocation).toContain('proxy_set_header X-Forwarded-Proto https')
   })
 
   it('keeps the API image build context complete for the TypeScript project references', () => {
     const dockerfile = readFileSync('infra/docker/api.Dockerfile', 'utf8')
     const workerDockerfile = readFileSync('infra/docker/worker.Dockerfile', 'utf8')
+    const localCompose = readFileSync('infra/local/docker-compose.yml', 'utf8')
+    expect(dockerfile).toMatch(/^FROM --platform=\$BUILDPLATFORM node:22-alpine@sha256:[0-9a-f]{64} AS build$/mu)
+    expect(dockerfile).toMatch(/^FROM node:22-alpine@sha256:[0-9a-f]{64} AS runtime$/mu)
+    expect(workerDockerfile).toMatch(/^FROM --platform=\$BUILDPLATFORM node:22-alpine@sha256:[0-9a-f]{64} AS build$/mu)
+    expect(workerDockerfile).toMatch(/^FROM node:22-alpine@sha256:[0-9a-f]{64} AS runtime$/mu)
     expect(dockerfile).toContain('COPY scripts ./scripts')
     expect(readFileSync('package-lock.json', 'utf8')).toContain('packages/knowledge')
     expect(readFileSync('package-lock.json', 'utf8')).toContain('packages/multimodal')
@@ -575,6 +628,9 @@ describe('deployment operation scripts', () => {
       expect(runtimeDockerfile.indexOf('COPY --from=build /app/packages ./packages')).toBeLessThan(runtimeDockerfile.indexOf('mkdir -p node_modules/@merchant-marketing'))
     }
     expect(workerDockerfile).toContain('COPY packages/persistence/src/migrations ./dist/packages/persistence/src/migrations')
+    expect(workerDockerfile).toContain('npx tsc -p apps/worker/tsconfig.build.json')
+    expect(workerDockerfile).not.toContain('npx tsc -p tsconfig.json --noEmitOnError false')
+    expect(localCompose.split('x-worker-common: &worker-common')[1]?.split('services:')[0]).toContain('image: local-worker')
     expect(workerDockerfile).not.toMatch(/COPY packages\/persistence\/src\/migrations\/\d{3}_/u)
   })
 

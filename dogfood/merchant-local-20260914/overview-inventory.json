@@ -1,0 +1,60 @@
+{
+  "url": "http://127.0.0.1:18081/merchant/login/merchant/overview",
+  "title": "Merchant Studio · 商家营销工作台",
+  "links": [],
+  "buttons": [
+    {
+      "text": "跳到主要内容",
+      "disabled": false
+    },
+    {
+      "text": "运营概览",
+      "disabled": false
+    },
+    {
+      "text": "知识库",
+      "disabled": false
+    },
+    {
+      "text": "打开主菜单",
+      "disabled": false
+    },
+    {
+      "text": "系统健康\n在线",
+      "disabled": false
+    },
+    {
+      "text": "工作区待处理问题，暂无",
+      "disabled": false
+    },
+    {
+      "text": "本\n本地演示商家",
+      "disabled": false
+    },
+    {
+      "text": "查看健康状态",
+      "disabled": false
+    },
+    {
+      "text": "等待店铺连接",
+      "disabled": true
+    },
+    {
+      "text": "刷新套餐",
+      "disabled": false
+    },
+    {
+      "text": "管理连接",
+      "disabled": false
+    },
+    {
+      "text": "查看全部",
+      "disabled": false
+    },
+    {
+      "text": "刷新",
+      "disabled": false
+    }
+  ],
+  "inputs": []
+}

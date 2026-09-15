@@ -1,0 +1,620 @@
+{
+  "schema_version": 2,
+  "evidence_kind": "isolated_live_customer_delivery_ui_rpc",
+  "verification_scope": "seven_scanned_attachments_and_full_delivery",
+  "raw_browser_trace_saved": false,
+  "browser_response_capture": "original_fetch_clone",
+  "real_delivery_scan": true,
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "timezone": "Asia/Shanghai",
+  "fixture": {
+    "workspace_id": "ws_ops_fixture_8fae20951e01489fa8bb77fd25bc1430"
+  },
+  "events": [
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.create",
+      "rpc_id": "92e030e9-a464-4fec-8c58-02739ba7317f",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_8fae20951e01489fa8bb77fd25bc1430",
+        "company_name": "隔离交付验收-1789386477601"
+      },
+      "error_code": null,
+      "response_body_unavailable": false,
+      "response_capture": "original_fetch_clone"
+    },
+    {
+      "event": "screenshot",
+      "name": "customer-created.png"
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.update",
+      "rpc_id": "9e32e3fe-9ad0-48b3-b314-ef44847de99d",
+      "status": 409,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_8fae20951e01489fa8bb77fd25bc1430",
+        "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+        "expected_revision": "1"
+      },
+      "error_code": "CUSTOMER_DELIVERY_CONTRACT_ASSET_NOT_READY",
+      "response_body_unavailable": false,
+      "response_capture": "original_fetch_clone"
+    },
+    {
+      "event": "screenshot",
+      "name": "missing-contract-rejected.png"
+    },
+    {
+      "event": "real_asset_upload",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "purpose": "contract",
+      "sha256": "8be1400e3e779ea89c9a5074687a7795d3ba74782308408a20db2df7ed1ff999",
+      "asset_ref": "asset_da6c5dd0-5513-4f5c-9777-44126de95a4b",
+      "scan_status": "pending",
+      "ready": false,
+      "status": 200
+    },
+    {
+      "event": "real_asset_scan",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "purpose": "contract",
+      "asset_ref": "asset_da6c5dd0-5513-4f5c-9777-44126de95a4b",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200
+    },
+    {
+      "event": "screenshot",
+      "name": "real-contract-scan-ready.png"
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.update",
+      "rpc_id": "706dd945-a2d2-4b9b-8d0a-130d9b1b20de",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_8fae20951e01489fa8bb77fd25bc1430",
+        "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+        "expected_revision": "1"
+      },
+      "error_code": null,
+      "response_body_unavailable": false,
+      "response_capture": "original_fetch_clone"
+    },
+    {
+      "event": "missing_payment_evidence_blocked_in_form"
+    },
+    {
+      "event": "real_asset_upload",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "purpose": "payment",
+      "sha256": "cd95f8f49484896dc3d59fc1a4ddafea72f12adb20bb11f9570987cfa1c6cc0b",
+      "asset_ref": "asset_a6ac58f1-4f8b-4e8e-be6d-31373d4bd245",
+      "scan_status": "pending",
+      "ready": false,
+      "status": 200
+    },
+    {
+      "event": "real_asset_scan",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "purpose": "payment",
+      "asset_ref": "asset_a6ac58f1-4f8b-4e8e-be6d-31373d4bd245",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.update",
+      "rpc_id": "7344ab6b-f57b-48b0-8888-45c21a6284d6",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_8fae20951e01489fa8bb77fd25bc1430",
+        "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+        "expected_revision": "2"
+      },
+      "error_code": null,
+      "response_body_unavailable": false,
+      "response_capture": "original_fetch_clone"
+    },
+    {
+      "event": "owner_browser_response_capture_integrity",
+      "installed": true,
+      "failures": 0,
+      "unexpectedAborts": 0,
+      "pending": 0,
+      "completed": 12,
+      "correlation": "jsonrpc_id_and_method",
+      "browser_cdp_body_reads": 0
+    },
+    {
+      "event": "screenshot",
+      "name": "profile-fields-reloaded.png"
+    },
+    {
+      "event": "real_asset_upload",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "purpose": "system_integration",
+      "sha256": "031f7443839f8d169727eb8f2f2a7b70c95d8f42cd2021d17957ed7ee2a69217",
+      "asset_ref": "asset_07775c08-2355-4748-9325-076c17052246",
+      "scan_status": "pending",
+      "ready": false,
+      "status": 200
+    },
+    {
+      "event": "real_asset_scan",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "purpose": "system_integration",
+      "asset_ref": "asset_07775c08-2355-4748-9325-076c17052246",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.checklist.update",
+      "rpc_id": "dca85d0f-904b-44e3-bb5e-b34c38e98e11",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_8fae20951e01489fa8bb77fd25bc1430",
+        "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+        "checklist_key": "system_integration",
+        "expected_revision": "3"
+      },
+      "error_code": null,
+      "response_body_unavailable": false,
+      "response_capture": "original_fetch_clone"
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.checklist-items.list",
+      "rpc_id": "280e888b-24bf-4884-9166-27070b59c6a4",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_8fae20951e01489fa8bb77fd25bc1430",
+        "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+        "checklist_key": "system_integration"
+      },
+      "error_code": null,
+      "response_body_unavailable": false,
+      "response_capture": "original_fetch_clone"
+    },
+    {
+      "event": "checklist_notes_and_scanned_evidence_reloaded",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "purpose": "system_integration",
+      "item_count": 10,
+      "asset_refs": [
+        "asset_07775c08-2355-4748-9325-076c17052246"
+      ]
+    },
+    {
+      "event": "real_asset_upload",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "purpose": "functional_acceptance",
+      "sha256": "4281f6c86eab8831d70e7db9624d21b887eee56c7b0e241b071bf36b189f0ac3",
+      "asset_ref": "asset_81d26ea3-daf1-4c66-80a8-18fc5553e2f4",
+      "scan_status": "pending",
+      "ready": false,
+      "status": 200
+    },
+    {
+      "event": "real_asset_scan",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "purpose": "functional_acceptance",
+      "asset_ref": "asset_81d26ea3-daf1-4c66-80a8-18fc5553e2f4",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.checklist.update",
+      "rpc_id": "f70003f3-8c2b-4780-b385-cf0202a35ab0",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_8fae20951e01489fa8bb77fd25bc1430",
+        "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+        "checklist_key": "functional_acceptance",
+        "expected_revision": "4"
+      },
+      "error_code": null,
+      "response_body_unavailable": false,
+      "response_capture": "original_fetch_clone"
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.checklist-items.list",
+      "rpc_id": "da36ce34-7ffe-4a16-8614-1f11fbfeb28f",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_8fae20951e01489fa8bb77fd25bc1430",
+        "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+        "checklist_key": "functional_acceptance"
+      },
+      "error_code": null,
+      "response_body_unavailable": false,
+      "response_capture": "original_fetch_clone"
+    },
+    {
+      "event": "checklist_notes_and_scanned_evidence_reloaded",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "purpose": "functional_acceptance",
+      "item_count": 8,
+      "asset_refs": [
+        "asset_81d26ea3-daf1-4c66-80a8-18fc5553e2f4"
+      ]
+    },
+    {
+      "event": "real_asset_upload",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "purpose": "training",
+      "sha256": "966b2ecd400c7b31c0c980a7fa096990630a814ce18fe64b201212c1f9a5230e",
+      "asset_ref": "asset_f32f3ebe-4360-43bd-932b-a5e20ed19c17",
+      "scan_status": "pending",
+      "ready": false,
+      "status": 200
+    },
+    {
+      "event": "real_asset_scan",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "purpose": "training",
+      "asset_ref": "asset_f32f3ebe-4360-43bd-932b-a5e20ed19c17",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.training.complete",
+      "rpc_id": "81a4bdb3-13a2-4349-a6a8-17a6bc83c3c7",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_8fae20951e01489fa8bb77fd25bc1430",
+        "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+        "expected_revision": "5",
+        "completed": "true"
+      },
+      "error_code": null,
+      "response_body_unavailable": false,
+      "response_capture": "original_fetch_clone"
+    },
+    {
+      "event": "screenshot",
+      "name": "training-inline-scanned-evidence.png"
+    },
+    {
+      "event": "training_requires_uploaded_evidence_and_explicit_confirmation",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "asset_refs": [
+        "asset_f32f3ebe-4360-43bd-932b-a5e20ed19c17"
+      ],
+      "opened_drawer": false
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.videos.add",
+      "rpc_id": "ca1b3e10-1f3f-44dc-8b29-207d34e7c3ce",
+      "status": 409,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_8fae20951e01489fa8bb77fd25bc1430",
+        "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+        "sort_order": "0"
+      },
+      "error_code": "CUSTOMER_DELIVERY_VIDEO_ASSET_NOT_READY",
+      "response_body_unavailable": false,
+      "response_capture": "original_fetch_clone"
+    },
+    {
+      "event": "screenshot",
+      "name": "customer-delivery-gates.png"
+    },
+    {
+      "event": "real_asset_upload",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "purpose": "video",
+      "sha256": "672abe0dad77d36c280a3154286ee0afcb58a6f3ff0ed55187969da149b796b8",
+      "asset_ref": "asset_32fecaf9-4a06-4feb-a452-fb4951f56056",
+      "scan_status": "pending",
+      "ready": false,
+      "status": 200
+    },
+    {
+      "event": "real_asset_scan",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "purpose": "video",
+      "asset_ref": "asset_32fecaf9-4a06-4feb-a452-fb4951f56056",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200
+    },
+    {
+      "event": "real_asset_upload",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "purpose": "video",
+      "sha256": "5d1e62b9412d2dbd0138abee356f5d15ae776eb3c6e507aa2de5af579d2a10d8",
+      "asset_ref": "asset_1b220660-6166-45fe-a76a-c22a332f0664",
+      "scan_status": "pending",
+      "ready": false,
+      "status": 200
+    },
+    {
+      "event": "real_asset_scan",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "purpose": "video",
+      "asset_ref": "asset_1b220660-6166-45fe-a76a-c22a332f0664",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200
+    },
+    {
+      "event": "screenshot",
+      "name": "real-videos-scan-ready.png"
+    },
+    {
+      "event": "real_video_registered",
+      "asset_ref": "asset_32fecaf9-4a06-4feb-a452-fb4951f56056",
+      "status": 200,
+      "error_code": null
+    },
+    {
+      "event": "real_video_registered",
+      "asset_ref": "asset_1b220660-6166-45fe-a76a-c22a332f0664",
+      "status": 200,
+      "error_code": null
+    },
+    {
+      "event": "owner_browser_response_capture_integrity",
+      "installed": true,
+      "failures": 0,
+      "unexpectedAborts": 0,
+      "pending": 0,
+      "completed": 31,
+      "correlation": "jsonrpc_id_and_method",
+      "browser_cdp_body_reads": 0
+    },
+    {
+      "event": "screenshot",
+      "name": "real-video-segments-reloaded.png"
+    },
+    {
+      "event": "real_seven_attachments_persisted",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "asset_refs": [
+        "asset_da6c5dd0-5513-4f5c-9777-44126de95a4b",
+        "asset_a6ac58f1-4f8b-4e8e-be6d-31373d4bd245",
+        "asset_07775c08-2355-4748-9325-076c17052246",
+        "asset_81d26ea3-daf1-4c66-80a8-18fc5553e2f4",
+        "asset_f32f3ebe-4360-43bd-932b-a5e20ed19c17",
+        "asset_32fecaf9-4a06-4feb-a452-fb4951f56056",
+        "asset_1b220660-6166-45fe-a76a-c22a332f0664"
+      ],
+      "purpose_asset_refs": {
+        "contract": [
+          "asset_da6c5dd0-5513-4f5c-9777-44126de95a4b"
+        ],
+        "payment": [
+          "asset_a6ac58f1-4f8b-4e8e-be6d-31373d4bd245"
+        ],
+        "system_integration": [
+          "asset_07775c08-2355-4748-9325-076c17052246"
+        ],
+        "functional_acceptance": [
+          "asset_81d26ea3-daf1-4c66-80a8-18fc5553e2f4"
+        ],
+        "training": [
+          "asset_f32f3ebe-4360-43bd-932b-a5e20ed19c17"
+        ],
+        "video": [
+          "asset_32fecaf9-4a06-4feb-a452-fb4951f56056",
+          "asset_1b220660-6166-45fe-a76a-c22a332f0664"
+        ]
+      },
+      "points_granted": false
+    },
+    {
+      "event": "owner_browser_response_capture_integrity",
+      "installed": true,
+      "failures": 0,
+      "unexpectedAborts": 0,
+      "pending": 0,
+      "completed": 2,
+      "correlation": "jsonrpc_id_and_method",
+      "browser_cdp_body_reads": 0
+    },
+    {
+      "event": "training_inline_withdraw_and_restore_reloaded",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "asset_refs": [
+        "asset_f32f3ebe-4360-43bd-932b-a5e20ed19c17"
+      ]
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.create",
+      "rpc_id": "588db60f-151b-4ad3-aadd-a3694401db20",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_8fae20951e01489fa8bb77fd25bc1430",
+        "company_name": "隔离交付验收-1789386477601-second"
+      },
+      "error_code": null,
+      "response_body_unavailable": false,
+      "response_capture": "original_fetch_clone"
+    },
+    {
+      "event": "new_customer_has_no_previous_profile_fields"
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.assets.upload",
+      "rpc_id": "59e37486-73c4-4fdf-ad28-634988615e4d",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_8fae20951e01489fa8bb77fd25bc1430",
+        "delivery_id": "cd_35357e8e-8412-46ea-a216-8b6d8f254df2",
+        "purpose": "contract"
+      },
+      "error_code": null,
+      "response_body_unavailable": false,
+      "response_capture": "original_fetch_clone"
+    },
+    {
+      "event": "cancelled_upload_received_by_server",
+      "sha256": "b4eaae48c4d9d1526556b0c2f3f7079a433d91883717bc7bb3b133ce7af67527",
+      "asset_ref": "asset_3939c993-7b1b-416c-b20f-7576ec28978a",
+      "scan_status": "pending",
+      "status": 200
+    },
+    {
+      "event": "cancelled_upload_real_scan",
+      "asset_ref": "asset_3939c993-7b1b-416c-b20f-7576ec28978a",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200
+    },
+    {
+      "event": "pending_upload_closed_and_switched_without_form_pollution",
+      "asset_ref": "asset_3939c993-7b1b-416c-b20f-7576ec28978a",
+      "server_asset_may_persist": true,
+      "delivery_profile_saved": false
+    },
+    {
+      "event": "screenshot",
+      "name": "cancelled-upload-does-not-populate-new-customer.png"
+    },
+    {
+      "event": "clean_contract_reuse_rpc",
+      "method": "ops.customer-delivery.create",
+      "delivery_id": "cd_49fafca9-0411-4a3c-8b8d-62c09269a6ed",
+      "sha256": "8be1400e3e779ea89c9a5074687a7795d3ba74782308408a20db2df7ed1ff999",
+      "asset_ref": null,
+      "scan_status": null,
+      "ready": null,
+      "status": 200,
+      "error_code": null
+    },
+    {
+      "event": "clean_contract_reuse_rpc",
+      "method": "ops.customer-delivery.assets.upload",
+      "delivery_id": "cd_49fafca9-0411-4a3c-8b8d-62c09269a6ed",
+      "sha256": "8be1400e3e779ea89c9a5074687a7795d3ba74782308408a20db2df7ed1ff999",
+      "asset_ref": "asset_da6c5dd0-5513-4f5c-9777-44126de95a4b",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200,
+      "error_code": null
+    },
+    {
+      "event": "clean_contract_reuse_rpc",
+      "method": "ops.customer-delivery.create",
+      "delivery_id": "cd_1fe523e1-845f-4e69-a072-082f9e41a5a4",
+      "sha256": "8be1400e3e779ea89c9a5074687a7795d3ba74782308408a20db2df7ed1ff999",
+      "asset_ref": null,
+      "scan_status": null,
+      "ready": null,
+      "status": 200,
+      "error_code": null
+    },
+    {
+      "event": "clean_contract_reuse_rpc",
+      "method": "ops.customer-delivery.assets.upload",
+      "delivery_id": "cd_1fe523e1-845f-4e69-a072-082f9e41a5a4",
+      "sha256": "8be1400e3e779ea89c9a5074687a7795d3ba74782308408a20db2df7ed1ff999",
+      "asset_ref": "asset_da6c5dd0-5513-4f5c-9777-44126de95a4b",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200,
+      "error_code": null
+    },
+    {
+      "event": "clean_contract_reuse_rpc",
+      "method": "ops.customer-delivery.create",
+      "delivery_id": "cd_34afae87-7005-4213-a107-f81c9a8516b8",
+      "sha256": "8be1400e3e779ea89c9a5074687a7795d3ba74782308408a20db2df7ed1ff999",
+      "asset_ref": null,
+      "scan_status": null,
+      "ready": null,
+      "status": 200,
+      "error_code": null
+    },
+    {
+      "event": "clean_contract_reuse_rpc",
+      "method": "ops.customer-delivery.assets.upload",
+      "delivery_id": "cd_34afae87-7005-4213-a107-f81c9a8516b8",
+      "sha256": "8be1400e3e779ea89c9a5074687a7795d3ba74782308408a20db2df7ed1ff999",
+      "asset_ref": "asset_da6c5dd0-5513-4f5c-9777-44126de95a4b",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200,
+      "error_code": null
+    },
+    {
+      "event": "clean_contract_reuse_rpc",
+      "method": "ops.customer-delivery.assets.get",
+      "delivery_id": "cd_49fafca9-0411-4a3c-8b8d-62c09269a6ed",
+      "sha256": "8be1400e3e779ea89c9a5074687a7795d3ba74782308408a20db2df7ed1ff999",
+      "asset_ref": "asset_da6c5dd0-5513-4f5c-9777-44126de95a4b",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200,
+      "error_code": null
+    },
+    {
+      "event": "clean_contract_reuse_rpc",
+      "method": "ops.customer-delivery.assets.get",
+      "delivery_id": "cd_1fe523e1-845f-4e69-a072-082f9e41a5a4",
+      "sha256": "8be1400e3e779ea89c9a5074687a7795d3ba74782308408a20db2df7ed1ff999",
+      "asset_ref": "asset_da6c5dd0-5513-4f5c-9777-44126de95a4b",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200,
+      "error_code": null
+    },
+    {
+      "event": "clean_contract_reuse_rpc",
+      "method": "ops.customer-delivery.assets.get",
+      "delivery_id": "cd_34afae87-7005-4213-a107-f81c9a8516b8",
+      "sha256": "8be1400e3e779ea89c9a5074687a7795d3ba74782308408a20db2df7ed1ff999",
+      "asset_ref": "asset_da6c5dd0-5513-4f5c-9777-44126de95a4b",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200,
+      "error_code": null
+    },
+    {
+      "event": "workspace_delivery_authorization_denied",
+      "method": "ops.customer-delivery.assets.get",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "status": 403,
+      "error_code": "FORBIDDEN",
+      "reason_code": "AUTHZ_WORKBENCH_MISMATCH",
+      "capability": "customer.delivery.read"
+    },
+    {
+      "event": "workspace_delivery_authorization_denied",
+      "method": "ops.customer-delivery.assets.upload",
+      "delivery_id": "cd_d8c1bc69-4e74-429b-af85-432e46942578",
+      "status": 403,
+      "error_code": "FORBIDDEN",
+      "reason_code": "AUTHZ_WORKBENCH_MISMATCH",
+      "capability": "customer.delivery.update"
+    },
+    {
+      "event": "owner_browser_response_capture_integrity",
+      "installed": true,
+      "failures": 0,
+      "unexpectedAborts": 0,
+      "pending": 0,
+      "completed": 4,
+      "correlation": "jsonrpc_id_and_method",
+      "browser_cdp_body_reads": 0
+    }
+  ],
+  "status": "passed"
+}

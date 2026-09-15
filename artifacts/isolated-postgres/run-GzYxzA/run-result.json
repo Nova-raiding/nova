@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-14T09:55:02.636Z",
+  "endedAt": "2026-09-14T09:55:28.746Z",
+  "runId": "badfe4c8-766a-4da9-8c0e-735ed1d750f5",
+  "selectedFiles": [
+    "packages/persistence/src/canonical-product-backfill.postgres.test.ts",
+    "packages/persistence/src/canonical-backfill-run-repository.postgres.test.ts",
+    "packages/persistence/src/commercial-point-adjustment-approval-repository.release.postgres.test.ts",
+    "packages/persistence/src/migration-106-release.postgres.test.ts",
+    "packages/persistence/src/migration-064-release.postgres.test.ts",
+    "packages/persistence/src/migration-127-release.postgres.test.ts",
+    "packages/persistence/src/migration-146-release.postgres.test.ts",
+    "packages/persistence/src/migration-148-release.postgres.test.ts",
+    "packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts",
+    "packages/persistence/src/private-trial-invites.release.postgres.test.ts",
+    "packages/persistence/src/private-trial-payment.release.postgres.test.ts",
+    "packages/persistence/src/brand-profile-association.release.postgres.test.ts",
+    "packages/persistence/src/password-auth-repository.release.postgres.test.ts",
+    "packages/persistence/src/migration-164-release.postgres.test.ts",
+    "packages/persistence/src/migration-166-release.postgres.test.ts"
+  ],
+  "childExitCode": 0,
+  "status": "passed",
+  "report": "vitest.json",
+  "errors": [],
+  "fixtureOnly": true,
+  "databaseSource": "newly-created-isolated-fixture",
+  "rolePasswordCompatibility": "isolated-test-fixture-only",
+  "inheritedBusinessEnvironment": false,
+  "sharedContainersTouched": false,
+  "disposal": {
+    "stopped": [
+      "20ca9035076787756bc190a9cf250db93ace7f7e2af31dd426333ba55ea2e37a",
+      "2d85127dbc6cf0e004d959045cd04f5b51c4e2b7b5780ced0b884a786f6ac2b0"
+    ],
+    "leftRunning": []
+  }
+}

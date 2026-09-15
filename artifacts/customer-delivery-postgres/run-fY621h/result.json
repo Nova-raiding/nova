@@ -1,0 +1,51 @@
+{
+  "status": "passed",
+  "stage": "post-upgrade new invalid state is atomic",
+  "at": "2026-09-14T11:18:48.756Z",
+  "fixtureOnly": true,
+  "verificationScope": "real-postgres-repository-with-explicitly-synthetic-evidence-refs",
+  "realScannerAcceptance": false,
+  "sharedContainersTouched": false,
+  "observations": [
+    "merchant_ops creates delivery with atomic audit",
+    "merchant_app cannot read any delivery control-plane table after bootstrap",
+    "unpaid checklist is blocked; full profile round-trips through PostgreSQL",
+    "10 integration and 8 acceptance items persist with evidence; no video means inactive",
+    "video reference and complete delivery generate persisted effective time (asset scanning belongs to API and is not claimed here)",
+    "single-item reopen/restore immediately recalculates effective time",
+    "profile-only update audit preserves existing video evidence in both before and after",
+    "stale concurrent update rejected; payment revocation clears effective time",
+    "cross-workspace reads are hidden; audit has real before-state and cannot be mutated by ops",
+    "video removal is soft-delete; physical delete denied",
+    "real 200→201→202 migration retains legacy paid/trained/raw effective facts while read surfaces show incomplete; 201 checksum unchanged",
+    "legacy metadata/video edits remain possible; payment then training repair separately succeeds; only all 18 real checklist rows permit effectiveness (refs are synthetic repository fixtures)",
+    "new missing-evidence states fail through repository and merchant_ops SQL; rejected writes preserve all row state/revisions and audit counts"
+  ],
+  "legacyEvidence": {
+    "upgradedFrom": 200,
+    "applied": [
+      201,
+      202
+    ],
+    "migration201ChecksumPreserved": true,
+    "rawLegacyPaymentTrainingFactsRetained": true,
+    "rawLegacyEffectiveAtPreservedByMigration": true,
+    "incompleteEffectiveAtMaskedOnRead": true,
+    "legacyReadsDoNotMutateRowsOrAudit": true,
+    "groupedRepairsAudited": true,
+    "requiredChecklistRows": 18,
+    "invalidWritesAtomic": true,
+    "schemaBypassUsed": false,
+    "databaseDropped": false,
+    "syntheticEvidenceRefs": true,
+    "runtimeRole": "merchant_ops",
+    "runtimeRoleBypassRls": false
+  },
+  "disposal": {
+    "stopped": [
+      "e0d31e567bb3b5d3322dbbbd2f7119b951c7351dbdeb82a78e9a139bbb9ba132",
+      "73bbcd7729cbd8e95ce26f8f695c8b5115aa02b128d689f2dfa36964f6e2dccd"
+    ],
+    "leftRunning": []
+  }
+}

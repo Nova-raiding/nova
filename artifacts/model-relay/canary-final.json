@@ -1,0 +1,62 @@
+{
+  "schema_version": "1",
+  "release_id": "local-canary",
+  "generated_at": "2026-09-12T08:30:54.820Z",
+  "expires_at": "2026-09-13T08:30:54.820Z",
+  "environment": "",
+  "simulated": false,
+  "relay": "https://ai.wormholexyz.xyz",
+  "results": [
+    {
+      "modality": "text",
+      "endpoint": "/chat/completions",
+      "model": "deepseek-v4-pro",
+      "httpStatus": 200,
+      "providerRequestId": "202609120830477240301148268d9d6dVEPTMLH",
+      "usageObserved": true,
+      "costObserved": true,
+      "costSource": "relay_pricing_snapshot",
+      "costCny": 0.04092536,
+      "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+      "pricingGroup": "VIP",
+      "state": "ready",
+      "evidence_ref": "artifact://production/relay/local-canary/text.json#59838f6b056cdb77c7a3450667e2c07ea6e6c8aaf2f9ddd5a369dafb22e69ffb"
+    },
+    {
+      "modality": "image",
+      "endpoint": "/images/generations",
+      "model": "qwen-image-2.0",
+      "state": "not_run_cost_guard",
+      "detail": "set MODEL_RELAY_CANARY_CONFIRM=true to run potentially billable media probes"
+    },
+    {
+      "modality": "image_edit",
+      "endpoint": "/images/edits",
+      "model": "qwen-image-2.0",
+      "state": "not_run_cost_guard",
+      "detail": "set MODEL_RELAY_CANARY_CONFIRM=true to run potentially billable media probes"
+    },
+    {
+      "modality": "ocr",
+      "endpoint": "/chat/completions",
+      "model": "glm-5.3-flash",
+      "httpStatus": 200,
+      "providerRequestId": "202609120830523767334348268d9d6GHoQGf3n",
+      "usageObserved": true,
+      "costObserved": true,
+      "costSource": "relay_pricing_snapshot",
+      "costCny": 0.00010928,
+      "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+      "pricingGroup": "VIP",
+      "state": "ready",
+      "evidence_ref": "artifact://production/relay/local-canary/ocr.json#8a6ce8ec634deceb5be7f62fc3b84d01dcb6953ffe3dbfe5be1c19233c4ed026"
+    },
+    {
+      "modality": "video",
+      "endpoint": "/video/generations",
+      "model": "wan3.0-video-prime",
+      "state": "not_run_cost_guard",
+      "detail": "set MODEL_RELAY_CANARY_CONFIRM=true to run potentially billable media probes"
+    }
+  ]
+}

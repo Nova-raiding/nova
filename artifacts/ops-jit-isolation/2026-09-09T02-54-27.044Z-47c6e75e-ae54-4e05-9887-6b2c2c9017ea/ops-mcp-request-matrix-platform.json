@@ -1,0 +1,2533 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "real_browser_mcp_workbench_scope_matrix",
+  "expectedWorkbench": "platform",
+  "requestCount": 109,
+  "methods": [
+    "ops.alerts.list",
+    "ops.audit.platform.list",
+    "ops.brand-units.summary",
+    "ops.commercial.access.summary",
+    "ops.commercial.readiness.report",
+    "ops.feature-flags.list",
+    "ops.growth.funnel",
+    "ops.marketing.summary",
+    "ops.session",
+    "ops.storage.reconciliation.list",
+    "ops.stores.list",
+    "ops.tasks.summary",
+    "ops.users.list",
+    "ops.workspaces.list",
+    "platform.model.status"
+  ],
+  "countsByMethod": {
+    "ops.alerts.list": 8,
+    "ops.audit.platform.list": 9,
+    "ops.brand-units.summary": 8,
+    "ops.commercial.access.summary": 12,
+    "ops.commercial.readiness.report": 2,
+    "ops.feature-flags.list": 1,
+    "ops.growth.funnel": 8,
+    "ops.marketing.summary": 8,
+    "ops.session": 9,
+    "ops.storage.reconciliation.list": 9,
+    "ops.stores.list": 9,
+    "ops.tasks.summary": 8,
+    "ops.users.list": 1,
+    "ops.workspaces.list": 8,
+    "platform.model.status": 9
+  },
+  "requests": [
+    {
+      "at": "2026-09-09T02:54:42.182Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:42.551Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.commercial.access.summary",
+      "params": {
+        "target_workspace_id": "ws_ops_fixture_637948540e8c4d38b66dd9d117c297df"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "access_revision",
+        "allowed",
+        "available_points",
+        "balance_state",
+        "decision_id",
+        "decision_outcome",
+        "error_code",
+        "next_actions",
+        "quoted_points",
+        "rate_card_version",
+        "reserved_points",
+        "schema_version",
+        "settled_points",
+        "verified_at",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:42.559Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.commercial.access.summary",
+      "params": {
+        "target_workspace_id": "ws_ops_fixture_637948540e8c4d38b66dd9d117c297df"
+      },
+      "status": null,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": null,
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:42.818Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.stores.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": null,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": null,
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:42.818Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "platform.model.status",
+      "params": {},
+      "status": null,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": null,
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:42.818Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.storage.reconciliation.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": null,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": null,
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:42.982Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:43.076Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.commercial.access.summary",
+      "params": {
+        "target_workspace_id": "ws_ops_fixture_637948540e8c4d38b66dd9d117c297df"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "access_revision",
+        "allowed",
+        "available_points",
+        "balance_state",
+        "decision_id",
+        "decision_outcome",
+        "error_code",
+        "next_actions",
+        "quoted_points",
+        "rate_card_version",
+        "reserved_points",
+        "schema_version",
+        "settled_points",
+        "verified_at",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:43.081Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.commercial.access.summary",
+      "params": {
+        "target_workspace_id": "ws_ops_fixture_637948540e8c4d38b66dd9d117c297df"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "access_revision",
+        "allowed",
+        "available_points",
+        "balance_state",
+        "decision_id",
+        "decision_outcome",
+        "error_code",
+        "next_actions",
+        "quoted_points",
+        "rate_card_version",
+        "reserved_points",
+        "schema_version",
+        "settled_points",
+        "verified_at",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:43.188Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.stores.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "aggregate",
+        "items",
+        "total"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:43.188Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "platform.model.status",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "capabilities",
+        "cost_control_ready",
+        "cost_evidence_by_modality",
+        "cost_evidence_ready",
+        "endpoints",
+        "image_model",
+        "image_provider_host",
+        "model_readiness",
+        "next_actions",
+        "ownership",
+        "provider_host",
+        "quotas",
+        "relay",
+        "release_metadata_missing",
+        "release_metadata_ready",
+        "state",
+        "text_model",
+        "user_key_binding",
+        "video_model",
+        "vision_model"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:43.188Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.storage.reconciliation.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:43.264Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.commercial.readiness.report",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "blockers",
+        "capabilities",
+        "catalog",
+        "creative_points",
+        "environment",
+        "generated_at",
+        "message",
+        "policies",
+        "provider",
+        "read_only",
+        "ready",
+        "registry",
+        "schema_version"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:43.485Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.audit.platform.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:43.485Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.brand-units.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "boundStoreCount",
+        "brandCount",
+        "canonicalProductCount",
+        "listingCount",
+        "scope",
+        "unboundBrandCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:43.485Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.tasks.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "byState",
+        "failedWorkspaceCount",
+        "generationQueueCount",
+        "publishQueueCount",
+        "scope",
+        "taskCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:43.485Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.marketing.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": null,
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:43.573Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.growth.funnel",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "counts",
+        "scope",
+        "totalEvents",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:43.575Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.alerts.list",
+      "params": {
+        "status": "open",
+        "limit": "100",
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "aggregate",
+        "items",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:44.685Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.workspaces.list",
+      "params": {
+        "offset": "0",
+        "limit": "20"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "hasMore",
+        "items",
+        "limit",
+        "offset",
+        "total"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:45.594Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:45.704Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.commercial.access.summary",
+      "params": {
+        "target_workspace_id": "ws_ops_fixture_637948540e8c4d38b66dd9d117c297df"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "access_revision",
+        "allowed",
+        "available_points",
+        "balance_state",
+        "decision_id",
+        "decision_outcome",
+        "error_code",
+        "next_actions",
+        "quoted_points",
+        "rate_card_version",
+        "reserved_points",
+        "schema_version",
+        "settled_points",
+        "verified_at",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:45.715Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.users.list",
+      "params": {
+        "limit": "20",
+        "offset": "0"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "identityCount",
+        "items",
+        "limit",
+        "offset",
+        "total",
+        "truncated",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:45.844Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.stores.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "aggregate",
+        "items",
+        "total"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:45.844Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "platform.model.status",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "capabilities",
+        "cost_control_ready",
+        "cost_evidence_by_modality",
+        "cost_evidence_ready",
+        "endpoints",
+        "image_model",
+        "image_provider_host",
+        "model_readiness",
+        "next_actions",
+        "ownership",
+        "provider_host",
+        "quotas",
+        "relay",
+        "release_metadata_missing",
+        "release_metadata_ready",
+        "state",
+        "text_model",
+        "user_key_binding",
+        "video_model",
+        "vision_model"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:45.844Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.storage.reconciliation.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:46.146Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.audit.platform.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:46.147Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.brand-units.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "boundStoreCount",
+        "brandCount",
+        "canonicalProductCount",
+        "listingCount",
+        "scope",
+        "unboundBrandCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:46.147Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.tasks.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "byState",
+        "failedWorkspaceCount",
+        "generationQueueCount",
+        "publishQueueCount",
+        "scope",
+        "taskCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:46.147Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.marketing.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": null,
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:46.217Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.growth.funnel",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "counts",
+        "scope",
+        "totalEvents",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:46.217Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.alerts.list",
+      "params": {
+        "status": "open",
+        "limit": "100",
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "aggregate",
+        "items",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:47.345Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.workspaces.list",
+      "params": {
+        "offset": "0",
+        "limit": "20"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "hasMore",
+        "items",
+        "limit",
+        "offset",
+        "total"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:48.084Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:48.122Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.commercial.access.summary",
+      "params": {
+        "target_workspace_id": "ws_ops_fixture_637948540e8c4d38b66dd9d117c297df"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "access_revision",
+        "allowed",
+        "available_points",
+        "balance_state",
+        "decision_id",
+        "decision_outcome",
+        "error_code",
+        "next_actions",
+        "quoted_points",
+        "rate_card_version",
+        "reserved_points",
+        "schema_version",
+        "settled_points",
+        "verified_at",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:48.176Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.stores.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "aggregate",
+        "items",
+        "total"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:48.177Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "platform.model.status",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "capabilities",
+        "cost_control_ready",
+        "cost_evidence_by_modality",
+        "cost_evidence_ready",
+        "endpoints",
+        "image_model",
+        "image_provider_host",
+        "model_readiness",
+        "next_actions",
+        "ownership",
+        "provider_host",
+        "quotas",
+        "relay",
+        "release_metadata_missing",
+        "release_metadata_ready",
+        "state",
+        "text_model",
+        "user_key_binding",
+        "video_model",
+        "vision_model"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:48.177Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.storage.reconciliation.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:48.477Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.audit.platform.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:48.478Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.brand-units.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "boundStoreCount",
+        "brandCount",
+        "canonicalProductCount",
+        "listingCount",
+        "scope",
+        "unboundBrandCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:48.478Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.tasks.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "byState",
+        "failedWorkspaceCount",
+        "generationQueueCount",
+        "publishQueueCount",
+        "scope",
+        "taskCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:48.478Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.marketing.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "assetRiskCount",
+        "failedWorkspaceCount",
+        "generationByState",
+        "learningSuggestionCount",
+        "publishByState",
+        "scope",
+        "taskCount",
+        "visualReviewCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:48.522Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.growth.funnel",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "counts",
+        "scope",
+        "totalEvents",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:48.527Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.alerts.list",
+      "params": {
+        "status": "open",
+        "limit": "100",
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "aggregate",
+        "items",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:49.678Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.workspaces.list",
+      "params": {
+        "offset": "0",
+        "limit": "20"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "hasMore",
+        "items",
+        "limit",
+        "offset",
+        "total"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:50.609Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:50.647Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.commercial.access.summary",
+      "params": {
+        "target_workspace_id": "ws_ops_fixture_637948540e8c4d38b66dd9d117c297df"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "access_revision",
+        "allowed",
+        "available_points",
+        "balance_state",
+        "decision_id",
+        "decision_outcome",
+        "error_code",
+        "next_actions",
+        "quoted_points",
+        "rate_card_version",
+        "reserved_points",
+        "schema_version",
+        "settled_points",
+        "verified_at",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:50.655Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.commercial.access.summary",
+      "params": {
+        "target_workspace_id": "ws_ops_fixture_637948540e8c4d38b66dd9d117c297df"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "access_revision",
+        "allowed",
+        "available_points",
+        "balance_state",
+        "decision_id",
+        "decision_outcome",
+        "error_code",
+        "next_actions",
+        "quoted_points",
+        "rate_card_version",
+        "reserved_points",
+        "schema_version",
+        "settled_points",
+        "verified_at",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:50.695Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.stores.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "aggregate",
+        "items",
+        "total"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:50.695Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "platform.model.status",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "capabilities",
+        "cost_control_ready",
+        "cost_evidence_by_modality",
+        "cost_evidence_ready",
+        "endpoints",
+        "image_model",
+        "image_provider_host",
+        "model_readiness",
+        "next_actions",
+        "ownership",
+        "provider_host",
+        "quotas",
+        "relay",
+        "release_metadata_missing",
+        "release_metadata_ready",
+        "state",
+        "text_model",
+        "user_key_binding",
+        "video_model",
+        "vision_model"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:50.695Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.storage.reconciliation.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:50.997Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.audit.platform.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:50.997Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.brand-units.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": null,
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:50.998Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.tasks.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "byState",
+        "failedWorkspaceCount",
+        "generationQueueCount",
+        "publishQueueCount",
+        "scope",
+        "taskCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:50.998Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.marketing.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "assetRiskCount",
+        "failedWorkspaceCount",
+        "generationByState",
+        "learningSuggestionCount",
+        "publishByState",
+        "scope",
+        "taskCount",
+        "visualReviewCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:51.042Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.growth.funnel",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "counts",
+        "scope",
+        "totalEvents",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:51.049Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.alerts.list",
+      "params": {
+        "status": "open",
+        "limit": "100",
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "aggregate",
+        "items",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:52.196Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.workspaces.list",
+      "params": {
+        "offset": "0",
+        "limit": "20"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "hasMore",
+        "items",
+        "limit",
+        "offset",
+        "total"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:52.854Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:52.913Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.commercial.access.summary",
+      "params": {
+        "target_workspace_id": "ws_ops_fixture_637948540e8c4d38b66dd9d117c297df"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "access_revision",
+        "allowed",
+        "available_points",
+        "balance_state",
+        "decision_id",
+        "decision_outcome",
+        "error_code",
+        "next_actions",
+        "quoted_points",
+        "rate_card_version",
+        "reserved_points",
+        "schema_version",
+        "settled_points",
+        "verified_at",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:52.980Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.stores.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "aggregate",
+        "items",
+        "total"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:52.980Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "platform.model.status",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "capabilities",
+        "cost_control_ready",
+        "cost_evidence_by_modality",
+        "cost_evidence_ready",
+        "endpoints",
+        "image_model",
+        "image_provider_host",
+        "model_readiness",
+        "next_actions",
+        "ownership",
+        "provider_host",
+        "quotas",
+        "relay",
+        "release_metadata_missing",
+        "release_metadata_ready",
+        "state",
+        "text_model",
+        "user_key_binding",
+        "video_model",
+        "vision_model"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:52.980Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.storage.reconciliation.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:53.038Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.feature-flags.list",
+      "params": {
+        "environment": "production",
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "items"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:53.281Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.audit.platform.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:53.282Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.brand-units.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "boundStoreCount",
+        "brandCount",
+        "canonicalProductCount",
+        "listingCount",
+        "scope",
+        "unboundBrandCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:53.282Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.tasks.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "byState",
+        "failedWorkspaceCount",
+        "generationQueueCount",
+        "publishQueueCount",
+        "scope",
+        "taskCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:53.283Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.marketing.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "assetRiskCount",
+        "failedWorkspaceCount",
+        "generationByState",
+        "learningSuggestionCount",
+        "publishByState",
+        "scope",
+        "taskCount",
+        "visualReviewCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:53.337Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.growth.funnel",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "counts",
+        "scope",
+        "totalEvents",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:53.343Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.alerts.list",
+      "params": {
+        "status": "open",
+        "limit": "100",
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "aggregate",
+        "items",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:54.480Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.workspaces.list",
+      "params": {
+        "offset": "0",
+        "limit": "20"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "hasMore",
+        "items",
+        "limit",
+        "offset",
+        "total"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:55.362Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:55.429Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.commercial.access.summary",
+      "params": {
+        "target_workspace_id": "ws_ops_fixture_637948540e8c4d38b66dd9d117c297df"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "access_revision",
+        "allowed",
+        "available_points",
+        "balance_state",
+        "decision_id",
+        "decision_outcome",
+        "error_code",
+        "next_actions",
+        "quoted_points",
+        "rate_card_version",
+        "reserved_points",
+        "schema_version",
+        "settled_points",
+        "verified_at",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:55.478Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.stores.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "aggregate",
+        "items",
+        "total"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:55.478Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "platform.model.status",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "capabilities",
+        "cost_control_ready",
+        "cost_evidence_by_modality",
+        "cost_evidence_ready",
+        "endpoints",
+        "image_model",
+        "image_provider_host",
+        "model_readiness",
+        "next_actions",
+        "ownership",
+        "provider_host",
+        "quotas",
+        "relay",
+        "release_metadata_missing",
+        "release_metadata_ready",
+        "state",
+        "text_model",
+        "user_key_binding",
+        "video_model",
+        "vision_model"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:55.478Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.storage.reconciliation.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:55.779Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.audit.platform.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:55.779Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.brand-units.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "boundStoreCount",
+        "brandCount",
+        "canonicalProductCount",
+        "listingCount",
+        "scope",
+        "unboundBrandCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:55.779Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.tasks.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "byState",
+        "failedWorkspaceCount",
+        "generationQueueCount",
+        "publishQueueCount",
+        "scope",
+        "taskCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:55.779Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.marketing.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "assetRiskCount",
+        "failedWorkspaceCount",
+        "generationByState",
+        "learningSuggestionCount",
+        "publishByState",
+        "scope",
+        "taskCount",
+        "visualReviewCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:55.816Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.growth.funnel",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "counts",
+        "scope",
+        "totalEvents",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:55.821Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.alerts.list",
+      "params": {
+        "status": "open",
+        "limit": "100",
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "aggregate",
+        "items",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:56.979Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.workspaces.list",
+      "params": {
+        "offset": "0",
+        "limit": "20"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "hasMore",
+        "items",
+        "limit",
+        "offset",
+        "total"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:57.829Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:57.863Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.commercial.access.summary",
+      "params": {
+        "target_workspace_id": "ws_ops_fixture_637948540e8c4d38b66dd9d117c297df"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "access_revision",
+        "allowed",
+        "available_points",
+        "balance_state",
+        "decision_id",
+        "decision_outcome",
+        "error_code",
+        "next_actions",
+        "quoted_points",
+        "rate_card_version",
+        "reserved_points",
+        "schema_version",
+        "settled_points",
+        "verified_at",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:57.911Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.stores.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "aggregate",
+        "items",
+        "total"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:57.911Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "platform.model.status",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "capabilities",
+        "cost_control_ready",
+        "cost_evidence_by_modality",
+        "cost_evidence_ready",
+        "endpoints",
+        "image_model",
+        "image_provider_host",
+        "model_readiness",
+        "next_actions",
+        "ownership",
+        "provider_host",
+        "quotas",
+        "relay",
+        "release_metadata_missing",
+        "release_metadata_ready",
+        "state",
+        "text_model",
+        "user_key_binding",
+        "video_model",
+        "vision_model"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:57.911Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.storage.reconciliation.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:57.981Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.commercial.readiness.report",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "blockers",
+        "capabilities",
+        "catalog",
+        "creative_points",
+        "environment",
+        "generated_at",
+        "message",
+        "policies",
+        "provider",
+        "read_only",
+        "ready",
+        "registry",
+        "schema_version"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:58.211Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.audit.platform.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:58.211Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.brand-units.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "boundStoreCount",
+        "brandCount",
+        "canonicalProductCount",
+        "listingCount",
+        "scope",
+        "unboundBrandCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:58.211Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.tasks.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "byState",
+        "failedWorkspaceCount",
+        "generationQueueCount",
+        "publishQueueCount",
+        "scope",
+        "taskCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:58.211Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.marketing.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "assetRiskCount",
+        "failedWorkspaceCount",
+        "generationByState",
+        "learningSuggestionCount",
+        "publishByState",
+        "scope",
+        "taskCount",
+        "visualReviewCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:58.243Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.growth.funnel",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "counts",
+        "scope",
+        "totalEvents",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:58.247Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.alerts.list",
+      "params": {
+        "status": "open",
+        "limit": "100",
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "aggregate",
+        "items",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:54:59.411Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.workspaces.list",
+      "params": {
+        "offset": "0",
+        "limit": "20"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "hasMore",
+        "items",
+        "limit",
+        "offset",
+        "total"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:55:00.203Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:55:00.530Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.commercial.access.summary",
+      "params": {
+        "target_workspace_id": "ws_ops_fixture_637948540e8c4d38b66dd9d117c297df"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "access_revision",
+        "allowed",
+        "available_points",
+        "balance_state",
+        "decision_id",
+        "decision_outcome",
+        "error_code",
+        "next_actions",
+        "quoted_points",
+        "rate_card_version",
+        "reserved_points",
+        "schema_version",
+        "settled_points",
+        "verified_at",
+        "workspace_id"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:55:00.746Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.stores.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "aggregate",
+        "items",
+        "total"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:55:00.746Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "platform.model.status",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "capabilities",
+        "cost_control_ready",
+        "cost_evidence_by_modality",
+        "cost_evidence_ready",
+        "endpoints",
+        "image_model",
+        "image_provider_host",
+        "model_readiness",
+        "next_actions",
+        "ownership",
+        "provider_host",
+        "quotas",
+        "relay",
+        "release_metadata_missing",
+        "release_metadata_ready",
+        "state",
+        "text_model",
+        "user_key_binding",
+        "video_model",
+        "vision_model"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:55:00.747Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.storage.reconciliation.list",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:55:01.047Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.audit.platform.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:55:01.047Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.brand-units.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "boundStoreCount",
+        "brandCount",
+        "canonicalProductCount",
+        "listingCount",
+        "scope",
+        "unboundBrandCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:55:01.047Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.tasks.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "byState",
+        "failedWorkspaceCount",
+        "generationQueueCount",
+        "publishQueueCount",
+        "scope",
+        "taskCount",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:55:01.047Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.marketing.summary",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": null,
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:55:01.103Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.audit.platform.list",
+      "params": {
+        "limit": "100"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:55:01.105Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.growth.funnel",
+      "params": {
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "counts",
+        "scope",
+        "totalEvents",
+        "workspaceCount"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:55:01.130Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.alerts.list",
+      "params": {
+        "status": "open",
+        "limit": "100",
+        "platform_scope": "platform"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "aggregate",
+        "items",
+        "truncated"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    },
+    {
+      "at": "2026-09-09T02:55:02.246Z",
+      "workbench": "platform",
+      "hasWorkspaceHeader": false,
+      "method": "ops.workspaces.list",
+      "params": {
+        "offset": "0",
+        "limit": "20"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "hasMore",
+        "items",
+        "limit",
+        "offset",
+        "total"
+      ],
+      "responseShape": "result",
+      "responseReadError": null
+    }
+  ],
+  "violations": [],
+  "capturedHeaders": [
+    "x-ops-workbench",
+    "x-workspace-id presence only"
+  ]
+}

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>商家营销内容助手 · 竞品与设计决策</title>
+  <style>
+    :root{font-family:Inter,"Noto Sans SC",system-ui,sans-serif;color:#e5eefb;background:#0b1220;line-height:1.55}body{margin:0;padding:32px}main{max-width:1180px;margin:auto}h1{margin:0 0 8px;font-size:30px}h2{margin-top:34px;color:#93c5fd}p,.note{color:#b7c6dc}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card,.panel{background:#111c2e;border:1px solid #2b3c55;border-radius:10px;padding:18px}.card h3{margin:0 0 8px;color:#f8fafc}.tag{display:inline-block;padding:3px 8px;border-radius:999px;background:#243b5a;color:#bfdbfe;font-size:12px;margin:3px}.win{border-color:#16855a}.risk{border-color:#b45309}table{width:100%;border-collapse:collapse;background:#111c2e;border:1px solid #2b3c55}th,td{text-align:left;padding:12px;border-bottom:1px solid #26364d;vertical-align:top}th{color:#bfdbfe;background:#17263d}button{background:#2563eb;color:#fff;border:0;border-radius:6px;padding:8px 12px;cursor:pointer}button:focus{outline:3px solid #fbbf24;outline-offset:2px}.hidden{display:none}.source{font-size:12px;color:#94a3b8}.decision{border-left:3px solid #22c55e;padding-left:14px}
+  </style>
+</head>
+<body><main>
+  <h1>商家营销内容助手：竞品研究与设计决策</h1>
+  <p>研究对象：Shopify Sidekick/Magic、Adobe Express、我们的 ChatGPT 插件 + 桌面运营台。结论只用于桌面商家工作流，不扩展到手机运营台。</p>
+  <button id="toggle">显示/隐藏证据与风险</button>
+  <section class="grid">
+    <article class="card win"><h3>我们应赢的场景</h3><span class="tag">真实平台授权</span><span class="tag">租户隔离</span><span class="tag">成本证据</span><span class="tag">远端回查</span><p>让商家知道“能不能做、为什么不能做、下一步怎么恢复”，并把扫描、权益、点数、发布回执串成一条可追溯链。</p></article>
+    <article class="card"><h3>Shopify 的强项</h3><span class="tag">上下文内助手</span><span class="tag">修改前审核</span><span class="tag">后台继续执行</span><p>Sidekick 在 Admin 上下文中生成商品文案、图片和任务；较长任务可后台继续，完成后回到审核。生成字段会被高亮，降低“模型偷偷改了什么”的认知成本。</p></article>
+    <article class="card"><h3>Adobe Express 的强项</h3><span class="tag">Brand Kit</span><span class="tag">模板锁定</span><span class="tag">预览排期</span><p>把品牌字体、颜色、logo、模板放入品牌资产；Content Scheduler 提供计划、预览、排期、发布四步闭环。</p></article>
+  </section>
+  <h2>能力矩阵</h2>
+  <table><thead><tr><th>能力</th><th>Shopify</th><th>Adobe</th><th>我们的设计取舍</th></tr></thead><tbody>
+    <tr><td>AI 生成</td><td>商品文案、图片、营销内容</td><td>模板、图片、社媒文案</td><td>生成前显示来源、模型、点数准入；生成后必须进入审核，不直接发布。</td></tr>
+    <tr><td>品牌一致性</td><td>店铺上下文</td><td>Brand Kit + 模板锁定</td><td>采用“品牌资料 + 权益状态 + 平台字段规则”三层门禁，锁定不可用字段。</td></tr>
+    <tr><td>异步任务</td><td>后台继续并通知审核</td><td>草稿、排期、预览</td><td>任务队列显示“处理中 / 待确认 / 失败”，待确认只能查结果或对账，不能盲重试。</td></tr>
+    <tr><td>发布</td><td>店铺内修改</td><td>多渠道排期发布</td><td>坚持 prepare → diff → 二次确认 → confirm → 远端回查；只有回查成功才显示已发布。</td></tr>
+    <tr><td>安全与证据</td><td>提示用户复核内容</td><td>商业安全与资产管理</td><td>增强为扫描回执、版权/权益、请求 ID、usage/cost、租户/RLS 和审计事件联动。</td></tr>
+  </tbody></table>
+  <h2>设计决策</h2>
+  <div class="panel decision"><b>1. 状态不再只给颜色或枚举。</b><br>每个“待确认/阻断”状态必须同时给出原因、可执行下一步、request ID/证据入口；“待确认”不能变成 0、成功或可重试。</div>
+  <div class="panel decision"><b>2. 把审核放在生成结果旁边。</b><br>沿用 Shopify 的修改可见性和 Adobe 的品牌控制：生成结果显示来源、版本、权益、扫描、成本与可发布条件；用户在同一工作区完成确认。</div>
+  <div class="panel decision"><b>3. 采用计划—预览—确认—发布四段式。</b><br>借鉴 Adobe Scheduler 的线性节奏，但把真实平台授权和远端回查插入发布前后，避免“本地显示成功、平台实际未知”。</div>
+  <div class="panel decision"><b>4. 桌面运营台保持高密度工作台。</b><br>左侧任务导航、身份/范围条、主表格、详情 Drawer；不引入移动端交互，不用装饰性卡片堆叠。</div>
+  <section id="evidence" class="hidden"><h2>证据与风险</h2><div class="panel"><p><b>竞品优势不可直接照搬：</b>Shopify 的店铺数据上下文和 Adobe 的品牌资产体系依赖其自身平台；我们的平台授权、对象存储、扫描、支付和模型中转都必须以真实配置和证据为准。</p><p><b>最高风险：</b>生成结果质量、平台字段差异、版权/权益、异步 provider 超时、重复扣费和远端发布状态不确定。所有风险都保持 fail-closed。</p><p class="source">来源：Shopify Sidekick / Magic 官方帮助中心；Adobe Express Brand Kit、Content Scheduler 官方文档（访问日期 2026-09-11）。</p></div></section>
+  <h2>下一轮实现优先级</h2><ol><li>统一状态组件：状态标签 + 解释 + 下一步 + 证据链接。</li><li>生成结果 Drawer 增加品牌/权益/扫描/成本四项审核摘要。</li><li>发布队列增加“预览差异”和“远端回查”时间线。</li><li>继续保持真实生产配置缺失时的 NO-GO，不用 fixture 解除门禁。</li></ol>
+</main><script>document.getElementById('toggle').onclick=()=>document.getElementById('evidence').classList.toggle('hidden')</script></body></html>

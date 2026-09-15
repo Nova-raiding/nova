@@ -1,0 +1,586 @@
+{
+  "config": {
+    "rootDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-10T14-00-45.784Z-0341f4b9-2b44-4e20-bfe8-54d6d1c673a2/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "walk every Ops Console section through the real browser UI",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 26138,
+                  "error": {
+                    "message": "TimeoutError: locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('h1,h2,h3').filter({ hasText: '/^运营总览$/u' }) to be visible\u001b[22m\n",
+                    "stack": "TimeoutError: locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('h1,h2,h3').filter({ hasText: '/^运营总览$/u' }) to be visible\u001b[22m\n\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js:68:97",
+                    "location": {
+                      "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js",
+                      "column": 97,
+                      "line": 68
+                    },
+                    "snippet": "  66 |     await page.locator('button').filter({ hasText: new RegExp(`^${section}$`, 'u') }).first().click()\n  67 |     const expectedHeading = headings[section] ?? section\n> 68 |     await page.locator('h1,h2,h3').filter({ hasText: new RegExp(`^${expectedHeading}$`, 'u') }).waitFor({ state: 'visible', timeout: 20_000 })\n     |                                                                                                 ^\n  69 |     await page.waitForTimeout(5_000)\n  70 |     if (section === '用户中心') {\n  71 |       const userDirectory = page.getByRole('tab', { name: '用户目录', exact: true })"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js",
+                        "column": 97,
+                        "line": 68
+                      },
+                      "message": "TimeoutError: locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('h1,h2,h3').filter({ hasText: '/^运营总览$/u' }) to be visible\u001b[22m\n\n\n  66 |     await page.locator('button').filter({ hasText: new RegExp(`^${section}$`, 'u') }).first().click()\n  67 |     const expectedHeading = headings[section] ?? section\n> 68 |     await page.locator('h1,h2,h3').filter({ hasText: new RegExp(`^${expectedHeading}$`, 'u') }).waitFor({ state: 'visible', timeout: 20_000 })\n     |                                                                                                 ^\n  69 |     await page.waitForTimeout(5_000)\n  70 |     if (section === '用户中心') {\n  71 |       const userDirectory = page.getByRole('tab', { name: '用户目录', exact: true })\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js:68:97"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:00:53.008Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-10T14-00-45.784Z-0341f4b9-2b44-4e20-bfe8-54d6d1c673a2/test-results/dogfood-chatgpt-all-functi-28935-through-the-real-browser-UI/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js",
+                    "column": 97,
+                    "line": 68
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "0411c0cf49f1d2cc9183-bed75de6c367b57696c0",
+          "file": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+          "line": 24,
+          "column": 1
+        },
+        {
+          "title": "does not report model configuration success when model status fails",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1258,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:01:49.632Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "0411c0cf49f1d2cc9183-15deecbc14659188a876",
+          "file": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+          "line": 126,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "operates the platform user directory without destructive confirmation",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 20945,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m()\u001b[22m failed\n\nLocator:  getByRole('heading', { name: '用户中心' })\nExpected: visible\nReceived: <element(s) not found>\nTimeout:  20000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 20000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('heading', { name: '用户中心' })\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m()\u001b[22m failed\n\nLocator:  getByRole('heading', { name: '用户中心' })\nExpected: visible\nReceived: <element(s) not found>\nTimeout:  20000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 20000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('heading', { name: '用户中心' })\u001b[22m\n\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js:46:61",
+                    "location": {
+                      "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js",
+                      "column": 61,
+                      "line": 46
+                    },
+                    "snippet": "  44 |   await page.locator('#ops-primary-navigation').getByRole('button', { name: '用户中心', exact: true }).click()\n  45 |   await expect(page).toHaveURL(/\\/ops\\/users(?:\\?.*)?$/u)\n> 46 |   await expect(page.getByRole('heading', { name: '用户中心' })).toBeVisible({ timeout: 20_000 })\n     |                                                             ^\n  47 |   await expect(page.getByText('当前租户成员')).toHaveCount(0)\n  48 |   await expect(page.getByRole('form', { name: '用户目录筛选' })).toBeVisible({ timeout: 20_000 })\n  49 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js",
+                        "column": 61,
+                        "line": 46
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m()\u001b[22m failed\n\nLocator:  getByRole('heading', { name: '用户中心' })\nExpected: visible\nReceived: <element(s) not found>\nTimeout:  20000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 20000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('heading', { name: '用户中心' })\u001b[22m\n\n\n  44 |   await page.locator('#ops-primary-navigation').getByRole('button', { name: '用户中心', exact: true }).click()\n  45 |   await expect(page).toHaveURL(/\\/ops\\/users(?:\\?.*)?$/u)\n> 46 |   await expect(page.getByRole('heading', { name: '用户中心' })).toBeVisible({ timeout: 20_000 })\n     |                                                             ^\n  47 |   await expect(page.getByText('当前租户成员')).toHaveCount(0)\n  48 |   await expect(page.getByRole('form', { name: '用户目录筛选' })).toBeVisible({ timeout: 20_000 })\n  49 |\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js:46:61"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:02:36.154Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-10T14-00-45.784Z-0341f4b9-2b44-4e20-bfe8-54d6d1c673a2/test-results/dogfood-chatgpt-all-functi-203b8-ut-destructive-confirmation/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js",
+                    "column": 61,
+                    "line": 46
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "6522f71e1b3fcc2fbb2c-e331058b5d4d2c88859f",
+          "file": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+          "line": 33,
+          "column": 1
+        },
+        {
+          "title": "keeps member governance in the workspace workbench",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 5829,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m()\u001b[22m failed\n\nLocator:  getByRole('heading', { name: '成员与权限' })\nExpected: visible\nReceived: <element(s) not found>\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('heading', { name: '成员与权限' })\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m()\u001b[22m failed\n\nLocator:  getByRole('heading', { name: '成员与权限' })\nExpected: visible\nReceived: <element(s) not found>\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('heading', { name: '成员与权限' })\u001b[22m\n\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js:145:62",
+                    "location": {
+                      "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js",
+                      "column": 62,
+                      "line": 145
+                    },
+                    "snippet": "  143 |   await openWorkspaceConsole(page, '/ops/members?workbench=workspace')\n  144 |   await expect(page).toHaveURL(/\\/ops\\/members\\?workbench=workspace$/u)\n> 145 |   await expect(page.getByRole('heading', { name: '成员与权限' })).toBeVisible()\n      |                                                              ^\n  146 |   await expect(page.getByText('当前租户成员')).toBeVisible()\n  147 |   const inviteForm = page.getByRole('form', { name: '邀请工作区成员' })\n  148 |   await expect(inviteForm).toBeVisible()"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js",
+                        "column": 62,
+                        "line": 145
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m()\u001b[22m failed\n\nLocator:  getByRole('heading', { name: '成员与权限' })\nExpected: visible\nReceived: <element(s) not found>\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('heading', { name: '成员与权限' })\u001b[22m\n\n\n  143 |   await openWorkspaceConsole(page, '/ops/members?workbench=workspace')\n  144 |   await expect(page).toHaveURL(/\\/ops\\/members\\?workbench=workspace$/u)\n> 145 |   await expect(page.getByRole('heading', { name: '成员与权限' })).toBeVisible()\n      |                                                              ^\n  146 |   await expect(page.getByText('当前租户成员')).toBeVisible()\n  147 |   const inviteForm = page.getByRole('form', { name: '邀请工作区成员' })\n  148 |   await expect(inviteForm).toBeVisible()\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js:145:62"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:03:21.536Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-10T14-00-45.784Z-0341f4b9-2b44-4e20-bfe8-54d6d1c673a2/test-results/dogfood-chatgpt-all-functi-dbed3--in-the-workspace-workbench/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js",
+                    "column": 62,
+                    "line": 145
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "6522f71e1b3fcc2fbb2c-02b18fadf9258823ef5a",
+          "file": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+          "line": 137,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-workspace-visual.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-workspace-visual.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "captures every workspace Ops Console page for visual QA",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 21087,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m()\u001b[22m failed\n\nLocator:  getByRole('heading', { name: '成员与权限', exact: true }).or(getByRole('heading', { name: /无权访问/u }))\nExpected: visible\nReceived: <element(s) not found>\nTimeout:  20000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 20000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('heading', { name: '成员与权限', exact: true }).or(getByRole('heading', { name: /无权访问/u }))\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m()\u001b[22m failed\n\nLocator:  getByRole('heading', { name: '成员与权限', exact: true }).or(getByRole('heading', { name: /无权访问/u }))\nExpected: visible\nReceived: <element(s) not found>\nTimeout:  20000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 20000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('heading', { name: '成员与权限', exact: true }).or(getByRole('heading', { name: /无权访问/u }))\u001b[22m\n\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-workspace-visual.spec.js:61:53",
+                    "location": {
+                      "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-workspace-visual.spec.js",
+                      "column": 53,
+                      "line": 61
+                    },
+                    "snippet": "  59 |     const pageHeading = page.getByRole('heading', { name: section.heading, exact: true })\n  60 |     const permissionHeading = page.getByRole('heading', { name: /无权访问/u })\n> 61 |     await expect(pageHeading.or(permissionHeading)).toBeVisible({ timeout: 20_000 })\n     |                                                     ^\n  62 |     await page.waitForTimeout(1_500)\n  63 |     pages.push(await snapshot(page, section.label))\n  64 |     await page.screenshot({ path: resolve(screenshots, `${index + 1}-${section.label}.png`), fullPage: true })"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-workspace-visual.spec.js",
+                        "column": 53,
+                        "line": 61
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m()\u001b[22m failed\n\nLocator:  getByRole('heading', { name: '成员与权限', exact: true }).or(getByRole('heading', { name: /无权访问/u }))\nExpected: visible\nReceived: <element(s) not found>\nTimeout:  20000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 20000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('heading', { name: '成员与权限', exact: true }).or(getByRole('heading', { name: /无权访问/u }))\u001b[22m\n\n\n  59 |     const pageHeading = page.getByRole('heading', { name: section.heading, exact: true })\n  60 |     const permissionHeading = page.getByRole('heading', { name: /无权访问/u })\n> 61 |     await expect(pageHeading.or(permissionHeading)).toBeVisible({ timeout: 20_000 })\n     |                                                     ^\n  62 |     await page.waitForTimeout(1_500)\n  63 |     pages.push(await snapshot(page, section.label))\n  64 |     await page.screenshot({ path: resolve(screenshots, `${index + 1}-${section.label}.png`), fullPage: true })\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-workspace-visual.spec.js:61:53"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:01:50.906Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-10T14-00-45.784Z-0341f4b9-2b44-4e20-bfe8-54d6d1c673a2/test-results/dogfood-chatgpt-all-functi-db6b1--Console-page-for-visual-QA/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-workspace-visual.spec.js",
+                    "column": 53,
+                    "line": 61
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "baf9c156953a3b17099c-39bfb3389afc0a6760e9",
+          "file": "dogfood/chatgpt-all-functions/ops-workspace-visual.spec.js",
+          "line": 30,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dogfood/chatgpt-all-functions/ops.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "inventory Ops Console through the real browser UI",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 7236,
+                  "error": {
+                    "message": "Error: Ops Console inventory should not observe HTTP error responses\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 16\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_bc6b81d9-3ea6-45db-8d79-3214717a1edc\\\",\\\"trace_id\\\":\\\"req_bc6b81d9-3ea6-45db-8d79-3214717a1edc\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_bc6b81d9-3ea6-45db-8d79-3214717a1edc\\\",\\\"trace_id\\\":\\\"req_bc6b81d9-3ea6-45db-8d79-3214717a1edc\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"8e4bc03e-0026-4463-b0ce-c0cb33c99ffe\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:63185/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_a6ee9469-8946-442f-b506-03ca531b8889\\\",\\\"trace_id\\\":\\\"req_a6ee9469-8946-442f-b506-03ca531b8889\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_a6ee9469-8946-442f-b506-03ca531b8889\\\",\\\"trace_id\\\":\\\"req_a6ee9469-8946-442f-b506-03ca531b8889\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"04d48b4c-6739-412e-a4e0-9fd7f18a23f7\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:63185/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+                    "stack": "Error: Ops Console inventory should not observe HTTP error responses\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 16\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_bc6b81d9-3ea6-45db-8d79-3214717a1edc\\\",\\\"trace_id\\\":\\\"req_bc6b81d9-3ea6-45db-8d79-3214717a1edc\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_bc6b81d9-3ea6-45db-8d79-3214717a1edc\\\",\\\"trace_id\\\":\\\"req_bc6b81d9-3ea6-45db-8d79-3214717a1edc\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"8e4bc03e-0026-4463-b0ce-c0cb33c99ffe\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:63185/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_a6ee9469-8946-442f-b506-03ca531b8889\\\",\\\"trace_id\\\":\\\"req_a6ee9469-8946-442f-b506-03ca531b8889\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_a6ee9469-8946-442f-b506-03ca531b8889\\\",\\\"trace_id\\\":\\\"req_a6ee9469-8946-442f-b506-03ca531b8889\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"04d48b4c-6739-412e-a4e0-9fd7f18a23f7\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:63185/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops.spec.js:49:91",
+                    "location": {
+                      "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops.spec.js",
+                      "column": 91,
+                      "line": 49
+                    },
+                    "snippet": "  47 |     const consoleErrors = consoleMessages.filter(message => message.type === 'error' || message.type === 'pageerror')\n  48 |     expect(response?.ok(), 'Ops Console entry page should return a successful response').toBe(true)\n> 49 |     expect(badResponses, 'Ops Console inventory should not observe HTTP error responses').toEqual([])\n     |                                                                                           ^\n  50 |     expect(requestFailures, 'Ops Console inventory should not observe failed network requests').toEqual([])\n  51 |     expect(consoleErrors, 'Ops Console inventory should not observe console or page errors').toEqual([])\n  52 |   } finally {"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops.spec.js",
+                        "column": 91,
+                        "line": 49
+                      },
+                      "message": "Error: Ops Console inventory should not observe HTTP error responses\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 16\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_bc6b81d9-3ea6-45db-8d79-3214717a1edc\\\",\\\"trace_id\\\":\\\"req_bc6b81d9-3ea6-45db-8d79-3214717a1edc\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_bc6b81d9-3ea6-45db-8d79-3214717a1edc\\\",\\\"trace_id\\\":\\\"req_bc6b81d9-3ea6-45db-8d79-3214717a1edc\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"8e4bc03e-0026-4463-b0ce-c0cb33c99ffe\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:63185/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_a6ee9469-8946-442f-b506-03ca531b8889\\\",\\\"trace_id\\\":\\\"req_a6ee9469-8946-442f-b506-03ca531b8889\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_a6ee9469-8946-442f-b506-03ca531b8889\\\",\\\"trace_id\\\":\\\"req_a6ee9469-8946-442f-b506-03ca531b8889\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"04d48b4c-6739-412e-a4e0-9fd7f18a23f7\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:63185/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m\n\n  47 |     const consoleErrors = consoleMessages.filter(message => message.type === 'error' || message.type === 'pageerror')\n  48 |     expect(response?.ok(), 'Ops Console entry page should return a successful response').toBe(true)\n> 49 |     expect(badResponses, 'Ops Console inventory should not observe HTTP error responses').toEqual([])\n     |                                                                                           ^\n  50 |     expect(requestFailures, 'Ops Console inventory should not observe failed network requests').toEqual([])\n  51 |     expect(consoleErrors, 'Ops Console inventory should not observe console or page errors').toEqual([])\n  52 |   } finally {\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops.spec.js:49:91"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:02:24.602Z",
+                  "annotations": [],
+                  "attachments": [],
+                  "errorLocation": {
+                    "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops.spec.js",
+                    "column": 91,
+                    "line": 49
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-a18e51edc5655ddbab2c",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 11,
+          "column": 1
+        },
+        {
+          "title": "fails closed with no local connection credentials and exposes platform login",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 757,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:02:32.214Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-b0888ed6b29c515886b5",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 58,
+          "column": 1
+        },
+        {
+          "title": "turns an authenticated-session 401 into a reauthentication gate",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 830,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:02:32.980Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-cc683d122c2d46299ebf",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 86,
+          "column": 1
+        },
+        {
+          "title": "renders the real workspace brand tree with revision and store navigation",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 742,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:02:33.818Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-64b7823a47e9221e3885",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 118,
+          "column": 1
+        },
+        {
+          "title": "ops/tasks long list scrolling keeps page stable (no white-screen)",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1193,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:02:34.564Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-823edb30dcfce80a8295",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 163,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "message": "\u001b[31mWorker teardown timeout of 30000ms exceeded.\u001b[39m\n\n\u001b[31mFailed worker ran 1 test:\u001b[39m\ndogfood/chatgpt-all-functions/ops-all.spec.js:24:1 › walk every Ops Console section through the real browser UI",
+      "stack": "\u001b[31mWorker teardown timeout of 30000ms exceeded.\u001b[39m\n\n\u001b[31mFailed worker ran 1 test:\u001b[39m\ndogfood/chatgpt-all-functions/ops-all.spec.js:24:1 › walk every Ops Console section through the real browser UI"
+    }
+  ],
+  "stats": {
+    "startTime": "2026-09-10T14:00:50.744Z",
+    "duration": 156960.22400000002,
+    "expected": 5,
+    "skipped": 0,
+    "unexpected": 5,
+    "flaky": 0
+  }
+}

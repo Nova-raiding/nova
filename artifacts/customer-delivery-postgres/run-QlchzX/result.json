@@ -1,0 +1,25 @@
+{
+  "status": "passed",
+  "stage": "video retention",
+  "at": "2026-09-14T07:40:52.125Z",
+  "fixtureOnly": true,
+  "sharedContainersTouched": false,
+  "observations": [
+    "merchant_ops creates delivery with atomic audit",
+    "merchant_app cannot read any delivery control-plane table after bootstrap",
+    "unpaid checklist is blocked; full profile round-trips through PostgreSQL",
+    "10 integration and 8 acceptance items persist with evidence; no video means inactive",
+    "video reference and complete delivery generate persisted effective time (asset scanning belongs to API and is not claimed here)",
+    "single-item reopen/restore immediately recalculates effective time",
+    "stale concurrent update rejected; payment revocation clears effective time",
+    "cross-workspace reads are hidden; audit has real before-state and cannot be mutated by ops",
+    "video removal is soft-delete; physical delete denied"
+  ],
+  "disposal": {
+    "stopped": [
+      "a17eee62a4025cf1f1f76e559de13801804218b0059ba412d863e7c068daf79c",
+      "e92e2767a6fca15069c307ab98391ea989164f38ad4bfa30550acc856f465c1c"
+    ],
+    "leftRunning": []
+  }
+}

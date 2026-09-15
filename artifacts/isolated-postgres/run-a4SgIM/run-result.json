@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-08T18:27:30.722Z",
+  "endedAt": "2026-09-08T18:27:34.653Z",
+  "runId": "b1ea7be1-496d-4a60-ad67-de4975b51257",
+  "selectedFiles": [
+    "packages/persistence/src/private-trial-payment.release.postgres.test.ts"
+  ],
+  "childExitCode": 1,
+  "status": "failed",
+  "report": "vitest.json",
+  "errors": [
+    "ISOLATED_POSTGRES_TEST_PROCESS_NONZERO",
+    "POSTGRES_REPORT_NOT_SUCCESSFUL",
+    "POSTGRES_REPORT_FAILED_OR_SKIPPED_ASSERTIONS",
+    "POSTGRES_REPORT_FAILED_OR_EMPTY_FILE",
+    "POSTGRES_REPORT_ASSERTION_NOT_PASSED",
+    "POSTGRES_REPORT_ASSERTION_COUNTS_MISMATCH"
+  ],
+  "fixtureOnly": true,
+  "databaseSource": "newly-created-isolated-fixture",
+  "rolePasswordCompatibility": "isolated-test-fixture-only",
+  "inheritedBusinessEnvironment": false,
+  "sharedContainersTouched": false,
+  "disposal": {
+    "stopped": [
+      "0bd3849ab78457b5e8457d988038c786e1a5aa3aae5c4def362a2b2eb1261ae7",
+      "6f503d19d33708e725a285acc0aca8367086e7f7869118d3428f19ca31eda78e"
+    ],
+    "leftRunning": []
+  }
+}

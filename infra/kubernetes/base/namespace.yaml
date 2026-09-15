@@ -4,3 +4,4 @@ metadata:
   name: merchant
   labels:
     app.kubernetes.io/part-of: merchant-marketing-codex
+    pod-identity.alibabacloud.com/injection: "on"

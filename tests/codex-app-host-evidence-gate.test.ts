@@ -1,3 +1,7 @@
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { validateCodexAppHostEvidence } from './codex-app-host-evidence-gate.js'
 
@@ -26,6 +30,47 @@ const evidence = {
 }
 
 describe('Codex App host evidence gate', () => {
+  it('collector emits references relative to the configured artifact root that the gate can verify', () => {
+    const root = mkdtempSync(join(tmpdir(), 'codex-host-evidence-'))
+    const captureDir = join(root, 'real-host-captures')
+    mkdirSync(captureDir)
+    const scenarioIds = evidence.scenarios.map(({ id }) => id)
+    const scenarios = scenarioIds.map(id => {
+      const artifactPath = join(captureDir, `${id}.json`)
+      writeFileSync(artifactPath, JSON.stringify({ id, captured: true }))
+      return {
+        id, state: 'passed', artifact_path: artifactPath, console_errors: 0, network_errors: 0,
+        ...(id === 'error_recovery' ? {
+          error_recovery: {
+            trigger_http_status: 503, trigger_error_code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN',
+            request_id: 'request-503', trace_id: 'trace-503', recovery_action: 'query_provider',
+            retry_allowed: false, before_state: 'outcome_unknown', after_state: 'reconciled_failed',
+            reconciliation_required: true, outcome_artifact_path: artifactPath,
+          },
+        } : {}),
+      }
+    })
+    const capturePath = join(root, 'capture.json')
+    const outputPath = join(root, 'evidence.json')
+    writeFileSync(capturePath, JSON.stringify({
+      release_id: 'release-1', environment: 'preproduction', generated_at: '2026-08-29T01:00:00Z',
+      host: 'codex-app-macos-arm64', app_version: '0.150.1', plugin_version: '0.1.0', simulated: false,
+      mcp_base_url: 'https://merchant.example.com', bridge_sha256: 'b'.repeat(64), scenarios,
+    }))
+
+    const run = spawnSync(process.execPath, [
+      resolve('scripts/collect-codex-app-host-evidence.mjs'), '--capture', capturePath,
+      '--output', outputPath, '--artifact-root', root,
+    ], { encoding: 'utf8' })
+    expect(run.status, run.stderr).toBe(0)
+    const collected = JSON.parse(readFileSync(outputPath, 'utf8'))
+    expect(collected.scenarios[0].evidence_ref).toMatch(/^artifact:\/\/production\/real-host-captures\//u)
+    expect(validateCodexAppHostEvidence(collected, {
+      expectedReleaseId: 'release-1', expectedMcpBaseUrl: 'https://merchant.example.com',
+      expectedBridgeSha256: 'b'.repeat(64), artifactRoot: root,
+    })).toEqual([])
+  })
+
   it('accepts only release-bound external host evidence', () => {
     expect(validateCodexAppHostEvidence(evidence, { expectedReleaseId: 'release-1', expectedMcpBaseUrl: 'https://merchant.example.com', expectedBridgeSha256: 'b'.repeat(64) })).toEqual([])
   })
@@ -35,6 +80,10 @@ describe('Codex App host evidence gate', () => {
       'mcp_base_url must match the deployment configuration',
       'bridge_sha256 must match the deployed plugin bridge',
     ]))
+  })
+
+  it('rejects an ambiguous host capture timestamp', () => {
+    expect(validateCodexAppHostEvidence({ ...evidence, generated_at: '2026-08-29' })).toContain('generated_at must be a strict UTC ISO timestamp')
   })
 
   it.each(['http://merchant.example.com', 'https://user@merchant.example.com', 'https://merchant.example.com/mcp', 'https://merchant.example.com?token=secret', 'https://localhost', 'https://10.0.0.1', 'https://192.168.1.5'])('rejects unsafe MCP origin %s', mcp_base_url => {

@@ -1,0 +1,14 @@
+{
+  "runId": "0064d8af-9142-41c6-9458-b93d55049ecf",
+  "stopped": [
+    "ba1e830ef402117b12762a7fd8c2e10dab25739f0a3706466eb8233f7c8901b3"
+  ],
+  "leftRunning": [
+    {
+      "id": "a0c09d927fec44817b27b45726cd178b3bb53c87c9ab5e557ac785b71640ae32",
+      "reason": "identity verification or exact-ID stop failed; not retried destructively"
+    }
+  ],
+  "evidenceRetained": true,
+  "externalContainersTouched": false
+}

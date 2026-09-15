@@ -13,9 +13,15 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: [yxsona.com, ops.yxsona.com]
+    - hosts: [yxsona.com, ops.yxsona.com, alerts.yxsona.com]
       secretName: merchant-tls
   rules:
+    - host: alerts.yxsona.com
+      http:
+        paths:
+          - path: /internal/v1/alerts
+            pathType: Exact
+            backend: {service: {name: merchant-alert-receiver, port: {name: http}}}
     - host: yxsona.com
       http:
         paths:

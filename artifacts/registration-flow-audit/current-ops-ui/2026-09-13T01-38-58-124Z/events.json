@@ -1,0 +1,219 @@
+[
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://127.0.0.1:18182/src/api/opsClient.ts",
+    "status": 200,
+    "requestBody": null,
+    "body": ""
+  },
+  {
+    "type": "console",
+    "level": "debug",
+    "text": "[vite] connecting..."
+  },
+  {
+    "type": "console",
+    "level": "debug",
+    "text": "[vite] connected."
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://127.0.0.1:18182/src/api/opsDomainClients.ts",
+    "status": 200,
+    "requestBody": null,
+    "body": ""
+  },
+  {
+    "type": "console",
+    "level": "info",
+    "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"bb091441-98c0-4fd8-ac2f-d64d3043d76b\",\"method\":\"ops.session\",\"params\":{}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"bd95674f-8e40-4d9b-a920-5cc8a0127904\",\"method\":\"platform.model.status\",\"params\":{}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"7caf3aa9-be9a-469f-adea-d4bf562b1f5f\",\"method\":\"ops.stores.list\",\"params\":{\"platform_scope\":\"platform\"}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"b56a3aed-e572-40a5-9d37-3b621c7ed749\",\"method\":\"ops.commercial.catalog-v2.list\",\"params\":{\"include_private\":\"false\",\"limit\":\"100\"}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"4d33cf0a-cccb-4160-81c2-7d82650be26a\",\"method\":\"ops.storage.reconciliation.list\",\"params\":{\"platform_scope\":\"platform\"}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://127.0.0.1:18182/api/v1/ops/merchant-registration-applications",
+    "status": 200,
+    "requestBody": null,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"cdef1172-c214-41f3-ac06-7ca134e6342e\",\"method\":\"ops.authorization.matrix.get\",\"params\":{}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"3a109c20-f071-46b2-a81c-3af7f8cbff81\",\"method\":\"ops.authorization.matrix.get\",\"params\":{}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"96113067-c30b-428d-b949-fd9391ea5f97\",\"method\":\"ops.brand-units.summary\",\"params\":{\"platform_scope\":\"platform\"}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://127.0.0.1:18182/api/v1/ops/merchant-registration-applications",
+    "status": 200,
+    "requestBody": null,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"6080947e-ab20-45c0-b10c-fdb697935fce\",\"method\":\"ops.audit.platform.list\",\"params\":{\"limit\":\"20\"}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"18ee406f-0d7c-411b-b8e1-d15c336a6080\",\"method\":\"ops.users.list\",\"params\":{\"limit\":\"20\",\"offset\":\"0\"}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"ca752fe4-bfcd-4f25-945f-b77050486da2\",\"method\":\"ops.model-usage.summary\",\"params\":{\"platform_scope\":\"platform\"}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"4f73175e-e891-41e0-855e-58d75016e5e7\",\"method\":\"ops.tasks.summary\",\"params\":{\"platform_scope\":\"platform\"}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"4c7d1742-53fa-40f4-a052-1e381b4f717f\",\"method\":\"ops.marketing.summary\",\"params\":{\"platform_scope\":\"platform\"}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"b22dad61-9124-4703-984f-b38cebb4703e\",\"method\":\"ops.workspaces.list\",\"params\":{\"offset\":\"0\",\"limit\":\"20\"}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"38ec1858-afbf-4c11-85a8-bf6fe88a788d\",\"method\":\"ops.finance.search\",\"params\":{\"kinds_json\":\"[\\\"recharge_order\\\",\\\"subscription_order\\\"]\",\"statuses_json\":\"[\\\"paid\\\"]\",\"limit\":\"1\"}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"b93dbc2c-1bdc-4f16-821d-2d6fe3e60bf7\",\"method\":\"ops.growth.funnel\",\"params\":{\"platform_scope\":\"platform\"}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"79ea3d05-1e7f-4ac2-a5f3-131ffd2a400a\",\"method\":\"ops.alerts.list\",\"params\":{\"status\":\"open\",\"limit\":\"20\",\"platform_scope\":\"platform\"}}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/v1/ops/merchant-accounts/authorize",
+    "status": 201,
+    "requestBody": "{\"login\":\"src-reg-1789263145613@example.test\",\"workspace_id\":\"ws_demo\",\"member_role\":\"operator\",\"sku_code\":\"sku-monthly-5000\",\"amount_fen\":500000,\"payment_status\":\"pending\",\"reason\":\"浏览器当前源码角色套餐审核链路审计\",\"idempotency_key\":\"registration-authorize-713c120e-49ba-40c0-be2d-f9a2f2cb2130-ws_demo\"}",
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"7b0b3cb0-5a49-4092-a5e7-6e2992cbb28e\",\"method\":\"ops.users.list\",\"params\":{\"limit\":\"20\",\"offset\":\"0\"}}",
+    "body": ""
+  },
+  {
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: the server responded with a status of 400 (Bad Request)"
+  },
+  {
+    "type": "console",
+    "level": "error",
+    "text": "Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead."
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/v1/ops/merchant-registration-applications/review",
+    "status": 400,
+    "requestBody": "{\"login\":\"src-reg-1789263145613@example.test\",\"decision\":\"approved\",\"reason\":\"浏览器当前源码角色套餐审核链路审计\",\"workspace_ids\":[\"ws_demo\"]}",
+    "body": "{\"request_id\":\"req_5cc45884-9e31-4ca5-928c-25c6a4d8a563\",\"trace_id\":\"req_5cc45884-9e31-4ca5-928c-25c6a4d8a563\",\"workspace_id\":\"ws_demo\",\"data\":null,\"warnings\":[],\"next_actions\":[],\"error\":{\"code\":\"42501\",\"message\":\"注册申请审核失败\"}}"
+  }
+]

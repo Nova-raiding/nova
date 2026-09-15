@@ -1130,7 +1130,7 @@ paths:
       parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { name: jobId, in: path, required: true, schema: { type: string } }]
       responses:
         '200':
-          description: Current authorization and commercial rechecks passed.
+          description: Current authorization and commercial rechecks completed.
           content: { application/json: { schema: { $ref: '#/components/schemas/WorkerExecutionCheckEnvelope' } } }
         '403': { $ref: '#/components/responses/ErrorEnvelope' }
         '409': { $ref: '#/components/responses/ErrorEnvelope' }
@@ -1139,16 +1139,16 @@ paths:
     get:
       tags: [Tasks]
       operationId: checkWorkerEventExecution
-      description: Worker-token protected pre-provider gate. Validates the durable authorization and commercial snapshots, then independently re-reads current tenant-scoped authorization, subscription and creative-point facts. Missing commercial snapshots or unavailable reservation facts fail closed.
+      description: Worker-token protected pre-provider gate. Validates the durable commercial snapshot for every merchant event and, for actor-authorized work such as continuation execution, also validates the durable authorization snapshot. Automatic initial merchant asset scans return the commercial-only response variant. Platform-owned customer-delivery scans return the delivery-scan response variant bound to the durable admission event; missing required evidence fails closed.
       parameters:
         - { $ref: '#/components/parameters/WorkspaceId' }
         - { name: eventId, in: path, required: true, schema: { type: string } }
         - { name: aggregate_id, in: query, required: true, schema: { type: string } }
-        - { name: operation, in: query, required: true, schema: { type: string, enum: [publish.execute, publish.reconcile, generation.execute, image_generation.execute, catalog.sync.execute, asset.scan.execute, asset.continuation.execute] } }
+        - { name: operation, in: query, required: true, schema: { type: string, enum: [publish.execute, publish.reconcile, generation.execute, image_generation.execute, catalog.sync.execute, asset.scan.execute, asset.continuation.execute, customer_delivery.asset.scan.execute] } }
       responses:
         '200':
-          description: Current authorization and commercial rechecks passed.
-          content: { application/json: { schema: { $ref: '#/components/schemas/WorkerExecutionCheckEnvelope' } } }
+          description: Required current worker evidence rechecks completed for the selected operation.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkerEventExecutionCheckEnvelope' } } }
         '400': { $ref: '#/components/responses/ErrorEnvelope' }
         '403': { $ref: '#/components/responses/ErrorEnvelope' }
         '404': { $ref: '#/components/responses/ErrorEnvelope' }
@@ -1813,6 +1813,94 @@ components:
         files_json: { type: string, contentMediaType: application/json, x-json-shape: array }
         expected_manifest_hash: { type: string, pattern: '^(?:sha256:)?[A-Fa-f0-9]{64}$' }
       additionalProperties: false
+    McpCustomerDeliveryProfileUpdateParams:
+      type: object
+      description: Update ordinary customer delivery profile fields with optimistic revision. Derived integration/acceptance summaries and training fields are not accepted. Paid status requires scanned payment evidence bound to this delivery and payment purpose.
+      required: [target_workspace_id, delivery_id, expected_revision, patch_json]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
+        target_workspace_id: { type: string, minLength: 1, maxLength: 200 }
+        delivery_id: { type: string, minLength: 1, maxLength: 256 }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
+        patch_json:
+          type: string
+          contentMediaType: application/json
+          x-json-shape: object
+          maxLength: 16384
+          x-json-allowed-properties: [companyName, contractNumber, paymentStatus, contractRef, projectOwner, supportOwner, paymentDate, paymentEvidenceRefs, plannedGoLiveAt, customerProfileStatus]
+          description: Strict JSON object limited to the listed profile fields. paymentEvidenceRefs is an array of uploaded payment asset references. contractRef must be an HTTPS URL or asset reference; server ownership and clean-scan checks still apply. systemIntegrationStatus, functionalAcceptanceStatus, trainingCompleted and trainingEvidenceRefs are rejected.
+      additionalProperties: false
+    McpCustomerDeliveryChecklistUpdateParams:
+      type: object
+      description: Exactly one update mode is required. Scalar completed, whether true or false, is allowed only for customer_profile. System integration and functional acceptance use items_json or checklist-item.update. Completed items require evidence.asset_refs bound to this delivery and checklist purpose with a trusted clean scan; missing or untrusted completion evidence fails the runtime gate.
+      required: [target_workspace_id, delivery_id, checklist_key, expected_revision]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
+        target_workspace_id: { type: string, minLength: 1, maxLength: 200 }
+        delivery_id: { type: string, minLength: 1, maxLength: 256 }
+        checklist_key: { type: string, enum: [customer_profile, system_integration, functional_acceptance] }
+        completed: { type: string, enum: ['true', 'false'], description: Scalar profile completion only. }
+        items_json: { type: string, contentMediaType: application/json, x-json-shape: array, maxLength: 16384, description: System integration or functional acceptance items with itemKey and completed; completed items require evidence.asset_refs containing scanned uploaded asset references. }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
+      oneOf:
+        - required: [completed]
+          properties:
+            checklist_key: { type: string, enum: [customer_profile] }
+          not: { required: [items_json] }
+        - required: [items_json]
+          not: { required: [completed] }
+      additionalProperties: false
+    McpCustomerDeliveryChecklistItemUpdateParams:
+      type: object
+      description: Update one checklist item with optimistic revision. completed=true requires evidence_json.asset_refs to contain scanned uploaded references bound to this delivery and checklist purpose. Missing or untrusted completion evidence fails the runtime gate.
+      required: [target_workspace_id, delivery_id, checklist_key, item_key, completed, expected_revision]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
+        target_workspace_id: { type: string, minLength: 1, maxLength: 200 }
+        delivery_id: { type: string, minLength: 1, maxLength: 256 }
+        checklist_key: { type: string, enum: [system_integration, functional_acceptance] }
+        item_key: { type: string, minLength: 1, maxLength: 256 }
+        completed: { type: string, enum: ['true', 'false'] }
+        evidence_json: { type: string, contentMediaType: application/json, x-json-shape: object, maxLength: 16384, description: Evidence object; completed=true requires a nonempty asset_refs array of scanned uploaded evidence references. }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
+      additionalProperties: false
+    McpCustomerDeliveryTrainingCompleteParams:
+      type: object
+      description: Independently update training completion. Functional acceptance never completes training automatically. evidence_refs_json is required for both completion states; completed=true requires at least one uploaded training reference bound to this delivery with a trusted clean scan.
+      required: [target_workspace_id, delivery_id, completed, evidence_refs_json, expected_revision]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
+        target_workspace_id: { type: string, minLength: 1, maxLength: 200 }
+        delivery_id: { type: string, minLength: 1, maxLength: 256 }
+        completed: { type: string, enum: ['true', 'false'] }
+        evidence_refs_json: { type: string, contentMediaType: application/json, x-json-shape: array, maxLength: 16384, description: Strict JSON array of nonempty training asset reference strings. An empty array cannot complete training. }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
+      additionalProperties: false
+    McpCustomerDeliveryAssetUploadParams:
+      type: object
+      description: Platform-only upload of customer delivery contract, payment, integration, acceptance, training, or video evidence into quarantine for automatic scanning. Acceptance does not assert a clean scan or attach unscanned delivery evidence.
+      required: [target_workspace_id, delivery_id, purpose, name, mime_type, content_base64]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
+        target_workspace_id: { type: string, minLength: 1, maxLength: 200 }
+        delivery_id: { type: string, minLength: 1, maxLength: 256 }
+        purpose: { type: string, enum: [contract, payment, system_integration, functional_acceptance, training, video] }
+        name: { type: string, minLength: 1, maxLength: 255 }
+        mime_type: { type: string, minLength: 1, maxLength: 100 }
+        content_base64: { type: string, minLength: 1, maxLength: 69905068, description: Base64-encoded source bytes with a 50 MiB decoded upload limit. }
+        sha256: { type: string, minLength: 64, maxLength: 64, pattern: '^[a-f0-9]{64}$' }
+      additionalProperties: false
+    McpCustomerDeliveryAssetGetParams:
+      type: object
+      description: Platform-only read of upload and scan status bound to the explicit customer delivery, workspace and purpose. Does not mark an asset clean.
+      required: [target_workspace_id, delivery_id, purpose, asset_ref]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
+        target_workspace_id: { type: string, minLength: 1, maxLength: 200 }
+        delivery_id: { type: string, minLength: 1, maxLength: 256 }
+        purpose: { type: string, enum: [contract, payment, system_integration, functional_acceptance, training, video] }
+        asset_ref: { type: string, minLength: 1, maxLength: 1000 }
+      additionalProperties: false
     McpRequest:
       type: object
       required: [jsonrpc, id, method]
@@ -1821,7 +1909,7 @@ components:
         id: { oneOf: [{ type: string }, { type: integer }, { type: 'null' }] }
         method:
           type: string
-          enum: [onboarding.status, merchant.start, commercial.service-boundary.accept, merchant.first_value, brand-unit.list, brand-unit.create, brand-unit.bind-store, brand-unit.product.create, brand-unit.listing.create, brand-unit.listing.list, brand-unit.access.grant, canonical.product.consistency, ops.canonical.backfill.create, ops.canonical.backfill.get, ops.canonical.backfill.pause, ops.canonical.backfill.resume, ops.canonical.backfill.run, ops.canonical.backfill.conflicts.list, ops.canonical.backfill.conflict.claim, ops.canonical.backfill.conflict.resolve, ops.rules.workspace.audit, campaign.batch.create, campaign.batch.list, campaign.batch.get, campaign.batch.generate, campaign.batch.pause, campaign.batch.resume, campaign.batch.retry_failed, workspace.health, workspace.invitations.list, workspace.invitation.accept, workspace.bootstrap, workspace.interactive.confirm, workspace.metrics, workspace.commercial.get, workspace.commercial.update, workspace.usage.get, commercial.access.get, commercial.catalog.get, commercial.order.create, commercial.order.payment.get, creative-points.balance.get, creative-points.statement.list, ops.audit.list, ops.audit.platform.list, ops.audit.detail, ops.audit.export, ops.data.delete.list, ops.data.delete.cancel, ops.data.delete.approve, ops.members.list, ops.session, ops.authorization.matrix.get, ops.authorization.roles.list, ops.authorization.role.assign, ops.authorization.role.revoke, ops.authorization.grants.list, ops.authorization.grant.issue, ops.authorization.grant.revoke, ops.workspaces.list, ops.stores.list, ops.brand-units.summary, ops.tasks.summary, ops.model-usage.summary, ops.storage.reconciliation.list, ops.support.tickets.list, ops.support.ticket.get, support.customer.replies.list, ops.support.ticket.create, ops.support.ticket.assign, ops.support.ticket.transition, ops.support.ticket.comment, ops.support.sla.report, ops.support.sla.correction.create, ops.support.sla.correction.decide, ops.customer-delivery.list, ops.customer-delivery.get, ops.customer-delivery.create, ops.customer-delivery.update, ops.customer-delivery.checklist.update, ops.customer-delivery.checklist-items.list, ops.customer-delivery.checklist-item.update, ops.customer-delivery.training.complete, ops.customer-delivery.videos.list, ops.customer-delivery.videos.add, ops.incidents.list, ops.incident.get, ops.incident.timeline, ops.incident.create, ops.incident.transition, ops.incident.comment, ops.incident.commander.assign, ops.incident.scope.update, ops.feature-flags.list, ops.feature-flag.upsert, ops.feature-flag.emergency.set, ops.feature-flag.events, ops.feature-flag.evaluate, ops.finance.search, ops.finance.detail, ops.finance.export, ops.users.list, ops.users.export, ops.user.detail, ops.user.suspend, ops.user.activate, ops.user.risk.transition, ops.user.session.revoke, ops.commercial.offers.list, ops.commercial.offer.upsert, ops.commercial.addons.list, ops.commercial.addon.upsert, ops.commercial.coupons.list, ops.commercial.export, ops.commercial.coupon.upsert, ops.commercial.rollouts.list, ops.commercial.rollout.upsert, ops.commercial.model-markup.get, ops.commercial.model-markup.update, ops.commercial.access.summary, ops.commercial.access-blocks.list, ops.commercial.entitlements.list, ops.commercial.points-ledger.list, ops.commercial.points.adjust.propose, ops.commercial.points.adjust.decide, ops.commercial.catalog-v2.list, ops.commercial.catalog-v2.mutate, ops.commercial.orders-v2.list, ops.commercial.rate-cards.list, ops.commercial.readiness.report, ops.commercial.private-trial.eligibility.create, ops.commercial.private-trial.order.create, ops.commercial.private-trial.trial-payment.verify, ops.commercial.private-trial.invite.create, ops.commercial.private-trial.invite.list, ops.commercial.private-trial.invite.revoke, ops.commercial.private-trial.eligibility.approve, ops.commercial.private-trial.validation.complete, ops.commercial.private-trial.credit.prepare, ops.commercial.private-trial.credit.approve, ops.commercial.private-trial.conversion.create, ops.commercial.private-trial.payment.verify, ops.commercial.order.payment.verify, ops.commercial.order.refund.list, ops.commercial.order.refund.request, ops.commercial.order.refund.approve, ops.commercial.order.refund.complete, ops.commercial.service-fulfillment.list, ops.commercial.timeline.list, ops.commercial.service-allocation.create, ops.commercial.service-fulfillment.schedule, ops.commercial.service-fulfillment.start, ops.commercial.service-fulfillment.complete, ops.commercial.service-fulfillment.adjust, ops.growth.funnel, ops.alerts.list, ops.alert.ack, ops.marketing.queue, ops.marketing.summary, ops.marketing.queue.assign, ops.marketing.image.reconcile, ops.marketing.image.evidence.export, ops.marketing.image.archive.audit, ops.marketing.image.billing.audit, ops.marketing.visual.review, ops.marketing.generation.retry, ops.marketing.asset_scan.retry, ops.marketing.publish.acknowledge, ops.marketing.revision.create, ops.member.upsert, ops.member.suspend, subscription.get, subscription.orders.list, subscription.order.create, subscription.change, billing.usage.consume, billing.usage.refund, billing.refund, billing.reconciliation, billing.model-usage.statement, billing.reconciliation.run, billing.model-usage.reconciliation.run, billing.model-usage.resolve, billing.export, platform.settings.get, platform.settings.update, platform.media.spec.list, platform.media.spec.get, platform.media.spec.create, platform.media.spec.update, platform.media.spec.approve, platform.media.spec.expire, platform.mapping.preflight, platform.model.status, billing.status, billing.recharge.create, billing.recharge.get, billing.recharge.list, billing.transactions, workspace.deactivate, workspace.activate, workspace.data.export.request, workspace.data.export.get, workspace.data.delete.request, platform.store.list, platform.connect, platform.store.alias.set, catalog.search, catalog.categories, catalog.title.optimize, catalog.title.accept, catalog.import, catalog.import.batch, catalog.sku.update, catalog.product.update, catalog.facts.confirm, catalog.product.disable, catalog.product.enable, catalog.image.generate, catalog.image.retry, catalog.image.get, catalog.image.select, catalog.image.review, sync.retry_failed, rule.list, rule.sync.status, rule.sync.now, rule.history, rule.audit, rule.publish, rule.status, asset.list, asset.parse, asset.facts.confirm, asset.preference.update, brand.get, brand.extract, brand.upsert, brand.tone.preview, asset.upload, asset.upload.batch, upload.session.create, upload.session.part, upload.session.complete, asset.scan, asset.generation.confirm, asset.rights.update, catalog.sync, catalog.sync.start, catalog.sync.get, deliverable.list, task.history, task.resume, task.clone, task.timeline, feedback.list, feedback.submit, platform.revoke, task.create, task.answer, task.understand, task.request.create, task.sku.split, task.group.create, creative.directions, creative.brief, creative.preview, creative.directions.update, task.select_direction, task.plan.confirm, content.generate, content.codex.prepare, content.codex.commit, generation.get, content.review, content.review.decide, content.visual.select, content.versions, content.diff, content.export, content.approve, content.modify, content.restore, publish.prepare, publish.batch.prepare, publish.batch.confirm, publish.batch.get, publish.batch.pause, publish.batch.resume, publish.batch.retry_failed, automation.policy.get, automation.policy.list, automation.policy.update, automation.scan, automation.tick, automation.pause, publish.confirm, publish.get, knowledge.rule.create, knowledge.rule.update, knowledge.rule.list, knowledge.asset.create, knowledge.asset.update, knowledge.asset.list, knowledge.brand.preference.get, knowledge.brand.preference.update, knowledge.feedback.record, knowledge.learning.list, knowledge.learning.confirm, knowledge.learning.dismiss, knowledge.competitor.create, knowledge.competitor.list, knowledge.competitor.reference, delivery.bundle.verify, multimodal.image.edit, multimodal.generate, multimodal.video.request, multimodal.video.get]
+          enum: [onboarding.status, merchant.start, commercial.service-boundary.accept, merchant.first_value, brand-unit.list, brand-unit.create, brand-unit.bind-store, brand-unit.product.create, brand-unit.listing.create, brand-unit.listing.list, brand-unit.access.grant, canonical.product.consistency, ops.canonical.backfill.create, ops.canonical.backfill.get, ops.canonical.backfill.pause, ops.canonical.backfill.resume, ops.canonical.backfill.run, ops.canonical.backfill.conflicts.list, ops.canonical.backfill.conflict.claim, ops.canonical.backfill.conflict.resolve, ops.rules.workspace.audit, campaign.batch.create, campaign.batch.list, campaign.batch.get, campaign.batch.generate, campaign.batch.pause, campaign.batch.resume, campaign.batch.retry_failed, workspace.health, workspace.invitations.list, workspace.invitation.accept, workspace.bootstrap, workspace.interactive.confirm, workspace.metrics, workspace.commercial.get, workspace.commercial.update, workspace.usage.get, commercial.access.get, commercial.catalog.get, commercial.order.create, commercial.order.payment.get, creative-points.balance.get, creative-points.statement.list, ops.audit.list, ops.audit.platform.list, ops.audit.detail, ops.audit.export, ops.data.delete.list, ops.data.delete.cancel, ops.data.delete.approve, ops.members.list, ops.session, ops.authorization.matrix.get, ops.authorization.roles.list, ops.authorization.role.assign, ops.authorization.role.revoke, ops.authorization.grants.list, ops.authorization.grant.issue, ops.authorization.grant.revoke, ops.workspaces.list, ops.stores.list, ops.brand-units.summary, ops.tasks.summary, ops.model-usage.summary, ops.storage.reconciliation.list, ops.support.tickets.list, ops.support.ticket.get, support.customer.replies.list, ops.support.ticket.create, ops.support.ticket.assign, ops.support.ticket.transition, ops.support.ticket.comment, ops.support.sla.report, ops.support.sla.correction.create, ops.support.sla.correction.decide, ops.customer-delivery.list, ops.customer-delivery.get, ops.customer-delivery.create, ops.customer-delivery.update, ops.customer-delivery.checklist.update, ops.customer-delivery.checklist-items.list, ops.customer-delivery.checklist-item.update, ops.customer-delivery.training.complete, ops.customer-delivery.videos.list, ops.customer-delivery.videos.add, ops.customer-delivery.assets.upload, ops.customer-delivery.assets.get, ops.incidents.list, ops.incident.get, ops.incident.timeline, ops.incident.create, ops.incident.transition, ops.incident.comment, ops.incident.commander.assign, ops.incident.scope.update, ops.feature-flags.list, ops.feature-flag.upsert, ops.feature-flag.emergency.set, ops.feature-flag.events, ops.feature-flag.evaluate, ops.finance.search, ops.finance.detail, ops.finance.export, ops.users.list, ops.users.export, ops.user.detail, ops.user.suspend, ops.user.activate, ops.user.risk.transition, ops.user.session.revoke, ops.commercial.offers.list, ops.commercial.offer.upsert, ops.commercial.addons.list, ops.commercial.addon.upsert, ops.commercial.coupons.list, ops.commercial.export, ops.commercial.coupon.upsert, ops.commercial.rollouts.list, ops.commercial.rollout.upsert, ops.commercial.model-markup.get, ops.commercial.model-markup.update, ops.commercial.access.summary, ops.commercial.access-blocks.list, ops.commercial.entitlements.list, ops.commercial.points-ledger.list, ops.commercial.points.adjust.propose, ops.commercial.points.adjust.decide, ops.commercial.catalog-v2.list, ops.commercial.catalog-v2.mutate, ops.commercial.orders-v2.list, ops.commercial.rate-cards.list, ops.commercial.readiness.report, ops.commercial.private-trial.eligibility.create, ops.commercial.private-trial.order.create, ops.commercial.private-trial.trial-payment.verify, ops.commercial.private-trial.invite.create, ops.commercial.private-trial.invite.list, ops.commercial.private-trial.invite.revoke, ops.commercial.private-trial.eligibility.approve, ops.commercial.private-trial.validation.complete, ops.commercial.private-trial.credit.prepare, ops.commercial.private-trial.credit.approve, ops.commercial.private-trial.conversion.create, ops.commercial.private-trial.payment.verify, ops.commercial.order.payment.verify, ops.commercial.order.refund.list, ops.commercial.order.refund.request, ops.commercial.order.refund.approve, ops.commercial.order.refund.complete, ops.commercial.service-fulfillment.list, ops.commercial.timeline.list, ops.commercial.service-allocation.create, ops.commercial.service-fulfillment.schedule, ops.commercial.service-fulfillment.start, ops.commercial.service-fulfillment.complete, ops.commercial.service-fulfillment.adjust, ops.growth.funnel, ops.alerts.list, ops.alert.ack, ops.marketing.queue, ops.marketing.summary, ops.marketing.queue.assign, ops.marketing.image.reconcile, ops.marketing.image.evidence.export, ops.marketing.image.archive.audit, ops.marketing.image.billing.audit, ops.marketing.visual.review, ops.marketing.generation.retry, ops.marketing.asset_scan.retry, ops.marketing.publish.acknowledge, ops.marketing.revision.create, ops.member.upsert, ops.member.suspend, subscription.get, subscription.orders.list, subscription.order.create, subscription.change, billing.usage.consume, billing.usage.refund, billing.refund, billing.reconciliation, billing.model-usage.statement, billing.reconciliation.run, billing.model-usage.reconciliation.run, billing.model-usage.resolve, billing.export, platform.settings.get, platform.settings.update, platform.media.spec.list, platform.media.spec.get, platform.media.spec.create, platform.media.spec.update, platform.media.spec.approve, platform.media.spec.expire, platform.mapping.preflight, platform.model.status, billing.status, billing.recharge.create, billing.recharge.get, billing.recharge.list, billing.transactions, workspace.deactivate, workspace.activate, workspace.data.export.request, workspace.data.export.get, workspace.data.delete.request, platform.store.list, platform.connect, platform.store.alias.set, catalog.search, catalog.categories, catalog.title.optimize, catalog.title.accept, catalog.import, catalog.import.batch, catalog.sku.update, catalog.product.update, catalog.facts.confirm, catalog.product.disable, catalog.product.enable, catalog.image.generate, catalog.image.retry, catalog.image.get, catalog.image.select, catalog.image.review, sync.retry_failed, rule.list, rule.sync.status, rule.sync.now, rule.history, rule.audit, rule.publish, rule.status, asset.list, asset.parse, asset.facts.confirm, asset.preference.update, brand.get, brand.extract, brand.upsert, brand.tone.preview, asset.upload, asset.upload.batch, upload.session.create, upload.session.part, upload.session.complete, asset.scan, asset.generation.confirm, asset.rights.update, catalog.sync, catalog.sync.start, catalog.sync.get, deliverable.list, task.history, task.resume, task.clone, task.timeline, feedback.list, feedback.submit, platform.revoke, task.create, task.answer, task.understand, task.request.create, task.sku.split, task.group.create, creative.directions, creative.brief, creative.preview, creative.directions.update, task.select_direction, task.plan.confirm, content.generate, content.codex.prepare, content.codex.commit, generation.get, content.review, content.review.decide, content.visual.select, content.versions, content.diff, content.export, content.approve, content.modify, content.restore, publish.prepare, publish.batch.prepare, publish.batch.confirm, publish.batch.get, publish.batch.pause, publish.batch.resume, publish.batch.retry_failed, automation.policy.get, automation.policy.list, automation.policy.update, automation.scan, automation.tick, automation.pause, publish.confirm, publish.get, knowledge.rule.create, knowledge.rule.update, knowledge.rule.list, knowledge.asset.create, knowledge.asset.update, knowledge.asset.list, knowledge.brand.preference.get, knowledge.brand.preference.update, knowledge.feedback.record, knowledge.learning.list, knowledge.learning.confirm, knowledge.learning.dismiss, knowledge.competitor.create, knowledge.competitor.list, knowledge.competitor.reference, delivery.bundle.verify, multimodal.image.edit, multimodal.generate, multimodal.video.request, multimodal.video.get]
         params:
           type: object
           description: Method-specific parameters. Production-evidence methods use the fail-closed schemas declared by x-method-schema-refs; complex values are JSON-encoded strings and validated for object/array shape before dispatch.
@@ -1837,6 +1925,12 @@ components:
             ops.canonical.backfill.conflicts.list: '#/components/schemas/McpCanonicalBackfillConflictListParams'
             ops.canonical.backfill.conflict.claim: '#/components/schemas/McpCanonicalBackfillConflictClaimParams'
             ops.canonical.backfill.conflict.resolve: '#/components/schemas/McpCanonicalBackfillConflictResolveParams'
+            ops.customer-delivery.update: '#/components/schemas/McpCustomerDeliveryProfileUpdateParams'
+            ops.customer-delivery.checklist.update: '#/components/schemas/McpCustomerDeliveryChecklistUpdateParams'
+            ops.customer-delivery.checklist-item.update: '#/components/schemas/McpCustomerDeliveryChecklistItemUpdateParams'
+            ops.customer-delivery.training.complete: '#/components/schemas/McpCustomerDeliveryTrainingCompleteParams'
+            ops.customer-delivery.assets.upload: '#/components/schemas/McpCustomerDeliveryAssetUploadParams'
+            ops.customer-delivery.assets.get: '#/components/schemas/McpCustomerDeliveryAssetGetParams'
             ops.marketing.image.reconcile: '#/components/schemas/McpMarketingImageReconcileParams'
             ops.marketing.image.evidence.export: '#/components/schemas/McpMarketingImageEvidenceExportParams'
             ops.marketing.image.archive.audit: '#/components/schemas/McpMarketingImageArchiveAuditParams'
@@ -1899,6 +1993,9 @@ components:
         reservation_state: { type: string, enum: [active, not_required, consumed, released, expired] }
         allowed: { type: boolean }
         ready: { type: boolean }
+        denial_code:
+          type: string
+          enum: [COMMERCIAL_EXECUTION_BALANCE_BLOCKED, COMMERCIAL_EXECUTION_ENTITLEMENT_STALE, COMMERCIAL_EXECUTION_RATE_STALE, COMMERCIAL_EXECUTION_RESERVATION_INVALID, COMMERCIAL_EXECUTION_REVISION_STALE]
         checked_at: { type: string, format: date-time }
       additionalProperties: false
     WorkerExecutionCheckEnvelope:
@@ -1909,9 +2006,75 @@ components:
             data:
               type: object
               required: [authorization_recheck, commercial_access_recheck]
+              not: { required: [delivery_scan_recheck] }
               properties:
                 authorization_recheck: { type: object, additionalProperties: true }
                 commercial_access_recheck: { $ref: '#/components/schemas/WorkerCommercialRecheck' }
+    WorkerCommercialOnlyExecutionCheckEnvelope:
+      allOf:
+        - { $ref: '#/components/schemas/ApiEnvelope' }
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [commercial_access_recheck]
+              not:
+                anyOf:
+                  - { required: [authorization_recheck] }
+                  - { required: [delivery_scan_recheck] }
+              properties:
+                commercial_access_recheck: { $ref: '#/components/schemas/WorkerCommercialRecheck' }
+    DeliveryScanRecheck:
+      type: object
+      required: [schema_version, operation, decision_id, actor_id, identity_id, workbench, context_id, capability, authorized, workspace_id, delivery_id, purpose, asset_id, asset_revision, source_revision, storage_key, sha256, size_bytes, mime_type, request_id, trace_id, admitted_at, recheck_id, event_id, allowed, ready, checked_at]
+      properties:
+        schema_version: { type: integer, enum: [1] }
+        operation: { type: string, enum: [customer_delivery.asset.scan.execute] }
+        decision_id: { type: string, minLength: 1 }
+        actor_id: { type: string, minLength: 1 }
+        identity_id: { type: string, minLength: 1 }
+        workbench: { type: string, enum: [platform] }
+        context_id: { type: string, enum: ['platform:global'] }
+        capability: { type: string, enum: [customer.delivery.update] }
+        authorized: { type: boolean, enum: [true] }
+        workspace_id: { type: string, minLength: 1 }
+        delivery_id: { type: string, minLength: 1 }
+        purpose: { type: string, enum: [contract, payment, system_integration, functional_acceptance, training, video] }
+        asset_id: { type: string, minLength: 1 }
+        asset_revision: { type: integer, minimum: 1 }
+        source_revision: { type: integer, minimum: 1 }
+        storage_key: { type: string, minLength: 1 }
+        sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        size_bytes: { type: integer, minimum: 1, maximum: 52428800 }
+        mime_type: { type: string, minLength: 1 }
+        request_id: { type: string, minLength: 1 }
+        trace_id: { type: string, minLength: 1 }
+        admitted_at: { type: string, format: date-time }
+        recheck_id: { type: string, minLength: 1 }
+        event_id: { type: string, minLength: 1 }
+        allowed: { type: boolean, enum: [true] }
+        ready: { type: boolean, enum: [true] }
+        checked_at: { type: string, format: date-time }
+      additionalProperties: false
+    WorkerDeliveryScanExecutionCheckEnvelope:
+      allOf:
+        - { $ref: '#/components/schemas/ApiEnvelope' }
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [delivery_scan_recheck]
+              not:
+                anyOf:
+                  - { required: [authorization_recheck] }
+                  - { required: [commercial_access_recheck] }
+              properties:
+                delivery_scan_recheck: { $ref: '#/components/schemas/DeliveryScanRecheck' }
+    WorkerEventExecutionCheckEnvelope:
+      oneOf:
+        - { $ref: '#/components/schemas/WorkerExecutionCheckEnvelope' }
+        - { $ref: '#/components/schemas/WorkerCommercialOnlyExecutionCheckEnvelope' }
+        - { $ref: '#/components/schemas/WorkerDeliveryScanExecutionCheckEnvelope' }
     ApiWarning:
       type: object
       required: [code, message]

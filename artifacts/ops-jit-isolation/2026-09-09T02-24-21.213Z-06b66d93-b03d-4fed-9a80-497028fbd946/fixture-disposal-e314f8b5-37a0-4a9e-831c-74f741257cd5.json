@@ -1,0 +1,10 @@
+{
+  "runId": "e314f8b5-37a0-4a9e-831c-74f741257cd5",
+  "stopped": [
+    "6feadcd4d3f3fefe8a9e7e762f16ecf24106f2ac585c33706806a030604ab9ae",
+    "808ab49275183e907188e896f3c7fe27208b0d85fa34315572dc061f1666d4d5"
+  ],
+  "leftRunning": [],
+  "evidenceRetained": true,
+  "externalContainersTouched": false
+}

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-08T23:17:14.614Z",
+  "endedAt": "2026-09-08T23:17:19.769Z",
+  "runId": "9e939b4f-57fc-4996-b4d6-0b1f8fe15829",
+  "selectedFiles": [
+    "packages/persistence/src/migration-166-release.postgres.test.ts"
+  ],
+  "childExitCode": 1,
+  "status": "failed",
+  "report": "vitest.json",
+  "errors": [
+    "ISOLATED_POSTGRES_TEST_PROCESS_NONZERO",
+    "POSTGRES_REPORT_NOT_SUCCESSFUL",
+    "POSTGRES_REPORT_FAILED_OR_SKIPPED_ASSERTIONS",
+    "POSTGRES_REPORT_FAILED_OR_EMPTY_FILE",
+    "POSTGRES_REPORT_ASSERTION_NOT_PASSED",
+    "POSTGRES_REPORT_ASSERTION_COUNTS_MISMATCH"
+  ],
+  "fixtureOnly": true,
+  "databaseSource": "newly-created-isolated-fixture",
+  "rolePasswordCompatibility": "isolated-test-fixture-only",
+  "inheritedBusinessEnvironment": false,
+  "sharedContainersTouched": false,
+  "disposal": {
+    "stopped": [
+      "835281dec7694d6a202d89f9b5d25f1e13c4e06ccd28d89fdc1a75ef40811517",
+      "41495b26279e99be36609701a474722bc1947ccf0b0603411b261a0db69b1932"
+    ],
+    "leftRunning": []
+  }
+}

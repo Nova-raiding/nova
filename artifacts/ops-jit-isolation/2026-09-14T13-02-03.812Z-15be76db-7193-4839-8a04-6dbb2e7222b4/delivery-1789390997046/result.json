@@ -1,0 +1,23 @@
+{
+  "schema_version": 2,
+  "evidence_kind": "isolated_live_customer_delivery_ui_rpc",
+  "verification_scope": "seven_scanned_attachments_and_full_delivery",
+  "raw_browser_trace_saved": false,
+  "browser_response_capture": "original_fetch_clone",
+  "real_delivery_scan": true,
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "timezone": "Asia/Shanghai",
+  "fixture": {
+    "workspace_id": "ws_ops_fixture_5fc891f14d954f3ebc12ee3ee944f76a"
+  },
+  "events": [
+    {
+      "event": "screenshot",
+      "name": "failure-masked.png"
+    }
+  ],
+  "status": "failed"
+}

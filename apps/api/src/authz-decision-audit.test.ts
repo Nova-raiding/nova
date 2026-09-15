@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { authorizationDecisionAuditContextIsValid, authorizationDecisionRequiresAudit, authorizationDecisionAuditEvidence } from './server.js'
-import { AUTHZ_POLICY_VERSION, type AuthorizationDecision } from '../../../packages/contracts/src/authz.js'
+import { AUTHZ_POLICY_VERSION, getMcpMethodPolicy, type AuthorizationDecision } from '../../../packages/contracts/src/authz.js'
 
 const enforcedDeniedDecision: AuthorizationDecision = {
   decision_id: 'decision_audit_context', policy_version: AUTHZ_POLICY_VERSION, method: 'ops.member.upsert',
@@ -11,6 +11,29 @@ const enforcedDeniedDecision: AuthorizationDecision = {
 }
 
 describe('authorization decision audit evidence', () => {
+  it.each([
+    ['ops.customer-delivery.assets.upload', 'allow_and_deny', true],
+    ['ops.customer-delivery.create', 'mutation', false],
+    ['ops.customer-delivery.videos.add', 'mutation', false],
+  ] as const)('requires the correct decision audit for enforced allow and deny on %s', (method, audit, allowRequiresAudit) => {
+    const allowed: AuthorizationDecision = {
+      decision_id: `decision_audit_${method}`, policy_version: AUTHZ_POLICY_VERSION, method,
+      capability: 'customer.delivery.update', workbench: 'platform',
+      scope: { required: 'platform', resource_id: 'platform:global', resolved: [{ type: 'platform', ids: ['platform:global'] }] },
+      mode: 'enforce', enforced: true, authorized: true, allowed: true, result: 'allow',
+      reason_code: 'AUTHZ_ALLOWED', explicit_deny: false,
+      obligations: { required: [], satisfied: [], missing: [] },
+    }
+    const original = structuredClone(allowed)
+    // Upload admission is later joined to this durable allow decision by the
+    // delivery evidence SQL assertion. Mutation-only audit is insufficient.
+    expect(getMcpMethodPolicy(method)?.audit).toBe(audit)
+    expect(authorizationDecisionRequiresAudit(allowed)).toBe(allowRequiresAudit)
+    expect(authorizationDecisionRequiresAudit({ ...allowed, authorized: false, allowed: false,
+      result: 'deny', reason_code: 'AUTHZ_CAPABILITY_MISSING' })).toBe(true)
+    expect(allowed).toEqual(original)
+  })
+
   it('fails closed when an enforced decision cannot be attributed to a workspace actor', () => {
     expect(authorizationDecisionRequiresAudit(enforcedDeniedDecision)).toBe(true)
     expect(authorizationDecisionAuditContextIsValid(enforcedDeniedDecision, '', 'actor_a')).toBe(false)

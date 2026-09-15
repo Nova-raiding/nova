@@ -1,0 +1,20 @@
+{
+  "runId": "a9c2566a-fc07-4b04-88cd-3854ed4d326c",
+  "containerId": "84acd3baaca16b377e36b85dd89bdd7a0a2186f5eac813198c12f3a7b63c842a",
+  "daemon": "unix:///Users/lixiaomei/.colima/default/docker.sock",
+  "identityVerifiedBeforeAction": {
+    "name": "merchant-delivery-scan-a9c2566a-fc07-4b04-88cd-3854ed4d326c",
+    "image": "clamav/clamav-debian@sha256:bcfc3d6117a6cfbeb6cd041c00164097916291b870c6183e06def6fed7fb740b",
+    "purpose": "isolated-customer-delivery-real-scan",
+    "kind": "clamav",
+    "status": "created",
+    "autoRemove": true,
+    "mounts": [],
+    "tmpfsOnly": "/tmp"
+  },
+  "action": "docker rm exact verified ID, without force",
+  "result": "removed; subsequent same-daemon inspect returned no such object",
+  "leftRunning": [],
+  "sharedContainersTouched": false,
+  "historicalFailurePreserved": true
+}

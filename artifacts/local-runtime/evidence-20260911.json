@@ -1,0 +1,114 @@
+{
+  "schema_version": "1",
+  "environment": "test",
+  "profile": "local_compose",
+  "compose_project": "local",
+  "compose_file": "infra/local/docker-compose.yml",
+  "captured_at": "2026-09-11T01:54:27.492Z",
+  "services": [
+    {
+      "service": "api",
+      "container_id": "e38582bcf364",
+      "image_id": "sha256:eb733a9e43c123e2b71d9e46da183db996762fc52f4553c38126c4059a2370d9",
+      "state": "running",
+      "health": "healthy",
+      "started_at": "2026-09-11T01:00:12.89954795Z"
+    },
+    {
+      "service": "api-replica",
+      "container_id": "2c94f38418af",
+      "image_id": "sha256:eb733a9e43c123e2b71d9e46da183db996762fc52f4553c38126c4059a2370d9",
+      "state": "running",
+      "health": "healthy",
+      "started_at": "2026-09-11T01:00:12.899036825Z"
+    },
+    {
+      "service": "clamav",
+      "container_id": "beb118df6b5c",
+      "image_id": "sha256:bcfc3d6117a6cfbeb6cd041c00164097916291b870c6183e06def6fed7fb740b",
+      "state": "running",
+      "health": "healthy",
+      "started_at": "2026-09-11T01:38:45.367719293Z"
+    },
+    {
+      "service": "ops-ui",
+      "container_id": "edf1b34d968a",
+      "image_id": "sha256:be43665806909a4dd816de48bb17ec4ccebbecf0412419d53b668f1516a46377",
+      "state": "running",
+      "health": "healthy",
+      "started_at": "2026-09-10T15:40:23.971186318Z"
+    },
+    {
+      "service": "postgres",
+      "container_id": "d1e4c62c05d5",
+      "image_id": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "state": "running",
+      "health": "healthy",
+      "started_at": "2026-09-09T18:17:15.228301822Z"
+    },
+    {
+      "service": "redis",
+      "container_id": "391dc6d48230",
+      "image_id": "sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2",
+      "state": "running",
+      "health": "healthy",
+      "started_at": "2026-09-07T10:41:42.108476599Z"
+    },
+    {
+      "service": "ui",
+      "container_id": "e3a6395fa730",
+      "image_id": "sha256:2af3b7703cf578c6a64181fcab50d4ed9d6df047c3ec1b00b6d59ea3082209c4",
+      "state": "running",
+      "health": "healthy",
+      "started_at": "2026-09-10T08:47:47.584956075Z"
+    },
+    {
+      "service": "worker-automation",
+      "container_id": "d7077284cadc",
+      "image_id": "sha256:91c549bacfe40decf2e99fef2d99acc8c59213c5ce849c05ce28476caf343d71",
+      "state": "running",
+      "health": "healthy",
+      "started_at": "2026-09-11T01:44:24.371953705Z"
+    },
+    {
+      "service": "worker-generation",
+      "container_id": "c174d517e946",
+      "image_id": "sha256:a15b5a64a479d4b64aade6756026182475c1d68d65b64159738385ee10815ce9",
+      "state": "running",
+      "health": "healthy",
+      "started_at": "2026-09-11T01:44:24.370325997Z"
+    },
+    {
+      "service": "worker-publish",
+      "container_id": "b48b3000926f",
+      "image_id": "sha256:6b4bf5c768e45228ef6f7b97063551a21a95d5c91bbd07baf3b84147f73678cf",
+      "state": "running",
+      "health": "healthy",
+      "started_at": "2026-09-11T01:44:24.374195288Z"
+    },
+    {
+      "service": "worker-reconcile",
+      "container_id": "42dea76e3380",
+      "image_id": "sha256:2fcff6475fe9215861399f3d2fdf2201b9d5d60bfbb4808bd74e3702d58be2de",
+      "state": "running",
+      "health": "healthy",
+      "started_at": "2026-09-11T01:44:24.373868872Z"
+    },
+    {
+      "service": "worker-scan",
+      "container_id": "9a47a308f3b0",
+      "image_id": "sha256:a25af2397a03459067cc00d88238e1e9542134c946b809a3794ec2e799d26c5a",
+      "state": "running",
+      "health": "healthy",
+      "started_at": "2026-09-11T01:44:24.372833205Z"
+    },
+    {
+      "service": "worker-sync",
+      "container_id": "569a38f78a9a",
+      "image_id": "sha256:707fbd3b6a9af4f25f0f25ab6d774430dc23151cddc7aae9ea30da2ad3acce95",
+      "state": "running",
+      "health": "healthy",
+      "started_at": "2026-09-11T01:42:34.822181194Z"
+    }
+  ]
+}

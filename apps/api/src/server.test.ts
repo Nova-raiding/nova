@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, authorizationRepositoryDomainError, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, nativeMcpErrorData, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
+import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, authorizationRepositoryDomainError, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, nativeMcpErrorData, persistAssetSnapshotAndEvent, prioritizeQueueAssets, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
 import { requireApprovedAssetForImageGeneration, requirePublishAuthorizationSnapshot } from './server.js'
 import { DomainError } from '../../../packages/application/src/service.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
@@ -190,6 +190,14 @@ describe('central commercial access gate', () => {
     expect(report).toContain("COMMERCIAL_READINESS_REPOSITORY_UNAVAILABLE")
     expect(report).toContain("不会修改费率、余额、注册表或执行状态")
     expect(report).not.toContain("MCP_POINT_CHARGED_ENABLED_METHODS.push")
+  })
+})
+
+describe('operations asset queue ordering', () => {
+  it('keeps a durable scan failure visible when more than 100 older asset risks exist', () => {
+    const assets = Array.from({ length: 105 }, (_, index) => ({ id: `asset_${index}` }))
+    expect(prioritizeQueueAssets(assets, ['asset_104'], 100)[0]).toEqual({ id: 'asset_104' })
+    expect(prioritizeQueueAssets(assets, ['asset_104'], 100)).toHaveLength(100)
   })
 })
 
@@ -616,7 +624,10 @@ describe('API application wiring', () => {
   it('routes every real quarantine object write through quota and atomic asset persistence', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     expect((source.match(/const stored = await putQuarantineObject\(/gu) ?? [])).toHaveLength(6)
-    expect((source.match(/await persistAssetSnapshotAndEvent\(workspaceId,/gu) ?? [])).toHaveLength(5)
+    // Customer-delivery quarantine adds one independently authorized atomic
+    // event; it must retain the same asset/outbox transaction boundary.
+    expect((source.match(/await persistAssetSnapshotAndEvent\(workspaceId,/gu) ?? [])).toHaveLength(6)
+    expect(source).toContain('await persistAssetSnapshotAndEvent(workspaceId, asset, CUSTOMER_DELIVERY_SCAN_EVENT, eventPayload, asset as unknown as Record<string, unknown>)')
     expect((source.match(/compensateStoredAsset\(/gu) ?? [])).toHaveLength(7)
     expect(source).toContain('const quota = persistence.storageQuota')
     expect(source).toContain('onDeleted: async row =>')

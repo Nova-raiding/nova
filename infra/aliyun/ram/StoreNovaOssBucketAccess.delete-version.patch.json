@@ -1,0 +1,14 @@
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "oss:DeleteObjectVersion"
+      ],
+      "Resource": [
+        "acs:oss:*:1600188311395090:codex-image-20260914/merchant-assets/canary/*"
+      ]
+    }
+  ]
+}

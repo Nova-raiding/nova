@@ -1,0 +1,12 @@
+{
+  "runId": "a9c2566a-fc07-4b04-88cd-3854ed4d326c",
+  "stopped": [],
+  "leftRunning": [
+    {
+      "id": "unconfirmed",
+      "reason": "Docker creation was attempted without recoverable exact-ID evidence; manual review required, no name-based cleanup attempted."
+    }
+  ],
+  "sharedContainersTouched": false,
+  "evidenceRetained": true
+}

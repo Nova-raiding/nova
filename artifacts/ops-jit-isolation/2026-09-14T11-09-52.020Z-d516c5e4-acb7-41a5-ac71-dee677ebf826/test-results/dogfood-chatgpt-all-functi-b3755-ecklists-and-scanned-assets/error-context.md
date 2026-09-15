@@ -1,0 +1,211 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e5]:
+    - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+      - /url: "#ops-main-content"
+    - complementary "运营主导航" [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - generic [ref=e10]: 大麦
+          - generic [ref=e11]:
+            - strong [ref=e12]: 大麦运营中心
+            - generic [ref=e13]: 平台运营后台
+        - generic [ref=e14]: 平台运营控制面
+        - navigation "平台运营功能导航" [ref=e15]:
+          - region "平台治理" [ref=e16]:
+            - heading "平台治理" [level=2] [ref=e17]
+            - button "总览" [ref=e18] [cursor=pointer]:
+              - img "dashboard" [ref=e19] [cursor=pointer]:
+                - img [ref=e20] [cursor=pointer]
+              - generic [ref=e22] [cursor=pointer]: 总览
+            - button "用户中心" [ref=e23] [cursor=pointer]:
+              - img "team" [ref=e24] [cursor=pointer]:
+                - img [ref=e25] [cursor=pointer]
+              - generic [ref=e27] [cursor=pointer]: 用户中心
+            - button "客户交付" [ref=e28] [cursor=pointer]:
+              - img "team" [ref=e29] [cursor=pointer]:
+                - img [ref=e30] [cursor=pointer]
+              - generic [ref=e32] [cursor=pointer]: 客户交付
+          - region "模型与计费" [ref=e33]:
+            - heading "模型与计费" [level=2] [ref=e34]
+            - button "账务与退款" [ref=e35] [cursor=pointer]:
+              - img "dollar" [ref=e36] [cursor=pointer]:
+                - img [ref=e37] [cursor=pointer]
+              - generic [ref=e39] [cursor=pointer]: 账务与退款
+    - generic [ref=e40]:
+      - banner [ref=e41]:
+        - generic [ref=e42]:
+          - heading "平台运营控制台" [level=2] [ref=e43]
+          - region "当前身份与权限范围" [ref=e44]:
+            - generic [ref=e45]:
+              - img [ref=e47]:
+                - img [ref=e48]
+              - strong [ref=e52]: 平台管理员
+              - status [ref=e54]: 授权状态：已由服务端验证
+              - button "展开其余 1 个已验证角色" [ref=e57] [cursor=pointer]:
+                - generic [ref=e58] [cursor=pointer]: +1 个角色
+              - generic [ref=e60]: 平台全局
+              - generic [ref=e62]: 策略 2026-09-08.v1
+            - status [ref=e63]: 平台运营视图：仅显示服务端授权的平台能力；企业主体操作需切换到对应企业主体。
+        - generic [ref=e65]:
+          - generic [ref=e66]:
+            - generic [ref=e67]: 当前状态
+            - status [ref=e68]: 已登录
+          - button "打开账号信息" [ref=e69] [cursor=pointer]:
+            - generic [ref=e70] [cursor=pointer]: o
+            - strong [ref=e72] [cursor=pointer]: ops-fixture-actor-98a9bad8-89c5-436e-b5ee-6a6c903cc729
+            - img [ref=e73] [cursor=pointer]:
+              - img [ref=e74] [cursor=pointer]
+      - main [ref=e76]:
+        - status [ref=e77]
+        - region "客户交付" [ref=e78]:
+          - generic [ref=e79]:
+            - generic [ref=e81]:
+              - generic [ref=e82]:
+                - generic [ref=e83]: CUSTOMER DELIVERY
+                - heading "客户交付" [level=1] [ref=e84]
+                - generic [ref=e85]: 以客户为中心跟进建档、系统接入、功能验收、培训和上线。付款未核验时，受控环节会保持阻断。
+              - button "刷新交付档案" [ref=e87] [cursor=pointer]:
+                - generic [ref=e88] [cursor=pointer]: 刷新交付档案
+            - generic [ref=e90]:
+              - generic [ref=e93]: 目标企业工作区（必选）
+              - generic [ref=e95]:
+                - generic [ref=e97]:
+                  - generic "ws_ops_fixture_98a9bad889c5436eb5ee6a6c903cc729" [ref=e98]:
+                    - text: ws_ops_fixture_98a9bad889c5436eb5ee6a6c903cc729
+                    - combobox "客户交付目标企业工作区" [ref=e99]
+                  - img "down" [ref=e101]:
+                    - img [ref=e102]
+                  - button "Clear" [ref=e104] [cursor=pointer]:
+                    - img "close-circle" [ref=e105] [cursor=pointer]:
+                      - img [ref=e106] [cursor=pointer]
+                - generic [ref=e109]: 交付档案只会在当前选中的企业工作区内读取和修改，切换后会重新加载。
+            - alert [ref=e111]:
+              - img "close-circle" [ref=e113]:
+                - img [ref=e114]
+              - generic [ref=e116]:
+                - generic [ref=e117]: 客户交付保存被阻断
+                - generic [ref=e118]: 合同文件必须引用当前工作区内已通过可信安全扫描的素材
+              - button "close" [ref=e119] [cursor=pointer]:
+                - img "close" [ref=e120] [cursor=pointer]:
+                  - img [ref=e121] [cursor=pointer]
+            - generic [ref=e124]:
+              - generic [ref=e126]:
+                - generic [ref=e127]: 客户建档
+                - generic [ref=e129]:
+                  - generic [ref=e131]: 完成全部交付项后，交付档案才会标记为已完成
+                  - button "新建客户" [ref=e133] [cursor=pointer]:
+                    - generic [ref=e134] [cursor=pointer]: 新建客户
+              - generic [ref=e135]:
+                - alert [ref=e136]:
+                  - img "info-circle" [ref=e138]:
+                    - img [ref=e139]
+                  - generic [ref=e142]: 交付状态由各环节真实填写结果决定；未付款客户的系统接入、功能验收和培训入口保持阻断。
+                - table [ref=e150]:
+                  - rowgroup [ref=e153]:
+                    - row "序号 公司名 客户档案 系统接入 功能测试及验收 客户培训 交付视频 交付完成时间 交付状态" [ref=e154]:
+                      - columnheader "序号" [ref=e155]
+                      - columnheader "公司名" [ref=e156]
+                      - columnheader "客户档案" [ref=e157]
+                      - columnheader "系统接入" [ref=e158]
+                      - columnheader "功能测试及验收" [ref=e159]
+                      - columnheader "客户培训" [ref=e160]
+                      - columnheader "交付视频" [ref=e161]
+                      - columnheader "交付完成时间" [ref=e162]
+                      - columnheader "交付状态" [ref=e163]
+                  - rowgroup [ref=e164]:
+                    - row "01 隔离交付验收-1789384309025 未填写 未填写 未填写 未完成 凭证 未上传 尚未完成 0 0/5" [ref=e165]:
+                      - cell "01" [ref=e166]
+                      - cell "隔离交付验收-1789384309025" [ref=e167]:
+                        - strong [ref=e169]: 隔离交付验收-1789384309025
+                      - cell "未填写" [ref=e170]:
+                        - button "未填写" [ref=e171] [cursor=pointer]:
+                          - generic [ref=e172] [cursor=pointer]: 未填写
+                      - cell "未填写" [ref=e173]:
+                        - button "未填写" [ref=e174] [cursor=pointer]:
+                          - generic [ref=e175] [cursor=pointer]: 未填写
+                      - cell "未填写" [ref=e176]:
+                        - button "未填写" [ref=e177] [cursor=pointer]:
+                          - generic [ref=e178] [cursor=pointer]: 未填写
+                      - cell "未完成 凭证" [ref=e179]:
+                        - generic [ref=e180]:
+                          - generic [ref=e182] [cursor=pointer]:
+                            - checkbox "未完成" [ref=e184] [cursor=pointer]
+                            - generic [ref=e185] [cursor=pointer]: 未完成
+                          - button "凭证" [ref=e187] [cursor=pointer]:
+                            - generic [ref=e188] [cursor=pointer]: 凭证
+                      - cell "未上传" [ref=e189]:
+                        - button "未上传" [ref=e190] [cursor=pointer]:
+                          - generic [ref=e191] [cursor=pointer]: 未上传
+                      - cell "尚未完成" [ref=e192]
+                      - cell "0 0/5" [ref=e193]:
+                        - generic [ref=e194]:
+                          - progressbar [ref=e196]
+                          - generic [ref=e202]: 0/5
+  - dialog "隔离交付验收-1789384309025 · 客户档案" [ref=e204]:
+    - generic [ref=e206]:
+      - button "关闭" [ref=e207] [cursor=pointer]:
+        - img "close" [ref=e208] [cursor=pointer]:
+          - img [ref=e209] [cursor=pointer]
+      - generic [ref=e211]: 隔离交付验收-1789384309025 · 客户档案
+    - generic [ref=e215]:
+      - generic [ref=e217]:
+        - generic "公司名称" [ref=e219]: "* 公司名称"
+        - textbox "* 公司名称" [ref=e223]: 隔离交付验收-1789384309025
+      - generic [ref=e225]:
+        - generic "合同编号" [ref=e227]: "* 合同编号"
+        - textbox "* 合同编号" [ref=e231]: C-1789384321443
+      - generic [ref=e233]:
+        - generic "付款状态" [ref=e235]: "* 付款状态"
+        - generic [ref=e239] [cursor=pointer]:
+          - generic "未支付" [ref=e240] [cursor=pointer]:
+            - text: 未支付
+            - combobox "* 付款状态" [ref=e241] [cursor=pointer]
+          - img "down" [ref=e243] [cursor=pointer]:
+            - img [ref=e244] [cursor=pointer]
+      - textbox "付款日期" [ref=e253]
+      - generic [ref=e261]:
+        - generic [ref=e262]:
+          - generic:
+            - generic: 上传通过安全检查后自动填入
+          - combobox "付款凭证" [ref=e264]
+        - img "down" [ref=e266]:
+          - img [ref=e267]
+      - generic [ref=e269]:
+        - button "上传付款凭证" [ref=e272] [cursor=pointer]:
+          - generic [ref=e273] [cursor=pointer]: 上传付款凭证
+        - generic [ref=e274]: PDF、DOCX、PNG、JPG、JPEG；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
+        - status
+      - generic [ref=e276]:
+        - generic "合同文件" [ref=e278]: "* 合同文件"
+        - generic [ref=e279]:
+          - textbox "* 合同文件" [active] [ref=e282]
+          - generic [ref=e284]:
+            - generic [ref=e285]: 请填写合同 asset_ref 或 HTTPS 链接
+            - generic [ref=e286]: 合同必须是 HTTPS 链接或已扫描的 asset_ref
+      - generic [ref=e287]:
+        - generic [ref=e288]:
+          - button "上传合同文件" [disabled] [ref=e290]:
+            - generic: 上传合同文件
+          - button "取消上传与检查" [ref=e292] [cursor=pointer]:
+            - generic [ref=e293] [cursor=pointer]: 取消上传与检查
+        - generic [ref=e294]: PDF、DOCX、PNG、JPG、JPEG；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
+        - status [ref=e295]:
+          - generic [ref=e297]:
+            - generic [ref=e299]: delivery-contract.pdf
+            - generic [ref=e309]: 安全检查中
+      - generic [ref=e310]: 素材编号须通过服务端安全核验；HTTPS 链接作为外部合同凭证保存，不代表已完成平台扫描。
+      - generic [ref=e312]:
+        - generic "项目负责人" [ref=e314]: "* 项目负责人"
+        - textbox "* 项目负责人" [ref=e318]: 隔离项目负责人
+      - generic [ref=e320]:
+        - generic "售后负责人" [ref=e322]: "* 售后负责人"
+        - textbox "* 售后负责人" [ref=e326]: 隔离售后负责人
+      - generic [ref=e328]:
+        - generic "要求上线时间" [ref=e330]: "* 要求上线时间"
+        - textbox "* 要求上线时间" [ref=e334]: 2026-10-01T09:00
+      - button "保存当前环节" [disabled] [ref=e335]:
+        - generic: 保存当前环节
+```

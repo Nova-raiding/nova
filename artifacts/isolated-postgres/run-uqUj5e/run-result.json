@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-08T18:31:09.507Z",
+  "endedAt": "2026-09-08T18:31:23.264Z",
+  "runId": "f7f846a0-ea74-4ff5-96a6-39dc7461a444",
+  "selectedFiles": [
+    "packages/persistence/src/canonical-product-backfill.postgres.test.ts",
+    "packages/persistence/src/canonical-backfill-run-repository.postgres.test.ts",
+    "packages/persistence/src/commercial-point-adjustment-approval-repository.release.postgres.test.ts",
+    "packages/persistence/src/migration-106-release.postgres.test.ts",
+    "packages/persistence/src/migration-127-release.postgres.test.ts",
+    "packages/persistence/src/migration-146-release.postgres.test.ts",
+    "packages/persistence/src/migration-148-release.postgres.test.ts",
+    "packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts",
+    "packages/persistence/src/private-trial-invites.release.postgres.test.ts",
+    "packages/persistence/src/private-trial-payment.release.postgres.test.ts",
+    "packages/persistence/src/migration-164-release.postgres.test.ts",
+    "packages/persistence/src/migration-166-release.postgres.test.ts"
+  ],
+  "childExitCode": 1,
+  "status": "failed",
+  "report": "vitest.json",
+  "errors": [
+    "ISOLATED_POSTGRES_TEST_PROCESS_NONZERO"
+  ],
+  "fixtureOnly": true,
+  "databaseSource": "newly-created-isolated-fixture",
+  "rolePasswordCompatibility": "isolated-test-fixture-only",
+  "inheritedBusinessEnvironment": false,
+  "sharedContainersTouched": false,
+  "disposal": {
+    "stopped": [
+      "1607cc7420665db43ac55ebc00bb40d3ba0eb2243e6137eaeb1e8db17b924b57",
+      "14178b9afba1bd4e2046a2655ce4015144908ab4c8eebc63d4a6c9eb9846b796"
+    ],
+    "leftRunning": []
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "status": "failed",
+  "errorCode": "OPS_E2E_SCANNER_RUNTIME_FAILED",
+  "cleanupErrors": [],
+  "sharedContainersTouched": false
+}

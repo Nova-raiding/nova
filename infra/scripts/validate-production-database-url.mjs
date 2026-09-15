@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { isIP } from 'node:net'
+import { lstatSync, readFileSync } from 'node:fs'
 
-const allowedEnvironmentNames = new Set(['DATABASE_URL', 'OPS_DATABASE_URL'])
+const allowedEnvironmentNames = new Set(['DATABASE_URL', 'OPS_DATABASE_URL', 'ALERT_RECEIVER_DATABASE_URL'])
 const environmentName = process.argv[2]
 
 function fail(message) {
@@ -11,12 +12,33 @@ function fail(message) {
 }
 
 if (process.argv.length !== 3 || !allowedEnvironmentNames.has(environmentName)) {
-  process.stderr.write('usage: validate-production-database-url.mjs <DATABASE_URL|OPS_DATABASE_URL>\n')
+  process.stderr.write('usage: validate-production-database-url.mjs <DATABASE_URL|OPS_DATABASE_URL|ALERT_RECEIVER_DATABASE_URL>\n')
   process.exit(2)
 }
 
-const value = process.env[environmentName]
+let value = process.env[environmentName]
+if (environmentName === 'ALERT_RECEIVER_DATABASE_URL') {
+  const fileEnvironmentName = 'ALERT_RECEIVER_DATABASE_URL_FILE'
+  const filePath = process.env[fileEnvironmentName]
+  if (value && filePath) fail(`must use only one of ${environmentName} or ${fileEnvironmentName}`)
+  if (!value && filePath) {
+    try {
+      const stat = lstatSync(filePath)
+      if (!stat.isFile() || stat.isSymbolicLink()) fail(`${fileEnvironmentName} must identify a regular non-symbolic-link file`)
+      value = readFileSync(filePath, 'utf8').trim()
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error) fail(`${fileEnvironmentName} must be readable`)
+      throw error
+    }
+  }
+}
 if (!value) fail('is required')
+if (value.includes('pilot-local-token')) fail('must not contain a local-only credential')
+
+if (environmentName === 'ALERT_RECEIVER_DATABASE_URL'
+  && (value === process.env.DATABASE_URL || value === process.env.OPS_DATABASE_URL)) {
+  fail('must use a dedicated credential distinct from DATABASE_URL and OPS_DATABASE_URL')
+}
 
 let url
 try {

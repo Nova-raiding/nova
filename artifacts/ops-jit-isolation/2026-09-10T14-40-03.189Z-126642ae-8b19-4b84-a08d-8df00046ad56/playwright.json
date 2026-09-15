@@ -1,0 +1,497 @@
+{
+  "config": {
+    "rootDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-10T14-40-03.189Z-126642ae-8b19-4b84-a08d-8df00046ad56/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "walk every Ops Console section through the real browser UI",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 41864,
+                  "error": {
+                    "message": "TimeoutError: locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('h1,h2,h3').filter({ hasText: '/^账务与商业配置$/u' }) to be visible\u001b[22m\n",
+                    "stack": "TimeoutError: locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('h1,h2,h3').filter({ hasText: '/^账务与商业配置$/u' }) to be visible\u001b[22m\n\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js:68:97",
+                    "location": {
+                      "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js",
+                      "column": 97,
+                      "line": 68
+                    },
+                    "snippet": "  66 |     await page.locator('button').filter({ hasText: new RegExp(`^${section}$`, 'u') }).first().click()\n  67 |     const expectedHeading = headings[section] ?? section\n> 68 |     await page.locator('h1,h2,h3').filter({ hasText: new RegExp(`^${expectedHeading}$`, 'u') }).waitFor({ state: 'visible', timeout: 20_000 })\n     |                                                                                                 ^\n  69 |     await page.waitForTimeout(5_000)\n  70 |     if (section === '用户中心') {\n  71 |       const userDirectory = page.getByRole('tab', { name: '用户目录', exact: true })"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js",
+                        "column": 97,
+                        "line": 68
+                      },
+                      "message": "TimeoutError: locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('h1,h2,h3').filter({ hasText: '/^账务与商业配置$/u' }) to be visible\u001b[22m\n\n\n  66 |     await page.locator('button').filter({ hasText: new RegExp(`^${section}$`, 'u') }).first().click()\n  67 |     const expectedHeading = headings[section] ?? section\n> 68 |     await page.locator('h1,h2,h3').filter({ hasText: new RegExp(`^${expectedHeading}$`, 'u') }).waitFor({ state: 'visible', timeout: 20_000 })\n     |                                                                                                 ^\n  69 |     await page.waitForTimeout(5_000)\n  70 |     if (section === '用户中心') {\n  71 |       const userDirectory = page.getByRole('tab', { name: '用户目录', exact: true })\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js:68:97"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:40:10.264Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-10T14-40-03.189Z-126642ae-8b19-4b84-a08d-8df00046ad56/test-results/dogfood-chatgpt-all-functi-28935-through-the-real-browser-UI/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js",
+                    "column": 97,
+                    "line": 68
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "0411c0cf49f1d2cc9183-bed75de6c367b57696c0",
+          "file": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+          "line": 24,
+          "column": 1
+        },
+        {
+          "title": "does not report model configuration success when model status fails",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1175,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:40:57.209Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "0411c0cf49f1d2cc9183-15deecbc14659188a876",
+          "file": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+          "line": 126,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "operates the platform user directory without destructive confirmation",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 1997,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoContain\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // indexOf\u001b[22m\n\nExpected substring: \u001b[32m\"external_subject,display_name,workspace_id\"\u001b[39m\nReceived string:    \u001b[31m\"external_subject,display_name,enterprise_name,workspace_id,role,status,workspace_status,plan_code,plan_name,subscription_status,used_tasks,included_tasks,remaining_tasks,wallet_balance_cny,invited_by,created_at,updated_at\u001b[39m\n\u001b[31m\\\"ops-fixture-target-2619aa27-18ae-4565-a0fb-7973dea8a9d8\\\",\\\"Isolated Directory Target\\\",\\\"Enterprise ws_ops_fixture_2619aa2718ae4565a0fb7973dea8a9d8\\\",\\\"ws_ops_fixture_2619aa2718ae4565a0fb7973dea8a9d8\\\",\\\"merchant_admin\\\",\\\"active\\\",\\\"active\\\",\\\"trial\\\",\\\"Trial\\\",\\\"trialing\\\",\\\"0\\\",\\\"30\\\",\\\"30\\\",\\\"0.00\\\",\\\"isolated-fixture-bootstrap\\\",\\\"2026-09-10T14:40:05.601Z\\\",\\\"2026-09-10T14:40:05.601Z\\\"\"\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoContain\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // indexOf\u001b[22m\n\nExpected substring: \u001b[32m\"external_subject,display_name,workspace_id\"\u001b[39m\nReceived string:    \u001b[31m\"external_subject,display_name,enterprise_name,workspace_id,role,status,workspace_status,plan_code,plan_name,subscription_status,used_tasks,included_tasks,remaining_tasks,wallet_balance_cny,invited_by,created_at,updated_at\u001b[39m\n\u001b[31m\\\"ops-fixture-target-2619aa27-18ae-4565-a0fb-7973dea8a9d8\\\",\\\"Isolated Directory Target\\\",\\\"Enterprise ws_ops_fixture_2619aa2718ae4565a0fb7973dea8a9d8\\\",\\\"ws_ops_fixture_2619aa2718ae4565a0fb7973dea8a9d8\\\",\\\"merchant_admin\\\",\\\"active\\\",\\\"active\\\",\\\"trial\\\",\\\"Trial\\\",\\\"trialing\\\",\\\"0\\\",\\\"30\\\",\\\"30\\\",\\\"0.00\\\",\\\"isolated-fixture-bootstrap\\\",\\\"2026-09-10T14:40:05.601Z\\\",\\\"2026-09-10T14:40:05.601Z\\\"\"\u001b[39m\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js:76:27",
+                    "location": {
+                      "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js",
+                      "column": 27,
+                      "line": 76
+                    },
+                    "snippet": "  74 |   expect(downloaded.suggestedFilename()).toMatch(/^ops-users-\\d{4}-\\d{2}-\\d{2}\\.csv$/u)\n  75 |   const exportedContent = await readFile(await downloaded.path(), 'utf8')\n> 76 |   expect(exportedContent).toContain('external_subject,display_name,workspace_id')\n     |                           ^\n  77 |   expect(exportedContent).toContain('external_subject')\n  78 |   const detailButton = supportRow.getByRole('button', { name: /用户详情/u })\n  79 |   await detailButton.focus()"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js",
+                        "column": 27,
+                        "line": 76
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoContain\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // indexOf\u001b[22m\n\nExpected substring: \u001b[32m\"external_subject,display_name,workspace_id\"\u001b[39m\nReceived string:    \u001b[31m\"external_subject,display_name,enterprise_name,workspace_id,role,status,workspace_status,plan_code,plan_name,subscription_status,used_tasks,included_tasks,remaining_tasks,wallet_balance_cny,invited_by,created_at,updated_at\u001b[39m\n\u001b[31m\\\"ops-fixture-target-2619aa27-18ae-4565-a0fb-7973dea8a9d8\\\",\\\"Isolated Directory Target\\\",\\\"Enterprise ws_ops_fixture_2619aa2718ae4565a0fb7973dea8a9d8\\\",\\\"ws_ops_fixture_2619aa2718ae4565a0fb7973dea8a9d8\\\",\\\"merchant_admin\\\",\\\"active\\\",\\\"active\\\",\\\"trial\\\",\\\"Trial\\\",\\\"trialing\\\",\\\"0\\\",\\\"30\\\",\\\"30\\\",\\\"0.00\\\",\\\"isolated-fixture-bootstrap\\\",\\\"2026-09-10T14:40:05.601Z\\\",\\\"2026-09-10T14:40:05.601Z\\\"\"\u001b[39m\n\n  74 |   expect(downloaded.suggestedFilename()).toMatch(/^ops-users-\\d{4}-\\d{2}-\\d{2}\\.csv$/u)\n  75 |   const exportedContent = await readFile(await downloaded.path(), 'utf8')\n> 76 |   expect(exportedContent).toContain('external_subject,display_name,workspace_id')\n     |                           ^\n  77 |   expect(exportedContent).toContain('external_subject')\n  78 |   const detailButton = supportRow.getByRole('button', { name: /用户详情/u })\n  79 |   await detailButton.focus()\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js:76:27"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:41:18.614Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-10T14-40-03.189Z-126642ae-8b19-4b84-a08d-8df00046ad56/test-results/dogfood-chatgpt-all-functi-203b8-ut-destructive-confirmation/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js",
+                    "column": 27,
+                    "line": 76
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "6522f71e1b3fcc2fbb2c-e331058b5d4d2c88859f",
+          "file": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+          "line": 33,
+          "column": 1
+        },
+        {
+          "title": "keeps member governance in the workspace workbench",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1032,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:41:21.283Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6522f71e1b3fcc2fbb2c-02b18fadf9258823ef5a",
+          "file": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+          "line": 137,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-workspace-visual.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-workspace-visual.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "captures every workspace Ops Console page for visual QA",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 9045,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:40:58.399Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "baf9c156953a3b17099c-39bfb3389afc0a6760e9",
+          "file": "dogfood/chatgpt-all-functions/ops-workspace-visual.spec.js",
+          "line": 30,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dogfood/chatgpt-all-functions/ops.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "inventory Ops Console through the real browser UI",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 7216,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:41:07.458Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-a18e51edc5655ddbab2c",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 11,
+          "column": 1
+        },
+        {
+          "title": "fails closed with no local connection credentials and exposes platform login",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 884,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:41:14.680Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-b0888ed6b29c515886b5",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 58,
+          "column": 1
+        },
+        {
+          "title": "turns an authenticated-session 401 into a reauthentication gate",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 816,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:41:15.570Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-cc683d122c2d46299ebf",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 86,
+          "column": 1
+        },
+        {
+          "title": "renders the real workspace brand tree with revision and store navigation",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 676,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:41:16.390Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-64b7823a47e9221e3885",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 118,
+          "column": 1
+        },
+        {
+          "title": "ops/tasks long list scrolling keeps page stable (no white-screen)",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1130,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-10T14:41:17.070Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-823edb30dcfce80a8295",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 163,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-10T14:40:08.142Z",
+    "duration": 74517.272,
+    "expected": 8,
+    "skipped": 0,
+    "unexpected": 2,
+    "flaky": 0
+  }
+}

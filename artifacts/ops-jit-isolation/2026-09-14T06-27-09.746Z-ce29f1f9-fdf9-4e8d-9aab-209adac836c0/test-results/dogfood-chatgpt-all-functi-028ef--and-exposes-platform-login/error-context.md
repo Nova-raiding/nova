@@ -1,0 +1,56 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营后台
+      - generic [ref=e14]: 平台运营控制面
+      - navigation "平台运营功能导航"
+  - generic [ref=e15]:
+    - banner [ref=e16]:
+      - generic [ref=e17]:
+        - heading "平台运营控制台" [level=2] [ref=e18]
+        - region "当前身份与权限范围" [ref=e19]:
+          - generic [ref=e20]:
+            - img [ref=e22]:
+              - img [ref=e23]
+            - strong [ref=e27]: 权限未验证
+            - status [ref=e29]: 授权状态：未验证，正在等待服务端授权
+            - button "通知消息，暂无未读" [ref=e32] [cursor=pointer]:
+              - img "bell" [ref=e34] [cursor=pointer]:
+                - img [ref=e35] [cursor=pointer]
+            - generic [ref=e38]: 企业主体 · 未识别
+            - generic [ref=e40]: 策略 未返回
+          - status [ref=e41]: 平台运营视图：仅显示服务端授权的平台能力；企业主体操作需切换到对应企业主体。
+      - generic [ref=e43]:
+        - generic [ref=e44]:
+          - generic [ref=e45]: 当前状态
+          - status [ref=e46]: 正在刷新
+        - button "平台运营账号登录" [ref=e47] [cursor=pointer]:
+          - generic [ref=e48] [cursor=pointer]: 平台运营账号登录
+        - button "打开账号信息" [ref=e49] [cursor=pointer]:
+          - generic [ref=e50] [cursor=pointer]: 平
+          - strong [ref=e52] [cursor=pointer]: 平台运营账号
+          - img [ref=e53] [cursor=pointer]:
+            - img [ref=e54] [cursor=pointer]
+    - main [ref=e56]:
+      - status [ref=e57]: 正在验证运营权限
+      - generic [ref=e59]:
+        - heading [level=3] [ref=e60]
+        - list [ref=e61]:
+          - listitem [ref=e62]
+          - listitem [ref=e63]
+          - listitem [ref=e64]
+          - listitem [ref=e65]
+          - listitem [ref=e66]
+          - listitem [ref=e67]
+          - listitem [ref=e68]
+          - listitem [ref=e69]
+```

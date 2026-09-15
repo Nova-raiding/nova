@@ -41,6 +41,8 @@ const productionEnvironment = (): NodeJS.ProcessEnv => ({
   ASSET_STORAGE_REGION: 'cn-test-1',
   ASSET_STORAGE_ENDPOINT: 'https://storage.example.test',
   ASSET_STORAGE_KMS_KEY_ID: 'kms-key-ref',
+  ASSET_STORAGE_CREDENTIAL_PROVIDER: 'aliyun_ecs_ram_role',
+  ASSET_STORAGE_ECS_RAM_ROLE: 'merchant-oss-role',
   PUBLIC_ASSET_BASE_URL: 'https://merchant.example.test',
   ASSET_DISPLAY_URL_SIGNING_SECRET: 'production-display-signing-secret-32-bytes-minimum',
   ASSET_DISPLAY_URL_SIGNING_KEY_ID: 'display-2026-08',
@@ -72,8 +74,9 @@ const productionEnvironment = (): NodeJS.ProcessEnv => ({
   ASSET_CLEAN_RETENTION_DAYS: '30',
   DELETION_REQUEST_GRACE_DAYS: '7',
   BACKUP_RETENTION_DAYS: '30',
-  LIFECYCLE_POLICY_REF: 'policy://production/assets-v1',
-  ALERT_CHANNEL_SECRET_REF: 'secret://production/alerts',
+  LIFECYCLE_POLICY_REF: 'oss://merchant-assets/lifecycle/assets-v1',
+  ALERT_CHANNEL_SECRET_REF: 'vault://merchant-alert-channel',
+  OPS_ALERT_NOTIFICATIONS_ENABLED: 'true',
   OPS_ALERT_WEBHOOK_URL: 'https://alerts.example.test/merchant',
   OPS_ALERT_WEBHOOK_ALLOWED_HOSTS: 'alerts.example.test',
   OPS_ALERT_WEBHOOK_SECRET: 'production-alert-webhook-secret',
@@ -163,7 +166,7 @@ describe('production readiness fail-closed', () => {
       { gate: 'authorization', key: 'MCP_AUTHZ_MODE' },
       { gate: 'authorization', key: 'AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED' },
       { gate: 'identity', key: 'OIDC_PROXY_SIGNING_SECRET' },
-      { gate: 'object_storage', key: 'ASSET_STORAGE_KMS_KEY_ID' },
+      { gate: 'object_storage', key: 'ASSET_STORAGE_ECS_RAM_ROLE' },
       { gate: 'object_storage', key: 'ASSET_DISPLAY_URL_SIGNING_SECRET' },
       { gate: 'asset_scanner', key: 'ASSET_SCAN_APPROVED_SCANNER_SERVICE_IDS' },
       { gate: 'asset_scanner', key: 'ASSET_SCAN_MIN_DEFINITIONS_VERSION' },
@@ -191,6 +194,81 @@ describe('production readiness fail-closed', () => {
       expect(JSON.stringify(result)).not.toContain('payment-provider-key')
       expect(JSON.stringify(result)).not.toContain('rule-sync-signing-secret')
     }
+  })
+
+  it('accepts OSS AES256 encryption without requiring a KMS key', () => {
+    const environment = productionEnvironment()
+    environment.ASSET_STORAGE_SSE_MODE = 'AES256'
+    delete environment.ASSET_STORAGE_KMS_KEY_ID
+
+    const result = productionReadinessDiagnostics(environment)
+    expect(result.gates.object_storage).toMatchObject({ ready: true, reasons: [] })
+  })
+
+  it('accepts ACK RRSA only when the admission-injected pod identity is complete', () => {
+    const environment = productionEnvironment()
+    environment.ASSET_STORAGE_CREDENTIAL_PROVIDER = 'aliyun_ack_rrsa'
+    delete environment.ASSET_STORAGE_ECS_RAM_ROLE
+    environment.ALIBABA_CLOUD_ROLE_ARN = 'acs:ram::1600188311395090:role/StoreNovaAckOssRole'
+    environment.ALIBABA_CLOUD_OIDC_PROVIDER_ARN = 'acs:ram::1600188311395090:oidc-provider/ack-rrsa-cluster1'
+    environment.ALIBABA_CLOUD_OIDC_TOKEN_FILE = '/var/run/secrets/ack.alibabacloud.com/rrsa-tokens/token'
+
+    expect(productionReadinessDiagnostics(environment).gates.object_storage).toMatchObject({ ready: true, reasons: [] })
+    delete environment.ALIBABA_CLOUD_OIDC_TOKEN_FILE
+    expect(productionReadinessDiagnostics(environment).gates.object_storage).toMatchObject({
+      ready: false,
+      reasons: ['alibaba_cloud_oidc_token_file_missing_or_invalid'],
+    })
+  })
+
+  it('does not allow an ACK deployment to fall back to shared ECS node metadata', () => {
+    const environment = productionEnvironment()
+    environment.ASSET_STORAGE_CREDENTIAL_PROVIDER = 'aliyun_ack_rrsa'
+    environment.ALIBABA_CLOUD_ROLE_ARN = 'acs:ram::1600188311395090:role/StoreNovaAckOssRole'
+    environment.ALIBABA_CLOUD_OIDC_PROVIDER_ARN = 'acs:ram::1600188311395090:oidc-provider/ack-rrsa-cluster1'
+    delete environment.ALIBABA_CLOUD_OIDC_TOKEN_FILE
+
+    expect(productionReadinessDiagnostics(environment).gates.object_storage?.ready).toBe(false)
+  })
+
+  it.each([
+    ['LIFECYCLE_POLICY_REF', 'policy://production/assets-v1'],
+    ['LIFECYCLE_POLICY_REF', 'oss://another-bucket/lifecycle/assets-v1'],
+    ['LIFECYCLE_POLICY_REF', 'oss://merchant-assets/lifecycle/placeholder'],
+    ['ALERT_CHANNEL_SECRET_REF', 'secret://production/alerts'],
+    ['ALERT_CHANNEL_SECRET_REF', 'vault://placeholder'],
+  ])('rejects an unbound or placeholder lifecycle control reference in %s', (key, value) => {
+    const environment = productionEnvironment()
+    environment[key] = value
+    const result = productionReadinessDiagnostics(environment)
+    expect(result.ready).toBe(false)
+    expect(result.gates.object_storage).toMatchObject({ ready: false })
+  })
+
+  it('binds lifecycle readiness to the operational alert channel configuration', () => {
+    const environment = productionEnvironment()
+    delete environment.OPS_ALERT_WEBHOOK_SECRET
+    const result = productionReadinessDiagnostics(environment)
+    expect(result.gates.object_storage!.ready).toBe(false)
+    expect(result.gates.object_storage!.reasons).toContain('lifecycle:alert channel is not verifiable: OPS_ALERT_WEBHOOK_SECRET 未配置')
+  })
+
+  it('allows alerts to be explicitly disabled without weakening lifecycle or storage controls', () => {
+    const environment = productionEnvironment()
+    environment.OPS_ALERT_NOTIFICATIONS_ENABLED = 'false'
+    delete environment.ALERT_CHANNEL_SECRET_REF
+    delete environment.OPS_ALERT_WEBHOOK_URL
+    delete environment.OPS_ALERT_WEBHOOK_ALLOWED_HOSTS
+    delete environment.OPS_ALERT_WEBHOOK_SECRET
+    const result = productionReadinessDiagnostics(environment)
+    expect(result.ready).toBe(true)
+    expect(result.gates.alerts).toEqual({ ready: true, reasons: [] })
+    expect(result.gates.object_storage).toEqual({ ready: true, reasons: [] })
+
+    delete environment.LIFECYCLE_POLICY_REF
+    const withoutLifecycle = productionReadinessDiagnostics(environment)
+    expect(withoutLifecycle.ready).toBe(false)
+    expect(withoutLifecycle.gates.object_storage?.reasons).toContain('lifecycle:LIFECYCLE_POLICY_REF must bind the configured bucket and rule as oss://<bucket>/lifecycle/<rule-id>')
   })
 
   it.each([

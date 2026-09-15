@@ -2,7 +2,7 @@ import { createHash, createHmac } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createLocalOidcGateway, type LocalOidcGatewayConfig } from './local-oidc-gateway.js'
+import { createLocalOidcGateway, localOidcProxyBodyLimit, type LocalOidcGatewayConfig } from './local-oidc-gateway.js'
 
 const servers: Server[] = []
 
@@ -53,6 +53,20 @@ async function login(gateway: string, password = 'correct horse battery'): Promi
 }
 
 describe('local authenticated OIDC gateway', () => {
+  it.each([
+    ['POST', '/mcp', 70],
+    ['POST', '/mcp?evidence=1', 70],
+    ['GET', '/mcp', 50],
+    ['PUT', '/mcp', 50],
+    ['POST', '/mcp/', 50],
+    ['POST', '/mcp/assets', 50],
+    ['POST', '/mcp-extra', 50],
+    ['POST', '/m%63p', 50],
+    ['POST', '/v1/assets?next=/mcp', 50],
+  ] as const)('bounds %s %s to precisely %s MiB', (method, target, mib) => {
+    expect(localOidcProxyBodyLimit(method, target)).toBe(mib * 1024 * 1024)
+  })
+
   it('returns a JSON session boundary for signed-out account panels', async () => {
     const { gateway } = await fixture()
     const response = await fetch(`${gateway}/auth/session`)
@@ -90,6 +104,52 @@ describe('local authenticated OIDC gateway', () => {
     expect(observed[0]?.headers['x-oidc-roles']).toBe('platform_ops,rules_admin')
     expect(observed[0]?.headers['x-oidc-workbench']).toBe('platform')
   })
+
+  it('actually proxies and signs a 40 MiB file encoded in an upload-shaped MCP request', async () => {
+    const { gateway, observed } = await fixture()
+    const authenticated = await login(gateway)
+    expect(authenticated.response.status).toBe(303)
+    // Transport evidence only: the upstream verifies the real signed bytes;
+    // this synthetic file is not a PDF-parser/scanner or asset-upload fixture.
+    const contentBase64 = Buffer.alloc(40 * 1024 * 1024, 65).toString('base64')
+    const body = JSON.stringify({
+      jsonrpc: '2.0', id: 'gateway-40-mib-transport', method: 'ops.customer-delivery.assets.upload',
+      params: { target_workspace_id: 'ws_demo', delivery_id: 'delivery_transport', purpose: 'contract', name: 'transport.pdf', mime_type: 'application/pdf', content_base64: contentBase64 },
+    })
+    const expectedBodyBytes = Buffer.byteLength(body)
+    expect(expectedBodyBytes).toBeGreaterThan(50 * 1024 * 1024)
+    expect(expectedBodyBytes).toBeLessThan(70 * 1024 * 1024)
+    const response = await fetch(`${gateway}/api/mcp?evidence=large-body`, {
+      method: 'POST', headers: { cookie: authenticated.sessionCookie ?? '', 'content-type': 'application/json', 'x-workspace-id': 'ws_demo', 'x-oidc-body-sha256': 'browser-injected' }, body,
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ valid: true })
+    expect(observed).toHaveLength(1)
+    expect(observed[0]?.target).toBe('/mcp?evidence=large-body')
+    expect(Buffer.byteLength(observed[0]?.body ?? '')).toBe(expectedBodyBytes)
+    expect(observed[0]?.headers['x-oidc-body-sha256']).toBe(createHash('sha256').update(body).digest('hex'))
+    expect(observed[0]?.headers['x-oidc-sub']).toBe('actor_demo')
+  }, 30_000)
+
+  it('rejects actual over-limit HTTP bodies without forwarding them, and keeps the session usable', async () => {
+    const { gateway, observed } = await fixture()
+    const authenticated = await login(gateway)
+    expect(authenticated.response.status).toBe(303)
+    const oversized = 'A'.repeat(70 * 1024 * 1024 + 1)
+    for (const [path, body] of [
+      ['/api/v1/assets', oversized.slice(0, 50 * 1024 * 1024 + 1)],
+      ['/api/mcp', oversized],
+    ] as const) {
+      const response = await fetch(`${gateway}${path}`, { method: 'POST', headers: { cookie: authenticated.sessionCookie ?? '', 'content-type': 'application/json' }, body })
+      expect(response.status, path).toBe(413)
+      expect(await response.json()).toMatchObject({ error: { code: 'REQUEST_BODY_TOO_LARGE' } })
+      expect(observed).toHaveLength(0)
+    }
+    const retry = await fetch(`${gateway}/api/mcp`, { method: 'POST', headers: { cookie: authenticated.sessionCookie ?? '', 'content-type': 'application/json' }, body: '{}' })
+    expect(retry.status).toBe(200)
+    expect(await retry.json()).toEqual({ valid: true })
+    expect(observed).toHaveLength(1)
+  }, 30_000)
 
   it('bootstraps and exposes a first-login workspace through signed OIDC APIs', async () => {
     const { gateway, observed } = await fixture({ workspaceId: '', workbench: 'workspace', subject: 'new-oidc-operator', roles: ['workspace_owner'] })

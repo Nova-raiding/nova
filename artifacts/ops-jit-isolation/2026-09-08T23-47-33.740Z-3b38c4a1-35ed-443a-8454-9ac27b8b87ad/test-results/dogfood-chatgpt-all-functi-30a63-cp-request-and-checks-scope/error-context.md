@@ -1,0 +1,116 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营与商家服务
+      - generic [ref=e14]: 平台运营控制面
+      - region "当前操作范围" [ref=e15]:
+        - generic [ref=e16]:
+          - generic [ref=e17]: 当前操作范围
+          - generic [ref=e18]: 工作区
+        - status [ref=e19]: 正在操作工作区 ws_ops_fixture_32e5eb5cb07c4d029c281a246cfe671a
+        - generic [ref=e20]:
+          - generic [ref=e21]: 工作区范围
+          - strong [ref=e22]: ws_ops_fixture_32e5eb5cb07c4d029c281a246cfe671a
+        - generic [ref=e23]: 数据与操作仅限当前工作区
+      - navigation "平台运营功能导航" [ref=e24]:
+        - region "平台治理" [ref=e25]:
+          - heading "平台治理" [level=2] [ref=e26]
+          - button "总览" [ref=e27] [cursor=pointer]:
+            - img "safety-certificate" [ref=e28] [cursor=pointer]:
+              - img [ref=e29] [cursor=pointer]
+            - text: 总览
+          - button "成员与权限" [ref=e31] [cursor=pointer]:
+            - img "usergroup-add" [ref=e32] [cursor=pointer]:
+              - img [ref=e33] [cursor=pointer]
+            - text: 成员与权限
+        - region "商家运营" [ref=e35]:
+          - heading "商家运营" [level=2] [ref=e36]
+          - button "任务与内容" [ref=e37] [cursor=pointer]:
+            - img "cloud-sync" [ref=e38] [cursor=pointer]:
+              - img [ref=e39] [cursor=pointer]
+            - text: 任务与内容
+          - button "知识库" [ref=e42] [cursor=pointer]:
+            - img "database" [ref=e43] [cursor=pointer]:
+              - img [ref=e44] [cursor=pointer]
+            - text: 知识库
+          - button "平台连接" [ref=e46] [cursor=pointer]:
+            - img "global" [ref=e47] [cursor=pointer]:
+              - img [ref=e48] [cursor=pointer]
+            - text: 平台连接
+          - button "平台规则" [ref=e50] [cursor=pointer]:
+            - img "read" [ref=e51] [cursor=pointer]:
+              - img [ref=e52] [cursor=pointer]
+            - text: 平台规则
+        - region "模型与计费" [ref=e54]:
+          - heading "模型与计费" [level=2] [ref=e55]
+          - button "账务与退款" [ref=e56] [cursor=pointer]:
+            - img "dollar" [ref=e57] [cursor=pointer]:
+              - img [ref=e58] [cursor=pointer]
+            - text: 账务与退款
+        - region "风险与系统" [ref=e60]:
+          - heading "风险与系统" [level=2] [ref=e61]
+          - button "存储与对账" [ref=e62] [cursor=pointer]:
+            - img "cloud-server" [ref=e63] [cursor=pointer]:
+              - img [ref=e64] [cursor=pointer]
+            - text: 存储与对账
+          - button "审计中心" [ref=e68] [cursor=pointer]:
+            - img "file-search" [ref=e69] [cursor=pointer]:
+              - img [ref=e70] [cursor=pointer]
+            - text: 审计中心
+  - generic [ref=e72]:
+    - banner [ref=e73]:
+      - generic [ref=e74]:
+        - generic [ref=e75]:
+          - generic [ref=e76]: WORKSPACE OPERATIONS
+          - generic [ref=e77]: 桌面运营工作台
+        - heading "商业与平台控制台" [level=2] [ref=e78]
+        - region "当前身份与权限范围" [ref=e79]:
+          - generic [ref=e80]:
+            - img [ref=e82]:
+              - img [ref=e83]
+            - strong [ref=e87]: 商家管理员
+            - status [ref=e89]: 授权状态：已由服务端验证
+            - generic [ref=e91]: 身份 ops-fixture-target-32e5eb5c-b07c-4d02-9c28-1a246cfe671a
+            - generic [ref=e93]: 商家工作区
+            - generic [ref=e95]: 工作区 · ws_ops_fixture_32e5eb5cb07c4d029c281a246cfe671a
+            - generic [ref=e97]: 策略 2026-09-08.v1
+          - status [ref=e98]: 商家自运营视图：仅作用于当前授权工作区；不包含平台运营能力。
+      - button "连接诊断 / 登录配置" [ref=e101] [cursor=pointer]:
+        - generic [ref=e102] [cursor=pointer]: 登录 / 连接
+    - main [ref=e103]:
+      - status [ref=e104]
+      - status [ref=e105]:
+        - img "exclamation-circle" [ref=e107]:
+          - img [ref=e108]
+        - generic [ref=e110]:
+          - generic [ref=e111]: 部分运营数据未刷新
+          - generic [ref=e112]: 部分数据集刷新失败（workspace.commercial.get、billing.model-usage.statement、workspace.metrics、knowledge.rule.list、knowledge.asset.list、knowledge.brand.preference.get、knowledge.learning.list、knowledge.competitor.list、automation.policy.get、automation.policy.list）。页面保留上次成功数据，这些值可能已过期：商业操作尚未满足上线门禁，已拒绝执行
+      - generic [ref=e113]:
+        - img "Unauthorized" [ref=e115]
+        - heading "无权访问“客服”" [active] [level=1] [ref=e170]
+        - generic [ref=e172]: 当前会话在workspace:ws_ops_fixture_32e5eb5cb07c4d029c281a246cfe671a范围内缺少 support.ticket.read 能力；服务端仍会独立校验每个请求。
+        - generic [ref=e174]:
+          - button "返回运营总览" [ref=e176] [cursor=pointer]:
+            - generic [ref=e177] [cursor=pointer]: 返回运营总览
+          - button "查看我的权限" [ref=e179] [cursor=pointer]:
+            - generic [ref=e180] [cursor=pointer]: 查看我的权限
+          - button "刷新权限" [ref=e182] [cursor=pointer]:
+            - generic [ref=e183] [cursor=pointer]: 刷新权限
+        - alert "权限拒绝详情" [ref=e185]:
+          - heading "权限拒绝详情" [level=5] [ref=e186]
+          - generic [ref=e187]:
+            - text: 缺失能力：
+            - code [ref=e189]: support.ticket.read
+          - generic [ref=e190]:
+            - text: 当前范围：
+            - code [ref=e192]: workspace:ws_ops_fixture_32e5eb5cb07c4d029c281a246cfe671a
+```

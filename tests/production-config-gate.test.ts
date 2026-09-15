@@ -48,7 +48,7 @@ function config(overrides: Record<string, boolean> = {}) {
     'asset_scan_policy_version: scan-policy-2026-08-30',
     `clamav_image_digest: sha256:${'a'.repeat(64)}`,
     'clamav_signature_max_age_minutes: 1440',
-    'clamav_max_file_bytes: 104857600',
+    'clamav_max_file_bytes: 52428800',
     'payment_mode: provider',
     'payment_provider_adapters: alipay,wechat',
     'payment_checkout_base_url: https://payments.example.com/checkout',
@@ -77,7 +77,7 @@ function config(overrides: Record<string, boolean> = {}) {
     'object_storage_bucket: merchant-assets',
     'object_storage_region: cn',
     'object_storage_endpoint: https://s3.example.com',
-    'object_storage_kms_key: vault://kms', 'merchant_ui_api_token_ref: vault://merchant-ui/api-token', 'merchant_ui_workspace_id_ref: vault://merchant-ui/workspace-id',
+    'object_storage_sse_mode: AES256', 'merchant_ui_api_token_ref: vault://merchant-ui/api-token', 'merchant_ui_workspace_id_ref: vault://merchant-ui/workspace-id',
     'asset_display_base_url: https://merchant.example.com',
     'asset_display_url_signing_secret_ref: vault://merchant-assets/display-url-signing-secret',
     'object_storage_versioning: true',
@@ -209,6 +209,13 @@ describe('production config gate', () => {
   it('rejects incomplete lifecycle and alert-channel policy', () => {
     expect(() => run(config().replace('object_storage_versioning: true\n', ''))()).toThrow(/versioning/)
     expect(() => run(config().replace('alert_channel_secret_ref: vault://merchant-alert-channel', ''))()).toThrow(/alert_channel/)
+  })
+
+  it('allows the alert channel reference to be omitted only with an explicit opt-out', () => {
+    const alertsDisabled = config()
+      .replace('alert_channel_secret_ref: vault://merchant-alert-channel', 'alert_notifications_enabled: false')
+    expect(run(alertsDisabled)()).toContain('production config gate passed')
+    expect(() => run(alertsDisabled.replace('alert_notifications_enabled: false', 'alert_notifications_enabled: invalid'))()).toThrow(/alert_channel/)
   })
 
   it('requires HTTPS signed asset-display configuration', () => {

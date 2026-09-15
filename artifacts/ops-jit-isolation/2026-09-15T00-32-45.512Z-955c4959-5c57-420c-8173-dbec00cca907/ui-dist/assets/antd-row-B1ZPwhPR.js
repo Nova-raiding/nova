@@ -1,0 +1,1 @@
+import{r as e}from"./antd-col-BygmL-9g.js";var t=e;export{t};

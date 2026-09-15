@@ -6,6 +6,12 @@ export const WORKER_COMMERCIAL_ACCESS_SNAPSHOT_SCHEMA = 1 as const
 
 export type WorkerCommercialAccessMode = 'POINT_CHARGED' | 'POINT_REQUIRED_NO_CHARGE'
 export type WorkerCommercialBalanceState = 'known'
+export type WorkerCommercialDenialCode =
+  | 'COMMERCIAL_EXECUTION_BALANCE_BLOCKED'
+  | 'COMMERCIAL_EXECUTION_ENTITLEMENT_STALE'
+  | 'COMMERCIAL_EXECUTION_RATE_STALE'
+  | 'COMMERCIAL_EXECUTION_RESERVATION_INVALID'
+  | 'COMMERCIAL_EXECUTION_REVISION_STALE'
 
 export interface WorkerCommercialAccessSnapshot {
   schemaVersion: typeof WORKER_COMMERCIAL_ACCESS_SNAPSHOT_SCHEMA
@@ -27,6 +33,7 @@ export interface WorkerCommercialAccessRecheck extends Omit<WorkerCommercialAcce
   recheckId: string
   allowed: boolean
   ready: boolean
+  denialCode?: WorkerCommercialDenialCode
   reservationState: 'active' | 'not_required' | 'consumed' | 'released' | 'expired'
   checkedAt: string
 }
@@ -143,10 +150,14 @@ function validateCommercialRecheck(current: WorkerCommercialAccessRecheck, snaps
   if (!isRecord(current)) throw recheckInvalid('commercial access recheck returned no evidence')
   const checkedAt = parseTimestamp(current.checkedAt, 'commercial access recheck checked_at')
   if (checkedAt > now + 5_000 || now - checkedAt > maxAgeMs) throw recheckInvalid('commercial access recheck evidence is stale')
-  if (current.allowed !== true) throw new WorkerCommercialAccessError('COMMERCIAL_EXECUTION_DENIED', 'commercial access was denied', false)
-  if (current.ready !== true) throw new WorkerCommercialAccessError('COMMERCIAL_EXECUTION_NOT_READY', 'commercial access is not ready for provider execution', true)
+  if (typeof current.allowed !== 'boolean' || typeof current.ready !== 'boolean') throw recheckInvalid('commercial access recheck decision is invalid')
   if (!nonEmpty(current.recheckId) || current.recheckId === snapshot.decisionId) throw recheckInvalid('commercial access recheck id is invalid')
   if (current.workspaceId !== snapshot.workspaceId || current.operation !== snapshot.operation || current.accessMode !== snapshot.accessMode) throw recheckInvalid('commercial access scope binding mismatch')
+  if (current.allowed !== true) {
+    const denialCode = isCommercialDenialCode(current.denialCode) ? current.denialCode : 'COMMERCIAL_EXECUTION_DENIED'
+    throw new WorkerCommercialAccessError(denialCode, `commercial access was denied: ${denialCode}`, false)
+  }
+  if (current.ready !== true) throw new WorkerCommercialAccessError('COMMERCIAL_EXECUTION_NOT_READY', 'commercial access is not ready for provider execution', true)
   if (current.accessRevision !== snapshot.accessRevision) throw new WorkerCommercialAccessError('COMMERCIAL_EXECUTION_REVISION_STALE', 'commercial access revision changed after enqueue', false)
   if (current.balanceState !== snapshot.balanceState || current.balanceState !== 'known') throw new WorkerCommercialAccessError('COMMERCIAL_EXECUTION_BALANCE_BLOCKED', 'creative point balance is not known', false)
   if (current.entitlementSnapshotId !== snapshot.entitlementSnapshotId || current.entitlementSnapshotChecksum !== snapshot.entitlementSnapshotChecksum) throw new WorkerCommercialAccessError('COMMERCIAL_EXECUTION_ENTITLEMENT_STALE', 'V2 entitlement snapshot changed after enqueue', false)
@@ -185,3 +196,10 @@ function requireOperation(value: unknown): CriticalWorkerOperation {
 }
 function nonEmpty(value: unknown): value is string { return typeof value === 'string' && value.trim().length > 0 }
 function isRecord(value: unknown): value is Record<string, unknown> { return Boolean(value) && typeof value === 'object' && !Array.isArray(value) }
+function isCommercialDenialCode(value: unknown): value is WorkerCommercialDenialCode {
+  return value === 'COMMERCIAL_EXECUTION_BALANCE_BLOCKED'
+    || value === 'COMMERCIAL_EXECUTION_ENTITLEMENT_STALE'
+    || value === 'COMMERCIAL_EXECUTION_RATE_STALE'
+    || value === 'COMMERCIAL_EXECUTION_RESERVATION_INVALID'
+    || value === 'COMMERCIAL_EXECUTION_REVISION_STALE'
+}

@@ -1,0 +1,11 @@
+{
+  "runId": "dfc7a4c1-95ef-4e39-8a4e-c87b25acf37b",
+  "error": "CUSTOMER_DELIVERY_SCAN_STARTUP_TIMEOUT:CUSTOMER_DELIVERY_SCAN_CLAMAV_NOT_READY",
+  "disposal": {
+    "stopped": [
+      "d44502844dd154a65a923a43ba976e5d1db364d1fe11073934a21c9e5d17b3c4"
+    ],
+    "leftRunning": []
+  },
+  "sharedContainersTouched": false
+}

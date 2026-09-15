@@ -1,0 +1,41 @@
+{
+  "schema_version": "1",
+  "release_id": "relay-live-20260913-text-ocr",
+  "generated_at": "2026-09-13T11:57:39.424Z",
+  "expires_at": "2026-09-14T11:57:39.424Z",
+  "environment": "",
+  "simulated": false,
+  "relay": "https://ai.wormholexyz.xyz",
+  "results": [
+    {
+      "modality": "text",
+      "endpoint": "/chat/completions",
+      "model": "deepseek-v4-pro",
+      "httpStatus": 200,
+      "providerRequestId": "202609131157343334336818268d9d6jpDqeinl",
+      "usageObserved": true,
+      "costObserved": true,
+      "costSource": "relay_pricing_snapshot",
+      "costCny": 0.04092536,
+      "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+      "pricingGroup": "VIP",
+      "state": "ready",
+      "evidence_ref": "artifact://production/relay/relay-live-20260913-text-ocr/text.json#972eb0cd077b6ed47100761d33c4a4c52e89ea080260f98db2d610d5b4205949"
+    },
+    {
+      "modality": "ocr",
+      "endpoint": "/chat/completions",
+      "model": "glm-5.3-flash",
+      "httpStatus": 200,
+      "providerRequestId": "202609131157370060444478268d9d6LInfnhhH",
+      "usageObserved": true,
+      "costObserved": true,
+      "costSource": "relay_pricing_snapshot",
+      "costCny": 0.00010928,
+      "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+      "pricingGroup": "VIP",
+      "state": "ready",
+      "evidence_ref": "artifact://production/relay/relay-live-20260913-text-ocr/ocr.json#2191345bc75dd80151c44f58b4384923a5e1c489b7d4cddd9d5da7c8edf2f7af"
+    }
+  ]
+}

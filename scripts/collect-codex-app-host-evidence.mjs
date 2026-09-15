@@ -8,8 +8,8 @@
  * evidence document for tests/codex-app-host-evidence-gate.ts.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, resolve, relative } from 'node:path'
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { dirname, resolve, relative, sep } from 'node:path'
 
 const REQUIRED_SCENARIOS = [
   'plugin_discovery', 'merchant_start', 'wallet_recharge_entry',
@@ -43,6 +43,12 @@ if (!/^(?:codex-app|chatgpt)(?:[-_.][A-Za-z0-9][A-Za-z0-9._-]*)?$/u.test(host) |
   throw new Error('capture.host must identify the real ChatGPT/Codex App host')
 }
 if (capture.simulated !== false) throw new Error('capture.simulated must be false')
+if (capture.environment !== 'preproduction' && capture.environment !== 'production') {
+  throw new Error('capture.environment must be preproduction or production')
+}
+if (typeof capture.generated_at !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u.test(capture.generated_at) || Number.isNaN(Date.parse(capture.generated_at))) {
+  throw new Error('capture.generated_at must be a strict UTC ISO timestamp from the real host capture')
+}
 if (!/^https:\/\//u.test(String(capture.mcp_base_url ?? '')) || forbidden.test(String(capture.mcp_base_url))) {
   throw new Error('capture.mcp_base_url must be a public HTTPS origin, not local or fixture')
 }
@@ -56,15 +62,19 @@ for (const [field, label] of [['release_id', 'release_id'], ['app_version', 'app
 }
 if (!Array.isArray(capture.scenarios)) throw new Error('capture.scenarios must be an array')
 
-const root = resolve(artifactRoot)
+const root = realpathSync(resolve(artifactRoot))
 const hashFile = file => {
-  const absolute = resolve(file)
-  if (!absolute.startsWith(`${root}/`) || !existsSync(absolute) || !lstatSync(absolute).isFile()) {
+  const requested = resolve(file)
+  if (!existsSync(requested) || lstatSync(requested).isSymbolicLink() || !lstatSync(requested).isFile()) {
     throw new Error(`scenario artifact must be a regular file under artifact root: ${file}`)
   }
+  const absolute = realpathSync(requested)
+  if (!absolute.startsWith(`${root}${sep}`)) throw new Error(`scenario artifact must be a regular file under artifact root: ${file}`)
   const body = readFileSync(absolute)
   return { absolute, digest: createHash('sha256').update(body).digest('hex') }
 }
+
+const evidenceRef = artifact => `artifact://production/${relative(root, artifact.absolute).split('\\').join('/')}#${artifact.digest}`
 
 const seenScenarioIds = new Set()
 const scenarios = capture.scenarios.map(scenario => {
@@ -77,8 +87,7 @@ const scenarios = capture.scenarios.map(scenario => {
     throw new Error(`${id} must be passed with zero console/network errors`)
   }
   const artifact = hashFile(scenario.artifact_path)
-  const evidenceRef = `artifact://production/codex-host/${relative(root, artifact.absolute).split('\\').join('/')}#${artifact.digest}`
-  const result = { id, state: 'passed', evidence_ref: evidenceRef, console_errors: 0, network_errors: 0 }
+  const result = { id, state: 'passed', evidence_ref: evidenceRef(artifact), console_errors: 0, network_errors: 0 }
   if (id === 'error_recovery') {
     if (!scenario.error_recovery || scenario.error_recovery.trigger_http_status !== 503 || scenario.error_recovery.trigger_error_code !== 'MODEL_PROVIDER_OUTCOME_UNKNOWN') {
       throw new Error('error_recovery must include a real 503 MODEL_PROVIDER_OUTCOME_UNKNOWN capture')
@@ -86,7 +95,7 @@ const scenarios = capture.scenarios.map(scenario => {
     const outcomeArtifact = hashFile(scenario.error_recovery.outcome_artifact_path)
     result.error_recovery = {
       ...scenario.error_recovery,
-      outcome_evidence_ref: `artifact://production/codex-host/${relative(root, outcomeArtifact.absolute).split('\\').join('/')}#${outcomeArtifact.digest}`,
+      outcome_evidence_ref: evidenceRef(outcomeArtifact),
     }
     delete result.error_recovery.outcome_artifact_path
   }
@@ -99,8 +108,8 @@ for (const id of REQUIRED_SCENARIOS) if (!seenScenarioIds.has(id)) throw new Err
 const evidence = {
   schema_version: '2',
   release_id: String(capture.release_id ?? ''),
-  environment: capture.environment === 'production' ? 'production' : 'preproduction',
-  generated_at: String(capture.generated_at ?? new Date().toISOString()),
+  environment: capture.environment,
+  generated_at: capture.generated_at,
   host,
   app_version: String(capture.app_version ?? ''),
   plugin_version: String(capture.plugin_version ?? ''),

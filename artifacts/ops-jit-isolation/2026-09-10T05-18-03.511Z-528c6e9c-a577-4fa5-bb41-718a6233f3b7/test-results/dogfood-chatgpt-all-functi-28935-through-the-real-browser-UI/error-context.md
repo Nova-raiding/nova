@@ -1,0 +1,188 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营与商家服务
+      - generic [ref=e14]: 平台运营控制面
+      - navigation "平台运营功能导航" [ref=e15]:
+        - region "平台治理" [ref=e16]:
+          - heading "平台治理" [level=2] [ref=e17]
+          - button "总览" [ref=e18] [cursor=pointer]:
+            - img "dashboard" [ref=e19] [cursor=pointer]:
+              - img [ref=e20] [cursor=pointer]
+            - text: 总览
+          - button "用户中心" [ref=e22] [cursor=pointer]:
+            - img "team" [ref=e23] [cursor=pointer]:
+              - img [ref=e24] [cursor=pointer]
+            - text: 用户中心
+        - region "模型与计费" [ref=e26]:
+          - heading "模型与计费" [level=2] [ref=e27]
+          - button "模型服务" [ref=e28] [cursor=pointer]:
+            - img "robot" [ref=e29] [cursor=pointer]:
+              - img [ref=e30] [cursor=pointer]
+            - text: 模型服务
+          - button "账务与退款" [ref=e32] [cursor=pointer]:
+            - img "dollar" [ref=e33] [cursor=pointer]:
+              - img [ref=e34] [cursor=pointer]
+            - text: 账务与退款
+  - generic [ref=e36]:
+    - banner [ref=e37]:
+      - generic [ref=e38]:
+        - heading "商业与平台控制台" [level=2] [ref=e39]
+        - region "当前身份与权限范围" [ref=e40]:
+          - generic [ref=e41]:
+            - img [ref=e43]:
+              - img [ref=e44]
+            - strong [ref=e48]: 平台管理员
+            - status [ref=e50]: 授权状态：已由服务端验证
+            - generic [ref=e52]: 身份 ops-fixture-actor-a3881af5-fc17-40b2-aae3-e7602c5e26b3
+            - button "展开其余 1 个已验证角色" [ref=e55] [cursor=pointer]:
+              - generic [ref=e56] [cursor=pointer]: +1 个角色
+            - generic [ref=e58]: 平台全局
+            - generic [ref=e60]: 策略 2026-09-08.v1
+          - status [ref=e61]: 平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。
+      - generic [ref=e63]:
+        - button "打开账号信息" [ref=e64] [cursor=pointer]:
+          - generic [ref=e65] [cursor=pointer]: 账号信息
+        - button "连接诊断" [ref=e66] [cursor=pointer]:
+          - generic [ref=e67] [cursor=pointer]: 连接诊断
+    - main [active] [ref=e68]:
+      - status [ref=e69]
+      - region "运营总览" [ref=e70]:
+        - generic [ref=e73]:
+          - generic [ref=e74]:
+            - generic "平台经营指标" [ref=e75]:
+              - generic [ref=e79]:
+                - generic [ref=e81]: 商家总数
+                - generic [ref=e82]:
+                  - img "team" [ref=e84]:
+                    - img [ref=e85]
+                  - generic [ref=e88]: "1"
+              - generic [ref=e92]:
+                - generic [ref=e94]: 已配置套餐
+                - generic [ref=e95]:
+                  - img "safety-certificate" [ref=e97]:
+                    - img [ref=e98]
+                  - generic [ref=e100]: —
+              - generic [ref=e104]:
+                - generic [ref=e106]: 累计套餐收入
+                - generic [ref=e107]:
+                  - img "dollar" [ref=e109]:
+                    - img [ref=e110]
+                  - generic [ref=e112]: —
+              - generic [ref=e116]:
+                - generic [ref=e118]: 累计充值到账
+                - generic [ref=e119]:
+                  - img "dollar" [ref=e121]:
+                    - img [ref=e122]
+                  - generic [ref=e124]: —
+            - generic [ref=e125]:
+              - generic [ref=e127]:
+                - generic [ref=e128]: 商家经营台账
+                - generic [ref=e130]:
+                  - button "team 管理商家授权" [ref=e132] [cursor=pointer]:
+                    - img "team" [ref=e134] [cursor=pointer]:
+                      - img [ref=e135] [cursor=pointer]
+                    - generic [ref=e137] [cursor=pointer]: 管理商家授权
+                  - button "safety-certificate 配置套餐" [ref=e139] [cursor=pointer]:
+                    - img "safety-certificate" [ref=e141] [cursor=pointer]:
+                      - img [ref=e142] [cursor=pointer]
+                    - generic [ref=e144] [cursor=pointer]: 配置套餐
+              - generic [ref=e145]:
+                - generic [ref=e146]: 查看商家主体当前套餐和订阅状态；授权变更统一在用户中心完成，套餐价格和权益统一在账务与退款中维护。商家名称、店铺数和创意点余额需要对应接口返回后才展示，不用内部 ID 冒充。
+                - generic [ref=e149]:
+                  - table [ref=e153]:
+                    - rowgroup [ref=e161]:
+                      - row "商家主体 套餐 订阅状态 月费 成员 操作" [ref=e162]:
+                        - columnheader "商家主体" [ref=e163]
+                        - columnheader "套餐" [ref=e164]
+                        - columnheader "订阅状态" [ref=e165]
+                        - columnheader "月费" [ref=e166]
+                        - columnheader "成员" [ref=e167]
+                        - columnheader "操作" [ref=e168]
+                    - rowgroup [ref=e169]:
+                      - row "商家主体 ws_ops_fixture_a3881af5fc1740b2aae3e7602c5e26b3 复制 Starter 试用中 ¥199.00 1 arrow-right 查看该商家授权" [ref=e170]:
+                        - cell "商家主体 ws_ops_fixture_a3881af5fc1740b2aae3e7602c5e26b3 复制" [ref=e171]:
+                          - generic [ref=e172]:
+                            - strong [ref=e175]: 商家主体
+                            - generic [ref=e177]:
+                              - text: ws_ops_fixture_a3881af5fc1740b2aae3e7602c5e26b3
+                              - button "复制" [ref=e179] [cursor=pointer]:
+                                - img "copy" [ref=e180] [cursor=pointer]:
+                                  - img [ref=e181] [cursor=pointer]
+                        - cell "Starter" [ref=e183]
+                        - cell "试用中" [ref=e184]:
+                          - generic [ref=e185]: 试用中
+                        - cell "¥199.00" [ref=e186]
+                        - cell "1" [ref=e187]
+                        - cell "arrow-right 查看该商家授权" [ref=e188]:
+                          - button "arrow-right 查看该商家授权" [ref=e189] [cursor=pointer]:
+                            - img "arrow-right" [ref=e191] [cursor=pointer]:
+                              - img [ref=e192] [cursor=pointer]
+                            - generic [ref=e194] [cursor=pointer]: 查看该商家授权
+                  - list [ref=e195]:
+                    - listitem [ref=e196]: 共 1 条
+                    - listitem "上一页" [ref=e197]:
+                      - button "left" [disabled] [ref=e198]:
+                        - img "left" [ref=e199]:
+                          - img [ref=e200]
+                    - listitem "1" [ref=e202] [cursor=pointer]:
+                      - generic [ref=e203] [cursor=pointer]: "1"
+                    - listitem "下一页" [ref=e204]:
+                      - button "right" [disabled] [ref=e205]:
+                        - img "right" [ref=e206]:
+                          - img [ref=e207]
+            - generic [ref=e209]:
+              - generic [ref=e211]:
+                - generic [ref=e213]:
+                  - generic [ref=e214]: 当前页套餐分布
+                  - generic [ref=e216]: 台账页 1 家
+                - generic [ref=e220]:
+                  - generic [ref=e221]: Starter
+                  - strong [ref=e223]: 1 家商家
+              - generic [ref=e225]:
+                - generic [ref=e228]: 运营动作
+                - generic [ref=e229]:
+                  - generic [ref=e230]:
+                    - button "team 给商家授权" [ref=e232] [cursor=pointer]:
+                      - img "team" [ref=e234] [cursor=pointer]:
+                        - img [ref=e235] [cursor=pointer]
+                      - generic [ref=e237] [cursor=pointer]: 给商家授权
+                    - button "safety-certificate 管理套餐" [ref=e239] [cursor=pointer]:
+                      - img "safety-certificate" [ref=e241] [cursor=pointer]:
+                        - img [ref=e242] [cursor=pointer]
+                      - generic [ref=e244] [cursor=pointer]: 管理套餐
+                    - button "dollar 查看财务流水" [ref=e246] [cursor=pointer]:
+                      - img "dollar" [ref=e248] [cursor=pointer]:
+                        - img [ref=e249] [cursor=pointer]
+                      - generic [ref=e251] [cursor=pointer]: 查看财务流水
+                  - generic [ref=e252]: 总览只保留经营决策需要的数据。模型、平台连接、规则、存储和系统风险请在各自工作台处理。
+            - generic [ref=e253]: 财务口径：平台已入账的套餐订单与充值订单，当前为累计快照。 财务汇总尚未取得，金额不解释为 0。 套餐目录尚未取得，已配置套餐不解释为 0。
+          - generic [ref=e255]:
+            - generic [ref=e257]:
+              - generic [ref=e258]: 模型服务
+              - button "进入模型服务" [ref=e260] [cursor=pointer]:
+                - generic [ref=e261] [cursor=pointer]: 进入模型服务
+                - img [ref=e262] [cursor=pointer]:
+                  - img [ref=e263] [cursor=pointer]
+            - generic [ref=e266]:
+              - generic [ref=e268]:
+                - generic [ref=e270]: 已就绪能力
+                - generic [ref=e271]:
+                  - generic [ref=e273]: "0"
+                  - generic [ref=e274]: / 5
+              - generic [ref=e276]:
+                - generic [ref=e278]: 阻断能力
+                - generic [ref=e281]: "5"
+              - generic [ref=e282]:
+                - generic [ref=e283]: not_configured
+                - generic [ref=e284]: 运行时状态与发布证据分别核验；Provider 配置不代表生产可用。当前 release metadata 已就绪，完整发布门禁仍由服务端决定。
+```

@@ -1,0 +1,20 @@
+# Production-only migration contract for the ECS Compose pilot.
+#
+# The base Compose migration intentionally seeds local demo data. Production
+# keeps the same role bootstrap, migration lock/checksum enforcement and ACL
+# verification, but must never execute seed-demo.sql.
+services:
+  migrate:
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql &&
+        /bin/sh /ops/apply-migrations.sh &&
+        psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql &&
+        /bin/sh /ops/verify-runtime-db-role.sh
+    volumes: !override
+      - ../../packages/persistence/src/migrations:/migrations:ro
+      - ../scripts/apply-migrations.sh:/ops/apply-migrations.sh:ro
+      - ./ensure-app-role.sql:/ops/ensure-app-role.sql:ro
+      - ../scripts/verify-runtime-db-role.sh:/ops/verify-runtime-db-role.sh:ro

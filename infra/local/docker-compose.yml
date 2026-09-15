@@ -33,6 +33,7 @@ x-worker-environment: &worker-environment
 
 x-worker-common: &worker-common
   restart: unless-stopped
+  image: local-worker
   dns:
     - ${CONTAINER_DNS_PRIMARY:-1.1.1.1}
     - ${CONTAINER_DNS_SECONDARY:-8.8.8.8}
@@ -126,6 +127,7 @@ services:
       LOCAL_COMPOSE: "true"
       MCP_AUTHZ_MODE: enforce
       REQUEST_OBSERVABILITY_LOGS: ${REQUEST_OBSERVABILITY_LOGS:-false}
+      OPS_ALERT_NOTIFICATIONS_ENABLED: ${OPS_ALERT_NOTIFICATIONS_ENABLED:-false}
       MERCHANT_IMAGE_TRACE_LOGS: ${MERCHANT_IMAGE_TRACE_LOGS:-true}
       DEPLOYMENT_PROFILE: local_acceptance
       PORT: 8787
@@ -500,6 +502,7 @@ services:
       PGPASSWORD: merchant_local_only
       DATABASE_URL: postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant
       OPS_DATABASE_URL: postgres://merchant_ops:merchant_ops_local_only@postgres:5432/merchant
+      ALERT_RECEIVER_DATABASE_URL: postgres://merchant_alert_receiver:merchant_alert_receiver_local_only@postgres:5432/merchant
     # Bootstrap runtime roles before migrations: migrations such as 080 grant
     # table privileges to merchant_app while creating their schema. Re-run the
     # idempotent bootstrap afterward so post-migration grants/deny lists apply

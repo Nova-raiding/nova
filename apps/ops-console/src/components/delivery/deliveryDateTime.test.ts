@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deliveryDateTimeInputValue, deliveryDateTimeIsoValue } from "./deliveryDateTime.js";
+import { deliveryCompletionTimeLabel, deliveryDateTimeInputValue, deliveryDateTimeIsoValue } from "./deliveryDateTime.js";
 
 describe("delivery local date and API timestamp boundary", () => {
   it("preserves the operator's local time across a UTC round-trip", () => {
@@ -13,5 +13,10 @@ describe("delivery local date and API timestamp boundary", () => {
     expect(deliveryDateTimeInputValue("invalid")).toBe("");
     expect(deliveryDateTimeIsoValue()).toBeUndefined();
     expect(() => deliveryDateTimeIsoValue("invalid")).toThrow("要求上线时间无效");
+  });
+  it("shows completion in the operator's local clock without exposing raw ISO timestamps", () => {
+    expect(deliveryCompletionTimeLabel(new Date(2026, 9, 1, 9, 5).toISOString())).toBe("2026-10-01 09:05");
+    expect(deliveryCompletionTimeLabel()).toBe("尚未完成");
+    expect(deliveryCompletionTimeLabel("invalid")).toBe("完成时间待核验");
   });
 });

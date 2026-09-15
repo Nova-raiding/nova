@@ -6,6 +6,9 @@ import { describe, expect, it } from 'vitest'
 type Json = Record<string, unknown>
 
 const json = (value: Json) => JSON.stringify(value)
+// Keep the transport harness independent from release-suite environment.
+// Restricted-environment behavior is covered by bridge.test.ts explicitly.
+const TEST_PROCESS_ENV = { ...process.env, NODE_ENV: 'test', DEPLOY_ENV: '${DEPLOY_ENV}' }
 
 async function listen(server: ReturnType<typeof createServer>) {
   server.listen(0, '127.0.0.1')
@@ -57,7 +60,18 @@ async function withBridge(handler: (request: Json, res: ServerResponse<IncomingM
   const address = await listen(server)
   const child = spawn(process.execPath, ['apps/plugin/mcp/bridge.mjs'], {
     cwd: process.cwd(),
-    env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: '${MERCHANT_MCP_WRITE_ENABLED}' },
+    // Keep host launchd credentials out of this local transport harness. An
+    // unset token is otherwise recovered from macOS launchd by the bridge,
+    // turning local confirmation into an extra remote MCP request.
+    env: {
+      ...TEST_PROCESS_ENV,
+      MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
+      MERCHANT_WORKSPACE_ID: 'ws_test',
+      MERCHANT_MCP_TOKEN: '${MERCHANT_MCP_TOKEN}',
+      MERCHANT_ALLOW_FIXTURE_FALLBACK: 'true',
+      MERCHANT_STRICT_AUTH: '${MERCHANT_STRICT_AUTH}',
+      MERCHANT_MCP_WRITE_ENABLED: '${MERCHANT_MCP_WRITE_ENABLED}',
+    },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   try {

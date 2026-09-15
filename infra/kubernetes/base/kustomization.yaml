@@ -6,6 +6,7 @@ resources:
   - configmap.yaml
   - migration.yaml
   - api.yaml
+  - alert-receiver.yaml
   - workers.yaml
   - network-policies.yaml
   - ui.yaml

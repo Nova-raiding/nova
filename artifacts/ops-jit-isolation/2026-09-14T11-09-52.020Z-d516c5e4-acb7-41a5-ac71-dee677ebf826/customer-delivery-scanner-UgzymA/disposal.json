@@ -1,0 +1,12 @@
+{
+  "runId": "36e4d85b-1e22-497b-b5c0-026eee58061a",
+  "stopped": [],
+  "leftRunning": [
+    {
+      "id": "6a6e55cb764f61f32108e04adbd655147193c15e493cc213bf6a4fc2b12ac580",
+      "reason": "Exact-ID ownership/stop unconfirmed; no name, label or broad cleanup fallback was attempted."
+    }
+  ],
+  "sharedContainersTouched": false,
+  "evidenceRetained": true
+}

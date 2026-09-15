@@ -23,6 +23,8 @@ printf '%s\n' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9._-]+$' || { echo "RELEASE_ID
 : "${IMAGE_DIGESTS_JSON:?IMAGE_DIGESTS_JSON is required with merchant-api, merchant-worker, merchant-ui, merchant-ops-ui and clamav digests}"
 : "${DATABASE_URL:?DATABASE_URL is required}"
 : "${OPS_DATABASE_URL:?OPS_DATABASE_URL is required}"
+[ -n "${ALERT_RECEIVER_DATABASE_URL:-}" ] || [ -n "${ALERT_RECEIVER_DATABASE_URL_FILE:-}" ] || { echo "ALERT_RECEIVER_DATABASE_URL or ALERT_RECEIVER_DATABASE_URL_FILE is required" >&2; exit 1; }
+[ -z "${ALERT_RECEIVER_DATABASE_URL:-}" ] || [ -z "${ALERT_RECEIVER_DATABASE_URL_FILE:-}" ] || { echo "Set only one of ALERT_RECEIVER_DATABASE_URL or ALERT_RECEIVER_DATABASE_URL_FILE" >&2; exit 1; }
 : "${REDIS_URL:?REDIS_URL is required}"
 : "${SECRET_PROVIDER:?SECRET_PROVIDER is required}"
 : "${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required}"
@@ -57,6 +59,7 @@ database_url_validator="$(dirname "$0")/validate-production-database-url.mjs"
 [ -f "$database_url_validator" ] || { echo "production database URL validator is missing: $database_url_validator" >&2; exit 1; }
 node "$database_url_validator" DATABASE_URL
 node "$database_url_validator" OPS_DATABASE_URL
+node "$database_url_validator" ALERT_RECEIVER_DATABASE_URL
 case "$profile" in
   pilot_50|wave_100|wave_250|target_500) ;;
   *) echo "unknown capacity profile: $profile" >&2; exit 2 ;;
@@ -85,6 +88,7 @@ scanner_contract_validator="$repo_root/infra/kubernetes/validate-scanner-contrac
 ruby "$scanner_contract_validator" "$RENDERED_MANIFEST_PATH"
 manifest_sha256=$(shasum -a 256 "$RENDERED_MANIFEST_PATH" | awk '{print $1}')
 release_git_sha=$(git -C "$repo_root" rev-parse HEAD)
+production_config_sha256=$(shasum -a 256 "$filtered_config_path" | awk '{print $1}')
 # Establish the immutable trust anchor before any evidence gate. Relay and
 # Codex host evidence are strict artifact checks on their first invocation;
 # there is no shape-only pass that an outer deploy wrapper could misread.
@@ -110,6 +114,9 @@ bridge_sha256=$(shasum -a 256 "$repo_root/apps/plugin/mcp/bridge.mjs" | awk '{pr
 npx --no-install tsx "$(dirname "$0")/../../tests/codex-app-host-evidence-gate.ts" --file "$CODEX_APP_HOST_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-mcp-base-url "$mcp_base_url" --expected-bridge-sha256 "$bridge_sha256" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-artifacts
 storage_bucket=$(awk '/^[[:space:]]*object_storage_bucket:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$filtered_config_path")
 storage_endpoint=$(awk '/^[[:space:]]*object_storage_endpoint:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$filtered_config_path")
+storage_encryption=$(awk '/^[[:space:]]*object_storage_sse_mode:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$filtered_config_path")
+storage_encryption=${storage_encryption:-AES256}
+case "$storage_encryption" in AES256|aws:kms) ;; *) echo "object_storage_sse_mode must be AES256 or aws:kms" >&2; exit 1 ;; esac
 [ -n "$storage_bucket" ] || { echo "object_storage_bucket is required for storage evidence binding" >&2; exit 1; }
 [ -n "$storage_endpoint" ] || { echo "object_storage_endpoint is required for storage evidence binding" >&2; exit 1; }
 npx --no-install tsx "$(dirname "$0")/../../tests/canonical-product-cutover-evidence-gate.ts" --file "$CANONICAL_CUTOVER_EVIDENCE_PATH" --release-id "$RELEASE_ID"
@@ -125,6 +132,9 @@ npx --no-install tsx "$(dirname "$0")/../../tests/release-manifest-gate.ts" \
 workspace_latest_migration=$(find "$repo_root/packages/persistence/src/migrations" -maxdepth 1 -type f -name '[0-9][0-9][0-9]_*.sql' -exec basename {} \; | sed 's/_.*//' | sort -n | tail -1)
 case "$EXPECTED_MIGRATION_VERSION" in ''|*[!0-9]*) echo 'EXPECTED_MIGRATION_VERSION must be numeric' >&2; exit 1 ;; esac
 [ "$workspace_latest_migration" = "$EXPECTED_MIGRATION_VERSION" ] || { echo "release migration chain tail mismatch: expected $EXPECTED_MIGRATION_VERSION, workspace has $workspace_latest_migration" >&2; exit 1; }
+# The receiver credential is inherited only through its existing environment
+# variable or projected-file path. Never copy it into argv, logs, or a derived
+# shell variable while handing it to the runtime role/ACL probe.
 sh "$(dirname "$0")/verify-runtime-db-role.sh"
 : "${API_IMAGE_REF:?API_IMAGE_REF is required as an immutable repository@sha256 reference}"
 : "${WORKER_IMAGE_REF:?WORKER_IMAGE_REF is required as an immutable repository@sha256 reference}"
@@ -135,7 +145,14 @@ sh "$(dirname "$0")/verify-container-source-freshness.sh" \
 : "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"
 printf '%s\n' "$DEPLOYMENT_NONCE" | grep -Eq '^[A-Za-z0-9_-]{22,128}$' || { echo "DEPLOYMENT_NONCE must contain 22-128 URL-safe random characters" >&2; exit 1; }
 npx --no-install tsx "$(dirname "$0")/../../tests/capability-evidence-gate.ts" --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --require-signed-production --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_root" --key-id "$trusted_key_id"
-npx --no-install tsx "$(dirname "$0")/../../tests/object-storage-evidence-gate.ts" --file "$OBJECT_STORAGE_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-bucket "$storage_bucket" --expected-endpoint "$storage_endpoint" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT"
+npx --no-install tsx "$(dirname "$0")/../../tests/object-storage-evidence-gate.ts" \
+  --file "$OBJECT_STORAGE_EVIDENCE_PATH" --release-id "$RELEASE_ID" \
+  --release-git-sha "$release_git_sha" --manifest-sha256 "$manifest_sha256" \
+  --image-set-digest "$image_set_digest" --deployment-nonce "$DEPLOYMENT_NONCE" \
+  --expected-config-checksum "$production_config_sha256" \
+  --expected-bucket "$storage_bucket" --expected-endpoint "$storage_endpoint" \
+  --expected-encryption "$storage_encryption" \
+  --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
 npx --no-install tsx "$(dirname "$0")/../../tests/production-evidence-gate.ts" --kind payment --file "$PAYMENT_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
 npx --no-install tsx "$(dirname "$0")/../../tests/production-evidence-gate.ts" --kind restore --file "$RESTORE_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
 echo "deploy preflight passed: release_id=$RELEASE_ID image_set_digest=$image_set_digest migration=$EXPECTED_MIGRATION_VERSION profile=$profile secret_provider=$SECRET_PROVIDER capability_evidence=$CAPABILITY_EVIDENCE_PATH capacity_report=$CAPACITY_REPORT_PATH model_relay_evidence=$MODEL_RELAY_EVIDENCE_PATH codex_app_host_evidence=$CODEX_APP_HOST_EVIDENCE_PATH object_storage_evidence=$OBJECT_STORAGE_EVIDENCE_PATH payment_evidence=$PAYMENT_EVIDENCE_PATH restore_evidence=$RESTORE_EVIDENCE_PATH"

@@ -1,0 +1,1 @@
+{"event":"asset.promotion_cleanup_drain_failed","error":{"code":"OBJECT_PROMOTION_CLEANUP_FAILED","message":"Connection terminated due to connection timeout","observed_at":"2026-09-14T11:11:55.033Z"}}

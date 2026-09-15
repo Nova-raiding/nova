@@ -1,0 +1,17 @@
+{
+  "status": "failed",
+  "stage": "ops create with atomic audit",
+  "at": "2026-09-14T07:20:44.347Z",
+  "fixtureOnly": true,
+  "sharedContainersTouched": false,
+  "observations": [
+    "FAILED at ops create with atomic audit; code=22P02"
+  ],
+  "disposal": {
+    "stopped": [
+      "1bc14807da1379ec7b5b9e6d10986e100dbe5b98bb9f327c8c1b3f68a57f5d98",
+      "020bbeb4355b94c516dd22233f4eed78bce9b38c18733040ce9ac25eebdb9893"
+    ],
+    "leftRunning": []
+  }
+}

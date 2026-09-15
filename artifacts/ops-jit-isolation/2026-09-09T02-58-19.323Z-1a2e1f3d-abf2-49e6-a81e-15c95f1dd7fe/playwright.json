@@ -1,0 +1,141 @@
+{
+  "config": {
+    "rootDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-09T02-58-19.323Z-1a2e1f3d-abf2-49e6-a81e-15c95f1dd7fe/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-mcp-request-matrix.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-mcp-request-matrix.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "captures every workspace workbench /mcp request and checks scope",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 23713,
+                  "error": {
+                    "message": "Error: workspace workbench MCP request scope matrix\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 68\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=CREATIVE_POINTS_UNAVAILABLE\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"rule.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=CREATIVE_POINTS_UNAVAILABLE\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"rule.sync.status\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"workspace.metrics\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"knowledge.rule.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"knowledge.asset.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"knowledge.brand.preference.get\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"knowledge.learning.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"knowledge.competitor.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"ops.marketing.queue\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"automation.policy.get\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"automation.policy.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+                    "stack": "Error: workspace workbench MCP request scope matrix\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 68\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=CREATIVE_POINTS_UNAVAILABLE\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"rule.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=CREATIVE_POINTS_UNAVAILABLE\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"rule.sync.status\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"workspace.metrics\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"knowledge.rule.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"knowledge.asset.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"knowledge.brand.preference.get\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"knowledge.learning.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"knowledge.competitor.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"ops.marketing.queue\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"automation.policy.get\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"automation.policy.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at writeEvidence (/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-mcp-request-matrix.spec.js:159:68)\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-mcp-request-matrix.spec.js:181:5",
+                    "location": {
+                      "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-mcp-request-matrix.spec.js",
+                      "column": 68,
+                      "line": 159
+                    },
+                    "snippet": "  157 |   await mkdir(outputDir, { recursive: true })\n  158 |   await writeFile(join(outputDir, `ops-mcp-request-matrix-${kind}.json`), JSON.stringify(evidence, null, 2), { mode: 0o600 })\n> 159 |   expect(violations, `${kind} workbench MCP request scope matrix`).toEqual([])\n      |                                                                    ^\n  160 |   expect(requests.length, `${kind} must make real MCP requests`).toBeGreaterThan(0)\n  161 | }\n  162 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-mcp-request-matrix.spec.js",
+                        "column": 68,
+                        "line": 159
+                      },
+                      "message": "Error: workspace workbench MCP request scope matrix\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 68\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=CREATIVE_POINTS_UNAVAILABLE\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"rule.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=CREATIVE_POINTS_UNAVAILABLE\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"rule.sync.status\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"workspace.metrics\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"knowledge.rule.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"knowledge.asset.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"knowledge.brand.preference.get\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"knowledge.learning.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"knowledge.competitor.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"ops.marketing.queue\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"automation.policy.get\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"errors\": Array [\u001b[39m\n\u001b[31m+       \"error=RATE_LIMITED\",\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"method\": \"automation.policy.list\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m\n\n  157 |   await mkdir(outputDir, { recursive: true })\n  158 |   await writeFile(join(outputDir, `ops-mcp-request-matrix-${kind}.json`), JSON.stringify(evidence, null, 2), { mode: 0o600 })\n> 159 |   expect(violations, `${kind} workbench MCP request scope matrix`).toEqual([])\n      |                                                                    ^\n  160 |   expect(requests.length, `${kind} must make real MCP requests`).toBeGreaterThan(0)\n  161 | }\n  162 |\n    at writeEvidence (/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-mcp-request-matrix.spec.js:159:68)\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-mcp-request-matrix.spec.js:181:5"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "{\"matrixDebugUrl\":\"http://127.0.0.1:61572/ops/rules?workbench=workspace\",\"matrixDebugText\":\"跳转到主要内容\\n大麦\\n大麦运营中心\\n平台运营与商家服务\\n平台运营控制面\\n当前操作范围\\n工作区\\n正在操作工作区 未识别\\n工作区范围\\n未识别\\n数据与操作仅限当前工作区\\n商业与平台控制台\\n权限未验证\\n授权状态：未验证，正在等待服务端授权\\n身份 未验证\\n商家工作区\\n工作区 · 未识别\\n策略 未返回\\n商家自运营视图：仅作用于当前授权工作区；不包含平台运营能力。\\n登录 / 连接\\n正在验证运营权限\"}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-09T02:58:32.754Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-09T02-58-19.323Z-1a2e1f3d-abf2-49e6-a81e-15c95f1dd7fe/test-results/dogfood-chatgpt-all-functi-30a63-cp-request-and-checks-scope/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-mcp-request-matrix.spec.js",
+                    "column": 68,
+                    "line": 159
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "f4d7e6e40195d5ee2e47-dbd1852c368c3b3a38d0",
+          "file": "dogfood/chatgpt-all-functions/ops-mcp-request-matrix.spec.js",
+          "line": 174,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-09T02:58:28.876Z",
+    "duration": 50057.074,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

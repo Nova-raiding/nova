@@ -1,0 +1,425 @@
+{
+  "config": {
+    "rootDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-08T23-32-59.423Z-8295f764-e47f-45a6-8680-e26c86f59874/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "walk every Ops Console section through the real browser UI",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 52173,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 9\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_d07add6f-4088-4177-95a8-91379468e529\\\",\\\"trace_id\\\":\\\"req_d07add6f-4088-4177-95a8-91379468e529\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"WORKSPACE_MEMBERSHIP_REQUIRED\\\",\\\"message\\\":\\\"当前身份不是该工作区的有效成员，请由工作区所有者邀请后重试\\\",\\\"details\\\":{\\\"workspace_id\\\":\\\"ws_ops_fixture_604d827bb1c0404e945c8348355983ef\\\"}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"275ce37c-9332-4841-a7fe-7b7684a1bcb5\\\",\\\"method\\\":\\\"billing.recharge.list\\\",\\\"params\\\":{\\\"limit\\\":\\\"100\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:57349/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 9\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_d07add6f-4088-4177-95a8-91379468e529\\\",\\\"trace_id\\\":\\\"req_d07add6f-4088-4177-95a8-91379468e529\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"WORKSPACE_MEMBERSHIP_REQUIRED\\\",\\\"message\\\":\\\"当前身份不是该工作区的有效成员，请由工作区所有者邀请后重试\\\",\\\"details\\\":{\\\"workspace_id\\\":\\\"ws_ops_fixture_604d827bb1c0404e945c8348355983ef\\\"}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"275ce37c-9332-4841-a7fe-7b7684a1bcb5\\\",\\\"method\\\":\\\"billing.recharge.list\\\",\\\"params\\\":{\\\"limit\\\":\\\"100\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:57349/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js:96:34",
+                    "location": {
+                      "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js",
+                      "column": 34,
+                      "line": 96
+                    },
+                    "snippet": "  94 |     return false\n  95 |   })\n> 96 |   expect(unexpectedBadResponses).toEqual([])\n     |                                  ^\n  97 |   const unexpectedRpcErrors = rpcErrors.filter((entry) => entry.error?.code !== 'MEMBER_ROLE_MISMATCH')\n  98 |   expect(unexpectedRpcErrors).toEqual([])\n  99 |   expect(requestFailures).toEqual([])"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js",
+                        "column": 34,
+                        "line": 96
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 9\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_d07add6f-4088-4177-95a8-91379468e529\\\",\\\"trace_id\\\":\\\"req_d07add6f-4088-4177-95a8-91379468e529\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"WORKSPACE_MEMBERSHIP_REQUIRED\\\",\\\"message\\\":\\\"当前身份不是该工作区的有效成员，请由工作区所有者邀请后重试\\\",\\\"details\\\":{\\\"workspace_id\\\":\\\"ws_ops_fixture_604d827bb1c0404e945c8348355983ef\\\"}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"275ce37c-9332-4841-a7fe-7b7684a1bcb5\\\",\\\"method\\\":\\\"billing.recharge.list\\\",\\\"params\\\":{\\\"limit\\\":\\\"100\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:57349/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m\n\n  94 |     return false\n  95 |   })\n> 96 |   expect(unexpectedBadResponses).toEqual([])\n     |                                  ^\n  97 |   const unexpectedRpcErrors = rpcErrors.filter((entry) => entry.error?.code !== 'MEMBER_ROLE_MISMATCH')\n  98 |   expect(unexpectedRpcErrors).toEqual([])\n  99 |   expect(requestFailures).toEqual([])\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js:96:34"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T23:33:11.667Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-08T23-32-59.423Z-8295f764-e47f-45a6-8680-e26c86f59874/test-results/dogfood-chatgpt-all-functi-28935-through-the-real-browser-UI/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js",
+                    "column": 34,
+                    "line": 96
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "0411c0cf49f1d2cc9183-bed75de6c367b57696c0",
+          "file": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+          "line": 24,
+          "column": 1
+        },
+        {
+          "title": "does not report model configuration success when model status fails",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3797,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T23:34:04.713Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "0411c0cf49f1d2cc9183-15deecbc14659188a876",
+          "file": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+          "line": 120,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "operates the platform user directory without destructive confirmation",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5330,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T23:34:31.347Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6522f71e1b3fcc2fbb2c-e331058b5d4d2c88859f",
+          "file": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+          "line": 33,
+          "column": 1
+        },
+        {
+          "title": "keeps member governance in the workspace workbench",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3397,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T23:34:37.113Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6522f71e1b3fcc2fbb2c-02b18fadf9258823ef5a",
+          "file": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+          "line": 137,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dogfood/chatgpt-all-functions/ops.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "inventory Ops Console through the real browser UI",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 9313,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T23:34:08.535Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-a18e51edc5655ddbab2c",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 11,
+          "column": 1
+        },
+        {
+          "title": "fails closed with no local connection credentials and exposes diagnostics on demand",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3199,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T23:34:17.854Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-aa6c7661665df7ef3549",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 58,
+          "column": 1
+        },
+        {
+          "title": "turns an authenticated-session 401 into a reauthentication gate",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2851,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T23:34:21.065Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-cc683d122c2d46299ebf",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 86,
+          "column": 1
+        },
+        {
+          "title": "renders the real workspace brand tree with revision and store navigation",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2858,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T23:34:23.934Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-64b7823a47e9221e3885",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 118,
+          "column": 1
+        },
+        {
+          "title": "ops/tasks long list scrolling keeps page stable (no white-screen)",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3829,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T23:34:26.803Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-823edb30dcfce80a8295",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 163,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-08T23:33:08.773Z",
+    "duration": 92177.731,
+    "expected": 8,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

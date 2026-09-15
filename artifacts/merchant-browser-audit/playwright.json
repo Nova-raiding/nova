@@ -1,0 +1,876 @@
+{
+  "config": {
+    "rootDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/lixiaomei/Desktop/code/codexSkills/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dogfood/chatgpt-all-functions/merchant-all.spec.js",
+      "file": "dogfood/chatgpt-all-functions/merchant-all.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "walk every Merchant Studio section through the real browser UI",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 8479,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:17:40.673Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "f2902d5f8fcdc28a6f81-a14d109f9d532ddfc99d",
+          "file": "dogfood/chatgpt-all-functions/merchant-all.spec.js",
+          "line": 24,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+      "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "model relay readiness is visible before a merchant starts a task",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2471,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:18:00.198Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-1cbee00022107333ac17",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 66,
+          "column": 1
+        },
+        {
+          "title": "final publish confirms once, binds all evidence, and returns to the product workflow",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2426,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "steps": [
+                    {
+                      "title": "Expect \"poll toBe\"",
+                      "duration": 0
+                    }
+                  ],
+                  "startTime": "2026-09-11T08:18:02.956Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-3bb1a5f7cfa6be91fb13",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 129,
+          "column": 1
+        },
+        {
+          "title": "500 keeps confirmation recoverable and replay uses one idempotency intent",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2541,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:18:05.396Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-730ac7dd1058d0850fae",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 158,
+          "column": 1
+        },
+        {
+          "title": "publish timeout never shows success and retry preserves confirmation and idempotency",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 13323,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:18:07.949Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-3ca03a0399cd2568d190",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 186,
+          "column": 1
+        },
+        {
+          "title": "non-fashion draft task renders only server direction, server state, and explicit missing rules",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2674,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:18:21.286Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-c4d138e989e3de2d616a",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 214,
+          "column": 1
+        },
+        {
+          "title": "API task with no server directions shows an empty state without demo directions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2534,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:18:23.972Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-25095e7bd8b972e702dd",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 247,
+          "column": 1
+        },
+        {
+          "title": "accepted task answers remain visible in the conversation thread",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2848,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:18:26.515Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-7d09cf1b36d1010ffcbc",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 266,
+          "column": 1
+        },
+        {
+          "title": "rule and category API failures never reveal demos and independent retries recover real data",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2195,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:18:29.375Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-a43c81463d2beab2a112",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 302,
+          "column": 1
+        },
+        {
+          "title": "successful empty rule and category APIs show true empty states without demos",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2367,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:18:31.584Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-904ef980c12a1926909b",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 346,
+          "column": 1
+        },
+        {
+          "title": "API product failure never falls back to fixtures and retry recovers to real products",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2425,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:18:33.960Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-664f83b0c36dbada0f90",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 365,
+          "column": 1
+        },
+        {
+          "title": "same-platform same-name selection preserves store identity through task facts and publish confirmation",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2916,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "steps": [
+                    {
+                      "title": "Expect \"poll toMatchObject\"",
+                      "duration": 0
+                    }
+                  ],
+                  "startTime": "2026-09-11T08:18:36.401Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-336ffc656f6bcd954641",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 389,
+          "column": 1
+        },
+        {
+          "title": "missing or changed store identity blocks same-name task creation",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2321,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "steps": [
+                    {
+                      "title": "Expect \"poll toBe\"",
+                      "duration": 0
+                    }
+                  ],
+                  "startTime": "2026-09-11T08:18:39.330Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-fd1b8598c3a78ca26c6c",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 440,
+          "column": 1
+        },
+        {
+          "title": "task list shows loading, then a true empty state only after a successful response",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2202,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:18:41.668Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-16efa10153e982eb06c1",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 470,
+          "column": 1
+        },
+        {
+          "title": "task list keeps error distinct from empty and retry can recover to data",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2186,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:18:43.882Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-d4df34d43f19a5e2fb37",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 489,
+          "column": 1
+        },
+        {
+          "title": "task list remains visible when auxiliary product identity fails and retry recovers",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2094,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:18:46.080Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-b14704716bbbe76281af",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 511,
+          "column": 1
+        },
+        {
+          "title": "publish lists show loading and never render empty while the request failed",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2226,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:18:48.186Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-c7e3e04c3afb9402ec7a",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 550,
+          "column": 1
+        },
+        {
+          "title": "publish list renders successful jobs after loading",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2237,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:18:50.427Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-316b0b4dea9c41634c62",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 581,
+          "column": 1
+        },
+        {
+          "title": "both sync-all entry points target every readable store including same-platform stores",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2467,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "steps": [
+                    {
+                      "title": "Expect \"poll toBe\"",
+                      "duration": 0
+                    },
+                    {
+                      "title": "Expect \"poll toBe\"",
+                      "duration": 0
+                    }
+                  ],
+                  "startTime": "2026-09-11T08:18:52.675Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-87c409de042b8315e941",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 597,
+          "column": 1
+        },
+        {
+          "title": "store discovery failure disables sync and sends no sync request",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2319,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "steps": [
+                    {
+                      "title": "Expect \"poll toBe\"",
+                      "duration": 1
+                    }
+                  ],
+                  "startTime": "2026-09-11T08:18:55.152Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3f9df1965efe6eb9bb84-83b778298dc59653c60b",
+          "file": "dogfood/chatgpt-all-functions/merchant-data-safety.spec.js",
+          "line": 631,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dogfood/chatgpt-all-functions/merchant-interactions.spec.js",
+      "file": "dogfood/chatgpt-all-functions/merchant-interactions.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "exercise Merchant Studio safe interactions and validation surfaces",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 7441,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:17:49.175Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "0aaf153c9215ea0f3d90-ff83d5438219702ea0c9",
+          "file": "dogfood/chatgpt-all-functions/merchant-interactions.spec.js",
+          "line": 17,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dogfood/chatgpt-all-functions/merchant.spec.js",
+      "file": "dogfood/chatgpt-all-functions/merchant.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "inventory merchant studio as a user",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3100,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-11T08:17:56.628Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9b7b5696503e723062fa-0a921f901f8290a85564",
+          "file": "dogfood/chatgpt-all-functions/merchant.spec.js",
+          "line": 11,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-11T08:17:38.361Z",
+    "duration": 79196.585,
+    "expected": 22,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

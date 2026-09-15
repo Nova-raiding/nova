@@ -1,0 +1,376 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e5]:
+    - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+      - /url: "#ops-main-content"
+    - complementary "运营主导航" [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - generic [ref=e10]: 大麦
+          - generic [ref=e11]:
+            - strong [ref=e12]: 大麦运营中心
+            - generic [ref=e13]: 平台运营后台
+        - generic [ref=e14]: 平台运营控制面
+        - navigation "平台运营功能导航" [ref=e15]:
+          - region "平台治理" [ref=e16]:
+            - heading "平台治理" [level=2] [ref=e17]
+            - button "总览" [ref=e18] [cursor=pointer]:
+              - img "dashboard" [ref=e19] [cursor=pointer]:
+                - img [ref=e20] [cursor=pointer]
+              - generic [ref=e22] [cursor=pointer]: 总览
+            - button "用户中心" [ref=e23] [cursor=pointer]:
+              - img "team" [ref=e24] [cursor=pointer]:
+                - img [ref=e25] [cursor=pointer]
+              - generic [ref=e27] [cursor=pointer]: 用户中心
+            - button "客户交付" [ref=e28] [cursor=pointer]:
+              - img "team" [ref=e29] [cursor=pointer]:
+                - img [ref=e30] [cursor=pointer]
+              - generic [ref=e32] [cursor=pointer]: 客户交付
+          - region "模型与计费" [ref=e33]:
+            - heading "模型与计费" [level=2] [ref=e34]
+            - button "账务与退款" [ref=e35] [cursor=pointer]:
+              - img "dollar" [ref=e36] [cursor=pointer]:
+                - img [ref=e37] [cursor=pointer]
+              - generic [ref=e39] [cursor=pointer]: 账务与退款
+    - generic [ref=e40]:
+      - banner [ref=e41]:
+        - generic [ref=e42]:
+          - heading "平台运营控制台" [level=2] [ref=e43]
+          - region "当前身份与权限范围" [ref=e44]:
+            - generic [ref=e45]:
+              - img [ref=e47]:
+                - img [ref=e48]
+              - strong [ref=e52]: 平台管理员
+              - status [ref=e54]: 授权状态：已由服务端验证
+              - button "展开其余 1 个已验证角色" [ref=e57] [cursor=pointer]:
+                - generic [ref=e58] [cursor=pointer]: +1 个角色
+              - generic [ref=e60]: 平台全局
+              - generic [ref=e62]: 策略 2026-09-08.v1
+            - status [ref=e63]: 平台运营视图：仅显示服务端授权的平台能力；企业主体操作需切换到对应企业主体。
+        - generic [ref=e65]:
+          - generic [ref=e66]:
+            - generic [ref=e67]: 当前状态
+            - status [ref=e68]: 已登录
+          - button "打开账号信息" [ref=e69] [cursor=pointer]:
+            - generic [ref=e70] [cursor=pointer]: o
+            - strong [ref=e72] [cursor=pointer]: ops-fixture-actor-da52b667-f008-43dd-9cd5-3d40cc3ea6d7
+            - img [ref=e73] [cursor=pointer]:
+              - img [ref=e74] [cursor=pointer]
+      - main [ref=e76]:
+        - status [ref=e77]
+        - region "客户交付" [ref=e78]:
+          - generic [ref=e79]:
+            - generic [ref=e81]:
+              - generic [ref=e82]:
+                - generic [ref=e83]: CUSTOMER DELIVERY
+                - heading "客户交付" [level=1] [ref=e84]
+                - generic [ref=e85]: 以客户为中心跟进建档、系统接入、功能验收、培训和上线。付款未核验时，受控环节会保持阻断。
+              - button "刷新交付档案" [ref=e87] [cursor=pointer]:
+                - generic [ref=e88] [cursor=pointer]: 刷新交付档案
+            - generic [ref=e90]:
+              - generic [ref=e93]: 目标企业工作区（必选）
+              - generic [ref=e95]:
+                - generic [ref=e97]:
+                  - generic "隔离验收企业 · ws_ops_fixture_da52b667f00843dd9cd53d40cc3ea6d7" [ref=e98]:
+                    - text: 隔离验收企业 · ws_ops_fixture_da52b667f00843dd9cd53d40cc3ea6d7
+                    - combobox "客户交付目标企业工作区" [ref=e99]
+                  - img "down" [ref=e101]:
+                    - img [ref=e102]
+                  - button "Clear" [ref=e104] [cursor=pointer]:
+                    - img "close-circle" [ref=e105] [cursor=pointer]:
+                      - img [ref=e106] [cursor=pointer]
+                - generic [ref=e109]: 交付档案只会在当前选中的企业工作区内读取和修改，切换后会重新加载。
+            - alert [ref=e111]:
+              - img "close-circle" [ref=e113]:
+                - img [ref=e114]
+              - generic [ref=e116]:
+                - generic [ref=e117]: 客户交付保存被阻断
+                - generic [ref=e118]: 运营 API 请求超时。请检查 API 和数据库状态后重试。
+              - button "close" [ref=e119] [cursor=pointer]:
+                - img "close" [ref=e120] [cursor=pointer]:
+                  - img [ref=e121] [cursor=pointer]
+            - generic [ref=e124]:
+              - generic [ref=e126]:
+                - generic [ref=e127]: 客户建档
+                - generic [ref=e129]:
+                  - generic [ref=e131]: 完成全部交付项后，交付档案才会标记为已完成
+                  - button "新建客户" [ref=e133] [cursor=pointer]:
+                    - generic [ref=e134] [cursor=pointer]: 新建客户
+              - generic [ref=e135]:
+                - alert [ref=e136]:
+                  - img "info-circle" [ref=e138]:
+                    - img [ref=e139]
+                  - generic [ref=e142]: 交付状态由各环节真实填写结果决定；未付款客户的系统接入、功能验收和培训入口保持阻断。
+                - table [ref=e150]:
+                  - rowgroup [ref=e161]:
+                    - row "序号 公司名 客户档案 系统接入 功能测试及验收 客户培训 交付视频 交付完成时间 交付状态" [ref=e162]:
+                      - columnheader "序号" [ref=e163]
+                      - columnheader "公司名" [ref=e164]
+                      - columnheader "客户档案" [ref=e165]
+                      - columnheader "系统接入" [ref=e166]
+                      - columnheader "功能测试及验收" [ref=e167]
+                      - columnheader "客户培训" [ref=e168]
+                      - columnheader "交付视频" [ref=e169]
+                      - columnheader "交付完成时间" [ref=e170]
+                      - columnheader "交付状态" [ref=e171]
+                  - rowgroup [ref=e172]:
+                    - row "01 隔离交付验收-1789395791558 已完成 未填写 未填写 未完成 凭证 未上传 尚未完成 20 1/5" [ref=e173]:
+                      - cell "01" [ref=e174]
+                      - cell "隔离交付验收-1789395791558" [ref=e175]:
+                        - strong [ref=e177]: 隔离交付验收-1789395791558
+                      - cell "已完成" [ref=e178]:
+                        - button "已完成" [ref=e179] [cursor=pointer]:
+                          - generic [ref=e180] [cursor=pointer]: 已完成
+                      - cell "未填写" [ref=e181]:
+                        - button "未填写" [ref=e182] [cursor=pointer]:
+                          - generic [ref=e183] [cursor=pointer]: 未填写
+                      - cell "未填写" [ref=e184]:
+                        - button "未填写" [ref=e185] [cursor=pointer]:
+                          - generic [ref=e186] [cursor=pointer]: 未填写
+                      - cell "未完成 凭证" [ref=e187]:
+                        - generic [ref=e188]:
+                          - generic [ref=e190] [cursor=pointer]:
+                            - checkbox "未完成" [ref=e192] [cursor=pointer]
+                            - generic [ref=e193] [cursor=pointer]: 未完成
+                          - button "凭证" [ref=e195] [cursor=pointer]:
+                            - generic [ref=e196] [cursor=pointer]: 凭证
+                      - cell "未上传" [ref=e197]:
+                        - button "未上传" [ref=e198] [cursor=pointer]:
+                          - generic [ref=e199] [cursor=pointer]: 未上传
+                      - cell "尚未完成" [ref=e200]
+                      - cell "20 1/5" [ref=e201]:
+                        - generic [ref=e202]:
+                          - progressbar [ref=e204]
+                          - generic [ref=e210]: 1/5
+  - dialog "隔离交付验收-1789395791558 · 系统接入" [ref=e212]:
+    - generic [ref=e214]:
+      - button "关闭" [ref=e215] [cursor=pointer]:
+        - img "close" [ref=e216] [cursor=pointer]:
+          - img [ref=e217] [cursor=pointer]
+      - generic [ref=e219]: 隔离交付验收-1789395791558 · 系统接入
+    - generic [ref=e223]:
+      - group [ref=e231]:
+        - generic [ref=e232] [cursor=pointer]:
+          - checkbox "插件账户" [checked] [ref=e234] [cursor=pointer]
+          - generic [ref=e235] [cursor=pointer]: 插件账户
+        - generic [ref=e236] [cursor=pointer]:
+          - checkbox "店铺连接" [checked] [ref=e238] [cursor=pointer]
+          - generic [ref=e239] [cursor=pointer]: 店铺连接
+        - generic [ref=e240] [cursor=pointer]:
+          - checkbox "商品扫描" [checked] [ref=e242] [cursor=pointer]
+          - generic [ref=e243] [cursor=pointer]: 商品扫描
+        - generic [ref=e244] [cursor=pointer]:
+          - checkbox "知识库功能" [checked] [ref=e246] [cursor=pointer]
+          - generic [ref=e247] [cursor=pointer]: 知识库功能
+        - generic [ref=e248] [cursor=pointer]:
+          - checkbox "平台规则" [checked] [ref=e250] [cursor=pointer]
+          - generic [ref=e251] [cursor=pointer]: 平台规则
+        - generic [ref=e252] [cursor=pointer]:
+          - checkbox "创作点" [checked] [ref=e254] [cursor=pointer]
+          - generic [ref=e255] [cursor=pointer]: 创作点
+        - generic [ref=e256] [cursor=pointer]:
+          - checkbox "企业信息" [checked] [ref=e258] [cursor=pointer]
+          - generic [ref=e259] [cursor=pointer]: 企业信息
+        - generic [ref=e260] [cursor=pointer]:
+          - checkbox "品牌资产" [checked] [ref=e262] [cursor=pointer]
+          - generic [ref=e263] [cursor=pointer]: 品牌资产
+        - generic [ref=e264] [cursor=pointer]:
+          - checkbox "商品资料" [checked] [ref=e266] [cursor=pointer]
+          - generic [ref=e267] [cursor=pointer]: 商品资料
+        - generic [ref=e268] [cursor=pointer]:
+          - checkbox "客户偏好" [checked] [ref=e270] [cursor=pointer]
+          - generic [ref=e271] [cursor=pointer]: 客户偏好
+      - generic [ref=e272]: 每个勾选为已完成的项目都必须上传至少一份凭证；文字说明不能代替文件。
+      - generic [ref=e273]:
+        - generic [ref=e276]: 插件账户
+        - generic [ref=e277]:
+          - textbox "凭证说明" [ref=e285]: 插件账户核验记录-1
+          - generic [ref=e293]:
+            - generic [ref=e294]:
+              - generic "asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3" [ref=e296]:
+                - generic [ref=e297]: asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3
+                - img [ref=e299] [cursor=pointer]:
+                  - img [ref=e300] [cursor=pointer]
+              - combobox "已上传凭证" [ref=e303]
+            - img "down" [ref=e305]:
+              - img [ref=e306]
+          - generic [ref=e308]:
+            - button "上传接入凭证" [ref=e311] [cursor=pointer]:
+              - generic [ref=e312] [cursor=pointer]: 上传接入凭证
+            - generic [ref=e313]: PDF、DOCX、PNG、JPG、JPEG；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
+            - status [ref=e314]:
+              - generic [ref=e316]:
+                - generic [ref=e318]: delivery-system_integration.pdf
+                - generic [ref=e320]: 可使用
+      - generic [ref=e321]:
+        - generic [ref=e324]: 店铺连接
+        - generic [ref=e325]:
+          - textbox "凭证说明" [ref=e333]: 店铺连接核验记录-2
+          - generic [ref=e341]:
+            - generic [ref=e342]:
+              - generic "asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3" [ref=e344]:
+                - generic [ref=e345]: asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3
+                - img [ref=e347] [cursor=pointer]:
+                  - img [ref=e348] [cursor=pointer]
+              - combobox "已上传凭证" [ref=e351]
+            - img "down" [ref=e353]:
+              - img [ref=e354]
+          - generic [ref=e356]:
+            - button "上传接入凭证" [ref=e359] [cursor=pointer]:
+              - generic [ref=e360] [cursor=pointer]: 上传接入凭证
+            - generic [ref=e361]: PDF、DOCX、PNG、JPG、JPEG；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
+            - status
+      - generic [ref=e362]:
+        - generic [ref=e365]: 商品扫描
+        - generic [ref=e366]:
+          - textbox "凭证说明" [ref=e374]: 商品扫描核验记录-3
+          - generic [ref=e382]:
+            - generic [ref=e383]:
+              - generic "asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3" [ref=e385]:
+                - generic [ref=e386]: asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3
+                - img [ref=e388] [cursor=pointer]:
+                  - img [ref=e389] [cursor=pointer]
+              - combobox "已上传凭证" [ref=e392]
+            - img "down" [ref=e394]:
+              - img [ref=e395]
+          - generic [ref=e397]:
+            - button "上传接入凭证" [ref=e400] [cursor=pointer]:
+              - generic [ref=e401] [cursor=pointer]: 上传接入凭证
+            - generic [ref=e402]: PDF、DOCX、PNG、JPG、JPEG；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
+            - status
+      - generic [ref=e403]:
+        - generic [ref=e406]: 知识库功能
+        - generic [ref=e407]:
+          - textbox "凭证说明" [ref=e415]: 知识库功能核验记录-4
+          - generic [ref=e423]:
+            - generic [ref=e424]:
+              - generic "asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3" [ref=e426]:
+                - generic [ref=e427]: asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3
+                - img [ref=e429] [cursor=pointer]:
+                  - img [ref=e430] [cursor=pointer]
+              - combobox "已上传凭证" [ref=e433]
+            - img "down" [ref=e435]:
+              - img [ref=e436]
+          - generic [ref=e438]:
+            - button "上传接入凭证" [ref=e441] [cursor=pointer]:
+              - generic [ref=e442] [cursor=pointer]: 上传接入凭证
+            - generic [ref=e443]: PDF、DOCX、PNG、JPG、JPEG；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
+            - status
+      - generic [ref=e444]:
+        - generic [ref=e447]: 平台规则
+        - generic [ref=e448]:
+          - textbox "凭证说明" [ref=e456]: 平台规则核验记录-5
+          - generic [ref=e464]:
+            - generic [ref=e465]:
+              - generic "asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3" [ref=e467]:
+                - generic [ref=e468]: asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3
+                - img [ref=e470] [cursor=pointer]:
+                  - img [ref=e471] [cursor=pointer]
+              - combobox "已上传凭证" [ref=e474]
+            - img "down" [ref=e476]:
+              - img [ref=e477]
+          - generic [ref=e479]:
+            - button "上传接入凭证" [ref=e482] [cursor=pointer]:
+              - generic [ref=e483] [cursor=pointer]: 上传接入凭证
+            - generic [ref=e484]: PDF、DOCX、PNG、JPG、JPEG；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
+            - status
+      - generic [ref=e485]:
+        - generic [ref=e488]: 创作点
+        - generic [ref=e489]:
+          - textbox "凭证说明" [ref=e497]: 创作点核验记录-6
+          - generic [ref=e505]:
+            - generic [ref=e506]:
+              - generic "asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3" [ref=e508]:
+                - generic [ref=e509]: asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3
+                - img [ref=e511] [cursor=pointer]:
+                  - img [ref=e512] [cursor=pointer]
+              - combobox "已上传凭证" [ref=e515]
+            - img "down" [ref=e517]:
+              - img [ref=e518]
+          - generic [ref=e520]:
+            - button "上传接入凭证" [ref=e523] [cursor=pointer]:
+              - generic [ref=e524] [cursor=pointer]: 上传接入凭证
+            - generic [ref=e525]: PDF、DOCX、PNG、JPG、JPEG；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
+            - status
+      - generic [ref=e526]:
+        - generic [ref=e529]: 企业信息
+        - generic [ref=e530]:
+          - textbox "凭证说明" [ref=e538]: 企业信息核验记录-7
+          - generic [ref=e546]:
+            - generic [ref=e547]:
+              - generic "asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3" [ref=e549]:
+                - generic [ref=e550]: asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3
+                - img [ref=e552] [cursor=pointer]:
+                  - img [ref=e553] [cursor=pointer]
+              - combobox "已上传凭证" [ref=e556]
+            - img "down" [ref=e558]:
+              - img [ref=e559]
+          - generic [ref=e561]:
+            - button "上传接入凭证" [ref=e564] [cursor=pointer]:
+              - generic [ref=e565] [cursor=pointer]: 上传接入凭证
+            - generic [ref=e566]: PDF、DOCX、PNG、JPG、JPEG；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
+            - status
+      - generic [ref=e567]:
+        - generic [ref=e570]: 品牌资产
+        - generic [ref=e571]:
+          - textbox "凭证说明" [ref=e579]: 品牌资产核验记录-8
+          - generic [ref=e587]:
+            - generic [ref=e588]:
+              - generic "asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3" [ref=e590]:
+                - generic [ref=e591]: asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3
+                - img [ref=e593] [cursor=pointer]:
+                  - img [ref=e594] [cursor=pointer]
+              - combobox "已上传凭证" [ref=e597]
+            - img "down" [ref=e599]:
+              - img [ref=e600]
+          - generic [ref=e602]:
+            - button "上传接入凭证" [ref=e605] [cursor=pointer]:
+              - generic [ref=e606] [cursor=pointer]: 上传接入凭证
+            - generic [ref=e607]: PDF、DOCX、PNG、JPG、JPEG；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
+            - status
+      - generic [ref=e608]:
+        - generic [ref=e611]: 商品资料
+        - generic [ref=e612]:
+          - textbox "凭证说明" [ref=e620]: 商品资料核验记录-9
+          - generic [ref=e628]:
+            - generic [ref=e629]:
+              - generic "asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3" [ref=e631]:
+                - generic [ref=e632]: asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3
+                - img [ref=e634] [cursor=pointer]:
+                  - img [ref=e635] [cursor=pointer]
+              - combobox "已上传凭证" [ref=e638]
+            - img "down" [ref=e640]:
+              - img [ref=e641]
+          - generic [ref=e643]:
+            - button "上传接入凭证" [ref=e646] [cursor=pointer]:
+              - generic [ref=e647] [cursor=pointer]: 上传接入凭证
+            - generic [ref=e648]: PDF、DOCX、PNG、JPG、JPEG；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
+            - status
+      - generic [ref=e649]:
+        - generic [ref=e652]: 客户偏好
+        - generic [ref=e653]:
+          - textbox "凭证说明" [ref=e661]: 客户偏好核验记录-10
+          - generic [ref=e669]:
+            - generic [ref=e670]:
+              - generic "asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3" [ref=e672]:
+                - generic [ref=e673]: asset_e84325ae-1305-42b4-9a3e-9b67c6f703b3
+                - img [ref=e675] [cursor=pointer]:
+                  - img [ref=e676] [cursor=pointer]
+              - combobox "已上传凭证" [ref=e679]
+            - img "down" [ref=e681]:
+              - img [ref=e682]
+          - generic [ref=e684]:
+            - button "上传接入凭证" [ref=e687] [cursor=pointer]:
+              - generic [ref=e688] [cursor=pointer]: 上传接入凭证
+            - generic [ref=e689]: PDF、DOCX、PNG、JPG、JPEG；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
+            - status
+      - button "保存当前环节" [active] [ref=e690] [cursor=pointer]:
+        - generic [ref=e691] [cursor=pointer]: 保存当前环节
+  - alert [ref=e692]:
+    - generic [ref=e693]:
+      - img "close-circle" [ref=e695]:
+        - img [ref=e696]
+      - generic [ref=e698]: 运营 API 请求超时
+```

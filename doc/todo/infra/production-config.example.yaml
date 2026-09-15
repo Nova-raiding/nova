@@ -302,7 +302,7 @@ data:
   object_storage_region: "cn"
   object_storage_endpoint: "https://s3.cn.example-provider.com"
   object_storage_prefix: "merchant-assets"
-  object_storage_kms_key: "${SECRET:OBJECT_STORAGE_KMS_KEY_ID}"
+  object_storage_sse_mode: "AES256"
   object_storage_versioning: true
   lifecycle_policy_ref: "vault://merchant-asset-lifecycle-policy"
   object_storage_logical_capacity_tb: 1
@@ -431,6 +431,7 @@ capacity_acceptance:
   platform_and_model_quota_evidence_url: "SET_FROM_CAPABILITY_EVIDENCE"
 
 observability:
+  alert_notifications_enabled: false
   otel_endpoint: "${SECRET:OTEL_EXPORTER_OTLP_ENDPOINT}"
   error_reporting_dsn: "${SECRET:ERROR_REPORTING_DSN}"
   metrics_environment: production

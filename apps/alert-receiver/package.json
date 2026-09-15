@@ -1,0 +1,11 @@
+{
+  "name": "merchant-alert-receiver",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "test": "cd ../.. && vitest run --no-file-parallelism apps/alert-receiver/src/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --pretty false"
+  }
+}

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   requireWorkspaceScope,
+  type SqlClient,
   type SqlPool,
   withWorkspaceTransaction,
 } from "./repository.js";
@@ -44,11 +45,13 @@ export interface CustomerDelivery {
   projectOwner: string | null;
   supportOwner: string | null;
   paymentDate: string | null;
+  paymentEvidenceRefs: string[];
   plannedGoLiveAt: string | null;
   customerProfileStatus: "incomplete" | "complete";
   systemIntegrationStatus: "incomplete" | "complete";
   functionalAcceptanceStatus: "incomplete" | "complete";
   trainingCompleted: boolean;
+  trainingEvidenceRefs: string[];
   effectiveAt: string | null;
   revision: number;
   createdByActorId: string;
@@ -72,6 +75,11 @@ export interface CustomerDeliveryChecklistBatchItem {
   completed: boolean;
   evidence?: Record<string, unknown>;
 }
+export type CustomerDeliveryPatch = Partial<Pick<CustomerDelivery,
+  | "companyName" | "contractNumber" | "paymentStatus" | "contractRef"
+  | "projectOwner" | "supportOwner" | "paymentDate" | "paymentEvidenceRefs"
+  | "plannedGoLiveAt" | "customerProfileStatus" | "trainingCompleted" | "trainingEvidenceRefs"
+>>;
 export const CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS = {
   system_integration: [
     "插件账号",
@@ -109,23 +117,7 @@ export interface CustomerDeliveryRepository {
     id: string;
     actorId: string;
     expectedRevision: number;
-    patch: Partial<
-      Pick<
-        CustomerDelivery,
-        | "companyName"
-        | "contractNumber"
-        | "paymentStatus"
-        | "contractRef"
-        | "projectOwner"
-        | "supportOwner"
-        | "paymentDate"
-        | "plannedGoLiveAt"
-        | "customerProfileStatus"
-        | "systemIntegrationStatus"
-        | "functionalAcceptanceStatus"
-        | "trainingCompleted"
-      >
-    >;
+    patch: CustomerDeliveryPatch;
   }): Promise<CustomerDelivery>;
   listChecklistItems?(input: {
     workspaceId: string;
@@ -174,26 +166,79 @@ export class CustomerDeliveryError extends Error {
   }
 }
 const clone = <T>(v: T): T => structuredClone(v);
-/** Contract evidence must be a secure URL or a durable asset reference. */
+export function customerDeliveryEvidenceRefs(value: unknown): string[] {
+  if (!Array.isArray(value) || value.some(ref => typeof ref !== "string" || !ref.trim())) return [];
+  return [...new Set(value.map((ref: string) => ref.trim()))];
+}
+function normalizeDeliveryPatch(input: CustomerDeliveryPatch): CustomerDeliveryPatch {
+  if ("systemIntegrationStatus" in input || "functionalAcceptanceStatus" in input)
+    throw new CustomerDeliveryError("INVALID_INPUT", "清单汇总状态只能由真实清单项推导");
+  const patch = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as CustomerDeliveryPatch;
+  if (typeof patch.contractRef === "string") patch.contractRef = patch.contractRef.trim();
+  for (const key of ["paymentEvidenceRefs", "trainingEvidenceRefs"] as const) {
+    if (patch[key] === undefined) continue;
+    if (!Array.isArray(patch[key]) || patch[key]!.some(ref => typeof ref !== "string" || !ref.trim()))
+      throw new CustomerDeliveryError("INVALID_INPUT", "凭证必须是非空字符串组成的数组");
+    patch[key] = customerDeliveryEvidenceRefs(patch[key]);
+  }
+  return patch;
+}
+function normalizeChecklistEvidence(evidence: Record<string, unknown> | undefined) {
+  if (!evidence || !Array.isArray(evidence.asset_refs)) return evidence;
+  // Use the same reference identity for validation, persistence, and the
+  // database's exact-match evidence invalidation trigger. Leave other evidence
+  // fields untouched; existing validation still rejects invalid completed refs.
+  return { ...evidence, asset_refs: evidence.asset_refs.map(ref => typeof ref === "string" ? ref.trim() : ref) };
+}
+function validateEvidenceTransition(previous: CustomerDelivery, candidate: CustomerDelivery) {
+  // Mirror migration 202: unchanged legacy groups remain repairable, while
+  // changing either group must leave that group internally valid.
+  const paymentChanged = previous.paymentStatus !== candidate.paymentStatus
+    || previous.paymentDate !== candidate.paymentDate
+    || JSON.stringify(previous.paymentEvidenceRefs) !== JSON.stringify(candidate.paymentEvidenceRefs);
+  const trainingChanged = previous.trainingCompleted !== candidate.trainingCompleted
+    || JSON.stringify(previous.trainingEvidenceRefs) !== JSON.stringify(candidate.trainingEvidenceRefs);
+  if (paymentChanged && candidate.paymentStatus === "paid"
+    && (!candidate.paymentDate || customerDeliveryEvidenceRefs(candidate.paymentEvidenceRefs).length === 0))
+    throw new CustomerDeliveryError("EVIDENCE_REQUIRED", "已付款状态必须绑定付款日期和付款凭证");
+  if (trainingChanged && candidate.trainingCompleted && customerDeliveryEvidenceRefs(candidate.trainingEvidenceRefs).length === 0)
+    throw new CustomerDeliveryError("EVIDENCE_REQUIRED", "完成培训必须绑定培训凭证");
+}
+function requireCompletedEvidence(completed: boolean, evidence: Record<string, unknown> | undefined) {
+  if (completed && customerDeliveryEvidenceRefs(evidence?.asset_refs).length === 0)
+    throw new CustomerDeliveryError("EVIDENCE_REQUIRED", "已完成的交付项必须绑定至少一份已扫描凭证");
+}
+function requireVerifiedPayment(paymentStatus: unknown, paymentDate: unknown, paymentEvidenceRefs: unknown) {
+  if (paymentStatus !== "paid" || !paymentDate || customerDeliveryEvidenceRefs(paymentEvidenceRefs).length === 0)
+    throw new CustomerDeliveryError("PAYMENT_REQUIRED", "完成下游交付前必须核验付款状态、付款日期和付款凭证");
+}
+/** Contract completion evidence must be a platform asset reference.
+ * External URLs are not proof of upload, binding, or a clean scanner verdict. */
 export function isValidCustomerDeliveryContractRef(value: string | null | undefined): boolean {
   const ref = typeof value === "string" ? value.trim() : "";
   if (!ref) return false;
-  if (ref.startsWith("https://")) {
-    try {
-      const url = new URL(ref);
-      return url.protocol === "https:" && Boolean(url.hostname);
-    } catch {
-      return false;
-    }
-  }
   return /^(?:asset:\/\/|asset_ref[:_]|asset[:_])[A-Za-z0-9][A-Za-z0-9._:/-]*$/u.test(ref);
 }
-const complete = (d: CustomerDelivery) =>
+function checklistComplete(checklistKey: "system_integration" | "functional_acceptance", items: readonly CustomerDeliveryChecklistItem[]) {
+  return CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS[checklistKey].every(itemKey => {
+    const matches = items.filter(item => item.checklistKey === checklistKey && item.itemKey === itemKey);
+    return matches.length === 1 && matches[0]!.completed
+      && customerDeliveryEvidenceRefs(matches[0]!.evidence?.asset_refs).length > 0;
+  });
+}
+const complete = (d: CustomerDelivery, items: readonly CustomerDeliveryChecklistItem[]) =>
   d.paymentStatus === "paid" &&
+  Boolean(d.paymentDate) &&
+  customerDeliveryEvidenceRefs(d.paymentEvidenceRefs).length > 0 &&
   d.customerProfileStatus === "complete" &&
+  Boolean(d.contractNumber?.trim() && d.projectOwner?.trim() && d.supportOwner?.trim() && d.plannedGoLiveAt) &&
+  isValidCustomerDeliveryContractRef(d.contractRef) &&
   d.systemIntegrationStatus === "complete" &&
   d.functionalAcceptanceStatus === "complete" &&
   d.trainingCompleted &&
+  customerDeliveryEvidenceRefs(d.trainingEvidenceRefs).length > 0 &&
+  (["system_integration", "functional_acceptance"] as const).every(checklistKey =>
+    checklistComplete(checklistKey, items.filter(item => item.workspaceId === d.workspaceId && item.deliveryId === d.id))) &&
   d.videos.some((video) => !video.deletedAt);
 export class MemoryCustomerDeliveryRepository implements CustomerDeliveryRepository {
   private rows = new Map<string, CustomerDelivery>();
@@ -203,16 +248,24 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       event: CustomerDeliveryAuditEvent,
     ) => Promise<void> | void = () => {},
   ) {}
+  private isComplete(delivery: CustomerDelivery) {
+    return complete(delivery, [...this.items.values()]);
+  }
+  private readable(delivery: CustomerDelivery) {
+    const result = clone(delivery);
+    if (!this.isComplete(delivery)) result.effectiveAt = null;
+    return result;
+  }
   async list(workspaceId: string) {
     const s = requireWorkspaceScope(workspaceId);
     return [...this.rows.values()]
       .filter((x) => x.workspaceId === s)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      .map(clone);
+      .map(row => this.readable(row));
   }
   async get(workspaceId: string, id: string) {
     const r = this.rows.get(`${requireWorkspaceScope(workspaceId)}:${id}`);
-    return r ? clone(r) : null;
+    return r ? this.readable(r) : null;
   }
   async create(input: {
     workspaceId: string;
@@ -245,11 +298,13 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       projectOwner: null,
       supportOwner: null,
       paymentDate: null,
+      paymentEvidenceRefs: [],
       plannedGoLiveAt: null,
       customerProfileStatus: "incomplete",
       systemIntegrationStatus: "incomplete",
       functionalAcceptanceStatus: "incomplete",
       trainingCompleted: false,
+      trainingEvidenceRefs: [],
       effectiveAt: null,
       revision: 1,
       createdByActorId: input.actorId,
@@ -276,24 +331,9 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
     id: string;
     actorId: string;
     expectedRevision: number;
-    patch: Partial<
-      Pick<
-        CustomerDelivery,
-        | "companyName"
-        | "contractNumber"
-        | "paymentStatus"
-        | "contractRef"
-        | "projectOwner"
-        | "supportOwner"
-        | "paymentDate"
-        | "plannedGoLiveAt"
-        | "customerProfileStatus"
-        | "systemIntegrationStatus"
-        | "functionalAcceptanceStatus"
-        | "trainingCompleted"
-      >
-    >;
+    patch: CustomerDeliveryPatch;
   }) {
+    const patch = normalizeDeliveryPatch(input.patch);
     const ws = requireWorkspaceScope(input.workspaceId),
       d = this.rows.get(`${ws}:${input.id}`);
     if (!d)
@@ -303,33 +343,20 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       );
     if (d.revision !== input.expectedRevision)
       throw new CustomerDeliveryError("REVISION_CONFLICT", "revision changed");
-    if (
-      d.paymentStatus === "unpaid" &&
-      (
-        [
-          "systemIntegrationStatus",
-          "functionalAcceptanceStatus",
-          "trainingCompleted",
-        ] as const
-      ).some(
-        (k) => k in input.patch && input.patch[k] && input.patch[k] !== d[k],
-      )
-    )
-      throw new CustomerDeliveryError(
-        "PAYMENT_REQUIRED",
-        "customer has not paid",
-      );
+    if (Object.keys(patch).length === 0) return this.readable(d);
+    const candidate = { ...d, ...patch };
+    if (patch.trainingCompleted === true && !d.trainingCompleted)
+      requireVerifiedPayment(candidate.paymentStatus, candidate.paymentDate, candidate.paymentEvidenceRefs);
     if (
       input.patch.companyName !== undefined &&
       !input.patch.companyName.trim()
     )
       throw new CustomerDeliveryError("INVALID_INPUT", "companyName required");
     const before = clone(d);
-    const patch = { ...input.patch };
+    validateEvidenceTransition(d, candidate);
     if ("contractRef" in patch && patch.contractRef != null && !isValidCustomerDeliveryContractRef(patch.contractRef))
-      throw new CustomerDeliveryError("INVALID_INPUT", "合同必须是 HTTPS 链接或 asset_ref");
+      throw new CustomerDeliveryError("INVALID_INPUT", "合同必须是已上传并扫描通过的 asset_ref");
     if (patch.customerProfileStatus === "complete" || (d.customerProfileStatus === "complete" && patch.customerProfileStatus !== "incomplete")) {
-      const candidate = { ...d, ...patch };
       if (
         !candidate.contractNumber?.trim() ||
         !isValidCustomerDeliveryContractRef(candidate.contractRef) ||
@@ -347,7 +374,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
     d.updatedByActorId = input.actorId;
     d.updatedAt = new Date().toISOString();
     d.revision++;
-    d.effectiveAt = complete(d) ? (d.effectiveAt ?? d.updatedAt) : null;
+    d.effectiveAt = this.isComplete(d) ? (d.effectiveAt ?? d.updatedAt) : null;
     await this.auditWriter({
       workspaceId: ws,
       actorId: input.actorId,
@@ -392,6 +419,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
     actorId: string;
     expectedRevision: number;
   }) {
+    input = { ...input, evidence: normalizeChecklistEvidence(input.evidence) };
     const ws = requireWorkspaceScope(input.workspaceId),
       d = this.rows.get(`${ws}:${input.deliveryId}`);
     if (!d)
@@ -401,11 +429,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       );
     if (d.revision !== input.expectedRevision)
       throw new CustomerDeliveryError("REVISION_CONFLICT", "revision changed");
-    if (d.paymentStatus === "unpaid")
-      throw new CustomerDeliveryError(
-        "PAYMENT_REQUIRED",
-        "customer has not paid",
-      );
+    requireVerifiedPayment(d.paymentStatus, d.paymentDate, d.paymentEvidenceRefs);
     if (!input.itemKey.trim())
       throw new CustomerDeliveryError("INVALID_INPUT", "itemKey required");
     if (
@@ -418,7 +442,8 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
         "INVALID_INPUT",
         "unknown checklist item",
       );
-    const key = `${ws}:${d.id}:${input.checklistKey}:${input.itemKey}`;
+    requireCompletedEvidence(input.completed, input.evidence);
+    const key = `${ws}:${d.id}:${input.checklistKey}:${input.itemKey.trim()}`;
     const now = new Date().toISOString();
     const prev = this.items.get(key);
     const item: CustomerDeliveryChecklistItem = {
@@ -443,18 +468,13 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
         x.deliveryId === d.id &&
         x.checklistKey === input.checklistKey,
     );
-    const expected = input.checklistKey === "system_integration" ? 10 : 8;
-    const status =
-      all.length >= expected &&
-      all.filter((x) => x.completed).length >= expected
-        ? "complete"
-        : "incomplete";
+    const status = checklistComplete(input.checklistKey, all) ? "complete" : "incomplete";
     if (input.checklistKey === "system_integration")
       d.systemIntegrationStatus = status;
     else {
       d.functionalAcceptanceStatus = status;
     }
-    if (complete(d)) d.effectiveAt = d.effectiveAt ?? now;
+    if (this.isComplete(d)) d.effectiveAt = d.effectiveAt ?? now;
     else d.effectiveAt = null;
     await this.auditWriter({
       workspaceId: ws,
@@ -476,6 +496,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
     actorId: string;
     expectedRevision: number;
   }) {
+    input = { ...input, items: input.items.map(item => ({ ...item, evidence: normalizeChecklistEvidence(item.evidence) })) };
     const ws = requireWorkspaceScope(input.workspaceId),
       d = this.rows.get(`${ws}:${input.deliveryId}`);
     if (!d)
@@ -485,11 +506,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       );
     if (d.revision !== input.expectedRevision)
       throw new CustomerDeliveryError("REVISION_CONFLICT", "revision changed");
-    if (d.paymentStatus === "unpaid")
-      throw new CustomerDeliveryError(
-        "PAYMENT_REQUIRED",
-        "customer has not paid",
-      );
+    requireVerifiedPayment(d.paymentStatus, d.paymentDate, d.paymentEvidenceRefs);
     const expectedKeys = CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS[
       input.checklistKey
     ] as readonly string[];
@@ -521,8 +538,11 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
           "INVALID_INPUT",
           "evidence must be an object",
         );
+      requireCompletedEvidence(x.completed, x.evidence);
       seen.add(key);
     }
+    const beforeItems = [...this.items.values()].filter(item => item.workspaceId === ws
+      && item.deliveryId === d.id && item.checklistKey === input.checklistKey).map(clone);
     const now = new Date().toISOString();
     const result = input.items.map((x) => {
       const itemKey = x.itemKey.trim(),
@@ -552,22 +572,19 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
         x.deliveryId === d.id &&
         x.checklistKey === input.checklistKey,
     );
-    const status =
-      all.length === expectedKeys.length && all.every((x) => x.completed)
-        ? "complete"
-        : "incomplete";
+    const status = checklistComplete(input.checklistKey, all) ? "complete" : "incomplete";
     if (input.checklistKey === "system_integration")
       d.systemIntegrationStatus = status;
     else {
       d.functionalAcceptanceStatus = status;
     }
-    d.effectiveAt = complete(d) ? (d.effectiveAt ?? now) : null;
+    d.effectiveAt = this.isComplete(d) ? (d.effectiveAt ?? now) : null;
     await this.auditWriter({
       workspaceId: ws,
       actorId: input.actorId,
       action: "customer_delivery.checklist_items.update",
       resourceId: d.id,
-      before: { revision: input.expectedRevision },
+      before: { revision: input.expectedRevision, items: beforeItems },
       after: { revision: d.revision, items: clone(result) },
       reason: "批量更新客户交付清单项",
       evidence: { checklistKey: input.checklistKey, itemCount: result.length },
@@ -608,7 +625,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
     row.videos.push(v);
     row.updatedAt = new Date().toISOString();
     row.revision++;
-    row.effectiveAt = complete(row) ? (row.effectiveAt ?? row.updatedAt) : null;
+    row.effectiveAt = this.isComplete(row) ? (row.effectiveAt ?? row.updatedAt) : null;
     await this.auditWriter({
       workspaceId: d.workspaceId,
       actorId: input.actorId,
@@ -637,7 +654,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
     video.deletedAt = new Date().toISOString();
     row.updatedAt = video.deletedAt;
     row.revision++;
-    row.effectiveAt = complete(row) ? (row.effectiveAt ?? row.updatedAt) : null;
+    row.effectiveAt = this.isComplete(row) ? (row.effectiveAt ?? row.updatedAt) : null;
     await this.auditWriter({
       workspaceId: ws,
       actorId: input.actorId,
@@ -650,8 +667,224 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
     });
   }
 }
+type DeliveryEvidencePurpose = "contract" | "payment" | "system_integration" | "functional_acceptance" | "training" | "video";
+type DeliveryEvidenceMutation =
+  | { kind: "update"; expectedRevision: number; patch: CustomerDeliveryPatch }
+  | { kind: "item"; expectedRevision: number; checklistKey: "system_integration" | "functional_acceptance"; itemKey: string; completed: boolean; evidence?: Record<string, unknown> }
+  | { kind: "batch"; expectedRevision: number; checklistKey: "system_integration" | "functional_acceptance"; items: CustomerDeliveryChecklistBatchItem[] }
+  | { kind: "add_video"; assetRef: string }
+  | { kind: "remove_video"; videoId: string };
+class DeliveryEvidenceSnapshotChanged extends Error {}
+
 export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepository {
+  // A presence check in this map also prevents a late assertion from acquiring
+  // another asset lock while the transaction already holds its delivery lock.
+  private readonly evidenceLocks = new WeakMap<object, Set<string>>();
   constructor(private readonly pool: SqlPool) {}
+  private async assertEvidenceAssets(
+    c: any,
+    workspaceId: string,
+    deliveryId: string,
+    purpose: DeliveryEvidencePurpose,
+    assetRefs: readonly string[],
+  ) {
+    for (const assetRef of customerDeliveryEvidenceRefs(assetRefs)) {
+      const locked = this.evidenceLocks.get(c);
+      if (locked) {
+        if (!locked.has(JSON.stringify([workspaceId, deliveryId, purpose, assetRef])))
+          throw new CustomerDeliveryError("REVISION_CONFLICT", "delivery evidence changed after preflight");
+        continue;
+      }
+      await c.query(
+        `SELECT public.assert_customer_delivery_evidence_asset($1,$2,$3,$4)`,
+        [workspaceId, deliveryId, purpose, assetRef],
+      );
+    }
+  }
+  private evidenceForMutation(delivery: CustomerDelivery, persistedItems: CustomerDeliveryChecklistItem[], mutation: DeliveryEvidenceMutation) {
+    const candidate = clone(delivery);
+    let items = clone(persistedItems);
+    const evidence = new Map<string, { purpose: DeliveryEvidencePurpose; assetRef: string }>();
+    const add = (purpose: DeliveryEvidencePurpose, refs: readonly string[]) => {
+      for (const assetRef of customerDeliveryEvidenceRefs(refs))
+        evidence.set(JSON.stringify([purpose, assetRef]), { purpose, assetRef });
+    };
+    if (mutation.kind === "update") {
+      const p = mutation.patch;
+      Object.assign(candidate, p);
+      validateEvidenceTransition(delivery, candidate);
+      if ("contractRef" in p && p.contractRef != null && !isValidCustomerDeliveryContractRef(p.contractRef))
+        throw new CustomerDeliveryError("INVALID_INPUT", "合同必须是已上传并扫描通过的 asset_ref");
+      if (p.trainingCompleted === true && !delivery.trainingCompleted)
+        requireVerifiedPayment(candidate.paymentStatus, candidate.paymentDate, candidate.paymentEvidenceRefs);
+      if ((Object.hasOwn(p, "contractRef") || p.customerProfileStatus === "complete")
+        && candidate.contractRef)
+        add("contract", [candidate.contractRef]);
+      if (Object.hasOwn(p, "paymentEvidenceRefs")
+        || ((Object.hasOwn(p, "paymentStatus") || Object.hasOwn(p, "paymentDate")) && candidate.paymentStatus === "paid"))
+        add("payment", candidate.paymentEvidenceRefs);
+      if (Object.hasOwn(p, "trainingEvidenceRefs")
+        || (Object.hasOwn(p, "trainingCompleted") && candidate.trainingCompleted))
+        add("training", candidate.trainingEvidenceRefs);
+    } else if (mutation.kind === "item" || mutation.kind === "batch") {
+      requireVerifiedPayment(delivery.paymentStatus, delivery.paymentDate, delivery.paymentEvidenceRefs);
+      const changes = mutation.kind === "item" ? [mutation] : mutation.items;
+      for (const change of changes) {
+        const itemKey = change.itemKey.trim();
+        items = items.filter(item => item.checklistKey !== mutation.checklistKey || item.itemKey !== itemKey);
+        items.push({ workspaceId: candidate.workspaceId, deliveryId: candidate.id, checklistKey: mutation.checklistKey,
+          itemKey, completed: change.completed, evidence: change.evidence ?? {}, completedByActorId: null,
+          completedAt: null, revision: 0, updatedAt: candidate.updatedAt });
+        add(mutation.checklistKey, customerDeliveryEvidenceRefs(change.evidence?.asset_refs));
+      }
+      const status = checklistComplete(mutation.checklistKey, items) ? "complete" : "incomplete";
+      if (mutation.checklistKey === "system_integration") candidate.systemIntegrationStatus = status;
+      else candidate.functionalAcceptanceStatus = status;
+    } else if (mutation.kind === "add_video") {
+      add("video", [mutation.assetRef]);
+      candidate.videos.push({ id: "preflight-video", workspaceId: candidate.workspaceId, deliveryId: candidate.id,
+        title: "preflight", assetRef: mutation.assetRef, sortOrder: 0, uploadedByActorId: "preflight",
+        createdAt: candidate.updatedAt, deletedAt: null });
+    } else {
+      if (!candidate.videos.some(video => video.id === mutation.videoId))
+        throw new CustomerDeliveryError("NOT_FOUND", "video not found");
+      candidate.videos = candidate.videos.filter(video => video.id !== mutation.videoId);
+    }
+    // Incomplete historical records remain repairable: do not validate an old
+    // reference unless this operation attaches it or would make the row ready.
+    if (complete(candidate, items)) {
+      if (candidate.contractRef) add("contract", [candidate.contractRef]);
+      add("payment", candidate.paymentEvidenceRefs);
+      add("training", candidate.trainingEvidenceRefs);
+      for (const item of items) if (item.completed) add(item.checklistKey, customerDeliveryEvidenceRefs(item.evidence?.asset_refs));
+      add("video", candidate.videos.filter(video => !video.deletedAt).map(video => video.assetRef));
+    }
+    return [...evidence.values()].sort((a, b) => a.assetRef < b.assetRef ? -1 : a.assetRef > b.assetRef ? 1
+      : a.purpose < b.purpose ? -1 : a.purpose > b.purpose ? 1 : 0);
+  }
+  private async evidenceSnapshot(c: SqlClient, workspaceId: string, deliveryId: string, row: any,
+    stage: "preflight" | "recheck" | "read" | "read_recheck") {
+    const videos = await c.query(
+      `SELECT * FROM workspace_customer_delivery_videos WHERE workspace_id=$1 AND delivery_id=$2 AND deleted_at IS NULL ORDER BY sort_order,id /* delivery_evidence_${stage}_videos */`,
+      [workspaceId, deliveryId],
+    );
+    const items = await c.query(
+      `SELECT * FROM workspace_customer_delivery_checklist_items WHERE workspace_id=$1 AND delivery_id=$2 /* delivery_evidence_${stage}_items */`,
+      [workspaceId, deliveryId],
+    );
+    return { delivery: this.map(row, videos.rows.map(video => this.mapVideo(video))),
+      items: items.rows.map(item => this.mapItem(item)) };
+  }
+  private evidenceSnapshotKey(snapshot: { delivery: CustomerDelivery; items: CustomerDeliveryChecklistItem[] }) {
+    const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
+    return JSON.stringify({ delivery: { ...snapshot.delivery,
+      videos: [...snapshot.delivery.videos].sort((a, b) => compare(a.id, b.id)) },
+      items: [...snapshot.items].sort((a, b) => compare(`${a.checklistKey}:${a.itemKey}`, `${b.checklistKey}:${b.itemKey}`)) });
+  }
+  private async lockEvidenceParent(c: SqlClient, workspaceId: string, deliveryId: string, mode: "UPDATE" | "SHARE") {
+    try {
+      // A multi-asset writer may already own this parent after invalidating a
+      // different asset. Never wait on it while holding our verified asset locks.
+      return await c.query(
+        `SELECT * FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2 FOR ${mode} NOWAIT /* ${mode === "UPDATE" ? "delivery_evidence_recheck" : "delivery_evidence_read_recheck"} */`,
+        [workspaceId, deliveryId],
+      );
+    } catch (error) {
+      // Scope this mapping to the parent-lock statement. An asset assertion or
+      // any other SQL failure with the same code must retain its real error.
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "55P03")
+        throw new CustomerDeliveryError("REVISION_CONFLICT", "delivery is being changed; refresh and retry");
+      throw error;
+    }
+  }
+  private async withEvidenceTransaction<T>(workspaceId: string, deliveryId: string, mutation: DeliveryEvidenceMutation, work: (c: SqlClient) => Promise<T>): Promise<T> {
+    // Video endpoints have no caller revision. Only a changed pre-read may be
+    // retried, and only before any write/audit. Other failures always propagate.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await withWorkspaceTransaction(this.pool, workspaceId, async c => {
+          const initial = await c.query(
+            `SELECT * FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2 /* delivery_evidence_preflight_parent */`,
+            [workspaceId, deliveryId],
+          );
+          const row = initial.rows[0];
+          if (!row) throw new CustomerDeliveryError("NOT_FOUND", "customer delivery not found");
+          if ("expectedRevision" in mutation && Number(row.revision) !== mutation.expectedRevision)
+            throw new CustomerDeliveryError("REVISION_CONFLICT", "revision changed");
+          const initialSnapshot = await this.evidenceSnapshot(c, workspaceId, deliveryId, row, "preflight");
+          const evidence = this.evidenceForMutation(initialSnapshot.delivery, initialSnapshot.items, mutation);
+          const locked = new Set<string>();
+          // Migration 204's assertion locks assets. Acquire all of them before
+          // the parent; its invalidation trigger takes those locks in this order.
+          for (const { purpose, assetRef } of evidence) {
+            await this.assertEvidenceAssets(c, workspaceId, deliveryId, purpose, [assetRef]);
+            locked.add(JSON.stringify([workspaceId, deliveryId, purpose, assetRef]));
+          }
+          const current = await this.lockEvidenceParent(c, workspaceId, deliveryId, "UPDATE");
+          if (!current.rows[0]) throw new CustomerDeliveryError("NOT_FOUND", "customer delivery not found");
+          if (Number(current.rows[0].revision) !== Number(row.revision)) throw new DeliveryEvidenceSnapshotChanged("revision changed during evidence preflight");
+          const lockedSnapshot = await this.evidenceSnapshot(c, workspaceId, deliveryId, current.rows[0], "recheck");
+          if (this.evidenceSnapshotKey(initialSnapshot) !== this.evidenceSnapshotKey(lockedSnapshot))
+            throw new DeliveryEvidenceSnapshotChanged("delivery references changed during evidence preflight");
+          this.evidenceLocks.set(c, locked);
+          try { return await work(c); }
+          finally { this.evidenceLocks.delete(c); }
+        });
+      } catch (error) {
+        if (!(error instanceof DeliveryEvidenceSnapshotChanged)) throw error;
+        if ("expectedRevision" in mutation || attempt === 2)
+          throw new CustomerDeliveryError("REVISION_CONFLICT", "delivery changed during evidence verification; refresh and retry");
+      }
+    }
+    throw new CustomerDeliveryError("REVISION_CONFLICT", "delivery evidence verification changed repeatedly");
+  }
+  private async readWithEvidence(workspaceId: string, deliveryId: string): Promise<CustomerDelivery | null> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await withWorkspaceTransaction(this.pool, workspaceId, async c => {
+          const initial = await c.query(
+            `SELECT * FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2 /* delivery_evidence_read_parent */`,
+            [workspaceId, deliveryId],
+          );
+          if (!initial.rows[0]) return null;
+          const snapshot = await this.evidenceSnapshot(c, workspaceId, deliveryId, initial.rows[0], "read");
+          let ready = complete(snapshot.delivery, snapshot.items);
+          if (snapshot.delivery.effectiveAt && ready) {
+            const evidence = this.evidenceForMutation(snapshot.delivery, snapshot.items,
+              { kind: "update", expectedRevision: snapshot.delivery.revision, patch: {} });
+            await c.query("SAVEPOINT customer_delivery_read_evidence");
+            try {
+              for (const { purpose, assetRef } of evidence)
+                await this.assertEvidenceAssets(c, workspaceId, deliveryId, purpose, [assetRef]);
+            } catch (error) {
+              await c.query("ROLLBACK TO SAVEPOINT customer_delivery_read_evidence");
+              // Do not turn missing permissions, migrations, or DB outages into
+              // apparent business incompleteness. Only this assertion's explicit
+              // unavailable-evidence result is a projection downgrade.
+              if (typeof error !== "object" || error === null || !("code" in error) || error.code !== "23514"
+                || !("message" in error) || error.message !== "customer delivery evidence is unavailable") throw error;
+              ready = false;
+            }
+            await c.query("RELEASE SAVEPOINT customer_delivery_read_evidence");
+          }
+          const current = await this.lockEvidenceParent(c, workspaceId, deliveryId, "SHARE");
+          if (!current.rows[0]) return null;
+          if (Number(current.rows[0].revision) !== snapshot.delivery.revision)
+            throw new DeliveryEvidenceSnapshotChanged("revision changed during evidence read");
+          const locked = await this.evidenceSnapshot(c, workspaceId, deliveryId, current.rows[0], "read_recheck");
+          if (this.evidenceSnapshotKey(snapshot) !== this.evidenceSnapshotKey(locked))
+            throw new DeliveryEvidenceSnapshotChanged("delivery references changed during evidence read");
+          const result = locked.delivery;
+          if (!ready) result.effectiveAt = null;
+          return result;
+        });
+      } catch (error) {
+        if (!(error instanceof DeliveryEvidenceSnapshotChanged)) throw error;
+        if (attempt === 2) throw new CustomerDeliveryError("REVISION_CONFLICT", "delivery changed during evidence read; refresh and retry");
+      }
+    }
+    throw new CustomerDeliveryError("REVISION_CONFLICT", "delivery evidence read changed repeatedly");
+  }
   private async audit(
     c: any,
     e: {
@@ -695,6 +928,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       paymentDate: r.payment_date instanceof Date
         ? `${r.payment_date.getFullYear()}-${String(r.payment_date.getMonth() + 1).padStart(2, "0")}-${String(r.payment_date.getDate()).padStart(2, "0")}`
         : r.payment_date ? String(r.payment_date).slice(0, 10) : null,
+      paymentEvidenceRefs: customerDeliveryEvidenceRefs(r.payment_evidence_refs),
       plannedGoLiveAt: r.planned_go_live_at
         ? new Date(r.planned_go_live_at).toISOString()
         : null,
@@ -702,6 +936,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       systemIntegrationStatus: r.system_integration_status,
       functionalAcceptanceStatus: r.functional_acceptance_status,
       trainingCompleted: Boolean(r.training_completed),
+      trainingEvidenceRefs: customerDeliveryEvidenceRefs(r.training_evidence_refs),
       effectiveAt: r.effective_at
         ? new Date(r.effective_at).toISOString()
         : null,
@@ -755,32 +990,87 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       a.push(this.mapVideo(x));
       by.set(x.delivery_id, a);
     }
-    return rows.map((r) => this.map(r, by.get(r.id) || []));
+    // A historical effective_at is not sufficient evidence of readiness.
+    // Only downgrade the read projection; never rewrite historical facts here.
+    const candidates = rows.filter(row => row.effective_at);
+    const items = candidates.length ? await c.query(
+      `SELECT * FROM workspace_customer_delivery_checklist_items WHERE workspace_id=$1 AND delivery_id = ANY($2::text[])`,
+      [rows[0].workspace_id, candidates.map(row => row.id)],
+    ) : { rows: [] };
+    const mappedItems = items.rows.map((item: any) => this.mapItem(item));
+    return rows.map((r) => {
+      const mapped = this.map(r, by.get(r.id) || []);
+      if (mapped.effectiveAt && !complete(mapped, mappedItems)) mapped.effectiveAt = null;
+      return mapped;
+    });
+  }
+  private async refreshEffectiveAt(c: any, workspaceId: string, deliveryId: string) {
+    // Every managed checklist/video writer takes this same parent lock before
+    // changing children, so the complete snapshot remains stable until commit.
+    const current = await c.query(
+      `SELECT * FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2 FOR UPDATE`,
+      [workspaceId, deliveryId],
+    );
+    if (!current.rows[0]) throw new CustomerDeliveryError("NOT_FOUND", "customer delivery not found");
+    const videos = await c.query(
+      `SELECT * FROM workspace_customer_delivery_videos WHERE workspace_id=$1 AND delivery_id=$2 AND deleted_at IS NULL`,
+      [workspaceId, deliveryId],
+    );
+    const items = await c.query(
+      `SELECT * FROM workspace_customer_delivery_checklist_items WHERE workspace_id=$1 AND delivery_id=$2`,
+      [workspaceId, deliveryId],
+    );
+    const delivery = this.map(current.rows[0], videos.rows.map((video: any) => this.mapVideo(video)));
+    const checklistItems: CustomerDeliveryChecklistItem[] = items.rows.map((item: any) => this.mapItem(item));
+    const ready = complete(delivery, checklistItems);
+    if (ready) {
+      if (delivery.contractRef)
+        await this.assertEvidenceAssets(c, workspaceId, deliveryId, "contract", [delivery.contractRef]);
+      await this.assertEvidenceAssets(c, workspaceId, deliveryId, "payment", delivery.paymentEvidenceRefs);
+      await this.assertEvidenceAssets(c, workspaceId, deliveryId, "training", delivery.trainingEvidenceRefs);
+      for (const checklistKey of ["system_integration", "functional_acceptance"] as const) {
+        await this.assertEvidenceAssets(
+          c,
+          workspaceId,
+          deliveryId,
+          checklistKey,
+          checklistItems
+            .filter(item => item.checklistKey === checklistKey && item.completed)
+            .flatMap(item => customerDeliveryEvidenceRefs(item.evidence?.asset_refs)),
+        );
+      }
+      await this.assertEvidenceAssets(
+        c,
+        workspaceId,
+        deliveryId,
+        "video",
+        delivery.videos.map(video => video.assetRef),
+      );
+    }
+    await c.query(
+      `UPDATE workspace_customer_deliveries SET effective_at=CASE WHEN $3 THEN COALESCE(effective_at,updated_at) ELSE NULL END WHERE workspace_id=$1 AND id=$2`,
+      [workspaceId, deliveryId, ready],
+    );
   }
   async list(workspaceId: string) {
     const scope = requireWorkspaceScope(workspaceId);
-    return withWorkspaceTransaction(this.pool, scope, async (c) =>
-      this.withVideos(
-        c,
-        (
-          await c.query(
-            `SELECT * FROM workspace_customer_deliveries WHERE workspace_id=$1 ORDER BY updated_at DESC,id DESC`,
-            [scope],
-          )
-        ).rows,
-      ),
-    );
+    const ids = await withWorkspaceTransaction(this.pool, scope, async c =>
+      (await c.query<{ id: string }>(
+        `SELECT id FROM workspace_customer_deliveries WHERE workspace_id=$1 ORDER BY updated_at DESC,id DESC /* delivery_evidence_list_ids */`,
+        [scope],
+      )).rows);
+    const result: CustomerDelivery[] = [];
+    // Do not keep one delivery's shared parent lock while checking the next
+    // delivery's assets: that would reintroduce a cross-delivery lock inversion.
+    for (const { id } of ids) {
+      const delivery = await this.readWithEvidence(scope, id);
+      if (delivery) result.push(delivery);
+    }
+    return result;
   }
   async get(workspaceId: string, id: string) {
     const scope = requireWorkspaceScope(workspaceId);
-    return withWorkspaceTransaction(this.pool, scope, async (c) => {
-      const q = await c.query(
-        `SELECT * FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2 LIMIT 1`,
-        [scope, id],
-      );
-      if (!q.rows[0]) return null;
-      return (await this.withVideos(c, q.rows))[0] || null;
-    });
+    return this.readWithEvidence(scope, id);
   }
   async listChecklistItems(input: {
     workspaceId: string;
@@ -815,6 +1105,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
     actorId: string;
     expectedRevision: number;
   }) {
+    input = { ...input, evidence: normalizeChecklistEvidence(input.evidence) };
     const scope = requireWorkspaceScope(input.workspaceId);
     if (
       !input.itemKey?.trim() ||
@@ -826,7 +1117,8 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
         "INVALID_INPUT",
         "unknown checklist item",
       );
-    return withWorkspaceTransaction(this.pool, scope, async (c) => {
+    requireCompletedEvidence(input.completed, input.evidence);
+    return this.withEvidenceTransaction(scope, input.deliveryId, { ...input, kind: "item" }, async (c) => {
       const cur = await c.query(
         `SELECT * FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2 FOR UPDATE`,
         [scope, input.deliveryId],
@@ -842,11 +1134,14 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           "REVISION_CONFLICT",
           "revision changed",
         );
-      if (d.payment_status === "unpaid")
-        throw new CustomerDeliveryError(
-          "PAYMENT_REQUIRED",
-          "customer has not paid",
-        );
+      requireVerifiedPayment(d.payment_status, d.payment_date, d.payment_evidence_refs);
+      await this.assertEvidenceAssets(
+        c,
+        scope,
+        input.deliveryId,
+        input.checklistKey,
+        customerDeliveryEvidenceRefs(input.evidence?.asset_refs),
+      );
       // Capture the persisted item before the upsert so the audit trail
       // contains the actual prior state (or an empty object for first write).
       // The delivery row is locked above, serializing checklist mutations for
@@ -867,16 +1162,11 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           input.completed ? input.actorId : null,
         ],
       );
-      const expected = input.checklistKey === "system_integration" ? 10 : 8;
-      const count = await c.query(
-        `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE completed)::int AS done FROM workspace_customer_delivery_checklist_items WHERE workspace_id=$1 AND delivery_id=$2 AND checklist_key=$3`,
+      const currentItems = await c.query(
+        `SELECT * FROM workspace_customer_delivery_checklist_items WHERE workspace_id=$1 AND delivery_id=$2 AND checklist_key=$3`,
         [scope, input.deliveryId, input.checklistKey],
       );
-      const status =
-        Number(count.rows[0]!.total) >= expected &&
-        Number(count.rows[0]!.done) >= expected
-          ? "complete"
-          : "incomplete";
+      const status = checklistComplete(input.checklistKey, currentItems.rows.map(row => this.mapItem(row))) ? "complete" : "incomplete";
       const sets =
         input.checklistKey === "system_integration"
           ? `system_integration_status='${status}'`
@@ -887,10 +1177,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       );
       // SET expressions read the pre-update row in PostgreSQL. Recalculate
       // only after writing the new checklist state, within the same lock/tx.
-      await c.query(
-        `UPDATE workspace_customer_deliveries SET effective_at=CASE WHEN payment_status='paid' AND customer_profile_status='complete' AND system_integration_status='complete' AND functional_acceptance_status='complete' AND training_completed AND EXISTS (SELECT 1 FROM workspace_customer_delivery_videos v WHERE v.workspace_id=workspace_customer_deliveries.workspace_id AND v.delivery_id=workspace_customer_deliveries.id AND v.deleted_at IS NULL) THEN COALESCE(effective_at,now()) ELSE NULL END WHERE workspace_id=$1 AND id=$2`,
-        [scope, input.deliveryId],
-      );
+      await this.refreshEffectiveAt(c, scope, input.deliveryId);
       await this.audit(c, {
         workspaceId: scope,
         actorId: input.actorId,
@@ -929,6 +1216,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
     const normalized = input.items.map((item) => ({
       ...item,
       itemKey: item.itemKey?.trim(),
+      evidence: normalizeChecklistEvidence(item.evidence),
     }));
     const seen = new Set<string>();
     for (const item of normalized) {
@@ -957,8 +1245,9 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           "INVALID_INPUT",
           "evidence must be an object",
         );
+      requireCompletedEvidence(item.completed, item.evidence);
     }
-    return withWorkspaceTransaction(this.pool, scope, async (c) => {
+    return this.withEvidenceTransaction(scope, input.deliveryId, { ...input, items: normalized, kind: "batch" }, async (c) => {
       const cur = await c.query(
         `SELECT * FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2 FOR UPDATE`,
         [scope, input.deliveryId],
@@ -974,11 +1263,16 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           "REVISION_CONFLICT",
           "revision changed",
         );
-      if (delivery.payment_status === "unpaid")
-        throw new CustomerDeliveryError(
-          "PAYMENT_REQUIRED",
-          "customer has not paid",
+      requireVerifiedPayment(delivery.payment_status, delivery.payment_date, delivery.payment_evidence_refs);
+      for (const item of normalized) {
+        await this.assertEvidenceAssets(
+          c,
+          scope,
+          input.deliveryId,
+          input.checklistKey,
+          customerDeliveryEvidenceRefs(item.evidence?.asset_refs),
         );
+      }
       const keys = [...seen];
       const before = await c.query(
         `SELECT * FROM workspace_customer_delivery_checklist_items WHERE workspace_id=$1 AND delivery_id=$2 AND checklist_key=$3 AND item_key = ANY($4::text[]) ORDER BY item_key`,
@@ -1000,16 +1294,11 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
         );
         saved.push(q.rows[0]);
       }
-      const expected = input.checklistKey === "system_integration" ? 10 : 8;
-      const count = await c.query(
-        `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE completed)::int AS done FROM workspace_customer_delivery_checklist_items WHERE workspace_id=$1 AND delivery_id=$2 AND checklist_key=$3`,
+      const currentItems = await c.query(
+        `SELECT * FROM workspace_customer_delivery_checklist_items WHERE workspace_id=$1 AND delivery_id=$2 AND checklist_key=$3`,
         [scope, input.deliveryId, input.checklistKey],
       );
-      const status =
-        Number(count.rows[0]?.total) >= expected &&
-        Number(count.rows[0]?.done) >= expected
-          ? "complete"
-          : "incomplete";
+      const status = checklistComplete(input.checklistKey, currentItems.rows.map(row => this.mapItem(row))) ? "complete" : "incomplete";
       if (input.checklistKey === "system_integration")
         await c.query(
           `UPDATE workspace_customer_deliveries SET system_integration_status=$3,revision=revision+1,updated_at=now(),updated_by_actor_id=$4 WHERE workspace_id=$1 AND id=$2`,
@@ -1020,10 +1309,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           `UPDATE workspace_customer_deliveries SET functional_acceptance_status=$3,revision=revision+1,updated_at=now(),updated_by_actor_id=$4 WHERE workspace_id=$1 AND id=$2`,
           [scope, input.deliveryId, status, input.actorId],
         );
-      await c.query(
-        `UPDATE workspace_customer_deliveries SET effective_at=CASE WHEN payment_status='paid' AND customer_profile_status='complete' AND system_integration_status='complete' AND functional_acceptance_status='complete' AND training_completed AND EXISTS (SELECT 1 FROM workspace_customer_delivery_videos v WHERE v.workspace_id=workspace_customer_deliveries.workspace_id AND v.delivery_id=workspace_customer_deliveries.id AND v.deleted_at IS NULL) THEN COALESCE(effective_at,updated_at) ELSE NULL END WHERE workspace_id=$1 AND id=$2`,
-        [scope, input.deliveryId],
-      );
+      await this.refreshEffectiveAt(c, scope, input.deliveryId);
       const updated = await c.query(
         `SELECT revision FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2`,
         [scope, input.deliveryId],
@@ -1088,32 +1374,22 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
     id: string;
     actorId: string;
     expectedRevision: number;
-    patch: Partial<
-      Pick<
-        CustomerDelivery,
-        | "companyName"
-        | "contractNumber"
-        | "paymentStatus"
-        | "contractRef"
-        | "projectOwner"
-        | "supportOwner"
-        | "paymentDate"
-        | "plannedGoLiveAt"
-        | "customerProfileStatus"
-        | "systemIntegrationStatus"
-        | "functionalAcceptanceStatus"
-        | "trainingCompleted"
-      >
-    >;
+    patch: CustomerDeliveryPatch;
   }): Promise<CustomerDelivery> {
     const scope = requireWorkspaceScope(input.workspaceId);
-    const p = input.patch;
+    const p = normalizeDeliveryPatch(input.patch);
     if (p.companyName !== undefined && !p.companyName.trim())
       throw new CustomerDeliveryError("INVALID_INPUT", "companyName required");
     const keys = (Object.keys(p) as Array<keyof typeof p>).filter(
       (k) => p[k] !== undefined,
     );
-    return withWorkspaceTransaction(this.pool, scope, async (c) => {
+    if (!keys.length) {
+      const current = await this.readWithEvidence(scope, input.id);
+      if (!current) throw new CustomerDeliveryError("NOT_FOUND", "customer delivery not found");
+      if (current.revision !== input.expectedRevision) throw new CustomerDeliveryError("REVISION_CONFLICT", "revision changed");
+      return current;
+    }
+    return this.withEvidenceTransaction(scope, input.id, { kind: "update", expectedRevision: input.expectedRevision, patch: p }, async (c) => {
       const cur = await c.query(
         `SELECT * FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2 FOR UPDATE`,
         [scope, input.id],
@@ -1130,34 +1406,34 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           "revision changed",
         );
       if ("contractRef" in p && p.contractRef != null && !isValidCustomerDeliveryContractRef(p.contractRef))
-        throw new CustomerDeliveryError("INVALID_INPUT", "合同必须是 HTTPS 链接或 asset_ref");
+        throw new CustomerDeliveryError("INVALID_INPUT", "合同必须是已上传并扫描通过的 asset_ref");
+      const before = this.map(row);
+      const candidate = { ...before, ...p };
+      validateEvidenceTransition(before, candidate);
+      if ((Object.hasOwn(p, "contractRef") || p.customerProfileStatus === "complete")
+        && candidate.contractRef)
+        await this.assertEvidenceAssets(c, scope, input.id, "contract", [candidate.contractRef]);
+      if (Object.hasOwn(p, "paymentEvidenceRefs")
+        || ((Object.hasOwn(p, "paymentStatus") || Object.hasOwn(p, "paymentDate")) && candidate.paymentStatus === "paid"))
+        await this.assertEvidenceAssets(c, scope, input.id, "payment", candidate.paymentEvidenceRefs);
+      if (Object.hasOwn(p, "trainingEvidenceRefs")
+        || (Object.hasOwn(p, "trainingCompleted") && candidate.trainingCompleted))
+        await this.assertEvidenceAssets(c, scope, input.id, "training", candidate.trainingEvidenceRefs);
       if (
         (p.customerProfileStatus === "complete" || (row.customer_profile_status === "complete" && p.customerProfileStatus !== "incomplete")) &&
-        (!String(p.contractNumber ?? row.contract_number ?? "").trim() ||
-          !isValidCustomerDeliveryContractRef(String(p.contractRef ?? row.contract_ref ?? "")) ||
-          !String(p.projectOwner ?? row.project_owner ?? "").trim() ||
-          !String(p.supportOwner ?? row.support_owner ?? "").trim() ||
-          ((p.paymentStatus ?? row.payment_status) === "paid" &&
-            !(p.paymentDate ?? row.payment_date)) ||
-          !(p.plannedGoLiveAt ?? row.planned_go_live_at))
+        (!candidate.contractNumber?.trim() ||
+          !isValidCustomerDeliveryContractRef(candidate.contractRef) ||
+          !candidate.projectOwner?.trim() ||
+          !candidate.supportOwner?.trim() ||
+          (candidate.paymentStatus === "paid" && !candidate.paymentDate) ||
+          !candidate.plannedGoLiveAt)
       )
         throw new CustomerDeliveryError(
           "INVALID_INPUT",
           "客户档案字段未填写完整",
         );
-      if (
-        row.payment_status === "unpaid" &&
-        (("systemIntegrationStatus" in p &&
-          p.systemIntegrationStatus === "complete") ||
-          ("functionalAcceptanceStatus" in p &&
-            p.functionalAcceptanceStatus === "complete") ||
-          ("trainingCompleted" in p && p.trainingCompleted === true))
-      )
-        throw new CustomerDeliveryError(
-          "PAYMENT_REQUIRED",
-          "customer has not paid",
-        );
-      const before = this.map(row);
+      if (p.trainingCompleted === true && !row.training_completed)
+        requireVerifiedPayment(candidate.paymentStatus, candidate.paymentDate, candidate.paymentEvidenceRefs);
       const vals: any[] = [
         scope,
         input.id,
@@ -1173,22 +1449,29 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
         projectOwner: "project_owner",
         supportOwner: "support_owner",
         paymentDate: "payment_date",
+        paymentEvidenceRefs: "payment_evidence_refs",
         plannedGoLiveAt: "planned_go_live_at",
         customerProfileStatus: "customer_profile_status",
-        systemIntegrationStatus: "system_integration_status",
-        functionalAcceptanceStatus: "functional_acceptance_status",
         trainingCompleted: "training_completed",
+        trainingEvidenceRefs: "training_evidence_refs",
       };
       for (const k of keys) {
         sets.push(`${col[k]}=$${vals.length + 1}`);
         vals.push(p[k]);
       }
-      if (!sets.length) return this.map(row);
+      if (!sets.length) return (await this.withVideos(c, [row]))[0]!;
       sets.push(
         `updated_by_actor_id=$3`,
         `updated_at=now()`,
         `revision=revision+1`,
       );
+      // Capture actual old videos while holding the same parent lock used by
+      // video writers. Audit the historical raw effective_at, not read projection.
+      const beforeVideos = await c.query(
+        `SELECT * FROM workspace_customer_delivery_videos WHERE workspace_id=$1 AND delivery_id=$2 AND deleted_at IS NULL ORDER BY sort_order,id`,
+        [scope, input.id],
+      );
+      before.videos = beforeVideos.rows.map(video => this.mapVideo(video));
       const q = await c.query(
         `UPDATE workspace_customer_deliveries SET ${sets.join(",")} WHERE workspace_id=$1 AND id=$2 AND revision=$4 RETURNING *`,
         vals,
@@ -1198,16 +1481,12 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           "REVISION_CONFLICT",
           "revision changed",
         );
-      const updated = q.rows[0];
-      await c.query(
-        `UPDATE workspace_customer_deliveries SET effective_at=CASE WHEN payment_status='paid' AND customer_profile_status='complete' AND system_integration_status='complete' AND functional_acceptance_status='complete' AND training_completed AND EXISTS (SELECT 1 FROM workspace_customer_delivery_videos v WHERE v.workspace_id=workspace_customer_deliveries.workspace_id AND v.delivery_id=workspace_customer_deliveries.id AND v.deleted_at IS NULL) THEN COALESCE(effective_at,updated_at) ELSE NULL END WHERE workspace_id=$1 AND id=$2`,
-        [scope, input.id],
-      );
+      await this.refreshEffectiveAt(c, scope, input.id);
       const final = await c.query(
         `SELECT * FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2`,
         [scope, input.id],
       );
-      const result = this.map(final.rows[0]);
+      const result = (await this.withVideos(c, final.rows))[0]!;
       await this.audit(c, {
         workspaceId: scope,
         actorId: input.actorId,
@@ -1237,9 +1516,9 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
         "INVALID_INPUT",
         "video title and assetRef required",
       );
-    return withWorkspaceTransaction(this.pool, scope, async (c) => {
+    return this.withEvidenceTransaction(scope, input.deliveryId, { kind: "add_video", assetRef: asset }, async (c) => {
       const exists = await c.query(
-        `SELECT id FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2`,
+        `SELECT id FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2 FOR UPDATE`,
         [scope, input.deliveryId],
       );
       if (!exists.rows[0])
@@ -1247,6 +1526,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           "NOT_FOUND",
           "customer delivery not found",
         );
+      await this.assertEvidenceAssets(c, scope, input.deliveryId, "video", [asset]);
       const q = await c.query(
         `INSERT INTO workspace_customer_delivery_videos (id,workspace_id,delivery_id,title,asset_ref,sort_order,uploaded_by_actor_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
         [
@@ -1260,9 +1540,10 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
         ],
       );
       await c.query(
-        `UPDATE workspace_customer_deliveries SET revision=revision+1,updated_at=now(),updated_by_actor_id=$3,effective_at=CASE WHEN payment_status='paid' AND customer_profile_status='complete' AND system_integration_status='complete' AND functional_acceptance_status='complete' AND training_completed THEN COALESCE(effective_at,now()) ELSE NULL END WHERE workspace_id=$1 AND id=$2`,
+        `UPDATE workspace_customer_deliveries SET revision=revision+1,updated_at=now(),updated_by_actor_id=$3 WHERE workspace_id=$1 AND id=$2`,
         [scope, input.deliveryId, input.actorId],
       );
+      await this.refreshEffectiveAt(c, scope, input.deliveryId);
       const video = this.mapVideo(q.rows[0]);
       await this.audit(c, {
         workspaceId: scope,
@@ -1284,7 +1565,12 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
     actorId: string;
   }): Promise<void> {
     const scope = requireWorkspaceScope(input.workspaceId);
-    return withWorkspaceTransaction(this.pool, scope, async (c) => {
+    return this.withEvidenceTransaction(scope, input.deliveryId, { kind: "remove_video", videoId: input.videoId }, async (c) => {
+      const delivery = await c.query(
+        `SELECT id FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2 FOR UPDATE`,
+        [scope, input.deliveryId],
+      );
+      if (!delivery.rows[0]) throw new CustomerDeliveryError("NOT_FOUND", "customer delivery not found");
       const q = await c.query(
         `UPDATE workspace_customer_delivery_videos SET deleted_at=now() WHERE workspace_id=$1 AND delivery_id=$2 AND id=$3 AND deleted_at IS NULL RETURNING id`,
         [scope, input.deliveryId, input.videoId],
@@ -1292,9 +1578,10 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       if (!q.rows[0])
         throw new CustomerDeliveryError("NOT_FOUND", "video not found");
       await c.query(
-        `UPDATE workspace_customer_deliveries SET revision=revision+1,updated_at=now(),updated_by_actor_id=$3,effective_at=CASE WHEN payment_status='paid' AND customer_profile_status='complete' AND system_integration_status='complete' AND functional_acceptance_status='complete' AND training_completed AND EXISTS (SELECT 1 FROM workspace_customer_delivery_videos v WHERE v.workspace_id=workspace_customer_deliveries.workspace_id AND v.delivery_id=workspace_customer_deliveries.id AND v.deleted_at IS NULL) THEN COALESCE(effective_at,now()) ELSE NULL END WHERE workspace_id=$1 AND id=$2`,
+        `UPDATE workspace_customer_deliveries SET revision=revision+1,updated_at=now(),updated_by_actor_id=$3 WHERE workspace_id=$1 AND id=$2`,
         [scope, input.deliveryId, input.actorId],
       );
+      await this.refreshEffectiveAt(c, scope, input.deliveryId);
       await this.audit(c, {
         workspaceId: scope,
         actorId: input.actorId,

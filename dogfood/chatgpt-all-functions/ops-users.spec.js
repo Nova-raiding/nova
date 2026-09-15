@@ -46,10 +46,11 @@ test('operates the platform user directory without destructive confirmation', as
   await expect(page.getByRole('heading', { name: '用户中心' })).toBeVisible({ timeout: 20_000 })
   await expect(page.getByText('当前租户成员')).toHaveCount(0)
   await expect(page.getByRole('form', { name: '用户目录筛选' })).toBeVisible({ timeout: 20_000 })
-  // Registration applications are loaded through the platform-only REST
-  // boundary and remain visible alongside the identity directory.
-  await expect(page.getByText('注册申请', { exact: true })).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByRole('button', { name: '刷新申请' })).toBeVisible()
+  // Account provisioning has one platform entry point. Self-registration and
+  // the former standalone application queue are intentionally absent.
+  await expect(page.getByRole('tab', { name: '已开通用户', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '开通商家账号' })).toBeVisible()
+  await expect(page.getByText('注册申请', { exact: true })).toHaveCount(0)
 
   const supportRow = await filterUserDirectory(page)
   // The platform directory aggregates members across every workspace; on a

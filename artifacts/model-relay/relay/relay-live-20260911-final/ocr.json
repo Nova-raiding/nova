@@ -1,0 +1,53 @@
+{
+  "schema_version": "1",
+  "release_id": "relay-live-20260911-final",
+  "modality": "ocr",
+  "observed_at": "2026-09-11T04:03:25.778Z",
+  "http_status": 200,
+  "response_headers": {
+    "x-oneapi-request-id": "202609110403230504937528268d9d65m3TxG64"
+  },
+  "result": {
+    "modality": "ocr",
+    "endpoint": "/chat/completions",
+    "model": "glm-5.3-flash",
+    "httpStatus": 200,
+    "providerRequestId": "202609110403230504937528268d9d65m3TxG64",
+    "usageObserved": true,
+    "costObserved": true,
+    "costSource": "relay_pricing_snapshot",
+    "costCny": 0.00010928,
+    "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+    "pricingGroup": "VIP",
+    "state": "ready"
+  },
+  "relay_response": {
+    "choices": [
+      {
+        "finish_reason": "length",
+        "index": 0,
+        "message": {
+          "content": "",
+          "reasoning_content": "The user wants me to return only JSON with the OCR text. Looking at the image, it appears to be a small image with some text. Let me look",
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1789099405,
+    "id": "2026091112032306285a80dfa74d15",
+    "model": "glm-5.3-flash",
+    "object": "chat.completion",
+    "request_id": "2026091112032306285a80dfa74d15",
+    "usage": {
+      "completion_tokens": 32,
+      "completion_tokens_details": {
+        "reasoning_tokens": 30
+      },
+      "prompt_tokens": 40,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_tokens": 72
+    }
+  }
+}

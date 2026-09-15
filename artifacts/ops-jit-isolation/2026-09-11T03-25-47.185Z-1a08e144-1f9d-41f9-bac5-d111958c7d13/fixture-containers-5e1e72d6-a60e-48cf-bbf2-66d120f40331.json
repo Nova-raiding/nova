@@ -1,0 +1,36 @@
+{
+  "runId": "5e1e72d6-a60e-48cf-bbf2-66d120f40331",
+  "containers": [
+    {
+      "id": "c0385dc1525c2d4f1920571c9bfb8579bff57e221c033dade1bd3e10d49cd583",
+      "name": "merchant-ops-fixture-postgres-5e1e72d6-a60e-48cf-bbf2-66d120f40331",
+      "runId": "5e1e72d6-a60e-48cf-bbf2-66d120f40331",
+      "kind": "postgres",
+      "image": "postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73",
+      "hostPort": 33384,
+      "autoRemove": true,
+      "labels": {
+        "merchant.fixture.kind": "postgres",
+        "merchant.fixture.purpose": "isolated-ops-oidc-acceptance",
+        "merchant.fixture.run-id": "5e1e72d6-a60e-48cf-bbf2-66d120f40331"
+      },
+      "dataStorage": "tmpfs"
+    },
+    {
+      "id": "c4455c0797d1a4d607f373fabd582a9816625e3377abbd8fd2e98f2a01a07dae",
+      "name": "merchant-ops-fixture-redis-5e1e72d6-a60e-48cf-bbf2-66d120f40331",
+      "runId": "5e1e72d6-a60e-48cf-bbf2-66d120f40331",
+      "kind": "redis",
+      "image": "redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2",
+      "hostPort": 33385,
+      "autoRemove": true,
+      "labels": {
+        "merchant.fixture.kind": "redis",
+        "merchant.fixture.purpose": "isolated-ops-oidc-acceptance",
+        "merchant.fixture.run-id": "5e1e72d6-a60e-48cf-bbf2-66d120f40331"
+      },
+      "dataStorage": "tmpfs"
+    }
+  ],
+  "externalConfigurationRead": false
+}

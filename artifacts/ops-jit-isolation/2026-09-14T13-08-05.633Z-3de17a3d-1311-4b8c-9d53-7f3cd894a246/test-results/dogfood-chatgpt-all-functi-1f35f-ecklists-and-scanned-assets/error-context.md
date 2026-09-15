@@ -1,0 +1,103 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营后台
+      - generic [ref=e14]: 平台运营控制面
+      - navigation "平台运营功能导航" [ref=e15]:
+        - region "平台治理" [ref=e16]:
+          - heading "平台治理" [level=2] [ref=e17]
+          - button "总览" [ref=e18] [cursor=pointer]:
+            - img "dashboard" [ref=e19] [cursor=pointer]:
+              - img [ref=e20] [cursor=pointer]
+            - generic [ref=e22] [cursor=pointer]: 总览
+          - button "用户中心" [ref=e23] [cursor=pointer]:
+            - img "team" [ref=e24] [cursor=pointer]:
+              - img [ref=e25] [cursor=pointer]
+            - generic [ref=e27] [cursor=pointer]: 用户中心
+          - button "客户交付" [ref=e28] [cursor=pointer]:
+            - img "team" [ref=e29] [cursor=pointer]:
+              - img [ref=e30] [cursor=pointer]
+            - generic [ref=e32] [cursor=pointer]: 客户交付
+        - region "模型与计费" [ref=e33]:
+          - heading "模型与计费" [level=2] [ref=e34]
+          - button "账务与退款" [ref=e35] [cursor=pointer]:
+            - img "dollar" [ref=e36] [cursor=pointer]:
+              - img [ref=e37] [cursor=pointer]
+            - generic [ref=e39] [cursor=pointer]: 账务与退款
+  - generic [ref=e40]:
+    - banner [ref=e41]:
+      - generic [ref=e42]:
+        - heading "平台运营控制台" [level=2] [ref=e43]
+        - region "当前身份与权限范围" [ref=e44]:
+          - generic [ref=e45]:
+            - img [ref=e47]:
+              - img [ref=e48]
+            - strong [ref=e52]: 平台管理员
+            - status [ref=e54]: 授权状态：已由服务端验证
+            - button "展开其余 1 个已验证角色" [ref=e57] [cursor=pointer]:
+              - generic [ref=e58] [cursor=pointer]: +1 个角色
+            - generic [ref=e60]: 平台全局
+            - generic [ref=e62]: 策略 2026-09-08.v1
+          - status [ref=e63]: 平台运营视图：仅显示服务端授权的平台能力；企业主体操作需切换到对应企业主体。
+      - generic [ref=e65]:
+        - generic [ref=e66]:
+          - generic [ref=e67]: 当前状态
+          - status [ref=e68]: 已登录
+        - button "打开账号信息" [ref=e69] [cursor=pointer]:
+          - generic [ref=e70] [cursor=pointer]: o
+          - strong [ref=e72] [cursor=pointer]: ops-fixture-actor-cdaf6ed0-b811-4d07-8b9f-ba3b8fc91359
+          - img [ref=e73] [cursor=pointer]:
+            - img [ref=e74] [cursor=pointer]
+    - main [ref=e76]:
+      - status [ref=e77]
+      - region "客户交付" [ref=e78]:
+        - generic [ref=e79]:
+          - generic [ref=e81]:
+            - generic [ref=e82]:
+              - generic [ref=e83]: CUSTOMER DELIVERY
+              - heading "客户交付" [level=1] [ref=e84]
+              - generic [ref=e85]: 以客户为中心跟进建档、系统接入、功能验收、培训和上线。付款未核验时，受控环节会保持阻断。
+            - button "刷新交付档案" [disabled] [ref=e87]:
+              - generic: 刷新交付档案
+          - generic [ref=e89]:
+            - generic [ref=e92]: 目标企业工作区（必选）
+            - generic [ref=e94]:
+              - generic [ref=e96]:
+                - generic [ref=e97]:
+                  - generic: 搜索并选择企业名称或 Workspace ID
+                  - combobox "客户交付目标企业工作区" [expanded] [active] [ref=e98]:
+                    - listbox [ref=e99]: 没有找到可用的企业工作区
+                - img "search" [ref=e101]:
+                  - img [ref=e102]
+              - generic [ref=e105]: 交付档案只会在当前选中的企业工作区内读取和修改，切换后会重新加载。
+          - alert [ref=e107]:
+            - img "info-circle" [ref=e109]:
+              - img [ref=e110]
+            - generic [ref=e112]:
+              - generic [ref=e113]: 请选择目标企业工作区后开始客户交付
+              - generic [ref=e114]: 平台管理员不会默认进入任何商家数据范围。
+          - generic [ref=e116]:
+            - generic [ref=e118]:
+              - generic [ref=e119]: 客户建档
+              - generic [ref=e121]:
+                - generic [ref=e123]: 完成全部交付项后，交付档案才会标记为已完成
+                - button "新建客户" [disabled] [ref=e125]:
+                  - generic: 新建客户
+            - generic [ref=e126]:
+              - alert [ref=e127]:
+                - img "info-circle" [ref=e129]:
+                  - img [ref=e130]
+                - generic [ref=e133]: 交付状态由各环节真实填写结果决定；未付款客户的系统接入、功能验收和培训入口保持阻断。
+              - generic [ref=e135]:
+                - img "暂无数据" [ref=e137]
+                - generic [ref=e148]: 暂无客户交付档案；请先创建客户档案
+```

@@ -1,0 +1,156 @@
+[
+  {
+    "type": "console",
+    "level": "debug",
+    "text": "[vite] connecting..."
+  },
+  {
+    "type": "console",
+    "level": "debug",
+    "text": "[vite] connected."
+  },
+  {
+    "type": "console",
+    "level": "info",
+    "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "requestfailed",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "error": "net::ERR_ABORTED"
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://127.0.0.1:18182/api/v1/ops/merchant-registration-applications",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://127.0.0.1:18182/api/v1/ops/merchant-registration-applications",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://127.0.0.1:18182/api/mcp",
+    "status": 200,
+    "body": ""
+  }
+]

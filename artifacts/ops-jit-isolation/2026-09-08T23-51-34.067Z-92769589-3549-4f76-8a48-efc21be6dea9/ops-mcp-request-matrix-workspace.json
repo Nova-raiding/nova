@@ -1,0 +1,2640 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "real_browser_mcp_workbench_scope_matrix",
+  "expectedWorkbench": "workspace",
+  "requestCount": 133,
+  "methods": [
+    "automation.policy.get",
+    "automation.policy.list",
+    "billing.model-usage.statement",
+    "canonical.product.consistency",
+    "knowledge.asset.list",
+    "knowledge.brand.preference.get",
+    "knowledge.competitor.list",
+    "knowledge.learning.list",
+    "knowledge.rule.list",
+    "ops.audit.list",
+    "ops.data.delete.list",
+    "ops.marketing.queue",
+    "ops.members.list",
+    "ops.session",
+    "rule.list",
+    "rule.sync.status",
+    "workspace.commercial.get",
+    "workspace.health",
+    "workspace.metrics"
+  ],
+  "countsByMethod": {
+    "automation.policy.get": 7,
+    "automation.policy.list": 7,
+    "billing.model-usage.statement": 8,
+    "canonical.product.consistency": 8,
+    "knowledge.asset.list": 8,
+    "knowledge.brand.preference.get": 7,
+    "knowledge.competitor.list": 7,
+    "knowledge.learning.list": 7,
+    "knowledge.rule.list": 8,
+    "ops.audit.list": 8,
+    "ops.data.delete.list": 8,
+    "ops.marketing.queue": 7,
+    "ops.members.list": 9,
+    "ops.session": 8,
+    "rule.list": 1,
+    "rule.sync.status": 1,
+    "workspace.commercial.get": 8,
+    "workspace.health": 8,
+    "workspace.metrics": 8
+  },
+  "requests": [
+    {
+      "at": "2026-09-08T23:52:28.682Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:28.748Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.commercial.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "COMMERCIAL_OPERATION_DISABLED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:28.748Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.audit.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:28.748Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.members.list",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:28.748Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "canonical.product.consistency",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "availability",
+        "blocking",
+        "contractStatus",
+        "contractVersion",
+        "counts",
+        "cutover",
+        "durable",
+        "findings",
+        "freshness",
+        "generatedAt",
+        "orphanFindings",
+        "readMode",
+        "readOnly",
+        "read_control",
+        "revision",
+        "source",
+        "status",
+        "unified_link_audit",
+        "workspaceId"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:28.807Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "billing.model-usage.statement",
+      "params": {
+        "limit": "50"
+      },
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:28.839Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.health",
+      "params": {},
+      "status": null,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": null
+    },
+    {
+      "at": "2026-09-08T23:52:28.840Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.data.delete.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:28.873Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.metrics",
+      "params": {},
+      "status": null,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": null
+    },
+    {
+      "at": "2026-09-08T23:52:28.879Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.rule.list",
+      "params": {},
+      "status": null,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": null
+    },
+    {
+      "at": "2026-09-08T23:52:28.909Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.asset.list",
+      "params": {},
+      "status": null,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": null
+    },
+    {
+      "at": "2026-09-08T23:52:29.008Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:29.071Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.commercial.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "COMMERCIAL_OPERATION_DISABLED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:29.071Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.audit.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:29.072Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.members.list",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:29.072Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "canonical.product.consistency",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "availability",
+        "blocking",
+        "contractStatus",
+        "contractVersion",
+        "counts",
+        "cutover",
+        "durable",
+        "findings",
+        "freshness",
+        "generatedAt",
+        "orphanFindings",
+        "readMode",
+        "readOnly",
+        "read_control",
+        "revision",
+        "source",
+        "status",
+        "unified_link_audit",
+        "workspaceId"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:29.160Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "billing.model-usage.statement",
+      "params": {
+        "limit": "50"
+      },
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:29.169Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.health",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "capabilityCards",
+        "capacity",
+        "commercial",
+        "connectorReadiness",
+        "connectors",
+        "mcp",
+        "onboarding_v2",
+        "persistence",
+        "platforms",
+        "plugin",
+        "ruleSync",
+        "rules",
+        "schemaVersion",
+        "setup",
+        "status",
+        "storeDirectory",
+        "storeSelection",
+        "workspace",
+        "writesEnabled"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:29.185Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.data.delete.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:29.204Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.metrics",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:29.235Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.rule.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:29.243Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.asset.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:29.274Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.brand.preference.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:29.282Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.learning.list",
+      "params": {
+        "status": "pending"
+      },
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:29.293Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.competitor.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:29.303Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.marketing.queue",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "assetRisks",
+        "batches",
+        "filters",
+        "generatedAt",
+        "generation",
+        "imageExecutions",
+        "learningSuggestions",
+        "publish",
+        "uploadedAssetRisks",
+        "visuals"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:29.335Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "automation.policy.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:29.337Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "automation.policy.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:31.997Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:32.052Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.commercial.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "COMMERCIAL_OPERATION_DISABLED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:32.052Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.audit.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:32.052Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.members.list",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:32.052Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "canonical.product.consistency",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "availability",
+        "blocking",
+        "contractStatus",
+        "contractVersion",
+        "counts",
+        "cutover",
+        "durable",
+        "findings",
+        "freshness",
+        "generatedAt",
+        "orphanFindings",
+        "readMode",
+        "readOnly",
+        "read_control",
+        "revision",
+        "source",
+        "status",
+        "unified_link_audit",
+        "workspaceId"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:32.099Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "billing.model-usage.statement",
+      "params": {
+        "limit": "50"
+      },
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:32.106Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.health",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "capabilityCards",
+        "capacity",
+        "commercial",
+        "connectorReadiness",
+        "connectors",
+        "mcp",
+        "onboarding_v2",
+        "persistence",
+        "platforms",
+        "plugin",
+        "ruleSync",
+        "rules",
+        "schemaVersion",
+        "setup",
+        "status",
+        "storeDirectory",
+        "storeSelection",
+        "workspace",
+        "writesEnabled"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:32.110Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.data.delete.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:32.127Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.metrics",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:32.146Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.rule.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:32.148Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.asset.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:32.165Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.brand.preference.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:32.171Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.learning.list",
+      "params": {
+        "status": "pending"
+      },
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:32.183Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.competitor.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:32.186Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.marketing.queue",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "assetRisks",
+        "batches",
+        "filters",
+        "generatedAt",
+        "generation",
+        "imageExecutions",
+        "learningSuggestions",
+        "publish",
+        "uploadedAssetRisks",
+        "visuals"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:32.207Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "automation.policy.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:32.209Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "automation.policy.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:32.285Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.members.list",
+      "params": {
+        "workspace_id": "ws_ops_fixture_bb46b45636fb44ae870dda99dd57f727"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:34.447Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:34.501Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.commercial.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "COMMERCIAL_OPERATION_DISABLED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:34.501Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.audit.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:34.501Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.members.list",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:34.501Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "canonical.product.consistency",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "availability",
+        "blocking",
+        "contractStatus",
+        "contractVersion",
+        "counts",
+        "cutover",
+        "durable",
+        "findings",
+        "freshness",
+        "generatedAt",
+        "orphanFindings",
+        "readMode",
+        "readOnly",
+        "read_control",
+        "revision",
+        "source",
+        "status",
+        "unified_link_audit",
+        "workspaceId"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:34.542Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "billing.model-usage.statement",
+      "params": {
+        "limit": "50"
+      },
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:34.547Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.health",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "capabilityCards",
+        "capacity",
+        "commercial",
+        "connectorReadiness",
+        "connectors",
+        "mcp",
+        "onboarding_v2",
+        "persistence",
+        "platforms",
+        "plugin",
+        "ruleSync",
+        "rules",
+        "schemaVersion",
+        "setup",
+        "status",
+        "storeDirectory",
+        "storeSelection",
+        "workspace",
+        "writesEnabled"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:34.549Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.data.delete.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:34.561Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.metrics",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:34.578Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.rule.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:34.582Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.asset.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:34.598Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.brand.preference.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:34.606Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.learning.list",
+      "params": {
+        "status": "pending"
+      },
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:34.618Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.competitor.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:34.619Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.marketing.queue",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "missing-result"
+    },
+    {
+      "at": "2026-09-08T23:52:34.633Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "automation.policy.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:34.642Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "automation.policy.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:36.658Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:36.721Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.commercial.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "COMMERCIAL_OPERATION_DISABLED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:36.721Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.audit.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:36.722Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.members.list",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:36.722Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "canonical.product.consistency",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "availability",
+        "blocking",
+        "contractStatus",
+        "contractVersion",
+        "counts",
+        "cutover",
+        "durable",
+        "findings",
+        "freshness",
+        "generatedAt",
+        "orphanFindings",
+        "readMode",
+        "readOnly",
+        "read_control",
+        "revision",
+        "source",
+        "status",
+        "unified_link_audit",
+        "workspaceId"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:36.759Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "billing.model-usage.statement",
+      "params": {
+        "limit": "50"
+      },
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:36.768Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.health",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "capabilityCards",
+        "capacity",
+        "commercial",
+        "connectorReadiness",
+        "connectors",
+        "mcp",
+        "onboarding_v2",
+        "persistence",
+        "platforms",
+        "plugin",
+        "ruleSync",
+        "rules",
+        "schemaVersion",
+        "setup",
+        "status",
+        "storeDirectory",
+        "storeSelection",
+        "workspace",
+        "writesEnabled"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:36.772Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.data.delete.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:36.780Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.metrics",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:36.799Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.rule.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:36.809Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.asset.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:36.816Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.brand.preference.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:36.822Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.learning.list",
+      "params": {
+        "status": "pending"
+      },
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:36.833Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.competitor.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:36.843Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.marketing.queue",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "assetRisks",
+        "batches",
+        "filters",
+        "generatedAt",
+        "generation",
+        "imageExecutions",
+        "learningSuggestions",
+        "publish",
+        "uploadedAssetRisks",
+        "visuals"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:36.848Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "automation.policy.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:36.857Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "automation.policy.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:38.850Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:38.893Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.commercial.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "COMMERCIAL_OPERATION_DISABLED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:38.893Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.audit.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:38.893Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.members.list",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:38.893Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "canonical.product.consistency",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "availability",
+        "blocking",
+        "contractStatus",
+        "contractVersion",
+        "counts",
+        "cutover",
+        "durable",
+        "findings",
+        "freshness",
+        "generatedAt",
+        "orphanFindings",
+        "readMode",
+        "readOnly",
+        "read_control",
+        "revision",
+        "source",
+        "status",
+        "unified_link_audit",
+        "workspaceId"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:38.947Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "billing.model-usage.statement",
+      "params": {
+        "limit": "50"
+      },
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:38.955Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.health",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "capabilityCards",
+        "capacity",
+        "commercial",
+        "connectorReadiness",
+        "connectors",
+        "mcp",
+        "onboarding_v2",
+        "persistence",
+        "platforms",
+        "plugin",
+        "ruleSync",
+        "rules",
+        "schemaVersion",
+        "setup",
+        "status",
+        "storeDirectory",
+        "storeSelection",
+        "workspace",
+        "writesEnabled"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:38.959Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.data.delete.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:38.967Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.metrics",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:38.989Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.rule.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:38.990Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.asset.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:39.000Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.brand.preference.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:39.019Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.learning.list",
+      "params": {
+        "status": "pending"
+      },
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:39.031Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.competitor.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:39.036Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.marketing.queue",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "assetRisks",
+        "batches",
+        "filters",
+        "generatedAt",
+        "generation",
+        "imageExecutions",
+        "learningSuggestions",
+        "publish",
+        "uploadedAssetRisks",
+        "visuals"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:39.042Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "automation.policy.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:39.060Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "automation.policy.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:41.322Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:41.362Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.commercial.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "COMMERCIAL_OPERATION_DISABLED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:41.362Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.audit.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:41.362Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.members.list",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:41.362Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "canonical.product.consistency",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "availability",
+        "blocking",
+        "contractStatus",
+        "contractVersion",
+        "counts",
+        "cutover",
+        "durable",
+        "findings",
+        "freshness",
+        "generatedAt",
+        "orphanFindings",
+        "readMode",
+        "readOnly",
+        "read_control",
+        "revision",
+        "source",
+        "status",
+        "unified_link_audit",
+        "workspaceId"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:41.414Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "billing.model-usage.statement",
+      "params": {
+        "limit": "50"
+      },
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:41.421Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.health",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "capabilityCards",
+        "capacity",
+        "commercial",
+        "connectorReadiness",
+        "connectors",
+        "mcp",
+        "onboarding_v2",
+        "persistence",
+        "platforms",
+        "plugin",
+        "ruleSync",
+        "rules",
+        "schemaVersion",
+        "setup",
+        "status",
+        "storeDirectory",
+        "storeSelection",
+        "workspace",
+        "writesEnabled"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:41.424Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.data.delete.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:41.437Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.metrics",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:41.455Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.rule.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:41.462Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.asset.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:41.476Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.brand.preference.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:41.482Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.learning.list",
+      "params": {
+        "status": "pending"
+      },
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:41.497Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.competitor.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:41.498Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.marketing.queue",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "assetRisks",
+        "batches",
+        "filters",
+        "generatedAt",
+        "generation",
+        "imageExecutions",
+        "learningSuggestions",
+        "publish",
+        "uploadedAssetRisks",
+        "visuals"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:41.520Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "automation.policy.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:41.521Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "automation.policy.list",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:43.769Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.session",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "actor_id",
+        "assignable_roles",
+        "authorization_revision",
+        "available_workbenches",
+        "canonical_roles",
+        "capabilities",
+        "context",
+        "context_id",
+        "context_version",
+        "denied_capabilities",
+        "effective_permissions",
+        "identity_id",
+        "identity_status",
+        "mfa_verified",
+        "policy_version",
+        "risk_decision",
+        "roles",
+        "schema_version",
+        "scopes",
+        "session_expires_at",
+        "session_id",
+        "temporary_grants",
+        "workbench",
+        "workspace_granted",
+        "workspace_id"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:43.808Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.commercial.get",
+      "params": {},
+      "status": 503,
+      "errorCode": "COMMERCIAL_OPERATION_DISABLED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:43.808Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.audit.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "records",
+        "totalRecords",
+        "truncated"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:43.808Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.members.list",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": null,
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:43.808Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "canonical.product.consistency",
+      "params": {},
+      "status": 200,
+      "errorCode": null,
+      "resultKeys": [
+        "availability",
+        "blocking",
+        "contractStatus",
+        "contractVersion",
+        "counts",
+        "cutover",
+        "durable",
+        "findings",
+        "freshness",
+        "generatedAt",
+        "orphanFindings",
+        "readMode",
+        "readOnly",
+        "read_control",
+        "revision",
+        "source",
+        "status",
+        "unified_link_audit",
+        "workspaceId"
+      ],
+      "responseShape": "result"
+    },
+    {
+      "at": "2026-09-08T23:52:43.816Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "rule.list",
+      "params": {},
+      "status": 429,
+      "errorCode": "RATE_LIMITED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:43.816Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "rule.sync.status",
+      "params": {},
+      "status": 503,
+      "errorCode": "CREATIVE_POINTS_UNAVAILABLE",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:43.893Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "billing.model-usage.statement",
+      "params": {
+        "limit": "50"
+      },
+      "status": 429,
+      "errorCode": "RATE_LIMITED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:43.900Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.health",
+      "params": {},
+      "status": 429,
+      "errorCode": "RATE_LIMITED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:43.906Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.data.delete.list",
+      "params": {
+        "limit": "50"
+      },
+      "status": 429,
+      "errorCode": "RATE_LIMITED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:43.966Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "workspace.metrics",
+      "params": {},
+      "status": 429,
+      "errorCode": "RATE_LIMITED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:43.967Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.rule.list",
+      "params": {},
+      "status": 429,
+      "errorCode": "RATE_LIMITED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:43.967Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.asset.list",
+      "params": {},
+      "status": 429,
+      "errorCode": "RATE_LIMITED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:43.968Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.brand.preference.get",
+      "params": {},
+      "status": 429,
+      "errorCode": "RATE_LIMITED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:43.997Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.learning.list",
+      "params": {
+        "status": "pending"
+      },
+      "status": 429,
+      "errorCode": "RATE_LIMITED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:43.999Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "knowledge.competitor.list",
+      "params": {},
+      "status": 429,
+      "errorCode": "RATE_LIMITED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:44.002Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "ops.marketing.queue",
+      "params": {
+        "limit": "50"
+      },
+      "status": 429,
+      "errorCode": "RATE_LIMITED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:44.008Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "automation.policy.get",
+      "params": {},
+      "status": 429,
+      "errorCode": "RATE_LIMITED",
+      "resultKeys": null,
+      "responseShape": "error"
+    },
+    {
+      "at": "2026-09-08T23:52:44.036Z",
+      "workbench": "workspace",
+      "hasWorkspaceHeader": true,
+      "method": "automation.policy.list",
+      "params": {},
+      "status": 429,
+      "errorCode": "RATE_LIMITED",
+      "resultKeys": null,
+      "responseShape": "error"
+    }
+  ],
+  "violations": [
+    {
+      "method": "workspace.commercial.get",
+      "errors": [
+        "error=COMMERCIAL_OPERATION_DISABLED"
+      ]
+    },
+    {
+      "method": "billing.model-usage.statement",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "workspace.commercial.get",
+      "errors": [
+        "error=COMMERCIAL_OPERATION_DISABLED"
+      ]
+    },
+    {
+      "method": "billing.model-usage.statement",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "workspace.metrics",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.rule.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.asset.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.brand.preference.get",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.learning.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.competitor.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "automation.policy.get",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "automation.policy.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "workspace.commercial.get",
+      "errors": [
+        "error=COMMERCIAL_OPERATION_DISABLED"
+      ]
+    },
+    {
+      "method": "billing.model-usage.statement",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "workspace.metrics",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.rule.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.asset.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.brand.preference.get",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.learning.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.competitor.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "automation.policy.get",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "automation.policy.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "workspace.commercial.get",
+      "errors": [
+        "error=COMMERCIAL_OPERATION_DISABLED"
+      ]
+    },
+    {
+      "method": "billing.model-usage.statement",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "workspace.metrics",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.rule.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.asset.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.brand.preference.get",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.learning.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.competitor.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "ops.marketing.queue",
+      "errors": [
+        "successful response missing result"
+      ]
+    },
+    {
+      "method": "automation.policy.get",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "automation.policy.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "workspace.commercial.get",
+      "errors": [
+        "error=COMMERCIAL_OPERATION_DISABLED"
+      ]
+    },
+    {
+      "method": "billing.model-usage.statement",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "workspace.metrics",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.rule.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.asset.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.brand.preference.get",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.learning.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.competitor.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "automation.policy.get",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "automation.policy.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "workspace.commercial.get",
+      "errors": [
+        "error=COMMERCIAL_OPERATION_DISABLED"
+      ]
+    },
+    {
+      "method": "billing.model-usage.statement",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "workspace.metrics",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.rule.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.asset.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.brand.preference.get",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.learning.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.competitor.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "automation.policy.get",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "automation.policy.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "workspace.commercial.get",
+      "errors": [
+        "error=COMMERCIAL_OPERATION_DISABLED"
+      ]
+    },
+    {
+      "method": "billing.model-usage.statement",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "workspace.metrics",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.rule.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.asset.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.brand.preference.get",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.learning.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "knowledge.competitor.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "automation.policy.get",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "automation.policy.list",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "workspace.commercial.get",
+      "errors": [
+        "error=COMMERCIAL_OPERATION_DISABLED"
+      ]
+    },
+    {
+      "method": "rule.list",
+      "errors": [
+        "error=RATE_LIMITED"
+      ]
+    },
+    {
+      "method": "rule.sync.status",
+      "errors": [
+        "error=CREATIVE_POINTS_UNAVAILABLE"
+      ]
+    },
+    {
+      "method": "billing.model-usage.statement",
+      "errors": [
+        "error=RATE_LIMITED"
+      ]
+    },
+    {
+      "method": "workspace.health",
+      "errors": [
+        "error=RATE_LIMITED"
+      ]
+    },
+    {
+      "method": "ops.data.delete.list",
+      "errors": [
+        "error=RATE_LIMITED"
+      ]
+    },
+    {
+      "method": "workspace.metrics",
+      "errors": [
+        "error=RATE_LIMITED"
+      ]
+    },
+    {
+      "method": "knowledge.rule.list",
+      "errors": [
+        "error=RATE_LIMITED"
+      ]
+    },
+    {
+      "method": "knowledge.asset.list",
+      "errors": [
+        "error=RATE_LIMITED"
+      ]
+    },
+    {
+      "method": "knowledge.brand.preference.get",
+      "errors": [
+        "error=RATE_LIMITED"
+      ]
+    },
+    {
+      "method": "knowledge.learning.list",
+      "errors": [
+        "error=RATE_LIMITED"
+      ]
+    },
+    {
+      "method": "knowledge.competitor.list",
+      "errors": [
+        "error=RATE_LIMITED"
+      ]
+    },
+    {
+      "method": "ops.marketing.queue",
+      "errors": [
+        "error=RATE_LIMITED"
+      ]
+    },
+    {
+      "method": "automation.policy.get",
+      "errors": [
+        "error=RATE_LIMITED"
+      ]
+    },
+    {
+      "method": "automation.policy.list",
+      "errors": [
+        "error=RATE_LIMITED"
+      ]
+    }
+  ],
+  "capturedHeaders": [
+    "x-ops-workbench",
+    "x-workspace-id presence only"
+  ]
+}

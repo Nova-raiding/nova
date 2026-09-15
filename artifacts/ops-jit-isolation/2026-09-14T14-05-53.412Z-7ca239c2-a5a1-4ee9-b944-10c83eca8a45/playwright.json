@@ -1,0 +1,157 @@
+{
+  "config": {
+    "rootDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-05-53.412Z-7ca239c2-a5a1-4ee9-b944-10c83eca8a45/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-delivery-owner-acceptance.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-delivery-owner-acceptance.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "isolated customer delivery end-to-end fields, gates, checklists and scanned assets",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 600000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 5673,
+                  "error": {
+                    "message": "Error: ops.customer-delivery.update status\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m200\u001b[39m\nReceived: \u001b[31m500\u001b[39m",
+                    "stack": "Error: ops.customer-delivery.update status\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m200\u001b[39m\nReceived: \u001b[31m500\u001b[39m\n    at rpcAfter (/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-owner-acceptance.spec.js:181:49)\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-owner-acceptance.spec.js:594:5",
+                    "location": {
+                      "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-owner-acceptance.spec.js",
+                      "column": 49,
+                      "line": 181
+                    },
+                    "snippet": "  179 |   const result = body?.result ?? body?.data?.result\n  180 |   evidence.events.push({ event: 'rpc', method, rpc_id: payload.id, status: response.status(), request: safeParams(payload?.params), error_code: error?.code ?? null, response_body_unavailable: false, response_capture: 'original_fetch_clone' })\n> 181 |   expect(response.status(), method + ' status').toBe(expectedStatus)\n      |                                                 ^\n  182 |   if (expectedStatus === 200) expect(error, method + ' RPC error').toBeFalsy()\n  183 |   return { payload, body, error, result }\n  184 | }"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-owner-acceptance.spec.js",
+                        "column": 49,
+                        "line": 181
+                      },
+                      "message": "Error: ops.customer-delivery.update status\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m200\u001b[39m\nReceived: \u001b[31m500\u001b[39m\n\n  179 |   const result = body?.result ?? body?.data?.result\n  180 |   evidence.events.push({ event: 'rpc', method, rpc_id: payload.id, status: response.status(), request: safeParams(payload?.params), error_code: error?.code ?? null, response_body_unavailable: false, response_capture: 'original_fetch_clone' })\n> 181 |   expect(response.status(), method + ' status').toBe(expectedStatus)\n      |                                                 ^\n  182 |   if (expectedStatus === 200) expect(error, method + ' RPC error').toBeFalsy()\n  183 |   return { payload, body, error, result }\n  184 | }\n    at rpcAfter (/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-owner-acceptance.spec.js:181:49)\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-owner-acceptance.spec.js:594:5"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-14T14:07:41.638Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "customer-created",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-05-53.412Z-7ca239c2-a5a1-4ee9-b944-10c83eca8a45/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/attachments/customer-created-f3ebdd6ac5f23a74774b06c37fb6ee22ef8cd2a4.png"
+                    },
+                    {
+                      "name": "missing-contract-rejected",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-05-53.412Z-7ca239c2-a5a1-4ee9-b944-10c83eca8a45/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/attachments/missing-contract-rejected-0937298ea41a2f99735c42d0de08049f88255441.png"
+                    },
+                    {
+                      "name": "real-contract-scan-ready",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-05-53.412Z-7ca239c2-a5a1-4ee9-b944-10c83eca8a45/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/attachments/real-contract-scan-ready-b3aed357ab5798661ad893b486cd8e09443d2a02.png"
+                    },
+                    {
+                      "name": "failure-masked",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-05-53.412Z-7ca239c2-a5a1-4ee9-b944-10c83eca8a45/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/attachments/failure-masked-1107895287bfd3851ab32dbb08b90213ec9c5d1c.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-05-53.412Z-7ca239c2-a5a1-4ee9-b944-10c83eca8a45/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-owner-acceptance.spec.js",
+                    "column": 49,
+                    "line": 181
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "8ae7c2d587a11be0bfc8-c5c11c2c3b2b3065053d",
+          "file": "dogfood/chatgpt-all-functions/ops-delivery-owner-acceptance.spec.js",
+          "line": 523,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-14T14:07:39.032Z",
+    "duration": 9070.014,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

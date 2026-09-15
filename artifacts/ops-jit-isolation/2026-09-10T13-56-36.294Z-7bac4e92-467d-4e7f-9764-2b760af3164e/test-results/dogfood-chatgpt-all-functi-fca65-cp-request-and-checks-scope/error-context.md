@@ -1,0 +1,439 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营与商家服务
+      - generic [ref=e14]: 平台运营控制面
+      - navigation "平台运营功能导航" [ref=e15]:
+        - region "平台治理" [ref=e16]:
+          - heading "平台治理" [level=2] [ref=e17]
+          - button "总览" [ref=e18] [cursor=pointer]:
+            - img "dashboard" [ref=e19] [cursor=pointer]:
+              - img [ref=e20] [cursor=pointer]
+            - text: 总览
+          - button "用户中心" [ref=e22] [cursor=pointer]:
+            - img "team" [ref=e23] [cursor=pointer]:
+              - img [ref=e24] [cursor=pointer]
+            - text: 用户中心
+        - region "模型与计费" [ref=e26]:
+          - heading "模型与计费" [level=2] [ref=e27]
+          - button "模型服务" [ref=e28] [cursor=pointer]:
+            - img "robot" [ref=e29] [cursor=pointer]:
+              - img [ref=e30] [cursor=pointer]
+            - text: 模型服务
+          - button "账务与退款" [ref=e32] [cursor=pointer]:
+            - img "dollar" [ref=e33] [cursor=pointer]:
+              - img [ref=e34] [cursor=pointer]
+            - text: 账务与退款
+  - generic [ref=e36]:
+    - banner [ref=e37]:
+      - generic [ref=e38]:
+        - heading "商业与平台控制台" [level=2] [ref=e39]
+        - region "当前身份与权限范围" [ref=e40]:
+          - generic [ref=e41]:
+            - img [ref=e43]:
+              - img [ref=e44]
+            - strong [ref=e48]: 平台管理员
+            - status [ref=e50]: 授权状态：已由服务端验证
+            - button "展开其余 1 个已验证角色" [ref=e53] [cursor=pointer]:
+              - generic [ref=e54] [cursor=pointer]: +1 个角色
+            - generic [ref=e56]: 平台全局
+            - generic [ref=e58]: 策略 2026-09-08.v1
+          - status [ref=e59]: 平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。
+      - generic [ref=e61]:
+        - generic [ref=e62]:
+          - generic [ref=e63]: 当前状态
+          - status [ref=e64]: 已登录
+        - button "打开账号信息" [ref=e65] [cursor=pointer]:
+          - generic [ref=e66] [cursor=pointer]: o
+          - generic [ref=e67] [cursor=pointer]:
+            - strong [ref=e68] [cursor=pointer]: ops-fixture-actor-1c78ad53-38ce-4406-8e95-1e88e0b6ff21
+            - generic [ref=e69] [cursor=pointer]: 平台运营
+          - img [ref=e70] [cursor=pointer]:
+            - img [ref=e71] [cursor=pointer]
+    - main [ref=e73]:
+      - status [ref=e74]
+      - region "平台财务中心" [active] [ref=e75]:
+        - generic [ref=e76]:
+          - generic [ref=e79]:
+            - generic [ref=e81]: 平台工作台
+            - button "reload 刷新平台账务" [ref=e83] [cursor=pointer]:
+              - img "reload" [ref=e85] [cursor=pointer]:
+                - img [ref=e86] [cursor=pointer]
+              - generic [ref=e88] [cursor=pointer]: 刷新平台账务
+          - generic [ref=e90]:
+            - region "平台账务概览" [ref=e91]:
+              - generic [ref=e92]:
+                - generic [ref=e93]:
+                  - generic [ref=e94]: PLATFORM FINANCE
+                  - heading "平台账务概览" [level=3] [ref=e95]
+                  - generic [ref=e96]: 按平台全局范围查看商家订单、钱包流水和模型成本证据。
+                - generic [ref=e97]: 汇总已读取
+              - generic [ref=e98]:
+                - generic [ref=e101]:
+                  - generic [ref=e102]:
+                    - generic [ref=e104]: 财务记录
+                    - generic [ref=e105]:
+                      - img "transaction" [ref=e107]:
+                        - img [ref=e108]
+                      - generic [ref=e111]: "0"
+                  - generic [ref=e112]: 当前平台检索范围内的记录数
+                - generic [ref=e115]:
+                  - generic [ref=e116]:
+                    - generic [ref=e118]: 充值订单
+                    - generic [ref=e119]:
+                      - img "dollar" [ref=e121]:
+                        - img [ref=e122]
+                      - generic [ref=e124]:
+                        - generic [ref=e125]: "0"
+                        - generic [ref=e126]: ".00"
+                      - generic [ref=e127]: 元
+                  - generic [ref=e128]: 已纳入平台财务汇总的充值金额
+                - generic [ref=e131]:
+                  - generic [ref=e132]:
+                    - generic [ref=e134]: 客户计费
+                    - generic [ref=e135]:
+                      - img "dollar" [ref=e137]:
+                        - img [ref=e138]
+                      - generic [ref=e140]:
+                        - generic [ref=e141]: "0"
+                        - generic [ref=e142]: ".000000"
+                      - generic [ref=e143]: 元
+                  - generic [ref=e144]: 模型用量对应的客户计费快照
+                - generic [ref=e147]:
+                  - generic [ref=e148]:
+                    - generic [ref=e150]: 成本证据
+                    - generic [ref=e151]:
+                      - img "safety-certificate" [ref=e153]:
+                        - img [ref=e154]
+                      - generic [ref=e156]: 已核验
+                  - generic [ref=e157]: 平台成本证据状态
+            - generic [ref=e158]:
+              - generic [ref=e160]:
+                - generic [ref=e161]: 跨工作区财务检索
+                - generic [ref=e163]:
+                  - button "刷新财务检索结果" [ref=e165] [cursor=pointer]:
+                    - img "reload" [ref=e167] [cursor=pointer]:
+                      - img [ref=e168] [cursor=pointer]
+                    - generic [ref=e170] [cursor=pointer]: 刷新
+                  - button "download 导出当前筛选" [disabled] [ref=e172]:
+                    - generic:
+                      - img "download":
+                        - img
+                    - generic: 导出当前筛选
+              - generic [ref=e173]:
+                - form "财务检索筛选" [ref=e174]:
+                  - generic [ref=e175]:
+                    - textbox "关键词" [ref=e185]
+                    - textbox "工作区" [ref=e196]
+                    - generic [ref=e206]:
+                      - combobox "记录类型" [ref=e209]
+                      - img "down" [ref=e211]:
+                        - img [ref=e212]
+                    - generic [ref=e222]:
+                      - generic [ref=e223]:
+                        - generic:
+                          - generic: 输入状态后回车，可多选
+                        - combobox "状态" [ref=e225]
+                      - img "down" [ref=e227]:
+                        - img [ref=e228]
+                    - button "search 检索" [ref=e238] [cursor=pointer]:
+                      - img "search" [ref=e240] [cursor=pointer]:
+                        - img [ref=e241] [cursor=pointer]
+                      - generic [ref=e243] [cursor=pointer]: 检索
+                - generic "财务检索汇总" [ref=e244]:
+                  - generic [ref=e246]:
+                    - generic [ref=e248]: 记录数
+                    - generic [ref=e251]: "0"
+                  - generic [ref=e253]:
+                    - generic [ref=e255]: 充值订单
+                    - generic [ref=e256]:
+                      - generic [ref=e257]: ¥
+                      - generic [ref=e258]:
+                        - generic [ref=e259]: "0"
+                        - generic [ref=e260]: ".00"
+                  - generic [ref=e262]:
+                    - generic [ref=e264]: 订阅订单
+                    - generic [ref=e265]:
+                      - generic [ref=e266]: ¥
+                      - generic [ref=e267]:
+                        - generic [ref=e268]: "0"
+                        - generic [ref=e269]: ".00"
+                  - generic [ref=e271]:
+                    - generic [ref=e273]: 钱包净额
+                    - generic [ref=e274]:
+                      - generic [ref=e275]: ¥
+                      - generic [ref=e276]:
+                        - generic [ref=e277]: "0"
+                        - generic [ref=e278]: ".00"
+                  - generic [ref=e280]:
+                    - generic [ref=e282]: 本地成本快照
+                    - generic [ref=e283]:
+                      - generic [ref=e284]: ¥
+                      - generic [ref=e285]:
+                        - generic [ref=e286]: "0"
+                        - generic [ref=e287]: ".000000"
+                  - generic [ref=e289]:
+                    - generic [ref=e291]: 客户计费
+                    - generic [ref=e292]:
+                      - generic [ref=e293]: ¥
+                      - generic [ref=e294]:
+                        - generic [ref=e295]: "0"
+                        - generic [ref=e296]: ".000000"
+                - generic [ref=e297]: 已加载 0 条财务记录
+                - table [ref=e304]:
+                  - rowgroup [ref=e316]:
+                    - row "类型 工作区 记录号 状态 业务引用 金额 本地成本快照 客户计费 发生时间 操作" [ref=e317]:
+                      - columnheader "类型" [ref=e318]
+                      - columnheader "工作区" [ref=e319]
+                      - columnheader "记录号" [ref=e320]
+                      - columnheader "状态" [ref=e321]
+                      - columnheader "业务引用" [ref=e322]
+                      - columnheader "金额" [ref=e323]
+                      - columnheader "本地成本快照" [ref=e324]
+                      - columnheader "客户计费" [ref=e325]
+                      - columnheader "发生时间" [ref=e326]
+                      - columnheader "操作" [ref=e327]
+                  - rowgroup [ref=e328]:
+                    - row "当前筛选条件下没有财务记录" [ref=e329]:
+                      - cell "当前筛选条件下没有财务记录" [ref=e330]:
+                        - generic [ref=e331]: 当前筛选条件下没有财务记录
+            - generic [ref=e332]:
+              - generic [ref=e334]:
+                - generic [ref=e335]: 商业化开通准备
+                - button "reload 刷新" [ref=e337] [cursor=pointer]:
+                  - img "reload" [ref=e339] [cursor=pointer]:
+                    - img [ref=e340] [cursor=pointer]
+                  - generic [ref=e342] [cursor=pointer]: 刷新
+              - generic [ref=e343]:
+                - alert [ref=e344]:
+                  - img "exclamation-circle" [ref=e346]:
+                    - img [ref=e347]
+                  - generic [ref=e349]:
+                    - generic [ref=e350]: BLOCKED · 商业化开通仍被阻断
+                    - generic [ref=e351]: 商业生产能力仍被门禁阻断；报告只读，不会修改费率、余额、注册表或执行状态。
+                - table [ref=e354]:
+                  - rowgroup [ref=e355]:
+                    - 'row "环境 : non_production 全局阻断项 : 7 报告时间 : 9/10/2026, 9:56:55 PM" [ref=e356]':
+                      - 'cell "环境 : non_production" [ref=e357]':
+                        - generic [ref=e358]:
+                          - generic [ref=e359]: "环境 :"
+                          - generic [ref=e361]: non_production
+                      - 'cell "全局阻断项 : 7" [ref=e362]':
+                        - generic [ref=e363]:
+                          - generic [ref=e364]: "全局阻断项 :"
+                          - generic [ref=e365]: "7"
+                      - 'cell "报告时间 : 9/10/2026, 9:56:55 PM" [ref=e366]':
+                        - generic [ref=e367]:
+                          - generic [ref=e368]: "报告时间 :"
+                          - generic [ref=e369]: 9/10/2026, 9:56:55 PM
+                - generic [ref=e370]:
+                  - generic [ref=e372]:
+                    - generic [ref=e376]:
+                      - generic [ref=e378]: 可执行 SKU
+                      - generic [ref=e380]: 1 项阻断
+                    - list [ref=e385]:
+                      - listitem [ref=e386]:
+                        - generic [ref=e388]:
+                          - heading "已配置 5000 元正式开通" [level=4] [ref=e389]:
+                            - generic [ref=e390]:
+                              - generic [ref=e392]: 已配置
+                              - generic [ref=e394]: 5000 元正式开通
+                          - generic [ref=e396]: 已返回可执行证据
+                      - listitem [ref=e397]:
+                        - generic [ref=e399]:
+                          - heading "已配置 1999 元 / 7 天试用" [level=4] [ref=e400]:
+                            - generic [ref=e401]:
+                              - generic [ref=e403]: 已配置
+                              - generic [ref=e405]: 1999 元 / 7 天试用
+                          - generic [ref=e407]: 已返回可执行证据
+                      - listitem [ref=e408]:
+                        - generic [ref=e410]:
+                          - heading "已配置 基础版 2000 元 / 月" [level=4] [ref=e411]:
+                            - generic [ref=e412]:
+                              - generic [ref=e414]: 已配置
+                              - generic [ref=e416]: 基础版 2000 元 / 月
+                          - generic [ref=e418]: 已返回可执行证据
+                      - listitem [ref=e419]:
+                        - generic [ref=e421]:
+                          - heading "已配置 成长版 5000 元 / 月" [level=4] [ref=e422]:
+                            - generic [ref=e423]:
+                              - generic [ref=e425]: 已配置
+                              - generic [ref=e427]: 成长版 5000 元 / 月
+                          - generic [ref=e429]: 已返回可执行证据
+                      - listitem [ref=e430]:
+                        - generic [ref=e432]:
+                          - heading "阻断 定制版 10000 元起 / 月" [level=4] [ref=e433]:
+                            - generic [ref=e434]:
+                              - generic [ref=e436]: 阻断
+                              - generic [ref=e438]: 定制版 10000 元起 / 月
+                          - generic [ref=e440]: ORDER_TERMS_REQUIRED
+                      - listitem [ref=e441]:
+                        - generic [ref=e443]:
+                          - heading "已配置 500 创意点 / 300 元" [level=4] [ref=e444]:
+                            - generic [ref=e445]:
+                              - generic [ref=e447]: 已配置
+                              - generic [ref=e449]: 500 创意点 / 300 元
+                          - generic [ref=e451]: 已返回可执行证据
+                      - listitem [ref=e452]:
+                        - generic [ref=e454]:
+                          - heading "已配置 2000 创意点 / 1000 元" [level=4] [ref=e455]:
+                            - generic [ref=e456]:
+                              - generic [ref=e458]: 已配置
+                              - generic [ref=e460]: 2000 创意点 / 1000 元
+                          - generic [ref=e462]: 已返回可执行证据
+                  - generic [ref=e464]:
+                    - generic [ref=e468]:
+                      - generic [ref=e470]: 方案规则
+                      - generic [ref=e472]: 1 项阻断
+                    - list [ref=e477]:
+                      - listitem [ref=e478]:
+                        - generic [ref=e480]:
+                          - heading "已配置 试用抵扣正式开通费" [level=4] [ref=e481]:
+                            - generic [ref=e482]:
+                              - generic [ref=e484]: 已配置
+                              - generic [ref=e486]: 试用抵扣正式开通费
+                          - generic [ref=e488]: 已返回配置证据
+                      - listitem [ref=e489]:
+                        - generic [ref=e491]:
+                          - heading "已配置 5000 元方案点数发放" [level=4] [ref=e492]:
+                            - generic [ref=e493]:
+                              - generic [ref=e495]: 已配置
+                              - generic [ref=e497]: 5000 元方案点数发放
+                          - generic [ref=e499]: 已返回配置证据
+                      - listitem [ref=e500]:
+                        - generic [ref=e502]:
+                          - heading "已配置 点数次月到期 / 6 个月后停止赠送" [level=4] [ref=e503]:
+                            - generic [ref=e504]:
+                              - generic [ref=e506]: 已配置
+                              - generic [ref=e508]: 点数次月到期 / 6 个月后停止赠送
+                          - generic [ref=e510]: 已返回配置证据
+                      - listitem [ref=e511]:
+                        - generic [ref=e513]:
+                          - heading "阻断 退款规则" [level=4] [ref=e514]:
+                            - generic [ref=e515]:
+                              - generic [ref=e517]: 阻断
+                              - generic [ref=e519]: 退款规则
+                          - generic [ref=e521]: COMMERCIAL_REFUND_POLICY_APPROVAL_REQUIRED
+                      - listitem [ref=e522]:
+                        - generic [ref=e524]:
+                          - heading "已配置 到期停服与权益关闭" [level=4] [ref=e525]:
+                            - generic [ref=e526]:
+                              - generic [ref=e528]: 已配置
+                              - generic [ref=e530]: 到期停服与权益关闭
+                          - generic [ref=e532]: 已返回配置证据
+                      - listitem [ref=e533]:
+                        - generic [ref=e535]:
+                          - heading "已配置 计费操作注册表" [level=4] [ref=e536]:
+                            - generic [ref=e537]:
+                              - generic [ref=e539]: 已配置
+                              - generic [ref=e541]: 计费操作注册表
+                          - generic [ref=e543]: 9 个计费操作已启用
+                - generic [ref=e544]:
+                  - generic [ref=e547]: 已返回的创意点能力费率
+                  - generic [ref=e549]:
+                    - generic [ref=e551]:
+                      - generic [ref=e554]: 标准图片
+                      - generic [ref=e555]:
+                        - generic [ref=e556]: 已配置
+                        - generic [ref=e557]: 已返回可执行费率
+                    - generic [ref=e559]:
+                      - generic [ref=e562]: 图片标注 / 编辑
+                      - generic [ref=e563]:
+                        - generic [ref=e564]: 已配置
+                        - generic [ref=e565]: 已返回可执行费率
+                    - generic [ref=e567]:
+                      - generic [ref=e570]: 15 秒视频
+                      - generic [ref=e571]:
+                        - generic [ref=e572]: 已配置
+                        - generic [ref=e573]: 已返回可执行费率
+                    - generic [ref=e575]:
+                      - generic [ref=e578]: 文本生成
+                      - generic [ref=e579]:
+                        - generic [ref=e580]: 已配置
+                        - generic [ref=e581]: 已返回可执行费率
+                - generic [ref=e582]:
+                  - generic [ref=e585]: 底层结算证据
+                  - table [ref=e589]:
+                    - rowgroup [ref=e590]:
+                      - 'row "点数账本 : 已配置 预占与结算 : 已配置 可审计结算 : 已配置" [ref=e591]':
+                        - 'cell "点数账本 : 已配置" [ref=e592]':
+                          - generic [ref=e593]:
+                            - generic [ref=e594]: "点数账本 :"
+                            - generic [ref=e596]: 已配置
+                        - 'cell "预占与结算 : 已配置" [ref=e597]':
+                          - generic [ref=e598]:
+                            - generic [ref=e599]: "预占与结算 :"
+                            - generic [ref=e601]: 已配置
+                        - 'cell "可审计结算 : 已配置" [ref=e602]':
+                          - generic [ref=e603]:
+                            - generic [ref=e604]: "可审计结算 :"
+                            - generic [ref=e606]: 已配置
+                - generic [ref=e607]:
+                  - strong [ref=e610]: 需要处理的全局阻断项
+                  - list [ref=e613]:
+                    - listitem [ref=e614]:
+                      - generic [ref=e616]:
+                        - heading "catalog.monthly_custom COMMERCIAL_SKU_NOT_EXECUTABLE" [level=4] [ref=e617]:
+                          - generic [ref=e618]: catalog.monthly_custom
+                          - code [ref=e620]: COMMERCIAL_SKU_NOT_EXECUTABLE
+                        - generic [ref=e621]:
+                          - generic [ref=e622]: 商业 SKU monthly_custom 尚未返回可执行证据
+                          - generic [ref=e623]: 下一步：完成目录审批、有效期、权益和订单快照校验后重新检查
+                    - listitem [ref=e624]:
+                      - generic [ref=e626]:
+                        - heading "policy.refund COMMERCIAL_REFUND_POLICY_APPROVAL_REQUIRED" [level=4] [ref=e627]:
+                          - generic [ref=e628]: policy.refund
+                          - code [ref=e630]: COMMERCIAL_REFUND_POLICY_APPROVAL_REQUIRED
+                        - generic [ref=e631]:
+                          - generic [ref=e632]: 商业订单退款已具备不可变申请、审批、外部退款凭证和点数回滚流水，但仍需法律审核后的政策证据才能执行
+                          - generic [ref=e633]: 下一步：由财务/法务审批退款政策，并在每笔退款审批时提交 policy_approval 证据
+                    - listitem [ref=e634]:
+                      - generic [ref=e636]:
+                        - heading "provider MODEL_RELAY_NOT_READY" [level=4] [ref=e637]:
+                          - generic [ref=e638]: provider
+                          - code [ref=e640]: MODEL_RELAY_NOT_READY
+                        - generic [ref=e641]:
+                          - generic [ref=e642]: 平台模型中转未通过生产就绪检查
+                          - generic [ref=e643]: 下一步：配置并验证 HTTPS 中转、真实鉴权和 provider 请求证据
+                    - listitem [ref=e644]:
+                      - generic [ref=e646]:
+                        - heading "text PROVIDER_NOT_READY" [level=4] [ref=e647]:
+                          - generic [ref=e648]: text
+                          - code [ref=e650]: PROVIDER_NOT_READY
+                        - generic [ref=e651]:
+                          - generic [ref=e652]: provider 未通过能力就绪检查
+                          - generic [ref=e653]: 下一步：完成真实 canary，并保存 request id、usage、cost 和不可变回执哈希
+                    - listitem [ref=e654]:
+                      - generic [ref=e656]:
+                        - heading "image PROVIDER_NOT_READY" [level=4] [ref=e657]:
+                          - generic [ref=e658]: image
+                          - code [ref=e660]: PROVIDER_NOT_READY
+                        - generic [ref=e661]:
+                          - generic [ref=e662]: provider 未通过能力就绪检查
+                          - generic [ref=e663]: 下一步：完成真实 canary，并保存 request id、usage、cost 和不可变回执哈希
+                    - listitem [ref=e664]:
+                      - generic [ref=e666]:
+                        - heading "image_edit PROVIDER_NOT_READY" [level=4] [ref=e667]:
+                          - generic [ref=e668]: image_edit
+                          - code [ref=e670]: PROVIDER_NOT_READY
+                        - generic [ref=e671]:
+                          - generic [ref=e672]: provider 未通过能力就绪检查
+                          - generic [ref=e673]: 下一步：完成真实 canary，并保存 request id、usage、cost 和不可变回执哈希
+                    - listitem [ref=e674]:
+                      - generic [ref=e676]:
+                        - heading "video PROVIDER_NOT_READY" [level=4] [ref=e677]:
+                          - generic [ref=e678]: video
+                          - code [ref=e680]: PROVIDER_NOT_READY
+                        - generic [ref=e681]:
+                          - generic [ref=e682]: provider 未通过能力就绪检查
+                          - generic [ref=e683]: 下一步：完成真实 canary，并保存 request id、usage、cost 和不可变回执哈希
+```

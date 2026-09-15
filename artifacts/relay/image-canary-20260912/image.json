@@ -1,0 +1,59 @@
+{
+  "schema_version": "1",
+  "release_id": "image-canary-20260912",
+  "modality": "image",
+  "observed_at": "2026-09-12T13:14:23.404Z",
+  "http_status": 200,
+  "response_headers": {
+    "req-cost-time": "2704",
+    "x-oneapi-request-id": "202609121314194212766578268d9d6BKoPHDz1",
+    "x-request-id": "2c61b476-40d0-980f-9412-c6ea3db91a28"
+  },
+  "result": {
+    "modality": "image",
+    "endpoint": "/images/generations",
+    "model": "qwen-image-2.0",
+    "httpStatus": 200,
+    "providerRequestId": "202609121314194212766578268d9d6BKoPHDz1",
+    "usageObserved": true,
+    "costObserved": true,
+    "costSource": "relay_pricing_snapshot",
+    "costCny": 0.17010798,
+    "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+    "pricingGroup": "VIP",
+    "state": "ready"
+  },
+  "relay_response": {
+    "data": [
+      {
+        "url": "https://dashscope-0484.oss-accelerate.aliyuncs.com/7d/7a/20260912/71e29776/d9d9df86-47ef-4e3b-aa75-72e1fb510f8f.png?Expires=1789824661&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=bywxBmnk7UOYnsBe34pOCiuzqZI%3D",
+        "b64_json": "",
+        "revised_prompt": ""
+      }
+    ],
+    "created": 1789218859,
+    "metadata": {
+      "output": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "message": {
+              "content": [
+                {
+                  "image": "https://dashscope-0484.oss-accelerate.aliyuncs.com/7d/7a/20260912/71e29776/d9d9df86-47ef-4e3b-aa75-72e1fb510f8f.png?Expires=1789824661&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=bywxBmnk7UOYnsBe34pOCiuzqZI%3D"
+                }
+              ],
+              "role": "assistant"
+            }
+          }
+        ]
+      },
+      "usage": {
+        "height": 1024,
+        "image_count": 1,
+        "width": 1024
+      },
+      "request_id": "2c61b476-40d0-980f-9412-c6ea3db91a28"
+    }
+  }
+}

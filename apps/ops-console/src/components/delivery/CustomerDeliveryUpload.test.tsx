@@ -1,0 +1,317 @@
+import { createHash } from "node:crypto";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  CUSTOMER_DELIVERY_MAX_FILE_BYTES,
+  customerDeliveryClient,
+  parseCustomerDeliveryAsset,
+  readCustomerDeliveryFile,
+  validateCustomerDeliveryFile,
+  type CustomerDeliveryAsset,
+} from "../../api/customerDeliveryClient.js";
+import { rpc } from "../../api/opsClient.js";
+import { CustomerDeliveryUpload, createDeliveryUploadTracker, runCustomerDeliveryUploadBatch, waitForDeliveryScan, type DeliveryUploadItem } from "./CustomerDeliveryUpload.js";
+
+vi.mock("../../api/opsClient.js", () => ({ rpc: vi.fn() }));
+
+const video = new File([new Uint8Array([1, 2, 3])], "交付片段.mp4", { type: "video/mp4" });
+const pending: CustomerDeliveryAsset = { assetRef: "asset:upload-one", name: video.name, mimeType: video.type, sizeBytes: video.size, scanStatus: "pending", ready: false };
+const ready: CustomerDeliveryAsset = { ...pending, scanStatus: "clean", ready: true };
+const item = (id = "one"): DeliveryUploadItem => ({ id, file: video, status: "queued" });
+const options = () => ({ purpose: "video" as const, signal: new AbortController().signal, upload: vi.fn().mockResolvedValue(pending), getAsset: vi.fn().mockResolvedValue(ready), onChange: vi.fn(), onReady: vi.fn(), pollDelayMs: 0 });
+
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); vi.clearAllMocks(); });
+
+describe("delivery upload file boundary", () => {
+  it("allows only the purpose-specific file types and normalizes missing browser MIME types", () => {
+    for (const name of ["合同.pdf", "合同.docx", "合同.png", "合同.JPG", "合同.jpeg"]) {
+      expect(validateCustomerDeliveryFile({ name, type: "", size: 1 }, "contract")).toBeTruthy();
+    }
+    expect(validateCustomerDeliveryFile(video, "video")).toBe("video/mp4");
+    expect(validateCustomerDeliveryFile({ name: "demo.webm", type: "", size: 1 }, "video")).toBe("video/webm");
+    expect(() => validateCustomerDeliveryFile(video, "contract")).toThrow("合同仅支持");
+    expect(() => validateCustomerDeliveryFile({ name: "demo.pdf", type: "application/pdf", size: 1 }, "video")).toThrow("交付视频仅支持");
+    expect(() => validateCustomerDeliveryFile({ name: "demo.pdf", type: "text/html", size: 1 }, "contract")).toThrow("不一致");
+  });
+
+  it("supports the four evidence purposes without permitting video payloads as proof documents", () => {
+    for (const purpose of ["payment", "system_integration", "functional_acceptance", "training"] as const) {
+      expect(validateCustomerDeliveryFile({ name: "evidence.pdf", type: "application/pdf", size: 20 }, purpose)).toBe("application/pdf");
+      expect(validateCustomerDeliveryFile({ name: "evidence.png", type: "image/png", size: 20 }, purpose)).toBe("image/png");
+      expect(() => validateCustomerDeliveryFile(video, purpose)).toThrow("交付凭证仅支持");
+      const html = renderToStaticMarkup(<CustomerDeliveryUpload purpose={purpose} onUpload={options().upload} onGetAsset={options().getAsset} onReady={() => {}} />);
+      expect(html).toContain('accept=".pdf,.docx,.png,.jpg,.jpeg"');
+      expect(html).toContain("multiple");
+    }
+  });
+
+  it("rejects empty, oversized, and invalidly named files before reading them", () => {
+    expect(() => validateCustomerDeliveryFile({ ...video, name: "x.mp4", type: "", size: 0 }, "video")).toThrow("空文件");
+    expect(() => validateCustomerDeliveryFile({ name: "x.mp4", type: "", size: CUSTOMER_DELIVERY_MAX_FILE_BYTES + 1 }, "video")).toThrow("50 MiB");
+    expect(validateCustomerDeliveryFile({ name: "x.mp4", type: "", size: CUSTOMER_DELIVERY_MAX_FILE_BYTES }, "video")).toBe("video/mp4");
+    expect(() => validateCustomerDeliveryFile({ name: "../x.mp4", type: "", size: 1 }, "video")).toThrow("文件名无效");
+  });
+
+  it("reads actual bytes and computes their base64 and SHA-256", async () => {
+    class Reader {
+      result: ArrayBuffer | null = null;
+      onload?: () => void;
+      onabort?: () => void;
+      readAsArrayBuffer(file: File) { void file.arrayBuffer().then((bytes) => { this.result = bytes; this.onload?.(); }); }
+      abort() { this.onabort?.(); }
+    }
+    vi.stubGlobal("FileReader", Reader);
+    const result = await readCustomerDeliveryFile(video, "video");
+    expect(result).toEqual({ name: video.name, mimeType: "video/mp4", contentBase64: "AQID", sha256: createHash("sha256").update(new Uint8Array([1, 2, 3])).digest("hex") });
+  });
+
+  it("aborts the FileReader when a drawer is closed", async () => {
+    const abort = vi.fn();
+    vi.stubGlobal("FileReader", class { readAsArrayBuffer() {} abort() { abort(); } });
+    const controller = new AbortController();
+    const read = readCustomerDeliveryFile(video, "video", controller.signal);
+    controller.abort();
+    await expect(read).rejects.toMatchObject({ name: "AbortError" });
+    expect(abort).toHaveBeenCalledOnce();
+  });
+
+  it("rejects malformed or contradictory scan responses", () => {
+    expect(parseCustomerDeliveryAsset(ready)).toEqual(ready);
+    expect(parseCustomerDeliveryAsset(pending)).toEqual(pending);
+    for (const bad of [null, {}, { ...ready, sizeBytes: -1 }, { ...ready, scanStatus: "pending" }, { ...ready, scanStatus: "blocked" }, { ...ready, ready: "true" }, { ...ready, assetRef: "https://example.test/file" }]) {
+      expect(() => parseCustomerDeliveryAsset(bad)).toThrow("安全检查状态");
+    }
+  });
+
+  it("sends actual file bytes with explicit tenant, delivery, purpose and cancellation context", async () => {
+    class Reader {
+      result: ArrayBuffer | null = null;
+      onload?: () => void;
+      readAsArrayBuffer(file: File) { void file.arrayBuffer().then((bytes) => { this.result = bytes; this.onload?.(); }); }
+      abort() {}
+    }
+    vi.stubGlobal("FileReader", Reader);
+    vi.mocked(rpc).mockResolvedValue(pending);
+    const signal = new AbortController().signal;
+    await expect(customerDeliveryClient.uploadAsset({ targetWorkspaceId: "enterprise-a", deliveryId: "delivery-a", purpose: "video", file: video }, signal)).resolves.toEqual(pending);
+    expect(rpc).toHaveBeenCalledWith("ops.customer-delivery.assets.upload", {
+      target_workspace_id: "enterprise-a",
+      delivery_id: "delivery-a",
+      purpose: "video",
+      name: video.name,
+      mime_type: "video/mp4",
+      content_base64: "AQID",
+      sha256: createHash("sha256").update(new Uint8Array([1, 2, 3])).digest("hex"),
+    }, { signal, timeoutMs: 120_000 });
+  });
+
+  it("scopes polling to the original tenant and asset, rejecting another asset's result", async () => {
+    vi.mocked(rpc).mockResolvedValue(ready);
+    const signal = new AbortController().signal;
+    const input = { targetWorkspaceId: "enterprise-a", deliveryId: "delivery-a", purpose: "video" as const, assetRef: pending.assetRef };
+    await expect(customerDeliveryClient.getAsset(input, signal)).resolves.toEqual(ready);
+    expect(rpc).toHaveBeenCalledWith("ops.customer-delivery.assets.get", { target_workspace_id: "enterprise-a", delivery_id: "delivery-a", purpose: "video", asset_ref: pending.assetRef }, { signal });
+    vi.mocked(rpc).mockResolvedValue({ ...ready, assetRef: "asset:other" });
+    await expect(customerDeliveryClient.getAsset(input, signal)).rejects.toThrow("其他素材");
+  });
+});
+
+describe("delivery upload lifecycle", () => {
+  it("keeps the save gate closed until every independently running evidence uploader finishes", () => {
+    const tracker = createDeliveryUploadTracker();
+    tracker.beginScope("customer-a:profile:1");
+    expect(tracker.setBusy("customer-a:profile:1", "payment", true)).toBe(true);
+    expect(tracker.setBusy("customer-a:profile:1", "contract", true)).toBe(true);
+    expect(tracker.setBusy("customer-a:profile:1", "payment", false)).toBe(true);
+    expect(tracker.isBusy()).toBe(true);
+    expect(tracker.setBusy("customer-a:profile:1", "contract", false)).toBe(false);
+  });
+
+  it("does not let cleanup or late completion from an old customer clear a new customer's busy gate", () => {
+    const tracker = createDeliveryUploadTracker();
+    tracker.beginScope("customer-a:integration:1");
+    tracker.setBusy("customer-a:integration:1", "item-one", true);
+    tracker.beginScope("customer-b:integration:2");
+    tracker.setBusy("customer-b:integration:2", "item-one", true);
+    expect(tracker.setBusy("customer-a:integration:1", "item-one", false)).toBeUndefined();
+    expect(tracker.isCurrent("customer-a:integration:1")).toBe(false);
+    expect(tracker.isBusy()).toBe(true);
+    tracker.beginScope();
+    expect(tracker.isCurrent("customer-b:integration:2")).toBe(false);
+    expect(tracker.isBusy()).toBe(false);
+  });
+
+  it("reports upload then scan then ready, and only publishes an accepted asset", async () => {
+    const callbacks = options();
+    await runCustomerDeliveryUploadBatch([item()], callbacks);
+    expect(callbacks.onChange.mock.calls.map(([value]) => value.status)).toEqual(["uploading", "scanning", "ready"]);
+    expect(callbacks.onReady).toHaveBeenCalledExactlyOnceWith(ready);
+    expect(callbacks.getAsset).toHaveBeenCalledWith(pending.assetRef, "video", callbacks.signal);
+  });
+
+  it("never publishes a blocked file", async () => {
+    const callbacks = options();
+    callbacks.getAsset.mockResolvedValue({ ...pending, scanStatus: "blocked" });
+    await runCustomerDeliveryUploadBatch([item()], callbacks);
+    expect(callbacks.onReady).not.toHaveBeenCalled();
+    expect(callbacks.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ status: "failed", error: expect.stringContaining("未通过安全检查") }));
+  });
+
+  it("rejects even a callback that incorrectly claims a pending asset is ready", async () => {
+    const callbacks = options();
+    callbacks.upload.mockResolvedValue({ ...pending, ready: true });
+    await runCustomerDeliveryUploadBatch([item()], callbacks);
+    expect(callbacks.onReady).not.toHaveBeenCalled();
+    expect(callbacks.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ status: "failed" }));
+  });
+
+  it("uploads sequentially and preserves successful files around a failure", async () => {
+    const callbacks = options();
+    callbacks.upload.mockResolvedValueOnce(ready).mockRejectedValueOnce(new Error("第二段上传失败")).mockResolvedValueOnce({ ...ready, assetRef: "asset:three" });
+    await runCustomerDeliveryUploadBatch([item("one"), item("two"), item("three")], callbacks);
+    expect(callbacks.onReady.mock.calls.map(([asset]) => asset.assetRef)).toEqual(["asset:upload-one", "asset:three"]);
+    expect(callbacks.onChange.mock.calls.map(([value]) => `${value.id}:${value.status}`)).toEqual(["one:uploading", "one:ready", "two:uploading", "two:failed", "three:uploading", "three:ready"]);
+  });
+
+  it("does not upload an invalid file and continues with other valid files", async () => {
+    const callbacks = options();
+    callbacks.upload.mockResolvedValue(ready);
+    await runCustomerDeliveryUploadBatch([{ ...item("bad"), file: new File(["html"], "page.html", { type: "text/html" }) }, item()], callbacks);
+    expect(callbacks.upload).toHaveBeenCalledOnce();
+    expect(callbacks.onChange).toHaveBeenCalledWith(expect.objectContaining({ id: "bad", status: "failed" }));
+    expect(callbacks.onReady).toHaveBeenCalledExactlyOnceWith(ready);
+  });
+
+  it("keeps the uploaded asset on scan timeout and retries without uploading again", async () => {
+    const callbacks = options();
+    await runCustomerDeliveryUploadBatch([item()], { ...callbacks, maxPolls: 0 });
+    const failed = callbacks.onChange.mock.lastCall?.[0] as DeliveryUploadItem;
+    expect(failed).toMatchObject({ status: "failed", asset: pending });
+    expect(callbacks.onReady).not.toHaveBeenCalled();
+    callbacks.upload.mockClear();
+    await runCustomerDeliveryUploadBatch([failed], callbacks);
+    expect(callbacks.upload).not.toHaveBeenCalled();
+    expect(callbacks.onReady).toHaveBeenCalledExactlyOnceWith(ready);
+  });
+
+  it.each(["API_REQUEST_TIMEOUT", "API_NETWORK_ERROR"])("retries two consecutive transient scan reads for %s without uploading again", async (code) => {
+    const callbacks = options();
+    const transient = Object.assign(new Error("temporary read failure"), { code });
+    callbacks.getAsset.mockRejectedValueOnce(transient).mockRejectedValueOnce(transient).mockResolvedValueOnce(ready);
+    await runCustomerDeliveryUploadBatch([item()], callbacks);
+    expect(callbacks.upload).toHaveBeenCalledOnce();
+    expect(callbacks.getAsset).toHaveBeenCalledTimes(3);
+    expect(callbacks.onChange).toHaveBeenCalledWith(expect.objectContaining({
+      asset: pending,
+      status: "scanning",
+      error: "连接暂时中断，正在重试检查（1/2）",
+    }));
+    expect(callbacks.onReady).toHaveBeenCalledExactlyOnceWith(ready);
+  });
+
+  it("resets the consecutive transient-read budget after a successful pending response", async () => {
+    const callbacks = options();
+    const timeout = Object.assign(new Error("timeout"), { code: "API_REQUEST_TIMEOUT" });
+    callbacks.getAsset
+      .mockRejectedValueOnce(timeout).mockResolvedValueOnce(pending)
+      .mockRejectedValueOnce(timeout).mockRejectedValueOnce(timeout).mockResolvedValueOnce(ready);
+    await runCustomerDeliveryUploadBatch([item()], callbacks);
+    expect(callbacks.getAsset).toHaveBeenCalledTimes(5);
+    expect(callbacks.onReady).toHaveBeenCalledExactlyOnceWith(ready);
+  });
+
+  it.each(["FORBIDDEN", "UNAUTHENTICATED", "API_INVALID_RESPONSE"])("does not retry non-transient scan error %s", async (code) => {
+    const callbacks = options();
+    callbacks.getAsset.mockRejectedValue(Object.assign(new Error("do not retry"), { code }));
+    await runCustomerDeliveryUploadBatch([item()], callbacks);
+    expect(callbacks.getAsset).toHaveBeenCalledOnce();
+    expect(callbacks.onReady).not.toHaveBeenCalled();
+    expect(callbacks.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ status: "failed", asset: pending, error: "do not retry" }));
+  });
+
+  it.each([401, 403, 409])("does not retry an explicit HTTP %s response even with a timeout-shaped code", async (httpStatus) => {
+    const callbacks = options();
+    callbacks.getAsset.mockRejectedValue(Object.assign(new Error("server rejected"), { code: "API_REQUEST_TIMEOUT", httpStatus }));
+    await runCustomerDeliveryUploadBatch([item()], callbacks);
+    expect(callbacks.getAsset).toHaveBeenCalledOnce();
+    expect(callbacks.onReady).not.toHaveBeenCalled();
+    expect(callbacks.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ status: "failed", asset: pending }));
+  });
+
+  it("stops after two transient scan-read retries and preserves the uploaded asset", async () => {
+    const callbacks = options();
+    callbacks.getAsset.mockRejectedValue(Object.assign(new Error("network down"), { code: "API_NETWORK_ERROR" }));
+    await runCustomerDeliveryUploadBatch([item()], callbacks);
+    expect(callbacks.upload).toHaveBeenCalledOnce();
+    expect(callbacks.getAsset).toHaveBeenCalledTimes(3);
+    expect(callbacks.onReady).not.toHaveBeenCalled();
+    expect(callbacks.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ status: "failed", asset: pending, error: "network down" }));
+  });
+
+  it("does not retry a transient-looking read after the user aborts", async () => {
+    const controller = new AbortController();
+    const callbacks = options();
+    callbacks.getAsset.mockImplementationOnce(async () => {
+      controller.abort();
+      throw Object.assign(new Error("timeout after cancel"), { code: "API_REQUEST_TIMEOUT" });
+    });
+    await runCustomerDeliveryUploadBatch([item()], { ...callbacks, signal: controller.signal });
+    expect(callbacks.getAsset).toHaveBeenCalledOnce();
+    expect(callbacks.onReady).not.toHaveBeenCalled();
+    expect(callbacks.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ status: "cancelled", asset: pending }));
+  });
+
+  it("counts transient retries toward the existing total poll limit", async () => {
+    const callbacks = options();
+    callbacks.getAsset.mockRejectedValue(Object.assign(new Error("timeout"), { code: "API_REQUEST_TIMEOUT" }));
+    await runCustomerDeliveryUploadBatch([item()], { ...callbacks, maxPolls: 2 });
+    expect(callbacks.getAsset).toHaveBeenCalledTimes(2);
+    expect(callbacks.onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: "failed",
+      asset: pending,
+      error: expect.stringContaining("尚未完成"),
+    }));
+  });
+
+  it("rejects a scan response for a different asset", async () => {
+    const callbacks = options();
+    callbacks.getAsset.mockResolvedValue({ ...ready, assetRef: "asset:other-customer" });
+    await runCustomerDeliveryUploadBatch([item()], callbacks);
+    expect(callbacks.onReady).not.toHaveBeenCalled();
+    expect(callbacks.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ status: "failed", error: expect.stringContaining("素材不匹配") }));
+    expect(callbacks.onChange.mock.lastCall?.[0].asset.assetRef).toBe(pending.assetRef);
+  });
+
+  it("prevents a late upload response from filling a switched or closed form", async () => {
+    const controller = new AbortController();
+    const callbacks = options();
+    let resolveUpload!: (asset: CustomerDeliveryAsset) => void;
+    callbacks.upload.mockReturnValue(new Promise((resolve) => { resolveUpload = resolve; }));
+    const run = runCustomerDeliveryUploadBatch([item(), item("two")], { ...callbacks, signal: controller.signal });
+    controller.abort();
+    resolveUpload(ready);
+    await run;
+    expect(callbacks.onReady).not.toHaveBeenCalled();
+    expect(callbacks.upload).toHaveBeenCalledOnce();
+    expect(callbacks.onChange.mock.calls.filter(([value]) => value.status === "cancelled")).toHaveLength(2);
+  });
+
+  it("cancels polling timers immediately", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const wait = waitForDeliveryScan(2000, controller.signal);
+    expect(vi.getTimerCount()).toBe(1);
+    controller.abort();
+    await expect(wait).rejects.toMatchObject({ name: "AbortError" });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not render a fake upload button without both API callbacks", () => {
+    expect(renderToStaticMarkup(<CustomerDeliveryUpload purpose="contract" onReady={() => {}} />)).toBe("");
+    expect(renderToStaticMarkup(<CustomerDeliveryUpload purpose="video" onUpload={options().upload} onReady={() => {}} />)).toBe("");
+    const html = renderToStaticMarkup(<CustomerDeliveryUpload purpose="video" onUpload={options().upload} onGetAsset={options().getAsset} onReady={() => {}} />);
+    expect(html).toContain("上传交付视频");
+    expect(html).toContain("50 MiB");
+    expect(html).toContain('accept=".mp4,.webm"');
+  });
+});

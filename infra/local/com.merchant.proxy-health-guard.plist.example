@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.merchant.proxy-health-guard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/ABSOLUTE/PATH/TO/codexSkills/infra/local/proxy-health-guard.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PROXY_GUARD_HTTP_PORT</key>
+    <string>10808</string>
+    <key>PROXY_GUARD_SOCKS_PORT</key>
+    <string>10808</string>
+    <key>PROXY_GUARD_START_V2RAYN</key>
+    <string>1</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>60</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/tmp/merchant-proxy-health.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/merchant-proxy-health.err.log</string>
+</dict>
+</plist>

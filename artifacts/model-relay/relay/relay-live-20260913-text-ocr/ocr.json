@@ -1,0 +1,53 @@
+{
+  "schema_version": "1",
+  "release_id": "relay-live-20260913-text-ocr",
+  "modality": "ocr",
+  "observed_at": "2026-09-13T11:57:39.421Z",
+  "http_status": 200,
+  "response_headers": {
+    "x-oneapi-request-id": "202609131157370060444478268d9d6LInfnhhH"
+  },
+  "result": {
+    "modality": "ocr",
+    "endpoint": "/chat/completions",
+    "model": "glm-5.3-flash",
+    "httpStatus": 200,
+    "providerRequestId": "202609131157370060444478268d9d6LInfnhhH",
+    "usageObserved": true,
+    "costObserved": true,
+    "costSource": "relay_pricing_snapshot",
+    "costCny": 0.00010928,
+    "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+    "pricingGroup": "VIP",
+    "state": "ready"
+  },
+  "relay_response": {
+    "choices": [
+      {
+        "finish_reason": "length",
+        "index": 0,
+        "message": {
+          "content": "",
+          "reasoning_content": "The user is asking me to return only JSON with the format {\"ocr_text\":\"OK\"} but the image attached appears to be a very small/blank image (",
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1789300659,
+    "id": "202609131957378ea5d990008147ca",
+    "model": "glm-5.3-flash",
+    "object": "chat.completion",
+    "request_id": "202609131957378ea5d990008147ca",
+    "usage": {
+      "completion_tokens": 32,
+      "completion_tokens_details": {
+        "reasoning_tokens": 32
+      },
+      "prompt_tokens": 40,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_tokens": 72
+    }
+  }
+}

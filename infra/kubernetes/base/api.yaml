@@ -13,8 +13,9 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: merchant-api, app.kubernetes.io/part-of: merchant-marketing-codex}
       annotations:
-        merchant.example.com/config-sha256: sha256:a5b7bc8e5e97d63ae844829aa681d755d5eac178f9225043a6d17c471a7d9747
+        merchant.example.com/config-sha256: sha256:3c74b3d880440c4cc432e519f6eb1b112e94ef6fa631b35803103d257c473b2e
     spec:
+      serviceAccountName: merchant-api-rrsa
       terminationGracePeriodSeconds: 30
       automountServiceAccountToken: false
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
@@ -37,7 +38,6 @@ spec:
             - {name: ASSET_SCANNER_API_TOKEN, valueFrom: {secretKeyRef: {name: merchant-scanner-secrets, key: ASSET_SCANNER_API_TOKEN}}}
             - {name: ASSET_SCANNER_WORKSPACE_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-scanner-secrets, key: ASSET_SCANNER_WORKSPACE_SIGNING_SECRET}}}
             - {name: ASSET_SCAN_TRUSTED_PUBLIC_KEYS, valueFrom: {secretKeyRef: {name: merchant-scanner-secrets, key: ASSET_SCAN_TRUSTED_PUBLIC_KEYS}}}
-            - {name: ASSET_STORAGE_KMS_KEY_ID, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: ASSET_STORAGE_KMS_KEY_ID}}}
             - {name: ASSET_DISPLAY_URL_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: ASSET_DISPLAY_URL_SIGNING_SECRET}}}
             - {name: ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON}}}
             - {name: VAULT_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: VAULT_TOKEN}}}
@@ -66,6 +66,16 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 3
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: merchant-api-rrsa
+  annotations:
+    # Provision this dedicated role with an oidc:sub trust condition restricted
+    # to system:serviceaccount:merchant:merchant-api-rrsa before rollout.
+    pod-identity.alibabacloud.com/role-name: StoreNovaAckOssRole
+automountServiceAccountToken: false
 ---
 apiVersion: v1
 kind: Service

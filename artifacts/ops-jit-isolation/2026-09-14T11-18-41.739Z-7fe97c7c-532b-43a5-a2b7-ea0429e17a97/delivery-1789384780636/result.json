@@ -1,0 +1,268 @@
+{
+  "schema_version": 2,
+  "evidence_kind": "isolated_live_customer_delivery_ui_rpc",
+  "verification_scope": "seven_scanned_attachments_and_full_delivery",
+  "raw_browser_trace_saved": false,
+  "real_delivery_scan": true,
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "timezone": "Asia/Shanghai",
+  "fixture": {
+    "workspace_id": "ws_ops_fixture_51011f4ce7ed42c4b81d6e3cb78616e7"
+  },
+  "events": [
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.create",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_51011f4ce7ed42c4b81d6e3cb78616e7",
+        "company_name": "隔离交付验收-1789384780638"
+      },
+      "error_code": null,
+      "response_body_unavailable": false
+    },
+    {
+      "event": "screenshot",
+      "name": "customer-created.png"
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.update",
+      "status": 409,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_51011f4ce7ed42c4b81d6e3cb78616e7",
+        "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+        "expected_revision": "1"
+      },
+      "error_code": "CUSTOMER_DELIVERY_CONTRACT_ASSET_NOT_READY",
+      "response_body_unavailable": false
+    },
+    {
+      "event": "screenshot",
+      "name": "missing-contract-rejected.png"
+    },
+    {
+      "event": "real_asset_upload",
+      "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+      "purpose": "contract",
+      "sha256": "8be1400e3e779ea89c9a5074687a7795d3ba74782308408a20db2df7ed1ff999",
+      "asset_ref": "asset_3ac2ac2b-8ab5-4a30-8090-448ffc00f147",
+      "scan_status": "pending",
+      "ready": false,
+      "status": 200
+    },
+    {
+      "event": "real_asset_scan",
+      "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+      "purpose": "contract",
+      "asset_ref": "asset_3ac2ac2b-8ab5-4a30-8090-448ffc00f147",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200
+    },
+    {
+      "event": "screenshot",
+      "name": "real-contract-scan-ready.png"
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.update",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_51011f4ce7ed42c4b81d6e3cb78616e7",
+        "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+        "expected_revision": "1"
+      },
+      "error_code": null,
+      "response_body_unavailable": false
+    },
+    {
+      "event": "missing_payment_evidence_blocked_in_form"
+    },
+    {
+      "event": "real_asset_upload",
+      "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+      "purpose": "payment",
+      "sha256": "cd95f8f49484896dc3d59fc1a4ddafea72f12adb20bb11f9570987cfa1c6cc0b",
+      "asset_ref": "asset_4f1ca998-3ac1-4aca-a676-1a406365b805",
+      "scan_status": "pending",
+      "ready": false,
+      "status": 200
+    },
+    {
+      "event": "real_asset_scan",
+      "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+      "purpose": "payment",
+      "asset_ref": "asset_4f1ca998-3ac1-4aca-a676-1a406365b805",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.update",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_51011f4ce7ed42c4b81d6e3cb78616e7",
+        "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+        "expected_revision": "2"
+      },
+      "error_code": null,
+      "response_body_unavailable": false
+    },
+    {
+      "event": "screenshot",
+      "name": "profile-fields-reloaded.png"
+    },
+    {
+      "event": "real_asset_upload",
+      "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+      "purpose": "system_integration",
+      "sha256": "031f7443839f8d169727eb8f2f2a7b70c95d8f42cd2021d17957ed7ee2a69217",
+      "asset_ref": "asset_74c3123f-85a0-4958-a053-3fe0b94bac4f",
+      "scan_status": "pending",
+      "ready": false,
+      "status": 200
+    },
+    {
+      "event": "real_asset_scan",
+      "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+      "purpose": "system_integration",
+      "asset_ref": "asset_74c3123f-85a0-4958-a053-3fe0b94bac4f",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.checklist.update",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_51011f4ce7ed42c4b81d6e3cb78616e7",
+        "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+        "checklist_key": "system_integration",
+        "expected_revision": "3"
+      },
+      "error_code": null,
+      "response_body_unavailable": false
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.checklist-items.list",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_51011f4ce7ed42c4b81d6e3cb78616e7",
+        "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+        "checklist_key": "system_integration"
+      },
+      "error_code": null,
+      "response_body_unavailable": false
+    },
+    {
+      "event": "checklist_notes_and_scanned_evidence_reloaded",
+      "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+      "purpose": "system_integration",
+      "item_count": 10,
+      "asset_refs": [
+        "asset_74c3123f-85a0-4958-a053-3fe0b94bac4f"
+      ]
+    },
+    {
+      "event": "real_asset_upload",
+      "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+      "purpose": "functional_acceptance",
+      "sha256": "4281f6c86eab8831d70e7db9624d21b887eee56c7b0e241b071bf36b189f0ac3",
+      "asset_ref": "asset_0b5d2f94-2957-42d7-b1a6-ef7bfb02cb3b",
+      "scan_status": "pending",
+      "ready": false,
+      "status": 200
+    },
+    {
+      "event": "real_asset_scan",
+      "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+      "purpose": "functional_acceptance",
+      "asset_ref": "asset_0b5d2f94-2957-42d7-b1a6-ef7bfb02cb3b",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.checklist.update",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_51011f4ce7ed42c4b81d6e3cb78616e7",
+        "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+        "checklist_key": "functional_acceptance",
+        "expected_revision": "4"
+      },
+      "error_code": null,
+      "response_body_unavailable": false
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.checklist-items.list",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_51011f4ce7ed42c4b81d6e3cb78616e7",
+        "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+        "checklist_key": "functional_acceptance"
+      },
+      "error_code": null,
+      "response_body_unavailable": false
+    },
+    {
+      "event": "checklist_notes_and_scanned_evidence_reloaded",
+      "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+      "purpose": "functional_acceptance",
+      "item_count": 8,
+      "asset_refs": [
+        "asset_0b5d2f94-2957-42d7-b1a6-ef7bfb02cb3b"
+      ]
+    },
+    {
+      "event": "real_asset_upload",
+      "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+      "purpose": "training",
+      "sha256": "966b2ecd400c7b31c0c980a7fa096990630a814ce18fe64b201212c1f9a5230e",
+      "asset_ref": "asset_64d2fc73-4600-41e4-933d-adaedb17eb8c",
+      "scan_status": "pending",
+      "ready": false,
+      "status": 200
+    },
+    {
+      "event": "real_asset_scan",
+      "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+      "purpose": "training",
+      "asset_ref": "asset_64d2fc73-4600-41e4-933d-adaedb17eb8c",
+      "scan_status": "clean",
+      "ready": true,
+      "status": 200
+    },
+    {
+      "event": "rpc",
+      "method": "ops.customer-delivery.training.complete",
+      "status": 200,
+      "request": {
+        "target_workspace_id": "ws_ops_fixture_51011f4ce7ed42c4b81d6e3cb78616e7",
+        "delivery_id": "cd_a14347fb-e162-42c8-9305-781c1db51540",
+        "expected_revision": "5",
+        "completed": "true"
+      },
+      "error_code": null,
+      "response_body_unavailable": false
+    },
+    {
+      "event": "screenshot",
+      "name": "training-inline-scanned-evidence.png"
+    },
+    {
+      "event": "screenshot",
+      "name": "failure-masked.png"
+    }
+  ],
+  "status": "failed"
+}

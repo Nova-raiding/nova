@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { Pool } from 'pg'
 import { PostgresAuthorizationRepository } from '../packages/persistence/src/authorization-repository.js'
 import { loadMigrations, MigrationRunner, type Migration } from '../packages/persistence/src/migration.js'
+import { PostgresPasswordAuthRepository } from '../packages/persistence/src/password-auth-repository.js'
 
 export const ISOLATED_POSTGRES_IMAGE = 'postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73'
 const PURPOSE = 'isolated-ops-oidc-acceptance'
@@ -209,6 +210,19 @@ export async function createIsolatedOpsFixture({ evidenceDir }: { evidenceDir: s
     const appUrl = new URL(adminUrl); appUrl.username = 'merchant_app'; appUrl.password = appPassword
     const opsUrl = new URL(adminUrl); opsUrl.username = 'merchant_ops'; opsUrl.password = opsPassword
     ops = new Pool({ connectionString: opsUrl.toString(), connectionTimeoutMillis: 1_000 })
+    const merchantAccount = await new PostgresPasswordAuthRepository(ops).createMerchantAccount({
+      login: `merchant-${runId}@fixture.invalid`,
+      password: randomBytes(24).toString('base64url'),
+      enterpriseName: '隔离验收企业',
+      contactName: '隔离验收商家',
+      workspaceIds: [workspaceId],
+      actorId: 'isolated-fixture-bootstrap',
+      reason: 'seed isolated merchant workspace directory target',
+    })
+    if (merchantAccount.status !== 'active' || merchantAccount.accountType !== 'merchant'
+      || merchantAccount.workspaceIds.length !== 1 || merchantAccount.workspaceIds[0] !== workspaceId) {
+      throw new Error('ISOLATED_FIXTURE_MERCHANT_DIRECTORY_SEED_MISMATCH')
+    }
     const repository = new PostgresAuthorizationRepository(ops)
     await repository.assignPlatformRole({ subjectIdentityId: actorIdentityId, role: 'platform_admin', assignedBy: 'isolated-fixture-bootstrap', reason: 'synthetic desktop acceptance actor', expectedAuthorizationRevision: 0 })
     await repository.assignPlatformRole({ subjectIdentityId: actorIdentityId, role: 'security_admin', assignedBy: 'isolated-fixture-bootstrap', reason: 'synthetic desktop acceptance security actor', expectedAuthorizationRevision: 1 })

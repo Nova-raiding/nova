@@ -1,0 +1,400 @@
+{
+  "config": {
+    "rootDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-09T01-53-46.612Z-bd2436a7-7776-4a5b-8636-cf6e7b17cc6c/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "walk every Ops Console section through the real browser UI",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 57728,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-09T01:53:54.042Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "0411c0cf49f1d2cc9183-bed75de6c367b57696c0",
+          "file": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+          "line": 24,
+          "column": 1
+        },
+        {
+          "title": "does not report model configuration success when model status fails",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2902,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-09T01:54:51.786Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "0411c0cf49f1d2cc9183-15deecbc14659188a876",
+          "file": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+          "line": 120,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "operates the platform user directory without destructive confirmation",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4472,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-09T01:55:45.659Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6522f71e1b3fcc2fbb2c-e331058b5d4d2c88859f",
+          "file": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+          "line": 33,
+          "column": 1
+        },
+        {
+          "title": "keeps member governance in the workspace workbench",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2973,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-09T01:55:50.458Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6522f71e1b3fcc2fbb2c-02b18fadf9258823ef5a",
+          "file": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+          "line": 137,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dogfood/chatgpt-all-functions/ops.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "inventory Ops Console through the real browser UI",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 9061,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-09T01:54:54.706Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-a18e51edc5655ddbab2c",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 11,
+          "column": 1
+        },
+        {
+          "title": "fails closed with no local connection credentials and exposes diagnostics on demand",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2775,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-09T01:55:03.774Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-aa6c7661665df7ef3549",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 58,
+          "column": 1
+        },
+        {
+          "title": "turns an authenticated-session 401 into a reauthentication gate",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2719,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-09T01:55:06.554Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-cc683d122c2d46299ebf",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 86,
+          "column": 1
+        },
+        {
+          "title": "renders the real workspace brand tree with revision and store navigation",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2500,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-09T01:55:09.279Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-64b7823a47e9221e3885",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 118,
+          "column": 1
+        },
+        {
+          "title": "ops/tasks long list scrolling keeps page stable (no white-screen)",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3431,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-09T01:55:11.785Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-823edb30dcfce80a8295",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 163,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "message": "\u001b[31mWorker teardown timeout of 30000ms exceeded.\u001b[39m\n\n\u001b[31mFailed worker ran 7 tests:\u001b[39m\ndogfood/chatgpt-all-functions/ops-all.spec.js:24:1 › walk every Ops Console section through the real browser UI\ndogfood/chatgpt-all-functions/ops-all.spec.js:120:1 › does not report model configuration success when model status fails\ndogfood/chatgpt-all-functions/ops.spec.js:11:1 › inventory Ops Console through the real browser UI\ndogfood/chatgpt-all-functions/ops.spec.js:58:1 › fails closed with no local connection credentials and exposes diagnostics on demand\ndogfood/chatgpt-all-functions/ops.spec.js:86:1 › turns an authenticated-session 401 into a reauthentication gate\ndogfood/chatgpt-all-functions/ops.spec.js:118:1 › renders the real workspace brand tree with revision and store navigation\ndogfood/chatgpt-all-functions/ops.spec.js:163:1 › ops/tasks long list scrolling keeps page stable (no white-screen)",
+      "stack": "\u001b[31mWorker teardown timeout of 30000ms exceeded.\u001b[39m\n\n\u001b[31mFailed worker ran 7 tests:\u001b[39m\ndogfood/chatgpt-all-functions/ops-all.spec.js:24:1 › walk every Ops Console section through the real browser UI\ndogfood/chatgpt-all-functions/ops-all.spec.js:120:1 › does not report model configuration success when model status fails\ndogfood/chatgpt-all-functions/ops.spec.js:11:1 › inventory Ops Console through the real browser UI\ndogfood/chatgpt-all-functions/ops.spec.js:58:1 › fails closed with no local connection credentials and exposes diagnostics on demand\ndogfood/chatgpt-all-functions/ops.spec.js:86:1 › turns an authenticated-session 401 into a reauthentication gate\ndogfood/chatgpt-all-functions/ops.spec.js:118:1 › renders the real workspace brand tree with revision and store navigation\ndogfood/chatgpt-all-functions/ops.spec.js:163:1 › ops/tasks long list scrolling keeps page stable (no white-screen)"
+    }
+  ],
+  "stats": {
+    "startTime": "2026-09-09T01:53:52.299Z",
+    "duration": 121214.003,
+    "expected": 9,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

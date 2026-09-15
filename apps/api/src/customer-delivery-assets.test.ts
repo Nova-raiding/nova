@@ -67,8 +67,8 @@ describe('customer delivery asset source boundary (unit fixtures, no scanner)', 
   it.each(purposes)('re-reads durable %s evidence and rejects a revoked asset despite a clean cache', async purpose => {
     const cache = memoryCache()
     const get = vi.fn()
-      .mockResolvedValueOnce({ payload: { ...cleanFixture() } })
-      .mockResolvedValueOnce({ payload: { ...cleanFixture({ scanStatus: 'blocked', scanVerdict: 'malicious', revision: 2 }) } })
+      .mockResolvedValueOnce({ payload: { ...cleanFixture(purpose === 'contract' ? { mimeType: 'application/pdf' } : {}) } })
+      .mockResolvedValueOnce({ payload: { ...cleanFixture({ ...(purpose === 'contract' ? { mimeType: 'application/pdf' } : {}), scanStatus: 'blocked', scanVerdict: 'malicious', revision: 2 }) } })
     const input = { workspaceId, assetRef, purpose, business: { get }, memoryAssets: cache.assets }
 
     await expect(requireCustomerDeliveryAsset(input)).resolves.toBeUndefined()

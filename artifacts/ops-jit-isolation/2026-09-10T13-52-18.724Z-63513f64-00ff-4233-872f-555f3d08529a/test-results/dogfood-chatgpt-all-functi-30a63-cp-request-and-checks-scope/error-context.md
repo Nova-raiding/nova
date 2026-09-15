@@ -1,0 +1,299 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营与商家服务
+      - generic [ref=e14]: 平台运营控制面
+      - navigation "平台运营功能导航" [ref=e15]:
+        - region "平台治理" [ref=e16]:
+          - heading "平台治理" [level=2] [ref=e17]
+          - button "总览" [ref=e18] [cursor=pointer]:
+            - img "dashboard" [ref=e19] [cursor=pointer]:
+              - img [ref=e20] [cursor=pointer]
+            - text: 总览
+        - region "商家数据" [ref=e22]:
+          - heading "商家数据" [level=2] [ref=e23]
+          - button "知识库" [ref=e24] [cursor=pointer]:
+            - img "database" [ref=e25] [cursor=pointer]:
+              - img [ref=e26] [cursor=pointer]
+            - text: 知识库
+        - region "模型与计费" [ref=e28]:
+          - heading "模型与计费" [level=2] [ref=e29]
+          - button "账务与退款" [ref=e30] [cursor=pointer]:
+            - img "dollar" [ref=e31] [cursor=pointer]:
+              - img [ref=e32] [cursor=pointer]
+            - text: 账务与退款
+  - generic [ref=e34]:
+    - banner [ref=e35]:
+      - generic [ref=e36]:
+        - heading "商业与平台控制台" [level=2] [ref=e37]
+        - region "当前身份与权限范围" [ref=e38]:
+          - generic [ref=e39]:
+            - img [ref=e41]:
+              - img [ref=e42]
+            - strong [ref=e46]: 商家管理员
+            - status [ref=e48]: 授权状态：已由服务端验证
+            - button "通知消息，暂无未读" [ref=e51] [cursor=pointer]:
+              - img "bell" [ref=e53] [cursor=pointer]:
+                - img [ref=e54] [cursor=pointer]
+            - generic [ref=e57]: 工作区 · ws_ops_fixture_c1cf0ddc023c43b4aa2c1f63a5642c00
+            - generic [ref=e59]: 策略 2026-09-08.v1
+          - status [ref=e60]: 商家自运营视图：仅作用于当前授权工作区；不包含平台运营能力。
+      - generic [ref=e62]:
+        - generic [ref=e63]:
+          - generic [ref=e64]: 当前状态
+          - status [ref=e65]: 已登录
+        - button "打开账号信息" [ref=e66] [cursor=pointer]:
+          - generic [ref=e67] [cursor=pointer]: o
+          - generic [ref=e68] [cursor=pointer]:
+            - strong [ref=e69] [cursor=pointer]: ops-fixture-target-c1cf0ddc-023c-43b4-aa2c-1f63a5642c00
+            - generic [ref=e70] [cursor=pointer]: 商家工作区
+          - img [ref=e71] [cursor=pointer]:
+            - img [ref=e72] [cursor=pointer]
+    - main [ref=e74]:
+      - status [ref=e75]
+      - region "运营总览" [active] [ref=e76]:
+        - generic [ref=e79]:
+          - region "平台运营实时概况" [ref=e80]:
+            - generic [ref=e81]:
+              - generic [ref=e82]:
+                - generic [ref=e83]: PLATFORM PULSE
+                - heading "平台运营实时概况" [level=2] [ref=e84]
+                - generic [ref=e85]: 先看平台整体状态，再进入对应工作台处理异常、商家、模型或账务。
+              - generic [ref=e86]:
+                - img "check-circle" [ref=e87]:
+                  - img [ref=e88]
+                - generic [ref=e91]: 数据已读取
+            - generic "平台核心运营指标" [ref=e92]:
+              - generic [ref=e95]:
+                - generic [ref=e96]:
+                  - generic [ref=e98]: 商家工作区
+                  - generic [ref=e99]:
+                    - img "team" [ref=e101]:
+                      - img [ref=e102]
+                    - generic [ref=e104]: —
+                - generic [ref=e105]: 已纳入平台运营数据范围
+              - generic [ref=e108]:
+                - generic [ref=e109]:
+                  - generic [ref=e111]: 已付商家
+                  - generic [ref=e112]:
+                    - img "shop" [ref=e114]:
+                      - img [ref=e115]
+                    - generic [ref=e117]: —
+                - generic [ref=e118]: 财务汇总尚未取得，不解释为 0
+              - generic [ref=e121]:
+                - generic [ref=e122]:
+                  - generic [ref=e124]: 平台任务
+                  - generic [ref=e125]:
+                    - img "project" [ref=e127]:
+                      - img [ref=e128]
+                    - generic [ref=e130]: —
+                - generic [ref=e131]: 任务汇总尚未取得
+              - generic [ref=e134]:
+                - generic [ref=e135]:
+                  - generic [ref=e137]: 待处理队列
+                  - generic [ref=e138]:
+                    - img "thunderbolt" [ref=e140]:
+                      - img [ref=e141]
+                    - generic [ref=e143]: —
+                - generic [ref=e144]: 队列汇总尚未取得
+              - generic [ref=e147]:
+                - generic [ref=e148]:
+                  - generic [ref=e150]: 模型能力
+                  - generic [ref=e151]:
+                    - img "robot" [ref=e153]:
+                      - img [ref=e154]
+                    - generic [ref=e156]: —
+                - generic [ref=e157]: 模型状态尚未取得
+              - generic [ref=e160]:
+                - generic [ref=e161]:
+                  - generic [ref=e163]: 开放告警
+                  - generic [ref=e164]:
+                    - img "exclamation-circle" [ref=e166]:
+                      - img [ref=e167]
+                    - generic [ref=e170]: —
+                - generic [ref=e171]: 告警数据尚未取得
+              - generic [ref=e174]:
+                - generic [ref=e175]:
+                  - generic [ref=e177]: 平台连接
+                  - generic [ref=e178]:
+                    - img "shop" [ref=e180]:
+                      - img [ref=e181]
+                    - generic [ref=e184]: "0"
+                    - generic [ref=e185]: 个
+                - generic [ref=e186]: 至少存在一个已连接账号的平台
+              - generic [ref=e189]:
+                - generic [ref=e190]:
+                  - generic [ref=e192]: 模型客户计费
+                  - generic [ref=e193]:
+                    - img "dollar" [ref=e195]:
+                      - img [ref=e196]
+                    - generic [ref=e198]: —
+                - generic [ref=e199]: 用量汇总尚未取得
+            - generic [ref=e200]:
+              - generic [ref=e202]:
+                - generic [ref=e204]:
+                  - generic [ref=e206]:
+                    - img "robot" [ref=e207]:
+                      - img [ref=e208]
+                    - text: 模型能力门禁
+                  - button "查看模型详情" [ref=e211] [cursor=pointer]:
+                    - generic [ref=e212] [cursor=pointer]: 查看模型详情
+                - generic [ref=e215]: 模型状态尚未取得，不能把配置状态解释为可用。
+              - generic [ref=e217]:
+                - generic [ref=e219]:
+                  - generic [ref=e221]:
+                    - img "exclamation-circle" [ref=e222]:
+                      - img [ref=e223]
+                    - text: 运营待办
+                  - button "进入用户中心" [ref=e227] [cursor=pointer]:
+                    - generic [ref=e228] [cursor=pointer]: 进入用户中心
+                - generic [ref=e229]:
+                  - generic [ref=e230]:
+                    - generic [ref=e231]:
+                      - generic [ref=e232]: —
+                      - generic [ref=e233]:
+                        - strong [ref=e234]: 开放告警
+                        - generic [ref=e235]: 告警数据尚未取得
+                    - generic [ref=e236]:
+                      - generic [ref=e237]: —
+                      - generic [ref=e238]:
+                        - strong [ref=e239]: 执行队列
+                        - generic [ref=e240]: 任务汇总尚未取得
+                    - generic [ref=e241]:
+                      - generic [ref=e242]: —
+                      - generic [ref=e243]:
+                        - strong [ref=e244]: 未绑定品牌
+                        - generic [ref=e245]: 品牌汇总尚未取得
+                  - generic [ref=e246]:
+                    - button "管理商家授权" [ref=e248] [cursor=pointer]:
+                      - generic [ref=e249] [cursor=pointer]: 管理商家授权
+                    - button "查看平台账务" [ref=e251] [cursor=pointer]:
+                      - generic [ref=e252] [cursor=pointer]: 查看平台账务
+          - generic [ref=e253]:
+            - generic "平台经营指标" [ref=e254]:
+              - generic [ref=e258]:
+                - generic [ref=e260]: 工作区总数（含未付）
+                - generic [ref=e261]:
+                  - img "team" [ref=e263]:
+                    - img [ref=e264]
+                  - generic [ref=e266]: —
+              - generic [ref=e270]:
+                - generic [ref=e272]: 已付商家
+                - generic [ref=e273]:
+                  - img "safety-certificate" [ref=e275]:
+                    - img [ref=e276]
+                  - generic [ref=e278]: —
+              - generic [ref=e282]:
+                - generic [ref=e284]: 累计套餐收入（已付）
+                - generic [ref=e285]:
+                  - img "dollar" [ref=e287]:
+                    - img [ref=e288]
+                  - generic [ref=e290]: —
+              - generic [ref=e294]:
+                - generic [ref=e296]: 累计充值到账
+                - generic [ref=e297]:
+                  - img "dollar" [ref=e299]:
+                    - img [ref=e300]
+                  - generic [ref=e302]: —
+            - generic [ref=e303]:
+              - generic [ref=e306]: 商业化 SKU 与订购情况
+              - generic [ref=e307]:
+                - generic [ref=e308]: 价格和权益来自服务端 V2 SKU 快照；订购数只统计已支付订单，未支付订单不会计入收入或已付商家。
+                - table [ref=e315]:
+                  - rowgroup [ref=e324]:
+                    - row "SKU 类型 价格 权益 已付订单 已付商家 状态" [ref=e325]:
+                      - columnheader "SKU" [ref=e326]
+                      - columnheader "类型" [ref=e327]
+                      - columnheader "价格" [ref=e328]
+                      - columnheader "权益" [ref=e329]
+                      - columnheader "已付订单" [ref=e330]
+                      - columnheader "已付商家" [ref=e331]
+                      - columnheader "状态" [ref=e332]
+                  - rowgroup [ref=e333]:
+                    - row "暂无数据 商业 SKU 尚未取得" [ref=e334]:
+                      - cell "暂无数据 商业 SKU 尚未取得" [ref=e335]:
+                        - generic [ref=e337]:
+                          - img "暂无数据" [ref=e339]
+                          - generic [ref=e345]: 商业 SKU 尚未取得
+            - generic [ref=e346]:
+              - generic [ref=e348]:
+                - generic [ref=e349]: 商家经营台账
+                - generic [ref=e351]:
+                  - button "team 管理商家授权" [ref=e353] [cursor=pointer]:
+                    - img "team" [ref=e355] [cursor=pointer]:
+                      - img [ref=e356] [cursor=pointer]
+                    - generic [ref=e358] [cursor=pointer]: 管理商家授权
+                  - button "safety-certificate 配置套餐" [ref=e360] [cursor=pointer]:
+                    - img "safety-certificate" [ref=e362] [cursor=pointer]:
+                      - img [ref=e363] [cursor=pointer]
+                    - generic [ref=e365] [cursor=pointer]: 配置套餐
+              - generic [ref=e366]:
+                - generic [ref=e367]: 查看商家主体当前套餐和订阅状态；授权变更统一在用户中心完成，服务端 SKU 价格、权益和订单统一在账务与退款中维护。商家名称、店铺数和创意点余额需要对应接口返回后才展示，不用内部 ID 冒充。
+                - table [ref=e374]:
+                  - rowgroup [ref=e382]:
+                    - row "商家主体 套餐 订阅状态 月费 成员 操作" [ref=e383]:
+                      - columnheader "商家主体" [ref=e384]
+                      - columnheader "套餐" [ref=e385]
+                      - columnheader "订阅状态" [ref=e386]
+                      - columnheader "月费" [ref=e387]
+                      - columnheader "成员" [ref=e388]
+                      - columnheader "操作" [ref=e389]
+                  - rowgroup [ref=e390]:
+                    - row "暂无数据 暂无商家数据" [ref=e391]:
+                      - cell "暂无数据 暂无商家数据" [ref=e392]:
+                        - generic [ref=e394]:
+                          - img "暂无数据" [ref=e396]
+                          - generic [ref=e402]: 暂无商家数据
+            - generic [ref=e403]:
+              - generic [ref=e405]:
+                - generic [ref=e407]:
+                  - generic [ref=e408]: 当前页套餐分布
+                  - generic [ref=e410]: 台账页 0 家
+                - generic [ref=e412]:
+                  - img "暂无数据" [ref=e414]
+                  - generic [ref=e420]: 暂无套餐分布
+              - generic [ref=e422]:
+                - generic [ref=e425]: 运营动作
+                - generic [ref=e426]:
+                  - generic [ref=e427]:
+                    - button "team 给商家授权" [ref=e429] [cursor=pointer]:
+                      - img "team" [ref=e431] [cursor=pointer]:
+                        - img [ref=e432] [cursor=pointer]
+                      - generic [ref=e434] [cursor=pointer]: 给商家授权
+                    - button "safety-certificate 管理套餐" [ref=e436] [cursor=pointer]:
+                      - img "safety-certificate" [ref=e438] [cursor=pointer]:
+                        - img [ref=e439] [cursor=pointer]
+                      - generic [ref=e441] [cursor=pointer]: 管理套餐
+                    - button "dollar 查看财务流水" [ref=e443] [cursor=pointer]:
+                      - img "dollar" [ref=e445] [cursor=pointer]:
+                        - img [ref=e446] [cursor=pointer]
+                      - generic [ref=e448] [cursor=pointer]: 查看财务流水
+                  - generic [ref=e449]: 总览只保留经营决策需要的数据。模型、平台连接、规则、存储和系统风险请在各自工作台处理。
+            - generic [ref=e450]: 财务口径：平台已入账的套餐订单与充值订单，当前为累计快照。 财务汇总尚未取得，金额不解释为 0。 套餐目录尚未取得，SKU 数量不解释为 0。
+          - generic [ref=e452]:
+            - generic [ref=e454]:
+              - generic [ref=e455]: 模型服务
+              - button "进入模型服务" [ref=e457] [cursor=pointer]:
+                - generic [ref=e458] [cursor=pointer]: 进入模型服务
+                - img [ref=e459] [cursor=pointer]:
+                  - img [ref=e460] [cursor=pointer]
+            - generic [ref=e463]:
+              - generic [ref=e465]:
+                - generic [ref=e467]: 已就绪能力
+                - generic [ref=e469]: 暂无数据
+              - generic [ref=e471]:
+                - generic [ref=e473]: 阻断能力
+                - generic [ref=e475]: 暂无数据
+              - generic [ref=e476]:
+                - generic [ref=e477]: 状态不可用
+                - generic [ref=e478]: 运行时状态与发布证据分别核验；Provider 配置不代表生产可用。当前 release metadata 未就绪，完整发布门禁仍由服务端决定。
+```

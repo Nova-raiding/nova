@@ -70,6 +70,31 @@ describe('worker commercial execution gate', () => {
     await expect(createCommercialAccessGuard(async () => ({ ...live(snapshot), reservationState: 'consumed' }), { now: () => now }).assertCommercialAccess(event(), 'generation.execute')).rejects.toMatchObject({ code: 'COMMERCIAL_EXECUTION_RESERVATION_INVALID', retryable: false })
   })
 
+  it('preserves an authority-classified denial while rejecting untrusted denial codes', async () => {
+    const snapshot = parseWorkerCommercialAccessSnapshot(event(), 'generation.execute')
+    await expect(createCommercialAccessGuard(async () => ({ ...live(snapshot), allowed: false, ready: false, denialCode: 'COMMERCIAL_EXECUTION_REVISION_STALE' }), { now: () => now }).assertCommercialAccess(event(), 'generation.execute'))
+      .rejects.toMatchObject({ code: 'COMMERCIAL_EXECUTION_REVISION_STALE', retryable: false })
+    await expect(createCommercialAccessGuard(async () => ({ ...live(snapshot), allowed: false, ready: false, denialCode: 'UNTRUSTED' as never }), { now: () => now }).assertCommercialAccess(event(), 'generation.execute'))
+      .rejects.toMatchObject({ code: 'COMMERCIAL_EXECUTION_DENIED', retryable: false })
+  })
+
+  it.each([
+    ['workspace', { workspaceId: 'ws_b' }],
+    ['operation', { operation: 'publish.execute' as const }],
+    ['recheck id', { recheckId: 'commercial_enqueue_1' }],
+  ])('rejects a denied response with a mismatched %s before trusting its denial code', async (_field, mismatch) => {
+    const snapshot = parseWorkerCommercialAccessSnapshot(event(), 'generation.execute')
+    const guard = createCommercialAccessGuard(async () => ({
+      ...live(snapshot),
+      allowed: false,
+      ready: false,
+      denialCode: 'COMMERCIAL_EXECUTION_REVISION_STALE',
+      ...mismatch,
+    }), { now: () => now })
+    await expect(guard.assertCommercialAccess(event(), 'generation.execute'))
+      .rejects.toMatchObject({ code: 'COMMERCIAL_EXECUTION_RECHECK_INVALID', retryable: true })
+  })
+
   it('allows retries only for authority availability and readiness, never for access drift', () => {
     expect(normalizeCommercialAccessFailure({ code: 'COMMERCIAL_EXECUTION_RECHECK_UNAVAILABLE', retryable: false, message: 'temporary' })).toMatchObject({ retryable: true, unknown: false })
     expect(normalizeCommercialAccessFailure({ code: 'COMMERCIAL_EXECUTION_NOT_READY', retryable: false, message: 'wait' })).toMatchObject({ retryable: true, unknown: false })

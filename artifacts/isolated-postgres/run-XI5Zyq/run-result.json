@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-08T11:09:52.002Z",
+  "endedAt": "2026-09-08T11:10:15.440Z",
+  "runId": "5e3fc823-43df-40c1-bfcd-2018d4b46c21",
+  "selectedFiles": [
+    "packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts"
+  ],
+  "childExitCode": 0,
+  "status": "passed",
+  "report": "vitest.json",
+  "errors": [],
+  "fixtureOnly": true,
+  "databaseSource": "newly-created-isolated-fixture",
+  "rolePasswordCompatibility": "isolated-test-fixture-only",
+  "inheritedBusinessEnvironment": false,
+  "sharedContainersTouched": false,
+  "disposal": {
+    "stopped": [
+      "9f8f1a561c3ef009807a5f90e646c23e9d55ac67d01d79a39308f169acc69248",
+      "f035273136894c9878f49125754b2df961379b38c7c755a99cf13aa884477171"
+    ],
+    "leftRunning": []
+  }
+}

@@ -85,6 +85,7 @@ describe('worker production entry', () => {
     await expect(scannerOperationalMetrics(pool as unknown as SqlPool, ['ws_demo'], 12)).resolves.toEqual({ backlog: 0, deadLetter: 9 })
     expect(metricsQuery).toContain("event.last_error->'retryable' = 'true'::jsonb")
     expect(metricsQuery).toContain("COALESCE(event.last_error->>'terminal', 'false') <> 'true'")
+    expect(metricsQuery).toMatch(/event\.last_error->>'terminal'='true' OR \(event\.published_at IS NOT NULL[\s\S]*event\.attempts >= \$3\)\)\)\s+AND EXISTS \(/)
   })
 
   it('propagates poll failures in once mode for a non-zero process exit', () => {

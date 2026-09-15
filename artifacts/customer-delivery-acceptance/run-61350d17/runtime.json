@@ -1,0 +1,25 @@
+{
+  "runId": "61350d17-e5a2-43b7-8537-31479ac32bab",
+  "evidenceDir": "/private/tmp/customer-delivery-clean-ELnwEJ/artifacts/ops-jit-isolation/2026-09-14T08-01-17.878Z-c183b7af-fdc3-4ddf-8a45-8a15474f4973",
+  "baseUrl": "http://127.0.0.1:57047",
+  "apiPort": 57044,
+  "uiPort": 57045,
+  "gatewayPort": 57047,
+  "persistence": {
+    "mode": "postgres",
+    "ready": true
+  },
+  "redis": {
+    "ready": true
+  },
+  "authorization": {
+    "mode": "enforce",
+    "durableAssignmentsRequired": true,
+    "identityProvider": "local signed OIDC fixture"
+  },
+  "models": {
+    "configured": false,
+    "called": false
+  },
+  "sharedConfigurationRead": false
+}

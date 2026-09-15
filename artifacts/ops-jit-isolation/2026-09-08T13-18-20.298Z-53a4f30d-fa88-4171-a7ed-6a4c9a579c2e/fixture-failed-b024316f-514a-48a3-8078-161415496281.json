@@ -1,0 +1,11 @@
+{
+  "runId": "b024316f-514a-48a3-8078-161415496281",
+  "error": "ISOLATED_FIXTURE_SETUP_FAILED",
+  "cleanup": {
+    "stopped": [
+      "81a62e67629b19b830b32b1f9510d9584df3f04a2da7e8b0ae5f2de38eecf1c3",
+      "ffa11160ea800b347a29709c6dbf0713de9ddd4af86fa57463b0e3307f12e8c4"
+    ],
+    "leftRunning": []
+  }
+}

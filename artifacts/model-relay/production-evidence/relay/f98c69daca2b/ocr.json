@@ -1,0 +1,53 @@
+{
+  "schema_version": "1",
+  "release_id": "f98c69daca2b",
+  "modality": "ocr",
+  "observed_at": "2026-09-14T09:29:30.581Z",
+  "http_status": 200,
+  "response_headers": {
+    "x-oneapi-request-id": "202609140929266519048948268d9d6zL51oEu3"
+  },
+  "result": {
+    "modality": "ocr",
+    "endpoint": "/chat/completions",
+    "model": "glm-5.3-flash",
+    "httpStatus": 200,
+    "providerRequestId": "202609140929266519048948268d9d6zL51oEu3",
+    "usageObserved": true,
+    "costObserved": true,
+    "costSource": "relay_pricing_snapshot",
+    "costCny": 0.00010928,
+    "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+    "pricingGroup": "VIP",
+    "state": "ready"
+  },
+  "relay_response": {
+    "choices": [
+      {
+        "finish_reason": "length",
+        "index": 0,
+        "message": {
+          "content": "",
+          "reasoning_content": "The user has sent an image that appears to be completely blank/white, and asks me to only return JSON: {\"ocr_text\":\"OK\"}\n\nWait, let",
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1789378170,
+    "id": "20260914172926bb2df72ebfea48c6",
+    "model": "glm-5.3-flash",
+    "object": "chat.completion",
+    "request_id": "20260914172926bb2df72ebfea48c6",
+    "usage": {
+      "completion_tokens": 32,
+      "completion_tokens_details": {
+        "reasoning_tokens": 30
+      },
+      "prompt_tokens": 40,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_tokens": 72
+    }
+  }
+}

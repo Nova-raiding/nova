@@ -5,6 +5,7 @@ import { describeOpsError, localOpsSessionEnabled, loginPlatformOps, logoutPlatf
 import type { OperationalAlert, OpsDataSource, OpsSession, OpsWorkbench } from "../types/ops.js";
 import { createAuthorizationProjection, type AuthorizationProjection } from "../authz/authorization.js";
 import { RoleScopeBar } from "./authz/RoleScopeBar.js";
+import { accountLabel } from "../authz/accountLabel.js";
 
 interface OpsHeaderProps {
   managedSession: boolean;
@@ -63,7 +64,7 @@ export function OpsHeader({
   );
   const hasSession = Boolean(sessionLoaded && session);
   const shouldShowLogin = !hasSession || isDemoSession;
-  const accountName = session?.account_login ?? session?.actor_id ?? (session ? platformLogin.trim() || "平台运营账号" : isDemoSession ? "本机演示账号" : "平台运营账号");
+  const accountName = isDemoSession ? "本机演示账号" : accountLabel(session);
   const accountInitial = Array.from(accountName)[0] ?? "运";
   const workbenchLabel = session?.workbench === "platform" || activeWorkbench === "platform" ? "平台运营" : "商家工作区";
   const roleLabel = roles?.join("、") || session?.roles?.join("、") || "未声明";

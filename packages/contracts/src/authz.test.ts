@@ -35,6 +35,7 @@ describe('authorization policy registry', () => {
       'ops.canonical.backfill.create', 'ops.canonical.backfill.run',
       'ops.canonical.backfill.pause', 'ops.canonical.backfill.resume',
       'ops.canonical.backfill.conflict.claim', 'ops.canonical.backfill.conflict.resolve',
+      'ops.customer-delivery.assets.upload',
       'platform.media.spec.approve', 'content.export', 'content.approve',
       'publish.prepare', 'publish.batch.prepare', 'publish.batch.pause',
       'publish.batch.resume', 'publish.batch.retry_failed', 'delivery.bundle.verify',
@@ -80,6 +81,7 @@ describe('authorization policy registry', () => {
     for (const method of ['ops.customer-delivery.create', 'ops.customer-delivery.videos.add'] as const) {
       expect(getMcpMethodPolicy(method)).toMatchObject({ capability: 'customer.delivery.update', scope: 'platform', workbench: 'platform', dataClass: 'customer_metadata', effect: 'write', obligations: [] })
     }
+    expect(getMcpMethodPolicy('ops.customer-delivery.assets.upload')).toMatchObject({ capability: 'customer.delivery.update', scope: 'platform', workbench: 'platform', dataClass: 'customer_metadata', effect: 'write', audit: 'allow_and_deny', obligations: [] })
   })
 
   it('normalizes legacy roles at one boundary without elevating ops_admin to platform_admin', () => {
@@ -95,6 +97,8 @@ describe('authorization policy registry', () => {
     expect(getMcpMethodPolicy('commercial.catalog.get')).toMatchObject({ capability: 'billing.self.read', scope: 'self' })
     expect(getMcpMethodPolicy('commercial.order.payment.get')).toMatchObject({ capability: 'billing.self.read', scope: 'self' })
     expect(getMcpMethodPolicy('creative-points.balance.get')).toMatchObject({ capability: 'billing.self.read', scope: 'self' })
+    expect(getMcpMethodPolicy('creative-points.statement.list')).toMatchObject({ capability: 'billing.workspace.read', scope: 'workspace' })
+    expect(capabilitiesForRoles(['operator'])).not.toContain('billing.workspace.read')
     expect(capabilitiesForRoles(['platform_admin'])).toContain('billing.platform.read')
     for (const role of CANONICAL_ROLES) {
       expect(capabilitiesForRoles([role]), `${role} must be able to load its own authorization session`).toContain('authorization.session.read')

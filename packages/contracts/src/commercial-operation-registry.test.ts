@@ -46,10 +46,12 @@ describe('complete commercial operation registry E1 totality', () => {
     )).toThrow('missing classifications: MCP:new.method.requires.review')
   })
 
-  it('publishes distinct workspace-scoped schemas for the four V2 recovery reads', () => {
+  it('publishes exact personal-summary and workspace-statement policies for the four V2 recovery reads', () => {
     for (const method of ['commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list'] as const) {
       expect(MCP_METHOD_SCHEMAS[method].additionalProperties).toBe(false)
-      expect(getMcpMethodPolicy(method)).toMatchObject({ effect: 'read', scope: 'workspace', capability: 'billing.workspace.read' })
+      expect(getMcpMethodPolicy(method)).toMatchObject(method === 'creative-points.statement.list'
+        ? { effect: 'read', scope: 'workspace', capability: 'billing.workspace.read' }
+        : { effect: 'read', scope: 'self', capability: 'billing.self.read' })
       expect(resolveMcp(method)).toMatchObject({ outcome: 'REGISTERED', policy: { classification: 'RECOVERY_CONTROL' } })
     }
     expect(Object.keys(MCP_METHOD_SCHEMAS['commercial.access.get'].properties)).toEqual(['workspace_id'])
@@ -68,7 +70,7 @@ describe('complete commercial operation registry E1 totality', () => {
     expect(getMcpMethodPolicy('commercial.order.create')).toMatchObject({ effect: 'write', scope: 'workspace', capability: 'billing.workspace.update' })
     expect(resolveMcp('commercial.order.create')).toMatchObject({ outcome: 'REGISTERED', policy: { enabled: true, classification: 'RECOVERY_CONTROL' } })
     expect(Object.keys(MCP_METHOD_SCHEMAS['commercial.order.payment.get'].properties)).toEqual(['workspace_id', 'order_id'])
-    expect(getMcpMethodPolicy('commercial.order.payment.get')).toMatchObject({ effect: 'read', scope: 'workspace', capability: 'billing.workspace.read' })
+    expect(getMcpMethodPolicy('commercial.order.payment.get')).toMatchObject({ effect: 'read', scope: 'self', capability: 'billing.self.read' })
   })
 
   it('keeps every MCP authorization reference attached instead of copying or weakening capabilities', () => {
@@ -170,7 +172,7 @@ describe('complete commercial operation registry E1 totality', () => {
     }
   })
 
-  it('keeps workspace recovery reads in exact HTTP/MCP parity', () => {
+  it('keeps recovery reads in exact HTTP/MCP parity without exposing workspace statements as personal data', () => {
     const pairs = [
       ['http:GET:/v1/commercial/access', 'commercial.access.get'],
       ['http:GET:/v1/commercial/catalog', 'commercial.catalog.get'],
@@ -183,7 +185,11 @@ describe('complete commercial operation registry E1 totality', () => {
         outcome: 'REGISTERED',
         policy: { domain: 'COMMERCIAL', enabled: true, classification: 'RECOVERY_CONTROL', authorization_policy_ref: method },
       })
-      expect(getMcpMethodPolicy(method)).toMatchObject({ scope: 'workspace', workbench: 'workspace', effect: 'read' })
+      expect(getMcpMethodPolicy(method)).toMatchObject({
+        scope: method === 'creative-points.statement.list' ? 'workspace' : 'self',
+        capability: method === 'creative-points.statement.list' ? 'billing.workspace.read' : 'billing.self.read',
+        workbench: 'workspace', effect: 'read',
+      })
     }
     expect(resolveHttp('http:POST:/v1/commercial/orders')).toMatchObject({
       outcome: 'REGISTERED',

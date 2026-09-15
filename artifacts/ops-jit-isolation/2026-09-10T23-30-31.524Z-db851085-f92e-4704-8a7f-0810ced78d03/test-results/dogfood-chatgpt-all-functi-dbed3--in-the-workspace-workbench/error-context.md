@@ -1,0 +1,227 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营与商家服务
+      - generic [ref=e14]: 平台运营控制面
+      - navigation "平台运营功能导航" [ref=e15]:
+        - region "平台治理" [ref=e16]:
+          - heading "平台治理" [level=2] [ref=e17]
+          - button "总览" [ref=e18] [cursor=pointer]:
+            - img "dashboard" [ref=e19] [cursor=pointer]:
+              - img [ref=e20] [cursor=pointer]
+            - text: 总览
+        - region "商家数据" [ref=e22]:
+          - heading "商家数据" [level=2] [ref=e23]
+          - button "知识库" [ref=e24] [cursor=pointer]:
+            - img "database" [ref=e25] [cursor=pointer]:
+              - img [ref=e26] [cursor=pointer]
+            - text: 知识库
+        - region "模型与计费" [ref=e28]:
+          - heading "模型与计费" [level=2] [ref=e29]
+          - button "账务与退款" [ref=e30] [cursor=pointer]:
+            - img "dollar" [ref=e31] [cursor=pointer]:
+              - img [ref=e32] [cursor=pointer]
+            - text: 账务与退款
+  - generic [ref=e34]:
+    - banner [ref=e35]:
+      - generic [ref=e36]:
+        - heading "商业与平台控制台" [level=2] [ref=e37]
+        - region "当前身份与权限范围" [ref=e38]:
+          - generic [ref=e39]:
+            - img [ref=e41]:
+              - img [ref=e42]
+            - strong [ref=e46]: 企业管理员
+            - status [ref=e48]: 授权状态：已由服务端验证
+            - button "通知消息，暂无未读" [ref=e51] [cursor=pointer]:
+              - img "bell" [ref=e53] [cursor=pointer]:
+                - img [ref=e54] [cursor=pointer]
+            - generic [ref=e57]: 企业主体 · ws_ops_fixture_187dec1434394ef28d59bb48d0f5b266
+            - generic [ref=e59]: 策略 2026-09-08.v1
+          - status [ref=e60]: 企业主体运营视图：仅作用于当前授权企业主体；不包含平台运营能力。
+      - generic [ref=e62]:
+        - generic [ref=e63]:
+          - generic [ref=e64]: 当前状态
+          - status [ref=e65]: 已登录
+        - button "打开账号信息" [ref=e66] [cursor=pointer]:
+          - generic [ref=e67] [cursor=pointer]: o
+          - generic [ref=e68] [cursor=pointer]:
+            - strong [ref=e69] [cursor=pointer]: ops-fixture-target-187dec14-3439-4ef2-8d59-bb48d0f5b266
+            - generic [ref=e70] [cursor=pointer]: 商家工作区
+          - img [ref=e71] [cursor=pointer]:
+            - img [ref=e72] [cursor=pointer]
+    - main [ref=e74]:
+      - status [ref=e75]
+      - region "成员与权限" [active] [ref=e76]:
+        - generic [ref=e77]:
+          - generic [ref=e79]:
+            - generic [ref=e80]:
+              - generic [ref=e81]: ACCESS GOVERNANCE
+              - heading "成员与权限" [level=1] [ref=e82]
+              - generic [ref=e83]: 在当前企业主体范围内邀请成员、调整角色和停用访问；所有变更均要求原因并进入审计记录。
+            - button "刷新成员" [ref=e85] [cursor=pointer]:
+              - generic [ref=e86] [cursor=pointer]: 刷新成员
+          - generic [ref=e88]:
+            - generic [ref=e89]:
+              - generic [ref=e92]: 当前账号权限
+              - generic [ref=e94]:
+                - generic [ref=e96]:
+                  - text: 当前账号：
+                  - strong [ref=e98]: ops-fixture-target-187dec14-3439-4ef2-8d59-bb48d0f5b266
+                  - generic [ref=e99]: merchant_admin
+                - generic "当前账号能力列表" [ref=e101]:
+                  - generic [ref=e102]:
+                    - generic [ref=e104]:
+                      - generic [ref=e105]: 审计与安全
+                      - generic [ref=e107]: 1 项
+                    - generic "技术标识：audit.read" [ref=e111]: 查看审计记录
+                  - generic [ref=e112]:
+                    - generic [ref=e114]:
+                      - generic [ref=e115]: 登录与会话
+                      - generic [ref=e117]: 1 项
+                    - generic "技术标识：authorization.session.read" [ref=e121]: 查看当前登录会话
+                  - generic [ref=e122]:
+                    - generic [ref=e124]:
+                      - generic [ref=e125]: 自动化任务
+                      - generic [ref=e127]: 2 项
+                    - generic [ref=e129]:
+                      - generic "技术标识：automation.read" [ref=e131]: 查看自动化任务
+                      - generic "技术标识：automation.update" [ref=e133]: 配置自动化任务
+                  - generic [ref=e134]:
+                    - generic [ref=e136]:
+                      - generic [ref=e137]: 账务与退款
+                      - generic [ref=e139]: 5 项
+                    - generic [ref=e141]:
+                      - generic "技术标识：billing.export" [ref=e143]: 导出账务数据
+                      - generic "技术标识：billing.refund.execute" [ref=e145]: 执行退款
+                      - generic "技术标识：billing.self.read" [ref=e147]: 查看本人账务
+                      - generic "技术标识：billing.workspace.read" [ref=e149]: 查看企业主体账务
+                      - generic "技术标识：billing.workspace.update" [ref=e151]: 管理企业主体账务
+                  - generic [ref=e152]:
+                    - generic [ref=e154]:
+                      - generic [ref=e155]: 其他权限
+                      - generic [ref=e157]: 1 项
+                    - generic "技术标识：commercial.service_boundary.accept" [ref=e161]: commercial · service_boundary · accept
+                  - generic [ref=e162]:
+                    - generic [ref=e164]:
+                      - generic [ref=e165]: 商家内容与知识库
+                      - generic [ref=e167]: 3 项
+                    - generic [ref=e169]:
+                      - generic "技术标识：customer.content.read" [ref=e171]: 查看商家内容与知识库
+                      - generic "技术标识：customer.content.update" [ref=e173]: 维护商家内容与知识库
+                      - generic "技术标识：customer.publish.execute" [ref=e175]: 执行商家发布
+                  - generic [ref=e176]:
+                    - generic [ref=e178]:
+                      - generic [ref=e179]: 营销任务
+                      - generic [ref=e181]: 2 项
+                    - generic [ref=e183]:
+                      - generic "技术标识：marketing.queue.read" [ref=e185]: 查看营销任务队列
+                      - generic "技术标识：marketing.queue.update" [ref=e187]: 管理营销任务队列
+                  - generic [ref=e188]:
+                    - generic [ref=e190]:
+                      - generic [ref=e191]: 商家入驻
+                      - generic [ref=e193]: 1 项
+                    - generic "技术标识：merchant.onboarding.execute" [ref=e197]: 执行商家入驻引导
+                  - generic [ref=e198]:
+                    - generic [ref=e200]:
+                      - generic [ref=e201]: 平台规则与素材
+                      - generic [ref=e203]: 1 项
+                    - generic "技术标识：platform.media_spec.read" [ref=e207]: 查看平台素材规格
+                  - generic [ref=e208]:
+                    - generic [ref=e210]:
+                      - generic [ref=e211]: 平台规则
+                      - generic [ref=e213]: 1 项
+                    - generic "技术标识：rule.read" [ref=e217]: 查看平台规则
+                  - generic [ref=e218]:
+                    - generic [ref=e220]:
+                      - generic [ref=e221]: 平台连接
+                      - generic [ref=e223]: 2 项
+                    - generic [ref=e225]:
+                      - generic "技术标识：store.connection.read" [ref=e227]: 查看平台连接
+                      - generic "技术标识：store.connection.update" [ref=e229]: 管理平台授权连接
+                  - generic [ref=e230]:
+                    - generic [ref=e232]:
+                      - generic [ref=e233]: 企业主体与成员
+                      - generic [ref=e235]: 5 项
+                    - generic [ref=e237]:
+                      - generic "技术标识：workspace.delete.execute" [ref=e239]: 删除企业主体
+                      - generic "技术标识：workspace.member.manage" [ref=e241]: 管理成员与角色
+                      - generic "技术标识：workspace.member.read" [ref=e243]: 查看成员
+                      - generic "技术标识：workspace.settings.update" [ref=e245]: 修改企业主体设置
+                      - generic "技术标识：workspace.summary.read" [ref=e247]: 查看企业主体概览
+                - generic [ref=e249]: 权限来自当前企业主体服务端会话，不能在浏览器端自行添加。蓝色表示查看权限，绿色表示管理、执行或变更权限；鼠标悬停可查看技术标识。
+            - generic [ref=e250]:
+              - generic [ref=e252]:
+                - generic [ref=e253]: 当前企业主体成员
+                - generic [ref=e255]: Workspace ID：ws_ops_fixture_187dec1434394ef28d59bb48d0f5b266
+              - generic [ref=e257]:
+                - status [ref=e258]: 已加载 1 位成员
+                - form "邀请企业主体成员" [ref=e260]:
+                  - generic [ref=e262]:
+                    - generic "用户 ID" [ref=e264]: "* 用户 ID :"
+                    - textbox "* 用户 ID :" [ref=e268]
+                  - generic [ref=e270]:
+                    - generic "显示名" [ref=e272]: "显示名 :"
+                    - textbox "显示名 :" [ref=e276]
+                  - generic [ref=e278]:
+                    - generic "角色" [ref=e280]: "* 角色 :"
+                    - generic [ref=e284] [cursor=pointer]:
+                      - generic [ref=e285] [cursor=pointer]:
+                        - generic: 请选择角色
+                        - combobox "* 角色 :" [ref=e286] [cursor=pointer]
+                      - img "down" [ref=e288] [cursor=pointer]:
+                        - img [ref=e289] [cursor=pointer]
+                  - generic [ref=e292]:
+                    - generic "邀请原因" [ref=e294]: "* 邀请原因 :"
+                    - textbox "* 邀请原因 :" [ref=e298]
+                  - button "邀请成员" [ref=e304] [cursor=pointer]:
+                    - generic [ref=e305] [cursor=pointer]: 邀请成员
+                - generic [ref=e309]:
+                  - table "成员列表" [ref=e313]:
+                    - rowgroup [ref=e322]:
+                      - row "身份标识 显示名 角色 状态 版本 更新时间 操作" [ref=e323]:
+                        - columnheader "身份标识" [ref=e324]
+                        - columnheader "显示名" [ref=e325]
+                        - columnheader "角色" [ref=e326]
+                        - columnheader "状态" [ref=e327]
+                        - columnheader "版本" [ref=e328]
+                        - columnheader "更新时间" [ref=e329]
+                        - columnheader "操作" [ref=e330]
+                    - rowgroup [ref=e331]:
+                      - row "ops-fixture-target-187dec14-3439-4ef2-8d59-bb48d0f5b266 Isolated Directory Target 企业管理员 已激活 1 2026/9/11 07:30:33 调整 Isolated Directory Target 的角色 停用 Isolated Directory Target" [ref=e332]:
+                        - cell "ops-fixture-target-187dec14-3439-4ef2-8d59-bb48d0f5b266" [ref=e333]:
+                          - generic [ref=e334]: ops-fixture-target-187dec14-3439-4ef2-8d59-bb48d0f5b266
+                        - cell "Isolated Directory Target" [ref=e335]
+                        - cell "企业管理员" [ref=e336]:
+                          - generic [ref=e337]: 企业管理员
+                        - cell "已激活" [ref=e338]:
+                          - generic [ref=e339]: 已激活
+                        - cell "1" [ref=e340]
+                        - cell "2026/9/11 07:30:33" [ref=e341]
+                        - cell "调整 Isolated Directory Target 的角色 停用 Isolated Directory Target" [ref=e342]:
+                          - generic [ref=e343]:
+                            - button "调整 Isolated Directory Target 的角色" [ref=e345] [cursor=pointer]:
+                              - generic [ref=e346] [cursor=pointer]: 改角色
+                            - button "停用 Isolated Directory Target" [disabled] [ref=e348]:
+                              - generic: 不能停用自己
+                  - list [ref=e349]:
+                    - listitem [ref=e350]: 共 1 位成员
+                    - listitem "上一页" [ref=e351]:
+                      - button "left" [disabled] [ref=e352]:
+                        - img "left" [ref=e353]:
+                          - img [ref=e354]
+                    - listitem "1" [ref=e356] [cursor=pointer]:
+                      - generic [ref=e357] [cursor=pointer]: "1"
+                    - listitem "下一页" [ref=e358]:
+                      - button "right" [disabled] [ref=e359]:
+                        - img "right" [ref=e360]:
+                          - img [ref=e361]
+```

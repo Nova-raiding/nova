@@ -1,0 +1,14 @@
+[Unit]
+Description=Renew and safely install Store Nova TLS certificate
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/store-nova-tls-renew
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

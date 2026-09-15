@@ -1,0 +1,699 @@
+{
+  "schemaVersion": 2,
+  "status": "passed",
+  "evidenceKind": "isolated-real-customer-delivery-scan-persistence",
+  "observedAt": "2026-09-14T14:43:41.065Z",
+  "sharedContainersTouched": false,
+  "businessWrites": 0,
+  "receiptSignaturesSaved": false,
+  "fileBodiesSaved": false,
+  "runId": "644d38ea-bea5-4a1d-be30-d78628ea1b5a",
+  "workspaceId": "ws_ops_fixture_644d38eabea54a1dbe30d78628ea1b5a",
+  "scanner": {
+    "runId": "2a249440-55e3-4171-aea6-8f4c398fba0e",
+    "image": "clamav/clamav-debian@sha256:bcfc3d6117a6cfbeb6cd041c00164097916291b870c6183e06def6fed7fb740b",
+    "engineVersion": "1.4.6",
+    "definitionsVersion": "28123",
+    "definitionsPublishedAt": "2026-09-14T06:24:19.000Z",
+    "eicarSelfTestPassed": true,
+    "ordinaryContentProbePassed": true
+  },
+  "points": {
+    "grants": 0,
+    "grantedPoints": 0,
+    "operations": 0,
+    "reservations": 0,
+    "ledgerEvents": 0,
+    "balanceState": "uninitialized",
+    "availablePoints": null,
+    "noPointsGrantedOrConsumed": true
+  },
+  "attachments": [
+    {
+      "purpose": "contract",
+      "deliveryId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "assetId": "asset_4758600b-b40b-4ca8-84fb-1e62ccf98068",
+      "eventId": "evt_d0049eaa-b2ef-4b44-a0ef-d43fafdf845e",
+      "sourceRevision": 1,
+      "sha256": "8be1400e3e779ea89c9a5074687a7795d3ba74782308408a20db2df7ed1ff999",
+      "sizeBytes": 610,
+      "mimeType": "application/pdf",
+      "quarantineKeySha256": "e084109181b4ae1820c9af3c5f10bdde2386efae099318ecd44dd9f306c33f6d",
+      "cleanKeySha256": "bc2adb8936dd2e57547df7d35ecf2b00ed17f511cef66648947fcbb496de7c23",
+      "objectBytesAndMetadataVerified": true,
+      "admissionDecisionId": "authz_89ac535c-e0ce-43df-aaf0-c2958dd826f0",
+      "receiptId": "scan_d804099c47e68f3bf18918016aa705865fef5f0baf37f32039cef2f76eb623dc",
+      "receiptDigest": "64a0172c63a2a8e3a4f57c406502fc898ea6a3d66e962011197e6aeeee675e48",
+      "signaturePresentAndPersistedCopiesMatch": true,
+      "callbackStatus": "accepted",
+      "callbackAttempts": 1,
+      "callbackAcceptedAt": "2026-09-14T14:42:20.805Z",
+      "workerStatus": "completed",
+      "workerPublishedAt": "2026-09-14T14:42:20.820Z",
+      "priorWorkerFailures": 0,
+      "uploadAuditIds": [
+        "1cfb0a8c-91ac-45e1-bc2e-ec54f3a8bbd6"
+      ],
+      "registeredResourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "registrationAuditIds": [
+        "f76164b9-f394-4f78-8e92-5d94a824eca9",
+        "49496bec-1081-4d5c-9fff-10063566f762",
+        "7f6b0451-eb44-4c8d-9e60-e499164fa6b8",
+        "31196c60-08f9-47dd-9274-06efc51eaacf",
+        "79c431a9-00ae-4c8d-94bf-d1b625cfb6bc"
+      ]
+    },
+    {
+      "purpose": "payment",
+      "deliveryId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "assetId": "asset_86b531be-5988-4654-a006-ce478a851afe",
+      "eventId": "evt_511ba9dc-4e3f-49d0-a74d-6cacd5b5755c",
+      "sourceRevision": 1,
+      "sha256": "cd95f8f49484896dc3d59fc1a4ddafea72f12adb20bb11f9570987cfa1c6cc0b",
+      "sizeBytes": 602,
+      "mimeType": "application/pdf",
+      "quarantineKeySha256": "b25dd64ce934daec9cee0b6373230aa16ca7111492cd2faa5b3aa64c3160b6ab",
+      "cleanKeySha256": "2577a3707c41c8be16e9db453c29869e9d603321655c7af3c0d5ccc1c3b1908b",
+      "objectBytesAndMetadataVerified": true,
+      "admissionDecisionId": "authz_4187b710-e1e3-4e59-9708-7bbad1de5e63",
+      "receiptId": "scan_0cb2904df41b18343816b4eabd06c622b510b68443619926f596de18057fc2dd",
+      "receiptDigest": "488a68d47a14df8243f9c705aec316c73b5a09274648212c894f51cb557be8de",
+      "signaturePresentAndPersistedCopiesMatch": true,
+      "callbackStatus": "accepted",
+      "callbackAttempts": 1,
+      "callbackAcceptedAt": "2026-09-14T14:42:26.849Z",
+      "workerStatus": "completed",
+      "workerPublishedAt": "2026-09-14T14:42:26.854Z",
+      "priorWorkerFailures": 0,
+      "uploadAuditIds": [
+        "5f093e10-a943-490a-ab0d-ab7f42815c91"
+      ],
+      "registeredResourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "registrationAuditIds": [
+        "49496bec-1081-4d5c-9fff-10063566f762",
+        "7f6b0451-eb44-4c8d-9e60-e499164fa6b8",
+        "31196c60-08f9-47dd-9274-06efc51eaacf",
+        "79c431a9-00ae-4c8d-94bf-d1b625cfb6bc"
+      ]
+    },
+    {
+      "purpose": "training",
+      "deliveryId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "assetId": "asset_6d4cc766-8e56-4257-8974-b93b6b25d13c",
+      "eventId": "evt_ea2c247d-e65b-4f10-8d6e-7539e43641a5",
+      "sourceRevision": 1,
+      "sha256": "966b2ecd400c7b31c0c980a7fa096990630a814ce18fe64b201212c1f9a5230e",
+      "sizeBytes": 619,
+      "mimeType": "application/pdf",
+      "quarantineKeySha256": "379e273146be494482792f39b3b5a7a76858076b031424204f4ee0a372c1a611",
+      "cleanKeySha256": "2095b310e2747e67f5b8044a6db4d11ef18aa6c1bfb85d3835f38b77dbd5f2a3",
+      "objectBytesAndMetadataVerified": true,
+      "admissionDecisionId": "authz_e24c6206-d90f-40a6-a8bc-2ad375e3aa66",
+      "receiptId": "scan_6c9fd73f34799b6fd196d266f38bfb32cd58db5c1acda4d9a54605910ba6bc55",
+      "receiptDigest": "90695caab0cd7a836307c98f2b8f7126918aec25c01a9496505c009f2529d25a",
+      "signaturePresentAndPersistedCopiesMatch": true,
+      "callbackStatus": "accepted",
+      "callbackAttempts": 1,
+      "callbackAcceptedAt": "2026-09-14T14:42:52.906Z",
+      "workerStatus": "completed",
+      "workerPublishedAt": "2026-09-14T14:42:52.919Z",
+      "priorWorkerFailures": 0,
+      "uploadAuditIds": [
+        "874c89e0-f193-4af0-a6b7-2394f8314432"
+      ],
+      "registeredResourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "registrationAuditIds": [
+        "7f6b0451-eb44-4c8d-9e60-e499164fa6b8",
+        "79c431a9-00ae-4c8d-94bf-d1b625cfb6bc"
+      ]
+    },
+    {
+      "purpose": "video",
+      "deliveryId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "assetId": "asset_bd727e90-4a68-4a88-97c2-e82966bba9ca",
+      "eventId": "evt_9d3c5b57-f072-4389-bb63-b23ad85b18f2",
+      "sourceRevision": 1,
+      "sha256": "672abe0dad77d36c280a3154286ee0afcb58a6f3ff0ed55187969da149b796b8",
+      "sizeBytes": 1545,
+      "mimeType": "video/mp4",
+      "quarantineKeySha256": "e22f8afdbdcf8b74836c1bed748d7bd2ac9478fe6b946390cfcc38335e5f9692",
+      "cleanKeySha256": "aea2431cbaa32ad85c8e9ff91b8974e34574c8be9422d1ac20e96016d395eb6f",
+      "objectBytesAndMetadataVerified": true,
+      "admissionDecisionId": "authz_74d01ddf-3ae7-4ef3-91f5-586db9d742df",
+      "receiptId": "scan_68d29dc9404dcb7dfa7123d1040f0f1e175f87c1a5aeda2326a0b4cbbbe5d775",
+      "receiptDigest": "6af5dc92c03e072721c8a62c6cbcf0f276c646e5087d3df09d31e4541be642f9",
+      "signaturePresentAndPersistedCopiesMatch": true,
+      "callbackStatus": "accepted",
+      "callbackAttempts": 1,
+      "callbackAcceptedAt": "2026-09-14T14:42:58.147Z",
+      "workerStatus": "completed",
+      "workerPublishedAt": "2026-09-14T14:42:58.165Z",
+      "priorWorkerFailures": 0,
+      "uploadAuditIds": [
+        "b5e7d52d-d5da-469a-977c-0b0c630f28b1"
+      ],
+      "registeredResourceId": "cdv_4b5892e5-fe2d-41be-b615-9d2f76aa85dd",
+      "registrationAuditIds": [
+        "6ed21ed9-c31c-4b4e-87cf-741455e4dd08"
+      ]
+    },
+    {
+      "purpose": "video",
+      "deliveryId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "assetId": "asset_9fdfa811-cb8c-4116-b7a7-512832f65cd2",
+      "eventId": "evt_4b07a8b3-b143-4c32-9e2f-84b078051333",
+      "sourceRevision": 1,
+      "sha256": "5d1e62b9412d2dbd0138abee356f5d15ae776eb3c6e507aa2de5af579d2a10d8",
+      "sizeBytes": 549,
+      "mimeType": "video/webm",
+      "quarantineKeySha256": "d0bbde9b95a508052247475c70fa131c3c432aabf592de08048aa578b21fbfcf",
+      "cleanKeySha256": "a203d5f976a24bdce9f23d4717ef32e790201f9d71e0f89bd5e4321ee61aaee0",
+      "objectBytesAndMetadataVerified": true,
+      "admissionDecisionId": "authz_119695a5-07d6-4f59-842c-437416d8ce25",
+      "receiptId": "scan_ccac17d8d5109345ec502c6e2b7dd5af858678214f11fdf67a2bed8683032520",
+      "receiptDigest": "65b37db87c1e2d4f026a56e723fbfa480964d4f3a78fb2870d36df81af1cb7e7",
+      "signaturePresentAndPersistedCopiesMatch": true,
+      "callbackStatus": "accepted",
+      "callbackAttempts": 1,
+      "callbackAcceptedAt": "2026-09-14T14:43:00.517Z",
+      "workerStatus": "completed",
+      "workerPublishedAt": "2026-09-14T14:43:00.547Z",
+      "priorWorkerFailures": 0,
+      "uploadAuditIds": [
+        "ed07e84c-8773-4f7e-a9e1-ee098ee63429"
+      ],
+      "registeredResourceId": "cdv_a257c34f-7481-4710-a895-eaed7724507e",
+      "registrationAuditIds": [
+        "cd320e12-b934-4e02-9292-ab6f460c91bc"
+      ]
+    },
+    {
+      "purpose": "system_integration",
+      "deliveryId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "assetId": "asset_9818d8ff-5b27-42b7-a5d2-a88ba6e8a18a",
+      "eventId": "evt_26925d04-11e9-49a9-9fbd-4b9452c5287c",
+      "sourceRevision": 1,
+      "sha256": "031f7443839f8d169727eb8f2f2a7b70c95d8f42cd2021d17957ed7ee2a69217",
+      "sizeBytes": 614,
+      "mimeType": "application/pdf",
+      "quarantineKeySha256": "96dc9989d9df7cd5c91061a65e1b481c68da71616c2f7dadbe2c2508e61d4864",
+      "cleanKeySha256": "032760924b22efa8cf099f85df44e48774052d04d0cb803210fbef9ba0271cb0",
+      "objectBytesAndMetadataVerified": true,
+      "admissionDecisionId": "authz_a6811651-3cc7-427a-8320-37d8c96a3d65",
+      "receiptId": "scan_15f6dc2c9759cf35c6b10f5b14ec9f3a38691d7107718ee7983dce55435fc39f",
+      "receiptDigest": "3bf1774d1fe37d2a9f80cd8cbe3de37fb9dd3c87562996accffd7bcaeb4e5101",
+      "signaturePresentAndPersistedCopiesMatch": true,
+      "callbackStatus": "accepted",
+      "callbackAttempts": 1,
+      "callbackAcceptedAt": "2026-09-14T14:42:35.101Z",
+      "workerStatus": "completed",
+      "workerPublishedAt": "2026-09-14T14:42:35.106Z",
+      "priorWorkerFailures": 0,
+      "uploadAuditIds": [
+        "63c2bb02-ebe0-4775-9920-74a629cc95ab"
+      ],
+      "registeredResourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3:system_integration",
+      "registrationAuditIds": [
+        "249473da-c023-42d3-a524-699978f1dea2"
+      ]
+    },
+    {
+      "purpose": "functional_acceptance",
+      "deliveryId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "assetId": "asset_782f5a63-24f3-452d-8e14-c166799e6631",
+      "eventId": "evt_ddf7df5c-8f3a-4cbf-bff5-fe73fb6722e8",
+      "sourceRevision": 1,
+      "sha256": "4281f6c86eab8831d70e7db9624d21b887eee56c7b0e241b071bf36b189f0ac3",
+      "sizeBytes": 619,
+      "mimeType": "application/pdf",
+      "quarantineKeySha256": "030daa743354db051278d76adbe67c7112a12039b7b2ed593f58866e43564666",
+      "cleanKeySha256": "5ecc7e71c2e78d2cad7efcf9321854713baf4b73e86405b2b3e0436f48e7a85a",
+      "objectBytesAndMetadataVerified": true,
+      "admissionDecisionId": "authz_4de32ea2-a29c-4a12-b157-5bcbfffc5a0d",
+      "receiptId": "scan_ba5abc9ce5e90fcb102014922efa0ac2bddcfb8cbb0a299d232d149b9f20defd",
+      "receiptDigest": "7392cf55c4836f4ae2e0540d54217bf52d42112ee6e47b9c8eedd87807f64b52",
+      "signaturePresentAndPersistedCopiesMatch": true,
+      "callbackStatus": "accepted",
+      "callbackAttempts": 1,
+      "callbackAcceptedAt": "2026-09-14T14:42:44.383Z",
+      "workerStatus": "completed",
+      "workerPublishedAt": "2026-09-14T14:42:44.391Z",
+      "priorWorkerFailures": 0,
+      "uploadAuditIds": [
+        "4d761d7f-6461-4020-b684-f2dd284effb5"
+      ],
+      "registeredResourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3:functional_acceptance",
+      "registrationAuditIds": [
+        "e9e4fd37-f86a-4241-b937-3f6908d1af96"
+      ]
+    }
+  ],
+  "delivery": {
+    "id": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+    "revision": 10,
+    "paymentStatus": "paid",
+    "paymentDatePresentAndAudited": true,
+    "requiredProfileFieldsPresent": true,
+    "contractRef": "asset_4758600b-b40b-4ca8-84fb-1e62ccf98068",
+    "paymentEvidenceRefs": [
+      "asset_86b531be-5988-4654-a006-ce478a851afe"
+    ],
+    "trainingCompleted": true,
+    "trainingEvidenceRefs": [
+      "asset_6d4cc766-8e56-4257-8974-b93b6b25d13c"
+    ],
+    "allRequiredPurposesBoundToThisDelivery": true,
+    "effectiveAt": "2026-09-14T14:43:17.829Z"
+  },
+  "checklists": [
+    {
+      "checklistKey": "system_integration",
+      "itemCount": 10,
+      "expectedItemCount": 10,
+      "sharedPurposeBoundAssetRef": "asset_9818d8ff-5b27-42b7-a5d2-a88ba6e8a18a",
+      "registrationAuditIds": [
+        "249473da-c023-42d3-a524-699978f1dea2"
+      ],
+      "items": [
+        {
+          "itemKey": "企业信息",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_9818d8ff-5b27-42b7-a5d2-a88ba6e8a18a"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:39.821Z"
+        },
+        {
+          "itemKey": "创意点数",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_9818d8ff-5b27-42b7-a5d2-a88ba6e8a18a"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:39.821Z"
+        },
+        {
+          "itemKey": "品牌资产",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_9818d8ff-5b27-42b7-a5d2-a88ba6e8a18a"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:39.821Z"
+        },
+        {
+          "itemKey": "商品扫描",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_9818d8ff-5b27-42b7-a5d2-a88ba6e8a18a"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:39.821Z"
+        },
+        {
+          "itemKey": "商品资料",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_9818d8ff-5b27-42b7-a5d2-a88ba6e8a18a"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:39.821Z"
+        },
+        {
+          "itemKey": "客户偏好",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_9818d8ff-5b27-42b7-a5d2-a88ba6e8a18a"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:39.821Z"
+        },
+        {
+          "itemKey": "平台规则",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_9818d8ff-5b27-42b7-a5d2-a88ba6e8a18a"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:39.821Z"
+        },
+        {
+          "itemKey": "店铺连接",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_9818d8ff-5b27-42b7-a5d2-a88ba6e8a18a"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:39.821Z"
+        },
+        {
+          "itemKey": "插件账号",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_9818d8ff-5b27-42b7-a5d2-a88ba6e8a18a"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:39.821Z"
+        },
+        {
+          "itemKey": "知识库",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_9818d8ff-5b27-42b7-a5d2-a88ba6e8a18a"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:39.821Z"
+        }
+      ]
+    },
+    {
+      "checklistKey": "functional_acceptance",
+      "itemCount": 8,
+      "expectedItemCount": 8,
+      "sharedPurposeBoundAssetRef": "asset_782f5a63-24f3-452d-8e14-c166799e6631",
+      "registrationAuditIds": [
+        "e9e4fd37-f86a-4241-b937-3f6908d1af96"
+      ],
+      "items": [
+        {
+          "itemKey": "内容验收",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_782f5a63-24f3-452d-8e14-c166799e6631"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:48.526Z"
+        },
+        {
+          "itemKey": "图片生成",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_782f5a63-24f3-452d-8e14-c166799e6631"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:48.526Z"
+        },
+        {
+          "itemKey": "店铺/商品读取",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_782f5a63-24f3-452d-8e14-c166799e6631"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:48.526Z"
+        },
+        {
+          "itemKey": "技术验收",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_782f5a63-24f3-452d-8e14-c166799e6631"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:48.526Z"
+        },
+        {
+          "itemKey": "文案生成",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_782f5a63-24f3-452d-8e14-c166799e6631"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:48.526Z"
+        },
+        {
+          "itemKey": "标注编辑",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_782f5a63-24f3-452d-8e14-c166799e6631"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:48.526Z"
+        },
+        {
+          "itemKey": "自动检查",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_782f5a63-24f3-452d-8e14-c166799e6631"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:48.526Z"
+        },
+        {
+          "itemKey": "视频生成",
+          "completed": true,
+          "revision": 1,
+          "notePresent": true,
+          "assetRefs": [
+            "asset_782f5a63-24f3-452d-8e14-c166799e6631"
+          ],
+          "completedActorPresent": true,
+          "completedAt": "2026-09-14T14:42:48.526Z"
+        }
+      ]
+    }
+  ],
+  "audit": [
+    {
+      "id": "7d4a2bf3-a7ef-4718-9cac-93f995e45587",
+      "action": "customer_delivery.create",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:42:17.907Z"
+    },
+    {
+      "id": "1cfb0a8c-91ac-45e1-bc2e-ec54f3a8bbd6",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:42:20.070Z"
+    },
+    {
+      "id": "f76164b9-f394-4f78-8e92-5d94a824eca9",
+      "action": "customer_delivery.update",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:42:23.307Z"
+    },
+    {
+      "id": "5f093e10-a943-490a-ab0d-ab7f42815c91",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:42:26.548Z"
+    },
+    {
+      "id": "49496bec-1081-4d5c-9fff-10063566f762",
+      "action": "customer_delivery.update",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:42:29.643Z"
+    },
+    {
+      "id": "63c2bb02-ebe0-4775-9920-74a629cc95ab",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:42:34.798Z"
+    },
+    {
+      "id": "249473da-c023-42d3-a524-699978f1dea2",
+      "action": "customer_delivery.checklist_items.update",
+      "resourceType": "customer_delivery_checklist_items",
+      "resourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3:system_integration",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:42:39.821Z"
+    },
+    {
+      "id": "4d761d7f-6461-4020-b684-f2dd284effb5",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:42:44.031Z"
+    },
+    {
+      "id": "e9e4fd37-f86a-4241-b937-3f6908d1af96",
+      "action": "customer_delivery.checklist_items.update",
+      "resourceType": "customer_delivery_checklist_items",
+      "resourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3:functional_acceptance",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:42:48.526Z"
+    },
+    {
+      "id": "874c89e0-f193-4af0-a6b7-2394f8314432",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:42:52.396Z"
+    },
+    {
+      "id": "7f6b0451-eb44-4c8d-9e60-e499164fa6b8",
+      "action": "customer_delivery.update",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:42:55.531Z"
+    },
+    {
+      "id": "b5e7d52d-d5da-469a-977c-0b0c630f28b1",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:42:57.499Z"
+    },
+    {
+      "id": "ed07e84c-8773-4f7e-a9e1-ee098ee63429",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:42:59.943Z"
+    },
+    {
+      "id": "6ed21ed9-c31c-4b4e-87cf-741455e4dd08",
+      "action": "customer_delivery.video.add",
+      "resourceType": "customer_delivery_video",
+      "resourceId": "cdv_4b5892e5-fe2d-41be-b615-9d2f76aa85dd",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:43:03.179Z"
+    },
+    {
+      "id": "cd320e12-b934-4e02-9292-ab6f460c91bc",
+      "action": "customer_delivery.video.add",
+      "resourceType": "customer_delivery_video",
+      "resourceId": "cdv_a257c34f-7481-4710-a895-eaed7724507e",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:43:03.673Z"
+    },
+    {
+      "id": "31196c60-08f9-47dd-9274-06efc51eaacf",
+      "action": "customer_delivery.update",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:43:15.388Z"
+    },
+    {
+      "id": "79c431a9-00ae-4c8d-94bf-d1b625cfb6bc",
+      "action": "customer_delivery.update",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_16412335-22a5-486c-82c9-7af0885deec3",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:43:17.829Z"
+    },
+    {
+      "id": "e36d9aa3-a8d6-41cc-ae38-302edac854f2",
+      "action": "customer_delivery.create",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_fcfc131d-14bd-4fea-98e2-fdc2d2e75356",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:43:29.165Z"
+    },
+    {
+      "id": "6d7b3010-cafa-47c7-9417-52bd1998effb",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_fcfc131d-14bd-4fea-98e2-fdc2d2e75356",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:43:30.099Z"
+    },
+    {
+      "id": "95d30780-ae26-4a4b-a726-0d25fa1c1170",
+      "action": "customer_delivery.create",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_c3a362ae-01ac-4988-b073-758d21b78cb8",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:43:35.774Z"
+    },
+    {
+      "id": "992d5113-bd06-42fd-802e-83b4696e92f0",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_c3a362ae-01ac-4988-b073-758d21b78cb8",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:43:36.150Z"
+    },
+    {
+      "id": "358f21c5-b327-4fcb-afb8-86d43e02e098",
+      "action": "customer_delivery.create",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_eabc6bb5-7f51-4b38-b3f7-ff483917c8c0",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:43:36.294Z"
+    },
+    {
+      "id": "5c5c0c6f-55be-4abb-aa79-fccf8010789f",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_eabc6bb5-7f51-4b38-b3f7-ff483917c8c0",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:43:36.862Z"
+    },
+    {
+      "id": "84119da8-046b-4d06-8e15-2967ea02a895",
+      "action": "customer_delivery.create",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_70f1ce89-85f0-45e8-85f5-f8bd3dc9cd6a",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:43:37.001Z"
+    },
+    {
+      "id": "2e6f49a2-001b-4ad8-864d-80851993e5db",
+      "action": "customer_delivery.asset.upload",
+      "resourceType": "customer_delivery",
+      "resourceId": "cd_70f1ce89-85f0-45e8-85f5-f8bd3dc9cd6a",
+      "actorPresent": true,
+      "createdAt": "2026-09-14T14:43:37.252Z"
+    }
+  ],
+  "databaseRoles": {
+    "assetsAndAudit": "merchant_app",
+    "delivery": "merchant_ops",
+    "transactions": "read_only",
+    "bypassRls": false
+  },
+  "signatureVerificationScope": "Collector checks persisted signature presence and equality; the real API performed cryptographic admission. No private key or signature was exported."
+}

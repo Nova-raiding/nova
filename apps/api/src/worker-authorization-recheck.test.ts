@@ -104,7 +104,7 @@ describe('worker authorization recheck API', () => {
   })
 })
 
-type HttpOperation = 'generation.execute' | 'publish.execute'
+type HttpOperation = 'generation.execute' | 'publish.execute' | 'asset.scan.execute' | 'asset.continuation.execute'
 type ExecutionEnvelope = {
   data: {
     allowed?: boolean
@@ -138,6 +138,7 @@ async function withHttpExecutionFixture(operation: HttpOperation, test: (fixture
   vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({
     generation: { token: 'test-authz-generation-token', signing_secret: 'test-authz-generation-secret' },
     publish: { token: 'test-authz-publish-token', signing_secret: 'test-authz-publish-secret' },
+    scan: { token: 'test-authz-scan-token', signing_secret: 'test-authz-scan-secret' },
   }))
   vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
   try {
@@ -165,7 +166,7 @@ async function createFixture(operation: HttpOperation) {
   const suffix = randomUUID().replaceAll('-', '')
   const workspaceId = `ws_authz_http_${suffix}`
   const identityId = `identity_${suffix}`
-  const resourceId = `${operation === 'publish.execute' ? 'publish_job' : 'generation_job'}_${suffix}`
+  const resourceId = `${operation === 'publish.execute' ? 'publish_job' : operation === 'asset.scan.execute' ? 'asset' : operation === 'asset.continuation.execute' ? 'asset_continuation' : 'generation_job'}_${suffix}`
   const repository = new MemoryAuthorizationRepository()
   const outbox = new InMemoryOutbox()
   const outboxAdapter: OutboxRepository = {
@@ -220,7 +221,11 @@ async function createFixture(operation: HttpOperation) {
     }
     service.publishJobs.set(job.id, job)
   }
-  const event = outbox.append({ workspaceId, aggregateId: resourceId, eventType: operation === 'publish.execute' ? 'publish.requested' : 'generation.requested', sequence: 1, payload: {
+  const eventType = operation === 'publish.execute' ? 'publish.requested'
+    : operation === 'asset.scan.execute' ? 'asset.uploaded'
+      : operation === 'asset.continuation.execute' ? 'asset.generation_continuations.ready'
+        : 'generation.requested'
+  const event = outbox.append({ workspaceId, aggregateId: resourceId, eventType, sequence: 1, payload: {
     authorization_snapshot: serializeSnapshot(snapshot),
     commercial_access_snapshot: {
       schema_version: 1, decision_id: `commercial_${suffix}`, workspace_id: workspaceId, operation,
@@ -242,7 +247,7 @@ async function createFixture(operation: HttpOperation) {
     const target = operation === 'publish.execute'
       ? `/v1/publish-jobs/${requestedResource}/execution-check?event_id=${options.eventId ?? event.id}`
       : `/v1/worker-events/${options.eventId ?? event.id}/execution-check?aggregate_id=${requestedResource}&operation=${options.operation ?? operation}`
-    const role = operation === 'publish.execute' ? 'publish' : 'generation'
+    const role = operation === 'publish.execute' ? 'publish' : operation === 'asset.scan.execute' ? 'scan' : 'generation'
     const proof = createWorkerRequestProof({ secret: `test-authz-${role}-secret`, role, workerId: 'authz-http-fixture', method: 'GET', requestTarget: target, workspaceId: requestedWorkspace })
     const response = await fetch(`http://127.0.0.1:${address.port}${target}`, { headers: {
       authorization: `Bearer test-authz-${role}-token`, 'x-workspace-id': requestedWorkspace, ...proof.headers,
@@ -254,6 +259,29 @@ async function createFixture(operation: HttpOperation) {
 }
 
 describe('E1 worker execution-check: real signed HTTP with controlled memory repositories', () => {
+  it.each([
+    { operation: 'asset.scan.execute', expectedAuthorization: false },
+    { operation: 'asset.continuation.execute', expectedAuthorization: true },
+  ] as const)('$operation returns the documented worker-event response variant', async ({ operation, expectedAuthorization }) => {
+    await withHttpExecutionFixture(operation, async fixture => {
+      const response = await fixture.request()
+      expect(response).toMatchObject({ status: 200, body: { error: null, data: { commercial_access_recheck: { allowed: true, ready: true } } } })
+      expect(response.body.data).not.toBeNull()
+      expect(Object.hasOwn(response.body.data!, 'authorization_recheck')).toBe(expectedAuthorization)
+      if (expectedAuthorization) {
+        expect(response.body.data?.authorization_recheck).toMatchObject({
+          authorized: true,
+          resource_id: fixture.resourceId,
+          event_id: fixture.event.id,
+          reservation_id: `worker-execution:${fixture.event.id}:${operation}`,
+        })
+        expect(fixture.reserve).toHaveBeenCalledOnce()
+      } else {
+        expect(fixture.reserve).not.toHaveBeenCalled()
+      }
+    })
+  })
+
   it.each<HttpOperation>(['generation.execute', 'publish.execute'])('%s loads scoped records and reserves the actual resource; replay never consumes twice and revoke blocks old/new execution', async operation => {
     await withHttpExecutionFixture(operation, async fixture => {
       const { workspaceId, resourceId, event, reserve, repository, grant, request, listEvents } = fixture

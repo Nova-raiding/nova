@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-13T02:16:50.756Z",
+  "endedAt": "2026-09-13T02:16:55.989Z",
+  "runId": "540c35d4-85e4-4176-8ea3-9ac7a64d016b",
+  "selectedFiles": [
+    "packages/persistence/src/password-auth-repository.release.postgres.test.ts"
+  ],
+  "childExitCode": 1,
+  "status": "failed",
+  "report": "vitest.json",
+  "errors": [
+    "ISOLATED_POSTGRES_TEST_PROCESS_NONZERO",
+    "POSTGRES_REPORT_NOT_SUCCESSFUL",
+    "POSTGRES_REPORT_FAILED_OR_SKIPPED_ASSERTIONS",
+    "POSTGRES_REPORT_FAILED_OR_EMPTY_FILE",
+    "POSTGRES_REPORT_ASSERTION_NOT_PASSED",
+    "POSTGRES_REPORT_ASSERTION_COUNTS_MISMATCH"
+  ],
+  "fixtureOnly": true,
+  "databaseSource": "newly-created-isolated-fixture",
+  "rolePasswordCompatibility": "isolated-test-fixture-only",
+  "inheritedBusinessEnvironment": false,
+  "sharedContainersTouched": false,
+  "disposal": {
+    "stopped": [
+      "401d96b03d82dbc491cfa12947615926bff1e1e05e4f068d37043556020a1234",
+      "f3e6d49cb2d0684913f7792ebfdd6b97634bce802144d15d939aeca5db055453"
+    ],
+    "leftRunning": []
+  }
+}

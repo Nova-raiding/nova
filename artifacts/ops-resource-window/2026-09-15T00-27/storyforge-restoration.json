@@ -1,0 +1,77 @@
+{
+  "status": "passed",
+  "observedAt": "2026-09-15T00:38:06.624Z",
+  "identitiesMatch": true,
+  "volumeBindingsPreserved": true,
+  "healthMatches": true,
+  "containersRemoved": 0,
+  "volumesRemoved": 0,
+  "services": [
+    {
+      "id": "eb93ddb8a190111908de72aa31c6900c34c9768d7b3d2e9402392c2a176db342",
+      "name": "/storyforge-frontend",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "8f4858085eb61c827b650ea8bad177f12ffa7d4baaa2c38707aacadd54bc44a2",
+      "name": "/storyforge-agents",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "52c165c71e786b5dc1641fbab6a6241da21dc0d755e6d8c7a1d022395bc5c9c1",
+      "name": "/storyforge-backend",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "16564b82dbc06fec2b63950d79aa6d6efc4d210394fc069f05ba0d46a58d858d",
+      "name": "/storyforge-worker",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "f5726a7b06ab8c281b3577ddf311ae3afad10bd23471f552b45cc47fed59c4d8",
+      "name": "/storyforge-compliance-worker",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "5b52af0b777de3f2c6cfa3b6a138aea203d99ffeaef20bc78fc8e53d2085d831",
+      "name": "/storyforge-nginx",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "f6cfabf49e615d151b7373ac994efbcb58747c376641c7bfd75b9361c174c148",
+      "name": "/storyforge-kafka",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "0e9693110be2688d6425c0f9d9c26fad5e107ff8f04fb40c43c6544c28b6e530",
+      "name": "/storyforge-redis",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "35e19ee1fdb28ca769aa1cfb71570adccb0678082c2e0e7d709d6079260a7896",
+      "name": "/storyforge-postgres",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "7954aadc2dcc56d774086482263d6dfb799527ff16c0060e3c5004e367b0f7eb",
+      "name": "/storyforge-minio",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "391da4a65a03f64f762cf9f5900a7b6eeb82ca5ee2d7def1bc3df07562d00ddf",
+      "name": "/storyforge-zookeeper",
+      "running": true,
+      "health": null
+    }
+  ]
+}

@@ -37,6 +37,8 @@ export MERCHANT_MCP_BASE_URL=https://merchant.example.com
 export MERCHANT_WORKSPACE_ID=<workspace-id>
 # 可选：由网关校验的 Bearer token；插件不会保存平台账号密码或 access token
 export MERCHANT_MCP_TOKEN=<mcp-token>
+# 连接非本机 API 时必须开启；否则 bridge 会在发送请求前失败关闭
+export MERCHANT_STRICT_AUTH=true
 # 仅本地 fixture 开发可显式开启；Automation 和生产环境禁止设置
 # export MERCHANT_ALLOW_FIXTURE_FALLBACK=true
 # 仅已明确确认的交互会话按需开启；Automation 禁止设置

@@ -30,6 +30,7 @@ function resultOf(body: Envelope) {
 
 beforeEach(() => {
   vi.stubEnv('NODE_ENV', 'production')
+  vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
   vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
   vi.stubEnv('SESSION_ID_HASH_SECRET', 'creative-point-statement-pagination-parity-secret')
   vi.stubEnv('API_RATE_LIMIT_PER_MINUTE', '10000')
@@ -93,5 +94,66 @@ describe('creative point statement HTTP/MCP pagination parity', () => {
     expect(body.error?.code).toBe('INVALID_REQUEST')
     expect(body.request_id).toMatch(/^req_/)
     expect(body.trace_id).toBe(body.request_id)
+  })
+
+  // Real loopback HTTP/MCP authorization over synthetic in-memory ledger records, not real payments.
+  it.each(['operator', 'finance', 'merchant_admin'] as const)('enforces workspace statement authorization for %s on both surfaces', async role => {
+    const workspaceId = `ws_statement_authz_${role}_${Date.now()}`
+    const actorId = `statement-reader-${role}-${Date.now()}`
+    const privateSourceId = `other-member-private-evidence-${workspaceId}`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role, status: 'active', invitedBy: 'acceptance-test' })
+    service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `statement-authz-store-${workspaceId}`, credentialRef: `vault://statement-authz/${workspaceId}` })
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ allow: { workspaces: [workspaceId], actor_id: actorId, roles: [role], workbenches: ['workspace'] } }))
+    await creativePointsForTests.grant({ workspaceId, points: 100, sourceType: 'synthetic_authorization_test', sourceId: privateSourceId, idempotencyKey: `${workspaceId}_grant`, metadata: { actor_id: 'another-member', synthetic: true }, at: '2026-09-02T00:00:00.000Z' })
+    const base = await start()
+    const common = headers('allow', workspaceId)
+    const responses = await Promise.all([
+      fetch(`${base}/v1/creative-points/statement`, { headers: common }),
+      fetch(`${base}/mcp`, { method: 'POST', headers: { ...common, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: `statement-authz-${role}`, method: 'creative-points.statement.list', params: {} }) }),
+    ])
+    const bodies = await Promise.all(responses.map(response => response.json() as Promise<Envelope>))
+    for (const [index, response] of responses.entries()) {
+      const body = bodies[index]!
+      expect(response.status, JSON.stringify(body)).toBe(role === 'operator' ? 403 : 200)
+      expect(body.request_id).toMatch(/^req_/)
+      expect(body.trace_id).toBe(body.request_id)
+      if (role === 'operator') {
+        expect(body.error?.code).toBe('FORBIDDEN')
+        expect(body.data).toBeNull()
+        expect(JSON.stringify(body)).not.toContain(privateSourceId)
+        expect(JSON.stringify(body)).not.toContain('another-member')
+      } else {
+        expect(body.error).toBeNull()
+        expect((resultOf(body) as { entries: unknown[] }).entries).toHaveLength(1)
+        expect(JSON.stringify(resultOf(body))).toContain(privateSourceId)
+      }
+    }
+    if (role !== 'operator') expect(resultOf(bodies[0]!)).toEqual(resultOf(bodies[1]!))
+  })
+
+  it('rejects cross-workspace statement reads on HTTP and MCP even for finance', async () => {
+    const workspaceId = `ws_statement_scope_${Date.now()}`
+    const otherWorkspaceId = `${workspaceId}_other`
+    const actorId = `statement-finance-scope-${Date.now()}`
+    const privateSourceId = `private-other-workspace-${otherWorkspaceId}`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'finance', status: 'active', invitedBy: 'acceptance-test' })
+    service.registerPlatformAccount({ workspaceId: otherWorkspaceId, platform: 'taobao', remoteAccountId: `statement-other-store-${otherWorkspaceId}`, credentialRef: `vault://statement-other/${otherWorkspaceId}` })
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ allow: { workspaces: [workspaceId], actor_id: actorId, roles: ['finance'], workbenches: ['workspace'] } }))
+    await creativePointsForTests.grant({ workspaceId: otherWorkspaceId, points: 100, sourceType: 'synthetic_authorization_test', sourceId: privateSourceId, idempotencyKey: `${otherWorkspaceId}_grant`, at: '2026-09-02T00:00:00.000Z' })
+    const base = await start()
+    const common = headers('allow', otherWorkspaceId)
+    const responses = await Promise.all([
+      fetch(`${base}/v1/creative-points/statement`, { headers: common }),
+      fetch(`${base}/mcp`, { method: 'POST', headers: { ...common, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 'statement-cross-workspace', method: 'creative-points.statement.list', params: { workspace_id: otherWorkspaceId } }) }),
+    ])
+    for (const response of responses) {
+      const body = await response.json() as Envelope
+      expect(response.status, JSON.stringify(body)).toBe(403)
+      expect(body.error?.code).toBe('FORBIDDEN')
+      expect(body.data).toBeNull()
+      expect(JSON.stringify(body)).not.toContain(privateSourceId)
+      expect(body.request_id).toMatch(/^req_/)
+      expect(body.trace_id).toBe(body.request_id)
+    }
   })
 })

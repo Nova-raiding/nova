@@ -10,8 +10,8 @@ const baseUrl = process.env.OPS_OIDC_BASE_URL ?? process.env.OPS_BASE_URL ?? 'ht
 // only exercised with a workspace membership fixture below.
 // These domains require a workspace-scoped policy and are covered by
 // workspace fixtures, never by the platform token walk.
-const platformSections = ['总览', '用户中心', '模型服务', '账务与退款']
-const headings = { '总览': '运营总览', '成员与权限': '成员与权限', '客服': '客服工作台', '平台连接': '平台连接汇总', '存储与对账': '存储与对账', '账务与退款': '账务与商业配置' }
+const platformSections = ['总览', '用户中心', '客户交付', '账务与退款']
+const headings = { '总览': '运营总览', '成员与权限': '成员与权限', '客服': '客服工作台', '平台连接': '平台连接汇总', '存储与对账': '存储与对账', '账务与退款': '平台财务中心' }
 
 const snapshot = async (page, section) => ({
   section,
@@ -68,7 +68,7 @@ test('walk every Ops Console section through the real browser UI', async () => {
     await page.locator('h1,h2,h3').filter({ hasText: new RegExp(`^${expectedHeading}$`, 'u') }).waitFor({ state: 'visible', timeout: 20_000 })
     await page.waitForTimeout(5_000)
     if (section === '用户中心') {
-      const userDirectory = page.getByRole('tab', { name: '用户目录', exact: true })
+      const userDirectory = page.getByRole('tab', { name: '已开通用户', exact: true })
       const userDirectoryLink = page.getByRole('link', { name: '用户目录', exact: true })
       const userDirectoryHeading = page.getByRole('heading', { name: '用户目录', exact: true })
       const hasDirectory = await userDirectory.or(userDirectoryLink).count() + await userDirectoryHeading.count()
@@ -82,7 +82,8 @@ test('walk every Ops Console section through the real browser UI', async () => {
       await expect(page.getByText('成员角色调整')).toHaveCount(0)
       const exportButton = page.getByRole('button', { name: '导出商业配置' })
       if (await exportButton.count() === 0) {
-        await expect(page.getByText(/商业配置|商业访问|上线门禁/).first()).toBeVisible()
+        await expect(page.getByRole('form', { name: '财务检索筛选' })).toBeVisible()
+        await expect(page.getByRole('button', { name: '导出当前筛选' })).toBeVisible()
       } else {
         const commercialDownload = page.waitForEvent('download')
         await exportButton.click()

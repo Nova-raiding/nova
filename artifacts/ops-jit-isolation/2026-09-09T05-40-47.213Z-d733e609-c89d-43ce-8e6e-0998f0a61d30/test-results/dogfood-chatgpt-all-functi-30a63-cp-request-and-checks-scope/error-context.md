@@ -1,0 +1,377 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营与商家服务
+      - generic [ref=e14]: 平台运营控制面
+      - region "当前操作范围" [ref=e15]:
+        - generic [ref=e16]:
+          - generic [ref=e17]: 当前操作范围
+          - generic [ref=e18]: 工作区
+        - status [ref=e19]: 正在操作工作区 ws_ops_fixture_495035fc1028407b80ef6440e57ff996
+        - generic [ref=e20]:
+          - generic [ref=e21]: 工作区范围
+          - strong [ref=e22]: ws_ops_fixture_495035fc1028407b80ef6440e57ff996
+        - generic [ref=e23]: 数据与操作仅限当前工作区
+      - navigation "平台运营功能导航" [ref=e24]:
+        - region "平台治理" [ref=e25]:
+          - heading "平台治理" [level=2] [ref=e26]
+          - button "总览" [ref=e27] [cursor=pointer]:
+            - img "safety-certificate" [ref=e28] [cursor=pointer]:
+              - img [ref=e29] [cursor=pointer]
+            - text: 总览
+          - button "成员与权限" [ref=e31] [cursor=pointer]:
+            - img "usergroup-add" [ref=e32] [cursor=pointer]:
+              - img [ref=e33] [cursor=pointer]
+            - text: 成员与权限
+        - region "商家运营" [ref=e35]:
+          - heading "商家运营" [level=2] [ref=e36]
+          - button "任务与内容" [ref=e37] [cursor=pointer]:
+            - img "cloud-sync" [ref=e38] [cursor=pointer]:
+              - img [ref=e39] [cursor=pointer]
+            - text: 任务与内容
+          - button "知识库" [ref=e42] [cursor=pointer]:
+            - img "database" [ref=e43] [cursor=pointer]:
+              - img [ref=e44] [cursor=pointer]
+            - text: 知识库
+          - button "平台连接" [ref=e46] [cursor=pointer]:
+            - img "global" [ref=e47] [cursor=pointer]:
+              - img [ref=e48] [cursor=pointer]
+            - text: 平台连接
+          - button "平台规则" [ref=e50] [cursor=pointer]:
+            - img "read" [ref=e51] [cursor=pointer]:
+              - img [ref=e52] [cursor=pointer]
+            - text: 平台规则
+        - region "模型与计费" [ref=e54]:
+          - heading "模型与计费" [level=2] [ref=e55]
+          - button "账务与退款" [ref=e56] [cursor=pointer]:
+            - img "dollar" [ref=e57] [cursor=pointer]:
+              - img [ref=e58] [cursor=pointer]
+            - text: 账务与退款
+        - region "风险与系统" [ref=e60]:
+          - heading "风险与系统" [level=2] [ref=e61]
+          - button "存储与对账" [ref=e62] [cursor=pointer]:
+            - img "cloud-server" [ref=e63] [cursor=pointer]:
+              - img [ref=e64] [cursor=pointer]
+            - text: 存储与对账
+          - button "审计中心" [ref=e68] [cursor=pointer]:
+            - img "file-search" [ref=e69] [cursor=pointer]:
+              - img [ref=e70] [cursor=pointer]
+            - text: 审计中心
+  - generic [ref=e72]:
+    - banner [ref=e73]:
+      - generic [ref=e74]:
+        - heading "商业与平台控制台" [level=2] [ref=e75]
+        - region "当前身份与权限范围" [ref=e76]:
+          - generic [ref=e77]:
+            - img [ref=e79]:
+              - img [ref=e80]
+            - strong [ref=e84]: 商家管理员
+            - status [ref=e86]: 授权状态：已由服务端验证
+            - generic [ref=e88]: 身份 ops-fixture-target-495035fc-1028-407b-80ef-6440e57ff996
+            - generic [ref=e90]: 商家工作区
+            - generic [ref=e92]: 工作区 · ws_ops_fixture_495035fc1028407b80ef6440e57ff996
+            - generic [ref=e94]: 策略 2026-09-08.v1
+          - status [ref=e95]: 商家自运营视图：仅作用于当前授权工作区；不包含平台运营能力。
+      - button "连接诊断 / 登录配置" [ref=e98] [cursor=pointer]:
+        - generic [ref=e99] [cursor=pointer]: 登录 / 连接
+    - main [ref=e100]:
+      - status [ref=e101]
+      - status [ref=e102]:
+        - img "exclamation-circle" [ref=e104]:
+          - img [ref=e105]
+        - generic [ref=e107]:
+          - generic [ref=e108]: 部分运营数据未刷新
+          - generic [ref=e110]:
+            - generic [ref=e111]: 1 个数据集刷新失败，页面已保留上次成功数据。
+            - group [ref=e112]
+      - region "账务与商业配置" [active] [ref=e114]:
+        - generic [ref=e115]:
+          - generic [ref=e116]:
+            - generic [ref=e117]:
+              - generic [ref=e118]: COMMERCIAL OPERATIONS
+              - generic [ref=e119]: 当前工作区数据
+            - heading "账务与商业配置" [level=2] [ref=e120]
+            - generic [ref=e121]: 处理商业准入阻断、Workspace 权益、创意点账本、版本化目录、支付、费率与服务履约。
+          - generic [ref=e123]:
+            - generic [ref=e125]: 目标 Workspace
+            - textbox "商业目标 Workspace" [ref=e127]: ws_ops_fixture_495035fc1028407b80ef6440e57ff996
+            - button "应用范围" [ref=e129] [cursor=pointer]:
+              - generic [ref=e130] [cursor=pointer]: 应用范围
+            - button "刷新账务" [disabled] [ref=e132]:
+              - generic: 刷新账务
+          - status [ref=e133]:
+            - strong [ref=e135]: 当前下一步
+            - generic [ref=e136]: 先处理阻断与 unknown；支付成功后仍需核验 grant 与新的 access revision。
+        - generic [ref=e139]:
+          - alert [ref=e140]:
+            - img "info-circle" [ref=e142]:
+              - img [ref=e143]
+            - generic [ref=e145]:
+              - generic [ref=e146]: 商业生产就绪状态只读
+              - generic [ref=e147]: 当前会话缺少 commercial.rate.read，未发起报告请求。
+          - generic [ref=e148]:
+            - generic [ref=e150]:
+              - generic [ref=e151]: 财务流水与对账
+              - generic [ref=e153]:
+                - generic [ref=e155]: 金额：元（两位小数）
+                - generic [ref=e157]:
+                  - button "运行支付查单" [disabled] [ref=e158]:
+                    - generic: 运行支付查单
+                  - generic [ref=e159]: 当前账号没有支付查单权限。
+                - generic [ref=e161]:
+                  - button "重试模型结算" [disabled] [ref=e162]:
+                    - generic: 重试模型结算
+                  - generic [ref=e163]: 当前账号没有模型结算权限。
+                - button "导出账单" [ref=e166] [cursor=pointer]:
+                  - img "download" [ref=e168] [cursor=pointer]:
+                    - img [ref=e169] [cursor=pointer]
+                  - generic [ref=e171] [cursor=pointer]: 导出账单
+            - generic [ref=e172]:
+              - status [ref=e173]:
+                - img "check-circle" [ref=e175]:
+                  - img [ref=e176]
+                - generic [ref=e178]:
+                  - generic [ref=e179]: 模型用量对账状态：本地一致
+                  - generic [ref=e180]: 状态来自服务端对账结果；供应商账户级核验仍以外部 statement 为准。
+              - alert [ref=e181]:
+                - img "info-circle" [ref=e183]:
+                  - img [ref=e184]
+                - generic [ref=e186]:
+                  - generic [ref=e187]: 当前视图：本人
+                  - generic [ref=e188]: 余额范围：工作区；钱包流水范围：本人；模型用量范围：本人。不同范围不会被解释为同一账本。
+              - generic [ref=e189]:
+                - generic [ref=e191]:
+                  - generic [ref=e193]: 余额
+                  - generic [ref=e194]:
+                    - generic [ref=e195]: ¥
+                    - generic [ref=e196]:
+                      - generic [ref=e197]: "0"
+                      - generic [ref=e198]: ".00"
+                - generic [ref=e200]:
+                  - generic [ref=e202]: 充值
+                  - generic [ref=e203]:
+                    - generic [ref=e204]: ¥
+                    - generic [ref=e205]:
+                      - generic [ref=e206]: "0"
+                      - generic [ref=e207]: ".00"
+                - generic [ref=e209]:
+                  - generic [ref=e211]: 消费
+                  - generic [ref=e212]:
+                    - generic [ref=e213]: ¥
+                    - generic [ref=e214]:
+                      - generic [ref=e215]: "0"
+                      - generic [ref=e216]: ".00"
+                - generic [ref=e218]:
+                  - generic [ref=e220]: 退款
+                  - generic [ref=e221]:
+                    - generic [ref=e222]: ¥
+                    - generic [ref=e223]:
+                      - generic [ref=e224]: "0"
+                      - generic [ref=e225]: ".00"
+              - alert [ref=e226]:
+                - img "exclamation-circle" [ref=e228]:
+                  - img [ref=e229]
+                - generic [ref=e231]:
+                  - generic [ref=e232]: 支付 provider：当前为 fixture（已阻断真实支付判断）
+                  - generic [ref=e233]: provider_adapters_incomplete、checkout_endpoint_must_use_https、provider_checkout_api_must_use_https、provider_query_api_must_use_https、provider_api_key_missing、provider_merchant_id_missing、provider_refund_api_must_use_https、callback_endpoint_must_use_https、callback_secret_missing、reconciliation_disabled、refund_disabled
+              - alert [ref=e234]:
+                - img "exclamation-circle" [ref=e236]:
+                  - img [ref=e237]
+                - generic [ref=e239]:
+                  - generic [ref=e240]: 外部中转站用量：个人视图不适用
+                  - generic [ref=e242]:
+                    - generic [ref=e244]: 供应商日志尚未完成账户级核验；本页面不将本地一致视为供应商已平账。
+                    - generic [ref=e246]: 核对异常：未知用户 0，孤立 action 0，钱包金额不一致 0，任务键缺失 0，预算链路错配 0。任务键或预算链路异常时不得重试上游，必须先修复链路。
+              - generic [ref=e247]:
+                - generic [ref=e249]:
+                  - generic [ref=e251]: 模型调用
+                  - generic [ref=e254]: "0"
+                - generic [ref=e256]:
+                  - generic [ref=e258]: 模型 Tokens
+                  - generic [ref=e261]: "0"
+                - generic [ref=e263]:
+                  - generic [ref=e265]: 模型实际成本
+                  - generic [ref=e266]:
+                    - generic [ref=e267]: ¥
+                    - generic [ref=e268]: "-"
+                - generic [ref=e270]:
+                  - generic [ref=e272]: 缺成本证据
+                  - generic [ref=e275]: "0"
+                - generic [ref=e277]:
+                  - generic [ref=e279]: 待结算记录
+                  - generic [ref=e282]: "0"
+              - table "模型用量待结算记录" [ref=e289]:
+                - rowgroup [ref=e298]:
+                  - row "结算状态 发现时间 任务 Run Key 调用 Action ID 模态 模型 Provider Request ID 原因与下一步 操作" [ref=e299]:
+                    - columnheader "结算状态" [ref=e300]
+                    - columnheader "发现时间" [ref=e301]
+                    - columnheader "任务 Run Key" [ref=e302]
+                    - columnheader "调用 Action ID" [ref=e303]
+                    - columnheader "模态"
+                    - columnheader "模型"
+                    - columnheader "Provider Request ID" [ref=e304]
+                    - columnheader "原因与下一步" [ref=e305]
+                    - columnheader "操作" [ref=e306]
+                - rowgroup [ref=e307]:
+                  - row "没有模型待结算记录" [ref=e308]:
+                    - cell "没有模型待结算记录" [ref=e309]:
+                      - generic [ref=e310]: 没有模型待结算记录
+              - table "财务交易对账记录" [ref=e317]:
+                - rowgroup [ref=e318]:
+                  - row "时间 类型 金额 说明" [ref=e319]:
+                    - columnheader "时间" [ref=e320]
+                    - columnheader "类型" [ref=e321]
+                    - columnheader "金额" [ref=e322]
+                    - columnheader "说明" [ref=e323]
+                - rowgroup [ref=e324]:
+                  - row "当前没有交易记录；这表示本次查询为空，不代表读取失败。" [ref=e325]:
+                    - cell "当前没有交易记录；这表示本次查询为空，不代表读取失败。" [ref=e326]
+          - generic [ref=e327]:
+            - generic [ref=e329]:
+              - generic [ref=e330]: 充值订单状态中心
+              - button "刷新充值订单" [ref=e332] [cursor=pointer]:
+                - img "reload" [ref=e334] [cursor=pointer]:
+                  - img [ref=e335] [cursor=pointer]
+                - generic [ref=e337] [cursor=pointer]: 刷新
+            - generic [ref=e338]:
+              - generic "充值订单汇总" [ref=e339]:
+                - generic [ref=e341]:
+                  - generic [ref=e343]: 订单总数
+                  - generic [ref=e346]: "0"
+                - generic [ref=e348]:
+                  - generic [ref=e350]: 待支付
+                  - generic [ref=e353]: "0"
+                - generic [ref=e355]:
+                  - generic [ref=e357]: 已支付
+                  - generic [ref=e360]: "0"
+                - generic [ref=e362]:
+                  - generic [ref=e364]: 异常
+                  - generic [ref=e367]: "0"
+              - generic [ref=e368]:
+                - radiogroup "充值订单状态筛选" [ref=e370]:
+                  - generic [ref=e371]:
+                    - generic [ref=e372] [cursor=pointer]:
+                      - radio "全部 0" [checked]
+                    - generic [ref=e374] [cursor=pointer]:
+                      - radio "待支付 0"
+                    - generic [ref=e376] [cursor=pointer]:
+                      - radio "已支付 0"
+                    - generic [ref=e378] [cursor=pointer]:
+                      - radio "已关闭 0"
+                    - generic [ref=e380] [cursor=pointer]:
+                      - radio "异常 0"
+                - table [ref=e389]:
+                  - rowgroup [ref=e401]:
+                    - row "状态 订单号 工作区 渠道 金额 Provider 交易号 创建时间 过期时间 支付时间 操作" [ref=e402]:
+                      - columnheader "状态" [ref=e403]
+                      - columnheader "订单号" [ref=e404]
+                      - columnheader "工作区" [ref=e405]
+                      - columnheader "渠道" [ref=e406]
+                      - columnheader "金额" [ref=e407]
+                      - columnheader "Provider 交易号" [ref=e408]
+                      - columnheader "创建时间" [ref=e409]
+                      - columnheader "过期时间" [ref=e410]
+                      - columnheader "支付时间" [ref=e411]
+                      - columnheader "操作" [ref=e412]
+                  - rowgroup [ref=e413]:
+                    - row "当前筛选条件下没有充值订单" [ref=e414]:
+                      - cell "当前筛选条件下没有充值订单" [ref=e415]:
+                        - generic [ref=e416]: 当前筛选条件下没有充值订单
+          - generic [ref=e417]:
+            - generic [ref=e419]:
+              - generic [ref=e420]: 退款操作
+              - generic [ref=e422]: 需要 finance 或 merchant_admin 权限
+            - form "创建退款" [ref=e424]:
+              - generic [ref=e426]:
+                - generic "充值订单 ID" [ref=e428]: "* 充值订单 ID :"
+                - textbox "* 充值订单 ID :" [ref=e432]
+              - generic [ref=e434]:
+                - generic "退款原因" [ref=e436]: "* 退款原因 :"
+                - textbox "* 退款原因 :" [ref=e440]
+              - button "创建退款" [ref=e441] [cursor=pointer]:
+                - generic [ref=e442] [cursor=pointer]: 创建退款
+          - generic [ref=e443]:
+            - alert [ref=e445]:
+              - img "info-circle" [ref=e447]:
+                - img [ref=e448]
+              - generic [ref=e450]:
+                - generic [ref=e451]: 暂无商业准入数据
+                - generic [ref=e452]:
+                  - text: 当前会话未授予
+                  - code [ref=e454]: commercial.access.read
+                  - text: ；服务端未返回商业准入数据，页面保持空状态。
+            - alert [ref=e456]:
+              - img "info-circle" [ref=e458]:
+                - img [ref=e459]
+              - generic [ref=e461]:
+                - generic [ref=e462]: 私测转正式仅对授权运营人员开放
+                - generic [ref=e463]: 需要 commercial.private_sku.grant 或 commercial.payment.reconcile；无权限时不会发起请求。
+            - generic [ref=e465]:
+              - generic [ref=e467]:
+                - generic [ref=e468]: 点数调整（双人审批）
+                - button "新建调整提议" [disabled] [ref=e470]:
+                  - generic: 新建调整提议
+              - alert [ref=e472]:
+                - img "info-circle" [ref=e474]:
+                  - img [ref=e475]
+                - generic [ref=e477]:
+                  - generic [ref=e478]: 当前账号无点数调整权限
+                  - generic [ref=e479]: 页面不会发起调整请求。
+            - generic [ref=e481]:
+              - generic [ref=e483]:
+                - generic [ref=e484]: 服务履约操作
+                - generic [ref=e486]: 需要 revision、幂等键和审计原因
+              - generic [ref=e487]:
+                - alert [ref=e488]:
+                  - img "info-circle" [ref=e490]:
+                    - img [ref=e491]
+                  - generic [ref=e493]:
+                    - generic [ref=e494]: 当前账号无履约写权限
+                    - generic [ref=e495]: 当前页面保持只读。
+                - generic [ref=e496]:
+                  - generic [ref=e498]:
+                    - generic "开始" [ref=e499]:
+                      - text: 开始
+                      - combobox "履约动作" [disabled] [ref=e500]
+                    - img "down" [ref=e502]:
+                      - img [ref=e503]
+                  - textbox "allocation id" [disabled] [ref=e506]
+                  - spinbutton "expected revision" [disabled] [ref=e509]
+                  - textbox "fulfillment reason" [disabled] [ref=e511]
+                  - button "提交命令" [disabled] [ref=e513]:
+                    - generic: 提交命令
+            - generic [ref=e515]:
+              - tablist [ref=e516]:
+                - generic [ref=e518]:
+                  - tab "阻断与恢复" [selected] [ref=e520] [cursor=pointer]
+                  - tab "Workspace 权益" [ref=e522] [cursor=pointer]
+                  - tab "创意点账本" [ref=e524] [cursor=pointer]
+                  - tab "商业目录" [ref=e526] [cursor=pointer]
+                  - tab "订单与支付" [ref=e528] [cursor=pointer]
+                  - tab "创意点费率" [ref=e530] [cursor=pointer]
+                  - tab "服务履约" [ref=e532] [cursor=pointer]
+                  - tab "工作区商业时间线" [ref=e534] [cursor=pointer]
+              - generic:
+                - generic:
+                  - tabpanel "阻断与恢复"
+            - region "阻断与恢复" [ref=e536]:
+              - heading "阻断与恢复" [level=4] [ref=e537]
+              - alert [ref=e538]:
+                - img "info-circle" [ref=e540]:
+                  - img [ref=e541]
+                - generic [ref=e543]:
+                  - generic [ref=e544]: 暂无此视图数据
+                  - generic [ref=e545]:
+                    - text: 服务端未授予
+                    - code [ref=e547]: commercial.access.read
+                    - text: ；未授权时不会发起数据请求，列表保持为空。
+```

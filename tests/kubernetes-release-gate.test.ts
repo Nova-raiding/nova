@@ -11,6 +11,7 @@ const imageDigests = {
   'merchant-worker': `sha256:${'b'.repeat(64)}`,
   'merchant-ui': `sha256:${'c'.repeat(64)}`,
   'merchant-ops-ui': `sha256:${'d'.repeat(64)}`,
+  'merchant-alert-receiver': `sha256:${'f'.repeat(64)}`,
   clamav: `sha256:${'e'.repeat(64)}`,
 }
 
@@ -80,7 +81,7 @@ function productionScannerManifest(mutate?: (manifest: Record<string, any>) => v
     MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
     ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ASSET_SCANNER_MODE: 'clamav_worker', ASSET_SCAN_POLICY_VERSION: 'scan-policy-2026-08-30',
     ASSET_SCANNER_SERVICE_ID: 'merchant-asset-scanner-production', ASSET_SCAN_APPROVED_SCANNER_SERVICE_IDS: 'merchant-asset-scanner-production', ASSET_SCAN_MIN_DEFINITIONS_VERSION: '28000',
-    CLAMAV_HOST: '127.0.0.1', CLAMAV_PORT: '3310', CLAMAV_MAX_FILE_BYTES: '104857600', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440',
+    CLAMAV_HOST: '127.0.0.1', CLAMAV_PORT: '3310', CLAMAV_MAX_FILE_BYTES: '52428800', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440',
   }
   const secret = (name: string, key = name) => ({ name, valueFrom: { secretKeyRef: { name: 'merchant-scanner-secrets', key } } })
   const runtimeSecret = (name: string, key = name) => ({ name, valueFrom: { secretKeyRef: { name: 'merchant-runtime-secrets', key } } })
@@ -98,6 +99,7 @@ function productionScannerManifest(mutate?: (manifest: Record<string, any>) => v
     { apiVersion: 'v1', kind: 'Service', metadata: { name: 'merchant-api-scanner-internal' }, spec: { publishNotReadyAddresses: true, selector: { 'app.kubernetes.io/name': 'merchant-api' } } },
     { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-ui' }, spec: { template: { spec: { containers: [{ name: 'ui', image: `registry.example.com/merchant-ui@${imageDigests['merchant-ui']}` }] } } } },
     { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-ops-ui' }, spec: { template: { spec: { containers: [{ name: 'ops-ui', image: `registry.example.com/merchant-ops-ui@${imageDigests['merchant-ops-ui']}` }] } } } },
+    { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-alert-receiver' }, spec: { template: { spec: { containers: [{ name: 'alert-receiver', image: `registry.example.com/merchant-alert-receiver@${imageDigests['merchant-alert-receiver']}` }] } } } },
   ] }
   mutate?.(manifest)
   const currentRuntime = manifest.items.find((item: any) => item.kind === 'ConfigMap' && item.metadata?.name === 'merchant-runtime')?.data
@@ -119,6 +121,7 @@ describe('structured Kubernetes release image gate', () => {
       'infra/kubernetes/base/workers.yaml',
       'infra/kubernetes/base/ui.yaml',
       'infra/kubernetes/base/ops-ui.yaml',
+      'infra/kubernetes/base/alert-receiver.yaml',
     ]
     const base = baseFiles.map(path => readFileSync(path, 'utf8')).join('\n---\n')
     const images = [...base.matchAll(/\bimage:\s*["']?([^\s"',}\]]+)/gu)].map(match => match[1]!)
@@ -131,6 +134,18 @@ describe('structured Kubernetes release image gate', () => {
     expect(renderedImages.every(image => /^\S+@sha256:[0-9a-f]{64}$/u.test(image))).toBe(true)
   })
 
+  it('requires ACK RRSA for Kubernetes object storage and a dedicated API service account', () => {
+    const rendered = execFileSync('kustomize', ['build', 'infra/kubernetes/base'], { encoding: 'utf8' })
+    expect(rendered).toContain('ASSET_STORAGE_CREDENTIAL_PROVIDER: aliyun_ack_rrsa')
+    expect(rendered).toContain('serviceAccountName: merchant-api-rrsa')
+    expect(rendered).toContain('pod-identity.alibabacloud.com/role-name: StoreNovaAckOssRole')
+
+    const ecsFallback = rendered.replace('ASSET_STORAGE_CREDENTIAL_PROVIDER: aliyun_ack_rrsa', 'ASSET_STORAGE_CREDENTIAL_PROVIDER: aliyun_ecs_ram_role')
+    expect(runManifest(ecsFallback, JSON.stringify(imageDigests))).toThrow(/ASSET_STORAGE_CREDENTIAL_PROVIDER=aliyun_ack_rrsa/)
+    const sharedAccount = rendered.replace('serviceAccountName: merchant-api-rrsa', 'serviceAccountName: default')
+    expect(runManifest(sharedAccount, JSON.stringify(imageDigests))).toThrow(/must bind ServiceAccount\/merchant-api-rrsa/)
+  })
+
   it('renders every production scale overlay with effective immutable image replacements and passes the release validator', () => {
     const overlayImageDigests = { ...imageDigests, clamav: 'sha256:761f6c99b8d9134b39431f8c200189cda749b17310091561bfa8b732f32bfada' }
     const replacements: Record<string, string> = {
@@ -138,6 +153,7 @@ describe('structured Kubernetes release image gate', () => {
       'REPLACE_ME/merchant-worker@SET_WORKER_IMAGE_DIGEST': `registry.example.com/merchant-worker@${imageDigests['merchant-worker']}`,
       'REPLACE_ME/merchant-ui@SET_UI_IMAGE_DIGEST': `registry.example.com/merchant-ui@${imageDigests['merchant-ui']}`,
       'REPLACE_ME/merchant-ops-ui@SET_OPS_UI_IMAGE_DIGEST': `registry.example.com/merchant-ops-ui@${imageDigests['merchant-ops-ui']}`,
+      'REPLACE_ME/merchant-alert-receiver@SET_ALERT_RECEIVER_IMAGE_DIGEST': `registry.example.com/merchant-alert-receiver@${imageDigests['merchant-alert-receiver']}`,
     }
     for (const overlay of ['pilot-50', 'wave-100', 'wave-250', 'target-500']) {
       const raw = execFileSync('kustomize', ['build', `infra/kubernetes/overlays/${overlay}`], { encoding: 'utf8', stdio: 'pipe' })
@@ -266,7 +282,7 @@ describe('structured Kubernetes release image gate', () => {
   it('accepts the complete production image set and returns a stable canonical set digest', () => {
     const manifest = productionScannerManifest()
     const result = runManifest(manifest, JSON.stringify(imageDigests))()
-    expect(result).toMatch(/images=5 image_set_digest=sha256:[a-f0-9]{64}/)
+    expect(result).toMatch(/images=6 image_set_digest=sha256:[a-f0-9]{64}/)
     const first = runManifest(manifest, JSON.stringify(imageDigests), ['--print-image-set-digest'])().trim()
     const reordered = Object.fromEntries(Object.entries(imageDigests).reverse())
     const second = runManifest(manifest, JSON.stringify(reordered), ['--print-image-set-digest'])().trim()

@@ -1,0 +1,137 @@
+{
+  "config": {
+    "rootDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T23-49-24.407Z-0ce90e9a-0de4-4c11-b451-403188683d99/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-delivery-auth-boundary.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-delivery-auth-boundary.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "workspace authorization is identical for APIRequestContext and real same-origin fetch",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 36641,
+                  "error": {
+                    "message": "Error: SHOT_SCRAPER_CAPTURE_FAILED",
+                    "stack": "Error: SHOT_SCRAPER_CAPTURE_FAILED\n    at ChildProcess.<anonymous> (/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-auth-boundary.spec.js:104:66)",
+                    "location": {
+                      "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-auth-boundary.spec.js",
+                      "column": 66,
+                      "line": 104
+                    },
+                    "snippet": "  102 |       child.stdout.resume(); child.stderr.resume()\n  103 |       child.once('error', () => reject(new Error('SHOT_SCRAPER_UNAVAILABLE')))\n> 104 |       child.once('exit', code => code === 0 ? resolve() : reject(new Error('SHOT_SCRAPER_CAPTURE_FAILED')))\n      |                                                                  ^\n  105 |       child.stdin.on('error', () => {})\n  106 |       child.stdin.end(JSON.stringify(authState))\n  107 |     })"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-auth-boundary.spec.js",
+                        "column": 66,
+                        "line": 104
+                      },
+                      "message": "Error: SHOT_SCRAPER_CAPTURE_FAILED\n\n  102 |       child.stdout.resume(); child.stderr.resume()\n  103 |       child.once('error', () => reject(new Error('SHOT_SCRAPER_UNAVAILABLE')))\n> 104 |       child.once('exit', code => code === 0 ? resolve() : reject(new Error('SHOT_SCRAPER_CAPTURE_FAILED')))\n      |                                                                  ^\n  105 |       child.stdin.on('error', () => {})\n  106 |       child.stdin.end(JSON.stringify(authState))\n  107 |     })\n    at ChildProcess.<anonymous> (/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-auth-boundary.spec.js:104:66)"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-14T23:49:33.578Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T23-49-24.407Z-0ce90e9a-0de4-4c11-b451-403188683d99/test-results/dogfood-chatgpt-all-functi-39a3e--and-real-same-origin-fetch/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-delivery-auth-boundary.spec.js",
+                    "column": 66,
+                    "line": 104
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "5458a71f55479122458d-66e005e62da18aff5d72",
+          "file": "dogfood/chatgpt-all-functions/ops-delivery-auth-boundary.spec.js",
+          "line": 47,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-14T23:49:30.596Z",
+    "duration": 49624.276000000005,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

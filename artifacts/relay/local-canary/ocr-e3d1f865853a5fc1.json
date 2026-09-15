@@ -1,0 +1,53 @@
+{
+  "schema_version": "1",
+  "release_id": "local-canary",
+  "modality": "ocr",
+  "observed_at": "2026-09-12T08:31:39.273Z",
+  "http_status": 200,
+  "response_headers": {
+    "x-oneapi-request-id": "202609120831368105523068268d9d64yWqK8V7"
+  },
+  "result": {
+    "modality": "ocr",
+    "endpoint": "/chat/completions",
+    "model": "glm-5.3-flash",
+    "httpStatus": 200,
+    "providerRequestId": "202609120831368105523068268d9d64yWqK8V7",
+    "usageObserved": true,
+    "costObserved": true,
+    "costSource": "relay_pricing_snapshot",
+    "costCny": 0.00010928,
+    "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+    "pricingGroup": "VIP",
+    "state": "ready"
+  },
+  "relay_response": {
+    "choices": [
+      {
+        "finish_reason": "length",
+        "index": 0,
+        "message": {
+          "content": "",
+          "reasoning_content": "The user is asking me to return only JSON: {\"ocr_text\":\"OK\"} along with what appears to be a blank/empty image (the image shows as",
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1789201899,
+    "id": "2026091216313603c7f4e0935d4c08",
+    "model": "glm-5.3-flash",
+    "object": "chat.completion",
+    "request_id": "2026091216313603c7f4e0935d4c08",
+    "usage": {
+      "completion_tokens": 32,
+      "completion_tokens_details": {
+        "reasoning_tokens": 32
+      },
+      "prompt_tokens": 40,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_tokens": 72
+    }
+  }
+}

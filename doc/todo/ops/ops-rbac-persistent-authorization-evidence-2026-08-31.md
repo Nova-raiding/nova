@@ -88,6 +88,8 @@ Tests      1 passed (1)
 
 ## 未完成与上线阻断（当前）
 
+- 首次启用持久平台授权必须遵循 [`docs/runbooks/durable-platform-authorization-bootstrap.md`](../../../docs/runbooks/durable-platform-authorization-bootstrap.md)：先通过真实 OIDC + 现有可审计 MCP 为两个独立身份建立 `platform_admin` / `security_admin`，复验新会话后再开启 `AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED`。不得用 SQL seed 绕过授权和审计。
+
 - 当前 worker registry 定义的六类 critical operation 已完成统一快照/执行前复核；OAuth callback 和定时同步仍缺独立 service principal，故严格环境 fail-closed。退款、删除等未进入该 worker registry 的外部副作用仍需后续 inventory 与契约化。
 - HTTP route 的契约级全量 inventory/parity 门禁已形成：`HTTP_OPERATION_POLICIES` 覆盖 OpenAPI 文档操作，并由 `http-authz.test.ts` 校验 identity policy 引用已注册 MCP policy、模板精确匹配和文档操作一一覆盖；但所有真实生产 HTTP 路由的 allow/deny/JIT/审计运行证据仍未完成。
 - 尚无 production `DATABASE_URL` / `OPS_DATABASE_URL` 双角色正负向 probe、真实 OIDC 主体或生产审计关联证据。

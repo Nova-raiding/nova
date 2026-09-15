@@ -1,0 +1,19 @@
+{
+  "status": "failed",
+  "stage": "profile field round-trip",
+  "at": "2026-09-14T07:39:49.196Z",
+  "fixtureOnly": true,
+  "sharedContainersTouched": false,
+  "observations": [
+    "merchant_ops creates delivery with atomic audit",
+    "merchant_app cannot read any delivery control-plane table after bootstrap",
+    "FAILED at profile field round-trip; code=ERR_ASSERTION"
+  ],
+  "disposal": {
+    "stopped": [
+      "831f9777f7c0049f964d7c0ef7a92e44e7edb6871b070ea8b8daab568e407e19",
+      "05a4525ea0e346c2e7abf441e75da06c13905bbd137a462f90827ff959e62627"
+    ],
+    "leftRunning": []
+  }
+}

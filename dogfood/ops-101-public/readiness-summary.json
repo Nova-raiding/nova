@@ -1,0 +1,25 @@
+{
+  "checked_at": "2026-09-14T20:15:00+08:00",
+  "origins": [
+    "https://yxsona.com/readyz",
+    "https://ops.yxsona.com/readyz"
+  ],
+  "http_status": 200,
+  "reported_status": "ok",
+  "setup_mode": "fixture",
+  "writes_enabled": false,
+  "production_gate": false,
+  "object_storage_mode": "local",
+  "credential_provider_mode": "fixture",
+  "connectors": {
+    "jd": "fixture_ready",
+    "taobao": "fixture_ready",
+    "tmall": "fixture_ready",
+    "pinduoduo": "fixture_ready",
+    "xiaohongshu": "fixture_ready",
+    "douyin": "fixture_ready"
+  },
+  "oauth_configured": false,
+  "http_connectors_configured": false,
+  "production_evidence_configured": false
+}

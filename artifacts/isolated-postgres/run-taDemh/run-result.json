@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-08T12:12:28.527Z",
+  "endedAt": "2026-09-08T12:12:36.830Z",
+  "runId": "a2582d13-e3f6-468e-be60-d09547b1a7a2",
+  "selectedFiles": [
+    "packages/persistence/src/private-trial-invites.release.postgres.test.ts"
+  ],
+  "childExitCode": 1,
+  "status": "failed",
+  "report": "vitest.json",
+  "errors": [
+    "ISOLATED_POSTGRES_TEST_PROCESS_NONZERO",
+    "POSTGRES_REPORT_NOT_SUCCESSFUL",
+    "POSTGRES_REPORT_FAILED_OR_SKIPPED_ASSERTIONS",
+    "POSTGRES_REPORT_FAILED_OR_EMPTY_FILE",
+    "POSTGRES_REPORT_ASSERTION_NOT_PASSED",
+    "POSTGRES_REPORT_ASSERTION_COUNTS_MISMATCH"
+  ],
+  "fixtureOnly": true,
+  "databaseSource": "newly-created-isolated-fixture",
+  "rolePasswordCompatibility": "isolated-test-fixture-only",
+  "inheritedBusinessEnvironment": false,
+  "sharedContainersTouched": false,
+  "disposal": {
+    "stopped": [
+      "d56b63230c1ba0d3543da4d600ec83160254eea627d2f3cbf6ead3a23b1db91a",
+      "c500cbdf129bdd1fb9f60a82b700512a25789150843421bf5ea945a735d749eb"
+    ],
+    "leftRunning": []
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "schema_version": "1",
+  "release_id": "relay-live-20260913-retry",
+  "generated_at": "2026-09-13T11:53:13.070Z",
+  "expires_at": "2026-09-14T11:53:13.070Z",
+  "environment": "",
+  "simulated": false,
+  "relay": "https://ai.wormholexyz.xyz",
+  "results": [
+    {
+      "modality": "video",
+      "endpoint": "/video/generations",
+      "model": "wan3.0-video-prime",
+      "httpStatus": 200,
+      "providerRequestId": "202609131153114592980938268d9d6LQplH5GU",
+      "providerJobId": "task_SFKAl1XysIGmiY6Sg2wWhhrQ4Fj1PE7a",
+      "usageObserved": true,
+      "costObserved": true,
+      "costSource": "relay_pricing_snapshot",
+      "costCny": 4.597956,
+      "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+      "pricingGroup": "VIP",
+      "state": "blocked",
+      "detail": "video_async_pending"
+    }
+  ]
+}

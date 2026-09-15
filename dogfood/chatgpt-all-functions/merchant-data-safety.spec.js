@@ -70,7 +70,13 @@ async function openKnowledgeEntry(page, name) {
 
 test('model relay readiness is visible before a merchant starts a task', async ({ page }) => {
   await page.route('**/api/healthz', async route => {
-    return fulfillJson(route, { setup: {
+    return fulfillJson(route, {
+      status: 'ok',
+      writesEnabled: true,
+      connectors: {},
+      setup: {
+      mode: 'production',
+      productionGate: true,
       ai: { relay: { configured: false, host: null }, costGate: 'blocked' },
       nextActions: ['配置平台模型中转站后重新检查'],
       modelReadiness: {

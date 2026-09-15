@@ -1,0 +1,284 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e5]:
+    - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+      - /url: "#ops-main-content"
+    - complementary "运营主导航" [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - generic [ref=e10]: 大麦
+          - generic [ref=e11]:
+            - strong [ref=e12]: 大麦运营中心
+            - generic [ref=e13]: 平台运营与商家服务
+        - generic [ref=e14]: 平台运营控制面
+        - region "当前操作范围" [ref=e15]:
+          - generic [ref=e16]:
+            - generic [ref=e17]: 当前操作范围
+            - generic [ref=e18]: 平台级
+          - status [ref=e19]: 正在查看平台聚合与控制面数据
+          - generic [ref=e20]:
+            - generic [ref=e21]: 平台范围
+            - strong [ref=e22]: 全平台
+          - generic [ref=e23]:
+            - generic [ref=e24]: 工作区上下文
+            - strong [ref=e25]: 未进入工作区
+          - generic [ref=e26]: 客户内容默认不可见；进入工作区需受控授权
+        - navigation "平台运营功能导航" [ref=e27]:
+          - region "平台治理" [ref=e28]:
+            - heading "平台治理" [level=2] [ref=e29]
+            - button "总览" [ref=e30] [cursor=pointer]:
+              - img "safety-certificate" [ref=e31] [cursor=pointer]:
+                - img [ref=e32] [cursor=pointer]
+              - text: 总览
+            - button "用户与租户" [ref=e34] [cursor=pointer]:
+              - img "team" [ref=e35] [cursor=pointer]:
+                - img [ref=e36] [cursor=pointer]
+              - text: 用户与租户
+            - button "客服" [ref=e38] [cursor=pointer]:
+              - img "customer-service" [ref=e39] [cursor=pointer]:
+                - img [ref=e40] [cursor=pointer]
+              - text: 客服
+            - button "事故中心" [ref=e42] [cursor=pointer]:
+              - img "alert" [ref=e43] [cursor=pointer]:
+                - img [ref=e44] [cursor=pointer]
+              - text: 事故中心
+          - region "商家工作区治理" [ref=e46]:
+            - heading "商家工作区治理" [level=2] [ref=e47]
+            - button "任务与内容" [ref=e48] [cursor=pointer]:
+              - img "cloud-sync" [ref=e49] [cursor=pointer]:
+                - img [ref=e50] [cursor=pointer]
+              - text: 任务与内容
+            - button "平台连接" [ref=e53] [cursor=pointer]:
+              - img "global" [ref=e54] [cursor=pointer]:
+                - img [ref=e55] [cursor=pointer]
+              - text: 平台连接
+            - button "平台规则" [ref=e57] [cursor=pointer]:
+              - img "read" [ref=e58] [cursor=pointer]:
+                - img [ref=e59] [cursor=pointer]
+              - text: 平台规则
+          - region "模型与计费" [ref=e61]:
+            - heading "模型与计费" [level=2] [ref=e62]
+            - button "模型服务" [ref=e63] [cursor=pointer]:
+              - img "robot" [ref=e64] [cursor=pointer]:
+                - img [ref=e65] [cursor=pointer]
+              - text: 模型服务
+            - button "账务与退款" [ref=e67] [cursor=pointer]:
+              - img "dollar" [ref=e68] [cursor=pointer]:
+                - img [ref=e69] [cursor=pointer]
+              - text: 账务与退款
+          - region "风险与系统" [ref=e71]:
+            - heading "风险与系统" [level=2] [ref=e72]
+            - button "功能开关" [ref=e73] [cursor=pointer]:
+              - img "experiment" [ref=e74] [cursor=pointer]:
+                - img [ref=e75] [cursor=pointer]
+              - text: 功能开关
+            - button "存储与对账" [ref=e77] [cursor=pointer]:
+              - img "cloud-server" [ref=e78] [cursor=pointer]:
+                - img [ref=e79] [cursor=pointer]
+              - text: 存储与对账
+            - button "审计中心" [ref=e83] [cursor=pointer]:
+              - img "file-search" [ref=e84] [cursor=pointer]:
+                - img [ref=e85] [cursor=pointer]
+              - text: 审计中心
+        - button "通过客服工作台受控支持客户问题" [ref=e87] [cursor=pointer]: 受控支持入口
+    - generic [ref=e88]:
+      - banner [ref=e89]:
+        - generic [ref=e90]:
+          - heading "商业与平台控制台" [level=2] [ref=e91]
+          - region "当前身份与权限范围" [ref=e92]:
+            - generic [ref=e93]:
+              - img [ref=e95]:
+                - img [ref=e96]
+              - strong [ref=e100]: 平台管理员
+              - status [ref=e102]: 授权状态：已由服务端验证
+              - button "通知消息，暂无未读" [ref=e105] [cursor=pointer]:
+                - img "bell" [ref=e107] [cursor=pointer]:
+                  - img [ref=e108] [cursor=pointer]
+              - generic [ref=e111]: 身份 ops-fixture-actor-e60ff25b-cf91-4cdc-82d6-d6f4efa312f2
+              - button "展开其余 1 个已验证角色" [ref=e114] [cursor=pointer]:
+                - generic [ref=e115] [cursor=pointer]: +1 个角色
+              - generic [ref=e117]: 平台全局
+              - generic [ref=e119]: 策略 2026-09-08.v1
+            - status [ref=e120]: 平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。
+        - button "连接诊断 / 登录配置" [ref=e123] [cursor=pointer]:
+          - generic [ref=e124] [cursor=pointer]: 登录 / 连接
+      - main [ref=e125]:
+        - status [ref=e126]
+        - region "用户与租户" [ref=e127]:
+          - generic [ref=e128]:
+            - generic [ref=e129]:
+              - generic [ref=e130]:
+                - generic [ref=e131]: PLATFORM GOVERNANCE
+                - generic [ref=e132]: 当前工作区数据
+              - heading "用户与租户" [level=3] [ref=e133]
+              - generic [ref=e134]: 按任务管理用户身份、租户状态与平台授权；用户详情同时关联成员角色、权限、钱包余额、扣款/账单状态、任务用量、订单权益、店铺范围和审计记录。只展示当前角色可读取的治理区域，所有写入仍由服务端逐次鉴权并审计。
+            - button "刷新目录" [ref=e136] [cursor=pointer]:
+              - generic [ref=e137] [cursor=pointer]: 刷新目录
+            - status [ref=e138]:
+              - strong [ref=e140]: 当前下一步
+              - generic [ref=e141]: 先确认服务端能力投影与当前工作区范围，再执行需要原因、修订号和审计的治理操作。
+          - generic [ref=e144]:
+            - status [ref=e145]:
+              - img "info-circle" [ref=e147]:
+                - img [ref=e148]
+              - generic [ref=e150]:
+                - generic [ref=e151]: 用户治理能力已由服务端确认
+                - generic [ref=e152]: 页面分区、只读状态和写入入口均依据 ops.session 返回的 capability projection；页面不会从角色名称推断权限。
+            - generic "用户治理工作区" [ref=e154]:
+              - tablist [ref=e155]:
+                - generic [ref=e157]:
+                  - tab "用户目录" [selected] [ref=e159] [cursor=pointer]
+                  - tab "租户治理" [ref=e161] [cursor=pointer]
+                  - tab "权限与角色" [ref=e163] [cursor=pointer]
+              - tabpanel "用户目录" [ref=e166]:
+                - generic [ref=e167]:
+                  - generic [ref=e171]:
+                    - generic [ref=e173]: 用户身份
+                    - generic [ref=e176]: "1"
+                  - generic [ref=e180]:
+                    - generic [ref=e182]: 成员关系
+                    - generic [ref=e185]: "1"
+                  - generic [ref=e189]:
+                    - generic [ref=e191]: 涉及租户
+                    - generic [ref=e194]: "1"
+                - generic [ref=e195]:
+                  - generic [ref=e198]: 用户目录
+                  - generic [ref=e199]:
+                    - form "用户目录筛选" [ref=e200]:
+                      - generic [ref=e202]:
+                        - generic "关键词" [ref=e204]: "关键词 :"
+                        - textbox "按关键词筛选用户目录" [ref=e209]
+                      - generic [ref=e212]:
+                        - generic "状态" [ref=e214]: "状态 :"
+                        - generic [ref=e218] [cursor=pointer]:
+                          - generic [ref=e219] [cursor=pointer]:
+                            - generic: 全部状态
+                            - combobox "按成员状态筛选用户目录" [ref=e220] [cursor=pointer]
+                          - img "down" [ref=e222] [cursor=pointer]:
+                            - img [ref=e223] [cursor=pointer]
+                      - generic [ref=e226]:
+                        - generic "租户" [ref=e228]: "租户 :"
+                        - textbox "按工作区筛选用户目录" [ref=e233]
+                      - generic [ref=e240]:
+                        - button "查 询" [ref=e242] [cursor=pointer]:
+                          - generic [ref=e243] [cursor=pointer]: 查 询
+                        - button "清 空" [ref=e245] [cursor=pointer]:
+                          - generic [ref=e246] [cursor=pointer]: 清 空
+                        - button "loading 导出当前筛选" [ref=e248] [cursor=pointer]:
+                          - generic:
+                            - img "loading"
+                          - generic [ref=e249] [cursor=pointer]: 导出当前筛选
+                        - button "批量停用（1）" [ref=e251] [cursor=pointer]:
+                          - generic [ref=e252] [cursor=pointer]: 批量停用（1）
+                    - generic [ref=e256]:
+                      - table "用户目录数据表" [ref=e260]:
+                        - rowgroup [ref=e273]:
+                          - row "Select all 身份标识 显示名 租户 角色 数据来源 套餐 / 消耗 成员状态 租户状态 创建时间 操作" [ref=e274]:
+                            - columnheader "Select all" [ref=e275]:
+                              - checkbox "Select all" [checked] [ref=e279] [cursor=pointer]
+                            - columnheader "身份标识" [ref=e280]
+                            - columnheader "显示名" [ref=e281] [cursor=pointer]:
+                              - generic [ref=e282] [cursor=pointer]:
+                                - generic [ref=e283] [cursor=pointer]: 显示名
+                                - generic [ref=e285] [cursor=pointer]:
+                                  - img [ref=e286] [cursor=pointer]:
+                                    - img [ref=e287] [cursor=pointer]
+                                  - img [ref=e289] [cursor=pointer]:
+                                    - img [ref=e290] [cursor=pointer]
+                            - columnheader "租户" [ref=e292]
+                            - columnheader "角色" [ref=e293]
+                            - columnheader "数据来源" [ref=e294]
+                            - columnheader "套餐 / 消耗" [ref=e295]
+                            - columnheader "成员状态" [ref=e296] [cursor=pointer]:
+                              - generic [ref=e297] [cursor=pointer]:
+                                - generic [ref=e298] [cursor=pointer]: 成员状态
+                                - generic [ref=e300] [cursor=pointer]:
+                                  - img [ref=e301] [cursor=pointer]:
+                                    - img [ref=e302] [cursor=pointer]
+                                  - img [ref=e304] [cursor=pointer]:
+                                    - img [ref=e305] [cursor=pointer]
+                            - columnheader "租户状态" [ref=e307]
+                            - columnheader "创建时间" [ref=e308] [cursor=pointer]:
+                              - generic [ref=e309] [cursor=pointer]:
+                                - generic [ref=e310] [cursor=pointer]: 创建时间
+                                - generic [ref=e312] [cursor=pointer]:
+                                  - img [ref=e313] [cursor=pointer]:
+                                    - img [ref=e314] [cursor=pointer]
+                                  - img [ref=e316] [cursor=pointer]:
+                                    - img [ref=e317] [cursor=pointer]
+                            - columnheader "操作" [ref=e319]
+                        - rowgroup [ref=e320]:
+                          - checkbox [checked] [ref=e324] [cursor=pointer]
+                          - generic [ref=e325]:
+                            - generic [ref=e326]: 显示名
+                            - generic [ref=e328]:
+                              - img [ref=e329]:
+                                - img [ref=e330]
+                              - img [ref=e332]:
+                                - img [ref=e333]
+                          - generic [ref=e335]:
+                            - generic [ref=e336]: 成员状态
+                            - generic [ref=e338]:
+                              - img [ref=e339]:
+                                - img [ref=e340]
+                              - img [ref=e342]:
+                                - img [ref=e343]
+                          - generic [ref=e345]:
+                            - generic [ref=e346]: 创建时间
+                            - generic [ref=e348]:
+                              - img [ref=e349]:
+                                - img [ref=e350]
+                              - img [ref=e352]:
+                                - img [ref=e353]
+                          - row "Row 1 selected ops-fixture-target-e60ff25b-cf91-4cdc-82d6-d6f4efa312f2 Isolated Directory Target ws_ops_fixture_e60ff25bcf914cdc82d6d6f4efa312f2 商家管理员 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/09/10 08:46 查看 Isolated Directory Target 的用户详情 停用 Isolated Directory Target 的访问" [ref=e355]:
+                            - cell "Row 1 selected" [ref=e356]:
+                              - checkbox "Row 1 selected" [checked] [ref=e359] [cursor=pointer]
+                            - cell "ops-fixture-target-e60ff25b-cf91-4cdc-82d6-d6f4efa312f2" [ref=e360]
+                            - cell "Isolated Directory Target" [ref=e361]
+                            - cell "ws_ops_fixture_e60ff25bcf914cdc82d6d6f4efa312f2" [ref=e362]
+                            - cell "商家管理员" [ref=e363]:
+                              - generic [ref=e364]: 商家管理员
+                            - cell "业务成员记录" [ref=e365]:
+                              - generic [ref=e366]: 业务成员记录
+                            - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e367]:
+                              - generic [ref=e368]:
+                                - generic [ref=e370]: Trial · trialing
+                                - generic [ref=e372]: 任务 0/30 · 余额 ¥0.00
+                            - cell "已激活" [ref=e373]:
+                              - generic [ref=e374]: 已激活
+                            - cell "正常" [ref=e375]:
+                              - generic [ref=e376]: 正常
+                            - cell "2026/09/10 08:46" [ref=e377]
+                            - cell "查看 Isolated Directory Target 的用户详情 停用 Isolated Directory Target 的访问" [ref=e378]:
+                              - generic [ref=e379]:
+                                - button "查看 Isolated Directory Target 的用户详情" [ref=e381] [cursor=pointer]:
+                                  - generic [ref=e382] [cursor=pointer]: 详 情
+                                - button "停用 Isolated Directory Target 的访问" [ref=e384] [cursor=pointer]:
+                                  - generic [ref=e385] [cursor=pointer]: 停 用
+                      - list [ref=e386]:
+                        - listitem [ref=e387]: 共 1 条成员关系
+                        - listitem "上一页" [ref=e388]:
+                          - button "left" [disabled] [ref=e389]:
+                            - img "left" [ref=e390]:
+                              - img [ref=e391]
+                        - listitem "1" [ref=e393] [cursor=pointer]:
+                          - generic [ref=e394] [cursor=pointer]: "1"
+                        - listitem "下一页" [ref=e395]:
+                          - button "right" [disabled] [ref=e396]:
+                            - img "right" [ref=e397]:
+                              - img [ref=e398]
+                        - listitem [ref=e400]:
+                          - generic [ref=e401]:
+                            - generic "20 条/页" [ref=e402]:
+                              - text: 20 条/页
+                              - combobox "页码" [ref=e403]
+                            - img "down" [ref=e405]:
+                              - img [ref=e406]
+  - alert [ref=e408]:
+    - generic [ref=e409]:
+      - img "check-circle" [ref=e411]:
+        - img [ref=e412]
+      - generic [ref=e414]: 用户目录已导出
+```

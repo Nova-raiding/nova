@@ -1,0 +1,178 @@
+{
+  "config": {
+    "rootDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-40-53.990Z-4f3c0628-2fd9-4280-93e7-be5d65a93f35/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-delivery-owner-acceptance.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-delivery-owner-acceptance.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "isolated customer delivery end-to-end fields, gates, checklists and scanned assets",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 600000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 85299,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "steps": [
+                    {
+                      "title": "Expect \"poll toBe\"",
+                      "duration": 2867
+                    },
+                    {
+                      "title": "Expect \"poll toBe\"",
+                      "duration": 160
+                    }
+                  ],
+                  "startTime": "2026-09-14T14:42:14.114Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "customer-created",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-40-53.990Z-4f3c0628-2fd9-4280-93e7-be5d65a93f35/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/attachments/customer-created-a4931426e57fedfcf3f5ee3b72e610155d2d07f2.png"
+                    },
+                    {
+                      "name": "missing-contract-rejected",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-40-53.990Z-4f3c0628-2fd9-4280-93e7-be5d65a93f35/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/attachments/missing-contract-rejected-6848fdc0795f16f725099b4780d7c33c03de79e1.png"
+                    },
+                    {
+                      "name": "real-contract-scan-ready",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-40-53.990Z-4f3c0628-2fd9-4280-93e7-be5d65a93f35/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/attachments/real-contract-scan-ready-5a030f444ba8d8ef844046086b775b396dbc11f4.png"
+                    },
+                    {
+                      "name": "profile-fields-reloaded",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-40-53.990Z-4f3c0628-2fd9-4280-93e7-be5d65a93f35/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/attachments/profile-fields-reloaded-c41fa37d4414c26696ef5ae78ce208f7a49e9bfb.png"
+                    },
+                    {
+                      "name": "training-inline-scanned-evidence",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-40-53.990Z-4f3c0628-2fd9-4280-93e7-be5d65a93f35/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/attachments/training-inline-scanned-evidence-11656bf89027fe9bc7d818357ddc9da87d3052d5.png"
+                    },
+                    {
+                      "name": "customer-delivery-gates",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-40-53.990Z-4f3c0628-2fd9-4280-93e7-be5d65a93f35/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/attachments/customer-delivery-gates-a5eeb6ac6d234774a5ad53f92f3512b4b811562f.png"
+                    },
+                    {
+                      "name": "real-videos-scan-ready",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-40-53.990Z-4f3c0628-2fd9-4280-93e7-be5d65a93f35/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/attachments/real-videos-scan-ready-267c0a25307d6d168c7411b3993c8da8eefb70c1.png"
+                    },
+                    {
+                      "name": "real-video-segments-reloaded",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-40-53.990Z-4f3c0628-2fd9-4280-93e7-be5d65a93f35/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/attachments/real-video-segments-reloaded-46c5b4ad0570ee5fa2a5fc0eae84b2092018b1a8.png"
+                    },
+                    {
+                      "name": "training-inline-shot-scraper",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-40-53.990Z-4f3c0628-2fd9-4280-93e7-be5d65a93f35/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/attachments/training-inline-shot-scraper-52f406ccdbfeee0acadf5fe3f9371270e64c498e.png"
+                    },
+                    {
+                      "name": "video-registration-shot-scraper",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-40-53.990Z-4f3c0628-2fd9-4280-93e7-be5d65a93f35/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/attachments/video-registration-shot-scraper-eaeb65bb36f529d0a69699083a2ac3f1532182a1.png"
+                    },
+                    {
+                      "name": "training-inline-video",
+                      "contentType": "video/webm",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-40-53.990Z-4f3c0628-2fd9-4280-93e7-be5d65a93f35/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/attachments/training-inline-video-2ad9a1b327dc2da9cfd6b95e2b699880dcd253f8.webm"
+                    },
+                    {
+                      "name": "cancelled-upload-does-not-populate-new-customer",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-14T14-40-53.990Z-4f3c0628-2fd9-4280-93e7-be5d65a93f35/test-results/dogfood-chatgpt-all-functi-1f35f-ecklists-and-scanned-assets/attachments/cancelled-upload-does-not-populate-new-customer-25c355f5fc842a46e6f68ccc47176e3219608b60.png"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "8ae7c2d587a11be0bfc8-c5c11c2c3b2b3065053d",
+          "file": "dogfood/chatgpt-all-functions/ops-delivery-owner-acceptance.spec.js",
+          "line": 541,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-14T14:42:11.065Z",
+    "duration": 89942.64,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

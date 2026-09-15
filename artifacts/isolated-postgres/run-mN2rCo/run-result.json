@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-14T14:56:56.071Z",
+  "endedAt": "2026-09-14T14:57:48.975Z",
+  "runId": "f4fd0ea7-e89b-4272-abd4-de80f9cb78bb",
+  "selectedFiles": [
+    "packages/persistence/src/migration-208-release.postgres.test.ts",
+    "packages/persistence/src/migration-209-release.postgres.test.ts"
+  ],
+  "childExitCode": 0,
+  "status": "passed",
+  "report": "vitest.json",
+  "errors": [],
+  "fixtureOnly": true,
+  "databaseSource": "newly-created-isolated-fixture",
+  "rolePasswordCompatibility": "isolated-test-fixture-only",
+  "inheritedBusinessEnvironment": false,
+  "sharedContainersTouched": false,
+  "disposal": {
+    "stopped": [
+      "10279cadfe7853f3c26465f8c19bf06cd77338da4d6357742b52463452f931f9",
+      "519ed8487afbe067f3fb5c61f348fa115683aad64f6751140ae572fb76be0119"
+    ],
+    "leftRunning": []
+  }
+}

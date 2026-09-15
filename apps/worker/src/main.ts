@@ -27,6 +27,7 @@ import { createClamAvScanner, type ClamAvScanner } from './clamav-scanner.js'
 import { ScannerHeartbeatController } from './scanner-heartbeat.js'
 import { createExecutionAuthorizationGuard, WorkerExecutionAuthorizationError, type WorkerAuthorizationRecheck } from '../../../packages/workers/src/execution-authorization.js'
 import { createCommercialAccessGuard, WorkerCommercialAccessError, type WorkerCommercialAccessRecheck } from '../../../packages/workers/src/commercial-access.js'
+import { CUSTOMER_DELIVERY_SCAN_EVENT, CUSTOMER_DELIVERY_SCAN_OPERATION, createDeliveryScanAdmissionGuard, DeliveryScanAdmissionError } from '../../../packages/workers/src/customer-delivery-scan-admission.js'
 import { assertClamAvExecutionAdmission } from '../../../packages/workers/src/scanner-heartbeat.js'
 import { planSupportSlaReportSchedule } from '../../../packages/workers/src/support-sla-scan.js'
 import { validateImageGenerationCallbackResult } from '../../../packages/contracts/src/index.js'
@@ -62,6 +63,7 @@ export interface WorkerConfig {
   scanMaxAttempts: number
   scanRetryBaseMs: number
   scanRetryMaxMs: number
+  clamavMaxFileBytes: number
 }
 
 export type WorkerRole = 'all' | 'sync' | 'generation' | 'publish' | 'reconcile' | 'automation' | 'scan'
@@ -195,7 +197,7 @@ const workerRouting: Record<Exclude<WorkerRole, 'all' | 'automation'>, { eventTy
     generation: { eventTypes: ['task.created', 'state.snapshot', 'generation.requested', 'image.generation.requested', 'asset.generation_continuations.ready', 'asset.generation_continuation.waiting_scan', 'asset.generation_continuation.awaiting_rights', 'asset.generation_continuations.awaiting_confirmation'], snapshotEntityTypes: ['task', 'content_version'] },
   publish: { eventTypes: ['publish.requested'] },
   reconcile: { eventTypes: ['publish.reconcile_requested'] },
-  scan: { eventTypes: ['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested'] },
+  scan: { eventTypes: ['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested', CUSTOMER_DELIVERY_SCAN_EVENT] },
 }
 
 const DEFAULT_WORKER_API_TIMEOUT_MS = 10_000
@@ -205,6 +207,63 @@ const DEFAULT_MODEL_USAGE_RECONCILIATION_INTERVAL_MS = 5 * 60_000
 const DEFAULT_SUPPORT_SLA_SCAN_INTERVAL_MS = 60_000
 const DEFAULT_SUPPORT_SLA_REPORT_INTERVAL_MS = 60 * 60_000
 const MAX_WORKER_API_RESPONSE_BYTES = 24 * 1024 * 1024
+export const DEFAULT_CLAMAV_MAX_FILE_BYTES = 50 * 1024 * 1024
+
+function assetScanContentTooLarge(maxBytes: number): Error & { code: string; retryable: false } {
+  return Object.assign(new Error(`asset scan content exceeds the ${maxBytes}-byte scanner limit`), {
+    code: 'ASSET_SCAN_CONTENT_TOO_LARGE',
+    retryable: false as const,
+  })
+}
+
+/** Reads an untrusted scan-content response without allowing an absent or
+ * dishonest Content-Length header to turn into an unbounded allocation. */
+export async function readBoundedAssetScanContent(response: Response, maxBytes = DEFAULT_CLAMAV_MAX_FILE_BYTES): Promise<Uint8Array> {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new RangeError('asset scan content limit must be a positive safe integer')
+  const rawLength = response.headers.get('content-length')
+  if (rawLength !== null) {
+    if (!/^(?:0|[1-9]\d*)$/u.test(rawLength)) {
+      await response.body?.cancel().catch(() => undefined)
+      throw Object.assign(new Error('asset scan content-length is invalid'), { code: 'ASSET_SCAN_CONTENT_LENGTH_INVALID', retryable: false })
+    }
+    const declaredLength = Number(rawLength)
+    if (!Number.isSafeInteger(declaredLength)) {
+      await response.body?.cancel().catch(() => undefined)
+      throw Object.assign(new Error('asset scan content-length is invalid'), { code: 'ASSET_SCAN_CONTENT_LENGTH_INVALID', retryable: false })
+    }
+    if (declaredLength > maxBytes) {
+      await response.body?.cancel().catch(() => undefined)
+      throw assetScanContentTooLarge(maxBytes)
+    }
+  }
+  if (!response.body) return new Uint8Array()
+
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value?.byteLength) continue
+      if (value.byteLength > maxBytes - total) {
+        await reader.cancel(assetScanContentTooLarge(maxBytes)).catch(() => undefined)
+        throw assetScanContentTooLarge(maxBytes)
+      }
+      chunks.push(value)
+      total += value.byteLength
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const body = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    body.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return body
+}
 
 type WorkerReadinessDatabase = {
   query(text: string, values?: readonly unknown[]): Promise<{ rows: Array<{ version: number; name: string }> }>
@@ -319,7 +378,7 @@ function workerRoleForRequest(method: string, requestTarget: string, body?: stri
     const operation = new URL(requestTarget, 'http://worker.internal').searchParams.get('operation')
     if (operation === 'publish.reconcile') return 'reconcile'
     if (operation === 'catalog.sync.execute') return 'sync'
-    if (operation === 'asset.scan.execute') return 'scan'
+    if (operation === 'asset.scan.execute' || operation === CUSTOMER_DELIVERY_SCAN_OPERATION) return 'scan'
     return 'generation'
   }
   if (path === '/v1/internal/automation/tick' || path === '/v1/ops/data-deletion/complete' || path === '/v1/internal/storage/orphans/cleanup') return 'automation'
@@ -581,8 +640,32 @@ export function createApiCommercialAccessGuard(config: Pick<WorkerConfig, 'apiBa
       balanceState: String(raw.balance_state ?? '') as WorkerCommercialAccessRecheck['balanceState'], entitlementSnapshotId: String(raw.entitlement_snapshot_id ?? ''),
       entitlementSnapshotChecksum: String(raw.entitlement_snapshot_checksum ?? ''), rateVersion: raw.rate_version === null ? null : String(raw.rate_version ?? ''), quotedPoints: Number(raw.quoted_points),
       ...(typeof raw.reservation_id === 'string' ? { reservationId: raw.reservation_id } : {}), reservationState: String(raw.reservation_state ?? '') as WorkerCommercialAccessRecheck['reservationState'],
+      ...(typeof raw.denial_code === 'string' ? { denialCode: raw.denial_code as WorkerCommercialAccessRecheck['denialCode'] } : {}),
       allowed: raw.allowed === true, ready: raw.ready === true, checkedAt: String(raw.checked_at ?? ''),
     }
+  })
+}
+
+/** Reuses the signed scan-machine transport while keeping platform admission
+ * separate from merchant authorization and point snapshots. */
+export function createApiDeliveryScanAdmissionGuard(config: Pick<WorkerConfig, 'apiBaseUrl' | 'apiToken' | 'apiSigningSecret'> & Partial<Pick<WorkerConfig, 'workerId'>>, fetcher: typeof fetch = fetch) {
+  return createDeliveryScanAdmissionGuard(async ({ event, signal }) => {
+    if (!config.apiBaseUrl || !config.apiToken || !config.apiSigningSecret) throw new DeliveryScanAdmissionError('DELIVERY_SCAN_EXECUTION_RECHECK_UNAVAILABLE', 'delivery scan requires API endpoint and signed machine credentials', true)
+    const path = `/v1/worker-events/${encodeURIComponent(event.id)}/execution-check?aggregate_id=${encodeURIComponent(event.aggregateId)}&operation=${encodeURIComponent(CUSTOMER_DELIVERY_SCAN_OPERATION)}`
+    const response = await fetchWorkerApi(fetcher, `${config.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
+      headers: { accept: 'application/json', authorization: `Bearer ${config.apiToken}`, 'x-workspace-id': event.workspaceId, ...workerAuthIntent(config.apiSigningSecret, config.workerId ?? resolveWorkerId()) },
+      redirect: 'error', signal,
+    })
+    if (!response.ok) {
+      let apiError: { code?: unknown; message?: unknown } | undefined
+      try { apiError = (await parseWorkerApiJson(response) as { error?: typeof apiError }).error } catch { /* preserve bounded HTTP fallback */ }
+      const retryable = response.status === 429 || response.status >= 500
+      const code = typeof apiError?.code === 'string' && /^DELIVERY_SCAN_[A-Z0-9_]{2,63}$/u.test(apiError.code)
+        ? apiError.code : retryable ? 'DELIVERY_SCAN_EXECUTION_RECHECK_UNAVAILABLE' : 'DELIVERY_SCAN_EXECUTION_DENIED'
+      throw new DeliveryScanAdmissionError(code, `delivery scan admission API returned ${response.status}`, retryable)
+    }
+    const envelope = await parseWorkerApiJson(response) as { data?: { delivery_scan_recheck?: unknown } }
+    return envelope.data?.delivery_scan_recheck
   })
 }
 
@@ -1009,6 +1092,7 @@ export async function executeAssetScan(input: {
   clamavHost: string
   clamavPort: number
   clamavTimeoutMs: number
+  clamavMaxFileBytes?: number
   attemptRepository: AssetScanAttemptRepository
   scanner?: Pick<ClamAvScanner, 'version' | 'scan'>
   definitionsMaxAgeSeconds?: number
@@ -1024,6 +1108,8 @@ export async function executeAssetScan(input: {
   const expectedSha = input.event.payload.sha256
   const expectedSize = input.event.payload.size_bytes
   const expectedSourceRevision = input.event.payload.source_revision
+  const maxFileBytes = input.clamavMaxFileBytes ?? DEFAULT_CLAMAV_MAX_FILE_BYTES
+  if (!Number.isSafeInteger(maxFileBytes) || maxFileBytes < 1) throw Object.assign(new Error('asset scanner maximum file size is invalid'), { code: 'ASSET_SCANNER_CONFIG_INVALID', retryable: false })
   if (!assetId || typeof expectedKey !== 'string' || typeof expectedSha !== 'string' || !/^[a-f0-9]{64}$/u.test(expectedSha) || !Number.isSafeInteger(expectedSize)
     || (expectedSourceRevision !== undefined && (!Number.isSafeInteger(expectedSourceRevision) || Number(expectedSourceRevision) < 1))
     || (redrive && expectedSourceRevision === undefined)) throw Object.assign(new Error('asset scan event binding is invalid'), { code: 'ASSET_SCAN_EVENT_INVALID', retryable: false })
@@ -1071,6 +1157,8 @@ export async function executeAssetScan(input: {
   const persisted = await input.attemptRepository.getByOutboxEvent(input.event.workspaceId, input.event.id)
   if (persisted) return callback(persisted)
 
+  if (Number(expectedSize) > maxFileBytes) throw assetScanContentTooLarge(maxFileBytes)
+
   const content = await fetchWorkerApi(fetcher, `${input.apiBaseUrl.replace(/\/$/u, '')}${contentPath}`, { headers: { accept: 'application/octet-stream', ...authHeaders('GET', contentPath) }, redirect: 'error', signal: input.signal })
   if (!content.ok) {
     let apiError: { code?: unknown; message?: unknown; details?: { retryable?: unknown } } | undefined
@@ -1082,7 +1170,7 @@ export async function executeAssetScan(input: {
     const retryable = typeof explicitRetryable === 'boolean' ? explicitRetryable : content.status === 429 || content.status >= 500
     throw Object.assign(new Error(message), { code, retryable })
   }
-  const body = new Uint8Array(await content.arrayBuffer())
+  const body = await readBoundedAssetScanContent(content, maxFileBytes)
   const actualSha = createHash('sha256').update(body).digest('hex')
   const mimeType = (content.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase()
   const sourceRevision = Number(content.headers.get('x-asset-source-revision'))
@@ -1177,6 +1265,7 @@ export function readWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     scanMaxAttempts: positiveInt(env.WORKER_SCAN_MAX_ATTEMPTS, 12, 'WORKER_SCAN_MAX_ATTEMPTS'),
     scanRetryBaseMs: positiveInt(env.WORKER_SCAN_RETRY_BASE_MS, 5_000, 'WORKER_SCAN_RETRY_BASE_MS'),
     scanRetryMaxMs: positiveInt(env.WORKER_SCAN_RETRY_MAX_MS, 900_000, 'WORKER_SCAN_RETRY_MAX_MS'),
+    clamavMaxFileBytes: positiveInt(env.CLAMAV_MAX_FILE_BYTES, DEFAULT_CLAMAV_MAX_FILE_BYTES, 'CLAMAV_MAX_FILE_BYTES'),
   }
 }
 
@@ -1245,14 +1334,14 @@ export async function scannerOperationalMetrics(pool: SqlPool, workspaceIds: rea
              AND COALESCE(event.last_error->>'terminal', 'false') <> 'true')::integer AS backlog,
            count(*) FILTER (WHERE event.last_error IS NOT NULL
              AND (event.last_error->>'terminal'='true' OR (event.published_at IS NOT NULL
-               AND (event.last_error->>'retryable'='false' OR event.attempts >= $3)
-               AND EXISTS (
+               AND (event.last_error->>'retryable'='false' OR event.attempts >= $3)))
+             AND EXISTS (
                SELECT 1 FROM business_entity_snapshots snapshot
                 WHERE snapshot.workspace_id=event.workspace_id
                   AND snapshot.entity_type='asset'
                   AND snapshot.entity_id=event.payload->>'asset_id'
                   AND snapshot.payload->>'scanStatus'='quarantined'
-               ))))::integer AS dead_letter,
+               ))::integer AS dead_letter,
            max(attempt.callback_accepted_at) AS last_callback_accepted_at
          FROM outbox_events event
          LEFT JOIN asset_scan_attempts attempt ON attempt.workspace_id=event.workspace_id AND attempt.outbox_event_id=event.id
@@ -1279,6 +1368,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
   const quotaAdmission = new FixedWindowQuotaAdmission(quotaConnection.store)
   const executionAuthorization = createApiExecutionAuthorizationGuard(config)
   const commercialAccess = createApiCommercialAccessGuard(config)
+  const deliveryScanAdmission = createApiDeliveryScanAdmissionGuard(config)
   const queueFactory = redisConnection
     ? (workspaceId: string) => new RedisQueueAdapter<DurableOutboxEvent>(redisConnection.transport, workerQueueKey(config.role, workspaceId))
     : undefined
@@ -1561,7 +1651,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     const keyId = process.env.ASSET_SCAN_RECEIPT_KEY_ID?.trim()
     if (!config.apiBaseUrl || !apiToken || !signingSecret || !privateKey || !keyId) throw Object.assign(new Error('asset scanner callback and receipt credentials are not configured'), { code: 'ASSET_SCANNER_CONFIG_MISSING', retryable: true })
     const scannerInstanceId = process.env.HOSTNAME?.trim() || `worker-${process.pid}`
-    return executeAssetScan({ apiBaseUrl: config.apiBaseUrl, apiToken, apiSigningSecret: signingSecret, receiptPrivateKeyPem: privateKey, receiptKeyId: keyId, scannerServiceId: process.env.ASSET_SCANNER_SERVICE_ID?.trim() || 'merchant-asset-scanner', scannerInstanceId, policyVersion: process.env.ASSET_SCAN_POLICY_VERSION?.trim() || '2026-08-30', clamavHost, clamavPort, clamavTimeoutMs, definitionsMaxAgeSeconds: positiveInt(process.env.SCANNER_DEFINITIONS_MAX_AGE_SECONDS, 86_400, 'SCANNER_DEFINITIONS_MAX_AGE_SECONDS'), attemptRepository: scanAttempts, event, signal, onCallbackAccepted: acceptedAt => redisConnection!.scannerHeartbeat.recordCallbackAccepted(scannerInstanceId, acceptedAt, positiveInt(process.env.SCANNER_CALLBACK_MAX_AGE_SECONDS, 86_400, 'SCANNER_CALLBACK_MAX_AGE_SECONDS')) })
+    return executeAssetScan({ apiBaseUrl: config.apiBaseUrl, apiToken, apiSigningSecret: signingSecret, receiptPrivateKeyPem: privateKey, receiptKeyId: keyId, scannerServiceId: process.env.ASSET_SCANNER_SERVICE_ID?.trim() || 'merchant-asset-scanner', scannerInstanceId, policyVersion: process.env.ASSET_SCAN_POLICY_VERSION?.trim() || '2026-08-30', clamavHost, clamavPort, clamavTimeoutMs, clamavMaxFileBytes: config.clamavMaxFileBytes, definitionsMaxAgeSeconds: positiveInt(process.env.SCANNER_DEFINITIONS_MAX_AGE_SECONDS, 86_400, 'SCANNER_DEFINITIONS_MAX_AGE_SECONDS'), attemptRepository: scanAttempts, event, signal, onCallbackAccepted: acceptedAt => redisConnection!.scannerHeartbeat.recordCallbackAccepted(scannerInstanceId, acceptedAt, positiveInt(process.env.SCANNER_CALLBACK_MAX_AGE_SECONDS, 86_400, 'SCANNER_CALLBACK_MAX_AGE_SECONDS')) })
   }
   const imageContinuationRequested = async (event: DurableOutboxEvent, _projection: unknown, signal?: AbortSignal) => {
     if (!config.apiBaseUrl || !config.apiToken || !config.apiSigningSecret) throw Object.assign(new Error('image continuation callback credentials are not configured'), { code: 'IMAGE_CONTINUATION_CONFIG_MISSING', retryable: true })
@@ -1690,7 +1780,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
               onError: (workspaceId, operation, error) => log({ level: 'error', message: 'automation workspace maintenance failed; continuing', workspaceId, operation, error: serializeError(error) }),
             })
           })()
-          : await pollOnce(repository, dispatchers, { ...config, workspaces, ...(scannerHeartbeat ? { claimAdmission: () => scannerHeartbeat!.canProcessScans() } : {}) }, queueFactory, { executionAuthorization, commercialAccess, publishRequested, reconcileRequested, generationRequested, imageGenerationRequested, syncRequested, scanRequested, imageContinuationRequested, onGenerationResult, onGenerationDeferred, onPublishObservation })
+          : await pollOnce(repository, dispatchers, { ...config, workspaces, ...(scannerHeartbeat ? { claimAdmission: () => scannerHeartbeat!.canProcessScans() } : {}) }, queueFactory, { executionAuthorization, commercialAccess, deliveryScanAdmission, publishRequested, reconcileRequested, generationRequested, imageGenerationRequested, syncRequested, scanRequested, imageContinuationRequested, onGenerationResult, onGenerationDeferred, onPublishObservation })
         if (config.role === 'reconcile' && startedAt >= nextStorageReconciliationAt) {
           if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for storage reconciliation')
           const reconciliation = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => postStorageReconciliation({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }))

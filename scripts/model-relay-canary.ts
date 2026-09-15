@@ -59,7 +59,35 @@ function endpointFor(modality: ProbeResult['modality']) {
   if (modality === 'text' || modality === 'ocr') return '/chat/completions'
   if (modality === 'image') return process.env.IMAGE_GENERATION_PATH?.trim() || '/images/generations'
   if (modality === 'image_edit') return process.env.IMAGE_EDIT_PATH?.trim() || '/images/generations'
-  return process.env.VIDEO_GENERATION_PATH?.trim() || '/video/generations'
+  return process.env.VIDEO_GENERATION_PATH?.trim()
+    || (process.env.VIDEO_REQUEST_FORMAT?.trim() === 'openai-video' ? '/videos' : '/video/generations')
+}
+
+export function buildVideoProbeRequest(input: {
+  model: string
+  prompt: string
+  durationSeconds: number
+  resolution?: string
+  requestFormat?: string
+}): { body: string | FormData; contentType?: string } {
+  if (input.requestFormat === 'openai-video') {
+    const form = new FormData()
+    form.set('model', input.model)
+    form.set('prompt', input.prompt)
+    form.set('seconds', String(input.durationSeconds))
+    if (input.resolution) form.set('size', input.resolution)
+    // Deliberately omit Content-Type: fetch must attach the multipart boundary.
+    return { body: form }
+  }
+  return {
+    body: JSON.stringify({
+      model: input.model,
+      prompt: input.prompt,
+      duration: input.durationSeconds,
+      ...(input.resolution ? { size: input.resolution } : {}),
+    }),
+    contentType: 'application/json',
+  }
 }
 
 function assertSafeRelativePath(path: string) {
@@ -260,10 +288,24 @@ async function probe(modality: ProbeResult['modality']): Promise<ProbeResult> {
             : { model, prompt: '创建一个最小成本的中转站测试任务', duration: videoDurationSeconds }
     const usesVideoStatusPath = Boolean(existingVideoTaskId && endpoint.includes('{job_id}'))
     const requestEndpoint = existingVideoTaskId ? endpoint.replace(/\{job_id\}/gu, encodeURIComponent(existingVideoTaskId)) : endpoint
+    const videoRequest = modality === 'video' && !existingVideoTaskId
+      ? buildVideoProbeRequest({
+        model,
+        prompt: '创建一个最小成本的中转站测试任务',
+        durationSeconds: videoDurationSeconds,
+        ...(process.env.VIDEO_RESOLUTION?.trim() ? { resolution: process.env.VIDEO_RESOLUTION.trim().toUpperCase() } : {}),
+        ...(process.env.VIDEO_REQUEST_FORMAT?.trim() ? { requestFormat: process.env.VIDEO_REQUEST_FORMAT.trim() } : {}),
+      })
+      : undefined
     const response = await fetch(`${base}${requestEndpoint}`, {
       method: existingVideoTaskId ? usesVideoStatusPath ? 'GET' : 'POST' : 'POST',
-      headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${keyFor(modality)}`, 'x-damai-canary': 'true' },
-      ...(!existingVideoTaskId ? { body: JSON.stringify(body) } : usesVideoStatusPath ? {} : { body: JSON.stringify({ job_id: existingVideoTaskId }) }),
+      headers: {
+        accept: 'application/json',
+        ...(!videoRequest || videoRequest.contentType ? { 'content-type': videoRequest?.contentType ?? 'application/json' } : {}),
+        authorization: `Bearer ${keyFor(modality)}`,
+        'x-damai-canary': 'true',
+      },
+      ...(!existingVideoTaskId ? { body: videoRequest?.body ?? JSON.stringify(body) } : usesVideoStatusPath ? {} : { body: JSON.stringify({ job_id: existingVideoTaskId }) }),
       signal: controller.signal,
       redirect: 'error',
     })
@@ -301,7 +343,10 @@ async function probe(modality: ProbeResult['modality']): Promise<ProbeResult> {
       responseValid: valid,
       ...(valid ? {} : { responseFailure: videoEvaluation?.reason ?? 'response_shape_incompatible' }),
     })
-    if (finalized.state === 'ready' && artifactRoot) {
+    // A successful transport can still be blocked by an async/payload/usage
+    // contract. Preserve that raw response as immutable evidence too; without
+    // it an accepted-but-pending provider job would be unauditable.
+    if (artifactRoot) {
       finalized.evidence_ref = writeRelayResponseArtifact(artifactRoot, releaseId, modality, {
         status: response.status, headers: response.headers, payload, result: finalized,
       })

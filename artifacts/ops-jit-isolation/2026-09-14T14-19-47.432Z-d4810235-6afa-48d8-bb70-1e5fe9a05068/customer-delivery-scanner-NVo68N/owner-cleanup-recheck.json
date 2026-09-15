@@ -1,0 +1,11 @@
+{
+  "status": "confirmed_absent",
+  "runId": "18d7a353-a275-4936-9916-a14cfe2ba401",
+  "containerId": "9176496575d49f8f9d03552f61b8f36c934ce48332970be7441b1572cf240742",
+  "checkedAtUtcMinute": "2026-09-14T14:30Z",
+  "dockerHost": "unix:///Users/lixiaomei/.colima/default/docker.sock",
+  "check": "exact-ID docker inspect returned no such object",
+  "ownerMutation": false,
+  "historicalFailurePreserved": true,
+  "sharedContainersTouched": false
+}

@@ -1,0 +1,234 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e5]:
+    - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+      - /url: "#ops-main-content"
+    - complementary "运营主导航" [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - generic [ref=e10]: 大麦
+          - generic [ref=e11]:
+            - strong [ref=e12]: 大麦运营中心
+            - generic [ref=e13]: 平台运营与商家服务
+        - generic [ref=e14]: 平台运营控制面
+        - region "当前操作范围" [ref=e15]:
+          - generic [ref=e16]:
+            - generic [ref=e17]: 当前操作范围
+            - generic [ref=e18]: 工作区
+          - status [ref=e19]: 正在操作工作区 ws_ops_fixture_bb46b45636fb44ae870dda99dd57f727
+          - generic [ref=e20]:
+            - generic [ref=e21]: 工作区范围
+            - strong [ref=e22]: ws_ops_fixture_bb46b45636fb44ae870dda99dd57f727
+          - generic [ref=e23]: 数据与操作仅限当前工作区
+        - navigation "平台运营功能导航" [ref=e24]:
+          - region "平台治理" [ref=e25]:
+            - heading "平台治理" [level=2] [ref=e26]
+            - button "总览" [ref=e27] [cursor=pointer]:
+              - img "safety-certificate" [ref=e28] [cursor=pointer]:
+                - img [ref=e29] [cursor=pointer]
+              - text: 总览
+            - button "成员与权限" [ref=e31] [cursor=pointer]:
+              - img "usergroup-add" [ref=e32] [cursor=pointer]:
+                - img [ref=e33] [cursor=pointer]
+              - text: 成员与权限
+          - region "商家运营" [ref=e35]:
+            - heading "商家运营" [level=2] [ref=e36]
+            - button "任务与内容" [ref=e37] [cursor=pointer]:
+              - img "cloud-sync" [ref=e38] [cursor=pointer]:
+                - img [ref=e39] [cursor=pointer]
+              - text: 任务与内容
+            - button "知识库" [ref=e42] [cursor=pointer]:
+              - img "database" [ref=e43] [cursor=pointer]:
+                - img [ref=e44] [cursor=pointer]
+              - text: 知识库
+            - button "平台连接" [ref=e46] [cursor=pointer]:
+              - img "global" [ref=e47] [cursor=pointer]:
+                - img [ref=e48] [cursor=pointer]
+              - text: 平台连接
+            - button "平台规则" [ref=e50] [cursor=pointer]:
+              - img "read" [ref=e51] [cursor=pointer]:
+                - img [ref=e52] [cursor=pointer]
+              - text: 平台规则
+          - region "模型与计费" [ref=e54]:
+            - heading "模型与计费" [level=2] [ref=e55]
+            - button "账务与退款" [ref=e56] [cursor=pointer]:
+              - img "dollar" [ref=e57] [cursor=pointer]:
+                - img [ref=e58] [cursor=pointer]
+              - text: 账务与退款
+          - region "风险与系统" [ref=e60]:
+            - heading "风险与系统" [level=2] [ref=e61]
+            - button "存储与对账" [ref=e62] [cursor=pointer]:
+              - img "cloud-server" [ref=e63] [cursor=pointer]:
+                - img [ref=e64] [cursor=pointer]
+              - text: 存储与对账
+            - button "审计中心" [ref=e68] [cursor=pointer]:
+              - img "file-search" [ref=e69] [cursor=pointer]:
+                - img [ref=e70] [cursor=pointer]
+              - text: 审计中心
+    - generic [ref=e72]:
+      - banner [ref=e73]:
+        - generic [ref=e74]:
+          - generic [ref=e75]:
+            - generic [ref=e76]: WORKSPACE OPERATIONS
+            - generic [ref=e77]: 桌面运营工作台
+          - heading "商业与平台控制台" [level=2] [ref=e78]
+          - region "当前身份与权限范围" [ref=e79]:
+            - generic [ref=e80]:
+              - img [ref=e82]:
+                - img [ref=e83]
+              - strong [ref=e87]: 商家管理员
+              - status [ref=e89]: 授权状态：已由服务端验证
+              - generic [ref=e91]: 身份 ops-fixture-target-bb46b456-36fb-44ae-870d-da99dd57f727
+              - generic [ref=e93]: 商家工作区
+              - generic [ref=e95]: 工作区 · ws_ops_fixture_bb46b45636fb44ae870dda99dd57f727
+              - generic [ref=e97]: 策略 2026-09-08.v1
+            - status [ref=e98]: 商家自运营视图：仅作用于当前授权工作区；不包含平台运营能力。
+        - button "连接诊断 / 登录配置" [ref=e101] [cursor=pointer]:
+          - generic [ref=e102] [cursor=pointer]: 登录 / 连接
+      - main [ref=e103]:
+        - status [ref=e104]
+        - status [ref=e105]:
+          - img "exclamation-circle" [ref=e107]:
+            - img [ref=e108]
+          - generic [ref=e110]:
+            - generic [ref=e111]: 部分运营数据未刷新
+            - generic [ref=e112]: 部分数据集刷新失败（workspace.commercial.get、ops.data.delete.list、billing.model-usage.statement、workspace.health、knowledge.brand.preference.get、knowledge.asset.list、workspace.metrics、knowledge.rule.list、automation.policy.get、ops.marketing.queue、knowledge.competitor.list、knowledge.learning.list、automation.policy.list）。页面保留上次成功数据，这些值可能已过期：商业操作尚未满足上线门禁，已拒绝执行
+        - region "平台规则" [ref=e113]:
+          - generic [ref=e114]:
+            - generic [ref=e115]:
+              - generic [ref=e116]:
+                - generic [ref=e117]: PLATFORM RULES
+                - generic [ref=e118]: 当前工作区数据
+              - heading "平台规则" [level=3] [ref=e119]
+              - generic [ref=e120]: 查看六个平台规则同步新鲜度，维护规则生命周期，并保留来源与审批证据。
+            - button "刷新规则" [ref=e122] [cursor=pointer]:
+              - generic [ref=e123] [cursor=pointer]: 刷新规则
+          - generic [ref=e124]:
+            - alert [ref=e127]:
+              - img "close-circle" [ref=e129]:
+                - img [ref=e130]
+              - generic [ref=e132]:
+                - generic [ref=e133]: 无法加载运营数据
+                - paragraph [ref=e136]: 部分数据集刷新失败（workspace.commercial.get、ops.data.delete.list、billing.model-usage.statement、workspace.health、knowledge.brand.preference.get、knowledge.asset.list、workspace.metrics、knowledge.rule.list、automation.policy.get、ops.marketing.queue、knowledge.competitor.list、knowledge.learning.list、automation.policy.list）。页面保留上次成功数据，这些值可能已过期：商业操作尚未满足上线门禁，已拒绝执行
+              - button "重试加载运营数据" [ref=e138] [cursor=pointer]:
+                - generic [ref=e139] [cursor=pointer]: 重 试
+            - alert [ref=e141]:
+              - img "info-circle" [ref=e143]:
+                - img [ref=e144]
+              - generic [ref=e146]:
+                - generic [ref=e147]: 平台规则只接受签名清单同步
+                - generic [ref=e148]: 页面中的 manual:// 记录是本地演示或人工草稿，不代表任何平台官方规则，也不会作为插件知识。请先配置签名清单地址和验签密钥，再点击“立即更新”。
+            - region "六平台规则同步" [ref=e150]:
+              - status [ref=e151]
+              - generic [ref=e152]:
+                - generic [ref=e154]:
+                  - generic [ref=e155]: 六平台规则同步
+                  - generic [ref=e157]:
+                    - button "立即更新平台规则（需要规则治理权限）" [disabled] [ref=e158]:
+                      - generic:
+                        - img:
+                          - img
+                      - generic: 立即更新
+                    - button "刷新规则同步状态" [ref=e159] [cursor=pointer]:
+                      - img [ref=e161] [cursor=pointer]:
+                        - img [ref=e162] [cursor=pointer]
+                      - generic [ref=e164] [cursor=pointer]: 刷新状态
+                - generic [ref=e165]:
+                  - alert [ref=e167]:
+                    - img "close-circle" [ref=e169]:
+                      - img [ref=e170]
+                    - generic [ref=e172]:
+                      - generic [ref=e174]: 规则同步状态读取失败
+                      - generic [ref=e176]: 部分数据集刷新失败（workspace.commercial.get、ops.data.delete.list、billing.model-usage.statement、workspace.health、knowledge.brand.preference.get、knowledge.asset.list、workspace.metrics、knowledge.rule.list、automation.policy.get、ops.marketing.queue、knowledge.competitor.list、knowledge.learning.list、automation.policy.list）。页面保留上次成功数据，这些值可能已过期：商业操作尚未满足上线门禁，已拒绝执行
+                    - button "重试规则同步" [ref=e178] [cursor=pointer]:
+                      - generic [ref=e179] [cursor=pointer]: 重试规则同步
+                  - alert [ref=e180]:
+                    - img "exclamation-circle" [ref=e182]:
+                      - img [ref=e183]
+                    - generic [ref=e185]:
+                      - generic [ref=e186]: 规则同步状态尚未加载
+                      - generic [ref=e187]: 平台规则来自各平台官方签名清单，服务端 worker 默认每 7 天自动检查一次；规则管理员也可立即更新。未配置或过期时必须保持阻断或人工复核，不能把旧规则视为有效。
+                  - table [ref=e194]:
+                    - rowgroup [ref=e203]:
+                      - row "平台 同步状态 版本 最后核验 规则年龄 门禁原因 官方来源" [ref=e204]:
+                        - columnheader "平台" [ref=e205]
+                        - columnheader "同步状态" [ref=e206]
+                        - columnheader "版本" [ref=e207]
+                        - columnheader "最后核验" [ref=e208]
+                        - columnheader "规则年龄" [ref=e209]
+                        - columnheader "门禁原因" [ref=e210]
+                        - columnheader "官方来源" [ref=e211]
+                    - rowgroup [ref=e212]:
+                      - row "没有可展示的规则同步状态，请刷新或检查规则服务连接" [ref=e213]:
+                        - cell "没有可展示的规则同步状态，请刷新或检查规则服务连接" [ref=e214]:
+                          - generic [ref=e215]: 没有可展示的规则同步状态，请刷新或检查规则服务连接
+            - generic [ref=e217]:
+              - generic [ref=e219]:
+                - generic [ref=e220]: 规则中心
+                - generic [ref=e222]: 0 条可信规则
+              - generic [ref=e223]:
+                - alert [ref=e224]:
+                  - img "info-circle" [ref=e226]:
+                    - img [ref=e227]
+                  - generic [ref=e229]:
+                    - generic [ref=e230]: 当前为规则只读视图
+                    - generic [ref=e231]: 平台运营可以查看规则同步状态和生命周期证据；创建、审批、激活和停用需要 rules_admin 权限。
+                - form "创建规则草稿" [ref=e232]:
+                  - generic [ref=e234]:
+                    - generic "规则包 ID" [ref=e236]: "* 规则包 ID :"
+                    - textbox "* 规则包 ID :" [disabled] [ref=e240]
+                  - generic [ref=e242]:
+                    - generic "规则名称" [ref=e244]: "* 规则名称 :"
+                    - textbox "* 规则名称 :" [disabled] [ref=e248]
+                  - generic [ref=e250]:
+                    - generic "版本" [ref=e252]: "* 版本 :"
+                    - textbox "* 版本 :" [disabled] [ref=e256]
+                  - generic [ref=e258]:
+                    - generic "来源" [ref=e260]: "* 来源 :"
+                    - textbox "* 来源 :" [disabled] [ref=e264]
+                  - generic [ref=e266]:
+                    - generic "检查规则" [ref=e268]: "检查规则 :"
+                    - textbox "检查规则 :" [disabled] [ref=e272]: "{\"forbiddenTerms\":[]}"
+                  - generic [ref=e274]:
+                    - generic "创建原因" [ref=e276]: "* 创建原因 :"
+                    - textbox "* 创建原因 :" [disabled] [ref=e280]
+                  - button "创建规则草稿" [disabled] [ref=e281]:
+                    - generic: 创建规则草稿
+                - table [ref=e288]:
+                  - rowgroup [ref=e289]:
+                    - row "规则包 名称 版本 生命周期 来源 有效期 操作" [ref=e290]:
+                      - columnheader "规则包" [ref=e291]
+                      - columnheader "名称" [ref=e292]
+                      - columnheader "版本" [ref=e293]
+                      - columnheader "生命周期" [ref=e294]
+                      - columnheader "来源" [ref=e295]
+                      - columnheader "有效期" [ref=e296]
+                      - columnheader "操作" [ref=e297]
+                  - rowgroup [ref=e298]:
+                    - row "暂无已验证的平台规则；请配置签名清单后点击“立即更新”" [ref=e299]:
+                      - cell "暂无已验证的平台规则；请配置签名清单后点击“立即更新”" [ref=e300]:
+                        - generic [ref=e301]: 暂无已验证的平台规则；请配置签名清单后点击“立即更新”
+                - generic [ref=e302]: 草稿发布不代表已生效；规则激活必须由服务端规则管理员提供审批凭证，所有状态变更写入审计。
+            - generic [ref=e304]:
+              - generic [ref=e306]:
+                - generic [ref=e307]: Workspace 规则审计
+                - generic [ref=e309]: 只读，不改变规则状态
+              - generic [ref=e311]:
+                - textbox "规则包 ID" [ref=e312]
+                - button "审 计" [disabled] [ref=e313]:
+                  - generic: 审 计
+  - generic:
+    - generic:
+      - alert [ref=e314]:
+        - generic [ref=e315]:
+          - img "close-circle" [ref=e317]:
+            - img [ref=e318]
+          - generic [ref=e320]: 规则列表加载失败：请求频率超过当前工作区限制
+      - alert [ref=e321]:
+        - generic [ref=e322]:
+          - img "close-circle" [ref=e324]:
+            - img [ref=e325]
+          - generic [ref=e327]: 规则同步状态加载失败：当前商业访问事实不允许执行该操作
+```
