@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ACCEPTANCE_ITEMS, CHECKLIST_DISPLAY_LABELS, CustomerDeliverySection, INTEGRATION_ITEMS, buildChecklistItems, checklistDisplayLabel, deliveryCompletion, deliveryLaunchDateLabel, deliveryStatusLabel, isDeliveryChecklistComplete, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
+import { ACCEPTANCE_ITEMS, CHECKLIST_DISPLAY_LABELS, CustomerDeliverySection, INTEGRATION_ITEMS, buildChecklistItems, checklistDisplayLabel, deliveryCompletion, deliveryLaunchDateLabel, deliveryStatusLabel, filterCustomerDeliveryRecords, isDeliveryChecklistComplete, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
 
 const base: CustomerDeliveryRecord = {
   id: "c-1", companyName: "示例企业", paymentStatus: "paid", profile: true,
@@ -86,6 +86,16 @@ describe("customer delivery completion", () => {
     expect(html).toContain("查看详情");
     expect(html).not.toContain("培训凭证");
     expect(html).not.toContain("上传培训");
+  });
+
+  it("filters records by company name and configured owners", () => {
+    const records = [
+      { ...base, id: "c-1", companyName: "星河科技", owner: "姜伟", afterSalesOwner: "韩先晓" },
+      { ...base, id: "c-2", companyName: "远山贸易", owner: "李风", afterSalesOwner: "姜伟" },
+    ];
+    expect(filterCustomerDeliveryRecords(records, { keyword: "星河" })).toEqual([records[0]]);
+    expect(filterCustomerDeliveryRecords(records, { owner: "李风", afterSalesOwner: "姜伟" })).toEqual([records[1]]);
+    expect(filterCustomerDeliveryRecords(records, { keyword: "贸易", owner: "姜伟" })).toEqual([]);
   });
 
   it("keeps durable keys while using the delivery brief's display labels", () => {

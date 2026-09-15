@@ -52,6 +52,23 @@ export interface CustomerDeliveryRecord {
   acceptanceEvidenceAssetRefs?: Record<string, string[]>;
 }
 
+export interface CustomerDeliveryFilters {
+  keyword?: string;
+  owner?: string;
+  afterSalesOwner?: string;
+}
+
+export function filterCustomerDeliveryRecords(
+  records: CustomerDeliveryRecord[],
+  filters: CustomerDeliveryFilters,
+) {
+  const keyword = filters.keyword?.trim().toLocaleLowerCase() ?? "";
+  return records.filter((record) =>
+    (!keyword || record.companyName.toLocaleLowerCase().includes(keyword))
+    && (!filters.owner || record.owner === filters.owner)
+    && (!filters.afterSalesOwner || record.afterSalesOwner === filters.afterSalesOwner));
+}
+
 export interface CustomerDeliveryChecklistItem {
   itemKey: string;
   completed: boolean;
@@ -271,8 +288,15 @@ export function CustomerDeliverySection({
   const [detailsVideos, setDetailsVideos] = useState<CustomerDeliveryVideoItem[]>([]);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [filters, setFilters] = useState<CustomerDeliveryFilters>({});
+  const [currentPage, setCurrentPage] = useState(1);
+  const [filterForm] = Form.useForm<CustomerDeliveryFilters>();
   const [createForm] = Form.useForm();
   const [form] = Form.useForm();
+  const filteredRecords = useMemo(
+    () => filterCustomerDeliveryRecords(records ?? [], filters),
+    [filters, records],
+  );
   const openStep = async (
     row: CustomerDeliveryRecord,
     next: DeliveryStepKey,
@@ -607,6 +631,44 @@ export function CustomerDeliverySection({
           </Form.Item>
         </Form>
       </Drawer>
+      <Form
+        form={filterForm}
+        layout="inline"
+        style={{ marginBottom: 16, rowGap: 12 }}
+        onFinish={(values) => {
+          setFilters({
+            keyword: values.keyword?.trim(),
+            owner: values.owner,
+            afterSalesOwner: values.afterSalesOwner,
+          });
+          setCurrentPage(1);
+        }}
+      >
+        <Form.Item name="keyword" label="搜索">
+          <Input allowClear aria-label="按公司名搜索" placeholder="请输入公司名" style={{ width: 220 }} />
+        </Form.Item>
+        <Form.Item name="owner" label="销售负责人">
+          <Select
+            allowClear
+            aria-label="销售负责人筛选"
+            placeholder="请选择"
+            style={{ width: 140 }}
+            options={["姜伟", "韩先晓", "李风"].map((value) => ({ value, label: value }))}
+          />
+        </Form.Item>
+        <Form.Item name="afterSalesOwner" label="售后负责人">
+          <Select
+            allowClear
+            aria-label="售后负责人筛选"
+            placeholder="请选择"
+            style={{ width: 140 }}
+            options={["姜伟", "韩先晓"].map((value) => ({ value, label: value }))}
+          />
+        </Form.Item>
+        <Form.Item>
+          <Button type="primary" htmlType="submit">查询</Button>
+        </Form.Item>
+      </Form>
       <div style={{ marginTop: 0 }}>
         <Table
           rowKey="id"
@@ -614,9 +676,19 @@ export function CustomerDeliverySection({
           scroll={{ x: 1140 }}
           tableLayout="fixed"
           columns={columns}
-          dataSource={records}
-          pagination={false}
-          locale={{ emptyText: "暂无客户交付档案；请先创建客户档案" }}
+          dataSource={filteredRecords}
+          pagination={{
+            current: currentPage,
+            pageSize: 10,
+            showSizeChanger: false,
+            position: ["bottomCenter"],
+            onChange: setCurrentPage,
+          }}
+          locale={{
+            emptyText: (records?.length ?? 0) > 0
+              ? "没有符合筛选条件的客户"
+              : "暂无客户交付档案；请先创建客户档案",
+          }}
         />
       </div>
       <Drawer
