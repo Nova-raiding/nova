@@ -207,7 +207,8 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-login-alert { margin-bottom: 18px; }
 .ops-login-form .ant-form-item { margin-bottom: 20px; }
 .ops-login-form .ant-form-item-label > label { color: #334155; font-weight: 600; }
-.ops-login-form .ant-input, .ops-login-form .ant-input-affix-wrapper { min-height: 48px; }
+.ops-login-form .ant-input, .ops-login-form .ant-input-affix-wrapper { box-sizing: border-box; height: 48px; min-height: 48px; }
+.ops-login-form .ant-input-affix-wrapper .ant-input { height: auto; min-height: 0; }
 .ops-login-form .ant-btn { min-height: 48px; margin-top: 2px; font-weight: 700; }
 .ops-login-helper { display: block; margin-top: 16px; line-height: 1.6; text-align: center; }
 .ops-login-footer { display: flex; align-items: center; justify-content: center; margin-top: 28px; padding-top: 18px; }
