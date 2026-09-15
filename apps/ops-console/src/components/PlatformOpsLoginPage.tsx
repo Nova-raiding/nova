@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Button, Card, Form, Input, Tag, Typography } from "antd";
+import { Alert, Button, Card, Form, Input, Typography } from "antd";
 import { describeOpsError, loginPlatformOps } from "../api/opsClient.js";
 
 type PlatformOpsLoginPageProps = {
@@ -40,10 +40,9 @@ export function PlatformOpsLoginPage({
       <section className="ops-login-form-panel">
         <Card className="ops-login-card" variant="borderless">
           <div className="ops-login-card-heading">
-            <Typography.Text className="ops-login-eyebrow">安全登录</Typography.Text>
             <Typography.Title id="ops-login-title" level={2}>欢迎回来</Typography.Title>
             <Typography.Paragraph type="secondary">
-              使用平台管理员分配的运营账号登录。商家账号不能登录平台运营后台。
+              请联系“侯沿平”获取管理账号
             </Typography.Paragraph>
           </div>
 
@@ -86,7 +85,6 @@ export function PlatformOpsLoginPage({
                 size="large"
                 autoFocus
                 autoComplete="username"
-                placeholder="例如 ops@example.com"
               />
             </Form.Item>
             <Form.Item
@@ -98,20 +96,15 @@ export function PlatformOpsLoginPage({
                 id="ops-login-password"
                 size="large"
                 autoComplete="current-password"
-                placeholder="请输入平台运营密码"
               />
             </Form.Item>
             <Button type="primary" htmlType="submit" size="large" block loading={submitting || loading}>
               登录平台运营后台
             </Button>
-            <Typography.Text type="secondary" className="ops-login-helper">
-              登录成功后由服务端创建 HttpOnly 会话。密码不会保存到浏览器。
-            </Typography.Text>
           </Form>
 
-          <div className="ops-login-footer">
-            <Tag color="blue">平台账号</Tag>
-            <Typography.Text type="secondary">仅限桌面运营工作台</Typography.Text>
+          <div className="ops-login-footer" aria-label="Store Nova">
+            <img src="/assets/store-nova-primary-horizontal.png" alt="Store Nova" />
           </div>
         </Card>
       </section>

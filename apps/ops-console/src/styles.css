@@ -210,7 +210,8 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-login-form .ant-input, .ops-login-form .ant-input-affix-wrapper { min-height: 48px; }
 .ops-login-form .ant-btn { min-height: 48px; margin-top: 2px; font-weight: 700; }
 .ops-login-helper { display: block; margin-top: 16px; line-height: 1.6; text-align: center; }
-.ops-login-footer { display: flex; align-items: center; gap: 8px; margin-top: 28px; padding-top: 18px; border-top: 1px solid #e2e8f0; }
+.ops-login-footer { display: flex; align-items: center; justify-content: center; margin-top: 28px; padding-top: 18px; }
+.ops-login-footer img { display: block; width: min(100%, 220px); height: auto; }
 @media (max-width: 800px) { .ops-login-page { grid-template-columns: 1fr; } .ops-login-brand-panel { min-height: auto; padding: 28px 24px; } .ops-login-brand-copy { margin: 48px 0 38px; } .ops-login-brand-copy h1 { font-size: 32px; } .ops-login-trust-list { display: none; } .ops-login-form-panel { min-height: auto; padding: 24px 16px 40px; } .ops-login-card .ant-card-body { padding: 24px 20px; } }
 .ops-global-load-warning-content { display: grid; gap: 6px; }
 .ops-global-load-warning-content details { color: #7c2d12; font-size: 12px; }
