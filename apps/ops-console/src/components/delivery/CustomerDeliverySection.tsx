@@ -5,7 +5,6 @@ import {
   Card,
   Checkbox,
   Drawer,
-  Empty,
   Form,
   Input,
   Select,
@@ -473,9 +472,10 @@ export function CustomerDeliverySection({
                 </Space>
               );
             }
+            const emptyLabel = key === "profile" ? "未填写" : "未完成";
             return (
               <Button type="link" size="small" onClick={() => openStep(row, key)}>
-                {value ? <Tag color="success">已完成</Tag> : <Tag>{key === "training" ? "未完成" : "未填写"}</Tag>}
+                {value ? <Tag color="success">{key === "profile" ? "已填写" : "已完成"}</Tag> : <Tag>{emptyLabel}</Tag>}
               </Button>
             );
           },
@@ -490,14 +490,14 @@ export function CustomerDeliverySection({
             size="small"
             onClick={() => openStep(row, "video")}
           >
-            {value ? `${value} 段` : <Tag>未上传</Tag>}
+            {value ? <Tag color="success">已上传</Tag> : <Tag>未上传</Tag>}
           </Button>
         ),
       },
       {
-        title: "交付完成时间",
+        title: "上线时间",
         dataIndex: "goLiveAt",
-        render: (value?: string) => value || "尚未完成",
+        render: (value?: string) => value || "未上线",
       },
     ],
     [onOpen, onTrainingSave, saving],
@@ -549,18 +549,15 @@ export function CustomerDeliverySection({
         </Form>
       </Drawer>
       <div style={{ marginTop: 0 }}>
-        {records.length ? (
-          <Table
-            rowKey="id"
-            size="small"
-            scroll={{ x: 1180 }}
-            columns={columns}
-            dataSource={records}
-            pagination={false}
-          />
-        ) : (
-          <Empty description="暂无客户交付档案；请先创建客户档案" />
-        )}
+        <Table
+          rowKey="id"
+          size="small"
+          scroll={{ x: 1180 }}
+          columns={columns}
+          dataSource={records}
+          pagination={false}
+          locale={{ emptyText: "暂无客户交付档案；请先创建客户档案" }}
+        />
       </div>
       <Drawer
         title={
