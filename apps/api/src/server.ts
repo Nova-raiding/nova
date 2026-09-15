@@ -2050,6 +2050,132 @@ async function releaseRechargeRefund(input: { workspaceId: string; orderId: stri
   return release
 }
 
+async function listActiveRechargeRefunds(workspaceId: string, limit: number): Promise<Array<{ order: RechargeOrder; reservation: WalletTransaction }>> {
+  await persistenceReady
+  if (persistence.billing) return persistence.billing.listActiveRechargeRefunds(workspaceId, limit)
+  const candidates: Array<{ order: RechargeOrder; reservation: WalletTransaction }> = []
+  for (const order of rechargeOrders.values()) {
+    if (candidates.length >= limit) break
+    if (order.workspaceId !== workspaceId || order.state !== 'paid' || order.paymentMode !== 'provider') continue
+    const prefix = `recharge-refund:${order.id}:`
+    const released = new Set(walletTransactions
+      .filter(item => item.workspaceId === workspaceId && item.type === 'refund' && item.orderId?.startsWith(`release:${prefix}`))
+      .map(item => item.orderId?.replace(/^release:/u, '')))
+    const reservation = walletTransactions.find(item => item.workspaceId === workspaceId && item.type === 'debit' && item.orderId?.startsWith(prefix) && !released.has(item.orderId))
+    if (reservation) candidates.push({ order, reservation })
+  }
+  return candidates
+}
+
+async function runPaymentReconciliation(input: { workspaceId: string; actorId: string; limit: number }) {
+  await persistenceReady
+  if (!paymentProvider?.queryStatus) {
+    if (isProduction()) throw new DomainError('PAYMENT_RECONCILIATION_UNAVAILABLE', '生产支付 provider 未配置查单能力', 503)
+    return { state: 'not_configured', checked: 0, payment_checked: 0, refund_checked: 0, settled: [], pending: [], failed: [], refund_settled: [], refund_pending: [], refund_failed: [], next_action: '配置支付 provider query endpoint 后再运行对账' }
+  }
+  if (isProduction()) {
+    const readiness = paymentProviderReadiness()
+    if (!readiness.ready) throw new DomainError('PAYMENT_RECONCILIATION_UNAVAILABLE', `生产支付 provider 未就绪：${readiness.reasons.join('、')}`, 503, { reasons: readiness.reasons })
+    if (!redisAutomationLease) throw new DomainError('PAYMENT_RECONCILIATION_LEASE_UNAVAILABLE', '生产支付对账必须配置 Redis 工作区互斥租约', 503)
+  }
+  const leaseKey = `payment-reconciliation:${createHash('sha256').update(input.workspaceId).digest('hex')}`
+  const leaseToken = randomUUID()
+  const leaseTtlMs = 7 * 60_000
+  const acquired = redisAutomationLease ? await redisAutomationLease.acquire(leaseKey, leaseToken, leaseTtlMs) : true
+  if (!acquired) throw new DomainError('PAYMENT_RECONCILIATION_IN_PROGRESS', '该工作区已有支付对账任务正在执行，请稍后重试', 409, { retryable: true })
+  try {
+    const refundBudget = Math.max(1, Math.ceil(input.limit / 2))
+    const activeRefunds = await listActiveRechargeRefunds(input.workspaceId, refundBudget)
+    const paymentBudget = Math.max(0, input.limit - activeRefunds.length)
+    const providerOrders = paymentBudget === 0
+      ? []
+      : persistence.billing
+        ? await persistence.billing.listPendingProviderOrdersForReconciliation(input.workspaceId, paymentBudget)
+        : [...rechargeOrders.values()]
+          .filter(order => order.workspaceId === input.workspaceId && order.state === 'pending' && order.paymentMode === 'provider')
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
+          .slice(0, paymentBudget)
+    const settled: Array<{ order_id: string; provider_trade_id: string }> = []
+    const pending: Array<{ order_id: string; state: string }> = []
+    const failed: Array<{ order_id: string; code: string; message: string }> = []
+    const refundSettled: Array<{ order_id: string; refund_request_id: string }> = []
+    const refundPending: Array<{ order_id: string; refund_request_id: string; state: string }> = []
+    const refundFailed: Array<{ order_id: string; refund_request_id: string; code: string; message: string; reservation_released: boolean }> = []
+    for (const order of providerOrders) {
+      try {
+        const providerStatus = await paymentProvider.queryStatus({ channel: order.channel, orderId: order.id, workspaceId: input.workspaceId })
+        if (providerStatus.state !== 'paid') {
+          if (providerStatus.state === 'closed' || providerStatus.state === 'failed') {
+            const terminal = await markRechargeProviderState({ workspaceId: input.workspaceId, orderId: order.id, state: providerStatus.state })
+            if (!terminal) {
+              failed.push({ order_id: order.id, code: 'BILLING_ORDER_NOT_FOUND', message: '充值订单在对账期间不可见' })
+              continue
+            }
+            const code = providerStatus.state === 'closed' ? 'PAYMENT_PROVIDER_ORDER_CLOSED' : 'PAYMENT_PROVIDER_ORDER_FAILED'
+            await persistEvent(input.workspaceId, order.id, 'billing.recharge.reconciled', 1, { order_id: order.id, state: providerStatus.state, source: 'provider_reconciliation' })
+            await recordOperationAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: order as unknown as Record<string, unknown>, after: terminal as unknown as Record<string, unknown>, reason: '支付服务商查单确认订单终态' })
+            failed.push({ order_id: order.id, code, message: providerStatus.state === 'closed' ? '支付服务商已关闭该充值订单' : '支付服务商报告该充值订单失败' })
+          } else pending.push({ order_id: order.id, state: providerStatus.state })
+          continue
+        }
+        if (providerStatus.amountFen !== order.amountFen) {
+          failed.push({ order_id: order.id, code: 'PAYMENT_QUERY_AMOUNT_MISMATCH', message: '支付服务商查单金额缺失或与充值订单不一致' })
+          continue
+        }
+        if (!providerStatus.providerTradeId) {
+          failed.push({ order_id: order.id, code: 'PAYMENT_QUERY_TRADE_ID_MISSING', message: '支付服务商已支付但未返回交易号' })
+          continue
+        }
+        const paid = await markRechargePaid({ workspaceId: input.workspaceId, orderId: order.id, providerTradeId: providerStatus.providerTradeId, amountFen: order.amountFen, eventSource: 'provider_reconciliation' })
+        if (!paid) {
+          failed.push({ order_id: order.id, code: 'BILLING_ORDER_NOT_FOUND', message: '充值订单在对账期间不可见' })
+          continue
+        }
+        await recordOperationAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: order as unknown as Record<string, unknown>, after: paid as unknown as Record<string, unknown>, reason: '执行支付服务商查单对账' })
+        settled.push({ order_id: order.id, provider_trade_id: providerStatus.providerTradeId })
+      } catch (error) {
+        failed.push({ order_id: order.id, code: error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'PAYMENT_RECONCILIATION_FAILED', message: error instanceof Error ? error.message : '支付服务商查单失败' })
+      }
+    }
+    for (const { order, reservation } of activeRefunds) {
+      const refundRequestId = reservation.id
+      if (!paymentProvider.queryRefundStatus) {
+        refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_REFUND_RECONCILIATION_UNAVAILABLE', message: '支付 provider 未配置退款查单能力', reservation_released: false })
+        continue
+      }
+      try {
+        const providerRefund = await paymentProvider.queryRefundStatus({ channel: order.channel, orderId: order.id, refundRequestId, workspaceId: input.workspaceId, amountFen: order.amountFen })
+        if (providerRefund.state === 'succeeded') {
+          if (providerRefund.amountFen !== order.amountFen) {
+            refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_REFUND_QUERY_AMOUNT_MISMATCH', message: '支付服务商退款查单金额缺失或不一致', reservation_released: false })
+            continue
+          }
+          if (!providerRefund.providerRefundId) {
+            refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_REFUND_QUERY_ID_MISSING', message: '支付服务商已退款但未返回退款交易凭据', reservation_released: false })
+            continue
+          }
+          await completeRechargeRefund({ workspaceId: input.workspaceId, orderId: order.id, reservationKey: reservation.orderId!, actorId: input.actorId, reason: '支付服务商退款查单确认成功', providerRefundId: providerRefund.providerRefundId })
+          await recordOperationAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: order as unknown as Record<string, unknown>, after: { ...order, state: 'closed', refund_request_id: refundRequestId } as unknown as Record<string, unknown>, reason: '支付服务商退款查单确认成功' })
+          refundSettled.push({ order_id: order.id, refund_request_id: refundRequestId })
+          continue
+        }
+        if (providerRefund.state === 'failed') {
+          await releaseRechargeRefund({ workspaceId: input.workspaceId, orderId: order.id, reservationKey: reservation.orderId!, actorId: input.actorId, reason: '支付服务商退款查单确认失败' })
+          await recordOperationAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: { ...order, refund_request_id: refundRequestId } as unknown as Record<string, unknown>, after: order as unknown as Record<string, unknown>, reason: '支付服务商退款查单确认失败并释放钱包预留' })
+          refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_PROVIDER_REFUND_FAILED', message: '支付服务商确认退款失败，钱包预留已释放', reservation_released: true })
+          continue
+        }
+        refundPending.push({ order_id: order.id, refund_request_id: refundRequestId, state: providerRefund.state })
+      } catch (error) {
+        refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'PAYMENT_REFUND_RECONCILIATION_FAILED', message: error instanceof Error ? error.message : '支付服务商退款查单失败', reservation_released: false })
+      }
+    }
+    return { state: failed.length || pending.length || refundFailed.length || refundPending.length ? 'attention_required' : 'completed', checked: providerOrders.length + activeRefunds.length, payment_checked: providerOrders.length, refund_checked: activeRefunds.length, provider_orders: providerOrders.length, skipped_fixture_orders: 0, settled, pending, failed, refund_settled: refundSettled, refund_pending: refundPending, refund_failed: refundFailed, actor_id: input.actorId, idempotent_settlement: true, total_query_budget: input.limit }
+  } finally {
+    if (redisAutomationLease) await redisAutomationLease.release(leaseKey, leaseToken).catch(() => undefined)
+  }
+}
+
 function verifyPaymentCallback(req: IncomingMessage, input: { channel: RechargeChannel; workspaceId: string; payload: { order_id: string; provider_trade_id: string; amount_fen: number; currency: string; state: string } }) {
   requireProviderPaymentConfigured()
   const secret = process.env.PAYMENT_CALLBACK_SECRET?.trim()
@@ -9676,6 +9802,7 @@ function headerRequired(req: IncomingMessage, name: string): string {
 function isWorkerRoute(method: string | undefined, path: string): boolean {
   if (method === 'POST') {
     return path === '/v1/internal/automation/tick'
+      || path === '/v1/internal/billing/reconciliation'
       || path === '/v1/internal/model-usage'
       || path === '/v1/internal/model-usage/reconciliation'
       || path === '/v1/ops/data-deletion/complete'
@@ -9756,6 +9883,7 @@ function workerRouteRoles(method: string | undefined, path: string): WorkerReque
   }
   if (method === 'POST') {
     if (/^\/v1\/sync-jobs\/[^/]+\/(?:progress|result)$/u.test(path)) return ['sync']
+    if (path === '/v1/internal/billing/reconciliation') return ['reconcile']
     if (path === '/v1/internal/image-generation-jobs/reconciliation') return ['reconcile']
     if (/^\/v1\/(?:generation-jobs|internal\/image-generation-jobs|internal\/image-generation-continuations)\//u.test(path)) return ['generation']
     if (/^\/v1\/publish-jobs\/[^/]+\/observation$/u.test(path)) return ['publish', 'reconcile']
@@ -15098,59 +15226,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'billing.reconciliation.run': {
       const actorId = requireOperationsRole(req, ['finance', 'finance_ops', 'ops_admin', 'platform_admin', 'platform_ops'])
-      const limit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Math.min(100, Math.max(1, Number(params.limit))) : 50
-      await persistenceReady
-      if (!paymentProvider?.queryStatus) {
-        if (isProduction()) throw new DomainError('PAYMENT_RECONCILIATION_UNAVAILABLE', '生产支付 provider 未配置查单能力', 503)
-        return result({ state: 'not_configured', checked: 0, settled: [], pending: [], failed: [], next_action: '配置支付 provider query endpoint 后再运行对账' })
-      }
-      const orders = persistence.billing
-        ? await persistence.billing.listOrders(workspaceId, ['pending'], limit)
-        : [...rechargeOrders.values()].filter(order => order.workspaceId === workspaceId && order.state === 'pending').slice(0, limit)
-      const providerOrders = orders.filter(item => item.paymentMode === 'provider')
-      const skippedFixtureOrders = orders.length - providerOrders.length
-      const settled: Array<{ order_id: string; provider_trade_id: string }> = []
-      const pending: Array<{ order_id: string; state: string }> = []
-      const failed: Array<{ order_id: string; code: string; message: string }> = []
-      for (const order of providerOrders) {
-        try {
-          const providerStatus = await paymentProvider.queryStatus({ channel: order.channel, orderId: order.id, workspaceId })
-          if (providerStatus.state !== 'paid') {
-            if (providerStatus.state === 'closed' || providerStatus.state === 'failed') {
-              const terminal = await markRechargeProviderState({ workspaceId, orderId: order.id, state: providerStatus.state })
-              if (!terminal) {
-                failed.push({ order_id: order.id, code: 'BILLING_ORDER_NOT_FOUND', message: '充值订单在对账期间不可见' })
-                continue
-              }
-              const code = providerStatus.state === 'closed' ? 'PAYMENT_PROVIDER_ORDER_CLOSED' : 'PAYMENT_PROVIDER_ORDER_FAILED'
-              await persistEvent(workspaceId, order.id, 'billing.recharge.reconciled', 1, { order_id: order.id, state: providerStatus.state, source: 'provider_reconciliation' })
-              await recordOperationAudit({ workspaceId, actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: order as unknown as Record<string, unknown>, after: terminal as unknown as Record<string, unknown>, reason: '支付服务商查单确认订单终态' })
-              failed.push({ order_id: order.id, code, message: providerStatus.state === 'closed' ? '支付服务商已关闭该充值订单' : '支付服务商报告该充值订单失败' })
-            } else {
-              pending.push({ order_id: order.id, state: providerStatus.state })
-            }
-            continue
-          }
-          if (providerStatus.amountFen !== order.amountFen) {
-            failed.push({ order_id: order.id, code: 'PAYMENT_QUERY_AMOUNT_MISMATCH', message: '支付服务商查单金额缺失或与充值订单不一致' })
-            continue
-          }
-          if (!providerStatus.providerTradeId) {
-            failed.push({ order_id: order.id, code: 'PAYMENT_QUERY_TRADE_ID_MISSING', message: '支付服务商已支付但未返回交易号' })
-            continue
-          }
-          const paid = await markRechargePaid({ workspaceId, orderId: order.id, providerTradeId: providerStatus.providerTradeId, amountFen: order.amountFen, eventSource: 'provider_reconciliation' })
-          if (!paid) {
-            failed.push({ order_id: order.id, code: 'BILLING_ORDER_NOT_FOUND', message: '充值订单在对账期间不可见' })
-            continue
-          }
-          await recordOperationAudit({ workspaceId, actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: order as unknown as Record<string, unknown>, after: paid as unknown as Record<string, unknown>, reason: '运营人员执行支付服务商查单对账' })
-          settled.push({ order_id: order.id, provider_trade_id: providerStatus.providerTradeId })
-        } catch (error) {
-          failed.push({ order_id: order.id, code: error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'PAYMENT_RECONCILIATION_FAILED', message: error instanceof Error ? error.message : '支付服务商查单失败' })
-        }
-      }
-      return result({ state: failed.length || pending.length ? 'attention_required' : 'completed', checked: providerOrders.length, provider_orders: providerOrders.length, skipped_fixture_orders: skippedFixtureOrders, settled, pending, failed, actor_id: actorId, idempotent_settlement: true })
+      const limit = params.limit === undefined ? 10 : typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Number(params.limit) : Number.NaN
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'limit 必须是 1 至 20 的整数', 400)
+      return result(await runPaymentReconciliation({ workspaceId, actorId, limit }))
     }
     case 'billing.model-usage.reconciliation.run': {
       const actorId = requireOperationsRole(req, ['finance', 'platform_ops'])
@@ -18989,6 +19067,35 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const workspaceId = headerRequired(req, 'x-workspace-id')
     const report = await runWorkspaceStorageReconciliation(workspaceId)
     return send(res, 200, workspaceId, { report, read_only: true, workspace_id: workspaceId }, null, req)
+  }
+  if (req.method === 'POST' && path === '/v1/internal/billing/reconciliation') {
+    await requireWorkerAuthorization(req)
+    const workspaceId = headerRequired(req, 'x-workspace-id')
+    const workerId = headerRequired(req, 'x-worker-id')
+    const input = await body(req)
+    const bodyWorkspaceId = typeof input.workspace_id === 'string' ? input.workspace_id.trim() : ''
+    if (!bodyWorkspaceId) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'workspace_id 必须是非空字符串', 400)
+    if (bodyWorkspaceId !== workspaceId) throw new DomainError(ERROR_CODES.TENANT_SCOPE_DENIED, '支付对账工作区不匹配', 403)
+    const limit = input.limit === undefined ? 10 : Number(input.limit)
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'limit 必须是 1 至 20 的整数', 400)
+    if (process.env.PAYMENT_RECONCILIATION_ENABLED !== 'true') throw new DomainError('PAYMENT_RECONCILIATION_DISABLED', '支付对账自动执行未启用', 503)
+    const actorId = `worker:${workerId}`
+    const reconciliation = await runPaymentReconciliation({ workspaceId, actorId, limit })
+    const summary = {
+      state: reconciliation.state,
+      limit,
+      checked: reconciliation.checked,
+      payment_checked: reconciliation.payment_checked,
+      refund_checked: reconciliation.refund_checked,
+      settled: reconciliation.settled.length,
+      pending: reconciliation.pending.length,
+      failed: reconciliation.failed.length,
+      refund_settled: reconciliation.refund_settled.length,
+      refund_pending: reconciliation.refund_pending.length,
+      refund_failed: reconciliation.refund_failed.length,
+    }
+    await recordOperationAudit({ workspaceId, actorId, action: 'billing.reconciliation.worker', resourceType: 'billing_reconciliation', resourceId: workspaceId, before: {}, after: summary, reason: 'reconcile worker 自动执行支付与退款对账' })
+    return send(res, 200, workspaceId, reconciliation, null, req)
   }
   if (req.method === 'POST' && path === '/v1/internal/support/sla-scan') {
     await requireWorkerAuthorization(req)

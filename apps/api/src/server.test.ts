@@ -650,6 +650,18 @@ describe('API application wiring', () => {
     expect(source).toContain('requireWorkerAuthorization(req)')
   })
 
+  it('shares one payment reconciliation implementation across MCP and the signed worker route', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    const mcpStart = source.indexOf("case 'billing.reconciliation.run':")
+    const mcpEnd = source.indexOf("case 'billing.model-usage.reconciliation.run':", mcpStart)
+    const mcp = source.slice(mcpStart, mcpEnd)
+    expect(mcp).toContain('runPaymentReconciliation({ workspaceId, actorId, limit })')
+    expect(mcp).not.toContain('paymentProvider.queryStatus')
+    expect(mcp).not.toContain('listActiveRechargeRefunds')
+    expect(source).toContain("path === '/v1/internal/billing/reconciliation'")
+    expect(source).toContain("action: 'billing.reconciliation.worker'")
+  })
+
   it('projects SLA scan actions into durable operational alerts without coupling webhook latency', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     const start = source.indexOf('async function runSupportSlaScan(')
