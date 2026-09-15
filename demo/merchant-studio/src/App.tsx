@@ -1434,7 +1434,9 @@ function UtilityPanel({
   })
   const statusActions = [
     ...environmentStatus.actions,
+    ...(apiHealth?.setup?.nextActions ?? []).map(userFacingModelAction),
     ...(modelStatus?.next_actions ?? []).map(userFacingModelAction),
+    ...(modelStatusRead && modelStatus?.state !== 'ready' ? ['配置平台模型中转站后重新检查'] : []),
   ]
     .filter((action, index, actions) => actions.indexOf(action) === index)
     .slice(0, 2)

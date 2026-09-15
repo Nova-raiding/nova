@@ -92,7 +92,9 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
     await page.getByRole('button', { name: /待确认/ }).first().click(); await page.waitForTimeout(300)
     steps.push(await state(page, '待确认筛选'))
   } else {
-    await expect(page.getByRole('heading', { name: '知识资料' })).toBeVisible()
+    // Empty knowledge workspaces intentionally show the section tabpanel and
+    // upload guidance without rendering a zero-row "知识资料" heading.
+    await expect(page.getByRole('tabpanel', { name: '资料库' }).or(page.getByRole('heading', { name: '知识资料' }))).toBeVisible()
     steps.push(await state(page, '知识资料列表'))
   }
   await page.screenshot({ path: resolve(shots, '3-product-filter.png') })
