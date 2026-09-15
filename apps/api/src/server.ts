@@ -7616,26 +7616,20 @@ function productionIdentityReadiness(source: NodeJS.ProcessEnv): ProductionReadi
   if (source.OPS_AUTH_MODE !== 'oidc') reasons.push('ops_auth_mode_must_be_oidc')
   if (!source.OIDC_PROXY_SIGNING_SECRET?.trim()) reasons.push('oidc_proxy_signing_secret_missing')
   if (!source.SESSION_ID_HASH_SECRET?.trim()) reasons.push('session_id_hash_secret_missing')
+  if (!source.OPS_DATABASE_URL?.trim()) reasons.push('ops_database_url_missing')
   const merchantHostname = source.MERCHANT_BEARER_HOSTNAME?.trim().toLowerCase()
   if (!merchantHostname) reasons.push('merchant_bearer_hostname_missing')
   else if (merchantHostname.includes('*') || merchantHostname.includes('://') || merchantHostname.includes('/')) reasons.push('merchant_bearer_hostname_invalid')
-  let grantsReady = false
-  try {
-    const parsed: unknown = JSON.parse(source.API_AUTH_TOKENS ?? '{}')
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      grantsReady = Object.values(parsed as Record<string, unknown>).some(value => {
-        if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-        const grant = value as Record<string, unknown>
-        return typeof grant.actor_id === 'string'
-          && grant.actor_id.trim().length > 0
-          && Array.isArray(grant.workspaces)
-          && grant.workspaces.some(workspace => typeof workspace === 'string' && workspace.trim().length > 0 && workspace !== '*')
-      })
-    }
-  } catch { /* reported below without exposing the configured token map */ }
-  const oauthReady = source.MCP_OAUTH_REQUIRED === 'true' && Boolean(mcpOAuthClients(source))
-  if (source.MCP_OAUTH_REQUIRED === 'true' && !oauthReady) reasons.push('mcp_oauth_clients_missing_or_invalid')
-  if (!oauthReady && !grantsReady) reasons.push('merchant_api_token_grants_missing_or_invalid')
+  const publicAppBaseUrl = source.PUBLIC_APP_BASE_URL?.trim()
+  if (!publicAppBaseUrl) reasons.push('public_app_base_url_missing')
+  else {
+    try {
+      const parsed = new URL(publicAppBaseUrl)
+      if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash || parsed.hostname.toLowerCase() !== merchantHostname) reasons.push('public_app_base_url_invalid')
+    } catch { reasons.push('public_app_base_url_invalid') }
+  }
+  if (source.MCP_OAUTH_REQUIRED !== 'true') reasons.push('mcp_oauth_required_must_be_true')
+  if (!mcpOAuthClients(source)) reasons.push('mcp_oauth_clients_missing_or_invalid')
   return { ready: reasons.length === 0, reasons }
 }
 

@@ -197,14 +197,28 @@ describe('production readiness fail-closed', () => {
       const environment = productionEnvironment()
       delete environment[key]
       const result = productionReadinessDiagnostics(environment)
-      expect(result.ready, `${gate} must fail closed`).toBe(false)
-      expect(result.gates[gate]).toMatchObject({ ready: false })
+      expect(result.ready, `${gate}:${key} must fail closed`).toBe(false)
+      expect(result.gates[gate], `${gate}:${key} gate detail`).toMatchObject({ ready: false })
       expect(JSON.stringify(result)).not.toContain('relay-key')
       expect(JSON.stringify(result)).not.toContain('oidc-signing-secret')
       expect(JSON.stringify(result)).not.toContain('merchant-token')
       expect(JSON.stringify(result)).not.toContain('payment-provider-key')
       expect(JSON.stringify(result)).not.toContain('rule-sync-signing-secret')
     }
+  })
+
+  it.each([
+    ['MCP_OAUTH_REQUIRED', 'false', 'mcp_oauth_required_must_be_true'],
+    ['MCP_OAUTH_REQUIRED', ' true ', 'mcp_oauth_required_must_be_true'],
+    ['PUBLIC_APP_BASE_URL', 'http://merchant.example.test', 'public_app_base_url_invalid'],
+    ['PUBLIC_APP_BASE_URL', 'https://other.example.test/mcp', 'public_app_base_url_invalid'],
+    ['MCP_OAUTH_CLIENTS', '{}', 'mcp_oauth_clients_missing_or_invalid'],
+  ])('rejects non-canonical production identity setting %s=%s', (key, value, reason) => {
+    const environment = productionEnvironment()
+    environment[key] = value
+    const result = productionReadinessDiagnostics(environment)
+    expect(result.ready).toBe(false)
+    expect(result.gates.identity).toMatchObject({ ready: false, reasons: expect.arrayContaining([reason]) })
   })
 
   it('accepts OSS AES256 encryption without requiring a KMS key', () => {
