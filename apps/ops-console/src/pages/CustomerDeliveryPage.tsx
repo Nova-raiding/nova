@@ -48,7 +48,9 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const [mutationError, setMutationError] = useState("");
   const [createPage, setCreatePage] = useState(false);
   const contractFileInput = useRef<HTMLInputElement>(null);
+  const deliveryVideoInput = useRef<HTMLInputElement>(null);
   const [uploadedContractName, setUploadedContractName] = useState("");
+  const [deliveryVideoFiles, setDeliveryVideoFiles] = useState<File[]>([]);
   const [integrationChecks, setIntegrationChecks] = useState<string[]>([]);
   const [acceptanceChecks, setAcceptanceChecks] = useState<string[]>([]);
   const [createForm] = Form.useForm<{
@@ -160,6 +162,10 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   };
   const submitCreatePage = async (values: { companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid"; paymentDate: string; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: string }) => {
     const created = await createRecord(values.companyName);
+    for (const [index, file] of deliveryVideoFiles.entries()) {
+      const asset = await customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: created.id, purpose: "video", file });
+      await customerDeliveryClient.addVideo({ targetWorkspaceId, deliveryId: created.id, title: file.name, assetRef: asset.assetRef, sortOrder: index });
+    }
     await saveProfile({
       ...created,
       companyName: values.companyName,
@@ -173,6 +179,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       profile: true,
     });
     createForm.resetFields();
+    setDeliveryVideoFiles([]);
     setCreatePage(false);
   };
   const saveProfile = async (record: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord) => {
@@ -282,7 +289,9 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         </Card>
         </div>
         <Card title="交付视频" style={{ marginTop: 16 }}>
-          <Button size="small" icon={<UploadOutlined />} onClick={() => message.info("创建客户后可上传交付视频")}>上传交付视频</Button>
+          <input ref={deliveryVideoInput} hidden type="file" accept="video/*" multiple onChange={(event) => { const files = Array.from(event.target.files ?? []); if (files.length) setDeliveryVideoFiles((current) => [...current, ...files]); event.target.value = ""; }} />
+          <Button size="small" icon={<UploadOutlined />} onClick={() => deliveryVideoInput.current?.click()}>上传交付视频</Button>
+          {deliveryVideoFiles.length ? <div className="customer-delivery-video-list">{deliveryVideoFiles.map((file, index) => <div className="customer-delivery-video-item" key={`${file.name}-${index}`}><span>{file.name}</span><Button type="text" size="small" icon={<CloseOutlined />} aria-label={`移除${file.name}`} onClick={() => setDeliveryVideoFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} /></div>)}</div> : null}
         </Card>
         <div className="customer-delivery-create-actions">
           <Button onClick={() => setCreatePage(false)}>返回客户建档</Button>
