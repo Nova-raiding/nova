@@ -35,6 +35,7 @@ export interface CustomerDeliveryRecord {
   owner?: string;
   afterSalesOwner?: string;
   paymentDate?: string;
+  paymentEvidenceRefs?: string[];
   requiredLaunchAt?: string;
   contractFile?: string;
   integrationItems?: string[];
@@ -52,6 +53,7 @@ export interface CustomerDeliveryChecklistItem {
   completed: boolean;
   /** Explicitly empty when an item has no evidence yet; the API may reject it. */
   evidence: string;
+  evidenceAssetRefs: string[];
 }
 
 export interface CustomerDeliveryChecklistSave {
@@ -128,6 +130,7 @@ export function buildChecklistItems(
       typeof evidenceMap[itemKey] === "string"
         ? evidenceMap[itemKey].trim()
         : "",
+    evidenceAssetRefs: [],
   }));
 }
 
@@ -205,6 +208,7 @@ export function CustomerDeliverySection({
   onTrainingSave?: (
     record: CustomerDeliveryRecord,
     completed: boolean,
+    evidenceAssetRefs: string[],
   ) => Promise<CustomerDeliveryRecord | void>;
   onVideoAdd?: (
     record: CustomerDeliveryRecord,
@@ -360,7 +364,7 @@ export function CustomerDeliverySection({
         });
       } else if (step === "training") {
         if (!onTrainingSave) throw new Error("客户培训保存接口未配置");
-        persisted = await onTrainingSave(selected, Boolean(values.training));
+        persisted = await onTrainingSave(selected, Boolean(values.training), []);
       } else if (step === "video") {
         if (!onVideoAdd) throw new Error("交付视频保存接口未配置");
         const refs = String(values.videoAssetRefs ?? "")
@@ -427,7 +431,7 @@ export function CustomerDeliverySection({
     }
     setSaving(true);
     try {
-      const persisted = await onTrainingSave(row, completed);
+      const persisted = await onTrainingSave(row, completed, []);
       if (persisted) setSelected((current) => current?.id === row.id ? persisted : current);
       message.success(completed ? "客户培训已完成" : "客户培训已取消");
     } catch (error) {

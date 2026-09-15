@@ -247,7 +247,6 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       <CustomerDeliverySection
         key={targetWorkspaceId || "unselected"}
         disabled={!canRead || !targetWorkspaceId}
-        readOnly={!canUpdate}
         records={records}
         onCreate={canUpdate && canRead ? createRecord : undefined}
         onSave={canUpdate && canRead ? saveProfile : undefined}
