@@ -89,6 +89,7 @@ jobs:
       - name: Run PostgreSQL migration acceptance tests without skips
         env:
           PG_DUMP_BIN: /usr/lib/postgresql/17/bin/pg_dump
+          PG_RESTORE_BIN: /usr/lib/postgresql/17/bin/pg_restore
           LEGACY_BACKFILL_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/legacy_backfill_test
           WORKSPACE_CATALOG_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
           MODEL_BUDGET_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/model_budget_test
@@ -196,6 +197,7 @@ jobs:
           packages/persistence/src/migration-207-release.postgres.test.ts
           packages/persistence/src/migration-208-release.postgres.test.ts
           packages/persistence/src/migration-209-release.postgres.test.ts
+          packages/persistence/src/migration-210-release.postgres.test.ts
           packages/persistence/src/migration-167.test.ts
           packages/persistence/src/migration-168.test.ts
           packages/persistence/src/migration-169.test.ts
