@@ -43,6 +43,10 @@ COPY packages/persistence/src/migrations ./dist/packages/persistence/src/migrati
 COPY --from=build /app/apps/plugin ./apps/plugin
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/dist/packages/contracts/src ./packages/contracts/dist
+# The billing provider imports this checked-in ESM callback signer at runtime;
+# keep it beside the compiled billing module in the API image.
+COPY packages/billing/src/callback-envelope.mjs ./dist/packages/billing/src/callback-envelope.mjs
+COPY packages/billing/src/callback-envelope.d.mts ./dist/packages/billing/src/callback-envelope.d.mts
 # The runtime install happens before workspace sources are copied, so npm
 # cannot create links for private @merchant-marketing packages. Compiled code
 # may legitimately import their public exports; wire those package roots after
