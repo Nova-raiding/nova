@@ -19,3 +19,17 @@
 3. 中转模型五模态的配置、鉴权、成本证据和 fail-closed 行为。
 4. 多租户隔离、并发稳定性、迁移完整性和生产发布门禁。
 
+## Deploy Configuration (configured by /setup-deploy)
+- Platform: Custom ECS via SSH
+- Production URL: https://yxsona.com
+- Deploy workflow: Manual release runbook on SSH host alias `101` (no repository deploy workflow detected)
+- Deploy status command: `ssh 101 'docker ps --format "table {{.Names}}\\t{{.Status}}"'`
+- Merge method: squash
+- Project type: ChatGPT plugin with API/MCP and desktop operations web apps
+- Post-deploy health check: `https://yxsona.com/api/healthz` and `https://ops.yxsona.com/healthz`
+
+### Custom deploy hooks
+- Pre-merge: `npm run typecheck && npm run test:release-gates`
+- Deploy trigger: Manual, following `docs/runbooks/ecs-candidate-safe-sync.md` and the production release gate
+- Deploy status: `ssh 101 'docker ps --format "table {{.Names}}\\t{{.Status}}"'`
+- Health check: `curl -fsS https://yxsona.com/api/healthz` and `curl -fsS https://ops.yxsona.com/healthz`
