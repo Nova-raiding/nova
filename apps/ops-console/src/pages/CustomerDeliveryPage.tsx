@@ -48,6 +48,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const [mutationError, setMutationError] = useState("");
   const [createPage, setCreatePage] = useState(false);
   const contractFileInput = useRef<HTMLInputElement>(null);
+  const [uploadedContractName, setUploadedContractName] = useState("");
   const [createForm] = Form.useForm<{
     companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid";
     paymentDate: string; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: string;
@@ -252,7 +253,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             <Form.Item name="paymentStatus" label="付款形式" rules={[{ required: true, message: "请选择付款形式" }]}><Select className="customer-delivery-payment-select" options={[{ value: "paid", label: "接入费" }, { value: "unpaid", label: "赠送" }]} /></Form.Item>
             <Form.Item name="paymentDate" label="付款时间" rules={[{ required: true, message: "请选择付款日期" }]}><Input type="date" /></Form.Item>
             <Form.Item name="contractFile" label="合同文件或链接" rules={[{ required: true, message: "请上传合同或填写合同链接" }]}>
-              <Space.Compact style={{ width: "100%" }}><Input placeholder="填写合同链接或文件地址" /><Button aria-label="上传合同文件" title="上传合同文件" icon={<UploadOutlined />} onClick={() => contractFileInput.current?.click()} /><input ref={contractFileInput} hidden type="file" onChange={(event) => { const file = event.target.files?.[0]; if (file) createForm.setFieldValue("contractFile", file.name); }} /></Space.Compact>
+              <Space.Compact style={{ width: "100%" }}><Input placeholder="填写合同链接或文件地址" /><Button className="customer-delivery-upload-button" aria-label="上传合同文件" title="上传合同文件" icon={<UploadOutlined />} onClick={() => contractFileInput.current?.click()} /><input ref={contractFileInput} hidden type="file" onChange={(event) => { const file = event.target.files?.[0]; if (file) { createForm.setFieldValue("contractFile", file.name); setUploadedContractName(file.name); } }} /></Space.Compact>
+              {uploadedContractName ? <div className="customer-delivery-uploaded-file">已选择：{uploadedContractName}</div> : null}
             </Form.Item>
             <Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input placeholder="例如：姜伟" /></Form.Item>
             <Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input placeholder="例如：韩先晓" /></Form.Item>
