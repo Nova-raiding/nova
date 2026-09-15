@@ -5,10 +5,27 @@ import { OpsPage } from "../components/OpsPage.js";
 import { CustomerDeliverySection } from "../components/delivery/CustomerDeliverySection.js";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel.js";
 import type { WorkspaceSummary } from "../types/ops.js";
-import { customerDeliveryClient } from "../api/customerDeliveryClient.js";
+import { customerDeliveryClient, type CustomerDeliveryAsset } from "../api/customerDeliveryClient.js";
 import { describeOpsError } from "../api/opsClient.js";
 import { deliveryDateTimeIsoValue } from "../components/delivery/deliveryDateTime.js";
 import type { CustomerDeliveryRecord } from "../components/delivery/CustomerDeliverySection.js";
+import { waitForDeliveryScan } from "../components/delivery/CustomerDeliveryUpload.js";
+
+async function waitForCleanDeliveryVideo(initialAsset: CustomerDeliveryAsset, input: {
+  targetWorkspaceId: string;
+  deliveryId: string;
+  signal: AbortSignal;
+}) {
+  let asset = initialAsset;
+  for (let poll = 0; !asset.ready; poll++) {
+    if (asset.scanStatus === "blocked") throw new Error("交付视频未通过安全检查，请更换文件后重试");
+    if (poll >= 90) throw new Error("交付视频安全检查尚未完成，请稍后再次点击创建，无需重新选择文件");
+    await waitForDeliveryScan(2000, input.signal);
+    asset = await customerDeliveryClient.getAsset({ ...input, purpose: "video", assetRef: asset.assetRef }, input.signal);
+  }
+  if (asset.scanStatus !== "clean") throw new Error("交付视频缺少可信安全检查结果，暂时无法创建客户");
+  return asset;
+}
 
 export function buildCustomerDeliveryProfilePatch(record: CustomerDeliveryRecord) {
   return {
@@ -53,6 +70,14 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const [deliveryVideoFiles, setDeliveryVideoFiles] = useState<File[]>([]);
   const [integrationChecks, setIntegrationChecks] = useState<string[]>([]);
   const [acceptanceChecks, setAcceptanceChecks] = useState<string[]>([]);
+  const [creating, setCreating] = useState(false);
+  const createErrorRef = useRef<HTMLDivElement>(null);
+  const createSubmissionController = useRef<AbortController | undefined>(undefined);
+  const pendingCreate = useRef<{
+    companyName: string;
+    record: CustomerDeliveryRecord;
+    videos: Map<File, { assetRef: string; registered: boolean }>;
+  } | undefined>(undefined);
   const [createForm] = Form.useForm<{
     companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid";
     paymentDate: { format: (pattern: string) => string }; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: { format: (pattern: string) => string };
@@ -70,6 +95,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      createSubmissionController.current?.abort();
       loadRequest.current.controller?.abort();
       loadRequest.current.generation++;
     };
@@ -161,30 +187,69 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     catch (cause) { reportMutationError(cause); throw cause; }
   };
   const submitCreatePage = async (values: { companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid"; paymentDate: { format: (pattern: string) => string }; contractFile: string; owner: string; afterSalesOwner: string; requiredLaunchAt: { format: (pattern: string) => string } }) => {
+    if (createSubmissionController.current) return;
     if (integrationChecks.length < 10 || acceptanceChecks.length < 8 || deliveryVideoFiles.length === 0) {
       message.error("请完成系统接入、功能验收全部勾选，并上传至少一段交付视频");
       return;
     }
-    const created = await createRecord(values.companyName);
-    for (const [index, file] of deliveryVideoFiles.entries()) {
-      const asset = await customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: created.id, purpose: "video", file });
-      await customerDeliveryClient.addVideo({ targetWorkspaceId, deliveryId: created.id, title: file.name, assetRef: asset.assetRef, sortOrder: index });
+    const companyName = values.companyName.trim();
+    const controller = new AbortController();
+    createSubmissionController.current = controller;
+    setCreating(true);
+    setMutationError("");
+    try {
+      let attempt = pendingCreate.current;
+      if (!attempt || attempt.companyName !== companyName) {
+        const record = await createRecord(companyName);
+        attempt = { companyName, record, videos: new Map() };
+        pendingCreate.current = attempt;
+      }
+      for (const [index, file] of deliveryVideoFiles.entries()) {
+        let video = attempt.videos.get(file);
+        if (!video) {
+          const uploaded = await customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: attempt.record.id, purpose: "video", file }, controller.signal);
+          const asset = await waitForCleanDeliveryVideo(uploaded, { targetWorkspaceId, deliveryId: attempt.record.id, signal: controller.signal });
+          video = { assetRef: asset.assetRef, registered: false };
+          attempt.videos.set(file, video);
+        }
+        if (!video.registered) {
+          await customerDeliveryClient.addVideo({ targetWorkspaceId, deliveryId: attempt.record.id, title: file.name, assetRef: video.assetRef, sortOrder: index }, controller.signal);
+          video.registered = true;
+        }
+      }
+      await saveProfile({
+        ...attempt.record,
+        companyName,
+        contractNo: values.contractNumber,
+        paymentStatus: values.paymentStatus,
+        paymentDate: values.paymentDate.format("YYYY-MM-DD"),
+        contractFile: values.contractFile,
+        owner: values.owner,
+        afterSalesOwner: values.afterSalesOwner,
+        requiredLaunchAt: values.requiredLaunchAt.format("YYYY-MM-DD"),
+        profile: true,
+      });
+      pendingCreate.current = undefined;
+      createForm.resetFields();
+      setDeliveryVideoFiles([]);
+      setCreatePage(false);
+      message.success("客户创建成功");
+    } catch (cause) {
+      if (controller.signal.aborted) return;
+      const rawMessage = describeOpsError(cause);
+      const creationMessage = /company already exists/i.test(rawMessage)
+        ? "该公司已存在，请返回客户建档查看，或修改公司名称后重试"
+        : rawMessage;
+      setMutationError(creationMessage);
+      message.error(creationMessage);
+      requestAnimationFrame(() => {
+        createErrorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        createErrorRef.current?.focus({ preventScroll: true });
+      });
+    } finally {
+      if (createSubmissionController.current === controller) createSubmissionController.current = undefined;
+      if (mounted.current) setCreating(false);
     }
-    await saveProfile({
-      ...created,
-      companyName: values.companyName,
-      contractNo: values.contractNumber,
-      paymentStatus: values.paymentStatus,
-      paymentDate: values.paymentDate.format("YYYY-MM-DD"),
-      contractFile: values.contractFile,
-      owner: values.owner,
-      afterSalesOwner: values.afterSalesOwner,
-      requiredLaunchAt: values.requiredLaunchAt.format("YYYY-MM-DD"),
-      profile: true,
-    });
-    createForm.resetFields();
-    setDeliveryVideoFiles([]);
-    setCreatePage(false);
   };
   const saveProfile = async (record: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord) => {
     if (!Number.isSafeInteger(record.revision) || (record.revision ?? 0) < 1) throw new Error("客户交付记录缺少有效 revision，请刷新后重试");
@@ -254,7 +319,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       {canRead && !canUpdate ? <Alert style={{ marginBottom: 16 }} type="info" showIcon message="当前会话仅可查看客户交付" description="保存、上传和流程变更需要 customer.delivery.update 权限。" /> : null}
       {!targetWorkspaceId && canRead ? <Alert style={{ marginBottom: 16 }} type="info" showIcon message="正在加载客户交付档案" description="请稍候，运营数据加载完成后即可新建客户。" /> : null}
       {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
-      {mutationError ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
+      {mutationError && !createPage ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
       {createPage ? (<>
         <Form id="customer-create-form" className="customer-delivery-create-form" form={createForm} layout="vertical" onFinish={submitCreatePage}>
         <Card title="用户建档">
@@ -302,10 +367,11 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             </Form.Item>
           </div>
         </Card>
+        {mutationError ? <div ref={createErrorRef} className="customer-delivery-create-error" tabIndex={-1}><Alert type="error" showIcon message="创建客户失败" description={mutationError} /></div> : null}
         <div className="customer-delivery-create-actions">
-          <Button onClick={() => setCreatePage(false)}>返回客户建档</Button>
+          <Button disabled={creating} onClick={() => setCreatePage(false)}>返回客户建档</Button>
           <Space>
-            <Button type="primary" htmlType="submit" form="customer-create-form">创建客户</Button>
+            <Button type="primary" htmlType="submit" form="customer-create-form" loading={creating}>{creating ? "正在创建" : "创建客户"}</Button>
           </Space>
         </div>
         </Form>
@@ -315,7 +381,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         disabled={!canRead || !targetWorkspaceId}
         records={records}
         onCreate={canUpdate && canRead ? createRecord : undefined}
-        onCreateNavigate={canUpdate && canRead ? () => setCreatePage(true) : undefined}
+        onCreateNavigate={canUpdate && canRead ? () => { setMutationError(""); pendingCreate.current = undefined; setCreatePage(true); } : undefined}
         onSave={canUpdate && canRead ? saveProfile : undefined}
         onChecklistSave={canUpdate && canRead ? saveChecklist : undefined}
         onChecklistLoad={loadChecklist}
