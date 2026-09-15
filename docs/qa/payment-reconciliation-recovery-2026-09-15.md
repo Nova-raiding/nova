@@ -1,6 +1,6 @@
 # 支付对账恢复与资金安全验收 · 2026-09-15
 
-状态：支付恢复已实现，owner 正在完成最终整合验证。不是生产支付放行或全系统交付声明。
+状态：支付恢复、整合回归及真实数据库锁超时恢复验证已完成。全量交付仍被分工外的权限契约冲突阻断；不是生产支付放行声明。
 
 ## 范围与根因
 
@@ -34,7 +34,11 @@ owner 负责根因、API 恢复、交错调度、整合和最终运行；独立 
 | 独立 agent 最终 API 三文件 | 181/181 通过（45 + 68 + 68） |
 | 仓储单元测试 | 62/62 通过，含 16 个写前／提交前／回滚／非对账兼容检查 |
 
-owner 最终整合报告与类型检查结果将在下节补入；上述单元和内存 HTTP 测试不替代真实 PG/Redis 验收。
+owner 最终整合：12 个文件、451 项，**450 passed / 1 failed / 0 skipped**，61.15 秒。失败仅为下文说明的余额权限契约冲突；没有跳过、改断言或移除该测试。报告：`artifacts/payment-reconciliation/run-DXaOt3/owner-final-vitest.json`。
+
+其中 API 三文件 181、worker 90、支付 provider 19、账务仓储 62、worker 签名 5 均通过；OIDC 26、OAuth 5、native MCP 13、MCP 契约 17 通过；authz 32 通过、1 失败。上述数量为同一次运行的唯一用例，不累计重复执行次数。最终 `npm run typecheck`（根项目、ops-console、merchant-studio）退出码 0，`git diff --check` 通过。未更改 UI，因此不重复声称本轮做了桌面视觉验收。
+
+最终被测生产源码：server `23de9071eb8027c73c431dae3df6a5dd6647c7db162911b4c7ee85d600289719`；billing repository `bd2ac8ad10eba42067600f021573fdad59a98688c7082b17ac91aa04735b4629`。上述单元和内存 HTTP 测试不替代真实 PG/Redis 验收。
 
 ## 真实运行面证据
 
@@ -45,7 +49,11 @@ owner 最终整合报告与类型检查结果将在下节补入；上述单元�
 - 第一轮：`artifacts/payment-reconciliation/run-0UZPUw/run-result.json`，基础结算、幂等、租户隔离、并发 409、provider 返回后失锁 503 均通过。
 - 第二轮：`artifacts/payment-reconciliation/run-DXaOt3/run-result.json`，另验证了真实 `pg_stat_activity` 与 `pg_locks` 显示 API 等锁后置换租约：付款订单、退款完成预留、退款回补预留三场景均 503 `PAYMENT_RECONCILIATION_LEASE_LOST`、全部账本不变、下一笔不查询、新租约保留、失败审计落库。对应源文件前后指纹一致；随后脚本类型与失败证据捕获改进，最终版本需重新运行。
 
-最终复验：待 owner 写入最新运行目录、结果和自身资源清理证明。
+最终复验通过：`artifacts/payment-reconciliation/run-nbnQyo/run-result.json`，run ID `6931b0ff-0d66-4ff7-90a8-61e91e9ffb3e`，2026-09-15 11:05:25–11:06:14（北京时间）。再次执行全部基础场景与三类数据库等锁失租场景，并新增真实五秒 lock_timeout：API 在 5,303 ms 返回 `attention_required / 55P03`，此时测试持锁事务仍存在，账本不变；只在释放该测试行锁后重新对账到账 800 分，再次执行不重复入账。
+
+最终脚本指纹 `913528ed9133d17b1ccb41be5afb30df7173c585dca40e6a5a5b79fa09214ff5`。九个关联源文件前后指纹一致，owner 再读当前源码也完全匹配。该轮两个临时容器已由精确 ID 校验后停止，随后 owner 独立确认均不存在，无遗留；未删除业务数据或共享容器卷。完整收口记录：`artifacts/payment-reconciliation/run-nbnQyo/owner-final-verification.json`。
+
+共享桌面 `/api/readyz` 返回 200，13 个既有项目服务健康；StoryForge 原 11 个完整容器 ID 均重新核对为 exited，没有自动恢复。此健康检查不表示新代码已经部署。
 
 ## 仍未解决、未冒充完成的事项
 
@@ -53,5 +61,7 @@ owner 最终整合报告与类型检查结果将在下节补入；上述单元�
 2. **合同外链尚未实现。** 原需求明确“文件／链接”，当前可信合同附件只接受已扫描的 asset_ref；MCP 层仍宣称接受 HTTPS，而 API 拒绝。未放宽安全门禁，也未将参考外链冒充已扫描合同。需要明确链接只供查看还是要下载并扫描后替代上传。
 3. **交付完成后自动生效范围尚未确认。** 不擅自给整个企业或某个账号开通，不解除管理员停用、角色和付费限制。
 4. 无真实支付商验收、真实模型调用或生产发布证据。本轮没有部署；StoryForge 按用户要求保持停止。
+
+并行写入收尾记录：本会话未执行 `git commit`／push，但收尾时 HEAD 已从起始 `b6d23e78` 前进到 `468d7e82`（`fix: close release blockers from full QA`），上述支付源码和权限文件已被另一写入流程纳入提交。owner 随后复核支付 server、repository 和验证脚本指纹仍与最终验收一致；权限文件也仍为 `b054d3fb…`，因此那一项失败并未因提交而消失。保留此记录，不回退或改写其他会话提交，也不能依据提交标题把全量验收认定为通过。
 
 技能影响：investigate 要求先证据定位再修复，识别到 SQL 等锁之后的第二个失租窗口；verify-feature 要求在真实 HTTP／数据库／Redis 运行面验证，避免把测试 seam 或类型通过当作真实支付证明。
