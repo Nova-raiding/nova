@@ -181,7 +181,7 @@ const productionConfigReady = (() => {
     return false
   }
 })()
-add('production_config', productionConfigReady ? 'pass' : production ? 'fail' : 'warn', productionConfigReady ? '显式生产配置路径存在' : '未提供非示例 PRODUCTION_CONFIG_PATH', ecsProduction ? '渲染真实 ECS Compose，并运行 infra/scripts/deploy-preflight-ecs.sh。' : '渲染真实生产配置并运行 npm run infra:launch-preflight。')
+add('production_config', productionConfigReady ? 'pass' : production ? 'fail' : 'warn', productionConfigReady ? '生产配置路径及适用配置检查通过' : productionConfig ? '生产配置路径已设置，但文件缺失、仍为草稿或配置校验失败' : '未提供非示例 PRODUCTION_CONFIG_PATH', ecsProduction ? '渲染真实 ECS Compose，并运行 infra/scripts/deploy-preflight-ecs.sh。' : '渲染真实生产配置并运行 npm run infra:launch-preflight。')
 
 add('deployment_scope', deploymentTarget === 'local-compose' || deploymentTarget === 'ecs' || deploymentTarget === 'kubernetes' ? 'pass' : 'fail', `部署诊断范围=${deploymentTarget}`, 'DOCTOR_DEPLOYMENT_TARGET 仅支持 local-compose、ecs 或 kubernetes。')
 
