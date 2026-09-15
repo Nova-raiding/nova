@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { BillingOrderIdempotencyConflictError, PostgresBillingRepository, RechargeRefundBalanceUnavailableError, WalletDebitIdempotencyConflictError } from './billing-repository.js'
-import type { SqlClient, SqlPool } from './repository.js'
+import type { OutboxEventInput, SqlClient, SqlPool } from './repository.js'
 
 type Row = Record<string, unknown>
 
@@ -238,12 +238,12 @@ describe('PostgresBillingRepository recharge order reporting', () => {
     await expect(repository.countOrdersByState('ws_wallet')).resolves.toEqual({ pending: 101, paid: 7, closed: 0, failed: 0 })
   })
 
-  it('uses an oldest-first provider-only queue for automated reconciliation', async () => {
+  it('uses a least-recently-checked provider-only queue for automated reconciliation', async () => {
     const client = new RecordingClient()
     const pending = { id: 'recharge_oldest', workspace_id: 'ws_wallet', channel: 'alipay', amount_fen: 1000, state: 'pending', payment_mode: 'provider', payment_url: null, provider_trade_id: null, created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:00:00.000Z' }
     client.enqueue(); client.enqueue(); client.enqueue(pending); client.enqueue()
     await expect(new PostgresBillingRepository(new RecordingPool(client)).listPendingProviderOrdersForReconciliation('ws_wallet', 7)).resolves.toMatchObject([{ id: 'recharge_oldest' }])
-    const query = client.calls.find(call => call.text.includes("payment_mode='provider'") && call.text.includes('ORDER BY created_at,id'))
+    const query = client.calls.find(call => call.text.includes("payment_mode='provider'") && call.text.includes('ORDER BY updated_at,created_at,id'))
     expect(query?.values).toEqual(['ws_wallet', 7])
   })
 })
@@ -281,6 +281,22 @@ describe('PostgresBillingRepository recharge settlement atomicity', () => {
     expect(client.calls.at(-1)?.text).toBe('ROLLBACK')
     expect(client.calls.some(call => call.text === 'COMMIT')).toBe(false)
   })
+
+  it('keeps a provider terminal transition and its reconciliation outbox evidence atomic', async () => {
+    const client = new RecordingClient()
+    const terminal = { id: 'recharge_terminal', workspace_id: 'ws_wallet', channel: 'alipay', amount_fen: 1000, state: 'failed', payment_mode: 'provider', payment_url: null, provider_trade_id: null, created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:01:00.000Z' }
+    client.enqueue(); client.enqueue(); client.enqueue(terminal); client.enqueue()
+    const appendEvent = vi.fn(async (_transactionClient, event) => {
+      expect(_transactionClient).toBe(client)
+      expect(event).toMatchObject({ eventType: 'billing.recharge.reconciled', payload: { order_id: terminal.id, state: 'failed', source: 'provider_reconciliation' } })
+      throw new Error('outbox unavailable')
+    })
+
+    await expect(new PostgresBillingRepository(new RecordingPool(client), appendEvent).markProviderState({ workspaceId: 'ws_wallet', orderId: terminal.id, state: 'failed', eventSource: 'provider_reconciliation' })).rejects.toThrow('outbox unavailable')
+    expect(client.calls.some(call => call.text.startsWith('UPDATE billing_orders'))).toBe(true)
+    expect(client.calls.at(-1)?.text).toBe('ROLLBACK')
+    expect(client.calls.some(call => call.text === 'COMMIT')).toBe(false)
+  })
 })
 
 describe('PostgresBillingRepository external recharge refund', () => {
@@ -303,6 +319,7 @@ describe('PostgresBillingRepository external recharge refund', () => {
     expect(result).toMatchObject([{ order: { id: 'recharge_100', state: 'paid', paymentMode: 'provider' }, reservation: { id: 'refund_reservation_1', orderId: 'recharge-refund:recharge_100:1', amountFen: 10_000 } }])
     const query = client.calls.find(call => call.text.includes('NOT EXISTS') && call.text.includes("released.order_id='release:' || r.order_id"))
     expect(query?.values).toEqual(['ws_wallet', 10])
+    expect(query?.text).toContain('ORDER BY o.updated_at,r.created_at,r.id')
   })
 
   it('atomically deducts the recharge value instead of crediting the wallet', async () => {
@@ -352,5 +369,194 @@ describe('PostgresBillingRepository external recharge refund', () => {
       actorId: 'finance', reason: '客户申请', providerRefundId: '  ',
     })).rejects.toThrow('billing refund provider id required')
     expect(client.calls).toHaveLength(0)
+  })
+})
+
+describe('PostgresBillingRepository reconciliation lease fencing', () => {
+  const workspaceId = 'ws_reconciliation_guard'
+  const orderId = 'recharge_guard'
+  const reservationKey = `recharge-refund:${orderId}:1`
+  const pendingOrder = {
+    id: orderId, workspace_id: workspaceId, channel: 'alipay', amount_fen: 1000,
+    state: 'pending', payment_mode: 'provider', payment_url: null, provider_trade_id: null,
+    created_at: '2026-09-15T01:00:00.000Z', updated_at: '2026-09-15T01:00:00.000Z',
+  }
+  const reservation = {
+    id: 'refund_guard', workspace_id: workspaceId, type: 'debit', amount_fen: 1000,
+    order_id: reservationKey, actor_id: 'finance', description: '退款预留',
+    created_at: '2026-09-15T01:01:00.000Z',
+  }
+  const timeoutStatements = [
+    "SET LOCAL lock_timeout='5s'",
+    "SET LOCAL statement_timeout='15s'",
+    "SET LOCAL idle_in_transaction_session_timeout='15s'",
+  ]
+
+  // Match business reads rather than consuming FIFO responses: adding timeout
+  // statements must not accidentally turn an order lookup into an empty result.
+  class GuardRecordingClient implements SqlClient {
+    readonly calls: Array<{ text: string; values?: readonly unknown[] }> = []
+    readonly timeline: string[] = []
+    constructor(private readonly orderState: 'pending' | 'paid') {}
+    async query<RowType = Row>(text: string, values?: readonly unknown[]) {
+      this.calls.push({ text, values })
+      this.timeline.push(text)
+      let rows: Row[] = []
+      if (/^SELECT .* FROM billing_orders /u.test(text)) {
+        rows = [{ ...pendingOrder, state: this.orderState }]
+      } else if (/^SELECT .* FROM billing_transactions .*type='debit'/u.test(text)) {
+        rows = [reservation]
+      } else if (/^UPDATE billing_orders /u.test(text)) {
+        rows = [{ ...pendingOrder, state: text.includes('state=$3') ? values?.[2] : text.includes("state='closed'") ? 'closed' : 'paid', provider_trade_id: 'trade_guard' }]
+      } else if (/^INSERT INTO billing_transactions .*RETURNING /u.test(text)) {
+        rows = [{ ...reservation, id: 'release_guard', type: 'refund', order_id: `release:${reservationKey}` }]
+      }
+      return { rows: rows as RowType[] }
+    }
+    release() {}
+  }
+
+  const operations = [
+    {
+      name: 'markPaid', orderState: 'pending' as const, eventType: 'billing.recharge.paid',
+      run: (repository: PostgresBillingRepository, assertReconciliationLease?: () => Promise<void>) => repository.markPaid({ workspaceId, orderId, providerTradeId: 'trade_guard', amountFen: 1000, eventSource: 'provider_reconciliation', assertReconciliationLease }),
+    },
+    {
+      name: 'markProviderState', orderState: 'pending' as const, eventType: 'billing.recharge.reconciled',
+      run: (repository: PostgresBillingRepository, assertReconciliationLease?: () => Promise<void>) => repository.markProviderState({ workspaceId, orderId, state: 'failed', eventSource: 'provider_reconciliation', assertReconciliationLease }),
+    },
+    {
+      name: 'markReconciliationChecked', orderState: 'pending' as const, eventType: undefined,
+      run: (repository: PostgresBillingRepository, assertReconciliationLease?: () => Promise<void>) => repository.markReconciliationChecked({ workspaceId, orderId, expectedState: 'pending', assertReconciliationLease }),
+    },
+    {
+      name: 'completeRechargeRefund', orderState: 'paid' as const, eventType: 'billing.recharge.refunded',
+      run: (repository: PostgresBillingRepository, assertReconciliationLease?: () => Promise<void>) => repository.completeRechargeRefund({ workspaceId, orderId, reservationKey, actorId: 'finance', reason: '查单确认退款成功', providerRefundId: 'provider_refund_guard', assertReconciliationLease }),
+    },
+    {
+      name: 'releaseRechargeRefund', orderState: 'paid' as const, eventType: 'billing.recharge.refund_reservation_released',
+      run: (repository: PostgresBillingRepository, assertReconciliationLease?: () => Promise<void>) => repository.releaseRechargeRefund({ workspaceId, orderId, reservationKey, actorId: 'finance', reason: '查单确认退款失败', assertReconciliationLease }),
+    },
+  ]
+
+  function setup(orderState: 'pending' | 'paid') {
+    const client = new GuardRecordingClient(orderState)
+    const appendEvent = vi.fn(async (_transactionClient: SqlClient, event: OutboxEventInput) => {
+      expect(_transactionClient).toBe(client)
+      client.timeline.push(`outbox:${event.eventType}`)
+    })
+    const repository = new PostgresBillingRepository({ connect: async () => client }, appendEvent)
+    return { client, repository, appendEvent }
+  }
+
+  function expectBoundedTransaction(client: GuardRecordingClient) {
+    const statements = client.calls.map(call => call.text)
+    expect(statements[0]).toBe('BEGIN')
+    const firstLock = statements.findIndex(statement => statement.includes('FOR UPDATE'))
+    expect(firstLock).toBeGreaterThan(0)
+    const settings = statements.filter(statement => statement.startsWith('SET LOCAL '))
+    expect(settings.map(statement => statement.replace(/\s*=\s*/gu, '='))).toEqual(timeoutStatements)
+    for (const setting of settings) {
+      expect(statements.indexOf(setting)).toBeGreaterThan(0)
+      expect(statements.indexOf(setting)).toBeLessThan(firstLock)
+    }
+  }
+
+  function lastMatchingIndex(entries: string[], matches: (entry: string) => boolean) {
+    return entries.reduce((found, entry, index) => matches(entry) ? index : found, -1)
+  }
+
+  it('rolls back reservation release when its transactional outbox fact cannot be written', async () => {
+    const { client } = setup('paid')
+    const repository = new PostgresBillingRepository({ connect: async () => client }, async (_transactionClient, event) => {
+      expect(event).toMatchObject({ eventType: 'billing.recharge.refund_reservation_released', payload: { order_id: orderId, reservation_key: reservationKey, release_transaction_id: expect.any(String) } })
+      throw new Error('outbox unavailable')
+    })
+    await expect(repository.releaseRechargeRefund({ workspaceId, orderId, reservationKey, actorId: 'finance', reason: '查单退款失败' })).rejects.toThrow('outbox unavailable')
+    expect(client.calls.at(-1)?.text).toBe('ROLLBACK')
+    expect(client.calls.some(call => call.text === 'COMMIT')).toBe(false)
+  })
+
+  it.each(operations)('$name checks the lease after locks and after writes/outbox, before COMMIT', async operation => {
+    const { client, repository, appendEvent } = setup(operation.orderState)
+    const assertReconciliationLease = vi.fn(async () => { client.timeline.push('guard') })
+
+    await expect(operation.run(repository, assertReconciliationLease)).resolves.toBeDefined()
+
+    expectBoundedTransaction(client)
+    expect(assertReconciliationLease).toHaveBeenCalledTimes(2)
+    const lastLock = lastMatchingIndex(client.timeline, entry => entry.includes('FOR UPDATE'))
+    const firstWrite = client.timeline.findIndex(entry => /^(?:UPDATE|INSERT INTO) billing_/u.test(entry))
+    const lastWrite = lastMatchingIndex(client.timeline, entry => /^(?:UPDATE|INSERT INTO) billing_/u.test(entry))
+    const firstGuard = client.timeline.indexOf('guard')
+    const finalGuard = client.timeline.lastIndexOf('guard')
+    expect(firstGuard).toBeGreaterThan(lastLock)
+    expect(firstGuard).toBeLessThan(firstWrite)
+    expect(finalGuard).toBeGreaterThan(lastWrite)
+    if (operation.eventType) {
+      expect(appendEvent).toHaveBeenCalledOnce()
+      expect(finalGuard).toBeGreaterThan(client.timeline.indexOf(`outbox:${operation.eventType}`))
+    } else {
+      expect(appendEvent).not.toHaveBeenCalled()
+    }
+    expect(client.timeline.at(-2)).toBe('guard')
+    expect(client.timeline.at(-1)).toBe('COMMIT')
+  })
+
+  it.each(operations)('$name rolls back without business writes if the post-lock lease check fails', async operation => {
+    const { client, repository, appendEvent } = setup(operation.orderState)
+    const leaseLost = new Error('PAYMENT_RECONCILIATION_LEASE_LOST')
+    const assertReconciliationLease = vi.fn(async () => {
+      client.timeline.push('guard')
+      throw leaseLost
+    })
+
+    await expect(operation.run(repository, assertReconciliationLease)).rejects.toBe(leaseLost)
+
+    expectBoundedTransaction(client)
+    expect(assertReconciliationLease).toHaveBeenCalledOnce()
+    expect(client.timeline.indexOf('guard')).toBeGreaterThan(lastMatchingIndex(client.timeline, entry => entry.includes('FOR UPDATE')))
+    expect(client.calls.some(call => /^(?:UPDATE|INSERT INTO) billing_/u.test(call.text))).toBe(false)
+    expect(appendEvent).not.toHaveBeenCalled()
+    expect(client.calls.at(-1)?.text).toBe('ROLLBACK')
+    expect(client.calls.some(call => call.text === 'COMMIT')).toBe(false)
+  })
+
+  it.each(operations)('$name rolls back writes/outbox if the final lease check fails', async operation => {
+    const { client, repository, appendEvent } = setup(operation.orderState)
+    const leaseLost = new Error('PAYMENT_RECONCILIATION_LEASE_LOST')
+    let checks = 0
+    const assertReconciliationLease = vi.fn(async () => {
+      client.timeline.push('guard')
+      if (++checks === 2) throw leaseLost
+    })
+
+    await expect(operation.run(repository, assertReconciliationLease)).rejects.toBe(leaseLost)
+
+    expectBoundedTransaction(client)
+    expect(assertReconciliationLease).toHaveBeenCalledTimes(2)
+    expect(client.calls.some(call => /^(?:UPDATE|INSERT INTO) billing_/u.test(call.text))).toBe(true)
+    const finalGuard = client.timeline.lastIndexOf('guard')
+    expect(finalGuard).toBeGreaterThan(lastMatchingIndex(client.timeline, entry => /^(?:UPDATE|INSERT INTO) billing_/u.test(entry)))
+    if (operation.eventType) {
+      expect(appendEvent).toHaveBeenCalledOnce()
+      expect(finalGuard).toBeGreaterThan(client.timeline.indexOf(`outbox:${operation.eventType}`))
+    }
+    expect(client.timeline.at(-2)).toBe('guard')
+    expect(client.timeline.at(-1)).toBe('ROLLBACK')
+    expect(client.calls.some(call => call.text === 'COMMIT')).toBe(false)
+  })
+
+  it.each(operations)('$name keeps non-reconciliation callers free of new timeout settings', async operation => {
+    const { client, repository } = setup(operation.orderState)
+
+    await expect(operation.run(repository)).resolves.toBeDefined()
+
+    expect(client.calls.some(call => call.text.startsWith('SET LOCAL '))).toBe(false)
+    expect(client.calls.at(-1)?.text).toBe('COMMIT')
+    if (operation.name === 'markProviderState') {
+      expect(client.calls.some(call => call.text.includes('FOR UPDATE'))).toBe(false)
+      expect(client.calls.filter(call => call.text.includes('billing_orders'))).toHaveLength(1)
+    }
   })
 })

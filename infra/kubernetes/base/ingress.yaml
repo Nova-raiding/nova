@@ -3,7 +3,9 @@ kind: Ingress
 metadata:
   name: merchant
   annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: 50m
+    # REST, OAuth, payment callback, and alert routes keep a small request
+    # boundary. Upload-capable MCP uses the separate Exact ingress below.
+    nginx.ingress.kubernetes.io/proxy-body-size: 1m
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     # /v1 is public for merchant APIs, but scanner callbacks are service-to-
     # service only. `return` inside an NGINX location is deterministic and
@@ -31,9 +33,6 @@ spec:
           - path: /v1
             pathType: Prefix
             backend: {service: {name: merchant-api, port: {name: http}}}
-          - path: /mcp
-            pathType: Exact
-            backend: {service: {name: merchant-api, port: {name: http}}}
           - path: /oauth
             pathType: Prefix
             backend: {service: {name: merchant-api, port: {name: http}}}
@@ -60,6 +59,50 @@ spec:
             backend: {service: {name: merchant-api, port: {name: http}}}
           - path: /
             pathType: Prefix
+            backend: {service: {name: merchant-ops-ui, port: {name: http}}}
+---
+# A product-limited 50 MiB customer-delivery file is transported as ~67 MiB
+# JSON base64. Isolate that larger request budget to the authenticated browser
+# RPC paths instead of weakening /v1 payment callbacks and their /api aliases.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: merchant-browser-api-upload
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 70m
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [yxsona.com, ops.yxsona.com]
+      secretName: merchant-tls
+  rules:
+    - host: yxsona.com
+      http:
+        paths:
+          - path: /mcp
+            pathType: Exact
+            backend: {service: {name: merchant-api, port: {name: http}}}
+          - path: /api/mcp
+            pathType: Exact
+            backend: {service: {name: merchant-ui, port: {name: http}}}
+          - path: /v1/assets/upload
+            pathType: Exact
+            backend: {service: {name: merchant-api, port: {name: http}}}
+          - path: /api/v1/assets/upload
+            pathType: Exact
+            backend: {service: {name: merchant-ui, port: {name: http}}}
+    - host: ops.yxsona.com
+      http:
+        paths:
+          - path: /api/mcp
+            pathType: Exact
+            backend: {service: {name: merchant-ops-ui, port: {name: http}}}
+          - path: /v1/assets/upload
+            pathType: Exact
+            backend: {service: {name: merchant-api, port: {name: http}}}
+          - path: /api/v1/assets/upload
+            pathType: Exact
             backend: {service: {name: merchant-ops-ui, port: {name: http}}}
 ---
 # Deliberately has no matching endpoints. Kubernetes longest-prefix routing

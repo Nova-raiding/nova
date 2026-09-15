@@ -37,6 +37,9 @@ const productionEnvironment = (): NodeJS.ProcessEnv => ({
   MERCHANT_BEARER_HOSTNAME: 'merchant.example.test',
   MCP_OAUTH_REQUIRED: 'true',
   PUBLIC_APP_BASE_URL: 'https://merchant.example.test',
+  MCP_OAUTH_ISSUER: 'https://merchant.example.test',
+  MCP_OAUTH_AUTHORIZATION_ENDPOINT: 'https://merchant.example.test/oauth/authorize',
+  MCP_OAUTH_TOKEN_ENDPOINT: 'https://merchant.example.test/oauth/token',
   MCP_OAUTH_CLIENTS: JSON.stringify({ 'chatgpt-production': ['https://chatgpt.com/oauth/callback'] }),
   API_AUTH_TOKENS: JSON.stringify({
     'merchant-token': { actor_id: 'merchant-owner', workspaces: ['ws_production'], roles: ['workspace_owner'] },
@@ -177,6 +180,9 @@ describe('production readiness fail-closed', () => {
       { gate: 'identity', key: 'MCP_OAUTH_REQUIRED' },
       { gate: 'identity', key: 'MCP_OAUTH_CLIENTS' },
       { gate: 'identity', key: 'PUBLIC_APP_BASE_URL' },
+      { gate: 'identity', key: 'MCP_OAUTH_ISSUER' },
+      { gate: 'identity', key: 'MCP_OAUTH_AUTHORIZATION_ENDPOINT' },
+      { gate: 'identity', key: 'MCP_OAUTH_TOKEN_ENDPOINT' },
       { gate: 'object_storage', key: 'ASSET_STORAGE_KMS_KEY_ID' },
       { gate: 'object_storage', key: 'ASSET_DISPLAY_URL_SIGNING_SECRET' },
       { gate: 'asset_scanner', key: 'ASSET_SCAN_APPROVED_SCANNER_SERVICE_IDS' },
@@ -212,6 +218,9 @@ describe('production readiness fail-closed', () => {
     ['MCP_OAUTH_REQUIRED', ' true ', 'mcp_oauth_required_must_be_true'],
     ['PUBLIC_APP_BASE_URL', 'http://merchant.example.test', 'public_app_base_url_invalid'],
     ['PUBLIC_APP_BASE_URL', 'https://other.example.test/mcp', 'public_app_base_url_invalid'],
+    ['MCP_OAUTH_ISSUER', 'https://accounts.example.test', 'mcp_oauth_issuer_must_be_self_hosted'],
+    ['MCP_OAUTH_AUTHORIZATION_ENDPOINT', 'https://accounts.example.test/oauth/authorize', 'mcp_oauth_endpoints_must_be_self_hosted'],
+    ['MCP_OAUTH_TOKEN_ENDPOINT', 'https://merchant.example.test/oauth/token/v2', 'mcp_oauth_endpoints_must_be_self_hosted'],
     ['MCP_OAUTH_CLIENTS', '{}', 'mcp_oauth_clients_missing_or_invalid'],
   ])('rejects non-canonical production identity setting %s=%s', (key, value, reason) => {
     const environment = productionEnvironment()

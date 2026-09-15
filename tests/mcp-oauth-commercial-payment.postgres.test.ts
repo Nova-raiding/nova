@@ -206,6 +206,17 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
         return (await exchanged.json() as { access_token: string }).access_token
       }
       const [tokenA, tokenB] = await Promise.all([authorizeAndExchange(merchants[0]!, `a-${suffix}`), authorizeAndExchange(merchants[1]!, `b-${suffix}`)])
+      // These are real PKCE-issued merchant tokens, not workspace OIDC sessions.
+      // Keep the ops session exclusion tied to the verified credential source.
+      for (const token of [tokenA, tokenB]) {
+        const opsSession = await fetch(`${running.base}/mcp`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, 'x-workspace-id': workspaceId },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 'merchant-oauth-ops-session-denied', method: 'ops.session', params: {} }),
+        })
+        expect(opsSession.status).toBe(403)
+        expect(await opsSession.json()).toMatchObject({ error: { code: 'FORBIDDEN', message: '商家 OAuth 会话不能访问平台运营工作台' } })
+      }
       const bridgeA = startBridge(running.base, workspaceId, tokenA)
       const bridgeB = startBridge(running.base, workspaceId, tokenB)
       const stopBridge = (child: ChildProcessWithoutNullStreams) => { if (child.exitCode === null) child.kill('SIGTERM') }
@@ -234,7 +245,16 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
       const paidViaBridge = await bridgeCall(bridgeA, 3, 'commercial.order.payment.get', { order_id: order.order_id })
       expect(paidViaBridge.result).toMatchObject({ isError: false, structuredContent: { order_id: order.order_id, status: 'paid', access_revision: 1 } })
       const balanceViaBridge = await bridgeCall(bridgeA, 4, 'creative-points.balance.get', {})
-      expect(balanceViaBridge.result).toMatchObject({ isError: false, structuredContent: { balance_state: 'known', available_points: 500, reserved_points: 0, settled_points: 0, access_revision: '1' } })
+      expect(balanceViaBridge.result).toMatchObject({
+        isError: false,
+        structuredContent: {
+          balance_state: 'known',
+          available_points: 500,
+          reserved_points: 0,
+          settled_points: 0,
+          access_revision: '1',
+        },
+      })
 
       const hiddenFromB = await bridgeCall(bridgeB, 5, 'commercial.order.payment.get', { order_id: order.order_id })
       expect(hiddenFromB.result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_ORDER_NOT_FOUND' } })

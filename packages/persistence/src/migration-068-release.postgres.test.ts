@@ -7,6 +7,7 @@ import { promisify } from 'node:util'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
 import { loadMigrations, MigrationRunner } from './migration.js'
+import { assertPostgresReleaseTooling } from './postgres-release-tooling.js'
 
 const run = promisify(execFile)
 const databaseUrlValue = process.env.PERSISTENCE_RELEASE_DATABASE_URL ?? process.env.PLATFORM_MEDIA_SPEC_DATABASE_URL
@@ -50,12 +51,14 @@ describe('persistence migration 068 release acceptance', () => {
     const temporary = await mkdtemp(join(tmpdir(), 'persistence-068-release-'))
     const dumpPath = join(temporary, 'schema.dump')
     const admin = new Pool({ connectionString: base.toString() })
+    let tooling: Awaited<ReturnType<typeof assertPostgresReleaseTooling>>
     let fresh: Pool | undefined
     let upgrade: Pool | undefined
     let restored: Pool | undefined
     let app: Pool | undefined
 
     try {
+      tooling = await assertPostgresReleaseTooling(admin)
       for (const name of [freshName, upgradeName, restoreName]) await admin.query(`CREATE DATABASE "${name}"`)
       await admin.query(`CREATE ROLE "${probeRole}" NOLOGIN`)
       fresh = new Pool({ connectionString: databaseUrl(base, freshName) })
@@ -140,8 +143,8 @@ describe('persistence migration 068 release acceptance', () => {
       expect(await new MigrationRunner(upgrade, migrations).run()).toEqual([])
       expect(await campaignSchemaFingerprint(upgrade)).toEqual(await campaignSchemaFingerprint(fresh))
 
-      await run(process.env.PG_DUMP_BIN ?? 'pg_dump', ['--format=custom', '--schema-only', '--no-owner', '--file', dumpPath, databaseUrl(base, freshName)])
-      await run('pg_restore', ['--dbname', databaseUrl(base, restoreName), '--no-owner', dumpPath])
+      await run(tooling.pgDump, ['--format=custom', '--schema-only', '--no-owner', '--file', dumpPath, databaseUrl(base, freshName)])
+      await run(tooling.pgRestore, ['--dbname', databaseUrl(base, restoreName), '--no-owner', dumpPath])
       expect(await campaignSchemaFingerprint(restored)).toEqual(await campaignSchemaFingerprint(fresh))
     } finally {
       await app?.end()

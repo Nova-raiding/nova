@@ -11,6 +11,10 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ARG VITE_WORKSPACE_ID
 ENV VITE_WORKSPACE_ID=$VITE_WORKSPACE_ID
 RUN npm run build
+ARG RELEASE_ID=unbound
+ARG RELEASE_GIT_SHA=unbound
+# Non-secret, build-time identity. Never infer UI freshness from its API proxy.
+RUN printf '{"surface":"merchant-ui","release_id":"%s","release_git_sha":"%s"}\n' "$RELEASE_ID" "$RELEASE_GIT_SHA" > dist/build-meta.json
 
 FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
 COPY infra/nginx/merchant-studio.conf /etc/nginx/merchant-studio.conf.template

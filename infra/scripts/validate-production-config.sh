@@ -145,7 +145,7 @@ done
 grep -Eq '^[[:space:]]*asset_scan_receipt_key_id:[[:space:]]*"?[A-Za-z0-9][A-Za-z0-9._-]{2,127}"?[[:space:]]*$' "$config_path" || { echo 'asset_scan_receipt_key_id must be a stable non-empty key id' >&2; exit 1; }
 grep -Eq '^[[:space:]]*asset_scan_policy_version:[[:space:]]*"?[A-Za-z0-9][A-Za-z0-9._-]{2,127}"?[[:space:]]*$' "$config_path" || { echo 'asset_scan_policy_version must be an immutable policy version' >&2; exit 1; }
 grep -Eq '^[[:space:]]*clamav_image_digest:[[:space:]]*"?sha256:[0-9a-f]{64}"?[[:space:]]*$' "$config_path" || { echo 'clamav_image_digest must be an immutable lowercase SHA-256 digest' >&2; exit 1; }
-grep -Eq '^[[:space:]]*clamav_max_file_bytes:[[:space:]]*"?104857600"?[[:space:]]*$' "$config_path" || { echo 'clamav_max_file_bytes must match the 100 MiB upload boundary' >&2; exit 1; }
+grep -Eq '^[[:space:]]*clamav_max_file_bytes:[[:space:]]*"?104857600"?[[:space:]]*$' "$config_path" || { echo 'clamav_max_file_bytes must match the 100 MiB delivery-chain boundary' >&2; exit 1; }
 scanner_signature_max_age=$(awk '/^[[:space:]]*clamav_signature_max_age_minutes[[:space:]]*:/ { value=$0; sub(/^[^:]*:[[:space:]]*/, "", value); gsub(/["[:space:]]/, "", value); print value; exit }' "$config_path")
 case "$scanner_signature_max_age" in ''|*[!0-9]*) echo 'clamav_signature_max_age_minutes must be an integer from 1 to 1440' >&2; exit 1;; esac
 if [ "$scanner_signature_max_age" -lt 1 ] || [ "$scanner_signature_max_age" -gt 1440 ]; then
@@ -177,8 +177,16 @@ grep -Eq 'payment_provider_checkout_api_url:[[:space:]]*https://' "$config_path"
 grep -Eq 'payment_provider_query_api_url:[[:space:]]*https://' "$config_path" || { echo 'payment_provider_query_api_url must be HTTPS' >&2; exit 1; }
 grep -Eq 'payment_provider_refund_query_api_url:[[:space:]]*https://' "$config_path" || { echo 'payment_provider_refund_query_api_url must be HTTPS' >&2; exit 1; }
 grep -Eq 'payment_provider_refund_api_url:[[:space:]]*https://' "$config_path" || { echo 'payment_provider_refund_api_url must be HTTPS' >&2; exit 1; }
+if grep -Eiq '^[[:space:]]*payment_(checkout_base_url|provider_(checkout|query|refund_query|refund)_api_url):[[:space:]]*https://(([^/[:space:]]*\.)?example\.(com|net|org)|([^/[:space:]]*\.)?(example|invalid|localhost|test))([/:[:space:]]|$)' "$config_path"; then
+  echo 'payment provider URLs must not target reserved placeholder hosts' >&2
+  exit 1
+fi
 grep -Eq 'payment_provider_api_key_ref:[[:space:]]*[^"'"'"' ]+' "$config_path" || { echo 'payment_provider_api_key_ref must be configured' >&2; exit 1; }
 grep -Eq 'payment_provider_merchant_id:[[:space:]]*[^"'"'"' ]+' "$config_path" || { echo 'payment_provider_merchant_id must be configured' >&2; exit 1; }
+if grep -Eiq '^[[:space:]]*payment_provider_merchant_id:[[:space:]]*"?[^"[:space:]]*(example|placeholder|replace[-_]?me|change[-_]?me|dummy|demo|test)[^"[:space:]]*"?[[:space:]]*$' "$config_path"; then
+  echo 'payment_provider_merchant_id must not be a placeholder value' >&2
+  exit 1
+fi
 grep -Eq 'payment_callback_base_url:[[:space:]]*https://' "$config_path" || { echo 'payment_callback_base_url must be HTTPS' >&2; exit 1; }
 grep -Eq "payment_callback_secret_ref:[[:space:]]*[^\"' ]+" "$config_path" || { echo 'payment_callback_secret_ref must be configured' >&2; exit 1; }
 grep -Eq '^[[:space:]]*payment_reconciliation_enabled:[[:space:]]*true[[:space:]]*$' "$config_path" || { echo 'payment reconciliation must be enabled' >&2; exit 1; }

@@ -147,11 +147,16 @@ spec:
           securityContext: {runAsUser: 10001, runAsGroup: 10001, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
         - name: clamav
           image: "clamav/clamav@sha256:761f6c99b8d9134b39431f8c200189cda749b17310091561bfa8b732f32bfada"
-          env: [{name: FRESHCLAM_CHECKS, value: "24"}]
+          env:
+            - {name: FRESHCLAM_CHECKS, value: "24"}
+            - {name: CLAMD_CONF_StreamMaxLength, value: "100M"}
+            - {name: CLAMD_CONF_MaxFileSize, value: "100M"}
+            - {name: CLAMD_CONF_MaxScanSize, value: "100M"}
+            - {name: CLAMD_CONF_AlertExceedsMax, value: "yes"}
           ports: [{name: clamd, containerPort: 3310, protocol: TCP}]
-          startupProbe: {exec: {command: ["/bin/sh", "-c", "clamdscan --ping 1 >/dev/null 2>&1"]}, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 30}
-          readinessProbe: {exec: {command: ["/bin/sh", "-c", "clamdscan --ping 1 >/dev/null 2>&1 && find /var/lib/clamav -maxdepth 1 -type f \\( -name daily.cvd -o -name daily.cld \\) -mmin -1440 | grep -q ."]}, periodSeconds: 15, timeoutSeconds: 10, failureThreshold: 2}
-          livenessProbe: {exec: {command: ["/bin/sh", "-c", "clamdscan --ping 1 >/dev/null 2>&1"]}, initialDelaySeconds: 30, periodSeconds: 30, timeoutSeconds: 10, failureThreshold: 3}
+          startupProbe: {exec: {command: ["/bin/sh", "-c", "grep -Eq '^StreamMaxLength[[:space:]]+100M$' /etc/clamav/clamd.conf && grep -Eq '^MaxFileSize[[:space:]]+100M$' /etc/clamav/clamd.conf && grep -Eq '^MaxScanSize[[:space:]]+100M$' /etc/clamav/clamd.conf && grep -Eq '^AlertExceedsMax[[:space:]]+yes$' /etc/clamav/clamd.conf && clamdscan --ping 1 >/dev/null 2>&1"]}, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 30}
+          readinessProbe: {exec: {command: ["/bin/sh", "-c", "grep -Eq '^StreamMaxLength[[:space:]]+100M$' /etc/clamav/clamd.conf && grep -Eq '^MaxFileSize[[:space:]]+100M$' /etc/clamav/clamd.conf && grep -Eq '^MaxScanSize[[:space:]]+100M$' /etc/clamav/clamd.conf && grep -Eq '^AlertExceedsMax[[:space:]]+yes$' /etc/clamav/clamd.conf && clamdscan --ping 1 >/dev/null 2>&1 && find /var/lib/clamav -maxdepth 1 -type f \\( -name daily.cvd -o -name daily.cld \\) -mmin -1440 | grep -q ."]}, periodSeconds: 15, timeoutSeconds: 10, failureThreshold: 2}
+          livenessProbe: {exec: {command: ["/bin/sh", "-c", "grep -Eq '^StreamMaxLength[[:space:]]+100M$' /etc/clamav/clamd.conf && grep -Eq '^MaxFileSize[[:space:]]+100M$' /etc/clamav/clamd.conf && grep -Eq '^MaxScanSize[[:space:]]+100M$' /etc/clamav/clamd.conf && grep -Eq '^AlertExceedsMax[[:space:]]+yes$' /etc/clamav/clamd.conf && clamdscan --ping 1 >/dev/null 2>&1"]}, initialDelaySeconds: 30, periodSeconds: 30, timeoutSeconds: 10, failureThreshold: 3}
           resources: {requests: {cpu: 500m, memory: 3Gi}, limits: {cpu: "2", memory: 4Gi}}
           volumeMounts: [{name: clamav-database, mountPath: /var/lib/clamav}, {name: clamav-tmp, mountPath: /tmp}]
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}

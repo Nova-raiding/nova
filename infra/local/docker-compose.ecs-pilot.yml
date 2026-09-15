@@ -87,6 +87,11 @@ x-ecs-platform-environment: &ecs-platform-environment
   DOUYIN_UPDATE_PATH: ${DOUYIN_UPDATE_PATH:-/products/update}
   DOUYIN_QUERY_PATH: ${DOUYIN_QUERY_PATH:-/publish/status}
 
+x-ecs-worker-environment: &ecs-worker-environment
+  NODE_ENV: production
+  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL production secret is required}
+  WORKER_WORKSPACES: ${WORKER_WORKSPACES:?WORKER_WORKSPACES=auto or an explicit production workspace allowlist is required}
+
 services:
   alert-receiver:
     profiles: ["alerts"]
@@ -164,6 +169,12 @@ services:
 
   api:
     ports: !override ["127.0.0.1:8787:8787"]
+    healthcheck: &ecs-api-healthcheck
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8787/readyz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     environment: &ecs-production-api-environment
       <<: *ecs-platform-environment
       # This overlay is a local/pilot surface. The base Compose service keeps
@@ -175,6 +186,21 @@ services:
       CONNECTOR_FIXTURE_MODE: "false"
       MERCHANT_TEST_APPROVED_RATES: "false"
       ALLOW_LOCAL_PAYMENT_FIXTURE: "false"
+      OPS_LOCAL_SESSION_ENABLED: "false"
+      OPS_LOCAL_SESSION_TOKEN: ""
+      OPS_LOCAL_SESSION_WORKSPACE_ID: ""
+      PLATFORM_ACCOUNT_LOGIN: ""
+      PLATFORM_ACCOUNT_PASSWORD_HASH: ""
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL production secret is required}
+      OPS_DATABASE_URL: ${OPS_DATABASE_URL:?OPS_DATABASE_URL production secret is required}
+      API_AUTH_TOKENS: ${API_AUTH_TOKENS:?API_AUTH_TOKENS is required}
+      SESSION_ID_HASH_SECRET: ${SESSION_ID_HASH_SECRET:?SESSION_ID_HASH_SECRET is required}
+      WORKER_API_CREDENTIALS: ${WORKER_API_CREDENTIALS:?WORKER_API_CREDENTIALS is required}
+      ALLOW_WILDCARD_WORKSPACE_GRANT: "false"
+      ASSET_DISPLAY_URL_SIGNING_SECRET: ${ASSET_DISPLAY_URL_SIGNING_SECRET:?ASSET_DISPLAY_URL_SIGNING_SECRET is required}
+      ASSET_DISPLAY_URL_SIGNING_KEY_ID: ${ASSET_DISPLAY_URL_SIGNING_KEY_ID:?ASSET_DISPLAY_URL_SIGNING_KEY_ID is required}
+      ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON: ${ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON:-}
+      MODEL_COST_ESTIMATE_VERSION: ${MODEL_COST_ESTIMATE_VERSION:?MODEL_COST_ESTIMATE_VERSION production value is required}
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: "false"
       ALLOW_LOCAL_ASSET_SCAN_FIXTURE: "false"
       ASSET_SCANNER_MODE: clamav_worker
@@ -402,6 +428,7 @@ services:
 
   api-replica:
     ports: !override []
+    healthcheck: *ecs-api-healthcheck
     # `extends` is resolved before this overlay is applied. Reuse the rendered
     # production map so every public, connector, alert, and payment value stays
     # byte-for-byte identical across both API instances.
@@ -410,8 +437,39 @@ services:
       - ${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required}:/run/release-evidence/platform-capability.json:ro
       - /run/release-security/evidence-trust:/run/release-security/evidence-trust:ro
 
+  worker-sync:
+    environment:
+      <<: *ecs-worker-environment
+      WORKER_API_TOKEN: ${WORKER_SYNC_API_TOKEN:?WORKER_SYNC_API_TOKEN is required}
+      WORKER_API_SIGNING_SECRET: ${WORKER_SYNC_API_SIGNING_SECRET:?WORKER_SYNC_API_SIGNING_SECRET is required}
+
+  worker-generation:
+    environment:
+      <<: *ecs-worker-environment
+      WORKER_API_TOKEN: ${WORKER_GENERATION_API_TOKEN:?WORKER_GENERATION_API_TOKEN is required}
+      WORKER_API_SIGNING_SECRET: ${WORKER_GENERATION_API_SIGNING_SECRET:?WORKER_GENERATION_API_SIGNING_SECRET is required}
+
+  worker-publish:
+    environment:
+      <<: *ecs-worker-environment
+      WORKER_API_TOKEN: ${WORKER_PUBLISH_API_TOKEN:?WORKER_PUBLISH_API_TOKEN is required}
+      WORKER_API_SIGNING_SECRET: ${WORKER_PUBLISH_API_SIGNING_SECRET:?WORKER_PUBLISH_API_SIGNING_SECRET is required}
+
+  worker-reconcile:
+    environment:
+      <<: *ecs-worker-environment
+      WORKER_API_TOKEN: ${WORKER_RECONCILE_API_TOKEN:?WORKER_RECONCILE_API_TOKEN is required}
+      WORKER_API_SIGNING_SECRET: ${WORKER_RECONCILE_API_SIGNING_SECRET:?WORKER_RECONCILE_API_SIGNING_SECRET is required}
+
+  worker-automation:
+    environment:
+      <<: *ecs-worker-environment
+      WORKER_API_TOKEN: ${WORKER_AUTOMATION_API_TOKEN:?WORKER_AUTOMATION_API_TOKEN is required}
+      WORKER_API_SIGNING_SECRET: ${WORKER_AUTOMATION_API_SIGNING_SECRET:?WORKER_AUTOMATION_API_SIGNING_SECRET is required}
+
   worker-scan:
     environment:
+      <<: *ecs-worker-environment
       WORKER_API_TOKEN: ${ASSET_SCANNER_API_TOKEN:?ASSET_SCANNER_API_TOKEN is required}
       WORKER_API_SIGNING_SECRET: ${ASSET_SCANNER_WORKSPACE_SIGNING_SECRET:?ASSET_SCANNER_WORKSPACE_SIGNING_SECRET is required}
       ASSET_SCANNER_API_TOKEN: ${ASSET_SCANNER_API_TOKEN:?ASSET_SCANNER_API_TOKEN is required}

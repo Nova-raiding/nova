@@ -61,8 +61,10 @@ describe('model relay evidence gate', () => {
   it('rejects immutable receipts copied from another release', () => {
     const root = mkdtempSync(join(tmpdir(), 'relay-binding-'))
     mkdirSync(join(root, 'relay'), { recursive: true })
-    const bound = structuredClone(evidence)
-    ;(bound as typeof bound & { expires_at: string }).expires_at = '2026-08-28T01:00:00Z'
+    const bound = {
+      ...structuredClone(evidence),
+      expires_at: '2026-08-28T01:00:00Z',
+    }
     bound.results = bound.results.map(result => {
       const body = JSON.stringify({ schema_version: '1', release_id: result.modality === 'text' ? 'older-release' : bound.release_id, modality: result.modality, result })
       const digest = createHash('sha256').update(body).digest('hex')

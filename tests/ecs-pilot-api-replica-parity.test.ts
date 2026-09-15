@@ -37,6 +37,25 @@ const paymentEnvironment = {
   ASSET_SCAN_RECEIPT_KEY_ID: 'prod-scanner-key',
   ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM_B64: 'dGVzdC1wcml2YXRlLWtleQ==',
   ASSET_SCANNER_SERVICE_ID: 'merchant-asset-scanner-production',
+  API_AUTH_TOKENS: '{"production-test":{"workspaces":["ws_production_test"],"actor_id":"actor_production_test","bootstrap":false,"workbenches":["workspace"],"roles":["merchant_admin"]}}',
+  SESSION_ID_HASH_SECRET: 'test-production-session-hash-secret',
+  WORKER_API_CREDENTIALS: '{"sync":{"token":"prod-sync","signing_secret":"prod-sync-signing"}}',
+  ASSET_DISPLAY_URL_SIGNING_SECRET: 'test-production-display-signing-secret',
+  ASSET_DISPLAY_URL_SIGNING_KEY_ID: 'display-production',
+  WORKER_WORKSPACES: 'auto',
+  WORKER_SYNC_API_TOKEN: 'prod-sync-token',
+  WORKER_SYNC_API_SIGNING_SECRET: 'prod-sync-signing-secret',
+  WORKER_GENERATION_API_TOKEN: 'prod-generation-token',
+  WORKER_GENERATION_API_SIGNING_SECRET: 'prod-generation-signing-secret',
+  WORKER_PUBLISH_API_TOKEN: 'prod-publish-token',
+  WORKER_PUBLISH_API_SIGNING_SECRET: 'prod-publish-signing-secret',
+  WORKER_RECONCILE_API_TOKEN: 'prod-reconcile-token',
+  WORKER_RECONCILE_API_SIGNING_SECRET: 'prod-reconcile-signing-secret',
+  WORKER_AUTOMATION_API_TOKEN: 'prod-automation-token',
+  WORKER_AUTOMATION_API_SIGNING_SECRET: 'prod-automation-signing-secret',
+  DATABASE_URL: 'postgres://merchant_app:opaque-production-secret@postgres:5432/merchant',
+  OPS_DATABASE_URL: 'postgres://merchant_ops:opaque-production-ops-secret@postgres:5432/merchant',
+  MODEL_COST_ESTIMATE_VERSION: 'production-rate-card-2026-09-15',
 }
 
 const requiredPaymentKeys = [
@@ -111,6 +130,48 @@ function render(overrides: NodeJS.ProcessEnv = {}): ComposeConfig {
 }
 
 describe('ECS pilot API replica parity', () => {
+  it('removes every local bootstrap identity from the fully rendered production services', () => {
+    const services = render().services
+    for (const service of ['api', 'api-replica']) {
+      expect(services[service]?.environment).toMatchObject({
+        OPS_LOCAL_SESSION_ENABLED: 'false', OPS_LOCAL_SESSION_TOKEN: '',
+        OPS_LOCAL_SESSION_WORKSPACE_ID: '',
+        PLATFORM_ACCOUNT_LOGIN: '', PLATFORM_ACCOUNT_PASSWORD_HASH: '',
+        ALLOW_WILDCARD_WORKSPACE_GRANT: 'false',
+        SESSION_ID_HASH_SECRET: 'test-production-session-hash-secret',
+        ASSET_DISPLAY_URL_SIGNING_SECRET: 'test-production-display-signing-secret',
+        ASSET_DISPLAY_URL_SIGNING_KEY_ID: 'display-production',
+        DATABASE_URL: 'postgres://merchant_app:opaque-production-secret@postgres:5432/merchant',
+        OPS_DATABASE_URL: 'postgres://merchant_ops:opaque-production-ops-secret@postgres:5432/merchant',
+        MODEL_COST_ESTIMATE_VERSION: 'production-rate-card-2026-09-15',
+      })
+      const serialized = JSON.stringify(services[service]?.environment)
+      expect(serialized).not.toMatch(/pilot-local|workspace-local|actor_demo|workspace_admin_demo|local-primary|ws_demo|local-acceptance/u)
+      expect(services[service]?.environment?.API_AUTH_TOKENS).not.toContain('"workspaces":["*"]')
+    }
+
+    for (const service of ['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan']) {
+      expect(services[service]?.environment?.NODE_ENV, service).toBe('production')
+      expect(services[service]?.environment?.DATABASE_URL, service).toBe('postgres://merchant_app:opaque-production-secret@postgres:5432/merchant')
+      expect(services[service]?.environment?.WORKER_WORKSPACES, service).toBe('auto')
+      const serialized = JSON.stringify(services[service]?.environment)
+      expect(serialized, service).not.toMatch(/(?:ws_demo|workspace_demo|demo-workspace|local-token|local-signing-secret)/u)
+    }
+  })
+
+  it.each([
+    'API_AUTH_TOKENS', 'SESSION_ID_HASH_SECRET', 'WORKER_API_CREDENTIALS',
+    'ASSET_DISPLAY_URL_SIGNING_SECRET', 'ASSET_DISPLAY_URL_SIGNING_KEY_ID', 'WORKER_WORKSPACES',
+    'DATABASE_URL', 'OPS_DATABASE_URL', 'MODEL_COST_ESTIMATE_VERSION',
+    'WORKER_SYNC_API_TOKEN', 'WORKER_SYNC_API_SIGNING_SECRET',
+    'WORKER_GENERATION_API_TOKEN', 'WORKER_GENERATION_API_SIGNING_SECRET',
+    'WORKER_PUBLISH_API_TOKEN', 'WORKER_PUBLISH_API_SIGNING_SECRET',
+    'WORKER_RECONCILE_API_TOKEN', 'WORKER_RECONCILE_API_SIGNING_SECRET',
+    'WORKER_AUTOMATION_API_TOKEN', 'WORKER_AUTOMATION_API_SIGNING_SECRET',
+  ])('fails closed when production identity setting %s is absent', (key) => {
+    expect(() => render({ [key]: '' })).toThrow(new RegExp(`${key}.*required`))
+  })
+
   it('hardens both APIs as production ECS runtimes and ignores stale local/fixture host values', () => {
     const services = render({
       NODE_ENV: 'development',

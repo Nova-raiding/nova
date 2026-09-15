@@ -4,10 +4,10 @@
 services:
   migrate:
     build: !reset null
-    # The base migration entrypoint invokes psql. Keep migration identity
-    # independent from the Node API image so an immutable release cannot pass
-    # validation and then fail before applying or verifying the schema.
-    image: ${MIGRATION_IMAGE_REF:?MIGRATION_IMAGE_REF must be an immutable psql-capable PostgreSQL repository@sha256 reference}
+    # The base migration entrypoint invokes psql against PostgreSQL 17. Keep
+    # migration identity independent from the Node API image and pin the same
+    # client major so dump/restore compatibility cannot drift at release time.
+    image: ${MIGRATION_IMAGE_REF:?MIGRATION_IMAGE_REF must be an immutable postgres:17-alpine repository@sha256 reference}
   api:
     build: !reset null
     image: ${API_IMAGE_REF:?API_IMAGE_REF must be an immutable repository@sha256 reference}

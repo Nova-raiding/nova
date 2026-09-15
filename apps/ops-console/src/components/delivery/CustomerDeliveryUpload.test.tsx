@@ -200,4 +200,25 @@ describe("delivery upload lifecycle", () => {
     expect(html).toContain("50 MiB");
     expect(html).toContain('accept=".mp4,.webm"');
   });
+
+  it.each([
+    ["contract", "上传合同文件", ".pdf,.docx,.png,.jpg,.jpeg"],
+    ["payment", "上传付款凭证", ".pdf,.docx,.png,.jpg,.jpeg"],
+    ["system_integration", "上传系统接入凭证", ".pdf,.docx,.png,.jpg,.jpeg"],
+    ["functional_acceptance", "上传功能验收凭证", ".pdf,.docx,.png,.jpg,.jpeg"],
+    ["training", "上传培训凭证", ".pdf,.docx,.png,.jpg,.jpeg"],
+    ["video", "上传交付视频", ".mp4,.webm"],
+  ] as const)("exposes a purpose-specific upload label for %s", (purpose, label, accept) => {
+    const html = renderToStaticMarkup(
+      <CustomerDeliveryUpload
+        purpose={purpose}
+        onUpload={options().upload}
+        onGetAsset={options().getAsset}
+        onReady={() => {}}
+      />,
+    );
+    expect(html).toContain(`aria-label="${label}"`);
+    expect(html).toContain(`<span>${label}</span>`);
+    expect(html).toContain(`accept="${accept}"`);
+  });
 });

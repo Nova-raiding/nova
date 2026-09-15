@@ -46,10 +46,10 @@ describe('complete commercial operation registry E1 totality', () => {
     )).toThrow('missing classifications: MCP:new.method.requires.review')
   })
 
-  it('keeps the member recovery decision self-scoped and shared billing facts workspace-scoped', () => {
+  it('publishes exact personal-commercial and workspace-creative-point policies for the four V2 recovery reads', () => {
     const expectedPolicies = {
       'commercial.access.get': { effect: 'read', scope: 'self', capability: 'billing.self.read' },
-      'commercial.catalog.get': { effect: 'read', scope: 'workspace', capability: 'billing.workspace.read' },
+      'commercial.catalog.get': { effect: 'read', scope: 'self', capability: 'billing.self.read' },
       'creative-points.balance.get': { effect: 'read', scope: 'workspace', capability: 'billing.workspace.read' },
       'creative-points.statement.list': { effect: 'read', scope: 'workspace', capability: 'billing.workspace.read' },
     } as const
@@ -74,7 +74,7 @@ describe('complete commercial operation registry E1 totality', () => {
     expect(getMcpMethodPolicy('commercial.order.create')).toMatchObject({ effect: 'write', scope: 'workspace', capability: 'billing.workspace.update' })
     expect(resolveMcp('commercial.order.create')).toMatchObject({ outcome: 'REGISTERED', policy: { enabled: true, classification: 'RECOVERY_CONTROL' } })
     expect(Object.keys(MCP_METHOD_SCHEMAS['commercial.order.payment.get'].properties)).toEqual(['workspace_id', 'order_id'])
-    expect(getMcpMethodPolicy('commercial.order.payment.get')).toMatchObject({ effect: 'read', scope: 'workspace', capability: 'billing.workspace.read' })
+    expect(getMcpMethodPolicy('commercial.order.payment.get')).toMatchObject({ effect: 'read', scope: 'self', capability: 'billing.self.read' })
   })
 
   it('keeps every MCP authorization reference attached instead of copying or weakening capabilities', () => {
@@ -179,8 +179,8 @@ describe('complete commercial operation registry E1 totality', () => {
   it('keeps recovery reads in exact HTTP/MCP parity without exposing workspace statements as personal data', () => {
     const pairs = [
       ['http:GET:/v1/commercial/access', 'commercial.access.get', 'self', 'billing.self.read'],
-      ['http:GET:/v1/commercial/catalog', 'commercial.catalog.get', 'workspace', 'billing.workspace.read'],
-      ['http:GET:/v1/commercial/orders/{orderId}/payment', 'commercial.order.payment.get', 'workspace', 'billing.workspace.read'],
+      ['http:GET:/v1/commercial/catalog', 'commercial.catalog.get', 'self', 'billing.self.read'],
+      ['http:GET:/v1/commercial/orders/{orderId}/payment', 'commercial.order.payment.get', 'self', 'billing.self.read'],
       ['http:GET:/v1/creative-points/balance', 'creative-points.balance.get', 'workspace', 'billing.workspace.read'],
       ['http:GET:/v1/creative-points/statement', 'creative-points.statement.list', 'workspace', 'billing.workspace.read'],
     ] as const

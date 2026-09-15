@@ -29,7 +29,7 @@ function fixture() {
   for (const [artifact, names] of Object.entries(groups)) {
     for (const name of names) services[name] = {
       image: artifact === 'postgres-migration'
-        ? `registry.example.com/library/postgres:16-alpine@${digests[artifact as keyof typeof digests]}`
+        ? `registry.example.com/library/postgres:17-alpine@${digests[artifact as keyof typeof digests]}`
         : `registry.example.com/${artifact}@${digests[artifact as keyof typeof digests]}`,
     }
   }
@@ -57,14 +57,18 @@ describe('ECS Compose release gate', () => {
     expect(() => run(fixture(), missingPayment)).toThrow(/payment-gateway digest/)
   })
 
-  it('requires migrate to use its own immutable psql-capable PostgreSQL image', () => {
+  it('requires migrate to use its own immutable PostgreSQL 17 image', () => {
     const apiBackedMigration = fixture() as any
     apiBackedMigration.services.migrate.image = apiBackedMigration.services.api.image
-    expect(() => run(apiBackedMigration)).toThrow(/migrate image must be an immutable psql-capable PostgreSQL image/)
+    expect(() => run(apiBackedMigration)).toThrow(/migrate image must be an immutable PostgreSQL 17/)
 
     const taggedMigration = fixture() as any
-    taggedMigration.services.migrate.image = 'postgres:16-alpine'
+    taggedMigration.services.migrate.image = 'postgres:17-alpine'
     expect(() => run(taggedMigration)).toThrow(/migrate image must be an immutable/)
+
+    const wrongMajorMigration = fixture() as any
+    wrongMajorMigration.services.migrate.image = `registry.example.com/library/postgres:16-alpine@${digests['postgres-migration']}`
+    expect(() => run(wrongMajorMigration)).toThrow(/PostgreSQL 17/)
   })
 
   it('rejects tag images and build directives', () => {

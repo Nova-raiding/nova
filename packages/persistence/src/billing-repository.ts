@@ -75,6 +75,21 @@ const sameOrderIntent = (row: OrderRow, input: BillingOrderIntent) => row.channe
 export class PostgresBillingRepository {
   constructor(private readonly pool: SqlPool, private readonly appendEvent?: (client: SqlClient, event: OutboxEventInput) => Promise<unknown>) {}
 
+  private withReconciliationTransaction<T>(input: { workspaceId: string; assertReconciliationLease?: () => Promise<void> }, work: (client: SqlClient) => Promise<T>): Promise<T> {
+    return withWorkspaceTransaction(this.pool, requireWorkspaceScope(input.workspaceId), async client => {
+      if (input.assertReconciliationLease) {
+        await client.query("SET LOCAL lock_timeout='5s'")
+        await client.query("SET LOCAL statement_timeout='15s'")
+        await client.query("SET LOCAL idle_in_transaction_session_timeout='15s'")
+      }
+      const result = await work(client)
+      // The ownership check belongs inside this transaction: a lost lease
+      // rolls back both wallet changes and the transactional outbox event.
+      await input.assertReconciliationLease?.()
+      return result
+    })
+  }
+
   async createOrder(input: Omit<BillingOrder, 'createdAt' | 'updatedAt'> & { idempotencyKey: string }) {
     billingAmountFen(input.amountFen)
     const workspaceId = requireWorkspaceScope(input.workspaceId)
@@ -118,12 +133,13 @@ export class PostgresBillingRepository {
     })
   }
 
-  /** Oldest-first provider queue used by recurring reconciliation so newer
-   * checkout traffic cannot starve an older ambiguous payment forever. */
+  /** Least-recently-checked provider queue. Pending rows are touched after
+   * every provider observation so a permanently ambiguous head item cannot
+   * starve later orders across recurring reconciliation passes. */
   async listPendingProviderOrdersForReconciliation(workspaceId: string, limit = 100): Promise<BillingOrder[]> {
     return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => {
       const safeLimit = Math.min(100, Math.max(1, Number.isSafeInteger(limit) ? limit : 100))
-      const result = await client.query<OrderRow>("SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND state='pending' AND payment_mode='provider' ORDER BY created_at,id LIMIT $2", [workspaceId, safeLimit])
+      const result = await client.query<OrderRow>("SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND state='pending' AND payment_mode='provider' ORDER BY updated_at,created_at,id LIMIT $2", [workspaceId, safeLimit])
       return result.rows.map(order)
     })
   }
@@ -151,7 +167,7 @@ export class PostgresBillingRepository {
             SELECT 1 FROM billing_transactions released
             WHERE released.workspace_id=r.workspace_id AND released.type='refund' AND released.order_id='release:' || r.order_id
           )
-        ORDER BY r.created_at,r.id
+        ORDER BY o.updated_at,r.created_at,r.id
         LIMIT $2`, [workspaceId, safeLimit])
       return result.rows.map(row => ({
         order: order(row),
@@ -248,10 +264,10 @@ export class PostgresBillingRepository {
     })
   }
 
-  async markPaid(input: { workspaceId: string; orderId: string; providerTradeId: string; amountFen: number; eventSource: string }) {
+  async markPaid(input: { workspaceId: string; orderId: string; providerTradeId: string; amountFen: number; eventSource: string; assertReconciliationLease?: () => Promise<void> }) {
     if (!input.providerTradeId.trim()) throw new Error('billing callback provider trade id required')
     billingAmountFen(input.amountFen)
-    return withWorkspaceTransaction(this.pool, requireWorkspaceScope(input.workspaceId), async client => {
+    return this.withReconciliationTransaction(input, async client => {
       const orderResult = await client.query<OrderRow>('SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [input.workspaceId, input.orderId])
       const current = orderResult.rows[0]
       if (!current) return undefined
@@ -261,6 +277,7 @@ export class PostgresBillingRepository {
         return order(current)
       }
       if (current.state !== 'pending') throw new Error('billing order is not payable')
+      await input.assertReconciliationLease?.()
       const updated = await client.query<OrderRow>('UPDATE billing_orders SET state=\'paid\', provider_trade_id=$3, updated_at=now() WHERE workspace_id=$1 AND id=$2 RETURNING id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at', [input.workspaceId, input.orderId, input.providerTradeId])
       await client.query('INSERT INTO billing_transactions (id,workspace_id,type,amount_fen,order_id,actor_id,description) VALUES ($1,$2,\'recharge\',$3,$4,$5,$6) ON CONFLICT (workspace_id,order_id,type) DO NOTHING', [billingTransactionId(), input.workspaceId, input.amountFen, input.orderId, current.created_by_actor_id ?? null, `充值到账（${current.channel}）`])
       await this.appendEvent?.(client, { workspaceId: input.workspaceId, aggregateId: input.orderId, eventType: 'billing.recharge.paid', sequence: 1, payload: { order_id: input.orderId, provider_trade_id: input.providerTradeId, amount_fen: input.amountFen, channel: current.channel, source: input.eventSource } })
@@ -268,9 +285,26 @@ export class PostgresBillingRepository {
     })
   }
 
-  async markProviderState(input: { workspaceId: string; orderId: string; state: 'closed' | 'failed' }) {
-    return withWorkspaceTransaction(this.pool, requireWorkspaceScope(input.workspaceId), async client => {
+  async markProviderState(input: { workspaceId: string; orderId: string; state: 'closed' | 'failed'; eventSource: string; assertReconciliationLease?: () => Promise<void> }) {
+    return this.withReconciliationTransaction(input, async client => {
+      if (input.assertReconciliationLease) {
+        await client.query('SELECT id FROM billing_orders WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [input.workspaceId, input.orderId])
+        await input.assertReconciliationLease()
+      }
       const updated = await client.query<OrderRow>("UPDATE billing_orders SET state=$3, updated_at=now() WHERE workspace_id=$1 AND id=$2 AND state='pending' RETURNING id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at", [input.workspaceId, input.orderId, input.state])
+      if (updated.rows[0]) await this.appendEvent?.(client, { workspaceId: input.workspaceId, aggregateId: input.orderId, eventType: 'billing.recharge.reconciled', sequence: 1, payload: { order_id: input.orderId, state: input.state, source: input.eventSource } })
+      return updated.rows[0] ? order(updated.rows[0]) : undefined
+    })
+  }
+
+  /** Persist a successful reconciliation observation without changing the
+   * business state. GREATEST keeps queue rotation monotonic under equal clocks. */
+  async markReconciliationChecked(input: { workspaceId: string; orderId: string; expectedState: 'pending' | 'paid'; assertReconciliationLease?: () => Promise<void> }) {
+    return this.withReconciliationTransaction(input, async client => {
+      const current = await client.query<OrderRow>('SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [input.workspaceId, input.orderId])
+      if (!current.rows[0] || current.rows[0].state !== input.expectedState || current.rows[0].payment_mode !== 'provider') return undefined
+      await input.assertReconciliationLease?.()
+      const updated = await client.query<OrderRow>("UPDATE billing_orders SET updated_at=GREATEST(now(),updated_at + interval '1 millisecond') WHERE workspace_id=$1 AND id=$2 AND state=$3 AND payment_mode='provider' RETURNING id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at", [input.workspaceId, input.orderId, input.expectedState])
       return updated.rows[0] ? order(updated.rows[0]) : undefined
     })
   }
@@ -305,9 +339,9 @@ export class PostgresBillingRepository {
     })
   }
 
-  async completeRechargeRefund(input: { workspaceId: string; orderId: string; reservationKey: string; actorId: string; reason: string; providerRefundId: string }) {
+  async completeRechargeRefund(input: { workspaceId: string; orderId: string; reservationKey: string; actorId: string; reason: string; providerRefundId: string; assertReconciliationLease?: () => Promise<void> }) {
     if (!input.providerRefundId.trim()) throw new Error('billing refund provider id required')
-    return withWorkspaceTransaction(this.pool, requireWorkspaceScope(input.workspaceId), async client => {
+    return this.withReconciliationTransaction(input, async client => {
       const orderResult = await client.query<OrderRow>('SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [input.workspaceId, input.orderId])
       const current = orderResult.rows[0]
       if (!current) throw new Error('billing order not found')
@@ -317,14 +351,15 @@ export class PostgresBillingRepository {
       if (released.rows[0]) throw new Error('recharge refund reservation was released')
       if (current.state === 'closed') return transaction(reservation.rows[0])
       if (current.state !== 'paid') throw new Error('billing order is not refundable')
+      await input.assertReconciliationLease?.()
       await client.query("UPDATE billing_orders SET state='closed',payment_url=NULL,updated_at=now() WHERE workspace_id=$1 AND id=$2", [input.workspaceId, input.orderId])
       await this.appendEvent?.(client, { workspaceId: input.workspaceId, aggregateId: input.orderId, eventType: 'billing.recharge.refunded', sequence: 1, payload: { order_id: input.orderId, provider_refund_id: input.providerRefundId, amount_fen: billingAmountFen(current.amount_fen), actor_id: input.actorId, reason: input.reason } })
       return transaction(reservation.rows[0])
     })
   }
 
-  async releaseRechargeRefund(input: { workspaceId: string; orderId: string; reservationKey: string; actorId: string; reason: string }) {
-    return withWorkspaceTransaction(this.pool, requireWorkspaceScope(input.workspaceId), async client => {
+  async releaseRechargeRefund(input: { workspaceId: string; orderId: string; reservationKey: string; actorId: string; reason: string; assertReconciliationLease?: () => Promise<void> }) {
+    return this.withReconciliationTransaction(input, async client => {
       const orderResult = await client.query<OrderRow>('SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [input.workspaceId, input.orderId])
       const current = orderResult.rows[0]
       if (!current) throw new Error('billing order not found')
@@ -334,7 +369,9 @@ export class PostgresBillingRepository {
       const releaseKey = `release:${input.reservationKey}`
       const existing = await client.query<TransactionRow>("SELECT id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at FROM billing_transactions WHERE workspace_id=$1 AND order_id=$2 AND type='refund'", [input.workspaceId, releaseKey])
       if (existing.rows[0]) return transaction(existing.rows[0])
+      await input.assertReconciliationLease?.()
       const inserted = await client.query<TransactionRow>("INSERT INTO billing_transactions (id,workspace_id,type,amount_fen,order_id,actor_id,description) VALUES ($1,$2,'refund',$3,$4,$5,$6) RETURNING id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at", [billingTransactionId(), input.workspaceId, billingAmountFen(reservation.rows[0].amount_fen), releaseKey, reservation.rows[0].actor_id ?? input.actorId, `充值退款失败释放预留（${input.actorId}）：${input.reason}`])
+      await this.appendEvent?.(client, { workspaceId: input.workspaceId, aggregateId: input.reservationKey, eventType: 'billing.recharge.refund_reservation_released', sequence: 1, payload: { order_id: input.orderId, reservation_key: input.reservationKey, release_transaction_id: inserted.rows[0]!.id, actor_id: input.actorId, reason: input.reason } })
       return transaction(inserted.rows[0]!)
     })
   }

@@ -46,8 +46,8 @@ required.each do |artifact, service_names|
 end
 
 migration_image = services.dig('migrate', 'image')
-unless migration_image.is_a?(String) && migration_image.match?(%r{(?:\A|/)postgres(?::[^@/]+)?@sha256:[0-9a-f]{64}\z})
-  errors << 'migrate image must be an immutable psql-capable PostgreSQL image'
+unless migration_image.is_a?(String) && migration_image.match?(%r{(?:\A|/)postgres:17-alpine@sha256:[0-9a-f]{64}\z})
+  errors << 'migrate image must be an immutable PostgreSQL 17 postgres:17-alpine image'
 end
 
 abort(errors.map { |error| "- #{error}" }.join("\n")) unless errors.empty?
