@@ -252,8 +252,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
       {mutationError ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
       {createPage ? (<>
+        <Form id="customer-create-form" className="customer-delivery-create-form" form={createForm} layout="vertical" onFinish={submitCreatePage}>
         <Card title="用户建档">
-          <Form id="customer-create-form" className="customer-delivery-create-form" form={createForm} layout="vertical" onFinish={submitCreatePage}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "0 16px" }}>
             <Form.Item name="companyName" label="公司名称" rules={[{ required: true, message: "请输入公司名称" }]}>
               <Input placeholder="请输入公司名称" autoFocus />
@@ -266,11 +266,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
               <input ref={contractFileInput} hidden type="file" onChange={(event) => { const file = event.target.files?.[0]; if (file) { createForm.setFieldValue("contractFile", file.name); setUploadedContractName(file.name); } }} />
               {uploadedContractName ? <div className="customer-delivery-uploaded-file">已选择：{uploadedContractName}<Button type="text" size="small" className="customer-delivery-clear-upload" aria-label="取消已选合同文件" title="取消已选文件" icon={<CloseOutlined />} onClick={() => { createForm.setFieldValue("contractFile", ""); setUploadedContractName(""); if (contractFileInput.current) contractFileInput.current.value = ""; }} /></div> : null}
             </Form.Item>
-            <Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input placeholder="例如：姜伟" /></Form.Item>
-            <Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input placeholder="例如：韩先晓" /></Form.Item>
-            <Form.Item name="requiredLaunchAt" label="需求上线时间" rules={[{ required: true, message: "请选择上线日期" }]}><Input type="date" /></Form.Item>
             </div>
-          </Form>
         </Card>
         <div className="customer-delivery-check-card-row">
         <Card title="系统接入确认">
@@ -288,7 +284,12 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
           </div>
         </Card>
         </div>
-        <Card title="交付视频" style={{ marginTop: 16 }}>
+        <Card title="最终交付" style={{ marginTop: 16 }}>
+          <div className="customer-delivery-final-fields">
+            <Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input placeholder="例如：姜伟" /></Form.Item>
+            <Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input placeholder="例如：韩先晓" /></Form.Item>
+            <Form.Item name="requiredLaunchAt" label="需求上线时间" rules={[{ required: true, message: "请选择上线日期" }]}><Input type="date" /></Form.Item>
+          </div>
           <input ref={deliveryVideoInput} hidden type="file" accept="video/*" multiple onChange={(event) => { const files = Array.from(event.target.files ?? []); if (files.length) setDeliveryVideoFiles((current) => [...current, ...files]); event.target.value = ""; }} />
           <Button size="small" icon={<UploadOutlined />} onClick={() => deliveryVideoInput.current?.click()}>上传交付视频</Button>
           {deliveryVideoFiles.length ? <div className="customer-delivery-video-list">{deliveryVideoFiles.map((file, index) => <div className="customer-delivery-video-item" key={`${file.name}-${index}`}><span>{file.name}</span><Button type="text" size="small" icon={<CloseOutlined />} aria-label={`移除${file.name}`} onClick={() => setDeliveryVideoFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} /></div>)}</div> : null}
@@ -300,6 +301,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             <Button type="primary" htmlType="submit" form="customer-create-form">创建客户</Button>
           </Space>
         </div>
+        </Form>
         </>
       ) : <CustomerDeliverySection
         key={targetWorkspaceId || "unselected"}
