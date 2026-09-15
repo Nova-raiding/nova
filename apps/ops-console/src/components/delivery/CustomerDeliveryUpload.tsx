@@ -87,6 +87,24 @@ const statusLabels: Record<DeliveryUploadStatus, string> = {
   cancelled: "已取消",
 };
 
+const uploadLabels: Record<CustomerDeliveryAssetPurpose, string> = {
+  contract: "上传合同文件",
+  payment: "上传付款凭证",
+  system_integration: "上传系统接入凭证",
+  functional_acceptance: "上传功能验收凭证",
+  training: "上传培训凭证",
+  video: "上传交付视频",
+};
+
+const uploadAccept: Record<CustomerDeliveryAssetPurpose, string> = {
+  contract: ".pdf,.docx,.png,.jpg,.jpeg",
+  payment: ".pdf,.docx,.png,.jpg,.jpeg",
+  system_integration: ".pdf,.docx,.png,.jpg,.jpeg",
+  functional_acceptance: ".pdf,.docx,.png,.jpg,.jpeg",
+  training: ".pdf,.docx,.png,.jpg,.jpeg",
+  video: ".mp4,.webm",
+};
+
 export function CustomerDeliveryUpload({ purpose, disabled = false, onUpload, onGetAsset, onReady, onBusyChange }: {
   purpose: CustomerDeliveryAssetPurpose;
   disabled?: boolean;
@@ -134,7 +152,8 @@ export function CustomerDeliveryUpload({ purpose, disabled = false, onUpload, on
       if (mounted.current) { setBusy(false); busyCallback.current?.(false); }
     }
   };
-  const label = purpose === "contract" ? "上传合同文件" : "上传交付视频";
+  const label = uploadLabels[purpose];
+  const isVideo = purpose === "video";
   return (
     <div style={{ marginBottom: 16 }} aria-busy={busy}>
       <input
@@ -142,8 +161,8 @@ export function CustomerDeliveryUpload({ purpose, disabled = false, onUpload, on
         type="file"
         aria-label={label}
         style={{ display: "none" }}
-        accept={purpose === "contract" ? ".pdf,.docx,.png,.jpg,.jpeg" : ".mp4,.webm"}
-        multiple={purpose === "video"}
+        accept={uploadAccept[purpose]}
+        multiple={isVideo}
         disabled={disabled || busy}
         onChange={(event) => {
           const files = Array.from(event.currentTarget.files ?? []);
@@ -158,7 +177,7 @@ export function CustomerDeliveryUpload({ purpose, disabled = false, onUpload, on
         {busy ? <Button onClick={() => controller.current?.abort()}>取消上传与检查</Button> : null}
       </Space>
       <Typography.Text type="secondary" style={{ display: "block", marginTop: 8 }}>
-        {purpose === "contract" ? "PDF、DOCX、PNG、JPG、JPEG" : "MP4、WebM，可多选并逐段上传"}；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
+        {isVideo ? "MP4、WebM，可多选并逐段上传" : "PDF、DOCX、PNG、JPG、JPEG"}；单文件不超过 50 MiB。安全检查通过后填入素材编号，保存当前环节后才会登记。
       </Typography.Text>
       <div role="status" aria-live="polite" aria-atomic="false">
         {items.map((item) => (
