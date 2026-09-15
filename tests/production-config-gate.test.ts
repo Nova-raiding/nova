@@ -214,11 +214,10 @@ describe('production config gate', () => {
     expect(run(config().replace('alert_notifications_enabled: false', 'alert_notifications_enabled: true\nalert_channel_secret_ref: vault://merchant-alert-channel'))()).toContain('production config gate passed')
   })
 
-  it('allows the alert channel reference to be omitted only with an explicit opt-out', () => {
+  it('allows the alert channel reference to be omitted only with an explicit boolean opt-out', () => {
     const alertsDisabled = config()
-      .replace('alert_channel_secret_ref: vault://merchant-alert-channel', 'alert_notifications_enabled: false')
     expect(run(alertsDisabled)()).toContain('production config gate passed')
-    expect(() => run(alertsDisabled.replace('alert_notifications_enabled: false', 'alert_notifications_enabled: invalid'))()).toThrow(/alert_channel/)
+    expect(() => run(alertsDisabled.replace('alert_notifications_enabled: false', 'alert_notifications_enabled: invalid'))()).toThrow(/alert_notifications_enabled/)
   })
 
   it('requires HTTPS signed asset-display configuration', () => {
