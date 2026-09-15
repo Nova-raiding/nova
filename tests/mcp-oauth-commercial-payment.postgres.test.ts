@@ -215,7 +215,7 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
           body: JSON.stringify({ jsonrpc: '2.0', id: 'merchant-oauth-ops-session-denied', method: 'ops.session', params: {} }),
         })
         expect(opsSession.status).toBe(403)
-        expect(await opsSession.json()).toMatchObject({ error: { code: 'FORBIDDEN', message: '商家 OAuth 会话不能访问平台运营工作台' } })
+        expect(await opsSession.json()).toMatchObject({ error: { code: 'FORBIDDEN', message: 'ChatGPT 商家 OAuth 会话不能访问运营后台工具' } })
       }
       const bridgeA = startBridge(running.base, workspaceId, tokenA)
       const bridgeB = startBridge(running.base, workspaceId, tokenB)
