@@ -97,6 +97,36 @@ function render(overrides: NodeJS.ProcessEnv = {}): ComposeConfig {
 }
 
 describe('ECS pilot API replica parity', () => {
+  it('hardens both APIs as production ECS runtimes and ignores stale local/fixture host values', () => {
+    const services = render({
+      NODE_ENV: 'development',
+      DEPLOYMENT_PROFILE: 'local_acceptance',
+      LOCAL_COMPOSE: 'true',
+      CONNECTOR_FIXTURE_MODE: 'true',
+      MERCHANT_TEST_APPROVED_RATES: 'true',
+      OPS_ALERT_NOTIFICATIONS_ENABLED: 'true',
+      ALERT_CHANNEL_SECRET_REF: 'vault://stale-alert-channel',
+      OPS_ALERT_WEBHOOK_URL: 'https://stale.example.test/hook',
+      OPS_ALERT_WEBHOOK_ALLOWED_HOSTS: 'stale.example.test',
+      OPS_ALERT_WEBHOOK_SECRET_FILE: '/tmp/stale-alert-secret',
+    }).services
+
+    for (const service of ['api', 'api-replica']) {
+      expect(services[service]?.environment).toMatchObject({
+        NODE_ENV: 'production',
+        DEPLOYMENT_PROFILE: 'ecs',
+        LOCAL_COMPOSE: 'false',
+        CONNECTOR_FIXTURE_MODE: 'false',
+        MERCHANT_TEST_APPROVED_RATES: 'false',
+        OPS_ALERT_NOTIFICATIONS_ENABLED: 'false',
+        ALERT_CHANNEL_SECRET_REF: '',
+        OPS_ALERT_WEBHOOK_URL: '',
+        OPS_ALERT_WEBHOOK_ALLOWED_HOSTS: '',
+        OPS_ALERT_WEBHOOK_SECRET_FILE: '',
+      })
+    }
+  })
+
   it.each(requiredPaymentKeys)('fails closed when %s is absent', (key) => {
     expect(() => render({ [key]: '' })).toThrow(new RegExp(`${key}.*required`))
   })

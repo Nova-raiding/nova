@@ -69,6 +69,11 @@ sh infra/scripts/validate-production-config.sh "$config_path"
 image_set_digest=$(ruby infra/scripts/validate-ecs-compose-release.rb "$RENDERED_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON" --print-image-set-digest)
 manifest_sha256=$(ruby infra/scripts/validate-ecs-compose-release.rb "$RENDERED_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON" --print-manifest-sha256)
 release_git_sha=$(git rev-parse HEAD)
+production_config_sha256=$(shasum -a 256 "$config_path" | awk '{print $1}')
+case "${ASSET_STORAGE_SSE_MODE:-AES256}" in
+  AES256|aes256) storage_encryption=AES256 ;;
+  aws:kms) storage_encryption=aws:kms ;;
+esac
 [ "${VITEST:-false}" = true ] || [ -z "$(git status --porcelain --untracked-files=all)" ] || { echo 'release preflight requires a clean git worktree' >&2; exit 1; }
 RELEASE_ID="$RELEASE_ID" RELEASE_GIT_SHA="$release_git_sha" ruby infra/scripts/validate-ecs-compose-release.rb "$RENDERED_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON"
 sh infra/scripts/validate-production-evidence-trust.sh "$root"
@@ -90,7 +95,14 @@ api_digest=$(IMAGE_DIGESTS_JSON="$IMAGE_DIGESTS_JSON" node -e 'const x=JSON.pars
 worker_digest=$(IMAGE_DIGESTS_JSON="$IMAGE_DIGESTS_JSON" node -e 'const x=JSON.parse(process.env.IMAGE_DIGESTS_JSON);process.stdout.write(x["merchant-worker"]||"")')
 sh infra/scripts/verify-container-source-freshness.sh "$API_IMAGE_REF" "$WORKER_IMAGE_REF" "$api_digest" "$worker_digest"
 npx --no-install tsx tests/capability-evidence-gate.ts --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --require-signed-production --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_root" --key-id "$trusted_key_id"
-npx --no-install tsx tests/object-storage-evidence-gate.ts --file "$OBJECT_STORAGE_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-bucket "$ASSET_STORAGE_BUCKET" --expected-endpoint "$ASSET_STORAGE_ENDPOINT" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT"
+npx --no-install tsx tests/object-storage-evidence-gate.ts \
+  --file "$OBJECT_STORAGE_EVIDENCE_PATH" --release-id "$RELEASE_ID" \
+  --release-git-sha "$release_git_sha" --manifest-sha256 "$manifest_sha256" \
+  --image-set-digest "$image_set_digest" --deployment-nonce "$DEPLOYMENT_NONCE" \
+  --expected-config-checksum "$production_config_sha256" \
+  --expected-bucket "$ASSET_STORAGE_BUCKET" --expected-endpoint "$ASSET_STORAGE_ENDPOINT" \
+  --expected-encryption "$storage_encryption" \
+  --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
 npx --no-install tsx tests/production-evidence-gate.ts --kind payment --file "$PAYMENT_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
 npx --no-install tsx tests/production-evidence-gate.ts --kind restore --file "$RESTORE_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
 echo "ecs deploy preflight passed: release_id=$RELEASE_ID image_set_digest=$image_set_digest manifest_sha256=$manifest_sha256 migration=$EXPECTED_MIGRATION_VERSION secret_provider=$SECRET_PROVIDER"

@@ -33,16 +33,18 @@ describe('alert receiver deployment contract', () => {
     expect(receiver).not.toMatch(/\n\s+ports:/u)
   })
 
-  it('mounts the same HMAC secret file into both API senders without an environment secret', async () => {
+  it('keeps both API senders disconnected from the separately profiled receiver by default', async () => {
     const compose = await text('infra/local/docker-compose.ecs-pilot.yml')
     const primary = compose.slice(compose.indexOf('  api:'), compose.indexOf('\n  api-replica:'))
     const replica = compose.slice(compose.indexOf('  api-replica:'), compose.indexOf('\n  worker-scan:'))
+    expect(primary).toContain('OPS_ALERT_NOTIFICATIONS_ENABLED: "false"')
+    expect(primary).toContain('ALERT_CHANNEL_SECRET_REF: ""')
+    expect(primary).toContain('OPS_ALERT_WEBHOOK_URL: ""')
+    expect(primary).toContain('OPS_ALERT_WEBHOOK_ALLOWED_HOSTS: ""')
+    expect(primary).toContain('OPS_ALERT_WEBHOOK_SECRET_FILE: ""')
+    expect(replica).toContain('environment: *ecs-production-api-environment')
     for (const service of [primary, replica]) {
-      expect(service).toContain('OPS_ALERT_WEBHOOK_SECRET_FILE: /run/secrets/alert_receiver_hmac_secret')
-      expect(service).toContain('source: /opt/merchant-deploy/deploy/secrets/alert_receiver_hmac_secret')
-      expect(service).toContain('target: /run/secrets/alert_receiver_hmac_secret')
-      expect(service).toContain('read_only: true')
-      expect(service).toContain('bind: {create_host_path: false}')
+      expect(service).not.toContain('/opt/merchant-deploy/deploy/secrets/alert_receiver_hmac_secret')
       expect(service).not.toMatch(/\n\s+OPS_ALERT_WEBHOOK_SECRET:/u)
     }
   })

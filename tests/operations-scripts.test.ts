@@ -47,6 +47,21 @@ describe('deployment operation scripts', () => {
     expect(readFileSync('infra/local/docker-compose.ecs-pilot-release.yml', 'utf8')).toContain('${PILOT_RELEASE_ID:?PILOT_RELEASE_ID is required}')
   })
 
+  it('binds ECS object-storage evidence to the exact release, config and trust anchor', () => {
+    const preflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
+    expect(preflight).toContain('production_config_sha256=$(shasum -a 256 "$config_path"')
+    for (const binding of [
+      '--release-git-sha "$release_git_sha"',
+      '--manifest-sha256 "$manifest_sha256"',
+      '--image-set-digest "$image_set_digest"',
+      '--deployment-nonce "$DEPLOYMENT_NONCE"',
+      '--expected-config-checksum "$production_config_sha256"',
+      '--expected-encryption "$storage_encryption"',
+      '--public-key "$trust_root"',
+      '--key-id "$trusted_key_id"',
+    ]) expect(preflight).toContain(binding)
+  })
+
   it('validates infrastructure scripts with their declared shell', () => {
     const validator = readFileSync('infra/scripts/validate-config.sh', 'utf8')
     expect(validator).toContain("interpreter=$(sed -n '1s/^#![[:space:]]*//p' \"$script\")")

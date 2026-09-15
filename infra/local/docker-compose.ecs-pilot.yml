@@ -170,7 +170,7 @@ services:
       # a separately reviewed deployment manifest and must not be required here.
       NODE_ENV: production
       LOCAL_COMPOSE: "false"
-      DEPLOYMENT_PROFILE: ecs_production
+      DEPLOYMENT_PROFILE: ecs
       CONNECTOR_FIXTURE_MODE: "false"
       MERCHANT_TEST_APPROVED_RATES: "false"
       ALLOW_LOCAL_PAYMENT_FIXTURE: "false"
@@ -194,10 +194,15 @@ services:
       PUBLIC_OAUTH_REDIRECT_URI: ${PUBLIC_OAUTH_REDIRECT_URI:-https://yxsona.com/v1/oauth/callback/{platform}}
       MERCHANT_BEARER_HOSTNAME: ${MERCHANT_BEARER_HOSTNAME:-yxsona.com}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://yxsona.com,https://admin.yxsona.com,https://ops.yxsona.com}
-      OPS_ALERT_NOTIFICATIONS_ENABLED: ${OPS_ALERT_NOTIFICATIONS_ENABLED:-false}
-      OPS_ALERT_WEBHOOK_URL: ${OPS_ALERT_WEBHOOK_URL:-http://alert-receiver:8791/v1/alerts}
-      OPS_ALERT_WEBHOOK_ALLOWED_HOSTS: ${OPS_ALERT_WEBHOOK_ALLOWED_HOSTS:-alert-receiver}
-      OPS_ALERT_WEBHOOK_SECRET_FILE: /run/secrets/alert_receiver_hmac_secret
+      # Alerts remain fail-closed until the separately profiled receiver is
+      # explicitly reviewed and enabled by a dedicated production overlay.
+      # Ignore stale host values so a plain production render cannot
+      # accidentally activate or partially wire alert delivery.
+      OPS_ALERT_NOTIFICATIONS_ENABLED: "false"
+      ALERT_CHANNEL_SECRET_REF: ""
+      OPS_ALERT_WEBHOOK_URL: ""
+      OPS_ALERT_WEBHOOK_ALLOWED_HOSTS: ""
+      OPS_ALERT_WEBHOOK_SECRET_FILE: ""
       PAYMENT_MODE: ${PAYMENT_MODE:?PAYMENT_MODE=provider is required for ECS}
       PAYMENT_PROVIDER_ADAPTERS: ${PAYMENT_PROVIDER_ADAPTERS:?PAYMENT_PROVIDER_ADAPTERS=alipay is required}
       PAYMENT_CHECKOUT_BASE_URL: ${PAYMENT_CHECKOUT_BASE_URL:?public HTTPS payment checkout base URL is required}

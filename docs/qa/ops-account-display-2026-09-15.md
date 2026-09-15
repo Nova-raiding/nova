@@ -1,5 +1,28 @@
 # 当前账号展示复核 · 2026-09-15
 
+## 最新：OIDC 登录名链路已实现并通过隔离运行验收
+
+2026-09-15 09:32：网关证明 v2、API 展示字段与真实桌面登录链路通过；本节更新下方第一轮“OIDC 登录名尚未实现”的历史结论。尚未部署本轮 API 修改，也未宣称外部生产 SSO 已上线。
+
+- 实现：新增 `packages/security/src/oidc-login-proof.ts`，通过 `X-OIDC-Proof-Version: 2` 与 `X-OIDC-Display-Login` 把登录名绑定到完整 HMAC 证明。旧证明只在两个新头都不存在时兼容；篡改、移除、空值、非法版本或非规范编码均拒绝，不降级尝试。
+- 编码：原始 UTF-8 → 无 padding base64url，严格往返校验；上限 256 Unicode 码点／512 字节，拒绝控制、格式、换行、孤立代理项及前后空白；不强制 NFC，不改变身份提供方已验证的原文。
+- 权限：新的 `displayAccountLogin` 只有三处使用——类型、验签成功的 OIDC principal、`ops.session.account_login` 投影。原 `accountLogin` 的密码账号成员别名匹配保持不变；OIDC 显示名不会参与主体、成员、角色、临时授权或租户查询。
+- 多 agent：一个 agent 修改本地网关与独立签名断言；另一个 agent 新增真实 HTTP 反例并独立复核权限边界；owner 实现协议解析、API 接线、桌面验收与整合测试。CodeGraph 检查了主入口影响面，未以索引结果代替实际验证。
+- owner 重跑：4 文件共 132 项通过（协议 46、网关 19、隔离 runner 41、HTTP 安全 26）；全项目类型检查通过。HTTP 反例覆盖同名管理员不提权、停用／非成员拒绝、改名不换身份、不同主体同名仍隔离、legacy 不残留前次显示名、签名／编码篡改及重放。
+- 旧安全套件中按 OIDC 筛选的 4 项另行通过；其他 64 项为筛选未执行，不能据此覆盖下文支付失败。完整 owner 汇总和五文件 SHA256 见本轮证据目录的 `owner-account-verification.json`。
+- 真实链路：Chrome 1440×900、Asia/Shanghai，认证表单 → 本地签名网关 → 真实 API/MCP enforce → 隔离 PostgreSQL 17／Redis → 生产前端构建。3 项通过（21.4 秒），无跳过／重试：平台 ASCII 账号与商家中文＋非 NFC 账号均与实际登录输入完全一致；刷新保持、账号弹层与成员页一致；浏览器伪造展示头被覆盖；工作区跨平台交付门禁仍严格 403。
+- 证据目录：`artifacts/ops-jit-isolation/2026-09-15T01-30-13.358Z-76f84fae-63db-40b2-b4db-3ac3589b3f92/`，fixture run ID `eb71f0fd-7c0d-4c17-bba4-5a59b063c781`。owner 已查看两个 `account-label-{platform,workspace}/account-panel-shot-scraper.png`；对应 WebM 实际打开账号弹层，画面非加载／动画中间帧。
+- 稳定与清理：API、协议 helper、网关、runner、桌面 spec 五文件 SHA256 前后完全一致；两个自有 PG/Redis 容器 disposal `leftRunning=[]`，owner 精确 inspect 再查均不存在。未启动扫描器、调用模型／支付或写共享业务数据；StoryForge 保持停止。
+- 发布边界：生产 SSO 网关实现不在本仓库。本地验收网关已发 v2，外部网关需按运行手册升级；应先部署兼容 API，再升级网关，不能把 fixture 通过当作生产 SSO 上线。
+
+### 本轮另发现的非 OIDC 回归：支付对账 worker 路由缺失
+
+旧 `security.e2e.test.ts` 全量 68 项中 1 项失败；连同协议／网关／runner 的首批结果为 173 passed、1 failed，不是全绿。独立 agent 定向复验仍失败：支付对账 worker 用例期待 `TENANT_SCOPE_DENIED`，实际为 `FORBIDDEN`。
+
+当前共享 `server.ts` 的其他并发修改已删除 `/v1/internal/billing/reconciliation` 的 worker 路由识别、角色映射、HTTP handler 与业务函数。请求因此落入普通 Bearer 授权，尚未解析 body 的租户范围就被拒绝；该用例未开启 OIDC，未经过本轮新增的验签解析。前三个 403 断言只是碰巧通过，不证明 worker 保护仍存在。
+
+未改弱断言或替换错误码，也未擅自恢复其他流程删除的支付能力。该功能应保留还是明确下线需要与删除方确认；因此本轮不更新共享 API，只保留上一轮已部署的本地前端。交付自动生效的工作区／指定账号范围也仍未确认。
+
 ## 本轮修复范围
 
 页头、账号弹层及“成员与权限”的当前账号统一读取服务端 `ops.session.account_login`。缺失、null、空白时显示“账号名称未提供”；无会话显示“未登录”。不回退显示 UUID/OIDC sub，也不使用未验证的登录框输入。`actor_id` 仍参与身份、权限、自操作保护和审计，未改安全语义。
