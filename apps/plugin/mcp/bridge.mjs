@@ -1244,6 +1244,10 @@ function userFacingToolText(method, result) {
         initialization.completed === 0 ? initialization.security_notice : '',
       ].filter(Boolean).join('\n')
     }
+    const blocker = result?.blocker
+    if (blocker?.code === 'ONBOARDING_API_VERSION_MISMATCH') {
+      return `${blocker.title ?? '首次引导服务正在升级'}：${blocker.message ?? '当前服务端引导版本需要更新。'}${blocker.next_action ? `\n${blocker.next_action}` : ''}`
+    }
     const card = result?.onboarding_card
     if (card && typeof card === 'object') {
       return [
@@ -1986,6 +1990,20 @@ function merchantUiMetadata(method, result, args = {}) {
       // conversation. Keep the server facts available without attaching the
       // legacy six-step dashboard card or an HTML output template.
       return result
+    }
+    // Do not rehydrate the retired dashboard projection when an old API is
+    // still serving this method. Surface a concise, honest upgrade boundary.
+    if (Array.isArray(result.steps) || result.onboarding || result.greeting) {
+      return {
+        schema_version: 'store-nova.initialization.v1',
+        status: 'blocked',
+        blocker: {
+          code: 'ONBOARDING_API_VERSION_MISMATCH',
+          title: '首次引导服务正在升级',
+          message: '当前服务端尚未加载四步初始化流程；已安全保留当前工作区，不会生成、扣费或发布。',
+          next_action: '请重新连接 Store Nova，服务升级完成后继续首次配置。',
+        },
+      }
     }
     const current = result.current_step && typeof result.current_step === 'object' ? result.current_step : {}
     const steps = Array.isArray(result.steps) ? result.steps : []
