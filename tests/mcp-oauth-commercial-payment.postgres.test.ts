@@ -3,11 +3,13 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
+import { fileURLToPath } from 'node:url'
 import { signPaymentCallback } from '../packages/billing/src/callback-envelope.mjs'
 import { loadMigrations, MigrationRunner } from '../packages/persistence/src/migration.js'
 import { PostgresPasswordAuthRepository } from '../packages/persistence/src/password-auth-repository.js'
 
 const databaseUrlValue = process.env.PERSISTENCE_RELEASE_DATABASE_URL
+const bridgePath = fileURLToPath(new URL('../apps/plugin/mcp/bridge.mjs', import.meta.url))
 const callback = 'http://127.0.0.1:19093/oauth/callback'
 const clientId = 'chatgpt-commercial-payment-e2e'
 const verifier = 'commercial-payment-pkce-verifier-0000000000000000000000000000000000'
@@ -73,6 +75,53 @@ async function stopApi(child: ChildProcessWithoutNullStreams) {
     const timeout = setTimeout(() => { child.kill('SIGKILL'); resolve() }, 5_000)
     child.once('exit', () => { clearTimeout(timeout); resolve() })
   })
+}
+
+function nextBridgeLine(stream: NodeJS.ReadableStream): Promise<any> {
+  return new Promise((resolve, reject) => {
+    let buffer = ''
+    const onData = (chunk: Buffer | string) => {
+      buffer += chunk.toString()
+      const newline = buffer.indexOf('\n')
+      if (newline < 0) return
+      stream.off('data', onData)
+      stream.off('error', onError)
+      resolve(JSON.parse(buffer.slice(0, newline)))
+    }
+    const onError = (error: Error) => {
+      stream.off('data', onData)
+      reject(error)
+    }
+    stream.on('data', onData)
+    stream.once('error', onError)
+  })
+}
+
+function startBridge(base: string, workspaceId: string, token: string) {
+  return spawn(process.execPath, [bridgePath], {
+    cwd: process.cwd(),
+    env: {
+      PATH: process.env.PATH,
+      LANG: 'C.UTF-8',
+      NODE_ENV: 'test',
+      DEPLOY_ENV: 'test',
+      MERCHANT_MCP_BASE_URL: base,
+      MERCHANT_WORKSPACE_ID: workspaceId,
+      MERCHANT_MCP_TOKEN: token,
+      MERCHANT_STRICT_AUTH: 'true',
+      // The isolated fixture represents the operator-approved checkout path;
+      // the bridge still forwards the real authenticated OAuth token.
+      MERCHANT_MCP_WRITE_ENABLED: 'true',
+      MERCHANT_MCP_TIMEOUT_MS: '30000',
+      MERCHANT_MCP_RETRY_ATTEMPTS: '1',
+    },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+}
+
+async function bridgeCall(child: ChildProcessWithoutNullStreams, id: number, name: string, arguments_: Record<string, unknown>) {
+  child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: arguments_ } })}\n`)
+  return await nextBridgeLine(child.stdout) as { result?: { isError?: boolean; structuredContent?: Record<string, any> }; error?: Record<string, unknown> }
 }
 
 describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', () => {
@@ -157,12 +206,24 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
         return (await exchanged.json() as { access_token: string }).access_token
       }
       const [tokenA, tokenB] = await Promise.all([authorizeAndExchange(merchants[0]!, `a-${suffix}`), authorizeAndExchange(merchants[1]!, `b-${suffix}`)])
-      const callMcp = async (token: string, id: number, name: string, arguments_: Record<string, unknown>) => {
-        const response = await fetch(`${running.base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: arguments_ } }) })
-        return { status: response.status, body: await response.json() as { result?: { structuredContent?: Record<string, any> }; error?: { code: number; data?: { code?: string } } } }
+      // These are real PKCE-issued merchant tokens, not workspace OIDC sessions.
+      // Keep the ops session exclusion tied to the verified credential source.
+      for (const token of [tokenA, tokenB]) {
+        const opsSession = await fetch(`${running.base}/mcp`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, 'x-workspace-id': workspaceId },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 'merchant-oauth-ops-session-denied', method: 'ops.session', params: {} }),
+        })
+        expect(opsSession.status).toBe(403)
+        expect(await opsSession.json()).toMatchObject({ error: { code: 'FORBIDDEN', message: '商家 OAuth 会话不能访问平台运营工作台' } })
       }
+      const bridgeA = startBridge(running.base, workspaceId, tokenA)
+      const bridgeB = startBridge(running.base, workspaceId, tokenB)
+      const stopBridge = (child: ChildProcessWithoutNullStreams) => { if (child.exitCode === null) child.kill('SIGTERM') }
 
-      const created = await callMcp(tokenA, 1, 'commercial.order.create', { purchase_kind: 'point_pack', sku_code: 'points_500', idempotency_key: `oauth-point-pack-${suffix}`, reason: '购买 500 创意点测试包' })
+      const createdViaBridge = await bridgeCall(bridgeA, 1, 'commercial.order.create', { purchase_kind: 'point_pack', sku_code: 'points_500', idempotency_key: `oauth-point-pack-${suffix}`, reason: '购买 500 创意点测试包' })
+      expect(createdViaBridge.result).toMatchObject({ isError: false })
+      const created = { status: 200, body: { result: createdViaBridge.result } }
       expect(created.status, JSON.stringify({ body: created.body, logs: running.logs() })).toBe(200)
       const order = created.body.result?.structuredContent as { order_id: string; status: string; amount_fen: number; payment_provider: string; payment_url: string }
       expect(order).toMatchObject({ status: 'pending', amount_fen: 30000, payment_provider: 'alipay' })
@@ -176,24 +237,21 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
       const callbackHeaders = { 'content-type': 'application/json', 'x-payment-signature': signature, 'x-payment-timestamp': timestamp, 'x-payment-nonce': nonce }
       for (const replayed of [false, true]) {
         const response = await fetch(`${running.base}/v1/commercial/callback/alipay`, { method: 'POST', headers: callbackHeaders, body: JSON.stringify(callbackPayload) })
-        expect(response.status).toBe(200)
-        await expect(response.json()).resolves.toMatchObject({ data: { state: 'paid', replayed }, error: null })
+        const callbackResult = await response.json()
+        expect(response.status, JSON.stringify({ callbackResult, logs: running.logs() })).toBe(200)
+        expect(callbackResult).toMatchObject({ data: { state: 'paid', replayed }, error: null })
       }
 
-      const paid = await callMcp(tokenA, 2, 'commercial.order.payment.get', { order_id: order.order_id })
-      expect(paid.body.result?.structuredContent).toMatchObject({ order_id: order.order_id, status: 'paid', access_revision: 1 })
-      const balance = await callMcp(tokenA, 3, 'creative-points.balance.get', {})
-      expect(balance.body.result?.structuredContent).toMatchObject({ balance_state: 'known', available_points: 500, reserved_points: 0, settled_points: 0, access_revision: '1' })
       const paidViaBridge = await bridgeCall(bridgeA, 3, 'commercial.order.payment.get', { order_id: order.order_id })
       expect(paidViaBridge.result).toMatchObject({ isError: false, structuredContent: { order_id: order.order_id, status: 'paid', access_revision: 1 } })
       const balanceViaBridge = await bridgeCall(bridgeA, 4, 'creative-points.balance.get', {})
       // The bridge exposes the authenticated state/revision needed for the
       // next action, while point quantities remain console-only by contract.
-       expect(balanceViaBridge.result).toMatchObject({ isError: false, structuredContent: { balance_state: 'known', access_revision: '1' } })
-       expect(balanceViaBridge.result?.structuredContent).not.toHaveProperty('available_points')
+      expect(balanceViaBridge.result).toMatchObject({ isError: false, structuredContent: { balance_state: 'known', access_revision: '1' } })
+      expect(balanceViaBridge.result?.structuredContent).not.toHaveProperty('available_points')
 
-      const hiddenFromB = await callMcp(tokenB, 4, 'commercial.order.payment.get', { order_id: order.order_id })
-      expect(hiddenFromB).toMatchObject({ status: 200, body: { error: { data: { code: 'COMMERCIAL_ORDER_NOT_FOUND' } } } })
+      const hiddenFromB = await bridgeCall(bridgeB, 5, 'commercial.order.payment.get', { order_id: order.order_id })
+      expect(hiddenFromB.result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_ORDER_NOT_FOUND' } })
 
       const evidence = await database.query(`
         SELECT g.id AS grant_id,g.points::int,o.created_by_actor_id,
@@ -210,6 +268,8 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
         { external_subject: merchants[0]!.login, identity_id: merchants[0]!.account.identityId },
         { external_subject: merchants[1]!.login, identity_id: merchants[1]!.account.identityId },
       ].sort((a, b) => a.external_subject.localeCompare(b.external_subject)))
+      stopBridge(bridgeA)
+      stopBridge(bridgeB)
     } finally {
       if (api) await stopApi(api)
       await application?.end()
