@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DownOutlined, LogoutOutlined, SafetyCertificateOutlined, UserOutlined } from "@ant-design/icons";
+import { DownOutlined, LogoutOutlined } from "@ant-design/icons";
 import { Alert, Button, Dropdown, Empty, Input, Layout, List, Modal, Space, Typography } from "antd";
 import { describeOpsError, localOpsSessionEnabled, loginPlatformOps, logoutPlatformOps, suppressLocalOpsSession } from "../api/opsClient.js";
 import type { OperationalAlert, OpsDataSource, OpsSession, OpsWorkbench } from "../types/ops.js";
@@ -35,7 +35,6 @@ export function OpsHeader({
   onSessionReset,
   connectionError,
   dataSource,
-  refreshing = false,
   session,
   authorization,
   activeWorkbench,
@@ -66,7 +65,6 @@ export function OpsHeader({
   const accountName = session?.actor_id ?? (isDemoSession ? "本机演示账号" : "平台运营账号");
   const accountDisplayName = accountName.length > 12 ? `${accountName.slice(0, 8)}…` : accountName;
   const accountInitial = Array.from(accountName)[0] ?? "运";
-  const workbenchLabel = session?.workbench === "platform" || activeWorkbench === "platform" ? "平台运营" : "商家工作区";
   const roleLabel = roles?.join("、") || session?.roles?.join("、") || "未声明";
 
   function openPlatformLogin() {
@@ -96,25 +94,8 @@ export function OpsHeader({
         <span className="ops-account-popover-avatar" aria-hidden="true">{accountInitial}</span>
         <div className="ops-account-popover-identity">
           <strong>{accountName}</strong>
-          <span>{session?.actor_id ?? "当前为本机演示账号"}</span>
-          <em><i />{hasSession ? "已登录" : "未登录"}</em>
+          <span>{roleLabel}</span>
         </div>
-      </div>
-      <div className="ops-account-popover-section">
-        <div className="ops-account-popover-section-title"><UserOutlined />账号信息</div>
-        <dl className="ops-account-popover-facts">
-          <div><dt>当前账号</dt><dd>{session?.actor_id ?? (isDemoSession ? "本机演示账号" : "未登录")}</dd></div>
-          <div><dt>当前工作台</dt><dd>{workbenchLabel}</dd></div>
-          <div><dt>账号角色</dt><dd>{roleLabel}</dd></div>
-        </dl>
-      </div>
-      <div className="ops-account-popover-section ops-account-popover-status">
-        <div className="ops-account-popover-section-title"><SafetyCertificateOutlined />访问状态</div>
-        <div className="ops-account-status-row">
-          <span className={`ops-account-status-dot ${hasSession ? "is-online" : ""}`} />
-          <strong>{refreshing ? "正在刷新会话" : isDemoSession ? "本机演示环境" : hasSession ? "服务端已验证" : "等待登录"}</strong>
-        </div>
-        {connectionError ? <Alert type="error" showIcon title="运营服务连接异常" description={connectionError} /> : null}
       </div>
       {merchantNotificationsEnabled ? (
         <div className="ops-account-message-center" aria-label="消息中心">
