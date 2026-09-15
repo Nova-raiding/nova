@@ -44,8 +44,8 @@ describe("customer delivery completion", () => {
     expect(deliveryCompletion({ ...base, profile: false, integration: false, acceptance: false, training: false, videos: 99 })).toEqual({ completed: 1, total: 5, ready: false });
   });
 
-  it("fails closed when all checkboxes are set on an unpaid customer", () => {
-    expect(deliveryCompletion({ ...base, paymentStatus: "unpaid" })).toEqual({ completed: 5, total: 5, ready: false });
+  it("does not use the manually verified payment state as a delivery gate", () => {
+    expect(deliveryCompletion({ ...base, paymentStatus: "unpaid" })).toEqual({ completed: 5, total: 5, ready: true });
   });
 
   it("does not promote legacy checkboxes to completion without a valid server completion timestamp", () => {
@@ -53,9 +53,9 @@ describe("customer delivery completion", () => {
     expect(deliveryCompletion({ ...base, goLiveAt: "not-a-date" }).ready).toBe(false);
   });
 
-  it("blocks only controlled delivery steps until payment is verified", () => {
+  it("never blocks delivery steps based on the manually verified payment state", () => {
     for (const step of ["integration", "acceptance", "training"] as const) {
-      expect(isDeliveryStepBlocked("unpaid", step)).toBe(true);
+      expect(isDeliveryStepBlocked("unpaid", step)).toBe(false);
       expect(isDeliveryStepBlocked("paid", step)).toBe(false);
     }
     expect(isDeliveryStepBlocked("unpaid", "profile")).toBe(false);

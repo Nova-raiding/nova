@@ -45,6 +45,8 @@ export interface CustomerDeliveryRecord {
   /** Per-item evidence returned by the delivery API. Keys are item labels. */
   integrationEvidence?: Record<string, string>;
   acceptanceEvidence?: Record<string, string>;
+  integrationEvidenceAssetRefs?: Record<string, string[]>;
+  acceptanceEvidenceAssetRefs?: Record<string, string[]>;
 }
 
 export interface CustomerDeliveryChecklistItem {
@@ -142,35 +144,53 @@ const stepLabels: Record<DeliveryStepKey, string> = {
 };
 
 export function isDeliveryStepBlocked(
-  paymentStatus: CustomerDeliveryRecord["paymentStatus"],
-  step: DeliveryStepKey,
+  _paymentStatus: CustomerDeliveryRecord["paymentStatus"],
+  _step: DeliveryStepKey,
 ) {
-  return (
-    paymentStatus !== "paid" &&
-    ["integration", "acceptance", "training"].includes(step)
-  );
+  return false;
 }
 
 export function deliveryCompletion(record: CustomerDeliveryRecord) {
   const completed = [
-    record.profile,
-    record.integration,
-    record.acceptance,
+    isCustomerProfileFilled(record),
+    isDeliveryChecklistComplete(record, "integration"),
+    isDeliveryChecklistComplete(record, "acceptance"),
     record.training,
-    record.videos > 0,
+    hasDeliveryVideo(record),
   ].filter(Boolean).length;
-  // Payment is a prerequisite for delivery completion. The UI gate prevents unpaid
-  // operators from entering controlled steps, but the aggregate must also be
-  // fail-closed when data is imported or updated through another route.
   return {
     completed,
     total: 5,
-    ready: record.paymentStatus === "paid" && completed === 5,
+    ready: completed === 5,
   };
 }
 
 export function deliveryStatusLabel(result: ReturnType<typeof deliveryCompletion>) {
   return result.ready ? "交付已完成" : `${result.completed}/${result.total}`;
+}
+
+export function isCustomerProfileFilled(record: CustomerDeliveryRecord) {
+  return record.profile || Boolean(
+    record.companyName.trim() &&
+    record.contractNo?.trim() &&
+    record.paymentDate &&
+    record.contractFile?.trim() &&
+    record.owner?.trim() &&
+    record.afterSalesOwner?.trim() &&
+    record.requiredLaunchAt,
+  );
+}
+
+export function isDeliveryChecklistComplete(record: CustomerDeliveryRecord, key: "integration" | "acceptance") {
+  if (record[key]) return true;
+  const expected = key === "integration" ? INTEGRATION_ITEMS : ACCEPTANCE_ITEMS;
+  const selected = key === "integration" ? record.integrationItems : record.acceptanceItems;
+  const evidence = key === "integration" ? record.integrationEvidenceAssetRefs : record.acceptanceEvidenceAssetRefs;
+  return Array.isArray(selected) && expected.every((item) => selected.includes(item) && Boolean(evidence?.[item]?.length));
+}
+
+export function hasDeliveryVideo(record: CustomerDeliveryRecord) {
+  return record.videos > 0 || Boolean(record.videoUrls?.length);
 }
 
 export function CustomerDeliverySection({
@@ -224,7 +244,6 @@ export function CustomerDeliverySection({
 }) {
   const [selected, setSelected] = useState<CustomerDeliveryRecord>();
   const [step, setStep] = useState<DeliveryStepKey>("profile");
-  const [blockedCompany, setBlockedCompany] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [loadingStep, setLoadingStep] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -238,11 +257,6 @@ export function CustomerDeliverySection({
     row: CustomerDeliveryRecord,
     next: DeliveryStepKey,
   ) => {
-    if (isDeliveryStepBlocked(row.paymentStatus, next)) {
-      setBlockedCompany(row.companyName);
-      return;
-    }
-    setBlockedCompany(undefined);
     const request = ++detailRequest.current;
     setUploading(false);
     setLoadingStep(true);
@@ -426,10 +440,6 @@ export function CustomerDeliverySection({
       await openStep(row, "training");
       return;
     }
-    if (isDeliveryStepBlocked(row.paymentStatus, "training")) {
-      setBlockedCompany(row.companyName);
-      return;
-    }
     setSaving(true);
     try {
       const persisted = await onTrainingSave(row, completed, []);
@@ -457,25 +467,13 @@ export function CustomerDeliverySection({
           <Typography.Text strong>{value}</Typography.Text>
         ),
       },
-      ...(["profile", "integration", "acceptance", "training"] as const).map(
+      ...(["profile", "integration", "acceptance"] as const).map(
         (key) => ({
           title: stepLabels[key],
           width: key === "acceptance" ? 120 : key === "profile" ? 76 : 86,
           dataIndex: key,
-          render: (value: boolean, row: CustomerDeliveryRecord) => {
-            if (key === "training" && onTrainingSave && row.paymentStatus === "paid") {
-              return (
-                <Space size="small">
-                  <Checkbox
-                    checked={value}
-                    disabled={saving}
-                    onChange={(event) => void toggleTraining(row, event.target.checked)}
-                  >
-                    {value ? "已完成" : "未完成"}
-                  </Checkbox>
-                </Space>
-              );
-            }
+          render: (_value: boolean, row: CustomerDeliveryRecord) => {
+            const value = key === "profile" ? isCustomerProfileFilled(row) : isDeliveryChecklistComplete(row, key);
             const emptyLabel = key === "profile" ? "未填写" : "未完成";
             return (
               <Button type="link" size="small" onClick={() => openStep(row, key)}>
@@ -486,16 +484,35 @@ export function CustomerDeliverySection({
         }),
       ),
       {
+        title: "客户培训",
+        width: 108,
+        dataIndex: "training",
+        render: (value: boolean, row: CustomerDeliveryRecord) => (
+          <Select
+            size="small"
+            aria-label={`${row.companyName}客户培训状态`}
+            value={value ? "trained" : "untrained"}
+            disabled={saving || !onTrainingSave}
+            style={{ width: 94 }}
+            options={[
+              { value: "trained", label: "已培训" },
+              { value: "untrained", label: "未培训" },
+            ]}
+            onChange={(next) => void toggleTraining(row, next === "trained")}
+          />
+        ),
+      },
+      {
         title: "交付视频",
         width: 86,
         dataIndex: "videos",
-        render: (value: number, row: CustomerDeliveryRecord) => (
+        render: (_value: number, row: CustomerDeliveryRecord) => (
           <Button
             type="link"
             size="small"
             onClick={() => openStep(row, "video")}
           >
-            {value ? <Tag color="success">已上传</Tag> : <Tag>未上传</Tag>}
+            {hasDeliveryVideo(row) ? <Tag color="success">已上传</Tag> : <Tag>未上传</Tag>}
           </Button>
         ),
       },
@@ -527,17 +544,6 @@ export function CustomerDeliverySection({
         </Space>
       }
     >
-      {blockedCompany ? (
-        <Alert
-          style={{ marginTop: 12 }}
-          type="warning"
-          showIcon
-          message="用户尚未完成付款"
-          description={`${blockedCompany} 的系统接入、功能测试及培训已阻断；完成付款核验后才可继续。`}
-          closable
-          onClose={() => setBlockedCompany(undefined)}
-        />
-      ) : null}
       <Drawer
         title="新建客户档案"
         open={showCreate}
