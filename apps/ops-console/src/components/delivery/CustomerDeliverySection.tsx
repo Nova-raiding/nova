@@ -443,12 +443,13 @@ export function CustomerDeliverySection({
     () => [
       {
         title: "序号",
-        width: 72,
+        width: 48,
         render: (_: unknown, __: CustomerDeliveryRecord, index: number) =>
           String(index + 1).padStart(2, "0"),
       },
       {
         title: "公司名",
+        width: 190,
         dataIndex: "companyName",
         render: (value: string) => (
           <Typography.Text strong>{value}</Typography.Text>
@@ -457,6 +458,7 @@ export function CustomerDeliverySection({
       ...(["profile", "integration", "acceptance", "training"] as const).map(
         (key) => ({
           title: stepLabels[key],
+          width: key === "acceptance" ? 120 : key === "profile" ? 76 : 86,
           dataIndex: key,
           render: (value: boolean, row: CustomerDeliveryRecord) => {
             if (key === "training" && onTrainingSave && row.paymentStatus === "paid") {
@@ -483,6 +485,7 @@ export function CustomerDeliverySection({
       ),
       {
         title: "交付视频",
+        width: 86,
         dataIndex: "videos",
         render: (value: number, row: CustomerDeliveryRecord) => (
           <Button
@@ -496,6 +499,7 @@ export function CustomerDeliverySection({
       },
       {
         title: "上线时间",
+        width: 100,
         dataIndex: "goLiveAt",
         render: (value?: string) => value || "未上线",
       },
@@ -552,7 +556,8 @@ export function CustomerDeliverySection({
         <Table
           rowKey="id"
           size="small"
-          scroll={{ x: 1180 }}
+          scroll={{ x: 792 }}
+          tableLayout="fixed"
           columns={columns}
           dataSource={records}
           pagination={false}
