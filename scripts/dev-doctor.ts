@@ -29,6 +29,12 @@ const add = (id: string, level: Level, message: string, next?: string) => checks
 const run = (command: string, commandArgs: string[] = []) => spawnSync(command, commandArgs, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 const commandReady = (command: string, commandArgs: string[] = []) => run(command, commandArgs).status === 0
 const root = process.cwd()
+// This ignored file contains only a config locator, never dotenv assignments
+// or secrets. Production still does not inherit workstation credentials.
+const productionConfigLocator = resolve(root, '.env.production-config-path')
+if (!process.env.PRODUCTION_CONFIG_PATH?.trim() && existsSync(productionConfigLocator)) {
+  process.env.PRODUCTION_CONFIG_PATH = readFileSync(productionConfigLocator, 'utf8').split(/\r?\n/u)[0]?.trim() || ''
+}
 const parseJsonFile = (path: string) => JSON.parse(readFileSync(resolve(root, path), 'utf8')) as unknown
 // Local doctor runs should inspect the same root .env that compose uses. Keep
 // production fail-closed: production checks must come from the deployment
@@ -166,7 +172,8 @@ const productionConfigPath = productionConfig ? resolve(root, productionConfig) 
 const productionConfigReady = (() => {
   if (!productionConfigPath || !existsSync(productionConfigPath) || /example/iu.test(productionConfigPath)) return false
   try {
-    return !/REPLACE_ME|SET_[A-Z_]+|example\.com/iu.test(readFileSync(productionConfigPath, 'utf8'))
+    if (/REPLACE_ME|SET_[A-Z_]+|BLOCKED_UNTIL_|example\.com/iu.test(readFileSync(productionConfigPath, 'utf8'))) return false
+    return !production || ecsProduction || run('sh', [resolve(root, 'infra/scripts/validate-production-config.sh'), productionConfigPath]).status === 0
   } catch {
     // A directory, unreadable path, or disappearing secret-rendered file is a
     // production configuration failure, not a reason for the doctor itself to
