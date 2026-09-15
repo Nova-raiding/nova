@@ -10,7 +10,6 @@ import {
   Select,
   Space,
   Table,
-  Tag,
   Typography,
   message,
 } from "antd";
@@ -477,9 +476,7 @@ export function CustomerDeliverySection({
           render: (_value: boolean, row: CustomerDeliveryRecord) => {
             const value = key === "profile" ? isCustomerProfileFilled(row) : isDeliveryChecklistComplete(row, key);
             const emptyLabel = key === "profile" ? "未填写" : "未完成";
-            return value
-              ? <Tag color="success">{key === "profile" ? "已填写" : "已完成"}</Tag>
-              : <Tag>{emptyLabel}</Tag>;
+            return value ? (key === "profile" ? "已填写" : "已完成") : emptyLabel;
           },
         }),
       ),
@@ -509,7 +506,7 @@ export function CustomerDeliverySection({
         align: "center" as const,
         dataIndex: "videos",
         render: (_value: number, row: CustomerDeliveryRecord) =>
-          hasDeliveryVideo(row) ? <Tag color="success">已上传</Tag> : <Tag>未上传</Tag>,
+          hasDeliveryVideo(row) ? "已上传" : "未上传",
       },
       {
         title: "上线时间",
