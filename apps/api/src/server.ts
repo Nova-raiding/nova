@@ -2088,6 +2088,23 @@ async function listActiveRechargeRefunds(workspaceId: string, limit: number): Pr
 const memoryPaymentReconciliationLeases = new Set<string>()
 
 type BillingAuditProjectionFailure = { order_id: string; code: string; cause_code: string; message: string; business_state: string; reservation_released?: boolean; reliable_fact_source: string }
+type PaymentReconciliationWorkItem =
+  | { kind: 'payment'; order: RechargeOrder }
+  | { kind: 'refund'; order: RechargeOrder; reservation: WalletTransaction }
+
+function comparePaymentReconciliationWork(left: PaymentReconciliationWorkItem, right: PaymentReconciliationWorkItem) {
+  return left.order.updatedAt.localeCompare(right.order.updatedAt)
+    || left.order.createdAt.localeCompare(right.order.createdAt)
+    || left.order.id.localeCompare(right.order.id)
+    || left.kind.localeCompare(right.kind)
+    || (left.kind === 'refund' ? left.reservation.createdAt : '').localeCompare(right.kind === 'refund' ? right.reservation.createdAt : '')
+    || (left.kind === 'refund' ? left.reservation.id : '').localeCompare(right.kind === 'refund' ? right.reservation.id : '')
+}
+
+async function getRechargeOrderSnapshot(workspaceId: string, orderId: string) {
+  await persistenceReady
+  return persistence.billing ? await persistence.billing.getOrder(workspaceId, orderId) : rechargeOrders.get(orderId)
+}
 
 async function runPaymentReconciliation(input: { workspaceId: string; actorId: string; limit: number }) {
   if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 20) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'limit 必须是 1 至 20 的整数', 400)
@@ -2124,9 +2141,9 @@ async function runPaymentReconciliation(input: { workspaceId: string; actorId: s
     if (!renewed) throw new DomainError('PAYMENT_RECONCILIATION_LEASE_LOST', '支付对账工作区租约已丢失，已停止后续查单和入账', 503)
   }
   try {
-    const refundBudget = Math.max(1, Math.ceil(input.limit / 2))
+    const refundBudget = input.limit === 1 ? 1 : Math.max(1, Math.ceil(input.limit / 2))
     const activeRefunds = await listActiveRechargeRefunds(input.workspaceId, refundBudget)
-    const paymentBudget = Math.max(0, input.limit - activeRefunds.length)
+    const paymentBudget = input.limit === 1 ? 1 : Math.max(0, input.limit - activeRefunds.length)
     const providerOrders = paymentBudget === 0
       ? []
       : persistence.billing
@@ -2135,6 +2152,12 @@ async function runPaymentReconciliation(input: { workspaceId: string; actorId: s
           .filter(order => order.workspaceId === input.workspaceId && order.state === 'pending' && order.paymentMode === 'provider')
           .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt) || left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
           .slice(0, paymentBudget)
+    const singleBudgetWorkQueue = input.limit === 1
+      ? [
+        ...activeRefunds.map(item => ({ kind: 'refund' as const, order: item.order, reservation: item.reservation })),
+        ...providerOrders.map(order => ({ kind: 'payment' as const, order })),
+      ].sort(comparePaymentReconciliationWork).slice(0, 1)
+      : undefined
     const settled: Array<{ order_id: string; provider_trade_id: string }> = []
     const pending: Array<{ order_id: string; state: string }> = []
     const failed: Array<{ order_id: string; code: string; message: string }> = []
@@ -2246,9 +2269,14 @@ async function runPaymentReconciliation(input: { workspaceId: string; actorId: s
           return
         }
         if (providerRefund.state === 'failed') {
-          await releaseRechargeRefund({ workspaceId: input.workspaceId, orderId: order.id, reservationKey: reservation.orderId!, actorId: input.actorId, reason: '支付服务商退款查单确认失败', assertReconciliationLease: renewLease })
+          const release = await releaseRechargeRefund({ workspaceId: input.workspaceId, orderId: order.id, reservationKey: reservation.orderId!, actorId: input.actorId, reason: '支付服务商退款查单确认失败', assertReconciliationLease: renewLease })
+          if (!release) {
+            const current = await getRechargeOrderSnapshot(input.workspaceId, order.id)
+            refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_REFUND_CONCURRENT_STATE_CHANGE', message: `支付服务商确认退款失败，但订单当前状态已变更为 ${current?.state ?? 'unknown'}；未写入钱包预留释放，需人工核对并等待既有可靠事实`, reservation_released: false })
+            return
+          }
           refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_PROVIDER_REFUND_FAILED', message: '支付服务商确认退款失败，钱包预留已释放', reservation_released: true })
-          await recordCommittedAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: { ...order, refund_request_id: refundRequestId } as unknown as Record<string, unknown>, after: { ...order, reservation_released: true } as unknown as Record<string, unknown>, reason: '支付服务商退款查单确认失败并释放钱包预留' }, 'paid', true)
+          await recordCommittedAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: { ...order, refund_request_id: refundRequestId } as unknown as Record<string, unknown>, after: { ...order, reservation_released: true, release_transaction_id: release.id } as unknown as Record<string, unknown>, reason: '支付服务商退款查单确认失败并释放钱包预留' }, 'paid', true)
           return
         }
         await markRechargeReconciliationChecked({ workspaceId: input.workspaceId, orderId: order.id, expectedState: 'paid', assertReconciliationLease: renewLease })
@@ -2259,13 +2287,21 @@ async function runPaymentReconciliation(input: { workspaceId: string; actorId: s
         refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'PAYMENT_REFUND_RECONCILIATION_FAILED', message: error instanceof Error ? error.message : '支付服务商退款查单失败', reservation_released: false })
       }
     }
-    // Interleave the two queues so persistent slow pending payments cannot
-    // consume every batch deadline while refund reservations remain untouched.
-    for (let index = 0; index < Math.max(activeRefunds.length, providerOrders.length); index += 1) {
-      if (Date.now() >= queryDeadline) break
-      if (activeRefunds[index]) await reconcileRefund(activeRefunds[index]!)
-      if (Date.now() >= queryDeadline) break
-      if (providerOrders[index]) await reconcilePayment(providerOrders[index]!)
+    if (singleBudgetWorkQueue) {
+      for (const item of singleBudgetWorkQueue) {
+        if (Date.now() >= queryDeadline) break
+        if (item.kind === 'refund') await reconcileRefund({ order: item.order, reservation: item.reservation })
+        else await reconcilePayment(item.order)
+      }
+    } else {
+      // Interleave the two queues so persistent slow pending payments cannot
+      // consume every batch deadline while refund reservations remain untouched.
+      for (let index = 0; index < Math.max(activeRefunds.length, providerOrders.length); index += 1) {
+        if (Date.now() >= queryDeadline) break
+        if (activeRefunds[index]) await reconcileRefund(activeRefunds[index]!)
+        if (Date.now() >= queryDeadline) break
+        if (providerOrders[index]) await reconcilePayment(providerOrders[index]!)
+      }
     }
     const deferred = providerOrders.length + activeRefunds.length - paymentChecked - refundChecked
     return { state: failed.length || pending.length || refundFailed.length || refundPending.length || deferred || auditProjectionFailures.length || queueRotationFailures.length ? 'attention_required' : 'completed', checked: paymentChecked + refundChecked, payment_checked: paymentChecked, refund_checked: refundChecked, deferred, provider_orders: providerOrders.length, skipped_fixture_orders: 0, settled, pending, failed, refund_settled: refundSettled, refund_pending: refundPending, refund_failed: refundFailed, audit_projection_failures: auditProjectionFailures, queue_rotation_failures: queueRotationFailures, actor_id: input.actorId, idempotent_settlement: true, total_query_budget: input.limit }
@@ -15280,11 +15316,28 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           providerRefundId = providerRefund.providerRefundId
         } catch (error) {
           const rejected = (error as { code?: string })?.code === 'PAYMENT_PROVIDER_REFUND_REJECTED'
-          if (rejected) await releaseRechargeRefund({ workspaceId, orderId, reservationKey: reservation.orderId!, actorId, reason: '支付服务商明确拒绝退款，释放钱包预留' })
-          const code = rejected ? 'PAYMENT_PROVIDER_REFUND_REJECTED' : 'PAYMENT_PROVIDER_REFUND_OUTCOME_UNKNOWN'
-          const outcome = { order_id: orderId, refund_request_id: reservation.id, reservation_key: reservation.orderId, reservation_released: rejected, code }
+          const release = rejected ? await releaseRechargeRefund({ workspaceId, orderId, reservationKey: reservation.orderId!, actorId, reason: '支付服务商明确拒绝退款，释放钱包预留' }) : undefined
+          const currentOrder = rejected && !release ? await getRechargeOrderSnapshot(workspaceId, orderId) : undefined
+          const concurrentStateChange = rejected && !release
+          const code = concurrentStateChange ? 'PAYMENT_REFUND_CONCURRENT_STATE_CHANGE' : rejected ? 'PAYMENT_PROVIDER_REFUND_REJECTED' : 'PAYMENT_PROVIDER_REFUND_OUTCOME_UNKNOWN'
+          const outcome = {
+            order_id: orderId,
+            refund_request_id: reservation.id,
+            reservation_key: reservation.orderId,
+            reservation_released: Boolean(release),
+            code,
+            ...(release ? { release_transaction_id: release.id } : {}),
+            ...(concurrentStateChange ? { concurrent_state_change: true, current_order_state: currentOrder?.state ?? 'unknown' } : {}),
+          }
           await recordOperationAudit({ workspaceId, actorId, action: 'billing.refund', resourceType: 'billing_order', resourceId: orderId, before, after: outcome, reason })
-          throw new DomainError(code, rejected ? '支付服务商明确拒绝退款，钱包预留已释放' : '支付服务商退款结果未确认，已保留钱包预留并等待对账', rejected ? 409 : 503, { ...outcome, next_actions: ['billing.reconciliation'] })
+          throw new DomainError(
+            code,
+            concurrentStateChange ? '支付服务商明确拒绝退款，但订单状态已并发变更；未写入钱包预留释放，需人工核对既有退款事实'
+              : rejected ? '支付服务商明确拒绝退款，钱包预留已释放'
+                : '支付服务商退款结果未确认，已保留钱包预留并等待对账',
+            rejected ? 409 : 503,
+            { ...outcome, next_actions: ['billing.reconciliation'] },
+          )
         }
       }
       const refund = await completeRechargeRefund({ workspaceId, orderId, reservationKey: reservation.orderId!, actorId, reason, providerRefundId })

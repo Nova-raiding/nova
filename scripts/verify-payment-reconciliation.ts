@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url'
 import { Pool, type PoolClient, type QueryResult } from 'pg'
 import { createClient } from 'redis'
 import type { PaymentRefundStatusResult, PaymentStatusResult } from '../packages/billing/src/payment-provider.js'
+import { PostgresBillingRepository } from '../packages/persistence/src/billing-repository.js'
+import { PostgresOutboxRepository } from '../packages/persistence/src/repository.js'
 import { createWorkerRequestProof, type WorkerRequestRole } from '../packages/security/src/worker-request-proof.js'
 import { createIsolatedOpsFixture, type IsolatedFixtureDisposal, type IsolatedOpsFixture } from '../tests/isolated-ops-fixture.js'
 
@@ -104,6 +106,7 @@ async function main() {
   process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt)
   let fixture: IsolatedOpsFixture | undefined
   let pool: Pool | undefined
+  let appPool: Pool | undefined
   let redis: ReturnType<typeof createClient> | undefined
   let child: ChildProcess | undefined
   let disposal: IsolatedFixtureDisposal | undefined
@@ -137,6 +140,7 @@ async function main() {
   try {
     fixture = await createIsolatedOpsFixture({ evidenceDir }); assertOwnBindings(fixture); abort.signal.throwIfAborted()
     pool = new Pool({ connectionString: fixture.adminDatabaseUrl, max: 2, connectionTimeoutMillis: 1_000 })
+    appPool = new Pool({ connectionString: fixture.databaseUrl, max: 2, connectionTimeoutMillis: 1_000 })
     redis = createClient({ url: fixture.redisUrl, socket: { reconnectStrategy: false, connectTimeout: 2_000 } })
     redis.on('error', () => undefined)
     await redis.connect()
@@ -230,6 +234,62 @@ async function main() {
       let timer: ReturnType<typeof setTimeout> | undefined
       try { await Promise.race([gate.entered.promise, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('VERIFY_PAYMENT_PROVIDER_NOT_REACHED')), 15_000) })]) } finally { if (timer) clearTimeout(timer) }
     }
+    stage = 'limit_one_oldest_queue_fairness'
+    const wsLimitOne = `ws_limit_one_${fixture.runId.replaceAll('-', '')}`
+    await pool.query("INSERT INTO workspaces (id,status) VALUES ($1,'active')", [wsLimitOne])
+    await seed(wsLimitOne, 'limit_refund', 1_000, 'unknown')
+    await seed(wsLimitOne, 'limit_payment', 1_000)
+    plans.set(`/status:${wsLimitOne}:limit_payment`, { response: { state: 'pending' } })
+    const limitOneBefore = await snapshot(wsLimitOne)
+    const limitOneCallStart = calls.length
+    const firstLimitOne = await post(wsLimitOne, { limit: 1 })
+    const secondLimitOne = await post(wsLimitOne, { limit: 1 })
+    const limitOneCalls = calls.slice(limitOneCallStart)
+    const limitOneAfter = await snapshot(wsLimitOne)
+    checks.push({ stage, first: firstLimitOne, second: secondLimitOne, providerCalls: limitOneCalls, before: limitOneBefore, after: limitOneAfter })
+    assert.equal(firstLimitOne.status, 200, 'VERIFY_PAYMENT_LIMIT_ONE_FIRST_HTTP_FAILED')
+    assert.equal(secondLimitOne.status, 200, 'VERIFY_PAYMENT_LIMIT_ONE_SECOND_HTTP_FAILED')
+    assert.equal(firstLimitOne.envelope.data?.refund_checked, 1, 'VERIFY_PAYMENT_LIMIT_ONE_REFUND_NOT_FIRST')
+    assert.equal(firstLimitOne.envelope.data?.payment_checked, 0, 'VERIFY_PAYMENT_LIMIT_ONE_PAYMENT_CHECKED_TOO_EARLY')
+    assert.equal(firstLimitOne.envelope.data?.deferred, 1, 'VERIFY_PAYMENT_LIMIT_ONE_DEFERRED_MISSING')
+    assert.equal(secondLimitOne.envelope.data?.payment_checked, 1, 'VERIFY_PAYMENT_LIMIT_ONE_PAYMENT_STARVED')
+    assert.equal(secondLimitOne.envelope.data?.refund_checked, 0, 'VERIFY_PAYMENT_LIMIT_ONE_REFUND_RECHECKED')
+    assert.deepEqual(limitOneCalls.map(call => `${call.kind}:${call.orderId}`), ['refund-status:limit_refund', 'status:limit_payment'], 'VERIFY_PAYMENT_LIMIT_ONE_PROVIDER_ORDER_INVALID')
+    assert.equal(limitOneAfter.balanceFen, limitOneBefore.balanceFen, 'VERIFY_PAYMENT_LIMIT_ONE_BALANCE_CHANGED')
+    assert.deepEqual(limitOneAfter.ledger, limitOneBefore.ledger, 'VERIFY_PAYMENT_LIMIT_ONE_LEDGER_CHANGED')
+    stage = 'concurrent_repo_refund_completion_during_failed_query'
+    const wsRepoComplete = `ws_repo_complete_${fixture.runId.replaceAll('-', '')}`
+    const repoCompleteOrder = 'repo_complete_refund'
+    await pool.query("INSERT INTO workspaces (id,status) VALUES ($1,'active')", [wsRepoComplete])
+    await seed(wsRepoComplete, repoCompleteOrder, 1_300, 'unknown')
+    const repoCompleteBefore = await snapshot(wsRepoComplete)
+    const repoCompleteGate = makeGate()
+    plans.set(`/refund-status:${wsRepoComplete}:${repoCompleteOrder}`, { response: { state: 'failed', providerRefundId: 'fixture-failed-after-repo-complete', amountFen: 1_300 }, refundRequestId: `hold_${repoCompleteOrder}`, gate: repoCompleteGate })
+    const repoCompleteRun = post(wsRepoComplete)
+    void repoCompleteRun.catch(() => undefined)
+    await waitEntered(repoCompleteGate)
+    const outbox = new PostgresOutboxRepository(appPool!)
+    const billing = new PostgresBillingRepository(appPool!, (client, event) => outbox.appendInTransaction(client, event))
+    await billing.completeRechargeRefund({ workspaceId: wsRepoComplete, orderId: repoCompleteOrder, reservationKey: `recharge-refund:${repoCompleteOrder}:1`, actorId: 'fixture-repo-complete', reason: '真实仓储并发完成退款', providerRefundId: 'fixture-repo-complete-refund' })
+    const repoCompletedSnapshot = await snapshot(wsRepoComplete)
+    repoCompleteGate.completion.release()
+    const repoCompleteResponse = await repoCompleteRun
+    const repoCompleteAfter = await snapshot(wsRepoComplete)
+    const repoOutbox: Array<{ event_type: string; aggregate_id: string; payload: Record<string, unknown> }> = (await pool.query('SELECT event_type,aggregate_id,payload FROM outbox_events WHERE workspace_id=$1 ORDER BY created_at,id', [wsRepoComplete])).rows
+    const repoAudits: Array<{ action: string; resource_id: string; after_json: Record<string, unknown> }> = (await pool.query("SELECT action,resource_id,after_json FROM workspace_operation_audit WHERE workspace_id=$1 ORDER BY created_at,id", [wsRepoComplete])).rows
+    checks.push({ stage, before: repoCompleteBefore, afterConcurrentRepositoryComplete: repoCompletedSnapshot, response: repoCompleteResponse, final: repoCompleteAfter, transactionalOutboxFacts: repoOutbox, audits: repoAudits })
+    assert.equal(repoCompleteResponse.status, 200, 'VERIFY_PAYMENT_REPO_COMPLETE_HTTP_FAILED')
+    assert.equal(repoCompleteResponse.envelope.data?.state, 'attention_required', 'VERIFY_PAYMENT_REPO_COMPLETE_ATTENTION_MISSING')
+    const repoRefundFailures = repoCompleteResponse.envelope.data?.refund_failed
+    assert(Array.isArray(repoRefundFailures) && repoRefundFailures.length === 1 && object(repoRefundFailures[0]) && repoRefundFailures[0].code === 'PAYMENT_REFUND_CONCURRENT_STATE_CHANGE' && repoRefundFailures[0].reservation_released === false, 'VERIFY_PAYMENT_REPO_COMPLETE_CONCURRENT_FAILURE_INVALID')
+    assert.equal(repoCompleteAfter.orders.find(row => row.id === repoCompleteOrder)?.state, 'closed', 'VERIFY_PAYMENT_REPO_COMPLETE_ORDER_NOT_CLOSED')
+    assert.equal(repoCompleteAfter.balanceFen, 0, 'VERIFY_PAYMENT_REPO_COMPLETE_BALANCE_CHANGED')
+    assert.equal(repoCompleteAfter.balanceFen, repoCompletedSnapshot.balanceFen, 'VERIFY_PAYMENT_REPO_COMPLETE_RECONCILIATION_BALANCE_CHANGED')
+    assert.deepEqual(repoCompleteAfter.ledger, repoCompletedSnapshot.ledger, 'VERIFY_PAYMENT_REPO_COMPLETE_RECONCILIATION_LEDGER_CHANGED')
+    assert.equal(repoCompleteAfter.ledger.filter(row => row.order_id === `release:recharge-refund:${repoCompleteOrder}:1`).length, 0, 'VERIFY_PAYMENT_REPO_COMPLETE_RELEASE_INSERTED')
+    assert.equal(repoOutbox.filter(row => row.event_type === 'billing.recharge.refunded' && row.payload.provider_refund_id === 'fixture-repo-complete-refund').length, 1, 'VERIFY_PAYMENT_REPO_COMPLETE_REFUND_OUTBOX_MISSING')
+    assert.equal(repoOutbox.filter(row => row.event_type === 'billing.recharge.refund_reservation_released').length, 0, 'VERIFY_PAYMENT_REPO_COMPLETE_RELEASE_OUTBOX_FABRICATED')
+    assert.equal(repoAudits.filter(row => row.action === 'billing.reconciliation.run' && row.resource_id === repoCompleteOrder).length, 0, 'VERIFY_PAYMENT_REPO_COMPLETE_FALSE_COMMITTED_AUDIT')
     stage = 'redis_concurrency'
     await seed(wsConcurrent, 'concurrent_1', 100); await seed(wsConcurrent, 'concurrent_2', 100)
     const concurrentGate = makeGate(); plans.get(`/status:${wsConcurrent}:concurrent_1`)!.gate = concurrentGate
@@ -470,6 +530,7 @@ async function main() {
     if (stub.listening) { stub.closeAllConnections(); await new Promise<void>(resolveClose => stub.close(() => resolveClose())) }
     if (redis?.isOpen) await redis.quit().catch(() => { redis?.destroy(); errors.push('VERIFY_PAYMENT_REDIS_DISCONNECT_FAILED') })
     await pool?.end().catch(() => errors.push('VERIFY_PAYMENT_DATABASE_DISCONNECT_FAILED'))
+    await appPool?.end().catch(() => errors.push('VERIFY_PAYMENT_APP_DATABASE_DISCONNECT_FAILED'))
     if (fixture) {
       try { disposal = await fixture.dispose(); if (disposal.leftRunning.length) errors.push('VERIFY_PAYMENT_FIXTURE_DISPOSAL_INCOMPLETE') } catch { errors.push('VERIFY_PAYMENT_FIXTURE_DISPOSAL_FAILED') }
     }

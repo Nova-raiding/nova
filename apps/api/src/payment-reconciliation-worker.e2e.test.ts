@@ -373,6 +373,35 @@ describe('payment reconciliation signed worker HTTP boundary', () => {
     expect(await workerAudits(workspaceId)).toEqual(expect.arrayContaining([expect.objectContaining({ after: expect.objectContaining({ state: 'attention_required', refund_failed: 1, refund_settled: 0 }) })]))
   })
 
+  it('does not record a committed release audit when failed refund reconciliation races a closed order', async () => {
+    let base = ''
+    let workspaceId = ''
+    let orderId = ''
+    let refundCalls = 0
+    const providerRefund = vi.fn<PaymentProvider['refund']>(async () => {
+      refundCalls += 1
+      return refundCalls === 1
+        ? { providerRefundId: 'refund-in-flight', state: 'processing' }
+        : { providerRefundId: 'refund-concurrent-close', state: 'succeeded' }
+    })
+    const refundQuery = vi.fn<NonNullable<PaymentProvider['queryRefundStatus']>>(async () => {
+      const concurrent = await fixtureMcp(base, workspaceId, 'billing.refund', { order_id: orderId, reason: 'concurrent refund completed before failed query release' })
+      expect(concurrent.error).toBeNull()
+      return { state: 'failed', providerRefundId: 'refund-failed-after-close', amountFen: 1000 }
+    })
+    configureProvider({ createCheckout: async () => ({ paymentUrl: 'https://payments.example/pay' }), queryStatus, refund: providerRefund, queryRefundStatus: refundQuery })
+    base = await start()
+    workspaceId = `ws_refund_reconcile_concurrent_${randomUUID()}`
+    orderId = await paidRecharge(base, workspaceId)
+    expect((await fixtureMcp(base, workspaceId, 'billing.refund', { order_id: orderId, reason: 'prepare held refund' })).error?.code).toBe('PAYMENT_PROVIDER_REFUND_OUTCOME_UNKNOWN')
+
+    const result = await reconcile(base, workspaceId)
+    expect(result.envelope.data).toMatchObject({ state: 'attention_required', refund_failed: [{ order_id: orderId, code: 'PAYMENT_REFUND_CONCURRENT_STATE_CHANGE', reservation_released: false }] })
+    const reconciliationAudits = (await operationAudits.list(workspaceId, 100)).filter(item => item.action === 'billing.reconciliation.run' && item.resourceId === orderId)
+    expect(reconciliationAudits).toEqual([])
+    expect((await wallet(base, workspaceId)).balance_cny).toBe('0.00')
+  })
+
   it.each([
     { state: 'pending' }, { state: 'unknown' },
     { state: 'succeeded', providerRefundId: 'refund-unverified', amountFen: 999 },
@@ -405,6 +434,36 @@ describe('payment reconciliation signed worker HTTP boundary', () => {
     expect(Number(result.envelope.data?.payment_checked) + Number(result.envelope.data?.refund_checked)).toBe(1)
     expect(queryStatus.mock.calls.length + refundQuery.mock.calls.length).toBe(1)
     expect((await wallet(base, workspaceId)).balance_cny).toBe('0.00')
+  })
+
+  it('does not let a limit-one pending refund starve an older payment queue across rounds', async () => {
+    const calls: Array<{ kind: 'payment' | 'refund'; orderId: string }> = []
+    const providerQuery = vi.fn<NonNullable<PaymentProvider['queryStatus']>>(async input => {
+      calls.push({ kind: 'payment', orderId: input.orderId })
+      return { state: 'pending' }
+    })
+    const refundQuery = vi.fn<NonNullable<PaymentProvider['queryRefundStatus']>>(async input => {
+      calls.push({ kind: 'refund', orderId: input.orderId })
+      return { state: 'pending' }
+    })
+    configureProvider({ createCheckout: async () => ({ paymentUrl: 'https://payments.example/pay' }), queryStatus: providerQuery, refund: async () => ({ providerRefundId: 'refund-in-flight', state: 'processing' }), queryRefundStatus: refundQuery })
+    const base = await start()
+    const workspaceId = `ws_payment_refund_limit_one_${randomUUID()}`
+    const refundOrderId = await paidRecharge(base, workspaceId)
+    expect((await fixtureMcp(base, workspaceId, 'billing.refund', { order_id: refundOrderId, reason: 'limit one held refund' })).error?.code).toBe('PAYMENT_PROVIDER_REFUND_OUTCOME_UNKNOWN')
+    const paymentOrderId = await createRecharge(base, workspaceId)
+
+    const first = await reconcile(base, workspaceId, { workspace_id: workspaceId, limit: 1 })
+    expect(first.status).toBe(200)
+    expect(first.envelope.data).toMatchObject({ state: 'attention_required', checked: 1, refund_checked: 1, payment_checked: 0, deferred: 1, total_query_budget: 1 })
+
+    const second = await reconcile(base, workspaceId, { workspace_id: workspaceId, limit: 1 })
+    expect(second.status).toBe(200)
+    expect(second.envelope.data).toMatchObject({ state: 'attention_required', checked: 1, refund_checked: 0, payment_checked: 1, deferred: 1, total_query_budget: 1 })
+    expect(calls).toEqual([
+      { kind: 'refund', orderId: refundOrderId },
+      { kind: 'payment', orderId: paymentOrderId },
+    ])
   })
 
   it('queries held refunds in every round despite continuously pending slow payments', async () => {
@@ -503,6 +562,36 @@ describe('payment reconciliation signed worker HTTP boundary', () => {
     expect(audits).toEqual([expect.objectContaining({ actorId: 'finance-test', before: expect.objectContaining({ state: 'paid' }), after: expect.objectContaining({ providerRefundId: 'refund-confirmed' }) })])
     expect((await wallet(base, workspaceId)).balance_cny).toBe('0.00')
     expect(providerRefund).toHaveBeenCalledOnce()
+  })
+
+  it('reports a direct rejected refund as a concurrent state change when another caller already closed it', async () => {
+    let base = ''
+    let workspaceId = ''
+    let orderId = ''
+    let refundCalls = 0
+    const providerRefund = vi.fn<PaymentProvider['refund']>(async () => {
+      refundCalls += 1
+      if (refundCalls === 1) {
+        const concurrent = await fixtureMcp(base, workspaceId, 'billing.refund', { order_id: orderId, reason: 'concurrent refund completed' })
+        expect(concurrent.error).toBeNull()
+        return { providerRefundId: 'refund-rejected-after-close', state: 'rejected' }
+      }
+      return { providerRefundId: 'refund-concurrent-close', state: 'succeeded' }
+    })
+    configureProvider({ createCheckout: async () => ({ paymentUrl: 'https://payments.example/pay' }), queryStatus, refund: providerRefund })
+    base = await start()
+    workspaceId = `ws_refund_direct_concurrent_${randomUUID()}`
+    orderId = await paidRecharge(base, workspaceId)
+
+    const result = await fixtureMcp(base, workspaceId, 'billing.refund', { order_id: orderId, reason: 'outer refund rejected after concurrent close' })
+    expect(result.error).toMatchObject({ code: 'PAYMENT_REFUND_CONCURRENT_STATE_CHANGE', details: { reservation_released: false, current_order_state: 'closed' } })
+    expect(providerRefund).toHaveBeenCalledTimes(2)
+    expect((await wallet(base, workspaceId)).balance_cny).toBe('0.00')
+    const audits = (await operationAudits.list(workspaceId, 100)).filter(item => item.action === 'billing.refund' && item.resourceId === orderId)
+    expect(audits).toEqual(expect.arrayContaining([
+      expect.objectContaining({ after: expect.objectContaining({ providerRefundId: 'refund-concurrent-close' }) }),
+      expect.objectContaining({ after: expect.objectContaining({ code: 'PAYMENT_REFUND_CONCURRENT_STATE_CHANGE', reservation_released: false, current_order_state: 'closed' }) }),
+    ]))
   })
 
   it('defers remaining orders after the query deadline and resumes them in a new pass', async () => {
