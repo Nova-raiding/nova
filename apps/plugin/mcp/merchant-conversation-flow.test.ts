@@ -140,7 +140,7 @@ describe('Codex App merchant conversation flow', () => {
     })
   })
 
-  it('fails closed with a clear upgrade boundary when an old API returns the retired onboarding shape', async () => {
+  it('projects durable old onboarding state into the conversational 4-step flow', async () => {
     await withBridge((request, res) => {
       res.setHeader('content-type', 'application/json')
       res.end(json(ok(request, {
@@ -153,9 +153,13 @@ describe('Codex App merchant conversation flow', () => {
       const response = await request(child, 1, 'onboarding.status')
       const result = response.result as Json
       const content = (result.content as Array<{ text: string }>)[0]?.text ?? ''
-      expect(content).toContain('首次引导服务正在升级')
-      expect(content).toContain('不会生成、扣费或发布')
-      expect(result.structuredContent).toMatchObject({ status: 'blocked', blocker: { code: 'ONBOARDING_API_VERSION_MISMATCH' } })
+      expect(content).toContain('首次配置 1/4')
+      expect(content).toContain('扫描商品至知识库')
+      expect(content).not.toContain('正在升级')
+      expect(result.structuredContent).toMatchObject({
+        status: 'in_progress',
+        initialization: { completed: 1, total: 4, evidence: { compatibility_projection: true } },
+      })
       expect(result.structuredContent).not.toHaveProperty('onboarding_card')
     })
   })
