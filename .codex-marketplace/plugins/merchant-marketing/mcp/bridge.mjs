@@ -1252,8 +1252,10 @@ function userFacingToolText(method, result) {
           : stepId === 'build_workspace'
             ? `现在开始第四步：建立工作区。\n\n${current.summary ?? '工作区用于管理店铺、商品、素材和生产任务。'}\n\n请确认工作区名称和对应店铺；确认后才会完成首次配置。`
             : ''
+      const capabilityIntro = '首次使用会按四个步骤完成：\n① 连接平台及店铺\n② 扫描商品至知识库\n③ 检查系统配置\n④ 建立内容工作区\n\n配置完成后，你可以让我制作商品详情文案、主图/详情图候选、视频脚本与分镜，并进行规则检查；正式生成、扣费和发布都需要真实配置与独立确认。'
       return [
         initialization.completed === 0 ? '您好，感谢您使用 Store Nova。\n\n本地系统已经部署完成。接下来需要通过四个步骤，完成您的初始化配置：\n\n① 连接 Store Nova 管理后台，并绑定平台品牌店铺。\n② 品牌知识学习，完成知识库初步搭建。\n③ 调用知识库资料，检查系统配置，完成功能搭建。\n④ 建立工作区。\n\n除店铺确认和工作区设置外，其余可自动完成的检查将由系统执行。请不要在对话中发送店铺账号、密码或短信验证码；涉及授权时，请通过平台官方授权页面完成。\n\n准备好后，我们从第一步开始。' : '',
+        capabilityIntro,
         `当前进度：${initialization.completed}/4\n${progress}`,
         initialization.status === 'ready'
           ? '恭喜您，Store Nova 首次使用配置已经全部完成。\n\n内容工作区已就位，您的生产环境已准备完毕。现在可以选择一个商品，或直接描述制作需求；生成和发布仍需独立确认。'

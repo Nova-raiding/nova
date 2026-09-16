@@ -1,7 +1,7 @@
 {
   "id": "merchant-marketing",
   "name": "merchant-marketing",
-  "version": "0.1.0+codex.20260916095600",
+  "version": "0.1.0+codex.20260916100500",
   "description": "商家营销内容助手：同步商品事实、生成可审阅内容，并在明确确认后提交发布。",
   "author": {
     "name": "Merchant Marketing Team",
