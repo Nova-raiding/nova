@@ -157,3 +157,11 @@ owner 验证：全局类型检查通过；发布门禁 135 个文件、652 项�
 ECS 只读核验显示所有容器和主站、运营后台健康接口仍存活，但生产实质上处于 NO-GO：`/api/releasez` 的发布四元组为空且 `ready=false`；运行环境仍为 fixture、`writesEnabled=false`；数据库只到 migration 209；API/worker 使用带 dirty 标记的候选镜像；ChatGPT Apps challenge 与 MCP OAuth issuer/authorization/token endpoint 缺失；运行 Compose 来源同时存在旧 deploy 目录与 release 目录。支付宝和模型中转配置存在，不能重复认定为缺失。
 
 最新远端主分支与当前功能分支从共同基点分别前进 173 和 30 个提交；直接合并模拟产生 36 个冲突。更关键的是双方独立占用了 migration 212–214：主分支必须保留现有 212–214，当前分支的 workspace/account/embedding 迁移在集成时应顺延为 215–217。发布前必须从最新 `origin/main` 建立隔离集成分支，跳过 5 个已等价进入主分支的补丁，按主题移植其余独有修改并重新执行全部门禁；不能直接部署当前旧基线分支。
+
+## 第十八批：owner 最终回归与 ECS 生产阻断复核（2026-09-17）
+
+本轮重新执行运营后台真实 OIDC 浏览器验收，10/10 通过；全量安全测试 16/16 分片通过；发布门禁 135 个文件、634 项通过，14 项因当前没有隔离 PostgreSQL URL 跳过；类型检查、运营后台构建、商家工作台构建、Ops API surface（140/140）和 release metadata 校验全部通过。测试产生的截图与 inventory 工件已恢复，工作树已清理并提交 `3edaaf36`，且已推送远端。
+
+ECS 容器状态全部 healthy，主 API 与运营后台健康端点可达。但 ECS 的 `production.yaml` 仍是 BLOCKED 占位文件，缺失生产合同要求的全部关键字段（首个门禁错误为 `plugin_enabled`）；生产 API 明确返回 fixture 模式、`writesEnabled=false`、`productionGate=false`，`/releasez` 证据也尚未形成可验证发布身份。当前不能安全写入真实店铺、扣款、模型中转或 OSS，也不能执行生产部署。告警维持显式关闭的可选策略，不构成阻断；Kubernetes 不在 ECS 生产门禁内。
+
+代码和测试侧 P0 已完成，剩余工作全部属于外部生产状态：注入并审计真实 OIDC/平台、模型中转、支付、OSS、数据库密钥；生成不可变镜像和 migration 214+ 的候选发布；采集并签署 release-bound 的 capability、capacity、model relay、payment、restore、OSS、ChatGPT host、canonical cutover 八类证据；通过 ECS preflight、桌面真实会话、canary 与回滚演练后，才可将判定从 **NO-GO** 改为 GO。
