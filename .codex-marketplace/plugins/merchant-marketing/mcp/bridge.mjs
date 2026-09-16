@@ -1999,18 +1999,8 @@ function merchantUiMetadata(method, result, args = {}) {
     // expose the retired dashboard card or claim a missing step is complete.
     if (Array.isArray(result.steps) || result.onboarding || result.greeting) {
       const legacySteps = Array.isArray(result.steps) ? result.steps : []
-      // An empty greeting-only response has no durable state to project. Keep
-      // the explicit upgrade boundary for that case instead of inventing 0/4.
-      if (!legacySteps.length) return {
-        schema_version: 'store-nova.initialization.v1',
-        status: 'blocked',
-        blocker: {
-          code: 'ONBOARDING_API_VERSION_MISMATCH',
-          title: '首次引导服务正在升级',
-          message: '当前服务端尚未返回可核验的首次配置状态；已安全保留当前工作区，不会生成、扣费或发布。',
-          next_action: '请重新连接 Store Nova，服务升级完成后继续首次配置。',
-        },
-      }
+      // A greeting-only legacy response has no completion evidence. Start the
+      // same honest 0/4 flow rather than showing an upgrade dead end.
       const stateFor = (...ids) => legacySteps.find(step => {
         const values = [step?.id, step?.title, step?.key].map(value => String(value ?? '').trim().toLowerCase())
         return ids.some(id => values.includes(id) || values.some(value => value.includes(id)))
@@ -2021,7 +2011,7 @@ function merchantUiMetadata(method, result, args = {}) {
       const products = stateFor('select_product', 'choose_product', 'scan_catalog', '选择商品', '扫描商品')
       const assets = stateFor('add_assets', 'upload_assets', '上传素材与资料', '素材')
       const generation = stateFor('generate_review', 'start_task', 'generate_content', '生成并审核', '开始任务')
-      const connectDone = done(workspace) && done(store)
+      const connectDone = legacySteps.length > 0 && done(workspace) && done(store)
       const scanDone = connectDone && done(products) && done(assets)
       const configDone = scanDone && done(generation)
       const initializationSteps = [
