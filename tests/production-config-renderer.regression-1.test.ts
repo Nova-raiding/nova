@@ -21,6 +21,7 @@ function completeEnvironment(): Record<string, string> {
     PAYMENT_MODE: 'provider', PAYMENT_PROVIDER_ADAPTERS: 'alipay', PAYMENT_PROVIDER_MERCHANT_ID: '2088123456789012',
     PAYMENT_CHECKOUT_BASE_URL: 'https://pay.yxsona.com/checkout', PAYMENT_CALLBACK_BASE_URL: 'https://merchant.yxsona.com/v1',
     MODEL_RELAY_BASE_URL: 'https://relay.yxsona.com', TEXT_MODEL: 'text-v1', IMAGE_MODEL: 'image-v1', IMAGE_EDIT_MODEL: 'edit-v1', OCR_MODEL: 'ocr-v1', VIDEO_MODEL: 'video-v1',
+    EMBEDDING_MODEL: 'embedding-v1', EMBEDDING_DIMENSIONS: '1536', EMBEDDING_MAX_REQUEST_CNY: '0.10', KNOWLEDGE_VECTOR_INDEX_ENABLED: 'false',
     APPROVED_REQUESTS_PER_MINUTE: '100', APPROVED_TOKENS_PER_MINUTE: '100000', MAXIMUM_TASK_COST_CNY: '0.50',
     PLATFORM_RULE_SYNC_MANIFEST_URL: 'https://rules.yxsona.com/manifest.json', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
     OBJECT_STORAGE_BUCKET: 'acceptance-assets', OBJECT_STORAGE_REGION: 'cn', OBJECT_STORAGE_ENDPOINT: 'https://storage.yxsona.com', OBJECT_STORAGE_SSE_MODE: 'AES256',
