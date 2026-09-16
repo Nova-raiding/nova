@@ -164,6 +164,21 @@ describe('Codex App merchant conversation flow', () => {
     })
   })
 
+  it('starts at 0/4 when a legacy server only returns a greeting', async () => {
+    await withBridge((request, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(json(ok(request, { status: 'in_progress', greeting: '欢迎回来' })))
+    }, async child => {
+      const response = await request(child, 1, 'onboarding.status')
+      const result = response.result as Json
+      const content = (result.content as Array<{ text: string }>)[0]?.text ?? ''
+      expect(content).toContain('首次配置 0/4')
+      expect(content).toContain('开始配置店铺')
+      expect(content).not.toContain('升级')
+      expect(result.structuredContent).toMatchObject({ status: 'in_progress', initialization: { completed: 0, total: 4 } })
+    })
+  })
+
   it('keeps later progress conversational and only celebrates a verified 4/4', async () => {
     await withBridge((request, res) => {
       res.setHeader('content-type', 'application/json')
