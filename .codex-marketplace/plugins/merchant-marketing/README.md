@@ -2,7 +2,7 @@
 
 macOS 管理凭据轮换：默认仍优先使用宿主显式环境。只有明确配置 `MERCHANT_MCP_TOKEN_SOURCE=launchd` 才在桥接进程启动时读取系统的新凭据；系统与宿主的完整 API 地址和工作区必须一致，否则拒绝启动，不回退旧凭据。此模式不支持显式 actor/role 覆盖。配置更新后需重载插件连接（必要时重启桌面宿主）；已运行进程不会热更新，也不会自动重试写入。
 
-当前 `tools/list` 实测为 154 个 MCP 工具（即当前 `tools/list` 为 154 个 MCP 工具），以运行态契约测试为准；数量可能随共享注册表变化，不作为生产就绪证明。
+当前商家主流程为：**公开链接/手工资料 → 内容生产 → 工具支持时审核、导出**。这是产品范围与目标顺序，每个阶段以实际工具支持和服务端结果为准；未绑定候选的审核/导出缺口见下文。实际工具以当前连接的 `tools/list` 与运行态契约测试为准，不在文档中固化工具数量，也不以数量证明生产就绪。
 
 这是可安装的 Codex Plugin 源目录，包含：
 
@@ -67,11 +67,17 @@ bridge 对缺失或未解析的 `${MERCHANT_MCP_BASE_URL}`、`${MERCHANT_WORKSPA
 
 ## 安装后第一步
 
-### 可以先导入资料、做草稿，再按需连接店铺
+### 从资料与制作目标开始
 
-已有合法商家登录、工作区权限且服务端商业准入允许时，没有店铺 OAuth 也可以先导入自己提供的资料、查看草稿预览。资料导入使用 `catalog.import` 并明确传 `draft_only="true"`；文本候选使用 `content.draft.generate`，结果保留为“草稿候选（未批准、未发布）”。如当前工具清单或服务端尚不支持该路径，应明确显示阻断，不以正式生成、宿主模型或静态示例替代。
+已有合法商家登录、当前工作区权限且服务端商业准入允许时，可提供公开商品链接、自己的图片、表格或手工资料，先制作内容候选；不需要先连接店铺，不以 OAuth 或四步店铺接入作为默认步骤。
 
-需要读取真实平台商品、同步或发布时，再选择“连接店铺”，通过官方 OAuth 连接明确的平台与店铺。店铺链接、Cookie、平台密码或验证码都不能替代 OAuth；资料导入和草稿生成不会提高店铺授权进度，也不会解除账号停用、角色、交付、创意点、安全扫描、模型中转及成本证据门禁。
+公开链接只是待核验来源，不代表店铺授权、已确认商品事实或页面一定可读取。只能使用当前实际可用且被允许的能力核验公开内容；无法读取时改由商家提供自己的资料，不绕过登录或平台访问限制，不索取 Cookie、平台密码和验证码。
+
+资料导入调用 `catalog.import` 并显式传 `draft_only="true"`，不猜造店铺账号；文本候选使用 `content.draft.generate`，结果标为“草稿候选（未批准、未发布）”。图片/视频候选仍走既有 MCP 和平台模型中转、扫描、事实、权益及计费门禁。工具缺失或接口不支持时明确阻断，不用宿主模型、静态示例或正式绑定路径替代。
+
+审核与导出使用现有 `content.review`、`content.export` 接受的真实内容/版本标识。当前文本候选返回 `formalVersionCreated=false`，不产生可直接交给这两个工具的正式版本；只能先供人工审阅，不能宣称候选审核与文件导出已闭环。已有真实内容版本继续按原门禁审核、导出，输出保留事实来源、审核与批准状态；“已导出”不等于“已批准”或“已发布”。
+
+当前插件隐藏店铺接入、商品/库存/订单同步、发布/批量发布及经营巡检自动化入口。不删除已有后端接口、业务数据或正式授权/审计门禁，也不通过兼容调用、直接 HTTP 或旧模板绕回隐藏能力。商业套餐订单、账单和支付恢复不是店铺订单同步，继续按服务端 exact recovery 契约执行。
 
 ### ChatGPT 宿主模型与Store Nova业务模型
 
@@ -93,9 +99,9 @@ npm run codex:relay:validate
 
 图片、PDF 或其他附件首先由 ChatGPT 宿主模型接收；消息成功发送后，服务端才会使用业务模型中转执行 OCR、文案或图片生成。若当前宿主模型不支持视觉附件（例如 Codex Spark 当前会提示“请移除图像或切换模型”），消息会在发送前被 ChatGPT 拦截，这不是 Merchant MCP 或业务中转故障。请切换到支持图片输入的宿主模型后重试；纯文字任务可以直接移除附件继续。业务模型不会替代宿主模型的输入能力，也不会出现在 ChatGPT 的模型选择器中。
 
-插件下载并启用后，第一步调用只读的 `onboarding.status`，读取真实身份、工作区和平台店铺状态。商家可先选择资料导入/草稿预览；正式店铺业务才按四步引导完成相应配置，不能把四步完成作为候选路径的前提。具体任务使用 `merchant.start`；该操作虽然幂等，但可能记录当前意图，因此不是只读恢复入口。服务端必须在任何意图写入、知识加载或业务 action 生成前完成创意点准入。零点或 unknown 时，返回内容只能包含余额/订单/支付状态等服务端授权恢复操作，不展示平台连接、目录同步、内容导出或其他业务下一步。如尚未有工作区，仅在服务端恢复契约允许时执行 `workspace.bootstrap`。选择真实店铺业务且准入通过后才展示京东、淘宝、天猫、拼多多、小红书、抖音六个平台，商家明确选择后调用 `platform.connect`，授权回调完成后用 `workspace.health` 刷新店铺状态。
+插件下载并启用后，先调用只读 `onboarding.status` 核验真实身份与当前工作区；欢迎说明只介绍资料、内容、审核和导出，并询问一个制作目标或缺失资料。旧店铺接入进度仅保留为兼容状态，不展示默认 `0/4` 引导，也不阻断未绑定候选。已有明确目标时可调用 `merchant.start`，但只使用当前内容范围内、经服务端准入允许的下一步；旧连接/同步/发布建议不执行。`merchant.start` 可能记录意图，不是只读恢复入口。缺工作区时仅在服务端契约允许后调用 `workspace.bootstrap`，失败不得回退演示工作区。
 
-同一平台可以绑定多个店铺；商家必须明确选择店铺，不能默认使用列表第一家。通过创意点准入后才可继续平台连接、商品读取和素材建档。`billing.status` 展示服务端返回的创意点余额、到期和恢复状态；恢复后才进入“上传我的商品图片和资料”。人民币收款记录和 provider 成本只是证据账本，不能解锁业务功能。
+当前登录、工作区/RLS、角色、交付、创意点、模型中转、成本证据与安全扫描门禁均保留。`billing.status` 展示服务端余额与恢复状态；旧人民币收款和 provider 成本账本不能解锁业务功能。内容制作不修改店铺授权或自动解除账号停用。
 
 ## 在插件中查看订单与账单
 
@@ -111,9 +117,9 @@ npm run codex:relay:validate
 
 对话示例：用户说“看看我的钱包”时调用 `billing.status`；用户说“有哪些套餐和点数包”时调用 `commercial.catalog.get` 并列出可执行的公开 SKU；用户选择套餐后调用 `commercial.order.create` 创建待支付订单并展示订单号，再通过 `commercial.order.payment.get` 查询支付状态。若服务端未提供正式 checkout 入口，插件必须明确提示“支付配置尚未就绪”，不能改用旧接口、猜测支付链接或要求用户把微信/支付宝密钥发给模型。
 
-也可以在新会话中输入“查看我的商品目录和平台连接状态”。插件应先调用 `workspace.health`，再调用 `catalog.search`：查看具体店铺时必须传 `platform + account_id`，只有明确要求全部店铺只读汇总时才传 `scope=workspace`。若出现 `MERCHANT_WORKSPACE_ID is required`、`WORKSPACE_SCOPE_REQUIRED` 或 MCP 工具不可见，应先修复环境变量、网关路由或身份映射，不要继续创建任务。
+可在新会话中输入“查看我的商品资料”，插件通过 `catalog.search(scope=workspace)` 查询当前授权工作区已有记录，无需先连接店铺。用户明确查询已有某店铺历史记录时必须校验具体范围，多候选不默认第一家。MCP 工具不可见、工作区不明或权限失败时，说明配置阻断，不继续创建任务。
 
-任务需要补充信息时，使用 `task.answer` 保存答案和输入快照；事实未明确确认前，不进入正式生成和发布。
+已有任务需要补充信息时用 `task.answer` 保存答案和输入快照；未绑定候选没有正式任务时不伪造任务编号。正式内容的事实、制作方案、审核与批准仍按既有门禁执行。
 
 商家侧 `tools/list` 数量以当前运行态契约测试为准，不在文档中固化易过期的数字。它不得包含任何 `ops.*`、`asset.scan`、`content.codex.*` 开发入口，也不得包含共享商业 registry 中 disabled 的操作。生成候选不会覆盖商品当前图片，也不能被称为平台已发布图。OAuth 授权回调仍由服务端 REST/官方页面承载；平台统一承担模型中转费用，商家不需要提供自己的 Key。
 
@@ -127,38 +133,20 @@ node apps/plugin/scripts/verify-installed-bridge.mjs \
   --installed /absolute/path/to/installed/merchant-marketing/<version>
 ```
 
-主图候选必须先由 `catalog.image.get` 展示、由 `catalog.image.review` 完成检查，再由商家明确选择 1–6 张及顺序后调用 `content.visual.select`。该操作不会改写原版本，而是派生一个新的 `review_required` 内容版本；选图确认、新版本审核与批准、最终发布确认是三个独立步骤，不得互相替代。任何选图集合或顺序变化都会使旧的 `publish.prepare` 预览和确认哈希失效，必须重新审核、批准、准备预览并获得新的明确确认。
+主图候选先由 `catalog.image.get` 展示，并按现有 `catalog.image.review` 与人工审阅要求检查。独立未绑定候选保持未批准、未发布。已有正式内容版本需要选图时，商家明确选择 1–6 张及顺序后才调用 `content.visual.select`，派生新的 `review_required` 版本；选图、审核与批准分别确认，不复用旧版本证据，也不附带平台发布操作。
 
-`publish.prepare` 会展示已冻结选图的发布预览。当对应平台的官方媒体上传适配器未实现或未配置时，预览会标记 `IMAGE_PUBLISH_ADAPTER_UNAVAILABLE` 且提交失败关闭。插件禁止删掉已选图、回退商品旧图、改成纯文案发布或声称图片已发布；必须先配置对应平台适配器，然后重新执行 `publish.prepare` 和独立发布确认。
+平台发布及批量发布不属于当前商家入口。内容审核通过或文件导出成功都不代表已写入平台；现有后端发布审批、幂等、账号范围和媒体适配器门禁继续保留，不在插件中提供绕过路径。
 
 `content.export` 在 bridge 内把 bundle、Markdown、JSON 或 manifest 写入权限为 `0600` 的会话隔离临时文件，并返回 MCP `resource_link`；正文和 ZIP Base64 不进入模型文本或 `structuredContent`。生产环境必须显式配置绝对 `MERCHANT_ARTIFACT_DIR`，单文件限制 25MB、单会话最多 100 个文件/250MB。文件卡片出现只证明导出已生成，不证明用户已下载、内容已批准或平台已发布。
 
-`workspace.health` 返回不含凭据的 `storeDirectory`。Codex 用别名/店铺名帮助商家选店，但所有店铺级调用最终都固定为 `platform + accountId`；同名、多候选、撤权或待刷新授权时必须阻断，不会默认选择列表第一家。`workspace.metrics` 支持按该组合执行单店分析；改别名不会改变授权代次或运营快照 hash。
+`workspace.health` 可返回不含凭据的历史店铺目录与连接摘要；它们不能作为当前默认店铺选择、同步或发布菜单。用户明确查询历史数据时仍按工作区与具体店铺范围隔离，不把历史快照说成实时平台数据。
 
-店铺目录同时返回脱敏的最后已知授权摘要与同步摘要：实际授权回包报告的 scope、访问令牌到期时间、是否具备刷新能力、最近授权时间，以及最近同步尝试、最近完整成功和最近可用数据时间。访问令牌到期不等于店铺授权到期，健康检查不会读取或返回 Vault 凭据；旧快照或平台未返回的字段保持 `unknown`。撤权店仍可查看历史同步记录，但不能被显示为当前可读。
+店铺目录中的授权和同步摘要仅代表最后观测记录，未知字段保持 `unknown`；访问令牌到期不等于整项授权到期，历史数据不证明当前可读或可发布。公开链接不能补齐这些授权证据。
 
-## Codex App 原生 Automations
+## 当前不提供的店铺运营入口
 
-生产环境默认关闭 API/Worker 的旧版内部 Automation tick；返回 codex_native_automations_only 且不会创建同步任务。
-只有经过运营迁移审批的独立内部调度部署，才可显式设置 MERCHANT_INTERNAL_AUTOMATION_TICK_ENABLED=true。
-商家插件和原生 Automation 模板不得设置该变量。
+同步、发布、批量发布和经营巡检 Automations 不属于本阶段商家工作流。旧 `scheduled/*.json` 与参考资料即使仍保留在仓库，也不作为当前入口或执行协议；不创建模板任务，不指导调用隐藏方法，不以直接 API 或替代调度器恢复它们。服务端内部调度配置不由商家插件开启。
 
-插件不实现独立定时任务服务。每日店铺风险巡检和每周六平台经营简报由 Codex App 原生 Automations 负责调度、历史与通知，插件通过根目录 `scheduled/*.json` 提供原生模板，并由 Skill 与现有只读 MCP 数据能力执行。安装后可从合并的默认入口 `创建六平台运营巡检 Automation（每日风险巡检或每周经营简报）` 进入，再选择插件提供的两个模板：
+本轮只收窄插件入口与引导，不删除后端接口、业务数据或审计记录，不改变服务端模型中转、费用、权限或发布门禁。只读注解不是权限或商业准入豁免；明确的用户确认也不能重新开放当前隐藏能力。
 
-- `创建每日店铺风险巡检 Automation`
-- `创建每周六平台经营简报 Automation`
-
-两个模板覆盖京东（`jd`）、淘宝（`taobao`）、天猫（`tmall`）、拼多多/PDD（机器标识 `pinduoduo`）、小红书（`xiaohongshu`）和抖音（`douyin`）；完整提示词、只读工具白名单、输出结构和失败降级见 `skills/merchant-marketing/references/automations.md`。无人值守默认只调用 `workspace.health` 和 `workspace.metrics`，严格按 store/account 隔离，fixture、unbound 与真实店铺不得混算；流程禁止同步、内容生成、批准、充值、发布和任何平台写入。
-
-`workspace.metrics` 支持可选的 `platform + account_id` 单店范围，以及 `date_from`、`date_to` 和 `risk_limit`；并返回按 `platform + accountId` 隔离的 `stores`、单列的 `unboundLocalData`、稳定 `riskItems`/`snapshotHash`、数据覆盖与基线状态。它不会保存 Automation 历史，也不会把账号记录等同于官方 API 可读；fixture、official API、仅账号记录和不可用状态必须分别呈现。
-
-模板不假定 Codex App 会自动提供上一次运行结果。没有包含稳定 risk key 的宿主基线时，报告必须标记 `comparisonAvailable=false`、`comparisonReason=baseline_unavailable` 并只描述当前风险；只有宿主明确提供兼容基线时才比较变化。插件自身不保存快照，也不承诺未经过宿主实测的“仅变化时通知”。
-
-`scheduled/*.json` 已按 Codex App `26.818.61809`（build 7019）桌面端实际解析器的 `name + prompt + schedule` 契约校验；桌面端会直接扫描已安装插件的 `scheduled/` 目录，当前 plugin manifest 契约不接受 `scheduledTasks` 字段，因此不添加臆测字段。App Server 的 `plugin/read.scheduledTasks` 当前返回 `null`，它不能作为桌面端“From Plugins”模板扫描结果；创建、Run now、历史和通知仍需在桌面 UI 完成真实 canary 后才能宣称可用。
-
-只读入口会通过 MCP annotations 标记为 `readOnlyHint`，因此 `workspace.health`、目录查询、版本查看和状态查询不会被 Codex 的自动审批策略误判为写操作；发布、规则激活、素材权益确认等写操作仍保留人工确认门禁。
-
-发布必须严格按 `publish.prepare` → 展示字段 diff/两个 hash → 用户明确确认 → `publish.confirm` 执行；批量发布使用 `publish.batch.prepare` → 逐项确认 → `publish.batch.confirm`，可暂停/恢复并对失败项重新确认重试。`publish.confirm` 的重复请求使用参数派生的稳定幂等键；返回 `unknown` 只能进入人工对账，不能改写为 `published`。
-
-本插件默认不声明平台真实写权限；生产写入仍受服务端平台配置、人工确认和幂等门禁控制。修改插件后需在 Codex 中开启新会话，确保 Skill 和 MCP 工具重新加载。
-当前发布元数据基线要求：`asset.scan` 仅用于测试/显式本地 fixture，不在生产商家插件展示；商业恢复类型以 `packages/contracts` 的共享 registry 为唯一真值并由 Bridge 契约测试校验。
+修改插件后在 Codex 中开启新会话，重新核验实际工具清单与 Skill。安装验证只能证明对应 bridge 文件和契约，不能替代真实宿主、内容生成、审核或导出验收。 `asset.scan` 不在生产商家插件展示；商业恢复类型仍以共享 exact registry 为唯一真值。

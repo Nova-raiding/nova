@@ -39,9 +39,9 @@ describe('Codex plugin installation package', () => {
     expect(manifest.skills).toBe('./skills/')
     expect(manifest.mcpServers).toBe('./.mcp.json')
     expect(manifest.interface.defaultPrompt).toEqual([
-      '@Store Nova 开始使用：展示首次配置欢迎说明、四步流程和当前进度，带我完成当前一步',
+      '@Store Nova 开始使用：从公开商品链接或手工资料开始，带我完成内容生产、审核和导出',
       '用我上传的商品图片做一张可审阅主图；还没有图片就先告诉我怎么上传',
-      '为我的商品策划第一份营销素材，先核对店铺和商品事实',
+      '为我的商品策划第一份营销素材，先核对我提供的商品资料',
     ])
     expect(manifest.interface.defaultPrompt).toHaveLength(3)
     expect(manifest.entry_skill).toBeUndefined()
@@ -228,17 +228,18 @@ printf '%s\n' Darwin
     for (const status of ['已到账', '待支付', '未成功', '已关闭', '已退款']) expect(recharge).toContain(status)
   })
 
-  it('documents store authorization before wallet and product-material onboarding', () => {
+  it('documents content-first onboarding without treating unbound candidates as exportable versions', () => {
     const readme = readFileSync(resolve(root, 'README.md'), 'utf8')
     const firstStep = readme.indexOf('## 安装后第一步')
     expect(firstStep).toBeGreaterThanOrEqual(0)
     const firstStepSection = readme.slice(firstStep, readme.indexOf('\n## ', firstStep + 3) < 0 ? undefined : readme.indexOf('\n## ', firstStep + 3))
-    expect(firstStepSection).toContain('六个平台')
-    expect(firstStepSection).toContain('platform.connect')
-    expect(firstStepSection).toContain('workspace.health')
-    expect(firstStepSection).toContain('billing.status')
-    expect(firstStepSection.indexOf('billing.status')).toBeGreaterThan(firstStepSection.indexOf('platform.connect'))
-    expect(firstStepSection.indexOf('上传我的商品图片和资料')).toBeGreaterThan(firstStepSection.indexOf('billing.status'))
+    expect(firstStepSection).toContain('公开商品链接')
+    expect(firstStepSection).toContain('draft_only="true"')
+    expect(firstStepSection).toContain('content.draft.generate')
+    expect(firstStepSection).toContain('content.export')
+    expect(firstStepSection).toContain('formalVersionCreated=false')
+    expect(firstStepSection).toContain('不能宣称候选审核与文件导出已闭环')
+    expect(firstStepSection).not.toContain('platform.connect')
   })
 
   it('keeps image generation on the business relay instead of the host image tool', () => {
