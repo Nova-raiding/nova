@@ -157,3 +157,17 @@ owner 验证：全局类型检查通过；发布门禁 135 个文件、652 项�
 ECS 只读核验显示所有容器和主站、运营后台健康接口仍存活，但生产实质上处于 NO-GO：`/api/releasez` 的发布四元组为空且 `ready=false`；运行环境仍为 fixture、`writesEnabled=false`；数据库只到 migration 209；API/worker 使用带 dirty 标记的候选镜像；ChatGPT Apps challenge 与 MCP OAuth issuer/authorization/token endpoint 缺失；运行 Compose 来源同时存在旧 deploy 目录与 release 目录。支付宝和模型中转配置存在，不能重复认定为缺失。
 
 最新远端主分支与当前功能分支从共同基点分别前进 173 和 30 个提交；直接合并模拟产生 36 个冲突。更关键的是双方独立占用了 migration 212–214：主分支必须保留现有 212–214，当前分支的 workspace/account/embedding 迁移在集成时应顺延为 215–217。发布前必须从最新 `origin/main` 建立隔离集成分支，跳过 5 个已等价进入主分支的补丁，按主题移植其余独有修改并重新执行全部门禁；不能直接部署当前旧基线分支。
+
+## 第十八批：最新主分支语义集成与最终代码验收
+
+已从最新 `origin/main`（`365c5d84`）建立隔离分支 `codex/release-integration-20260916`，按功能语义移植旧分支独有修改，并跳过 5 个已等价进入主分支的补丁。集成后相对主分支前进 38 个提交，工作树干净；主分支 migration 212–214 保持字节不变，账号、工作区内容和 embedding 迁移顺延为 215–217。发布元数据、CI PostgreSQL 验收、插件 canonical 与 marketplace 镜像均已同步到新迁移与当前契约。
+
+集成过程中修复了运营后台客户交付账号编辑入口不可达，以及财务、隐私、ECS 发布目标和插件范围的陈旧测试合同。桌面只读用户仍只能查看详情，具备更新权限且后端提供保存能力时才显示“编辑档案”；列表、权限和业务数据继续由后端接口提供。owner 最终复核：全局类型检查通过；发布门禁 135 个文件通过、7 个外部 PostgreSQL 文件跳过，共 676 项通过、14 项跳过；迁移连续性、源码 diff、Git 对象和已跟踪工件敏感信息检查通过。
+
+本次仅完成代码集成与本地/隔离验收，没有部署生产。ECS 现网仍停留在 migration 209、fixture 与 `writesEnabled=false`，使用 dirty 候选镜像；ChatGPT Apps challenge、MCP OAuth 端点、不可变 release identity 和 release-bound 八类证据仍未形成。因此集成分支可以进入代码评审和候选构建，但生产上线判定继续为 **NO-GO**。
+## 第十九批：owner 最终代码验收（2026-09-17）
+
+- 客户交付真实 Chromium 回归：35/35 通过；客户交付组件测试：14/14 通过。
+- 全量 16 分片测试中唯一失败为培训状态选择器旧断言，已修复；对应分片重新通过。发布门禁 135 个文件通过、7 个 PostgreSQL 外部环境文件跳过，676 个测试通过、14 个跳过。
+- `typecheck`、运营后台构建、商家工作台构建、运营表面审计（140/140 契约方法有前端引用）和 release metadata gate 均通过。
+- 生产预检仍阻断：本地缺少真实 `PRODUCTION_CONFIG_PATH`，ECS releasez 返回 `RELEASE_METADATA_UNAVAILABLE`；生产健康接口当前为 fixture 模式、写入关闭。模型中转校验缺少真实 endpoint/key 和五模态模型配置。以上属于外部生产配置与证据，不以 fixture 通过替代。

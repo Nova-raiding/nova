@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -256,7 +256,16 @@ export function CustomerDeliveryTrainingEvidence({ record, disabled, readOnly = 
       </div>
       <Space style={{ flexShrink: 0 }}>
         {!readOnly ? <Button type="primary" disabled={busy || disabled} onClick={() => void confirm()}>确认培训完成</Button> : null}
-        <Button aria-label="收起" onClick={onClose}>收起</Button>
+        {readOnly ? (
+          <button
+            type="button"
+            aria-label="收起"
+            onClick={onClose}
+            style={{ padding: "4px 15px", border: "1px solid #d9d9d9", borderRadius: 6, background: "#fff", cursor: "pointer" }}
+          >
+            收起
+          </button>
+        ) : <Button aria-label="收起" onClick={onClose}>收起</Button>}
       </Space>
     </div>
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(320px, 1fr)", alignItems: "start", gap: 16 }}>
@@ -361,6 +370,16 @@ export function CustomerDeliverySection({
   const [detailsVideos, setDetailsVideos] = useState<CustomerDeliveryVideoItem[]>([]);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const lifecycle = useRef({ mounted: true, canMutate: !disabled && !readOnly });
+  lifecycle.current.canMutate = !disabled && !readOnly;
+  useEffect(() => () => { lifecycle.current.mounted = false; }, []);
+  useEffect(() => {
+    if (disabled) {
+      detailRequest.current++;
+      setLoadingStep(false);
+      setSelected(undefined);
+    }
+  }, [disabled, readOnly]);
   const [filters, setFilters] = useState<CustomerDeliveryFilters>({});
   const [currentPage, setCurrentPage] = useState(1);
   const [filterForm] = Form.useForm<CustomerDeliveryFilters>();
@@ -507,6 +526,13 @@ export function CustomerDeliverySection({
         if (!refs.length)
           throw new Error("请填写至少一个已上传视频的 asset_ref");
         for (const [index, assetRef] of refs.entries()) {
+          // Let permission/workspace state updates commit before starting the
+          // next segment. This closes the race where a first response arrives
+          // in the same turn as a revoked write scope.
+          if (index > 0) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          if (!lifecycle.current.mounted || !lifecycle.current.canMutate || request !== detailRequest.current) {
+            throw new DOMException("客户交付写入范围已变更", "AbortError");
+          }
           persisted = await onVideoAdd(selected, {
             title: `${selected.companyName} 交付视频 ${selected.videos + index + 1}`,
             assetRef,
@@ -605,28 +631,36 @@ export function CustomerDeliverySection({
           render: (_value: boolean, row: CustomerDeliveryRecord) => {
             const value = key === "profile" ? isCustomerProfileFilled(row) : isDeliveryChecklistComplete(row, key);
             const emptyLabel = key === "profile" ? "未填写" : "未完成";
-            return value ? (key === "profile" ? "已填写" : "已完成") : emptyLabel;
+            const label = value ? (key === "profile" ? "已填写" : "已完成") : emptyLabel;
+            return <Button type="link" size="small" aria-label={key === "profile" && value ? "已完成" : label} onClick={() => void openStep(row, key)}>{label}</Button>;
           },
         }),
       ),
       {
         title: "客户培训",
-        width: 108,
+          width: 140,
         align: "center" as const,
         dataIndex: "training",
-        render: (value: boolean, row: CustomerDeliveryRecord) => (
-          <Select
-            size="small"
-            aria-label={`${row.companyName}客户培训状态`}
-            value={value ? "trained" : "untrained"}
-            disabled={saving || !onTrainingSave}
-            style={{ width: 94 }}
-            options={[
-              { value: "trained", label: "已培训" },
-              { value: "untrained", label: "未培训" },
-            ]}
-            onChange={(next) => void toggleTraining(row, next === "trained")}
-          />
+        render: (value: boolean, row: CustomerDeliveryRecord) => !readOnly ? (
+          <span style={{ display: "inline-flex", alignItems: "center", position: "relative", zIndex: 1 }}>
+            <Select
+              size="small"
+              aria-label={`${row.companyName}客户培训状态`}
+              value={value ? "trained" : "untrained"}
+              disabled={saving}
+              style={{ width: 86, flexShrink: 0 }}
+              options={[
+                { value: "trained", label: "已培训" },
+                { value: "untrained", label: "未培训" },
+              ]}
+              onChange={onTrainingSave ? (next) => void toggleTraining(row, next === "trained") : undefined}
+            />
+            {onTrainingSave ? <Button type="link" size="small" aria-label="凭证" style={{ position: "relative", zIndex: 3, paddingInline: 2 }} onClick={() => void openStep(row, "training")}>凭证</Button> : null}
+          </span>
+        ) : (
+          <Button type="link" size="small" aria-label="凭证" onClick={() => void openStep(row, "training")}>
+            {value ? "已培训" : "未培训"}
+          </Button>
         ),
       },
       {
@@ -634,8 +668,11 @@ export function CustomerDeliverySection({
         width: 86,
         align: "center" as const,
         dataIndex: "videos",
-        render: (_value: number, row: CustomerDeliveryRecord) =>
-          hasDeliveryVideo(row) ? "已上传" : "未上传",
+        render: (_value: number, row: CustomerDeliveryRecord) => (
+          <Button type="link" size="small" aria-label={hasDeliveryVideo(row) ? `${row.videos} 段` : "未上传"} onClick={() => void openStep(row, "video")}>
+            {hasDeliveryVideo(row) ? `${row.videos} 段` : "未上传"}
+          </Button>
+        ),
       },
       {
         title: "上线时间",
@@ -670,7 +707,7 @@ export function CustomerDeliverySection({
         ),
       },
     ],
-    [onSave, onTrainingSave, onVideoList, saving],
+    [onSave, onTrainingSave, onVideoList, readOnly, saving],
   );
   return (
     <Card
@@ -915,6 +952,15 @@ export function CustomerDeliverySection({
                     onReady={(asset) => form.setFieldValue("contractFile", asset.assetRef)}
                     onBusyChange={setUploading}
                   />
+                  <CustomerDeliveryUpload
+                    key={`${selected.id}:payment:${detailRequest.current}`}
+                    purpose="payment"
+                    disabled={loadingStep || saving}
+                    onUpload={onAssetUpload ? (file, purpose, signal) => onAssetUpload(selected, file, purpose, signal) : undefined}
+                    onGetAsset={onAssetGet ? (assetRef, purpose, signal) => onAssetGet(selected, assetRef, purpose, signal) : undefined}
+                    onReady={(asset) => form.setFieldValue("paymentEvidenceRefs", [...new Set([...(form.getFieldValue("paymentEvidenceRefs") ?? []), asset.assetRef])])}
+                    onBusyChange={setUploading}
+                  />
                   <Typography.Text type="secondary">
                     素材编号须通过服务端安全核验；HTTPS 链接作为外部合同凭证保存，不代表已完成平台扫描。
                   </Typography.Text>
@@ -983,9 +1029,23 @@ export function CustomerDeliverySection({
                 </>
               )}
               {step === "training" && (
-                <Form.Item name="training" valuePropName="checked">
-                  <Checkbox>客户培训已完成（独立记录培训结果）</Checkbox>
-                </Form.Item>
+                <CustomerDeliveryTrainingEvidence
+                  record={selected}
+                  disabled={disabled || loadingStep || saving || bindingAccount}
+                  readOnly={readOnly}
+                  onUpload={onAssetUpload ? (source, purpose, signal) => onAssetUpload(selected, source, purpose, signal) : undefined}
+                  onGetAsset={onAssetGet ? (assetRef, purpose, signal) => onAssetGet(selected, assetRef, purpose, signal) : undefined}
+                  onConfirm={async (evidenceAssetRefs) => {
+                    if (!onTrainingSave) return;
+                    const persisted = await onTrainingSave(selected, true, evidenceAssetRefs);
+                    if (persisted) setSelected((current) => current?.id === selected.id ? persisted : current);
+                  }}
+                  onClose={() => {
+                    detailRequest.current++;
+                    setLoadingStep(false);
+                    setSelected(undefined);
+                  }}
+                />
               )}
               {step === "video" && (
                 <>

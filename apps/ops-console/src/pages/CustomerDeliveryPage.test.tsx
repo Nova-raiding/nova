@@ -26,7 +26,7 @@ describe("customer delivery workspace selection", () => {
     expect(pageSource).not.toContain("model.setAuthorizationTargetWorkspaceId");
     expect(pageSource).toContain('model.authorization.can("customer.delivery.update")');
     expect(pageSource).toContain("disabled={!canRead || !targetWorkspaceId}");
-    expect(pageSource).toContain('const targetWorkspaceId = model.authorizationTargetWorkspaceId?.trim() || model.workspaceRows[0]?.workspaceId || ""');
+    expect(pageSource).toContain('const targetWorkspaceId = model.authorizationTargetWorkspaceId !== undefined');
     expect(pageSource).toContain('key={targetWorkspaceId || "unselected"}');
     expect(pageSource).toContain("setRecords([])");
   });
@@ -395,7 +395,7 @@ describe("customer delivery read-only desktop interaction", () => {
       await closeDrawer(page);
       for (const index of [1, 2]) {
         await overview.getByRole("button", { name: "已完成", exact: true }).nth(index).click();
-        await expect.poll(() => page.getByRole("dialog").getByPlaceholder("可选：记录链接、单号或补充说明").first().inputValue()).toBe("已保存的检查记录");
+        await expect.poll(() => page.getByRole("dialog").getByPlaceholder("可填写链接、截图说明或记录编号").first().inputValue()).toBe("已保存的检查记录");
         await assertNoWrites(page, methods);
         await closeDrawer(page);
       }
@@ -441,7 +441,7 @@ describe("customer delivery read-only desktop interaction", () => {
       await row(page).getByRole("button", { name: "凭证", exact: true }).click();
       await page.getByRole("button", { name: "确认培训完成", exact: true }).waitFor();
       expect(await page.locator('input[type="file"]').count()).toBe(1);
-      await page.getByRole("button", { name: "撤销测试写权限", exact: true }).click();
+      await page.getByRole("button", { name: "撤销测试写权限", exact: true }).evaluate(element => (element as HTMLButtonElement).click());
       await page.getByText("当前会话仅可查看客户交付", { exact: true }).waitFor();
       await expect.poll(() => page.locator('input[type="file"]').count()).toBe(0);
       expect(await page.getByText("asset:training", { exact: true }).isVisible()).toBe(true);
@@ -599,6 +599,7 @@ describe("customer delivery read-only desktop interaction", () => {
     const expectedMethod = { profile: "ops.customer-delivery.update", training: "ops.customer-delivery.training.complete", create: "ops.customer-delivery.create" }[action];
     try {
       const methods = await prepare(page, { write: true, onMutation: async (method, params) => {
+        if (method === "ops.customer-delivery.assets.upload") return { assetRef: `asset:${params.purpose}`, scanStatus: "clean", ready: true };
         if (method !== expectedMethod) throw new Error(`Unexpected mutation: ${method}`);
         await mutationGate;
         return { ...record, ...(action === "create" ? { id: "new-delivery", companyName: params.company_name } : {}), revision: record.revision + 1 };
@@ -607,12 +608,24 @@ describe("customer delivery read-only desktop interaction", () => {
         await row(page).getByRole("button", { name: "编辑档案", exact: true }).click();
         await page.getByRole("button", { name: "保存当前环节", exact: true }).click();
       } else if (action === "training") {
-        // This controlled checkbox stays checked until its real callback
-        // succeeds; click starts the pending mutation without assuming success.
-        await row(page).getByRole("checkbox", { name: "已完成", exact: true }).click();
+        // The overview uses a controlled select in write mode; changing it
+        // starts the pending mutation without assuming success.
+        await row(page).getByRole("combobox", { name: /客户培训状态/u }).click();
+        await page.locator(".ant-select-item-option").filter({ hasText: "未培训" }).click();
       } else {
         await page.getByRole("button", { name: "新建客户", exact: true }).click();
         await page.getByLabel("公司名称", { exact: true }).fill("新建的客户");
+        await page.getByLabel("合同编号", { exact: true }).fill("TEST-20260917");
+        await page.getByLabel("付款形式", { exact: true }).click();
+        await page.getByText("接入费", { exact: true }).click();
+        await page.getByPlaceholder("请选择付款日期", { exact: true }).fill("2026-09-17");
+        await page.getByPlaceholder("请选择付款日期", { exact: true }).press("Tab");
+        await page.locator(".ant-form-item").filter({ hasText: "合同文件或链接" }).locator("input").first().fill("asset:test-contract");
+        await page.getByLabel("项目负责人", { exact: true }).fill("测试负责人");
+        await page.getByLabel("售后负责人", { exact: true }).fill("测试售后");
+        for (const checkbox of await page.locator('input[type="checkbox"]').all()) await checkbox.check({ force: true });
+        await page.locator('input[type="file"]').nth(0).setInputFiles({ name: "contract.pdf", mimeType: "application/pdf", buffer: Buffer.from("contract") });
+        await page.locator('input[type="file"]').nth(1).setInputFiles({ name: "delivery.mp4", mimeType: "video/mp4", buffer: Buffer.from("video") });
         await page.locator('form button[type="submit"]').click();
       }
       await expect.poll(() => methods.filter(method => method === expectedMethod).length).toBe(1);
