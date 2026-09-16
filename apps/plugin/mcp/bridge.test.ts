@@ -2429,7 +2429,7 @@ describe('Codex stdio MCP bridge', () => {
   })
 
   it.each([
-    [401, 'MCP_AUTH_REQUIRED', '当前服务配置尚未就绪。任务和已有内容已保留，没有扣费或发布；平台恢复后可继续处理。'],
+    [401, 'MCP_AUTH_REQUIRED', 'Store Nova 尚未登录或授权。请先在 ChatGPT 的插件连接设置中点击“连接/授权 Store Nova”，使用商家账号完成登录；任务和已有内容已保留，没有扣费或发布。'],
     [403, 'PERMISSION_DENIED', '当前账号没有执行这一步的权限。任务和已有内容已保留。'],
   ])('maps a bare HTTP %s gateway response to the stable plugin error contract', async (status, code, message) => {
     const server = createServer((_req, res) => {
@@ -2450,6 +2450,14 @@ describe('Codex stdio MCP bridge', () => {
         structuredContent: { code, message },
         content: [{ type: 'text', text: message }],
       })
+      if (status === 401) {
+        expect(response.result.structuredContent.recovery).toMatchObject({
+          state: 'authentication_required',
+          user_action_required: true,
+          resume_message: '登录并授权后继续',
+          next_action: { label: '连接/授权 Store Nova', target: 'chatgpt_plugin_connection_settings' },
+        })
+      }
     } finally {
       child.kill()
       await close(server)

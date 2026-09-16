@@ -10181,8 +10181,8 @@ function workerRouteRoles(method: string | undefined, path: string): WorkerReque
     if (/^\/v1\/(?:generation-jobs|internal\/image-generation-jobs|internal\/image-generation-continuations)\//u.test(path)) return ['generation']
     if (/^\/v1\/publish-jobs\/[^/]+\/observation$/u.test(path)) return ['publish', 'reconcile']
     if (path === '/v1/internal/automation/tick') return ['automation']
-    if (path === '/v1/internal/model-usage') return ['generation', 'publish']
-    if (path === '/v1/internal/knowledge-embeddings/admission' || path === '/v1/internal/knowledge-embeddings/outcome') return ['generation']
+    if (path === '/v1/internal/model-usage') return ['generation', 'publish', 'automation']
+    if (path === '/v1/internal/knowledge-embeddings/admission' || path === '/v1/internal/knowledge-embeddings/outcome') return ['generation', 'automation']
     if (path === '/v1/internal/model-usage/reconciliation' || path === '/v1/internal/storage/reconciliation' || path === '/v1/internal/support/sla-scan' || path === '/v1/internal/support/sla-report' || path === '/v1/internal/image-generation-jobs/reconciliation') return ['reconcile']
     if (path === '/v1/ops/data-deletion/complete' || path === '/v1/internal/storage/orphans/cleanup') return ['automation']
     if (/^\/v1\/assets\/[^/]+\/scan$/u.test(path)) return ['scan']
@@ -19734,6 +19734,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       return value
     }
     if (!['text', 'image', 'image_edit', 'ocr', 'video', 'embedding'].includes(String(modality)) || !model || !actionId || !runKey) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '模型用量回执缺少合法 modality、model、actionId 或 runKey', 400)
+    if (verifiedWorkerRequestRoles.get(req) === 'automation' && modality !== 'embedding') throw new DomainError(ERROR_CODES.FORBIDDEN, 'automation worker may report embedding usage only', 403)
     if ((contextLinkId === undefined) !== (contextHash === undefined) || (contextHash !== undefined && !/^[a-f0-9]{64}$/u.test(contextHash))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '模型用量回执的 contextLinkId/contextHash 必须成对且合法', 400)
     if (input.workspaceId !== undefined && input.workspaceId !== workspaceId) throw new DomainError(ERROR_CODES.TENANT_SCOPE_DENIED, '模型用量回执工作区不匹配', 403)
     let actionAuthorization = await persistence.actionLedger?.get(workspaceId, actionId)

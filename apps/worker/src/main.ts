@@ -474,7 +474,15 @@ function workerRoleForRequest(method: string, requestTarget: string, body?: stri
   if (path === '/v1/internal/automation/tick' || path === '/v1/ops/data-deletion/complete' || path === '/v1/internal/storage/orphans/cleanup') return 'automation'
   if (path === '/v1/internal/support/sla-scan' || path === '/v1/internal/support/sla-report') return 'reconcile'
   if (path.includes('reconciliation')) return 'reconcile'
-  if (path === '/v1/internal/model-usage' || path === '/v1/internal/knowledge-embeddings/admission' || path === '/v1/internal/knowledge-embeddings/outcome') return 'generation'
+  // Knowledge indexing is owned by the automation worker. Its admission,
+  // outcome and usage callbacks must use that worker's isolated credential;
+  // generation remains accepted server-side only for already-deployed callers.
+  if (path === '/v1/internal/knowledge-embeddings/admission' || path === '/v1/internal/knowledge-embeddings/outcome') return 'automation'
+  if (path === '/v1/internal/model-usage') {
+    try {
+      return JSON.parse(typeof body === 'string' ? body : Buffer.from(body ?? []).toString('utf8')).modality === 'embedding' ? 'automation' : 'generation'
+    } catch { return 'generation' }
+  }
   if (/^\/v1\/assets\/[^/]+\/scan$/u.test(path)) return 'scan'
   throw new Error(`no worker role policy for ${method} ${path}`)
 }
