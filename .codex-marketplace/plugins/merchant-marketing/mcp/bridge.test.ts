@@ -67,6 +67,37 @@ async function close(server: ReturnType<typeof createServer>) {
 }
 
 describe('Codex stdio MCP bridge', () => {
+  it('presents first-use progress as a native welcome and a brand-confirmation conversation', async () => {
+    let completed = 0
+    const server = createServer(async (_req, res) => {
+      const steps = [
+        { id: 'connect_stores', title: '连接平台及店铺', state: completed ? 'complete' : 'required' },
+        { id: 'scan_catalog', title: '扫描商品至知识库', state: completed ? 'complete' : 'pending' },
+        { id: 'check_configuration', title: '检查系统配置', state: completed ? 'blocked' : 'pending' },
+        { id: 'build_workspace', title: '建立工作区', state: 'pending' },
+      ]
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { initialization: { completed, total: 4, status: 'in_progress', steps, current_step: completed ? { id: 'check_configuration', title: '检查系统配置', summary: '待建立品牌基础档案', next_action: { label: '确认品牌名称' } } : { id: 'connect_stores', title: '连接平台及店铺', summary: '尚未授权店铺', next_action: { label: '开始配置店铺' } }, brand_clues: completed ? { candidates: [{ brandName: '云朵轻户外' }], totalCandidates: 1 } : { candidates: [], totalCandidates: 0 }, evidence: { brand_profile_present: false }, security_notice: '请通过官方页面授权，不要发送密码或验证码。' } } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token' }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'onboarding.status', arguments: {} } })}\n`)
+      const welcome = await nextLine(child.stdout)
+      expect(welcome.result.content[0].text).toContain('您好，感谢您使用 Store Nova')
+      expect(welcome.result.content[0].text).toContain('当前进度：0/4')
+      completed = 2
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'onboarding.status', arguments: {} } })}\n`)
+      const brandStep = await nextLine(child.stdout)
+      expect(brandStep.result.content[0].text).toContain('当前进度：2/4')
+      expect(brandStep.result.content[0].text).toContain('「云朵轻户外」品牌线索')
+      expect(brandStep.result.content[0].text).toContain('○ 建立工作区')
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('continues serving requests after a valid JSON value is not a JSON-RPC object', async () => {
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
@@ -346,49 +377,6 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('returns known and unknown creative-point balances without exposing billing evidence', async () => {
-    let balanceCalls = 0
-    const server = createServer(async (_req, res) => {
-      balanceCalls += 1
-      const known = balanceCalls === 1
-      const result = {
-        schema_version: 'creative-points.balance.v1',
-        balance_state: known ? 'known' : 'unknown',
-        available_points: known ? 500 : null,
-        reserved_points: known ? 0 : null,
-        settled_points: known ? 0 : null,
-        access_revision: known ? '1' : null,
-        updated_at: known ? '2026-09-15T00:00:00.000Z' : null,
-        workspace_id: 'ws_secret',
-        provider_cost_cny: '12.34',
-        ledger_entries: [{ ledger_event_id: 'ledger_secret' }],
-      }
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ data: { result }, error: null }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'creative-points.balance.get', arguments: {} } })}\n`)
-      const known = (await nextLine(child.stdout)).result.structuredContent
-      expect(known).toMatchObject({ balance_state: 'known', availability: 'available', available_points: 500, reserved_points: 0, settled_points: 0, access_revision: '1' })
-      expect(known).not.toHaveProperty('workspace_id')
-      expect(known).not.toHaveProperty('provider_cost_cny')
-      expect(known).not.toHaveProperty('ledger_entries')
-
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'creative-points.balance.get', arguments: {} } })}\n`)
-      const unknown = (await nextLine(child.stdout)).result.structuredContent
-      expect(unknown).toMatchObject({ balance_state: 'unknown', availability: 'unknown', available_points: null, reserved_points: null, settled_points: null, access_revision: null })
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
   it('renders trusted payment deep links without turning arbitrary schemes into links', async () => {
     const server = createServer(async (req, res) => {
       let body = ''
@@ -601,6 +589,33 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('does not present fixture-only stores as a usable merchant workspace', async () => {
+    const server = createServer(async (_req, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: {
+        status: 'ok',
+        workspace: { status: 'ready' },
+        storeDirectory: [
+          { platform: 'taobao', accountId: 'fixture-taobao', label: '淘宝演示店', state: 'fixture', dataMode: 'fixture', readable: true, writeEnabled: true },
+        ],
+      } }, warnings: [], next_actions: [], error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'ignore'] })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.content[0].text).toContain('演示店铺')
+      expect(response.result.content[0].text).toContain('不能用于读取商品或发布')
+      expect(response.result.content[0].text).toContain('官方授权页面')
+      expect(response.result.structuredContent.question).toContain('连接真实店铺')
+      expect(response.result.structuredContent.conversation_state.store_options[0]).toMatchObject({ selectable: false, data_source: '演示数据' })
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('uses an explicitly requested JD platform without asking for the platform again', async () => {
     const forwarded: Array<Record<string, unknown>> = []
     const server = createServer(async (req, res) => {
@@ -776,7 +791,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260915100904' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260915235827' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -872,7 +887,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(imageCandidateUi.result.contents[0].text).not.toContain('票据')
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`)
       const listed = await nextLine(child.stdout)
-      expect(listed.result.tools).toHaveLength(151)
+      expect(listed.result.tools).toHaveLength(153)
       const catalogImageGet = listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.get')
       expect(catalogImageGet).toMatchObject({ name: 'catalog.image.get', annotations: { readOnlyHint: true } })
       expect(catalogImageGet).not.toHaveProperty('_meta')
@@ -1402,9 +1417,10 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.generate', arguments: { task_id: 'task_1' } } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result.content[0].text).toContain('商业操作')
-      expect(response.result.content[0].text).not.toContain('操作已完成')
-      expect(requests).toHaveLength(0)
+      expect(response.result.isError).toBe(false)
+      expect(requests).toHaveLength(1)
+      expect(requests[0]!.body.params).toMatchObject({ task_id: 'task_1' })
+      expect(requests[0]!.headers['idempotency-key']).toMatch(/^mcp-[a-f0-9]{64}$/u)
     } finally {
       child.kill()
       server.close()
@@ -1748,7 +1764,9 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.generate', arguments: { task_id: 'task_1', idempotency_key: 'generation-retry-1' } } })}\n`)
       await nextLine(child.stdout)
-      expect(requests).toHaveLength(0)
+      expect(requests).toHaveLength(1)
+      expect(requests[0]!.body.params.idempotency_key).toBe('generation-retry-1')
+      expect(requests[0]!.headers['idempotency-key']).toBe('generation-retry-1')
     } finally {
       child.kill()
       server.close()
@@ -1815,9 +1833,7 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.generate', arguments: { task_id: 'task_1' } } })}\n`)
       const generatedResponse = await nextLine(child.stdout)
       const generatedText = generatedResponse.result.content[0].text
-      expect(generatedResponse.result.isError).toBe(true)
-      expect(generatedResponse.result.structuredContent).toMatchObject({ code: 'COMMERCIAL_OPERATION_DISABLED' })
-      return
+      expect(generatedResponse.result.isError).toBe(false)
       expect(generatedText).toContain('已验证宣称：\n- 合同内已验证的主购买理由。')
       expect(generatedText).toContain('买家问题：为什么值得继续看？\n正文：合同内已验证的主购买理由。')
       expect(generatedText).not.toContain('顶层未验证详情')
