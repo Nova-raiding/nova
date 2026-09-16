@@ -1994,19 +1994,44 @@ function merchantUiMetadata(method, result, args = {}) {
       // legacy six-step dashboard card or an HTML output template.
       return result
     }
-    // Do not rehydrate the retired dashboard projection when an old API is
-    // still serving this method. Surface a concise, honest upgrade boundary.
+    // Older servers expose a six-step status. Adapt only the durable states
+    // they actually returned into the current four-step conversation; never
+    // expose the retired dashboard card or claim a missing step is complete.
     if (Array.isArray(result.steps) || result.onboarding || result.greeting) {
-      return {
+      const legacySteps = Array.isArray(result.steps) ? result.steps : []
+      // An empty greeting-only response has no durable state to project. Keep
+      // the explicit upgrade boundary for that case instead of inventing 0/4.
+      if (!legacySteps.length) return {
         schema_version: 'store-nova.initialization.v1',
         status: 'blocked',
         blocker: {
           code: 'ONBOARDING_API_VERSION_MISMATCH',
           title: '首次引导服务正在升级',
-          message: '当前服务端尚未加载四步初始化流程；已安全保留当前工作区，不会生成、扣费或发布。',
+          message: '当前服务端尚未返回可核验的首次配置状态；已安全保留当前工作区，不会生成、扣费或发布。',
           next_action: '请重新连接 Store Nova，服务升级完成后继续首次配置。',
         },
       }
+      const stateFor = (...ids) => legacySteps.find(step => {
+        const values = [step?.id, step?.title, step?.key].map(value => String(value ?? '').trim().toLowerCase())
+        return ids.some(id => values.includes(id) || values.some(value => value.includes(id)))
+      })
+      const done = step => step?.state === 'complete' || step?.status === 'complete'
+      const workspace = stateFor('workspace', 'workspace_setup', '工作区')
+      const store = stateFor('connect_store', 'bind_store', 'connect_shop', '连接店铺', '绑定店铺')
+      const products = stateFor('select_product', 'choose_product', 'scan_catalog', '选择商品', '扫描商品')
+      const assets = stateFor('add_assets', 'upload_assets', '上传素材与资料', '素材')
+      const generation = stateFor('generate_review', 'start_task', 'generate_content', '生成并审核', '开始任务')
+      const connectDone = done(workspace) && done(store)
+      const scanDone = connectDone && done(products) && done(assets)
+      const configDone = scanDone && done(generation)
+      const initializationSteps = [
+        { id: 'connect_stores', title: '连接平台及店铺', state: connectDone ? 'complete' : 'required', summary: connectDone ? '工作区和店铺连接状态已读取' : '等待官方店铺授权', next_action: { method: 'platform.connect', label: '开始配置店铺', required_inputs: ['platform'] } },
+        { id: 'scan_catalog', title: '扫描商品至知识库', state: !connectDone ? 'pending' : scanDone ? 'complete' : 'required', summary: !connectDone ? '等待店铺授权' : scanDone ? '商品和素材状态已读取' : '等待商品与素材核验', next_action: { method: 'catalog.search', label: '扫描店铺商品', required_inputs: ['platform', 'account_id'] } },
+        { id: 'check_configuration', title: '检查系统配置', state: !scanDone ? 'pending' : configDone ? 'complete' : 'blocked', summary: !scanDone ? '等待商品扫描' : configDone ? '生成前配置已读取' : '仍有商品事实、素材或生产配置待核验', next_action: { method: 'workspace.health', label: '检查系统配置', required_inputs: [] } },
+        { id: 'build_workspace', title: '建立工作区', state: configDone ? 'required' : 'pending', summary: configDone ? '请确认内容工作区名称和店铺范围' : '等待前述步骤完成', next_action: { method: 'workspace.content_setup.confirm', label: '确认内容工作区', required_inputs: ['display_name', 'platform', 'account_id'] } },
+      ]
+      const current = initializationSteps.find(step => step.state !== 'complete') ?? initializationSteps.at(-1)
+      return { schema_version: 'store-nova.initialization.v1', status: current?.state === 'complete' ? 'ready' : 'in_progress', initialization: { schema_version: 'store-nova.initialization.v1', status: 'in_progress', completed: initializationSteps.filter(step => step.state === 'complete').length, total: 4, current_step: current, steps: initializationSteps, security_notice: '请通过平台官方页面授权，不要发送密码或验证码。', evidence: { compatibility_projection: true } } }
     }
     const current = result.current_step && typeof result.current_step === 'object' ? result.current_step : {}
     const steps = Array.isArray(result.steps) ? result.steps : []
