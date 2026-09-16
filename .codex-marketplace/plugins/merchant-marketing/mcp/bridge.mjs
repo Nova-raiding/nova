@@ -1942,11 +1942,14 @@ function merchantConversationProjection(method, result, args = {}) {
       action: store.platform && store.accountId ? { method: 'catalog.search', arguments: { scope: 'store', platform: store.platform, account_id: store.accountId } } : { method: 'platform.connect', arguments: { platform: store.platform } },
     }
   })
+  const demoOnlyStores = stores.length > 0 && storeOptions.every(store => store.selectable === false && store.status === '演示店铺')
   const expectedInput = workspaceUnavailable
     ? { kind: 'none', user_action_required: false }
     : merchantConversationInput(method, stage, action.method, explicitContext, stores.length)
   const question = workspaceUnavailable
     ? undefined
+    : demoOnlyStores
+      ? '当前仅检测到演示店铺。请通过平台官方授权页面连接真实店铺，完成后我会继续读取商品。'
     : merchantConversationQuestion(method, stage, expectedInput, explicitContext, result, action.label)
   const rawPrimaryAction = canonicalStep && typeof canonicalStep === 'object' && !Array.isArray(canonicalStep) && canonicalStep.primary_action && typeof canonicalStep.primary_action === 'object' && !Array.isArray(canonicalStep.primary_action)
     ? canonicalStep.primary_action
@@ -1967,7 +1970,7 @@ function merchantConversationProjection(method, result, args = {}) {
     : scanning
       ? '图片已收到，正在自动检查。通过后会等待你的确认再继续生成。'
       : method === 'workspace.health'
-        ? stores.length ? `已更新 ${stores.length} 家店铺的连接状态。` : '当前还没有可用店铺。'
+        ? demoOnlyStores ? `当前检测到 ${stores.length} 家演示店铺；它们不代表真实授权，也不能用于读取商品或发布。` : stores.length ? `已更新 ${stores.length} 家店铺的连接状态。` : '当前还没有可用店铺。'
         : explicitContext.platform
           ? `已锁定${merchantPlatformLabel(explicitContext.platform)}。`
           : typeof result?.summary === 'string' && result.summary.trim()
