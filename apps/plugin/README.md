@@ -2,11 +2,11 @@
 
 macOS 管理凭据轮换：默认仍优先使用宿主显式环境。只有明确配置 `MERCHANT_MCP_TOKEN_SOURCE=launchd` 才在桥接进程启动时读取系统的新凭据；系统与宿主的完整 API 地址和工作区必须一致，否则拒绝启动，不回退旧凭据。此模式不支持显式 actor/role 覆盖。配置更新后需重载插件连接（必要时重启桌面宿主）；已运行进程不会热更新，也不会自动重试写入。
 
-当前 `tools/list` 实测为 151 个 MCP 工具（即当前 `tools/list` 为 151 个 MCP 工具），以运行态契约测试为准；数量可能随共享注册表变化，不作为生产就绪证明。
+当前 `tools/list` 实测为 153 个 MCP 工具（即当前 `tools/list` 为 153 个 MCP 工具），以运行态契约测试为准；数量可能随共享注册表变化，不作为生产就绪证明。
 
 这是可安装的 Codex Plugin 源目录，包含：
 
-- `.codex-plugin/plugin.json`：正式 manifest，版本 `0.1.0+codex.20260915012616`。
+- `.codex-plugin/plugin.json`：正式 manifest，版本 `0.1.0+codex.20260916095600`。
 - `skills/merchant-marketing/SKILL.md`：唯一入口 Skill。
 - `.mcp.json`：Codex 标准 stdio MCP 配置；`mcp/bridge.mjs` 将标准 `tools/list`、`tools/call` 转发到现有 API 的 `/mcp` 业务方法。
 - `mcp/bridge.mjs`：插件侧传输适配器，固定注入 `X-Workspace-Id`，并将 API 的统一 envelope 解包为 Codex MCP 响应。
