@@ -1,7 +1,7 @@
 {
   "id": "merchant-marketing",
   "name": "merchant-marketing",
-  "version": "0.1.0+codex.20260916101500",
+  "version": "0.1.0+codex.20260916102500",
   "description": "商家营销内容助手：同步商品事实、生成可审阅内容，并在明确确认后提交发布。",
   "author": {
     "name": "Merchant Marketing Team",
@@ -39,7 +39,7 @@
       "Creative Points Access"
     ],
     "defaultPrompt": [
-      "@Store Nova 开始使用：查看首次配置进度，带我完成当前一步",
+      "@Store Nova 开始使用：展示首次配置欢迎说明、四步流程和当前进度，带我完成当前一步",
       "用我上传的商品图片做一张可审阅主图；还没有图片就先告诉我怎么上传",
       "为我的商品策划第一份营销素材，先核对店铺和商品事实"
     ],

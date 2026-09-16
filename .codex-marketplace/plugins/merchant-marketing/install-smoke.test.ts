@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
@@ -39,9 +39,9 @@ describe('Codex plugin installation package', () => {
     expect(manifest.skills).toBe('./skills/')
     expect(manifest.mcpServers).toBe('./.mcp.json')
     expect(manifest.interface.defaultPrompt).toEqual([
-      '如果我已上传图片并要求生成或优化，直接使用上传素材生成未绑定候选图，不要先读取店铺或要求授权；只有同步、绑定商品或发布时才进入店铺流程',
-      '查看当前工作区的创意点余额和准入状态；余额为零或未知时只显示服务端授权的恢复入口',
-      '开始商品营销与视频策划：先让我选择一个平台和商品，然后每一步都等我确认',
+      '@Store Nova 开始使用：展示首次配置欢迎说明、四步流程和当前进度，带我完成当前一步',
+      '用我上传的商品图片做一张可审阅主图；还没有图片就先告诉我怎么上传',
+      '为我的商品策划第一份营销素材，先核对店铺和商品事实',
     ])
     expect(manifest.interface.defaultPrompt).toHaveLength(3)
     expect(manifest.entry_skill).toBeUndefined()
@@ -76,6 +76,32 @@ describe('Codex plugin installation package', () => {
     expect(existsSync(resolve(root, 'mcp/bridge.mjs'))).toBe(true)
     expect(existsSync(resolve(root, 'mcp/bridge.sh'))).toBe(true)
     expect(readFileSync(resolve(root, 'mcp/bridge.mjs'), 'utf8')).toContain('MERCHANT_MCP_TIMEOUT_MS ?? 360000')
+  })
+
+  it('refuses an install when the registered marketplace targets a different checkout', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-marketplace-check-'))
+    const expected = resolve(directory, 'expected')
+    const other = resolve(directory, 'other')
+    const fakeCodex = resolve(directory, 'codex-list')
+    try {
+      mkdirSync(expected)
+      mkdirSync(other)
+      writeFileSync(resolve(expected, 'marketplace.json'), JSON.stringify({ name: 'merchant-local' }))
+      writeFileSync(fakeCodex, `#!/bin/sh\nprintf 'MARKETPLACE ROOT\\nmerchant-local ${other}\\n'\n`)
+      chmodSync(fakeCodex, 0o755)
+      const check = (registered: string) => {
+        writeFileSync(fakeCodex, `#!/bin/sh\nprintf 'MARKETPLACE ROOT\\nmerchant-local ${registered}\\n'\n`)
+        return spawnSync(process.execPath, [resolve(root, 'scripts/verify-marketplace-source.mjs'), '--expected', expected, '--codex', fakeCodex], { encoding: 'utf8' })
+      }
+      const wrong = check(other)
+      expect(wrong.status).toBe(1)
+      expect(JSON.parse(wrong.stdout)).toMatchObject({ ok: false, reason: 'marketplace_points_to_different_checkout' })
+      const correct = check(expected)
+      expect(correct.status).toBe(0)
+      expect(JSON.parse(correct.stdout)).toMatchObject({ ok: true, reason: null })
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 
   it('recovers local merchant settings from the macOS user session without exposing them in the manifest', () => {
