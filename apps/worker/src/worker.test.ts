@@ -1177,10 +1177,21 @@ describe('knowledge embedding worker API contract', () => {
     } })
     expect(JSON.parse(request!.body)).toEqual({ document_id: 'doc_a', document_revision: 3, content_hash: 'a'.repeat(64), action_id: binding.actionId, run_key: binding.runKey })
     expect(request!.headers.get('x-worker-workspace-signature')).toMatch(/^[a-f0-9]{64}$/u)
-    expect(request!.headers.get('x-worker-role')).toBe('generation')
+    expect(request!.headers.get('x-worker-role')).toBe('automation')
     expect(data.reservation?.reservation_key).toBe('reserve_a')
   })
   it('requires explicit reconciliation evidence for unknown outcomes', async () => {
     await expect(postKnowledgeEmbeddingOutcome({ ...binding, outcome: 'unknown', apiBaseUrl: 'https://api.test', apiToken: 'worker-token', signingSecret: 'worker-secret', fetcher: async () => new Response(JSON.stringify({ data: { outcome: 'unknown', action_id: binding.actionId, reconciliation_required: false } }), { status: 200 }) })).rejects.toMatchObject({ code: 'KNOWLEDGE_EMBEDDING_OUTCOME_INVALID', reconciliationRequired: true })
+  })
+  it('signs embedding usage with automation while preserving generation for other modalities', async () => {
+    const roles: Array<string | null> = []
+    const fetcher = async (_input: string | URL | Request, init?: RequestInit) => {
+      roles.push(new Headers(init?.headers).get('x-worker-role'))
+      return new Response(JSON.stringify({ data: { recorded: true } }), { status: 200 })
+    }
+    const common = { workspaceId: 'ws_a', actionId: binding.actionId, runKey: binding.runKey, model: 'model-a', totalTokens: 1, costCny: 0.01, observedAt: '2026-09-16T00:00:00.000Z' }
+    await postModelUsage({ apiBaseUrl: 'https://api.test', apiToken: 'worker-token', signingSecret: 'worker-secret', fetcher, usage: { ...common, modality: 'embedding' } })
+    await postModelUsage({ apiBaseUrl: 'https://api.test', apiToken: 'worker-token', signingSecret: 'worker-secret', fetcher, usage: { ...common, modality: 'text' } })
+    expect(roles).toEqual(['automation', 'generation'])
   })
 })

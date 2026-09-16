@@ -1788,6 +1788,49 @@ describe('security and access-control acceptance gates', () => {
     expect((await signed.json() as Envelope<{ executed: unknown[]; unattendedAutoResubmit: boolean }>).data).toMatchObject({ executed: [], unattendedAutoResubmit: false })
   })
 
+  it('accepts automation and legacy generation proofs only on embedding callbacks', async () => {
+    vi.stubEnv('NODE_ENV', 'staging')
+    const credentials = {
+      automation: { token: 'embedding-automation-token', signing_secret: 'embedding-automation-secret' },
+      generation: { token: 'embedding-generation-token', signing_secret: 'embedding-generation-secret' },
+      publish: { token: 'embedding-publish-token', signing_secret: 'embedding-publish-secret' },
+      reconcile: { token: 'embedding-reconcile-token', signing_secret: 'embedding-reconcile-secret' },
+    }
+    vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify(credentials))
+    const base = await start()
+    const workspaceId = `ws_embedding_roles_${Date.now()}`
+    const routes = ['/v1/internal/knowledge-embeddings/admission', '/v1/internal/knowledge-embeddings/outcome']
+    for (const path of routes) {
+      const body = '{}'
+      const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+      for (const role of ['automation', 'generation'] as const) {
+        const credential = credentials[role]
+        const response = await fetch(`${base}${path}`, { method: 'POST', headers: { ...headers, authorization: `Bearer ${credential.token}`, ...workerProofHeaders({ role, secret: credential.signing_secret, method: 'POST', path, workspaceId, body }) }, body })
+        // 400 proves the role-specific bearer and HMAC reached route validation.
+        expect(response.status, `${role} ${path}`).toBe(400)
+      }
+      for (const role of ['publish', 'reconcile'] as const) {
+        const credential = credentials[role]
+        const response = await fetch(`${base}${path}`, { method: 'POST', headers: { ...headers, authorization: `Bearer ${credential.token}`, ...workerProofHeaders({ role, secret: credential.signing_secret, method: 'POST', path, workspaceId, body }) }, body })
+        expect(response.status, `${role} ${path}`).toBe(403)
+      }
+    }
+    const usagePath = '/v1/internal/model-usage'
+    const usageBody = JSON.stringify({ modality: 'embedding' })
+    const usageHeaders = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+    for (const role of ['automation', 'generation', 'publish'] as const) {
+      const credential = credentials[role]
+      const response = await fetch(`${base}${usagePath}`, { method: 'POST', headers: { ...usageHeaders, authorization: `Bearer ${credential.token}`, ...workerProofHeaders({ role, secret: credential.signing_secret, method: 'POST', path: usagePath, workspaceId, body: usageBody }) }, body: usageBody })
+      expect(response.status, `${role} ${usagePath}`).toBe(400)
+    }
+    const reconcile = credentials.reconcile
+    const denied = await fetch(`${base}${usagePath}`, { method: 'POST', headers: { ...usageHeaders, authorization: `Bearer ${reconcile.token}`, ...workerProofHeaders({ role: 'reconcile', secret: reconcile.signing_secret, method: 'POST', path: usagePath, workspaceId, body: usageBody }) }, body: usageBody })
+    expect(denied.status).toBe(403)
+    const textUsageBody = JSON.stringify({ modality: 'text', model: 'text-model', actionId: 'action-a', runKey: 'run-a' })
+    const automationText = await fetch(`${base}${usagePath}`, { method: 'POST', headers: { ...usageHeaders, authorization: `Bearer ${credentials.automation.token}`, ...workerProofHeaders({ role: 'automation', secret: credentials.automation.signing_secret, method: 'POST', path: usagePath, workspaceId, body: textUsageBody }) }, body: textUsageBody })
+    expect(automationText.status).toBe(403)
+  })
+
   it('keeps SLA reports on the signed reconcile worker boundary', async () => {
     vi.stubEnv('NODE_ENV', 'staging')
     vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({ reconcile: { token: 'reconcile-token', signing_secret: 'reconcile-secret' }, generation: { token: 'generation-token', signing_secret: 'generation-secret' } }))
