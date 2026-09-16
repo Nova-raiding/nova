@@ -148,7 +148,7 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   // Current merchant scope is content production, review and export.
   // Keep server compatibility and audit records; do not expose store sync or
   // publishing actions through this merchant bridge.
-  'platform.connect', 'workspace.content_setup.confirm',
+  'platform.connect', 'platform.store.list', 'workspace.content_setup.confirm',
   'catalog.sync', 'catalog.sync.start', 'catalog.sync.get', 'sync.retry_failed',
   'automation.policy.get', 'automation.policy.list', 'automation.policy.update',
   'automation.scan', 'automation.tick', 'automation.pause',

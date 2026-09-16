@@ -10,7 +10,7 @@ describe("PlatformOpsLoginPage", () => {
     expect(markup).toContain("登录平台运营后台");
     expect(markup).toContain('id="ops-login-account"');
     expect(markup).toContain('id="ops-login-password"');
-    expect(markup).toContain("平台管理员分配的运营账号");
+    expect(markup).toContain('请联系“侯沿平”获取管理账号');
     expect(markup).not.toContain("连接诊断");
   });
 

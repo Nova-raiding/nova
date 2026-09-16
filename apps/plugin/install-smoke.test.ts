@@ -240,7 +240,7 @@ printf '%s\n' Darwin
   })
 
 
-  it('marks the platform account list as a read-only MCP operation', () => {
+  it('keeps the operator-sensitive platform account list out of the merchant bridge', () => {
     const response = spawnSync(process.execPath, [resolve(root, 'mcp/bridge.mjs')], {
       encoding: 'utf8',
       input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })}\n`,
@@ -253,7 +253,7 @@ printf '%s\n' Darwin
     expect(response.status).toBe(0)
     const listed = JSON.parse(response.stdout.trim())
     const tool = listed.result.tools.find((item: { name: string }) => item.name === 'platform.store.list')
-    expect(tool.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
+    expect(tool).toBeUndefined()
   })
 
   it('documents content-first onboarding without treating unbound candidates as exportable versions', () => {
