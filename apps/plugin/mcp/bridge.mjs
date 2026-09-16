@@ -639,8 +639,8 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { asset_id: { type: 'string' }, verdict: { type: 'string', enum: ['excellent', 'disliked', 'unrated'] }, reasons_json: { type: 'string' }, note: { type: 'string' }, expected_revision: { type: 'string' } }, required: ['asset_id', 'verdict'], additionalProperties: false },
   },
   'brand.get': {
-    description: '查看当前工作区品牌档案。',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    description: '查看当前工作区品牌档案；提供 brand_unit_id 时只读取该品牌，避免多个品牌串用。',
+    inputSchema: { type: 'object', properties: { brand_unit_id: { type: 'string', description: '可选；明确读取的品牌单元。' } }, additionalProperties: false },
   },
   'brand.extract': {
     description: '从已读取的品牌素材提取候选字段、来源和置信度；只读且不会自动写入品牌档案。',
