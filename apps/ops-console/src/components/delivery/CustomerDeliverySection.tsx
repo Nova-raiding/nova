@@ -663,11 +663,14 @@ export function CustomerDeliverySection({
         align: "center" as const,
         fixed: "right" as const,
         render: (_: unknown, row: CustomerDeliveryRecord) => (
-          <Button size="small" onClick={() => void openDetails(row)}>查看详情</Button>
+          <Space size="small">
+            <Button size="small" onClick={() => void openDetails(row)}>查看详情</Button>
+            {onSave ? <Button size="small" onClick={() => void openStep(row, "profile")}>编辑档案</Button> : null}
+          </Space>
         ),
       },
     ],
-    [onTrainingSave, onVideoList, saving],
+    [onSave, onTrainingSave, onVideoList, saving],
   );
   return (
     <Card
@@ -785,6 +788,7 @@ export function CustomerDeliverySection({
             <Descriptions.Item label="销售负责人">{detailsRecord.owner || "未填写"}</Descriptions.Item>
             <Descriptions.Item label="售后负责人">{detailsRecord.afterSalesOwner || "未填写"}</Descriptions.Item>
             <Descriptions.Item label="上线时间">{deliveryLaunchDateLabel(detailsRecord)}</Descriptions.Item>
+            <Descriptions.Item label="生效账号"><section aria-label="生效账号">{detailsRecord.targetAccountLogin || "未关联"}</section></Descriptions.Item>
             <Descriptions.Item label="交付视频">{detailsLoading ? "正在读取…" : detailsVideos.length ? <Space orientation="vertical" size="small">{detailsVideos.map((video) => <Space key={video.id} wrap><Typography.Link onClick={() => void onAssetOpen?.(detailsRecord, video.assetRef, "video", "open")}>{video.title}</Typography.Link><Button size="small" onClick={() => void onAssetOpen?.(detailsRecord, video.assetRef, "video", "download")}>下载</Button></Space>)}</Space> : "未上传"}</Descriptions.Item>
             <Descriptions.Item label="操作人">
               {detailsRecord.updatedByActorId === operatorActorId

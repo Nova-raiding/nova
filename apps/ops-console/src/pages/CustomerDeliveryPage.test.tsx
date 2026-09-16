@@ -201,8 +201,8 @@ describe("customer delivery read-only desktop interaction", () => {
   const account = { workspaceId: "ws-readonly", accountId: "private-account-1", identityId: "private-identity-1", login: "merchant-one@example.test" };
   const account2 = { ...account, accountId: "private-account-2", identityId: "private-identity-2", login: "merchant-two@example.test" };
   const boundRecord = { ...record, workspaceId: "ws-readonly", revision: 5, targetAccountId: account.accountId, targetIdentityId: account.identityId, targetAccountLogin: account.login };
-  async function openAccountBinding(page: Page) {
-    await row(page).getByRole("button", { name: "已完成", exact: true }).first().click();
+  async function openAccountBinding(page: Page, editable = true) {
+    await row(page).getByRole("button", { name: editable ? "编辑档案" : "查看详情", exact: true }).click();
     await page.getByRole("region", { name: "生效账号", exact: true }).waitFor();
   }
   async function selectAccount(page: Page, login = account.login) {
@@ -216,13 +216,13 @@ describe("customer delivery read-only desktop interaction", () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     try {
       const methods = await prepare(page, { onList: () => [boundRecord] });
-      await openAccountBinding(page);
+      await openAccountBinding(page, false);
       const section = page.getByRole("region", { name: "生效账号", exact: true });
       expect(await section.innerText()).toContain(account.login);
       expect(await section.innerText()).not.toContain(account.accountId);
       expect(await section.innerText()).not.toContain(account.identityId);
       expect(await section.getByRole("button").count()).toBe(0);
-      expect(methods).toEqual(["ops.customer-delivery.list"]);
+      expect(methods).toEqual(["ops.customer-delivery.list", "ops.customer-delivery.videos.list"]);
     } finally { await page.close(); }
   }, 45_000);
 
@@ -416,7 +416,7 @@ describe("customer delivery read-only desktop interaction", () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     try {
       const methods = await prepare(page, { write: true });
-      await row(page).getByRole("button", { name: "已完成", exact: true }).first().click();
+      await row(page).getByRole("button", { name: "编辑档案", exact: true }).click();
       await page.getByRole("dialog").waitFor();
       expect(await page.locator('input[type="file"]').count()).toBe(2);
       // Harness control changes the real React model without navigating away.
@@ -604,7 +604,7 @@ describe("customer delivery read-only desktop interaction", () => {
         return { ...record, ...(action === "create" ? { id: "new-delivery", companyName: params.company_name } : {}), revision: record.revision + 1 };
       } });
       if (action === "profile") {
-        await row(page).getByRole("button", { name: "已完成", exact: true }).first().click();
+        await row(page).getByRole("button", { name: "编辑档案", exact: true }).click();
         await page.getByRole("button", { name: "保存当前环节", exact: true }).click();
       } else if (action === "training") {
         // This controlled checkbox stays checked until its real callback
