@@ -37,6 +37,11 @@ describe('migration 214 PostgreSQL embedding accounting acceptance', () => {
         VALUES ('usage_embedding_before_214','ws_214','receipt_embedding_before_214','hash_embedding_before_214','embedding','relay-embedding','pending_wallet')`))
         .rejects.toMatchObject({ code: '23514' })
 
+      await database.query(`ALTER TABLE model_usage_ledger
+        RENAME CONSTRAINT model_usage_ledger_modality_check TO legacy_usage_modality_check_214`)
+      await database.query(`ALTER TABLE model_cost_budget_reservations
+        RENAME CONSTRAINT model_cost_budget_reservations_modality_check TO legacy_budget_modality_check_214`)
+
       expect(await new MigrationRunner(database, migration214).run()).toEqual([214])
       expect(await new MigrationRunner(database, migrations).run()).toEqual([])
       expect((await database.query("SELECT id,modality,model,settlement_status FROM model_usage_ledger WHERE id='usage_text_214'")).rows)
@@ -49,6 +54,16 @@ describe('migration 214 PostgreSQL embedding accounting acceptance', () => {
         (workspace_id,budget_date,reservation_key,run_key,modality,model,estimate_cny,estimate_version,daily_limit_cny,run_limit_cny,status)
         VALUES ('ws_214','2026-09-16','embedding_reservation_214','embedding_run_214','embedding','relay-embedding',0.01,'pricing-v1',10,1,'active')`))
         .resolves.toMatchObject({ rowCount: 1 })
+      expect((await database.query(`SELECT conrelid::regclass::text AS table_name, conname, convalidated
+        FROM pg_constraint
+        WHERE conname IN ('model_usage_ledger_modality_check', 'model_cost_budget_reservations_modality_check')
+        ORDER BY conname`)).rows).toEqual([
+        { table_name: 'model_cost_budget_reservations', conname: 'model_cost_budget_reservations_modality_check', convalidated: true },
+        { table_name: 'model_usage_ledger', conname: 'model_usage_ledger_modality_check', convalidated: true },
+      ])
+      expect((await database.query(`SELECT count(*)::int AS count FROM pg_constraint
+        WHERE conname IN ('legacy_usage_modality_check_214', 'legacy_budget_modality_check_214')`)).rows)
+        .toEqual([{ count: 0 }])
       expect((await database.query('SELECT max(version)::int AS version FROM schema_migrations')).rows).toEqual([{ version: 214 }])
     } finally {
       await database?.end()
