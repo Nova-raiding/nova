@@ -26,6 +26,40 @@ describe('canonical password identity MCP OAuth', () => {
     vi.unstubAllEnvs()
   })
 
+  it('exchanges a merchant browser session for a local desktop MCP token without ChatGPT OAuth', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    const repository = new MemoryPasswordAuthRepository()
+    setPasswordAuthRepositoryForTests(repository)
+    const workspaceId = `ws_local_desktop_${Date.now()}`
+    const login = `local-desktop-${Date.now()}@example.test`
+    const password = 'LocalDesktop1234!'
+    const account = await repository.createMerchantAccount({ login, password, enterpriseName: 'Local desktop merchant', contactName: 'Local owner', workspaceIds: [workspaceId], actorId: 'platform-operator', reason: 'local desktop e2e' })
+    await workspaceMembers.upsert({ workspaceId, externalSubject: login, displayName: 'Local owner', role: 'workspace_owner', status: 'active', invitedBy: 'local-desktop-e2e' })
+    await workspaceMembers.bindIdentity({ workspaceId, externalSubject: login, identityId: account.identityId })
+    const base = await start()
+    const logged = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'merchant' }) })
+    expect(logged.status).toBe(200)
+    const cookie = logged.headers.get('set-cookie')?.split(';')[0]
+    expect(cookie).toBeTruthy()
+    const exchanged = await fetch(`${base}/v1/auth/mcp-token`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ workspace_id: workspaceId }) })
+    expect(exchanged.status).toBe(200)
+    const envelope = await exchanged.json() as { data?: { result?: Record<string, unknown> }; error?: unknown }
+    const result = envelope.data?.result ?? envelope.data
+    expect(result).toMatchObject({ token_type: 'Bearer', expires_in: 600, scope: 'merchant', workspace_id: workspaceId, account_login: login })
+    const accessToken = (result as Record<string, unknown> | undefined)?.access_token
+    const refreshToken = (result as Record<string, unknown> | undefined)?.refresh_token
+    expect(typeof accessToken).toBe('string')
+    expect(typeof refreshToken).toBe('string')
+    const principal = await repository.authenticateMcpAccessToken({ accessToken: accessToken as string, clientId: 'local-desktop', issuer: base, audience: `${base}/mcp`, resource: `${base}/mcp`, scope: ['merchant'] })
+    expect(principal).toMatchObject({ identityId: account.identityId, workspaceId, accountLogin: login })
+    const rotated = await fetch(`${base}/v1/auth/mcp-token/refresh`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ refresh_token: refreshToken }) })
+    expect(rotated.status).toBe(200)
+    const rotatedEnvelope = await rotated.json() as { data?: { result?: Record<string, unknown> } }
+    expect(rotatedEnvelope.data?.result ?? rotatedEnvelope.data).toMatchObject({ token_type: 'Bearer', expires_in: 600 })
+    const csrf = await fetch(`${base}/v1/auth/mcp-token`, { method: 'POST', headers: { cookie: cookie!, origin: 'https://evil.example', 'content-type': 'application/json' }, body: JSON.stringify({ workspace_id: workspaceId }) })
+    expect(csrf.status).toBe(403)
+  })
+
   it('uses authorization code + PKCE, rotates refresh tokens, and never falls back to a static merchant token', async () => {
     vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
     vi.stubEnv('MCP_OAUTH_REQUIRED', 'true')

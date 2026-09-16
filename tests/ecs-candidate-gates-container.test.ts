@@ -4,19 +4,20 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-const image = `example.invalid/release-gates@sha256:${'a'.repeat(64)}`
+const image = 'release-gates:candidate'
 const revision = 'b'.repeat(40)
 const sourceSha = `sha256:${'c'.repeat(64)}`
 
 function run(overrides: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'ecs-gates-'))
   const log = join(dir, 'docker-args')
-  writeFileSync(join(dir, 'docker'), `#!/bin/sh\nif [ "$1" = image ]; then case "$@" in *source_sha256*) printf '%s\\n' '${sourceSha}';; *) printf '%s\\n' '${revision}';; esac; exit 0; fi\nprintf '%s\\n' "$@" > '${log}'\n`, { mode: 0o755 })
+    writeFileSync(join(dir, 'docker'), `#!/bin/sh\nif [ "$1" = image ]; then case "$@" in *source_sha256*) printf '%s\\n' '${sourceSha}';; *Id*) printf '%s\\n' 'sha256:${'e'.repeat(64)}';; *) printf '%s\\n' '${revision}';; esac; exit 0; fi\nprintf '%s\\n' "$@" > '${log}'\n`, { mode: 0o755 })
   const env = {
     PATH: `${dir}:${process.env.PATH ?? ''}`,
     ECS_CANDIDATE_GATE_IMAGE: image,
     ECS_CANDIDATE_GIT_SHA: revision,
     ECS_CANDIDATE_SOURCE_SHA256: sourceSha,
+    ECS_CANDIDATE_GATE_IMAGE_ID: `sha256:${'e'.repeat(64)}`,
     ...overrides,
   }
   const result = spawnSync('sh', ['infra/scripts/run-ecs-candidate-gates-container.sh'], { env, encoding: 'utf8' })

@@ -2413,6 +2413,38 @@ function paymentProviderReadiness(source: NodeJS.ProcessEnv = process.env) {
   return { ready: reasons.length === 0, reasons }
 }
 
+/**
+ * A provider can be technically configured while the current runtime is not
+ * allowed to take money (fixture/non-production mode, or another production
+ * gate is still closed).  Keep those concepts separate so health/readiness
+ * consumers never present a configured fixture as usable payment.
+ */
+export function paymentCapabilityStatus(input: {
+  mode: string | undefined
+  providerReady: boolean
+  production: boolean
+  fixtureMode: boolean
+  productionGate: boolean
+  reasons?: string[]
+}) {
+  const providerConfigured = input.mode === 'provider' && input.providerReady
+  // `configured` is intentionally false in fixture mode.  A complete set of
+  // provider-shaped env vars must not make a fixture runtime look chargeable.
+  const configured = providerConfigured && !input.fixtureMode
+  const productionEnabled = providerConfigured && input.production && !input.fixtureMode && input.productionGate
+  const reasons = [...(input.reasons ?? [])]
+  if (input.fixtureMode && providerConfigured) reasons.push('payment_fixture_mode_blocked')
+  if (providerConfigured && !productionEnabled && !input.fixtureMode) reasons.push('payment_production_gate_blocked')
+  return {
+    provider_configured: providerConfigured,
+    configured,
+    effective: productionEnabled,
+    production_enabled: productionEnabled,
+    state: productionEnabled ? 'enabled' as const : configured ? 'configured_but_blocked' as const : 'not_configured' as const,
+    reasons: [...new Set(reasons)],
+  }
+}
+
 function requireProviderPaymentConfigured() {
   if (!isProduction()) return
   const readiness = paymentProviderReadiness()
@@ -8246,6 +8278,15 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
   if (!capabilityEvidence.configured) nextActions.push('运营后台未检测到通过发布门禁的平台 capability 证据（六平台范围）；example、fixture 或 test_e2e 证据不能标记生产可写，社交平台未就绪时必须保持 fixture/API 或只读')
   if (!capacityEvidence.configured) nextActions.push('运营后台未检测到通过真实云门禁的容量报告；必须绑定 release、profile、云环境、零 mock 和签署人')
   if (!production) nextActions.push('当前不是生产模式；上线前还需完成真实平台 canary、TLS/DNS/WAF、备份恢复和容量压测')
+  const productionGate = production && !fixtureMode && commercialReadiness.ready && controlPlaneReadiness.ready && relayGate.ready && paymentReadiness.ready && Object.values(platformDiagnostics).every(item => item.ready) && contentProviderConfigured && imageProviderConfigured && imageEditProviderConfigured && imageFactsConfigured && videoProviderConfigured && embeddingProviderConfigured && modelCostGateConfigured && objectStorageConfigured && vaultConfigured && dataLifecycle.configured && alertNotifications.ready && capabilityEvidence.configured && capacityEvidence.configured
+  const payment = paymentCapabilityStatus({
+    mode: process.env.PAYMENT_MODE,
+    providerReady: paymentReadiness.ready,
+    production,
+    fixtureMode,
+    productionGate,
+    reasons: paymentReadiness.reasons,
+  })
   return {
     mode: production ? 'production' : fixtureMode ? 'fixture' : 'local',
     ai: { ownership: 'platform', userKeyRequired: false, relay: { configured: relayGate.ready, host: relayGate.endpointHost ?? null }, contentGeneration: contentProviderConfigured ? 'configured' : fixtureMode ? 'fixture_fallback' : 'not_configured', imageGeneration: imageProviderConfigured ? 'configured' : fixtureMode ? 'fixture_fallback' : 'not_configured', imageEditing: imageEditProviderConfigured ? 'configured' : 'blocked', imageFacts: imageFactsConfigured ? 'configured' : 'manual_fallback', videoRendering: videoProviderConfigured ? 'configured' : 'storyboard_only', costGate: modelCostGateConfigured ? 'ready' : 'blocked' },
@@ -8265,8 +8306,8 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
     productionEvidence: { capability: capabilityEvidence, capacity: capacityEvidence },
     credentialProvider: { configured: vaultConfigured, mode: fixtureMode ? 'fixture' : vaultConfigured ? 'vault_or_external' : 'none' },
     platforms: platformDiagnostics,
-    payment: { mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : 'fixture', configured: process.env.PAYMENT_MODE === 'provider' && paymentReadiness.ready, reasons: paymentReadiness.reasons },
-    productionGate: production && !fixtureMode && commercialReadiness.ready && controlPlaneReadiness.ready && relayGate.ready && paymentReadiness.ready && Object.values(platformDiagnostics).every(item => item.ready) && contentProviderConfigured && imageProviderConfigured && imageEditProviderConfigured && imageFactsConfigured && videoProviderConfigured && embeddingProviderConfigured && modelCostGateConfigured && objectStorageConfigured && vaultConfigured && dataLifecycle.configured && alertNotifications.ready && capabilityEvidence.configured && capacityEvidence.configured,
+    payment: { mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : 'fixture', ...payment },
+    productionGate,
     nextActions,
   }
 }
@@ -18730,7 +18771,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
 async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', `${publicRequestOrigin(req)}/`)
   const path = url.pathname
-  const isPasswordAuthRoute = path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm' || path === '/v1/auth/password/change'
+  const isPasswordAuthRoute = path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm' || path === '/v1/auth/password/change' || path === '/v1/auth/mcp-token' || path === '/v1/auth/mcp-token/refresh'
   const passwordSessionToken = () => {
     const encoded = (header(req, 'cookie') ?? '').split(';').map(value => value.trim()).find(value => value.startsWith('damai_session='))?.slice('damai_session='.length)
     if (!encoded) return ''
@@ -18784,6 +18825,44 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const current = await passwordAuthRepository.authenticate(passwordSessionToken())
       if (!current) throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请重新登录', 401)
       return send(res, 200, 'unknown', { account: current.account, session_id: current.sessionId, issued_at: current.issuedAt, expires_at: current.expiresAt, workspaces: current.account.workspaceIds, roles: current.account.roles }, null, req)
+    }
+    if (req.method === 'POST' && path === '/v1/auth/mcp-token') {
+      // Local desktop installs do not use ChatGPT's remote MCP OAuth.  They
+      // exchange the already-authenticated, HttpOnly merchant session for a
+      // short-lived, workspace-scoped MCP bearer.  The password never leaves
+      // the login form and the bearer is never accepted from a cookie.
+      const origin = publicRequestOrigin(req)
+      const requestOrigin = header(req, 'origin')?.trim()
+      if (requestOrigin && requestOrigin !== origin) throw new DomainError('AUTH_CSRF_ORIGIN_INVALID', '登录来源无效，请从 Store Nova 工作台发起连接', 403)
+      const current = await passwordAuthRepository.authenticate(passwordSessionToken())
+      if (!current || current.account.accountType !== 'merchant' || current.account.status !== 'active') throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请重新登录商家后台', 401)
+      const input = await body(req, 16 * 1024)
+      const workspaceIds = [...new Set(current.account.workspaceIds.filter(Boolean))]
+      const requestedWorkspace = String(input.workspace_id ?? input.workspaceId ?? '').trim()
+      if (workspaceIds.length !== 1 || (requestedWorkspace && requestedWorkspace !== workspaceIds[0])) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '当前账号必须绑定且只能绑定一个工作区', 409)
+      const workspaceId = workspaceIds[0]!
+      const clientId = 'local-desktop'
+      const redirectUri = 'http://127.0.0.1/merchant-mcp-callback'
+      const codeVerifier = randomBytes(48).toString('base64url')
+      const context = { clientId, issuer: origin, audience: `${origin}/mcp`, resource: `${origin}/mcp`, scope: ['merchant'] }
+      const issued = await passwordAuthRepository.issueMcpAuthorizationCode({ ...context, account: current.account, redirectUri, codeChallenge: createHash('sha256').update(codeVerifier).digest('base64url') })
+      const pair = await passwordAuthRepository.exchangeMcpAuthorizationCode({ ...context, redirectUri, code: issued.code, codeVerifier })
+      return send(res, 200, workspaceId, { access_token: pair.accessToken, refresh_token: pair.refreshToken, token_type: 'Bearer', expires_in: pair.expiresIn, scope: pair.scope.join(' '), workspace_id: workspaceId, account_login: current.account.login }, null, req)
+    }
+    if (req.method === 'POST' && path === '/v1/auth/mcp-token/refresh') {
+      // Refresh is intentionally token-only: callers must not be able to
+      // mint a new bearer by presenting an arbitrary workspace or account.
+      const origin = publicRequestOrigin(req)
+      const requestOrigin = header(req, 'origin')?.trim()
+      if (requestOrigin && requestOrigin !== origin) throw new DomainError('AUTH_CSRF_ORIGIN_INVALID', '登录来源无效，请从 Store Nova 工作台发起连接', 403)
+      const input = await body(req, 16 * 1024)
+      const refreshToken = String(input.refresh_token ?? input.refreshToken ?? '').trim()
+      if (!refreshToken) throw new DomainError('MCP_OAUTH_INVALID_GRANT', '本地连接凭据已失效，请重新登录商家后台', 401)
+      const context = { clientId: 'local-desktop', issuer: origin, audience: `${origin}/mcp`, resource: `${origin}/mcp`, scope: ['merchant'] }
+      try {
+        const pair = await passwordAuthRepository.refreshMcpOAuthToken({ ...context, refreshToken })
+        return send(res, 200, 'unknown', { access_token: pair.accessToken, refresh_token: pair.refreshToken, token_type: 'Bearer', expires_in: pair.expiresIn, scope: pair.scope.join(' ') }, null, req)
+      } catch { throw new DomainError('MCP_OAUTH_INVALID_GRANT', '本地连接凭据已失效，请重新登录商家后台', 401) }
     }
     if (req.method === 'POST' && path === '/v1/auth/logout') {
       await passwordAuthRepository.logout(passwordSessionToken())

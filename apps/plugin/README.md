@@ -13,6 +13,23 @@ macOS 管理凭据轮换：默认仍优先使用宿主显式环境。只有明�
 
 交给技术安装人员或商家时，先阅读仓库根目录的[安装与配置手册](../../docs/store-nova-chatgpt-plugin-install-manual.md)。手册包含 marketplace 安装、macOS launchd 环境、工作区绑定、模型中转边界、重启验收和 `MCP_CONFIGURATION_REQUIRED` 排障；不要把下面的开发环境示例直接复制到生产商家电脑。
 
+### 本地安装（不使用 ChatGPT OAuth）
+
+本插件支持本地桌面模式：bridge 通过 stdio 连接本机 API，API 再请求 Store Nova 服务端；
+不会使用 ChatGPT 远程 MCP OAuth，也不会在 ChatGPT 中显示授权页。请先启动
+`infra/local/docker-compose.yml`，再在运营后台登录商家账号，并由服务端为当前工作区注入
+独立 Bearer 凭据。`MERCHANT_MCP_TOKEN` 是 Store Nova 的内部调用凭据，不是平台 Cookie，
+不能把账号密码写进插件或聊天，也不能向所有用户分发共享测试 token。
+
+若 `MERCHANT_MCP_BASE_URL` 指向公网 `https://yxsona.com`，本地 bridge 仍可通过 HTTPS 和
+服务端签发的短期 Bearer 调用，不需要 ChatGPT OAuth；只有把公网 `/mcp` 直接登记为 ChatGPT
+云端远程 MCP 时才需要 OAuth。“本地安装”不能绕过公网服务端的身份、工作区/RLS 和审计门禁。
+
+本地连接凭据由已登录的 Store Nova 商家后台通过同源 `POST /v1/auth/mcp-token` 申请。服务端
+会校验 HttpOnly 登录会话、商家账号和唯一工作区，并返回短期 access/refresh token；安装器应
+把它写入系统密钥管理器后再启动 bridge。插件不接收密码、Cookie，也不把 ChatGPT OAuth
+当作本地登录方式。未登录、跨来源、停用账号或工作区不唯一时必须失败关闭。
+
 ## 商品视频策划
 
 插件内置两层视频策划技能：`ecommerce-video-marketing` 负责商品痛点、卖点、受众、平台调性和营销脚本；`storyboard-prompt-assistant` 负责逐镜头时长、景别、运镜、正/负提示词和连续性。它们只生成可审阅的脚本与分镜，真实成片仍必须经过商品事实、素材扫描、商家确认、平台模型中转、创意点、归档和发布前审核；脚本或分镜不等于已生成或已发布视频。

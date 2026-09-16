@@ -59,7 +59,7 @@ ECS preflight 会以只读查询分别使用目标 `DATABASE_URL` 和 `OPS_DATAB
   "compose_project": "merchant-production",
   "current": { "release_id": "current", "git_sha": "40位SHA", "manifest_sha256": "64位SHA", "image_set_digest": "sha256:64位SHA" },
   "target": { "release_id": "previous", "git_sha": "40位SHA", "manifest_sha256": "64位SHA", "image_set_digest": "sha256:64位SHA", "compose_sha256": "64位SHA", "env_sha256": "64位SHA", "image_digests_sha256": "64位SHA" },
-  "database": { "strategy": "forward_only", "live_migration_version": 212, "target_migration_tail": 212, "schema_downgrade": false },
+  "database": { "strategy": "forward_only", "live_migration_version": 214, "target_migration_tail": 214, "schema_downgrade": false },
   "volumes": { "preserve": true }
 }
 ```

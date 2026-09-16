@@ -2337,6 +2337,33 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('uses the local desktop bridge with a cloud bearer and fixed workspace scope, without ChatGPT OAuth', async () => {
+    const requests: Array<{ path?: string; authorization?: string; workspace?: string; bodyWorkspace?: string }> = []
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      requests.push({ path: req.url, authorization: req.headers.authorization, workspace: req.headers['x-workspace-id'] as string | undefined, bodyWorkspace: body.params?.workspace_id })
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { jsonrpc: '2.0', id: body.id, result: { workspace: { id: 'ws_cloud_merchant', status: 'ready' }, source: 'cloud-api' } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, DEPLOY_ENV: 'local_desktop', MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_cloud_merchant', MERCHANT_MCP_TOKEN: 'short-lived-test-bearer', MERCHANT_STRICT_AUTH: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      expect((await nextLine(child.stdout)).result.isError).toBe(false)
+      expect(requests).toEqual([{ path: '/mcp', authorization: 'Bearer short-lived-test-bearer', workspace: 'ws_cloud_merchant', bodyWorkspace: 'ws_cloud_merchant' }])
+      expect(requests.some(request => request.path === '/oauth/authorize' || request.path === '/oauth/token')).toBe(false)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('automatically bootstraps before the merchant-facing start entry when no workspace is bound', async () => {
     const codexHome = await mkdtemp(join(tmpdir(), 'merchant-codex-home-'))
     await mkdir(join(codexHome, 'merchant-marketing'), { recursive: true })
@@ -2429,7 +2456,7 @@ describe('Codex stdio MCP bridge', () => {
   })
 
   it.each([
-    [401, 'MCP_AUTH_REQUIRED', 'Store Nova 尚未登录或授权。请先在 ChatGPT 的插件连接设置中点击“连接/授权 Store Nova”，使用商家账号完成登录；任务和已有内容已保留，没有扣费或发布。'],
+    [401, 'MCP_AUTH_REQUIRED', 'Store Nova 尚未登录或授权。请先在 Store Nova 商家后台登录，并在“连接本地插件”中为当前工作区生成连接凭据；本地插件不使用 ChatGPT OAuth。任务和已有内容已保留，没有扣费或发布。'],
     [403, 'PERMISSION_DENIED', '当前账号没有执行这一步的权限。任务和已有内容已保留。'],
   ])('maps a bare HTTP %s gateway response to the stable plugin error contract', async (status, code, message) => {
     const server = createServer((_req, res) => {
@@ -2455,7 +2482,7 @@ describe('Codex stdio MCP bridge', () => {
           state: 'authentication_required',
           user_action_required: true,
           resume_message: '登录并授权后继续',
-          next_action: { label: '连接/授权 Store Nova', target: 'chatgpt_plugin_connection_settings' },
+          next_action: { label: '登录商家后台并生成本地连接凭据', target: 'merchant_studio_local_plugin_connection' },
         })
       }
     } finally {

@@ -2,5 +2,5 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": { "rootDir": "src", "outDir": "dist" },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/migration-087.test.ts"]
+  "exclude": ["src/**/*.test.ts"]
 }

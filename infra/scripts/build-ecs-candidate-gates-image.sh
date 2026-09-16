@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-# Local construction only. Publishing and production admission require a
-# separately reviewed registry digest; this script never pushes an image.
+# Local construction only. Images are transferred to ECS as encrypted archives;
+# this script never creates or pushes to a paid registry.
 root=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd -P)
 revision=${ECS_CANDIDATE_GIT_SHA:-}
 tag=${ECS_CANDIDATE_BUILD_TAG:-}

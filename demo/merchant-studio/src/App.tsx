@@ -7,6 +7,7 @@ import { imageCandidateLoading } from './image-candidate-loading'
 import { mergeImageGenerationJobs } from './image-job-list'
 import { isRealReadableStore, merchantConnectionPresentation } from './platform-connection-status'
 import { DetailDecisionContract } from './DetailDecisionContract'
+import { LocalPluginConnection } from './LocalPluginConnection'
 import {
   evidenceSafeTopLevelContent,
   moduleDecisionPresentation,
@@ -988,6 +989,7 @@ function Topbar({
         <h1>{titles[page]}</h1>
       </div>
       <div className="topbar-actions">
+        {apiBaseUrl && account && <LocalPluginConnection apiBaseUrl={apiBaseUrl} account={account} />}
         <button
           className={`health-button ${environmentStatus.tone}`}
           onClick={() => onOpenUtility('health')}

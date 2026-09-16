@@ -1474,7 +1474,7 @@ function userFacingErrorText(code, details) {
     return '图片已保存并通过自动安全检查，但没有读出可靠的商品信息。请先告诉我商品名称；我会继续使用当前图片记录你的确认，无需重新连接工作区或重复上传。'
   }
   if (code === 'PERMISSION_DENIED') return '当前账号没有执行这一步的权限。任务和已有内容已保留。'
-  if (code === 'MCP_AUTH_REQUIRED') return 'Store Nova 尚未登录或授权。请先在 ChatGPT 的插件连接设置中点击“连接/授权 Store Nova”，使用商家账号完成登录；任务和已有内容已保留，没有扣费或发布。'
+  if (code === 'MCP_AUTH_REQUIRED') return 'Store Nova 尚未登录或授权。请先在 Store Nova 商家后台登录，并在“连接本地插件”中为当前工作区生成连接凭据；本地插件不使用 ChatGPT OAuth。任务和已有内容已保留，没有扣费或发布。'
   if (code === 'MCP_GATEWAY_BAD_REQUEST') return '插件请求被网关拒绝。当前任务和已有产物已保留；请根据请求 ID 排查网关路由、请求格式或插件连接配置。'
   if (code === 'MODEL_RELAY_EVIDENCE_REQUIRED') {
     const missing = Array.isArray(details?.missing) ? details.missing : []
@@ -1518,13 +1518,13 @@ function toolErrorPresentation(method, args, code, details) {
   }
   if (code === 'MCP_AUTH_REQUIRED') {
     return {
-      text: 'Store Nova 尚未登录或授权。请先在 ChatGPT 的插件连接设置中点击“连接/授权 Store Nova”，使用商家账号完成登录；任务和已有内容已保留，没有扣费或发布。',
+      text: 'Store Nova 尚未登录或授权。请先在 Store Nova 商家后台登录，并在“连接本地插件”中为当前工作区生成连接凭据；本地插件不使用 ChatGPT OAuth。任务和已有内容已保留，没有扣费或发布。',
       recovery: {
         state: 'authentication_required',
         user_action_required: true,
         preserved: ['uploaded_assets', 'confirmed_facts', 'saved_products', 'saved_skus'],
         resume_message: '登录并授权后继续',
-        next_action: { label: '连接/授权 Store Nova', target: 'chatgpt_plugin_connection_settings' },
+        next_action: { label: '登录商家后台并生成本地连接凭据', target: 'merchant_studio_local_plugin_connection' },
       },
     }
   }

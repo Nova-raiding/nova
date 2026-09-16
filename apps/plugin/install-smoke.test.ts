@@ -272,6 +272,44 @@ printf '%s\n' Darwin
     expect(readFileSync(resolve(root, 'package.json'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'package.json'), 'utf8'))
   })
 
+  it('provides a redacted macOS local installer that hands off a short-lived token through launchd', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-local-installer-'))
+    const bin = resolve(directory, 'bin')
+    const state = resolve(directory, 'launchd-state')
+    mkdirSync(bin)
+    writeFileSync(resolve(bin, 'uname'), '#!/bin/sh\nprintf Darwin\n')
+    writeFileSync(resolve(bin, 'launchctl'), `#!/bin/sh
+set -eu
+state='${state}'
+case "\${1:-}" in
+  setenv) printf '%s=%s\\n' "\$2" "\$3" >> "\$state" ;;
+  getenv) key="\$2"; awk -F= -v key="\$key" '\$1 == key { value=substr(\$0, index(\$0,"=")+1) } END { printf "%s", value }' "\$state" 2>/dev/null || true ;;
+  *) exit 2 ;;
+esac
+`)
+    chmodSync(resolve(bin, 'uname'), 0o755)
+    chmodSync(resolve(bin, 'launchctl'), 0o755)
+    try {
+      const token = 'short-lived-token-not-printed'
+      const result = spawnSync('sh', [resolve(root, 'scripts/install-local-macos.sh'), '--base-url', 'https://yxsona.com', '--workspace', 'ws_install'], {
+        input: `${token}\n`, encoding: 'utf8', env: { PATH: `${bin}:${process.env.PATH ?? ''}` },
+      })
+      expect(result.status).toBe(0)
+      expect(result.stdout).not.toContain(token)
+      expect(result.stderr).not.toContain(token)
+      const values = readFileSync(state, 'utf8')
+      expect(values).toContain('MERCHANT_MCP_BASE_URL=https://yxsona.com')
+      expect(values).toContain('MERCHANT_WORKSPACE_ID=ws_install')
+      expect(values).toContain(`MERCHANT_MCP_TOKEN=${token}`)
+      expect(values).toContain('MERCHANT_MCP_TOKEN_SOURCE=launchd')
+      expect(values).toContain('MERCHANT_STRICT_AUTH=true')
+      expect(values).toContain('MERCHANT_ALLOW_FIXTURE_FALLBACK=false')
+      expect(values).toContain('MERCHANT_MCP_WRITE_ENABLED=false')
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   it('verifies installed runtime files and the commercial recovery tool surface without claiming conversation refresh', () => {
     const result = spawnSync(process.execPath, [resolve(root, 'scripts/verify-installed-bridge.mjs'), '--source', root, '--installed', root], {
       encoding: 'utf8',
