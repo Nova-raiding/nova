@@ -26,7 +26,7 @@
   "relay_response": {
     "data": [
       {
-        "url": "https://dashscope-a717.oss-accelerate.aliyuncs.com/1d/dc/20260906/6fb5d90d/89f53145-ae89-99cb-b090-c7174422854a_qwen_image3_serving_output_0.png?Expires=1788745625&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=C0m7GpQ14EAvNxJRoALKU0XcsJg%3D",
+        "url": "https://dashscope-a717.oss-accelerate.aliyuncs.com/1d/dc/20260906/6fb5d90d/89f53145-ae89-99cb-b090-c7174422854a_qwen_image3_serving_output_0.png?Expires=REDACTED&OSSAccessKeyId=REDACTED&Signature=REDACTED",
         "b64_json": "",
         "revised_prompt": ""
       }
@@ -40,7 +40,7 @@
             "message": {
               "content": [
                 {
-                  "image": "https://dashscope-a717.oss-accelerate.aliyuncs.com/1d/dc/20260906/6fb5d90d/89f53145-ae89-99cb-b090-c7174422854a_qwen_image3_serving_output_0.png?Expires=1788745625&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=C0m7GpQ14EAvNxJRoALKU0XcsJg%3D",
+                  "image": "https://dashscope-a717.oss-accelerate.aliyuncs.com/1d/dc/20260906/6fb5d90d/89f53145-ae89-99cb-b090-c7174422854a_qwen_image3_serving_output_0.png?Expires=REDACTED&OSSAccessKeyId=REDACTED&Signature=REDACTED",
                   "type": "image"
                 }
               ],

@@ -26,7 +26,7 @@
   "relay_response": {
     "data": [
       {
-        "url": "https://dashscope-0484.oss-accelerate.aliyuncs.com/7d/90/20260914/71e29776/1d664f14-5824-4b86-b7c2-41b3f96ccd3d.png?Expires=1789983960&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=6r0DITI5sIL6x%2FETg3tFJMsjPkE%3D",
+        "url": "https://dashscope-0484.oss-accelerate.aliyuncs.com/7d/90/20260914/71e29776/1d664f14-5824-4b86-b7c2-41b3f96ccd3d.png?Expires=REDACTED&OSSAccessKeyId=REDACTED&Signature=REDACTED",
         "b64_json": "",
         "revised_prompt": ""
       }
@@ -40,7 +40,7 @@
             "message": {
               "content": [
                 {
-                  "image": "https://dashscope-0484.oss-accelerate.aliyuncs.com/7d/90/20260914/71e29776/1d664f14-5824-4b86-b7c2-41b3f96ccd3d.png?Expires=1789983960&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=6r0DITI5sIL6x%2FETg3tFJMsjPkE%3D"
+                  "image": "https://dashscope-0484.oss-accelerate.aliyuncs.com/7d/90/20260914/71e29776/1d664f14-5824-4b86-b7c2-41b3f96ccd3d.png?Expires=REDACTED&OSSAccessKeyId=REDACTED&Signature=REDACTED"
                 }
               ],
               "role": "assistant"

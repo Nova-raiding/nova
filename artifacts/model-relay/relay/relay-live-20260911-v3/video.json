@@ -38,7 +38,7 @@
       "action": "textGenerate",
       "status": "SUCCESS",
       "fail_reason": "",
-      "result_url": "https://dashscope-a717.oss-accelerate.aliyuncs.com/1d/ca/20260911/c49b352e/524182-metadata_nFLF2Q4Y_9695114dfac7.mp4?Expires=1789185549&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=r8o0ryAb8ujdPMEk9EbhBnNGohE%3D",
+      "result_url": "https://dashscope-a717.oss-accelerate.aliyuncs.com/1d/ca/20260911/c49b352e/524182-metadata_nFLF2Q4Y_9695114dfac7.mp4?Expires=REDACTED&OSSAccessKeyId=REDACTED&Signature=REDACTED",
       "submit_time": 1789099056,
       "start_time": 1789099060,
       "finish_time": 1789099165,
@@ -56,7 +56,7 @@
           "submit_time": "2026-09-11 11:57:36.933",
           "task_id": "9229882a-8756-4c18-9935-946803cb1dc8",
           "task_status": "SUCCEEDED",
-          "video_url": "https://dashscope-a717.oss-accelerate.aliyuncs.com/1d/ca/20260911/c49b352e/524182-metadata_nFLF2Q4Y_9695114dfac7.mp4?Expires=1789185549&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=r8o0ryAb8ujdPMEk9EbhBnNGohE%3D"
+          "video_url": "https://dashscope-a717.oss-accelerate.aliyuncs.com/1d/ca/20260911/c49b352e/524182-metadata_nFLF2Q4Y_9695114dfac7.mp4?Expires=REDACTED&OSSAccessKeyId=REDACTED&Signature=REDACTED"
         },
         "request_id": "f39cae1c-f44e-93cd-9f72-0a0a05c8c864",
         "usage": {

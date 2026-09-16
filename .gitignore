@@ -19,6 +19,19 @@ artifacts/ops-oidc-e2e-users-retry*/
 artifacts/ops-oidc-platform*/
 artifacts/ops-oidc-e2e/ui-dist/assets/
 
+# Ephemeral local/runtime outputs. Reviewed evidence remains trackable under
+# explicitly named audit directories.
+/artifacts/codex-output/
+/artifacts/ops-jit-isolation/
+/artifacts/isolated-postgres/
+/artifacts/deployment-candidates/
+/artifacts/customer-delivery-account-access/
+/artifacts/customer-delivery-contract-link/
+/artifacts/local-runtime-tests/
+/artifacts/local-worker-sync/
+__pycache__/
+*.py[cod]
+
 # TypeScript outputs belong in dist/. Keeping emitted artifacts beside src/*.ts
 # makes NodeNext/Vitest resolve stale JavaScript ahead of the authoritative TS.
 packages/*/src/**/*.js
