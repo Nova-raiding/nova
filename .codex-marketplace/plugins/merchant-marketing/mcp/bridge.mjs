@@ -114,7 +114,7 @@ const COMMERCIAL_RECOVERY_METHODS = new Set([
   'billing.export', 'workspace.data.export.request', 'workspace.data.export.get', 'workspace.data.delete.request', 'workspace.bootstrap',
   'workspace.health', 'canonical.product.consistency', 'platform.mapping.preflight',
   'commercial.access.get', 'commercial.catalog.get', 'commercial.order.create', 'commercial.order.payment.get',
-  'creative-points.balance.get', 'creative-points.statement.list',
+  'creative-points.balance.get', 'creative-points.statement.list', 'content.draft.generate',
 ])
 const COMMERCIAL_DISABLED_METHODS = new Set([
   'ops.commercial.offers.list', 'ops.commercial.offer.upsert',
@@ -198,7 +198,7 @@ const DESTRUCTIVE_WRITE_METHODS = new Set([
 ])
 const METHODS = {
   'onboarding.status': {
-    description: '查看首次使用四步进度；可附上平台、店铺名称和店铺首页链接，仅检查格式并生成待确认候选，不读取网页或代替官方授权。只读。',
+    description: '只读查看真实店铺接入四步进度；未连接店铺也可在已授权工作区先用 catalog.import（draft_only="true"）导入资料、content.draft.generate 制作草稿候选，仍须通过服务端商业准入。真实商品读取、同步和发布需要官方 OAuth。可附上平台、店铺名称和店铺首页链接，仅检查格式并生成待确认候选，不读取网页或代替授权。',
     inputSchema: { type: 'object', properties: { store_links_text: boundedString(8192, 1, '用户逐行提供的平台｜店铺名称｜HTTPS店铺首页；仅作格式检查') }, additionalProperties: false },
   },
   'workspace.content_setup.confirm': {
@@ -223,8 +223,8 @@ const METHODS = {
     },
   },
   'merchant.first_value': {
-    description: '返回首个价值安全预览包；传 example=true 可查看静态示例，不代表真实商品，不发布内容；服务端不调用模型。',
-    inputSchema: { type: 'object', properties: { platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, product_id: { type: 'string' }, example: { type: 'string', enum: ['true'] } }, additionalProperties: false },
+    description: '返回首个价值安全预览包；example=true 为静态示例，draft=true 可通过平台中转生成未绑定内容候选，但不会创建正式版本、不发布。',
+    inputSchema: { type: 'object', properties: { platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, product_id: { type: 'string' }, example: { type: 'string', enum: ['true'] }, draft: { type: 'string', enum: ['true'] }, draft_title: { type: 'string', minLength: 2, maxLength: 256 }, draft_prompt: { type: 'string', minLength: 2, maxLength: 2000 }, idempotency_key: { type: 'string', minLength: 8, maxLength: 200 } }, additionalProperties: false },
   },
   'brand-unit.list': {
     description: '查看当前工作区的品及其已绑定店铺。只读。',
@@ -540,7 +540,7 @@ const METHODS = {
   'automation.pause': { description: '暂停店铺自动化运营并记录原因。', inputSchema: { type: 'object', properties: { platform: { type: 'string' }, account_id: { type: 'string' }, reason: { type: 'string' } }, required: ['reason'], additionalProperties: false } },
   'catalog.import': {
     description: '导入或绑定商品；支持后续主图生成和发布。',
-    inputSchema: { type: 'object', properties: { brand_id: { type: 'string', description: '已授权品牌 ID；传入后商品绑定到该品牌和店铺范围' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, remote_id: { type: 'string' }, local_product_key: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, sku_count: { type: 'string' }, skus_json: { type: 'string' }, images: { type: 'string' }, asset_ids_json: { type: 'string', description: '已上传商品素材 ID 字符串数组 JSON' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string' }, store_name: { type: 'string' }, store_differentiation: { type: 'string' } }, required: ['platform', 'title'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { brand_id: { type: 'string', description: '已授权品牌 ID；传入后商品绑定到该品牌和店铺范围' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, draft_only: { type: 'string', enum: ['true'], description: '仅导入本地资料用于草稿候选；不绑定店铺、不可同步或发布。' }, remote_id: { type: 'string' }, local_product_key: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, sku_count: { type: 'string' }, skus_json: { type: 'string' }, images: { type: 'string' }, asset_ids_json: { type: 'string', description: '已上传商品素材 ID 字符串数组 JSON' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string' }, store_name: { type: 'string' }, store_differentiation: { type: 'string' } }, required: ['platform', 'title'], additionalProperties: false },
   },
   'catalog.import.batch': {
     description: '批量导入最多 50 个商品；可传商品对象数组，或传已解析并由商家确认事实的 XLSX/CSV 商品表格素材；每项明确平台和店铺，全部预校验通过后才写入。',
@@ -802,6 +802,10 @@ const METHODS = {
   'content.generate': {
     description: '基于任务和已确认商品事实生成新的可审阅内容版本。',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['task_id'], additionalProperties: false },
+  },
+  'content.draft.generate': {
+    description: '通过平台中转生成未绑定内容候选；仅草稿，不创建正式版本、不批准、不发布。',
+    inputSchema: { type: 'object', properties: { draft: { type: 'string', enum: ['true'] }, draft_title: { type: 'string', minLength: 2, maxLength: 256 }, draft_prompt: { type: 'string', minLength: 2, maxLength: 2000 }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, idempotency_key: { type: 'string', minLength: 8, maxLength: 200 } }, required: ['draft', 'draft_title', 'idempotency_key'], additionalProperties: false },
   },
   'content.codex.prepare': {
     description: '仅本地开发/测试：准备已确认商品事实和结构化输出契约供 Codex 会话生成。生产环境禁止调用，正式生成必须使用平台托管并计量 token 的 content.generate。',
@@ -1248,20 +1252,19 @@ function userFacingToolText(method, result) {
       const stepIntro = stepId === 'scan_catalog'
         ? `第一步已经完成。\n\n当前进度：${initialization.completed}/4\n${progress}\n\n接下来系统将扫描店铺商品，建立商品知识卡片。准备好后，请回复“进行第二步”。`
         : stepId === 'check_configuration'
-          ? `现在开始第三步：检查系统配置。\n\n系统将检查规则库、知识库和生产模块。\n\n${checkLines}\n\n${current.state === 'complete' ? `第三步已经完成。\n\n当前进度：${initialization.completed}/4\n${progress}\n\n准备建立第一个内容工作区。` : `当前仍有配置项待核验：${current.summary ?? '请等待真实配置证据返回'}。未核验完成前不会生成或发布。`}`
+          ? `现在开始第三步：检查系统配置。\n\n系统将检查规则库、知识库和生产模块。\n\n${checkLines}\n\n${current.state === 'complete' ? `第三步已经完成。\n\n当前进度：${initialization.completed}/4\n${progress}\n\n准备建立第一个内容工作区。` : `当前仍有配置项待核验：${current.summary ?? '请等待真实配置证据返回'}。正式店铺任务须先完成对应核验；草稿预览也必须通过其自身的权限、模型配置和创意点检查。`}`
           : stepId === 'build_workspace'
             ? `现在开始第四步：建立工作区。\n\n${current.summary ?? '工作区用于管理店铺、商品、素材和生产任务。'}\n\n请确认工作区名称和对应店铺；确认后才会完成首次配置。`
             : ''
-      const capabilityIntro = '首次使用会按四个步骤完成：\n① 连接平台及店铺\n② 扫描商品至知识库\n③ 检查系统配置\n④ 建立内容工作区\n\n配置完成后，你可以让我制作商品详情文案、主图/详情图候选、视频脚本与分镜，并进行规则检查；正式生成、扣费和发布都需要真实配置与独立确认。'
+      const capabilityIntro = '你可以先导入自己提供的商品资料、预览文案草稿，不必先连接店铺；需要有效登录、工作区权限和服务端准入。草稿仅为未批准、未发布的候选，仍会检查模型配置、创意点和安全条件。\n\n真实店铺接入分为四步：\n① 连接平台及店铺\n② 扫描商品至知识库\n③ 检查系统配置\n④ 建立内容工作区\n\n真实商品读取、同步和发布仍需连接对应店铺，通过平台官方 OAuth 授权；生成、扣费和发布仍遵守各自门禁与确认要求。'
       return [
-        initialization.completed === 0 ? '您好，感谢您使用 Store Nova。\n\n本地系统已经部署完成。接下来需要通过四个步骤，完成您的初始化配置：\n\n① 连接 Store Nova 管理后台，并绑定平台品牌店铺。\n② 品牌知识学习，完成知识库初步搭建。\n③ 调用知识库资料，检查系统配置，完成功能搭建。\n④ 建立工作区。\n\n除店铺确认和工作区设置外，其余可自动完成的检查将由系统执行。请不要在对话中发送店铺账号、密码或短信验证码；涉及授权时，请通过平台官方授权页面完成。\n\n准备好后，我们从第一步开始。' : '',
+        initialization.completed === 0 ? '您好，感谢您使用 Store Nova。\n\n我们会把你的商品资料、店铺与内容生产能力接成一条可核验的工作流。你可以从资料和草稿开始，按需连接店铺；未连接店铺不代表没有工作区权限。请不要在对话中发送平台密码、Cookie 或短信验证码，店铺授权只通过平台官方页面完成。' : '',
         capabilityIntro,
         `当前进度：${initialization.completed}/4\n${progress}`,
         initialization.status === 'ready'
-          ? '恭喜您，Store Nova 首次使用配置已经全部完成。\n\n内容工作区已就位，您的生产环境已准备完毕。现在可以选择一个商品，或直接描述制作需求；生成和发布仍需独立确认。'
-          : stepIntro || `现在开始第一步：连接平台及店铺。\n\n${current.summary ?? '请将平台、店铺名称和店铺首页链接发送给我，一店一行。'}\n\n请按以下格式发送：\n平台｜店铺名称｜店铺首页链接\n\n例如：\n淘宝｜××女装店｜https://……\n天猫｜××旗舰店｜https://……\n\n下一步：开始配置店铺。不要发送账号、密码或验证码。`,
+          ? '服务端已确认四步接入配置完成。请描述你的第一个制作目标；这不代表内容已生成、已批准或已发布，每次正式操作仍会重新核验权限、配置和费用。'
+          : stepIntro || '先导入资料做草稿，还是连接店铺做真实同步？\n\n若选择连接店铺，下一步再提供“平台｜店铺名称｜店铺首页链接”；链接只用于识别待确认店铺，不能代替官方授权。',
         brandHint,
-        initialization.completed === 0 ? '【开始配置】' : '',
       ].filter(Boolean).join('\n')
     }
     const blocker = result?.blocker
@@ -1740,7 +1743,7 @@ function safeStructuredErrorMessage(error, code, details) {
   return userFacingErrorText(code, details)
 }
 
-const MODEL_PROVIDER_METHODS = new Set(['content.generate', 'catalog.image.generate', 'multimodal.generate', 'multimodal.video.request', 'multimodal.image.edit'])
+const MODEL_PROVIDER_METHODS = new Set(['content.generate', 'content.draft.generate', 'catalog.image.generate', 'multimodal.generate', 'multimodal.video.request', 'multimodal.image.edit'])
 
 function isProviderChannelUnavailable(method, status, remoteError, rawResponseText = '') {
   if (status !== 503) return false
@@ -3223,7 +3226,7 @@ async function handle(request) {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: { tools: {}, resources: {}, resourceTemplates: {} },
       serverInfo: { name: 'merchant-marketing', version: PLUGIN_VERSION || 'unversioned' },
-      instructions: '首次使用先调用 onboarding.status；按返回的步骤完成工作区、身份、平台店铺和数据读取配置。需要完整诊断时调用 workspace.health；发布前必须人工确认并调用 publish.prepare。',
+      instructions: '首次使用先只读调用 onboarding.status，再按商家选择推进：已登录并获工作区权限、服务端准入允许时，未连接店铺也可用 catalog.import（显式 draft_only="true"）导入资料、content.draft.generate 制作未批准未发布的草稿候选；只调用服务端实际提供的工具，缺失时明确阻断，不绕过权限、创意点或模型配置门禁。真实商品读取、同步和发布仍需对应店铺官方 OAuth；不索取 Cookie、平台密码或验证码。需要完整诊断时调用 workspace.health；发布前必须人工确认并调用 publish.prepare。',
     })
   }
   if (request.method === 'resources/list') {
