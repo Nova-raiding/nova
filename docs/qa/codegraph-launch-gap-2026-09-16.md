@@ -144,6 +144,16 @@ owner 验证：全局类型检查通过；发布门禁 135 个文件、652 项�
 
 候选发布增加 `stage-verified-ecs-release.sh`，从完整、已验证的 Git archive 构造仓库外隔离 release checkout。执行器验证四项候选身份、归档和比较清单摘要及内嵌 40 位提交；拒绝路径穿越、链接、特殊文件、重复路径、特权位和超限展开，使用 `npm ci --ignore-scripts`，并以原子移动创建不可覆盖的 release 目录。对抗复核进一步加入同 release ID 并发锁、release root 属主/权限、祖先符号链接检查，以及部署前逐文件比对暂存源码和绑定归档。部署与回滚控制面脚本及证据 attester 类型声明已进入 release manifest、候选比较和必需工件。
 
-迁移 214 的 PostgreSQL 验收现覆盖 213→214、旧账务不变、embedding 用量与预算预留以及幂等尾版本，并进入 CI。Kubernetes 保留为 legacy 全量测试，但已从 ECS 生产发布门禁移除；告警继续允许显式关闭，不属于当前上线要求。owner 最终复核：全局类型检查通过；API/worker/知识索引组合 200 项通过；候选暂存与部署安全回归 12 项通过；发布门禁 135 个文件、632 项通过，14 项因当前未提供 PostgreSQL URL 跳过。此前全量八分片发现的告警、readiness 与 legacy Kubernetes 断言均已定向修复并复测 71 项通过。
+迁移 214 的 PostgreSQL 验收现覆盖 213→214、旧账务不变、embedding 用量与预算预留以及幂等尾版本，并进入 CI。Kubernetes 保留为 legacy 全量测试，但已从 ECS 生产发布门禁移除；告警继续允许显式关闭，不属于当前上线要求。owner 最终复核：全局类型检查通过；API/worker/知识索引组合 200 项通过；候选暂存与部署安全回归 12 项通过；发布门禁 135 个文件、632 项通过，14 项因当前未提供 PostgreSQL URL 跳过。此前全量八分片发现的告警、readiness 与 legacy Kubernetes 断言均已定向修复并复测 71 项通过；修复后重新执行完整测试，8/8 分片全部通过。
 
 本批仍未部署生产，也没有调用真实 embedding、ChatGPT、OSS、支付宝或商家平台。当前代码级 P0 已收口，但工作树尚未固化，真实 OAuth 客户端、不可变镜像、ECS migration 214、生产凭据与 release-bound 证据、桌面真实会话和 canary 仍是 **NO-GO** 条件。建议顺序更新为：固化干净提交并生成受验证候选包；构建和推送不可变镜像；在 ECS 暂存隔离 release；应用 migration 214；注入真实 OAuth、OSS、支付和模型中转配置；采集并签署八类 release 证据；最后执行 ECS preflight、受管桌面验收、受控 canary 和回滚演练。
+
+## 第十七批：生产只读核验与主分支集成风险
+
+对抗审查发现并修复了 embedding 的生产角色错配：索引实际由 automation worker 执行，而原实现将 admission、outcome 和 model usage 请求签为 generation，使用独立 automation 凭据时会被 API 拒绝。现在 embedding 专用请求使用 automation HMAC 角色；API 仅允许 automation 上报 embedding 用量，同时保留 generation 的滚动兼容，其他 automation 模型调用继续拒绝。新增真实 bearer 与 HMAC 路由测试覆盖允许和拒绝路径。migration 214 改为先增加 `NOT VALID` 替代约束、完成 `VALIDATE`，再用短锁移除旧约束并恢复规范名称；本地 PostgreSQL 已验证任意旧约束名、幂等执行和 embedding 写入。
+
+仓库安全复核还发现 21 份历史模型中转证据保存了 OSS 签名 URL 参数。相关参数值已统一替换为确定性的 `REDACTED`，证据结构保留；新增源码工件卫生门禁，阻止以后提交未脱敏的 OSS access key、signature、expiry 或 security token 查询参数。2,869 个未跟踪文件均为本地运行产物或缓存，已通过精确 `.gitignore` 规则排除，没有删除业务数据或正式审计目录。
+
+ECS 只读核验显示所有容器和主站、运营后台健康接口仍存活，但生产实质上处于 NO-GO：`/api/releasez` 的发布四元组为空且 `ready=false`；运行环境仍为 fixture、`writesEnabled=false`；数据库只到 migration 209；API/worker 使用带 dirty 标记的候选镜像；ChatGPT Apps challenge 与 MCP OAuth issuer/authorization/token endpoint 缺失；运行 Compose 来源同时存在旧 deploy 目录与 release 目录。支付宝和模型中转配置存在，不能重复认定为缺失。
+
+最新远端主分支与当前功能分支从共同基点分别前进 173 和 30 个提交；直接合并模拟产生 36 个冲突。更关键的是双方独立占用了 migration 212–214：主分支必须保留现有 212–214，当前分支的 workspace/account/embedding 迁移在集成时应顺延为 215–217。发布前必须从最新 `origin/main` 建立隔离集成分支，跳过 5 个已等价进入主分支的补丁，按主题移植其余独有修改并重新执行全部门禁；不能直接部署当前旧基线分支。
