@@ -148,6 +148,7 @@ describe('Codex App merchant conversation flow', () => {
         current_step: { id: 'choose_product', title: '选择商品' },
         steps: [{ title: '工作区', state: 'complete', summary: '已建立' }, { title: '连接店铺', state: 'complete', summary: '已绑定' }],
         onboarding: { currentStep: 'choose_product' },
+        evidence: { official_stores: 1 },
       })))
     }, async child => {
       const response = await request(child, 1, 'onboarding.status')
@@ -161,6 +162,25 @@ describe('Codex App merchant conversation flow', () => {
         initialization: { completed: 1, total: 4, evidence: { compatibility_projection: true } },
       })
       expect(result.structuredContent).not.toHaveProperty('onboarding_card')
+    })
+  })
+
+  it('does not advance to catalog scanning without official store evidence', async () => {
+    await withBridge((request, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(json(ok(request, {
+        status: 'in_progress',
+        steps: [{ title: '工作区', state: 'complete' }, { title: '连接店铺', state: 'complete' }],
+        onboarding: { currentStep: 'choose_product' },
+      })))
+    }, async child => {
+      const response = await request(child, 1, 'onboarding.status')
+      const result = response.result as Json
+      const content = (result.content as Array<{ text: string }>)[0]?.text ?? ''
+      expect(content).toContain('当前进度：0/4')
+      expect(content).toContain('平台｜店铺名称｜店铺首页链接')
+      expect(content).not.toContain('进行第二步')
+      expect(result.structuredContent).toMatchObject({ initialization: { completed: 0, current_step: { id: 'connect_stores', state: 'required' } } })
     })
   })
 
