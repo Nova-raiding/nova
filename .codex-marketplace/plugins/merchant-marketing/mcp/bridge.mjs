@@ -2031,7 +2031,19 @@ function merchantUiMetadata(method, result, args = {}) {
       const products = stateFor('select_product', 'choose_product', 'scan_catalog', '选择商品', '扫描商品')
       const assets = stateFor('add_assets', 'upload_assets', '上传素材与资料', '素材')
       const generation = stateFor('generate_review', 'start_task', 'generate_content', '生成并审核', '开始任务')
-      const connectDone = legacySteps.length > 0 && done(workspace) && done(store)
+      const legacyStores = Array.isArray(result.stores) ? result.stores : Array.isArray(result.storeDirectory) ? result.storeDirectory : []
+      const legacyEvidence = result.evidence && typeof result.evidence === 'object' ? result.evidence : {}
+      const officialStoreCount = Number(legacyEvidence.official_stores ?? legacyEvidence.officialStores ?? 0)
+      const hasOfficialStore = officialStoreCount > 0 || legacyStores.some(item => {
+        if (!item || typeof item !== 'object') return false
+        const mode = String(item.dataMode ?? item.data_mode ?? '').toLowerCase()
+        const state = String(item.state ?? item.status ?? '').toLowerCase()
+        return mode === 'official_api' && state !== 'revoked' && state !== 'refresh_required' && item.readable !== false
+      })
+      // Legacy APIs often reported “bound” for fixture rows or an account
+      // record without OAuth evidence. Never let that skip the real store
+      // authorization step.
+      const connectDone = legacySteps.length > 0 && hasOfficialStore && done(workspace) && done(store)
       const scanDone = connectDone && done(products) && done(assets)
       const configDone = scanDone && done(generation)
       const initializationSteps = [
