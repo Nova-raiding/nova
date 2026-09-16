@@ -386,6 +386,18 @@ const deliveryDispatchContext = new AsyncLocalStorage<{
   resourceRechecks?: Map<string, () => Promise<void>>
   recheckingResources?: boolean
 }>()
+
+/**
+ * Runs a direct service invocation under an explicit provider-dispatch
+ * admission for tests that exercise behavior below the HTTP/MCP boundary.
+ * Production code must establish this context through an authenticated
+ * request; keeping this helper Vitest-only prevents it from becoming a
+ * second, fail-open runtime entrypoint.
+ */
+export async function withProviderDispatchAdmissionForTests<T>(workspaceId: string, invoke: () => Promise<T>): Promise<T> {
+  if (process.env.VITEST !== 'true') throw new Error('TEST_PROVIDER_DISPATCH_ADMISSION_UNAVAILABLE')
+  return deliveryDispatchContext.run({ workspaceId, recheck: async () => undefined }, invoke)
+}
 const rawContentGenerator = createContentGeneratorFromEnv(process.env, recordRelayUsage, recheckDeliveryBeforeProvider)
 const rawImageGenerator = createImageGeneratorFromEnv(process.env, recordRelayUsage, recheckDeliveryBeforeProvider)
 const protectedProductPromptConstraints = validateProtectedProductIntent('').promptConstraints
@@ -16089,9 +16101,13 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       })
       await scanImportedProductRules(workspaceId, product)
       await persistSnapshot(workspaceId, 'product', product, product as unknown as Record<string, unknown>)
-      return result({ ...product, product_id: product.id, rule_scan: product.ruleScan, ...(draftOnly ? { draft_only: true, candidate_status: '未绑定商品、仅草稿、不可发布', publishable: false } : {}) })
+      const knowledgeProjection = draftOnly
+        ? await projectImportedProductsToKnowledge({ repository: persistence.knowledge ?? durableKnowledgeRepository ?? memoryKnowledge, workspaceId, products: [product], ...(sourceAssetIds?.[0] ? { sourceAssetId: sourceAssetIds[0] } : {}), sourceMetadata: { source: 'catalog.import.draft', importMode: 'manual' } })
+        : undefined
+      return result({ ...product, product_id: product.id, rule_scan: product.ruleScan, ...(draftOnly ? { draft_only: true, candidate_status: '未绑定商品、仅草稿、不可发布', publishable: false, knowledge: { assetCount: knowledgeProjection?.assets.length ?? 0, documentCount: knowledgeProjection?.documents.length ?? 0, chunkCount: knowledgeProjection?.chunks.length ?? 0, bindingCount: knowledgeProjection?.bindings.length ?? 0, approvalStatus: 'pending', rightsStatus: 'unknown', indexState: 'queued' } } : {}) })
     }
     case 'catalog.import.batch': {
+      const draftOnly = params.draft_only === 'true'
       let rawItems: unknown
       try {
         if (typeof params.products_json === 'string' && params.products_json.trim()) rawItems = JSON.parse(params.products_json)
@@ -16123,7 +16139,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const platform = typeof item.platform === 'string' ? item.platform as Platform : '' as Platform
         if (!SUPPORTED_PLATFORMS.includes(platform)) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 platform 无效`, 400)
         const accountId = typeof item.account_id === 'string' && item.account_id.trim() ? item.account_id.trim() : undefined
-        if (isProduction() && !accountId) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', `第 ${index + 1} 项生产导入必须绑定已授权平台账号`, 400)
+        if (isProduction() && !accountId && !draftOnly) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', `第 ${index + 1} 项生产导入必须绑定已授权平台账号；如仅需建立待审核知识草稿，请显式传 draft_only=true`, 400)
         if (accountId) service.getActivePlatformAccount(workspaceId, accountId, platform)
         const title = typeof item.title === 'string' ? item.title.trim() : ''
         if (!title) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 title 不能为空`, 400)
@@ -16172,7 +16188,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const batchId = `catalog_import_batch_${randomUUID()}`
         await persistSnapshotsAndEvent({ workspaceId, snapshots: created.map(product => ({ entityType: 'product' as const, entityId: product.id, entityVersion: product.version ?? 1, payload: product as unknown as Record<string, unknown> })), aggregateId: batchId, eventType: 'catalog.import.batch.completed', sequence: 1, eventPayload: { batch_id: batchId, count: created.length, product_ids: created.map(product => product.id) } })
         await recordOperationAudit({ workspaceId, actorId: requestActor(req), action: 'catalog.import.batch', resourceType: 'product_import_batch', resourceId: batchId, before: {}, after: { count: created.length, product_ids: created.map(product => product.id), atomic: true }, reason: '批量导入商品并建立持久化快照' })
-        return result({ batchId, count: created.length, products: created.map(product => ({ ...product, product_id: product.id, rule_scan: product.ruleScan })), atomic: true, factsConfirmationRequired: true, knowledge: { assetCount: knowledgeProjection.assets.length, documentCount: knowledgeProjection.documents.length, chunkCount: knowledgeProjection.chunks.length, bindingCount: knowledgeProjection.bindings.length, indexState: 'queued', approvalStatus: 'pending', nextAction: 'knowledge.asset.update' } })
+        return result({ batchId, count: created.length, products: created.map(product => ({ ...product, product_id: product.id, rule_scan: product.ruleScan, ...(draftOnly ? { draft_only: true, candidate_status: '未绑定商品、仅草稿、不可发布', publishable: false } : {}) })), atomic: true, factsConfirmationRequired: true, ...(draftOnly ? { draft_only: true } : {}), knowledge: { assetCount: knowledgeProjection.assets.length, documentCount: knowledgeProjection.documents.length, chunkCount: knowledgeProjection.chunks.length, bindingCount: knowledgeProjection.bindings.length, indexState: 'queued', approvalStatus: 'pending', nextAction: 'knowledge.asset.update' } })
       } catch (error) {
         rollbackBatchProducts(service.products, workspaceId, writes, beforeProducts)
         throw error
