@@ -5,6 +5,7 @@ import { describeOpsError, localOpsSessionEnabled, loginPlatformOps, logoutPlatf
 import type { OperationalAlert, OpsDataSource, OpsSession, OpsWorkbench } from "../types/ops.js";
 import type { AuthorizationProjection } from "../authz/authorization.js";
 import { accountLabel } from "../authz/accountLabel.js";
+import { RoleScopeBar } from "./authz/RoleScopeBar.js";
 
 interface OpsHeaderProps {
   managedSession: boolean;
@@ -132,6 +133,20 @@ export function OpsHeader({
 
   return (
     <Layout.Header className="ops-header">
+      {authorization ? <RoleScopeBar
+        session={session}
+        authorization={authorization}
+        activeWorkbench={activeWorkbench}
+        availableWorkbenches={availableWorkbenches}
+        switching={switchingWorkbench}
+        onWorkbenchChange={onWorkbenchChange}
+        onJitExpired={onJitExpired}
+        onJitExit={onJitExit}
+        alerts={alerts}
+        notifications={notifications}
+        onAcknowledgeAlert={onAcknowledgeAlert}
+        compact
+      /> : null}
       <div className="ops-header-actions">
         <div className="ops-connection-toolbar">
           {shouldShowLogin ? (
