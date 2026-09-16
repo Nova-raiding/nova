@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { PostgresBusinessRepository } from './business-repository.js'
 import { PostgresImageGenerationExecutionRepository, type FailImageGenerationBeforeProviderInput } from './image-generation-execution-repository.js'
 import { loadMigrations, MigrationRunner } from './migration.js'
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 
 const databaseUrlValue = process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const postgresIt = databaseUrlValue ? it : it.skip
@@ -22,6 +23,7 @@ describe('image generation known-before-provider cancellation PostgreSQL accepta
     const databaseName = `release_image_before_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined; let app: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: connection(base, databaseName) })
@@ -161,11 +163,14 @@ describe('image generation known-before-provider cancellation PostgreSQL accepta
       }
       const scopes = (await app.query("SELECT current_setting('app.workspace_id',true) AS workspace")).rows[0]
       expect([null, '']).toContain(scopes.workspace)
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await app?.end(); await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await Promise.all([app?.end(), database?.end()])
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [() => admin.end()])
     }
   }, 300_000)
 })

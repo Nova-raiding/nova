@@ -49,13 +49,16 @@ const expectedSafeFixtureFiles = [
   'packages/persistence/src/migration-209-release.postgres.test.ts',
   'packages/persistence/src/migration-210-release.postgres.test.ts',
   'packages/persistence/src/migration-211-release.postgres.test.ts',
+  'packages/persistence/src/migration-217-release.postgres.test.ts',
   'packages/persistence/src/migration-integrity-release.postgres.test.ts',
   'packages/persistence/src/ops-workspace-summary-rls.postgres.test.ts',
   'packages/persistence/src/password-auth-repository.release.postgres.test.ts',
   'packages/persistence/src/payment-callback-repository.postgres.test.ts',
   'packages/persistence/src/platform-authorization-audit.postgres.test.ts',
   'packages/persistence/src/private-trial-payment.release.postgres.test.ts',
+  'packages/persistence/src/image-generation-before-provider.release.postgres.test.ts',
   'packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts',
+  'packages/persistence/src/workspace-content-setup-repository.release.postgres.test.ts',
   'tests/mcp-oauth-commercial-payment.postgres.test.ts',
 ] as const
 const fixture = () => {

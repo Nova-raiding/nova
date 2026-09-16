@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { loadMigrations, MigrationRunner } from './migration.js'
 import { PostgresModelUsageRepository } from './model-usage-repository.js'
 import { PostgresWorkspaceContentSetupRepository } from './workspace-content-setup-repository.js'
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 
 const databaseUrlValue = process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const postgresIt = databaseUrlValue ? it : it.skip
@@ -15,6 +16,7 @@ describe('workspace content setup PostgreSQL release acceptance', () => {
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
     let app: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const isolated = new URL(base)
@@ -45,12 +47,14 @@ describe('workspace content setup PostgreSQL release acceptance', () => {
       expect(audit.rows[0]).toMatchObject({ before_json: { displayName: '旗舰店内容工作区' }, after_json: { displayName: '品牌内容工作区', platform: 'tmall' } })
       expect((await app.query('SELECT workspace_id FROM workspace_content_setup')).rows).toEqual([])
       expect((await database.query('SELECT count(*)::integer AS count FROM workspace_content_setup WHERE workspace_id=$1', [workspaceId])).rows[0].count).toBe(1)
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await app?.end()
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await Promise.all([app?.end(), database?.end()])
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [() => admin.end()])
     }
   }, 240_000)
 })

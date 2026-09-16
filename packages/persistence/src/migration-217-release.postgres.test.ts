@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
 import { loadMigrations, MigrationRunner } from './migration.js'
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 
 const databaseUrlValue = process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const postgresIt = databaseUrlValue ? it : it.skip
@@ -18,6 +19,7 @@ describe('migration 217 PostgreSQL embedding accounting acceptance', () => {
     const databaseName = `release_217_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: databaseUrl(base, databaseName) })
@@ -65,11 +67,14 @@ describe('migration 217 PostgreSQL embedding accounting acceptance', () => {
         WHERE conname IN ('legacy_usage_modality_check_217', 'legacy_budget_modality_check_217')`)).rows)
         .toEqual([{ count: 0 }])
       expect((await database.query('SELECT max(version)::int AS version FROM schema_migrations')).rows).toEqual([{ version: 217 }])
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [() => admin.end()])
     }
   }, 240_000)
 })
