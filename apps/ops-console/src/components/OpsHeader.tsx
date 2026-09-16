@@ -4,6 +4,7 @@ import { Alert, Button, Dropdown, Empty, Input, Layout, List, Modal, Space, Typo
 import { describeOpsError, localOpsSessionEnabled, loginPlatformOps, logoutPlatformOps, suppressLocalOpsSession } from "../api/opsClient.js";
 import type { OperationalAlert, OpsDataSource, OpsSession, OpsWorkbench } from "../types/ops.js";
 import type { AuthorizationProjection } from "../authz/authorization.js";
+import { accountLabel } from "../authz/accountLabel.js";
 
 interface OpsHeaderProps {
   managedSession: boolean;
@@ -62,7 +63,7 @@ export function OpsHeader({
   const shouldShowLogin = !hasSession || isDemoSession;
   const merchantNotificationsEnabled = (activeWorkbench ?? session?.workbench) === "workspace" || authorization?.scope.kind !== "platform";
   const allNotifications = merchantNotificationsEnabled ? (notifications ?? alerts ?? []) : [];
-  const accountName = session?.actor_id ?? (isDemoSession ? "本机演示账号" : "平台运营账号");
+  const accountName = isDemoSession ? "本机演示账号" : accountLabel(session);
   const accountDisplayName = accountName.length > 12 ? `${accountName.slice(0, 8)}…` : accountName;
   const accountInitial = Array.from(accountName)[0] ?? "运";
   const roleLabel = roles?.join("、") || session?.roles?.join("、") || "未声明";
@@ -97,6 +98,9 @@ export function OpsHeader({
           <span>{roleLabel}</span>
         </div>
       </div>
+      <dl className="ops-account-popover-facts">
+        <div><dt>当前账号</dt><dd>{accountName}</dd></div>
+      </dl>
       {merchantNotificationsEnabled ? (
         <div className="ops-account-message-center" aria-label="消息中心">
           <div className="ops-account-message-heading">
