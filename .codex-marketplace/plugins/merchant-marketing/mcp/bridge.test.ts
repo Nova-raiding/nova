@@ -19,6 +19,13 @@ process.env.MERCHANT_ARTIFACT_DIR = TEST_ARTIFACT_DIR
 afterAll(async () => { await rm(TEST_ARTIFACT_DIR, { recursive: true, force: true }) })
 
 const MERCHANT_HIDDEN_METHODS = new Set([
+  'platform.connect', 'platform.store.list', 'workspace.content_setup.confirm',
+  'catalog.sync', 'catalog.sync.start', 'catalog.sync.get', 'sync.retry_failed',
+  'automation.policy.get', 'automation.policy.list', 'automation.policy.update',
+  'automation.scan', 'automation.tick', 'automation.pause',
+  'publish.prepare', 'publish.confirm', 'publish.get',
+  'publish.batch.prepare', 'publish.batch.confirm', 'publish.batch.get',
+  'publish.batch.pause', 'publish.batch.resume', 'publish.batch.retry_failed',
   'billing.model-usage.reconciliation.run',
   'billing.model-usage.resolve',
   'billing.usage.consume',
@@ -67,7 +74,7 @@ async function close(server: ReturnType<typeof createServer>) {
 }
 
 describe('Codex stdio MCP bridge', () => {
-  it('presents first-use progress as a native welcome and a brand-confirmation conversation', async () => {
+  it('keeps legacy store progress as evidence without making it the default content workflow', async () => {
     let completed = 0
     const server = createServer(async (_req, res) => {
       const steps = [
@@ -85,13 +92,16 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'onboarding.status', arguments: {} } })}\n`)
       const welcome = await nextLine(child.stdout)
       expect(welcome.result.content[0].text).toContain('您好，感谢您使用 Store Nova')
-      expect(welcome.result.content[0].text).toContain('当前进度：0/4')
+      expect(welcome.result.content[0].text).toContain('内容生产 → 审核 → 导出')
+      expect(welcome.result.content[0].text).toContain('不必先连接店铺')
+      expect(welcome.result.content[0].text).not.toContain('当前进度：0/4')
+      expect(welcome.result.structuredContent.initialization.completed).toBe(0)
       completed = 2
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'onboarding.status', arguments: {} } })}\n`)
       const brandStep = await nextLine(child.stdout)
-      expect(brandStep.result.content[0].text).toContain('当前进度：2/4')
-      expect(brandStep.result.content[0].text).toContain('「云朵轻户外」品牌线索')
-      expect(brandStep.result.content[0].text).toContain('○ 建立工作区')
+      expect(brandStep.result.content[0].text).toContain('内容生产 → 审核 → 导出')
+      expect(brandStep.result.content[0].text).not.toContain('当前进度：2/4')
+      expect(brandStep.result.structuredContent.initialization.completed).toBe(2)
     } finally {
       child.kill()
       await close(server)
@@ -263,7 +273,7 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('allows onboarding, recharge-order, and read-only sync tools without interactive-write mode', async () => {
+  it('keeps hidden sync separate from interactive-write and commercial gates', async () => {
     let requests = 0
     const server = createServer(async (_req, res) => {
       requests += 1
@@ -279,7 +289,12 @@ describe('Codex stdio MCP bridge', () => {
     try {
       for (const [index, name] of ['platform.connect', 'billing.recharge.create', 'catalog.sync', 'catalog.sync.start', 'platform.media.spec.list', 'platform.media.spec.get', 'platform.mapping.preflight', 'delivery.bundle.verify', 'task.understand'].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: {} } })}\n`)
-        const result = (await nextLine(child.stdout)).result
+        const response = await nextLine(child.stdout)
+        if (MERCHANT_HIDDEN_METHODS.has(name)) {
+          expect(response.error).toMatchObject({ code: -32602, message: `Unknown tool: ${name}` })
+          continue
+        }
+        const result = response.result
         if (name === 'billing.recharge.create') {
           expect(result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
         } else if (name === 'task.understand') {
@@ -288,14 +303,14 @@ describe('Codex stdio MCP bridge', () => {
           expect(result).toMatchObject({ isError: false, structuredContent: { accepted: true } })
         }
       }
-      expect(requests).toBe(7)
+      expect(requests).toBe(4)
     } finally {
       child.kill()
       await close(server)
     }
   })
 
-  it('renders safe clickable authorization and recharge links for Codex App users', async () => {
+  it('keeps recharge links while hiding store authorization links', async () => {
     const server = createServer(async (req, res) => {
       let body = ''
       for await (const chunk of req) body += chunk.toString()
@@ -316,6 +331,10 @@ describe('Codex stdio MCP bridge', () => {
       for (const [id, name] of [[1, 'platform.connect'], [2, 'billing.recharge.create']] as const) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: {} } })}\n`)
         const response = await nextLine(child.stdout)
+        if (name === 'platform.connect') {
+          expect(response.error).toMatchObject({ code: -32602, message: 'Unknown tool: platform.connect' })
+          continue
+        }
         expect(response.result.content).toContainEqual(expect.objectContaining({ type: 'resource_link', uri: expect.stringMatching(/^https:\/\//u), annotations: { audience: ['user'] } }))
       }
     } finally {
@@ -384,7 +403,7 @@ describe('Codex stdio MCP bridge', () => {
       const method = JSON.parse(body).method
       const result = method === 'billing.recharge.create'
         ? { paymentUrl: 'weixin://wxpay/bizpayurl?pr=opaque' }
-        : { authorizationUrl: 'javascript:alert(1)' }
+        : { paymentUrl: 'javascript:alert(1)', state: 'pending' }
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: { result }, error: null }))
     })
@@ -397,7 +416,7 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'billing.recharge.create', arguments: {} } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'platform.connect', arguments: {} } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'billing.recharge.get', arguments: { order_id: 'order_1' } } })}\n`)
       expect((await nextLine(child.stdout)).result.content).not.toContainEqual(expect.objectContaining({ type: 'resource_link' }))
     } finally {
       child.kill()
@@ -527,9 +546,8 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.start', arguments: {} } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result.structuredContent.conversation_state).toMatchObject({
-        primary_action: { method: 'platform.connect', label: '连接平台店铺', required_inputs: ['platform'] },
-      })
+      expect(response.result.structuredContent.conversation_state).toMatchObject({ stage: 'provide_materials' })
+      expect(response.result.structuredContent.conversation_state).not.toHaveProperty('primary_action')
       expect(response.result.structuredContent.conversation_state).not.toHaveProperty('secondary_actions')
     } finally {
       child.kill()
@@ -549,10 +567,10 @@ describe('Codex stdio MCP bridge', () => {
       const response = await nextLine(child.stdout)
       expect(response.result.structuredContent).toMatchObject({
         conversation_state: { stage: 'start', status: 'needs_input' },
-        question: '你想先连接哪个平台？',
-        expected_input: { kind: 'platform_selection' },
+        question: '你要处理哪个平台、店铺或商品？',
+        expected_input: { kind: 'platform_store_or_product_selection' },
       })
-      expect(response.result.content[0].text).toContain('你想先连接哪个平台？')
+      expect(response.result.content[0].text).not.toContain('你想先连接哪个平台？')
       expect(response.result.content[0].text).not.toContain('[object Object]')
     } finally {
       child.kill()
@@ -606,8 +624,8 @@ describe('Codex stdio MCP bridge', () => {
       const response = await nextLine(child.stdout)
       expect(response.result.content[0].text).toContain('演示店铺')
       expect(response.result.content[0].text).toContain('不能用于读取商品或发布')
-      expect(response.result.content[0].text).toContain('官方授权页面')
-      expect(response.result.structuredContent.question).toContain('连接真实店铺')
+      expect(response.result.content[0].text).not.toContain('官方授权页面')
+      expect(response.result.structuredContent.question).toContain('请提供公开商品链接、商品资料或图片')
       expect(response.result.structuredContent.conversation_state.store_options[0]).toMatchObject({ selectable: false, data_source: '演示数据' })
     } finally {
       child.kill()
@@ -759,11 +777,16 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
       const listedNames = (await nextLine(child.stdout)).result.tools.map((tool: { name: string }) => tool.name)
       for (const name of MERCHANT_HIDDEN_METHODS) expect(listedNames).not.toContain(name)
+      for (const name of ['catalog.import', 'content.draft.generate', 'content.export', 'content.review.decide', 'workspace.health', 'workspace.bootstrap', 'subscription.orders.list', 'commercial.order.create']) expect(listedNames).toContain(name)
       for (const [index, name] of [...MERCHANT_HIDDEN_METHODS].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 2, method: 'tools/call', params: { name, arguments: {} } })}\n`)
         expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: `Unknown tool: ${name}` })
       }
       expect(requests).toBe(0)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 100, method: 'resources/list' })}\n`)
+      expect((await nextLine(child.stdout)).result.resources.some((resource: { uri: string }) => resource.uri === 'ui://merchant-marketing/publish-confirm-v1.html')).toBe(false)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 101, method: 'resources/read', params: { uri: 'ui://merchant-marketing/publish-confirm-v1.html' } })}\n`)
+      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602 })
     } finally {
       child.kill()
       await close(server)
@@ -886,7 +909,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(imageCandidateUi.result.contents[0].text).not.toContain('票据')
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`)
       const listed = await nextLine(child.stdout)
-      expect(listed.result.tools).toHaveLength(154)
+      expect(listed.result.tools).toHaveLength(132)
       const catalogImageGet = listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.get')
       expect(catalogImageGet).toMatchObject({ name: 'catalog.image.get', annotations: { readOnlyHint: true } })
       expect(catalogImageGet).not.toHaveProperty('_meta')
@@ -922,7 +945,7 @@ describe('Codex stdio MCP bridge', () => {
         requested_goal: { type: 'string' },
         attachment_count: { type: 'string' },
       })
-      for (const name of ['catalog.search', 'billing.status', 'billing.transactions', 'billing.recharge.get', 'publish.batch.get', 'multimodal.image.edit']) {
+      for (const name of ['catalog.search', 'billing.status', 'billing.transactions', 'billing.recharge.get', 'multimodal.image.edit']) {
         expect(listed.result.tools.find((tool: { name: string }) => tool.name === name)._meta).toBeUndefined()
       }
       const taskComponents = {
@@ -975,12 +998,9 @@ describe('Codex stdio MCP bridge', () => {
       expect(mediaCreate.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: false })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'delivery.bundle.verify').inputSchema.properties.files_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'array' })
       const publishConfirm = listed.result.tools.find((tool: { name: string }) => tool.name === 'publish.confirm')
-      expect(publishConfirm.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true })
-      expect(publishConfirm.inputSchema.properties.confirmation_ticket_nonce_hash).toEqual(MCP_METHOD_SCHEMAS['publish.confirm'].properties.confirmation_ticket_nonce_hash)
-      expect(publishConfirm.inputSchema.properties.confirmation_ticket_intent_hash).toEqual(MCP_METHOD_SCHEMAS['publish.confirm'].properties.confirmation_ticket_intent_hash)
-      expect(publishConfirm.inputSchema.required).toEqual(MCP_METHOD_SCHEMAS['publish.confirm'].required)
-      expect(publishConfirm.inputSchema.required).not.toContain('confirmation_ticket_nonce_hash')
-      expect(publishConfirm.inputSchema.required).not.toContain('confirmation_ticket_intent_hash')
+      expect(publishConfirm).toBeUndefined()
+      // Backend contracts remain intact; only the merchant entry is hidden.
+      expect(MCP_METHOD_SCHEMAS['publish.confirm'].properties.confirmation_ticket_nonce_hash).toBeDefined()
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 13, method: 'tools/call', params: { name: 'billing.recharge.get', arguments: { order_id: 'order_test', confirm_test_payment: 'true' } } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: 'Unsupported tool argument: confirm_test_payment' })
       expect(requests).toHaveLength(0)
@@ -1027,11 +1047,18 @@ describe('Codex stdio MCP bridge', () => {
     try {
       for (const [index, [name, args]] of calls.entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: args } })}\n`)
-        const response = (await nextLine(child.stdout)).result
+        const envelope = await nextLine(child.stdout)
+        if (MERCHANT_HIDDEN_METHODS.has(name)) {
+          expect(envelope.error).toMatchObject({ code: -32602, message: `Unknown tool: ${name}` })
+          continue
+        }
+        const response = envelope.result
         expect(response.isError ? response.structuredContent?.code : response.structuredContent?.accepted).toBeTruthy()
       }
-      for (const [index, request] of requests.entries()) {
-        expect(request).toMatchObject({ jsonrpc: '2.0', method: calls[index]![0], params: { ...calls[index]![1], workspace_id: 'ws_test' } })
+      expect(requests).toHaveLength(3)
+      for (const request of requests) {
+        const expected = calls.find(([name]) => name === request.method)!
+        expect(request).toMatchObject({ jsonrpc: '2.0', method: expected[0], params: { ...expected[1], workspace_id: 'ws_test' } })
         expect(validateMcpRequest(request), `${request.method} bridge request must satisfy the authoritative contract`).toEqual({ valid: true, errors: [] })
       }
     } finally {
@@ -1348,7 +1375,6 @@ describe('Codex stdio MCP bridge', () => {
       const componentCases = [
         ['ui://merchant-marketing/creative-choice-v1.html', '选择一个创意方向', '确认选择', "callTool('task.select_direction'", 'data-component="creative"'],
         ['ui://merchant-marketing/content-diff-v1.html', '比较内容版本', '保留所选版本', "callTool('content.restore'", 'data-component="diff"'],
-        ['ui://merchant-marketing/publish-confirm-v1.html', '最终发布确认', '确认发布', "callTool('publish.confirm'", 'data-component="publish"'],
       ]
       for (const [uri, title, cta, toolCall, marker] of componentCases) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri } })}\n`)
@@ -1436,11 +1462,11 @@ describe('Codex stdio MCP bridge', () => {
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: { result: {
         workflow: {
-          kind: 'publish',
-          resource_id: 'publish_internal',
-          status: { internal_state: 'unknown', user_state: '发布结果待确认', terminal: false, updated_at: '2026-08-31T00:00:00Z' },
+          kind: 'generation',
+          resource_id: 'generation_internal',
+          status: { internal_state: 'unknown', user_state: '生成结果待确认', terminal: false, updated_at: '2026-08-31T00:00:00Z' },
           progress: { known: false, completed: 0, total: null, label: '结果未知' },
-          next_action: { method: 'publish.get', label: '查询发布状态', allowed: true },
+          next_action: { method: 'generation.get', label: '查询生成状态', allowed: true },
           recovery: { retryable: false, reconciliation_required: true, retry_scope: '人工对账' },
           evidence: { source: 'official_api', simulated: false },
         },
@@ -1449,11 +1475,11 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'publish.get', arguments: { publish_job_id: 'publish_internal' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'generation.get', arguments: { job_id: 'generation_internal' } } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result.structuredContent.merchant_status).toMatchObject({ state: 'unknown', label: '发布结果待确认', next_action: { label: '查询发布状态', allowed: true }, recovery: { retryable: false, reconciliation_required: true } })
+      expect(response.result.structuredContent.merchant_status).toMatchObject({ state: 'unknown', label: '生成结果待确认', next_action: { label: '查询生成状态', allowed: true }, recovery: { retryable: false, reconciliation_required: true } })
       expect(response.result.content[0].text).toContain('不要重复提交')
-      expect(response.result.content[0].text).toContain('查询发布状态')
+      expect(response.result.content[0].text).toContain('查询生成状态')
     } finally {
       child.kill()
       await close(server)
@@ -1610,7 +1636,7 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('keeps an unavailable official OAuth connection merchant-safe and resumable', async () => {
+  it('does not invoke hidden OAuth even when a caller supplies its old parameters', async () => {
     const server = createServer(async (req, res) => {
       for await (const _chunk of req) { /* consume request */ }
       res.statusCode = 503
@@ -1626,16 +1652,8 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'platform.connect', arguments: { platform: 'jd' } } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({
-        isError: true,
-        structuredContent: {
-          code: 'NOT_CONFIGURED',
-          recovery: { state: 'service_unavailable', user_action_required: false, resume_message: '继续' },
-        },
-      })
-      expect(response.result.content[0].text).toContain('当前京东官方连接尚未启用')
-      expect(response.result.content[0].text).toContain('商品图片和确认信息已保留')
-      expect(JSON.stringify(response.result)).not.toMatch(/管理员|运营后台|client secret|OAuth 密钥/u)
+      expect(response.error).toMatchObject({ code: -32602, message: 'Unknown tool: platform.connect' })
+      expect(response.result).toBeUndefined()
     } finally {
       child.kill()
       await close(server)
@@ -2004,10 +2022,10 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result.isError).toBe(false)
       expect(response.result._meta).toBeUndefined()
       expect(response.result.structuredContent).toEqual({
-        conversation_state: { stage: 'connect_store', status: 'needs_input', connected_store_count: 0 },
+        conversation_state: { stage: 'provide_materials', status: 'needs_input', connected_store_count: 0 },
         completed_summary: '当前还没有可用店铺。',
-        question: '你想先连接哪个平台？',
-        expected_input: { kind: 'platform_selection', accepts: ['natural_language'] },
+        question: '你想制作什么内容？可以提供公开商品链接、商品资料或图片。',
+        expected_input: { kind: 'product_materials', accepts: ['natural_language', 'public_url', 'attachment'] },
       })
       expect(attempts).toBe(2)
     } finally {
@@ -2039,8 +2057,8 @@ describe('Codex stdio MCP bridge', () => {
       const response = await nextLine(child.stdout)
       expect(response.result.isError).toBe(false)
       expect(response.result.structuredContent).toMatchObject({
-        conversation_state: { stage: 'connect_store', status: 'needs_input', connected_store_count: 0 },
-        question: '你想先连接哪个平台？',
+        conversation_state: { stage: 'provide_materials', status: 'needs_input', connected_store_count: 0 },
+        question: '你想制作什么内容？可以提供公开商品链接、商品资料或图片。',
       })
       expect(attempts).toBe(2)
     } finally {
@@ -2304,10 +2322,10 @@ describe('Codex stdio MCP bridge', () => {
       expect((await nextLine(child.stdout)).result.structuredContent).toMatchObject({ workspaceId: 'ws_bootstrapped_1' })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
       expect((await nextLine(child.stdout)).result.structuredContent).toEqual({
-        conversation_state: { stage: 'connect_store', status: 'needs_input', connected_store_count: 0 },
+        conversation_state: { stage: 'provide_materials', status: 'needs_input', connected_store_count: 0 },
         completed_summary: '当前还没有可用店铺。',
-        question: '你想先连接哪个平台？',
-        expected_input: { kind: 'platform_selection', accepts: ['natural_language'] },
+        question: '你想制作什么内容？可以提供公开商品链接、商品资料或图片。',
+        expected_input: { kind: 'product_materials', accepts: ['natural_language', 'public_url', 'attachment'] },
       })
       expect(requests).toEqual([
         { method: 'workspace.bootstrap', workspace: undefined, header: undefined },
@@ -2344,10 +2362,10 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.start', arguments: {} } })}\n`)
       expect((await nextLine(child.stdout)).result.structuredContent).toEqual({
-        conversation_state: { stage: 'start', status: 'needs_input' },
+        conversation_state: { stage: 'provide_materials', status: 'needs_input' },
         completed_summary: '欢迎使用Store Nova。',
-        question: '你想先完成什么营销任务？',
-        expected_input: { kind: 'task_goal', accepts: ['natural_language'] },
+        question: '你想制作什么内容？可以提供公开商品链接、商品资料或图片。',
+        expected_input: { kind: 'product_materials', accepts: ['natural_language', 'public_url', 'attachment'] },
       })
       expect(requests).toEqual(['workspace.bootstrap', 'merchant.start'])
       const savedBinding = JSON.parse(await readFile(join(codexHome, 'merchant-marketing', 'workspace-binding.json'), 'utf8'))
