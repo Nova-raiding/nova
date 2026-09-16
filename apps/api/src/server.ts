@@ -3689,7 +3689,7 @@ export async function enforceMcpCommercialAccess(req: IncomingMessage, workspace
   // Standalone user-uploaded image generation/editing is allowed before a
   // store is bound; publishing, syncing and content-task operations retain
   // the store onboarding boundary.
-  if (!['catalog.image.generate', 'multimodal.image.edit'].includes(operation)) requireStoreOnboarding(workspaceId, operation)
+  if (!['catalog.image.generate', 'multimodal.image.edit', 'content.draft.generate'].includes(operation)) requireStoreOnboarding(workspaceId, operation)
   await ensureLocalFixtureCreativePoints(workspaceId)
   const result = await commercialAccessService.decide({
     surface: 'MCP', operation, workspace_id: workspaceId,
@@ -4063,6 +4063,7 @@ const ONBOARDING_METHODS = new Set([
   'platform.media.spec.list', 'platform.media.spec.get', 'platform.media.spec.create', 'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire', 'platform.mapping.preflight', 'delivery.bundle.verify',
   'asset.scan',
   'merchant.first_value',
+  'content.draft.generate',
   'workspace.commercial.get', 'workspace.commercial.update', 'workspace.usage.get', 'workspace.activate', 'workspace.deactivate', 'workspace.interactive.confirm',
 ])
 
@@ -5495,6 +5496,20 @@ function publicRequestOrigin(req: IncomingMessage) {
   return new URL('/', `${protocol}://${host}`).origin
 }
 
+function localFixtureOAuthAllowed(req: IncomingMessage): boolean {
+  if (isProduction() || process.env.MCP_OAUTH_REQUIRED === 'true') return false
+  const loopback = (host: string) => host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1'
+  try {
+    const configured = process.env.PUBLIC_APP_BASE_URL?.trim()
+    if (configured && !loopback(new URL(configured).hostname)) return false
+    const hostname = (value: string) => new URL(`http://${value}`).hostname.toLowerCase()
+    const host = hostname(header(req, 'host') ?? '')
+    const forwardedHost = header(req, 'x-forwarded-host')?.split(',')[0]?.trim()
+    const forwarded = forwardedHost ? hostname(forwardedHost) : undefined
+    return loopback(host) && (!forwarded || loopback(forwarded))
+  } catch { return false }
+}
+
 /**
  * Return MCP OAuth discovery metadata only when the advertised authorization
  * server is actually configured.  The local fixture endpoints below are
@@ -5504,6 +5519,8 @@ function publicRequestOrigin(req: IncomingMessage) {
  * layer and are required to be absolute HTTPS URLs.
  */
 function mcpOAuthDiscovery(req: IncomingMessage) {
+  if (!localFixtureOAuthAllowed(req) && !mcpOAuthClients()) return null
+  if (!productionMcpOAuthRuntimeReady(req)) return null
   const serviceOrigin = publicRequestOrigin(req)
   const issuer = process.env.MCP_OAUTH_ISSUER?.trim() || serviceOrigin
   const authorizationEndpoint = process.env.MCP_OAUTH_AUTHORIZATION_ENDPOINT?.trim() || (!isProduction() ? `${issuer}/oauth/authorize` : '')
@@ -5541,7 +5558,9 @@ function mcpOAuthClients(source: NodeJS.ProcessEnv = process.env): McpOAuthClien
   try {
     const parsed: unknown = JSON.parse(source.MCP_OAUTH_CLIENTS ?? '')
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
-    const clients: McpOAuthClientRegistry = {}
+    // Client IDs are untrusted configuration keys. Keep lookups independent
+    // of Object.prototype so inherited names cannot masquerade as clients.
+    const clients: McpOAuthClientRegistry = Object.create(null) as McpOAuthClientRegistry
     for (const [clientId, redirects] of Object.entries(parsed as Record<string, unknown>)) {
       if (!/^[A-Za-z0-9._~-]{1,128}$/u.test(clientId) || !Array.isArray(redirects) || redirects.length === 0) return undefined
       const normalized = redirects.map(value => typeof value === 'string' ? value.trim() : '')
@@ -5562,9 +5581,23 @@ function oauthSingle(params: URLSearchParams, key: string): string | undefined {
 function oauthCriticalParamsValid(params: URLSearchParams, keys: readonly string[]) { return keys.every(key => params.getAll(key).length <= 1) }
 function escapeOAuthHtml(value: string) { return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;') }
 function sendOAuthProtocolError(res: ServerResponse, status: number, error: string) { res.statusCode = status; res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store'); res.setHeader('pragma', 'no-cache'); res.end(JSON.stringify({ error })) }
-function mcpOAuthRequestContext(req: IncomingMessage) { const origin = publicRequestOrigin(req); const issuer = process.env.MCP_OAUTH_ISSUER?.trim() || origin; const resource = `${origin}/mcp`; return { issuer, audience: resource, resource, scope: ['merchant'] } }
+function mcpOAuthRequestContext(req: IncomingMessage) { const configured = process.env.PUBLIC_APP_BASE_URL?.trim(); const origin = isProduction() && configured ? new URL(configured).origin : publicRequestOrigin(req); const issuer = process.env.MCP_OAUTH_ISSUER?.trim() || origin; const resource = `${origin}/mcp`; return { issuer, audience: resource, resource, scope: ['merchant'] } }
+
+function productionMcpOAuthRuntimeReady(_req: IncomingMessage, source: NodeJS.ProcessEnv = process.env): boolean {
+  if (source.NODE_ENV !== 'production') return true
+  if (source.MCP_OAUTH_REQUIRED !== 'true') return false
+  try {
+    const publicUrl = new URL(source.PUBLIC_APP_BASE_URL ?? '')
+    if (publicUrl.protocol !== 'https:' || publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash || publicUrl.pathname !== '/') return false
+    const issuer = source.MCP_OAUTH_ISSUER?.trim() || publicUrl.origin
+    const authorizationEndpoint = source.MCP_OAUTH_AUTHORIZATION_ENDPOINT?.trim() || `${issuer}/oauth/authorize`
+    const tokenEndpoint = source.MCP_OAUTH_TOKEN_ENDPOINT?.trim() || `${issuer}/oauth/token`
+    return issuer === publicUrl.origin && authorizationEndpoint === `${issuer}/oauth/authorize` && tokenEndpoint === `${issuer}/oauth/token`
+  } catch { return false }
+}
 
 async function handleMcpOAuthAuthorize(req: IncomingMessage, res: ServerResponse, url: URL) {
+  if (!productionMcpOAuthRuntimeReady(req)) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
   const clients = mcpOAuthClients()
   if (!clients) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
   let params = url.searchParams
@@ -5595,6 +5628,7 @@ async function handleMcpOAuthAuthorize(req: IncomingMessage, res: ServerResponse
 }
 
 async function handleMcpOAuthToken(req: IncomingMessage, res: ServerResponse) {
+  if (!productionMcpOAuthRuntimeReady(req)) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
   const clients = mcpOAuthClients()
   if (!clients) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
   if (header(req, 'content-type')?.split(';')[0]?.trim().toLowerCase() !== 'application/x-www-form-urlencoded') return sendOAuthProtocolError(res, 415, 'invalid_request')
@@ -7879,11 +7913,13 @@ function productionObjectStorageReadiness(source: NodeJS.ProcessEnv): Production
   return { ready: reasons.length === 0, reasons }
 }
 
+const RELEASE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u
+
 function productionReleaseMetadataReadiness(source: NodeJS.ProcessEnv): ProductionReadinessGate {
   const reasons: string[] = []
   const releaseId = source.RELEASE_ID?.trim() ?? ''
   if (!releaseId) reasons.push('release_id_missing')
-  else if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(releaseId)) reasons.push('release_id_invalid')
+  else if (!RELEASE_ID_PATTERN.test(releaseId)) reasons.push('release_id_invalid')
   if (!/^[0-9a-f]{40}$/u.test(source.RELEASE_GIT_SHA?.trim() ?? '')) reasons.push('release_git_sha_invalid')
   if (!/^[0-9a-f]{64}$/u.test(source.RELEASE_MANIFEST_SHA256?.trim() ?? '')) reasons.push('release_manifest_sha256_invalid')
   if (!/^sha256:[0-9a-f]{64}$/u.test(source.RELEASE_IMAGE_SET_DIGEST?.trim() ?? '')) reasons.push('release_image_set_digest_invalid')
@@ -8190,7 +8226,7 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
   if (production && !commercialReadiness.ready) nextActions.push(`商业目录/费率未通过生产准入：${commercialReadiness.reasons?.join('、') || 'commercial_readiness_not_checked'}`)
   if (!capabilityEvidence.configured) nextActions.push('运营后台未检测到通过发布门禁的平台 capability 证据（六平台范围）；example、fixture 或 test_e2e 证据不能标记生产可写，社交平台未就绪时必须保持 fixture/API 或只读')
   if (!capacityEvidence.configured) nextActions.push('运营后台未检测到通过真实云门禁的容量报告；必须绑定 release、profile、云环境、零 mock 和签署人')
-  if (!production) nextActions.push('当前不是生产模式；上线前还需完成真实平台 canary、TLS/DNS/WAF、备份恢复、监控告警和容量压测')
+  if (!production) nextActions.push('当前不是生产模式；上线前还需完成真实平台 canary、TLS/DNS/WAF、备份恢复和容量压测')
   return {
     mode: production ? 'production' : fixtureMode ? 'fixture' : 'local',
     ai: { ownership: 'platform', userKeyRequired: false, relay: { configured: relayGate.ready, host: relayGate.endpointHost ?? null }, contentGeneration: contentProviderConfigured ? 'configured' : fixtureMode ? 'fixture_fallback' : 'not_configured', imageGeneration: imageProviderConfigured ? 'configured' : fixtureMode ? 'fixture_fallback' : 'not_configured', imageEditing: imageEditProviderConfigured ? 'configured' : 'blocked', imageFacts: imageFactsConfigured ? 'configured' : 'manual_fallback', videoRendering: videoProviderConfigured ? 'configured' : 'storyboard_only', costGate: modelCostGateConfigured ? 'ready' : 'blocked' },
@@ -10380,7 +10416,20 @@ function firstValueNextActions(product: import('../../../packages/application/sr
   return actions
 }
 
-function merchantFirstValuePreview(workspaceId: string, params: JsonObject) {
+async function merchantFirstValuePreview(workspaceId: string, params: JsonObject) {
+  if (params.draft === 'true') {
+    const idempotencyKey = typeof params.idempotency_key === 'string' ? params.idempotency_key.trim() : ''
+    if (!idempotencyKey) throw new DomainError(ERROR_CODES.IDEMPOTENCY_KEY_REQUIRED, '中转草稿生成必须携带幂等键', 400)
+    if (!contentGenerator) throw new DomainError('AI_GENERATION_NOT_CONFIGURED', '平台文案模型中转未就绪，当前只能查看静态示例；请联系平台运营配置模型', 503, { provider_executed: false, candidate_only: true })
+    const title = typeof params.draft_title === 'string' && params.draft_title.trim() ? params.draft_title.trim() : '未绑定商品内容候选'
+    const prompt = typeof params.draft_prompt === 'string' && params.draft_prompt.trim() ? params.draft_prompt.trim() : '生成一个结构化商品文案候选，仅使用创意表达，不作任何未经确认的商品事实或效果宣称。'
+    const platform = typeof params.platform === 'string' && params.platform.trim() ? params.platform.trim() : 'general'
+    const actionId = `content-draft:${createHash('sha256').update(`${workspaceId}:${idempotencyKey}`).digest('hex')}`
+    await recordOperationAudit({ workspaceId, actorId: 'merchant-draft', action: 'content.draft.generate', resourceType: 'content_draft_candidate', resourceId: actionId, before: {}, after: { candidate_only: true, platform, title }, reason: '生成未绑定内容候选；不创建正式版本、不允许发布' })
+    const generated = await contentGenerator.generate({ platform, directionId: prompt, product: { title, stock: 0, skuCount: 0 }, usageContext: { workspaceId, actionId, runKey: actionId } })
+    const body = validateContentSchema(generated, 'content.draft.generate')
+    return { readOnly: true, previewOnly: true, candidateOnly: true, publishable: false, formalVersionCreated: false, product: { id: null, title, platform, factsConfirmed: false }, contentPreview: { id: actionId, taskId: null, version: null, state: 'candidate', body }, execution: { mode: 'platform_relay_candidate', simulated: false, providerExecuted: true, modelCalled: true, label: '平台中转模型已生成内容候选', message: '仅供预览；未创建正式内容版本，未批准、未发布' }, nextActions: ['绑定已授权店铺并确认商品事实后，创建正式任务', '正式商品内容必须通过 content.generate 生成并审核'] }
+  }
   const example = params.example === 'true'
   if (example) {
     const nextActions = ['连接一个平台店铺并选择真实商品，查看基于商家事实的预览', '或上传商品资料后确认事实，再开始内容和视觉任务', '示例不会调用模型、写入商品或发布到平台']
@@ -11859,6 +11908,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     // commercial activation; otherwise the host turns a health probe into a
     // misleading points failure during startup.
     || method === 'platform.model.status'
+    || method === 'content.draft.generate'
     || COMMERCIAL_READ_ONLY_METHODS.has(method)
   const commercialBeforeOnboarding = !bypassWorkspaceLifecycleGate && (ONBOARDING_METHODS.has(method) || isOpsDomainMethod)
   // A health scan writes durable operational alerts. It therefore needs the
@@ -11887,7 +11937,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
   // before any store is bound. Store authorization remains mandatory for
   // sync, content tasks, and every publish operation.
   if (method !== 'workspace.bootstrap' && !bypassWorkspaceLifecycleGate && (commercialValidationDeferred || commercialBeforeOnboarding)
-    && !['catalog.image.generate', 'multimodal.image.edit'].includes(method)) requireStoreOnboarding(workspaceId, method)
+    && !['catalog.image.generate', 'multimodal.image.edit', 'content.draft.generate'].includes(method)) requireStoreOnboarding(workspaceId, method)
   if (shouldHydrateKnowledgeForMethod(method, bypassWorkspaceLifecycleGate, isOpsDomainMethod)) await hydrateKnowledge(workspaceId)
   const workspaceBillingMethod = method === 'billing.usage.consume' || method === 'billing.usage.refund'
   if (typeof params.task_id === 'string' && params.task_id.trim()) {
@@ -11984,11 +12034,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       } catch (error) { rethrowCommercialPurchaseError(error) }
     }
     case 'merchant.first_value':
-      return result(merchantFirstValuePreview(workspaceId, params))
+      return result(await merchantFirstValuePreview(workspaceId, params))
     case 'brand-unit.list': {
       const brandId = typeof params.brand_id === 'string' && params.brand_id.trim() ? params.brand_id.trim() : undefined
       const platform = typeof params.platform === 'string' ? params.platform as Platform : undefined
       const accountId = typeof params.account_id === 'string' && params.account_id.trim() ? params.account_id.trim() : undefined
+      const draftOnly = params.draft_only === true || params.draft_only === 'true'
       if (accountId && !platform) throw new DomainError('STORE_PLATFORM_REQUIRED', '使用 account_id 筛选品时必须同时指定 platform', 400)
       await persistenceReady
       const listed = await (persistence.brandUnits ?? memoryBrandUnits).listBrands({ workspaceId, ...(brandId ? { brandId } : {}), ...(platform ? { platform } : {}), ...(accountId ? { accountId } : {}) })
@@ -15975,6 +16026,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'catalog.import': {
       const platform = required(params, 'platform') as Platform
+      const draftOnly = params.draft_only === 'true'
       const numeric = (key: string) => typeof params[key] === 'string' && params[key]!.trim() ? Number(params[key]) : undefined
       const images = typeof params.images === 'string' && params.images.trim() ? params.images.split(',').map(item => item.trim()).filter(Boolean) : undefined
       let sourceAssetIds: string[] | undefined
@@ -16013,7 +16065,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const accountId = typeof params.account_id === 'string' && params.account_id.trim() ? params.account_id.trim() : undefined
       const brandId = typeof params.brand_id === 'string' && params.brand_id.trim() ? params.brand_id.trim() : undefined
       if (!SUPPORTED_PLATFORMS.includes(platform)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'platform 无效', 400)
-      if (isProduction() && !accountId) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '生产商品导入必须绑定已授权平台账号', 400)
+      if (isProduction() && !accountId && !draftOnly) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '生产商品导入必须绑定已授权平台账号；如仅需做内容草稿，请显式传 draft_only=true', 400)
       if (accountId) service.getActivePlatformAccount(workspaceId, accountId, platform)
       if (brandId) {
         if (!accountId) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '绑定品牌导入商品必须同时指定已授权店铺', 400)
@@ -16037,7 +16089,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       })
       await scanImportedProductRules(workspaceId, product)
       await persistSnapshot(workspaceId, 'product', product, product as unknown as Record<string, unknown>)
-      return result({ ...product, product_id: product.id, rule_scan: product.ruleScan })
+      return result({ ...product, product_id: product.id, rule_scan: product.ruleScan, ...(draftOnly ? { draft_only: true, candidate_status: '未绑定商品、仅草稿、不可发布', publishable: false } : {}) })
     }
     case 'catalog.import.batch': {
       let rawItems: unknown
@@ -17601,6 +17653,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await recordOperationAudit({ workspaceId, actorId: confirmed.productionPlan?.confirmedBy ?? requestActor(req), action: 'task.plan_confirmed', resourceType: 'task', resourceId: confirmed.id, before: { state: task.state, version: task.version }, after: { state: confirmed.state, version: confirmed.version, plan_id: confirmed.productionPlan?.id ?? null }, reason: '确认生产方案' })
       return result({ ...confirmed, task_id: confirmed.id, expected_version: confirmed.version })
     }
+    case 'content.draft.generate': {
+      await enforceMcpCommercialAccess(req, workspaceId, method)
+      return result(await merchantFirstValuePreview(workspaceId, { ...params, draft: 'true' }))
+    }
     case 'content.generate': {
       const task = scopeTask(req, required(params, 'task_id'))
       // Content generation is a canonical business action. Re-check the
@@ -18764,16 +18820,27 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   if (path === '/oauth/authorize' && (req.method === 'GET' || req.method === 'POST') && mcpOAuthClients()) return handleMcpOAuthAuthorize(req, res, url)
   if (path === '/oauth/token' && req.method === 'POST' && mcpOAuthClients()) return handleMcpOAuthToken(req, res)
   if (path === '/oauth/authorize' && req.method === 'GET') {
-    if (isProduction()) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
-    const redirect = url.searchParams.get('redirect_uri'); const state = url.searchParams.get('state') ?? ''
-    if (!redirect) { res.statusCode = 400; res.end('redirect_uri required'); return }
-    const target = new URL(redirect); target.searchParams.set('code', 'fixture-code'); if (state) target.searchParams.set('state', state)
+    if (!localFixtureOAuthAllowed(req)) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
+    if (!oauthCriticalParamsValid(url.searchParams, ['redirect_uri', 'state'])) return sendOAuthProtocolError(res, 400, 'invalid_request')
+    const redirect = oauthSingle(url.searchParams, 'redirect_uri'); const state = oauthSingle(url.searchParams, 'state') ?? ''
+    if (!redirect || state.length > 2048) return sendOAuthProtocolError(res, 400, 'invalid_request')
+    let target: URL
+    try {
+      target = new URL(redirect)
+      const loopback = target.hostname === '127.0.0.1' || target.hostname === 'localhost' || target.hostname === '[::1]'
+      if (target.username || target.password || target.hash || (target.protocol !== 'https:' && !(target.protocol === 'http:' && loopback))) return sendOAuthProtocolError(res, 400, 'invalid_request')
+    } catch { return sendOAuthProtocolError(res, 400, 'invalid_request') }
+    target.searchParams.set('code', 'fixture-code'); if (state) target.searchParams.set('state', state)
     res.statusCode = 302; res.setHeader('location', target.toString()); res.end(); return
   }
   if (path === '/oauth/token' && req.method === 'POST') {
-    if (isProduction()) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
+    if (!localFixtureOAuthAllowed(req)) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
+    if (header(req, 'content-type')?.split(';')[0]?.trim().toLowerCase() !== 'application/x-www-form-urlencoded') return sendOAuthProtocolError(res, 415, 'invalid_request')
+    const params = new URLSearchParams((await requestBodyBytes(req, 32 * 1024)).toString('utf8'))
+    if (!oauthCriticalParamsValid(params, ['grant_type', 'code'])) return sendOAuthProtocolError(res, 400, 'invalid_request')
+    if (oauthSingle(params, 'grant_type') !== 'authorization_code' || oauthSingle(params, 'code') !== 'fixture-code') return sendOAuthProtocolError(res, 400, 'invalid_grant')
     const fixture = process.env.MERCHANT_MCP_TOKEN?.trim() || 'fixture-token'
-    res.statusCode = 200; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ access_token: fixture, token_type: 'Bearer', expires_in: 3600, scope: 'openid profile merchant' })); return
+    res.statusCode = 200; res.setHeader('content-type', 'application/json'); res.setHeader('cache-control', 'no-store'); res.setHeader('pragma', 'no-cache'); res.end(JSON.stringify({ access_token: fixture, token_type: 'Bearer', expires_in: 3600, scope: 'merchant' })); return
   }
   // OAuth discovery endpoints used by ChatGPT/MCP clients. Keep these public
   // so an unauthenticated client can discover where to sign in.
@@ -19216,7 +19283,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       image_set_digest: process.env.RELEASE_IMAGE_SET_DIGEST?.trim() || null,
     }
     const valid = Boolean(
-      release.release_id
+      RELEASE_ID_PATTERN.test(release.release_id ?? '')
       && /^[0-9a-f]{40}$/u.test(release.release_git_sha ?? '')
       && /^[0-9a-f]{64}$/u.test(release.manifest_sha256 ?? '')
       && /^sha256:[0-9a-f]{64}$/u.test(release.image_set_digest ?? ''),

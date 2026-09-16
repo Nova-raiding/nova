@@ -886,7 +886,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(imageCandidateUi.result.contents[0].text).not.toContain('票据')
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`)
       const listed = await nextLine(child.stdout)
-      expect(listed.result.tools).toHaveLength(153)
+      expect(listed.result.tools).toHaveLength(154)
       const catalogImageGet = listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.get')
       expect(catalogImageGet).toMatchObject({ name: 'catalog.image.get', annotations: { readOnlyHint: true } })
       expect(catalogImageGet).not.toHaveProperty('_meta')
@@ -1309,10 +1309,14 @@ describe('Codex stdio MCP bridge', () => {
           account_id: { type: 'string' },
           product_id: { type: 'string' },
           example: { type: 'string', enum: ['true'] },
+          draft: { type: 'string', enum: ['true'] },
+          draft_title: { type: 'string', minLength: 2, maxLength: 256 },
+          draft_prompt: { type: 'string', minLength: 2, maxLength: 2000 },
+          idempotency_key: { type: 'string', minLength: 8, maxLength: 200 },
         },
         additionalProperties: false,
       })
-      expect(firstValue.description).toMatch(/安全预览包.*不发布.*服务端.*不调用模型/u)
+      expect(firstValue.description).toMatch(/安全预览包.*不发布/u)
       expect(firstValue.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'merchant.first_value', arguments: { platform: 'taobao', account_id: 'acct_1', product_id: 'prod_1' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { preview: true } })

@@ -46,6 +46,7 @@ export const MCP_METHODS = [
   'workspace.invitations.list',
   'workspace.invitation.accept',
   'workspace.bootstrap',
+  'workspace.content_setup.confirm',
   'workspace.interactive.confirm',
   'workspace.metrics',
   'workspace.commercial.get',
@@ -289,6 +290,7 @@ export const MCP_METHODS = [
   'task.select_direction',
   'task.plan.confirm',
   'content.generate',
+  'content.draft.generate',
   'content.codex.prepare',
   'content.codex.commit',
   'generation.get',
@@ -551,7 +553,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'onboarding.status',
     description: '查看插件安装后的系统引导进度、当前阻断、所需绑定和下一步动作。只读，不改变权限或业务数据。',
-    params: params({}),
+    params: params({ store_links_text: boundedString(8_192, 1, 'User-supplied shop introductions for format-only inspection; never authorizes a platform or fetches a shop page.') }),
   },
   {
     method: 'merchant.start',
@@ -570,8 +572,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'merchant.first_value',
-    description: 'Return a safe first-value preview bundle for the scoped platform, account, and product; `example=true` returns a static non-merchant example. It never publishes content and does not call a model unless the server explicitly says the preview requires one.',
-    params: params({ platform: platformProperty, account_id: { type: 'string' }, product_id: { type: 'string' }, example: { type: 'string', enum: ['true'] } }),
+    description: 'Return a safe first-value preview bundle. `example=true` returns a static example; `draft=true` may generate an unbound content candidate through the platform relay, but never creates a formal content version and never publishes.',
+    params: params({ platform: platformProperty, account_id: { type: 'string' }, product_id: { type: 'string' }, example: { type: 'string', enum: ['true'] }, draft: { type: 'string', enum: ['true'] }, draft_title: { type: 'string', minLength: 2, maxLength: 256 }, draft_prompt: { type: 'string', minLength: 2, maxLength: 2_000 }, idempotency_key: { type: 'string', minLength: 8, maxLength: 200 } }),
   },
   {
     method: 'commercial.service-boundary.accept',
@@ -685,6 +687,11 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     method: 'workspace.bootstrap',
     description: 'Create a new merchant workspace during first-run onboarding; returns the immutable workspace binding.',
     params: params({ display_name: { type: 'string' }, external_subject: { type: 'string' } }, ['display_name']),
+  },
+  {
+    method: 'workspace.content_setup.confirm',
+    description: 'Save the signed-in workspace owner’s confirmed first content workspace name and official store scope; auditable, never authorizes a store or starts a task.',
+    params: params({ display_name: boundedString(120), platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: boundedString(200) }, ['display_name', 'platform', 'account_id']),
   },
   {
     method: 'workspace.health',
@@ -1017,7 +1024,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'catalog.import',
     description: 'Import a confirmed local product or bind an existing platform product for a later create/update publish.',
-    params: params({ brand_id: { type: 'string', description: '已授权品牌 ID；传入后商品绑定到该品牌和店铺范围。' }, platform: platformProperty, account_id: { type: 'string', description: '已授权的平台店铺账号；提供后商品会绑定该店铺。' }, remote_id: { type: 'string' }, local_product_key: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, sku_count: { type: 'string' }, skus_json: { type: 'string' }, images: { type: 'string' }, asset_ids_json: { type: 'string', description: '已上传商品素材 ID 字符串数组 JSON；绑定后图片优化默认使用这些素材。' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string', description: '最多 3 条；每条包含 id、text、proof_status、source_ids' }, store_name: { type: 'string' }, store_differentiation: { type: 'string', description: '商家确认的该店铺相对品牌的定位、客群或经营差异。' } }, ['platform', 'title']),
+    params: params({ brand_id: { type: 'string', description: '已授权品牌 ID；传入后商品绑定到该品牌和店铺范围。' }, platform: platformProperty, account_id: { type: 'string', description: '已授权的平台店铺账号；提供后商品会绑定该店铺。' }, draft_only: { type: 'string', enum: ['true'], description: '仅导入本地资料用于草稿候选；不绑定店铺、不可同步或发布。' }, remote_id: { type: 'string' }, local_product_key: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, sku_count: { type: 'string' }, skus_json: { type: 'string' }, images: { type: 'string' }, asset_ids_json: { type: 'string', description: '已上传商品素材 ID 字符串数组 JSON；绑定后图片优化默认使用这些素材。' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string', description: '最多 3 条；每条包含 id、text、proof_status、source_ids' }, store_name: { type: 'string' }, store_differentiation: { type: 'string', description: '商家确认的该店铺相对品牌的定位、客群或经营差异。' } }, ['platform', 'title']),
   },
   {
     method: 'catalog.import.batch',
@@ -1316,6 +1323,11 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     method: 'content.generate',
     description: 'Generate a content draft from the task and its confirmed product facts.',
     params: params({ task_id: { type: 'string' }, idempotency_key: { type: 'string' } }, ['task_id']),
+  },
+  {
+    method: 'content.draft.generate',
+    description: 'Generate an unbound content candidate through the platform relay. Candidate-only: no formal content version, approval, or publishing.',
+    params: params({ draft: { type: 'string', enum: ['true'] }, draft_title: { type: 'string', minLength: 2, maxLength: 256 }, draft_prompt: { type: 'string', minLength: 2, maxLength: 2_000 }, platform: platformProperty, idempotency_key: { type: 'string', minLength: 8, maxLength: 200 } }, ['draft', 'draft_title', 'idempotency_key']),
   },
   {
     method: 'content.codex.prepare',

@@ -79,7 +79,15 @@ export function StoreDirectorySection({
         pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         loading={loading}
         dataSource={storeDirectory}
-        locale={{ emptyText: loading ? "正在读取店铺目录…" : initialLoadFailed ? "尚未取得店铺目录；请先恢复连接或权限。" : "暂无已登记店铺；完成平台授权后会显示在这里。" }}
+        locale={{
+          emptyText: loading ? "正在读取店铺目录…" : initialLoadFailed ? "尚未取得店铺目录；请先检查网络或工作区权限。" : (
+            <Space orientation="vertical" size={4}>
+              <Typography.Text>暂无已登记店铺</Typography.Text>
+              <Typography.Text type="secondary">尚未连接店铺不代表没有工作区权限，可先在已授权工作区导入商品资料、预览草稿。</Typography.Text>
+              <Typography.Text type="secondary">真实平台同步和发布仍需连接对应店铺，并具备相应操作权限。</Typography.Text>
+            </Space>
+          ),
+        }}
         columns={[
           {
             title: "平台",
@@ -183,8 +191,8 @@ export function StoreDirectorySection({
             showIcon
             title={<span id="store-directory-error-title">店铺目录读取失败</span>}
             description={initialLoadFailed
-              ? "当前空列表不代表没有已登记店铺；请修复连接或权限后重新加载。"
-              : "已保留上一次成功读取的店铺目录；请修复连接或权限后重新加载。"}
+              ? "当前空列表不代表没有已登记店铺；请检查网络或工作区权限后重新加载。"
+              : "已保留上一次成功读取的店铺目录；请检查网络或工作区权限后重新加载。"}
             action={onRetry ? <Button htmlType="button" style={{ minHeight: 44 }} aria-label="刷新店铺目录" onClick={onRetry}>刷新店铺目录</Button> : undefined}
           />
         </div>

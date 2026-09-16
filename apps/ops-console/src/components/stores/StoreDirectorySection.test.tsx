@@ -53,6 +53,27 @@ describe("StoreDirectorySection", () => {
     const markup = render({ storeDirectory: [], error: "workspace health unavailable" });
 
     expect(markup).toContain("当前空列表不代表没有已登记店铺");
-    expect(markup).not.toContain("暂无已登记店铺；完成平台授权后会显示在这里。");
+    expect(markup).not.toContain("暂无已登记店铺");
+    expect(markup).not.toContain("尚未连接店铺不代表没有工作区权限");
+    expect(markup).toContain("检查网络或工作区权限");
+  });
+
+  it("distinguishes a missing store connection from workspace permission in the empty state", () => {
+    const markup = render({ storeDirectory: [] });
+
+    expect(markup).toContain("暂无已登记店铺");
+    expect(markup).toContain("尚未连接店铺不代表没有工作区权限");
+    expect(markup).toContain("可先在已授权工作区导入商品资料、预览草稿");
+    expect(markup).toContain("真实平台同步和发布仍需连接对应店铺，并具备相应操作权限");
+    expect(markup).not.toContain('role="alert"');
+    expect(markup).not.toContain("店铺目录读取失败");
+  });
+
+  it("does not announce an empty directory before loading succeeds", () => {
+    const markup = render({ storeDirectory: [], loading: true });
+
+    expect(markup).toContain("正在读取店铺目录");
+    expect(markup).not.toContain("暂无已登记店铺");
+    expect(markup).not.toContain("尚未连接店铺不代表没有工作区权限");
   });
 });

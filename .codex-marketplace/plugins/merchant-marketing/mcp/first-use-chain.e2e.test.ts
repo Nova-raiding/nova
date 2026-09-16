@@ -45,6 +45,13 @@ describe('first-use plugin → API/MCP chain', () => {
       env: { ...process.env, NODE_ENV: 'test', DEPLOY_ENV: '${DEPLOY_ENV}', MERCHANT_MCP_BASE_URL: apiBase, MERCHANT_WORKSPACE_ID: `ws_first_use_chain_${Date.now()}`, MERCHANT_MCP_TOKEN: '', MERCHANT_STRICT_AUTH: 'false', MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'initialize', params: {} })}\n`)
+    const initialized = await nextLine(child.stdout)
+    expect(initialized.result.instructions).toContain('draft_only="true"')
+    expect(initialized.result.instructions).toContain('content.draft.generate')
+    expect(initialized.result.instructions).toContain('真实商品读取、同步和发布仍需对应店铺官方 OAuth')
+    expect(initialized.result.instructions).toContain('不绕过权限、创意点或模型配置门禁')
+
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })}\n`)
     const listed = await nextLine(child.stdout)
     const tools = listed.result.tools.map((tool: { name: string }) => tool.name)
@@ -57,7 +64,12 @@ describe('first-use plugin → API/MCP chain', () => {
     expect(onboarding.result.isError, JSON.stringify(onboarding.result)).toBe(false)
     expect(onboarding.result.structuredContent.initialization).toMatchObject({ completed: 0, total: 4, current_step: { id: 'connect_stores', state: 'required' }, evidence: { official_stores: 0 } })
     expect(onboarding.result.content[0].text).toContain('您好，感谢您使用 Store Nova')
-    expect(onboarding.result.content[0].text).toContain('本地系统已经部署完成')
+    expect(onboarding.result.content[0].text).not.toContain('本地系统已经部署完成')
+    expect(onboarding.result.content[0].text).not.toContain('生产环境已准备完毕')
+    expect(onboarding.result.content[0].text).toContain('先导入资料做草稿，还是连接店铺做真实同步？')
+    expect(onboarding.result.content[0].text).toContain('未批准、未发布的候选')
+    expect(onboarding.result.content[0].text).toContain('真实商品读取、同步和发布仍需连接对应店铺')
+    expect(onboarding.result.content[0].text).toContain('请不要在对话中发送平台密码、Cookie 或短信验证码')
     expect(onboarding.result.content[0].text).toContain('当前进度：0/4')
     expect(onboarding.result.content[0].text).toContain('平台｜店铺名称｜店铺首页链接')
     expect(onboarding.result).not.toHaveProperty('structuredContent.onboarding_card')
