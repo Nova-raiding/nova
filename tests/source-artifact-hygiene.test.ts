@@ -1,9 +1,34 @@
 import { execFileSync } from 'node:child_process'
 import { readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const root = process.cwd()
+const redactedQueryValue = 'REDACTED'
+const ossSignedQueryParameter = /(?:^|[?&])(OSSAccessKeyId|Signature|Expires|security-token|x-oss-security-token)=([^&#\s"']*)/gu
+
+function exposedOssSignedQueryParameters(source: string): string[] {
+  return [...source.matchAll(ossSignedQueryParameter)]
+    .flatMap(match => {
+      const name = match[1]
+      const value = match[2]
+      if (name === undefined || value === undefined || value === redactedQueryValue) return []
+      return [name.toLowerCase()]
+    })
+}
+
+function trackedArtifactFiles(): string[] {
+  return execFileSync(
+    'git',
+    ['grep', '-IlzE', 'OSSAccessKeyId=|[?&]Signature=|[?&]Expires=|[?&](security-token|x-oss-security-token)=', '--', 'artifacts'],
+    { cwd: root, maxBuffer: 16 * 1024 * 1024 },
+  )
+    .toString('utf8')
+    .split('\0')
+    .filter(Boolean)
+}
 
 const generatedEvidencePaths = [
   'artifacts/ops-jit-isolation/example/ui-dist/assets/index.js',
@@ -73,5 +98,19 @@ describe('source artifact hygiene', () => {
       })
 
     expect(artifacts, 'Build outputs beside TypeScript can shadow current source under NodeNext/Vitest; emit only to dist/.').toEqual([])
+  })
+
+  it('keeps OSS signed query credentials out of tracked evidence artifacts', () => {
+    const exposed = trackedArtifactFiles().flatMap(path => {
+      const parameters = exposedOssSignedQueryParameters(readFileSync(join(root, path), 'utf8'))
+      return parameters.length === 0 ? [] : [`${path}: ${[...new Set(parameters)].sort().join(', ')}`]
+    })
+
+    expect(exposed, 'Commit evidence structure with signed OSS query values replaced by the deterministic REDACTED marker.').toEqual([])
+  }, 30_000)
+
+  it('does not flag ordinary public URLs or deterministically redacted evidence URLs', () => {
+    expect(exposedOssSignedQueryParameters('https://cdn.example.com/public/image.png?width=1200&format=webp')).toEqual([])
+    expect(exposedOssSignedQueryParameters('https://bucket.example.com/object?OSSAccessKeyId=REDACTED&Signature=REDACTED&Expires=REDACTED')).toEqual([])
   })
 })
