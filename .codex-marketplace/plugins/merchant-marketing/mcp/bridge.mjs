@@ -1792,9 +1792,18 @@ function merchantContextMetadata(result, explicitContext = {}) {
   const businessUnits = Array.isArray(result?.business_units)
     ? result.business_units
     : Array.isArray(result?.brands) ? result.brands : []
-  const stores = Array.isArray(result?.storeDirectory)
+  const stores = (Array.isArray(result?.storeDirectory)
     ? result.storeDirectory
-    : Array.isArray(result?.stores) ? result.stores : []
+    : Array.isArray(result?.stores) ? result.stores : [])
+    // The current workspace has no JD official authorization. Keep future
+    // official JD support intact, but hide demo/fixture JD rows from the
+    // merchant-facing selector so they cannot be mistaken for a real store.
+    .filter(store => {
+      const platform = String(store?.platform ?? '').trim().toLowerCase()
+      const mode = String(store?.dataMode ?? store?.data_mode ?? '').trim().toLowerCase()
+      const state = String(store?.state ?? store?.status ?? '').trim().toLowerCase()
+      return !(platform === 'jd' && (mode === 'fixture' || state === 'fixture'))
+    })
   const simulated = result?.execution?.simulated === true || result?.simulated === true || result?.mode === 'fixture'
   const firstAction = Array.isArray(result?.action_cards)
     ? result.action_cards.find(card => card && typeof card === 'object' && card.enabled !== false)
@@ -1898,9 +1907,15 @@ function merchantConversationQuestion(method, stage, expectedInput, explicitCont
 
 function merchantConversationProjection(method, result, args = {}) {
   const explicitContext = method === 'merchant.start' ? merchantStartContext(args) : {}
-  const stores = Array.isArray(result?.storeDirectory)
+  const stores = (Array.isArray(result?.storeDirectory)
     ? result.storeDirectory
-    : Array.isArray(result?.stores) ? result.stores : []
+    : Array.isArray(result?.stores) ? result.stores : [])
+    .filter(store => {
+      const platform = String(store?.platform ?? '').trim().toLowerCase()
+      const mode = String(store?.dataMode ?? store?.data_mode ?? '').trim().toLowerCase()
+      const state = String(store?.state ?? store?.status ?? '').trim().toLowerCase()
+      return !(platform === 'jd' && (mode === 'fixture' || state === 'fixture'))
+    })
   const canonicalStep = result?.onboarding_v2?.current_step
   const currentStep = canonicalStep && typeof canonicalStep === 'object' && !Array.isArray(canonicalStep)
     ? canonicalStep

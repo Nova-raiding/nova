@@ -579,10 +579,9 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result.structuredContent.conversation_state.store_options).toEqual([
-        expect.objectContaining({ platform: 'jd', store_name: '京东示例店', status: '演示店铺', data_source: '演示数据', selectable: false }),
         expect.objectContaining({ platform: 'jd', store_name: '京东旗舰店', status: '可读取', data_source: '官方 API', selectable: true, action: { method: 'catalog.search', arguments: { scope: 'store', platform: 'jd', account_id: 'jd-real' } } }),
       ])
-      expect(response.result.content[0].text).toContain('已更新 2 家店铺的连接状态。')
+      expect(response.result.content[0].text).toContain('已更新 1 家店铺的连接状态。')
     } finally {
       child.kill()
       await close(server)
