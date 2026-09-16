@@ -4,9 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
+const nodeHardening = { user: '10001:10001', read_only: true, security_opt: ['no-new-privileges:true'], cap_drop: ['ALL'], tmpfs: ['/tmp'] }
 const valid = {
   services: {
-    api: { environment: {
+    api: { ...nodeHardening, environment: {
       NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', LOCAL_COMPOSE: 'false',
       CONNECTOR_FIXTURE_MODE: 'false', MERCHANT_TEST_APPROVED_RATES: 'false',
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
@@ -20,8 +21,9 @@ const valid = {
       ALLOW_WILDCARD_WORKSPACE_GRANT: 'false',
       OPS_LOCAL_SESSION_WORKSPACE_ID: '', DATABASE_URL: 'postgres://app:opaque@db/merchant',
       OPS_DATABASE_URL: 'postgres://ops:opaque@db/merchant', MODEL_COST_ESTIMATE_VERSION: 'production-v1',
+      OPENAI_APPS_CHALLENGE_TOKEN: 'openai-domain-token-production-123',
     } },
-    'api-replica': { environment: {
+    'api-replica': { ...nodeHardening, environment: {
       NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', LOCAL_COMPOSE: 'false',
       CONNECTOR_FIXTURE_MODE: 'false', MERCHANT_TEST_APPROVED_RATES: 'false',
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
@@ -35,8 +37,9 @@ const valid = {
       ALLOW_WILDCARD_WORKSPACE_GRANT: 'false',
       OPS_LOCAL_SESSION_WORKSPACE_ID: '', DATABASE_URL: 'postgres://app:opaque@db/merchant',
       OPS_DATABASE_URL: 'postgres://ops:opaque@db/merchant', MODEL_COST_ESTIMATE_VERSION: 'production-v1',
+      OPENAI_APPS_CHALLENGE_TOKEN: 'openai-domain-token-production-123',
     } },
-    ...Object.fromEntries(['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan'].map(name => [name, { environment: {
+    ...Object.fromEntries(['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan'].map(name => [name, { ...nodeHardening, environment: {
       NODE_ENV: 'production', DATABASE_URL: 'postgres://app:opaque@db/merchant', WORKER_WORKSPACES: 'auto', WORKER_API_TOKEN: `${name}-token`, WORKER_API_SIGNING_SECRET: `${name}-signing`,
     } }])),
     migrate: {
@@ -56,13 +59,7 @@ function validate(value: unknown) {
 }
 
 function renderFinalProductionCompose() {
-  const files = [
-    'infra/local/docker-compose.yml',
-    'infra/local/docker-compose.ecs-pilot.yml',
-    'infra/local/docker-compose.ecs-oss-cutover.yml',
-    'infra/local/docker-compose.ecs-production-migration.yml',
-    'infra/local/docker-compose.ecs-pilot-release.yml',
-  ]
+  const files = readFileSync('infra/local/ecs-production-compose.layers', 'utf8').trim().split('\n')
   const env: NodeJS.ProcessEnv = { ...process.env }
   for (const file of files) {
     const source = readFileSync(file, 'utf8')
@@ -92,7 +89,7 @@ function renderFinalProductionCompose() {
     env[`WORKER_${role.toUpperCase()}_API_TOKEN`] = credentials[role].token
     env[`WORKER_${role.toUpperCase()}_API_SIGNING_SECRET`] = credentials[role].signing_secret
   }
-  return JSON.parse(execFileSync('docker', ['compose', ...files.flatMap(file => ['-f', file]), 'config', '--format', 'json'], {
+  return JSON.parse(execFileSync('sh', ['infra/scripts/render-ecs-production-compose.sh'], {
     cwd: process.cwd(), encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'],
   }))
 }
@@ -152,7 +149,7 @@ describe('ECS production Compose contract', () => {
     expect(() => validate(mount)).toThrow(/must not mount alert receiver secrets/)
 
     const receiver = structuredClone(valid) as any
-    receiver.services['alert-receiver'] = { profiles: [] }
+    receiver.services['alert-receiver'] = { ...nodeHardening, profiles: [] }
     expect(() => validate(receiver)).toThrow(/isolated behind the alerts profile/)
   })
 
@@ -193,5 +190,34 @@ describe('ECS production Compose contract', () => {
     credentials.generation.token = 'different-token'
     mismatch.services.api.environment.WORKER_API_CREDENTIALS = JSON.stringify(credentials)
     expect(() => validate(mismatch)).toThrow(/generation.token must match worker-generation/)
+  })
+
+  it.each([
+    ['privileged mode', (service: any) => { service.privileged = true }, /privileged/],
+    ['host networking', (service: any) => { service.network_mode = 'host' }, /network_mode/],
+    ['Docker socket access', (service: any) => { service.volumes = ['/var\/run\/docker.sock:/var\/run\/docker.sock'] }, /Docker socket/],
+    ['a sensitive host mount', (service: any) => { service.volumes = ['/etc:/host-etc:ro'] }, /sensitive host path/],
+  ])('rejects %s for every production service', (_label, mutate, message) => {
+    const rendered = structuredClone(valid) as any
+    mutate(rendered.services.migrate)
+    expect(() => validate(rendered)).toThrow(message)
+  })
+
+  it.each([
+    ['root identity', (service: any) => { service.user = '0:0' }, /non-root identity/],
+    ['writable root filesystem', (service: any) => { service.read_only = false }, /read_only/],
+    ['missing no-new-privileges', (service: any) => { service.security_opt = [] }, /no-new-privileges/],
+    ['retained Linux capabilities', (service: any) => { service.cap_drop = [] }, /cap_drop/],
+  ])('rejects application containers with %s', (_label, mutate, message) => {
+    const rendered = structuredClone(valid) as any
+    mutate(rendered.services['worker-generation'])
+    expect(() => validate(rendered)).toThrow(message)
+  })
+
+  it('allows stateful and one-shot infrastructure to keep the filesystem and image entrypoint identity they require', () => {
+    const rendered = structuredClone(valid) as any
+    rendered.services.postgres = { image: 'postgres:16-alpine', volumes: ['merchant-postgres:/var/lib/postgresql/data'] }
+    rendered.services.redis = { image: 'redis:7-alpine', volumes: ['merchant-redis:/data'] }
+    expect(validate(rendered)).toContain('contract passed')
   })
 })

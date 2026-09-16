@@ -38,6 +38,7 @@ const runtimeFiles = [
   'mcp/bridge.sh',
   'mcp/bridge.mjs',
   'mcp/relay-evidence.mjs',
+  'mcp/managed-token.mjs',
   'scheduled/daily-store-risk-scan.json',
   'scheduled/weekly-six-platform-digest.json',
   'ui/image-local-edit.html',
@@ -63,7 +64,7 @@ const manifestErrors = [
   Array.isArray(startup?.args) && startup.args.length === 1 && startup.args[0] === './mcp/bridge.sh' ? null : 'MCP startup args must point to ./mcp/bridge.sh',
 ].filter(Boolean)
 
-const discoveryEnv = { ...process.env, MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8790', MERCHANT_WORKSPACE_ID: 'ws_install_verify' }
+const discoveryEnv = { ...process.env, MERCHANT_MCP_TOKEN_SOURCE: 'environment', MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8790', MERCHANT_WORKSPACE_ID: 'ws_install_verify' }
 function discoverTools(root) {
   const bridge = spawnSync(process.execPath, [resolve(root, 'mcp/bridge.mjs')], {
     encoding: 'utf8',

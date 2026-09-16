@@ -22,6 +22,7 @@ const paymentEnvironment = {
   MERCHANT_API_TOKEN: 'test-merchant-token',
   MERCHANT_WORKSPACE_ID: 'ws_pilot_parity',
   MCP_OAUTH_CLIENTS: JSON.stringify({ 'chatgpt-test': ['https://chatgpt.example.test/oauth/callback'] }),
+  OPENAI_APPS_CHALLENGE_TOKEN: 'openai-domain-token-production-123',
   CAPABILITY_EVIDENCE_PATH: '/tmp/test-capability-evidence.json',
   ASSET_STORAGE_BUCKET: 'test-production-bucket',
   ASSET_STORAGE_REGION: 'cn-test',

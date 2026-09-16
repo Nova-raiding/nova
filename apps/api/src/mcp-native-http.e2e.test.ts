@@ -177,20 +177,81 @@ describe('native ChatGPT MCP HTTP transport', () => {
     }
   })
 
-  it('publishes configured HTTPS OAuth metadata without leaking local fixture routes', async () => {
+  it('does not expose fixture OAuth on a public host when NODE_ENV is not production', async () => {
+    vi.stubEnv('NODE_ENV', 'development')
+    vi.stubEnv('PUBLIC_APP_BASE_URL', 'https://yxsona.com')
+    const base = await start()
+    const publicHeaders = { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' }
+    for (const path of ['/.well-known/oauth-protected-resource', '/.well-known/oauth-authorization-server']) {
+      const response = await fetch(`${base}${path}`, { headers: publicHeaders })
+      expect(response.status, path).toBe(503)
+    }
+    const authorize = await fetch(`${base}/oauth/authorize?redirect_uri=https%3A%2F%2Fexample.com%2Fcallback`, { headers: publicHeaders, redirect: 'manual' })
+    expect(authorize.status).toBe(503)
+    expect(authorize.headers.get('location')).toBeNull()
+    const token = await fetch(`${base}/oauth/token`, { method: 'POST', headers: publicHeaders })
+    expect(token.status).toBe(503)
+    await expect(token.json()).resolves.toEqual({ error: 'temporarily_unavailable' })
+  })
+
+  it('keeps fixture OAuth restricted to a loopback development entry', async () => {
+    vi.stubEnv('NODE_ENV', 'development')
+    vi.stubEnv('PUBLIC_APP_BASE_URL', 'http://127.0.0.1')
+    const base = await start()
+    const authorize = await fetch(`${base}/oauth/authorize?redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback`, { redirect: 'manual' })
+    expect(authorize.status).toBe(302)
+    expect(authorize.headers.get('location')).toContain('fixture-code')
+    for (const query of [
+      'redirect_uri=not-a-url',
+      `redirect_uri=${encodeURIComponent('javascript:alert(1)')}`,
+      `redirect_uri=${encodeURIComponent('http://example.com/callback')}`,
+      'redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback',
+      'redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&state=first&state=second',
+    ]) {
+      const rejected = await fetch(`${base}/oauth/authorize?${query}`, { redirect: 'manual' })
+      expect(rejected.status, query).toBe(400)
+      expect(rejected.headers.get('location')).toBeNull()
+      await expect(rejected.json()).resolves.toEqual({ error: 'invalid_request' })
+    }
+
+    for (const candidate of [
+      { contentType: 'application/x-www-form-urlencoded', body: '' },
+      { contentType: 'application/x-www-form-urlencoded', body: 'grant_type=authorization_code&code=attacker-code' },
+      { contentType: 'application/x-www-form-urlencoded', body: 'grant_type=authorization_code&code=fixture-code&code=attacker-code' },
+      { contentType: 'application/json', body: JSON.stringify({ grant_type: 'authorization_code', code: 'fixture-code' }) },
+    ]) {
+      const rejected = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': candidate.contentType }, body: candidate.body })
+      expect(rejected.status, candidate.body).toBeGreaterThanOrEqual(400)
+      expect(rejected.headers.get('cache-control')).toBe('no-store')
+    }
+    const exchanged = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'grant_type=authorization_code&code=fixture-code' })
+    expect(exchanged.status).toBe(200)
+    expect(exchanged.headers.get('cache-control')).toBe('no-store')
+    await expect(exchanged.json()).resolves.toMatchObject({ access_token: 'fixture-token', token_type: 'Bearer', scope: 'merchant' })
+  })
+
+  it('does not advertise an external OAuth provider without an external token validation runtime', async () => {
     vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('MCP_OAUTH_REQUIRED', 'true')
     vi.stubEnv('PUBLIC_APP_BASE_URL', 'https://yxsona.com')
     vi.stubEnv('MCP_OAUTH_ISSUER', 'https://accounts.example.com')
     vi.stubEnv('MCP_OAUTH_AUTHORIZATION_ENDPOINT', 'https://accounts.example.com/oauth/authorize')
     vi.stubEnv('MCP_OAUTH_TOKEN_ENDPOINT', 'https://accounts.example.com/oauth/token')
+    vi.stubEnv('MCP_OAUTH_CLIENTS', JSON.stringify({ 'chatgpt-client': ['https://chatgpt.example.com/oauth/callback'] }))
     const base = await start()
     const protectedResource = await fetch(`${base}/.well-known/oauth-protected-resource`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
-    expect(protectedResource.status).toBe(200)
-    await expect(protectedResource.json()).resolves.toEqual({ resource: 'https://yxsona.com/mcp', authorization_servers: ['https://accounts.example.com'], scopes_supported: ['merchant'] })
+    expect(protectedResource.status).toBe(503)
+    expect(protectedResource.headers.get('cache-control')).toBe('no-store')
+    await expect(protectedResource.json()).resolves.toEqual({ error: 'MCP_OAUTH_NOT_CONFIGURED' })
 
     const authorizationServer = await fetch(`${base}/.well-known/oauth-authorization-server`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
-    expect(authorizationServer.status).toBe(200)
-    await expect(authorizationServer.json()).resolves.toMatchObject({ issuer: 'https://accounts.example.com', authorization_endpoint: 'https://accounts.example.com/oauth/authorize', token_endpoint: 'https://accounts.example.com/oauth/token', code_challenge_methods_supported: ['S256'] })
+    expect(authorizationServer.status).toBe(503)
+    expect(authorizationServer.headers.get('cache-control')).toBe('no-store')
+    await expect(authorizationServer.json()).resolves.toEqual({ error: 'MCP_OAUTH_NOT_CONFIGURED' })
+
+    const authorize = await fetch(`${base}/oauth/authorize`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
+    expect(authorize.status).toBe(503)
+    await expect(authorize.json()).resolves.toEqual({ error: 'temporarily_unavailable' })
   })
 
   it('fails closed when the OpenAI Apps domain challenge token is not configured', async () => {

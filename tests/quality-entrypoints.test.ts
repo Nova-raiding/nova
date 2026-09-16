@@ -9,6 +9,10 @@ const packageJsonSource = readFileSync(resolve(root, 'package.json'), 'utf8')
 const packageJson = JSON.parse(packageJsonSource) as {
   scripts: Record<string, string>
 }
+const LEGACY_NON_RELEASE_GATES = new Set([
+  'tests/local-docker-release-gate.test.ts',
+  'tests/kubernetes-release-gate.test.ts',
+])
 
 function script(name: string): string {
   const command = packageJson.scripts[name]
@@ -55,10 +59,11 @@ describe('quality entrypoint coverage', () => {
     const releaseGate = script('test:release-gates')
     const missing = filesUnder('tests')
       .filter(file => /^tests\/[^/]+-gate\.test\.ts$/.test(file))
-      .filter(file => file !== 'tests/local-docker-release-gate.test.ts')
+      .filter(file => !LEGACY_NON_RELEASE_GATES.has(file))
       .filter(file => !releaseGate.includes(file))
 
     expect(missing).toEqual([])
+    expect(script('test')).toContain('scripts/run-safe-tests-sharded.ts')
     expect(script('test:local-release-gate')).toContain('--config vitest.runtime.config.ts tests/local-docker-release-gate.test.ts')
     for (const contract of [
       'tests/quality-entrypoints.test.ts',
@@ -106,7 +111,7 @@ describe('quality entrypoint coverage', () => {
   })
 
   it('keeps non-hermetic coverage explicit instead of silently passing it in the default suite', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(27)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(29)
     expect(script('test:runtime:isolated')).toContain('--config vitest.runtime.config.ts')
     expect(script('test:postgres:isolated')).toContain('scripts/run-isolated-postgres-tests.ts')
     expect(script('test:browser:ops:jit')).toContain('scripts/run-ops-oidc-e2e.ts')

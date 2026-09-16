@@ -15,7 +15,7 @@ async function start() {
 }
 
 describe('spreadsheet batch import API', () => {
-  beforeAll(async () => { api = await import('./server.js') })
+  beforeAll(async () => { api = await import('./server.js'); api.enableCommercialFixtureHarnessForTests() })
   afterEach(async () => { if (api.server.listening) await new Promise<void>(resolve => api.server.close(() => resolve())) })
 
   it('imports products from confirmed parsed CSV facts through the MCP batch entry', async () => {

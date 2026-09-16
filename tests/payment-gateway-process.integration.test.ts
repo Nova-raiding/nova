@@ -144,6 +144,22 @@ describe('payment gateway process contract', () => {
     })
     expect(unsupportedRefund.status).toBe(503)
     await expect(unsupportedRefund.json()).resolves.toEqual({ error: 'UNSUPPORTED_PAYMENT_CHANNEL' })
+
+    const unscopedRefund = await fetch(`${gatewayBase}/v1/refund`, {
+      method: 'POST',
+      headers: internalHeaders,
+      body: JSON.stringify({ channel: 'alipay', order_id: 'order-alipay-refund', refund_request_id: 'refund-alipay-1', amount_fen: 1000 }),
+    })
+    expect(unscopedRefund.status).toBe(400)
+    await expect(unscopedRefund.json()).resolves.toEqual({ error: 'INVALID_REFUND' })
+
+    const unscopedRefundQuery = await fetch(`${gatewayBase}/v1/refund/query`, {
+      method: 'POST',
+      headers: internalHeaders,
+      body: JSON.stringify({ channel: 'alipay', order_id: 'order-alipay-refund', refund_request_id: 'refund-alipay-1', amount_fen: 1000 }),
+    })
+    expect(unscopedRefundQuery.status).toBe(400)
+    await expect(unscopedRefundQuery.json()).resolves.toEqual({ error: 'INVALID_REFUND_QUERY' })
     expect(alipayCalls).toBe(0)
 
     const notification = {

@@ -120,9 +120,9 @@ const containerEnvironmentNames = (service: string) => {
 if (dockerReady) {
   containerEnv = containerEnvironmentNames('api')
 }
-const relayNames = ['MODEL_RELAY_BASE_URL', 'MODEL_RELAY_API_KEY', 'AI_MODEL', 'IMAGE_MODEL', 'IMAGE_EDIT_MODEL', 'OCR_MODEL', 'VIDEO_MODEL']
+const relayNames = ['MODEL_RELAY_BASE_URL', 'MODEL_RELAY_API_KEY', 'AI_MODEL', 'IMAGE_MODEL', 'IMAGE_EDIT_MODEL', 'OCR_MODEL', 'VIDEO_MODEL', 'EMBEDDING_MODEL', 'EMBEDDING_DIMENSIONS', 'MODEL_EMBEDDING_MAX_REQUEST_CNY']
 const relayReady = relayNames.every(name => Boolean(process.env[name]) || containerEnv.has(name))
-add('model_relay', relayReady ? 'pass' : production ? 'fail' : 'warn', relayReady ? '业务模型中转配置存在（值已隐藏）' : '业务模型中转配置不完整', '通过 Secret Manager/环境合同注入七项 relay 配置；不要复制密钥到仓库。')
+add('model_relay', relayReady ? 'pass' : production ? 'fail' : 'warn', relayReady ? '业务模型中转配置存在（值已隐藏）' : '业务模型中转配置不完整', '通过 Secret Manager/环境合同注入 relay、五种生成模型及 embedding 配置；不要复制密钥到仓库。')
 const identitySessionReady = Boolean(process.env.SESSION_ID_HASH_SECRET) || containerEnv.has('SESSION_ID_HASH_SECRET')
 add('identity_session_hash', identitySessionReady ? 'pass' : production ? 'fail' : 'warn', identitySessionReady ? '平台身份会话指纹密钥已注入（值已隐藏）' : '平台身份会话指纹密钥未注入', '通过 Secret Manager 注入独立 SESSION_ID_HASH_SECRET；不得复用 OIDC 或 API token。')
 const hostRelayReady = commandReady('npm', ['run', 'codex:relay:validate', '--silent'])

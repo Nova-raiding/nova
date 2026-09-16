@@ -56,9 +56,27 @@ export function validateProductionEvidence(document: unknown, options: { kind: P
   if (expires <= now.getTime()) errors.push('evidence has expired')
   const maxAge = options.kind === 'payment' ? 24 : 168
   if (Number.isFinite(attested) && now.getTime() - attested > maxAge * 3_600_000) errors.push('evidence is stale')
-  for (const name of checksByKind[options.kind]) { const check = value.checks?.[name]; if (check?.status !== 'pass') errors.push(`checks.${name}.status must be pass`); errors.push(...validateArtifact(check?.evidence_ref, options.artifactRoot, `checks.${name}.evidence_ref`)) }
+  const seenArtifactRefs = new Map<string, string>()
+  for (const name of checksByKind[options.kind]) {
+    const check = value.checks?.[name]
+    if (check?.status !== 'pass') errors.push(`checks.${name}.status must be pass`)
+    errors.push(...validateArtifact(check?.evidence_ref, options.artifactRoot, `checks.${name}.evidence_ref`))
+    if (options.kind === 'payment' && text(check?.evidence_ref)) {
+      const previous = seenArtifactRefs.get(check.evidence_ref)
+      if (previous) errors.push(`checks.${name}.evidence_ref must differ from checks.${previous}.evidence_ref`)
+      else seenArtifactRefs.set(check.evidence_ref, name)
+    }
+  }
   if (options.kind === 'payment') { if (!text(value.provider) || /mock|fixture/iu.test(value.provider)) errors.push('provider must identify a real provider'); if (typeof value.amount_cny !== 'number' || value.amount_cny <= 0) errors.push('amount_cny must be positive'); if (!/^[a-f0-9]{64}$/u.test(String(value.provider_trade_id_sha256 ?? ''))) errors.push('provider_trade_id_sha256 must be a SHA-256 hash') }
-  else { if (value.recovery_target_isolated !== true) errors.push('recovery_target_isolated must be true'); if (!/^[a-f0-9]{64}$/u.test(String(value.backup_sha256 ?? ''))) errors.push('backup_sha256 must be a SHA-256 hash'); for (const field of ['source_backup_created_at', 'recovery_point_at']) if (!iso(value[field])) errors.push(`${field} must be a strict UTC ISO timestamp`) }
+  else {
+    if (value.recovery_target_isolated !== true) errors.push('recovery_target_isolated must be true')
+    if (!/^[a-f0-9]{64}$/u.test(String(value.backup_sha256 ?? ''))) errors.push('backup_sha256 must be a SHA-256 hash')
+    for (const field of ['source_backup_created_at', 'recovery_point_at']) if (!iso(value[field])) errors.push(`${field} must be a strict UTC ISO timestamp`)
+    const backupCreated = Date.parse(String(value.source_backup_created_at ?? '')); const recoveryPoint = Date.parse(String(value.recovery_point_at ?? ''))
+    if (Number.isFinite(backupCreated) && Number.isFinite(recoveryPoint) && recoveryPoint < backupCreated) errors.push('recovery_point_at must not be before source_backup_created_at')
+    if (Number.isFinite(recoveryPoint) && Number.isFinite(generated) && recoveryPoint > generated) errors.push('recovery_point_at must not be after generated_at')
+    if (Number.isFinite(backupCreated) && backupCreated > now.getTime() + 300_000) errors.push('source_backup_created_at must not be in the future')
+  }
   if (text(value.signature_base64)) {
     if (!/^[A-Za-z0-9+/]{86}==$/u.test(value.signature_base64)) errors.push('signature_base64 must be a canonical Ed25519 signature')
     else try { const key = createPublicKey(options.publicKeyPem); if (key.asymmetricKeyType !== 'ed25519') errors.push('trusted public key must be Ed25519'); else if (!verify(null, payload(value), key, Buffer.from(value.signature_base64, 'base64'))) errors.push('signature_base64 is invalid') } catch { errors.push('trusted public key or signature is invalid') }

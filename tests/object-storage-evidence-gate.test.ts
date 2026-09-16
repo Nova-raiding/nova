@@ -91,4 +91,13 @@ describe('object storage production evidence gate', () => {
     expect(validateObjectStorageEvidence(evidence, { ...bindings, now: '2026-08-31T04:00:00Z' })).toContain('evidence is stale')
     expect(validateObjectStorageEvidence(evidence, { ...bindings, now: '2026-08-29T03:00:00Z' })).toContain('attested_at must not be in the future')
   })
+  it('rejects retention or restore observations outside the signed evidence interval', () => {
+    const invalid = structuredClone(evidence)
+    invalid.retention_evidence.verified_at = '2026-08-29T00:59:59Z'
+    invalid.restore_evidence.restored_at = '2026-08-29T03:30:01Z'
+    expect(validateObjectStorageEvidence(invalid, bindings)).toEqual(expect.arrayContaining([
+      'retention_evidence.verified_at must not be before generated_at',
+      'restore_evidence.restored_at must not be after attested_at',
+    ]))
+  })
 })

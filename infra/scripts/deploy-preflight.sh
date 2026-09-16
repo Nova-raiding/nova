@@ -119,7 +119,7 @@ storage_encryption=${storage_encryption:-AES256}
 case "$storage_encryption" in AES256|aws:kms) ;; *) echo "object_storage_sse_mode must be AES256 or aws:kms" >&2; exit 1 ;; esac
 [ -n "$storage_bucket" ] || { echo "object_storage_bucket is required for storage evidence binding" >&2; exit 1; }
 [ -n "$storage_endpoint" ] || { echo "object_storage_endpoint is required for storage evidence binding" >&2; exit 1; }
-npx --no-install tsx "$(dirname "$0")/../../tests/canonical-product-cutover-evidence-gate.ts" --file "$CANONICAL_CUTOVER_EVIDENCE_PATH" --release-id "$RELEASE_ID"
+npx --no-install tsx "$(dirname "$0")/../../tests/canonical-product-cutover-evidence-gate.ts" --file "$CANONICAL_CUTOVER_EVIDENCE_PATH" --release-id "$RELEASE_ID" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT"
 trust_key_id_path="$trust_dir/production-evidence-key-id"
 trusted_key_id=$(sed -n '1p' "$trust_key_id_path")
 npx --no-install tsx "$(dirname "$0")/../../tests/release-manifest-gate.ts" \

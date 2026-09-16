@@ -86,6 +86,12 @@ describe('Codex App host evidence gate', () => {
     expect(validateCodexAppHostEvidence({ ...evidence, generated_at: '2026-08-29' })).toContain('generated_at must be a strict UTC ISO timestamp')
   })
 
+  it('rejects stale or future host captures when used by the production preflight', () => {
+    const now = new Date('2026-08-30T02:00:00Z')
+    expect(validateCodexAppHostEvidence(evidence, { requireFresh: true, now })).toContain('Codex App host evidence is stale')
+    expect(validateCodexAppHostEvidence({ ...evidence, generated_at: '2026-08-30T02:05:01Z' }, { requireFresh: true, now })).toContain('generated_at must not be more than five minutes in the future')
+  })
+
   it.each(['http://merchant.example.com', 'https://user@merchant.example.com', 'https://merchant.example.com/mcp', 'https://merchant.example.com?token=secret', 'https://localhost', 'https://10.0.0.1', 'https://192.168.1.5'])('rejects unsafe MCP origin %s', mcp_base_url => {
     expect(validateCodexAppHostEvidence({ ...evidence, mcp_base_url })).toContain('mcp_base_url must be a canonical public HTTPS root origin')
   })

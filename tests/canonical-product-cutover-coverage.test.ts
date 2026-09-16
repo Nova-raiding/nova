@@ -3,7 +3,7 @@ import { validateCanonicalProductCutoverEvidence } from './canonical-product-cut
 
 const validEvidence = {
   schema_version: '1', release_id: 'release-1', environment: 'production',
-  generated_at: '2026-08-29T01:00:00Z', expires_at: '2026-09-29T01:00:00Z', simulated: false,
+  generated_at: '2026-08-29T01:00:00Z', expires_at: '2026-08-30T00:59:00Z', simulated: false,
   source: 'production_database', database_identity_sha256: 'b'.repeat(64),
   cutover_state: 'not_cut_over', canonical_read_mode: 'legacy_shadow', canonical_read_enabled: false,
   workspace_count: 1, shadow_check_cycles: 2,
@@ -25,7 +25,7 @@ describe('canonical product cutover release-gate coverage', () => {
       database_identity_sha256: 'not-a-digest', canonical_read_enabled: true,
       workspace_count: 0, shadow_check_cycles: -1,
       status_counts: { verified: -1 }, evidence_ref: 'file://mutable', rollback_evidence_ref: 'file://mutable',
-    }, { expectedReleaseId: 'release-expected' })
+    }, { expectedReleaseId: 'release-expected', now: new Date('2026-08-29T02:00:00Z') })
 
     expect(errors).toEqual(expect.arrayContaining([
       'release_id is required', 'release_id must match release-expected', 'environment must be production',
@@ -38,6 +38,6 @@ describe('canonical product cutover release-gate coverage', () => {
   })
 
   it('accepts the complete legacy-shadow evidence contract', () => {
-    expect(validateCanonicalProductCutoverEvidence(validEvidence, { expectedReleaseId: 'release-1' })).toEqual([])
+    expect(validateCanonicalProductCutoverEvidence(validEvidence, { expectedReleaseId: 'release-1', now: new Date('2026-08-29T02:00:00Z') })).toEqual([])
   })
 })

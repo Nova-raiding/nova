@@ -278,7 +278,7 @@ describe("customer delivery read-only desktop interaction", () => {
       await openAccountBinding(page); await selectAccount(page);
       await page.getByLabel("关联原因（必填）", { exact: true }).fill("已核对商家登录账号");
       await page.getByRole("checkbox", { name: `我已核对登录账号，确认关联 ${account.login}`, exact: true }).check();
-      await page.getByRole("button", { name: "查询账号", exact: true }).click();
+      await page.locator("#delivery-account-search").press("Enter");
       await page.getByRole("alert").filter({ hasText: "账号查询失败" }).waitFor();
       await page.getByRole("button", { name: "重新查询", exact: true }).click();
       await expect.poll(() => searches).toBe(3);

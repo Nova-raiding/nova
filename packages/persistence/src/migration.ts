@@ -506,6 +506,8 @@ export async function loadMigrations(): Promise<Migration[]> {
   const mcpOauthIdentity = await readFile(new URL('./migrations/210_mcp_oauth_identity.sql', import.meta.url), 'utf8')
   const mcpOauthWorkspaceRls = await readFile(new URL('./migrations/211_mcp_oauth_workspace_rls.sql', import.meta.url), 'utf8')
   const customerDeliveryAccountBinding = await readFile(new URL('./migrations/212_customer_delivery_account_binding.sql', import.meta.url), 'utf8')
+  const workspaceContentSetup = await readFile(new URL('./migrations/213_workspace_content_setup.sql', import.meta.url), 'utf8')
+  const modelUsageEmbeddingModality = await readFile(new URL('./migrations/214_model_usage_embedding_modality.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -719,6 +721,8 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 210, name: 'mcp_oauth_identity', sql: mcpOauthIdentity },
     { version: 211, name: 'mcp_oauth_workspace_rls', sql: mcpOauthWorkspaceRls },
     { version: 212, name: 'customer_delivery_account_binding', sql: customerDeliveryAccountBinding },
+    { version: 213, name: 'workspace_content_setup', sql: workspaceContentSetup },
+    { version: 214, name: 'model_usage_embedding_modality', sql: modelUsageEmbeddingModality },
   ]
 }
 

@@ -8,6 +8,52 @@ function fail(message) {
   process.exit(1)
 }
 
+function normalizedMounts(service) {
+  return (service?.volumes ?? []).map(item => {
+    if (typeof item === 'string') {
+      const [source = '', target = ''] = item.split(':')
+      return { source, target, type: source.startsWith('/') || source.startsWith('.') ? 'bind' : 'volume' }
+    }
+    return { source: String(item?.source ?? ''), target: String(item?.target ?? ''), type: String(item?.type ?? '') }
+  })
+}
+
+const applicationServices = new Set([
+  'api', 'api-replica', 'worker-sync', 'worker-generation', 'worker-publish',
+  'worker-reconcile', 'worker-automation', 'worker-scan', 'payment-gateway',
+  'ui', 'ops-ui', 'pilot-gateway', 'alert-receiver',
+])
+const immutableNodeServices = new Set([
+  'api', 'api-replica', 'worker-sync', 'worker-generation', 'worker-publish',
+  'worker-reconcile', 'worker-automation', 'worker-scan', 'payment-gateway',
+  'alert-receiver',
+])
+
+for (const [name, service] of Object.entries(rendered.services ?? {})) {
+  if (service?.privileged === true) fail(`${name}.privileged must not be enabled`)
+  if (String(service?.network_mode ?? '').toLowerCase() === 'host') fail(`${name}.network_mode must not equal host`)
+  if (String(service?.pid ?? '').toLowerCase() === 'host') fail(`${name}.pid must not equal host`)
+  if (String(service?.ipc ?? '').toLowerCase() === 'host') fail(`${name}.ipc must not equal host`)
+
+  for (const mount of normalizedMounts(service)) {
+    const source = mount.source.replace(/\/$/u, '')
+    const target = mount.target.replace(/\/$/u, '')
+    if (/(^|\/)docker\.sock$/u.test(source) || /(^|\/)docker\.sock$/u.test(target)) fail(`${name} must not mount a Docker socket`)
+    if (mount.type === 'bind' && (source === '/' || /^(?:\/etc|\/proc|\/sys|\/dev|\/boot|\/var\/run)(?:\/|$)/u.test(source))) {
+      fail(`${name} must not bind-mount sensitive host path ${source}`)
+    }
+  }
+
+  if (!applicationServices.has(name)) continue
+  const user = String(service?.user ?? '').trim().split(':')[0]
+  if (!user || user === '0' || user === 'root') fail(`${name}.user must explicitly select a non-root identity`)
+  const securityOpt = (service?.security_opt ?? []).map(value => String(value).toLowerCase())
+  if (!securityOpt.includes('no-new-privileges:true')) fail(`${name}.security_opt must include no-new-privileges:true`)
+  const dropped = (service?.cap_drop ?? []).map(value => String(value).toUpperCase())
+  if (!dropped.includes('ALL')) fail(`${name}.cap_drop must include ALL`)
+  if (immutableNodeServices.has(name) && service?.read_only !== true) fail(`${name}.read_only must equal true`)
+}
+
 for (const name of ['api', 'api-replica']) {
   const environment = rendered.services?.[name]?.environment ?? {}
   const expected = {
@@ -26,9 +72,10 @@ for (const name of ['api', 'api-replica']) {
   for (const key of ['ALERT_CHANNEL_SECRET_REF', 'OPS_ALERT_WEBHOOK_URL', 'OPS_ALERT_WEBHOOK_ALLOWED_HOSTS', 'OPS_ALERT_WEBHOOK_SECRET_FILE']) {
     if (String(environment[key] ?? '') !== '') fail(`${name}.${key} must be empty while alerts are disabled`)
   }
-  for (const key of ['API_AUTH_TOKENS', 'SESSION_ID_HASH_SECRET', 'WORKER_API_CREDENTIALS', 'ASSET_DISPLAY_URL_SIGNING_SECRET', 'ASSET_DISPLAY_URL_SIGNING_KEY_ID', 'DATABASE_URL', 'OPS_DATABASE_URL', 'MODEL_COST_ESTIMATE_VERSION']) {
+  for (const key of ['API_AUTH_TOKENS', 'SESSION_ID_HASH_SECRET', 'WORKER_API_CREDENTIALS', 'ASSET_DISPLAY_URL_SIGNING_SECRET', 'ASSET_DISPLAY_URL_SIGNING_KEY_ID', 'DATABASE_URL', 'OPS_DATABASE_URL', 'MODEL_COST_ESTIMATE_VERSION', 'OPENAI_APPS_CHALLENGE_TOKEN']) {
     if (!String(environment[key] ?? '').trim()) fail(`${name}.${key} must be configured`)
   }
+  if (/fixture|example|placeholder|<|>/iu.test(String(environment.OPENAI_APPS_CHALLENGE_TOKEN))) fail(`${name}.OPENAI_APPS_CHALLENGE_TOKEN must be an OpenAI-issued production value`)
   if (String(environment.ALLOW_WILDCARD_WORKSPACE_GRANT ?? '') !== 'false') fail(`${name}.ALLOW_WILDCARD_WORKSPACE_GRANT must equal false`)
   if (String(environment.OPS_LOCAL_SESSION_WORKSPACE_ID ?? '') !== '') fail(`${name}.OPS_LOCAL_SESSION_WORKSPACE_ID must be empty`)
   const serialized = JSON.stringify(environment)

@@ -28,11 +28,30 @@ export type ConnectorBeforeRequest = (context: Readonly<{
   signal?: AbortSignal
 }>) => void | Promise<void>
 
+/** Secret-free metadata observed after a real provider HTTP response. */
+export interface ProviderExchangeObservation {
+  platform: Platform
+  operation: Parameters<ConnectorBeforeRequest>[0]['operation']
+  workspaceId?: string
+  accountId?: string
+  method: string
+  origin: string
+  status: number
+  observedAt: string
+  providerRequestId?: string
+  errorCode?: NormalizedPlatformError['code']
+  errorMessage?: string
+  retryable?: boolean
+  /** Fetch does not expose negotiated HTTP/TLS protocol versions. */
+  transport: 'fetch'
+}
+
 export interface HttpPlatformConnectorOptions {
   config?: HttpConnectorConfig
   credentials?: CredentialProvider
   fetch?: FetchLike
   beforeRequest?: ConnectorBeforeRequest
+  onExchange?: (observation: Readonly<ProviderExchangeObservation>) => void
   /** Explicit test-only escape hatch for an in-memory provider. */
   allowTestCredentials?: boolean
   /** Explicit test-only escape hatch for test signer/mapping adapters. */
@@ -498,6 +517,23 @@ export class HttpPlatformConnector implements PlatformConnector {
       const text = await readBoundedResponseText(response, MAX_PLATFORM_RESPONSE_BYTES)
       let payload: unknown = undefined
       try { payload = text ? JSON.parse(text) : undefined } catch { payload = text }
+      if (this.options.onExchange) {
+        const providerId = readRequestId(providerRequestId(payload))
+        const observation: ProviderExchangeObservation = {
+          platform: this.platform, operation, method, origin: new URL(requestUrl).origin,
+          status: response.status, observedAt: new Date().toISOString(), transport: 'fetch',
+          ...(context?.workspaceId ? { workspaceId: context.workspaceId } : {}),
+          ...(context?.accountId ? { accountId: context.accountId } : {}),
+          ...(providerId ? { providerRequestId: providerId } : {}),
+          ...(!response.ok ? (() => {
+            const normalized = this.normalizeError({ status: response.status, message: `platform HTTP ${response.status}` })
+            return { errorCode: normalized.code, errorMessage: normalized.message, retryable: normalized.retryable }
+          })() : {}),
+        }
+        try { this.options.onExchange(Object.freeze(observation)) } catch {
+          throw { code: 'REMOTE_ERROR', message: 'provider exchange audit failed after response', retryable: false, unknown: true }
+        }
+      }
       if (!response.ok) {
         const errorPayload = isRecord(payload) && isRecord(payload.error) ? payload.error : payload
         const errorEnvelope = platformEnvelope(errorPayload)

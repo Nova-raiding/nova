@@ -76,6 +76,29 @@ const semanticEmbeddingRow = {
 }
 
 describe('knowledge persistence contract', () => {
+  it('discards vectors for superseded content before later approval', async () => {
+    const repository = new MemoryKnowledgeRepository()
+    const asset = await repository.createAsset({ workspaceId: 'ws-a', kind: 'material', name: '旧材料', content: 'old' })
+    const document = await repository.createDocument({ id: 'doc-vector', workspaceId: 'ws-a', knowledgeAssetId: asset.id, knowledgeType: 'material', contentHash: 'old', extractedText: 'old', approvalStatus: 'approved', rightsStatus: 'cleared' })
+    const [chunk] = await repository.replaceChunks('ws-a', document.id, [{ ordinal: 0, content: 'old' }])
+    await repository.updateAsset('ws-a', asset.id, { approvalStatus: 'approved', rightsStatus: 'cleared' })
+    const approved = (await repository.listDocuments('ws-a')).find(item => item.id === document.id)!
+    const vectorInput = { documentId: document.id, chunkId: chunk!.id, expectedDocumentRevision: approved.revision, expectedDocumentContentHash: approved.contentHash, expectedChunkContentHash: chunk!.contentHash, embedding: [1, 0], embeddingModel: 'model', embeddingVersion: '1', indexState: 'ready' as const }
+    const stored = await repository.upsertEmbedding('ws-a', vectorInput)
+    expect(stored).not.toHaveProperty('expectedDocumentRevision')
+    expect(stored).not.toHaveProperty('expectedDocumentContentHash')
+    expect(stored).not.toHaveProperty('expectedChunkContentHash')
+    await expect(repository.upsertEmbedding('ws-a', { ...vectorInput, expectedChunkContentHash: 'wrong' })).rejects.toThrow('KNOWLEDGE_EMBEDDING_STALE')
+    await repository.updateAsset('ws-a', asset.id, { rightsStatus: 'restricted' })
+    await expect(repository.upsertEmbedding('ws-a', vectorInput)).rejects.toThrow('KNOWLEDGE_EMBEDDING_STALE')
+    await repository.updateAsset('ws-a', asset.id, { rightsStatus: 'cleared' })
+    await expect(repository.upsertEmbedding('ws-a', vectorInput)).rejects.toThrow('KNOWLEDGE_EMBEDDING_STALE')
+    await repository.createDocument({ id: document.id, workspaceId: 'ws-a', knowledgeType: 'material', contentHash: 'new', extractedText: 'new' })
+    await repository.updateAsset('ws-a', asset.id, { approvalStatus: 'approved', rightsStatus: 'cleared' })
+    await expect(repository.upsertEmbedding('ws-a', vectorInput)).rejects.toThrow('KNOWLEDGE_EMBEDDING_STALE')
+    const proof = await repository.deleteDocument('ws-a', document.id)
+    expect(proof.embeddingsDeleted).toBe(0)
+  })
   it('binds an Excel-derived asset, indexes chunks, filters unapproved content, rebuilds and records deletion', async () => {
     const repository = new MemoryKnowledgeRepository()
     const asset = await repository.createAsset({ workspaceId: 'ws-a', kind: 'product_facts', name: 'Excel 商品事实', content: { title: '轻薄外套' }, productId: 'product-a', approvalStatus: 'approved', rightsStatus: 'cleared' })
@@ -83,7 +106,9 @@ describe('knowledge persistence contract', () => {
     expect(binding.bindingType).toBe('spreadsheet_facts')
     const document = await repository.createDocument({ workspaceId: 'ws-a', knowledgeAssetId: asset.id, productId: 'product-a', skuId: 'sku-blue-m', knowledgeType: 'product_facts', contentHash: 'hash-a', extractedText: '锦纶 88%，蓝色 M', approvalStatus: 'approved', rightsStatus: 'cleared' })
     const [chunk] = await repository.replaceChunks('ws-a', document.id, [{ ordinal: 0, content: '锦纶 88%，蓝色 M' }])
-    await repository.upsertEmbedding('ws-a', { documentId: document.id, chunkId: chunk!.id, embedding: [1, 0], embeddingModel: 'test', embeddingVersion: '1', indexState: 'ready' })
+    await repository.updateAsset('ws-a', asset.id, { approvalStatus: 'approved', rightsStatus: 'cleared' })
+    const approved = (await repository.listDocuments('ws-a')).find(item => item.id === document.id)!
+    await repository.upsertEmbedding('ws-a', { documentId: document.id, chunkId: chunk!.id, expectedDocumentRevision: approved.revision, expectedDocumentContentHash: approved.contentHash, expectedChunkContentHash: chunk!.contentHash, embedding: [1, 0], embeddingModel: 'test', embeddingVersion: '1', indexState: 'ready' })
     await repository.transitionIndexState('ws-a', document.id, 'ready')
     expect((await repository.search({ workspaceId: 'ws-a', query: '蓝色', productId: 'product-a' }))[0]?.document.skuId).toBe('sku-blue-m')
     expect(await repository.search({ workspaceId: 'ws-b', query: '蓝色' })).toEqual([])

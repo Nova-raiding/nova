@@ -4,7 +4,8 @@ import { resolve, sep } from 'node:path'
 
 export const REQUIRED_RELAY_MODALITIES = ['text', 'image', 'image_edit', 'ocr', 'video'] as const
 type Modality = typeof REQUIRED_RELAY_MODALITIES[number]
-type RelayResult = { modality?: Modality; state?: string; endpoint?: string; model?: string; providerRequestId?: string; providerJobId?: string; usageObserved?: boolean; costObserved?: boolean; costSource?: string; costCny?: number; pricingVersion?: string; pricingGroup?: string; evidence_ref?: string }
+type RelayUsage = { inputTokens?: number; outputTokens?: number; totalTokens?: number; billingUnits?: number; durationSeconds?: number }
+type RelayResult = { modality?: Modality; state?: string; endpoint?: string; model?: string; providerRequestId?: string; providerJobId?: string; usageObserved?: boolean; usage?: RelayUsage; usageProviderRequestId?: string; costObserved?: boolean; costSource?: string; costCny?: number; pricingVersion?: string; pricingGroup?: string; evidence_ref?: string }
 type RelayEvidence = { schema_version?: string; release_id?: string; generated_at?: string; expires_at?: string; environment?: string; simulated?: boolean; relay?: string; results?: RelayResult[] }
 
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
@@ -37,8 +38,8 @@ function validateArtifact(reference: string | undefined, root: string, label: st
       if (artifactValue.release_id !== expected.releaseId) return [`${label} release_id must match the evidence release_id`]
       if (artifactValue.modality !== expected.result?.modality) return [`${label} modality must match ${expected.result?.modality}`]
       const receipt = artifactValue.result
-      if (!receipt || typeof receipt !== 'object' || receipt.providerRequestId !== expected.result?.providerRequestId || receipt.model !== expected.result?.model || receipt.state !== expected.result?.state) {
-        return [`${label} receipt must match the summarized model, state and provider request id`]
+      if (!receipt || typeof receipt !== 'object' || ['providerRequestId', 'providerJobId', 'model', 'state', 'endpoint', 'usageObserved', 'usageProviderRequestId', 'costObserved', 'costCny', 'costSource', 'pricingVersion', 'pricingGroup'].some(field => receipt[field] !== expected.result?.[field as keyof RelayResult]) || JSON.stringify(receipt.usage) !== JSON.stringify(expected.result?.usage)) {
+        return [`${label} receipt must match the summarized request, model, state, endpoint, usage and cost`]
       }
     }
   } catch { return [`${label} referenced artifact does not exist or cannot be read`] }
@@ -56,10 +57,17 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
   if (options.requireProduction && value.simulated !== false) errors.push('simulated must be false')
   if (!isIsoInstant(value.generated_at)) errors.push('generated_at must be an ISO instant')
   if (options.requireProduction) {
+    if (isIsoInstant(value.generated_at)) {
+      const generatedAt = Date.parse(value.generated_at)
+      const now = (options.now ?? new Date()).getTime()
+      if (generatedAt > now + 300_000) errors.push('generated_at must not be in the future')
+      if (now - generatedAt > 24 * 3_600_000) errors.push('relay evidence is stale')
+    }
     if (!isIsoInstant(value.expires_at)) errors.push('expires_at must be an ISO instant')
     else {
       const expiresAt = Date.parse(value.expires_at)
       if (isIsoInstant(value.generated_at) && expiresAt <= Date.parse(value.generated_at)) errors.push('expires_at must be after generated_at')
+      if (isIsoInstant(value.generated_at) && expiresAt - Date.parse(value.generated_at) > 24 * 3_600_000) errors.push('relay evidence validity must not exceed 24 hours')
       if (expiresAt <= (options.now ?? new Date()).getTime()) errors.push('relay evidence is expired')
     }
   }
@@ -87,11 +95,21 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
     if (!result) { errors.push(`${modality} result is required`); continue }
     if (result.state !== 'ready') errors.push(`${modality} state must be ready`)
     if (!nonEmpty(result.endpoint)) errors.push(`${modality}.endpoint is required`)
-    else if (!result.endpoint.startsWith('/') || result.endpoint.includes('\\') || /^https?:\/\//iu.test(result.endpoint) || /[\u0000-\u001f\u007f]/u.test(result.endpoint)) errors.push(`${modality}.endpoint must be a safe relative path`)
+    else if (!result.endpoint.startsWith('/') || result.endpoint.startsWith('//') || result.endpoint.includes('\\') || result.endpoint.includes('?') || result.endpoint.includes('#') || result.endpoint.split('/').some(segment => segment === '.' || segment === '..') || /[\u0000-\u001f\u007f]/u.test(result.endpoint)) errors.push(`${modality}.endpoint must be a safe relative path`)
     if (!nonEmpty(result.model)) errors.push(`${modality}.model is required`)
     if (!nonEmpty(result.providerRequestId)) errors.push(`${modality}.providerRequestId is required`)
     if (nonEmpty(result.providerJobId) && result.providerJobId === result.providerRequestId) errors.push(`${modality}.providerRequestId must not reuse providerJobId`)
     if (result.usageObserved !== true) errors.push(`${modality}.usageObserved must be true`)
+    const usage = result.usage
+    const numericUsage = usage && Object.entries(usage).filter(([, amount]) => amount !== undefined)
+    if (!usage || !numericUsage?.length || numericUsage.some(([, amount]) => typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0)) errors.push(`${modality}.usage must contain finite non-negative numeric units`)
+    else {
+      if ((modality === 'text' || modality === 'ocr') && usage.inputTokens === undefined && usage.outputTokens === undefined && usage.totalTokens === undefined) errors.push(`${modality}.usage must contain token units`)
+      if ((modality === 'image' || modality === 'image_edit') && (!Number.isSafeInteger(usage.billingUnits) || (usage.billingUnits ?? 0) <= 0)) errors.push(`${modality}.usage must contain positive integer billingUnits`)
+      if (modality === 'video' && (typeof usage.durationSeconds !== 'number' || usage.durationSeconds <= 0)) errors.push(`${modality}.usage must contain positive durationSeconds`)
+      if (usage.totalTokens !== undefined && usage.inputTokens !== undefined && usage.outputTokens !== undefined && usage.totalTokens !== usage.inputTokens + usage.outputTokens) errors.push(`${modality}.usage token totals must be consistent`)
+    }
+    if (!nonEmpty(result.usageProviderRequestId) || result.usageProviderRequestId !== result.providerRequestId) errors.push(`${modality}.usageProviderRequestId must match providerRequestId`)
     if (result.costObserved !== true) errors.push(`${modality}.costObserved must be true`)
     if (typeof result.costCny !== 'number' || !Number.isFinite(result.costCny) || result.costCny < 0) errors.push(`${modality}.costCny must be a non-negative observed number`)
     if (options.requireProduction && result.costSource !== 'provider_receipt' && result.costSource !== 'relay_pricing_snapshot') errors.push(`${modality}.costSource must identify provider_receipt or relay_pricing_snapshot`)

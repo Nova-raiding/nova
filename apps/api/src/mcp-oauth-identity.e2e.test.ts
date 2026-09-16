@@ -66,6 +66,16 @@ describe('canonical password identity MCP OAuth', () => {
     expect(await consentPage.text()).toContain('登录 Store Nova')
     const unknownClient = new URL(crossSiteCandidate); unknownClient.searchParams.set('client_id', 'unknown-client')
     expect((await fetch(unknownClient, { headers: { cookie: passwordCookie }, redirect: 'manual' })).status).toBe(400)
+    for (const inheritedName of ['constructor', 'toString', '__proto__']) {
+      const inheritedAuthorize = new URL(authorize)
+      inheritedAuthorize.searchParams.set('client_id', inheritedName)
+      const rejectedAuthorize = await fetch(inheritedAuthorize, { redirect: 'manual' })
+      expect(rejectedAuthorize.status, inheritedName).toBe(400)
+      expect(rejectedAuthorize.headers.get('location')).toBeNull()
+      const rejectedRefresh = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'refresh_token', client_id: inheritedName, refresh_token: 'invalid-refresh', resource }) })
+      expect(rejectedRefresh.status, inheritedName).toBe(400)
+      await expect(rejectedRefresh.json()).resolves.toEqual({ error: 'invalid_request' })
+    }
 
     const shortVerifier = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', client_id: clientId, redirect_uri: callback, code, code_verifier: 'a'.repeat(42), resource }) })
     expect(shortVerifier.status).toBe(400)
@@ -245,6 +255,27 @@ describe('canonical password identity MCP OAuth', () => {
     const response = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: 'Bearer legacy-token', 'x-workspace-id': 'ws_legacy', 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'initialize', params: {} }) })
     expect(response.status).toBe(503)
     await expect(response.json()).resolves.toMatchObject({ error: { code: 'MCP_OAUTH_NOT_CONFIGURED' } })
+  })
+
+  it('does not start an OAuth lifecycle in production without a canonical public origin', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('MCP_OAUTH_REQUIRED', 'true')
+    vi.stubEnv('PUBLIC_APP_BASE_URL', '')
+    vi.stubEnv('MCP_OAUTH_ISSUER', '')
+    vi.stubEnv('MCP_OAUTH_AUTHORIZATION_ENDPOINT', '')
+    vi.stubEnv('MCP_OAUTH_TOKEN_ENDPOINT', '')
+    vi.stubEnv('MCP_OAUTH_CLIENTS', JSON.stringify({ [clientId]: ['https://chatgpt.com/oauth/callback'] }))
+    const base = await start()
+    const headers = { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'attacker.example' }
+    const authorize = new URL(`${base}/oauth/authorize`)
+    for (const [key, value] of Object.entries({ response_type: 'code', client_id: clientId, redirect_uri: 'https://chatgpt.com/oauth/callback', state: 'state', code_challenge: challenge, code_challenge_method: 'S256', scope: 'merchant', resource: 'https://attacker.example/mcp' })) authorize.searchParams.set(key, value)
+    const rejectedAuthorize = await fetch(authorize, { headers, redirect: 'manual' })
+    expect(rejectedAuthorize.status).toBe(503)
+    await expect(rejectedAuthorize.json()).resolves.toEqual({ error: 'temporarily_unavailable' })
+
+    const rejectedToken = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { ...headers, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'refresh_token', client_id: clientId, refresh_token: 'untrusted', resource: 'https://attacker.example/mcp' }) })
+    expect(rejectedToken.status).toBe(503)
+    await expect(rejectedToken.json()).resolves.toEqual({ error: 'temporarily_unavailable' })
   })
 
   it('makes production identity readiness depend on self-hosted MCP OAuth instead of static bearer grants', () => {

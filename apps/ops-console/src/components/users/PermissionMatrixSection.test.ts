@@ -34,4 +34,10 @@ describe("permission matrix filtering", () => {
     expect(source).not.toContain("平台台");
     expect(source).not.toContain("工作区台");
   });
+
+  it("requires the backend role catalog before exposing role assignment choices", () => {
+    expect(source).toContain("assignable_roles: string[]");
+    expect(source).toContain("!Array.isArray(value.assignable_roles)");
+    expect(source).toContain("onLoaded?.(value)");
+  });
 });

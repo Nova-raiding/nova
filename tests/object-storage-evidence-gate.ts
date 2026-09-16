@@ -101,7 +101,12 @@ export function validateObjectStorageEvidence(document: unknown, options: { expe
     if (retention.policy_id !== value.lifecycle_policy_id) errors.push('retention_evidence.policy_id must match lifecycle_policy_id')
     const retentionDays = retention.retention_days
     if (!Number.isSafeInteger(retentionDays) || typeof retentionDays !== 'number' || retentionDays <= 0) errors.push('retention_evidence.retention_days must be a positive integer')
-    if (!text(retention.verified_at) || Number.isNaN(Date.parse(retention.verified_at))) errors.push('retention_evidence.verified_at must be an ISO instant')
+    if (!iso(retention.verified_at)) errors.push('retention_evidence.verified_at must be a strict UTC ISO timestamp')
+    else {
+      const verifiedAt = Date.parse(retention.verified_at!)
+      if (Number.isFinite(attestedAt) && verifiedAt > attestedAt) errors.push('retention_evidence.verified_at must not be after attested_at')
+      if (Number.isFinite(generatedAt) && verifiedAt < generatedAt) errors.push('retention_evidence.verified_at must not be before generated_at')
+    }
     if (!artifact.test(retention.evidence_ref ?? '')) errors.push('retention_evidence.evidence_ref must be an immutable production artifact')
     else if (options.artifactRoot) errors.push(...validateArtifact(retention.evidence_ref, options.artifactRoot, 'retention_evidence.evidence_ref'))
   }
@@ -109,7 +114,12 @@ export function validateObjectStorageEvidence(document: unknown, options: { expe
   if (!restore || typeof restore !== 'object') errors.push('restore_evidence is required')
   else {
     if (restore.target_isolated !== true) errors.push('restore_evidence.target_isolated must be true')
-    if (!text(restore.restored_at) || Number.isNaN(Date.parse(restore.restored_at))) errors.push('restore_evidence.restored_at must be an ISO instant')
+    if (!iso(restore.restored_at)) errors.push('restore_evidence.restored_at must be a strict UTC ISO timestamp')
+    else {
+      const restoredAt = Date.parse(restore.restored_at!)
+      if (Number.isFinite(attestedAt) && restoredAt > attestedAt) errors.push('restore_evidence.restored_at must not be after attested_at')
+      if (Number.isFinite(generatedAt) && restoredAt < generatedAt) errors.push('restore_evidence.restored_at must not be before generated_at')
+    }
     if (!/^[a-f0-9]{64}$/u.test(restore.backup_checksum_sha256 ?? '')) errors.push('restore_evidence.backup_checksum_sha256 must be a SHA-256 hash')
     if (!artifact.test(restore.evidence_ref ?? '')) errors.push('restore_evidence.evidence_ref must be an immutable production artifact')
     else if (options.artifactRoot) errors.push(...validateArtifact(restore.evidence_ref, options.artifactRoot, 'restore_evidence.evidence_ref'))

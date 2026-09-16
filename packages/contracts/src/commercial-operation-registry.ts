@@ -225,6 +225,7 @@ export const MCP_POINT_CHARGED_DISABLED_METHODS = [
 
 export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
   'merchant.first_value',
+  'content.draft.generate',
   'brand.extract',
   'creative.brief',
   'creative.preview',

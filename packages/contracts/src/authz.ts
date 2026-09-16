@@ -404,7 +404,7 @@ const write = (capability: CapabilityId, scope: AuthorizationScopeType, dataClas
 
 // Every current method is named in exactly one group. Prefix or wildcard fallbacks are intentionally forbidden.
 const POLICY_GROUPS: readonly PolicyGroup[] = [
-  write('merchant.onboarding.execute', 'workspace', 'customer_metadata', ['merchant.start', 'merchant.first_value', 'workspace.bootstrap', 'workspace.interactive.confirm']),
+  write('merchant.onboarding.execute', 'workspace', 'customer_metadata', ['merchant.start', 'merchant.first_value', 'workspace.bootstrap', 'workspace.content_setup.confirm', 'workspace.interactive.confirm']),
   read('workspace.summary.read', 'workspace', 'customer_metadata', ['onboarding.status', 'workspace.health', 'workspace.invitations.list', 'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get']),
   write('workspace.settings.update', 'workspace', 'customer_metadata', ['workspace.commercial.update']),
   write('workspace.status.update', 'workspace', 'customer_metadata', ['workspace.deactivate', 'workspace.activate']),
@@ -523,7 +523,7 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   write('rule.update', 'workspace', 'customer_content', ['knowledge.rule.create', 'knowledge.rule.update']),
   write('customer.content.update', 'brand', 'customer_content', ['catalog.product.disable', 'catalog.product.enable']),
   write('customer.content.update', 'account', 'customer_content', ['brand-unit.bind-store', 'brand-unit.listing.create']),
-  write('customer.content.update', 'brand', 'customer_content', ['brand-unit.product.create', 'brand-unit.access.grant', 'catalog.product.update', 'catalog.image.retry', 'catalog.image.select', 'catalog.image.review', 'task.answer', 'task.resume', 'task.select_direction', 'task.plan.confirm', 'content.generate', 'content.review', 'content.review.decide', 'content.modify', 'content.restore', 'content.visual.select']),
+  write('customer.content.update', 'brand', 'customer_content', ['brand-unit.product.create', 'brand-unit.access.grant', 'catalog.product.update', 'catalog.image.retry', 'catalog.image.select', 'catalog.image.review', 'task.answer', 'task.resume', 'task.select_direction', 'task.plan.confirm', 'content.generate', 'content.draft.generate', 'content.review', 'content.review.decide', 'content.modify', 'content.restore', 'content.visual.select']),
   write('customer.publish.execute', 'workspace', 'customer_content', ['content.export', 'publish.batch.prepare', 'publish.batch.pause', 'publish.batch.resume', 'publish.batch.retry_failed', 'delivery.bundle.verify'], 'allow_and_deny'),
   write('customer.publish.execute', 'brand', 'customer_content', ['content.approve', 'publish.prepare'], 'allow_and_deny'),
   write('customer.publish.execute', 'brand', 'customer_content', ['publish.confirm'], 'allow_and_deny', ['confirmation', 'idempotency']),

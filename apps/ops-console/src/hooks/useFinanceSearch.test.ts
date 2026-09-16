@@ -24,6 +24,17 @@ describe("finance search hook helpers", () => {
     expect(requests.isCurrent(second.id)).toBe(false);
   });
 
+  it("revokes a pending finance response at a permission boundary", () => {
+    const requests = new LatestFinanceRequest();
+    const authorizedRequest = requests.begin();
+
+    // Mirrors the hook's fail-closed path when billing.platform.read disappears.
+    requests.cancel();
+
+    expect(authorizedRequest.signal.aborted).toBe(true);
+    expect(requests.isCurrent(authorizedRequest.id)).toBe(false);
+  });
+
   it("preserves actionable API errors and supplies a safe fallback", () => {
     expect(financeErrorMessage(new Error("params.limit must be a non-empty string"), "fallback"))
       .toBe("params.limit must be a non-empty string");

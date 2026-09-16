@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { chmodSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, realpathSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -36,9 +36,7 @@ describe('deployment operation scripts', () => {
     expect(preflight).toContain('--expected-bucket "$ASSET_STORAGE_BUCKET"')
     expect(preflight).toContain('--expected-endpoint "$ASSET_STORAGE_ENDPOINT"')
     expect(preflight).toContain('--artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT"')
-    expect(preflight).toContain('--env-file .env')
-    expect(preflight).toContain('-f infra/local/docker-compose.ecs-oss-cutover.yml')
-    expect(preflight).toContain('-f infra/local/docker-compose.ecs-production-migration.yml')
+    expect(preflight).toContain('infra/scripts/render-ecs-production-compose.sh')
     expect(preflight).toContain('validate-ecs-production-compose.mjs')
     expect(preflight).toContain(': "${PILOT_RELEASE_CONFIG_SHA256:?PILOT_RELEASE_CONFIG_SHA256 is required}"')
     expect(preflight).toContain(': "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"')
@@ -47,8 +45,26 @@ describe('deployment operation scripts', () => {
     expect(readFileSync('infra/local/docker-compose.ecs-pilot-release.yml', 'utf8')).toContain('${PILOT_RELEASE_ID:?PILOT_RELEASE_ID is required}')
   })
 
+  it('uses one ordered manifest for the final ECS production Compose render', () => {
+    const layers = readFileSync('infra/local/ecs-production-compose.layers', 'utf8').trim().split('\n')
+    expect(layers).toEqual([
+      'infra/local/docker-compose.yml',
+      'infra/local/docker-compose.ecs-pilot.yml',
+      'infra/local/docker-compose.ecs-oss-cutover.yml',
+      'infra/local/docker-compose.ecs-production-migration.yml',
+      'infra/local/docker-compose.ecs-pilot-release.yml',
+    ])
+    const renderer = readFileSync('infra/scripts/render-ecs-production-compose.sh', 'utf8')
+    expect(renderer).toContain('ECS_PRODUCTION_COMPOSE_LAYERS_FILE override is forbidden')
+    expect(renderer).toContain('development auth-hardening overlay is forbidden')
+    expect(renderer).toContain("release identity layer must be last")
+    expect(renderer).toContain('docker compose --env-file .env "$@" config --format json')
+  })
+
   it('binds ECS object-storage evidence to the exact release, config and trust anchor', () => {
     const preflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
+    expect(preflight).toContain('ASSET_STORAGE_CREDENTIAL_PROVIDER=aliyun_ecs_ram_role is required')
+    expect(preflight).not.toContain('ASSET_STORAGE_CREDENTIAL_MODE')
     expect(preflight).toContain('production_config_sha256=$(shasum -a 256 "$config_path"')
     for (const binding of [
       '--release-git-sha "$release_git_sha"',
@@ -156,11 +172,44 @@ describe('deployment operation scripts', () => {
     expect(() => run('infra/scripts/run-production-canary.sh', [], {
       RELEASE_ID: 'release-1', PLATFORM_CANARY_BASE_EVIDENCE: '/not-found', PLATFORM_CANARY_OUTPUT: '/tmp/out.json',
       PLATFORM_CANARY_MODE: 'real', PLATFORM_CANARY_CONFIRM: 'true', PAYMENT_MODE: 'provider',
+      PLATFORM_CANARY_ALLOW_WRITE: 'true', PLATFORM_CANARY_CONFIRM_WRITES: 'true',
+      PLATFORM_CANARY_ALLOW_REVOKE: 'true', PLATFORM_CANARY_CONFIRM_REVOKE: 'true',
       PAYMENT_CALLBACK_BASE_URL: 'https://merchant.example.com', PAYMENT_CALLBACK_SECRET_REF: 'vault://callback',
       PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.example.com/query', PAYMENT_PROVIDER_REFUND_API_URL: 'http://payments.example.com/refund',
     })).toThrow(/HTTPS|base evidence/)
+    expect(() => run('infra/scripts/run-production-canary.sh', [], {
+      RELEASE_ID: 'release-1', PLATFORM_CANARY_BASE_EVIDENCE: 'doc/todo/platform/platform-capability-evidence.example.json',
+      PLATFORM_CANARY_OUTPUT: join(realpathSync(tmpdir()), 'merchant-duplicate-platform-candidate.json'), PLATFORM_CANARY_PLATFORMS: 'jd,jd',
+      PLATFORM_CANARY_MODE: 'real', PLATFORM_CANARY_CONFIRM: 'true', PAYMENT_MODE: 'provider',
+      PLATFORM_CANARY_ALLOW_WRITE: 'true', PLATFORM_CANARY_CONFIRM_WRITES: 'true',
+      PLATFORM_CANARY_ALLOW_REVOKE: 'true', PLATFORM_CANARY_CONFIRM_REVOKE: 'true',
+      PAYMENT_CALLBACK_BASE_URL: 'https://merchant.example.com', PAYMENT_CALLBACK_SECRET_REF: 'vault://callback',
+      PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.example.com/query',
+      PAYMENT_PROVIDER_REFUND_QUERY_API_URL: 'https://payments.example.com/refund-query',
+      PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.example.com/refund',
+      PRODUCTION_API_BASE_URL: 'https://merchant.example.com',
+    })).toThrow(/duplicate platform: jd/)
+    expect(() => run('infra/scripts/run-production-canary.sh', [], {
+      RELEASE_ID: 'release-1', PLATFORM_CANARY_BASE_EVIDENCE: 'doc/todo/platform/platform-capability-evidence.example.json',
+      PLATFORM_CANARY_OUTPUT: join(realpathSync(tmpdir()), 'merchant-admission-candidate.json'), PLATFORM_CANARY_PLATFORMS: 'jd',
+      PLATFORM_CANARY_MODE: 'real', PLATFORM_CANARY_CONFIRM: 'true', PAYMENT_MODE: 'provider',
+      PLATFORM_CANARY_ALLOW_WRITE: 'true', PLATFORM_CANARY_CONFIRM_WRITES: 'true',
+      PLATFORM_CANARY_ALLOW_REVOKE: 'true', PLATFORM_CANARY_CONFIRM_REVOKE: 'true',
+      PAYMENT_CALLBACK_BASE_URL: 'https://merchant.example.com', PAYMENT_CALLBACK_SECRET_REF: 'vault://callback',
+      PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.example.com/query',
+      PAYMENT_PROVIDER_REFUND_QUERY_API_URL: 'https://payments.example.com/refund-query',
+      PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.example.com/refund',
+      PRODUCTION_API_BASE_URL: 'https://merchant.example.com',
+    })).toThrow(/production canary admission blocked:.*no provider calls were made/)
     expect(script).not.toMatch(/\beval\s+["']/)
     expect(script).toContain('printenv "$1"')
+    expect(script).toContain('PLATFORM_CANARY_${prefix}_EXPECTED_REMOTE_ID')
+    expect(script).toContain('PLATFORM_CANARY_EXPECTED_REMOTE_ID="$expected_remote_id"')
+    expect(script).toContain('PLATFORM_CANARY_CONFIRM_WRITES')
+    expect(script).toContain('PLATFORM_CANARY_CONFIRM_REVOKE')
+    expect(script).toContain('PLATFORM_CANARY_TRANSCRIPT_OUTPUT="$transcript_output"')
+    expect(script.indexOf('production canary admission blocked')).toBeLessThan(script.indexOf('npx --no-install tsx tests/platform-canary.ts'))
+    expect(script).toMatch(/capability-evidence-gate\.ts --file "\$current" --release-id "\$RELEASE_ID" --require-canary[\s\S]*# The runner produces an unsigned candidate/)
     expect(execFileSync('sh', ['-n', 'infra/scripts/run-production-canary.sh'], { encoding: 'utf8' })).toBe('')
   })
 
@@ -294,7 +343,7 @@ describe('deployment operation scripts', () => {
       'pinduoduo_auth_enabled: true', 'pinduoduo_read_enabled: true', 'pinduoduo_write_enabled: true',
       'xiaohongshu_auth_enabled: true', 'xiaohongshu_read_enabled: true', 'xiaohongshu_write_enabled: true',
       'douyin_auth_enabled: true', 'douyin_read_enabled: true', 'douyin_write_enabled: true',
-      'point_in_time_recovery_enabled: true', 'database_pooler_enabled: true', 'database_max_backend_connections: 300', 'database_connection_utilization_alert_percent: 80', 'secret_provider: vault', 'worker_api_credentials_ref: vault://worker-api-credentials', ...['sync', 'generation', 'publish', 'reconcile', 'automation'].flatMap(role => [`worker_${role}_api_token_ref: vault://worker-${role}-token`, `worker_${role}_api_signing_secret_ref: vault://worker-${role}-signing`]), 'payment_mode: provider', 'payment_provider_adapters: alipay,wechat', 'payment_checkout_base_url: https://payments.example.com/checkout', 'payment_provider_checkout_api_url: https://payments.example.com/v1/checkout', 'payment_provider_query_api_url: https://payments.example.com/v1/query', 'payment_provider_refund_query_api_url: https://payments.example.com/v1/refund/query', 'payment_provider_refund_api_url: https://payments.example.com/v1/refund', 'payment_provider_api_key_ref: vault://merchant-payment/provider-api-key', 'payment_provider_merchant_id: merchant-example', 'payment_callback_base_url: https://merchant.example.com/v1', 'payment_callback_secret_ref: vault://merchant-payment-callback', 'payment_reconciliation_enabled: true', 'payment_refund_enabled: true', 'model_relay_base_url: https://relay.example.com', 'model_relay_api_key_ref: vault://merchant-model/relay-api-key', 'text_model: merchant-text-v1', 'image_model: merchant-image-v1', 'image_edit_model: merchant-image-edit-v1', 'ocr_model: merchant-ocr-v1', 'video_model: merchant-video-v1', 'approved_requests_per_minute: "100"', 'approved_tokens_per_minute: "100000"', 'maximum_task_cost_cny: "0.50"', 'platform_rule_sync_manifest_url: https://rules.example.com/platform-rules/v1/manifest.json', 'platform_rule_sync_signing_secret_ref: vault://merchant-rules/manifest-signing-secret', 'platform_rule_sync_interval_hours: "24"',
+      'point_in_time_recovery_enabled: true', 'database_pooler_enabled: true', 'database_max_backend_connections: 300', 'database_connection_utilization_alert_percent: 80', 'secret_provider: vault', 'worker_api_credentials_ref: vault://worker-api-credentials', ...['sync', 'generation', 'publish', 'reconcile', 'automation'].flatMap(role => [`worker_${role}_api_token_ref: vault://worker-${role}-token`, `worker_${role}_api_signing_secret_ref: vault://worker-${role}-signing`]), 'payment_mode: provider', 'payment_provider_adapters: alipay,wechat', 'payment_checkout_base_url: https://payments.example.com/checkout', 'payment_provider_checkout_api_url: https://payments.example.com/v1/checkout', 'payment_provider_query_api_url: https://payments.example.com/v1/query', 'payment_provider_refund_query_api_url: https://payments.example.com/v1/refund/query', 'payment_provider_refund_api_url: https://payments.example.com/v1/refund', 'payment_provider_api_key_ref: vault://merchant-payment/provider-api-key', 'payment_provider_merchant_id: merchant-example', 'payment_callback_base_url: https://merchant.example.com/v1', 'payment_callback_secret_ref: vault://merchant-payment-callback', 'payment_reconciliation_enabled: true', 'payment_refund_enabled: true', 'model_relay_base_url: https://relay.example.com', 'model_relay_api_key_ref: vault://merchant-model/relay-api-key', 'text_model: merchant-text-v1', 'image_model: merchant-image-v1', 'image_edit_model: merchant-image-edit-v1', 'ocr_model: merchant-ocr-v1', 'video_model: merchant-video-v1', 'embedding_model: merchant-embedding-v1', 'embedding_dimensions: 1536', 'embedding_max_request_cny: 0.10', 'knowledge_vector_index_enabled: false', 'approved_requests_per_minute: "100"', 'approved_tokens_per_minute: "100000"', 'maximum_task_cost_cny: "0.50"', 'platform_rule_sync_manifest_url: https://rules.example.com/platform-rules/v1/manifest.json', 'platform_rule_sync_signing_secret_ref: vault://merchant-rules/manifest-signing-secret', 'platform_rule_sync_interval_hours: "24"',
       'asset_scanner_mode: clamav_worker', 'allow_local_asset_scan_fixture: false', 'asset_scanner_api_token_ref: vault://merchant-scanner/api-token', 'asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/workspace-signing', 'asset_scan_receipt_key_id: scanner-production-2026-08', 'asset_scan_receipt_private_key_ref: vault://merchant-scanner/receipt-private-key', 'asset_scan_trusted_public_keys_ref: vault://merchant-scanner/trusted-public-keys', 'asset_scan_policy_version: scan-policy-2026-08-30', `clamav_image_digest: ${imageDigests.clamav}`, 'clamav_signature_max_age_minutes: 1440', 'clamav_max_file_bytes: 52428800',
       'object_storage_bucket: merchant-assets', 'object_storage_region: cn', 'object_storage_endpoint: https://s3.example.com', 'object_storage_credential_provider: aliyun_ack_rrsa', 'object_storage_sse_mode: AES256', 'asset_display_base_url: https://merchant.example.com', 'asset_display_url_signing_secret_ref: vault://merchant-assets/display-url-signing-secret', 'merchant_ui_api_token_ref: vault://merchant-ui/api-token', 'merchant_ui_workspace_id_ref: vault://merchant-ui/workspace-id', 'object_storage_versioning: true', 'lifecycle_policy_ref: vault://asset-lifecycle-policy', 'asset_quarantine_retention_days: 7', 'asset_clean_retention_days: 90', 'deletion_request_grace_days: 7', 'backup_retention_days: 30', 'alert_notifications_enabled: false', 'alert_channel_secret_ref: vault://merchant-alert-channel',
     ].join('\n'))
@@ -307,7 +356,7 @@ describe('deployment operation scripts', () => {
     }))
     writeFileSync(relayEvidence, JSON.stringify({
       schema_version: '1', release_id: 'release-1', generated_at: '2026-08-23T06:00:00Z', environment: 'production', simulated: false, relay: 'https://relay.example.com',
-      results: ['text', 'image', 'image_edit', 'ocr', 'video'].map(modality => ({ modality, state: 'ready', endpoint: '/probe', model: `merchant-${modality}-v1`, providerRequestId: `req-${modality}`, usageObserved: true, costObserved: true, costCny: 0.01 })),
+      results: ['text', 'image', 'image_edit', 'ocr', 'video'].map(modality => ({ modality, state: 'ready', endpoint: '/probe', model: `merchant-${modality}-v1`, providerRequestId: `req-${modality}`, usageObserved: true, usage: modality === 'text' || modality === 'ocr' ? { totalTokens: 1 } : modality === 'video' ? { durationSeconds: 5 } : { billingUnits: 1 }, usageProviderRequestId: `req-${modality}`, costObserved: true, costCny: 0.01 })),
     }))
     writeFileSync(hostEvidence, JSON.stringify({
       schema_version: '2', release_id: 'release-1', environment: 'preproduction', generated_at: '2026-08-23T06:00:00Z',
@@ -328,7 +377,7 @@ describe('deployment operation scripts', () => {
     writeFileSync(restoreEvidence, JSON.stringify(restoreDocument))
     const scannerRuntime = {
       MERCHANT_BEARER_HOSTNAME: 'merchant.example.com', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
-      MODEL_RELAY_BASE_URL: 'https://relay.example.com', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example.com', AI_MODEL: 'merchant-text-v1', IMAGE_MODEL: 'merchant-image-v1', IMAGE_EDIT_MODEL: 'merchant-image-edit-v1', OCR_MODEL: 'merchant-ocr-v1', VIDEO_MODEL: 'merchant-video-v1', MODEL_RPM_LIMIT: '100', MODEL_TPM_LIMIT: '100000', MODEL_MAX_TASK_COST_CNY: '0.50',
+      MODEL_RELAY_BASE_URL: 'https://relay.example.com', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example.com', AI_MODEL: 'merchant-text-v1', IMAGE_MODEL: 'merchant-image-v1', IMAGE_EDIT_MODEL: 'merchant-image-edit-v1', OCR_MODEL: 'merchant-ocr-v1', VIDEO_MODEL: 'merchant-video-v1', EMBEDDING_MODEL: 'merchant-embedding-v1', EMBEDDING_DIMENSIONS: '1536', MODEL_EMBEDDING_MAX_REQUEST_CNY: '0.10', KNOWLEDGE_VECTOR_INDEX_ENABLED: 'false', MODEL_RPM_LIMIT: '100', MODEL_TPM_LIMIT: '100000', MODEL_MAX_TASK_COST_CNY: '0.50',
       ASSET_STORAGE_BUCKET: 'merchant-assets', ASSET_STORAGE_REGION: 'cn', ASSET_STORAGE_ENDPOINT: 'https://s3.example.com', ASSET_STORAGE_CREDENTIAL_PROVIDER: 'aliyun_ack_rrsa', OBJECT_STORAGE_VERSIONING: 'true', PUBLIC_ASSET_BASE_URL: 'https://merchant.example.com', PUBLIC_OAUTH_REDIRECT_URI: 'https://merchant.example.com/v1/oauth/callback/{platform}',
       ASSET_QUARANTINE_RETENTION_DAYS: '7', ASSET_CLEAN_RETENTION_DAYS: '90', DELETION_REQUEST_GRACE_DAYS: '7', BACKUP_RETENTION_DAYS: '30', LIFECYCLE_POLICY_REF: 'vault://asset-lifecycle-policy',
       ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ASSET_SCANNER_MODE: 'clamav_worker', ASSET_SCAN_POLICY_VERSION: 'scan-policy-2026-08-30', CLAMAV_HOST: '127.0.0.1', CLAMAV_PORT: '3310', CLAMAV_MAX_FILE_BYTES: '52428800', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
@@ -403,7 +452,19 @@ describe('deployment operation scripts', () => {
   it('provides one fail-closed launch preflight entrypoint', () => {
     expect(readFileSync('infra/scripts/launch-preflight.sh', 'utf8')).toContain('validate-production-config.sh')
     expect(readFileSync('infra/scripts/launch-preflight.sh', 'utf8')).toContain('production-ops-gate.ts')
-    expect(readFileSync('infra/scripts/launch-preflight.sh', 'utf8')).toContain('deploy-preflight.sh')
+    expect(readFileSync('infra/scripts/launch-preflight.sh', 'utf8')).toContain('deploy-preflight-ecs.sh')
+    expect(readFileSync('infra/scripts/launch-preflight.sh', 'utf8')).not.toContain('"$root/infra/scripts/deploy-preflight.sh"')
+    const ecsDeployPreflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
+    expect(ecsDeployPreflight).toContain('validate-ecs-production-compose.mjs "$RENDERED_COMPOSE_PATH"')
+    expect(ecsDeployPreflight).toContain('validate-ecs-compose-release.rb')
+    expect(ecsDeployPreflight.indexOf('validate-ecs-production-compose.mjs')).toBeLessThan(ecsDeployPreflight.indexOf('validate-ecs-compose-release.rb'))
+    expect(ecsDeployPreflight).toContain('validate-production-evidence-trust.sh')
+    expect(ecsDeployPreflight).toContain('release-manifest-gate.ts')
+    expect(ecsDeployPreflight).toContain('verify-container-source-freshness.sh')
+    expect(ecsDeployPreflight).toContain('release preflight requires a clean git worktree')
+    expect(ecsDeployPreflight).toContain('for tool in node npm npx ruby git docker psql shasum')
+    expect(ecsDeployPreflight).toContain('$root/node_modules/.bin/tsx')
+    expect(readFileSync('infra/scripts/launch-preflight.sh', 'utf8')).toContain('for tool in node npm npx ruby git docker psql shasum')
     const deployPreflight = readFileSync('infra/scripts/deploy-preflight.sh', 'utf8')
     expect(deployPreflight).toContain('codex-app-host-evidence-gate.ts')
     expect(deployPreflight.match(/model-relay-evidence-gate\.ts[^\n]*/g)?.every(line => line.includes('--require-artifacts'))).toBe(true)

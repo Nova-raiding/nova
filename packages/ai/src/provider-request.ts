@@ -6,7 +6,7 @@ export type ProviderRequestOutcome = 'unknown' | 'failed'
  * credentials. Hosts must obtain identity/authority from their trusted request
  * or durable job context, not from the optional usage correlation fields. */
 export type ProviderBeforeRequest = (context: Readonly<{
-  operation: 'text_generate' | 'image_generate' | 'image_edit' | 'ocr' | 'video_generate' | 'image_query' | 'video_query'
+  operation: 'text_generate' | 'image_generate' | 'image_edit' | 'ocr' | 'video_generate' | 'image_query' | 'video_query' | 'embedding'
   workspaceId?: string
   actionId?: string
   signal?: AbortSignal
@@ -127,7 +127,7 @@ export function retryAfterMilliseconds(value: string | null, now = Date.now()): 
 }
 
 export function providerIdempotencyKey(input: {
-    operation: 'text_generate' | 'image_generate' | 'image_edit' | 'ocr' | 'video_generate'
+    operation: 'text_generate' | 'image_generate' | 'image_edit' | 'ocr' | 'video_generate' | 'embedding'
   model: string
   workspaceId?: string
   actionId?: string

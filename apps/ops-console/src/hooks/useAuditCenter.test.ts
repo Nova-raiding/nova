@@ -28,6 +28,12 @@ describe('audit center hook', () => {
     ])
   })
 
+  it('keeps equal audit ids from different enterprises in platform results', () => {
+    const first = record('1')
+    const second = { ...record('1'), workspaceId: 'ws_2' }
+    expect(mergeAuditRecords([first], [second, second, first]).map(item => item.workspaceId)).toEqual(['ws_1', 'ws_2'])
+  })
+
   it('builds the canonical service query without leaking a prior cursor', () => {
     const filters: AuditCenterFilters = { text: 'refund', sources: ['operation'] }
     expect(buildAuditCenterQuery('ws_1', filters, 'cursor-2')).toEqual({
@@ -53,6 +59,16 @@ describe('audit center hook', () => {
     expect(source).toContain('request !== listRequest.current')
     expect(source).toContain('request !== exportRequest.current')
     expect(source).toContain('window.setTimeout(() => void run(false), 250)')
+  })
+
+  it('clears sensitive audit state when the workbench scope changes without a workspace id change', async () => {
+    const source = await readFile(new URL('./useAuditCenter.ts', import.meta.url), 'utf8')
+    expect(source).toContain('setRecords([])')
+    expect(source).toContain('setTotalRecords(0)')
+    expect(source).toContain('setTruncated(false)')
+    expect(source).toContain('setDetail(undefined)')
+    expect(source).toContain('setDetailError(undefined)')
+    expect(source).toContain('}, [workspaceId, platformScope])')
   })
 
   it('restores focus to the exact detail trigger after closing the drawer', async () => {

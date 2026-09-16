@@ -25,7 +25,7 @@ describe('MigrationRunner', () => {
   it('loads the ordered production migration set', async () => {
     const migrations = await loadMigrations()
     const latestVersion = migrations.at(-1)?.version ?? 0
-    expect(latestVersion).toBe(212)
+    expect(latestVersion).toBe(214)
     expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(migrations[1]?.sql).toContain('FORCE ROW LEVEL SECURITY')
     const byVersion = new Map(migrations.map(migration => [migration.version, migration]))
@@ -124,6 +124,8 @@ describe('MigrationRunner', () => {
     expect(byVersion.get(53)?.sql).toContain("job.state IN ('succeeded', 'failed')")
     expect(byVersion.get(54)).toMatchObject({ name: 'model_daily_cost_budget' })
     expect(byVersion.get(54)?.sql).toContain('model_cost_budget_reservations')
+    expect(byVersion.get(214)?.sql).toContain('model_cost_budget_reservations_modality_check')
+    expect(byVersion.get(214)?.sql).toContain("'embedding'")
     expect(byVersion.get(55)).toMatchObject({ name: 'support_crm' })
     expect(byVersion.get(55)?.sql).toContain('workspace_support_tickets')
     expect(byVersion.get(56)).toMatchObject({ name: 'incidents' })

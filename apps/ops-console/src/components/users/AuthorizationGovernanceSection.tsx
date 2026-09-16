@@ -15,7 +15,6 @@ type PendingRevocation =
   | { kind: "grant"; title: string; grant: Grant };
 type GrantStatus = { label: string; color: "green" | "gold" | "orange" | "red" };
 
-const platformRoles = ["platform_admin", "ops_admin", "support_agent", "finance_ops", "security_admin", "auditor", "rules_admin", "model_admin", "release_admin"];
 const platformRoleLabels: Record<string, string> = {
   platform_admin: "平台管理员",
   ops_admin: "运营管理员",
@@ -77,6 +76,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
   const [subjectIdentityId, setSubjectIdentityId] = useState("");
   const [targetWorkspaceId, setTargetWorkspaceId] = useState("");
   const [roles, setRoles] = useState<RoleList>();
+  const [assignableRoles, setAssignableRoles] = useState<string[]>([]);
   const [grants, setGrants] = useState<GrantList>();
   const [roleLoadError, setRoleLoadError] = useState<unknown>();
   const [grantLoadError, setGrantLoadError] = useState<unknown>();
@@ -215,7 +215,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
     ) : null}
     {canReadRoles ? <section className="ops-authorization-block" aria-labelledby="permission-matrix-heading">
       <Typography.Title id="permission-matrix-heading" level={5}>功能权限矩阵</Typography.Title>
-      <PermissionMatrixSection />
+      <PermissionMatrixSection onLoaded={(matrix) => setAssignableRoles(matrix.assignable_roles)} />
     </section> : null}
     {canReadRoles ? <section className="ops-authorization-block" aria-labelledby="platform-roles-heading">
       <Divider><span id="platform-roles-heading">平台角色</span></Divider>
@@ -248,7 +248,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
               setRoleSubmitting(false);
             }
           }}>
-          <Form.Item name="role" label="平台角色" rules={[{ required: true }]}><Select placeholder="选择平台角色" style={{ width: 190 }} options={platformRoles.map(value => ({ value, label: platformRoleLabels[value] ?? value }))} /></Form.Item>
+          <Form.Item name="role" label="平台角色" rules={[{ required: true }]}><Select placeholder={assignableRoles.length ? "选择平台角色" : "等待服务端角色策略"} disabled={!assignableRoles.length} style={{ width: 190 }} options={assignableRoles.map(value => ({ value, label: platformRoleLabels[value] ?? value }))} /></Form.Item>
           <Form.Item name="expires_at" label="到期时间"><Input placeholder="可选：ISO 到期时间" style={{ width: 220 }} /></Form.Item>
           <Form.Item name="reason" label="分配原因" rules={[{ required: true, min: 3 }]}><Input placeholder="说明工单或业务原因" style={{ width: 220 }} /></Form.Item>
           <Button type="primary" htmlType="submit" style={{ minHeight: 44 }} loading={roleSubmitting} aria-busy={roleSubmitting} disabled={roleSubmitting || !subjectIdentityId.trim()}>分配角色</Button>

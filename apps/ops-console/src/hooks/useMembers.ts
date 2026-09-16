@@ -171,7 +171,12 @@ export function useMembers(workspaceId: string | undefined, client: MembersClien
       const member = await operation(workspaceId);
       if (gate.current.isCurrent(token, workspaceRef.current ?? "")) {
         const refreshed = await client.list(workspaceId, { offset: page.offset, limit: page.limit });
-        setMembers(refreshed.items); setPage(refreshed);
+        // The tenant can change while the post-mutation refresh is in flight.
+        // Re-check after the await so an old workspace response cannot replace
+        // the newly selected workspace's member directory.
+        if (gate.current.isCurrent(token, workspaceRef.current ?? "")) {
+          setMembers(refreshed.items); setPage(refreshed);
+        }
       }
       return member;
     } catch (cause) {

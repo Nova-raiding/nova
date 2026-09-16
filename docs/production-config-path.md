@@ -12,6 +12,12 @@ Never commit credentials. Production checks do not load the developer `.env`.
 
 A configured locator does not establish production readiness. Configuration
 validation, release evidence, runtime checks and launch preflight must all pass.
+The workstation launch command (`npm run infra:launch-preflight`) now enters the
+ECS Compose preflight in `infra/scripts/deploy-preflight-ecs.sh`. It requires the
+rendered Compose release, exact image digests, a clean Git worktree, current
+migration version, protected evidence trust anchor and release-bound production
+evidence. The separate Kubernetes manifest preflight remains for legacy
+Kubernetes deployment scripts and is not the ECS launch gate.
 
 ## Server-side preparation
 
@@ -35,10 +41,17 @@ mode 600 and the containing directory is mode 700. The configuration remains
 blocked until real secret references, auth/platform declarations, PITR/pooler,
 approved limits and release inputs are supplied.
 
-The server host currently lacks Ruby. The actual launch entrypoint was also
+The server host currently lacks Node.js/npm/npx, Ruby, Git, psql and shasum;
+only the Docker CLI was found in the release tool inventory. A real ECS launch
+must run from a reviewed checkout with the required host toolchain and
+`npm ci`-installed local `tsx`. The preflight checks these commands explicitly
+and never lets `npx` download a replacement dependency. Until the toolchain is
+provisioned, the launch remains blocked; container health does not satisfy this
+release-host requirement. The actual launch entrypoint was also
 executed inside the pinned Ruby validation container
 `ruby@sha256:2f763b37070564bb00b736f1d4dba6e8f8d203b5f93b94463879fd8d79966f28`
 with network disabled and the project mounted read-only. It read the persisted
 locator and exited 1 on the unresolved configuration marker, before any
-operations/deployment action. The host entrypoint exits 127 for missing Ruby;
-a supported full preflight runtime is still required before launch.
+operations/deployment action. The host entrypoint may still stop during the
+configuration validator while Ruby is absent; the release toolchain check is
+reached after configuration validation and before any operations action.

@@ -12,6 +12,8 @@ export interface PlatformCanaryInput {
   scope: string
   /** The controlled test-store product that a read canary must actually return. */
   expectedRemoteId: string
+  /** Authorization code and state from an actual controlled OAuth callback. */
+  oauthCallback?: { code: string; state: string; pendingState?: string; redirectUri: string; codeVerifier?: string }
   /** Real create/update calls are opt-in because they mutate a test store. */
   allowWrite: boolean
   /** Revoke is separately opt-in because it invalidates the test account. */
@@ -71,6 +73,9 @@ function canaryInputErrors(input: PlatformCanaryInput): string[] {
   if (!validScopeId(input.context.workspaceId)) errors.push('workspaceId is invalid')
   if (!validScopeId(input.context.accountId)) errors.push('accountId is invalid')
   if (!validCanaryText(input.expectedRemoteId, 256)) errors.push('expectedRemoteId is invalid')
+  if (input.oauthCallback && (!validCanaryText(input.oauthCallback.code, 4096) || !validCanaryText(input.oauthCallback.state, 512) || !/^https:\/\//u.test(input.oauthCallback.redirectUri))) errors.push('OAuth callback is invalid')
+  if (input.promoteToProductionCanary && !input.oauthCallback) errors.push('production OAuth callback is required')
+  if (input.promoteToProductionCanary && (!validCanaryText(input.oauthCallback?.pendingState, 512) || input.oauthCallback?.state !== input.oauthCallback.pendingState)) errors.push('production OAuth callback state must match the separately recorded pending state')
   if (input.mediaFile) {
     if (!validCanaryText(input.mediaFile.mimeType, 128)) errors.push('media mimeType is invalid')
     if (input.mediaFile.bytes.byteLength > 5 * 1024 * 1024) errors.push('media file exceeds 5 MiB')
@@ -107,9 +112,20 @@ export async function runPlatformCanary(input: PlatformCanaryInput): Promise<Pla
   }
 
   try {
-    const authorization = await input.connector.authorize({ workspaceId: input.context.workspaceId, actorId: 'platform-canary', redirectUri: 'https://canary.invalid/oauth/callback', state: `canary-${input.connector.platform}-${Date.now()}` })
-    add('authorize', authorization.ok && authorization.mode === 'real', authorization.mode !== 'real', authorization.message)
+    const callback = input.oauthCallback
+    const authorization = await input.connector.authorize({ workspaceId: input.context.workspaceId, actorId: 'platform-canary', redirectUri: callback?.redirectUri ?? 'https://canary.invalid/oauth/callback', state: callback?.state ?? `canary-${input.connector.platform}-${Date.now()}` })
+    if (!authorization.ok || authorization.mode !== 'real') add('authorize', false, authorization.mode !== 'real', authorization.message)
+    else if (!callback) add('authorize', true, false)
+    else {
+      const credential = await input.connector.exchangeCode({ code: callback.code, state: callback.state, ...(callback.codeVerifier ? { codeVerifier: callback.codeVerifier } : {}), workspaceId: input.context.workspaceId })
+      add('authorize', credential.workspaceId === input.context.workspaceId && credential.accountId === input.context.accountId && Boolean(credential.credentialRef.trim()), false, 'OAuth callback exchanged with controlled test account')
+    }
   } catch (error) { add('authorize', false, false, error instanceof Error ? error.message : String(error)) }
+
+  if (input.promoteToProductionCanary && !checks.find(item => item.capability === 'authorize')?.passed) {
+    for (const capability of ['read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'] as const) add(capability, false, false, 'OAuth authorization failed; provider canary stopped before further requests')
+    return { platform: input.connector.platform, passed: false, checks, evidence: evidenceItems }
+  }
 
   let full: Awaited<ReturnType<PlatformConnector['syncProducts']>> | undefined
   try {
@@ -123,10 +139,13 @@ export async function runPlatformCanary(input: PlatformCanaryInput): Promise<Pla
     add('read', false, false, error instanceof Error ? error.message : String(error))
     add('full_sync', false, false, error instanceof Error ? error.message : String(error))
   }
-  try {
-    const incremental = await input.connector.syncProducts(input.context, full?.nextCursor ?? { value: `canary-${Date.now()}` })
-    add('incremental_sync', incremental.source === 'official_api' && !incremental.simulated, incremental.simulated)
-  } catch (error) { add('incremental_sync', false, false, error instanceof Error ? error.message : String(error)) }
+  if (!full?.nextCursor?.value) add('incremental_sync', false, false, 'full sync returned no provider cursor for incremental verification')
+  else {
+    try {
+      const incremental = await input.connector.syncProducts(input.context, full.nextCursor)
+      add('incremental_sync', incremental.source === 'official_api' && !incremental.simulated, incremental.simulated)
+    } catch (error) { add('incremental_sync', false, false, error instanceof Error ? error.message : String(error)) }
+  }
 
   let remoteId: string | undefined
   if (!input.allowWrite) {
@@ -138,17 +157,23 @@ export async function runPlatformCanary(input: PlatformCanaryInput): Promise<Pla
     try {
       const receipt = await input.connector.createProduct(input.context, { fields, idempotencyKey: `platform-canary-create-${input.connector.platform}-${Date.now()}` })
       remoteId = receipt.remoteId
-      add('create', receipt.operation === 'create' && !receipt.simulated, receipt.simulated)
-      const status = await input.connector.queryWrite(input.context, { idempotencyKey: receipt.idempotencyKey, remoteId: receipt.remoteId })
-      add('query_status', status.found && !status.simulated, status.simulated)
+      add('create', receipt.operation === 'create' && !receipt.simulated && Boolean(receipt.remoteId.trim() && receipt.requestId.trim()), receipt.simulated)
+      if (!receipt.remoteId.trim() || !receipt.requestId.trim()) add('query_status', false, false, 'create returned no attributable provider remote ID or request ID')
+      else {
+        const status = await input.connector.queryWrite(input.context, { idempotencyKey: receipt.idempotencyKey, remoteId: receipt.remoteId })
+        add('query_status', status.found && !status.simulated && status.requestId === receipt.requestId && status.remoteId === receipt.remoteId && status.state === 'published', status.simulated)
+      }
     } catch (error) {
       add('create', false, false, error instanceof Error ? error.message : String(error))
       add('query_status', false, false, 'create did not return an attributable request')
     }
-    try {
-      const receipt = await input.connector.updateProduct(input.context, { fields, ...(remoteId ? { remoteId } : {}), idempotencyKey: `platform-canary-update-${input.connector.platform}-${Date.now()}` })
-      add('update', receipt.operation === 'update' && !receipt.simulated, receipt.simulated)
-    } catch (error) { add('update', false, false, error instanceof Error ? error.message : String(error)) }
+    if (!remoteId?.trim()) add('update', false, false, 'create did not return a provider remote product ID to update')
+    else {
+      try {
+        const receipt = await input.connector.updateProduct(input.context, { fields, remoteId, idempotencyKey: `platform-canary-update-${input.connector.platform}-${Date.now()}` })
+        add('update', receipt.operation === 'update' && !receipt.simulated && receipt.remoteId === remoteId && Boolean(receipt.requestId.trim()), receipt.simulated)
+      } catch (error) { add('update', false, false, error instanceof Error ? error.message : String(error)) }
+    }
   }
 
   if (!input.allowRevoke) add('revoke', false, false, 'revoke canary disabled; set explicit allowRevoke for a disposable test account')
