@@ -1,8 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { readdirSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const root = process.cwd()

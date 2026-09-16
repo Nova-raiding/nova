@@ -83,7 +83,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const [provisionOpen, setProvisionOpen] = useState(false);
   const [provisionSubmitting, setProvisionSubmitting] = useState(false);
   const [provisionResult, setProvisionResult] = useState<{ login: string; onboardingFeeFen: number; authorization?: MerchantAccountAuthorizationResult }>();
-  const [provisionForm] = Form.useForm<{ login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string; reason: string; skuCode: string; amountFen: number; paymentStatus: "pending" | "verified"; paymentReference?: string; paidAt?: string }>();
+  const [provisionForm] = Form.useForm<{ login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string; reason: string; skuCode: string; amountYuan: number; paymentStatus: "pending" | "verified"; paymentReference?: string; paidAt?: string }>();
   const [actionError, setActionError] = useState("");
   const actionErrorRef = useRef<HTMLDivElement>(null);
   const directoryErrorRef = useRef<HTMLDivElement>(null);
@@ -310,7 +310,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
               workspaceId,
               memberRole: "merchant_admin",
               skuCode: values.skuCode,
-              amountFen: Number(values.amountFen),
+              amountFen: yuanToFen(values.amountYuan),
               paymentStatus: values.paymentStatus,
               paymentReference: values.paymentReference,
               paidAt: values.paidAt,

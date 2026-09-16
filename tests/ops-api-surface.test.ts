@@ -59,7 +59,7 @@ describe('operations console API surface', () => {
 
   it('covers the operations domains with routed page components', () => {
     const source = readFileSync(new URL('../apps/ops-console/src/navigation/opsNavigation.ts', import.meta.url), 'utf8')
-    for (const domain of ['overview', 'users', 'members', 'tasks', 'knowledge', 'stores', 'rules', 'models', 'storage', 'finance', 'audit']) expect(source).toContain(`"${domain}"`)
+    for (const domain of ['overview', 'users', 'customer-delivery', 'members', 'tasks', 'knowledge', 'stores', 'rules', 'models', 'storage', 'audit']) expect(source).toContain(`"${domain}"`)
     expect(source).not.toContain('"feature-flags"')
   })
 })

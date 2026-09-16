@@ -36,9 +36,7 @@ describe('deployment operation scripts', () => {
     expect(preflight).toContain('--expected-bucket "$ASSET_STORAGE_BUCKET"')
     expect(preflight).toContain('--expected-endpoint "$ASSET_STORAGE_ENDPOINT"')
     expect(preflight).toContain('--artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT"')
-    expect(preflight).toContain('--env-file .env')
-    expect(preflight).toContain('-f infra/local/docker-compose.ecs-oss-cutover.yml')
-    expect(preflight).toContain('-f infra/local/docker-compose.ecs-production-migration.yml')
+    expect(preflight).toContain('render-ecs-production-compose.sh')
     expect(preflight).toContain('validate-ecs-production-compose.mjs')
     expect(preflight).toContain(': "${PILOT_RELEASE_CONFIG_SHA256:?PILOT_RELEASE_CONFIG_SHA256 is required}"')
     expect(preflight).toContain(': "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"')
@@ -156,6 +154,8 @@ describe('deployment operation scripts', () => {
     expect(() => run('infra/scripts/run-production-canary.sh', [], {
       RELEASE_ID: 'release-1', PLATFORM_CANARY_BASE_EVIDENCE: '/not-found', PLATFORM_CANARY_OUTPUT: '/tmp/out.json',
       PLATFORM_CANARY_MODE: 'real', PLATFORM_CANARY_CONFIRM: 'true', PAYMENT_MODE: 'provider',
+      PLATFORM_CANARY_ALLOW_WRITE: 'true', PLATFORM_CANARY_CONFIRM_WRITES: 'true',
+      PLATFORM_CANARY_ALLOW_REVOKE: 'true', PLATFORM_CANARY_CONFIRM_REVOKE: 'true',
       PAYMENT_CALLBACK_BASE_URL: 'https://merchant.example.com', PAYMENT_CALLBACK_SECRET_REF: 'vault://callback',
       PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.example.com/query', PAYMENT_PROVIDER_REFUND_API_URL: 'http://payments.example.com/refund',
     })).toThrow(/HTTPS|base evidence/)
@@ -294,7 +294,7 @@ describe('deployment operation scripts', () => {
       'pinduoduo_auth_enabled: true', 'pinduoduo_read_enabled: true', 'pinduoduo_write_enabled: true',
       'xiaohongshu_auth_enabled: true', 'xiaohongshu_read_enabled: true', 'xiaohongshu_write_enabled: true',
       'douyin_auth_enabled: true', 'douyin_read_enabled: true', 'douyin_write_enabled: true',
-      'point_in_time_recovery_enabled: true', 'database_pooler_enabled: true', 'database_max_backend_connections: 300', 'database_connection_utilization_alert_percent: 80', 'secret_provider: vault', 'worker_api_credentials_ref: vault://worker-api-credentials', ...['sync', 'generation', 'publish', 'reconcile', 'automation'].flatMap(role => [`worker_${role}_api_token_ref: vault://worker-${role}-token`, `worker_${role}_api_signing_secret_ref: vault://worker-${role}-signing`]), 'payment_mode: provider', 'payment_provider_adapters: alipay,wechat', 'payment_checkout_base_url: https://pay.yxsona.com/checkout', 'payment_provider_checkout_api_url: https://pay.yxsona.com/v1/checkout', 'payment_provider_query_api_url: https://pay.yxsona.com/v1/query', 'payment_provider_refund_query_api_url: https://pay.yxsona.com/v1/refund/query', 'payment_provider_refund_api_url: https://pay.yxsona.com/v1/refund', 'payment_provider_api_key_ref: vault://merchant-payment/provider-api-key', 'payment_provider_merchant_id: 2088123456789012', 'payment_callback_base_url: https://merchant.example.com/v1', 'payment_callback_secret_ref: vault://merchant-payment-callback', 'payment_reconciliation_enabled: true', 'payment_refund_enabled: true', 'model_relay_base_url: https://relay.example.com', 'model_relay_api_key_ref: vault://merchant-model/relay-api-key', 'text_model: merchant-text-v1', 'image_model: merchant-image-v1', 'image_edit_model: merchant-image-edit-v1', 'ocr_model: merchant-ocr-v1', 'video_model: merchant-video-v1', 'approved_requests_per_minute: "100"', 'approved_tokens_per_minute: "100000"', 'maximum_task_cost_cny: "0.50"', 'platform_rule_sync_manifest_url: https://rules.example.com/platform-rules/v1/manifest.json', 'platform_rule_sync_signing_secret_ref: vault://merchant-rules/manifest-signing-secret', 'platform_rule_sync_interval_hours: "24"',
+      'point_in_time_recovery_enabled: true', 'database_pooler_enabled: true', 'database_max_backend_connections: 300', 'database_connection_utilization_alert_percent: 80', 'secret_provider: vault', 'worker_api_credentials_ref: vault://worker-api-credentials', ...['sync', 'generation', 'publish', 'reconcile', 'automation'].flatMap(role => [`worker_${role}_api_token_ref: vault://worker-${role}-token`, `worker_${role}_api_signing_secret_ref: vault://worker-${role}-signing`]), 'payment_mode: provider', 'payment_provider_adapters: alipay,wechat', 'payment_checkout_base_url: https://pay.yxsona.com/checkout', 'payment_provider_checkout_api_url: https://pay.yxsona.com/v1/checkout', 'payment_provider_query_api_url: https://pay.yxsona.com/v1/query', 'payment_provider_refund_query_api_url: https://pay.yxsona.com/v1/refund/query', 'payment_provider_refund_api_url: https://pay.yxsona.com/v1/refund', 'payment_provider_api_key_ref: vault://merchant-payment/provider-api-key', 'payment_provider_merchant_id: 2088123456789012', 'payment_callback_base_url: https://merchant.example.com/v1', 'payment_callback_secret_ref: vault://merchant-payment-callback', 'payment_reconciliation_enabled: true', 'payment_refund_enabled: true', 'model_relay_base_url: https://relay.example.com', 'model_relay_api_key_ref: vault://merchant-model/relay-api-key', 'text_model: merchant-text-v1', 'image_model: merchant-image-v1', 'image_edit_model: merchant-image-edit-v1', 'ocr_model: merchant-ocr-v1', 'video_model: merchant-video-v1', 'embedding_model: merchant-embedding-v1', 'embedding_dimensions: 1536', 'embedding_max_request_cny: "0.01"', 'knowledge_vector_index_enabled: true', 'approved_requests_per_minute: "100"', 'approved_tokens_per_minute: "100000"', 'maximum_task_cost_cny: "0.50"', 'platform_rule_sync_manifest_url: https://rules.example.com/platform-rules/v1/manifest.json', 'platform_rule_sync_signing_secret_ref: vault://merchant-rules/manifest-signing-secret', 'platform_rule_sync_interval_hours: "24"',
       'asset_scanner_mode: clamav_worker', 'allow_local_asset_scan_fixture: false', 'asset_scanner_api_token_ref: vault://merchant-scanner/api-token', 'asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/workspace-signing', 'asset_scan_receipt_key_id: scanner-production-2026-08', 'asset_scan_receipt_private_key_ref: vault://merchant-scanner/receipt-private-key', 'asset_scan_trusted_public_keys_ref: vault://merchant-scanner/trusted-public-keys', 'asset_scan_policy_version: scan-policy-2026-08-30', `clamav_image_digest: ${imageDigests.clamav}`, 'clamav_signature_max_age_minutes: 1440', 'clamav_max_file_bytes: 104857600',
       'object_storage_bucket: merchant-assets', 'object_storage_region: cn', 'object_storage_endpoint: https://s3.example.com', 'object_storage_credential_provider: aliyun_ack_rrsa', 'object_storage_sse_mode: AES256', 'asset_display_base_url: https://merchant.example.com', 'asset_display_url_signing_secret_ref: vault://merchant-assets/display-url-signing-secret', 'merchant_ui_api_token_ref: vault://merchant-ui/api-token', 'merchant_ui_workspace_id_ref: vault://merchant-ui/workspace-id', 'object_storage_versioning: true', 'lifecycle_policy_ref: vault://asset-lifecycle-policy', 'asset_quarantine_retention_days: 7', 'asset_clean_retention_days: 90', 'deletion_request_grace_days: 7', 'backup_retention_days: 30', 'alert_notifications_enabled: false', 'alert_channel_secret_ref: vault://merchant-alert-channel',
     ].join('\n'))
@@ -328,7 +328,7 @@ describe('deployment operation scripts', () => {
     writeFileSync(restoreEvidence, JSON.stringify(restoreDocument))
     const scannerRuntime = {
       MERCHANT_BEARER_HOSTNAME: 'merchant.example.com', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
-      MODEL_RELAY_BASE_URL: 'https://relay.example.com', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example.com', AI_MODEL: 'merchant-text-v1', IMAGE_MODEL: 'merchant-image-v1', IMAGE_EDIT_MODEL: 'merchant-image-edit-v1', OCR_MODEL: 'merchant-ocr-v1', VIDEO_MODEL: 'merchant-video-v1', MODEL_RPM_LIMIT: '100', MODEL_TPM_LIMIT: '100000', MODEL_MAX_TASK_COST_CNY: '0.50',
+      MODEL_RELAY_BASE_URL: 'https://relay.example.com', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example.com', AI_MODEL: 'merchant-text-v1', IMAGE_MODEL: 'merchant-image-v1', IMAGE_EDIT_MODEL: 'merchant-image-edit-v1', OCR_MODEL: 'merchant-ocr-v1', VIDEO_MODEL: 'merchant-video-v1', EMBEDDING_MODEL: 'merchant-embedding-v1', EMBEDDING_DIMENSIONS: '1536', MODEL_EMBEDDING_MAX_REQUEST_CNY: '0.01', KNOWLEDGE_VECTOR_INDEX_ENABLED: 'true', MODEL_RPM_LIMIT: '100', MODEL_TPM_LIMIT: '100000', MODEL_MAX_TASK_COST_CNY: '0.50',
       ASSET_STORAGE_BUCKET: 'merchant-assets', ASSET_STORAGE_REGION: 'cn', ASSET_STORAGE_ENDPOINT: 'https://s3.example.com', ASSET_STORAGE_CREDENTIAL_PROVIDER: 'aliyun_ack_rrsa', OBJECT_STORAGE_VERSIONING: 'true', PUBLIC_ASSET_BASE_URL: 'https://merchant.example.com', PUBLIC_OAUTH_REDIRECT_URI: 'https://merchant.example.com/v1/oauth/callback/{platform}',
       ASSET_QUARANTINE_RETENTION_DAYS: '7', ASSET_CLEAN_RETENTION_DAYS: '90', DELETION_REQUEST_GRACE_DAYS: '7', BACKUP_RETENTION_DAYS: '30', LIFECYCLE_POLICY_REF: 'vault://asset-lifecycle-policy',
       ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ASSET_SCANNER_MODE: 'clamav_worker', ASSET_SCAN_POLICY_VERSION: 'scan-policy-2026-08-30', CLAMAV_HOST: '127.0.0.1', CLAMAV_PORT: '3310', CLAMAV_MAX_FILE_BYTES: '104857600', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
@@ -415,8 +415,8 @@ describe('deployment operation scripts', () => {
   it('provides one fail-closed launch preflight entrypoint', () => {
     expect(readFileSync('infra/scripts/launch-preflight.sh', 'utf8')).toContain('validate-production-config.sh')
     expect(readFileSync('infra/scripts/launch-preflight.sh', 'utf8')).toContain('production-ops-gate.ts')
-    expect(readFileSync('infra/scripts/launch-preflight.sh', 'utf8')).toContain('deploy-preflight.sh')
-    const deployPreflight = readFileSync('infra/scripts/deploy-preflight.sh', 'utf8')
+    expect(readFileSync('infra/scripts/launch-preflight.sh', 'utf8')).toContain('deploy-preflight-ecs.sh')
+    const deployPreflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
     expect(deployPreflight).toContain('codex-app-host-evidence-gate.ts')
     expect(deployPreflight.match(/model-relay-evidence-gate\.ts[^\n]*/g)?.every(line => line.includes('--require-artifacts'))).toBe(true)
     expect(deployPreflight.match(/codex-app-host-evidence-gate\.ts[^\n]*/g)?.every(line => line.includes('--require-artifacts'))).toBe(true)
@@ -424,10 +424,10 @@ describe('deployment operation scripts', () => {
     expect(deployPreflight).toContain('--expected-bridge-sha256')
     expect(deployPreflight).toContain('release-manifest-gate.ts')
     for (const binding of ['--release-git-sha', '--manifest-sha256', '--image-set-digest', '--deployment-nonce', '--expected-config-checksum', '--public-key', '--key-id']) expect(deployPreflight).toContain(binding)
-    expect(deployPreflight).toContain('validate-rendered-production-config.rb')
-    expect(deployPreflight).toContain('validate-scanner-contract.rb')
-    expect(deployPreflight.indexOf('validate-rendered-production-config.rb')).toBeLessThan(deployPreflight.indexOf('capability-evidence-gate.ts'))
-    expect(deployPreflight.indexOf('validate-scanner-contract.rb')).toBeLessThan(deployPreflight.indexOf('capability-evidence-gate.ts'))
+    expect(deployPreflight).toContain('validate-production-config.sh')
+    expect(deployPreflight).toContain('validate-ecs-production-compose.mjs')
+    expect(deployPreflight.indexOf('validate-production-config.sh')).toBeLessThan(deployPreflight.indexOf('capability-evidence-gate.ts'))
+    expect(deployPreflight.indexOf('validate-ecs-production-compose.mjs')).toBeLessThan(deployPreflight.indexOf('capability-evidence-gate.ts'))
     for (const binding of ['--artifact-root', '--public-key', '--key-id', '--capability-evidence', '--capacity-evidence', '--model-relay-evidence', '--payment-evidence', '--restore-evidence', '--object-storage-evidence', '--codex-app-host-evidence', '--canonical-cutover-evidence']) expect(deployPreflight).toContain(binding)
     expect(() => run('infra/scripts/launch-preflight.sh', [], { PRODUCTION_CONFIG_PATH: '/not-found' })).toThrow()
     expect(() => run('infra/scripts/launch-preflight.sh', [], { PRODUCTION_CONFIG_PATH: '/not-found', SKIP_LOCAL_OPS_GATE: 'true', NODE_ENV: 'production' })).toThrow(/SKIP_LOCAL_OPS_GATE/)
