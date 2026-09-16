@@ -2283,7 +2283,10 @@ export class MerchantService {
       this.syncJobs.set(entity.id, { ...job, itemsFailed: job.itemsFailed ?? 0, failedItems: job.failedItems ?? [], retryCount: Math.max(0, Math.floor(job.retryCount ?? 0)) })
     }
   }
-  getBrandProfile(workspaceId: string) { return this.brandProfiles.get(`brand_${workspaceId}`) }
+  getBrandProfile(workspaceId: string, brandUnitId?: string) {
+    const unit = brandUnitId?.trim()
+    return this.brandProfiles.get(unit ? `brand_${workspaceId}:unit:${unit}` : `brand_${workspaceId}`)
+  }
   extractBrandProfile(workspaceId: string, assetIds?: string[]): BrandExtraction {
     const requested = assetIds?.length ? new Set(assetIds) : undefined
     const assets = [...this.assets.values()].filter(asset => asset.workspaceId === workspaceId && (!requested || requested.has(asset.id)))
@@ -2292,7 +2295,16 @@ export class MerchantService {
       if (missing.length) throw new DomainError('ASSET_NOT_FOUND', '部分品牌素材不存在或不属于当前工作区', 404, { asset_ids: missing })
     }
     if (!assets.length) throw new DomainError('BRAND_ASSETS_REQUIRED', '请先上传并读取品牌资料，再提取品牌候选字段', 409)
-    return extractBrandCandidates(assets)
+    const trusted = assets.filter(isTrustedCleanAsset)
+    if (!trusted.length) throw new DomainError('BRAND_ASSETS_SCAN_REQUIRED', '品牌资料尚未通过可信安全扫描，不能读取为品牌候选；请等待平台自动检查', 409)
+    const extracted = extractBrandCandidates(trusted)
+    return {
+      ...extracted,
+      ignoredAssets: [
+        ...extracted.ignoredAssets,
+        ...assets.filter(asset => !isTrustedCleanAsset(asset)).map(asset => ({ assetId: asset.id, assetName: asset.name, reason: '可信安全扫描尚未通过' })),
+      ],
+    }
   }
   previewBrandTone(workspaceId: string, input: { topic?: string; productId?: string } = {}) {
     const profile = this.getBrandProfile(workspaceId)
@@ -2307,7 +2319,8 @@ export class MerchantService {
     ]
   }
   upsertBrandProfile(input: { workspaceId: string; name: string; positioning?: string; audience?: string; tone?: string[]; forbiddenTerms?: string[]; details?: Record<string, unknown>; visualRules?: BrandVisualRules; brandUnitId?: string; source?: string; resolutions?: Record<string, 'existing' | 'candidate'> }) {
-    const id = `brand_${input.workspaceId}`
+    const brandUnitId = input.brandUnitId?.trim()
+    const id = brandUnitId ? `brand_${input.workspaceId}:unit:${brandUnitId}` : `brand_${input.workspaceId}`
     const previous = this.brandProfiles.get(id)
     const source = input.source?.trim() || 'codex'
     const candidates: Partial<Record<BrandConflict['field'], unknown>> = {

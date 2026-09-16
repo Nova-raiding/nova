@@ -1775,7 +1775,8 @@ function modelIdForBudget(kind: PlatformModelKind) {
     : kind === 'image' ? process.env.IMAGE_MODEL?.trim() || process.env.AI_IMAGE_MODEL?.trim()
       : kind === 'image_edit' ? process.env.IMAGE_EDIT_MODEL?.trim() || process.env.IMAGE_MODEL?.trim() || process.env.AI_IMAGE_MODEL?.trim()
         : kind === 'ocr' ? process.env.OCR_MODEL?.trim() || process.env.AI_VISION_MODEL?.trim()
-          : process.env.VIDEO_MODEL?.trim() || process.env.AI_VIDEO_MODEL?.trim()
+          : kind === 'embedding' ? process.env.EMBEDDING_MODEL?.trim()
+            : process.env.VIDEO_MODEL?.trim() || process.env.AI_VIDEO_MODEL?.trim()
 }
 
 function modalityForActionKind(kind: ActionKind): PlatformModelKind | undefined {
@@ -7821,7 +7822,7 @@ function configuredEnv(...keys: string[]) {
 }
 
 const MODEL_COST_EVIDENCE_KEYS = {
-  text: 'MODEL_RELAY_TEXT_COST_EVIDENCE', image: 'MODEL_RELAY_IMAGE_COST_EVIDENCE', image_edit: 'MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE', ocr: 'MODEL_RELAY_OCR_COST_EVIDENCE', video: 'MODEL_RELAY_VIDEO_COST_EVIDENCE',
+  text: 'MODEL_RELAY_TEXT_COST_EVIDENCE', image: 'MODEL_RELAY_IMAGE_COST_EVIDENCE', image_edit: 'MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE', ocr: 'MODEL_RELAY_OCR_COST_EVIDENCE', video: 'MODEL_RELAY_VIDEO_COST_EVIDENCE', embedding: 'MODEL_RELAY_EMBEDDING_COST_EVIDENCE',
 } as const
 
 function modelCostEvidenceReady(kind: keyof typeof MODEL_COST_EVIDENCE_KEYS, source: NodeJS.ProcessEnv = process.env) {
@@ -7834,7 +7835,7 @@ function modelCostEvidenceByModality(source: NodeJS.ProcessEnv = process.env) {
   return Object.fromEntries(Object.keys(MODEL_COST_EVIDENCE_KEYS).map(kind => [kind, modelCostEvidenceReady(kind as keyof typeof MODEL_COST_EVIDENCE_KEYS, source)])) as Record<keyof typeof MODEL_COST_EVIDENCE_KEYS, boolean>
 }
 
-function requirePlatformModelCostGate(kind: 'text' | 'image' | 'image_edit' | 'ocr' | 'video') {
+function requirePlatformModelCostGate(kind: PlatformModelKind) {
   if (!isProduction()) return
   const relayGate = evaluatePlatformModelRelayGate(process.env)
   if (!relayGate.ready) throw new DomainError('MODEL_RELAY_NOT_CONFIGURED', `生产环境必须配置平台模型中转站：${relayGate.reasons.join(', ')}`, 503, { reasons: relayGate.reasons })
@@ -7842,7 +7843,7 @@ function requirePlatformModelCostGate(kind: 'text' | 'image' | 'image_edit' | 'o
   const costGate = evaluatePlatformModelCostGate(process.env)
   const costEvidenceReady = modelCostEvidenceReady(kind)
   if (!modelGate.ready || !costGate.ready || !costEvidenceReady) {
-    const labels = { text: '文案', image: '图片', image_edit: '图片编辑', ocr: '图片解析', video: '视频' } as const
+    const labels = { text: '文案', image: '图片', image_edit: '图片编辑', ocr: '图片解析', video: '视频', embedding: '知识向量' } as const
     throw new DomainError('MODEL_COST_GATE_BLOCKED', `平台${labels[kind]}模型未通过成本与配额门禁；需配置 HTTPS 中转站、模型、RPM、TPM、每日人民币成本上限和真实成本回执证据`, 503)
   }
 }
@@ -8300,9 +8301,14 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
   const imageEditModelGate = evaluatePlatformModelGate(process.env, 'image_edit')
   const ocrModelGate = evaluatePlatformModelGate(process.env, 'ocr')
   const videoModelGate = evaluatePlatformModelGate(process.env, 'video')
+  const embeddingModelGate = evaluatePlatformModelGate(process.env, 'embedding')
   const imageFactsConfigured = Boolean(imageFactsExtractor) && ocrModelGate.ready
   const imageEditProviderConfigured = Boolean(imageEditGenerator) && imageEditModelGate.ready
   const videoProviderConfigured = Boolean(videoGenerator) && videoModelGate.ready
+  // Configuration alone must not advertise vector indexing. The worker stays
+  // lexical until the dedicated durable authorization/budget workflow is
+  // explicitly enabled for the release.
+  const embeddingProviderConfigured = embeddingModelGate.ready && process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED === 'true'
   const modelCostGateConfigured = evaluatePlatformModelCostGate(process.env).ready && Object.values(modelCostEvidenceByModality()).every(Boolean)
   const vaultConfigured = connectorRuntime.credentialProviderConfigured && !fixtureMode
   const localAcceptanceObjectStorage = production && process.env.DEPLOYMENT_PROFILE === 'local_acceptance' && process.env.ALLOW_LOCAL_DURABLE_OBJECT_STORAGE === 'true' && (process.env.ASSET_STORAGE_ROOT?.startsWith('/var/lib/merchant-assets/') ?? false)
@@ -8337,6 +8343,7 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
   if (!imageEditProviderConfigured) nextActions.push('配置 IMAGE_EDIT_MODEL（或复用 IMAGE_MODEL）和图片编辑中转 provider 后启用局部图片编辑；未配置时保留原图并阻断编辑请求')
   if (!imageFactsConfigured) nextActions.push('配置平台模型中转站、MODEL_RELAY_API_KEY 和 OCR_MODEL 后启用图片 OCR 候选；未配置时继续要求商家人工确认图片事实')
   if (!videoProviderConfigured) nextActions.push('配置平台模型中转站、MODEL_RELAY_API_KEY、VIDEO_MODEL 和视频 provider 后启用视频渲染；未配置时只能生成无渲染分镜')
+  if (!embeddingProviderConfigured) nextActions.push('知识库向量索引尚未启用：需配置 EMBEDDING_MODEL/EMBEDDING_DIMENSIONS，并完成后台索引专用授权、预算预留和用量结算后设置 KNOWLEDGE_VECTOR_INDEX_ENABLED=true；当前保持词法索引')
   if (!modelCostGateConfigured) nextActions.push('配置平台模型 RPM、TPM 和每日人民币成本上限；成本门禁未通过时生产模型请求保持阻断')
   if (production && !paymentReadiness.ready) nextActions.push('配置支付宝/微信服务端 checkout provider、商户号、回调验签、对账和退款能力：' + paymentReadiness.reasons.join('、'))
   if (!vaultConfigured) nextActions.push('配置 VAULT_ADDR 和 VAULT_TOKEN（或接入外部凭据服务），让 Codex 安全读取商家授权凭据；不要把平台 token 放进插件参数')
@@ -8361,6 +8368,7 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
       image_edit: { ...imageEditModelGate, providerConfigured: imageEditProviderConfigured },
       ocr: { ...ocrModelGate, providerConfigured: imageFactsConfigured },
       video: { ...videoModelGate, providerConfigured: videoProviderConfigured },
+      embedding: { ...embeddingModelGate, providerConfigured: embeddingProviderConfigured },
     },
     objectStorage: { configured: objectStorageConfigured, mode: localAcceptanceObjectStorage ? 'local_acceptance_durable' : production ? 's3_compatible' : 'local' },
     alertNotifications,
@@ -8371,7 +8379,7 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
     credentialProvider: { configured: vaultConfigured, mode: fixtureMode ? 'fixture' : vaultConfigured ? 'vault_or_external' : 'none' },
     platforms: platformDiagnostics,
     payment: { mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : 'fixture', configured: process.env.PAYMENT_MODE === 'provider' && paymentReadiness.ready, reasons: paymentReadiness.reasons },
-    productionGate: production && !fixtureMode && commercialReadiness.ready && controlPlaneReadiness.ready && relayGate.ready && paymentReadiness.ready && Object.values(platformDiagnostics).every(item => item.ready) && contentProviderConfigured && imageProviderConfigured && imageEditProviderConfigured && imageFactsConfigured && videoProviderConfigured && modelCostGateConfigured && objectStorageConfigured && vaultConfigured && dataLifecycle.configured && alertNotifications.ready && capabilityEvidence.configured && capacityEvidence.configured,
+    productionGate: production && !fixtureMode && commercialReadiness.ready && controlPlaneReadiness.ready && relayGate.ready && paymentReadiness.ready && Object.values(platformDiagnostics).every(item => item.ready) && contentProviderConfigured && imageProviderConfigured && imageEditProviderConfigured && imageFactsConfigured && videoProviderConfigured && embeddingProviderConfigured && modelCostGateConfigured && objectStorageConfigured && vaultConfigured && dataLifecycle.configured && alertNotifications.ready && capabilityEvidence.configured && capacityEvidence.configured,
     nextActions,
   }
 }
@@ -10201,6 +10209,8 @@ function isWorkerRoute(method: string | undefined, path: string): boolean {
       || path === '/v1/internal/billing/reconciliation'
       || path === '/v1/internal/model-usage'
       || path === '/v1/internal/model-usage/reconciliation'
+      || path === '/v1/internal/knowledge-embeddings/admission'
+      || path === '/v1/internal/knowledge-embeddings/outcome'
       || path === '/v1/ops/data-deletion/complete'
       || path === '/v1/internal/storage/orphans/cleanup'
       || path === '/v1/internal/storage/reconciliation'
@@ -10285,6 +10295,7 @@ function workerRouteRoles(method: string | undefined, path: string): WorkerReque
     if (/^\/v1\/publish-jobs\/[^/]+\/observation$/u.test(path)) return ['publish', 'reconcile']
     if (path === '/v1/internal/automation/tick') return ['automation']
     if (path === '/v1/internal/model-usage') return ['generation', 'publish']
+    if (path === '/v1/internal/knowledge-embeddings/admission' || path === '/v1/internal/knowledge-embeddings/outcome') return ['generation']
     if (path === '/v1/internal/model-usage/reconciliation' || path === '/v1/internal/storage/reconciliation' || path === '/v1/internal/support/sla-scan' || path === '/v1/internal/support/sla-report' || path === '/v1/internal/image-generation-jobs/reconciliation') return ['reconcile']
     if (path === '/v1/ops/data-deletion/complete' || path === '/v1/internal/storage/orphans/cleanup') return ['automation']
     if (/^\/v1\/assets\/[^/]+\/scan$/u.test(path)) return ['scan']
@@ -13686,6 +13697,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'ops.authorization.matrix.get': {
       const roles = [...CANONICAL_ROLES]
+      const assignableRoles = PLATFORM_ASSIGNED_ROLES.filter(role => role !== 'platform_owner')
       const items = MCP_METHODS.map(method => {
         const policy = MCP_METHOD_POLICIES[method]
         return {
@@ -13700,7 +13712,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           role_access: Object.fromEntries(roles.map(role => [role, canonicalRoleMethodAccess(role, policy)])),
         }
       })
-      return result({ schema_version: 1, policy_version: AUTHZ_POLICY_VERSION, generated_from: 'MCP_METHOD_POLICIES', method_count: items.length, role_count: roles.length, roles, items })
+      return result({ schema_version: 1, policy_version: AUTHZ_POLICY_VERSION, generated_from: 'MCP_METHOD_POLICIES', method_count: items.length, role_count: roles.length, roles, assignable_roles: assignableRoles, items })
     }
     case 'ops.authorization.roles.list': {
       const repository = authorizationRepository()
@@ -15227,6 +15239,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const imageEditGate = evaluatePlatformModelGate(process.env, 'image_edit')
       const ocrGate = evaluatePlatformModelGate(process.env, 'ocr')
       const videoGate = evaluatePlatformModelGate(process.env, 'video')
+      const embeddingGate = evaluatePlatformModelGate(process.env, 'embedding')
       const relayGate = evaluatePlatformModelRelayGate(process.env)
       const costGate = evaluatePlatformModelCostGate(process.env)
       const releaseMetadataNames = ['PLUGIN_VERSION', 'SKILL_BUNDLE_VERSION', 'MCP_VERSION', 'CONNECTOR_BUILD', 'PROMPT_BUNDLE_VERSION']
@@ -15246,16 +15259,17 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const ocrReady = ocrGate.ready && Boolean(imageFactsExtractor)
       const imageEditReady = imageEditGate.ready && Boolean(imageEditGenerator)
       const videoReady = videoGate.ready && Boolean(videoGenerator)
-      const allModelReady = textReady && imageReady && imageEditReady && ocrReady && videoReady
+      const embeddingReady = embeddingGate.ready && process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED === 'true'
+      const allModelReady = textReady && imageReady && imageEditReady && ocrReady && videoReady && embeddingReady
       return result({
         ownership: 'platform', user_key_binding: false, relay: { configured: relayGate.ready, host: relayGate.endpointHost ?? null, reasons: relayGate.reasons }, state: allModelReady && costControlReady && releaseMetadataReady && (!isProduction() || relayGate.ready) ? 'ready' : !releaseMetadataReady ? 'release_metadata_blocked' : isProduction() && !relayGate.ready ? 'model_relay_blocked' : allModelReady ? 'cost_gate_blocked' : textReady ? 'partial_model_readiness' : 'not_configured',
-        provider_host: relayGate.endpointHost ?? textGate.endpointHost ?? providerHost ?? null, image_provider_host: relayGate.endpointHost ?? imageGate.endpointHost ?? null, text_model: process.env.AI_MODEL?.trim() || process.env.MODEL_ID?.trim() || null, image_model: process.env.IMAGE_MODEL?.trim() || process.env.AI_IMAGE_MODEL?.trim() || null, vision_model: process.env.OCR_MODEL?.trim() || process.env.AI_VISION_MODEL?.trim() || null, video_model: process.env.VIDEO_MODEL?.trim() || process.env.AI_VIDEO_MODEL?.trim() || null,
-        capabilities: { text_generation: textReady, image_generation: imageReady, image_editing: imageEditReady, image_fact_ocr: ocrReady, video_rendering: videoReady }, endpoints: { text_https: textGate.https, image_https: imageGate.https, image_edit_https: imageEditGate.https, ocr_https: ocrGate.https, video_https: videoGate.https },
-        model_readiness: { text: { ...textGate, provider_configured: textReady }, image: { ...imageGate, provider_configured: imageReady }, image_edit: { ...imageEditGate, provider_configured: imageEditReady }, ocr: { ...ocrGate, provider_configured: ocrReady }, video: { ...videoGate, provider_configured: videoReady } },
+        provider_host: relayGate.endpointHost ?? textGate.endpointHost ?? providerHost ?? null, image_provider_host: relayGate.endpointHost ?? imageGate.endpointHost ?? null, text_model: process.env.AI_MODEL?.trim() || process.env.MODEL_ID?.trim() || null, image_model: process.env.IMAGE_MODEL?.trim() || process.env.AI_IMAGE_MODEL?.trim() || null, vision_model: process.env.OCR_MODEL?.trim() || process.env.AI_VISION_MODEL?.trim() || null, video_model: process.env.VIDEO_MODEL?.trim() || process.env.AI_VIDEO_MODEL?.trim() || null, embedding_model: process.env.EMBEDDING_MODEL?.trim() || null,
+        capabilities: { text_generation: textReady, image_generation: imageReady, image_editing: imageEditReady, image_fact_ocr: ocrReady, video_rendering: videoReady, knowledge_vector_indexing: embeddingReady }, endpoints: { text_https: textGate.https, image_https: imageGate.https, image_edit_https: imageEditGate.https, ocr_https: ocrGate.https, video_https: videoGate.https, embedding_https: embeddingGate.https },
+        model_readiness: { text: { ...textGate, provider_configured: textReady }, image: { ...imageGate, provider_configured: imageReady }, image_edit: { ...imageEditGate, provider_configured: imageEditReady }, ocr: { ...ocrGate, provider_configured: ocrReady }, video: { ...videoGate, provider_configured: videoReady }, embedding: { ...embeddingGate, provider_configured: embeddingReady } },
         quotas: { rpm: rpm || null, tpm: tpm || null, daily_cny_limit: dailyCnyLimit ? dailyCnyLimit.toFixed(2) : null },
         cost_control_ready: costControlReady, cost_evidence_ready: costEvidenceReady, cost_evidence_by_modality: costEvidenceByModality,
         release_metadata_ready: releaseMetadataReady, release_metadata_missing: releaseMetadataMissing,
-        next_actions: [...(isProduction() && !relayGate.ready ? ['配置平台模型中转站：' + relayGate.reasons.join('、')] : []), ...(!textReady ? ['配置平台文案模型：' + textGate.reasons.join('、')] : []), ...(!imageReady ? ['配置平台图片模型：' + imageGate.reasons.join('、')] : []), ...(!imageEditReady ? ['配置图片编辑模型和中转 provider：' + imageEditGate.reasons.join('、')] : []), ...(!ocrReady ? ['配置 OCR_MODEL 和 OCR 中转 provider：' + ocrGate.reasons.join('、')] : []), ...(!videoReady ? ['配置 VIDEO_MODEL 和视频中转 provider：' + videoGate.reasons.join('、')] : []), ...(!costGate.ready ? ['配置并审批平台模型 RPM、TPM 和每日人民币成本上限'] : []), ...(!costEvidenceReady ? ['验证中转站 cost_cny，或验证价格快照、实际计费分组和人民币汇率后，再开启成本证据开关'] : []), ...(!releaseMetadataReady ? ['注入不可使用 fixture/local 默认值的发布版本、Skill、MCP、连接器和 prompt 元数据'] : []), ...(allModelReady && costControlReady && releaseMetadataReady && (!isProduction() || relayGate.ready) ? [] : ['完成平台模型供应商额度、成本和数据处理条款审批'])],
+        next_actions: [...(isProduction() && !relayGate.ready ? ['配置平台模型中转站：' + relayGate.reasons.join('、')] : []), ...(!textReady ? ['配置平台文案模型：' + textGate.reasons.join('、')] : []), ...(!imageReady ? ['配置平台图片模型：' + imageGate.reasons.join('、')] : []), ...(!imageEditReady ? ['配置图片编辑模型和中转 provider：' + imageEditGate.reasons.join('、')] : []), ...(!ocrReady ? ['配置 OCR_MODEL 和 OCR 中转 provider：' + ocrGate.reasons.join('、')] : []), ...(!videoReady ? ['配置 VIDEO_MODEL 和视频中转 provider：' + videoGate.reasons.join('、')] : []), ...(!embeddingReady ? ['完成 embedding 后台授权、预算预留、用量结算并启用 KNOWLEDGE_VECTOR_INDEX_ENABLED'] : []), ...(!costGate.ready ? ['配置并审批平台模型 RPM、TPM 和每日人民币成本上限'] : []), ...(!costEvidenceReady ? ['验证中转站 cost_cny，或验证价格快照、实际计费分组和人民币汇率后，再开启成本证据开关'] : []), ...(!releaseMetadataReady ? ['注入不可使用 fixture/local 默认值的发布版本、Skill、MCP、连接器和 prompt 元数据'] : []), ...(allModelReady && costControlReady && releaseMetadataReady && (!isProduction() || relayGate.ready) ? [] : ['完成平台模型供应商额度、成本和数据处理条款审批'])],
       })
     }
     case 'platform.settings.update': {
@@ -17265,7 +17279,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result(updated)
     }
     case 'brand.get': {
-      const profile = service.getBrandProfile(workspaceId)
+      const brandUnitId = typeof params.brand_unit_id === 'string' && params.brand_unit_id.trim() ? params.brand_unit_id.trim() : undefined
+      if (brandUnitId) await enforceBrandAccess(req, workspaceId, brandUnitId, 'viewer')
+      const profile = service.getBrandProfile(workspaceId, brandUnitId)
       return result(profile ? await brandProfileWithUnit(workspaceId, profile, false) : null)
     }
     case 'brand.extract': {
@@ -19806,6 +19822,46 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     }
     return send(res, 200, workspaceId, { ...repaired, reconciliation_required: true, next_action: providerStateValue === 'processing' ? 'Provider 仍在处理中，等待下一次查询' : 'Provider 状态或产物尚不足以完成交付，保持对账状态' }, null, req)
   }
+  if (req.method === 'POST' && (path === '/v1/internal/knowledge-embeddings/admission' || path === '/v1/internal/knowledge-embeddings/outcome')) {
+    await requireWorkerAuthorization(req)
+    const workspaceId = headerRequired(req, 'x-workspace-id')
+    const input = await body(req)
+    const documentId = typeof input.document_id === 'string' ? input.document_id.trim() : ''
+    const documentRevision = Number(input.document_revision)
+    const contentHash = typeof input.content_hash === 'string' ? input.content_hash.trim().toLowerCase() : ''
+    const actionId = typeof input.action_id === 'string' ? input.action_id.trim() : ''
+    const runKey = typeof input.run_key === 'string' ? input.run_key.trim() : ''
+    if (!documentId || !Number.isSafeInteger(documentRevision) || documentRevision < 1 || !/^[a-f0-9]{64}$/u.test(contentHash)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '知识向量准入缺少合法 document_id、document_revision 或 content_hash', 400)
+    const expectedActionId = `knowledge-embedding:${documentId}:${documentRevision}`
+    const expectedRunKey = `knowledge-index:${documentId}:${documentRevision}`
+    if (actionId !== expectedActionId || runKey !== expectedRunKey) throw new DomainError('KNOWLEDGE_EMBEDDING_BINDING_INVALID', '知识向量动作标识未绑定文档版本', 409, { expected_action_id: expectedActionId, expected_run_key: expectedRunKey })
+    await persistenceReady
+    const repository = persistence.knowledge ?? durableKnowledgeRepository ?? (!requiresStrictAuth() ? memoryKnowledge : undefined)
+    if (!repository) throw new DomainError('KNOWLEDGE_DURABLE_NOT_CONFIGURED', '知识库持久化仓储未配置，已阻断向量调用', 503)
+    const document = (await repository.listDocuments(workspaceId)).find(candidate => candidate.id === documentId)
+    if (!document) throw new DomainError('KNOWLEDGE_DOCUMENT_NOT_FOUND', '知识文档不存在', 404)
+    if (document.revision !== documentRevision || document.contentHash !== contentHash) throw new DomainError('KNOWLEDGE_EMBEDDING_DOCUMENT_STALE', '知识文档版本或内容摘要已变化，已阻断向量调用', 409)
+    if (document.approvalStatus !== 'approved' || document.rightsStatus !== 'cleared' || !['queued', 'indexing'].includes(document.indexState)) throw new DomainError('KNOWLEDGE_EMBEDDING_DOCUMENT_NOT_ELIGIBLE', '知识文档未完成审批、权利确认或不在待索引状态', 409, { approval_status: document.approvalStatus, rights_status: document.rightsStatus, index_state: document.indexState })
+    if (path.endsWith('/admission')) {
+      const embeddingGate = evaluatePlatformModelGate(process.env, 'embedding')
+      if (!embeddingGate.ready || process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED !== 'true') throw new DomainError('KNOWLEDGE_EMBEDDING_PROVIDER_NOT_READY', '知识向量中转配置未通过生产门禁', 503, { reasons: embeddingGate.reasons, vector_index_enabled: process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED === 'true' })
+      const existingAuthorization = await persistence.actionLedger?.get(workspaceId, actionId)
+      if (existingAuthorization && ['released', 'refunded', 'manual_attention'].includes(existingAuthorization.settlementStatus ?? existingAuthorization.state ?? '')) throw new DomainError('KNOWLEDGE_EMBEDDING_AUTHORIZATION_INACTIVE', '知识向量动作授权已失效，禁止再次调用上游', 409)
+      if (!existingAuthorization) await recordActionSettlement({ workspaceId, actionKey: actionId, actionKind: 'other', settlement: 'included_quota', amountFen: 0, actorId: requestActor(req), description: '知识向量索引模型调用', settlementStatus: 'authorized' })
+      const budget = await reserveDailyModelBudget(workspaceId, actionId, runKey, 'embedding')
+      return send(res, 200, workspaceId, { admitted: true, reused: budget?.reused ?? false, action_id: actionId, run_key: runKey, reservation: budget ? { reservation_key: budget.reservation.reservationKey, run_key: budget.reservation.runKey, status: budget.reservation.status, estimate_cny: budget.reservation.estimateCny, estimate_version: budget.reservation.estimateVersion, daily_limit_cny: budget.reservation.dailyLimitCny, run_limit_cny: budget.reservation.runLimitCny, revision: budget.reservation.revision } : null }, null, req)
+    }
+    const outcome = input.outcome
+    if (outcome !== 'failed_before_provider' && outcome !== 'unknown') throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'outcome 必须是 failed_before_provider 或 unknown', 400)
+    const authorization = await persistence.actionLedger?.get(workspaceId, actionId)
+    if (!authorization) throw new DomainError('KNOWLEDGE_EMBEDDING_AUTHORIZATION_NOT_FOUND', '知识向量动作授权不存在', 409)
+    if (outcome === 'failed_before_provider') {
+      const released = await persistence.modelUsage?.releaseDailyBudget({ workspaceId, reservationKey: actionId })
+      if (authorization.settlementStatus === 'authorized') await persistence.actionLedger?.transitionSettlementStatus({ workspaceId, actionKey: actionId, from: ['authorized'], to: 'released' })
+      return send(res, 200, workspaceId, { outcome, action_id: actionId, reservation_status: released?.status ?? 'released', reconciliation_required: false }, null, req)
+    }
+    return send(res, 202, workspaceId, { outcome, action_id: actionId, reservation_status: 'active', reconciliation_required: true, next_action: '按 provider idempotency key 查询真实结果；确认成功后提交 /v1/internal/model-usage，确认调用前失败后提交 failed_before_provider' }, null, req)
+  }
   if (req.method === 'POST' && path === '/v1/internal/model-usage') {
     await requireWorkerAuthorization(req)
     const workspaceId = headerRequired(req, 'x-workspace-id')
@@ -19822,7 +19878,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new DomainError(ERROR_CODES.INVALID_REQUEST, `${name} 必须是非负数`, 400)
       return value
     }
-    if (!['text', 'image', 'image_edit', 'ocr', 'video'].includes(String(modality)) || !model || !actionId || !runKey) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '模型用量回执缺少合法 modality、model、actionId 或 runKey', 400)
+    if (!['text', 'image', 'image_edit', 'ocr', 'video', 'embedding'].includes(String(modality)) || !model || !actionId || !runKey) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '模型用量回执缺少合法 modality、model、actionId 或 runKey', 400)
     if ((contextLinkId === undefined) !== (contextHash === undefined) || (contextHash !== undefined && !/^[a-f0-9]{64}$/u.test(contextHash))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '模型用量回执的 contextLinkId/contextHash 必须成对且合法', 400)
     if (input.workspaceId !== undefined && input.workspaceId !== workspaceId) throw new DomainError(ERROR_CODES.TENANT_SCOPE_DENIED, '模型用量回执工作区不匹配', 403)
     let actionAuthorization = await persistence.actionLedger?.get(workspaceId, actionId)

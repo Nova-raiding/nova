@@ -2678,3 +2678,13 @@ it('rejects duplicate SKU IDs at the shared product import boundary', () => {
     ],
   })).toThrowError(expect.objectContaining({ code: 'PRODUCT_IMPORT_DUPLICATE_SKU' }))
 })
+
+it('keeps multiple brand profiles isolated within one merchant workspace', () => {
+  const service = new MerchantService({ seedFixture: false })
+  const alpha = service.upsertBrandProfile({ workspaceId: 'ws_multi_brand', brandUnitId: 'brand-alpha', name: 'Alpha', positioning: '户外' })
+  const beta = service.upsertBrandProfile({ workspaceId: 'ws_multi_brand', brandUnitId: 'brand-beta', name: 'Beta', positioning: '通勤' })
+  expect(alpha.id).not.toBe(beta.id)
+  expect(service.getBrandProfile('ws_multi_brand', 'brand-alpha')).toMatchObject({ name: 'Alpha', positioning: '户外', brandUnitId: 'brand-alpha' })
+  expect(service.getBrandProfile('ws_multi_brand', 'brand-beta')).toMatchObject({ name: 'Beta', positioning: '通勤', brandUnitId: 'brand-beta' })
+  expect(service.getBrandProfile('ws_multi_brand')).toBeUndefined()
+})
