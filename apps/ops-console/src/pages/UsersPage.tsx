@@ -31,7 +31,6 @@ export function UsersPage({ model }: UsersPageProps) {
   return (
     <OpsPage
       title="用户中心"
-      hideTitle
     >
       <div className="ops-users-page">
       <OpsPageError error={model.error} onRetry={() => void model.load()} />
