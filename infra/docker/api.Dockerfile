@@ -9,6 +9,9 @@ COPY demo ./demo
 COPY scripts ./scripts
 COPY tsconfig.json vitest*.config.ts ./
 COPY infra/scripts/generate-container-source-manifest.mjs ./infra/scripts/generate-container-source-manifest.mjs
+# The protected attesters are imported by release-evidence tests during the
+# composite build; keep them in the isolated Docker build context as well.
+COPY infra/protected ./infra/protected
 # Host-side incremental state must never control which checked-in source is
 # emitted into the runtime image. A stale tsbuildinfo can otherwise make the
 # API container run an older compiled module after a source change.
