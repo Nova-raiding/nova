@@ -84,14 +84,14 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'onboarding.status', arguments: {} } })}\n`)
       const welcome = await nextLine(child.stdout)
-      expect(welcome.result.content[0].text).toContain('欢迎使用 Store Nova')
-      expect(welcome.result.content[0].text).toContain('首次配置 0/4')
+      expect(welcome.result.content[0].text).toContain('您好，感谢您使用 Store Nova')
+      expect(welcome.result.content[0].text).toContain('当前进度：0/4')
       completed = 2
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'onboarding.status', arguments: {} } })}\n`)
       const brandStep = await nextLine(child.stdout)
-      expect(brandStep.result.content[0].text).toContain('首次配置 2/4｜检查系统配置')
+      expect(brandStep.result.content[0].text).toContain('当前进度：2/4')
       expect(brandStep.result.content[0].text).toContain('「云朵轻户外」品牌线索')
-      expect(brandStep.result.content[0].text).not.toContain('○ 建立工作区')
+      expect(brandStep.result.content[0].text).toContain('○ 建立工作区')
     } finally {
       child.kill()
       await close(server)

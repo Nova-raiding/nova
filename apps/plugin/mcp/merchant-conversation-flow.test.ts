@@ -130,10 +130,10 @@ describe('Codex App merchant conversation flow', () => {
     }, async (child, calls) => {
       const response = await request(child, 1, 'onboarding.status')
       const content = (response.result as { content: Array<{ text: string }> }).content[0]?.text ?? ''
-      expect(content).toContain('欢迎使用 Store Nova')
-      expect(content).toContain('首次配置 0/4')
+      expect(content).toContain('您好，感谢您使用 Store Nova')
+      expect(content).toContain('当前进度：0/4')
       expect(content).toContain('下一步：开始配置店铺')
-      expect(content).toContain('尚无官方授权店铺')
+      expect(content).toContain('平台｜店铺名称｜店铺首页链接')
       expect(content).not.toContain('店铺连接成功')
       expect((response.result as { structuredContent: Json }).structuredContent).not.toHaveProperty('onboarding_card')
       expect(calls.map(call => call.method)).toEqual(['onboarding.status'])
@@ -153,7 +153,7 @@ describe('Codex App merchant conversation flow', () => {
       const response = await request(child, 1, 'onboarding.status')
       const result = response.result as Json
       const content = (result.content as Array<{ text: string }>)[0]?.text ?? ''
-      expect(content).toContain('首次配置 1/4')
+      expect(content).toContain('当前进度：1/4')
       expect(content).toContain('扫描商品至知识库')
       expect(content).not.toContain('正在升级')
       expect(result.structuredContent).toMatchObject({
@@ -172,7 +172,7 @@ describe('Codex App merchant conversation flow', () => {
       const response = await request(child, 1, 'onboarding.status')
       const result = response.result as Json
       const content = (result.content as Array<{ text: string }>)[0]?.text ?? ''
-      expect(content).toContain('首次配置 0/4')
+      expect(content).toContain('当前进度：0/4')
       expect(content).toContain('开始配置店铺')
       expect(content).not.toContain('升级')
       expect(result.structuredContent).toMatchObject({ status: 'in_progress', initialization: { completed: 0, total: 4 } })
@@ -193,7 +193,7 @@ describe('Codex App merchant conversation flow', () => {
     }, async child => {
       const response = await request(child, 1, 'onboarding.status')
       const content = (response.result as { content: Array<{ text: string }> }).content[0]?.text ?? ''
-      expect(content).toContain('首次配置 4/4')
+      expect(content).toContain('当前进度：4/4')
       expect(content).toContain('内容工作区已就位')
       expect(content).not.toContain('欢迎使用 Store Nova')
       expect(content).not.toContain('不要发送密码或验证码')

@@ -1227,21 +1227,39 @@ function userFacingToolText(method, result) {
     const initialization = result?.initialization
     if (initialization && Array.isArray(initialization.steps)) {
       const current = initialization.current_step ?? {}
-      const progress = initialization.steps.map(step => `${step.state === 'complete' ? '✓' : '○'} ${step.title}`).join('  ·  ')
+      const progress = initialization.steps.map(step => `${step.state === 'complete' ? '✓' : '○'} ${step.title}`).join('\n')
+      const evidence = initialization.evidence && typeof initialization.evidence === 'object' ? initialization.evidence : {}
       const brandClues = initialization.brand_clues?.candidates
       const brandHint = current.id === 'check_configuration' && !initialization.evidence?.brand_profile_present && Array.isArray(brandClues) && brandClues.length
         ? brandClues.length === 1
           ? `已确认商品中出现「${brandClues[0].brandName}」品牌线索。请确认这是否是你要使用的品牌名称；确认后才会保存品牌档案。`
           : `已确认商品中出现 ${initialization.brand_clues.totalCandidates} 条不同店铺或品牌的线索。请先选定要建立档案的品牌，不会自动合并。`
         : ''
+      const configurationChecks = [
+        ['规则库', evidence.rules_ready === true],
+        ['知识库', evidence.confirmed_products !== undefined && evidence.scanned_products !== undefined && evidence.confirmed_products === evidence.scanned_products],
+        ['文案生成能力', evidence.relay_ready === true && evidence.modalities_ready === true],
+        ['图片与视频能力', evidence.modalities_ready === true],
+        ['对象存储', evidence.storage_ready === true],
+        ['成本与创意点门禁', evidence.cost_ready === true && evidence.points_state === 'ready'],
+      ]
+      const checkLines = configurationChecks.map(([label, ready]) => `${ready ? '✓' : '○'} ${label}`).join('\n')
+      const stepId = String(current.id ?? '').toLowerCase()
+      const stepIntro = stepId === 'scan_catalog'
+        ? `第一步已经完成。\n\n当前进度：${initialization.completed}/4\n${progress}\n\n接下来系统将扫描店铺商品，建立商品知识卡片。准备好后，请回复“进行第二步”。`
+        : stepId === 'check_configuration'
+          ? `现在开始第三步：检查系统配置。\n\n系统将检查规则库、知识库和生产模块。\n\n${checkLines}\n\n${current.state === 'complete' ? `第三步已经完成。\n\n当前进度：${initialization.completed}/4\n${progress}\n\n准备建立第一个内容工作区。` : `当前仍有配置项待核验：${current.summary ?? '请等待真实配置证据返回'}。未核验完成前不会生成或发布。`}`
+          : stepId === 'build_workspace'
+            ? `现在开始第四步：建立工作区。\n\n${current.summary ?? '工作区用于管理店铺、商品、素材和生产任务。'}\n\n请确认工作区名称和对应店铺；确认后才会完成首次配置。`
+            : ''
       return [
-        initialization.completed === 0 ? '您好，欢迎使用 Store Nova。本地系统已经部署完成。接下来，我会陪你把官方店铺、商品知识与内容生产能力连接成专属工作流；四个步骤都会给出真实核验结果。' : '',
-        initialization.completed === 0 || initialization.status === 'ready' ? `首次配置 ${initialization.completed}/4｜${progress}` : `首次配置 ${initialization.completed}/4｜${current.title ?? '下一步'}`,
+        initialization.completed === 0 ? '您好，感谢您使用 Store Nova。\n\n本地系统已经部署完成。接下来需要通过四个步骤，完成您的初始化配置：\n\n① 连接 Store Nova 管理后台，并绑定平台品牌店铺。\n② 品牌知识学习，完成知识库初步搭建。\n③ 调用知识库资料，检查系统配置，完成功能搭建。\n④ 建立工作区。\n\n除店铺确认和工作区设置外，其余可自动完成的检查将由系统执行。请不要在对话中发送店铺账号、密码或短信验证码；涉及授权时，请通过平台官方授权页面完成。\n\n准备好后，我们从第一步开始。' : '',
+        `当前进度：${initialization.completed}/4\n${progress}`,
         initialization.status === 'ready'
-          ? '配置完成。你的内容工作区已就位；告诉我想先为哪件商品制作素材。生成和发布仍需独立确认。'
-          : `现在进行「${current.title ?? '连接平台及店铺'}」：${current.summary ?? '等待核验'}。${current.id === 'connect_stores' ? '下一步：开始配置店铺。请按“平台｜店铺名称｜店铺首页链接”发送，一店一行；我会先整理名单，再引导你到平台官方页面授权。' : current.next_action?.label ? `下一步：${current.next_action.label}。` : ''}`,
+          ? '恭喜您，Store Nova 首次使用配置已经全部完成。\n\n内容工作区已就位，您的生产环境已准备完毕。现在可以选择一个商品，或直接描述制作需求；生成和发布仍需独立确认。'
+          : stepIntro || `现在开始第一步：连接平台及店铺。\n\n${current.summary ?? '请将平台、店铺名称和店铺首页链接发送给我，一店一行。'}\n\n请按以下格式发送：\n平台｜店铺名称｜店铺首页链接\n\n例如：\n淘宝｜××女装店｜https://……\n天猫｜××旗舰店｜https://……\n\n下一步：开始配置店铺。不要发送账号、密码或验证码。`,
         brandHint,
-        initialization.completed === 0 ? initialization.security_notice : '',
+        initialization.completed === 0 ? '【开始配置】' : '',
       ].filter(Boolean).join('\n')
     }
     const blocker = result?.blocker
