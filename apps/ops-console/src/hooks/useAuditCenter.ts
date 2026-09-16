@@ -22,8 +22,13 @@ export const mergeAuditRecords = (
   current: readonly AuditCenterRecord[],
   incoming: readonly AuditCenterRecord[],
 ) => {
-  const seen = new Set(current.map(item => `${item.source}:${item.id}`))
-  return [...current, ...incoming.filter(item => !seen.has(`${item.source}:${item.id}`))]
+  const seen = new Set(current.map(item => `${item.workspaceId}:${item.source}:${item.id}`))
+  return [...current, ...incoming.filter(item => {
+    const key = `${item.workspaceId}:${item.source}:${item.id}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })]
 }
 
 export const buildAuditCenterQuery = (
@@ -187,15 +192,19 @@ export function useAuditCenter(client: AuditCenterClient, workspaceId: string, a
     exportAbort.current?.abort()
     cursorRef.current = undefined
     setRecords([])
+    setTotalRecords(0)
+    setTruncated(false)
     setNextCursor(undefined)
     setSelected(undefined)
     setDetail(undefined)
+    setDetailError(undefined)
     setError(undefined)
     setExportError(undefined)
     setLoading(false)
     setLoadingMore(false)
+    setDetailLoading(false)
     setExporting(false)
-  }, [workspaceId])
+  }, [workspaceId, platformScope])
 
   useEffect(() => {
     if (!autoLoad) return

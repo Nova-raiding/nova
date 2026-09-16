@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, workerQueueKey } from './main.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, workerQueueKey } from './main.js'
 import type { PostgresOutboxRepository, SqlPool } from '../../../packages/persistence/src/index.js'
 import { DurableOutboxDispatcher, InMemoryQueue, type DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
@@ -913,7 +913,7 @@ describe('worker production entry', () => {
   it('returns settlement attestations from both provider usage sinks', async () => {
     const source = await readFile(new URL('./main.ts', import.meta.url), 'utf8')
     const usageSinkSection = source.slice(source.indexOf('const contentGenerator ='), source.indexOf('const requireImageProviderRequestId'))
-    expect(usageSinkSection.match(/return postModelUsage\(/gu)).toHaveLength(2)
+    expect(usageSinkSection.match(/return postModelUsage\(/gu)).toHaveLength(3)
     expect(usageSinkSection).not.toContain('await postModelUsage(')
   })
 
@@ -1163,5 +1163,24 @@ describe('worker production entry', () => {
       apiBaseUrl: 'http://api.test', apiToken: 'token', event,
       fetcher: async () => new Response(JSON.stringify({ data: { media: [{ visual_ref: 'dvis_1', role: 'main', mime_type: 'image/png', sha256: 'a'.repeat(64), content_base64: Buffer.from('not-a-png').toString('base64') }] } }), { status: 200 }),
     })).rejects.toThrow('invalid size or SHA-256 digest')
+  })
+})
+
+
+describe('knowledge embedding worker API contract', () => {
+  const binding = { workspaceId: 'ws_a', documentId: 'doc_a', documentRevision: 3, contentHash: 'a'.repeat(64), actionId: 'knowledge-embedding:doc_a:3', runKey: 'knowledge-index:doc_a:3' }
+  it('signs admission and requires durable reservation evidence', async () => {
+    let request: { body: string; headers: Headers } | undefined
+    const data = await postKnowledgeEmbeddingAdmission({ ...binding, apiBaseUrl: 'https://api.test', apiToken: 'worker-token', signingSecret: 'worker-secret', fetcher: async (_input, init) => {
+      request = { body: String(init?.body), headers: new Headers(init?.headers) }
+      return new Response(JSON.stringify({ data: { admitted: true, reused: false, reservation: { reservation_key: 'reserve_a', run_key: binding.runKey, status: 'active' } } }), { status: 200 })
+    } })
+    expect(JSON.parse(request!.body)).toEqual({ document_id: 'doc_a', document_revision: 3, content_hash: 'a'.repeat(64), action_id: binding.actionId, run_key: binding.runKey })
+    expect(request!.headers.get('x-worker-workspace-signature')).toMatch(/^[a-f0-9]{64}$/u)
+    expect(request!.headers.get('x-worker-role')).toBe('generation')
+    expect(data.reservation?.reservation_key).toBe('reserve_a')
+  })
+  it('requires explicit reconciliation evidence for unknown outcomes', async () => {
+    await expect(postKnowledgeEmbeddingOutcome({ ...binding, outcome: 'unknown', apiBaseUrl: 'https://api.test', apiToken: 'worker-token', signingSecret: 'worker-secret', fetcher: async () => new Response(JSON.stringify({ data: { outcome: 'unknown', action_id: binding.actionId, reconciliation_required: false } }), { status: 200 }) })).rejects.toMatchObject({ code: 'KNOWLEDGE_EMBEDDING_OUTCOME_INVALID', reconciliationRequired: true })
   })
 })

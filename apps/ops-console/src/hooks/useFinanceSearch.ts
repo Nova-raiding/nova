@@ -80,6 +80,7 @@ export function useFinanceSearch(client: FinanceSearchClient, initialQuery: Fina
   const [exportError, setExportError] = useState<string>();
   const searchRequests = useRef(new LatestFinanceRequest());
   const detailRequests = useRef(new LatestFinanceRequest());
+  const exportRequests = useRef(new LatestFinanceRequest());
 
   const runSearch = useCallback(async (next: FinanceSearchQuery, append: boolean) => {
     const request = searchRequests.current.begin();
@@ -133,20 +134,42 @@ export function useFinanceSearch(client: FinanceSearchClient, initialQuery: Fina
 
   const downloadCsv = useCallback(async () => {
     setExporting(true); setExportError(undefined);
-    const controller = new AbortController();
+    const request = exportRequests.current.begin();
     try {
-      const exported = await client.exportCsv({ ...query, cursor: undefined, snapshotAt: page?.snapshotAt }, controller.signal);
+      const exported = await client.exportCsv({ ...query, cursor: undefined, snapshotAt: page?.snapshotAt }, request.signal);
+      if (!exportRequests.current.isCurrent(request.id)) return;
       const url = URL.createObjectURL(new Blob([exported.csv], { type: exported.contentType }));
       const anchor = document.createElement("a");
       anchor.href = url; anchor.download = exported.fileName; anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
     } catch (cause) {
-      if (!controller.signal.aborted) setExportError(financeErrorMessage(cause, "财务导出失败，请重试。"));
-    } finally { setExporting(false); }
+      if (exportRequests.current.isCurrent(request.id)) setExportError(financeErrorMessage(cause, "财务导出失败，请重试。"));
+    } finally {
+      if (exportRequests.current.isCurrent(request.id)) setExporting(false);
+    }
   }, [client, page?.snapshotAt, query]);
 
-  useEffect(() => () => { searchRequests.current.cancel(); detailRequests.current.cancel(); }, []);
-  useEffect(() => { if (autoLoad) void runSearch(initialQueryRef.current, false); }, [autoLoad, runSearch]);
+  useEffect(() => () => {
+    searchRequests.current.cancel();
+    detailRequests.current.cancel();
+    exportRequests.current.cancel();
+  }, []);
+  useEffect(() => {
+    if (autoLoad) {
+      void runSearch(initialQueryRef.current, false);
+      return;
+    }
+
+    // Finance data is platform-sensitive. Permission/workbench changes must revoke
+    // every in-flight response and remove records already hydrated for the old scope.
+    searchRequests.current.cancel();
+    detailRequests.current.cancel();
+    exportRequests.current.cancel();
+    setQuery(initialQueryRef.current);
+    setPage(undefined); setRecords([]); setLoading(false); setLoadingMore(false); setError(undefined);
+    setSelected(undefined); setDetail(undefined); setDetailLoading(false); setDetailError(undefined);
+    setExporting(false); setExportError(undefined);
+  }, [autoLoad, runSearch]);
 
   return { query, page, records, loading, loadingMore, error, selected, detail, detailLoading, detailError, exporting, exportError, search, loadMore, openDetail, retryDetail, closeDetail, downloadCsv };
 }

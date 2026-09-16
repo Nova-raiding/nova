@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 
-export type RelayUsageModality = 'text' | 'image' | 'image_edit' | 'ocr' | 'video'
+export type RelayUsageModality = 'text' | 'image' | 'image_edit' | 'ocr' | 'video' | 'embedding'
 
 export interface RelayUsageContext {
   workspaceId?: string
@@ -116,15 +116,20 @@ function firstNumber(...values: unknown[]): number | undefined {
 
 export function relayUsageReceiptKey(usage: Pick<RelayUsageRecord, 'workspaceId' | 'actionId' | 'model' | 'modality' | 'providerRequestId' | 'providerAttemptId'>) {
   const providerRequestId = evidenceIdentity(usage.providerRequestId)
-  if (providerRequestId) return providerRequestId
   const providerAttemptId = evidenceIdentity(usage.providerAttemptId)
-  if (!providerAttemptId) throw new ModelUsageReceiptIdentityError()
+  if (!providerRequestId && !providerAttemptId) throw new ModelUsageReceiptIdentityError()
+  // Preserve the provider request ID as the externally reconcilable receipt.
+  // Persistence uniqueness is workspace-scoped and separately validates all
+  // immutable receipt facts, so cross-tenant IDs cannot collide silently.
+  if (providerRequestId) return providerRequestId
+  // A local attempt has no externally meaningful identity, so bind it to the
+  // trusted tenant/action/model/modality context before persisting it.
   const identity = JSON.stringify([
     usage.workspaceId?.trim() ?? '',
     usage.actionId?.trim() ?? '',
     usage.model.trim(),
     usage.modality,
-    providerAttemptId,
+    ['provider_attempt', providerAttemptId],
   ])
   return `relay_usage_${createHash('sha256').update(identity, 'utf8').digest('hex')}`
 }

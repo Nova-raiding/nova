@@ -110,6 +110,7 @@ data:
   # readiness. Keep video pricing on the same approved VIP snapshot as the
   # local relay configuration.
   MODEL_RELAY_VIDEO_PRICING_GROUP: VIP
+  MODEL_RELAY_EMBEDDING_PRICING_GROUP: VIP
   MODEL_RELAY_VIDEO_PRICING_OVERRIDES: '{"happyhorse-1.1-t2v":0.4508,"happyhorse-1.1-i2v":0.4508,"happyhorse-1.1-r2v":0.4508,"wan3.0-video":0.25}'
   # Cost evidence is a runtime requirement for every production modality.
   # The flag only enables acceptance of a real provider receipt or pricing
@@ -121,6 +122,7 @@ data:
   MODEL_RELAY_IMAGE_COST_EVIDENCE: "true"
   MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE: "true"
   MODEL_RELAY_VIDEO_COST_EVIDENCE: "true"
+  MODEL_RELAY_EMBEDDING_COST_EVIDENCE: "false"
   IMAGE_MODEL: merchant-main-image
   IMAGE_GENERATION_EXECUTION_MODE: durable
   IMAGE_GENERATION_PATH: /images/generations
@@ -134,6 +136,9 @@ data:
   IMAGE_EDIT_MODEL: merchant-main-image-edit
   OCR_MODEL: merchant-vision-ocr
   VIDEO_MODEL: merchant-video
+  EMBEDDING_MODEL: merchant-embedding
+  EMBEDDING_DIMENSIONS: "1536"
+  KNOWLEDGE_VECTOR_INDEX_ENABLED: "false"
   IMAGE_RESPONSE_FORMAT: url
   VIDEO_DURATION_SECONDS: "100"
   VIDEO_GENERATION_PATH: /video/generations
@@ -148,6 +153,7 @@ data:
   MODEL_TPM_LIMIT: "0"
   MODEL_DAILY_CNY_LIMIT: "0.00"
   MODEL_MAX_TASK_COST_CNY: "0.00"
+  MODEL_EMBEDDING_MAX_REQUEST_CNY: "0.00"
   # Provider payment configuration is non-secret runtime state. Credentials
   # remain explicit Secret key references on the API Deployment.
   PAYMENT_MODE: provider

@@ -60,6 +60,9 @@ describe("AuthorizationGovernanceSection", () => {
     expect(source).toContain("最近一次 JIT 已撤销");
     expect(source).toContain("已检测到");
     expect(source).toContain('title: "状态"');
+    expect(source).toContain("setAssignableRoles(matrix.assignable_roles)");
+    expect(source).toContain('placeholder={assignableRoles.length ? "选择平台角色" : "等待服务端角色策略"}');
+    expect(source).not.toContain('const platformRoles = [');
   });
 
   it("keeps the revoke receipt and renders governance sections in one page", () => {

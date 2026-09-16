@@ -16,6 +16,8 @@ export type ProbeResult = {
   providerRequestId?: string
   providerJobId?: string
   usageObserved?: boolean
+  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; billingUnits?: number; durationSeconds?: number }
+  usageProviderRequestId?: string
   costObserved?: boolean
   costSource?: 'provider_receipt' | 'relay_pricing_snapshot'
   costCny?: number
@@ -171,30 +173,37 @@ export async function evaluateRelayUsageEvidence(
       ? { context: { billingUnits: 1 } }
       : modality === 'video' ? { context: { durationSeconds: options.durationSeconds ?? videoDurationSeconds, ...(options.resolution ? { resolution: options.resolution } : {}) } } : {}),
   })
-  const requestUsageObserved = modality === 'image' || modality === 'image_edit'
-    ? parsed?.metadata?.billing_units === 1
-    : modality === 'video'
-      ? typeof parsed?.metadata?.duration_seconds === 'number' && parsed.metadata.duration_seconds > 0
-      : false
-  // Cost alone proves money, not consumption units. Keep the two evidence
-  // dimensions separate so a media response cannot pass usage gates merely
-  // because it contains cost_cny.
-  const usageObserved = requestUsageObserved
-    || parsed?.inputTokens !== undefined
-    || parsed?.outputTokens !== undefined
-    || parsed?.totalTokens !== undefined
-    || Boolean(rawUsage && Object.keys(rawUsage).length)
+  const nonNegativeNumber = (value: unknown): number | undefined => {
+    const number = typeof value === 'number' ? value : typeof value === 'string' && /^\d+(?:\.\d+)?$/u.test(value.trim()) ? Number(value) : undefined
+    return number !== undefined && Number.isFinite(number) && number >= 0 ? number : undefined
+  }
+  const imageArtifacts = Array.isArray(record.data) ? record.data.length
+    : nested && Array.isArray(nested.data) ? nested.data.length
+      : result && Array.isArray(result.data) ? result.data.length : 0
+  const reportedBillingUnits = nonNegativeNumber(rawUsage?.billing_units ?? rawUsage?.billed_units ?? rawUsage?.output_image_count)
+  const reportedDuration = nonNegativeNumber(rawUsage?.duration_seconds ?? rawUsage?.durationSeconds)
+  const usage = {
+    ...(parsed?.inputTokens !== undefined ? { inputTokens: parsed.inputTokens } : {}),
+    ...(parsed?.outputTokens !== undefined ? { outputTokens: parsed.outputTokens } : {}),
+    ...(parsed?.totalTokens !== undefined ? { totalTokens: parsed.totalTokens } : {}),
+    ...(modality === 'image' || modality === 'image_edit' ? { billingUnits: reportedBillingUnits ?? imageArtifacts } : {}),
+    ...(modality === 'video' && reportedDuration !== undefined ? { durationSeconds: reportedDuration } : {}),
+  }
+  // Cost alone proves money, not consumption units. Only response-derived
+  // numeric units are release evidence; requested media duration/count is not.
+  const usageObserved = Object.keys(usage).length > 0
+  const metering = usageObserved ? { usage, ...(parsed?.providerRequestId ? { usageProviderRequestId: parsed.providerRequestId } : {}) } : {}
   const rawCost = parsed?.costCny ?? record.cost ?? headers.get('x-model-cost-cny')
   const providerCost = typeof rawCost === 'number'
     ? rawCost
     : typeof rawCost === 'string' && /^\d+(?:\.\d+)?$/u.test(rawCost.trim()) ? Number(rawCost) : undefined
   if (providerCost !== undefined && Number.isFinite(providerCost) && providerCost >= 0) {
-    return { usageObserved, costObserved: true, costSource: 'provider_receipt' as const, costCny: providerCost }
+    return { usageObserved, ...metering, costObserved: true, costSource: 'provider_receipt' as const, costCny: providerCost }
   }
   const quoteClient = options.pricing ?? pricingClient
   if (quoteClient && parsed && usageObserved) {
     const quote = await quoteClient.quote(parsed)
-    return { usageObserved: true, costObserved: true, costSource: 'relay_pricing_snapshot' as const, costCny: quote.costCny, pricingVersion: quote.metadata.pricing_version, pricingGroup: quote.metadata.pricing_group }
+    return { usageObserved: true, ...metering, costObserved: true, costSource: 'relay_pricing_snapshot' as const, costCny: quote.costCny, pricingVersion: quote.metadata.pricing_version, pricingGroup: quote.metadata.pricing_group }
   }
   return { usageObserved, costObserved: false }
 }
@@ -235,6 +244,8 @@ export function finalizeSuccessfulProbe(input: SuccessfulProbe): ProbeResult {
   if (!responseValid) return { ...result, state: 'blocked', detail: responseFailure ?? 'response_contract_invalid' }
   if (!result.providerRequestId) return { ...result, state: 'blocked', detail: 'provider_request_id_missing' }
   if (result.usageObserved !== true) return { ...result, state: 'blocked', detail: 'usage_evidence_missing' }
+  if (!result.usage || Object.keys(result.usage).length === 0) return { ...result, state: 'blocked', detail: 'numeric_usage_evidence_missing' }
+  if (!result.usageProviderRequestId || result.usageProviderRequestId !== result.providerRequestId) return { ...result, state: 'blocked', detail: 'usage_request_id_mismatch' }
   if (result.costObserved !== true || result.costCny === undefined || !result.costSource) return { ...result, state: 'blocked', detail: 'cost_evidence_missing' }
   return { ...result, state: 'ready' }
 }

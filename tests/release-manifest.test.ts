@@ -38,6 +38,7 @@ describe('release manifest', () => {
         promptBundleVersion: 'prompt-rc-1',
       },
       mcp: { methodCount: MCP_METHODS.length },
+      productionEvidenceBundle: { required: true, schemaVersion: 'release-evidence-bundle/1' },
       productionEvidence: {
         capability: 'artifact://capability/rc-20260826',
         capacity: 'artifact://capacity/rc-20260826',
@@ -48,7 +49,7 @@ describe('release manifest', () => {
         codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(16)
+    expect(manifest.artifacts).toHaveLength(24)
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining([
       'services/payment-gateway/index.mjs',
       'services/payment-gateway/alipay.mjs',
@@ -56,6 +57,14 @@ describe('release manifest', () => {
       'packages/billing/src/callback-envelope.mjs',
       'packages/billing/src/callback-envelope.d.mts',
       'services/payment-gateway/Dockerfile',
+      'infra/scripts/render-ecs-production-compose.sh',
+      'infra/scripts/stage-verified-ecs-release.sh',
+      'infra/scripts/deploy-verified-ecs-compose.sh',
+      'infra/scripts/rollback-ecs-compose.sh',
+      'infra/scripts/invoke-ecs-automatic-rollback.sh',
+      'infra/protected/attest-release-evidence-bundle.mjs',
+      'infra/protected/attest-release-evidence-bundle.d.mts',
+      'tests/release-evidence-bundle-gate.ts',
     ]))
     expect(manifest.artifacts.every(item => /^[a-f0-9]{64}$/.test(item.sha256) && item.bytes > 0)).toBe(true)
   })

@@ -16,6 +16,8 @@ cd "$repo_root"
 : "${PLATFORM_CANARY_MODE:?PLATFORM_CANARY_MODE=real is required}"
 [ "$PLATFORM_CANARY_MODE" = real ] || { echo "PLATFORM_CANARY_MODE must be real" >&2; exit 1; }
 [ "${PLATFORM_CANARY_CONFIRM:-false}" = true ] || { echo "PLATFORM_CANARY_CONFIRM=true is required" >&2; exit 1; }
+[ "${PLATFORM_CANARY_ALLOW_WRITE:-false}" = true ] && [ "${PLATFORM_CANARY_CONFIRM_WRITES:-false}" = true ] || { echo "production canary requires explicitly confirmed controlled test-store writes" >&2; exit 1; }
+[ "${PLATFORM_CANARY_ALLOW_REVOKE:-false}" = true ] && [ "${PLATFORM_CANARY_CONFIRM_REVOKE:-false}" = true ] || { echo "production canary requires explicitly confirmed disposable test-account revoke" >&2; exit 1; }
 [ "${PAYMENT_MODE:-}" = provider ] || { echo "PAYMENT_MODE=provider is required for production canary" >&2; exit 1; }
 printf '%s' "${PAYMENT_CALLBACK_BASE_URL:-}" | grep -Eq '^https://' || { echo "PAYMENT_CALLBACK_BASE_URL must be HTTPS" >&2; exit 1; }
 [ -n "${PAYMENT_CALLBACK_SECRET_REF:-}" ] || { echo "PAYMENT_CALLBACK_SECRET_REF is required" >&2; exit 1; }
@@ -23,6 +25,11 @@ printf '%s' "${PAYMENT_PROVIDER_QUERY_API_URL:-}" | grep -Eq '^https://' || { ec
 printf '%s' "${PAYMENT_PROVIDER_REFUND_QUERY_API_URL:-}" | grep -Eq '^https://' || { echo "PAYMENT_PROVIDER_REFUND_QUERY_API_URL must be HTTPS" >&2; exit 1; }
 printf '%s' "${PAYMENT_PROVIDER_REFUND_API_URL:-}" | grep -Eq '^https://' || { echo "PAYMENT_PROVIDER_REFUND_API_URL must be HTTPS" >&2; exit 1; }
 [ -f "$PLATFORM_CANARY_BASE_EVIDENCE" ] || { echo "base evidence not found" >&2; exit 1; }
+[ "${PLATFORM_CANARY_OUTPUT#/}" != "$PLATFORM_CANARY_OUTPUT" ] || { echo "canary output path must be absolute" >&2; exit 1; }
+[ -d "$(dirname "$PLATFORM_CANARY_OUTPUT")" ] || { echo "canary output directory is missing" >&2; exit 1; }
+output_dir=$(dirname "$PLATFORM_CANARY_OUTPUT")
+[ "$(CDPATH= cd -- "$output_dir" && pwd -P)" = "$output_dir" ] || { echo "canary output directory must be canonical and non-symlink" >&2; exit 1; }
+[ ! -e "$PLATFORM_CANARY_OUTPUT" ] && [ ! -L "$PLATFORM_CANARY_OUTPUT" ] || { echo "canary output already exists" >&2; exit 1; }
 [ -n "${PRODUCTION_API_BASE_URL:-}" ] || { echo "PRODUCTION_API_BASE_URL is required so the canary is bound to the deployed application" >&2; exit 1; }
 printf '%s' "$PRODUCTION_API_BASE_URL" | grep -Eq '^https://' || { echo "PRODUCTION_API_BASE_URL must use HTTPS" >&2; exit 1; }
 
@@ -33,6 +40,20 @@ read_env() {
 }
 
 platforms=${PLATFORM_CANARY_PLATFORMS:-jd,taobao,tmall,pinduoduo,xiaohongshu,douyin}
+seen_platforms=
+for platform in $(printf '%s' "$platforms" | tr ',' ' '); do
+  case "$platform" in jd|taobao|tmall|pinduoduo|xiaohongshu|douyin) ;; *) echo "unsupported platform: $platform" >&2; exit 1 ;; esac
+  case ",$seen_platforms," in *",$platform,"*) echo "duplicate platform: $platform" >&2; exit 1 ;; esac
+  seen_platforms=${seen_platforms:+$seen_platforms,}$platform
+  transcript_output="$PLATFORM_CANARY_OUTPUT.$platform.exchanges.json"
+  [ ! -e "$transcript_output" ] && [ ! -L "$transcript_output" ] || { echo "canary transcript already exists: $transcript_output" >&2; exit 1; }
+done
+# OAuth callback exchange is implemented by the CLI, but per-capability
+# negative probes and negotiated transport protocol evidence are still absent.
+# Confirmed writes/revoke would therefore mutate a test store for a matrix
+# that cannot pass the release gate. Stop before any provider I/O.
+echo "production canary admission blocked: per-capability negative probes and trusted protocol evidence capture are not implemented; no provider calls were made" >&2
+exit 1
 workdir=$(mktemp -d "${TMPDIR:-/tmp}/merchant-production-canary.XXXXXX")
 trap 'rm -rf "$workdir"' EXIT HUP INT TERM
 current="$workdir/evidence.json"
@@ -57,6 +78,7 @@ for platform in $(printf '%s' "$platforms" | tr ',' ' '); do
   api_version=$(read_env "PLATFORM_CANARY_${prefix}_API_VERSION")
   verified_by=$(read_env "PLATFORM_CANARY_${prefix}_VERIFIED_BY")
   evidence_ref=$(read_env "PLATFORM_CANARY_${prefix}_EVIDENCE_REF")
+  expected_remote_id=$(read_env "PLATFORM_CANARY_${prefix}_EXPECTED_REMOTE_ID")
   [ -n "$workspace_id" ] || workspace_id=${PLATFORM_CANARY_WORKSPACE_ID:-}
   [ -n "$account_id" ] || account_id=${PLATFORM_CANARY_ACCOUNT_ID:-}
   [ -n "$scope" ] || scope=${PLATFORM_CANARY_SCOPE:-}
@@ -64,6 +86,7 @@ for platform in $(printf '%s' "$platforms" | tr ',' ' '); do
   [ -n "$api_version" ] || api_version=${PLATFORM_CANARY_API_VERSION:-}
   [ -n "$verified_by" ] || verified_by=${PLATFORM_CANARY_VERIFIED_BY:-}
   [ -n "$evidence_ref" ] || evidence_ref="artifact://canary/$platform/$RELEASE_ID"
+  [ -n "$expected_remote_id" ] || expected_remote_id=${PLATFORM_CANARY_EXPECTED_REMOTE_ID:-}
   : "${application_id:?PLATFORM_CANARY_${prefix}_APPLICATION_ID is required}"
   : "${test_store_id:?PLATFORM_CANARY_${prefix}_TEST_STORE_ID is required}"
   : "${workspace_id:?PLATFORM_CANARY_${prefix}_WORKSPACE_ID or PLATFORM_CANARY_WORKSPACE_ID is required}"
@@ -72,7 +95,9 @@ for platform in $(printf '%s' "$platforms" | tr ',' ' '); do
   : "${media_file:?PLATFORM_CANARY_${prefix}_MEDIA_FILE or PLATFORM_CANARY_MEDIA_FILE is required}"
   : "${api_version:?PLATFORM_CANARY_${prefix}_API_VERSION or PLATFORM_CANARY_API_VERSION is required}"
   : "${verified_by:?PLATFORM_CANARY_${prefix}_VERIFIED_BY or PLATFORM_CANARY_VERIFIED_BY is required}"
+  : "${expected_remote_id:?PLATFORM_CANARY_${prefix}_EXPECTED_REMOTE_ID or PLATFORM_CANARY_EXPECTED_REMOTE_ID is required}"
   output="$workdir/$platform.json"
+  transcript_output="$PLATFORM_CANARY_OUTPUT.$platform.exchanges.json"
   PLATFORM_CANARY_PLATFORM="$platform" \
   PLATFORM_CANARY_APPLICATION_ID="$application_id" \
   PLATFORM_CANARY_TEST_STORE_ID="$test_store_id" \
@@ -83,11 +108,20 @@ for platform in $(printf '%s' "$platforms" | tr ',' ' '); do
   PLATFORM_CANARY_API_VERSION="$api_version" \
   PLATFORM_CANARY_VERIFIED_BY="$verified_by" \
   PLATFORM_CANARY_EVIDENCE_REF="$evidence_ref" \
+  PLATFORM_CANARY_EXPECTED_REMOTE_ID="$expected_remote_id" \
   PLATFORM_CANARY_BASE_EVIDENCE="$current" \
   PLATFORM_CANARY_OUTPUT="$output" \
+  PLATFORM_CANARY_TRANSCRIPT_OUTPUT="$transcript_output" \
   npx --no-install tsx tests/platform-canary.ts
   cp "$output" "$current"
 done
+
+# A successful provider round trip is insufficient for release evidence. The
+# unsigned matrix must already contain real protocol and negative-path error
+# observations for every contracted capability before the protected signer is
+# asked to attest it.
+npx --no-install tsx tests/platform-transcript-gate.ts --file "$current" --artifact-root "$(dirname "$PLATFORM_CANARY_OUTPUT")"
+npx --no-install tsx tests/capability-evidence-gate.ts --file "$current" --release-id "$RELEASE_ID" --require-canary
 
 # The runner produces an unsigned candidate. A protected external attester
 # must add the immutable release bindings and Ed25519 signature; application

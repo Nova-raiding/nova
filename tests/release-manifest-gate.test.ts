@@ -20,7 +20,7 @@ function boundManifestFixture() {
   const refs = {} as Record<string, string>
   for (const field of evidenceFields) {
     const document: Record<string, unknown> = { schema_version: '2', release_id: 'release-1', generated_at: '2026-08-29T00:00:00Z', expires_at: '2026-09-02T00:00:00Z', key_id: 'release-security-test', environment: 'production', status: 'pass' }
-    if (field === 'capability' || field === 'payment' || field === 'restore' || field === 'codexAppHost') document.signature_base64 = signProductionEvidence(document, privateKeyPem)
+    if (field === 'capability' || field === 'payment' || field === 'restore' || field === 'objectStorage' || field === 'codexAppHost') document.signature_base64 = signProductionEvidence(document, privateKeyPem)
     const contents = JSON.stringify(document)
     const path = join(artifactRoot, `${field}.json`)
     writeFileSync(path, contents)
@@ -39,8 +39,9 @@ describe('release manifest production gate', () => {
   })
   it('rejects stale API/MCP artifacts and unbound production evidence', () => {
     const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })
+    delete (manifest as Partial<typeof manifest>).productionEvidenceBundle
     manifest.artifacts.find(item => item.path === 'apps/api/openapi.yaml')!.sha256 = 'f'.repeat(64)
-    expect(validateReleaseManifest(manifest, { root: process.cwd(), expectedReleaseId: 'release-1' })).toEqual(expect.arrayContaining(['artifact SHA-256 does not match current source: apps/api/openapi.yaml', 'productionEvidence.capability must be an immutable production artifact']))
+    expect(validateReleaseManifest(manifest, { root: process.cwd(), expectedReleaseId: 'release-1' })).toEqual(expect.arrayContaining(['productionEvidenceBundle must require release-evidence-bundle/1', 'artifact SHA-256 does not match current source: apps/api/openapi.yaml', 'productionEvidence.capability must be an immutable production artifact']))
     expect(readFileSync('apps/api/openapi.yaml', 'utf8').length).toBeGreaterThan(0)
   })
   it('binds every payment-gateway source and build artifact to the release', () => {
@@ -55,6 +56,24 @@ describe('release manifest production gate', () => {
     const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining(gatewayArtifacts))
     for (const path of gatewayArtifacts) {
+      const tampered = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })
+      tampered.artifacts.find(item => item.path === path)!.sha256 = 'f'.repeat(64)
+      expect(validateReleaseManifest(tampered, { root: process.cwd(), expectedReleaseId: 'release-1' })).toContain(`artifact SHA-256 does not match current source: ${path}`)
+    }
+  })
+  it('binds the ECS deploy, rollback, render and evidence-bundle trust chain', () => {
+    const deploymentArtifacts = [
+      'infra/scripts/render-ecs-production-compose.sh',
+      'infra/scripts/deploy-verified-ecs-compose.sh',
+      'infra/scripts/rollback-ecs-compose.sh',
+      'infra/scripts/invoke-ecs-automatic-rollback.sh',
+      'infra/protected/attest-release-evidence-bundle.mjs',
+      'infra/protected/attest-release-evidence-bundle.d.mts',
+      'tests/release-evidence-bundle-gate.ts',
+    ]
+    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })
+    expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining(deploymentArtifacts))
+    for (const path of deploymentArtifacts) {
       const tampered = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })
       tampered.artifacts.find(item => item.path === path)!.sha256 = 'f'.repeat(64)
       expect(validateReleaseManifest(tampered, { root: process.cwd(), expectedReleaseId: 'release-1' })).toContain(`artifact SHA-256 does not match current source: ${path}`)
@@ -110,5 +129,13 @@ describe('release manifest production gate', () => {
     writeFileSync(unsignedHost.evidenceFiles.codexAppHost, unsignedHostContents)
     unsignedHost.manifest.productionEvidence.codexAppHost = `artifact://production/codexAppHost.json#${digest(unsignedHostContents)}`
     expect(validateReleaseManifest(unsignedHost.manifest, unsignedHost.options)).toContain('productionEvidence.codexAppHost signature_base64 must be a canonical Ed25519 signature')
+
+    const unsignedStorage = boundManifestFixture()
+    const storage = JSON.parse(readFileSync(unsignedStorage.evidenceFiles.objectStorage, 'utf8')) as Record<string, unknown>
+    delete storage.signature_base64
+    const unsignedStorageContents = JSON.stringify(storage)
+    writeFileSync(unsignedStorage.evidenceFiles.objectStorage, unsignedStorageContents)
+    unsignedStorage.manifest.productionEvidence.objectStorage = `artifact://production/objectStorage.json#${digest(unsignedStorageContents)}`
+    expect(validateReleaseManifest(unsignedStorage.manifest, unsignedStorage.options)).toContain('productionEvidence.objectStorage signature_base64 must be a canonical Ed25519 signature')
   })
 })

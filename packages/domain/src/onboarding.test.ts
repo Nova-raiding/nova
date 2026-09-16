@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCanonicalIdentityHash, resolveOnboardingImportWindow } from './onboarding.js'
+import { buildCanonicalIdentityHash, inspectStoreLinks, resolveOnboardingImportWindow } from './onboarding.js'
 
 describe('onboarding import domain rules', () => {
   it('opens from configuring and closes at the earlier accepted or paid+60d deadline', () => {
@@ -33,5 +33,21 @@ describe('onboarding import domain rules', () => {
 
   it('rejects empty identity parts instead of creating a shared sentinel key', () => {
     expect(buildCanonicalIdentityHash({ jurisdiction: 'CN', registrationType: 'company', registrationNumber: ' ' })).toMatchObject({ ok: false, error: { code: 'CANONICAL_IDENTITY_INVALID' } })
+  })
+
+  it('inspects multiple shop introductions without claiming authorization', () => {
+    const inspected = inspectStoreLinks('淘宝｜云朵女装店｜https://shop.m.taobao.com/shop/shop_index.htm?shop_id=123&token=secret\n平台：抖音电商\n店铺名称：云朵官方旗舰店\n店铺链接：https://shop.douyin.com/store/456')
+    expect(inspected.candidates).toHaveLength(2)
+    expect(inspected.candidates[0]).toMatchObject({ platform: 'taobao', storeName: '云朵女装店', authorizationState: 'not_checked', linkState: 'format_verified_identity_unverified' })
+    expect(inspected.candidates[0]?.shopUrl).toContain('shop_id=123')
+    expect(inspected.candidates[0]?.shopUrl).not.toContain('secret')
+    expect(inspected.requiresUserConfirmation).toBe(true)
+  })
+
+  it('rejects unsafe and duplicate links without echoing secrets', () => {
+    const inspected = inspectStoreLinks('淘宝｜店铺甲｜http://shop.taobao.com/1\n淘宝｜店铺甲｜https://user:pass@shop.taobao.com/1\n淘宝｜店铺乙｜https://shop.taobao.com/2\n淘宝｜店铺乙｜https://shop.taobao.com/2')
+    expect(inspected.candidates).toHaveLength(1)
+    expect(inspected.issues.map(issue => issue.code)).toEqual(['SHOP_URL_UNSAFE', 'SHOP_URL_UNSAFE', 'DUPLICATE_STORE_LINK'])
+    expect(JSON.stringify(inspected)).not.toContain('pass')
   })
 })

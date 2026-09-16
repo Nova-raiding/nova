@@ -21,6 +21,10 @@ const productionEnvironment = (): NodeJS.ProcessEnv => ({
   IMAGE_EDIT_MODEL: 'image-edit-model',
   OCR_MODEL: 'ocr-model',
   VIDEO_MODEL: 'video-model',
+  EMBEDDING_MODEL: 'embedding-model',
+  EMBEDDING_DIMENSIONS: '1536',
+  MODEL_EMBEDDING_MAX_REQUEST_CNY: '0.10',
+  MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'true',
   MODEL_RPM_LIMIT: '120',
   MODEL_TPM_LIMIT: '120000',
   MODEL_DAILY_CNY_LIMIT: '100',
@@ -371,6 +375,20 @@ describe('production readiness fail-closed', () => {
     expect(result.ready).toBe(false)
     expect(result.gates.release_metadata).toMatchObject({ ready: false })
     expect(result.gates.release_metadata?.reasons ?? []).toContain(releaseId.trim() ? 'release_id_invalid' : 'release_id_missing')
+  })
+
+  it('returns 503 from /releasez when the production release identity is unsafe', async () => {
+    const environment = productionEnvironment()
+    environment.RELEASE_ID = 'release/unsafe'
+    for (const [key, value] of Object.entries(environment)) vi.stubEnv(key, value)
+    const running = await listen()
+    openServers.push(running.server)
+
+    const response = await fetch(`${running.baseUrl}/releasez`)
+    const body = await response.json() as Envelope
+    expect(response.status).toBe(503)
+    expect(body.error).toMatchObject({ code: 'RELEASE_METADATA_UNAVAILABLE' })
+    expect(body.data).toBeNull()
   })
 
   it('does not let a production fixture profile bypass control-plane gates', () => {

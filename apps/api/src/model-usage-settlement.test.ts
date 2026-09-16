@@ -179,7 +179,7 @@ async function generate(workspaceId: string, actionId: string) {
     category: product.category,
   })
   api.service.confirmProductFacts(workspaceId, owned.id)
-  return api.service.generateOneSentenceText({ workspaceId, productId: owned.id, prompt: '生成一句事实安全文案', actionId })
+  return api.withProviderDispatchAdmissionForTests(workspaceId, async () => api.service.generateOneSentenceText({ workspaceId, productId: owned.id, prompt: '生成一句事实安全文案', actionId }))
 }
 
 async function authorizeAction(workspaceId: string, actionId: string, settlement: 'wallet' | 'included_quota' | 'entitlement', runKey = actionId) {

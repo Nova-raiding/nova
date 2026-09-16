@@ -32,6 +32,13 @@
 
 ### A2. 注册 marketplace 并安装插件
 
+先核对注册来源。多工作树机器上，`merchant-local` 可能仍指向旧候选目录；即使当前源码和测试已更新，直接 `codex plugin add` 也只会从旧目录重新安装。技术人员在目标仓库运行：
+
+    codex plugin marketplace list
+    node apps/plugin/scripts/verify-marketplace-source.mjs --expected .codex-marketplace
+
+只有检查输出 `ok: true` 才继续安装。若显示 `marketplace_points_to_different_checkout`，先由维护者确定要发布的工作树及其未提交改动，再按 Codex marketplace 管理流程调整来源；不要覆盖另一个工作树或直接改插件缓存。
+
 如果管理员给的是本机 marketplace 目录：
 
     codex plugin marketplace add /absolute/path/to/.codex-marketplace
@@ -89,9 +96,9 @@
 
 ### A5. 做只读验收
 
-在新会话中输入：
+在新会话中选择第一个快捷提示，或输入：
 
-> 启动Store Nova插件并检查连接状态
+> @Store Nova 开始使用
 
 首次调用会读取工作区和准入状态。正常结果应继续询问上传资料、选择平台或查看工作区；不应出现 `MCP_CONFIGURATION_REQUIRED`、`MERCHANT_MCP_BASE_URL is required` 或“插件连接配置未加载”。
 
@@ -145,8 +152,8 @@
 技术人员完成 A 节后，商家只需：
 
 1. 打开新的 ChatGPT 会话；
-2. 说“启动Store Nova插件并检查连接状态”；
-3. 按对话提示选择平台和店铺，或上传商品图片/资料；
+2. 选择第一个快捷提示“@Store Nova 开始使用”，先查看服务端核验的四步进度；
+3. 按当前一步的对话提示确认店铺链接，再经平台官方页面授权。没有可读官方授权时保持 0/4，不用店铺密码或 Cookie 代替；
 4. 需要生成、审核、批准或发布时，按对话中的一次性确认继续。
 
 插件会通过服务端 OAuth 绑定店铺。商家不会把平台登录密码交给插件，插件也不会保存平台 access token。店铺选择始终以“平台 + 店铺账号”为范围，同名店铺不会自动选第一家。
@@ -194,6 +201,7 @@
 技术人员交付前逐项确认：
 
 - [ ] `codex plugin list` 显示插件 `installed, enabled`。
+- [ ] marketplace 来源核对为本次交付仓库，`verify-marketplace-source.mjs` 返回 `ok: true`；安装缓存与源码版本一致。
 - [ ] `MERCHANT_MCP_BASE_URL`、`MERCHANT_WORKSPACE_ID`、`MERCHANT_STRICT_AUTH=true`、`DEPLOY_ENV=production` 在启动 ChatGPT 的用户 launchd 环境中存在。
 - [ ] 生产没有开启 `MERCHANT_ALLOW_FIXTURE_FALLBACK=true` 或全局 `MERCHANT_MCP_WRITE_ENABLED=true`。
 - [ ] ChatGPT 已完全重启，并在新会话中重新加载工具。

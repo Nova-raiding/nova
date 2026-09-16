@@ -291,6 +291,16 @@ export function alertListParams(filters: AlertFilters, platformScope = false, wo
   };
 }
 
+export function canonicalOpsWorkspaceId(sessionWorkspaceId: string | undefined, managedSession: boolean, configuredWorkspaceId: string | undefined): string {
+  const fromSession = sessionWorkspaceId?.trim();
+  if (fromSession) return fromSession;
+  return managedSession ? "" : configuredWorkspaceId?.trim() ?? "";
+}
+
+export function workspaceAuditListParams(workspaceId: string): Record<string, string> {
+  return { ...(workspaceId ? { workspace_id: workspaceId } : {}), limit: "20" };
+}
+
 export function marketingQueueParams(filters: QueueFilters): Record<string, string> {
   return {
     limit: "20",
@@ -759,16 +769,17 @@ export function useOpsConsoleModel() {
       const platformAlertScope = platformOperator && resolvedAuthorization.can("marketing.summary.read");
       const platformStoreScope = platformOperator && resolvedAuthorization.can("platform.settings.read");
       const commercialAccessAvailable = resolvedAuthorization.can("commercial.access.read");
+      const scopedWorkspaceId = canonicalOpsWorkspaceId(
+        resolvedSession?.workspace_id,
+        managedOpsSession,
+        (managedOpsSession ? undefined : localStorage.getItem("ops_workspace_id")) ?? undefined,
+      );
       const workspaceAlertParams = alertListParams(
         activeAlertFilters,
         platformAlertScope,
-        resolvedSession?.workspace_id?.trim()
-        || (managedOpsSession ? sessionStorage : localStorage).getItem("ops_workspace_id")?.trim()
-        || undefined,
+        scopedWorkspaceId || undefined,
       );
-      const commercialTargetWorkspaceId = resolvedSession?.workspace_id?.trim()
-        || (managedOpsSession ? sessionStorage : localStorage).getItem("ops_workspace_id")?.trim()
-        || "";
+      const commercialTargetWorkspaceId = scopedWorkspaceId;
       const commercialAccessSummary = platformOperator && commercialAccessAvailable && commercialTargetWorkspaceId
         ? await authorizedOptional("ops.commercial.access.summary", { target_workspace_id: commercialTargetWorkspaceId })
         : undefined;
@@ -828,10 +839,7 @@ export function useOpsConsoleModel() {
         platformOperator || import.meta.env.VITE_OPS_BUILD_MODE === "local"
           ? Promise.resolve(undefined)
           : authorizedOptional("workspace.commercial.get"),
-        platformOperator ? deferredOptional("ops.audit.platform.list", { limit: "20" }) : authorizedOptional("ops.audit.list", {
-          ...(localStorage.getItem("ops_workspace_id")?.trim() ? { workspace_id: localStorage.getItem("ops_workspace_id")!.trim() } : {}),
-          limit: "20",
-        }),
+        platformOperator ? deferredOptional("ops.audit.platform.list", { limit: "20" }) : authorizedOptional("ops.audit.list", workspaceAuditListParams(scopedWorkspaceId)),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("ops.members.list"),
         platformOperator && allowedHydrationMethods.has("ops.workspaces.list")
           ? new Promise<void>((resolve) => window.setTimeout(resolve, 1_500)).then(() => authorizedOptional("ops.workspaces.list", { offset: "0", limit: "20", merchant_only: "true" }))
@@ -1153,9 +1161,7 @@ export function useOpsConsoleModel() {
     () => createAuthorizationProjection(opsSession, managedOpsSession),
     [opsSession],
   );
-  const opsWorkspaceId = opsSession?.workspace_id ?? (
-    (managedOpsSession ? sessionStorage : localStorage).getItem("ops_workspace_id")?.trim() ?? ""
-  );
+  const opsWorkspaceId = canonicalOpsWorkspaceId(opsSession?.workspace_id, managedOpsSession, managedOpsSession ? undefined : localStorage.getItem("ops_workspace_id") ?? undefined);
   const financeAccess = financePermissions(authorization);
   const can = (capabilities: readonly string[]) => authorization.canAny(capabilities);
   const canFinance = financeAccess.refund;

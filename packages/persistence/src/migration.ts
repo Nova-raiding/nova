@@ -509,6 +509,8 @@ export async function loadMigrations(): Promise<Migration[]> {
   const customerDeliveryManualVerification = await readFile(new URL('./migrations/213_customer_delivery_manual_verification.sql', import.meta.url), 'utf8')
   const customerDeliveryArchival = await readFile(new URL('./migrations/214_customer_delivery_archival.sql', import.meta.url), 'utf8')
   const customerDeliveryAccountBinding = await readFile(new URL('./migrations/215_customer_delivery_account_binding.sql', import.meta.url), 'utf8')
+  const workspaceContentSetup = await readFile(new URL('./migrations/216_workspace_content_setup.sql', import.meta.url), 'utf8')
+  const modelUsageEmbeddingModality = await readFile(new URL('./migrations/217_model_usage_embedding_modality.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -725,6 +727,8 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 213, name: 'customer_delivery_manual_verification', sql: customerDeliveryManualVerification },
     { version: 214, name: 'customer_delivery_archival', sql: customerDeliveryArchival },
     { version: 215, name: 'customer_delivery_account_binding', sql: customerDeliveryAccountBinding },
+    { version: 216, name: 'workspace_content_setup', sql: workspaceContentSetup },
+    { version: 217, name: 'model_usage_embedding_modality', sql: modelUsageEmbeddingModality },
   ]
 }
 

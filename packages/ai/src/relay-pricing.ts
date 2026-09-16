@@ -229,6 +229,7 @@ export function createRelayPricingClientFromEnv(source: Record<string, string | 
     ...(source.MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP?.trim() ? { image_edit: source.MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP.trim() } : {}),
     ...(source.MODEL_RELAY_OCR_PRICING_GROUP?.trim() ? { ocr: source.MODEL_RELAY_OCR_PRICING_GROUP.trim() } : {}),
     ...(source.MODEL_RELAY_VIDEO_PRICING_GROUP?.trim() ? { video: source.MODEL_RELAY_VIDEO_PRICING_GROUP.trim() } : {}),
+    ...(source.MODEL_RELAY_EMBEDDING_PRICING_GROUP?.trim() ? { embedding: source.MODEL_RELAY_EMBEDDING_PRICING_GROUP.trim() } : {}),
   }
   let videoPriceCnyPerSecond: Record<string, number> | undefined
   const rawVideoPrices = source.MODEL_RELAY_VIDEO_PRICING_OVERRIDES?.trim()

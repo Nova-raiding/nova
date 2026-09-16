@@ -1,0 +1,50 @@
+# Owner 多轮验收记录（2026-09-15）
+
+以当前工作树和隔离运行环境为证据；本记录不能替代绑定最终 Git SHA、镜像摘要和 nonce 的生产发布证据。
+
+| 方向 | 实际证据 | 结果与界限 |
+|---|---|---|
+| 类型检查 | `/tmp/owner-final-typecheck.log` | 最终复跑通过；工作树未冻结，正式发布仍需从绑定版本重跑。 |
+| 发布门禁第一轮 | `/tmp/owner-current-release-gates.log` | 593 通过、12 失败；元数据 MCP 数量、迁移尾版和隔离清单断言滞后。 |
+| 失败项复核 | `/tmp/owner-release-failures-retest.log` | 6 文件、69 项通过。 |
+| 发布门禁第二轮 | `/tmp/owner-current-release-gates-rerun.log` | 128 文件、605 项通过；7 文件、14 项 PostgreSQL 测试按设计跳过。 |
+| 发布门禁最终复跑 | `/tmp/owner-final-release-gates.log` | 128 文件、605 项通过；7 文件、14 项 PostgreSQL 测试仍按设计跳过，已由全量隔离 PostgreSQL 独立覆盖。 |
+| 迁移 212 真 PostgreSQL | `artifacts/isolated-postgres/run-IyJ46Z/vitest.json` | 1/1 通过，覆盖历史保留、RLS 范围、不可变绑定和并发撤销。 |
+| 全量隔离 PostgreSQL | `artifacts/isolated-postgres/run-dHN7lK/vitest.json`；`/tmp/owner-all-postgres-third.log` | 72/72 文件、95/95 断言通过，零跳过、零未处理错误；清理时由 `DROP DATABASE` 检查连接是否已关闭。 |
+| 桌面运营后台浏览器 | `/tmp/owner-browser-ops.log` | 10/10 通过，使用真实浏览器和隔离持久层。 |
+| 商家工作流浏览器 | `/tmp/owner-browser-merchant.log` | 23/23 通过，包含发布重试、模型 readiness 与店铺同步边界。 |
+| 合同公网下载/真实扫描 | `/tmp/owner-browser-contract-link-real.log`；对应隔离目录 `contract-link/browser-result.json` | 1/1 通过，公网 HTTPS PDF → API 上传 → ClamAV → PG 回读与合同登记，34 个 API 事件。合成附件仅用于交付档案准备，不能证明真实付款/平台验收。 |
+| 账号绑定浏览器复跑 | `/tmp/owner-browser-account-access-real.log` | 2/2 通过；先运行真实合同扫描准备，再验证账号 A 绑定及账号 B 不受影响。 |
+| ChatGPT 生产 OAuth | 公开 MCP 401 challenge、资源和授权服务器 metadata | 发现路径存在；当前没有 CIMD/DCR，服务器缺实际 `MCP_OAUTH_CLIENTS`，未证明 ChatGPT 授权码闭环。 |
+| ECS 生产 | `/releasez`、`/readyz`、迁移表、Compose/容器环境 | 仍是 fixture/local、无可信 release 身份，迁移尾 209。生产 NO-GO。 |
+| 生产诊断复核 | `/tmp/owner-production-doctor.log` | 真实诊断确认迁移尾 212、RLS/目录门禁通过；运行模式仍为 fixture，支付、六平台 OAuth、OSS、scanner、release 元数据和宿主错误恢复证据均阻断生产。 |
+| ECS Compose 来源复核 | `ssh 101 docker inspect local-api-1`；候选渲染复核 | 线上容器由 `docker-compose.yml + docker-compose.ecs-pilot.yml + deploy/runtime/auth-hardening.yml` 启动，后者把 API 覆盖为 `NODE_ENV=development`、`DEPLOYMENT_PROFILE=local_acceptance`、fixture/local storage；移除该覆盖后，release overlay 又因缺少不可变镜像引用而无法渲染。未执行线上切换。 |
+| 运营 REST 租户边界回归 | `apps/ops-console/src/api/opsClient.test.ts`；针对性 Vitest | 平台工作台的 REST GET/POST 不再携带陈旧 `x-workspace-id`；4 文件、35 项相关回归通过。 |
+| 商家开通套餐数据源 | `UsersGovernanceWorkspace.tsx`、`UserDirectorySection.tsx`、`commercialOperationsClient.ts` | 套餐与价格改为后端商业目录；仅展示公开、已审批、可执行且有服务端价格的 SKU；目录为空时开通操作阻断。用户目录/商业解析相关 4 文件、23 项测试通过，类型检查通过。 |
+| 运营前端全量回归 | `/tmp/owner-ops-console-after-catalog.log`、`/tmp/owner-browser-ops.log` | 目录修复前 98 文件、695 项断言通过；修复后的新增路径与 UsersPage 恢复场景 4 文件、23 项通过；浏览器运营场景 10/10 通过。 |
+| 桌面前端生产构建 | `/tmp/owner-build-ops-final.log`、`/tmp/owner-build-merchant-final.log` | 运营后台与商家工作台构建均成功；Vite 仅提示商家主 bundle 超过 500 kB，未阻断构建。 |
+| ECS 只读配置快照 | `ssh 101 docker inspect local-api-1` | 当前为 `NODE_ENV=development`、`LOCAL_COMPOSE=true`、`DEPLOYMENT_PROFILE=local_acceptance`、`CONNECTOR_FIXTURE_MODE=true`、`ALLOW_LOCAL_DURABLE_OBJECT_STORAGE=true`；MCP OAuth 端点与 capability 证据路径未配置。该快照仅用于阻断定位，未修改线上。 |
+| 本地候选发布门禁安全拒绝 | `artifacts/local-runtime-tests/ad964b88-bcbe-47d0-99ad-fc301c6309c7/vitest.json` | 未提供显式隔离运行时配置时，`test:local-release-gate` 以 `LOCAL_RUNTIME_TEST_CONFIG_REQUIRED` fail-closed，拒绝连接共享本地/生产目标；符合安全约束。 |
+| 运营接口表面审计 | `npm run audit:ops-surface` | 140 个后端契约方法与 140 个前端引用完全对应，未注册服务端方法为 0；仅保留 3 个间接数据删除候选供后续人工审阅。 |
+| ECS 支付退款查单配置修复 | ECS `docker-compose.ecs-pilot.yml` 原件备份；主副本环境对比；`/api/healthz` | 远端 Compose 主副本共用映射新增 `PAYMENT_PROVIDER_REFUND_QUERY_API_URL`，仅此环境键变化；按原镜像/Compose 重建后主副本 healthy，线上 `payment.configured=true` 且 `reasons=[]`。生产仍为 fixture、只读，`releasez.ready=false`。 |
+| OSS 控制面与隔离 cutover 渲染 | ECS `ossutil` RAM Role 检查；`deploy/candidates/oss-20260915/docker-compose.ecs-oss-cutover.yml` | Bucket 版本控制 Enabled、生命周期规则 Enabled、Block Public Access=true；候选 overlay 渲染确认 API 主副本 OSS 环境一致。隔离探针的精确 VersionId 删除成功且 HEAD 确认不存在。尝试将 overlay 加到当前三层 Compose 后，容器健康但 `/healthz` 仍显示 `objectStorage.mode=local`：当前 `NODE_ENV=development` 分支不会实例化 OSS 存储。已恢复原三层 Compose，原本地卷保留；此试运行不构成 OSS 生产切换或签名 release canary。 |
+| 本地对象安全复制到 OSS | `scripts/migrate-local-objects-to-oss.py`；ECS 隔离候选执行输出 | `ws_demo` 的 4 个对象（8 个正文/元数据文件）经本地 SHA-256/大小校验后，以应用 CloudStorage 键和 `.merchant-meta.json` 格式复制到 OSS；每个正文从 OSS 回读验哈希，8 个目标键均可 HEAD，4 个原本地对象及元数据保留。该复制不构成 release canary 或生产切换证据。 |
+| ECS 当前镜像 OSS SDK 旁路只读验证 | `deploy/candidates/oss-20260915/oss-sdk-readonly.mjs`，`local-api:latest` 镜像、ECS RAM Role | 同一镜像的 AWS S3 SDK 从 OSS 回读 4 个已迁移对象及对应 `.merchant-meta.json`，工作空间、大小、SHA-256 均匹配，输出 `objectsVerified=4,status=passed`。当前镜像 RAM Role 模块导出 `aliyunEcsRamRoleCredentialProvider`，本地候选源码导出 `createAliyunEcsRoleCredentials`；正式切换必须用最终候选镜像复测，不能把旧镜像只读结果当作新版本 release canary。 |
+| ECS OSS 运行时验收门禁 | `infra/scripts/verify-ecs-oss-runtime.mjs`；35 项相关测试；线上 `/api/healthz` | 新只读检查要求生产模式、`s3_compatible` 云存储、已配置且可写；当前线上健康接口虽然 `status=ok`，仍因 `setup.mode=fixture` 被明确拒绝。相关测试 35/35、类型检查和完整 release gates 605/605 通过。 |
+| 隔离候选镜像版本复核 | ECS `store-nova-api:candidate-20260915-080332-dc72e177b738-dirty`、`store-nova-worker:candidate-20260915-081449-dc72e177b738-dirty`；镜像内迁移目录 | 候选 API 镜像的新版 RAM Role 凭证模块通过同一 SDK/RAM Role 旁路只读回归，4 个已迁移对象内容/元数据哈希匹配。但 API 与 worker 镜像内迁移均只到 209，隔离合并源码已有 210–212，镜像标签还明确为 `dirty`；不能作为绑定当前源码的发布镜像。尝试在 ECS 主机运行完整新鲜度脚本被环境缺少 host `node` 阻断，未把它报告为源码比较结果。 |
+| 隔离候选 API/worker 重建 | ECS `/opt/merchant-candidates/merge-20260915-1329/source`；临时 npm/Alpine 镜像源 Dockerfile；API `sha256:1bdc446558c69e4a83606e5a5208cf3c7d85312cab95ef092e0061691274645a`，worker `sha256:81e70f16908aa85232613ac2691c6565e28a224df852116f8e6e46280fb52001` | API/worker 两张隔离镜像均构建成功，迁移目录均到 212；worker 的 `font-noto-cjk` 已安装。API/worker 镜像源码清单摘要分别与隔离合并源码重新生成的 `sha256:473e8cc6…`、`sha256:869babd7…` 完全一致；API RAM Role + SDK 回读 4 个 OSS 对象及元数据哈希通过。字体包约 75 MB，默认构建网络取包卡住；从 ECS 主机镜像站下载确切版本并记录 SHA-256 后，仅在临时候选 Dockerfile 通过构建上下文安装。现网服务未切换。隔离源码仍未提交，镜像源修改也仅在临时 Dockerfile，不能生成正式 release 身份或发布证据。 |
+| ChatGPT OAuth 客户端与 metadata 复核 | OpenAI 插件认证官方文档；ECS `.env`/隔离 `candidate.env` 键存在性；公开 `.well-known` | ECS 和隔离候选均缺 `MCP_OAUTH_CLIENTS`；公开授权服务器 metadata 缺 `token_endpoint_auth_methods_supported`，当前项目 token 端点只支持公开客户端 `none`。本地源码已补 metadata `['none']` 并更新 ECS runbook；63 项 MCP/身份/readiness 测试、类型检查和完整 release gates 605/605 通过。现网旧镜像尚未部署该修复。当前服务器不支持 CIMD/DCR，也不声明 RFC 9207 issuer identification；必须从 ChatGPT 管理页读取真实预定义 client ID 和精确 callback URI，不能凭测试数据填充。 |
+| ECS 发布信任边界与存储配置键 | `deploy-preflight-ecs.sh`、`validate-production-evidence-trust.sh`；ECS 固定路径只读检查 | 发布脚本错用旧 `ASSET_STORAGE_CREDENTIAL_MODE`，已改为 API/Compose 实际使用的 `ASSET_STORAGE_CREDENTIAL_PROVIDER`，45 项脚本/信任测试、类型检查和 shell 语法通过。ECS `/run/release-security/evidence-trust` 目录存在但五个信任文件均缺；`/usr/local/libexec/merchant/attest-capability-evidence` 和 `consume-production-evidence-nonce` 也缺，发布签名/防重放控制面尚未 provision。该控制面需要独立受保护的真实实现和私钥，不能从测试夹具复制或生成虚假生产证据。 |
+| ECS 防重放控制面增量 | `infra/protected/consume-production-evidence-nonce.py`、`tests/protected-nonce-consumer-smoke.py`；ECS 隔离候选 `/opt/merchant-candidates/nonce-consumer-20260915` | 独立安全审查后补父目录/账本权限、Python 3.6 兼容和异常拒绝。ECS 隔离并发实测：同 nonce 24 进程仅 1 接受、不同 nonce 24/24 接受；重放、换绑定、无效 nonce、不安全权限、symlink、损坏账本均拒绝。受保护固定程序已由 root 安装，源码/远端摘要同为 `d09fd226bb9adaf5bce9068bc4132e62ed2d7e825e8a8f0ec6634c1004233c5f`，目录/文件 root 权限符合契约，持久账本目录在 `/var/lib`。`/run` 摘要为 tmpfs，宿主重启恢复机制尚未 provision；签名程序、公钥和 key ID 仍缺，完整信任门禁继续 NO-GO。 |
+| 六平台 canary 运行器契约 | `run-production-canary.sh`、`platform-canary.ts`；针对性 Vitest/类型检查与 CLI 拒绝路径 | 补齐按平台传递真实测试店远端商品 ID、证据中的租户上下文；在发起平台请求前强制写入和撤销的双重确认。签名前增加 `--require-canary` 全矩阵门禁，缺真实协议或错误响应时禁止签名。49/49 相关测试、类型检查、shell 语法和 `git diff --check` 通过；CLI 对未确认写入及 fixture 矩阵分别即时拒绝。尚无真实六平台响应或签名，能力矩阵不能晋升为 production_canary。 |
+| canary 操作关联与编译阻断复核 | `packages/connectors/src/canary.ts`、`workspace-content-setup-repository.ts` | 增量同步只能使用 provider 从全量同步返回的游标；写入查询需与 create 回执的 provider 请求 ID、远端商品 ID 对应且状态为 published；update 必须针对 create 返回的远端商品 ID。沙箱契约 8/8、相关工作流合计 9/9、类型检查通过。另修复 PostgreSQL 首次内容工作区审计 JSON 参数的 TypeScript 类型阻断，值保持一致。独立审查指出当前 canary 不保存真实 provider transcript；签名候选未安装，完整六平台矩阵仍 NO-GO。 |
+| provider 交换观测基础 | `HttpPlatformConnector.request()`、`ConnectorRuntime`、`platform-canary.ts` | 在真实 HTTP 响应后采集脱敏元数据：平台、租户、操作、方法、HTTPS origin、状态、provider 请求 ID、时间；绝不记录 URL 查询、header、请求体或响应体。观测钩子失败时返回不可重试的未知结果。真实 canary CLI 在平台请求前拒绝缺失输出目录、已有 sidecar 和重复平台，并逐平台以 `0600`/独占写入留下交换记录。相关 3 文件 91/91 测试、类型检查、shell 语法及差异检查通过；全量 release gates 最终复跑 128 文件、605 断言通过，7 文件/14 项 PostgreSQL 门禁测试按设计跳过。首轮唯一 manifest 提示断言失败发生于文件更新窗口，源码与 marketplace 镜像摘要复核一致、单项 23/23 通过后完整复跑通过。Fetch 不暴露实际协议版本，缺逐能力负面路径和可由独立签名边界验证的内容寻址 transcript，因此尚不能据此签署 production_canary。 |
+| provider transcript 元数据门禁 | `tests/platform-transcript-gate.ts`、`platform-canary.ts`、`run-production-canary.sh` | 每个平台 sidecar 使用 SHA-256 内容寻址引用，门禁在签名入口前验证文件完整性、release/平台/租户绑定、必需操作的成功 HTTP 响应，并要求任何声称 `production_canary` 的能力错误证据对应同操作、请求 ID、错误码、错误信息、时间和重试属性的真实失败观测。拒绝篡改、符号链接、敏感字段和全成功记录冒充负面路径。Fetch 记录仍不能证明服务商来源或实际协议版本；受保护签名器尚未安装，生产六平台验证仍是 NO-GO。 |
+| 生产 canary 外部操作准入 | `infra/scripts/run-production-canary.sh` | 现有 CLI 只构造 OAuth 授权 URL，不执行实际换码；能力输出也覆盖并丢弃协议与逐能力错误证据。因此它执行测试店铺写入和账号撤销后仍必然无法通过签名前门禁。准入现于任何平台请求前明确失败，避免产生没有发布价值的服务商副作用；恢复运行必须先实现真实换码、受控负面探测、协议观测和证据保留，并重新验收。 |
+| ECS 线上 ChatGPT OAuth 入口复核 | `https://yxsona.com/.well-known/oauth-authorization-server`、`local-api-1` 环境键清单、`apps/api/src/server.ts` | 线上 ECS API 健康，但仍为 fixture 模式、写入关闭、生产门禁 false；`MCP_OAUTH_CLIENTS` 未配置，`MCP_OAUTH_REQUIRED` 非 true，`NODE_ENV` 非 production。线上 discovery 还没有 `token_endpoint_auth_methods_supported`，表明本地修复尚未部署。针对误配成公网非生产模式的夹具 OAuth 回退，源码已改为只有 loopback 开发入口可用；公网且无真实客户端时 discovery/authorize/token 均安全失败。此项仍待最终候选镜像部署与线上复测。 |
+| ECS 候选包只读校验 | `artifacts/deployment-candidates/ecs-20260915T101838Z/sync-plan.tsv` | 远端只读比对完成：203 个文件一致、20 个需三方审阅、27 个远端缺失；未覆盖或重启 ECS。候选包明确排除密钥和生产证据。 |
+| ECS 迁移源码差异 | 候选包 `missing_remote` 清单；`docker exec local-api-1` 迁移目录 | ECS 镜像源码迁移文件当前只到 200，候选包含 201–212；不能直接覆盖服务器，必须在隔离候选目录完成三方合并、迁移验证和 release 绑定。 |
+
+新增账号绑定浏览器场景此前因 spec 导入 spec 被 Playwright 拒绝收集。现已提取共享 `.fixture.js`，收集为两场景；真实扫描复跑 2/2 通过。
+
+全量 PostgreSQL 第一轮因本地 `pg_dump`/`pg_restore` 16 与测试服务 PostgreSQL 17 不匹配，第二轮断言通过但 3 个测试清理时强制终止连接导致未处理错误，均未计作通过。安装匹配的 PostgreSQL 17 客户端、给全量隔离运行器绑定自身测试库，并删除这 3 处不必要的强制断连后，第三轮才获得上述完整通过结果。

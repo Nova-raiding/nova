@@ -17,6 +17,7 @@ import { buildPublishObservationRequest, PublishObservationReportError } from '.
 import { createContentGeneratorFromEnv, type ContentGenerationInput, type GeneratedContent } from '../../../packages/ai/src/generator.js'
 import { createImageGeneratorFromEnv, type ImageGenerationInput, type ImageGenerationStatus } from '../../../packages/ai/src/image-generator.js'
 import { createRelayPricingClientFromEnv } from '../../../packages/ai/src/relay-pricing.js'
+import { createEmbeddingClientFromEnv } from '../../../packages/ai/src/embedding.js'
 import type { RelayUsageRecord } from '../../../packages/ai/src/relay-usage.js'
 import { FixedWindowQuotaAdmission, type QuotaAdmissionInput } from '../../../packages/quotas/src/admission.js'
 import { DistributedLockBusyError } from '../../../packages/quotas/src/lock.js'
@@ -35,6 +36,8 @@ import { planSupportSlaReportSchedule } from '../../../packages/workers/src/supp
 import { validateImageGenerationCallbackResult } from '../../../packages/contracts/src/index.js'
 import { assertGenerationInput } from './generation-input.js'
 import { CreativePointRelaySettlement, relayProviderIdentity } from './creative-point-relay-settlement.js'
+import { PostgresKnowledgeRepository } from '../../../packages/persistence/src/knowledge.js'
+import { indexApprovedKnowledge } from '../../../packages/application/src/knowledge-lexical-index.js'
 
 export interface WorkerConfig {
   databaseUrl: string
@@ -471,7 +474,7 @@ function workerRoleForRequest(method: string, requestTarget: string, body?: stri
   if (path === '/v1/internal/automation/tick' || path === '/v1/ops/data-deletion/complete' || path === '/v1/internal/storage/orphans/cleanup') return 'automation'
   if (path === '/v1/internal/support/sla-scan' || path === '/v1/internal/support/sla-report') return 'reconcile'
   if (path.includes('reconciliation')) return 'reconcile'
-  if (path === '/v1/internal/model-usage') return 'generation'
+  if (path === '/v1/internal/model-usage' || path === '/v1/internal/knowledge-embeddings/admission' || path === '/v1/internal/knowledge-embeddings/outcome') return 'generation'
   if (/^\/v1\/assets\/[^/]+\/scan$/u.test(path)) return 'scan'
   throw new Error(`no worker role policy for ${method} ${path}`)
 }
@@ -928,6 +931,37 @@ export async function closeRejectedImageDispatch(input: {
   // The durable execution is now terminal. Replaying this old event cannot
   // safely retry its reserved provider key, even if the read failure was 503.
   throw new WorkerExecutionAuthorizationError(input.error.code, input.error.message, { retryable: false })
+}
+
+export interface KnowledgeEmbeddingBinding { workspaceId: string; documentId: string; documentRevision: number; contentHash: string; actionId: string; runKey: string }
+
+function knowledgeEmbeddingBody(input: KnowledgeEmbeddingBinding) {
+  return { document_id: input.documentId, document_revision: input.documentRevision, content_hash: input.contentHash, action_id: input.actionId, run_key: input.runKey }
+}
+
+export async function postKnowledgeEmbeddingAdmission(input: KnowledgeEmbeddingBinding & { apiBaseUrl: string; apiToken: string; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
+  const path = '/v1/internal/knowledge-embeddings/admission'
+  const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
+    method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': input.workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret) : {}) },
+    body: JSON.stringify(knowledgeEmbeddingBody(input)), redirect: 'error', signal: input.signal,
+  })
+  if (!response.ok) throw Object.assign(new Error(`knowledge embedding admission API returned ${response.status}`), { code: response.status === 409 || response.status === 503 ? 'KNOWLEDGE_EMBEDDING_ADMISSION_UNAVAILABLE' : 'KNOWLEDGE_EMBEDDING_ADMISSION_REJECTED' })
+  const envelope = await parseWorkerApiJson(response) as { data?: { admitted?: unknown; reservation?: { reservation_key?: unknown; run_key?: unknown; status?: unknown } } }
+  const reservation = envelope.data?.reservation
+  if (envelope.data?.admitted !== true || !reservation || typeof reservation.reservation_key !== 'string' || !reservation.reservation_key.trim() || reservation.run_key !== input.runKey || !['active', 'settled'].includes(String(reservation.status))) throw Object.assign(new Error('knowledge embedding admission omitted durable reservation evidence'), { code: 'KNOWLEDGE_EMBEDDING_ADMISSION_INVALID' })
+  return envelope.data
+}
+
+export async function postKnowledgeEmbeddingOutcome(input: KnowledgeEmbeddingBinding & { outcome: 'failed_before_provider' | 'unknown'; apiBaseUrl: string; apiToken: string; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
+  const path = '/v1/internal/knowledge-embeddings/outcome'
+  const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
+    method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': input.workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret) : {}) },
+    body: JSON.stringify({ ...knowledgeEmbeddingBody(input), outcome: input.outcome }), redirect: 'error', signal: input.signal,
+  })
+  if (!response.ok) throw Object.assign(new Error(`knowledge embedding outcome API returned ${response.status}`), { code: 'KNOWLEDGE_EMBEDDING_OUTCOME_UNAVAILABLE', reconciliationRequired: input.outcome === 'unknown' })
+  const envelope = await parseWorkerApiJson(response) as { data?: { outcome?: unknown; action_id?: unknown; reconciliation_required?: unknown } }
+  if (envelope.data?.outcome !== input.outcome || envelope.data.action_id !== input.actionId || envelope.data.reconciliation_required !== (input.outcome === 'unknown')) throw Object.assign(new Error('knowledge embedding outcome API omitted durable evidence'), { code: 'KNOWLEDGE_EMBEDDING_OUTCOME_INVALID', reconciliationRequired: input.outcome === 'unknown' })
+  return envelope.data
 }
 
 export async function postModelUsage(input: { apiBaseUrl: string; apiToken: string; usage: RelayUsageRecord; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
@@ -1594,6 +1628,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
   const onboardingGrantDispatch = new PostgresOnboardingGrantDispatchRepository(sqlPool)
   const scanAttempts = new PostgresAssetScanAttemptRepository(sqlPool)
   const creativePointSettlement = new CreativePointRelaySettlement(new PostgresCreativePointRepository(sqlPool), new PostgresCreativePointLifecycleRepository(sqlPool), relayProviderIdentity(process.env))
+  const knowledgeRepository = new PostgresKnowledgeRepository(sqlPool)
   const relayPricing = createRelayPricingClientFromEnv(process.env)
   const runtime = new ConnectorRuntime({
     configSource: process.env,
@@ -1624,6 +1659,15 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     }
     return postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, usage: enriched, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal: execution?.signal })
   }, providerDispatchAdmission.beforeModelRequest)
+  const knowledgeVectorIndexEnabled = process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED?.trim() === 'true'
+  const embeddingVersion = process.env.EMBEDDING_VERSION?.trim()
+  const embeddingClient = knowledgeVectorIndexEnabled ? createEmbeddingClientFromEnv(process.env, async usage => {
+    if (!config.apiBaseUrl || !config.apiToken || !config.apiSigningSecret) throw Object.assign(new Error('signed worker API configuration is required for embedding usage settlement'), { code: 'KNOWLEDGE_EMBEDDING_CONTRACT_MISSING' })
+    return postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, signingSecret: config.apiSigningSecret, usage })
+  }) : undefined
+  if (knowledgeVectorIndexEnabled && (!embeddingClient || !embeddingVersion || !config.apiBaseUrl || !config.apiToken || !config.apiSigningSecret)) {
+    throw Object.assign(new Error('enabled knowledge vector indexing requires relay, embedding version, and signed worker API configuration'), { code: 'KNOWLEDGE_EMBEDDING_CONTRACT_MISSING' })
+  }
   const imageGenerator = createImageGeneratorFromEnv(process.env, async usage => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for image model usage settlement')
     const execution = usage.actionId ? imageUsageContexts.get(usage.actionId) : undefined
@@ -2021,6 +2065,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     }
     let dependenciesReady = false
     let nextDependencyCheckAt = 0
+    let nextKnowledgeIndexAt = 0
     do {
       const startedAt = Date.now()
       try {
@@ -2046,6 +2091,18 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
             })
           })()
           : await pollOnce(repository, dispatchers, { ...config, workspaces, ...(scannerHeartbeat ? { claimAdmission: () => scannerHeartbeat!.canProcessScans() } : {}) }, queueFactory, { executionAuthorization, commercialAccess, deliveryScanAdmission, publishRequested, reconcileRequested, generationRequested, imageGenerationRequested, syncRequested, scanRequested, imageContinuationRequested, onGenerationResult, onGenerationDeferred, onPublishObservation })
+        if ((config.role === 'automation' || config.role === 'all') && startedAt >= nextKnowledgeIndexAt && workspaces.length) {
+          const indexed = await allSettledWithConcurrency(workspaces, Math.min(2, config.workspaceBatchSize), workspaceId => indexApprovedKnowledge({
+            repository: knowledgeRepository, workspaceId, limit: Math.min(20, config.batchSize),
+            ...(embeddingClient && embeddingVersion ? { embedding: {
+              model: process.env.EMBEDDING_MODEL!.trim(), version: embeddingVersion, embed: embeddingClient.embed.bind(embeddingClient),
+              admit: (binding: KnowledgeEmbeddingBinding) => postKnowledgeEmbeddingAdmission({ ...binding, apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, signingSecret: config.apiSigningSecret! }).then(() => undefined),
+              reportOutcome: (outcome: KnowledgeEmbeddingBinding & { outcome: 'failed_before_provider' | 'unknown' }) => postKnowledgeEmbeddingOutcome({ ...outcome, apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, signingSecret: config.apiSigningSecret! }).then(() => undefined),
+            } } : {}),
+          }))
+          nextKnowledgeIndexAt = Date.now() + 60_000
+          Object.assign(result as unknown as Record<string, unknown>, { knowledgeLexicalIndex: { completed: indexed.filter(item => item.status === 'fulfilled').length, failed: indexed.filter(item => item.status === 'rejected').length } })
+        }
         const paymentReconciliationSchedule = planPaymentReconciliationRun({ role: config.role, startedAt, nextRunAt: nextPaymentReconciliationAt, intervalMs: config.paymentReconciliationIntervalMs })
         nextPaymentReconciliationAt = paymentReconciliationSchedule.nextRunAt
         if (config.role === 'reconcile' && startedAt >= nextStorageReconciliationAt) {

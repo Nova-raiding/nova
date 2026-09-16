@@ -41,6 +41,7 @@ export function AuditCenterSection({ controller, canExport, platformScope = fals
     void controller.openDetail(record, target)
   const columns: ColumnsType<AuditCenterRecord> = [
     { title: '时间', dataIndex: 'occurredAt', width: 180, fixed: 'left', render: value => new Date(value).toLocaleString() },
+    ...(platformScope ? [{ title: '企业主体', dataIndex: 'workspaceId', width: 180 }] : []),
     { title: '来源', dataIndex: 'source', width: 110, render: value => <Tag>{sourceLabels[value as AuditCenterRecord['source']]}</Tag> },
     { title: '操作者', dataIndex: 'actorId', width: 170 },
     { title: '动作', dataIndex: 'action', width: 200 },
@@ -88,11 +89,12 @@ export function AuditCenterSection({ controller, canExport, platformScope = fals
     {compact ? <div role="list" aria-busy={controller.loading}>
       {controller.loading && !controller.records.length ? <Card loading aria-label="正在加载审计记录" /> : null}
       {!controller.loading && !controller.error && !controller.records.length ? <Empty description="当前筛选条件下没有审计记录" /> : null}
-      {controller.records.map(record => <div role="listitem" key={`${record.source}:${record.id}`} style={{ paddingBlock: 8 }}>
+      {controller.records.map(record => <div role="listitem" key={`${record.workspaceId}:${record.source}:${record.id}`} style={{ paddingBlock: 8 }}>
         <Card size="small" style={{ width: '100%', overflow: 'hidden' }}>
           <Space wrap size={8} style={{ marginBottom: 12 }}>
             <Tag>{sourceLabels[record.source]}</Tag>
             <Typography.Text strong style={{ overflowWrap: 'anywhere' }}>{record.action}</Typography.Text>
+            {platformScope ? <Typography.Text type="secondary">{record.workspaceId}</Typography.Text> : null}
           </Space>
           <Typography.Paragraph style={{ overflowWrap: 'anywhere' }}>{record.resourceType} / {record.resourceId}</Typography.Paragraph>
           <Typography.Paragraph type="secondary" style={{ overflowWrap: 'anywhere' }}>{record.actorId} · {new Date(record.occurredAt).toLocaleString()}</Typography.Paragraph>
@@ -101,7 +103,7 @@ export function AuditCenterSection({ controller, canExport, platformScope = fals
         </Card>
       </div>)}
     </div> : initialLoadFailed ? <Typography.Text type="secondary" role="status">审计数据尚未取得，请重试；当前状态不能解释为没有审计记录。</Typography.Text> : <div style={{ maxWidth: '100%', overflowX: 'auto' }}>
-        <Table rowKey={record => `${record.source}:${record.id}`} size="small" loading={controller.loading}
+        <Table rowKey={record => `${record.workspaceId}:${record.source}:${record.id}`} size="small" loading={controller.loading}
           dataSource={controller.records} columns={columns} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 1270 }}
           locale={{ emptyText: controller.loading ? '正在加载' : '当前筛选条件下没有审计记录' }} />
       </div>}

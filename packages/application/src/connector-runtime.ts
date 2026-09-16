@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util'
 import { buildHttpConnectorConfigs, buildHttpConnectorConfigsFromStructured, createConfiguredConnector, createFakeConnector, isProductionCanaryReady, profiles, validateConnectorAuthorizationReadiness, validateConnectorReadiness, type ConfigSource, type ConnectorReadiness, type CredentialProvider, type HttpConnectorConfig, type Platform, type PlatformConnector, type StructuredPlatformConfig } from '../../../packages/connectors/src/index.js'
 import { platformWriteAllowed } from '../../../packages/connectors/src/write-boundary.js'
-import type { FetchLike, ConnectorBeforeRequest } from '../../../packages/connectors/src/http-connector.js'
+import type { FetchLike, ConnectorBeforeRequest, ProviderExchangeObservation } from '../../../packages/connectors/src/http-connector.js'
 import { createPublishWorker } from '../../../packages/workers/src/factories.js'
 import { createPublishHandler } from '../../../packages/workers/src/publish-adapter.js'
 import type { ConnectorContext, MediaUploadInput, PlatformWriteDraft, RawProduct } from '../../../packages/connectors/src/types.js'
@@ -43,7 +43,7 @@ export class ConnectorRuntime {
   private readonly productionWrites: boolean
   private readonly fixtureMode: boolean
   private readonly allowFixtureWrites: boolean
-  constructor(options: { fixtureMode?: boolean; allowFixtureWrites?: boolean; connectorConfigs?: Partial<Record<Platform, HttpConnectorConfig>>; configSource?: ConfigSource; capabilityEvidenceTrust?: ProductionCapabilityEvidenceTrust; structuredConfig?: Partial<Record<Platform, StructuredPlatformConfig>>; credentialProvider?: CredentialProvider; fetch?: FetchLike; beforeRequest?: ConnectorBeforeRequest; mappingPreflight?: ConnectorRuntimeMappingPreflightAdapter; environment?: 'development' | 'test' | 'production' } = {}) {
+  constructor(options: { fixtureMode?: boolean; allowFixtureWrites?: boolean; connectorConfigs?: Partial<Record<Platform, HttpConnectorConfig>>; configSource?: ConfigSource; capabilityEvidenceTrust?: ProductionCapabilityEvidenceTrust; structuredConfig?: Partial<Record<Platform, StructuredPlatformConfig>>; credentialProvider?: CredentialProvider; fetch?: FetchLike; beforeRequest?: ConnectorBeforeRequest; onExchange?: (observation: Readonly<ProviderExchangeObservation>) => void; mappingPreflight?: ConnectorRuntimeMappingPreflightAdapter; environment?: 'development' | 'test' | 'production' } = {}) {
     const fixtureMode = options.fixtureMode ?? false
     this.fixtureMode = fixtureMode
     this.allowFixtureWrites = options.allowFixtureWrites ?? fixtureMode
@@ -73,7 +73,7 @@ export class ConnectorRuntime {
     this.connectors = Object.fromEntries((Object.keys(profiles) as Platform[]).map(platform => {
       const config = configs[platform]
       return [platform, config
-        ? createConfiguredConnector(platform, { config, credentials: options.credentialProvider, fetch: options.fetch, beforeRequest: options.beforeRequest })
+        ? createConfiguredConnector(platform, { config, credentials: options.credentialProvider, fetch: options.fetch, beforeRequest: options.beforeRequest, onExchange: options.onExchange })
         : createFakeConnector(platform, { configured: fixtureMode, allowFakeWrites: options.allowFixtureWrites ?? fixtureMode })]
     })) as Record<Platform, PlatformConnector>
   }

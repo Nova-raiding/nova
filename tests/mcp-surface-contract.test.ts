@@ -19,6 +19,13 @@ const productionEvidenceMethods = [
 ] as const
 const campaignControlMethods = ['campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed'] as const
 const merchantHiddenMethods = new Set([
+  'platform.connect', 'platform.store.list', 'workspace.content_setup.confirm',
+  'catalog.sync', 'catalog.sync.start', 'catalog.sync.get', 'sync.retry_failed',
+  'automation.policy.get', 'automation.policy.list', 'automation.policy.update',
+  'automation.scan', 'automation.tick', 'automation.pause',
+  'publish.prepare', 'publish.confirm', 'publish.get',
+  'publish.batch.prepare', 'publish.batch.confirm', 'publish.batch.get',
+  'publish.batch.pause', 'publish.batch.resume', 'publish.batch.retry_failed',
   'billing.reconciliation',
   'billing.model-usage.reconciliation.run',
   'billing.model-usage.resolve',
@@ -41,7 +48,7 @@ const commercialDisabledMethods = new Set([
   'subscription.order.create', 'subscription.change', 'ops.marketing.generation.retry',
   'campaign.batch.generate', 'campaign.batch.retry_failed', 'catalog.title.optimize', 'catalog.image.retry',
   'brand.tone.preview', 'task.understand', 'creative.directions',
-  'content.generate', 'content.codex.prepare', 'content.codex.commit', 'content.review', 'content.modify',
+  'content.codex.prepare', 'content.codex.commit', 'content.review', 'content.modify',
   'multimodal.generate', 'multimodal.video.request', 'workspace.commercial.get',
   'workspace.commercial.update', 'workspace.usage.get', 'billing.usage.consume', 'billing.usage.refund', 'billing.refund',
 ])
@@ -60,7 +67,7 @@ describe('MCP surface coverage', () => {
     expect(MCP_METHOD_SCHEMAS['merchant.start'].required).toBeUndefined()
   })
 
-  it('keeps current API and merchant-tool counts aligned across authoritative docs', () => {
+  it('keeps authoritative docs free of stale fixed merchant-tool counts', () => {
     const merchantMethodCount = MCP_METHODS.filter(method =>
       !method.startsWith('ops.') && !merchantHiddenMethods.has(method) && !commercialDisabledMethods.has(method),
     ).length
@@ -70,10 +77,11 @@ describe('MCP surface coverage', () => {
     const installedReadme = readFileSync(new URL('../.codex-marketplace/plugins/merchant-marketing/README.md', import.meta.url), 'utf8')
 
     expect(installedReadme).toBe(pluginReadme)
-    expect(merchantMethodCount).toBe(151)
-    expect(rootReadme).toContain(`商家插件当前实测为 ${merchantMethodCount} 个 MCP 工具`)
-    expect(status).toContain(`bridge 当前实测为 ${merchantMethodCount} 个工具`)
-    expect(pluginReadme).toContain(`当前 \`tools/list\` 实测为 ${merchantMethodCount} 个 MCP 工具`)
+    expect(merchantMethodCount).toBeGreaterThan(0)
+    expect(rootReadme).not.toMatch(/商家插件当前实测为 \d+ 个 MCP 工具/u)
+    expect(status).not.toMatch(/bridge 当前实测为 \d+ 个工具/u)
+    expect(pluginReadme).toContain('实际工具以当前连接的 `tools/list` 与运行态契约测试为准')
+    expect(pluginReadme).not.toMatch(/tools\/list` (?:实测)?为 \d+ 个 MCP 工具/u)
   })
 
   it('keeps the 23 domain methods and four audit-center reads on the declared surface', () => {

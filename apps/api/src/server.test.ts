@@ -490,6 +490,16 @@ describe('protected product provider prompts', () => {
   })
 })
 describe('API application wiring', () => {
+  it('exposes relay-backed content draft as candidate-only without formal task bypass', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    const handler = source.slice(source.indexOf("case 'content.draft.generate':"), source.indexOf("case 'content.generate':"))
+    expect(handler).toContain("await enforceMcpCommercialAccess(req, workspaceId, method)")
+    expect(handler).toContain("draft: 'true'")
+    expect(source).toContain("candidateOnly: true")
+    expect(source).toContain("formalVersionCreated: false")
+    expect(source).toContain("publishable: false")
+  })
+
   it('rechecks canonical task scope before MCP and REST content generation', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     const planMcpHandler = source.slice(source.indexOf("case 'task.plan.confirm':"), source.indexOf("case 'content.generate':"))

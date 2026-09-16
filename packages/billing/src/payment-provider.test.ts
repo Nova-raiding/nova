@@ -107,7 +107,7 @@ describe('payment provider adapter', () => {
 
   it('calls the server-side refund endpoint with an idempotency key and never exposes the API key', async () => {
     let requestUrl = ''; let requestBody = ''; let authorization = ''
-    const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'server-only-key', merchantId: 'merchant-1', fetch: async (url, init) => { requestUrl = String(url); requestBody = String(init?.body); authorization = String((init?.headers as Record<string, string>)?.authorization); return new Response(JSON.stringify({ order_id: 'recharge-1', refund_request_id: 'billing-tx-refund-1', amount_fen: 1000, provider_refund_id: 'refund-1', state: 'accepted' }), { status: 200 }) } })
+    const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'server-only-key', merchantId: 'merchant-1', fetch: async (url, init) => { requestUrl = String(url); requestBody = String(init?.body); authorization = String((init?.headers as Record<string, string>)?.authorization); return new Response(JSON.stringify({ order_id: 'recharge-1', refund_request_id: 'billing-tx-refund-1', workspace_id: 'ws-1', amount_fen: 1000, provider_refund_id: 'refund-1', state: 'accepted' }), { status: 200 }) } })
     await expect(provider.refund({ channel: 'alipay', orderId: 'recharge-1', refundRequestId: 'billing-tx-refund-1', providerTradeId: 'trade-1', workspaceId: 'ws-1', amountFen: 1000, reason: '商家申请退款' })).resolves.toEqual({ providerRefundId: 'refund-1', state: 'accepted' })
     expect(requestUrl).toBe('https://payments.example/refund')
     expect(authorization).toBe('Bearer server-only-key')
@@ -118,10 +118,10 @@ describe('payment provider adapter', () => {
   })
 
   it('classifies refund rejection separately from unknown provider outcomes', async () => {
-    const rejected = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ order_id: 'recharge-rejected', refund_request_id: 'refund:recharge-rejected', amount_fen: 1000, provider_refund_id: 'refund-rejected', state: 'rejected' }), { status: 200 }) })
+    const rejected = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ order_id: 'recharge-rejected', refund_request_id: 'refund:recharge-rejected', workspace_id: 'ws-1', amount_fen: 1000, provider_refund_id: 'refund-rejected', state: 'rejected' }), { status: 200 }) })
     await expect(rejected.refund({ channel: 'alipay', orderId: 'recharge-rejected', providerTradeId: 'trade-rejected', workspaceId: 'ws-1', amountFen: 1000, reason: '拒绝退款' })).rejects.toBeInstanceOf(PaymentProviderRefundRejectedError)
 
-    const processing = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ order_id: 'recharge-processing', refund_request_id: 'refund:recharge-processing', amount_fen: 1000, provider_refund_id: 'refund-processing', state: 'processing' }), { status: 200 }) })
+    const processing = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ order_id: 'recharge-processing', refund_request_id: 'refund:recharge-processing', workspace_id: 'ws-1', amount_fen: 1000, provider_refund_id: 'refund-processing', state: 'processing' }), { status: 200 }) })
     await expect(processing.refund({ channel: 'alipay', orderId: 'recharge-processing', providerTradeId: 'trade-processing', workspaceId: 'ws-1', amountFen: 1000, reason: '处理中' })).rejects.toBeInstanceOf(PaymentProviderRefundOutcomeUnknownError)
 
     const timeout = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => { throw new DOMException('timeout', 'AbortError') } })
@@ -130,13 +130,16 @@ describe('payment provider adapter', () => {
     const mismatched = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ order_id: 'another-order', refund_request_id: 'refund:recharge-mismatch', amount_fen: 1000, provider_refund_id: 'refund-mismatch', state: 'completed' }), { status: 200 }) })
     await expect(mismatched.refund({ channel: 'alipay', orderId: 'recharge-mismatch', providerTradeId: 'trade-mismatch', workspaceId: 'ws-1', amountFen: 1000, reason: '错单响应' })).rejects.toBeInstanceOf(PaymentProviderRefundOutcomeUnknownError)
 
+    const crossWorkspace = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ order_id: 'recharge-cross-workspace', refund_request_id: 'refund:recharge-cross-workspace', workspace_id: 'ws-other', amount_fen: 1000, provider_refund_id: 'refund-cross-workspace', state: 'completed' }), { status: 200 }) })
+    await expect(crossWorkspace.refund({ channel: 'alipay', orderId: 'recharge-cross-workspace', providerTradeId: 'trade-cross-workspace', workspaceId: 'ws-1', amountFen: 1000, reason: '跨租户响应' })).rejects.toBeInstanceOf(PaymentProviderRefundOutcomeUnknownError)
+
     const unboundClientError = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ state: 'rejected' }), { status: 409 }) })
     await expect(unboundClientError.refund({ channel: 'alipay', orderId: 'recharge-http-rejected', providerTradeId: 'trade-http-rejected', workspaceId: 'ws-1', amountFen: 1000, reason: '未绑定错误' })).rejects.toBeInstanceOf(PaymentProviderRefundOutcomeUnknownError)
   })
 
   it('queries provider refund status with strict order request and amount binding', async () => {
     let requestUrl = ''; let requestBody = ''; let authorization = ''
-    const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundQueryEndpoint: 'https://payments.example/refund/query', apiKey: 'server-only-key', merchantId: 'merchant-1', fetch: async (url, init) => { requestUrl = String(url); requestBody = String(init?.body); authorization = String((init?.headers as Record<string, string>)?.authorization); return new Response(JSON.stringify({ state: 'REFUND_SUCCESS', order_id: 'recharge-query', refund_request_id: 'refund:recharge-query', provider_refund_id: 'refund-9', amount_fen: 1000 }), { status: 200 }) } })
+    const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundQueryEndpoint: 'https://payments.example/refund/query', apiKey: 'server-only-key', merchantId: 'merchant-1', fetch: async (url, init) => { requestUrl = String(url); requestBody = String(init?.body); authorization = String((init?.headers as Record<string, string>)?.authorization); return new Response(JSON.stringify({ state: 'REFUND_SUCCESS', order_id: 'recharge-query', refund_request_id: 'refund:recharge-query', workspace_id: 'ws-1', provider_refund_id: 'refund-9', amount_fen: 1000 }), { status: 200 }) } })
     await expect(provider.queryRefundStatus?.({ channel: 'alipay', orderId: 'recharge-query', refundRequestId: 'refund:recharge-query', workspaceId: 'ws-1', amountFen: 1000, providerRefundId: 'refund-9' })).resolves.toEqual({ state: 'succeeded', providerRefundId: 'refund-9', amountFen: 1000 })
     expect(requestUrl).toBe('https://payments.example/refund/query')
     expect(authorization).toBe('Bearer server-only-key')
@@ -150,10 +153,23 @@ describe('payment provider adapter', () => {
       { state: 'succeeded', order_id: 'other-order', refund_request_id: 'refund:recharge-query', amount_fen: 1000 },
       { state: 'succeeded', order_id: 'recharge-query', refund_request_id: 'refund:other', amount_fen: 1000 },
       { state: 'succeeded', order_id: 'recharge-query', refund_request_id: 'refund:recharge-query', amount_fen: 1001 },
+      { state: 'succeeded', order_id: 'recharge-query', refund_request_id: 'refund:recharge-query', workspace_id: 'ws-other', amount_fen: 1000 },
+      { state: 'succeeded', refund_request_id: 'refund:recharge-query', amount_fen: 1000 },
+      { state: 'succeeded', order_id: 'recharge-query', amount_fen: 1000 },
       { state: 'mystery', order_id: 'recharge-query', refund_request_id: 'refund:recharge-query', amount_fen: 1000 },
     ]) {
       const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundQueryEndpoint: 'https://payments.example/refund/query', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify(payload), { status: 200 }) })
       await expect(provider.queryRefundStatus?.({ channel: 'alipay', orderId: 'recharge-query', refundRequestId: 'refund:recharge-query', workspaceId: 'ws-1', amountFen: 1000 })).resolves.toEqual({ state: 'unknown' })
+    }
+  })
+
+  it('requires the returned provider refund id to match the persisted refund id', async () => {
+    for (const payload of [
+      { state: 'succeeded', order_id: 'recharge-query', refund_request_id: 'refund:recharge-query', amount_fen: 1000 },
+      { state: 'succeeded', order_id: 'recharge-query', refund_request_id: 'refund:recharge-query', provider_refund_id: 'refund-other', amount_fen: 1000 },
+    ]) {
+      const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundQueryEndpoint: 'https://payments.example/refund/query', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify(payload), { status: 200 }) })
+      await expect(provider.queryRefundStatus?.({ channel: 'alipay', orderId: 'recharge-query', refundRequestId: 'refund:recharge-query', workspaceId: 'ws-1', amountFen: 1000, providerRefundId: 'refund-expected' })).resolves.toEqual({ state: 'unknown' })
     }
   })
 
@@ -172,7 +188,7 @@ describe('payment provider adapter', () => {
 
   it('queries provider order status without exposing credentials and normalizes success states', async () => {
     let requestBody = ''; let authorization = ''
-    const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', queryEndpoint: 'https://payments.example/query', apiKey: 'server-only-key', merchantId: 'merchant-1', fetch: async (_url, init) => { requestBody = String(init?.body); authorization = String((init?.headers as Record<string, string>)?.authorization); return new Response(JSON.stringify({ state: 'TRADE_SUCCESS', trade_no: 'trade-9', amount_fen: 1000 }), { status: 200 }) } })
+    const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', queryEndpoint: 'https://payments.example/query', apiKey: 'server-only-key', merchantId: 'merchant-1', fetch: async (_url, init) => { requestBody = String(init?.body); authorization = String((init?.headers as Record<string, string>)?.authorization); return new Response(JSON.stringify({ state: 'TRADE_SUCCESS', order_id: 'recharge-9', workspace_id: 'ws-9', trade_no: 'trade-9', amount_fen: 1000 }), { status: 200 }) } })
     await expect(provider.queryStatus?.({ channel: 'alipay', orderId: 'recharge-9', workspaceId: 'ws-9' })).resolves.toEqual({ state: 'paid', providerTradeId: 'trade-9', amountFen: 1000 })
     expect(authorization).toBe('Bearer server-only-key')
     expect(requestBody).toContain('"order_id":"recharge-9"')
@@ -180,9 +196,26 @@ describe('payment provider adapter', () => {
   })
 
   it('rejects a paid query without a positive amount before it becomes payment evidence', async () => {
-    for (const payload of [{ state: 'paid' }, { state: 'paid', amount_fen: 0 }, { state: 'paid', amount_fen: -1 }, { state: 'paid', amount_fen: 1.5 }]) {
-      const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', queryEndpoint: 'https://payments.example/query', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify(payload), { status: 200 }) })
+    for (const payload of [{ state: 'paid', order_id: 'order-amount' }, { state: 'paid', order_id: 'order-amount', amount_fen: 0 }, { state: 'paid', order_id: 'order-amount', amount_fen: -1 }, { state: 'paid', order_id: 'order-amount', amount_fen: 1.5 }]) {
+      const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', queryEndpoint: 'https://payments.example/query', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ ...payload, workspace_id: 'ws-amount' }), { status: 200 }) })
       await expect(provider.queryStatus?.({ channel: 'alipay', orderId: 'order-amount', workspaceId: 'ws-amount' })).rejects.toThrow('positive amount')
+    }
+  })
+
+  it('rejects a status query response explicitly bound to another order', async () => {
+    const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', queryEndpoint: 'https://payments.example/query', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ state: 'paid', order_id: 'another-order', workspace_id: 'ws-9', trade_no: 'trade-9', amount_fen: 1000 }), { status: 200 }) })
+    await expect(provider.queryStatus?.({ channel: 'alipay', orderId: 'recharge-9', workspaceId: 'ws-9' })).rejects.toThrow('did not match the order')
+  })
+
+  it('rejects paid query evidence that is not explicitly bound to the requested order', async () => {
+    const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', queryEndpoint: 'https://payments.example/query', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ state: 'paid', workspace_id: 'ws-9', trade_no: 'trade-9', amount_fen: 1000 }), { status: 200 }) })
+    await expect(provider.queryStatus?.({ channel: 'alipay', orderId: 'recharge-9', workspaceId: 'ws-9' })).rejects.toThrow('must identify the requested order')
+  })
+
+  it('rejects paid query evidence missing or mismatching the requested workspace', async () => {
+    for (const workspaceId of [undefined, 'ws-other']) {
+      const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', queryEndpoint: 'https://payments.example/query', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ state: 'paid', order_id: 'recharge-9', ...(workspaceId ? { workspace_id: workspaceId } : {}), trade_no: 'trade-9', amount_fen: 1000 }), { status: 200 }) })
+      await expect(provider.queryStatus?.({ channel: 'alipay', orderId: 'recharge-9', workspaceId: 'ws-9' })).rejects.toThrow('must identify the requested workspace')
     }
   })
 

@@ -191,17 +191,22 @@ describe('relay usage normalization', () => {
     await expect(rejection).rejects.toBe(sinkError)
   })
 
-  it('uses a stable hashed receipt key when the provider request id is absent', () => {
+  it('binds local attempt keys while preserving provider receipt identity for reconciliation', () => {
     const input = { workspaceId: ' ws_usage ', actionId: ' action_1 ', providerAttemptId: ' attempt_1 ', modality: 'image' as const, model: ' image-v1 ' }
     const first = relayUsageReceiptKey(input)
     const replay = relayUsageReceiptKey({ ...input })
     const differentAction = relayUsageReceiptKey({ ...input, actionId: 'action_2' })
+    const providerReceipt = relayUsageReceiptKey({ ...input, providerRequestId: ' req_provider ' })
 
     expect(first).toMatch(/^relay_usage_[a-f0-9]{64}$/u)
     expect(replay).toBe(first)
     expect(differentAction).not.toBe(first)
     expect(relayUsageReceiptKey({ ...input, providerAttemptId: 'attempt_2' })).not.toBe(first)
-    expect(relayUsageReceiptKey({ ...input, providerRequestId: ' req_provider ' })).toBe('req_provider')
+    expect(providerReceipt).toBe('req_provider')
+    expect(relayUsageReceiptKey({ ...input, providerRequestId: 'req_provider', providerAttemptId: 'another_local_attempt' })).toBe(providerReceipt)
+    expect(relayUsageReceiptKey({ ...input, workspaceId: 'ws_other', providerRequestId: 'req_provider' })).toBe(providerReceipt)
+    expect(relayUsageReceiptKey({ ...input, model: 'image-v2', providerRequestId: 'req_provider' })).toBe(providerReceipt)
+    expect(relayUsageReceiptKey({ ...input, modality: 'image_edit', providerRequestId: 'req_provider' })).toBe(providerReceipt)
   })
 
   it('fails closed when neither provider request nor provider attempt identity exists', () => {

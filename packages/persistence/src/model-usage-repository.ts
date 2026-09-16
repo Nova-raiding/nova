@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { requireWorkspaceScope, type SqlPool, withWorkspaceTransaction } from './repository.js'
 
-export type ModelUsageModality = 'text' | 'image' | 'image_edit' | 'ocr' | 'video'
+export type ModelUsageModality = 'text' | 'image' | 'image_edit' | 'ocr' | 'video' | 'embedding'
 export type ModelSettlementStatus = 'pending_cost' | 'pending_wallet' | 'settled' | 'manual_attention' | 'waived'
 export type ModelUsageSettlementDecision = 'retry' | 'waive' | 'manual_attention'
 export type ModelCostBudgetReservationStatus = 'active' | 'settled' | 'released' | 'over_budget'

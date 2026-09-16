@@ -22,6 +22,7 @@ type PermissionMatrix = {
   method_count: number;
   role_count: number;
   roles: string[];
+  assignable_roles: string[];
   items: PermissionMatrixItem[];
 };
 
@@ -49,7 +50,7 @@ function AccessTag({ access }: { access: PermissionAccess }) {
   return <Tag color={presentation.color}>{presentation.label}</Tag>;
 }
 
-export function PermissionMatrixSection() {
+export function PermissionMatrixSection({ onLoaded }: { onLoaded?: (matrix: PermissionMatrix) => void } = {}) {
   const [matrix, setMatrix] = useState<PermissionMatrix>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
@@ -65,8 +66,9 @@ export function PermissionMatrixSection() {
     setError(undefined);
     try {
       const value = await rpc<PermissionMatrix>("ops.authorization.matrix.get");
-      if (!value || value.method_count !== value.items.length || value.role_count !== value.roles.length) throw new Error("权限矩阵响应不完整");
+      if (!value || value.method_count !== value.items.length || value.role_count !== value.roles.length || !Array.isArray(value.assignable_roles)) throw new Error("权限矩阵响应不完整");
       setMatrix(value);
+      onLoaded?.(value);
       setVisibleRoles((current) => current.filter((role) => value.roles.includes(role)).length ? current.filter((role) => value.roles.includes(role)) : value.roles.slice(0, 10));
     } catch (error) {
       setError(error instanceof Error ? error.message : "权限矩阵读取失败");

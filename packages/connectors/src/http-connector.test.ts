@@ -449,15 +449,19 @@ describe('HttpPlatformConnector', () => {
   })
 
   it('classifies structured platform validation errors and retains safe rejection evidence', async () => {
+    const observations: unknown[] = []
     const connector = createConfiguredConnector('jd', {
       config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },
       credentials: credentials(),
       fetch: async () => response({ error: { code: 'SKU_INVALID', message: '商品字段不合法', requestId: 'req-safe', fields: [{ path: 'sku[0].price', code: 'PRICE_INVALID', message: 'must be positive' }] } }, 422),
+      onExchange: observation => observations.push(observation),
       allowTestCredentials: true,
       allowTestAdapters: true,
     })
     await expect(connector.syncProducts({ workspaceId: 'ws', accountId: 'acct' }))
       .rejects.toMatchObject({ normalized: { code: 'VALIDATION_FAILED', status: 422, retryable: false, details: { platformCode: 'SKU_INVALID', requestId: 'req-safe', rejection: { rawCode: 'SKU_INVALID', fields: [{ path: 'sku[0].price', rawCode: 'PRICE_INVALID', message: 'must be positive' }] } } } })
+    expect(observations).toMatchObject([{ platform: 'jd', operation: 'sync_products', status: 422, providerRequestId: 'req-safe', transport: 'fetch' }])
+    expect(JSON.stringify(observations)).not.toContain('商品字段不合法')
   })
 
   it('retains provider identity and error code from nested HTTP rejection envelopes', async () => {

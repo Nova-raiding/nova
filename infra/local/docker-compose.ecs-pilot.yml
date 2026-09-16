@@ -92,8 +92,21 @@ x-ecs-worker-environment: &ecs-worker-environment
   DATABASE_URL: ${DATABASE_URL:?DATABASE_URL production secret is required}
   WORKER_WORKSPACES: ${WORKER_WORKSPACES:?WORKER_WORKSPACES=auto or an explicit production workspace allowlist is required}
 
+x-ecs-node-hardening: &ecs-node-hardening
+  user: "10001:10001"
+  read_only: true
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=64m]
+
+x-ecs-nginx-hardening: &ecs-nginx-hardening
+  user: "101:101"
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+
 services:
   alert-receiver:
+    <<: *ecs-node-hardening
     profiles: ["alerts"]
     restart: unless-stopped
     build:
@@ -104,8 +117,6 @@ services:
       ALERT_RECEIVER_BIND_HOST: 0.0.0.0
       ALERT_RECEIVER_DATABASE_URL_FILE: /run/secrets/alert_receiver_database_url
       ALERT_RECEIVER_HMAC_SECRET_FILE: /run/secrets/alert_receiver_hmac_secret
-    read_only: true
-    security_opt: [no-new-privileges:true]
     volumes:
       - type: bind
         source: /opt/merchant-deploy/deploy/secrets/alert_receiver_database_url
@@ -125,6 +136,11 @@ services:
       retries: 5
 
   payment-gateway:
+    user: "100:101"
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=32m]
     restart: unless-stopped
     build:
       context: ../..
@@ -154,12 +170,14 @@ services:
       timeout: 3s
       retries: 5
   ui:
+    <<: *ecs-nginx-hardening
     ports: !override []
     environment:
       MERCHANT_API_TOKEN: ${MERCHANT_API_TOKEN:?MERCHANT_API_TOKEN is required for pilot preflight}
       MERCHANT_WORKSPACE_ID: ${MERCHANT_WORKSPACE_ID:?MERCHANT_WORKSPACE_ID is required for pilot preflight}
 
   ops-ui:
+    <<: *ecs-nginx-hardening
     ports: !override []
     build:
       args:
@@ -168,6 +186,7 @@ services:
         VITE_BASE: /ops/
 
   api:
+    <<: *ecs-node-hardening
     ports: !override ["127.0.0.1:8787:8787"]
     healthcheck: &ecs-api-healthcheck
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8787/readyz >/dev/null || exit 1"]
@@ -237,7 +256,7 @@ services:
       # Inject through the ECS secret environment, never a checked-in env file.
       # Missing registration intentionally prevents the production stack from rendering.
       MCP_OAUTH_CLIENTS: ${MCP_OAUTH_CLIENTS:?MCP_OAUTH_CLIENTS secret JSON callback allowlist is required}
-      OPENAI_APPS_CHALLENGE_TOKEN: ${OPENAI_APPS_CHALLENGE_TOKEN:-}
+      OPENAI_APPS_CHALLENGE_TOKEN: ${OPENAI_APPS_CHALLENGE_TOKEN:?OPENAI_APPS_CHALLENGE_TOKEN issued by OpenAI is required}
       PUBLIC_ASSET_BASE_URL: ${PUBLIC_ASSET_BASE_URL:-https://yxsona.com}
       PUBLIC_OAUTH_REDIRECT_URI: ${PUBLIC_OAUTH_REDIRECT_URI:-https://yxsona.com/v1/oauth/callback/{platform}}
       MERCHANT_BEARER_HOSTNAME: ${MERCHANT_BEARER_HOSTNAME:-yxsona.com}
@@ -427,6 +446,7 @@ services:
       - /run/release-security/evidence-trust:/run/release-security/evidence-trust:ro
 
   api-replica:
+    <<: *ecs-node-hardening
     ports: !override []
     healthcheck: *ecs-api-healthcheck
     # `extends` is resolved before this overlay is applied. Reuse the rendered
@@ -438,36 +458,42 @@ services:
       - /run/release-security/evidence-trust:/run/release-security/evidence-trust:ro
 
   worker-sync:
+    <<: *ecs-node-hardening
     environment:
       <<: *ecs-worker-environment
       WORKER_API_TOKEN: ${WORKER_SYNC_API_TOKEN:?WORKER_SYNC_API_TOKEN is required}
       WORKER_API_SIGNING_SECRET: ${WORKER_SYNC_API_SIGNING_SECRET:?WORKER_SYNC_API_SIGNING_SECRET is required}
 
   worker-generation:
+    <<: *ecs-node-hardening
     environment:
       <<: *ecs-worker-environment
       WORKER_API_TOKEN: ${WORKER_GENERATION_API_TOKEN:?WORKER_GENERATION_API_TOKEN is required}
       WORKER_API_SIGNING_SECRET: ${WORKER_GENERATION_API_SIGNING_SECRET:?WORKER_GENERATION_API_SIGNING_SECRET is required}
 
   worker-publish:
+    <<: *ecs-node-hardening
     environment:
       <<: *ecs-worker-environment
       WORKER_API_TOKEN: ${WORKER_PUBLISH_API_TOKEN:?WORKER_PUBLISH_API_TOKEN is required}
       WORKER_API_SIGNING_SECRET: ${WORKER_PUBLISH_API_SIGNING_SECRET:?WORKER_PUBLISH_API_SIGNING_SECRET is required}
 
   worker-reconcile:
+    <<: *ecs-node-hardening
     environment:
       <<: *ecs-worker-environment
       WORKER_API_TOKEN: ${WORKER_RECONCILE_API_TOKEN:?WORKER_RECONCILE_API_TOKEN is required}
       WORKER_API_SIGNING_SECRET: ${WORKER_RECONCILE_API_SIGNING_SECRET:?WORKER_RECONCILE_API_SIGNING_SECRET is required}
 
   worker-automation:
+    <<: *ecs-node-hardening
     environment:
       <<: *ecs-worker-environment
       WORKER_API_TOKEN: ${WORKER_AUTOMATION_API_TOKEN:?WORKER_AUTOMATION_API_TOKEN is required}
       WORKER_API_SIGNING_SECRET: ${WORKER_AUTOMATION_API_SIGNING_SECRET:?WORKER_AUTOMATION_API_SIGNING_SECRET is required}
 
   worker-scan:
+    <<: *ecs-node-hardening
     environment:
       <<: *ecs-worker-environment
       WORKER_API_TOKEN: ${ASSET_SCANNER_API_TOKEN:?ASSET_SCANNER_API_TOKEN is required}
@@ -482,6 +508,7 @@ services:
       CLAMAV_DEFINITIONS_MAX_AGE_SECONDS: "86400"
 
   pilot-gateway:
+    <<: *ecs-nginx-hardening
     restart: unless-stopped
     build:
       context: ../..

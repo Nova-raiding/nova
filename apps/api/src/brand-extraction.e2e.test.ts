@@ -26,6 +26,7 @@ describe('brand extraction and explicit confirmation', () => {
     grantContinuousFeatureEntitlementForTests(workspaceId)
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
     const asset = service.registerAsset({ workspaceId, name: '品牌手册.json', mimeType: 'application/json', sizeBytes: 128, sha256: 'b'.repeat(64), storageKey: `quarantine/${workspaceId}/brand.json` })
+    Object.assign(asset, { scanStatus: 'clean', scanVerdict: 'clean', scanReceiptId: 'brand-extraction-test-receipt', scanReceiptDigest: 'c'.repeat(64), storageKey: `clean/${workspaceId}/brand.json` })
     service.updateAssetParse({ workspaceId, assetId: asset.id, state: 'succeeded', source: 'parser', facts: { 品牌名称: '云朵轻户外', 品牌定位: '城市轻户外', 品牌调性: ['克制', '清晰'], 品牌色: ['松石绿', '米白'] } })
 
     const extracted = await fetch(`${base}/v1/brand-profile/extract`, { method: 'POST', headers, body: JSON.stringify({ asset_ids: [asset.id] }) }).then(json<any>)
@@ -50,6 +51,18 @@ describe('brand extraction and explicit confirmation', () => {
     grantContinuousFeatureEntitlementForTests(workspaceId)
     const response = await fetch(`${base}/v1/brand-profile/extract`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: '{}' }).then(json<any>)
     expect(response.error?.code).toBe('BRAND_ASSETS_REQUIRED')
+  })
+
+  it('never promotes parsed but unscanned brand material into a candidate', async () => {
+    const base = await start()
+    const workspaceId = `ws_unscanned_brand_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
+    const asset = service.registerAsset({ workspaceId, name: '待扫描品牌资料.json', mimeType: 'application/json', sizeBytes: 128, sha256: 'e'.repeat(64), storageKey: `quarantine/${workspaceId}/brand.json` })
+    service.updateAssetParse({ workspaceId, assetId: asset.id, state: 'succeeded', source: 'parser', facts: { 品牌名称: '不能自动建档' } })
+    const response = await fetch(`${base}/v1/brand-profile/extract`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ asset_ids: [asset.id] }) }).then(json<any>)
+    expect(response.error?.code).toBe('BRAND_ASSETS_SCAN_REQUIRED')
+    expect(service.getBrandProfile(workspaceId)).toBeUndefined()
   })
 
   it('persists strong visual rules and blocks real generation entrypoints until font rights are approved', async () => {

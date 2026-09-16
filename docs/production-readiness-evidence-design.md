@@ -26,6 +26,8 @@ productionGate = runtimeReadiness
 
 五模态 relay evidence 必须来自真实 HTTPS relay，且每个 modality 都要有唯一 provider request id、usage、cost；使用 pricing snapshot 时还必须有 pricing version 和 pricing group。异步视频必须在 evidence 生成前确认最终成功状态和 HTTPS artifact，不能把 `IN_PROGRESS` 记录为成功。
 
+`usageObserved: true` 不能单独作为用量证据。每个模态必须保存响应中实际观测到的数值单位：文本/OCR 使用 token，图片/图片编辑使用正整数 billing units，视频使用 provider 回执的实际 duration seconds。请求参数中的图片数量或视频时长不能冒充 provider 用量。计量回执的 `usageProviderRequestId` 必须与顶层 `providerRequestId` 完全一致；缺少数值、数值非法或身份不一致时发布门禁 fail-closed。
+
 本地 Compose、fixture、示例 YAML、测试 token 和 Playwright 结果只能证明开发或契约层，不得写入 production evidence，也不得解除 `PRODUCTION_CONFIG_PATH`、Secret Manager、宿主 ChatGPT evidence 或支付/平台/云资源门禁。
 
 ## Owner 审计记录（2026-09-05）

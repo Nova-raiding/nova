@@ -5606,6 +5606,19 @@ function publicRequestOrigin(req: IncomingMessage) {
   return new URL('/', `${protocol}://${host}`).origin
 }
 
+function localFixtureOAuthAllowed(req: IncomingMessage): boolean {
+  if (isProduction() || process.env.MCP_OAUTH_REQUIRED === 'true') return false
+  const loopback = (host: string) => host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1'
+  try {
+    const configured = process.env.PUBLIC_APP_BASE_URL?.trim()
+    if (configured && !loopback(new URL(configured).hostname)) return false
+    const hostname = (value: string) => new URL(`http://${value}`).hostname.toLowerCase()
+    const host = hostname(header(req, 'host') ?? '')
+    const forwardedHost = header(req, 'x-forwarded-host')?.split(',')[0]?.trim()
+    const forwarded = forwardedHost ? hostname(forwardedHost) : undefined
+    return loopback(host) && (!forwarded || loopback(forwarded))
+  } catch { return false }
+}
 
 type McpOAuthClientRegistry = Record<string, readonly string[]>
 

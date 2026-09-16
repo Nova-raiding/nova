@@ -106,8 +106,14 @@ describe('commercial registry generated zero-side-effect E1 matrix', () => {
 
     const http = source.slice(source.indexOf("if (req.method === 'OPTIONS')"), source.indexOf("if (req.method === 'GET' && path === '/v1/commercial/access')"))
     const httpGate = http.indexOf('await enforceHttpCommercialAccess(req, requestWorkspace, httpOperationPolicy.operation)')
+    const httpHydrationCandidates = [
+      http.indexOf('await hydrateWorkspaceFromPersistence(hydrateRequestWorkspace'),
+      http.indexOf('await hydrateWorkspace(hydrateRequestWorkspace'),
+    ].filter(index => index >= 0)
+    const httpHydration = Math.min(...httpHydrationCandidates)
     expect(httpGate).toBeGreaterThan(0)
-    expect(httpGate).toBeLessThan(http.indexOf('await hydrateWorkspaceFromPersistence(hydrateRequestWorkspace)'))
+    expect(httpHydration).toBeGreaterThan(0)
+    expect(httpGate).toBeLessThan(httpHydration)
   })
 
   it.each([

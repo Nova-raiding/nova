@@ -11,9 +11,9 @@ const report = (files: readonly string[]) => ({
 })
 
 describe('isolated PostgreSQL entrypoint', () => {
-  it('selects exactly the twenty-three audited PostgreSQL files by default', async () => {
-    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(23)
-    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(23)
+  it('selects exactly the twenty-six audited PostgreSQL files by default', async () => {
+    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(26)
+    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(26)
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/migration-211-release.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/migration-215-release.postgres.test.ts')
     await expect(selectIsolatedPostgresTests([])).resolves.toEqual(ISOLATED_POSTGRES_TEST_FILES)

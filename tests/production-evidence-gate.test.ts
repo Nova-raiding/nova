@@ -72,6 +72,29 @@ describe('production payment and restore evidence gates', () => {
     expect(validateProductionEvidence(value, options('payment'))).toContain('deployment_nonce must match the deployment orchestrator nonce')
   })
 
+  it('requires separate immutable artifacts for each payment operation', () => {
+    const value = evidence('payment')
+    const checks = value.checks as Record<string, { status: string; evidence_ref: string }>
+    checks.refund!.evidence_ref = checks.checkout!.evidence_ref
+    value.signature_base64 = signProductionEvidence(value, privateKeyPem)
+    expect(validateProductionEvidence(value, options('payment'))).toContain('checks.refund.evidence_ref must differ from checks.checkout.evidence_ref')
+  })
+
+  it('allows restore checks to cite the same backup artifact', () => {
+    const value = evidence('restore')
+    const checks = value.checks as Record<string, { status: string; evidence_ref: string }>
+    checks.data_integrity!.evidence_ref = checks.backup_checksum!.evidence_ref
+    value.signature_base64 = signProductionEvidence(value, privateKeyPem)
+    expect(validateProductionEvidence(value, options('restore'))).toEqual([])
+  })
+
+  it('rejects impossible restore chronology even when independently signed', () => {
+    const value = evidence('restore'); value.source_backup_created_at = '2026-08-28T05:10:00Z'; value.recovery_point_at = '2026-08-28T05:00:00Z'; value.signature_base64 = signProductionEvidence(value, privateKeyPem)
+    expect(validateProductionEvidence(value, options('restore'))).toContain('recovery_point_at must not be before source_backup_created_at')
+    const futurePoint = evidence('restore'); futurePoint.recovery_point_at = '2026-08-28T05:25:00Z'; futurePoint.signature_base64 = signProductionEvidence(futurePoint, privateKeyPem)
+    expect(validateProductionEvidence(futurePoint, options('restore'))).toContain('recovery_point_at must not be after generated_at')
+  })
+
   it('rejects evidence at the expiry boundary and malformed expiry timestamps', () => {
     const expired = evidence('payment'); expired.expires_at = now.toISOString(); expired.signature_base64 = signProductionEvidence(expired, privateKeyPem)
     expect(validateProductionEvidence(expired, options('payment'))).toContain('evidence has expired')
