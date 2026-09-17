@@ -129,6 +129,13 @@ describe('payment gateway process contract', () => {
       authorization: `Bearer ${gatewayApiKey}`,
       'content-type': 'application/json',
     }
+    const checkoutResponse = await fetch(`${gatewayBase}/v1/checkout`, {
+      method: 'POST',
+      headers: internalHeaders,
+      body: JSON.stringify({ channel: 'alipay', order_id: 'order-checkout-1', workspace_id: 'ws-checkout-1', amount_fen: 1234, callback_url: 'https://yxsona.com/v1/billing/callback/alipay', description: 'test checkout' }),
+    })
+    expect(checkoutResponse.status).toBe(200)
+    await expect(checkoutResponse.json()).resolves.toMatchObject({ order_id: 'order-checkout-1', workspace_id: 'ws-checkout-1', amount_fen: 1234, provider_order_id: 'order-checkout-1' })
     const unsupportedQuery = await fetch(`${gatewayBase}/v1/query`, {
       method: 'POST',
       headers: internalHeaders,

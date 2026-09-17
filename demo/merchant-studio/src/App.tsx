@@ -169,6 +169,11 @@ import {
   validateTaskStoreIdentity,
 } from './store-identity'
 import { resolveLibraryData } from './library-data'
+import {
+  KnowledgeBindingStatus as KnowledgeBindingStatusPanel,
+  resolveKnowledgeBindingStatus,
+  resolveKnowledgeBindingSummary,
+} from './knowledge-binding-status.js'
 
 const taskQuestionEvidenceLabels: Record<NonNullable<TaskQuestion['evidenceKind']>, string> = {
   merchant_request: '依据：你的任务描述',
@@ -212,6 +217,7 @@ import { resolveProductAssetRelation } from './product-assets.js'
 import { ContextRecoveryCard } from './ContextRecoveryCard.js'
 import { canonicalProductActionAllowed, groupTasksForRecovery, prioritizeProducts } from './merchant-ia.js'
 import { resolveDetailSopSteps } from './detail-sop.js'
+import { ProductSpreadsheetImport } from './ProductSpreadsheetImport.js'
 
 const MERCHANT_READ_ONLY_ROLES = new Set(['viewer', 'knowledge_reader'])
 const merchantRole = (import.meta.env.VITE_MERCHANT_ROLE ?? '').trim().toLowerCase()
@@ -2978,8 +2984,37 @@ function AssetLibrary({
       width: 140,
       render: (rightsStatus: AssetMetadata['rightsStatus']) => rightsStatus === 'approved' ? <StatusChip tone="green">已确认</StatusChip> : '待确认',
     },
+    {
+      title: '知识绑定',
+      key: 'knowledgeBinding',
+      width: 330,
+      render: (_: unknown, asset: AssetMetadata) => (
+        <KnowledgeBindingStatusPanel
+          asset={asset}
+          onAction={() => {
+            const binding = resolveKnowledgeBindingStatus(asset)
+            if (
+              binding.indexState === 'queued' &&
+              binding.approvalStatus === 'approved' &&
+              binding.rightsStatus === 'cleared'
+            ) {
+              void load()
+              return
+            }
+            runPrimaryAssetAction(asset)
+          }}
+          actionLabel={
+            resolveKnowledgeBindingStatus(asset).indexState === 'queued' &&
+            resolveKnowledgeBindingStatus(asset).approvalStatus === 'approved' &&
+            resolveKnowledgeBindingStatus(asset).rightsStatus === 'cleared'
+              ? '刷新状态'
+              : '处理'
+          }
+        />
+      ),
+    },
   ]
-  const knowledgeReadyCount = visibleAssets.filter((asset) => asset.parseStatus === 'succeeded' && asset.rightsStatus === 'approved').length
+  const knowledgeReadyCount = visibleAssets.filter((asset) => resolveKnowledgeBindingStatus(asset).ready).length
   const knowledgePendingCount = Math.max(0, visibleAssets.length - knowledgeReadyCount)
   const load = async () => {
     if (!baseUrl) {
@@ -4594,6 +4629,8 @@ function Products({
   )
   const [accountsLoading, setAccountsLoading] = useState(Boolean(baseUrl))
   const [accountsError, setAccountsError] = useState('')
+  const [catalogKnowledgeAssets, setCatalogKnowledgeAssets] = useState<AssetMetadata[] | null>(null)
+  const [catalogKnowledgeError, setCatalogKnowledgeError] = useState('')
   const [selectedTargets, setSelectedTargets] = useState<Target[]>([])
   const [productFilter, setProductFilter] = useState<'all' | 'needsReview'>(
     'all',
@@ -4739,6 +4776,18 @@ function Products({
   }
   useEffect(() => {
     loadAccounts()
+  }, [baseUrl])
+  useEffect(() => {
+    if (!baseUrl) {
+      setCatalogKnowledgeAssets([])
+      setCatalogKnowledgeError('')
+      return
+    }
+    setCatalogKnowledgeAssets(null)
+    setCatalogKnowledgeError('')
+    fetchAssets(baseUrl)
+      .then(setCatalogKnowledgeAssets)
+      .catch((cause) => setCatalogKnowledgeError(describeApiError(cause)))
   }, [baseUrl])
   useEffect(() => {
     if (!baseUrl) return
@@ -5014,6 +5063,24 @@ function Products({
     Boolean(baseUrl),
     selectedTargets.length,
   )
+  const knowledgeSummaryForProduct = (sourceAssetIds: string[]) => {
+    if (!catalogKnowledgeAssets) {
+      return {
+        approvalStatus: 'pending' as const,
+        rightsStatus: 'unknown' as const,
+        indexState: 'queued' as const,
+        ready: false,
+        reasons: [catalogKnowledgeError || '正在读取知识绑定状态'],
+        boundAssetCount: sourceAssetIds.length,
+        missingAssetCount: 0,
+      }
+    }
+    return resolveKnowledgeBindingSummary(catalogKnowledgeAssets, sourceAssetIds)
+  }
+  const blockedBatchKnowledge = selectedTargets
+    .map((target) => rows.find((row) => row.id === target.productId)?.sourceAssetIds ?? [])
+    .map(knowledgeSummaryForProduct)
+    .find((summary) => !summary.ready)
   const consistencyItems = resolveDataConsistency({
     apiConfigured: Boolean(baseUrl),
     productsLoaded: !loading && !productListUnavailable,
@@ -5031,6 +5098,10 @@ function Products({
   })
   const createGroup = async () => {
     if (!baseUrl || selectedTargets.length < 2) return
+    if (blockedBatchKnowledge) {
+      setError(`知识绑定尚未 ready，不能批量生成：${blockedBatchKnowledge.reasons.join('、')}`)
+      return
+    }
     setGroupCreating(true)
     setError('')
     setGroupMessage('')
@@ -5157,9 +5228,9 @@ function Products({
           <button
             className="secondary"
             onClick={() => setGroupConfirmOpen(true)}
-            disabled={!batchReadiness.canCreateGroup || groupCreating}
+            disabled={!batchReadiness.canCreateGroup || groupCreating || Boolean(blockedBatchKnowledge)}
             aria-describedby="batch-action-help"
-            title={batchReadiness.nextStep}
+            title={blockedBatchKnowledge ? `知识绑定未 ready：${blockedBatchKnowledge.reasons.join('、')}` : batchReadiness.nextStep}
           >
             {groupCreating
               ? '创建任务组中…'
@@ -5205,6 +5276,11 @@ function Products({
           </small>
         </div>
       </section>
+      <ProductSpreadsheetImport
+        baseUrl={baseUrl}
+        accounts={accounts ?? []}
+        canWrite={!merchantReadOnly}
+      />
       <section className="products-summary" aria-label="商品目录概览">
         <div className="products-summary-main">
           <span className="section-kicker">当前目录</span>
@@ -5618,10 +5694,15 @@ function Products({
                               setError(`暂不能生成图片：${canonicalCopy.detail}。请先点击“打开商品关系并核验”。`)
                               return
                             }
+                            const knowledge = knowledgeSummaryForProduct(product.sourceAssetIds)
+                            if (!knowledge.ready) {
+                              setError(`暂不能生成图片：知识绑定未 ready。${knowledge.reasons.join('、')}`)
+                              return
+                            }
                             setImageGenerationError(''); setImageGenerationErrorField(null); setImageGenerationMode(product.sourceAssetIds.length ? 'optimize' : 'create'); setImageGenerationTarget(target); setImageGenerationCount('1')
                           }}
-                          disabled={!baseUrl || productListUnavailable || Boolean(identityError) || !product.factsConfirmed}
-                          title={!baseUrl ? '尚未连接商家 API' : identityError ?? (!product.factsConfirmed ? '请先确认商品事实' : canonicalUnverified ? canonicalCopy.detail : undefined)}
+                          disabled={!baseUrl || productListUnavailable || Boolean(identityError) || !product.factsConfirmed || !knowledgeSummaryForProduct(product.sourceAssetIds).ready}
+                          title={!baseUrl ? '尚未连接商家 API' : identityError ?? (!product.factsConfirmed ? '请先确认商品事实' : canonicalUnverified ? canonicalCopy.detail : `知识绑定未 ready：${knowledgeSummaryForProduct(product.sourceAssetIds).reasons.join('、')}`)}
                         >
                           生成图片 <ImageIcon size={14} />
                         </button>
@@ -6689,6 +6770,7 @@ function TaskWorkspace({
   onTaskResolved,
   onBack,
   onBackToProducts,
+  onOpenKnowledge,
 }: {
   openPublish: () => void
   baseUrl?: string
@@ -6698,6 +6780,7 @@ function TaskWorkspace({
   onTaskResolved: (taskId: string) => void
   onBack: () => void
   onBackToProducts: () => void
+  onOpenKnowledge: () => void
 }) {
   const taskListRequestId = useRef(0)
   const taskProductsRequestId = useRef(0)
@@ -6770,6 +6853,10 @@ function TaskWorkspace({
   const [taskProducts, setTaskProducts] = useState<ApiProduct[]>([])
   const [taskPage, setTaskPage] = useState(0)
   const [product, setProduct] = useState<ApiProduct | null>(null)
+  const [knowledgeAssets, setKnowledgeAssets] = useState<AssetMetadata[] | null>(null)
+  const [knowledgeBoundAssetIds, setKnowledgeBoundAssetIds] = useState<string[]>([])
+  const [knowledgeLoading, setKnowledgeLoading] = useState(Boolean(baseUrl))
+  const [knowledgeError, setKnowledgeError] = useState('')
   const [taskListError, setTaskListError] = useState('')
   const [taskListLoading, setTaskListLoading] = useState(Boolean(baseUrl))
   const [taskProductsError, setTaskProductsError] = useState('')
@@ -6820,9 +6907,36 @@ function TaskWorkspace({
   const consumedKnowledgeRuleCount = consumedKnowledge?.rules.length ?? 0
   const consumedKnowledgeAssetCount = consumedKnowledge?.assets.length ?? 0
   const consumedLearningCount = consumedKnowledge?.confirmedLearningSuggestions.length ?? 0
+  const knowledgeSummary = useMemo(() => {
+    if (knowledgeLoading) {
+      return {
+        approvalStatus: 'pending' as const,
+        rightsStatus: 'unknown' as const,
+        indexState: 'queued' as const,
+        ready: false,
+        reasons: ['正在读取知识绑定状态'],
+        boundAssetCount: knowledgeBoundAssetIds.length,
+        missingAssetCount: 0,
+      }
+    }
+    if (knowledgeError) {
+      return {
+        approvalStatus: 'pending' as const,
+        rightsStatus: 'unknown' as const,
+        indexState: 'queued' as const,
+        ready: false,
+        reasons: [`知识绑定状态读取失败：${knowledgeError}`],
+        boundAssetCount: knowledgeBoundAssetIds.length,
+        missingAssetCount: 0,
+      }
+    }
+    return resolveKnowledgeBindingSummary(knowledgeAssets ?? [], knowledgeBoundAssetIds)
+  }, [knowledgeAssets, knowledgeBoundAssetIds, knowledgeError, knowledgeLoading])
   const recentTimeline = timeline.slice().reverse().slice(0, 4)
   const generateDraft = (created: Task) => {
     if (!baseUrl) return Promise.reject(new Error('API 未配置'))
+    if (!knowledgeSummary.ready)
+      return Promise.reject(new Error(`知识绑定尚未 ready，不能生成：${knowledgeSummary.reasons.join('、')}`))
     if (!['direction_selected', 'plan_confirmed'].includes(created.state))
       return Promise.reject(new Error('请先选择创意方向并确认制作方案'))
     return (
@@ -6849,6 +6963,10 @@ function TaskWorkspace({
     setTaskCreationAttempted(false)
     setTask(null)
     setProduct(null)
+    setKnowledgeAssets(null)
+    setKnowledgeBoundAssetIds([])
+    setKnowledgeLoading(Boolean(baseUrl))
+    setKnowledgeError('')
     setRemoteDirections(null)
     setDirectionsError('')
     setApproved(false)
@@ -6887,6 +7005,26 @@ function TaskWorkspace({
       )
       if (productIdentityError) throw new Error(productIdentityError)
       if (!cancelled) setProduct(selectedProduct)
+      if (!cancelled) {
+        setKnowledgeBoundAssetIds(selectedProduct.sourceAssetIds ?? [])
+        const [bindingResult, assetResult] = await Promise.allSettled([
+          fetchProductAssetBindings(baseUrl, selectedProduct.id),
+          fetchAssets(baseUrl),
+        ])
+        if (bindingResult.status === 'fulfilled') {
+          setKnowledgeBoundAssetIds(
+            bindingResult.value.items
+              .filter((item) => item.status === 'active')
+              .sort((left, right) => left.ordinal - right.ordinal)
+              .map((item) => item.assetId),
+          )
+        } else {
+          setKnowledgeError(describeApiError(bindingResult.reason))
+        }
+        if (assetResult.status === 'fulfilled') setKnowledgeAssets(assetResult.value)
+        else setKnowledgeError(describeApiError(assetResult.reason))
+        setKnowledgeLoading(false)
+      }
       const current = target.taskId
         ? (target.resolvedTask ?? (await fetchTask(baseUrl, target.taskId)))
         : null
@@ -8710,6 +8848,22 @@ function TaskWorkspace({
                   </>
                 )}
               </div>
+              <div className="context-section" data-testid="task-knowledge-binding">
+                <div className="subhead">
+                  <b>知识绑定状态</b>
+                  <span>{knowledgeSummary.boundAssetCount} 份绑定</span>
+                </div>
+                <KnowledgeBindingStatusPanel
+                  summary={knowledgeSummary}
+                  onAction={onOpenKnowledge}
+                  actionLabel="去知识库处理"
+                />
+                {!knowledgeSummary.ready && (
+                  <div className="knowledge-generation-blocker" role="status">
+                    未 ready 前不会调用生成接口；完成 approval、rights 和 index 后请重新检查。
+                  </div>
+                )}
+              </div>
               <div className="context-section" data-testid="task-knowledge-consumption">
                 <div className="subhead">
                   <b>工作区知识消费</b>
@@ -8780,6 +8934,7 @@ function TaskWorkspace({
                       Boolean(operation) ||
                       !baseUrl ||
                       Boolean(content) ||
+                      !knowledgeSummary.ready ||
                       !task?.selectedDirectionId ||
                       !['direction_selected', 'plan_confirmed'].includes(
                         task.state,
@@ -11087,6 +11242,9 @@ export default function App() {
                     onBack={() => navigateTo('task', { clearContext: true })}
                     onBackToProducts={() =>
                       navigateTo('products', { clearContext: true })
+                    }
+                    onOpenKnowledge={() =>
+                      navigateTo('products', { entry: 'knowledge', clearContext: true })
                     }
                   />
                 )}

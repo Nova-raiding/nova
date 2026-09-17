@@ -76,6 +76,7 @@ export interface PasswordAuthRepository {
   issueMcpAuthorizationCode(input: McpOAuthContext & { account: PasswordAccount; redirectUri: string; codeChallenge: string }): Promise<{ code: string; expiresAt: string; workspaceId: string }>
   exchangeMcpAuthorizationCode(input: McpOAuthContext & { redirectUri: string; code: string; codeVerifier: string }): Promise<McpOAuthTokenPair>
   refreshMcpOAuthToken(input: McpOAuthContext & { refreshToken: string }): Promise<McpOAuthTokenPair>
+  revokeMcpOAuthToken(input: McpOAuthContext & { token: string; tokenTypeHint?: 'access_token' | 'refresh_token' }): Promise<void>
   authenticateMcpAccessToken(input: McpOAuthContext & { accessToken: string }): Promise<McpOAuthPrincipal | undefined>
 }
 
@@ -266,6 +267,13 @@ export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
     }
     record.status = 'rotated'
     return this.issueMemoryMcpTokenPair(record, record.familyId)
+  }
+  async revokeMcpOAuthToken(input: McpOAuthContext & { token: string; tokenTypeHint?: 'access_token' | 'refresh_token' }) {
+    const record = this.mcpTokens.get(tokenDigest(input.token))
+    if (!record || record.clientId !== input.clientId || record.issuer !== input.issuer || record.audience !== input.audience || record.resource !== input.resource) return
+    if (record.kind === 'refresh') {
+      for (const token of this.mcpTokens.values()) if (token.familyId === record.familyId && token.status === 'active') token.status = 'revoked'
+    } else if (record.status === 'active') record.status = 'revoked'
   }
   async authenticateMcpAccessToken(input: McpOAuthContext & { accessToken: string }) {
     const record = this.mcpTokens.get(tokenDigest(input.accessToken))
@@ -483,6 +491,25 @@ export class PostgresPasswordAuthRepository implements PasswordAuthRepository {
     })
     if (outcome.error) throw mcpOAuthError('MCP_OAUTH_INVALID_GRANT')
     return outcome.pair
+  }
+  async revokeMcpOAuthToken(input: McpOAuthContext & { token: string; tokenTypeHint?: 'access_token' | 'refresh_token' }) {
+    await this.withClient(async client => {
+      const result = await client.query<{ id: string; family_id: string; token_kind: 'access' | 'refresh' }>(
+        `SELECT id,family_id,token_kind FROM mcp_oauth_tokens WHERE token_hash=$1 AND client_id=$2 AND issuer=$3 AND audience=$4 AND resource=$5 FOR UPDATE`,
+        [tokenDigest(input.token), input.clientId, input.issuer, input.audience, input.resource],
+      )
+      const row = result.rows[0]
+      // RFC 7009 defines token_type_hint as an optimization hint, not an
+      // assertion about the token's actual type. The token hash remains the
+      // authoritative lookup key so a mismatched hint cannot leave a token
+      // active.
+      if (!row) return
+      if (row.token_kind === 'refresh') {
+        await client.query(`UPDATE mcp_oauth_tokens SET status='revoked',revoked_at=now(),revoke_reason='oauth_token_revocation' WHERE family_id=$1 AND status='active'`, [row.family_id])
+      } else {
+        await client.query(`UPDATE mcp_oauth_tokens SET status='revoked',revoked_at=now(),revoke_reason='oauth_token_revocation' WHERE id=$1 AND status='active'`, [row.id])
+      }
+    })
   }
   async authenticateMcpAccessToken(input: McpOAuthContext & { accessToken: string }) {
     return this.withClient(async client => {

@@ -742,6 +742,29 @@ type JsonObject = Record<string, unknown>
 type BatchProduct = { id: string; workspaceId: string; version?: number }
 type BatchProductWrite = { product: BatchProduct; version: number }
 
+type ProductFactsConfirmationState = 'awaiting_confirmation' | 'confirmed'
+
+function productFactsConfirmation(product: Pick<Product, 'id' | 'factsConfirmed'>) {
+  const state: ProductFactsConfirmationState = product.factsConfirmed ? 'confirmed' : 'awaiting_confirmation'
+  return {
+    state,
+    required: !product.factsConfirmed,
+    product_id: product.id,
+    next_action: product.factsConfirmed ? null : { method: 'catalog.facts.confirm', params: { product_id: product.id }, confirmation: 'interactive_confirmation' as const },
+  }
+}
+
+function batchFactsConfirmation(products: readonly Pick<Product, 'id' | 'factsConfirmed'>[]) {
+  const pending = products.filter(product => !product.factsConfirmed).map(product => product.id)
+  return {
+    state: pending.length ? 'awaiting_confirmation' as const : 'confirmed' as const,
+    required: pending.length > 0,
+    product_ids: products.map(product => product.id),
+    pending_product_ids: pending,
+    next_actions: pending.map(productId => ({ method: 'catalog.facts.confirm', params: { product_id: productId }, confirmation: 'interactive_confirmation' as const })),
+  }
+}
+
 export function rollbackBatchProducts(products: Map<string, BatchProduct>, workspaceId: string, writes: readonly BatchProductWrite[], before: ReadonlyMap<string, BatchProduct>): void {
   for (const write of writes) {
     const current = products.get(write.product.id)
@@ -4323,6 +4346,36 @@ async function persistSnapshot(workspaceId: string, entityType: 'product' | 'tas
 }
 
 /**
+ * The import boundary deliberately leaves facts unconfirmed.  Keep the
+ * follow-up transition observable and idempotent so a client retry cannot
+ * increment the product version or emit a second confirmation event.
+ */
+async function confirmProductFactsTransition(input: { workspaceId: string; productId: string; source: 'mcp' | 'rest' }) {
+  const current = service.products.get(input.productId)
+  if (!current || current.workspaceId !== input.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
+  if (current.factsConfirmed) {
+    // A prior confirmation may have happened before a draft task was
+    // rehydrated or retried. Re-run the task projection without mutating the
+    // already-confirmed product; only newly unblocked tasks are persisted.
+    const resumedTasks = service.refreshTasksAfterProductFacts(input.workspaceId, input.productId)
+    for (const task of resumedTasks) {
+      await persistSnapshot(input.workspaceId, 'task', task, task as unknown as Record<string, unknown>)
+      await persistEvent(input.workspaceId, task.id, 'task.facts_unblocked', task.version, { task_id: task.id, product_id: current.id, state: task.state, source: input.source })
+    }
+    return { product: current, resumedTasks, changed: false }
+  }
+  const product = service.confirmProductFacts(input.workspaceId, input.productId)
+  const resumedTasks = service.refreshTasksAfterProductFacts(input.workspaceId, input.productId)
+  await persistSnapshot(input.workspaceId, 'product', product, product as unknown as Record<string, unknown>)
+  await persistEvent(input.workspaceId, product.id, 'product.facts_confirmed', product.version ?? 1, { product_id: product.id, version: product.version ?? 1, source: input.source })
+  for (const task of resumedTasks) {
+    await persistSnapshot(input.workspaceId, 'task', task, task as unknown as Record<string, unknown>)
+    await persistEvent(input.workspaceId, task.id, 'task.facts_unblocked', task.version, { task_id: task.id, product_id: product.id, state: task.state, source: input.source })
+  }
+  return { product, resumedTasks, changed: true }
+}
+
+/**
  * Task answers and product facts are separate aggregates. When a merchant
  * confirms facts from the task conversation, persist the product transition
  * and unblock sibling draft tasks as one observable workflow. Otherwise the
@@ -5593,6 +5646,7 @@ function mcpOAuthDiscovery(req: IncomingMessage) {
     issuer,
     authorizationEndpoint,
     tokenEndpoint,
+    revocationEndpoint: `${issuer}/oauth/revoke`,
     resource: `${serviceOrigin}/mcp`,
     scopes: ['merchant'],
   }
@@ -5689,6 +5743,32 @@ async function handleMcpOAuthToken(req: IncomingMessage, res: ServerResponse) {
     if (!pair) return sendOAuthProtocolError(res, 400, 'invalid_request')
     res.statusCode = 200; res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store'); res.setHeader('pragma', 'no-cache'); res.end(JSON.stringify({ access_token: pair.accessToken, refresh_token: pair.refreshToken, token_type: 'Bearer', expires_in: pair.expiresIn, scope: pair.scope.join(' ') }))
   } catch { return sendOAuthProtocolError(res, 400, 'invalid_grant') }
+}
+
+/** RFC 7009 token revocation.  The endpoint intentionally returns 200 for an
+ * unknown token so callers cannot use it as a token oracle. */
+async function handleMcpOAuthRevoke(req: IncomingMessage, res: ServerResponse) {
+  if (!productionMcpOAuthRuntimeReady(req)) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
+  const clients = mcpOAuthClients()
+  if (!clients) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
+  if (header(req, 'content-type')?.split(';')[0]?.trim().toLowerCase() !== 'application/x-www-form-urlencoded') return sendOAuthProtocolError(res, 415, 'invalid_request')
+  const params = new URLSearchParams((await requestBodyBytes(req, 32 * 1024)).toString('utf8'))
+  if (!oauthCriticalParamsValid(params, ['token', 'client_id', 'token_type_hint', 'resource'])) return sendOAuthProtocolError(res, 400, 'invalid_request')
+  const clientId = oauthSingle(params, 'client_id') ?? ''
+  const token = oauthSingle(params, 'token') ?? ''
+  const resource = oauthSingle(params, 'resource')
+  const context = mcpOAuthRequestContext(req)
+  if (!clients[clientId] || !token || (resource !== undefined && resource !== context.resource)) return sendOAuthProtocolError(res, 400, 'invalid_request')
+  const hint = oauthSingle(params, 'token_type_hint')
+  if (hint !== undefined && hint !== 'access_token' && hint !== 'refresh_token') return sendOAuthProtocolError(res, 400, 'unsupported_token_type')
+  try {
+    await passwordAuthRepository.revokeMcpOAuthToken({ ...context, clientId, token, tokenTypeHint: hint as 'access_token' | 'refresh_token' | undefined })
+  } catch {
+    // RFC 7009 requires a successful response for an otherwise well-formed
+    // unknown or already-revoked token; persistence failures remain 503.
+    return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
+  }
+  res.statusCode = 200; res.setHeader('cache-control', 'no-store'); res.setHeader('pragma', 'no-cache'); res.end()
 }
 
 type RequestObservationState = RequestLogInput & { startedAt: bigint; failed: boolean }
@@ -6572,6 +6652,11 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
   if (!requiresStrictAuth()) return policy
   const runtime = mcpAuthorizationRuntimeConfig()
   if (['workspace.invitations.list', 'workspace.invitation.accept'].includes(method) && await hasPendingInvitationForPrincipal(req, workspaceId)) return policy
+  // Health/onboarding is the authenticated merchant's bootstrap read. It
+  // must remain reachable before a membership role projection is hydrated;
+  // this does not grant mutation or cross-workspace access.
+  const bootstrapPrincipal = requestPrincipals.get(req)
+  if (['workspace.health', 'onboarding.status'].includes(method) && bootstrapPrincipal?.identityId && bootstrapPrincipal.workspaces.includes(workspaceId)) return policy
   // A signed OIDC principal is intentionally allowed to create its first
   // workspace before membership exists. All subsequent methods require the
   // projected capability and active membership.
@@ -6927,6 +7012,7 @@ async function authenticate(req: IncomingMessage) {
   const oauthClients = isMcpRequest ? mcpOAuthClients() : undefined
   const mcpOAuthRequired = isMcpRequest && process.env.MCP_OAUTH_REQUIRED === 'true'
   if (mcpOAuthRequired && !oauthClients) throw new DomainError('MCP_OAUTH_NOT_CONFIGURED', 'MCP OAuth 客户端注册表缺失或无效', 503)
+  if (isMcpRequest && isProduction() && !productionMcpOAuthRuntimeReady(req)) throw new DomainError('MCP_OAUTH_NOT_CONFIGURED', 'MCP OAuth 生产运行时未完成配置', 503)
   const mcpOAuthBoundary = isMcpRequest && (mcpOAuthRequired || Boolean(oauthClients))
   const authorizationHeader = header(req, 'authorization')?.trim() ?? ''
   if (mcpOAuthBoundary && !/^Bearer\s+[^\s]+$/iu.test(authorizationHeader)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'MCP 请求必须携带 OAuth Bearer token', 401)
@@ -7284,7 +7370,7 @@ async function resolveActiveWorkspaceMember(req: IncomingMessage, workspaceId: s
   const principal = requestPrincipals.get(req)
   if (!principal?.actorId) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '生产工作区访问必须绑定可识别的成员身份', 401)
   if (!workspaceId) throw new DomainError(ERROR_CODES.FORBIDDEN, '生产工作区访问缺少工作区范围', 403)
-  const member = (await (persistence.members ?? memoryMembers).list(workspaceId)).find(item => item.externalSubject === principal.actorId || (principal.accountLogin && item.externalSubject === principal.accountLogin))
+  const member = (await (persistence.members ?? memoryMembers).list(workspaceId)).find(item => item.externalSubject === principal.actorId || (principal.accountLogin && item.externalSubject === principal.accountLogin) || (principal.identityId && item.identityId === principal.identityId))
   if (!member) {
     if (required) throw new DomainError('WORKSPACE_MEMBERSHIP_REQUIRED', '当前身份不是该工作区的有效成员，请由工作区所有者邀请后重试', 403, { workspace_id: workspaceId })
     return false
@@ -7308,10 +7394,16 @@ async function resolveActiveWorkspaceMember(req: IncomingMessage, workspaceId: s
 }
 
 async function hasPendingInvitationForPrincipal(req: IncomingMessage, workspaceId: string) {
-  const actorId = requestPrincipals.get(req)?.actorId
-  if (!actorId || !workspaceId) return false
-  const member = (await (persistence.members ?? memoryMembers).list(workspaceId)).find(item => item.externalSubject === actorId)
+  const principal = requestPrincipals.get(req)
+  const subjects = new Set([principal?.actorId, principal?.accountLogin].filter((value): value is string => Boolean(value)))
+  if (!subjects.size || !workspaceId) return false
+  const member = (await (persistence.members ?? memoryMembers).list(workspaceId)).find(item => subjects.has(item.externalSubject))
   return member?.status === 'invited'
+}
+
+function principalInvitationSubjects(req: IncomingMessage) {
+  const principal = requestPrincipals.get(req)
+  return new Set([principal?.actorId, principal?.accountLogin].filter((value): value is string => Boolean(value)))
 }
 
 async function enforceActiveWorkspaceMember(req: IncomingMessage, workspaceId: string) {
@@ -12821,15 +12913,17 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     })
     }
     case 'workspace.invitations.list': {
-      const actorId = requestActor(req, 'unknown')
+      const subjects = principalInvitationSubjects(req)
       const invitations = (await (persistence.members ?? memoryMembers).list(workspaceId))
-        .filter(member => member.externalSubject === actorId && member.status === 'invited')
+        .filter(member => subjects.has(member.externalSubject) && member.status === 'invited')
         .map(member => ({ workspace_id: member.workspaceId, member_id: member.id, display_name: member.displayName, role: member.role, status: member.status, revision: member.revision, invited_by: member.invitedBy, created_at: member.createdAt }))
       return result({ invitations, unread_count: invitations.length })
     }
     case 'workspace.invitation.accept': {
-      const actorId = requestActor(req, 'unknown')
-      const member = (await (persistence.members ?? memoryMembers).list(workspaceId)).find(item => item.externalSubject === actorId && item.status === 'invited')
+      const principal = requestPrincipals.get(req)
+      const actorId = principal?.accountLogin ?? requestActor(req, 'unknown')
+      const subjects = principalInvitationSubjects(req)
+      const member = (await (persistence.members ?? memoryMembers).list(workspaceId)).find(item => subjects.has(item.externalSubject) && item.status === 'invited')
       if (!member) throw new DomainError('INVITATION_NOT_FOUND', '没有找到发给当前账号的待接受邀请', 404)
       const expectedRevision = optionalNumberValue(params, 'expectedRevision', 'expected_revision')
       if (expectedRevision === undefined) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '接受邀请必须提供 expected_revision', 400)
@@ -16255,7 +16349,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const batchId = `catalog_import_batch_${randomUUID()}`
         await persistSnapshotsAndEvent({ workspaceId, snapshots: created.map(product => ({ entityType: 'product' as const, entityId: product.id, entityVersion: product.version ?? 1, payload: product as unknown as Record<string, unknown> })), aggregateId: batchId, eventType: 'catalog.import.batch.completed', sequence: 1, eventPayload: { batch_id: batchId, count: created.length, product_ids: created.map(product => product.id) } })
         await recordOperationAudit({ workspaceId, actorId: requestActor(req), action: 'catalog.import.batch', resourceType: 'product_import_batch', resourceId: batchId, before: {}, after: { count: created.length, product_ids: created.map(product => product.id), atomic: true }, reason: '批量导入商品并建立持久化快照' })
-        return result({ batchId, count: created.length, products: created.map(product => ({ ...product, product_id: product.id, rule_scan: product.ruleScan, ...(draftOnly ? { draft_only: true, candidate_status: '未绑定商品、仅草稿、不可发布', publishable: false } : {}) })), atomic: true, factsConfirmationRequired: true, ...(draftOnly ? { draft_only: true } : {}), knowledge: { assetCount: knowledgeProjection.assets.length, documentCount: knowledgeProjection.documents.length, chunkCount: knowledgeProjection.chunks.length, bindingCount: knowledgeProjection.bindings.length, indexState: 'queued', approvalStatus: 'pending', nextAction: 'knowledge.asset.update' } })
+        const factsConfirmation = batchFactsConfirmation(created)
+        return result({ batchId, count: created.length, products: created.map(product => ({ ...product, product_id: product.id, rule_scan: product.ruleScan, factsConfirmationRequired: !product.factsConfirmed, facts_confirmation: productFactsConfirmation(product), ...(draftOnly ? { draft_only: true, candidate_status: '未绑定商品、仅草稿、不可发布', publishable: false } : {}) })), atomic: true, factsConfirmationRequired: factsConfirmation.required, facts_confirmation: factsConfirmation, next_actions: factsConfirmation.next_actions, ...(draftOnly ? { draft_only: true } : {}), knowledge: { assetCount: knowledgeProjection.assets.length, documentCount: knowledgeProjection.documents.length, chunkCount: knowledgeProjection.chunks.length, bindingCount: knowledgeProjection.bindings.length, indexState: 'queued', approvalStatus: 'pending', nextAction: 'knowledge.asset.update' } })
       } catch (error) {
         rollbackBatchProducts(service.products, workspaceId, writes, beforeProducts)
         throw error
@@ -16263,23 +16358,17 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'catalog.facts.confirm': {
       const productId = required(params, 'product_id')
-      const product = service.confirmProductFacts(workspaceId, productId)
-      const resumedTasks = service.refreshTasksAfterProductFacts(workspaceId, productId)
-      await persistSnapshot(workspaceId, 'product', product, product as unknown as Record<string, unknown>)
-      await persistEvent(workspaceId, product.id, 'product.facts_confirmed', product.version ?? 1, { product_id: product.id, version: product.version ?? 1 })
-      for (const task of resumedTasks) {
-        await persistSnapshot(workspaceId, 'task', task, task as unknown as Record<string, unknown>)
-        await persistEvent(workspaceId, task.id, 'task.facts_unblocked', task.version, { task_id: task.id, product_id: product.id, state: task.state })
-      }
+      const transition = await confirmProductFactsTransition({ workspaceId, productId, source: 'mcp' })
+      const { product, resumedTasks } = transition
       const readControl = await canonicalProductReadControl(workspaceId)
-      if (readControl.mode !== 'canonical_read') return result({ ...product, product_id: product.id, resumed_task_ids: resumedTasks.map(task => task.id) })
+      if (readControl.mode !== 'canonical_read') return result({ ...product, product_id: product.id, factsConfirmationRequired: false, humanConfirmed: true, facts_confirmation: productFactsConfirmation(product), resumed_task_ids: resumedTasks.map(task => task.id) })
       await persistenceReady
       const canonicalRepository = persistence.brandUnits ?? memoryBrandUnits
       const candidates = (await canonicalRepository.listCanonicalProducts({ workspaceId })).filter(row => row.sourceProductId === product.id)
       if (candidates.length > 1) throw new DomainError('CANONICAL_PRODUCT_AMBIGUOUS', '一个商品对应多个规范商品，已阻止同步事实，请先完成映射治理', 409, { product_id: product.id, canonical_product_ids: candidates.map(row => row.id), next_action: 'canonical.product.consistency' })
       const canonical = candidates[0]
       if (!canonical) throw new DomainError('CANONICAL_PRODUCT_MAPPING_REQUIRED', '商品事实已确认，但尚未绑定规范商品，无法完成 canonical_read 同步', 409, { product_id: product.id, next_action: 'canonical.product.consistency' })
-      if (canonical.facts && Object.keys(canonical.facts).length > 0) return result({ ...product, product_id: product.id, resumed_task_ids: resumedTasks.map(task => task.id), canonical_scope: { canonical_product_id: canonical.id, brand_id: canonical.brandId, facts_version: canonical.factsVersion, facts_synced: false } })
+      if (canonical.facts && Object.keys(canonical.facts).length > 0) return result({ ...product, product_id: product.id, factsConfirmationRequired: false, humanConfirmed: true, facts_confirmation: productFactsConfirmation(product), resumed_task_ids: resumedTasks.map(task => task.id), canonical_scope: { canonical_product_id: canonical.id, brand_id: canonical.brandId, facts_version: canonical.factsVersion, facts_synced: false } })
       const facts: Record<string, unknown> = {
         ...(product.category ? { category: product.category } : {}),
         ...(product.attributes ? { attributes: structuredClone(product.attributes) } : {}),
@@ -16290,7 +16379,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       try {
         const updated = await canonicalRepository.updateCanonicalProductFacts({ workspaceId, id: canonical.id, facts, expectedFactsVersion: canonical.factsVersion })
         await persistEvent(workspaceId, updated.id, 'canonical_product.facts_confirmed', updated.factsVersion, { product_id: product.id, canonical_product_id: updated.id, facts_version: updated.factsVersion, source: 'legacy_confirmation' })
-        return result({ ...product, product_id: product.id, resumed_task_ids: resumedTasks.map(task => task.id), canonical_scope: { canonical_product_id: updated.id, brand_id: updated.brandId, facts_version: updated.factsVersion, facts_synced: true } })
+        return result({ ...product, product_id: product.id, factsConfirmationRequired: false, humanConfirmed: true, facts_confirmation: productFactsConfirmation(product), resumed_task_ids: resumedTasks.map(task => task.id), canonical_scope: { canonical_product_id: updated.id, brand_id: updated.brandId, facts_version: updated.factsVersion, facts_synced: true } })
       } catch (error) {
         if (error instanceof Error && error.message === 'CANONICAL_PRODUCT_REVISION_CONFLICT') throw new DomainError('CANONICAL_PRODUCT_REVISION_CONFLICT', '标准商品事实已被其他操作更新，请刷新后重试', 409)
         if (error instanceof Error && error.message === 'CANONICAL_PRODUCT_NOT_FOUND') throw new DomainError('CANONICAL_PRODUCT_NOT_FOUND', '标准商品不存在或不属于当前工作区', 404)
@@ -18942,6 +19031,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   }
   if (path === '/oauth/authorize' && (req.method === 'GET' || req.method === 'POST') && mcpOAuthClients()) return handleMcpOAuthAuthorize(req, res, url)
   if (path === '/oauth/token' && req.method === 'POST' && mcpOAuthClients()) return handleMcpOAuthToken(req, res)
+  if (path === '/oauth/revoke' && req.method === 'POST' && mcpOAuthClients()) return handleMcpOAuthRevoke(req, res)
   if (path === '/oauth/authorize' && req.method === 'GET') {
     if (!localFixtureOAuthAllowed(req)) return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
     if (!oauthCriticalParamsValid(url.searchParams, ['redirect_uri', 'state'])) return sendOAuthProtocolError(res, 400, 'invalid_request')
@@ -18965,6 +19055,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const fixture = process.env.MERCHANT_MCP_TOKEN?.trim() || 'fixture-token'
     res.statusCode = 200; res.setHeader('content-type', 'application/json'); res.setHeader('cache-control', 'no-store'); res.setHeader('pragma', 'no-cache'); res.end(JSON.stringify({ access_token: fixture, token_type: 'Bearer', expires_in: 3600, scope: 'merchant' })); return
   }
+  if (path === '/oauth/revoke' && req.method === 'POST') return sendOAuthProtocolError(res, 503, 'temporarily_unavailable')
   // OAuth discovery endpoints used by ChatGPT/MCP clients. Keep these public
   // so an unauthenticated client can discover where to sign in.
   if (req.method === 'GET' && path === '/.well-known/oauth-protected-resource') {
@@ -18983,7 +19074,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       res.end(JSON.stringify({ error: 'MCP_OAUTH_NOT_CONFIGURED' })); return
     }
     res.statusCode = 200; res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store')
-    res.end(JSON.stringify({ issuer: discovery.issuer, authorization_endpoint: discovery.authorizationEndpoint, token_endpoint: discovery.tokenEndpoint, response_types_supported: ['code'], grant_types_supported: ['authorization_code', 'refresh_token'], token_endpoint_auth_methods_supported: ['none'], code_challenge_methods_supported: ['S256'], scopes_supported: discovery.scopes })); return
+    res.end(JSON.stringify({ issuer: discovery.issuer, authorization_endpoint: discovery.authorizationEndpoint, token_endpoint: discovery.tokenEndpoint, revocation_endpoint: discovery.revocationEndpoint, response_types_supported: ['code'], grant_types_supported: ['authorization_code', 'refresh_token'], token_endpoint_auth_methods_supported: ['none'], code_challenge_methods_supported: ['S256'], scopes_supported: discovery.scopes })); return
   }
   if (req.method === 'GET' && path === '/.well-known/openai-apps-challenge') {
     const challenge = process.env.OPENAI_APPS_CHALLENGE_TOKEN?.trim()
@@ -20647,7 +20738,8 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const batchId = `catalog_import_batch_${randomUUID()}`
       await persistSnapshotsAndEvent({ workspaceId, snapshots: created.map(product => ({ entityType: 'product' as const, entityId: product.id, entityVersion: product.version ?? 1, payload: product as unknown as Record<string, unknown> })), aggregateId: batchId, eventType: 'catalog.import.batch.completed', sequence: 1, eventPayload: { batch_id: batchId, count: created.length, product_ids: created.map(product => product.id), transport: 'rest' } })
       await recordOperationAudit({ workspaceId, actorId: requestActor(req), action: 'catalog.import.batch', resourceType: 'product_import_batch', resourceId: batchId, before: {}, after: { count: created.length, product_ids: created.map(product => product.id), atomic: true, transport: 'rest' }, reason: '批量导入商品并建立持久化快照' })
-      return send(res, 201, workspaceId, { batchId, count: created.length, products: created, atomic: true, factsConfirmationRequired: true }, null, req)
+      const factsConfirmation = batchFactsConfirmation(created)
+      return send(res, 201, workspaceId, { batchId, count: created.length, products: created.map(product => ({ ...product, factsConfirmationRequired: !product.factsConfirmed, facts_confirmation: productFactsConfirmation(product) })), atomic: true, factsConfirmationRequired: factsConfirmation.required, facts_confirmation: factsConfirmation, next_actions: factsConfirmation.next_actions }, null, req)
     } catch (error) {
       rollbackBatchProducts(service.products, workspaceId, writes, beforeProducts)
       throw error
@@ -20681,9 +20773,8 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const workspaceId = resolveWorkspace(req)
     const productId = decodeURIComponent(productConfirmMatch[1]!)
     await enforceProductBrandAccess(req, workspaceId, productId)
-    const product = service.confirmProductFacts(workspaceId, productId)
-    await persistSnapshot(workspaceId, 'product', product, product as unknown as Record<string, unknown>)
-    return send(res, 200, workspaceId, product, null, req)
+    const { product, resumedTasks } = await confirmProductFactsTransition({ workspaceId, productId, source: 'rest' })
+    return send(res, 200, workspaceId, { ...product, product_id: product.id, factsConfirmationRequired: false, humanConfirmed: true, facts_confirmation: productFactsConfirmation(product), resumed_task_ids: resumedTasks.map(task => task.id) }, null, req)
   }
   if (req.method === 'GET' && path === '/v1/platform-accounts') {
     const workspaceId = resolveWorkspace(req)

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { MemoryPasswordAuthRepository } from './password-auth-repository.js'
 
@@ -95,5 +96,34 @@ describe('password authentication', () => {
     const logged = await auth.login({ login: account.login, password: 'InitialPass123' })
     await expect(auth.changePassword({ token: logged.token, currentPassword: 'InitialPass123', newPassword: 'short' }))
       .rejects.toMatchObject({ code: 'AUTH_PASSWORD_POLICY_INVALID' })
+  })
+
+  it('revokes one access token or the complete refresh-token family and treats the type hint as advisory', async () => {
+    const auth = new MemoryPasswordAuthRepository()
+    const account = await auth.createMerchantAccount({
+      login: 'oauth-revoke@example.com',
+      password: 'InitialPass123',
+      enterpriseName: '企业',
+      contactName: '管理员',
+      workspaceIds: ['ws_oauth_revoke'],
+      actorId: 'platform_ops',
+      reason: 'OAuth revoke test',
+    })
+    const context = { clientId: 'chatgpt', issuer: 'https://merchant.example', audience: 'https://merchant.example/mcp', resource: 'https://merchant.example/mcp', scope: ['merchant'] }
+    const verifier = 'oauth-pkce-verifier-for-revoke-test-000000000000000000000000'
+    const challenge = createHash('sha256').update(verifier).digest('base64url')
+    const code = await auth.issueMcpAuthorizationCode({ ...context, account, redirectUri: 'https://chatgpt.com/oauth/callback', codeChallenge: challenge })
+    const pair = await auth.exchangeMcpAuthorizationCode({ ...context, redirectUri: 'https://chatgpt.com/oauth/callback', code: code.code, codeVerifier: verifier })
+
+    await auth.revokeMcpOAuthToken({ ...context, token: pair.accessToken, tokenTypeHint: 'refresh_token' })
+    await expect(auth.authenticateMcpAccessToken({ ...context, accessToken: pair.accessToken })).resolves.toBeUndefined()
+    await expect(auth.refreshMcpOAuthToken({ ...context, refreshToken: pair.refreshToken })).resolves.toBeDefined()
+
+    const familyCode = await auth.issueMcpAuthorizationCode({ ...context, account, redirectUri: 'https://chatgpt.com/oauth/callback', codeChallenge: challenge })
+    const family = await auth.exchangeMcpAuthorizationCode({ ...context, redirectUri: 'https://chatgpt.com/oauth/callback', code: familyCode.code, codeVerifier: verifier })
+    await auth.revokeMcpOAuthToken({ ...context, token: family.refreshToken, tokenTypeHint: 'refresh_token' })
+    await expect(auth.authenticateMcpAccessToken({ ...context, accessToken: family.accessToken })).resolves.toBeUndefined()
+    await expect(auth.refreshMcpOAuthToken({ ...context, refreshToken: family.refreshToken })).rejects.toMatchObject({ code: 'MCP_OAUTH_INVALID_GRANT' })
+    await expect(auth.revokeMcpOAuthToken({ ...context, token: 'unknown-token', tokenTypeHint: 'access_token' })).resolves.toBeUndefined()
   })
 })

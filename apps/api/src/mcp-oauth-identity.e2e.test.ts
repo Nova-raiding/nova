@@ -60,6 +60,36 @@ describe('canonical password identity MCP OAuth', () => {
     expect(csrf.status).toBe(403)
   })
 
+  it('publishes RFC 7009 metadata and revokes a refresh-token family over HTTP', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_OAUTH_REQUIRED', 'true')
+    vi.stubEnv('MCP_OAUTH_CLIENTS', JSON.stringify({ [clientId]: [callback] }))
+    const repository = new MemoryPasswordAuthRepository()
+    setPasswordAuthRepositoryForTests(repository)
+    const suffix = `${Date.now()}-${randomUUID().slice(0, 8)}`
+    const workspaceId = `ws_oauth_revoke_${suffix}`
+    const login = `oauth-revoke-${suffix}@example.test`
+    const account = await repository.createMerchantAccount({ login, password: 'RevokePass1234!', enterpriseName: 'OAuth revoke', contactName: 'Owner', workspaceIds: [workspaceId], actorId: 'platform-operator', reason: 'OAuth revoke HTTP test' })
+    await workspaceMembers.upsert({ workspaceId, externalSubject: login, displayName: 'Owner', role: 'workspace_owner', status: 'active', invitedBy: 'oauth-revoke-e2e' })
+    await workspaceMembers.bindIdentity({ workspaceId, externalSubject: login, identityId: account.identityId })
+    const base = await start()
+    const resource = `${base}/mcp`
+    const issued = await repository.issueMcpAuthorizationCode({ account, clientId, redirectUri: callback, codeChallenge: challenge, issuer: base, audience: resource, resource, scope: ['merchant'] })
+    const pair = await repository.exchangeMcpAuthorizationCode({ clientId, redirectUri: callback, code: issued.code, codeVerifier: verifier, issuer: base, audience: resource, resource, scope: ['merchant'] })
+
+    const metadata = await fetch(`${base}/.well-known/oauth-authorization-server`)
+    expect(metadata.status).toBe(200)
+    await expect(metadata.json()).resolves.toMatchObject({ issuer: base, revocation_endpoint: `${base}/oauth/revoke` })
+    const response = await fetch(`${base}/oauth/revoke`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: pair.refreshToken, token_type_hint: 'refresh_token', client_id: clientId }) })
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('')
+    await expect(repository.authenticateMcpAccessToken({ accessToken: pair.accessToken, clientId, issuer: base, audience: resource, resource, scope: ['merchant'] })).resolves.toBeUndefined()
+
+    const unknown = await fetch(`${base}/oauth/revoke`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: 'unknown-token', client_id: clientId }) })
+    expect(unknown.status).toBe(200)
+    expect(await unknown.text()).toBe('')
+  })
+
   it('uses authorization code + PKCE, rotates refresh tokens, and never falls back to a static merchant token', async () => {
     vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
     vi.stubEnv('MCP_OAUTH_REQUIRED', 'true')
@@ -125,7 +155,6 @@ describe('canonical password identity MCP OAuth', () => {
     expect(tokens).toMatchObject({ expires_in: 600, scope: 'merchant' })
     const principal = await repository.authenticateMcpAccessToken({ accessToken: tokens.access_token, clientId, issuer: base, audience: resource, resource, scope: ['merchant'] })
     expect(principal).toMatchObject({ identityId: account.identityId, accountLogin: login, workspaceId })
-
     const initialized = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${tokens.access_token}`, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) })
     expect(initialized.status).toBe(200)
     await expect(initialized.json()).resolves.toMatchObject({ jsonrpc: '2.0', id: 1, result: { serverInfo: { name: 'merchant-marketing' } } })
