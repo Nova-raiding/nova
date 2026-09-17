@@ -1,4 +1,4 @@
-import { rpc } from "./opsClient.js";
+import { managedOpsSession, opsApiBase, readOpsConnectionConfig, rpc } from "./opsClient.js";
 import type { CustomerDeliveryRecord } from "../components/delivery/CustomerDeliverySection.js";
 
 export interface CustomerDeliveryClient {
@@ -30,6 +30,7 @@ export interface CustomerDeliveryClient {
   completeTraining(input: { targetWorkspaceId: string; deliveryId: string; completed: boolean; evidenceAssetRefs: string[]; expectedRevision: number }, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
   listVideos(targetWorkspaceId: string, deliveryId: string, signal?: AbortSignal): Promise<Array<{ id: string; title: string; assetRef: string; sortOrder: number }>>;
   addVideo(input: { targetWorkspaceId: string; deliveryId: string; title: string; assetRef: string; sortOrder?: number }, signal?: AbortSignal): Promise<unknown>;
+  downloadAsset(input: { targetWorkspaceId: string; deliveryId: string; purpose: "contract" | "video"; assetRef: string }, signal?: AbortSignal): Promise<{ blob: Blob; fileName: string }>;
 }
 
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -265,6 +266,9 @@ export function parseCustomerDeliveryList(value: unknown): CustomerDeliveryRecor
       ...(text(row.effectiveAt ?? row.effective_at) ? { goLiveAt: (row.effectiveAt ?? row.effective_at) as string } : {}),
       ...(Array.isArray(row.videoUrls) ? { videoUrls: row.videoUrls.filter(text) } : {}),
       ...(typeof row.revision === "number" ? { revision: row.revision } : {}),
+      ...(text(row.createdAt ?? row.created_at) ? { createdAt: String(row.createdAt ?? row.created_at) } : {}),
+      ...(text(row.createdByActorId ?? row.created_by_actor_id) ? { createdByActorId: String(row.createdByActorId ?? row.created_by_actor_id) } : {}),
+      ...(text(row.updatedByActorId ?? row.updated_by_actor_id) ? { updatedByActorId: String(row.updatedByActorId ?? row.updated_by_actor_id) } : {}),
       ...(Array.isArray(row.integrationItems) ? { integrationItems: row.integrationItems.filter(text) } : {}),
       ...(Array.isArray(row.acceptanceItems) ? { acceptanceItems: row.acceptanceItems.filter(text) } : {}),
       ...(object(row.integrationEvidence) ? { integrationEvidence: Object.fromEntries(Object.entries(row.integrationEvidence).filter(([,v]) => text(v)).map(([k,v]) => [k, String(v)])) } : {}),
@@ -398,5 +402,28 @@ export const customerDeliveryClient: CustomerDeliveryClient = {
   },
   async addVideo(input, signal) {
     return rpc("ops.customer-delivery.videos.add", { target_workspace_id: input.targetWorkspaceId, delivery_id: input.deliveryId, title: input.title, asset_ref: input.assetRef, sort_order: String(input.sortOrder ?? 0) }, { signal });
+  },
+  async downloadAsset(input, signal) {
+    const connection = readOpsConnectionConfig();
+    const headers: Record<string, string> = { "x-ops-workbench": connection.workbench };
+    if (!managedOpsSession) {
+      if (connection.actorId) headers["x-actor-id"] = connection.actorId;
+      if (connection.token) headers.authorization = `Bearer ${connection.token}`;
+    }
+    const response = await fetch(`${opsApiBase()}/v1/ops/customer-deliveries/workspaces/${encodeURIComponent(input.targetWorkspaceId)}/${encodeURIComponent(input.deliveryId)}/assets/${encodeURIComponent(input.assetRef)}/download?purpose=${encodeURIComponent(input.purpose)}`, {
+      credentials: "include",
+      headers,
+      signal,
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null) as { error?: { message?: unknown }; data?: { error?: { message?: unknown } } } | null;
+      const detail = body?.error?.message ?? body?.data?.error?.message;
+      throw new Error(typeof detail === "string" && detail.trim() ? detail : `文件读取失败（HTTP ${response.status}）`);
+    }
+    const disposition = response.headers.get("content-disposition") ?? "";
+    const encoded = /filename\*=UTF-8''([^;]+)/iu.exec(disposition)?.[1];
+    const plain = /filename="?([^";]+)"?/iu.exec(disposition)?.[1];
+    const fileName = encoded ? decodeURIComponent(encoded) : plain || input.assetRef;
+    return { blob: await response.blob(), fileName };
   },
 };

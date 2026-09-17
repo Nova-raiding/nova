@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -19,6 +20,7 @@ describe('migrations 119 and 120 PostgreSQL release acceptance', () => {
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
 
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: isolatedConnection(base, databaseName), max: 4 })
@@ -74,11 +76,16 @@ describe('migrations 119 and 120 PostgreSQL release acceptance', () => {
         WHERE table_schema = 'public' AND table_name = 'authorization_execution_reservations'
           AND grantee = 'merchant_ops' ORDER BY privilege_type`)
       expect(acl.rows).toEqual([{ privilege_type: 'INSERT' }, { privilege_type: 'SELECT' }])
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

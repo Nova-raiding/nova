@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { execFile } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -58,6 +59,7 @@ describe('persistence 001-067 release acceptance', () => {
     let appA: Pool | undefined
     let appB: Pool | undefined
     let ops: Pool | undefined
+    let primaryFailure: unknown
     try {
       tooling = await assertPostgresReleaseTooling(admin)
       for (const name of [freshName, upgradeName, restoreName]) await admin.query(`CREATE DATABASE "${name}"`)
@@ -129,10 +131,18 @@ describe('persistence 001-067 release acceptance', () => {
       await run(tooling.pgDump, ['--format=custom', '--schema-only', '--no-owner', '--file', dumpPath, databaseUrl(base, freshName)])
       await run(tooling.pgRestore, ['--dbname', databaseUrl(base, restoreName), '--no-owner', dumpPath])
       expect(await schemaFingerprint(restored)).toEqual(await schemaFingerprint(fresh))
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await Promise.all([appA?.end(), appB?.end(), ops?.end()]); await Promise.all([fresh?.end(), upgrade?.end(), restored?.end()])
-      for (const name of [freshName, upgradeName, restoreName]) { await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [name]); await admin.query(`DROP DATABASE IF EXISTS "${name}"`) }
-      await admin.query(`DROP ROLE IF EXISTS "${probeRole}"`); await admin.end(); await rm(temporary, { recursive: true, force: true })
+      await withPostgresFixtureCleanup(async () => {
+        await Promise.all([appA?.end(), appB?.end(), ops?.end()]); await Promise.all([fresh?.end(), upgrade?.end(), restored?.end()])
+        for (const name of [freshName, upgradeName, restoreName]) { await dropDrainedPostgresFixture(admin, name) }
+      }, primaryFailure, [
+        () => admin.query(`DROP ROLE IF EXISTS "${probeRole}"`),
+        () => admin.end(),
+        () => rm(temporary, { recursive: true, force: true }),
+      ])
     }
   }, 240_000)
 })

@@ -44,8 +44,8 @@ function run(extra: Record<string, string> = {}) {
 describe('ECS database migration-chain preflight', () => {
   it('binds the production preflight to the current release migration tail', () => {
     const metadata = JSON.parse(readFileSync('release-metadata.json', 'utf8')) as { expectedMigrationVersion: number }
-    const migration = readFileSync('packages/persistence/src/migrations/214_model_usage_embedding_modality.sql', 'utf8')
-    expect(metadata.expectedMigrationVersion).toBe(214)
+    const migration = readFileSync('packages/persistence/src/migrations/217_model_usage_embedding_modality.sql', 'utf8')
+    expect(metadata.expectedMigrationVersion).toBe(217)
     expect(migration).toContain("'embedding'")
   })
 

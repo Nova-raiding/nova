@@ -177,8 +177,9 @@ describe('customer delivery input validation over loopback HTTP', () => {
     await rejectedWithoutMutation('ops.customer-delivery.training.complete', { ...mutationParams(), completed: 'false', evidence_refs_json })
   })
 
-  it('does not complete training from a valid but empty evidence array', async () => {
-    await rejectedWithoutMutation('ops.customer-delivery.training.complete', { ...mutationParams(), completed: 'true', evidence_refs_json: '[]' }, 409, 'CUSTOMER_DELIVERY_TRAINING_EVIDENCE_REQUIRED')
+  it('completes manually confirmed training without an evidence upload', async () => {
+    const trained = successful(await call<CustomerDelivery>('ops.customer-delivery.training.complete', { ...mutationParams(), completed: 'true', evidence_refs_json: '[]' }))
+    expect(trained).toMatchObject({ trainingCompleted: true, trainingEvidenceRefs: [] })
   })
 
   it('does not complete an unfilled customer profile through the scalar endpoint', async () => {
@@ -273,10 +274,10 @@ describe('customer delivery input validation over loopback HTTP', () => {
           expect(listed.items).toEqual([])
         })
 
-        it(`keeps the unpaid gate for ordinary incomplete ${checklistKey} ${mode} evidence`, async () => {
-          // This draft intentionally has no verified payment or clean assets.
-          // Valid JSON must reach the existing payment gate, not bypass it.
-          await rejectedWithoutMutation(method, paramsFor({ note: '待补充凭证\n下一步', asset_refs: [] }), 409, 'CUSTOMER_DELIVERY_PAYMENT_REQUIRED')
+        it(`allows manually reviewed incomplete ${checklistKey} ${mode} notes without uploaded evidence`, async () => {
+          successful(await call(method, paramsFor({ note: '人工核验记录\n下一步', asset_refs: [] })))
+          const listed = successful(await call<{ items: unknown[] }>('ops.customer-delivery.checklist-items.list', { delivery_id: delivery.id, checklist_key: checklistKey }))
+          expect(listed.items.length).toBeGreaterThan(0)
         })
       }
 

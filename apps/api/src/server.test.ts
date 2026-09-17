@@ -4,14 +4,35 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, authorizationRepositoryDomainError, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, nativeMcpErrorData, persistAssetSnapshotAndEvent, prioritizeQueueAssets, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
 import { requireApprovedAssetForImageGeneration, requirePublishAuthorizationSnapshot } from './server.js'
+import { merchantEntryBillingReadAllowed } from './server.js'
 import { DomainError } from '../../../packages/application/src/service.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
 import { AUTHZ_POLICY_VERSION, getMcpMethodPolicy } from '../../../packages/contracts/src/authz.js'
 import { getHttpOperationPolicy } from '../../../packages/contracts/src/http-authz.js'
-import type { AuthorizationDecision } from '../../../packages/contracts/src/index.js'
+import type { AuthorizationDecision, PermissionAtom } from '../../../packages/contracts/src/index.js'
 import type { SqlPool } from '../../../packages/persistence/src/index.js'
 import { AuthorizationRepositoryError } from '../../../packages/persistence/src/index.js'
 import { imageReconciliationIdempotencyKey as workerImageReconciliationIdempotencyKey } from '../../../apps/worker/src/main.js'
+
+describe('merchant entry workspace billing projection', () => {
+  const direct: PermissionAtom = { capability: 'billing.workspace.read', effect: 'allow', scope: { type: 'workspace', ids: ['ws_entry'] }, source: 'workspace_membership', sourceId: 'membership:ws_entry:owner', obligations: [] }
+  const allowed = (atoms: PermissionAtom[], workspaceId = 'ws_entry') => merchantEntryBillingReadAllowed({ atoms, workspaceId, workbench: 'workspace' })
+  it('does not consume or bypass a temporary grant through the onboarding entry', () => {
+    const temporary: PermissionAtom = { ...direct, source: 'temporary_grant', sourceId: 'grant-entry-billing', expiresAt: new Date(Date.now() + 60_000).toISOString() }
+    expect(allowed([temporary])).toBe(false)
+    expect(allowed([direct, temporary])).toBe(true)
+  })
+  it('preserves explicit denies even when direct and temporary allow atoms exist', () => {
+    const deny: PermissionAtom = { ...direct, effect: 'deny', source: 'explicit_deny', sourceId: 'identity:entry-owner', scope: { type: 'self', ids: ['entry-owner'] } }
+    expect(allowed([direct, deny])).toBe(false)
+    expect(allowed([{ ...direct, source: 'temporary_grant', sourceId: 'grant-entry-billing' }, deny])).toBe(false)
+  })
+  it('rejects other-workspace and expired direct permissions instead of widening their scope', () => {
+    expect(allowed([direct], 'ws_other')).toBe(false)
+    expect(allowed([{ ...direct, expiresAt: new Date(Date.now() - 1000).toISOString() }])).toBe(false)
+    expect(allowed([])).toBe(false)
+  })
+})
 
 describe('central commercial access gate', () => {
   const request = { headers: { 'x-request-id': 'req_commercial_test', 'x-trace-id': 'trace_commercial_test' } } as unknown as IncomingMessage
@@ -666,6 +687,18 @@ describe('API application wiring', () => {
     expect(source).toContain("action: 'billing.model-usage.reconciliation.worker'")
     expect(source).toContain("if (req.method === 'POST' && path === '/v1/internal/model-usage/reconciliation')")
     expect(source).toContain('requireWorkerAuthorization(req)')
+  })
+
+  it('shares one payment reconciliation implementation across MCP and the signed worker route', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    const mcpStart = source.indexOf("case 'billing.reconciliation.run':")
+    const mcpEnd = source.indexOf("case 'billing.model-usage.reconciliation.run':", mcpStart)
+    const mcp = source.slice(mcpStart, mcpEnd)
+    expect(mcp).toContain('runPaymentReconciliation({ workspaceId, actorId, limit })')
+    expect(mcp).not.toContain('paymentProvider.queryStatus')
+    expect(mcp).not.toContain('listActiveRechargeRefunds')
+    expect(source).toContain("path === '/v1/internal/billing/reconciliation'")
+    expect(source).toContain("action: 'billing.reconciliation.worker'")
   })
 
   it('projects SLA scan actions into durable operational alerts without coupling webhook latency', () => {

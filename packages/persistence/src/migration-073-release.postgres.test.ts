@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -46,6 +47,7 @@ describe('migration 073 PostgreSQL release acceptance', () => {
     let upgrade: Pool | undefined
     let app: Pool | undefined
 
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${freshName}"`)
       await admin.query(`CREATE DATABASE "${upgradeName}"`)
@@ -145,14 +147,19 @@ describe('migration 073 PostgreSQL release acceptance', () => {
       } finally {
         upgradeClient.release()
       }
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await app?.end()
-      await Promise.all([fresh?.end(), upgrade?.end()])
-      for (const name of [freshName, upgradeName]) {
-        await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [name])
-        await admin.query(`DROP DATABASE IF EXISTS "${name}"`)
-      }
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await app?.end()
+        await Promise.all([fresh?.end(), upgrade?.end()])
+        for (const name of [freshName, upgradeName]) {
+          await dropDrainedPostgresFixture(admin, name)
+        }
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

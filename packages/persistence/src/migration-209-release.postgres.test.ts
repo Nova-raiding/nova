@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -27,6 +28,7 @@ describe('migration 209 dedicated alert receiver role release acceptance', () =>
     let ops: Pool | undefined
     let receiver: Pool | undefined
 
+    let primaryFailure: unknown
     try {
       await admin.query(`ALTER ROLE merchant_alert_receiver WITH LOGIN INHERIT NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD '${receiverPassword}'`)
       await admin.query(`CREATE DATABASE "${databaseName}"`)
@@ -139,15 +141,20 @@ describe('migration 209 dedicated alert receiver role release acceptance', () =>
         { proname: 'alert_webhook_receipts_ready', prosecdef: true, proconfig: ['search_path=pg_catalog'] },
         { proname: 'append_alert_webhook_receipt', prosecdef: true, proconfig: ['search_path=pg_catalog'] },
       ])
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await receiver?.end()
-      await ops?.end()
-      await app?.end()
-      await database?.end()
-      await admin.query('ALTER ROLE merchant_alert_receiver NOINHERIT')
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await receiver?.end()
+        await ops?.end()
+        await app?.end()
+        await database?.end()
+        await admin.query('ALTER ROLE merchant_alert_receiver NOINHERIT')
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 300_000)
 })

@@ -1093,6 +1093,14 @@ describe('worker production entry', () => {
     expect(called).toBe(false)
   })
 
+  it('preserves the API settlement error code for worker diagnostics', async () => {
+    await expect(postModelUsage({
+      apiBaseUrl: 'http://api.test', apiToken: 'worker-token',
+      usage: { workspaceId: 'ws-1', actionId: 'model:generation:diagnostic', runKey: 'task:diagnostic', modality: 'image', model: 'test-model', costCny: 0.01, observedAt: '2026-08-29T00:00:00.000Z' },
+      fetcher: async () => new Response(JSON.stringify({ error: { code: 'MODEL_USAGE_ZERO_CHARGE_SETTLEMENT_BLOCKED', message: 'action settlement is blocked' } }), { status: 409, headers: { 'content-type': 'application/json' } }),
+    })).rejects.toMatchObject({ code: 'MODEL_USAGE_ZERO_CHARGE_SETTLEMENT_BLOCKED', message: 'action settlement is blocked', apiErrorCode: 'MODEL_USAGE_ZERO_CHARGE_SETTLEMENT_BLOCKED' })
+  })
+
   it('rejects model usage callbacks without a run key before network I/O', async () => {
     let called = false
     await expect(postModelUsage({

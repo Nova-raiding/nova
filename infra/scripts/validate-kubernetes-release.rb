@@ -79,7 +79,13 @@ SCANNER_CONFIG = {
   'ASSET_SCANNER_MODE' => 'clamav_worker',
   'CLAMAV_HOST' => '127.0.0.1',
   'CLAMAV_PORT' => '3310',
-  'CLAMAV_MAX_FILE_BYTES' => '52428800',
+  'CLAMAV_MAX_FILE_BYTES' => '104857600',
+}.freeze
+CLAMAV_DAEMON_CONFIG = {
+  'CLAMD_CONF_StreamMaxLength' => '100M',
+  'CLAMD_CONF_MaxFileSize' => '100M',
+  'CLAMD_CONF_MaxScanSize' => '100M',
+  'CLAMD_CONF_AlertExceedsMax' => 'yes',
 }.freeze
 AUTHORIZATION_CONFIG = {
   'MCP_AUTHZ_MODE' => 'enforce',
@@ -540,12 +546,16 @@ def validate_asset_scanner_contract(documents, config_maps)
   raise ReleaseManifestError, 'merchant-worker-scan clamav container must use clamav image' unless image_name(clamav['image'].to_s) == 'clamav'
   require_literal_environment(worker, 'WORKER_ROLE', 'scan')
   require_secret_environment(worker, SCANNER_WORKER_SECRET_ENV)
+  CLAMAV_DAEMON_CONFIG.each { |name, expected| require_literal_environment(clamav, name, expected) }
   %w[startupProbe livenessProbe].each do |probe|
-    raise ReleaseManifestError, "clamav #{probe} must fail closed on clamd PING" unless probe_command(clamav, probe).include?('clamdscan --ping 1')
+    command = probe_command(clamav, probe)
+    unless command.include?('clamdscan --ping 1') && CLAMAV_DAEMON_CONFIG.all? { |name, expected| command.include?(name.delete_prefix('CLAMD_CONF_')) && command.include?(expected) }
+      raise ReleaseManifestError, "clamav #{probe} must fail closed on clamd PING and its effective 100 MiB daemon limits"
+    end
   end
   readiness = probe_command(clamav, 'readinessProbe')
-  unless readiness.include?('clamdscan --ping 1') && readiness.include?('-mmin -1440')
-    raise ReleaseManifestError, 'clamav readinessProbe must require clamd PING and signatures no older than 1440 minutes'
+  unless readiness.include?('clamdscan --ping 1') && readiness.include?('-mmin -1440') && CLAMAV_DAEMON_CONFIG.all? { |name, expected| readiness.include?(name.delete_prefix('CLAMD_CONF_')) && readiness.include?(expected) }
+    raise ReleaseManifestError, 'clamav readinessProbe must require effective 100 MiB daemon limits, clamd PING, and signatures no older than 1440 minutes'
   end
 end
 

@@ -175,7 +175,7 @@ describe('deployment operation scripts', () => {
       PLATFORM_CANARY_ALLOW_WRITE: 'true', PLATFORM_CANARY_CONFIRM_WRITES: 'true',
       PLATFORM_CANARY_ALLOW_REVOKE: 'true', PLATFORM_CANARY_CONFIRM_REVOKE: 'true',
       PAYMENT_CALLBACK_BASE_URL: 'https://merchant.example.com', PAYMENT_CALLBACK_SECRET_REF: 'vault://callback',
-      PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.example.com/query', PAYMENT_PROVIDER_REFUND_API_URL: 'http://payments.example.com/refund',
+      PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.yxsona.com/query', PAYMENT_PROVIDER_REFUND_API_URL: 'http://payments.yxsona.com/refund',
     })).toThrow(/HTTPS|base evidence/)
     expect(() => run('infra/scripts/run-production-canary.sh', [], {
       RELEASE_ID: 'release-1', PLATFORM_CANARY_BASE_EVIDENCE: 'doc/todo/platform/platform-capability-evidence.example.json',
@@ -184,9 +184,9 @@ describe('deployment operation scripts', () => {
       PLATFORM_CANARY_ALLOW_WRITE: 'true', PLATFORM_CANARY_CONFIRM_WRITES: 'true',
       PLATFORM_CANARY_ALLOW_REVOKE: 'true', PLATFORM_CANARY_CONFIRM_REVOKE: 'true',
       PAYMENT_CALLBACK_BASE_URL: 'https://merchant.example.com', PAYMENT_CALLBACK_SECRET_REF: 'vault://callback',
-      PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.example.com/query',
-      PAYMENT_PROVIDER_REFUND_QUERY_API_URL: 'https://payments.example.com/refund-query',
-      PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.example.com/refund',
+      PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.yxsona.com/query',
+      PAYMENT_PROVIDER_REFUND_QUERY_API_URL: 'https://payments.yxsona.com/refund-query',
+      PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.yxsona.com/refund',
       PRODUCTION_API_BASE_URL: 'https://merchant.example.com',
     })).toThrow(/duplicate platform: jd/)
     expect(() => run('infra/scripts/run-production-canary.sh', [], {
@@ -196,9 +196,9 @@ describe('deployment operation scripts', () => {
       PLATFORM_CANARY_ALLOW_WRITE: 'true', PLATFORM_CANARY_CONFIRM_WRITES: 'true',
       PLATFORM_CANARY_ALLOW_REVOKE: 'true', PLATFORM_CANARY_CONFIRM_REVOKE: 'true',
       PAYMENT_CALLBACK_BASE_URL: 'https://merchant.example.com', PAYMENT_CALLBACK_SECRET_REF: 'vault://callback',
-      PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.example.com/query',
-      PAYMENT_PROVIDER_REFUND_QUERY_API_URL: 'https://payments.example.com/refund-query',
-      PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.example.com/refund',
+      PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.yxsona.com/query',
+      PAYMENT_PROVIDER_REFUND_QUERY_API_URL: 'https://payments.yxsona.com/refund-query',
+      PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.yxsona.com/refund',
       PRODUCTION_API_BASE_URL: 'https://merchant.example.com',
     })).toThrow(/production canary admission blocked:.*no provider calls were made/)
     expect(script).not.toMatch(/\beval\s+["']/)
@@ -343,8 +343,8 @@ describe('deployment operation scripts', () => {
       'pinduoduo_auth_enabled: true', 'pinduoduo_read_enabled: true', 'pinduoduo_write_enabled: true',
       'xiaohongshu_auth_enabled: true', 'xiaohongshu_read_enabled: true', 'xiaohongshu_write_enabled: true',
       'douyin_auth_enabled: true', 'douyin_read_enabled: true', 'douyin_write_enabled: true',
-      'point_in_time_recovery_enabled: true', 'database_pooler_enabled: true', 'database_max_backend_connections: 300', 'database_connection_utilization_alert_percent: 80', 'secret_provider: vault', 'worker_api_credentials_ref: vault://worker-api-credentials', ...['sync', 'generation', 'publish', 'reconcile', 'automation'].flatMap(role => [`worker_${role}_api_token_ref: vault://worker-${role}-token`, `worker_${role}_api_signing_secret_ref: vault://worker-${role}-signing`]), 'payment_mode: provider', 'payment_provider_adapters: alipay,wechat', 'payment_checkout_base_url: https://payments.example.com/checkout', 'payment_provider_checkout_api_url: https://payments.example.com/v1/checkout', 'payment_provider_query_api_url: https://payments.example.com/v1/query', 'payment_provider_refund_query_api_url: https://payments.example.com/v1/refund/query', 'payment_provider_refund_api_url: https://payments.example.com/v1/refund', 'payment_provider_api_key_ref: vault://merchant-payment/provider-api-key', 'payment_provider_merchant_id: merchant-example', 'payment_callback_base_url: https://merchant.example.com/v1', 'payment_callback_secret_ref: vault://merchant-payment-callback', 'payment_reconciliation_enabled: true', 'payment_refund_enabled: true', 'model_relay_base_url: https://relay.example.com', 'model_relay_api_key_ref: vault://merchant-model/relay-api-key', 'text_model: merchant-text-v1', 'image_model: merchant-image-v1', 'image_edit_model: merchant-image-edit-v1', 'ocr_model: merchant-ocr-v1', 'video_model: merchant-video-v1', 'embedding_model: merchant-embedding-v1', 'embedding_dimensions: 1536', 'embedding_max_request_cny: 0.10', 'knowledge_vector_index_enabled: false', 'approved_requests_per_minute: "100"', 'approved_tokens_per_minute: "100000"', 'maximum_task_cost_cny: "0.50"', 'platform_rule_sync_manifest_url: https://rules.example.com/platform-rules/v1/manifest.json', 'platform_rule_sync_signing_secret_ref: vault://merchant-rules/manifest-signing-secret', 'platform_rule_sync_interval_hours: "24"',
-      'asset_scanner_mode: clamav_worker', 'allow_local_asset_scan_fixture: false', 'asset_scanner_api_token_ref: vault://merchant-scanner/api-token', 'asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/workspace-signing', 'asset_scan_receipt_key_id: scanner-production-2026-08', 'asset_scan_receipt_private_key_ref: vault://merchant-scanner/receipt-private-key', 'asset_scan_trusted_public_keys_ref: vault://merchant-scanner/trusted-public-keys', 'asset_scan_policy_version: scan-policy-2026-08-30', `clamav_image_digest: ${imageDigests.clamav}`, 'clamav_signature_max_age_minutes: 1440', 'clamav_max_file_bytes: 52428800',
+      'point_in_time_recovery_enabled: true', 'database_pooler_enabled: true', 'database_max_backend_connections: 300', 'database_connection_utilization_alert_percent: 80', 'secret_provider: vault', 'worker_api_credentials_ref: vault://worker-api-credentials', ...['sync', 'generation', 'publish', 'reconcile', 'automation'].flatMap(role => [`worker_${role}_api_token_ref: vault://worker-${role}-token`, `worker_${role}_api_signing_secret_ref: vault://worker-${role}-signing`]), 'payment_mode: provider', 'payment_provider_adapters: alipay,wechat', 'payment_checkout_base_url: https://payments.yxsona.com/checkout', 'payment_provider_checkout_api_url: https://payments.yxsona.com/v1/checkout', 'payment_provider_query_api_url: https://payments.yxsona.com/v1/query', 'payment_provider_refund_query_api_url: https://payments.yxsona.com/v1/refund/query', 'payment_provider_refund_api_url: https://payments.yxsona.com/v1/refund', 'payment_provider_api_key_ref: vault://merchant-payment/provider-api-key', 'payment_provider_merchant_id: merchant-yxsona-2026', 'payment_callback_base_url: https://merchant.example.com/v1', 'payment_callback_secret_ref: vault://merchant-payment-callback', 'payment_reconciliation_enabled: true', 'payment_refund_enabled: true', 'model_relay_base_url: https://relay.example.com', 'model_relay_api_key_ref: vault://merchant-model/relay-api-key', 'text_model: merchant-text-v1', 'image_model: merchant-image-v1', 'image_edit_model: merchant-image-edit-v1', 'ocr_model: merchant-ocr-v1', 'video_model: merchant-video-v1', 'embedding_model: merchant-embedding-v1', 'embedding_dimensions: 1536', 'embedding_max_request_cny: 0.10', 'knowledge_vector_index_enabled: false', 'approved_requests_per_minute: "100"', 'approved_tokens_per_minute: "100000"', 'maximum_task_cost_cny: "0.50"', 'platform_rule_sync_manifest_url: https://rules.example.com/platform-rules/v1/manifest.json', 'platform_rule_sync_signing_secret_ref: vault://merchant-rules/manifest-signing-secret', 'platform_rule_sync_interval_hours: "24"',
+      'asset_scanner_mode: clamav_worker', 'allow_local_asset_scan_fixture: false', 'asset_scanner_api_token_ref: vault://merchant-scanner/api-token', 'asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/workspace-signing', 'asset_scan_receipt_key_id: scanner-production-2026-08', 'asset_scan_receipt_private_key_ref: vault://merchant-scanner/receipt-private-key', 'asset_scan_trusted_public_keys_ref: vault://merchant-scanner/trusted-public-keys', 'asset_scan_policy_version: scan-policy-2026-08-30', `clamav_image_digest: ${imageDigests.clamav}`, 'clamav_signature_max_age_minutes: 1440', 'clamav_max_file_bytes: 104857600',
       'object_storage_bucket: merchant-assets', 'object_storage_region: cn', 'object_storage_endpoint: https://s3.example.com', 'object_storage_credential_provider: aliyun_ack_rrsa', 'object_storage_sse_mode: AES256', 'asset_display_base_url: https://merchant.example.com', 'asset_display_url_signing_secret_ref: vault://merchant-assets/display-url-signing-secret', 'merchant_ui_api_token_ref: vault://merchant-ui/api-token', 'merchant_ui_workspace_id_ref: vault://merchant-ui/workspace-id', 'object_storage_versioning: true', 'lifecycle_policy_ref: vault://asset-lifecycle-policy', 'asset_quarantine_retention_days: 7', 'asset_clean_retention_days: 90', 'deletion_request_grace_days: 7', 'backup_retention_days: 30', 'alert_notifications_enabled: false', 'alert_channel_secret_ref: vault://merchant-alert-channel',
     ].join('\n'))
     writeFileSync(evidence, JSON.stringify({
@@ -380,8 +380,8 @@ describe('deployment operation scripts', () => {
       MODEL_RELAY_BASE_URL: 'https://relay.example.com', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example.com', AI_MODEL: 'merchant-text-v1', IMAGE_MODEL: 'merchant-image-v1', IMAGE_EDIT_MODEL: 'merchant-image-edit-v1', OCR_MODEL: 'merchant-ocr-v1', VIDEO_MODEL: 'merchant-video-v1', EMBEDDING_MODEL: 'merchant-embedding-v1', EMBEDDING_DIMENSIONS: '1536', MODEL_EMBEDDING_MAX_REQUEST_CNY: '0.10', KNOWLEDGE_VECTOR_INDEX_ENABLED: 'false', MODEL_RPM_LIMIT: '100', MODEL_TPM_LIMIT: '100000', MODEL_MAX_TASK_COST_CNY: '0.50',
       ASSET_STORAGE_BUCKET: 'merchant-assets', ASSET_STORAGE_REGION: 'cn', ASSET_STORAGE_ENDPOINT: 'https://s3.example.com', ASSET_STORAGE_CREDENTIAL_PROVIDER: 'aliyun_ack_rrsa', OBJECT_STORAGE_VERSIONING: 'true', PUBLIC_ASSET_BASE_URL: 'https://merchant.example.com', PUBLIC_OAUTH_REDIRECT_URI: 'https://merchant.example.com/v1/oauth/callback/{platform}',
       ASSET_QUARANTINE_RETENTION_DAYS: '7', ASSET_CLEAN_RETENTION_DAYS: '90', DELETION_REQUEST_GRACE_DAYS: '7', BACKUP_RETENTION_DAYS: '30', LIFECYCLE_POLICY_REF: 'vault://asset-lifecycle-policy',
-      ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ASSET_SCANNER_MODE: 'clamav_worker', ASSET_SCAN_POLICY_VERSION: 'scan-policy-2026-08-30', CLAMAV_HOST: '127.0.0.1', CLAMAV_PORT: '3310', CLAMAV_MAX_FILE_BYTES: '52428800', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
-      PAYMENT_MODE: 'provider', PAYMENT_PROVIDER_ADAPTERS: 'alipay,wechat', PAYMENT_CHECKOUT_BASE_URL: 'https://payments.example.com/checkout', PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://payments.example.com/v1/checkout', PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.example.com/v1/query', PAYMENT_PROVIDER_REFUND_QUERY_API_URL: 'https://payments.example.com/v1/refund/query', PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.example.com/v1/refund', PAYMENT_PROVIDER_MERCHANT_ID: 'merchant-example', PAYMENT_CALLBACK_BASE_URL: 'https://merchant.example.com/v1', PAYMENT_RECONCILIATION_ENABLED: 'true', PAYMENT_REFUND_ENABLED: 'true', PLATFORM_RULE_SYNC_MANIFEST_URL: 'https://rules.example.com/platform-rules/v1/manifest.json',
+      ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ASSET_SCANNER_MODE: 'clamav_worker', ASSET_SCAN_POLICY_VERSION: 'scan-policy-2026-08-30', CLAMAV_HOST: '127.0.0.1', CLAMAV_PORT: '3310', CLAMAV_MAX_FILE_BYTES: '104857600', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
+      PAYMENT_MODE: 'provider', PAYMENT_PROVIDER_ADAPTERS: 'alipay,wechat', PAYMENT_CHECKOUT_BASE_URL: 'https://payments.yxsona.com/checkout', PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://payments.yxsona.com/v1/checkout', PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.yxsona.com/v1/query', PAYMENT_PROVIDER_REFUND_QUERY_API_URL: 'https://payments.yxsona.com/v1/refund/query', PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.yxsona.com/v1/refund', PAYMENT_PROVIDER_MERCHANT_ID: 'merchant-yxsona-2026', PAYMENT_CALLBACK_BASE_URL: 'https://merchant.example.com/v1', PAYMENT_RECONCILIATION_ENABLED: 'true', PAYMENT_REFUND_ENABLED: 'true', PLATFORM_RULE_SYNC_MANIFEST_URL: 'https://rules.example.com/platform-rules/v1/manifest.json',
     }
     const scannerSecret = (name: string, key = name) => ({ name, valueFrom: { secretKeyRef: { name: 'merchant-scanner-secrets', key } } })
     const runtimeSecret = (name: string, key = name) => ({ name, valueFrom: { secretKeyRef: { name: 'merchant-runtime-secrets', key } } })
@@ -391,7 +391,7 @@ describe('deployment operation scripts', () => {
       { apiVersion: 'v1', kind: 'ConfigMap', metadata: { name: 'merchant-runtime' }, data: scannerRuntime },
       { apiVersion: 'v1', kind: 'Namespace', metadata: { name: 'merchant', labels: { 'pod-identity.alibabacloud.com/injection': 'on' } } },
       { apiVersion: 'v1', kind: 'ServiceAccount', metadata: { name: 'merchant-api-rrsa', annotations: { 'pod-identity.alibabacloud.com/role-name': 'StoreNovaAckOssRole' } } },
-      { apiVersion: 'networking.k8s.io/v1', kind: 'Ingress', metadata: { name: 'merchant' }, spec: { tls: [{ hosts: ['merchant.example.com', 'ops.merchant.example.com'], secretName: 'merchant-tls' }], rules: [
+      { apiVersion: 'networking.k8s.io/v1', kind: 'Ingress', metadata: { name: 'merchant', annotations: { 'nginx.ingress.kubernetes.io/proxy-body-size': '1m' } }, spec: { tls: [{ hosts: ['merchant.example.com', 'ops.merchant.example.com'], secretName: 'merchant-tls' }], rules: [
         { host: 'merchant.example.com', http: { paths: [
           { path: '/mcp', pathType: 'Exact', backend: { service: { name: 'merchant-api', port: { name: 'http' } } } },
           { path: '/v1', pathType: 'Prefix', backend: { service: { name: 'merchant-api', port: { name: 'http' } } } },
@@ -401,10 +401,14 @@ describe('deployment operation scripts', () => {
           { path: '/', pathType: 'Prefix', backend: { service: { name: 'merchant-ops-ui', port: { name: 'http' } } } },
         ] } },
       ] } },
+      { apiVersion: 'networking.k8s.io/v1', kind: 'Ingress', metadata: { name: 'merchant-browser-api-upload', annotations: { 'nginx.ingress.kubernetes.io/proxy-body-size': '70m' } }, spec: { rules: [
+        { host: 'merchant.example.com', http: { paths: ['/mcp', '/api/mcp', '/v1/assets/upload', '/api/v1/assets/upload'].map((path) => ({ path, pathType: 'Exact', backend: { service: { name: path === '/mcp' || path === '/v1/assets/upload' ? 'merchant-api' : 'merchant-ui', port: { name: 'http' } } } })) } },
+        { host: 'ops.merchant.example.com', http: { paths: ['/api/mcp', '/v1/assets/upload', '/api/v1/assets/upload'].map((path) => ({ path, pathType: 'Exact', backend: { service: { name: path === '/v1/assets/upload' ? 'merchant-api' : 'merchant-ops-ui', port: { name: 'http' } } } })) } },
+      ] } },
       { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-api' }, spec: { template: { metadata: { annotations: scannerConfigAnnotation }, spec: { serviceAccountName: 'merchant-api-rrsa', containers: [{ name: 'api', image: `registry.example.com/merchant-api@${imageDigests['merchant-api']}`, envFrom: [{ configMapRef: { name: 'merchant-runtime' } }], env: [scannerSecret('ASSET_SCANNER_API_TOKEN'), scannerSecret('ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), scannerSecret('ASSET_SCAN_TRUSTED_PUBLIC_KEYS'), runtimeSecret('MODEL_RELAY_API_KEY'), runtimeSecret('PLATFORM_RULE_SYNC_SIGNING_SECRET'), runtimeSecret('PAYMENT_PROVIDER_API_KEY'), runtimeSecret('PAYMENT_CALLBACK_SECRET')] }] } } } },
       { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-worker-scan' }, spec: { template: { metadata: { annotations: scannerConfigAnnotation }, spec: { nodeSelector: { 'kubernetes.io/arch': 'amd64' }, containers: [
         { name: 'worker', image: `registry.example.com/merchant-worker@${imageDigests['merchant-worker']}`, envFrom: [{ configMapRef: { name: 'merchant-runtime' } }], env: [{ name: 'WORKER_ROLE', value: 'scan' }, scannerSecret('WORKER_API_TOKEN', 'ASSET_SCANNER_API_TOKEN'), scannerSecret('WORKER_API_SIGNING_SECRET', 'ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), scannerSecret('ASSET_SCANNER_API_TOKEN'), scannerSecret('ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), scannerSecret('ASSET_SCAN_RECEIPT_KEY_ID'), scannerSecret('ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM')] },
-        { name: 'clamav', image: `registry.example.com/clamav@${imageDigests.clamav}`, startupProbe: { exec: { command: ['sh', '-c', 'clamdscan --ping 1'] } }, readinessProbe: { exec: { command: ['sh', '-c', 'clamdscan --ping 1 && find /var/lib/clamav -mmin -1440'] } }, livenessProbe: { exec: { command: ['sh', '-c', 'clamdscan --ping 1'] } } },
+        { name: 'clamav', image: `registry.example.com/clamav@${imageDigests.clamav}`, env: [{ name: 'CLAMD_CONF_StreamMaxLength', value: '100M' }, { name: 'CLAMD_CONF_MaxFileSize', value: '100M' }, { name: 'CLAMD_CONF_MaxScanSize', value: '100M' }, { name: 'CLAMD_CONF_AlertExceedsMax', value: 'yes' }], startupProbe: { exec: { command: ['sh', '-c', 'clamdscan --ping 1 && StreamMaxLength=100M MaxFileSize=100M MaxScanSize=100M AlertExceedsMax=yes'] } }, readinessProbe: { exec: { command: ['sh', '-c', 'clamdscan --ping 1 && find /var/lib/clamav -mmin -1440 && StreamMaxLength=100M MaxFileSize=100M MaxScanSize=100M AlertExceedsMax=yes'] } }, livenessProbe: { exec: { command: ['sh', '-c', 'clamdscan --ping 1 && StreamMaxLength=100M MaxFileSize=100M MaxScanSize=100M AlertExceedsMax=yes'] } } },
       ] } } } },
       { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-ui' }, spec: { template: { spec: { containers: [{ name: 'ui', image: `registry.example.com/merchant-ui@${imageDigests['merchant-ui']}` }] } } } },
       { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-ops-ui' }, spec: { template: { spec: { containers: [{ name: 'ops-ui', image: `registry.example.com/merchant-ops-ui@${imageDigests['merchant-ops-ui']}` }] } } } },
@@ -412,7 +416,7 @@ describe('deployment operation scripts', () => {
     ] }))
     const script = 'infra/scripts/deploy-preflight.sh'
     const base = { PRODUCTION_CONFIG_PATH: config, CAPABILITY_EVIDENCE_PATH: evidence, CAPACITY_REPORT_PATH: capacity, MODEL_RELAY_EVIDENCE_PATH: relayEvidence, CODEX_APP_HOST_EVIDENCE_PATH: hostEvidence, OBJECT_STORAGE_EVIDENCE_PATH: storageEvidence, CANONICAL_CUTOVER_EVIDENCE_PATH: canonicalCutoverEvidence, PRODUCTION_EVIDENCE_ARTIFACT_ROOT: directory, EXPECTED_MIGRATION_VERSION: '078', RELEASE_MANIFEST_PATH: releaseManifest, PAYMENT_EVIDENCE_PATH: paymentEvidence, RESTORE_EVIDENCE_PATH: restoreEvidence, RENDERED_MANIFEST_PATH: manifest, RELEASE_ID: 'release-1', IMAGE_DIGESTS_JSON: JSON.stringify(imageDigests), API_IMAGE_REF: `registry.example.com/merchant-api@${imageDigests['merchant-api']}`, WORKER_IMAGE_REF: `registry.example.com/merchant-worker@${imageDigests['merchant-worker']}`, DATABASE_URL: 'postgresql://db.internal/merchant?sslmode=verify-full', OPS_DATABASE_URL: 'postgresql://ops-db.internal/merchant?sslmode=verify-full', ALERT_RECEIVER_DATABASE_URL: 'postgresql://alert-db.internal/merchant?sslmode=verify-full', REDIS_URL: 'rediss://redis.internal', SECRET_PROVIDER: 'vault' }
-    expect(() => run(script, [config], base)).toThrow(/scanner|merchant-worker-scan|ConfigMap\/merchant-runtime|ASSET_STORAGE_CREDENTIAL_PROVIDER|ACK pod identity|Namespace\/merchant/i)
+    expect(() => run(script, [config], base)).toThrow(/clamav_max_file_bytes|asset_scan_trusted_public_keys_ref|scanner|merchant-worker-scan|ConfigMap\/merchant-runtime|ASSET_STORAGE_CREDENTIAL_PROVIDER|ACK pod identity|Namespace\/merchant/i)
     const matchingManifest = readFileSync(manifest, 'utf8')
     const driftedManifest = JSON.parse(matchingManifest)
     driftedManifest.items[0].data.MODEL_RELAY_BASE_URL = 'https://different-relay.example.com'
@@ -668,7 +672,7 @@ describe('deployment operation scripts', () => {
     expect(challengeLocation).toContain('proxy_pass http://pilot_api')
     expect(challengeLocation).toContain('proxy_set_header X-Forwarded-Proto $scheme')
     const releaseLocation = gateway.split('location = /releasez {')[1]?.split('}')[0] ?? ''
-    expect(releaseLocation).toContain('proxy_pass http://api:8787/releasez')
+    expect(releaseLocation).toContain('proxy_pass http://pilot_api/releasez')
     expect(releaseLocation).toContain('proxy_set_header X-Forwarded-Proto $scheme')
 
     const httpsGateway = readFileSync('infra/nginx/pilot-gateway-https.conf', 'utf8')
@@ -681,7 +685,7 @@ describe('deployment operation scripts', () => {
     expect(httpsChallengeLocation).toContain('proxy_pass http://pilot_api')
     expect(httpsChallengeLocation).toContain('proxy_set_header X-Forwarded-Proto https')
     const httpsReleaseLocation = httpsGateway.split('location = /releasez {')[1]?.split('}')[0] ?? ''
-    expect(httpsReleaseLocation).toContain('proxy_pass http://api:8787/releasez')
+    expect(httpsReleaseLocation).toContain('proxy_pass http://pilot_api/releasez')
     expect(httpsReleaseLocation).toContain('proxy_set_header X-Forwarded-Proto https')
   })
 

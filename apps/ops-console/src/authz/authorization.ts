@@ -44,11 +44,6 @@ export const domainReadCapabilities: Readonly<Record<OpsDomain, readonly OpsCapa
   rules: ["rule.read", "platform.media_spec.read"],
   models: ["model.status.read", "model.cost.read", "model.policy.update"],
   storage: ["storage.reconciliation.read", "workspace.summary.read"],
-  finance: [
-    "billing.self.read", "billing.workspace.read", "billing.platform.read", "commercial.read", "model.cost.read",
-    "commercial.access.read", "commercial.entitlement.read", "commercial.point.read", "commercial.catalog.read",
-    "commercial.order.read", "commercial.rate.read", "commercial.service_fulfillment.read",
-  ],
   audit: ["audit.read", "audit.export"],
 };
 

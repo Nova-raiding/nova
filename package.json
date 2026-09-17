@@ -27,7 +27,7 @@
     "test:summary": "tsx tests/test-summary.ts",
     "test:authorization-postgres": "vitest run --no-file-parallelism packages/persistence/src/authorization-repository.release.postgres.test.ts packages/persistence/src/authorization-rls-boundary.postgres.test.ts packages/persistence/src/authorization-event-scope-integrity.postgres.test.ts packages/persistence/src/authorization-grant-scope-integrity.postgres.test.ts packages/persistence/src/migration-105-release.postgres.test.ts --reporter=default --reporter=json --outputFile=artifacts/authorization-postgres/vitest.json",
     "test:merchant-studio-smoke": "tsx tests/merchant-studio-smoke.ts",
-    "test:browser:merchant": "sh scripts/ensure-local-browser-stack.sh && npm exec -- playwright test dogfood/chatgpt-all-functions/merchant-all.spec.js dogfood/chatgpt-all-functions/merchant-interactions.spec.js dogfood/chatgpt-all-functions/merchant.spec.js dogfood/chatgpt-all-functions/merchant-data-safety.spec.js --workers=1",
+    "test:browser:merchant": "node --import tsx scripts/merchant-browser-candidate.ts",
     "test:browser:all": "npm run test:browser:merchant && npm run test:browser:ops",
     "test:browser:ops": "node --import tsx scripts/run-ops-oidc-e2e.ts dogfood/chatgpt-all-functions/ops-all.spec.js dogfood/chatgpt-all-functions/ops-users.spec.js dogfood/chatgpt-all-functions/ops-workspace-visual.spec.js dogfood/chatgpt-all-functions/ops.spec.js --workers=1",
     "test:backup-restore": "sh tests/backup-restore-acceptance.sh",

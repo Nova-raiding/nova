@@ -505,9 +505,12 @@ export async function loadMigrations(): Promise<Migration[]> {
   const isolateAlertWebhookReceiverRole = await readFile(new URL('./migrations/209_isolate_alert_webhook_receiver_role.sql', import.meta.url), 'utf8')
   const mcpOauthIdentity = await readFile(new URL('./migrations/210_mcp_oauth_identity.sql', import.meta.url), 'utf8')
   const mcpOauthWorkspaceRls = await readFile(new URL('./migrations/211_mcp_oauth_workspace_rls.sql', import.meta.url), 'utf8')
-  const customerDeliveryAccountBinding = await readFile(new URL('./migrations/212_customer_delivery_account_binding.sql', import.meta.url), 'utf8')
-  const workspaceContentSetup = await readFile(new URL('./migrations/213_workspace_content_setup.sql', import.meta.url), 'utf8')
-  const modelUsageEmbeddingModality = await readFile(new URL('./migrations/214_model_usage_embedding_modality.sql', import.meta.url), 'utf8')
+  const customerDeliveryTrainingWithoutEvidence = await readFile(new URL('./migrations/212_customer_delivery_training_without_evidence.sql', import.meta.url), 'utf8')
+  const customerDeliveryManualVerification = await readFile(new URL('./migrations/213_customer_delivery_manual_verification.sql', import.meta.url), 'utf8')
+  const customerDeliveryArchival = await readFile(new URL('./migrations/214_customer_delivery_archival.sql', import.meta.url), 'utf8')
+  const customerDeliveryAccountBinding = await readFile(new URL('./migrations/215_customer_delivery_account_binding.sql', import.meta.url), 'utf8')
+  const workspaceContentSetup = await readFile(new URL('./migrations/216_workspace_content_setup.sql', import.meta.url), 'utf8')
+  const modelUsageEmbeddingModality = await readFile(new URL('./migrations/217_model_usage_embedding_modality.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -720,9 +723,12 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 209, name: 'isolate_alert_webhook_receiver_role', sql: isolateAlertWebhookReceiverRole },
     { version: 210, name: 'mcp_oauth_identity', sql: mcpOauthIdentity },
     { version: 211, name: 'mcp_oauth_workspace_rls', sql: mcpOauthWorkspaceRls },
-    { version: 212, name: 'customer_delivery_account_binding', sql: customerDeliveryAccountBinding },
-    { version: 213, name: 'workspace_content_setup', sql: workspaceContentSetup },
-    { version: 214, name: 'model_usage_embedding_modality', sql: modelUsageEmbeddingModality },
+    { version: 212, name: 'customer_delivery_training_without_evidence', sql: customerDeliveryTrainingWithoutEvidence },
+    { version: 213, name: 'customer_delivery_manual_verification', sql: customerDeliveryManualVerification },
+    { version: 214, name: 'customer_delivery_archival', sql: customerDeliveryArchival },
+    { version: 215, name: 'customer_delivery_account_binding', sql: customerDeliveryAccountBinding },
+    { version: 216, name: 'workspace_content_setup', sql: workspaceContentSetup },
+    { version: 217, name: 'model_usage_embedding_modality', sql: modelUsageEmbeddingModality },
   ]
 }
 

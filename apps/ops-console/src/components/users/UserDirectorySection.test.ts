@@ -40,13 +40,16 @@ describe("UserDirectorySection sorting", () => {
   });
 
   it("retains active filters when pagination changes", () => {
-    expect(userDirectoryPageRequest({ query: "Alice", status: "active", workspaceId: "workspace-1" }, 3, 50)).toEqual({
+    expect(userDirectoryPageRequest({ query: "Alice", status: "active", workspaceId: "workspace-1", attribute: "正常版本" }, 3, 50)).toEqual({
       query: "Alice",
       status: "active",
       workspaceId: "workspace-1",
       page: 3,
       pageSize: 50,
     });
+    const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
+    expect(source).toContain("total: model.userDirectory.total");
+    expect(source).not.toContain("total: attributeFilter ? sortedUsers.length");
   });
 
   it("keeps identity writes disabled until a persistent identity is fully loaded", () => {
@@ -86,10 +89,9 @@ describe("UserDirectorySection sorting", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain('aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`}');
     expect(source).toContain('aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`}');
-    expect(source).toContain('aria-label={`撤销认证会话 ${row.id}`}');
     expect(source).toContain('aria-label="按关键词筛选用户目录"');
     expect(source).toContain('aria-label="按成员状态筛选用户目录"');
-    expect(source).toContain('aria-label="按企业主体筛选用户目录"');
+    expect(source).toContain('aria-label="按用户属性筛选用户目录"');
   });
 
   it("keeps directory refresh errors distinguishable and recoverable without stealing focus during background refresh", () => {

@@ -8,8 +8,8 @@ describe("OpsHeader account authentication UX", () => {
       <OpsHeader managedSession={false} sessionLoaded={false} onRefresh={() => undefined} />,
     );
     expect(markup).toContain("平台运营账号登录");
-    expect(markup).toContain("账号信息");
-    expect(markup).toContain("未登录");
+    expect(markup).toContain("打开账号信息");
+    expect(markup).not.toContain("当前状态");
   });
 
   it("documents server-side session and password handling", async () => {
@@ -62,6 +62,6 @@ describe("OpsHeader account authentication UX", () => {
       readFile(new URL("../styles.css", import.meta.url), "utf8"),
     );
     expect(styles).toMatch(/\.ops-account-trigger-copy\s*\{[^}]*display:\s*flex/s);
-    expect(styles).toMatch(/\.ops-account-trigger\s*\{[^}]*width:\s*280px/s);
+    expect(styles).toMatch(/\.ops-account-trigger\s*\{[^}]*width:\s*132px/s);
   });
 });

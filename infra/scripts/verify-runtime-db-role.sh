@@ -122,13 +122,16 @@ mcp_oauth_rls_failures=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
        ('mcp_oauth_authorization_codes', 'mcp_oauth_authorization_codes_ops', '((CURRENT_USER = ''merchant_ops''::name) AND (current_setting(''app.platform_scope''::text, true) = ''platform_ops''::text))', '((CURRENT_USER = ''merchant_ops''::name) AND (current_setting(''app.platform_scope''::text, true) = ''platform_ops''::text))'),
        ('mcp_oauth_tokens', 'mcp_oauth_tokens_ops', '((CURRENT_USER = ''merchant_ops''::name) AND (current_setting(''app.platform_scope''::text, true) = ''platform_ops''::text))', '((CURRENT_USER = ''merchant_ops''::name) AND (current_setting(''app.platform_scope''::text, true) = ''platform_ops''::text))')
    ), actual AS (
-     SELECT tablename, policyname, permissive, roles, qual, with_check
+     SELECT tablename, policyname, cmd, permissive, roles, qual, with_check
        FROM pg_policies WHERE schemaname = 'public'
          AND tablename IN ('mcp_oauth_authorization_codes', 'mcp_oauth_tokens')
    )
-   SELECT coalesce(string_agg(e.tablename || '.' || e.policyname, ',' ORDER BY e.tablename, e.policyname), '')
-     FROM expected e LEFT JOIN actual a USING (tablename, policyname)
-    WHERE a.policyname IS NULL OR a.permissive <> 'PERMISSIVE' OR a.roles <> ARRAY['public']::name[]
+   SELECT coalesce(string_agg(coalesce(e.tablename, a.tablename) || '.' || coalesce(e.policyname, a.policyname), ',' ORDER BY coalesce(e.tablename, a.tablename), coalesce(e.policyname, a.policyname)), '')
+     FROM expected e FULL JOIN actual a USING (tablename, policyname)
+     LEFT JOIN pg_class c ON c.oid = to_regclass('public.' || coalesce(e.tablename, a.tablename))
+    WHERE e.policyname IS NULL OR a.policyname IS NULL
+       OR c.oid IS NULL OR c.relkind NOT IN ('r','p') OR NOT c.relrowsecurity OR NOT c.relforcerowsecurity
+       OR a.cmd IS DISTINCT FROM 'ALL' OR a.permissive <> 'PERMISSIVE' OR a.roles <> ARRAY['public']::name[]
        OR replace(a.qual, ' ', '') IS DISTINCT FROM replace(e.qual, ' ', '')
        OR replace(a.with_check, ' ', '') IS DISTINCT FROM replace(e.with_check, ' ', '')")
 [ -z "$mcp_oauth_rls_failures" ] || { echo "MCP OAuth tables missing workspace/platform RLS policies: $mcp_oauth_rls_failures" >&2; exit 1; }

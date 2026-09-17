@@ -46,6 +46,7 @@ export interface CustomerDeliveryRecord {
   acceptanceItems?: string[];
   trainingCompletedAt?: string;
   videoUrls?: string[];
+  createdAt?: string;
   revision?: number;
   targetAccountId?: string | null;
   targetIdentityId?: string | null;
@@ -56,6 +57,30 @@ export interface CustomerDeliveryRecord {
   integrationEvidenceAssetRefs?: Record<string, string[]>;
   acceptanceEvidenceAssetRefs?: Record<string, string[]>;
 }
+
+export interface CustomerDeliveryFilters { keyword?: string; owner?: string; afterSalesOwner?: string }
+export function filterCustomerDeliveryRecords(records: CustomerDeliveryRecord[], filters: CustomerDeliveryFilters) {
+  const keyword = filters.keyword?.trim().toLocaleLowerCase() ?? "";
+  return records.filter(record => (!keyword || record.companyName.toLocaleLowerCase().includes(keyword))
+    && (!filters.owner || record.owner === filters.owner)
+    && (!filters.afterSalesOwner || record.afterSalesOwner === filters.afterSalesOwner));
+}
+export function isCustomerProfileFilled(record: CustomerDeliveryRecord) {
+  return record.profile || Boolean(record.companyName.trim() && record.contractNo?.trim() && record.paymentDate && record.contractFile?.trim() && record.owner?.trim() && record.afterSalesOwner?.trim());
+}
+export function isDeliveryChecklistComplete(record: CustomerDeliveryRecord, key: "integration" | "acceptance") {
+  if (record[key]) return true;
+  const expected = key === "integration" ? INTEGRATION_ITEMS : ACCEPTANCE_ITEMS;
+  const selected = key === "integration" ? record.integrationItems : record.acceptanceItems;
+  return Array.isArray(selected) && expected.every(item => selected.includes(item));
+}
+export function deliveryLaunchDateLabel(record: Pick<CustomerDeliveryRecord, "createdAt">) {
+  const value = record.createdAt;
+  if (!value) return "未填写";
+  const local = deliveryDateTimeInputValue(value);
+  return local ? local.slice(0, 10) : value;
+}
+export function hasDeliveryVideo(record: CustomerDeliveryRecord) { return record.videos > 0 || Boolean(record.videoUrls?.length); }
 
 export interface CustomerDeliveryChecklistItem {
   itemKey: string;
@@ -288,6 +313,7 @@ export function CustomerDeliverySection({
   onOpen,
   onSave,
   onCreate,
+  onCreateNavigate,
   onChecklistSave,
   onChecklistLoad,
   onTrainingSave,
@@ -310,6 +336,7 @@ export function CustomerDeliverySection({
     record: CustomerDeliveryRecord,
   ) => Promise<CustomerDeliveryRecord | void> | CustomerDeliveryRecord | void;
   onCreate?: (companyName: string) => Promise<CustomerDeliveryRecord>;
+  onCreateNavigate?: () => void;
   onChecklistSave?: (
     payload: CustomerDeliveryChecklistSave,
   ) => Promise<CustomerDeliveryRecord | void> | CustomerDeliveryRecord | void;
@@ -332,6 +359,10 @@ export function CustomerDeliverySection({
   ) => Promise<CustomerDeliveryVideoItem[]>;
   onAssetUpload?: (record: CustomerDeliveryRecord, source: CustomerDeliveryUploadSource, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
   onAssetGet?: (record: CustomerDeliveryRecord, assetRef: string, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
+  onAssetOpen?: (record: CustomerDeliveryRecord, assetRef: string, purpose: "contract" | "video", mode: "open" | "download") => Promise<void>;
+  onArchive?: (record: CustomerDeliveryRecord) => Promise<void>;
+  operatorActorId?: string;
+  operatorName?: string;
   onAccountList?: (input: { search?: string; cursor?: string }, signal: AbortSignal) => Promise<CustomerDeliveryAccountPage>;
   onAccountBind?: (record: CustomerDeliveryRecord, account: CustomerDeliveryAccount, reason: string, signal: AbortSignal) => Promise<CustomerDeliveryRecord>;
 }) {
@@ -739,6 +770,7 @@ export function CustomerDeliverySection({
             type="primary"
             disabled={disabled || readOnly}
             onClick={() => {
+              if (onCreateNavigate) { onCreateNavigate(); return; }
               createForm.resetFields();
               setShowCreate(true);
             }}

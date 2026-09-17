@@ -23,7 +23,7 @@ describe('migration 214 PostgreSQL embedding accounting acceptance', () => {
       database = new Pool({ connectionString: databaseUrl(base, databaseName) })
       const migrations = await loadMigrations()
       const through213 = migrations.filter(migration => migration.version <= 213)
-      const migration214 = migrations.filter(migration => migration.version === 214)
+      const migration214 = migrations.filter(migration => migration.version === 217)
       expect(migration214).toHaveLength(1)
       expect(await new MigrationRunner(database, through213).run()).toEqual(through213.map(migration => migration.version))
 
@@ -42,7 +42,7 @@ describe('migration 214 PostgreSQL embedding accounting acceptance', () => {
       await database.query(`ALTER TABLE model_cost_budget_reservations
         RENAME CONSTRAINT model_cost_budget_reservations_modality_check TO legacy_budget_modality_check_214`)
 
-      expect(await new MigrationRunner(database, migration214).run()).toEqual([214])
+      expect(await new MigrationRunner(database, migration214).run()).toEqual([217])
       expect(await new MigrationRunner(database, migrations).run()).toEqual([])
       expect((await database.query("SELECT id,modality,model,settlement_status FROM model_usage_ledger WHERE id='usage_text_214'")).rows)
         .toEqual(accountingBefore)
@@ -64,7 +64,7 @@ describe('migration 214 PostgreSQL embedding accounting acceptance', () => {
       expect((await database.query(`SELECT count(*)::int AS count FROM pg_constraint
         WHERE conname IN ('legacy_usage_modality_check_214', 'legacy_budget_modality_check_214')`)).rows)
         .toEqual([{ count: 0 }])
-      expect((await database.query('SELECT max(version)::int AS version FROM schema_migrations')).rows).toEqual([{ version: 214 }])
+      expect((await database.query('SELECT max(version)::int AS version FROM schema_migrations')).rows).toEqual([{ version: 217 }])
     } finally {
       await database?.end()
       await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])

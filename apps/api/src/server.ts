@@ -2118,7 +2118,7 @@ async function markRechargePaid(input: { workspaceId: string; orderId: string; p
   return order
 }
 
-async function markRechargeProviderState(input: { workspaceId: string; orderId: string; state: 'closed' | 'failed'; assertReconciliationLease?: () => Promise<void> }) {
+async function markRechargeProviderState(input: { workspaceId: string; orderId: string; state: 'closed' | 'failed'; eventSource: string; assertReconciliationLease?: () => Promise<void> }) {
   await persistenceReady
   if (persistence.billing?.markProviderState) return persistence.billing.markProviderState(input)
   if (input.assertReconciliationLease) await input.assertReconciliationLease()
@@ -2127,6 +2127,7 @@ async function markRechargeProviderState(input: { workspaceId: string; orderId: 
   order.state = input.state
   order.paymentUrl = undefined
   order.updatedAt = new Date().toISOString()
+  await persistEvent(input.workspaceId, input.orderId, 'billing.recharge.reconciled', 1, { order_id: input.orderId, state: input.state, source: input.eventSource })
   return order
 }
 
@@ -2276,7 +2277,7 @@ async function runPaymentReconciliation(input: { workspaceId: string; actorId: s
         await renewLease()
         if (providerStatus.state !== 'paid') {
           if (providerStatus.state === 'closed' || providerStatus.state === 'failed') {
-            const terminal = await markRechargeProviderState({ workspaceId: input.workspaceId, orderId: order.id, state: providerStatus.state, assertReconciliationLease: renewLease })
+            const terminal = await markRechargeProviderState({ workspaceId: input.workspaceId, orderId: order.id, state: providerStatus.state, eventSource: 'provider_reconciliation', assertReconciliationLease: renewLease })
             if (!terminal) {
               failed.push({ order_id: order.id, code: 'BILLING_ORDER_NOT_FOUND', message: '充值订单在对账期间不可见' })
               return
@@ -6652,6 +6653,17 @@ export function registeredMcpAuthorizationDecision(input: {
     mode: input.mode,
     now: input.now,
   })
+}
+
+export function merchantEntryBillingReadAllowed(input: { atoms: readonly PermissionAtom[]; workspaceId: string; workbench: OpsWorkbench }) {
+  return registeredMcpAuthorizationDecision({
+    decisionId: `authz_${randomUUID()}`,
+    method: 'creative-points.balance.get',
+    atoms: input.atoms.filter(atom => atom.effect === 'deny' || atom.source !== 'temporary_grant'),
+    resourceScope: { type: 'workspace', id: input.workspaceId },
+    workbench: input.workbench,
+    mode: 'enforce',
+  }).authorized
 }
 
 export function httpAuthorizationPathParams(pathTemplate: string, pathname: string, mcpMethod: string): Record<string, string> {

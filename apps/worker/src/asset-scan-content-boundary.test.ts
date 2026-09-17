@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_CLAMAV_MAX_FILE_BYTES, readBoundedAssetScanContent, readWorkerConfig } from './main.js'
 
 describe('asset scan content boundary', () => {
-  it('defaults to the delivery-chain 50 MiB contract and reads CLAMAV_MAX_FILE_BYTES', () => {
+  it('defaults to the delivery-chain 100 MiB contract and reads CLAMAV_MAX_FILE_BYTES', () => {
     const base = { DATABASE_URL: 'postgres://worker', WORKER_WORKSPACES: 'ws_a' }
-    expect(DEFAULT_CLAMAV_MAX_FILE_BYTES).toBe(50 * 1024 * 1024)
+    expect(DEFAULT_CLAMAV_MAX_FILE_BYTES).toBe(100 * 1024 * 1024)
     expect(readWorkerConfig(base).clamavMaxFileBytes).toBe(DEFAULT_CLAMAV_MAX_FILE_BYTES)
     expect(readWorkerConfig({ ...base, CLAMAV_MAX_FILE_BYTES: '4096' }).clamavMaxFileBytes).toBe(4096)
     expect(() => readWorkerConfig({ ...base, CLAMAV_MAX_FILE_BYTES: '0' })).toThrow('CLAMAV_MAX_FILE_BYTES')

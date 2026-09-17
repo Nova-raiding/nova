@@ -60,6 +60,8 @@ export interface CustomerDelivery {
   revision: number;
   createdByActorId: string;
   updatedByActorId: string;
+  archivedAt?: string | null;
+  archivedByActorId?: string | null;
   createdAt: string;
   updatedAt: string;
   videos: CustomerDeliveryVideo[];
@@ -113,6 +115,7 @@ export type CustomerDeliveryPatch = Partial<Pick<CustomerDelivery,
   | "companyName" | "contractNumber" | "paymentStatus" | "contractRef"
   | "projectOwner" | "supportOwner" | "paymentDate" | "paymentEvidenceRefs"
   | "plannedGoLiveAt" | "customerProfileStatus" | "trainingCompleted" | "trainingEvidenceRefs"
+  | "archivedAt"
 >>;
 export const CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS = {
   system_integration: [
@@ -455,6 +458,8 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       revision: 1,
       createdByActorId: input.actorId,
       updatedByActorId: input.actorId,
+      archivedAt: null,
+      archivedByActorId: null,
       createdAt: now,
       updatedAt: now,
       videos: [],
@@ -518,6 +523,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
         );
     }
     Object.assign(d, patch);
+    if (patch.archivedAt !== undefined) d.archivedByActorId = patch.archivedAt ? input.actorId : null;
     d.updatedByActorId = input.actorId;
     d.updatedAt = new Date().toISOString();
     d.revision++;
@@ -1101,6 +1107,8 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       revision: Number(r.revision),
       createdByActorId: r.created_by_actor_id,
       updatedByActorId: r.updated_by_actor_id,
+      archivedAt: r.archived_at ? new Date(r.archived_at).toISOString() : null,
+      archivedByActorId: r.archived_by_actor_id ?? null,
       createdAt: new Date(r.created_at).toISOString(),
       updatedAt: new Date(r.updated_at).toISOString(),
       videos,
@@ -1692,10 +1700,15 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
         customerProfileStatus: "customer_profile_status",
         trainingCompleted: "training_completed",
         trainingEvidenceRefs: "training_evidence_refs",
+        archivedAt: "archived_at",
       };
       for (const k of keys) {
         sets.push(`${col[k]}=$${vals.length + 1}`);
         vals.push(p[k]);
+      }
+      if (p.archivedAt !== undefined) {
+        sets.push(`archived_by_actor_id=CASE WHEN $${vals.length + 1} IS NULL THEN NULL ELSE $3 END`);
+        vals.push(p.archivedAt);
       }
       if (!sets.length) return (await this.withVideos(c, [row]))[0]!;
       sets.push(

@@ -66,6 +66,8 @@ services:
       dockerfile: infra/docker/ui.Dockerfile
       args:
         VITE_WORKSPACE_ID: ${MERCHANT_WORKSPACE_ID:-ws_demo}
+        RELEASE_ID: ${RELEASE_ID:-unbound}
+        RELEASE_GIT_SHA: ${RELEASE_GIT_SHA:-unbound}
     ports: ["127.0.0.1:${LOCAL_UI_PORT:-18081}:8080"]
     environment:
       MERCHANT_API_TOKEN: ${MERCHANT_API_TOKEN:-workspace-local-token}
@@ -83,7 +85,7 @@ services:
 
   ops-ui:
     restart: unless-stopped
-    image: local-ops-ui
+    image: ${LOCAL_OPS_UI_IMAGE:-local-ops-ui}
     build:
       context: ../..
       dockerfile: infra/docker/ops-console.Dockerfile
@@ -94,6 +96,8 @@ services:
         # Platform operations must start behind the real account login gate.
         # Do not silently create actor_demo in the operator browser.
         VITE_OPS_LOCAL_SESSION: "false"
+        RELEASE_ID: ${RELEASE_ID:-unbound}
+        RELEASE_GIT_SHA: ${RELEASE_GIT_SHA:-unbound}
     ports: ["127.0.0.1:${LOCAL_OPS_UI_PORT:-18082}:8080"]
     environment:
       OPS_API_UPSTREAM: http://api:8787
@@ -111,7 +115,7 @@ services:
 
   api:
     restart: unless-stopped
-    image: local-api
+    image: ${LOCAL_API_IMAGE:-local-api}
     dns:
       - ${CONTAINER_DNS_PRIMARY:-1.1.1.1}
       - ${CONTAINER_DNS_SECONDARY:-8.8.8.8}
@@ -130,6 +134,8 @@ services:
       OPS_ALERT_NOTIFICATIONS_ENABLED: ${OPS_ALERT_NOTIFICATIONS_ENABLED:-false}
       MERCHANT_IMAGE_TRACE_LOGS: ${MERCHANT_IMAGE_TRACE_LOGS:-true}
       DEPLOYMENT_PROFILE: local_acceptance
+      RELEASE_ID: ${RELEASE_ID:-}
+      RELEASE_GIT_SHA: ${RELEASE_GIT_SHA:-}
       PORT: 8787
       DATABASE_URL: postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant
       OPS_DATABASE_URL: postgres://merchant_ops:merchant_ops_local_only@postgres:5432/merchant
@@ -449,7 +455,7 @@ services:
       WORKER_SCAN_MAX_ATTEMPTS: ${WORKER_SCAN_MAX_ATTEMPTS:-12}
       WORKER_SCAN_RETRY_BASE_MS: ${WORKER_SCAN_RETRY_BASE_MS:-5000}
       WORKER_SCAN_RETRY_MAX_MS: ${WORKER_SCAN_RETRY_MAX_MS:-900000}
-      CLAMAV_MAX_FILE_BYTES: ${CLAMAV_MAX_FILE_BYTES:-52428800}
+      CLAMAV_MAX_FILE_BYTES: ${CLAMAV_MAX_FILE_BYTES:-104857600}
       SCANNER_HEARTBEAT_INTERVAL_MS: ${SCANNER_HEARTBEAT_INTERVAL_MS:-5000}
       SCANNER_HEARTBEAT_TTL_SECONDS: ${SCANNER_HEARTBEAT_TTL_SECONDS:-15}
       # Local acceptance tolerates an unchanged upstream signature database
@@ -480,6 +486,16 @@ services:
       # Check hourly so a once-daily scheduler cannot cross the strict
       # 24-hour signature freshness gate between checks.
       FRESHCLAM_CHECKS: "24"
+      # The scanner streams files with clamd INSTREAM. Keep the daemon's own
+      # limits aligned with the 100 MiB application boundary; the upstream
+      # image materializes CLAMD_CONF_* into /etc/clamav/clamd.conf before
+      # launching this service's supervisor.
+      CLAMD_CONF_StreamMaxLength: "100M"
+      CLAMD_CONF_MaxFileSize: "100M"
+      CLAMD_CONF_MaxScanSize: "100M"
+      # Expanded archives that exceed a scan limit must not receive an OK
+      # verdict after clamd skips their remaining contents.
+      CLAMD_CONF_AlertExceedsMax: "yes"
       CLAMAV_DEFINITIONS_MAX_AGE_SECONDS: ${CLAMAV_DEFINITIONS_MAX_AGE_SECONDS:-172800}
       HTTP_PROXY: ${CONTAINER_HTTP_PROXY:-}
       HTTPS_PROXY: ${CONTAINER_HTTPS_PROXY:-}

@@ -1,6 +1,5 @@
 import {
   DashboardOutlined,
-  DollarOutlined,
   RobotOutlined,
   TeamOutlined,
   MenuOutlined,
@@ -43,13 +42,11 @@ export const mainItems: Array<{ domain: OpsDomain; label: string; description: s
     { domain: "users", label: "用户中心", description: "管理企业账号与授权范围", icon: <TeamOutlined /> },
     { domain: "customer-delivery", label: "客户交付", description: "管理客户建档、接入、验收与上线", icon: <TeamOutlined /> },
     // Kept for backwards-compatible tests/bookmarks; intentionally omitted from navigationGroups.
-    { domain: "models", label: "模型服务", description: "模型状态已并入账务中心", icon: <RobotOutlined /> },
-    { domain: "finance", label: "账务与退款", description: "核对收款、创意点与退款", icon: <DollarOutlined /> },
+    { domain: "models", label: "模型服务", description: "查看模型状态与计费设置", icon: <RobotOutlined /> },
   ];
 
 export const navigationGroups: Array<{ key: string; label: string; items: readonly OpsDomain[] }> = [
   { key: "governance", label: "平台治理", items: ["overview", "users", "customer-delivery"] },
-  { key: "model-billing", label: "模型与计费", items: ["finance"] },
 ];
 
 export function OpsSidebar({
@@ -90,19 +87,13 @@ export function OpsSidebar({
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }} className="ops-sider">
       <div className="brand-mark">
-        <span>Store Nova</span>
-        <div>
-          <strong>Store Nova运营中心</strong>
-          <small>平台运营后台</small>
-        </div>
+        <img src="/assets/store-nova-primary-horizontal.png" alt="Store Nova" />
       </div>
-      <div className="sider-caption">平台运营控制面</div>
       <nav className="ops-nav-groups" aria-label="平台运营功能导航">
         {navigationGroups.map((group) => {
           const groupItems = group.items.map((domain) => itemsByDomain.get(domain)).filter(Boolean) as typeof visibleItems;
           if (!groupItems.length) return null;
-          return <section className="ops-nav-group" key={group.key} aria-labelledby={`ops-nav-group-${group.key}`}>
-            <h2 id={`ops-nav-group-${group.key}`} className="ops-nav-group-title">{group.label}</h2>
+          return <section className="ops-nav-group" key={group.key} aria-label="运营导航分组">
             {groupItems.map((item) => <button key={item.domain} className={`sider-item${activeDomain === item.domain ? " active" : ""}`} type="button" aria-label={item.label} title={`${item.label}：${item.description}`} aria-description={item.description} aria-current={activeDomain === item.domain ? "page" : undefined} onClick={() => navigate(item.domain)}>{item.icon}<span className="sider-item-copy">{item.label}</span></button>)}
           </section>;
         })}

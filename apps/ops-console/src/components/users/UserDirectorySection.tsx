@@ -8,7 +8,7 @@ import { packageDisplayName } from "../commercial/packageLabels.js";
 import { provisionableCatalogItems } from "../../api/commercialOperationsClient.js";
 import { yuanToFen } from "../../utils/currency.js";
 
-type UserFilters = { query?: string; status?: string; workspaceId?: string };
+type UserFilters = { query?: string; status?: string; workspaceId?: string; attribute?: string };
 export type UserDirectorySort = { field: "displayName" | "status" | "createdAt"; order: "ascend" | "descend" };
 type DirectoryUser = PlatformUser & { createdAt?: string };
 const roleLabels: Record<string, string> = { workspace_owner: "企业所有者", merchant_admin: "企业管理员", operator: "运营", support: "支持", finance: "财务", platform_ops: "平台运营" };
@@ -42,7 +42,8 @@ export function sortUserDirectoryRows(items: PlatformUser[], sort?: UserDirector
 }
 
 export function userDirectoryPageRequest(filters: UserFilters, current?: number, pageSize?: number) {
-  return { ...filters, page: current ?? 1, pageSize: pageSize ?? 20 };
+  const { attribute: _attribute, ...scopedFilters } = filters;
+  return { ...scopedFilters, page: current ?? 1, pageSize: pageSize ?? 20 };
 }
 
 export function canWriteLoadedIdentity(model: Pick<OpsConsoleModel, "canUserGovernance" | "userDetail" | "userDetailLoading">) {

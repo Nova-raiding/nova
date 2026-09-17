@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
 import { loadMigrations, MigrationRunner } from './migration.js'
+import { disposePostgresScopeFixture } from './postgres-scope-fixture-cleanup.js'
 
 const databaseUrlValue = process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const postgresIt = databaseUrlValue ? it : it.skip
@@ -18,9 +19,10 @@ describe('resource ID scope PostgreSQL probe', () => {
   postgresIt('keeps an allowed app read bounded to the exact workspace and platform account', async () => {
     const base = new URL(databaseUrlValue!)
     const databaseName = `probe_resource_scope_${randomUUID().replaceAll('-', '')}`
-    const admin = new Pool({ connectionString: base.toString() })
+    const admin = new Pool({ connectionString: base.toString(), connectionTimeoutMillis: 1_000, query_timeout: 1_000 })
     let database: Pool | undefined
     let app: Pool | undefined
+    let primaryFailure: unknown
 
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
@@ -88,12 +90,11 @@ describe('resource ID scope PostgreSQL probe', () => {
 
       // SET LOCAL context must not leak after the request transaction ends.
       expect((await app.query('SELECT id FROM products ORDER BY id')).rows).toEqual([])
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await app?.end()
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await disposePostgresScopeFixture(admin, databaseName, [app, database], undefined, primaryFailure)
     }
   }, 240_000)
 })

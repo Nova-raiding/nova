@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -23,6 +24,7 @@ describe('platform authorization audit PostgreSQL boundary', () => {
     let database: Pool | undefined
     let app: Pool | undefined
     let ops: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: databaseConnection(base, databaseName) })
@@ -69,13 +71,18 @@ describe('platform authorization audit PostgreSQL boundary', () => {
       await expect(ops.query(`UPDATE platform_authorization_audit SET reason_code='tampered' WHERE decision_id=$1`, [decisionId])).rejects.toThrow(/append-only|permission denied/u)
       await expect(ops.query(`DELETE FROM platform_authorization_audit WHERE decision_id=$1`, [decisionId])).rejects.toThrow(/append-only|permission denied/u)
       await expect(ops.query('TRUNCATE platform_authorization_audit')).rejects.toThrow(/append-only|permission denied/u)
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await app?.end()
-      await ops?.end()
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await app?.end()
+        await ops?.end()
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

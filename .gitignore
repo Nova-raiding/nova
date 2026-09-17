@@ -8,16 +8,24 @@ coverage/
 *.tsbuildinfo
 .gstack/
 
-# Local browser acceptance reruns and generated bundles are evidence inputs,
-# not source artifacts. Keep named, reviewed evidence directories trackable.
-artifacts/ops-oidc-e2e-rerun*/
-artifacts/ops-oidc-e2e-final*/
-artifacts/ops-oidc-e2e-no-creds*/
-artifacts/ops-oidc-e2e-opsall*/
-artifacts/ops-oidc-e2e-regression*/
-artifacts/ops-oidc-e2e-users-retry*/
-artifacts/ops-oidc-platform*/
-artifacts/ops-oidc-e2e/ui-dist/assets/
+# Runtime captures, browser screenshots and local inventories are generated
+# evidence, not source. Existing reviewed evidence remains tracked; new evidence
+# belongs in the external evidence store unless it is explicitly force-added.
+/artifacts/**
+/screenshots/**
+/dogfood/ops-101-public/**
+/dogfood/merchant-local-*/**
+/dogfood/ops-console/screenshots/**
+/dogfood/chatgpt-all-functions/*-inventory.json
+/merchant-all-inventory.json
+/merchant-interactions.json
+/merchant-inventory.json
+/ops-all-inventory.json
+/ops-inventory.json
+/ops-users-result.json
+/ops-workspace-visual-inventory.json
+/output/**
+/tmp/**
 
 # Ephemeral local/runtime outputs. Reviewed evidence remains trackable under
 # explicitly named audit directories.

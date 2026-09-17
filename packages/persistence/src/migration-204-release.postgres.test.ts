@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -73,6 +74,7 @@ describe('migration 204 customer delivery atomic evidence', () => {
       )
     }
 
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       expect(await new MigrationRunner(database, await loadMigrations()).run()).toEqual(expect.arrayContaining([204, 205]))
@@ -205,11 +207,16 @@ describe('migration 204 customer delivery atomic evidence', () => {
         `SELECT after_json->>'asset_scan_status' AS status FROM workspace_operation_audit
          WHERE workspace_id='ws_evidence_delete' AND action='customer_delivery.evidence.invalidated'`,
       )).rows).toEqual([{ status: 'deleted' }])
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 300_000)
 })

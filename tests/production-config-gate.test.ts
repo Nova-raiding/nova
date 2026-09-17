@@ -48,16 +48,16 @@ function config(overrides: Record<string, boolean> = {}) {
     'asset_scan_policy_version: scan-policy-2026-08-30',
     `clamav_image_digest: sha256:${'a'.repeat(64)}`,
     'clamav_signature_max_age_minutes: 1440',
-    'clamav_max_file_bytes: 52428800',
+    'clamav_max_file_bytes: 104857600',
     'payment_mode: provider',
     'payment_provider_adapters: alipay',
-    'payment_checkout_base_url: https://payments.example.com/checkout',
-    'payment_provider_checkout_api_url: https://payments.example.com/v1/checkout',
-    'payment_provider_query_api_url: https://payments.example.com/v1/query',
-    'payment_provider_refund_query_api_url: https://payments.example.com/v1/refund/query',
-    'payment_provider_refund_api_url: https://payments.example.com/v1/refund',
+    'payment_checkout_base_url: https://pay.yxsona.com/checkout',
+    'payment_provider_checkout_api_url: https://pay.yxsona.com/v1/checkout',
+    'payment_provider_query_api_url: https://pay.yxsona.com/v1/query',
+    'payment_provider_refund_query_api_url: https://pay.yxsona.com/v1/refund/query',
+    'payment_provider_refund_api_url: https://pay.yxsona.com/v1/refund',
     'payment_provider_api_key_ref: vault://merchant-payment/provider-api-key',
-    'payment_provider_merchant_id: merchant-example',
+    'payment_provider_merchant_id: 2088123456789012',
     'payment_callback_base_url: https://merchant.example.com/v1',
     'payment_callback_secret_ref: vault://merchant-payment-callback',
     'payment_reconciliation_enabled: true',
@@ -221,9 +221,8 @@ describe('production config gate', () => {
     expect(run(config().replace('alert_notifications_enabled: false', 'alert_notifications_enabled: true\nalert_channel_secret_ref: vault://merchant-alert-channel'))()).toContain('production config gate passed')
   })
 
-  it('allows the alert channel reference to be omitted only with an explicit opt-out', () => {
+  it('allows the alert channel reference to be omitted only with an explicit boolean opt-out', () => {
     const alertsDisabled = config()
-      .replace('alert_channel_secret_ref: vault://merchant-alert-channel', 'alert_notifications_enabled: false')
     expect(run(alertsDisabled)()).toContain('production config gate passed')
     expect(() => run(alertsDisabled.replace('alert_notifications_enabled: false', 'alert_notifications_enabled: invalid'))()).toThrow(/alert_notifications_enabled/)
   })
@@ -234,8 +233,15 @@ describe('production config gate', () => {
   })
 
   it('requires a provider query endpoint for payment status reconciliation', () => {
-    expect(() => run(config().replace('payment_provider_query_api_url: https://payments.example.com/v1/query\n', ''))()).toThrow(/payment_provider_query_api_url/)
-    expect(() => run(config().replace('payment_provider_query_api_url: https://payments.example.com/v1/query', 'payment_provider_query_api_url: http://payments.example.com/v1/query'))()).toThrow(/payment_provider_query_api_url/)
+    expect(() => run(config().replace('payment_provider_query_api_url: https://pay.yxsona.com/v1/query\n', ''))()).toThrow(/payment_provider_query_api_url/)
+    expect(() => run(config().replace('payment_provider_query_api_url: https://pay.yxsona.com/v1/query', 'payment_provider_query_api_url: http://pay.yxsona.com/v1/query'))()).toThrow(/payment_provider_query_api_url/)
+  })
+
+  it('rejects reserved payment provider hosts and placeholder merchant ids', () => {
+    for (const hostname of ['payments.example.com', 'example.com', 'payments.production.test']) {
+      expect(() => run(config().replace('https://pay.yxsona.com/v1/query', `https://${hostname}/v1/query`))()).toThrow(/reserved placeholder hosts/)
+    }
+    expect(() => run(config().replace('payment_provider_merchant_id: 2088123456789012', 'payment_provider_merchant_id: merchant-example'))()).toThrow(/placeholder value/)
   })
 
   it('does not echo rendered secret-bearing lines when rejecting config', () => {

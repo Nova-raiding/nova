@@ -94,6 +94,10 @@ export function resolveMerchantEnvironmentStatus({
   const productionGate = apiHealth.setup?.productionGate
   const writesEnabled = apiHealth.writesEnabled
   const modelReady = modelStatusRead && modelStatus?.state === 'ready'
+  const productionReady = mode === 'production'
+    && productionGate === true
+    && writesEnabled === true
+    && modelReady
   const blockers: string[] = []
 
   if (isDemo) blockers.push(`当前是${modeLabel}环境`)
@@ -120,7 +124,7 @@ export function resolveMerchantEnvironmentStatus({
   if (!isDemo && productionGate !== true)
     actions.push('请管理员在运营后台查看并处理未通过或缺失的生产门禁。')
 
-  if (blockers.length === 0) {
+  if (productionReady) {
     return {
       state: 'ready',
       tone: 'ready',

@@ -1,0 +1,11 @@
+# Browser candidates run from worktrees that may not be shared into Colima.
+# Bake frozen migration/role artifacts into an isolated image; never bind host SQL.
+services:
+  migrate:
+    image: ${BROWSER_MIGRATION_IMAGE:?candidate wrapper must provide a unique migration image}
+    build:
+      context: ../..
+      dockerfile: infra/docker/browser-candidate-migrate.Dockerfile
+    volumes: !reset []
+  postgres:
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73

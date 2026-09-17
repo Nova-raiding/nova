@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url'
 import { Pool, type PoolClient, type QueryResult } from 'pg'
 import { createClient } from 'redis'
 import type { PaymentRefundStatusResult, PaymentStatusResult } from '../packages/billing/src/payment-provider.js'
+import { PostgresBillingRepository } from '../packages/persistence/src/billing-repository.js'
+import { PostgresOutboxRepository } from '../packages/persistence/src/repository.js'
 import { createWorkerRequestProof, type WorkerRequestRole } from '../packages/security/src/worker-request-proof.js'
 import { createIsolatedOpsFixture, type IsolatedFixtureDisposal, type IsolatedOpsFixture } from '../tests/isolated-ops-fixture.js'
 
@@ -69,7 +71,7 @@ async function apiChild() {
   }
   const api = await import('../apps/api/src/server.js')
   api.setPaymentProviderForTests({
-    createCheckout: async () => { throw new Error('VERIFY_PAYMENT_UNEXPECTED_CHECKOUT') },
+    createCheckout: async input => ({ paymentUrl: `https://payments.example/checkout/${encodeURIComponent(input.orderId)}`, providerOrderId: `provider-${input.orderId}`, expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() }),
     refund: async () => { throw new Error('VERIFY_PAYMENT_UNEXPECTED_REFUND_DISPATCH') },
     queryStatus: async input => await call('/status', input) as PaymentStatusResult,
     queryRefundStatus: async input => await call('/refund-status', input) as PaymentRefundStatusResult,
@@ -104,6 +106,7 @@ async function main() {
   process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt)
   let fixture: IsolatedOpsFixture | undefined
   let pool: Pool | undefined
+  let appPool: Pool | undefined
   let redis: ReturnType<typeof createClient> | undefined
   let child: ChildProcess | undefined
   let disposal: IsolatedFixtureDisposal | undefined
@@ -117,6 +120,7 @@ async function main() {
     reconcile: { token: randomBytes(32).toString('hex'), signing_secret: randomBytes(32).toString('hex') },
     generation: { token: randomBytes(32).toString('hex'), signing_secret: randomBytes(32).toString('hex') },
   }
+  const callbackSecret = randomBytes(32).toString('hex')
   const stub = createServer((req, res) => {
     void (async () => {
       assert(req.method === 'POST' && req.headers.authorization === `Bearer ${stubToken}`, 'VERIFY_PAYMENT_STUB_UNAUTHORIZED')
@@ -137,6 +141,7 @@ async function main() {
   try {
     fixture = await createIsolatedOpsFixture({ evidenceDir }); assertOwnBindings(fixture); abort.signal.throwIfAborted()
     pool = new Pool({ connectionString: fixture.adminDatabaseUrl, max: 2, connectionTimeoutMillis: 1_000 })
+    appPool = new Pool({ connectionString: fixture.databaseUrl, max: 2, connectionTimeoutMillis: 1_000 })
     redis = createClient({ url: fixture.redisUrl, socket: { reconnectStrategy: false, connectTimeout: 2_000 } })
     redis.on('error', () => undefined)
     await redis.connect()
@@ -168,6 +173,7 @@ async function main() {
     }
     const initialA = await snapshot(wsA); const initialB = await snapshot(wsB)
     assert.equal(initialA.balanceFen, 0, 'VERIFY_PAYMENT_INITIAL_BALANCE_INVALID')
+    await pool.query("ALTER ROLE merchant_app SET lock_timeout='750ms'")
     stage = 'api_startup'
     const environment: NodeJS.ProcessEnv = {
       PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C.UTF-8',
@@ -175,7 +181,15 @@ async function main() {
       PORT: '0', API_BIND_HOST: '127.0.0.1', DATABASE_URL: fixture.databaseUrl, OPS_DATABASE_URL: fixture.opsDatabaseUrl,
       REDIS_URL: fixture.redisUrl, RUN_MIGRATIONS_ON_STARTUP: 'false', CONNECTOR_FIXTURE_MODE: 'false',
       SESSION_ID_HASH_SECRET: randomBytes(32).toString('hex'), REQUEST_OBSERVABILITY_LOGS: 'false',
-      WORKER_API_CREDENTIALS: JSON.stringify(credentials), PAYMENT_RECONCILIATION_ENABLED: 'true',
+      WORKER_API_CREDENTIALS: JSON.stringify(credentials), PAYMENT_RECONCILIATION_ENABLED: 'true', PAYMENT_REFUND_ENABLED: 'true',
+      PAYMENT_MODE: 'provider', PAYMENT_PROVIDER_ADAPTERS: 'alipay,wechat',
+      PAYMENT_CHECKOUT_BASE_URL: 'https://payments.example/checkout',
+      PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://payments.example/api/checkout',
+      PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.example/api/query',
+      PAYMENT_PROVIDER_REFUND_QUERY_API_URL: 'https://payments.example/api/refund-query',
+      PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.example/api/refund',
+      PAYMENT_PROVIDER_API_KEY: 'synthetic-provider-key', PAYMENT_PROVIDER_MERCHANT_ID: 'synthetic-merchant',
+      PAYMENT_CALLBACK_BASE_URL: 'https://merchant.example/v1', PAYMENT_CALLBACK_SECRET: callbackSecret,
       ASSET_STORAGE_ROOT: join(evidenceDir, 'local-objects'), MCP_AUTHZ_MODE: 'enforce',
       VERIFY_PAYMENT_CHILD: 'isolated-fixture', VERIFY_PAYMENT_STUB_URL: `http://127.0.0.1:${stubAddress.port}`,
       VERIFY_PAYMENT_STUB_TOKEN: stubToken,
@@ -200,6 +214,123 @@ async function main() {
       checks.push({ stage, status: response.status, body: envelope })
       return { status: response.status, envelope }
     }
+    const callbackProof = (input: { channel: 'alipay' | 'wechat'; workspaceId: string; orderId: string; providerTradeId: string; amountFen: number; nonce: string; state?: 'paid' | 'SUCCESS'; timestamp?: string }) => {
+      const stateValue = input.state ?? 'paid'
+      const timestamp = input.timestamp ?? `${Math.floor(Date.now() / 1000)}`
+      const currency = 'CNY'
+      const body = JSON.stringify({ workspace_id: input.workspaceId, order_id: input.orderId, provider_trade_id: input.providerTradeId, amount_fen: input.amountFen, currency, state: stateValue })
+      const canonical = `${input.channel}|${input.workspaceId}|${input.orderId}|${input.providerTradeId}|${input.amountFen}|${currency}|${stateValue}|${timestamp}|${input.nonce}`
+      return {
+        body,
+        nonce: input.nonce,
+        payloadHash: digest(canonical),
+        headers: {
+          'content-type': 'application/json',
+          'x-payment-timestamp': timestamp,
+          'x-payment-nonce': input.nonce,
+          'x-payment-signature': createHmac('sha256', callbackSecret).update(canonical).digest('hex'),
+        },
+      }
+    }
+    const postCallback = async (kind: 'billing' | 'commercial', channel: 'alipay' | 'wechat', proof: ReturnType<typeof callbackProof>) => {
+      const response = await fetch(`${base}/v1/${kind}/callback/${channel}`, { method: 'POST', headers: proof.headers, body: proof.body, redirect: 'error', signal: AbortSignal.any([abort.signal, AbortSignal.timeout(20_000)]) })
+      return { status: response.status, envelope: await response.json() as Envelope }
+    }
+    const withLockedRow = async <T>(query: string, values: unknown[], work: () => Promise<T>) => {
+      const locker = await pool!.connect()
+      try {
+        await locker.query('BEGIN')
+        await locker.query("SET LOCAL idle_in_transaction_session_timeout='30s'")
+        const locked = await locker.query(query, values)
+        assert.equal(locked.rowCount, 1, 'VERIFY_PAYMENT_CALLBACK_LOCK_TARGET_MISSING')
+        return await work()
+      } finally {
+        try { await locker.query('ROLLBACK') } finally { locker.release() }
+      }
+    }
+    const nonceRows = async (workspaceId: string, channel: 'alipay' | 'wechat', nonce: string) =>
+      (await pool!.query('SELECT payload_hash FROM payment_callback_nonces WHERE workspace_id=$1 AND channel=$2 AND nonce=$3 ORDER BY received_at', [workspaceId, channel, nonce])).rows
+    const callbackRechargeSnapshot = async (workspaceId: string) => ({
+      orders: (await pool!.query('SELECT id,state,amount_fen::text,provider_trade_id FROM billing_orders WHERE workspace_id=$1 ORDER BY id', [workspaceId])).rows,
+      ledger: (await pool!.query('SELECT type,amount_fen::text,order_id FROM billing_transactions WHERE workspace_id=$1 ORDER BY id', [workspaceId])).rows,
+      balanceFen: Number((await pool!.query("SELECT COALESCE(SUM(CASE WHEN type='debit' THEN -amount_fen ELSE amount_fen END),0)::text AS value FROM billing_transactions WHERE workspace_id=$1", [workspaceId])).rows[0]?.value),
+    })
+    const callbackCommercialSnapshot = async (workspaceId: string, orderId: string) => ({
+      orders: (await pool!.query('SELECT id,status,amount_fen::text,provider_order_id FROM commercial_orders_v2 WHERE workspace_id=$1 AND id=$2 ORDER BY id', [workspaceId, orderId])).rows,
+      paymentEvents: (await pool!.query('SELECT provider_event_id,payload_hash,amount_fen::text FROM commercial_payment_events_v2 WHERE workspace_id=$1 AND order_id=$2 ORDER BY received_at,id', [workspaceId, orderId])).rows,
+      grants: (await pool!.query("SELECT id,points::text,source_id FROM creative_point_grants WHERE workspace_id=$1 AND source_type='commercial_order_v2' AND source_id=$2 ORDER BY created_at,id", [workspaceId, orderId])).rows,
+      ledger: (await pool!.query('SELECT event_type,points_delta::text,available_after::text,operation_id FROM creative_point_ledger_events WHERE workspace_id=$1 ORDER BY created_at,id', [workspaceId])).rows,
+      accessState: (await pool!.query('SELECT available_points::text,reserved_points::text,settled_points::text,revision::text FROM creative_point_access_state WHERE workspace_id=$1', [workspaceId])).rows,
+    })
+    stage = 'payment_callback_same_proof_recovery_recharge'
+    const callbackRechargeWorkspace = `ws_callback_recharge_${fixture.runId.replaceAll('-', '')}`
+    await pool.query("INSERT INTO workspaces (id,status) VALUES ($1,'active')", [callbackRechargeWorkspace])
+    await seed(callbackRechargeWorkspace, 'callback_recharge_order', 1_100)
+    const rechargeProof = callbackProof({ channel: 'alipay', workspaceId: callbackRechargeWorkspace, orderId: 'callback_recharge_order', providerTradeId: `trade-${callbackRechargeWorkspace}`, amountFen: 1_100, nonce: `nonceRecharge${fixture.runId.replaceAll('-', '').slice(0, 20)}` })
+    const rechargeBefore = await callbackRechargeSnapshot(callbackRechargeWorkspace)
+    const rechargeFirst = await withLockedRow('SELECT id FROM billing_orders WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [callbackRechargeWorkspace, 'callback_recharge_order'], async () => await postCallback('billing', 'alipay', rechargeProof))
+    const rechargeAfterFailure = await callbackRechargeSnapshot(callbackRechargeWorkspace)
+    const rechargeNonceAfterFailure = await nonceRows(callbackRechargeWorkspace, 'alipay', rechargeProof.nonce)
+    assert.notEqual(rechargeFirst.status, 200, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_LOCK_FAILURE_NOT_OBSERVED')
+    assert.deepEqual(rechargeAfterFailure, rechargeBefore, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_FAILURE_CHANGED_FINANCE')
+    assert.deepEqual(rechargeNonceAfterFailure, [{ payload_hash: rechargeProof.payloadHash }], 'VERIFY_PAYMENT_CALLBACK_RECHARGE_NONCE_NOT_RECORDED')
+    const rechargeSecond = await postCallback('billing', 'alipay', rechargeProof)
+    const rechargeAfterSuccess = await callbackRechargeSnapshot(callbackRechargeWorkspace)
+    assert.equal(rechargeSecond.status, 200, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_RETRY_HTTP_FAILED')
+    assert.equal(rechargeAfterSuccess.orders[0]?.state, 'paid', 'VERIFY_PAYMENT_CALLBACK_RECHARGE_NOT_PAID')
+    assert.equal(rechargeAfterSuccess.balanceFen, 1_100, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_BALANCE_INVALID')
+    assert.equal(rechargeAfterSuccess.ledger.filter(row => row.type === 'recharge' && row.order_id === 'callback_recharge_order').length, 1, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_NOT_ONCE')
+    const rechargeThird = await postCallback('billing', 'alipay', rechargeProof)
+    assert.equal(rechargeThird.status, 200, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_IDEMPOTENT_HTTP_FAILED')
+    assert.deepEqual(await callbackRechargeSnapshot(callbackRechargeWorkspace), rechargeAfterSuccess, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_IDEMPOTENT_CHANGED_FINANCE')
+    const rechargeConflict = await postCallback('billing', 'alipay', callbackProof({ channel: 'alipay', workspaceId: callbackRechargeWorkspace, orderId: 'callback_recharge_order', providerTradeId: `trade-conflict-${callbackRechargeWorkspace}`, amountFen: 1_100, nonce: rechargeProof.nonce, timestamp: rechargeProof.headers['x-payment-timestamp'] }))
+    assert.equal(rechargeConflict.status, 409, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_CONFLICT_STATUS_INVALID')
+    assert.equal(rechargeConflict.envelope.error?.code, 'PAYMENT_CALLBACK_NONCE_REPLAY', 'VERIFY_PAYMENT_CALLBACK_RECHARGE_CONFLICT_CODE_INVALID')
+    assert.deepEqual(await callbackRechargeSnapshot(callbackRechargeWorkspace), rechargeAfterSuccess, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_CONFLICT_CHANGED_FINANCE')
+    checks.push({ stage, first: rechargeFirst, before: rechargeBefore, afterFailure: rechargeAfterFailure, afterSuccess: rechargeAfterSuccess, sameProofRetry: rechargeSecond, idempotentReplay: rechargeThird, conflict: rechargeConflict })
+    stage = 'payment_callback_same_proof_recovery_commercial_point_pack'
+    const callbackCommercialWorkspace = `ws_callback_commercial_${fixture.runId.replaceAll('-', '')}`
+    const commercialOrderId = 'callback_commercial_order'
+    const commercialSkuId = `sku-callback-${fixture.runId.replaceAll('-', '')}`
+    const commercialSkuVersionId = `skuv-callback-${fixture.runId.replaceAll('-', '')}`
+    const commercialPayload = { expiryRule: 'purchase_plus_30_natural_days', expiryDays: 30, blockers: [] }
+    const commercialBenefit = { code: 'creative_points', quantity: 500, rawValue: null, rawUnit: null, normalizedValue: null, policyRef: null, metadata: {} }
+    const commercialSku = {
+      id: commercialSkuId, code: `callback_points_${fixture.runId.replaceAll('-', '').slice(0, 12)}`, kind: 'point_pack', visibility: 'public', requiredCapability: null,
+      versionId: commercialSkuVersionId, version: 1, lifecycle: 'approved', executable: true, priceFen: 1_200, currency: 'CNY', priceMode: 'fixed', durationDays: null,
+      payload: commercialPayload, checksum: digest(JSON.stringify(commercialPayload)), effectiveAt: new Date(Date.now() - 60_000).toISOString(), benefits: [commercialBenefit],
+    }
+    const commercialSnapshot = { schema_version: 'commercial-order.v2', sku: commercialSku, private_eligibility_id: null }
+    await pool.query("INSERT INTO workspaces (id,status) VALUES ($1,'active')", [callbackCommercialWorkspace])
+    await pool.query('INSERT INTO commercial_catalog_skus (id,code,kind,visibility,required_capability) VALUES ($1,$2,\'point_pack\',\'public\',NULL)', [commercialSku.id, commercialSku.code])
+    await pool.query('INSERT INTO commercial_catalog_sku_versions (id,sku_id,version,lifecycle,executable,price_fen,currency,price_mode,duration_days,payload,checksum,effective_at) VALUES ($1,$2,1,\'approved\',true,$3,\'CNY\',\'fixed\',NULL,$4::jsonb,$5,$6::timestamptz)', [commercialSku.versionId, commercialSku.id, commercialSku.priceFen, JSON.stringify(commercialSku.payload), commercialSku.checksum, commercialSku.effectiveAt])
+    await pool.query('INSERT INTO commercial_catalog_sku_benefits (id,sku_version_id,benefit_code,quantity,raw_value,raw_unit,normalized_value,policy_ref,metadata) VALUES ($1,$2,\'creative_points\',500,NULL,NULL,NULL,NULL,\'{}\'::jsonb)', [`benefit-${commercialSku.id}`, commercialSku.versionId])
+    await pool.query('INSERT INTO commercial_orders_v2 (id,workspace_id,sku_id,sku_version_id,amount_fen,currency,payment_provider,status,idempotency_key,request_hash,created_by_actor_id) VALUES ($1,$2,$3,$4,1200,\'CNY\',\'alipay\',\'pending\',\'callback-commercial\', $5, \'fixture-callback\')', [commercialOrderId, callbackCommercialWorkspace, commercialSku.id, commercialSku.versionId, digest('callback-commercial-request')])
+    await pool.query('INSERT INTO commercial_order_snapshots_v2 (id,workspace_id,order_id,sku_id,sku_version_id,catalog_checksum,snapshot,checksum) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)', [`snapshot-${commercialOrderId}`, callbackCommercialWorkspace, commercialOrderId, commercialSku.id, commercialSku.versionId, commercialSku.checksum, JSON.stringify(commercialSnapshot), digest(JSON.stringify(commercialSnapshot))])
+    const commercialProof = callbackProof({ channel: 'alipay', workspaceId: callbackCommercialWorkspace, orderId: commercialOrderId, providerTradeId: `trade-${callbackCommercialWorkspace}`, amountFen: 1_200, nonce: `nonceCommercial${fixture.runId.replaceAll('-', '').slice(0, 18)}` })
+    const commercialBefore = await callbackCommercialSnapshot(callbackCommercialWorkspace, commercialOrderId)
+    const commercialFirst = await withLockedRow('SELECT id FROM commercial_orders_v2 WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [callbackCommercialWorkspace, commercialOrderId], async () => await postCallback('commercial', 'alipay', commercialProof))
+    const commercialAfterFailure = await callbackCommercialSnapshot(callbackCommercialWorkspace, commercialOrderId)
+    const commercialNonceAfterFailure = await nonceRows(callbackCommercialWorkspace, 'alipay', commercialProof.nonce)
+    assert.notEqual(commercialFirst.status, 200, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_LOCK_FAILURE_NOT_OBSERVED')
+    assert.deepEqual(commercialAfterFailure, commercialBefore, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_FAILURE_CHANGED_FINANCE')
+    assert.deepEqual(commercialNonceAfterFailure, [{ payload_hash: commercialProof.payloadHash }], 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_NONCE_NOT_RECORDED')
+    const commercialSecond = await postCallback('commercial', 'alipay', commercialProof)
+    const commercialAfterSuccess = await callbackCommercialSnapshot(callbackCommercialWorkspace, commercialOrderId)
+    assert.equal(commercialSecond.status, 200, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_RETRY_HTTP_FAILED')
+    assert.equal(commercialAfterSuccess.orders[0]?.status, 'paid', 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_NOT_PAID')
+    assert.equal(commercialAfterSuccess.paymentEvents.length, 1, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_PAYMENT_EVENT_NOT_ONCE')
+    assert.equal(commercialAfterSuccess.grants.length, 1, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_GRANT_NOT_ONCE')
+    assert.equal(commercialAfterSuccess.ledger.filter(row => row.event_type === 'granted' && row.points_delta === '500').length, 1, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_LEDGER_NOT_ONCE')
+    assert.deepEqual(commercialAfterSuccess.accessState, [{ available_points: '500', reserved_points: '0', settled_points: '0', revision: '1' }], 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_BALANCE_INVALID')
+    const commercialThird = await postCallback('commercial', 'alipay', commercialProof)
+    assert.equal(commercialThird.status, 200, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_IDEMPOTENT_HTTP_FAILED')
+    assert.deepEqual(await callbackCommercialSnapshot(callbackCommercialWorkspace, commercialOrderId), commercialAfterSuccess, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_IDEMPOTENT_CHANGED_FINANCE')
+    const commercialConflict = await postCallback('commercial', 'alipay', callbackProof({ channel: 'alipay', workspaceId: callbackCommercialWorkspace, orderId: commercialOrderId, providerTradeId: `trade-conflict-${callbackCommercialWorkspace}`, amountFen: 1_200, nonce: commercialProof.nonce, timestamp: commercialProof.headers['x-payment-timestamp'] }))
+    assert.equal(commercialConflict.status, 409, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_CONFLICT_STATUS_INVALID')
+    assert.equal(commercialConflict.envelope.error?.code, 'PAYMENT_CALLBACK_NONCE_REPLAY', 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_CONFLICT_CODE_INVALID')
+    assert.deepEqual(await callbackCommercialSnapshot(callbackCommercialWorkspace, commercialOrderId), commercialAfterSuccess, 'VERIFY_PAYMENT_CALLBACK_COMMERCIAL_CONFLICT_CHANGED_FINANCE')
+    checks.push({ stage, first: commercialFirst, before: commercialBefore, afterFailure: commercialAfterFailure, afterSuccess: commercialAfterSuccess, sameProofRetry: commercialSecond, idempotentReplay: commercialThird, conflict: commercialConflict })
     stage = 'signed_worker_boundary'
     assert.equal((await post(wsA, { unsigned: true })).status, 403, 'VERIFY_PAYMENT_UNSIGNED_ACCEPTED')
     assert.equal((await post(wsA, { role: 'generation' })).status, 403, 'VERIFY_PAYMENT_WRONG_ROLE_ACCEPTED')
@@ -230,6 +361,62 @@ async function main() {
       let timer: ReturnType<typeof setTimeout> | undefined
       try { await Promise.race([gate.entered.promise, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('VERIFY_PAYMENT_PROVIDER_NOT_REACHED')), 15_000) })]) } finally { if (timer) clearTimeout(timer) }
     }
+    stage = 'limit_one_oldest_queue_fairness'
+    const wsLimitOne = `ws_limit_one_${fixture.runId.replaceAll('-', '')}`
+    await pool.query("INSERT INTO workspaces (id,status) VALUES ($1,'active')", [wsLimitOne])
+    await seed(wsLimitOne, 'limit_refund', 1_000, 'unknown')
+    await seed(wsLimitOne, 'limit_payment', 1_000)
+    plans.set(`/status:${wsLimitOne}:limit_payment`, { response: { state: 'pending' } })
+    const limitOneBefore = await snapshot(wsLimitOne)
+    const limitOneCallStart = calls.length
+    const firstLimitOne = await post(wsLimitOne, { limit: 1 })
+    const secondLimitOne = await post(wsLimitOne, { limit: 1 })
+    const limitOneCalls = calls.slice(limitOneCallStart)
+    const limitOneAfter = await snapshot(wsLimitOne)
+    checks.push({ stage, first: firstLimitOne, second: secondLimitOne, providerCalls: limitOneCalls, before: limitOneBefore, after: limitOneAfter })
+    assert.equal(firstLimitOne.status, 200, 'VERIFY_PAYMENT_LIMIT_ONE_FIRST_HTTP_FAILED')
+    assert.equal(secondLimitOne.status, 200, 'VERIFY_PAYMENT_LIMIT_ONE_SECOND_HTTP_FAILED')
+    assert.equal(firstLimitOne.envelope.data?.refund_checked, 1, 'VERIFY_PAYMENT_LIMIT_ONE_REFUND_NOT_FIRST')
+    assert.equal(firstLimitOne.envelope.data?.payment_checked, 0, 'VERIFY_PAYMENT_LIMIT_ONE_PAYMENT_CHECKED_TOO_EARLY')
+    assert.equal(firstLimitOne.envelope.data?.deferred, 1, 'VERIFY_PAYMENT_LIMIT_ONE_DEFERRED_MISSING')
+    assert.equal(secondLimitOne.envelope.data?.payment_checked, 1, 'VERIFY_PAYMENT_LIMIT_ONE_PAYMENT_STARVED')
+    assert.equal(secondLimitOne.envelope.data?.refund_checked, 0, 'VERIFY_PAYMENT_LIMIT_ONE_REFUND_RECHECKED')
+    assert.deepEqual(limitOneCalls.map(call => `${call.kind}:${call.orderId}`), ['refund-status:limit_refund', 'status:limit_payment'], 'VERIFY_PAYMENT_LIMIT_ONE_PROVIDER_ORDER_INVALID')
+    assert.equal(limitOneAfter.balanceFen, limitOneBefore.balanceFen, 'VERIFY_PAYMENT_LIMIT_ONE_BALANCE_CHANGED')
+    assert.deepEqual(limitOneAfter.ledger, limitOneBefore.ledger, 'VERIFY_PAYMENT_LIMIT_ONE_LEDGER_CHANGED')
+    stage = 'concurrent_repo_refund_completion_during_failed_query'
+    const wsRepoComplete = `ws_repo_complete_${fixture.runId.replaceAll('-', '')}`
+    const repoCompleteOrder = 'repo_complete_refund'
+    await pool.query("INSERT INTO workspaces (id,status) VALUES ($1,'active')", [wsRepoComplete])
+    await seed(wsRepoComplete, repoCompleteOrder, 1_300, 'unknown')
+    const repoCompleteBefore = await snapshot(wsRepoComplete)
+    const repoCompleteGate = makeGate()
+    plans.set(`/refund-status:${wsRepoComplete}:${repoCompleteOrder}`, { response: { state: 'failed', providerRefundId: 'fixture-failed-after-repo-complete', amountFen: 1_300 }, refundRequestId: `hold_${repoCompleteOrder}`, gate: repoCompleteGate })
+    const repoCompleteRun = post(wsRepoComplete)
+    void repoCompleteRun.catch(() => undefined)
+    await waitEntered(repoCompleteGate)
+    const outbox = new PostgresOutboxRepository(appPool!)
+    const billing = new PostgresBillingRepository(appPool!, (client, event) => outbox.appendInTransaction(client, event))
+    await billing.completeRechargeRefund({ workspaceId: wsRepoComplete, orderId: repoCompleteOrder, reservationKey: `recharge-refund:${repoCompleteOrder}:1`, actorId: 'fixture-repo-complete', reason: '真实仓储并发完成退款', providerRefundId: 'fixture-repo-complete-refund' })
+    const repoCompletedSnapshot = await snapshot(wsRepoComplete)
+    repoCompleteGate.completion.release()
+    const repoCompleteResponse = await repoCompleteRun
+    const repoCompleteAfter = await snapshot(wsRepoComplete)
+    const repoOutbox: Array<{ event_type: string; aggregate_id: string; payload: Record<string, unknown> }> = (await pool.query('SELECT event_type,aggregate_id,payload FROM outbox_events WHERE workspace_id=$1 ORDER BY created_at,id', [wsRepoComplete])).rows
+    const repoAudits: Array<{ action: string; resource_id: string; after_json: Record<string, unknown> }> = (await pool.query("SELECT action,resource_id,after_json FROM workspace_operation_audit WHERE workspace_id=$1 ORDER BY created_at,id", [wsRepoComplete])).rows
+    checks.push({ stage, before: repoCompleteBefore, afterConcurrentRepositoryComplete: repoCompletedSnapshot, response: repoCompleteResponse, final: repoCompleteAfter, transactionalOutboxFacts: repoOutbox, audits: repoAudits })
+    assert.equal(repoCompleteResponse.status, 200, 'VERIFY_PAYMENT_REPO_COMPLETE_HTTP_FAILED')
+    assert.equal(repoCompleteResponse.envelope.data?.state, 'attention_required', 'VERIFY_PAYMENT_REPO_COMPLETE_ATTENTION_MISSING')
+    const repoRefundFailures = repoCompleteResponse.envelope.data?.refund_failed
+    assert(Array.isArray(repoRefundFailures) && repoRefundFailures.length === 1 && object(repoRefundFailures[0]) && repoRefundFailures[0].code === 'PAYMENT_REFUND_CONCURRENT_STATE_CHANGE' && repoRefundFailures[0].reservation_released === false, 'VERIFY_PAYMENT_REPO_COMPLETE_CONCURRENT_FAILURE_INVALID')
+    assert.equal(repoCompleteAfter.orders.find(row => row.id === repoCompleteOrder)?.state, 'closed', 'VERIFY_PAYMENT_REPO_COMPLETE_ORDER_NOT_CLOSED')
+    assert.equal(repoCompleteAfter.balanceFen, 0, 'VERIFY_PAYMENT_REPO_COMPLETE_BALANCE_CHANGED')
+    assert.equal(repoCompleteAfter.balanceFen, repoCompletedSnapshot.balanceFen, 'VERIFY_PAYMENT_REPO_COMPLETE_RECONCILIATION_BALANCE_CHANGED')
+    assert.deepEqual(repoCompleteAfter.ledger, repoCompletedSnapshot.ledger, 'VERIFY_PAYMENT_REPO_COMPLETE_RECONCILIATION_LEDGER_CHANGED')
+    assert.equal(repoCompleteAfter.ledger.filter(row => row.order_id === `release:recharge-refund:${repoCompleteOrder}:1`).length, 0, 'VERIFY_PAYMENT_REPO_COMPLETE_RELEASE_INSERTED')
+    assert.equal(repoOutbox.filter(row => row.event_type === 'billing.recharge.refunded' && row.payload.provider_refund_id === 'fixture-repo-complete-refund').length, 1, 'VERIFY_PAYMENT_REPO_COMPLETE_REFUND_OUTBOX_MISSING')
+    assert.equal(repoOutbox.filter(row => row.event_type === 'billing.recharge.refund_reservation_released').length, 0, 'VERIFY_PAYMENT_REPO_COMPLETE_RELEASE_OUTBOX_FABRICATED')
+    assert.equal(repoAudits.filter(row => row.action === 'billing.reconciliation.run' && row.resource_id === repoCompleteOrder).length, 0, 'VERIFY_PAYMENT_REPO_COMPLETE_FALSE_COMMITTED_AUDIT')
     stage = 'redis_concurrency'
     await seed(wsConcurrent, 'concurrent_1', 100); await seed(wsConcurrent, 'concurrent_2', 100)
     const concurrentGate = makeGate(); plans.get(`/status:${wsConcurrent}:concurrent_1`)!.gate = concurrentGate
@@ -388,12 +575,13 @@ async function main() {
         FROM pg_stat_activity a WHERE a.pid=$1`, [blockerPid])).rows[0]
       const timeoutAfter = await snapshot(timeoutWorkspace)
       const providerQueries = calls.filter(call => call.workspaceId === timeoutWorkspace).length
-      checks.push({ stage, observedWait, elapsedMs, blockerStillHeldAtResponse: blockerState, before: timeoutBefore, after: timeoutAfter, providerQueries, redisLeaseManuallyReplaced: false })
+      checks.push({ stage, response, observedWait, elapsedMs, blockerStillHeldAtResponse: blockerState, before: timeoutBefore, after: timeoutAfter, providerQueries, redisLeaseManuallyReplaced: false })
       assert.equal(response.status, 200, 'VERIFY_PAYMENT_SQL_TIMEOUT_HTTP_STATUS_INVALID')
       assert.equal(response.envelope.data?.state, 'attention_required', 'VERIFY_PAYMENT_SQL_TIMEOUT_ATTENTION_MISSING')
       const failures = response.envelope.data?.failed
       assert(Array.isArray(failures) && failures.length === 1 && object(failures[0]) && failures[0].code === '55P03', 'VERIFY_PAYMENT_SQL_TIMEOUT_CODE_INVALID')
-      assert(elapsedMs < 15_000, 'VERIFY_PAYMENT_SQL_TIMEOUT_EXCEEDED_BUDGET')
+      assert(elapsedMs < 9_000, 'VERIFY_PAYMENT_SQL_TIMEOUT_EXCEEDED_BUDGET')
+      assert(Array.isArray(response.envelope.data?.queue_rotation_failures) && response.envelope.data.queue_rotation_failures.length === 1, 'VERIFY_PAYMENT_SQL_TIMEOUT_ROTATION_EVIDENCE_MISSING')
       assert(blockerState?.state === 'idle in transaction' && blockerState.holds_transaction_lock === true, 'VERIFY_PAYMENT_FIXTURE_LOCK_RELEASED_BEFORE_RESPONSE')
       assert.deepEqual(timeoutAfter, timeoutBefore, 'VERIFY_PAYMENT_SQL_TIMEOUT_CHANGED_LEDGER')
       assert.equal(providerQueries, 1, 'VERIFY_PAYMENT_SQL_TIMEOUT_QUERY_COUNT_INVALID')
@@ -410,6 +598,51 @@ async function main() {
     assert.equal((await post(timeoutWorkspace)).status, 200, 'VERIFY_PAYMENT_SQL_TIMEOUT_RECOVERY_REPLAY_FAILED')
     assert.deepEqual(await snapshot(timeoutWorkspace), recoveredSnapshot, 'VERIFY_PAYMENT_SQL_TIMEOUT_RECOVERY_REPLAY_CHANGED_LEDGER')
     checks.push({ stage, recoveredSnapshot, replayUnchanged: true })
+    stage = 'post_commit_audit_projection_failure'
+    // Fault only the caller-owned isolated audit projection. Business/outbox
+    // transactions must remain committed and their response must stay truthful.
+    await pool.query(`CREATE FUNCTION verify_payment_reject_audit_projection() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF (NEW.workspace_id LIKE 'ws_audit_%' AND NEW.action='billing.reconciliation.run')
+          OR (NEW.workspace_id LIKE 'ws_worker_audit_%' AND NEW.action='billing.reconciliation.worker') THEN
+          RAISE EXCEPTION 'isolated audit projection failure' USING ERRCODE='P0001';
+        END IF;
+        RETURN NEW;
+      END $$`)
+    await pool.query('CREATE TRIGGER verify_payment_audit_projection_failure BEFORE INSERT ON workspace_operation_audit FOR EACH ROW EXECUTE FUNCTION verify_payment_reject_audit_projection()')
+    for (const scenario of [
+      { suffix: 'payment', hold: undefined, eventType: 'billing.recharge.paid', state: 'paid', balanceFen: 900 },
+      { suffix: 'refund_success', hold: 'succeeded' as const, eventType: 'billing.recharge.refunded', state: 'closed', balanceFen: 0 },
+      { suffix: 'refund_failed', hold: 'failed' as const, eventType: 'billing.recharge.refund_reservation_released', state: 'paid', balanceFen: 900 },
+      { suffix: 'worker', hold: undefined, eventType: 'billing.recharge.paid', state: 'paid', balanceFen: 900 },
+    ]) {
+      const workspace: string = `${scenario.suffix === 'worker' ? 'ws_worker_audit' : 'ws_audit'}_${scenario.suffix}_${fixture.runId.replaceAll('-', '')}`
+      const id = `audit_${scenario.suffix}`
+      await pool.query("INSERT INTO workspaces (id,status) VALUES ($1,'active')", [workspace])
+      await seed(workspace, id, 900, scenario.hold)
+      const response = await post(workspace)
+      const committed = await snapshot(workspace)
+      const facts: Array<{ aggregate_id: string; event_type: string; payload: Record<string, unknown> }> = (await pool.query('SELECT aggregate_id,event_type,payload FROM outbox_events WHERE workspace_id=$1 ORDER BY created_at,id', [workspace])).rows
+      checks.push({ stage, scenario: scenario.suffix, response, committed, transactionalOutboxFacts: facts })
+      assert.equal(response.status, 200, 'VERIFY_PAYMENT_AUDIT_PROJECTION_HTTP_INVALID')
+      assert.equal(response.envelope.data?.state, 'attention_required', 'VERIFY_PAYMENT_AUDIT_PROJECTION_ATTENTION_MISSING')
+      assert(Array.isArray(response.envelope.data?.audit_projection_failures) && response.envelope.data.audit_projection_failures.length === 1, 'VERIFY_PAYMENT_AUDIT_PROJECTION_EVIDENCE_MISSING')
+      assert.equal(committed.orders[0]?.state, scenario.state, 'VERIFY_PAYMENT_AUDIT_PROJECTION_BUSINESS_STATE_INVALID')
+      assert.equal(committed.balanceFen, scenario.balanceFen, 'VERIFY_PAYMENT_AUDIT_PROJECTION_BALANCE_INVALID')
+      assert.equal(facts.filter(row => row.event_type === scenario.eventType && row.payload.order_id === id).length, 1, 'VERIFY_PAYMENT_AUDIT_PROJECTION_OUTBOX_MISSING')
+      if (!scenario.hold) {
+        assert(Array.isArray(response.envelope.data?.settled) && response.envelope.data.settled.length === 1, 'VERIFY_PAYMENT_AUDIT_PROJECTION_SETTLEMENT_MISREPORTED')
+        assert.deepEqual(response.envelope.data?.failed, [], 'VERIFY_PAYMENT_AUDIT_PROJECTION_PROVIDER_FAILURE_FABRICATED')
+      } else if (scenario.hold === 'succeeded') {
+        assert(Array.isArray(response.envelope.data?.refund_settled) && response.envelope.data.refund_settled.length === 1, 'VERIFY_PAYMENT_AUDIT_PROJECTION_REFUND_MISREPORTED')
+        assert.deepEqual(response.envelope.data?.refund_failed, [], 'VERIFY_PAYMENT_AUDIT_PROJECTION_REFUND_FAILURE_FABRICATED')
+      } else {
+        const failures = response.envelope.data?.refund_failed
+        assert(Array.isArray(failures) && failures.length === 1 && object(failures[0]) && failures[0].reservation_released === true, 'VERIFY_PAYMENT_AUDIT_PROJECTION_RELEASE_MISREPORTED')
+      }
+      assert.equal((await post(workspace)).status, 200, 'VERIFY_PAYMENT_AUDIT_PROJECTION_REPLAY_FAILED')
+      assert.deepEqual(await snapshot(workspace), committed, 'VERIFY_PAYMENT_AUDIT_PROJECTION_REPLAY_CHANGED_LEDGER')
+    }
     stage = 'durable_audits'
     const audits = (await pool.query("SELECT workspace_id,actor_id,action,resource_type,resource_id,after_json FROM workspace_operation_audit WHERE action='billing.reconciliation.worker' ORDER BY created_at,id")).rows
     assert(audits.length >= 3 && audits.every(row => row.actor_id === 'worker:isolated-payment-reconcile' && row.resource_type === 'billing_reconciliation'), 'VERIFY_PAYMENT_DURABLE_AUDIT_MISSING')
@@ -424,6 +657,7 @@ async function main() {
     if (stub.listening) { stub.closeAllConnections(); await new Promise<void>(resolveClose => stub.close(() => resolveClose())) }
     if (redis?.isOpen) await redis.quit().catch(() => { redis?.destroy(); errors.push('VERIFY_PAYMENT_REDIS_DISCONNECT_FAILED') })
     await pool?.end().catch(() => errors.push('VERIFY_PAYMENT_DATABASE_DISCONNECT_FAILED'))
+    await appPool?.end().catch(() => errors.push('VERIFY_PAYMENT_APP_DATABASE_DISCONNECT_FAILED'))
     if (fixture) {
       try { disposal = await fixture.dispose(); if (disposal.leftRunning.length) errors.push('VERIFY_PAYMENT_FIXTURE_DISPOSAL_INCOMPLETE') } catch { errors.push('VERIFY_PAYMENT_FIXTURE_DISPOSAL_FAILED') }
     }

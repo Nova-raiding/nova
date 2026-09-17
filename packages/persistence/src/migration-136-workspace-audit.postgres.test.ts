@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -27,6 +28,7 @@ describe('migration 136 workspace audit truncate guard', () => {
     const databaseName = `probe_workspace_audit_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     const database = new Pool({ connectionString: databaseConnection(base, databaseName) })
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const migrations = await loadMigrations()
@@ -35,11 +37,16 @@ describe('migration 136 workspace audit truncate guard', () => {
       await database.query(`INSERT INTO workspace_operation_audit (id,workspace_id,actor_id,action,resource_type,resource_id) VALUES ($1,'audit_guard_ws','probe','read','workspace','audit_guard_ws')`, [randomUUID()])
       await expect(database.query('TRUNCATE workspace_operation_audit CASCADE')).rejects.toMatchObject({ code: '55000' })
       expect((await database.query('SELECT count(*)::int AS count FROM workspace_operation_audit')).rows).toEqual([{ count: 1 }])
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

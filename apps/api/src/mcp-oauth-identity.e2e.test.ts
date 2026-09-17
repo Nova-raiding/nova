@@ -132,6 +132,10 @@ describe('canonical password identity MCP OAuth', () => {
     const cookieOnly = await fetch(`${base}/mcp`, { method: 'POST', headers: { cookie: 'damai_session=browser-session-must-not-authenticate-mcp', 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1.1, method: 'initialize', params: {} }) })
     expect(cookieOnly.status).toBe(401)
 
+    const health = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${tokens.access_token}`, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1.1, method: 'workspace.health', params: {} }) })
+    expect(health.status).toBe(200)
+    await expect(health.json()).resolves.toMatchObject({ data: { jsonrpc: '2.0', id: 1.1, result: expect.any(Object) } })
+
     const switched = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${tokens.access_token}`, 'content-type': 'application/json', 'x-workspace-id': 'ws_other' }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'initialize', params: {} }) })
     expect(switched.status).toBe(403)
 
@@ -163,7 +167,54 @@ describe('canonical password identity MCP OAuth', () => {
     vi.stubEnv('MCP_OAUTH_CLIENTS', JSON.stringify({ [clientId]: ['https://chatgpt.com/oauth/callback'] }))
     vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ 'legacy-static-token': { actor_id: account.identityId, workspaces: [workspaceId], roles: ['workspace_owner'] } }))
     const staticFallback = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: 'Bearer legacy-static-token', cookie: passwordCookie, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'initialize', params: {} }) })
-    expect({ status: staticFallback.status, body: await staticFallback.json() }).toMatchObject({ status: 401, body: { error: { code: 'UNAUTHENTICATED' } } })
+    // Missing/non-canonical production OAuth configuration is a runtime
+    // blocker, not an opportunity to authenticate through the legacy token.
+    expect({ status: staticFallback.status, body: await staticFallback.json() }).toMatchObject({ status: 503, body: { error: { code: 'MCP_OAUTH_NOT_CONFIGURED' } } })
+  })
+
+  it('lets only the invited OAuth identity view and accept an account-login invitation', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_OAUTH_REQUIRED', 'true')
+    vi.stubEnv('MCP_OAUTH_CLIENTS', JSON.stringify({ [clientId]: [callback] }))
+    const repository = new MemoryPasswordAuthRepository()
+    setPasswordAuthRepositoryForTests(repository)
+    const suffix = `${Date.now()}-${randomUUID().slice(0, 8)}`
+    const workspaceId = `ws_oauth_invitation_${suffix}`
+    const accounts = await Promise.all(['invited', 'other'].map(label => {
+      const login = `oauth-${label}-${suffix}@example.test`
+      return repository.createMerchantAccount({ login, password: `OAuth${label}Pass1234!`, enterpriseName: `OAuth ${label}`, contactName: `OAuth ${label}`, workspaceIds: [workspaceId], actorId: 'platform-operator', reason: 'OAuth invitation identity test' })
+        .then(account => ({ account, login }))
+    }))
+    const invitation = await workspaceMembers.upsert({ workspaceId, externalSubject: accounts[0]!.login, displayName: 'Invited OAuth merchant', role: 'operator', status: 'invited', invitedBy: 'workspace-owner' })
+    const base = await start()
+    const resource = `${base}/mcp`
+    const accessToken = async ({ account }: (typeof accounts)[number]) => {
+      const issued = await repository.issueMcpAuthorizationCode({ account, clientId, redirectUri: callback, codeChallenge: challenge, issuer: base, audience: resource, resource, scope: ['merchant'] })
+      return (await repository.exchangeMcpAuthorizationCode({ clientId, redirectUri: callback, code: issued.code, codeVerifier: verifier, issuer: base, audience: resource, resource, scope: ['merchant'] })).accessToken
+    }
+    const tokens = await Promise.all(accounts.map(accessToken))
+    const invitedToken = tokens[0]!
+    const otherToken = tokens[1]!
+    const call = async (token: string, id: number, method: string, params: Record<string, unknown> = {}) => {
+      const response = await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+        body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { ...params, workspace_id: workspaceId } }),
+      })
+      return { status: response.status, body: await response.json() as { data?: { result?: Record<string, any> }; error?: { code?: string } } }
+    }
+
+    const visible = await call(invitedToken, 1, 'workspace.invitations.list')
+    expect(visible).toMatchObject({ status: 200, body: { data: { result: { unread_count: 1, invitations: [expect.objectContaining({ member_id: invitation.id, status: 'invited', revision: invitation.revision })] } } } })
+
+    const isolated = await call(otherToken, 2, 'workspace.invitations.list')
+    expect(isolated).toMatchObject({ status: 200, body: { data: { result: { unread_count: 0, invitations: [] } } } })
+
+    const accepted = await call(invitedToken, 3, 'workspace.invitation.accept', { expected_revision: String(invitation.revision), reason: 'Accept OAuth invitation' })
+    expect(accepted).toMatchObject({ status: 200, body: { data: { result: { accepted: true, member: expect.objectContaining({ externalSubject: accounts[0]!.login, status: 'active' }) } } } })
+    const health = await call(invitedToken, 4, 'workspace.health')
+    expect(health.status).toBe(200)
+    expect((await workspaceMembers.list(workspaceId)).find(member => member.id === invitation.id)).toMatchObject({ externalSubject: accounts[0]!.login, identityId: accounts[0]!.account.identityId, status: 'active' })
   })
 
   it('attributes a signed fixture recharge exactly once to the canonical OAuth identity and camouflages it from another member', async () => {
@@ -314,7 +365,7 @@ describe('canonical password identity MCP OAuth', () => {
 
   it('makes production identity readiness depend on self-hosted MCP OAuth instead of static bearer grants', () => {
     const identityEnvironment: NodeJS.ProcessEnv = {
-      NODE_ENV: 'production', OPS_AUTH_MODE: 'oidc', OIDC_PROXY_SIGNING_SECRET: 'oidc-secret', SESSION_ID_HASH_SECRET: 'session-secret', OPS_DATABASE_URL: 'postgres://control-plane', MERCHANT_BEARER_HOSTNAME: 'yxsona.com', MCP_OAUTH_REQUIRED: 'true', PUBLIC_APP_BASE_URL: 'https://yxsona.com', MCP_OAUTH_CLIENTS: JSON.stringify({ chatgpt: ['https://chatgpt.com/oauth/callback'] }),
+      NODE_ENV: 'production', OPS_AUTH_MODE: 'oidc', OIDC_PROXY_SIGNING_SECRET: 'oidc-secret', SESSION_ID_HASH_SECRET: 'session-secret', OPS_DATABASE_URL: 'postgres://control-plane', MERCHANT_BEARER_HOSTNAME: 'yxsona.com', MCP_OAUTH_REQUIRED: 'true', PUBLIC_APP_BASE_URL: 'https://yxsona.com', MCP_OAUTH_ISSUER: 'https://yxsona.com', MCP_OAUTH_AUTHORIZATION_ENDPOINT: 'https://yxsona.com/oauth/authorize', MCP_OAUTH_TOKEN_ENDPOINT: 'https://yxsona.com/oauth/token', MCP_OAUTH_CLIENTS: JSON.stringify({ chatgpt: ['https://chatgpt.com/oauth/callback'] }),
     }
     expect(productionReadinessDiagnostics(identityEnvironment).gates.identity).toEqual({ ready: true, reasons: [] })
     delete identityEnvironment.MCP_OAUTH_CLIENTS

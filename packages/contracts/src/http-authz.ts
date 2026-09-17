@@ -80,6 +80,7 @@ export const HTTP_OPERATION_POLICIES = [
   machine('POST', '/v1/assets/{assetId}/scan', 'worker'),
   identity('POST', '/v1/assets/{assetId}/parse', 'asset.parse'),
   identity('GET', '/v1/assets/{assetId}/download', 'asset.list'),
+  identity('GET', '/v1/ops/customer-deliveries/workspaces/{targetWorkspaceId}/{deliveryId}/assets/{assetId}/download', 'ops.customer-delivery.assets.get'),
   machine('GET', '/v1/internal/assets/{assetId}/scan-content', 'asset_scanner'),
   machine('POST', '/v1/internal/assets/{assetId}/scan-result', 'asset_scanner'),
   identity('GET', '/v1/platform-accounts', 'platform.store.list'),

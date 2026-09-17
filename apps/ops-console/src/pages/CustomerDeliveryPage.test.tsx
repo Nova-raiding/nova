@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { customerDeliveryWorkspaceOptions } from "./CustomerDeliveryPage.js";
+import { customerDeliveryWorkspaceOptions, isCustomerDeliveryRevisionConflict } from "./CustomerDeliveryPage.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -21,15 +21,36 @@ describe("customer delivery workspace selection", () => {
     ]);
   });
 
-  it("provides an explicit accessible selector instead of an unactionable scope warning", () => {
-    expect(pageSource).toContain('aria-label="客户交付目标企业工作区"');
-    expect(pageSource).toContain("model.setAuthorizationTargetWorkspaceId");
+  it("uses the shared platform workspace without exposing a tenant selector", () => {
+    expect(pageSource).not.toContain('aria-label="客户交付目标企业工作区"');
+    expect(pageSource).not.toContain("model.setAuthorizationTargetWorkspaceId");
     expect(pageSource).toContain('model.authorization.can("customer.delivery.update")');
     expect(pageSource).toContain("disabled={!canRead || !targetWorkspaceId}");
-    expect(pageSource).toContain("readOnly={!canUpdate}");
-    expect(pageSource).toContain('const targetWorkspaceId = canBrowseWorkspaces ? model.authorizationTargetWorkspaceId?.trim() || "" : ""');
+    expect(pageSource).toContain('const targetWorkspaceId = model.authorizationTargetWorkspaceId?.trim() || model.workspaceRows[0]?.workspaceId || ""');
     expect(pageSource).toContain('key={targetWorkspaceId || "unselected"}');
     expect(pageSource).toContain("setRecords([])");
+  });
+
+  it("uploads real contract and video assets and resumes an interrupted draft", () => {
+    expect(pageSource).toContain('purpose: "contract"');
+    expect(pageSource).toContain('purpose: "video"');
+    expect(pageSource).toContain("const existingDraft = records.find");
+    expect(pageSource).toContain("pendingCreate.current = attempt");
+    expect(pageSource).toContain("poll >= 15");
+  });
+
+  it("recognizes stale-record conflicts so checklist and training saves can refresh once", () => {
+    expect(isCustomerDeliveryRevisionConflict(new Error("revision changed"))).toBe(true);
+    expect(isCustomerDeliveryRevisionConflict(new Error("REVISION_CONFLICT"))).toBe(true);
+    expect(isCustomerDeliveryRevisionConflict(new Error("network unavailable"))).toBe(false);
+    expect(pageSource).toContain("currentRecord = await customerDeliveryClient.get");
+    expect(pageSource).toContain("const latest = await customerDeliveryClient.get");
+  });
+
+  it("uses creation time for launch display and removes the manual launch field", () => {
+    expect(pageSource).not.toContain('name="requiredLaunchAt"');
+    expect(pageSource).not.toContain("plannedGoLiveAt:");
+    expect(pageSource).toContain("customer-delivery-four-char-label");
   });
 });
 
@@ -112,10 +133,24 @@ describe("customer delivery read-only desktop interaction", () => {
   }, 60_000);
 
   afterAll(async () => {
-    try { await browser?.close(); }
+    const logCleanupStage = async (stage: string, action: () => Promise<void>) => {
+      const startedAt = Date.now();
+      console.info(`[customer-delivery-test-cleanup] stage=${stage} status=started duration_ms=0`);
+      try {
+        await action();
+        console.info(`[customer-delivery-test-cleanup] stage=${stage} status=completed duration_ms=${Date.now() - startedAt}`);
+      } catch (error) {
+        console.error(`[customer-delivery-test-cleanup] stage=${stage} status=failed duration_ms=${Date.now() - startedAt}`);
+        throw error;
+      }
+    };
+    try { await logCleanupStage("browser.close", async () => { await browser?.close(); }); }
     finally {
-      try { await vite?.close(); }
-      finally { if (cacheDirectory) await rm(cacheDirectory, { recursive: true, force: true }); }
+      try { await logCleanupStage("vite.close", async () => { await vite?.close(); }); }
+      finally {
+        const directory = cacheDirectory;
+        if (directory) await logCleanupStage("cache.rm", async () => { await rm(directory, { recursive: true, force: true }); });
+      }
     }
   }, 60_000);
 
