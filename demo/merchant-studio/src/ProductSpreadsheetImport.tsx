@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { Upload } from 'lucide-react'
-import { parseDocumentFacts } from '../../../packages/application/src/document-parser.js'
 import { spreadsheetFactsToBatchProducts } from '../../../packages/application/src/spreadsheet-batch.js'
 import {
   catalogImportBatch,
