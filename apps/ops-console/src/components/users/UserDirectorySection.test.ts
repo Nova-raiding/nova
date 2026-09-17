@@ -90,7 +90,9 @@ describe("UserDirectorySection sorting", () => {
   it("gives desktop directory controls stable, row-specific accessible names", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain('aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`}');
-    expect(source).toContain('aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`}');
+    expect(source).toContain('rowClassName={(row) => row.status === "suspended" ? "ops-user-row-suspended" : ""}');
+    expect(source).toContain('aria-label={`${row.status === "suspended" ? "启用" : "停用"} ${row.displayName || row.externalSubject} 的访问`}');
+    expect(source).toContain('{row.status === "suspended" ? "启用" : "停用"}');
     expect(source).toContain('aria-label="按关键词筛选用户目录"');
     expect(source).toContain('aria-label="按成员状态筛选用户目录"');
     expect(source).toContain('aria-label="按用户属性筛选用户目录"');
