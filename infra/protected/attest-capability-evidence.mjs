@@ -7,9 +7,9 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const PLATFORMS = ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin']
-const CAPABILITIES = ['authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload']
-const OPERATIONS = ['sync_products', 'create_product', 'update_product', 'query_write', 'upload_media', 'revoke']
-const CAPABILITY_OPERATION = { authorize: 'exchange_code', read: 'sync_products', full_sync: 'sync_products', incremental_sync: 'sync_products', create: 'create_product', update: 'update_product', query_status: 'query_write', revoke: 'revoke', media_upload: 'upload_media' }
+const CAPABILITIES = ['authorize', 'refresh', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload']
+const OPERATIONS = ['refresh_credential', 'sync_products', 'create_product', 'update_product', 'query_write', 'upload_media', 'revoke']
+const CAPABILITY_OPERATION = { authorize: 'exchange_code', refresh: 'refresh_credential', read: 'sync_products', full_sync: 'sync_products', incremental_sync: 'sync_products', create: 'create_product', update: 'update_product', query_status: 'query_write', revoke: 'revoke', media_upload: 'upload_media' }
 const REF = /^artifact:\/\/production\/([A-Za-z0-9._-]+)#([a-f0-9]{64})$/u
 const HEX = /^[a-f0-9]{64}$/u
 const GIT = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u

@@ -561,6 +561,22 @@ export interface PublishJob {
   }
 }
 
+export interface ManualPublishRecord {
+  id: string
+  taskId: string
+  contentVersionId: string
+  platform: PlatformId
+  accountId: string
+  state: 'export_ready' | 'manual_publish_in_progress' | 'manual_publish_reported' | 'manual_review_required' | string
+  platformContentId?: string
+  publicUrl?: string
+  platformDisplayStatus?: string
+  operatedAt?: string
+  reviewedAt?: string
+  recordedAt: string
+  differenceNote?: string
+}
+
 export interface SyncFailureItem {
   id: string
   remoteId?: string
@@ -1023,6 +1039,7 @@ export const importProduct = (baseUrl: string, input: { platform: PlatformId; ac
 export const catalogImportBatch = (baseUrl: string, input: { source_asset_id: string; products_json: string; draft_only?: 'true' }) => requestApi<{ batchId?: string; count?: number; products: Array<{ id?: string; product_id?: string }>; factsConfirmationRequired?: boolean; draft_only?: boolean; knowledge?: { indexState?: string; approvalStatus?: string } }>(baseUrl, '/v1/products/import/batch', { method: 'POST', body: JSON.stringify(input) })
 export const confirmProductFacts = (baseUrl: string, productId: string) => requestMcp<Product>(baseUrl, 'catalog.facts.confirm', { product_id: productId })
 export const fetchPublishJobs = (baseUrl: string) => fetchAllPages<PublishJob>(baseUrl, '/v1/publish-jobs')
+export const fetchManualPublishRecords = async (baseUrl: string) => normalizeApiItems(await requestMcp<ApiPage<ManualPublishRecord> | ManualPublishRecord[]>(baseUrl, 'publish.manual.list', { limit: '100', offset: '0' }))
 export const createTask = (baseUrl: string, input: { product_id: string; platform: PlatformId; account_id?: string; request_text?: string; idempotency_key?: string }) => requestApi<Task>(baseUrl, '/v1/tasks', { method: 'POST', body: JSON.stringify(input) })
 export const fetchTask = (baseUrl: string, taskId: string) => requestApi<Task>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}`)
 export const fetchTasks = (baseUrl: string, filters: { state?: string; platform?: PlatformId; query?: string } = {}) => { const params = new URLSearchParams(); if (filters.state) params.set('state', filters.state); if (filters.platform) params.set('platform', filters.platform); if (filters.query) params.set('query', filters.query); return fetchAllPages<Task>(baseUrl, `/v1/tasks${params.toString() ? `?${params.toString()}` : ''}`) }

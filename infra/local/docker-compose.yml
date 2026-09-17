@@ -430,7 +430,7 @@ services:
     # healthcheck aligned with that contract: an unproven scanner must not be
     # reported healthy merely because its process is still alive.
     healthcheck:
-      test: ["CMD-SHELL", "test -s /tmp/merchant-worker-$${WORKER_ROLE}-ready && node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "test -s /tmp/merchant-worker-$${WORKER_ROLE}-ready && node -e \"const fs=require('fs');const h=JSON.parse(fs.readFileSync('/tmp/merchant-worker-'+process.env.WORKER_ROLE+'-ready','utf8'));if(h.state!=='ready'||!h.heartbeat||Date.parse(h.heartbeat.expiresAt)<=Date.now())process.exit(1)\" && node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]
       interval: 5s
       timeout: 3s
       retries: 12

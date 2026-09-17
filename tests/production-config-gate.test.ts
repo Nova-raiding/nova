@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { validateManualOperationsEvidence } from './manual-operations-evidence-gate.js'
 
 const script = join(process.cwd(), 'infra/scripts/validate-production-config.sh')
 const flags = [
@@ -25,8 +26,9 @@ function config(overrides: Record<string, boolean> = {}) {
     'auth_enforcement: strict',
     'mcp_authorization_mode: enforce',
     'durable_platform_assignments_required: true',
+    'platform_operations_mode: manual',
     'session_id_hash_secret_ref: vault://merchant-identity/session-id-hash-secret',
-    ...flags.map(flag => `${flag}: ${overrides[flag] === false ? 'false' : 'true'}`),
+    ...flags.map(flag => `${flag}: ${overrides[flag] === true ? 'true' : 'false'}`),
     ...socialFlags.map(flag => `${flag}: ${overrides[flag] === true ? 'true' : 'false'}`),
     'point_in_time_recovery_enabled: true',
     'database_pooler_enabled: true',
@@ -102,22 +104,31 @@ function run(value: string) {
 }
 
 describe('production config gate', () => {
-  it('requires all four platform capability flag groups', () => {
+  it('requires release-bound manual workflow evidence to reject official receipt claims', () => {
+    const evidence = { schema_version: 'manual-operations-evidence/1', release_id: 'release-1', environment: 'production', workflow: 'public_import_manual_publish', official_api_receipt: false, tenant_isolation_verified: true, checks: [{ name: 'tenant_scope', status: 'pass' }, { name: 'manual_report', status: 'pass' }, { name: 'merchant_visibility', status: 'pass' }] }
+    expect(validateManualOperationsEvidence(evidence, 'release-1')).toEqual([])
+    expect(validateManualOperationsEvidence({ ...evidence, official_api_receipt: true }, 'release-1')).toContain('official_api_receipt must be false')
+  })
+  it('keeps every platform connector disabled in manual operations mode', () => {
     expect(run(config())()).toContain('production config gate passed')
-    expect(() => run(config({ pinduoduo_write_enabled: false }))()).toThrow()
+    expect(() => run(config({ pinduoduo_write_enabled: true }))()).toThrow(/manual platform operations mode/)
   })
 
   it('rejects a partial social-platform rollout', () => {
-    expect(() => run(config({ xiaohongshu_auth_enabled: true }))()).toThrow(/xiaohongshu/)
-    expect(() => run(config({ douyin_read_enabled: true, douyin_auth_enabled: true }))()).toThrow(/douyin/)
-    expect(run(config({
+    expect(() => run(config({ xiaohongshu_auth_enabled: true }))()).toThrow(/manual platform operations mode/)
+    expect(() => run(config({ douyin_read_enabled: true, douyin_auth_enabled: true }))()).toThrow(/manual platform operations mode/)
+    const official = config({
+      jd_auth_enabled: true, jd_read_enabled: true, jd_write_enabled: true,
+      taobao_tmall_auth_enabled: true, taobao_tmall_read_enabled: true, taobao_tmall_write_enabled: true,
+      pinduoduo_auth_enabled: true, pinduoduo_read_enabled: true, pinduoduo_write_enabled: true,
       xiaohongshu_auth_enabled: true,
       xiaohongshu_read_enabled: true,
       xiaohongshu_write_enabled: true,
       douyin_auth_enabled: true,
       douyin_read_enabled: true,
       douyin_write_enabled: true,
-    }))()).toContain('production config gate passed')
+    }).replace('platform_operations_mode: manual', 'platform_operations_mode: official_api')
+    expect(run(official)()).toContain('production config gate passed')
   })
 
   it('accepts the nested production-config OIDC spelling used by the release document', () => {

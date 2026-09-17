@@ -402,7 +402,7 @@ describe('Codex App merchant conversation flow', () => {
       'catalog.sync', 'catalog.sync.start', 'catalog.sync.get', 'sync.retry_failed',
       'automation.policy.get', 'automation.policy.list', 'automation.policy.update',
       'automation.scan', 'automation.tick', 'automation.pause',
-      'publish.prepare', 'publish.confirm', 'publish.get',
+      'publish.prepare', 'publish.confirm', 'publish.get', 'publish.manual.get', 'publish.manual.list',
       'publish.batch.prepare', 'publish.batch.confirm', 'publish.batch.get',
       'publish.batch.pause', 'publish.batch.resume', 'publish.batch.retry_failed',
       'platform.connect', 'platform.store.list', 'workspace.content_setup.confirm',

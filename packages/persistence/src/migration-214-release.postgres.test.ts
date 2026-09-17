@@ -22,10 +22,10 @@ describe('migration 214 PostgreSQL embedding accounting acceptance', () => {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: databaseUrl(base, databaseName) })
       const migrations = await loadMigrations()
-      const through213 = migrations.filter(migration => migration.version <= 213)
-      const migration214 = migrations.filter(migration => migration.version === 217)
-      expect(migration214).toHaveLength(1)
-      expect(await new MigrationRunner(database, through213).run()).toEqual(through213.map(migration => migration.version))
+      const through216 = migrations.filter(migration => migration.version <= 216)
+      const migration217 = migrations.filter(migration => migration.version === 217)
+      expect(migration217).toHaveLength(1)
+      expect(await new MigrationRunner(database, through216).run()).toEqual(through216.map(migration => migration.version))
 
       await database.query("INSERT INTO workspaces(id,status) VALUES('ws_214','active')")
       await database.query(`INSERT INTO model_usage_ledger
@@ -42,8 +42,8 @@ describe('migration 214 PostgreSQL embedding accounting acceptance', () => {
       await database.query(`ALTER TABLE model_cost_budget_reservations
         RENAME CONSTRAINT model_cost_budget_reservations_modality_check TO legacy_budget_modality_check_214`)
 
-      expect(await new MigrationRunner(database, migration214).run()).toEqual([217])
-      expect(await new MigrationRunner(database, migrations).run()).toEqual([])
+      expect(await new MigrationRunner(database, migration217).run()).toEqual([217])
+      expect(await new MigrationRunner(database, migration217).run()).toEqual([])
       expect((await database.query("SELECT id,modality,model,settlement_status FROM model_usage_ledger WHERE id='usage_text_214'")).rows)
         .toEqual(accountingBefore)
       await expect(database.query(`INSERT INTO model_usage_ledger
@@ -67,7 +67,6 @@ describe('migration 214 PostgreSQL embedding accounting acceptance', () => {
       expect((await database.query('SELECT max(version)::int AS version FROM schema_migrations')).rows).toEqual([{ version: 217 }])
     } finally {
       await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
       await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
       await admin.end()
     }

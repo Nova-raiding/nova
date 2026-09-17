@@ -259,7 +259,7 @@ try {
   add('commercial:scanner', level(readiness?.scannerReady), `scanner ready=${String(readiness?.scannerReady)}`, '配置非 fixture scanner、签名回执和新鲜度证据；仅容器存活不满足生产门禁。')
   const alertsReady = alertNotificationReady(readiness?.alertEnabled, readiness?.alertReady)
   add('commercial:alerts', level(alertsReady), `可选告警通知 enabled=${String(readiness?.alertEnabled)}, ready=${String(readiness?.alertReady)}, scopeReady=${String(alertsReady)}`, '如启用告警通知，必须注入安全的 webhook/secret 并验证真实投递；未启用不阻断上线。')
-  add('commercial:production_gate', level(readiness?.productionGate), `mode=${readiness?.mode ?? 'unknown'}, writes=${String(readiness?.writesEnabled)}, productionGate=${String(readiness?.productionGate)}`, '未满足真实支付、平台、存储、容量和证据前保持 writes disabled / NO-GO。')
+  add('commercial:production_gate', level(readiness?.productionGate), `mode=${readiness?.mode ?? 'unknown'}, writes=${String(readiness?.writesEnabled)}, productionGate=${String(readiness?.productionGate)}`, '未满足真实支付、模型中转、存储、容量、人工运营或所选官方接口模式证据前保持 writes disabled / NO-GO。')
 } catch {
   add('commercial:runtime', production ? 'fail' : 'warn', '无法读取商业运行时 readiness', ecsProduction ? '确认 PRODUCTION_API_BASE_URL 指向当前 ECS release，且 /readyz 返回非敏感商业门禁状态。' : '启动 API，并确认 /readyz 返回非敏感的支付、五模态、存储和生产门禁状态。')
 }

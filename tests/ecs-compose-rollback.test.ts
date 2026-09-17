@@ -104,7 +104,7 @@ describe('ECS Compose rollback executor', () => {
     expect(script).toContain('BEGIN READ ONLY')
     expect(script).toContain('SELECT version,name,checksum FROM schema_migrations ORDER BY version ASC')
     expect(script).toContain('verifyAppliedMigrations(result.rows,migrations)')
-    expect(metadata.expectedMigrationVersion).toBe(217)
+    expect(metadata.expectedMigrationVersion).toBe(218)
     expect(script).toContain('for(let version=1;version<=expected;version+=1)')
     expect(script).not.toContain('DROP DATABASE')
     expect(script).not.toContain('DELETE FROM schema_migrations')

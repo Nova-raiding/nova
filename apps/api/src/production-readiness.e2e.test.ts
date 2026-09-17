@@ -39,6 +39,7 @@ const productionEnvironment = (): NodeJS.ProcessEnv => ({
   SESSION_ID_HASH_SECRET: 'session-hash-secret',
   OPS_DATABASE_URL: 'postgres://merchant_ops@database/store_nova',
   MERCHANT_BEARER_HOSTNAME: 'merchant.example.test',
+  MCP_INTEGRATION_MODE: 'remote_oauth',
   MCP_OAUTH_REQUIRED: 'true',
   PUBLIC_APP_BASE_URL: 'https://merchant.example.test',
   MCP_OAUTH_ISSUER: 'https://merchant.example.test',
@@ -241,6 +242,29 @@ describe('production readiness fail-closed', () => {
 
     const result = productionReadinessDiagnostics(environment)
     expect(result.gates.object_storage).toMatchObject({ ready: true, reasons: [] })
+  })
+
+  it('accepts local stdio production identity without remote OAuth registration', () => {
+    const environment = productionEnvironment()
+    environment.MCP_INTEGRATION_MODE = 'local_stdio'
+    environment.MCP_OAUTH_REQUIRED = 'false'
+    delete environment.MCP_OAUTH_CLIENTS
+    delete environment.MCP_OAUTH_ISSUER
+    delete environment.MCP_OAUTH_AUTHORIZATION_ENDPOINT
+    delete environment.MCP_OAUTH_TOKEN_ENDPOINT
+
+    const result = productionReadinessDiagnostics(environment)
+    expect(result.gates.identity).toMatchObject({ ready: true, reasons: [] })
+  })
+
+  it('fails closed when production MCP integration mode is absent or contradictory', () => {
+    const missing = productionEnvironment()
+    delete missing.MCP_INTEGRATION_MODE
+    expect(productionReadinessDiagnostics(missing).gates.identity).toMatchObject({ ready: false, reasons: expect.arrayContaining(['mcp_integration_mode_missing_or_invalid']) })
+
+    const contradictory = productionEnvironment()
+    contradictory.MCP_INTEGRATION_MODE = 'local_stdio'
+    expect(productionReadinessDiagnostics(contradictory).gates.identity).toMatchObject({ ready: false, reasons: expect.arrayContaining(['local_stdio_must_not_require_remote_oauth']) })
   })
 
   it('accepts ACK RRSA only when the admission-injected pod identity is complete', () => {

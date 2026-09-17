@@ -12,13 +12,18 @@ const report = (files: readonly string[]) => ({
 
 describe('isolated PostgreSQL entrypoint', () => {
   it('selects exactly the audited PostgreSQL files by default', async () => {
-    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(24)
-    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(24)
+    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(27)
+    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(27)
     await expect(selectIsolatedPostgresTests([])).resolves.toEqual(ISOLATED_POSTGRES_TEST_FILES)
-    expect(ISOLATED_POSTGRES_TEST_FILES.every(file => (file.startsWith('packages/persistence/src/') || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts') && file.endsWith('.postgres.test.ts'))).toBe(true)
+    expect(ISOLATED_POSTGRES_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')
+    expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/migration-218-release.postgres.test.ts')
+    expect(ISOLATED_POSTGRES_TEST_FILES.every(file => (file.startsWith('packages/persistence/src/') || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts' || file === 'tests/postgres-rls-attack-matrix.postgres.test.ts') && file.endsWith('.postgres.test.ts'))).toBe(true)
   })
   it('accepts only exact audited file selections and normalizes a relative prefix', async () => {
     await expect(selectIsolatedPostgresTests([`./${ISOLATED_POSTGRES_TEST_FILES[0]}`])).resolves.toEqual([ISOLATED_POSTGRES_TEST_FILES[0]])
+  })
+  it('discovers the RLS attack matrix in all-mode as an executable PostgreSQL test', async () => {
+    await expect(selectIsolatedPostgresTests(['--all'])).resolves.toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')
   })
   it.each(['--config=other.ts', '--env', '--reporter=json', '--passWithNoTests', '--testNamePattern=x', 'run', 'packages/persistence/src', 'tests/local-docker-runtime-contract.test.ts', 'apps/api/src/canonical-backfill-contract.test.ts', 'packages/persistence/src/migration-051.test.ts'])('rejects an unapproved argument before starting Docker: %s', async argument => {
     await expect(selectIsolatedPostgresTests([argument])).rejects.toThrow(/only exact audited PostgreSQL test files/u)

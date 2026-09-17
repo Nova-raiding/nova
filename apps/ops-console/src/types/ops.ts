@@ -429,7 +429,9 @@ export type MarketingQueue = {
   publish: Array<{
     id: string;
     taskId: string;
+    contentVersionId: string;
     platform: string;
+    accountId?: string | null;
     state: string;
     remoteState?: string | null;
     rejection?: { rawCode?: string; message?: string } | null;
@@ -442,6 +444,7 @@ export type MarketingQueue = {
     assignedAt?: string | null;
     revision: number;
     createdAt: string;
+    manualPublish?: ManualPublishRecord | null;
   }>;
   visuals: Array<{
     jobId: string;
@@ -495,6 +498,38 @@ export type MarketingQueue = {
   uploadedAssetRisks: UploadedAssetRisk[];
   /** Optional until the server exposes durable scan dead letters in the queue read model. */
   assetScanFailures?: AssetScanFailure[];
+};
+export type ManualPublishStatus =
+  | "export_ready"
+  | "manual_publish_in_progress"
+  | "manual_publish_reported"
+  | "manual_review_required"
+  | "platform_verified";
+export type ManualPublishEvidence = {
+  id: string;
+  kind: "screenshot" | "public_url" | "platform_record" | "review_note";
+  reference: string;
+  note?: string | null;
+  recordedBy: string;
+  recordedAt: string;
+};
+export type ManualPublishRecord = {
+  id?: string;
+  revision?: number;
+  status: ManualPublishStatus;
+  deliveryBundleHash?: string | null;
+  platformItemId?: string | null;
+  publicUrl?: string | null;
+  reportedAt?: string | null;
+  reportedBy?: string | null;
+  reviewedAt?: string | null;
+  reviewedBy?: string | null;
+  evidence: ManualPublishEvidence[];
+  writeCapability?: {
+    method: "ops.marketing.publish.manual-evidence.record";
+    writable: boolean;
+    blockingReason?: string | null;
+  } | null;
 };
 export type PlatformTaskSummary = {
   scope: "platform";

@@ -44,9 +44,13 @@ source_after=$(shasum -a 256 "$ROLLBACK_MANIFEST_PATH" | awk '{print $1}')
 verified_sha=$(shasum -a 256 "$verified_manifest" | awk '{print $1}')
 [ "$source_before" = "$source_after" ] && [ "$source_before" = "$verified_sha" ] || { echo "rollback manifest changed during verification" >&2; exit 1; }
 sh "$root/infra/scripts/validate-kubernetes-release.sh" "$verified_manifest" "$ROLLBACK_IMAGE_DIGESTS_JSON" --rollback >/dev/null
-npx --no-install tsx "$root/tests/capability-evidence-gate.ts" --file "$ROLLBACK_CAPABILITY_EVIDENCE_PATH" --require-canary --require-signed-production --release-id "$RELEASE_ID" \
-  --image-set-digest "$image_set_digest" --manifest-sha256 "$verified_sha" --release-git-sha "$release_git_sha" --deployment-nonce "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}" \
-  --public-key "$trust_dir/production-evidence-public.pem" --key-id "$trusted_key_id"
+if [ "${PLATFORM_OPERATIONS_MODE:-}" = manual ]; then
+  npx --no-install tsx "$root/tests/manual-operations-evidence-gate.ts" --file "$ROLLBACK_CAPABILITY_EVIDENCE_PATH" --release-id "$RELEASE_ID"
+else
+  npx --no-install tsx "$root/tests/capability-evidence-gate.ts" --file "$ROLLBACK_CAPABILITY_EVIDENCE_PATH" --require-canary --require-signed-production --release-id "$RELEASE_ID" \
+    --image-set-digest "$image_set_digest" --manifest-sha256 "$verified_sha" --release-git-sha "$release_git_sha" --deployment-nonce "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}" \
+    --public-key "$trust_dir/production-evidence-public.pem" --key-id "$trusted_key_id"
+fi
 IMAGE_DIGEST="$image_set_digest" PRODUCTION_EVIDENCE_MANIFEST_SHA256="$verified_sha" RELEASE_GIT_SHA="$release_git_sha" PRODUCTION_EVIDENCE_REPO_ROOT="$root" \
   sh "$root/infra/scripts/consume-production-evidence-nonce.sh"
 
@@ -194,12 +198,16 @@ EXPECTED_RELEASE_ID="$RELEASE_ID" EXPECTED_RELEASE_GIT_SHA="$release_git_sha" EX
 $release_payload
 EOF
 curl --fail --silent --show-error --max-time 20 -H "authorization: Bearer $PRODUCTION_CANARY_BEARER_TOKEN" -H "x-workspace-id: $PRODUCTION_CANARY_WORKSPACE_ID" "${PRODUCTION_API_BASE_URL%/}/v1/products?limit=1&offset=0" >/dev/null
-PLATFORM_CANARY_BASE_EVIDENCE="$ROLLBACK_CAPABILITY_EVIDENCE_PATH" \
-PLATFORM_CANARY_OUTPUT="$POST_ROLLBACK_CANARY_OUTPUT" \
-RELEASE_GIT_SHA="$release_git_sha" RELEASE_MANIFEST_SHA256="$verified_sha" RELEASE_IMAGE_SET_DIGEST="$image_set_digest" \
-  sh "$root/infra/scripts/run-production-canary.sh"
-npx --no-install tsx "$root/tests/capability-evidence-gate.ts" --file "$POST_ROLLBACK_CANARY_OUTPUT" --require-canary --require-signed-production --release-id "$RELEASE_ID" \
-  --image-set-digest "$image_set_digest" --manifest-sha256 "$verified_sha" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" \
-  --public-key "$trust_dir/production-evidence-public.pem" --key-id "$trusted_key_id"
+if [ "${PLATFORM_OPERATIONS_MODE:-}" = manual ]; then
+  sh "$root/infra/scripts/run-manual-operations-canary.sh"
+else
+  PLATFORM_CANARY_BASE_EVIDENCE="$ROLLBACK_CAPABILITY_EVIDENCE_PATH" \
+  PLATFORM_CANARY_OUTPUT="$POST_ROLLBACK_CANARY_OUTPUT" \
+  RELEASE_GIT_SHA="$release_git_sha" RELEASE_MANIFEST_SHA256="$verified_sha" RELEASE_IMAGE_SET_DIGEST="$image_set_digest" \
+    sh "$root/infra/scripts/run-production-canary.sh"
+  npx --no-install tsx "$root/tests/capability-evidence-gate.ts" --file "$POST_ROLLBACK_CANARY_OUTPUT" --require-canary --require-signed-production --release-id "$RELEASE_ID" \
+    --image-set-digest "$image_set_digest" --manifest-sha256 "$verified_sha" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" \
+    --public-key "$trust_dir/production-evidence-public.pem" --key-id "$trusted_key_id"
+fi
 
 echo "verified rollback passed: release_id=$RELEASE_ID manifest_sha256=$verified_sha canary=$POST_ROLLBACK_CANARY_OUTPUT"

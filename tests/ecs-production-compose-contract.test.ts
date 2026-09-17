@@ -9,7 +9,7 @@ const valid = {
   services: {
     api: { ...nodeHardening, environment: {
       NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', LOCAL_COMPOSE: 'false',
-      CONNECTOR_FIXTURE_MODE: 'false', MERCHANT_TEST_APPROVED_RATES: 'false',
+      CONNECTOR_FIXTURE_MODE: 'false', PLATFORM_OPERATIONS_MODE: 'manual', MERCHANT_TEST_APPROVED_RATES: 'false',
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
       ASSET_STORAGE_CREDENTIAL_PROVIDER: 'aliyun_ecs_ram_role',
       OPS_ALERT_NOTIFICATIONS_ENABLED: 'false',
@@ -21,11 +21,11 @@ const valid = {
       ALLOW_WILDCARD_WORKSPACE_GRANT: 'false',
       OPS_LOCAL_SESSION_WORKSPACE_ID: '', DATABASE_URL: 'postgres://app:opaque@db/merchant',
       OPS_DATABASE_URL: 'postgres://ops:opaque@db/merchant', MODEL_COST_ESTIMATE_VERSION: 'production-v1',
-      OPENAI_APPS_CHALLENGE_TOKEN: 'openai-domain-token-production-123',
+      MCP_INTEGRATION_MODE: 'local_stdio', MCP_OAUTH_REQUIRED: 'false',
     } },
     'api-replica': { ...nodeHardening, environment: {
       NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', LOCAL_COMPOSE: 'false',
-      CONNECTOR_FIXTURE_MODE: 'false', MERCHANT_TEST_APPROVED_RATES: 'false',
+      CONNECTOR_FIXTURE_MODE: 'false', PLATFORM_OPERATIONS_MODE: 'manual', MERCHANT_TEST_APPROVED_RATES: 'false',
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
       ASSET_STORAGE_CREDENTIAL_PROVIDER: 'aliyun_ecs_ram_role',
       OPS_ALERT_NOTIFICATIONS_ENABLED: 'false',
@@ -37,7 +37,7 @@ const valid = {
       ALLOW_WILDCARD_WORKSPACE_GRANT: 'false',
       OPS_LOCAL_SESSION_WORKSPACE_ID: '', DATABASE_URL: 'postgres://app:opaque@db/merchant',
       OPS_DATABASE_URL: 'postgres://ops:opaque@db/merchant', MODEL_COST_ESTIMATE_VERSION: 'production-v1',
-      OPENAI_APPS_CHALLENGE_TOKEN: 'openai-domain-token-production-123',
+      MCP_INTEGRATION_MODE: 'local_stdio', MCP_OAUTH_REQUIRED: 'false',
     } },
     ...Object.fromEntries(['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan'].map(name => [name, { ...nodeHardening, environment: {
       NODE_ENV: 'production', DATABASE_URL: 'postgres://app:opaque@db/merchant', WORKER_WORKSPACES: 'auto', WORKER_API_TOKEN: `${name}-token`, WORKER_API_SIGNING_SECRET: `${name}-signing`,

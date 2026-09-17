@@ -246,6 +246,7 @@ jobs:
           packages/persistence/src/migration-148-release.postgres.test.ts
           packages/persistence/src/migration-212-release.postgres.test.ts
           packages/persistence/src/migration-214-release.postgres.test.ts
+          packages/persistence/src/migration-218-release.postgres.test.ts
           packages/persistence/src/object-orphan-repository.postgres.test.ts
           packages/persistence/src/ops-workspace-summary-rls.postgres.test.ts
           packages/persistence/src/platform-authorization-audit.postgres.test.ts
@@ -261,6 +262,7 @@ jobs:
           packages/persistence/src/workspace-data-export-repository.release.postgres.test.ts
           tests/mcp-oauth-commercial-payment.postgres.test.ts
           tests/outbox-retry.postgres.test.ts
+          tests/postgres-rls-attack-matrix.postgres.test.ts
       - name: Run mandatory authorization PostgreSQL acceptance
         env:
           PERSISTENCE_RELEASE_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant

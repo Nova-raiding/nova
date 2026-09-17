@@ -124,6 +124,14 @@ describe('payment gateway process contract', () => {
     child.stderr.on('data', chunk => { stderr += String(chunk) })
     const gatewayBase = `http://127.0.0.1:${gatewayPort}`
     await waitForGateway(gatewayBase, child, () => `${stdout}\n${stderr}`)
+    await expect(fetch(`${gatewayBase}/healthz`).then(response => response.json())).resolves.toEqual({
+      ok: true,
+      supported_channels: ['alipay'],
+      channel_readiness: {
+        alipay: { ready: true },
+        wechat: { ready: false, reason: 'provider_adapter_not_implemented' },
+      },
+    })
 
     const internalHeaders = {
       authorization: `Bearer ${gatewayApiKey}`,
@@ -136,6 +144,13 @@ describe('payment gateway process contract', () => {
     })
     expect(checkoutResponse.status).toBe(200)
     await expect(checkoutResponse.json()).resolves.toMatchObject({ order_id: 'order-checkout-1', workspace_id: 'ws-checkout-1', amount_fen: 1234, provider_order_id: 'order-checkout-1' })
+    const unsupportedCheckout = await fetch(`${gatewayBase}/v1/checkout`, {
+      method: 'POST',
+      headers: internalHeaders,
+      body: JSON.stringify({ channel: 'wechat', order_id: 'order-wechat-checkout', workspace_id: 'ws-wechat', amount_fen: 1000 }),
+    })
+    expect(unsupportedCheckout.status).toBe(503)
+    await expect(unsupportedCheckout.json()).resolves.toEqual({ error: 'UNSUPPORTED_PAYMENT_CHANNEL' })
     const unsupportedQuery = await fetch(`${gatewayBase}/v1/query`, {
       method: 'POST',
       headers: internalHeaders,

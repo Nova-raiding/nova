@@ -569,6 +569,7 @@ async function createSubscriptionCheckout(input: { channel: PaymentChannel; orde
     if (!fixturePaymentAllowed()) throw new DomainError('PAYMENT_NOT_CONFIGURED', '本地 fixture 支付未显式开启', 503)
     return fixturePaymentProvider.createCheckout({ ...input, callbackUrl: `fixture://${input.workspaceId}/callback`, description: `merchant-marketing 订阅订单 ${input.orderId}` })
   }
+  requirePaymentChannelReady(input.channel)
   if (!paymentProvider) throw new DomainError('PAYMENT_NOT_CONFIGURED', '支付 provider adapter 未装配', 503)
   const callbackBase = process.env.PAYMENT_CALLBACK_BASE_URL?.trim().replace(/\/$/u, '')
   if (!callbackBase) throw new DomainError('PAYMENT_NOT_CONFIGURED', '支付回调地址未配置', 503)
@@ -2215,7 +2216,19 @@ async function releaseRechargeRefund(input: { workspaceId: string; orderId: stri
   if (existing) return existing
   const release = { id: `billing_tx_${randomUUID()}`, workspaceId: input.workspaceId, type: 'refund' as const, amountFen: reservation.amountFen, orderId: releaseKey, actorId: input.actorId, description: `充值退款失败释放预留（${input.actorId}）：${input.reason}`, createdAt: new Date().toISOString() }
   walletTransactions.push(release)
+  await persistEvent(input.workspaceId, input.reservationKey, 'billing.recharge.refund_reservation_released', 1, { order_id: input.orderId, reservation_key: input.reservationKey, release_transaction_id: release.id, actor_id: input.actorId, reason: input.reason })
   return release
+}
+
+async function markRechargeReconciliationChecked(input: { workspaceId: string; orderId: string; expectedState: 'pending' | 'paid'; assertReconciliationLease?: () => Promise<void> }) {
+  await persistenceReady
+  if (persistence.billing) return persistence.billing.markReconciliationChecked(input)
+  if (input.assertReconciliationLease) await input.assertReconciliationLease()
+  const order = rechargeOrders.get(input.orderId)
+  if (!order || order.workspaceId !== input.workspaceId || order.state !== input.expectedState || order.paymentMode !== 'provider') return undefined
+  const previous = Date.parse(order.updatedAt)
+  order.updatedAt = new Date(Math.max(Date.now(), Number.isFinite(previous) ? previous + 1 : 0)).toISOString()
+  return order
 }
 
 async function listActiveRechargeRefunds(workspaceId: string, limit: number): Promise<Array<{ order: RechargeOrder; reservation: WalletTransaction }>> {
@@ -2223,7 +2236,6 @@ async function listActiveRechargeRefunds(workspaceId: string, limit: number): Pr
   if (persistence.billing) return persistence.billing.listActiveRechargeRefunds(workspaceId, limit)
   const candidates: Array<{ order: RechargeOrder; reservation: WalletTransaction }> = []
   for (const order of rechargeOrders.values()) {
-    if (candidates.length >= limit) break
     if (order.workspaceId !== workspaceId || order.state !== 'paid' || order.paymentMode !== 'provider') continue
     const prefix = `recharge-refund:${order.id}:`
     const released = new Set(walletTransactions
@@ -2233,9 +2245,30 @@ async function listActiveRechargeRefunds(workspaceId: string, limit: number): Pr
     if (reservation) candidates.push({ order, reservation })
   }
   return candidates
+    .sort((left, right) => left.order.updatedAt.localeCompare(right.order.updatedAt) || left.reservation.createdAt.localeCompare(right.reservation.createdAt) || left.reservation.id.localeCompare(right.reservation.id))
+    .slice(0, limit)
 }
 
 const memoryPaymentReconciliationLeases = new Set<string>()
+
+type BillingAuditProjectionFailure = { order_id: string; code: string; cause_code: string; message: string; business_state: string; reservation_released?: boolean; reliable_fact_source: string }
+type PaymentReconciliationWorkItem =
+  | { kind: 'payment'; order: RechargeOrder }
+  | { kind: 'refund'; order: RechargeOrder; reservation: WalletTransaction }
+
+function comparePaymentReconciliationWork(left: PaymentReconciliationWorkItem, right: PaymentReconciliationWorkItem) {
+  return left.order.updatedAt.localeCompare(right.order.updatedAt)
+    || left.order.createdAt.localeCompare(right.order.createdAt)
+    || left.order.id.localeCompare(right.order.id)
+    || left.kind.localeCompare(right.kind)
+    || (left.kind === 'refund' ? left.reservation.createdAt : '').localeCompare(right.kind === 'refund' ? right.reservation.createdAt : '')
+    || (left.kind === 'refund' ? left.reservation.id : '').localeCompare(right.kind === 'refund' ? right.reservation.id : '')
+}
+
+async function getRechargeOrderSnapshot(workspaceId: string, orderId: string) {
+  await persistenceReady
+  return persistence.billing ? await persistence.billing.getOrder(workspaceId, orderId) : rechargeOrders.get(orderId)
+}
 
 async function runPaymentReconciliation(input: { workspaceId: string; actorId: string; limit: number }) {
   if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 20) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'limit 必须是 1 至 20 的整数', 400)
@@ -2243,7 +2276,7 @@ async function runPaymentReconciliation(input: { workspaceId: string; actorId: s
   const provider = paymentProvider
   if (!provider?.queryStatus) {
     if (isProduction()) throw new DomainError('PAYMENT_RECONCILIATION_UNAVAILABLE', '生产支付 provider 未配置查单能力', 503)
-    return { state: 'not_configured', checked: 0, payment_checked: 0, refund_checked: 0, settled: [], pending: [], failed: [], refund_settled: [], refund_pending: [], refund_failed: [], next_action: '配置支付 provider query endpoint 后再运行对账' }
+    return { state: 'not_configured', checked: 0, payment_checked: 0, refund_checked: 0, deferred: 0, provider_orders: 0, total_query_budget: input.limit, settled: [], pending: [], failed: [], refund_settled: [], refund_pending: [], refund_failed: [], audit_projection_failures: [] as BillingAuditProjectionFailure[], queue_rotation_failures: [], next_action: '配置支付 provider query endpoint 后再运行对账' }
   }
   const queryPaymentStatus = provider.queryStatus.bind(provider)
   if (isProduction()) {
@@ -2272,23 +2305,52 @@ async function runPaymentReconciliation(input: { workspaceId: string; actorId: s
     if (!renewed) throw new DomainError('PAYMENT_RECONCILIATION_LEASE_LOST', '支付对账工作区租约已丢失，已停止后续查单和入账', 503)
   }
   try {
-    const refundBudget = Math.max(1, Math.ceil(input.limit / 2))
+    const refundBudget = input.limit === 1 ? 1 : Math.max(1, Math.ceil(input.limit / 2))
     const activeRefunds = await listActiveRechargeRefunds(input.workspaceId, refundBudget)
-    const paymentBudget = Math.max(0, input.limit - activeRefunds.length)
+    const paymentBudget = input.limit === 1 ? 1 : Math.max(0, input.limit - activeRefunds.length)
     const providerOrders = paymentBudget === 0
       ? []
       : persistence.billing
         ? await persistence.billing.listPendingProviderOrdersForReconciliation(input.workspaceId, paymentBudget)
         : [...rechargeOrders.values()]
           .filter(order => order.workspaceId === input.workspaceId && order.state === 'pending' && order.paymentMode === 'provider')
-          .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
+          .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt) || left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
           .slice(0, paymentBudget)
+    const singleBudgetWorkQueue = input.limit === 1
+      ? [
+        ...activeRefunds.map(item => ({ kind: 'refund' as const, order: item.order, reservation: item.reservation })),
+        ...providerOrders.map(order => ({ kind: 'payment' as const, order })),
+      ].sort(comparePaymentReconciliationWork).slice(0, 1)
+      : undefined
     const settled: Array<{ order_id: string; provider_trade_id: string }> = []
     const pending: Array<{ order_id: string; state: string }> = []
     const failed: Array<{ order_id: string; code: string; message: string }> = []
-    const refundSettled: Array<{ order_id: string; refund_request_id: string }> = []
+    const refundSettled: Array<{ order_id: string; refund_request_id: string; provider_refund_id: string }> = []
     const refundPending: Array<{ order_id: string; refund_request_id: string; state: string }> = []
     const refundFailed: Array<{ order_id: string; refund_request_id: string; code: string; message: string; reservation_released: boolean }> = []
+    const auditProjectionFailures: BillingAuditProjectionFailure[] = []
+    const queueRotationFailures: Array<{ order_id: string; code: string; message: string }> = []
+    const errorCode = (error: unknown, fallback: string) => error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : fallback
+    const rotateAfterFailure = async (orderId: string, expectedState: 'pending' | 'paid', originalError: unknown) => {
+      await renewLease()
+      const originalCode = errorCode(originalError, '')
+      if (originalCode === '55P03' || originalCode === '57014') {
+        queueRotationFailures.push({ order_id: orderId, code: originalCode, message: '数据库锁或语句超时，本轮未更新队列检查水位；下一轮重试' })
+        return
+      }
+      try {
+        await markRechargeReconciliationChecked({ workspaceId: input.workspaceId, orderId, expectedState, assertReconciliationLease: renewLease })
+      } catch (rotationError) {
+        if (errorCode(rotationError, '') === 'PAYMENT_RECONCILIATION_LEASE_LOST') throw rotationError
+        await renewLease()
+        queueRotationFailures.push({ order_id: orderId, code: errorCode(rotationError, 'PAYMENT_RECONCILIATION_QUEUE_ROTATION_FAILED'), message: rotationError instanceof Error ? rotationError.message : '队列检查水位更新失败' })
+      }
+    }
+    const recordCommittedAudit = async (audit: Parameters<typeof recordOperationAudit>[0], businessState: string, reservationReleased?: boolean) => {
+      try { await recordOperationAudit(audit) } catch (auditError) {
+        auditProjectionFailures.push({ order_id: audit.resourceId, code: 'BILLING_AUDIT_PROJECTION_FAILED', cause_code: errorCode(auditError, 'OPERATION_AUDIT_APPEND_FAILED'), message: auditError instanceof Error ? auditError.message : '账务操作审计投影失败', business_state: businessState, ...(reservationReleased === undefined ? {} : { reservation_released: reservationReleased }), reliable_fact_source: 'transactional_outbox' })
+      }
+    }
     let paymentChecked = 0
     let refundChecked = 0
     const reconcilePayment = async (order: RechargeOrder) => {
@@ -2306,17 +2368,21 @@ async function runPaymentReconciliation(input: { workspaceId: string; actorId: s
               return
             }
             const code = providerStatus.state === 'closed' ? 'PAYMENT_PROVIDER_ORDER_CLOSED' : 'PAYMENT_PROVIDER_ORDER_FAILED'
-            await persistEvent(input.workspaceId, order.id, 'billing.recharge.reconciled', 1, { order_id: order.id, state: providerStatus.state, source: 'provider_reconciliation' })
-            await recordOperationAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: before as unknown as Record<string, unknown>, after: terminal as unknown as Record<string, unknown>, reason: '支付服务商查单确认订单终态' })
             failed.push({ order_id: order.id, code, message: providerStatus.state === 'closed' ? '支付服务商已关闭该充值订单' : '支付服务商报告该充值订单失败' })
-          } else pending.push({ order_id: order.id, state: providerStatus.state })
+            await recordCommittedAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: before as unknown as Record<string, unknown>, after: terminal as unknown as Record<string, unknown>, reason: '支付服务商查单确认订单终态' }, terminal.state)
+          } else {
+            await markRechargeReconciliationChecked({ workspaceId: input.workspaceId, orderId: order.id, expectedState: 'pending', assertReconciliationLease: renewLease })
+            pending.push({ order_id: order.id, state: providerStatus.state })
+          }
           return
         }
         if (providerStatus.amountFen !== order.amountFen) {
+          await markRechargeReconciliationChecked({ workspaceId: input.workspaceId, orderId: order.id, expectedState: 'pending', assertReconciliationLease: renewLease })
           failed.push({ order_id: order.id, code: 'PAYMENT_QUERY_AMOUNT_MISMATCH', message: '支付服务商查单金额缺失或与充值订单不一致' })
           return
         }
         if (!providerStatus.providerTradeId) {
+          await markRechargeReconciliationChecked({ workspaceId: input.workspaceId, orderId: order.id, expectedState: 'pending', assertReconciliationLease: renewLease })
           failed.push({ order_id: order.id, code: 'PAYMENT_QUERY_TRADE_ID_MISSING', message: '支付服务商已支付但未返回交易号' })
           return
         }
@@ -2325,11 +2391,11 @@ async function runPaymentReconciliation(input: { workspaceId: string; actorId: s
           failed.push({ order_id: order.id, code: 'BILLING_ORDER_NOT_FOUND', message: '充值订单在对账期间不可见' })
           return
         }
-        await recordOperationAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: before as unknown as Record<string, unknown>, after: paid as unknown as Record<string, unknown>, reason: '执行支付服务商查单对账' })
         settled.push({ order_id: order.id, provider_trade_id: providerStatus.providerTradeId })
+        await recordCommittedAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: before as unknown as Record<string, unknown>, after: paid as unknown as Record<string, unknown>, reason: '执行支付服务商查单对账' }, paid.state)
       } catch (error) {
         if (error instanceof DomainError && error.code === 'PAYMENT_RECONCILIATION_LEASE_LOST') throw error
-        await renewLease()
+        await rotateAfterFailure(order.id, 'pending', error)
         failed.push({ order_id: order.id, code: error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'PAYMENT_RECONCILIATION_FAILED', message: error instanceof Error ? error.message : '支付服务商查单失败' })
       }
     }
@@ -2339,6 +2405,7 @@ async function runPaymentReconciliation(input: { workspaceId: string; actorId: s
       refundChecked += 1
       const refundRequestId = reservation.id
       if (!provider.queryRefundStatus) {
+        await rotateAfterFailure(order.id, 'paid', new DomainError('PAYMENT_REFUND_RECONCILIATION_UNAVAILABLE', '支付 provider 未配置退款查单能力', 503))
         refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_REFUND_RECONCILIATION_UNAVAILABLE', message: '支付 provider 未配置退款查单能力', reservation_released: false })
         return
       }
@@ -2347,41 +2414,55 @@ async function runPaymentReconciliation(input: { workspaceId: string; actorId: s
         await renewLease()
         if (providerRefund.state === 'succeeded') {
           if (providerRefund.amountFen !== order.amountFen) {
+            await markRechargeReconciliationChecked({ workspaceId: input.workspaceId, orderId: order.id, expectedState: 'paid', assertReconciliationLease: renewLease })
             refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_REFUND_QUERY_AMOUNT_MISMATCH', message: '支付服务商退款查单金额缺失或不一致', reservation_released: false })
             return
           }
           if (!providerRefund.providerRefundId) {
+            await markRechargeReconciliationChecked({ workspaceId: input.workspaceId, orderId: order.id, expectedState: 'paid', assertReconciliationLease: renewLease })
             refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_REFUND_QUERY_ID_MISSING', message: '支付服务商已退款但未返回退款交易凭据', reservation_released: false })
             return
           }
           await completeRechargeRefund({ workspaceId: input.workspaceId, orderId: order.id, reservationKey: reservation.orderId!, actorId: input.actorId, reason: '支付服务商退款查单确认成功', providerRefundId: providerRefund.providerRefundId, assertReconciliationLease: renewLease })
-          await recordOperationAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: before as unknown as Record<string, unknown>, after: { ...order, state: 'closed', refund_request_id: refundRequestId } as unknown as Record<string, unknown>, reason: '支付服务商退款查单确认成功' })
-          refundSettled.push({ order_id: order.id, refund_request_id: refundRequestId })
+          refundSettled.push({ order_id: order.id, refund_request_id: refundRequestId, provider_refund_id: providerRefund.providerRefundId })
+          await recordCommittedAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: before as unknown as Record<string, unknown>, after: { ...order, state: 'closed', refund_request_id: refundRequestId, provider_refund_id: providerRefund.providerRefundId } as unknown as Record<string, unknown>, reason: '支付服务商退款查单确认成功' }, 'closed')
           return
         }
         if (providerRefund.state === 'failed') {
-          await releaseRechargeRefund({ workspaceId: input.workspaceId, orderId: order.id, reservationKey: reservation.orderId!, actorId: input.actorId, reason: '支付服务商退款查单确认失败', assertReconciliationLease: renewLease })
-          await recordOperationAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: { ...order, refund_request_id: refundRequestId } as unknown as Record<string, unknown>, after: order as unknown as Record<string, unknown>, reason: '支付服务商退款查单确认失败并释放钱包预留' })
+          const release = await releaseRechargeRefund({ workspaceId: input.workspaceId, orderId: order.id, reservationKey: reservation.orderId!, actorId: input.actorId, reason: '支付服务商退款查单确认失败', assertReconciliationLease: renewLease })
+          if (!release) {
+            const current = await getRechargeOrderSnapshot(input.workspaceId, order.id)
+            refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_REFUND_CONCURRENT_STATE_CHANGE', message: `支付服务商确认退款失败，但订单当前状态已变更为 ${current?.state ?? 'unknown'}；未写入钱包预留释放，需人工核对并等待既有可靠事实`, reservation_released: false })
+            return
+          }
           refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: 'PAYMENT_PROVIDER_REFUND_FAILED', message: '支付服务商确认退款失败，钱包预留已释放', reservation_released: true })
+          await recordCommittedAudit({ workspaceId: input.workspaceId, actorId: input.actorId, action: 'billing.reconciliation.run', resourceType: 'billing_order', resourceId: order.id, before: { ...order, refund_request_id: refundRequestId } as unknown as Record<string, unknown>, after: { ...order, reservation_released: true, release_transaction_id: release.id } as unknown as Record<string, unknown>, reason: '支付服务商退款查单确认失败并释放钱包预留' }, 'paid', true)
           return
         }
+        await markRechargeReconciliationChecked({ workspaceId: input.workspaceId, orderId: order.id, expectedState: 'paid', assertReconciliationLease: renewLease })
         refundPending.push({ order_id: order.id, refund_request_id: refundRequestId, state: providerRefund.state })
       } catch (error) {
         if (error instanceof DomainError && error.code === 'PAYMENT_RECONCILIATION_LEASE_LOST') throw error
-        await renewLease()
+        await rotateAfterFailure(order.id, 'paid', error)
         refundFailed.push({ order_id: order.id, refund_request_id: refundRequestId, code: error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'PAYMENT_REFUND_RECONCILIATION_FAILED', message: error instanceof Error ? error.message : '支付服务商退款查单失败', reservation_released: false })
       }
     }
-    // Interleave the two queues so persistent slow pending payments cannot
-    // consume every batch deadline while refund reservations remain untouched.
-    for (let index = 0; index < Math.max(activeRefunds.length, providerOrders.length); index += 1) {
-      if (Date.now() >= queryDeadline) break
-      if (activeRefunds[index]) await reconcileRefund(activeRefunds[index]!)
-      if (Date.now() >= queryDeadline) break
-      if (providerOrders[index]) await reconcilePayment(providerOrders[index]!)
+    if (singleBudgetWorkQueue) {
+      for (const item of singleBudgetWorkQueue) {
+        if (Date.now() >= queryDeadline) break
+        if (item.kind === 'refund') await reconcileRefund({ order: item.order, reservation: item.reservation })
+        else await reconcilePayment(item.order)
+      }
+    } else {
+      for (let index = 0; index < Math.max(activeRefunds.length, providerOrders.length); index += 1) {
+        if (Date.now() >= queryDeadline) break
+        if (activeRefunds[index]) await reconcileRefund(activeRefunds[index]!)
+        if (Date.now() >= queryDeadline) break
+        if (providerOrders[index]) await reconcilePayment(providerOrders[index]!)
+      }
     }
     const deferred = providerOrders.length + activeRefunds.length - paymentChecked - refundChecked
-    return { state: failed.length || pending.length || refundFailed.length || refundPending.length || deferred ? 'attention_required' : 'completed', checked: paymentChecked + refundChecked, payment_checked: paymentChecked, refund_checked: refundChecked, deferred, provider_orders: providerOrders.length, skipped_fixture_orders: 0, settled, pending, failed, refund_settled: refundSettled, refund_pending: refundPending, refund_failed: refundFailed, actor_id: input.actorId, idempotent_settlement: true, total_query_budget: input.limit }
+    return { state: failed.length || pending.length || refundFailed.length || refundPending.length || deferred || auditProjectionFailures.length || queueRotationFailures.length ? 'attention_required' : 'completed', checked: paymentChecked + refundChecked, payment_checked: paymentChecked, refund_checked: refundChecked, deferred, provider_orders: providerOrders.length, skipped_fixture_orders: 0, settled, pending, failed, refund_settled: refundSettled, refund_pending: refundPending, refund_failed: refundFailed, audit_projection_failures: auditProjectionFailures, queue_rotation_failures: queueRotationFailures, actor_id: input.actorId, idempotent_settlement: true, total_query_budget: input.limit }
   } finally {
     if (redisAutomationLease) await redisAutomationLease.release(leaseKey, leaseToken).catch(() => undefined)
     else memoryPaymentReconciliationLeases.delete(leaseKey)
@@ -2420,9 +2501,12 @@ async function consumePaymentCallbackProof(input: { workspaceId: string; channel
 
 function paymentProviderReadiness(source: NodeJS.ProcessEnv = process.env) {
   const reasons: string[] = []
-  const adapters = (source.PAYMENT_PROVIDER_ADAPTERS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+  const adapters = [...new Set((source.PAYMENT_PROVIDER_ADAPTERS ?? '').split(',').map(value => value.trim()).filter(Boolean))]
+  const implementedChannels = ['alipay'] as const
+  const supportedChannels = implementedChannels.filter(channel => adapters.includes(channel))
   if (adapters.length === 0) reasons.push('provider_adapters_missing')
   if (adapters.some(adapter => !['alipay', 'wechat'].includes(adapter))) reasons.push('provider_adapter_unsupported')
+  if (supportedChannels.length === 0) reasons.push('implemented_provider_adapter_missing')
   if (!/^https:\/\//iu.test(source.PAYMENT_CHECKOUT_BASE_URL?.trim() ?? '')) reasons.push('checkout_endpoint_must_use_https')
   if (!/^https:\/\//iu.test(source.PAYMENT_PROVIDER_CHECKOUT_API_URL?.trim() ?? '')) reasons.push('provider_checkout_api_must_use_https')
   if (!/^https:\/\//iu.test(source.PAYMENT_PROVIDER_QUERY_API_URL?.trim() ?? '')) reasons.push('provider_query_api_must_use_https')
@@ -2434,7 +2518,26 @@ function paymentProviderReadiness(source: NodeJS.ProcessEnv = process.env) {
   if (!source.PAYMENT_CALLBACK_SECRET?.trim()) reasons.push('callback_secret_missing')
   if (source.PAYMENT_RECONCILIATION_ENABLED !== 'true') reasons.push('reconciliation_disabled')
   if (source.PAYMENT_REFUND_ENABLED !== 'true') reasons.push('refund_disabled')
-  return { ready: reasons.length === 0, reasons }
+  if (!createPaymentProviderFromEnv(source)) reasons.push('provider_configuration_invalid')
+  return {
+    ready: reasons.length === 0,
+    reasons,
+    supportedChannels,
+    channelReadiness: {
+      alipay: { ready: supportedChannels.includes('alipay'), reasons: supportedChannels.includes('alipay') ? [] : ['provider_adapter_not_configured'] },
+      wechat: { ready: false, reasons: ['provider_adapter_not_implemented'] },
+    },
+  }
+}
+
+function requirePaymentChannelReady(channel: PaymentChannel, source: NodeJS.ProcessEnv = process.env) {
+  if (source.PAYMENT_MODE !== 'provider') return
+  const readiness = paymentProviderReadiness(source)
+  const channelStatus = readiness.channelReadiness[channel]
+  if (!readiness.ready || !channelStatus.ready) {
+    const reasons = [...readiness.reasons, ...channelStatus.reasons]
+    throw new DomainError('PAYMENT_CHANNEL_NOT_READY', `支付渠道 ${channel} 未就绪：${reasons.join(', ')}`, 503, { channel, reasons })
+  }
 }
 
 /**
@@ -2450,6 +2553,8 @@ export function paymentCapabilityStatus(input: {
   fixtureMode: boolean
   productionGate: boolean
   reasons?: string[]
+  supportedChannels?: readonly PaymentChannel[]
+  channelReadiness?: Record<PaymentChannel, { ready: boolean; reasons: string[] }>
 }) {
   const providerConfigured = input.mode === 'provider' && input.providerReady
   // `configured` is intentionally false in fixture mode.  A complete set of
@@ -2465,6 +2570,11 @@ export function paymentCapabilityStatus(input: {
     effective: productionEnabled,
     production_enabled: productionEnabled,
     state: productionEnabled ? 'enabled' as const : configured ? 'configured_but_blocked' as const : 'not_configured' as const,
+    supported_channels: productionEnabled ? [...(input.supportedChannels ?? [])] : [],
+    channel_readiness: input.channelReadiness ?? {
+      alipay: { ready: false, reasons: ['provider_readiness_unknown'] },
+      wechat: { ready: false, reasons: ['provider_adapter_not_implemented'] },
+    },
     reasons: [...new Set(reasons)],
   }
 }
@@ -4331,7 +4441,7 @@ async function syncOperationalAlerts(workspaceId: string) {
   }
   return repository
 }
-async function persistSnapshot(workspaceId: string, entityType: 'product' | 'task' | 'content_version' | 'publish_job' | 'publish_batch' | 'platform_account' | 'generation_job' | 'image_generation_job' | 'brand_profile' | 'asset' | 'feedback' | 'sync_job' | 'automation_policy', entity: { id: string; version?: number; revision?: number }, value: Record<string, unknown>) {
+async function persistSnapshot(workspaceId: string, entityType: 'product' | 'task' | 'content_version' | 'publish_job' | 'manual_publish_record' | 'publish_batch' | 'platform_account' | 'generation_job' | 'image_generation_job' | 'brand_profile' | 'asset' | 'feedback' | 'sync_job' | 'automation_policy', entity: { id: string; version?: number; revision?: number }, value: Record<string, unknown>) {
   await persistenceReady
   const entityVersion = entity.version ?? entity.revision ?? 1
   if (persistence.persistSnapshotAndEvent) {
@@ -5016,7 +5126,7 @@ export function hydrateOutboxSnapshot(workspaceId: string, snapshot: DurableStat
     else if (payload.entityType === 'merchant_intent' && payload.entity && typeof payload.entity === 'object') {
       merchantIntents.set(`${workspaceId}:${snapshot.aggregateId}`, payload.entity as Record<string, unknown>)
     }
-    else if (payload.entityType === 'product' || payload.entityType === 'task' || payload.entityType === 'content_version' || payload.entityType === 'publish_job' || payload.entityType === 'platform_account' || payload.entityType === 'generation_job' || payload.entityType === 'image_generation_job' || payload.entityType === 'brand_profile' || payload.entityType === 'asset' || payload.entityType === 'feedback' || payload.entityType === 'sync_job') {
+    else if (payload.entityType === 'product' || payload.entityType === 'task' || payload.entityType === 'content_version' || payload.entityType === 'publish_job' || payload.entityType === 'manual_publish_record' || payload.entityType === 'platform_account' || payload.entityType === 'generation_job' || payload.entityType === 'image_generation_job' || payload.entityType === 'brand_profile' || payload.entityType === 'asset' || payload.entityType === 'feedback' || payload.entityType === 'sync_job') {
       service.hydrateSnapshot({ entityType: payload.entityType, entity: payload.entity })
     }
   } catch (error) {
@@ -5682,6 +5792,14 @@ function oauthCriticalParamsValid(params: URLSearchParams, keys: readonly string
 function escapeOAuthHtml(value: string) { return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;') }
 function sendOAuthProtocolError(res: ServerResponse, status: number, error: string) { res.statusCode = status; res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store'); res.setHeader('pragma', 'no-cache'); res.end(JSON.stringify({ error })) }
 function mcpOAuthRequestContext(req: IncomingMessage) { const configured = process.env.PUBLIC_APP_BASE_URL?.trim(); const origin = isProduction() && configured ? new URL(configured).origin : publicRequestOrigin(req); const issuer = process.env.MCP_OAUTH_ISSUER?.trim() || origin; const resource = `${origin}/mcp`; return { issuer, audience: resource, resource, scope: ['merchant'] } }
+
+type McpIntegrationMode = 'local_stdio' | 'remote_oauth'
+function mcpIntegrationMode(source: NodeJS.ProcessEnv = process.env): McpIntegrationMode | undefined {
+  const configured = source.MCP_INTEGRATION_MODE?.trim()
+  if (configured === 'local_stdio' || configured === 'remote_oauth') return configured
+  if (source.NODE_ENV !== 'production' && source.MCP_OAUTH_REQUIRED === 'true') return 'remote_oauth'
+  return undefined
+}
 
 function productionMcpOAuthRuntimeReady(_req: IncomingMessage, source: NodeJS.ProcessEnv = process.env): boolean {
   if (source.NODE_ENV !== 'production') return true
@@ -7009,11 +7127,15 @@ async function authenticate(req: IncomingMessage) {
   // silently replaces a real platform login with actor_demo, making the
   // login cookie appear accepted while every API call still runs as demo.
   const isMcpRequest = (req.url ?? '').split('?')[0] === '/mcp'
-  const oauthClients = isMcpRequest ? mcpOAuthClients() : undefined
-  const mcpOAuthRequired = isMcpRequest && process.env.MCP_OAUTH_REQUIRED === 'true'
+  const integrationMode = isMcpRequest ? mcpIntegrationMode() : undefined
+  if (isMcpRequest && isProduction() && process.env.VITEST !== 'true' && !integrationMode) throw new DomainError('MCP_INTEGRATION_MODE_NOT_CONFIGURED', 'MCP 接入模式未配置', 503)
+  const remoteOAuth = integrationMode === 'remote_oauth'
+  const localStdio = integrationMode === 'local_stdio'
+  const oauthClients = isMcpRequest && remoteOAuth ? mcpOAuthClients() : undefined
+  const mcpOAuthRequired = isMcpRequest && remoteOAuth && process.env.MCP_OAUTH_REQUIRED === 'true'
   if (mcpOAuthRequired && !oauthClients) throw new DomainError('MCP_OAUTH_NOT_CONFIGURED', 'MCP OAuth 客户端注册表缺失或无效', 503)
-  if (isMcpRequest && isProduction() && !productionMcpOAuthRuntimeReady(req)) throw new DomainError('MCP_OAUTH_NOT_CONFIGURED', 'MCP OAuth 生产运行时未完成配置', 503)
-  const mcpOAuthBoundary = isMcpRequest && (mcpOAuthRequired || Boolean(oauthClients))
+  if (isMcpRequest && remoteOAuth && isProduction() && !productionMcpOAuthRuntimeReady(req)) throw new DomainError('MCP_OAUTH_NOT_CONFIGURED', 'MCP OAuth 生产运行时未完成配置', 503)
+  const mcpOAuthBoundary = isMcpRequest && (localStdio || mcpOAuthRequired || Boolean(oauthClients))
   const authorizationHeader = header(req, 'authorization')?.trim() ?? ''
   if (mcpOAuthBoundary && !/^Bearer\s+[^\s]+$/iu.test(authorizationHeader)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'MCP 请求必须携带 OAuth Bearer token', 401)
   const passwordCookie = mcpOAuthBoundary ? undefined : (header(req, 'cookie') ?? '').split(';').map(value => value.trim()).find(value => value.startsWith('damai_session='))?.slice('damai_session='.length)
@@ -7025,6 +7147,10 @@ async function authenticate(req: IncomingMessage) {
       const session = await passwordAuthRepository.authenticate(rawToken)
       if (session) {
         const platform = session.account.accountType === 'platform'
+        const requestedWorkspace = header(req, 'x-workspace-id')?.trim()
+        if (!platform && requestedWorkspace && !session.account.workspaceIds.includes(requestedWorkspace)) {
+          throw new DomainError(ERROR_CODES.FORBIDDEN, '请求工作区不属于当前商家账号', 403)
+        }
         // Audit actor IDs must be stable opaque identity keys. Login identifiers
         // may contain characters such as "@", which are intentionally rejected
         // by the operation-audit identity grammar and must never become the
@@ -7081,6 +7207,17 @@ async function authenticate(req: IncomingMessage) {
   const token = authorization?.match(/^Bearer\s+([^\s]+)$/i)?.[1] ?? cookieToken
   if (!token) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '生产请求必须携带有效 Bearer token', 401)
   if (isMcpRequest) {
+    if (localStdio) {
+      const context = mcpOAuthRequestContext(req)
+      const oauthPrincipal = await passwordAuthRepository.authenticateMcpAccessToken({ ...context, clientId: 'local-desktop', accessToken: token })
+      if (!oauthPrincipal) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '本地插件 MCP token 无效或已过期', 401)
+      const requestedWorkspace = header(req, 'x-workspace-id')?.trim()
+      if (requestedWorkspace && requestedWorkspace !== oauthPrincipal.workspaceId) throw new DomainError(ERROR_CODES.FORBIDDEN, '本地插件 token 无权切换到其他工作区', 403)
+      const principal: RequestPrincipal = { credentialSource: 'mcp_oauth', actorId: oauthPrincipal.identityId, accountLogin: oauthPrincipal.accountLogin, identityId: oauthPrincipal.identityId, sessionId: oauthPrincipal.tokenId, sessionSubject: oauthPrincipal.tokenId, sessionKind: 'api_token', sessionIssuedAt: oauthPrincipal.issuedAt, sessionExpiresAt: oauthPrincipal.expiresAt, roles: ['merchant'], workspaces: [oauthPrincipal.workspaceId], workbench: 'workspace', availableWorkbenches: ['workspace'], identityStatus: 'active', mfaVerified: false }
+      requestPrincipals.set(req, principal)
+      await hydrateDurableAuthorizationContext(req, principal)
+      return
+    }
     const clients = oauthClients
     if (clients) {
       const context = mcpOAuthRequestContext(req)
@@ -7233,6 +7370,7 @@ const CUSTOMER_DATA_EXACT_METHODS = new Set([
   'ops.support.sla.report',
   'ops.support.sla.correction.create',
   'ops.support.sla.correction.decide',
+  'ops.alert.ack',
 ])
 const CUSTOMER_DATA_READ_METHODS = new Set(['brand.get', 'brand.list', 'brand-unit.list', 'brand-unit.listing.list', 'catalog.search', 'catalog.categories', 'catalog.image.get', 'catalog.sync.get', 'deliverable.list', 'asset.list', 'asset.get', 'content.get', 'content.list', 'feedback.list', 'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.learning.list', 'knowledge.competitor.list', 'task.history', 'task.timeline', 'publish.get', 'ops.audit.detail', 'support.customer.replies.list'])
 
@@ -7655,7 +7793,7 @@ function commercialActionCards() {
       method: 'subscription.change',
       label: '升级套餐增加店铺数',
       required_inputs: ['to_plan_code', 'billing_cycle', 'channel', 'reason', 'idempotency_key'],
-      input_schema: { type: 'object', properties: { to_plan_code: { type: 'string' }, billing_cycle: { type: 'string', enum: ['monthly', 'annual'] }, channel: { type: 'string', enum: ['alipay', 'wechat'] }, reason: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['to_plan_code', 'billing_cycle', 'channel', 'reason', 'idempotency_key'] },
+      input_schema: { type: 'object', properties: { to_plan_code: { type: 'string' }, billing_cycle: { type: 'string', enum: ['monthly', 'annual'] }, channel: { type: 'string', enum: ['alipay'] }, reason: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['to_plan_code', 'billing_cycle', 'channel', 'reason', 'idempotency_key'] },
       confirmation: 'interactive_confirmation',
     },
     {
@@ -8006,19 +8144,28 @@ function productionIdentityReadiness(source: NodeJS.ProcessEnv): ProductionReadi
   const merchantHostname = source.MERCHANT_BEARER_HOSTNAME?.trim().toLowerCase()
   if (!merchantHostname) reasons.push('merchant_bearer_hostname_missing')
   else if (merchantHostname.includes('*') || merchantHostname.includes('://') || merchantHostname.includes('/')) reasons.push('merchant_bearer_hostname_invalid')
-  if (source.MCP_OAUTH_REQUIRED !== 'true') reasons.push('mcp_oauth_must_be_required')
+  const integrationMode = mcpIntegrationMode(source)
+  if (!integrationMode) reasons.push('mcp_integration_mode_missing_or_invalid')
+  if (integrationMode === 'local_stdio') {
+    if (source.MCP_OAUTH_REQUIRED !== 'false') reasons.push('local_stdio_must_not_require_remote_oauth')
+    if (['MCP_OAUTH_CLIENTS', 'MCP_OAUTH_ISSUER', 'MCP_OAUTH_AUTHORIZATION_ENDPOINT', 'MCP_OAUTH_TOKEN_ENDPOINT'].some(key => source[key]?.trim())) reasons.push('local_stdio_remote_oauth_configuration_present')
+    if (source.OPENAI_APPS_CHALLENGE_TOKEN?.trim()) reasons.push('local_stdio_openai_challenge_present')
+  }
+  if (integrationMode === 'remote_oauth' && source.MCP_OAUTH_REQUIRED !== 'true') reasons.push('mcp_oauth_required_must_be_true')
   let publicOrigin = ''
   try {
     const publicUrl = new URL(source.PUBLIC_APP_BASE_URL ?? '')
-    if (publicUrl.protocol !== 'https:' || publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash) throw new Error('unsafe public origin')
+    if (publicUrl.protocol !== 'https:' || publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash || publicUrl.pathname !== '/') throw new Error('unsafe public origin')
     publicOrigin = publicUrl.origin
-  } catch { reasons.push('mcp_oauth_public_origin_missing_or_invalid') }
-  const issuer = source.MCP_OAUTH_ISSUER?.trim() || publicOrigin
-  if (!publicOrigin || issuer !== publicOrigin) reasons.push('mcp_oauth_issuer_must_be_self_hosted')
-  const authorizationEndpoint = source.MCP_OAUTH_AUTHORIZATION_ENDPOINT?.trim() || `${issuer}/oauth/authorize`
-  const tokenEndpoint = source.MCP_OAUTH_TOKEN_ENDPOINT?.trim() || `${issuer}/oauth/token`
-  if (!issuer || authorizationEndpoint !== `${issuer}/oauth/authorize` || tokenEndpoint !== `${issuer}/oauth/token`) reasons.push('mcp_oauth_endpoints_must_be_self_hosted')
-  if (!mcpOAuthClients(source)) reasons.push('mcp_oauth_clients_missing_or_invalid')
+  } catch { reasons.push('public_app_base_url_invalid') }
+  if (integrationMode === 'remote_oauth') {
+    const issuer = source.MCP_OAUTH_ISSUER?.trim() || ''
+    if (!publicOrigin || issuer !== publicOrigin) reasons.push('mcp_oauth_issuer_must_be_self_hosted')
+    const authorizationEndpoint = source.MCP_OAUTH_AUTHORIZATION_ENDPOINT?.trim() || ''
+    const tokenEndpoint = source.MCP_OAUTH_TOKEN_ENDPOINT?.trim() || ''
+    if (!issuer || authorizationEndpoint !== `${issuer}/oauth/authorize` || tokenEndpoint !== `${issuer}/oauth/token`) reasons.push('mcp_oauth_endpoints_must_be_self_hosted')
+    if (!mcpOAuthClients(source)) reasons.push('mcp_oauth_clients_missing_or_invalid')
+  }
   return { ready: reasons.length === 0, reasons }
 }
 
@@ -8317,6 +8464,11 @@ export async function productionCommercialReadiness(repository: CommercialCatalo
  * without echoing tokens, keys, endpoints, or bucket names. */
 function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; reasons?: string[] } } = {}) {
   const production = isProduction()
+  const configuredPlatformOperationsMode = process.env.PLATFORM_OPERATIONS_MODE?.trim().toLowerCase()
+  const platformOperationsMode = configuredPlatformOperationsMode === 'manual' || configuredPlatformOperationsMode === 'official_api'
+    ? configuredPlatformOperationsMode
+    : production ? 'invalid' : fixtureMode ? 'fixture' : 'manual'
+  const manualPlatformOperations = platformOperationsMode === 'manual'
   const relayGate = evaluatePlatformModelRelayGate(process.env)
   const paymentReadiness = paymentProviderReadiness()
   const contentProviderConfigured = evaluatePlatformModelGate(process.env, 'text').ready
@@ -8359,7 +8511,8 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
     }]
   }))
   const nextActions: string[] = []
-  if (fixtureMode) nextActions.push('当前是 Codex 本地 fixture 模式；如要操作真实店铺，请关闭 CONNECTOR_FIXTURE_MODE 并配置六个平台的官方 OAuth、API endpoint、scope 和回调地址；小红书/抖音在 readiness 完成前保持 fixture/API 或只读')
+  if (platformOperationsMode === 'invalid') nextActions.push('生产环境必须显式配置 PLATFORM_OPERATIONS_MODE=manual 或 official_api；当前保持上线阻断')
+  if (fixtureMode) nextActions.push('当前是 Codex 本地 fixture 模式；真实业务应显式选择人工运营（PLATFORM_OPERATIONS_MODE=manual）或官方接口（official_api）')
   if (production && !relayGate.ready) nextActions.push('配置 HTTPS MODEL_RELAY_BASE_URL 和平台托管的 MODEL_RELAY_API_KEY；生产模型 token 只允许经自有中转站转发')
   if (!contentProviderConfigured) nextActions.push('配置平台模型中转站、AI_MODEL 和平台密钥后，启用真实商品文案生成；当前文案生成使用本地规则/fixture 回退')
   if (!imageProviderConfigured) nextActions.push('配置平台模型中转站、IMAGE_MODEL 和平台密钥后，启用真实商品主图生成；当前主图生成使用本地规则/fixture 回退')
@@ -8369,7 +8522,7 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
   if (!embeddingProviderConfigured) nextActions.push('知识库向量索引尚未启用：需配置 EMBEDDING_MODEL/EMBEDDING_DIMENSIONS，并完成后台索引专用授权、预算预留和用量结算后设置 KNOWLEDGE_VECTOR_INDEX_ENABLED=true；当前保持词法索引')
   if (!modelCostGateConfigured) nextActions.push('配置平台模型 RPM、TPM 和每日人民币成本上限；成本门禁未通过时生产模型请求保持阻断')
   if (production && !paymentReadiness.ready) nextActions.push('配置支付宝/微信服务端 checkout provider、商户号、回调验签、对账和退款能力：' + paymentReadiness.reasons.join('、'))
-  if (!vaultConfigured) nextActions.push('配置 VAULT_ADDR 和 VAULT_TOKEN（或接入外部凭据服务），让 Codex 安全读取商家授权凭据；不要把平台 token 放进插件参数')
+  if (!manualPlatformOperations && !vaultConfigured) nextActions.push('official_api 模式需配置 VAULT_ADDR 和 VAULT_TOKEN（或接入外部凭据服务），让服务端安全读取商家授权凭据；不要把平台 token 放进插件参数')
   if (!objectStorageConfigured) nextActions.push('配置生产对象存储 bucket、region、HTTPS endpoint 和 KMS key，素材上传才可切换到云端持久化')
   if (!dataLifecycle.configured) nextActions.push('补齐生产数据生命周期、对象版本化和存储控制引用；缺少删除与保留门禁时禁止接收真实商家数据')
   if (production && alertNotifications.enabled && !alertNotifications.ready) nextActions.push(`配置可验证的告警 Webhook、允许主机和签名密钥：${alertNotifications.reason}`)
@@ -8379,10 +8532,11 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
     }
   }
   if (production && !commercialReadiness.ready) nextActions.push(`商业目录/费率未通过生产准入：${commercialReadiness.reasons?.join('、') || 'commercial_readiness_not_checked'}`)
-  if (!capabilityEvidence.configured) nextActions.push('运营后台未检测到通过发布门禁的平台 capability 证据（六平台范围）；example、fixture 或 test_e2e 证据不能标记生产可写，社交平台未就绪时必须保持 fixture/API 或只读')
+  if (!manualPlatformOperations && !capabilityEvidence.configured) nextActions.push('official_api 模式未检测到通过发布门禁的平台 capability 证据（六平台范围）；example、fixture 或 test_e2e 证据不能标记生产可写')
   if (!capacityEvidence.configured) nextActions.push('运营后台未检测到通过真实云门禁的容量报告；必须绑定 release、profile、云环境、零 mock 和签署人')
-  if (!production) nextActions.push('当前不是生产模式；上线前还需完成真实平台 canary、TLS/DNS/WAF、备份恢复和容量压测')
-  const productionGate = production && !fixtureMode && commercialReadiness.ready && controlPlaneReadiness.ready && relayGate.ready && paymentReadiness.ready && Object.values(platformDiagnostics).every(item => item.ready) && contentProviderConfigured && imageProviderConfigured && imageEditProviderConfigured && imageFactsConfigured && videoProviderConfigured && embeddingProviderConfigured && modelCostGateConfigured && objectStorageConfigured && vaultConfigured && dataLifecycle.configured && alertNotifications.ready && capabilityEvidence.configured && capacityEvidence.configured
+  if (!production) nextActions.push('当前不是生产模式；上线前还需完成 TLS/DNS/WAF、备份恢复、容量压测及所选运营模式验收')
+  const platformOperationsReady = manualPlatformOperations || (platformOperationsMode === 'official_api' && Object.values(platformDiagnostics).every(item => item.ready) && vaultConfigured && capabilityEvidence.configured)
+  const productionGate = production && !fixtureMode && platformOperationsMode !== 'invalid' && platformOperationsReady && commercialReadiness.ready && controlPlaneReadiness.ready && relayGate.ready && paymentReadiness.ready && contentProviderConfigured && imageProviderConfigured && imageEditProviderConfigured && imageFactsConfigured && videoProviderConfigured && embeddingProviderConfigured && modelCostGateConfigured && objectStorageConfigured && dataLifecycle.configured && alertNotifications.ready && capacityEvidence.configured
   const payment = paymentCapabilityStatus({
     mode: process.env.PAYMENT_MODE,
     providerReady: paymentReadiness.ready,
@@ -8390,6 +8544,8 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
     fixtureMode,
     productionGate,
     reasons: paymentReadiness.reasons,
+    supportedChannels: paymentReadiness.supportedChannels,
+    channelReadiness: paymentReadiness.channelReadiness,
   })
   return {
     mode: production ? 'production' : fixtureMode ? 'fixture' : 'local',
@@ -8407,8 +8563,9 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
     productionControls: controlPlaneReadiness,
     commercialReadiness,
     dataLifecycle,
+    platformOperations: { mode: platformOperationsMode, ready: platformOperationsReady, automatedWritesEnabled: platformOperationsMode === 'official_api' && platformOperationsReady, manualReportsAreOfficialReceipts: false },
     productionEvidence: { capability: capabilityEvidence, capacity: capacityEvidence },
-    credentialProvider: { configured: vaultConfigured, mode: fixtureMode ? 'fixture' : vaultConfigured ? 'vault_or_external' : 'none' },
+    credentialProvider: { configured: vaultConfigured, required: platformOperationsMode === 'official_api', mode: fixtureMode ? 'fixture' : vaultConfigured ? 'vault_or_external' : 'none' },
     platforms: platformDiagnostics,
     payment: { mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : 'fixture', ...payment },
     productionGate,
@@ -8671,11 +8828,14 @@ function merchantPlatformOptions(workspaceId: string, directory = workspaceStore
 
 function workspaceOnboarding(workspaceId: string, directory = workspaceStoreDirectory(workspaceId)) {
   const products = service.listProducts(workspaceId)
-  // Fixture accounts remain visible for demos, but never satisfy the formal
-  // merchant onboarding gate. Only readable accounts backed by the official
-  // platform API can unlock product selection and downstream tasks.
+  const manualOperations = process.env.PLATFORM_OPERATIONS_MODE === 'manual'
+  // Manual operations use credential-free, tenant-scoped account records that
+  // operations staff assign to a merchant. They identify the target store but
+  // never imply an OAuth connection or an official platform receipt.
   const realDirectory = directory.filter(store => store.dataMode === 'official_api' && store.readable)
-  const selectedStoreKeys = new Set(realDirectory.map(store => `${store.platform}:${store.accountId}`))
+  const manualDirectory = directory.filter(store => store.dataMode === 'account_record_only')
+  const eligibleDirectory = manualOperations ? manualDirectory : realDirectory
+  const selectedStoreKeys = new Set(eligibleDirectory.map(store => `${store.platform}:${store.accountId}`))
   const boundProducts = products.filter(product => product.accountId ? selectedStoreKeys.has(`${product.platform}:${product.accountId}`) : false)
   const assets = service.listAssets(workspaceId)
   const tasks = service.listTasks(workspaceId).filter(task => task.accountId ? selectedStoreKeys.has(`${task.platform}:${task.accountId}`) : false)
@@ -8684,14 +8844,14 @@ function workspaceOnboarding(workspaceId: string, directory = workspaceStoreDire
   const deliverableTasks = tasks.filter(task => service.listContentVersions(workspaceId, task.id).some(version => version.state === 'approved' || version.state === 'delivered'))
   const steps = [
     { id: 'workspace', title: '工作区', summary: '当前工作区已建立，后续状态按工作区隔离', state: 'complete', entryMethod: 'workspace.health', nextMethod: 'workspace.health' },
-    { id: 'bind-store', title: '连接店铺', summary: realDirectory.length ? `已绑定 ${realDirectory.length} 家真实店铺` : directory.length ? '当前只有演示店铺，正式商品任务需要先连接真实店铺' : '先选择平台并完成官方授权', state: realDirectory.length ? 'complete' : 'required', entryMethod: 'platform.connect', nextMethod: 'platform.connect' },
-    { id: 'choose-product', title: '选择商品', summary: boundProducts.length ? `已找到 ${boundProducts.length} 个商品，可按店铺选择` : '绑定真实店铺后同步或导入商品', state: !realDirectory.length ? 'blocked' : boundProducts.length ? 'next' : 'required', entryMethod: 'catalog.search', nextMethod: 'catalog.search' },
+    { id: 'bind-store', title: manualOperations ? '确认运营店铺' : '连接店铺', summary: eligibleDirectory.length ? `已配置 ${eligibleDirectory.length} 家${manualOperations ? '人工运营' : '官方授权'}店铺` : manualOperations ? '请联系平台运营为当前商家建立不含凭据的店铺记录' : directory.length ? '当前只有演示店铺，正式商品任务需要先连接真实店铺' : '先选择平台并完成官方授权', state: eligibleDirectory.length ? 'complete' : 'required', entryMethod: manualOperations ? 'workspace.health' : 'platform.connect', nextMethod: manualOperations ? 'workspace.health' : 'platform.connect' },
+    { id: 'choose-product', title: '选择商品', summary: boundProducts.length ? `已找到 ${boundProducts.length} 个商品，可按店铺选择` : manualOperations ? '等待运营导入公开链接或商家提供的商品资料' : '绑定真实店铺后同步或导入商品', state: !eligibleDirectory.length ? 'blocked' : boundProducts.length ? 'next' : 'required', entryMethod: 'catalog.search', nextMethod: 'catalog.search' },
     { id: 'add-assets', title: '上传素材与资料', summary: readyAssets.length ? `已确认 ${readyAssets.length} 份可用素材` : assets.length ? '素材已上传，仍需完成扫描、权益和事实确认' : '添加商品图片、品牌资料和知识库文件', state: !boundProducts.length ? 'blocked' : readyAssets.length ? 'complete' : assets.length ? 'next' : 'required', entryMethod: 'asset.upload', nextMethod: 'asset.upload' },
     { id: 'start-content', title: '生成并审核', summary: deliverableTasks.length ? `已有 ${deliverableTasks.length} 个内容交付` : confirmedProducts.length ? '商品事实已确认，可以开始文案、主图或视频分镜' : '先确认商品、价格、库存和图片事实', state: !boundProducts.length || !confirmedProducts.length ? 'blocked' : deliverableTasks.length ? 'complete' : 'next', entryMethod: 'task.understand', nextMethod: 'task.understand' },
     { id: 'publish', title: '发布', summary: deliverableTasks.length ? '已有已批准交付物，可查看发布前预检' : '完成内容审核后才能进入发布预检', state: deliverableTasks.length ? 'next' : 'blocked', entryMethod: 'publish.prepare', nextMethod: 'publish.prepare' },
   ] as const
   const current = steps.find(step => step.state === 'required' || step.state === 'next' || step.state === 'blocked') ?? steps.at(-1)!
-  return { steps, currentStep: { id: current.id, title: current.title, state: current.state, entryMethod: current.entryMethod }, summary: { stores: realDirectory.length, fixtureStores: directory.length - realDirectory.length, products: boundProducts.length, unboundProducts: products.length - boundProducts.length, confirmedProducts: confirmedProducts.length, assets: assets.length, readyAssets: readyAssets.length, tasks: tasks.length, deliverableTasks: deliverableTasks.length } }
+  return { steps, currentStep: { id: current.id, title: current.title, state: current.state, entryMethod: current.entryMethod }, summary: { stores: eligibleDirectory.length, officialStores: realDirectory.length, manualStores: manualDirectory.length, fixtureStores: directory.length - realDirectory.length - manualDirectory.length, products: boundProducts.length, unboundProducts: products.length - boundProducts.length, confirmedProducts: confirmedProducts.length, assets: assets.length, readyAssets: readyAssets.length, tasks: tasks.length, deliverableTasks: deliverableTasks.length } }
 }
 
 function onboardingPrimaryAction(step: ReturnType<typeof workspaceOnboarding>['steps'][number]) {
@@ -8915,6 +9075,9 @@ function resolveWorkspace(req: IncomingMessage, candidate?: unknown): string {
     : undefined
   if (!fromHeader && !sessionWorkspace && requiresStrictAuth()) throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_REQUIRED, '受控环境请求必须携带 X-Workspace-Id', 401)
   const workspaceId = fromHeader || sessionWorkspace || 'ws_demo'
+  if (requiresStrictAuth() && principal?.workbench === 'workspace' && principal.workspaces.length > 0 && !principal.workspaces.includes(workspaceId)) {
+    throw new DomainError(ERROR_CODES.FORBIDDEN, '请求工作区与认证身份不一致', 403)
+  }
   knownWorkspaces.add(workspaceId)
   if (candidate !== undefined && candidate !== null && String(candidate) !== '' && String(candidate) !== workspaceId) {
     throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_MISMATCH, '请求工作区与身份工作区不一致', 403)
@@ -11721,18 +11884,16 @@ async function updateCustomerDeliveryWithRequiredEvidence(input: Parameters<Cust
   }
   const paymentStatus = input.patch.paymentStatus ?? current?.paymentStatus
   const paymentRefs = input.patch.paymentEvidenceRefs === undefined ? current?.paymentEvidenceRefs ?? [] : evidenceRefs(input.patch.paymentEvidenceRefs, '付款凭证')
-  // Legacy paid/trained facts may predate the required evidence fields. Repair
-  // each group independently; unrelated edits must not deadlock the repair.
+  // Payment and training are manually attested operations. Evidence is accepted
+  // when supplied, but is not an artificial prerequisite for the workflow.
   const paymentChanged = ['paymentStatus', 'paymentEvidenceRefs', 'paymentDate'].some(key => Object.hasOwn(input.patch, key))
-  if (paymentChanged && paymentStatus === 'paid') {
-    if (!paymentRefs.length) throw new DomainError('CUSTOMER_DELIVERY_PAYMENT_EVIDENCE_REQUIRED', '标记已付款前必须上传付款凭证', 409)
+  if (paymentChanged && paymentStatus === 'paid' && paymentRefs.length) {
     await Promise.all(paymentRefs.map(ref => requireBoundCustomerDeliveryAsset(input.workspaceId, input.id, 'payment', ref)))
   }
   const trainingCompleted = input.patch.trainingCompleted ?? current?.trainingCompleted
   const trainingRefs = input.patch.trainingEvidenceRefs === undefined ? current?.trainingEvidenceRefs ?? [] : evidenceRefs(input.patch.trainingEvidenceRefs, '培训凭证')
   const trainingChanged = ['trainingCompleted', 'trainingEvidenceRefs'].some(key => Object.hasOwn(input.patch, key))
-  if (trainingChanged && trainingCompleted) {
-    if (!trainingRefs.length) throw new DomainError('CUSTOMER_DELIVERY_TRAINING_EVIDENCE_REQUIRED', '完成培训前必须上传培训凭证', 409)
+  if (trainingChanged && trainingCompleted && trainingRefs.length) {
     await Promise.all(trainingRefs.map(ref => requireBoundCustomerDeliveryAsset(input.workspaceId, input.id, 'training', ref)))
   }
   return invokeCustomerDeliveryDomain(() => repository.update(input))
@@ -12724,15 +12885,24 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const setup = setupDiagnostics()
       await persistenceReady
       const brandNavigation = await accessibleBrandNavigation(req, workspaceId)
-      const pointBalance = await persistence.creativePoints?.getBalance(workspaceId)
+      // merchant.start is intentionally usable as the conversational entry
+      // point for operators without billing-read capability, but it must not
+      // turn into a side channel for workspace balances or ledger revisions.
+      const canReadWorkspaceBilling = !requiresStrictAuth() || effectiveAuthorizationProjection(requestPrincipals.get(req), workspaceId)
+        .capabilities.includes('billing.workspace.read')
+      const pointBalance = canReadWorkspaceBilling
+        ? await persistence.creativePoints?.getBalance(workspaceId)
+        : undefined
       // Billing is the authoritative monetary source for commercial access.
       // The legacy wallet projection is retained only for historical
       // reconciliation and must not disagree with billing.status in the
       // merchant entry card.
-      const authoritativeBalanceFen = persistence.billing
-        ? await persistence.billing.balanceFen(workspaceId)
-        : walletBalanceFen(workspaceId)
-      const pointAccessAllowed = pointBalance?.availablePoints !== null && pointBalance !== undefined && pointBalance.availablePoints > 0
+      const authoritativeBalanceFen = canReadWorkspaceBilling
+        ? persistence.billing
+          ? await persistence.billing.balanceFen(workspaceId)
+          : walletBalanceFen(workspaceId)
+        : undefined
+      const pointAccessAllowed = !canReadWorkspaceBilling || (pointBalance?.availablePoints !== null && pointBalance !== undefined && pointBalance.availablePoints > 0)
       const current = onboarding.currentStep
       const platformOptions = merchantPlatformOptions(workspaceId, directory)
       const nextPrompt = current.id === 'bind-store'
@@ -12756,14 +12926,15 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         nextInstruction: `你可以直接说：“${nextPrompt}”。`,
         onboarding: onboarding.steps,
         summary: onboarding.summary,
-        creative_points: { balance_state: pointBalance?.availablePoints === null || !pointBalance ? 'unknown' : 'known', available_points: pointBalance?.availablePoints ?? null, reserved_points: pointBalance?.reservedPoints ?? null, access_revision: pointBalance?.availablePoints === null || !pointBalance ? null : String(pointBalance.revision), allowed: pointAccessAllowed, recovery_methods: ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'] },
+        creative_points: { balance_state: !canReadWorkspaceBilling ? 'restricted' : pointBalance?.availablePoints === null || !pointBalance ? 'unknown' : 'known', available_points: pointBalance?.availablePoints ?? null, reserved_points: pointBalance?.reservedPoints ?? null, access_revision: pointBalance?.availablePoints === null || !pointBalance ? null : String(pointBalance.revision), allowed: pointAccessAllowed, recovery_methods: ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'] },
         // Keep the merchant entry card aligned with the V2 commercial flow.
         // The legacy arbitrary-amount recharge endpoint is intentionally not
         // advertised here: it is a compatibility surface, not a supported
         // point-pack purchase path. Payment channels are only exposed by a
         // configured V2 checkout (which is not part of this response yet).
         wallet: {
-          balance_cny: (authoritativeBalanceFen / 100).toFixed(2),
+          balance_cny: authoritativeBalanceFen === undefined ? null : (authoritativeBalanceFen / 100).toFixed(2),
+          balance_state: canReadWorkspaceBilling ? 'known' : 'restricted',
           // This compatibility field reflects commercial access, which is
           // unlocked by creative points rather than the legacy RMB wallet.
           unlocked: pointAccessAllowed,
@@ -12772,7 +12943,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           order_method: 'commercial.order.create',
           payment_status_method: 'commercial.order.payment.get',
           payment_channels: [],
-          message: authoritativeBalanceFen > 0
+          message: authoritativeBalanceFen !== undefined && authoritativeBalanceFen > 0
             ? '钱包余额可用于历史兼容对账；购买创意点请使用服务端可售套餐'
             : '当前未解锁商业操作，请先查看商业访问和可售套餐',
         },
@@ -14609,7 +14780,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result({ items: items.slice(0, Math.min(500, Math.max(1, limit))), aggregate: true, truncated: items.length > limit })
     }
     case 'ops.alert.ack': {
-      const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'operator', 'support', 'platform_ops'])
+      const actorId = requireWorkspaceDataRole(req)
       const alert = await (persistence.alerts ?? memoryAlerts).acknowledge({ workspaceId, id: required(params, 'alert_id'), actorId, reason: required(params, 'reason') })
       await recordOperationAudit({ workspaceId, actorId, action: 'ops.alert.ack', resourceType: 'operational_alert', resourceId: alert.id, before: { status: 'open' }, after: alert as unknown as Record<string, unknown>, reason: required(params, 'reason') })
       return result(alert)
@@ -14690,7 +14861,25 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const publish = service.listPublishJobs(workspaceId).filter(job => {
         const task = taskForQueue(job.taskId)
         return Boolean(task && matchesTask(job.taskId, job.platform, job.accountId, task.productId, job.remoteState ?? job.state))
-      }).sort((left, right) => right.createdAt.localeCompare(left.createdAt)).slice(0, limit).map(job => ({ id: job.id, taskId: job.taskId, contentVersionId: job.contentVersionId, platform: job.platform, accountId: job.accountId ?? null, state: job.state, remoteState: job.remoteState ?? null, remoteId: job.remoteId ?? null, requestId: job.requestId ?? null, rejection: job.rejection ? { rawCode: job.rejection.rawCode, message: job.rejection.message, fields: job.rejection.fields.map(field => ({ path: field.path, rawCode: field.rawCode ?? null, message: field.message })) } : null, operatorAcknowledgement: job.operatorAcknowledgement ?? null, assignedOperatorId: job.assignedOperatorId ?? null, assignedAt: job.assignedAt ?? null, revision: job.revision, createdAt: job.createdAt, remoteObservedAt: job.remoteObservedAt ?? null }))
+      }).sort((left, right) => right.createdAt.localeCompare(left.createdAt)).slice(0, limit).map(job => {
+        const manual = service.listManualPublishRecords(workspaceId, { taskId: job.taskId, contentVersionId: job.contentVersionId })[0]
+        const manualPublish = {
+          ...(manual ? { id: manual.id, revision: manual.revision } : {}),
+          status: manual?.state ?? 'export_ready',
+          deliveryBundleHash: manual?.deliveryBundleHash ?? job.payloadHash,
+          platformItemId: manual?.platformContentId ?? null,
+          publicUrl: manual?.publicUrl ?? null,
+          reportedAt: manual?.operatedAt ?? manual?.recordedAt ?? null,
+          reportedBy: manual?.publisherId ?? manual?.actorId ?? null,
+          reviewedAt: manual?.reviewedAt ?? null,
+          reviewedBy: manual?.reviewerId ?? null,
+          evidence: (manual?.evidenceAssetIds ?? []).map((reference, index) => ({ id: `${manual!.id}:evidence:${index}`, kind: 'screenshot' as const, reference, note: manual?.differenceNote ?? null, recordedBy: manual!.actorId, recordedAt: manual!.recordedAt })),
+          writeCapability: isPlatformOperations(req)
+            ? { method: 'ops.marketing.publish.manual-evidence.record' as const, writable: Boolean(job.accountId), ...(!job.accountId ? { blockingReason: '发布任务未绑定目标店铺账号' } : {}) }
+            : { method: 'ops.marketing.publish.manual-evidence.record' as const, writable: false, blockingReason: '仅平台运营可为指定商家登记人工发布证据' },
+        }
+        return { id: job.id, taskId: job.taskId, contentVersionId: job.contentVersionId, platform: job.platform, accountId: job.accountId ?? null, state: job.state, remoteState: job.remoteState ?? null, remoteId: job.remoteId ?? null, requestId: job.requestId ?? null, rejection: job.rejection ? { rawCode: job.rejection.rawCode, message: job.rejection.message, fields: job.rejection.fields.map(field => ({ path: field.path, rawCode: field.rawCode ?? null, message: field.message })) } : null, operatorAcknowledgement: job.operatorAcknowledgement ?? null, assignedOperatorId: job.assignedOperatorId ?? null, assignedAt: job.assignedAt ?? null, revision: job.revision, createdAt: job.createdAt, remoteObservedAt: job.remoteObservedAt ?? null, manualPublish }
+      })
       const batches = (await Promise.all([...publishBatches.values()].filter(batch => batch.workspaceId === workspaceId && (!filterPlatform && !filterAccountId && !filterProductId && !filterTaskId && !filterState || batch.items.some(item => {
         const task = taskForQueue(item.taskId)
         return Boolean(task && matchesTask(item.taskId, task.platform, task.accountId, task.productId, item.state))
@@ -15573,6 +15762,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         return result(await inFlight.promise)
       }
       const providerMode = process.env.PAYMENT_MODE === 'provider'
+      if (providerMode) requirePaymentChannelReady(channel)
       const creation = (async () => {
       if (persistence.billing) {
         const durableExisting = await persistence.billing.getOrderByIdempotencyKey(workspaceId, idempotencyKey)
@@ -15715,11 +15905,28 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           providerRefundId = providerRefund.providerRefundId
         } catch (error) {
           const rejected = (error as { code?: string })?.code === 'PAYMENT_PROVIDER_REFUND_REJECTED'
-          if (rejected) await releaseRechargeRefund({ workspaceId, orderId, reservationKey: reservation.orderId!, actorId, reason: '支付服务商明确拒绝退款，释放钱包预留' })
-          const code = rejected ? 'PAYMENT_PROVIDER_REFUND_REJECTED' : 'PAYMENT_PROVIDER_REFUND_OUTCOME_UNKNOWN'
-          const outcome = { order_id: orderId, refund_request_id: reservation.id, reservation_key: reservation.orderId, reservation_released: rejected, code }
+          const release = rejected ? await releaseRechargeRefund({ workspaceId, orderId, reservationKey: reservation.orderId!, actorId, reason: '支付服务商明确拒绝退款，释放钱包预留' }) : undefined
+          const currentOrder = rejected && !release ? await getRechargeOrderSnapshot(workspaceId, orderId) : undefined
+          const concurrentStateChange = rejected && !release
+          const code = concurrentStateChange ? 'PAYMENT_REFUND_CONCURRENT_STATE_CHANGE' : rejected ? 'PAYMENT_PROVIDER_REFUND_REJECTED' : 'PAYMENT_PROVIDER_REFUND_OUTCOME_UNKNOWN'
+          const outcome = {
+            order_id: orderId,
+            refund_request_id: reservation.id,
+            reservation_key: reservation.orderId,
+            reservation_released: Boolean(release),
+            code,
+            ...(release ? { release_transaction_id: release.id } : {}),
+            ...(concurrentStateChange ? { concurrent_state_change: true, current_order_state: currentOrder?.state ?? 'unknown' } : {}),
+          }
           await recordOperationAudit({ workspaceId, actorId, action: 'billing.refund', resourceType: 'billing_order', resourceId: orderId, before, after: outcome, reason })
-          throw new DomainError(code, rejected ? '支付服务商明确拒绝退款，钱包预留已释放' : '支付服务商退款结果未确认，已保留钱包预留并等待对账', rejected ? 409 : 503, { ...outcome, next_actions: ['billing.reconciliation'] })
+          throw new DomainError(
+            code,
+            concurrentStateChange ? '支付服务商明确拒绝退款，但订单状态已并发变更；未写入钱包预留释放，需人工核对既有退款事实'
+              : rejected ? '支付服务商明确拒绝退款，钱包预留已释放'
+                : '支付服务商退款结果未确认，已保留钱包预留并等待对账',
+            rejected ? 409 : 503,
+            { ...outcome, next_actions: ['billing.reconciliation'] },
+          )
         }
       }
       const refund = await completeRechargeRefund({ workspaceId, orderId, reservationKey: reservation.orderId!, actorId, reason, providerRefundId })
@@ -18321,6 +18528,71 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await enforceTaskBrandAccess(req, service.getTask(job.taskId), 'viewer')
       return result({ ...jobWithQueueMetadata(job, workspaceId, 'publish'), workflow: projectPublishWorkflow(workspaceId, job) })
     }
+    case 'ops.marketing.publish.manual-evidence.record': {
+      const actorId = requireOperationsRole(req, ['platform_ops'])
+      const targetWorkspaceId = required(params, 'target_workspace_id')
+      let evidenceAssetIds: string[]
+      let differences: unknown[]
+      try {
+        const parsed = JSON.parse(required(params, 'evidence_refs_json'))
+        if (!Array.isArray(parsed) || parsed.some(value => typeof value !== 'string' || !value.trim())) throw new Error('invalid evidence refs')
+        evidenceAssetIds = [...new Set(parsed.map(value => value.trim()))]
+      } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'evidence_refs_json 必须是字符串数组', 400) }
+      try {
+        const parsed = typeof params.differences_json === 'string' ? JSON.parse(params.differences_json) : []
+        if (!Array.isArray(parsed)) throw new Error('invalid differences')
+        differences = parsed
+      } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'differences_json 必须是数组', 400) }
+      const expectedRevision = Number(required(params, 'expected_revision'))
+      if (expectedRevision !== 1) throw new DomainError('MANUAL_PUBLISH_REVISION_CONFLICT', '人工发布记录版本已变化，请刷新后重试', 409)
+      const state = required(params, 'status') as import('../../../packages/application/src/service.js').ManualPublishState
+      if (!['manual_publish_in_progress', 'manual_publish_reported', 'manual_review_required'].includes(state)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '人工发布状态无效', 400)
+      const record = service.recordManualPublish({
+        workspaceId: targetWorkspaceId,
+        taskId: required(params, 'task_id'),
+        contentVersionId: required(params, 'content_version_id'),
+        platform: required(params, 'platform') as Platform,
+        accountId: required(params, 'account_id'),
+        deliveryBundleHash: required(params, 'delivery_bundle_hash'),
+        state,
+        actorId,
+        publisherId: actorId,
+        operatedAt: required(params, 'occurred_at'),
+        ...(typeof params.reviewer_id === 'string' && params.reviewer_id.trim() ? { reviewerId: params.reviewer_id.trim(), reviewedAt: new Date().toISOString() } : {}),
+        ...(typeof params.remote_content_id === 'string' ? { platformContentId: params.remote_content_id } : {}),
+        ...(typeof params.public_url === 'string' ? { publicUrl: params.public_url } : {}),
+        ...(typeof params.platform_display_status === 'string' ? { platformDisplayStatus: params.platform_display_status } : {}),
+        evidenceAssetIds,
+        ...(differences.length ? { differenceNote: JSON.stringify(differences) } : state === 'manual_review_required' ? { differenceNote: required(params, 'reason') } : {}),
+        idempotencyKey: required(params, 'idempotency_key'),
+      })
+      await persistSnapshot(targetWorkspaceId, 'manual_publish_record', record, record as unknown as Record<string, unknown>)
+      await recordOperationAudit({ workspaceId: targetWorkspaceId, actorId, action: 'ops.marketing.publish.manual-evidence.record', resourceType: 'manual_publish_record', resourceId: record.id, before: {}, after: record as unknown as Record<string, unknown>, reason: required(params, 'reason') })
+      return result(record)
+    }
+    case 'publish.manual.get': {
+      const recordId = required(params, 'manual_publish_report_id')
+      const record = service.listManualPublishRecords(workspaceId).find(item => item.id === recordId)
+      if (!record) throw new DomainError('MANUAL_PUBLISH_RECORD_NOT_FOUND', '人工发布记录不存在', 404)
+      await enforceTaskBrandAccess(req, service.getTask(record.taskId), 'viewer')
+      return result(record)
+    }
+    case 'publish.manual.list': {
+      const taskId = typeof params.task_id === 'string' && params.task_id.trim() ? params.task_id.trim() : undefined
+      const contentVersionId = typeof params.content_version_id === 'string' && params.content_version_id.trim() ? params.content_version_id.trim() : undefined
+      const { limit, offset } = mcpPagination(params)
+      const visible: import('../../../packages/application/src/service.js').ManualPublishRecord[] = []
+      for (const record of service.listManualPublishRecords(workspaceId, { ...(taskId ? { taskId } : {}), ...(contentVersionId ? { contentVersionId } : {}) })) {
+        try {
+          await enforceTaskBrandAccess(req, service.getTask(record.taskId), 'viewer')
+          visible.push(record)
+        } catch (error) {
+          if (error instanceof DomainError) continue
+          throw error
+        }
+      }
+      return result({ items: visible.slice(offset, offset + limit), total: visible.length, limit, offset })
+    }
     case 'automation.policy.get': {
       const platform = typeof params.platform === 'string' ? params.platform as Platform : undefined
       const accountId = typeof params.account_id === 'string' && params.account_id.trim() ? params.account_id.trim() : undefined
@@ -18872,7 +19144,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
 async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', `${publicRequestOrigin(req)}/`)
   const path = url.pathname
-  const isPasswordAuthRoute = path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm' || path === '/v1/auth/password/change' || path === '/v1/auth/mcp-token' || path === '/v1/auth/mcp-token/refresh'
+  const isPasswordAuthRoute = path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm' || path === '/v1/auth/password/change' || path === '/v1/auth/mcp-token' || path === '/v1/auth/mcp-token/refresh' || path === '/v1/auth/mcp-token/revoke'
   const passwordSessionToken = () => {
     const encoded = (header(req, 'cookie') ?? '').split(';').map(value => value.trim()).find(value => value.startsWith('damai_session='))?.slice('damai_session='.length)
     if (!encoded) return ''
@@ -18928,6 +19200,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       return send(res, 200, 'unknown', { account: current.account, session_id: current.sessionId, issued_at: current.issuedAt, expires_at: current.expiresAt, workspaces: current.account.workspaceIds, roles: current.account.roles }, null, req)
     }
     if (req.method === 'POST' && path === '/v1/auth/mcp-token') {
+      if (isProduction() && mcpIntegrationMode() !== 'local_stdio') throw new DomainError('MCP_LOCAL_TOKEN_FLOW_DISABLED', '当前部署未启用本地插件凭据', 409)
       // Local desktop installs do not use ChatGPT's remote MCP OAuth.  They
       // exchange the already-authenticated, HttpOnly merchant session for a
       // short-lived, workspace-scoped MCP bearer.  The password never leaves
@@ -18951,6 +19224,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       return send(res, 200, workspaceId, { access_token: pair.accessToken, refresh_token: pair.refreshToken, token_type: 'Bearer', expires_in: pair.expiresIn, scope: pair.scope.join(' '), workspace_id: workspaceId, account_login: current.account.login }, null, req)
     }
     if (req.method === 'POST' && path === '/v1/auth/mcp-token/refresh') {
+      if (isProduction() && mcpIntegrationMode() !== 'local_stdio') throw new DomainError('MCP_LOCAL_TOKEN_FLOW_DISABLED', '当前部署未启用本地插件凭据', 409)
       // Refresh is intentionally token-only: callers must not be able to
       // mint a new bearer by presenting an arbitrary workspace or account.
       const origin = publicRequestOrigin(req)
@@ -18964,6 +19238,18 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         const pair = await passwordAuthRepository.refreshMcpOAuthToken({ ...context, refreshToken })
         return send(res, 200, 'unknown', { access_token: pair.accessToken, refresh_token: pair.refreshToken, token_type: 'Bearer', expires_in: pair.expiresIn, scope: pair.scope.join(' ') }, null, req)
       } catch { throw new DomainError('MCP_OAUTH_INVALID_GRANT', '本地连接凭据已失效，请重新登录商家后台', 401) }
+    }
+    if (req.method === 'POST' && path === '/v1/auth/mcp-token/revoke') {
+      if (isProduction() && mcpIntegrationMode() !== 'local_stdio') throw new DomainError('MCP_LOCAL_TOKEN_FLOW_DISABLED', '当前部署未启用本地插件凭据', 409)
+      const origin = publicRequestOrigin(req)
+      const requestOrigin = header(req, 'origin')?.trim()
+      if (requestOrigin && requestOrigin !== origin) throw new DomainError('AUTH_CSRF_ORIGIN_INVALID', '连接断开来源无效', 403)
+      const input = await body(req, 16 * 1024)
+      const token = String(input.refresh_token ?? input.refreshToken ?? input.access_token ?? input.accessToken ?? '').trim()
+      if (!token) throw new DomainError('MCP_OAUTH_INVALID_GRANT', '缺少待撤销的本地连接凭据', 400)
+      const context = { clientId: 'local-desktop', issuer: origin, audience: `${origin}/mcp`, resource: `${origin}/mcp`, scope: ['merchant'] }
+      await passwordAuthRepository.revokeMcpOAuthToken({ ...context, token, tokenTypeHint: input.refresh_token || input.refreshToken ? 'refresh_token' : 'access_token' })
+      return send(res, 200, 'unknown', { revoked: true }, null, req)
     }
     if (req.method === 'POST' && path === '/v1/auth/logout') {
       await passwordAuthRepository.logout(passwordSessionToken())
@@ -19995,10 +20281,18 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const summary = {
       state: reconciliation.state, limit, checked: reconciliation.checked,
       payment_checked: reconciliation.payment_checked, refund_checked: reconciliation.refund_checked,
+      deferred: reconciliation.deferred, provider_orders: reconciliation.provider_orders, total_query_budget: reconciliation.total_query_budget,
       settled: reconciliation.settled.length, pending: reconciliation.pending.length, failed: reconciliation.failed.length,
       refund_settled: reconciliation.refund_settled.length, refund_pending: reconciliation.refund_pending.length, refund_failed: reconciliation.refund_failed.length,
+      audit_projection_failures: reconciliation.audit_projection_failures.length, queue_rotation_failures: reconciliation.queue_rotation_failures.length,
     }
-    await recordOperationAudit({ workspaceId, actorId, action: 'billing.reconciliation.worker', resourceType: 'billing_reconciliation', resourceId: workspaceId, before: {}, after: summary, reason: 'reconcile worker 自动执行支付与退款对账' })
+    try {
+      await recordOperationAudit({ workspaceId, actorId, action: 'billing.reconciliation.worker', resourceType: 'billing_reconciliation', resourceId: workspaceId, before: {}, after: summary, reason: 'reconcile worker 自动执行支付与退款对账' })
+    } catch (auditError) {
+      const businessState = reconciliation.state
+      reconciliation.state = 'attention_required'
+      reconciliation.audit_projection_failures.push({ order_id: workspaceId, code: 'BILLING_AUDIT_PROJECTION_FAILED', cause_code: auditError instanceof Error && 'code' in auditError && typeof auditError.code === 'string' ? auditError.code : 'OPERATION_AUDIT_APPEND_FAILED', message: auditError instanceof Error ? auditError.message : '对账汇总审计投影失败', business_state: businessState, reliable_fact_source: 'transactional_outbox' })
+    }
     return send(res, 200, workspaceId, reconciliation, null, req)
   }
   if (req.method === 'POST' && path === '/v1/internal/model-usage/reconciliation') {
@@ -20018,12 +20312,23 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const orderId = required(input, 'order_id')
     const providerTradeId = required(input, 'provider_trade_id')
     const amountFen = Number(input.amount_fen)
-    const currency = typeof input.currency === 'string' ? input.currency : ''
+    const carriesModernProof = Boolean(header(req, 'x-payment-timestamp')?.trim() || header(req, 'x-payment-nonce')?.trim())
+    // Legacy fixture callbacks did not carry currency. They remain CNY-only
+    // for compatibility; a signed modern callback must state CNY explicitly.
+    const currency = typeof input.currency === 'string' ? input.currency : carriesModernProof ? '' : 'CNY'
     const state = typeof input.state === 'string' ? input.state : ''
     const workspaceId = typeof input.workspace_id === 'string' && input.workspace_id.trim() ? input.workspace_id.trim() : ''
     if (!workspaceId || !Number.isSafeInteger(amountFen) || amountFen < 0) throw new DomainError('PAYMENT_CALLBACK_INVALID', '支付回调缺少有效订单、工作区或金额', 400)
+    // Currency is part of the signed callback payload. Reject an unsupported
+    // value before consuming its one-time nonce, so a malformed/foreign
+    // callback cannot burn the nonce that the valid CNY callback must use.
+    if (currency !== 'CNY') throw new DomainError('PAYMENT_CALLBACK_CURRENCY_UNSUPPORTED', '支付回调币种必须为 CNY', 400)
     const callbackProof = verifyPaymentCallback(req, { channel: paymentCallbackMatch[2] as RechargeChannel, workspaceId, payload: { order_id: orderId, provider_trade_id: providerTradeId, amount_fen: amountFen, currency, state } })
-    const freshCallbackProof = callbackProof ? await consumePaymentCallbackProof({ workspaceId, channel: paymentCallbackMatch[2] as RechargeChannel, ...callbackProof }) : true
+    const callbackNonceRepository = persistence.paymentCallbackNonces ?? memoryPaymentCallbackNonces
+    const freshCallbackProof = callbackProof ? await callbackNonceRepository.consume({ workspaceId, channel: paymentCallbackMatch[2] as RechargeChannel, ...callbackProof }) : true
+    if (callbackProof && !freshCallbackProof && !(await callbackNonceRepository.replayPayloadMatches?.({ workspaceId, channel: paymentCallbackMatch[2] as RechargeChannel, nonce: callbackProof.nonce, payloadHash: callbackProof.payloadHash }) ?? false)) {
+      throw new DomainError('PAYMENT_CALLBACK_NONCE_REPLAY', '支付回调 nonce 已被用于不同的签名载荷', 409)
+    }
     if (paymentCallbackMatch[1] === 'commercial') {
       await persistenceReady
       const status = await persistence.commercialContracts?.getPaymentStatus(workspaceId, orderId)

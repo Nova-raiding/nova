@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { assertProductTargetIdentity, fetchImageGenerationJobs, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTasks, generateCampaignBatch, importProduct, registerMerchantAccount, requestApi, type Product } from './src/api.js'
+import { assertProductTargetIdentity, fetchImageGenerationJobs, fetchManualPublishRecords, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTasks, generateCampaignBatch, importProduct, registerMerchantAccount, requestApi, type Product } from './src/api.js'
 import { resolveLibraryData } from './src/library-data.js'
 import { resolveTaskDirections } from './src/task-evidence.js'
 
@@ -73,6 +73,16 @@ describe('merchant product response normalization', () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/v1/products?limit=50&offset=0')
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/v1/products?limit=50&offset=1')
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/v1/tasks?limit=50&offset=0')
+  })
+
+  it('reads tenant-scoped manual publish reports without treating them as platform receipts', async () => {
+    vi.stubGlobal('window', globalThis)
+    const record = { id: 'manual-1', taskId: 'task-1', contentVersionId: 'content-1', platform: 'taobao', accountId: 'store-1', state: 'manual_publish_reported', recordedAt: '2026-09-17T00:00:00.000Z' }
+    const fetchMock = vi.fn().mockResolvedValueOnce(envelope({ result: { items: [record], total: 1, limit: 100, offset: 0 } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchManualPublishRecords('/api')).resolves.toEqual([record])
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({ method: 'publish.manual.list', params: { limit: '100', offset: '0' } })
   })
 
   it('preserves request and trace evidence on API failures', async () => {

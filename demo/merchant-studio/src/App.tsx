@@ -90,6 +90,7 @@ import {
   fetchProductsByAsset,
   fetchProductPage,
   fetchPublishJobs,
+  fetchManualPublishRecords,
   fetchRechargeOrder,
   fetchRulePacks,
   fetchSyncJobs,
@@ -143,6 +144,7 @@ import {
   type ContentVersion,
   type ProductAssetBinding,
   type PublishJob,
+  type ManualPublishRecord,
   type PublishPreview,
   type RechargeOrder,
   type ReviewCategory,
@@ -9474,6 +9476,8 @@ function PublishCenter({
   canOpenPublish: boolean
 }) {
   const [jobs, setJobs] = useState<PublishJob[] | null>(null)
+  const [manualRecords, setManualRecords] = useState<ManualPublishRecord[] | null>(null)
+  const [manualError, setManualError] = useState('')
   const [initialError, setInitialError] = useState('')
   const [refreshError, setRefreshError] = useState('')
   const [loading, setLoading] = useState(Boolean(baseUrl))
@@ -9488,10 +9492,13 @@ function PublishCenter({
       setJobs(null)
       setInitialError('')
       setRefreshError('')
+      setManualRecords(null)
+      setManualError('')
       return
     }
     let cancelled = false
     let inFlight = false
+    let manualInFlight = false
     const hasCachedJobs = jobsSourceRef.current === baseUrl && jobs !== null
     let hasLoadedJobs = hasCachedJobs
     // Keep the last successful list visible during both background refresh and
@@ -9551,8 +9558,27 @@ function PublishCenter({
           if (!cancelled && showLoading) setLoading(false)
         })
     }
+    const loadManualRecords = () => {
+      if (manualInFlight) return
+      manualInFlight = true
+      fetchManualPublishRecords(baseUrl)
+        .then((records) => {
+          if (!cancelled) {
+            setManualRecords(records)
+            setManualError('')
+          }
+        })
+        .catch((cause) => {
+          if (!cancelled) setManualError(describeApiError(cause))
+        })
+        .finally(() => { manualInFlight = false })
+    }
     load(true)
-    const timer = window.setInterval(() => load(false), 5000)
+    loadManualRecords()
+    const timer = window.setInterval(() => {
+      load(false)
+      loadManualRecords()
+    }, 5000)
     return () => {
       cancelled = true
       window.clearInterval(timer)
@@ -9709,37 +9735,28 @@ function PublishCenter({
         <div className="panel receipt-panel">
           <div className="panel-heading">
             <div>
-              <span className="section-kicker">RECEIPTS</span>
-              <h3>最近回执</h3>
+              <span className="section-kicker">MANUAL OPERATIONS</span>
+              <h3>运营人工发布结果</h3>
             </div>
           </div>
-          {loading && <LoadingState label="正在读取平台回执…" />}
-          {listReady &&
-            Boolean(jobs.length) &&
-            jobs.slice(0, 5).map((job) => (
-              <div className="receipt-row" key={`receipt-${job.id}`}>
-                <span
-                  className={`receipt-icon ${job.state === 'rejected' ? 'fail' : ''}`}
-                >
-                  {job.state === 'rejected' ? (
-                    <X size={14} />
-                  ) : (
-                    <Check size={14} />
-                  )}
-                </span>
-                <b>
-                  {platformNames[job.platform] ?? job.platform} ·{' '}
-                  {statusLabel(job.state)}
-                </b>
-                <span>
-                  回执已保留 ·{' '}
-                  {job.rejection?.rawCode ?? job.remoteState ?? '等待观测'}
-                </span>
-              </div>
-            ))}
-          {listReady && jobs.length === 0 && (
+          <div className="info-notice" role="note">人工记录由运营回填，不是平台 API 官方回执；“已报告”仍需以公开页面或平台后台复核为准。</div>
+          {manualError && <ErrorNotice message={`人工发布记录读取失败：${manualError}`} onRetry={() => setReloadKey(key => key + 1)} />}
+          {baseUrl && manualRecords === null && !manualError && <LoadingState label="正在读取人工发布记录…" />}
+          {manualRecords?.map(record => (
+            <div className="receipt-row" key={`manual-${record.id}`}>
+              <span className={`receipt-icon ${record.state === 'manual_review_required' ? 'fail' : ''}`}>
+                {record.state === 'manual_review_required' ? <X size={14} /> : <FileCheck2 size={14} />}
+              </span>
+              <b>{platformNames[record.platform] ?? record.platform} · {{ export_ready: '交付包已就绪', manual_publish_in_progress: '运营发布中', manual_publish_reported: '运营已报告', manual_review_required: '需要人工复核' }[record.state] ?? record.state}</b>
+              <span>{record.platformDisplayStatus || '未提供平台显示状态'} · {new Date(record.operatedAt || record.recordedAt).toLocaleString('zh-CN', { hour12: false })}</span>
+              <small className="receipt-detail">任务 {record.taskId || '未关联'} · 店铺账号 {record.accountId || '未提供'} · 内容版本 {record.contentVersionId || '未提供'}</small>
+              {record.reviewedAt && <small className="receipt-detail">人工复核：{new Date(record.reviewedAt).toLocaleString('zh-CN', { hour12: false })}</small>}
+              {record.publicUrl && <a href={record.publicUrl} target="_blank" rel="noreferrer">查看公开页面</a>}
+            </div>
+          ))}
+          {manualRecords?.length === 0 && (
             <div className="empty-state">
-              <span>暂无回执</span>
+              <span>暂无运营人工发布记录</span>
             </div>
           )}
         </div>

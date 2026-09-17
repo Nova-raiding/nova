@@ -11,7 +11,7 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 function fixture() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'platform-transcript-gate-'))); roots.push(root)
   const observedAt = new Date(Date.now() - 1_000).toISOString()
-  const exchanges = ['exchange_code', 'sync_products', 'create_product', 'update_product', 'query_write', 'upload_media', 'revoke'].map(operation => ({
+  const exchanges = ['exchange_code', 'refresh_credential', 'sync_products', 'create_product', 'update_product', 'query_write', 'upload_media', 'revoke'].map(operation => ({
     platform: 'jd', operation, workspaceId: 'ws_jd', accountId: 'acct_jd', method: operation === 'sync_products' ? 'GET' : 'POST',
     origin: 'https://api.jd.example', status: 200, observedAt, transport: 'fetch',
     ...(['create_product', 'update_product', 'query_write'].includes(operation) ? { providerRequestId: `provider-${operation}` } : {}),

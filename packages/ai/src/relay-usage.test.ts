@@ -35,9 +35,24 @@ describe('relay usage normalization', () => {
     expect(usage).not.toHaveProperty('costCny')
   })
 
-  it('treats an accepted video job with provider identity as bounded request evidence', () => {
+  it('keeps an accepted video job and requested duration as preauthorization evidence only', () => {
     const usage = parseRelayUsage({ data: { id: 'video_job_1', status: 'queued' } }, new Headers({ 'x-request-id': 'video_request_1' }), { modality: 'video', model: 'video-v1', context: { durationSeconds: 5 } })
-    expect(usage).toMatchObject({ providerRequestId: 'video_request_1', metadata: { usage_observed: true, video_request_accepted: true, duration_seconds: 5 } })
+    expect(usage).toMatchObject({ providerRequestId: 'video_request_1', metadata: { usage_observed: false, video_request_accepted: true, preauthorization_duration_seconds: 5, preauthorization_estimate: true } })
+    expect(usage?.metadata).not.toHaveProperty('duration_seconds')
+  })
+
+  it('uses only provider-reported video duration as observed settlement evidence', () => {
+    const usage = parseRelayUsage({ data: { task_id: 'video_job_1', status: 'completed', usage: { duration_seconds: '7' } } }, new Headers({ 'x-request-id': 'video_request_1' }), { modality: 'video', model: 'video-v1', context: { preauthorizationDurationSeconds: 5 } })
+    expect(usage).toMatchObject({ metadata: { usage_observed: true, duration_seconds: 7, duration_evidence: 'provider_usage', preauthorization_duration_seconds: 5 } })
+  })
+
+  it('rejects accepted-only video jobs as observed usage', async () => {
+    await expect(emitRelayUsage(
+      () => ({ recorded: true, costEvidence: true }),
+      { data: { task_id: 'video_job_1', status: 'queued' } },
+      new Headers({ 'x-request-id': 'video_request_1' }),
+      { modality: 'video', model: 'video-v1', context: { preauthorizationDurationSeconds: 5 } },
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage' })
   })
 
   it('normalizes provider usage and request identity inside the API envelope result', () => {

@@ -163,7 +163,8 @@ export class RelayPricingClient {
       rawQuota = model.model_price * units * groupRatio * status.quota_per_unit
     } else if (model.quota_type === 1 && usage.modality === 'video') {
       const rawDuration = usage.metadata?.duration_seconds
-      const durationSeconds = typeof rawDuration === 'number' && Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : undefined
+      const durationEvidence = usage.metadata?.duration_evidence
+      const durationSeconds = durationEvidence === 'provider_usage' && typeof rawDuration === 'number' && Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : undefined
       if (!durationSeconds) throw new RelayPricingError('MODEL_PRICING_DURATION_EVIDENCE_MISSING', 'duration-priced video requires positive duration evidence')
       videoPriceCnyPerSecond = this.options.videoPriceCnyPerSecond?.[usage.model]
       if (model.billing_mode === 'per_duration' && model.duration_pricing) {

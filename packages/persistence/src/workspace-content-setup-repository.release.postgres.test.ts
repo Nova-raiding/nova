@@ -20,7 +20,7 @@ describe('workspace content setup PostgreSQL release acceptance', () => {
       const isolated = new URL(base)
       isolated.pathname = `/${databaseName}`
       database = new Pool({ connectionString: isolated.toString() })
-      expect((await new MigrationRunner(database, await loadMigrations()).run()).at(-1)).toBe(214)
+      expect((await new MigrationRunner(database, await loadMigrations()).run()).at(-1)).toBe(218)
       const workspaceId = `content-setup-${randomUUID()}`
       const otherWorkspaceId = `content-setup-other-${randomUUID()}`
       await database.query("INSERT INTO workspaces (id,status) VALUES ($1,'active'),($2,'active')", [workspaceId, otherWorkspaceId])
@@ -48,7 +48,6 @@ describe('workspace content setup PostgreSQL release acceptance', () => {
     } finally {
       await app?.end()
       await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
       await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
       await admin.end()
     }

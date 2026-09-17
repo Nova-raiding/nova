@@ -100,31 +100,60 @@ export async function runPlatformCanary(input: PlatformCanaryInput): Promise<Pla
       : passed ? 'test_e2e' : 'unverified'
     evidenceItems.push(evidence(input, capability, state, simulated))
   }
+  const result = (passed: boolean): PlatformCanaryResult => ({
+    platform: input.connector.platform,
+    passed,
+    checks,
+    evidence: passed
+      ? evidenceItems
+      : evidenceItems.map(item => item.state === 'production_canary' ? { ...item, state: 'test_e2e' as const } : item),
+  })
 
   const inputErrors = canaryInputErrors(input)
   if (inputErrors.length) {
     // Evidence is an authorization input. Reject malformed attribution before
     // touching the connector so a bad canary cannot create provider side effects.
-    for (const capability of ['authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'] as const) {
+    for (const capability of ['authorize', 'refresh', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'] as const) {
       add(capability, false, false, 'canary input rejected: invalid evidence, scope, or media attribution')
     }
-    return { platform: input.connector.platform, passed: false, checks, evidence: evidenceItems }
+    return result(false)
   }
 
+  let exchangedCredential: Awaited<ReturnType<PlatformConnector['exchangeCode']>> | undefined
+  let credentialForRevoke: Awaited<ReturnType<PlatformConnector['exchangeCode']>> | undefined
+  let exchangeAccepted = false
   try {
     const callback = input.oauthCallback
     const authorization = await input.connector.authorize({ workspaceId: input.context.workspaceId, actorId: 'platform-canary', redirectUri: callback?.redirectUri ?? 'https://canary.invalid/oauth/callback', state: callback?.state ?? `canary-${input.connector.platform}-${Date.now()}` })
     if (!authorization.ok || authorization.mode !== 'real') add('authorize', false, authorization.mode !== 'real', authorization.message)
     else if (!callback) add('authorize', true, false)
     else {
-      const credential = await input.connector.exchangeCode({ code: callback.code, state: callback.state, ...(callback.codeVerifier ? { codeVerifier: callback.codeVerifier } : {}), workspaceId: input.context.workspaceId })
-      add('authorize', credential.workspaceId === input.context.workspaceId && credential.accountId === input.context.accountId && Boolean(credential.credentialRef.trim()), false, 'OAuth callback exchanged with controlled test account')
+      exchangedCredential = await input.connector.exchangeCode({ code: callback.code, state: callback.state, redirectUri: callback.redirectUri, ...(callback.codeVerifier ? { codeVerifier: callback.codeVerifier } : {}), workspaceId: input.context.workspaceId })
+      exchangeAccepted = exchangedCredential.workspaceId === input.context.workspaceId && exchangedCredential.accountId === input.context.accountId && Boolean(exchangedCredential.credentialRef.trim())
+      if (exchangeAccepted) credentialForRevoke = exchangedCredential
+      add('authorize', exchangeAccepted, false, 'OAuth callback exchanged with controlled test account')
     }
   } catch (error) { add('authorize', false, false, error instanceof Error ? error.message : String(error)) }
 
+  if (!exchangedCredential || !exchangeAccepted) add('refresh', false, false, 'refresh canary requires an accepted credential returned by OAuth exchange')
+  else {
+    try {
+      const refreshed = await input.connector.refreshCredential(exchangedCredential)
+      const passed = refreshed.workspaceId === input.context.workspaceId
+        && refreshed.accountId === input.context.accountId
+        && Boolean(refreshed.credentialRef.trim())
+      if (passed) credentialForRevoke = refreshed
+      add('refresh', passed, false, passed ? 'OAuth credential refreshed and rebound to the controlled test account' : 'refreshed credential was not bound to the controlled test account')
+    } catch (error) { add('refresh', false, false, error instanceof Error ? error.message : String(error)) }
+  }
+
   if (input.promoteToProductionCanary && !checks.find(item => item.capability === 'authorize')?.passed) {
     for (const capability of ['read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'] as const) add(capability, false, false, 'OAuth authorization failed; provider canary stopped before further requests')
-    return { platform: input.connector.platform, passed: false, checks, evidence: evidenceItems }
+    return result(false)
+  }
+  if (input.promoteToProductionCanary && !checks.find(item => item.capability === 'refresh')?.passed) {
+    for (const capability of ['read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'] as const) add(capability, false, false, 'OAuth refresh failed; provider canary stopped before further requests')
+    return result(false)
   }
 
   let full: Awaited<ReturnType<PlatformConnector['syncProducts']>> | undefined
@@ -177,9 +206,10 @@ export async function runPlatformCanary(input: PlatformCanaryInput): Promise<Pla
   }
 
   if (!input.allowRevoke) add('revoke', false, false, 'revoke canary disabled; set explicit allowRevoke for a disposable test account')
+  else if (!credentialForRevoke) add('revoke', false, false, 'revoke canary requires the credential returned by OAuth exchange')
   else {
     try {
-      await input.connector.revoke({ accountId: input.context.accountId, credentialRef: `canary://${input.context.accountId}` })
+      await input.connector.revoke(credentialForRevoke)
       add('revoke', true, false)
     } catch (error) { add('revoke', false, false, error instanceof Error ? error.message : String(error)) }
   }
@@ -193,8 +223,5 @@ export async function runPlatformCanary(input: PlatformCanaryInput): Promise<Pla
     } catch (error) { add('media_upload', false, false, error instanceof Error ? error.message : String(error)) }
   }
   const passed = checks.every(item => item.passed && !item.simulated)
-  const finalEvidence = passed
-    ? evidenceItems
-    : evidenceItems.map(item => item.state === 'production_canary' ? { ...item, state: 'test_e2e' as const } : item)
-  return { platform: input.connector.platform, passed, checks, evidence: finalEvidence }
+  return result(passed)
 }

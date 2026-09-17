@@ -7,9 +7,9 @@ import { signCandidate, validateCandidate } from '../infra/protected/attest-capa
 import { validateCapabilityProductionSignature } from './capability-evidence-gate.js'
 
 const platforms = ['jd','taobao','tmall','pinduoduo','xiaohongshu','douyin']
-const names = ['authorize','read','full_sync','incremental_sync','create','update','query_status','revoke','media_upload']
-const operation: Record<string,string> = { authorize:'exchange_code', read:'sync_products', full_sync:'sync_products', incremental_sync:'sync_products', create:'create_product', update:'update_product', query_status:'query_write', revoke:'revoke', media_upload:'upload_media' }
-const required = ['sync_products','create_product','update_product','query_write','upload_media','revoke']
+const names = ['authorize','refresh','read','full_sync','incremental_sync','create','update','query_status','revoke','media_upload']
+const operation: Record<string,string> = { authorize:'exchange_code', refresh:'refresh_credential', read:'sync_products', full_sync:'sync_products', incremental_sync:'sync_products', create:'create_product', update:'update_product', query_status:'query_write', revoke:'revoke', media_upload:'upload_media' }
+const required = ['refresh_credential','sync_products','create_product','update_product','query_write','upload_media','revoke']
 const observedAt = new Date(Date.now() - 1_000).toISOString()
 const binding = { releaseId:'release-1', imageSetDigest:`sha256:${'a'.repeat(64)}`, manifestSha256:'b'.repeat(64), releaseGitSha:'c'.repeat(40), deploymentNonce:'d'.repeat(24), keyId:'trusted-key-1' }
 

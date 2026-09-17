@@ -160,19 +160,24 @@ curl --fail --silent --show-error --max-time 20 \
   "${PRODUCTION_API_BASE_URL%/}/v1/products?limit=1&offset=0" >/dev/null
 
 : "${POST_DEPLOY_CANARY_OUTPUT:?POST_DEPLOY_CANARY_OUTPUT is required}"
-PLATFORM_CANARY_BASE_EVIDENCE="$CAPABILITY_EVIDENCE_PATH" \
-PLATFORM_CANARY_OUTPUT="$POST_DEPLOY_CANARY_OUTPUT" \
-PRODUCTION_API_BASE_URL="$PRODUCTION_API_BASE_URL" \
-RELEASE_GIT_SHA="$release_git_sha" \
-RELEASE_MANIFEST_SHA256="$after" \
-RELEASE_IMAGE_SET_DIGEST="$image_set_digest" \
-  sh "$root/infra/scripts/run-production-canary.sh"
+if [ "${PLATFORM_OPERATIONS_MODE:-}" = manual ]; then
+  sh "$root/infra/scripts/run-manual-operations-canary.sh"
+else
+  [ "${PLATFORM_OPERATIONS_MODE:-}" = official_api ] || { echo 'PLATFORM_OPERATIONS_MODE must be manual or official_api' >&2; exit 1; }
+  PLATFORM_CANARY_BASE_EVIDENCE="$CAPABILITY_EVIDENCE_PATH" \
+  PLATFORM_CANARY_OUTPUT="$POST_DEPLOY_CANARY_OUTPUT" \
+  PRODUCTION_API_BASE_URL="$PRODUCTION_API_BASE_URL" \
+  RELEASE_GIT_SHA="$release_git_sha" \
+  RELEASE_MANIFEST_SHA256="$after" \
+  RELEASE_IMAGE_SET_DIGEST="$image_set_digest" \
+    sh "$root/infra/scripts/run-production-canary.sh"
 
-trust_dir=/run/release-security/evidence-trust
-if [ "${PRODUCTION_EVIDENCE_TEST_HOOK:-}" = enabled-for-local-tests-only ] && [ "${NODE_ENV:-}" = test ]; then trust_dir=${PRODUCTION_EVIDENCE_TEST_TRUST_DIR:-$trust_dir}; fi
-trusted_key_id=$(sed -n '1p' "$trust_dir/production-evidence-key-id")
-npx --no-install tsx "$root/tests/capability-evidence-gate.ts" --file "$POST_DEPLOY_CANARY_OUTPUT" --require-canary --require-signed-production \
-  --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$after" --release-git-sha "$release_git_sha" \
-  --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_dir/production-evidence-public.pem" --key-id "$trusted_key_id"
+  trust_dir=/run/release-security/evidence-trust
+  if [ "${PRODUCTION_EVIDENCE_TEST_HOOK:-}" = enabled-for-local-tests-only ] && [ "${NODE_ENV:-}" = test ]; then trust_dir=${PRODUCTION_EVIDENCE_TEST_TRUST_DIR:-$trust_dir}; fi
+  trusted_key_id=$(sed -n '1p' "$trust_dir/production-evidence-key-id")
+  npx --no-install tsx "$root/tests/capability-evidence-gate.ts" --file "$POST_DEPLOY_CANARY_OUTPUT" --require-canary --require-signed-production \
+    --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$after" --release-git-sha "$release_git_sha" \
+    --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_dir/production-evidence-public.pem" --key-id "$trusted_key_id"
+fi
 
 echo "verified manifest rollout and post-deploy canary passed: sha256=$after release_id=$RELEASE_ID canary=$POST_DEPLOY_CANARY_OUTPUT"

@@ -70,7 +70,8 @@ describe('local six-platform connector profile smoke', () => {
 
     expect(authorization).toMatchObject({ ok: true, mode: 'real', platform })
     const authUrl = new URL(authorization.authorizationUrl!)
-    expect(authUrl.searchParams.get('scope')?.split(' ')).toEqual([`fixture.${platform}.read`, `fixture.${platform}.write`])
+    const scopeDelimiter = platform === 'douyin' ? ',' : ' '
+    expect(authUrl.searchParams.get('scope')?.split(scopeDelimiter)).toEqual([`fixture.${platform}.read`, `fixture.${platform}.write`])
 
     const credential = await connector.exchangeCode({ code: 'local-code', state: `state-${platform}`, workspaceId: `workspace-${platform}` })
     expect(credential).toMatchObject({ accountId: `local-account-${platform}`, workspaceId: `workspace-${platform}`, scope: `fixture.${platform}.read fixture.${platform}.write` })

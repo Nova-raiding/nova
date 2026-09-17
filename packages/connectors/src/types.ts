@@ -323,7 +323,7 @@ export interface PlatformConnector {
   readonly platform: Platform
   readonly profile: PlatformProfile
   authorize(input: AuthorizeInput): Promise<AuthorizeResult>
-  exchangeCode(input: { code: string; state: string; codeVerifier?: string; workspaceId?: string }): Promise<CredentialRef>
+  exchangeCode(input: ExchangeCodeInput): Promise<CredentialRef>
   refreshCredential(ref: CredentialRef): Promise<CredentialRef>
   revoke(ref: CredentialRef): Promise<void>
   syncProducts(ctx: ConnectorContext, cursor?: Cursor): Promise<ProductPage>
@@ -334,6 +334,15 @@ export interface PlatformConnector {
   queryWrite(ctx: ConnectorContext, request: WriteIdentity): Promise<WriteStatus>
   uploadMedia?(ctx: ConnectorContext, input: MediaUploadInput): Promise<MediaUploadReceipt>
   normalizeError(error: unknown): NormalizedPlatformError
+}
+
+export interface ExchangeCodeInput {
+  code: string
+  state: string
+  /** Exact validated callback URI used for the authorization request. */
+  redirectUri?: string
+  codeVerifier?: string
+  workspaceId?: string
 }
 
 export interface FakeConnectorOptions {

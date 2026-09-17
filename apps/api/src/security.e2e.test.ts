@@ -630,7 +630,7 @@ describe('security and access-control acceptance gates', () => {
     expect(JSON.stringify(platformAlerts.data?.result)).not.toContain(workspaceId)
     expect(JSON.stringify(platformAlerts.data?.result)).not.toContain(revoked.id)
     expect((await call('ops.alerts.list', { platform_scope: 'platform', entity_id: revoked.id })).error?.code).toBe('OPS_CUSTOMER_ACCESS_REQUIRED')
-    expect((await call('ops.alert.ack', { alert_id: 'customer-alert-guess', reason: '平台越权确认测试' })).error?.code).not.toBe('OPS_CUSTOMER_ACCESS_REQUIRED')
+    expect((await call('ops.alert.ack', { alert_id: 'customer-alert-guess', reason: '平台越权确认测试' })).error?.code).toBe('OPS_CUSTOMER_ACCESS_REQUIRED')
     const platformStores = await call('ops.stores.list', { platform_scope: 'platform' })
     expect(platformStores.error).toBeNull()
     expect(platformStores.data?.result).toMatchObject({ aggregate: true, items: expect.any(Array) })

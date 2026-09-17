@@ -12,7 +12,7 @@ if (!source || !output || !gate) {
 try {
   const contract = readFileSync(gate, 'utf8').match(/^required_keys='([^']+)'/m)?.[1];
   if (!contract) throw new Error('missing contract');
-  const requiredKeys = [...new Set([...contract.split(/\s+/), 'mcp_authorization_mode', 'durable_platform_assignments_required',
+  const requiredKeys = [...new Set([...contract.split(/\s+/), 'mcp_authorization_mode', 'durable_platform_assignments_required', 'platform_operations_mode',
     'app_base_url', 'ops_base_url', 'mcp_base_url', 'asset_scan_trusted_public_keys_ref',
     'OPS_AUTH_MODE', 'object_storage_sse_mode', 'release_id'])];
   const aliases = {

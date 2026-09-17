@@ -11,8 +11,18 @@ const packageJson = JSON.parse(packageJsonSource) as {
 }
 const LEGACY_NON_RELEASE_GATES = new Set([
   'tests/local-docker-release-gate.test.ts',
-  'tests/kubernetes-release-gate.test.ts',
 ])
+const CRITICAL_DEFAULT_RELEASE_GATES = [
+  'tests/mcp-integration-mode-release-gate.test.ts',
+  'tests/mcp-oauth-production-script.test.ts',
+  'tests/kubernetes-release-gate.test.ts',
+  'tests/payment-gateway-process.integration.test.ts',
+  'apps/api/src/payment-capability-status.test.ts',
+  'apps/api/src/payment-reconciliation-worker.e2e.test.ts',
+  'packages/ai/src/relay-usage.test.ts',
+  'packages/ai/src/relay-pricing.test.ts',
+  'packages/ai/src/video-generator.test.ts',
+] as const
 
 function script(name: string): string {
   const command = packageJson.scripts[name]
@@ -86,6 +96,22 @@ describe('quality entrypoint coverage', () => {
     }
   })
 
+  it('runs critical MCP, worker, payment, and usage evidence checks from the default release entrypoint', () => {
+    const releaseGate = script('test:release-gates')
+    for (const gate of CRITICAL_DEFAULT_RELEASE_GATES) {
+      expect(releaseGate.split(/\s+/u).filter(argument => argument === gate)).toHaveLength(1)
+    }
+
+    // The attack matrix needs a disposable PostgreSQL instance, so the safe
+    // default process enforces its dedicated launcher rather than pretending
+    // to execute it against an absent or shared database.
+    expect(script('test:postgres:isolated')).toContain('scripts/run-isolated-postgres-tests.ts')
+    const isolatedRunner = readFileSync(resolve(root, 'scripts/run-isolated-postgres-tests.ts'), 'utf8')
+    expect(isolatedRunner).toContain("from '../vitest.postgres.config.js'")
+    const postgresManifest = readFileSync(resolve(root, 'vitest.postgres.config.ts'), 'utf8')
+    expect(postgresManifest).toContain("'tests/postgres-rls-attack-matrix.postgres.test.ts'")
+  })
+
   it('keeps the deliberately server-only feature-flag control plane explicit', () => {
     const auditSource = readFileSync(resolve(root, 'scripts/audit-ops-surface.mjs'), 'utf8')
     const serverOnly = [
@@ -111,7 +137,9 @@ describe('quality entrypoint coverage', () => {
   })
 
   it('keeps non-hermetic coverage explicit instead of silently passing it in the default suite', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(29)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(32)
+    expect(NON_HERMETIC_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')
+    expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/migration-218-release.postgres.test.ts')
     expect(script('test:runtime:isolated')).toContain('--config vitest.runtime.config.ts')
     expect(script('test:postgres:isolated')).toContain('scripts/run-isolated-postgres-tests.ts')
     expect(script('test:browser:ops:jit')).toContain('scripts/run-ops-oidc-e2e.ts')

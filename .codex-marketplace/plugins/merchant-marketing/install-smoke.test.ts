@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
@@ -18,6 +18,7 @@ const inheritedRuntimeEnv = [
   'MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES',
   'MERCHANT_WORKSPACE_ID',
   'MERCHANT_MCP_TOKEN',
+  'MERCHANT_MCP_REFRESH_TOKEN',
   'MERCHANT_MCP_TOKEN_SOURCE',
   'MERCHANT_STRICT_AUTH',
   'MERCHANT_ALLOW_FIXTURE_FALLBACK',
@@ -276,7 +277,16 @@ printf '%s\n' Darwin
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-local-installer-'))
     const bin = resolve(directory, 'bin')
     const state = resolve(directory, 'launchd-state')
+    const codexHome = resolve(directory, 'codex-home')
+    const bindingDirectory = resolve(codexHome, 'merchant-marketing')
+    const binding = resolve(bindingDirectory, 'workspace-binding.json')
     mkdirSync(bin)
+    mkdirSync(bindingDirectory, { recursive: true })
+    writeFileSync(binding, JSON.stringify({
+      schema_version: '2',
+      workspace_id: 'ws_install',
+      scope: { api_origin: 'http://127.0.0.1:8787', actor_id: '', token_sha256: '', environment: 'development' },
+    }))
     writeFileSync(resolve(bin, 'uname'), '#!/bin/sh\nprintf Darwin\n')
     writeFileSync(resolve(bin, 'launchctl'), `#!/bin/sh
 set -eu
@@ -291,20 +301,84 @@ esac
     chmodSync(resolve(bin, 'launchctl'), 0o755)
     try {
       const token = 'short-lived-token-not-printed'
+      const refreshToken = 'rotating-refresh-token-not-printed'
+      const bindingBeforeInstall = readFileSync(binding, 'utf8')
       const result = spawnSync('sh', [resolve(root, 'scripts/install-local-macos.sh'), '--base-url', 'https://yxsona.com', '--workspace', 'ws_install'], {
-        input: `${token}\n`, encoding: 'utf8', env: { PATH: `${bin}:${process.env.PATH ?? ''}` },
+        input: `${token}\n${refreshToken}\n`, encoding: 'utf8', env: { PATH: `${bin}:${process.env.PATH ?? ''}`, CODEX_HOME: codexHome, CODEX_NODE_BIN: process.execPath },
       })
       expect(result.status).toBe(0)
       expect(result.stdout).not.toContain(token)
       expect(result.stderr).not.toContain(token)
+      expect(result.stdout).not.toContain(refreshToken)
+      expect(result.stderr).not.toContain(refreshToken)
+      expect(result.stderr).toContain('检测到陈旧的 workspace binding')
+      expect(result.stderr).toContain('binding origin 已从本机 loopback 变为 https://yxsona.com')
+      expect(result.stderr).toContain('旧 binding 缺少完整身份指纹')
+      expect(readFileSync(binding, 'utf8')).toBe(bindingBeforeInstall)
       const values = readFileSync(state, 'utf8')
       expect(values).toContain('MERCHANT_MCP_BASE_URL=https://yxsona.com')
       expect(values).toContain('MERCHANT_WORKSPACE_ID=ws_install')
       expect(values).toContain(`MERCHANT_MCP_TOKEN=${token}`)
+      expect(values).toContain(`MERCHANT_MCP_REFRESH_TOKEN=${refreshToken}`)
       expect(values).toContain('MERCHANT_MCP_TOKEN_SOURCE=launchd')
       expect(values).toContain('MERCHANT_STRICT_AUTH=true')
       expect(values).toContain('MERCHANT_ALLOW_FIXTURE_FALLBACK=false')
       expect(values).toContain('MERCHANT_MCP_WRITE_ENABLED=false')
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('diagnoses a loopback binding migration without reusing or deleting the old identity', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-binding-diagnostic-'))
+    const binding = resolve(directory, 'workspace-binding.json')
+    writeFileSync(binding, JSON.stringify({
+      schema_version: '2',
+      workspace_id: 'ws_install',
+      scope: { api_origin: 'http://127.0.0.1:8787', actor_id: '', token_sha256: '', environment: 'development' },
+    }))
+    try {
+      const before = readFileSync(binding, 'utf8')
+      const result = spawnSync(process.execPath, [
+        resolve(root, 'scripts/diagnose-workspace-binding.mjs'),
+        '--binding', binding,
+        '--target-origin', 'https://yxsona.com',
+        '--workspace', 'ws_install',
+      ], { encoding: 'utf8' })
+      expect(result.status).toBe(0)
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        stale: true,
+        reusable: false,
+        reasons: ['loopback_to_production_origin', 'identity_fingerprint_missing'],
+        safety: { old_identity_reused: false, binding_deleted: false, secrets_read: false },
+      })
+      expect(readFileSync(binding, 'utf8')).toBe(before)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('reports missing identity fingerprints even when origin and workspace match', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-binding-fingerprint-'))
+    const binding = resolve(directory, 'workspace-binding.json')
+    writeFileSync(binding, JSON.stringify({
+      schema_version: '2',
+      workspace_id: 'ws_install',
+      scope: { api_origin: 'https://yxsona.com', actor_id: '', token_sha256: '', environment: 'local_desktop' },
+    }))
+    try {
+      const result = spawnSync(process.execPath, [
+        resolve(root, 'scripts/diagnose-workspace-binding.mjs'),
+        '--binding', binding,
+        '--target-origin', 'https://yxsona.com',
+        '--workspace', 'ws_install',
+      ], { encoding: 'utf8' })
+      expect(result.status).toBe(0)
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        stale: true,
+        reusable: false,
+        reasons: ['identity_fingerprint_missing'],
+      })
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
@@ -324,10 +398,38 @@ esac
         required: ['merchant.start', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list'],
         missing: [],
         forbidden: [],
+        cache_drift: { detected: false, automatic_reuse: false, automatic_deletion: false },
       },
       current_conversation_refresh: { verified: false },
     })
     expect(evidence.tools.count).toBeGreaterThanOrEqual(5)
     expect(evidence.runtime_files.every((file: { matches: boolean }) => file.matches)).toBe(true)
+  })
+
+  it('classifies an installed tool-surface mismatch as cache drift without deleting or reusing it', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-tool-cache-drift-'))
+    const installed = resolve(directory, 'installed')
+    try {
+      cpSync(root, installed, { recursive: true })
+      const bridgePath = resolve(installed, 'mcp/bridge.mjs')
+      const bridge = readFileSync(bridgePath, 'utf8')
+      expect(bridge).toContain("'merchant.start'")
+      writeFileSync(bridgePath, bridge.replace("'merchant.start'", "'merchant.start.stale'"))
+      const result = spawnSync(process.execPath, [resolve(root, 'scripts/verify-installed-bridge.mjs'), '--source', root, '--installed', installed], {
+        encoding: 'utf8',
+        env: { ...process.env, MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8790', MERCHANT_WORKSPACE_ID: 'ws_install_verify' },
+      })
+      expect(result.status).toBe(1)
+      const evidence = JSON.parse(result.stdout)
+      expect(evidence.tools.cache_drift).toMatchObject({
+        detected: true,
+        automatic_reuse: false,
+        automatic_deletion: false,
+      })
+      expect(evidence.runtime_files).toContainEqual(expect.objectContaining({ path: 'mcp/bridge.mjs', matches: false }))
+      expect(existsSync(installed)).toBe(true)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 })

@@ -27,7 +27,7 @@ yaml_validator=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)/validate-production-
 # intentionally remain dependency-free, but an unanchored grep can otherwise
 # mistake text such as `note: "plugin_enabled: true"` for configuration.
 required_keys='plugin_enabled merchant_bearer_hostname auth_enforcement session_id_hash_secret_ref jd_auth_enabled jd_read_enabled jd_write_enabled taobao_tmall_auth_enabled taobao_tmall_read_enabled taobao_tmall_write_enabled pinduoduo_auth_enabled pinduoduo_read_enabled pinduoduo_write_enabled object_storage_versioning lifecycle_policy_ref asset_quarantine_retention_days asset_clean_retention_days deletion_request_grace_days backup_retention_days alert_notifications_enabled point_in_time_recovery_enabled database_pooler_enabled database_max_backend_connections database_connection_utilization_alert_percent secret_provider worker_api_credentials_ref worker_sync_api_token_ref worker_sync_api_signing_secret_ref worker_generation_api_token_ref worker_generation_api_signing_secret_ref worker_publish_api_token_ref worker_publish_api_signing_secret_ref worker_reconcile_api_token_ref worker_reconcile_api_signing_secret_ref worker_automation_api_token_ref worker_automation_api_signing_secret_ref merchant_ui_api_token_ref merchant_ui_workspace_id_ref payment_mode payment_provider_adapters payment_checkout_base_url payment_provider_checkout_api_url payment_provider_query_api_url payment_provider_refund_query_api_url payment_provider_refund_api_url payment_provider_api_key_ref payment_provider_merchant_id payment_callback_base_url payment_callback_secret_ref payment_reconciliation_enabled payment_refund_enabled model_relay_base_url model_relay_api_key_ref text_model image_model image_edit_model ocr_model video_model embedding_model embedding_dimensions embedding_max_request_cny knowledge_vector_index_enabled approved_requests_per_minute approved_tokens_per_minute maximum_task_cost_cny object_storage_bucket object_storage_region object_storage_endpoint asset_display_base_url asset_display_url_signing_secret_ref platform_rule_sync_manifest_url platform_rule_sync_signing_secret_ref platform_rule_sync_interval_hours asset_scanner_mode allow_local_asset_scan_fixture asset_scanner_api_token_ref asset_scanner_workspace_signing_secret_ref asset_scan_receipt_key_id asset_scan_receipt_private_key_ref asset_scan_policy_version clamav_image_digest clamav_signature_max_age_minutes clamav_max_file_bytes'
-required_keys="$required_keys mcp_authorization_mode durable_platform_assignments_required"
+required_keys="$required_keys mcp_authorization_mode durable_platform_assignments_required platform_operations_mode"
 REQUIRED_PRODUCTION_CONFIG_KEYS="$required_keys" ruby "$yaml_validator" "$rendered_config_path"
 filtered_config_path=$(mktemp "${TMPDIR:-/tmp}/merchant-production-config.XXXXXX")
 trap 'rm -f -- "$filtered_config_path"' EXIT
@@ -80,16 +80,28 @@ if ! grep -Eq '^[[:space:]]*OPS_AUTH_MODE:[[:space:]]*oidc([[:space:]]*)$' "$con
   echo 'production ops console must use OIDC gateway authentication' >&2
   exit 1
 fi
-# The baseline production contract requires the three established platform
-# groups. Social platforms are opt-in until their official OAuth/scopes,
-# field-mapping, and production-canary evidence are resolved; when enabled,
-# each social platform must be enabled as a complete auth/read/write group.
-for flag in \
-  jd_auth_enabled jd_read_enabled jd_write_enabled \
-  taobao_tmall_auth_enabled taobao_tmall_read_enabled taobao_tmall_write_enabled \
-  pinduoduo_auth_enabled pinduoduo_read_enabled pinduoduo_write_enabled; do
-  grep -Eq "^[[:space:]]*${flag}:[[:space:]]*true[[:space:]]*$" "$config_path" || { echo "${flag} must be true in rendered production config" >&2; exit 1; }
-done
+platform_operations_mode=$(sed -nE 's/^[[:space:]]*platform_operations_mode:[[:space:]]*"?([a-z_]+)"?[[:space:]]*$/\1/p' "$config_path" | tail -1)
+case "$platform_operations_mode" in
+  manual)
+    for flag in \
+      jd_auth_enabled jd_read_enabled jd_write_enabled \
+      taobao_tmall_auth_enabled taobao_tmall_read_enabled taobao_tmall_write_enabled \
+      pinduoduo_auth_enabled pinduoduo_read_enabled pinduoduo_write_enabled \
+      xiaohongshu_auth_enabled xiaohongshu_read_enabled xiaohongshu_write_enabled \
+      douyin_auth_enabled douyin_read_enabled douyin_write_enabled; do
+      grep -Eq "^[[:space:]]*${flag}:[[:space:]]*false[[:space:]]*$" "$config_path" || { echo "${flag} must be false in manual platform operations mode" >&2; exit 1; }
+    done
+    ;;
+  official_api)
+    for flag in \
+      jd_auth_enabled jd_read_enabled jd_write_enabled \
+      taobao_tmall_auth_enabled taobao_tmall_read_enabled taobao_tmall_write_enabled \
+      pinduoduo_auth_enabled pinduoduo_read_enabled pinduoduo_write_enabled; do
+      grep -Eq "^[[:space:]]*${flag}:[[:space:]]*true[[:space:]]*$" "$config_path" || { echo "${flag} must be true in official_api platform operations mode" >&2; exit 1; }
+    done
+    ;;
+  *) echo 'platform_operations_mode must be manual or official_api' >&2; exit 1 ;;
+esac
 for social_platform in xiaohongshu douyin; do
   social_enabled=false
   for flag in \

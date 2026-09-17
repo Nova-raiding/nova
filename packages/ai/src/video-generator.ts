@@ -157,7 +157,7 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
       const remoteError = record(payload) && record(payload.error) ? payload.error : record(payload) ? payload : {}
       const errorSummary = !response.ok ? [remoteError.code, remoteError.type, remoteError.message].filter(value => typeof value === 'string').join(': ').replace(/data:image\/[^\s]+/gu, '[image redacted]').slice(0, 500) : undefined
       assertProviderResponseAccepted(response, providerKey, 'video provider', errorSummary)
-      await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'video', model, context: { ...input.usageContext, durationSeconds: this.options.durationSeconds ?? 5, resolution: this.options.resolution, providerAttemptId: providerKey } })
+      await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'video', model, context: { ...input.usageContext, preauthorizationDurationSeconds: this.options.durationSeconds ?? 5, resolution: this.options.resolution, providerAttemptId: providerKey } })
       return parseVideoResult(payload, providerKey)
     } finally {
       clearTimeout(timeout)

@@ -337,7 +337,7 @@ describe('deployment operation scripts', () => {
     }
     writeFileSync(config, [
       'plugin_enabled: true', 'merchant_bearer_hostname: merchant.example.com', 'app_base_url: https://merchant.example.com', 'ops_base_url: https://ops.merchant.example.com', 'mcp_base_url: https://merchant.example.com', 'oauth_callback_base_url: https://merchant.example.com/v1/oauth/callback', 'OPS_AUTH_MODE: oidc',
-      'auth_enforcement: strict', 'mcp_authorization_mode: enforce', 'durable_platform_assignments_required: true', 'session_id_hash_secret_ref: vault://merchant-identity/session-id-hash-secret',
+      'auth_enforcement: strict', 'mcp_authorization_mode: enforce', 'durable_platform_assignments_required: true', 'platform_operations_mode: official_api', 'session_id_hash_secret_ref: vault://merchant-identity/session-id-hash-secret',
       'jd_auth_enabled: true', 'jd_read_enabled: true', 'jd_write_enabled: true',
       'taobao_tmall_auth_enabled: true', 'taobao_tmall_read_enabled: true', 'taobao_tmall_write_enabled: true',
       'pinduoduo_auth_enabled: true', 'pinduoduo_read_enabled: true', 'pinduoduo_write_enabled: true',

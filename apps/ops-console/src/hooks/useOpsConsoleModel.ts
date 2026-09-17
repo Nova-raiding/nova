@@ -65,6 +65,7 @@ import { submitRevisionCreation, type RevisionCreationValues } from "../componen
 import { auditCenterClient, financeSearchClient, incidentsClient, parseModelStatus, parseStorageReconciliationList, supportClient } from "../api/opsDomainClients.js";
 import { createAuthorizationProjection, type AuthorizationProjection } from "../authz/authorization.js";
 import type { CapabilityId } from "../../../../packages/contracts/src/authz.js";
+import { manualPublishClient, type RecordManualPublishEvidenceInput } from "../api/manualPublishClient.js";
 
 export type JitRevocationReceipt = {
   grantId: string;
@@ -2584,6 +2585,38 @@ export function useOpsConsoleModel() {
       );
     }
   };
+  const recordManualPublishEvidence = async (
+    job: MarketingQueue["publish"][number],
+    input: Omit<RecordManualPublishEvidenceInput, "targetWorkspaceId" | "publishJobId" | "taskId" | "contentVersionId" | "platform" | "accountId" | "expectedRevision" | "idempotencyKey">,
+  ) => {
+    if (!canQueue) {
+      message.error("当前会话为只读，缺少队列权限");
+      return false;
+    }
+    if (!opsWorkspaceId) {
+      message.error("请先选择目标商家工作区");
+      return false;
+    }
+    try {
+      await manualPublishClient.recordEvidence({
+        ...input,
+        targetWorkspaceId: opsWorkspaceId,
+        publishJobId: job.id,
+        taskId: job.taskId,
+        contentVersionId: job.contentVersionId,
+        platform: job.platform,
+        accountId: job.accountId ?? "",
+        expectedRevision: job.manualPublish?.revision ?? 1,
+        idempotencyKey: crypto.randomUUID(),
+      }, job.manualPublish?.writeCapability);
+      message.success("人工发布证据已由服务端保存，等待复核");
+      await load();
+      return true;
+    } catch (cause) {
+      message.error(cause instanceof Error ? cause.message : "人工发布证据保存失败");
+      return false;
+    }
+  };
   const createRevision = async (job: MarketingQueue["publish"][number], values: RevisionCreationValues) => {
     if (!canQueue) {
       const error = "当前会话为只读，缺少队列权限";
@@ -2921,6 +2954,7 @@ export function useOpsConsoleModel() {
     retryFailedPublishBatch,
     retryGeneration,
     acknowledgePublish,
+    recordManualPublishEvidence,
     createRevision,
     reviewVisual,
     provisionMerchantAccount,

@@ -43,7 +43,7 @@ describe('platform capability preflight', () => {
     expect(result.evidenceValid).toBe(true)
     expect(result.passed).toBe(false)
     expect(result.productionReady).toBe(false)
-    expect(result.gaps).toContain('all nine capabilities lack production_canary evidence')
+    expect(result.gaps).toContain('all ten capabilities lack production_canary evidence')
   })
 
   it('accepts a complete evidence matrix but still requires HTTP readiness', async () => {

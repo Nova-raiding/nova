@@ -10,8 +10,23 @@ blocked draft, not real production configuration. Replace it with the real
 rendered configuration following `doc/todo/infra/production-config.example.yaml`.
 Never commit credentials. Production checks do not load the developer `.env`.
 
+For a new environment, begin with
+`infra/config/production.blocked.example.yaml`. It declares every required
+production key exactly once, sets every unresolved value to YAML `null`, and
+uses the explicit `BLOCKED_UNTIL_REQUIRED_PRODUCTION_INPUTS` status. This avoids
+an ambiguous, partial draft whose first error is a missing key while remaining
+strictly fail-closed until each real value or managed-secret reference is
+provided. Do not remove keys to represent unavailable configuration and do not
+replace Secret references with fabricated values.
+
 A configured locator does not establish production readiness. Configuration
 validation, release evidence, runtime checks and launch preflight must all pass.
+The current release profile must explicitly set
+`PLATFORM_OPERATIONS_MODE=manual`. In this mode the six commerce-platform OAuth,
+Vault credential and connector-canary inputs are not launch prerequisites;
+official connector writes remain disabled. `official_api` is a separate future
+profile and retains those strict requirements. ChatGPT/MCP host authentication
+is independent and remains required by the selected MCP integration mode.
 The workstation launch command (`npm run infra:launch-preflight`) now enters the
 ECS Compose preflight in `infra/scripts/deploy-preflight-ecs.sh`. It requires the
 rendered Compose release, exact image digests, a clean Git worktree, current
@@ -27,6 +42,20 @@ It reads the required-key contract from `validate-production-config.sh`, never
 exports raw credentials or invents secret-store references, and exits 2 when
 inputs remain missing or unresolved. Existing output files are not overwritten.
 Its successful preparation exit code does not indicate release readiness.
+Running it against an empty environment file is the supported generation path
+for a fresh blocked skeleton; it writes the same complete key set as
+`infra/config/production.blocked.example.yaml` and exits 2 by design:
+
+```sh
+empty_env=$(mktemp)
+node infra/scripts/render-production-config-from-env.mjs \
+  "$empty_env" /private/deploy/production.yaml \
+  infra/scripts/validate-production-config.sh
+```
+
+The output file is created mode 600. Review it privately, populate real values
+through the deployment system, and rerun validation. Do not treat exit 2 or the
+presence of all keys as production readiness.
 
 Known deployment aliases `MCP_AUTHZ_MODE`,
 `AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED` and `PUBLIC_APP_BASE_URL` are accepted;

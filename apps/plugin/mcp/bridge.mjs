@@ -16,7 +16,7 @@ import { loadManagedToken } from './managed-token.mjs'
 if (process.platform === 'darwin' && process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') {
   const launchdNames = [
     'NODE_ENV', 'DEPLOY_ENV', 'MERCHANT_MCP_BASE_URL', 'MERCHANT_WORKSPACE_ID',
-    'MERCHANT_MCP_TOKEN', 'MERCHANT_MCP_TOKEN_SOURCE', 'MERCHANT_STRICT_AUTH', 'MERCHANT_ALLOW_FIXTURE_FALLBACK',
+    'MERCHANT_MCP_TOKEN', 'MERCHANT_MCP_REFRESH_TOKEN', 'MERCHANT_MCP_TOKEN_SOURCE', 'MERCHANT_STRICT_AUTH', 'MERCHANT_ALLOW_FIXTURE_FALLBACK',
     'MERCHANT_MCP_WRITE_ENABLED', 'MERCHANT_RULE_APPROVAL_TOKEN', 'MERCHANT_ARTIFACT_DIR',
     'MERCHANT_MCP_TIMEOUT_MS', 'MERCHANT_MCP_RETRY_ATTEMPTS', 'MERCHANT_MCP_RETRY_DELAY_MS',
     'MERCHANT_ASSET_RESOURCE_DOMAINS', 'MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES',
@@ -35,6 +35,32 @@ if (process.platform === 'darwin' && process.env.NODE_ENV !== 'test' && process.
 loadManagedToken(process.env, process.platform, name => execFileSync('launchctl', ['getenv', name], {
   encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000,
 }))
+
+async function refreshLocalDesktopToken() {
+  const refreshToken = process.env.MERCHANT_MCP_REFRESH_TOKEN?.trim()
+  if (!refreshToken || /^\$\{[^}]+\}$/u.test(refreshToken)) return false
+  const origin = new URL(baseUrl()).origin
+  const response = await fetch(`${origin}/v1/auth/mcp-token/refresh`, {
+    method: 'POST', redirect: 'error',
+    headers: { accept: 'application/json', 'content-type': 'application/json', origin },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  })
+  if (!response.ok) return false
+  const payload = await response.json()
+  const result = payload?.data?.result ?? payload?.data
+  const accessToken = typeof result?.access_token === 'string' ? result.access_token.trim() : ''
+  const nextRefreshToken = typeof result?.refresh_token === 'string' ? result.refresh_token.trim() : ''
+  if (!accessToken || !nextRefreshToken) return false
+  process.env.MERCHANT_MCP_TOKEN = accessToken
+  process.env.MERCHANT_MCP_REFRESH_TOKEN = nextRefreshToken
+  if (process.env.MERCHANT_MCP_TOKEN_SOURCE === 'launchd' && process.platform === 'darwin') {
+    try {
+      execFileSync('launchctl', ['setenv', 'MERCHANT_MCP_TOKEN', accessToken], { stdio: 'ignore', timeout: 2000 })
+      execFileSync('launchctl', ['setenv', 'MERCHANT_MCP_REFRESH_TOKEN', nextRefreshToken], { stdio: 'ignore', timeout: 2000 })
+    } catch { return false }
+  }
+  return true
+}
 
 const PROTOCOL_VERSION = '2025-06-18'
 const PLUGIN_VERSION = (() => {
@@ -99,7 +125,7 @@ const READ_ONLY_METHODS = new Set([
   'billing.status', 'billing.model-usage.statement', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.export', 'catalog.sync.get', 'commercial.order.payment.get',
   'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'asset.list', 'brand.get', 'brand.extract', 'brand.tone.preview',
   'deliverable.list', 'task.history', 'task.resume', 'task.timeline', 'task.understand', 'feedback.list', 'generation.get', 'content.review',
-  'content.versions', 'content.diff', 'publish.get', 'publish.batch.get',
+  'content.versions', 'content.diff', 'publish.get', 'publish.manual.get', 'publish.manual.list', 'publish.batch.get',
   'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get', 'knowledge.learning.list', 'knowledge.competitor.list', 'knowledge.competitor.reference', 'automation.policy.get', 'automation.policy.list',
 ])
 // Generated from packages/contracts COMMERCIAL_MCP_FOUNDATION_POLICIES.
@@ -152,7 +178,8 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   'catalog.sync', 'catalog.sync.start', 'catalog.sync.get', 'sync.retry_failed',
   'automation.policy.get', 'automation.policy.list', 'automation.policy.update',
   'automation.scan', 'automation.tick', 'automation.pause',
-  'publish.prepare', 'publish.confirm', 'publish.get',
+  'publish.prepare', 'publish.confirm', 'publish.get', 'publish.manual.get', 'publish.manual.list',
+  'ops.marketing.publish.manual-evidence.record',
   'publish.batch.prepare', 'publish.batch.confirm', 'publish.batch.get',
   'publish.batch.pause', 'publish.batch.resume', 'publish.batch.retry_failed',
   'billing.reconciliation',
@@ -900,6 +927,18 @@ const METHODS = {
     description: '查询发布任务当前状态和平台回执。',
     inputSchema: { type: 'object', properties: { publish_job_id: { type: 'string' } }, required: ['publish_job_id'], additionalProperties: false },
   },
+  'ops.marketing.publish.manual-evidence.record': {
+    description: '平台运营为指定商家登记人工发布证据；人工证据不能替代平台 API 回执。',
+    inputSchema: { type: 'object', properties: { target_workspace_id: { type: 'string' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, platform: { type: 'string' }, account_id: { type: 'string' }, delivery_bundle_hash: { type: 'string', pattern: '^[a-f0-9]{64}$' }, status: { type: 'string', enum: ['manual_publish_in_progress', 'manual_publish_reported', 'manual_review_required'] }, occurred_at: { type: 'string' }, remote_content_id: { type: 'string' }, public_url: { type: 'string', pattern: '^https://' }, platform_display_status: { type: 'string' }, reviewer_id: { type: 'string' }, evidence_refs_json: { type: 'string' }, differences_json: { type: 'string' }, expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, required: ['target_workspace_id', 'task_id', 'content_version_id', 'platform', 'account_id', 'delivery_bundle_hash', 'status', 'occurred_at', 'evidence_refs_json', 'expected_revision', 'idempotency_key', 'reason'], additionalProperties: false },
+  },
+  'publish.manual.get': {
+    description: '商家读取本工作区的一条人工发布报告；该报告不等同于平台 API 已验证。',
+    inputSchema: { type: 'object', properties: { manual_publish_report_id: { type: 'string' } }, required: ['manual_publish_report_id'], additionalProperties: false },
+  },
+  'publish.manual.list': {
+    description: '查看当前商家工作区的人工发布记录列表；人工记录不等同于平台 API 已验证。',
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, content_version_id: { type: 'string' }, limit: positiveIntegerString, offset: { type: 'string', pattern: '^[0-9]+$' } }, additionalProperties: false },
+  },
   'knowledge.rule.create': {
     description: '录入平台、品类、品牌、店铺或大促节点规则，形成可追溯的规则版本。',
     inputSchema: { type: 'object', properties: { name: { type: 'string' }, content: { type: 'string' }, scope: { type: 'string', enum: ['global', 'platform', 'category', 'brand', 'store', 'campaign'] }, scope_value: { type: 'string' }, platform: { type: 'string' }, category: { type: 'string' }, brand: { type: 'string' }, store: { type: 'string' }, campaign: { type: 'string' }, source_kind: { type: 'string', enum: ['official', 'internal', 'merchant', 'observed', 'legal_review'] }, source_reference: { type: 'string' }, source_checked_at: { type: 'string' }, version: { type: 'string' }, severity: { type: 'string', enum: ['info', 'warning', 'error'] }, action: { type: 'string', enum: ['warn', 'block', 'require_confirmation', 'suggest'] }, owner_id: { type: 'string' }, status: { type: 'string', enum: ['draft', 'active', 'inactive', 'archived'] }, effective_from: { type: 'string' }, effective_to: { type: 'string' }, tags_json: { type: 'string' } }, required: ['name', 'content', 'scope', 'source_kind', 'source_reference', 'source_checked_at', 'version', 'status'], additionalProperties: false },
@@ -1482,7 +1521,7 @@ function userFacingErrorText(code, details) {
     return '图片已保存并通过自动安全检查，但没有读出可靠的商品信息。请先告诉我商品名称；我会继续使用当前图片记录你的确认，无需重新连接工作区或重复上传。'
   }
   if (code === 'PERMISSION_DENIED') return '当前账号没有执行这一步的权限。任务和已有内容已保留。'
-  if (code === 'MCP_AUTH_REQUIRED') return 'Store Nova 尚未登录或授权。请先在 Store Nova 商家后台登录，并在“连接本地插件”中为当前工作区生成连接凭据；本地插件不使用 ChatGPT OAuth。任务和已有内容已保留，没有扣费或发布。'
+  if (code === 'MCP_AUTH_REQUIRED') return '当前 ChatGPT 桌面插件没有可用的 Store Nova 工作区绑定，或旧的本地开发绑定已失效。请在商家后台的“连接本地插件”重新绑定当前工作区后重启 ChatGPT；这不是六个平台授权，也不会触发扣费或发布。'
   if (code === 'MCP_GATEWAY_BAD_REQUEST') return '插件请求被网关拒绝。当前任务和已有产物已保留；请根据请求 ID 排查网关路由、请求格式或插件连接配置。'
   if (code === 'MODEL_RELAY_EVIDENCE_REQUIRED') {
     const missing = Array.isArray(details?.missing) ? details.missing : []
@@ -1526,13 +1565,13 @@ function toolErrorPresentation(method, args, code, details) {
   }
   if (code === 'MCP_AUTH_REQUIRED') {
     return {
-      text: 'Store Nova 尚未登录或授权。请先在 Store Nova 商家后台登录，并在“连接本地插件”中为当前工作区生成连接凭据；本地插件不使用 ChatGPT OAuth。任务和已有内容已保留，没有扣费或发布。',
+      text: '当前 ChatGPT 桌面插件没有可用的 Store Nova 工作区绑定，或旧的本地开发绑定已失效。请在商家后台的“连接本地插件”重新绑定当前工作区后重启 ChatGPT；这不是六个平台授权，也不会触发扣费或发布。',
       recovery: {
         state: 'authentication_required',
         user_action_required: true,
         preserved: ['uploaded_assets', 'confirmed_facts', 'saved_products', 'saved_skus'],
-        resume_message: '登录并授权后继续',
-        next_action: { label: '登录商家后台并生成本地连接凭据', target: 'merchant_studio_local_plugin_connection' },
+        resume_message: '重新绑定后继续',
+        next_action: { label: '重新绑定当前 Store Nova 工作区', target: 'merchant_studio_local_plugin_connection' },
       },
     }
   }
@@ -2641,6 +2680,7 @@ async function callRemote(method, params) {
   const startupGraceMs = timeoutMs < 100 ? 50 : 0
   const deadline = Date.now() + timeoutMs + startupGraceMs
   const retrySafe = READ_ONLY_METHODS.has(method) || headers['idempotency-key'] !== undefined
+  let credentialRefreshAttempted = false
   try {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const remainingMs = deadline - Date.now()
@@ -2689,6 +2729,13 @@ async function callRemote(method, params) {
               },
             }
           : remoteError
+        if (response.status === 401 && !credentialRefreshAttempted) {
+          credentialRefreshAttempted = true
+          if (await refreshLocalDesktopToken()) {
+            headers.authorization = `Bearer ${process.env.MERCHANT_MCP_TOKEN}`
+            continue
+          }
+        }
         const providerOutcomeUnknown = normalizedRemoteError?.code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN'
         const transient = retrySafe && !providerOutcomeUnknown && (response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504)
         if ((!response.ok || !payload || remoteError) && (!transient || attempt === maxAttempts)) {

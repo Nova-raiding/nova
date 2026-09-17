@@ -9,6 +9,11 @@ describe('payment capability status', () => {
     fixtureMode: false,
     productionGate: true,
     reasons: [],
+    supportedChannels: ['alipay'] as const,
+    channelReadiness: {
+      alipay: { ready: true, reasons: [] },
+      wechat: { ready: false, reasons: ['provider_adapter_not_implemented'] },
+    },
   }
 
   it('does not advertise a fixture provider as configured or usable', () => {
@@ -40,6 +45,11 @@ describe('payment capability status', () => {
       effective: true,
       production_enabled: true,
       state: 'enabled',
+      supported_channels: ['alipay'],
+      channel_readiness: {
+        alipay: { ready: true, reasons: [] },
+        wechat: { ready: false, reasons: ['provider_adapter_not_implemented'] },
+      },
       reasons: [],
     })
   })

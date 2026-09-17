@@ -11,7 +11,7 @@ import { assertOutboundUrl, inspectOutboundUrl, isSecureEnvironment, officialHos
 import { deduplicateSyncProducts, SyncContractError, validateNextSyncCursor, validateSyncCursor, validateSyncWindow } from './sync-safety.js'
 import { mapPlatformRejection, platformEnvelope, providerRequestId } from './platform-adapters/rejection.js'
 import type {
-  AccessCredential, AuthorizeInput, AuthorizeResult, ConnectorContext, CredentialProvider, CredentialRef, Cursor,
+  AccessCredential, AuthorizeInput, AuthorizeResult, ConnectorContext, CredentialProvider, CredentialRef, Cursor, ExchangeCodeInput,
   HttpConnectorConfig, HttpRequestBodyEncoding, HttpRequestDescriptor, MappingVersion, NormalizedPlatformError, Platform, PlatformConnector,
   PlatformProfile, PlatformWriteDraft, ProductPage, RawProduct, RequestSigner, VaultCredentialProvider, WriteIdentity, WriteReceipt, WriteStatus, MediaUploadInput, MediaUploadReceipt,
 } from './types.js'
@@ -248,25 +248,27 @@ export class HttpPlatformConnector implements PlatformConnector {
     // production authorization redirect.
     const redirectReason = inspectOutboundUrl(input.redirectUri, { environment: process.env.NODE_ENV, resolveDns: false })
     if (redirectReason) return { ok: false, platform: this.platform, mode: 'not_configured', code: 'VALIDATION_FAILED', message: `OAuth redirect URI rejected: ${redirectReason}` }
-    const params = new URLSearchParams({ response_type: 'code', client_id: config.clientId, redirect_uri: input.redirectUri, state: input.state })
+    const clientIdKey = this.platform === 'douyin' ? 'client_key' : 'client_id'
+    const params = new URLSearchParams({ response_type: 'code', [clientIdKey]: config.clientId, redirect_uri: input.redirectUri, state: input.state })
     if (input.codeVerifier) {
       params.set('code_challenge', pkceChallenge(input.codeVerifier))
       params.set('code_challenge_method', 'S256')
     }
-    if (config.oauth.scopes?.length) params.set('scope', config.oauth.scopes.join(' '))
+    if (config.oauth.scopes?.length) params.set('scope', config.oauth.scopes.join(this.platform === 'douyin' ? ',' : ' '))
     for (const [key, value] of Object.entries(config.oauth.extraAuthorizeParams ?? {})) params.set(key, value)
     return { ok: true, platform: this.platform, mode: 'real', authorizationUrl: `${config.oauth.authorizeUrl}${config.oauth.authorizeUrl.includes('?') ? '&' : '?'}${params.toString()}` }
   }
 
-  async exchangeCode(input: { code: string; state: string; codeVerifier?: string; workspaceId?: string }): Promise<CredentialRef> {
+  async exchangeCode(input: ExchangeCodeInput): Promise<CredentialRef> {
     const config = this.requireOAuthConfig()
     const provider = this.requireProvider()
-    const payload = await this.request('exchange_code', 'POST', config.oauth.tokenUrl, undefined, { grant_type: 'authorization_code', code: input.code, ...(input.codeVerifier ? { code_verifier: input.codeVerifier } : {}), client_id: config.clientId, ...(config.clientSecret ? { client_secret: config.clientSecret } : {}), ...config.oauth.extraTokenParams }, config.oauth.tokenBodyEncoding ?? 'form', false, undefined, input)
+    const clientIdKey = this.platform === 'douyin' ? 'client_key' : 'client_id'
+    const payload = await this.request('exchange_code', 'POST', config.oauth.tokenUrl, undefined, { grant_type: 'authorization_code', code: input.code, ...(input.redirectUri ? { redirect_uri: input.redirectUri } : {}), ...(input.codeVerifier ? { code_verifier: input.codeVerifier } : {}), [clientIdKey]: config.clientId, ...(config.clientSecret ? { client_secret: config.clientSecret } : {}), ...config.oauth.extraTokenParams }, config.oauth.tokenBodyEncoding ?? 'form', false, undefined, input)
     const credential = this.parseCredential(payload)
     // The credential exists only for this call. A production provider must
     // persist it in Vault/KMS and return an opaque reference.
     const tokenPayload = platformEnvelope(payload) ?? {}
-    const remoteAccountId = readString(tokenPayload.account_id) ?? readString(tokenPayload.seller_id) ?? readString(tokenPayload.user_id) ?? readString(tokenPayload.uid)
+    const remoteAccountId = readString(tokenPayload.account_id) ?? readString(tokenPayload.seller_id) ?? readString(tokenPayload.user_id) ?? readString(tokenPayload.uid) ?? readString(tokenPayload.open_id)
     if (!remoteAccountId) throw new ConnectorFailure(this.normalizeError({ code: 'VALIDATION_FAILED', message: 'OAuth token response did not identify a remote merchant account' }))
     try {
       const stored = await provider.store!({ ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}), accountId: remoteAccountId, credential })
@@ -289,7 +291,8 @@ export class HttpPlatformConnector implements PlatformConnector {
     const current = await provider.resolve(ref)
     signal?.throwIfAborted()
     if (!current?.refreshToken || !config.oauth.refreshUrl) throw new ConnectorFailure(this.normalizeError({ code: 'UNAUTHORIZED', message: 'refresh credential or refresh endpoint is unavailable' }))
-    const payload = await this.request('refresh_credential', 'POST', config.oauth.refreshUrl, undefined, { grant_type: 'refresh_token', refresh_token: current.refreshToken, client_id: config.clientId, ...(config.clientSecret ? { client_secret: config.clientSecret } : {}) }, config.oauth.tokenBodyEncoding ?? 'form', false, signal, ref)
+    const clientIdKey = this.platform === 'douyin' ? 'client_key' : 'client_id'
+    const payload = await this.request('refresh_credential', 'POST', config.oauth.refreshUrl, undefined, { grant_type: 'refresh_token', refresh_token: current.refreshToken, [clientIdKey]: config.clientId, ...(config.clientSecret ? { client_secret: config.clientSecret } : {}) }, config.oauth.tokenBodyEncoding ?? 'form', false, signal, ref)
     const next = this.parseCredential(payload, current)
     try {
       signal?.throwIfAborted()
@@ -320,7 +323,8 @@ export class HttpPlatformConnector implements PlatformConnector {
     try { await provider.revoke(ref) } catch {
       throw new ConnectorFailure(this.normalizeError({ code: 'NOT_CONFIGURED', message: 'credential vault is unavailable' }))
     }
-    if (config.oauth.revokeUrl) await this.request('revoke', 'POST', config.oauth.revokeUrl, credential, { token: credential.accessToken, client_id: config.clientId }, config.oauth.tokenBodyEncoding ?? 'form', true, undefined, ref)
+    const clientIdKey = this.platform === 'douyin' ? 'client_key' : 'client_id'
+    if (config.oauth.revokeUrl) await this.request('revoke', 'POST', config.oauth.revokeUrl, credential, { token: credential.accessToken, [clientIdKey]: config.clientId }, config.oauth.tokenBodyEncoding ?? 'form', true, undefined, ref)
   }
 
   async syncProducts(ctx: ConnectorContext, cursor?: Cursor): Promise<ProductPage> {
@@ -471,12 +475,14 @@ export class HttpPlatformConnector implements PlatformConnector {
     const tokenPayload = platformEnvelope(payload) ?? {}
     const accessToken = readCredentialToken(tokenPayload.access_token) ?? readCredentialToken(tokenPayload.accessToken)
     if (!accessToken) throw new ConnectorFailure(this.normalizeError({ code: 'REMOTE_ERROR', message: 'token response did not contain an access token' }))
-    const expiresIn = typeof tokenPayload.expires_in === 'number' ? tokenPayload.expires_in : undefined
+    const parsedExpiresIn = typeof tokenPayload.expires_in === 'number' ? tokenPayload.expires_in : typeof tokenPayload.expires_in === 'string' ? Number(tokenPayload.expires_in) : Number.NaN
+    const expiresIn = Number.isFinite(parsedExpiresIn) && parsedExpiresIn > 0 ? parsedExpiresIn : undefined
     return { accessToken, tokenType: readCredentialToken(tokenPayload.token_type) ?? readCredentialToken(previous?.tokenType), refreshToken: readCredentialToken(tokenPayload.refresh_token) ?? readCredentialToken(previous?.refreshToken), scope: readCredentialToken(tokenPayload.scope) ?? readCredentialToken(previous?.scope), expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : previous?.expiresAt }
   }
 
   private async request(operation: Parameters<ConnectorBeforeRequest>[0]['operation'], method: string, url: string, credential?: AccessCredential, body?: unknown, encoding: HttpRequestBodyEncoding = 'json', revokeOnly = false, signal?: AbortSignal, context?: { workspaceId?: string; accountId?: string }): Promise<unknown> {
-    const config = revokeOnly ? this.requireRevokeConfig() : this.requireConfig()
+    const oauthTransport = operation === 'exchange_code' || operation === 'refresh_credential' || operation === 'revoke'
+    const config = revokeOnly ? this.requireRevokeConfig() : oauthTransport ? this.requireOAuthConfig() : this.requireConfig()
     const headers: Record<string, string> = { accept: 'application/json' }
     if (credential) headers.authorization = `${credential.tokenType ?? 'Bearer'} ${credential.accessToken}`
     let serialized: string | undefined
@@ -491,17 +497,27 @@ export class HttpPlatformConnector implements PlatformConnector {
     }
     const descriptor: HttpRequestDescriptor = { method, url, headers: { ...headers }, ...(serialized ? { body: serialized } : {}), platform: this.platform, ...(credential ? { credential } : {}) }
     signal?.throwIfAborted()
-    const signed = await config.signer?.sign(descriptor)
+    // Provider business-API signers must never rewrite OAuth token requests.
+    const signed = oauthTransport ? undefined : await config.signer?.sign(descriptor)
     signal?.throwIfAborted()
     Object.assign(headers, signed ?? {})
     Object.assign(headers, descriptor.headers)
     const requestUrl = descriptor.url
     const requestBody = descriptor.body
     if (isSecureEnvironment()) {
-      await assertOutboundUrl(requestUrl, {
+      const outboundPolicy = {
         environment: process.env.NODE_ENV,
         allowedHosts: config.allowedHosts ?? officialHostsFor(this.platform),
-      })
+      }
+      const outboundReason = inspectOutboundUrl(requestUrl, { ...outboundPolicy, resolveDns: false })
+      if (outboundReason) {
+        throw new ConnectorFailure(this.normalizeError({ code: outboundReason, message: `unsafe outbound URL: ${outboundReason}` }))
+      }
+      try {
+        await assertOutboundUrl(requestUrl, outboundPolicy)
+      } catch (error) {
+        throw new ConnectorFailure(this.normalizeError(error))
+      }
     }
     // Deliberately outside the provider-error catch: a local admission denial
     // means nothing was dispatched and must never become an unknown outcome.

@@ -13,13 +13,23 @@ function exactUrl(raw, expected, code) {
 }
 
 function checkConfig(env) {
+  const integrationMode = env.MCP_INTEGRATION_MODE
+  if (integrationMode === 'local_stdio') {
+    if (env.MCP_OAUTH_REQUIRED !== 'false') fail('local_stdio_oauth_required_must_be_false')
+    for (const key of ['MCP_OAUTH_CLIENTS', 'MCP_OAUTH_ISSUER', 'MCP_OAUTH_AUTHORIZATION_ENDPOINT', 'MCP_OAUTH_TOKEN_ENDPOINT', 'OPENAI_APPS_CHALLENGE_TOKEN']) {
+      if (env[key]?.trim()) fail(`local_stdio_${key.toLowerCase()}_must_be_empty`)
+    }
+    exactUrl(env.PUBLIC_APP_BASE_URL ?? '', requiredOrigin + '/', 'public_origin_invalid')
+    return
+  }
+  if (integrationMode !== 'remote_oauth') { fail('integration_mode_missing_or_invalid'); return }
   if (env.MCP_OAUTH_REQUIRED !== 'true') fail('oauth_required_disabled')
   const challenge = env.OPENAI_APPS_CHALLENGE_TOKEN?.trim() ?? ''
   if (!challenge || /fixture|example|placeholder|<|>/iu.test(challenge)) fail('openai_apps_challenge_missing_or_placeholder')
   exactUrl(env.PUBLIC_APP_BASE_URL ?? '', requiredOrigin + '/', 'public_origin_invalid')
-  exactUrl(env.MCP_OAUTH_ISSUER ?? requiredOrigin, requiredOrigin + '/', 'issuer_invalid')
-  exactUrl(env.MCP_OAUTH_AUTHORIZATION_ENDPOINT ?? requiredOrigin + '/oauth/authorize', requiredOrigin + '/oauth/authorize', 'authorization_endpoint_invalid')
-  exactUrl(env.MCP_OAUTH_TOKEN_ENDPOINT ?? requiredOrigin + '/oauth/token', requiredOrigin + '/oauth/token', 'token_endpoint_invalid')
+  exactUrl(env.MCP_OAUTH_ISSUER ?? '', requiredOrigin + '/', 'issuer_invalid')
+  exactUrl(env.MCP_OAUTH_AUTHORIZATION_ENDPOINT ?? '', requiredOrigin + '/oauth/authorize', 'authorization_endpoint_invalid')
+  exactUrl(env.MCP_OAUTH_TOKEN_ENDPOINT ?? '', requiredOrigin + '/oauth/token', 'token_endpoint_invalid')
   let registry
   try { registry = JSON.parse(env.MCP_OAUTH_CLIENTS ?? '') } catch { fail('client_registry_missing_or_invalid'); return }
   if (!registry || typeof registry !== 'object' || Array.isArray(registry) || !Object.keys(registry).length) { fail('client_registry_missing_or_invalid'); return }
@@ -57,4 +67,4 @@ if (mode === '--config') checkConfig(process.env)
 else if (mode === '--smoke') await checkSmoke()
 else { process.stderr.write('usage: check-mcp-oauth-production.mjs --config|--smoke\n'); process.exit(2) }
 if (errors.length) { process.stderr.write(`MCP OAuth ${mode} blocked: ${[...new Set(errors)].join(', ')}\n`); process.exit(1) }
-process.stdout.write(`MCP OAuth ${mode} passed (metadata/config shape only; real ChatGPT authorization remains separately required)\n`)
+process.stdout.write(`MCP integration ${mode} passed for ${process.env.MCP_INTEGRATION_MODE ?? 'unknown'} mode\n`)

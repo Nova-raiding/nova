@@ -199,13 +199,10 @@ const stepLabels: Record<DeliveryStepKey, string> = {
 };
 
 export function isDeliveryStepBlocked(
-  paymentStatus: CustomerDeliveryRecord["paymentStatus"],
-  step: DeliveryStepKey,
+  _paymentStatus: CustomerDeliveryRecord["paymentStatus"],
+  _step: DeliveryStepKey,
 ) {
-  return (
-    paymentStatus !== "paid" &&
-    ["integration", "acceptance", "training"].includes(step)
-  );
+  return false;
 }
 
 export function deliveryCompletion(record: CustomerDeliveryRecord) {
@@ -216,15 +213,12 @@ export function deliveryCompletion(record: CustomerDeliveryRecord) {
     record.training,
     record.videos > 0,
   ].filter(Boolean).length;
-  // Payment is a prerequisite for delivery completion. The UI gate prevents unpaid
-  // operators from entering controlled steps, but the aggregate must also be
-  // fail-closed when data is imported or updated through another route.
   return {
     completed,
     total: 5,
     // Only the server can verify that all attached files and checklist evidence
     // are usable. Legacy checkboxes alone must not claim completed delivery.
-    ready: record.paymentStatus === "paid" && completed === 5 && Boolean(record.goLiveAt) && Number.isFinite(Date.parse(record.goLiveAt ?? "")),
+    ready: completed === 5,
   };
 }
 
@@ -233,8 +227,9 @@ export function deliveryStatusLabel(result: ReturnType<typeof deliveryCompletion
 }
 
 export function customerDeliveryTrainingAction(record: CustomerDeliveryRecord, completed: boolean) {
-  if (record.paymentStatus !== "paid") return "blocked";
-  return completed && !record.trainingEvidenceRefs?.length ? "evidence" : "save";
+  void record;
+  void completed;
+  return "save";
 }
 
 function createUploadTracker() {
@@ -261,48 +256,29 @@ export function CustomerDeliveryTrainingEvidence({ record, disabled, readOnly = 
   onConfirm: (refs: string[]) => Promise<void>;
   onClose: () => void;
 }) {
-  const [refs, setRefs] = useState(record.trainingEvidenceRefs ?? []);
-  const [busy, setBusy] = useState(false);
+  void record;
+  void onUpload;
+  void onGetAsset;
   const [error, setError] = useState("");
   const confirm = async () => {
-    if (busy || disabled || readOnly) return;
+    if (disabled || readOnly) return;
     try {
-      const valid = parseCustomerDeliveryEvidenceRefs(refs, "培训凭证");
-      if (!valid.length) throw new Error("完成客户培训前请上传培训凭证");
       setError("");
-      await onConfirm(valid);
+      await onConfirm([]);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "培训确认失败，请重试"); }
   };
-  return <section aria-label={`${record.companyName} 培训凭证`} style={{ padding: "8px 0", minWidth: 0 }}>
+  return <section aria-label={`${record.companyName} 客户培训`} style={{ padding: "8px 0", minWidth: 0 }}>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 12 }}>
       <div style={{ minWidth: 0 }}>
-        <Typography.Text strong>培训凭证</Typography.Text>
-        <Typography.Paragraph type="secondary" style={{ margin: "4px 0 0" }}>{readOnly ? "查看已登记的培训凭证，当前会话不可修改。" : "上传签到表、培训记录或确认截图，安全检查通过后确认。"}</Typography.Paragraph>
+        <Typography.Text strong>客户培训</Typography.Text>
+        <Typography.Paragraph type="secondary" style={{ margin: "4px 0 0" }}>{readOnly ? "查看已登记的培训状态，当前会话不可修改。" : "由运营人员人工确认培训是否完成。"}</Typography.Paragraph>
       </div>
       <Space style={{ flexShrink: 0 }}>
-        {!readOnly ? <Button type="primary" disabled={busy || disabled} onClick={() => void confirm()}>确认培训完成</Button> : null}
+        {!readOnly ? <Button type="primary" disabled={disabled} onClick={() => void confirm()}>确认培训完成</Button> : null}
         <Button aria-label="收起" onClick={onClose}>收起</Button>
       </Space>
     </div>
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(320px, 1fr)", alignItems: "start", gap: 16 }}>
-      <div style={{ minWidth: 0 }}>
-        <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8 }}>已上传培训凭证</Typography.Text>
-        <Select
-          aria-label="已上传培训凭证"
-          mode="tags"
-          open={false}
-          value={refs}
-          onChange={setRefs}
-          disabled={disabled || readOnly}
-          placeholder="上传后自动填入，也可填写已绑定素材编号"
-          style={{ width: "100%" }}
-        />
-        {error ? <Typography.Paragraph type="danger" role="alert" style={{ margin: "8px 0 0" }}>{error}</Typography.Paragraph> : null}
-      </div>
-      <div style={{ minWidth: 0 }}>
-        {!readOnly ? <CustomerDeliveryUpload purpose="training" disabled={disabled} onUpload={disabled ? undefined : onUpload} onGetAsset={onGetAsset} onReady={(asset) => setRefs((current) => [...new Set([...current, asset.assetRef])])} onBusyChange={setBusy} /> : null}
-      </div>
-    </div>
+    {error ? <Typography.Paragraph type="danger" role="alert" style={{ margin: "8px 0 0" }}>{error}</Typography.Paragraph> : null}
   </section>;
 }
 
@@ -568,9 +544,7 @@ export function CustomerDeliverySection({
         });
       } else if (step === "training") {
         if (!onTrainingSave) throw new Error("客户培训保存接口未配置");
-        const refs = parseCustomerDeliveryEvidenceRefs(values.trainingEvidenceRefs, "培训凭证");
-        if (Boolean(values.training) && !refs.length) throw new Error("完成客户培训前请上传培训凭证");
-        persisted = await onTrainingSave(selected, Boolean(values.training), refs);
+        persisted = await onTrainingSave(selected, Boolean(values.training), []);
       } else if (step === "video") {
         if (!onVideoAdd) throw new Error("交付视频保存接口未配置");
         const refs = String(values.videoAssetRefs ?? "")
@@ -670,7 +644,7 @@ export function CustomerDeliverySection({
     const action = customerDeliveryTrainingAction(row, completed);
     if (action === "blocked") { setBlockedCompany(row.companyName); return; }
     if (action === "evidence") { setTrainingRowId(row.id); return; }
-    try { await confirmTraining(row, completed, parseCustomerDeliveryEvidenceRefs(row.trainingEvidenceRefs, "培训凭证")); }
+    try { await confirmTraining(row, completed, []); }
     catch (cause) { message.error(cause instanceof Error ? cause.message : "客户培训保存失败"); }
   };
   const columns = useMemo(
@@ -697,11 +671,8 @@ export function CustomerDeliverySection({
           width: CUSTOMER_DELIVERY_TABLE_WIDTHS[key],
           render: (value: boolean, row: CustomerDeliveryRecord) => {
             if (key === "training") return <Space size="small" style={{ whiteSpace: "nowrap" }}>
-              <Checkbox checked={value} disabled={disabled || readOnly || saving || !onTrainingSave} onChange={(event) => void toggleTraining(row, event.target.checked)}>{value ? "已完成" : "未完成"}</Checkbox>
-              <Button type="link" size="small" disabled={disabled || saving} onClick={() => {
-                if (!readOnly && row.paymentStatus !== "paid") setBlockedCompany(row.companyName);
-                else setTrainingRowId((current) => current === row.id ? undefined : row.id);
-              }}>凭证</Button>
+              <Checkbox aria-label={`${row.companyName}客户培训状态`} checked={value} disabled={disabled || readOnly || saving || !onTrainingSave} onChange={(event) => void toggleTraining(row, event.target.checked)}>{value ? "已完成" : "未完成"}</Checkbox>
+              <Button type="link" size="small" disabled={disabled || saving} onClick={() => setTrainingRowId((current) => current === row.id ? undefined : row.id)}>查看详情</Button>
             </Space>;
             return (
               <Button type="link" size="small" disabled={disabled || saving} onClick={() => openStep(row, key)}>
@@ -783,16 +754,15 @@ export function CustomerDeliverySection({
       <Alert
         type="info"
         showIcon
-        message="交付状态由各环节真实填写结果决定；未付款客户的系统接入、功能验收和培训入口保持阻断。"
+        title="交付状态由各环节的人工确认结果决定；付款记录仅用于账务核验，不阻断交付。"
       />
       {blockedCompany ? (
         <Alert
           style={{ marginTop: 12 }}
           type="warning"
           showIcon
-          message="用户尚未完成付款"
-          description={`${blockedCompany} 的系统接入、功能测试及培训已阻断；完成付款核验后才可继续。`}
-          action={!readOnly ? <Button size="small" onClick={() => { const row = records.find((record) => record.companyName === blockedCompany); if (row) void openStep(row, "profile"); }}>去上传付款凭证</Button> : undefined}
+          title="交付步骤暂不可编辑"
+          description={`${blockedCompany} 的当前状态不允许执行该步骤。`}
           closable
           onClose={() => setBlockedCompany(undefined)}
         />
@@ -853,7 +823,7 @@ export function CustomerDeliverySection({
         }
         open={Boolean(selected)}
         onClose={() => { detailRequest.current++; uploadTracker.current.beginScope(); setUploading(false); setLoadingStep(false); setSelected(undefined); }}
-        width={560}
+        size="large"
       >
         {selected ? (
           <Space orientation="vertical" size="large" style={{ width: "100%" }}>
@@ -928,22 +898,10 @@ export function CustomerDeliverySection({
                   </Form.Item>
                   <Form.Item
                     noStyle
-                    shouldUpdate={(prev, cur) => prev.paymentStatus !== cur.paymentStatus || prev.paymentEvidenceRefs !== cur.paymentEvidenceRefs}
+                    shouldUpdate={() => false}
                   >
-                    {({ getFieldValue }) => (
-                      <Form.Item
-                        name="paymentEvidenceRefs"
-                        label="付款凭证"
-                        rules={[{ validator: async (_, value) => {
-                          if (getFieldValue("paymentStatus") !== "paid" || Array.isArray(value) && value.length > 0) return;
-                          throw new Error("标记已付款前必须上传付款凭证");
-                        } }]}
-                      >
-                        <Select mode="tags" open={false} placeholder="上传通过安全检查后自动填入" />
-                      </Form.Item>
-                    )}
+                    {() => null}
                   </Form.Item>
-                  {evidenceUpload("payment", "paymentEvidenceRefs")}
                   <Form.Item
                     name="contractFile"
                     label="合同文件"
@@ -1035,11 +993,7 @@ export function CustomerDeliverySection({
                   ))}
                 </>
               )}
-              {step === "training" && (<>
-                <Form.Item name="training" valuePropName="checked"><Checkbox>客户培训已完成</Checkbox></Form.Item>
-                <Form.Item name="trainingEvidenceRefs" label="已上传培训凭证"><Select mode="tags" open={false} placeholder="上传签到表、培训记录或确认截图" /></Form.Item>
-                {evidenceUpload("training", "trainingEvidenceRefs")}
-              </>)}
+              {step === "training" && <Form.Item name="training" valuePropName="checked"><Checkbox>客户培训已完成</Checkbox></Form.Item>}
               {step === "video" && (
                 <>
                   {videoItems.length ? (
@@ -1059,7 +1013,7 @@ export function CustomerDeliverySection({
                       </Space>
                     </Card>
                   ) : (
-                    <Alert type="info" showIcon message="尚未登记交付视频" description="上传视频或填写已完成安全扫描的素材编号；保存后会显示在这里。" />
+                    <Alert type="info" showIcon title="尚未登记交付视频" description="上传视频或填写已完成安全扫描的素材编号；保存后会显示在这里。" />
                   )}
                   {evidenceUpload("video", "videoAssetRefs")}
                   <Form.Item name="videoAssetRefs" label="交付视频（支持多段）">

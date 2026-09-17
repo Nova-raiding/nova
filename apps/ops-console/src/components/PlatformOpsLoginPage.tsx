@@ -42,7 +42,7 @@ export function PlatformOpsLoginPage({
           <div className="ops-login-card-heading">
             <Typography.Title id="ops-login-title" level={2}>欢迎回来</Typography.Title>
             <Typography.Paragraph type="secondary">
-              请联系“侯沿平”获取管理账号
+              请使用平台管理员分配的运营账号登录
             </Typography.Paragraph>
           </div>
 

@@ -1,12 +1,12 @@
 # Store Nova Codex 插件
 
-macOS 管理凭据轮换：默认仍优先使用宿主显式环境。只有明确配置 `MERCHANT_MCP_TOKEN_SOURCE=launchd` 才在桥接进程启动时读取系统的新凭据；系统与宿主的完整 API 地址和工作区必须一致，否则拒绝启动，不回退旧凭据。此模式不支持显式 actor/role 覆盖。配置更新后需重载插件连接（必要时重启桌面宿主）；已运行进程不会热更新，也不会自动重试写入。
+macOS 管理凭据轮换：默认仍优先使用宿主显式环境。只有明确配置 `MERCHANT_MCP_TOKEN_SOURCE=launchd` 才读取系统凭据；系统与宿主的完整 API 地址和工作区必须一致，否则拒绝启动。安装器同时注入 access/refresh token；远端返回 401 时 bridge 只自动轮换一次并重试原请求，旋转后的凭据同步回当前用户 launchd。此模式不支持显式 actor/role 覆盖。
 
 当前商家主流程为：**公开链接/手工资料 → 内容生产 → 工具支持时审核、导出**。这是产品范围与目标顺序，每个阶段以实际工具支持和服务端结果为准；未绑定候选的审核/导出缺口见下文。实际工具以当前连接的 `tools/list` 与运行态契约测试为准，不在文档中固化工具数量，也不以数量证明生产就绪。
 
 这是可安装的 Codex Plugin 源目录，包含：
 
-- `.codex-plugin/plugin.json`：正式 manifest，版本 `0.1.0+codex.20260916102500`。
+- `.codex-plugin/plugin.json`：正式 manifest，版本 `0.1.0+codex.20260917171000`。
 - `skills/merchant-marketing/SKILL.md`：唯一入口 Skill。
 - `.mcp.json`：Codex 标准 stdio MCP 配置；`mcp/bridge.mjs` 将标准 `tools/list`、`tools/call` 转发到现有 API 的 `/mcp` 业务方法。
 - `mcp/bridge.mjs`：插件侧传输适配器，固定注入 `X-Workspace-Id`，并将 API 的统一 envelope 解包为 Codex MCP 响应。
@@ -56,6 +56,7 @@ export MERCHANT_MCP_BASE_URL=https://merchant.example.com
 export MERCHANT_WORKSPACE_ID=<workspace-id>
 # 可选：由网关校验的 Bearer token；插件不会保存平台账号密码或 access token
 export MERCHANT_MCP_TOKEN=<mcp-token>
+export MERCHANT_MCP_REFRESH_TOKEN=<rotating-refresh-token>
 # 连接非本机 API 时必须开启；否则 bridge 会在发送请求前失败关闭
 export MERCHANT_STRICT_AUTH=true
 # 仅本地 fixture 开发可显式开启；Automation 和生产环境禁止设置
@@ -149,6 +150,16 @@ node apps/plugin/scripts/verify-installed-bridge.mjs \
   --source apps/plugin \
   --installed /absolute/path/to/installed/merchant-marketing/<version>
 ```
+
+升级时不要手工覆盖 `~/.codex/plugins/cache`。使用下面的入口让 Codex CLI 安装当前 marketplace 版本，并立即比较完整 Skill 运行树、bridge 文件与实际 `tools/list`；任一步不一致都会以非零状态失败：
+
+```bash
+node apps/plugin/scripts/upgrade-installed-plugin.mjs \
+  --source apps/plugin \
+  --marketplace merchant-local
+```
+
+同一版本的内容必须保持不可变；源码内容变化时先更新插件版本并同步 marketplace。升级验真通过后仍须完全退出 ChatGPT/Codex，并在新会话重新发现工具。
 
 主图候选先由 `catalog.image.get` 展示，并按现有 `catalog.image.review` 与人工审阅要求检查。独立未绑定候选保持未批准、未发布。已有正式内容版本需要选图时，商家明确选择 1–6 张及顺序后才调用 `content.visual.select`，派生新的 `review_required` 版本；选图、审核与批准分别确认，不复用旧版本证据，也不附带平台发布操作。
 

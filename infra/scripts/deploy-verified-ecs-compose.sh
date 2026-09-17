@@ -259,14 +259,19 @@ curl --fail --silent --show-error --max-time 20 \
   -H "authorization: Bearer $PRODUCTION_CANARY_BEARER_TOKEN" \
   -H "x-workspace-id: $PRODUCTION_CANARY_WORKSPACE_ID" \
   "${PRODUCTION_API_BASE_URL%/}/v1/products?limit=1&offset=0" >/dev/null
-PLATFORM_CANARY_BASE_EVIDENCE="$CAPABILITY_EVIDENCE_PATH" PLATFORM_CANARY_OUTPUT="$POST_DEPLOY_CANARY_OUTPUT" \
-PRODUCTION_API_BASE_URL="$PRODUCTION_API_BASE_URL" RELEASE_GIT_SHA="$git_sha" RELEASE_MANIFEST_SHA256="$manifest_sha256" \
-RELEASE_IMAGE_SET_DIGEST="$image_set_digest" sh "$root/infra/scripts/run-production-canary.sh"
-trust_root=/run/release-security/evidence-trust/production-evidence-public.pem
-trusted_key_id=$(sed -n '1p' /run/release-security/evidence-trust/production-evidence-key-id)
-npx --no-install tsx "$root/tests/capability-evidence-gate.ts" --file "$POST_DEPLOY_CANARY_OUTPUT" --require-canary --require-signed-production \
-  --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$git_sha" \
-  --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_root" --key-id "$trusted_key_id"
+if [ "${PLATFORM_OPERATIONS_MODE:-}" = manual ]; then
+  sh "$root/infra/scripts/run-manual-operations-canary.sh"
+else
+  [ "${PLATFORM_OPERATIONS_MODE:-}" = official_api ] || { echo 'PLATFORM_OPERATIONS_MODE must be manual or official_api' >&2; exit 1; }
+  PLATFORM_CANARY_BASE_EVIDENCE="$CAPABILITY_EVIDENCE_PATH" PLATFORM_CANARY_OUTPUT="$POST_DEPLOY_CANARY_OUTPUT" \
+  PRODUCTION_API_BASE_URL="$PRODUCTION_API_BASE_URL" RELEASE_GIT_SHA="$git_sha" RELEASE_MANIFEST_SHA256="$manifest_sha256" \
+  RELEASE_IMAGE_SET_DIGEST="$image_set_digest" sh "$root/infra/scripts/run-production-canary.sh"
+  trust_root=/run/release-security/evidence-trust/production-evidence-public.pem
+  trusted_key_id=$(sed -n '1p' /run/release-security/evidence-trust/production-evidence-key-id)
+  npx --no-install tsx "$root/tests/capability-evidence-gate.ts" --file "$POST_DEPLOY_CANARY_OUTPUT" --require-canary --require-signed-production \
+    --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$git_sha" \
+    --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_root" --key-id "$trusted_key_id"
+fi
 
 mutation_started=false
 trap - EXIT HUP INT TERM

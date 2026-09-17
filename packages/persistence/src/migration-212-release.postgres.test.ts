@@ -44,8 +44,8 @@ describe('migration 212 customer delivery account binding release acceptance', (
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: connection(base, databaseName), max: 4 })
       const fixtureDb = database
-      const migrations = (await loadMigrations()).filter(migration => migration.version <= 212)
-      await new MigrationRunner(database, migrations.filter(migration => migration.version < 212)).run()
+      const migrations = (await loadMigrations()).filter(migration => migration.version <= 215)
+      await new MigrationRunner(database, migrations.filter(migration => migration.version < 215)).run()
 
       const workspaceId = `delivery-212-${randomUUID()}`
       const otherWorkspaceId = `delivery-212-other-${randomUUID()}`
@@ -86,7 +86,7 @@ describe('migration 212 customer delivery account binding release acceptance', (
       )
       const historicalBefore = (await database.query('SELECT to_jsonb(d) AS row FROM workspace_customer_deliveries d WHERE id=$1', [historicalId])).rows[0].row
       const auditCountBefore = (await database.query('SELECT count(*)::integer AS count FROM workspace_operation_audit')).rows[0].count
-      expect(await new MigrationRunner(database, migrations).run()).toEqual([212])
+      expect(await new MigrationRunner(database, migrations).run()).toEqual([215])
       expect(await new MigrationRunner(database, migrations).run()).toEqual([])
       const historicalAfter = (await database.query(
         `SELECT to_jsonb(d)-'target_account_id'-'target_identity_id' AS row,target_account_id,target_identity_id

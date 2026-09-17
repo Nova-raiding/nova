@@ -5,6 +5,7 @@ metadata:
 data:
   NODE_ENV: production
   CONNECTOR_FIXTURE_MODE: "false"
+  PLATFORM_OPERATIONS_MODE: "manual"
   OPS_AUTH_MODE: oidc
   # Production authorization is fail-closed. Durable platform assignments are
   # authoritative over gateway role claims so revocation takes effect on the

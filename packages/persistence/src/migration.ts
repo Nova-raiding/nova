@@ -511,6 +511,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const customerDeliveryAccountBinding = await readFile(new URL('./migrations/215_customer_delivery_account_binding.sql', import.meta.url), 'utf8')
   const workspaceContentSetup = await readFile(new URL('./migrations/216_workspace_content_setup.sql', import.meta.url), 'utf8')
   const modelUsageEmbeddingModality = await readFile(new URL('./migrations/217_model_usage_embedding_modality.sql', import.meta.url), 'utf8')
+  const manualPublishEvidence = await readFile(new URL('./migrations/218_manual_publish_evidence.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -729,6 +730,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 215, name: 'customer_delivery_account_binding', sql: customerDeliveryAccountBinding },
     { version: 216, name: 'workspace_content_setup', sql: workspaceContentSetup },
     { version: 217, name: 'model_usage_embedding_modality', sql: modelUsageEmbeddingModality },
+    { version: 218, name: 'manual_publish_evidence', sql: manualPublishEvidence },
   ]
 }
 

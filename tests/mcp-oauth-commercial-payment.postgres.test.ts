@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { signPaymentCallback } from '../packages/billing/src/callback-envelope.mjs'
 import { loadMigrations, MigrationRunner } from '../packages/persistence/src/migration.js'
 import { PostgresPasswordAuthRepository } from '../packages/persistence/src/password-auth-repository.js'
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from '../packages/persistence/src/postgres-scope-fixture-cleanup.js'
 
 const databaseUrlValue = process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const bridgePath = fileURLToPath(new URL('../apps/plugin/mcp/bridge.mjs', import.meta.url))
@@ -135,6 +136,7 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
     let application: Pool | undefined
     let operations: Pool | undefined
     let api: ChildProcessWithoutNullStreams | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const isolatedAdminUrl = databaseUrl(baseDatabase, databaseName)
@@ -245,10 +247,9 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
       const paidViaBridge = await bridgeCall(bridgeA, 3, 'commercial.order.payment.get', { order_id: order.order_id })
       expect(paidViaBridge.result).toMatchObject({ isError: false, structuredContent: { order_id: order.order_id, status: 'paid', access_revision: 1 } })
       const balanceViaBridge = await bridgeCall(bridgeA, 4, 'creative-points.balance.get', {})
-      // The bridge exposes the authenticated state/revision needed for the
-      // next action, while point quantities remain console-only by contract.
-      expect(balanceViaBridge.result).toMatchObject({ isError: false, structuredContent: { balance_state: 'known', access_revision: '1' } })
-      expect(balanceViaBridge.result?.structuredContent).not.toHaveProperty('available_points')
+      // The merchant bridge exposes the authenticated wallet balance so the
+      // user can decide whether another paid generation is affordable.
+      expect(balanceViaBridge.result).toMatchObject({ isError: false, structuredContent: { balance_state: 'known', access_revision: '1', available_points: 500 } })
 
       const hiddenFromB = await bridgeCall(bridgeB, 5, 'commercial.order.payment.get', { order_id: order.order_id })
       expect(hiddenFromB.result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_ORDER_NOT_FOUND' } })
@@ -270,13 +271,17 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
       ].sort((a, b) => a.external_subject.localeCompare(b.external_subject)))
       stopBridge(bridgeA)
       stopBridge(bridgeB)
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      if (api) await stopApi(api)
-      await application?.end()
-      await operations?.end()
-      await database?.end()
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        if (api) await stopApi(api)
+        await application?.end()
+        await operations?.end()
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [() => admin.end()])
     }
   }, 240_000)
 })

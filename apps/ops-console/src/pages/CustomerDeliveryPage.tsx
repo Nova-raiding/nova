@@ -415,11 +415,11 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       description="以客户为中心跟进建档、系统接入、功能验收、培训和上线。付款未核验时，受控环节会保持阻断。"
       actions={<Button onClick={() => void load()} loading={loading} disabled={!canRead || !targetWorkspaceId}>刷新交付档案</Button>}
     >
-      {!canRead ? <Alert type="warning" showIcon message="当前会话没有客户交付读取权限" description="请切换到具备 customer.delivery.read 的平台运营工作区。" /> : null}
-      {canRead && !canUpdate ? <Alert style={{ marginBottom: 16 }} type="info" showIcon message="当前会话仅可查看客户交付" description="保存、上传和流程变更需要 customer.delivery.update 权限。" /> : null}
-      {!targetWorkspaceId && canRead ? <Alert style={{ marginBottom: 16 }} type="info" showIcon message="正在加载客户交付档案" description="请稍候，运营数据加载完成后即可新建客户。" /> : null}
-      {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
-      {mutationError && !createPage ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
+      {!canRead ? <Alert type="warning" showIcon title="当前会话没有客户交付读取权限" description="请切换到具备 customer.delivery.read 的平台运营工作区。" /> : null}
+      {canRead && !canUpdate ? <Alert style={{ marginBottom: 16 }} type="info" showIcon title="当前会话仅可查看客户交付" description="保存、上传和流程变更需要 customer.delivery.update 权限。" /> : null}
+      {!targetWorkspaceId && canRead ? <Alert style={{ marginBottom: 16 }} type="info" showIcon title="正在加载客户交付档案" description="请稍候，运营数据加载完成后即可新建客户。" /> : null}
+      {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon title="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
+      {mutationError && !createPage ? <Alert style={{ marginBottom: 16 }} type="error" showIcon title="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
       {createPage ? (<>
         <Form id="customer-create-form" className="customer-delivery-create-form" form={createForm} layout="vertical" onFinish={submitCreatePage}>
         <Card title="用户建档">
@@ -464,7 +464,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             </Form.Item>
           </div>
         </Card>
-        {mutationError ? <div ref={createErrorRef} className="customer-delivery-create-error" tabIndex={-1}><Alert type="error" showIcon message="创建客户失败" description={mutationError} /></div> : null}
+        {mutationError ? <div ref={createErrorRef} className="customer-delivery-create-error" tabIndex={-1}><Alert type="error" showIcon title="创建客户失败" description={mutationError} /></div> : null}
         <div className="customer-delivery-create-actions">
           <Button disabled={creating} onClick={() => setCreatePage(false)}>返回客户建档</Button>
           <Space>

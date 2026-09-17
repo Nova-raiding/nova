@@ -61,6 +61,7 @@ for (const name of ['api', 'api-replica']) {
     DEPLOYMENT_PROFILE: 'ecs',
     LOCAL_COMPOSE: 'false',
     CONNECTOR_FIXTURE_MODE: 'false',
+    PLATFORM_OPERATIONS_MODE: 'manual',
     MERCHANT_TEST_APPROVED_RATES: 'false',
     ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
     ASSET_STORAGE_CREDENTIAL_PROVIDER: 'aliyun_ecs_ram_role',
@@ -72,10 +73,13 @@ for (const name of ['api', 'api-replica']) {
   for (const key of ['ALERT_CHANNEL_SECRET_REF', 'OPS_ALERT_WEBHOOK_URL', 'OPS_ALERT_WEBHOOK_ALLOWED_HOSTS', 'OPS_ALERT_WEBHOOK_SECRET_FILE']) {
     if (String(environment[key] ?? '') !== '') fail(`${name}.${key} must be empty while alerts are disabled`)
   }
-  for (const key of ['API_AUTH_TOKENS', 'SESSION_ID_HASH_SECRET', 'WORKER_API_CREDENTIALS', 'ASSET_DISPLAY_URL_SIGNING_SECRET', 'ASSET_DISPLAY_URL_SIGNING_KEY_ID', 'DATABASE_URL', 'OPS_DATABASE_URL', 'MODEL_COST_ESTIMATE_VERSION', 'OPENAI_APPS_CHALLENGE_TOKEN']) {
+  for (const key of ['API_AUTH_TOKENS', 'SESSION_ID_HASH_SECRET', 'WORKER_API_CREDENTIALS', 'ASSET_DISPLAY_URL_SIGNING_SECRET', 'ASSET_DISPLAY_URL_SIGNING_KEY_ID', 'DATABASE_URL', 'OPS_DATABASE_URL', 'MODEL_COST_ESTIMATE_VERSION']) {
     if (!String(environment[key] ?? '').trim()) fail(`${name}.${key} must be configured`)
   }
-  if (/fixture|example|placeholder|<|>/iu.test(String(environment.OPENAI_APPS_CHALLENGE_TOKEN))) fail(`${name}.OPENAI_APPS_CHALLENGE_TOKEN must be an OpenAI-issued production value`)
+  if (String(environment.MCP_INTEGRATION_MODE ?? '') !== 'local_stdio') fail(`${name}.MCP_INTEGRATION_MODE must equal local_stdio`)
+  if (String(environment.MCP_OAUTH_REQUIRED ?? '') !== 'false') fail(`${name}.MCP_OAUTH_REQUIRED must equal false for local stdio`)
+  if (String(environment.MCP_OAUTH_CLIENTS ?? '') !== '') fail(`${name}.MCP_OAUTH_CLIENTS must be empty for local stdio`)
+  if (String(environment.OPENAI_APPS_CHALLENGE_TOKEN ?? '') !== '') fail(`${name}.OPENAI_APPS_CHALLENGE_TOKEN must be empty for local stdio`)
   if (String(environment.ALLOW_WILDCARD_WORKSPACE_GRANT ?? '') !== 'false') fail(`${name}.ALLOW_WILDCARD_WORKSPACE_GRANT must equal false`)
   if (String(environment.OPS_LOCAL_SESSION_WORKSPACE_ID ?? '') !== '') fail(`${name}.OPS_LOCAL_SESSION_WORKSPACE_ID must be empty`)
   const serialized = JSON.stringify(environment)

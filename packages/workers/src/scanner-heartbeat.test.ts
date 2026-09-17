@@ -29,6 +29,12 @@ describe('scanner heartbeat contract', () => {
     expect(createScannerHeartbeat({ instanceId: 'scan-a', now, thresholds, checks: base.checks, clamav: base.clamav, eicar: base.eicar, callback: base.callback, queue: { backlog: 0, deadLetter: 1 } }).ready).toBe(true)
   })
 
+  it('admits bootstrap recovery with configured callback wiring but keeps readiness fail-closed until acceptance', () => {
+    const base = healthy('scan-bootstrap')
+    const heartbeat = createScannerHeartbeat({ instanceId: 'scan-bootstrap', now, thresholds, checks: base.checks, clamav: base.clamav, eicar: base.eicar, callback: { configured: true, capable: false }, queue: { backlog: 0, deadLetter: 0 } })
+    expect(heartbeat).toMatchObject({ recoveryCapable: true, ready: false, callback: { configured: true, capable: false } })
+  })
+
   it('fails closed and records malformed queue evidence instead of coercing it to healthy', () => {
     const base = healthy('scan-a')
     for (const queue of [{ backlog: -1, deadLetter: 0 }, { backlog: Number.NaN, deadLetter: 0 }, { backlog: 0, deadLetter: 1.5 }]) {

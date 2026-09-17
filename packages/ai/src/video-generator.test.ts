@@ -113,7 +113,7 @@ describe('video generator relay', () => {
     [12.9, 12],
     [99, 15],
     [Number.NaN, 5],
-  ] as const)('normalizes direct duration %s before request and usage settlement', async (configured, expected) => {
+  ] as const)('normalizes direct duration %s before request and preserves it as a preauthorization estimate', async (configured, expected) => {
     let body: Record<string, unknown> = {}
     let usageMetadata: Record<string, unknown> | undefined
     const generator = new OpenAICompatibleVideoGenerator({
@@ -126,7 +126,8 @@ describe('video generator relay', () => {
     })
     await generator.generate({ prompt: '生成视频', output: 'rendering', context: {} })
     expect(body.duration).toBe(expected)
-    expect(usageMetadata).toMatchObject({ duration_seconds: expected })
+    expect(usageMetadata).toMatchObject({ preauthorization_duration_seconds: expected, preauthorization_estimate: true })
+    expect(usageMetadata).not.toHaveProperty('duration_seconds')
   })
 
   it('accepts the configured 100-second maximum without exceeding it', () => {

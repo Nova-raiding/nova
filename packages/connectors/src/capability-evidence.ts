@@ -1,7 +1,7 @@
 import { createPublicKey, verify } from 'node:crypto'
 import type { Platform } from './types.js'
 
-export type CapabilityName = 'authorize' | 'read' | 'full_sync' | 'incremental_sync' | 'create' | 'update' | 'query_status' | 'revoke' | 'media_upload'
+export type CapabilityName = 'authorize' | 'refresh' | 'read' | 'full_sync' | 'incremental_sync' | 'create' | 'update' | 'query_status' | 'revoke' | 'media_upload'
 export type CapabilityEvidenceState = 'unverified' | 'documented' | 'fixture_verified' | 'test_e2e' | 'production_canary'
 
 export interface CapabilityEvidence {
@@ -70,6 +70,6 @@ export function advanceCapabilityEvidence(current: CapabilityEvidence, next: Cap
 }
 
 export function isProductionCanaryReady(evidence: readonly CapabilityEvidence[], platform: Platform): boolean {
-  const required: CapabilityName[] = ['authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload']
+  const required: CapabilityName[] = ['authorize', 'refresh', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload']
   return required.every(capability => evidence.some(item => item.platform === platform && item.capability === capability && item.state === 'production_canary'))
 }

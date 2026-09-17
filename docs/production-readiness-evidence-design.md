@@ -2,7 +2,7 @@
 
 生产状态由两个独立维度组成：
 
-1. **Runtime readiness**：当前部署是否使用真实依赖并能安全处理请求。它检查运行模式、支付 provider、平台 OAuth、对象存储/KMS、scanner、告警、数据库/RLS、宿主 bridge 和模型 relay 配置。
+1. **Runtime readiness**：当前部署是否使用真实依赖并能安全处理请求。它检查运行模式、支付 provider、平台操作模式（当前上线为人工运营；`official_api` 才要求平台 OAuth）、对象存储/KMS、scanner、告警、数据库/RLS、宿主 bridge 和模型 relay 配置。
 2. **Release evidence readiness**：当前 release 是否拥有可审计的外部运行证据。它检查 release id 绑定、五模态 provider request id、usage、cost、pricing snapshot、503 recovery，以及 capability、capacity、payment、storage、restore 和 ChatGPT host evidence。
 
 单项通过不能推导另一项通过。尤其是本地 `.env` 中的真实 relay 请求只能使 `release:model_relay_evidence=ready`，不能把 `commercial:model_relay` 或 `productionGate` 标成 ready；运行时仍为 fixture、对象存储为 local 或支付为 fixture 时，写入必须保持关闭。

@@ -192,7 +192,7 @@ describe('HttpPlatformConnector', () => {
       return response({ ok: true })
     })
     const connector = createConfiguredConnector('taobao', { config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'taobao' as const })) }, credentials: store, fetch: fetchMock, allowTestCredentials: true, allowTestAdapters: true })
-    const ref = await connector.exchangeCode({ code: 'code-1', state: 'state-1', codeVerifier: 'pkce-verifier', workspaceId: 'ws-oauth' })
+    const ref = await connector.exchangeCode({ code: 'code-1', state: 'state-1', redirectUri: 'https://app.test/oauth/callback', codeVerifier: 'pkce-verifier', workspaceId: 'ws-oauth' })
     expect(ref).toMatchObject({ credentialRef: 'vault://remote-shop-1', workspaceId: 'ws-oauth', scope: 'product.read product.write', expiresAt: expect.any(String) })
     await connector.refreshCredential(ref)
     await connector.revoke(ref)
@@ -200,8 +200,34 @@ describe('HttpPlatformConnector', () => {
     expect(calls[0]?.body).toContain('authorization_code')
     expect(calls[0]?.body).toContain('grant_type=authorization_code')
     expect(calls[0]?.body).toContain('code_verifier=pkce-verifier')
+    expect(calls[0]?.body).toContain('redirect_uri=https%3A%2F%2Fapp.test%2Foauth%2Fcallback')
     expect(calls[1]?.body).toContain('refresh_token')
     expect(calls[0]?.body).not.toContain('access-token')
+  })
+
+  it('uses Douyin OAuth parameter names and response identity without invoking the business signer', async () => {
+    const store = credentials()
+    const signer = { kind: 'platform' as const, sign: vi.fn(() => ({ 'x-business-signature': 'must-not-be-used' })) }
+    const requests: Array<{ url: string; body?: string }> = []
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      requests.push({ url: String(url), body: typeof init?.body === 'string' ? init.body : undefined })
+      return response({ access_token: 'douyin-token', refresh_token: 'douyin-refresh', expires_in: '3600', open_id: 'douyin-open-id' })
+    })
+    const config = { ...readyConfig, signer, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'douyin' as const })) }
+    const connector = createConfiguredConnector('douyin', { config, credentials: store, fetch: fetchMock, allowTestCredentials: true, allowTestAdapters: true })
+
+    const authorization = await connector.authorize({ workspaceId: 'ws', actorId: 'actor', redirectUri: 'https://app.test/douyin/callback', state: 'douyin-state' })
+    const authorizationUrl = new URL(authorization.authorizationUrl!)
+    expect(authorizationUrl.searchParams.get('client_key')).toBe('app-test')
+    expect(authorizationUrl.searchParams.has('client_id')).toBe(false)
+    expect(authorizationUrl.searchParams.get('scope')).toBe('product.read,product.write')
+
+    await expect(connector.exchangeCode({ code: 'douyin-code', state: 'douyin-state', redirectUri: 'https://app.test/douyin/callback', workspaceId: 'ws' }))
+      .resolves.toMatchObject({ accountId: 'douyin-open-id', expiresAt: expect.any(String) })
+    expect(requests[0]?.body).toContain('client_key=app-test')
+    expect(requests[0]?.body).not.toContain('client_id=')
+    expect(requests[0]?.body).toContain('redirect_uri=https%3A%2F%2Fapp.test%2Fdouyin%2Fcallback')
+    expect(signer.sign).not.toHaveBeenCalled()
   })
 
   it('drops control characters from OAuth token metadata before constructing headers', async () => {
@@ -372,7 +398,7 @@ describe('HttpPlatformConnector', () => {
           ...readyConfig,
           allowedHosts: ['platform.test'],
           signer: { kind: 'platform', sign: (descriptor) => { descriptor.url = 'https://evil.test/steal'; return {} } },
-          capabilityEvidence: [...(readyConfig.capabilityEvidence ?? []), { platform: 'jd' as const, capability: 'media_upload', state: 'test_e2e' as const, evidenceRef: 'test-only', verifiedBy: 'unit-test', verifiedAt: '2026-08-22T00:00:00Z' }],
+          capabilityEvidence: ['authorize', 'refresh', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'].map(capability => ({ platform: 'jd' as const, capability: capability as any, state: 'test_e2e' as const, evidenceRef: 'test-only', verifiedBy: 'unit-test', verifiedAt: '2026-08-22T00:00:00Z' })),
         },
         credentials: credentials(), fetch: fetchMock, allowTestCredentials: true, allowTestAdapters: true,
       })

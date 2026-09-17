@@ -39,7 +39,14 @@ function allPostgresTests(): Promise<string[]> {
 }
 
 export async function selectIsolatedPostgresTests(args: readonly string[]): Promise<string[]> {
-  if (args.length === 0) return [...ISOLATED_POSTGRES_TEST_FILES]
+  if (args.length === 0) {
+    const discovered = new Set(await allPostgresTests())
+    const missing = ISOLATED_POSTGRES_TEST_FILES.filter(file => !discovered.has(file))
+    if (missing.length > 0 || new Set(ISOLATED_POSTGRES_TEST_FILES).size !== ISOLATED_POSTGRES_TEST_FILES.length) {
+      throw new Error('ISOLATED_POSTGRES_AUDITED_MANIFEST_INVALID')
+    }
+    return [...ISOLATED_POSTGRES_TEST_FILES]
+  }
   if (args.length === 1 && args[0] === '--all') return allPostgresTests()
   const selected = args.map(argument => posix.normalize(argument.replaceAll('\\', '/')))
   if (selected.some(file => !ISOLATED_POSTGRES_TEST_FILES.some(expected => file === expected)) || new Set(selected).size !== selected.length) {

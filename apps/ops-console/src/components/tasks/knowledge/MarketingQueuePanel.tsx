@@ -7,6 +7,7 @@ import { CampaignLifecycleControl } from './CampaignLifecycleControl.js'
 import { assetScanRecoveryEvidence } from "./assetScanRecovery.js";
 import { ImageExecutionEvidenceModal } from "./ImageExecutionEvidenceModal.js";
 import { canReconcileImageExecution, summarizeImageExecutionEvidence } from "./imageExecutionEvidence.js";
+import type { RecordManualPublishEvidenceInput } from "../../../api/manualPublishClient.js";
 
 interface MarketingQueuePanelProps {
   model: OpsConsoleModel;
@@ -100,6 +101,11 @@ export function queueStateLabel(state: string) {
     completed: "已完成",
     published: "已发布",
     ready: "待处理",
+    export_ready: "交付包就绪",
+    manual_publish_in_progress: "人工发布中",
+    manual_publish_reported: "人工已报告，待复核",
+    manual_review_required: "人工复核异常",
+    platform_verified: "平台 API 已验证",
   } as Record<string, string>)[state] ?? "状态待确认";
 }
 
@@ -153,6 +159,9 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
   const [visualEvidenceTarget, setVisualEvidenceTarget] = useState<OpsConsoleModel["marketingQueue"]["visuals"][number]>();
   const [visualReviewReason, setVisualReviewReason] = useState("");
   const [visualReviewSubmitting, setVisualReviewSubmitting] = useState(false);
+  const [manualPublishForm] = Form.useForm<Omit<RecordManualPublishEvidenceInput, "targetWorkspaceId" | "publishJobId" | "taskId" | "contentVersionId" | "platform" | "accountId" | "expectedRevision" | "idempotencyKey">>();
+  const [manualPublishTarget, setManualPublishTarget] = useState<OpsConsoleModel["marketingQueue"]["publish"][number]>();
+  const [manualPublishSubmitting, setManualPublishSubmitting] = useState(false);
   const revisionErrorRef = useRef<HTMLDivElement>(null);
 
   const openSupportTicket = (input: { kind: string; taskId: string; state: string; detail: string }) => {
@@ -257,6 +266,32 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
       setVisualReviewReason("");
     } finally {
       setVisualReviewSubmitting(false);
+    }
+  };
+  const openManualPublish = (job: OpsConsoleModel["marketingQueue"]["publish"][number]) => {
+    setManualPublishTarget(job);
+    manualPublishForm.setFieldsValue({
+      status: job.manualPublish?.status === "manual_review_required" ? "manual_review_required" : "manual_publish_reported",
+      deliveryBundleHash: job.manualPublish?.deliveryBundleHash ?? "",
+      platformItemId: job.manualPublish?.platformItemId ?? "",
+      publicUrl: job.manualPublish?.publicUrl ?? "",
+      evidenceKind: "screenshot",
+      evidenceReference: "",
+      note: "",
+    });
+  };
+  const closeManualPublish = () => {
+    if (manualPublishSubmitting) return;
+    setManualPublishTarget(undefined);
+    manualPublishForm.resetFields();
+  };
+  const submitManualPublish = async (values: Omit<RecordManualPublishEvidenceInput, "targetWorkspaceId" | "publishJobId" | "taskId" | "contentVersionId" | "platform" | "accountId" | "expectedRevision" | "idempotencyKey">) => {
+    if (!manualPublishTarget?.manualPublish?.writeCapability?.writable) return;
+    setManualPublishSubmitting(true);
+    try {
+      if (await model.recordManualPublishEvidence(manualPublishTarget, values)) closeManualPublish();
+    } finally {
+      setManualPublishSubmitting(false);
     }
   };
   const submitAssignment = async (values: { operatorId: string }) => {
@@ -388,11 +423,12 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
       id: `publish:${job.id}`,
       kind: `发布 · ${job.platform}`,
       taskId: job.taskId,
-      state: job.remoteState || job.state,
-      detail: `${job.assignedOperatorId ? `负责人：${job.assignedOperatorId}；` : "未分配负责人；"}${job.rejection?.rawCode || job.rejection?.message || "等待平台回执"}`,
+      state: job.manualPublish?.status || job.remoteState || job.state,
+      detail: `${job.assignedOperatorId ? `负责人：${job.assignedOperatorId}；` : "未分配负责人；"}${job.manualPublish ? `人工交付：${queueStateLabel(job.manualPublish.status)}；证据 ${job.manualPublish.evidence.length} 条；交付包哈希：${job.manualPublish.deliveryBundleHash ?? "未绑定"}` : job.rejection?.rawCode || job.rejection?.message || "等待平台回执"}`,
       updatedAt: job.createdAt,
       action: (
         <Space wrap>
+          <Button type="link" onClick={() => openManualPublish(job)}>人工发布与证据</Button>
           <Button
             type="link"
             onClick={() =>
@@ -546,6 +582,71 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
           setImageEvidenceRef("");
         }}
       />
+      <Modal
+        open={Boolean(manualPublishTarget)}
+        title="人工发布与证据"
+        okText="保存人工报告"
+        cancelText="关闭"
+        confirmLoading={manualPublishSubmitting}
+        okButtonProps={{ disabled: manualPublishTarget?.manualPublish?.writeCapability?.writable !== true }}
+        onCancel={closeManualPublish}
+        onOk={() => manualPublishForm.submit()}
+        width={760}
+        destroyOnHidden
+      >
+        {manualPublishTarget && <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+          <Alert
+            type="warning"
+            showIcon
+            title="人工报告不是平台 API 回执"
+            description="截图、公开链接和运营登记只能证明人工操作过程；不得据此标记为 platform_verified 或自动化 published。"
+          />
+          <Descriptions bordered size="small" column={2}>
+            <Descriptions.Item label="平台 / 任务">{manualPublishTarget.platform} / {manualPublishTarget.taskId}</Descriptions.Item>
+            <Descriptions.Item label="当前状态"><Tag color={stateColor(manualPublishTarget.manualPublish?.status ?? "export_ready")}>{queueStateLabel(manualPublishTarget.manualPublish?.status ?? "export_ready")}</Tag></Descriptions.Item>
+            <Descriptions.Item label="交付包哈希" span={2}><Typography.Text code copyable={Boolean(manualPublishTarget.manualPublish?.deliveryBundleHash)}>{manualPublishTarget.manualPublish?.deliveryBundleHash ?? "未返回，禁止提交"}</Typography.Text></Descriptions.Item>
+            <Descriptions.Item label="平台内容 ID">{manualPublishTarget.manualPublish?.platformItemId ?? "未登记"}</Descriptions.Item>
+            <Descriptions.Item label="公开链接">{manualPublishTarget.manualPublish?.publicUrl ? <a href={manualPublishTarget.manualPublish.publicUrl} target="_blank" rel="noreferrer">打开已登记链接</a> : "未登记"}</Descriptions.Item>
+            <Descriptions.Item label="报告人 / 时间">{manualPublishTarget.manualPublish?.reportedBy ?? "未报告"} / {manualPublishTarget.manualPublish?.reportedAt ? new Date(manualPublishTarget.manualPublish.reportedAt).toLocaleString() : "—"}</Descriptions.Item>
+            <Descriptions.Item label="复核人 / 时间">{manualPublishTarget.manualPublish?.reviewedBy ?? "未复核"} / {manualPublishTarget.manualPublish?.reviewedAt ? new Date(manualPublishTarget.manualPublish.reviewedAt).toLocaleString() : "—"}</Descriptions.Item>
+          </Descriptions>
+          <Card size="small" title={`已保存证据（${manualPublishTarget.manualPublish?.evidence.length ?? 0}）`}>
+            {manualPublishTarget.manualPublish?.evidence.length ? <Table pagination={false} rowKey="id" size="small" dataSource={manualPublishTarget.manualPublish.evidence} columns={[
+              { title: "类型", dataIndex: "kind" },
+              { title: "引用", dataIndex: "reference", render: (value: string) => <Typography.Text code copyable>{value}</Typography.Text> },
+              { title: "说明", dataIndex: "note", render: (value?: string | null) => value || "—" },
+              { title: "记录人 / 时间", render: (_: unknown, evidence) => `${evidence.recordedBy} / ${new Date(evidence.recordedAt).toLocaleString()}` },
+            ]} /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="服务端尚未返回证据记录" />}
+          </Card>
+          {manualPublishTarget.manualPublish?.writeCapability?.writable !== true && <Alert
+            type="info"
+            showIcon
+            role="status"
+            title="人工证据写入尚未接通"
+            description={manualPublishTarget.manualPublish?.writeCapability?.blockingReason ?? "服务端未返回可写 capability。以下字段仅展示操作要求，提交保持禁用，不会在浏览器中伪造保存。"}
+          />}
+          <Form form={manualPublishForm} layout="vertical" requiredMark onFinish={(values) => void submitManualPublish(values)} disabled={manualPublishTarget.manualPublish?.writeCapability?.writable !== true}>
+            <Form.Item name="status" label="人工状态" rules={[{ required: true }]}>
+              <Select options={[
+                { value: "manual_publish_in_progress", label: "人工发布中" },
+                { value: "manual_publish_reported", label: "人工已报告，待复核" },
+                { value: "manual_review_required", label: "人工复核异常" },
+              ]} />
+            </Form.Item>
+            <Form.Item name="deliveryBundleHash" label="交付包 SHA-256" rules={[{ required: true, pattern: /^[a-f0-9]{64}$/iu, message: "请输入 64 位交付包 SHA-256" }]}>
+              <Input className="ops-token" placeholder="必须绑定批准版本的交付包哈希" />
+            </Form.Item>
+            <Form.Item name="platformItemId" label="平台内容 ID（如有）"><Input maxLength={256} /></Form.Item>
+            <Form.Item name="publicUrl" label="公开结果链接（如有）" rules={[{ type: "url", message: "请输入完整 URL" }]}><Input type="url" /></Form.Item>
+            <Form.Item name="evidenceKind" label="证据类型" rules={[{ required: true }]}><Select options={[
+              { value: "screenshot", label: "发布结果截图引用" }, { value: "public_url", label: "公开链接" },
+              { value: "platform_record", label: "平台后台记录引用" }, { value: "review_note", label: "复核说明" },
+            ]} /></Form.Item>
+            <Form.Item name="evidenceReference" label="证据引用" extra="填写已安全上传并扫描通过的资产引用或审计记录 ID。" rules={[{ required: true, whitespace: true, message: "请填写证据引用" }]}><Input maxLength={500} /></Form.Item>
+            <Form.Item name="note" label="操作与差异说明" rules={[{ required: true, whitespace: true, min: 4, message: "至少填写 4 个字符" }]}><Input.TextArea rows={3} maxLength={500} showCount /></Form.Item>
+          </Form>
+        </Space>}
+      </Modal>
       <Modal open={Boolean(imageReconcileTarget)} title="人工收口图片执行" okText="提交收口" cancelText="取消" confirmLoading={imageReconcileSubmitting} okButtonProps={{ danger: imageResolution === "failed", disabled: imageReason.trim().length < 4 || !imageEvidenceRef.trim() }} onCancel={closeImageReconcile} onOk={() => void submitImageReconcile()} destroyOnHidden>
         <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
           <Alert type="warning" showIcon role="alert" title="待确认状态不能直接视为成功或重试" description="完成收口仅在服务端确认任务成功、产物已归档且安全扫描通过时允许；失败收口必须留下可追溯证据。收口期间 Merchant 与 Ops 都不会创建第二个 Provider 请求。" />

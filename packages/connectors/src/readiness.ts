@@ -3,7 +3,7 @@ import type { HttpConnectorConfig, Platform } from './types.js'
 import { inspectOutboundUrl, isSecureEnvironment, officialHostsFor } from './outbound-security.js'
 
 export const REQUIRED_CONNECTOR_CAPABILITIES: readonly CapabilityName[] = [
-  'authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload',
+  'authorize', 'refresh', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload',
 ]
 
 export type ConnectorReadinessReason =
@@ -30,6 +30,8 @@ export type ConnectorReadinessReason =
   | 'CAPABILITY_EVIDENCE_MISSING'
   | 'CAPABILITY_EVIDENCE_NOT_E2E'
   | 'CAPABILITY_EVIDENCE_UNATTRIBUTED'
+  | 'READ_DISABLED'
+  | 'WRITE_DISABLED'
 
 export interface ConnectorReadiness {
   platform: Platform
@@ -106,7 +108,7 @@ function evidenceFor(evidence: readonly CapabilityEvidence[] | undefined, platfo
 export function validateConnectorReadiness(
   platform: Platform,
   config: HttpConnectorConfig | undefined,
-  options: { allowTestAdapters?: boolean } = {},
+  options: { allowTestAdapters?: boolean; readEnabled?: boolean; writeEnabled?: boolean } = {},
 ): ConnectorReadiness {
   // This is a test seam, not a deployment switch. Keeping the environment
   // check here prevents a production caller from accidentally bypassing the
@@ -116,6 +118,11 @@ export function validateConnectorReadiness(
   if (!config) {
     return { platform, ready: false, reasons: ['CONFIG_MISSING'], verifiedCapabilities: [] }
   }
+  // Platform operation switches are deployment authorization inputs. When a
+  // caller supplies them, only an explicit true admits that operation. This
+  // keeps malformed, missing, and false Compose values fail-closed.
+  if (options.readEnabled === false) reasons.push('READ_DISABLED')
+  if (options.writeEnabled === false) reasons.push('WRITE_DISABLED')
   if (!config.clientId.trim()) reasons.push('CLIENT_ID_MISSING')
   if (!validUrl(config.oauth.authorizeUrl) || !validUrl(config.oauth.tokenUrl)) reasons.push('OAUTH_ENDPOINT_MISSING')
   if (!validUrl(config.api.baseUrl)) reasons.push('API_ENDPOINT_MISSING')

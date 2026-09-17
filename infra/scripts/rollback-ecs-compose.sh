@@ -193,7 +193,7 @@ state applying 'validated rollback is being applied; volumes and database are pr
 # Update only the reviewed services. No data cleanup is part of rollback.
 compose up -d --no-build \
   api api-replica ui ops-ui payment-gateway clamav \
-  worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan \
+  worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan pilot-gateway \
   || fail apply_failed 'Compose rollback apply failed after mutation began; services may be partially switched, data was preserved, and manual recovery is required'
 
 deadline=$(( $(date +%s) + ${ECS_ROLLBACK_HEALTH_TIMEOUT_SECONDS:-300} ))

@@ -24,6 +24,7 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   'automation.policy.get', 'automation.policy.list', 'automation.policy.update',
   'automation.scan', 'automation.tick', 'automation.pause',
   'publish.prepare', 'publish.confirm', 'publish.get',
+  'ops.marketing.publish.manual-evidence.record',
   'publish.batch.prepare', 'publish.batch.confirm', 'publish.batch.get',
   'publish.batch.pause', 'publish.batch.resume', 'publish.batch.retry_failed',
   'billing.model-usage.reconciliation.run',
@@ -813,7 +814,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260916102500' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260917171000' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -2455,8 +2456,133 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('rotates a local desktop credential once on 401 and retries the original MCP request', async () => {
+    const authorizations: string[] = []
+    let refreshes = 0
+    const server = createServer(async (req, res) => {
+      if (req.url === '/v1/auth/mcp-token/refresh') {
+        refreshes += 1
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ data: { result: { access_token: 'fresh-access', refresh_token: 'fresh-refresh' } } }))
+        return
+      }
+      authorizations.push(String(req.headers.authorization ?? ''))
+      if (req.headers.authorization !== 'Bearer fresh-access') {
+        res.writeHead(401, { 'content-type': 'application/json' }).end('{}')
+        return
+      }
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { ready: true } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'expired-access', MERCHANT_MCP_REFRESH_TOKEN: 'valid-refresh' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false })
+      expect(refreshes).toBe(1)
+      expect(authorizations).toEqual(['Bearer expired-access', 'Bearer fresh-access'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it.each([401, 409, 500])('fails closed without replaying the MCP request when token refresh returns HTTP %s', async refreshStatus => {
+    let mcpRequests = 0
+    let refreshes = 0
+    const server = createServer((req, res) => {
+      if (req.url === '/v1/auth/mcp-token/refresh') {
+        refreshes += 1
+        res.writeHead(refreshStatus, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: { code: refreshStatus === 409 ? 'MCP_REFRESH_REPLAY_DETECTED' : 'MCP_REFRESH_FAILED' } }))
+        return
+      }
+      mcpRequests += 1
+      res.writeHead(401, { 'content-type': 'application/json' }).end('{}')
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'expired-access', MERCHANT_MCP_REFRESH_TOKEN: 'replayed-or-invalid-refresh' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_AUTH_REQUIRED' } })
+      expect(refreshes).toBe(1)
+      expect(mcpRequests).toBe(1)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('attempts refresh only once when the rotated access token is also rejected', async () => {
+    const authorizations: string[] = []
+    let refreshes = 0
+    const server = createServer((req, res) => {
+      if (req.url === '/v1/auth/mcp-token/refresh') {
+        refreshes += 1
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ data: { result: { access_token: 'rejected-access', refresh_token: 'rotated-refresh' } } }))
+        return
+      }
+      authorizations.push(String(req.headers.authorization ?? ''))
+      res.writeHead(401, { 'content-type': 'application/json' }).end('{}')
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'expired-access', MERCHANT_MCP_REFRESH_TOKEN: 'valid-refresh' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_AUTH_REQUIRED' } })
+      expect(refreshes).toBe(1)
+      expect(authorizations).toEqual(['Bearer expired-access', 'Bearer rejected-access'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('fails closed when refresh succeeds without a complete rotated token pair', async () => {
+    let mcpRequests = 0
+    let refreshes = 0
+    const server = createServer((req, res) => {
+      if (req.url === '/v1/auth/mcp-token/refresh') {
+        refreshes += 1
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ data: { result: { access_token: 'incomplete-access' } } }))
+        return
+      }
+      mcpRequests += 1
+      res.writeHead(401, { 'content-type': 'application/json' }).end('{}')
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'expired-access', MERCHANT_MCP_REFRESH_TOKEN: 'valid-refresh' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_AUTH_REQUIRED' } })
+      expect(refreshes).toBe(1)
+      expect(mcpRequests).toBe(1)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it.each([
-    [401, 'MCP_AUTH_REQUIRED', 'Store Nova 尚未登录或授权。请先在 Store Nova 商家后台登录，并在“连接本地插件”中为当前工作区生成连接凭据；本地插件不使用 ChatGPT OAuth。任务和已有内容已保留，没有扣费或发布。'],
+    [401, 'MCP_AUTH_REQUIRED', '当前 ChatGPT 桌面插件没有可用的 Store Nova 工作区绑定，或旧的本地开发绑定已失效。请在商家后台的“连接本地插件”重新绑定当前工作区后重启 ChatGPT；这不是六个平台授权，也不会触发扣费或发布。'],
     [403, 'PERMISSION_DENIED', '当前账号没有执行这一步的权限。任务和已有内容已保留。'],
   ])('maps a bare HTTP %s gateway response to the stable plugin error contract', async (status, code, message) => {
     const server = createServer((_req, res) => {
@@ -2481,8 +2607,8 @@ describe('Codex stdio MCP bridge', () => {
         expect(response.result.structuredContent.recovery).toMatchObject({
           state: 'authentication_required',
           user_action_required: true,
-          resume_message: '登录并授权后继续',
-          next_action: { label: '登录商家后台并生成本地连接凭据', target: 'merchant_studio_local_plugin_connection' },
+          resume_message: '重新绑定后继续',
+          next_action: { label: '重新绑定当前 Store Nova 工作区', target: 'merchant_studio_local_plugin_connection' },
         })
       }
     } finally {

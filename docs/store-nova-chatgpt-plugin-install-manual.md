@@ -140,11 +140,12 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
     launchctl setenv MERCHANT_MCP_BASE_URL "https://<商家API根地址>"
     launchctl setenv MERCHANT_WORKSPACE_ID "ws_<管理员分配的工作区>"
     launchctl setenv MERCHANT_STRICT_AUTH "true"
-    launchctl setenv DEPLOY_ENV "production"
+    launchctl setenv DEPLOY_ENV "local_desktop"
 
 只有网关明确要求静态 Bearer token 时才设置：
 
     launchctl setenv MERCHANT_MCP_TOKEN "<网关签发的短期token>"
+    launchctl setenv MERCHANT_MCP_REFRESH_TOKEN "<网关签发的轮换refresh token>"
 
 生产环境不要设置以下开发开关：
 
@@ -153,7 +154,7 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
 
 检查变量是否存在，但不要打印 token：
 
-    for name in MERCHANT_MCP_BASE_URL MERCHANT_WORKSPACE_ID MERCHANT_MCP_TOKEN MERCHANT_STRICT_AUTH DEPLOY_ENV; do
+    for name in MERCHANT_MCP_BASE_URL MERCHANT_WORKSPACE_ID MERCHANT_MCP_TOKEN MERCHANT_MCP_REFRESH_TOKEN MERCHANT_STRICT_AUTH DEPLOY_ENV; do
       value=$(launchctl getenv "$name" 2>/dev/null || true)
       if [ -n "$value" ]; then
         case "$name" in
@@ -218,8 +219,9 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
 | `MERCHANT_MCP_BASE_URL` | ChatGPT 插件 → 商家 API/MCP | 技术安装人员/平台管理员 |
 | `MERCHANT_WORKSPACE_ID` | 请求的租户边界 | 平台管理员分配 |
 | `MERCHANT_MCP_TOKEN` | 插件到网关的可选 Bearer 身份 | 网关管理员注入 |
+| `MERCHANT_MCP_REFRESH_TOKEN` | access token 过期后单次轮换并恢复连接；每次使用后必须替换旧值 | 网关管理员注入 |
 | `MERCHANT_STRICT_AUTH` | 非本机 API 的强制鉴权门禁；生产必须为 `true` | 技术安装人员/平台管理员 |
-| `DEPLOY_ENV` | bridge 的部署环境判定；生产必须为 `production` | 技术安装人员/平台管理员 |
+| `DEPLOY_ENV` | 本地插件 bridge 的部署环境判定；安装到用户电脑时必须为 `local_desktop` | 技术安装人员/平台管理员 |
 | `MODEL_RELAY_BASE_URL`、`MODEL_RELAY_API_KEY`、`AI_MODEL` 等 | 商家 API → 业务模型 | 服务端密钥管理器 |
 | `CODEX_RELAY_BASE_URL`、`CODEX_RELAY_MODEL`、`WORMHOLE_API_KEY` | ChatGPT/Codex 宿主 → 宿主模型中转 | 平台管理员 |
 
@@ -280,7 +282,7 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
 
 - [ ] `codex plugin list` 显示插件 `installed, enabled`。
 - [ ] marketplace 来源核对为本次交付仓库，`verify-marketplace-source.mjs` 返回 `ok: true`；安装缓存与源码版本一致。
-- [ ] `MERCHANT_MCP_BASE_URL`、`MERCHANT_WORKSPACE_ID`、`MERCHANT_STRICT_AUTH=true`、`DEPLOY_ENV=production` 在启动 ChatGPT 的用户 launchd 环境中存在。
+- [ ] `MERCHANT_MCP_BASE_URL`、`MERCHANT_WORKSPACE_ID`、`MERCHANT_STRICT_AUTH=true`、`DEPLOY_ENV=local_desktop` 在启动 ChatGPT 的用户 launchd 环境中存在。
 - [ ] 生产没有开启 `MERCHANT_ALLOW_FIXTURE_FALLBACK=true` 或全局 `MERCHANT_MCP_WRITE_ENABLED=true`。
 - [ ] ChatGPT 已完全重启，并在新会话中重新加载工具。
 - [ ] 首个只读入口能返回工作区/引导状态，而不是 MCP 配置缺失。

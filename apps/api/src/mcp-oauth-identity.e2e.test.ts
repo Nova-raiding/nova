@@ -28,6 +28,7 @@ describe('canonical password identity MCP OAuth', () => {
 
   it('exchanges a merchant browser session for a local desktop MCP token without ChatGPT OAuth', async () => {
     vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
     const repository = new MemoryPasswordAuthRepository()
     setPasswordAuthRepositoryForTests(repository)
     const workspaceId = `ws_local_desktop_${Date.now()}`
@@ -41,6 +42,9 @@ describe('canonical password identity MCP OAuth', () => {
     expect(logged.status).toBe(200)
     const cookie = logged.headers.get('set-cookie')?.split(';')[0]
     expect(cookie).toBeTruthy()
+    const crossTenantHttp = await fetch(`${base}/v1/products`, { headers: { cookie: cookie!, 'x-workspace-id': 'ws_other' } })
+    expect(crossTenantHttp.status).toBe(403)
+    await expect(crossTenantHttp.json()).resolves.toMatchObject({ error: { code: 'FORBIDDEN' } })
     const exchanged = await fetch(`${base}/v1/auth/mcp-token`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ workspace_id: workspaceId }) })
     expect(exchanged.status).toBe(200)
     const envelope = await exchanged.json() as { data?: { result?: Record<string, unknown> }; error?: unknown }
@@ -52,10 +56,19 @@ describe('canonical password identity MCP OAuth', () => {
     expect(typeof refreshToken).toBe('string')
     const principal = await repository.authenticateMcpAccessToken({ accessToken: accessToken as string, clientId: 'local-desktop', issuer: base, audience: `${base}/mcp`, resource: `${base}/mcp`, scope: ['merchant'] })
     expect(principal).toMatchObject({ identityId: account.identityId, workspaceId, accountLogin: login })
+    const initialized = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${accessToken}`, 'x-workspace-id': workspaceId, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) })
+    expect(initialized.status).toBe(200)
+    await expect(initialized.json()).resolves.toMatchObject({ jsonrpc: '2.0', id: 1, result: { serverInfo: { name: expect.any(String) } } })
+    const switched = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${accessToken}`, 'x-workspace-id': 'ws_other', 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'initialize', params: {} }) })
+    expect(switched.status).toBe(403)
     const rotated = await fetch(`${base}/v1/auth/mcp-token/refresh`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ refresh_token: refreshToken }) })
     expect(rotated.status).toBe(200)
     const rotatedEnvelope = await rotated.json() as { data?: { result?: Record<string, unknown> } }
-    expect(rotatedEnvelope.data?.result ?? rotatedEnvelope.data).toMatchObject({ token_type: 'Bearer', expires_in: 600 })
+    const rotatedResult = (rotatedEnvelope.data?.result ?? rotatedEnvelope.data ?? {}) as Record<string, unknown>
+    expect(rotatedResult).toMatchObject({ token_type: 'Bearer', expires_in: 600 })
+    const revoke = await fetch(`${base}/v1/auth/mcp-token/revoke`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ refresh_token: rotatedResult?.refresh_token }) })
+    expect(revoke.status).toBe(200)
+    await expect(repository.authenticateMcpAccessToken({ accessToken: String(rotatedResult?.access_token), clientId: 'local-desktop', issuer: base, audience: `${base}/mcp`, resource: `${base}/mcp`, scope: ['merchant'] })).resolves.toBeUndefined()
     const csrf = await fetch(`${base}/v1/auth/mcp-token`, { method: 'POST', headers: { cookie: cookie!, origin: 'https://evil.example', 'content-type': 'application/json' }, body: JSON.stringify({ workspace_id: workspaceId }) })
     expect(csrf.status).toBe(403)
   })
@@ -190,6 +203,7 @@ describe('canonical password identity MCP OAuth', () => {
     await expect(repository.authenticateMcpAccessToken({ accessToken: epochTokens.accessToken, clientId, issuer: base, audience: resource, resource, scope: ['merchant'] })).resolves.toBeUndefined()
 
     vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('MCP_INTEGRATION_MODE', 'remote_oauth')
     vi.stubEnv('MCP_OAUTH_REQUIRED', undefined)
     vi.stubEnv('PUBLIC_APP_BASE_URL', 'https://yxsona.com')
     vi.stubEnv('MERCHANT_BEARER_HOSTNAME', '127.0.0.1')
@@ -394,7 +408,7 @@ describe('canonical password identity MCP OAuth', () => {
 
   it('makes production identity readiness depend on self-hosted MCP OAuth instead of static bearer grants', () => {
     const identityEnvironment: NodeJS.ProcessEnv = {
-      NODE_ENV: 'production', OPS_AUTH_MODE: 'oidc', OIDC_PROXY_SIGNING_SECRET: 'oidc-secret', SESSION_ID_HASH_SECRET: 'session-secret', OPS_DATABASE_URL: 'postgres://control-plane', MERCHANT_BEARER_HOSTNAME: 'yxsona.com', MCP_OAUTH_REQUIRED: 'true', PUBLIC_APP_BASE_URL: 'https://yxsona.com', MCP_OAUTH_ISSUER: 'https://yxsona.com', MCP_OAUTH_AUTHORIZATION_ENDPOINT: 'https://yxsona.com/oauth/authorize', MCP_OAUTH_TOKEN_ENDPOINT: 'https://yxsona.com/oauth/token', MCP_OAUTH_CLIENTS: JSON.stringify({ chatgpt: ['https://chatgpt.com/oauth/callback'] }),
+      NODE_ENV: 'production', OPS_AUTH_MODE: 'oidc', OIDC_PROXY_SIGNING_SECRET: 'oidc-secret', SESSION_ID_HASH_SECRET: 'session-secret', OPS_DATABASE_URL: 'postgres://control-plane', MERCHANT_BEARER_HOSTNAME: 'yxsona.com', MCP_INTEGRATION_MODE: 'remote_oauth', MCP_OAUTH_REQUIRED: 'true', PUBLIC_APP_BASE_URL: 'https://yxsona.com', MCP_OAUTH_ISSUER: 'https://yxsona.com', MCP_OAUTH_AUTHORIZATION_ENDPOINT: 'https://yxsona.com/oauth/authorize', MCP_OAUTH_TOKEN_ENDPOINT: 'https://yxsona.com/oauth/token', MCP_OAUTH_CLIENTS: JSON.stringify({ chatgpt: ['https://chatgpt.com/oauth/callback'] }),
     }
     expect(productionReadinessDiagnostics(identityEnvironment).gates.identity).toEqual({ ready: true, reasons: [] })
     delete identityEnvironment.MCP_OAUTH_CLIENTS

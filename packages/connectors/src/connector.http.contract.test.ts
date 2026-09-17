@@ -55,8 +55,12 @@ describe.each(platforms)('%s HTTP connector FR-15 contract', (platform) => {
     const connector = createConfiguredConnector(platform, { config: makeConfig(platform), credentials: store, fetch: fetchMock, allowTestCredentials: true, allowTestAdapters: true })
 
     await expect(connector.authorize({ workspaceId: 'ws', actorId: 'actor', redirectUri: 'https://app.test/callback', state: `${platform}-state`, codeVerifier: 'verifier' })).resolves.toMatchObject({ ok: true, mode: 'real', platform })
-    const ref = await connector.exchangeCode({ code: `${platform}-code`, state: `${platform}-state`, codeVerifier: 'verifier' })
+    const ref = await connector.exchangeCode({ code: `${platform}-code`, state: `${platform}-state`, redirectUri: 'https://app.test/callback', codeVerifier: 'verifier' })
     expect(ref.accountId).toBe(`${platform}-shop-1`)
+    const tokenRequest = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/oauth/token'))
+    const tokenBody = String(tokenRequest?.[1]?.body ?? '')
+    expect(tokenBody).toContain('redirect_uri=https%3A%2F%2Fapp.test%2Fcallback')
+    expect(tokenBody).toContain(platform === 'douyin' ? 'client_key=' : 'client_id=')
     await expect(connector.syncProducts({ workspaceId: 'ws', accountId: ref.accountId, credentialRef: ref.credentialRef })).resolves.toMatchObject({ source: 'official_api', simulated: false, nextCursor: { value: 'cursor-2' } })
     await connector.revoke(ref)
     expect(store.revoked).toBe(true)

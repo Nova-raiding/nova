@@ -2,13 +2,16 @@ import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { createConfiguredConnector, createFakeConnector, profiles, runPlatformCanary, type AccessCredential, type CredentialProvider, type HttpConnectorConfig } from './index.js'
 
-function sandboxCredentialProvider(): CredentialProvider {
-  const credential: AccessCredential = { accessToken: 'sandbox-test-token' }
+function sandboxCredentialProvider(revokedRefs: string[] = []): CredentialProvider {
+  let credential: AccessCredential = { accessToken: 'sandbox-test-token' }
   return {
     kind: 'test',
     async resolve() { return credential },
-    async store({ accountId, workspaceId }) { return { accountId, ...(workspaceId ? { workspaceId } : {}), credentialRef: 'sandbox://credential' } },
-    async revoke() {},
+    async store(input) {
+      credential = input.credential
+      return { accountId: input.accountId, ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}), credentialRef: 'sandbox://credential' }
+    },
+    async revoke(ref) { revokedRefs.push(ref.credentialRef) },
   }
 }
 
@@ -19,6 +22,7 @@ function sandboxConfig(): HttpConnectorConfig {
     oauth: {
       authorizeUrl: 'https://sandbox.local.test/oauth/authorize',
       tokenUrl: 'https://sandbox.local.test/oauth/token',
+      refreshUrl: 'https://sandbox.local.test/oauth/refresh',
       revokeUrl: 'https://sandbox.local.test/oauth/revoke',
       scopes: ['sandbox.product.read', 'sandbox.product.write'],
     },
@@ -39,6 +43,7 @@ function sandboxConfig(): HttpConnectorConfig {
 function localSandboxConnector(options: { statusRequestId?: string; omitCursor?: boolean; onExchange?: (observation: unknown) => void } = {}) {
   const fixture = profiles.taobao.fixture
   let writeRequestId = 'sandbox-create-request'
+  const revokedRefs: string[] = []
   const fetch = vi.fn(async (url: string | URL, init?: RequestInit) => {
     const requestUrl = new URL(String(url))
     if (requestUrl.pathname === '/oauth/revoke') return new Response('{}', { status: 200 })
@@ -52,10 +57,10 @@ function localSandboxConnector(options: { statusRequestId?: string; omitCursor?:
       return new Response(JSON.stringify({ remoteId: body.remoteId ?? fixture.remoteId, requestId: writeRequestId }), { status: 200 })
     }
     if (requestUrl.pathname === '/api/media') return new Response(JSON.stringify({ mediaId: 'sandbox-media-1' }), { status: 200 })
-    if (requestUrl.pathname === '/oauth/token') return new Response(JSON.stringify({ access_token: 'sandbox-test-token', account_id: 'acct_local_sandbox' }), { status: 200 })
+    if (requestUrl.pathname === '/oauth/token' || requestUrl.pathname === '/oauth/refresh') return new Response(JSON.stringify({ access_token: 'sandbox-test-token', refresh_token: 'sandbox-refresh-token', account_id: 'acct_local_sandbox' }), { status: 200 })
     return new Response(JSON.stringify({}), { status: 404 })
   })
-  return { connector: createConfiguredConnector('taobao', { config: sandboxConfig(), credentials: sandboxCredentialProvider(), fetch, onExchange: options.onExchange, allowTestCredentials: true, allowTestAdapters: true }), fetch }
+  return { connector: createConfiguredConnector('taobao', { config: sandboxConfig(), credentials: sandboxCredentialProvider(revokedRefs), fetch, onExchange: options.onExchange, allowTestCredentials: true, allowTestAdapters: true }), fetch, revokedRefs }
 }
 
 describe('platform canary runner', () => {
@@ -91,11 +96,11 @@ describe('platform canary runner', () => {
     const { connector, fetch } = localSandboxConnector()
     const result = await runPlatformCanary({ connector, context: { workspaceId: 'ws_local_sandbox', accountId: 'wrong-account' }, evidenceRef: 'artifact://sandbox/oauth', verifiedBy: 'qa', apiVersion: 'sandbox-v1', scope: 'sandbox.product.read', expectedRemoteId: profiles.taobao.fixture.remoteId, oauthCallback: { code: 'actual-code', state: 'sandbox-state', pendingState: 'sandbox-state', redirectUri: 'https://sandbox.local.test/callback' }, allowWrite: true, allowRevoke: true, promoteToProductionCanary: true })
     expect(result.passed).toBe(false)
-    expect(result.checks).toHaveLength(9)
+    expect(result.checks).toHaveLength(10)
     expect(fetch.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual(['/oauth/token'])
   })
   it('proves a local sandbox test-shop contract without promoting evidence to production', async () => {
-    const { connector, fetch } = localSandboxConnector()
+    const { connector, fetch, revokedRefs } = localSandboxConnector()
     const result = await runPlatformCanary({
       connector,
       context: { workspaceId: 'ws_local_sandbox', accountId: 'acct_local_sandbox' },
@@ -106,6 +111,7 @@ describe('platform canary runner', () => {
       expectedRemoteId: profiles.taobao.fixture.remoteId,
       allowWrite: true,
       allowRevoke: true,
+      oauthCallback: { code: 'sandbox-authorize-code', state: 'sandbox-state', pendingState: 'sandbox-state', redirectUri: 'https://sandbox.local.test/callback' },
       mediaFile: (() => { const bytes = new Uint8Array([1, 2, 3]); return { bytes, mimeType: 'image/png', sha256: createHash('sha256').update(bytes).digest('hex') } })(),
     })
 
@@ -114,7 +120,10 @@ describe('platform canary runner', () => {
     expect(result.evidence.every(item => item.state === 'test_e2e')).toBe(true)
     expect(result.evidence.every(item => item.evidenceRef?.startsWith('artifact://sandbox/local-taobao'))).toBe(true)
     expect(result.evidence.some(item => item.state === 'production_canary')).toBe(false)
-    expect(fetch).toHaveBeenCalled()
+    expect(result.checks.find(item => item.capability === 'refresh')).toMatchObject({ passed: true, simulated: false })
+    expect(fetch.mock.calls.some(([url]) => String(url).endsWith('/oauth/refresh'))).toBe(true)
+    expect(revokedRefs).toEqual(['sandbox://credential'])
+    expect(revokedRefs.every(ref => !ref.startsWith('canary://'))).toBe(true)
   })
 
   it('only promotes a fully successful non-simulated run to production_canary', async () => {
@@ -195,7 +204,7 @@ describe('platform canary runner', () => {
     })
 
     expect(result.passed).toBe(false)
-    expect(result.checks).toHaveLength(9)
+    expect(result.checks).toHaveLength(10)
     expect(result.checks.every(item => item.detail?.includes('invalid evidence, scope, or media attribution'))).toBe(true)
     expect(authorize).not.toHaveBeenCalled()
   })
@@ -211,7 +220,7 @@ describe('platform canary runner', () => {
       mediaFile: { bytes: new Uint8Array([1, 2, 3]), mimeType: 'image/png', sha256: 'a'.repeat(64) },
     })
     expect(result.passed).toBe(false)
-    expect(result.checks).toHaveLength(9)
+    expect(result.checks).toHaveLength(10)
     expect(result.checks.every(item => item.detail?.includes('invalid evidence, scope, or media attribution'))).toBe(true)
     expect(authorize).not.toHaveBeenCalled()
   })

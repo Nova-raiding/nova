@@ -70,6 +70,11 @@ for file in "$CAPABILITY_EVIDENCE_PATH" "$CAPACITY_REPORT_PATH" "$MODEL_RELAY_EV
 done
 [ -d "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" ] || { echo 'production evidence artifact root not found' >&2; exit 1; }
 cd "$root"
+: "${MCP_INTEGRATION_MODE:?MCP_INTEGRATION_MODE is required}"
+case "$MCP_INTEGRATION_MODE" in
+  local_stdio|remote_oauth) ;;
+  *) echo 'MCP_INTEGRATION_MODE must be local_stdio or remote_oauth' >&2; exit 1 ;;
+esac
 node infra/scripts/check-mcp-oauth-production.mjs --config
 sh infra/scripts/validate-production-config.sh "$config_path"
 node infra/scripts/validate-ecs-production-compose.mjs "$RENDERED_COMPOSE_PATH"
@@ -86,7 +91,12 @@ RELEASE_ID="$RELEASE_ID" RELEASE_GIT_SHA="$release_git_sha" ruby infra/scripts/v
 sh infra/scripts/validate-production-evidence-trust.sh "$root"
 trust_root=/run/release-security/evidence-trust/production-evidence-public.pem
 trusted_key_id=$(sed -n '1p' /run/release-security/evidence-trust/production-evidence-key-id)
-npx --no-install tsx tests/capability-evidence-gate.ts --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --release-id "$RELEASE_ID"
+platform_operations_mode=$(awk '/^[[:space:]]*platform_operations_mode:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$config_path")
+if [ "$platform_operations_mode" = manual ]; then
+  npx --no-install tsx tests/manual-operations-evidence-gate.ts --file "$CAPABILITY_EVIDENCE_PATH" --release-id "$RELEASE_ID"
+else
+  npx --no-install tsx tests/capability-evidence-gate.ts --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --release-id "$RELEASE_ID"
+fi
 npx --no-install tsx tests/capacity-evidence-gate.ts --file "$CAPACITY_REPORT_PATH" --require-cloud-gate --release-id "$RELEASE_ID" --profile "${CAPACITY_PROFILE:-pilot_50}"
 model_relay_url=$(awk '/^[[:space:]]*model_relay_base_url:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$config_path")
 npx --no-install tsx tests/model-relay-evidence-gate.ts --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-production --require-artifacts
@@ -102,7 +112,11 @@ sh infra/scripts/verify-runtime-db-role.sh
 api_digest=$(IMAGE_DIGESTS_JSON="$IMAGE_DIGESTS_JSON" node -e 'const x=JSON.parse(process.env.IMAGE_DIGESTS_JSON);process.stdout.write(x["merchant-api"]||"")')
 worker_digest=$(IMAGE_DIGESTS_JSON="$IMAGE_DIGESTS_JSON" node -e 'const x=JSON.parse(process.env.IMAGE_DIGESTS_JSON);process.stdout.write(x["merchant-worker"]||"")')
 sh infra/scripts/verify-container-source-freshness.sh "$API_IMAGE_REF" "$WORKER_IMAGE_REF" "$api_digest" "$worker_digest"
-npx --no-install tsx tests/capability-evidence-gate.ts --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --require-signed-production --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_root" --key-id "$trusted_key_id"
+if [ "$platform_operations_mode" = manual ]; then
+  npx --no-install tsx tests/manual-operations-evidence-gate.ts --file "$CAPABILITY_EVIDENCE_PATH" --release-id "$RELEASE_ID"
+else
+  npx --no-install tsx tests/capability-evidence-gate.ts --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --require-signed-production --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_root" --key-id "$trusted_key_id"
+fi
 npx --no-install tsx tests/object-storage-evidence-gate.ts \
   --file "$OBJECT_STORAGE_EVIDENCE_PATH" --release-id "$RELEASE_ID" \
   --release-git-sha "$release_git_sha" --manifest-sha256 "$manifest_sha256" \
