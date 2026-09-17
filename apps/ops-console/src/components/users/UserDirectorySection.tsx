@@ -224,7 +224,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         onChange={handleDirectoryChange}
         scroll={{ x: "max-content" }}
         columns={[
-          { title: "用户名", dataIndex: "externalSubject", width: 220, render: (value: string) => <Typography.Text className="ops-token" copyable>{value}</Typography.Text> },
+          { title: "用户名", dataIndex: "externalSubject", width: 330, render: (value: string) => <Typography.Text className="ops-token ops-token-single-line" copyable>{value}</Typography.Text> },
           { title: "店铺名", dataIndex: "displayName", width: 180, sorter: true, sortOrder: userSort?.field === "displayName" ? userSort.order : null, render: (value: string) => value || "未设置" },
           { title: "激活状态", dataIndex: "status", width: 110, sorter: true, sortOrder: userSort?.field === "status" ? userSort.order : null, render: (value: string) => <Tag color={value === "active" ? "green" : value === "suspended" ? "red" : "gold"}>{memberStatusLabels[value] ?? value}</Tag> },
           { title: "用户属性", key: "attribute", width: 150, render: (_: unknown, row: PlatformUser) => <Tag color={userAttributeLabel(row) === "演示版本" ? "gold" : userAttributeLabel(row) === "赠送版本" ? "cyan" : "blue"}>{userAttributeLabel(row)}</Tag> },

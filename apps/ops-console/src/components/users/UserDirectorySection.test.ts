@@ -70,6 +70,8 @@ describe("UserDirectorySection sorting", () => {
   it("keeps the wide directory table inside a horizontal scroll surface on mobile", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain('scroll={{ x: "max-content" }}');
+    expect(source).toContain('width: 330');
+    expect(source).toContain('className="ops-token ops-token-single-line"');
   });
 
   it("makes table, drawer, and failed action forms recoverable for keyboard users", () => {
