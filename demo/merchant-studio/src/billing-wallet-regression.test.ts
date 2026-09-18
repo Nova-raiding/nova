@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 const api = readFileSync(new URL('./api.ts', import.meta.url), 'utf8')
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
 
 describe('Merchant Studio paid wallet projection', () => {
   // Regression: ISSUE-001 — a valid recharge and creative-point grant were
@@ -23,5 +24,6 @@ describe('Merchant Studio paid wallet projection', () => {
     expect(app).toContain('到账状态')
     expect(app).toContain('订单号：')
     expect(app).toContain('latestRecharge?.order_id || latestRecharge?.orderId')
+    expect(styles).not.toMatch(/\.overview-page \.page-stack > \.wallet-panel[^}]*display:\s*none/u)
   })
 })
