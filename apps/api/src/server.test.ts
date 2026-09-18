@@ -1049,6 +1049,12 @@ describe('API application wiring', () => {
     expect(health.connectors.jd).toBe('not_configured')
   })
 
+  it('does not let dormant OAuth configuration overwrite six-platform manual operations health', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    expect(source).toContain("...(!manualPlatformOperationsMode ? {")
+    expect(source).toContain("...(manualPlatformOperationsMode ? Object.fromEntries(SUPPORTED_PLATFORMS.map(platform => [platform, 'manual_operations'])) : {})")
+  })
+
   it('labels local fallback output as simulated and provider output as executed', () => {
     expect(executionContract('image', false)).toMatchObject({ mode: 'simulated', simulated: true, providerExecuted: false, label: '本地演示图片，未调用图片模型' })
     expect(executionContract('ocr', false)).toMatchObject({ mode: 'simulated', simulated: true, providerExecuted: false })

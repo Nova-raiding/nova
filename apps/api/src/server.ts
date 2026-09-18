@@ -8697,10 +8697,12 @@ function runtimeHealth() {
     connectors: {
       ...base.connectors,
       ...(manualPlatformOperationsMode ? Object.fromEntries(SUPPORTED_PLATFORMS.map(platform => [platform, 'manual_operations'])) : {}),
-      jd: connectorRuntime.isOAuthConfigured('jd') ? 'configured_provider_required' : base.connectors.jd,
-      taobao: connectorRuntime.isOAuthConfigured('taobao') ? 'configured_provider_required' : base.connectors.taobao,
-      tmall: connectorRuntime.isOAuthConfigured('tmall') ? 'configured_provider_required' : base.connectors.tmall,
-      pinduoduo: connectorRuntime.isOAuthConfigured('pinduoduo') ? 'configured_provider_required' : base.connectors.pinduoduo,
+      ...(!manualPlatformOperationsMode ? {
+        jd: connectorRuntime.isOAuthConfigured('jd') ? 'configured_provider_required' : base.connectors.jd,
+        taobao: connectorRuntime.isOAuthConfigured('taobao') ? 'configured_provider_required' : base.connectors.taobao,
+        tmall: connectorRuntime.isOAuthConfigured('tmall') ? 'configured_provider_required' : base.connectors.tmall,
+        pinduoduo: connectorRuntime.isOAuthConfigured('pinduoduo') ? 'configured_provider_required' : base.connectors.pinduoduo,
+      } : {}),
     },
   }
 }
