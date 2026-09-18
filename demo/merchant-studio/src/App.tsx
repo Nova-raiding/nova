@@ -5471,41 +5471,46 @@ function MaterialLibraryWorkspace() {
           <h1>素材库</h1>
           <p>按店铺独立管理图片与视频。</p>
         </div>
-        <div className="material-store-selector" ref={storeMenuRef}>
-          <button type="button" aria-haspopup="listbox" aria-expanded={storeMenuOpen} onClick={() => setStoreMenuOpen((current) => !current)}>
-            <span className="catalog-store-logo" aria-label={`${activeStore?.name}店铺 Logo`}><img src={activeStore?.logoUrl} alt="" /></span>
-            <span><strong>{activeStore?.name}</strong><small>{activeStore?.platform} · {activeMaterials.length} 项素材</small></span>
-            <ChevronDown size={16} />
-          </button>
-          {storeMenuOpen && (
-            <div className="material-store-menu" role="listbox" aria-label="选择素材所属店铺">
-              <label><Search size={14} /><input autoFocus value={storeQuery} onChange={(event) => setStoreQuery(event.target.value)} placeholder="搜索店铺名称或平台" /></label>
-              <div>
-                {visibleStores.map((store) => (
-                  <button type="button" role="option" aria-selected={store.id === activeStoreId} className={store.id === activeStoreId ? 'active' : ''} key={store.id} onClick={() => switchStore(store.id)}>
-                    <span className="catalog-store-logo" aria-hidden="true"><img src={store.logoUrl} alt="" /></span>
-                    <span><strong>{store.name}</strong><small>{store.platform} · {(materialsByStore[store.id] ?? []).length} 项素材</small></span>
-                    {store.id === activeStoreId && <Check size={15} />}
-                  </button>
-                ))}
-                {!visibleStores.length && <p>没有匹配的店铺</p>}
-              </div>
-            </div>
-          )}
-        </div>
-        <div className="material-storage-card" aria-label="共享储存空间">
-          <div><span>共享储存空间</span><strong>{usedGb.toFixed(1)} GB <small>/ {quotaGb} GB</small></strong></div>
-          <div className="material-storage-track"><i style={{ width: `${usagePercent}%` }} /></div>
-          <div><small>全部店铺已用 {usedGb.toFixed(1)} GB</small><b>剩余 {remainingGb.toFixed(1)} GB</b></div>
-        </div>
       </section>
 
       {activeStore && (
         <section className="material-store-workspace">
-          <div className="material-store-heading">
-            <div><span className="catalog-store-logo" aria-label={`${activeStore.name}店铺 Logo`}><img src={activeStore.logoUrl} alt="" /></span><div><span className="section-kicker">CURRENT STORE</span><h2>{activeStore.name}</h2><p>本区素材只属于当前店铺，不会与其他店铺混用。</p></div></div>
-            <div>
-              <button type="button" className="material-upload-button" onClick={() => setUploadDialogOpen(true)}><Upload size={17} />上传到当前店铺</button>
+          <div className="material-store-overview-grid">
+            <div className="material-current-store-card">
+              <span className="catalog-store-logo" aria-label={`${activeStore.name}店铺 Logo`}><img src={activeStore.logoUrl} alt="" /></span>
+              <div className="material-current-store-copy">
+                <span className="section-kicker">CURRENT STORE</span>
+                <h2>{activeStore.name}</h2>
+                <button type="button" className="material-upload-button" onClick={() => setUploadDialogOpen(true)}><Upload size={15} />上传素材</button>
+                <p>本区素材只属于当前店铺，不会与其他店铺混用。</p>
+              </div>
+            </div>
+            <div className="material-store-selector" ref={storeMenuRef}>
+              <button type="button" aria-haspopup="listbox" aria-expanded={storeMenuOpen} onClick={() => setStoreMenuOpen((current) => !current)}>
+                <span className="catalog-store-logo" aria-label={`${activeStore.name}店铺 Logo`}><img src={activeStore.logoUrl} alt="" /></span>
+                <span><strong>{activeStore.name}</strong><small>{activeStore.platform} · {activeMaterials.length} 项素材</small></span>
+                <ChevronDown size={16} />
+              </button>
+              {storeMenuOpen && (
+                <div className="material-store-menu" role="listbox" aria-label="选择素材所属店铺">
+                  <label><Search size={14} /><input autoFocus value={storeQuery} onChange={(event) => setStoreQuery(event.target.value)} placeholder="搜索店铺名称或平台" /></label>
+                  <div>
+                    {visibleStores.map((store) => (
+                      <button type="button" role="option" aria-selected={store.id === activeStoreId} className={store.id === activeStoreId ? 'active' : ''} key={store.id} onClick={() => switchStore(store.id)}>
+                        <span className="catalog-store-logo" aria-hidden="true"><img src={store.logoUrl} alt="" /></span>
+                        <span><strong>{store.name}</strong><small>{store.platform} · {(materialsByStore[store.id] ?? []).length} 项素材</small></span>
+                        {store.id === activeStoreId && <Check size={15} />}
+                      </button>
+                    ))}
+                    {!visibleStores.length && <p>没有匹配的店铺</p>}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="material-storage-card" aria-label="共享储存空间">
+              <div><span>共享储存空间</span><strong>{usedGb.toFixed(1)} GB <small>/ {quotaGb} GB</small></strong></div>
+              <div className="material-storage-track"><i style={{ width: `${usagePercent}%` }} /></div>
+              <div><small>全部店铺已用 {usedGb.toFixed(1)} GB</small><b>剩余 {remainingGb.toFixed(1)} GB</b></div>
             </div>
           </div>
 
