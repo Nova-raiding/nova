@@ -114,6 +114,16 @@ describe('production config gate', () => {
     expect(() => run(config({ pinduoduo_write_enabled: true }))()).toThrow(/manual platform operations mode/)
   })
 
+  it('accepts a truthful protected single-node ECS profile without managed-service claims', () => {
+    const singleNode = config()
+      .replace('point_in_time_recovery_enabled: true', 'point_in_time_recovery_enabled: false')
+      .replace('database_pooler_enabled: true', 'database_pooler_enabled: false')
+      .replace('database_max_backend_connections: 300', 'database_max_backend_connections: 100')
+      .replace('secret_provider: vault', 'secret_provider: ecs-protected-env')
+    expect(run(singleNode)()).toContain('production config gate passed')
+    expect(() => run(singleNode.replace('database_pooler_enabled: false', 'database_pooler_enabled: true'))()).toThrow(/must not claim/)
+  })
+
   it('rejects a partial social-platform rollout', () => {
     expect(() => run(config({ xiaohongshu_auth_enabled: true }))()).toThrow(/manual platform operations mode/)
     expect(() => run(config({ douyin_read_enabled: true, douyin_auth_enabled: true }))()).toThrow(/manual platform operations mode/)

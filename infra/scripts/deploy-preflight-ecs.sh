@@ -49,7 +49,13 @@ config_path=${1:-${PRODUCTION_CONFIG_PATH:-}}
 : "${ASSET_DISPLAY_URL_SIGNING_KEY_ID:?ASSET_DISPLAY_URL_SIGNING_KEY_ID is required}"
 printf '%s' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9._-]+$' || { echo 'unsafe RELEASE_ID' >&2; exit 1; }
 printf '%s' "$DEPLOYMENT_NONCE" | grep -Eq '^[A-Za-z0-9_-]{22,128}$' || { echo 'DEPLOYMENT_NONCE must contain 22-128 URL-safe random characters' >&2; exit 1; }
-case "$REDIS_URL" in rediss://*) ;; *) echo 'production REDIS_URL must use rediss://' >&2; exit 1 ;; esac
+case "$REDIS_URL" in
+  rediss://*) ;;
+  redis://redis:6379|redis://redis:6379/0)
+    [ "$SECRET_PROVIDER" = ecs-protected-env ] || { echo 'plaintext Redis is allowed only for the private single-node ECS profile' >&2; exit 1; }
+    ;;
+  *) echo 'production REDIS_URL must use rediss:// or the private single-node ECS Redis service' >&2; exit 1 ;;
+esac
 for tool in node npm npx ruby git docker psql shasum; do
   command -v "$tool" >/dev/null 2>&1 || { echo "ECS deploy preflight requires $tool on the execution host; provision the reviewed release toolchain before launch" >&2; exit 1; }
 done

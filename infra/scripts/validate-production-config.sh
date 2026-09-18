@@ -134,10 +134,21 @@ grep -Eq '^[[:space:]]*alert_notifications_enabled:[[:space:]]*(true|false)[[:sp
 if grep -Eq '^[[:space:]]*alert_notifications_enabled:[[:space:]]*true[[:space:]]*$' "$config_path"; then
   grep -Eq 'alert_channel_secret_ref:[[:space:]]*"?[^"[:space:]]+"?$' "$config_path" || { echo 'alert_channel_secret_ref must be configured when alert notifications are enabled' >&2; exit 1; }
 fi
-grep -Eq '^[[:space:]]*point_in_time_recovery_enabled:[[:space:]]*true[[:space:]]*$' "$config_path" || { echo 'PITR must be explicitly enabled' >&2; exit 1; }
 grep -Eq 'secret_provider:[[:space:]]*[^"'"'"' ]+' "$config_path" || { echo 'managed secret provider must be configured' >&2; exit 1; }
-grep -Eq '^[[:space:]]*database_pooler_enabled:[[:space:]]*true[[:space:]]*$' "$config_path" || { echo 'managed database pooler must be enabled' >&2; exit 1; }
-grep -Eq 'database_max_backend_connections:[[:space:]]*"?300"?$' "$config_path" || { echo 'database_max_backend_connections must be 300' >&2; exit 1; }
+secret_provider=$(sed -nE 's/^[[:space:]]*secret_provider:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' "$config_path" | tail -1)
+if [ "$secret_provider" = ecs-protected-env ]; then
+  # A single-host ECS deployment keeps PostgreSQL and Redis on a private
+  # Compose network and stores runtime secrets in a root-owned mode-600 file.
+  # It must describe the controls it actually has instead of claiming managed
+  # PITR or a managed pooler. Restore evidence remains a mandatory release gate.
+  grep -Eq '^[[:space:]]*point_in_time_recovery_enabled:[[:space:]]*false[[:space:]]*$' "$config_path" || { echo 'single-node ECS must explicitly use snapshot restore instead of claiming PITR' >&2; exit 1; }
+  grep -Eq '^[[:space:]]*database_pooler_enabled:[[:space:]]*false[[:space:]]*$' "$config_path" || { echo 'single-node ECS must not claim a managed database pooler' >&2; exit 1; }
+  grep -Eq 'database_max_backend_connections:[[:space:]]*"?(100|150)"?$' "$config_path" || { echo 'single-node ECS database connection budget must be 100 or 150' >&2; exit 1; }
+else
+  grep -Eq '^[[:space:]]*point_in_time_recovery_enabled:[[:space:]]*true[[:space:]]*$' "$config_path" || { echo 'PITR must be explicitly enabled' >&2; exit 1; }
+  grep -Eq '^[[:space:]]*database_pooler_enabled:[[:space:]]*true[[:space:]]*$' "$config_path" || { echo 'managed database pooler must be enabled' >&2; exit 1; }
+  grep -Eq 'database_max_backend_connections:[[:space:]]*"?300"?$' "$config_path" || { echo 'database_max_backend_connections must be 300' >&2; exit 1; }
+fi
 grep -Eq 'database_connection_utilization_alert_percent:[[:space:]]*"?80"?$' "$config_path" || { echo 'database connection utilization alert must be 80 percent' >&2; exit 1; }
 
 for worker_secret_ref in \

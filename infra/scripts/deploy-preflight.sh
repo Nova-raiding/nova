@@ -52,7 +52,10 @@ printf '%s\n' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9._-]+$' || { echo "RELEASE_ID
 
 case "$REDIS_URL" in
   rediss://*) ;;
-  *) echo "production REDIS_URL must use rediss://" >&2; exit 1 ;;
+  redis://redis:6379|redis://redis:6379/0)
+    [ "$SECRET_PROVIDER" = ecs-protected-env ] || { echo "plaintext Redis is allowed only for the private single-node ECS profile" >&2; exit 1; }
+    ;;
+  *) echo "production REDIS_URL must use rediss:// or the private single-node ECS Redis service" >&2; exit 1 ;;
 esac
 command -v node >/dev/null 2>&1 || { echo "node is required to validate production database URLs" >&2; exit 1; }
 database_url_validator="$(dirname "$0")/validate-production-database-url.mjs"
