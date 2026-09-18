@@ -81,7 +81,7 @@ function productionScannerManifest(mutate?: (manifest: Record<string, any>) => v
     MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
     ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ASSET_SCANNER_MODE: 'clamav_worker', ASSET_SCAN_POLICY_VERSION: 'scan-policy-2026-08-30',
     ASSET_SCANNER_SERVICE_ID: 'merchant-asset-scanner-production', ASSET_SCAN_APPROVED_SCANNER_SERVICE_IDS: 'merchant-asset-scanner-production', ASSET_SCAN_MIN_DEFINITIONS_VERSION: '28000',
-    CLAMAV_HOST: '127.0.0.1', CLAMAV_PORT: '3310', CLAMAV_MAX_FILE_BYTES: '52428800', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440',
+    CLAMAV_HOST: '127.0.0.1', CLAMAV_PORT: '3310', CLAMAV_MAX_FILE_BYTES: '104857600', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440',
   }
   const secret = (name: string, key = name) => ({ name, valueFrom: { secretKeyRef: { name: 'merchant-scanner-secrets', key } } })
   const runtimeSecret = (name: string, key = name) => ({ name, valueFrom: { secretKeyRef: { name: 'merchant-runtime-secrets', key } } })
@@ -93,7 +93,9 @@ function productionScannerManifest(mutate?: (manifest: Record<string, any>) => v
       { name: 'worker', image: `registry.example.com/merchant-worker@${imageDigests['merchant-worker']}`, envFrom: [{ configMapRef: { name: 'merchant-runtime' } }], env: [
         { name: 'WORKER_ROLE', value: 'scan' }, { name: 'ASSET_SCANNER_SERVICE_ID', valueFrom: { configMapKeyRef: { name: 'merchant-runtime', key: 'ASSET_SCANNER_SERVICE_ID' } } }, { name: 'SCANNER_MINIMUM_READY_INSTANCES', value: '2' }, secret('WORKER_API_TOKEN', 'ASSET_SCANNER_API_TOKEN'), secret('WORKER_API_SIGNING_SECRET', 'ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), secret('ASSET_SCANNER_API_TOKEN'), secret('ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), secret('ASSET_SCAN_RECEIPT_KEY_ID'), secret('ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM'),
       ] },
-      { name: 'clamav', image: `registry.example.com/clamav@${imageDigests.clamav}`, startupProbe: { exec: { command: ['sh', '-c', 'clamdscan --ping 1'] } }, readinessProbe: { exec: { command: ['sh', '-c', 'clamdscan --ping 1 && find /var/lib/clamav -mmin -1440'] } }, livenessProbe: { exec: { command: ['sh', '-c', 'clamdscan --ping 1'] } } },
+      { name: 'clamav', image: `registry.example.com/clamav@${imageDigests.clamav}`, env: [
+        { name: 'CLAMD_CONF_StreamMaxLength', value: '100M' }, { name: 'CLAMD_CONF_MaxFileSize', value: '100M' }, { name: 'CLAMD_CONF_MaxScanSize', value: '100M' }, { name: 'CLAMD_CONF_AlertExceedsMax', value: 'yes' },
+      ], startupProbe: { exec: { command: ['sh', '-c', "grep StreamMaxLength /etc/clamav/clamd.conf | grep 100M && grep MaxFileSize /etc/clamav/clamd.conf | grep 100M && grep MaxScanSize /etc/clamav/clamd.conf | grep 100M && grep AlertExceedsMax /etc/clamav/clamd.conf | grep yes && clamdscan --ping 1"] } }, readinessProbe: { exec: { command: ['sh', '-c', "grep StreamMaxLength /etc/clamav/clamd.conf | grep 100M && grep MaxFileSize /etc/clamav/clamd.conf | grep 100M && grep MaxScanSize /etc/clamav/clamd.conf | grep 100M && grep AlertExceedsMax /etc/clamav/clamd.conf | grep yes && clamdscan --ping 1 && find /var/lib/clamav -mmin -1440"] } }, livenessProbe: { exec: { command: ['sh', '-c', "grep StreamMaxLength /etc/clamav/clamd.conf | grep 100M && grep MaxFileSize /etc/clamav/clamd.conf | grep 100M && grep MaxScanSize /etc/clamav/clamd.conf | grep 100M && grep AlertExceedsMax /etc/clamav/clamd.conf | grep yes && clamdscan --ping 1"] } } },
     ] } } } },
     { apiVersion: 'v1', kind: 'Service', metadata: { name: 'merchant-api' }, spec: { selector: { 'app.kubernetes.io/name': 'merchant-api' } } },
     { apiVersion: 'v1', kind: 'Service', metadata: { name: 'merchant-api-scanner-internal' }, spec: { publishNotReadyAddresses: true, selector: { 'app.kubernetes.io/name': 'merchant-api' } } },
@@ -214,6 +216,9 @@ describe('structured Kubernetes release image gate', () => {
     expect(workers).toContain('clamav/clamav@sha256:761f6c99b8d9134b39431f8c200189cda749b17310091561bfa8b732f32bfada')
     expect(workers).toContain('nodeSelector: {kubernetes.io/arch: amd64}')
     expect(workers).toContain('clamdscan --ping 1')
+    expect(workers).toContain('{name: CLAMD_CONF_StreamMaxLength, value: "100M"}')
+    expect(workers).toContain('{name: CLAMD_CONF_MaxFileSize, value: "100M"}')
+    expect(workers).toContain('{name: CLAMD_CONF_MaxScanSize, value: "100M"}')
     expect(workers).toContain('-mmin -1440')
     expect(workers).toContain('memory: 3Gi')
     expect(workers).toContain('memory: 4Gi')
@@ -328,6 +333,11 @@ describe('structured Kubernetes release image gate', () => {
     expect(runManifest(staleSignaturesAllowed, JSON.stringify(imageDigests))).toThrow(/SIGNATURE_MAX_AGE/)
     const noFreshnessProbe = productionScannerManifest(value => { value.items[2].spec.template.spec.containers[1].readinessProbe.exec.command = ['sh', '-c', 'clamdscan --ping 1'] })
     expect(runManifest(noFreshnessProbe, JSON.stringify(imageDigests))).toThrow(/readinessProbe/)
+
+    const weakDaemonLimit = productionScannerManifest(value => { value.items[2].spec.template.spec.containers[1].env.find((entry: any) => entry.name === 'CLAMD_CONF_StreamMaxLength').value = '25M' })
+    expect(runManifest(weakDaemonLimit, JSON.stringify(imageDigests))).toThrow(/CLAMD_CONF_StreamMaxLength=100M/)
+    const silentLimitSkip = productionScannerManifest(value => { value.items[2].spec.template.spec.containers[1].env.find((entry: any) => entry.name === 'CLAMD_CONF_AlertExceedsMax').value = 'no' })
+    expect(runManifest(silentLimitSkip, JSON.stringify(imageDigests))).toThrow(/CLAMD_CONF_AlertExceedsMax=yes/)
   })
 
   it.each(['MODEL_RELAY_API_KEY', 'PLATFORM_RULE_SYNC_SIGNING_SECRET', 'PAYMENT_PROVIDER_API_KEY', 'PAYMENT_CALLBACK_SECRET'])('requires the API critical Secret binding %s', secretName => {

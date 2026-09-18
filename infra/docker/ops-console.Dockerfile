@@ -31,13 +31,16 @@ ENV NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY
 COPY package.json package-lock.json ./
 COPY tsconfig.json tsconfig.json
 COPY apps/ops-console/package.json apps/ops-console/package.json
-RUN --mount=type=cache,id=merchant-npm-cache,target=/root/.npm,sharing=locked \
-  npm ci --workspace apps/ops-console --include-workspace-root --prefer-offline --no-audit --fund=false
+RUN npm ci --workspace apps/ops-console --include-workspace-root --prefer-offline --no-audit --fund=false
 COPY packages/contracts packages/contracts
 COPY packages/application/src/spreadsheet-batch.ts packages/application/src/spreadsheet-batch.ts
 COPY apps/ops-console apps/ops-console
 RUN if [ "$OPS_CONSOLE_BUILD_MODE" = production ]; then auth_mode=oidc; else auth_mode=local; fi; \
     VITE_API_BASE="$VITE_API_BASE" VITE_BASE="$VITE_BASE" VITE_OPS_AUTH_MODE="$auth_mode" VITE_OPS_BUILD_MODE="$OPS_CONSOLE_BUILD_MODE" VITE_OPS_LOCAL_SESSION="$VITE_OPS_LOCAL_SESSION" npm run build --workspace apps/ops-console
+ARG RELEASE_ID=unbound
+ARG RELEASE_GIT_SHA=unbound
+# Non-secret, build-time identity. Never infer UI freshness from its API proxy.
+RUN printf '{"surface":"ops-ui","release_id":"%s","release_git_sha":"%s"}\n' "$RELEASE_ID" "$RELEASE_GIT_SHA" > apps/ops-console/dist/build-meta.json
 
 FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
 ENV OPS_API_UPSTREAM=http://127.0.0.1:8787

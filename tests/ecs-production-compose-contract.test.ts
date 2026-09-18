@@ -3,10 +3,21 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { safePaymentUrls, unsafePaymentUrls } from './payment-url-gate-fixtures.js'
+
+const paymentEnvironment = {
+  PAYMENT_MODE: 'provider', PAYMENT_CHECKOUT_BASE_URL: 'https://pay.yxsona.com/checkout',
+  PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://pay.yxsona.com/v1/checkout',
+  PAYMENT_PROVIDER_QUERY_API_URL: 'https://pay.yxsona.com/v1/query',
+  PAYMENT_PROVIDER_REFUND_QUERY_API_URL: 'https://pay.yxsona.com/v1/refund/query',
+  PAYMENT_PROVIDER_REFUND_API_URL: 'https://pay.yxsona.com/v1/refund',
+  PAYMENT_PROVIDER_MERCHANT_ID: '2088123456789012',
+}
 
 const valid = {
   services: {
     api: { environment: {
+      ...paymentEnvironment,
       NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', LOCAL_COMPOSE: 'false',
       CONNECTOR_FIXTURE_MODE: 'false', MERCHANT_TEST_APPROVED_RATES: 'false',
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
@@ -22,6 +33,7 @@ const valid = {
       OPS_DATABASE_URL: 'postgres://ops:opaque@db/merchant', MODEL_COST_ESTIMATE_VERSION: 'production-v1',
     } },
     'api-replica': { environment: {
+      ...paymentEnvironment,
       NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', LOCAL_COMPOSE: 'false',
       CONNECTOR_FIXTURE_MODE: 'false', MERCHANT_TEST_APPROVED_RATES: 'false',
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
@@ -76,6 +88,7 @@ function renderFinalProductionCompose() {
   type WorkerCredential = { token: string; signing_secret: string }
   const credentials = Object.fromEntries(roles.map(role => [role, { token: `worker-${role}-token`, signing_secret: `worker-${role}-signing` }])) as Record<WorkerRole, WorkerCredential>
   Object.assign(env, {
+    ...paymentEnvironment,
     API_AUTH_TOKENS: '{"production":{"workspaces":["ws_prod"],"bootstrap":false}}',
     WORKER_API_CREDENTIALS: JSON.stringify(credentials),
     WORKER_WORKSPACES: 'auto',
@@ -107,6 +120,33 @@ describe('ECS production Compose contract', () => {
     const migrate = rendered.services.migrate
     expect(JSON.stringify(migrate.entrypoint)).not.toContain('seed-demo.sql')
     expect(JSON.stringify(migrate.volumes)).not.toContain('seed-demo.sql')
+    expect(validate(rendered)).toContain('contract passed')
+  })
+
+  it.each(['api', 'api-replica'])('rejects placeholder payment runtime on %s even when a separate production config could be valid', name => {
+    for (const [key, value] of [
+      ['PAYMENT_MODE', 'fixture'],
+      ['PAYMENT_PROVIDER_QUERY_API_URL', 'https://payments.example.com/query'],
+      ['PAYMENT_PROVIDER_REFUND_QUERY_API_URL', 'https://example.com/refund/query'],
+      ['PAYMENT_PROVIDER_MERCHANT_ID', 'merchant-example'],
+    ]) {
+      const rendered = structuredClone(valid)
+      ;(rendered.services[name as 'api' | 'api-replica'].environment as Record<string, string>)[key!] = value!
+      expect(() => validate(rendered)).toThrow(new RegExp(`${name}\\.${key}`))
+    }
+  })
+
+  it.each(['api', 'api-replica'])('rejects special-use IPs and normalized payment URLs on %s', name => {
+    for (const value of unsafePaymentUrls) {
+      const rendered = structuredClone(valid)
+      rendered.services[name as 'api' | 'api-replica'].environment.PAYMENT_PROVIDER_QUERY_API_URL = value
+      expect(() => validate(rendered), value).toThrow(/PAYMENT_PROVIDER_QUERY_API_URL/)
+    }
+  }, 20_000)
+
+  it.each(safePaymentUrls)('accepts a canonical public payment URL %s', value => {
+    const rendered = structuredClone(valid)
+    rendered.services.api.environment.PAYMENT_PROVIDER_QUERY_API_URL = value
     expect(validate(rendered)).toContain('contract passed')
   })
 

@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -13,6 +14,7 @@ describe('persistence migration 128 listing identity uniqueness', () => {
     const databaseName = `release_128_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const databaseUrl = new URL(base)
@@ -41,11 +43,16 @@ describe('persistence migration 128 listing identity uniqueness', () => {
       await expect(database.query(`INSERT INTO product_listings (id,workspace_id,brand_id,canonical_product_id,platform,platform_account_id)
         VALUES ('listing_128_b','ws_128','brand_128','canonical_128','taobao','acct_128')`)).rejects.toMatchObject({ code: '23505', constraint: 'product_listings_canonical_identity_key' })
       await expect(repository.createListing({ workspaceId: 'ws_128', id: 'listing_128_c', brandId: 'brand_128', canonicalProductId: 'canonical_128', platform: 'taobao', accountId: 'acct_128' })).rejects.toThrow('PRODUCT_LISTING_IDENTITY_CONFLICT')
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

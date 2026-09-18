@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { resolve } from 'node:path'
+import { runInNewContext } from 'node:vm'
+import { describe, expect, it, vi } from 'vitest'
 import { alertNotificationReady, apiProbeReady, codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, releaseReadiness } from '../scripts/dev-doctor-runtime.js'
 
 describe('developer doctor runtime checks', () => {
@@ -216,6 +218,51 @@ describe('developer doctor runtime checks', () => {
     expect(source).toContain('const productionConfigReady = (() => {')
     expect(source).toContain('catch {')
     expect(source).toContain('return false')
+  })
+
+  it.each(['EISDIR', 'EACCES'])('reports an unreadable production locator without a raw %s error or path leak', code => {
+    const source = readFileSync('scripts/dev-doctor.ts', 'utf8')
+    const bootstrap = source.slice(source.indexOf('// This ignored file'), source.indexOf('const parseJsonFile'))
+    const env: Record<string, string> = {}
+    const add = vi.fn()
+    const readLocator = vi.fn(() => { throw Object.assign(new Error(`${code}: private-config-secret/path`), { code }) })
+
+    expect(() => runInNewContext(bootstrap, { root: '/isolated-doctor', process: { env }, resolve, existsSync: () => true, readFileSync: readLocator, add })).not.toThrow()
+    expect(readLocator).toHaveBeenCalledOnce()
+    expect(add).toHaveBeenCalledWith('production_config_locator', 'fail', expect.any(String), expect.any(String))
+    expect(env.PRODUCTION_CONFIG_PATH).toBeUndefined()
+    expect(JSON.stringify(add.mock.calls)).not.toContain('private-config-secret')
+    expect(JSON.stringify(add.mock.calls)).not.toContain(code)
+  })
+
+  it('preserves an explicit production path without reading the fallback locator', () => {
+    const source = readFileSync('scripts/dev-doctor.ts', 'utf8')
+    const bootstrap = source.slice(source.indexOf('// This ignored file'), source.indexOf('const parseJsonFile'))
+    const env = { PRODUCTION_CONFIG_PATH: '/explicit/production.yaml' }
+    const readLocator = vi.fn()
+    const add = vi.fn()
+    runInNewContext(bootstrap, { root: '/isolated-doctor', process: { env }, resolve, existsSync: () => true, readFileSync: readLocator, add })
+    expect(readLocator).not.toHaveBeenCalled()
+    expect(add).not.toHaveBeenCalled()
+    expect(env.PRODUCTION_CONFIG_PATH).toBe('/explicit/production.yaml')
+  })
+
+  it.each([true, false])('only reads macOS workstation MCP configuration in local diagnosis (production=%s)', production => {
+    const source = readFileSync('scripts/dev-doctor.ts', 'utf8')
+    const bootstrap = source.slice(source.indexOf('// The desktop plugin'), source.indexOf('// Compose resolves'))
+    const env: Record<string, string> = { MERCHANT_MCP_BASE_URL: 'https://explicit.invalid' }
+    const launchctl = vi.fn((_command: string, args: string[]) => args[1] === 'MERCHANT_MCP_TOKEN' ? 'private-workstation-token' : 'ws_local')
+    runInNewContext(bootstrap, { production, process: { platform: 'darwin', env }, execFileSync: launchctl })
+    expect(env.MERCHANT_MCP_BASE_URL).toBe('https://explicit.invalid')
+    if (production) {
+      expect(launchctl).not.toHaveBeenCalled()
+      expect(env.MERCHANT_MCP_TOKEN).toBeUndefined()
+      expect(env.MERCHANT_WORKSPACE_ID).toBeUndefined()
+    } else {
+      expect(launchctl).toHaveBeenCalledTimes(2)
+      expect(env.MERCHANT_MCP_TOKEN).toBe('private-workstation-token')
+      expect(env.MERCHANT_WORKSPACE_ID).toBe('ws_local')
+    }
   })
 
   it('documents the supported Ops Console entrypoint default instead of treating an unset shell variable as unhealthy', () => {

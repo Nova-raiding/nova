@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -18,6 +19,7 @@ describe('canonical legacy brand integrity PostgreSQL boundary', () => {
     const databaseName = `release_canonical_brand_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: databaseConnection(base, databaseName) })
@@ -46,11 +48,16 @@ describe('canonical legacy brand integrity PostgreSQL boundary', () => {
         WHERE workspace_id='ws_canonical_brand' AND id='canonical_valid'`)).rejects.toMatchObject({ code: '23514' })
       await expect(database.query(`SELECT brand_id FROM canonical_products
         WHERE workspace_id='ws_canonical_brand' AND id='canonical_valid'`)).resolves.toMatchObject({ rows: [{ brand_id: 'brand_a' }] })
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

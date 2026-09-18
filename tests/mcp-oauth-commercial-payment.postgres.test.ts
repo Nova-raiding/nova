@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from '../packages/persistence/src/postgres-scope-fixture-cleanup.js'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
@@ -135,6 +136,7 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
     let application: Pool | undefined
     let operations: Pool | undefined
     let api: ChildProcessWithoutNullStreams | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const isolatedAdminUrl = databaseUrl(baseDatabase, databaseName)
@@ -245,10 +247,16 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
       const paidViaBridge = await bridgeCall(bridgeA, 3, 'commercial.order.payment.get', { order_id: order.order_id })
       expect(paidViaBridge.result).toMatchObject({ isError: false, structuredContent: { order_id: order.order_id, status: 'paid', access_revision: 1 } })
       const balanceViaBridge = await bridgeCall(bridgeA, 4, 'creative-points.balance.get', {})
-      // The bridge exposes the authenticated state/revision needed for the
-      // next action, while point quantities remain console-only by contract.
-      expect(balanceViaBridge.result).toMatchObject({ isError: false, structuredContent: { balance_state: 'known', access_revision: '1' } })
-      expect(balanceViaBridge.result?.structuredContent).not.toHaveProperty('available_points')
+      expect(balanceViaBridge.result).toMatchObject({
+        isError: false,
+        structuredContent: {
+          balance_state: 'known',
+          available_points: 500,
+          reserved_points: 0,
+          settled_points: 0,
+          access_revision: '1',
+        },
+      })
 
       const hiddenFromB = await bridgeCall(bridgeB, 5, 'commercial.order.payment.get', { order_id: order.order_id })
       expect(hiddenFromB.result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_ORDER_NOT_FOUND' } })
@@ -270,14 +278,19 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
       ].sort((a, b) => a.external_subject.localeCompare(b.external_subject)))
       stopBridge(bridgeA)
       stopBridge(bridgeB)
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      if (api) await stopApi(api)
-      await application?.end()
-      await operations?.end()
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        if (api) await stopApi(api)
+        await application?.end()
+        await operations?.end()
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

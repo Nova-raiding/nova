@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -18,6 +19,7 @@ describe('migration 127 platform role shadow boundary PostgreSQL release accepta
     const databaseName = `release_127_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: connection(base, databaseName) })
@@ -38,11 +40,16 @@ describe('migration 127 platform role shadow boundary PostgreSQL release accepta
       await database.query(`UPDATE workspace_members SET role='operator',updated_at=now() WHERE workspace_id='ws_role_shadow' AND external_subject='legacy-platform'`)
       await expect(new MigrationRunner(database, migrations).run()).resolves.toEqual(migrations.filter(migration => migration.version > 126).map(migration => migration.version))
       await expect(new MigrationRunner(database, migrations).run()).resolves.toEqual([])
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

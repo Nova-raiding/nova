@@ -388,6 +388,7 @@ export const HTTP_IDENTITY_LINKED_OPERATIONS = [
   'http:POST:/v1/assets/upload',
   'http:POST:/v1/assets/{assetId}/parse',
   'http:GET:/v1/assets/{assetId}/download',
+  'http:GET:/v1/ops/customer-deliveries/workspaces/{targetWorkspaceId}/{deliveryId}/assets/{assetId}/download',
   'http:GET:/v1/platform-accounts',
   'http:POST:/v1/platform-accounts/{platform}/authorize',
   'http:DELETE:/v1/platform-accounts/{platform}',

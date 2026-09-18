@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -23,6 +24,7 @@ describe('brand profile association PostgreSQL release evidence', () => {
     let database: Pool | undefined
     let application: Pool | undefined
 
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const isolated = new URL(databaseConnection(base, databaseName))
@@ -143,12 +145,17 @@ describe('brand profile association PostgreSQL release evidence', () => {
       await application.query("SELECT set_config('app.workspace_id', 'brand_assoc_beta', true)")
       await expect(application.query(`INSERT INTO brands (id, workspace_id, name) VALUES ('brand_assoc_forged', 'brand_assoc_alpha', 'forged')`)).rejects.toMatchObject({ code: '42501' })
       await application.query('ROLLBACK')
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await application?.end()
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await application?.end()
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

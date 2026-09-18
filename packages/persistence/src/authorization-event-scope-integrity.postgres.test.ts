@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -21,6 +22,7 @@ describe('authorization event scope integrity PostgreSQL probe', () => {
     const databaseName = `probe_authz_event_scope_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: connection(base, databaseName) })
@@ -51,11 +53,16 @@ describe('authorization event scope integrity PostgreSQL probe', () => {
       expect(authorizationScopeHash(scope)).toMatch(/^[0-9a-f]{64}$/u)
       await database.query(`INSERT INTO ops_access_grant_events (id,grant_id,subject_identity_id,workspace_id,event_type,actor_id,reason,authorization_revision,grant_revision,snapshot_json,created_at) VALUES ($1,$2,$3,$4,'issued','probe','valid event',2,1,'{}',$5)`, [randomUUID(), grant.id, subject, 'event_scope_ws', eventTime])
       await expect(database.query(`INSERT INTO ops_access_grant_events (id,grant_id,subject_identity_id,workspace_id,event_type,actor_id,reason,authorization_revision,grant_revision,snapshot_json,created_at) VALUES ($1,$2,$3,$4,'issued','probe','forged scope',2,1,'{}',$5)`, [randomUUID(), grant.id, otherSubject, 'other_ws', eventTime])).rejects.toThrow(/scope is invalid/u)
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

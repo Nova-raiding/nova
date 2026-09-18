@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -15,6 +16,7 @@ describe('commercial point adjustment approval PostgreSQL E2', () => {
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
     let app: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${name}"`)
       database = new Pool({ connectionString: databaseUrl(base, name) })
@@ -37,11 +39,16 @@ describe('commercial point adjustment approval PostgreSQL E2', () => {
       await expect(database.query("UPDATE commercial_point_adjustment_proposals_v2 SET reason='tamper' WHERE workspace_id='ws-adjust-a'" )).rejects.toMatchObject({ code: '55000' })
       await expect(database.query("DELETE FROM commercial_point_adjustment_decisions_v2 WHERE workspace_id='ws-adjust-a'" )).rejects.toMatchObject({ code: '55000' })
       await expect(lifecycle.adjust({ workspaceId: 'ws-adjust-a', approvalId: 'stale-approval', pointsDelta: 1, expectedAccessRevision: 7, actorId: 'other-maker', approvedByActorId: 'other-approver', reason: 'stale correction', evidence: { ticket: 'stale' }, idempotencyKey: 'stale-adjust', at: '2026-09-02T00:03:00Z' })).rejects.toMatchObject({ code: 'CREATIVE_POINT_IDEMPOTENCY_CONFLICT' })
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await app?.end(); await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [name])
-      await admin.query(`DROP DATABASE IF EXISTS "${name}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await app?.end(); await database?.end()
+        await dropDrainedPostgresFixture(admin, name)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

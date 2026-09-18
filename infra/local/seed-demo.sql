@@ -32,7 +32,7 @@ SELECT
   '$argon2id$v=19$m=19456,p=1,t=2$ZXUxT7YCOQRta+XTdDca0Q$UZVXgJhBHnR3D4IBAZ8cq99CH7j0TAR/NmZodfkd2So',
   now(),
   'active',
-  ARRAY['platform_admin']::text[],
+  ARRAY['platform_admin','platform_ops']::text[],
   ARRAY[]::text[]
 FROM platform_identities
 WHERE issuer = 'damai-password' AND external_subject = 'admin@dm.com'
@@ -104,6 +104,23 @@ ON CONFLICT (workspace_id, external_subject) DO UPDATE SET
   revision = workspace_members.revision + 1
 WHERE (workspace_members.display_name, workspace_members.role, workspace_members.status)
   IS DISTINCT FROM (EXCLUDED.display_name, EXCLUDED.role, EXCLUDED.status);
+
+-- Additional read-only members keep the local directory useful for pagination
+-- and visual QA. These deterministic fixtures never ship to production.
+INSERT INTO workspace_members (
+  id, workspace_id, external_subject, display_name, role, status, invited_by
+)
+VALUES
+  ('00000000-0000-4000-8000-000000000004','ws_demo','finance_demo','本地演示财务专员','finance','active','local_compose_seed'),
+  ('00000000-0000-4000-8000-000000000005','ws_demo','operator_demo','本地演示运营专员','operator','active','local_compose_seed'),
+  ('00000000-0000-4000-8000-000000000006','ws_demo','merchant_admin_demo','本地演示商家管理员','merchant_admin','active','local_compose_seed'),
+  ('00000000-0000-4000-8000-000000000007','ws_demo','support_demo_2','本地演示客户支持二号','support','active','local_compose_seed'),
+  ('00000000-0000-4000-8000-000000000008','ws_demo','finance_demo_2','本地演示财务二号','finance','active','local_compose_seed')
+ON CONFLICT (workspace_id, external_subject) DO UPDATE SET
+  display_name = EXCLUDED.display_name,
+  role = EXCLUDED.role,
+  status = EXCLUDED.status,
+  updated_at = now();
 
 -- Password-authenticated API requests use the stable platform identity UUID as
 -- the actor principal. Keep the local browser account bound to that same

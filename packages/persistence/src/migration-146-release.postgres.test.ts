@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { Pool } from 'pg'
@@ -12,6 +13,7 @@ describe('migration 146 commercial catalog PostgreSQL release evidence', () => {
     const databaseName = `catalog_146_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const isolated = new URL(base)
@@ -53,11 +55,16 @@ describe('migration 146 commercial catalog PostgreSQL release evidence', () => {
       expect(executableRate.rows[0]?.total).toBe(0)
       await expect(database.query("UPDATE commercial_catalog_sku_versions SET executable=true WHERE id='sku-version-monthly-basic-v1'"))
         .rejects.toMatchObject({ code: '55000' })
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

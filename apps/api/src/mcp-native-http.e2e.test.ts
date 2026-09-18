@@ -177,20 +177,64 @@ describe('native ChatGPT MCP HTTP transport', () => {
     }
   })
 
-  it('publishes configured HTTPS OAuth metadata without leaking local fixture routes', async () => {
+  it('publishes configured self-hosted OAuth metadata without leaking local fixture routes', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('PUBLIC_APP_BASE_URL', 'https://yxsona.com')
-    vi.stubEnv('MCP_OAUTH_ISSUER', 'https://accounts.example.com')
-    vi.stubEnv('MCP_OAUTH_AUTHORIZATION_ENDPOINT', 'https://accounts.example.com/oauth/authorize')
-    vi.stubEnv('MCP_OAUTH_TOKEN_ENDPOINT', 'https://accounts.example.com/oauth/token')
+    vi.stubEnv('MERCHANT_BEARER_HOSTNAME', 'yxsona.com')
+    vi.stubEnv('MCP_OAUTH_REQUIRED', 'true')
+    vi.stubEnv('MCP_OAUTH_ISSUER', 'https://yxsona.com')
+    vi.stubEnv('MCP_OAUTH_AUTHORIZATION_ENDPOINT', 'https://yxsona.com/oauth/authorize')
+    vi.stubEnv('MCP_OAUTH_TOKEN_ENDPOINT', 'https://yxsona.com/oauth/token')
+    vi.stubEnv('MCP_OAUTH_CLIENTS', JSON.stringify({ chatgpt: ['https://chatgpt.com/oauth/callback'] }))
     const base = await start()
     const protectedResource = await fetch(`${base}/.well-known/oauth-protected-resource`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
     expect(protectedResource.status).toBe(200)
-    await expect(protectedResource.json()).resolves.toEqual({ resource: 'https://yxsona.com/mcp', authorization_servers: ['https://accounts.example.com'], scopes_supported: ['merchant'] })
+    await expect(protectedResource.json()).resolves.toEqual({ resource: 'https://yxsona.com/mcp', authorization_servers: ['https://yxsona.com'], scopes_supported: ['merchant'] })
 
     const authorizationServer = await fetch(`${base}/.well-known/oauth-authorization-server`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
     expect(authorizationServer.status).toBe(200)
-    await expect(authorizationServer.json()).resolves.toMatchObject({ issuer: 'https://accounts.example.com', authorization_endpoint: 'https://accounts.example.com/oauth/authorize', token_endpoint: 'https://accounts.example.com/oauth/token', code_challenge_methods_supported: ['S256'] })
+    await expect(authorizationServer.json()).resolves.toMatchObject({ issuer: 'https://yxsona.com', authorization_endpoint: 'https://yxsona.com/oauth/authorize', token_endpoint: 'https://yxsona.com/oauth/token', code_challenge_methods_supported: ['S256'] })
+  })
+
+  it('fails every production OAuth surface closed against the same canonical runtime gate', async () => {
+    const canonical = {
+      NODE_ENV: 'production',
+      PUBLIC_APP_BASE_URL: 'https://yxsona.com',
+      MERCHANT_BEARER_HOSTNAME: 'yxsona.com',
+      MCP_OAUTH_REQUIRED: 'true',
+      MCP_OAUTH_ISSUER: 'https://yxsona.com',
+      MCP_OAUTH_AUTHORIZATION_ENDPOINT: 'https://yxsona.com/oauth/authorize',
+      MCP_OAUTH_TOKEN_ENDPOINT: 'https://yxsona.com/oauth/token',
+      MCP_OAUTH_CLIENTS: JSON.stringify({ chatgpt: ['https://chatgpt.com/oauth/callback'] }),
+    }
+    const invalidConfigurations = [
+      ['OAuth requirement disabled', 'MCP_OAUTH_REQUIRED', 'false'],
+      ['unsafe public origin', 'PUBLIC_APP_BASE_URL', 'http://yxsona.com'],
+      ['merchant hostname mismatch', 'MERCHANT_BEARER_HOSTNAME', 'merchant.yxsona.com'],
+      ['external issuer', 'MCP_OAUTH_ISSUER', 'https://accounts.example.com'],
+      ['external authorization endpoint', 'MCP_OAUTH_AUTHORIZATION_ENDPOINT', 'https://accounts.example.com/oauth/authorize'],
+      ['incorrect token endpoint', 'MCP_OAUTH_TOKEN_ENDPOINT', 'https://yxsona.com/oauth/token/v2'],
+      ['invalid client registry', 'MCP_OAUTH_CLIENTS', '{}'],
+    ] as const
+    const base = await start()
+    for (const [label, key, value] of invalidConfigurations) {
+      for (const [name, configured] of Object.entries(canonical)) vi.stubEnv(name, configured)
+      vi.stubEnv(key, value)
+      for (const path of ['/.well-known/oauth-protected-resource', '/.well-known/oauth-authorization-server']) {
+        const response = await fetch(`${base}${path}`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
+        expect(response.status, `${label}:${path}`).toBe(503)
+        await expect(response.json()).resolves.toEqual({ error: 'MCP_OAUTH_NOT_CONFIGURED' })
+      }
+      const authorize = await fetch(`${base}/oauth/authorize`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
+      expect(authorize.status, `${label}:/oauth/authorize`).toBe(503)
+      await expect(authorize.json()).resolves.toEqual({ error: 'temporarily_unavailable' })
+      const authorizePost = await fetch(`${base}/oauth/authorize`, { method: 'POST', headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https', 'content-type': 'application/x-www-form-urlencoded' }, body: '' })
+      expect(authorizePost.status, `${label}:POST /oauth/authorize`).toBe(503)
+      await expect(authorizePost.json()).resolves.toEqual({ error: 'temporarily_unavailable' })
+      const token = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https', 'content-type': 'application/x-www-form-urlencoded' }, body: '' })
+      expect(token.status, `${label}:/oauth/token`).toBe(503)
+      await expect(token.json()).resolves.toEqual({ error: 'temporarily_unavailable' })
+    }
   })
 
   it('fails closed when the OpenAI Apps domain challenge token is not configured', async () => {

@@ -22,16 +22,34 @@ exports raw credentials or invents secret-store references, and exits 2 when
 inputs remain missing or unresolved. Existing output files are not overwritten.
 Its successful preparation exit code does not indicate release readiness.
 
+Known deployment aliases `MCP_AUTHZ_MODE`,
+`AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED` and `PUBLIC_APP_BASE_URL` are accepted;
+conflicting explicit/alias values are rejected without printing them. Enabled
+alerts, KMS encryption and social-platform opt-ins retain their conditional
+fields. No missing secret references or authorization flags are invented.
+
+Use the optional `LOCATOR` argument only for a new path record. If it already
+exists, it is preserved and the command fails; the separately created YAML
+may remain for private review. Do not delete the existing configuration or
+environment file to retry. Prepare a new YAML without `LOCATOR`, then review
+it and supply its explicit path to preflight.
+
 `infra/scripts/install-production-config-locator.mjs ROOT` updates only the
 locator-loading block in an older launch entrypoint, preserving unrelated code
 and its mode. The previous script is backed up in
 `deploy/production-config/launch-preflight.before-locator.sh`. It does not deploy,
 restart services or modify the runtime environment file.
+The locator must be one path line, either a regular file or a controlled link
+to a regular file inside `ROOT`; its link, content and permissions are not
+modified. Escaping/dangling links, directories, symlink launchers and partial
+or duplicate patches are rejected before installation writes.
 
 On SSH alias `101`, the configured target is now
 `/opt/merchant-deploy/deploy/production-config/production.yaml`, reached through
-`/opt/merchant-deploy/.env.production-config-path`. Both generated files are
-mode 600 and the containing directory is mode 700. The configuration remains
+`/opt/merchant-deploy/.env.production-config-path`. A subsequent owner read-only
+check confirmed this locator is a controlled root-local symlink; its content
+target and the YAML are mode 600, and the configuration directory is mode 700.
+The configuration remains
 blocked until real secret references, auth/platform declarations, PITR/pooler,
 approved limits and release inputs are supplied.
 

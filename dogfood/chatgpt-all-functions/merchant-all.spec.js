@@ -104,7 +104,7 @@ test('walk every Merchant Studio section through the real browser UI', async () 
 
   for (const section of utilitySections) {
     activeSection = section
-    await page.getByRole('button', { name: section, exact: true }).click()
+    await page.getByRole('button', { name: new RegExp(section) }).click()
     await page.waitForTimeout(500)
     pages.push({ section, ...(await snapshot(page)) })
     const dialog = page.getByRole('dialog')

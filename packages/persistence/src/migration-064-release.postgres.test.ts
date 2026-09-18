@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { Pool } from 'pg'
@@ -25,6 +26,7 @@ describe('064 workspace identity bootstrap', () => {
     let database: Pool | undefined
     let appA: Pool | undefined
     let appB: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const databaseUrl = new URL(adminUrl)
@@ -64,12 +66,17 @@ describe('064 workspace identity bootstrap', () => {
       const isolated = await repositoryB.bootstrap({ issuer: 'https://issuer-b.example', externalSubject: 'same-subject', identityId: identityB, candidateWorkspaceId: 'ws_issuer_b', displayName: '另一发行方', actorId: 'same-subject' })
       expect(isolated).toMatchObject({ workspaceId: 'ws_issuer_b', created: true })
       expect(isolated.workspaceId).not.toBe(canonicalWorkspaceId)
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await Promise.all([appA?.end(), appB?.end()])
-      await database?.end()
-      await admin.query(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1`, [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await Promise.all([appA?.end(), appB?.end()])
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 120_000)
 })

@@ -384,7 +384,7 @@ export const ROLE_CAPABILITIES: Readonly<Record<CanonicalRole, readonly Capabili
   operator: [...tenantOperate, 'billing.export'],
   workspace_support: [...tenantRead, 'support.ticket.read', 'support.ticket.update', 'support.sla.update', 'incident.read', 'marketing.queue.read', 'billing.export'],
   reviewer: [...tenantRead, 'rule.update', 'rule.publish.approve'],
-  finance: ['workspace.summary.read', 'billing.self.read', 'billing.workspace.read', 'billing.workspace.update', 'billing.reconcile.execute', 'billing.refund.execute', 'billing.export', 'commercial.read', 'audit.read'],
+  finance: ['workspace.summary.read', 'billing.self.read', 'billing.workspace.read', 'billing.workspace.update', 'billing.refund.execute', 'billing.export', 'commercial.read', 'audit.read'],
   viewer: tenantRead,
   knowledge_editor: [...tenantRead, 'customer.content.update'],
   knowledge_reader: tenantRead,

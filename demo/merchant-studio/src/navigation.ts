@@ -1,6 +1,6 @@
 import { merchantEntryPointFromQuery, type MerchantEntryPoint } from './entry-points.js'
 
-export const merchantPages = ['overview', 'products', 'task', 'publish', 'rules'] as const
+export const merchantPages = ['overview', 'products', 'finance', 'task', 'publish', 'rules'] as const
 export type MerchantPage = (typeof merchantPages)[number]
 export type MerchantPlatformId = 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin'
 
@@ -31,7 +31,7 @@ export function focusMainAfterMerchantNavigation(
 }
 
 const platforms = new Set<MerchantPlatformId>(['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'])
-const merchantRoutePattern = /\/merchant\/(?:overview|products|tasks(?:\/new|\/[^/?#]+)?|publish|rules)\/?$/u
+const merchantRoutePattern = /\/merchant\/(?:overview|products|finance|tasks(?:\/new|\/[^/?#]+)?|publish|rules)\/?$/u
 
 function platformFromQuery(value: string | null): MerchantPlatformId | undefined {
   return value && platforms.has(value as MerchantPlatformId) ? value as MerchantPlatformId : undefined
@@ -44,10 +44,11 @@ function legacyPage(hash: string): MerchantPage | undefined {
 }
 
 export function merchantRouteFromLocation(location: Pick<Location, 'hash' | 'pathname' | 'search'>): MerchantRoute {
-  const match = location.pathname.match(/\/merchant\/(overview|products|tasks(?:\/new|\/[^/?#]+)?|publish|rules)\/?$/u)
+  const match = location.pathname.match(/\/merchant\/(overview|products|finance|tasks(?:\/new|\/[^/?#]+)?|publish|rules)\/?$/u)
   const params = new URLSearchParams(location.search)
   const segment = match?.[1]
   if (segment === 'overview') return { page: 'overview', searchQuery: '' }
+  if (segment === 'finance') return { page: 'finance', searchQuery: '' }
   if (segment === 'products') {
     // The former 商品与资产 landing page is retired. Direct links now open
     // the knowledge workspace; the product catalog remains available only

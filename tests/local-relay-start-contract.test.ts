@@ -18,7 +18,7 @@ describe('local relay start contract', () => {
     }
     expect(compose).toContain('MODEL_RELAY_BASE_URL: ${MODEL_RELAY_BASE_URL:-https://ai.wormholexyz.xyz/v1}')
     expect(compose).toContain('MODEL_RELAY_API_KEY: ${MODEL_RELAY_API_KEY:-}')
-    expect(compose).toContain('AI_MODEL: ${AI_MODEL:-deepseek-v4-pro}')
+    expect(compose).toContain('AI_MODEL: ${AI_MODEL:-glm-4.7-flash}')
     expect(compose).toContain('IMAGE_MODEL: ${IMAGE_MODEL:-qwen-image-2.0}')
     expect(compose).toContain('IMAGE_GENERATION_EXECUTION_MODE: ${IMAGE_GENERATION_EXECUTION_MODE:-durable}')
     expect(compose).toContain('IMAGE_STATUS_PATH: ${IMAGE_STATUS_PATH:-}')

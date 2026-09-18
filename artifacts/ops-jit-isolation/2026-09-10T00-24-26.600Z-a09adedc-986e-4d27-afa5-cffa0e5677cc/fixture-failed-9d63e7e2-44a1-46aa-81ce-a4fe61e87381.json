@@ -1,8 +1,0 @@
-{
-  "runId": "9d63e7e2-44a1-46aa-81ce-a4fe61e87381",
-  "error": "ISOLATED_FIXTURE_DOCKER_RUN_FAILED",
-  "cleanup": {
-    "stopped": [],
-    "leftRunning": []
-  }
-}

@@ -7,6 +7,11 @@ if [ -z "$relay_api_key" ] && [ -f .env ]; then
   # file: it contains JSON-valued settings and must never be executed as shell.
   relay_api_key=$(awk -F= '/^[[:space:]]*(MODEL_RELAY_API_KEY|WORMHOLE_API_KEY)[[:space:]]*=/{sub(/^[^=]*=/, ""); gsub(/^\"|\"$/, ""); gsub(/^\047|\047$/, ""); print; exit}' .env)
 fi
+# A repository .env may intentionally contain a placeholder. Never let that
+# placeholder shadow a real key injected into the macOS launchd environment.
+case "$relay_api_key" in
+  ''|'${MODEL_RELAY_API_KEY}'|'REPLACE_WITH_'*|'your-'*|'changeme'|'placeholder'|'fixture-'*) relay_api_key='';;
+esac
 if [ -z "$relay_api_key" ] && command -v launchctl >/dev/null 2>&1; then
   relay_api_key=$(launchctl getenv WORMHOLE_API_KEY 2>/dev/null || true)
 fi
@@ -31,7 +36,7 @@ if [ -n "$video_relay_api_key" ]; then
 fi
 export MODEL_RELAY_BASE_URL=${MODEL_RELAY_BASE_URL:-https://ai.wormholexyz.xyz/v1}
 sh scripts/ensure-local-scanner-key.sh
-export AI_MODEL=${AI_MODEL:-deepseek-v4-pro}
+export AI_MODEL=${AI_MODEL:-glm-4.7-flash}
 export AI_THINKING_MODE=${AI_THINKING_MODE:-disabled}
 export AI_TIMEOUT_MS=${AI_TIMEOUT_MS:-180000}
 export WORKER_LEASE_MS=${WORKER_LEASE_MS:-1200000}

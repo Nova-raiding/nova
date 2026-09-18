@@ -4,6 +4,7 @@ import { Space, Typography } from "antd";
 interface OpsPageProps {
   eyebrow?: string;
   title: string;
+  hideTitle?: boolean;
   description?: string;
   nextStep?: string;
   actions?: ReactNode;
@@ -14,6 +15,7 @@ interface OpsPageProps {
 export function OpsPage({
   eyebrow,
   title,
+  hideTitle = false,
   description,
   nextStep,
   actions,
@@ -37,7 +39,7 @@ export function OpsPage({
       tabIndex={-1}
     >
       <Space orientation="vertical" size={20} className="content-stack">
-        <header className="ops-page-header">
+        {!hideTitle ? <header className="ops-page-header">
           <div className="ops-page-heading">
             {eyebrow ? <Typography.Text className="ops-page-eyebrow">{eyebrow}</Typography.Text> : null}
             <HeadingTag className="ops-page-title">{title}</HeadingTag>
@@ -45,7 +47,7 @@ export function OpsPage({
             {nextStep ? <Typography.Text className="ops-page-next-step">{nextStep}</Typography.Text> : null}
           </div>
           {actions ? <div className="ops-page-actions">{actions}</div> : null}
-        </header>
+        </header> : null}
         {children}
       </Space>
     </section>

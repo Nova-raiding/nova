@@ -47,11 +47,15 @@ describe('complete commercial operation registry E1 totality', () => {
   })
 
   it('publishes exact personal-commercial and workspace-creative-point policies for the four V2 recovery reads', () => {
-    for (const method of ['commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list'] as const) {
+    const expectedPolicies = {
+      'commercial.access.get': { effect: 'read', scope: 'self', capability: 'billing.self.read' },
+      'commercial.catalog.get': { effect: 'read', scope: 'self', capability: 'billing.self.read' },
+      'creative-points.balance.get': { effect: 'read', scope: 'workspace', capability: 'billing.workspace.read' },
+      'creative-points.statement.list': { effect: 'read', scope: 'workspace', capability: 'billing.workspace.read' },
+    } as const
+    for (const method of Object.keys(expectedPolicies) as Array<keyof typeof expectedPolicies>) {
       expect(MCP_METHOD_SCHEMAS[method].additionalProperties).toBe(false)
-      expect(getMcpMethodPolicy(method)).toMatchObject(method.startsWith('creative-points.')
-        ? { effect: 'read', scope: 'workspace', capability: 'billing.workspace.read' }
-        : { effect: 'read', scope: 'self', capability: 'billing.self.read' })
+      expect(getMcpMethodPolicy(method)).toMatchObject(expectedPolicies[method])
       expect(resolveMcp(method)).toMatchObject({ outcome: 'REGISTERED', policy: { classification: 'RECOVERY_CONTROL' } })
     }
     expect(Object.keys(MCP_METHOD_SCHEMAS['commercial.access.get'].properties)).toEqual(['workspace_id'])
@@ -174,20 +178,20 @@ describe('complete commercial operation registry E1 totality', () => {
 
   it('keeps recovery reads in exact HTTP/MCP parity without exposing workspace statements as personal data', () => {
     const pairs = [
-      ['http:GET:/v1/commercial/access', 'commercial.access.get'],
-      ['http:GET:/v1/commercial/catalog', 'commercial.catalog.get'],
-      ['http:GET:/v1/commercial/orders/{orderId}/payment', 'commercial.order.payment.get'],
-      ['http:GET:/v1/creative-points/balance', 'creative-points.balance.get'],
-      ['http:GET:/v1/creative-points/statement', 'creative-points.statement.list'],
+      ['http:GET:/v1/commercial/access', 'commercial.access.get', 'self', 'billing.self.read'],
+      ['http:GET:/v1/commercial/catalog', 'commercial.catalog.get', 'self', 'billing.self.read'],
+      ['http:GET:/v1/commercial/orders/{orderId}/payment', 'commercial.order.payment.get', 'self', 'billing.self.read'],
+      ['http:GET:/v1/creative-points/balance', 'creative-points.balance.get', 'workspace', 'billing.workspace.read'],
+      ['http:GET:/v1/creative-points/statement', 'creative-points.statement.list', 'workspace', 'billing.workspace.read'],
     ] as const
-    for (const [operation, method] of pairs) {
+    for (const [operation, method, scope, capability] of pairs) {
       expect(resolveHttp(operation)).toMatchObject({
         outcome: 'REGISTERED',
         policy: { domain: 'COMMERCIAL', enabled: true, classification: 'RECOVERY_CONTROL', authorization_policy_ref: method },
       })
       expect(getMcpMethodPolicy(method)).toMatchObject({
-        scope: method.startsWith('creative-points.') ? 'workspace' : 'self',
-        capability: method.startsWith('creative-points.') ? 'billing.workspace.read' : 'billing.self.read',
+        scope,
+        capability,
         workbench: 'workspace', effect: 'read',
       })
     }

@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -12,6 +13,7 @@ describe('persistence migration 131 task campaign item scope', () => {
     const databaseName = `release_131_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const databaseUrl = new URL(base); databaseUrl.pathname = `/${databaseName}`
@@ -45,11 +47,16 @@ describe('persistence migration 131 task campaign item scope', () => {
         INSERT INTO tasks (id,workspace_id,product_id,platform,platform_account_id,state,brand_id,canonical_product_id,listing_id,campaign_id,campaign_item_id)
         VALUES ('task_131_ok','ws_131','legacy_131','taobao','acct_131','draft','brand_131','canonical_131','listing_131','campaign_131','item_131')
       `)).resolves.toMatchObject({ rowCount: 1 })
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

@@ -1,8 +1,0 @@
-{
-  "status": "failed",
-  "runId": "6d9e0383-a958-40fa-ad09-17b8d6006dcb",
-  "containerId": "2733a5e7a7384aedf23901b472ff6fb47e8f71e3021b8b251fe9686fe8319828",
-  "observedAt": "2026-09-14T15:29:15.593Z",
-  "errorCode": "CUSTOMER_DELIVERY_SCAN_RUNTIME_UNAVAILABLE",
-  "sharedContainersTouched": false
-}

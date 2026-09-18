@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -32,6 +33,7 @@ describe('authorization/RLS local PostgreSQL probe', () => {
     let app: Pool | undefined
     let ops: Pool | undefined
     let pooledOps: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: connection(base, databaseName) })
@@ -93,14 +95,19 @@ describe('authorization/RLS local PostgreSQL probe', () => {
       expect((await pooledOps.query('SELECT count(*)::int AS count FROM authorization_revisions')).rows).toEqual([{ count: 1 }])
       await pooledOps.query('COMMIT')
       expect((await pooledOps.query('SELECT count(*)::int AS count FROM authorization_revisions')).rows).toEqual([{ count: 0 }])
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await app?.end()
-      await ops?.end()
-      await pooledOps?.end()
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await app?.end()
+        await ops?.end()
+        await pooledOps?.end()
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

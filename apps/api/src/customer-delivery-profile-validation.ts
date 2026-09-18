@@ -62,4 +62,6 @@ export function validateCustomerDeliveryProfileValues(patch: Record<string, unkn
     && (typeof patch.paymentDate !== 'string' || !calendarDate(patch.paymentDate))) invalid('付款日期必须是有效的 YYYY-MM-DD 日期或 null')
   if (Object.hasOwn(patch, 'plannedGoLiveAt') && patch.plannedGoLiveAt !== null
     && (typeof patch.plannedGoLiveAt !== 'string' || !zonedTimestamp(patch.plannedGoLiveAt))) invalid('要求上线时间必须是包含时区的有效 ISO 日期时间或 null')
+  if (Object.hasOwn(patch, 'archivedAt') && patch.archivedAt !== null
+    && (typeof patch.archivedAt !== 'string' || !zonedTimestamp(patch.archivedAt))) invalid('停用时间必须是包含时区的有效 ISO 日期时间或 null')
 }

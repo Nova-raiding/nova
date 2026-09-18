@@ -29,8 +29,7 @@ FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a55
 ENV NODE_ENV=production
 ENV PORT=8787
 WORKDIR /app
-RUN apk add --no-cache postgresql16-client \
-  && addgroup -g 10001 -S merchant && adduser -u 10001 -S -D -H -G merchant merchant \
+RUN addgroup -g 10001 -S merchant && adduser -u 10001 -S -D -H -G merchant merchant \
   && mkdir -p /var/lib/merchant-assets \
   && chown 10001:10001 /var/lib/merchant-assets
 COPY package.json package-lock.json ./
@@ -43,6 +42,10 @@ COPY packages/persistence/src/migrations ./dist/packages/persistence/src/migrati
 COPY --from=build /app/apps/plugin ./apps/plugin
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/dist/packages/contracts/src ./packages/contracts/dist
+# The billing provider imports this checked-in ESM callback signer at runtime;
+# keep it beside the compiled billing module in the API image.
+COPY packages/billing/src/callback-envelope.mjs ./dist/packages/billing/src/callback-envelope.mjs
+COPY packages/billing/src/callback-envelope.d.mts ./dist/packages/billing/src/callback-envelope.d.mts
 # The runtime install happens before workspace sources are copied, so npm
 # cannot create links for private @merchant-marketing packages. Compiled code
 # may legitimately import their public exports; wire those package roots after

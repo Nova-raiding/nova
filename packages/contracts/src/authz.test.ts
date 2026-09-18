@@ -103,17 +103,40 @@ describe('authorization policy registry', () => {
     expect(capabilitiesForRoles(['ops_admin'])).not.toContain('feature_flag.administer')
     expect(resolveCanonicalRoles({ gatewayRoles: ['platform_ops'] })).not.toContain('platform_admin')
     expect(capabilitiesForRoles(['rules_admin'])).toContain('rule.publish.approve')
-    expect(capabilitiesForRoles(['finance'])).toEqual(expect.arrayContaining(['billing.workspace.read', 'billing.reconcile.execute', 'billing.refund.execute']))
+    expect(capabilitiesForRoles(['finance'])).toEqual(expect.arrayContaining(['billing.workspace.read', 'billing.refund.execute']))
+    expect(capabilitiesForRoles(['finance'])).not.toContain('billing.reconcile.execute')
     expect(capabilitiesForRoles(['operator'])).toContain('billing.self.read')
     expect(getMcpMethodPolicy('commercial.catalog.get')).toMatchObject({ capability: 'billing.self.read', scope: 'self' })
     expect(getMcpMethodPolicy('commercial.order.payment.get')).toMatchObject({ capability: 'billing.self.read', scope: 'self' })
     expect(getMcpMethodPolicy('creative-points.balance.get')).toMatchObject({ capability: 'billing.workspace.read', scope: 'workspace' })
     expect(getMcpMethodPolicy('creative-points.statement.list')).toMatchObject({ capability: 'billing.workspace.read', scope: 'workspace' })
     expect(capabilitiesForRoles(['operator'])).not.toContain('billing.workspace.read')
+    expect(getMcpMethodPolicy('commercial.access.get')).toMatchObject({ capability: 'billing.self.read', scope: 'self', workbench: 'workspace' })
     expect(capabilitiesForRoles(['platform_admin'])).toContain('billing.platform.read')
+    expect(capabilitiesForRoles(['platform_admin'])).toEqual(expect.arrayContaining(['billing.reconcile.execute', 'billing.refund.execute']))
+    expect(getMcpMethodPolicy('billing.refund')).toMatchObject({ capability: 'billing.refund.execute', scope: 'platform', workbench: 'platform' })
+    for (const method of ['billing.reconciliation.run', 'billing.model-usage.reconciliation.run', 'billing.model-usage.resolve'] as const) {
+      expect(getMcpMethodPolicy(method)).toMatchObject({ capability: 'billing.reconcile.execute', scope: 'platform', workbench: 'platform' })
+    }
     for (const role of CANONICAL_ROLES) {
       expect(capabilitiesForRoles([role]), `${role} must be able to load its own authorization session`).toContain('authorization.session.read')
     }
+  })
+
+  it('lets a tenant operator read its recovery decision without granting a platform support role billing access', () => {
+    const policy = getMcpMethodPolicy('commercial.access.get')!
+    const decide = (role: 'operator' | 'support_agent') => evaluateAuthorizationDecision({
+      decisionId: `commercial-access-${role}`,
+      policy,
+      capabilities: capabilitiesForRoles([role]),
+      scopes: [{ type: 'self', ids: [`actor-${role}`] }],
+      resourceScope: { type: 'self', id: `actor-${role}` },
+      workbench: 'workspace',
+      mode: 'enforce',
+    })
+
+    expect(decide('operator')).toMatchObject({ allowed: true, authorized: true, reason_code: 'AUTHZ_ALLOWED', capability: 'billing.self.read', scope: { required: 'self' } })
+    expect(decide('support_agent')).toMatchObject({ allowed: false, authorized: false, reason_code: 'AUTHZ_CAPABILITY_MISSING', capability: 'billing.self.read', scope: { required: 'self' } })
   })
 
   it.each([

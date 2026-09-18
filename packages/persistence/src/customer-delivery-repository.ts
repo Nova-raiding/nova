@@ -56,6 +56,8 @@ export interface CustomerDelivery {
   revision: number;
   createdByActorId: string;
   updatedByActorId: string;
+  archivedAt?: string | null;
+  archivedByActorId?: string | null;
   createdAt: string;
   updatedAt: string;
   videos: CustomerDeliveryVideo[];
@@ -79,6 +81,7 @@ export type CustomerDeliveryPatch = Partial<Pick<CustomerDelivery,
   | "companyName" | "contractNumber" | "paymentStatus" | "contractRef"
   | "projectOwner" | "supportOwner" | "paymentDate" | "paymentEvidenceRefs"
   | "plannedGoLiveAt" | "customerProfileStatus" | "trainingCompleted" | "trainingEvidenceRefs"
+  | "archivedAt"
 >>;
 export const CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS = {
   system_integration: [
@@ -190,28 +193,6 @@ function normalizeChecklistEvidence(evidence: Record<string, unknown> | undefine
   // fields untouched; existing validation still rejects invalid completed refs.
   return { ...evidence, asset_refs: evidence.asset_refs.map(ref => typeof ref === "string" ? ref.trim() : ref) };
 }
-function validateEvidenceTransition(previous: CustomerDelivery, candidate: CustomerDelivery) {
-  // Mirror migration 202: unchanged legacy groups remain repairable, while
-  // changing either group must leave that group internally valid.
-  const paymentChanged = previous.paymentStatus !== candidate.paymentStatus
-    || previous.paymentDate !== candidate.paymentDate
-    || JSON.stringify(previous.paymentEvidenceRefs) !== JSON.stringify(candidate.paymentEvidenceRefs);
-  const trainingChanged = previous.trainingCompleted !== candidate.trainingCompleted
-    || JSON.stringify(previous.trainingEvidenceRefs) !== JSON.stringify(candidate.trainingEvidenceRefs);
-  if (paymentChanged && candidate.paymentStatus === "paid"
-    && (!candidate.paymentDate || customerDeliveryEvidenceRefs(candidate.paymentEvidenceRefs).length === 0))
-    throw new CustomerDeliveryError("EVIDENCE_REQUIRED", "已付款状态必须绑定付款日期和付款凭证");
-  if (trainingChanged && candidate.trainingCompleted && customerDeliveryEvidenceRefs(candidate.trainingEvidenceRefs).length === 0)
-    throw new CustomerDeliveryError("EVIDENCE_REQUIRED", "完成培训必须绑定培训凭证");
-}
-function requireCompletedEvidence(completed: boolean, evidence: Record<string, unknown> | undefined) {
-  if (completed && customerDeliveryEvidenceRefs(evidence?.asset_refs).length === 0)
-    throw new CustomerDeliveryError("EVIDENCE_REQUIRED", "已完成的交付项必须绑定至少一份已扫描凭证");
-}
-function requireVerifiedPayment(paymentStatus: unknown, paymentDate: unknown, paymentEvidenceRefs: unknown) {
-  if (paymentStatus !== "paid" || !paymentDate || customerDeliveryEvidenceRefs(paymentEvidenceRefs).length === 0)
-    throw new CustomerDeliveryError("PAYMENT_REQUIRED", "完成下游交付前必须核验付款状态、付款日期和付款凭证");
-}
 /** Contract completion evidence must be a platform asset reference.
  * External URLs are not proof of upload, binding, or a clean scanner verdict. */
 export function isValidCustomerDeliveryContractRef(value: string | null | undefined): boolean {
@@ -222,21 +203,18 @@ export function isValidCustomerDeliveryContractRef(value: string | null | undefi
 function checklistComplete(checklistKey: "system_integration" | "functional_acceptance", items: readonly CustomerDeliveryChecklistItem[]) {
   return CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS[checklistKey].every(itemKey => {
     const matches = items.filter(item => item.checklistKey === checklistKey && item.itemKey === itemKey);
-    return matches.length === 1 && matches[0]!.completed
-      && customerDeliveryEvidenceRefs(matches[0]!.evidence?.asset_refs).length > 0;
+    return matches.length === 1 && matches[0]!.completed;
   });
 }
 const complete = (d: CustomerDelivery, items: readonly CustomerDeliveryChecklistItem[]) =>
   d.paymentStatus === "paid" &&
   Boolean(d.paymentDate) &&
-  customerDeliveryEvidenceRefs(d.paymentEvidenceRefs).length > 0 &&
   d.customerProfileStatus === "complete" &&
-  Boolean(d.contractNumber?.trim() && d.projectOwner?.trim() && d.supportOwner?.trim() && d.plannedGoLiveAt) &&
+  Boolean(d.contractNumber?.trim() && d.projectOwner?.trim() && d.supportOwner?.trim()) &&
   isValidCustomerDeliveryContractRef(d.contractRef) &&
   d.systemIntegrationStatus === "complete" &&
   d.functionalAcceptanceStatus === "complete" &&
   d.trainingCompleted &&
-  customerDeliveryEvidenceRefs(d.trainingEvidenceRefs).length > 0 &&
   (["system_integration", "functional_acceptance"] as const).every(checklistKey =>
     checklistComplete(checklistKey, items.filter(item => item.workspaceId === d.workspaceId && item.deliveryId === d.id))) &&
   d.videos.some((video) => !video.deletedAt);
@@ -259,7 +237,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
   async list(workspaceId: string) {
     const s = requireWorkspaceScope(workspaceId);
     return [...this.rows.values()]
-      .filter((x) => x.workspaceId === s)
+      .filter((x) => x.workspaceId === s && !x.archivedAt)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .map(row => this.readable(row));
   }
@@ -279,6 +257,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       [...this.rows.values()].some(
         (x) =>
           x.workspaceId === ws &&
+          !x.archivedAt &&
           x.companyName.toLowerCase() ===
             input.companyName.trim().toLowerCase(),
       )
@@ -309,6 +288,8 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       revision: 1,
       createdByActorId: input.actorId,
       updatedByActorId: input.actorId,
+      archivedAt: null,
+      archivedByActorId: null,
       createdAt: now,
       updatedAt: now,
       videos: [],
@@ -345,15 +326,12 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       throw new CustomerDeliveryError("REVISION_CONFLICT", "revision changed");
     if (Object.keys(patch).length === 0) return this.readable(d);
     const candidate = { ...d, ...patch };
-    if (patch.trainingCompleted === true && !d.trainingCompleted)
-      requireVerifiedPayment(candidate.paymentStatus, candidate.paymentDate, candidate.paymentEvidenceRefs);
     if (
       input.patch.companyName !== undefined &&
       !input.patch.companyName.trim()
     )
       throw new CustomerDeliveryError("INVALID_INPUT", "companyName required");
     const before = clone(d);
-    validateEvidenceTransition(d, candidate);
     if ("contractRef" in patch && patch.contractRef != null && !isValidCustomerDeliveryContractRef(patch.contractRef))
       throw new CustomerDeliveryError("INVALID_INPUT", "合同必须是已上传并扫描通过的 asset_ref");
     if (patch.customerProfileStatus === "complete" || (d.customerProfileStatus === "complete" && patch.customerProfileStatus !== "incomplete")) {
@@ -362,8 +340,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
         !isValidCustomerDeliveryContractRef(candidate.contractRef) ||
         !candidate.projectOwner?.trim() ||
         !candidate.supportOwner?.trim() ||
-        (candidate.paymentStatus === "paid" && !candidate.paymentDate) ||
-        !candidate.plannedGoLiveAt
+        (candidate.paymentStatus === "paid" && !candidate.paymentDate)
       )
         throw new CustomerDeliveryError(
           "INVALID_INPUT",
@@ -371,6 +348,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
         );
     }
     Object.assign(d, patch);
+    if (patch.archivedAt !== undefined) d.archivedByActorId = patch.archivedAt ? input.actorId : null;
     d.updatedByActorId = input.actorId;
     d.updatedAt = new Date().toISOString();
     d.revision++;
@@ -429,7 +407,6 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       );
     if (d.revision !== input.expectedRevision)
       throw new CustomerDeliveryError("REVISION_CONFLICT", "revision changed");
-    requireVerifiedPayment(d.paymentStatus, d.paymentDate, d.paymentEvidenceRefs);
     if (!input.itemKey.trim())
       throw new CustomerDeliveryError("INVALID_INPUT", "itemKey required");
     if (
@@ -442,7 +419,6 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
         "INVALID_INPUT",
         "unknown checklist item",
       );
-    requireCompletedEvidence(input.completed, input.evidence);
     const key = `${ws}:${d.id}:${input.checklistKey}:${input.itemKey.trim()}`;
     const now = new Date().toISOString();
     const prev = this.items.get(key);
@@ -506,7 +482,6 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       );
     if (d.revision !== input.expectedRevision)
       throw new CustomerDeliveryError("REVISION_CONFLICT", "revision changed");
-    requireVerifiedPayment(d.paymentStatus, d.paymentDate, d.paymentEvidenceRefs);
     const expectedKeys = CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS[
       input.checklistKey
     ] as readonly string[];
@@ -538,7 +513,6 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
           "INVALID_INPUT",
           "evidence must be an object",
         );
-      requireCompletedEvidence(x.completed, x.evidence);
       seen.add(key);
     }
     const beforeItems = [...this.items.values()].filter(item => item.workspaceId === ws
@@ -714,11 +688,8 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
     if (mutation.kind === "update") {
       const p = mutation.patch;
       Object.assign(candidate, p);
-      validateEvidenceTransition(delivery, candidate);
       if ("contractRef" in p && p.contractRef != null && !isValidCustomerDeliveryContractRef(p.contractRef))
         throw new CustomerDeliveryError("INVALID_INPUT", "合同必须是已上传并扫描通过的 asset_ref");
-      if (p.trainingCompleted === true && !delivery.trainingCompleted)
-        requireVerifiedPayment(candidate.paymentStatus, candidate.paymentDate, candidate.paymentEvidenceRefs);
       if ((Object.hasOwn(p, "contractRef") || p.customerProfileStatus === "complete")
         && candidate.contractRef)
         add("contract", [candidate.contractRef]);
@@ -729,7 +700,6 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
         || (Object.hasOwn(p, "trainingCompleted") && candidate.trainingCompleted))
         add("training", candidate.trainingEvidenceRefs);
     } else if (mutation.kind === "item" || mutation.kind === "batch") {
-      requireVerifiedPayment(delivery.paymentStatus, delivery.paymentDate, delivery.paymentEvidenceRefs);
       const changes = mutation.kind === "item" ? [mutation] : mutation.items;
       for (const change of changes) {
         const itemKey = change.itemKey.trim();
@@ -945,6 +915,8 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       revision: Number(r.revision),
       createdByActorId: r.created_by_actor_id,
       updatedByActorId: r.updated_by_actor_id,
+      archivedAt: r.archived_at ? new Date(r.archived_at).toISOString() : null,
+      archivedByActorId: r.archived_by_actor_id ?? null,
       createdAt: new Date(r.created_at).toISOString(),
       updatedAt: new Date(r.updated_at).toISOString(),
       videos,
@@ -1029,7 +1001,6 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       if (delivery.contractRef)
         await this.assertEvidenceAssets(c, workspaceId, deliveryId, "contract", [delivery.contractRef]);
       await this.assertEvidenceAssets(c, workspaceId, deliveryId, "payment", delivery.paymentEvidenceRefs);
-      await this.assertEvidenceAssets(c, workspaceId, deliveryId, "training", delivery.trainingEvidenceRefs);
       for (const checklistKey of ["system_integration", "functional_acceptance"] as const) {
         await this.assertEvidenceAssets(
           c,
@@ -1058,7 +1029,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
     const scope = requireWorkspaceScope(workspaceId);
     const ids = await withWorkspaceTransaction(this.pool, scope, async c =>
       (await c.query<{ id: string }>(
-        `SELECT id FROM workspace_customer_deliveries WHERE workspace_id=$1 ORDER BY updated_at DESC,id DESC /* delivery_evidence_list_ids */`,
+        `SELECT id FROM workspace_customer_deliveries WHERE workspace_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC,id DESC /* delivery_evidence_list_ids */`,
         [scope],
       )).rows);
     const result: CustomerDelivery[] = [];
@@ -1119,7 +1090,6 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
         "INVALID_INPUT",
         "unknown checklist item",
       );
-    requireCompletedEvidence(input.completed, input.evidence);
     return this.withEvidenceTransaction(scope, input.deliveryId, { ...input, kind: "item" }, async (c) => {
       const cur = await c.query(
         `SELECT * FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2 FOR UPDATE`,
@@ -1136,7 +1106,6 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           "REVISION_CONFLICT",
           "revision changed",
         );
-      requireVerifiedPayment(d.payment_status, d.payment_date, d.payment_evidence_refs);
       await this.assertEvidenceAssets(
         c,
         scope,
@@ -1247,7 +1216,6 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           "INVALID_INPUT",
           "evidence must be an object",
         );
-      requireCompletedEvidence(item.completed, item.evidence);
     }
     return this.withEvidenceTransaction(scope, input.deliveryId, { ...input, items: normalized, kind: "batch" }, async (c) => {
       const cur = await c.query(
@@ -1265,7 +1233,6 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           "REVISION_CONFLICT",
           "revision changed",
         );
-      requireVerifiedPayment(delivery.payment_status, delivery.payment_date, delivery.payment_evidence_refs);
       for (const item of normalized) {
         await this.assertEvidenceAssets(
           c,
@@ -1411,7 +1378,6 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
         throw new CustomerDeliveryError("INVALID_INPUT", "合同必须是已上传并扫描通过的 asset_ref");
       const before = this.map(row);
       const candidate = { ...before, ...p };
-      validateEvidenceTransition(before, candidate);
       if ((Object.hasOwn(p, "contractRef") || p.customerProfileStatus === "complete")
         && candidate.contractRef)
         await this.assertEvidenceAssets(c, scope, input.id, "contract", [candidate.contractRef]);
@@ -1427,15 +1393,12 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           !isValidCustomerDeliveryContractRef(candidate.contractRef) ||
           !candidate.projectOwner?.trim() ||
           !candidate.supportOwner?.trim() ||
-          (candidate.paymentStatus === "paid" && !candidate.paymentDate) ||
-          !candidate.plannedGoLiveAt)
+          (candidate.paymentStatus === "paid" && !candidate.paymentDate))
       )
         throw new CustomerDeliveryError(
           "INVALID_INPUT",
           "客户档案字段未填写完整",
         );
-      if (p.trainingCompleted === true && !row.training_completed)
-        requireVerifiedPayment(candidate.paymentStatus, candidate.paymentDate, candidate.paymentEvidenceRefs);
       const vals: any[] = [
         scope,
         input.id,
@@ -1456,6 +1419,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
         customerProfileStatus: "customer_profile_status",
         trainingCompleted: "training_completed",
         trainingEvidenceRefs: "training_evidence_refs",
+        archivedAt: "archived_at",
       };
       for (const k of keys) {
         sets.push(`${col[k]}=$${vals.length + 1}`);
@@ -1464,6 +1428,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       if (!sets.length) return (await this.withVideos(c, [row]))[0]!;
       sets.push(
         `updated_by_actor_id=$3`,
+        ...(Object.hasOwn(p, "archivedAt") ? [`archived_by_actor_id=CASE WHEN archived_at IS NULL THEN $3 ELSE NULL END`] : []),
         `updated_at=now()`,
         `revision=revision+1`,
       );

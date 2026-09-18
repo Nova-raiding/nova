@@ -90,7 +90,7 @@ const READ_ONLY_METHODS = new Set([
   'ops.incidents.list', 'ops.incident.get', 'ops.incident.timeline',
   'ops.feature-flags.list', 'ops.feature-flag.events', 'ops.feature-flag.evaluate',
   'ops.finance.search', 'ops.finance.detail', 'ops.finance.export',
-  'ops.users.list', 'ops.users.export', 'ops.user.detail', 'ops.commercial.offers.list', 'ops.commercial.addons.list', 'ops.commercial.coupons.list', 'ops.commercial.export', 'ops.commercial.rollouts.list', 'ops.growth.funnel', 'ops.alerts.list', 'subscription.get', 'subscription.orders.list', 'billing.reconciliation', 'platform.settings.get', 'platform.media.spec.list', 'platform.media.spec.get', 'platform.mapping.preflight', 'delivery.bundle.verify',
+  'ops.users.list', 'ops.users.export', 'ops.user.detail', 'ops.commercial.offers.list', 'ops.commercial.addons.list', 'ops.commercial.coupons.list', 'ops.commercial.export', 'ops.commercial.rollouts.list', 'ops.growth.funnel', 'ops.alerts.list', 'subscription.get', 'subscription.orders.list', 'billing.reconciliation', 'platform.settings.get', 'platform.store.list', 'platform.media.spec.list', 'platform.media.spec.get', 'platform.mapping.preflight', 'delivery.bundle.verify',
   'billing.status', 'billing.model-usage.statement', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.export', 'catalog.sync.get', 'commercial.order.payment.get',
   'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'asset.list', 'brand.get', 'brand.extract', 'brand.tone.preview',
   'deliverable.list', 'task.history', 'task.resume', 'task.timeline', 'task.understand', 'feedback.list', 'generation.get', 'content.review',
@@ -182,7 +182,7 @@ const SAFE_WITHOUT_INTERACTIVE_WRITE = new Set([
   'asset.upload', 'catalog.image.generate',
   'workspace.data.export.request', 'workspace.data.delete.request',
   'workspace.interactive.confirm',
-  'platform.store.list', 'platform.connect', 'catalog.sync', 'catalog.sync.start',
+  'platform.connect', 'catalog.sync', 'catalog.sync.start',
 ])
 const ALWAYS_INTERACTIVE_WRITE_METHODS = new Set([
   'platform.media.spec.create', 'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire',
@@ -1350,10 +1350,10 @@ function userFacingToolText(method, result) {
 }
 
 // The ChatGPT surface is a capability/recovery surface, not the merchant's
-// financial statement.  Keep only the server-authored state needed to decide
-// whether an action may continue.  Amounts, point quantities, token counts,
-// provider costs and exports remain available through the authenticated
-// desktop merchant console only.
+// financial statement. Keep the current creative-point balance required to
+// verify recharge and consumption, while payment amounts, ledger entries,
+// token counts, provider costs and exports remain in the authenticated desktop
+// merchant console only.
 function merchantBillingProjection(method, result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) return result
   const rechargeOrder = order => {
@@ -1375,7 +1375,15 @@ function merchantBillingProjection(method, result) {
       orders: Array.isArray(result.orders) ? result.orders.map(rechargeOrder) : [],
     }
   }
-  if (method === 'billing.status' || method === 'creative-points.balance.get') {
+  if (method === 'creative-points.balance.get') {
+    const allowedKeys = ['schema_version', 'balance_state', 'availability', 'available_points', 'reserved_points', 'settled_points', 'access_revision', 'updated_at']
+    const available = Number.isSafeInteger(result.available_points) ? result.available_points : undefined
+    const availability = result.availability ?? (result.balance_state !== 'known' || available === undefined
+      ? 'unknown'
+      : available === 0 ? 'exhausted' : 'available')
+    return Object.fromEntries(allowedKeys.filter(key => Object.prototype.hasOwnProperty.call(result, key) || key === 'availability').map(key => [key, key === 'availability' ? availability : result[key]]))
+  }
+  if (method === 'billing.status') {
     const allowedKeys = ['schema_version', 'balance_state', 'availability', 'allowed', 'access_revision', 'updated_at', 'next_actions', 'point_reservation_status', 'settlement_status', 'viewer']
     const available = Number.isSafeInteger(result.available_points) ? result.available_points : undefined
     const availability = result.availability ?? (result.balance_state !== 'known' || available === undefined

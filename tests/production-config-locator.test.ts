@@ -23,6 +23,25 @@ describe('production config locator safety', () => {
     expect(result.stdout + result.stderr).not.toContain('launch preflight passed')
   })
 
+  it('lets the standalone production config gate resolve the safe locator', () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'production-gate-locator-'))
+    try {
+      mkdirSync(resolve(root, 'infra/scripts'), { recursive: true })
+      const gate = readFileSync(resolve('infra/scripts/validate-production-config.sh'), 'utf8')
+      writeFileSync(resolve(root, 'infra/scripts/validate-production-config.sh'), gate, { mode: 0o755 })
+      writeFileSync(resolve(root, '.env.production-config-path'), 'private/rendered.yaml\n')
+      mkdirSync(resolve(root, 'private'), { recursive: true })
+      writeFileSync(resolve(root, 'private/rendered.yaml'), 'plugin_enabled: false\n')
+      const result = spawnSync('sh', [resolve(root, 'infra/scripts/validate-production-config.sh')], {
+        cwd: root, encoding: 'utf8', env: { ...process.env },
+      })
+      expect(result.status).not.toBe(2)
+      expect(result.stderr).not.toContain('requires a rendered config path')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('resolves locator paths without executing shell text and preserves argument precedence', () => {
     const root = mkdtempSync(resolve(tmpdir(), 'production-locator-'))
     try {

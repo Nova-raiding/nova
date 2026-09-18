@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -28,6 +29,7 @@ describe('persistence migration 078 late asset binding acceptance', () => {
     let fresh: Pool | undefined
     let upgrade: Pool | undefined
 
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${freshName}"`)
       await admin.query(`CREATE DATABASE "${upgradeName}"`)
@@ -69,13 +71,18 @@ describe('persistence migration 078 late asset binding acceptance', () => {
         .toEqual([{ asset_id: 'asset_078_existing', status: 'active' }])
       expect((await upgrade.query(`SELECT count(*)::int AS count,min(version)::int AS min,max(version)::int AS max FROM schema_migrations`)).rows)
         .toEqual([{ count: 78, min: 1, max: 78 }])
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await Promise.all([fresh?.end(), upgrade?.end()])
-      for (const name of [freshName, upgradeName]) {
-        await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [name])
-        await admin.query(`DROP DATABASE IF EXISTS "${name}"`)
-      }
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await Promise.all([fresh?.end(), upgrade?.end()])
+        for (const name of [freshName, upgradeName]) {
+          await dropDrainedPostgresFixture(admin, name)
+        }
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

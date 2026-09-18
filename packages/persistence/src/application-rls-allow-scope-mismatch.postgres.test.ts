@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -22,6 +23,7 @@ describe('application PostgreSQL RLS allow/scope mismatch probe', () => {
     let database: Pool | undefined
     let app: Pool | undefined
 
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: connection(base, databaseName) })
@@ -63,12 +65,17 @@ describe('application PostgreSQL RLS allow/scope mismatch probe', () => {
       // SET LOCAL must not leak the tenant or platform scope to the pooled
       // connection after the request transaction completes.
       expect((await app.query('SELECT id FROM brands ORDER BY id')).rows).toEqual([])
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await app?.end()
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await app?.end()
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

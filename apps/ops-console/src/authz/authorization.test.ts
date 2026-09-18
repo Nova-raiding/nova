@@ -21,7 +21,7 @@ describe("authorization projection", () => {
     }), true);
     expect(authorization.source).toBe("server");
     expect(canViewDomain(authorization, "rules")).toBe(true);
-    expect(canViewDomain(authorization, "finance")).toBe(false);
+    expect(authorization.can("billing.platform.read")).toBe(false);
     expect(canViewDomain(authorization, "users")).toBe(false);
   });
 
@@ -66,11 +66,10 @@ describe("authorization projection", () => {
     expect(authorization.can("billing.platform.read")).toBe(false);
   });
 
-  it("keeps finance navigation aligned with canonical finance actions", () => {
+  it("keeps finance capabilities available without exposing a finance page", () => {
     const authorization = createAuthorizationProjection(session(["finance"], {
       capabilities: ["billing.workspace.read", "billing.refund.execute"],
     }), true);
-    expect(canViewDomain(authorization, "finance")).toBe(true);
     expect(authorization.can("billing.refund.execute")).toBe(true);
   });
 

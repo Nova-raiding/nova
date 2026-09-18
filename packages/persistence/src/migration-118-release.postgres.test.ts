@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { Pool, type PoolClient } from 'pg'
 import { describe, expect, it } from 'vitest'
 import { loadMigrations, MigrationRunner, type Migration } from './migration.js'
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 
 const databaseUrlValue = process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const postgresIt = databaseUrlValue ? it : it.skip
@@ -14,9 +15,7 @@ function databaseUrl(base: URL, databaseName: string) {
 
 async function dropIsolatedDatabase(admin: Pool, database: Pool | undefined, databaseName: string) {
   await database?.end()
-  await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-  await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-  await admin.end()
+  await dropDrainedPostgresFixture(admin, databaseName)
 }
 
 async function insertWorkspace(database: Pool, workspaceId: string) {
@@ -56,6 +55,7 @@ describe('migration 118 PostgreSQL model usage budget run linkage', () => {
     const databaseName = `release_118_bad_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: databaseUrl(base, databaseName) })
@@ -78,8 +78,13 @@ describe('migration 118 PostgreSQL model usage budget run linkage', () => {
       expect((await database.query('SELECT version FROM schema_migrations WHERE version=118')).rows).toEqual([])
       expect((await database.query(`SELECT conname FROM pg_constraint WHERE conname IN
         ('model_cost_budget_reservation_run_unique','model_usage_budget_reservation_run_fk')`)).rows).toEqual([])
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await dropIsolatedDatabase(admin, database, databaseName)
+      await withPostgresFixtureCleanup(async () => {
+        await dropIsolatedDatabase(admin, database, databaseName)
+      }, primaryFailure, [() => admin.end()])
     }
   }, 240_000)
 
@@ -89,6 +94,7 @@ describe('migration 118 PostgreSQL model usage budget run linkage', () => {
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
     let client: PoolClient | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: databaseUrl(base, databaseName), max: 4 })
@@ -143,9 +149,14 @@ describe('migration 118 PostgreSQL model usage budget run linkage', () => {
           definition: expect.stringContaining('FOREIGN KEY (workspace_id, budget_reservation_key, budget_run_key)'),
         }),
       ])
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      client?.release()
-      await dropIsolatedDatabase(admin, database, databaseName)
+      await withPostgresFixtureCleanup(async () => {
+        client?.release()
+        await dropIsolatedDatabase(admin, database, databaseName)
+      }, primaryFailure, [() => admin.end()])
     }
   }, 240_000)
 })

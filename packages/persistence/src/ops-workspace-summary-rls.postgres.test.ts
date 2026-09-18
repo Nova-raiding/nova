@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -22,6 +23,7 @@ describe('merchant_ops workspace summary RLS boundary', () => {
     let database: Pool | undefined
     let ops: Pool | undefined
 
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: connection(base, databaseName) })
@@ -92,12 +94,17 @@ describe('merchant_ops workspace summary RLS boundary', () => {
         { table_name: 'products', can_select: true },
         { table_name: 'tasks', can_select: true },
       ])
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await ops?.end()
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await ops?.end()
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

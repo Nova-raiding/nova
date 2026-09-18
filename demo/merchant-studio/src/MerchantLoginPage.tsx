@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Alert, Button, Card, Form, Input, Typography } from 'antd'
 import { LockKeyhole } from 'lucide-react'
+import storeNovaLogo from './assets/store-nova-primary-horizontal.png'
 import {
   describeApiError,
   loginMerchantAccount,
@@ -45,11 +46,8 @@ export function MerchantLoginPage({
       <section className="merchant-login-form-panel">
         <Card className="merchant-login-card" variant="borderless">
           <div className="merchant-login-card-heading">
-            <Typography.Text className="merchant-login-eyebrow">安全登录</Typography.Text>
-            <Typography.Title id="merchant-login-title" level={2}>欢迎回来</Typography.Title>
-            <Typography.Paragraph type="secondary">
-              使用平台管理员分配的商家账号登录。平台运营账号不能登录商家工作台。
-            </Typography.Paragraph>
+            <img className="merchant-login-logo" src={storeNovaLogo} alt="Store Nova" />
+            <Typography.Title id="merchant-login-title" level={2}>欢迎使用Store Nova</Typography.Title>
           </div>
           {visibleError ? (
             <Alert

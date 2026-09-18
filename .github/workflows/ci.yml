@@ -198,6 +198,7 @@ jobs:
           packages/persistence/src/migration-208-release.postgres.test.ts
           packages/persistence/src/migration-209-release.postgres.test.ts
           packages/persistence/src/migration-210-release.postgres.test.ts
+          packages/persistence/src/migration-211-release.postgres.test.ts
           packages/persistence/src/migration-167.test.ts
           packages/persistence/src/migration-168.test.ts
           packages/persistence/src/migration-169.test.ts
@@ -248,6 +249,7 @@ jobs:
           packages/persistence/src/private-trial-payment.release.postgres.test.ts
           packages/persistence/src/brand-profile-association.release.postgres.test.ts
           packages/persistence/src/password-auth-repository.release.postgres.test.ts
+          packages/persistence/src/payment-callback-repository.postgres.test.ts
           packages/persistence/src/product-rls-tenant-boundary.postgres.test.ts
           packages/persistence/src/resource-id-scope.postgres.test.ts
           packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts

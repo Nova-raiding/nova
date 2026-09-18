@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -19,6 +20,7 @@ describe('persistence migration 077 canonical scope acceptance', () => {
     const admin = new Pool({ connectionString: base.toString() })
     let db: Pool | undefined
 
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       db = new Pool({ connectionString: databaseUrl(base, databaseName) })
@@ -70,11 +72,16 @@ describe('persistence migration 077 canonical scope acceptance', () => {
         .rejects.toMatchObject({ code: '23514' })
       await expect(db.query(`UPDATE publish_jobs SET platform='jd', platform_account_id='acct_077_jd' WHERE id='publish_077'`))
         .rejects.toMatchObject({ code: '23514' })
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await db?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await db?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })

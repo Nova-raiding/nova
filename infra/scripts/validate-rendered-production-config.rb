@@ -120,6 +120,42 @@ rescue IPAddr::InvalidAddressError
   true
 end
 
+def placeholder_hostname?(hostname)
+  normalized = hostname.to_s.downcase
+  return true if %w[example invalid localhost test].include?(normalized)
+  return true if %w[example.com example.net example.org].any? { |domain| normalized == domain || normalized.end_with?(".#{domain}") }
+
+  %w[.example .invalid .localhost .test].any? { |suffix| normalized.end_with?(suffix) }
+end
+
+# Payment endpoints require globally routable literal addresses, not only RFC1918 exclusion.
+# Keep this stricter policy scoped to payment fields; unrelated URL contracts are unchanged.
+def payment_public_hostname?(hostname)
+  normalized = hostname.delete_prefix('[').delete_suffix(']')
+  address = IPAddr.new(normalized)
+  if address.ipv4?
+    return false unless normalized == address.to_s
+    blocked = %w[0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.0.0.0/24 192.0.2.0/24 192.88.99.0/24 192.168.0.0/16 198.18.0.0/15 198.51.100.0/24 203.0.113.0/24 224.0.0.0/4 240.0.0.0/4]
+    return blocked.none? { |network| IPAddr.new(network).include?(address) }
+  end
+  IPAddr.new('2000::/3').include?(address) && %w[2001::/23 2001:db8::/32 2002::/16 3fff::/20].none? { |network| IPAddr.new(network).include?(address) }
+rescue IPAddr::InvalidAddressError
+  normalized.include?('.') && normalized.split('.').last.to_s.match?(/[a-z]/) && normalized.split('.', -1).all? { |label| label.match?(/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/) }
+end
+
+def canonical_payment_https_url(value, field)
+  uri = canonical_https_url(value, field)
+  authority = value.split('/', 4)[2].to_s
+  explicit_port = authority[/:(\d+)\z/, 1]
+  path = URI.decode_www_form_component(uri.path)
+  valid = value.start_with?('https://') && !value.match?(/[\s\\]/) && !value.include?('?') && !value.include?('#') &&
+    (!explicit_port || (explicit_port != '443' && explicit_port == uri.port.to_s)) && !path.split('/').any? { |segment| %w[. ..].include?(segment) }
+  raise ProductionManifestBindingError, "#{field} must be a canonical public HTTPS URL" unless valid
+  uri
+rescue ArgumentError
+  raise ProductionManifestBindingError, "#{field} must be a canonical public HTTPS URL"
+end
+
 def ingress_path(rule, path, path_type, service_name)
   Array(rule&.dig('http', 'paths')).any? do |entry|
     entry.is_a?(Hash) && entry['path'] == path && entry['pathType'] == path_type &&
@@ -213,8 +249,13 @@ begin
   canonical_https_url(payment_callback_base_url, 'payment_callback_base_url')
   raise ProductionManifestBindingError, 'payment_callback_base_url must match the merchant /v1 route' unless payment_callback_base_url == "https://#{merchant_host}/v1"
   %w[payment_checkout_base_url payment_provider_checkout_api_url payment_provider_query_api_url payment_provider_refund_query_api_url payment_provider_refund_api_url].each do |field|
-    uri = canonical_https_url(required_config_leaf(config, field), field)
-    raise ProductionManifestBindingError, "#{field} must not target a local or private literal host" unless public_hostname?(uri.host)
+    uri = canonical_payment_https_url(required_config_leaf(config, field), field)
+    raise ProductionManifestBindingError, "#{field} must not target a local, private, or special-use literal host" unless payment_public_hostname?(uri.host)
+    raise ProductionManifestBindingError, "#{field} must not target a reserved placeholder host" if placeholder_hostname?(uri.host)
+  end
+  merchant_id = required_config_leaf(config, 'payment_provider_merchant_id').strip
+  if merchant_id.match?(/(?:example|placeholder|replace[-_]?me|change[-_]?me|dummy|demo|test)/i)
+    raise ProductionManifestBindingError, 'payment_provider_merchant_id must not be a placeholder value'
   end
   rule_manifest_uri = canonical_https_url(required_config_leaf(config, 'platform_rule_sync_manifest_url'), 'platform_rule_sync_manifest_url')
   raise ProductionManifestBindingError, 'platform_rule_sync_manifest_url must not target a local or private literal host' unless public_hostname?(rule_manifest_uri.host)
@@ -224,16 +265,33 @@ begin
   ingress = ingresses.first
   merchant_rule = Array(ingress.dig('spec', 'rules')).find { |rule| rule.is_a?(Hash) && rule['host'] == merchant_host }
   raise ProductionManifestBindingError, 'Ingress/merchant is missing the configured merchant host rule' unless merchant_rule
-  raise ProductionManifestBindingError, 'configured merchant host must expose Exact /mcp to merchant-api:http' unless ingress_path(merchant_rule, '/mcp', 'Exact', 'merchant-api')
   raise ProductionManifestBindingError, 'configured merchant host must expose Prefix /v1 to merchant-api:http' unless ingress_path(merchant_rule, '/v1', 'Prefix', 'merchant-api')
   raise ProductionManifestBindingError, 'configured merchant host root must route to merchant-ui:http' unless ingress_path(merchant_rule, '/', 'Prefix', 'merchant-ui')
   ops_rule = Array(ingress.dig('spec', 'rules')).find { |rule| rule.is_a?(Hash) && rule['host'] == ops_uri.host }
   raise ProductionManifestBindingError, 'Ingress/merchant is missing the configured ops host rule' unless ops_rule
   raise ProductionManifestBindingError, 'configured ops host root must route to merchant-ops-ui:http' unless ingress_path(ops_rule, '/', 'Prefix', 'merchant-ops-ui')
   raise ProductionManifestBindingError, 'configured ops host must not expose /mcp' if Array(ops_rule.dig('http', 'paths')).any? { |path| path.is_a?(Hash) && path['path'] == '/mcp' }
+  raise ProductionManifestBindingError, 'Ingress/merchant public routes must keep a 1m request-body limit' unless ingress.dig('metadata', 'annotations', 'nginx.ingress.kubernetes.io/proxy-body-size') == '1m'
   tls_hosts = Array(ingress.dig('spec', 'tls')).flat_map { |entry| entry.is_a?(Hash) ? Array(entry['hosts']) : [] }
   raise ProductionManifestBindingError, 'Ingress TLS does not cover merchant_bearer_hostname' unless tls_hosts.include?(merchant_host)
   raise ProductionManifestBindingError, 'Ingress TLS does not cover ops_base_url' unless tls_hosts.include?(ops_uri.host)
+
+  upload_ingresses = resources.select { |resource| resource.is_a?(Hash) && resource['kind'] == 'Ingress' && resource.dig('metadata', 'name') == 'merchant-browser-api-upload' }
+  raise ProductionManifestBindingError, 'rendered manifest must contain exactly one Ingress/merchant-browser-api-upload' unless upload_ingresses.length == 1
+  upload_ingress = upload_ingresses.first
+  raise ProductionManifestBindingError, 'browser API upload ingress must set a 70m request-body limit' unless upload_ingress.dig('metadata', 'annotations', 'nginx.ingress.kubernetes.io/proxy-body-size') == '70m'
+  upload_merchant_rule = Array(upload_ingress.dig('spec', 'rules')).find { |rule| rule.is_a?(Hash) && rule['host'] == merchant_host }
+  upload_ops_rule = Array(upload_ingress.dig('spec', 'rules')).find { |rule| rule.is_a?(Hash) && rule['host'] == ops_uri.host }
+  raise ProductionManifestBindingError, 'configured merchant host must expose Exact /mcp to merchant-api:http in the 70m upload ingress' unless ingress_path(upload_merchant_rule, '/mcp', 'Exact', 'merchant-api')
+  raise ProductionManifestBindingError, 'merchant browser Exact /api/mcp upload route must target merchant-ui:http' unless ingress_path(upload_merchant_rule, '/api/mcp', 'Exact', 'merchant-ui')
+  raise ProductionManifestBindingError, 'ops browser Exact /api/mcp upload route must target merchant-ops-ui:http' unless ingress_path(upload_ops_rule, '/api/mcp', 'Exact', 'merchant-ops-ui')
+  [[upload_merchant_rule, 'merchant-ui'], [upload_ops_rule, 'merchant-ops-ui']].each do |rule, ui_service|
+    raise ProductionManifestBindingError, 'Exact /v1/assets/upload must target merchant-api:http in the upload ingress' unless ingress_path(rule, '/v1/assets/upload', 'Exact', 'merchant-api')
+    raise ProductionManifestBindingError, "Exact /api/v1/assets/upload must target #{ui_service}:http in the upload ingress" unless ingress_path(rule, '/api/v1/assets/upload', 'Exact', ui_service)
+  end
+  unless Array(upload_ingress.dig('spec', 'rules')).all? { |rule| rule.is_a?(Hash) && Array(rule.dig('http', 'paths')).all? { |path| path.is_a?(Hash) && path['pathType'] == 'Exact' && (%w[/api/mcp /v1/assets/upload /api/v1/assets/upload].include?(path['path']) || (rule['host'] == merchant_host && path['path'] == '/mcp')) } }
+    raise ProductionManifestBindingError, 'upload ingress must not widen the body limit beyond exact MCP and asset-upload routes'
+  end
 
   puts 'production config/rendered manifest binding gate passed'
 rescue ProductionManifestBindingError => error

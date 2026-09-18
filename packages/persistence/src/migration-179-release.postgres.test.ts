@@ -1,3 +1,4 @@
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
@@ -12,6 +13,7 @@ describe('persistence migration 179 campaign item task scope integrity', () => {
     const databaseName = `release_179_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
+    let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       const databaseUrl = new URL(base); databaseUrl.pathname = `/${databaseName}`
@@ -48,11 +50,16 @@ describe('persistence migration 179 campaign item task scope integrity', () => {
       await expect(database.query(`SELECT item.task_id, task.campaign_item_id
         FROM batch_campaign_items item JOIN tasks task ON task.workspace_id=item.workspace_id AND task.id=item.task_id
         WHERE item.workspace_id='ws_179' AND item.id='item_179'`)).resolves.toMatchObject({ rows: [{ task_id: 'task_179', campaign_item_id: 'item_179' }] })
+    } catch (error) {
+      primaryFailure = error
+      throw error
     } finally {
-      await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
-      await admin.end()
+      await withPostgresFixtureCleanup(async () => {
+        await database?.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, primaryFailure, [
+        () => admin.end(),
+      ])
     }
   }, 240_000)
 })
