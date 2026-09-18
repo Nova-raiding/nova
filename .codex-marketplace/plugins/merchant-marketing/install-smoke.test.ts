@@ -210,10 +210,10 @@ printf '%s\n' Darwin
     expect(recharge).not.toContain('balance_state=unknown')
     expect(recharge).not.toContain('unknown: "未知"')
     expect(recharge).toContain('call("billing.recharge.list"')
-    expect(recharge).toContain('function safePaymentUrl')
-    expect(recharge).toContain('打开支付入口')
-    expect(recharge).toContain('noopener noreferrer')
-    expect(recharge).toMatch(/url\.username.*url\.password.*url\.hash/su)
+    expect(recharge).toContain('支付统一在 Store Nova 商家后台完成')
+    expect(recharge).toContain('打开商家后台')
+    expect(recharge).toContain('https://yxsona.com')
+    expect(recharge).not.toContain('打开支付入口')
     // Detailed orders, transactions, usage and exports belong in the merchant
     // desktop workspace. The ChatGPT surface only exposes payment state and
     // a server-authorized recovery action.

@@ -183,6 +183,10 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   'publish.batch.prepare', 'publish.batch.confirm', 'publish.batch.get',
   'publish.batch.pause', 'publish.batch.resume', 'publish.batch.retry_failed',
   'billing.reconciliation',
+  // Payment is initiated only from the authenticated merchant backend. The
+  // desktop ChatGPT surface may read status/orders, but must not create a
+  // payment intent or expose a provider checkout link.
+  'billing.recharge.create',
   'billing.model-usage.reconciliation.run',
   'billing.model-usage.resolve',
   'billing.usage.consume',

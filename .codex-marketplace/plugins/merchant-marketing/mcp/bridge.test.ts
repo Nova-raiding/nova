@@ -291,14 +291,12 @@ describe('Codex stdio MCP bridge', () => {
       for (const [index, name] of ['platform.connect', 'billing.recharge.create', 'catalog.sync', 'catalog.sync.start', 'platform.media.spec.list', 'platform.media.spec.get', 'platform.mapping.preflight', 'delivery.bundle.verify', 'task.understand'].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: {} } })}\n`)
         const response = await nextLine(child.stdout)
-        if (MERCHANT_HIDDEN_METHODS.has(name)) {
+        if (name === 'billing.recharge.create' || MERCHANT_HIDDEN_METHODS.has(name)) {
           expect(response.error).toMatchObject({ code: -32602, message: `Unknown tool: ${name}` })
           continue
         }
         const result = response.result
-        if (name === 'billing.recharge.create') {
-          expect(result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
-        } else if (name === 'task.understand') {
+        if (name === 'task.understand') {
           expect(result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_OPERATION_DISABLED' } })
         } else {
           expect(result).toMatchObject({ isError: false, structuredContent: { accepted: true } })
@@ -311,7 +309,7 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('keeps recharge links while hiding store authorization links', async () => {
+  it('hides recharge creation while hiding store authorization links', async () => {
     const server = createServer(async (req, res) => {
       let body = ''
       for await (const chunk of req) body += chunk.toString()
@@ -336,7 +334,7 @@ describe('Codex stdio MCP bridge', () => {
           expect(response.error).toMatchObject({ code: -32602, message: 'Unknown tool: platform.connect' })
           continue
         }
-        expect(response.result.content).toContainEqual(expect.objectContaining({ type: 'resource_link', uri: expect.stringMatching(/^https:\/\//u), annotations: { audience: ['user'] } }))
+        expect(response.error).toMatchObject({ code: -32602, message: 'Unknown tool: billing.recharge.create' })
       }
     } finally {
       child.kill()
@@ -370,11 +368,6 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'billing.recharge.create', arguments: { channel: 'alipay', amount_cny: '0.01' } } })}\n`)
-      const pending = (await nextLine(child.stdout)).result
-      expect(pending.structuredContent).toMatchObject({ id: 'order_1', state: 'pending', paymentUrl: 'https://pay.example.com/checkout' })
-      expect(pending.content).toContainEqual(expect.objectContaining({ type: 'resource_link', uri: 'https://pay.example.com/checkout' }))
-
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'billing.recharge.get', arguments: { order_id: 'order_1' } } })}\n`)
       const paid = (await nextLine(child.stdout)).result.structuredContent
       expect(paid).toMatchObject({ id: 'order_1', state: 'paid', paid_at: '2026-09-14T00:01:00.000Z' })
@@ -402,9 +395,7 @@ describe('Codex stdio MCP bridge', () => {
       let body = ''
       for await (const chunk of req) body += chunk.toString()
       const method = JSON.parse(body).method
-      const result = method === 'billing.recharge.create'
-        ? { paymentUrl: 'weixin://wxpay/bizpayurl?pr=opaque' }
-        : { paymentUrl: 'javascript:alert(1)', state: 'pending' }
+      const result = { paymentUrl: 'javascript:alert(1)', state: 'pending' }
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: { result }, error: null }))
     })
@@ -416,7 +407,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'billing.recharge.create', arguments: {} } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: 'Unknown tool: billing.recharge.create' })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'billing.recharge.get', arguments: { order_id: 'order_1' } } })}\n`)
       expect((await nextLine(child.stdout)).result.content).not.toContainEqual(expect.objectContaining({ type: 'resource_link' }))
     } finally {
@@ -910,7 +901,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(imageCandidateUi.result.contents[0].text).not.toContain('票据')
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`)
       const listed = await nextLine(child.stdout)
-      expect(listed.result.tools).toHaveLength(132)
+      expect(listed.result.tools).toHaveLength(131)
       const catalogImageGet = listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.get')
       expect(catalogImageGet).toMatchObject({ name: 'catalog.image.get', annotations: { readOnlyHint: true } })
       expect(catalogImageGet).not.toHaveProperty('_meta')

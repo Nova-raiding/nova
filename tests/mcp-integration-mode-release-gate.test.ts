@@ -68,6 +68,20 @@ describe('MCP integration-mode release gate', () => {
     )
   })
 
+  it('keeps the desktop release contract local and documents remote OAuth as optional', () => {
+    const adr = readFileSync('docs/architecture/desktop-only-auth-adr.md', 'utf8')
+    const installer = readFileSync('apps/plugin/scripts/install-local-macos.sh', 'utf8')
+    const compose = readFileSync('infra/local/docker-compose.ecs-pilot.yml', 'utf8')
+
+    expect(adr).toContain('MCP_INTEGRATION_MODE=local_stdio')
+    expect(adr).toContain('MCP_OAUTH_REQUIRED=false')
+    expect(adr).toContain('remote_mcp')
+    expect(adr).toMatch(/不.*ChatGPT.*OAuth/u)
+    expect(installer).toMatch(/不使用 ChatGPT OAuth/u)
+    expect(compose).toContain('MCP_INTEGRATION_MODE: local_stdio')
+    expect(compose).toContain('MCP_OAUTH_REQUIRED: "false"')
+  })
+
   it('never prints client registration or challenge values on failure', () => {
     const secretClient = 'sensitive-client-id'
     const secretChallenge = 'sensitive-domain-challenge'

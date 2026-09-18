@@ -1216,6 +1216,9 @@ export function redactStorageReconciliation(report?: ReconciliationReport) {
 
 export interface RuleRepositoryPort {
   list(workspaceId: string, packId?: string): Promise<PersistedRuleVersion[]>
+  listPublic?(workspaceId: string, platform?: string): Promise<PersistedRuleVersion[]>
+  insertPublicVersionWithAudit?(input: { version: Omit<PersistedRuleVersion, 'workspaceId' | 'createdAt' | 'updatedAt'> & { createdAt?: string; updatedAt?: string }; audit: Omit<PersistedRuleAudit, 'workspaceId'> }): Promise<{ version: PersistedRuleVersion; audit: PersistedRuleAudit }>
+  transitionPublicStatus?(input: { platform: string; packId: string; version: string; status: string; actorId: string; reason: string; occurredAt: string }): Promise<PersistedRuleVersion>
   insertVersion(input: Omit<PersistedRuleVersion, 'createdAt' | 'updatedAt'> & { createdAt?: string; updatedAt?: string }): Promise<PersistedRuleVersion>
   appendAudit(input: PersistedRuleAudit): Promise<PersistedRuleAudit>
   listAudit(workspaceId: string, packId?: string): Promise<PersistedRuleAudit[]>
@@ -2604,10 +2607,10 @@ function isVerifiedOfficialRule(version: Pick<PersistedRuleVersion, 'sourceKind'
   return version.sourceKind === 'official' && version.createdBy === 'signed-rule-sync' && !version.sourceReference.startsWith('manual://')
 }
 
-function assertManualRuleSource(sourceKind: string, category: unknown) {
+function assertManualRuleSource(sourceKind: string, category: unknown, publicScope?: unknown) {
   // Official classifications cannot be asserted by a browser or MCP caller.
   // Only the signature-verified importer may persist those classifications.
-  if (sourceKind === 'official' || (category !== undefined && category !== null && category !== '')) {
+  if (sourceKind === 'official' || (category !== undefined && category !== null && category !== '' && publicScope !== 'platform')) {
     throw new DomainError('OFFICIAL_RULE_IMPORT_REQUIRED', '平台、品类、广告发布和大促限制必须通过已验证的官方规则清单导入；自定义约束请使用工作区规则', 409)
   }
 }
@@ -2633,10 +2636,12 @@ async function rulePacksForWorkspace(workspaceId: string): Promise<RulePack[]> {
   const repository = ruleRepository()
   if (repository) {
     const rows = await repository.list(workspaceId)
+    const publicRows = repository.listPublic ? await repository.listPublic(workspaceId) : []
+    const merged = [...rows, ...publicRows.filter(item => !rows.some(row => row.packId === item.packId && row.version === item.version))]
     // A newly created local workspace may not have durable rows yet. Use the
     // same bootstrap projection as the REST/MCP rule list so the Ops view and
     // the merchant/plugin view do not silently disagree about an empty store.
-    return rows.length ? rows.map(rulePackProjection) : (await persistedRules(workspaceId) ?? []) as RulePack[]
+    return merged.length ? merged.map(rulePackProjection) : (await persistedRules(workspaceId) ?? []) as RulePack[]
   }
   return service.ruleCenter.list({ includeInactive: false })
 }
@@ -2654,7 +2659,8 @@ async function trustedActiveRuleVersionsForWorkspace(workspaceId: string) {
 async function trustedPlatformRuleSyncStatuses(workspaceId: string, intervalHours = Number(process.env.PLATFORM_RULE_SYNC_INTERVAL_HOURS ?? 168)) {
   const repository = ruleRepository()
   const trustedRules = repository
-    ? (await repository.list(workspaceId))
+    ? ([...(await repository.list(workspaceId)), ...(repository.listPublic ? await repository.listPublic(workspaceId) : [])]
+      .filter((row, index, all) => all.findIndex(candidate => candidate.packId === row.packId && candidate.version === row.version) === index))
       .filter(row => row.status === 'active' && row.sourceKind === 'official' && row.createdBy === 'signed-rule-sync')
       .map(rulePackProjection)
     : []
@@ -2684,7 +2690,9 @@ export async function syncSignedPlatformRules(workspaceId: string, options: { fo
   let manifest
   try { manifest = verifyAndParsePlatformRuleManifest(raw, response.headers.get('x-rule-manifest-signature') ?? '', signingSecret) }
   catch (error) { throw new DomainError('RULE_MANIFEST_INVALID', error instanceof Error ? error.message : '签名规则清单无效', 409) }
-  const existing = await repository.list(workspaceId)
+  const existing = repository.listPublic
+    ? await repository.listPublic(workspaceId)
+    : await repository.list(workspaceId)
   let imported = 0
   let activated = 0
   const versions: Array<{ platform: string; pack_id: string; version: string; state: string }> = []
@@ -2693,7 +2701,16 @@ export async function syncSignedPlatformRules(workspaceId: string, options: { fo
     let target = existing.find(row => row.packId === entry.packId && row.version === entry.version)
     if (target && target.checksum !== checksum) throw new DomainError('RULE_MANIFEST_VERSION_CONFLICT', `规则 ${entry.packId}@${entry.version} 已存在但摘要不同`, 409)
     const at = new Date().toISOString()
-    if (!target) {
+    if (!target && repository.insertPublicVersionWithAudit) {
+      const id = `public_rule_sync_${createHash('sha256').update(`${entry.platform}:${entry.packId}:${entry.version}`).digest('hex').slice(0, 32)}`
+      target = (await repository.insertPublicVersionWithAudit({
+        version: { id, packId: entry.packId, name: entry.name, version: entry.version, scope: 'platform', status: 'active', sourceKind: 'official', sourceReference: entry.sourceReference, sourceCheckedAt: entry.sourceCheckedAt, checksum, checks: entry.checks, createdBy: 'signed-rule-sync', revision: 1, targetId: entry.platform, severity: entry.severity, action: entry.action, ...(entry.effectiveFrom ? { effectiveFrom: entry.effectiveFrom } : {}), ...(entry.effectiveTo ? { effectiveTo: entry.effectiveTo } : {}), activatedAt: at },
+        audit: { id: `public_rule_audit_${randomUUID()}`, rulePackId: entry.packId, ruleVersionId: id, version: entry.version, action: 'activated', actorId: 'signed-rule-sync', reason: '签名平台规则清单导入并激活公共规则', occurredAt: at, data: { manifest_generated_at: manifest.generatedAt, checksum } },
+      })).version
+      existing.push(target)
+      imported += 1
+      activated += 1
+    } else if (!target) {
       const id = `rule_sync_${createHash('sha256').update(`${workspaceId}:${entry.platform}:${entry.packId}:${entry.version}`).digest('hex').slice(0, 32)}`
       target = (await repository.insertVersionWithAudit({
         version: { id, workspaceId, packId: entry.packId, name: entry.name, version: entry.version, scope: 'platform', status: 'draft', sourceKind: 'official', sourceReference: entry.sourceReference, sourceCheckedAt: entry.sourceCheckedAt, checksum, checks: entry.checks, createdBy: 'signed-rule-sync', revision: 1, targetId: entry.platform, severity: entry.severity, action: entry.action, ...(entry.effectiveFrom ? { effectiveFrom: entry.effectiveFrom } : {}), ...(entry.effectiveTo ? { effectiveTo: entry.effectiveTo } : {}) },
@@ -2722,10 +2739,12 @@ async function persistedRules(workspaceId: string, fillMissingDefaults = false) 
   const repository = ruleRepository()
   if (!repository) return undefined
   const rows = await repository.list(workspaceId)
-  if (rows.length && !fillMissingDefaults) return rows.map(publicRule)
+  const publicRows = repository.listPublic ? await repository.listPublic(workspaceId) : []
+  const mergedRows = [...rows, ...publicRows.filter(item => !rows.some(row => row.packId === item.packId && row.version === item.version))]
+  if (mergedRows.length && !fillMissingDefaults) return mergedRows.map(publicRule)
   // Production must never manufacture platform policy. Only a verified,
   // signed manifest may populate the durable rule repository there.
-  if (isProduction()) return rows.map(publicRule)
+  if (isProduction()) return mergedRows.map(publicRule)
   // Bootstrap only the first request for a new workspace. This keeps the
   // durable rule center usable after migration without silently changing the
   // in-memory fixture registry used by local tests.
@@ -2739,7 +2758,9 @@ async function persistedRules(workspaceId: string, fillMissingDefaults = false) 
       if (seed.status === 'active') await repository.appendAudit({ id: `rule_audit_${randomUUID()}`, workspaceId, rulePackId: seed.packId, ruleVersionId: `${seed.packId}@${seed.version}`, version: seed.version, action: 'activated', actorId: seed.createdBy ?? 'system', reason: 'workspace rule bootstrap', occurredAt: at, data: {} })
     } catch { /* another request may have bootstrapped this workspace */ }
   }
-  return (await repository.list(workspaceId)).map(publicRule)
+  const finalRows = await repository.list(workspaceId)
+  const finalPublicRows = repository.listPublic ? await repository.listPublic(workspaceId) : []
+  return [...finalRows, ...finalPublicRows.filter(item => !finalRows.some(row => row.packId === item.packId && row.version === item.version))].map(publicRule)
 }
 
 type RuleEvaluationScope = { platform: Platform; category?: string; brand?: string; store?: string; campaign?: string }
@@ -2748,6 +2769,10 @@ async function evaluationRules(workspaceId: string, context?: RuleEvaluationScop
   const repository = ruleRepository()
   if (!repository) return undefined
   let rows = await repository.list(workspaceId)
+  if (repository.listPublic) {
+    const publicRows = await repository.listPublic(workspaceId)
+    rows = [...rows, ...publicRows.filter(item => !rows.some(row => row.packId === item.packId && row.version === item.version))]
+  }
   // Older and concurrently bootstrapped workspaces can contain only a subset
   // of the immutable defaults. Fill missing packs before review; otherwise a
   // task can freeze an in-memory default that the durable reviewer cannot see.
@@ -17341,7 +17366,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const reason = required(params, 'reason')
       const status = typeof params.status === 'string' ? params.status : 'draft'
       const governanceCategory = typeof params.category === 'string' && params.category.trim() ? params.category.trim() : undefined
-      assertManualRuleSource(sourceKind, params.category)
+      assertManualRuleSource(sourceKind, params.category, params.public_scope)
       if ((governanceCategory && !['platform', 'category', 'advertising_publish', 'big_promotion'].includes(governanceCategory)) || !['global', 'platform', 'category', 'brand', 'store', 'campaign'].includes(scope) || !['official', 'internal', 'legal_review'].includes(sourceKind) || !['draft', 'active'].includes(status)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '规则发布参数无效', 400)
       if (!Number.isFinite(Date.parse(sourceCheckedAt))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'source_checked_at 必须是合法时间', 400)
       let checks: Record<string, unknown>
@@ -17360,6 +17385,16 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const checksum = createHash('sha256').update(canonicalJson(checks)).digest('hex')
       const repository = ruleRepository()
       if (repository) {
+        if (params.public_scope === 'platform') {
+          if (scope !== 'platform' || !repository.insertPublicVersionWithAudit || typeof params.target_id !== 'string' || !SUPPORTED_PLATFORMS.includes(params.target_id as Platform)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '公共平台规则必须指定受支持的平台和公共规则仓储', 400)
+          if (status === 'active') throw new DomainError('RULE_ACTIVATION_REQUIRES_APPROVAL', '公共平台规则必须先创建草稿，再通过独立审批激活', 409)
+          const publicId = `public_rule_${randomBytes(12).toString('hex')}`
+          const publicVersion = await repository.insertPublicVersionWithAudit({
+            version: { id: publicId, packId, name, version: versionValue, scope, status: 'draft', sourceKind, sourceReference, sourceCheckedAt: new Date(sourceCheckedAt).toISOString(), checksum, checks, createdBy: principal.actorId, revision: 1, targetId: params.target_id, severity, action, ...(effectiveFrom ? { effectiveFrom } : {}), ...(effectiveTo ? { effectiveTo } : {}) },
+            audit: { id: `public_rule_audit_${randomBytes(12).toString('hex')}`, rulePackId: packId, ruleVersionId: publicId, version: versionValue, action: 'created', actorId: principal.actorId, reason, occurredAt: at, data: { checksum } },
+          })
+          return result(publicVersion.version)
+        }
         await persistence.ensureWorkspace?.(workspaceId)
         const versionInput = { id: `rule_${randomBytes(12).toString('hex')}`, workspaceId, packId, name, version: versionValue, scope, ...(governanceCategory ? { category: governanceCategory } : {}), status, sourceKind, sourceReference, sourceCheckedAt: new Date(sourceCheckedAt).toISOString(), checksum, checks, severity, action, ...(effectiveFrom ? { effectiveFrom } : {}), ...(effectiveTo ? { effectiveTo } : {}), ...(typeof params.target_id === 'string' && params.target_id.trim() ? { targetId: params.target_id.trim() } : {}), ...(typeof params.scope_value === 'string' && params.scope_value.trim() ? { scopeValue: params.scope_value.trim() } : {}), createdBy: principal.actorId, revision: 1, createdAt: at, updatedAt: at, ...(status === 'active' ? { activatedAt: at } : {}) }
         const audit = { id: `rule_audit_${randomBytes(12).toString('hex')}`, workspaceId, rulePackId: packId, ruleVersionId: versionInput.id, version: versionValue, action: status === 'active' ? 'activated' : 'created', actorId: principal.actorId, reason, occurredAt: at, data: { checksum, ...(approval ? { approval } : {}) } }
@@ -17379,6 +17414,11 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const approval = status === 'active' ? parseApprovalGrant(req, workspaceId, principal.actorId, { approval: typeof params.approval_json === 'string' ? JSON.parse(params.approval_json) : undefined }) : undefined
       const repository = ruleRepository()
       if (repository) {
+        if (params.public_scope === 'platform') {
+          if (!repository.transitionPublicStatus || typeof params.platform !== 'string' || !SUPPORTED_PLATFORMS.includes(params.platform as Platform)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '公共平台规则状态变更缺少平台或公共规则仓储', 400)
+          if (status === 'active' && !approval) throw new DomainError('RULE_ACTIVATION_REQUIRES_APPROVAL', '公共平台规则激活需要独立审批凭证', 409)
+          return result(await repository.transitionPublicStatus({ platform: params.platform, packId, version: versionValue, status, actorId: principal.actorId, reason, occurredAt: new Date().toISOString() }))
+        }
         const rows = await repository.list(workspaceId, packId); const target = rows.find(row => row.version === versionValue)
         if (!target) throw new DomainError('RULE_VERSION_NOT_FOUND', '规则版本不存在', 404)
         if (status === 'active') assertRuleActivationSource(target)

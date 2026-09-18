@@ -53,7 +53,7 @@ flowchart LR
 
 ### 1. 身份和工作区
 
-目标正式会话由Store Nova账号密码登录；ChatGPT 只在Store Nova授权页完成 OAuth/MCP code 交换，网关最终按 identity→member→workspace 建立会话。当前仓库仍可观察到 OIDC/Bearer 和本地 fixture，因此本段描述的账号密码流程在生产证据完成前仍是待实现目标。
+当前正式会话采用桌面本地模式：用户在 Store Nova 商家后台使用账号密码登录，可信安装器接收服务端签发的短期 workspace Bearer 凭据，桌面 stdio bridge 再通过 HTTPS 调用 MCP。当前上线不需要 ChatGPT 云端远程 OAuth；远程 MCP OAuth 仅保留为未来可选模式。
 
 工作区是所有数据隔离的第一层。商品、任务、素材、内容版本、发布任务、用量和审计记录都带 `workspace_id`。平台运营进入客户工作区时也不能直接越过这一边界，必须使用受控支持或临时授权。
 

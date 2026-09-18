@@ -1222,6 +1222,7 @@ export function useOpsConsoleModel() {
         pack_id: row.packId,
         version: row.version,
         status,
+        ...(row.id.startsWith("public_rule_") ? { public_scope: "platform", platform: row.scopeValue } : {}),
         reason: options?.reason?.trim() || "运营后台规则生命周期调整",
         ...(status === "active" ? { approval_json: JSON.stringify({
           approval_ref: options?.approvalRef?.trim(),
@@ -1250,6 +1251,8 @@ export function useOpsConsoleModel() {
     sourceReference: string;
     checksJson: string;
     reason: string;
+    publicScope?: "platform";
+    targetId?: string;
   }): Promise<boolean> => {
     if (!canRules) {
       message.error("当前会话为只读，缺少规则管理员权限");
@@ -1273,6 +1276,8 @@ export function useOpsConsoleModel() {
         checks_json: values.checksJson,
         reason: values.reason,
         status: "draft",
+        ...(values.publicScope ? { public_scope: values.publicScope } : {}),
+        ...(values.targetId ? { target_id: values.targetId } : {}),
       });
       message.success("规则草稿已创建，激活需要规则管理员审批");
       ruleForm.resetFields();
