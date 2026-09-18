@@ -38,13 +38,18 @@ services:
     image: ${WORKER_IMAGE_REF:?WORKER_IMAGE_REF must be an immutable repository@sha256 reference}
   worker-generation:
     <<: *release-worker-image
+    build: !reset null
   worker-publish:
     <<: *release-worker-image
+    build: !reset null
   worker-reconcile:
     <<: *release-worker-image
+    build: !reset null
   worker-automation:
     <<: *release-worker-image
+    build: !reset null
   worker-scan:
     <<: *release-worker-image
+    build: !reset null
   clamav:
     image: ${CLAMAV_IMAGE_REF:?CLAMAV_IMAGE_REF must be an immutable repository@sha256 reference}
