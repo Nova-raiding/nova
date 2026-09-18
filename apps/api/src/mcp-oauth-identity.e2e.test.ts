@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import argon2 from 'argon2'
 import { signPaymentCallback } from '../../../packages/billing/src/callback-envelope.mjs'
 import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
 import { productionReadinessDiagnostics, server, setPasswordAuthRepositoryForTests, workspaceMembers } from './server.js'
@@ -42,6 +43,8 @@ describe('canonical password identity MCP OAuth', () => {
     expect(logged.status).toBe(200)
     const cookie = logged.headers.get('set-cookie')?.split(';')[0]
     expect(cookie).toBeTruthy()
+    const merchantCookieMcp = await fetch(`${base}/mcp`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'initialize', params: {} }) })
+    expect(merchantCookieMcp.status).toBe(401)
     const crossTenantHttp = await fetch(`${base}/v1/products`, { headers: { cookie: cookie!, 'x-workspace-id': 'ws_other' } })
     expect(crossTenantHttp.status).toBe(403)
     await expect(crossTenantHttp.json()).resolves.toMatchObject({ error: { code: 'FORBIDDEN' } })
@@ -71,6 +74,23 @@ describe('canonical password identity MCP OAuth', () => {
     await expect(repository.authenticateMcpAccessToken({ accessToken: String(rotatedResult?.access_token), clientId: 'local-desktop', issuer: base, audience: `${base}/mcp`, resource: `${base}/mcp`, scope: ['merchant'] })).resolves.toBeUndefined()
     const csrf = await fetch(`${base}/v1/auth/mcp-token`, { method: 'POST', headers: { cookie: cookie!, origin: 'https://evil.example', 'content-type': 'application/json' }, body: JSON.stringify({ workspace_id: workspaceId }) })
     expect(csrf.status).toBe(403)
+  })
+
+  it('keeps the password-authenticated operations console usable in local stdio mode', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
+    const repository = new MemoryPasswordAuthRepository()
+    setPasswordAuthRepositoryForTests(repository)
+    const login = `local-ops-${Date.now()}@example.test`
+    const password = 'LocalOps1234!'
+    await repository.ensurePlatformAccount({ login, passwordHash: await argon2.hash(password), roles: ['platform_admin'] })
+    const base = await start()
+    const logged = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'platform' }) })
+    expect(logged.status).toBe(200)
+    const cookie = logged.headers.get('set-cookie')?.split(';')[0]
+    const response = await fetch(`${base}/mcp`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'x-ops-workbench': 'platform', 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ops.session', params: {} }) })
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({ data: { result: { workbench: 'platform' } } })
   })
 
   it('publishes RFC 7009 metadata and revokes a refresh-token family over HTTP', async () => {

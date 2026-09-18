@@ -7163,8 +7163,7 @@ async function authenticate(req: IncomingMessage) {
   if (isMcpRequest && remoteOAuth && isProduction() && !productionMcpOAuthRuntimeReady(req)) throw new DomainError('MCP_OAUTH_NOT_CONFIGURED', 'MCP OAuth 生产运行时未完成配置', 503)
   const mcpOAuthBoundary = isMcpRequest && (localStdio || mcpOAuthRequired || Boolean(oauthClients))
   const authorizationHeader = header(req, 'authorization')?.trim() ?? ''
-  if (mcpOAuthBoundary && !/^Bearer\s+[^\s]+$/iu.test(authorizationHeader)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'MCP 请求必须携带 OAuth Bearer token', 401)
-  const passwordCookie = mcpOAuthBoundary ? undefined : (header(req, 'cookie') ?? '').split(';').map(value => value.trim()).find(value => value.startsWith('damai_session='))?.slice('damai_session='.length)
+  const passwordCookie = (header(req, 'cookie') ?? '').split(';').map(value => value.trim()).find(value => value.startsWith('damai_session='))?.slice('damai_session='.length)
   let invalidPasswordSession = false
   if (passwordCookie) {
     let rawToken = ''
@@ -7173,24 +7172,36 @@ async function authenticate(req: IncomingMessage) {
       const session = await passwordAuthRepository.authenticate(rawToken)
       if (session) {
         const platform = session.account.accountType === 'platform'
-        const requestedWorkspace = header(req, 'x-workspace-id')?.trim()
-        if (!platform && requestedWorkspace && !session.account.workspaceIds.includes(requestedWorkspace)) {
-          throw new DomainError(ERROR_CODES.FORBIDDEN, '请求工作区不属于当前商家账号', 403)
+        // Local desktop MCP access and browser operations share the /mcp
+        // transport, but not the same credential. A merchant browser session
+        // must exchange for a short-lived local-desktop token; an authenticated
+        // platform session remains usable by the desktop operations console.
+        if (mcpOAuthBoundary && !platform) {
+          if (!/^Bearer\s+[^\s]+$/iu.test(authorizationHeader)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '商家插件 MCP 请求必须携带 OAuth Bearer token', 401)
+        } else {
+          if (isMcpRequest && platform && isProduction()) {
+            const requestOrigin = header(req, 'origin')?.trim()
+            if (!requestOrigin || requestOrigin !== publicRequestOrigin(req)) throw new DomainError('AUTH_CSRF_ORIGIN_INVALID', '运营工作台请求来源无效', 403)
+          }
+          const requestedWorkspace = header(req, 'x-workspace-id')?.trim()
+          if (!platform && requestedWorkspace && !session.account.workspaceIds.includes(requestedWorkspace)) {
+            throw new DomainError(ERROR_CODES.FORBIDDEN, '请求工作区不属于当前商家账号', 403)
+          }
+          // Audit actor IDs must be stable opaque identity keys. Login identifiers
+          // may contain characters such as "@", which are intentionally rejected
+          // by the operation-audit identity grammar and must never become the
+          // authorization actor principal.
+          const principal: RequestPrincipal = { actorId: session.account.identityId, accountLogin: session.account.login, identityId: session.account.identityId, sessionId: session.sessionId, sessionSubject: session.sessionId, sessionKind: 'api_token', sessionIssuedAt: session.issuedAt, sessionExpiresAt: session.expiresAt, roles: session.account.roles, workspaces: session.account.workspaceIds, workbench: platform ? 'platform' : 'workspace', availableWorkbenches: platform ? ['platform', 'workspace'] : ['workspace'], identityStatus: 'active', mfaVerified: false }
+          requestPrincipals.set(req, principal)
+          await hydrateDurableAuthorizationContext(req, principal)
+          return
         }
-        // Audit actor IDs must be stable opaque identity keys. Login identifiers
-        // may contain characters such as "@", which are intentionally rejected
-        // by the operation-audit identity grammar and must never become the
-        // authorization actor principal.
-        const principal: RequestPrincipal = { actorId: session.account.identityId, accountLogin: session.account.login, identityId: session.account.identityId, sessionId: session.sessionId, sessionSubject: session.sessionId, sessionKind: 'api_token', sessionIssuedAt: session.issuedAt, sessionExpiresAt: session.expiresAt, roles: session.account.roles, workspaces: session.account.workspaceIds, workbench: platform ? 'platform' : 'workspace', availableWorkbenches: platform ? ['platform', 'workspace'] : ['workspace'], identityStatus: 'active', mfaVerified: false }
-        requestPrincipals.set(req, principal)
-        await hydrateDurableAuthorizationContext(req, principal)
-        return
-      }
-      invalidPasswordSession = true
+      } else invalidPasswordSession = true
     }
     else invalidPasswordSession = true
   }
   if (invalidPasswordSession) throw new DomainError('AUTH_SESSION_INVALID', '平台登录会话已失效，请重新登录', 401)
+  if (mcpOAuthBoundary && !/^Bearer\s+[^\s]+$/iu.test(authorizationHeader)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, 'MCP 请求必须携带 OAuth Bearer token', 401)
   if (!requiresStrictAuth()) {
     const requestedWorkbench = header(req, 'x-ops-workbench')?.trim()
     if (requestedWorkbench && requestedWorkbench !== 'platform' && requestedWorkbench !== 'workspace') throw new DomainError('AUTHZ_WORKBENCH_ASSERTION_INVALID', '工作台只能是 platform 或 workspace', 400)
