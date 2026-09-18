@@ -29,7 +29,7 @@ function fixture() {
     `sync_plan_sha256=sha256:${sha(readFileSync(join(bundle, 'sync-plan.tsv')))}`,
     '',
   ].join('\n'))
-  writeFileSync(join(bin, 'npm'), '#!/bin/sh\n[ "$1" = ci ] || exit 9\nprintf "%s\\n" "$@" > .npm-ci-args\n', { mode: 0o755 })
+  writeFileSync(join(bin, 'npm'), '#!/bin/sh\ncase "$1" in\n  ci) printf "%s\\n" "$@" > .npm-ci-args ;;\n  run) [ "$2" = build ] || exit 9 ;;\n  *) exit 9 ;;\nesac\n', { mode: 0o755 })
   return { base, repo, bundle, releases, bin, gitSha }
 }
 
