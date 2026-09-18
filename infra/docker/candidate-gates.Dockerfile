@@ -6,6 +6,7 @@ LABEL org.opencontainers.image.revision=$CANDIDATE_GIT_SHA \
 WORKDIR /workspace
 COPY . .
 RUN npm ci --no-audit --fund=false \
+    && npm ci --prefix demo/merchant-studio --no-audit --fund=false \
     && chown -R 65534:65534 /workspace
 USER 65534:65534
 CMD ["sh", "-c", "npm run typecheck && npm run test:release-gates"]

@@ -102,7 +102,7 @@ tar -xf "$stage/.candidate-source.tar" -C "$stage"
 # Build workspace packages after the locked install so staged source tests and
 # image builds resolve package exports from the candidate itself, while still
 # keeping lifecycle scripts disabled during npm ci.
-(cd "$stage" && npm ci --ignore-scripts --no-audit --no-fund && npm run build)
+(cd "$stage" && npm ci --ignore-scripts --no-audit --no-fund && npm ci --prefix demo/merchant-studio --ignore-scripts --no-audit --no-fund && npm run build)
 cat > "$stage/.candidate-identity" <<EOF
 release_id=$RELEASE_ID
 git_sha=$git_sha
