@@ -928,14 +928,14 @@ function Topbar({
   }
   const notificationPanel = (
     <div className="merchant-notification-panel" role="region" aria-label="待处理问题">
-      {issueMetrics?.dataCoverage?.fixtureDataPresent ? <div className="merchant-notification-fixture-warning">当前工作区包含本地演示数据；未绑定或演示店铺的问题已隐藏，不计入工作区待处理问题。</div> : null}
-      <div className="merchant-notification-heading">
-        <div><strong>工作区待处理问题</strong><span>{issueCount ? `${issueCount} 项需要关注` : '当前没有待处理问题'}</span></div>
-        <button type="button" className="text-button" onClick={() => { setNotificationOpen(false); onOpenIssues() }}>查看全部</button>
-      </div>
-      {issueItems.length ? <List
+      {issueItems.length ? <>
+        <div className="merchant-notification-heading">
+          <div><strong>工作区待处理问题</strong><span>{issueCount} 项需要关注</span></div>
+        </div>
+        <List
+        className="merchant-notification-list"
         size="small"
-        dataSource={issueItems.slice(0, 8)}
+        dataSource={issueItems}
         renderItem={(item, index) => <List.Item className="merchant-notification-item">
           <button
             type="button"
@@ -949,8 +949,8 @@ function Topbar({
             <span className="merchant-notification-index">{index + 1}</span>
           </button>
         </List.Item>}
-      /> : <div className="merchant-notification-empty"><CheckCircle2 size={18} />暂无需要处理的问题</div>}
-      {issueCount > 8 ? <div className="merchant-notification-footer">还有 {issueCount - 8} 项问题，请打开商品与问题查看</div> : null}
+        />
+      </> : <div className="merchant-notification-empty">暂无需要处理的问题</div>}
     </div>
   )
   return (
