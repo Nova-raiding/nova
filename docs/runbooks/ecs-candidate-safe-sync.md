@@ -4,6 +4,8 @@
 
 ## 生成候选包
 
+发布不依赖 GitHub CLI、PR 或 GitHub 登录。候选包由本地 owner 生成后，通过 SSH/受控文件同步送到 `101`，再由 ECS 主机上的发布执行器完成 staging、preflight 和切换。
+
 ```sh
 sh infra/scripts/prepare-ecs-candidate-bundle.sh
 ```

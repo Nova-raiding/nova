@@ -24,7 +24,7 @@
 - Production URL: https://yxsona.com
 - Deploy workflow: Manual release runbook on SSH host alias `101` (no repository deploy workflow detected)
 - Deploy status command: `ssh 101 'docker ps --format "table {{.Names}}\\t{{.Status}}"'`
-- Merge method: squash
+- Merge method: not required for deployment; deploy directly from the reviewed candidate over SSH to host alias `101`
 - Project type: ChatGPT plugin with API/MCP and desktop operations web apps
 - Post-deploy health check: `https://yxsona.com/api/healthz` and `https://ops.yxsona.com/healthz`
 
