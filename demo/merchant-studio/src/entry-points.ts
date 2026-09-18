@@ -1,4 +1,4 @@
-export const merchantEntryPoints = ['knowledge', 'products', 'images', 'assets', 'rules'] as const
+export const merchantEntryPoints = ['knowledge', 'products', 'images', 'assets', 'rules', 'trash'] as const
 
 export type MerchantEntryPoint = (typeof merchantEntryPoints)[number]
 

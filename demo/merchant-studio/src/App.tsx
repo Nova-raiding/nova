@@ -7,12 +7,14 @@ import { imageCandidateLoading } from './image-candidate-loading'
 import { mergeImageGenerationJobs } from './image-job-list'
 import { isRealReadableStore, merchantConnectionPresentation } from './platform-connection-status'
 import { DetailDecisionContract } from './DetailDecisionContract'
+import storeNovaLogo from './assets/store-nova-primary-horizontal.png'
 import {
   evidenceSafeTopLevelContent,
   moduleDecisionPresentation,
 } from './detail-decision-contract'
 import {
   AlertCircle,
+  ArrowLeft,
   ArrowLeftRight,
   ArrowRight,
   Bell,
@@ -24,11 +26,11 @@ import {
   ChevronRight,
   CircleHelp,
   Clock3,
-  CreditCard,
   FileCheck2,
   FileText,
   FolderOpen,
   Gauge,
+  Grid2X2,
   History,
   Image as ImageIcon,
   LayoutDashboard,
@@ -37,18 +39,23 @@ import {
   Menu,
   PackageSearch,
   PanelLeftClose,
+  Play,
   RefreshCw,
+  Rows3,
   Rocket,
   Search,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
   Store,
+  Download,
+  Truck,
+  Trash2,
+  Undo2,
   Upload,
   UserRound,
   X,
   Zap,
-  WalletCards,
 } from 'lucide-react'
 import {
   answerTask,
@@ -275,12 +282,11 @@ const knowledgeSubItems: Array<{
   entry?: MerchantEntryPoint
   description?: string
 }> = [
-  { id: 'products', label: '商品目录', icon: PackageSearch, entry: 'products', description: '选择商品、平台和店铺后创建营销任务' },
-  { id: 'products', label: '资料库', icon: BookOpen, entry: 'knowledge', description: '上传、确认并引用资料' },
-  { id: 'products', label: '店铺素材', icon: ImageIcon, entry: 'images', description: '查看已授权素材' },
+  { id: 'products', label: '平台&店铺&商品', icon: PackageSearch, entry: 'products', description: '选择平台、店铺和商品后创建营销任务' },
+  { id: 'products', label: '素材库', icon: BookOpen, entry: 'knowledge', description: '上传、确认并引用素材' },
   { id: 'products', label: '品牌资产', icon: FolderOpen, entry: 'assets', description: '维护品牌资料与素材' },
   { id: 'products', label: '规则库', icon: ShieldCheck, entry: 'rules', description: '检查发布前的平台规则' },
-  { id: 'task', label: '营销任务', icon: Sparkles, description: '创建并生成商品内容' },
+  { id: 'products', label: '回收站', icon: Trash2, entry: 'trash', description: '恢复或彻底删除近 7 天内移除的素材' },
 ]
 // Compatibility marker for deep links that still address id: 'knowledge'.
 
@@ -729,13 +735,7 @@ const activity = [
 ]
 
 function BrandMark() {
-  return (
-    <div className="brand-mark" aria-hidden="true">
-      <span />
-      <span />
-      <span />
-    </div>
-  )
+  return <img className="brand-logo" src={storeNovaLogo} alt="Store Nova" />
 }
 
 function StatusChip({
@@ -905,7 +905,7 @@ function Topbar({
   }, [apiBaseUrl])
   const titles: Record<Page, string> = {
     overview: '运营概览',
-    products: activeEntry === 'rules' ? '规则库' : activeEntry === 'assets' ? '品牌资产' : '知识库',
+    products: activeEntry === 'rules' ? '规则库' : activeEntry === 'assets' ? '品牌资产' : activeEntry === 'trash' ? '回收站' : '知识库',
     task: '营销任务',
     publish: '发布中心',
     rules: '规则与检查',
@@ -922,13 +922,6 @@ function Topbar({
   // notifications for the currently signed-in merchant.
   const issueItems = (issueMetrics?.riskItems ?? []).filter(item => item.evidence?.unboundLocalData !== true && item.evidence?.fixtureData !== true)
   const issueCount = issueItems.length
-  const environmentStatus = resolveMerchantEnvironmentStatus({
-    apiBaseUrl,
-    apiOnline,
-    apiHealth,
-    modelStatus,
-    modelStatusRead,
-  })
   const openIssueDetail = (item: WorkspaceMetrics['riskItems'][number]) => {
     setNotificationOpen(false)
     setIssueDetail(item)
@@ -973,31 +966,9 @@ function Topbar({
         <Menu size={20} />
       </button>
       <div>
-        <div className="eyebrow">
-          云朵轻户外 ·{' '}
-          {!apiBaseUrl
-            ? '离线演示工作区'
-            : apiOnline === false
-              ? 'API 不可用'
-              : apiMode === 'fixture'
-                ? '本地演示工作区'
-              : apiMode === 'local'
-                  ? '本地 API 工作区'
-                  : '工作区 API'}
-        </div>
         <h1>{titles[page]}</h1>
       </div>
       <div className="topbar-actions">
-        <button
-          className={`health-button ${environmentStatus.tone}`}
-          onClick={() => onOpenUtility('health')}
-          aria-label="查看系统健康与上线状态"
-        >
-          <span
-            className={`pulse-dot ${environmentStatus.tone === 'warning' ? 'warning' : ''}`}
-          />
-          环境状态 <b>{environmentStatus.topbarLabel}</b>
-        </button>
         <Dropdown trigger={['click']} placement="bottomRight" open={notificationOpen} onOpenChange={setNotificationOpen} dropdownRender={() => notificationPanel}>
           <Badge count={issueCount > 99 ? '99+' : issueCount} overflowCount={99} offset={[-2, 4]}>
             <button type="button" className="icon-button notification-trigger" aria-label={`工作区待处理问题${issueCount ? `，${issueCount} 项` : '，暂无'}`}>
@@ -1033,28 +1004,8 @@ function Topbar({
                 <div className="account-dropdown-section-title"><UserRound size={15} />个人信息</div>
                 <dl className="account-dropdown-facts">
                   <div><dt>登录账号</dt><dd>{account?.login || '未读取'}</dd></div>
-                  <div><dt>联系人</dt><dd>{account?.contactName || '未设置'}</dd></div>
+                  <div><dt>账号所属</dt><dd>XXX公司</dd></div>
                 </dl>
-              </div>
-              <div className="account-dropdown-section">
-                <div className="account-dropdown-section-title"><CreditCard size={15} />业务归属</div>
-                <dl className="account-dropdown-facts">
-                  <div><dt>当前租户</dt><dd>{tenantName}</dd></div>
-                  <div><dt>当前工作区</dt><dd>{workspaceName}</dd></div>
-                  <div><dt>角色</dt><dd>{account?.roles?.join('、') || '未分配'}</dd></div>
-                </dl>
-              </div>
-              <div className="account-dropdown-section account-wallet-section">
-                <div className="account-dropdown-section-title"><WalletCards size={15} />钱包信息</div>
-                {walletUnavailable ? (
-                  <div className="account-wallet-pending">正在读取服务端钱包状态…</div>
-                ) : (
-                  <div className="account-wallet-grid">
-                    <div><span>剩余创意点</span><strong>{points === null || points === undefined ? '待确认' : points.toLocaleString('zh-CN')}<small>{points === null || points === undefined ? '' : ' 点'}</small></strong></div>
-                    <div><span>钱包余额</span><strong>{balance ? `¥${balance}` : '待确认'}</strong></div>
-                  </div>
-                )}
-                <p className="account-wallet-note">每次生成、编辑和相关任务按服务端实际消耗扣除创意点。</p>
               </div>
               <div className="account-dropdown-actions">
                 {apiBaseUrl && account ? (
@@ -1223,7 +1174,6 @@ function Sidebar({
   onOpenUtility,
   onOpenEntry,
   activeEntry,
-  target,
 }: {
   page: Page
   setPage: (page: Page) => void
@@ -1237,12 +1187,8 @@ function Sidebar({
   ) => void
   onOpenEntry: (entry: MerchantEntryPoint) => void
   activeEntry?: MerchantEntryPoint
-  target?: Target
 }) {
   const sidebarRef = useRef<HTMLElement>(null)
-  const [knowledgeExpanded, setKnowledgeExpanded] = useState(
-    page === 'products' || page === 'task' || page === 'publish',
-  )
   const closeAction = useRef(close)
   const restoreFocusOnClose = useRef(true)
   closeAction.current = close
@@ -1315,10 +1261,6 @@ function Sidebar({
       >
         <div className="brand">
           <BrandMark />
-          <div>
-            <strong>Merchant Studio</strong>
-            <span>商家营销助手</span>
-          </div>
         </div>
         <nav aria-label="主导航">
           <div className="nav-label">工作台</div>
@@ -1329,27 +1271,24 @@ function Sidebar({
               : page === item.id
             return (
               <Fragment key={item.id}>
-                <button
-                  className={active ? 'active' : ''}
-                  onClick={() => closeForAction(() => {
-                    if (item.id === 'products') {
-                      setKnowledgeExpanded((expanded) => !expanded)
-                      if (item.entry && page !== 'products') onOpenEntry(item.entry)
-                    } else {
-                      setPage(item.id)
-                    }
-                  })}
-                  title={item.description}
-                  aria-current={active && item.id !== 'products' ? 'page' : undefined}
-                  aria-expanded={item.id === 'products' ? knowledgeExpanded : undefined}
-                  aria-controls={item.id === 'products' ? 'merchant-knowledge-subnav' : undefined}
-                >
-                  <Icon size={19} />
-                  <span>{item.label}</span>
-                  {item.id === 'products' && <ChevronDown className={`nav-chevron ${knowledgeExpanded ? 'expanded' : ''}`} size={16} aria-hidden="true" />}
-                  {item.badge && <em>{item.badge}</em>}
-                </button>
-                {item.id === 'products' && knowledgeExpanded && (
+                {item.id === 'products' ? (
+                  <div className={`nav-group-title ${active ? 'active' : ''}`} aria-label={item.label}>
+                    <Icon size={19} />
+                    <span>{item.label}</span>
+                  </div>
+                ) : (
+                  <button
+                    className={active ? 'active' : ''}
+                    onClick={() => closeForAction(() => setPage(item.id))}
+                    title={item.description}
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    <Icon size={19} />
+                    <span>{item.label}</span>
+                    {item.badge && <em>{item.badge}</em>}
+                  </button>
+                )}
+                {item.id === 'products' && (
                   <div className="entry-nav" id="merchant-knowledge-subnav" aria-label="知识库二级菜单">
                     {knowledgeSubItems.map((subItem) => {
                       const SubIcon = subItem.icon
@@ -1367,7 +1306,6 @@ function Sidebar({
                           <SubIcon size={18} />
                           <span>
                             {subItem.label}
-                            {subItem.description && <small className="nav-description">{subItem.description}</small>}
                           </span>
                         </button>
                       )
@@ -1379,24 +1317,6 @@ function Sidebar({
           })}
         </nav>
         <nav aria-label="新会话入口" className="sr-only" aria-hidden="true" />
-        <section className="sidebar-context" aria-label="当前商品上下文">
-          <div className="nav-label">当前上下文</div>
-          {target ? (
-            <div className="context-path">
-              <b title={target.title}>{target.title}</b>
-              <span>
-                <span>{platformNames[target.platform]}</span>
-                <i aria-hidden="true">→</i>
-                <span>{target.storeName ?? '店铺待确认'}</span>
-              </span>
-              <small>
-                {target.accountId ? '店铺账号已确认' : '店铺身份缺失'}
-              </small>
-            </div>
-          ) : (
-            <p>尚未选择商品。进入资料库后，按商品、平台和店铺建立任务。</p>
-          )}
-        </section>
       </aside>
     </>
   )
@@ -1667,6 +1587,213 @@ function MetricCard({
         <small>{detail}</small>
       </div>
     </article>
+  )
+}
+
+function TodayDashboard({
+  onOpenEntry,
+}: {
+  onOpenEntry: (entry: MerchantEntryPoint) => void
+}) {
+  const now = new Date()
+  const currentTime = new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(now)
+  const storageUsed = 31.5
+  const storageTotal = 50
+  const storageRemaining = storageTotal - storageUsed
+
+  return (
+    <section className="today-dashboard" aria-labelledby="today-dashboard-title">
+      <div className="today-dashboard-heading">
+        <div>
+          <span className="section-kicker">DAILY BRIEFING</span>
+          <h2 id="today-dashboard-title">今日看板</h2>
+          <p>汇总昨日执行、规则状态和素材容量，帮助快速安排今天的工作。</p>
+        </div>
+      </div>
+
+      <div className="today-dashboard-grid">
+        <article className="today-board-card today-data-board">
+          <div className="today-board-title">
+            <span className="today-board-icon" aria-hidden="true"><LayoutDashboard size={18} /></span>
+            <div><h3>数据看板</h3><span>昨日经营摘要</span></div>
+          </div>
+          <div className="today-stat-grid">
+            <div><span>昨日完成任务</span><strong>18<small>次</small></strong></div>
+            <div><span>昨日使用创意点</span><strong>326<small>点</small></strong></div>
+            <div><span>当前剩余创意点</span><strong>2,480<small>点</small></strong></div>
+          </div>
+        </article>
+
+        <article className="today-board-card today-assets-board">
+          <div className="today-board-title">
+            <span className="today-board-icon" aria-hidden="true"><FolderOpen size={18} /></span>
+            <div><h3>素材看板</h3><span>商品卡片与储存空间</span></div>
+          </div>
+          <div className="today-assets-summary" aria-label="素材概览">
+            <div><span>已连接</span><strong>3<small>家电商店铺</small></strong></div>
+            <div><span>已储存</span><strong>24<small>套商品卡片</small></strong></div>
+            <div><span>已上传</span><strong>31.5 GB<small>素材</small></strong></div>
+          </div>
+          <div className="today-storage-heading">
+            <span>储存空间</span><b>{storageUsed} GB / {storageTotal} GB</b>
+          </div>
+          <div
+            className="today-storage-progress"
+            role="progressbar"
+            aria-label="储存空间已用"
+            aria-valuemin={0}
+            aria-valuemax={storageTotal}
+            aria-valuenow={storageUsed}
+          >
+            <span style={{ width: `${storageUsed / storageTotal * 100}%` }} />
+          </div>
+          <div className="today-storage-meta"><span>已用 {storageUsed} GB</span><span>剩余 {storageRemaining} GB</span></div>
+          <button className="today-board-link" type="button" onClick={() => onOpenEntry('images')}>
+            进入素材库 <ArrowRight size={15} aria-hidden="true" />
+          </button>
+        </article>
+
+        <article className="today-board-card today-knowledge-board">
+          <div className="today-board-title">
+            <span className="today-board-icon" aria-hidden="true"><ShieldCheck size={18} /></span>
+            <div><h3>知识库看板</h3><span>规则版本与更新状态</span></div>
+          </div>
+          <div className="today-rule-list">
+            <div className="today-rule-row">
+              <span className="today-rule-state"><i aria-hidden="true" />平台规则</span>
+              <small>更新时间：{currentTime}</small>
+            </div>
+            <div className="today-rule-row">
+              <span className="today-rule-state"><i aria-hidden="true" />广告法规则</span>
+              <small>更新时间：{currentTime}</small>
+            </div>
+            <div className="today-rule-row">
+              <span className="today-rule-state"><i aria-hidden="true" />品类规则</span>
+              <button type="button" onClick={() => onOpenEntry('rules')}>点击修改</button>
+            </div>
+            <div className="today-rule-row">
+              <span className="today-rule-state"><i aria-hidden="true" />大促规则</span>
+              <button type="button" onClick={() => onOpenEntry('rules')}>点击修改</button>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+  )
+}
+
+const accountPlatformFixtures = [
+  { name: '淘宝', mark: '淘', connected: true },
+  { name: '天猫', mark: '天', connected: false },
+  { name: '京东', mark: '京', connected: true },
+  { name: '拼多多', mark: '拼', connected: false },
+  { name: '抖音小店', mark: '抖', connected: true },
+  { name: '小红书店', mark: '红', connected: false },
+]
+
+const connectedStoreFixtures = [
+  { platform: '淘宝', name: 'Store Nova 旗舰店', mark: '淘' },
+  { platform: '京东', name: 'Store Nova 京东自营店', mark: '京' },
+  { platform: '抖音小店', name: 'Store Nova 品牌店', mark: '抖' },
+  { platform: '拼多多', name: 'Store Nova 品牌专营店', mark: '拼' },
+  { platform: '天猫', name: 'Store Nova 天猫旗舰店', mark: '天' },
+  { platform: '小红书店', name: 'Store Nova 生活方式店', mark: '红' },
+  { platform: '淘宝', name: 'Store Nova 家居店', mark: '淘' },
+  { platform: '京东', name: 'Store Nova 京东专卖店', mark: '京' },
+  { platform: '抖音小店', name: 'Store Nova 新品店', mark: '抖' },
+  { platform: '拼多多', name: 'Store Nova 好物店', mark: '拼' },
+]
+
+const accountIssueFixtures = [
+  { title: '天猫店铺尚未完成授权', detail: '完成授权后即可同步商品与素材。' },
+  { title: '2 条商品素材等待补充', detail: '补齐主图后可继续创建营销任务。' },
+  { title: '京东店铺授权即将到期', detail: '建议在 3 天内完成重新授权。' },
+  { title: '1 条平台规则需要确认', detail: '确认后将应用到后续营销任务。' },
+  { title: '抖音小店商品同步中断', detail: '检查店铺权限后重新发起同步。' },
+  { title: '3 张商品主图待审核', detail: '审核通过后可加入素材库。' },
+]
+
+function AccountDashboard({ onOpenConnections }: { onOpenConnections: () => void }) {
+  return (
+    <section className="account-dashboard" aria-labelledby="account-dashboard-title">
+      <div className="account-dashboard-main">
+        <div className="account-dashboard-heading">
+          <div>
+            <span className="section-kicker">ACCOUNT OVERVIEW</span>
+            <h2 id="account-dashboard-title">账号看板</h2>
+            <p>汇总平台授权与已连接店铺，快速掌握账号接入状态。</p>
+          </div>
+        </div>
+
+        <div className="account-block account-platform-block">
+          <div className="account-block-heading">
+            <div><h3>平台连接</h3><span>统一查看各渠道授权状态。如果需要连接，请联系客户经理。</span></div>
+            <b>{accountPlatformFixtures.filter(item => item.connected).length}/{accountPlatformFixtures.length} 已接入</b>
+          </div>
+          <div className="account-platform-list">
+            {accountPlatformFixtures.map(platform => (
+              <div className="account-platform-row" key={platform.name}>
+                <span className="account-platform-mark" aria-hidden="true">{platform.mark}</span>
+                <strong>{platform.name}</strong>
+                <span className={`account-connection-state ${platform.connected ? 'connected' : 'pending'}`}>
+                  <i aria-hidden="true" />{platform.connected ? '已接入' : '未接入'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="account-block account-store-block">
+          <div className="account-block-heading">
+            <div><h3>已连接店铺 <strong>{connectedStoreFixtures.length}</strong> 家</h3><span>当前可管理的店铺账号</span></div>
+            <button type="button" className="account-block-link" onClick={onOpenConnections}>进入店铺连接 <ArrowRight size={14} aria-hidden="true" /></button>
+          </div>
+          <div className="connected-store-list">
+            {connectedStoreFixtures.map(store => (
+              <div className="connected-store-card" key={`${store.platform}-${store.name}`}>
+                <span aria-hidden="true">{store.mark}</span>
+                <div><strong>{store.name}</strong><small>{store.platform} · 连接正常</small></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function TransactionDashboard({ onOpenIssues }: { onOpenIssues: () => void }) {
+  return (
+      <aside className="transaction-dashboard" aria-labelledby="transaction-dashboard-title">
+        <div className="transaction-dashboard-heading">
+          <div>
+            <span className="section-kicker">ACTION CENTER</span>
+            <h2 id="transaction-dashboard-title">事务看板</h2>
+            <p>集中查看需要处理的授权、素材与运营事项。</p>
+          </div>
+          <span className="transaction-count">{accountIssueFixtures.length} 项待处理</span>
+        </div>
+        {accountIssueFixtures.length ? (
+          <div className="account-issue-list">
+            {accountIssueFixtures.map((issue, index) => (
+              <button type="button" onClick={onOpenIssues} key={issue.title}>
+                <span>{index + 1}</span>
+                <div><strong>{issue.title}</strong><small>{issue.detail}</small></div>
+                <ChevronRight size={16} aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="account-all-clear"><CheckCircle2 size={28} /><strong>太棒啦，解决了所有问题</strong></div>
+        )}
+      </aside>
   )
 }
 
@@ -2078,54 +2205,12 @@ function Overview({
         </div>
       )}
 
-      <section className="metric-grid" aria-label="关键运营指标">
-        <MetricCard
-          icon={Store}
-          label="可读取真实店铺"
-          value={connectedStoreCount}
-          detail={
-            metrics
-              ? `${metrics.stores.length - Number(connectedStoreCount)} 家需处理或未就绪`
-              : baseUrl
-                ? '等待真实工作区数据'
-                : '离线演示数据'
-          }
-          tone="green"
-        />
-        <MetricCard
-          icon={FileCheck2}
-          label="已批准内容"
-          value={approvedCount}
-          detail={
-            metrics
-              ? '当前工作区累计'
-              : baseUrl
-                ? '等待真实工作区数据'
-                : '离线演示数据'
-          }
-          tone="blue"
-        />
-        <MetricCard
-          icon={Clock3}
-          label="平均首稿耗时"
-          value="—"
-          detail="当前接口暂无耗时统计"
-          tone="violet"
-        />
-        <MetricCard
-          icon={AlertCircle}
-          label="需处理问题"
-          value={riskCount}
-          detail={
-            metrics
-              ? `其中 ${highRiskCount} 项高风险`
-              : baseUrl
-                ? '等待真实工作区数据'
-                : '离线演示数据'
-          }
-          tone="amber"
-        />
-      </section>
+      <TodayDashboard onOpenEntry={onOpenEntry} />
+
+      <div className="overview-secondary-grid">
+        <AccountDashboard onOpenConnections={goProducts} />
+        <TransactionDashboard onOpenIssues={goProducts} />
+      </div>
 
       <WorkspaceDataIntegrityNotice metrics={metrics} />
 
@@ -3548,7 +3633,7 @@ function AssetLibrary({
     >
       <div className="knowledge-context-bar" aria-label="当前位置">
         <div className="knowledge-breadcrumb">
-          <span>工作台</span><ChevronRight size={14} aria-hidden="true" /><span>知识库</span><ChevronRight size={14} aria-hidden="true" /><strong>{assetEntry === 'knowledge' ? '资料库' : assetEntry === 'images' ? '店铺素材' : assetEntry === 'assets' ? '品牌资产' : '规则库'}</strong>
+          <span>工作台</span><ChevronRight size={14} aria-hidden="true" /><span>知识库</span><ChevronRight size={14} aria-hidden="true" /><strong>{assetEntry === 'knowledge' ? '素材库' : assetEntry === 'images' ? '店铺素材' : assetEntry === 'assets' ? '品牌资产' : '规则库'}</strong>
         </div>
         <span className="knowledge-context-status"><span className="status-dot" aria-hidden="true" />当前工作区</span>
       </div>
@@ -3628,7 +3713,7 @@ function AssetLibrary({
           onClick={() => setAssetEntry('knowledge')}
         >
           <BookOpen size={15} aria-hidden="true" />
-          资料库
+          素材库
         </button>
         <button
           id="asset-images-tab"
@@ -3700,7 +3785,7 @@ function AssetLibrary({
         <div className="knowledge-plan-step">{assetEntry === 'knowledge' ? '01' : assetEntry === 'images' ? '02' : assetEntry === 'rules' ? '03' : '04'}</div>
         <div className="knowledge-plan-copy">
           <strong>
-            {assetEntry === 'knowledge' ? '资料库：上传并确认知识' : assetEntry === 'images' ? '店铺素材：查看已授权内容' : assetEntry === 'rules' ? '规则库：检查发布前约束' : '全部资料：统一检索工作区内容'}
+            {assetEntry === 'knowledge' ? '素材库：上传并确认素材' : assetEntry === 'images' ? '店铺素材：查看已授权内容' : assetEntry === 'rules' ? '规则库：检查发布前约束' : '全部资料：统一检索工作区内容'}
           </strong>
           <span>
             {assetEntry === 'knowledge' ? '上传 Excel、图片或文档；完成扫描、读取和权益确认后，才会进入生成上下文。' : assetEntry === 'images' ? '店铺同步后，系统只展示当前工作区已授权且可读取的素材，不会混用其他企业数据。' : assetEntry === 'rules' ? '查看广告、促销、品类和平台规则命中结果；未通过的内容不能直接发布。' : '按来源、状态和权益快速查找工作区资料。'}
@@ -4559,6 +4644,968 @@ function ProductAssetRelationDialog({
   )
 }
 
+type CatalogStore = {
+  id: string
+  mark: string
+  logoUrl: string
+  name: string
+  platform: string
+  category: string
+  connected: boolean
+  products: number
+  updated: string
+  tone: string
+}
+
+type CatalogProduct = {
+  id: string
+  title: string
+  subtitle: string
+  price: number
+  addedAt: string
+  tone: string
+}
+
+const catalogStores: CatalogStore[] = [
+  { id: 'taobao-flagship', mark: '淘', logoUrl: storeNovaLogo, name: 'Store Nova 旗舰店', platform: '淘宝', category: '家居日用', connected: true, products: 9, updated: '刚刚同步', tone: 'mint' },
+  { id: 'tmall-official', mark: '天', logoUrl: storeNovaLogo, name: 'Store Nova 天猫旗舰店', platform: '天猫', category: '品牌直营', connected: false, products: 0, updated: '等待连接', tone: 'lime' },
+  { id: 'jd-official', mark: '京', logoUrl: storeNovaLogo, name: 'Store Nova 京东自营店', platform: '京东', category: '品质生活', connected: true, products: 9, updated: '12 分钟前同步', tone: 'blue' },
+  { id: 'douyin-brand', mark: '抖', logoUrl: storeNovaLogo, name: 'Store Nova 品牌店', platform: '抖音小店', category: '趋势好物', connected: true, products: 9, updated: '20 分钟前同步', tone: 'rose' },
+  { id: 'pdd-special', mark: '拼', logoUrl: storeNovaLogo, name: 'Store Nova 品牌专营店', platform: '拼多多', category: '日用百货', connected: false, products: 0, updated: '等待连接', tone: 'amber' },
+  { id: 'red-lifestyle', mark: '红', logoUrl: storeNovaLogo, name: 'Store Nova 生活方式店', platform: '小红书店', category: '生活美学', connected: false, products: 0, updated: '等待连接', tone: 'violet' },
+]
+
+const catalogProductTemplates: Omit<CatalogProduct, 'id'>[] = [
+  { title: '恒温暖饮杯垫礼盒', subtitle: '三档恒温 · 自动断电 · 礼盒装', price: 129, addedAt: '2026-09-17', tone: 'sage' },
+  { title: '轻量随行保温杯', subtitle: '316L 内胆 · 480ml · 一键开盖', price: 99, addedAt: '2026-09-15', tone: 'sand' },
+  { title: '桌面香氛加湿器', subtitle: '静音雾化 · 柔光夜灯 · 便携补水', price: 159, addedAt: '2026-09-11', tone: 'mist' },
+  { title: '模块化桌面收纳盒', subtitle: '自由组合 · 磁吸定位 · 环保材质', price: 79, addedAt: '2026-09-05', tone: 'clay' },
+  { title: '云感午睡抱枕毯', subtitle: '一物两用 · 亲肤面料 · 可机洗', price: 119, addedAt: '2026-08-29', tone: 'peach' },
+  { title: '智能感应氛围灯', subtitle: '人体感应 · 无级调光 · Type-C', price: 139, addedAt: '2026-08-18', tone: 'night' },
+  { title: '折叠旅行收纳套装', subtitle: '六件分装 · 防泼水 · 轻量便携', price: 89, addedAt: '2026-07-30', tone: 'sky' },
+  { title: '磁吸无线充电支架', subtitle: '15W 快充 · 横竖可用 · 稳固支撑', price: 169, addedAt: '2026-07-12', tone: 'graphite' },
+  { title: '柔雾护眼阅读灯', subtitle: '无蓝光频闪 · 三档色温 · 定时休息', price: 189, addedAt: '2026-06-26', tone: 'cream' },
+]
+
+function storeProducts(store: CatalogStore): CatalogProduct[] {
+  return catalogProductTemplates.map((product, index) => ({
+    ...product,
+    id: `${store.id}-product-${index + 1}`,
+  }))
+}
+
+function CatalogProductVisual({ product, large = false }: { product: CatalogProduct; large?: boolean }) {
+  return (
+    <div className={`catalog-product-visual ${product.tone} ${large ? 'large' : ''}`} aria-hidden="true">
+      <span className="catalog-visual-shadow" />
+      <span className="catalog-visual-object"><ShoppingBag size={large ? 58 : 34} strokeWidth={1.35} /></span>
+      <em>STORE NOVA</em>
+    </div>
+  )
+}
+
+type CatalogFilterOption = { value: string; label: string }
+
+function CatalogFilterMenu({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: string
+  options: CatalogFilterOption[]
+  onChange: (value: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const selected = options.find((option) => option.value === value) ?? options[0]
+
+  useEffect(() => {
+    if (!open) return
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [open])
+
+  return (
+    <div className={`catalog-filter-field ${open ? 'open' : ''}`} ref={menuRef}>
+      <button type="button" aria-label={label} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+        <span>{selected.label}</span>
+        <ChevronDown size={14} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="catalog-filter-menu" role="listbox" aria-label={label}>
+          {options.map((option) => (
+            <button
+              type="button"
+              role="option"
+              aria-selected={option.value === value}
+              className={option.value === value ? 'selected' : ''}
+              key={option.value}
+              onClick={() => { onChange(option.value); setOpen(false) }}
+            >
+              <span>{option.label}</span>
+              {option.value === value && <Check size={14} aria-hidden="true" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StoreCatalogExperience() {
+  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null)
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
+  const [selectedMediaIndex, setSelectedMediaIndex] = useState(1)
+  const [videoPlaying, setVideoPlaying] = useState(false)
+  const [selectedSkuIndex, setSelectedSkuIndex] = useState(0)
+  const [activeAssetGroupId, setActiveAssetGroupId] = useState<string | null>(null)
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([])
+  const [assetPage, setAssetPage] = useState(1)
+  const [assetPreview, setAssetPreview] = useState<{ name: string; description: string; video: boolean; top: number; left: number } | null>(null)
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [catalogQuery, setCatalogQuery] = useState('')
+  const [catalogAddedTime, setCatalogAddedTime] = useState('all')
+  const [catalogSort, setCatalogSort] = useState('default')
+  const selectedStore = catalogStores.find((store) => store.id === selectedStoreId) ?? null
+  const storeItems = selectedStore ? storeProducts(selectedStore) : []
+  const selectedProduct = storeItems.find((product) => product.id === selectedProductId) ?? null
+  const visibleStoreItems = useMemo(() => {
+    const normalizedQuery = catalogQuery.trim().toLocaleLowerCase()
+    const filtered = storeItems.filter((product) => {
+      const matchesQuery = !normalizedQuery || `${product.title} ${product.subtitle}`.toLocaleLowerCase().includes(normalizedQuery)
+      const newestAddedAt = new Date(`${catalogProductTemplates[0].addedAt}T00:00:00`).getTime()
+      const productAddedAt = new Date(`${product.addedAt}T00:00:00`).getTime()
+      const ageInDays = Math.floor((newestAddedAt - productAddedAt) / 86_400_000)
+      const matchesAddedTime = catalogAddedTime === 'all'
+        || (catalogAddedTime === '7-days' && ageInDays <= 7)
+        || (catalogAddedTime === '30-days' && ageInDays <= 30)
+        || (catalogAddedTime === '90-days' && ageInDays <= 90)
+      return matchesQuery && matchesAddedTime
+    })
+    if (catalogSort === 'added-asc') return [...filtered].sort((left, right) => left.addedAt.localeCompare(right.addedAt))
+    return [...filtered].sort((left, right) => right.addedAt.localeCompare(left.addedAt))
+  }, [catalogAddedTime, catalogQuery, catalogSort, storeItems])
+  const hasCatalogFilters = Boolean(catalogQuery.trim()) || catalogAddedTime !== 'all' || catalogSort !== 'default'
+
+  const openStore = (storeId: string) => {
+    setSelectedStoreId(storeId)
+    setSelectedProductId(null)
+    setCatalogQuery('')
+    setCatalogAddedTime('all')
+    setCatalogSort('default')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  const openProduct = (productId: string) => {
+    setSelectedProductId(productId)
+    setSelectedMediaIndex(1)
+    setVideoPlaying(false)
+    setSelectedSkuIndex(0)
+    setActiveAssetGroupId(null)
+    setSelectedAssetIds([])
+    setAssetPage(1)
+    setAssetPreview(null)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  const assetDownload = (label: string) =>
+    `data:text/plain;charset=utf-8,${encodeURIComponent(`${selectedProduct?.title ?? '商品'} · ${label}\n演示素材文件，正式接入后将下载原始素材。`)}`
+
+  if (selectedStore && !selectedStore.connected) {
+    return (
+      <div className="store-catalog-page catalog-connection-page">
+        <button className="catalog-back" onClick={() => setSelectedStoreId(null)}><ArrowLeft size={17} />返回店铺列表</button>
+        <section className="catalog-connection-required">
+          <div className="catalog-store-logo" aria-label={`${selectedStore.name}店铺 Logo`}><img src={selectedStore.logoUrl} alt="" /></div>
+          <span className="catalog-disconnected-state"><i />未连接</span>
+          <AlertCircle size={32} aria-hidden="true" />
+          <h1>店铺尚未连接</h1>
+          <p>请联系工作人员完成链接店铺操作。</p>
+          <button onClick={() => setSelectedStoreId(null)}>返回店铺列表</button>
+        </section>
+      </div>
+    )
+  }
+
+  if (selectedStore && selectedProduct) {
+    const skus = [
+      { name: '暖米白 · 单杯礼盒', price: selectedProduct.price },
+      { name: '雾绿色 · 单杯礼盒', price: selectedProduct.price + 10 },
+      { name: '暖米白 · 双杯组合', price: selectedProduct.price * 2 - 19 },
+      { name: '雾绿色 · 双杯组合', price: selectedProduct.price * 2 - 9 },
+    ]
+    const assetGroups = [
+      { id: 'videos', label: '商品视频', description: '讲解、展示与场景视频', video: true, items: [
+        { id: 'video-main', name: '商品讲解视频', description: '功能与使用方式讲解', size: '1920 × 1080', fileSize: '18.6 MB', format: 'MP4' },
+        { id: 'video-scene', name: '桌面使用场景', description: '办公桌面实拍展示', size: '1920 × 1080', fileSize: '12.4 MB', format: 'MP4' },
+      ] },
+      { id: 'main-images', label: '商品主图', description: '主图、白底图与场景图', items: Array.from({ length: 12 }, (_, index) => ({ id: `main-${index + 1}`, name: `商品主图 ${String(index + 1).padStart(2, '0')}`, description: index === 0 ? '商品首图' : index < 4 ? '核心卖点展示' : index < 8 ? '商品场景展示' : '材质与细节展示', size: index < 8 ? '1200 × 1200' : '1600 × 1200', fileSize: index < 8 ? `${486 + index * 17} KB` : `${(1.08 + (index - 8) * .11).toFixed(2)} MB`, format: 'JPG' })) },
+      { id: 'sku-images', label: '各 SKU 图', description: '每个规格对应的商品图', items: skus.flatMap((sku, index) => [
+        { id: `sku-${index + 1}-front`, name: `${sku.name} · 正面`, description: '对应规格正面展示', size: '1200 × 1200', fileSize: `${512 + index * 24} KB`, format: 'JPG' },
+        { id: `sku-${index + 1}-side`, name: `${sku.name} · 侧面`, description: '对应规格侧面展示', size: '1200 × 1200', fileSize: `${498 + index * 21} KB`, format: 'JPG' },
+      ]) },
+      { id: 'detail-images', label: '详情页图', description: '卖点、参数与服务长图', items: ['详情首屏', '三档温控卖点', '自动断电卖点', '桌面使用场景', '材质工艺', '适配杯型', '尺寸说明', '操作步骤', '清洁说明', '包装展示', '礼赠场景', '商品参数', '配送说明', '售后服务', '品牌故事', '详情页尾图'].map((name, index) => ({ id: `detail-${index + 1}`, name, description: '商品详情页内容图片', size: `750 × ${index % 3 === 0 ? '1000' : '900'}`, fileSize: `${638 + index * 31} KB`, format: 'JPG' })) },
+    ]
+    const galleryMedia = [
+      { label: '商品视频', video: true },
+      { label: '商品主图' },
+      { label: '使用场景' },
+      { label: '材质细节' },
+      { label: '尺寸说明' },
+    ]
+    const selectedSku = skus[selectedSkuIndex]
+    const activeAssetGroup = assetGroups.find((group) => group.id === activeAssetGroupId) ?? null
+    const selectedAssets = activeAssetGroup?.items.filter((item) => selectedAssetIds.includes(item.id)) ?? []
+    const assetPageSize = 10
+    const assetPageCount = Math.max(1, Math.ceil((activeAssetGroup?.items.length ?? 0) / assetPageSize))
+    const visibleAssets = activeAssetGroup?.items.slice((assetPage - 1) * assetPageSize, assetPage * assetPageSize) ?? []
+    const toggleAsset = (assetId: string) => setSelectedAssetIds((current) => current.includes(assetId) ? current.filter((id) => id !== assetId) : [...current, assetId])
+    return (
+      <div className="store-catalog-page catalog-detail-page">
+        <button className="catalog-back" onClick={() => setSelectedProductId(null)}><ArrowLeft size={17} />返回商品列表</button>
+        <section className="catalog-material-section">
+          <div className="catalog-section-heading">
+            <div><span className="section-kicker">PRODUCT ASSETS</span><h2>商品素材</h2><p>已同步至商品详情的素材，可逐项下载原文件。</p></div>
+            <span className="catalog-count-badge">4 个素材区域</span>
+          </div>
+          <div className="catalog-asset-group-grid">
+            {assetGroups.map((group, index) => (
+              <button className="catalog-asset-group" type="button" key={group.id} onClick={() => { setActiveAssetGroupId(group.id); setSelectedAssetIds([]); setAssetPage(1); setAssetPreview(null) }}>
+                <span className={`catalog-asset-group-icon material-${index + 1}`}>{group.video ? <Play size={17} fill="currentColor" /> : <ImageIcon size={17} />}</span>
+                <span className="catalog-asset-group-copy"><strong>{group.label}</strong></span>
+                <span className="catalog-asset-group-count">{group.items.length} 项</span>
+                <ArrowRight size={15} aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        </section>
+        <section className="catalog-commerce-detail">
+          <div className="catalog-detail-gallery">
+            <div className={`catalog-detail-media media-${selectedMediaIndex} ${videoPlaying ? 'playing' : ''}`}>
+              <CatalogProductVisual product={selectedProduct} large />
+              <span className="catalog-media-label">{galleryMedia[selectedMediaIndex].label}</span>
+              {galleryMedia[selectedMediaIndex].video && (
+                <button className="catalog-video-play" type="button" aria-pressed={videoPlaying} onClick={() => setVideoPlaying((current) => !current)}>
+                  <Play size={22} fill="currentColor" />{videoPlaying ? '视频播放中' : '播放商品视频'}
+                </button>
+              )}
+            </div>
+            <div className="catalog-detail-thumbs" aria-label="商品图片预览">
+              {galleryMedia.map((media, index) => (
+                <button type="button" className={selectedMediaIndex === index ? 'active' : ''} aria-label={`查看${media.label}`} aria-pressed={selectedMediaIndex === index} key={media.label} onClick={() => { setSelectedMediaIndex(index); setVideoPlaying(false) }}>
+                  {media.video ? <Play size={17} fill="currentColor" /> : <ImageIcon size={17} />}
+                  <small>{media.label}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="catalog-detail-info">
+            <div className="catalog-detail-source"><span>{selectedStore.platform}</span><small>{selectedStore.name}</small></div>
+            <h1>{selectedProduct.title}</h1>
+            <p>{selectedProduct.subtitle}。甄选耐用材质与克制设计，为日常使用带来更轻松的体验。</p>
+            <div className="catalog-detail-price"><span>所选 SKU 价格</span><strong><small>¥</small>{selectedSku.price.toFixed(2)}</strong></div>
+            <div className="catalog-sku-section">
+              <span>选择规格</span>
+              <div className="catalog-sku-grid">
+                {skus.map((sku, index) => (
+                  <button type="button" className={selectedSkuIndex === index ? 'active' : ''} aria-pressed={selectedSkuIndex === index} key={sku.name} onClick={() => setSelectedSkuIndex(index)}>
+                    <span>{sku.name}</span><strong>¥{sku.price.toFixed(2)}</strong>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <dl className="catalog-detail-specs">
+              <div><dt>促销</dt><dd><b>店铺优惠</b> 满 99 元包邮，会员可叠加积分</dd></div>
+              <div><dt>配送</dt><dd><Truck size={16} />预计 48 小时内发货</dd></div>
+              <div><dt>保障</dt><dd><ShieldCheck size={16} />正品保障 · 7 天无理由退换</dd></div>
+            </dl>
+          </div>
+        </section>
+        <section className="catalog-description">
+          <span className="section-kicker">PRODUCT DETAILS</span><h2>商品详情</h2>
+          <div className="catalog-long-detail">
+            <div className="catalog-detail-story story-hero"><span>STORE NOVA</span><strong>四季恒温，随手一放即暖</strong><p>三档温控覆盖日常饮用温度，工作、阅读与休息时都能保持舒适入口。</p><div className="detail-product-shape"><ShoppingBag size={58} strokeWidth={1.2} /></div></div>
+            <div className="catalog-detail-feature-grid">
+              <article><b>01</b><strong>三档温控</strong><span>45℃ / 55℃ / 65℃</span></article>
+              <article><b>02</b><strong>自动断电</strong><span>连续工作 8 小时自动关闭</span></article>
+              <article><b>03</b><strong>细腻面板</strong><span>易清洁，适配多种杯型</span></article>
+            </div>
+            <div className="catalog-detail-story story-scene"><div><span>DESK MOMENT</span><strong>一杯温热，陪你专注一整天</strong><p>低饱和雾绿色与简洁轮廓融入办公桌面，暖饮无需反复加热。</p></div><div className="detail-scene-card"><Clock3 size={38} /><b>55℃</b><small>推荐恒温档</small></div></div>
+            <div className="catalog-parameter-panel"><h3>商品参数</h3><dl><div><dt>产品名称</dt><dd>恒温暖饮杯垫礼盒</dd></div><div><dt>额定功率</dt><dd>18W</dd></div><div><dt>温控档位</dt><dd>45℃ / 55℃ / 65℃</dd></div><div><dt>面板材质</dt><dd>微晶玻璃</dd></div><div><dt>供电方式</dt><dd>Type-C</dd></div><div><dt>包装内容</dt><dd>杯垫、连接线、说明书、礼盒</dd></div></dl></div>
+            <div className="catalog-detail-story story-service"><ShieldCheck size={38} /><strong>安心售后服务</strong><p>正品保障 · 7 天无理由退换 · 在线客服支持</p></div>
+          </div>
+        </section>
+        {activeAssetGroup && (
+          <DialogFrame
+            title={activeAssetGroup.label}
+            kicker="PRODUCT ASSETS"
+            onClose={() => setActiveAssetGroupId(null)}
+            testId="catalog-asset-list"
+            actions={<>
+              <button type="button" className="catalog-asset-cancel" onClick={() => setActiveAssetGroupId(null)}>关闭</button>
+              <a
+                className={`catalog-batch-download ${selectedAssets.length ? '' : 'disabled'}`}
+                href={selectedAssets.length ? assetDownload(selectedAssets.map((item) => item.name).join('、')) : undefined}
+                download={`${selectedProduct.title}-${activeAssetGroup.label}-已选素材.txt`}
+                aria-disabled={!selectedAssets.length}
+              ><Download size={15} />下载已选（{selectedAssets.length}）</a>
+            </>}
+          >
+            <div className="catalog-asset-list-toolbar">
+              <p>共 {activeAssetGroup.items.length} 项，可多选后批量下载。</p>
+              <button type="button" onClick={() => setSelectedAssetIds(selectedAssetIds.length === activeAssetGroup.items.length ? [] : activeAssetGroup.items.map((item) => item.id))}>{selectedAssetIds.length === activeAssetGroup.items.length ? '取消全选' : '全选'}</button>
+            </div>
+            <div className="catalog-asset-table-wrap">
+              <table className="catalog-asset-table">
+                <thead><tr><th aria-label="选择" /><th>序号</th><th>素材名</th><th>素材描述</th><th>尺寸</th><th>文件大小</th><th>格式</th><th>操作</th></tr></thead>
+                <tbody>
+                  {visibleAssets.map((item, index) => {
+                    const selected = selectedAssetIds.includes(item.id)
+                    const serialNumber = (assetPage - 1) * assetPageSize + index + 1
+                    return (
+                      <tr className={selected ? 'selected' : ''} key={item.id}>
+                        <td><button type="button" className="catalog-asset-checkbox" aria-label={`选择${item.name}`} aria-pressed={selected} onClick={() => toggleAsset(item.id)}>{selected && <Check size={13} />}</button></td>
+                        <td className="catalog-asset-serial">{String(serialNumber).padStart(2, '0')}</td>
+                        <td
+                          className="catalog-asset-name"
+                          tabIndex={0}
+                          onMouseEnter={(event) => {
+                            const rect = event.currentTarget.getBoundingClientRect()
+                            setAssetPreview({ name: item.name, description: item.description, video: Boolean(activeAssetGroup.video), top: Math.max(16, Math.min(rect.top - 42, window.innerHeight - 178)), left: Math.min(rect.right + 12, window.innerWidth - 202) })
+                          }}
+                          onMouseLeave={() => setAssetPreview(null)}
+                          onFocus={(event) => {
+                            const rect = event.currentTarget.getBoundingClientRect()
+                            setAssetPreview({ name: item.name, description: item.description, video: Boolean(activeAssetGroup.video), top: Math.max(16, Math.min(rect.top - 42, window.innerHeight - 178)), left: Math.min(rect.right + 12, window.innerWidth - 202) })
+                          }}
+                          onBlur={() => setAssetPreview(null)}
+                        ><strong>{item.name}</strong></td>
+                        <td>{item.description}</td>
+                        <td>{item.size}</td>
+                        <td className="catalog-asset-file-size">{item.fileSize}</td>
+                        <td><span className="catalog-format-badge">{item.format}</span></td>
+                        <td><a href={assetDownload(item.name)} download={`${selectedProduct.title}-${item.name}-演示素材.txt`} aria-label={`下载${item.name}`}><Download size={14} />下载</a></td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {assetPreview && (
+              <div className="catalog-asset-hover-preview" style={{ top: assetPreview.top, left: assetPreview.left }} role="tooltip">
+                <div className="catalog-asset-hover-image">
+                  <CatalogProductVisual product={selectedProduct} />
+                  {assetPreview.video && <span className="catalog-asset-video-cover"><Play size={24} fill="currentColor" /></span>}
+                </div>
+                <strong>{assetPreview.name}</strong>
+                <small>{assetPreview.description}</small>
+              </div>
+            )}
+            {assetPageCount > 1 && (
+              <div className="catalog-asset-pagination" aria-label="素材分页">
+                <span>每页 10 项 · 第 {assetPage} / {assetPageCount} 页</span>
+                <div>
+                  <button type="button" disabled={assetPage === 1} onClick={() => { setAssetPreview(null); setAssetPage((page) => Math.max(1, page - 1)) }}>上一页</button>
+                  {Array.from({ length: assetPageCount }, (_, index) => index + 1).map((page) => <button type="button" className={page === assetPage ? 'active' : ''} aria-current={page === assetPage ? 'page' : undefined} key={page} onClick={() => { setAssetPreview(null); setAssetPage(page) }}>{page}</button>)}
+                  <button type="button" disabled={assetPage === assetPageCount} onClick={() => { setAssetPreview(null); setAssetPage((page) => Math.min(assetPageCount, page + 1)) }}>下一页</button>
+                </div>
+              </div>
+            )}
+          </DialogFrame>
+        )}
+      </div>
+    )
+  }
+
+  if (selectedStore) {
+    return (
+      <div className="store-catalog-page catalog-products-page">
+        <button className="catalog-back" onClick={() => setSelectedStoreId(null)}><ArrowLeft size={17} />返回店铺列表</button>
+        <section className={`catalog-store-hero ${selectedStore.tone}`}>
+          <div className="catalog-store-logo" aria-label={`${selectedStore.name}店铺 Logo`}><img src={selectedStore.logoUrl} alt="" /></div>
+          <div><h1>{selectedStore.name}</h1></div>
+          <div className="catalog-store-stat"><strong>{selectedStore.products}</strong><span>已上架商品</span></div>
+        </section>
+        <section className="catalog-products-panel">
+          <div className="catalog-products-toolbar">
+            <div className="catalog-search-field">
+              <Search size={16} aria-hidden="true" />
+              <input aria-label="搜索商品名称或关键词" placeholder="搜索商品名称或关键词" value={catalogQuery} onChange={(event) => setCatalogQuery(event.target.value)} />
+            </div>
+            <CatalogFilterMenu label="按添加时间筛选" value={catalogAddedTime} onChange={setCatalogAddedTime} options={[{ value: 'all', label: '全部添加时间' }, { value: '7-days', label: '近 7 天添加' }, { value: '30-days', label: '近 30 天添加' }, { value: '90-days', label: '近 90 天添加' }]} />
+            <CatalogFilterMenu label="商品排序方式" value={catalogSort} onChange={setCatalogSort} options={[{ value: 'default', label: '添加时间从新到旧' }, { value: 'added-asc', label: '添加时间从旧到新' }]} />
+            <div className="catalog-view-toggle" role="group" aria-label="商品展示方式">
+              <button className={viewMode === 'grid' ? 'active' : ''} aria-pressed={viewMode === 'grid'} onClick={() => setViewMode('grid')}><Grid2X2 size={16} />卡片</button>
+              <button className={viewMode === 'list' ? 'active' : ''} aria-pressed={viewMode === 'list'} onClick={() => setViewMode('list')}><Rows3 size={16} />列表</button>
+            </div>
+          </div>
+          <div className="catalog-search-summary"><span>找到 <strong>{visibleStoreItems.length}</strong> 件商品</span>{hasCatalogFilters && <button onClick={() => { setCatalogQuery(''); setCatalogAddedTime('all'); setCatalogSort('default') }}>重置条件</button>}</div>
+          <div className={`catalog-product-collection ${viewMode}`}>
+            {visibleStoreItems.map((product) => (
+              <button className="catalog-product-card" key={product.id} onClick={() => openProduct(product.id)}>
+                <CatalogProductVisual product={product} />
+                <div className="catalog-product-copy"><span>添加于 {product.addedAt}</span><h3>{product.title}</h3><p>{product.subtitle}</p><div><strong>¥ {product.price.toFixed(2)}</strong></div></div>
+                <ArrowRight className="catalog-product-arrow" size={18} />
+              </button>
+            ))}
+            {!visibleStoreItems.length && <div className="catalog-no-results"><PackageSearch size={25} /><strong>没有找到符合条件的商品</strong><span>可以减少筛选条件，或换一个关键词再试。</span><button onClick={() => { setCatalogQuery(''); setCatalogAddedTime('all'); setCatalogSort('default') }}>清除全部条件</button></div>}
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  return (
+    <div className="store-catalog-page catalog-stores-page">
+      <section className="catalog-page-hero">
+        <div><span className="section-kicker">STORE CATALOG</span><h1>选择店铺，查看已上架商品</h1><p>集中浏览各平台店铺与商品素材。进入店铺后可切换列表或卡片展示，并查看商品完整页面。</p></div>
+        <div className="catalog-hero-summary"><div><strong>{catalogStores.filter((store) => store.connected).length}</strong><span>家已连接店铺</span></div><small>共 {catalogStores.reduce((total, store) => total + store.products, 0)} 件上架商品</small></div>
+      </section>
+      <section className="catalog-store-section">
+        <div className="catalog-store-grid">
+          {catalogStores.map((store) => (
+            <button className={`catalog-store-card ${store.tone} ${store.connected ? 'connected' : 'disconnected'}`} key={store.id} onClick={() => openStore(store.id)}>
+              <div className="catalog-store-card-top"><span className={`catalog-platform-logo ${store.id}`}>{store.platform}</span><span className={`catalog-live-state ${store.connected ? '' : 'disconnected'}`}><i />{store.connected ? '已连接' : '未连接'}</span></div>
+              <div className="catalog-store-card-copy"><h3>{store.name}</h3><p>{store.updated}</p></div>
+              <div className="catalog-store-card-foot"><span>{store.connected ? <>已上架 <strong>{store.products}</strong> 件商品</> : '店铺商品暂不可读'}</span><em>{store.connected ? '进入店铺' : '查看连接说明'} <ArrowRight size={16} /></em></div>
+            </button>
+          ))}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+type StoreMaterialCategory = '商品主图' | '详情页图' | 'SKU 图' | '商品视频' | '未分类'
+type StoreMaterialSeries = '恒温饮具' | '桌面生活' | '礼赠套装' | '未归属'
+
+type StoreMaterialItem = {
+  id: string
+  name: string
+  category: StoreMaterialCategory
+  series: StoreMaterialSeries
+  sizeLabel: string
+  fileSizeLabel: string
+  format: string
+  addedAt: string
+  previewUrl?: string
+  downloadUrl: string
+  bytes?: number
+}
+
+const storeMaterialCategories: Array<'全部' | StoreMaterialCategory> = ['全部', '商品主图', '详情页图', 'SKU 图', '商品视频', '未分类']
+const storeMaterialSeries: Array<'全部' | StoreMaterialSeries> = ['全部', '恒温饮具', '桌面生活', '礼赠套装', '未归属']
+type RecycleMaterialItem = StoreMaterialItem & {
+  storeId: string
+  storeName: string
+  platform: string
+  deletedAt: string
+  expiresAt: string
+}
+const materialRecycleStorageKey = 'merchant-material-recycle-bin-v1'
+
+function initialRecycleMaterials(): RecycleMaterialItem[] {
+  const deletedAt = new Date()
+  deletedAt.setDate(deletedAt.getDate() - 1)
+  const expiresAt = new Date(deletedAt)
+  expiresAt.setDate(expiresAt.getDate() + 7)
+  return [{
+    id: 'recycle-demo-packaging-v1',
+    name: 'Store Nova 旗舰店 · 旧版包装展示图',
+    category: '详情页图',
+    series: '礼赠套装',
+    sizeLabel: '1600 × 1200',
+    fileSizeLabel: '1.8 MB',
+    format: 'JPG',
+    addedAt: '2026-09-08',
+    downloadUrl: `data:text/plain;charset=utf-8,${encodeURIComponent('回收站演示素材')}`,
+    storeId: 'taobao-flagship',
+    storeName: 'Store Nova 旗舰店',
+    platform: '淘宝',
+    deletedAt: deletedAt.toISOString(),
+    expiresAt: expiresAt.toISOString(),
+  }]
+}
+
+function readRecycleMaterials(): RecycleMaterialItem[] {
+  try {
+    const saved = window.localStorage.getItem(materialRecycleStorageKey)
+    const items = saved === null ? initialRecycleMaterials() : JSON.parse(saved) as RecycleMaterialItem[]
+    const active = items.filter((item) => new Date(item.expiresAt).getTime() > Date.now())
+    if (saved === null || active.length !== items.length) window.localStorage.setItem(materialRecycleStorageKey, JSON.stringify(active))
+    return active
+  } catch {
+    return initialRecycleMaterials()
+  }
+}
+
+function writeRecycleMaterials(items: RecycleMaterialItem[]) {
+  try {
+    window.localStorage.setItem(materialRecycleStorageKey, JSON.stringify(items))
+  } catch {
+    // 本地预览禁用储存时仍保留当前页面状态。
+  }
+}
+
+function recycleDaysRemaining(expiresAt: string) {
+  return Math.max(1, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000))
+}
+
+function MaterialCategoryDropdown({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  value: string
+  options: Array<{ value: string; label: string }>
+  onChange: (value: string) => void
+  ariaLabel: string
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const selectedLabel = options.find((option) => option.value === value)?.label ?? value
+
+  useEffect(() => {
+    if (!open) return
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        setOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', closeOnOutside)
+    document.addEventListener('keydown', closeOnEscape, true)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutside)
+      document.removeEventListener('keydown', closeOnEscape, true)
+    }
+  }, [open])
+
+  return (
+    <div className="material-category-dropdown" ref={rootRef}>
+      <button type="button" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((current) => !current)}><span>{selectedLabel}</span><ChevronDown size={15} /></button>
+      {open && <div className="material-category-dropdown-menu" role="listbox" aria-label={ariaLabel}>{options.map((option) => <button type="button" role="option" aria-selected={option.value === value} className={option.value === value ? 'active' : ''} key={option.value} onClick={() => { onChange(option.value); setOpen(false) }}><span>{option.label}</span>{option.value === value && <Check size={14} />}</button>)}</div>}
+    </div>
+  )
+}
+
+function formatMaterialFileSize(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`
+}
+
+function demoStoreMaterials(store: CatalogStore, storeIndex: number): StoreMaterialItem[] {
+  const definitions: Array<[StoreMaterialCategory, StoreMaterialSeries, string, string, string, string]> = [
+    ['商品主图', '恒温饮具', '商品首图', '1200 × 1200', 'JPG', '686 KB'],
+    ['商品主图', '恒温饮具', '核心卖点图', '1200 × 1200', 'JPG', '742 KB'],
+    ['详情页图', '桌面生活', '详情页首屏', '750 × 1000', 'JPG', '918 KB'],
+    ['详情页图', '桌面生活', '材质工艺长图', '750 × 1400', 'JPG', '1.3 MB'],
+    ['SKU 图', '恒温饮具', '暖米白规格图', '1200 × 1200', 'PNG', '824 KB'],
+    ['SKU 图', '恒温饮具', '雾绿色规格图', '1200 × 1200', 'PNG', '856 KB'],
+    ['商品视频', '礼赠套装', '商品讲解视频', '1920 × 1080', 'MP4', '18.6 MB'],
+    ['未分类', '未归属', '包装与说明书', '1600 × 1200', 'JPG', '1.1 MB'],
+  ]
+  return definitions.map(([category, series, label, sizeLabel, format, fileSizeLabel], index) => ({
+    id: `${store.id}-material-${index + 1}`,
+    name: `${store.name} · ${label}`,
+    category,
+    series,
+    sizeLabel,
+    fileSizeLabel,
+    format,
+    addedAt: `2026-09-${String(17 - storeIndex * 2 - index).padStart(2, '0')}`,
+    downloadUrl: `data:text/plain;charset=utf-8,${encodeURIComponent(`${store.name}\n${label}\n${category}\n演示素材文件`)}`,
+  }))
+}
+
+function MaterialRecycleBinWorkspace() {
+  const [items, setItems] = useState<RecycleMaterialItem[]>(() => readRecycleMaterials())
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [previewId, setPreviewId] = useState<string | null>(null)
+  const [permanentDeleteOpen, setPermanentDeleteOpen] = useState(false)
+  const selectedItems = items.filter((item) => selectedIds.includes(item.id))
+  const previewItem = items.find((item) => item.id === previewId)
+  const allSelected = items.length > 0 && items.every((item) => selectedIds.includes(item.id))
+
+  const removeFromRecycleBin = (ids: string[]) => {
+    const next = items.filter((item) => !ids.includes(item.id))
+    setItems(next)
+    writeRecycleMaterials(next)
+    setSelectedIds([])
+  }
+
+  return (
+    <div className="material-recycle-page" data-testid="material-recycle-bin">
+      <section className="material-recycle-hero">
+        <div><span className="section-kicker">RECYCLE BIN</span><h1>回收站</h1><p>删除的素材会保留 7 天，到期后自动彻底删除。</p></div>
+        <div className="material-recycle-summary"><strong>{items.length}</strong><span>项待处理素材</span><small>最长保留 7 天</small></div>
+      </section>
+      <section className="material-recycle-workspace">
+        <div className="material-recycle-toolbar">
+          <div><h2>已删除素材</h2><p>可恢复到原店铺，也可以提前彻底删除。</p></div>
+          <div className="material-recycle-actions">
+            <span>已选 <strong>{selectedItems.length}</strong> 项</span>
+            <button type="button" disabled={!items.length} onClick={() => setSelectedIds(allSelected ? [] : items.map((item) => item.id))}>{allSelected ? '取消全选' : '全选'}</button>
+            <button type="button" disabled={!selectedItems.length} onClick={() => removeFromRecycleBin(selectedIds)}><Undo2 size={14} />恢复</button>
+            <button type="button" className="danger" disabled={!selectedItems.length} onClick={() => setPermanentDeleteOpen(true)}><Trash2 size={14} />彻底删除</button>
+          </div>
+        </div>
+        {items.length ? <div className="material-recycle-grid">{items.map((item) => {
+          const selected = selectedIds.includes(item.id)
+          return <article className={selected ? 'selected' : ''} key={item.id}>
+            <div className="material-recycle-preview">
+              <button type="button" className="material-recycle-open" aria-label={`放大${item.name}`} onClick={() => setPreviewId(item.id)}>{item.previewUrl && item.format !== 'MP4' ? <img src={item.previewUrl} alt="" /> : item.category === '商品视频' ? <Play size={34} fill="currentColor" /> : <ImageIcon size={34} />}</button>
+              <button type="button" className="material-recycle-select" aria-label={`选择${item.name}`} aria-pressed={selected} onClick={() => setSelectedIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])}>{selected && <Check size={14} />}</button>
+              <span>{item.category}</span>
+            </div>
+            <div className="material-recycle-copy"><strong title={item.name}>{item.name}</strong><span>{item.series} · {item.sizeLabel} · {item.format}</span><small>{item.storeName} · {item.platform}</small></div>
+            <div className="material-recycle-expiry"><Clock3 size={13} /><span>剩余 {recycleDaysRemaining(item.expiresAt)} 天</span><small>{new Date(item.deletedAt).toLocaleDateString('zh-CN')} 删除</small></div>
+          </article>
+        })}</div> : <div className="material-empty"><Trash2 size={30} /><strong>回收站为空</strong><span>删除的素材会在这里保留 7 天。</span></div>}
+      </section>
+      {previewItem && <button type="button" className="material-upload-lightbox" aria-label="关闭回收站图片预览" onClick={() => setPreviewId(null)}><span>{previewItem.previewUrl && previewItem.format !== 'MP4' ? <img src={previewItem.previewUrl} alt={previewItem.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{previewItem.name}</strong><small>点击任意位置关闭</small></span></button>}
+      {permanentDeleteOpen && selectedItems.length > 0 && <DialogFrame title="彻底删除素材" kicker="PERMANENT DELETE" onClose={() => setPermanentDeleteOpen(false)} actions={<><button type="button" className="catalog-asset-cancel" onClick={() => setPermanentDeleteOpen(false)}>取消</button><button type="button" className="material-delete-confirm" onClick={() => { removeFromRecycleBin(selectedIds); setPermanentDeleteOpen(false) }}><Trash2 size={14} />彻底删除</button></>}><div className="material-delete-dialog"><Trash2 size={24} /><div><strong>确定彻底删除已选的 {selectedItems.length} 项素材？</strong><p>此操作完成后，这些素材将无法从回收站恢复。</p></div></div></DialogFrame>}
+    </div>
+  )
+}
+
+function MaterialLibraryWorkspace() {
+  const stores = useMemo(() => catalogStores.filter((store) => store.connected), [])
+  const [activeStoreId, setActiveStoreId] = useState(stores[0]?.id ?? '')
+  const [storeMenuOpen, setStoreMenuOpen] = useState(false)
+  const [storeQuery, setStoreQuery] = useState('')
+  const storeMenuRef = useRef<HTMLDivElement>(null)
+  const [query, setQuery] = useState('')
+  const [category, setCategory] = useState<'全部' | StoreMaterialCategory>('全部')
+  const [series, setSeries] = useState<'全部' | StoreMaterialSeries>('全部')
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [materialsByStore, setMaterialsByStore] = useState<Record<string, StoreMaterialItem[]>>(() => {
+    const recycledIds = new Set(readRecycleMaterials().map((item) => item.id))
+    return Object.fromEntries(stores.map((store, index) => [store.id, demoStoreMaterials(store, index).filter((item) => !recycledIds.has(item.id))]))
+  })
+  const [uploadedBytes, setUploadedBytes] = useState(0)
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const [uploadCategory, setUploadCategory] = useState<StoreMaterialCategory>('未分类')
+  const [uploadSeries, setUploadSeries] = useState<StoreMaterialSeries | ''>('')
+  const [uploadLimitReached, setUploadLimitReached] = useState(false)
+  const [pendingPreviewIndex, setPendingPreviewIndex] = useState<number | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [detailMaterialId, setDetailMaterialId] = useState<string | null>(null)
+  const [detailPreviewOpen, setDetailPreviewOpen] = useState(false)
+  const uploadInput = useRef<HTMLInputElement>(null)
+  const pendingPreviews = useMemo(() => pendingFiles.map((file) => ({ file, url: URL.createObjectURL(file) })), [pendingFiles])
+
+  useEffect(() => () => pendingPreviews.forEach((item) => URL.revokeObjectURL(item.url)), [pendingPreviews])
+
+  useEffect(() => {
+    if (pendingPreviewIndex === null) return
+    const closePreview = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        setPendingPreviewIndex(null)
+      }
+    }
+    document.addEventListener('keydown', closePreview, true)
+    return () => document.removeEventListener('keydown', closePreview, true)
+  }, [pendingPreviewIndex])
+
+  useEffect(() => {
+    if (!storeMenuOpen) return
+    const closeStoreMenu = (event: PointerEvent) => {
+      if (!storeMenuRef.current?.contains(event.target as Node)) {
+        setStoreMenuOpen(false)
+        setStoreQuery('')
+      }
+    }
+    const closeStoreMenuWithKeyboard = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setStoreMenuOpen(false)
+        setStoreQuery('')
+      }
+    }
+    document.addEventListener('pointerdown', closeStoreMenu)
+    document.addEventListener('keydown', closeStoreMenuWithKeyboard)
+    return () => {
+      document.removeEventListener('pointerdown', closeStoreMenu)
+      document.removeEventListener('keydown', closeStoreMenuWithKeyboard)
+    }
+  }, [storeMenuOpen])
+  const activeStore = stores.find((store) => store.id === activeStoreId) ?? stores[0]
+  const visibleStores = stores.filter((store) => `${store.name} ${store.platform}`.toLocaleLowerCase().includes(storeQuery.trim().toLocaleLowerCase()))
+  const activeMaterials = materialsByStore[activeStoreId] ?? []
+  const visibleMaterials = activeMaterials.filter((item) => {
+    const matchesCategory = category === '全部' || item.category === category
+    const matchesSeries = series === '全部' || item.series === series
+    const normalizedQuery = query.trim().toLocaleLowerCase()
+    return matchesCategory && matchesSeries && (!normalizedQuery || `${item.name} ${item.category} ${item.series} ${item.format}`.toLocaleLowerCase().includes(normalizedQuery))
+  })
+  const baseUsedGb = 31.5
+  const quotaGb = 50
+  const usedGb = baseUsedGb + uploadedBytes / 1024 / 1024 / 1024
+  const remainingGb = Math.max(0, quotaGb - usedGb)
+  const usagePercent = Math.min(100, (usedGb / quotaGb) * 100)
+  const allVisibleSelected = visibleMaterials.length > 0 && visibleMaterials.every((item) => selectedIds.includes(item.id))
+  const selectedMaterials = activeMaterials.filter((item) => selectedIds.includes(item.id))
+  const detailMaterial = activeMaterials.find((item) => item.id === detailMaterialId)
+  const batchDownloadUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(selectedMaterials.map((item) => `${item.name} · ${item.category} · ${item.series} · ${item.fileSizeLabel}`).join('\n'))}`
+
+  const switchStore = (storeId: string) => {
+    setActiveStoreId(storeId)
+    setQuery('')
+    setCategory('全部')
+    setSeries('全部')
+    setSelectedIds([])
+    setDeleteDialogOpen(false)
+    setDetailMaterialId(null)
+    setStoreMenuOpen(false)
+    setStoreQuery('')
+  }
+
+  const closeUploadDialog = () => {
+    setUploadDialogOpen(false)
+    setPendingFiles([])
+    setUploadCategory('未分类')
+    setUploadSeries('')
+    setUploadLimitReached(false)
+    setPendingPreviewIndex(null)
+    if (uploadInput.current) uploadInput.current.value = ''
+  }
+
+  const addPendingFiles = (files: FileList | null) => {
+    if (!files?.length) return
+    const incoming = Array.from(files)
+    setPendingFiles((current) => {
+      const known = new Set(current.map((file) => `${file.name}-${file.size}-${file.lastModified}`))
+      const additions = incoming.filter((file) => !known.has(`${file.name}-${file.size}-${file.lastModified}`))
+      setUploadLimitReached(current.length + additions.length > 50)
+      return [...current, ...additions].slice(0, 50)
+    })
+    if (uploadInput.current) uploadInput.current.value = ''
+  }
+
+  const confirmUpload = () => {
+    if (!pendingFiles.length || !activeStore || !uploadSeries) return
+    const incoming = pendingFiles
+    const additions = incoming.map((file, index): StoreMaterialItem => {
+      const video = file.type.startsWith('video/')
+      const extension = file.name.includes('.') ? file.name.split('.').pop()?.toUpperCase() ?? 'FILE' : 'FILE'
+      const objectUrl = URL.createObjectURL(file)
+      return {
+        id: `${activeStore.id}-upload-${Date.now()}-${index}`,
+        name: file.name,
+        category: uploadCategory,
+        series: uploadSeries,
+        sizeLabel: video ? '1920 × 1080' : '读取中',
+        fileSizeLabel: formatMaterialFileSize(file.size),
+        format: extension,
+        addedAt: '刚刚上传',
+        previewUrl: objectUrl,
+        downloadUrl: objectUrl,
+        bytes: file.size,
+      }
+    })
+    setMaterialsByStore((current) => ({ ...current, [activeStore.id]: [...additions, ...(current[activeStore.id] ?? [])] }))
+    setUploadedBytes((current) => current + incoming.reduce((total, file) => total + file.size, 0))
+    setCategory('全部')
+    setSeries('全部')
+    setQuery('')
+    closeUploadDialog()
+  }
+
+  const updateMaterialMetadata = (materialId: string, patch: Partial<Pick<StoreMaterialItem, 'category' | 'series'>>) => {
+    setMaterialsByStore((current) => ({
+      ...current,
+      [activeStoreId]: (current[activeStoreId] ?? []).map((item) => item.id === materialId ? { ...item, ...patch } : item),
+    }))
+  }
+
+  const deleteSelectedMaterials = () => {
+    if (!activeStore) return
+    const deletedBytes = selectedMaterials.reduce((total, item) => total + (item.bytes ?? 0), 0)
+    const now = new Date()
+    const expiresAt = new Date(now)
+    expiresAt.setDate(expiresAt.getDate() + 7)
+    const recycled = readRecycleMaterials()
+    const additions = selectedMaterials.map((item): RecycleMaterialItem => ({ ...item, storeId: activeStore.id, storeName: activeStore.name, platform: activeStore.platform, deletedAt: now.toISOString(), expiresAt: expiresAt.toISOString() }))
+    writeRecycleMaterials([...additions, ...recycled.filter((item) => !selectedIds.includes(item.id))])
+    setMaterialsByStore((current) => ({
+      ...current,
+      [activeStoreId]: (current[activeStoreId] ?? []).filter((item) => !selectedIds.includes(item.id)),
+    }))
+    setUploadedBytes((current) => Math.max(0, current - deletedBytes))
+    setSelectedIds([])
+    setDeleteDialogOpen(false)
+  }
+
+  if (activeStore && detailMaterial) {
+    return <div className="material-detail-page" data-testid="material-detail-page">
+      <button type="button" className="material-detail-back" onClick={() => { setDetailMaterialId(null); setDetailPreviewOpen(false) }}><ArrowLeft size={16} />返回素材库</button>
+      <section className="material-detail-hero">
+        <button type="button" className={`material-detail-preview ${detailMaterial.previewUrl ? 'has-image' : ''}`} aria-label={`放大${detailMaterial.name}`} onClick={() => setDetailPreviewOpen(true)}>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : detailMaterial.category === '商品视频' ? <Play size={64} fill="currentColor" /> : <ImageIcon size={64} />}<span>点击放大预览</span></button>
+        <div className="material-detail-info"><span className="section-kicker">MATERIAL DETAILS</span><h1>{detailMaterial.name}</h1><p>查看素材文件、归属店铺与管理信息。</p><dl><div><dt>素材分类</dt><dd>{detailMaterial.category}</dd></div><div><dt>所属系列</dt><dd>{detailMaterial.series}</dd></div><div><dt>所属店铺</dt><dd>{activeStore.name}</dd></div><div><dt>平台</dt><dd>{activeStore.platform}</dd></div><div><dt>文件格式</dt><dd>{detailMaterial.format}</dd></div><div><dt>图片尺寸</dt><dd>{detailMaterial.sizeLabel}</dd></div><div><dt>文件大小</dt><dd>{detailMaterial.fileSizeLabel}</dd></div><div><dt>上传时间</dt><dd>{detailMaterial.addedAt}</dd></div></dl><a href={detailMaterial.downloadUrl} download={detailMaterial.name}><Download size={15} />下载素材</a></div>
+      </section>
+      {detailPreviewOpen && <button type="button" className="material-upload-lightbox" aria-label="关闭素材图片预览" onClick={() => setDetailPreviewOpen(false)}><span>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{detailMaterial.name}</strong><small>点击任意位置关闭</small></span></button>}
+    </div>
+  }
+
+  return (
+    <div className="material-library-page" data-testid="material-library-workspace">
+      <section className="material-library-hero">
+        <div className="material-library-intro">
+          <span className="section-kicker">MATERIAL LIBRARY</span>
+          <h1>素材库</h1>
+          <p>按店铺独立管理图片与视频。</p>
+        </div>
+        <div className="material-store-selector" ref={storeMenuRef}>
+          <button type="button" aria-haspopup="listbox" aria-expanded={storeMenuOpen} onClick={() => setStoreMenuOpen((current) => !current)}>
+            <span className="catalog-store-logo" aria-label={`${activeStore?.name}店铺 Logo`}><img src={activeStore?.logoUrl} alt="" /></span>
+            <span><strong>{activeStore?.name}</strong><small>{activeStore?.platform} · {activeMaterials.length} 项素材</small></span>
+            <ChevronDown size={16} />
+          </button>
+          {storeMenuOpen && (
+            <div className="material-store-menu" role="listbox" aria-label="选择素材所属店铺">
+              <label><Search size={14} /><input autoFocus value={storeQuery} onChange={(event) => setStoreQuery(event.target.value)} placeholder="搜索店铺名称或平台" /></label>
+              <div>
+                {visibleStores.map((store) => (
+                  <button type="button" role="option" aria-selected={store.id === activeStoreId} className={store.id === activeStoreId ? 'active' : ''} key={store.id} onClick={() => switchStore(store.id)}>
+                    <span className="catalog-store-logo" aria-hidden="true"><img src={store.logoUrl} alt="" /></span>
+                    <span><strong>{store.name}</strong><small>{store.platform} · {(materialsByStore[store.id] ?? []).length} 项素材</small></span>
+                    {store.id === activeStoreId && <Check size={15} />}
+                  </button>
+                ))}
+                {!visibleStores.length && <p>没有匹配的店铺</p>}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="material-storage-card" aria-label="共享储存空间">
+          <div><span>共享储存空间</span><strong>{usedGb.toFixed(1)} GB <small>/ {quotaGb} GB</small></strong></div>
+          <div className="material-storage-track"><i style={{ width: `${usagePercent}%` }} /></div>
+          <div><small>全部店铺已用 {usedGb.toFixed(1)} GB</small><b>剩余 {remainingGb.toFixed(1)} GB</b></div>
+        </div>
+      </section>
+
+      {activeStore && (
+        <section className="material-store-workspace">
+          <div className="material-store-heading">
+            <div><span className="catalog-store-logo" aria-label={`${activeStore.name}店铺 Logo`}><img src={activeStore.logoUrl} alt="" /></span><div><span className="section-kicker">CURRENT STORE</span><h2>{activeStore.name}</h2><p>本区素材只属于当前店铺，不会与其他店铺混用。</p></div></div>
+            <div>
+              <button type="button" className="material-upload-button" onClick={() => setUploadDialogOpen(true)}><Upload size={17} />上传到当前店铺</button>
+            </div>
+          </div>
+
+          <div className="material-toolbar">
+            <div className="material-toolbar-filters">
+              <label className="material-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索素材名称、分类或格式" /></label>
+              <div className="material-category-filter"><span>素材分类</span><MaterialCategoryDropdown ariaLabel="素材分类筛选" value={category} options={storeMaterialCategories.map((item) => ({ value: item, label: item }))} onChange={(value) => { setCategory(value as '全部' | StoreMaterialCategory); setSelectedIds([]) }} /></div>
+              <div className="material-series-filter"><span>系列</span><MaterialCategoryDropdown ariaLabel="系列筛选" value={series} options={storeMaterialSeries.map((item) => ({ value: item, label: item }))} onChange={(value) => { setSeries(value as '全部' | StoreMaterialSeries); setSelectedIds([]) }} /></div>
+            </div>
+            <div className="material-toolbar-actions">
+              <span className={selectedMaterials.length ? 'has-selection' : ''}>已选 <strong>{selectedMaterials.length}</strong> 项</span>
+              {selectedMaterials.length > 0 && <button type="button" className="material-delete-button" onClick={() => setDeleteDialogOpen(true)}><Trash2 size={14} />删除</button>}
+              <button type="button" disabled={!visibleMaterials.length} onClick={() => setSelectedIds(allVisibleSelected ? selectedIds.filter((id) => !visibleMaterials.some((item) => item.id === id)) : Array.from(new Set([...selectedIds, ...visibleMaterials.map((item) => item.id)])))}>{allVisibleSelected ? '取消全选' : '全选当前'}</button>
+              <a className={selectedMaterials.length ? '' : 'disabled'} href={selectedMaterials.length ? batchDownloadUrl : undefined} download={`${activeStore.name}-已选素材清单.txt`}><Download size={15} />下载已选</a>
+            </div>
+          </div>
+
+          <div className="material-result-summary"><span>找到 <strong>{visibleMaterials.length}</strong> 项素材</span><small>上传目标：{activeStore.name}</small></div>
+          {visibleMaterials.length ? (
+            <div className="material-card-grid">
+              {visibleMaterials.map((item, index) => {
+                const selected = selectedIds.includes(item.id)
+                return (
+                  <article className={selected ? 'selected' : ''} key={item.id}>
+                    <div className={`material-card-preview tone-${(index % 4) + 1}`}>
+                      <button type="button" className="material-card-open" aria-label={`查看${item.name}详情`} onClick={() => setDetailMaterialId(item.id)}>{item.previewUrl && item.format !== 'MP4' ? <img src={item.previewUrl} alt="" /> : item.category === '商品视频' ? <Play size={30} fill="currentColor" /> : <ImageIcon size={30} />}<span>{item.category}</span></button>
+                      <button type="button" className="material-card-select" aria-label={`选择${item.name}`} aria-pressed={selected} onClick={() => setSelectedIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])}>{selected && <Check size={14} />}</button>
+                    </div>
+                    <div className="material-card-copy"><strong title={item.name}>{item.name}</strong><span>{item.series} · {item.sizeLabel} · {item.format}</span><small>{item.fileSizeLabel} · {item.addedAt}</small></div>
+                    <div className="material-card-actions">
+                      <div className="material-card-inline-editor">
+                        <div className="material-card-inline-field"><span>素材分类</span><MaterialCategoryDropdown ariaLabel={`修改${item.name}的素材分类`} value={item.category} options={storeMaterialCategories.filter((value): value is StoreMaterialCategory => value !== '全部').map((value) => ({ value, label: value }))} onChange={(value) => updateMaterialMetadata(item.id, { category: value as StoreMaterialCategory })} /></div>
+                        <div className="material-card-inline-field"><span>所属系列</span><MaterialCategoryDropdown ariaLabel={`修改${item.name}的所属系列`} value={item.series} options={storeMaterialSeries.filter((value): value is StoreMaterialSeries => value !== '全部').map((value) => ({ value, label: value }))} onChange={(value) => updateMaterialMetadata(item.id, { series: value as StoreMaterialSeries })} /></div>
+                      </div>
+                      <a href={item.downloadUrl} download={item.name}><Download size={14} />下载</a>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="material-empty"><FolderOpen size={28} /><strong>当前条件下没有素材</strong><span>调整搜索或分类，也可以直接上传到当前店铺。</span></div>
+          )}
+        </section>
+      )}
+      {activeStore && uploadDialogOpen && (
+        <DialogFrame
+          title="上传素材"
+          kicker="MATERIAL UPLOAD"
+          onClose={closeUploadDialog}
+          testId="material-upload-dialog"
+          actions={<>
+            <button type="button" className="catalog-asset-cancel" onClick={closeUploadDialog}>取消</button>
+            <button type="button" className="material-upload-confirm" disabled={!pendingFiles.length || !uploadSeries} onClick={confirmUpload}><Upload size={15} />确认上传{pendingFiles.length ? `（${pendingFiles.length}）` : ''}</button>
+          </>}
+        >
+          <div className="material-upload-dialog">
+            <div className="material-upload-top">
+              <div className="material-upload-store"><span className="catalog-store-logo" aria-hidden="true"><img src={activeStore.logoUrl} alt="" /></span><div><span>上传到</span><strong>{activeStore.name}</strong><small>{activeStore.platform} · 素材仅归属于此店铺</small></div></div>
+              <button type="button" className="material-upload-picker" data-dialog-initial-focus disabled={pendingFiles.length >= 50} onClick={() => uploadInput.current?.click()}><Upload size={18} /><span><strong>{pendingFiles.length ? '继续选择' : '选择图片或视频'}</strong><small>最多 50 个文件</small></span></button>
+            </div>
+            <input ref={uploadInput} className="sr-only" type="file" accept="image/*,video/*" multiple onChange={(event) => addPendingFiles(event.target.files)} />
+            <div className="material-upload-controls">
+              <div className="material-upload-category"><span>素材分类</span><MaterialCategoryDropdown ariaLabel="素材分类" value={uploadCategory} options={storeMaterialCategories.filter((item): item is StoreMaterialCategory => item !== '全部').map((item) => ({ value: item, label: item }))} onChange={(value) => setUploadCategory(value as StoreMaterialCategory)} /></div>
+              <div className="material-upload-category"><span>所属系列</span><MaterialCategoryDropdown ariaLabel="所属系列" value={uploadSeries} options={[{ value: '', label: '请选择系列' }, ...storeMaterialSeries.filter((item): item is StoreMaterialSeries => item !== '全部').map((item) => ({ value: item, label: item }))]} onChange={(value) => setUploadSeries(value as StoreMaterialSeries | '')} /></div>
+            </div>
+            <div className="material-upload-preview-heading"><span>待上传素材 <strong>{pendingFiles.length}</strong> / 50</span><small>{uploadLimitReached ? '已达到单次上传上限，仅保留前 50 个文件。' : '可继续追加选择，也可以移除单个文件。'}</small></div>
+            <div className={`material-upload-preview-grid ${pendingFiles.length ? '' : 'empty'}`}>
+              {pendingPreviews.length ? pendingPreviews.map(({ file, url }, index) => (
+                <article key={`${file.name}-${file.size}-${file.lastModified}`}>
+                  <button type="button" className="material-upload-thumb" aria-label={`放大预览${file.name}`} onClick={() => setPendingPreviewIndex(index)}>{file.type.startsWith('image/') ? <img src={url} alt="" /> : <Play size={24} fill="currentColor" />}</button>
+                  <button type="button" className="material-upload-remove" aria-label={`移除${file.name}`} onClick={() => { setPendingFiles((current) => current.filter((_, fileIndex) => fileIndex !== index)); setPendingPreviewIndex(null); setUploadLimitReached(false) }}><X size={13} /></button>
+                  <strong title={file.name}>{file.name}</strong>
+                  <small>{formatMaterialFileSize(file.size)}</small>
+                </article>
+              )) : <div><ImageIcon size={30} /><strong>尚未选择素材</strong><span>点击上方按钮，可一次选择或继续追加多张图片。</span></div>}
+            </div>
+            <p className="material-upload-note">本次文件将统一归入“{uploadCategory}”{uploadSeries ? `，所属“${uploadSeries}”系列` : '；请选择所属系列'}，上传后可在当前店铺的素材库中搜索和下载。</p>
+            {pendingPreviewIndex !== null && pendingPreviews[pendingPreviewIndex] && <button type="button" className="material-upload-lightbox" aria-label="关闭图片预览" onClick={() => setPendingPreviewIndex(null)}><span>{pendingPreviews[pendingPreviewIndex].file.type.startsWith('image/') ? <img src={pendingPreviews[pendingPreviewIndex].url} alt={pendingPreviews[pendingPreviewIndex].file.name} /> : <span className="material-upload-video-preview"><Play size={52} fill="currentColor" /></span>}<strong>{pendingPreviews[pendingPreviewIndex].file.name}</strong><small>点击任意位置关闭</small></span></button>}
+          </div>
+        </DialogFrame>
+      )}
+      {activeStore && deleteDialogOpen && selectedMaterials.length > 0 && (
+        <DialogFrame
+          title="移入回收站"
+          kicker="MOVE TO RECYCLE BIN"
+          onClose={() => setDeleteDialogOpen(false)}
+          testId="material-delete-dialog"
+          actions={<>
+            <button type="button" className="catalog-asset-cancel" onClick={() => setDeleteDialogOpen(false)}>取消</button>
+            <button type="button" className="material-delete-confirm" onClick={deleteSelectedMaterials}><Trash2 size={14} />移入回收站</button>
+          </>}
+        >
+          <div className="material-delete-dialog"><Trash2 size={24} /><div><strong>确定将已选的 {selectedMaterials.length} 项素材移入回收站？</strong><p>素材会从“{activeStore.name}”移除，并在回收站保留 7 天。</p></div></div>
+        </DialogFrame>
+      )}
+    </div>
+  )
+}
+
 function Products({
   baseUrl,
   modelStatus,
@@ -5125,15 +6172,14 @@ function Products({
     if (!imageGenerationError || imageGenerationBusy || !imageGenerationTarget) return
     window.requestAnimationFrame(() => imageGenerationErrorRef.current?.focus({ preventScroll: true }))
   }, [imageGenerationBusy, imageGenerationError, imageGenerationTarget])
-  if (showAssetLibrary)
-    return (
-      <div className="page-stack" data-testid="asset-workspace">
-        <AssetLibrary
-          baseUrl={baseUrl}
-          initialEntry={initialEntry as Exclude<MerchantEntryPoint, 'products'>}
-        />
-      </div>
-    )
+  if (showAssetLibrary) {
+    const rebuildEntryLabel = initialEntry === 'knowledge' ? '素材库' : initialEntry === 'assets' ? '品牌资产' : initialEntry === 'trash' ? '回收站' : '规则库'
+    return initialEntry === 'knowledge'
+      ? <MaterialLibraryWorkspace />
+      : initialEntry === 'trash'
+        ? <MaterialRecycleBinWorkspace />
+      : <div className="page-stack knowledge-rebuild-blank" data-testid="asset-workspace" aria-label={`${rebuildEntryLabel}空白工作区`} />
+  }
   return (
     <div className="page-stack products-page">
       <section className="page-intro">
@@ -5279,12 +6325,6 @@ function Products({
           <span>3 逐个生成 → 审核 → 发布</span>
         </div>
       </section>
-      {showAssetLibrary && (
-        <AssetLibrary
-          baseUrl={baseUrl}
-          initialEntry={initialEntry as Exclude<MerchantEntryPoint, 'products'>}
-        />
-      )}
       {!baseUrl && (
         <div className="info-notice" role="status">
           <CircleHelp size={16} />
@@ -10951,7 +11991,6 @@ export default function App() {
           navigateTo('products', { entry, clearContext: true })
         }
         activeEntry={activeEntry}
-        target={target}
       />
       <div
         className="app-content"
@@ -10983,14 +12022,6 @@ export default function App() {
             searchQuery={globalSearch}
             onSearchQuery={setGlobalSearch}
             onSearch={searchProducts}
-          />
-          <EnvironmentStatusBanner
-            apiOnline={apiOnline}
-            apiBaseUrl={apiBaseUrl}
-            apiHealth={apiHealth}
-            modelStatus={modelStatus}
-            modelStatusRead={modelStatusRead}
-            onOpenHealth={() => openUtility('health')}
           />
           <main
             ref={mainContentRef}
@@ -11048,20 +12079,24 @@ export default function App() {
                   />
                 )}
                 {page === 'products' && (
-                  <Products
-                    baseUrl={apiBaseUrl}
-                    modelStatus={modelStatus}
-                    modelStatusRead={modelStatusRead}
-                    onRefreshModelStatus={refreshEnvironmentStatus}
-                    initialQuery={globalSearch}
-                    initialEntry={activeEntry}
-                    onSelectTarget={(next) =>
-                      navigateTo('task', { target: next, clearContext: true })
-                    }
-                    onOpenTasks={() =>
-                      navigateTo('task', { clearContext: true })
-                    }
-                  />
+                  activeEntry === 'products' ? (
+                    <StoreCatalogExperience />
+                  ) : (
+                    <Products
+                      baseUrl={apiBaseUrl}
+                      modelStatus={modelStatus}
+                      modelStatusRead={modelStatusRead}
+                      onRefreshModelStatus={refreshEnvironmentStatus}
+                      initialQuery={globalSearch}
+                      initialEntry={activeEntry}
+                      onSelectTarget={(next) =>
+                        navigateTo('task', { target: next, clearContext: true })
+                      }
+                      onOpenTasks={() =>
+                        navigateTo('task', { clearContext: true })
+                      }
+                    />
+                  )
                 )}
                 {page === 'task' && (
                   <TaskWorkspace
