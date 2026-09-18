@@ -22,5 +22,6 @@ describe('Merchant Studio paid wallet projection', () => {
     expect(app).toContain('最近充值')
     expect(app).toContain('到账状态')
     expect(app).toContain('订单号：')
+    expect(app).toContain('latestRecharge?.order_id || latestRecharge?.orderId')
   })
 })

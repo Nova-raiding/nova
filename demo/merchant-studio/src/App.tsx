@@ -2195,7 +2195,7 @@ function Overview({
                 <div><span>最近充值</span><strong>{latestRecharge ? `¥${latestRecharge.amount_cny}` : '暂无记录'}</strong></div>
                 <div><span>到账状态</span><strong>{latestRecharge ? (latestRecharge.description || '充值到账') : '—'}</strong></div>
               </div>
-              {latestRecharge?.order_id ? <small className="wallet-order-id">订单号：{latestRecharge.order_id}</small> : null}
+              {(latestRecharge?.order_id || latestRecharge?.orderId) ? <small className="wallet-order-id">订单号：{latestRecharge.order_id || latestRecharge.orderId}</small> : null}
               <small className="wallet-note wallet-note-blocked" role="status">
                 钱包金额与创意点分别记账；支付到账不等于模型扣费，模型能力只读取创意点账本。
               </small>

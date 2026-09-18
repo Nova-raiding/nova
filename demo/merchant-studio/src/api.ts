@@ -214,8 +214,10 @@ export interface BillingTransaction {
   type: string
   amount_cny: string
   order_id?: string
+  orderId?: string
   description?: string
   created_at?: string
+  createdAt?: string
 }
 
 interface CreativePointBalance {
