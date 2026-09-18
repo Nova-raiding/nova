@@ -381,7 +381,7 @@ flowchart LR
 | Ops Console | 12 个一级域，平台/工作区双工作台 |
 | PostgreSQL / Redis | 本地与候选远端运行就绪；当前发布基线迁移版本 201（以 `release-metadata.json` 为准） |
 | 五模态模型中转 | 本地 relay contract 可解析，但五模态生产配置/成本证据尚未就绪 |
-| 六平台连接器 | 当前为 `fixture_ready`；官方 OAuth/API 未配置 |
+| 六个平台 | 采用 `manual_operations`；商品资料由运营人工上传、审核并分配给商家，不接入平台 OAuth/API |
 | 平台写入 | 关闭 |
 | 支付 | fixture 环境未配置真实 provider |
 | 告警通知 | webhook 未配置 |
@@ -430,9 +430,9 @@ flowchart LR
 
 说明后台尚未取得服务端 `ops.session` 权限投影，或当前工作台与 scope 不匹配。重新登录/连接，确认选择的是平台控制台还是商家工作区。这个状态不会白屏，也不会开放按钮。
 
-### 平台显示 `fixture_ready`
+### 六个平台如何获取商品资料
 
-这只表示本地演示连接器可用于测试，不代表真实店铺已授权。生产必须获得官方 OAuth URL、平台账号范围和 canary 证据。
+本项目不通过六个平台 OAuth/API 自动同步。平台运营人员在运营后台上传公开商品资料、商品图片、SKU 与必要的人工核验信息，选择目标商家后发布；商家只能看到被分配的数据。平台状态显示为 `manual_operations`，数据来源显示为 `manual_upload`，不代表店铺已授权，也不会开放平台自动写入。
 
 ### 平台返回 `NOT_CONFIGURED`
 
