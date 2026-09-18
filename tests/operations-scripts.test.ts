@@ -706,6 +706,7 @@ describe('deployment operation scripts', () => {
       expect(runtimeDockerfile).toContain('COPY --from=build /app/packages ./packages')
       expect(runtimeDockerfile).toContain('mkdir -p node_modules/@merchant-marketing')
       expect(runtimeDockerfile).toContain('ln -sfn "../../$package_dir" "node_modules/$package_name"')
+      expect(runtimeDockerfile).toContain('chmod -R a+rX /app/packages /app/dist')
       expect(runtimeDockerfile.indexOf('COPY --from=build /app/packages ./packages')).toBeLessThan(runtimeDockerfile.indexOf('mkdir -p node_modules/@merchant-marketing'))
     }
     expect(workerDockerfile).toContain('COPY packages/persistence/src/migrations ./dist/packages/persistence/src/migrations')
