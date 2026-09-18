@@ -99,7 +99,10 @@ tar -xf "$stage/.candidate-source.tar" -C "$stage"
 [ -f "$stage/package.json" ] && [ -f "$stage/package-lock.json" ] || { echo 'candidate archive lacks the locked Node workspace' >&2; exit 2; }
 
 # Runtime credentials and server-only configuration stay outside this tree.
-(cd "$stage" && npm ci --ignore-scripts --no-audit --no-fund)
+# Build workspace packages after the locked install so staged source tests and
+# image builds resolve package exports from the candidate itself, while still
+# keeping lifecycle scripts disabled during npm ci.
+(cd "$stage" && npm ci --ignore-scripts --no-audit --no-fund && npm run build)
 cat > "$stage/.candidate-identity" <<EOF
 release_id=$RELEASE_ID
 git_sha=$git_sha
