@@ -77,9 +77,9 @@ function config(overrides: Record<string, boolean> = {}) {
     'approved_requests_per_minute: "100"',
     'approved_tokens_per_minute: "100000"',
     'maximum_task_cost_cny: "0.50"',
-    'platform_rule_sync_manifest_url: https://rules.example.com/platform-rules/v1/manifest.json',
-    'platform_rule_sync_signing_secret_ref: vault://merchant-rules/manifest-signing-secret',
-    'platform_rule_sync_interval_hours: "24"',
+    'platform_rule_sync_manifest_url: disabled',
+    'platform_rule_sync_signing_secret_ref: disabled',
+    'platform_rule_sync_interval_hours: "0"',
     'object_storage_bucket: merchant-assets',
     'object_storage_region: cn',
     'object_storage_endpoint: https://s3.example.com',
@@ -138,6 +138,9 @@ describe('production config gate', () => {
       douyin_read_enabled: true,
       douyin_write_enabled: true,
     }).replace('platform_operations_mode: manual', 'platform_operations_mode: official_api')
+      .replace('platform_rule_sync_manifest_url: disabled', 'platform_rule_sync_manifest_url: https://rules.example.com/platform-rules/v1/manifest.json')
+      .replace('platform_rule_sync_signing_secret_ref: disabled', 'platform_rule_sync_signing_secret_ref: vault://merchant-rules/manifest-signing-secret')
+      .replace('platform_rule_sync_interval_hours: "0"', 'platform_rule_sync_interval_hours: "24"')
     expect(run(official)()).toContain('production config gate passed')
   })
 

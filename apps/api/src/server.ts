@@ -8167,8 +8167,8 @@ type ProductionReadinessGate = { ready: boolean; reasons: string[] }
 
 function productionIdentityReadiness(source: NodeJS.ProcessEnv): ProductionReadinessGate {
   const reasons: string[] = []
-  if (source.OPS_AUTH_MODE !== 'oidc') reasons.push('ops_auth_mode_must_be_oidc')
-  if (!source.OIDC_PROXY_SIGNING_SECRET?.trim()) reasons.push('oidc_proxy_signing_secret_missing')
+  if (!['oidc', 'password'].includes(source.OPS_AUTH_MODE ?? '')) reasons.push('ops_auth_mode_must_be_oidc_or_password')
+  if (source.OPS_AUTH_MODE === 'oidc' && !source.OIDC_PROXY_SIGNING_SECRET?.trim()) reasons.push('oidc_proxy_signing_secret_missing')
   if (!source.SESSION_ID_HASH_SECRET?.trim()) reasons.push('session_id_hash_secret_missing')
   if (!source.OPS_DATABASE_URL?.trim()) reasons.push('canonical_password_identity_store_missing')
   const merchantHostname = source.MERCHANT_BEARER_HOSTNAME?.trim().toLowerCase()
@@ -8281,6 +8281,10 @@ function productionPaymentReadiness(source: NodeJS.ProcessEnv): ProductionReadin
 
 function productionRuleSyncReadiness(source: NodeJS.ProcessEnv): ProductionReadinessGate {
   const reasons: string[] = []
+  if (source.PLATFORM_OPERATIONS_MODE === 'manual') {
+    if (source.PLATFORM_RULE_SYNC_MANIFEST_URL?.trim() || source.PLATFORM_RULE_SYNC_SIGNING_SECRET?.trim()) reasons.push('manual_platform_rules_must_not_enable_remote_sync')
+    return { ready: reasons.length === 0, reasons }
+  }
   const manifestUrl = source.PLATFORM_RULE_SYNC_MANIFEST_URL?.trim()
   if (!manifestUrl) reasons.push('platform_rule_sync_manifest_url_missing')
   else {

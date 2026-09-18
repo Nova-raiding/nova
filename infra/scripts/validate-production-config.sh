@@ -76,8 +76,8 @@ if grep -Eq '^[[:space:]]*merchant_bearer_hostname:[[:space:]]*"?[^[:space:]]*\*
   echo 'merchant_bearer_hostname must not be a wildcard' >&2
   exit 1
 fi
-if ! grep -Eq '^[[:space:]]*OPS_AUTH_MODE:[[:space:]]*oidc([[:space:]]*)$' "$config_path" && ! grep -Eq '^[[:space:]]*auth_mode:[[:space:]]*"?oidc_gateway_hmac"?([[:space:]]*)$' "$config_path"; then
-  echo 'production ops console must use OIDC gateway authentication' >&2
+if ! grep -Eq '^[[:space:]]*OPS_AUTH_MODE:[[:space:]]*(oidc|password)([[:space:]]*)$' "$config_path" && ! grep -Eq '^[[:space:]]*auth_mode:[[:space:]]*"?oidc_gateway_hmac"?([[:space:]]*)$' "$config_path"; then
+  echo 'production ops console must use OIDC gateway or Store Nova password authentication' >&2
   exit 1
 fi
 platform_operations_mode=$(sed -nE 's/^[[:space:]]*platform_operations_mode:[[:space:]]*"?([a-z_]+)"?[[:space:]]*$/\1/p' "$config_path" | tail -1)
@@ -238,9 +238,15 @@ fi
 grep -Eq 'approved_requests_per_minute:[[:space:]]*"?[1-9][0-9]*\"?$' "$config_path" || { echo 'approved_requests_per_minute must be a positive approved limit' >&2; exit 1; }
 grep -Eq 'approved_tokens_per_minute:[[:space:]]*"?[1-9][0-9]*\"?$' "$config_path" || { echo 'approved_tokens_per_minute must be a positive approved limit' >&2; exit 1; }
 grep -Eq 'maximum_task_cost_cny:[[:space:]]*"?([1-9][0-9]*(\.[0-9]{1,2})?|0\.(0[1-9]|[1-9][0-9]?))\"?$' "$config_path" || { echo 'maximum_task_cost_cny must be a positive CNY amount with at most two decimals' >&2; exit 1; }
-grep -Eq 'platform_rule_sync_manifest_url:[[:space:]]*"?https://' "$config_path" || { echo 'platform rule sync manifest URL must be HTTPS' >&2; exit 1; }
-grep -Eq "platform_rule_sync_signing_secret_ref:[[:space:]]*[^\"' ]+" "$config_path" || { echo 'platform rule sync signing secret ref must be configured' >&2; exit 1; }
-grep -Eq 'platform_rule_sync_interval_hours:[[:space:]]*"?[1-9][0-9]*\"?$' "$config_path" || { echo 'platform rule sync interval must be a positive number of hours' >&2; exit 1; }
+if [ "$platform_operations_mode" = manual ]; then
+  grep -Eq 'platform_rule_sync_manifest_url:[[:space:]]*"?disabled"?[[:space:]]*$' "$config_path" || { echo 'manual platform operations must disable remote rule sync' >&2; exit 1; }
+  grep -Eq 'platform_rule_sync_signing_secret_ref:[[:space:]]*"?disabled"?[[:space:]]*$' "$config_path" || { echo 'manual platform operations must not claim a rule sync signing secret' >&2; exit 1; }
+  grep -Eq 'platform_rule_sync_interval_hours:[[:space:]]*"?0"?[[:space:]]*$' "$config_path" || { echo 'manual platform operations rule sync interval must be zero' >&2; exit 1; }
+else
+  grep -Eq 'platform_rule_sync_manifest_url:[[:space:]]*"?https://' "$config_path" || { echo 'platform rule sync manifest URL must be HTTPS' >&2; exit 1; }
+  grep -Eq "platform_rule_sync_signing_secret_ref:[[:space:]]*[^\"' ]+" "$config_path" || { echo 'platform rule sync signing secret ref must be configured' >&2; exit 1; }
+  grep -Eq 'platform_rule_sync_interval_hours:[[:space:]]*"?[1-9][0-9]*\"?$' "$config_path" || { echo 'platform rule sync interval must be a positive number of hours' >&2; exit 1; }
+fi
 for storage_field in object_storage_bucket object_storage_region object_storage_endpoint; do
   grep -Eq "${storage_field}:[[:space:]]*\"?[^\"[:space:]]+\"?$" "$config_path" || { echo "${storage_field} must be configured" >&2; exit 1; }
 done
