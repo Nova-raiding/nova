@@ -146,6 +146,14 @@ describe('central commercial access gate', () => {
     expect(source).toContain("process.env.NODE_ENV === 'development' && process.env.CONNECTOR_FIXTURE_MODE === 'true' && process.env.MERCHANT_TEST_APPROVED_RATES === 'true'")
   })
 
+  it('labels explicit manual platform operations as manual upload instead of fixture-ready', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    expect(source).toContain("const manualPlatformOperationsMode = process.env.PLATFORM_OPERATIONS_MODE?.trim().toLowerCase() === 'manual'")
+    expect(source).toContain("'manual_operations'")
+    expect(source).toContain("dataMode: manual ? 'manual_upload'")
+    expect(source).toContain("['manual_upload_required']")
+  })
+
   it('keeps V2 order recovery server-owned and leaves legacy arbitrary recharge disabled', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     expect(source).toContain("case 'commercial.order.create':")

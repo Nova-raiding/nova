@@ -143,6 +143,7 @@ const port = Number(process.env.PORT ?? 8787)
 const uploadSessions = new UploadSessionManager()
 
 const fixtureMode = process.env.CONNECTOR_FIXTURE_MODE === 'true'
+const manualPlatformOperationsMode = process.env.PLATFORM_OPERATIONS_MODE?.trim().toLowerCase() === 'manual'
 const fixtureCommercialTestMode = fixtureMode && process.env.MERCHANT_TEST_APPROVED_RATES === 'true'
 const testCommercialFixtureMode = process.env.VITEST === 'true' || process.env.VITEST_WORKER_ID !== undefined || process.argv.some(argument => /(?:^|[/\\])vitest(?:[/\\]|$)/u.test(argument))
 let testCommercialFixtureHarnessEnabled = false
@@ -7904,8 +7905,12 @@ function fixturePlatformEnabled(_platform: Platform) {
   return fixtureMode
 }
 
+function manualPlatformEnabled(_platform: Platform) {
+  return manualPlatformOperationsMode && !fixtureMode
+}
+
 function platformConnectorConfigured(platform: Platform) {
-  return fixturePlatformEnabled(platform) || connectorRuntime.canRead(platform)
+  return fixturePlatformEnabled(platform) || (!manualPlatformEnabled(platform) && connectorRuntime.canRead(platform))
 }
 
 function platformAuthorizationConfigured(platform: Platform) {
@@ -8527,12 +8532,12 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
   const platformDiagnostics = Object.fromEntries(SUPPORTED_PLATFORMS.map(platform => {
     const readiness = connectorRuntime.readiness[platform]
     return [platform, {
-      mode: fixturePlatformEnabled(platform) ? 'fixture' : connectorRuntime.isHttpConfigured(platform) ? 'official_api' : connectorRuntime.isOAuthConfigured(platform) ? 'oauth_only' : 'not_configured',
+      mode: manualPlatformEnabled(platform) ? 'manual_operations' : fixturePlatformEnabled(platform) ? 'fixture' : connectorRuntime.isHttpConfigured(platform) ? 'official_api' : connectorRuntime.isOAuthConfigured(platform) ? 'oauth_only' : 'not_configured',
       oauthConfigured: connectorRuntime.isOAuthConfigured(platform),
       httpConfigured: connectorRuntime.isHttpConfigured(platform),
       credentialProviderConfigured: vaultConfigured,
-      ready: fixturePlatformEnabled(platform) || connectorRuntime.canRead(platform),
-      reasons: fixturePlatformEnabled(platform) ? [] : readiness.reasons,
+      ready: manualPlatformEnabled(platform) || fixturePlatformEnabled(platform) || connectorRuntime.canRead(platform),
+      reasons: manualPlatformEnabled(platform) ? ['manual_upload_required'] : fixturePlatformEnabled(platform) ? [] : readiness.reasons,
     }]
   }))
   const nextActions: string[] = []
@@ -8676,6 +8681,7 @@ function runtimeHealth() {
       setup: setupDiagnostics(),
     connectors: {
       ...base.connectors,
+      ...(manualPlatformOperationsMode ? Object.fromEntries(SUPPORTED_PLATFORMS.map(platform => [platform, 'manual_operations'])) : {}),
       jd: connectorRuntime.isOAuthConfigured('jd') ? 'configured_provider_required' : base.connectors.jd,
       taobao: connectorRuntime.isOAuthConfigured('taobao') ? 'configured_provider_required' : base.connectors.taobao,
       tmall: connectorRuntime.isOAuthConfigured('tmall') ? 'configured_provider_required' : base.connectors.tmall,
@@ -8697,7 +8703,10 @@ function workspacePlatformStatus(workspaceId: string) {
         : connectorRuntime.isOAuthConfigured(platform)
           ? 'oauth_configured'
           : 'not_configured'
-    const state = fixture
+    const manual = manualPlatformEnabled(platform)
+    const state = manual
+      ? 'manual_operations'
+      : fixture
       ? 'fixture_ready'
       : accounts.length === 0
         ? configuredState
@@ -8721,7 +8730,7 @@ function workspacePlatformStatus(workspaceId: string) {
       connectedAccountCount,
       // Platform readiness is a six-row summary. Store identities and mixed
       // account states remain available through storeDirectory.
-      dataMode: fixture ? 'fixture' : accounts.length === 0 ? 'unavailable' : officialReadCount === accounts.length ? 'official_api' : officialReadCount > 0 ? 'mixed' : 'account_record_only',
+      dataMode: manual ? 'manual_upload' : fixture ? 'fixture' : accounts.length === 0 ? 'unavailable' : officialReadCount === accounts.length ? 'official_api' : officialReadCount > 0 ? 'mixed' : 'account_record_only',
       simulated: fixture,
       readEnabled,
       writeEnabled,
@@ -8824,7 +8833,7 @@ function platformAccountAccessItems(workspaceId: string, platformFilter?: Platfo
       const rows = accounts.length ? accounts : [undefined]
       return rows.map(account => {
         if (account) return { ...directory.get(`${platform}:${account.id}`), ...platformAccessFlags(platform, account), readiness: workspaceConnectorReadiness(platform) }
-        return { platform, state: fixturePlatformEnabled(platform) ? 'fixture_ready' : connectorRuntime.isOAuthConfigured(platform) && !connectorRuntime.credentialProviderConfigured ? 'configured_provider_required' : connectorRuntime.isHttpConfigured(platform) ? 'configured' : connectorRuntime.isOAuthConfigured(platform) ? 'oauth_configured' : 'not_configured', ...platformAccessFlags(platform, account), readiness: workspaceConnectorReadiness(platform) }
+        return { platform, state: manualPlatformEnabled(platform) ? 'manual_operations' : fixturePlatformEnabled(platform) ? 'fixture_ready' : connectorRuntime.isOAuthConfigured(platform) && !connectorRuntime.credentialProviderConfigured ? 'configured_provider_required' : connectorRuntime.isHttpConfigured(platform) ? 'configured' : connectorRuntime.isOAuthConfigured(platform) ? 'oauth_configured' : 'not_configured', dataMode: manualPlatformEnabled(platform) ? 'manual_upload' : undefined, ...platformAccessFlags(platform, account), readiness: workspaceConnectorReadiness(platform) }
       })
     })
 }
