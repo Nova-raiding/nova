@@ -16,6 +16,8 @@ describe('production model relay contract', () => {
     httpStatus: 200,
     providerRequestId: `req-${modality}`,
     usageObserved: true,
+    usage: modality === 'text' || modality === 'ocr' ? { totalTokens: 1 } : modality === 'video' ? { durationSeconds: 5 } : { billingUnits: 1 },
+    usageProviderRequestId: `req-${modality}`,
     costObserved: true,
     costSource: 'provider_receipt' as const,
     costCny: 0.01,
@@ -33,10 +35,10 @@ describe('production model relay contract', () => {
   it('keeps fixed-price image usage separate from a provider cost receipt', async () => {
     await expect(evaluateRelayUsageEvidence(
       { data: [{ url: 'https://cdn.example/image.png' }], cost_cny: 0.02 },
-      new Headers(),
+      new Headers({ 'x-request-id': 'req-image' }),
       'image',
       'image-v1',
-    )).resolves.toEqual({ usageObserved: true, costObserved: true, costSource: 'provider_receipt', costCny: 0.02 })
+    )).resolves.toEqual({ usageObserved: true, usage: { billingUnits: 1 }, usageProviderRequestId: 'req-image', costObserved: true, costSource: 'provider_receipt', costCny: 0.02 })
   })
 
   it('uses the bounded request unit as fixed-price image usage evidence', async () => {
@@ -47,11 +49,11 @@ describe('production model relay contract', () => {
     } }) }
     await expect(evaluateRelayUsageEvidence(
       { data: [{ url: 'https://cdn.example/image.png' }] },
-      new Headers(),
+      new Headers({ 'x-request-id': 'req-image' }),
       'image',
       'image-v1',
       { pricing },
-    )).resolves.toEqual({ usageObserved: true, costObserved: true, costSource: 'relay_pricing_snapshot', costCny: 0.12, pricingVersion: 'pricing-v1', pricingGroup: 'VIP' })
+    )).resolves.toEqual({ usageObserved: true, usage: { billingUnits: 1 }, usageProviderRequestId: 'req-image', costObserved: true, costSource: 'relay_pricing_snapshot', costCny: 0.12, pricingVersion: 'pricing-v1', pricingGroup: 'VIP' })
   })
 
   it('requires a numeric non-negative provider cost receipt', async () => {
@@ -122,6 +124,8 @@ describe('production model relay contract', () => {
     modality => {
       expect(finalizeSuccessfulProbe({ ...completeProbe(modality), providerRequestId: undefined })).toMatchObject({ state: 'blocked', detail: 'provider_request_id_missing' })
       expect(finalizeSuccessfulProbe({ ...completeProbe(modality), usageObserved: false })).toMatchObject({ state: 'blocked', detail: 'usage_evidence_missing' })
+      expect(finalizeSuccessfulProbe({ ...completeProbe(modality), usage: undefined })).toMatchObject({ state: 'blocked', detail: 'numeric_usage_evidence_missing' })
+      expect(finalizeSuccessfulProbe({ ...completeProbe(modality), usageProviderRequestId: 'different-request' })).toMatchObject({ state: 'blocked', detail: 'usage_request_id_mismatch' })
       expect(finalizeSuccessfulProbe({ ...completeProbe(modality), costObserved: false, costCny: undefined })).toMatchObject({ state: 'blocked', detail: 'cost_evidence_missing' })
     },
   )
@@ -137,6 +141,16 @@ describe('production model relay contract', () => {
       'video',
       'video-v1',
     )).resolves.toEqual({ usageObserved: true, costObserved: false })
+  })
+
+  it('does not treat requested video duration as observed provider usage', async () => {
+    await expect(evaluateRelayUsageEvidence(
+      { data: { request_id: 'req-video', task_id: 'job-video', status: 'completed', result_url: 'https://cdn.example/video.mp4' }, cost_cny: 0.02 },
+      new Headers(),
+      'video',
+      'video-v1',
+      { durationSeconds: 5 },
+    )).resolves.toEqual({ usageObserved: false, costObserved: true, costSource: 'provider_receipt', costCny: 0.02 })
   })
 
   it('reads usage from the API envelope result without requiring real relay configuration', async () => {

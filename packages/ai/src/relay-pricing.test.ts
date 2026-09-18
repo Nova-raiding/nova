@@ -41,10 +41,10 @@ describe('RelayPricingClient', () => {
     await expect(value.quote({ modality: 'ocr', model: 'deepseek-v4-pro', inputTokens: 1, outputTokens: 1, observedAt: new Date().toISOString() })).rejects.toMatchObject({ code: 'MODEL_PRICING_GROUP_UNAVAILABLE' })
   })
 
-  it('derives duration-priced video cost from request-side duration evidence', async () => {
+  it('derives duration-priced video cost only from provider duration evidence', async () => {
     const { fetch } = client()
     const value = new RelayPricingClient({ baseUrl: 'https://relay.example/v1', apiKey: 'secret', group: 'VIP', fetch })
-    await expect(value.quote({ modality: 'video', model: 'agnes-video-v2.0', observedAt: new Date().toISOString(), metadata: { duration_seconds: 5 } })).resolves.toMatchObject({
+    await expect(value.quote({ modality: 'video', model: 'agnes-video-v2.0', observedAt: new Date().toISOString(), metadata: { duration_seconds: 5, duration_evidence: 'provider_usage' } })).resolves.toMatchObject({
       costCny: 544.265625,
       metadata: { pricing_group: 'VIP', raw_quota: 39_843_750, formula_version: 'new-api-quota-v1' },
     })
@@ -62,7 +62,7 @@ describe('RelayPricingClient', () => {
       videoPriceCnyPerSecond: { 'happyhorse-1.1-t2v': 0.4508 },
       fetch,
     })
-    await expect(value.quote({ modality: 'video', model: 'happyhorse-1.1-t2v', observedAt: new Date().toISOString(), metadata: { duration_seconds: 5 } })).resolves.toMatchObject({
+    await expect(value.quote({ modality: 'video', model: 'happyhorse-1.1-t2v', observedAt: new Date().toISOString(), metadata: { duration_seconds: 5, duration_evidence: 'provider_usage' } })).resolves.toMatchObject({
       costCny: 2.254,
       metadata: { pricing_group: 'SVIP', video_price_cny_per_second: 0.4508, formula_version: 'relay-video-cny-per-second-v1' },
     })
@@ -100,9 +100,16 @@ it('uses explicit resolution pricing instead of an overflowing fallback or stale
   const payload = { ...pricing, data: [{ model_name: 'video-i2v', quota_type: 1, model_ratio: 37.5, model_price: 0, completion_ratio: 1, enable_groups: ['SVIP'], billing_mode: 'per_duration', duration_pricing: { fallback_price: 90000000, size_prices: { '1080P': 0.176 } } }] }
   const { fetch } = client(payload)
   const value = new RelayPricingClient({ baseUrl: 'https://relay.example/v1', apiKey: 'secret', group: 'SVIP', videoPriceCnyPerSecond: { 'video-i2v': 0.4508 }, fetch })
-  const usage = { modality: 'video' as const, model: 'video-i2v', observedAt: new Date().toISOString(), metadata: { duration_seconds: 5, resolution: '1080P' } }
+  const usage = { modality: 'video' as const, model: 'video-i2v', observedAt: new Date().toISOString(), metadata: { duration_seconds: 5, duration_evidence: 'provider_usage', resolution: '1080P' } }
   const quote = await value.quote(usage)
   expect(quote).toMatchObject({ costCny: 3.0052, metadata: { rounded_quota: 220000, formula_version: 'relay-video-resolution-v1' } })
   expect(quote.metadata.video_price_cny_per_second).toBeUndefined()
-  await expect(value.quote({ ...usage, metadata: { duration_seconds: 5 } })).rejects.toMatchObject({ code: 'MODEL_PRICING_RESOLUTION_REQUIRED' })
+  await expect(value.quote({ ...usage, metadata: { duration_seconds: 5, duration_evidence: 'provider_usage' } })).rejects.toMatchObject({ code: 'MODEL_PRICING_RESOLUTION_REQUIRED' })
+})
+
+it('rejects requested duration and untrusted duration fields as settlement evidence', async () => {
+  const { fetch } = client()
+  const value = new RelayPricingClient({ baseUrl: 'https://relay.example/v1', apiKey: 'secret', group: 'VIP', fetch })
+  await expect(value.quote({ modality: 'video', model: 'agnes-video-v2.0', observedAt: new Date().toISOString(), metadata: { preauthorization_duration_seconds: 5, preauthorization_estimate: true } })).rejects.toMatchObject({ code: 'MODEL_PRICING_DURATION_EVIDENCE_MISSING' })
+  await expect(value.quote({ modality: 'video', model: 'agnes-video-v2.0', observedAt: new Date().toISOString(), metadata: { duration_seconds: 5 } })).rejects.toMatchObject({ code: 'MODEL_PRICING_DURATION_EVIDENCE_MISSING' })
 })

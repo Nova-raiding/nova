@@ -41,7 +41,8 @@ RUN mkdir -p node_modules/@merchant-marketing \
          @merchant-marketing/*) \
            ln -sfn "../../$package_dir" "node_modules/$package_name" ;; \
        esac; \
-     done
+     done \
+  && chmod -R a+rX /app/packages /app/dist
 COPY --from=build /app/.release-source/worker.manifest /app/.release-source/worker.manifest
 COPY --from=build /app/.release-source/worker.manifest.sha256 /app/.release-source/worker.manifest.sha256
 USER 10001:10001

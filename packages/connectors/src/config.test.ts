@@ -1,8 +1,10 @@
 import { generateKeyPairSync, sign } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildHttpConnectorConfigs, buildHttpConnectorConfigsFromStructured } from './config.js'
+import { validateConnectorAuthorizationReadiness } from './readiness.js'
 
 const base = {
+  JD_AUTH_ENABLED: 'true', JD_READ_ENABLED: 'true', JD_WRITE_ENABLED: 'true',
   JD_APP_KEY: 'jd-app', JD_OAUTH_AUTHORIZE_URL: 'https://jd.test/authorize', JD_OAUTH_TOKEN_URL: 'https://jd.test/token', JD_API_BASE_URL: 'https://jd.test/api',
   TAOBAO_APP_KEY: 'taobao-app', TAOBAO_OAUTH_AUTHORIZE_URL: 'https://taobao.test/authorize', TAOBAO_OAUTH_TOKEN_URL: 'https://taobao.test/token', TAOBAO_API_BASE_URL: 'https://taobao.test/api',
   TMALL_APP_KEY: 'tmall-app', TMALL_OAUTH_AUTHORIZE_URL: 'https://tmall.test/authorize', TMALL_OAUTH_TOKEN_URL: 'https://tmall.test/token', TMALL_API_BASE_URL: 'https://tmall.test/api',
@@ -35,9 +37,36 @@ describe('platform HTTP configuration', () => {
     expect(result.configs.jd).toBeUndefined()
   })
 
+  it('consumes JD operation switches and fails closed when they are absent or malformed', () => {
+    for (const source of [
+      { ...base, JD_AUTH_ENABLED: undefined },
+      { ...base, JD_AUTH_ENABLED: 'enabled' },
+      { ...base, JD_AUTH_ENABLED: 'false' },
+    ]) {
+      const result = buildHttpConnectorConfigs(source)
+      expect(result.allConfigs.jd).toBeUndefined()
+      expect(result.configs.jd).toBeUndefined()
+      expect(result.missing.jd).toContain('JD_AUTH_ENABLED=true')
+      expect(result.readiness.jd.reasons).toContain('CONFIG_MISSING')
+    }
+  })
+
+  it('keeps OAuth diagnostic config but denies connector admission when JD read or write is disabled', () => {
+    const readDisabled = buildHttpConnectorConfigs({ ...base, JD_READ_ENABLED: 'false' })
+    expect(readDisabled.allConfigs.jd).toBeDefined()
+    expect(readDisabled.configs.jd).toBeUndefined()
+    expect(readDisabled.readiness.jd.reasons).toContain('READ_DISABLED')
+    expect(validateConnectorAuthorizationReadiness('jd', readDisabled.allConfigs.jd).ready).toBe(true)
+
+    const writeDisabled = buildHttpConnectorConfigs({ ...base, JD_WRITE_ENABLED: 'not-a-boolean' })
+    expect(writeDisabled.allConfigs.jd).toBeDefined()
+    expect(writeDisabled.configs.jd).toBeUndefined()
+    expect(writeDisabled.readiness.jd.reasons).toContain('WRITE_DISABLED')
+  })
+
   it('loads release-bound production capability evidence into runtime readiness', () => {
     const verifiedAt = new Date(Date.now() - 60_000).toISOString()
-    const capabilities = Object.fromEntries(['authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'].map(capability => [capability, {
+    const capabilities = Object.fromEntries(['authorize', 'refresh', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'].map(capability => [capability, {
       state: 'production_canary', evidence_ref: `artifact://production/jd/${capability}#${'a'.repeat(64)}`, verified_by: 'platform-qa', verified_at: verifiedAt, api_version: 'v1', scope: 'item.read',
     }]))
     const source = {
@@ -51,7 +80,7 @@ describe('platform HTTP configuration', () => {
     const document: Record<string, unknown> = { schema_version: '1', release_id: 'release-1', release_git_sha: source.RELEASE_GIT_SHA, manifest_sha256: source.RELEASE_MANIFEST_SHA256, image_set_digest: source.RELEASE_IMAGE_SET_DIGEST, deployment_nonce: 'deployment_nonce_abcdefghijklmnop', key_id: 'release-key', environment: 'production', simulated: false, platforms: [{ platform: 'jd', application_id: 'jd-app', test_store_id: 'jd-store', capabilities }] }
     document.signature_base64 = sign(null, Buffer.from(canonical(document)), privateKey).toString('base64')
     const result = buildHttpConnectorConfigs(source, { capabilityEvidenceTrust: { documentJson: JSON.stringify(document), publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString(), trustedKeyId: 'release-key' } })
-    expect(result.allConfigs.jd?.capabilityEvidence).toHaveLength(9)
+    expect(result.allConfigs.jd?.capabilityEvidence).toHaveLength(10)
     expect(result.readiness.jd.reasons).not.toContain('CAPABILITY_EVIDENCE_MISSING')
     expect(result.readiness.jd.reasons).not.toContain('MEDIA_UPLOAD_MAPPING_MISSING')
   })
@@ -160,7 +189,7 @@ describe('platform HTTP configuration', () => {
   })
 
   it('does not create a partial connector config', () => {
-    const result = buildHttpConnectorConfigs({ JD_APP_KEY: 'jd-only' })
+    const result = buildHttpConnectorConfigs({ JD_AUTH_ENABLED: 'true', JD_READ_ENABLED: 'true', JD_WRITE_ENABLED: 'true', JD_APP_KEY: 'jd-only' })
     expect(result.configs.jd).toBeUndefined()
     expect(result.missing.jd).toEqual(expect.arrayContaining(['JD_OAUTH_AUTHORIZE_URL', 'JD_OAUTH_TOKEN_URL', 'JD_API_BASE_URL']))
   })

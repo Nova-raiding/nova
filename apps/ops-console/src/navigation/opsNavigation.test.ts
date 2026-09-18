@@ -28,6 +28,16 @@ describe("operations navigation", () => {
     expect(urlForDomain({ pathname, search: "" }, "overview")).toBe(expected);
   });
 
+  it.each([
+    ["/ops/workspaces", "/ops/overview"],
+    ["/ops/workspaces/", "/ops/overview"],
+    ["/console/ops/workspaces", "/console/ops/overview"],
+  ])("canonicalizes the unknown Ops deep link %s without duplicating the Ops path", (pathname, expected) => {
+    expect(domainFromLocation({ pathname, hash: "" })).toBe("overview");
+    expect(urlForDomain({ pathname, search: "?return=desktop" }, "overview"))
+      .toBe(`${expected}?return=desktop`);
+  });
+
   it.each(opsDomains)("keeps the legacy #%s bookmark compatible", (domain) => {
     expect(domainFromLocation({ pathname: "/", hash: `#${domain}` })).toBe(domain);
   });
@@ -68,7 +78,7 @@ describe("operations navigation", () => {
   it("keeps support role navigation bounded while preserving incident response", () => {
     const support = authorization(["platform.summary.read", "support.ticket.read", "incident.read", "audit.read"]);
     expect(visibleOpsDomains(support)).toEqual(["overview", "audit"]);
-    expect(opsDomains).not.toContain("finance");
+    expect(opsDomains).toContain("finance");
   });
 
   it("lets platform operations reach every domain and local owner mode stay compatible", () => {
@@ -86,9 +96,10 @@ describe("operations navigation", () => {
     expect(visible).not.toContain("feature-flags");
   });
 
-  it("does not expose finance as a routable frontend domain", () => {
-    expect(domainFromLocation({ pathname: "/ops/finance", hash: "" })).toBe("overview");
-    expect(domainFromLocation({ pathname: "/", hash: "#finance" })).toBe("overview");
+  it("keeps platform finance as a first-class, platform-only route", () => {
+    expect(domainFromLocation({ pathname: "/ops/finance", hash: "" })).toBe("finance");
+    expect(domainFromLocation({ pathname: "/", hash: "#finance" })).toBe("finance");
+    expect(requiredWorkbenchForDomain("finance")).toBe("platform");
   });
 
   it("keeps remaining Ops Console routes in their intended workbench", () => {

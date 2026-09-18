@@ -6,6 +6,12 @@ ENV NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY
 RUN --mount=type=cache,id=merchant-npm-cache,target=/root/.npm,sharing=locked \
   npm ci --prefer-offline --no-audit --fund=false
 COPY demo/merchant-studio ./
+# Product spreadsheet import reuses the browser-safe parsing helpers from the
+# workspace application package. Keep the package outside the demo app's npm
+# project, matching the source import path, and expose the app dependencies to
+# its resolver without copying the rest of the monorepo into the image.
+COPY packages/application/src/spreadsheet-batch.ts /packages/application/src/spreadsheet-batch.ts
+RUN ln -s /app/node_modules /packages/node_modules
 ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ARG VITE_WORKSPACE_ID

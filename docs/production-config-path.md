@@ -10,8 +10,29 @@ blocked draft, not real production configuration. Replace it with the real
 rendered configuration following `doc/todo/infra/production-config.example.yaml`.
 Never commit credentials. Production checks do not load the developer `.env`.
 
+For a new environment, begin with
+`infra/config/production.blocked.example.yaml`. It declares every required
+production key exactly once, sets every unresolved value to YAML `null`, and
+uses the explicit `BLOCKED_UNTIL_REQUIRED_PRODUCTION_INPUTS` status. This avoids
+an ambiguous, partial draft whose first error is a missing key while remaining
+strictly fail-closed until each real value or managed-secret reference is
+provided. Do not remove keys to represent unavailable configuration and do not
+replace Secret references with fabricated values.
+
 A configured locator does not establish production readiness. Configuration
 validation, release evidence, runtime checks and launch preflight must all pass.
+The current release profile must explicitly set
+`PLATFORM_OPERATIONS_MODE=manual`. In this mode the six commerce-platform OAuth,
+Vault credential and connector-canary inputs are not launch prerequisites;
+official connector writes remain disabled. `official_api` is a separate future
+profile and retains those strict requirements. ChatGPT/MCP host authentication
+is independent and remains required by the selected MCP integration mode.
+The workstation launch command (`npm run infra:launch-preflight`) now enters the
+ECS Compose preflight in `infra/scripts/deploy-preflight-ecs.sh`. It requires the
+rendered Compose release, exact image digests, a clean Git worktree, current
+migration version, protected evidence trust anchor and release-bound production
+evidence. The separate Kubernetes manifest preflight remains for legacy
+Kubernetes deployment scripts and is not the ECS launch gate.
 
 ## Server-side preparation
 
@@ -21,6 +42,20 @@ It reads the required-key contract from `validate-production-config.sh`, never
 exports raw credentials or invents secret-store references, and exits 2 when
 inputs remain missing or unresolved. Existing output files are not overwritten.
 Its successful preparation exit code does not indicate release readiness.
+Running it against an empty environment file is the supported generation path
+for a fresh blocked skeleton; it writes the same complete key set as
+`infra/config/production.blocked.example.yaml` and exits 2 by design:
+
+```sh
+empty_env=$(mktemp)
+node infra/scripts/render-production-config-from-env.mjs \
+  "$empty_env" /private/deploy/production.yaml \
+  infra/scripts/validate-production-config.sh
+```
+
+The output file is created mode 600. Review it privately, populate real values
+through the deployment system, and rerun validation. Do not treat exit 2 or the
+presence of all keys as production readiness.
 
 Known deployment aliases `MCP_AUTHZ_MODE`,
 `AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED` and `PUBLIC_APP_BASE_URL` are accepted;
@@ -53,10 +88,17 @@ The configuration remains
 blocked until real secret references, auth/platform declarations, PITR/pooler,
 approved limits and release inputs are supplied.
 
-The server host currently lacks Ruby. The actual launch entrypoint was also
+The server host currently lacks Node.js/npm/npx, Ruby, Git, psql and shasum;
+only the Docker CLI was found in the release tool inventory. A real ECS launch
+must run from a reviewed checkout with the required host toolchain and
+`npm ci`-installed local `tsx`. The preflight checks these commands explicitly
+and never lets `npx` download a replacement dependency. Until the toolchain is
+provisioned, the launch remains blocked; container health does not satisfy this
+release-host requirement. The actual launch entrypoint was also
 executed inside the pinned Ruby validation container
 `ruby@sha256:2f763b37070564bb00b736f1d4dba6e8f8d203b5f93b94463879fd8d79966f28`
 with network disabled and the project mounted read-only. It read the persisted
 locator and exited 1 on the unresolved configuration marker, before any
-operations/deployment action. The host entrypoint exits 127 for missing Ruby;
-a supported full preflight runtime is still required before launch.
+operations/deployment action. The host entrypoint may still stop during the
+configuration validator while Ruby is absent; the release toolchain check is
+reached after configuration validation and before any operations action.

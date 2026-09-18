@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { loadMigrations, MigrationRunner } from '../packages/persistence/src/migration.js'
 
 const databaseUrlValue = process.env.PERSISTENCE_RELEASE_DATABASE_URL
-const postgresIt = databaseUrlValue ? it : it.skip
+if (!databaseUrlValue) throw new Error('PERSISTENCE_RELEASE_DATABASE_URL_REQUIRED')
 
 const databaseConnection = (base: URL, database: string, user?: string, password?: string) => {
   const url = new URL(base)
@@ -23,8 +23,8 @@ const scopedReadTables = [
 ] as const
 
 describe('PostgreSQL RLS cross-scope attack matrix', () => {
-  postgresIt('keeps workspace, brand, account, canonical, and listing rows tenant isolated', async () => {
-    const base = new URL(databaseUrlValue!)
+  it('keeps workspace, brand, account, canonical, and listing rows tenant isolated', async () => {
+    const base = new URL(databaseUrlValue)
     const databaseName = `probe_rls_matrix_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
@@ -114,7 +114,6 @@ describe('PostgreSQL RLS cross-scope attack matrix', () => {
     } finally {
       await app?.end()
       await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
       await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
       await admin.end()
     }

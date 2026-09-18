@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
@@ -18,6 +18,8 @@ const inheritedRuntimeEnv = [
   'MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES',
   'MERCHANT_WORKSPACE_ID',
   'MERCHANT_MCP_TOKEN',
+  'MERCHANT_MCP_REFRESH_TOKEN',
+  'MERCHANT_MCP_TOKEN_SOURCE',
   'MERCHANT_STRICT_AUTH',
   'MERCHANT_ALLOW_FIXTURE_FALLBACK',
   'MERCHANT_MCP_WRITE_ENABLED',
@@ -38,9 +40,9 @@ describe('Codex plugin installation package', () => {
     expect(manifest.skills).toBe('./skills/')
     expect(manifest.mcpServers).toBe('./.mcp.json')
     expect(manifest.interface.defaultPrompt).toEqual([
-      '如果我已上传图片并要求生成或优化，直接使用上传素材生成未绑定候选图，不要先读取店铺或要求授权；只有同步、绑定商品或发布时才进入店铺流程',
-      '查看当前工作区的创意点余额和准入状态；余额为零或未知时只显示服务端授权的恢复入口',
-      '开始商品营销与视频策划：先让我选择一个平台和商品，然后每一步都等我确认',
+      '@Store Nova 开始使用：从公开商品链接或手工资料开始，带我完成内容生产、审核和导出',
+      '用我上传的商品图片做一张可审阅主图；还没有图片就先告诉我怎么上传',
+      '为我的商品策划第一份营销素材，先核对我提供的商品资料',
     ])
     expect(manifest.interface.defaultPrompt).toHaveLength(3)
     expect(manifest.entry_skill).toBeUndefined()
@@ -75,6 +77,32 @@ describe('Codex plugin installation package', () => {
     expect(existsSync(resolve(root, 'mcp/bridge.mjs'))).toBe(true)
     expect(existsSync(resolve(root, 'mcp/bridge.sh'))).toBe(true)
     expect(readFileSync(resolve(root, 'mcp/bridge.mjs'), 'utf8')).toContain('MERCHANT_MCP_TIMEOUT_MS ?? 360000')
+  })
+
+  it('refuses an install when the registered marketplace targets a different checkout', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-marketplace-check-'))
+    const expected = resolve(directory, 'expected')
+    const other = resolve(directory, 'other')
+    const fakeCodex = resolve(directory, 'codex-list')
+    try {
+      mkdirSync(expected)
+      mkdirSync(other)
+      writeFileSync(resolve(expected, 'marketplace.json'), JSON.stringify({ name: 'merchant-local' }))
+      writeFileSync(fakeCodex, `#!/bin/sh\nprintf 'MARKETPLACE ROOT\\nmerchant-local ${other}\\n'\n`)
+      chmodSync(fakeCodex, 0o755)
+      const check = (registered: string) => {
+        writeFileSync(fakeCodex, `#!/bin/sh\nprintf 'MARKETPLACE ROOT\\nmerchant-local ${registered}\\n'\n`)
+        return spawnSync(process.execPath, [resolve(root, 'scripts/verify-marketplace-source.mjs'), '--expected', expected, '--codex', fakeCodex], { encoding: 'utf8' })
+      }
+      const wrong = check(other)
+      expect(wrong.status).toBe(1)
+      expect(JSON.parse(wrong.stdout)).toMatchObject({ ok: false, reason: 'marketplace_points_to_different_checkout' })
+      const correct = check(expected)
+      expect(correct.status).toBe(0)
+      expect(JSON.parse(correct.stdout)).toMatchObject({ ok: true, reason: null })
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 
   it('recovers local merchant settings from the macOS user session without exposing them in the manifest', () => {
@@ -174,9 +202,6 @@ printf '%s\n' Darwin
 
   it('renders an accessible ChatGPT creative-point recovery card without client-authored payment actions', () => {
     const recharge = readFileSync(resolve(root, 'ui/recharge.html'), 'utf8')
-    const catalogStart = recharge.indexOf('function catalogHtml')
-    const catalogEnd = recharge.indexOf('function safePaymentUrl', catalogStart)
-    const catalogRenderer = recharge.slice(catalogStart, catalogEnd)
     expect(recharge).toContain('支付成功也必须等待 grant 到账和新 access revision')
     expect(recharge).not.toContain('call("billing.recharge.create"')
     expect(recharge).not.toMatch(/data-amount|customAmount|createOrder/u)
@@ -185,10 +210,10 @@ printf '%s\n' Darwin
     expect(recharge).not.toContain('balance_state=unknown')
     expect(recharge).not.toContain('unknown: "未知"')
     expect(recharge).toContain('call("billing.recharge.list"')
-    expect(recharge).toContain('function safePaymentUrl')
-    expect(recharge).toContain('打开支付入口')
-    expect(recharge).toContain('noopener noreferrer')
-    expect(recharge).toMatch(/url\.username.*url\.password.*url\.hash/su)
+    expect(recharge).toContain('支付统一在 Store Nova 商家后台完成')
+    expect(recharge).toContain('打开商家后台')
+    expect(recharge).toContain('https://yxsona.com')
+    expect(recharge).not.toContain('打开支付入口')
     // Detailed orders, transactions, usage and exports belong in the merchant
     // desktop workspace. The ChatGPT surface only exposes payment state and
     // a server-authorized recovery action.
@@ -201,44 +226,21 @@ printf '%s\n' Darwin
     expect(recharge).toContain('role="status"')
     expect(recharge).toContain('aria-busy="false"')
     expect(recharge).not.toMatch(/role="radio(group)?"|aria-checked|checkoutTitle|data-channel|payment_mode/u)
-    expect(catalogStart).toBeGreaterThanOrEqual(0)
-    expect(catalogEnd).toBeGreaterThan(catalogStart)
-    expect(catalogRenderer).toContain('item?.lifecycle === "approved"')
-    expect(catalogRenderer).toContain('item?.visibility === "public"')
-    expect(catalogRenderer).toContain('item.code')
-    expect(catalogRenderer).toContain('item.kind')
-    expect(recharge).toContain('item.priceFen')
-    expect(catalogRenderer).not.toMatch(/item\?\.approval_state|item\.(?:sku_code|type|price_label|benefits_summary)/u)
     for (const status of ['已到账', '待支付', '未成功', '已关闭', '已退款']) expect(recharge).toContain(status)
   })
 
-  it('marks the platform account list as a read-only MCP operation', () => {
-    const response = spawnSync(process.execPath, [resolve(root, 'mcp/bridge.mjs')], {
-      encoding: 'utf8',
-      input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })}\n`,
-      env: {
-        ...process.env,
-        MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8790',
-        MERCHANT_WORKSPACE_ID: 'ws_install_verify',
-      },
-    })
-    expect(response.status).toBe(0)
-    const listed = JSON.parse(response.stdout.trim())
-    const tool = listed.result.tools.find((item: { name: string }) => item.name === 'platform.store.list')
-    expect(tool.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
-  })
-
-  it('documents store authorization before wallet and product-material onboarding', () => {
+  it('documents content-first onboarding without treating unbound candidates as exportable versions', () => {
     const readme = readFileSync(resolve(root, 'README.md'), 'utf8')
     const firstStep = readme.indexOf('## 安装后第一步')
     expect(firstStep).toBeGreaterThanOrEqual(0)
     const firstStepSection = readme.slice(firstStep, readme.indexOf('\n## ', firstStep + 3) < 0 ? undefined : readme.indexOf('\n## ', firstStep + 3))
-    expect(firstStepSection).toContain('六个平台')
-    expect(firstStepSection).toContain('platform.connect')
-    expect(firstStepSection).toContain('workspace.health')
-    expect(firstStepSection).toContain('billing.status')
-    expect(firstStepSection.indexOf('billing.status')).toBeGreaterThan(firstStepSection.indexOf('platform.connect'))
-    expect(firstStepSection.indexOf('上传我的商品图片和资料')).toBeGreaterThan(firstStepSection.indexOf('billing.status'))
+    expect(firstStepSection).toContain('公开商品链接')
+    expect(firstStepSection).toContain('draft_only="true"')
+    expect(firstStepSection).toContain('content.draft.generate')
+    expect(firstStepSection).toContain('content.export')
+    expect(firstStepSection).toContain('formalVersionCreated=false')
+    expect(firstStepSection).toContain('不能宣称候选审核与文件导出已闭环')
+    expect(firstStepSection).not.toContain('platform.connect')
   })
 
   it('keeps image generation on the business relay instead of the host image tool', () => {
@@ -271,6 +273,117 @@ printf '%s\n' Darwin
     expect(readFileSync(resolve(root, 'package.json'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'package.json'), 'utf8'))
   })
 
+  it('provides a redacted macOS local installer that hands off a short-lived token through launchd', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-local-installer-'))
+    const bin = resolve(directory, 'bin')
+    const state = resolve(directory, 'launchd-state')
+    const codexHome = resolve(directory, 'codex-home')
+    const bindingDirectory = resolve(codexHome, 'merchant-marketing')
+    const binding = resolve(bindingDirectory, 'workspace-binding.json')
+    mkdirSync(bin)
+    mkdirSync(bindingDirectory, { recursive: true })
+    writeFileSync(binding, JSON.stringify({
+      schema_version: '2',
+      workspace_id: 'ws_install',
+      scope: { api_origin: 'http://127.0.0.1:8787', actor_id: '', token_sha256: '', environment: 'development' },
+    }))
+    writeFileSync(resolve(bin, 'uname'), '#!/bin/sh\nprintf Darwin\n')
+    writeFileSync(resolve(bin, 'launchctl'), `#!/bin/sh
+set -eu
+state='${state}'
+case "\${1:-}" in
+  setenv) printf '%s=%s\\n' "\$2" "\$3" >> "\$state" ;;
+  getenv) key="\$2"; awk -F= -v key="\$key" '\$1 == key { value=substr(\$0, index(\$0,"=")+1) } END { printf "%s", value }' "\$state" 2>/dev/null || true ;;
+  *) exit 2 ;;
+esac
+`)
+    chmodSync(resolve(bin, 'uname'), 0o755)
+    chmodSync(resolve(bin, 'launchctl'), 0o755)
+    try {
+      const token = 'short-lived-token-not-printed'
+      const refreshToken = 'rotating-refresh-token-not-printed'
+      const bindingBeforeInstall = readFileSync(binding, 'utf8')
+      const result = spawnSync('sh', [resolve(root, 'scripts/install-local-macos.sh'), '--base-url', 'https://yxsona.com', '--workspace', 'ws_install'], {
+        input: `${token}\n${refreshToken}\n`, encoding: 'utf8', env: { PATH: `${bin}:${process.env.PATH ?? ''}`, CODEX_HOME: codexHome, CODEX_NODE_BIN: process.execPath },
+      })
+      expect(result.status).toBe(0)
+      expect(result.stdout).not.toContain(token)
+      expect(result.stderr).not.toContain(token)
+      expect(result.stdout).not.toContain(refreshToken)
+      expect(result.stderr).not.toContain(refreshToken)
+      expect(result.stderr).toContain('检测到陈旧的 workspace binding')
+      expect(result.stderr).toContain('binding origin 已从本机 loopback 变为 https://yxsona.com')
+      expect(result.stderr).toContain('旧 binding 缺少完整身份指纹')
+      expect(readFileSync(binding, 'utf8')).toBe(bindingBeforeInstall)
+      const values = readFileSync(state, 'utf8')
+      expect(values).toContain('MERCHANT_MCP_BASE_URL=https://yxsona.com')
+      expect(values).toContain('MERCHANT_WORKSPACE_ID=ws_install')
+      expect(values).toContain(`MERCHANT_MCP_TOKEN=${token}`)
+      expect(values).toContain(`MERCHANT_MCP_REFRESH_TOKEN=${refreshToken}`)
+      expect(values).toContain('MERCHANT_MCP_TOKEN_SOURCE=launchd')
+      expect(values).toContain('MERCHANT_STRICT_AUTH=true')
+      expect(values).toContain('MERCHANT_ALLOW_FIXTURE_FALLBACK=false')
+      expect(values).toContain('MERCHANT_MCP_WRITE_ENABLED=false')
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('diagnoses a loopback binding migration without reusing or deleting the old identity', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-binding-diagnostic-'))
+    const binding = resolve(directory, 'workspace-binding.json')
+    writeFileSync(binding, JSON.stringify({
+      schema_version: '2',
+      workspace_id: 'ws_install',
+      scope: { api_origin: 'http://127.0.0.1:8787', actor_id: '', token_sha256: '', environment: 'development' },
+    }))
+    try {
+      const before = readFileSync(binding, 'utf8')
+      const result = spawnSync(process.execPath, [
+        resolve(root, 'scripts/diagnose-workspace-binding.mjs'),
+        '--binding', binding,
+        '--target-origin', 'https://yxsona.com',
+        '--workspace', 'ws_install',
+      ], { encoding: 'utf8' })
+      expect(result.status).toBe(0)
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        stale: true,
+        reusable: false,
+        reasons: ['loopback_to_production_origin', 'identity_fingerprint_missing'],
+        safety: { old_identity_reused: false, binding_deleted: false, secrets_read: false },
+      })
+      expect(readFileSync(binding, 'utf8')).toBe(before)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('reports missing identity fingerprints even when origin and workspace match', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-binding-fingerprint-'))
+    const binding = resolve(directory, 'workspace-binding.json')
+    writeFileSync(binding, JSON.stringify({
+      schema_version: '2',
+      workspace_id: 'ws_install',
+      scope: { api_origin: 'https://yxsona.com', actor_id: '', token_sha256: '', environment: 'local_desktop' },
+    }))
+    try {
+      const result = spawnSync(process.execPath, [
+        resolve(root, 'scripts/diagnose-workspace-binding.mjs'),
+        '--binding', binding,
+        '--target-origin', 'https://yxsona.com',
+        '--workspace', 'ws_install',
+      ], { encoding: 'utf8' })
+      expect(result.status).toBe(0)
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        stale: true,
+        reusable: false,
+        reasons: ['identity_fingerprint_missing'],
+      })
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   it('verifies installed runtime files and the commercial recovery tool surface without claiming conversation refresh', () => {
     const result = spawnSync(process.execPath, [resolve(root, 'scripts/verify-installed-bridge.mjs'), '--source', root, '--installed', root], {
       encoding: 'utf8',
@@ -285,10 +398,38 @@ printf '%s\n' Darwin
         required: ['merchant.start', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list'],
         missing: [],
         forbidden: [],
+        cache_drift: { detected: false, automatic_reuse: false, automatic_deletion: false },
       },
       current_conversation_refresh: { verified: false },
     })
     expect(evidence.tools.count).toBeGreaterThanOrEqual(5)
     expect(evidence.runtime_files.every((file: { matches: boolean }) => file.matches)).toBe(true)
+  })
+
+  it('classifies an installed tool-surface mismatch as cache drift without deleting or reusing it', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-tool-cache-drift-'))
+    const installed = resolve(directory, 'installed')
+    try {
+      cpSync(root, installed, { recursive: true })
+      const bridgePath = resolve(installed, 'mcp/bridge.mjs')
+      const bridge = readFileSync(bridgePath, 'utf8')
+      expect(bridge).toContain("'merchant.start'")
+      writeFileSync(bridgePath, bridge.replace("'merchant.start'", "'merchant.start.stale'"))
+      const result = spawnSync(process.execPath, [resolve(root, 'scripts/verify-installed-bridge.mjs'), '--source', root, '--installed', installed], {
+        encoding: 'utf8',
+        env: { ...process.env, MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8790', MERCHANT_WORKSPACE_ID: 'ws_install_verify' },
+      })
+      expect(result.status).toBe(1)
+      const evidence = JSON.parse(result.stdout)
+      expect(evidence.tools.cache_drift).toMatchObject({
+        detected: true,
+        automatic_reuse: false,
+        automatic_deletion: false,
+      })
+      expect(evidence.runtime_files).toContainEqual(expect.objectContaining({ path: 'mcp/bridge.mjs', matches: false }))
+      expect(existsSync(installed)).toBe(true)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 })

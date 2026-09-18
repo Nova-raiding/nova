@@ -1,8 +1,16 @@
 import { err, ok, type Result } from './result.js'
 import type { DomainRuntime } from './clock.js'
 
-export type PublishState = 'prepared' | 'confirmed' | 'queued' | 'submitting' | 'submitted' | 'reviewing' | 'published' | 'rejected' | 'unknown' | 'reconciling' | 'manual_attention'
+export type ManualPublishState = 'export_ready' | 'manual_publish_in_progress' | 'manual_publish_reported' | 'manual_review_required'
+export type PublishState = 'prepared' | 'confirmed' | 'queued' | 'submitting' | 'submitted' | 'reviewing' | 'published' | 'rejected' | 'unknown' | 'reconciling' | 'manual_attention' | ManualPublishState | 'platform_verified'
 export type ReconcileRemoteStatus = 'absent' | 'accepted' | 'reviewing' | 'published' | 'rejected' | 'unknown'
+
+export interface PlatformVerificationEvidence {
+  readonly source: 'official_api'
+  readonly receiptId: string
+  readonly remoteResourceId: string
+  readonly verifiedAt: string
+}
 
 export interface ConfirmationToken {
   readonly value: string
@@ -29,12 +37,18 @@ export interface PublishJob {
   readonly state: PublishState
   readonly attempt: number
   readonly createdAt: string
+  readonly platformVerification?: PlatformVerificationEvidence
 }
 
 const transitions: Readonly<Record<PublishState, readonly PublishState[]>> = {
   prepared: ['confirmed'], confirmed: ['queued'], queued: ['submitting'], submitting: ['submitted', 'rejected', 'unknown'],
   submitted: ['reviewing', 'published'], reviewing: ['published', 'rejected'], published: [], rejected: [],
   unknown: ['reconciling'], reconciling: ['submitted', 'reviewing', 'published', 'rejected', 'manual_attention'], manual_attention: [],
+  export_ready: ['manual_publish_in_progress', 'manual_review_required'],
+  manual_publish_in_progress: ['manual_publish_reported', 'manual_review_required'],
+  manual_publish_reported: ['manual_review_required'],
+  manual_review_required: ['manual_publish_in_progress'],
+  platform_verified: [],
 }
 
 export const issueConfirmationToken = (input: Omit<ConfirmationToken, 'value' | 'issuedAt'>, runtime: DomainRuntime): ConfirmationToken =>
@@ -67,10 +81,31 @@ export const confirmPublish = (
 }
 
 export const transitionPublishJob = (job: PublishJob, next: PublishState): Result<PublishJob> => {
+  if (next === 'platform_verified') {
+    return err('PUBLISH_INVALID_TRANSITION', 'platform_verified requires an official API receipt', { from: job.state, to: next })
+  }
   if (!transitions[job.state].includes(next)) {
     return err('PUBLISH_INVALID_TRANSITION', `publish job ${job.state} cannot transition to ${next}`, { from: job.state, to: next })
   }
   return ok(Object.freeze({ ...job, state: next }))
+}
+
+export const prepareManualPublish = (job: PublishJob): Result<PublishJob> => {
+  if (job.state !== 'confirmed') {
+    return err('PUBLISH_INVALID_TRANSITION', 'only a confirmed publish job can become export_ready', { from: job.state, to: 'export_ready' })
+  }
+  return ok(Object.freeze({ ...job, state: 'export_ready' as const }))
+}
+
+export const verifyPlatformPublish = (job: PublishJob, evidence: PlatformVerificationEvidence): Result<PublishJob> => {
+  const verifiableStates: readonly PublishState[] = ['submitted', 'reviewing', 'published', 'manual_publish_reported']
+  if (!verifiableStates.includes(job.state)) {
+    return err('PUBLISH_INVALID_TRANSITION', `publish job ${job.state} cannot be platform verified`, { from: job.state, to: 'platform_verified' })
+  }
+  if (evidence.source !== 'official_api' || !evidence.receiptId.trim() || !evidence.remoteResourceId.trim() || !evidence.verifiedAt.trim()) {
+    return err('PUBLISH_CONFIRMATION_REQUIRED', 'platform_verified requires a complete official API receipt')
+  }
+  return ok(Object.freeze({ ...job, state: 'platform_verified' as const, platformVerification: Object.freeze({ ...evidence }) }))
 }
 
 export const retryPublishJob = (job: PublishJob): Result<PublishJob> => {

@@ -1043,6 +1043,40 @@ export interface PublishJob {
   revision: number
 }
 
+export type ManualPublishState = 'export_ready' | 'manual_publish_in_progress' | 'manual_publish_reported' | 'manual_review_required'
+
+/**
+ * Append-only evidence that an operator handled an approved delivery outside
+ * Store Nova. It is deliberately separate from PublishJob: human statements,
+ * screenshots and public URLs are never platform API receipts.
+ */
+export interface ManualPublishRecord {
+  id: string
+  workspaceId: string
+  taskId: string
+  productId: string
+  contentVersionId: string
+  platform: Platform
+  accountId: string
+  deliveryBundleHash: string
+  state: ManualPublishState
+  actorId: string
+  publisherId?: string
+  reviewerId?: string
+  operatedAt?: string
+  reviewedAt?: string
+  platformContentId?: string
+  publicUrl?: string
+  platformDisplayStatus?: string
+  evidenceAssetIds: string[]
+  differenceNote?: string
+  previousRecordId?: string
+  idempotencyKey: string
+  evidenceBoundary: 'manual_unverified'
+  recordedAt: string
+  revision: 1
+}
+
 export interface CanonicalExecutionReadProof {
   mode: 'legacy_shadow' | 'dual_verify' | 'canonical_read'
   status: 'verified' | 'legacy_only' | 'conflict' | 'blocked' | 'unknown' | 'unavailable'
@@ -1337,6 +1371,7 @@ export class MerchantService {
   readonly generationJobs = new Map<string, GenerationJob>()
   readonly imageGenerationJobs = new Map<string, ImageGenerationJob>()
   readonly publishJobs = new Map<string, PublishJob>()
+  readonly manualPublishRecords = new Map<string, ManualPublishRecord>()
   private readonly durableKnowledgeDocuments = new Map<string, KnowledgeGenerationContext['documents']>()
   readonly platformAccounts = new Map<string, PlatformAccount>()
   readonly ruleCenter = new RuleCenter(undefined, defaultRuleCenterSeeds)
@@ -1347,6 +1382,7 @@ export class MerchantService {
   readonly taskInputSnapshots = new Map<string, TaskInputSnapshot>()
   private readonly durableRuleSnapshots = new Map<string, DurableRuleSnapshot>()
   private readonly idempotency = new Map<string, string>()
+  private readonly manualPublishIdempotency = new Map<string, string>()
   private readonly taskGroupIdempotency = new Map<string, { groupId: string; intentHash: string; createdAt: string }>()
   private readonly taskRequestIdempotency = new Map<string, { taskId: string; intentHash: string }>()
   private readonly imageIdempotency = new Map<string, string>()
@@ -2211,7 +2247,7 @@ export class MerchantService {
     return job
   }
 
-  hydrateSnapshot(input: { entityType: 'product' | 'task' | 'content_version' | 'publish_job' | 'platform_account' | 'generation_job' | 'image_generation_job' | 'brand_profile' | 'asset' | 'feedback' | 'sync_job'; entity: unknown }) {
+  hydrateSnapshot(input: { entityType: 'product' | 'task' | 'content_version' | 'publish_job' | 'manual_publish_record' | 'platform_account' | 'generation_job' | 'image_generation_job' | 'brand_profile' | 'asset' | 'feedback' | 'sync_job'; entity: unknown }) {
     if (!input.entity || typeof input.entity !== 'object') return
     const entity = input.entity as { id?: unknown }
     if (typeof entity.id !== 'string') return
@@ -2268,6 +2304,21 @@ export class MerchantService {
       this.publishJobs.set(entity.id, restored)
       this.idempotency.set(`${restored.workspaceId}:${restored.idempotencyKey}`, restored.id)
     }
+    if (input.entityType === 'manual_publish_record') {
+      const record = input.entity as Partial<ManualPublishRecord>
+      const validStates = new Set<ManualPublishState>(['export_ready', 'manual_publish_in_progress', 'manual_publish_reported', 'manual_review_required'])
+      const requiredStrings: Array<keyof ManualPublishRecord> = ['id', 'workspaceId', 'taskId', 'productId', 'contentVersionId', 'platform', 'accountId', 'deliveryBundleHash', 'actorId', 'idempotencyKey', 'recordedAt']
+      const missing = requiredStrings.filter(key => typeof record[key] !== 'string' || !(record[key] as string).trim())
+      if (!validStates.has(record.state as ManualPublishState) || record.evidenceBoundary !== 'manual_unverified' || record.revision !== 1 || !Array.isArray(record.evidenceAssetIds) || !/^[a-f0-9]{64}$/u.test(record.deliveryBundleHash ?? '') || !Number.isFinite(Date.parse(record.recordedAt ?? ''))) missing.push('state')
+      if (missing.length) throw new DomainError('MANUAL_PUBLISH_SNAPSHOT_INVALID', '持久化的人工发布记录缺少必填审计字段或字段格式异常', 409, { manual_publish_record_id: entity.id, missing: [...new Set(missing)] })
+      const restored = record as ManualPublishRecord
+      const prior = this.manualPublishRecords.get(restored.id)
+      if (prior && !isDeepStrictEqual(prior, restored)) throw new DomainError('VERSION_CONFLICT', '同一人工发布记录 ID 对应了冲突内容，已拒绝覆盖', 409, { manual_publish_record_id: restored.id })
+      const idempotent = this.manualPublishIdempotency.get(`${restored.workspaceId}:${restored.idempotencyKey}`)
+      if (idempotent && idempotent !== restored.id) throw new DomainError('IDEMPOTENCY_CONFLICT', '人工发布幂等键已绑定其他记录', 409)
+      this.manualPublishRecords.set(restored.id, restored)
+      this.manualPublishIdempotency.set(`${restored.workspaceId}:${restored.idempotencyKey}`, restored.id)
+    }
     if (input.entityType === 'platform_account') {
       const account = input.entity as PlatformAccount
       this.platformAccounts.set(entity.id, { ...account, authRevision: account.authRevision ?? account.revision ?? 1 })
@@ -2283,7 +2334,10 @@ export class MerchantService {
       this.syncJobs.set(entity.id, { ...job, itemsFailed: job.itemsFailed ?? 0, failedItems: job.failedItems ?? [], retryCount: Math.max(0, Math.floor(job.retryCount ?? 0)) })
     }
   }
-  getBrandProfile(workspaceId: string) { return this.brandProfiles.get(`brand_${workspaceId}`) }
+  getBrandProfile(workspaceId: string, brandUnitId?: string) {
+    const unit = brandUnitId?.trim()
+    return this.brandProfiles.get(unit ? `brand_${workspaceId}:unit:${unit}` : `brand_${workspaceId}`)
+  }
   extractBrandProfile(workspaceId: string, assetIds?: string[]): BrandExtraction {
     const requested = assetIds?.length ? new Set(assetIds) : undefined
     const assets = [...this.assets.values()].filter(asset => asset.workspaceId === workspaceId && (!requested || requested.has(asset.id)))
@@ -2292,7 +2346,16 @@ export class MerchantService {
       if (missing.length) throw new DomainError('ASSET_NOT_FOUND', '部分品牌素材不存在或不属于当前工作区', 404, { asset_ids: missing })
     }
     if (!assets.length) throw new DomainError('BRAND_ASSETS_REQUIRED', '请先上传并读取品牌资料，再提取品牌候选字段', 409)
-    return extractBrandCandidates(assets)
+    const trusted = assets.filter(isTrustedCleanAsset)
+    if (!trusted.length) throw new DomainError('BRAND_ASSETS_SCAN_REQUIRED', '品牌资料尚未通过可信安全扫描，不能读取为品牌候选；请等待平台自动检查', 409)
+    const extracted = extractBrandCandidates(trusted)
+    return {
+      ...extracted,
+      ignoredAssets: [
+        ...extracted.ignoredAssets,
+        ...assets.filter(asset => !isTrustedCleanAsset(asset)).map(asset => ({ assetId: asset.id, assetName: asset.name, reason: '可信安全扫描尚未通过' })),
+      ],
+    }
   }
   previewBrandTone(workspaceId: string, input: { topic?: string; productId?: string } = {}) {
     const profile = this.getBrandProfile(workspaceId)
@@ -2307,7 +2370,8 @@ export class MerchantService {
     ]
   }
   upsertBrandProfile(input: { workspaceId: string; name: string; positioning?: string; audience?: string; tone?: string[]; forbiddenTerms?: string[]; details?: Record<string, unknown>; visualRules?: BrandVisualRules; brandUnitId?: string; source?: string; resolutions?: Record<string, 'existing' | 'candidate'> }) {
-    const id = `brand_${input.workspaceId}`
+    const brandUnitId = input.brandUnitId?.trim()
+    const id = brandUnitId ? `brand_${input.workspaceId}:unit:${brandUnitId}` : `brand_${input.workspaceId}`
     const previous = this.brandProfiles.get(id)
     const source = input.source?.trim() || 'codex'
     const candidates: Partial<Record<BrandConflict['field'], unknown>> = {
@@ -4629,6 +4693,107 @@ export class MerchantService {
     task.state = 'publish_prepared'
     task.version += 1
     return { task, version, remoteSnapshotHash, confirmationHash, payloadHash, selectionHash, storeContext: { platform: task.platform, accountId: task.accountId ?? null, authorizationRevision: account ? account.authRevision ?? account.revision : null, alias: account?.storeAlias ?? null }, operation, changes: Object.keys(fields), protectedFields: operation === 'update' ? ['price', 'inventory', 'sku', 'images', 'attributes', 'listing_status'] : ['images', 'listing_status'], visualPreview: { imageMode: payloadSnapshot.imageMode, count: selectedVisuals.length, items: selectedVisuals.map(item => ({ visualRef: item.visualRef, role: item.role, ordinal: item.ordinal, mimeType: item.mimeType, sizeBytes: item.sizeBytes, reviewStatus: item.reviewStatus, authenticity: item.authenticity ?? { externallyUnverified: true, reason: 'evidence_provider_unavailable' }, firstIsMainImage: item.role === 'main' })), executionReady: selectedVisuals.length === 0, externallyUnverified: deliveryEvidence?.externallyUnverified ?? selectedVisuals.some(item => item.authenticity?.externallyUnverified !== false), ...(deliveryEvidence ? { deliveryEvidence } : {}), ...(selectedVisuals.length ? { blocker: 'IMAGE_PUBLISH_ADAPTER_UNAVAILABLE' } : {}) } }
+  }
+
+  recordManualPublish(input: {
+    workspaceId: string
+    taskId: string
+    contentVersionId: string
+    platform: Platform
+    accountId: string
+    deliveryBundleHash: string
+    state: ManualPublishState | 'platform_verified'
+    actorId: string
+    idempotencyKey: string
+    publisherId?: string
+    reviewerId?: string
+    operatedAt?: string
+    reviewedAt?: string
+    platformContentId?: string
+    publicUrl?: string
+    platformDisplayStatus?: string
+    evidenceAssetIds?: string[]
+    differenceNote?: string
+    previousRecordId?: string
+  }): ManualPublishRecord {
+    const required = (value: string | undefined, field: string) => {
+      const normalized = value?.normalize('NFKC').trim()
+      if (!normalized) throw new DomainError('MANUAL_PUBLISH_AUDIT_REQUIRED', `人工发布记录缺少 ${field}`, 400, { field })
+      return normalized
+    }
+    const workspaceId = required(input.workspaceId, 'workspace_id')
+    const accountId = required(input.accountId, 'account_id')
+    const actorId = required(input.actorId, 'actor_id')
+    const idempotencyKey = required(input.idempotencyKey, 'idempotency_key')
+    if (input.state === 'platform_verified') throw new DomainError('MANUAL_PUBLISH_CANNOT_VERIFY_PLATFORM', '人工记录不能标记为平台 API 已验证', 409)
+    if (!/^[a-f0-9]{64}$/u.test(input.deliveryBundleHash)) throw new DomainError('MANUAL_PUBLISH_BUNDLE_HASH_INVALID', '人工发布必须绑定有效的交付包 SHA-256', 400)
+    const existingId = this.manualPublishIdempotency.get(`${workspaceId}:${idempotencyKey}`)
+    if (existingId) {
+      const existing = this.manualPublishRecords.get(existingId)!
+      const sameIntent = existing.taskId === input.taskId && existing.contentVersionId === input.contentVersionId && existing.platform === input.platform && existing.accountId === accountId && existing.deliveryBundleHash === input.deliveryBundleHash && existing.state === input.state
+        && existing.actorId === actorId && existing.publisherId === (input.publisherId?.normalize('NFKC').trim() || undefined) && existing.reviewerId === (input.reviewerId?.normalize('NFKC').trim() || undefined)
+        && existing.operatedAt === (input.operatedAt?.trim() || undefined) && existing.reviewedAt === (input.reviewedAt?.trim() || undefined)
+        && existing.platformContentId === (input.platformContentId?.trim() || undefined) && existing.publicUrl === (input.publicUrl?.trim() || undefined)
+        && existing.platformDisplayStatus === (input.platformDisplayStatus?.trim() || undefined) && existing.differenceNote === (input.differenceNote?.trim() || undefined)
+        && existing.previousRecordId === input.previousRecordId && isDeepStrictEqual(existing.evidenceAssetIds, [...new Set((input.evidenceAssetIds ?? []).map(value => value.trim()).filter(Boolean))])
+      if (!sameIntent) throw new DomainError('IDEMPOTENCY_CONFLICT', '幂等键已绑定其他人工发布记录', 409)
+      return existing
+    }
+    const task = this.mustTask(input.taskId)
+    if (task.workspaceId !== workspaceId) throw new DomainError('TENANT_SCOPE_DENIED', '无权记录该任务的人工发布结果', 403)
+    if (task.platform !== input.platform || !task.accountId || task.accountId !== accountId) throw new DomainError('MANUAL_PUBLISH_SCOPE_MISMATCH', '人工发布记录与任务的平台或店铺不一致', 409, { expected_platform: task.platform, expected_account_id: task.accountId ?? null })
+    const version = this.mustContentVersion(input.contentVersionId)
+    if (version.taskId !== task.id || task.contentVersionId !== version.id || !['approved', 'delivered'].includes(version.state)) throw new DomainError('MANUAL_PUBLISH_CONTENT_NOT_APPROVED', '人工发布只能绑定当前任务明确批准的内容版本', 409)
+    const product = this.products.get(task.productId)
+    if (!product || product.workspaceId !== workspaceId || product.platform !== task.platform || product.accountId !== task.accountId) throw new DomainError('MANUAL_PUBLISH_PRODUCT_SCOPE_MISMATCH', '人工发布任务的商品作用域与工作区、平台或店铺不一致', 409)
+    const evidenceAssetIds = [...new Set((input.evidenceAssetIds ?? []).map(value => value.trim()).filter(Boolean))]
+    for (const assetId of evidenceAssetIds) {
+      const asset = this.assets.get(assetId)
+      if (!asset || asset.workspaceId !== workspaceId || !isTrustedCleanAsset(asset)) throw new DomainError('MANUAL_PUBLISH_EVIDENCE_INVALID', '人工发布证据必须是当前工作区已通过可信扫描的私有资产', 409, { asset_id: assetId })
+    }
+    const publisherId = input.publisherId?.normalize('NFKC').trim() || undefined
+    const reviewerId = input.reviewerId?.normalize('NFKC').trim() || undefined
+    const validTime = (value: string | undefined, field: string) => {
+      if (value === undefined) return undefined
+      if (!Number.isFinite(Date.parse(value))) throw new DomainError('MANUAL_PUBLISH_AUDIT_INVALID', `${field} 必须是合法时间`, 400, { field })
+      return new Date(value).toISOString()
+    }
+    const operatedAt = validTime(input.operatedAt, 'operated_at')
+    const reviewedAt = validTime(input.reviewedAt, 'reviewed_at')
+    if ((reviewerId && !reviewedAt) || (!reviewerId && reviewedAt)) throw new DomainError('MANUAL_PUBLISH_REVIEW_AUDIT_INCOMPLETE', '复核人员和复核时间必须同时记录', 400)
+    if (publisherId && reviewerId && publisherId === reviewerId) throw new DomainError('MANUAL_PUBLISH_REVIEWER_NOT_INDEPENDENT', '发布人员与复核人员必须为不同人员', 409)
+    let publicUrl: string | undefined
+    if (input.publicUrl?.trim()) {
+      try {
+        const parsed = new URL(input.publicUrl.trim())
+        if (parsed.protocol !== 'https:' || parsed.username || parsed.password) throw new Error('unsafe URL')
+        publicUrl = parsed.toString()
+      } catch { throw new DomainError('MANUAL_PUBLISH_PUBLIC_URL_INVALID', '公开页面地址必须是无凭据的 HTTPS URL', 400) }
+    }
+    const hasOutcomeEvidence = Boolean(input.platformContentId?.trim() || publicUrl || evidenceAssetIds.length)
+    if (input.state === 'manual_publish_in_progress' && !publisherId) throw new DomainError('MANUAL_PUBLISH_PUBLISHER_REQUIRED', '开始人工发布时必须记录发布人员', 400)
+    if (input.state === 'manual_publish_reported' && (!publisherId || !operatedAt || !hasOutcomeEvidence)) throw new DomainError('MANUAL_PUBLISH_EVIDENCE_REQUIRED', '报告人工发布结果时必须记录发布人员、操作时间及平台 ID、公开 URL 或已扫描证据', 409)
+    if (input.state === 'manual_review_required' && !input.differenceNote?.trim()) throw new DomainError('MANUAL_PUBLISH_DIFFERENCE_REQUIRED', '进入人工复核队列时必须记录差异或异常', 400)
+    let previousRecordId: string | undefined
+    if (input.previousRecordId) {
+      const previous = this.manualPublishRecords.get(input.previousRecordId)
+      if (!previous || previous.workspaceId !== workspaceId || previous.taskId !== task.id || previous.contentVersionId !== version.id || previous.platform !== task.platform || previous.accountId !== accountId) throw new DomainError('MANUAL_PUBLISH_PREVIOUS_RECORD_INVALID', '前序人工发布记录不存在或作用域不一致', 409)
+      previousRecordId = previous.id
+    }
+    const record: ManualPublishRecord = {
+      id: id('manual_pub'), workspaceId, taskId: task.id, productId: task.productId, contentVersionId: version.id, platform: task.platform, accountId,
+      deliveryBundleHash: input.deliveryBundleHash, state: input.state, actorId, idempotencyKey, evidenceAssetIds, evidenceBoundary: 'manual_unverified', recordedAt: now(), revision: 1,
+      ...(publisherId ? { publisherId } : {}), ...(reviewerId ? { reviewerId } : {}), ...(operatedAt ? { operatedAt } : {}), ...(reviewedAt ? { reviewedAt } : {}),
+      ...(input.platformContentId?.trim() ? { platformContentId: input.platformContentId.trim() } : {}), ...(publicUrl ? { publicUrl } : {}),
+      ...(input.platformDisplayStatus?.trim() ? { platformDisplayStatus: input.platformDisplayStatus.trim() } : {}), ...(input.differenceNote?.trim() ? { differenceNote: input.differenceNote.trim() } : {}), ...(previousRecordId ? { previousRecordId } : {}),
+    }
+    this.manualPublishRecords.set(record.id, record)
+    this.manualPublishIdempotency.set(`${workspaceId}:${idempotencyKey}`, record.id)
+    return record
+  }
+
+  listManualPublishRecords(workspaceId: string, input: { taskId?: string; contentVersionId?: string } = {}) {
+    return [...this.manualPublishRecords.values()].filter(record => record.workspaceId === workspaceId && (!input.taskId || record.taskId === input.taskId) && (!input.contentVersionId || record.contentVersionId === input.contentVersionId)).sort((a, b) => b.recordedAt.localeCompare(a.recordedAt) || a.id.localeCompare(b.id))
   }
 
   confirmPublish(input: { workspaceId: string; taskId: string; batchId?: string; contentVersionId: string; confirmationHash: string; remoteSnapshotHash: string; idempotencyKey: string; accountId?: string; mediaAdapterReady?: boolean; deferCommit?: boolean; authorizationSnapshot?: PublishAuthorizationSnapshot }) {

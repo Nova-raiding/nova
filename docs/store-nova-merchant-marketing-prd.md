@@ -95,7 +95,7 @@ ChatGPT App 市场安装
 
 1. 用户在 ChatGPT App 市场搜索“Store Nova商家营销”。
 2. 点击安装后打开插件，插件显示“Store Nova账号登录”。
-3. 插件跳转Store Nova账号授权页，用户在Store Nova页面输入账号和密码；密码不进入 ChatGPT、插件参数或模型。OAuth/MCP authorization code 仅是宿主协议。
+3. 桌面插件引导用户打开 Store Nova 商家后台，用户在后台输入账号和密码；密码不进入 ChatGPT、插件参数或模型。服务端向可信安装器签发短期 workspace 凭据；当前桌面版不依赖 ChatGPT 云端 OAuth。
 4. 登录后创建 `merchant_pending` 标记并绑定待开通身份。
 5. 插件提示“账号已提交平台审核”，不提前显示生成或发布权限。
 
@@ -128,7 +128,7 @@ merchant_pending
 ### 5.3 登录边界
 
 - 正式用户可见登录：Store Nova账号 + 密码；平台运营和商家后台均使用该方式。
-- ChatGPT App 仍通过标准 OAuth/MCP authorization code 让宿主获得受限 token，但登录页由Store Nova提供，密码不被宿主获取。
+- 当前桌面版通过本地 stdio bridge 和 Store Nova workspace 凭据工作，不要求 ChatGPT Business 或远程 MCP OAuth；远程 OAuth 仅属于未来可选接入模式。
 - 平台运营账号由 Owner 预置/邀请，不开放公开注册；商家账号由平台运营创建，创建时绑定企业工作区、角色和套餐。
 - 本机 API 自动连接、Bearer Token 表单、企业 SSO/OIDC 直登和 fixture 登录只允许 development/test，生产 UI 不得展示。
 

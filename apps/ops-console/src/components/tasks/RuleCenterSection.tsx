@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Alert, Button, Card, Form, Input, Modal, Space, Table, Tag, Typography } from "antd";
+import { useRef, useState } from "react";
+import { Alert, Button, Card, Form, Input, message, Modal, Space, Table, Tag, Typography } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { Rule } from "../../types/ops";
 
@@ -35,8 +35,10 @@ export function hasRuleDraftChanges(values: Readonly<Record<string, unknown>>) {
 }
 
 export function RuleCenterSection({ model }: RuleCenterSectionProps) {
-  const { canRules, ruleMutationKey, rules, updateRuleStatus } =
+  const { canRules, ruleMutationKey, rules, updateRuleStatus, publishRuleDraft } =
     model;
+  const markdownInputRef = useRef<HTMLInputElement>(null);
+  const [markdownImporting, setMarkdownImporting] = useState(false);
   const [activationTarget, setActivationTarget] = useState<Rule>();
   const [activationForm] = Form.useForm<{ approvalRef: string; approvedBy: string; approvedAt: string; reason: string }>();
   const unverifiedRules = rules.filter((rule) => !isOfficialPlatformRule(rule));
@@ -51,13 +53,52 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
     activationForm.resetFields();
   };
 
+  const importMarkdownDrafts = async (file: File) => {
+    if (!canRules || markdownImporting) return;
+    setMarkdownImporting(true);
+    try {
+      const markdown = await file.text();
+      const cards = [...markdown.matchAll(/^##\s+(PDD-[A-Z0-9-]+)｜(.+)$/gmu)];
+      if (!cards.length) throw new Error("未识别到规则卡片；请使用 ## PDD-xxx｜规则名称 格式");
+      const version = markdown.match(/知识库\s+v([\w.-]+)/u)?.[1] ?? "imported";
+      for (const [index, card] of cards.entries()) {
+        const cardId = card[1] ?? `PDD-${index + 1}`;
+        const body = markdown.slice((card.index ?? 0) + card[0].length, cards[index + 1]?.index ?? markdown.length).trim();
+        const platform = body.match(/^- 平台：([^；\n]+)/mu)?.[1]?.trim();
+        const source = body.match(/^- 官方依据：(.+)$/mu)?.[1]?.trim();
+        if (!platform || !source) throw new Error(`${cardId} 缺少平台或官方依据字段`);
+        const ok = await publishRuleDraft({
+          packId: `${platform.toLowerCase()}-manual-${cardId.toLowerCase()}`,
+          name: card[2]?.trim() || cardId,
+          version,
+          category: "platform",
+          publicScope: "platform",
+          targetId: platform === "拼多多" ? "pinduoduo" : platform,
+          sourceReference: `manual://${file.name}#${cardId}`,
+          checksJson: JSON.stringify({ platform, source, content: `${card[0]}\n${body}` }),
+          reason: `运营上传平台规则草稿：${file.name}`,
+        });
+        if (!ok) break;
+      }
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "平台规则文件导入失败");
+    } finally {
+      setMarkdownImporting(false);
+      if (markdownInputRef.current) markdownInputRef.current.value = "";
+    }
+  };
+
   return (
     <Card
       title="规则中心"
       extra={
-        <Tag color={unverifiedRules.length ? "orange" : rules.length ? "green" : "orange"}>
-          {unverifiedRules.length ? `${unverifiedRules.length} 条未验证（不展示）` : `${verifiedRules.length} 条可信规则`}
-        </Tag>
+        <Space>
+          <input ref={markdownInputRef} type="file" accept=".md,text/markdown" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importMarkdownDrafts(file); }} />
+          <Button disabled={!canRules || markdownImporting} loading={markdownImporting} onClick={() => markdownInputRef.current?.click()}>上传平台规则 Markdown</Button>
+          <Tag color={unverifiedRules.length ? "orange" : rules.length ? "green" : "orange"}>
+            {unverifiedRules.length ? `${unverifiedRules.length} 条未验证（不展示）` : `${verifiedRules.length} 条可信规则`}
+          </Tag>
+        </Space>
       }
     >
       {unverifiedRules.length ? (
@@ -82,8 +123,8 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
       <Table
         rowKey="id"
         pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
-        dataSource={verifiedRules}
-        locale={{ emptyText: "暂无已验证的平台限制规则；请配置官方签名清单后点击“立即更新”" }}
+        dataSource={rules}
+        locale={{ emptyText: "暂无平台规则；可配置官方签名清单，或上传 Markdown 生成待审核草稿" }}
         scroll={{ x: 900 }}
         columns={[
           { title: "规则包", dataIndex: "packId" },

@@ -46,6 +46,7 @@ export const MCP_METHODS = [
   'workspace.invitations.list',
   'workspace.invitation.accept',
   'workspace.bootstrap',
+  'workspace.content_setup.confirm',
   'workspace.interactive.confirm',
   'workspace.metrics',
   'workspace.commercial.get',
@@ -90,6 +91,8 @@ export const MCP_METHODS = [
   'ops.support.sla.correction.create',
   'ops.support.sla.correction.decide',
   'ops.customer-delivery.list',
+  'ops.customer-delivery.accounts.list',
+  'ops.customer-delivery.account.bind',
   'ops.customer-delivery.get',
   'ops.customer-delivery.create',
   'ops.customer-delivery.update',
@@ -287,6 +290,7 @@ export const MCP_METHODS = [
   'task.select_direction',
   'task.plan.confirm',
   'content.generate',
+  'content.draft.generate',
   'content.codex.prepare',
   'content.codex.commit',
   'generation.get',
@@ -314,6 +318,9 @@ export const MCP_METHODS = [
   'automation.pause',
   'publish.confirm',
   'publish.get',
+  'ops.marketing.publish.manual-evidence.record',
+  'publish.manual.get',
+  'publish.manual.list',
   'knowledge.rule.create',
   'knowledge.rule.update',
   'knowledge.rule.list',
@@ -357,6 +364,8 @@ export interface McpParamsSchema {
   readonly requiredAnyOf?: readonly string[]
   /** Fields that cannot be supplied together (at most one non-empty value). */
   readonly mutuallyExclusive?: readonly (readonly string[])[]
+  /** Standard JSON Schema alternatives exposed to native MCP clients. */
+  readonly oneOf?: readonly Readonly<Record<string, unknown>>[]
   readonly additionalProperties: false
 }
 
@@ -547,7 +556,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'onboarding.status',
     description: '查看插件安装后的系统引导进度、当前阻断、所需绑定和下一步动作。只读，不改变权限或业务数据。',
-    params: params({}),
+    params: params({ store_links_text: boundedString(8_192, 1, 'User-supplied shop introductions for format-only inspection; never authorizes a platform or fetches a shop page.') }),
   },
   {
     method: 'merchant.start',
@@ -566,8 +575,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'merchant.first_value',
-    description: 'Return a safe first-value preview bundle for the scoped platform, account, and product; `example=true` returns a static non-merchant example. It never publishes content and does not call a model unless the server explicitly says the preview requires one.',
-    params: params({ platform: platformProperty, account_id: { type: 'string' }, product_id: { type: 'string' }, example: { type: 'string', enum: ['true'] } }),
+    description: 'Return a safe first-value preview bundle. `example=true` returns a static example; `draft=true` may generate an unbound content candidate through the platform relay, but never creates a formal content version and never publishes.',
+    params: params({ platform: platformProperty, account_id: { type: 'string' }, product_id: { type: 'string' }, example: { type: 'string', enum: ['true'] }, draft: { type: 'string', enum: ['true'] }, draft_title: { type: 'string', minLength: 2, maxLength: 256 }, draft_prompt: { type: 'string', minLength: 2, maxLength: 2_000 }, idempotency_key: { type: 'string', minLength: 8, maxLength: 200 } }),
   },
   {
     method: 'commercial.service-boundary.accept',
@@ -683,6 +692,11 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     params: params({ display_name: { type: 'string' }, external_subject: { type: 'string' } }, ['display_name']),
   },
   {
+    method: 'workspace.content_setup.confirm',
+    description: 'Save the signed-in workspace owner’s confirmed first content workspace name and official store scope; auditable, never authorizes a store or starts a task.',
+    params: params({ display_name: boundedString(120), platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: boundedString(200) }, ['display_name', 'platform', 'account_id']),
+  },
+  {
     method: 'workspace.health',
     description: 'Return service and platform readiness for the scoped workspace.',
     params: params({}),
@@ -740,6 +754,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'ops.storage.reconciliation.list', description: 'List redacted storage reconciliation summaries for all workspaces visible to platform operations; requires explicit platform scope and never returns object keys, asset content, or download URLs.', params: params({ platform_scope: { type: 'string', enum: ['platform'] } }) },
   { method: 'ops.support.tickets.list', description: 'List a bounded page of support tickets in one authorized workspace, or a redacted platform-wide aggregate for platform_ops.', params: params({ platform_scope: { type: 'string', enum: ['platform'] }, status: { type: 'string', enum: ['open', 'in_progress', 'waiting_customer', 'resolved', 'closed'] }, priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] }, sla_state: { type: 'string', enum: ['on_track', 'at_risk', 'breached', 'met'] }, assignee_id: boundedString(256), customer_id: boundedString(256), query: boundedString(200), cursor_json: boundedString(2_000), limit: pageLimit100 }) },
   { method: 'ops.customer-delivery.list', description: 'List customer delivery records in the authorized workspace.', params: params({ target_workspace_id: boundedString(200, 1) }, ['target_workspace_id']) },
+  { method: 'ops.customer-delivery.accounts.list', description: 'List a bounded page of eligible merchant login accounts with an active identity and actual membership in the explicitly selected workspace. Never returns credentials.', params: params({ target_workspace_id: boundedString(200, 1), search: boundedString(200), cursor: boundedString(1_000), limit: { type: 'string', pattern: '^(?:[1-9]|[1-4][0-9]|50)$' } }, ['target_workspace_id']) },
+  { method: 'ops.customer-delivery.account.bind', description: 'Immutably associate this delivery with one explicitly selected merchant account using current revision and audit reason. Does not change suspension, membership, roles, subscriptions or points.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), target_account_id: boundedString(256), expected_revision: positiveIntegerString, reason: reasonProperty }, ['target_workspace_id', 'delivery_id', 'target_account_id', 'expected_revision', 'reason']) },
   { method: 'ops.customer-delivery.get', description: 'Get one customer delivery record and its videos.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256) }, ['target_workspace_id', 'delivery_id']) },
   { method: 'ops.customer-delivery.create', description: 'Create a customer delivery record.', params: params({ target_workspace_id: boundedString(200, 1), company_name: boundedString(200, 1) }, ['target_workspace_id', 'company_name']) },
   { method: 'ops.customer-delivery.update', description: 'Update customer delivery profile fields with optimistic revision. Derived integration/acceptance summaries and training fields are not accepted; use checklist item or training endpoints. Paid status requires scanned payment evidence.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), expected_revision: positiveIntegerString, patch_json: { ...jsonObject('Profile JSON object accepting only companyName, contractNumber, paymentStatus, contractRef, projectOwner, supportOwner, paymentDate, paymentEvidenceRefs, plannedGoLiveAt and customerProfileStatus. contractRef is an uploaded contract asset reference or null, never an external URL. paymentEvidenceRefs is an array of uploaded payment asset references; server ownership, purpose and clean-scan checks remain required.'), maxLength: 16_384 } }, ['target_workspace_id', 'delivery_id', 'expected_revision', 'patch_json']) },
@@ -751,16 +767,21 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'ops.customer-delivery.videos.add', description: 'Attach one uploaded delivery video asset reference.', params: params({ target_workspace_id: boundedString(200, 1), delivery_id: boundedString(256), title: boundedString(200, 1), asset_ref: boundedString(1_000, 1), sort_order: nonNegativeIntegerString }, ['target_workspace_id', 'delivery_id', 'title', 'asset_ref']) },
   {
     method: 'ops.customer-delivery.assets.upload',
-    description: 'Upload customer delivery contract, payment, integration, acceptance, training, or video evidence into quarantine for automatic platform scanning. Upload acceptance does not assert a clean scan or attach the asset as delivery evidence.',
-    params: params({
+    description: 'Upload customer delivery contract, payment, integration, acceptance, training, or video evidence into quarantine for automatic platform scanning. For contracts only, source_url may replace all local file fields: a public HTTPS direct file URL, without redirects or authentication. Upload acceptance does not assert a clean scan or attach the asset as delivery evidence.',
+    params: { ...params({
       target_workspace_id: boundedString(200),
       delivery_id: boundedString(256),
       purpose: { type: 'string', enum: ['contract', 'payment', 'system_integration', 'functional_acceptance', 'training', 'video'] },
       name: boundedString(255),
       mime_type: boundedString(100),
       content_base64: boundedString(69_905_068),
+      source_url: boundedString(2_000),
       sha256: { type: 'string', minLength: 64, maxLength: 64, pattern: '^[a-f0-9]{64}$' },
-    }, ['target_workspace_id', 'delivery_id', 'purpose', 'name', 'mime_type', 'content_base64']),
+    }, ['target_workspace_id', 'delivery_id', 'purpose'], ['content_base64', 'source_url'], [['content_base64', 'source_url']]),
+    oneOf: [
+      { required: ['name', 'mime_type', 'content_base64'], not: { required: ['source_url'] } },
+      { required: ['source_url'], properties: { purpose: { enum: ['contract'] } }, not: { anyOf: ['name', 'mime_type', 'content_base64', 'sha256'].map(key => ({ required: [key] })) } },
+    ] },
   },
   {
     method: 'ops.customer-delivery.assets.get',
@@ -1006,7 +1027,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'catalog.import',
     description: 'Import a confirmed local product or bind an existing platform product for a later create/update publish.',
-    params: params({ brand_id: { type: 'string', description: '已授权品牌 ID；传入后商品绑定到该品牌和店铺范围。' }, platform: platformProperty, account_id: { type: 'string', description: '已授权的平台店铺账号；提供后商品会绑定该店铺。' }, remote_id: { type: 'string' }, local_product_key: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, sku_count: { type: 'string' }, skus_json: { type: 'string' }, images: { type: 'string' }, asset_ids_json: { type: 'string', description: '已上传商品素材 ID 字符串数组 JSON；绑定后图片优化默认使用这些素材。' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string', description: '最多 3 条；每条包含 id、text、proof_status、source_ids' }, store_name: { type: 'string' }, store_differentiation: { type: 'string', description: '商家确认的该店铺相对品牌的定位、客群或经营差异。' } }, ['platform', 'title']),
+    params: params({ brand_id: { type: 'string', description: '已授权品牌 ID；传入后商品绑定到该品牌和店铺范围。' }, platform: platformProperty, account_id: { type: 'string', description: '已授权的平台店铺账号；提供后商品会绑定该店铺。' }, draft_only: { type: 'string', enum: ['true'], description: '仅导入本地资料用于草稿候选；不绑定店铺、不可同步或发布。' }, remote_id: { type: 'string' }, local_product_key: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, sku_count: { type: 'string' }, skus_json: { type: 'string' }, images: { type: 'string' }, asset_ids_json: { type: 'string', description: '已上传商品素材 ID 字符串数组 JSON；绑定后图片优化默认使用这些素材。' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string', description: '最多 3 条；每条包含 id、text、proof_status、source_ids' }, store_name: { type: 'string' }, store_differentiation: { type: 'string', description: '商家确认的该店铺相对品牌的定位、客群或经营差异。' } }, ['platform', 'title']),
   },
   {
     method: 'catalog.import.batch',
@@ -1096,12 +1117,12 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'rule.publish',
     description: 'Create an immutable rule version; activating it requires rules-admin identity and approval_json with approval_ref, approved_by, and approved_at.',
-    params: params({ pack_id: { type: 'string' }, name: { type: 'string' }, version: { type: 'string' }, scope: { type: 'string', enum: ['global', 'platform', 'category', 'brand', 'store', 'campaign'] }, source_kind: { type: 'string', enum: ['official', 'internal', 'legal_review'] }, source_reference: { type: 'string' }, source_checked_at: { type: 'string' }, effective_from: { type: 'string' }, effective_to: { type: 'string' }, severity: { type: 'string', enum: ['error', 'warning'] }, action: { type: 'string', enum: ['block', 'warn', 'review', 'allow'] }, target_id: { type: 'string' }, scope_value: { type: 'string' }, checks_json: { type: 'string' }, reason: { type: 'string' }, status: { type: 'string', enum: ['draft', 'active'] }, approval_json: { type: 'string' } }, ['pack_id', 'name', 'version', 'scope', 'source_kind', 'source_reference', 'source_checked_at', 'checks_json', 'reason']),
+    params: params({ pack_id: { type: 'string' }, name: { type: 'string' }, version: { type: 'string' }, scope: { type: 'string', enum: ['global', 'platform', 'category', 'brand', 'store', 'campaign'] }, public_scope: { type: 'string', enum: ['platform'] }, source_kind: { type: 'string', enum: ['official', 'internal', 'legal_review'] }, source_reference: { type: 'string' }, source_checked_at: { type: 'string' }, effective_from: { type: 'string' }, effective_to: { type: 'string' }, severity: { type: 'string', enum: ['error', 'warning'] }, action: { type: 'string', enum: ['block', 'warn', 'review', 'allow'] }, target_id: { type: 'string' }, scope_value: { type: 'string' }, checks_json: { type: 'string' }, reason: { type: 'string' }, status: { type: 'string', enum: ['draft', 'active'] }, approval_json: { type: 'string' } }, ['pack_id', 'name', 'version', 'scope', 'source_kind', 'source_reference', 'source_checked_at', 'checks_json', 'reason']),
   },
   {
     method: 'rule.status',
     description: 'Change a rule version to active, inactive or expired with an audit reason; activation requires approval_json with approval_ref, approved_by, and approved_at.',
-    params: params({ pack_id: { type: 'string' }, version: { type: 'string' }, status: { type: 'string', enum: ['active', 'inactive', 'expired'] }, reason: { type: 'string' }, approval_json: { type: 'string' } }, ['pack_id', 'version', 'status', 'reason']),
+    params: params({ pack_id: { type: 'string' }, version: { type: 'string' }, status: { type: 'string', enum: ['active', 'inactive', 'expired'] }, public_scope: { type: 'string', enum: ['platform'] }, platform: platformProperty, reason: { type: 'string' }, approval_json: { type: 'string' } }, ['pack_id', 'version', 'status', 'reason']),
   },
   {
     method: 'asset.list',
@@ -1307,6 +1328,11 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     params: params({ task_id: { type: 'string' }, idempotency_key: { type: 'string' } }, ['task_id']),
   },
   {
+    method: 'content.draft.generate',
+    description: 'Generate an unbound content candidate through the platform relay. Candidate-only: no formal content version, approval, or publishing.',
+    params: params({ draft: { type: 'string', enum: ['true'] }, draft_title: { type: 'string', minLength: 2, maxLength: 256 }, draft_prompt: { type: 'string', minLength: 2, maxLength: 2_000 }, platform: platformProperty, idempotency_key: { type: 'string', minLength: 8, maxLength: 200 } }, ['draft', 'draft_title', 'idempotency_key']),
+  },
+  {
     method: 'content.codex.prepare',
     description: 'Prepare confirmed product facts for local/test Codex-native generation; production must use platform-managed content.generate and never accepts a user model key.',
     params: params({ task_id: { type: 'string' } }, ['task_id']),
@@ -1424,6 +1450,39 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     method: 'publish.get',
     description: 'Read a workspace-scoped publish job and its current delivery status.',
     params: params({ publish_job_id: { type: 'string' } }, ['publish_job_id']),
+  },
+  {
+    method: 'ops.marketing.publish.manual-evidence.record',
+    description: 'Platform operations records a manual publish for one explicitly targeted merchant workspace. Human evidence never creates an official platform receipt, never sets automated published, and cannot claim platform_verified.',
+    params: params({
+      target_workspace_id: boundedString(200),
+      task_id: boundedString(200),
+      content_version_id: boundedString(200),
+      platform: platformProperty,
+      account_id: boundedString(200),
+      delivery_bundle_hash: { type: 'string', pattern: '^[a-f0-9]{64}$', maxLength: 64 },
+      status: { type: 'string', enum: ['manual_publish_in_progress', 'manual_publish_reported', 'manual_review_required'] },
+      occurred_at: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$', maxLength: 30 },
+      remote_content_id: boundedString(500),
+      public_url: { type: 'string', pattern: '^https://', maxLength: 2_048 },
+      platform_display_status: boundedString(200),
+      reviewer_id: boundedString(200),
+      evidence_refs_json: { ...jsonArray('Private scanned asset references supporting the human report. Screenshots and exports remain human evidence, never an official API receipt.'), maxLength: 16_384 },
+      differences_json: { ...jsonArray('Documented differences between the approved bundle and the manually entered platform version.'), maxLength: 16_384 },
+      expected_revision: positiveIntegerString,
+      idempotency_key: idempotencyKeyProperty,
+      reason: reasonProperty,
+    }, ['target_workspace_id', 'task_id', 'content_version_id', 'platform', 'account_id', 'delivery_bundle_hash', 'status', 'occurred_at', 'evidence_refs_json', 'expected_revision', 'idempotency_key', 'reason']),
+  },
+  {
+    method: 'publish.manual.get',
+    description: 'Read one workspace-scoped manual publish report and its human evidence. A returned manual status is not platform_verified and must remain distinct from official API delivery receipts.',
+    params: params({ manual_publish_report_id: boundedString(200) }, ['manual_publish_report_id']),
+  },
+  {
+    method: 'publish.manual.list',
+    description: 'List manual publish reports visible to the authenticated merchant workspace. Human reports remain distinct from official platform delivery receipts.',
+    params: params({ task_id: boundedString(200), content_version_id: boundedString(200), limit: positiveIntegerString, offset: { type: 'string', pattern: '^[0-9]+$', maxLength: 10 } }),
   },
   {
     method: 'knowledge.rule.create',
@@ -1627,6 +1686,29 @@ export function validateMcpRequest(value: unknown): McpValidationResult {
       return typeof value === 'string' ? Boolean(value.trim()) : value !== undefined && value !== null
     })
     if (supplied.length > 1) errors.push(`params.${supplied.join(' and ')} are mutually exclusive`)
+  }
+  if (request.method === 'ops.customer-delivery.assets.upload') {
+    if ('source_url' in paramsObject) {
+      if (paramsObject.purpose !== 'contract') errors.push('params.source_url is only accepted for contract purpose')
+      for (const key of ['name', 'mime_type', 'content_base64', 'sha256']) {
+        if (key in paramsObject) errors.push(`params.${key} is not accepted with source_url`)
+      }
+      try {
+        const raw = paramsObject.source_url
+        if (typeof raw !== 'string' || raw !== raw.trim() || !/^https:\/\//iu.test(raw)
+          || /[\u0000-\u0020\u007f-\u009f\\#]/u.test(raw) || /%(?:0[0-9a-f]|1[0-9a-f]|7f)/iu.test(raw)) throw new Error()
+        const url = new URL(raw)
+        const authority = raw.slice(raw.indexOf('//') + 2).split(/[/?#]/u, 1)[0] ?? ''
+        if (url.protocol !== 'https:' || url.username || url.password || authority.includes('@') || url.hash || (url.port && url.port !== '443')) throw new Error()
+      } catch {
+        // Never echo signed URLs or credentials in validation errors.
+        errors.push('params.source_url must be a public HTTPS direct URL without credentials, fragment or custom port')
+      }
+    } else {
+      for (const key of ['name', 'mime_type', 'content_base64']) {
+        if (typeof paramsObject[key] !== 'string' || !(paramsObject[key] as string).trim()) errors.push(`params.${key} is required`)
+      }
+    }
   }
   if (request.method === 'ops.customer-delivery.update' && typeof paramsObject.patch_json === 'string') {
     try {

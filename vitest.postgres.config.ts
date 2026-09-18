@@ -3,7 +3,11 @@ import { readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { NON_HERMETIC_TEST_FILES } from './tests/test-suite-isolation.js'
 
-export const ISOLATED_POSTGRES_TEST_FILES = NON_HERMETIC_TEST_FILES.filter(file => (file.startsWith('packages/persistence/src/') || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts') && file.endsWith('.postgres.test.ts'))
+export const ISOLATED_POSTGRES_TEST_FILES = NON_HERMETIC_TEST_FILES.filter(file => (
+  file.startsWith('packages/persistence/src/')
+  || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts'
+  || file === 'tests/postgres-rls-attack-matrix.postgres.test.ts'
+) && file.endsWith('.postgres.test.ts'))
 
 const projectRoot = resolve(import.meta.dirname)
 function discover(directory: string, prefix = ''): string[] {
@@ -14,6 +18,9 @@ function discover(directory: string, prefix = ''): string[] {
   }).sort()
 }
 export const ALL_POSTGRES_TEST_FILES = ['packages/persistence', 'apps/worker', 'tests'].flatMap(directory => discover(directory)).sort()
+const discoveredPostgresFiles = new Set(ALL_POSTGRES_TEST_FILES)
+const isolatedManifestValid = new Set(ISOLATED_POSTGRES_TEST_FILES).size === ISOLATED_POSTGRES_TEST_FILES.length
+  && ISOLATED_POSTGRES_TEST_FILES.every(file => discoveredPostgresFiles.has(file))
 
 export function createIsolatedPostgresConfig(environment: NodeJS.ProcessEnv) {
   let valid = false
@@ -25,7 +32,7 @@ export function createIsolatedPostgresConfig(environment: NodeJS.ProcessEnv) {
       && !database.search && !database.hash
       && /^[a-f0-9-]{36}$/u.test(environment.MERCHANT_ISOLATED_POSTGRES_RUN_ID ?? '')
   } catch { /* missing or malformed binding must not activate a localhost fallback */ }
-  if (!valid || ISOLATED_POSTGRES_TEST_FILES.length !== 21 || ALL_POSTGRES_TEST_FILES.length < ISOLATED_POSTGRES_TEST_FILES.length) throw new Error('Use the isolated PostgreSQL launcher; generated local fixture bindings and the PostgreSQL manifest are required.')
+  if (!valid || !isolatedManifestValid || ISOLATED_POSTGRES_TEST_FILES.length !== 27 || ALL_POSTGRES_TEST_FILES.length < ISOLATED_POSTGRES_TEST_FILES.length) throw new Error('Use the isolated PostgreSQL launcher; generated local fixture bindings and the PostgreSQL manifest are required.')
   const files = environment.MERCHANT_ISOLATED_POSTGRES_ALL === 'true' ? ALL_POSTGRES_TEST_FILES : ISOLATED_POSTGRES_TEST_FILES
   return {
     test: {

@@ -44,7 +44,8 @@ function productText(product: ProductLike): string {
 /**
  * Projects an imported spreadsheet product into durable knowledge records.
  * Records deliberately remain pending/unknown and queued: approval, rights
- * confirmation and embedding workers are separate safety gates.
+ * confirmation and the hash-verified lexical index worker are separate safety gates.
+ * Vector embeddings require a separate, evidenced model-relay contract.
  */
 export async function projectImportedProductsToKnowledge(input: {
   repository: KnowledgeRepository
@@ -58,6 +59,9 @@ export async function projectImportedProductsToKnowledge(input: {
   const documents: KnowledgeDocument[] = []
   const chunks: KnowledgeChunk[] = []
   const bindings: KnowledgeAssetBinding[] = []
+  const source = typeof input.sourceMetadata?.source === 'string' && input.sourceMetadata.source.trim()
+    ? input.sourceMetadata.source.trim()
+    : 'catalog.import.batch'
   for (const product of input.products) {
     const text = productText(product)
     const contentHash = hash(text)
@@ -89,19 +93,19 @@ export async function projectImportedProductsToKnowledge(input: {
       contentType: 'text/plain',
       contentHash,
       extractedText: text,
-      sourceMetadata: { source: 'catalog.import.batch', ...(input.sourceMetadata ?? {}) },
+      sourceMetadata: { source, ...(input.sourceMetadata ?? {}) },
       approvalStatus: 'pending',
       rightsStatus: 'unknown',
       indexState: 'queued',
     })
     documents.push(document)
-    const createdChunks = await input.repository.replaceChunks(input.workspaceId, document.id, [{ id: `knowledge_chunk_product_${product.id}`, ordinal: 0, content: text, contentHash, metadata: { productId: product.id, source: 'spreadsheet' } }])
+    const createdChunks = await input.repository.replaceChunks(input.workspaceId, document.id, [{ id: `knowledge_chunk_product_${product.id}`, ordinal: 0, content: text, contentHash, metadata: { productId: product.id, source } }])
     chunks.push(...createdChunks)
     for (const sku of product.skus ?? []) {
       const skuText = `${product.title}\nSKU ${sku.id}：${sku.name}\n价格：${sku.price}\n库存：${sku.stock}${sku.attributes ? `\n属性：${JSON.stringify(sku.attributes)}` : ''}`
-      const skuDocument = await input.repository.createDocument({ id: `knowledge_document_sku_${product.id}_${sku.id}`, workspaceId: input.workspaceId, knowledgeAssetId: asset.id, ...(input.sourceAssetId ? { sourceAssetId: input.sourceAssetId } : {}), sourceVersion: input.sourceVersion ?? 1, productId: product.id, skuId: sku.id, knowledgeType: 'product_facts', title: `${product.title} SKU ${sku.name}`, contentType: 'text/plain', contentHash: hash(skuText), extractedText: skuText, sourceMetadata: { source: 'catalog.import.batch', ...(input.sourceMetadata ?? {}) }, approvalStatus: 'pending', rightsStatus: 'unknown', indexState: 'queued' })
+      const skuDocument = await input.repository.createDocument({ id: `knowledge_document_sku_${product.id}_${sku.id}`, workspaceId: input.workspaceId, knowledgeAssetId: asset.id, ...(input.sourceAssetId ? { sourceAssetId: input.sourceAssetId } : {}), sourceVersion: input.sourceVersion ?? 1, productId: product.id, skuId: sku.id, knowledgeType: 'product_facts', title: `${product.title} SKU ${sku.name}`, contentType: 'text/plain', contentHash: hash(skuText), extractedText: skuText, sourceMetadata: { source, ...(input.sourceMetadata ?? {}) }, approvalStatus: 'pending', rightsStatus: 'unknown', indexState: 'queued' })
       documents.push(skuDocument)
-      chunks.push(...await input.repository.replaceChunks(input.workspaceId, skuDocument.id, [{ id: `knowledge_chunk_sku_${product.id}_${sku.id}`, ordinal: 0, content: skuText, contentHash: hash(skuText), metadata: { productId: product.id, skuId: sku.id, source: 'spreadsheet' } }]))
+      chunks.push(...await input.repository.replaceChunks(input.workspaceId, skuDocument.id, [{ id: `knowledge_chunk_sku_${product.id}_${sku.id}`, ordinal: 0, content: skuText, contentHash: hash(skuText), metadata: { productId: product.id, skuId: sku.id, source } }]))
     }
   }
   return { assets, documents, chunks, bindings }

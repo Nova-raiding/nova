@@ -60,7 +60,8 @@ key_id_path="$resolved_trust_dir/production-evidence-key-id"
 fingerprint_path="$resolved_trust_dir/production-evidence-public-key-sha256"
 consumer_digest_path="$resolved_trust_dir/production-evidence-nonce-consumer-sha256"
 attester_digest_path="$resolved_trust_dir/production-capability-attester-sha256"
-for entry in "$public_key" "$key_id_path" "$fingerprint_path" "$consumer_digest_path" "$attester_digest_path"; do
+bundle_attester_digest_path="$resolved_trust_dir/production-evidence-bundle-attester-sha256"
+for entry in "$public_key" "$key_id_path" "$fingerprint_path" "$consumer_digest_path" "$attester_digest_path" "$bundle_attester_digest_path"; do
   [ -f "$entry" ] && [ ! -L "$entry" ] || { echo "production evidence trust file must be a regular non-symlink file: $entry" >&2; exit 1; }
   validate_secure_owner_mode "$entry" 'production evidence trust file'
 done
@@ -70,10 +71,12 @@ key_id=$(sed -n '1p' "$key_id_path")
 expected_fingerprint=$(sed -n '1p' "$fingerprint_path")
 expected_consumer_digest=$(sed -n '1p' "$consumer_digest_path")
 expected_attester_digest=$(sed -n '1p' "$attester_digest_path")
+expected_bundle_attester_digest=$(sed -n '1p' "$bundle_attester_digest_path")
 printf '%s\n' "$key_id" | grep -Eq '^[A-Za-z0-9._:-]{8,128}$' || { echo "production evidence key id is invalid or unprovisioned" >&2; exit 1; }
 printf '%s\n' "$expected_fingerprint" | grep -Eq '^[0-9a-f]{64}$' || { echo "production evidence public key fingerprint is invalid" >&2; exit 1; }
 printf '%s\n' "$expected_consumer_digest" | grep -Eq '^[0-9a-f]{64}$' || { echo "production evidence nonce consumer digest is invalid" >&2; exit 1; }
 printf '%s\n' "$expected_attester_digest" | grep -Eq '^[0-9a-f]{64}$' || { echo "production capability attester digest is invalid" >&2; exit 1; }
+printf '%s\n' "$expected_bundle_attester_digest" | grep -Eq '^[0-9a-f]{64}$' || { echo "production evidence bundle attester digest is invalid" >&2; exit 1; }
 
 actual_fingerprint=$(openssl pkey -pubin -in "$public_key" -outform DER 2>/dev/null | shasum -a 256 | awk '{print $1}') || {
   echo "production evidence public key is not a valid public key" >&2

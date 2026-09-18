@@ -1,0 +1,37 @@
+# Explicit real OAuth opt-in. No guessed endpoints, secrets, or write access.
+# Merge AFTER docker-compose.yml. Supply reviewed configuration via secret manager.
+x-jd-oauth-environment: &jd-oauth-environment
+  CONNECTOR_FIXTURE_MODE: "false"
+  PLUGIN_WRITE_ENABLED: "false"
+  JD_AUTH_ENABLED: "true"
+  JD_READ_ENABLED: "false"
+  JD_WRITE_ENABLED: "false"
+  JD_APP_KEY: ${JD_APP_KEY:?JD_APP_KEY must be supplied securely}
+  JD_APP_SECRET: ${JD_APP_SECRET:?JD_APP_SECRET must be supplied securely}
+  JD_OAUTH_AUTHORIZE_URL: ${JD_OAUTH_AUTHORIZE_URL:?Use the approved JD application authorization URL}
+  JD_OAUTH_TOKEN_URL: ${JD_OAUTH_TOKEN_URL:?Use the approved JD application token URL}
+  JD_OAUTH_REDIRECT_URI: ${JD_OAUTH_REDIRECT_URI:?Use the registered HTTPS JD callback}
+  PUBLIC_OAUTH_REDIRECT_URI: ${JD_OAUTH_REDIRECT_URI:?Use the registered HTTPS JD callback}
+  JD_OAUTH_REFRESH_URL: ${JD_OAUTH_REFRESH_URL:-}
+  JD_OAUTH_REVOKE_URL: ${JD_OAUTH_REVOKE_URL:-}
+  JD_OAUTH_SCOPES: ${JD_OAUTH_SCOPES:-}
+  JD_OAUTH_TOKEN_BODY_ENCODING: ${JD_OAUTH_TOKEN_BODY_ENCODING:-form}
+  JD_API_BASE_URL: ${JD_API_BASE_URL:?Use the approved JD API endpoint}
+  # OAuth configuration does not constitute verified product read/write capability.
+  JD_SYNC_PATH: ${JD_SYNC_PATH:-}
+  JD_CREATE_PATH: ""
+  JD_UPDATE_PATH: ""
+  JD_QUERY_PATH: ""
+  VAULT_ADDR: ${VAULT_ADDR:?A credential Vault must be configured}
+  VAULT_TOKEN: ${VAULT_TOKEN:?Inject the least-privilege credential Vault token securely}
+  VAULT_KV_MOUNT: ${VAULT_KV_MOUNT:-secret}
+  VAULT_NAMESPACE: ${VAULT_NAMESPACE:-}
+  VAULT_CREDENTIAL_PATH_PREFIX: ${VAULT_CREDENTIAL_PATH_PREFIX:-merchant}
+
+services:
+  api:
+    environment:
+      <<: *jd-oauth-environment
+  api-replica:
+    environment:
+      <<: *jd-oauth-environment

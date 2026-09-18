@@ -2,7 +2,7 @@
 
 生产状态由两个独立维度组成：
 
-1. **Runtime readiness**：当前部署是否使用真实依赖并能安全处理请求。它检查运行模式、支付 provider、平台 OAuth、对象存储/KMS、scanner、告警、数据库/RLS、宿主 bridge 和模型 relay 配置。
+1. **Runtime readiness**：当前部署是否使用真实依赖并能安全处理请求。它检查运行模式、支付 provider、平台操作模式（当前上线为人工运营；`official_api` 才要求平台 OAuth）、对象存储/KMS、scanner、告警、数据库/RLS、宿主 bridge 和模型 relay 配置。
 2. **Release evidence readiness**：当前 release 是否拥有可审计的外部运行证据。它检查 release id 绑定、五模态 provider request id、usage、cost、pricing snapshot、503 recovery，以及 capability、capacity、payment、storage、restore 和 ChatGPT host evidence。
 
 单项通过不能推导另一项通过。尤其是本地 `.env` 中的真实 relay 请求只能使 `release:model_relay_evidence=ready`，不能把 `commercial:model_relay` 或 `productionGate` 标成 ready；运行时仍为 fixture、对象存储为 local 或支付为 fixture 时，写入必须保持关闭。
@@ -25,6 +25,8 @@ productionGate = runtimeReadiness
 证据生命周期固定为 `missing → observed → validated → release_bound → expired`。`observed` 只表示采集到了响应，`validated` 才表示通过 schema 和成本/用量约束，`release_bound` 才能参与生产发布门禁。过期或 release id 不一致的证据必须回到 `missing`，不能沿用历史 readiness。
 
 五模态 relay evidence 必须来自真实 HTTPS relay，且每个 modality 都要有唯一 provider request id、usage、cost；使用 pricing snapshot 时还必须有 pricing version 和 pricing group。异步视频必须在 evidence 生成前确认最终成功状态和 HTTPS artifact，不能把 `IN_PROGRESS` 记录为成功。
+
+`usageObserved: true` 不能单独作为用量证据。每个模态必须保存响应中实际观测到的数值单位：文本/OCR 使用 token，图片/图片编辑使用正整数 billing units，视频使用 provider 回执的实际 duration seconds。请求参数中的图片数量或视频时长不能冒充 provider 用量。计量回执的 `usageProviderRequestId` 必须与顶层 `providerRequestId` 完全一致；缺少数值、数值非法或身份不一致时发布门禁 fail-closed。
 
 本地 Compose、fixture、示例 YAML、测试 token 和 Playwright 结果只能证明开发或契约层，不得写入 production evidence，也不得解除 `PRODUCTION_CONFIG_PATH`、Secret Manager、宿主 ChatGPT evidence 或支付/平台/云资源门禁。
 

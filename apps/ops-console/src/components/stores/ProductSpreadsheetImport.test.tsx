@@ -22,5 +22,19 @@ describe('product spreadsheet import', () => {
     const html = renderToStaticMarkup(<ProductSpreadsheetImport platformScope={false} canWrite={false} workspaceId="ws_customer" />);
     expect(html).toContain('ws_customer');
     expect(html).toContain('没有商品导入权限');
+    const upload = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gu)].find((button) => button[2]?.includes('上传商品表格'));
+    expect(upload).toBeDefined();
+    expect(upload?.[1]).toContain('disabled');
+  });
+  it('allows authorized workspace import before connecting a store without promising platform writes', () => {
+    const html = renderToStaticMarkup(<ProductSpreadsheetImport platformScope={false} canWrite workspaceId="ws_customer" />);
+
+    expect(html).toContain('导入商品资料无需先连接店铺');
+    expect(html).toContain('仅导入当前已授权工作区，可先预览草稿');
+    expect(html).toContain('真实平台同步和发布仍需连接对应店铺，并具备相应操作权限');
+    expect(html).not.toContain('没有商品导入权限');
+    const upload = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gu)].find((button) => button[2]?.includes('上传商品表格'));
+    expect(upload).toBeDefined();
+    expect(upload?.[1]).not.toContain('disabled');
   });
 });

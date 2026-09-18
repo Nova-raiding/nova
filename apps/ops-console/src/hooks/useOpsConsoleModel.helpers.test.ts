@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   allowedBackgroundHydrationMethods,
   alertListParams,
+  canonicalOpsWorkspaceId,
+  workspaceAuditListParams,
   dataSetErrorFor,
   dataSetErrorEvidenceFor,
   IdempotencyOperationKeys,
@@ -78,6 +80,14 @@ describe("Ops Console model helpers", () => {
     expect(alertListParams({})).toEqual({ status: "open", limit: "20" });
     expect(alertListParams({}, true)).toEqual({ status: "open", limit: "100", platform_scope: "platform" });
     expect(alertListParams({}, false, "ws-1")).toEqual({ status: "open", limit: "20", workspace_id: "ws-1" });
+  });
+
+  it("uses only the canonical session tenant in managed workspace requests", () => {
+    expect(canonicalOpsWorkspaceId("ws-session", true, "ws-stale")).toBe("ws-session");
+    expect(canonicalOpsWorkspaceId(undefined, true, "ws-stale")).toBe("");
+    expect(workspaceAuditListParams(canonicalOpsWorkspaceId(undefined, true, "ws-stale"))).toEqual({ limit: "20" });
+    expect(workspaceAuditListParams(canonicalOpsWorkspaceId("ws-session", true, "ws-stale"))).toEqual({ workspace_id: "ws-session", limit: "20" });
+    expect(canonicalOpsWorkspaceId(undefined, false, "ws-local")).toBe("ws-local");
   });
 
   it("clears old automation data and resolves a concrete store scope", () => {

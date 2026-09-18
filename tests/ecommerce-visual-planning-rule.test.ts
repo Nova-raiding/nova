@@ -19,7 +19,7 @@ describe('e-commerce visual planning rule', () => {
     expect(sourceSkill).toContain('第一轮只输出面向商家的商品判断和图片方案，不调用图片生成')
     expect(sourceSkill).toContain('首屏利益图、核心参数图、结构细节图、使用场景图、稳定体验图、汇总收口图')
     expect(sourceSkill).toContain('整套详情图”“电商图套系”或“商品详情页视觉”时，必须转入“电商详情图视觉策划规则”')
-    expect(sourceSkill).toContain('不适用此快捷路由，必须先输出视觉策划方案')
+    expect(sourceSkill).toContain('如果用户要求整套详情图、完整电商图或商品详情页，必须先执行“电商详情图视觉策划规则”，不能直接生成')
     expect(sourceSkill).toContain('上传图片直接制作独立候选')
   })
 

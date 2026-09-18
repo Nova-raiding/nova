@@ -174,6 +174,8 @@ export interface CommercialCatalogItem {
   visibility: string;
   version: string;
   priceLabel: string;
+  /** Server-priced amount in fen; absent only for legacy unparsed responses. */
+  priceFen?: number | null;
   cycleLabel: string | null;
   benefitsSummary: string;
   benefits?: Array<{ code: string; quantity: number | null; rawValue: string | null; rawUnit: string | null }>;
@@ -357,7 +359,7 @@ export function parseCatalog(value: unknown): CommercialPage<CommercialCatalogIt
     id: requiredText(row, method, "id", "id", "sku_id"), skuCode: requiredText(row, method, "sku_code", "sku_code", "skuCode", "code"),
     name: requiredText(row, method, "name", "name"), type: requiredText(row, method, "type", "type", "sku_type"),
     visibility: requiredText(row, method, "visibility", "visibility"), version: requiredText(row, method, "version", "version", "sku_version"),
-    priceLabel: requiredText(row, method, "price_label", "price_label", "priceLabel"), cycleLabel: optionalText(pick(row, "cycle_label", "cycleLabel")),
+    priceLabel: requiredText(row, method, "price_label", "price_label", "priceLabel"), priceFen: finiteNumber(pick(row, "price_fen", "priceFen")), cycleLabel: optionalText(pick(row, "cycle_label", "cycleLabel")),
     benefitsSummary: requiredText(row, method, "benefits_summary", "benefits_summary", "benefitsSummary"),
     benefits: Array.isArray(row.benefits) ? row.benefits.flatMap((value) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) return [];
@@ -369,6 +371,18 @@ export function parseCatalog(value: unknown): CommercialPage<CommercialCatalogIt
     validFrom: optionalText(pick(row, "valid_from", "validFrom")), validTo: optionalText(pick(row, "valid_to", "validTo")),
     unresolved: stringArray(row.unresolved),
   })) };
+}
+
+/**
+ * Package choices used when an operator provisions a merchant account must
+ * come from the versioned server catalog. In particular, a label or a legacy
+ * SKU alias is not enough to grant a commercial entitlement.
+ */
+export function provisionableCatalogItems(items: readonly CommercialCatalogItem[]): CommercialCatalogItem[] {
+  return items
+    .filter((item) => item.visibility === "public" && item.approvalState === "approved" && item.executable === true && item.unresolved.length === 0 && item.priceFen !== null && item.priceFen !== undefined)
+    .slice()
+    .sort((left, right) => left.skuCode.localeCompare(right.skuCode) || left.version.localeCompare(right.version));
 }
 
 export function parseOrders(value: unknown): CommercialPage<CommercialOrderItem> {

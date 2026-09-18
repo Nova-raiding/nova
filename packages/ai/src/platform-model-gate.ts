@@ -1,4 +1,4 @@
-export type PlatformModelKind = 'text' | 'image' | 'image_edit' | 'ocr' | 'video'
+export type PlatformModelKind = 'text' | 'image' | 'image_edit' | 'ocr' | 'video' | 'embedding'
 export type ModelEnvironment = Record<string, string | undefined>
 
 /** Configuration examples must never make a provider appear ready. Keep this
@@ -58,7 +58,7 @@ export interface PlatformModelBudgetEstimate {
 }
 
 const MODEL_BUDGET_ESTIMATE_KEYS: Record<PlatformModelKind, string> = {
-  text: 'MODEL_TEXT_MAX_REQUEST_CNY', image: 'MODEL_IMAGE_MAX_REQUEST_CNY', image_edit: 'MODEL_IMAGE_EDIT_MAX_REQUEST_CNY', ocr: 'MODEL_OCR_MAX_REQUEST_CNY', video: 'MODEL_VIDEO_MAX_REQUEST_CNY',
+  text: 'MODEL_TEXT_MAX_REQUEST_CNY', image: 'MODEL_IMAGE_MAX_REQUEST_CNY', image_edit: 'MODEL_IMAGE_EDIT_MAX_REQUEST_CNY', ocr: 'MODEL_OCR_MAX_REQUEST_CNY', video: 'MODEL_VIDEO_MAX_REQUEST_CNY', embedding: 'MODEL_EMBEDDING_MAX_REQUEST_CNY',
 }
 
 /** Versioned conservative request ceilings. Missing production estimates are
@@ -99,7 +99,9 @@ export function evaluatePlatformModelGate(source: ModelEnvironment, kind: Platfo
         ? source.IMAGE_EDIT_MODEL?.trim() || source.IMAGE_MODEL?.trim() || source.AI_IMAGE_MODEL?.trim()
       : kind === 'ocr'
         ? source.OCR_MODEL?.trim() || source.AI_VISION_MODEL?.trim()
-        : source.VIDEO_MODEL?.trim() || source.AI_VIDEO_MODEL?.trim()
+        : kind === 'embedding'
+          ? source.EMBEDDING_MODEL?.trim()
+          : source.VIDEO_MODEL?.trim() || source.AI_VIDEO_MODEL?.trim()
   const reasons: string[] = []
   let https = false
   let endpointHost: string | undefined

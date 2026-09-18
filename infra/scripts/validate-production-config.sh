@@ -26,8 +26,8 @@ yaml_validator=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)/validate-production-
 # Every required setting must be an actual YAML key. The value checks below
 # intentionally remain dependency-free, but an unanchored grep can otherwise
 # mistake text such as `note: "plugin_enabled: true"` for configuration.
-required_keys='plugin_enabled merchant_bearer_hostname auth_enforcement session_id_hash_secret_ref jd_auth_enabled jd_read_enabled jd_write_enabled taobao_tmall_auth_enabled taobao_tmall_read_enabled taobao_tmall_write_enabled pinduoduo_auth_enabled pinduoduo_read_enabled pinduoduo_write_enabled object_storage_versioning lifecycle_policy_ref asset_quarantine_retention_days asset_clean_retention_days deletion_request_grace_days backup_retention_days alert_notifications_enabled point_in_time_recovery_enabled database_pooler_enabled database_max_backend_connections database_connection_utilization_alert_percent secret_provider worker_api_credentials_ref worker_sync_api_token_ref worker_sync_api_signing_secret_ref worker_generation_api_token_ref worker_generation_api_signing_secret_ref worker_publish_api_token_ref worker_publish_api_signing_secret_ref worker_reconcile_api_token_ref worker_reconcile_api_signing_secret_ref worker_automation_api_token_ref worker_automation_api_signing_secret_ref merchant_ui_api_token_ref merchant_ui_workspace_id_ref payment_mode payment_provider_adapters payment_checkout_base_url payment_provider_checkout_api_url payment_provider_query_api_url payment_provider_refund_query_api_url payment_provider_refund_api_url payment_provider_api_key_ref payment_provider_merchant_id payment_callback_base_url payment_callback_secret_ref payment_reconciliation_enabled payment_refund_enabled model_relay_base_url model_relay_api_key_ref text_model image_model image_edit_model ocr_model video_model approved_requests_per_minute approved_tokens_per_minute maximum_task_cost_cny object_storage_bucket object_storage_region object_storage_endpoint asset_display_base_url asset_display_url_signing_secret_ref platform_rule_sync_manifest_url platform_rule_sync_signing_secret_ref platform_rule_sync_interval_hours asset_scanner_mode allow_local_asset_scan_fixture asset_scanner_api_token_ref asset_scanner_workspace_signing_secret_ref asset_scan_receipt_key_id asset_scan_receipt_private_key_ref asset_scan_policy_version clamav_image_digest clamav_signature_max_age_minutes clamav_max_file_bytes'
-required_keys="$required_keys mcp_authorization_mode durable_platform_assignments_required"
+required_keys='plugin_enabled merchant_bearer_hostname auth_enforcement session_id_hash_secret_ref jd_auth_enabled jd_read_enabled jd_write_enabled taobao_tmall_auth_enabled taobao_tmall_read_enabled taobao_tmall_write_enabled pinduoduo_auth_enabled pinduoduo_read_enabled pinduoduo_write_enabled object_storage_versioning lifecycle_policy_ref asset_quarantine_retention_days asset_clean_retention_days deletion_request_grace_days backup_retention_days alert_notifications_enabled point_in_time_recovery_enabled database_pooler_enabled database_max_backend_connections database_connection_utilization_alert_percent secret_provider worker_api_credentials_ref worker_sync_api_token_ref worker_sync_api_signing_secret_ref worker_generation_api_token_ref worker_generation_api_signing_secret_ref worker_publish_api_token_ref worker_publish_api_signing_secret_ref worker_reconcile_api_token_ref worker_reconcile_api_signing_secret_ref worker_automation_api_token_ref worker_automation_api_signing_secret_ref merchant_ui_api_token_ref merchant_ui_workspace_id_ref payment_mode payment_provider_adapters payment_checkout_base_url payment_provider_checkout_api_url payment_provider_query_api_url payment_provider_refund_query_api_url payment_provider_refund_api_url payment_provider_api_key_ref payment_provider_merchant_id payment_callback_base_url payment_callback_secret_ref payment_reconciliation_enabled payment_refund_enabled model_relay_base_url model_relay_api_key_ref text_model image_model image_edit_model ocr_model video_model embedding_model embedding_dimensions embedding_max_request_cny knowledge_vector_index_enabled approved_requests_per_minute approved_tokens_per_minute maximum_task_cost_cny object_storage_bucket object_storage_region object_storage_endpoint asset_display_base_url asset_display_url_signing_secret_ref platform_rule_sync_manifest_url platform_rule_sync_signing_secret_ref platform_rule_sync_interval_hours asset_scanner_mode allow_local_asset_scan_fixture asset_scanner_api_token_ref asset_scanner_workspace_signing_secret_ref asset_scan_receipt_key_id asset_scan_receipt_private_key_ref asset_scan_policy_version clamav_image_digest clamav_signature_max_age_minutes clamav_max_file_bytes'
+required_keys="$required_keys mcp_authorization_mode durable_platform_assignments_required platform_operations_mode"
 REQUIRED_PRODUCTION_CONFIG_KEYS="$required_keys" ruby "$yaml_validator" "$rendered_config_path"
 filtered_config_path=$(mktemp "${TMPDIR:-/tmp}/merchant-production-config.XXXXXX")
 trap 'rm -f -- "$filtered_config_path"' EXIT
@@ -76,20 +76,32 @@ if grep -Eq '^[[:space:]]*merchant_bearer_hostname:[[:space:]]*"?[^[:space:]]*\*
   echo 'merchant_bearer_hostname must not be a wildcard' >&2
   exit 1
 fi
-if ! grep -Eq '^[[:space:]]*OPS_AUTH_MODE:[[:space:]]*oidc([[:space:]]*)$' "$config_path" && ! grep -Eq '^[[:space:]]*auth_mode:[[:space:]]*"?oidc_gateway_hmac"?([[:space:]]*)$' "$config_path"; then
-  echo 'production ops console must use OIDC gateway authentication' >&2
+if ! grep -Eq '^[[:space:]]*OPS_AUTH_MODE:[[:space:]]*(oidc|password)([[:space:]]*)$' "$config_path" && ! grep -Eq '^[[:space:]]*auth_mode:[[:space:]]*"?oidc_gateway_hmac"?([[:space:]]*)$' "$config_path"; then
+  echo 'production ops console must use OIDC gateway or Store Nova password authentication' >&2
   exit 1
 fi
-# The baseline production contract requires the three established platform
-# groups. Social platforms are opt-in until their official OAuth/scopes,
-# field-mapping, and production-canary evidence are resolved; when enabled,
-# each social platform must be enabled as a complete auth/read/write group.
-for flag in \
-  jd_auth_enabled jd_read_enabled jd_write_enabled \
-  taobao_tmall_auth_enabled taobao_tmall_read_enabled taobao_tmall_write_enabled \
-  pinduoduo_auth_enabled pinduoduo_read_enabled pinduoduo_write_enabled; do
-  grep -Eq "^[[:space:]]*${flag}:[[:space:]]*true[[:space:]]*$" "$config_path" || { echo "${flag} must be true in rendered production config" >&2; exit 1; }
-done
+platform_operations_mode=$(sed -nE 's/^[[:space:]]*platform_operations_mode:[[:space:]]*"?([a-z_]+)"?[[:space:]]*$/\1/p' "$config_path" | tail -1)
+case "$platform_operations_mode" in
+  manual)
+    for flag in \
+      jd_auth_enabled jd_read_enabled jd_write_enabled \
+      taobao_tmall_auth_enabled taobao_tmall_read_enabled taobao_tmall_write_enabled \
+      pinduoduo_auth_enabled pinduoduo_read_enabled pinduoduo_write_enabled \
+      xiaohongshu_auth_enabled xiaohongshu_read_enabled xiaohongshu_write_enabled \
+      douyin_auth_enabled douyin_read_enabled douyin_write_enabled; do
+      grep -Eq "^[[:space:]]*${flag}:[[:space:]]*false[[:space:]]*$" "$config_path" || { echo "${flag} must be false in manual platform operations mode" >&2; exit 1; }
+    done
+    ;;
+  official_api)
+    for flag in \
+      jd_auth_enabled jd_read_enabled jd_write_enabled \
+      taobao_tmall_auth_enabled taobao_tmall_read_enabled taobao_tmall_write_enabled \
+      pinduoduo_auth_enabled pinduoduo_read_enabled pinduoduo_write_enabled; do
+      grep -Eq "^[[:space:]]*${flag}:[[:space:]]*true[[:space:]]*$" "$config_path" || { echo "${flag} must be true in official_api platform operations mode" >&2; exit 1; }
+    done
+    ;;
+  *) echo 'platform_operations_mode must be manual or official_api' >&2; exit 1 ;;
+esac
 for social_platform in xiaohongshu douyin; do
   social_enabled=false
   for flag in \
@@ -122,10 +134,21 @@ grep -Eq '^[[:space:]]*alert_notifications_enabled:[[:space:]]*(true|false)[[:sp
 if grep -Eq '^[[:space:]]*alert_notifications_enabled:[[:space:]]*true[[:space:]]*$' "$config_path"; then
   grep -Eq 'alert_channel_secret_ref:[[:space:]]*"?[^"[:space:]]+"?$' "$config_path" || { echo 'alert_channel_secret_ref must be configured when alert notifications are enabled' >&2; exit 1; }
 fi
-grep -Eq '^[[:space:]]*point_in_time_recovery_enabled:[[:space:]]*true[[:space:]]*$' "$config_path" || { echo 'PITR must be explicitly enabled' >&2; exit 1; }
 grep -Eq 'secret_provider:[[:space:]]*[^"'"'"' ]+' "$config_path" || { echo 'managed secret provider must be configured' >&2; exit 1; }
-grep -Eq '^[[:space:]]*database_pooler_enabled:[[:space:]]*true[[:space:]]*$' "$config_path" || { echo 'managed database pooler must be enabled' >&2; exit 1; }
-grep -Eq 'database_max_backend_connections:[[:space:]]*"?300"?$' "$config_path" || { echo 'database_max_backend_connections must be 300' >&2; exit 1; }
+secret_provider=$(sed -nE 's/^[[:space:]]*secret_provider:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' "$config_path" | tail -1)
+if [ "$secret_provider" = ecs-protected-env ]; then
+  # A single-host ECS deployment keeps PostgreSQL and Redis on a private
+  # Compose network and stores runtime secrets in a root-owned mode-600 file.
+  # It must describe the controls it actually has instead of claiming managed
+  # PITR or a managed pooler. Restore evidence remains a mandatory release gate.
+  grep -Eq '^[[:space:]]*point_in_time_recovery_enabled:[[:space:]]*false[[:space:]]*$' "$config_path" || { echo 'single-node ECS must explicitly use snapshot restore instead of claiming PITR' >&2; exit 1; }
+  grep -Eq '^[[:space:]]*database_pooler_enabled:[[:space:]]*false[[:space:]]*$' "$config_path" || { echo 'single-node ECS must not claim a managed database pooler' >&2; exit 1; }
+  grep -Eq 'database_max_backend_connections:[[:space:]]*"?(100|150)"?$' "$config_path" || { echo 'single-node ECS database connection budget must be 100 or 150' >&2; exit 1; }
+else
+  grep -Eq '^[[:space:]]*point_in_time_recovery_enabled:[[:space:]]*true[[:space:]]*$' "$config_path" || { echo 'PITR must be explicitly enabled' >&2; exit 1; }
+  grep -Eq '^[[:space:]]*database_pooler_enabled:[[:space:]]*true[[:space:]]*$' "$config_path" || { echo 'managed database pooler must be enabled' >&2; exit 1; }
+  grep -Eq 'database_max_backend_connections:[[:space:]]*"?300"?$' "$config_path" || { echo 'database_max_backend_connections must be 300' >&2; exit 1; }
+fi
 grep -Eq 'database_connection_utilization_alert_percent:[[:space:]]*"?80"?$' "$config_path" || { echo 'database connection utilization alert must be 80 percent' >&2; exit 1; }
 
 for worker_secret_ref in \
@@ -203,9 +226,11 @@ grep -Eq '^[[:space:]]*payment_refund_enabled:[[:space:]]*true[[:space:]]*$' "$c
 # Keep this gate aligned with the runtime MODEL_RELAY_* contract; legacy
 # per-provider endpoints/keys must never pass a rendered production config.
 grep -Eq 'model_relay_base_url:[[:space:]]*"?https://' "$config_path" || { echo 'model_relay_base_url must be HTTPS' >&2; exit 1; }
-for model_field in model_relay_api_key_ref text_model image_model image_edit_model ocr_model video_model; do
+for model_field in model_relay_api_key_ref text_model image_model image_edit_model ocr_model video_model embedding_model; do
   grep -Eq "${model_field}:[[:space:]]*\"?[^\"'[:space:]]+\"?$" "$config_path" || { echo "${model_field} must be configured" >&2; exit 1; }
 done
+grep -Eq 'embedding_dimensions:[[:space:]]*"?[1-9][0-9]*"?$' "$config_path" || { echo 'embedding_dimensions must be a positive integer' >&2; exit 1; }
+grep -Eq 'embedding_max_request_cny:[[:space:]]*"?([1-9][0-9]*(\.[0-9]{1,4})?|0\.[0-9]*[1-9][0-9]*)"?$' "$config_path" || { echo 'embedding_max_request_cny must be a positive CNY amount' >&2; exit 1; }
 if grep -Eq '(^|[[:space:]])(text_endpoint|image_endpoint|text_api_key_ref|image_api_key_ref|AI_BASE_URL|IMAGE_BASE_URL|VIDEO_BASE_URL):' "$config_path"; then
   echo 'legacy direct model endpoint/key fields are forbidden; use the platform relay contract' >&2
   exit 1
@@ -213,9 +238,15 @@ fi
 grep -Eq 'approved_requests_per_minute:[[:space:]]*"?[1-9][0-9]*\"?$' "$config_path" || { echo 'approved_requests_per_minute must be a positive approved limit' >&2; exit 1; }
 grep -Eq 'approved_tokens_per_minute:[[:space:]]*"?[1-9][0-9]*\"?$' "$config_path" || { echo 'approved_tokens_per_minute must be a positive approved limit' >&2; exit 1; }
 grep -Eq 'maximum_task_cost_cny:[[:space:]]*"?([1-9][0-9]*(\.[0-9]{1,2})?|0\.(0[1-9]|[1-9][0-9]?))\"?$' "$config_path" || { echo 'maximum_task_cost_cny must be a positive CNY amount with at most two decimals' >&2; exit 1; }
-grep -Eq 'platform_rule_sync_manifest_url:[[:space:]]*"?https://' "$config_path" || { echo 'platform rule sync manifest URL must be HTTPS' >&2; exit 1; }
-grep -Eq "platform_rule_sync_signing_secret_ref:[[:space:]]*[^\"' ]+" "$config_path" || { echo 'platform rule sync signing secret ref must be configured' >&2; exit 1; }
-grep -Eq 'platform_rule_sync_interval_hours:[[:space:]]*"?[1-9][0-9]*\"?$' "$config_path" || { echo 'platform rule sync interval must be a positive number of hours' >&2; exit 1; }
+if [ "$platform_operations_mode" = manual ]; then
+  grep -Eq 'platform_rule_sync_manifest_url:[[:space:]]*"?disabled"?[[:space:]]*$' "$config_path" || { echo 'manual platform operations must disable remote rule sync' >&2; exit 1; }
+  grep -Eq 'platform_rule_sync_signing_secret_ref:[[:space:]]*"?disabled"?[[:space:]]*$' "$config_path" || { echo 'manual platform operations must not claim a rule sync signing secret' >&2; exit 1; }
+  grep -Eq 'platform_rule_sync_interval_hours:[[:space:]]*"?0"?[[:space:]]*$' "$config_path" || { echo 'manual platform operations rule sync interval must be zero' >&2; exit 1; }
+else
+  grep -Eq 'platform_rule_sync_manifest_url:[[:space:]]*"?https://' "$config_path" || { echo 'platform rule sync manifest URL must be HTTPS' >&2; exit 1; }
+  grep -Eq "platform_rule_sync_signing_secret_ref:[[:space:]]*[^\"' ]+" "$config_path" || { echo 'platform rule sync signing secret ref must be configured' >&2; exit 1; }
+  grep -Eq 'platform_rule_sync_interval_hours:[[:space:]]*"?[1-9][0-9]*\"?$' "$config_path" || { echo 'platform rule sync interval must be a positive number of hours' >&2; exit 1; }
+fi
 for storage_field in object_storage_bucket object_storage_region object_storage_endpoint; do
   grep -Eq "${storage_field}:[[:space:]]*\"?[^\"[:space:]]+\"?$" "$config_path" || { echo "${storage_field} must be configured" >&2; exit 1; }
 done

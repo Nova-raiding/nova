@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { withWorkspaceTransaction, requireWorkspaceScope, type SqlClient, type SqlPool } from './repository.js'
 
-export type BusinessEntityType = 'product' | 'task' | 'content_version' | 'publish_job' | 'publish_batch' | 'platform_account' | 'generation_job' | 'image_generation_job' | 'brand_profile' | 'asset' | 'feedback' | 'sync_job' | 'automation_policy' | 'merchant_intent'
+export type BusinessEntityType = 'product' | 'task' | 'content_version' | 'publish_job' | 'manual_publish_record' | 'publish_batch' | 'platform_account' | 'generation_job' | 'image_generation_job' | 'brand_profile' | 'asset' | 'feedback' | 'sync_job' | 'automation_policy' | 'merchant_intent'
 
 export interface SaveBusinessSnapshotInput {
   workspaceId: string

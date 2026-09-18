@@ -12,6 +12,7 @@ services:
     environment:
       LOCAL_COMPOSE: "false"
       CONNECTOR_FIXTURE_MODE: "false"
+      PLATFORM_OPERATIONS_MODE: "manual"
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: "false"
       ALLOW_LOCAL_PAYMENT_FIXTURE: "false"
       RUN_MIGRATIONS_ON_STARTUP: "false"
@@ -43,6 +44,7 @@ services:
     environment:
       LOCAL_COMPOSE: "false"
       CONNECTOR_FIXTURE_MODE: "false"
+      PLATFORM_OPERATIONS_MODE: "manual"
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: "false"
       ALLOW_LOCAL_PAYMENT_FIXTURE: "false"
       RUN_MIGRATIONS_ON_STARTUP: "false"

@@ -42,7 +42,11 @@ describe("members governance helpers", () => {
   it("rejects stale responses after a tenant switch", () => {
     const gate = new MembersRequestGate();
     const oldRequest = gate.begin("ws_old");
+    // A post-mutation refresh may start while this token is current.
+    expect(gate.isCurrent(oldRequest, "ws_old")).toBe(true);
     const currentRequest = gate.begin("ws_new");
+    // The response must be checked again after its await, because the tenant
+    // may have changed while the refresh was in flight.
     expect(gate.isCurrent(oldRequest, "ws_new")).toBe(false);
     expect(gate.isCurrent(currentRequest, "ws_new")).toBe(true);
     gate.invalidate();

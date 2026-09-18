@@ -22,6 +22,7 @@ const paymentEnvironment = {
   MERCHANT_API_TOKEN: 'test-merchant-token',
   MERCHANT_WORKSPACE_ID: 'ws_pilot_parity',
   MCP_OAUTH_CLIENTS: JSON.stringify({ 'chatgpt-test': ['https://chatgpt.example.test/oauth/callback'] }),
+  OPENAI_APPS_CHALLENGE_TOKEN: 'openai-domain-token-production-123',
   CAPABILITY_EVIDENCE_PATH: '/tmp/test-capability-evidence.json',
   ASSET_STORAGE_BUCKET: 'test-production-bucket',
   ASSET_STORAGE_REGION: 'cn-test',
@@ -110,10 +111,26 @@ const platformAndVaultKeys = [
     `${prefix}_OAUTH_AUTHORIZE_URL`, `${prefix}_OAUTH_TOKEN_URL`, `${prefix}_OAUTH_REDIRECT_URI`,
     `${prefix}_API_BASE_URL`, `${prefix}_SYNC_PATH`, `${prefix}_CREATE_PATH`, `${prefix}_UPDATE_PATH`, `${prefix}_QUERY_PATH`,
   ]),
-  'JD_APP_KEY', 'JD_APP_SECRET', 'TAOBAO_APP_KEY', 'TAOBAO_APP_SECRET',
+  'JD_APP_KEY', 'JD_APP_SECRET',
+  'TAOBAO_APP_KEY', 'TAOBAO_APP_SECRET', 'TAOBAO_OAUTH_REFRESH_URL', 'TAOBAO_OAUTH_REVOKE_URL', 'TAOBAO_OAUTH_SCOPES',
   'TMALL_CLIENT_ID', 'TMALL_CLIENT_SECRET', 'TMALL_OAUTH_REFRESH_URL', 'TMALL_OAUTH_REVOKE_URL', 'TMALL_OAUTH_SCOPES',
   'PDD_APP_KEY', 'PDD_APP_SECRET', 'XHS_CLIENT_ID', 'XHS_CLIENT_SECRET', 'DOUYIN_CLIENT_ID', 'DOUYIN_CLIENT_SECRET',
 ] as const
+
+const douyinProductMappingEnvironment = {
+  DOUYIN_TITLE_PATH: 'data.product.name',
+  DOUYIN_DESCRIPTION_PATH: 'data.product.description',
+  DOUYIN_PRICE_PATH: 'data.product.price',
+  DOUYIN_STOCK_PATH: 'data.product.stock',
+  DOUYIN_SKU_PATH: 'data.product.skus',
+  DOUYIN_SKU_ID_PATH: 'sku_id',
+  DOUYIN_SKU_NAME_PATH: 'sku_name',
+  DOUYIN_SKU_PRICE_PATH: 'price',
+  DOUYIN_SKU_STOCK_PATH: 'stock',
+  DOUYIN_IMAGES_PATH: 'data.product.images',
+  DOUYIN_CATEGORY_PATH: 'data.product.category',
+  DOUYIN_ATTRIBUTES_PATH: 'data.product.attributes',
+} as const
 
 function render(overrides: NodeJS.ProcessEnv = {}): ComposeConfig {
   return JSON.parse(execFileSync('docker', [
@@ -272,6 +289,14 @@ describe('ECS pilot API replica parity', () => {
     expect(services.api?.environment?.CONNECTOR_FIXTURE_MODE).toBe('false')
     expect(services.api?.environment?.JD_APP_KEY).toBe('jd-key')
     expect(services.api?.environment?.VAULT_ADDR).toBe('https://vault.example.test')
+  })
+
+  it('passes every Douyin product mapping path to both API instances', () => {
+    const services = render(douyinProductMappingEnvironment).services
+
+    for (const service of ['api', 'api-replica']) {
+      expect(services[service]?.environment).toMatchObject(douyinProductMappingEnvironment)
+    }
   })
 
   it('renders the same public and payment configuration on both API instances', () => {

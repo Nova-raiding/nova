@@ -8,6 +8,7 @@ import {
   createInMemoryDomainRepository,
   isFactUsable,
   issueConfirmationToken,
+  prepareManualPublish,
   proposeFact,
   reconcilePublishJob,
   restoreContentVersion,
@@ -17,6 +18,7 @@ import {
   transitionFact,
   transitionPublishJob,
   transitionTask,
+  verifyPlatformPublish,
   type FactField,
   type Task,
 } from '../domain/src/index.js'
@@ -164,5 +166,24 @@ describe('PublishJob confirmation / idempotency / stale', () => {
     if (!reconciling.ok) return
     expect(reconcilePublishJob(reconciling.value, 'published')).toMatchObject({ ok: true, value: { state: 'published' } })
     expect(reconcilePublishJob(reconciling.value, 'absent')).toMatchObject({ ok: true, value: { state: 'manual_attention' } })
+  })
+
+  it('keeps manual publish reports distinct from API-verified publication', () => {
+    const { rt, token, repo, input } = publishFixture()
+    const created = confirmPublish(token, input, repo.publishJobsByIdempotency, rt, repo.publishJobsByToken)
+    if (!created.ok) throw new Error('fixture publish failed')
+    const exported = prepareManualPublish(created.value)
+    if (!exported.ok) throw new Error('fixture export failed')
+    const inProgress = transitionPublishJob(exported.value, 'manual_publish_in_progress')
+    if (!inProgress.ok) throw new Error('fixture manual start failed')
+    const reported = transitionPublishJob(inProgress.value, 'manual_publish_reported')
+    if (!reported.ok) throw new Error('fixture report failed')
+
+    expect(transitionPublishJob(reported.value, 'published')).toMatchObject({ ok: false, error: { code: 'PUBLISH_INVALID_TRANSITION' } })
+    expect(transitionPublishJob(reported.value, 'platform_verified')).toMatchObject({ ok: false, error: { code: 'PUBLISH_INVALID_TRANSITION' } })
+    expect(verifyPlatformPublish(reported.value, { source: 'official_api', receiptId: 'api_receipt_1', remoteResourceId: 'remote_item_1', verifiedAt: rt.now() })).toMatchObject({
+      ok: true,
+      value: { state: 'platform_verified', platformVerification: { source: 'official_api', receiptId: 'api_receipt_1' } },
+    })
   })
 })

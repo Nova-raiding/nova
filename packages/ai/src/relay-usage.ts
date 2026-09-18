@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 
-export type RelayUsageModality = 'text' | 'image' | 'image_edit' | 'ocr' | 'video'
+export type RelayUsageModality = 'text' | 'image' | 'image_edit' | 'ocr' | 'video' | 'embedding'
 
 export interface RelayUsageContext {
   workspaceId?: string
@@ -11,6 +11,9 @@ export interface RelayUsageContext {
   contextHash?: string
   billingUnits?: number
   resolution?: string
+  /** Request-side estimate used for budget preauthorization, never settlement. */
+  preauthorizationDurationSeconds?: number
+  /** @deprecated Use preauthorizationDurationSeconds for request-side estimates. */
   durationSeconds?: number
   /** Stable identity of this exact provider call when no provider request ID is returned. */
   providerAttemptId?: string
@@ -116,15 +119,20 @@ function firstNumber(...values: unknown[]): number | undefined {
 
 export function relayUsageReceiptKey(usage: Pick<RelayUsageRecord, 'workspaceId' | 'actionId' | 'model' | 'modality' | 'providerRequestId' | 'providerAttemptId'>) {
   const providerRequestId = evidenceIdentity(usage.providerRequestId)
-  if (providerRequestId) return providerRequestId
   const providerAttemptId = evidenceIdentity(usage.providerAttemptId)
-  if (!providerAttemptId) throw new ModelUsageReceiptIdentityError()
+  if (!providerRequestId && !providerAttemptId) throw new ModelUsageReceiptIdentityError()
+  // Preserve the provider request ID as the externally reconcilable receipt.
+  // Persistence uniqueness is workspace-scoped and separately validates all
+  // immutable receipt facts, so cross-tenant IDs cannot collide silently.
+  if (providerRequestId) return providerRequestId
+  // A local attempt has no externally meaningful identity, so bind it to the
+  // trusted tenant/action/model/modality context before persisting it.
   const identity = JSON.stringify([
     usage.workspaceId?.trim() ?? '',
     usage.actionId?.trim() ?? '',
     usage.model.trim(),
     usage.modality,
-    providerAttemptId,
+    ['provider_attempt', providerAttemptId],
   ])
   return `relay_usage_${createHash('sha256').update(identity, 'utf8').digest('hex')}`
 }
@@ -184,6 +192,8 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // Treat a positive output_image_count as usage evidence; the pricing client
   // then derives currency from the frozen billing_units context.
   const outputImageCount = firstNumber(usage?.output_image_count, usage?.outputImageCount, root.output_image_count, data?.output_image_count, result?.output_image_count, metadata?.output_image_count)
+  const parsedProviderDurationSeconds = firstNumber(usage?.duration_seconds, usage?.durationSeconds)
+  const providerDurationSeconds = parsedProviderDurationSeconds !== undefined && parsedProviderDurationSeconds > 0 ? parsedProviderDurationSeconds : undefined
   // A successful image response is itself metering evidence when the relay
   // omits token/usage metadata: each returned image is one billable unit and
   // the caller supplies the requested count as the bounded billing context.
@@ -198,7 +208,8 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   const acceptedVideoStatuses = new Set(['queued', 'pending', 'created', 'submitted', 'processing', 'running', 'in_progress'])
   const statusBoundVideoId = typeof videoEvidenceNode?.id === 'string' && videoEvidenceNode.id.trim().length > 0 && typeof videoStatus === 'string' && acceptedVideoStatuses.has(videoStatus.toLowerCase())
   const videoRequestAccepted = defaults.modality === 'video' && Boolean(providerRequestId || defaults.context?.providerAttemptId) && (explicitVideoJobId || statusBoundVideoId)
-  const usageObserved = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || ((defaults.modality === 'image' || defaults.modality === 'image_edit') && outputImageCount !== undefined && outputImageCount > 0) || imageResultObserved || videoRequestAccepted
+  const usageObserved = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || providerDurationSeconds !== undefined || ((defaults.modality === 'image' || defaults.modality === 'image_edit') && outputImageCount !== undefined && outputImageCount > 0) || imageResultObserved
+  const preauthorizationDurationSeconds = defaults.context?.preauthorizationDurationSeconds ?? defaults.context?.durationSeconds
   return {
     ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}),
     ...(defaults.context?.actionId ? { actionId: defaults.context.actionId } : {}),
@@ -219,7 +230,8 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
       ...(videoRequestAccepted ? { video_request_accepted: true } : {}),
       ...(defaults.context?.billingUnits ? { billing_units: defaults.context.billingUnits } : {}),
       ...(defaults.context?.resolution ? { resolution: defaults.context.resolution } : {}),
-      ...(defaults.context?.durationSeconds ? { duration_seconds: defaults.context.durationSeconds } : {}),
+      ...(providerDurationSeconds !== undefined ? { duration_seconds: providerDurationSeconds, duration_evidence: 'provider_usage' } : {}),
+      ...(preauthorizationDurationSeconds ? { preauthorization_duration_seconds: preauthorizationDurationSeconds, preauthorization_estimate: true } : {}),
       ...(typeof root.id === 'string' && root.id.trim() ? { provider_response_id: root.id.trim() } : {}),
     },
   }

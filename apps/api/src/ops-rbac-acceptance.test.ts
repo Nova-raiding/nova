@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { server, setAuthorizationRepositoryForTests, workspaceMembers } from './server.js'
 import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, MCP_METHOD_POLICIES } from '../../../packages/contracts/src/authz.js'
 import { MCP_METHODS } from '../../../packages/contracts/src/mcp.js'
+import { PLATFORM_ASSIGNED_ROLES } from '../../../packages/persistence/src/index.js'
 
 type RpcBody<T = unknown> = {
   request_id?: string
@@ -30,6 +31,7 @@ type Matrix = {
   method_count: number
   role_count: number
   roles: string[]
+  assignable_roles: string[]
   items: Array<{
     method: string
     capability: string
@@ -96,6 +98,7 @@ describe('Ops RBAC backend API acceptance contracts', () => {
       method_count: MCP_METHODS.length,
       role_count: CANONICAL_ROLES.length,
       roles: CANONICAL_ROLES,
+      assignable_roles: PLATFORM_ASSIGNED_ROLES.filter(role => role !== 'platform_owner'),
     })
     expect(matrix.items.map(item => item.method).sort()).toEqual(Object.keys(MCP_METHOD_POLICIES).sort())
     for (const item of matrix.items) {

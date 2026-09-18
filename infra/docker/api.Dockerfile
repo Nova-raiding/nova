@@ -7,6 +7,10 @@ COPY services ./services
 COPY tests ./tests
 COPY demo ./demo
 COPY scripts ./scripts
+# Release-gate tests imported by the root composite build use the checked-in
+# attestation helpers. Keep them in the build stage only; they are not copied
+# into the runtime image.
+COPY infra/protected ./infra/protected
 COPY tsconfig.json vitest*.config.ts ./
 COPY infra/scripts/generate-container-source-manifest.mjs ./infra/scripts/generate-container-source-manifest.mjs
 # Host-side incremental state must never control which checked-in source is
@@ -29,7 +33,8 @@ FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a55
 ENV NODE_ENV=production
 ENV PORT=8787
 WORKDIR /app
-RUN addgroup -g 10001 -S merchant && adduser -u 10001 -S -D -H -G merchant merchant \
+RUN apk add --no-cache postgresql16-client \
+  && addgroup -g 10001 -S merchant && adduser -u 10001 -S -D -H -G merchant merchant \
   && mkdir -p /var/lib/merchant-assets \
   && chown 10001:10001 /var/lib/merchant-assets
 COPY package.json package-lock.json ./
@@ -42,8 +47,10 @@ COPY packages/persistence/src/migrations ./dist/packages/persistence/src/migrati
 COPY --from=build /app/apps/plugin ./apps/plugin
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/dist/packages/contracts/src ./packages/contracts/dist
-# The billing provider imports this checked-in ESM callback signer at runtime;
-# keep it beside the compiled billing module in the API image.
+# Billing callback signing is intentionally kept as a checked-in ESM asset
+# rather than compiled TypeScript. The compiled payment provider imports it at
+# runtime, so the API image must carry the exact source asset alongside the
+# generated package output.
 COPY packages/billing/src/callback-envelope.mjs ./dist/packages/billing/src/callback-envelope.mjs
 COPY packages/billing/src/callback-envelope.d.mts ./dist/packages/billing/src/callback-envelope.d.mts
 # The runtime install happens before workspace sources are copied, so npm
@@ -57,7 +64,8 @@ RUN mkdir -p node_modules/@merchant-marketing \
          @merchant-marketing/*) \
            ln -sfn "../../$package_dir" "node_modules/$package_name" ;; \
        esac; \
-     done
+     done \
+  && chmod -R a+rX /app/packages /app/dist
 COPY --from=build /app/.release-source/api.manifest /app/.release-source/api.manifest
 COPY --from=build /app/.release-source/api.manifest.sha256 /app/.release-source/api.manifest.sha256
 USER 10001:10001

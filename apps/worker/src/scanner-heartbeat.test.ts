@@ -25,7 +25,7 @@ describe('scanner heartbeat controller', () => {
     await controller.tick()
     expect(controller.canProcessScans()).toBe(false)
     configured = true
-    expect(await controller.tick()).toMatchObject({ ready: false, recoveryCapable: false, callback: { capable: false } })
+    expect(await controller.tick()).toMatchObject({ ready: false, recoveryCapable: true, callback: { capable: false } })
     expect(controller.canProcessScans()).toBe(true)
     await expect(stat(readyFile)).rejects.toMatchObject({ code: 'ENOENT' })
     acceptedAt = '2026-08-30T09:59:59.000Z'

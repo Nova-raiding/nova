@@ -21,6 +21,7 @@ export interface ReleaseManifest {
   }
   mcp: { methodCount: number; methodListSha256: string; bridgeSha256: string }
   artifacts: Array<{ path: string; sha256: string; bytes: number }>
+  productionEvidenceBundle: { required: true; schemaVersion: 'release-evidence-bundle/1' }
   productionEvidence: { capability: string; capacity: string; modelRelay: string; payment: string; restore: string; objectStorage: string; codexAppHost: string; canonicalCutover: string }
 }
 
@@ -94,6 +95,14 @@ export function buildReleaseManifest(input: {
     resolve(root, 'packages/billing/src/callback-envelope.mjs'),
     resolve(root, 'packages/billing/src/callback-envelope.d.mts'),
     resolve(root, 'services/payment-gateway/Dockerfile'),
+    resolve(root, 'infra/scripts/render-ecs-production-compose.sh'),
+    resolve(root, 'infra/scripts/stage-verified-ecs-release.sh'),
+    resolve(root, 'infra/scripts/deploy-verified-ecs-compose.sh'),
+    resolve(root, 'infra/scripts/rollback-ecs-compose.sh'),
+    resolve(root, 'infra/scripts/invoke-ecs-automatic-rollback.sh'),
+    resolve(root, 'infra/protected/attest-release-evidence-bundle.mjs'),
+    resolve(root, 'infra/protected/attest-release-evidence-bundle.d.mts'),
+    resolve(root, 'tests/release-evidence-bundle-gate.ts'),
   ]
   const artifacts = artifactPaths.map(path => {
     const bytes = readFileSync(path)
@@ -115,6 +124,7 @@ export function buildReleaseManifest(input: {
     },
     mcp: { methodCount: MCP_METHODS.length, methodListSha256: sha256(JSON.stringify(MCP_METHODS)), bridgeSha256: artifacts.find(item => item.path === 'apps/plugin/mcp/bridge.mjs')!.sha256 },
     artifacts,
+    productionEvidenceBundle: { required: true, schemaVersion: 'release-evidence-bundle/1' },
     productionEvidence: {
       capability: input.capabilityEvidenceRef ?? (process.env.CAPABILITY_EVIDENCE_REF?.trim() || 'not-provided'),
       capacity: input.capacityEvidenceRef ?? (process.env.CAPACITY_EVIDENCE_REF?.trim() || 'not-provided'),

@@ -126,9 +126,9 @@ const containerEnvironmentNames = (service: string) => {
 if (dockerReady) {
   containerEnv = containerEnvironmentNames('api')
 }
-const relayNames = ['MODEL_RELAY_BASE_URL', 'MODEL_RELAY_API_KEY', 'AI_MODEL', 'IMAGE_MODEL', 'IMAGE_EDIT_MODEL', 'OCR_MODEL', 'VIDEO_MODEL']
+const relayNames = ['MODEL_RELAY_BASE_URL', 'MODEL_RELAY_API_KEY', 'AI_MODEL', 'IMAGE_MODEL', 'IMAGE_EDIT_MODEL', 'OCR_MODEL', 'VIDEO_MODEL', 'EMBEDDING_MODEL', 'EMBEDDING_DIMENSIONS', 'MODEL_EMBEDDING_MAX_REQUEST_CNY']
 const relayReady = relayNames.every(name => Boolean(process.env[name]) || containerEnv.has(name))
-add('model_relay', relayReady ? 'pass' : production ? 'fail' : 'warn', relayReady ? '业务模型中转配置存在（值已隐藏）' : '业务模型中转配置不完整', '通过 Secret Manager/环境合同注入七项 relay 配置；不要复制密钥到仓库。')
+add('model_relay', relayReady ? 'pass' : production ? 'fail' : 'warn', relayReady ? '业务模型中转配置存在（值已隐藏）' : '业务模型中转配置不完整', '通过 Secret Manager/环境合同注入 relay、五种生成模型及 embedding 配置；不要复制密钥到仓库。')
 const identitySessionReady = Boolean(process.env.SESSION_ID_HASH_SECRET) || containerEnv.has('SESSION_ID_HASH_SECRET')
 add('identity_session_hash', identitySessionReady ? 'pass' : production ? 'fail' : 'warn', identitySessionReady ? '平台身份会话指纹密钥已注入（值已隐藏）' : '平台身份会话指纹密钥未注入', '通过 Secret Manager 注入独立 SESSION_ID_HASH_SECRET；不得复用 OIDC 或 API token。')
 const hostRelayReady = commandReady('npm', ['run', 'codex:relay:validate', '--silent'])
@@ -259,7 +259,7 @@ try {
   add('commercial:scanner', level(readiness?.scannerReady), `scanner ready=${String(readiness?.scannerReady)}`, '配置非 fixture scanner、签名回执和新鲜度证据；仅容器存活不满足生产门禁。')
   const alertsReady = alertNotificationReady(readiness?.alertEnabled, readiness?.alertReady)
   add('commercial:alerts', level(alertsReady), `可选告警通知 enabled=${String(readiness?.alertEnabled)}, ready=${String(readiness?.alertReady)}, scopeReady=${String(alertsReady)}`, '如启用告警通知，必须注入安全的 webhook/secret 并验证真实投递；未启用不阻断上线。')
-  add('commercial:production_gate', level(readiness?.productionGate), `mode=${readiness?.mode ?? 'unknown'}, writes=${String(readiness?.writesEnabled)}, productionGate=${String(readiness?.productionGate)}`, '未满足真实支付、平台、存储、容量和证据前保持 writes disabled / NO-GO。')
+  add('commercial:production_gate', level(readiness?.productionGate), `mode=${readiness?.mode ?? 'unknown'}, writes=${String(readiness?.writesEnabled)}, productionGate=${String(readiness?.productionGate)}`, '未满足真实支付、模型中转、存储、容量、人工运营或所选官方接口模式证据前保持 writes disabled / NO-GO。')
 } catch {
   add('commercial:runtime', production ? 'fail' : 'warn', '无法读取商业运行时 readiness', ecsProduction ? '确认 PRODUCTION_API_BASE_URL 指向当前 ECS release，且 /readyz 返回非敏感商业门禁状态。' : '启动 API，并确认 /readyz 返回非敏感的支付、五模态、存储和生产门禁状态。')
 }

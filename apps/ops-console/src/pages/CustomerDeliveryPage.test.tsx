@@ -198,6 +198,178 @@ describe("customer delivery read-only desktop interaction", () => {
   }
 
   const row = (page: Page) => page.getByRole("row").filter({ has: page.getByRole("cell", { name: "只读客户", exact: true }) });
+  const account = { workspaceId: "ws-readonly", accountId: "private-account-1", identityId: "private-identity-1", login: "merchant-one@example.test" };
+  const account2 = { ...account, accountId: "private-account-2", identityId: "private-identity-2", login: "merchant-two@example.test" };
+  const boundRecord = { ...record, workspaceId: "ws-readonly", revision: 5, targetAccountId: account.accountId, targetIdentityId: account.identityId, targetAccountLogin: account.login };
+  async function openAccountBinding(page: Page) {
+    await row(page).getByRole("button", { name: "已完成", exact: true }).first().click();
+    await page.getByRole("region", { name: "生效账号", exact: true }).waitFor();
+  }
+  async function selectAccount(page: Page, login = account.login) {
+    await page.getByRole("button", { name: "查询账号", exact: true }).click();
+    await expect.poll(() => page.getByRole("combobox", { name: "选择生效账号", exact: true }).isEnabled()).toBe(true);
+    await page.getByRole("combobox", { name: "选择生效账号", exact: true }).click();
+    await page.locator(".ant-select-item-option-content").filter({ hasText: login }).click();
+  }
+
+  it("shows a bound login but no internal identifiers or binding controls to read-only operators", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      const methods = await prepare(page, { onList: () => [boundRecord] });
+      await openAccountBinding(page);
+      const section = page.getByRole("region", { name: "生效账号", exact: true });
+      expect(await section.innerText()).toContain(account.login);
+      expect(await section.innerText()).not.toContain(account.accountId);
+      expect(await section.innerText()).not.toContain(account.identityId);
+      expect(await section.getByRole("button").count()).toBe(0);
+      expect(methods).toEqual(["ops.customer-delivery.list"]);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("requires an explicit scoped account selection and confirmation, keeps pagination and saves the new revision", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    const calls: Array<{ method: string; params: Record<string, string> }> = [];
+    try {
+      const methods = await prepare(page, { write: true, onMutation: async (method, params) => {
+        calls.push({ method, params });
+        if (method === "ops.customer-delivery.accounts.list") return params.cursor ? { items: [account2] } : { items: [account], nextCursor: "page-2" };
+        if (method === "ops.customer-delivery.account.bind") return boundRecord;
+        if (method === "ops.customer-delivery.update") return { ...boundRecord, ...JSON.parse(params.patch_json!), revision: 6 };
+        throw new Error(`Unexpected method ${method}`);
+      } });
+      await openAccountBinding(page);
+      expect(methods).toEqual(["ops.customer-delivery.list"]);
+      await page.getByLabel("合同编号", { exact: true }).fill("UNSAVED-PRESERVED");
+      await selectAccount(page);
+      await page.getByRole("button", { name: "加载更多账号", exact: true }).click();
+      await expect.poll(() => calls.filter(call => call.method.endsWith("accounts.list")).length).toBe(2);
+      await expect.poll(() => page.getByRole("combobox", { name: "选择生效账号", exact: true }).isEnabled()).toBe(true);
+      await page.getByRole("combobox", { name: "选择生效账号", exact: true }).click();
+      await page.locator(".ant-select-item-option-content").filter({ hasText: account2.login }).waitFor();
+      await page.getByRole("combobox", { name: "选择生效账号", exact: true }).press("Escape");
+      expect(calls.some(call => call.method.endsWith("account.bind"))).toBe(false);
+      await page.getByRole("button", { name: "确认关联账号", exact: true }).click();
+      await page.getByRole("alert").filter({ hasText: "请填写 3–1000 字的关联原因" }).waitFor();
+      await page.getByLabel("关联原因（必填）", { exact: true }).fill("已核对商家登录账号");
+      await page.getByRole("checkbox", { name: `我已核对登录账号，确认关联 ${account.login}`, exact: true }).check();
+      await page.getByRole("button", { name: "确认关联账号", exact: true }).click();
+      await page.getByText("已关联，仅此账号受该交付档案的完成状态约束。", { exact: false }).waitFor();
+      expect(await page.getByLabel("合同编号", { exact: true }).inputValue()).toBe("UNSAVED-PRESERVED");
+      await page.getByRole("button", { name: "保存当前环节", exact: true }).click();
+      await expect.poll(() => calls.filter(call => call.method === "ops.customer-delivery.update").length).toBe(1);
+      expect(calls.filter(call => call.method.endsWith("accounts.list")).map(call => call.params)).toEqual([
+        { target_workspace_id: "ws-readonly", limit: "25" },
+        { target_workspace_id: "ws-readonly", cursor: "page-2", limit: "25" },
+      ]);
+      expect(calls.find(call => call.method.endsWith("account.bind"))?.params).toEqual({ target_workspace_id: "ws-readonly", delivery_id: record.id, target_account_id: account.accountId, expected_revision: "4", reason: "已核对商家登录账号" });
+      const saved = calls.find(call => call.method === "ops.customer-delivery.update")?.params;
+      expect(saved?.expected_revision).toBe("5");
+      expect(JSON.parse(saved!.patch_json!)).toMatchObject({ contractNumber: "UNSAVED-PRESERVED" });
+      expect(JSON.parse(saved!.patch_json!)).not.toHaveProperty("targetAccountId");
+    } finally { await page.close(); }
+  }, 60_000);
+
+  it.each(["write", "read", "workspace", "unmount", "close", "cancel"] as const)("ignores a late account binding after %s interruption", async interruption => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let returned = false;
+    try {
+      const methods = await prepare(page, { write: true, onMutation: async (method) => {
+        if (method.endsWith("accounts.list")) return { items: [account] };
+        if (method.endsWith("account.bind")) { await gate; returned = true; return boundRecord; }
+        throw new Error(`Unexpected ${method}`);
+      } });
+      await openAccountBinding(page); await selectAccount(page);
+      await page.getByLabel("关联原因（必填）", { exact: true }).fill("已核对商家登录账号");
+      await page.getByRole("checkbox", { name: `我已核对登录账号，确认关联 ${account.login}`, exact: true }).check();
+      await page.getByRole("button", { name: "确认关联账号", exact: true }).click();
+      await expect.poll(() => methods.filter(method => method.endsWith("account.bind")).length).toBe(1);
+      if (interruption === "close") await closeDrawer(page);
+      else if (interruption === "cancel") await page.getByRole("button", { name: "取消等待", exact: true }).click();
+      else {
+        const control = { write: "撤销测试写权限", read: "撤销测试读权限", workspace: "切换测试工作区", unmount: "卸载测试页面" }[interruption];
+        // The isolated harness lifecycle control is intentionally outside the modal.
+        await page.getByRole("button", { name: control, exact: true }).evaluate(element => (element as HTMLButtonElement).click());
+      }
+      release!(); await expect.poll(() => returned).toBe(true);
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      expect(await page.getByText("已关联，仅此账号受该交付档案的完成状态约束。", { exact: false }).count()).toBe(0);
+      expect(methods.filter(method => method.endsWith("account.bind"))).toHaveLength(1);
+      expect(methods.filter(method => method === "ops.customer-delivery.get")).toHaveLength(0);
+      if (interruption === "cancel") expect(await page.getByRole("region", { name: "生效账号", exact: true }).getByRole("status").innerText()).toContain("取消不会撤销已保存的关联");
+    } finally { release?.(); await page.close(); }
+  }, 45_000);
+
+  it("retrying an account search after selection never invokes binding", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    let searches = 0;
+    try {
+      const methods = await prepare(page, { write: true, onMutation: async (method) => {
+        if (!method.endsWith("accounts.list")) throw new Error(`Unexpected write ${method}`);
+        searches++;
+        return searches === 2 ? { items: [{ ...account, workspaceId: "wrong-workspace" }] } : { items: [account] };
+      } });
+      await openAccountBinding(page); await selectAccount(page);
+      await page.getByLabel("关联原因（必填）", { exact: true }).fill("已核对商家登录账号");
+      await page.getByRole("checkbox", { name: `我已核对登录账号，确认关联 ${account.login}`, exact: true }).check();
+      await page.locator("#delivery-account-search").press("Enter");
+      await page.getByRole("alert").filter({ hasText: "账号查询失败" }).waitFor();
+      await page.getByRole("button", { name: "重新查询", exact: true }).click();
+      await expect.poll(() => searches).toBe(3);
+      expect(methods.some(method => method.endsWith("account.bind"))).toBe(false);
+      expect(await page.getByRole("checkbox", { name: `我已核对登录账号，确认关联 ${account.login}`, exact: true }).isChecked()).toBe(false);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it.each(["identity", "revision"] as const)("rejects a mismatched account %s response without showing success", async mismatch => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      const methods = await prepare(page, { write: true, onMutation: async method => {
+        if (method.endsWith("accounts.list")) return { items: [account] };
+        if (method.endsWith("account.bind")) return { ...boundRecord, ...(mismatch === "identity" ? { targetIdentityId: "wrong-identity" } : { revision: 4 }) };
+        throw new Error(`Unexpected ${method}`);
+      } });
+      await openAccountBinding(page); await selectAccount(page);
+      await page.getByLabel("关联原因（必填）", { exact: true }).fill("已核对商家登录账号");
+      await page.getByRole("checkbox", { name: `我已核对登录账号，确认关联 ${account.login}`, exact: true }).check();
+      await page.getByRole("button", { name: "确认关联账号", exact: true }).click();
+      await page.getByRole("alert").filter({ hasText: "关联未确认成功" }).waitFor();
+      expect(await page.getByText("已关联，仅此账号受该交付档案的完成状态约束。", { exact: false }).count()).toBe(0);
+      expect(methods.filter(method => method.endsWith("account.bind"))).toHaveLength(1);
+      expect(await page.getByRole("region", { name: "生效账号", exact: true }).innerText()).not.toContain("wrong-identity");
+      await closeDrawer(page); await openAccountBinding(page);
+      expect(await page.getByRole("region", { name: "生效账号", exact: true }).innerText()).toContain("未关联");
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("does not expose an older account search after a new query wins", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let queries = 0;
+    let returned = false;
+    try {
+      await prepare(page, { write: true, onMutation: async (method, params) => {
+        if (!method.endsWith("accounts.list")) throw new Error(`Unexpected ${method}`);
+        queries++;
+        if (params.search === "old") { await gate; returned = true; return { items: [account] }; }
+        return { items: [account2] };
+      } });
+      await openAccountBinding(page);
+      await page.getByLabel("查找商家登录账号", { exact: true }).fill("old");
+      await page.getByRole("button", { name: "查询账号", exact: true }).click();
+      await expect.poll(() => queries).toBe(1);
+      await page.getByLabel("查找商家登录账号", { exact: true }).fill("new");
+      await page.getByLabel("查找商家登录账号", { exact: true }).press("Enter");
+      await expect.poll(() => queries).toBe(2);
+      release!(); await expect.poll(() => returned).toBe(true);
+      await expect.poll(() => page.getByRole("combobox", { name: "选择生效账号", exact: true }).isEnabled()).toBe(true);
+      await page.getByRole("combobox", { name: "选择生效账号", exact: true }).click();
+      await page.locator(".ant-select-item-option-content").filter({ hasText: account2.login }).waitFor();
+      expect(await page.locator(".ant-select-item-option-content").filter({ hasText: account.login }).count()).toBe(0);
+    } finally { release?.(); await page.close(); }
+  }, 45_000);
   async function closeDrawer(page: Page) {
     await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
     await page.getByRole("dialog").waitFor({ state: "hidden" });

@@ -4,12 +4,12 @@ import { lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 import { MCP_METHODS } from '../packages/contracts/src/mcp.js'
 
-type ReleaseManifest = { schemaVersion?: number; releaseId?: string; components?: { repositoryVersion?: string; releaseGitSha?: string }; mcp?: { methodCount?: number; methodListSha256?: string; bridgeSha256?: string }; artifacts?: Array<{ path?: string; sha256?: string; bytes?: number }>; productionEvidence?: Record<string, string> }
+type ReleaseManifest = { schemaVersion?: number; releaseId?: string; components?: { repositoryVersion?: string; releaseGitSha?: string }; mcp?: { methodCount?: number; methodListSha256?: string; bridgeSha256?: string }; artifacts?: Array<{ path?: string; sha256?: string; bytes?: number }>; productionEvidenceBundle?: { required?: boolean; schemaVersion?: string }; productionEvidence?: Record<string, string> }
 const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
-const requiredArtifacts = ['VERSION', 'CHANGELOG.md', 'release-metadata.json', 'apps/plugin/.codex-plugin/plugin.json', 'apps/plugin/package.json', 'apps/plugin/skills/merchant-marketing/SKILL.md', 'apps/plugin/mcp/bridge.mjs', '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs', 'apps/api/openapi.yaml', 'packages/contracts/src/mcp.ts', 'services/payment-gateway/index.mjs', 'services/payment-gateway/alipay.mjs', 'services/payment-gateway/alipay.d.mts', 'packages/billing/src/callback-envelope.mjs', 'packages/billing/src/callback-envelope.d.mts', 'services/payment-gateway/Dockerfile']
+const requiredArtifacts = ['VERSION', 'CHANGELOG.md', 'release-metadata.json', 'apps/plugin/.codex-plugin/plugin.json', 'apps/plugin/package.json', 'apps/plugin/skills/merchant-marketing/SKILL.md', 'apps/plugin/mcp/bridge.mjs', '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs', 'apps/api/openapi.yaml', 'packages/contracts/src/mcp.ts', 'services/payment-gateway/index.mjs', 'services/payment-gateway/alipay.mjs', 'services/payment-gateway/alipay.d.mts', 'packages/billing/src/callback-envelope.mjs', 'packages/billing/src/callback-envelope.d.mts', 'services/payment-gateway/Dockerfile', 'infra/scripts/render-ecs-production-compose.sh', 'infra/scripts/stage-verified-ecs-release.sh', 'infra/scripts/deploy-verified-ecs-compose.sh', 'infra/scripts/rollback-ecs-compose.sh', 'infra/scripts/invoke-ecs-automatic-rollback.sh', 'infra/protected/attest-release-evidence-bundle.mjs', 'infra/protected/attest-release-evidence-bundle.d.mts', 'tests/release-evidence-bundle-gate.ts']
 const evidenceFields = ['capability', 'capacity', 'modelRelay', 'payment', 'restore', 'objectStorage', 'codexAppHost', 'canonicalCutover'] as const
 type EvidenceField = typeof evidenceFields[number]
-const signedEvidenceFields = new Set<EvidenceField>(['capability', 'payment', 'restore', 'codexAppHost'])
+const signedEvidenceFields = new Set<EvidenceField>(['capability', 'payment', 'restore', 'objectStorage', 'codexAppHost'])
 const immutableProductionArtifact = /^artifact:\/\/production\/([A-Za-z0-9._/-]+)#([a-f0-9]{64})$/u
 const compare = ([left]: [string, unknown], [right]: [string, unknown]) => left < right ? -1 : left > right ? 1 : 0
 const canonical = (value: unknown): string => Array.isArray(value)
@@ -91,6 +91,7 @@ export function validateReleaseManifest(document: unknown, options: { root?: str
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
   const value = document as ReleaseManifest
   if (value.schemaVersion !== 1) errors.push('schemaVersion must be 1')
+  if (value.productionEvidenceBundle?.required !== true || value.productionEvidenceBundle?.schemaVersion !== 'release-evidence-bundle/1') errors.push('productionEvidenceBundle must require release-evidence-bundle/1')
   if (!value.releaseId) errors.push('releaseId is required')
   if (options.expectedReleaseId && value.releaseId !== options.expectedReleaseId) errors.push(`releaseId must match ${options.expectedReleaseId}`)
   const repositoryVersion = (() => { try { return readFileSync(resolve(root, 'VERSION'), 'utf8').trim() } catch { return '' } })()

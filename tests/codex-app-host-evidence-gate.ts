@@ -78,7 +78,7 @@ function validateArtifact(reference: string | undefined, root: string, label: st
   return []
 }
 
-export function validateCodexAppHostEvidence(document: unknown, options: { expectedReleaseId?: string; expectedMcpBaseUrl?: string; expectedBridgeSha256?: string; artifactRoot?: string } = {}): string[] {
+export function validateCodexAppHostEvidence(document: unknown, options: { expectedReleaseId?: string; expectedMcpBaseUrl?: string; expectedBridgeSha256?: string; artifactRoot?: string; requireFresh?: boolean; now?: Date } = {}): string[] {
   const errors: string[] = []
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
   const value = document as HostEvidence
@@ -87,6 +87,11 @@ export function validateCodexAppHostEvidence(document: unknown, options: { expec
   if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push(`release_id must match ${options.expectedReleaseId}`)
   if (value.environment !== 'preproduction' && value.environment !== 'production') errors.push('environment must be preproduction or production')
   if (!nonEmpty(value.generated_at) || !strictUtcInstant.test(value.generated_at) || Number.isNaN(Date.parse(value.generated_at))) errors.push('generated_at must be a strict UTC ISO timestamp')
+  else if (options.requireFresh) {
+    const generatedAt = Date.parse(value.generated_at); const now = (options.now ?? new Date()).getTime()
+    if (generatedAt > now + 300_000) errors.push('generated_at must not be more than five minutes in the future')
+    if (now - generatedAt > 24 * 3_600_000) errors.push('Codex App host evidence is stale')
+  }
   for (const [field, label] of [['host', 'host'], ['app_version', 'app_version'], ['plugin_version', 'plugin_version']] as const) {
     if (!nonEmpty(value[field])) errors.push(`${label} is required`)
     else if (forbidden.test(value[field]!)) errors.push(`${label} must identify a real Codex App host, not fixture/local evidence`)
@@ -148,7 +153,7 @@ function main() {
   if (args.includes('--require-artifacts') && (!expectedMcpBaseUrl || !expectedBridgeSha256)) { console.error('--expected-mcp-base-url and --expected-bridge-sha256 are required for production host evidence validation'); process.exit(2) }
   let document: unknown
   try { document = JSON.parse(readFileSync(path, 'utf8')) } catch (error) { console.error(`unable to read Codex App host evidence: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
-  const errors = validateCodexAppHostEvidence(document, { expectedReleaseId, expectedMcpBaseUrl, expectedBridgeSha256, artifactRoot })
+  const errors = validateCodexAppHostEvidence(document, { expectedReleaseId, expectedMcpBaseUrl, expectedBridgeSha256, artifactRoot, requireFresh: args.includes('--require-artifacts') })
   if (errors.length) { console.error(errors.map(error => `- ${error}`).join('\n')); process.exit(1) }
   console.log(`Codex App host evidence gate passed: ${path} (external host evidence; not stdio or browser fixture evidence)`)
 }

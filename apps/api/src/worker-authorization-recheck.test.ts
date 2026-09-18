@@ -1,7 +1,7 @@
-import { afterAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { createHash, randomUUID } from 'node:crypto'
 import { persistenceReady, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests } from './server.js'
-import { MemoryAuthorizationRepository, MemoryCreativePointRepository } from '../../../packages/persistence/src/index.js'
+import { MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCreativePointRepository, MemoryMembersRepository } from '../../../packages/persistence/src/index.js'
 import { InMemoryOutbox, type OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import { createWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
 import type { WorkerAuthorizationSnapshot } from '../../../packages/workers/src/execution-authorization.js'
@@ -101,6 +101,155 @@ describe('worker authorization recheck API', () => {
     } finally {
       setAuthorizationRepositoryForTests()
     }
+  })
+})
+
+// Controlled repository regression for the canonical actor shape produced by
+// password/OAuth authentication. This does not claim a real login, PostgreSQL,
+// or provider acceptance run; the production recheck itself is not mocked.
+async function withCanonicalMemberFixture(test: (fixture: {
+  workspaceId: string; identityId: string; login: string; resourceId: string
+  members: MemoryMembersRepository; brands: MemoryBrandUnitRepository
+  snapshot: WorkerAuthorizationSnapshot
+  reserve: MockInstance<MemoryAuthorizationRepository['reserveExecution']>
+}) => Promise<void>) {
+  const persistence = await persistenceReady
+  expect(persistence.mode).toBe('memory')
+  const previousMembers = persistence.members
+  const previousBrands = persistence.brandUnits
+  const members = new MemoryMembersRepository()
+  const brands = new MemoryBrandUnitRepository()
+  const repository = new MemoryAuthorizationRepository()
+  const reserve = vi.spyOn(repository, 'reserveExecution')
+  const identityId = randomUUID()
+  const workspaceId = `ws_canonical_member_${randomUUID()}`
+  const login = `merchant-${randomUUID()}@example.test`
+  const resourceId = `job_${randomUUID()}`
+  await members.upsert({ workspaceId, externalSubject: login, displayName: 'Controlled merchant', role: 'operator', status: 'active', invitedBy: 'operator_fixture' })
+  await members.bindIdentity({ workspaceId, externalSubject: login, identityId })
+  persistence.members = members
+  persistence.brandUnits = brands
+  setAuthorizationRepositoryForTests(repository)
+  const snapshot: WorkerAuthorizationSnapshot = {
+    schemaVersion: 1, decisionId: `decision_${randomUUID()}`, actorId: identityId, identityId, workspaceId,
+    workbench: 'workspace', contextId: `workspace:${workspaceId}`, contextVersion: 'controlled_context', policyVersion: 'controlled_policy',
+    grantRevision: `membership:${identityId}:0`, grantIds: [], scopeHash: 'a'.repeat(64),
+    capability: 'generation.execute', resourceId, authorized: true, decidedAt: new Date().toISOString(),
+  }
+  try {
+    await test({ workspaceId, identityId, login, resourceId, members, brands, snapshot, reserve })
+  } finally {
+    persistence.members = previousMembers
+    persistence.brandUnits = previousBrands
+    setAuthorizationRepositoryForTests()
+    reserve.mockRestore()
+  }
+}
+
+describe('worker canonical identity to login-subject membership boundary', () => {
+  it('rechecks workspace deactivation before any new execution reservation without gating scan or receipt convergence', async () => {
+    await withCanonicalMemberFixture(async ({ workspaceId, resourceId, snapshot, reserve }) => {
+      const runtime = await persistenceReady
+      const original = runtime.getWorkspaceStatus
+      let status: 'active' | 'disabled' = 'active'
+      runtime.getWorkspaceStatus = vi.fn(async () => status)
+      try {
+        await expect(recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, resourceId)).resolves.toMatchObject({ authorized: true })
+        status = 'disabled'
+        for (const capability of ['generation.execute', 'image_generation.execute', 'catalog.sync.execute', 'asset.continuation.execute'] as const) {
+          await expect(recheckWorkerAuthorizationSnapshot({ ...snapshot, capability }, workspaceId, resourceId, { eventId: `disabled-${capability}` })).rejects.toMatchObject({ code: 'WORKSPACE_DISABLED', status: 423 })
+        }
+        expect(reserve).not.toHaveBeenCalled()
+        for (const capability of ['asset.scan.execute', 'publish.reconcile'] as const) {
+          await expect(recheckWorkerAuthorizationSnapshot({ ...snapshot, capability }, workspaceId, resourceId)).resolves.toMatchObject({ authorized: true })
+        }
+      } finally { runtime.getWorkspaceStatus = original }
+    })
+  })
+  it('authorizes the UUID actor against its uniquely bound login member and preserves the opaque audit actor', async () => {
+    await withCanonicalMemberFixture(async ({ workspaceId, identityId, login, resourceId, members, snapshot, reserve }) => {
+      expect(identityId).not.toBe(login)
+      expect(await members.list(workspaceId)).toEqual([expect.objectContaining({ externalSubject: login, identityId })])
+      await expect(recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, resourceId, { eventId: 'evt_canonical_member' })).resolves.toMatchObject({
+        authorized: true, actor_id: identityId, identity_id: identityId,
+        reservation_id: 'worker-execution:evt_canonical_member:generation.execute',
+      })
+      expect(reserve).toHaveBeenCalledOnce()
+      expect(reserve).toHaveBeenCalledWith(expect.objectContaining({ subjectIdentityId: identityId, workspaceId, resourceId }))
+    })
+  })
+
+  it('rejects ambiguous duplicate canonical identities before reserving an execution', async () => {
+    await withCanonicalMemberFixture(async ({ workspaceId, identityId, resourceId, members, snapshot, reserve }) => {
+      const duplicateLogin = 'duplicate-member@example.test'
+      await members.upsert({ workspaceId, externalSubject: duplicateLogin, displayName: 'Duplicate', role: 'operator', status: 'active', invitedBy: 'operator_fixture' })
+      await members.bindIdentity({ workspaceId, externalSubject: duplicateLogin, identityId })
+      await expect(recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, resourceId, { eventId: 'evt_duplicate_member' })).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
+      expect(reserve).not.toHaveBeenCalled()
+    })
+  })
+
+  it.each(['other workspace', 'other identity', 'unbound identity'] as const)('never substitutes a matching actor/login string for %s', async failure => {
+    await withCanonicalMemberFixture(async ({ workspaceId, identityId, resourceId, members, snapshot, reserve }) => {
+      const requestedWorkspace = failure === 'other workspace' ? `${workspaceId}_other` : workspaceId
+      const requestedIdentity = failure === 'other identity' ? randomUUID() : identityId
+      if (failure !== 'other workspace') {
+        // A legacy row whose externalSubject equals the actor still must not
+        // substitute for the exact bound canonical identity.
+        await members.upsert({ workspaceId, externalSubject: requestedIdentity, displayName: 'Legacy actor row', role: 'operator', status: 'active', invitedBy: 'operator_fixture' })
+        if (failure === 'unbound identity') {
+          const current = (await members.list(workspaceId)).find(row => row.identityId === identityId)!
+          await members.upsert({ workspaceId, externalSubject: current.externalSubject, displayName: current.displayName, role: 'operator', status: 'active', invitedBy: 'operator_fixture' })
+        }
+      }
+      const changed = { ...snapshot, workspaceId: requestedWorkspace, identityId: requestedIdentity, actorId: requestedIdentity, grantRevision: `membership:${requestedIdentity}:0` }
+      await expect(recheckWorkerAuthorizationSnapshot(changed, requestedWorkspace, resourceId, { eventId: 'evt_wrong_member_binding' })).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
+      expect(reserve).not.toHaveBeenCalled()
+    })
+  })
+
+  it.each(['suspended', 'role changed'] as const)('rechecks a login member after its %s state changes', async failure => {
+    await withCanonicalMemberFixture(async ({ workspaceId, identityId, login, resourceId, members, snapshot, reserve }) => {
+      await expect(recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, resourceId)).resolves.toMatchObject({ authorized: true })
+      if (failure === 'suspended') await members.suspend({ workspaceId, externalSubject: login, actorId: 'operator_fixture', reason: 'controlled revocation' })
+      else {
+        await members.upsert({ workspaceId, externalSubject: login, displayName: 'Controlled merchant', role: 'finance', status: 'active', invitedBy: 'operator_fixture' })
+        await members.bindIdentity({ workspaceId, externalSubject: login, identityId })
+      }
+      await expect(recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, resourceId, { eventId: 'evt_member_changed' })).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
+      expect(reserve).not.toHaveBeenCalled()
+    })
+  })
+
+  it('uses the member login for exact brand publisher access and rejects subsequent brand downgrade', async () => {
+    await withCanonicalMemberFixture(async ({ workspaceId, identityId, login, resourceId, brands, snapshot, reserve }) => {
+      const brandId = 'brand_canonical_member'
+      await brands.createBrand({ workspaceId, id: brandId, name: 'Controlled brand' })
+      await brands.grantBrandAccess({ workspaceId, brandId, externalSubject: login, role: 'publisher' })
+      const hasAccess = vi.spyOn(brands, 'hasBrandAccess')
+      const publishSnapshot = { ...snapshot, capability: 'publish.execute' as const, contextId: `brand:${brandId}` }
+      try {
+        await expect(recheckWorkerAuthorizationSnapshot(publishSnapshot, workspaceId, resourceId, { eventId: 'evt_brand_login' })).resolves.toMatchObject({ authorized: true, actor_id: identityId })
+        expect(hasAccess).toHaveBeenLastCalledWith({ workspaceId, brandId, externalSubject: login, minimumRole: 'publisher' })
+        await brands.grantBrandAccess({ workspaceId, brandId, externalSubject: login, role: 'viewer' })
+        await expect(recheckWorkerAuthorizationSnapshot(publishSnapshot, workspaceId, resourceId, { eventId: 'evt_brand_login' })).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
+        expect(reserve).toHaveBeenCalledOnce()
+      } finally { hasAccess.mockRestore() }
+    })
+  })
+
+  it('does not borrow publisher access from another brand, workspace, or an actor-UUID grant', async () => {
+    await withCanonicalMemberFixture(async ({ workspaceId, identityId, login, resourceId, brands, snapshot, reserve }) => {
+      const brandId = 'brand_canonical_denied'
+      await brands.createBrand({ workspaceId, id: brandId, name: 'Target brand' })
+      await brands.createBrand({ workspaceId, id: 'brand_other', name: 'Other brand' })
+      await brands.createBrand({ workspaceId: `${workspaceId}_other`, id: brandId, name: 'Other workspace brand' })
+      await brands.grantBrandAccess({ workspaceId, brandId: 'brand_other', externalSubject: login, role: 'publisher' })
+      await brands.grantBrandAccess({ workspaceId: `${workspaceId}_other`, brandId, externalSubject: login, role: 'publisher' })
+      await brands.grantBrandAccess({ workspaceId, brandId, externalSubject: identityId, role: 'publisher' })
+      await expect(recheckWorkerAuthorizationSnapshot({ ...snapshot, capability: 'publish.execute', contextId: `brand:${brandId}` }, workspaceId, resourceId, { eventId: 'evt_wrong_brand' })).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
+      expect(reserve).not.toHaveBeenCalled()
+    })
   })
 })
 

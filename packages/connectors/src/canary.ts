@@ -12,6 +12,8 @@ export interface PlatformCanaryInput {
   scope: string
   /** The controlled test-store product that a read canary must actually return. */
   expectedRemoteId: string
+  /** Authorization code and state from an actual controlled OAuth callback. */
+  oauthCallback?: { code: string; state: string; pendingState?: string; redirectUri: string; codeVerifier?: string }
   /** Real create/update calls are opt-in because they mutate a test store. */
   allowWrite: boolean
   /** Revoke is separately opt-in because it invalidates the test account. */
@@ -71,6 +73,9 @@ function canaryInputErrors(input: PlatformCanaryInput): string[] {
   if (!validScopeId(input.context.workspaceId)) errors.push('workspaceId is invalid')
   if (!validScopeId(input.context.accountId)) errors.push('accountId is invalid')
   if (!validCanaryText(input.expectedRemoteId, 256)) errors.push('expectedRemoteId is invalid')
+  if (input.oauthCallback && (!validCanaryText(input.oauthCallback.code, 4096) || !validCanaryText(input.oauthCallback.state, 512) || !/^https:\/\//u.test(input.oauthCallback.redirectUri))) errors.push('OAuth callback is invalid')
+  if (input.promoteToProductionCanary && !input.oauthCallback) errors.push('production OAuth callback is required')
+  if (input.promoteToProductionCanary && (!validCanaryText(input.oauthCallback?.pendingState, 512) || input.oauthCallback?.state !== input.oauthCallback.pendingState)) errors.push('production OAuth callback state must match the separately recorded pending state')
   if (input.mediaFile) {
     if (!validCanaryText(input.mediaFile.mimeType, 128)) errors.push('media mimeType is invalid')
     if (input.mediaFile.bytes.byteLength > 5 * 1024 * 1024) errors.push('media file exceeds 5 MiB')
@@ -95,21 +100,61 @@ export async function runPlatformCanary(input: PlatformCanaryInput): Promise<Pla
       : passed ? 'test_e2e' : 'unverified'
     evidenceItems.push(evidence(input, capability, state, simulated))
   }
+  const result = (passed: boolean): PlatformCanaryResult => ({
+    platform: input.connector.platform,
+    passed,
+    checks,
+    evidence: passed
+      ? evidenceItems
+      : evidenceItems.map(item => item.state === 'production_canary' ? { ...item, state: 'test_e2e' as const } : item),
+  })
 
   const inputErrors = canaryInputErrors(input)
   if (inputErrors.length) {
     // Evidence is an authorization input. Reject malformed attribution before
     // touching the connector so a bad canary cannot create provider side effects.
-    for (const capability of ['authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'] as const) {
+    for (const capability of ['authorize', 'refresh', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'] as const) {
       add(capability, false, false, 'canary input rejected: invalid evidence, scope, or media attribution')
     }
-    return { platform: input.connector.platform, passed: false, checks, evidence: evidenceItems }
+    return result(false)
   }
 
+  let exchangedCredential: Awaited<ReturnType<PlatformConnector['exchangeCode']>> | undefined
+  let credentialForRevoke: Awaited<ReturnType<PlatformConnector['exchangeCode']>> | undefined
+  let exchangeAccepted = false
   try {
-    const authorization = await input.connector.authorize({ workspaceId: input.context.workspaceId, actorId: 'platform-canary', redirectUri: 'https://canary.invalid/oauth/callback', state: `canary-${input.connector.platform}-${Date.now()}` })
-    add('authorize', authorization.ok && authorization.mode === 'real', authorization.mode !== 'real', authorization.message)
+    const callback = input.oauthCallback
+    const authorization = await input.connector.authorize({ workspaceId: input.context.workspaceId, actorId: 'platform-canary', redirectUri: callback?.redirectUri ?? 'https://canary.invalid/oauth/callback', state: callback?.state ?? `canary-${input.connector.platform}-${Date.now()}` })
+    if (!authorization.ok || authorization.mode !== 'real') add('authorize', false, authorization.mode !== 'real', authorization.message)
+    else if (!callback) add('authorize', true, false)
+    else {
+      exchangedCredential = await input.connector.exchangeCode({ code: callback.code, state: callback.state, redirectUri: callback.redirectUri, ...(callback.codeVerifier ? { codeVerifier: callback.codeVerifier } : {}), workspaceId: input.context.workspaceId })
+      exchangeAccepted = exchangedCredential.workspaceId === input.context.workspaceId && exchangedCredential.accountId === input.context.accountId && Boolean(exchangedCredential.credentialRef.trim())
+      if (exchangeAccepted) credentialForRevoke = exchangedCredential
+      add('authorize', exchangeAccepted, false, 'OAuth callback exchanged with controlled test account')
+    }
   } catch (error) { add('authorize', false, false, error instanceof Error ? error.message : String(error)) }
+
+  if (!exchangedCredential || !exchangeAccepted) add('refresh', false, false, 'refresh canary requires an accepted credential returned by OAuth exchange')
+  else {
+    try {
+      const refreshed = await input.connector.refreshCredential(exchangedCredential)
+      const passed = refreshed.workspaceId === input.context.workspaceId
+        && refreshed.accountId === input.context.accountId
+        && Boolean(refreshed.credentialRef.trim())
+      if (passed) credentialForRevoke = refreshed
+      add('refresh', passed, false, passed ? 'OAuth credential refreshed and rebound to the controlled test account' : 'refreshed credential was not bound to the controlled test account')
+    } catch (error) { add('refresh', false, false, error instanceof Error ? error.message : String(error)) }
+  }
+
+  if (input.promoteToProductionCanary && !checks.find(item => item.capability === 'authorize')?.passed) {
+    for (const capability of ['read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'] as const) add(capability, false, false, 'OAuth authorization failed; provider canary stopped before further requests')
+    return result(false)
+  }
+  if (input.promoteToProductionCanary && !checks.find(item => item.capability === 'refresh')?.passed) {
+    for (const capability of ['read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'] as const) add(capability, false, false, 'OAuth refresh failed; provider canary stopped before further requests')
+    return result(false)
+  }
 
   let full: Awaited<ReturnType<PlatformConnector['syncProducts']>> | undefined
   try {
@@ -123,10 +168,13 @@ export async function runPlatformCanary(input: PlatformCanaryInput): Promise<Pla
     add('read', false, false, error instanceof Error ? error.message : String(error))
     add('full_sync', false, false, error instanceof Error ? error.message : String(error))
   }
-  try {
-    const incremental = await input.connector.syncProducts(input.context, full?.nextCursor ?? { value: `canary-${Date.now()}` })
-    add('incremental_sync', incremental.source === 'official_api' && !incremental.simulated, incremental.simulated)
-  } catch (error) { add('incremental_sync', false, false, error instanceof Error ? error.message : String(error)) }
+  if (!full?.nextCursor?.value) add('incremental_sync', false, false, 'full sync returned no provider cursor for incremental verification')
+  else {
+    try {
+      const incremental = await input.connector.syncProducts(input.context, full.nextCursor)
+      add('incremental_sync', incremental.source === 'official_api' && !incremental.simulated, incremental.simulated)
+    } catch (error) { add('incremental_sync', false, false, error instanceof Error ? error.message : String(error)) }
+  }
 
   let remoteId: string | undefined
   if (!input.allowWrite) {
@@ -138,23 +186,30 @@ export async function runPlatformCanary(input: PlatformCanaryInput): Promise<Pla
     try {
       const receipt = await input.connector.createProduct(input.context, { fields, idempotencyKey: `platform-canary-create-${input.connector.platform}-${Date.now()}` })
       remoteId = receipt.remoteId
-      add('create', receipt.operation === 'create' && !receipt.simulated, receipt.simulated)
-      const status = await input.connector.queryWrite(input.context, { idempotencyKey: receipt.idempotencyKey, remoteId: receipt.remoteId })
-      add('query_status', status.found && !status.simulated, status.simulated)
+      add('create', receipt.operation === 'create' && !receipt.simulated && Boolean(receipt.remoteId.trim() && receipt.requestId.trim()), receipt.simulated)
+      if (!receipt.remoteId.trim() || !receipt.requestId.trim()) add('query_status', false, false, 'create returned no attributable provider remote ID or request ID')
+      else {
+        const status = await input.connector.queryWrite(input.context, { idempotencyKey: receipt.idempotencyKey, remoteId: receipt.remoteId })
+        add('query_status', status.found && !status.simulated && status.requestId === receipt.requestId && status.remoteId === receipt.remoteId && status.state === 'published', status.simulated)
+      }
     } catch (error) {
       add('create', false, false, error instanceof Error ? error.message : String(error))
       add('query_status', false, false, 'create did not return an attributable request')
     }
-    try {
-      const receipt = await input.connector.updateProduct(input.context, { fields, ...(remoteId ? { remoteId } : {}), idempotencyKey: `platform-canary-update-${input.connector.platform}-${Date.now()}` })
-      add('update', receipt.operation === 'update' && !receipt.simulated, receipt.simulated)
-    } catch (error) { add('update', false, false, error instanceof Error ? error.message : String(error)) }
+    if (!remoteId?.trim()) add('update', false, false, 'create did not return a provider remote product ID to update')
+    else {
+      try {
+        const receipt = await input.connector.updateProduct(input.context, { fields, remoteId, idempotencyKey: `platform-canary-update-${input.connector.platform}-${Date.now()}` })
+        add('update', receipt.operation === 'update' && !receipt.simulated && receipt.remoteId === remoteId && Boolean(receipt.requestId.trim()), receipt.simulated)
+      } catch (error) { add('update', false, false, error instanceof Error ? error.message : String(error)) }
+    }
   }
 
   if (!input.allowRevoke) add('revoke', false, false, 'revoke canary disabled; set explicit allowRevoke for a disposable test account')
+  else if (!credentialForRevoke) add('revoke', false, false, 'revoke canary requires the credential returned by OAuth exchange')
   else {
     try {
-      await input.connector.revoke({ accountId: input.context.accountId, credentialRef: `canary://${input.context.accountId}` })
+      await input.connector.revoke(credentialForRevoke)
       add('revoke', true, false)
     } catch (error) { add('revoke', false, false, error instanceof Error ? error.message : String(error)) }
   }
@@ -168,8 +223,5 @@ export async function runPlatformCanary(input: PlatformCanaryInput): Promise<Pla
     } catch (error) { add('media_upload', false, false, error instanceof Error ? error.message : String(error)) }
   }
   const passed = checks.every(item => item.passed && !item.simulated)
-  const finalEvidence = passed
-    ? evidenceItems
-    : evidenceItems.map(item => item.state === 'production_canary' ? { ...item, state: 'test_e2e' as const } : item)
-  return { platform: input.connector.platform, passed, checks, evidence: finalEvidence }
+  return result(passed)
 }

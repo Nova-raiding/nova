@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
 import { unlink, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
@@ -16,6 +17,7 @@ import { buildPublishObservationRequest, PublishObservationReportError } from '.
 import { createContentGeneratorFromEnv, type ContentGenerationInput, type GeneratedContent } from '../../../packages/ai/src/generator.js'
 import { createImageGeneratorFromEnv, type ImageGenerationInput, type ImageGenerationStatus } from '../../../packages/ai/src/image-generator.js'
 import { createRelayPricingClientFromEnv } from '../../../packages/ai/src/relay-pricing.js'
+import { createEmbeddingClientFromEnv } from '../../../packages/ai/src/embedding.js'
 import type { RelayUsageRecord } from '../../../packages/ai/src/relay-usage.js'
 import { FixedWindowQuotaAdmission, type QuotaAdmissionInput } from '../../../packages/quotas/src/admission.js'
 import { DistributedLockBusyError } from '../../../packages/quotas/src/lock.js'
@@ -26,7 +28,7 @@ import { createScannerRequestProof } from '../../../packages/security/src/scanne
 import { createWorkerRequestProof, resolveWorkerId, type WorkerRequestRole } from '../../../packages/security/src/worker-request-proof.js'
 import { createClamAvScanner, type ClamAvScanner } from './clamav-scanner.js'
 import { ScannerHeartbeatController } from './scanner-heartbeat.js'
-import { createExecutionAuthorizationGuard, WorkerExecutionAuthorizationError, type WorkerAuthorizationRecheck } from '../../../packages/workers/src/execution-authorization.js'
+import { createExecutionAuthorizationGuard, executeAfterAuthorizationCheck, WorkerExecutionAuthorizationError, type CriticalWorkerOperation, type WorkerAuthorizationRecheck, type WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
 import { createCommercialAccessGuard, WorkerCommercialAccessError, type WorkerCommercialAccessRecheck } from '../../../packages/workers/src/commercial-access.js'
 import { CUSTOMER_DELIVERY_SCAN_EVENT, CUSTOMER_DELIVERY_SCAN_OPERATION, createDeliveryScanAdmissionGuard, DeliveryScanAdmissionError } from '../../../packages/workers/src/customer-delivery-scan-admission.js'
 import { assertClamAvExecutionAdmission } from '../../../packages/workers/src/scanner-heartbeat.js'
@@ -34,6 +36,8 @@ import { planSupportSlaReportSchedule } from '../../../packages/workers/src/supp
 import { validateImageGenerationCallbackResult } from '../../../packages/contracts/src/index.js'
 import { assertGenerationInput } from './generation-input.js'
 import { CreativePointRelaySettlement, relayProviderIdentity } from './creative-point-relay-settlement.js'
+import { PostgresKnowledgeRepository } from '../../../packages/persistence/src/knowledge.js'
+import { indexApprovedKnowledge } from '../../../packages/application/src/knowledge-lexical-index.js'
 
 export interface WorkerConfig {
   databaseUrl: string
@@ -470,7 +474,15 @@ function workerRoleForRequest(method: string, requestTarget: string, body?: stri
   if (path === '/v1/internal/automation/tick' || path === '/v1/ops/data-deletion/complete' || path === '/v1/internal/storage/orphans/cleanup') return 'automation'
   if (path === '/v1/internal/support/sla-scan' || path === '/v1/internal/support/sla-report') return 'reconcile'
   if (path.includes('reconciliation')) return 'reconcile'
-  if (path === '/v1/internal/model-usage') return 'generation'
+  // Knowledge indexing is owned by the automation worker. Its admission,
+  // outcome and usage callbacks must use that worker's isolated credential;
+  // generation remains accepted server-side only for already-deployed callers.
+  if (path === '/v1/internal/knowledge-embeddings/admission' || path === '/v1/internal/knowledge-embeddings/outcome') return 'automation'
+  if (path === '/v1/internal/model-usage') {
+    try {
+      return JSON.parse(typeof body === 'string' ? body : Buffer.from(body ?? []).toString('utf8')).modality === 'embedding' ? 'automation' : 'generation'
+    } catch { return 'generation' }
+  }
   if (/^\/v1\/assets\/[^/]+\/scan$/u.test(path)) return 'scan'
   throw new Error(`no worker role policy for ${method} ${path}`)
 }
@@ -645,9 +657,15 @@ export async function assertPublishExecution(input: {
       signal: input.signal,
     })
   } catch (error) {
-    throw new Error(`publish execution gate unavailable: ${error instanceof Error ? error.message : String(error)}`)
+    input.signal?.throwIfAborted()
+    throw new WorkerExecutionAuthorizationError('AUTHZ_EXECUTION_RECHECK_UNAVAILABLE', `publish execution gate unavailable: ${error instanceof Error ? error.message : String(error)}`, { retryable: true })
   }
-  if (!response.ok) throw new Error(`publish execution rejected by authorization gate (${response.status})`)
+  if (!response.ok) {
+    let apiError: { code?: unknown; message?: unknown } | undefined
+    try { apiError = (await parseWorkerApiJson(response) as { error?: typeof apiError }).error } catch { /* retain bounded fallback */ }
+    const code = typeof apiError?.code === 'string' && /^[A-Z][A-Z0-9_]{2,63}$/u.test(apiError.code) ? apiError.code : 'AUTHZ_EXECUTION_RECHECK_DENIED'
+    throw new WorkerExecutionAuthorizationError(code, typeof apiError?.message === 'string' ? apiError.message : `publish execution rejected by authorization gate (${response.status})`, { retryable: response.status === 429 || response.status >= 500 })
+  }
   const envelope = await parseWorkerApiJson(response) as { data?: { credential_ref?: string; payload_hash?: string; media_required?: boolean; authorization_snapshot?: unknown } }
   if (typeof envelope.data?.credential_ref !== 'string' || !envelope.data.credential_ref) throw new Error('publish execution gate did not return a credential locator')
   if (typeof envelope.data.payload_hash !== 'string' || !/^[a-f0-9]{64}$/u.test(envelope.data.payload_hash)) throw new Error('publish execution gate did not return a payload hash')
@@ -690,6 +708,69 @@ export function createApiExecutionAuthorizationGuard(config: Pick<WorkerConfig, 
       recheckId: String(raw.recheck_id ?? ''), actorId: String(raw.actor_id ?? ''), identityId: String(raw.identity_id ?? ''), workspaceId: String(raw.workspace_id ?? ''), workbench: raw.workbench === 'workspace' ? 'workspace' : '' as 'workspace', contextId: String(raw.context_id ?? ''), contextVersion: String(raw.context_version ?? ''), policyVersion: String(raw.policy_version ?? ''), grantRevision: String(raw.grant_revision ?? ''), grantIds: [...raw.grant_ids] as string[], scopeHash: String(raw.scope_hash ?? ''), capability: String(raw.capability ?? '') as WorkerAuthorizationRecheck['capability'], resourceId: String(raw.resource_id ?? ''), resourceRevision: String(raw.resource_revision ?? ''), requestId: String(raw.request_id ?? ''), traceId: String(raw.trace_id ?? ''), authorized: raw.authorized === true, checkedAt: String(raw.checked_at ?? ''),
     }
   })
+}
+
+/** Callback-local preflight (quota, locks, leases and credential reads) can
+ * outlive the handler's initial check. Never carry an earlier allow across
+ * those waits into a provider call. This does not replace connector-level
+ * checks after signing/DNS or between pagination requests. */
+export async function executeWorkerProviderAfterPreflight<T>(input: {
+  event: DurableOutboxEvent
+  operation: CriticalWorkerOperation
+  authorization: WorkerExecutionAuthorizationGuard
+  preflight: () => Promise<void>
+  invoke: () => Promise<T>
+  signal?: AbortSignal
+}): Promise<T> {
+  input.signal?.throwIfAborted()
+  await input.preflight()
+  input.signal?.throwIfAborted()
+  return executeAfterAuthorizationCheck({ guard: input.authorization, event: input.event, operation: input.operation, providerCall: input.invoke, signal: input.signal })
+}
+
+export interface WorkerProviderDispatchScope {
+  event: DurableOutboxEvent
+  operation: CriticalWorkerOperation
+  signal?: AbortSignal
+  /** Set only after live admission, immediately before transport dispatch.
+   * A nonzero count must never be reported as a proven zero-provider abort. */
+  providerRequests: number
+}
+
+/** Trusted event context follows provider preflight/retries without accepting
+ * identity from model input or a caller-controlled URL/header. Read-only
+ * provider reconciliation and credential recovery retain their own gates. */
+export function createWorkerProviderDispatchAdmission(authorization: WorkerExecutionAuthorizationGuard) {
+  const current = new AsyncLocalStorage<WorkerProviderDispatchScope>()
+  const check = async (operation: CriticalWorkerOperation, workspaceId?: string, signal?: AbortSignal) => {
+    const scope = current.getStore()
+    if (!scope || scope.operation !== operation || (workspaceId !== undefined && workspaceId !== scope.event.workspaceId)) {
+      throw new WorkerExecutionAuthorizationError('AUTHZ_PROVIDER_CONTEXT_REQUIRED', 'provider dispatch lacks the exact trusted worker event context', { retryable: false })
+    }
+    scope.signal?.throwIfAborted()
+    signal?.throwIfAborted()
+    await authorization.assertAuthorized(scope.event, operation, scope.signal ?? signal)
+    scope.signal?.throwIfAborted()
+    signal?.throwIfAborted()
+    scope.providerRequests += 1
+  }
+  return {
+    run: <T>(scope: WorkerProviderDispatchScope, invoke: () => T): T => current.run(scope, invoke),
+    beforeModelRequest: async (input: { operation: string; workspaceId?: string; signal?: AbortSignal }) => {
+      if (input.operation === 'image_query' || input.operation === 'video_query') return
+      const operation = input.operation === 'text_generate' ? 'generation.execute'
+        : input.operation === 'image_generate' || input.operation === 'image_edit' ? 'image_generation.execute' : undefined
+      if (!operation) throw new WorkerExecutionAuthorizationError('AUTHZ_PROVIDER_OPERATION_INVALID', 'model operation is not registered for this worker', { retryable: false })
+      await check(operation, input.workspaceId, input.signal)
+    },
+    beforeConnectorRequest: async (input: { operation: string; workspaceId?: string; signal?: AbortSignal }) => {
+      if (['query_write', 'refresh_credential', 'revoke', 'exchange_code'].includes(input.operation)) return
+      const operation = input.operation === 'sync_products' ? 'catalog.sync.execute'
+        : ['create_product', 'update_product', 'upload_media'].includes(input.operation) ? 'publish.execute' : undefined
+      if (!operation) throw new WorkerExecutionAuthorizationError('AUTHZ_PROVIDER_OPERATION_INVALID', 'connector operation is not registered for this worker', { retryable: false })
+      await check(operation, input.workspaceId, input.signal)
+    },
+  }
 }
 
 /** Re-check the immutable commercial quote and reservation after identity /
@@ -818,7 +899,7 @@ export async function postImageGenerationResult(input: { apiBaseUrl: string; api
   if (!response.ok) throw new Error(`image generation result API returned ${response.status}`)
 }
 
-async function updateImageGenerationExecution(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; operation: 'claim' | 'reserve_provider_operation' | 'begin_provider_dispatch' | 'provider_started' | 'completed' | 'failed' | 'outcome_unknown'; ownerToken?: string; providerRequestId?: string; errorCode?: string; errorMessage?: string; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
+export async function updateImageGenerationExecution(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; operation: 'claim' | 'reserve_provider_operation' | 'begin_provider_dispatch' | 'fail_before_provider' | 'provider_started' | 'completed' | 'failed' | 'outcome_unknown'; ownerToken?: string; providerRequestId?: string; errorCode?: string; errorMessage?: string; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
   const path = `/v1/internal/image-generation-jobs/${encodeURIComponent(input.event.aggregateId)}/execution`
   const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
     method: 'POST',
@@ -827,9 +908,68 @@ async function updateImageGenerationExecution(input: { apiBaseUrl: string; apiTo
     redirect: 'error',
     signal: input.signal,
   })
-  if (!response.ok) throw Object.assign(new Error(`image generation execution API returned ${response.status}`), { code: response.status === 409 ? 'IMAGE_GENERATION_EXECUTION_BUSY' : 'IMAGE_GENERATION_EXECUTION_GATE_UNAVAILABLE' })
-  const envelope = await parseWorkerApiJson(response) as { data?: { execution?: { ownerToken?: string; providerOperationKey?: string } } }
+  if (!response.ok) {
+    let apiError: { code?: unknown; message?: unknown } | undefined
+    try { apiError = (await parseWorkerApiJson(response) as { error?: typeof apiError }).error } catch { /* preserve bounded fallback */ }
+    const code = typeof apiError?.code === 'string' && /^[A-Z][A-Z0-9_]{2,63}$/u.test(apiError.code) ? apiError.code : undefined
+    const workspaceDisabled = code === 'WORKSPACE_DISABLED' || response.status === 423
+    if (workspaceDisabled || (code && (code.startsWith('CUSTOMER_DELIVERY_') || code.startsWith('AUTHZ_') || code.startsWith('AUTHORIZATION_'))) || response.status === 401 || response.status === 403) {
+      throw new WorkerExecutionAuthorizationError(workspaceDisabled ? 'WORKSPACE_DISABLED' : code ?? 'AUTHZ_EXECUTION_RECHECK_DENIED', typeof apiError?.message === 'string' ? apiError.message : 'image dispatch authorization was rejected', { retryable: !workspaceDisabled && (response.status === 429 || response.status >= 500) })
+    }
+    throw Object.assign(new Error(`image generation execution API returned ${response.status}`), { code: code ?? (response.status === 409 ? 'IMAGE_GENERATION_EXECUTION_BUSY' : 'IMAGE_GENERATION_EXECUTION_GATE_UNAVAILABLE') })
+  }
+  const envelope = await parseWorkerApiJson(response) as { data?: { execution?: { ownerToken?: string; providerOperationKey?: string; state?: string; workspaceId?: string; jobId?: string; eventId?: string } } }
   return envelope.data?.execution
+}
+
+/** Only a locally proven zero-dispatch authorization rejection may close a
+ * reserved lease this way. A transport failure or any prior provider attempt
+ * must retain reconciliation semantics, never this known-not-sent transition. */
+export async function closeRejectedImageDispatch(input: {
+  apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; ownerToken: string
+  providerRequests: number; error: unknown; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal
+}): Promise<never> {
+  if (!(input.error instanceof WorkerExecutionAuthorizationError) || input.providerRequests !== 0) throw input.error
+  try {
+    const closed = await updateImageGenerationExecution({ ...input, operation: 'fail_before_provider', errorCode: input.error.code, errorMessage: input.error.message.replace(/[\u0000-\u001f\u007f]/gu, ' ').trim().slice(0, 255) || 'Provider dispatch authorization was rejected' })
+    if (!closed || closed.state !== 'failed' || closed.workspaceId !== input.event.workspaceId || closed.jobId !== input.event.aggregateId || closed.eventId !== input.event.id) throw new Error('image rejection closure did not return the bound terminal execution')
+  } catch {
+    throw new WorkerExecutionAuthorizationError('IMAGE_GENERATION_PRE_PROVIDER_CLOSE_UNAVAILABLE', 'Provider was not called, but the rejected execution could not be closed; manual recovery is required', { retryable: false })
+  }
+  // The durable execution is now terminal. Replaying this old event cannot
+  // safely retry its reserved provider key, even if the read failure was 503.
+  throw new WorkerExecutionAuthorizationError(input.error.code, input.error.message, { retryable: false })
+}
+
+export interface KnowledgeEmbeddingBinding { workspaceId: string; documentId: string; documentRevision: number; contentHash: string; actionId: string; runKey: string }
+
+function knowledgeEmbeddingBody(input: KnowledgeEmbeddingBinding) {
+  return { document_id: input.documentId, document_revision: input.documentRevision, content_hash: input.contentHash, action_id: input.actionId, run_key: input.runKey }
+}
+
+export async function postKnowledgeEmbeddingAdmission(input: KnowledgeEmbeddingBinding & { apiBaseUrl: string; apiToken: string; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
+  const path = '/v1/internal/knowledge-embeddings/admission'
+  const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
+    method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': input.workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret) : {}) },
+    body: JSON.stringify(knowledgeEmbeddingBody(input)), redirect: 'error', signal: input.signal,
+  })
+  if (!response.ok) throw Object.assign(new Error(`knowledge embedding admission API returned ${response.status}`), { code: response.status === 409 || response.status === 503 ? 'KNOWLEDGE_EMBEDDING_ADMISSION_UNAVAILABLE' : 'KNOWLEDGE_EMBEDDING_ADMISSION_REJECTED' })
+  const envelope = await parseWorkerApiJson(response) as { data?: { admitted?: unknown; reservation?: { reservation_key?: unknown; run_key?: unknown; status?: unknown } } }
+  const reservation = envelope.data?.reservation
+  if (envelope.data?.admitted !== true || !reservation || typeof reservation.reservation_key !== 'string' || !reservation.reservation_key.trim() || reservation.run_key !== input.runKey || !['active', 'settled'].includes(String(reservation.status))) throw Object.assign(new Error('knowledge embedding admission omitted durable reservation evidence'), { code: 'KNOWLEDGE_EMBEDDING_ADMISSION_INVALID' })
+  return envelope.data
+}
+
+export async function postKnowledgeEmbeddingOutcome(input: KnowledgeEmbeddingBinding & { outcome: 'failed_before_provider' | 'unknown'; apiBaseUrl: string; apiToken: string; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
+  const path = '/v1/internal/knowledge-embeddings/outcome'
+  const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
+    method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': input.workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret) : {}) },
+    body: JSON.stringify({ ...knowledgeEmbeddingBody(input), outcome: input.outcome }), redirect: 'error', signal: input.signal,
+  })
+  if (!response.ok) throw Object.assign(new Error(`knowledge embedding outcome API returned ${response.status}`), { code: 'KNOWLEDGE_EMBEDDING_OUTCOME_UNAVAILABLE', reconciliationRequired: input.outcome === 'unknown' })
+  const envelope = await parseWorkerApiJson(response) as { data?: { outcome?: unknown; action_id?: unknown; reconciliation_required?: unknown } }
+  if (envelope.data?.outcome !== input.outcome || envelope.data.action_id !== input.actionId || envelope.data.reconciliation_required !== (input.outcome === 'unknown')) throw Object.assign(new Error('knowledge embedding outcome API omitted durable evidence'), { code: 'KNOWLEDGE_EMBEDDING_OUTCOME_INVALID', reconciliationRequired: input.outcome === 'unknown' })
+  return envelope.data
 }
 
 export async function postModelUsage(input: { apiBaseUrl: string; apiToken: string; usage: RelayUsageRecord; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
@@ -1484,6 +1624,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
   const quotaConnection = await createQuotaCounterStore(process.env.REDIS_URL)
   const quotaAdmission = new FixedWindowQuotaAdmission(quotaConnection.store)
   const executionAuthorization = createApiExecutionAuthorizationGuard(config)
+  const providerDispatchAdmission = createWorkerProviderDispatchAdmission(executionAuthorization)
   const commercialAccess = createApiCommercialAccessGuard(config)
   const deliveryScanAdmission = createApiDeliveryScanAdmissionGuard(config)
   const queueFactory = redisConnection
@@ -1495,9 +1636,11 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
   const onboardingGrantDispatch = new PostgresOnboardingGrantDispatchRepository(sqlPool)
   const scanAttempts = new PostgresAssetScanAttemptRepository(sqlPool)
   const creativePointSettlement = new CreativePointRelaySettlement(new PostgresCreativePointRepository(sqlPool), new PostgresCreativePointLifecycleRepository(sqlPool), relayProviderIdentity(process.env))
+  const knowledgeRepository = new PostgresKnowledgeRepository(sqlPool)
   const relayPricing = createRelayPricingClientFromEnv(process.env)
   const runtime = new ConnectorRuntime({
     configSource: process.env,
+    beforeRequest: providerDispatchAdmission.beforeConnectorRequest,
     capabilityEvidenceTrust: (() => {
       const evidencePath = process.env.CAPABILITY_EVIDENCE_PATH?.trim()
       if (process.env.NODE_ENV !== 'production' || !evidencePath) return undefined
@@ -1523,7 +1666,16 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
       if (providerRequestId) execution.providerRequestIds.push(providerRequestId)
     }
     return postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, usage: enriched, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal: execution?.signal })
-  })
+  }, providerDispatchAdmission.beforeModelRequest)
+  const knowledgeVectorIndexEnabled = process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED?.trim() === 'true'
+  const embeddingVersion = process.env.EMBEDDING_VERSION?.trim()
+  const embeddingClient = knowledgeVectorIndexEnabled ? createEmbeddingClientFromEnv(process.env, async usage => {
+    if (!config.apiBaseUrl || !config.apiToken || !config.apiSigningSecret) throw Object.assign(new Error('signed worker API configuration is required for embedding usage settlement'), { code: 'KNOWLEDGE_EMBEDDING_CONTRACT_MISSING' })
+    return postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, signingSecret: config.apiSigningSecret, usage })
+  }) : undefined
+  if (knowledgeVectorIndexEnabled && (!embeddingClient || !embeddingVersion || !config.apiBaseUrl || !config.apiToken || !config.apiSigningSecret)) {
+    throw Object.assign(new Error('enabled knowledge vector indexing requires relay, embedding version, and signed worker API configuration'), { code: 'KNOWLEDGE_EMBEDDING_CONTRACT_MISSING' })
+  }
   const imageGenerator = createImageGeneratorFromEnv(process.env, async usage => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for image model usage settlement')
     const execution = usage.actionId ? imageUsageContexts.get(usage.actionId) : undefined
@@ -1544,7 +1696,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
       })
     }
     return postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, usage: enriched, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal: execution?.signal })
-  })
+  }, providerDispatchAdmission.beforeModelRequest)
   const requireImageProviderRequestId = (actionId: string) => {
     const providerRequestId = imageUsageContexts.get(actionId)?.providerRequestId?.trim()
     if (!providerRequestId) throw Object.assign(new Error('image provider response did not expose a real provider request id'), { code: 'IMAGE_PROVIDER_REQUEST_ID_MISSING', retryable: false, unknown: true })
@@ -1578,18 +1730,28 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     const lockRemoteId = remoteId ?? `create:${event.aggregateId}`
     const idempotencyKey = publishIdempotencyKey(event)
     try {
-      return await quotaConnection.lock.run(`publish:${event.workspaceId}:${String(platform)}:${accountId}:${lockRemoteId}`, () => mappingExecution.run(event, () => {
-        signal?.throwIfAborted()
-        return runtime.executePublish({
-        platform: platform as 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin',
-        context: { workspaceId: event.workspaceId, accountId, ...(execution ? { credentialRef: execution.credentialRef } : {}), traceId: event.id, signal },
-        fields,
-        ...(media?.length ? { media } : {}),
-        ...(remoteId ? { remoteId } : {}),
-        // A platform may commit just before transport cancellation. Retrying
-        // with this stable key is the fail-closed boundary for that ambiguity.
-        idempotencyKey,
-      }) }))
+      return await quotaConnection.lock.run(`publish:${event.workspaceId}:${String(platform)}:${accountId}:${lockRemoteId}`, () => mappingExecution.run(event, async () => {
+        let currentExecution = execution
+        return executeWorkerProviderAfterPreflight({
+          event, operation: 'publish.execute', authorization: executionAuthorization, signal,
+          preflight: async () => {
+            // Resolve the credential again inside the lock. Neither the
+            // lock wait nor fetching media may preserve an earlier allow.
+            if (config.apiBaseUrl && config.apiToken) currentExecution = await assertPublishExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), production: config.environment === 'production', signal })
+            if (currentExecution && payload.payload_hash !== currentExecution.payloadHash) throw new WorkerExecutionAuthorizationError('AUTHZ_EXECUTION_RESOURCE_STALE', 'publish event payload hash no longer matches the frozen job', { retryable: false })
+          },
+          invoke: () => providerDispatchAdmission.run({ event, operation: 'publish.execute', signal, providerRequests: 0 }, () => runtime.executePublish({
+            platform: platform as 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin',
+            context: { workspaceId: event.workspaceId, accountId, ...(currentExecution ? { credentialRef: currentExecution.credentialRef } : {}), traceId: event.id, signal },
+            fields,
+            ...(media?.length ? { media } : {}),
+            ...(remoteId ? { remoteId } : {}),
+            // A platform may commit just before transport cancellation.
+            // Preserve this stable key for an uncertain committed write.
+            idempotencyKey,
+          })),
+        })
+      }))
     } catch (error) {
       if (error instanceof DistributedLockBusyError) throw { normalized: { code: error.code, message: error.message, retryable: true, unknown: false } }
       if (error instanceof ConnectorMappingPreflightError) throw { normalized: { code: 'MAPPING_PREFLIGHT_BLOCKED', message: error.message, retryable: false, unknown: false } }
@@ -1642,14 +1804,29 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     const taskId = event.payload.task_id
     if (typeof taskId !== 'string' || !taskId) throw new Error('generation event is missing task_id')
     const modelKey = process.env.AI_MODEL?.trim() ?? process.env.MODEL_ID?.trim() ?? 'configured-model'
-    await quotaAdmission.admit(quotaAdmissionForEvent(event, 'model', modelKey, config.modelQuotaPerMinute))
     const usageContext = { runKey, contextHash, ...(typeof event.payload.context_link_id === 'string' && event.payload.context_link_id ? { contextLinkId: event.payload.context_link_id } : {}), taskId, ...(typeof event.payload.campaign_item_id === 'string' && event.payload.campaign_item_id ? { campaignItemId: event.payload.campaign_item_id } : {}), event, providerRequestIds: [] as string[], ...(signal ? { signal } : {}) }
-    generationUsageContexts.set(actionId, usageContext)
     try {
-      const content = await contentGenerator.generate(validatedInput, { signal })
+      const content = await executeWorkerProviderAfterPreflight({
+        event, operation: 'generation.execute', authorization: executionAuthorization, signal,
+        preflight: async () => { await quotaAdmission.admit(quotaAdmissionForEvent(event, 'model', modelKey, config.modelQuotaPerMinute)) },
+        invoke: () => {
+          generationUsageContexts.set(actionId, usageContext)
+          return providerDispatchAdmission.run({ event, operation: 'generation.execute', signal, providerRequests: 0 }, () => contentGenerator.generate(validatedInput, { signal }))
+        },
+      })
       await creativePointSettlement.settleForDelivery(event, usageContext.providerRequestIds)
       return content
     } catch (error) {
+      if (error instanceof WorkerExecutionAuthorizationError && usageContext.providerRequestIds.length > 0) {
+        // A schema-repair attempt can be denied after an earlier response
+        // already produced real usage. Preserve that evidence and reservation
+        // for reconciliation instead of claiming this whole action was free.
+        throw Object.assign(new Error('Generation was interrupted by current authorization after recorded provider usage'), {
+          code: 'GENERATION_AUTHORIZATION_CHANGED_AFTER_USAGE', retryable: false, unknown: false,
+          providerSucceeded: true, reconciliationRequired: true, cause: error,
+          providerRequestIds: [...usageContext.providerRequestIds],
+        })
+      }
       const candidate = error as { providerOutcome?: unknown; providerRequestId?: unknown; providerIdempotencyKey?: unknown; code?: unknown; message?: unknown }
       if (candidate.providerOutcome === 'unknown') await creativePointSettlement.recordProviderOutcome(event, candidate).catch(() => undefined)
       else if (candidate.providerOutcome === 'failed') {
@@ -1679,7 +1856,12 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     const reserved = await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'reserve_provider_operation', ownerToken, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
     const providerOperationKey = reserved?.providerOperationKey
     if (!providerOperationKey) throw new Error('image generation execution response is missing provider operation reservation')
-    await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'begin_provider_dispatch', ownerToken, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
+    const dispatchScope: WorkerProviderDispatchScope = { event, operation: 'image_generation.execute', signal, providerRequests: 0 }
+    const closeRejected = (error: unknown) => closeRejectedImageDispatch({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, event, ownerToken, providerRequests: dispatchScope.providerRequests, error, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
+    try {
+      await executionAuthorization.assertAuthorized(event, 'image_generation.execute', signal)
+      await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'begin_provider_dispatch', ownerToken, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
+    } catch (error) { return closeRejected(error) }
     imageUsageContexts.set(actionId, { runKey, contextHash: intentHash, ...(signal ? { signal } : {}) })
     // Keep asset IDs and resolved pixels on their respective relay fields.
     // Passing IDs through `sourceImages` silently dropped the reference image
@@ -1696,10 +1878,13 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     try {
       let images: string[]
       try {
-        images = await imageGenerator.generate(input, { signal, providerOperationKey })
+        images = await executeAfterAuthorizationCheck({ guard: executionAuthorization, event, operation: 'image_generation.execute', signal, providerCall: () => providerDispatchAdmission.run(dispatchScope, () => imageGenerator.generate(input, { signal, providerOperationKey })) })
         signal?.throwIfAborted()
       } catch (error) {
         if (signal?.aborted) throw error
+        // A live authorization failure occurs before the provider call. It
+        // must not manufacture a provider request or unknown remote outcome.
+        if (error instanceof WorkerExecutionAuthorizationError && dispatchScope.providerRequests === 0) return closeRejected(error)
         const candidate = error as { code?: unknown }
         const failure = { code: typeof candidate.code === 'string' ? candidate.code : 'IMAGE_GENERATION_FAILED', message: error instanceof Error ? error.message : 'image generation failed' }
         const providerRequestId = imageUsageContexts.get(actionId)?.providerRequestId?.trim()
@@ -1760,16 +1945,19 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     const envelope = await parseWorkerApiJson(remoteJob) as { data?: { resumeCursor?: string; state?: string } }
     const cursor = typeof envelope.data?.resumeCursor === 'string' ? envelope.data.resumeCursor : typeof event.payload.cursor === 'string' ? event.payload.cursor : undefined
     try {
-      const result = await runtime.sync(platform as 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin', { workspaceId: event.workspaceId, accountId, credentialRef: execution.credentialRef, traceId: event.id, signal }, cursor, async page => {
+      const result = await executeAfterAuthorizationCheck({ guard: executionAuthorization, event, operation: 'catalog.sync.execute', signal, providerCall: () => providerDispatchAdmission.run({ event, operation: 'catalog.sync.execute', signal, providerRequests: 0 }, () => runtime.sync(platform as 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin', { workspaceId: event.workspaceId, accountId, credentialRef: execution.credentialRef, traceId: event.id, signal }, cursor, async page => {
         await postSyncProgress({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, event, page: { pageNumber: page.pageNumber, ...(page.cursor ? { cursor: page.cursor } : {}), ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}), items: page.items as unknown[] }, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
-      })
+      })) })
       signal?.throwIfAborted()
       await postSyncResult({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, state: 'succeeded', ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
       return result
     } catch (error) {
       signal?.throwIfAborted()
-      await postSyncResult({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, state: error instanceof SyncPaginationError ? 'partial' : 'failed', errorMessage: error instanceof Error ? error.message : 'catalog sync failed', ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
-      throw error
+      const failure = error instanceof SyncPaginationError && error.cause instanceof WorkerExecutionAuthorizationError ? error.cause : error
+      await postSyncResult({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, state: error instanceof SyncPaginationError && error.pages > 0 ? 'partial' : 'failed', errorMessage: failure instanceof Error ? failure.message : 'catalog sync failed', ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
+      // Pagination retains already observed pages, but must not turn a
+      // final authorization denial into a generic retryable connector error.
+      throw failure
     }
   }
   const scanRequested = async (event: DurableOutboxEvent, _projection: unknown, signal?: AbortSignal) => {
@@ -1885,6 +2073,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     }
     let dependenciesReady = false
     let nextDependencyCheckAt = 0
+    let nextKnowledgeIndexAt = 0
     do {
       const startedAt = Date.now()
       try {
@@ -1910,6 +2099,18 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
             })
           })()
           : await pollOnce(repository, dispatchers, { ...config, workspaces, ...(scannerHeartbeat ? { claimAdmission: () => scannerHeartbeat!.canProcessScans() } : {}) }, queueFactory, { executionAuthorization, commercialAccess, deliveryScanAdmission, publishRequested, reconcileRequested, generationRequested, imageGenerationRequested, syncRequested, scanRequested, imageContinuationRequested, onGenerationResult, onGenerationDeferred, onPublishObservation })
+        if ((config.role === 'automation' || config.role === 'all') && startedAt >= nextKnowledgeIndexAt && workspaces.length) {
+          const indexed = await allSettledWithConcurrency(workspaces, Math.min(2, config.workspaceBatchSize), workspaceId => indexApprovedKnowledge({
+            repository: knowledgeRepository, workspaceId, limit: Math.min(20, config.batchSize),
+            ...(embeddingClient && embeddingVersion ? { embedding: {
+              model: process.env.EMBEDDING_MODEL!.trim(), version: embeddingVersion, embed: embeddingClient.embed.bind(embeddingClient),
+              admit: (binding: KnowledgeEmbeddingBinding) => postKnowledgeEmbeddingAdmission({ ...binding, apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, signingSecret: config.apiSigningSecret! }).then(() => undefined),
+              reportOutcome: (outcome: KnowledgeEmbeddingBinding & { outcome: 'failed_before_provider' | 'unknown' }) => postKnowledgeEmbeddingOutcome({ ...outcome, apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, signingSecret: config.apiSigningSecret! }).then(() => undefined),
+            } } : {}),
+          }))
+          nextKnowledgeIndexAt = Date.now() + 60_000
+          Object.assign(result as unknown as Record<string, unknown>, { knowledgeLexicalIndex: { completed: indexed.filter(item => item.status === 'fulfilled').length, failed: indexed.filter(item => item.status === 'rejected').length } })
+        }
         const paymentReconciliationSchedule = planPaymentReconciliationRun({ role: config.role, startedAt, nextRunAt: nextPaymentReconciliationAt, intervalMs: config.paymentReconciliationIntervalMs })
         nextPaymentReconciliationAt = paymentReconciliationSchedule.nextRunAt
         if (config.role === 'reconcile' && startedAt >= nextStorageReconciliationAt) {

@@ -8,6 +8,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { assertRelayEvidence } from './relay-evidence.mjs'
+import { loadManagedToken } from './managed-token.mjs'
 
 // ChatGPT/Codex may launch the JavaScript entrypoint with a bundled Node binary.
 // On macOS, recover only missing configuration from launchd;
@@ -15,7 +16,7 @@ import { assertRelayEvidence } from './relay-evidence.mjs'
 if (process.platform === 'darwin' && process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') {
   const launchdNames = [
     'NODE_ENV', 'DEPLOY_ENV', 'MERCHANT_MCP_BASE_URL', 'MERCHANT_WORKSPACE_ID',
-    'MERCHANT_MCP_TOKEN', 'MERCHANT_STRICT_AUTH', 'MERCHANT_ALLOW_FIXTURE_FALLBACK',
+    'MERCHANT_MCP_TOKEN', 'MERCHANT_MCP_REFRESH_TOKEN', 'MERCHANT_MCP_TOKEN_SOURCE', 'MERCHANT_STRICT_AUTH', 'MERCHANT_ALLOW_FIXTURE_FALLBACK',
     'MERCHANT_MCP_WRITE_ENABLED', 'MERCHANT_RULE_APPROVAL_TOKEN', 'MERCHANT_ARTIFACT_DIR',
     'MERCHANT_MCP_TIMEOUT_MS', 'MERCHANT_MCP_RETRY_ATTEMPTS', 'MERCHANT_MCP_RETRY_DELAY_MS',
     'MERCHANT_ASSET_RESOURCE_DOMAINS', 'MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES',
@@ -29,6 +30,36 @@ if (process.platform === 'darwin' && process.env.NODE_ENV !== 'test' && process.
       // Missing launchd configuration is handled by the normal validation path.
     }
   }
+}
+
+loadManagedToken(process.env, process.platform, name => execFileSync('launchctl', ['getenv', name], {
+  encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000,
+}))
+
+async function refreshLocalDesktopToken() {
+  const refreshToken = process.env.MERCHANT_MCP_REFRESH_TOKEN?.trim()
+  if (!refreshToken || /^\$\{[^}]+\}$/u.test(refreshToken)) return false
+  const origin = new URL(baseUrl()).origin
+  const response = await fetch(`${origin}/v1/auth/mcp-token/refresh`, {
+    method: 'POST', redirect: 'error',
+    headers: { accept: 'application/json', 'content-type': 'application/json', origin },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  })
+  if (!response.ok) return false
+  const payload = await response.json()
+  const result = payload?.data?.result ?? payload?.data
+  const accessToken = typeof result?.access_token === 'string' ? result.access_token.trim() : ''
+  const nextRefreshToken = typeof result?.refresh_token === 'string' ? result.refresh_token.trim() : ''
+  if (!accessToken || !nextRefreshToken) return false
+  process.env.MERCHANT_MCP_TOKEN = accessToken
+  process.env.MERCHANT_MCP_REFRESH_TOKEN = nextRefreshToken
+  if (process.env.MERCHANT_MCP_TOKEN_SOURCE === 'launchd' && process.platform === 'darwin') {
+    try {
+      execFileSync('launchctl', ['setenv', 'MERCHANT_MCP_TOKEN', accessToken], { stdio: 'ignore', timeout: 2000 })
+      execFileSync('launchctl', ['setenv', 'MERCHANT_MCP_REFRESH_TOKEN', nextRefreshToken], { stdio: 'ignore', timeout: 2000 })
+    } catch { return false }
+  }
+  return true
 }
 
 const PROTOCOL_VERSION = '2025-06-18'
@@ -94,7 +125,7 @@ const READ_ONLY_METHODS = new Set([
   'billing.status', 'billing.model-usage.statement', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.export', 'catalog.sync.get', 'commercial.order.payment.get',
   'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'asset.list', 'brand.get', 'brand.extract', 'brand.tone.preview',
   'deliverable.list', 'task.history', 'task.resume', 'task.timeline', 'task.understand', 'feedback.list', 'generation.get', 'content.review',
-  'content.versions', 'content.diff', 'publish.get', 'publish.batch.get',
+  'content.versions', 'content.diff', 'publish.get', 'publish.manual.get', 'publish.manual.list', 'publish.batch.get',
   'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get', 'knowledge.learning.list', 'knowledge.competitor.list', 'knowledge.competitor.reference', 'automation.policy.get', 'automation.policy.list',
 ])
 // Generated from packages/contracts COMMERCIAL_MCP_FOUNDATION_POLICIES.
@@ -109,7 +140,7 @@ const COMMERCIAL_RECOVERY_METHODS = new Set([
   'billing.export', 'workspace.data.export.request', 'workspace.data.export.get', 'workspace.data.delete.request', 'workspace.bootstrap',
   'workspace.health', 'canonical.product.consistency', 'platform.mapping.preflight',
   'commercial.access.get', 'commercial.catalog.get', 'commercial.order.create', 'commercial.order.payment.get',
-  'creative-points.balance.get', 'creative-points.statement.list',
+  'creative-points.balance.get', 'creative-points.statement.list', 'content.draft.generate',
 ])
 const COMMERCIAL_DISABLED_METHODS = new Set([
   'ops.commercial.offers.list', 'ops.commercial.offer.upsert',
@@ -126,7 +157,6 @@ const COMMERCIAL_DISABLED_METHODS = new Set([
   'campaign.batch.generate', 'campaign.batch.retry_failed',
   'catalog.title.optimize', 'catalog.image.retry',
   'brand.tone.preview', 'task.understand', 'creative.directions',
-  'content.generate',
   'content.codex.prepare', 'content.codex.commit', 'content.review',
   'content.modify',
   'multimodal.generate',
@@ -141,7 +171,22 @@ if (process.env.MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES === 'true' && !['producti
   } catch { /* Missing connection stays closed. */ }
 }
 const MERCHANT_HIDDEN_METHODS = new Set([
+  // Current merchant scope is content production, review and export.
+  // Keep server compatibility and audit records; do not expose store sync or
+  // publishing actions through this merchant bridge.
+  'platform.connect', 'platform.store.list', 'workspace.content_setup.confirm',
+  'catalog.sync', 'catalog.sync.start', 'catalog.sync.get', 'sync.retry_failed',
+  'automation.policy.get', 'automation.policy.list', 'automation.policy.update',
+  'automation.scan', 'automation.tick', 'automation.pause',
+  'publish.prepare', 'publish.confirm', 'publish.get', 'publish.manual.get', 'publish.manual.list',
+  'ops.marketing.publish.manual-evidence.record',
+  'publish.batch.prepare', 'publish.batch.confirm', 'publish.batch.get',
+  'publish.batch.pause', 'publish.batch.resume', 'publish.batch.retry_failed',
   'billing.reconciliation',
+  // Payment is initiated only from the authenticated merchant backend. The
+  // desktop ChatGPT surface may read status/orders, but must not create a
+  // payment intent or expose a provider checkout link.
+  'billing.recharge.create',
   'billing.model-usage.reconciliation.run',
   'billing.model-usage.resolve',
   'billing.usage.consume',
@@ -194,8 +239,12 @@ const DESTRUCTIVE_WRITE_METHODS = new Set([
 ])
 const METHODS = {
   'onboarding.status': {
-    description: '查看安装后的系统引导进度、当前阻断、需要绑定的对象和下一步动作。只读。',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    description: '只读检查当前使用状态；默认流程为公开链接或手工资料输入、内容生产、审核、导出。有效身份与工作区权限、服务端准入允许时，可用 catalog.import（draft_only="true"）和 content.draft.generate 制作候选，不要求先连接店铺。链接仅作来源线索，不代表已读取、已授权或事实已核验；历史接入状态不作为内容流程进度。',
+    inputSchema: { type: 'object', properties: { store_links_text: boundedString(8192, 1, '用户逐行提供的平台｜店铺名称｜HTTPS店铺首页；仅作格式检查') }, additionalProperties: false },
+  },
+  'workspace.content_setup.confirm': {
+    description: '商家明确确认内容工作区名称及已官方授权店铺后保存设置；须先开启当前交互写会话，服务端核验 owner 与店铺并写入审计。',
+    inputSchema: { type: 'object', properties: { display_name: boundedString(120), platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: boundedString(200) }, required: ['display_name', 'platform', 'account_id'], additionalProperties: false },
   },
   'commercial.service-boundary.accept': {
     description: '确认 commercial.service-boundary.v1（校验和 94cd78089cf960d4b556ed9990fcd653c03473bd143b94d0203ab978ea84d685）：包含系统指导、常规排障、品牌配置、生成指导、拒审分析、流程优化；不包含无限修改、全套代做、完整营销策略、日常运营、7×24/非工作时段应急、内部开发；结果不保证。客户身份由已认证会话派生。',
@@ -215,8 +264,8 @@ const METHODS = {
     },
   },
   'merchant.first_value': {
-    description: '返回首个价值安全预览包；传 example=true 可查看静态示例，不代表真实商品，不发布内容；服务端不调用模型。',
-    inputSchema: { type: 'object', properties: { platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, product_id: { type: 'string' }, example: { type: 'string', enum: ['true'] } }, additionalProperties: false },
+    description: '返回首个价值安全预览包；example=true 为静态示例，draft=true 可通过平台中转生成未绑定内容候选，但不会创建正式版本、不发布。',
+    inputSchema: { type: 'object', properties: { platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, product_id: { type: 'string' }, example: { type: 'string', enum: ['true'] }, draft: { type: 'string', enum: ['true'] }, draft_title: { type: 'string', minLength: 2, maxLength: 256 }, draft_prompt: { type: 'string', minLength: 2, maxLength: 2000 }, idempotency_key: { type: 'string', minLength: 8, maxLength: 200 } }, additionalProperties: false },
   },
   'brand-unit.list': {
     description: '查看当前工作区的品及其已绑定店铺。只读。',
@@ -532,11 +581,11 @@ const METHODS = {
   'automation.pause': { description: '暂停店铺自动化运营并记录原因。', inputSchema: { type: 'object', properties: { platform: { type: 'string' }, account_id: { type: 'string' }, reason: { type: 'string' } }, required: ['reason'], additionalProperties: false } },
   'catalog.import': {
     description: '导入或绑定商品；支持后续主图生成和发布。',
-    inputSchema: { type: 'object', properties: { brand_id: { type: 'string', description: '已授权品牌 ID；传入后商品绑定到该品牌和店铺范围' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, remote_id: { type: 'string' }, local_product_key: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, sku_count: { type: 'string' }, skus_json: { type: 'string' }, images: { type: 'string' }, asset_ids_json: { type: 'string', description: '已上传商品素材 ID 字符串数组 JSON' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string' }, store_name: { type: 'string' }, store_differentiation: { type: 'string' } }, required: ['platform', 'title'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { brand_id: { type: 'string', description: '已授权品牌 ID；传入后商品绑定到该品牌和店铺范围' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, draft_only: { type: 'string', enum: ['true'], description: '仅导入本地资料用于草稿候选；不绑定店铺、不可同步或发布。' }, remote_id: { type: 'string' }, local_product_key: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, sku_count: { type: 'string' }, skus_json: { type: 'string' }, images: { type: 'string' }, asset_ids_json: { type: 'string', description: '已上传商品素材 ID 字符串数组 JSON' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string' }, store_name: { type: 'string' }, store_differentiation: { type: 'string' } }, required: ['platform', 'title'], additionalProperties: false },
   },
   'catalog.import.batch': {
-    description: '批量导入最多 50 个商品；可传商品对象数组，或传已解析并由商家确认事实的 XLSX/CSV 商品表格素材；每项明确平台和店铺，全部预校验通过后才写入。',
-    inputSchema: { type: 'object', properties: { products_json: { type: 'string', description: '商品对象数组 JSON' }, source_asset_id: { type: 'string', description: '已解析且已由商家确认事实的 XLSX/CSV 商品表格素材' } }, oneOf: [{ required: ['products_json'] }, { required: ['source_asset_id'] }], additionalProperties: false },
+    description: '批量导入最多 50 个商品；可传商品对象数组，或传已解析并由商家确认事实的 XLSX/CSV 商品表格素材。显式 draft_only=true 时只建立未绑定、待审核知识草稿，不需要店铺账号，不同步、不发布。',
+    inputSchema: { type: 'object', properties: { products_json: { type: 'string', description: '商品对象数组 JSON' }, source_asset_id: { type: 'string', description: '已解析且已由商家确认事实的 XLSX/CSV 商品表格素材' }, draft_only: { type: 'string', enum: ['true'], description: '仅建立未绑定商品和待审核知识，不连接店铺、不同步、不发布。' } }, oneOf: [{ required: ['products_json'] }, { required: ['source_asset_id'] }], additionalProperties: false },
   },
   'catalog.sku.update': { description: '独立修改商品 SKU 的名称、价格、库存、图片和规格；修改后必须重新确认商品事实。', inputSchema: { type: 'object', properties: { product_id: { type: 'string' }, sku_id: { type: 'string' }, name: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, images_json: { type: 'string' }, attributes_json: { type: 'string' }, expected_version: { type: 'string' } }, required: ['product_id', 'sku_id'], additionalProperties: false } },
   'catalog.product.update': { description: '修改商品级标题、类目、主副图、属性、卖点和店铺差异化；修改后必须重新确认商品事实。', inputSchema: { type: 'object', properties: { product_id: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, images_json: { type: 'string' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string' }, store_differentiation: { type: 'string' }, price: { type: 'string' }, expected_version: { type: 'string' } }, required: ['product_id'], additionalProperties: false } },
@@ -621,8 +670,8 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { asset_id: { type: 'string' }, verdict: { type: 'string', enum: ['excellent', 'disliked', 'unrated'] }, reasons_json: { type: 'string' }, note: { type: 'string' }, expected_revision: { type: 'string' } }, required: ['asset_id', 'verdict'], additionalProperties: false },
   },
   'brand.get': {
-    description: '查看当前工作区品牌档案。',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    description: '查看当前工作区品牌档案；提供 brand_unit_id 时只读取该品牌，避免多个品牌串用。',
+    inputSchema: { type: 'object', properties: { brand_unit_id: { type: 'string', description: '可选；明确读取的品牌单元。' } }, additionalProperties: false },
   },
   'brand.extract': {
     description: '从已读取的品牌素材提取候选字段、来源和置信度；只读且不会自动写入品牌档案。',
@@ -795,6 +844,10 @@ const METHODS = {
     description: '基于任务和已确认商品事实生成新的可审阅内容版本。',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['task_id'], additionalProperties: false },
   },
+  'content.draft.generate': {
+    description: '通过平台中转生成未绑定内容候选；仅草稿，不创建正式版本、不批准、不发布。',
+    inputSchema: { type: 'object', properties: { draft: { type: 'string', enum: ['true'] }, draft_title: { type: 'string', minLength: 2, maxLength: 256 }, draft_prompt: { type: 'string', minLength: 2, maxLength: 2000 }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, idempotency_key: { type: 'string', minLength: 8, maxLength: 200 } }, required: ['draft', 'draft_title', 'idempotency_key'], additionalProperties: false },
+  },
   'content.codex.prepare': {
     description: '仅本地开发/测试：准备已确认商品事实和结构化输出契约供 Codex 会话生成。生产环境禁止调用，正式生成必须使用平台托管并计量 token 的 content.generate。',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } }, required: ['task_id'], additionalProperties: false },
@@ -877,6 +930,18 @@ const METHODS = {
   'publish.get': {
     description: '查询发布任务当前状态和平台回执。',
     inputSchema: { type: 'object', properties: { publish_job_id: { type: 'string' } }, required: ['publish_job_id'], additionalProperties: false },
+  },
+  'ops.marketing.publish.manual-evidence.record': {
+    description: '平台运营为指定商家登记人工发布证据；人工证据不能替代平台 API 回执。',
+    inputSchema: { type: 'object', properties: { target_workspace_id: { type: 'string' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, platform: { type: 'string' }, account_id: { type: 'string' }, delivery_bundle_hash: { type: 'string', pattern: '^[a-f0-9]{64}$' }, status: { type: 'string', enum: ['manual_publish_in_progress', 'manual_publish_reported', 'manual_review_required'] }, occurred_at: { type: 'string' }, remote_content_id: { type: 'string' }, public_url: { type: 'string', pattern: '^https://' }, platform_display_status: { type: 'string' }, reviewer_id: { type: 'string' }, evidence_refs_json: { type: 'string' }, differences_json: { type: 'string' }, expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, required: ['target_workspace_id', 'task_id', 'content_version_id', 'platform', 'account_id', 'delivery_bundle_hash', 'status', 'occurred_at', 'evidence_refs_json', 'expected_revision', 'idempotency_key', 'reason'], additionalProperties: false },
+  },
+  'publish.manual.get': {
+    description: '商家读取本工作区的一条人工发布报告；该报告不等同于平台 API 已验证。',
+    inputSchema: { type: 'object', properties: { manual_publish_report_id: { type: 'string' } }, required: ['manual_publish_report_id'], additionalProperties: false },
+  },
+  'publish.manual.list': {
+    description: '查看当前商家工作区的人工发布记录列表；人工记录不等同于平台 API 已验证。',
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, content_version_id: { type: 'string' }, limit: positiveIntegerString, offset: { type: 'string', pattern: '^[0-9]+$' } }, additionalProperties: false },
   },
   'knowledge.rule.create': {
     description: '录入平台、品类、品牌、店铺或大促节点规则，形成可追溯的规则版本。',
@@ -1101,6 +1166,8 @@ function merchantActionLabel(value) {
 }
 
 function merchantNextActionLabel(value) {
+  const method = typeof value === 'string' ? value.match(/\b(?:[a-z][a-z_-]*\.)+[a-z][a-z_-]*\b/u)?.[0] : value?.tool ?? value?.method
+  if (typeof method === 'string' && !isMerchantTool(method)) return undefined
   if (typeof value === 'string') return merchantActionLabel(value) ?? sanitizeMerchantAction(value)
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
   return merchantActionLabel(value.tool ?? value.method) ?? sanitizeMerchantAction(String(value.label ?? value.title ?? value.description ?? ''))
@@ -1204,6 +1271,33 @@ function detailDecisionSummary(method, result) {
 
 function userFacingToolText(method, result) {
   if (method === 'onboarding.status') {
+    const inspection = result?.store_link_inspection
+    if (inspection && Array.isArray(inspection.candidates)) {
+      const issueText = Array.isArray(inspection.issues) && inspection.issues.length
+        ? inspection.issues.map(issue => `第 ${issue.line || '?'} 行：${issue.message}`).join('\n')
+        : ''
+      return [
+        inspection.candidates.length ? `已整理 ${inspection.candidates.length} 家店铺的接入候选；链接格式已检查，店铺身份和授权仍待核验。` : '这次没有识别出可用的店铺候选。',
+        ...inspection.candidates.map((store, index) => `${index + 1}. ${store.platformLabel}｜${store.storeName}｜${store.shopUrl}`),
+        issueText,
+        inspection.candidates.length ? '请确认这份店铺名单是否正确；需要修改或继续添加，也可以直接告诉我。' : '请按“淘宝｜店铺名称｜https://店铺首页”重新发送。',
+      ].filter(Boolean).join('\n')
+    }
+    const initialization = result?.initialization
+    if (initialization && Array.isArray(initialization.steps)) {
+      return [
+        '您好，感谢您使用 Store Nova。',
+        '从公开商品链接、手工填写的商品资料或你上传的图片开始，完成内容生产 → 审核 → 导出。',
+        '不必先连接店铺。资料导入和草稿生成仍需有效登录、当前工作区权限、服务端准入，以及真实模型配置、创意点和安全检查；候选保持未批准、未发布。',
+        '公开链接只是来源线索，不代表系统已读取页面或确认商品事实；若当前无法读取，请补充商品资料。审核和导出仅使用当前实际支持的工具，草稿不能冒充正式内容版本。',
+        '当前不提供库存/订单同步和自动发布。历史店铺接入状态已保留，但不代表本次内容已生成、审核或导出；不要发送 Cookie、平台密码或验证码。',
+        '你想制作什么内容？可以提供公开商品链接、商品资料或图片。',
+      ].join('\n\n')
+    }
+    const blocker = result?.blocker
+    if (blocker?.code === 'ONBOARDING_API_VERSION_MISMATCH') {
+      return `${blocker.title ?? '首次引导服务正在升级'}：${blocker.message ?? '当前服务端引导版本需要更新。'}${blocker.next_action ? `\n${blocker.next_action}` : ''}`
+    }
     const card = result?.onboarding_card
     if (card && typeof card === 'object') {
       return [
@@ -1431,7 +1525,7 @@ function userFacingErrorText(code, details) {
     return '图片已保存并通过自动安全检查，但没有读出可靠的商品信息。请先告诉我商品名称；我会继续使用当前图片记录你的确认，无需重新连接工作区或重复上传。'
   }
   if (code === 'PERMISSION_DENIED') return '当前账号没有执行这一步的权限。任务和已有内容已保留。'
-  if (code === 'MCP_AUTH_REQUIRED') return '当前服务配置尚未就绪。任务和已有内容已保留，没有扣费或发布；平台恢复后可继续处理。'
+  if (code === 'MCP_AUTH_REQUIRED') return '当前 ChatGPT 桌面插件没有可用的 Store Nova 工作区绑定，或旧的本地开发绑定已失效。请在商家后台的“连接本地插件”重新绑定当前工作区后重启 ChatGPT；这不是六个平台授权，也不会触发扣费或发布。'
   if (code === 'MCP_GATEWAY_BAD_REQUEST') return '插件请求被网关拒绝。当前任务和已有产物已保留；请根据请求 ID 排查网关路由、请求格式或插件连接配置。'
   if (code === 'MODEL_RELAY_EVIDENCE_REQUIRED') {
     const missing = Array.isArray(details?.missing) ? details.missing : []
@@ -1470,6 +1564,18 @@ function toolErrorPresentation(method, args, code, details) {
         user_action_required: true,
         preserved: ['uploaded_assets', 'confirmed_facts', 'saved_products', 'saved_skus'],
         resume_message: '继续',
+      },
+    }
+  }
+  if (code === 'MCP_AUTH_REQUIRED') {
+    return {
+      text: '当前 ChatGPT 桌面插件没有可用的 Store Nova 工作区绑定，或旧的本地开发绑定已失效。请在商家后台的“连接本地插件”重新绑定当前工作区后重启 ChatGPT；这不是六个平台授权，也不会触发扣费或发布。',
+      recovery: {
+        state: 'authentication_required',
+        user_action_required: true,
+        preserved: ['uploaded_assets', 'confirmed_facts', 'saved_products', 'saved_skus'],
+        resume_message: '重新绑定后继续',
+        next_action: { label: '重新绑定当前 Store Nova 工作区', target: 'merchant_studio_local_plugin_connection' },
       },
     }
   }
@@ -1676,7 +1782,7 @@ function safeStructuredErrorMessage(error, code, details) {
   return userFacingErrorText(code, details)
 }
 
-const MODEL_PROVIDER_METHODS = new Set(['content.generate', 'catalog.image.generate', 'multimodal.generate', 'multimodal.video.request', 'multimodal.image.edit'])
+const MODEL_PROVIDER_METHODS = new Set(['content.generate', 'content.draft.generate', 'catalog.image.generate', 'multimodal.generate', 'multimodal.video.request', 'multimodal.image.edit'])
 
 function isProviderChannelUnavailable(method, status, remoteError, rawResponseText = '') {
   if (status !== 503) return false
@@ -1707,12 +1813,12 @@ function actionCards(method, result) {
     enabled: card.enabled ?? true,
     reason: sanitizeMerchantText(String(card.reason ?? card.description ?? '')),
     requires_confirmation: card.requires_confirmation ?? card.confirmation === 'interactive_confirmation',
-  })).filter(card => !COMMERCIAL_DISABLED_METHODS.has(card.tool)) : []
+  })).filter(card => typeof card.tool === 'string' && isMerchantTool(card.tool) && !COMMERCIAL_DISABLED_METHODS.has(card.tool)) : []
   let sanitizedStoreCapacity = result.store_capacity
   if (result.store_capacity && typeof result.store_capacity === 'object' && !Array.isArray(result.store_capacity) && Array.isArray(result.store_capacity.action_cards)) {
     sanitizedStoreCapacity = {
       ...result.store_capacity,
-      action_cards: result.store_capacity.action_cards.filter(card => card && typeof card === 'object' && !Array.isArray(card) && typeof card.tool === 'string' && !card.tool.startsWith('ops.') && !COMMERCIAL_DISABLED_METHODS.has(card.tool)),
+      action_cards: result.store_capacity.action_cards.filter(card => card && typeof card === 'object' && !Array.isArray(card) && typeof card.tool === 'string' && isMerchantTool(card.tool) && !COMMERCIAL_DISABLED_METHODS.has(card.tool)),
     }
   }
   return Array.isArray(result.action_cards) || sanitizedStoreCapacity !== result.store_capacity
@@ -1736,9 +1842,18 @@ function merchantContextMetadata(result, explicitContext = {}) {
   const businessUnits = Array.isArray(result?.business_units)
     ? result.business_units
     : Array.isArray(result?.brands) ? result.brands : []
-  const stores = Array.isArray(result?.storeDirectory)
+  const stores = (Array.isArray(result?.storeDirectory)
     ? result.storeDirectory
-    : Array.isArray(result?.stores) ? result.stores : []
+    : Array.isArray(result?.stores) ? result.stores : [])
+    // The current workspace has no JD official authorization. Keep future
+    // official JD support intact, but hide demo/fixture JD rows from the
+    // merchant-facing selector so they cannot be mistaken for a real store.
+    .filter(store => {
+      const platform = String(store?.platform ?? '').trim().toLowerCase()
+      const mode = String(store?.dataMode ?? store?.data_mode ?? '').trim().toLowerCase()
+      const state = String(store?.state ?? store?.status ?? '').trim().toLowerCase()
+      return !(platform === 'jd' && (mode === 'fixture' || state === 'fixture'))
+    })
   const simulated = result?.execution?.simulated === true || result?.simulated === true || result?.mode === 'fixture'
   const firstAction = Array.isArray(result?.action_cards)
     ? result.action_cards.find(card => card && typeof card === 'object' && card.enabled !== false)
@@ -1780,7 +1895,7 @@ function firstMerchantAction(result) {
   const canonical = result?.onboarding_v2?.current_step
   if (canonical && typeof canonical === 'object' && !Array.isArray(canonical)) {
     const action = canonical.primary_action
-    if (action && typeof action === 'object' && !Array.isArray(action)) return {
+    if (action && typeof action === 'object' && !Array.isArray(action) && typeof action.method === 'string' && isMerchantTool(action.method)) return {
       method: typeof action.method === 'string' ? action.method : '',
       label: typeof action.label === 'string' ? sanitizeMerchantAction(action.label) : undefined,
     }
@@ -1792,7 +1907,7 @@ function firstMerchantAction(result) {
     method: typeof card.tool === 'string' ? card.tool : typeof card.method === 'string' ? card.method : '',
     label: merchantNextActionLabel(card),
   }
-  const action = Array.isArray(result?.next_actions) ? result.next_actions.find(Boolean) : undefined
+  const action = Array.isArray(result?.next_actions) ? result.next_actions.find(item => merchantNextActionLabel(item)) : undefined
   if (!action) return { method: '', label: undefined }
   return {
     method: action && typeof action === 'object' && !Array.isArray(action)
@@ -1805,8 +1920,9 @@ function firstMerchantAction(result) {
 function merchantConversationInput(method, stage, actionMethod, explicitContext, storeCount) {
   if (method === 'workspace.health') {
     if (storeCount > 0) return { kind: 'store_or_product_selection', accepts: ['natural_language'] }
-    return { kind: 'platform_selection', accepts: ['natural_language'] }
+    return { kind: 'product_materials', accepts: ['natural_language', 'public_url', 'attachment'] }
   }
+  if (stage === 'provide_materials') return { kind: 'product_materials', accepts: ['natural_language', 'public_url', 'attachment'] }
   if (stage === 'automatic_scan') return { kind: 'none', user_action_required: false }
   if (actionMethod === 'platform.connect' || stage === 'bind_store') return { kind: 'platform_selection', accepts: ['natural_language'] }
   if (actionMethod === 'asset.upload' || stage === 'add_assets') return { kind: 'attachment', accepts: ['attachment'] }
@@ -1820,6 +1936,7 @@ function merchantConversationInput(method, stage, actionMethod, explicitContext,
 
 function merchantConversationQuestion(method, stage, expectedInput, explicitContext, result, actionLabel) {
   if (stage === 'automatic_scan' || expectedInput.kind === 'none') return undefined
+  if (expectedInput.kind === 'product_materials') return '你想制作什么内容？可以提供公开商品链接、商品资料或图片。'
   if (method === 'workspace.health') {
     if (expectedInput.kind === 'platform_selection') return '你想先连接哪个平台？'
     return '你要处理哪个店铺或商品？'
@@ -1842,9 +1959,15 @@ function merchantConversationQuestion(method, stage, expectedInput, explicitCont
 
 function merchantConversationProjection(method, result, args = {}) {
   const explicitContext = method === 'merchant.start' ? merchantStartContext(args) : {}
-  const stores = Array.isArray(result?.storeDirectory)
+  const stores = (Array.isArray(result?.storeDirectory)
     ? result.storeDirectory
-    : Array.isArray(result?.stores) ? result.stores : []
+    : Array.isArray(result?.stores) ? result.stores : [])
+    .filter(store => {
+      const platform = String(store?.platform ?? '').trim().toLowerCase()
+      const mode = String(store?.dataMode ?? store?.data_mode ?? '').trim().toLowerCase()
+      const state = String(store?.state ?? store?.status ?? '').trim().toLowerCase()
+      return !(platform === 'jd' && (mode === 'fixture' || state === 'fixture'))
+    })
   const canonicalStep = result?.onboarding_v2?.current_step
   const currentStep = canonicalStep && typeof canonicalStep === 'object' && !Array.isArray(canonicalStep)
     ? canonicalStep
@@ -1864,15 +1987,17 @@ function merchantConversationProjection(method, result, args = {}) {
   const readOnlyCatalogIntent = method === 'merchant.start'
     && !scanning
     && /(?:查看|查询|列出|目录|店铺状态|商品列表|库存|连接状态)/u.test(String(explicitContext.requested_goal ?? ''))
+  const defaultAction = firstMerchantAction(result)
   const stage = scanning
     ? 'automatic_scan'
     : readOnlyCatalogIntent
       ? 'choose_product'
-    : rawStage || (method === 'workspace.health' ? stores.length ? 'choose_store_or_product' : 'connect_store' : 'start')
+    : ['connect_store', 'connect_stores', 'bind_store'].includes(rawStage) ? 'provide_materials'
+    : rawStage || (method === 'workspace.health' ? stores.length ? 'choose_store_or_product' : 'provide_materials' : defaultAction.method ? 'start' : 'provide_materials')
   const workspaceUnavailable = String(result?.workspace?.status ?? '').toLowerCase() === 'disabled'
   const action = readOnlyCatalogIntent
     ? { method: 'catalog.search', label: '选择店铺查看商品' }
-    : firstMerchantAction(result)
+    : defaultAction
   const storeOptions = stores.map((store, index) => {
     const simulated = store.dataMode === 'fixture' || store.state === 'fixture'
     const status = simulated
@@ -1882,9 +2007,7 @@ function merchantConversationProjection(method, result, args = {}) {
         : store.state === 'refresh_required'
           ? { label: '需要重新授权', explanation: '目前无法读取该店铺商品' }
           : store.readable
-            ? store.writeEnabled
-              ? { label: '可读取并发布', explanation: '已授权，可继续选择商品；发布仍需审核和确认' }
-              : { label: '可读取', explanation: '可以查看商品，平台发布能力尚未就绪' }
+            ? { label: '可读取', explanation: '可以查看已有商品资料；当前仅提供内容生产、审核和导出' }
             : { label: '仅有账号记录', explanation: '尚未取得可读取的店铺数据' }
     return {
       id: `store-option-${index + 1}`,
@@ -1895,14 +2018,17 @@ function merchantConversationProjection(method, result, args = {}) {
       explanation: status.explanation,
       data_source: simulated ? '演示数据' : store.dataMode === 'official_api' ? '官方 API' : '账号记录',
       selectable: Boolean(store.platform && store.accountId && store.readable && !simulated),
-      action: store.platform && store.accountId ? { method: 'catalog.search', arguments: { scope: 'store', platform: store.platform, account_id: store.accountId } } : { method: 'platform.connect', arguments: { platform: store.platform } },
+      ...(store.platform && store.accountId ? { action: { method: 'catalog.search', arguments: { scope: 'store', platform: store.platform, account_id: store.accountId } } } : {}),
     }
   })
+  const demoOnlyStores = stores.length > 0 && storeOptions.every(store => store.selectable === false && store.status === '演示店铺')
   const expectedInput = workspaceUnavailable
     ? { kind: 'none', user_action_required: false }
     : merchantConversationInput(method, stage, action.method, explicitContext, stores.length)
   const question = workspaceUnavailable
     ? undefined
+    : demoOnlyStores
+      ? '当前仅检测到演示店铺，不能作为真实商品来源。请提供公开商品链接、商品资料或图片。'
     : merchantConversationQuestion(method, stage, expectedInput, explicitContext, result, action.label)
   const rawPrimaryAction = canonicalStep && typeof canonicalStep === 'object' && !Array.isArray(canonicalStep) && canonicalStep.primary_action && typeof canonicalStep.primary_action === 'object' && !Array.isArray(canonicalStep.primary_action)
     ? canonicalStep.primary_action
@@ -1910,7 +2036,7 @@ function merchantConversationProjection(method, result, args = {}) {
   // Internal scan/operations instructions are not merchant actions. In an
   // automatic scan state the merchant has nothing to do; exposing asset.scan
   // would leak an Ops-only recovery path into the native conversation.
-  const merchantActionAllowed = !scanning && action.method !== 'asset.scan' && !/管理员|运营后台|扫描证据/u.test(action.label ?? '')
+  const merchantActionAllowed = !scanning && stage !== 'provide_materials' && isMerchantTool(action.method) && !/管理员|运营后台|扫描证据/u.test(action.label ?? '')
   const primaryAction = merchantActionAllowed && action.method
     ? {
         method: action.method,
@@ -1923,7 +2049,7 @@ function merchantConversationProjection(method, result, args = {}) {
     : scanning
       ? '图片已收到，正在自动检查。通过后会等待你的确认再继续生成。'
       : method === 'workspace.health'
-        ? stores.length ? `已更新 ${stores.length} 家店铺的连接状态。` : '当前还没有可用店铺。'
+        ? demoOnlyStores ? `当前检测到 ${stores.length} 家演示店铺；它们不代表真实授权，也不能用于读取商品或发布。` : stores.length ? `已更新 ${stores.length} 家店铺的连接状态。` : '当前还没有可用店铺。'
         : explicitContext.platform
           ? `已锁定${merchantPlatformLabel(explicitContext.platform)}。`
           : typeof result?.summary === 'string' && result.summary.trim()
@@ -1949,6 +2075,53 @@ function merchantConversationProjection(method, result, args = {}) {
 function merchantUiMetadata(method, result, args = {}) {
   if (!result || typeof result !== 'object' || Array.isArray(result) || !MERCHANT_CONTEXT_METADATA_METHODS.has(method)) return result
   if (method === 'onboarding.status') {
+    if (result.initialization && Array.isArray(result.initialization.steps)) {
+      // The four-step first-use journey is delivered in ChatGPT's native
+      // conversation. Keep the server facts available without attaching the
+      // legacy six-step dashboard card or an HTML output template.
+      return result
+    }
+    // Older servers expose a six-step status. Adapt only the durable states
+    // they actually returned into the current four-step conversation; never
+    // expose the retired dashboard card or claim a missing step is complete.
+    if (Array.isArray(result.steps) || result.onboarding || result.greeting) {
+      const legacySteps = Array.isArray(result.steps) ? result.steps : []
+      // A greeting-only legacy response has no completion evidence. Start the
+      // same honest 0/4 flow rather than showing an upgrade dead end.
+      const stateFor = (...ids) => legacySteps.find(step => {
+        const values = [step?.id, step?.title, step?.key].map(value => String(value ?? '').trim().toLowerCase())
+        return ids.some(id => values.includes(id) || values.some(value => value.includes(id)))
+      })
+      const done = step => step?.state === 'complete' || step?.status === 'complete'
+      const workspace = stateFor('workspace', 'workspace_setup', '工作区')
+      const store = stateFor('connect_store', 'bind_store', 'connect_shop', '连接店铺', '绑定店铺')
+      const products = stateFor('select_product', 'choose_product', 'scan_catalog', '选择商品', '扫描商品')
+      const assets = stateFor('add_assets', 'upload_assets', '上传素材与资料', '素材')
+      const generation = stateFor('generate_review', 'start_task', 'generate_content', '生成并审核', '开始任务')
+      const legacyStores = Array.isArray(result.stores) ? result.stores : Array.isArray(result.storeDirectory) ? result.storeDirectory : []
+      const legacyEvidence = result.evidence && typeof result.evidence === 'object' ? result.evidence : {}
+      const officialStoreCount = Number(legacyEvidence.official_stores ?? legacyEvidence.officialStores ?? 0)
+      const hasOfficialStore = officialStoreCount > 0 || legacyStores.some(item => {
+        if (!item || typeof item !== 'object') return false
+        const mode = String(item.dataMode ?? item.data_mode ?? '').toLowerCase()
+        const state = String(item.state ?? item.status ?? '').toLowerCase()
+        return mode === 'official_api' && state !== 'revoked' && state !== 'refresh_required' && item.readable !== false
+      })
+      // Legacy APIs often reported “bound” for fixture rows or an account
+      // record without OAuth evidence. Never let that skip the real store
+      // authorization step.
+      const connectDone = legacySteps.length > 0 && hasOfficialStore && done(workspace) && done(store)
+      const scanDone = connectDone && done(products) && done(assets)
+      const configDone = scanDone && done(generation)
+      const initializationSteps = [
+        { id: 'connect_stores', title: '连接平台及店铺', state: connectDone ? 'complete' : 'required', summary: connectDone ? '工作区和店铺连接状态已读取' : '等待官方店铺授权', next_action: { method: 'platform.connect', label: '开始配置店铺', required_inputs: ['platform'] } },
+        { id: 'scan_catalog', title: '扫描商品至知识库', state: !connectDone ? 'pending' : scanDone ? 'complete' : 'required', summary: !connectDone ? '等待店铺授权' : scanDone ? '商品和素材状态已读取' : '等待商品与素材核验', next_action: { method: 'catalog.search', label: '扫描店铺商品', required_inputs: ['platform', 'account_id'] } },
+        { id: 'check_configuration', title: '检查系统配置', state: !scanDone ? 'pending' : configDone ? 'complete' : 'blocked', summary: !scanDone ? '等待商品扫描' : configDone ? '生成前配置已读取' : '仍有商品事实、素材或生产配置待核验', next_action: { method: 'workspace.health', label: '检查系统配置', required_inputs: [] } },
+        { id: 'build_workspace', title: '建立工作区', state: configDone ? 'required' : 'pending', summary: configDone ? '请确认内容工作区名称和店铺范围' : '等待前述步骤完成', next_action: { method: 'workspace.content_setup.confirm', label: '确认内容工作区', required_inputs: ['display_name', 'platform', 'account_id'] } },
+      ]
+      const current = initializationSteps.find(step => step.state !== 'complete') ?? initializationSteps.at(-1)
+      return { schema_version: 'store-nova.initialization.v1', status: current?.state === 'complete' ? 'ready' : 'in_progress', initialization: { schema_version: 'store-nova.initialization.v1', status: 'in_progress', completed: initializationSteps.filter(step => step.state === 'complete').length, total: 4, current_step: current, steps: initializationSteps, security_notice: '请通过平台官方页面授权，不要发送密码或验证码。', evidence: { compatibility_projection: true } } }
+    }
     const current = result.current_step && typeof result.current_step === 'object' ? result.current_step : {}
     const steps = Array.isArray(result.steps) ? result.steps : []
     const labels = steps.map(step => `${step.state === 'complete' ? '✓' : '○'} ${step.title}: ${step.summary}`).join('；')
@@ -1974,7 +2147,7 @@ function merchantUiMetadata(method, result, args = {}) {
       kind: 'products',
       selection: 'multi',
       selection_key: 'product_id',
-      empty_state: products.length ? null : '当前范围暂无商品；请先同步或导入商品。',
+      empty_state: products.length ? null : '当前范围暂无商品；可先提供公开商品链接或导入商品资料。',
     }
   }
   if (method === 'merchant.start') {
@@ -2029,7 +2202,7 @@ function toolAnnotations(name) {
 }
 
 function onboardingUiHtml() {
-  return `<!doctype html><meta charset="utf-8"><title>Store Nova安装引导</title><style>body{font:15px system-ui,sans-serif;color:#172554;margin:24px;line-height:1.6}h1{font-size:22px;margin:0 0 16px}.step{border:1px solid #dbe4f0;border-radius:12px;padding:12px 14px;margin:8px 0}.muted{color:#64748b}</style><h1>Store Nova插件安装引导</h1><p class="muted">这是只读状态卡。完成当前步骤后重新检查，不会自动生成或发布内容。</p><div id="steps">请先调用 onboarding.status 获取最新状态。</div><script>const root=document.getElementById('steps');const data=window.openai?.toolOutput;if(data?.steps){root.innerHTML=data.steps.map(s=>'<div class="step"><strong>'+(s.state==='complete'?'✓':'○')+' '+s.title+'</strong><br><span class="muted">'+s.summary+'</span></div>').join('')}else if(data?.onboarding_card){root.textContent=data.onboarding_card.progress||'请先调用 onboarding.status'}</script>`
+  return `<!doctype html><meta charset="utf-8"><title>Store Nova安装引导</title><style>body{font:16px system-ui,sans-serif;color:#172554;margin:24px;line-height:1.6}h1{font-size:22px;margin:0 0 16px}.muted{color:#475569}</style><h1>Store Nova插件安装引导</h1><p>公开链接或手工资料 → 内容生产 → 审核 → 导出</p><p class="muted">请先调用 onboarding.status 读取真实状态。这是流程说明，不代表内容已经生成、审核或导出；不要求先连接店铺。</p><p class="muted">公开链接只是来源线索。生成仍需身份、工作区权限、创意点、模型中转和安全检查；无法读取或缺少工具时请补充资料，不使用 Cookie、平台密码或验证码。</p>`
 }
 
 function toolContent(method, result) {
@@ -2511,6 +2684,7 @@ async function callRemote(method, params) {
   const startupGraceMs = timeoutMs < 100 ? 50 : 0
   const deadline = Date.now() + timeoutMs + startupGraceMs
   const retrySafe = READ_ONLY_METHODS.has(method) || headers['idempotency-key'] !== undefined
+  let credentialRefreshAttempted = false
   try {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const remainingMs = deadline - Date.now()
@@ -2559,6 +2733,13 @@ async function callRemote(method, params) {
               },
             }
           : remoteError
+        if (response.status === 401 && !credentialRefreshAttempted) {
+          credentialRefreshAttempted = true
+          if (await refreshLocalDesktopToken()) {
+            headers.authorization = `Bearer ${process.env.MERCHANT_MCP_TOKEN}`
+            continue
+          }
+        }
         const providerOutcomeUnknown = normalizedRemoteError?.code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN'
         const transient = retrySafe && !providerOutcomeUnknown && (response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504)
         if ((!response.ok || !payload || remoteError) && (!transient || attempt === maxAttempts)) {
@@ -3094,16 +3275,15 @@ async function handle(request) {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: { tools: {}, resources: {}, resourceTemplates: {} },
       serverInfo: { name: 'merchant-marketing', version: PLUGIN_VERSION || 'unversioned' },
-      instructions: '首次使用先调用 onboarding.status；按返回的步骤完成工作区、身份、平台店铺和数据读取配置。需要完整诊断时调用 workspace.health；发布前必须人工确认并调用 publish.prepare。',
+      instructions: '首次使用先只读调用 onboarding.status。默认主流程是公开链接/手工资料输入 → 内容生产 → 审核 → 导出，不以店铺 OAuth 或历史四步接入进度作为默认前置。已登录并获工作区权限、服务端准入允许时，用 catalog.import（显式 draft_only="true"）和 content.draft.generate 制作未批准未发布的候选。公开链接不是读取成功或事实已确认的证据，无法读取时请商家补充资料；不索取 Cookie、平台密码或验证码。只调用当前实际提供的工具，缺失时明确阻断，不绕过权限、创意点或模型配置门禁。审核后按实际支持的 content.export 导出；草稿候选不是正式版本，不能虚构 content_version_id。当前不提供库存/订单同步和自动发布，不主动引导连接店铺或调用隐藏方法。',
     })
   }
   if (request.method === 'resources/list') {
     return jsonRpc(id, { resources: [
-      { uri: ONBOARDING_UI_URI, name: '安装引导', title: 'Store Nova插件安装引导', description: '展示工作区、身份、店铺、商品、素材和发布步骤；只读。', mimeType: 'text/html;profile=mcp-app' },
+      { uri: ONBOARDING_UI_URI, name: '安装引导', title: 'Store Nova插件安装引导', description: '说明资料输入、内容生产、审核和导出流程；只读，不代表步骤已完成。', mimeType: 'text/html;profile=mcp-app' },
       { uri: RECHARGE_UI_URI, name: '创意点恢复', title: 'Store Nova创意点恢复中心', description: '显示创意点准入、服务端授权恢复入口及历史账务证据；不接受客户端自填金额。', mimeType: 'text/html;profile=mcp-app' },
       { uri: CREATIVE_CHOICE_UI_URI, name: '创意方向选择', title: '选择创意方向', description: '比较三个创意方向并明确确认其中一个；初始不默认选择。', mimeType: 'text/html;profile=mcp-app' },
       { uri: CONTENT_DIFF_UI_URI, name: '内容版本差异', title: '比较内容版本', description: '逐字段比较两个内容版本并明确保留其中一个。', mimeType: 'text/html;profile=mcp-app' },
-      { uri: PUBLISH_CONFIRM_UI_URI, name: '最终发布确认', title: '确认发布内容', description: '核对单项或批量发布对象、变化、费用和影响后最终确认。', mimeType: 'text/html;profile=mcp-app' },
       { uri: IMAGE_EDIT_UI_URI, name: 'Store Nova图片局部编辑', title: '图片局部编辑区域标注', description: '在图片预览上拖拽或用键盘标注归一化编辑区域，并避开不可修改区域。', mimeType: 'text/html;profile=mcp-app' },
       { uri: IMAGE_CANDIDATE_CHOICE_UI_URI, name: '主图候选选择', title: '选择主图候选', description: '展示已归档且通过自动检查的主图候选；单张可直接确认，多张可选择一张。', mimeType: 'text/html;profile=mcp-app' },
     ] })
@@ -3115,7 +3295,6 @@ async function handle(request) {
     if (request.params?.uri === ONBOARDING_UI_URI) return jsonRpc(id, { contents: [{ uri: ONBOARDING_UI_URI, mimeType: 'text/html;profile=mcp-app', text: onboardingUiHtml(), _meta: { ui: { prefersBorder: true } } }] })
     if (request.params?.uri === CREATIVE_CHOICE_UI_URI) return jsonRpc(id, { contents: [{ uri: CREATIVE_CHOICE_UI_URI, mimeType: 'text/html;profile=mcp-app', text: creativeChoiceUiHtml(), _meta: { ui: { prefersBorder: true } } }] })
     if (request.params?.uri === CONTENT_DIFF_UI_URI) return jsonRpc(id, { contents: [{ uri: CONTENT_DIFF_UI_URI, mimeType: 'text/html;profile=mcp-app', text: contentDiffUiHtml(), _meta: { ui: { prefersBorder: true } } }] })
-    if (request.params?.uri === PUBLISH_CONFIRM_UI_URI) return jsonRpc(id, { contents: [{ uri: PUBLISH_CONFIRM_UI_URI, mimeType: 'text/html;profile=mcp-app', text: publishConfirmUiHtml(), _meta: { ui: { prefersBorder: true } } }] })
     if (request.params?.uri === IMAGE_EDIT_UI_URI) return jsonRpc(id, { contents: [{ uri: IMAGE_EDIT_UI_URI, mimeType: 'text/html;profile=mcp-app', text: imageEditUiHtml(), _meta: { ui: { prefersBorder: true } } }] })
     if (request.params?.uri === IMAGE_CANDIDATE_CHOICE_UI_URI) return jsonRpc(id, { contents: [{ uri: IMAGE_CANDIDATE_CHOICE_UI_URI, mimeType: 'text/html;profile=mcp-app', text: imageCandidateChoiceUiHtml(), _meta: { ui: { prefersBorder: true, csp: { resourceDomains: imageResourceDomains() } } } }] })
     if (request.params?.uri !== RECHARGE_UI_URI) return jsonRpcError(id, -32602, `Unknown resource: ${String(request.params?.uri)}`)

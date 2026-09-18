@@ -1,0 +1,103 @@
+# Complete fail-closed production configuration skeleton.
+#
+# Copy this file to a private, mode-600 deployment path and replace every null
+# with a reviewed real value or managed-secret reference. This file is not a
+# deployable production configuration: the explicit status and null values are
+# intentionally rejected by validate-production-config.sh.
+# For the current launch profile set platform_operations_mode to `manual` and
+# set every six-platform auth/read/write flag to false. Do not add OAuth values
+# for those platforms; ChatGPT/MCP host authorization is configured separately.
+configuration_status: BLOCKED_UNTIL_REQUIRED_PRODUCTION_INPUTS
+plugin_enabled: null
+merchant_bearer_hostname: null
+auth_enforcement: null
+session_id_hash_secret_ref: null
+platform_operations_mode: null
+jd_auth_enabled: null
+jd_read_enabled: null
+jd_write_enabled: null
+taobao_tmall_auth_enabled: null
+taobao_tmall_read_enabled: null
+taobao_tmall_write_enabled: null
+pinduoduo_auth_enabled: null
+pinduoduo_read_enabled: null
+pinduoduo_write_enabled: null
+object_storage_versioning: null
+lifecycle_policy_ref: null
+asset_quarantine_retention_days: null
+asset_clean_retention_days: null
+deletion_request_grace_days: null
+backup_retention_days: null
+alert_notifications_enabled: null
+point_in_time_recovery_enabled: null
+database_pooler_enabled: null
+database_max_backend_connections: null
+database_connection_utilization_alert_percent: null
+secret_provider: null
+worker_api_credentials_ref: null
+worker_sync_api_token_ref: null
+worker_sync_api_signing_secret_ref: null
+worker_generation_api_token_ref: null
+worker_generation_api_signing_secret_ref: null
+worker_publish_api_token_ref: null
+worker_publish_api_signing_secret_ref: null
+worker_reconcile_api_token_ref: null
+worker_reconcile_api_signing_secret_ref: null
+worker_automation_api_token_ref: null
+worker_automation_api_signing_secret_ref: null
+merchant_ui_api_token_ref: null
+merchant_ui_workspace_id_ref: null
+payment_mode: null
+payment_provider_adapters: null
+payment_checkout_base_url: null
+payment_provider_checkout_api_url: null
+payment_provider_query_api_url: null
+payment_provider_refund_query_api_url: null
+payment_provider_refund_api_url: null
+payment_provider_api_key_ref: null
+payment_provider_merchant_id: null
+payment_callback_base_url: null
+payment_callback_secret_ref: null
+payment_reconciliation_enabled: null
+payment_refund_enabled: null
+model_relay_base_url: null
+model_relay_api_key_ref: null
+text_model: null
+image_model: null
+image_edit_model: null
+ocr_model: null
+video_model: null
+embedding_model: null
+embedding_dimensions: null
+embedding_max_request_cny: null
+knowledge_vector_index_enabled: null
+approved_requests_per_minute: null
+approved_tokens_per_minute: null
+maximum_task_cost_cny: null
+object_storage_bucket: null
+object_storage_region: null
+object_storage_endpoint: null
+asset_display_base_url: null
+asset_display_url_signing_secret_ref: null
+platform_rule_sync_manifest_url: null
+platform_rule_sync_signing_secret_ref: null
+platform_rule_sync_interval_hours: null
+asset_scanner_mode: null
+allow_local_asset_scan_fixture: null
+asset_scanner_api_token_ref: null
+asset_scanner_workspace_signing_secret_ref: null
+asset_scan_receipt_key_id: null
+asset_scan_receipt_private_key_ref: null
+asset_scan_policy_version: null
+clamav_image_digest: null
+clamav_signature_max_age_minutes: null
+clamav_max_file_bytes: null
+mcp_authorization_mode: null
+durable_platform_assignments_required: null
+app_base_url: null
+ops_base_url: null
+mcp_base_url: null
+asset_scan_trusted_public_keys_ref: null
+OPS_AUTH_MODE: null
+object_storage_sse_mode: null
+release_id: null

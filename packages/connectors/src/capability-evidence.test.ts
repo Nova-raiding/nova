@@ -17,8 +17,15 @@ describe('platform capability evidence', () => {
     expect(isProductionCanaryReady(evidence, 'taobao')).toBe(false)
   })
 
-  it('does not treat malformed or future attribution as readiness evidence', () => {
+  it('requires refresh lifecycle evidence for production canary readiness', () => {
     const capabilities = ['authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'] as const
+    const evidence = capabilities.map(capability => ({ platform: 'taobao' as const, capability, state: 'production_canary' as const }))
+    expect(isProductionCanaryReady(evidence, 'taobao')).toBe(false)
+    expect(isProductionCanaryReady([...evidence, { platform: 'taobao', capability: 'refresh', state: 'production_canary' }], 'taobao')).toBe(true)
+  })
+
+  it('does not treat malformed or future attribution as readiness evidence', () => {
+    const capabilities = ['authorize', 'refresh', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'] as const
     const config: HttpConnectorConfig = {
       clientId: 'jd-client',
       oauth: { authorizeUrl: 'https://jd.test/a', tokenUrl: 'https://jd.test/t' },
@@ -37,7 +44,7 @@ describe('platform capability evidence', () => {
   })
 
   it('does not report media readiness when the upload implementation is absent', () => {
-    const capabilities = ['authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'] as const
+    const capabilities = ['authorize', 'refresh', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'] as const
     const config: HttpConnectorConfig = {
       clientId: 'jd-client',
       oauth: { authorizeUrl: 'https://jd.test/a', tokenUrl: 'https://jd.test/t' },

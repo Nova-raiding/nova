@@ -13,7 +13,7 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: merchant-api, app.kubernetes.io/part-of: merchant-marketing-codex}
       annotations:
-        merchant.example.com/config-sha256: sha256:7dc43ae9162721e836cdd68d0f1d58bda6162b8a1ad5ef4100841c8493771139
+        merchant.example.com/config-sha256: sha256:ff10827fede9f4135e9b5cbae7c3b5317392c7b5587ba4e724d0d8ee3d3f8139
     spec:
       serviceAccountName: merchant-api-rrsa
       terminationGracePeriodSeconds: 30
@@ -28,14 +28,11 @@ spec:
             - configMapRef: {name: merchant-runtime}
           env:
             - {name: OTEL_SERVICE_NAME, value: merchant-api}
-            # ChatGPT MCP OAuth is mandatory on the public merchant host. The
-            # client/callback allowlist remains a managed Secret so a missing
-            # production registration keeps /readyz fail-closed.
-            - {name: MCP_OAUTH_REQUIRED, value: "true"}
-            - {name: MCP_OAUTH_ISSUER, value: https://yxsona.com}
-            - {name: MCP_OAUTH_AUTHORIZATION_ENDPOINT, value: https://yxsona.com/oauth/authorize}
-            - {name: MCP_OAUTH_TOKEN_ENDPOINT, value: https://yxsona.com/oauth/token}
-            - {name: MCP_OAUTH_CLIENTS, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: MCP_OAUTH_CLIENTS}}}
+            # ChatGPT loads the packaged stdio plugin locally. The bridge uses
+            # a short-lived workspace-bound bearer; remote OpenAI App OAuth is
+            # a separate, optional deployment profile.
+            - {name: MCP_INTEGRATION_MODE, value: local_stdio}
+            - {name: MCP_OAUTH_REQUIRED, value: "false"}
             - {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: DATABASE_URL}}}
             - {name: OPS_DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: OPS_DATABASE_URL}}}
             - {name: REDIS_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: REDIS_URL}}}

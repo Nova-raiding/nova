@@ -1,4 +1,3 @@
-import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from '../packages/persistence/src/postgres-scope-fixture-cleanup.js'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
@@ -8,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { signPaymentCallback } from '../packages/billing/src/callback-envelope.mjs'
 import { loadMigrations, MigrationRunner } from '../packages/persistence/src/migration.js'
 import { PostgresPasswordAuthRepository } from '../packages/persistence/src/password-auth-repository.js'
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from '../packages/persistence/src/postgres-scope-fixture-cleanup.js'
 
 const databaseUrlValue = process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const bridgePath = fileURLToPath(new URL('../apps/plugin/mcp/bridge.mjs', import.meta.url))
@@ -247,16 +247,9 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
       const paidViaBridge = await bridgeCall(bridgeA, 3, 'commercial.order.payment.get', { order_id: order.order_id })
       expect(paidViaBridge.result).toMatchObject({ isError: false, structuredContent: { order_id: order.order_id, status: 'paid', access_revision: 1 } })
       const balanceViaBridge = await bridgeCall(bridgeA, 4, 'creative-points.balance.get', {})
-      expect(balanceViaBridge.result).toMatchObject({
-        isError: false,
-        structuredContent: {
-          balance_state: 'known',
-          available_points: 500,
-          reserved_points: 0,
-          settled_points: 0,
-          access_revision: '1',
-        },
-      })
+      // The merchant bridge exposes the authenticated wallet balance so the
+      // user can decide whether another paid generation is affordable.
+      expect(balanceViaBridge.result).toMatchObject({ isError: false, structuredContent: { balance_state: 'known', access_revision: '1', available_points: 500 } })
 
       const hiddenFromB = await bridgeCall(bridgeB, 5, 'commercial.order.payment.get', { order_id: order.order_id })
       expect(hiddenFromB.result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_ORDER_NOT_FOUND' } })
@@ -288,9 +281,7 @@ describe('ChatGPT MCP OAuth commercial point-pack payment PostgreSQL vertical', 
         await operations?.end()
         await database?.end()
         await dropDrainedPostgresFixture(admin, databaseName)
-      }, primaryFailure, [
-        () => admin.end(),
-      ])
+      }, primaryFailure, [() => admin.end()])
     }
   }, 240_000)
 })

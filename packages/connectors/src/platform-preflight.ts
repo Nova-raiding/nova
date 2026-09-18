@@ -11,7 +11,7 @@ import { douyinProfile } from './profiles/douyin.js'
 
 export const PLATFORM_CAPABILITY_CONTRACT_PLATFORMS = ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] as const
 export const PLATFORM_CAPABILITY_CONTRACT_CAPABILITIES: readonly CapabilityName[] = [
-  'authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload',
+  'authorize', 'refresh', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload',
 ]
 export const PLATFORM_CAPABILITY_EVIDENCE_STATES = ['unverified', 'documented', 'fixture_verified', 'test_e2e', 'production_canary'] as const
 
@@ -334,7 +334,7 @@ export async function runPlatformPreflight(options: PlatformPreflightOptions = {
     else if (!readiness.ready) gaps.push(...readiness.reasons)
     gaps.push(...configErrors.filter(error => error.startsWith(`${platform}.`)))
     if (tenantErrors.length) gaps.push(...tenantErrors)
-    if (!productionCanaryReady) gaps.push('all nine capabilities lack production_canary evidence')
+    if (!productionCanaryReady) gaps.push('all ten capabilities lack production_canary evidence')
     results.push({ platform, contractPassed: checks.every(item => item.passed), checks, ...(readiness ? { readiness } : {}), productionCanaryReady, gaps: [...new Set(gaps)] })
   }
   const gaps = [...new Set([...evidenceErrors, ...promotionEvidenceErrors, ...configErrors, ...tenantErrors, ...results.flatMap(item => item.gaps)])]

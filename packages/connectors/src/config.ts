@@ -173,7 +173,11 @@ function numberValue(source: ConfigSource, key: string): number | undefined {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
 }
 
-const capabilityNames = new Set<CapabilityName>(['authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'])
+function explicitlyEnabled(source: ConfigSource, key: string): boolean {
+  return value(source, key)?.toLowerCase() === 'true'
+}
+
+const capabilityNames = new Set<CapabilityName>(['authorize', 'refresh', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'])
 const capabilityStates = new Set<CapabilityEvidenceState>(['unverified', 'documented', 'fixture_verified', 'test_e2e', 'production_canary'])
 
 /**
@@ -231,6 +235,12 @@ function validUrl(raw: string | undefined): raw is string {
 
 function buildOne(platform: Platform, source: ConfigSource): { config?: HttpConnectorConfig; missing: string[] } {
   const prefix = platformPrefixes[platform]
+  // Platform switches are part of the runtime admission contract. Missing,
+  // malformed, and false values all disable OAuth for managed platforms.
+  const managedSwitchPrefix = platform === 'jd' ? 'JD' : platform === 'taobao' || platform === 'tmall' ? 'TAOBAO' : platform === 'douyin' ? 'DOUYIN' : undefined
+  if (managedSwitchPrefix && (platform === 'jd' || value(source, 'NODE_ENV') === 'production') && !explicitlyEnabled(source, `${managedSwitchPrefix}_AUTH_ENABLED`)) {
+    return { missing: [`${managedSwitchPrefix}_AUTH_ENABLED=true`] }
+  }
   const clientId = value(source, `${prefix}_CLIENT_ID`) ?? value(source, `${prefix}_APP_KEY`)
   const clientSecret = value(source, `${prefix}_CLIENT_SECRET`) ?? value(source, `${prefix}_APP_SECRET`)
   const authorizeUrl = value(source, `${prefix}_OAUTH_AUTHORIZE_URL`)
@@ -326,7 +336,11 @@ export function buildHttpConnectorConfigs(source: ConfigSource = process.env, op
   for (const platform of Object.keys(platformPrefixes) as Platform[]) {
     const result = buildOne(platform, source)
     if (result.config && capabilityEvidence[platform]) result.config.capabilityEvidence = capabilityEvidence[platform]
-    const state = validateConnectorReadiness(platform, result.config)
+    const switchPrefix = platform === 'jd' ? 'JD' : platform === 'taobao' || platform === 'tmall' ? 'TAOBAO' : platform === 'douyin' ? 'DOUYIN' : undefined
+    const state = validateConnectorReadiness(platform, result.config, switchPrefix && (platform === 'jd' || value(source, 'NODE_ENV') === 'production') ? {
+      readEnabled: explicitlyEnabled(source, `${switchPrefix}_READ_ENABLED`),
+      writeEnabled: explicitlyEnabled(source, `${switchPrefix}_WRITE_ENABLED`),
+    } : {})
     readiness[platform] = state
     if (result.config) allConfigs[platform] = result.config
     if (result.config && state.ready) configs[platform] = result.config

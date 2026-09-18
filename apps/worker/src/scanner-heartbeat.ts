@@ -86,7 +86,7 @@ export class ScannerHeartbeatController {
       const version = await this.options.scanner.version()
       clamav = { reachable: true, ...parseClamAvVersion(version, now) }
       const previousEicarAt = this.lastEicar?.checkedAt ? Date.parse(this.lastEicar.checkedAt) : 0
-      if (!this.lastEicar?.passed || now.getTime() - previousEicarAt >= this.options.thresholds.eicarMaxAgeSeconds * 500) {
+      if (!this.lastEicar?.passed || now.getTime() - previousEicarAt >= this.options.thresholds.eicarMaxAgeSeconds * 1000) {
         const result = await this.options.scanner.scan(EICAR_SELF_TEST_BYTES)
         if (result.status !== 'infected' || result.signature !== 'Eicar-Test-Signature') throw Object.assign(new Error('ClamAV EICAR self-test did not return Eicar-Test-Signature'), { code: 'CLAMAV_EICAR_SELF_TEST_FAILED' })
         this.lastEicar = { passed: true, checkedAt: now.toISOString(), signature: result.signature }

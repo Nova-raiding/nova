@@ -65,6 +65,7 @@ import { submitRevisionCreation, type RevisionCreationValues } from "../componen
 import { auditCenterClient, financeSearchClient, incidentsClient, parseModelStatus, parseStorageReconciliationList, supportClient } from "../api/opsDomainClients.js";
 import { createAuthorizationProjection, type AuthorizationProjection } from "../authz/authorization.js";
 import type { CapabilityId } from "../../../../packages/contracts/src/authz.js";
+import { manualPublishClient, type RecordManualPublishEvidenceInput } from "../api/manualPublishClient.js";
 
 export type JitRevocationReceipt = {
   grantId: string;
@@ -289,6 +290,16 @@ export function alertListParams(filters: AlertFilters, platformScope = false, wo
     ...(filters.entityId ? { entity_id: filters.entityId } : {}),
     ...(workspaceId ? { workspace_id: workspaceId } : {}),
   };
+}
+
+export function canonicalOpsWorkspaceId(sessionWorkspaceId: string | undefined, managedSession: boolean, configuredWorkspaceId: string | undefined): string {
+  const fromSession = sessionWorkspaceId?.trim();
+  if (fromSession) return fromSession;
+  return managedSession ? "" : configuredWorkspaceId?.trim() ?? "";
+}
+
+export function workspaceAuditListParams(workspaceId: string): Record<string, string> {
+  return { ...(workspaceId ? { workspace_id: workspaceId } : {}), limit: "20" };
 }
 
 export function marketingQueueParams(filters: QueueFilters): Record<string, string> {
@@ -759,16 +770,17 @@ export function useOpsConsoleModel() {
       const platformAlertScope = platformOperator && resolvedAuthorization.can("marketing.summary.read");
       const platformStoreScope = platformOperator && resolvedAuthorization.can("platform.settings.read");
       const commercialAccessAvailable = resolvedAuthorization.can("commercial.access.read");
+      const scopedWorkspaceId = canonicalOpsWorkspaceId(
+        resolvedSession?.workspace_id,
+        managedOpsSession,
+        (managedOpsSession ? undefined : localStorage.getItem("ops_workspace_id")) ?? undefined,
+      );
       const workspaceAlertParams = alertListParams(
         activeAlertFilters,
         platformAlertScope,
-        resolvedSession?.workspace_id?.trim()
-        || (managedOpsSession ? sessionStorage : localStorage).getItem("ops_workspace_id")?.trim()
-        || undefined,
+        scopedWorkspaceId || undefined,
       );
-      const commercialTargetWorkspaceId = resolvedSession?.workspace_id?.trim()
-        || (managedOpsSession ? sessionStorage : localStorage).getItem("ops_workspace_id")?.trim()
-        || "";
+      const commercialTargetWorkspaceId = scopedWorkspaceId;
       const commercialAccessSummary = platformOperator && commercialAccessAvailable && commercialTargetWorkspaceId
         ? await authorizedOptional("ops.commercial.access.summary", { target_workspace_id: commercialTargetWorkspaceId })
         : undefined;
@@ -828,10 +840,7 @@ export function useOpsConsoleModel() {
         platformOperator || import.meta.env.VITE_OPS_BUILD_MODE === "local"
           ? Promise.resolve(undefined)
           : authorizedOptional("workspace.commercial.get"),
-        platformOperator ? deferredOptional("ops.audit.platform.list", { limit: "20" }) : authorizedOptional("ops.audit.list", {
-          ...(localStorage.getItem("ops_workspace_id")?.trim() ? { workspace_id: localStorage.getItem("ops_workspace_id")!.trim() } : {}),
-          limit: "20",
-        }),
+        platformOperator ? deferredOptional("ops.audit.platform.list", { limit: "20" }) : authorizedOptional("ops.audit.list", workspaceAuditListParams(scopedWorkspaceId)),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("ops.members.list"),
         platformOperator && allowedHydrationMethods.has("ops.workspaces.list")
           ? new Promise<void>((resolve) => window.setTimeout(resolve, 1_500)).then(() => authorizedOptional("ops.workspaces.list", { offset: "0", limit: "20", merchant_only: "true" }))
@@ -955,6 +964,7 @@ export function useOpsConsoleModel() {
           type: String(item.type ?? ""),
           visibility: String(item.visibility ?? ""),
           version: String(item.version ?? ""),
+          priceFen: typeof item.price_fen === "number" && Number.isSafeInteger(item.price_fen) ? item.price_fen : null,
           priceLabel: String(item.price_label ?? ""),
           cycleLabel: typeof item.cycle_label === "string" ? item.cycle_label : null,
           benefitsSummary: String(item.benefits_summary ?? ""),
@@ -1152,9 +1162,7 @@ export function useOpsConsoleModel() {
     () => createAuthorizationProjection(opsSession, managedOpsSession),
     [opsSession],
   );
-  const opsWorkspaceId = opsSession?.workspace_id ?? (
-    (managedOpsSession ? sessionStorage : localStorage).getItem("ops_workspace_id")?.trim() ?? ""
-  );
+  const opsWorkspaceId = canonicalOpsWorkspaceId(opsSession?.workspace_id, managedOpsSession, managedOpsSession ? undefined : localStorage.getItem("ops_workspace_id") ?? undefined);
   const financeAccess = financePermissions(authorization);
   const can = (capabilities: readonly string[]) => authorization.canAny(capabilities);
   const canFinance = financeAccess.refund;
@@ -1214,6 +1222,7 @@ export function useOpsConsoleModel() {
         pack_id: row.packId,
         version: row.version,
         status,
+        ...(row.id.startsWith("public_rule_") ? { public_scope: "platform", platform: row.scopeValue } : {}),
         reason: options?.reason?.trim() || "运营后台规则生命周期调整",
         ...(status === "active" ? { approval_json: JSON.stringify({
           approval_ref: options?.approvalRef?.trim(),
@@ -1242,6 +1251,8 @@ export function useOpsConsoleModel() {
     sourceReference: string;
     checksJson: string;
     reason: string;
+    publicScope?: "platform";
+    targetId?: string;
   }): Promise<boolean> => {
     if (!canRules) {
       message.error("当前会话为只读，缺少规则管理员权限");
@@ -1265,6 +1276,8 @@ export function useOpsConsoleModel() {
         checks_json: values.checksJson,
         reason: values.reason,
         status: "draft",
+        ...(values.publicScope ? { public_scope: values.publicScope } : {}),
+        ...(values.targetId ? { target_id: values.targetId } : {}),
       });
       message.success("规则草稿已创建，激活需要规则管理员审批");
       ruleForm.resetFields();
@@ -2577,6 +2590,38 @@ export function useOpsConsoleModel() {
       );
     }
   };
+  const recordManualPublishEvidence = async (
+    job: MarketingQueue["publish"][number],
+    input: Omit<RecordManualPublishEvidenceInput, "targetWorkspaceId" | "publishJobId" | "taskId" | "contentVersionId" | "platform" | "accountId" | "expectedRevision" | "idempotencyKey">,
+  ) => {
+    if (!canQueue) {
+      message.error("当前会话为只读，缺少队列权限");
+      return false;
+    }
+    if (!opsWorkspaceId) {
+      message.error("请先选择目标商家工作区");
+      return false;
+    }
+    try {
+      await manualPublishClient.recordEvidence({
+        ...input,
+        targetWorkspaceId: opsWorkspaceId,
+        publishJobId: job.id,
+        taskId: job.taskId,
+        contentVersionId: job.contentVersionId,
+        platform: job.platform,
+        accountId: job.accountId ?? "",
+        expectedRevision: job.manualPublish?.revision ?? 1,
+        idempotencyKey: crypto.randomUUID(),
+      }, job.manualPublish?.writeCapability);
+      message.success("人工发布证据已由服务端保存，等待复核");
+      await load();
+      return true;
+    } catch (cause) {
+      message.error(cause instanceof Error ? cause.message : "人工发布证据保存失败");
+      return false;
+    }
+  };
   const createRevision = async (job: MarketingQueue["publish"][number], values: RevisionCreationValues) => {
     if (!canQueue) {
       const error = "当前会话为只读，缺少队列权限";
@@ -2914,6 +2959,7 @@ export function useOpsConsoleModel() {
     retryFailedPublishBatch,
     retryGeneration,
     acknowledgePublish,
+    recordManualPublishEvidence,
     createRevision,
     reviewVisual,
     provisionMerchantAccount,

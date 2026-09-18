@@ -2678,3 +2678,61 @@ it('rejects duplicate SKU IDs at the shared product import boundary', () => {
     ],
   })).toThrowError(expect.objectContaining({ code: 'PRODUCT_IMPORT_DUPLICATE_SKU' }))
 })
+
+it('keeps multiple brand profiles isolated within one merchant workspace', () => {
+  const service = new MerchantService({ seedFixture: false })
+  const alpha = service.upsertBrandProfile({ workspaceId: 'ws_multi_brand', brandUnitId: 'brand-alpha', name: 'Alpha', positioning: '户外' })
+  const beta = service.upsertBrandProfile({ workspaceId: 'ws_multi_brand', brandUnitId: 'brand-beta', name: 'Beta', positioning: '通勤' })
+  expect(alpha.id).not.toBe(beta.id)
+  expect(service.getBrandProfile('ws_multi_brand', 'brand-alpha')).toMatchObject({ name: 'Alpha', positioning: '户外', brandUnitId: 'brand-alpha' })
+  expect(service.getBrandProfile('ws_multi_brand', 'brand-beta')).toMatchObject({ name: 'Beta', positioning: '通勤', brandUnitId: 'brand-beta' })
+  expect(service.getBrandProfile('ws_multi_brand')).toBeUndefined()
+})
+
+describe('manual platform operations records', () => {
+  function approvedManualDelivery() {
+    const service = new MerchantService({ seedFixture: false })
+    const product = service.importProduct({ workspaceId: 'ws_manual', platform: 'taobao', accountId: 'store-taobao-manual', title: '人工发布商品', stock: 3, price: 199 })
+    service.confirmProductFacts('ws_manual', product.id)
+    const task = service.createTask({ workspaceId: 'ws_manual', productId: product.id, platform: 'taobao', accountId: 'store-taobao-manual' })
+    service.selectDirection(task.id, 'A')
+    const version = service.createDraft(task.id)
+    service.approveContent(task.id, version.id)
+    const bundle = service.exportContent('ws_manual', version.id, 'bundle')
+    return { service, product, task, version, bundleHash: bundle.deliveryManifestHash! }
+  }
+
+  it('binds a manual result to the exact workspace, platform, store, approved version, bundle and audit actors', () => {
+    const { service, product, task, version, bundleHash } = approvedManualDelivery()
+    const record = service.recordManualPublish({
+      workspaceId: 'ws_manual', taskId: task.id, contentVersionId: version.id, platform: 'taobao', accountId: 'store-taobao-manual',
+      deliveryBundleHash: bundleHash, state: 'manual_publish_reported', actorId: 'ops-recorder', publisherId: 'ops-publisher', reviewerId: 'ops-reviewer',
+      operatedAt: '2026-09-17T02:00:00.000Z', reviewedAt: '2026-09-17T02:10:00.000Z', platformContentId: 'TB-MANUAL-1',
+      publicUrl: 'https://item.taobao.example/TB-MANUAL-1', platformDisplayStatus: '平台显示已提交', idempotencyKey: 'manual-result-1',
+    })
+    expect(record).toMatchObject({ workspaceId: 'ws_manual', taskId: task.id, productId: product.id, contentVersionId: version.id, platform: 'taobao', accountId: 'store-taobao-manual', deliveryBundleHash: bundleHash, state: 'manual_publish_reported', evidenceBoundary: 'manual_unverified', publisherId: 'ops-publisher', reviewerId: 'ops-reviewer', revision: 1 })
+    expect(service.recordManualPublish({ workspaceId: 'ws_manual', taskId: task.id, contentVersionId: version.id, platform: 'taobao', accountId: 'store-taobao-manual', deliveryBundleHash: bundleHash, state: 'manual_publish_reported', actorId: 'ops-recorder', publisherId: 'ops-publisher', reviewerId: 'ops-reviewer', operatedAt: '2026-09-17T02:00:00.000Z', reviewedAt: '2026-09-17T02:10:00.000Z', platformContentId: 'TB-MANUAL-1', publicUrl: 'https://item.taobao.example/TB-MANUAL-1', platformDisplayStatus: '平台显示已提交', idempotencyKey: 'manual-result-1' })).toBe(record)
+    expect(() => service.recordManualPublish({ workspaceId: 'ws_manual', taskId: task.id, contentVersionId: version.id, platform: 'taobao', accountId: 'store-taobao-manual', deliveryBundleHash: bundleHash, state: 'manual_publish_reported', actorId: 'different-recorder', publisherId: 'ops-publisher', operatedAt: '2026-09-17T02:00:00.000Z', platformContentId: 'TB-MANUAL-1', idempotencyKey: 'manual-result-1' })).toThrowError(expect.objectContaining({ code: 'IDEMPOTENCY_CONFLICT' }))
+    expect(service.listManualPublishRecords('ws_manual', { contentVersionId: version.id })).toEqual([record])
+
+    const restarted = new MerchantService({ seedFixture: false })
+    restarted.hydrateSnapshot({ entityType: 'manual_publish_record', entity: structuredClone(record) })
+    expect(restarted.listManualPublishRecords('ws_manual')).toEqual([record])
+  })
+
+  it('fails closed for false verification, scope drift, unapproved versions and incomplete human evidence', () => {
+    const { service, task, version, bundleHash } = approvedManualDelivery()
+    const base = { workspaceId: 'ws_manual', taskId: task.id, contentVersionId: version.id, platform: 'taobao' as const, accountId: 'store-taobao-manual', deliveryBundleHash: bundleHash, actorId: 'ops-recorder', idempotencyKey: 'manual-fail-closed' }
+    expect(() => service.recordManualPublish({ ...base, state: 'platform_verified' })).toThrowError(expect.objectContaining({ code: 'MANUAL_PUBLISH_CANNOT_VERIFY_PLATFORM' }))
+    expect(() => service.recordManualPublish({ ...base, accountId: 'wrong-store', state: 'export_ready' })).toThrowError(expect.objectContaining({ code: 'MANUAL_PUBLISH_SCOPE_MISMATCH' }))
+    expect(() => service.recordManualPublish({ ...base, workspaceId: 'ws_other', state: 'export_ready' })).toThrowError(expect.objectContaining({ code: 'TENANT_SCOPE_DENIED' }))
+    expect(() => service.recordManualPublish({ ...base, state: 'manual_publish_reported', publisherId: 'ops-publisher', operatedAt: '2026-09-17T02:00:00.000Z' })).toThrowError(expect.objectContaining({ code: 'MANUAL_PUBLISH_EVIDENCE_REQUIRED' }))
+    expect(() => service.recordManualPublish({ ...base, state: 'manual_publish_reported', publisherId: 'same-person', reviewerId: 'same-person', operatedAt: '2026-09-17T02:00:00.000Z', reviewedAt: '2026-09-17T02:10:00.000Z', platformContentId: 'TB-1' })).toThrowError(expect.objectContaining({ code: 'MANUAL_PUBLISH_REVIEWER_NOT_INDEPENDENT' }))
+    expect(() => service.recordManualPublish({ ...base, state: 'manual_review_required' })).toThrowError(expect.objectContaining({ code: 'MANUAL_PUBLISH_DIFFERENCE_REQUIRED' }))
+
+    const otherTask = service.createTask({ workspaceId: 'ws_manual', productId: task.productId, platform: 'taobao', accountId: 'store-taobao-manual' })
+    service.selectDirection(otherTask.id, 'A')
+    const unapproved = service.createDraft(otherTask.id)
+    expect(() => service.recordManualPublish({ ...base, taskId: otherTask.id, contentVersionId: unapproved.id, state: 'export_ready' })).toThrowError(expect.objectContaining({ code: 'MANUAL_PUBLISH_CONTENT_NOT_APPROVED' }))
+  })
+})

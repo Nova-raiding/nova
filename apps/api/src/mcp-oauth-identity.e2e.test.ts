@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import argon2 from 'argon2'
 import { signPaymentCallback } from '../../../packages/billing/src/callback-envelope.mjs'
 import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
 import { productionReadinessDiagnostics, server, setPasswordAuthRepositoryForTests, workspaceMembers } from './server.js'
@@ -24,6 +25,102 @@ describe('canonical password identity MCP OAuth', () => {
     if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()))
     setPasswordAuthRepositoryForTests()
     vi.unstubAllEnvs()
+  })
+
+  it('exchanges a merchant browser session for a local desktop MCP token without ChatGPT OAuth', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
+    const repository = new MemoryPasswordAuthRepository()
+    setPasswordAuthRepositoryForTests(repository)
+    const workspaceId = `ws_local_desktop_${Date.now()}`
+    const login = `local-desktop-${Date.now()}@example.test`
+    const password = 'LocalDesktop1234!'
+    const account = await repository.createMerchantAccount({ login, password, enterpriseName: 'Local desktop merchant', contactName: 'Local owner', workspaceIds: [workspaceId], actorId: 'platform-operator', reason: 'local desktop e2e' })
+    await workspaceMembers.upsert({ workspaceId, externalSubject: login, displayName: 'Local owner', role: 'workspace_owner', status: 'active', invitedBy: 'local-desktop-e2e' })
+    await workspaceMembers.bindIdentity({ workspaceId, externalSubject: login, identityId: account.identityId })
+    const base = await start()
+    const logged = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'merchant' }) })
+    expect(logged.status).toBe(200)
+    const cookie = logged.headers.get('set-cookie')?.split(';')[0]
+    expect(cookie).toBeTruthy()
+    const merchantCookieMcp = await fetch(`${base}/mcp`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'initialize', params: {} }) })
+    expect(merchantCookieMcp.status).toBe(401)
+    const crossTenantHttp = await fetch(`${base}/v1/products`, { headers: { cookie: cookie!, 'x-workspace-id': 'ws_other' } })
+    expect(crossTenantHttp.status).toBe(403)
+    await expect(crossTenantHttp.json()).resolves.toMatchObject({ error: { code: 'FORBIDDEN' } })
+    const exchanged = await fetch(`${base}/v1/auth/mcp-token`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ workspace_id: workspaceId }) })
+    expect(exchanged.status).toBe(200)
+    const envelope = await exchanged.json() as { data?: { result?: Record<string, unknown> }; error?: unknown }
+    const result = envelope.data?.result ?? envelope.data
+    expect(result).toMatchObject({ token_type: 'Bearer', expires_in: 600, scope: 'merchant', workspace_id: workspaceId, account_login: login })
+    const accessToken = (result as Record<string, unknown> | undefined)?.access_token
+    const refreshToken = (result as Record<string, unknown> | undefined)?.refresh_token
+    expect(typeof accessToken).toBe('string')
+    expect(typeof refreshToken).toBe('string')
+    const principal = await repository.authenticateMcpAccessToken({ accessToken: accessToken as string, clientId: 'local-desktop', issuer: base, audience: `${base}/mcp`, resource: `${base}/mcp`, scope: ['merchant'] })
+    expect(principal).toMatchObject({ identityId: account.identityId, workspaceId, accountLogin: login })
+    const initialized = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${accessToken}`, 'x-workspace-id': workspaceId, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) })
+    expect(initialized.status).toBe(200)
+    await expect(initialized.json()).resolves.toMatchObject({ jsonrpc: '2.0', id: 1, result: { serverInfo: { name: expect.any(String) } } })
+    const switched = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${accessToken}`, 'x-workspace-id': 'ws_other', 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'initialize', params: {} }) })
+    expect(switched.status).toBe(403)
+    const rotated = await fetch(`${base}/v1/auth/mcp-token/refresh`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ refresh_token: refreshToken }) })
+    expect(rotated.status).toBe(200)
+    const rotatedEnvelope = await rotated.json() as { data?: { result?: Record<string, unknown> } }
+    const rotatedResult = (rotatedEnvelope.data?.result ?? rotatedEnvelope.data ?? {}) as Record<string, unknown>
+    expect(rotatedResult).toMatchObject({ token_type: 'Bearer', expires_in: 600 })
+    const revoke = await fetch(`${base}/v1/auth/mcp-token/revoke`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ refresh_token: rotatedResult?.refresh_token }) })
+    expect(revoke.status).toBe(200)
+    await expect(repository.authenticateMcpAccessToken({ accessToken: String(rotatedResult?.access_token), clientId: 'local-desktop', issuer: base, audience: `${base}/mcp`, resource: `${base}/mcp`, scope: ['merchant'] })).resolves.toBeUndefined()
+    const csrf = await fetch(`${base}/v1/auth/mcp-token`, { method: 'POST', headers: { cookie: cookie!, origin: 'https://evil.example', 'content-type': 'application/json' }, body: JSON.stringify({ workspace_id: workspaceId }) })
+    expect(csrf.status).toBe(403)
+  })
+
+  it('keeps the password-authenticated operations console usable in local stdio mode', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
+    const repository = new MemoryPasswordAuthRepository()
+    setPasswordAuthRepositoryForTests(repository)
+    const login = `local-ops-${Date.now()}@example.test`
+    const password = 'LocalOps1234!'
+    await repository.ensurePlatformAccount({ login, passwordHash: await argon2.hash(password), roles: ['platform_admin'] })
+    const base = await start()
+    const logged = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'platform' }) })
+    expect(logged.status).toBe(200)
+    const cookie = logged.headers.get('set-cookie')?.split(';')[0]
+    const response = await fetch(`${base}/mcp`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'x-ops-workbench': 'platform', 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ops.session', params: {} }) })
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({ data: { result: { workbench: 'platform' } } })
+  })
+
+  it('publishes RFC 7009 metadata and revokes a refresh-token family over HTTP', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_OAUTH_REQUIRED', 'true')
+    vi.stubEnv('MCP_OAUTH_CLIENTS', JSON.stringify({ [clientId]: [callback] }))
+    const repository = new MemoryPasswordAuthRepository()
+    setPasswordAuthRepositoryForTests(repository)
+    const suffix = `${Date.now()}-${randomUUID().slice(0, 8)}`
+    const workspaceId = `ws_oauth_revoke_${suffix}`
+    const login = `oauth-revoke-${suffix}@example.test`
+    const account = await repository.createMerchantAccount({ login, password: 'RevokePass1234!', enterpriseName: 'OAuth revoke', contactName: 'Owner', workspaceIds: [workspaceId], actorId: 'platform-operator', reason: 'OAuth revoke HTTP test' })
+    await workspaceMembers.upsert({ workspaceId, externalSubject: login, displayName: 'Owner', role: 'workspace_owner', status: 'active', invitedBy: 'oauth-revoke-e2e' })
+    await workspaceMembers.bindIdentity({ workspaceId, externalSubject: login, identityId: account.identityId })
+    const base = await start()
+    const resource = `${base}/mcp`
+    const issued = await repository.issueMcpAuthorizationCode({ account, clientId, redirectUri: callback, codeChallenge: challenge, issuer: base, audience: resource, resource, scope: ['merchant'] })
+    const pair = await repository.exchangeMcpAuthorizationCode({ clientId, redirectUri: callback, code: issued.code, codeVerifier: verifier, issuer: base, audience: resource, resource, scope: ['merchant'] })
+
+    const metadata = await fetch(`${base}/.well-known/oauth-authorization-server`)
+    expect(metadata.status).toBe(200)
+    await expect(metadata.json()).resolves.toMatchObject({ issuer: base, revocation_endpoint: `${base}/oauth/revoke` })
+    const response = await fetch(`${base}/oauth/revoke`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: pair.refreshToken, token_type_hint: 'refresh_token', client_id: clientId }) })
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('')
+    await expect(repository.authenticateMcpAccessToken({ accessToken: pair.accessToken, clientId, issuer: base, audience: resource, resource, scope: ['merchant'] })).resolves.toBeUndefined()
+
+    const unknown = await fetch(`${base}/oauth/revoke`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: 'unknown-token', client_id: clientId }) })
+    expect(unknown.status).toBe(200)
+    expect(await unknown.text()).toBe('')
   })
 
   it('uses authorization code + PKCE, rotates refresh tokens, and never falls back to a static merchant token', async () => {
@@ -66,6 +163,16 @@ describe('canonical password identity MCP OAuth', () => {
     expect(await consentPage.text()).toContain('登录 Store Nova')
     const unknownClient = new URL(crossSiteCandidate); unknownClient.searchParams.set('client_id', 'unknown-client')
     expect((await fetch(unknownClient, { headers: { cookie: passwordCookie }, redirect: 'manual' })).status).toBe(400)
+    for (const inheritedName of ['constructor', 'toString', '__proto__']) {
+      const inheritedAuthorize = new URL(authorize)
+      inheritedAuthorize.searchParams.set('client_id', inheritedName)
+      const rejectedAuthorize = await fetch(inheritedAuthorize, { redirect: 'manual' })
+      expect(rejectedAuthorize.status, inheritedName).toBe(400)
+      expect(rejectedAuthorize.headers.get('location')).toBeNull()
+      const rejectedRefresh = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'refresh_token', client_id: inheritedName, refresh_token: 'invalid-refresh', resource }) })
+      expect(rejectedRefresh.status, inheritedName).toBe(400)
+      await expect(rejectedRefresh.json()).resolves.toEqual({ error: 'invalid_request' })
+    }
 
     const shortVerifier = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', client_id: clientId, redirect_uri: callback, code, code_verifier: 'a'.repeat(42), resource }) })
     expect(shortVerifier.status).toBe(400)
@@ -81,7 +188,6 @@ describe('canonical password identity MCP OAuth', () => {
     expect(tokens).toMatchObject({ expires_in: 600, scope: 'merchant' })
     const principal = await repository.authenticateMcpAccessToken({ accessToken: tokens.access_token, clientId, issuer: base, audience: resource, resource, scope: ['merchant'] })
     expect(principal).toMatchObject({ identityId: account.identityId, accountLogin: login, workspaceId })
-
     const initialized = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${tokens.access_token}`, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) })
     expect(initialized.status).toBe(200)
     await expect(initialized.json()).resolves.toMatchObject({ jsonrpc: '2.0', id: 1, result: { serverInfo: { name: 'merchant-marketing' } } })
@@ -117,6 +223,7 @@ describe('canonical password identity MCP OAuth', () => {
     await expect(repository.authenticateMcpAccessToken({ accessToken: epochTokens.accessToken, clientId, issuer: base, audience: resource, resource, scope: ['merchant'] })).resolves.toBeUndefined()
 
     vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('MCP_INTEGRATION_MODE', 'remote_oauth')
     vi.stubEnv('MCP_OAUTH_REQUIRED', undefined)
     vi.stubEnv('PUBLIC_APP_BASE_URL', 'https://yxsona.com')
     vi.stubEnv('MERCHANT_BEARER_HOSTNAME', '127.0.0.1')
@@ -298,9 +405,30 @@ describe('canonical password identity MCP OAuth', () => {
     await expect(response.json()).resolves.toMatchObject({ error: { code: 'MCP_OAUTH_NOT_CONFIGURED' } })
   })
 
+  it('does not start an OAuth lifecycle in production without a canonical public origin', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('MCP_OAUTH_REQUIRED', 'true')
+    vi.stubEnv('PUBLIC_APP_BASE_URL', '')
+    vi.stubEnv('MCP_OAUTH_ISSUER', '')
+    vi.stubEnv('MCP_OAUTH_AUTHORIZATION_ENDPOINT', '')
+    vi.stubEnv('MCP_OAUTH_TOKEN_ENDPOINT', '')
+    vi.stubEnv('MCP_OAUTH_CLIENTS', JSON.stringify({ [clientId]: ['https://chatgpt.com/oauth/callback'] }))
+    const base = await start()
+    const headers = { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'attacker.example' }
+    const authorize = new URL(`${base}/oauth/authorize`)
+    for (const [key, value] of Object.entries({ response_type: 'code', client_id: clientId, redirect_uri: 'https://chatgpt.com/oauth/callback', state: 'state', code_challenge: challenge, code_challenge_method: 'S256', scope: 'merchant', resource: 'https://attacker.example/mcp' })) authorize.searchParams.set(key, value)
+    const rejectedAuthorize = await fetch(authorize, { headers, redirect: 'manual' })
+    expect(rejectedAuthorize.status).toBe(503)
+    await expect(rejectedAuthorize.json()).resolves.toEqual({ error: 'temporarily_unavailable' })
+
+    const rejectedToken = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { ...headers, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'refresh_token', client_id: clientId, refresh_token: 'untrusted', resource: 'https://attacker.example/mcp' }) })
+    expect(rejectedToken.status).toBe(503)
+    await expect(rejectedToken.json()).resolves.toEqual({ error: 'temporarily_unavailable' })
+  })
+
   it('makes production identity readiness depend on self-hosted MCP OAuth instead of static bearer grants', () => {
     const identityEnvironment: NodeJS.ProcessEnv = {
-      NODE_ENV: 'production', OPS_AUTH_MODE: 'oidc', OIDC_PROXY_SIGNING_SECRET: 'oidc-secret', SESSION_ID_HASH_SECRET: 'session-secret', OPS_DATABASE_URL: 'postgres://control-plane', MERCHANT_BEARER_HOSTNAME: 'yxsona.com', MCP_OAUTH_REQUIRED: 'true', PUBLIC_APP_BASE_URL: 'https://yxsona.com', MCP_OAUTH_ISSUER: 'https://yxsona.com', MCP_OAUTH_AUTHORIZATION_ENDPOINT: 'https://yxsona.com/oauth/authorize', MCP_OAUTH_TOKEN_ENDPOINT: 'https://yxsona.com/oauth/token', MCP_OAUTH_CLIENTS: JSON.stringify({ chatgpt: ['https://chatgpt.com/oauth/callback'] }),
+      NODE_ENV: 'production', OPS_AUTH_MODE: 'oidc', OIDC_PROXY_SIGNING_SECRET: 'oidc-secret', SESSION_ID_HASH_SECRET: 'session-secret', OPS_DATABASE_URL: 'postgres://control-plane', MERCHANT_BEARER_HOSTNAME: 'yxsona.com', MCP_INTEGRATION_MODE: 'remote_oauth', MCP_OAUTH_REQUIRED: 'true', PUBLIC_APP_BASE_URL: 'https://yxsona.com', MCP_OAUTH_ISSUER: 'https://yxsona.com', MCP_OAUTH_AUTHORIZATION_ENDPOINT: 'https://yxsona.com/oauth/authorize', MCP_OAUTH_TOKEN_ENDPOINT: 'https://yxsona.com/oauth/token', MCP_OAUTH_CLIENTS: JSON.stringify({ chatgpt: ['https://chatgpt.com/oauth/callback'] }),
     }
     expect(productionReadinessDiagnostics(identityEnvironment).gates.identity).toEqual({ ready: true, reasons: [] })
     delete identityEnvironment.MCP_OAUTH_CLIENTS

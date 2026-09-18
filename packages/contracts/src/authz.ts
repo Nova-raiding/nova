@@ -404,7 +404,7 @@ const write = (capability: CapabilityId, scope: AuthorizationScopeType, dataClas
 
 // Every current method is named in exactly one group. Prefix or wildcard fallbacks are intentionally forbidden.
 const POLICY_GROUPS: readonly PolicyGroup[] = [
-  write('merchant.onboarding.execute', 'workspace', 'customer_metadata', ['merchant.start', 'merchant.first_value', 'workspace.bootstrap', 'workspace.interactive.confirm']),
+  write('merchant.onboarding.execute', 'workspace', 'customer_metadata', ['merchant.start', 'merchant.first_value', 'workspace.bootstrap', 'workspace.content_setup.confirm', 'workspace.interactive.confirm']),
   read('workspace.summary.read', 'workspace', 'customer_metadata', ['onboarding.status', 'workspace.health', 'workspace.invitations.list', 'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get']),
   write('workspace.settings.update', 'workspace', 'customer_metadata', ['workspace.commercial.update']),
   write('workspace.status.update', 'workspace', 'customer_metadata', ['workspace.deactivate', 'workspace.activate']),
@@ -431,7 +431,8 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   read('audit.export', 'workspace', 'secret_metadata', ['ops.audit.export']),
   read('support.ticket.read', 'workspace', 'customer_metadata', ['ops.support.tickets.list', 'ops.support.ticket.get', 'ops.support.sla.report']),
   write('support.ticket.update', 'workspace', 'customer_metadata', ['ops.support.ticket.create', 'ops.support.ticket.assign', 'ops.support.ticket.transition', 'ops.support.ticket.comment']),
-  read('customer.delivery.read', 'platform', 'customer_metadata', ['ops.customer-delivery.list', 'ops.customer-delivery.get', 'ops.customer-delivery.checklist-items.list', 'ops.customer-delivery.videos.list', 'ops.customer-delivery.assets.get']),
+  read('customer.delivery.read', 'platform', 'customer_metadata', ['ops.customer-delivery.accounts.list', 'ops.customer-delivery.list', 'ops.customer-delivery.get', 'ops.customer-delivery.checklist-items.list', 'ops.customer-delivery.videos.list', 'ops.customer-delivery.assets.get']),
+  write('customer.delivery.update', 'platform', 'customer_metadata', ['ops.customer-delivery.account.bind'], 'mutation', ['revision']),
   write('customer.delivery.update', 'platform', 'customer_metadata', ['ops.customer-delivery.create', 'ops.customer-delivery.videos.add']),
   // Uploaded evidence is later admitted by a DB-level predicate that binds
   // the exact allow decision to the delivery, purpose and scanner receipt.
@@ -517,15 +518,20 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   write('store.connection.update', 'account', 'customer_metadata', ['platform.revoke']),
   write('store.connection.update', 'account', 'customer_metadata', ['platform.store.alias.set']),
   read('customer.content.read', 'workspace', 'customer_content', ['brand-unit.list', 'brand-unit.listing.list', 'canonical.product.consistency', 'campaign.batch.list', 'campaign.batch.get', 'catalog.search', 'catalog.categories', 'rule.list', 'rule.sync.status', 'rule.history', 'asset.list', 'brand.get', 'catalog.sync.get', 'deliverable.list', 'task.history', 'feedback.list', 'creative.directions', 'publish.batch.get', 'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get', 'knowledge.learning.list', 'knowledge.competitor.list', 'multimodal.video.get', 'catalog.image.get', 'support.customer.replies.list']),
-  read('customer.content.read', 'brand', 'customer_content', ['generation.get', 'publish.get', 'task.timeline', 'content.versions', 'content.diff', 'creative.brief', 'creative.preview']),
+  read('customer.content.read', 'brand', 'customer_content', ['generation.get', 'publish.get', 'publish.manual.get', 'task.timeline', 'content.versions', 'content.diff', 'creative.brief', 'creative.preview']),
+  // The list endpoint has no single brand resource in its request. It applies
+  // per-record brand filtering in the handler, so admission must be scoped to
+  // the authenticated workspace rather than an unresolvable empty brand id.
+  read('customer.content.read', 'workspace', 'customer_content', ['publish.manual.list']),
   write('customer.content.update', 'workspace', 'customer_content', ['brand-unit.create', 'campaign.batch.create', 'campaign.batch.generate', 'campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed', 'catalog.title.optimize', 'catalog.title.accept', 'catalog.import', 'catalog.import.batch', 'catalog.sku.update', 'catalog.facts.confirm', 'sync.retry_failed', 'asset.parse', 'asset.facts.confirm', 'asset.preference.update', 'brand.extract', 'brand.upsert', 'brand.tone.preview', 'asset.upload', 'asset.upload.batch', 'upload.session.create', 'upload.session.part', 'upload.session.complete', 'asset.scan', 'asset.generation.confirm', 'asset.rights.update', 'catalog.sync', 'catalog.sync.start', 'task.create', 'task.understand', 'task.request.create', 'task.sku.split', 'task.group.create', 'task.clone', 'creative.directions.update', 'content.codex.prepare', 'content.codex.commit', 'ops.marketing.generation.retry', 'knowledge.asset.create', 'knowledge.asset.update', 'knowledge.brand.preference.update', 'knowledge.feedback.record', 'knowledge.learning.confirm', 'knowledge.learning.dismiss', 'knowledge.competitor.create', 'knowledge.competitor.reference', 'catalog.image.generate', 'multimodal.image.edit', 'multimodal.generate', 'multimodal.video.request']),
   write('rule.update', 'workspace', 'customer_content', ['knowledge.rule.create', 'knowledge.rule.update']),
   write('customer.content.update', 'brand', 'customer_content', ['catalog.product.disable', 'catalog.product.enable']),
   write('customer.content.update', 'account', 'customer_content', ['brand-unit.bind-store', 'brand-unit.listing.create']),
-  write('customer.content.update', 'brand', 'customer_content', ['brand-unit.product.create', 'brand-unit.access.grant', 'catalog.product.update', 'catalog.image.retry', 'catalog.image.select', 'catalog.image.review', 'task.answer', 'task.resume', 'task.select_direction', 'task.plan.confirm', 'content.generate', 'content.review', 'content.review.decide', 'content.modify', 'content.restore', 'content.visual.select']),
+  write('customer.content.update', 'brand', 'customer_content', ['brand-unit.product.create', 'brand-unit.access.grant', 'catalog.product.update', 'catalog.image.retry', 'catalog.image.select', 'catalog.image.review', 'task.answer', 'task.resume', 'task.select_direction', 'task.plan.confirm', 'content.generate', 'content.draft.generate', 'content.review', 'content.review.decide', 'content.modify', 'content.restore', 'content.visual.select']),
   write('customer.publish.execute', 'workspace', 'customer_content', ['content.export', 'publish.batch.prepare', 'publish.batch.pause', 'publish.batch.resume', 'publish.batch.retry_failed', 'delivery.bundle.verify'], 'allow_and_deny'),
   write('customer.publish.execute', 'brand', 'customer_content', ['content.approve', 'publish.prepare'], 'allow_and_deny'),
   write('customer.publish.execute', 'brand', 'customer_content', ['publish.confirm'], 'allow_and_deny', ['confirmation', 'idempotency']),
+  write('marketing.queue.update', 'workspace', 'customer_content', ['ops.marketing.publish.manual-evidence.record'], 'allow_and_deny', ['reason', 'revision', 'idempotency']),
   write('customer.publish.execute', 'workspace', 'customer_content', ['publish.batch.confirm'], 'allow_and_deny', ['confirmation']),
   read('automation.read', 'workspace', 'customer_metadata', ['automation.policy.get', 'automation.policy.list', 'automation.scan']),
   write('automation.update', 'workspace', 'customer_metadata', ['automation.policy.update', 'automation.tick', 'automation.pause']),

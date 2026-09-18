@@ -90,7 +90,167 @@ function failure(code: string, message: string, details?: Json) {
   return { error: { code, message, ...(details ? { details } : {}) } }
 }
 
+function expectContentProductionIntroduction(content: string) {
+  expect(content).toContain('内容生产 → 审核 → 导出')
+  expect(content).toContain('不必先连接店铺')
+  expect(content).toContain('公开链接只是来源线索')
+  expect(content).toContain('草稿不能冒充正式内容版本')
+  expect(content).toContain('你想制作什么内容？可以提供公开商品链接、商品资料或图片。')
+  expect(content).not.toMatch(/当前进度：\d\/4|连接平台及店铺|扫描商品至知识库|检查系统配置|建立工作区/u)
+  expect(content).not.toContain('平台｜店铺名称｜店铺首页链接')
+  expect(content).not.toContain('生产环境已准备完毕')
+  expect(content).not.toContain('店铺连接成功')
+}
+
 describe('Codex App merchant conversation flow', () => {
+  it('returns shop-link candidates for confirmation without claiming a store connection', async () => {
+    await withBridge((request, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(json(ok(request, {
+        store_link_inspection: {
+          candidates: [{ platformLabel: '淘宝', storeName: '云朵女装店', shopUrl: 'https://shop.taobao.com/1', authorizationState: 'not_checked' }],
+          issues: [], requiresUserConfirmation: true,
+        },
+        initialization: { completed: 0, total: 4, status: 'in_progress', steps: [] },
+      })))
+    }, async (child, calls) => {
+      const response = await request(child, 1, 'onboarding.status', { store_links_text: '淘宝｜云朵女装店｜https://shop.taobao.com/1' })
+      const content = (response.result as { content: Array<{ text: string }> }).content[0]?.text ?? ''
+      expect(content).toContain('云朵女装店')
+      expect(content).toContain('身份和授权仍待核验')
+      expect(content).not.toContain('店铺连接成功')
+      expect(calls).toMatchObject([{ method: 'onboarding.status', params: { store_links_text: '淘宝｜云朵女装店｜https://shop.taobao.com/1' } }])
+    })
+  })
+
+  it('welcomes first-time users with content production while preserving server initialization evidence', async () => {
+    const initialization = {
+      completed: 0, total: 4, status: 'in_progress',
+      current_step: { id: 'connect_stores', title: '连接平台及店铺', summary: '尚无官方授权店铺', next_action: { label: '开始配置店铺' } },
+      steps: [
+        { id: 'connect_stores', title: '连接平台及店铺', state: 'required', summary: '尚无官方授权店铺' },
+        { id: 'scan_catalog', title: '扫描商品至知识库', state: 'pending', summary: '等待官方授权' },
+        { id: 'check_configuration', title: '检查系统配置', state: 'pending', summary: '等待扫描' },
+        { id: 'build_workspace', title: '建立工作区', state: 'pending', summary: '等待配置' },
+      ],
+      security_notice: '不要发送密码或验证码',
+    }
+    await withBridge((request, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(json(ok(request, { initialization })))
+    }, async (child, calls) => {
+      const response = await request(child, 1, 'onboarding.status')
+      const result = response.result as { content: Array<{ text: string }>; structuredContent: Json }
+      const content = result.content[0]?.text ?? ''
+      expect(content).toContain('您好，感谢您使用 Store Nova')
+      expectContentProductionIntroduction(content)
+      expect(content).toContain('有效登录、当前工作区权限、服务端准入')
+      expect(content).toContain('真实模型配置、创意点和安全检查')
+      expect(result.structuredContent.initialization).toEqual(initialization)
+      expect(result.structuredContent).not.toHaveProperty('onboarding_card')
+      expect(calls.map(call => call.method)).toEqual(['onboarding.status'])
+    })
+  })
+
+  it('preserves compatibility evidence without presenting legacy store progress as the content workflow', async () => {
+    await withBridge((request, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(json(ok(request, {
+        status: 'in_progress',
+        current_step: { id: 'choose_product', title: '选择商品' },
+        steps: [{ title: '工作区', state: 'complete', summary: '已建立' }, { title: '连接店铺', state: 'complete', summary: '已绑定' }],
+        onboarding: { currentStep: 'choose_product' },
+        evidence: { official_stores: 1 },
+      })))
+    }, async child => {
+      const response = await request(child, 1, 'onboarding.status')
+      const result = response.result as Json
+      const content = (result.content as Array<{ text: string }>)[0]?.text ?? ''
+      expectContentProductionIntroduction(content)
+      expect(content).not.toContain('正在升级')
+      expect(result.structuredContent).toMatchObject({
+        status: 'in_progress',
+        initialization: { completed: 1, total: 4, evidence: { compatibility_projection: true } },
+      })
+      expect(result.structuredContent).not.toHaveProperty('onboarding_card')
+    })
+  })
+
+  it('does not invent official store evidence while allowing the content-first introduction', async () => {
+    await withBridge((request, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(json(ok(request, {
+        status: 'in_progress',
+        steps: [{ title: '工作区', state: 'complete' }, { title: '连接店铺', state: 'complete' }],
+        onboarding: { currentStep: 'choose_product' },
+      })))
+    }, async child => {
+      const response = await request(child, 1, 'onboarding.status')
+      const result = response.result as Json
+      const content = (result.content as Array<{ text: string }>)[0]?.text ?? ''
+      expectContentProductionIntroduction(content)
+      expect(content).not.toContain('进行第二步')
+      expect(result.structuredContent).toMatchObject({ initialization: { completed: 0, current_step: { id: 'connect_stores', state: 'required' } } })
+    })
+  })
+
+  it('introduces content production when a legacy server only returns a greeting', async () => {
+    await withBridge((request, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(json(ok(request, { status: 'in_progress', greeting: '欢迎回来' })))
+    }, async child => {
+      const response = await request(child, 1, 'onboarding.status')
+      const result = response.result as Json
+      const content = (result.content as Array<{ text: string }>)[0]?.text ?? ''
+      expectContentProductionIntroduction(content)
+      expect(content).not.toContain('升级')
+      expect(result.structuredContent).toMatchObject({ status: 'in_progress', initialization: { completed: 0, total: 4 } })
+    })
+  })
+
+  it('preserves completed historical setup without claiming content is generated, reviewed or exported', async () => {
+    const initialization = {
+      completed: 4, total: 4, status: 'ready',
+      current_step: { id: 'build_workspace', title: '建立工作区', state: 'complete' },
+      steps: ['连接平台及店铺', '扫描商品至知识库', '检查系统配置', '建立工作区'].map((title, index) => ({ id: `step-${index}`, title, state: 'complete' })),
+      security_notice: '不要发送密码或验证码',
+    }
+    await withBridge((request, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(json(ok(request, { initialization })))
+    }, async child => {
+      const response = await request(child, 1, 'onboarding.status')
+      const result = response.result as { content: Array<{ text: string }>; structuredContent: Json }
+      const content = result.content[0]?.text ?? ''
+      expectContentProductionIntroduction(content)
+      expect(content).toContain('不代表本次内容已生成、审核或导出')
+      expect(content).not.toContain('服务端已确认四步接入配置完成')
+      expect(result.structuredContent.initialization).toEqual(initialization)
+    })
+  })
+
+  it('keeps legacy brand clues as evidence without diverting the content question into brand confirmation', async () => {
+    const initialization = {
+      completed: 2, total: 4, status: 'in_progress',
+      current_step: { id: 'check_configuration', title: '检查系统配置', state: 'required' },
+      steps: [{ id: 'check_configuration', title: '检查系统配置', state: 'required' }],
+      evidence: { brand_profile_present: false },
+      brand_clues: { totalCandidates: 1, candidates: [{ brandName: '历史品牌线索' }] },
+    }
+    await withBridge((request, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(json(ok(request, { initialization })))
+    }, async child => {
+      const response = await request(child, 1, 'onboarding.status')
+      const result = response.result as { content: Array<{ text: string }>; structuredContent: Json }
+      const content = result.content[0]?.text ?? ''
+      expectContentProductionIntroduction(content)
+      expect(content).not.toContain('历史品牌线索')
+      expect(content).not.toContain('请确认这是否是你要使用的品牌名称')
+      expect(result.structuredContent.initialization).toEqual(initialization)
+    })
+  })
+
   it('starts onboarding with one conversational question and removes dashboard-shaped fields', async () => {
     await withBridge((request, res) => {
       res.setHeader('content-type', 'application/json')
@@ -105,17 +265,17 @@ describe('Codex App merchant conversation flow', () => {
       const result = response.result as Json
       expect(result.isError).toBe(false)
       expect(result.structuredContent).toEqual({
-        conversation_state: { stage: 'start', status: 'needs_input', primary_action: { method: 'platform.connect', label: '连接店铺' } },
+        conversation_state: { stage: 'provide_materials', status: 'needs_input' },
         completed_summary: '欢迎使用Store Nova',
-        question: '你想先连接哪个平台？',
-        expected_input: { kind: 'platform_selection', accepts: ['natural_language'] },
+        question: '你想制作什么内容？可以提供公开商品链接、商品资料或图片。',
+        expected_input: { kind: 'product_materials', accepts: ['natural_language', 'public_url', 'attachment'] },
       })
-      expect(JSON.stringify(result.structuredContent)).not.toMatch(/dashboard|capabilityCards|context_bar|action_cards/u)
+      expect(JSON.stringify(result.structuredContent)).not.toMatch(/dashboard|capabilityCards|context_bar|action_cards|platform\.connect/u)
       expect(calls.map(call => call.method)).toEqual(['merchant.start'])
     })
   })
 
-  it('uses the server onboarding projection as the primary action source', async () => {
+  it('adapts a legacy server connection prerequisite to material input without exposing the hidden action', async () => {
     await withBridge((request, res) => {
       res.setHeader('content-type', 'application/json')
       res.end(json(ok(request, {
@@ -125,7 +285,16 @@ describe('Codex App merchant conversation flow', () => {
       })))
     }, async (child) => {
       const response = await request(child, 1, 'merchant.start')
-      expect(response.result).toMatchObject({ structuredContent: { conversation_state: { stage: 'connect_store' }, question: '你想先连接哪个平台？', expected_input: { kind: 'platform_selection' } } })
+      const result = response.result as { structuredContent: Json }
+      expect(result).toMatchObject({
+        structuredContent: {
+          conversation_state: { stage: 'provide_materials', status: 'needs_input' },
+          question: '你想制作什么内容？可以提供公开商品链接、商品资料或图片。',
+          expected_input: { kind: 'product_materials', accepts: ['natural_language', 'public_url', 'attachment'] },
+        },
+      })
+      expect(result.structuredContent.conversation_state).not.toHaveProperty('primary_action')
+      expect(JSON.stringify(result.structuredContent)).not.toContain('platform.connect')
     })
   })
 
@@ -145,15 +314,15 @@ describe('Codex App merchant conversation flow', () => {
     })
   })
 
-  it('rejects disabled content generation before older downstream blockers can be reached', async () => {
+  it('rejects disabled Codex-host content preparation before older downstream blockers can be reached', async () => {
     await withBridge((request, res) => {
       res.setHeader('content-type', 'application/json')
       res.end(json(ok(request, { enabled: true })))
     }, async (child, calls) => {
       expect((await request(child, 1, 'workspace.interactive.confirm', { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' })).result).toMatchObject({ isError: false })
-      const response = await request(child, 2, 'content.generate', { task_id: 'task_1' })
-      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_OPERATION_DISABLED' } })
-      expect(JSON.stringify(response.result)).not.toContain('success')
+      const response = await request(child, 2, 'content.codex.prepare', { task_id: 'task_1' })
+      expect(response.error).toMatchObject({ code: -32602 })
+      expect(JSON.stringify(response)).not.toContain('success')
       expect(calls).toEqual([])
     })
   })
@@ -228,20 +397,40 @@ describe('Codex App merchant conversation flow', () => {
     })
   })
 
-  it('keeps publish writes closed until the current conversation confirms them', async () => {
+  it('hides out-of-scope store, synchronization and publishing tools even after interactive confirmation', async () => {
+    const hiddenMethods = [
+      'catalog.sync', 'catalog.sync.start', 'catalog.sync.get', 'sync.retry_failed',
+      'automation.policy.get', 'automation.policy.list', 'automation.policy.update',
+      'automation.scan', 'automation.tick', 'automation.pause',
+      'publish.prepare', 'publish.confirm', 'publish.get', 'publish.manual.get', 'publish.manual.list',
+      'publish.batch.prepare', 'publish.batch.confirm', 'publish.batch.get',
+      'publish.batch.pause', 'publish.batch.resume', 'publish.batch.retry_failed',
+      'platform.connect', 'platform.store.list', 'workspace.content_setup.confirm',
+    ]
     await withBridge((request, res) => {
       res.setHeader('content-type', 'application/json')
       res.end(json(ok(request, { accepted: true })))
     }, async (child, calls) => {
-      const blocked = await request(child, 1, 'publish.confirm', { confirmation_hash: 'hash_1', remote_snapshot_hash: 'snapshot_1' })
-      expect(blocked.result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
-      expect(calls).toHaveLength(0)
+      child.stdin.write(`${json({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })}\n`)
+      const listed = await nextLine(child.stdout)
+      const names = ((listed.result as Json).tools as Array<{ name: string }>).map(tool => tool.name)
+      expect(names).toEqual(expect.arrayContaining(['catalog.import', 'content.draft.generate', 'content.export']))
+      expect(names.some(name => /^(?:catalog\.sync(?:\.|$)|automation\.|publish\.)/u.test(name))).toBe(false)
+      for (const method of hiddenMethods) expect(names).not.toContain(method)
 
-      await request(child, 2, 'workspace.interactive.confirm', { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' })
-      const published = await request(child, 3, 'publish.confirm', { idempotency_key: 'publish:task_1:v3', confirmation_hash: 'hash_1', remote_snapshot_hash: 'snapshot_1' })
-      expect(published.result).toMatchObject({ isError: false, structuredContent: { accepted: true } })
-      expect(calls).toHaveLength(1)
-      expect(calls[0]).toMatchObject({ method: 'publish.confirm', params: { workspace_id: 'ws_test', idempotency_key: 'publish:task_1:v3', confirmation_hash: 'hash_1', remote_snapshot_hash: 'snapshot_1' } })
+      const publishArgs = { idempotency_key: 'publish:task_1:v3', confirmation_hash: 'hash_1', remote_snapshot_hash: 'snapshot_1' }
+      const blocked = await request(child, 2, 'publish.confirm', publishArgs)
+      expect(blocked.error).toMatchObject({ code: -32602, message: 'Unknown tool: publish.confirm' })
+      expect(calls).toEqual([])
+
+      const confirmed = await request(child, 3, 'workspace.interactive.confirm', { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' })
+      expect(confirmed.result).toMatchObject({ isError: false })
+      for (const [index, method] of hiddenMethods.entries()) {
+        const response = await request(child, index + 4, method, method === 'publish.confirm' ? publishArgs : {})
+        expect(response.error).toMatchObject({ code: -32602, message: `Unknown tool: ${method}` })
+        expect(response).not.toHaveProperty('result')
+      }
+      expect(calls).toEqual([])
     })
   })
 })

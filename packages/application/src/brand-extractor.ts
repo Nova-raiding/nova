@@ -35,6 +35,37 @@ export interface BrandExtractableAsset {
   extractedFactsSource?: 'parser' | 'model_ocr' | 'manual'
 }
 
+export interface ConfirmedStoreBrandProduct {
+  id: string
+  platform: string
+  accountId?: string
+  source: string
+  factsConfirmed: boolean
+  attributes?: Record<string, string>
+}
+
+/** Read-only brand clues from the same official, merchant-confirmed products used by onboarding. */
+export function confirmedStoreBrandClues(products: ConfirmedStoreBrandProduct[], limit = 30) {
+  const grouped = new Map<string, { platform: string; accountId: string; brandName: string; productIds: string[] }>()
+  for (const product of products) {
+    if (product.source !== 'official_api' || !product.factsConfirmed || !product.accountId) continue
+    const brandName = product.attributes?.brand?.normalize('NFKC').trim()
+    if (!brandName || brandName.length > 120 || /[\p{C}]/u.test(brandName)) continue
+    const key = `${product.platform}\u0000${product.accountId}\u0000${brandName.toLocaleLowerCase()}`
+    const group = grouped.get(key) ?? { platform: product.platform, accountId: product.accountId, brandName, productIds: [] }
+    if (!group.productIds.includes(product.id)) group.productIds.push(product.id)
+    grouped.set(key, group)
+  }
+  const all = [...grouped.values()].sort((left, right) => `${left.platform}:${left.accountId}:${left.brandName}`.localeCompare(`${right.platform}:${right.accountId}:${right.brandName}`))
+  return {
+    candidates: all.slice(0, Math.max(1, Math.min(30, limit))).map(group => ({ platform: group.platform, accountId: group.accountId, brandName: group.brandName, productCount: group.productIds.length, sourceProductIds: group.productIds.slice(0, 20), source: 'official_api_confirmed_product_fact' as const, confirmationRequired: true as const })),
+    totalCandidates: all.length,
+    truncated: all.length > Math.max(1, Math.min(30, limit)),
+    profileCreated: false as const,
+    guidance: '这些只是已确认商品字段中的品牌线索；不同店铺或不同品牌不能自动合并，商家确认后才可建立品牌档案。',
+  }
+}
+
 const definitions: Array<{ key: BrandCandidateFieldKey; label: string; aliases: string[]; list?: boolean }> = [
   { key: 'name', label: '品牌名称', aliases: ['品牌名称', '品牌名', 'brandname', 'brand'] },
   { key: 'positioning', label: '品牌定位', aliases: ['品牌定位', '定位', 'brandpositioning', 'positioning'] },

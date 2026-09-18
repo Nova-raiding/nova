@@ -93,6 +93,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   currentWorkspace.current = targetWorkspaceId;
   const currentCanRead = useRef(canRead);
   currentCanRead.current = canRead;
+  const currentCanUpdate = useRef(canUpdate);
+  currentCanUpdate.current = canUpdate;
   const mounted = useRef(true);
   const reportMutationError = (cause: unknown) => {
     if (currentWorkspace.current === targetWorkspaceId) setMutationError(describeOpsError(cause));
@@ -413,11 +415,11 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       description="以客户为中心跟进建档、系统接入、功能验收、培训和上线。付款未核验时，受控环节会保持阻断。"
       actions={<Button onClick={() => void load()} loading={loading} disabled={!canRead || !targetWorkspaceId}>刷新交付档案</Button>}
     >
-      {!canRead ? <Alert type="warning" showIcon message="当前会话没有客户交付读取权限" description="请切换到具备 customer.delivery.read 的平台运营工作区。" /> : null}
-      {canRead && !canUpdate ? <Alert style={{ marginBottom: 16 }} type="info" showIcon message="当前会话仅可查看客户交付" description="保存、上传和流程变更需要 customer.delivery.update 权限。" /> : null}
-      {!targetWorkspaceId && canRead ? <Alert style={{ marginBottom: 16 }} type="info" showIcon message="正在加载客户交付档案" description="请稍候，运营数据加载完成后即可新建客户。" /> : null}
-      {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
-      {mutationError && !createPage ? <Alert style={{ marginBottom: 16 }} type="error" showIcon message="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
+      {!canRead ? <Alert type="warning" showIcon title="当前会话没有客户交付读取权限" description="请切换到具备 customer.delivery.read 的平台运营工作区。" /> : null}
+      {canRead && !canUpdate ? <Alert style={{ marginBottom: 16 }} type="info" showIcon title="当前会话仅可查看客户交付" description="保存、上传和流程变更需要 customer.delivery.update 权限。" /> : null}
+      {!targetWorkspaceId && canRead ? <Alert style={{ marginBottom: 16 }} type="info" showIcon title="正在加载客户交付档案" description="请稍候，运营数据加载完成后即可新建客户。" /> : null}
+      {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon title="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
+      {mutationError && !createPage ? <Alert style={{ marginBottom: 16 }} type="error" showIcon title="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
       {createPage ? (<>
         <Form id="customer-create-form" className="customer-delivery-create-form" form={createForm} layout="vertical" onFinish={submitCreatePage}>
         <Card title="用户建档">
@@ -462,7 +464,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             </Form.Item>
           </div>
         </Card>
-        {mutationError ? <div ref={createErrorRef} className="customer-delivery-create-error" tabIndex={-1}><Alert type="error" showIcon message="创建客户失败" description={mutationError} /></div> : null}
+        {mutationError ? <div ref={createErrorRef} className="customer-delivery-create-error" tabIndex={-1}><Alert type="error" showIcon title="创建客户失败" description={mutationError} /></div> : null}
         <div className="customer-delivery-create-actions">
           <Button disabled={creating} onClick={() => setCreatePage(false)}>返回客户建档</Button>
           <Space>
@@ -483,7 +485,33 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         onTrainingSave={canUpdate && canRead ? saveTraining : undefined}
         onVideoAdd={canUpdate && canRead ? addVideo : undefined}
         onVideoList={listVideos}
-        onAssetUpload={canUpdate && canRead ? (record, file, purpose, signal) => customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: record.id, file, purpose }, signal) : undefined}
+        onAccountList={canUpdate && canRead ? async (input, signal) => {
+          signal.throwIfAborted();
+          if (!hasCurrentReadAccess(targetWorkspaceId) || !currentCanUpdate.current) throw new DOMException("账号查询权限已变更", "AbortError");
+          const result = await customerDeliveryClient.listAccounts({ targetWorkspaceId, ...input }, signal);
+          signal.throwIfAborted();
+          if (!hasCurrentReadAccess(targetWorkspaceId) || !currentCanUpdate.current) throw new DOMException("账号查询范围已变更", "AbortError");
+          return result;
+        } : undefined}
+        onAccountBind={canUpdate && canRead ? async (record, account, reason, signal) => {
+          signal.throwIfAborted();
+          if (!hasCurrentReadAccess(targetWorkspaceId) || !currentCanUpdate.current) throw new DOMException("账号关联权限已变更", "AbortError");
+          if (!Number.isSafeInteger(record.revision) || Number(record.revision) < 1) throw new Error("档案版本无效，请刷新后再关联账号");
+          if (account.workspaceId !== targetWorkspaceId) throw new Error("所选账号不属于当前企业，请重新查询");
+          const updated = await customerDeliveryClient.bindAccount({ targetWorkspaceId, deliveryId: record.id, targetAccountId: account.accountId, reason, expectedRevision: record.revision as number }, signal);
+          signal.throwIfAborted();
+          if (!hasCurrentReadAccess(targetWorkspaceId) || !currentCanUpdate.current) throw new DOMException("账号关联范围已变更", "AbortError");
+          if (updated.targetIdentityId !== account.identityId) throw new Error("关联响应与所选账号身份不一致，请刷新档案核对");
+          setRecords((previous) => previous.map((candidate) => candidate.id === record.id ? updated : candidate));
+          return updated;
+        } : undefined}
+        onAssetUpload={canUpdate && canRead ? (record, source, purpose, signal) => {
+          if ("sourceUrl" in source) {
+            if (purpose !== "contract") return Promise.reject(new Error("仅合同凭证支持链接导入"));
+            return customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: record.id, sourceUrl: source.sourceUrl, purpose }, signal);
+          }
+          return customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: record.id, file: source, purpose }, signal);
+        } : undefined}
         onAssetGet={(record, assetRef, purpose, signal) => customerDeliveryClient.getAsset({ targetWorkspaceId, deliveryId: record.id, assetRef, purpose }, signal)}
         onAssetOpen={openDeliveryAsset}
         onArchive={canUpdate && canRead ? archiveRecord : undefined}

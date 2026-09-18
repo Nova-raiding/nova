@@ -2,7 +2,7 @@ export function assertRelayEvidence(method, result, { environment, fixtureFallba
   const relayMethods = new Set(['content.generate', 'catalog.image.generate', 'multimodal.generate', 'multimodal.video.request', 'multimodal.image.edit'])
   if (!relayMethods.has(method) || !['production', 'staging', 'preview'].includes(environment) || fixtureFallback) return
   const execution = result && typeof result === 'object' && !Array.isArray(result) && result.execution && typeof result.execution === 'object' ? result.execution : {}
-  const pending = result && typeof result === 'object' && !Array.isArray(result) && (['queued', 'generating', 'processing'].includes(result.state) || ['queued', 'running', 'pending'].includes(result.status))
+  const pending = isPendingRelayResult(result)
   if (pending) return
   const simulated = execution.simulated === true || result?.simulated === true || result?.mode === 'fixture'
   const providerRequestId = execution.providerRequestId ?? execution.provider_request_id ?? result?.providerRequestId ?? result?.provider_request_id
@@ -24,4 +24,22 @@ export function assertRelayEvidence(method, result, { environment, fixtureFallba
     error.details = { operation_status: 'blocked', missing: [...new Set(missing)] }
     throw error
   }
+}
+
+export function isPendingRelayResult(result) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return false
+  const execution = result.execution && typeof result.execution === 'object' && !Array.isArray(result.execution) ? result.execution : {}
+  const job = result.job && typeof result.job === 'object' && !Array.isArray(result.job) ? result.job : {}
+  const candidateState = result.candidate_state && typeof result.candidate_state === 'object' && !Array.isArray(result.candidate_state) ? result.candidate_state : {}
+  const states = [
+    result.state,
+    result.status,
+    result.execution_state,
+    execution.state,
+    execution.status,
+    job.state,
+    job.status,
+    candidateState.state,
+  ].map(value => typeof value === 'string' ? value.trim().toLowerCase() : '')
+  return states.some(state => ['queued', 'generating', 'processing', 'running', 'pending', 'provider_reserved', 'provider_dispatching', 'provider_started'].includes(state))
 }

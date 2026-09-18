@@ -26,9 +26,9 @@ describe('MCP method contract', () => {
   it('keeps the legacy methods and exposes the complete merchant workflow', () => {
     expect(MCP_METHODS.filter(method => !['workspace.interactive.confirm', 'task.resume', 'catalog.title.accept', 'catalog.sku.update', 'catalog.product.update', 'ops.marketing.queue.assign', 'ops.marketing.visual.review', 'automation.tick', 'ops.session', 'brand-unit.list', 'brand-unit.create', 'brand-unit.bind-store', 'brand-unit.product.create', 'brand-unit.listing.create', 'brand-unit.listing.list', 'campaign.batch.create', 'campaign.batch.get', 'campaign.batch.generate'].includes(method)).filter(method => !method.startsWith('ops.commercial.model-markup.'))).toEqual(expect.arrayContaining([
       'merchant.start', 'merchant.first_value', 'workspace.health', 'workspace.bootstrap', 'workspace.metrics', 'workspace.commercial.get', 'workspace.commercial.update', 'workspace.usage.get', 'ops.audit.list', 'ops.audit.detail', 'ops.audit.export', 'ops.data.delete.list', 'ops.data.delete.cancel', 'ops.data.delete.approve', 'ops.members.list', 'ops.workspaces.list', 'ops.commercial.offers.list', 'ops.commercial.offer.upsert', 'ops.commercial.addons.list', 'ops.commercial.addon.upsert', 'ops.commercial.coupons.list', 'ops.commercial.coupon.upsert', 'ops.commercial.rollouts.list', 'ops.commercial.rollout.upsert', 'ops.growth.funnel', 'ops.alerts.list', 'ops.alert.ack', 'ops.marketing.queue', 'ops.marketing.generation.retry', 'ops.marketing.asset_scan.retry', 'ops.marketing.publish.acknowledge', 'ops.marketing.revision.create', 'ops.member.upsert', 'ops.member.suspend', 'subscription.get', 'subscription.orders.list', 'subscription.order.create', 'subscription.change', 'billing.usage.consume', 'billing.usage.refund', 'billing.refund', 'billing.reconciliation', 'billing.reconciliation.run', 'billing.export', 'platform.settings.get', 'platform.settings.update', 'platform.model.status', 'billing.status', 'billing.recharge.create', 'billing.recharge.get', 'billing.transactions', 'workspace.deactivate', 'workspace.activate', 'workspace.data.delete.request', 'platform.connect', 'platform.store.alias.set', 'catalog.search', 'catalog.categories', 'catalog.title.optimize', 'catalog.import', 'catalog.import.batch', 'catalog.facts.confirm', 'catalog.product.disable', 'catalog.product.enable', 'catalog.image.generate', 'catalog.image.get', 'catalog.image.review', 'sync.retry_failed', 'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'rule.publish', 'rule.status', 'asset.list', 'asset.parse', 'asset.facts.confirm', 'asset.preference.update', 'brand.get', 'brand.extract', 'brand.upsert', 'brand.tone.preview', 'asset.upload', 'asset.upload.batch', 'asset.scan', 'asset.rights.update', 'catalog.sync', 'catalog.sync.start', 'catalog.sync.get', 'deliverable.list', 'task.history', 'task.clone', 'task.timeline', 'feedback.list', 'feedback.submit', 'platform.revoke', 'task.create', 'task.answer', 'task.understand', 'task.request.create', 'task.sku.split', 'task.group.create',
-      'creative.directions', 'creative.brief', 'creative.preview', 'creative.directions.update', 'task.select_direction', 'task.plan.confirm', 'content.generate', 'content.codex.prepare', 'content.codex.commit', 'generation.get', 'content.review', 'content.review.decide', 'content.visual.select',
+      'creative.directions', 'creative.brief', 'creative.preview', 'creative.directions.update', 'task.select_direction', 'task.plan.confirm', 'content.generate', 'content.draft.generate', 'content.codex.prepare', 'content.codex.commit', 'generation.get', 'content.review', 'content.review.decide', 'content.visual.select',
       'content.versions', 'content.diff', 'content.export',
-      'content.approve', 'content.modify', 'content.restore', 'publish.prepare', 'publish.batch.prepare', 'publish.batch.confirm', 'publish.batch.get', 'publish.batch.pause', 'publish.batch.resume', 'publish.batch.retry_failed', 'automation.policy.get', 'automation.policy.list', 'automation.policy.update', 'automation.scan', 'automation.pause', 'publish.confirm', 'publish.get',
+      'content.approve', 'content.modify', 'content.restore', 'publish.prepare', 'publish.batch.prepare', 'publish.batch.confirm', 'publish.batch.get', 'publish.batch.pause', 'publish.batch.resume', 'publish.batch.retry_failed', 'automation.policy.get', 'automation.policy.list', 'automation.policy.update', 'automation.scan', 'automation.pause', 'publish.confirm', 'publish.get', 'ops.marketing.publish.manual-evidence.record', 'publish.manual.get', 'publish.manual.list',
       'knowledge.rule.create', 'knowledge.rule.list', 'knowledge.asset.create', 'knowledge.asset.update', 'knowledge.asset.list', 'knowledge.feedback.record', 'knowledge.learning.list', 'knowledge.learning.confirm', 'knowledge.learning.dismiss', 'knowledge.competitor.create', 'knowledge.competitor.list', 'knowledge.competitor.reference', 'multimodal.image.edit', 'multimodal.generate', 'multimodal.video.request', 'multimodal.video.get',
     ]))
     expect(MCP_METHODS).toContain('catalog.sku.update')
@@ -133,6 +133,35 @@ describe('MCP method contract', () => {
     expect(MCP_METHOD_SCHEMAS['campaign.batch.retry_failed'].properties.item_ids_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'array' })
     expect(MCP_METHOD_SCHEMAS['campaign.batch.pause'].properties).not.toHaveProperty('item_ids_json')
     expect(MCP_METHOD_SCHEMAS['campaign.batch.resume'].properties).not.toHaveProperty('item_ids_json')
+  })
+
+  it('keeps manual publish reports distinct from platform-verified receipts', () => {
+    const schema = MCP_METHOD_SCHEMAS['ops.marketing.publish.manual-evidence.record']
+    expect(schema.required).toEqual([
+      'target_workspace_id', 'task_id', 'content_version_id', 'platform', 'account_id', 'delivery_bundle_hash', 'status',
+      'occurred_at', 'evidence_refs_json', 'expected_revision', 'idempotency_key', 'reason',
+    ])
+    expect(schema.properties.status?.enum).toEqual([
+      'manual_publish_in_progress', 'manual_publish_reported', 'manual_review_required',
+    ])
+    expect(schema.properties.evidence_refs_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'array', maxLength: 16_384 })
+    expect(getMcpMethodContract('ops.marketing.publish.manual-evidence.record')?.description).toMatch(/never.*platform_verified/iu)
+    expect(getMcpMethodContract('publish.manual.get')?.description).toMatch(/not platform_verified/iu)
+
+    const validParams = {
+      target_workspace_id: 'workspace_1', task_id: 'task_1', content_version_id: 'content_1', platform: 'douyin', account_id: 'store_1',
+      delivery_bundle_hash: 'a'.repeat(64), status: 'manual_publish_reported', occurred_at: '2026-09-17T10:30:00Z',
+      evidence_refs_json: '["asset_ref_screenshot_1"]', expected_revision: '1',
+      idempotency_key: 'manual-publish:task_1:1', reason: 'Operator reported the approved bundle as submitted.',
+    }
+    const method = 'ops.marketing.publish.manual-evidence.record'
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-report', method, params: validParams })).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-verified', method, params: { ...validParams, status: 'platform_verified' } }).errors).toContain('params.status has an unsupported value')
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-published', method, params: { ...validParams, status: 'published' } }).errors).toContain('params.status has an unsupported value')
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-fake-receipt', method, params: { ...validParams, platform_verified: 'true' } }).errors).toContain(`params.platform_verified is not accepted for ${method}`)
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-get', method: 'publish.manual.get', params: { manual_publish_report_id: 'manual_report_1' } })).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-list', method: 'publish.manual.list', params: { task_id: 'task_1', limit: '20', offset: '0' } })).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'manual-list-invalid', method: 'publish.manual.list', params: { limit: '0' } }).valid).toBe(false)
   })
 
   it('requires exactly one checklist update mode and always scopes customer delivery to a target workspace', () => {
@@ -253,11 +282,15 @@ describe('MCP method contract', () => {
         account_id: { type: 'string' },
         product_id: { type: 'string' },
         example: { type: 'string', enum: ['true'] },
+        draft: { type: 'string', enum: ['true'] },
+        draft_title: { type: 'string', minLength: 2, maxLength: 256 },
+        draft_prompt: { type: 'string', minLength: 2, maxLength: 2_000 },
+        idempotency_key: { type: 'string', minLength: 8, maxLength: 200 },
       },
       additionalProperties: false,
     })
     expect(MCP_METHOD_SCHEMAS['merchant.first_value'].required).toBeUndefined()
-    expect(getMcpMethodContract('merchant.first_value')?.description).toMatch(/safe first-value preview bundle.*never publishes.*does not call a model unless the server explicitly says/iu)
+    expect(getMcpMethodContract('merchant.first_value')?.description).toMatch(/safe first-value preview bundle.*never publishes/iu)
     expect(MCP_METHOD_SCHEMAS['brand-unit.bind-store'].required).toEqual(['brand_id', 'platform', 'account_id'])
     expect(MCP_METHOD_SCHEMAS['brand-unit.bind-store'].properties.expected_revision).toEqual({ type: 'string', pattern: '^[1-9][0-9]*$', maxLength: 10 })
     expect(MCP_METHOD_SCHEMAS['campaign.batch.create'].required).toEqual(['brand_id'])

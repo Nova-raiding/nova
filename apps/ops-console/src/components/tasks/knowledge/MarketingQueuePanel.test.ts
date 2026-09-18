@@ -18,7 +18,19 @@ describe('marketing queue delivery evidence', () => {
     expect(queueStateLabel('provider_dispatching')).toBe('正在提交模型请求，等待受理确认')
     expect(queueStateLabel('dispatching')).toBe('正在提交模型请求，等待受理确认')
     expect(queueStateLabel('provider_started')).toBe('模型已受理，等待结果确认')
+    expect(queueStateLabel('export_ready')).toBe('交付包就绪')
+    expect(queueStateLabel('manual_publish_reported')).toBe('人工已报告，待复核')
+    expect(queueStateLabel('platform_verified')).toBe('平台 API 已验证')
     expect(queueStateLabel('future_state')).toBe('状态待确认')
+  })
+
+  it('keeps manual publish reports distinct from verified platform receipts', () => {
+    expect(panelSource).toContain('人工报告不是平台 API 回执')
+    expect(panelSource).toContain('不得据此标记为 platform_verified 或自动化 published')
+    expect(panelSource).toContain('人工证据写入尚未接通')
+    expect(panelSource).toContain('writeCapability?.writable !== true')
+    const formOptions = panelSource.slice(panelSource.indexOf('name="status"'), panelSource.indexOf('name="deliveryBundleHash"'))
+    expect(formOptions).not.toContain('platform_verified')
   })
 
   it('never promotes manual visual review to authenticity verified', () => {

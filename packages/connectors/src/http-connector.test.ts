@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createConfiguredConnector, type AccessCredential, type CredentialProvider, type HttpConnectorConfig } from './index.js'
+import { createConfiguredConnector, type AccessCredential, type CredentialProvider, type HttpConnectorConfig, type PlatformConnector, type ConnectorBeforeRequest } from './index.js'
 
 const config: HttpConnectorConfig = {
   clientId: 'app-test',
@@ -34,6 +34,88 @@ function credentials(): CredentialProvider & { saved: AccessCredential[] } {
 }
 
 function response(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }) }
+
+describe('HTTP connector trusted final dispatch admission', () => {
+  const context = { workspaceId: 'ws-admission', accountId: 'account-admission', credentialRef: 'vault://admission' }
+  const draft = { fields: { title: 'Product', category: 'cat', price: 10, stock: 1 }, idempotencyKey: 'admission-write', remoteId: 'remote-admission' }
+  const operations: Array<{ operation: Parameters<ConnectorBeforeRequest>[0]['operation']; call(connector: PlatformConnector): Promise<unknown> }> = [
+    { operation: 'exchange_code', call: connector => connector.exchangeCode({ code: 'local-code', state: 'local-state', workspaceId: context.workspaceId }) },
+    { operation: 'refresh_credential', call: connector => connector.refreshCredential(context) },
+    { operation: 'revoke', call: connector => connector.revoke(context) },
+    { operation: 'sync_products', call: connector => connector.syncProducts(context) },
+    { operation: 'create_product', call: connector => connector.createProduct(context, draft) },
+    { operation: 'update_product', call: connector => connector.updateProduct(context, draft) },
+    { operation: 'query_write', call: connector => connector.queryWrite(context, { idempotencyKey: draft.idempotencyKey, remoteId: draft.remoteId }) },
+    { operation: 'upload_media', call: connector => connector.uploadMedia!(context, { visualRef: 'visual-a', role: 'main', mimeType: 'image/png', sha256: 'a'.repeat(64), idempotencyKey: 'media-a', bytes: new Uint8Array([1]) }) },
+  ]
+
+  it.each(operations)('$operation preserves host denial and never invokes fetch', async ({ operation, call }) => {
+    const denial = Object.assign(new TypeError('local access revoked'), { code: 'CUSTOMER_DELIVERY_REQUIRED', retryable: false })
+    const fetchMock = vi.fn()
+    const beforeRequest = vi.fn<ConnectorBeforeRequest>(() => { throw denial })
+    const connector = createConfiguredConnector('jd', { config: readyConfig, credentials: credentials(), allowTestCredentials: true, allowTestAdapters: true, fetch: fetchMock, beforeRequest })
+    await expect(call(connector)).rejects.toBe(denial)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(beforeRequest).toHaveBeenCalledExactlyOnceWith({ operation, platform: 'jd', workspaceId: context.workspaceId, accountId: operation === 'exchange_code' ? undefined : context.accountId, signal: undefined })
+    expect(denial).not.toHaveProperty('normalized')
+    expect(denial).not.toHaveProperty('providerSucceeded')
+  })
+
+  it.each(['sync', 'create', 'update', 'media'] as const)('%s admission occurs after credential resolution and delayed signing', async operation => {
+    let release!: () => void
+    let signEntered!: () => void
+    const signing = new Promise<void>(resolve => { release = resolve })
+    const entered = new Promise<void>(resolve => { signEntered = resolve })
+    let allowed = true
+    const denial = new Error('revoked while signing')
+    const events: string[] = []
+    const store = credentials()
+    const resolve = store.resolve.bind(store)
+    store.resolve = async ref => { events.push('credentials'); return resolve(ref) }
+    const beforeRequest = vi.fn<ConnectorBeforeRequest>(() => { events.push('admission'); if (!allowed) throw denial })
+    const fetchMock = vi.fn()
+    const connector = createConfiguredConnector('jd', {
+      config: { ...readyConfig, signer: { kind: 'test', async sign() { events.push('signing'); signEntered(); await signing; return {} } } },
+      credentials: store, allowTestCredentials: true, allowTestAdapters: true, fetch: fetchMock, beforeRequest,
+    })
+    const call = operations.find(item => item.operation === ({ sync: 'sync_products', create: 'create_product', update: 'update_product', media: 'upload_media' } as const)[operation])!.call
+    const pending = expect(call(connector)).rejects.toBe(denial)
+    await entered
+    expect(beforeRequest).not.toHaveBeenCalled()
+    allowed = false
+    release()
+    await pending
+    expect(events).toEqual(['credentials', 'signing', 'admission'])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('checks each sync page and leaves status reads classifiable for reconciliation', async () => {
+    let allowed = true
+    const denial = new Error('revoked after first page')
+    const beforeRequest = vi.fn<ConnectorBeforeRequest>(request => { if (request.operation === 'sync_products' && !allowed) throw denial })
+    const fetchMock = vi.fn(async () => response({ items: [] }))
+    const connector = createConfiguredConnector('jd', { config: readyConfig, credentials: credentials(), allowTestCredentials: true, allowTestAdapters: true, fetch: fetchMock, beforeRequest })
+    await connector.syncProducts(context)
+    allowed = false
+    await expect(connector.syncProducts(context, { value: 'next-page' })).rejects.toBe(denial)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    await connector.queryWrite(context, { idempotencyKey: 'prior-write' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(beforeRequest.mock.calls.map(([request]) => request.operation)).toEqual(['sync_products', 'sync_products', 'query_write'])
+  })
+
+  it('does not relabel an automatic credential-refresh admission denial', async () => {
+    const denial = new TypeError('refresh locally denied')
+    const store = credentials()
+    store.resolve = async () => ({ accessToken: 'expired', refreshToken: 'refresh', expiresAt: '2020-01-01T00:00:00Z' })
+    const fetchMock = vi.fn()
+    const beforeRequest = vi.fn<ConnectorBeforeRequest>(() => { throw denial })
+    const connector = createConfiguredConnector('jd', { config: readyConfig, credentials: store, allowTestCredentials: true, allowTestAdapters: true, fetch: fetchMock, beforeRequest })
+    await expect(connector.syncProducts(context)).rejects.toBe(denial)
+    expect(beforeRequest.mock.calls.map(([request]) => request.operation)).toEqual(['refresh_credential'])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
 
 describe('HttpPlatformConnector', () => {
   it('allows OAuth setup before catalog evidence while keeping sync closed', async () => {
@@ -110,7 +192,7 @@ describe('HttpPlatformConnector', () => {
       return response({ ok: true })
     })
     const connector = createConfiguredConnector('taobao', { config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'taobao' as const })) }, credentials: store, fetch: fetchMock, allowTestCredentials: true, allowTestAdapters: true })
-    const ref = await connector.exchangeCode({ code: 'code-1', state: 'state-1', codeVerifier: 'pkce-verifier', workspaceId: 'ws-oauth' })
+    const ref = await connector.exchangeCode({ code: 'code-1', state: 'state-1', redirectUri: 'https://app.test/oauth/callback', codeVerifier: 'pkce-verifier', workspaceId: 'ws-oauth' })
     expect(ref).toMatchObject({ credentialRef: 'vault://remote-shop-1', workspaceId: 'ws-oauth', scope: 'product.read product.write', expiresAt: expect.any(String) })
     await connector.refreshCredential(ref)
     await connector.revoke(ref)
@@ -118,8 +200,34 @@ describe('HttpPlatformConnector', () => {
     expect(calls[0]?.body).toContain('authorization_code')
     expect(calls[0]?.body).toContain('grant_type=authorization_code')
     expect(calls[0]?.body).toContain('code_verifier=pkce-verifier')
+    expect(calls[0]?.body).toContain('redirect_uri=https%3A%2F%2Fapp.test%2Foauth%2Fcallback')
     expect(calls[1]?.body).toContain('refresh_token')
     expect(calls[0]?.body).not.toContain('access-token')
+  })
+
+  it('uses Douyin OAuth parameter names and response identity without invoking the business signer', async () => {
+    const store = credentials()
+    const signer = { kind: 'platform' as const, sign: vi.fn(() => ({ 'x-business-signature': 'must-not-be-used' })) }
+    const requests: Array<{ url: string; body?: string }> = []
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      requests.push({ url: String(url), body: typeof init?.body === 'string' ? init.body : undefined })
+      return response({ access_token: 'douyin-token', refresh_token: 'douyin-refresh', expires_in: '3600', open_id: 'douyin-open-id' })
+    })
+    const config = { ...readyConfig, signer, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'douyin' as const })) }
+    const connector = createConfiguredConnector('douyin', { config, credentials: store, fetch: fetchMock, allowTestCredentials: true, allowTestAdapters: true })
+
+    const authorization = await connector.authorize({ workspaceId: 'ws', actorId: 'actor', redirectUri: 'https://app.test/douyin/callback', state: 'douyin-state' })
+    const authorizationUrl = new URL(authorization.authorizationUrl!)
+    expect(authorizationUrl.searchParams.get('client_key')).toBe('app-test')
+    expect(authorizationUrl.searchParams.has('client_id')).toBe(false)
+    expect(authorizationUrl.searchParams.get('scope')).toBe('product.read,product.write')
+
+    await expect(connector.exchangeCode({ code: 'douyin-code', state: 'douyin-state', redirectUri: 'https://app.test/douyin/callback', workspaceId: 'ws' }))
+      .resolves.toMatchObject({ accountId: 'douyin-open-id', expiresAt: expect.any(String) })
+    expect(requests[0]?.body).toContain('client_key=app-test')
+    expect(requests[0]?.body).not.toContain('client_id=')
+    expect(requests[0]?.body).toContain('redirect_uri=https%3A%2F%2Fapp.test%2Fdouyin%2Fcallback')
+    expect(signer.sign).not.toHaveBeenCalled()
   })
 
   it('drops control characters from OAuth token metadata before constructing headers', async () => {
@@ -290,7 +398,7 @@ describe('HttpPlatformConnector', () => {
           ...readyConfig,
           allowedHosts: ['platform.test'],
           signer: { kind: 'platform', sign: (descriptor) => { descriptor.url = 'https://evil.test/steal'; return {} } },
-          capabilityEvidence: [...(readyConfig.capabilityEvidence ?? []), { platform: 'jd' as const, capability: 'media_upload', state: 'test_e2e' as const, evidenceRef: 'test-only', verifiedBy: 'unit-test', verifiedAt: '2026-08-22T00:00:00Z' }],
+          capabilityEvidence: ['authorize', 'refresh', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'].map(capability => ({ platform: 'jd' as const, capability: capability as any, state: 'test_e2e' as const, evidenceRef: 'test-only', verifiedBy: 'unit-test', verifiedAt: '2026-08-22T00:00:00Z' })),
         },
         credentials: credentials(), fetch: fetchMock, allowTestCredentials: true, allowTestAdapters: true,
       })
@@ -367,15 +475,19 @@ describe('HttpPlatformConnector', () => {
   })
 
   it('classifies structured platform validation errors and retains safe rejection evidence', async () => {
+    const observations: unknown[] = []
     const connector = createConfiguredConnector('jd', {
       config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },
       credentials: credentials(),
       fetch: async () => response({ error: { code: 'SKU_INVALID', message: '商品字段不合法', requestId: 'req-safe', fields: [{ path: 'sku[0].price', code: 'PRICE_INVALID', message: 'must be positive' }] } }, 422),
+      onExchange: observation => observations.push(observation),
       allowTestCredentials: true,
       allowTestAdapters: true,
     })
     await expect(connector.syncProducts({ workspaceId: 'ws', accountId: 'acct' }))
       .rejects.toMatchObject({ normalized: { code: 'VALIDATION_FAILED', status: 422, retryable: false, details: { platformCode: 'SKU_INVALID', requestId: 'req-safe', rejection: { rawCode: 'SKU_INVALID', fields: [{ path: 'sku[0].price', rawCode: 'PRICE_INVALID', message: 'must be positive' }] } } } })
+    expect(observations).toMatchObject([{ platform: 'jd', operation: 'sync_products', status: 422, providerRequestId: 'req-safe', transport: 'fetch' }])
+    expect(JSON.stringify(observations)).not.toContain('商品字段不合法')
   })
 
   it('retains provider identity and error code from nested HTTP rejection envelopes', async () => {

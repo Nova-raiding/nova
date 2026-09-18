@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
 import { loadMigrations, MigrationRunner } from './migration.js'
-import { disposePostgresScopeFixture } from './postgres-scope-fixture-cleanup.js'
 
 const databaseUrlValue = process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const postgresIt = databaseUrlValue ? it : it.skip
@@ -19,10 +18,9 @@ describe('product tenant RLS PostgreSQL probe', () => {
   postgresIt('keeps customer rows isolated and rejects platform-scope spoofing', async () => {
     const base = new URL(databaseUrlValue!)
     const databaseName = `probe_product_rls_${randomUUID().replaceAll('-', '')}`
-    const admin = new Pool({ connectionString: base.toString(), connectionTimeoutMillis: 1_000, query_timeout: 1_000 })
+    const admin = new Pool({ connectionString: base.toString() })
     let database: Pool | undefined
     let app: Pool | undefined
-    let primaryFailure: unknown
 
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
@@ -82,11 +80,11 @@ describe('product tenant RLS PostgreSQL probe', () => {
 
       // SET LOCAL context must be cleared before a pooled connection is reused.
       expect((await app.query('SELECT id FROM products ORDER BY id')).rows).toEqual([])
-    } catch (error) {
-      primaryFailure = error
-      throw error
     } finally {
-      await disposePostgresScopeFixture(admin, databaseName, [app, database], undefined, primaryFailure)
+      await app?.end()
+      await database?.end()
+      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
+      await admin.end()
     }
   }, 240_000)
 })

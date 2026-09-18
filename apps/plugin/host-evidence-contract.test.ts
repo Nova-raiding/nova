@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -6,7 +6,7 @@ const root = resolve(process.cwd(), 'apps/plugin')
 const readText = (path: string) => readFileSync(resolve(root, path), 'utf8')
 const readJson = (path: string) => JSON.parse(readText(path)) as Record<string, any>
 
-describe('ChatGPT Host/OIDC/Automation local evidence contract', () => {
+describe('ChatGPT Host/OIDC local evidence contract', () => {
   it('declares a desktop ChatGPT host boundary without claiming mobile support', () => {
     const runtime = readJson('package.json').merchantRuntime
 
@@ -40,18 +40,14 @@ describe('ChatGPT Host/OIDC/Automation local evidence contract', () => {
     expect(readme).toMatch(/bridge 对缺失或未解析的.*默认失败关闭/u)
   })
 
-  it('uses native host Automations and keeps the plugin manifest free of speculative scheduler fields', () => {
+  it('keeps hidden automation and scheduler capabilities outside the current merchant scope', () => {
     const manifest = readJson('.codex-plugin/plugin.json')
     const skill = readText('skills/merchant-marketing/SKILL.md')
-    const automationReference = 'skills/merchant-marketing/references/automations.md'
 
     expect(manifest).not.toHaveProperty('scheduledTasks')
     expect(manifest).not.toHaveProperty('automation')
-    expect(existsSync(resolve(root, automationReference))).toBe(true)
-    expect(skill).toContain('Codex App 原生 Automations')
-    expect(skill).toContain('不得创建自己的调度服务、任务表或管理页面')
-    expect(skill).toMatch(/宿主没有 Automations[^\n]*复制/u)
-    expect(readText(automationReference)).toMatch(/无人值守[^\n]*(禁止|不得)[^\n]*写/u)
-    expect(readText(automationReference)).toMatch(/执行频率、暂停\/恢复、运行历史和通知均由 Codex App 管理/u)
+    expect(skill).toContain('当前插件不提供库存/订单同步、自动发布、批量发布或店铺经营巡检入口')
+    expect(skill).toContain('旧 Automation 模板')
+    expect(skill).toContain('平台同步、发布与自动化入口保持隐藏')
   })
 })

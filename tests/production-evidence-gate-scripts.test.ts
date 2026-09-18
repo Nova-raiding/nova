@@ -21,6 +21,7 @@ const provisionTrustBundle = (directory: string, consumerContents = '#!/bin/sh\n
   writeFileSync(join(directory, 'production-evidence-public-key-sha256'), `${sha256(der)}\n`, { mode: 0o600 })
   writeFileSync(join(directory, 'production-evidence-nonce-consumer-sha256'), `${sha256(consumerContents)}\n`, { mode: 0o600 })
   writeFileSync(join(directory, 'production-capability-attester-sha256'), `${sha256('#!/bin/sh\nexit 0\n')}\n`, { mode: 0o600 })
+  writeFileSync(join(directory, 'production-evidence-bundle-attester-sha256'), `${sha256('#!/bin/sh\nexit 0\n')}\n`, { mode: 0o600 })
 }
 
 const nonceEnvironment = (directory: string, consumer: string) => ({

@@ -235,6 +235,8 @@ jobs:
           packages/persistence/src/commercial-contract-repository.release.postgres.test.ts
           packages/persistence/src/commercial-point-adjustment-approval-repository.release.postgres.test.ts
           packages/persistence/src/data-lifecycle-repository.postgres.test.ts
+          packages/persistence/src/image-generation-before-provider.release.postgres.test.ts
+          packages/persistence/src/knowledge-index-cas.release.postgres.test.ts
           packages/persistence/src/migration-106-release.postgres.test.ts
           packages/persistence/src/migration-109-release.postgres.test.ts
           packages/persistence/src/migration-127-release.postgres.test.ts
@@ -242,6 +244,9 @@ jobs:
           packages/persistence/src/migration-129-release.postgres.test.ts
           packages/persistence/src/migration-146-release.postgres.test.ts
           packages/persistence/src/migration-148-release.postgres.test.ts
+          packages/persistence/src/migration-212-release.postgres.test.ts
+          packages/persistence/src/migration-214-release.postgres.test.ts
+          packages/persistence/src/migration-218-release.postgres.test.ts
           packages/persistence/src/object-orphan-repository.postgres.test.ts
           packages/persistence/src/ops-workspace-summary-rls.postgres.test.ts
           packages/persistence/src/platform-authorization-audit.postgres.test.ts
@@ -253,9 +258,11 @@ jobs:
           packages/persistence/src/product-rls-tenant-boundary.postgres.test.ts
           packages/persistence/src/resource-id-scope.postgres.test.ts
           packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts
+          packages/persistence/src/workspace-content-setup-repository.release.postgres.test.ts
           packages/persistence/src/workspace-data-export-repository.release.postgres.test.ts
           tests/mcp-oauth-commercial-payment.postgres.test.ts
           tests/outbox-retry.postgres.test.ts
+          tests/postgres-rls-attack-matrix.postgres.test.ts
       - name: Run mandatory authorization PostgreSQL acceptance
         env:
           PERSISTENCE_RELEASE_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant

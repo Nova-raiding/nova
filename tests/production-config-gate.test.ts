@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { validateManualOperationsEvidence } from './manual-operations-evidence-gate.js'
 
 const script = join(process.cwd(), 'infra/scripts/validate-production-config.sh')
 const flags = [
@@ -25,8 +26,9 @@ function config(overrides: Record<string, boolean> = {}) {
     'auth_enforcement: strict',
     'mcp_authorization_mode: enforce',
     'durable_platform_assignments_required: true',
+    'platform_operations_mode: manual',
     'session_id_hash_secret_ref: vault://merchant-identity/session-id-hash-secret',
-    ...flags.map(flag => `${flag}: ${overrides[flag] === false ? 'false' : 'true'}`),
+    ...flags.map(flag => `${flag}: ${overrides[flag] === true ? 'true' : 'false'}`),
     ...socialFlags.map(flag => `${flag}: ${overrides[flag] === true ? 'true' : 'false'}`),
     'point_in_time_recovery_enabled: true',
     'database_pooler_enabled: true',
@@ -69,12 +71,15 @@ function config(overrides: Record<string, boolean> = {}) {
     'image_edit_model: merchant-image-edit-v1',
     'ocr_model: merchant-ocr-v1',
     'video_model: merchant-video-v1',
+    'embedding_model: merchant-embedding-v1',
+    'embedding_dimensions: 1536',
+    'embedding_max_request_cny: 0.10', 'knowledge_vector_index_enabled: false',
     'approved_requests_per_minute: "100"',
     'approved_tokens_per_minute: "100000"',
     'maximum_task_cost_cny: "0.50"',
-    'platform_rule_sync_manifest_url: https://rules.example.com/platform-rules/v1/manifest.json',
-    'platform_rule_sync_signing_secret_ref: vault://merchant-rules/manifest-signing-secret',
-    'platform_rule_sync_interval_hours: "24"',
+    'platform_rule_sync_manifest_url: disabled',
+    'platform_rule_sync_signing_secret_ref: disabled',
+    'platform_rule_sync_interval_hours: "0"',
     'object_storage_bucket: merchant-assets',
     'object_storage_region: cn',
     'object_storage_endpoint: https://s3.example.com',
@@ -99,22 +104,44 @@ function run(value: string) {
 }
 
 describe('production config gate', () => {
-  it('requires all four platform capability flag groups', () => {
+  it('requires release-bound manual workflow evidence to reject official receipt claims', () => {
+    const evidence = { schema_version: 'manual-operations-evidence/1', release_id: 'release-1', environment: 'production', workflow: 'public_import_manual_publish', official_api_receipt: false, tenant_isolation_verified: true, checks: [{ name: 'tenant_scope', status: 'pass' }, { name: 'manual_report', status: 'pass' }, { name: 'merchant_visibility', status: 'pass' }] }
+    expect(validateManualOperationsEvidence(evidence, 'release-1')).toEqual([])
+    expect(validateManualOperationsEvidence({ ...evidence, official_api_receipt: true }, 'release-1')).toContain('official_api_receipt must be false')
+  })
+  it('keeps every platform connector disabled in manual operations mode', () => {
     expect(run(config())()).toContain('production config gate passed')
-    expect(() => run(config({ pinduoduo_write_enabled: false }))()).toThrow()
+    expect(() => run(config({ pinduoduo_write_enabled: true }))()).toThrow(/manual platform operations mode/)
+  })
+
+  it('accepts a truthful protected single-node ECS profile without managed-service claims', () => {
+    const singleNode = config()
+      .replace('point_in_time_recovery_enabled: true', 'point_in_time_recovery_enabled: false')
+      .replace('database_pooler_enabled: true', 'database_pooler_enabled: false')
+      .replace('database_max_backend_connections: 300', 'database_max_backend_connections: 100')
+      .replace('secret_provider: vault', 'secret_provider: ecs-protected-env')
+    expect(run(singleNode)()).toContain('production config gate passed')
+    expect(() => run(singleNode.replace('database_pooler_enabled: false', 'database_pooler_enabled: true'))()).toThrow(/must not claim/)
   })
 
   it('rejects a partial social-platform rollout', () => {
-    expect(() => run(config({ xiaohongshu_auth_enabled: true }))()).toThrow(/xiaohongshu/)
-    expect(() => run(config({ douyin_read_enabled: true, douyin_auth_enabled: true }))()).toThrow(/douyin/)
-    expect(run(config({
+    expect(() => run(config({ xiaohongshu_auth_enabled: true }))()).toThrow(/manual platform operations mode/)
+    expect(() => run(config({ douyin_read_enabled: true, douyin_auth_enabled: true }))()).toThrow(/manual platform operations mode/)
+    const official = config({
+      jd_auth_enabled: true, jd_read_enabled: true, jd_write_enabled: true,
+      taobao_tmall_auth_enabled: true, taobao_tmall_read_enabled: true, taobao_tmall_write_enabled: true,
+      pinduoduo_auth_enabled: true, pinduoduo_read_enabled: true, pinduoduo_write_enabled: true,
       xiaohongshu_auth_enabled: true,
       xiaohongshu_read_enabled: true,
       xiaohongshu_write_enabled: true,
       douyin_auth_enabled: true,
       douyin_read_enabled: true,
       douyin_write_enabled: true,
-    }))()).toContain('production config gate passed')
+    }).replace('platform_operations_mode: manual', 'platform_operations_mode: official_api')
+      .replace('platform_rule_sync_manifest_url: disabled', 'platform_rule_sync_manifest_url: https://rules.example.com/platform-rules/v1/manifest.json')
+      .replace('platform_rule_sync_signing_secret_ref: disabled', 'platform_rule_sync_signing_secret_ref: vault://merchant-rules/manifest-signing-secret')
+      .replace('platform_rule_sync_interval_hours: "0"', 'platform_rule_sync_interval_hours: "24"')
+    expect(run(official)()).toContain('production config gate passed')
   })
 
   it('accepts the nested production-config OIDC spelling used by the release document', () => {

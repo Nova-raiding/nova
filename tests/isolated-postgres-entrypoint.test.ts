@@ -11,15 +11,19 @@ const report = (files: readonly string[]) => ({
 })
 
 describe('isolated PostgreSQL entrypoint', () => {
-  it('selects exactly the twenty-one audited PostgreSQL files by default', async () => {
-    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(21)
-    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(21)
-    expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/migration-211-release.postgres.test.ts')
+  it('selects exactly the audited PostgreSQL files by default', async () => {
+    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(27)
+    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(27)
     await expect(selectIsolatedPostgresTests([])).resolves.toEqual(ISOLATED_POSTGRES_TEST_FILES)
-    expect(ISOLATED_POSTGRES_TEST_FILES.every(file => (file.startsWith('packages/persistence/src/') || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts') && file.endsWith('.postgres.test.ts'))).toBe(true)
+    expect(ISOLATED_POSTGRES_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')
+    expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/migration-218-release.postgres.test.ts')
+    expect(ISOLATED_POSTGRES_TEST_FILES.every(file => (file.startsWith('packages/persistence/src/') || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts' || file === 'tests/postgres-rls-attack-matrix.postgres.test.ts') && file.endsWith('.postgres.test.ts'))).toBe(true)
   })
   it('accepts only exact audited file selections and normalizes a relative prefix', async () => {
     await expect(selectIsolatedPostgresTests([`./${ISOLATED_POSTGRES_TEST_FILES[0]}`])).resolves.toEqual([ISOLATED_POSTGRES_TEST_FILES[0]])
+  })
+  it('discovers the RLS attack matrix in all-mode as an executable PostgreSQL test', async () => {
+    await expect(selectIsolatedPostgresTests(['--all'])).resolves.toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')
   })
   it.each(['--config=other.ts', '--env', '--reporter=json', '--passWithNoTests', '--testNamePattern=x', 'run', 'packages/persistence/src', 'tests/local-docker-runtime-contract.test.ts', 'apps/api/src/canonical-backfill-contract.test.ts', 'packages/persistence/src/migration-051.test.ts'])('rejects an unapproved argument before starting Docker: %s', async argument => {
     await expect(selectIsolatedPostgresTests([argument])).rejects.toThrow(/only exact audited PostgreSQL test files/u)
@@ -69,7 +73,7 @@ describe('isolated PostgreSQL entrypoint', () => {
   }
   it('binds only the fixture-returned admin URL and never inherits ambient runtime settings', async () => {
     const { handle, runtime } = fixture()
-    const outcome = await runIsolatedPostgresTests([], { PATH: '/test/bin', DATABASE_URL: 'postgres://external/base', PERSISTENCE_RELEASE_DATABASE_URL: 'postgres://external/release', PLATFORM_MEDIA_SPEC_DATABASE_URL: 'postgres://external/media', MODEL_BUDGET_DATABASE_URL: 'postgres://external/budget', REDIS_URL: 'redis://external', EXECUTE: 'true', MODEL_RELAY_API_KEY: 'external-secret' }, runtime)
+    const outcome = await runIsolatedPostgresTests([], { PATH: '/test/bin', DATABASE_URL: 'postgres://external/base', PERSISTENCE_RELEASE_DATABASE_URL: 'postgres://external/release', REDIS_URL: 'redis://external', EXECUTE: 'true', MODEL_RELAY_API_KEY: 'external-secret' }, runtime)
     expect(outcome.exitCode).toBe(0)
     expect(runtime.prepareTestRoles).toHaveBeenCalledExactlyOnceWith(handle.adminDatabaseUrl)
     const [args, environment] = vi.mocked(runtime.runVitest).mock.calls[0]!
@@ -82,33 +86,6 @@ describe('isolated PostgreSQL entrypoint', () => {
     expect(summary).not.toContain('generated-fixture-secret')
     expect(summary).not.toContain('external-secret')
     expect(summary).not.toContain(adminUrl)
-  })
-  it('replaces poisoned historical database aliases with the verified owned fixture only in --all child environment', async () => {
-    const { handle, runtime } = fixture()
-    const files = await selectIsolatedPostgresTests(['--all'])
-    vi.mocked(runtime.readReport).mockResolvedValue(report(files))
-    const outcome = await runIsolatedPostgresTests(['--all'], {
-      PATH: '/test/bin',
-      PERSISTENCE_RELEASE_DATABASE_URL: 'postgres://external/release',
-      PLATFORM_MEDIA_SPEC_DATABASE_URL: 'postgres://external/media',
-      MODEL_BUDGET_DATABASE_URL: 'postgres://external/budget',
-    }, runtime)
-    expect(outcome.exitCode).toBe(0)
-    expect(runtime.prepareTestRoles).toHaveBeenCalledExactlyOnceWith(handle.adminDatabaseUrl)
-    const [args, environment] = vi.mocked(runtime.runVitest).mock.calls[0]!
-    expect(args).toContain('packages/persistence/src/campaign-lifecycle.postgres.test.ts')
-    expect(args).toContain('packages/persistence/src/model-daily-budget.postgres.test.ts')
-    expect(environment).toEqual({
-      PATH: '/test/bin', NODE_ENV: 'test', ASSET_STORAGE_ROOT: '/owned/evidence/run-unique/local-objects',
-      PERSISTENCE_RELEASE_DATABASE_URL: handle.adminDatabaseUrl,
-      PLATFORM_MEDIA_SPEC_DATABASE_URL: handle.adminDatabaseUrl,
-      MODEL_BUDGET_DATABASE_URL: handle.adminDatabaseUrl,
-      MERCHANT_ISOLATED_POSTGRES_RUN_ID: handle.runId,
-      MERCHANT_ISOLATED_POSTGRES_ALL: 'true',
-    })
-    expect(handle.dispose).toHaveBeenCalledOnce()
-    expect(JSON.stringify(vi.mocked(runtime.writeSummary).mock.calls)).not.toContain('postgres://external/')
-    expect(JSON.stringify(vi.mocked(runtime.writeSummary).mock.calls)).not.toContain(handle.adminDatabaseUrl)
   })
   it('fails before fixture creation for an unapproved selection', async () => {
     const { runtime } = fixture()

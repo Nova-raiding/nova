@@ -148,6 +148,63 @@ describe('structured Kubernetes release image gate', () => {
     expect(runManifest(sharedAccount, JSON.stringify(imageDigests))).toThrow(/must bind ServiceAccount\/merchant-api-rrsa/)
   })
 
+  it('pins the packaged desktop plugin to local stdio without remote OpenAI OAuth secrets', () => {
+    const api = readFileSync('infra/kubernetes/base/api.yaml', 'utf8')
+    const secretContract = readFileSync('infra/kubernetes/secret-contract.example.yaml', 'utf8')
+    expect(api).toContain('{name: MCP_INTEGRATION_MODE, value: local_stdio}')
+    expect(api).toContain('{name: MCP_OAUTH_REQUIRED, value: "false"}')
+    expect(api).not.toContain('MCP_OAUTH_CLIENTS')
+    expect(api).not.toContain('OPENAI_APPS_CHALLENGE_TOKEN')
+    expect(secretContract).not.toMatch(/requiredKeys:[\s\S]*?- (?:MCP_OAUTH_CLIENTS|OPENAI_APPS_CHALLENGE_TOKEN)/u)
+  })
+
+  it('keeps every critical worker redundant and detects stale non-scanner heartbeats', () => {
+    const rendered = execFileSync('kustomize', ['build', 'infra/kubernetes/base'], { encoding: 'utf8', stdio: 'pipe' })
+    const resources = JSON.parse(execFileSync('ruby', ['-rpsych', '-rjson', '-e', 'print JSON.generate(Psych.load_stream(STDIN.read))'], {
+      encoding: 'utf8', input: rendered, stdio: ['pipe', 'pipe', 'pipe'],
+    })) as Array<Record<string, any>>
+    const roles = ['sync', 'generation', 'publish', 'reconcile', 'automation']
+    const requiredResource = (kind: string, name: string) => {
+      const resource = resources.find(candidate => candidate.kind === kind && candidate.metadata?.name === name)
+      expect(resource, `${name} ${kind}`).toBeDefined()
+      if (!resource) throw new Error(`${kind}/${name} missing from rendered manifest`)
+      return resource
+    }
+
+    for (const role of roles) {
+      const name = `merchant-worker-${role}`
+      const deployment = requiredResource('Deployment', name)
+      expect(deployment.spec.replicas, `${name} replicas`).toBeGreaterThanOrEqual(2)
+
+      const worker = deployment.spec.template.spec.containers.find((container: Record<string, any>) => container.name === 'worker')
+      const readyFile = `/tmp/${name}-ready`
+      const readiness = worker.readinessProbe.exec.command.join(' ')
+      const liveness = worker.livenessProbe.exec.command.join(' ')
+      expect(readiness).toContain(`test -s ${readyFile}`)
+      expect(readiness).toContain(`find ${readyFile} -mmin -2`)
+      expect(liveness).toContain(`find ${readyFile} -mmin -2`)
+      expect(readiness).toContain('grep -q .')
+      expect(liveness).toContain('grep -q .')
+
+      const disruptionBudget = requiredResource('PodDisruptionBudget', name)
+      expect(disruptionBudget.spec.minAvailable, `${name} minAvailable`).toBeGreaterThanOrEqual(1)
+    }
+
+    for (const resource of resources.filter(resource => resource.kind === 'HorizontalPodAutoscaler' && roles.includes(resource.metadata?.name?.replace('merchant-worker-', '')))) {
+      expect(resource.spec.minReplicas, `${resource.metadata.name} HPA minReplicas`).toBeGreaterThanOrEqual(2)
+    }
+
+    const scanner = requiredResource('Deployment', 'merchant-worker-scan')
+    expect(scanner.spec.replicas).toBe(2)
+    const scannerWorker = scanner.spec.template.spec.containers.find((container: Record<string, any>) => container.name === 'worker')
+    expect(scannerWorker.readinessProbe.exec.command.join(' ')).toContain('process.kill(1, 0)')
+    expect(scannerWorker.livenessProbe.exec.command.join(' ')).toContain('process.kill(1, 0)')
+    expect(scannerWorker.env).toContainEqual({ name: 'SCANNER_HEARTBEAT_INTERVAL_MS', value: '5000' })
+    expect(scannerWorker.env).toContainEqual({ name: 'SCANNER_HEARTBEAT_TTL_SECONDS', value: '15' })
+    const scannerBudget = requiredResource('PodDisruptionBudget', 'merchant-worker-scan')
+    expect(scannerBudget.spec.minAvailable).toBe(2)
+  })
+
   it('renders every production scale overlay with effective immutable image replacements and passes the release validator', () => {
     const overlayImageDigests = { ...imageDigests, clamav: 'sha256:761f6c99b8d9134b39431f8c200189cda749b17310091561bfa8b732f32bfada' }
     const replacements: Record<string, string> = {

@@ -45,6 +45,13 @@ describe('central commercial access gate', () => {
     })
   })
 
+  it('keeps first-use status readable with unknown points without admitting merchant work', async () => {
+    await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'onboarding.status')).resolves.toMatchObject({
+      classification: 'RECOVERY_CONTROL', allowed: true, available_points: null,
+    })
+    await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'merchant.start')).rejects.toMatchObject({ code: 'CREATIVE_POINTS_UNAVAILABLE' })
+  })
+
   it('fails unknown point-required access closed without projecting null as zero', async () => {
     await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'merchant.start')).rejects.toMatchObject({
       code: 'CREATIVE_POINTS_UNAVAILABLE',
@@ -137,6 +144,14 @@ describe('central commercial access gate', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     expect(source).toContain("['catalog.image.generate', 'multimodal.video.request', 'multimodal.video.get'].includes(method)")
     expect(source).toContain("process.env.NODE_ENV === 'development' && process.env.CONNECTOR_FIXTURE_MODE === 'true' && process.env.MERCHANT_TEST_APPROVED_RATES === 'true'")
+  })
+
+  it('labels explicit manual platform operations as manual upload instead of fixture-ready', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    expect(source).toContain("const manualPlatformOperationsMode = process.env.PLATFORM_OPERATIONS_MODE?.trim().toLowerCase() === 'manual'")
+    expect(source).toContain("'manual_operations'")
+    expect(source).toContain("dataMode: manual ? 'manual_upload'")
+    expect(source).toContain("['manual_upload_required']")
   })
 
   it('keeps V2 order recovery server-owned and leaves legacy arbitrary recharge disabled', () => {
@@ -483,6 +498,16 @@ describe('protected product provider prompts', () => {
   })
 })
 describe('API application wiring', () => {
+  it('exposes relay-backed content draft as candidate-only without formal task bypass', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    const handler = source.slice(source.indexOf("case 'content.draft.generate':"), source.indexOf("case 'content.generate':"))
+    expect(handler).toContain("await enforceMcpCommercialAccess(req, workspaceId, method)")
+    expect(handler).toContain("draft: 'true'")
+    expect(source).toContain("candidateOnly: true")
+    expect(source).toContain("formalVersionCreated: false")
+    expect(source).toContain("publishable: false")
+  })
+
   it('rechecks canonical task scope before MCP and REST content generation', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     const planMcpHandler = source.slice(source.indexOf("case 'task.plan.confirm':"), source.indexOf("case 'content.generate':"))
@@ -1022,6 +1047,12 @@ describe('API application wiring', () => {
     expect(health.status).toBe('ok')
     expect(health.writesEnabled).toBe(false)
     expect(health.connectors.jd).toBe('not_configured')
+  })
+
+  it('does not let dormant OAuth configuration overwrite six-platform manual operations health', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    expect(source).toContain("...(!manualPlatformOperationsMode ? {")
+    expect(source).toContain("...(manualPlatformOperationsMode ? Object.fromEntries(SUPPORTED_PLATFORMS.map(platform => [platform, 'manual_operations'])) : {})")
   })
 
   it('labels local fallback output as simulated and provider output as executed', () => {

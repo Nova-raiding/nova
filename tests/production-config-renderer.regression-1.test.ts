@@ -13,6 +13,7 @@ function completeEnvironment(): Record<string, string> {
   Object.assign(env, {
     MERCHANT_BEARER_HOSTNAME: 'merchant.yxsona.com', AUTH_ENFORCEMENT: 'strict',
     MCP_AUTHORIZATION_MODE: 'enforce', DURABLE_PLATFORM_ASSIGNMENTS_REQUIRED: 'true',
+    PLATFORM_OPERATIONS_MODE: 'manual',
     APP_BASE_URL: 'https://merchant.yxsona.com', OPS_BASE_URL: 'https://ops.yxsona.com', MCP_BASE_URL: 'https://merchant.yxsona.com',
     OPS_AUTH_MODE: 'oidc', SECRET_PROVIDER: 'vault', ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ALERT_NOTIFICATIONS_ENABLED: 'false',
     DATABASE_MAX_BACKEND_CONNECTIONS: '300', DATABASE_CONNECTION_UTILIZATION_ALERT_PERCENT: '80',
@@ -21,12 +22,20 @@ function completeEnvironment(): Record<string, string> {
     PAYMENT_MODE: 'provider', PAYMENT_PROVIDER_ADAPTERS: 'alipay', PAYMENT_PROVIDER_MERCHANT_ID: '2088123456789012',
     PAYMENT_CHECKOUT_BASE_URL: 'https://pay.yxsona.com/checkout', PAYMENT_CALLBACK_BASE_URL: 'https://merchant.yxsona.com/v1',
     MODEL_RELAY_BASE_URL: 'https://relay.yxsona.com', TEXT_MODEL: 'text-v1', IMAGE_MODEL: 'image-v1', IMAGE_EDIT_MODEL: 'edit-v1', OCR_MODEL: 'ocr-v1', VIDEO_MODEL: 'video-v1',
+    EMBEDDING_MODEL: 'embedding-v1', EMBEDDING_DIMENSIONS: '1536', EMBEDDING_MAX_REQUEST_CNY: '0.10', KNOWLEDGE_VECTOR_INDEX_ENABLED: 'true',
     APPROVED_REQUESTS_PER_MINUTE: '100', APPROVED_TOKENS_PER_MINUTE: '100000', MAXIMUM_TASK_COST_CNY: '0.50',
     PLATFORM_RULE_SYNC_MANIFEST_URL: 'https://rules.yxsona.com/manifest.json', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
     OBJECT_STORAGE_BUCKET: 'acceptance-assets', OBJECT_STORAGE_REGION: 'cn', OBJECT_STORAGE_ENDPOINT: 'https://storage.yxsona.com', OBJECT_STORAGE_SSE_MODE: 'AES256',
     ASSET_DISPLAY_BASE_URL: 'https://merchant.yxsona.com', ASSET_QUARANTINE_RETENTION_DAYS: '7', ASSET_CLEAN_RETENTION_DAYS: '90', DELETION_REQUEST_GRACE_DAYS: '7', BACKUP_RETENTION_DAYS: '30',
     RELEASE_ID: 'acceptance-release', ASSET_SCAN_TRUSTED_PUBLIC_KEYS_REF: 'vault://acceptance/trusted-keys',
   })
+  for (const key of [
+    'JD_AUTH_ENABLED', 'JD_READ_ENABLED', 'JD_WRITE_ENABLED',
+    'TAOBAO_TMALL_AUTH_ENABLED', 'TAOBAO_TMALL_READ_ENABLED', 'TAOBAO_TMALL_WRITE_ENABLED',
+    'PINDUODUO_AUTH_ENABLED', 'PINDUODUO_READ_ENABLED', 'PINDUODUO_WRITE_ENABLED',
+    'XIAOHONGSHU_AUTH_ENABLED', 'XIAOHONGSHU_READ_ENABLED', 'XIAOHONGSHU_WRITE_ENABLED',
+    'DOUYIN_AUTH_ENABLED', 'DOUYIN_READ_ENABLED', 'DOUYIN_WRITE_ENABLED',
+  ]) env[key] = 'false'
   for (const action of ['CHECKOUT', 'QUERY', 'REFUND_QUERY', 'REFUND']) env[`PAYMENT_PROVIDER_${action}_API_URL`] = `https://pay.yxsona.com/v1/${action.toLowerCase()}`
   return env
 }
@@ -67,7 +76,8 @@ describe('production renderer real-gate contract regressions', () => {
     })
   })
   it('preserves enabled alerts, KMS and full social opt-in through the real gate', () => {
-    const env: Record<string, string> = { ...completeEnvironment(), ALERT_NOTIFICATIONS_ENABLED: 'true', ALERT_CHANNEL_SECRET_REF: 'vault://acceptance/alerts', OBJECT_STORAGE_SSE_MODE: 'aws:kms', OBJECT_STORAGE_KMS_KEY: 'kms-key-acceptance' }
+    const env: Record<string, string> = { ...completeEnvironment(), PLATFORM_OPERATIONS_MODE: 'official_api', ALERT_NOTIFICATIONS_ENABLED: 'true', ALERT_CHANNEL_SECRET_REF: 'vault://acceptance/alerts', OBJECT_STORAGE_SSE_MODE: 'aws:kms', OBJECT_STORAGE_KMS_KEY: 'kms-key-acceptance' }
+    for (const key of ['JD_AUTH_ENABLED', 'JD_READ_ENABLED', 'JD_WRITE_ENABLED', 'TAOBAO_TMALL_AUTH_ENABLED', 'TAOBAO_TMALL_READ_ENABLED', 'TAOBAO_TMALL_WRITE_ENABLED', 'PINDUODUO_AUTH_ENABLED', 'PINDUODUO_READ_ENABLED', 'PINDUODUO_WRITE_ENABLED']) env[key] = 'true'
     for (const platform of ['XIAOHONGSHU', 'DOUYIN']) for (const capability of ['AUTH', 'READ', 'WRITE']) env[`${platform}_${capability}_ENABLED`] = 'true'
     withRendered(env, (result, config, dir) => {
       expect(result.status, String(result.stderr)).toBe(0)

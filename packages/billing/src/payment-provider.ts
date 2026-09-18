@@ -188,6 +188,7 @@ function refundResponseMatchesInput(payload: unknown, input: PaymentRefundInput,
   if (!isRecord(payload)) return false
   return payload.order_id === input.orderId
     && payload.refund_request_id === refundRequestId
+    && payload.workspace_id === input.workspaceId
     && payload.amount_fen === input.amountFen
 }
 
@@ -305,11 +306,16 @@ export class HttpPaymentProvider implements PaymentProvider {
       if (!response.ok) throw new Error(`payment provider query returned HTTP ${response.status}`)
       const payload = JSON.parse(await readBoundedResponseText(response, MAX_PAYMENT_PROVIDER_RESPONSE_BYTES, 'payment provider response')) as unknown
       const rawState = isRecord(payload) && typeof payload.state === 'string' ? payload.state.toLowerCase() : ''
-      const state = rawState === 'success' || rawState === 'paid' || rawState === 'trade_success' ? 'paid' : rawState === 'closed' || rawState === 'cancelled' ? 'closed' : rawState === 'failed' || rawState === 'refunded' ? 'failed' : 'pending'
+      const state = rawState === 'success' || rawState === 'paid' || rawState === 'trade_success' ? 'paid' : rawState === 'closed' || rawState === 'cancelled' ? 'closed' : rawState === 'failed' || rawState === 'refunded' ? 'failed' : rawState === 'pending' || rawState === 'processing' ? 'pending' : undefined
+      if (!state) throw new Error('payment provider status returned an unknown state')
+      if (isRecord(payload) && payload.order_id !== undefined && payload.order_id !== input.orderId) throw new Error('payment provider status response did not match the order')
+      if (state === 'paid' && (!isRecord(payload) || payload.order_id !== input.orderId)) throw new Error('payment provider paid status must identify the requested order')
+      if (state === 'paid' && (!isRecord(payload) || payload.workspace_id !== input.workspaceId)) throw new Error('payment provider paid status must identify the requested workspace')
       const providerTradeId = isRecord(payload) && typeof payload.provider_trade_id === 'string' ? payload.provider_trade_id : isRecord(payload) && typeof payload.trade_no === 'string' ? payload.trade_no : undefined
       const rawAmountFen = isRecord(payload) ? payload.amount_fen : undefined
       const amountFen = typeof rawAmountFen === 'number' && Number.isSafeInteger(rawAmountFen) && rawAmountFen > 0 ? rawAmountFen : undefined
       if (state === 'paid' && amountFen === undefined) throw new Error('payment provider paid status must include a positive amount in fen')
+      if (state === 'paid' && !providerTradeId) throw new Error('payment provider paid status must include a provider trade id')
       return { state, ...(providerTradeId ? { providerTradeId } : {}), ...(amountFen !== undefined ? { amountFen } : {}) }
     } finally { clearTimeout(timeout) }
   }
@@ -333,6 +339,7 @@ export class HttpPaymentProvider implements PaymentProvider {
       const payload = JSON.parse(await readBoundedResponseText(response, MAX_PAYMENT_PROVIDER_RESPONSE_BYTES, 'payment provider response')) as unknown
       const paymentUrl = isRecord(payload) && typeof payload.payment_url === 'string' ? payload.payment_url : isRecord(payload) && typeof payload.code_url === 'string' ? payload.code_url : undefined
       if (!paymentUrl || !/^(?:https:\/\/|weixin:\/\/|alipays:\/\/)/u.test(paymentUrl)) throw new Error('payment provider returned no supported checkout URI')
+      if (!isRecord(payload) || payload.order_id !== input.orderId || payload.workspace_id !== input.workspaceId || payload.amount_fen !== input.amountFen) throw new Error('payment provider checkout response did not match the request')
       return { paymentUrl, ...(isRecord(payload) && typeof payload.provider_order_id === 'string' ? { providerOrderId: payload.provider_order_id } : {}), ...(isRecord(payload) && typeof payload.expires_at === 'string' ? { expiresAt: payload.expires_at } : {}) }
     } finally { clearTimeout(timeout) }
   }
@@ -396,16 +403,15 @@ export class HttpPaymentProvider implements PaymentProvider {
       let payload: unknown
       try { payload = JSON.parse(await readBoundedResponseText(response, MAX_PAYMENT_PROVIDER_RESPONSE_BYTES, 'payment provider response')) as unknown } catch { return { state: 'unknown' } }
       if (!isRecord(payload)) return { state: 'unknown' }
-      const returnedOrderId = typeof payload.order_id === 'string' ? payload.order_id : undefined
-      if (returnedOrderId !== undefined && returnedOrderId !== input.orderId) return { state: 'unknown' }
-      const returnedRefundRequestId = typeof payload.refund_request_id === 'string' ? payload.refund_request_id : undefined
-      if (returnedRefundRequestId !== undefined && returnedRefundRequestId !== input.refundRequestId) return { state: 'unknown' }
+      if (payload.order_id !== input.orderId || payload.refund_request_id !== input.refundRequestId || payload.workspace_id !== input.workspaceId) return { state: 'unknown' }
       const rawAmountFen = payload.amount_fen
       const amountFen = typeof rawAmountFen === 'number' && Number.isSafeInteger(rawAmountFen) && rawAmountFen > 0 ? rawAmountFen : undefined
       const state = normalizePaymentRefundQueryState(typeof payload.state === 'string' ? payload.state : undefined)
       if (state !== 'unknown' && amountFen !== input.amountFen) return { state: 'unknown' }
-      const providerRefundId = typeof payload.provider_refund_id === 'string' ? payload.provider_refund_id : typeof payload.refund_id === 'string' ? payload.refund_id : input.providerRefundId
+      const providerRefundId = typeof payload.provider_refund_id === 'string' ? payload.provider_refund_id : typeof payload.refund_id === 'string' ? payload.refund_id : undefined
+      if (input.providerRefundId && providerRefundId !== input.providerRefundId) return { state: 'unknown' }
       if (state === 'unknown') return { state }
+      if (state === 'succeeded' && !providerRefundId) return { state: 'unknown' }
       return { state, ...(providerRefundId ? { providerRefundId } : {}), ...(amountFen !== undefined ? { amountFen } : {}) }
     } catch {
       return { state: 'unknown' }

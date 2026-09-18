@@ -52,7 +52,10 @@ printf '%s\n' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9._-]+$' || { echo "RELEASE_ID
 
 case "$REDIS_URL" in
   rediss://*) ;;
-  *) echo "production REDIS_URL must use rediss://" >&2; exit 1 ;;
+  redis://redis:6379|redis://redis:6379/0)
+    [ "$SECRET_PROVIDER" = ecs-protected-env ] || { echo "plaintext Redis is allowed only for the private single-node ECS profile" >&2; exit 1; }
+    ;;
+  *) echo "production REDIS_URL must use rediss:// or the private single-node ECS Redis service" >&2; exit 1 ;;
 esac
 command -v node >/dev/null 2>&1 || { echo "node is required to validate production database URLs" >&2; exit 1; }
 database_url_validator="$(dirname "$0")/validate-production-database-url.mjs"
@@ -69,9 +72,10 @@ case "$DATABASE_URL $OPS_DATABASE_URL $REDIS_URL" in
 esac
 
 PRODUCTION_CONFIG_PATH="$config_path" sh "$(dirname "$0")/validate-production-config.sh" "$config_path"
-# The final deployment contract covers all six platforms. Lower environments
-# may keep social connectors opt-in, but production must expose every platform
-# whose production canary evidence is required below.
+# The current launch contract uses manual operations for the six commerce
+# platforms; official API canaries remain an explicit future opt-in profile.
+platform_operations_mode=$(awk '/^[[:space:]]*platform_operations_mode:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$filtered_config_path")
+if [ "$platform_operations_mode" != manual ]; then
 for flag in \
   xiaohongshu_auth_enabled xiaohongshu_read_enabled xiaohongshu_write_enabled \
   douyin_auth_enabled douyin_read_enabled douyin_write_enabled; do
@@ -80,6 +84,7 @@ for flag in \
     exit 1
   }
 done
+fi
 image_set_digest=$(sh "$(dirname "$0")/validate-kubernetes-release.sh" "$RENDERED_MANIFEST_PATH" "$IMAGE_DIGESTS_JSON" --print-image-set-digest)
 printf '%s\n' "$image_set_digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo 'canonical image set digest is invalid' >&2; exit 1; }
 ruby "$(dirname "$0")/validate-rendered-production-config.rb" "$config_path" "$RENDERED_MANIFEST_PATH"
@@ -103,7 +108,11 @@ if [ "${VITEST:-false}" != true ] && [ -n "$(git -C "$repo_root" status --porcel
 fi
 sh "$(dirname "$0")/validate-production-evidence-trust.sh" "$repo_root"
 trust_root="$trust_dir/production-evidence-public.pem"
-npx --no-install tsx "$(dirname "$0")/../../tests/capability-evidence-gate.ts" --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --release-id "$RELEASE_ID"
+if [ "$platform_operations_mode" = manual ]; then
+  npx --no-install tsx "$(dirname "$0")/../../tests/manual-operations-evidence-gate.ts" --file "$CAPABILITY_EVIDENCE_PATH" --release-id "$RELEASE_ID"
+else
+  npx --no-install tsx "$(dirname "$0")/../../tests/capability-evidence-gate.ts" --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --release-id "$RELEASE_ID"
+fi
 npx --no-install tsx "$(dirname "$0")/../../tests/capacity-evidence-gate.ts" --file "$CAPACITY_REPORT_PATH" --require-cloud-gate --release-id "$RELEASE_ID" --profile "$profile"
 model_relay_url=$(awk '/^[[:space:]]*model_relay_base_url:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$filtered_config_path")
 [ -n "$model_relay_url" ] || { echo "model_relay_base_url is required for relay evidence binding" >&2; exit 1; }
@@ -119,7 +128,7 @@ storage_encryption=${storage_encryption:-AES256}
 case "$storage_encryption" in AES256|aws:kms) ;; *) echo "object_storage_sse_mode must be AES256 or aws:kms" >&2; exit 1 ;; esac
 [ -n "$storage_bucket" ] || { echo "object_storage_bucket is required for storage evidence binding" >&2; exit 1; }
 [ -n "$storage_endpoint" ] || { echo "object_storage_endpoint is required for storage evidence binding" >&2; exit 1; }
-npx --no-install tsx "$(dirname "$0")/../../tests/canonical-product-cutover-evidence-gate.ts" --file "$CANONICAL_CUTOVER_EVIDENCE_PATH" --release-id "$RELEASE_ID"
+npx --no-install tsx "$(dirname "$0")/../../tests/canonical-product-cutover-evidence-gate.ts" --file "$CANONICAL_CUTOVER_EVIDENCE_PATH" --release-id "$RELEASE_ID" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT"
 trust_key_id_path="$trust_dir/production-evidence-key-id"
 trusted_key_id=$(sed -n '1p' "$trust_key_id_path")
 npx --no-install tsx "$(dirname "$0")/../../tests/release-manifest-gate.ts" \
@@ -144,7 +153,11 @@ sh "$(dirname "$0")/verify-container-source-freshness.sh" \
   "$API_IMAGE_REF" "$WORKER_IMAGE_REF" "$api_image_digest" "$worker_image_digest"
 : "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"
 printf '%s\n' "$DEPLOYMENT_NONCE" | grep -Eq '^[A-Za-z0-9_-]{22,128}$' || { echo "DEPLOYMENT_NONCE must contain 22-128 URL-safe random characters" >&2; exit 1; }
-npx --no-install tsx "$(dirname "$0")/../../tests/capability-evidence-gate.ts" --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --require-signed-production --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_root" --key-id "$trusted_key_id"
+if [ "$platform_operations_mode" = manual ]; then
+  npx --no-install tsx "$(dirname "$0")/../../tests/manual-operations-evidence-gate.ts" --file "$CAPABILITY_EVIDENCE_PATH" --release-id "$RELEASE_ID"
+else
+  npx --no-install tsx "$(dirname "$0")/../../tests/capability-evidence-gate.ts" --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --require-signed-production --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_root" --key-id "$trusted_key_id"
+fi
 npx --no-install tsx "$(dirname "$0")/../../tests/object-storage-evidence-gate.ts" \
   --file "$OBJECT_STORAGE_EVIDENCE_PATH" --release-id "$RELEASE_ID" \
   --release-git-sha "$release_git_sha" --manifest-sha256 "$manifest_sha256" \

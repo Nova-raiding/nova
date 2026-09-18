@@ -13,11 +13,34 @@ case "$remote_root" in
   /*) ;;
   *) echo "ECS_CANDIDATE_REMOTE_ROOT must be an absolute path" >&2; exit 1 ;;
 esac
+# The path is interpolated into a remote POSIX shell command. Reject quotes,
+# whitespace, shell metacharacters and traversal before opening SSH, so this
+# read-only checksum command cannot be turned into remote shell source.
+printf '%s' "$remote_root" | grep -Eq '^/[A-Za-z0-9._/-]+$' || {
+  echo 'ECS_CANDIDATE_REMOTE_ROOT contains unsafe characters' >&2; exit 1;
+}
+case "$remote_root/" in
+  */../*|*/./*|*//*) echo 'ECS_CANDIDATE_REMOTE_ROOT must be canonical' >&2; exit 1 ;;
+esac
+printf '%s' "$remote_alias" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._@-]*$' || {
+  echo 'ECS_CANDIDATE_REMOTE_ALIAS must be a safe SSH host or alias' >&2; exit 1;
+}
+
+command -v git >/dev/null 2>&1 || { echo 'git is required' >&2; exit 2; }
+command -v shasum >/dev/null 2>&1 || { echo 'shasum is required' >&2; exit 2; }
+[ -z "$(git -C "$root" status --porcelain --untracked-files=normal)" ] || {
+  echo 'candidate bundle requires a clean committed source tree' >&2
+  exit 2
+}
+revision=$(git -C "$root" rev-parse HEAD)
+printf '%s' "$revision" | grep -Eq '^[0-9a-f]{40}$' || {
+  echo 'candidate HEAD must be a full commit SHA' >&2; exit 2;
+}
 
 mkdir -p "$output_dir"
 manifest="$output_dir/files.txt"
 report="$output_dir/sync-plan.tsv"
-archive="$output_dir/candidate-files.tar.gz"
+archive="$output_dir/candidate-source.tar"
 
 cat > "$manifest" <<'EOF'
 .env.example
@@ -25,11 +48,31 @@ package.json
 package-lock.json
 apps/api/src/server.ts
 apps/api/src/aliyun-ecs-role-credentials.ts
+apps/api/src/customer-delivery-contract-download.ts
+packages/persistence/src/migration.ts
+packages/persistence/src/migration-210.test.ts
+packages/persistence/src/migration-210-release.postgres.test.ts
+release-metadata.json
+infra/docker/api.Dockerfile
+infra/docker/worker.Dockerfile
+infra/scripts/apply-migrations.sh
+infra/scripts/verify-runtime-db-role.sh
+infra/scripts/generate-container-source-manifest.mjs
+infra/local/ensure-app-role.sql
 infra/local/docker-compose.ecs-pilot.yml
 infra/local/docker-compose.ecs-oss-cutover.yml
 infra/local/docker-compose.ecs-production-migration.yml
 infra/local/docker-compose.ecs-pilot-release.yml
+infra/local/ecs-production-compose.layers
 infra/scripts/pilot-compose-preflight.sh
+infra/scripts/render-ecs-production-compose.sh
+infra/scripts/stage-verified-ecs-release.sh
+infra/scripts/deploy-verified-ecs-compose.sh
+infra/scripts/rollback-ecs-compose.sh
+infra/scripts/invoke-ecs-automatic-rollback.sh
+infra/protected/attest-release-evidence-bundle.mjs
+infra/protected/attest-release-evidence-bundle.d.mts
+tests/release-evidence-bundle-gate.ts
 infra/scripts/validate-ecs-production-compose.mjs
 infra/scripts/validate-production-config.sh
 scripts/collect-aliyun-oss-control-plane.ts
@@ -47,7 +90,13 @@ tests/rendered-production-config-contract.test.ts
 tests/rendered-production-config-gate.test.ts
 docs/runbooks/aliyun-oss-canary-delete-version-authorization.md
 docs/runbooks/durable-platform-authorization-bootstrap.md
+docs/runbooks/ecs-verified-compose-deploy.md
+docs/runbooks/ecs-release-evidence-bundle-attester.md
 EOF
+
+# The migration registry loads the entire chain, so review all SQL assets
+# together rather than shipping only its newest entry.
+git -C "$root" ls-files packages/persistence/src/migrations >> "$manifest"
 
 while IFS= read -r path; do
   [ -f "$root/$path" ] || {
@@ -57,10 +106,14 @@ while IFS= read -r path; do
 done < "$manifest"
 
 printf 'status\tlocal_sha256\tremote_sha256\tpath\n' > "$report"
+# Read all remote checksums through one SSH connection. A full migration
+# inventory otherwise establishes hundreds of connections for one review.
+remote_checksums="$output_dir/remote-checksums.txt"
+ssh "$remote_alias" "cd '$remote_root' && while IFS= read -r path; do if [ -f \"\$path\" ]; then sha256sum \"\$path\"; else printf 'MISSING  %s\\n' \"\$path\"; fi; done" < "$manifest" > "$remote_checksums"
 while IFS= read -r path; do
   local_sha=$(shasum -a 256 "$root/$path" | awk '{print $1}')
-  # -n prevents ssh from consuming the manifest that feeds this loop.
-  remote_line=$(ssh -n "$remote_alias" "cd '$remote_root' && if [ -f '$path' ]; then sha256sum '$path'; else printf 'MISSING  %s\\n' '$path'; fi")
+  remote_line=$(awk -v wanted="$path" '$2 == wanted { print; exit }' "$remote_checksums")
+  [ -n "$remote_line" ] || { echo "remote checksum missing: $path" >&2; exit 1; }
   remote_sha=$(printf '%s\n' "$remote_line" | awk '{print $1}')
   if [ "$remote_sha" = MISSING ]; then
     status=missing_remote
@@ -73,16 +126,33 @@ while IFS= read -r path; do
   printf '%s\t%s\t%s\t%s\n' "$status" "$local_sha" "$remote_sha" "$path" >> "$report"
 done < "$manifest"
 
-git -C "$root" status --short -- $(cat "$manifest") > "$output_dir/git-status.txt"
-git -C "$root" rev-parse HEAD > "$output_dir/source-head.txt"
-tar -C "$root" -czf "$archive" -T "$manifest"
-shasum -a 256 "$archive" > "$archive.sha256"
+printf '%s\n' "$revision" > "$output_dir/source-head.txt"
+# Match build-ecs-candidate-gates-image.sh exactly: the canonical source
+# artifact is the complete committed tree, not a hand-maintained subset of the
+# current working directory. Its digest can therefore be compared directly
+# with the candidate image's source_sha256 OCI label.
+git -C "$root" archive --format=tar "$revision" > "$archive"
+archive_sha=$(shasum -a 256 "$archive" | awk '{print $1}')
+manifest_sha=$(shasum -a 256 "$manifest" | awk '{print $1}')
+report_sha=$(shasum -a 256 "$report" | awk '{print $1}')
+printf '%s  %s\n' "$archive_sha" "$(basename "$archive")" > "$archive.sha256"
+cat > "$output_dir/candidate-identity.txt" <<EOF
+git_sha=$revision
+source_sha256=sha256:$archive_sha
+comparison_manifest_sha256=sha256:$manifest_sha
+sync_plan_sha256=sha256:$report_sha
+EOF
 
 cat > "$output_dir/README.txt" <<'EOF'
-This is a review candidate, not a deployment package.
+This review candidate must be materialized by
+infra/scripts/stage-verified-ecs-release.sh before deployment. candidate-source.tar
+is the complete committed source tree. candidate-identity.txt binds its Git SHA,
+source digest, comparison manifest and sync plan; the source digest must equal
+the candidate gate image's com.storenova.candidate.source_sha256 label.
 
 Safety rules:
-1. Do not rsync or extract this archive over /opt/merchant-deploy.
+1. Do not rsync or extract this archive over /opt/merchant-deploy. Stage it to
+   a new repository-external release directory with the verified staging script.
 2. A review_required file must be merged against the remote copy. In
    particular, docker-compose.ecs-pilot.yml may contain server-only platform
    connector and secret wiring that must not be removed.

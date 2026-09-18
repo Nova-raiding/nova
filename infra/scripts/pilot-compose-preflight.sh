@@ -93,14 +93,7 @@ npx --no-install tsx tests/object-storage-evidence-gate.ts \
 
 rendered_compose=$(mktemp "${TMPDIR:-/tmp}/merchant-ecs-production-compose.XXXXXX.json")
 trap 'rm -f -- "$rendered_compose"' EXIT HUP INT TERM
-docker compose \
-  --env-file .env \
-  -f infra/local/docker-compose.yml \
-  -f infra/local/docker-compose.ecs-pilot.yml \
-  -f infra/local/docker-compose.ecs-oss-cutover.yml \
-  -f infra/local/docker-compose.ecs-production-migration.yml \
-  -f infra/local/docker-compose.ecs-pilot-release.yml \
-  config --format json > "$rendered_compose"
+sh infra/scripts/render-ecs-production-compose.sh > "$rendered_compose"
 node infra/scripts/validate-ecs-production-compose.mjs "$rendered_compose"
 
 printf '%s\n' "pilot compose preflight passed: release identity, object storage evidence, and compose configuration are valid (object_storage_evidence=$OBJECT_STORAGE_EVIDENCE_PATH)"

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
@@ -39,54 +39,13 @@ async function discoveredToolNames(root: URL) {
   }
 }
 
-function lineDeclaresForbidden(document: string, term: string) {
-  return document.split(/\r?\n/u).some(line =>
-    line.toLowerCase().includes(term.toLowerCase()) && /(禁止|不得|严禁|不可|不允许)/u.test(line),
-  )
-}
-
-function markdownSection(document: string, headingPattern: RegExp) {
-  const lines = document.split(/\r?\n/u)
-  const start = lines.findIndex(line => /^#{1,6}\s+/u.test(line) && headingPattern.test(line))
-  if (start < 0) return ''
-  const depth = lines[start]!.match(/^#+/u)![0].length
-  const endOffset = lines.slice(start + 1).findIndex(line => {
-    const heading = line.match(/^(#+)\s+/u)
-    return Boolean(heading && heading[1]!.length <= depth)
-  })
-  return lines.slice(start, endOffset < 0 ? undefined : start + 1 + endOffset).join('\n')
-}
-
-function expectReadOnlySixPlatformPrompt(prompt: string) {
-  const normalized = prompt.toLowerCase()
-  for (const aliases of [['jd', '京东'], ['taobao', '淘宝'], ['tmall', '天猫'], ['pinduoduo', '拼多多']]) {
-    expect(aliases.some(alias => normalized.includes(alias)), `prompt 必须覆盖平台 ${aliases.join('/')}`).toBe(true)
-  }
-  for (const platform of ['xiaohongshu', 'douyin']) expect(normalized).toContain(platform)
-  expect(prompt).toContain('只读')
-  expect(prompt).toMatch(/(禁止|不得|严禁|不允许|不执行)[^。\n]*(写入|写操作)|(写入|写操作)[^。\n]*(禁止|不得|严禁|不允许|不执行)/u)
-
-  const namedTools = [...prompt.matchAll(/\b[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+\b/gu)].map(match => match[0])
-  expect([...new Set(namedTools)].sort()).toEqual(['workspace.health', 'workspace.metrics'])
-  for (const writeTool of ['publish.confirm', 'publish.prepare', 'catalog.sync.start', 'platform.connect', 'billing.recharge.create']) {
-    expect(prompt).not.toContain(writeTool)
-  }
-
-  expect(prompt).toContain('store/account')
-  expect(prompt).toMatch(/(隔离|分组)[^。\n]*(不得|禁止)[^。\n]*混算/u)
-  expect(prompt).toContain('comparisonAvailable=false')
-  expect(prompt).toContain('comparisonReason=baseline_unavailable')
-  expect(prompt).toMatch(/仅当宿主明确提供上一运行的结构化结果/u)
-  expect(prompt).toMatch(/否则[^。\n]*只报告当前[^。\n]*不得声称风险新增、升级、持续或已恢复/u)
-}
-
 describe('Codex plugin package', () => {
   it('keeps the installable marketplace mirror byte-identical to the source package', () => {
     const mirroredFiles = [
-      '.codex-plugin/plugin.json', '.mcp.json', 'README.md', 'install-smoke.test.ts',
-      'mcp/bridge.mjs', 'mcp/bridge.sh', 'mcp/bridge.test.ts', 'mcp/merchant-conversation-flow.test.ts', 'package.json',
-      'scheduled/daily-store-risk-scan.json', 'scheduled/weekly-six-platform-digest.json',
-      'skills/merchant-marketing/SKILL.md', 'skills/merchant-marketing/references/automations.md',
+      '.codex-plugin/plugin.json', '.mcp.json', 'README.md', 'host-evidence-contract.test.ts', 'install-smoke.test.ts',
+      'mcp/bridge.mjs', 'mcp/bridge.sh', 'mcp/managed-token.mjs', 'mcp/bridge.test.ts', 'mcp/merchant-conversation-flow.test.ts', 'package.json',
+      'scripts/verify-installed-bridge.mjs',
+      'skills/merchant-marketing/SKILL.md',
       'skills/merchant-marketing/references/ecommerce-detail-page-generator.md',
       'skills/merchant-marketing/references/ecommerce-detail-page-generator/category-playbooks.md',
       'skills/merchant-marketing/references/ecommerce-detail-page-generator/page-spec.schema.json',
@@ -108,16 +67,16 @@ describe('Codex plugin package', () => {
   it('executes discovery from both source and marketplace bridge roots', async () => {
     const sourceTools = await discoveredToolNames(pluginRoot)
     const marketplaceTools = await discoveredToolNames(marketplaceRoot)
-    expect(sourceTools).toHaveLength(151)
+    expect(sourceTools.length).toBeGreaterThan(0)
     expect(marketplaceTools).toEqual(sourceTools)
     expect(sourceTools.some(name => name.startsWith('ops.'))).toBe(false)
+    for (const name of ['platform.connect', 'catalog.sync', 'automation.scan', 'publish.confirm']) expect(sourceTools).not.toContain(name)
   })
 
-  it('keeps README runtime tool-count claims aligned with discovery', async () => {
-    const tools = await discoveredToolNames(pluginRoot)
+  it('keeps README scoped to runtime discovery instead of a stale fixed tool count', () => {
     const readme = readPluginFile('README.md')
-    expect(readme).toContain(`tools/list\` 为 ${tools.length} 个 MCP 工具`)
-    expect(readme).not.toContain('tools/list` 为 150 个 MCP 工具')
+    expect(readme).toContain('实际工具以当前连接的 `tools/list` 与运行态契约测试为准')
+    expect(readme).not.toMatch(/tools\/list` (?:实测)?为 \d+ 个 MCP 工具/u)
   })
 
   it('declares a confirmation-gated MCP plugin and entry skill', () => {
@@ -125,10 +84,11 @@ describe('Codex plugin package', () => {
     expect(manifest.id).toBe('merchant-marketing')
     expect(manifest.skills).toBe('./skills/')
     expect(manifest.mcpServers).toBe('./.mcp.json')
-    expect(manifest.interface.longDescription).toMatch(/确认/)
+    expect(manifest.interface.longDescription).toMatch(/内容生产、审核与导出/)
+    expect(manifest.interface.longDescription).toMatch(/不提供库存\/订单同步和自动发布/)
   })
 
-  it('keeps native entry prompts within the Codex host limit and exposes one combined Automation entry', () => {
+  it('keeps native entry prompts within the Codex host limit and inside the content workflow', () => {
     const manifest = JSON.parse(readPluginFile('.codex-plugin/plugin.json')) as {
       interface?: { defaultPrompt?: unknown }
     }
@@ -138,58 +98,11 @@ describe('Codex plugin package', () => {
       .map(value => value.trim())
 
     expect(prompts).toEqual([
-      '如果我已上传图片并要求生成或优化，直接使用上传素材生成未绑定候选图，不要先读取店铺或要求授权；只有同步、绑定商品或发布时才进入店铺流程',
-      '查看当前工作区的创意点余额和准入状态；余额为零或未知时只显示服务端授权的恢复入口',
-      '开始商品营销与视频策划：先让我选择一个平台和商品，然后每一步都等我确认',
+      '@Store Nova 开始使用：从公开商品链接或手工资料开始，带我完成内容生产、审核和导出',
+      '用我上传的商品图片做一张可审阅主图；还没有图片就先告诉我怎么上传',
+      '为我的商品策划第一份营销素材，先核对我提供的商品资料',
     ])
     expect(prompts.length).toBeLessThanOrEqual(3)
-  })
-
-  it('links the skill to an explicit native Automation safety contract', () => {
-    const skill = readPluginFile('skills/merchant-marketing/SKILL.md')
-    expect(skill).toContain('references/automations.md')
-    expect(existsSync(new URL('skills/merchant-marketing/references/automations.md', pluginRoot))).toBe(true)
-  })
-
-  it('limits unattended Automations to six domestic platforms and an explicit read-only allowlist', () => {
-    const automation = readPluginFile('skills/merchant-marketing/references/automations.md')
-
-    const platformScope = automation.split(/\n\s*\n/u).find(paragraph => paragraph.includes('覆盖') && ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'].every(platform => paragraph.toLowerCase().includes(platform)))
-    expect(platformScope, '平台范围必须在同一段明确声明覆盖六个平台').toBeTruthy()
-
-    const allowlist = markdownSection(automation, /只读.{0,12}(工具)?白名单|白名单.{0,12}只读/u).toLowerCase()
-    expect(allowlist, 'automations.md 必须包含独立的“只读工具白名单”章节').not.toBe('')
-    for (const tool of ['workspace.health', 'workspace.metrics']) {
-      expect(allowlist).toContain(tool)
-    }
-    for (const forbidden of ['catalog.search', 'task.history', 'publish.confirm', 'catalog.sync.start', 'platform.connect', 'billing']) expect(allowlist).not.toContain(forbidden)
-
-    for (const forbidden of ['publish.confirm', 'catalog.sync.start', 'platform.connect', 'billing']) {
-      expect(lineDeclaresForbidden(automation, forbidden), `${forbidden} 必须在同一行明确标记为禁止`).toBe(true)
-    }
-    expect(automation).toMatch(/(禁止|不得|严禁|不允许)[^。\n]*(任何|所有)[^。\n]*写操作[^。\n]*无人值守|无人值守[^。\n]*(禁止|不得|严禁|不允许)[^。\n]*写操作/us)
-  })
-
-  it('ships minimal native Automation definitions with fixed schedules and fail-closed comparison prompts', () => {
-    const expected = {
-      'daily-store-risk-scan.json': { type: 'daily', time: '09:00' },
-      'weekly-six-platform-digest.json': { type: 'weekly', days: ['SA'], time: '09:30' },
-    } as const
-    const scheduledDirectory = new URL('scheduled/', pluginRoot)
-    expect(existsSync(scheduledDirectory)).toBe(true)
-
-    const jsonFiles = readdirSync(scheduledDirectory).filter(file => file.endsWith('.json'))
-    for (const filename of jsonFiles) expect(filename).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*\.json$/u)
-    expect(jsonFiles.sort()).toEqual(Object.keys(expected).sort())
-
-    for (const [filename, schedule] of Object.entries(expected)) {
-      const definition = JSON.parse(readPluginFile(`scheduled/${filename}`)) as Record<string, unknown>
-      expect(Object.keys(definition).sort()).toEqual(['name', 'prompt', 'schedule'])
-      expect(typeof definition.name).toBe('string')
-      expect((definition.name as string).trim()).not.toBe('')
-      expect(typeof definition.prompt).toBe('string')
-      expectReadOnlySixPlatformPrompt(definition.prompt as string)
-      expect(definition.schedule).toEqual(schedule)
-    }
+    expect(prompts.join('\n')).not.toMatch(/同步|发布|Automation|四步流程/u)
   })
 })

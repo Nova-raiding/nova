@@ -92,6 +92,8 @@ export const MCP_OPS_CONTROL_METHODS = [
   'ops.support.sla.correction.create',
   'ops.support.sla.correction.decide',
   'ops.customer-delivery.list',
+  'ops.customer-delivery.accounts.list',
+  'ops.customer-delivery.account.bind',
   'ops.customer-delivery.get',
   'ops.customer-delivery.create',
   'ops.customer-delivery.update',
@@ -167,6 +169,8 @@ export const MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS = [
 
 export const MCP_RECOVERY_ENABLED_METHODS = [
   'workspace.bootstrap',
+  'onboarding.status',
+  'workspace.content_setup.confirm',
   'workspace.health',
   'canonical.product.consistency',
   'commercial.access.get',
@@ -220,8 +224,8 @@ export const MCP_POINT_CHARGED_DISABLED_METHODS = [
 ] as const satisfies readonly McpMethod[]
 
 export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
-  'onboarding.status',
   'merchant.first_value',
+  'content.draft.generate',
   'brand.extract',
   'creative.brief',
   'creative.preview',
@@ -328,6 +332,9 @@ export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
   'automation.tick',
   'publish.confirm',
   'publish.get',
+  'ops.marketing.publish.manual-evidence.record',
+  'publish.manual.get',
+  'publish.manual.list',
   'knowledge.rule.create',
   'knowledge.rule.list',
   'knowledge.asset.create',

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildChecklistUpdateParams, customerDeliveryClient, parseCustomerDeliveryChecklistItems, parseCustomerDeliveryEvidenceRefs, parseCustomerDeliveryList, parseCustomerDeliveryVideos } from "./customerDeliveryClient.js";
+import { buildChecklistUpdateParams, customerDeliveryClient, parseCustomerDeliveryAccountBinding, parseCustomerDeliveryAccounts, parseCustomerDeliveryChecklistItems, parseCustomerDeliveryEvidenceRefs, parseCustomerDeliveryList, parseCustomerDeliveryVideos, validateCustomerDeliveryContractUrl } from "./customerDeliveryClient.js";
 import { rpc } from "./opsClient.js";
 
 vi.mock("./opsClient.js", () => ({ rpc: vi.fn() }));
@@ -7,6 +7,110 @@ afterEach(() => vi.clearAllMocks());
 const delivery = { id: "cd_1", companyName: "Acme", paymentStatus: "paid", profile: true, integration: true, acceptance: true, training: false, videos: 0 };
 
 describe("customer delivery client", () => {
+  const account = { workspaceId: "workspace-1", accountId: "account-1", identityId: "identity-1", login: "merchant@example.test" };
+  const bindInput = { targetWorkspaceId: "workspace-1", deliveryId: "cd_1", targetAccountId: "account-1", expectedRevision: 4, reason: "核验账号后关联" };
+  const bound = { ...delivery, workspaceId: "workspace-1", revision: 5, targetAccountId: account.accountId, targetIdentityId: account.identityId, targetAccountLogin: account.login };
+  it("parses legacy unbound records without interpreting completion as account activation", () => {
+    expect(parseCustomerDeliveryAccountBinding({ effectiveAt: "2026-09-15T00:00:00Z" })).toEqual({ targetAccountId: null, targetIdentityId: null, targetAccountLogin: null });
+    expect(parseCustomerDeliveryAccountBinding({ targetAccountId: null, targetIdentityId: null, targetAccountLogin: null })).toEqual({ targetAccountId: null, targetIdentityId: null, targetAccountLogin: null });
+    expect(parseCustomerDeliveryList({ items: [bound] })[0]).toMatchObject({ targetAccountId: account.accountId, targetIdentityId: account.identityId, targetAccountLogin: account.login });
+  });
+  it.each([
+    { targetAccountId: "account-1" }, { targetIdentityId: "identity-1" }, { targetAccountLogin: "merchant@example.test" },
+    { targetAccountId: "account-1", targetIdentityId: "identity-1", targetAccountLogin: "" },
+    { targetAccountId: "account-1", targetIdentityId: null, targetAccountLogin: "merchant@example.test" },
+    { targetAccountId: 2, targetIdentityId: "identity-1", targetAccountLogin: "merchant@example.test" },
+  ])("rejects partial or malformed account linkage %j", (input) => {
+    expect(() => parseCustomerDeliveryAccountBinding(input)).toThrow("关联信息不完整");
+  });
+  it("queries an explicitly scoped, paged account directory without writing", async () => {
+    vi.mocked(rpc).mockResolvedValue({ items: [account], nextCursor: "page-2" });
+    const signal = new AbortController().signal;
+    await expect(customerDeliveryClient.listAccounts({ targetWorkspaceId: "workspace-1", search: " merchant ", cursor: "page-1", limit: 50 }, signal)).resolves.toEqual({ items: [account], nextCursor: "page-2" });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("ops.customer-delivery.accounts.list", { target_workspace_id: "workspace-1", search: "merchant", cursor: "page-1", limit: "50" }, { signal });
+  });
+  it.each([null, {}, { items: null }, { items: [], nextCursor: "" }, { items: [{ ...account, workspaceId: "other" }] }, { items: [{ ...account, login: "" }] }, { items: [account, account] }, { items: [account, { ...account, accountId: "other" }] }])("rejects unsafe directory responses %j", (value) => {
+    expect(() => parseCustomerDeliveryAccounts(value, "workspace-1")).toThrow();
+  });
+  it.each([0, 51, 1.2, Number.NaN])("rejects invalid account page sizes %s", async (limit) => {
+    await expect(customerDeliveryClient.listAccounts({ targetWorkspaceId: "workspace-1", limit })).rejects.toThrow();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+  it("sends only the explicit binding and validates its new revision", async () => {
+    vi.mocked(rpc).mockResolvedValue(bound);
+    const signal = new AbortController().signal;
+    await expect(customerDeliveryClient.bindAccount(bindInput, signal)).resolves.toMatchObject({ targetAccountLogin: account.login, revision: 5 });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("ops.customer-delivery.account.bind", { target_workspace_id: "workspace-1", delivery_id: "cd_1", target_account_id: "account-1", expected_revision: "4", reason: bindInput.reason }, { signal });
+  });
+  it.each([{ id: "other" }, { workspaceId: "other" }, { workspaceId: undefined }, { targetAccountId: "other" }, { revision: 4 }, { revision: undefined }, { targetAccountLogin: null }])("rejects mismatched binding results %j", async (patch) => {
+    vi.mocked(rpc).mockResolvedValue({ ...bound, ...patch });
+    await expect(customerDeliveryClient.bindAccount(bindInput)).rejects.toThrow();
+  });
+  it("rejects invalid reasons and aborted/late account requests", async () => {
+    await expect(customerDeliveryClient.bindAccount({ ...bindInput, reason: "短" })).rejects.toThrow("3–1000");
+    expect(rpc).not.toHaveBeenCalled();
+    for (const run of [customerDeliveryClient.listAccounts.bind(null, { targetWorkspaceId: "workspace-1" }), customerDeliveryClient.bindAccount.bind(null, bindInput)]) {
+      const controller = new AbortController();
+      vi.mocked(rpc).mockImplementation(async () => { controller.abort(); return bound; });
+      await expect(run(controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+      vi.mocked(rpc).mockClear();
+      await expect(run(controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+      expect(rpc).not.toHaveBeenCalled();
+    }
+  });
+  it("imports a contract URL with only the scoped source fields and reuses the asset response", async () => {
+    const asset = { assetRef: "asset:contract-import", name: "contract.pdf", mimeType: "application/pdf", sizeBytes: 100, scanStatus: "pending", ready: false };
+    vi.mocked(rpc).mockResolvedValue(asset);
+    const signal = new AbortController().signal;
+    await expect(customerDeliveryClient.uploadAsset({ targetWorkspaceId: "workspace-1", deliveryId: "cd_1", purpose: "contract", sourceUrl: "  https://files.example.test/contract.pdf?token=example  " }, signal)).resolves.toEqual(asset);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("ops.customer-delivery.assets.upload", {
+      target_workspace_id: "workspace-1", delivery_id: "cd_1", purpose: "contract", source_url: "https://files.example.test/contract.pdf?token=example",
+    }, { signal, timeoutMs: 120_000 });
+  });
+
+  it.each(["", "not-a-url", "http://example.test/file.pdf", "https://example.test:8443/file.pdf", "https://user:pass@example.test/file.pdf", "https://example.test/file.pdf#page=2", "https://example.test/file.pdf#", "https://example.test/a b.pdf", "https://example.test/a\\b.pdf", "https://example.test/a\n.pdf", "https://example.test/a\u200b.pdf"])("rejects an invalid contract URL before sending it: %j", async (sourceUrl) => {
+    await expect(customerDeliveryClient.uploadAsset({ targetWorkspaceId: "workspace-1", deliveryId: "cd_1", purpose: "contract", sourceUrl })).rejects.toThrow();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("allows HTTPS default-port file URLs without guessing MIME or stripping signed query bytes", () => {
+    const source = "https://files.example.test:443/download?name=contract%2Epdf&signature=a%2Bb";
+    expect(validateCustomerDeliveryContractUrl(` ${source} `)).toBe(source);
+  });
+
+  it("rejects oversized links without truncating signatures, empty userinfo and encoded controls", () => {
+    const exact = "https://files.example.test/file.pdf?signature=".padEnd(2000, "a");
+    expect(exact.length).toBe(2000);
+    expect(validateCustomerDeliveryContractUrl(exact)).toBe(exact);
+    expect(() => validateCustomerDeliveryContractUrl(`${exact}b`)).toThrow("2000");
+    for (const value of ["https:example.test/file.pdf", "https://@example.test/file.pdf", "https://example.test/file%0a.pdf", "https://example.test/file%00.pdf", "https://example.test/file%7F.pdf", "https://example.test/file%5c.pdf"]) {
+      expect(() => validateCustomerDeliveryContractUrl(value)).toThrow();
+    }
+  });
+
+  it.each([
+    { purpose: "video", sourceUrl: "https://example.test/file.mp4" },
+    { purpose: "contract", sourceUrl: "https://example.test/file.pdf", file: new File(["pdf"], "file.pdf") },
+    { purpose: "contract" },
+    { purpose: "contract", sourceUrl: undefined },
+  ])("rejects ambiguous, missing or non-contract URL sources at runtime", async (source) => {
+    const input = { targetWorkspaceId: "workspace-1", deliveryId: "cd_1", ...source } as Parameters<typeof customerDeliveryClient.uploadAsset>[0];
+    await expect(customerDeliveryClient.uploadAsset(input)).rejects.toThrow();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("does not accept a late URL import after cancellation or an untrusted scan response", async () => {
+    const input = { targetWorkspaceId: "workspace-1", deliveryId: "cd_1", purpose: "contract" as const, sourceUrl: "https://example.test/file.pdf" };
+    const controller = new AbortController();
+    vi.mocked(rpc).mockImplementation(async () => { controller.abort(); return {}; });
+    await expect(customerDeliveryClient.uploadAsset(input, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    vi.mocked(rpc).mockResolvedValue({ assetRef: "https://example.test/file.pdf", ready: true });
+    await expect(customerDeliveryClient.uploadAsset(input)).rejects.toThrow("安全检查状态");
+    vi.mocked(rpc).mockClear();
+    await expect(customerDeliveryClient.uploadAsset(input, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
   it("parses aggregate snake_case response", () => {
     expect(parseCustomerDeliveryList({ items: [{ id: "cd_1", company_name: "Acme", payment_status: "paid", customerProfileStatus: "complete", systemIntegrationStatus: "complete", functionalAcceptanceStatus: "incomplete", trainingCompleted: false, videos: [{ id: "v" }], created_at: "2026-09-16T00:01:02.000Z" }] })).toMatchObject([{ id: "cd_1", companyName: "Acme", paymentStatus: "paid", profile: true, integration: true, acceptance: false, training: false, videos: 1, createdAt: "2026-09-16T00:01:02.000Z" }]);
   });

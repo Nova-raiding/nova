@@ -27,7 +27,6 @@ const keys = [
   'ASSET_STORAGE_ECS_RAM_ROLE', 'ASSET_STORAGE_QUOTA_BYTES', 'OBJECT_STORAGE_VERSIONING',
   'DATA_RETENTION_DAYS', 'ASSET_QUARANTINE_RETENTION_DAYS', 'ASSET_CLEAN_RETENTION_DAYS',
   'DELETION_REQUEST_GRACE_DAYS', 'BACKUP_RETENTION_DAYS', 'LIFECYCLE_POLICY_REF',
-  'ALERT_CHANNEL_SECRET_REF',
 ] as const
 
 function render(overrides: NodeJS.ProcessEnv = {}): ComposeConfig {
@@ -59,10 +58,9 @@ describe('ECS OSS cutover overlay', () => {
     }
   })
 
-  it('keeps alerts disabled even when the host environment contains a stale reference', () => {
-    const services = render({ ALERT_CHANNEL_SECRET_REF: 'vault://stale-alert-channel' }).services
-    expect(services.api?.environment?.ALERT_CHANNEL_SECRET_REF).toBe('')
-    expect(services['api-replica']?.environment?.ALERT_CHANNEL_SECRET_REF).toBe('')
+  it('does not modify the independently managed alert configuration', () => {
+    const source = readFileSync('infra/local/docker-compose.ecs-oss-cutover.yml', 'utf8')
+    expect(source).not.toMatch(/(?:OPS_ALERT|ALERT_CHANNEL|ALERT_WEBHOOK)_/u)
   })
 
   it('uses only the canonical ECS RAM role credential contract', () => {

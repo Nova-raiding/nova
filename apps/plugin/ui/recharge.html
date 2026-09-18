@@ -522,7 +522,8 @@
       >
         <div class="section-head">
           <h2>套餐与点数包</h2>
-          <p>价格、周期和权益全部来自服务端已批准 SKU。选择后创建待支付订单，支付后请回到“订单”查询到账与权益状态。</p>
+          <p>价格、周期和权益全部来自服务端已批准 SKU。支付统一在 Store Nova 商家后台完成；插件只展示目录和到账状态，不直接承载收款。</p>
+          <p class="item-detail">请先打开商家后台登录并完成支付，支付服务回调确认后，再回到“订单”查询到账与权益状态。</p>
         </div>
         <div class="list" id="catalogList"></div>
       </section>
@@ -689,11 +690,6 @@
                 : "当前工作区还没有订单",
             );
       }
-      const purchaseKind = (type) => ({
-        onboarding: "onboarding_once",
-        monthly: "purchase",
-        point_pack: "point_pack",
-      }[type] || "purchase");
       const catalogName = (code) => ({
         basic: "基础版",
         growth: "成长版",
@@ -715,58 +711,18 @@
         const items = Array.isArray(value) ? value : value?.catalog ?? value?.items ?? [];
         const executable = items.filter((item) => item?.lifecycle === "approved" && item?.executable === true && item?.visibility === "public");
         return executable.length
-          ? executable.map((item) => `<article class="item"><div class="item-head"><div><div class="item-title">${esc(catalogName(item.code))}</div><div class="item-meta">${esc(item.code)} · ${esc(catalogKind(item.kind))}</div></div><strong>${esc(catalogPrice(item))}</strong></div><div class="item-detail">权益以服务端订单快照为准</div><div class="actions"><button class="btn primary" data-buy-sku="${esc(item.code)}" data-buy-kind="${esc(purchaseKind(item.kind))}">选择此套餐</button></div></article>`).join("")
+          ? executable.map((item) => `<article class="item"><div class="item-head"><div><div class="item-title">${esc(catalogName(item.code))}</div><div class="item-meta">${esc(item.code)} · ${esc(catalogKind(item.kind))}</div></div><strong>${esc(catalogPrice(item))}</strong></div><div class="item-detail">权益以服务端订单快照为准，支付请在商家后台完成</div><div class="actions"><button class="btn primary" data-open-merchant-portal="true">打开商家后台</button></div></article>`).join("")
           : empty("当前没有可执行的公开套餐。服务端目录缺少批准、生效或支付条件时，不会展示为可购买。");
-      }
-      function safePaymentUrl(value) {
-        if (typeof value !== "string" || !value.trim()) return "";
-        try {
-          const url = new URL(value.trim());
-          const localFixture = url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname);
-          const paymentDeepLink = url.protocol === "weixin:" || url.protocol === "alipays:";
-          if (url.protocol !== "https:" && !localFixture && !paymentDeepLink) return "";
-          if (url.username || url.password || url.hash) return "";
-          return url.toString();
-        } catch {
-          return "";
-        }
       }
       async function catalog() {
         const el = $("catalogList");
         el.innerHTML = '<div class="loading">正在读取套餐目录…</div>';
         try {
           el.innerHTML = catalogHtml(await call("commercial.catalog.get"));
-          el.querySelectorAll("[data-buy-sku]").forEach((button) => {
-            button.onclick = async () => {
-              button.disabled = true;
-              try {
-                const sku = button.dataset.buySku;
-                const kind = button.dataset.buyKind;
-                const key = `plugin-order-${sku}-${Date.now()}`;
-                const result = await call("commercial.order.create", {
-                  purchase_kind: kind,
-                  sku_code: sku,
-                  idempotency_key: key,
-                  reason: "商家在 ChatGPT 插件中选择商业化套餐",
-                });
-                const payment = safePaymentUrl(result?.payment_url || result?.paymentUrl || result?.checkout_url || result?.checkoutUrl);
-                const actions = button.closest(".actions");
-                if (payment && actions && !actions.querySelector("[data-payment-link]")) {
-                  const link = document.createElement("a");
-                  link.className = "btn primary";
-                  link.dataset.paymentLink = "true";
-                  link.href = payment;
-                  link.target = "_blank";
-                  link.rel = "noopener noreferrer";
-                  link.textContent = "打开支付入口";
-                  actions.append(link);
-                }
-                button.textContent = payment ? "支付入口已准备" : "订单已创建";
-                $("live").textContent = payment ? "支付入口已准备，请完成支付后查询订单" : "订单已创建，请回到订单查询状态";
-              } catch (e) {
-                button.disabled = false;
-                fail(e.message || "套餐订单创建失败");
-              }
+          el.querySelectorAll("[data-open-merchant-portal]").forEach((button) => {
+            button.onclick = () => {
+              window.open("https://yxsona.com", "_blank", "noopener,noreferrer");
+              $("live").textContent = "已打开商家后台，请登录后完成支付";
             };
           });
           fail();

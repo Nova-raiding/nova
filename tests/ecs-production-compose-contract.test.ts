@@ -3,23 +3,13 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { safePaymentUrls, unsafePaymentUrls } from './payment-url-gate-fixtures.js'
 
-const paymentEnvironment = {
-  PAYMENT_MODE: 'provider', PAYMENT_CHECKOUT_BASE_URL: 'https://pay.yxsona.com/checkout',
-  PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://pay.yxsona.com/v1/checkout',
-  PAYMENT_PROVIDER_QUERY_API_URL: 'https://pay.yxsona.com/v1/query',
-  PAYMENT_PROVIDER_REFUND_QUERY_API_URL: 'https://pay.yxsona.com/v1/refund/query',
-  PAYMENT_PROVIDER_REFUND_API_URL: 'https://pay.yxsona.com/v1/refund',
-  PAYMENT_PROVIDER_MERCHANT_ID: '2088123456789012',
-}
-
+const nodeHardening = { user: '10001:10001', read_only: true, security_opt: ['no-new-privileges:true'], cap_drop: ['ALL'], tmpfs: ['/tmp'] }
 const valid = {
   services: {
-    api: { environment: {
-      ...paymentEnvironment,
+    api: { ...nodeHardening, environment: {
       NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', LOCAL_COMPOSE: 'false',
-      CONNECTOR_FIXTURE_MODE: 'false', MERCHANT_TEST_APPROVED_RATES: 'false',
+      CONNECTOR_FIXTURE_MODE: 'false', PLATFORM_OPERATIONS_MODE: 'manual', MERCHANT_TEST_APPROVED_RATES: 'false',
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
       ASSET_STORAGE_CREDENTIAL_PROVIDER: 'aliyun_ecs_ram_role',
       OPS_ALERT_NOTIFICATIONS_ENABLED: 'false',
@@ -31,11 +21,11 @@ const valid = {
       ALLOW_WILDCARD_WORKSPACE_GRANT: 'false',
       OPS_LOCAL_SESSION_WORKSPACE_ID: '', DATABASE_URL: 'postgres://app:opaque@db/merchant',
       OPS_DATABASE_URL: 'postgres://ops:opaque@db/merchant', MODEL_COST_ESTIMATE_VERSION: 'production-v1',
+      MCP_INTEGRATION_MODE: 'local_stdio', MCP_OAUTH_REQUIRED: 'false',
     } },
-    'api-replica': { environment: {
-      ...paymentEnvironment,
+    'api-replica': { ...nodeHardening, environment: {
       NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', LOCAL_COMPOSE: 'false',
-      CONNECTOR_FIXTURE_MODE: 'false', MERCHANT_TEST_APPROVED_RATES: 'false',
+      CONNECTOR_FIXTURE_MODE: 'false', PLATFORM_OPERATIONS_MODE: 'manual', MERCHANT_TEST_APPROVED_RATES: 'false',
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
       ASSET_STORAGE_CREDENTIAL_PROVIDER: 'aliyun_ecs_ram_role',
       OPS_ALERT_NOTIFICATIONS_ENABLED: 'false',
@@ -47,8 +37,9 @@ const valid = {
       ALLOW_WILDCARD_WORKSPACE_GRANT: 'false',
       OPS_LOCAL_SESSION_WORKSPACE_ID: '', DATABASE_URL: 'postgres://app:opaque@db/merchant',
       OPS_DATABASE_URL: 'postgres://ops:opaque@db/merchant', MODEL_COST_ESTIMATE_VERSION: 'production-v1',
+      MCP_INTEGRATION_MODE: 'local_stdio', MCP_OAUTH_REQUIRED: 'false',
     } },
-    ...Object.fromEntries(['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan'].map(name => [name, { environment: {
+    ...Object.fromEntries(['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan'].map(name => [name, { ...nodeHardening, environment: {
       NODE_ENV: 'production', DATABASE_URL: 'postgres://app:opaque@db/merchant', WORKER_WORKSPACES: 'auto', WORKER_API_TOKEN: `${name}-token`, WORKER_API_SIGNING_SECRET: `${name}-signing`,
     } }])),
     migrate: {
@@ -68,13 +59,7 @@ function validate(value: unknown) {
 }
 
 function renderFinalProductionCompose() {
-  const files = [
-    'infra/local/docker-compose.yml',
-    'infra/local/docker-compose.ecs-pilot.yml',
-    'infra/local/docker-compose.ecs-oss-cutover.yml',
-    'infra/local/docker-compose.ecs-production-migration.yml',
-    'infra/local/docker-compose.ecs-pilot-release.yml',
-  ]
+  const files = readFileSync('infra/local/ecs-production-compose.layers', 'utf8').trim().split('\n')
   const env: NodeJS.ProcessEnv = { ...process.env }
   for (const file of files) {
     const source = readFileSync(file, 'utf8')
@@ -88,7 +73,6 @@ function renderFinalProductionCompose() {
   type WorkerCredential = { token: string; signing_secret: string }
   const credentials = Object.fromEntries(roles.map(role => [role, { token: `worker-${role}-token`, signing_secret: `worker-${role}-signing` }])) as Record<WorkerRole, WorkerCredential>
   Object.assign(env, {
-    ...paymentEnvironment,
     API_AUTH_TOKENS: '{"production":{"workspaces":["ws_prod"],"bootstrap":false}}',
     WORKER_API_CREDENTIALS: JSON.stringify(credentials),
     WORKER_WORKSPACES: 'auto',
@@ -105,7 +89,7 @@ function renderFinalProductionCompose() {
     env[`WORKER_${role.toUpperCase()}_API_TOKEN`] = credentials[role].token
     env[`WORKER_${role.toUpperCase()}_API_SIGNING_SECRET`] = credentials[role].signing_secret
   }
-  return JSON.parse(execFileSync('docker', ['compose', ...files.flatMap(file => ['-f', file]), 'config', '--format', 'json'], {
+  return JSON.parse(execFileSync('sh', ['infra/scripts/render-ecs-production-compose.sh'], {
     cwd: process.cwd(), encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'],
   }))
 }
@@ -120,33 +104,6 @@ describe('ECS production Compose contract', () => {
     const migrate = rendered.services.migrate
     expect(JSON.stringify(migrate.entrypoint)).not.toContain('seed-demo.sql')
     expect(JSON.stringify(migrate.volumes)).not.toContain('seed-demo.sql')
-    expect(validate(rendered)).toContain('contract passed')
-  })
-
-  it.each(['api', 'api-replica'])('rejects placeholder payment runtime on %s even when a separate production config could be valid', name => {
-    for (const [key, value] of [
-      ['PAYMENT_MODE', 'fixture'],
-      ['PAYMENT_PROVIDER_QUERY_API_URL', 'https://payments.example.com/query'],
-      ['PAYMENT_PROVIDER_REFUND_QUERY_API_URL', 'https://example.com/refund/query'],
-      ['PAYMENT_PROVIDER_MERCHANT_ID', 'merchant-example'],
-    ]) {
-      const rendered = structuredClone(valid)
-      ;(rendered.services[name as 'api' | 'api-replica'].environment as Record<string, string>)[key!] = value!
-      expect(() => validate(rendered)).toThrow(new RegExp(`${name}\\.${key}`))
-    }
-  })
-
-  it.each(['api', 'api-replica'])('rejects special-use IPs and normalized payment URLs on %s', name => {
-    for (const value of unsafePaymentUrls) {
-      const rendered = structuredClone(valid)
-      rendered.services[name as 'api' | 'api-replica'].environment.PAYMENT_PROVIDER_QUERY_API_URL = value
-      expect(() => validate(rendered), value).toThrow(/PAYMENT_PROVIDER_QUERY_API_URL/)
-    }
-  }, 20_000)
-
-  it.each(safePaymentUrls)('accepts a canonical public payment URL %s', value => {
-    const rendered = structuredClone(valid)
-    rendered.services.api.environment.PAYMENT_PROVIDER_QUERY_API_URL = value
     expect(validate(rendered)).toContain('contract passed')
   })
 
@@ -192,7 +149,7 @@ describe('ECS production Compose contract', () => {
     expect(() => validate(mount)).toThrow(/must not mount alert receiver secrets/)
 
     const receiver = structuredClone(valid) as any
-    receiver.services['alert-receiver'] = { profiles: [] }
+    receiver.services['alert-receiver'] = { ...nodeHardening, profiles: [] }
     expect(() => validate(receiver)).toThrow(/isolated behind the alerts profile/)
   })
 
@@ -233,5 +190,34 @@ describe('ECS production Compose contract', () => {
     credentials.generation.token = 'different-token'
     mismatch.services.api.environment.WORKER_API_CREDENTIALS = JSON.stringify(credentials)
     expect(() => validate(mismatch)).toThrow(/generation.token must match worker-generation/)
+  })
+
+  it.each([
+    ['privileged mode', (service: any) => { service.privileged = true }, /privileged/],
+    ['host networking', (service: any) => { service.network_mode = 'host' }, /network_mode/],
+    ['Docker socket access', (service: any) => { service.volumes = ['/var\/run\/docker.sock:/var\/run\/docker.sock'] }, /Docker socket/],
+    ['a sensitive host mount', (service: any) => { service.volumes = ['/etc:/host-etc:ro'] }, /sensitive host path/],
+  ])('rejects %s for every production service', (_label, mutate, message) => {
+    const rendered = structuredClone(valid) as any
+    mutate(rendered.services.migrate)
+    expect(() => validate(rendered)).toThrow(message)
+  })
+
+  it.each([
+    ['root identity', (service: any) => { service.user = '0:0' }, /non-root identity/],
+    ['writable root filesystem', (service: any) => { service.read_only = false }, /read_only/],
+    ['missing no-new-privileges', (service: any) => { service.security_opt = [] }, /no-new-privileges/],
+    ['retained Linux capabilities', (service: any) => { service.cap_drop = [] }, /cap_drop/],
+  ])('rejects application containers with %s', (_label, mutate, message) => {
+    const rendered = structuredClone(valid) as any
+    mutate(rendered.services['worker-generation'])
+    expect(() => validate(rendered)).toThrow(message)
+  })
+
+  it('allows stateful and one-shot infrastructure to keep the filesystem and image entrypoint identity they require', () => {
+    const rendered = structuredClone(valid) as any
+    rendered.services.postgres = { image: 'postgres:16-alpine', volumes: ['merchant-postgres:/var/lib/postgresql/data'] }
+    rendered.services.redis = { image: 'redis:7-alpine', volumes: ['merchant-redis:/data'] }
+    expect(validate(rendered)).toContain('contract passed')
   })
 })

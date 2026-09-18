@@ -1,4 +1,7 @@
-import { readFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('ECS candidate bundle contract', () => {
@@ -10,5 +13,82 @@ describe('ECS candidate bundle contract', () => {
     expect(script).toContain('This candidate is ECS-only')
     expect(script).toContain('Alerts are disabled for this candidate')
     expect(script).not.toContain('alert delivery, and rollback')
+  })
+
+  it('binds a clean committed full-source archive to the same digest used by the gate image', () => {
+    const script = readFileSync('infra/scripts/prepare-ecs-candidate-bundle.sh', 'utf8')
+
+    expect(script).toContain("status --porcelain --untracked-files=normal")
+    expect(script).toContain('candidate bundle requires a clean committed source tree')
+    expect(script).toContain('git -C "$root" archive --format=tar "$revision" > "$archive"')
+    expect(script).not.toContain('tar -C "$root" -czf "$archive" -T "$manifest"')
+    expect(script).toContain('source_sha256=sha256:$archive_sha')
+    expect(script).toContain('comparison_manifest_sha256=sha256:$manifest_sha')
+    expect(script).toContain('sync_plan_sha256=sha256:$report_sha')
+    expect(readFileSync('infra/scripts/build-ecs-candidate-gates-image.sh', 'utf8')).toContain(
+      'git -C "$root" archive --format=tar "$revision" > "$archive"',
+    )
+  })
+
+  it('puts the verified ECS deployment and evidence trust chain in the review manifest', () => {
+    const script = readFileSync('infra/scripts/prepare-ecs-candidate-bundle.sh', 'utf8')
+    const manifest = script.slice(script.indexOf("cat > \"$manifest\" <<'EOF'"), script.indexOf('\nEOF', script.indexOf("cat > \"$manifest\" <<'EOF'")))
+    for (const path of [
+      'infra/scripts/render-ecs-production-compose.sh',
+      'infra/scripts/stage-verified-ecs-release.sh',
+      'infra/scripts/deploy-verified-ecs-compose.sh',
+      'infra/scripts/rollback-ecs-compose.sh',
+      'infra/scripts/invoke-ecs-automatic-rollback.sh',
+      'infra/protected/attest-release-evidence-bundle.mjs',
+      'infra/protected/attest-release-evidence-bundle.d.mts',
+      'tests/release-evidence-bundle-gate.ts',
+      'docs/runbooks/ecs-verified-compose-deploy.md',
+      'docs/runbooks/ecs-release-evidence-bundle-attester.md',
+    ]) expect(manifest).toContain(path)
+  })
+
+  it('keeps host deployment entrypoints executable while verifier modules remain data', () => {
+    for (const path of [
+      'infra/scripts/render-ecs-production-compose.sh',
+      'infra/scripts/stage-verified-ecs-release.sh',
+      'infra/scripts/deploy-verified-ecs-compose.sh',
+      'infra/scripts/rollback-ecs-compose.sh',
+      'infra/scripts/invoke-ecs-automatic-rollback.sh',
+      'infra/protected/attest-release-evidence-bundle.mjs',
+    ]) expect(statSync(path).mode & 0o111, `${path} must be executable in the release tree`).not.toBe(0)
+    expect(statSync('tests/release-evidence-bundle-gate.ts').mode & 0o111).toBe(0)
+  })
+
+  it('fails before remote access when the candidate repository has uncommitted input', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ecs-candidate-dirty-'))
+    mkdirSync(join(root, 'infra/scripts'), { recursive: true })
+    cpSync(resolve('infra/scripts/prepare-ecs-candidate-bundle.sh'), join(root, 'infra/scripts/prepare-ecs-candidate-bundle.sh'))
+    spawnSync('git', ['init', '-q'], { cwd: root })
+    spawnSync('git', ['add', '.'], { cwd: root })
+    spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'candidate'], { cwd: root })
+    writeFileSync(join(root, 'uncommitted.txt'), 'not reviewed\n')
+
+    const result = spawnSync('sh', [join(root, 'infra/scripts/prepare-ecs-candidate-bundle.sh'), join(root, 'output')], {
+      env: { ...process.env, ECS_CANDIDATE_REMOTE_ALIAS: 'must-not-connect.invalid' },
+      encoding: 'utf8',
+    })
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('candidate bundle requires a clean committed source tree')
+    expect(result.stderr).not.toContain('ssh')
+  })
+
+  it.each([
+    { root: "/opt/merchant-deploy' ; touch /tmp/unsafe ; : '", alias: '101', reason: 'unsafe characters' },
+    { root: '/opt/../merchant-deploy', alias: '101', reason: 'canonical' },
+    { root: '/opt//merchant-deploy', alias: '101', reason: 'canonical' },
+    { root: '/opt/merchant-deploy', alias: '-oProxyCommand=unsafe', reason: 'safe SSH host' },
+  ])('rejects unsafe remote shell inputs before SSH: $root $alias', ({ root, alias, reason }) => {
+    const result = spawnSync('sh', ['infra/scripts/prepare-ecs-candidate-bundle.sh'], {
+      env: { ...process.env, ECS_CANDIDATE_REMOTE_ROOT: root, ECS_CANDIDATE_REMOTE_ALIAS: alias },
+      encoding: 'utf8',
+    })
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(reason)
   })
 })

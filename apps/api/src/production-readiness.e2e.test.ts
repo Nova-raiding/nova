@@ -21,6 +21,10 @@ const productionEnvironment = (): NodeJS.ProcessEnv => ({
   IMAGE_EDIT_MODEL: 'image-edit-model',
   OCR_MODEL: 'ocr-model',
   VIDEO_MODEL: 'video-model',
+  EMBEDDING_MODEL: 'embedding-model',
+  EMBEDDING_DIMENSIONS: '1536',
+  MODEL_EMBEDDING_MAX_REQUEST_CNY: '0.10',
+  MODEL_RELAY_EMBEDDING_COST_EVIDENCE: 'true',
   MODEL_RPM_LIMIT: '120',
   MODEL_TPM_LIMIT: '120000',
   MODEL_DAILY_CNY_LIMIT: '100',
@@ -35,6 +39,7 @@ const productionEnvironment = (): NodeJS.ProcessEnv => ({
   SESSION_ID_HASH_SECRET: 'session-hash-secret',
   OPS_DATABASE_URL: 'postgres://merchant_ops@database/store_nova',
   MERCHANT_BEARER_HOSTNAME: 'merchant.example.test',
+  MCP_INTEGRATION_MODE: 'remote_oauth',
   MCP_OAUTH_REQUIRED: 'true',
   PUBLIC_APP_BASE_URL: 'https://merchant.example.test',
   MCP_OAUTH_ISSUER: 'https://merchant.example.test',
@@ -239,6 +244,29 @@ describe('production readiness fail-closed', () => {
     expect(result.gates.object_storage).toMatchObject({ ready: true, reasons: [] })
   })
 
+  it('accepts local stdio production identity without remote OAuth registration', () => {
+    const environment = productionEnvironment()
+    environment.MCP_INTEGRATION_MODE = 'local_stdio'
+    environment.MCP_OAUTH_REQUIRED = 'false'
+    delete environment.MCP_OAUTH_CLIENTS
+    delete environment.MCP_OAUTH_ISSUER
+    delete environment.MCP_OAUTH_AUTHORIZATION_ENDPOINT
+    delete environment.MCP_OAUTH_TOKEN_ENDPOINT
+
+    const result = productionReadinessDiagnostics(environment)
+    expect(result.gates.identity).toMatchObject({ ready: true, reasons: [] })
+  })
+
+  it('fails closed when production MCP integration mode is absent or contradictory', () => {
+    const missing = productionEnvironment()
+    delete missing.MCP_INTEGRATION_MODE
+    expect(productionReadinessDiagnostics(missing).gates.identity).toMatchObject({ ready: false, reasons: expect.arrayContaining(['mcp_integration_mode_missing_or_invalid']) })
+
+    const contradictory = productionEnvironment()
+    contradictory.MCP_INTEGRATION_MODE = 'local_stdio'
+    expect(productionReadinessDiagnostics(contradictory).gates.identity).toMatchObject({ ready: false, reasons: expect.arrayContaining(['local_stdio_must_not_require_remote_oauth']) })
+  })
+
   it('accepts ACK RRSA only when the admission-injected pod identity is complete', () => {
     const environment = productionEnvironment()
     environment.ASSET_STORAGE_CREDENTIAL_PROVIDER = 'aliyun_ack_rrsa'
@@ -371,6 +399,20 @@ describe('production readiness fail-closed', () => {
     expect(result.ready).toBe(false)
     expect(result.gates.release_metadata).toMatchObject({ ready: false })
     expect(result.gates.release_metadata?.reasons ?? []).toContain(releaseId.trim() ? 'release_id_invalid' : 'release_id_missing')
+  })
+
+  it('returns 503 from /releasez when the production release identity is unsafe', async () => {
+    const environment = productionEnvironment()
+    environment.RELEASE_ID = 'release/unsafe'
+    for (const [key, value] of Object.entries(environment)) vi.stubEnv(key, value)
+    const running = await listen()
+    openServers.push(running.server)
+
+    const response = await fetch(`${running.baseUrl}/releasez`)
+    const body = await response.json() as Envelope
+    expect(response.status).toBe(503)
+    expect(body.error).toMatchObject({ code: 'RELEASE_METADATA_UNAVAILABLE' })
+    expect(body.data).toBeNull()
   })
 
   it('does not let a production fixture profile bypass control-plane gates', () => {

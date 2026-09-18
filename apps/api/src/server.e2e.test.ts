@@ -801,6 +801,34 @@ describe('API HTTP vertical slice', () => {
     expect(products.has(created.id)).toBe(false)
   })
 
+  it('keeps fixture stores visible but excludes them from formal onboarding', async () => {
+    const base = await start()
+    const workspaceId = `ws_fixture_onboarding_${Date.now()}`
+    const account = service.registerPlatformAccount({
+      workspaceId,
+      platform: 'taobao',
+      remoteAccountId: `fixture-remote-${workspaceId}`,
+      credentialRef: `fixture-secret/${workspaceId}`,
+    })
+    service.upsertSyncedProducts({ workspaceId, platform: 'taobao', accountId: account.id, items: [{ remoteId: `fixture-product-${workspaceId}`, title: '演示商品', sku: [], stock: 1, source: 'fixture' }] })
+    const response = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'workspace.health', params: { workspace_id: workspaceId } }),
+    }).then(json)
+    expect(response.error).toBeNull()
+    const result = response.data?.result as {
+      storeDirectory: Array<{ dataMode: string; readable: boolean }>
+      onboarding_v2: { current_step: { id: string }; steps: Array<{ id: string; state: string }> }
+    }
+    expect(result.storeDirectory).toEqual([expect.objectContaining({ dataMode: 'fixture', readable: true })])
+    expect(result.onboarding_v2.current_step).toMatchObject({ id: 'connect_store', state: 'required' })
+    expect(result.onboarding_v2.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'connect_store', state: 'required' }),
+      expect.objectContaining({ id: 'select_product', state: 'blocked' }),
+    ]))
+  })
+
   it('bootstraps a first-run workspace before the Codex plugin binds its workspace id', async () => {
     const base = await start()
     const created = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-bootstrap': 'true', 'x-actor-id': 'codex-user-1' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'workspace.bootstrap', params: { display_name: 'Codex 首次工作区', external_subject: 'codex-user-1' } }) }).then(json)
@@ -816,6 +844,28 @@ describe('API HTTP vertical slice', () => {
     const onboarding = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2.25, method: 'onboarding.status', params: { workspace_id: workspaceId } }) }).then(json)
     expect(onboarding.error).toBeNull()
     expect((onboarding.data as { result: { schema_version: string; status: string; current_step: { id: string }; binding: string; next_action: { method: string } } }).result).toMatchObject({ schema_version: 'onboarding.status.v1', status: 'in_progress', current_step: { id: 'connect_store' }, next_action: { method: 'platform.connect' } })
+    expect((onboarding.data as { result: { initialization: unknown } }).result.initialization).toMatchObject({
+      schema_version: 'store-nova.initialization.v1', status: 'in_progress', completed: 0, total: 4,
+      brand_clues: { candidates: [], totalCandidates: 0, profileCreated: false },
+      current_step: { id: 'connect_stores', state: 'required' },
+      steps: [
+        { id: 'connect_stores', state: 'required' },
+        { id: 'scan_catalog', state: 'pending' },
+        { id: 'check_configuration', state: 'pending' },
+        { id: 'build_workspace', state: 'pending' },
+      ],
+    })
+    const links = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2.26, method: 'onboarding.status', params: { workspace_id: workspaceId, store_links_text: '淘宝｜云朵女装店｜https://shop.m.taobao.com/shop/shop_index.htm?shop_id=123&token=secret' } }) }).then(json)
+    expect(links.error).toBeNull()
+    expect((links.data as { result: { store_link_inspection: unknown; initialization: { completed: number } } }).result).toMatchObject({
+      store_link_inspection: { candidates: [{ platform: 'taobao', storeName: '云朵女装店', authorizationState: 'not_checked' }], requiresUserConfirmation: true },
+      initialization: { completed: 0 },
+    })
+    expect(JSON.stringify(links)).not.toContain('token=secret')
+    const unverifiedSetup = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2.27, method: 'workspace.content_setup.confirm', params: { display_name: '云朵内容工作区', platform: 'taobao', account_id: 'unverified-shop' } }) }).then(json)
+    expect(unverifiedSetup.error).not.toBeNull()
+    const afterUnverifiedSetup = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2.28, method: 'onboarding.status', params: {} }) }).then(json)
+    expect((afterUnverifiedSetup.data as { result: { initialization: { evidence: { content_workspace_confirmed: boolean } } } }).result.initialization.evidence.content_workspace_confirmed).toBe(false)
     const startCard = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2.5, method: 'merchant.start', params: { workspace_id: workspaceId } }) }).then(json)
     expect(startCard.error).toBeNull()
     const startResult = (startCard.data as { result: { greeting: string; currentStep: { id: string; entryMethod: string }; nextPrompt: string; modelAccess: { userKeyRequired: boolean }; brandNavigation: { presentation: string; hierarchy: string[]; items: unknown[] }; platformOptions: Array<{ platform: string; label: string; state: string; action: string; readiness: { mediaUpload: { ready: boolean; configured: boolean; evidence: boolean; reason?: string } } }>; cards: Array<{ id: string; state: string; cta: string; action: { method: string }; blocked_by: string[]; next_actions?: Array<{ required_inputs?: string[] }>; capabilityGate?: { unlocked: boolean; method: string; reason: string } }>; wallet: { balance_cny: string; unlocked: boolean; status_method: string; purchase_method: string; order_method: string; payment_status_method: string; payment_channels: string[]; message: string } } }).result
@@ -1166,6 +1216,8 @@ describe('API HTTP vertical slice', () => {
     vi.stubEnv('PAYMENT_CALLBACK_SECRET', 'callback-secret')
     vi.stubEnv('PAYMENT_RECONCILIATION_ENABLED', 'true')
     vi.stubEnv('PAYMENT_REFUND_ENABLED', 'true')
+    vi.stubEnv('PAYMENT_RECONCILIATION_ENABLED', 'true')
+    vi.stubEnv('PAYMENT_REFUND_ENABLED', 'true')
     const workspaceId = `ws_recharge_concurrent_${Date.now()}`
     const idempotencyKey = `recharge-concurrent-${workspaceId}`
     let checkoutCalls = 0
@@ -1178,7 +1230,10 @@ describe('API HTTP vertical slice', () => {
     })
     const base = await start()
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
-    const request = () => fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'wechat', amount_cny: '10.00', idempotency_key: idempotencyKey } }) }).then(json)
+    const unsupported = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'wechat', amount_cny: '10.00', idempotency_key: `${idempotencyKey}-wechat` } }) }).then(json)
+    expect(unsupported.error?.code).toBe('PAYMENT_CHANNEL_NOT_READY')
+    expect(checkoutCalls).toBe(0)
+    const request = () => fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'alipay', amount_cny: '10.00', idempotency_key: idempotencyKey } }) }).then(json)
     const [first, second] = await Promise.all([request(), request()])
     expect(first.error).toBeNull()
     expect(second.error).toBeNull()
@@ -1197,6 +1252,8 @@ describe('API HTTP vertical slice', () => {
     vi.stubEnv('PAYMENT_PROVIDER_MERCHANT_ID', 'merchant-test')
     vi.stubEnv('PAYMENT_CALLBACK_BASE_URL', 'https://merchant.example/v1')
     vi.stubEnv('PAYMENT_CALLBACK_SECRET', 'callback-secret')
+    vi.stubEnv('PAYMENT_RECONCILIATION_ENABLED', 'true')
+    vi.stubEnv('PAYMENT_REFUND_ENABLED', 'true')
     const workspaceId = `ws_subscription_concurrent_${Date.now()}`
     let checkoutCalls = 0
     setPaymentProviderForTests({
@@ -1264,7 +1321,7 @@ describe('API HTTP vertical slice', () => {
     })
     const base = await start()
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'finance_1' }
-    const created = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'wechat', amount_cny: '10.00', idempotency_key: `provider-reconciliation-${workspaceId}` } }) }).then(json)
+    const created = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'alipay', amount_cny: '10.00', idempotency_key: `provider-reconciliation-${workspaceId}` } }) }).then(json)
     expect(created.error).toBeNull()
     const first = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.reconciliation.run', params: { workspace_id: workspaceId, limit: '10' } }) }).then(json)
     expect(first.error).toBeNull()
@@ -1292,7 +1349,7 @@ describe('API HTTP vertical slice', () => {
     setPaymentProviderForTests({ createCheckout: async () => ({ paymentUrl: 'https://payments.example/pay/order' }), refund: async () => ({ providerRefundId: 'refund-1' }), queryStatus: async () => ({ state: 'paid', providerTradeId: 'trade-without-amount' }) })
     const base = await start()
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'finance_1' }
-    const created = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'wechat', amount_cny: '10.00', idempotency_key: `missing-amount-${workspaceId}` } }) }).then(json)
+    const created = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'alipay', amount_cny: '10.00', idempotency_key: `missing-amount-${workspaceId}` } }) }).then(json)
     expect(created.error).toBeNull()
     const reconciliation = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.reconciliation.run', params: { workspace_id: workspaceId, limit: '10' } }) }).then(json)
     expect(reconciliation.data?.result).toMatchObject({ state: 'attention_required', failed: [{ code: 'PAYMENT_QUERY_AMOUNT_MISMATCH' }] })
@@ -1382,7 +1439,7 @@ describe('API HTTP vertical slice', () => {
     })
     const base = await start()
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'finance_1' }
-    const created = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'wechat', amount_cny: '10.00', idempotency_key: `refund-rejected-${workspaceId}` } }) }).then(json)
+    const created = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'alipay', amount_cny: '10.00', idempotency_key: `refund-rejected-${workspaceId}` } }) }).then(json)
     expect(created.error).toBeNull()
     const order = (created.data as { result: { id: string; amount_cny: string } }).result
     const paid = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'billing.recharge.get', params: { workspace_id: workspaceId, order_id: order.id } }) }).then(json)
@@ -1465,11 +1522,11 @@ describe('API HTTP vertical slice', () => {
     const base = await start()
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'finance_1' }
     const call = (id: number, method: string, params: Record<string, unknown>) => fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { workspace_id: workspaceId, ...params } }) }).then(json)
-    const created = await call(1, 'billing.recharge.create', { channel: 'wechat', amount_cny: '100.00', idempotency_key: `refund-balance-${workspaceId}` })
+    const created = await call(1, 'billing.recharge.create', { channel: 'alipay', amount_cny: '100.00', idempotency_key: `refund-balance-${workspaceId}` })
     const order = (created.data as { result: { id: string } }).result
     const providerTradeId = `trade-${workspaceId}`
     const callbackSignature = createHmac('sha256', 'callback-secret').update(`${order.id}|${providerTradeId}|10000|SUCCESS`).digest('hex')
-    const paid = await fetch(`${base}/v1/billing/callback/wechat`, { method: 'POST', headers: { ...headers, 'x-payment-signature': callbackSignature }, body: JSON.stringify({ workspace_id: workspaceId, order_id: order.id, provider_trade_id: providerTradeId, amount_fen: 10_000, state: 'SUCCESS' }) }).then(json)
+    const paid = await fetch(`${base}/v1/billing/callback/alipay`, { method: 'POST', headers: { ...headers, 'x-payment-signature': callbackSignature }, body: JSON.stringify({ workspace_id: workspaceId, order_id: order.id, provider_trade_id: providerTradeId, amount_fen: 10_000, state: 'SUCCESS' }) }).then(json)
     expect(paid.error).toBeNull()
 
     const first = await call(2, 'billing.refund', { order_id: order.id, reason: '客户原路退款' })
@@ -2161,7 +2218,7 @@ describe('API HTTP vertical slice', () => {
     expect(response.error).toBeNull()
     const items = (response.data as { items: Array<{ platform: string; capabilities: Array<{ capability: string; state: string }> }> }).items
     expect(items.map(item => item.platform)).toEqual(['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'])
-    expect(items.every(item => item.capabilities.length === 9)).toBe(true)
+    expect(items.every(item => item.capabilities.length === 10)).toBe(true)
     expect(JSON.stringify(response.data)).not.toContain('client_secret')
     expect(JSON.stringify(response.data)).not.toContain('access_token')
   })

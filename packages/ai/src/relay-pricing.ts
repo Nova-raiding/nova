@@ -163,7 +163,8 @@ export class RelayPricingClient {
       rawQuota = model.model_price * units * groupRatio * status.quota_per_unit
     } else if (model.quota_type === 1 && usage.modality === 'video') {
       const rawDuration = usage.metadata?.duration_seconds
-      const durationSeconds = typeof rawDuration === 'number' && Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : undefined
+      const durationEvidence = usage.metadata?.duration_evidence
+      const durationSeconds = durationEvidence === 'provider_usage' && typeof rawDuration === 'number' && Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : undefined
       if (!durationSeconds) throw new RelayPricingError('MODEL_PRICING_DURATION_EVIDENCE_MISSING', 'duration-priced video requires positive duration evidence')
       videoPriceCnyPerSecond = this.options.videoPriceCnyPerSecond?.[usage.model]
       if (model.billing_mode === 'per_duration' && model.duration_pricing) {
@@ -229,6 +230,7 @@ export function createRelayPricingClientFromEnv(source: Record<string, string | 
     ...(source.MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP?.trim() ? { image_edit: source.MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP.trim() } : {}),
     ...(source.MODEL_RELAY_OCR_PRICING_GROUP?.trim() ? { ocr: source.MODEL_RELAY_OCR_PRICING_GROUP.trim() } : {}),
     ...(source.MODEL_RELAY_VIDEO_PRICING_GROUP?.trim() ? { video: source.MODEL_RELAY_VIDEO_PRICING_GROUP.trim() } : {}),
+    ...(source.MODEL_RELAY_EMBEDDING_PRICING_GROUP?.trim() ? { embedding: source.MODEL_RELAY_EMBEDDING_PRICING_GROUP.trim() } : {}),
   }
   let videoPriceCnyPerSecond: Record<string, number> | undefined
   const rawVideoPrices = source.MODEL_RELAY_VIDEO_PRICING_OVERRIDES?.trim()

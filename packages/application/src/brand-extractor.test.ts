@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { extractBrandCandidates } from './brand-extractor.js'
+import { confirmedStoreBrandClues, extractBrandCandidates } from './brand-extractor.js'
+
+describe('confirmed official-store brand clues', () => {
+  it('keeps brands scoped to each store and never creates a profile', () => {
+    const result = confirmedStoreBrandClues([
+      { id: 'p1', platform: 'taobao', accountId: 'shop-a', source: 'official_api', factsConfirmed: true, attributes: { brand: '云朵' } },
+      { id: 'p2', platform: 'taobao', accountId: 'shop-a', source: 'official_api', factsConfirmed: true, attributes: { brand: '云朵' } },
+      { id: 'p3', platform: 'jd', accountId: 'shop-b', source: 'official_api', factsConfirmed: true, attributes: { brand: '云朵' } },
+      { id: 'fixture', platform: 'taobao', accountId: 'shop-a', source: 'fixture', factsConfirmed: true, attributes: { brand: '虚构品牌' } },
+      { id: 'pending', platform: 'jd', accountId: 'shop-b', source: 'official_api', factsConfirmed: false, attributes: { brand: '未确认' } },
+    ])
+    expect(result).toMatchObject({ totalCandidates: 2, profileCreated: false })
+    expect(result.candidates).toEqual([
+      expect.objectContaining({ platform: 'jd', accountId: 'shop-b', brandName: '云朵', productCount: 1, confirmationRequired: true }),
+      expect.objectContaining({ platform: 'taobao', accountId: 'shop-a', brandName: '云朵', productCount: 2, confirmationRequired: true }),
+    ])
+  })
+})
 
 describe('brand candidate extraction', () => {
   it('extracts structured and text fields with provenance and mandatory confirmation', () => {
