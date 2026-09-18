@@ -80,13 +80,20 @@ sh infra/scripts/validate-production-config.sh "$config_path"
 node infra/scripts/validate-ecs-production-compose.mjs "$RENDERED_COMPOSE_PATH"
 image_set_digest=$(ruby infra/scripts/validate-ecs-compose-release.rb "$RENDERED_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON" --print-image-set-digest)
 manifest_sha256=$(ruby infra/scripts/validate-ecs-compose-release.rb "$RENDERED_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON" --print-manifest-sha256)
-release_git_sha=$(git rev-parse HEAD)
+if [ -f "$root/.candidate-identity" ] && [ ! -L "$root/.candidate-identity" ]; then
+  release_git_sha=$(sed -n 's/^git_sha=//p' "$root/.candidate-identity")
+  printf '%s' "$release_git_sha" | grep -Eq '^[0-9a-f]{40}$' || { echo 'staged candidate Git SHA is invalid' >&2; exit 1; }
+else
+  release_git_sha=$(git rev-parse HEAD)
+fi
 production_config_sha256=$(shasum -a 256 "$config_path" | awk '{print $1}')
 case "${ASSET_STORAGE_SSE_MODE:-AES256}" in
   AES256|aes256) storage_encryption=AES256 ;;
   aws:kms) storage_encryption=aws:kms ;;
 esac
-[ "${VITEST:-false}" = true ] || [ -z "$(git status --porcelain --untracked-files=all)" ] || { echo 'release preflight requires a clean git worktree' >&2; exit 1; }
+if [ -d "$root/.git" ]; then
+  [ "${VITEST:-false}" = true ] || [ -z "$(git status --porcelain --untracked-files=all)" ] || { echo 'release preflight requires a clean git worktree' >&2; exit 1; }
+fi
 RELEASE_ID="$RELEASE_ID" RELEASE_GIT_SHA="$release_git_sha" ruby infra/scripts/validate-ecs-compose-release.rb "$RENDERED_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON"
 sh infra/scripts/validate-production-evidence-trust.sh "$root"
 trust_root=/run/release-security/evidence-trust/production-evidence-public.pem
