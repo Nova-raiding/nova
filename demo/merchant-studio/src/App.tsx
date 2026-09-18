@@ -5479,11 +5479,10 @@ function MaterialLibraryWorkspace() {
             <div className="material-current-store-card">
               <span className="catalog-store-logo" aria-label={`${activeStore.name}店铺 Logo`}><img src={activeStore.logoUrl} alt="" /></span>
               <div className="material-current-store-copy">
-                <span className="section-kicker">CURRENT STORE</span>
                 <h2>{activeStore.name}</h2>
-                <button type="button" className="material-upload-button" onClick={() => setUploadDialogOpen(true)}><Upload size={15} />上传素材</button>
                 <p>本区素材只属于当前店铺，不会与其他店铺混用。</p>
               </div>
+              <button type="button" className="material-upload-button" onClick={() => setUploadDialogOpen(true)}><Upload size={15} />上传素材</button>
             </div>
             <div className="material-store-selector" ref={storeMenuRef}>
               <button type="button" aria-haspopup="listbox" aria-expanded={storeMenuOpen} onClick={() => setStoreMenuOpen((current) => !current)}>
