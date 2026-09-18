@@ -1730,6 +1730,7 @@ function Overview({
     return '待确认'
   }
   const modelAccessMessage = billing?.model_access?.message ?? (billing?.model_access?.access_state === 'included_quota_available' ? '模型额度可用，具体生成仍受内容与平台门禁约束。' : billing ? '模型能力状态待确认。' : '正在读取钱包状态…')
+  const latestRecharge = billing?.transactions.find((transaction) => transaction.type === 'recharge')
   const loadAccounts = () => {
     if (!baseUrl) return
     const requestId = ++accountsRequestId.current
@@ -2189,8 +2190,14 @@ function Overview({
               <small className="wallet-note">
                 生成、OCR、图片和视频按服务端确认的创意点直接扣费；余额待确认或不足时不会调用模型。
               </small>
+              <div className="wallet-payment-facts" aria-label="钱包与最近充值">
+                <div><span>人民币钱包</span><strong>{billing ? `¥${billing.balance_cny}` : '待确认'}</strong></div>
+                <div><span>最近充值</span><strong>{latestRecharge ? `¥${latestRecharge.amount_cny}` : '暂无记录'}</strong></div>
+                <div><span>到账状态</span><strong>{latestRecharge ? (latestRecharge.description || '充值到账') : '—'}</strong></div>
+              </div>
+              {latestRecharge?.order_id ? <small className="wallet-order-id">订单号：{latestRecharge.order_id}</small> : null}
               <small className="wallet-note wallet-note-blocked" role="status">
-                购买创意点请使用服务端可售套餐；当前支付服务未配置时不会显示或创建微信/支付宝订单。
+                钱包金额与创意点分别记账；支付到账不等于模型扣费，模型能力只读取创意点账本。
               </small>
             </Card>
           </div>

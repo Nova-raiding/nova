@@ -200,12 +200,35 @@ export interface BillingStatus {
   plugin_access: { unlocked: boolean; balance_cny: string; unlocks: string[] }
   recharge_channels: string[]
   provider_ready: boolean
+  transactions: BillingTransaction[]
   capability_entitlements?: {
     balance: { state: string; label: string; value_cny: string; reason: string }
     package_quota: { state: string; label: string; remaining: number | null; reason: string }
     generation: { state: string; label: string; reason: string; code: string | null }
     platform_publish: { state: string; label: string; reason: string; code: string | null; platform?: string; store?: string }
   }
+}
+
+export interface BillingTransaction {
+  id: string
+  type: string
+  amount_cny: string
+  order_id?: string
+  description?: string
+  created_at?: string
+}
+
+interface CreativePointBalance {
+  balance_state: 'known' | 'unknown'
+  available_points: number | null
+  reserved_points: number | null
+  settled_points: number | null
+  access_revision: string | null
+}
+
+interface WalletTransactions {
+  balance_cny: string
+  transactions: BillingTransaction[]
 }
 
 export interface CommercialCatalogBenefit {
@@ -920,7 +943,43 @@ export async function requestMcp<T>(baseUrl: string, method: string, params: Rec
   return response.result
 }
 
-export const fetchBillingStatus = (baseUrl: string) => requestMcp<BillingStatus>(baseUrl, 'billing.status')
+export async function fetchBillingStatus(baseUrl: string): Promise<BillingStatus> {
+  // Wallet and creative points are independent facts. `billing.status` is an
+  // entitlement gate and can correctly return 402 before a paid workspace has
+  // a subscription, which must not hide an already verified recharge or grant.
+  const [points, wallet] = await Promise.all([
+    requestMcp<CreativePointBalance>(baseUrl, 'creative-points.balance.get'),
+    requestMcp<WalletTransactions>(baseUrl, 'billing.transactions', { scope: 'workspace', limit: '20' }),
+  ])
+  const availablePoints = points.balance_state === 'known' ? points.available_points : null
+  const pointBalanceAvailable = availablePoints !== null && availablePoints > 0
+  return {
+    available_points: availablePoints,
+    balance_cny: wallet.balance_cny,
+    billing_mode: 'creative_points',
+    model_access: {
+      access_state: pointBalanceAvailable ? 'creative_points_available' : 'creative_points_unavailable',
+      message: pointBalanceAvailable
+        ? '创意点已到账；生成能力仍按服务端模型与内容门禁检查。'
+        : '创意点余额待确认或不足，系统不会调用收费模型。',
+    },
+    plugin_access: { unlocked: pointBalanceAvailable, balance_cny: wallet.balance_cny, unlocks: [] },
+    recharge_channels: [],
+    provider_ready: true,
+    transactions: wallet.transactions ?? [],
+    capability_entitlements: {
+      balance: {
+        state: pointBalanceAvailable ? 'available' : 'blocked',
+        label: pointBalanceAvailable ? '创意点可用' : '创意点待确认',
+        value_cny: wallet.balance_cny,
+        reason: '创意点账本是模型能力和扣费的唯一依据',
+      },
+      package_quota: { state: 'documented', label: '以创意点账本为准', remaining: availablePoints, reason: '不使用旧任务额度推导能力' },
+      generation: { state: pointBalanceAvailable ? 'available' : 'blocked', label: pointBalanceAvailable ? '余额门禁已通过' : '余额门禁未通过', reason: '实际生成仍检查模型、素材和内容门禁', code: null },
+      platform_publish: { state: 'documented', label: '按人工发布流程执行', reason: '六个平台当前采用运营人工发布', code: null },
+    },
+  }
+}
 export const fetchCommercialCatalog = async (baseUrl: string) => normalizeCommercialCatalog(await requestMcp<{ schema_version?: unknown; status?: unknown; catalog?: unknown }>(baseUrl, 'commercial.catalog.get'))
 /**
  * Merchant workspaces may read the redacted readiness projection from
