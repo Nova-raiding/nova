@@ -13,7 +13,7 @@
 - `npm run test:release-gates`：144 个文件通过、7 个 PostgreSQL 文件跳过；848 tests passed、14 skipped。跳过原因是当前没有隔离 PostgreSQL URL，不能当作生产 RLS 已验收。
 - 全量核心 `npm test`：8/8 安全分片通过；随后 `npm run test:ops-console`：101 个文件、720 个测试通过。此前发现的概览布局、CI PostgreSQL 分母和浏览器清理超时均已修复并定向复验。
 - `npm run audit:ops-surface`：141/141 方法有前端引用；`release:metadata:validate`、运营后台构建、商家工作台构建和 `git diff --check` 均通过。商家构建仍有单 bundle 大于 500KB 的性能警告，未作为功能失败隐藏。
-- 本轮 owner 修复已提交并推送：`7b55c6c3`（`origin/main` 已同步）；没有切换线上。
+- 本轮 owner 修复已提交并推送：`8c15c2a1`（`origin/main` 已同步）；没有切换线上。
 
 ## 会议待办核对
 
@@ -68,7 +68,8 @@
 - 客户交付页补齐只读权限态、培训凭证展示/上传边界、工作区清空态；交付仓储补齐已归档过滤、已付款完成门禁和有效证据时间投影。
 - MCP 充值职责收敛为商家后台创建订单、插件只读查询；平台告警的客户实体筛选保留数据授权边界；CI 纳入 migration-219 PostgreSQL 发布测试；桌面浏览器测试清理增加硬上限，避免残留浏览器阻塞验收。
 - 商家财务页已改为调用服务端 `billing.recharge.create/get`，展示真实订单状态和支付链接；不再使用静态二维码或伪造充值成功。交付清单项完成必须保留扫描资产证据，交付生效还必须存在未删除视频资产；API/Worker Dockerfile 补齐构建平台和 npm cache 约束；发布元数据同步为 11 个运营域。
-- 最新本地证据：`npm run typecheck`、`npm run test:release-gates`（144 文件/848 passed）、核心 `npm test`（8/8 分片）、运营后台关键回归、`npm run audit:ops-surface`、构建和 CodeGraph 同步均通过。
+- 最新本地证据：`npm run typecheck`、`npm run test:release-gates`（144 文件/848 passed）、核心 `npm test`（8/8 分片）、运营后台关键回归、`npm run audit:ops-surface`、构建和 CodeGraph 同步均通过；本轮客户交付组件 18/18、页面有效路径 12/12、运营后台构建通过。
+- 本轮新增修复：客户交付列表的档案/接入/验收状态恢复为可点击入口；只读运营打开详情时，合同、清单和保存动作全部禁用；Ant Design Drawer/Table 弃用 API 已迁移。完整 `CustomerDeliveryPage.test.tsx` 仍包含已被 `8990483e` 移除的旧交付视频上传场景，运行会超时，不能作为当前设计的通过证据，需单独清理测试债。
 - 最新线上只读证据：`https://yxsona.com/api/healthz` 返回 `writesEnabled=false`、`setup.mode=fixture`、六平台 `fixture_ready`、`objectStorage.mode=local`、`productionGate=false`；`/api/releasez` 的 release/git SHA/manifest/image digest 仍为空且 `ready=false`；`https://ops.yxsona.com/healthz` 返回 `ok`。
 
 这些修复不改变真实支付、OAuth、OSS 或平台连接器的生产状态；上线判定仍保持 NO-GO。
