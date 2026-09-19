@@ -74,7 +74,6 @@ import {
   confirmAssetFacts,
   confirmPublish,
   confirmTaskPlan,
-  createRechargeOrder,
   createCampaignBatch,
   createTask,
   decideReviewFinding,
@@ -85,8 +84,6 @@ import {
   fetchAssetBlob,
   fetchAssets,
   fetchBillingStatus,
-  fetchCommercialCatalog,
-  selectMerchantCatalogItems,
   fetchCustomerSupportReplies,
   fetchBrandProfile,
   fetchImageGenerationJob,
@@ -104,7 +101,6 @@ import {
   fetchProductPage,
   fetchPublishJobs,
   fetchManualPublishRecords,
-  fetchRechargeOrder,
   fetchRulePacks,
   fetchSyncJobs,
   fetchTask,
@@ -144,7 +140,6 @@ import {
   type BrandProfile,
   type BrandVisualRules,
   type BillingStatus,
-  type CommercialCatalog,
   type CatalogCategory,
   type FeedbackRating,
   type ImageGenerationJob,
@@ -159,7 +154,6 @@ import {
   type PublishJob,
   type ManualPublishRecord,
   type PublishPreview,
-  type RechargeOrder,
   type ReviewCategory,
   type ReviewFinding,
   type RulePack,
@@ -1920,16 +1914,6 @@ function Overview({
   const [actionMessage, setActionMessage] = useState('')
   const [syncJobs, setSyncJobs] = useState<SyncJob[] | null>(null)
   const [syncJobsError, setSyncJobsError] = useState('')
-  const [billing, setBilling] = useState<BillingStatus | null>(null)
-  const [billingError, setBillingError] = useState('')
-  const [commercialCatalog, setCommercialCatalog] = useState<CommercialCatalog | null>(null)
-  const [commercialCatalogError, setCommercialCatalogError] = useState('')
-  const [rechargeOrder, setRechargeOrder] = useState<RechargeOrder | null>(null)
-  const [rechargeQuerying, setRechargeQuerying] = useState(false)
-  const [rechargeOpen, setRechargeOpen] = useState(false)
-  const [rechargeAmount, setRechargeAmount] = useState('100')
-  const [rechargeSubmitting, setRechargeSubmitting] = useState(false)
-  const [rechargeError, setRechargeError] = useState('')
   const [revokeTarget, setRevokeTarget] = useState<{
     platform: PlatformId
     accountId: string
@@ -1937,15 +1921,6 @@ function Overview({
   } | null>(null)
   const [metrics, setMetrics] = useState<WorkspaceMetrics | null>(null)
   const [metricsError, setMetricsError] = useState('')
-  const entitlementLabel = (id: string, item?: { state?: string; label?: string }) => {
-    if (item?.label) return item.label
-    if (item?.state === 'available') return '可用'
-    if (id === 'platform_publish') return '暂不可发布'
-    if (id === 'generation') return '暂不可生成'
-    return '待确认'
-  }
-  const modelAccessMessage = billing?.model_access?.message ?? (billing?.model_access?.access_state === 'included_quota_available' ? '模型额度可用，具体生成仍受内容与平台门禁约束。' : billing ? '模型能力状态待确认。' : '正在读取钱包状态…')
-  const latestRecharge = billing?.transactions.find((transaction) => transaction.type === 'recharge')
   const loadAccounts = () => {
     if (!baseUrl) return
     const requestId = ++accountsRequestId.current
@@ -1981,29 +1956,6 @@ function Overview({
   useEffect(() => {
     loadSyncJobs()
   }, [baseUrl])
-  const loadBilling = () => {
-    if (!baseUrl) return
-    setBillingError('')
-    fetchBillingStatus(baseUrl)
-      .then(setBilling)
-      .catch((error) => setBillingError(`钱包状态暂时无法读取：${describeApiError(error)}。不会改变余额或订单状态。`))
-  }
-  useEffect(() => {
-    loadBilling()
-  }, [baseUrl])
-  const loadCommercialCatalog = () => {
-    if (!baseUrl) return
-    setCommercialCatalogError('')
-    fetchCommercialCatalog(baseUrl)
-      .then(setCommercialCatalog)
-      .catch((error) => {
-        setCommercialCatalog(null)
-        setCommercialCatalogError(`可售套餐暂时无法读取：${describeApiError(error)}。不会创建订单或改变钱包。`)
-      })
-  }
-  useEffect(() => {
-    loadCommercialCatalog()
-  }, [baseUrl])
   const loadMetrics = () => {
     if (!baseUrl) return
     setMetricsError('')
@@ -2014,43 +1966,6 @@ function Overview({
   useEffect(() => {
     loadMetrics()
   }, [baseUrl])
-  const recharge = async () => {
-    if (!baseUrl || rechargeSubmitting) return
-    const amount = rechargeAmount.trim()
-    const amountNumber = Number(amount)
-    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
-      setRechargeError('充值金额必须是大于 0 的数字。')
-      return
-    }
-    setRechargeSubmitting(true)
-    setRechargeError('')
-    try {
-      const order = await createRechargeOrder(baseUrl, amount)
-      setRechargeOrder({ ...order, amount_cny: order.amount_cny ?? amount })
-      setRechargeOpen(false)
-      if (order.payment_url?.startsWith('http'))
-        window.open(order.payment_url, '_blank', 'noopener,noreferrer')
-      loadBilling()
-    } catch (error) {
-      setRechargeError(describeApiError(error))
-    } finally {
-      setRechargeSubmitting(false)
-    }
-  }
-  const queryRechargeOrder = async () => {
-    if (!baseUrl || !rechargeOrder) return
-    setRechargeQuerying(true)
-    setBillingError('')
-    try {
-      const order = await fetchRechargeOrder(baseUrl, rechargeOrder.id)
-      setRechargeOrder({ ...rechargeOrder, ...order })
-      loadBilling()
-    } catch (error) {
-      setBillingError(describeApiError(error))
-    } finally {
-      setRechargeQuerying(false)
-    }
-  }
   const retryFailures = (job: SyncJob) => {
     if (!baseUrl || !job.failedItems.length) return
     setAction(`retry-${job.id}`)
@@ -2249,10 +2164,6 @@ function Overview({
                 : '处理中',
           ] as [string, string, string],
       ) ?? []
-  const merchantCatalogItems = useMemo(
-    () => selectMerchantCatalogItems(commercialCatalog?.catalog ?? []),
-    [commercialCatalog],
-  )
   const capabilityStateLabel = (state: string) =>
     ({
       unverified: '未验证',
@@ -2321,196 +2232,7 @@ function Overview({
         />
       )}
 
-      {baseUrl && (
-        <section className="panel wallet-panel">
-          <div className="panel-heading">
-            <div>
-              <span className="section-kicker">PLUGIN WALLET</span>
-              <h3>创意点与能力状态</h3>
-            </div>
-            <StatusChip
-              tone={
-                billing?.capability_entitlements?.balance.state === 'available'
-                  ? 'green'
-                  : 'amber'
-              }
-            >
-              {entitlementLabel('balance', billing?.capability_entitlements?.balance)}
-            </StatusChip>
-          </div>
-          {billingError && (
-            <ErrorNotice message={billingError} onRetry={loadBilling} compact />
-          )}
-          <div className="wallet-content">
-            <Card className="wallet-summary-card" variant="borderless">
-              <div className="wallet-summary">
-                <div>
-                  <span className="wallet-label">可用创意点</span>
-                  <Statistic
-                    className="wallet-statistic"
-                    value={billing?.available_points ?? '-'}
-                    suffix={billing?.available_points === null || billing?.available_points === undefined ? '' : ' 点'}
-                    loading={!billing && !billingError}
-                  />
-                    <p>{modelAccessMessage}</p>
-                </div>
-                <Space direction="vertical" align="end" size={8}>
-                  <Tag color={billing?.capability_entitlements?.balance.state === 'available' ? 'green' : 'gold'}>
-                    {entitlementLabel('balance', billing?.capability_entitlements?.balance)}
-                  </Tag>
-                </Space>
-              </div>
-              <small className="wallet-note">
-                生成、OCR、图片和视频按服务端确认的创意点直接扣费；余额待确认或不足时不会调用模型。
-              </small>
-              <div className="wallet-payment-facts" aria-label="钱包与最近充值">
-                <div><span>人民币钱包</span><strong>{billing ? `¥${billing.balance_cny}` : '待确认'}</strong></div>
-                <div><span>最近充值</span><strong>{latestRecharge ? `¥${latestRecharge.amount_cny}` : '暂无记录'}</strong></div>
-                <div><span>到账状态</span><strong>{latestRecharge ? (latestRecharge.description || '充值到账') : '—'}</strong></div>
-              </div>
-              {(latestRecharge?.order_id || latestRecharge?.orderId) ? <small className="wallet-order-id">订单号：{latestRecharge.order_id || latestRecharge.orderId}</small> : null}
-              <small className="wallet-note wallet-note-blocked" role="status">
-                钱包金额与创意点分别记账；支付到账不等于模型扣费，模型能力只读取创意点账本。
-              </small>
-            </Card>
-          </div>
-          <div className="wallet-catalog" aria-label="可售创意点套餐">
-            <div className="wallet-catalog-heading">
-              <div>
-                <span className="section-kicker">COMMERCIAL CATALOG</span>
-                <h4>可售创意点套餐</h4>
-              </div>
-              <button className="text-button" onClick={loadCommercialCatalog} disabled={!baseUrl}>
-                刷新套餐
-              </button>
-            </div>
-            {commercialCatalogError && <ErrorNotice message={commercialCatalogError} compact />}
-            {!commercialCatalogError && !commercialCatalog && <p className="wallet-note">正在读取服务端套餐…</p>}
-            {commercialCatalog && merchantCatalogItems.length === 0 && <p className="wallet-note">当前没有可展示的服务端套餐。</p>}
-            <div className="wallet-catalog-grid">
-              {merchantCatalogItems.map((item) => {
-                const unresolved = Array.isArray(item.unresolved) ? item.unresolved : []
-                const blockers = unresolved.length ? unresolved : (!item.executable ? ['当前套餐尚未达到可执行条件'] : [])
-                return (
-                  <Card className="wallet-catalog-card" size="small" key={`${item.id}-${item.sku_code}`} bordered>
-                    <div className="wallet-catalog-card-head">
-                      <b>{item.name}</b>
-                      <Tag color={item.executable ? 'green' : 'gold'}>{item.executable ? '可执行' : '暂不可购买'}</Tag>
-                    </div>
-                    <div className="wallet-catalog-meta"><span>SKU <code>{item.sku_code}</code></span><span>{item.version}</span></div>
-                    <div className="wallet-catalog-price">{item.price_label}{item.cycle_label ? ` · ${item.cycle_label}` : ''}</div>
-                    <p className="wallet-note">权益：{item.benefits_summary}</p>
-                    {blockers.length > 0 && <p className="recharge-mock-note">购买阻断：{blockers.join('；')}</p>}
-                    {!blockers.length && <p className="wallet-note">当前仅展示服务端批准目录；支付入口将在真实 checkout 与回调就绪后开放。</p>}
-                  </Card>
-                )
-              })}
-            </div>
-          </div>
-          {billing?.capability_entitlements && (
-            <div className="wallet-entitlement-grid" aria-label="能力状态">
-              {Object.entries(billing.capability_entitlements).map(
-                ([id, item]) => (
-                  <Card className="wallet-entitlement" size="small" key={id} bordered>
-                    <div className="wallet-entitlement-head"><b>
-                      {(
-                        {
-                          balance: '余额',
-                          package_quota: '套餐剩余次数',
-                          generation: '生成能力',
-                          platform_publish: '平台发布能力',
-                        } as Record<string, string>
-                      )[id] ?? id}
-                    </b>
-                    <StatusChip
-                      tone={item.state === 'available' ? 'green' : 'amber'}
-                    >
-                      {entitlementLabel(id, item)}
-                    </StatusChip>
-                    </div>
-                    <small>
-                      {item.reason ?? '服务端尚未返回说明。'}
-                      {'platform' in item && item.platform
-                        ? `（${item.platform} · ${item.store ?? '店铺'}）`
-                        : ''}
-                    </small>
-                  </Card>
-                ),
-              )}
-            </div>
-          )}
-          {rechargeOrder && (
-            <div className="recharge-order-card" role="status">
-              <div className="recharge-order-head">
-                <div>
-                  <span className="section-kicker">RECHARGE ORDER</span>
-                  <b>充值订单</b>
-                </div>
-                <StatusChip
-                  tone={rechargeOrder.state === 'paid' ? 'green' : 'amber'}
-                >
-                  {rechargeOrder.state === 'paid'
-                    ? '已到账'
-                    : rechargeOrder.state === 'pending'
-                      ? '待支付 / 待回调'
-                      : rechargeOrder.state}
-                </StatusChip>
-              </div>
-              <div className="recharge-order-meta">
-                <span>
-                  订单号 <b>{rechargeOrder.id}</b>
-                </span>
-                <span>
-                  金额 <b>¥{rechargeOrder.amount_cny ?? '—'}</b>
-                </span>
-                <span>
-                  渠道{' '}
-                  <b>
-                    {rechargeOrder.channel === 'wechat' ? '微信支付' : '支付宝'}
-                  </b>
-                </span>
-              </div>
-              {rechargeOrder.payment_mode === 'fixture' ||
-              rechargeOrder.paymentMode === 'fixture' ||
-              rechargeOrder.payment_url?.startsWith('fixture:') ||
-              rechargeOrder.paymentUrl?.startsWith('fixture:') ? (
-                <p className="recharge-mock-note">
-                  当前为 Mock
-                  演示订单，不会产生真实扣款。点击“查询订单”可验证订单状态。
-                </p>
-              ) : (
-                rechargeOrder.warning && (
-                  <p className="recharge-mock-note">{rechargeOrder.warning}</p>
-                )
-              )}
-              <div className="button-row">
-                <button
-                  className="secondary"
-                  onClick={queryRechargeOrder}
-                  disabled={rechargeQuerying}
-                >
-                  {rechargeQuerying ? '查询中…' : '查询订单'}
-                </button>
-                {(rechargeOrder.payment_url?.startsWith('http') ||
-                  rechargeOrder.paymentUrl?.startsWith('http')) && (
-                  <button
-                    className="text-button"
-                    onClick={() =>
-                      window.open(
-                        rechargeOrder.payment_url ?? rechargeOrder.paymentUrl,
-                        '_blank',
-                        'noopener,noreferrer',
-                      )
-                    }
-                  >
-                    打开支付页面 <ArrowRight size={14} />
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-        </section>
-      )}
+
 
       <section className="dashboard-grid">
         <article className="panel platform-panel" aria-busy={accountsLoading}>
@@ -2761,53 +2483,7 @@ function Overview({
           平台能力证据属于平台运营工作台；商家工作台仅展示店铺授权和交付就绪状态。
         </div>
       </section>
-      {rechargeOpen && (
-        <DialogFrame
-          testId="recharge-dialog"
-          kicker="WALLET RECHARGE"
-          title="充值并解锁能力"
-          onClose={() => setRechargeOpen(false)}
-          busy={rechargeSubmitting}
-          actions={
-            <>
-              <button
-                className="secondary"
-                onClick={() => setRechargeOpen(false)}
-                disabled={rechargeSubmitting}
-              >
-                取消
-              </button>
-              <button
-                className="primary"
-                onClick={() => void recharge()}
-                disabled={rechargeSubmitting}
-              >
-                {rechargeSubmitting ? '正在创建订单…' : '创建充值订单'}
-              </button>
-            </>
-          }
-        >
-          <div className="dialog-form">
-            <label htmlFor="recharge-amount">
-              充值金额（元）
-              <input
-                id="recharge-amount"
-                data-dialog-initial-focus
-                inputMode="decimal"
-                value={rechargeAmount}
-                onChange={(event) => {
-                  setRechargeAmount(event.target.value)
-                  setRechargeError('')
-                }}
-              />
-            </label>
-            <small>
-              提交后会创建订单；只有支付服务回调确认后余额才会到账。
-            </small>
-            {rechargeError && <ErrorNotice message={rechargeError} compact />}
-          </div>
-        </DialogFrame>
-      )}
+
       {revokeTarget && (
         <DialogFrame
           testId="revoke-platform-dialog"
