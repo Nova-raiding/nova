@@ -13,7 +13,7 @@
 - `npm run test:release-gates`：144 个文件通过、7 个 PostgreSQL 文件跳过；848 tests passed、14 skipped。跳过原因是当前没有隔离 PostgreSQL URL，不能当作生产 RLS 已验收。
 - 全量核心 `npm test`：本轮初跑暴露 8 个旧契约断言（7 个旧架构断言，加 1 个清单证据断言）；已按当前实现修正，受影响契约 8 文件/30 测试与清单输入验证 1 文件/124 测试均通过；其余 7/8 安全分片通过。随后 `npm run test:ops-console`：101 个文件、710 个测试通过。
 - `npm run audit:ops-surface`：141/141 方法有前端引用；`release:metadata:validate`、运营后台构建、商家工作台构建和 `git diff --check` 均通过。商家构建仍有单 bundle 大于 500KB 的性能警告，未作为功能失败隐藏。
-- 本轮 owner 修复已提交并推送：`639f3917`（`origin/main` 已同步）；没有切换线上。
+- 本轮 owner 修复已提交并推送：`639f3917`、`3e3522ab`（`origin/main` 已同步）；没有切换线上。
 
 ## 会议待办核对
 
