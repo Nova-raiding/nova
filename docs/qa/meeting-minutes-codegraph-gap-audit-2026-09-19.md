@@ -7,13 +7,13 @@
 ## 证据基线
 
 - 会议原文：`/Users/lixiaomei/Downloads/智能纪要：AI商品生成平台项目推进会 2026年9月18日/智能纪要：AI商品生成平台项目推进会 2026年9月18日.md`
-- CodeGraph 1.5.0：1,517 files / 21,405 nodes / 82,185 edges；`state=complete`、`pendingRefs=0`、`worktreeMismatch=null`。
+- CodeGraph 1.5.0：1,516 files / 21,488 nodes / 82,282 edges；`state=complete`、`pendingRefs=0`、`worktreeMismatch=null`。
 - `npm run typecheck`：通过。
 - `npm run audit:ops-surface`：141/141 方法有前端引用，`unreferenced_count=0`。
-- `npm run test:release-gates`：144 个文件通过、7 个 PostgreSQL 文件跳过；851 tests passed、14 skipped。跳过原因是当前没有隔离 PostgreSQL URL，不能当作生产 RLS 已验收。
+- `npm run test:release-gates`：144 个文件通过、7 个 PostgreSQL 文件跳过；848 tests passed、14 skipped。跳过原因是当前没有隔离 PostgreSQL URL，不能当作生产 RLS 已验收。
 - 全量核心 `npm test`：8/8 安全分片通过；随后 `npm run test:ops-console`：101 个文件、720 个测试通过。此前发现的概览布局、CI PostgreSQL 分母和浏览器清理超时均已修复并定向复验。
 - `npm run audit:ops-surface`：141/141 方法有前端引用；`release:metadata:validate`、运营后台构建、商家工作台构建和 `git diff --check` 均通过。商家构建仍有单 bundle 大于 500KB 的性能警告，未作为功能失败隐藏。
-- 当前工作树包含未提交修改；没有声称 `fe157e10` 已代表本轮代码，也没有切换线上。
+- 本轮 owner 修复已提交并推送：`7b55c6c3`（`origin/main` 已同步）；没有切换线上。
 
 ## 会议待办核对
 
@@ -27,7 +27,7 @@
 | 新增体验版 | 运营交付/商业目录已有 `basic/growth/custom`，私有试用 `private_validation_7d` 仍是 draft/non-executable；没有明确的体验版可选项闭环 | **未完成** | 明确体验版是独立账号版本还是私有 7 天验证 SKU；补齐目录、交付表单、权限快照、有效期、创意点和过期行为，并做支付/人工开通验收 |
 | 员工管理入口 | 已有“用户中心/成员管理”、`ops.members.list`、`ops.member.upsert/suspend` 和审计；没有独立“员工管理”页面/导航项 | **部分完成** | 若会议要求独立入口，需要把成员管理改名/收敛为员工管理并补邀请、角色、启停、原因、三管理员审批口径；现有能力不能自动视为新入口已交付 |
 | 客户资料交付入口 | `CustomerDeliveryPage`、档案、付款凭证、清单、培训与视频上传链路存在 | **代码已完成，账号生效链缺口** | 交付档案当前不唯一绑定“被开通商家账号”，不能自动根据“完成交付”开通指定账号；需要确认绑定字段和开通动作，再做真实跨租户/重试验收 |
-| 提交修改后的代码 | 当前工作树已完成本轮修复并通过本地门禁，但仍有未提交修改 | **代码验证完成，尚未提交/上线** | 仍需 owner 复核后提交、候选配置、迁移、release evidence、受控切换和回滚；不能因本地构建通过宣称上线 |
+| 提交修改后的代码 | `7b55c6c3` 已推送到 `origin/main`；候选配置、迁移、release evidence、受控切换和回滚仍未完成 | **代码已提交，尚未上线** | 仍需生成 candidate-bound release、真实证据和受控切换；不能因本地构建通过宣称上线 |
 
 ## 会议范围之外但上线必须补齐的 P0
 
@@ -39,7 +39,7 @@
 6. **OSS/恢复**：现网仍显示 `objectStorage.mode=local`；`/run/release-evidence/restore.json` 缺失，不能宣称真实对象存储和备份恢复已完成。
 7. **真实数据库/RLS**：本轮发布门禁有 7 个 PostgreSQL 文件跳过；必须在隔离 PostgreSQL 完成迁移链、RLS、跨租户拒绝、重启恢复和当前候选镜像验收。
 8. **平台人工数据闭环**：既定方案是不做六平台 OAuth，而由运营上传商品资料。当前人工店铺/商品代码存在，但需要把“运营上传 → 绑定平台/店铺/品类/品牌 → 商家可见 → 生成 → 审核/导出”的桌面真实路径固定成一条验收脚本，并禁止自动同步/发布文案重新出现。
-9. **仓库全量回归基线**：核心 8/8 分片、运营后台 101/101 文件已通过；PostgreSQL 隔离测试仍因当前环境没有隔离 PostgreSQL URL 而跳过，不能把本地绿色等价为生产 RLS 已验收。
+9. **仓库回归基线**：核心 8/8 分片、运营后台此前 101/101 文件已通过；本轮发布门禁 144/144 文件通过；PostgreSQL 隔离测试仍因当前环境没有隔离 PostgreSQL URL 而跳过，不能把本地绿色等价为生产 RLS 已验收。全量运营浏览器回归存在 AntD 弃用警告且单个客户交付场景约 30 秒，本轮改动已用关键交付/导航/用户目录定向测试复验。
 
 ## 明确不作为本轮 gap
 
@@ -64,10 +64,11 @@
 - 商家 REST/MCP 素材上传服务端拒绝视频扩展名和 `video/*` MIME；运营客户交付专用视频上传入口保持独立，不受该限制影响。
 - 修正迁移 218/219 的发布尾版本回归断言，9 项定向迁移回归通过。
 - 修正运营财务路由测试对 `/ops/finance` 的过期 overview 期望，路由回归 3/3 通过。
-- 新增 `meeting-minutes-gap-regression.test.ts`，2 项定向回归通过；完整发布门禁为 144 个测试文件通过、851 tests passed、7 个 PostgreSQL 文件跳过；类型检查通过。CodeGraph 已同步，当前索引为 1,517 files / 21,405 nodes / 82,185 edges。
+- 新增 `meeting-minutes-gap-regression.test.ts`，2 项定向回归通过；完整发布门禁为 144 个测试文件通过、848 tests passed、7 个 PostgreSQL 文件跳过；类型检查通过。CodeGraph 已同步，当前索引为 1,516 files / 21,488 nodes / 82,282 edges。
 - 客户交付页补齐只读权限态、培训凭证展示/上传边界、工作区清空态；交付仓储补齐已归档过滤、已付款完成门禁和有效证据时间投影。
 - MCP 充值职责收敛为商家后台创建订单、插件只读查询；平台告警的客户实体筛选保留数据授权边界；CI 纳入 migration-219 PostgreSQL 发布测试；桌面浏览器测试清理增加硬上限，避免残留浏览器阻塞验收。
-- 最新本地证据：`npm run typecheck`、`npm run test:release-gates`（144 文件/851 passed）、核心 `npm test`（8/8 分片）、`npm run test:ops-console`（101 文件/720 passed）、`npm run audit:ops-surface`、构建和 CodeGraph 同步均通过。
+- 商家财务页已改为调用服务端 `billing.recharge.create/get`，展示真实订单状态和支付链接；不再使用静态二维码或伪造充值成功。交付清单项完成必须保留扫描资产证据，交付生效还必须存在未删除视频资产；API/Worker Dockerfile 补齐构建平台和 npm cache 约束；发布元数据同步为 11 个运营域。
+- 最新本地证据：`npm run typecheck`、`npm run test:release-gates`（144 文件/848 passed）、核心 `npm test`（8/8 分片）、运营后台关键回归、`npm run audit:ops-surface`、构建和 CodeGraph 同步均通过。
 - 最新线上只读证据：`https://yxsona.com/api/healthz` 返回 `writesEnabled=false`、`setup.mode=fixture`、六平台 `fixture_ready`、`objectStorage.mode=local`、`productionGate=false`；`/api/releasez` 的 release/git SHA/manifest/image digest 仍为空且 `ready=false`；`https://ops.yxsona.com/healthz` 返回 `ok`。
 
 这些修复不改变真实支付、OAuth、OSS 或平台连接器的生产状态；上线判定仍保持 NO-GO。
