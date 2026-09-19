@@ -486,8 +486,8 @@ export function CustomerDeliverySection({
           dataIndex: key,
           render: (_value: boolean, row: CustomerDeliveryRecord) => {
             const value = key === "profile" ? isCustomerProfileFilled(row) : isDeliveryChecklistComplete(row, key);
-            const emptyLabel = key === "profile" ? "未填写" : "未完成";
-            return value ? (key === "profile" ? "已填写" : "已完成") : emptyLabel;
+            const label = value ? "已完成" : "未完成";
+            return <Button type="link" size="small" onClick={() => void openStep(row, key)}>{label}</Button>;
           },
         }),
       ),
@@ -541,7 +541,7 @@ export function CustomerDeliverySection({
         ),
       },
     ],
-    [onTrainingSave, saving],
+    [onTrainingSave, openStep, saving],
   );
   return (
     <Card
@@ -566,7 +566,7 @@ export function CustomerDeliverySection({
         title="新建客户档案"
         open={showCreate}
         onClose={() => setShowCreate(false)}
-        width={480}
+        size={480}
         extra={<Button type="primary" loading={creating} onClick={() => createForm.submit()}>创建</Button>}
       >
         <Form form={createForm} layout="vertical" onFinish={create}>
@@ -630,7 +630,7 @@ export function CustomerDeliverySection({
             current: currentPage,
             pageSize: 10,
             showSizeChanger: false,
-            position: ["bottomCenter"],
+            placement: ["bottomCenter"],
             onChange: setCurrentPage,
           }}
           locale={{
@@ -644,7 +644,7 @@ export function CustomerDeliverySection({
         title={detailsRecord ? `${detailsRecord.companyName} · 客户详情` : "客户详情"}
         open={Boolean(detailsRecord)}
         onClose={() => setDetailsRecord(undefined)}
-        width={620}
+        size={620}
       >
         {detailsRecord ? (
           <>
@@ -691,7 +691,7 @@ export function CustomerDeliverySection({
         }
         open={Boolean(selected)}
         onClose={() => { detailRequest.current++; setLoadingStep(false); setSelected(undefined); }}
-        width={560}
+        size={560}
       >
         {selected ? (
           <Space orientation="vertical" size="large" style={{ width: "100%" }}>
@@ -699,7 +699,7 @@ export function CustomerDeliverySection({
               key={`${selected.id}:${detailRequest.current}`}
               record={selected}
               readOnly={!onAccountBind}
-              disabled={disabled || loadingStep || saving || uploading}
+              disabled={readOnly || disabled || loadingStep || saving || uploading}
               onList={onAccountList}
               onBind={onAccountBind}
               onBusyChange={setBindingAccount}
@@ -717,7 +717,7 @@ export function CustomerDeliverySection({
             <Form
               form={form}
               layout="vertical"
-              disabled={loadingStep || saving || bindingAccount}
+              disabled={readOnly || loadingStep || saving || bindingAccount}
               aria-busy={loadingStep}
               onFinish={save}
             >
@@ -798,7 +798,7 @@ export function CustomerDeliverySection({
                   <CustomerDeliveryUpload
                     key={`${selected.id}:contract:${detailRequest.current}`}
                     purpose="contract"
-                    disabled={loadingStep || saving}
+                    disabled={readOnly || loadingStep || saving}
                     onUpload={onAssetUpload ? (file, purpose, signal) => onAssetUpload(selected, file, purpose, signal) : undefined}
                     onGetAsset={onAssetGet ? (assetRef, purpose, signal) => onAssetGet(selected, assetRef, purpose, signal) : undefined}
                     onReady={(asset) => form.setFieldValue("contractFile", asset.assetRef)}
@@ -876,9 +876,9 @@ export function CustomerDeliverySection({
                   <Checkbox>客户培训已完成（独立记录培训结果）</Checkbox>
                 </Form.Item>
               )}
-              <Button type="primary" htmlType="submit" loading={saving || loadingStep} disabled={uploading}>
+              {!readOnly ? <Button type="primary" htmlType="submit" loading={saving || loadingStep} disabled={uploading}>
                 保存当前环节
-              </Button>
+              </Button> : null}
             </Form>
           </Space>
         ) : null}
