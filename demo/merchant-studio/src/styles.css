@@ -1967,6 +1967,15 @@ body {
 .finance-query-menu { overflow:hidden; padding:5px!important; border:1px solid #dbe5de; border-radius:10px!important; box-shadow:0 12px 30px rgba(20,51,38,.14)!important; }
 .finance-query-menu .ant-select-item { min-height:34px; display:flex; align-items:center; border-radius:7px; color:#294238; font-size:11px; }
 .finance-query-menu .ant-select-item-option-selected { color:#155c43; background:#edf6f1!important; font-weight:700; }
+.finance-date-picker-popup .ant-picker-date-panel,.finance-date-picker-popup .ant-picker-month-panel { width:252px; }
+.finance-date-picker-popup .ant-picker-header { min-height:38px; padding:0 9px; }
+.finance-date-picker-popup .ant-picker-header-view { font-size:13px; line-height:38px; }
+.finance-date-picker-popup .ant-picker-body { padding:7px 10px 8px; }
+.finance-date-picker-popup .ant-picker-content { width:232px; }
+.finance-date-picker-popup .ant-picker-content th { height:26px; font-size:11px; }
+.finance-date-picker-popup .ant-picker-cell { padding:2px 0; font-size:11px; }
+.finance-date-picker-popup .ant-picker-cell-inner { min-width:26px; height:26px; line-height:26px; }
+.finance-date-picker-popup .ant-picker-footer { line-height:34px; }
 .finance-range-search i { align-self:end; padding:0 0 12px; color:#8a9790; font-size:10px; font-style:normal; text-align:center; }
 .finance-range-search button { min-height:38px; height:38px; padding:0 13px; font-size:10px; }
 .finance-chart-summary { display:flex; align-items:center; gap:12px; padding:11px 22px 0; color:#748078; font-size:10px; }
@@ -1979,7 +1988,7 @@ body {
 .finance-chart-area { fill:url('#none'); fill:#e9f5ed; opacity:.8; }
 .finance-chart-line { fill:none; stroke:#2f7b60; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; opacity:.72; }
 .finance-chart-dot { fill:#fff; stroke:#176b4d; stroke-width:3; }
-.finance-chart-point { outline:none; cursor:help; }
+.finance-chart-point { outline:none; cursor:default; }
 .finance-chart-hit { fill:transparent; }
 .finance-chart-value { fill:#234a39; font-size:8.5px; font-weight:700; paint-order:stroke; stroke:rgba(255,255,255,.96); stroke-width:4px; stroke-linejoin:round; }
 .finance-chart-label { fill:#849089; font-size:10px; }
