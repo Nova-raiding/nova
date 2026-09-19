@@ -306,7 +306,7 @@ P0 不自建 GPU，使用经批准的模型 API 或企业模型服务。
 - `doc/todo/infra/production-config.example.yaml`：生产字段契约；真实值只从托管 Secret Manager/KMS 注入。
 - `infra/local/docker-compose.yml`：本地/联调依赖。`migrate` 服务只执行 `packages/persistence/src/migrations/*.sql`，并在 `schema_migrations` 中登记版本；不再挂载兼容指针 `schema.sql`。
 - `infra/scripts/backup-postgres.sh`、`restore-postgres.sh`：数据库备份、校验和、显式确认恢复模板。
-- `infra/scripts/scale-workloads.sh`：50/100/250/500 容量档位的 dry-run 扩容模板；生产执行时由平台注入 `SCALE_COMMAND`。
+- `infra/scripts/scale-workloads.sh`：50/100/250/500 容量档位的 dry-run 扩容模板。脚本**不接受**任何注入式命令：默认只打印目标副本数，只有显式设置 `EXECUTE=true` 才会直接用调用方 kubeconfig 的 `kubectl scale` 改 6 个 Deployment 的副本数（命名空间可用 `SCALE_NAMESPACE` 覆盖，默认 `merchant`）。因此生产放量前必须自己确认 kubeconfig/context 与命名空间，脚本本身不提供命令白名单。
 - `infra/scripts/rollback.sh`：显式确认的发布回滚模板；回滚后必须执行健康、迁移、队列收敛和 `publish_unknown` 检查。
 - `infra/observability/`：Prometheus 告警和 OTEL 脱敏管道示例。
 - `infra/backup/backup-policy.example.yaml`：数据库 PITR、对象存储版本化和恢复演练约束。

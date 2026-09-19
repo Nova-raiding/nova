@@ -70,6 +70,12 @@ payments:
   payment_callback_secret_ref: "vault://merchant-payment-callback"
   payment_reconciliation_enabled: true
   payment_refund_enabled: true
+  # Channel label recorded on `commercial_orders.payment_provider`. Independent
+  # of payment_mode: the API resolves it before writing the order, so a missing
+  # value makes `commercial.order.create` return 503 and persist nothing, which
+  # in turn leaves `ops.commercial.order.payment.verify` with no order to find.
+  # `sandbox` is rejected in production; use the live channel name.
+  commercial_payment_provider: "alipay"
 
 runtime:
   merchant_ui_api_token_ref: "vault://merchant-ui/api-token"
@@ -319,6 +325,13 @@ data:
   backup_retention_days: 30
   asset_quarantine_retention_days: 7
   asset_clean_retention_days: 90
+  # Artifact fetch allowlists. The API fails closed in production when either is
+  # empty (`IMAGE_ARTIFACT_ALLOWLIST_MISSING` / `VIDEO_ARTIFACT_ALLOWLIST_MISSING`),
+  # so these are required inputs rather than optional tuning. A placeholder host
+  # is the dangerous case: it is non-empty, so the API starts normally and then
+  # rejects every real artifact host at runtime.
+  image_artifact_allowed_hosts: "merchant-images.example-provider.com"
+  video_artifact_allowed_hosts: "merchant-videos.example-provider.com"
   deletion_request_grace_days: 7
   migration_source: "packages/persistence/src/migrations"
   migration_lock_timeout_seconds: 60
@@ -331,6 +344,10 @@ security:
   webhook_signing_secret: "${SECRET:WEBHOOK_SIGNING_SECRET}"
   oauth_state_ttl_seconds: 600
   signed_download_ttl_seconds: 600
+  # Fail-closed asset-rights gate in front of product-image generation. The API
+  # reads REQUIRE_APPROVED_ASSET_FOR_GENERATION with a fail-open default, so
+  # production must pin it to true; `false` is rejected by the config gate.
+  require_approved_asset_for_generation: true
   callback_host_allowlist:
     - "merchant.example.com"
   outbound_api_host_allowlist:
@@ -433,6 +450,20 @@ capacity_acceptance:
 
 observability:
   alert_notifications_enabled: false
+  # Bearer the metrics scraper must present to `GET /metrics`. Mandatory in
+  # production: the API answers 503 METRICS_AUTH_NOT_CONFIGURED when it is unset
+  # and 401 when it does not match, so an empty value disables every merchant_*
+  # series with no symptom other than an empty dashboard. The Kubernetes path
+  # uses the same key through the merchant-runtime-secrets contract; the ECS path
+  # injects it through the secret manager like any other *_ref.
+  #
+  # NOTE: this key is documented here but is deliberately NOT yet in
+  # `infra/scripts/validate-production-config.sh`'s required_keys, because that
+  # gate's blocked template (`infra/config/production.blocked.example.yaml`) is
+  # outside this change's scope. Until it is added there, the gate will not fail
+  # a production config that omits it — do not read the gate's exit 0 as proof
+  # that scrapes are authenticated.
+  metrics_auth_token_ref: "${SECRET:METRICS_AUTH_TOKEN}"
   otel_endpoint: "${SECRET:OTEL_EXPORTER_OTLP_ENDPOINT}"
   error_reporting_dsn: "${SECRET:ERROR_REPORTING_DSN}"
   metrics_environment: production

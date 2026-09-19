@@ -1090,11 +1090,11 @@ quote
 | 工具组 | 示例 | 用途 | 商家 Bridge 可达性 |
 | --- | --- | --- | --- |
 | 身份/工作区 | `merchant.start`、`workspace.health`、`workspace.bootstrap` | 启动会话、健康和工作区 | 可达；`merchant.start` 受 `POINT_REQUIRED_NO_CHARGE` 门禁，零余额/无权益返回 402，余额未知返回 503 |
-| 店铺/商品 | `platform.connect`、`catalog.sync.start`、`catalog.search` | 授权、同步、检索 | `platform.connect`、`catalog.sync.start` **隐藏**（调用得到 `Unknown tool`）；`catalog.search` 可达，未绑店铺时 428 |
+| 店铺/商品 | `platform.connect`、`catalog.sync.start`、`catalog.search` | 授权、同步、检索 | `platform.connect`、`catalog.sync.start` **隐藏**（调用得到 `Unknown tool`）；`catalog.search` 可达且**不属于店铺边界**——它在 `STORE_BOUNDARY_EXEMPT_METHODS` 内，未绑店铺时不会返回 428，只受商业门禁约束（零余额 402、余额未知 503） |
 | 品和 SKU | `brand-unit.list`、`brand-unit.product.create`、`catalog.sku.update` | 维护品、商品和变体 | 可达，但属平台写入边界，未绑店铺时 428 |
 | 素材/知识 | `asset.list`、`asset.parse`、`knowledge.asset.list`、`knowledge.rule.list` | 素材、品牌和规则 | 可达（素材上传/解析在店铺边界之外） |
 | 任务/内容 | `task.create`、`task.answer`、`creative.directions`、`content.generate` | 任务和内容生成 | `creative.directions` **桥接层禁用**（`COMMERCIAL_DISABLED_METHODS`）；`task.*` 与 `content.generate` 可达但未绑店铺时 428 |
-| 图片/视频 | `catalog.image.generate`、`catalog.image.get`、`multimodal.video.request` | 视觉候选和视频任务 | 图片两项可达（需点数 + 权益 + 已扫描素材）；`multimodal.video.request` **默认禁用**，仅在本地 relay 验收开关下临时开放 |
+| 图片/视频 | `catalog.image.generate`、`catalog.image.get`、`catalog.image.select`、`multimodal.video.request` | 视觉候选和视频任务 | 图片三项**均在店铺边界之外**：生成 → 查看 → 选中首选是一整条未绑店铺可用的链路（需点数 + 权益 + 已扫描素材）；`multimodal.video.request` **默认禁用**，仅在本地 relay 验收开关下临时开放 |
 | 审核/发布 | `content.review`、`content.approve`、`publish.prepare`、`publish.confirm` | 审核、预览和写入 | `content.review` **桥接层禁用**；`publish.*` **全部隐藏**（当前 `manual` 档不通过插件发布）；`content.approve` 可达但未绑店铺时 428 |
 | 商业/钱包 | `commercial.catalog.get`、`commercial.order.create`、`billing.status`、`creative-points.balance.get` | 套餐、订单和点数 | 可达，且为零余额时仍可用的恢复入口；但未配置 `COMMERCIAL_PAYMENT_PROVIDER` 时下单返回 503 且不落库 |
 | 恢复/反馈 | `task.resume`、`task.timeline`、`feedback.submit` | 恢复任务和记录反馈 | 可达；`task.resume` 未绑店铺时 428 |

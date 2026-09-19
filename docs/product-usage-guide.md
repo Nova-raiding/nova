@@ -161,21 +161,23 @@ flowchart LR
 
 ### 开始之前：三个硬前置条件
 
-插件可以完成很多只读和准备工作，但**几乎所有业务动作（包括插件入口 `merchant.start` 本身）都必须同时满足下面三项**。缺任何一项都会被服务端直接拒绝——这是阻断，不是提示。
+插件可以完成很多只读和准备工作，但**几乎所有业务动作都必须同时满足下面第 1、2 项（包括插件入口 `merchant.start` 本身）**；**第 3 项只在需要素材的图片链路上成立**（纯文案链路不经过扫描器）。缺任何一项都会被服务端直接拒绝——这是阻断，不是提示。前两项由服务端商业准入门禁统一执行（`packages/application/src/commercial-access-service.ts`），第 3 项由图片链路的素材门禁执行（`apps/api/src/server.ts` 的 `requireApprovedAssetForImageGeneration()`）。
 
 | 前置条件 | 谁负责 | 未满足时返回的确切错误码 |
 |---|---|---|
-| 创意点余额大于 0 | 商家从商家后台购买创意点包或月付套餐 | `CREATIVE_POINTS_EXHAUSTED`（402，余额为 0）；`CREATIVE_POINTS_INSUFFICIENT`（402，余额不足本次报价） |
+| 创意点余额**已知**且大于 0 | 商家从商家后台购买创意点包或月付套餐 | `CREATIVE_POINTS_UNAVAILABLE`（503，工作区没有任何点数状态记录，余额**未知**——全新工作区就是这个状态，既不是 0 也不是已购）；`CREATIVE_POINTS_EXHAUSTED`（402，余额为 0）；`CREATIVE_POINTS_INSUFFICIENT`（402，余额不足本次报价） |
 | 有效的月付套餐权益 | 商家购买月付套餐（`basic` ¥2000 / `growth` ¥5000），运营核验后写入权益快照 | `COMMERCIAL_ENTITLEMENT_REQUIRED`（402） |
 | 生产素材扫描器已配置 | 平台运营（`ASSET_SCANNER_MODE=clamav_worker` + 签名扫描回执） | `IMAGE_SOURCE_ASSET_INVALID`（409，素材未通过扫描）；`GENERATED_IMAGE_SCAN_REQUIRED`（409，生成结果仍在隔离区） |
 
-三点必须同时成立，这是最容易误解的地方：
+最容易误解的是「同时成立」的范围：点数与套餐权益对每一个业务动作都成立，扫描器只对需要素材的图片链路成立——但只要走图片链路，三项就同样没有例外：
 
 - **只买创意点包不能创作。** 点包只会增加余额，不会产生套餐权益快照——`packages/persistence/src/commercial-contract-repository.ts` 的 `validatePeriod` 对 `point_pack` 和 `onboarding` 返回 `null`，公开目录中只有 `monthly` 套餐才在该文件的核销路径写入 `workspace_entitlement_snapshots_v2`。所以必须买月付套餐。
 - **只买套餐也可能点数为 0**，此时仍是 402。
 - **扫描器没配好，素材永远停在隔离区**，再多点数也无法生成。
 
-余额为 0 时，除身份/状态、下单、余额与流水、目录、导出等恢复类方法外，**其余业务方法一律返回 402 `CREATIVE_POINTS_EXHAUSTED`**；零余额判断先于操作分类，与操作类型无关（`packages/application/src/commercial-access-service.ts` 的 `CommercialAccessService.decide()` 中 `available_points === 0` 分支）。
+余额为 0 时，除身份/状态、下单、余额与流水、**商业目录**（`commercial.catalog.get`，即可售点包与套餐的价格）、导出等恢复类方法外，**其余业务方法一律返回 402 `CREATIVE_POINTS_EXHAUSTED`**；零余额判断先于操作分类，与操作类型无关（`packages/application/src/commercial-access-service.ts` 的 `CommercialAccessService.decide()` 中 `available_points === 0` 分支）。
+
+> 注意两个“目录”不是一回事：`commercial.catalog.get` 是**商业目录**（`RECOVERY_CONTROL`，零余额仍可用），而 `catalog.search`、`catalog.categories` 是**商品检索与类目**（`POINT_REQUIRED_NO_CHARGE`，零余额返回 402）。别把“目录可用”当成“商品类目也能读”。
 
 **注意：“开始使用Store Nova”（`merchant.start`）也在这道门禁之内。** 它被归类为 `POINT_REQUIRED_NO_CHARGE`，必须同时有可用点数和套餐权益；余额为 0 返回 `CREATIVE_POINTS_EXHAUSTED`（402），余额未知返回 `CREATIVE_POINTS_UNAVAILABLE`（503），没有权益快照返回 `COMMERCIAL_ENTITLEMENT_REQUIRED`（402）（分类见 `packages/contracts/src/commercial-access.ts` 的 `COMMERCIAL_MCP_FOUNDATION_POLICIES`；逐条行为断言见 `apps/api/src/server.test.ts` 的 `central commercial access gate` 用例）。零余额工作区里真正还能读的第一入口是 `onboarding.status` 和 `workspace.health`。
 

@@ -242,9 +242,9 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
 
 | 前置条件 | 未满足时返回 |
 | --- | --- |
-| 创意点余额大于 0 | `CREATIVE_POINTS_EXHAUSTED`（402，余额为 0）/ `CREATIVE_POINTS_INSUFFICIENT`（402，余额不足） |
+| 创意点余额**已知**且大于 0 | `CREATIVE_POINTS_UNAVAILABLE`（503，工作区没有点数状态记录、余额未知；全新工作区即此状态）/ `CREATIVE_POINTS_EXHAUSTED`（402，余额为 0）/ `CREATIVE_POINTS_INSUFFICIENT`（402，余额不足） |
 | 有效月付套餐权益 | `COMMERCIAL_ENTITLEMENT_REQUIRED`（402） |
-| 生产素材扫描器已配置 | `IMAGE_SOURCE_ASSET_INVALID`（409） |
+| 生产素材扫描器已配置 | `IMAGE_SOURCE_ASSET_INVALID`（409，素材未通过扫描）；`GENERATED_IMAGE_SCAN_REQUIRED`（409，生成结果仍在隔离区） |
 
 **只买创意点包不能创作**：点包只增加余额，公开目录中只有月付套餐 `basic`（¥2000）/ `growth`（¥5000）才产生套餐权益快照（`packages/persistence/src/commercial-contract-repository.ts` 的 `validatePeriod` 与核销路径）。店铺绑定也仍然必要：未绑定店铺时商品同步、正式任务与发布返回 `STORE_ONBOARDING_REQUIRED`（428）。扫描器由平台配置（`ASSET_SCANNER_MODE=clamav_worker` + 签名回执），商家无需也不能提交扫描证据。
 
