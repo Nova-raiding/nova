@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
-import { SqlPool } from './repository.js'
+import { SqlClient, SqlPool } from './repository.js'
 
 export interface Migration {
   version: number
@@ -25,24 +25,93 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   applied_at timestamptz NOT NULL DEFAULT now()
 )`
 const MIGRATION_ADVISORY_LOCK = 731942851
-// Preserve the immutable pre-commercial 144 artifact while migration 148
-// performs the forward-only reservation hardening.
-const LEGACY_MIGRATION_CHECKSUMS = new Map<number, ReadonlySet<string>>([
+
+/**
+ * Operator opt-in that turns the explicit checksum baseline below into an
+ * accepted identity set. Absent or any value other than `true` means the
+ * runner fails closed: an unverifiable history stops the deployment instead of
+ * being certified by the release that happens to run next.
+ */
+export const MIGRATION_BASELINE_ACCEPTED_ENV = 'MIGRATION_BASELINE_ACCEPTED'
+/**
+ * Release-captured checksums the operator accepts for a version, formatted as
+ * `version=sha256hex` entries separated by commas, for example
+ * `144=<digest>,168=<digest>`. Captured when the release is cut, never read
+ * from the deploy-time working copy, so a later in-place edit of a migration
+ * file cannot satisfy it.
+ */
+export const MIGRATION_BASELINE_CHECKSUMS_ENV = 'MIGRATION_BASELINE_CHECKSUMS'
+
+/**
+ * Migration identities recorded by earlier local release databases that cannot
+ * be re-derived from any committed artifact: 144 (pre-commercial ledger), 168
+ * (pre-consolidation scheduler branch) and 191 (pre-consolidation category
+ * DDL). The digest stored in `schema_migrations` is the only surviving trace;
+ * no blob in this repository's object database hashes to any of them.
+ *
+ * An identity that cannot be verified against a release artifact cannot be
+ * attested by this release either, so these entries are inert unless the
+ * operator explicitly sets `MIGRATION_BASELINE_ACCEPTED=true`. They are never
+ * honoured silently. Prefer re-baselining the affected database (rewriting the
+ * recorded checksum to the release artifact digest) and deleting the entry.
+ */
+const UNVERIFIABLE_LEGACY_CHECKSUMS = new Map<number, ReadonlySet<string>>([
   [144, new Set(['9519b2dbee21371a0bc7429c50e61ab3a677a4fd3965707328bd18489f2ad2e7'])],
-  // Migration 168 was applied to the local release database by the
-  // scheduler branch before its source file was consolidated with the
-  // expiration-fact hardening. Keep that applied identity accepted; 169 is
-  // the forward-only repair for the missing expiration table.
   [168, new Set(['37f633fb25a7d1536f65a644a1adee3611c36ed416ac9a1bf3a10a1e92ab1ef1'])],
-  // Migration 191 was applied by the local release image before the
-  // category DDL was consolidated into its current idempotent form.  The
-  // database already contains the category column and index; preserve that
-  // immutable applied identity while allowing the release runner to continue
-  // validating and applying later migrations.
   [191, new Set(['36f8c9669ba99a392a874a76fa8d28b658211376a0e7e3131281247926202ba2'])],
 ])
 
-export type MigrationIntegrityErrorCode = 'MIGRATION_NAME_MISMATCH' | 'MIGRATION_CHECKSUM_MISMATCH' | 'MIGRATION_VERSION_UNKNOWN' | 'MIGRATION_DUPLICATE_VERSION' | 'MIGRATION_VERSION_INVALID'
+/**
+ * Checksums the operator has explicitly accepted for a database history that
+ * the release itself cannot verify.
+ */
+export interface MigrationChecksumBaseline {
+  /** True only when the operator explicitly approved unverifiable identities. */
+  readonly accepted: boolean
+  /** Accepted checksums per migration version. */
+  readonly checksums: ReadonlyMap<number, ReadonlySet<string>>
+}
+
+/** Fail-closed default: nothing outside the release artifacts is accepted. */
+export const EMPTY_MIGRATION_CHECKSUM_BASELINE: MigrationChecksumBaseline = {
+  accepted: false,
+  checksums: new Map(),
+}
+
+/**
+ * Builds the accepted-checksum baseline from the deployment environment. The
+ * default (nothing set) accepts nothing, so a NULL checksum or an unknown
+ * recorded checksum stops the run instead of being silently adopted.
+ */
+export function migrationChecksumBaseline(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): MigrationChecksumBaseline {
+  if ((env[MIGRATION_BASELINE_ACCEPTED_ENV] ?? '').trim().toLowerCase() !== 'true') {
+    return EMPTY_MIGRATION_CHECKSUM_BASELINE
+  }
+  const checksums = new Map<number, Set<string>>()
+  const record = (version: number, checksum: string): void => {
+    const existing = checksums.get(version)
+    if (existing) existing.add(checksum)
+    else checksums.set(version, new Set([checksum]))
+  }
+  for (const [version, accepted] of UNVERIFIABLE_LEGACY_CHECKSUMS) {
+    for (const checksum of accepted) record(version, checksum)
+  }
+  const raw = (env[MIGRATION_BASELINE_CHECKSUMS_ENV] ?? '').trim()
+  if (raw) {
+    for (const entry of raw.split(',')) {
+      const match = /^\s*(\d+)\s*=\s*([a-f0-9]{64})\s*$/u.exec(entry)
+      if (!match) {
+        throw new Error(`${MIGRATION_BASELINE_CHECKSUMS_ENV} contains a malformed entry (expected version=sha256hex): ${entry.trim()}`)
+      }
+      record(Number(match[1]), match[2]!)
+    }
+  }
+  return { accepted: true, checksums }
+}
+
+export type MigrationIntegrityErrorCode = 'MIGRATION_NAME_MISMATCH' | 'MIGRATION_CHECKSUM_MISMATCH' | 'MIGRATION_CHECKSUM_UNVERIFIED' | 'MIGRATION_CONCURRENT_INDEX_INVALID' | 'MIGRATION_VERSION_UNKNOWN' | 'MIGRATION_DUPLICATE_VERSION' | 'MIGRATION_VERSION_INVALID'
 
 export class MigrationIntegrityError extends Error {
   constructor(
@@ -62,12 +131,20 @@ export function migrationChecksum(sql: string): string {
 
 /**
  * Verifies the immutable identity of rows already recorded in schema_migrations.
- * A null checksum is intentionally accepted for one-time legacy backfill.
+ *
+ * Fails closed. A null checksum is an *unverified* identity: it is accepted
+ * only when the operator supplied an explicit baseline that attests the digest
+ * of the release artifact for that version. Accepting a null checksum and
+ * stamping it with the digest of whatever file is on disk would certify an
+ * in-place edit of the migration made while the row was still null.
  */
 export function verifyAppliedMigrations(
   applied: readonly AppliedMigration[],
   expected: readonly Migration[],
+  baseline: MigrationChecksumBaseline = EMPTY_MIGRATION_CHECKSUM_BASELINE,
 ): void {
+  const acceptedBaselineChecksum = (version: number, checksum: string): boolean =>
+    baseline.checksums.get(version)?.has(checksum) === true
   const assertVersion = (version: number): void => {
     if (!Number.isInteger(version) || version < 1) {
       throw new MigrationIntegrityError('MIGRATION_VERSION_INVALID', version, `migration version must be a positive integer: ${String(version)}`)
@@ -114,8 +191,21 @@ export function verifyAppliedMigrations(
     if (row.name !== migration.name && !legacy014Alias) {
       throw new MigrationIntegrityError('MIGRATION_NAME_MISMATCH', row.version, `migration ${row.version} name mismatch: database=${row.name}, release=${migration.name}`)
     }
-    if (row.checksum != null && row.checksum !== migrationChecksum(migration.sql) && !LEGACY_MIGRATION_CHECKSUMS.get(row.version)?.has(row.checksum)) {
-      throw new MigrationIntegrityError('MIGRATION_CHECKSUM_MISMATCH', row.version, `migration ${row.version} checksum mismatch: database=${row.checksum}, release=${migrationChecksum(migration.sql)}`)
+    const releaseChecksum = migrationChecksum(migration.sql)
+    if (row.checksum == null) {
+      // Fail closed. The row is only verifiable when the operator's baseline
+      // pins this version to the digest of the release artifact. The
+      // prefix-only 014 alias has no recoverable digest at all, so the
+      // operator has to approve the version explicitly as well.
+      if (!acceptedBaselineChecksum(row.version, releaseChecksum) && !(legacy014Alias && baseline.accepted)) {
+        throw new MigrationIntegrityError(
+          'MIGRATION_CHECKSUM_UNVERIFIED',
+          row.version,
+          `migration ${row.version} has no recorded checksum and no operator-approved baseline entry; set ${MIGRATION_BASELINE_ACCEPTED_ENV}=true with a release-captured ${MIGRATION_BASELINE_CHECKSUMS_ENV} entry for ${row.version}, or re-baseline the database`,
+        )
+      }
+    } else if (row.checksum !== releaseChecksum && !acceptedBaselineChecksum(row.version, row.checksum)) {
+      throw new MigrationIntegrityError('MIGRATION_CHECKSUM_MISMATCH', row.version, `migration ${row.version} checksum mismatch: database=${row.checksum}, release=${releaseChecksum}`)
     }
   }
   if (completeChain) {
@@ -233,6 +323,63 @@ export function splitTopLevelSqlStatements(sql: string): string[] {
   return statements
 }
 
+/**
+ * Index names a non-transactional migration builds with
+ * `CREATE INDEX CONCURRENTLY [IF NOT EXISTS]`.
+ *
+ * `IF NOT EXISTS` matches on the name alone, so Postgres happily skips the
+ * build when a previous attempt left an INVALID index (`indisvalid = false`)
+ * under that name - a partial build from a deadlock, a killed connection, a
+ * unique violation or a full disk. Without an explicit assertion the migration
+ * is then recorded as applied and the index is never rebuilt.
+ */
+export function concurrentIndexNames(sql: string): string[] {
+  const pattern = /^CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:("(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)\s*\.\s*)?("(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)/iu
+  const names: string[] = []
+  for (const statement of splitTopLevelSqlStatements(sql)) {
+    // Leading comments are retained by the splitter; drop them before matching.
+    const code = statement.replace(/^(?:\s*--[^\n]*(?:\n|$)|\s*\/\*[\s\S]*?\*\/|\s)+/u, '')
+    const match = pattern.exec(code)
+    if (!match) continue
+    const identifier = match[2]!
+    names.push(identifier.startsWith('"') ? identifier.slice(1, -1).replaceAll('""', '"') : identifier)
+  }
+  return names
+}
+
+/**
+ * Fails when a non-transactional migration finished without materialising the
+ * indexes it declares. Runs after the statement loop and before the row is
+ * written to `schema_migrations`, so a broken build fails the deployment
+ * instead of being recorded as applied forever.
+ *
+ * The check is scoped to the indexes this migration declares rather than to
+ * every index in the database: unrelated invalid indexes elsewhere in the
+ * schema are not this migration's business, and a global probe would turn an
+ * unrelated object into a deployment outage.
+ */
+export async function assertConcurrentIndexesValid(client: SqlClient, migration: Migration): Promise<void> {
+  const names = concurrentIndexNames(migration.sql)
+  if (names.length === 0) return
+  const result = await client.query<{ name: string }>(
+    `SELECT probe.name
+       FROM unnest($1::text[]) AS probe(name)
+       LEFT JOIN pg_class c ON c.relname = probe.name AND c.relkind = 'i' AND pg_table_is_visible(c.oid)
+       LEFT JOIN pg_index i ON i.indexrelid = c.oid
+      WHERE c.oid IS NULL OR NOT i.indisvalid
+      ORDER BY probe.name`,
+    [names],
+  )
+  if (result.rows.length > 0) {
+    const broken = result.rows.map(row => row.name).join(', ')
+    throw new MigrationIntegrityError(
+      'MIGRATION_CONCURRENT_INDEX_INVALID',
+      migration.version,
+      `migration ${migration.version} completed without building ${broken}; the index is missing or indisvalid=false (a concurrent build that failed or was cancelled). Drop it with DROP INDEX CONCURRENTLY and redeploy, or REINDEX INDEX CONCURRENTLY to repair it.`,
+    )
+  }
+}
+
 /** Applies migrations in ascending version order in one deployment transaction. */
 export class MigrationRunner {
   constructor(private readonly pool: SqlPool, private readonly migrations: readonly Migration[]) {}
@@ -248,11 +395,20 @@ export class MigrationRunner {
       // historical migration chain or requires a new migration version.
       await client.query('ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum text')
       const result = await client.query<MigrationRow>('SELECT version, name, checksum FROM schema_migrations ORDER BY version ASC')
-      verifyAppliedMigrations(result.rows, this.migrations)
+      const baseline = migrationChecksumBaseline()
+      verifyAppliedMigrations(result.rows, this.migrations, baseline)
       const versions = new Set(result.rows.map(row => row.version))
       const pending = [...this.migrations].sort((a, b) => a.version - b.version)
-      for (const row of result.rows) {
-        if (row.checksum == null && !(row.version === 14 && row.name === 'read_only_schedules')) {
+      // Adopt a legacy NULL checksum only when the operator's baseline pinned
+      // this version to the digest of the release artifact, which the verifier
+      // above already established. Never stamp the digest of the file on disk
+      // onto an unverified row: that would permanently certify an edit made
+      // while the checksum was still null. The 014 name-only alias keeps a NULL
+      // checksum forever because its historical digest is unrecoverable.
+      if (baseline.accepted) {
+        for (const row of result.rows) {
+          if (row.checksum != null) continue
+          if (row.version === 14 && row.name === 'read_only_schedules') continue
           const migration = pending.find(item => item.version === row.version)
           if (migration) await client.query('UPDATE schema_migrations SET checksum = $1 WHERE version = $2 AND checksum IS NULL', [migrationChecksum(migration.sql), row.version])
         }
@@ -264,6 +420,7 @@ export class MigrationRunner {
           for (const statement of splitTopLevelSqlStatements(migration.sql)) {
             await client.query(statement)
           }
+          await assertConcurrentIndexesValid(client, migration)
           await client.query('BEGIN')
           await client.query('INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)', [migration.version, migration.name, checksum])
           await client.query('COMMIT')
@@ -515,6 +672,14 @@ export async function loadMigrations(): Promise<Migration[]> {
   const publicPlatformRules = await readFile(new URL('./migrations/219_public_platform_rules.sql', import.meta.url), 'utf8')
   const commercialRefundCumulativeBound = await readFile(new URL('./migrations/220_commercial_refund_cumulative_bound.sql', import.meta.url), 'utf8')
   const commercialRefundAmountBound = await readFile(new URL('./migrations/221_commercial_refund_amount_bound.sql', import.meta.url), 'utf8')
+  const opsAuditCenterPageIndexes = await readFile(new URL('./migrations/222_ops_audit_center_page_indexes.sql', import.meta.url), 'utf8')
+  const merchantCatalogProjection = await readFile(new URL('./migrations/223_merchant_catalog_projection.sql', import.meta.url), 'utf8')
+  const publicPlatformRuleAuditTruncateGuard = await readFile(new URL('./migrations/224_public_platform_rule_audit_truncate_guard.sql', import.meta.url), 'utf8')
+  const appendOnlyLedgerTruncateGuards = await readFile(new URL('./migrations/225_append_only_ledger_truncate_guards.sql', import.meta.url), 'utf8')
+  const evidenceAndSnapshotTruncateGuards = await readFile(new URL('./migrations/226_evidence_and_snapshot_truncate_guards.sql', import.meta.url), 'utf8')
+  const platformMediaSpecAuditAppendOnly = await readFile(new URL('./migrations/227_platform_media_spec_audit_append_only.sql', import.meta.url), 'utf8')
+  const auditLedgerErrnoContract = await readFile(new URL('./migrations/228_audit_ledger_errno_contract.sql', import.meta.url), 'utf8')
+  const evidenceAndSnapshotAppendOnlyGuards = await readFile(new URL('./migrations/229_evidence_and_snapshot_append_only_guards.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -737,6 +902,14 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 219, name: 'public_platform_rules', sql: publicPlatformRules },
     { version: 220, name: 'commercial_refund_cumulative_bound', sql: commercialRefundCumulativeBound },
     { version: 221, name: 'commercial_refund_amount_bound', sql: commercialRefundAmountBound },
+    { version: 222, name: 'ops_audit_center_page_indexes', sql: opsAuditCenterPageIndexes, transactional: false },
+    { version: 223, name: 'merchant_catalog_projection', sql: merchantCatalogProjection },
+    { version: 224, name: 'public_platform_rule_audit_truncate_guard', sql: publicPlatformRuleAuditTruncateGuard },
+    { version: 225, name: 'append_only_ledger_truncate_guards', sql: appendOnlyLedgerTruncateGuards },
+    { version: 226, name: 'evidence_and_snapshot_truncate_guards', sql: evidenceAndSnapshotTruncateGuards },
+    { version: 227, name: 'platform_media_spec_audit_append_only', sql: platformMediaSpecAuditAppendOnly },
+    { version: 228, name: 'audit_ledger_errno_contract', sql: auditLedgerErrnoContract },
+    { version: 229, name: 'evidence_and_snapshot_append_only_guards', sql: evidenceAndSnapshotAppendOnlyGuards },
   ]
 }
 

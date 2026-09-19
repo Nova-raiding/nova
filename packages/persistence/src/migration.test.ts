@@ -5,10 +5,10 @@ import { SqlClient, SqlPool } from './repository.js'
 
 class MigrationClient implements SqlClient {
   readonly calls: Array<{ text: string; values?: readonly unknown[] }> = []
-  constructor(private readonly alreadyApplied: number[] = []) {}
+  constructor(private readonly alreadyApplied: Array<{ version: number; name: string; checksum?: string | null }> = []) {}
   async query<Row = Record<string, unknown>>(text: string, values?: readonly unknown[]) {
     this.calls.push({ text, values })
-    if (text.startsWith('SELECT version')) return { rows: this.alreadyApplied.map(version => ({ version, name: version === 1 ? 'initial' : `migration_${version}`, checksum: null })) as Row[] }
+    if (text.startsWith('SELECT version')) return { rows: this.alreadyApplied as Row[] }
     return { rows: [] as Row[] }
   }
   release() {}
@@ -25,7 +25,7 @@ describe('MigrationRunner', () => {
   it('loads the ordered production migration set', async () => {
     const migrations = await loadMigrations()
     const latestVersion = migrations.at(-1)?.version ?? 0
-    expect(latestVersion).toBe(221)
+    expect(latestVersion).toBe(229)
     expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(migrations[1]?.sql).toContain('FORCE ROW LEVEL SECURITY')
     const byVersion = new Map(migrations.map(migration => [migration.version, migration]))
@@ -53,6 +53,8 @@ describe('MigrationRunner', () => {
     expect(byVersion.get(219)?.sql).toContain('CREATE TABLE IF NOT EXISTS public_platform_rule_audits')
     expect(byVersion.get(219)?.sql).toContain('GRANT SELECT ON public_platform_rule_versions TO merchant_app')
     expect(byVersion.get(219)?.sql).toContain('public_platform_rule_audits_append_only')
+    expect(byVersion.get(224)).toMatchObject({ name: 'public_platform_rule_audit_truncate_guard' })
+    expect(byVersion.get(224)?.sql).toContain('public_platform_rule_audits_no_truncate')
     expect(byVersion.get(220)).toMatchObject({ name: 'commercial_refund_cumulative_bound' })
     expect(byVersion.get(220)?.sql).toContain('enforce_commercial_refund_cumulative_bound')
     expect(byVersion.get(220)?.sql).toContain('commercial_refund_events_v2_cumulative_bound')
@@ -373,9 +375,19 @@ CREATE INDEX CONCURRENTLY second_idx ON second_table (id);
   })
 
   it('skips versions already recorded', async () => {
-    const client = new MigrationClient([1])
+    const artifact = { version: 1, name: 'initial', sql: 'SHOULD NOT RUN' }
+    const client = new MigrationClient([{ version: 1, name: 'initial', checksum: migrationChecksum(artifact.sql) }])
     const pool: SqlPool = { connect: async () => client }
-    expect(await new MigrationRunner(pool, [{ version: 1, name: 'initial', sql: 'SHOULD NOT RUN' }]).run()).toEqual([])
+    expect(await new MigrationRunner(pool, [artifact]).run()).toEqual([])
+    expect(client.calls.some(call => call.text === 'SHOULD NOT RUN')).toBe(false)
+  })
+
+  it('refuses to re-stamp a legacy row whose checksum was never recorded', async () => {
+    const artifact = { version: 1, name: 'initial', sql: 'SHOULD NOT RUN' }
+    const client = new MigrationClient([{ version: 1, name: 'initial', checksum: null }])
+    const pool: SqlPool = { connect: async () => client }
+    await expect(new MigrationRunner(pool, [artifact]).run()).rejects.toMatchObject({ code: 'MIGRATION_CHECKSUM_UNVERIFIED', version: 1 })
+    expect(client.calls.some(call => call.text.startsWith('UPDATE schema_migrations SET checksum'))).toBe(false)
     expect(client.calls.some(call => call.text === 'SHOULD NOT RUN')).toBe(false)
   })
 })
