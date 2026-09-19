@@ -62,3 +62,4 @@ export * from './commercial-refund-repository.js'
 export * from './creative-point-lifecycle-repository.js'
 
 export * from "./customer-delivery-repository.js"
+export * from './job-queue-metrics-repository.js'

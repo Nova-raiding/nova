@@ -85,6 +85,43 @@ describe('PostgresOpsDataRepository', () => {
     expect(client.calls.filter(call => call.includes('FROM ops_workspace_summaries'))).toHaveLength(3)
   })
 
+  it('bounds the platform summary read to the requested workspaces', async () => {
+    const client = new Client([{ workspaceId: 'ws_1', enterpriseName: '演示企业', status: 'active', planName: 'Pro' }])
+    await new PostgresOpsDataRepository(new Pool(client)).listWorkspaceSummaries({ workspaceIds: ['ws_1', 'ws_2'] })
+    const summaryQuery = client.calls.findIndex(call => call.includes('FROM ops_workspace_summaries'))
+    expect(client.calls[summaryQuery]).toContain('WHERE s.workspace_id = ANY($1)')
+    expect(client.calls[summaryQuery]).toContain('ORDER BY s.created_at DESC, s.workspace_id ASC')
+    expect(client.values[summaryQuery]).toEqual([['ws_1', 'ws_2']])
+  })
+
+  it('keeps the unfiltered summary read unchanged for callers that genuinely want the directory', async () => {
+    const client = new Client()
+    await new PostgresOpsDataRepository(new Pool(client)).listWorkspaceSummaries()
+    const summaryQuery = client.calls.findIndex(call => call.includes('FROM ops_workspace_summaries'))
+    expect(client.calls[summaryQuery]).not.toContain('WHERE')
+    expect(client.values[summaryQuery]).toEqual([])
+  })
+
+  it('treats an explicitly empty workspace list as "no workspaces", not "no filter"', async () => {
+    const client = new Client()
+    await expect(new PostgresOpsDataRepository(new Pool(client)).listWorkspaceSummaries({ workspaceIds: [] })).resolves.toEqual([])
+    const summaryQuery = client.calls.findIndex(call => call.includes('FROM ops_workspace_summaries'))
+    expect(client.calls[summaryQuery]).toContain('WHERE s.workspace_id = ANY($1)')
+    expect(client.values[summaryQuery]).toEqual([[]])
+  })
+
+  it('applies the same bound when it falls back to the migration-073 projection', async () => {
+    const client = new HistoricalClient([])
+    await new PostgresOpsDataRepository(new Pool(client)).listWorkspaceSummaries({ workspaceIds: ['ws_legacy'] })
+    const summaryCalls = client.calls.filter(call => call.includes('FROM ops_workspace_summaries'))
+    expect(summaryCalls).toHaveLength(2)
+    expect(summaryCalls.every(call => call.includes('WHERE s.workspace_id = ANY($1)'))).toBe(true)
+    const summaryValueSlots = client.calls
+      .map((call, index) => (call.includes('FROM ops_workspace_summaries') ? client.values[index] : undefined))
+      .filter(values => values !== undefined)
+    expect(summaryValueSlots).toEqual([[['ws_legacy']], [['ws_legacy']]])
+  })
+
   it('retries summaries against the migration-073 projection when enterprise schema is absent', async () => {
     const client = new HistoricalClient([{
       workspaceId: 'ws_legacy', enterpriseName: '未命名企业主体', status: 'active', planName: 'Starter',

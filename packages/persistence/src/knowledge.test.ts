@@ -33,6 +33,143 @@ class RecordingKnowledgePool implements SqlPool {
   }
 }
 
+type PgRow = Record<string, any>
+
+const compareValues = (left: unknown, right: unknown): number => typeof left === 'number' && typeof right === 'number'
+  ? left - right
+  : String(left).localeCompare(String(right))
+
+/** Serves both the per-document child reads and the batched `= ANY($n)` form,
+ * so the same fixture can pin the combined result as well as the round-trip
+ * count of whichever implementation is under test. */
+function childRows(rows: readonly PgRow[], values: readonly unknown[], order: readonly string[], readyOnly = false): PgRow[] {
+  const selector = values[1]
+  const documentIds = Array.isArray(selector) ? selector.map(String) : [String(selector)]
+  return rows
+    .filter(row => documentIds.includes(String(row.document_id)) && (!readyOnly || row.index_state === 'ready'))
+    .map(row => ({ ...row }))
+    .sort((left, right) => order.reduce((result, key) => result || compareValues(left[key], right[key]), 0))
+}
+
+class BatchedKnowledgePool implements SqlPool {
+  readonly statements: string[] = []
+  readonly parameters: unknown[][] = []
+  constructor(
+    private readonly documents: readonly PgRow[],
+    private readonly chunks: readonly PgRow[],
+    private readonly embeddings: readonly PgRow[],
+  ) {}
+  /** Honours the `AND id=$n` point lookup, both product predicates and either
+   * bound (`LIMIT $n`, or the batch form's per-product `knowledge_product_rank`)
+   * so a bounded read is observable, not just a SQL string. */
+  private selectDocuments(text: string, values: readonly unknown[]): PgRow[] {
+    let rows = [...this.documents]
+    const idMatch = / AND id=\$(\d+)/u.exec(text)
+    if (idMatch) {
+      const id = values[Number(idMatch[1]) - 1]
+      rows = rows.filter(row => row.id === id)
+    }
+    const productMatch = / AND (?:d\.)?product_id=\$(\d+)/u.exec(text)
+    if (productMatch) {
+      const productId = values[Number(productMatch[1]) - 1]
+      rows = rows.filter(row => row.product_id === productId)
+    }
+    const productSetMatch = /product_id = ANY\(\$(\d+)::text\[\]\)/u.exec(text)
+    if (productSetMatch) {
+      const productIds = values[Number(productSetMatch[1]) - 1] as readonly string[]
+      rows = rows.filter(row => productIds.includes(String(row.product_id)))
+    }
+    const rankMatch = /knowledge_product_rank <= \$(\d+)/u.exec(text)
+    if (rankMatch) {
+      const cap = Number(values[Number(rankMatch[1]) - 1])
+      const perProduct = new Map<string, PgRow[]>()
+      for (const row of rows) {
+        const key = String(row.product_id)
+        const bucket = perProduct.get(key)
+        if (bucket) bucket.push(row)
+        else perProduct.set(key, [row])
+      }
+      return [...perProduct.values()].flatMap(bucket => bucket.slice(0, cap))
+    }
+    const limitMatch = / LIMIT \$(\d+)$/u.exec(text)
+    if (limitMatch) rows = rows.slice(0, Number(values[Number(limitMatch[1]) - 1]))
+    return rows
+  }
+  async connect(): Promise<SqlClient> {
+    return {
+      query: async <Row>(text: string, values: readonly unknown[] = []) => {
+        this.statements.push(text)
+        this.parameters.push([...values])
+        if (text.includes('FROM knowledge_documents')) return { rows: this.selectDocuments(text, values) as Row[] }
+        if (text.includes('FROM knowledge_chunks')) return { rows: childRows(this.chunks, values, ['document_id', 'ordinal']) as Row[] }
+        if (text.includes('FROM knowledge_embeddings')) return { rows: childRows(this.embeddings, values, [], true) as Row[] }
+        return { rows: [] as Row[] }
+      },
+      release: () => {},
+    }
+  }
+}
+
+const childQueries = (pool: BatchedKnowledgePool): { documents: number; chunks: number; embeddings: number } => ({
+  documents: pool.statements.filter(statement => statement.includes('FROM knowledge_documents')).length,
+  chunks: pool.statements.filter(statement => statement.includes('FROM knowledge_chunks')).length,
+  embeddings: pool.statements.filter(statement => statement.includes('FROM knowledge_embeddings')).length,
+})
+
+/** The transaction wrapper appends BEGIN/COMMIT, so locate the page query by text. */
+const lastDocumentCall = (pool: BatchedKnowledgePool): { statement: string; parameters: unknown[] } => {
+  const position = pool.statements.reduce((result, statement, index) => statement.includes('FROM knowledge_documents') ? index : result, -1)
+  return { statement: pool.statements[position]!, parameters: pool.parameters[position]! }
+}
+
+/** The exact statements this repository issued before the batch forms existed.
+ * Every call shape that omits `productIds` must still produce these
+ * byte-for-byte, so adding a batch read can never quietly rewrite the
+ * single-value statement a deployed caller already depends on. */
+const DOCUMENT_PROJECTION_GOLDEN = 'id, workspace_id, knowledge_asset_id, source_asset_id, source_version, brand_id, product_id, sku_id, knowledge_type, title, content_type, content_hash, extracted_text, source_metadata, approval_status, rights_status, rule_snapshot_version, embedding_model, embedding_version, index_state, index_error, expires_at, revision, created_at, updated_at'
+const SCOPED_PROJECTION_GOLDEN = 'd.id,d.workspace_id,d.knowledge_asset_id,d.source_asset_id,d.source_version,d.brand_id,d.product_id,d.sku_id,d.knowledge_type,d.title,d.content_type,d.content_hash,d.extracted_text,d.source_metadata,d.approval_status,d.rights_status,d.rule_snapshot_version,d.embedding_model,d.embedding_version,d.index_state,d.index_error,d.expires_at,d.revision,d.created_at,d.updated_at'
+const listDocumentsGolden = (suffix: string): string => `SELECT ${DOCUMENT_PROJECTION_GOLDEN} FROM knowledge_documents ${suffix}`
+const searchGolden = (suffix: string): string => `SELECT ${SCOPED_PROJECTION_GOLDEN} FROM knowledge_documents d ${suffix}`
+
+/** Serves the single rebuild statement: the update's `RETURNING` set feeds the
+ * audit insert, so the rows it hands back are the audit rows the caller wrote. */
+class RebuildKnowledgePool implements SqlPool {
+  readonly statements: string[] = []
+  readonly parameters: unknown[][] = []
+  constructor(private readonly rebuilt: readonly string[]) {}
+  async connect(): Promise<SqlClient> {
+    return {
+      query: async <Row>(text: string, values: readonly unknown[] = []) => {
+        this.statements.push(text)
+        this.parameters.push([...values])
+        if (text.includes('UPDATE knowledge_documents')) return { rows: this.rebuilt.map(id => ({ id, document_id: id })) as Row[] }
+        return { rows: [] as Row[] }
+      },
+      release: () => {},
+    }
+  }
+}
+
+const pgDocument = (id: string, overrides: PgRow = {}): PgRow => ({
+  id, workspace_id: 'ws-a', knowledge_asset_id: null, source_asset_id: null, source_version: 1, brand_id: null,
+  product_id: 'product-a', sku_id: null, knowledge_type: 'product_facts', title: id, content_type: 'text/plain',
+  content_hash: `hash-${id}`, extracted_text: '', source_metadata: {}, approval_status: 'approved',
+  rights_status: 'cleared', rule_snapshot_version: null, embedding_model: 'test', embedding_version: '1',
+  index_state: 'ready', index_error: null, expires_at: null, revision: 1,
+  created_at: '2026-09-10T00:00:00.000Z', updated_at: '2026-09-10T00:00:00.000Z', ...overrides,
+})
+
+const pgChunk = (id: string, documentId: string, ordinal: number, content: string): PgRow => ({
+  id, workspace_id: 'ws-a', document_id: documentId, ordinal, content, content_hash: `chunk-hash-${id}`,
+  token_count: 2, metadata: {}, created_at: '2026-09-10T00:00:00.000Z',
+})
+
+const pgEmbedding = (id: string, documentId: string, chunkId: string, embedding: readonly number[], indexState = 'ready'): PgRow => ({
+  id, workspace_id: 'ws-a', document_id: documentId, chunk_id: chunkId, embedding, embedding_model: 'test',
+  embedding_version: '1', vector_metadata: {}, index_state: indexState,
+  created_at: '2026-09-10T00:00:00.000Z', updated_at: '2026-09-10T00:00:00.000Z',
+})
+
 const semanticDocumentRow = {
   id: 'doc-semantic',
   workspace_id: 'ws-a',
@@ -195,5 +332,254 @@ describe('knowledge persistence contract', () => {
     expect(documentQuery).toContain('lower(p.store_name)=lower(')
     expect(pool.parameters.find(values => values.includes('account-north'))).toBeDefined()
     expect(pool.parameters.find(values => values.includes('sku-blue-m'))).toBeDefined()
+  })
+
+  it('reads the candidate documents, chunks and vectors in three fixed queries instead of one child query per document', async () => {
+    const chunks = [
+      pgChunk('chunk-1a', 'doc-1', 0, '锦纶 88%'),
+      pgChunk('chunk-2b', 'doc-2', 0, '其他'),
+      pgChunk('chunk-2a', 'doc-2', 1, '锦纶 面料'),
+    ]
+    const embeddings = [
+      pgEmbedding('embedding-1a', 'doc-1', 'chunk-1a', [1, 0]),
+      pgEmbedding('embedding-2a', 'doc-2', 'chunk-2a', [0, 1]),
+      pgEmbedding('embedding-2b', 'doc-2', 'chunk-2b', [0.5, 0.5]),
+      pgEmbedding('embedding-3a', 'doc-3', 'chunk-3a', [0, 1], 'stale'),
+    ]
+    // The candidate set grows with the workspace, the round trips must not.
+    const single = new BatchedKnowledgePool([pgDocument('doc-1', { extracted_text: '锦纶 88%' })], chunks, embeddings)
+    await new PostgresKnowledgeRepository(single).search({ workspaceId: 'ws-a', query: '锦纶', queryEmbedding: [0, 1] })
+    expect(childQueries(single)).toEqual({ documents: 1, chunks: 1, embeddings: 1 })
+
+    const many = new BatchedKnowledgePool(
+      [pgDocument('doc-1', { extracted_text: '锦纶 88%' }), pgDocument('doc-2'), pgDocument('doc-3', { extracted_text: '无关内容' })],
+      chunks,
+      embeddings,
+    )
+    expect(await new PostgresKnowledgeRepository(many).search({ workspaceId: 'ws-a', query: '锦纶', queryEmbedding: [0, 1] })).toHaveLength(3)
+    expect(childQueries(many)).toEqual({ documents: 1, chunks: 1, embeddings: 1 })
+
+    // No candidate documents: never issue an empty `= ANY('{}')` child read.
+    const none = new BatchedKnowledgePool([], chunks, embeddings)
+    expect(await new PostgresKnowledgeRepository(none).search({ workspaceId: 'ws-a', queryEmbedding: [0, 1] })).toEqual([])
+    expect(childQueries(none)).toEqual({ documents: 1, chunks: 0, embeddings: 0 })
+  })
+
+  it('keeps every candidate on its own chunk and vector rows when the child reads are batched', async () => {
+    const pool = new BatchedKnowledgePool(
+      [pgDocument('doc-1', { extracted_text: '锦纶 88%' }), pgDocument('doc-2'), pgDocument('doc-3', { extracted_text: '无关内容' })],
+      [pgChunk('chunk-1a', 'doc-1', 0, '锦纶 88%'), pgChunk('chunk-2b', 'doc-2', 0, '其他'), pgChunk('chunk-2a', 'doc-2', 1, '锦纶 面料')],
+      [
+        pgEmbedding('embedding-1a', 'doc-1', 'chunk-1a', [1, 0]),
+        pgEmbedding('embedding-2a', 'doc-2', 'chunk-2a', [0, 1]),
+        pgEmbedding('embedding-2b', 'doc-2', 'chunk-2b', [0.5, 0.5]),
+        pgEmbedding('embedding-3a', 'doc-3', 'chunk-3a', [0, 1], 'stale'),
+      ],
+    )
+    const results = await new PostgresKnowledgeRepository(pool).search({ workspaceId: 'ws-a', query: '锦纶', queryEmbedding: [0, 1] })
+
+    expect(results.map(item => ({ id: item.document.id, chunks: item.chunks.map(chunk => chunk.id), score: item.score }))).toEqual([
+      { id: 'doc-1', chunks: ['chunk-1a'], score: 1 },
+      // chunks stay ordered by ordinal, not by the batch row order
+      { id: 'doc-2', chunks: ['chunk-2b', 'chunk-2a'], score: 1 },
+      // no chunks and only a stale vector: still returned with a zero score
+      { id: 'doc-3', chunks: [], score: 0 },
+    ])
+    expect(results.every(item => item.chunks.every(chunk => chunk.documentId === item.document.id && chunk.workspaceId === 'ws-a'))).toBe(true)
+    expect(results[2]!.document.extractedText).toBe('无关内容')
+
+    const chunkQuery = pool.statements.find(statement => statement.includes('FROM knowledge_chunks'))!
+    const embeddingQuery = pool.statements.find(statement => statement.includes('FROM knowledge_embeddings'))!
+    expect(chunkQuery).toContain('document_id = ANY(')
+    expect(chunkQuery).toContain('ORDER BY document_id, ordinal')
+    expect(chunkQuery).toContain('workspace_id=$1')
+    expect(embeddingQuery).toContain('document_id = ANY(')
+    expect(embeddingQuery).toContain("index_state='ready'")
+    expect(embeddingQuery).toContain('workspace_id=$1')
+  })
+
+  it('bounds listDocuments on request and reads a single document by id without changing the unbounded default', async () => {
+    const pool = new BatchedKnowledgePool([pgDocument('doc-a'), pgDocument('doc-b'), pgDocument('doc-c')], [], [])
+    const repository = new PostgresKnowledgeRepository(pool)
+
+    expect((await repository.listDocuments('ws-a')).map(item => item.id)).toEqual(['doc-a', 'doc-b', 'doc-c'])
+    expect(lastDocumentCall(pool)).toEqual({
+      statement: expect.stringContaining('ORDER BY updated_at DESC,id'),
+      parameters: ['ws-a'],
+    })
+    expect(lastDocumentCall(pool).statement).not.toContain('LIMIT')
+
+    expect((await repository.listDocuments('ws-a', { limit: 2 })).map(item => item.id)).toEqual(['doc-a', 'doc-b'])
+    expect(lastDocumentCall(pool).statement).toContain('ORDER BY updated_at DESC,id LIMIT $2')
+    expect(lastDocumentCall(pool).parameters).toEqual(['ws-a', 2])
+
+    expect((await repository.listDocuments('ws-a', { id: 'doc-b' })).map(item => item.id)).toEqual(['doc-b'])
+    expect(lastDocumentCall(pool).statement).toContain('AND id=$2 ORDER BY updated_at DESC,id LIMIT $3')
+    expect(lastDocumentCall(pool).parameters).toEqual(['ws-a', 'doc-b', 1])
+
+    expect((await repository.listDocuments('ws-a', { id: 'doc-missing' }))).toEqual([])
+    await expect(repository.listDocuments('ws-a', { limit: 0 })).rejects.toThrow('KNOWLEDGE_LIST_LIMIT_INVALID')
+
+    const memory = new MemoryKnowledgeRepository()
+    for (const id of ['doc-a', 'doc-b', 'doc-c']) await memory.createDocument({ id, workspaceId: 'ws-a', knowledgeType: 'product_facts', contentHash: `hash-${id}`, extractedText: id })
+    expect((await memory.listDocuments('ws-a', { limit: 2 })).map(item => item.id)).toEqual(['doc-a', 'doc-b'])
+    expect((await memory.listDocuments('ws-a', { id: 'doc-c' })).map(item => item.id)).toEqual(['doc-c'])
+    expect((await memory.listDocuments('ws-a')).map(item => item.id)).toEqual(['doc-a', 'doc-b', 'doc-c'])
+    await expect(memory.listDocuments('ws-a', { limit: 0 })).rejects.toThrow('KNOWLEDGE_LIST_LIMIT_INVALID')
+  })
+
+  it('records a whole-workspace rebuild with one audit insert instead of one insert per document', async () => {
+    const pool = new RebuildKnowledgePool(['doc-1', 'doc-2', 'doc-3'])
+    const repository = new PostgresKnowledgeRepository(pool)
+
+    expect(await repository.rebuildIndex('ws-a')).toBe(3)
+
+    // One statement for the transition and one for the audit trail, whatever the
+    // size of the rebuilt set: the audit rows come from the update's own
+    // `RETURNING` set through a data-modifying CTE.
+    expect(pool.statements.filter(statement => statement.includes('UPDATE knowledge_documents'))).toHaveLength(1)
+    const auditStatements = pool.statements.filter(statement => statement.includes('INSERT INTO knowledge_index_events'))
+    expect(auditStatements).toHaveLength(1)
+    expect(auditStatements[0]).toContain('WITH rebuilt AS (UPDATE knowledge_documents')
+    expect(auditStatements[0]).toContain('FROM rebuilt RETURNING document_id')
+    // The row set and the scope predicate cannot drift from the update, and the
+    // reason is bound once for the batch rather than once per document.
+    expect(auditStatements[0]).toContain("WHERE workspace_id=$1 AND index_state <> 'deleted' AND ($2::text IS NULL OR id=$2)")
+    expect(auditStatements[0]).toContain("'knowledge_index_event_'||pg_catalog.gen_random_uuid()::text,$1,rebuilt.id,'rebuild','stale','queued',$3")
+    expect(pool.parameters[pool.statements.indexOf(auditStatements[0]!)]).toEqual(['ws-a', null, 'rebuild requested'])
+    expect(pool.statements.filter(statement => statement.includes('knowledge_index_events'))).toHaveLength(1)
+
+    const scopedPool = new RebuildKnowledgePool(['doc-9'])
+    expect(await new PostgresKnowledgeRepository(scopedPool).rebuildIndex('ws-a', 'doc-9', 'operator asked')).toBe(1)
+    expect(scopedPool.parameters[scopedPool.statements.findIndex(statement => statement.includes('INSERT INTO knowledge_index_events'))]).toEqual(['ws-a', 'doc-9', 'operator asked'])
+  })
+
+  it('reads a product page with the productIds batch form without changing any single-value statement', async () => {
+    const pool = new BatchedKnowledgePool([
+      pgDocument('doc-a', { product_id: 'product-a' }),
+      pgDocument('doc-b', { product_id: 'product-b' }),
+      pgDocument('doc-c', { product_id: 'product-c' }),
+    ], [], [])
+    const repository = new PostgresKnowledgeRepository(pool)
+
+    expect((await repository.listDocuments('ws-a', { productIds: ['product-c', 'product-a'] })).map(item => item.id)).toEqual(['doc-a', 'doc-c'])
+    expect(lastDocumentCall(pool)).toEqual({ statement: listDocumentsGolden('WHERE workspace_id=$1 AND product_id = ANY($2::text[]) ORDER BY updated_at DESC,id'), parameters: ['ws-a', ['product-c', 'product-a']] })
+
+    // The batch form is a scope, not an escape hatch: an empty set stays empty
+    // and the single value is ANDed with it instead of being widened.
+    expect(await repository.listDocuments('ws-a', { productIds: [] })).toEqual([])
+    expect(await repository.listDocuments('ws-a', { productId: 'product-b', productIds: ['product-c'] })).toEqual([])
+
+    // Every statement that does not use the new parameter is byte-identical to
+    // the one this repository issued before the batch form existed.
+    expect((await repository.listDocuments('ws-a')).map(item => item.id)).toEqual(['doc-a', 'doc-b', 'doc-c'])
+    expect(lastDocumentCall(pool)).toEqual({ statement: listDocumentsGolden('WHERE workspace_id=$1 ORDER BY updated_at DESC,id'), parameters: ['ws-a'] })
+    expect(lastDocumentCall(pool).statement).not.toContain('ANY(')
+    expect((await repository.listDocuments('ws-a', { limit: 2 })).map(item => item.id)).toEqual(['doc-a', 'doc-b'])
+    expect(lastDocumentCall(pool)).toEqual({ statement: listDocumentsGolden('WHERE workspace_id=$1 ORDER BY updated_at DESC,id LIMIT $2'), parameters: ['ws-a', 2] })
+    expect((await repository.listDocuments('ws-a', { id: 'doc-b' })).map(item => item.id)).toEqual(['doc-b'])
+    expect(lastDocumentCall(pool)).toEqual({ statement: listDocumentsGolden('WHERE workspace_id=$1 AND id=$2 ORDER BY updated_at DESC,id LIMIT $3'), parameters: ['ws-a', 'doc-b', 1] })
+    expect((await repository.listDocuments('ws-a', { productId: 'product-a' })).map(item => item.id)).toEqual(['doc-a'])
+    expect(lastDocumentCall(pool)).toEqual({ statement: listDocumentsGolden('WHERE workspace_id=$1 AND product_id=$2 ORDER BY updated_at DESC,id'), parameters: ['ws-a', 'product-a'] })
+    expect((await repository.listDocuments('ws-a', { productId: 'product-a', skuId: 'sku-a', indexState: 'ready', knowledgeType: 'product_facts', limit: 5 })).map(item => item.id)).toEqual(['doc-a'])
+    expect(lastDocumentCall(pool)).toEqual({
+      statement: listDocumentsGolden('WHERE workspace_id=$1 AND product_id=$2 AND sku_id=$3 AND index_state=$4 AND knowledge_type=$5 ORDER BY updated_at DESC,id LIMIT $6'),
+      parameters: ['ws-a', 'product-a', 'sku-a', 'ready', 'product_facts', 5],
+    })
+
+    const memory = new MemoryKnowledgeRepository()
+    for (const [id, productId] of [['doc-a', 'product-a'], ['doc-b', 'product-b'], ['doc-c', 'product-c']] as const) {
+      await memory.createDocument({ id, workspaceId: 'ws-a', productId, knowledgeType: 'product_facts', contentHash: `hash-${id}`, extractedText: id })
+    }
+    expect((await memory.listDocuments('ws-a', { productIds: ['product-c', 'product-a'] })).map(item => item.id)).toEqual(['doc-a', 'doc-c'])
+    expect(await memory.listDocuments('ws-a', { productIds: [] })).toEqual([])
+    expect(await memory.listDocuments('ws-a', { productId: 'product-b', productIds: ['product-c'] })).toEqual([])
+    expect((await memory.listDocuments('ws-a')).map(item => item.id)).toEqual(['doc-a', 'doc-b', 'doc-c'])
+  })
+
+  it('answers a page of products with one bounded search per product in three queries instead of three queries per product', async () => {
+    // `doc-a` is over the per-product bound, `doc-c` has no lexical match at
+    // all: a single global LIMIT would drop `doc-b` rather than keep it.
+    const documents = [
+      pgDocument('doc-a1', { product_id: 'product-a', extracted_text: '锦纶 88%' }),
+      pgDocument('doc-a2', { product_id: 'product-a', extracted_text: '锦纶 面料' }),
+      pgDocument('doc-a3', { product_id: 'product-a', extracted_text: '锦纶 里料' }),
+      pgDocument('doc-b1', { product_id: 'product-b', extracted_text: '锦纶 外套' }),
+      pgDocument('doc-c1', { product_id: 'product-c', extracted_text: '无关内容' }),
+    ]
+    const chunks = [pgChunk('chunk-a1', 'doc-a1', 0, '锦纶 88%'), pgChunk('chunk-b1', 'doc-b1', 0, '锦纶 外套')]
+    const embeddings = [
+      pgEmbedding('embedding-a1', 'doc-a1', 'chunk-a1', [1, 0]),
+      pgEmbedding('embedding-a2', 'doc-a2', 'chunk-a1', [0, 1]),
+      pgEmbedding('embedding-b1', 'doc-b1', 'chunk-b1', [0, 1]),
+    ]
+
+    const batched = new BatchedKnowledgePool(documents, chunks, embeddings)
+    const batchedResults = await new PostgresKnowledgeRepository(batched).search({
+      workspaceId: 'ws-a',
+      query: '锦纶',
+      queryEmbedding: [0, 1],
+      productIds: ['product-c', 'product-a', 'product-b'],
+      limit: 2,
+    })
+    // The per-product calls this batch replaces, same filters and same bound.
+    const singles: Awaited<ReturnType<PostgresKnowledgeRepository['search']>> = []
+    for (const productId of ['product-c', 'product-a', 'product-b']) {
+      singles.push(...await new PostgresKnowledgeRepository(new BatchedKnowledgePool(documents, chunks, embeddings)).search({
+        workspaceId: 'ws-a',
+        query: '锦纶',
+        queryEmbedding: [0, 1],
+        productId,
+        limit: 2,
+      }))
+    }
+    expect(batchedResults).toEqual(singles)
+    expect(batchedResults.map(item => item.document.id)).toEqual(['doc-c1', 'doc-a1', 'doc-a2', 'doc-b1'])
+    // Three queries for the whole page, not three per product.
+    expect(childQueries(batched)).toEqual({ documents: 1, chunks: 1, embeddings: 1 })
+
+    // The bound is per product: a page-level top-2 would silently drop doc-b1.
+    const bounded = new BatchedKnowledgePool(documents, [], [])
+    expect((await new PostgresKnowledgeRepository(bounded).search({ workspaceId: 'ws-a', query: '锦纶', productIds: ['product-a', 'product-b'], limit: 1 })).map(item => item.document.id)).toEqual(['doc-a1', 'doc-b1'])
+    expect((await new PostgresKnowledgeRepository(new BatchedKnowledgePool(documents, [], [])).search({ workspaceId: 'ws-a', query: '锦纶', productIds: ['product-a', 'product-b'], limit: 2 })).map(item => item.document.id)).toEqual(['doc-a1', 'doc-a2', 'doc-b1'])
+
+    // An empty batch stays an empty scope, and no batch call is issued for it.
+    const empty = new BatchedKnowledgePool(documents, [], [])
+    expect(await new PostgresKnowledgeRepository(empty).search({ workspaceId: 'ws-a', query: '锦纶', productIds: [] })).toEqual([])
+
+    // The single-product statement is byte-identical to the pre-batch one, and
+    // the batch statement is the only place the per-product window appears.
+    const legacy = new BatchedKnowledgePool(documents, [], [])
+    const legacyRepository = new PostgresKnowledgeRepository(legacy)
+    expect((await legacyRepository.search({ workspaceId: 'ws-a' })).map(item => item.document.id)).toEqual(['doc-a1', 'doc-a2', 'doc-a3', 'doc-b1', 'doc-c1'])
+    expect(legacy.statements.find(statement => statement.includes('FROM knowledge_documents'))).toBe(searchGolden("WHERE d.workspace_id=$1 AND d.index_state='ready' AND d.approval_status='approved' AND d.rights_status='cleared' ORDER BY d.updated_at DESC,d.id LIMIT $2"))
+    expect((await legacyRepository.search({ workspaceId: 'ws-a', productId: 'product-a' })).map(item => item.document.id)).toEqual(['doc-a1', 'doc-a2', 'doc-a3'])
+    const lastSearchCall = (pool: BatchedKnowledgePool) => {
+      const position = pool.statements.reduce((result, statement, index) => statement.includes('FROM knowledge_documents d') ? index : result, -1)
+      return { statement: pool.statements[position]!, parameters: pool.parameters[position]! }
+    }
+    expect(lastSearchCall(legacy)).toEqual({
+      statement: searchGolden("WHERE d.workspace_id=$1 AND d.index_state='ready' AND d.approval_status='approved' AND d.rights_status='cleared' AND d.product_id=$2 ORDER BY d.updated_at DESC,d.id LIMIT $3"),
+      parameters: ['ws-a', 'product-a', 20],
+    })
+    expect(lastSearchCall(legacy).statement).not.toContain('ANY(')
+    expect(lastSearchCall(legacy).statement).not.toContain('ranked')
+    expect(lastSearchCall(batched).statement).toContain('row_number() OVER (PARTITION BY d.product_id ORDER BY d.updated_at DESC,d.id) AS knowledge_product_rank')
+
+    const memory = new MemoryKnowledgeRepository()
+    for (const [id, productId, extractedText] of [
+      ['doc-a1', 'product-a', '锦纶 88%'],
+      ['doc-a2', 'product-a', '锦纶 面料'],
+      ['doc-b1', 'product-b', '锦纶 外套'],
+      ['doc-c1', 'product-c', '无关内容'],
+    ] as const) {
+      await memory.createDocument({ id, workspaceId: 'ws-a', productId, knowledgeType: 'product_facts', contentHash: `hash-${id}`, extractedText, approvalStatus: 'approved', rightsStatus: 'cleared', indexState: 'ready' })
+    }
+    const memoryBatch = await memory.search({ workspaceId: 'ws-a', query: '锦纶', productIds: ['product-c', 'product-a', 'product-b'], limit: 1 })
+    const memorySingles: Awaited<ReturnType<MemoryKnowledgeRepository['search']>> = []
+    for (const productId of ['product-c', 'product-a', 'product-b']) memorySingles.push(...await memory.search({ workspaceId: 'ws-a', query: '锦纶', productId, limit: 1 }))
+    expect(memoryBatch).toEqual(memorySingles)
+    expect(memoryBatch.map(item => item.document.id)).toEqual(['doc-a1', 'doc-b1'])
+    expect(await memory.search({ workspaceId: 'ws-a', query: '锦纶', productIds: [] })).toEqual([])
   })
 })

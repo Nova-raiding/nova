@@ -21,7 +21,38 @@ async function beginPlatformRead(client: SqlClient) {
   await client.query(`SELECT set_config('app.platform_scope', 'platform_ops', true)`)
 }
 
-const modernSummarySql = `SELECT s.workspace_id AS "workspaceId",
+/**
+ * `listWorkspaceSummaries` is a platform-scoped read of a `security_barrier`
+ * view: PostgreSQL materializes the whole view before applying any filter, so
+ * the cost is proportional to the number of workspaces on the platform, not to
+ * the number of rows the caller needs. Callers that only need a known set of
+ * workspaces must therefore say so; `workspaceIds` turns the read into bounded
+ * lookups on the base tables.
+ *
+ * The unfiltered call — reachable only from `ops.workspaces.list` when the
+ * caller sends no pagination parameters at all — is still a full scan. It is
+ * deliberately not capped here: this method returns a bare array, so a server
+ * side `LIMIT` would silently turn an honest list into a truncated one, which
+ * the Ops console must never be shown. Capping it requires either an explicit
+ * truncation flag on the response (the `scan_truncated` pattern used by
+ * `ops.users.list`) or a move to the paged `WorkspaceDirectoryPage` shape, and
+ * both are caller-visible contract changes rather than persistence details.
+ */
+export interface OpsWorkspaceSummaryQuery {
+  /**
+   * Restrict the read to these workspaces. An empty (but present) list means
+   * "no workspaces", not "no filter"; callers that have nothing to look up
+   * should skip the call instead of passing an empty array.
+   */
+  workspaceIds?: readonly string[]
+}
+
+function summaryWhereClause(query: OpsWorkspaceSummaryQuery | undefined): string {
+  return query?.workspaceIds !== undefined ? 'WHERE s.workspace_id = ANY($1)' : ''
+}
+
+function modernSummarySql(where: string) {
+  return `SELECT s.workspace_id AS "workspaceId",
                 COALESCE(NULLIF(btrim(e.name), ''), '${DEFAULT_ENTERPRISE_NAME}') AS "enterpriseName",
                 s.status, s.plan_name AS "planName",
                 s.monthly_price_cny AS "monthlyPriceCny", s.used_tasks AS "usedTasks",
@@ -30,16 +61,21 @@ const modernSummarySql = `SELECT s.workspace_id AS "workspaceId",
            FROM ops_workspace_summaries s
            JOIN workspaces w ON w.id = s.workspace_id
            JOIN enterprises e ON e.id = w.enterprise_id
+          ${where}
           ORDER BY s.created_at DESC, s.workspace_id ASC`
+}
 
-const legacySummarySql = `SELECT s.workspace_id AS "workspaceId",
+function legacySummarySql(where: string) {
+  return `SELECT s.workspace_id AS "workspaceId",
                 '${DEFAULT_ENTERPRISE_NAME}' AS "enterpriseName",
                 s.status, s.plan_name AS "planName",
                 s.monthly_price_cny AS "monthlyPriceCny", s.used_tasks AS "usedTasks",
                 s.included_tasks AS "includedTasks", s.subscription_status AS "subscriptionStatus",
                 s.member_count AS "memberCount"
            FROM ops_workspace_summaries s
+          ${where}
           ORDER BY s.created_at DESC, s.workspace_id ASC`
+}
 
 type DirectorySqlParts = {
   values: unknown[]
@@ -163,7 +199,7 @@ export interface OpsWorkspaceDirectoryPage {
 }
 
 export interface OpsDataRepository {
-  listWorkspaceSummaries(): Promise<OpsWorkspaceSummary[]>
+  listWorkspaceSummaries(query?: OpsWorkspaceSummaryQuery): Promise<OpsWorkspaceSummary[]>
   listWorkspaceDirectory?(query: OpsWorkspaceDirectoryQuery): Promise<OpsWorkspaceDirectoryPage>
 }
 
@@ -175,20 +211,22 @@ export interface OpsDataRepository {
 export class PostgresOpsDataRepository implements OpsDataRepository {
   constructor(private readonly pool: SqlPool) {}
 
-  async listWorkspaceSummaries(): Promise<OpsWorkspaceSummary[]> {
+  async listWorkspaceSummaries(query?: OpsWorkspaceSummaryQuery): Promise<OpsWorkspaceSummary[]> {
+    const where = summaryWhereClause(query)
+    const values = query?.workspaceIds !== undefined ? [[...query.workspaceIds]] : []
     const client = await this.pool.connect()
     try {
       await beginPlatformRead(client)
       let result
       try {
-        result = await client.query<OpsWorkspaceSummary>(modernSummarySql)
+        result = await client.query<OpsWorkspaceSummary>(modernSummarySql(where), values)
       } catch (error) {
         if (!isMissingSchemaObject(error)) throw error
         // PostgreSQL aborts a transaction after a relation/column error.  Start
         // a fresh read-only transaction before issuing the historical query.
         await client.query('ROLLBACK')
         await beginPlatformRead(client)
-        result = await client.query<OpsWorkspaceSummary>(legacySummarySql)
+        result = await client.query<OpsWorkspaceSummary>(legacySummarySql(where), values)
       }
       await client.query('COMMIT')
       return result.rows

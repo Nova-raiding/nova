@@ -372,7 +372,18 @@ export class PostgresSupportRepository implements SupportRepository {
         ORDER BY created_at DESC, id DESC LIMIT $12`, [workspaceId, input.status ?? null, input.priority ?? null,
         input.slaState ?? null, input.assigneeId ?? null, input.customerId ?? null, input.relatedOrderId ?? null, input.relatedTaskId ?? null,
         input.query?.trim() || null, input.cursor?.createdAt ?? null, input.cursor?.id ?? null, limit + 1])
-      const rows = await Promise.all(result.rows.map(async row => projectTicketSla(mapTicket(row), await this.listEventsInTransaction(client, workspaceId, row.id))))
+      if (!result.rows.length) return { items: [] }
+      // One batched event read for the whole page instead of one read per
+      // ticket: the per-ticket loop cost 2 x (limit + 1) statements inside a
+      // single transaction.
+      const events = await client.query<EventRow>(`SELECT ${eventColumns} FROM workspace_support_ticket_events WHERE workspace_id=$1 AND ticket_id = ANY($2::uuid[]) ORDER BY ticket_id, sequence ASC`, [workspaceId, result.rows.map(row => row.id)])
+      const eventsByTicket = new Map<string, SupportTicketEvent[]>()
+      for (const event of events.rows.map(mapEvent)) {
+        const existing = eventsByTicket.get(event.ticketId)
+        if (existing) existing.push(event)
+        else eventsByTicket.set(event.ticketId, [event])
+      }
+      const rows = result.rows.map(row => projectTicketSla(mapTicket(row), eventsByTicket.get(row.id) ?? []))
       const items = rows.slice(0, limit)
       const last = items.at(-1)
       return { items, ...(rows.length > limit && last ? { nextCursor: { createdAt: last.createdAt, id: last.id } } : {}) }

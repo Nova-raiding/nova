@@ -20,7 +20,12 @@ describe('workspace content setup PostgreSQL release acceptance', () => {
       const isolated = new URL(base)
       isolated.pathname = `/${databaseName}`
       database = new Pool({ connectionString: isolated.toString() })
-      expect((await new MigrationRunner(database, await loadMigrations()).run()).at(-1)).toBe(218)
+      // Assert the chain runs to the head *this release ships*, not to a literal
+      // that drifts every time a migration is added. `migration.test.ts` is the
+      // place that deliberately forces a conscious bump when the head moves;
+      // here the property under test is that the runner reaches it at all.
+      const migrations = await loadMigrations()
+      expect((await new MigrationRunner(database, migrations).run()).at(-1)).toBe(migrations.at(-1)?.version)
       const workspaceId = `content-setup-${randomUUID()}`
       const otherWorkspaceId = `content-setup-other-${randomUUID()}`
       await database.query("INSERT INTO workspaces (id,status) VALUES ($1,'active'),($2,'active')", [workspaceId, otherWorkspaceId])

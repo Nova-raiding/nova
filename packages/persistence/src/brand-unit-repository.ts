@@ -80,9 +80,15 @@ export interface BrandUnitRepository {
   updateCanonicalProductTitle(input: { workspaceId: string; id: string; title: string; expectedFactsVersion: number }): Promise<CanonicalProductRow>
   updateCanonicalProductFacts(input: { workspaceId: string; id: string; facts: Record<string, unknown>; expectedFactsVersion: number }): Promise<CanonicalProductRow>
   createListing(input: { workspaceId: string; id: string; brandId: string; canonicalProductId: string; platform: BrandUnitPlatform; accountId: string; remoteProductId?: string }): Promise<ProductListingRow>
-  listListings(input: { workspaceId: string; brandId?: string; canonicalProductId?: string; listingId?: string; platform?: BrandUnitPlatform; accountId?: string }): Promise<ProductListingRow[]>
+  /** `canonicalProductIds` is an optional page-level filter: one read for a whole
+   * page of canonical products instead of one read per product. Omitted, the SQL
+   * and the result are unchanged. */
+  listListings(input: { workspaceId: string; brandId?: string; canonicalProductId?: string; listingId?: string; platform?: BrandUnitPlatform; accountId?: string; canonicalProductIds?: readonly string[] }): Promise<ProductListingRow[]>
   listCanonicalChainConsistencyRows(input: { workspaceId: string }): Promise<CanonicalChainConsistencyRows>
   hasBrandAccess(input: { workspaceId: string; brandId: string; externalSubject: string; minimumRole?: BrandAccessRole }): Promise<boolean>
+  /** Page-level form of `hasBrandAccess`: resolves every brand in one read.
+   * Returns the subset of `brandIds` the subject holds at or above `minimumRole`. */
+  hasBrandAccessMany(input: { workspaceId: string; brandIds: readonly string[]; externalSubject: string; minimumRole?: BrandAccessRole }): Promise<Set<string>>
   grantBrandAccess(input: { workspaceId: string; brandId: string; externalSubject: string; role: BrandAccessRole }): Promise<void>
 }
 
@@ -254,7 +260,10 @@ export class MemoryBrandUnitRepository implements BrandUnitRepository {
     this.listings.set(`${input.workspaceId}:${input.id}`, row)
     return row
   }
-  async listListings(input: { workspaceId: string; brandId?: string; canonicalProductId?: string; listingId?: string; platform?: BrandUnitPlatform; accountId?: string }) { return [...this.listings.values()].filter(row => row.workspaceId === input.workspaceId && (!input.brandId || row.brandId === input.brandId) && (!input.canonicalProductId || row.canonicalProductId === input.canonicalProductId) && (!input.listingId || row.id === input.listingId) && (!input.platform || row.platform === input.platform) && (!input.accountId || row.accountId === input.accountId)) }
+  async listListings(input: { workspaceId: string; brandId?: string; canonicalProductId?: string; listingId?: string; platform?: BrandUnitPlatform; accountId?: string; canonicalProductIds?: readonly string[] }) {
+    if (input.canonicalProductIds && !input.canonicalProductIds.length) return []
+    return [...this.listings.values()].filter(row => row.workspaceId === input.workspaceId && (!input.brandId || row.brandId === input.brandId) && (!input.canonicalProductId || row.canonicalProductId === input.canonicalProductId) && (!input.canonicalProductIds || input.canonicalProductIds.includes(row.canonicalProductId)) && (!input.listingId || row.id === input.listingId) && (!input.platform || row.platform === input.platform) && (!input.accountId || row.accountId === input.accountId))
+  }
   async listCanonicalChainConsistencyRows(input: { workspaceId: string }): Promise<CanonicalChainConsistencyRows> {
     requireWorkspaceScope(input.workspaceId)
     const canonicalProducts = [...this.canonicalProducts.values()].filter(row => row.workspaceId === input.workspaceId)
@@ -270,6 +279,15 @@ export class MemoryBrandUnitRepository implements BrandUnitRepository {
     }
   }
   async hasBrandAccess(input: { workspaceId: string; brandId: string; externalSubject: string; minimumRole?: BrandAccessRole }) { const role = this.accessGrants.get(`${input.workspaceId}:${input.brandId}:${input.externalSubject}`); if (!role) return false; return brandRoleLevel(role) >= brandRoleLevel(input.minimumRole ?? 'viewer') }
+  async hasBrandAccessMany(input: { workspaceId: string; brandIds: readonly string[]; externalSubject: string; minimumRole?: BrandAccessRole }) {
+    const minimum = brandRoleLevel(input.minimumRole ?? 'viewer')
+    const granted = new Set<string>()
+    for (const brandId of new Set(input.brandIds)) {
+      const role = this.accessGrants.get(`${input.workspaceId}:${brandId}:${input.externalSubject}`)
+      if (role && brandRoleLevel(role) >= minimum) granted.add(brandId)
+    }
+    return granted
+  }
   async grantBrandAccess(input: { workspaceId: string; brandId: string; externalSubject: string; role: BrandAccessRole }) { if (!this.brands.has(`${input.workspaceId}:${input.brandId}`)) throw new Error('BRAND_UNIT_NOT_FOUND'); this.accessGrants.set(`${input.workspaceId}:${input.brandId}:${input.externalSubject}`, input.role) }
 }
 
@@ -509,10 +527,14 @@ export class PostgresBrandUnitRepository implements BrandUnitRepository {
       return row
     })
   }
-  async listListings(input: { workspaceId: string; brandId?: string; canonicalProductId?: string; listingId?: string; platform?: BrandUnitPlatform; accountId?: string }) {
+  async listListings(input: { workspaceId: string; brandId?: string; canonicalProductId?: string; listingId?: string; platform?: BrandUnitPlatform; accountId?: string; canonicalProductIds?: readonly string[] }) {
     requireWorkspaceScope(input.workspaceId)
+    // A page-level caller that has no canonical product on the page asks for
+    // nothing; answer without opening a transaction.
+    if (input.canonicalProductIds && !input.canonicalProductIds.length) return []
+    const pageScoped = input.canonicalProductIds ? ' AND canonical_product_id = ANY($7::text[])' : ''
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
-      const result = await client.query<ProductListingRow>(`SELECT id, workspace_id AS "workspaceId", brand_id AS "brandId", canonical_product_id AS "canonicalProductId", platform, platform_account_id AS "accountId", remote_product_id AS "remoteProductId", state, created_at AS "createdAt", updated_at AS "updatedAt" FROM product_listings WHERE workspace_id=$1 AND ($2::text IS NULL OR brand_id=$2) AND ($3::text IS NULL OR canonical_product_id=$3) AND ($4::text IS NULL OR id=$4) AND ($5::text IS NULL OR platform=$5) AND ($6::text IS NULL OR platform_account_id=$6) ORDER BY updated_at DESC`, [input.workspaceId, input.brandId ?? null, input.canonicalProductId ?? null, input.listingId ?? null, input.platform ?? null, input.accountId ?? null])
+      const result = await client.query<ProductListingRow>(`SELECT id, workspace_id AS "workspaceId", brand_id AS "brandId", canonical_product_id AS "canonicalProductId", platform, platform_account_id AS "accountId", remote_product_id AS "remoteProductId", state, created_at AS "createdAt", updated_at AS "updatedAt" FROM product_listings WHERE workspace_id=$1 AND ($2::text IS NULL OR brand_id=$2) AND ($3::text IS NULL OR canonical_product_id=$3) AND ($4::text IS NULL OR id=$4) AND ($5::text IS NULL OR platform=$5) AND ($6::text IS NULL OR platform_account_id=$6)${pageScoped} ORDER BY updated_at DESC`, input.canonicalProductIds ? [input.workspaceId, input.brandId ?? null, input.canonicalProductId ?? null, input.listingId ?? null, input.platform ?? null, input.accountId ?? null, [...new Set(input.canonicalProductIds)]] : [input.workspaceId, input.brandId ?? null, input.canonicalProductId ?? null, input.listingId ?? null, input.platform ?? null, input.accountId ?? null])
       return result.rows
     })
   }
@@ -536,6 +558,27 @@ export class PostgresBrandUnitRepository implements BrandUnitRepository {
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
       const result = await client.query<{ role: BrandAccessRole }>(`SELECT g.role FROM brand_access_grants g JOIN workspace_members m ON m.workspace_id=g.workspace_id AND m.id=g.member_id WHERE g.workspace_id=$1 AND g.brand_id=$2 AND m.external_subject=$3 AND m.status='active'`, [input.workspaceId, input.brandId, input.externalSubject])
       return Boolean(result.rows[0] && brandRoleLevel(result.rows[0].role) >= brandRoleLevel(input.minimumRole ?? 'viewer'))
+    })
+  }
+  async hasBrandAccessMany(input: { workspaceId: string; brandIds: readonly string[]; externalSubject: string; minimumRole?: BrandAccessRole }) {
+    requireWorkspaceScope(input.workspaceId)
+    const brandIds = [...new Set(input.brandIds.map(brandId => brandId.trim()).filter(Boolean))]
+    if (!brandIds.length) return new Set<string>()
+    const minimum = brandRoleLevel(input.minimumRole ?? 'viewer')
+    return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
+      // One grant read for the whole page. `hasBrandAccess` resolves a single
+      // brand per transaction, so the page-level callers that filter a list of
+      // brands paid one transaction (BEGIN/set_config/SELECT/COMMIT) per brand.
+      //
+      // A subject may match several `workspace_members` rows in one workspace
+      // (invited + active history). The single-brand read took `rows[0]`, whose
+      // order the query never pinned; this read grants the brand when *any*
+      // active membership reaches the role, which is the intent both callers
+      // already had and is never narrower than the old answer.
+      const result = await client.query<{ brandId: string; role: BrandAccessRole }>(`SELECT g.brand_id AS "brandId", g.role FROM brand_access_grants g JOIN workspace_members m ON m.workspace_id=g.workspace_id AND m.id=g.member_id WHERE g.workspace_id=$1 AND g.brand_id = ANY($2::text[]) AND m.external_subject=$3 AND m.status='active'`, [input.workspaceId, brandIds, input.externalSubject])
+      const granted = new Set<string>()
+      for (const row of result.rows) if (brandRoleLevel(row.role) >= minimum) granted.add(row.brandId)
+      return granted
     })
   }
   async grantBrandAccess(input: { workspaceId: string; brandId: string; externalSubject: string; role: BrandAccessRole }) {
