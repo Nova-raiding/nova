@@ -3,8 +3,7 @@ WORKDIR /app
 COPY demo/merchant-studio/package.json demo/merchant-studio/package-lock.json ./
 ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 ENV NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY
-RUN --mount=type=cache,id=merchant-npm-cache,target=/root/.npm,sharing=locked \
-  npm ci --prefer-offline --no-audit --fund=false
+RUN npm ci --prefer-offline --no-audit --fund=false
 COPY demo/merchant-studio ./
 # Product spreadsheet import reuses the browser-safe parsing helpers from the
 # workspace application package. Keep the package outside the demo app's npm
@@ -24,7 +23,7 @@ RUN printf '{"surface":"merchant-ui","release_id":"%s","release_git_sha":"%s"}\n
 
 FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
 COPY infra/nginx/merchant-studio.conf /etc/nginx/merchant-studio.conf.template
-COPY --chmod=0755 infra/nginx/merchant-studio-entrypoint.sh /docker-entrypoint.d/40-merchant-studio-token.sh
+COPY infra/nginx/merchant-studio-entrypoint.sh /docker-entrypoint.d/40-merchant-studio-token.sh
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --retries=5 CMD wget -qO- http://127.0.0.1:8080/ || exit 1
