@@ -76,6 +76,18 @@ function productionWorkerCredentialManifest(sharedPublishToken = false) {
   return resources.join('\n---\n')
 }
 
+// The daemon limits the scan Pod must really run with. The manifest has to
+// carry them as uncommented clamd.conf directives in a mounted ConfigMap,
+// because the upstream image only materialises CLAMD_CONF_* through a root-only
+// `sed -i` and this container runs as uid 10001.
+const clamdLimits = ['StreamMaxLength 100M', 'MaxFileSize 100M', 'MaxScanSize 100M', 'AlertExceedsMax yes']
+const clamdConf = ['LogFile /var/log/clamav/clamd.log', 'LogTime yes', 'LocalSocket /tmp/clamd.sock', 'TCPSocket 3310', 'TCPAddr 0.0.0.0', ...clamdLimits, ''].join('\n')
+const clamdConfGuard = clamdLimits.map(line => `grep -qx '${line}' /etc/clamav/clamd.conf`).join(' && ')
+const clamavProbe = `${clamdConfGuard} && clamdscan --ping 1`
+// A factory, not a shared object: the drift cases below mutate this ConfigMap,
+// so every manifest needs its own copy.
+const clamavConfig = () => ({ apiVersion: 'v1', kind: 'ConfigMap', metadata: { name: 'merchant-clamav-config' }, data: { 'clamd.conf': clamdConf } })
+
 function productionScannerManifest(mutate?: (manifest: Record<string, any>) => void) {
   const runtimeData = {
     MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
@@ -89,19 +101,21 @@ function productionScannerManifest(mutate?: (manifest: Record<string, any>) => v
   const manifest: Record<string, any> = { apiVersion: 'v1', kind: 'List', items: [
     { apiVersion: 'v1', kind: 'ConfigMap', metadata: { name: 'merchant-runtime' }, data: runtimeData },
     { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-api' }, spec: { template: { metadata: { annotations: annotation }, spec: { containers: [{ name: 'api', image: `registry.example.com/merchant-api@${imageDigests['merchant-api']}`, envFrom: [{ configMapRef: { name: 'merchant-runtime' } }], env: [secret('ASSET_SCANNER_API_TOKEN'), secret('ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), secret('ASSET_SCAN_TRUSTED_PUBLIC_KEYS'), runtimeSecret('MODEL_RELAY_API_KEY'), runtimeSecret('PLATFORM_RULE_SYNC_SIGNING_SECRET'), runtimeSecret('PAYMENT_PROVIDER_API_KEY'), runtimeSecret('PAYMENT_CALLBACK_SECRET')] }] } } } },
-    { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-worker-scan' }, spec: { replicas: 2, template: { metadata: { annotations: annotation }, spec: { nodeSelector: { 'kubernetes.io/arch': 'amd64' }, containers: [
-      { name: 'worker', image: `registry.example.com/merchant-worker@${imageDigests['merchant-worker']}`, envFrom: [{ configMapRef: { name: 'merchant-runtime' } }], env: [
+    { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-worker-scan' }, spec: { replicas: 2, template: { metadata: { annotations: annotation }, spec: { nodeSelector: { 'kubernetes.io/arch': 'amd64' }, securityContext: { runAsNonRoot: true, fsGroup: 10001 }, volumes: [{ name: 'clamav-config', configMap: { name: 'merchant-clamav-config' } }], containers: [
+      { name: 'worker', image: `registry.example.com/merchant-worker@${imageDigests['merchant-worker']}`, securityContext: { runAsUser: 10001, runAsGroup: 10001 }, envFrom: [{ configMapRef: { name: 'merchant-runtime' } }], env: [
         { name: 'WORKER_ROLE', value: 'scan' }, { name: 'ASSET_SCANNER_SERVICE_ID', valueFrom: { configMapKeyRef: { name: 'merchant-runtime', key: 'ASSET_SCANNER_SERVICE_ID' } } }, { name: 'SCANNER_MINIMUM_READY_INSTANCES', value: '2' }, secret('WORKER_API_TOKEN', 'ASSET_SCANNER_API_TOKEN'), secret('WORKER_API_SIGNING_SECRET', 'ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), secret('ASSET_SCANNER_API_TOKEN'), secret('ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), secret('ASSET_SCAN_RECEIPT_KEY_ID'), secret('ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM'),
       ] },
-      { name: 'clamav', image: `registry.example.com/clamav@${imageDigests.clamav}`, env: [
-        { name: 'CLAMD_CONF_StreamMaxLength', value: '100M' }, { name: 'CLAMD_CONF_MaxFileSize', value: '100M' }, { name: 'CLAMD_CONF_MaxScanSize', value: '100M' }, { name: 'CLAMD_CONF_AlertExceedsMax', value: 'yes' },
-      ], startupProbe: { exec: { command: ['sh', '-c', "grep StreamMaxLength /etc/clamav/clamd.conf | grep 100M && grep MaxFileSize /etc/clamav/clamd.conf | grep 100M && grep MaxScanSize /etc/clamav/clamd.conf | grep 100M && grep AlertExceedsMax /etc/clamav/clamd.conf | grep yes && clamdscan --ping 1"] } }, readinessProbe: { exec: { command: ['sh', '-c', "grep StreamMaxLength /etc/clamav/clamd.conf | grep 100M && grep MaxFileSize /etc/clamav/clamd.conf | grep 100M && grep MaxScanSize /etc/clamav/clamd.conf | grep 100M && grep AlertExceedsMax /etc/clamav/clamd.conf | grep yes && clamdscan --ping 1 && find /var/lib/clamav -mmin -1440"] } }, livenessProbe: { exec: { command: ['sh', '-c', "grep StreamMaxLength /etc/clamav/clamd.conf | grep 100M && grep MaxFileSize /etc/clamav/clamd.conf | grep 100M && grep MaxScanSize /etc/clamav/clamd.conf | grep 100M && grep AlertExceedsMax /etc/clamav/clamd.conf | grep yes && clamdscan --ping 1"] } } },
+      { name: 'clamav', image: `registry.example.com/clamav@${imageDigests.clamav}`, command: ['/init-unprivileged'], securityContext: { runAsUser: 10001, runAsGroup: 10001 }, env: [
+        { name: 'FRESHCLAM_CHECKS', value: '24' },
+      ], volumeMounts: [{ name: 'clamav-config', mountPath: '/etc/clamav/clamd.conf', subPath: 'clamd.conf', readOnly: true }], startupProbe: { exec: { command: ['sh', '-c', clamavProbe] } }, readinessProbe: { exec: { command: ['sh', '-c', `${clamavProbe} && find /var/lib/clamav -mmin -1440`] } }, livenessProbe: { exec: { command: ['sh', '-c', clamavProbe] } } },
     ] } } } },
     { apiVersion: 'v1', kind: 'Service', metadata: { name: 'merchant-api' }, spec: { selector: { 'app.kubernetes.io/name': 'merchant-api' } } },
     { apiVersion: 'v1', kind: 'Service', metadata: { name: 'merchant-api-scanner-internal' }, spec: { publishNotReadyAddresses: true, selector: { 'app.kubernetes.io/name': 'merchant-api' } } },
     { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-ui' }, spec: { template: { spec: { containers: [{ name: 'ui', image: `registry.example.com/merchant-ui@${imageDigests['merchant-ui']}` }] } } } },
     { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-ops-ui' }, spec: { template: { spec: { containers: [{ name: 'ops-ui', image: `registry.example.com/merchant-ops-ui@${imageDigests['merchant-ops-ui']}` }] } } } },
     { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-alert-receiver' }, spec: { template: { spec: { containers: [{ name: 'alert-receiver', image: `registry.example.com/merchant-alert-receiver@${imageDigests['merchant-alert-receiver']}` }] } } } },
+    // Appended last so the item indexes the other cases mutate stay stable.
+    clamavConfig(),
   ] }
   mutate?.(manifest)
   const currentRuntime = manifest.items.find((item: any) => item.kind === 'ConfigMap' && item.metadata?.name === 'merchant-runtime')?.data
@@ -186,8 +200,19 @@ describe('structured Kubernetes release image gate', () => {
       expect(readiness).toContain('grep -q .')
       expect(liveness).toContain('grep -q .')
 
+      // A budget must never equal the replica count, or no pod can ever be
+      // voluntarily evicted and the node cannot be drained. `automation` is a
+      // deliberate singleton under every overlay (the worker excludes itself
+      // from lease-based claiming), so it expresses the budget as
+      // `maxUnavailable: 1` rather than `minAvailable: 1`.
       const disruptionBudget = requiredResource('PodDisruptionBudget', name)
-      expect(disruptionBudget.spec.minAvailable, `${name} minAvailable`).toBeGreaterThanOrEqual(1)
+      if (role === 'automation') {
+        expect(disruptionBudget.spec.maxUnavailable, `${name} maxUnavailable`).toBe(1)
+        expect(disruptionBudget.spec.minAvailable, `${name} must not also set minAvailable`).toBeUndefined()
+      } else {
+        expect(disruptionBudget.spec.minAvailable, `${name} minAvailable`).toBeGreaterThanOrEqual(1)
+        expect(disruptionBudget.spec.minAvailable, `${name} minAvailable must leave one pod evictable`).toBeLessThan(deployment.spec.replicas)
+      }
     }
 
     for (const resource of resources.filter(resource => resource.kind === 'HorizontalPodAutoscaler' && roles.includes(resource.metadata?.name?.replace('merchant-worker-', '')))) {
@@ -201,8 +226,44 @@ describe('structured Kubernetes release image gate', () => {
     expect(scannerWorker.livenessProbe.exec.command.join(' ')).toContain('process.kill(1, 0)')
     expect(scannerWorker.env).toContainEqual({ name: 'SCANNER_HEARTBEAT_INTERVAL_MS', value: '5000' })
     expect(scannerWorker.env).toContainEqual({ name: 'SCANNER_HEARTBEAT_TTL_SECONDS', value: '15' })
+    // `minAvailable: 2` over `replicas: 2` was unsatisfiable: combined with the
+    // scan pod's REQUIRED hostname podAntiAffinity it pinned one replica to
+    // each node and made every node in the cluster permanently undrainable.
     const scannerBudget = requiredResource('PodDisruptionBudget', 'merchant-worker-scan')
-    expect(scannerBudget.spec.minAvailable).toBe(2)
+    expect(scannerBudget.spec.minAvailable).toBe(1)
+    expect(scannerBudget.spec.minAvailable).toBeLessThan(scanner.spec.replicas)
+  })
+
+  it('keeps every disruption budget satisfiable so a node drain can always complete', () => {
+    // The invariant that would have caught the scan and automation defects: for
+    // every PDB, the budget must permit at least one voluntary eviction of its
+    // target Deployment, in the base render and in every production overlay.
+    for (const target of ['base', 'overlays/pilot-50', 'overlays/wave-100', 'overlays/wave-250', 'overlays/target-500']) {
+      const rendered = execFileSync('kustomize', ['build', `infra/kubernetes/${target}`], { encoding: 'utf8', stdio: 'pipe' })
+      const resources = JSON.parse(execFileSync('ruby', ['-rpsych', '-rjson', '-e', 'print JSON.generate(Psych.load_stream(STDIN.read))'], {
+        encoding: 'utf8', input: rendered, stdio: ['pipe', 'pipe', 'pipe'],
+      })) as Array<Record<string, any>>
+      const replicasByName = new Map<string, number>(
+        resources.filter(resource => resource.kind === 'Deployment').map(resource => [resource.metadata.name, resource.spec.replicas ?? 1]),
+      )
+      const covered = new Set<string>()
+      for (const budget of resources.filter(resource => resource.kind === 'PodDisruptionBudget')) {
+        const name = budget.metadata.name as string
+        const targetName = budget.spec.selector.matchLabels['app.kubernetes.io/name'] as string
+        const replicas = replicasByName.get(targetName)
+        expect(replicas, `${target}: ${name} targets an unknown Deployment`).toBeDefined()
+        covered.add(targetName)
+        if (budget.spec.minAvailable !== undefined) {
+          expect(budget.spec.minAvailable, `${target}: ${name} minAvailable must stay below ${targetName} replicas`).toBeLessThan(replicas!)
+        } else {
+          expect(budget.spec.maxUnavailable, `${target}: ${name} must allow at least one eviction`).toBeGreaterThanOrEqual(1)
+        }
+      }
+      // A redundant Deployment without a budget loses every replica to a single
+      // drain, which is the gap merchant-ui and merchant-ops-ui shipped with.
+      const unprotected = [...replicasByName].filter(([name, replicas]) => replicas >= 2 && !covered.has(name)).map(([name]) => name)
+      expect(unprotected, `${target}: redundant Deployments must carry a PodDisruptionBudget`).toEqual([])
+    }
   })
 
   it('renders every production scale overlay with effective immutable image replacements and passes the release validator', () => {
@@ -273,9 +334,25 @@ describe('structured Kubernetes release image gate', () => {
     expect(workers).toContain('clamav/clamav@sha256:761f6c99b8d9134b39431f8c200189cda749b17310091561bfa8b732f32bfada')
     expect(workers).toContain('nodeSelector: {kubernetes.io/arch: amd64}')
     expect(workers).toContain('clamdscan --ping 1')
-    expect(workers).toContain('{name: CLAMD_CONF_StreamMaxLength, value: "100M"}')
-    expect(workers).toContain('{name: CLAMD_CONF_MaxFileSize, value: "100M"}')
-    expect(workers).toContain('{name: CLAMD_CONF_MaxScanSize, value: "100M"}')
+    // The daemon limits must live in the mounted ClamAV ConfigMap and be
+    // asserted by the probes against the file clamd is actually handed. The
+    // previous version only echoed CLAMD_CONF_* environment variables, which
+    // the non-root container can no longer turn into daemon configuration.
+    expect(workers).toContain('command: ["/init-unprivileged"]')
+    expect(workers).toContain('{name: clamav-config, mountPath: /etc/clamav/clamd.conf, subPath: clamd.conf, readOnly: true}')
+    expect(workers).toContain('{name: clamav-config, configMap: {name: merchant-clamav-config, defaultMode: 292}}')
+    expect(workers).toContain('{name: clamav-logs, mountPath: /var/log/clamav}')
+    expect(workers).toContain('securityContext: {runAsUser: 10001, runAsGroup: 10001, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}')
+    expect(workers).not.toMatch(/name: CLAMD_CONF_/u)
+    const clamavConfigMap = readFileSync('infra/kubernetes/base/clamav-config.yaml', 'utf8')
+    for (const directive of ['StreamMaxLength 100M', 'MaxFileSize 100M', 'MaxScanSize 100M', 'AlertExceedsMax yes']) {
+      expect(workers).toContain(`grep -qx '${directive}' /etc/clamav/clamd.conf`)
+      expect(clamavConfigMap).toMatch(new RegExp(`^\\s{4}${directive}$`, 'mu'))
+    }
+    // Only the 4-space-indented `data.clamd.conf` body counts; the file header
+    // legitimately documents the image's weaker defaults inside comments.
+    expect(clamavConfigMap).not.toMatch(/^ {4}#\s*(?:StreamMaxLength|MaxFileSize|MaxScanSize|AlertExceedsMax)\b/mu)
+    expect(readFileSync('infra/kubernetes/base/kustomization.yaml', 'utf8')).toContain('- clamav-config.yaml')
     expect(workers).toContain('-mmin -1440')
     expect(workers).toContain('memory: 3Gi')
     expect(workers).toContain('memory: 4Gi')
@@ -288,7 +365,10 @@ describe('structured Kubernetes release image gate', () => {
     expect(config).toContain('ASSET_SCAN_MIN_DEFINITIONS_VERSION: "28000"')
     expect(workers).toContain('key: ASSET_SCANNER_SERVICE_ID')
     expect(workers).toContain('{name: SCANNER_MINIMUM_READY_INSTANCES, value: "2"}')
-    expect(workers).toMatch(/name: merchant-worker-scan[\s\S]*?minAvailable: 2/)
+    // The scan budget is pinned to the PDB block itself: a bare
+    // `/name: merchant-worker-scan[\s\S]*?minAvailable: \d/` would also match
+    // whichever unrelated budget happens to follow the scan Deployment.
+    expect(workers).toMatch(/metadata: \{name: merchant-worker-scan\}\n[\s\S]*?\n  minAvailable: 1\n/)
     expect(config).toContain('ASSET_SCANNER_INTERNAL_API_BASE_URL: http://merchant-api-scanner-internal:8787')
     expect(api).toContain('name: merchant-api-scanner-internal')
     expect(api).toMatch(/name: merchant-api-scanner-internal[\s\S]*?publishNotReadyAddresses: true/)
@@ -391,10 +471,69 @@ describe('structured Kubernetes release image gate', () => {
     const noFreshnessProbe = productionScannerManifest(value => { value.items[2].spec.template.spec.containers[1].readinessProbe.exec.command = ['sh', '-c', 'clamdscan --ping 1'] })
     expect(runManifest(noFreshnessProbe, JSON.stringify(imageDigests))).toThrow(/readinessProbe/)
 
-    const weakDaemonLimit = productionScannerManifest(value => { value.items[2].spec.template.spec.containers[1].env.find((entry: any) => entry.name === 'CLAMD_CONF_StreamMaxLength').value = '25M' })
-    expect(runManifest(weakDaemonLimit, JSON.stringify(imageDigests))).toThrow(/CLAMD_CONF_StreamMaxLength=100M/)
-    const silentLimitSkip = productionScannerManifest(value => { value.items[2].spec.template.spec.containers[1].env.find((entry: any) => entry.name === 'CLAMD_CONF_AlertExceedsMax').value = 'no' })
-    expect(runManifest(silentLimitSkip, JSON.stringify(imageDigests))).toThrow(/CLAMD_CONF_AlertExceedsMax=yes/)
+    const clamdConfigItem = (value: Record<string, any>) => value.items.find((item: any) => item.metadata?.name === 'merchant-clamav-config')
+    const weakDaemonLimit = productionScannerManifest(value => { clamdConfigItem(value).data['clamd.conf'] = clamdConf.replace('StreamMaxLength 100M', 'StreamMaxLength 25M') })
+    expect(runManifest(weakDaemonLimit, JSON.stringify(imageDigests))).toThrow(/StreamMaxLength 100M/)
+    const silentLimitSkip = productionScannerManifest(value => { clamdConfigItem(value).data['clamd.conf'] = clamdConf.replace('AlertExceedsMax yes', '#AlertExceedsMax yes') })
+    expect(runManifest(silentLimitSkip, JSON.stringify(imageDigests))).toThrow(/AlertExceedsMax yes/)
+    const commentedLimit = productionScannerManifest(value => { clamdConfigItem(value).data['clamd.conf'] = clamdConf.replace('MaxScanSize 100M', '#MaxScanSize 100M') })
+    expect(runManifest(commentedLimit, JSON.stringify(imageDigests))).toThrow(/MaxScanSize 100M/)
+    const unmountedConfig = productionScannerManifest(value => { value.items[2].spec.template.spec.containers[1].volumeMounts = [] })
+    expect(runManifest(unmountedConfig, JSON.stringify(imageDigests))).toThrow(/must mount the effective clamd.conf/)
+    const envTautology = productionScannerManifest(value => {
+      value.items[2].spec.template.spec.containers[1].startupProbe.exec.command = ['sh', '-c', 'clamdscan --ping 1 && StreamMaxLength=100M MaxFileSize=100M MaxScanSize=100M AlertExceedsMax=yes']
+    })
+    expect(runManifest(envTautology, JSON.stringify(imageDigests))).toThrow(/startupProbe/)
+  })
+
+  it('rejects a runAsNonRoot Pod whose container would still resolve to root', () => {
+    // A name outside the five-role worker credential contract keeps this case
+    // focused on the non-root rule alone.
+    const podWith = (podContext: string, container: string, name = 'merchant-api') =>
+      deployment([`securityContext: {${podContext}}`, `containers: [${container}]`].join('\n'), name)
+    const clamavImage = `registry.example.com/clamav@${digest}`
+    const workerImage = `registry.example.com/merchant-worker@${digest}`
+
+    // The exact shape that made the scan Pod unschedulable: pod-level
+    // runAsNonRoot, a container with no runAsUser, and an image (clamav) that
+    // sets no USER either. kubelet refuses this with "container has
+    // runAsNonRoot and image will run as root".
+    expect(runManifest(podWith('runAsNonRoot: true', `{name: clamav, image: ${clamavImage}, securityContext: {allowPrivilegeEscalation: false}}`)))
+      .toThrow(/inherits runAsNonRoot but declares no runAsUser/)
+    // `merchant-worker` is attested non-root in NON_ROOT_IMAGE_CONTRACTS.
+    expect(runManifest(podWith('runAsNonRoot: true', `{name: worker, image: ${workerImage}}`))()).toContain('images=1')
+    // An explicit non-zero uid is always accepted.
+    expect(runManifest(podWith('runAsNonRoot: true', `{name: clamav, image: ${clamavImage}, securityContext: {runAsUser: 10001}}`))()).toContain('images=1')
+    // ...but not a root one, at either level.
+    expect(runManifest(podWith('runAsNonRoot: true', `{name: clamav, image: ${clamavImage}, securityContext: {runAsUser: 0}}`))).toThrow(/runAsUser is "0"/)
+    expect(runManifest(podWith('runAsNonRoot: true, runAsUser: 0', `{name: clamav, image: ${clamavImage}}`))).toThrow(/runAsUser is "0"/)
+    // A container must not opt back out of the Pod-level policy.
+    expect(runManifest(podWith('runAsNonRoot: true', `{name: clamav, image: ${clamavImage}, securityContext: {runAsNonRoot: false, runAsUser: 10001}}`)))
+      .toThrow(/re-permits a root container/)
+    // Container-scoped runAsNonRoot is enforced even without a Pod-level one.
+    expect(runManifest(podWith('seccompProfile: {type: RuntimeDefault}', `{name: clamav, image: ${clamavImage}, securityContext: {runAsNonRoot: true}}`)))
+      .toThrow(/inherits runAsNonRoot but declares no runAsUser/)
+    // initContainers are covered too.
+    expect(runManifest(deployment([
+      'securityContext: {runAsNonRoot: true}',
+      `containers: [{name: api, image: ${clamavImage}, securityContext: {runAsUser: 10001}}]`,
+      `initContainers: [{name: bootstrap, image: ${clamavImage}}]`,
+    ].join('\n')))).toThrow(/initContainers\[bootstrap\] inherits runAsNonRoot/)
+  })
+
+  it('keeps every non-root image exemption attested by the Dockerfile that pins it', () => {
+    const validator = readFileSync('infra/scripts/validate-kubernetes-release.rb', 'utf8')
+    const body = validator.match(/NON_ROOT_IMAGE_CONTRACTS = \{(?<body>[\s\S]*?)\}\.freeze/u)?.groups?.body ?? ''
+    const entries = [...body.matchAll(/'([^']+)' => '([^']+)'/gu)].map(match => [match[1]!, match[2]!] as const)
+    expect(entries.length).toBeGreaterThan(0)
+    for (const [imageName, dockerfile] of entries) {
+      const userLines = [...readFileSync(dockerfile, 'utf8').matchAll(/^USER\s+(\d+)(?::\d+)?\s*$/gmu)]
+      expect(userLines.length, `${dockerfile} (${imageName}) must declare a USER`).toBeGreaterThan(0)
+      expect(Number(userLines.at(-1)![1]), `${imageName}: ${dockerfile} must end on a non-root USER`).toBeGreaterThan(0)
+    }
+    // The image that broke the scan Pod must never be exempted: it declares no
+    // USER and therefore starts as root.
+    expect(entries.map(([imageName]) => imageName)).not.toContain('clamav')
   })
 
   it.each(['MODEL_RELAY_API_KEY', 'PLATFORM_RULE_SYNC_SIGNING_SECRET', 'PAYMENT_PROVIDER_API_KEY', 'PAYMENT_CALLBACK_SECRET'])('requires the API critical Secret binding %s', secretName => {

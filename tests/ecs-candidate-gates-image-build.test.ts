@@ -13,6 +13,27 @@ describe('ECS candidate gate image construction', () => {
     expect(dockerfile).toContain('com.storenova.candidate.source_sha256')
   })
 
+  it('excludes local secrets and generated evidence from the COPY . . build context', () => {
+    // `candidate-gates.Dockerfile` is the only Dockerfile that copies the whole
+    // repository. Docker replaces the root ignore file with
+    // `<dockerfile>.dockerignore` when one exists, so the sidecar must carry the
+    // same exclusions or a manual `docker build .` ships `.env` into the image.
+    for (const path of ['.dockerignore', 'infra/docker/candidate-gates.Dockerfile.dockerignore']) {
+      const ignore = readFileSync(path, 'utf8')
+      const lines = ignore.split('\n').map(line => line.trim())
+      for (const entry of ['.env', '.env.*', '.env.production-config-path', 'test-results', '.codegraph', '*.tar.gz', 'screenshots', '*-inventory.json', '.DS_Store']) {
+        expect(lines, `${path} must exclude ${entry}`).toContain(entry)
+      }
+      // The tracked, secret-free template must survive the `.env.*` rule.
+      expect(lines, `${path} must re-include .env.example`).toContain('!.env.example')
+      expect(lines.indexOf('!.env.example'), `${path}: negation must follow .env.*`).toBeGreaterThan(lines.indexOf('.env.*'))
+    }
+    const dockerfile = readFileSync('infra/docker/candidate-gates.Dockerfile', 'utf8')
+    expect(dockerfile).toContain('RUN test ! -e .env')
+    expect(dockerfile).toContain('test ! -e .env.production-config-path')
+    expect(dockerfile.indexOf('RUN test ! -e .env')).toBeLessThan(dockerfile.indexOf('RUN npm ci'))
+  })
+
   it('refuses an unreviewed source revision before invoking Docker', () => {
     const result = spawnSync('sh', ['infra/scripts/build-ecs-candidate-gates-image.sh'], {
       env: { ...process.env, ECS_CANDIDATE_GIT_SHA: 'a'.repeat(40) },

@@ -18,6 +18,15 @@ const SERVER_ONLY_METHODS = new Set([
   'ops.feature-flag.emergency.set',
   'ops.feature-flag.events',
   'ops.feature-flag.evaluate',
+  // Registering the credential-free manual store record is a narrow
+  // platform-operations control plane: it decides which merchant workspace owns
+  // which platform store scope, it is the only writer of
+  // `platform_accounts.token_state='manually_registered'`, and it can widen
+  // what a paid workspace is allowed to do. It therefore stays behind the
+  // authenticated API/MCP boundary until the Ops Console ships a reviewed,
+  // approval-aware surface for it (the same bar the feature-flag controls are
+  // held to). Adding that UI should remove this entry in the same change.
+  'ops.platform.store.record.create',
 ])
 const referenced = new Set()
 function walk(dir) {

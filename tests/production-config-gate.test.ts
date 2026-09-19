@@ -27,6 +27,7 @@ function config(overrides: Record<string, boolean> = {}) {
     'mcp_authorization_mode: enforce',
     'durable_platform_assignments_required: true',
     'platform_operations_mode: manual',
+    'require_approved_asset_for_generation: true',
     'session_id_hash_secret_ref: vault://merchant-identity/session-id-hash-secret',
     ...flags.map(flag => `${flag}: ${overrides[flag] === true ? 'true' : 'false'}`),
     ...socialFlags.map(flag => `${flag}: ${overrides[flag] === true ? 'true' : 'false'}`),
@@ -64,6 +65,7 @@ function config(overrides: Record<string, boolean> = {}) {
     'payment_callback_secret_ref: vault://merchant-payment-callback',
     'payment_reconciliation_enabled: true',
     'payment_refund_enabled: true',
+    'commercial_payment_provider: alipay',
     'model_relay_base_url: https://relay.example.com',
     'model_relay_api_key_ref: vault://merchant-model/relay-api-key',
     'text_model: merchant-text-v1',
@@ -86,6 +88,8 @@ function config(overrides: Record<string, boolean> = {}) {
     'object_storage_sse_mode: AES256', 'merchant_ui_api_token_ref: vault://merchant-ui/api-token', 'merchant_ui_workspace_id_ref: vault://merchant-ui/workspace-id',
     'asset_display_base_url: https://merchant.example.com',
     'asset_display_url_signing_secret_ref: vault://merchant-assets/display-url-signing-secret',
+    'image_artifact_allowed_hosts: images.merchant-assets.cn',
+    'video_artifact_allowed_hosts: videos.merchant-assets.cn',
     'object_storage_versioning: true',
     'lifecycle_policy_ref: vault://asset-lifecycle-policy',
     'asset_quarantine_retention_days: 7',
@@ -251,9 +255,29 @@ describe('production config gate', () => {
     expect(() => run(alertsDisabled.replace('alert_notifications_enabled: false', 'alert_notifications_enabled: invalid'))()).toThrow(/alert_notifications_enabled/)
   })
 
+  it('requires the asset-rights gate to be explicitly enabled', () => {
+    // The API reads REQUIRE_APPROVED_ASSET_FOR_GENERATION with `!== 'true'`,
+    // so an absent or false value silently drops the clean/approved/AI-edit
+    // check in front of product-image generation. A rendered production config
+    // must therefore pin it, and `false` has no legitimate production meaning.
+    expect(() => run(config().replace('require_approved_asset_for_generation: true\n', ''))()).toThrow(/required production config key is missing: require_approved_asset_for_generation/)
+    expect(() => run(config().replace('require_approved_asset_for_generation: true', 'require_approved_asset_for_generation: false'))()).toThrow(/require_approved_asset_for_generation must be true/)
+    expect(run(config())()).toContain('production config gate passed')
+  })
+
   it('requires HTTPS signed asset-display configuration', () => {
     expect(() => run(config().replace('asset_display_base_url: https://merchant.example.com', 'asset_display_base_url: http://merchant.example.com'))()).toThrow(/asset_display_base_url/)
     expect(() => run(config().replace('asset_display_url_signing_secret_ref: vault://merchant-assets/display-url-signing-secret', 'asset_display_url_signing_secret_ref:'))()).toThrow(/asset_display_url_signing_secret_ref/)
+  })
+
+  it('rejects blank or placeholder artifact fetch allowlists', () => {
+    // A placeholder is the dangerous case: it is non-empty, so the API treats it
+    // as a configured allowlist, starts normally, and then rejects every real
+    // artifact host at runtime instead of failing closed at boot.
+    for (const field of ['image_artifact_allowed_hosts', 'video_artifact_allowed_hosts']) {
+      expect(() => run(config().replace(`${field}: ${field.startsWith('image') ? 'images' : 'videos'}.merchant-assets.cn`, `${field}:`))()).toThrow(new RegExp(field, 'u'))
+      expect(() => run(config().replace(`${field}: ${field.startsWith('image') ? 'images' : 'videos'}.merchant-assets.cn`, `${field}: cdn.example.com`))()).toThrow(new RegExp(`${field} must not list reserved placeholder hosts`, 'u'))
+    }
   })
 
   it('requires a provider query endpoint for payment status reconciliation', () => {

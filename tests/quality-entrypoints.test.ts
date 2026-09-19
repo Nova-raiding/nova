@@ -139,14 +139,19 @@ describe('quality entrypoint coverage', () => {
     expect(postgresManifest).toContain("'tests/postgres-rls-attack-matrix.postgres.test.ts'")
   })
 
-  it('keeps the deliberately server-only feature-flag control plane explicit', () => {
+  it('keeps the deliberately server-only control planes explicit', () => {
     const auditSource = readFileSync(resolve(root, 'scripts/audit-ops-surface.mjs'), 'utf8')
+    // Not only feature flags: `ops.platform.store.record.create` is the other
+    // deliberately UI-less control plane (see the set's own comment in
+    // `scripts/audit-ops-surface.mjs`). Adding a UI for either entry should
+    // remove it from this list and from the audit's set in the same change.
     const serverOnly = [
       'ops.feature-flags.list',
       'ops.feature-flag.upsert',
       'ops.feature-flag.emergency.set',
       'ops.feature-flag.events',
       'ops.feature-flag.evaluate',
+      'ops.platform.store.record.create',
     ]
     for (const method of serverOnly) expect(auditSource).toContain(`'${method}'`)
 

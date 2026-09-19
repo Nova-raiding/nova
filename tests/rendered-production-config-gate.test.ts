@@ -11,31 +11,35 @@ const config = () => ({
   codex: { mcp: { base_url: 'https://merchant.production.test' } },
   mcp_authorization_mode: 'enforce',
   durable_platform_assignments_required: true,
+  require_approved_asset_for_generation: true,
   model_relay_base_url: 'https://relay.production.test/v1',
   text_model: 'text-v1', image_model: 'image-v1', image_edit_model: 'image-edit-v1', ocr_model: 'ocr-v1', video_model: 'video-v1', embedding_model: 'embedding-v1', embedding_dimensions: 1536, embedding_max_request_cny: '0.10', knowledge_vector_index_enabled: false,
   approved_requests_per_minute: 120, approved_tokens_per_minute: 120000, maximum_task_cost_cny: '10.00',
   object_storage_bucket: 'merchant-production-assets', object_storage_region: 'cn-prod-1', object_storage_endpoint: 'https://storage.production.test', object_storage_versioning: true,
-  asset_display_base_url: 'https://merchant.production.test', asset_quarantine_retention_days: 7, asset_clean_retention_days: 90, deletion_request_grace_days: 7, backup_retention_days: 30,
+  asset_display_base_url: 'https://merchant.production.test', image_artifact_allowed_hosts: 'images.merchant-assets.cn', video_artifact_allowed_hosts: 'videos.merchant-assets.cn', asset_quarantine_retention_days: 7, asset_clean_retention_days: 90, deletion_request_grace_days: 7, backup_retention_days: 30,
   lifecycle_policy_ref: 'policy://production/assets-v1', asset_scanner_mode: 'clamav_worker', allow_local_asset_scan_fixture: false,
   asset_scan_policy_version: 'scan-policy-v1', clamav_signature_max_age_minutes: 1440, clamav_max_file_bytes: 104857600,
   payment_mode: 'provider', payment_provider_adapters: 'alipay', payment_checkout_base_url: 'https://pay.yxsona.com/checkout',
   payment_provider_checkout_api_url: 'https://pay.yxsona.com/v1/checkout', payment_provider_query_api_url: 'https://pay.yxsona.com/v1/query', payment_provider_refund_query_api_url: 'https://pay.yxsona.com/v1/refund/query', payment_provider_refund_api_url: 'https://pay.yxsona.com/v1/refund',
   payment_provider_merchant_id: '2088123456789012', payment_callback_base_url: 'https://merchant.production.test/v1', payment_reconciliation_enabled: true, payment_refund_enabled: true,
+  commercial_payment_provider: 'alipay',
   platform_rule_sync_manifest_url: 'https://rules.production.test/platform-rules/v1/manifest.json', platform_rule_sync_interval_hours: 24,
 })
 
 const manifest = () => ({ apiVersion: 'v1', kind: 'List', items: [
   { apiVersion: 'v1', kind: 'ConfigMap', metadata: { name: 'merchant-runtime' }, data: {
-    MERCHANT_BEARER_HOSTNAME: 'merchant.production.test', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
+    MERCHANT_BEARER_HOSTNAME: 'merchant.production.test', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true', REQUIRE_APPROVED_ASSET_FOR_GENERATION: 'true',
     MODEL_RELAY_BASE_URL: 'https://relay.production.test/v1', MODEL_RELAY_ALLOWED_HOSTS: 'relay.production.test',
     AI_MODEL: 'text-v1', IMAGE_MODEL: 'image-v1', IMAGE_EDIT_MODEL: 'image-edit-v1', OCR_MODEL: 'ocr-v1', VIDEO_MODEL: 'video-v1', EMBEDDING_MODEL: 'embedding-v1', EMBEDDING_DIMENSIONS: '1536', MODEL_EMBEDDING_MAX_REQUEST_CNY: '0.10', KNOWLEDGE_VECTOR_INDEX_ENABLED: 'false', MODEL_RPM_LIMIT: '120', MODEL_TPM_LIMIT: '120000', MODEL_MAX_TASK_COST_CNY: '10.00',
     ASSET_STORAGE_BUCKET: 'merchant-production-assets', ASSET_STORAGE_REGION: 'cn-prod-1', ASSET_STORAGE_ENDPOINT: 'https://storage.production.test', OBJECT_STORAGE_VERSIONING: 'true',
     PUBLIC_ASSET_BASE_URL: 'https://merchant.production.test', PUBLIC_OAUTH_REDIRECT_URI: 'https://merchant.production.test/v1/oauth/callback/{platform}',
+    IMAGE_ARTIFACT_ALLOWED_HOSTS: 'images.merchant-assets.cn', VIDEO_ARTIFACT_ALLOWED_HOSTS: 'videos.merchant-assets.cn',
     ASSET_QUARANTINE_RETENTION_DAYS: '7', ASSET_CLEAN_RETENTION_DAYS: '90', DELETION_REQUEST_GRACE_DAYS: '7', BACKUP_RETENTION_DAYS: '30', LIFECYCLE_POLICY_REF: 'policy://production/assets-v1',
     ASSET_SCANNER_MODE: 'clamav_worker', ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ASSET_SCAN_POLICY_VERSION: 'scan-policy-v1', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440', CLAMAV_MAX_FILE_BYTES: '104857600', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
     PAYMENT_MODE: 'provider', PAYMENT_PROVIDER_ADAPTERS: 'alipay', PAYMENT_CHECKOUT_BASE_URL: 'https://pay.yxsona.com/checkout',
     PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://pay.yxsona.com/v1/checkout', PAYMENT_PROVIDER_QUERY_API_URL: 'https://pay.yxsona.com/v1/query', PAYMENT_PROVIDER_REFUND_QUERY_API_URL: 'https://pay.yxsona.com/v1/refund/query', PAYMENT_PROVIDER_REFUND_API_URL: 'https://pay.yxsona.com/v1/refund',
     PAYMENT_PROVIDER_MERCHANT_ID: '2088123456789012', PAYMENT_CALLBACK_BASE_URL: 'https://merchant.production.test/v1', PAYMENT_RECONCILIATION_ENABLED: 'true', PAYMENT_REFUND_ENABLED: 'true',
+    COMMERCIAL_PAYMENT_PROVIDER: 'alipay',
     PLATFORM_RULE_SYNC_MANIFEST_URL: 'https://rules.production.test/platform-rules/v1/manifest.json',
   } },
   { apiVersion: 'networking.k8s.io/v1', kind: 'Ingress', metadata: { name: 'merchant', annotations: { 'nginx.ingress.kubernetes.io/proxy-body-size': '1m' } }, spec: {
@@ -92,6 +96,12 @@ describe('production config and rendered manifest binding gate', () => {
       const rendered = execFileSync('kustomize', ['build', `infra/kubernetes/overlays/${overlay}`], { encoding: 'utf8', stdio: 'pipe' })
         .replaceAll('https://payments.example.com', 'https://pay.yxsona.com')
         .replaceAll('merchant-example', '2088123456789012')
+        // The artifact allowlists are template values too: the binding gate
+        // requires each to equal the operator's production config value, so an
+        // unsubstituted manifest fails rather than shipping an allowlist that
+        // rejects every real artifact host.
+        .replaceAll('video-cdn.example.com', 'videos.merchant-assets.cn')
+        .replaceAll('image-cdn.example.com', 'images.merchant-assets.cn')
       expect(run(overlayConfig, rendered)()).toContain('binding gate passed')
     }
   })
@@ -117,7 +127,11 @@ describe('production config and rendered manifest binding gate', () => {
     ['payment_callback_base_url', 'PAYMENT_CALLBACK_BASE_URL'],
     ['payment_reconciliation_enabled', 'PAYMENT_RECONCILIATION_ENABLED'],
     ['payment_refund_enabled', 'PAYMENT_REFUND_ENABLED'],
+    ['commercial_payment_provider', 'COMMERCIAL_PAYMENT_PROVIDER'],
+    ['image_artifact_allowed_hosts', 'IMAGE_ARTIFACT_ALLOWED_HOSTS'],
+    ['video_artifact_allowed_hosts', 'VIDEO_ARTIFACT_ALLOWED_HOSTS'],
     ['platform_rule_sync_manifest_url', 'PLATFORM_RULE_SYNC_MANIFEST_URL'],
+    ['require_approved_asset_for_generation', 'REQUIRE_APPROVED_ASSET_FOR_GENERATION'],
   ])('rejects drift between %s and %s without echoing values', (configKey, runtimeKey) => {
     const rendered = manifest()
     const runtime = rendered.items[0]!.data as Record<string, string>
@@ -129,7 +143,10 @@ describe('production config and rendered manifest binding gate', () => {
     'PAYMENT_MODE', 'PAYMENT_PROVIDER_ADAPTERS', 'PAYMENT_CHECKOUT_BASE_URL',
     'PAYMENT_PROVIDER_CHECKOUT_API_URL', 'PAYMENT_PROVIDER_QUERY_API_URL', 'PAYMENT_PROVIDER_REFUND_QUERY_API_URL', 'PAYMENT_PROVIDER_REFUND_API_URL',
     'PAYMENT_PROVIDER_MERCHANT_ID', 'PAYMENT_CALLBACK_BASE_URL', 'PAYMENT_RECONCILIATION_ENABLED', 'PAYMENT_REFUND_ENABLED',
+    'COMMERCIAL_PAYMENT_PROVIDER',
+    'IMAGE_ARTIFACT_ALLOWED_HOSTS', 'VIDEO_ARTIFACT_ALLOWED_HOSTS',
     'PLATFORM_RULE_SYNC_MANIFEST_URL',
+    'REQUIRE_APPROVED_ASSET_FOR_GENERATION',
   ])('rejects a missing required runtime projection %s', runtimeKey => {
     const rendered = manifest()
     delete (rendered.items[0]!.data as Record<string, string>)[runtimeKey]

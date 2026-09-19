@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
-import { alertNotificationReady, apiProbeReady, codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, releaseReadiness } from '../scripts/dev-doctor-runtime.js'
+import { alertNotificationReady, apiProbeReady, codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, productionConfigGateReady, releaseReadiness } from '../scripts/dev-doctor-runtime.js'
 
 describe('developer doctor runtime checks', () => {
   it('parses Docker Compose newline-delimited JSON', () => {
@@ -278,4 +278,51 @@ describe('developer doctor runtime checks', () => {
     expect(source).toContain('ECS 范围不以开发机 Compose 容器状态判断生产健康')
     expect(source).toContain('deploy-preflight-ecs.sh')
   })
+
+  // Regression: the gate used to short-circuit on `ecsProduction`, so
+  // `DOCTOR_DEPLOYMENT_TARGET=ecs PRODUCTION_CONFIG_PATH=VERSION` reported
+  // `production_config: pass` while the identical input reported `fail` for
+  // local-compose. A forged locator must now fail for every target.
+  it.each(['local-compose', 'ecs', 'kubernetes'])('fails a forged production config under DOCTOR_DEPLOYMENT_TARGET=%s', () => {
+    // `VERSION` is a six-byte non-YAML file: readable, not example-named, and
+    // free of draft markers, so only the shell gate can reject it.
+    const runGate = vi.fn(() => false)
+    expect(productionConfigGateReady({
+      production: true,
+      configPath: '/repo/VERSION',
+      configText: '1.0.0\n',
+      runGate,
+    })).toBe(false)
+    expect(runGate, 'the rendered-config gate must actually run for every target').toHaveBeenCalledOnce()
+  })
+
+  it('still passes a real rendered production config in production mode', () => {
+    expect(productionConfigGateReady({
+      production: true,
+      configPath: '/repo/rendered/production.yaml',
+      configText: 'plugin_enabled: true\nauth_enforcement: strict\n',
+      runGate: () => true,
+    })).toBe(true)
+  })
+
+  it('screens draft markers and example paths before the shell gate runs', () => {
+    const runGate = vi.fn(() => true)
+    expect(productionConfigGateReady({ production: true, configPath: '/repo/production.example.yaml', configText: 'plugin_enabled: true\n', runGate })).toBe(false)
+    expect(productionConfigGateReady({ production: true, configPath: '/repo/rendered.yaml', configText: 'secret: SET_ME\n', runGate })).toBe(false)
+    expect(productionConfigReadyWithUnreadablePath()).toBe(false)
+    expect(runGate).not.toHaveBeenCalled()
+  })
+
+  it('does not short-circuit the rendered-config gate for ECS', () => {
+    const source = readFileSync('scripts/dev-doctor.ts', 'utf8')
+    expect(source).not.toContain('ecsProduction ||')
+    expect(source).toContain('productionConfigGateReady({')
+    expect(source).toContain("resolve(root, 'infra/scripts/validate-production-config.sh')")
+  })
 })
+
+// A missing or unreadable path is reported by the caller (dev-doctor.ts) as a
+// structured failure; the shared predicate treats `undefined` text the same.
+function productionConfigReadyWithUnreadablePath(): boolean {
+  return productionConfigGateReady({ production: true, configPath: '/repo/rendered.yaml', configText: undefined, runGate: () => true })
+}

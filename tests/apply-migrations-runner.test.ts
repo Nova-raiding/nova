@@ -42,6 +42,13 @@ if (sql.includes('pg_advisory_lock') || sql.includes('pg_advisory_xact_lock')) {
   if (holdMs > 0) { const until = Date.now() + holdMs; while (Date.now() < until) {} }
   const included = sql.match(/\\\\i '([^']+)'/)
   if (included) event('applied:' + path.basename(included[1]))
+  if (process.env.FAKE_PSQL_MODE === 'invalid-index' && sql.includes('invalid_concurrent_indexes')) {
+    event('probed-concurrent-indexes')
+    process.stdout.write('MIGRATION_CONCURRENT_INDEX_INVALID version 002\\n')
+    release('lock-released-after-invalid-index')
+    process.exit(1)
+  }
+  if (sql.includes('INSERT INTO schema_migrations')) event('recorded-migration')
   release('lock-released')
 }
 process.exit(0)
@@ -133,6 +140,38 @@ describe('apply-migrations.sh shell runner', () => {
       expect(result.status).not.toBe(0)
       expect(`${result.stdout}${result.stderr}`).toContain('MIGRATION_CHECKSUM_MISMATCH')
       expect(stateOf(testFixture).events).toContain('lock-released-after-checksum')
+      expect(existsSync(`${testFixture.state}.lock`)).toBe(false)
+    } finally { dispose(testFixture) }
+  })
+
+  it('probes the indexes a non-transactional migration declares before recording it as applied', () => {
+    const script = readFileSync('infra/scripts/apply-migrations.sh', 'utf8')
+    expect(script).toContain('NOT i.indisvalid')
+    // The probe has to sit inside the same psql session as the DDL and the
+    // INSERT, after the file runs and before the row is recorded.
+    const probe = script.indexOf('$index_probe')
+    const include = script.indexOf("\\i '$migration'")
+    expect(probe).toBeGreaterThan(-1)
+    expect(include).toBeGreaterThan(-1)
+    expect(probe).toBeGreaterThan(include)
+    expect(probe).toBeLessThan(script.indexOf('INSERT INTO schema_migrations', include))
+  })
+
+  it('fails the deploy instead of recording a migration whose concurrent index is unusable', () => {
+    const testFixture = fixture([
+      ['001_initial.sql', 'create table probe (v integer);'],
+      ['002_add_index.sql', '-- migrate:no-transaction\nCREATE INDEX CONCURRENTLY IF NOT EXISTS probe_v_idx ON probe (v);'],
+    ])
+    try {
+      const result = run(testFixture, { FAKE_PSQL_MODE: 'invalid-index' })
+      expect(result.status).not.toBe(0)
+      expect(`${result.stdout}${result.stderr}`).toContain('MIGRATION_CONCURRENT_INDEX_INVALID')
+      const events = stateOf(testFixture).events
+      expect(events).toContain('applied:002_add_index.sql')
+      // 001 is recorded normally; nothing at or after the failing probe may be.
+      const probeAt = events.indexOf('probed-concurrent-indexes')
+      expect(probeAt).toBeGreaterThan(-1)
+      expect(events.slice(probeAt)).not.toContain('recorded-migration')
       expect(existsSync(`${testFixture.state}.lock`)).toBe(false)
     } finally { dispose(testFixture) }
   })

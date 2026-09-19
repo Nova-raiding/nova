@@ -11,8 +11,13 @@ describe('production config locator safety', () => {
     expect(shell).not.toMatch(/(?:source|\.)\s+.*\.env/)
     const doctor = readFileSync(resolve('scripts/dev-doctor.ts'), 'utf8')
     expect(doctor).toContain("resolve(root, '.env.production-config-path')")
-    expect(doctor).toContain('BLOCKED_UNTIL_')
     expect(doctor).toContain("resolve(root, 'infra/scripts/validate-production-config.sh')")
+    // The draft-marker screening moved into the shared predicate so that every
+    // deployment target runs it; assert it where it now lives rather than in
+    // the caller that no longer inlines it.
+    const runtime = readFileSync(resolve('scripts/dev-doctor-runtime.ts'), 'utf8')
+    expect(runtime).toContain('BLOCKED_UNTIL_')
+    expect(runtime).toContain('REPLACE_ME')
   })
 
   it('honors explicit environment paths and fails closed when missing', () => {

@@ -94,6 +94,29 @@ assert.equal(productionRuntimeValue('NODE_ENV'), 'production')
 assert.equal(productionRuntimeValue('CONNECTOR_FIXTURE_MODE'), 'false')
 assert.equal(productionRuntimeValue('PLUGIN_WRITE_ENABLED'), 'false')
 assert.equal(productionRuntimeValue('WORKER_WORKSPACES'), 'auto', 'production workers must discover authoritative workspace scope')
+// `commercialPaymentProvider()` (apps/api/src/server.ts) resolves this before it
+// writes a V2 commercial order, so the production ConfigMap must carry it. The
+// `PAYMENT_MODE`/`PAYMENT_PROVIDER_ADAPTERS` pair above does not substitute:
+// without a channel label `commercial.order.create` fails closed with 503 and
+// persists no order row, which leaves the operator's
+// `ops.commercial.order.payment.verify` with nothing to verify.
+const commercialProvider = productionRuntimeValue('COMMERCIAL_PAYMENT_PROVIDER')
+assert.ok(commercialProvider, 'production ConfigMap must set COMMERCIAL_PAYMENT_PROVIDER')
+assert.match(commercialProvider, /^[a-z][a-z0-9_-]{1,63}$/u, 'COMMERCIAL_PAYMENT_PROVIDER must be a channel label the API accepts')
+assert.notEqual(commercialProvider, 'sandbox', 'production must not label commercial orders as sandbox')
+// The artifact fetch allowlists are required production inputs the API reads
+// directly, and they were previously undeclared on every config surface. This
+// asserts only that the render declares them: the template legitimately holds an
+// illustrative host, and the two things that stop an unsubstituted one from
+// shipping are the placeholder rejection in validate-production-config.sh (on
+// the operator's config) plus the config-equals-manifest binding in
+// validate-rendered-production-config.rb.
+for (const key of ['IMAGE_ARTIFACT_ALLOWED_HOSTS', 'VIDEO_ARTIFACT_ALLOWED_HOSTS']) {
+  assert.ok(productionRuntimeValue(key), `production ConfigMap must declare ${key}`)
+}
+const productionConfigTemplate = readFileSync('doc/todo/infra/production-config.example.yaml', 'utf8')
+const templateProvider = productionConfigTemplate.match(/^\s*commercial_payment_provider:\s*"?([^"\s#]+)"?\s*$/m)?.[1]
+assert.equal(commercialProvider, templateProvider, 'rendered ConfigMap and production config template must agree on the commercial channel')
 assert.ok('OTEL_EXPORTER_OTLP_ENDPOINT' in apiEnv, 'API must expose an OTEL endpoint injection point')
 assert.ok(apiEnv.WORKER_API_CREDENTIALS, 'API must expose a role-scoped worker credential map')
 const workerCredentials = JSON.parse(apiEnv.WORKER_API_CREDENTIALS) as Record<string, { token: string; signing_secret: string }>

@@ -140,6 +140,36 @@ export function commercialRuntimeReadiness(payload: unknown): CommercialRuntimeR
   }
 }
 
+export type ProductionConfigGateInput = {
+  /** True for `dev-doctor --production`. Local diagnosis only warns. */
+  production: boolean
+  /** Absolute path resolved from PRODUCTION_CONFIG_PATH; '' when unset. */
+  configPath: string
+  /** Rendered config text, or undefined when the path could not be read. */
+  configText: string | undefined
+  /** Runs `infra/scripts/validate-production-config.sh` for the resolved path. */
+  runGate: () => boolean
+}
+
+/**
+ * The deployment target is deliberately NOT an input. `dev-doctor --production`
+ * used to short-circuit the rendered-config gate when
+ * `DOCTOR_DEPLOYMENT_TARGET=ecs`, so a placeholder locator (for example
+ * `PRODUCTION_CONFIG_PATH=VERSION`) reported `production_config: pass` on ECS
+ * while the identical input reported `fail` on local-compose. Draft screening
+ * and the shell gate must therefore behave the same for every target; an ECS
+ * config arrives pre-rendered but is not thereby more trustworthy.
+ */
+export function productionConfigGateReady({ production, configPath, configText, runGate }: ProductionConfigGateInput): boolean {
+  // A missing/unreadable locator, or one still named after the checked-in
+  // example, is never a rendered production configuration.
+  if (!configPath || configText === undefined || /example/iu.test(configPath)) return false
+  // Screen draft markers and local-only hosts before shelling out: the gate
+  // exists to catch a real artifact, not to be the first thing that reads one.
+  if (/REPLACE_ME|SET_[A-Z_]+|BLOCKED_UNTIL_|example\.com/iu.test(configText)) return false
+  return !production || runGate()
+}
+
 /**
  * A production doctor probe must validate the readiness contract, not only
  * the HTTP status. A local/fixture API can legitimately answer `/readyz` with

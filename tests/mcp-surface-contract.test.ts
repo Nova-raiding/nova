@@ -11,6 +11,27 @@ import {
   MCP_RECOVERY_ENABLED_METHODS,
 } from '../packages/contracts/src/commercial-operation-registry.js'
 
+/**
+ * Methods the entry skill names that are reachable only when the deployment
+ * turns their producer on. Unlike a hidden tool, the skill is not lying: it
+ * tells the model to check `tools/list` first and to report the path as
+ * unavailable when the tool is absent.
+ *
+ * Declared here rather than silently skipped, and each entry names the switch
+ * that enables it, so the declaration is checkable: the assertions below verify
+ * the tool really is absent from the default runtime and that the bridge really
+ * does condition it on that switch. If either stops being true the entry is
+ * stale and this gate fails.
+ */
+const CONDITIONALLY_EXPOSED_TOOLS = new Map<string, { enabledBy: string; producer: string }>([
+  [
+    'multimodal.video.get',
+    // Its only input is the provider_job_id returned by multimodal.video.request,
+    // so the poller is exactly as reachable as its producer.
+    { enabledBy: 'MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES', producer: 'multimodal.video.request' },
+  ],
+])
+
 function methodsFromAllowlist(source: string): string[] {
   const block = source.match(/export const MCP_METHODS = \[(.*?)\]\s+as const/s)?.[1] ?? ''
   return [...block.matchAll(/'([^']+)'/g)].map(match => match[1]!)
@@ -220,6 +241,17 @@ describe('MCP surface coverage', () => {
       // at all (permissions such as customer.content.update, artifact names
       // such as review-findings.json) are documentation, not tool calls.
       if (!allowlisted.has(token)) continue
+      const conditional = CONDITIONALLY_EXPOSED_TOOLS.get(token)
+      if (conditional) {
+        // A declared conditional tool must actually be conditional: absent by
+        // default, and gated in the bridge on the switch named here. That is
+        // what keeps this declaration from decaying into a plain allowlist.
+        expect(runtimeTools.has(token), `${token} is declared conditional but the default runtime exposes it; the declaration is stale`).toBe(false)
+        const bridgeSource = readFileSync(new URL('../apps/plugin/mcp/bridge.mjs', import.meta.url), 'utf8')
+        expect(bridgeSource, `${token} is declared conditional on ${conditional.enabledBy}, but the bridge never mentions it`).toContain(conditional.enabledBy)
+        expect(bridgeSource, `${token} is declared conditional but the bridge never mentions its producer ${conditional.producer}`).toContain(conditional.producer)
+        continue
+      }
       expect(runtimeTools.has(token), `SKILL.md tells the model to use ${token}, but the bridge does not expose it`).toBe(true)
     }
   })

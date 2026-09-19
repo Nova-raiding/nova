@@ -2,7 +2,7 @@ import { accessSync, constants, existsSync, readFileSync, readdirSync } from 'no
 import { execFileSync, spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
-import { alertNotificationReady, apiProbeReady, codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, releaseReadiness } from './dev-doctor-runtime.js'
+import { alertNotificationReady, apiProbeReady, codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, productionConfigGateReady, releaseReadiness } from './dev-doctor-runtime.js'
 
 const REQUIRED_CREATIVE_POINT_FORCE_RLS_TABLES = [
   'creative_point_access_state',
@@ -176,10 +176,17 @@ add('ops_api_base', opsApiBaseReady ? 'pass' : 'warn', opsApiBase
 const productionConfig = process.env.PRODUCTION_CONFIG_PATH?.trim()
 const productionConfigPath = productionConfig ? resolve(root, productionConfig) : ''
 const productionConfigReady = (() => {
-  if (!productionConfigPath || !existsSync(productionConfigPath) || /example/iu.test(productionConfigPath)) return false
+  if (!productionConfigPath || !existsSync(productionConfigPath)) return false
   try {
-    if (/REPLACE_ME|SET_[A-Z_]+|BLOCKED_UNTIL_|example\.com/iu.test(readFileSync(productionConfigPath, 'utf8'))) return false
-    return !production || ecsProduction || run('sh', [resolve(root, 'infra/scripts/validate-production-config.sh'), productionConfigPath]).status === 0
+    return productionConfigGateReady({
+      production,
+      configPath: productionConfigPath,
+      configText: readFileSync(productionConfigPath, 'utf8'),
+      // Every deployment target runs the same rendered-config gate. ECS must
+      // not short-circuit it: an unrendered or placeholder config has to fail
+      // there exactly as it does for local-compose.
+      runGate: () => run('sh', [resolve(root, 'infra/scripts/validate-production-config.sh'), productionConfigPath]).status === 0,
+    })
   } catch {
     // A directory, unreadable path, or disappearing secret-rendered file is a
     // production configuration failure, not a reason for the doctor itself to
