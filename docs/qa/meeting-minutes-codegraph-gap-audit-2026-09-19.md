@@ -11,7 +11,7 @@
 - `npm run typecheck`：通过。
 - `npm run audit:ops-surface`：141/141 方法有前端引用，`unreferenced_count=0`。
 - `npm run test:release-gates`：144 个文件通过、7 个 PostgreSQL 文件跳过；848 tests passed、14 skipped。跳过原因是当前没有隔离 PostgreSQL URL，不能当作生产 RLS 已验收。
-- 全量核心 `npm test`：本轮初跑暴露 8 个旧契约断言（7 个旧架构断言，加 1 个清单证据断言）；已按当前实现修正，受影响契约 8 文件/30 测试与清单输入验证 1 文件/124 测试均通过；其余 7/8 安全分片通过。随后 `npm run test:ops-console`：101 个文件、710 个测试通过。
+- 全量核心 `npm test`：本轮初跑暴露 8 个旧契约断言（7 个旧架构断言，加 1 个清单证据断言）；已按当前实现修正，最终 8/8 安全分片全部通过（97 个文件通过、7 个 PostgreSQL 文件跳过，701 tests passed、9 skipped）。随后 `npm run test:ops-console`：101 个文件、710 个测试通过。
 - `npm run audit:ops-surface`：141/141 方法有前端引用；`release:metadata:validate`、运营后台构建、商家工作台构建和 `git diff --check` 均通过。商家构建仍有单 bundle 大于 500KB 的性能警告，未作为功能失败隐藏。
 - 本轮 owner 修复已提交并推送：`639f3917`、`3e3522ab`（`origin/main` 已同步）；没有切换线上。
 
@@ -68,7 +68,7 @@
 - 客户交付页补齐只读权限态、培训凭证展示/上传边界、工作区清空态；交付仓储补齐已归档过滤、已付款完成门禁和有效证据时间投影。
 - MCP 充值职责收敛为商家后台创建订单、插件只读查询；平台告警的客户实体筛选保留数据授权边界；CI 纳入 migration-219 PostgreSQL 发布测试；桌面浏览器测试清理增加硬上限，避免残留浏览器阻塞验收。
 - 商家财务页已改为调用服务端 `billing.recharge.create/get`，展示真实订单状态和支付链接；不再使用静态二维码或伪造充值成功。交付清单项完成必须保留扫描资产证据，交付生效还必须存在未删除视频资产；API/Worker Dockerfile 补齐构建平台和 npm cache 约束；发布元数据同步为 11 个运营域。
-- 最新本地证据：`npm run typecheck`、`npm run test:release-gates`（144 文件/848 passed）、核心安全分片（7/8 分片通过，剩余旧断言已定向修复并以 124/124 通过）、运营后台全量（101 文件/710 passed）、运营后台构建和 CodeGraph 同步均通过；本轮客户交付组件与页面有效路径定向回归通过。
+- 最新本地证据：`npm run typecheck`、`npm run test:release-gates`（144 文件/848 passed）、核心安全分片（8/8 分片、701 passed/9 skipped）、运营后台全量（101 文件/710 passed）、运营后台构建和 CodeGraph 同步均通过；本轮客户交付组件与页面有效路径定向回归通过。
 - 本轮新增修复：客户交付列表的档案/接入/验收状态恢复为可点击入口；只读运营打开详情时，合同、清单和保存动作全部禁用；权限丢失会关闭正在编辑的详情；Ant Design Drawer/Table 弃用 API 已迁移。同步清理了 `CustomerDeliveryPage.test.tsx` 中与会议决策冲突的旧交付视频主流程断言。商家账号菜单已挂接本地插件连接入口，客服入口会携带当前任务关联 ID；相关契约测试 8 文件/30 测试通过。
 - 最新线上只读证据：`https://yxsona.com/api/healthz` 返回 `writesEnabled=false`、`setup.mode=fixture`、六平台 `fixture_ready`、`objectStorage.mode=local`、`productionGate=false`；`/api/releasez` 的 release/git SHA/manifest/image digest 仍为空且 `ready=false`；`https://ops.yxsona.com/healthz` 返回 `ok`。
 - 最新 CodeGraph：同步 `10` 个变更文件后，索引为 1,516 files / 21,489 nodes / 82,258 edges，`pendingChanges=0`、`worktreeMismatch=null`。
