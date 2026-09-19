@@ -4,9 +4,11 @@
 
 ## 1. 固定候选身份
 
-候选分支：`codex/fix-relay-pending-state`
+候选分支：`main`
 
-当前候选提交：`ae5498523dde56728b91184c3296ca8f4acd7c78`
+当前候选提交：`57db5b2fa9dd85b5d5619007ddc4243890bb9173`
+
+候选包已于 2026-09-19 生成。101 上现有候选容器仍绑定旧提交 `53721389bf6d3399b264642bc0c5969302ad39e8`，不得将其视为当前候选；必须先完成安全同步、人工合并 21 个差异文件，并补齐 45 个远端缺失文件后再 staging。
 
 发布前必须把以下字段绑定到同一 `RELEASE_ID`，不得现场修改或复用旧证据：Git SHA、源码归档摘要、镜像摘要、渲染 Compose 摘要、deployment nonce、capability/capacity evidence。
 
