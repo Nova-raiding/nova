@@ -202,6 +202,15 @@ function pointBenefit(snapshot: CommercialCatalogSkuSnapshot): number {
   return values[0]!.quantity!
 }
 
+/**
+ * The end instant a subscription period must have, given its start. Shared so
+ * the stacking path below re-derives the same window `validatePeriod` accepts
+ * instead of owning a second copy of the rule.
+ */
+function periodEndFor(sku: CommercialCatalogSkuSnapshot, start: string): string {
+  return sku.kind === 'private_trial' ? privateTrialPeriod(start).end : monthlyAnniversary(start, 1)
+}
+
 function validatePeriod(sku: CommercialCatalogSkuSnapshot, period: VerifiedPaymentGrantInput['period']): { start: string; end: string } | null {
   if (sku.kind === 'point_pack') return null
   if (sku.kind === 'onboarding') return null
@@ -218,9 +227,81 @@ function validatePeriod(sku: CommercialCatalogSkuSnapshot, period: VerifiedPayme
   // `monthlyAnniversary` is the canonical implementation for this path; the
   // other copies of the rule are listed on its definition and pinned by
   // `tests/month-anniversary-equivalence.test.ts`.
-  const expected = sku.kind === 'private_trial' ? privateTrialPeriod(start).end : monthlyAnniversary(start, 1)
+  const expected = periodEndFor(sku, start)
   if (end !== expected) throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', sku.kind === 'private_trial' ? 'private trial period must be exactly seven days' : 'monthly subscription period must be one calendar month')
   return { start, end }
+}
+
+/**
+ * Stack a newly granted subscription period on the workspace's current one
+ * instead of letting the two overlap.
+ *
+ * `commercialMonthlyPeriod` derives the window from the payment instant, so a
+ * merchant who renews before their current month is over would otherwise get a
+ * second `status='active'` row whose window also contains "now".
+ * `isAuthoritativeSnapshot` accepts every period containing now, so two
+ * overlapping rows make `ContinuousFeatureEntitlementService.decide` return
+ * `COMMERCIAL_ENTITLEMENT_AMBIGUOUS` and deny every non-recovery operation:
+ * the customer pays and is immediately locked out of the product.
+ *
+ * Starting the new window where the current one ends keeps exactly one window
+ * authoritative at every instant, and leaves the customer the days they already
+ * paid for rather than restarting the clock on them.
+ *
+ * A period that has already elapsed is closed for bookkeeping — it was already
+ * non-authoritative, since `isAuthoritativeSnapshot` requires `now < end`. A
+ * period that is still running is deliberately left `active`: it is the
+ * authority until its own end, and the stacked window only takes over after it.
+ */
+async function stackSubscriptionPeriod(
+  client: SqlClient,
+  workspaceId: string,
+  sku: CommercialCatalogSkuSnapshot,
+  period: { start: string; end: string },
+): Promise<{ start: string; end: string }> {
+  // Serialize this workspace's grants for the rest of the transaction.
+  //
+  // `FOR UPDATE` on the rows below cannot do it: PostgreSQL has no gap lock, so
+  // two concurrent verifications for the same workspace both see the same
+  // pre-insert row set, neither blocks the other, and both insert a period —
+  // producing two overlapping `active` windows and `COMMERCIAL_ENTITLEMENT_AMBIGUOUS`
+  // for a customer who just paid. The `creative_point_access_state` row lock
+  // further down happens *after* the period insert, so it cannot cover this.
+  // A transaction-scoped advisory lock on the workspace is the serialization
+  // point, and it is released automatically on commit or rollback.
+  await client.query(`SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext($1), pg_catalog.hashtext($2))`, ['workspace_subscription_periods_v2', workspaceId])
+  const active = await client.query<{ periodEnd: string | Date }>(
+    `SELECT period_end AS "periodEnd" FROM workspace_subscription_periods_v2
+      WHERE workspace_id=$1 AND status='active'
+      ORDER BY period_end DESC, id DESC FOR UPDATE`,
+    [workspaceId],
+  )
+  const currentEnd = active.rows[0] ? timestamp(active.rows[0].periodEnd) : null
+  // Close windows that are already over. Two constraints fix the shape of this
+  // statement and neither is obvious:
+  //
+  //   * No `revision = revision + 1`. `workspace_entitlement_snapshots_v2` holds
+  //     a non-deferrable FK on `(workspace_id, subscription_period_id,
+  //     subscription_period_revision)` and the grant path always writes the
+  //     snapshot with revision 1, so the revision of a granted period is an
+  //     immutable key. Bumping it makes the UPDATE violate that FK, which
+  //     aborts the whole payment verification: the customer's payment lands,
+  //     the order stays pending, no period, no points, no payment event.
+  //   * Compare against the database clock, not `paidAt`. A caller-supplied
+  //     `paid_at` can be in the future (the operator verification routes only
+  //     check that it parses), and `now()` is the only bound under which
+  //     "already elapsed" is true.
+  //
+  // This is bookkeeping only — such a window is already non-authoritative, so
+  // it changes no decision.
+  await client.query(
+    `UPDATE workspace_subscription_periods_v2 SET status='expired'
+      WHERE workspace_id=$1 AND status='active' AND period_end <= now()`,
+    [workspaceId],
+  )
+  if (currentEnd === null || Date.parse(currentEnd) <= Date.parse(period.start)) return period
+  const start = instant(currentEnd, 'period_end')
+  return { start, end: periodEndFor(sku, start) }
 }
 
 function privateTrialPeriod(paidAt: string): { start: string; end: string } {
@@ -282,9 +363,16 @@ export class PostgresCommercialContractRepository {
     const scope = requireWorkspaceScope(workspaceId)
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new RangeError('limit must be between 1 and 200')
     return withWorkspaceTransaction(this.pool, scope, async client => {
+      // `skuCode` comes from the immutable order snapshot, never from the
+      // catalog base table: migration 146 revokes every privilege on
+      // `commercial_catalog_skus` from the runtime role (re-asserted by the
+      // local role bootstrap), and `commercial_order_snapshots_v2.snapshot->'sku'`
+      // is the full catalog snapshot captured by `createOrder`. This mirrors
+      // `getPaymentStatus` and `attachCheckout`, which already read the code
+      // from the same place.
       const result = await client.query<OrderRow & { skuCode: string }>(
-        `SELECT ${aliasedOrderProjection('o')},s.code AS "skuCode"
-           FROM commercial_orders_v2 o JOIN commercial_catalog_skus s ON s.id=o.sku_id
+        `SELECT ${aliasedOrderProjection('o')},s.snapshot->'sku'->>'code' AS "skuCode"
+           FROM commercial_orders_v2 o JOIN commercial_order_snapshots_v2 s ON s.workspace_id=o.workspace_id AND s.order_id=o.id
           WHERE o.workspace_id=$1 ORDER BY o.created_at DESC,o.id DESC LIMIT $2`, [scope, limit],
       )
       return result.rows.map(row => ({ ...mapOrder(row), skuCode: row.skuCode }))
@@ -296,17 +384,21 @@ export class PostgresCommercialContractRepository {
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new RangeError('limit must be between 1 and 200')
     return withWorkspaceTransaction(this.pool, scope, async client => {
       type Row = { id: string; workspaceId: string; subscriptionPeriodId: string; periodStart: string | Date; periodEnd: string | Date; periodStatus: string; catalogVersionId: string; skuCode: string; resolvedBenefits: unknown; unresolvedBlockers: unknown; executable: boolean; checksum: string; createdAt: string | Date }
+      // `merchant_entitlement_snapshots_v2` is a SECURITY DEFINER projection
+      // owned by migration 223. It resolves `sku_code` on the function owner's
+      // side because migration 146 revokes every privilege on
+      // `commercial_catalog_sku_versions` and `commercial_catalog_skus` from the
+      // runtime role, and the local role bootstrap re-asserts that deny list
+      // after every migration run. The function narrows to the caller's
+      // workspace itself (`row_security = off` stops the RLS policy from doing
+      // it), so `scope` is passed through the transaction-local
+      // `app.workspace_id` setting set by `withWorkspaceTransaction`.
       const result = await client.query<Row>(
-        `SELECT e.id,e.workspace_id AS "workspaceId",e.subscription_period_id AS "subscriptionPeriodId",
-                p.period_start AS "periodStart",p.period_end AS "periodEnd",p.status AS "periodStatus",
-                e.catalog_version_id AS "catalogVersionId",s.code AS "skuCode",e.resolved_benefits AS "resolvedBenefits",
-                e.unresolved_blockers AS "unresolvedBlockers",e.executable,e.checksum,e.created_at AS "createdAt"
-           FROM workspace_entitlement_snapshots_v2 e
-           JOIN workspace_subscription_periods_v2 p
-             ON p.workspace_id=e.workspace_id AND p.id=e.subscription_period_id
-           JOIN commercial_catalog_sku_versions v ON v.id=e.catalog_version_id
-           JOIN commercial_catalog_skus s ON s.id=v.sku_id
-          WHERE e.workspace_id=$1 ORDER BY e.created_at DESC,e.id DESC LIMIT $2`, [scope, limit],
+        `SELECT id, workspace_id AS "workspaceId", subscription_period_id AS "subscriptionPeriodId",
+                period_start AS "periodStart", period_end AS "periodEnd", period_status AS "periodStatus",
+                catalog_version_id AS "catalogVersionId", sku_code AS "skuCode", resolved_benefits AS "resolvedBenefits",
+                unresolved_blockers AS "unresolvedBlockers", executable, checksum, created_at AS "createdAt"
+           FROM public.merchant_entitlement_snapshots_v2($1)`, [limit],
       )
       return result.rows.map(row => {
         if (!Array.isArray(row.resolvedBenefits) || !Array.isArray(row.unresolvedBlockers) || !row.unresolvedBlockers.every(item => typeof item === 'string')) {
@@ -522,7 +614,10 @@ export class PostgresCommercialContractRepository {
       // Derive its seven-day period from the verified payment timestamp so a
       // caller cannot omit the period and accidentally grant points without
       // the matching brand/store entitlement snapshot.
-      const period = validatePeriod(sku, input.period ?? (sku.kind === 'private_trial' ? privateTrialPeriod(paidAt) : undefined))
+      const grantedPeriod = validatePeriod(sku, input.period ?? (sku.kind === 'private_trial' ? privateTrialPeriod(paidAt) : undefined))
+      // A renewal must not overlap the period it renews; see
+      // `stackSubscriptionPeriod` for the lockout this prevents.
+      const period = grantedPeriod ? await stackSubscriptionPeriod(client, workspaceId, sku, grantedPeriod) : null
       const points = pointBenefit(sku)
       let expiresAt = input.grantExpiresAt == null ? null : instant(input.grantExpiresAt, 'grantExpiresAt')
       if (sku.kind === 'point_pack') {

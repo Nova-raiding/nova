@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FixturePaymentProvider, HttpPaymentProvider, PaymentProviderRefundOutcomeUnknownError, PaymentProviderRefundRejectedError, createPaymentProviderFromEnv, verifyPaymentCallbackSignature } from './payment-provider.js'
+import { FixturePaymentProvider, HttpPaymentProvider, PaymentProviderRefundOutcomeUnknownError, PaymentProviderRefundRejectedError, classifyPaymentRefundState, createPaymentProviderFromEnv, normalizePaymentRefundQueryState, verifyPaymentCallbackSignature } from './payment-provider.js'
 import { createHmac } from 'node:crypto'
 import { paymentCallbackCanonical, signPaymentCallback } from './callback-envelope.mjs'
 
@@ -140,6 +140,40 @@ describe('payment provider adapter', () => {
 
     const unboundClientError = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ state: 'rejected' }), { status: 409 }) })
     await expect(unboundClientError.refund({ channel: 'alipay', orderId: 'recharge-http-rejected', providerTradeId: 'trade-http-rejected', workspaceId: 'ws-1', amountFen: 1000, reason: '未绑定错误' })).rejects.toBeInstanceOf(PaymentProviderRefundOutcomeUnknownError)
+  })
+
+  it('fails closed when the refund response omits the provider state', async () => {
+    // A refund is irreversible, so a missing/blank state is missing evidence,
+    // never an acceptance. The refund-query path already classifies the same
+    // input as unknown; the submission path must not be more optimistic.
+    expect(classifyPaymentRefundState(undefined)).toBe('unknown')
+    expect(classifyPaymentRefundState('   ')).toBe('unknown')
+    expect(normalizePaymentRefundQueryState(undefined)).toBe('unknown')
+    expect(normalizePaymentRefundQueryState('   ')).toBe('unknown')
+    expect(classifyPaymentRefundState('accepted')).toBe('accepted')
+    expect(classifyPaymentRefundState('completed')).toBe('accepted')
+    expect(classifyPaymentRefundState('processing')).toBe('unknown')
+    expect(classifyPaymentRefundState('rejected')).toBe('rejected')
+
+    const bound = { order_id: 'recharge-no-state', refund_request_id: 'refund:recharge-no-state', workspace_id: 'ws-1', amount_fen: 1000, provider_refund_id: 'refund-no-state' }
+    const request = { channel: 'alipay' as const, orderId: 'recharge-no-state', providerTradeId: 'trade-no-state', workspaceId: 'ws-1', amountFen: 1000, reason: '缺少状态' }
+
+    const absent = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify(bound), { status: 200 }) })
+    await expect(absent.refund(request)).rejects.toBeInstanceOf(PaymentProviderRefundOutcomeUnknownError)
+
+    const blank = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ ...bound, state: '   ' }), { status: 200 }) })
+    await expect(blank.refund(request)).rejects.toBeInstanceOf(PaymentProviderRefundOutcomeUnknownError)
+
+    // Equivalence: explicit acceptance evidence is unchanged, and the HTTP
+    // error branch keeps its existing bound-rejection/unbound-unknown split.
+    const accepted = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ ...bound, state: 'accepted' }), { status: 200 }) })
+    await expect(accepted.refund(request)).resolves.toEqual({ providerRefundId: 'refund-no-state', state: 'accepted' })
+
+    const boundError = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ ...bound, state: 'rejected' }), { status: 409 }) })
+    await expect(boundError.refund(request)).rejects.toBeInstanceOf(PaymentProviderRefundRejectedError)
+
+    const unboundError = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', refundEndpoint: 'https://payments.example/refund', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ state: 'rejected' }), { status: 409 }) })
+    await expect(unboundError.refund(request)).rejects.toBeInstanceOf(PaymentProviderRefundOutcomeUnknownError)
   })
 
   it('queries provider refund status with strict order request and amount binding', async () => {

@@ -181,10 +181,15 @@ export class PostgresPrivateTrialConversionRepository implements PrivateTrialCon
       const current = await this.lockEligibility(client, workspaceId, input.eligibilityId)
       if (current.status === 'approved' && current.trialOrderId === input.trialOrderId) return asEligibility(current)
       if (current.status !== 'approved_pending_validation') throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_ELIGIBILITY_STATE_INVALID', 'eligibility needs an independent business approval before validation can bind')
-      const payment = await client.query<{ skuKind: string; orderStatus: string; paidAt: string | Date | null; paymentSubjectRef: string | null }>(
-        `SELECT s.kind AS "skuKind", o.status AS "orderStatus", o.paid_at AS "paidAt", p.payment_subject_ref AS "paymentSubjectRef"
+      // The SKU kind is read from the immutable order snapshot rather than from
+      // `commercial_catalog_skus`. Migration 146 revokes every privilege on the
+      // catalog base tables from the runtime role, and `createOrder` stores the
+      // complete `CommercialCatalogSkuSnapshot` (including `kind`) under
+      // `snapshot->'sku'`. No extra column is introduced.
+      const payment = await client.query<{ skuKind: string | null; orderStatus: string; paidAt: string | Date | null; paymentSubjectRef: string | null }>(
+        `SELECT s.snapshot->'sku'->>'kind' AS "skuKind", o.status AS "orderStatus", o.paid_at AS "paidAt", p.payment_subject_ref AS "paymentSubjectRef"
            FROM commercial_orders_v2 o
-           JOIN commercial_catalog_skus s ON s.id=o.sku_id
+           JOIN commercial_order_snapshots_v2 s ON s.workspace_id=o.workspace_id AND s.order_id=o.id
            JOIN commercial_payment_events_v2 p ON p.workspace_id=o.workspace_id AND p.order_id=o.id AND p.verified=true
           WHERE o.workspace_id=$1 AND o.id=$2 FOR UPDATE OF o`, [workspaceId, input.trialOrderId],
       )
@@ -292,7 +297,20 @@ export class PostgresPrivateTrialConversionRepository implements PrivateTrialCon
   private creditSummary(row: CreditRow) { const expiresAt = date(row.expiresAt); if (!expiresAt) throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_ELIGIBILITY_STATE_INVALID', 'credit expiry is missing'); return { id: row.id, status: row.status, expiresAt } }
   private orderView(credit: CreditRow, orderId: string, expiresAt: string): PrivateTrialConversionOrderView { return { eligibility_id: credit.eligibilityId ?? '', credit_id: credit.id, onboarding_order_id: orderId, list_amount_fen: 500000, offset_amount_fen: 199900, payable_amount_fen: 300100, status: 'pending', expires_at: expiresAt } }
   private async onboardingSnapshot(client: SqlClient): Promise<CommercialCatalogSkuSnapshot> {
-    const result = await client.query<CatalogRow>(`SELECT s.id,s.code,s.kind,s.visibility,s.required_capability AS "requiredCapability",v.id AS "versionId",v.version,v.lifecycle,v.executable,v.price_fen AS "priceFen",v.currency,v.price_mode AS "priceMode",v.duration_days AS "durationDays",v.payload,v.checksum,v.effective_at AS "effectiveAt",COALESCE((SELECT jsonb_agg(jsonb_build_object('code',b.benefit_code,'quantity',b.quantity,'rawValue',b.raw_value,'rawUnit',b.raw_unit,'normalizedValue',b.normalized_value,'policyRef',b.policy_ref,'metadata',b.metadata) ORDER BY b.benefit_code) FROM commercial_catalog_sku_benefits b WHERE b.sku_version_id=v.id),'[]'::jsonb) AS benefits FROM commercial_catalog_skus s JOIN commercial_catalog_sku_versions v ON v.sku_id=s.id WHERE s.code='onboarding_once' AND s.kind='onboarding' AND v.lifecycle='approved' AND v.executable=true AND v.effective_at <= now() ORDER BY v.version DESC LIMIT 2`)
+    // `merchant_onboarding_sku_v2()` is the SECURITY DEFINER projection owned by
+    // migration 223. The catalog query used to run directly against
+    // `commercial_catalog_skus` / `commercial_catalog_sku_versions` /
+    // `commercial_catalog_sku_benefits`, which migration 146 revokes from the
+    // runtime role. The function returns the same single approved, executable
+    // `onboarding_once` snapshot (0 rows, or 2 when the catalog is ambiguous, so
+    // the exactly-one check below still fails closed).
+    const result = await client.query<CatalogRow>(
+      `SELECT id, code, kind, visibility, required_capability AS "requiredCapability",
+              version_id AS "versionId", version, lifecycle, executable, price_fen AS "priceFen",
+              currency, price_mode AS "priceMode", duration_days AS "durationDays", payload,
+              checksum, effective_at AS "effectiveAt", benefits
+         FROM public.merchant_onboarding_sku_v2()`,
+    )
     if (result.rows.length !== 1) throw new PrivateTrialRepositoryError('COMMERCIAL_CATALOG_UNAVAILABLE', 'exactly one active 5000 onboarding SKU is required for a private conversion')
     const row = result.rows[0]!
     const priceFen = row.priceFen === null ? null : Number(row.priceFen)

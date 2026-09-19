@@ -79,6 +79,62 @@ describe('creative point repository', () => {
     await expect(repository.getReservation('ws-a', 'missing')).resolves.toBeNull()
   })
 
+  it('replays a reserve idempotency key only while the hold is still consumable', async () => {
+    const repository = new MemoryCreativePointRepository()
+    await repository.grant({ workspaceId: 'ws-a', idempotencyKey: 'grant-1', sourceType: 'paid_order', sourceId: 'order-1', points: 100 })
+    const input = { workspaceId: 'ws-a', idempotencyKey: 'reserve-1', actionKey: 'image.generate', rateCardVersion: 'image-v1', points: 40 }
+    const reserved = await repository.reserve(input)
+
+    // An active hold is still replayed verbatim: the retry path is unchanged.
+    await expect(repository.reserve(input)).resolves.toMatchObject({ value: { id: reserved.value.id, status: 'active', points: 40 }, balance: { availablePoints: 60, reservedPoints: 40 } })
+
+    const released = await repository.release({ workspaceId: 'ws-a', idempotencyKey: 'release-1', reservationId: reserved.value.id })
+    expect(released.value.status).toBe('released')
+    await expect(repository.reserve(input)).rejects.toMatchObject({ code: 'CREATIVE_POINT_RESERVATION_TERMINAL' })
+    // The replay must not hand back a consumed hold, nor silently mint a new one.
+    await expect(repository.getBalance('ws-a')).resolves.toMatchObject({ availablePoints: 100, reservedPoints: 0 })
+
+    const second = await repository.reserve({ ...input, idempotencyKey: 'reserve-2' })
+    await repository.settle({ workspaceId: 'ws-a', idempotencyKey: 'settle-1', reservationId: second.value.id, actualPoints: 30 })
+    await expect(repository.reserve({ ...input, idempotencyKey: 'reserve-2' })).rejects.toMatchObject({ code: 'CREATIVE_POINT_RESERVATION_TERMINAL' })
+    await expect(repository.getBalance('ws-a')).resolves.toMatchObject({ availablePoints: 70, reservedPoints: 0, settledPoints: 30 })
+  })
+
+  it('refuses a PostgreSQL reserve replay whose recorded reservation is already finalized', async () => {
+    const scriptedPool = (status: 'active' | 'released', requested: string[]): SqlPool => ({
+      async connect() {
+        const client: SqlClient = {
+          async query<Row>(text: string) {
+            requested.push(text)
+            if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK' || text.includes("set_config('app.workspace_id'")) return { rows: [] as Row[] }
+            if (text.includes('ON CONFLICT (workspace_id) DO NOTHING')) return { rows: [] as Row[] }
+            if (text.includes('FROM creative_point_access_state WHERE workspace_id=$1 FOR UPDATE')) return { rows: [] as Row[] }
+            if (text.includes('FROM creative_point_operations')) return { rows: [{ result: { entity_id: 'cpr_recorded' }, requestMatches: true }] as unknown as Row[] }
+            if (text.includes('FROM creative_point_reservations')) return { rows: [{ id: 'cpr_recorded', workspaceId: 'ws-a', operationId: 'cpo_recorded', actionKey: 'image.generate', rateCardVersion: 'image-v1', points: '40', status, settledPoints: null, createdAt: '2026-01-01T00:00:00.000Z', finalizedAt: status === 'active' ? null : '2026-01-02T00:00:00.000Z' }] as unknown as Row[] }
+            if (text.includes('AS known,')) return { rows: [{ available: '60', reserved: '40', settled: '0', known: true }] as unknown as Row[] }
+            if (text.includes('UPDATE creative_point_access_state SET available_points=')) return { rows: [{ workspaceId: 'ws-a', availablePoints: '60', reservedPoints: '40', settledPoints: '0', revision: '2', updatedAt: null }] as unknown as Row[] }
+            throw new Error(`unexpected query: ${text}`)
+          },
+          release() {},
+        }
+        return client
+      },
+    })
+
+    const input = { workspaceId: 'ws-a', idempotencyKey: 'reserve-1', actionKey: 'image.generate', rateCardVersion: 'image-v1', points: 40 }
+    // Equivalence: a recorded reservation that is still active replays with a live hold.
+    const activeCalls: string[] = []
+    await expect(new PostgresCreativePointRepository(scriptedPool('active', activeCalls)).reserve(input)).resolves.toMatchObject({ value: { id: 'cpr_recorded', status: 'active', points: 40 }, balance: { availablePoints: 60, reservedPoints: 40 } })
+
+    // A terminal hold must be rejected before any allocation, ledger or balance
+    // write, and must not be handed back as if it were consumable.
+    const releasedCalls: string[] = []
+    await expect(new PostgresCreativePointRepository(scriptedPool('released', releasedCalls)).reserve(input)).rejects.toMatchObject({ code: 'CREATIVE_POINT_RESERVATION_TERMINAL' })
+    expect(releasedCalls.some(text => text.includes('INSERT INTO creative_point_allocations'))).toBe(false)
+    expect(releasedCalls.some(text => text.includes('INSERT INTO creative_point_ledger_events'))).toBe(false)
+    expect(releasedCalls.some(text => text.includes('UPDATE creative_point_access_state SET available_points='))).toBe(false)
+  })
+
   it('queries PostgreSQL reservations with both tenant and reservation predicates', async () => {
     const calls: Array<{ text: string; values?: readonly unknown[] }> = []
     const client: SqlClient = {

@@ -257,8 +257,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const MAX_PAYMENT_PROVIDER_RESPONSE_BYTES = 1 * 1024 * 1024
 
+/**
+ * Classify the state a provider reports for a submitted refund. A refund is an
+ * irreversible money movement, so an absent or blank state is missing evidence
+ * rather than an acceptance: it stays `unknown` so the caller keeps the wallet
+ * hold and reconciles through the refund-query path, which classifies the same
+ * input as `unknown`.
+ */
 export function classifyPaymentRefundState(state: string | undefined): 'accepted' | 'rejected' | 'unknown' {
-  if (state === undefined || !state.trim()) return 'accepted'
+  if (state === undefined || !state.trim()) return 'unknown'
   const normalized = state.trim().toLowerCase()
   if (['accepted', 'success', 'succeeded', 'completed'].includes(normalized)) return 'accepted'
   if (['rejected', 'failed', 'failure', 'closed', 'cancelled', 'canceled', 'denied'].includes(normalized)) return 'rejected'
