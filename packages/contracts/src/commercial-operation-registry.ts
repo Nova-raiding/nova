@@ -78,6 +78,7 @@ export const MCP_OPS_CONTROL_METHODS = [
   'ops.authorization.grant.revoke',
   'ops.workspaces.list',
   'ops.stores.list',
+  'ops.platform.store.record.create',
   'ops.brand-units.summary',
   'ops.tasks.summary',
   'ops.model-usage.summary',
@@ -444,6 +445,7 @@ export const HTTP_IDENTITY_LINKED_OPERATIONS = [
 // equivalent. They still require an authenticated operations session and must
 // be classified so the HTTP surface remains total.
 export const HTTP_OPS_IDENTITY_OPERATIONS = [
+  'http:POST:/v1/ops/merchant-accounts',
   'http:GET:/v1/ops/merchant-registration-applications',
   'http:POST:/v1/ops/merchant-registration-applications/review',
   'http:POST:/v1/ops/merchant-accounts/authorize',
@@ -452,6 +454,7 @@ export const HTTP_OPS_IDENTITY_OPERATIONS = [
 export const HTTP_RECOVERY_CALLBACK_OPERATIONS = [
   'http:POST:/v1/billing/callback/{channel}',
   'http:POST:/v1/subscriptions/callback/{channel}',
+  'http:POST:/v1/commercial/callback/{channel}',
 ] as const satisfies readonly string[]
 
 export const HTTP_MACHINE_INFRASTRUCTURE_OPERATIONS = [
@@ -472,6 +475,9 @@ export const HTTP_MACHINE_INFRASTRUCTURE_OPERATIONS = [
   'http:POST:/v1/internal/automation/tick',
   'http:POST:/v1/internal/model-usage',
   'http:POST:/v1/internal/model-usage/reconciliation',
+  'http:POST:/v1/internal/billing/reconciliation',
+  'http:POST:/v1/internal/knowledge-embeddings/admission',
+  'http:POST:/v1/internal/knowledge-embeddings/outcome',
   'http:POST:/v1/internal/storage/reconciliation',
   'http:POST:/v1/internal/support/sla-scan',
   'http:POST:/v1/internal/support/sla-report',

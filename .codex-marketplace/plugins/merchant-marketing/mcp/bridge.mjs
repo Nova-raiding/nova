@@ -148,6 +148,15 @@ const COMMERCIAL_RECOVERY_METHODS = new Set([
   'workspace.data.export.request', 'workspace.data.export.get', 'workspace.data.delete.request',
   'platform.mapping.preflight',
 ])
+// Commercial operations this bridge fails closed before forwarding. It is a
+// snapshot of the shared registry's disabled classification
+// (packages/contracts/src/commercial-operation-registry.ts), which the
+// standalone plugin bundle cannot import at runtime. Every method the registry
+// disables must be listed here, and the only entries that may be missing from
+// that classification are the two annotated "Bridge-only narrowing" entries
+// below. Both directions are pinned by tests/mcp-surface-contract.test.ts and
+// mcp/bridge.test.ts, so a stale snapshot fails loudly instead of silently
+// re-opening or re-blocking a merchant operation.
 const COMMERCIAL_DISABLED_METHODS = new Set([
   'ops.commercial.offers.list', 'ops.commercial.offer.upsert',
   'ops.commercial.addons.list', 'ops.commercial.addon.upsert',
@@ -161,16 +170,33 @@ const COMMERCIAL_DISABLED_METHODS = new Set([
   // hiding them here makes a configured local/relay workflow impossible.
   'ops.marketing.generation.retry',
   'campaign.batch.generate', 'campaign.batch.retry_failed',
-  'catalog.title.optimize', 'catalog.image.retry',
+  'catalog.image.retry',
   'brand.tone.preview', 'task.understand', 'creative.directions',
   'content.codex.prepare', 'content.codex.commit', 'content.review',
   'content.modify',
+  // Bridge-only narrowing, not a registry mirror. The shared registry enables
+  // multimodal.generate as POINT_CHARGED, but it is the generic form of the
+  // three modality-specific tools this bridge already exposes
+  // (content.generate / catalog.image.generate / multimodal.image.edit), and
+  // its modality=video + output=rendering branch is a second route to video
+  // rendering that would bypass the local video acceptance gate below. The API
+  // routes that branch through the same commercial operation as
+  // multimodal.video.request, so re-listing it here would re-open rendering on
+  // a deployment that deliberately withheld it.
   'multimodal.generate',
   'workspace.commercial.get', 'workspace.commercial.update',
   'workspace.usage.get', 'billing.usage.consume', 'billing.usage.refund',
-  'billing.refund', 'multimodal.video.request',
+  'billing.refund',
+  // Bridge-only narrowing, not a registry mirror. The shared registry enables
+  // multimodal.video.request, but provider rendering is a paid, relay-backed
+  // action the merchant bridge withholds until a deployment opts into local
+  // video acceptance below.
+  'multimodal.video.request',
 ])
-// Explicit local relay acceptance only; server authorization and cost gates still apply.
+// Explicit local relay acceptance only; server authorization and cost gates
+// still apply. This is also the switch that decides whether
+// multimodal.video.get may be listed: the poller is exactly as reachable as
+// its producer.
 if (process.env.MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES === 'true' && !['production', 'staging', 'preview'].includes(deploymentEnvironment())) {
   try {
     if (['127.0.0.1', 'localhost', '[::1]'].includes(new URL(process.env.MERCHANT_MCP_BASE_URL ?? '').hostname)) COMMERCIAL_DISABLED_METHODS.delete('multimodal.video.request')
@@ -206,7 +232,21 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   'content.codex.prepare',
   'content.codex.commit',
   'knowledge.rule.update',
+  // The only required argument is provider_job_id, and the only producer of a
+  // provider_job_id is multimodal.video.request (the server rejects a job id
+  // that is not bound to a rendering owned by this workspace). Listing the
+  // poller while the request tool is withheld — the production default — would
+  // advertise a tool the merchant can never call, so it is hidden here and
+  // lifted only by the local video acceptance switch below. Keep quote marks
+  // out of this block: scripts/merchant-bridge-surface.ts and the surface
+  // contract test parse quoted entries between the set brackets.
+  'multimodal.video.get',
 ])
+// Keep the poller exactly as reachable as its producer. The local video
+// acceptance block above is the only configuration where
+// multimodal.video.request leaves COMMERCIAL_DISABLED_METHODS, and only then
+// may multimodal.video.get appear in tools/list.
+if (!COMMERCIAL_DISABLED_METHODS.has('multimodal.video.request')) MERCHANT_HIDDEN_METHODS.delete('multimodal.video.get')
 const isMerchantTool = name => !name.startsWith('ops.') && !MERCHANT_HIDDEN_METHODS.has(name)
 const boundedString = (maxLength, minLength = 1, description) => ({ type: 'string', minLength, maxLength, ...(description ? { description } : {}) })
 const positiveIntegerString = { type: 'string', pattern: '^[1-9][0-9]*$', maxLength: 10 }
@@ -364,7 +404,7 @@ const METHODS = {
   },
   'workspace.interactive.confirm': {
     description: '商家明确要求生成、编辑、审核或发布后，开启当前 Codex 交互会话的短时写权限；Automation 不得调用。',
-    inputSchema: { type: 'object', properties: { confirmation: { type: 'string', enum: ['I_CONFIRM_INTERACTIVE_WRITES'] } }, required: ['confirmation'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { confirmation: { type: 'string', enum: ['I_CONFIRM_INTERACTIVE_WRITES'] }, intent_hash: { type: 'string', pattern: '^[a-f0-9]{64}$', description: '可选；把本次确认票据绑定到调用方给定的 64 位小写 SHA-256 意图，省略时由服务端按当前会话派生。' } }, required: ['confirmation'], additionalProperties: false },
   },
   'workspace.metrics': {
     description: '查看当前工作区的运营指标和任务漏斗。只读。',
@@ -457,7 +497,7 @@ const METHODS = {
   'ops.alerts.list': { description: '查看当前工作区平台运营告警；支持平台、店铺、告警编码和对象筛选。只读。', inputSchema: { type: 'object', properties: { status: { type: 'string', enum: ['open', 'acknowledged'] }, limit: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, code: { type: 'string' }, entity_type: { type: 'string' }, entity_id: { type: 'string' } }, additionalProperties: false } },
   'ops.alert.ack': { description: '确认一条平台运营告警并记录处理原因。', inputSchema: { type: 'object', properties: { alert_id: { type: 'string' }, reason: { type: 'string' } }, required: ['alert_id', 'reason'], additionalProperties: false } },
   'ops.marketing.queue': { description: '查看当前工作区营销队列；需要有效工作区角色或显式 support 授权。platform_ops 单独无权读取客户商品、素材、内容或发布任务详情。', inputSchema: { type: 'object', properties: { limit: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, product_id: { type: 'string' }, task_id: { type: 'string' }, state: { type: 'string' } }, additionalProperties: false } },
-  'ops.marketing.queue.assign': { description: '为营销队列任务分配负责人；需要有效工作区角色或显式 support 授权，platform_ops 单独无权操作客户任务。', inputSchema: { type: 'object', properties: { item_type: { type: 'string', enum: ['generation', 'publish'] }, item_id: { type: 'string' }, operator_id: { type: 'string' }, expected_revision: { type: 'string' }, reason: { type: 'string' } }, required: ['item_type', 'item_id', 'operator_id', 'reason'], additionalProperties: false } },
+  'ops.marketing.queue.assign': { description: '为营销队列任务分配负责人；需要有效工作区角色或显式 support 授权，platform_ops 单独无权操作客户任务。', inputSchema: { type: 'object', properties: { item_type: { type: 'string', enum: ['generation', 'publish', 'image'] }, item_id: { type: 'string' }, operator_id: { type: 'string' }, expected_revision: { type: 'string' }, reason: { type: 'string' } }, required: ['item_type', 'item_id', 'operator_id', 'reason'], additionalProperties: false } },
   'ops.marketing.visual.review': { description: '审查当前工作区已归档的视觉候选；需要有效工作区角色或显式 support 授权，platform_ops 单独无权操作。', inputSchema: { type: 'object', properties: { visual_refs_json: { type: 'string' }, status: { type: 'string', enum: ['passed', 'blocked'] }, expected_revision: { type: 'string' }, reason: { type: 'string' } }, required: ['visual_refs_json', 'status', 'reason'], additionalProperties: false } },
   'ops.marketing.generation.retry': { description: '安全重试当前工作区失败的生成任务；需要有效工作区角色或显式 support 授权，platform_ops 单独无权操作。', inputSchema: { type: 'object', properties: { job_id: { type: 'string' }, reason: { type: 'string' } }, required: ['job_id', 'reason'], additionalProperties: false } },
   'ops.marketing.publish.acknowledge': { description: '确认当前工作区被平台驳回或未知的发布任务；需要有效工作区角色或显式 support 授权，platform_ops 单独无权操作。', inputSchema: { type: 'object', properties: { publish_job_id: { type: 'string' }, reason: { type: 'string' } }, required: ['publish_job_id', 'reason'], additionalProperties: false } },
@@ -666,11 +706,11 @@ const METHODS = {
   },
   'rule.publish': {
     description: '创建不可变规则版本；激活规则需要规则发布权限和审批证据。approval_json 需包含 approval_ref、approved_by、approved_at。',
-    inputSchema: { type: 'object', properties: { pack_id: { type: 'string' }, name: { type: 'string' }, version: { type: 'string' }, scope: { type: 'string', enum: ['global', 'platform', 'category', 'brand', 'store', 'campaign'] }, source_kind: { type: 'string', enum: ['official', 'internal', 'legal_review'] }, source_reference: { type: 'string' }, source_checked_at: { type: 'string' }, effective_from: { type: 'string' }, effective_to: { type: 'string' }, severity: { type: 'string', enum: ['error', 'warning'] }, action: { type: 'string', enum: ['block', 'warn', 'review', 'allow'] }, target_id: { type: 'string' }, scope_value: { type: 'string' }, checks_json: { type: 'string' }, reason: { type: 'string' }, status: { type: 'string', enum: ['draft', 'active'] }, approval_json: { type: 'string' } }, required: ['pack_id', 'name', 'version', 'scope', 'source_kind', 'source_reference', 'source_checked_at', 'checks_json', 'reason'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { pack_id: { type: 'string' }, name: { type: 'string' }, version: { type: 'string' }, scope: { type: 'string', enum: ['global', 'platform', 'category', 'brand', 'store', 'campaign'] }, public_scope: { type: 'string', enum: ['platform'], description: '声明创建公共平台规则草稿；需服务端规则管理员权限与公共规则仓储。' }, category: { type: 'string', enum: ['platform', 'category', 'advertising_publish', 'big_promotion'], description: '治理分类；仅在与 public_scope=platform 同时提供时被服务端接受。' }, source_kind: { type: 'string', enum: ['official', 'internal', 'legal_review'] }, source_reference: { type: 'string' }, source_checked_at: { type: 'string' }, effective_from: { type: 'string' }, effective_to: { type: 'string' }, severity: { type: 'string', enum: ['error', 'warning'] }, action: { type: 'string', enum: ['block', 'warn', 'review', 'allow'] }, target_id: { type: 'string' }, scope_value: { type: 'string' }, checks_json: { type: 'string' }, reason: { type: 'string' }, status: { type: 'string', enum: ['draft', 'active'] }, approval_json: { type: 'string' } }, required: ['pack_id', 'name', 'version', 'scope', 'source_kind', 'source_reference', 'source_checked_at', 'checks_json', 'reason'], additionalProperties: false },
   },
   'rule.status': {
     description: '变更规则版本状态并留下审计记录；激活时 approval_json 需包含 approval_ref、approved_by、approved_at。',
-    inputSchema: { type: 'object', properties: { pack_id: { type: 'string' }, version: { type: 'string' }, status: { type: 'string', enum: ['active', 'inactive', 'expired'] }, reason: { type: 'string' }, approval_json: { type: 'string' } }, required: ['pack_id', 'version', 'status', 'reason'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { pack_id: { type: 'string' }, version: { type: 'string' }, status: { type: 'string', enum: ['active', 'inactive', 'expired'] }, public_scope: { type: 'string', enum: ['platform'], description: '声明变更公共平台规则状态；需同时提供 platform。' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'], description: '公共平台规则所属平台；仅与 public_scope=platform 同时使用。' }, reason: { type: 'string' }, approval_json: { type: 'string' } }, required: ['pack_id', 'version', 'status', 'reason'], additionalProperties: false },
   },
   'asset.list': {
     description: '查看工作区素材、扫描和权益状态。',
@@ -3375,15 +3415,30 @@ async function handle(request) {
     if (typeof name !== 'string' || !isMerchantTool(name) || !METHODS[name]) return jsonRpcError(id, -32602, `Unknown tool: ${String(name)}`)
     if (!args || typeof args !== 'object' || Array.isArray(args)) return jsonRpcError(id, -32602, 'Tool arguments must be an object')
     if (COMMERCIAL_DISABLED_METHODS.has(name)) {
+      // The set is not only a registry mirror: it also carries the annotated
+      // bridge-only narrowings, so the message must not claim the shared
+      // registry disables every entry.
       const structuredContent = {
         code: 'COMMERCIAL_OPERATION_DISABLED',
-        message: '该商业操作在共享 registry 中为 disabled，已在 API 前失败关闭。',
+        message: '该商业操作在当前商家工具面未启用，已在 API 前失败关闭。',
         commercial_registry_version: COMMERCIAL_REGISTRY_VERSION,
       }
       return jsonRpc(id, { content: [{ type: 'text', text: structuredContent.message }], structuredContent, isError: true })
     }
     const cachedCommercialBlock = recoveryOnlyResult(id, name)
     if (cachedCommercialBlock) return cachedCommercialBlock
+    // Deliberate fail-closed control, not schema drift. The authoritative
+    // contract declares billing.recharge.get.confirm_test_payment for the
+    // API/test surface, where it settles a fixture order without any provider
+    // callback, but a merchant-facing model must never be able to mark its own
+    // recharge order paid. The merchant surface therefore withholds the
+    // argument entirely: tools/list omits it and this guard rejects it with
+    // -32602 before any request is forwarded, so the server-side fixture gate
+    // (fixturePaymentAllowed + paymentMode === 'fixture') is never even
+    // reached from here. Nothing else is lost: billing.status,
+    // billing.recharge.list, the read form of billing.recharge.get, and the
+    // provider callback/query settlement all stay available; only
+    // "self-confirm a test payment" is unreachable on purpose.
     if (name === 'billing.recharge.get' && Object.prototype.hasOwnProperty.call(args, 'confirm_test_payment')) {
       return jsonRpcError(id, -32602, 'Unsupported tool argument: confirm_test_payment')
     }

@@ -40,6 +40,11 @@ const machine = (method: HttpMethod, pathTemplate: string, authentication: Exclu
  * scope, workbench, audit and obligation semantics have one source of truth.
  */
 export const HTTP_OPERATION_POLICIES = [
+  // Platform account provisioning. It is the same platform-only transport as
+  // the registration queue and the authorization decision below: the router
+  // authenticates the caller and then requires an operations role, and there is
+  // no merchant MCP method for it (`authenticate` + `requireOperationsRole`).
+  identityOnly('POST', '/v1/ops/merchant-accounts'),
   identityOnly('GET', '/v1/ops/merchant-registration-applications'),
   identityOnly('POST', '/v1/ops/merchant-registration-applications/review'),
   identityOnly('POST', '/v1/ops/merchant-accounts/authorize'),
@@ -144,6 +149,12 @@ export const HTTP_OPERATION_POLICIES = [
   machine('POST', '/v1/internal/automation/tick', 'worker'),
   machine('POST', '/v1/internal/model-usage', 'worker'),
   machine('POST', '/v1/internal/model-usage/reconciliation', 'worker'),
+  machine('POST', '/v1/internal/billing/reconciliation', 'worker'),
+  // Worker-owned knowledge embedding admission and outcome callbacks. They are
+  // dispatched through `isWorkerRoute` and authenticated by the worker bearer
+  // plus request signing, exactly like the reconciliation routes around them.
+  machine('POST', '/v1/internal/knowledge-embeddings/admission', 'worker'),
+  machine('POST', '/v1/internal/knowledge-embeddings/outcome', 'worker'),
   machine('POST', '/v1/internal/storage/reconciliation', 'worker'),
   machine('POST', '/v1/internal/support/sla-scan', 'worker'),
   machine('POST', '/v1/internal/support/sla-report', 'worker'),
@@ -156,6 +167,14 @@ export const HTTP_OPERATION_POLICIES = [
   machine('POST', '/v1/ops/data-deletion/complete', 'worker'),
   machine('POST', '/v1/billing/callback/{channel}', 'payment_callback'),
   machine('POST', '/v1/subscriptions/callback/{channel}', 'payment_callback'),
+  // The commercial settlement callback shares the provider proof boundary of
+  // the two above: the router routes all three through the same
+  // `/v1/{billing|subscriptions|commercial}/callback/{channel}` match and the
+  // same HMAC-verified `verifyPaymentCallback` (timestamp + single-use nonce).
+  // It is deliberately *not* an identity operation — an external payment
+  // provider cannot present a merchant bearer, and registering it as identity
+  // would break settlement.
+  machine('POST', '/v1/commercial/callback/{channel}', 'payment_callback'),
   machine('GET', '/v1/oauth/callback/{platform}', 'oauth_callback'),
   machine('GET', '/healthz', 'infrastructure'),
   machine('GET', '/readyz', 'infrastructure'),
@@ -194,13 +213,161 @@ function isSafeHttpPolicyPath(path: string): boolean {
   }
 }
 
-export function assertHttpOperationPolicyCoverage() {
+/**
+ * Route shapes the server dispatches without a registry entry, each with the
+ * independent authentication boundary that already stands in front of it.
+ *
+ * These are not forgotten operations: they *are* the authentication protocol
+ * (password sessions, the MCP OAuth authorization server, OAuth discovery) and
+ * registering them would be actively wrong, not merely redundant. The router
+ * consumes a registered policy in places a session endpoint must never reach:
+ *
+ * - `enforceRegisteredHttpCapability` would resolve a merchant capability for a
+ *   request that has no identity yet;
+ * - the commercial-access gate runs for every request that resolves to *any*
+ *   policy, so a protocol endpoint would start answering
+ *   `COMMERCIAL_OPERATION_UNCLASSIFIED` (503) instead of issuing a session.
+ *
+ * Keeping them here rather than silently absent is what lets the coverage
+ * assertion tell a deliberate exemption apart from drift, and forces a written
+ * reason for the next one.
+ */
+export interface HttpRouteCoverageExemption {
+  pathTemplate: string
+  /**
+   * The methods this exemption actually covers, read off the router's own
+   * dispatch guard rather than assumed.
+   *
+   * Exempting a *path* is not the same as exempting every method on it: the
+   * authorization review that this list forces is per-operation, and a new verb
+   * on an already-exempt path would otherwise arrive with no review at all —
+   * e.g. a second way to mint an ops bearer at an already-exempt path. Pinning
+   * the verbs makes that addition fail the gate instead.
+   */
+  methods: readonly HttpMethod[]
+  reason: string
+}
+
+const AUTH_FORM_METHODS: readonly HttpMethod[] = ['GET', 'POST']
+
+export const HTTP_ROUTE_COVERAGE_EXEMPTIONS: readonly HttpRouteCoverageExemption[] = [
+  // Password authentication. The router dispatches these before the identity
+  // boundary and they authenticate by credentials, not by a bearer. The group
+  // guard admits GET and POST and rejects everything else with 405.
+  { pathTemplate: '/v1/auth/register', methods: AUTH_FORM_METHODS, reason: 'password registration; runs before the identity boundary' },
+  { pathTemplate: '/v1/auth/login', methods: AUTH_FORM_METHODS, reason: 'password login; issues the session cookie that later requests present' },
+  { pathTemplate: '/v1/auth/session', methods: AUTH_FORM_METHODS, reason: 'reads the caller session from the HttpOnly cookie' },
+  { pathTemplate: '/v1/auth/logout', methods: AUTH_FORM_METHODS, reason: 'revokes the caller session from the HttpOnly cookie' },
+  { pathTemplate: '/v1/auth/refresh', methods: AUTH_FORM_METHODS, reason: 'rotates the caller session from the HttpOnly cookie' },
+  { pathTemplate: '/v1/auth/password/reset-request', methods: AUTH_FORM_METHODS, reason: 'password reset request; unauthenticated by design' },
+  { pathTemplate: '/v1/auth/password/reset-confirm', methods: AUTH_FORM_METHODS, reason: 'password reset confirmation; authenticated by the reset token' },
+  { pathTemplate: '/v1/auth/password/change', methods: AUTH_FORM_METHODS, reason: 'password change; authenticated by the caller session cookie' },
+  { pathTemplate: '/v1/auth/mcp-token', methods: AUTH_FORM_METHODS, reason: 'local desktop MCP token exchange; authenticated by the caller session cookie plus origin check' },
+  { pathTemplate: '/v1/auth/mcp-token/refresh', methods: AUTH_FORM_METHODS, reason: 'local desktop MCP token refresh; authenticated by the refresh token itself' },
+  { pathTemplate: '/v1/auth/mcp-token/revoke', methods: AUTH_FORM_METHODS, reason: 'local desktop MCP token revocation; authenticated by the token being revoked' },
+  // Local Ops Console bootstrap. Disabled unless OPS_LOCAL_SESSION_ENABLED is
+  // set outside production, answers 404 otherwise, requires a loopback host and
+  // loopback origin, and gets its bearer from the API environment. The dispatch
+  // guard is `req.method === 'GET'`.
+  { pathTemplate: '/v1/ops/local-session', methods: ['GET'], reason: 'local-only ops console bootstrap; 404 outside the local Compose profile' },
+  // MCP OAuth authorization server for ChatGPT/MCP clients. Protocol-level
+  // authentication (PKCE, redirect allow-list, client configuration) — these
+  // are the endpoints that *mint* the merchant bearer. `/oauth/authorize`
+  // serves the consent form (GET) and accepts it (POST); the other two are
+  // POST-only.
+  { pathTemplate: '/oauth/authorize', methods: AUTH_FORM_METHODS, reason: 'MCP OAuth authorization endpoint; protocol authentication, not bearer' },
+  { pathTemplate: '/oauth/token', methods: ['POST'], reason: 'MCP OAuth token endpoint; authenticates the authorization code and PKCE verifier' },
+  { pathTemplate: '/oauth/revoke', methods: ['POST'], reason: 'MCP OAuth revocation endpoint; protocol authentication, not bearer' },
+  // OAuth discovery. Public by design so an unauthenticated client can find the
+  // authorization server, and GET-only in the dispatch guard.
+  { pathTemplate: '/.well-known/oauth-protected-resource', methods: ['GET'], reason: 'public OAuth discovery document' },
+  { pathTemplate: '/.well-known/oauth-authorization-server', methods: ['GET'], reason: 'public OAuth discovery document' },
+  { pathTemplate: '/.well-known/openai-apps-challenge', methods: ['GET'], reason: 'public OpenAI app challenge token; not an operation' },
+]
+
+/**
+ * One routed operation as it is actually dispatched by
+ * `apps/api/src/server.ts`, derived from the router source rather than restated
+ * by hand. `method` is omitted when the dispatch guard is method-agnostic.
+ */
+export interface DispatchedHttpOperation {
+  method?: HttpMethod
+  path: string
+  /** Where in the server source this dispatch was read from, for failure messages. */
+  evidence: string
+}
+
+const HTTP_METHODS: readonly HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+
+const compiledExemptions = HTTP_ROUTE_COVERAGE_EXEMPTIONS.map(exemption => ({
+  exemption,
+  matcher: pathMatcher(exemption.pathTemplate),
+}))
+
+/**
+ * An exemption covers a dispatch only when it covers the dispatched *method*.
+ *
+ * Matching on the path alone would let a new verb on an already-exempt path
+ * through without the review this gate exists to force — the shape of the next
+ * `POST /v1/ops/local-session`, say, which would be a second way to mint an ops
+ * bearer. That path is attributed a method by the parser, so the addition is
+ * caught.
+ *
+ * Residual, stated rather than papered over: when the parser cannot attribute a
+ * method — it falls back to method-agnostic whenever the guard's method sits on
+ * a non-continuation earlier line, which is the case for the whole
+ * `/v1/auth/*` group at `server.ts:20395` — the exemption still covers by path,
+ * and a new verb there would not be reported by this gate. That group's own
+ * dispatch guard admits only GET and POST and answers 405 otherwise, so the
+ * addition is rejected at runtime, but the review this gate forces does not
+ * extend to it. Closing that belongs to the parser, not here.
+ */
+function exemptionCovers(candidate: (typeof compiledExemptions)[number], entry: DispatchedHttpOperation): boolean {
+  if (!candidate.matcher.test(entry.path)) return false
+  if (entry.method === undefined) return true
+  return candidate.exemption.methods.includes(entry.method)
+}
+
+function dispatchedOperationIsCovered(entry: DispatchedHttpOperation): boolean {
+  if (compiledExemptions.some(candidate => exemptionCovers(candidate, entry))) return true
+  if (entry.method) return getHttpOperationPolicy(entry.method, entry.path) !== undefined
+  return HTTP_METHODS.some(method => getHttpOperationPolicy(method, entry.path) !== undefined)
+}
+
+/**
+ * Coverage gate for the HTTP surface.
+ *
+ * The duplicate and shape checks always run. When the caller passes the
+ * operations the server really dispatches — `tests/http-route-authz-coverage.test.ts`
+ * reads them out of the router source — the gate also fails on drift in both
+ * directions:
+ *
+ * - a dispatched route with no registered policy and no exemption, i.e. a route
+ *   whose authorization nobody reviewed; and
+ * - an exemption that no longer matches any dispatched route, i.e. a reason that
+ *   outlived the route it was written for.
+ *
+ * Drift used to be undetectable here because the registry and the router were
+ * only ever compared by hand. The inventory is derived from the dispatcher so
+ * this check cannot itself go stale.
+ */
+export function assertHttpOperationPolicyCoverage(dispatched: readonly DispatchedHttpOperation[] = []) {
   const operations = HTTP_OPERATION_POLICIES.map(policy => policy.operation)
   const duplicates = operations.filter((operation, index) => operations.indexOf(operation) !== index)
   if (duplicates.length) throw new Error(`duplicate HTTP operation policies: ${[...new Set(duplicates)].join(', ')}`)
   for (const policy of HTTP_OPERATION_POLICIES) {
     if (policy.authentication === 'identity' && !policy.mcpMethod && !policy.identityOnly) throw new Error(`identity HTTP operation lacks MCP policy reference: ${policy.operation}`)
     if (policy.authentication !== 'identity' && policy.mcpMethod) throw new Error(`machine HTTP operation must not reference an identity MCP policy: ${policy.operation}`)
+  }
+  const uncovered = dispatched.filter(entry => !dispatchedOperationIsCovered(entry))
+  if (uncovered.length) {
+    throw new Error(`HTTP routes dispatched by apps/api/src/server.ts without an authorization policy: ${uncovered.map(entry => `${entry.method ?? '*'} ${entry.path} [${entry.evidence}]`).join(', ')}`)
+  }
+  const staleExemptions = dispatched.length
+    ? compiledExemptions.filter(candidate => !dispatched.some(entry => candidate.matcher.test(entry.path)))
+    : []
+  if (staleExemptions.length) {
+    throw new Error(`HTTP route coverage exemptions no longer dispatched by apps/api/src/server.ts: ${staleExemptions.map(candidate => candidate.exemption.pathTemplate).join(', ')}`)
   }
   return { registered: operations.length, identity: HTTP_OPERATION_POLICIES.filter(policy => policy.authentication === 'identity').length }
 }

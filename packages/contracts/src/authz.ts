@@ -511,6 +511,13 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   // source of truth without widening access to provider credentials.
   read('model.status.read', 'platform', 'platform_summary', ['platform.model.status']),
   read('store.connection.read', 'workspace', 'customer_metadata', ['platform.store.list']),
+  // Platform operations register the credential-free manual store record. The
+  // policy is platform-scoped and platform-workbench, so a merchant principal
+  // is denied by `AUTHZ_WORKBENCH_MISMATCH` (enforced even in shadow mode)
+  // rather than by a missing parameter; `allow_and_deny` makes the decision
+  // itself auditable in `platform_authorization_audit`, and the `reason`
+  // obligation refuses an operator who does not state a justification.
+  write('store.connection.update', 'platform', 'customer_metadata', ['ops.platform.store.record.create'], 'allow_and_deny', ['reason']),
   write('store.connection.update', 'workspace', 'customer_metadata', ['platform.connect']),
   // Revoke is account-scoped: the caller must identify the exact connected
   // account so HTTP and MCP cannot authorize a different store in the same

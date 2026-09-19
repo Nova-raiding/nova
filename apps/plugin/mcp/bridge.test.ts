@@ -1,6 +1,7 @@
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +9,38 @@ import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
 import { afterAll, describe, expect, it } from 'vitest'
 import { MCP_METHOD_SCHEMAS, MCP_METHODS, validateMcpRequest } from '@merchant-marketing/contracts'
+// The two byte-identical copies of this file sit at different depths relative to
+// the repository root (`apps/plugin/mcp` vs
+// `.codex-marketplace/plugins/merchant-marketing/mcp`), so no fixed relative
+// path can serve both — and `plugin-manifest.test.ts` asserts each mirrored file
+// hashes equal to its source copy, so they cannot be allowed to diverge.
+// `@merchant-marketing/contracts` is not an option either: it resolves to the
+// gitignored `packages/contracts/dist` build output, which lags `src` and does
+// not carry the commercial registry. Walk up to the repository root instead, and
+// keep the shape inline so no relative path appears in a type position either.
+const repositoryRoot = (() => {
+  let directory = fileURLToPath(new URL('.', import.meta.url))
+  for (let depth = 0; depth < 10; depth += 1) {
+    if (existsSync(join(directory, 'packages/contracts/src/commercial-operation-registry.ts'))) return directory
+    directory = join(directory, '..')
+  }
+  throw new Error('bridge test could not locate the repository root')
+})()
+const {
+  MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS,
+  MCP_POINT_CHARGED_DISABLED_METHODS,
+  MCP_POINT_CHARGED_ENABLED_METHODS,
+  MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS,
+  MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS,
+  MCP_RECOVERY_DISABLED_METHODS,
+} = await import(join(repositoryRoot, 'packages/contracts/src/commercial-operation-registry.js')) as {
+  MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS: readonly string[]
+  MCP_POINT_CHARGED_DISABLED_METHODS: readonly string[]
+  MCP_POINT_CHARGED_ENABLED_METHODS: readonly string[]
+  MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS: readonly string[]
+  MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS: readonly string[]
+  MCP_RECOVERY_DISABLED_METHODS: readonly string[]
+}
 
 const BRIDGE_PATH = fileURLToPath(new URL('./bridge.mjs', import.meta.url))
 const TEST_ARTIFACT_DIR = await mkdtemp(join(tmpdir(), 'merchant-bridge-artifacts-'))
@@ -59,6 +92,35 @@ function nextLine(stream: NodeJS.ReadableStream): Promise<any> {
     stream.on('data', onData)
     stream.once('error', onError)
   })
+}
+
+// Reads one of the bridge literal sets the same way
+// scripts/merchant-bridge-surface.ts and tests/mcp-surface-contract.test.ts do:
+// quoted entries between the set brackets, so a comment inside the set must not
+// contain a quote mark.
+function literalSetFromBridge(source: string, name: string): Set<string> {
+  const block = source.match(new RegExp(`const ${name} = new Set\\(\\[([\\s\\S]*?)\\]\\)`))?.[1] ?? ''
+  return new Set([...block.matchAll(/'([^']+)'/gu)].map(match => match[1]!))
+}
+
+type ListedTool = { name: string; inputSchema: { properties?: Record<string, any> } }
+
+// Spawns the real bridge exactly as the host does and performs one tools/list,
+// so surface assertions run against the shipped process rather than the source.
+async function listBridgeTools(env: Record<string, string>): Promise<{ tools: ListedTool[]; child: ReturnType<typeof spawn> }> {
+  const child = spawn(process.execPath, [BRIDGE_PATH], {
+    cwd: process.cwd(),
+    env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: 'https://merchant.example.com', MERCHANT_WORKSPACE_ID: 'ws_surface_test', ...env },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  try {
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
+    const listed = await nextLine(child.stdout)
+    return { tools: listed.result.tools as ListedTool[], child }
+  } catch (error) {
+    child.kill()
+    throw error
+  }
 }
 
 async function listen(server: ReturnType<typeof createServer>) {
@@ -1046,7 +1108,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(imageSelectSchema.properties.confirmation_ticket_nonce_hash).toEqual({ type: 'string', pattern: '^[a-f0-9]{64}$', minLength: 64, maxLength: 64 })
       expect(imageSelectSchema.properties.confirmation_ticket_intent_hash).toEqual({ type: 'string', pattern: '^[a-f0-9]{64}$', minLength: 64, maxLength: 64 })
       expect(listed.result.tools.some((tool: { name: string }) => tool.name.startsWith('ops.'))).toBe(false)
-      for (const name of ['ops.support.ticket.create', 'ops.incident.transition', 'ops.feature-flag.emergency.set', 'ops.finance.search']) {
+      for (const name of ['ops.support.ticket.create', 'ops.incident.transition', 'ops.feature-flag.emergency.set', 'ops.finance.search', 'ops.platform.store.record.create']) {
         expect(listed.result.tools.some((tool: { name: string }) => tool.name === name)).toBe(false)
       }
       for (const name of MERCHANT_HIDDEN_METHODS) expect(listed.result.tools.some((tool: { name: string }) => tool.name === name)).toBe(false)
@@ -1155,6 +1217,77 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  // multimodal.video.get takes one required argument, provider_job_id, and the
+  // only producer of that value is multimodal.video.request (the server rejects
+  // a job id that is not bound to a rendering owned by the calling workspace).
+  // The poller therefore stays exactly as reachable as its producer: hidden in
+  // the production default, listed only when the local video acceptance switch
+  // makes the request tool reachable.
+  it('lists the queued-video poller only while its producer is reachable', async () => {
+    const { tools, child } = await listBridgeTools({})
+    try {
+      const names = tools.map(tool => tool.name)
+      expect(names).not.toContain('multimodal.video.request')
+      expect(names).not.toContain('multimodal.video.get')
+      // `ReturnType<typeof spawn>` widens the stdio tuple, so the pipes are
+      // nullable from out here even though the helper always passes 'pipe'.
+      if (!child.stdin || !child.stdout) throw new Error('bridge test child lost its stdio pipes')
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'multimodal.video.get', arguments: { provider_job_id: 'job_poll_1' } } })}\n`)
+      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: 'Unknown tool: multimodal.video.get' })
+      // The generic multimodal entry point stays withheld on purpose: its
+      // modality=video + output=rendering branch is the only other route to
+      // video rendering, and the API settles it through the same commercial
+      // operation as the gated request tool.
+      expect(names).not.toContain('multimodal.generate')
+      // The shared registry enables this one, and catalog.title.accept (which
+      // consumes its suggestions) is listed, so withholding it broke the SEO/GEO
+      // flow the skill documents.
+      expect(names).toContain('catalog.title.optimize')
+      // Nothing else may ask the relay to render a video either.
+      expect(tools.filter(tool => (tool.inputSchema?.properties?.output as { enum?: string[] } | undefined)?.enum?.includes('rendering')).map(tool => tool.name)).toEqual([])
+    } finally {
+      child.kill()
+    }
+    const local = await listBridgeTools({ MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES: 'true', MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8787' })
+    try {
+      const names = local.tools.map(tool => tool.name)
+      expect(names).toContain('multimodal.video.request')
+      expect(names).toContain('multimodal.video.get')
+    } finally {
+      local.child.kill()
+    }
+  })
+
+  // The bridge snapshot cannot import the TypeScript registry at runtime, so
+  // both directions are pinned here: a registry-disabled operation may never be
+  // forwarded, and the only entries the bridge may withhold on its own are the
+  // two annotated product narrowings. Without the second assertion a blind
+  // "sync with the registry" pass would silently re-open video rendering.
+  it('keeps the commercial disabled set aligned with the shared registry and pins the bridge-only narrowings', async () => {
+    const bridgeSource = await readFile(BRIDGE_PATH, 'utf8')
+    const disabled = literalSetFromBridge(bridgeSource, 'COMMERCIAL_DISABLED_METHODS')
+    const registryDisabled = new Set<string>([
+      ...MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS,
+      ...MCP_RECOVERY_DISABLED_METHODS,
+      ...MCP_POINT_CHARGED_DISABLED_METHODS,
+      ...MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS,
+    ])
+    const registryEnabled = new Set<string>([
+      ...MCP_POINT_CHARGED_ENABLED_METHODS,
+      ...MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS,
+    ])
+    expect([...registryDisabled].filter(method => !disabled.has(method)), 'bridge re-enables a method the shared registry disables').toEqual([])
+    expect([...disabled].filter(method => !registryDisabled.has(method)).sort(), 'unexpected bridge-only narrowing').toEqual(['multimodal.generate', 'multimodal.video.request'])
+    for (const method of ['multimodal.generate', 'multimodal.video.request']) {
+      expect(registryEnabled.has(method), `${method} must be registry-enabled, otherwise it is drift rather than a narrowing`).toBe(true)
+    }
+    // catalog.title.optimize was stale bridge drift: the registry enables it as
+    // POINT_REQUIRED_NO_CHARGE and the SEO/GEO flow hands suggestions to the
+    // exposed catalog.title.accept, so the bridge must not block it.
+    expect(registryEnabled.has('catalog.title.optimize')).toBe(true)
+    expect(disabled.has('catalog.title.optimize')).toBe(false)
+  })
+
   it('forwards the five corrected tool schemas as requests accepted by the authoritative contract', async () => {
     const requests: any[] = []
     const server = createServer(async (req, res) => {
@@ -1194,6 +1327,114 @@ describe('Codex stdio MCP bridge', () => {
         expect(request).toMatchObject({ jsonrpc: '2.0', method: expected[0], params: { ...expected[1], workspace_id: 'ws_test' } })
         expect(validateMcpRequest(request), `${request.method} bridge request must satisfy the authoritative contract`).toEqual({ valid: true, errors: [] })
       }
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('declares every contract argument the server handlers read, and keeps the unlisted ops schema in sync', async () => {
+    const requests: any[] = []
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      requests.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { accepted: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_TOKEN: 'test-token' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
+      const listed = await nextLine(child.stdout)
+      const tools = listed.result.tools as Array<{ name: string; inputSchema: { properties?: Record<string, { enum?: readonly string[] }>; required?: readonly string[] } }>
+      // Judge drift against the authoritative source instead of the built
+      // packages/contracts/dist, which is a build artifact that can lag src.
+      // This file and its marketplace mirror sit at different depths, so the
+      // repository root is discovered rather than hard-coded.
+      let repositoryRoot = new URL('./', import.meta.url)
+      for (let depth = 0; depth < 6 && !existsSync(new URL('packages/contracts/src/mcp.ts', repositoryRoot)); depth += 1) {
+        repositoryRoot = new URL('../', repositoryRoot)
+      }
+      expect(existsSync(new URL('packages/contracts/src/mcp.ts', repositoryRoot)), 'authoritative contract source not found').toBe(true)
+      const authoritative = await import(new URL('packages/contracts/src/mcp.ts', repositoryRoot).href) as {
+        MCP_METHOD_SCHEMAS: Readonly<Record<string, { properties?: Record<string, { enum?: readonly string[] }>; required?: readonly string[] }>>
+        validateMcpRequest: (value: unknown) => { valid: boolean; errors: readonly string[] }
+      }
+      const contractSchemas = authoritative.MCP_METHOD_SCHEMAS
+      // Contract arguments this merchant surface withholds on purpose. Only
+      // billing.recharge.get.confirm_test_payment is here today: it settles a
+      // fixture order without a provider callback, so the bridge keeps the
+      // model away from it (-32602) while the API/operator surface keeps it.
+      // Every other withheld argument is drift: the model would be unable to
+      // send a field its handler reads.
+      const withheldArguments: Readonly<Record<string, readonly string[]>> = {
+        'billing.recharge.get': ['confirm_test_payment'],
+      }
+      const missing: string[] = []
+      const enumDrift: string[] = []
+      for (const tool of tools) {
+        const contract = contractSchemas[tool.name]
+        expect(contract, `${tool.name} is not an authoritative contract method`).toBeDefined()
+        for (const [key, definition] of Object.entries(contract?.properties ?? {})) {
+          // workspace_id is injected by the bridge (callRemote) and accepted as
+          // CONTRACT_DECLARED_IMPLICIT_PROPERTIES, so it is never redeclared.
+          if (key === 'workspace_id' || (withheldArguments[tool.name] ?? []).includes(key)) continue
+          const declared = tool.inputSchema.properties?.[key]
+          if (!declared) { missing.push(`${tool.name}.${key}`); continue }
+          if (definition.enum && JSON.stringify(definition.enum) !== JSON.stringify(declared.enum)) {
+            enumDrift.push(`${tool.name}.${key}: contract=${JSON.stringify(definition.enum)} bridge=${JSON.stringify(declared.enum)}`)
+          }
+        }
+      }
+      expect(missing, `the bridge must declare every contract argument the handlers read: ${missing.join(', ')}`).toEqual([])
+      expect(enumDrift, enumDrift.join(', ')).toEqual([])
+      // asset.upload declares its two input modes with oneOf
+      // (file_path | content_base64) instead of the contract's flat required
+      // list, so it is the only method whose required array may differ.
+      const requiredDrift = tools
+        .filter(tool => tool.name !== 'asset.upload')
+        .filter(tool => JSON.stringify(contractSchemas[tool.name]?.required ?? []) !== JSON.stringify(tool.inputSchema.required ?? []))
+        .map(tool => `${tool.name}: contract=${JSON.stringify(contractSchemas[tool.name]?.required ?? [])} bridge=${JSON.stringify(tool.inputSchema.required ?? [])}`)
+      expect(requiredDrift, requiredDrift.join(', ')).toEqual([])
+      // ops.* tools are never listed on the merchant surface, so the
+      // hand-copied schema there is only observable through its source. Keep
+      // the reconciliation enum equal to what the API handler accepts.
+      const bridgeSource = await readFile(BRIDGE_PATH, 'utf8')
+      const queueAssignStart = bridgeSource.indexOf("'ops.marketing.queue.assign':")
+      expect(queueAssignStart).toBeGreaterThan(-1)
+      const queueAssignLine = bridgeSource.slice(queueAssignStart, bridgeSource.indexOf('\n', queueAssignStart))
+      const itemTypeEnum = contractSchemas['ops.marketing.queue.assign']?.properties?.item_type?.enum ?? []
+      expect(itemTypeEnum).toContain('image')
+      expect(queueAssignLine).toContain(`item_type: { type: 'string', enum: [${itemTypeEnum.map(value => `'${value}'`).join(', ')}] }`)
+      // The fields the server handlers read must survive the bridge boundary and
+      // satisfy the authoritative contract the API validates with.
+      const intentHash = 'a'.repeat(64)
+      const calls = [
+        ['workspace.interactive.confirm', { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES', intent_hash: intentHash }],
+        ['rule.publish', { pack_id: 'pack_platform', name: '公共平台规则', version: '1.0.0', scope: 'platform', public_scope: 'platform', category: 'platform', target_id: 'jd', source_kind: 'internal', source_reference: 'manual://platform-rules', source_checked_at: '2026-09-01T00:00:00.000Z', status: 'draft', checks_json: '{}', reason: '导入公共平台规则草稿' }],
+        ['rule.status', { pack_id: 'pack_platform', version: '1.0.0', status: 'inactive', public_scope: 'platform', platform: 'jd', reason: '停用公共平台规则' }],
+      ] as const
+      for (const [index, [name, args]] of calls.entries()) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 2, method: 'tools/call', params: { name, arguments: args } })}\n`)
+        const envelope = await nextLine(child.stdout)
+        expect(envelope.error, `${name} must accept the declared arguments`).toBeUndefined()
+        expect(envelope.result.isError).toBe(false)
+      }
+      for (const [name, args] of calls) {
+        const request = requests.find(candidate => candidate.method === name)
+        expect(request, `${name} must be forwarded to the API`).toBeDefined()
+        expect(request.params).toMatchObject(args)
+        expect(authoritative.validateMcpRequest(request), `${name} bridge request must satisfy the authoritative contract`).toEqual({ valid: true, errors: [] })
+      }
+      // The refusal is what keeps the withheld argument unreachable; keeping it
+      // here means a future schema sync cannot silently re-open it.
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 20, method: 'tools/call', params: { name: 'billing.recharge.get', arguments: { order_id: 'order_test', confirm_test_payment: 'true' } } })}\n`)
+      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: 'Unsupported tool argument: confirm_test_payment' })
     } finally {
       child.kill()
       await close(server)

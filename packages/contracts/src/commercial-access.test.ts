@@ -155,10 +155,65 @@ describe('CommercialAccessDecision E1 contract', () => {
       access_revision: 'revision-7',
       next_actions: ['BUY_POINTS'],
     }
-    expect(assertCommercialAccessDecision({ ...charged, available_points: 0, quoted_points: null, rate_card_version: null, allowed: false, error_code: ERROR_CODES.CREATIVE_POINTS_EXHAUSTED })).toBeDefined()
-    expect(assertCommercialAccessDecision({ ...charged, available_points: 4, quoted_points: 5, rate_card_version: 'rate-v1', allowed: false, error_code: ERROR_CODES.CREATIVE_POINTS_INSUFFICIENT })).toBeDefined()
-    expect(assertCommercialAccessDecision({ ...charged, available_points: 4, quoted_points: null, rate_card_version: null, allowed: false, error_code: ERROR_CODES.RATE_CARD_UNAVAILABLE })).toBeDefined()
-    expect(assertCommercialAccessDecision({ ...charged, available_points: 4, quoted_points: 1, rate_card_version: 'rate-v1', allowed: false, error_code: ERROR_CODES.COMMERCIAL_ACCESS_STALE })).toBeDefined()
+    // Each class is a distinct (error_code, evidence) pair. The evidence is the
+    // part the validator actually keys on:
+    //   exhausted        zero balance, so no rate lookup may happen at all
+    //   insufficient     a real quote the balance cannot cover (available < quoted)
+    //   rate-unavailable the rate card did not resolve, so no quote may be exposed
+    //   stale            a real, affordable quote; only the decision revision is stale
+    const classes = [
+      { label: 'exhausted', code: ERROR_CODES.CREATIVE_POINTS_EXHAUSTED, evidence: { available_points: 0, quoted_points: null, rate_card_version: null } },
+      { label: 'insufficient', code: ERROR_CODES.CREATIVE_POINTS_INSUFFICIENT, evidence: { available_points: 4, quoted_points: 5, rate_card_version: 'rate-v1' } },
+      { label: 'rate-unavailable', code: ERROR_CODES.RATE_CARD_UNAVAILABLE, evidence: { available_points: 4, quoted_points: null, rate_card_version: null } },
+      { label: 'stale', code: ERROR_CODES.COMMERCIAL_ACCESS_STALE, evidence: { available_points: 4, quoted_points: 1, rate_card_version: 'rate-v1' } },
+    ] as const
+
+    const decisions = classes.map(({ code, evidence }) => assertCommercialAccessDecision({ ...charged, ...evidence, allowed: false, error_code: code }))
+
+    // Positive side: every class is accepted with its own code and its own
+    // quote/rate evidence, and nothing else. `toBeDefined()` used to stand here
+    // and passed for any implementation that did not throw.
+    for (const [index, { label, code, evidence }] of classes.entries()) {
+      expect(decisions[index], label).toMatchObject({ error_code: code, allowed: false, balance_state: 'known', ...evidence })
+    }
+
+    // A validator that collapsed the four classes onto one branch would return
+    // one shared code for all four inputs.
+    const codes = decisions.map(decision => decision.error_code)
+    expect(codes).toEqual(classes.map(({ code }) => code))
+    expect(new Set(codes).size).toBe(4)
+
+    // Negative side: the classes are not interchangeable labels. Every
+    // code/evidence pair other than the four above is rejected, so a decision
+    // cannot silently drift into a neighbouring class.
+    //
+    // Deliberately absent from the matrix: `stale` with the `insufficient`
+    // evidence. The validator pins "available_points below quoted_points" to
+    // CREATIVE_POINTS_INSUFFICIENT only, so that one pair is currently accepted.
+    // Asserting it here would demand a production change that is out of scope for
+    // this suite; it is recorded as an open gap instead.
+    const rejectedPairs = [
+      ['exhausted', 'insufficient'],
+      ['exhausted', 'rate-unavailable'],
+      ['exhausted', 'stale'],
+      ['insufficient', 'exhausted'],
+      ['insufficient', 'rate-unavailable'],
+      ['insufficient', 'stale'],
+      ['rate-unavailable', 'exhausted'],
+      ['rate-unavailable', 'insufficient'],
+      ['rate-unavailable', 'stale'],
+      ['stale', 'exhausted'],
+      ['stale', 'rate-unavailable'],
+    ] as const
+    const byLabel = new Map(classes.map(entry => [entry.label, entry]))
+    for (const [codeLabel, evidenceLabel] of rejectedPairs) {
+      const { code } = byLabel.get(codeLabel)!
+      const { evidence } = byLabel.get(evidenceLabel)!
+      expect(
+        () => assertCommercialAccessDecision({ ...charged, ...evidence, allowed: false, error_code: code }),
+        `${codeLabel} code with ${evidenceLabel} evidence`,
+      ).toThrow()
+    }
   })
 
   it('enforces exhausted before rate lookup and insufficient only after a valid quote', () => {

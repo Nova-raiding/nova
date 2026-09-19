@@ -76,6 +76,7 @@ export const MCP_METHODS = [
   'ops.authorization.grant.revoke',
   'ops.workspaces.list',
   'ops.stores.list',
+  'ops.platform.store.record.create',
   'ops.brand-units.summary',
   'ops.tasks.summary',
   'ops.model-usage.summary',
@@ -748,6 +749,17 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'ops.authorization.grant.revoke', description: 'Immediately revoke one durable JIT grant using grant and subject authorization revisions.', params: params({ grant_id: boundedString(256), subject_identity_id: boundedString(256), expected_revision: positiveIntegerString, expected_authorization_revision: nonNegativeIntegerString, reason: reasonProperty }, ['grant_id', 'subject_identity_id', 'expected_revision', 'expected_authorization_revision', 'reason']) },
   { method: 'ops.workspaces.list', description: 'List a server-paginated platform workspace directory with optional text, lifecycle, subscription, and active-merchant filters.', params: params({ query: boundedString(200), status: { type: 'string', enum: ['active', 'disabled'] }, subscription_status: boundedString(64), merchant_only: booleanString, offset: { type: 'string' }, limit: pageLimit100 }) },
   { method: 'ops.stores.list', description: 'List redacted store connection health across all workspaces for platform operations. Requires explicit platform scope and never returns credentials.', params: params({ platform_scope: { type: 'string', enum: ['platform'] } }) },
+  {
+    method: 'ops.platform.store.record.create',
+    description: 'Platform operations only. Register the credential-free manual store record that manual operations mode (PLATFORM_OPERATIONS_MODE=manual) uses in place of an OAuth connection. Writes platform_accounts with token_state=manually_registered; never writes connected and never records a credential, scope or platform receipt. Requires an explicit workspace, platform, account and audit reason. Hidden from every merchant surface.',
+    params: params({
+      workspace_id: boundedString(256),
+      platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] },
+      account_id: boundedString(256),
+      store_alias: boundedString(200),
+      reason: reasonProperty,
+    }, ['workspace_id', 'platform', 'account_id', 'reason']),
+  },
   { method: 'ops.brand-units.summary', description: 'Return redacted brand-unit graph counts by workspace for platform operations. Requires explicit platform scope and never returns brand names, product titles, content, tokens, or customer data.', params: params({ platform_scope: { type: 'string', enum: ['platform'] } }) },
   { method: 'ops.tasks.summary', description: 'Return redacted platform-wide task and content queue counts for platform operations. Requires explicit platform scope and never returns task正文 or credentials.', params: params({ platform_scope: { type: 'string', enum: ['platform'] } }) },
   { method: 'ops.model-usage.summary', description: 'Return redacted platform-wide model usage totals grouped by modality, model and settlement status. Requires explicit platform scope and never returns prompts, credentials or provider request identifiers.', params: params({ platform_scope: { type: 'string', enum: ['platform'] } }) },
@@ -1118,7 +1130,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'rule.publish',
     description: 'Create an immutable rule version; activating it requires rules-admin identity and approval_json with approval_ref, approved_by, and approved_at.',
-    params: params({ pack_id: { type: 'string' }, name: { type: 'string' }, version: { type: 'string' }, scope: { type: 'string', enum: ['global', 'platform', 'category', 'brand', 'store', 'campaign'] }, public_scope: { type: 'string', enum: ['platform'] }, source_kind: { type: 'string', enum: ['official', 'internal', 'legal_review'] }, source_reference: { type: 'string' }, source_checked_at: { type: 'string' }, effective_from: { type: 'string' }, effective_to: { type: 'string' }, severity: { type: 'string', enum: ['error', 'warning'] }, action: { type: 'string', enum: ['block', 'warn', 'review', 'allow'] }, target_id: { type: 'string' }, scope_value: { type: 'string' }, checks_json: { type: 'string' }, reason: { type: 'string' }, status: { type: 'string', enum: ['draft', 'active'] }, approval_json: { type: 'string' } }, ['pack_id', 'name', 'version', 'scope', 'source_kind', 'source_reference', 'source_checked_at', 'checks_json', 'reason']),
+    params: params({ pack_id: { type: 'string' }, name: { type: 'string' }, version: { type: 'string' }, scope: { type: 'string', enum: ['global', 'platform', 'category', 'brand', 'store', 'campaign'] }, public_scope: { type: 'string', enum: ['platform'] }, category: { type: 'string', enum: ['platform', 'category', 'advertising_publish', 'big_promotion'], description: 'Governance classification read by the handler; only accepted together with public_scope=platform, which requires the verified public rule repository.' }, source_kind: { type: 'string', enum: ['official', 'internal', 'legal_review'] }, source_reference: { type: 'string' }, source_checked_at: { type: 'string' }, effective_from: { type: 'string' }, effective_to: { type: 'string' }, severity: { type: 'string', enum: ['error', 'warning'] }, action: { type: 'string', enum: ['block', 'warn', 'review', 'allow'] }, target_id: { type: 'string' }, scope_value: { type: 'string' }, checks_json: { type: 'string' }, reason: { type: 'string' }, status: { type: 'string', enum: ['draft', 'active'] }, approval_json: { type: 'string' } }, ['pack_id', 'name', 'version', 'scope', 'source_kind', 'source_reference', 'source_checked_at', 'checks_json', 'reason']),
   },
   {
     method: 'rule.status',
