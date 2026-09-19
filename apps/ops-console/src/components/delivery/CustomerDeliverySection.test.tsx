@@ -21,31 +21,31 @@ describe("customer delivery completion", () => {
   });
 
   it("only marks a delivery record complete after every delivery item is complete", () => {
-    expect(deliveryCompletion(base)).toEqual({ completed: 5, total: 5, ready: true });
-    expect(deliveryCompletion({ ...base, videos: 0 })).toEqual({ completed: 4, total: 5, ready: false });
+    expect(deliveryCompletion(base)).toEqual({ completed: 4, total: 4, ready: true });
+    expect(deliveryCompletion({ ...base, videos: 0 })).toEqual({ completed: 4, total: 4, ready: true });
   });
 
   it("labels the aggregate as delivery completion, never account activation", () => {
     expect(deliveryStatusLabel(deliveryCompletion(base))).toBe("交付已完成");
-    expect(deliveryStatusLabel(deliveryCompletion({ ...base, videos: 0 }))).toBe("4/5");
+    expect(deliveryStatusLabel(deliveryCompletion({ ...base, training: false }))).toBe("3/4");
   });
 
   it("counts each checklist item independently (not by a partial percentage)", () => {
     const keys = ["profile", "integration", "acceptance", "training"] as const;
     for (const key of keys) {
-      expect(deliveryCompletion({ ...base, [key]: false })).toEqual({ completed: 4, total: 5, ready: false });
+      expect(deliveryCompletion({ ...base, [key]: false })).toEqual({ completed: 3, total: 4, ready: false });
     }
-    expect(deliveryCompletion({ ...base, videos: -1 })).toEqual({ completed: 4, total: 5, ready: false });
+    expect(deliveryCompletion({ ...base, videos: -1 })).toEqual({ completed: 4, total: 4, ready: true });
   });
 
-  it("requires a positive video count and all four checklist states before completion", () => {
-    expect(deliveryCompletion({ ...base, videos: 0 }).ready).toBe(false);
-    expect(deliveryCompletion({ ...base, videos: Number.NaN }).ready).toBe(false);
-    expect(deliveryCompletion({ ...base, profile: false, integration: false, acceptance: false, training: false, videos: 99 })).toEqual({ completed: 1, total: 5, ready: false });
+  it("ignores legacy video data and requires all four delivery states", () => {
+    expect(deliveryCompletion({ ...base, videos: 0 }).ready).toBe(true);
+    expect(deliveryCompletion({ ...base, videos: Number.NaN }).ready).toBe(true);
+    expect(deliveryCompletion({ ...base, profile: false, integration: false, acceptance: false, training: false, videos: 99 })).toEqual({ completed: 0, total: 4, ready: false });
   });
 
   it("does not use the manually verified payment state as a delivery gate", () => {
-    expect(deliveryCompletion({ ...base, paymentStatus: "unpaid" })).toEqual({ completed: 5, total: 5, ready: true });
+    expect(deliveryCompletion({ ...base, paymentStatus: "unpaid" })).toEqual({ completed: 4, total: 4, ready: true });
   });
 
   it("never blocks delivery steps based on the manually verified payment state", () => {
@@ -54,7 +54,6 @@ describe("customer delivery completion", () => {
       expect(isDeliveryStepBlocked("paid", step)).toBe(false);
     }
     expect(isDeliveryStepBlocked("unpaid", "profile")).toBe(false);
-    expect(isDeliveryStepBlocked("unpaid", "video")).toBe(false);
   });
 
   it("builds one durable item payload per checklist entry and preserves explicit empty evidence", () => {
@@ -83,6 +82,7 @@ describe("customer delivery completion", () => {
     const html = renderToStaticMarkup(<CustomerDeliverySection disabled records={[base]} />);
     expect(html).toContain("示例企业");
     expect(html).toContain('aria-label="示例企业客户培训状态"');
+    expect(html).not.toContain("交付视频");
     expect(html).toContain("查看详情");
     expect(html).not.toContain("培训凭证");
     expect(html).not.toContain("上传培训");

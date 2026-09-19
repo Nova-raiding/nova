@@ -149,7 +149,8 @@ class EvidenceTransactionClient extends RecordingClient {
     }
     if (text.startsWith('SELECT') && text.includes('FROM workspace_customer_deliveries')) {
       if (text.includes('delivery_evidence_list_ids'))
-        return result(this.row.workspace_id === values[0] ? [{ id: this.row.id }] : [])
+        return result(this.row.workspace_id === values[0]
+          && (!text.includes('archived_at IS NULL') || !this.row.archived_at) ? [{ id: this.row.id }] : [])
       if (text.includes('FOR UPDATE') && !text.includes('delivery_evidence_recheck') && this.lockedBodyChange) {
         const change = this.lockedBodyChange
         this.lockedBodyChange = undefined
@@ -759,6 +760,15 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     await expect(repo.create({ workspaceId: original.workspaceId, companyName: 'Acme', actorId: 'creator-2' })).resolves.toMatchObject({ companyName: 'Acme', archivedAt: null })
   })
 
+  it('excludes archived PostgreSQL records from the active delivery list', async () => {
+    const client = new EvidenceTransactionClient()
+    client.row.archived_at = '2026-09-15T12:00:00.000Z'
+    const result = await new PostgresCustomerDeliveryRepository(new RecordingPool(client)).list('ws_pg')
+    expect(result).toEqual([])
+    expect(client.calls.find(call => call.text.includes('delivery_evidence_list_ids'))?.text)
+      .toContain('archived_at IS NULL')
+  })
+
   it('preserves PostgreSQL DATE calendar values separately from timestamp instants', async () => {
     for (const paymentDate of [new Date(2026, 8, 14), '2026-09-14']) {
       const client = new EvidenceTransactionClient()
@@ -787,6 +797,21 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     const repo = new MemoryCustomerDeliveryRepository()
     const draft = await repo.create({ workspaceId: 'ws_auto_launch', companyName: 'Auto launch', actorId: 'operator-1' })
     await expect(repo.update({ workspaceId: draft.workspaceId, id: draft.id, actorId: 'operator-1', expectedRevision: draft.revision, patch: { contractNumber: 'AUTO-1', contractRef: 'asset_ref_contract-1', projectOwner: 'owner', supportOwner: 'support', customerProfileStatus: 'complete' } })).resolves.toMatchObject({ customerProfileStatus: 'complete', plannedGoLiveAt: null })
+  })
+
+  it('identifies the visible fields missing from an incomplete customer profile', async () => {
+    const repo = new MemoryCustomerDeliveryRepository()
+    const draft = await repo.create({ workspaceId: 'ws_profile_errors', companyName: 'Profile errors', actorId: 'operator-1' })
+    await expect(repo.update({
+      workspaceId: draft.workspaceId,
+      id: draft.id,
+      actorId: 'operator-1',
+      expectedRevision: draft.revision,
+      patch: { customerProfileStatus: 'complete' },
+    })).rejects.toMatchObject({
+      code: 'INVALID_INPUT',
+      message: '客户档案未填写完整：缺少合同编号、已扫描合同文件、项目负责人、售后负责人',
+    })
   })
 
   it('fails closed when an already-complete profile receives an invalid contract reference', async () => {

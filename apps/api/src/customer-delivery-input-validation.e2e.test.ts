@@ -182,6 +182,22 @@ describe('customer delivery input validation over loopback HTTP', () => {
     expect(trained).toMatchObject({ trainingCompleted: true, trainingEvidenceRefs: [] })
   })
 
+  it('completes an operator-confirmed checklist without forcing evidence uploads', async () => {
+    const items = CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS.system_integration.map(itemKey => ({
+      itemKey,
+      completed: true,
+      evidence: { note: '运营人员人工确认', asset_refs: [] },
+    }))
+    const saved = successful(await call<Array<{ itemKey: string; completed: boolean }>>('ops.customer-delivery.checklist.update', {
+      ...mutationParams(),
+      checklist_key: 'system_integration',
+      items_json: JSON.stringify(items),
+    }))
+    expect(saved).toHaveLength(items.length)
+    expect(saved.every(item => item.completed)).toBe(true)
+    expect(await currentDelivery()).toMatchObject({ systemIntegrationStatus: 'complete' })
+  })
+
   it('does not complete an unfilled customer profile through the scalar endpoint', async () => {
     await rejectedWithoutMutation('ops.customer-delivery.checklist.update', { ...mutationParams(), checklist_key: 'customer_profile', completed: 'true' }, 400, 'CUSTOMER_DELIVERY_INVALID_INPUT')
   })

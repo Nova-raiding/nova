@@ -32,11 +32,16 @@ describe("UserDirectorySection sorting", () => {
     expect(sortUserDirectoryRows(rows, { field: "displayName", order: "ascend" }).map((row) => row.displayName)).toEqual(["alice", "Bob", "Charlie"]);
     expect(sortUserDirectoryRows(rows, { field: "status", order: "ascend" }).map((row) => row.status)).toEqual(["active", "invited", "suspended"]);
     expect(sortUserDirectoryRows(rows, { field: "createdAt", order: "descend" }).map((row) => (row as DirectoryUser).createdAt)).toEqual([
-      "2026-08-03T00:00:00.000Z",
       "2026-08-02T00:00:00.000Z",
       "2026-08-01T00:00:00.000Z",
+      "2026-08-03T00:00:00.000Z",
     ]);
     expect(rows.map((row) => row.externalSubject)).toEqual(["subject-3", "subject-1", "subject-2"]);
+  });
+
+  it("always moves suspended users behind enabled users while preserving the loaded order otherwise", () => {
+    expect(sortUserDirectoryRows(rows).map((row) => row.status)).toEqual(["active", "invited", "suspended"]);
+    expect(sortUserDirectoryRows(rows, { field: "createdAt", order: "descend" }).map((row) => row.status)).toEqual(["invited", "active", "suspended"]);
   });
 
   it("retains active filters when pagination changes", () => {

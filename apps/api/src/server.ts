@@ -13376,7 +13376,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       let parsed: unknown
       try { parsed = JSON.parse(rawPatch) } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'patch_json 必须是有效 JSON 对象', 400) }
       if (!isObject(parsed)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'patch_json 必须是 JSON 对象', 400)
-      const allowed = new Set(['companyName', 'contractNumber', 'paymentStatus', 'contractRef', 'projectOwner', 'supportOwner', 'paymentDate', 'paymentEvidenceRefs', 'plannedGoLiveAt', 'customerProfileStatus'])
+      const allowed = new Set(['companyName', 'contractNumber', 'paymentStatus', 'contractRef', 'projectOwner', 'supportOwner', 'paymentDate', 'paymentEvidenceRefs', 'plannedGoLiveAt', 'customerProfileStatus', 'archivedAt'])
       if (Object.keys(parsed).some(key => !allowed.has(key))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'patch_json 包含不支持的字段', 400)
       validateCustomerDeliveryProfileValues(parsed)
       return result(await updateCustomerDeliveryWithRequiredEvidence({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')), patch: parsed }))
@@ -13408,7 +13408,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         for (const [index, item] of items.entries()) {
           if (!item.completed) continue
           const refs = evidenceRefs(item.evidence.asset_refs, `items_json 第 ${index + 1} 项 asset_refs`)
-          if (!refs.length) throw new DomainError('CUSTOMER_DELIVERY_CHECKLIST_EVIDENCE_REQUIRED', `已完成项“${item.itemKey}”必须上传凭证`, 409)
           await Promise.all(refs.map(ref => requireBoundCustomerDeliveryAsset(workspaceId, deliveryId, purpose, ref)))
         }
         return result(await invokeCustomerDeliveryDomain(() => repository.updateChecklistItems!({ workspaceId, deliveryId, checklistKey: purpose, items, actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')) })))
@@ -13440,7 +13439,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const checklistKey = requiredStringValue(params, 'checklistKey', 'checklist_key') as 'system_integration'|'functional_acceptance'
       if (completed) {
         const refs = evidenceRefs(evidence.asset_refs, 'asset_refs')
-        if (!refs.length) throw new DomainError('CUSTOMER_DELIVERY_CHECKLIST_EVIDENCE_REQUIRED', '已完成项必须上传凭证', 409)
         await Promise.all(refs.map(ref => requireBoundCustomerDeliveryAsset(workspaceId, deliveryId, checklistKey, ref)))
       }
       return result(await invokeCustomerDeliveryDomain(() => repository.updateChecklistItem!({ workspaceId, deliveryId, checklistKey, itemKey: requiredStringValue(params, 'itemKey', 'item_key'), completed, evidence, actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')) })))

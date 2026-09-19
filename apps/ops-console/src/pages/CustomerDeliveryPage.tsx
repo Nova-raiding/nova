@@ -14,12 +14,11 @@ import { waitForDeliveryScan } from "../components/delivery/CustomerDeliveryUplo
 export function isCustomerDeliveryRevisionConflict(cause: unknown) {
   return /revision(?:[_ ]changed|[_ ]conflict)|版本.*(?:变化|冲突)/iu.test(describeOpsError(cause));
 }
-
 async function waitForCleanDeliveryAsset(initialAsset: CustomerDeliveryAsset, input: {
   targetWorkspaceId: string;
   deliveryId: string;
   signal: AbortSignal;
-  purpose: "contract" | "video";
+  purpose: "contract";
   label: string;
 }) {
   let asset = initialAsset;
@@ -70,10 +69,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const [mutationError, setMutationError] = useState("");
   const [createPage, setCreatePage] = useState(false);
   const contractFileInput = useRef<HTMLInputElement>(null);
-  const deliveryVideoInput = useRef<HTMLInputElement>(null);
   const [uploadedContractName, setUploadedContractName] = useState("");
   const [uploadedContractFile, setUploadedContractFile] = useState<File>();
-  const [deliveryVideoFiles, setDeliveryVideoFiles] = useState<File[]>([]);
   const [integrationChecks, setIntegrationChecks] = useState<string[]>([]);
   const [acceptanceChecks, setAcceptanceChecks] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
@@ -83,7 +80,6 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     companyName: string;
     record: CustomerDeliveryRecord;
     contract?: { file: File; assetRef: string };
-    videos: Map<File, { assetRef: string; registered: boolean }>;
   } | undefined>(undefined);
   const [createForm] = Form.useForm<{
     companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid";
@@ -207,8 +203,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   };
   const submitCreatePage = async (values: { companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid"; paymentDate: { format: (pattern: string) => string }; contractFile: string; owner: string; afterSalesOwner: string }) => {
     if (createSubmissionController.current) return;
-    if (integrationChecks.length < INTEGRATION_ITEMS.length || acceptanceChecks.length < ACCEPTANCE_ITEMS.length || deliveryVideoFiles.length === 0 || !uploadedContractFile) {
-      message.error("请上传合同和交付视频，并完成系统接入、功能验收全部勾选");
+    if (integrationChecks.length < INTEGRATION_ITEMS.length || acceptanceChecks.length < ACCEPTANCE_ITEMS.length || !uploadedContractFile) {
+      message.error("请上传合同，并完成系统接入、功能验收全部勾选");
       return;
     }
     const companyName = values.companyName.trim();
@@ -224,22 +220,13 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         // the unique company-name constraint.
         const existingDraft = records.find((record) => record.companyName.trim() === companyName && !record.profile);
         const record = existingDraft ?? await createRecord(companyName);
-        attempt = { companyName, record, videos: new Map() };
+        attempt = { companyName, record };
         pendingCreate.current = attempt;
       }
       if (!attempt.contract || attempt.contract.file !== uploadedContractFile) {
         const uploaded = await customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: attempt.record.id, purpose: "contract", file: uploadedContractFile }, controller.signal);
         const asset = await waitForCleanDeliveryAsset(uploaded, { targetWorkspaceId, deliveryId: attempt.record.id, signal: controller.signal, purpose: "contract", label: "合同文件" });
         attempt.contract = { file: uploadedContractFile, assetRef: asset.assetRef };
-      }
-      for (const file of deliveryVideoFiles) {
-        let video = attempt.videos.get(file);
-        if (!video) {
-          const uploaded = await customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: attempt.record.id, purpose: "video", file }, controller.signal);
-          const asset = await waitForCleanDeliveryAsset(uploaded, { targetWorkspaceId, deliveryId: attempt.record.id, signal: controller.signal, purpose: "video", label: "交付视频" });
-          video = { assetRef: asset.assetRef, registered: false };
-          attempt.videos.set(file, video);
-        }
       }
       attempt.record = await saveProfile({
         ...attempt.record,
@@ -264,19 +251,11 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         expectedRevision: attempt.record.revision as number,
       }, controller.signal);
       attempt.record = { ...attempt.record, acceptance: true, revision: acceptance.revision ?? (attempt.record.revision as number) + 1 };
-      for (const [index, file] of deliveryVideoFiles.entries()) {
-        const video = attempt.videos.get(file)!;
-        if (!video.registered) {
-          await customerDeliveryClient.addVideo({ targetWorkspaceId, deliveryId: attempt.record.id, title: file.name, assetRef: video.assetRef, sortOrder: index }, controller.signal);
-          video.registered = true;
-        }
-      }
       await load();
       pendingCreate.current = undefined;
       createForm.resetFields();
       setUploadedContractFile(undefined);
       setUploadedContractName("");
-      setDeliveryVideoFiles([]);
       setCreatePage(false);
       message.success("客户创建成功");
     } catch (cause) {
@@ -333,38 +312,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     }
     catch (cause) { reportMutationError(cause); throw cause; }
   };
-  const addVideo = async (record: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord, input: { title: string; assetRef: string; sortOrder: number }) => {
-    const mutationWorkspaceId = targetWorkspaceId;
-    const mutationGeneration = loadRequest.current.generation;
-    try { await customerDeliveryClient.addVideo({ targetWorkspaceId, deliveryId: record.id, ...input }); }
-    catch (cause) { reportMutationError(cause); throw cause; }
-    // Registration has succeeded. A failed read must not make this segment
-    // look unsaved and cause the operator to submit it for a second time.
-    // Reconcile only while the initiating read scope is still current; this
-    // also rejects A -> B -> A and unmounts without undoing the acknowledged write.
-    const request = startCurrentRead(mutationWorkspaceId, mutationGeneration);
-    if (!request) return undefined;
-    try {
-      const refreshed = await customerDeliveryClient.get(mutationWorkspaceId, record.id, request.controller.signal);
-      if (request.isCurrent()) setRecords((previous) => previous.map((candidate) => candidate.id === record.id ? refreshed : candidate));
-      return request.isCurrent() ? refreshed : undefined;
-    } catch (cause) {
-      if (request.isCurrent()) setError(`视频已登记，但最新档案读取失败。请刷新档案，不要重复登记。${describeOpsError(cause)}`);
-      return undefined;
-    }
-  };
-  const listVideos = async (record: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord) => {
-    const request = startCurrentRead(targetWorkspaceId);
-    if (!request) return [];
-    try {
-      const videos = await customerDeliveryClient.listVideos(targetWorkspaceId, record.id, request.controller.signal);
-      return request.isCurrent() ? videos : [];
-    } catch (cause) {
-      reportMutationError(cause);
-      throw cause;
-    }
-  };
-  const openDeliveryAsset = async (record: CustomerDeliveryRecord, assetRef: string, purpose: "contract" | "video", mode: "open" | "download") => {
+  const openDeliveryAsset = async (record: CustomerDeliveryRecord, assetRef: string, purpose: "contract", mode: "open" | "download") => {
     if (/^https:\/\//iu.test(assetRef)) {
       window.open(assetRef, "_blank", "noopener,noreferrer");
       return;
@@ -423,7 +371,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       {createPage ? (<>
         <Form id="customer-create-form" className="customer-delivery-create-form" form={createForm} layout="vertical" onFinish={submitCreatePage}>
         <Card title="用户建档">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: "0 16px" }}>
+            <div className="customer-delivery-profile-fields">
             <Form.Item name="companyName" label="公司名称" rules={[{ required: true, message: "请输入公司名称" }]}>
               <Input placeholder="请输入公司名称" autoFocus />
             </Form.Item>
@@ -435,6 +383,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
               <input ref={contractFileInput} hidden type="file" accept=".pdf,.docx,.png,.jpg,.jpeg" onChange={(event) => { const file = event.target.files?.[0]; if (file) { createForm.setFieldValue("contractFile", file.name); setUploadedContractName(file.name); setUploadedContractFile(file); } }} />
               {uploadedContractName ? <div className="customer-delivery-uploaded-file">已选择：{uploadedContractName}<Button type="text" size="small" className="customer-delivery-clear-upload" aria-label="取消已选合同文件" title="取消已选文件" icon={<CloseOutlined />} onClick={() => { createForm.setFieldValue("contractFile", ""); setUploadedContractName(""); setUploadedContractFile(undefined); if (contractFileInput.current) contractFileInput.current.value = ""; }} /></div> : null}
             </Form.Item>
+            <Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input placeholder="例如：姜伟" /></Form.Item>
+            <Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input placeholder="例如：韩先晓" /></Form.Item>
             </div>
         </Card>
         <div className="customer-delivery-check-card-row">
@@ -451,19 +401,6 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
           </div>
         </Card>
         </div>
-        <Card title={<span>最终交付 <em className="customer-delivery-required-mark">*</em></span>} style={{ marginTop: 16 }}>
-          <div className="customer-delivery-final-fields">
-            <Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input placeholder="例如：姜伟" /></Form.Item>
-            <Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input placeholder="例如：韩先晓" /></Form.Item>
-            <Form.Item label="交付视频" htmlFor="deliveryVideo" required className="customer-delivery-final-video">
-              <div>
-                <Input id="deliveryVideo" readOnly aria-label="交付视频（支持多段）" value={deliveryVideoFiles.map((file) => file.name).join("、")} placeholder="请选择交付视频" suffix={<Button type="text" className="customer-delivery-upload-button" aria-label="上传交付视频" title="上传交付视频" icon={<UploadOutlined />} onClick={() => deliveryVideoInput.current?.click()} />} />
-                <input ref={deliveryVideoInput} hidden type="file" accept="video/*" multiple onChange={(event) => { const files = Array.from(event.target.files ?? []); if (files.length) setDeliveryVideoFiles((current) => [...current, ...files]); event.target.value = ""; }} />
-                {deliveryVideoFiles.length ? <div className="customer-delivery-video-list">{deliveryVideoFiles.map((file, index) => <div className="customer-delivery-video-item" key={`${file.name}-${index}`}><span>{file.name}</span><Button type="text" size="small" icon={<CloseOutlined />} aria-label={`移除${file.name}`} onClick={() => setDeliveryVideoFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} /></div>)}</div> : null}
-              </div>
-            </Form.Item>
-          </div>
-        </Card>
         {mutationError ? <div ref={createErrorRef} className="customer-delivery-create-error" tabIndex={-1}><Alert type="error" showIcon title="创建客户失败" description={mutationError} /></div> : null}
         <div className="customer-delivery-create-actions">
           <Button disabled={creating} onClick={() => setCreatePage(false)}>返回客户建档</Button>
@@ -483,8 +420,6 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         onChecklistSave={canUpdate && canRead ? saveChecklist : undefined}
         onChecklistLoad={loadChecklist}
         onTrainingSave={canUpdate && canRead ? saveTraining : undefined}
-        onVideoAdd={canUpdate && canRead ? addVideo : undefined}
-        onVideoList={listVideos}
         onAccountList={canUpdate && canRead ? async (input, signal) => {
           signal.throwIfAborted();
           if (!hasCurrentReadAccess(targetWorkspaceId) || !currentCanUpdate.current) throw new DOMException("账号查询权限已变更", "AbortError");

@@ -278,10 +278,6 @@ function validateEvidenceTransition(previous: CustomerDelivery, candidate: Custo
   void paymentChanged;
   void trainingChanged;
 }
-function requireCompletedEvidence(completed: boolean, evidence: Record<string, unknown> | undefined) {
-  if (completed && customerDeliveryEvidenceRefs(evidence?.asset_refs).length === 0)
-    throw new CustomerDeliveryError("EVIDENCE_REQUIRED", "已完成的交付项必须绑定至少一份已扫描凭证");
-}
 /** Contract completion evidence must be a platform asset reference.
  * External URLs are not proof of upload, binding, or a clean scanner verdict. */
 export function isValidCustomerDeliveryContractRef(value: string | null | undefined): boolean {
@@ -290,22 +286,31 @@ export function isValidCustomerDeliveryContractRef(value: string | null | undefi
   return /^(?:asset:\/\/|asset_ref[:_]|asset[:_])[A-Za-z0-9][A-Za-z0-9._:/-]*$/u.test(ref);
 }
 function checklistComplete(checklistKey: "system_integration" | "functional_acceptance", items: readonly CustomerDeliveryChecklistItem[]) {
+  // These checklists capture an operator's manual confirmation. Evidence is
+  // optional audit context and must not make a fully checked list incomplete.
   return CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS[checklistKey].every(itemKey => {
     const matches = items.filter(item => item.checklistKey === checklistKey && item.itemKey === itemKey);
-    return matches.length === 1 && matches[0]!.completed
-      && customerDeliveryEvidenceRefs(matches[0]!.evidence?.asset_refs).length > 0;
+    return matches.length === 1 && matches[0]!.completed;
   });
+}
+function missingCustomerProfileFields(candidate: CustomerDelivery): string[] {
+  return [
+    ...(!candidate.contractNumber?.trim() ? ["合同编号"] : []),
+    ...(!isValidCustomerDeliveryContractRef(candidate.contractRef) ? ["已扫描合同文件"] : []),
+    ...(!candidate.projectOwner?.trim() ? ["项目负责人"] : []),
+    ...(!candidate.supportOwner?.trim() ? ["售后负责人"] : []),
+    ...(candidate.paymentStatus === "paid" && !candidate.paymentDate ? ["付款时间"] : []),
+  ];
 }
 const complete = (d: CustomerDelivery, items: readonly CustomerDeliveryChecklistItem[]) =>
   d.customerProfileStatus === "complete" &&
-  Boolean(d.contractNumber?.trim() && d.projectOwner?.trim() && d.supportOwner?.trim() && d.plannedGoLiveAt) &&
+  Boolean(d.contractNumber?.trim() && d.projectOwner?.trim() && d.supportOwner?.trim()) &&
   isValidCustomerDeliveryContractRef(d.contractRef) &&
   d.systemIntegrationStatus === "complete" &&
   d.functionalAcceptanceStatus === "complete" &&
   d.trainingCompleted &&
   (["system_integration", "functional_acceptance"] as const).every(checklistKey =>
-    checklistComplete(checklistKey, items.filter(item => item.workspaceId === d.workspaceId && item.deliveryId === d.id))) &&
-  d.videos.some((video) => !video.deletedAt);
+    checklistComplete(checklistKey, items.filter(item => item.workspaceId === d.workspaceId && item.deliveryId === d.id)));
 export class MemoryCustomerDeliveryRepository implements CustomerDeliveryRepository {
   private rows = new Map<string, CustomerDelivery>();
   private items = new Map<string, CustomerDeliveryChecklistItem>();
@@ -348,7 +353,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
   async list(workspaceId: string) {
     const s = requireWorkspaceScope(workspaceId);
     return Promise.all([...this.rows.values()]
-      .filter((x) => x.workspaceId === s)
+      .filter((x) => x.workspaceId === s && !x.archivedAt)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .map(row => this.readable(row)));
   }
@@ -417,6 +422,7 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       [...this.rows.values()].some(
         (x) =>
           x.workspaceId === ws &&
+          !x.archivedAt &&
           x.companyName.toLowerCase() ===
             input.companyName.trim().toLowerCase(),
       )
@@ -499,17 +505,11 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
     if ("contractRef" in patch && patch.contractRef != null && !isValidCustomerDeliveryContractRef(patch.contractRef))
       throw new CustomerDeliveryError("INVALID_INPUT", "合同必须是已上传并扫描通过的 asset_ref");
     if (patch.customerProfileStatus === "complete" || (d.customerProfileStatus === "complete" && patch.customerProfileStatus !== "incomplete")) {
-      if (
-        !candidate.contractNumber?.trim() ||
-        !isValidCustomerDeliveryContractRef(candidate.contractRef) ||
-        !candidate.projectOwner?.trim() ||
-        !candidate.supportOwner?.trim() ||
-        (candidate.paymentStatus === "paid" && !candidate.paymentDate) ||
-        !candidate.plannedGoLiveAt
-      )
+      const missingFields = missingCustomerProfileFields(candidate);
+      if (missingFields.length)
         throw new CustomerDeliveryError(
           "INVALID_INPUT",
-          "客户档案字段未填写完整",
+          `客户档案未填写完整：缺少${missingFields.join("、")}`,
         );
     }
     Object.assign(d, patch);
@@ -585,7 +585,6 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
         "INVALID_INPUT",
         "unknown checklist item",
       );
-    requireCompletedEvidence(input.completed, input.evidence);
     const key = `${ws}:${d.id}:${input.checklistKey}:${input.itemKey.trim()}`;
     const now = new Date().toISOString();
     const prev = this.items.get(key);
@@ -681,7 +680,6 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
           "INVALID_INPUT",
           "evidence must be an object",
         );
-      requireCompletedEvidence(x.completed, x.evidence);
       seen.add(key);
     }
     const beforeItems = [...this.items.values()].filter(item => item.workspaceId === ws
@@ -1219,7 +1217,7 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
     const scope = requireWorkspaceScope(workspaceId);
     const ids = await withWorkspaceTransaction(this.pool, scope, async c =>
       (await c.query<{ id: string }>(
-        `SELECT id FROM workspace_customer_deliveries WHERE workspace_id=$1 ORDER BY updated_at DESC,id DESC /* delivery_evidence_list_ids */`,
+        `SELECT id FROM workspace_customer_deliveries WHERE workspace_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC,id DESC /* delivery_evidence_list_ids */`,
         [scope],
       )).rows);
     const result: CustomerDelivery[] = [];
@@ -1348,7 +1346,6 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
         "INVALID_INPUT",
         "unknown checklist item",
       );
-    requireCompletedEvidence(input.completed, input.evidence);
     return this.withEvidenceTransaction(scope, input.deliveryId, { ...input, kind: "item" }, async (c) => {
       const cur = await c.query(
         `SELECT * FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2 FOR UPDATE`,
@@ -1475,7 +1472,6 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
           "INVALID_INPUT",
           "evidence must be an object",
         );
-      requireCompletedEvidence(item.completed, item.evidence);
     }
     return this.withEvidenceTransaction(scope, input.deliveryId, { ...input, items: normalized, kind: "batch" }, async (c) => {
       const cur = await c.query(
@@ -1648,18 +1644,14 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       if (Object.hasOwn(p, "trainingEvidenceRefs")
         || (Object.hasOwn(p, "trainingCompleted") && candidate.trainingCompleted))
         await this.assertEvidenceAssets(c, scope, input.id, "training", candidate.trainingEvidenceRefs);
+      const missingFields = missingCustomerProfileFields(candidate);
       if (
         (p.customerProfileStatus === "complete" || (row.customer_profile_status === "complete" && p.customerProfileStatus !== "incomplete")) &&
-        (!candidate.contractNumber?.trim() ||
-          !isValidCustomerDeliveryContractRef(candidate.contractRef) ||
-          !candidate.projectOwner?.trim() ||
-          !candidate.supportOwner?.trim() ||
-          (candidate.paymentStatus === "paid" && !candidate.paymentDate) ||
-          !candidate.plannedGoLiveAt)
+        missingFields.length
       )
         throw new CustomerDeliveryError(
           "INVALID_INPUT",
-          "客户档案字段未填写完整",
+          `客户档案未填写完整：缺少${missingFields.join("、")}`,
         );
       const vals: any[] = [
         scope,
@@ -1683,13 +1675,15 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
         trainingEvidenceRefs: "training_evidence_refs",
         archivedAt: "archived_at",
       };
+      let archivedAtParameter: number | undefined;
       for (const k of keys) {
-        sets.push(`${col[k]}=$${vals.length + 1}`);
+        const parameter = vals.length + 1;
+        sets.push(`${col[k]}=$${parameter}`);
         vals.push(p[k]);
+        if (k === "archivedAt") archivedAtParameter = parameter;
       }
-      if (p.archivedAt !== undefined) {
-        sets.push(`archived_by_actor_id=CASE WHEN $${vals.length + 1} IS NULL THEN NULL ELSE $3 END`);
-        vals.push(p.archivedAt);
+      if (archivedAtParameter !== undefined) {
+        sets.push(`archived_by_actor_id=CASE WHEN $${archivedAtParameter}::timestamptz IS NULL THEN NULL ELSE $3 END`);
       }
       if (!sets.length) return (await this.withVideos(c, [row]))[0]!;
       sets.push(

@@ -220,8 +220,8 @@ describe('MCP method contract', () => {
   })
 
   it('publishes completion evidence requirements without claiming static validation proves clean scans', () => {
-    expect(getMcpMethodContract('ops.customer-delivery.checklist.update')?.description).toContain('evidence.asset_refs')
-    expect(getMcpMethodContract('ops.customer-delivery.checklist-item.update')?.description).toContain('evidence_json.asset_refs')
+    expect(getMcpMethodContract('ops.customer-delivery.checklist.update')?.description).toContain('evidence.asset_refs is optional')
+    expect(getMcpMethodContract('ops.customer-delivery.checklist-item.update')?.description).toContain('evidence_json.asset_refs is optional')
     expect(getMcpMethodContract('ops.customer-delivery.training.complete')?.description).toContain('proof is not required')
     for (const checklist_key of ['system_integration', 'functional_acceptance']) {
       const params = { target_workspace_id: 'ws_delivery', delivery_id: 'delivery_1', checklist_key, expected_revision: '1' }

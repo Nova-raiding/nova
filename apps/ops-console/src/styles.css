@@ -38,6 +38,7 @@
 .customer-delivery-upload-button { width: 32px; height: 28px !important; min-height: 28px !important; padding: 0; border: 0; border-radius: 6px !important; }
 .customer-delivery-uploaded-file { display: flex; align-items: center; gap: 4px; margin-top: 6px; color: #475569; font-size: 12px; }
 .customer-delivery-clear-upload { flex: 0 0 auto; width: 22px; height: 22px; padding: 0; color: #64748b; }
+.customer-delivery-profile-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0 16px; align-items: start; }
 .customer-delivery-check-card-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
 .customer-delivery-required-mark { color: #dc2626; font-style: normal; }
 .customer-delivery-check-grid { display: grid; gap: 12px 14px; }
@@ -51,9 +52,6 @@
 .customer-delivery-create-error { margin-top: 16px; border-radius: 8px; }
 .customer-delivery-create-error:focus { outline: none; }
 .customer-delivery-create-error:focus-visible { outline: 3px solid var(--ops-focus-color); outline-offset: 3px; }
-.customer-delivery-video-list { display: grid; gap: 6px; margin-top: 10px; max-width: 520px; }
-.customer-delivery-video-item { display: flex; width: min(100%, 360px); align-items: center; justify-content: space-between; gap: 8px; padding: 5px 8px; border: 1px solid #e2e8f0; border-radius: 6px; color: #475569; font-size: 12px; }
-.customer-delivery-video-item span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .customer-delivery-filter-form .ant-input-affix-wrapper,
 .customer-delivery-filter-form .ant-select-single,
 .customer-delivery-filter-form .ant-select-selector,
@@ -61,13 +59,10 @@
 .customer-delivery-filter-form .ant-input-affix-wrapper,
 .customer-delivery-filter-form .ant-select-selector { display: flex; align-items: center; }
 .customer-delivery-filter-form .ant-input-affix-wrapper .ant-input { height: auto; min-height: 0; padding-block: 0; }
-.customer-delivery-final-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 16px; align-items: start; }
-.customer-delivery-final-video { margin-bottom: 24px; }
 @media (max-width: 1100px) { .customer-delivery-check-card-row { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .customer-delivery-check-grid-five { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 900px) { .customer-delivery-check-grid-four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 900px) { .customer-delivery-final-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 600px) { .customer-delivery-check-grid-five { grid-template-columns: 1fr; } .customer-delivery-final-fields { grid-template-columns: 1fr; } .customer-delivery-create-actions { align-items: stretch; flex-direction: column-reverse; } }
+@media (max-width: 600px) { .customer-delivery-profile-fields, .customer-delivery-check-grid-five { grid-template-columns: 1fr; } .customer-delivery-create-actions { align-items: stretch; flex-direction: column-reverse; } }
 html { height: 100%; scroll-padding-top: 16px; }
 /* Keep keyboard focus visible for AntD controls as well as custom desktop controls. */
 :where(.ant-btn, .ant-input, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-tabs-tab, .ant-menu-item, .ant-drawer-close, .ant-modal-close):focus-visible {

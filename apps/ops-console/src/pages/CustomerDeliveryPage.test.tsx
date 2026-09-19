@@ -31,9 +31,10 @@ describe("customer delivery workspace selection", () => {
     expect(pageSource).toContain("setRecords([])");
   });
 
-  it("uploads real contract and video assets and resumes an interrupted draft", () => {
+  it("uploads the contract, omits delivery video, and resumes an interrupted draft", () => {
     expect(pageSource).toContain('purpose: "contract"');
-    expect(pageSource).toContain('purpose: "video"');
+    expect(pageSource).not.toContain('purpose: "video"');
+    expect(pageSource).not.toContain("交付视频");
     expect(pageSource).toContain("const existingDraft = records.find");
     expect(pageSource).toContain("pendingCreate.current = attempt");
     expect(pageSource).toContain("poll >= 15");
@@ -51,6 +52,14 @@ describe("customer delivery workspace selection", () => {
     expect(pageSource).not.toContain('name="requiredLaunchAt"');
     expect(pageSource).not.toContain("plannedGoLiveAt:");
     expect(pageSource).toContain("customer-delivery-four-char-label");
+  });
+
+  it("keeps both owners in the customer profile instead of a separate final-delivery card", () => {
+    expect(pageSource).toContain('className="customer-delivery-profile-fields"');
+    expect(pageSource).toContain('name="owner" label="项目负责人"');
+    expect(pageSource).toContain('name="afterSalesOwner" label="售后负责人"');
+    expect(pageSource).not.toContain("最终交付");
+    expect(pageSource.indexOf('name="owner"')).toBeLessThan(pageSource.indexOf("customer-delivery-check-card-row"));
   });
 });
 

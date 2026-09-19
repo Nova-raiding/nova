@@ -4,15 +4,18 @@ import type { TableProps } from "antd";
 import type { MerchantAccountAuthorizationResult, OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { PlatformUser } from "../../types/ops";
 import { EnterpriseIdentity } from "../EnterpriseIdentity.js";
-import { packageDisplayName } from "../commercial/packageLabels.js";
-import { provisionableCatalogItems } from "../../api/commercialOperationsClient.js";
-import { yuanToFen } from "../../utils/currency.js";
+import { packageCodeLabel } from "../commercial/packageLabels.js";
 
 type UserFilters = { query?: string; status?: string; workspaceId?: string; attribute?: string };
 export type UserDirectorySort = { field: "displayName" | "status" | "createdAt"; order: "ascend" | "descend" };
 type DirectoryUser = PlatformUser & { createdAt?: string };
 const roleLabels: Record<string, string> = { workspace_owner: "企业所有者", merchant_admin: "企业管理员", operator: "运营", support: "支持", finance: "财务", platform_ops: "平台运营" };
 const memberStatusLabels: Record<string, string> = { active: "已激活", invited: "待激活", suspended: "已停用" };
+function userAttributeLabel(row: PlatformUser) {
+  if (row.accountType === "platform") return "正常版本";
+  if (row.externalSubject.includes("demo") || row.enterpriseName?.includes("演示")) return "演示版本";
+  return row.commercial?.subscriptionStatus === "active" ? "正常版本" : "赠送版本";
+}
 const memberStatusOrder: Record<string, number> = { active: 0, invited: 1, suspended: 2 };
 const workspaceStatusLabels: Record<string, string> = { active: "正常", disabled: "已停用" };
 const lifecycleEventLabels: Record<string, string> = {
@@ -23,6 +26,14 @@ const lifecycleEventLabels: Record<string, string> = {
   "session.revoked": "撤销认证会话",
 };
 const dateTimeFormatter = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+const dateOnlyFormatter = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
+function monthlyEffectivePeriod(row: PlatformUser) {
+  if (!row.updatedAt) return "—";
+  const start = new Date(row.updatedAt);
+  const end = new Date(start);
+  end.setMonth(end.getMonth() + 1);
+  return `${dateOnlyFormatter.format(start)} - ${dateOnlyFormatter.format(end)}`;
+}
 const userNameCollator = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
 
 export function compareUserDirectoryRows(left: PlatformUser, right: PlatformUser, field: UserDirectorySort["field"]) {
@@ -36,14 +47,17 @@ export function compareUserDirectoryRows(left: PlatformUser, right: PlatformUser
 }
 
 export function sortUserDirectoryRows(items: PlatformUser[], sort?: UserDirectorySort) {
-  if (!sort) return items;
-  const direction = sort.order === "ascend" ? 1 : -1;
-  return [...items].sort((left, right) => direction * compareUserDirectoryRows(left, right, sort.field));
+  const direction = sort?.order === "ascend" ? 1 : -1;
+  return [...items].sort((left, right) => {
+    const suspendedOrder = Number(left.status === "suspended") - Number(right.status === "suspended");
+    if (suspendedOrder) return suspendedOrder;
+    return sort ? direction * compareUserDirectoryRows(left, right, sort.field) : 0;
+  });
 }
 
 export function userDirectoryPageRequest(filters: UserFilters, current?: number, pageSize?: number) {
-  const { attribute: _attribute, ...scopedFilters } = filters;
-  return { ...scopedFilters, page: current ?? 1, pageSize: pageSize ?? 20 };
+  const { attribute: _attribute, ...serverFilters } = filters;
+  return { ...serverFilters, page: current ?? 1, pageSize: pageSize ?? 10 };
 }
 
 export function canWriteLoadedIdentity(model: Pick<OpsConsoleModel, "canUserGovernance" | "userDetail" | "userDetailLoading">) {
@@ -55,14 +69,13 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const [form] = Form.useForm<UserFilters>();
   const [accessTarget, setAccessTarget] = useState<PlatformUser>();
   const [suspendReason, setSuspendReason] = useState("");
+  const [suspendApprover, setSuspendApprover] = useState("");
   const [suspending, setSuspending] = useState(false);
   const [detailSubject, setDetailSubject] = useState<string>();
   const [identityAction, setIdentityAction] = useState<"active" | "suspended">();
   const [identityReason, setIdentityReason] = useState("");
   const [riskDecision, setRiskDecision] = useState<"allow" | "step_up" | "block">();
   const [riskLevel, setRiskLevel] = useState<"low" | "medium" | "high" | "critical">("low");
-  const [sessionTarget, setSessionTarget] = useState<{ id: string; revision: number }>();
-  const [sessionReason, setSessionReason] = useState("");
   const [selectedUserKeys, setSelectedUserKeys] = useState<string[]>([]);
   const [bulkSuspendOpen, setBulkSuspendOpen] = useState(false);
   const [bulkSuspendReason, setBulkSuspendReason] = useState("");
@@ -70,18 +83,20 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const [provisionOpen, setProvisionOpen] = useState(false);
   const [provisionSubmitting, setProvisionSubmitting] = useState(false);
   const [provisionResult, setProvisionResult] = useState<{ login: string; onboardingFeeFen: number; authorization?: MerchantAccountAuthorizationResult }>();
-  const [provisionForm] = Form.useForm<{ login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string; reason: string; skuCode: string; amountYuan: number; paymentStatus: "pending" | "verified"; paymentReference?: string; paidAt?: string }>();
+  const [provisionForm] = Form.useForm<{ login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string; reason: string; skuCode: string; amountFen: number; paymentStatus: "pending" | "verified"; paymentReference?: string; paidAt?: string }>();
   const [actionError, setActionError] = useState("");
   const actionErrorRef = useRef<HTMLDivElement>(null);
   const directoryErrorRef = useRef<HTMLDivElement>(null);
   const [userSort, setUserSort] = useState<UserDirectorySort>();
+  const [attributeFilter, setAttributeFilter] = useState("");
   const detailTriggerSubjectRef = useRef<string | undefined>(undefined);
   const detailButtonRefs = useRef(new Map<string, HTMLElement>());
-  const sortedUsers = useMemo(() => sortUserDirectoryRows(model.userDirectory.items, userSort), [model.userDirectory.items, userSort]);
+  const sortedUsers = useMemo(() => {
+    const filtered = attributeFilter ? model.userDirectory.items.filter((row) => userAttributeLabel(row) === attributeFilter) : model.userDirectory.items;
+    return sortUserDirectoryRows(filtered, userSort);
+  }, [attributeFilter, model.userDirectory.items, userSort]);
   const identityWritesDisabled = !canWriteLoadedIdentity(model);
   const initialDirectoryLoadFailed = Boolean(model.userDirectoryError && !model.userDirectoryLoading && model.userDirectory.items.length === 0);
-  const provisionableCatalog = useMemo(() => provisionableCatalogItems(model.platformCommercialCatalog ?? []), [model.platformCommercialCatalog]);
-  const provisionableCatalogBySku = useMemo(() => new Map(provisionableCatalog.map((item) => [item.skuCode, item])), [provisionableCatalog]);
 
   useEffect(() => {
     if (actionError) actionErrorRef.current?.focus({ preventScroll: true });
@@ -97,17 +112,17 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   }, [canReadUserDirectory]);
 
   const submitAccessChange = async () => {
-    if (!accessTarget || suspendReason.trim().length < 4) {
-      setActionError("请填写至少 4 个字符的操作原因。");
+    if (!accessTarget || suspendReason.trim().length < 4 || !suspendApprover.trim()) {
+      setActionError(!suspendApprover.trim() ? "请填写审批人。" : "请填写至少 4 个字符的操作原因。");
       return;
     }
     setActionError("");
     setSuspending(true);
     const saved = accessTarget.status === "suspended"
-      ? await model.activateUser(accessTarget.workspaceId, accessTarget.externalSubject, suspendReason.trim())
-      : await model.suspendUser(accessTarget.workspaceId, accessTarget.externalSubject, suspendReason.trim());
+      ? await model.activateUser(accessTarget.workspaceId, accessTarget.externalSubject, `审批人：${suspendApprover.trim()}；${suspendReason.trim()}`)
+      : await model.suspendUser(accessTarget.workspaceId, accessTarget.externalSubject, `审批人：${suspendApprover.trim()}；${suspendReason.trim()}`);
     setSuspending(false);
-    if (saved) { setAccessTarget(undefined); setSuspendReason(""); }
+    if (saved) { setAccessTarget(undefined); setSuspendReason(""); setSuspendApprover(""); }
     else setActionError("用户访问状态未更新。请检查权限、版本冲突或连接状态后重试；已保留操作原因。");
   };
   const closeUserDetail = () => {
@@ -170,38 +185,21 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   return <>
     {!canReadUserDirectory && <Alert showIcon type="warning" title="当前角色不能读取用户目录" description="跨租户身份与成员关系需要 identity.read；权限由服务端策略决定。" />}
     {canReadUserDirectory && !model.canUserGovernance && <Alert showIcon type="info" title="当前为只读视图" description="可以查询身份、成员关系和审计详情，但停用、恢复、风险策略与会话撤销需要 identity.update。" />}
-    <Card title="已开通用户" extra={<Typography.Text type="secondary">共 {model.userDirectory.total} 条成员关系</Typography.Text>} aria-busy={model.userDirectoryLoading}>
-      <Form<UserFilters> form={form} layout="inline" onFinish={(values) => void model.loadUsers({ ...values, page: 1 })} aria-label="用户目录筛选">
-        <Form.Item name="query" label="搜索"><Input allowClear aria-label="按关键词筛选用户目录" placeholder="姓名、身份或企业名称" /></Form.Item>
+    <Card title="已接入用户" extra={<Typography.Text type="secondary">共 {model.userDirectory.workspaceCount} 家接入用户</Typography.Text>} aria-busy={model.userDirectoryLoading}>
+      <Form<UserFilters> form={form} layout="inline" initialValues={{ status: "", attribute: "" }} onFinish={(values) => { const { attribute, ...filters } = values; setAttributeFilter(attribute || ""); void model.loadUsers({ ...filters, status: values.status || undefined, page: 1 }); }} aria-label="用户目录筛选">
+        <Form.Item name="query" label="搜索"><Input allowClear maxLength={64} aria-label="按关键词筛选用户目录" /></Form.Item>
         <Form.Item name="status" label="状态">
-          <Select allowClear aria-label="按成员状态筛选用户目录" placeholder="全部状态" style={{ width: 140 }} options={[
-            { value: "active", label: "已激活" }, { value: "invited", label: "待激活" }, { value: "suspended", label: "已停用" },
+          <Select aria-label="按成员状态筛选用户目录" style={{ width: 140 }} options={[
+            { value: "", label: "全部" }, { value: "active", label: "已激活" }, { value: "suspended", label: "已停用" },
           ]} />
         </Form.Item>
-        <Form.Item name="workspaceId" label="企业"><Input allowClear aria-label="按企业主体筛选用户目录" placeholder="企业名称或 ID" /></Form.Item>
+        <Form.Item name="attribute" label="属性">
+          <Select aria-label="按用户属性筛选用户目录" style={{ width: 140 }} options={[
+            { value: "", label: "全部" }, { value: "正常版本", label: "正常版本" }, { value: "赠送版本", label: "赠送版本" }, { value: "演示版本", label: "演示版本" },
+          ]} />
+        </Form.Item>
         <Form.Item><Space>
           <Button type="primary" htmlType="submit" loading={model.userDirectoryLoading}>查询</Button>
-          <Button onClick={() => { form.resetFields(); void model.loadUsers({ page: 1 }); }}>清空</Button>
-          <Button
-            onClick={() => void model.exportUsers(form.getFieldsValue())}
-            disabled={!model.canUserGovernance || model.userExporting}
-            loading={model.userExporting}
-            aria-busy={model.userExporting}
-          >{model.userExporting ? "正在导出" : "导出当前筛选"}</Button>
-          <Button
-            onClick={() => {
-              setActionError("");
-              setProvisionResult(undefined);
-              provisionForm.resetFields();
-              const first = provisionableCatalog[0];
-              provisionForm.setFieldsValue({
-                skuCode: first?.skuCode,
-                amountYuan: first?.priceFen === null || first?.priceFen === undefined ? undefined : first.priceFen / 100,
-              });
-              setProvisionOpen(true);
-            }}
-            disabled={!model.canPlatformOps || provisionableCatalog.length === 0}
-          >开通商家账号</Button>
           <Button danger onClick={() => { setActionError(""); setBulkSuspendOpen(true); }} disabled={!selectedUsers.length}>批量停用（{selectedUsers.length}）</Button>
         </Space></Form.Item>
       </Form>
@@ -218,24 +216,23 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
           action={<Button htmlType="button" size="small" style={{ minHeight: 44 }} aria-label="刷新用户目录" onClick={() => void model.loadUsers(form.getFieldsValue())}>刷新用户目录</Button>}
         />
       </div>}
-      {model.userDirectory.truncated && <Alert className="ops-inline-alert" showIcon type="info" title="结果超过 500 条，请增加筛选条件。" />}
       <Table<PlatformUser>
         aria-label="用户目录数据表"
         rowKey={(row) => `${row.accountType ?? "merchant"}:${row.workspaceId}:${row.externalSubject}`}
         loading={model.userDirectoryLoading}
         dataSource={sortedUsers}
+        rowClassName={(row) => row.status === "suspended" ? "ops-user-row-suspended" : ""}
         locale={{ emptyText: "没有符合条件的用户成员关系" }}
         rowSelection={{ selectedRowKeys: selectedUserKeys, onChange: (keys) => setSelectedUserKeys(keys.map((key) => String(key))), getCheckboxProps: (row) => ({ disabled: row.accountType === "platform" || row.externalSubject === model.opsSession?.actor_id || row.status === "suspended" }) }}
-        pagination={{ current: Math.floor(model.userDirectory.offset / model.userDirectory.limit) + 1, pageSize: model.userDirectory.limit, total: model.userDirectory.total, showSizeChanger: true, showTotal: (total) => `共 ${total} 条成员关系` }}
+        pagination={{ current: Math.floor(model.userDirectory.offset / model.userDirectory.limit) + 1, pageSize: model.userDirectory.limit, total: model.userDirectory.total, showSizeChanger: false }}
         onChange={handleDirectoryChange}
         scroll={{ x: "max-content" }}
         columns={[
-          { title: "登录身份", dataIndex: "externalSubject", width: 220, render: (value: string) => <Typography.Text className="ops-token" copyable>{value}</Typography.Text> },
-          { title: "用户显示名", dataIndex: "displayName", width: 150, sorter: true, sortOrder: userSort?.field === "displayName" ? userSort.order : null, render: (value: string) => value || "未设置" },
-          { title: "企业主体", key: "scope", width: 240, render: (_: unknown, row: PlatformUser) => row.scope === "platform" ? <Tag color="purple">平台级</Tag> : <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
-          { title: "角色", dataIndex: "role", width: 140, render: (value: string) => <Tag color="blue">{roleLabels[value] ?? value}</Tag> },
-          { title: "成员状态", dataIndex: "status", width: 110, sorter: true, sortOrder: userSort?.field === "status" ? userSort.order : null, render: (value: string) => <Tag color={value === "active" ? "green" : value === "suspended" ? "red" : "gold"}>{memberStatusLabels[value] ?? value}</Tag> },
-          { title: "操作", key: "actions", width: 150, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { if (node) detailButtonRefs.current.set(row.externalSubject, node); else detailButtonRefs.current.delete(row.externalSubject); }} size="small" aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`} onClick={() => { detailTriggerSubjectRef.current = row.externalSubject; setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button>{row.accountType === "platform" ? <Tag color="purple">平台账号</Tag> : <Button danger={row.status !== "suspended"} size="small" aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`} title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "恢复" : "停用"}</Button>}</Space> },
+          { title: "用户名", dataIndex: "externalSubject", width: 330, render: (value: string) => <Typography.Text className="ops-token ops-token-single-line" copyable>{value}</Typography.Text> },
+          { title: "店铺名", dataIndex: "displayName", width: 180, sorter: true, sortOrder: userSort?.field === "displayName" ? userSort.order : null, render: (value: string) => value || "未设置" },
+          { title: "激活状态", dataIndex: "status", width: 110, sorter: true, sortOrder: userSort?.field === "status" ? userSort.order : null, render: (value: string) => <Tag color={value === "active" ? "green" : value === "suspended" ? "red" : "gold"}>{memberStatusLabels[value] ?? value}</Tag> },
+          { title: "用户属性", key: "attribute", width: 150, render: (_: unknown, row: PlatformUser) => <Tag color={userAttributeLabel(row) === "演示版本" ? "gold" : userAttributeLabel(row) === "赠送版本" ? "cyan" : "blue"}>{userAttributeLabel(row)}</Tag> },
+          { title: "操作", key: "actions", width: 150, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { if (node) detailButtonRefs.current.set(row.externalSubject, node); else detailButtonRefs.current.delete(row.externalSubject); }} size="small" aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`} onClick={() => { detailTriggerSubjectRef.current = row.externalSubject; setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button>{row.accountType === "platform" ? <Button size="small" disabled title="平台账号不能停用">停用</Button> : <Button danger={row.status !== "suspended"} size="small" aria-label={`${row.status === "suspended" ? "启用" : "停用"} ${row.displayName || row.externalSubject} 的访问`} title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "启用" : "停用"}</Button>}</Space> },
         ]}
       />
     </Card>
@@ -290,7 +287,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
               workspaceId,
               memberRole: "merchant_admin",
               skuCode: values.skuCode,
-              amountFen: yuanToFen(values.amountYuan),
+              amountFen: Number(values.amountFen),
               paymentStatus: values.paymentStatus,
               paymentReference: values.paymentReference,
               paidAt: values.paidAt,
@@ -322,76 +319,79 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
           <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} placeholder="例如：合同已签，等待财务核验首期接入费" />
         </Form.Item>
         <Row gutter={12}>
-          <Col span={12}><Form.Item label="套餐" name="skuCode" rules={[{ required: true, message: "请选择服务端已发布套餐" }]}><Select options={provisionableCatalog.map((item) => ({ value: item.skuCode, label: `${packageDisplayName(item.skuCode, item.name)} · ${item.priceLabel}` }))} onChange={(value) => provisionForm.setFieldValue("amountYuan", provisionableCatalogBySku.get(value)?.priceFen === null || provisionableCatalogBySku.get(value)?.priceFen === undefined ? undefined : (provisionableCatalogBySku.get(value)!.priceFen! / 100))} /></Form.Item></Col>
-          <Col span={12}><Form.Item label="实收金额（元）" name="amountYuan" extra="价格来自服务端已发布 SKU" rules={[{ required: true, message: "服务端未返回套餐价格" }]}><Input type="number" min={0} step="0.01" readOnly /></Form.Item></Col>
+          <Col span={12}><Form.Item label="套餐" name="skuCode" initialValue="sku-onboarding-5000" rules={[{ required: true, message: "请选择套餐" }]}><Select options={["sku-onboarding-5000", "sku-monthly-2000", "sku-monthly-5000", "sku-monthly-10000", "sku-points-500", "sku-points-2000"].map(value => ({ value, label: packageCodeLabel(value) }))} /></Form.Item></Col>
+          <Col span={12}><Form.Item label="实收金额（分）" name="amountFen" initialValue={500000} rules={[{ required: true, message: "请输入实收金额" }]}><Input type="number" min={0} /></Form.Item></Col>
           <Col span={12}><Form.Item label="收款状态" name="paymentStatus" initialValue="pending" rules={[{ required: true }]}><Select options={[{ value: "pending", label: "待核验（不开放权限）" }, { value: "verified", label: "已核验（立即开通）" }]} /></Form.Item></Col>
           <Col span={12}><Form.Item label="支付凭证号" name="paymentReference"><Input placeholder="微信/支付宝交易号" /></Form.Item></Col>
           <Col span={24}><Form.Item label="支付时间（ISO UTC）" name="paidAt"><Input placeholder="已核验时必填，例如 2026-09-10T12:00:00.000Z" /></Form.Item></Col>
         </Row>
       </Form>
     </Modal>
-    <Drawer title={`用户详情 · ${detailSubject ?? ""}`} aria-label="用户目录详情抽屉" size="large" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden>
+    <Drawer title="用户详情" aria-label="用户目录详情抽屉" size="large" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden footer={<div style={{ textAlign: "right" }}><Button danger disabled={!model.canUserGovernance || !model.userDetail?.memberships.length} onClick={() => { const row = model.userDetail?.memberships[0]; if (row) { setActionError(""); setAccessTarget(row); } }}>停用</Button></div>}>
       <Spin spinning={model.userDetailLoading} tip="正在加载用户详情…" aria-label="正在加载用户详情">
         {!model.userDetailLoading && !model.userDetail ? <Empty description="用户详情尚未取得，请重试或关闭后重新打开" /> : null}
-        {model.userDetail && <Space orientation="vertical" size="large" className="full-width">
+        {model.userDetail && <Space orientation="vertical" size="middle" className="full-width">
           <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} items={[
-            { key: "subject", label: "登录身份", children: <Typography.Text className="ops-token" copyable>{model.userDetail.identity.externalSubject}</Typography.Text> },
-            { key: "name", label: "用户显示名", children: model.userDetail.identity.displayName || "未设置" },
-            { key: "members", label: "成员关系", children: `${model.userDetail.identity.activeMembershipCount} 个有效 / ${model.userDetail.identity.membershipCount} 个总计` },
-            { key: "first", label: "首次出现", children: dateTimeFormatter.format(new Date(model.userDetail.identity.firstSeenAt)) },
-            { key: "updated", label: "最近更新", children: dateTimeFormatter.format(new Date(model.userDetail.identity.lastUpdatedAt)) },
-            { key: "access", label: "平台身份状态", children: model.userDetail.identity.accessStatus ? <Tag color={model.userDetail.identity.accessStatus === "active" ? "green" : "red"}>{model.userDetail.identity.accessStatus === "active" ? "正常" : "全局停用"}</Tag> : "尚未绑定持久身份" },
-            { key: "risk", label: "风险策略", children: model.userDetail.identity.riskDecision ? <Tag color={model.userDetail.identity.riskDecision === "allow" ? "green" : model.userDetail.identity.riskDecision === "step_up" ? "gold" : "red"}>{model.userDetail.identity.riskLevel} / {model.userDetail.identity.riskDecision}</Tag> : "—" },
+            { key: "name", label: "用户名", children: model.userDetail.identity.displayName || model.userDetail.identity.externalSubject },
+            { key: "first", label: "开通时间", children: dateTimeFormatter.format(new Date(model.userDetail.identity.firstSeenAt)) },
           ]} />
-          {model.userDetail.identity.id ? <Alert showIcon type="warning" title="平台身份操作会影响所有租户" description={<Space wrap><Button aria-label={`${model.userDetail.identity.accessStatus === "active" ? "全局停用并撤销会话" : "恢复平台身份"} ${model.userDetail.identity.externalSubject}`} disabled={identityWritesDisabled} danger={model.userDetail.identity.accessStatus === "active"} onClick={() => setIdentityAction(model.userDetail!.identity.accessStatus === "active" ? "suspended" : "active")}>{model.userDetail.identity.accessStatus === "active" ? "全局停用并撤销会话" : "恢复平台身份"}</Button><Button aria-label={`调整 ${model.userDetail.identity.externalSubject} 的风险策略`} disabled={identityWritesDisabled} onClick={() => { setRiskLevel(model.userDetail!.identity.riskLevel ?? "low"); setRiskDecision(model.userDetail!.identity.riskDecision ?? "allow"); }}>调整风险策略</Button></Space>} /> : <Alert showIcon type="info" title="该成员尚未绑定持久平台身份" description="用户下次通过严格认证登录后，系统会绑定身份和会话；当前只能治理单个工作区成员关系。" />}
-          <div><Typography.Title level={5}>认证会话（已脱敏）</Typography.Title><Table size="small" rowKey="id" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "暂无认证会话；用户完成严格认证后会在此留痕" }} scroll={{ x: 1080 }} dataSource={model.userDetail.sessions} columns={[
-            { title: "类型", dataIndex: "sessionKind", width: 100 },
-            { title: "状态", dataIndex: "status", width: 100, render: (value: string) => <Tag color={value === "active" ? "green" : value === "revoked" ? "red" : "default"}>{({ active: "有效", revoked: "已撤销", expired: "已过期" } as Record<string, string>)[value] ?? value}</Tag> },
-            { title: "MFA", dataIndex: "mfaVerified", width: 80, render: (value: boolean) => value ? "已验证" : "否" },
-            { title: "签发时间", dataIndex: "issuedAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
-            { title: "过期时间", dataIndex: "expiresAt", width: 180, render: (value?: string) => value ? dateTimeFormatter.format(new Date(value)) : "未提供" },
-            { title: "最后访问", dataIndex: "lastSeenAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
-            { title: "操作", key: "action", width: 110, render: (_: unknown, row: { id: string; revision: number; status: string }) => <Button danger size="small" aria-label={`撤销认证会话 ${row.id}`} disabled={identityWritesDisabled || row.status !== "active"} onClick={() => setSessionTarget({ id: row.id, revision: row.revision })}>撤销</Button> },
+          <div><Typography.Title level={5}>店铺详情</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={false} dataSource={model.userDetail.memberships} columns={[
+            { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
+            { title: "店铺名称", key: "name", align: "center", width: 220, render: (_: unknown, row: PlatformUser) => row.enterpriseName || row.workspaceId },
+            { title: "店铺状态", key: "status", align: "center", width: 120, render: (_: unknown, row: PlatformUser) => <Tag color={row.workspaceStatus === "active" ? "green" : "red"}>{row.workspaceStatus === "active" ? "正常" : "风险"}</Tag> },
+            { title: "开通时间", key: "openedAt", align: "center", width: 170, render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
-          <div><Typography.Title level={5}>平台身份生命周期</Typography.Title><Table size="small" rowKey="id" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "暂无平台身份生命周期事件" }} scroll={{ x: 780 }} dataSource={model.userDetail.lifecycleEvents} columns={[
-            { title: "时间", dataIndex: "createdAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
-            { title: "事件", dataIndex: "eventType", width: 180, render: (value: string) => lifecycleEventLabels[value] ?? value },
-            { title: "操作者", dataIndex: "actorId", width: 160, render: (value: string) => value || "系统" },
-            { title: "原因与证据", dataIndex: "reason", width: 260, render: (value: string) => value || "系统观测" },
+          <div><Typography.Title level={5}>月费详情</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:monthly-fee`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无月费记录" }} columns={[
+            { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
+            { title: "用户名", key: "name", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
+            { title: "月费版本", key: "plan", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
+            { title: "生效周期", key: "period", align: "center", width: "50%", render: (_: unknown, row: PlatformUser) => monthlyEffectivePeriod(row) },
           ]} /></div>
-          <div><Typography.Title level={5}>所属租户与角色（企业主体）</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 620 }} dataSource={model.userDetail.memberships} columns={[
-            { title: "企业主体", key: "enterprise", width: 220, render: (_: unknown, row: PlatformUser) => <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
-            { title: "角色", dataIndex: "role", width: 140, render: (value: string) => roleLabels[value] ?? value },
-            { title: "成员状态", dataIndex: "status", width: 110, render: (value: string) => memberStatusLabels[value] ?? value },
-            { title: "企业状态", dataIndex: "workspaceStatus", width: 110, render: (value: string) => workspaceStatusLabels[value] ?? value },
+          <div><Typography.Title level={5}>钱包</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:wallet`} pagination={false} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无充值记录" }} columns={[
+            { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => <span className="ops-table-index">{index + 1}</span> },
+            { title: "用户名", key: "name", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
+            { title: "充值金额", key: "amount", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "—" },
+            { title: "实际到账创意点", key: "points", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial ? row.commercial.includedTasks : "—" },
+            { title: "充值时间", key: "time", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
-          <div><Typography.Title level={5}>商业、钱包与任务状态</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:commercial`} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 920 }} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无商业快照；不会把缺失账务数据解释为余额为零" }} columns={[
-            { title: "企业主体", key: "enterprise", width: 220, render: (_: unknown, row: PlatformUser) => <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
-            { title: "套餐", width: 160, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "未配置" },
-            { title: "订阅 / 权益", width: 150, render: (_: unknown, row: PlatformUser) => row.commercial?.subscriptionStatus ?? "未确认" },
-            { title: "任务用量", width: 130, render: (_: unknown, row: PlatformUser) => row.commercial ? `${row.commercial.usedTasks} / ${row.commercial.includedTasks}` : "未确认" },
-            { title: "钱包余额", width: 130, render: (_: unknown, row: PlatformUser) => row.commercial ? `¥${row.commercial.walletBalanceCny}` : "未确认" },
-            { title: "扣款与账单", width: 200, render: (_: unknown, row: PlatformUser) => row.commercial ? <Tag color={row.commercial.subscriptionStatus === "active" ? "blue" : "gold"}>{row.commercial.subscriptionStatus === "active" ? "订阅有效，账务仍需门禁核验" : "需核对订单/账单"}</Tag> : <Tag>未取得账务快照</Tag> },
+          <div><Typography.Title level={5}>当月消耗表</Typography.Title><Table size="small" tableLayout="fixed" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:monthly-usage`} pagination={false} dataSource={model.userDetail.memberships} columns={[
+            { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
+            { title: "用户名", key: "name", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.displayName || row.externalSubject },
+            { title: "本月消耗创意点", key: "used", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.usedTasks ?? "—" },
+            { title: "剩余创意点", key: "remaining", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.commercial?.remainingTasks ?? "—" },
+            { title: "更新时间", key: "updated", align: "center", width: "25%", render: (_: unknown, row: PlatformUser) => row.updatedAt ? dateTimeFormatter.format(new Date(row.updatedAt)) : "—" },
           ]} /></div>
-          <div><Typography.Title level={5}>成员操作历史</Typography.Title><Table size="small" rowKey="id" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "暂无成员操作记录" }} scroll={{ x: 680 }} dataSource={model.userDetail.audits} columns={[
-            { title: "时间", dataIndex: "createdAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
-            { title: "操作", dataIndex: "action", width: 140 },
-            { title: "操作者", dataIndex: "actorId", width: 150 },
-            { title: "原因", dataIndex: "reason", width: 220, render: (value: string) => value || "—" },
-          ]} /></div>
+          <div><Typography.Title level={5}>2026年用户总消耗金额</Typography.Title><div className="ops-usage-chart" role="img" aria-label="2026年用户总消耗金额月度折线图">
+            <svg viewBox="0 0 720 170" preserveAspectRatio="none" aria-hidden="true">
+              <line x1="48" y1="18" x2="48" y2="142" className="ops-usage-chart-axis" /><line x1="48" y1="142" x2="700" y2="142" className="ops-usage-chart-axis" />
+              {[18, 49, 80, 111].map((y) => <line key={y} x1="48" y1={y} x2="700" y2={y} className="ops-usage-chart-grid" />)}
+              <text x="6" y="24" className="ops-usage-chart-tick">2000元</text><text x="6" y="56" className="ops-usage-chart-tick">1500元</text><text x="6" y="88" className="ops-usage-chart-tick">1000元</text><text x="6" y="120" className="ops-usage-chart-tick">500元</text>
+              <polyline points="48,142 178,142 308,142 438,142 568,142 698,142" className="ops-usage-chart-line" />
+              <circle cx="698" cy="142" r="5" className="ops-usage-chart-point" />
+            </svg>
+            <div className="ops-usage-chart-labels"><span>1月</span><span>2月</span><span>3月</span><span>4月</span><span>5月</span><span>6月</span><span>7月</span><span>8月</span><span>9月</span><span>10月</span><span>11月</span><span>12月</span></div>
+          </div></div>
         </Space>}
       </Spin>
     </Drawer>
     <Modal
-      title={accessTarget?.status === "suspended" ? "恢复用户访问" : "停用用户访问"} open={Boolean(accessTarget)} okText={accessTarget?.status === "suspended" ? "确认恢复" : "确认停用"}
-      okButtonProps={{ danger: accessTarget?.status !== "suspended", disabled: suspendReason.trim().length < 4 }}
+      title={accessTarget?.status === "suspended" ? "启用用户访问" : "停用用户访问"} width={420} open={Boolean(accessTarget)} okText={accessTarget?.status === "suspended" ? "确认启用" : "确认停用"}
+      okButtonProps={{ danger: accessTarget?.status !== "suspended", disabled: suspendReason.trim().length < 4 || !suspendApprover.trim() }}
       confirmLoading={suspending} transitionName="" maskTransitionName="" onOk={() => void submitAccessChange()}
-      onCancel={() => { if (!suspending) { setAccessTarget(undefined); setSuspendReason(""); } }}
+      onCancel={() => { if (!suspending) { setAccessTarget(undefined); setSuspendReason(""); setSuspendApprover(""); } }}
     >
-      {actionError && <div ref={actionErrorRef} className="ops-form-error-summary" role="alert" tabIndex={-1} aria-labelledby="user-access-error-title" aria-describedby="user-access-error-description"><Typography.Text strong id="user-access-error-title">操作未完成</Typography.Text><Typography.Paragraph id="user-access-error-description">{actionError}</Typography.Paragraph></div>}
-      <Typography.Paragraph>{accessTarget?.status === "suspended" ? "恢复" : "仅停用"} <Typography.Text code>{accessTarget?.externalSubject}</Typography.Text> 在企业主体 <Typography.Text code>{accessTarget?.workspaceId}</Typography.Text> 的访问，不会删除业务数据。</Typography.Paragraph>
-      <label htmlFor="suspend-reason">操作原因（至少 4 个字符）</label>
-      <Input.TextArea id="suspend-reason" aria-describedby={actionError ? "user-access-error-title" : undefined} autoFocus rows={4} maxLength={500} showCount value={suspendReason} onChange={(event) => { setSuspendReason(event.target.value); if (actionError) setActionError(""); }} placeholder="例如：按工单 OPS-123 撤销或恢复访问" />
+      <div className="ops-suspension-dialog">
+        {actionError && <div ref={actionErrorRef} className="ops-form-error-summary" role="alert" tabIndex={-1} aria-labelledby="user-access-error-title" aria-describedby="user-access-error-description"><Typography.Text strong id="user-access-error-title">操作未完成</Typography.Text><Typography.Paragraph id="user-access-error-description">{actionError}</Typography.Paragraph></div>}
+        <Typography.Paragraph className="ops-suspension-summary">{accessTarget?.status === "suspended" ? "启用" : "停用"} <Typography.Text code>{accessTarget?.displayName || accessTarget?.externalSubject}</Typography.Text> 的所有系统操作权限，不会删除其云端数据。</Typography.Paragraph>
+        <div className="ops-suspension-field">
+          <label htmlFor="suspend-approver">审批人</label>
+          <Select id="suspend-approver" aria-label="审批人" value={suspendApprover || undefined} onChange={(value) => { setSuspendApprover(value); if (actionError) setActionError(""); }} placeholder="请选择审批人" options={[{ value: "姜伟", label: "姜伟" }, { value: "侯沿平", label: "侯沿平" }, { value: "韩先晓", label: "韩先晓" }]} />
+        </div>
+        <div className="ops-suspension-field">
+          <label htmlFor="suspend-reason">操作原因（至少 4 个字符）</label>
+          <Input.TextArea id="suspend-reason" aria-describedby={actionError ? "user-access-error-title" : undefined} autoFocus rows={2} maxLength={500} value={suspendReason} onChange={(event) => { setSuspendReason(event.target.value); if (actionError) setActionError(""); }} placeholder="例如：按工单 OPS-123 撤销或恢复访问" />
+        </div>
+      </div>
     </Modal>
     <Modal title={identityAction === "suspended" ? "全局停用平台身份" : "恢复平台身份"} open={Boolean(identityAction)} okText="确认执行" okButtonProps={{ danger: identityAction === "suspended", disabled: identityWritesDisabled || identityReason.trim().length < 4 }} onCancel={() => { setIdentityAction(undefined); setIdentityReason(""); }} onOk={async () => { if (identityAction && await model.changeIdentityAccess(identityAction, identityReason.trim())) { setIdentityAction(undefined); setIdentityReason(""); } }}>
       <Alert showIcon type={identityAction === "suspended" ? "error" : "warning"} title={identityAction === "suspended" ? "该用户在所有租户的访问将立即失效，活动会话会被撤销。" : "只恢复身份状态；旧会话不会复活，用户必须重新登录。"} />
@@ -400,7 +400,6 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
     <Modal title="调整身份风险策略" open={Boolean(riskDecision)} okText="保存风险策略" okButtonProps={{ danger: riskDecision === "block", disabled: identityWritesDisabled || identityReason.trim().length < 4 }} onCancel={() => { setRiskDecision(undefined); setIdentityReason(""); }} onOk={async () => { if (riskDecision && await model.transitionIdentityRisk(riskLevel, riskDecision, identityReason.trim())) { setRiskDecision(undefined); setIdentityReason(""); } }}>
       <Space orientation="vertical" className="full-width"><Select value={riskLevel} onChange={setRiskLevel} options={[{ value: "low" }, { value: "medium" }, { value: "high" }, { value: "critical" }]} /><Select value={riskDecision} onChange={setRiskDecision} options={[{ value: "allow", label: "允许" }, { value: "step_up", label: "要求 MFA" }, { value: "block", label: "阻断并撤销会话" }]} /><Input.TextArea aria-label="风险策略原因" rows={4} value={identityReason} onChange={(event) => setIdentityReason(event.target.value)} placeholder="填写风险证据或工单原因" /></Space>
     </Modal>
-    <Modal title="撤销认证会话" open={Boolean(sessionTarget)} okText="确认撤销" okButtonProps={{ danger: true, disabled: identityWritesDisabled || sessionReason.trim().length < 4 }} onCancel={() => { setSessionTarget(undefined); setSessionReason(""); }} onOk={async () => { if (sessionTarget && await model.revokeIdentitySession(sessionTarget.id, sessionTarget.revision, sessionReason.trim())) { setSessionTarget(undefined); setSessionReason(""); } }}><Input.TextArea aria-label="会话撤销原因" rows={4} value={sessionReason} onChange={(event) => setSessionReason(event.target.value)} placeholder="填写会话撤销原因或工单号" /></Modal>
     <Modal title={`批量停用用户（${selectedUsers.length}）`} open={bulkSuspendOpen} okText="逐条执行停用" cancelText="取消" transitionName="" maskTransitionName="" confirmLoading={bulkSuspending} okButtonProps={{ danger: true, disabled: bulkSuspendReason.trim().length < 4 || !selectedUsers.length }} onCancel={() => { if (!bulkSuspending) { setBulkSuspendOpen(false); setBulkSuspendReason(""); setActionError(""); } }} onOk={() => void submitBulkSuspend()}>
       <Alert showIcon type="warning" title="操作会逐条写入真实成员状态和审计记录" description="系统不会把部分成功伪装成全部成功；失败成员会保留在刷新后的目录中，需要单独处理。当前登录账号和已停用成员不可勾选。" />
       {actionError && <div ref={actionErrorRef} className="ops-form-error-summary" role="alert" tabIndex={-1} aria-labelledby="bulk-suspend-error-title" aria-describedby="bulk-suspend-error-description"><Typography.Text strong id="bulk-suspend-error-title">批量操作结果</Typography.Text><Typography.Paragraph id="bulk-suspend-error-description">{actionError}</Typography.Paragraph></div>}

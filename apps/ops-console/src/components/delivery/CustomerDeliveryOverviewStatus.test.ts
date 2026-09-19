@@ -3,7 +3,6 @@ import {
   ACCEPTANCE_ITEMS,
   INTEGRATION_ITEMS,
   deliveryCompletion,
-  hasDeliveryVideo,
   isCustomerProfileFilled,
   isDeliveryChecklistComplete,
   isDeliveryStepBlocked,
@@ -43,12 +42,6 @@ describe("customer delivery overview status", () => {
     expect(isDeliveryChecklistComplete({ ...record, acceptanceItems: ACCEPTANCE_ITEMS.slice(0, -1) }, "acceptance")).toBe(false);
   });
 
-  it("recognizes persisted video counts and legacy video URL records", () => {
-    expect(hasDeliveryVideo({ ...record, videos: 1 })).toBe(true);
-    expect(hasDeliveryVideo({ ...record, videoUrls: ["asset:video"] })).toBe(true);
-    expect(hasDeliveryVideo(record)).toBe(false);
-  });
-
   it("does not block delivery work on the manually verified payment field", () => {
     expect(isDeliveryStepBlocked("unpaid", "integration")).toBe(false);
     expect(isDeliveryStepBlocked("unpaid", "acceptance")).toBe(false);
@@ -61,6 +54,6 @@ describe("customer delivery overview status", () => {
       acceptance: true,
       training: true,
       videos: 1,
-    })).toEqual({ completed: 5, total: 5, ready: true });
+    })).toEqual({ completed: 4, total: 4, ready: true });
   });
 });
