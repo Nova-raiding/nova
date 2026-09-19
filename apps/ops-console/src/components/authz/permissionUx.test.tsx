@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 import { createAuthorizationProjection } from "../../authz/authorization.js";
 import { AuthorizationProvider } from "../../authz/AuthorizationProvider.js";
 import type { OpsSession } from "../../types/ops.js";
-import { AccessDeniedResult, explainAccessDeniedReason } from "./AccessDeniedResult.js";
+import { AccessDeniedResult, explainAccessDeniedReason, PermissionSelfView } from "./AccessDeniedResult.js";
 import { PermissionGate } from "./PermissionGate.js";
-import { focusActiveWorkbenchControl, OpsWorkbenchSwitcher } from "./OpsWorkbenchSwitcher.js";
-import { activeJitGrantForNow, formatJitRemaining, RoleScopeBar, workbenchBoundaryMessage } from "./RoleScopeBar.js";
+import { RoleScopeBar, workbenchBoundaryMessage } from "./RoleScopeBar.js";
+import { activeJitGrantForNow, formatJitRemaining } from "../../authz/jitGrant.js";
+import { canActivateOpsWorkbench } from "../../pages/OpsConsoleController.js";
 
 const session: OpsSession = {
   actor_id: "actor_1", workspace_id: "ws_1", roles: ["platform_ops"], canonical_roles: ["ops_admin"],
@@ -16,14 +17,6 @@ const session: OpsSession = {
 };
 
 describe("desktop permission UX", () => {
-  it("restores keyboard focus to the active workbench control", () => {
-    let focused = false;
-    const active = { focus: (options?: FocusOptions) => { focused = options?.preventScroll === true; } };
-    const root = { querySelector: () => active } as unknown as Pick<HTMLElement, "querySelector">;
-    expect(focusActiveWorkbenchControl(root)).toBe(true);
-    expect(focused).toBe(true);
-    expect(focusActiveWorkbenchControl(null)).toBe(false);
-  });
   it("states the platform and merchant workbench boundary explicitly", () => {
     expect(workbenchBoundaryMessage("platform")).toContain("企业主体操作需切换到对应企业主体");
     expect(workbenchBoundaryMessage("workspace")).toContain("不包含平台运营能力");
@@ -148,15 +141,12 @@ describe("desktop permission UX", () => {
     expect(html).not.toContain("当前运营工作台");
   });
 
-  it("keeps the platform workbench label static", () => {
-    const html = renderToStaticMarkup(<OpsWorkbenchSwitcher
-      value="platform"
-      available={["platform", "workspace"]}
-      switching
-      onChange={() => undefined}
-    />);
-    expect(html).toContain("平台控制台");
-    expect(html).not.toContain("商家工作区");
+  it("keeps the console platform-bound: a merchant workbench target can never be activated", () => {
+    // The retired workbench switcher used to advertise a transition it could
+    // not perform. The boundary is now enforced where the transition is
+    // actually committed, so no shipped control can promise one.
+    expect(canActivateOpsWorkbench("workspace")).toBe(false);
+    expect(canActivateOpsWorkbench("platform")).toBe(true);
   });
 
   it("hides denied content and explains read-only state", () => {
@@ -242,17 +232,37 @@ describe("desktop permission UX", () => {
     expect(html).toContain('disabled=""');
   });
 
-  it("offers an explicit permission-center recovery path for deep-link denial", () => {
+  it("answers the permission question in place instead of navigating to an unreachable domain", () => {
     const html = renderToStaticMarkup(<AccessDeniedResult
       domainLabel="用户与租户"
       capability="identity.read"
       scope={{ kind: "workspace", id: "ws_1" }}
+      grantedCapabilities={["platform.summary.read"]}
       onBack={() => undefined}
-      onViewPermissions={() => undefined}
       onRefresh={() => undefined}
     />);
     expect(html).toContain("查看我的权限");
-    expect(html).toMatch(/class="[^"]*ant-btn-link/);
+    expect(html).toContain("<details");
+    expect(html).toContain('class="access-denied-permissions-trigger"');
+    expect(html).toContain('id="access-denied-permissions"');
+    expect(html).toContain("platform.summary.read");
+    expect(html).not.toContain("申请权限</button>");
+  });
+
+  it("states that elevation is server-issued instead of promising a self-service flow", () => {
+    const html = renderToStaticMarkup(<PermissionSelfView
+      capability="identity.read"
+      scope={{ kind: "workspace", id: "ws_1" }}
+      grantedCapabilities={["platform.summary.read", "platform.summary.read", "  "]}
+    />);
+    expect(html).toContain("不会在本控制台自助申请或自助提权");
+    expect(html.match(/platform\.summary\.read/g)).toHaveLength(1);
+    const empty = renderToStaticMarkup(<PermissionSelfView
+      capability="identity.read"
+      scope={{ kind: "workspace", id: "ws_1" }}
+      grantedCapabilities={[]}
+    />);
+    expect(empty).toContain("当前会话没有被授予任何运营能力");
   });
 
   it("does not render duplicate or malformed obligations in a 403 summary", () => {

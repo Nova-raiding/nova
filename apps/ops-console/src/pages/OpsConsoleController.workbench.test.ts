@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { commitOpsWorkbenchTransition, initialOpsWorkbench, shouldConfirmWorkbenchTransition, workbenchSwitchWarning } from "./OpsConsoleController.js";
+import { canActivateOpsWorkbench, commitOpsWorkbenchTransition, domainNavigationBlockedReason, initialOpsWorkbench, shouldConfirmWorkbenchTransition, workbenchSwitchWarning } from "./OpsConsoleController.js";
+import { opsDomains, requiredWorkbenchForDomain } from "../navigation/opsNavigation.js";
 import { hasRuleDraftChanges, validateRuleChecksJson } from "../components/tasks/RuleCenterSection.js";
 
 describe("ops workbench transition", () => {
@@ -50,6 +52,33 @@ describe("ops workbench transition", () => {
     expect(workbenchSwitchWarning("workspace", "platform", ["事故创建表单", "规则草稿表单"])).toBe(
       "当前在商家工作区，切换到平台控制台将清除未保存内容：事故创建表单、规则草稿表单。该内容无法恢复。",
     );
+  });
+
+  it("keeps every in-console domain link reachable from the platform workbench", () => {
+    // `navigateToDomain` refuses exactly the domains whose workbench cannot be
+    // activated. Anything else would render a control that can never fire.
+    for (const domain of opsDomains) {
+      const required = requiredWorkbenchForDomain(domain);
+      const reachable = required === undefined || canActivateOpsWorkbench(required);
+      expect(domainNavigationBlockedReason(domain, "platform") === undefined).toBe(reachable);
+    }
+  });
+
+  it("names the reason a merchant-workspace domain cannot be opened from the platform console", () => {
+    expect(domainNavigationBlockedReason("members", "platform")).toContain("属于商家工作区");
+    expect(domainNavigationBlockedReason("tasks", "platform")).toContain("属于商家工作区");
+    expect(domainNavigationBlockedReason("knowledge", "platform")).toContain("属于商家工作区");
+    expect(domainNavigationBlockedReason("rules", "platform")).toContain("属于商家工作区");
+    expect(domainNavigationBlockedReason("members", "workspace")).toBeUndefined();
+    expect(domainNavigationBlockedReason("users", "workspace")).toBeUndefined();
+    expect(domainNavigationBlockedReason("overview", "platform")).toBeUndefined();
+  });
+
+  it("no longer routes the 403 recovery action at an unreachable merchant domain", () => {
+    const controller = readFileSync(new URL("./OpsConsoleController.tsx", import.meta.url), "utf8");
+    const denied = readFileSync(new URL("../components/authz/AccessDeniedResult.tsx", import.meta.url), "utf8");
+    expect(controller).not.toContain('navigateToDomain("members")');
+    expect(denied).not.toContain("onViewPermissions");
   });
 
   it("recovers rule draft dirtiness from values after touched metadata is remounted", () => {

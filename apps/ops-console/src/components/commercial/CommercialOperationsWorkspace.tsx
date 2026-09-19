@@ -36,8 +36,18 @@ import {
   type CommercialView,
 } from "../../hooks/useCommercialOperations.js";
 import { refundPolicyApproval } from "../../api/commercialOperationsClient.js";
+import { DangerActionModal } from "../authz/DangerActionModal.js";
 import { PointAdjustmentPanel } from "./PointAdjustmentPanel.js";
 import { ServiceFulfillmentPanel } from "./ServiceFulfillmentPanel.js";
+import {
+  CommercialOperationOutcomeAlert,
+  commercialOperationDecision,
+  idleCommercialOperationOutcome,
+  settleCommercialOperation,
+  type CommercialOperationId,
+  type CommercialOperationOutcome,
+  type PendingCommercialOperation,
+} from "./commercialOperationFeedback.js";
 import { readableBenefits } from "./benefitLabels.js";
 import { packageCodeLabel, packageDisplayName } from "./packageLabels.js";
 import { yuanToFen } from "../../utils/currency.js";
@@ -450,15 +460,37 @@ function PrivateTrialOperationsPanel({ controller }: { controller: CommercialOpe
   const [providerOrderId, setProviderOrderId] = useState("");
   const [nonce, setNonce] = useState("");
   const [payloadHash, setPayloadHash] = useState("");
-  const [message, setMessage] = useState("");
+  const [outcome, setOutcome] = useState<CommercialOperationOutcome>(idleCommercialOperationOutcome);
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [pending, setPending] = useState<PendingCommercialOperation>();
+  const [pendingReason, setPendingReason] = useState("");
+  const [pendingError, setPendingError] = useState("");
+  const confirmTriggerRef = useRef<HTMLElement | null>(null);
   if (!canOperate) return <Alert type="info" showIcon title="私测转正式仅对授权运营人员开放" description="需要 commercial.private_sku.grant 或 commercial.payment.reconcile；无权限时不会发起请求。" />;
-  const run = async (action: () => Promise<unknown>) => {
-    setBusy(true); setMessage("");
-    try { const value = await action(); setMessage(JSON.stringify(value)); }
-    catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
-    finally { setBusy(false); }
+  // Reversible preparation steps run on click; irreversible money/point commands
+  // only reach the server through confirmPending() after an explicit confirmation.
+  const run = async (id: CommercialOperationId, action: () => Promise<unknown>) => {
+    if (!commercialOperationDecision(id, false).execute) return;
+    setBusy(true); setOutcome(idleCommercialOperationOutcome);
+    setOutcome(await settleCommercialOperation(action)); setBusy(false);
+  };
+  const requestConfirmation = (next: PendingCommercialOperation, trigger: HTMLElement | null) => {
+    confirmTriggerRef.current = trigger;
+    setPending(next); setPendingReason(next.defaultReason); setPendingError("");
+  };
+  const closeConfirmation = () => {
+    if (busy) return;
+    setPending(undefined); setPendingReason(""); setPendingError("");
+  };
+  const confirmPending = async () => {
+    if (!pending || busy || !commercialOperationDecision(pending.id, true).execute) return;
+    const target = pending;
+    setBusy(true); setPendingError("");
+    const result = await settleCommercialOperation(() => target.run(pendingReason));
+    setBusy(false); setOutcome(result);
+    if (result.status === "error") { setPendingError(result.text); return; }
+    setPending(undefined);
   };
   const reason = "商业化方案：私测转正式人工核验";
   return <section aria-label="私测转正式与人工转账" className="commercial-manual-operations">
@@ -467,29 +499,73 @@ function PrivateTrialOperationsPanel({ controller }: { controller: CommercialOpe
     <Space wrap>
       <Input aria-label="目标 Workspace" placeholder="目标 Workspace" value={workspace} onChange={event => setWorkspace(event.target.value)} />
       <Input aria-label="客户标识" placeholder="客户标识" value={customerRef} onChange={event => setCustomerRef(event.target.value)} />
-      <Button loading={busy} disabled={!workspace || !customerRef} onClick={() => void run(async () => controller.client.createPrivateTrialInvite(workspace, customerRef, new Date(Date.now() + 7 * 86400000).toISOString(), reason))}>生成私测邀请</Button>
+      <Button loading={busy} disabled={!workspace || !customerRef} onClick={() => void run("createPrivateTrialInvite", async () => controller.client.createPrivateTrialInvite(workspace, customerRef, new Date(Date.now() + 7 * 86400000).toISOString(), reason))}>生成私测邀请</Button>
       <Input aria-label="私测邀请编码" placeholder="私测邀请编码（生成后粘贴/保存）" value={inviteCode} onChange={event => setInviteCode(event.target.value)} />
-      <Button loading={busy} disabled={!workspace || !customerRef || !inviteCode} onClick={() => void run(async () => { const value = await controller.client.createPrivateTrialEligibility(workspace, customerRef, inviteCode, reason); if (value && typeof value === "object") { const row = value as Record<string, unknown>; if (typeof row.eligibility_id === "string") setEligibilityId(row.eligibility_id); } return value; })}>使用邀请创建私测资格</Button>
+      <Button loading={busy} disabled={!workspace || !customerRef || !inviteCode} onClick={() => void run("createPrivateTrialEligibility", async () => { const value = await controller.client.createPrivateTrialEligibility(workspace, customerRef, inviteCode, reason); if (value && typeof value === "object") { const row = value as Record<string, unknown>; if (typeof row.eligibility_id === "string") setEligibilityId(row.eligibility_id); } return value; })}>使用邀请创建私测资格</Button>
       <Input aria-label="私测资格 ID" placeholder="私测资格 ID" value={eligibilityId} onChange={event => setEligibilityId(event.target.value)} />
-      <Button loading={busy} disabled={!workspace || !eligibilityId || !controller.permissions.canGrantPrivateSku} onClick={() => void run(() => controller.client.approvePrivateTrialEligibility(workspace, eligibilityId, revision, reason))}>业务审批</Button>
-      <Button loading={busy} disabled={!workspace || !eligibilityId || !controller.permissions.canGrantPrivateSku} onClick={() => void run(async () => { const value = await controller.client.createPrivateTrialOrder(workspace, eligibilityId, "商业化方案：创建 1999 元私测订单"); if (value && typeof value === "object") { const row = value as Record<string, unknown>; const order = row.order; if (order && typeof order === "object" && typeof (order as Record<string, unknown>).order_id === "string") setTrialOrderId((order as Record<string, unknown>).order_id as string); } return value; })}>创建 1999 元私测订单</Button>
-      <Button loading={busy} disabled={!workspace || !eligibilityId} onClick={() => void run(() => controller.client.completePrivateTrialValidation(workspace, eligibilityId, trialOrderId, new Date().toISOString(), reason))}>完成 7 天验证</Button>
+      <Button loading={busy} disabled={!workspace || !eligibilityId || !controller.permissions.canGrantPrivateSku} onClick={() => void run("approvePrivateTrialEligibility", () => controller.client.approvePrivateTrialEligibility(workspace, eligibilityId, revision, reason))}>业务审批</Button>
+      <Button loading={busy} disabled={!workspace || !eligibilityId || !controller.permissions.canGrantPrivateSku} onClick={() => void run("createPrivateTrialOrder", async () => { const value = await controller.client.createPrivateTrialOrder(workspace, eligibilityId, "商业化方案：创建 1999 元私测订单"); if (value && typeof value === "object") { const row = value as Record<string, unknown>; const order = row.order; if (order && typeof order === "object" && typeof (order as Record<string, unknown>).order_id === "string") setTrialOrderId((order as Record<string, unknown>).order_id as string); } return value; })}>创建 1999 元私测订单</Button>
+      <Button loading={busy} disabled={!workspace || !eligibilityId} onClick={() => void run("completePrivateTrialValidation", () => controller.client.completePrivateTrialValidation(workspace, eligibilityId, trialOrderId, new Date().toISOString(), reason))}>完成 7 天验证</Button>
       <Input aria-label="试用订单 ID" placeholder="试用订单 ID" value={trialOrderId} onChange={event => setTrialOrderId(event.target.value)} />
-      <Button loading={busy} disabled={!workspace || !eligibilityId || !controller.permissions.canGrantPrivateSku} onClick={() => void run(async () => { const value = await controller.client.preparePrivateTrialCredit(workspace, eligibilityId, reason); if (value && typeof value === "object") { const row = value as Record<string, unknown>; if (typeof row.credit_id === "string") setCreditId(row.credit_id); } return value; })}>准备 3001 元抵扣</Button>
+      <Button loading={busy} disabled={!workspace || !eligibilityId || !controller.permissions.canGrantPrivateSku} onClick={() => void run("preparePrivateTrialCredit", async () => { const value = await controller.client.preparePrivateTrialCredit(workspace, eligibilityId, reason); if (value && typeof value === "object") { const row = value as Record<string, unknown>; if (typeof row.credit_id === "string") setCreditId(row.credit_id); } return value; })}>准备 3001 元抵扣</Button>
       <Input aria-label="抵扣 ID" placeholder="抵扣 ID" value={creditId} onChange={event => setCreditId(event.target.value)} />
-      <Button loading={busy} disabled={!workspace || !creditId || !controller.permissions.canGrantPrivateSku} onClick={() => void run(() => controller.client.approvePrivateTrialCredit(workspace, creditId, reason))}>财务审批抵扣</Button>
-      <Button loading={busy} disabled={!workspace || !creditId || !controller.permissions.canGrantPrivateSku} onClick={() => void run(async () => { const value = await controller.client.createPrivateTrialConversionOrder(workspace, creditId, reason); if (value && typeof value === "object") { const row = value as Record<string, unknown>; if (typeof row.order_id === "string") setConversionOrderId(row.order_id); } return value; })}>创建正式订单</Button>
+      <Button loading={busy} disabled={!workspace || !creditId || !controller.permissions.canGrantPrivateSku} onClick={() => void run("approvePrivateTrialCredit", () => controller.client.approvePrivateTrialCredit(workspace, creditId, reason))}>财务审批抵扣</Button>
+      <Button loading={busy} disabled={!workspace || !creditId || !controller.permissions.canGrantPrivateSku} onClick={() => void run("createPrivateTrialConversionOrder", async () => { const value = await controller.client.createPrivateTrialConversionOrder(workspace, creditId, reason); if (value && typeof value === "object") { const row = value as Record<string, unknown>; if (typeof row.order_id === "string") setConversionOrderId(row.order_id); } return value; })}>创建正式订单</Button>
       <Input aria-label="正式订单 ID" placeholder="正式订单 ID" value={conversionOrderId} onChange={event => setConversionOrderId(event.target.value)} />
       <Input aria-label="支付主体引用" placeholder="支付主体引用" value={paymentSubjectRef} onChange={event => setPaymentSubjectRef(event.target.value)} />
       <Input aria-label="支付事件 ID" placeholder="支付事件 ID" value={providerEventId} onChange={event => setProviderEventId(event.target.value)} />
       <Input aria-label="支付订单 ID" placeholder="支付订单 ID" value={providerOrderId} onChange={event => setProviderOrderId(event.target.value)} />
       <Input aria-label="支付 nonce" placeholder="支付 nonce" value={nonce} onChange={event => setNonce(event.target.value)} />
       <Input aria-label="支付 payload hash" placeholder="支付 payload hash" value={payloadHash} onChange={event => setPayloadHash(event.target.value)} />
-      <Button loading={busy} disabled={!workspace || !conversionOrderId || !paymentSubjectRef || !providerEventId || !providerOrderId || !nonce || !payloadHash || !controller.permissions.canReconcilePayment} onClick={() => void run(() => controller.client.verifyCommercialOrderTransfer(workspace, conversionOrderId, paymentSubjectRef, providerEventId, providerOrderId, nonce, payloadHash, new Date().toISOString(), reason))}>核验普通订单转账并发放点数</Button>
-      <Button loading={busy} disabled={!workspace || !trialOrderId || !paymentSubjectRef || !providerEventId || !providerOrderId || !nonce || !payloadHash || !controller.permissions.canReconcilePayment} onClick={() => void run(() => controller.client.verifyPrivateTrialPayment(workspace, trialOrderId, paymentSubjectRef, providerEventId, providerOrderId, nonce, payloadHash, new Date().toISOString(), "商业化方案：核验 1999 元私测付款并授予试用权益"))}>核验 1999 元私测付款并授予权益</Button>
-      <Button type="primary" loading={busy} disabled={!workspace || !creditId || !conversionOrderId || !paymentSubjectRef || !providerEventId || !providerOrderId || !nonce || !payloadHash || !controller.permissions.canReconcilePayment} onClick={() => void run(() => controller.client.verifyPrivateTrialTransfer(workspace, creditId, conversionOrderId, paymentSubjectRef, providerEventId, providerOrderId, nonce, payloadHash, new Date().toISOString(), reason))}>核验转账并开通</Button>
+      <Button loading={busy} disabled={!workspace || !conversionOrderId || !paymentSubjectRef || !providerEventId || !providerOrderId || !nonce || !payloadHash || !controller.permissions.canReconcilePayment} onClick={event => requestConfirmation({
+        id: "verifyCommercialOrderTransfer",
+        title: "核验普通订单转账并发放点数",
+        objectLabel: "正式订单 ID",
+        objectValue: conversionOrderId,
+        scope: `workspace:${workspace}`,
+        impact: "核验通过后按该订单发放点数并写入商业时间线；核验结果不可撤销。",
+        defaultReason: reason,
+        run: confirmedReason => controller.client.verifyCommercialOrderTransfer(workspace, conversionOrderId, paymentSubjectRef, providerEventId, providerOrderId, nonce, payloadHash, new Date().toISOString(), confirmedReason),
+      }, event.currentTarget)}>核验普通订单转账并发放点数</Button>
+      <Button loading={busy} disabled={!workspace || !trialOrderId || !paymentSubjectRef || !providerEventId || !providerOrderId || !nonce || !payloadHash || !controller.permissions.canReconcilePayment} onClick={event => requestConfirmation({
+        id: "verifyPrivateTrialPayment",
+        title: "核验 1999 元私测付款并授予权益",
+        objectLabel: "试用订单 ID",
+        objectValue: trialOrderId,
+        scope: `workspace:${workspace}`,
+        impact: "核验 1999 元到账后授予 7 天试用权益并写入商业时间线；核验结果不可撤销。",
+        defaultReason: "商业化方案：核验 1999 元私测付款并授予试用权益",
+        run: confirmedReason => controller.client.verifyPrivateTrialPayment(workspace, trialOrderId, paymentSubjectRef, providerEventId, providerOrderId, nonce, payloadHash, new Date().toISOString(), confirmedReason),
+      }, event.currentTarget)}>核验 1999 元私测付款并授予权益</Button>
+      <Button type="primary" loading={busy} disabled={!workspace || !creditId || !conversionOrderId || !paymentSubjectRef || !providerEventId || !providerOrderId || !nonce || !payloadHash || !controller.permissions.canReconcilePayment} onClick={event => requestConfirmation({
+        id: "verifyPrivateTrialTransfer",
+        title: "核验转账并开通",
+        objectLabel: "抵扣 / 正式订单 ID",
+        objectValue: `${dash(creditId)} / ${dash(conversionOrderId)}`,
+        scope: `workspace:${workspace}`,
+        impact: "核验 3001 元补款到账后开通正式权益并写入商业时间线；核验结果不可撤销。",
+        defaultReason: reason,
+        run: confirmedReason => controller.client.verifyPrivateTrialTransfer(workspace, creditId, conversionOrderId, paymentSubjectRef, providerEventId, providerOrderId, nonce, payloadHash, new Date().toISOString(), confirmedReason),
+      }, event.currentTarget)}>核验转账并开通</Button>
     </Space>
-    {message ? <Typography.Paragraph copyable={{ text: message }} code>{message}</Typography.Paragraph> : null}
+    <CommercialOperationOutcomeAlert outcome={outcome} />
+    <DangerActionModal
+      open={Boolean(pending)}
+      title={pending?.title ?? "确认商业操作"}
+      objectLabel={pending?.objectLabel ?? "对象"}
+      objectValue={pending?.objectValue || "未填写"}
+      scope={pending?.scope ?? "未指定"}
+      impact={pending?.impact ?? "未指定"}
+      reason={pendingReason}
+      onReasonChange={setPendingReason}
+      onConfirm={confirmPending}
+      onCancel={closeConfirmation}
+      loading={busy}
+      error={pendingError || undefined}
+      confirmLabel="确认执行并写入审计"
+      initialFocus="cancel"
+      triggerRef={confirmTriggerRef}
+    />
   </section>;
 }
 
@@ -503,12 +579,39 @@ function CommercialRefundOperationsPanel({ controller }: { controller: Commercia
   const [requestEvidenceRef, setRequestEvidenceRef] = useState("");
   const [externalRefundId, setExternalRefundId] = useState("");
   const [policyApproval, setPolicyApproval] = useState('{"legal_review_ref":""}');
-  const [message, setMessage] = useState("");
+  const [outcome, setOutcome] = useState<CommercialOperationOutcome>(idleCommercialOperationOutcome);
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<PendingCommercialOperation>();
+  const [pendingReason, setPendingReason] = useState("");
+  const [pendingError, setPendingError] = useState("");
+  const confirmTriggerRef = useRef<HTMLElement | null>(null);
   let policyApprovalReady = false;
   try { refundPolicyApproval(policyApproval); policyApprovalReady = true; } catch { /* invalid evidence stays disabled */ }
   if (!controller.permissions.canReconcilePayment) return null;
-  const run = async (action: () => Promise<unknown>) => { setBusy(true); setMessage(""); try { setMessage(JSON.stringify(await action())); } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); } finally { setBusy(false); } };
+  // Applications and approvals stay reversible; only the final completion that
+  // registers the external refund and rolls points back needs a confirmation.
+  const run = async (id: CommercialOperationId, action: () => Promise<unknown>) => {
+    if (!commercialOperationDecision(id, false).execute) return;
+    setBusy(true); setOutcome(idleCommercialOperationOutcome);
+    setOutcome(await settleCommercialOperation(action)); setBusy(false);
+  };
+  const requestConfirmation = (next: PendingCommercialOperation, trigger: HTMLElement | null) => {
+    confirmTriggerRef.current = trigger;
+    setPending(next); setPendingReason(next.defaultReason); setPendingError("");
+  };
+  const closeConfirmation = () => {
+    if (busy) return;
+    setPending(undefined); setPendingReason(""); setPendingError("");
+  };
+  const confirmPending = async () => {
+    if (!pending || busy || !commercialOperationDecision(pending.id, true).execute) return;
+    const target = pending;
+    setBusy(true); setPendingError("");
+    const result = await settleCommercialOperation(() => target.run(pendingReason));
+    setBusy(false); setOutcome(result);
+    if (result.status === "error") { setPendingError(result.text); return; }
+    setPending(undefined);
+  };
   const reason = "商业化方案：订单退款人工审核";
   return <section aria-label="商业订单退款" className="commercial-manual-operations">
     <Typography.Title level={5}>商业订单退款 / 点数回滚</Typography.Title>
@@ -523,13 +626,39 @@ function CommercialRefundOperationsPanel({ controller }: { controller: Commercia
         { value: "onboarding_pre_deployment", label: "部署前实施费" }, { value: "monthly_unused_points", label: "月费未使用点数" }, { value: "point_pack_unused_points", label: "点数包未使用点数" }, { value: "outage_compensation", label: "故障补偿" }, { value: "custom_milestone", label: "定制里程碑" },
       ]} />
       <Input aria-label="退款申请证据引用" placeholder={refundKind === "monthly_unused_points" ? "补充协议编号" : refundKind === "point_pack_unused_points" ? "到期政策编号" : refundKind === "outage_compensation" ? "事故 ID" : refundKind === "custom_milestone" ? "里程碑 ID" : "部署前自动记录 not_started"} value={requestEvidenceRef} disabled={refundKind === "onboarding_pre_deployment"} onChange={event => setRequestEvidenceRef(event.target.value)} />
-      <Button loading={busy} disabled={!workspace || !orderId || !requestId || !amountYuan || (refundKind !== "onboarding_pre_deployment" && !requestEvidenceRef.trim())} onClick={() => void run(() => controller.client.requestCommercialRefund({ workspace, orderId, requestId, kind: refundKind, amountFen: yuanToFen(amountYuan), pointsToRevoke: Number(points || "0"), reason, evidenceRef: requestEvidenceRef }))}>提交退款申请</Button>
+      <Button loading={busy} disabled={!workspace || !orderId || !requestId || !amountYuan || (refundKind !== "onboarding_pre_deployment" && !requestEvidenceRef.trim())} onClick={() => void run("requestCommercialRefund", () => controller.client.requestCommercialRefund({ workspace, orderId, requestId, kind: refundKind, amountFen: yuanToFen(amountYuan), pointsToRevoke: Number(points || "0"), reason, evidenceRef: requestEvidenceRef }))}>提交退款申请</Button>
       <Input aria-label="政策审批证据 JSON" placeholder="政策审批证据 JSON" value={policyApproval} onChange={event => setPolicyApproval(event.target.value)} />
-      <Button loading={busy} disabled={!workspace || !requestId || !policyApprovalReady} onClick={() => void run(() => controller.client.approveCommercialRefund(workspace, requestId, policyApproval, reason))}>双人审批</Button>
+      <Button loading={busy} disabled={!workspace || !requestId || !policyApprovalReady} onClick={() => void run("approveCommercialRefund", () => controller.client.approveCommercialRefund(workspace, requestId, policyApproval, reason))}>双人审批</Button>
       <Input aria-label="外部退款凭证" placeholder="外部退款凭证 / 转账流水号" value={externalRefundId} onChange={event => setExternalRefundId(event.target.value)} />
-      <Button type="primary" loading={busy} disabled={!workspace || !requestId || !externalRefundId} onClick={() => void run(() => controller.client.completeCommercialRefund(workspace, requestId, externalRefundId, JSON.stringify({ source: "ops_console", action: "external_refund_verified" }), reason))}>登记退款并回滚点数</Button>
+      <Button type="primary" loading={busy} disabled={!workspace || !requestId || !externalRefundId} onClick={event => requestConfirmation({
+        id: "completeCommercialRefund",
+        title: "登记退款并回滚点数",
+        objectLabel: "退款请求 ID",
+        objectValue: requestId,
+        scope: `workspace:${workspace} · 订单 ${dash(orderId)} · 退款 ${dash(amountYuan)} 元 · 外部凭证 ${dash(externalRefundId)}`,
+        impact: `登记后该项退款被视为已完成，并回滚 ${dash(points || "0")} 创意点；不可撤销。`,
+        defaultReason: reason,
+        run: confirmedReason => controller.client.completeCommercialRefund(workspace, requestId, externalRefundId, JSON.stringify({ source: "ops_console", action: "external_refund_verified" }), confirmedReason),
+      }, event.currentTarget)}>登记退款并回滚点数</Button>
     </Space>
-    {message ? <Typography.Paragraph copyable={{ text: message }} code>{message}</Typography.Paragraph> : null}
+    <CommercialOperationOutcomeAlert outcome={outcome} />
+    <DangerActionModal
+      open={Boolean(pending)}
+      title={pending?.title ?? "确认商业操作"}
+      objectLabel={pending?.objectLabel ?? "对象"}
+      objectValue={pending?.objectValue || "未填写"}
+      scope={pending?.scope ?? "未指定"}
+      impact={pending?.impact ?? "未指定"}
+      reason={pendingReason}
+      onReasonChange={setPendingReason}
+      onConfirm={confirmPending}
+      onCancel={closeConfirmation}
+      loading={busy}
+      error={pendingError || undefined}
+      confirmLabel="确认登记并回滚点数"
+      initialFocus="cancel"
+      triggerRef={confirmTriggerRef}
+    />
   </section>;
 }
 

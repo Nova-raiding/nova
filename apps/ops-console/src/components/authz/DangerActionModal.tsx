@@ -1,6 +1,22 @@
 import { Alert, Button, Descriptions, Input, Modal, Space, Typography } from "antd";
 import { useEffect, useId, useRef, type RefObject } from "react";
 
+export type DangerActionInitialFocus = "reason" | "cancel";
+
+export interface DangerActionFocusPlan {
+  reason: boolean;
+  cancel: boolean;
+}
+
+/**
+ * Decides which control receives focus when a danger dialog opens. Callers
+ * whose operation is irreversible pass "cancel" so that a stray Enter aborts
+ * instead of executing; the confirm button stays disabled until a reason exists.
+ */
+export function dangerActionFocusPlan(initialFocus: DangerActionInitialFocus = "reason"): DangerActionFocusPlan {
+  return { reason: initialFocus !== "cancel", cancel: initialFocus === "cancel" };
+}
+
 export interface DangerActionModalProps {
   open: boolean;
   title: string;
@@ -20,6 +36,7 @@ export interface DangerActionModalProps {
   reasonLabel?: string;
   reasonHint?: string;
   triggerRef?: RefObject<HTMLElement | null>;
+  initialFocus?: DangerActionInitialFocus;
 }
 
 /**
@@ -46,7 +63,9 @@ export function DangerActionModal({
   reasonLabel = "操作原因",
   reasonHint = "请填写原因，便于审计和后续恢复。",
   triggerRef,
+  initialFocus = "reason",
 }: DangerActionModalProps) {
+  const focusPlan = dangerActionFocusPlan(initialFocus);
   const errorRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const reasonId = useId();
@@ -90,14 +109,14 @@ export function DangerActionModal({
           onChange={(event) => onReasonChange(event.target.value)}
           aria-describedby={`${reasonId}-hint${error ? ` ${errorId}` : ""}`}
           aria-invalid={Boolean(error)}
-          autoFocus
+          autoFocus={focusPlan.reason}
           rows={3}
           disabled={loading}
           placeholder={reasonHint}
         />
         <Typography.Text id={`${reasonId}-hint`} type="secondary">{reasonHint}</Typography.Text>
         <Space className="full-width" style={{ justifyContent: "flex-end" }}>
-          <Button htmlType="button" onClick={onCancel} disabled={loading}>{cancelLabel}</Button>
+          <Button htmlType="button" autoFocus={focusPlan.cancel} onClick={onCancel} disabled={loading}>{cancelLabel}</Button>
           <Button htmlType="button" danger type="primary" loading={loading} disabled={!reason.trim() || loading} aria-busy={loading} onClick={() => void onConfirm()}>{loading ? "正在提交" : confirmLabel}</Button>
         </Space>
       </Space>

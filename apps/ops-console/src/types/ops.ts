@@ -218,6 +218,19 @@ export type OperationalAlert = {
     updatedAt: string;
   };
 };
+/**
+ * Server-side readiness of the outbound alert channel, as returned by
+ * `alertNotificationReadiness`. It is not derivable from the alert rows: an
+ * empty alert list and a channel that can never deliver look identical without
+ * this report, which is exactly the reassurance that must not be implied.
+ */
+export type AlertNotificationReadiness = {
+  enabled: boolean;
+  configured: boolean;
+  ready: boolean;
+  reason?: string;
+  protocol?: string;
+};
 export type ModelStatus = {
   ownership: string;
   user_key_binding: boolean;

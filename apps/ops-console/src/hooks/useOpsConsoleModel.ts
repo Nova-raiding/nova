@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { App as AntApp, Form } from "antd";
-import { describeOpsError, hasOpsConnection, managedOpsSession, opsRestPost, readOpsConnectionConfig, recordOpsBootstrapTrace, rpc, rpcForWorkspace } from "../api/opsClient.js";
+import { clearOpsConnectionConfig, describeOpsError, hasOpsConnection, managedOpsSession, opsRestPost, readOpsConnectionConfig, recordOpsBootstrapTrace, rpc, rpcForWorkspace } from "../api/opsClient.js";
 import type {
   Platform,
   Settings,
@@ -20,6 +20,7 @@ import type {
   ModelMarkupPolicy,
   GrowthFunnel,
   OperationalAlert,
+  AlertNotificationReadiness,
   ModelStatus,
   Rule,
   RuleSyncStatus,
@@ -59,8 +60,9 @@ import type {
 import type { FinanceSearchSummary } from "../../../../packages/contracts/src/ops/finance-search.js";
 import type { CommercialCatalogItem } from "../api/commercialOperationsClient.js";
 import { financePermissions, runAuthorizedFinanceAction } from "../components/finance/financePermissions.js";
+import { confirmPolicyPropsFor } from "../utils/destructiveConfirm.js";
 import { paymentQueryOutcome, paymentReconciliationOutcome, rechargeOrderListParams } from "../components/finance/rechargeOrders.js";
-import { applyLoadedValue, OpsLoadCoordinator } from "./opsLoadCoordinator.js";
+import { applyLoadedValue, OpsLoadCoordinator, OpsLoadRerunGate } from "./opsLoadCoordinator.js";
 import { submitRevisionCreation, type RevisionCreationValues } from "../components/tasks/knowledge/revisionCreation.js";
 import { auditCenterClient, financeSearchClient, incidentsClient, parseModelStatus, parseStorageReconciliationList, supportClient } from "../api/opsDomainClients.js";
 import { createAuthorizationProjection, type AuthorizationProjection } from "../authz/authorization.js";
@@ -494,6 +496,13 @@ export function useOpsConsoleModel() {
   });
   const [alerts, setAlerts] = useState<OperationalAlert[]>([]);
   const [notifications, setNotifications] = useState<OperationalAlert[]>([]);
+  // `undefined` means the channel report was not part of this view (the
+  // platform workbench does not request `workspace.health`). It is never
+  // defaulted to "ready": an unknown channel must not read as a working one.
+  const [alertNotificationReadiness, setAlertNotificationReadiness] = useState<AlertNotificationReadiness>();
+  // When the alert rows on screen were last read, from any source. The panel
+  // must not say "尚未刷新" while it is displaying rows a full load just read.
+  const [alertsLoadedAt, setAlertsLoadedAt] = useState<Date>();
   const [deletionRequests, setDeletionRequests] = useState<
     DataDeletionRequest[]
   >([]);
@@ -590,7 +599,7 @@ export function useOpsConsoleModel() {
   const [knowledgeRuleForm] = Form.useForm();
   const [knowledgeAssetForm] = Form.useForm();
   const [competitorForm] = Form.useForm();
-  const loadInFlightKeysRef = useRef(new Set<string>());
+  const loadRerunGateRef = useRef(new OpsLoadRerunGate<OpsLoadFilterOverrides>());
   const userDirectoryInFlightKeysRef = useRef(new Set<string>());
   const userRequestsRef = useRef(new UserRequestGate());
 
@@ -613,7 +622,7 @@ export function useOpsConsoleModel() {
     rulesLoadCoordinatorRef.current.invalidate();
     rechargeOrdersLoadCoordinatorRef.current.invalidate();
     modelMarkupLoadCoordinatorRef.current.invalidate();
-    loadInFlightKeysRef.current.clear();
+    loadRerunGateRef.current.clear();
     cancelUserRequests();
     setSettings(undefined);
     setPlatformRows([]);
@@ -647,6 +656,8 @@ export function useOpsConsoleModel() {
     setBrandNavigation([]);
     setAlerts([]);
     setNotifications([]);
+    setAlertNotificationReadiness(undefined);
+    setAlertsLoadedAt(undefined);
     setDeletionRequests([]);
     setModelStatus(undefined);
     setRules([]);
@@ -676,18 +687,14 @@ export function useOpsConsoleModel() {
     setError("");
   };
 
-  const load = async (filterOverrides: OpsLoadFilterOverrides = {}) => {
+  const performLoad = async (filterOverrides: OpsLoadFilterOverrides) => {
     const activeQueueFilters = filterOverrides.queueFilters ?? queueFilters;
     const activeAlertFilters = filterOverrides.alertFilters ?? alertFilters;
-    const loadKey = JSON.stringify({ activeQueueFilters, activeAlertFilters });
-    if (loadInFlightKeysRef.current.has(loadKey)) return;
-    loadInFlightKeysRef.current.add(loadKey);
     const loadRequest = loadCoordinatorRef.current.begin();
     setLoading(true);
     setModelStatusLoading(true);
     setError("");
     if (!managedOpsSession && !hasOpsConnection()) {
-      loadInFlightKeysRef.current.delete(loadKey);
       setLoading(false);
       setModelStatusLoading(false);
       return;
@@ -746,6 +753,11 @@ export function useOpsConsoleModel() {
         resolvedSession = value as unknown as OpsSession;
         loadCoordinatorRef.current.commit(loadRequest, () => { acceptLoadedSession(resolvedSession!); });
       } else if (firstOptionalError && ["SESSION_EXPIRED", "UNAUTHENTICATED"].includes(String((firstOptionalError as { code?: string }).code))) {
+        // The session is gone: the local bearer that produced this request must
+        // not stay in localStorage, or every later refresh keeps sending a
+        // credential the gateway already rejected. Managed sessions are
+        // untouched (clearOpsConnectionConfig is a no-op for them).
+        clearOpsConnectionConfig();
         loadCoordinatorRef.current.commit(loadRequest, () => {
           // Clearing the authorization boundary invalidates this load. Commit
           // its terminal authentication error here, before the stale-load guard
@@ -1049,6 +1061,8 @@ export function useOpsConsoleModel() {
             capability: EvidenceReadiness;
             capacity: EvidenceReadiness;
           };
+          /** Already on the wire; the console used to drop it. */
+          alertNotifications?: AlertNotificationReadiness;
         };
       };
       const metrics = metricsResult as unknown as {
@@ -1070,10 +1084,12 @@ export function useOpsConsoleModel() {
         setBrandNavigation(health?.capabilityCards?.brandNavigation?.items ?? []);
         setDataLifecycle(health?.setup?.dataLifecycle ?? { state: "not_required" });
         setProductionEvidence(health?.setup?.productionEvidence ?? { capability: { state: "not_required" }, capacity: { state: "not_required" } });
+        setAlertNotificationReadiness(health?.setup?.alertNotifications);
       }
       applyLoadedValue(alertResult, (value) => {
         const rows = Array.isArray(value) ? value : (value as { items?: unknown[] } | undefined)?.items ?? [];
         setAlerts(rows as unknown as OperationalAlert[]);
+        setAlertsLoadedAt(new Date());
       });
       applyLoadedValue(notificationResult, (value) => {
         const rows = Array.isArray(value) ? value : (value as { items?: unknown[] } | undefined)?.items ?? [];
@@ -1091,10 +1107,28 @@ export function useOpsConsoleModel() {
         setError(message);
       });
     } finally {
-      loadInFlightKeysRef.current.delete(loadKey);
       loadCoordinatorRef.current.commit(loadRequest, () => setLoading(false));
     }
   };
+  // A queued re-run must resolve the filters the operator last asked for, not
+  // the values captured when the in-flight request started. Routing the
+  // follow-up through the newest closure keeps a slow older request from
+  // replaying its own filter set after a newer one already committed.
+  const performLoadRef = useRef(performLoad);
+  performLoadRef.current = performLoad;
+  const loadKeyFor = (filterOverrides: OpsLoadFilterOverrides) => JSON.stringify({
+    activeQueueFilters: filterOverrides.queueFilters ?? queueFilters,
+    activeAlertFilters: filterOverrides.alertFilters ?? alertFilters,
+  });
+  const load = (filterOverrides: OpsLoadFilterOverrides = {}): Promise<void> => {
+    // A repeat refresh for the same filters is queued, not dropped: the caller
+    // that just wrote must still observe data fetched after its write.
+    return loadRerunGateRef.current.run(loadKeyFor(filterOverrides), filterOverrides, (payload) => performLoadRef.current(payload));
+  };
+  // Reactive hydration is idempotent by construction, so it only needs an idle
+  // check: see OpsLoadRerunGate.runIfIdle.
+  const loadIfIdle = (filterOverrides: OpsLoadFilterOverrides = {}): Promise<void> =>
+    loadRerunGateRef.current.runIfIdle(loadKeyFor(filterOverrides), filterOverrides, (payload) => performLoadRef.current(payload));
   const loadRules = async () => {
     if (!hasOpsConnection()) return;
     const request = rulesLoadCoordinatorRef.current.begin();
@@ -1159,7 +1193,11 @@ export function useOpsConsoleModel() {
       return;
     }
     recordOpsBootstrapTrace("load_started", { managed: managedOpsSession });
-    void load();
+    // This effect re-fires when the roles of the session land while the first
+    // load is still fanning out. That load already hydrates with the new
+    // authorization, so an idle check is enough here; queueing a follow-up
+    // would double every bootstrap fan-out (and re-flash the loading state).
+    void loadIfIdle();
   }, [managedOpsSession, opsRoleKey]);
   useEffect(() => () => cancelUserRequests(), []);
   const enabledCount = useMemo(
@@ -1403,7 +1441,8 @@ export function useOpsConsoleModel() {
         content: "撤销后不会再执行同步或发布，可重新完成官方授权后恢复。",
         okText: "确认撤销",
         cancelText: "取消",
-        okButtonProps: { danger: true },
+        // 破坏性确认：焦点落在“取消”，避免误按回车直接撤销授权。
+        ...confirmPolicyPropsFor("store.revoke"),
         onOk: () => resolve(true),
         onCancel: () => resolve(false),
       });
@@ -1723,9 +1762,14 @@ export function useOpsConsoleModel() {
         content: `原因：${values.reason}。退款会产生真实账务流水，提交后不能通过此页面撤销。`,
         okText: "确认退款",
         cancelText: "取消",
-        okButtonProps: { danger: true },
+        // 破坏性确认：焦点落在“取消”，避免误按回车直接产生账务流水。
+        ...confirmPolicyPropsFor("billing.refund"),
         onOk: () => resolve(true),
-        onCancel: () => resolve(false),
+        onCancel: () => {
+          // 这是唯一的确认层；取消必须给出明确结论，否则操作者无法判断退款是否已发生。
+          message.info("已取消退款，未产生任何账务流水");
+          resolve(false);
+        },
       });
     });
     if (!confirmed) return;
@@ -1755,6 +1799,8 @@ export function useOpsConsoleModel() {
         content: "已支付充值会幂等入账；结果未知的退款仅在服务商返回可信终态后关单或释放预留。",
         okText: "确认查单",
         cancelText: "取消",
+        // 只读查单：保留默认焦点，不加危险样式（见 utils/destructiveConfirm.ts 风险表）。
+        ...confirmPolicyPropsFor("billing.reconciliation.run"),
         onOk: () => resolve(true),
         onCancel: () => resolve(false),
       });
@@ -1912,6 +1958,43 @@ export function useOpsConsoleModel() {
       message.success("告警已确认");
     } catch (cause) {
       message.error(cause instanceof Error ? cause.message : "告警确认失败");
+    }
+  };
+  /**
+   * Re-read only the alert dataset. `load()` fans out over every authorized
+   * domain, so pointing a 60s poll at it would re-fetch the whole console for
+   * one list. Callers state their own failure instead of raising the global
+   * "部分运营数据未刷新" banner on every missed poll.
+   */
+  const refreshAlerts = async (): Promise<boolean> => {
+    if (!hasOpsConnection()) return false;
+    const authorization = createAuthorizationProjection(opsSessionRef.current, managedOpsSession);
+    if (!authorization.can("marketing.summary.read")) return false;
+    const platformOperator = authorization.scope.kind === "platform";
+    const workspaceId = canonicalOpsWorkspaceId(
+      opsSessionRef.current?.workspace_id,
+      managedOpsSession,
+      (managedOpsSession ? undefined : localStorage.getItem("ops_workspace_id")) ?? undefined,
+    );
+    try {
+      const value = await rpc(
+        "ops.alerts.list",
+        alertListParams(alertFilters, platformOperator, workspaceId || undefined),
+      );
+      const rows = Array.isArray(value) ? value : (value as { items?: unknown[] } | null | undefined)?.items ?? [];
+      setAlerts(rows as unknown as OperationalAlert[]);
+      setAlertsLoadedAt(new Date());
+      // A recovered read must clear the dataset error, otherwise the panel
+      // keeps showing stale failure text and the poll gate stays closed.
+      setDataSetErrors((previous) => {
+        if (!("ops.alerts.list" in previous)) return previous;
+        const next = { ...previous };
+        delete next["ops.alerts.list"];
+        return next;
+      });
+      return true;
+    } catch {
+      return false;
     }
   };
   const confirmLearning = async (suggestion: LearningSuggestion) => {
@@ -2805,6 +2888,10 @@ export function useOpsConsoleModel() {
     setProductionEvidence,
     alerts,
     setAlerts,
+    alertNotificationReadiness,
+    setAlertNotificationReadiness,
+    alertsLoadedAt,
+    refreshAlerts,
     notifications,
     deletionRequests,
     setDeletionRequests,

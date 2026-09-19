@@ -5,6 +5,7 @@ import type { AuthorizationProjection } from "../../authz/authorization.js";
 import type { OpsSession } from "../../types/ops.js";
 import type { OpsWorkbench } from "../../types/ops.js";
 import type { OperationalAlert } from "../../types/ops.js";
+import { activeJitGrantForNow, formatJitRemaining } from "../../authz/jitGrant.js";
 
 const roleLabels: Record<string, string> = {
   platform_admin: "平台管理员", ops_admin: "平台运营", support_agent: "平台客服",
@@ -26,15 +27,6 @@ export function workbenchBoundaryMessage(workbench: OpsWorkbench) {
   return workbench === "platform"
     ? "平台运营视图：仅显示服务端授权的平台能力；企业主体操作需切换到对应企业主体。"
     : "企业主体运营视图：仅作用于当前授权企业主体；不包含平台运营能力。";
-}
-
-export function formatJitRemaining(milliseconds: number) {
-  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
-  return `${Math.floor(totalSeconds / 60).toString().padStart(2, "0")}:${(totalSeconds % 60).toString().padStart(2, "0")}`;
-}
-
-export function activeJitGrantForNow<T extends { expires_at?: string }>(grants: readonly T[] | undefined, now: number) {
-  return grants?.find((grant) => !grant.expires_at || Date.parse(grant.expires_at) > now);
 }
 
 export function RoleScopeBar({

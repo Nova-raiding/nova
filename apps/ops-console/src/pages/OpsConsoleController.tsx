@@ -57,6 +57,31 @@ export function commitOpsWorkbenchTransition(
   return target;
 }
 
+/**
+ * The Ops Console is the platform-operations surface: merchant operation is
+ * Merchant Studio's job, so a merchant workspace can never be activated here.
+ * Every caller that could otherwise ask for one must go through this predicate,
+ * because a transition that is silently refused is a control that renders but
+ * can never fire.
+ */
+export function canActivateOpsWorkbench(next: OpsWorkbench): boolean {
+  return next === "platform";
+}
+
+/**
+ * Reachability of an in-console domain link, mirroring `activateWorkbench`.
+ * `undefined` means the domain is reachable from the active workbench as-is.
+ */
+export function domainNavigationBlockedReason(
+  domain: OpsDomain,
+  activeWorkbench: OpsWorkbench,
+): string | undefined {
+  const required = requiredWorkbenchForDomain(domain);
+  if (!required || required === activeWorkbench) return undefined;
+  if (canActivateOpsWorkbench(required)) return undefined;
+  return `“${mainItems.find((item) => item.domain === domain)?.label ?? domain}”属于商家工作区，平台运营控制台不提供该页面。`;
+}
+
 export function shouldConfirmWorkbenchTransition(
   current: OpsWorkbench,
   next: OpsWorkbench,
@@ -151,16 +176,13 @@ function Dashboard({
   activeWorkbench,
   switchingWorkbench,
   onWorkbenchChange,
-  availableWorkbenches,
-  onAvailableWorkbenches,
 }: {
   model: OpsConsoleModel;
   activeWorkbench: OpsWorkbench;
   switchingWorkbench: boolean;
   onWorkbenchChange: (workbench: OpsWorkbench, pushHistory?: boolean, prepare?: () => unknown, cancel?: () => unknown) => void;
-  availableWorkbenches: readonly OpsWorkbench[];
-  onAvailableWorkbenches: (workbenches: readonly OpsWorkbench[]) => void;
 }) {
+  const { message } = AntApp.useApp();
   const deferredPopstate = (domain: Parameters<typeof requiredWorkbenchForDomain>[0], commit: () => void) => {
     const targetWorkbench = workbenchIntentFromLocation(window.location) ?? requiredWorkbenchForDomain(domain);
     if (!targetWorkbench || targetWorkbench === activeWorkbench) return false;
@@ -194,6 +216,14 @@ function Dashboard({
   const authorized = sessionReady && canViewOpsDomain(activeDomain, model.authorization);
   const ActivePage = opsPageRegistry[activeDomain];
   const navigateToDomain = (domain: Parameters<typeof navigateToRoute>[0]) => {
+    // A domain served by a workbench this console cannot activate would
+    // otherwise fall through to a refused transition: the control renders, the
+    // click does nothing, and the operator gets no explanation.
+    const blocked = domainNavigationBlockedReason(domain, activeWorkbench);
+    if (blocked) {
+      void message.warning(blocked);
+      return;
+    }
     const requiredWorkbench = requiredWorkbenchForDomain(domain);
     if (requiredWorkbench && requiredWorkbench !== activeWorkbench) {
       onWorkbenchChange(requiredWorkbench, false, () => navigateToRoute(domain));
@@ -207,12 +237,6 @@ function Dashboard({
     model.modelStatus?.state === "ready" &&
     model.modelStatus.relay?.configured === true &&
     readOpsConnectionConfig().workbench === "platform";
-
-  useEffect(() => {
-    if (model.opsSession?.available_workbenches?.length) {
-      onAvailableWorkbenches(model.opsSession.available_workbenches);
-    }
-  }, [model.opsSession?.available_workbenches?.join("|")]);
 
   useEffect(() => {
     // Keep domain-specific hydration behind the same client-side visibility
@@ -286,9 +310,6 @@ function Dashboard({
           notifications={model.notifications}
           onAcknowledgeAlert={(alert) => void model.acknowledgeAlert(alert)}
           activeWorkbench={activeWorkbench}
-          availableWorkbenches={availableWorkbenches}
-          switchingWorkbench={switchingWorkbench}
-          onWorkbenchChange={onWorkbenchChange}
           onJitExpired={() => { model.clearJitRevocationReceipt(); model.clearAuthorizationScopedData(); void model.load(); }}
           onJitExit={() => { model.clearJitRevocationReceipt(); model.clearAuthorizationScopedData(); void model.load(); }}
           onRefresh={() => {
@@ -348,8 +369,8 @@ function Dashboard({
               reasonCode={accessDeniedReasonCode(sessionErrorEvidence)}
               decisionId={sessionAccessDeniedEvidence.decisionId}
               obligationsMissing={sessionAccessDeniedEvidence.obligationsMissing}
+              grantedCapabilities={Array.from(model.authorization.capabilities).sort()}
               onBack={() => navigateToDomain("users")}
-              onViewPermissions={() => navigateToDomain("members")}
               onRefresh={() => void model.load()}
               refreshing={model.loading}
             />
@@ -374,7 +395,6 @@ function OpsConsoleControllerContent() {
   });
   const [contextReady, setContextReady] = useState(false);
   const [switchingWorkbench, setSwitchingWorkbench] = useState(false);
-  const [availableWorkbenches, setAvailableWorkbenches] = useState<readonly OpsWorkbench[]>(["platform"]);
   const [pendingWorkbench, setPendingWorkbench] = useState<{ next: OpsWorkbench; pushHistory: boolean; prepare?: () => unknown; cancel?: () => unknown }>();
   const { clearAll: clearUnsavedChanges, labels: unsavedLabels } = useUnsavedChangesState();
 
@@ -388,7 +408,7 @@ function OpsConsoleControllerContent() {
     window.requestAnimationFrame(() => setSwitchingWorkbench(false));
   };
   const activateWorkbench = (next: OpsWorkbench, pushHistory: boolean, prepare?: () => unknown, cancel?: () => unknown) => {
-    if (next !== "platform") return;
+    if (!canActivateOpsWorkbench(next)) return;
     if (shouldConfirmWorkbenchTransition(activeWorkbench, next, unsavedLabels)) {
       setPendingWorkbench({ next, pushHistory, prepare, cancel });
       return;
@@ -411,8 +431,6 @@ function OpsConsoleControllerContent() {
           key={activeWorkbench}
           activeWorkbench={activeWorkbench}
           switchingWorkbench={switchingWorkbench}
-          availableWorkbenches={availableWorkbenches}
-          onAvailableWorkbenches={setAvailableWorkbenches}
           onWorkbenchChange={(next, pushHistory = true, prepare, cancel) => activateWorkbench(next, pushHistory, prepare, cancel)}
         />
       ) : <Skeleton active paragraph={{ rows: 8 }} aria-label="正在初始化运营工作台" />}
@@ -450,14 +468,10 @@ function OpsConsoleRuntime({
   activeWorkbench,
   switchingWorkbench,
   onWorkbenchChange,
-  availableWorkbenches,
-  onAvailableWorkbenches,
 }: {
   activeWorkbench: OpsWorkbench;
   switchingWorkbench: boolean;
   onWorkbenchChange: (workbench: OpsWorkbench, pushHistory?: boolean, prepare?: () => unknown, cancel?: () => unknown) => void;
-  availableWorkbenches: readonly OpsWorkbench[];
-  onAvailableWorkbenches: (workbenches: readonly OpsWorkbench[]) => void;
 }) {
   const model = useOpsConsoleModel();
   const switchWorkbench = (next: OpsWorkbench, pushHistory = true, prepare?: () => unknown, cancel?: () => unknown) => {
@@ -472,7 +486,7 @@ function OpsConsoleRuntime({
   };
   return (
     <AuthorizationProvider authorization={model.authorization}>
-      <Dashboard model={model} activeWorkbench={activeWorkbench} switchingWorkbench={switchingWorkbench} onWorkbenchChange={switchWorkbench} availableWorkbenches={availableWorkbenches} onAvailableWorkbenches={onAvailableWorkbenches} />
+      <Dashboard model={model} activeWorkbench={activeWorkbench} switchingWorkbench={switchingWorkbench} onWorkbenchChange={switchWorkbench} />
     </AuthorizationProvider>
   );
 }

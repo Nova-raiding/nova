@@ -16,6 +16,7 @@ import {
   message,
 } from "antd";
 import { deliveryDateTimeInputValue } from "./deliveryDateTime.js";
+import { confirmPolicyPropsFor } from "../../utils/destructiveConfirm.js";
 import { CustomerDeliveryUpload } from "./CustomerDeliveryUpload.js";
 import { CustomerDeliveryAccountBinding } from "./CustomerDeliveryAccountBinding.js";
 import type {
@@ -690,7 +691,30 @@ export function CustomerDeliverySection({
           />
           </>
         ) : null}
-        {detailsRecord && onArchive ? <div style={{ marginTop: 24, textAlign: "right" }}><Button danger onClick={() => Modal.confirm({ title: `停用并删除“${detailsRecord.companyName}”记录？`, content: "该记录会从当前列表移除，但业务数据会保留，管理员仍可恢复。", okText: "确认停用并删除", cancelText: "取消", okButtonProps: { danger: true }, onOk: async () => { await onArchive(detailsRecord); setDetailsRecord(undefined); message.success("记录已停用并从列表移除"); } })}>停用并删除记录</Button></div> : null}
+        {detailsRecord && onArchive ? (
+          <div style={{ marginTop: 24, textAlign: "right" }}>
+            <Button
+              danger
+              onClick={() =>
+                Modal.confirm({
+                  title: `停用并删除“${detailsRecord.companyName}”记录？`,
+                  content: "该记录会从当前列表移除，但业务数据会保留，管理员仍可恢复。",
+                  okText: "确认停用并删除",
+                  cancelText: "取消",
+                  // 记录会立刻从列表消失，只能由管理员恢复：焦点默认落在“取消”。
+                  ...confirmPolicyPropsFor("delivery.record.archive"),
+                  onOk: async () => {
+                    await onArchive(detailsRecord);
+                    setDetailsRecord(undefined);
+                    message.success("记录已停用并从列表移除");
+                  },
+                })
+              }
+            >
+              停用并删除记录
+            </Button>
+          </div>
+        ) : null}
       </Drawer>
       <Drawer
         title={

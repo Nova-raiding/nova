@@ -5,6 +5,7 @@ import { parseRevisionChangesJson, type RevisionCreationValues } from "./revisio
 import { describeOpsError, rpc } from "../../../api/opsClient.js";
 import { CampaignLifecycleControl } from './CampaignLifecycleControl.js'
 import { assetScanRecoveryEvidence } from "./assetScanRecovery.js";
+import { confirmPolicyPropsFor } from "../../../utils/destructiveConfirm.js";
 import { ImageExecutionEvidenceModal } from "./ImageExecutionEvidenceModal.js";
 import { canReconcileImageExecution, summarizeImageExecutionEvidence } from "./imageExecutionEvidence.js";
 import type { RecordManualPublishEvidenceInput } from "../../../api/manualPublishClient.js";
@@ -170,6 +171,8 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
       content: `系统会在当前工作区创建客服工单，并关联任务 ${input.taskId}。客服可继续分配负责人、沟通并跟踪 SLA。`,
       okText: "创建工单",
       cancelText: "取消",
+      // 新增工单不是破坏性操作：保持默认焦点，也不加危险样式。
+      ...confirmPolicyPropsFor("support.ticket.create"),
       onOk: async () => {
         try {
           await model.supportClient.create({

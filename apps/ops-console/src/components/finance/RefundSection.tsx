@@ -1,4 +1,4 @@
-import { Button, Card, Form, Input, Modal, Tag } from "antd";
+import { Button, Card, Form, Input, Tag } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 
 interface RefundSectionProps {
@@ -7,15 +7,11 @@ interface RefundSectionProps {
 
 export function RefundSection({ model }: RefundSectionProps) {
   const { refundForm, refund, canFinance, refundSubmitting } = model;
-  const confirmRefund = (values: { orderId: string; reason: string }) => {
-    Modal.confirm({
-      title: "确认创建退款？",
-      content: `订单 ${values.orderId} 将按服务端订单状态和原支付金额执行退款。原因：${values.reason}`,
-      okText: "确认退款",
-      cancelText: "返回修改",
-      okButtonProps: { danger: true },
-      onOk: () => refund(values),
-    });
+  // 确认只在 `refund()` 内部弹一次，程序化调用者同样受保护。此处不能再弹第二层：
+  // 表单 onOk 返回 promise 时 antd 会让第一层带着 loading 停在第二层下方，取消第二层
+  // 只会让两层静默消失，操作者无法判断退款是否已发生。
+  const submitRefund = (values: { orderId: string; reason: string }) => {
+    void refund(values);
   };
 
   return (
@@ -26,7 +22,7 @@ export function RefundSection({ model }: RefundSectionProps) {
       <Form
         form={refundForm}
         layout="inline"
-        onFinish={confirmRefund}
+        onFinish={submitRefund}
         onFinishFailed={({ errorFields }) => {
           const first = errorFields[0]?.name;
           if (first) refundForm.scrollToField(first, { block: "center", focus: true });

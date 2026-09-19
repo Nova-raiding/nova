@@ -4,6 +4,7 @@ import {
   abortOpsRequests,
   describeOpsError,
   hasOpsConnection,
+  logoutPlatformOps,
   opsRestGetWithMeta,
   opsRestPost,
   purgeLocalOpsCredentialsForManagedSession,
@@ -146,6 +147,53 @@ describe("workspace RPC boundary", () => {
     expect(() => saveOpsConnectionConfig({ apiBase: "http://new-api.test", workspaceId: "", token: "new-token" })).toThrowError("请填写真实工作区 ID");
     expect(readOpsConnectionConfig()).toEqual(original);
     clearOpsConnectionConfig();
+    expect(hasOpsConnection()).toBe(false);
+  });
+
+  it("drops the local bearer from localStorage when the operator logs out", async () => {
+    // Regression: 退出登录 only POSTed /v1/auth/logout and switched workbench, so
+    // the bearer stayed in localStorage and `onRefresh()` still succeeded — on a
+    // shared machine the previous operator's credential survived the logout.
+    const values = new Map<string, string>([
+      ["ops_connection_config_v1", JSON.stringify({ apiBase: "http://ops.test", workspaceId: "", actorId: "actor-ops", token: "platform-token", workbench: "platform" })],
+      ["ops_api_base", "http://ops.test"],
+      ["ops_actor_id", "actor-ops"],
+      ["ops_api_token", "legacy-platform-token"],
+    ]);
+    const local = storage();
+    vi.spyOn(local, "getItem").mockImplementation((key) => values.get(key) ?? "");
+    vi.spyOn(local, "setItem").mockImplementation((key, value) => { values.set(key, value); });
+    vi.spyOn(local, "removeItem").mockImplementation((key) => { values.delete(key); });
+    vi.stubGlobal("localStorage", local);
+    vi.stubGlobal("sessionStorage", storage());
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: { jsonrpc: "2.0", id: "1", result: {} } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(readOpsConnectionConfig().token).toBe("platform-token");
+    expect(hasOpsConnection()).toBe(true);
+
+    await logoutPlatformOps();
+    expect(fetchMock).toHaveBeenCalledWith("http://ops.test/v1/auth/logout", expect.objectContaining({ method: "POST" }));
+
+    expect(values.has("ops_api_token")).toBe(false);
+    expect(values.has("ops_connection_config_v1")).toBe(false);
+    expect(values.has("ops_api_base")).toBe(false);
+    expect(values.has("ops_actor_id")).toBe(false);
+    expect(readOpsConnectionConfig().token).toBe("");
+    expect(hasOpsConnection()).toBe(false);
+  });
+
+  it("rejects a local bearer that survives the connection config wipe", () => {
+    const values = new Map<string, string>([["ops_api_token", "legacy-platform-token"]]);
+    const local = storage();
+    vi.spyOn(local, "getItem").mockImplementation((key) => values.get(key) ?? "");
+    vi.spyOn(local, "removeItem").mockImplementation((key) => { values.delete(key); });
+    vi.stubGlobal("localStorage", local);
+    vi.stubGlobal("sessionStorage", storage());
+
+    clearOpsConnectionConfig();
+    expect(values.has("ops_api_token")).toBe(false);
+    expect(readOpsConnectionConfig().token).toBe("");
     expect(hasOpsConnection()).toBe(false);
   });
 

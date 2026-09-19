@@ -57,6 +57,53 @@ describe("OpsHeader account authentication UX", () => {
     expect(markup).not.toContain("oidc-private-subject");
   });
 
+  it("consumes the JIT callbacks it is given instead of accepting them unused", () => {
+    // The controlled-session bar only renders its exit control when the header
+    // actually forwards onJitExit, so its presence is the proof that the
+    // expiry/exit cleanup chain is reachable from the shell.
+    const liveGrant = {
+      id: "grant_1",
+      access_mode: "read" as const,
+      workspace_id: "ws_1",
+      resource_scope: { type: "workspace", ids: ["ws_1"] },
+      expires_at: "2999-01-01T00:00:00.000Z",
+    };
+    const base = {
+      managedSession: false,
+      sessionLoaded: true,
+      onRefresh: () => undefined,
+      session: {
+        actor_id: "5902c96f-508f-420c-a82a-ef4c69de59db",
+        account_login: "ops@example.com",
+        workspace_id: "ws_1",
+        roles: ["platform_ops"],
+        workbench: "platform" as const,
+        workspace_granted: true,
+        scope: { type: "platform" as const },
+      },
+    };
+    const withoutGrant = renderToStaticMarkup(<OpsHeader {...base} onJitExpired={() => undefined} onJitExit={() => undefined} />);
+    expect(withoutGrant).not.toContain("受控会话");
+
+    const withGrant = renderToStaticMarkup(
+      <OpsHeader
+        {...base}
+        session={{ ...base.session, temporary_grants: [liveGrant] }}
+        onJitExpired={() => undefined}
+        onJitExit={() => undefined}
+      />,
+    );
+    expect(withGrant).toContain('aria-label="受控会话"');
+    expect(withGrant).toContain("退出受控会话");
+    expect(withGrant).toContain('aria-label="退出受控会话并清除本机已加载的授权数据"');
+
+    const withoutExitHandler = renderToStaticMarkup(
+      <OpsHeader {...base} session={{ ...base.session, temporary_grants: [liveGrant] }} />,
+    );
+    expect(withoutExitHandler).toContain("受控会话 · 只读");
+    expect(withoutExitHandler).not.toContain("退出受控会话");
+  });
+
   it("keeps account identity and workbench label on one horizontal row", async () => {
     const styles = await import("node:fs/promises").then(({ readFile }) =>
       readFile(new URL("../styles.css", import.meta.url), "utf8"),

@@ -142,17 +142,25 @@ async function ensureLocalOpsSession(): Promise<void> {
   return localOpsSessionPromise;
 }
 
+/**
+ * Every locally persisted credential key: the versioned connection tuple plus
+ * the legacy per-key form `readOpsConnectionConfig` still falls back to. A
+ * "clear" that only removed the tuple left `ops_api_token` behind, so the
+ * console kept attaching `authorization: Bearer …` after logout.
+ */
+const LOCAL_CREDENTIAL_KEYS = [
+  "ops_connection_config_v1",
+  "ops_api_base",
+  "ops_actor_id",
+  "ops_api_token",
+] as const;
+
 export function purgeLocalOpsCredentialsForManagedSession(
   storage: Pick<Storage, "removeItem">,
   managed = managedOpsSession,
 ): void {
   if (!managed) return;
-  for (const key of [
-    "ops_connection_config_v1",
-    "ops_api_base",
-    "ops_actor_id",
-    "ops_api_token",
-  ]) storage.removeItem(key);
+  for (const key of LOCAL_CREDENTIAL_KEYS) storage.removeItem(key);
   // A managed OIDC session still needs the route-scoped tenant/workbench
   // context to select the correct signed boundary. These values are not
   // credentials and are validated again by the gateway/API on every request.
@@ -294,9 +302,21 @@ export function saveOpsConnectionConfig(input: OpsConnectionConfigInput): OpsCon
   return config;
 }
 
+/**
+ * Drop the local connection state, including the legacy credential keys. This
+ * is the logout/401 boundary: `readOpsConnectionConfig` falls back to those
+ * keys, so removing only the versioned tuple left a usable bearer in
+ * localStorage — `onRefresh()` still succeeded after 退出登录 and a shared
+ * machine kept the operator's credential. Managed OIDC sessions keep their
+ * context in sessionStorage and authenticate with an HttpOnly cookie, so only
+ * the route-scoped UI context is cleared for them.
+ */
 export function clearOpsConnectionConfig(): void {
-  configStorage().removeItem(OPS_CONNECTION_CONFIG_KEY);
-  configStorage().removeItem(OPS_WORKBENCH_KEY);
+  const storage = configStorage();
+  storage.removeItem(OPS_CONNECTION_CONFIG_KEY);
+  storage.removeItem(OPS_WORKBENCH_KEY);
+  if (managedOpsSession || typeof localStorage === "undefined") return;
+  for (const key of LOCAL_CREDENTIAL_KEYS) localStorage.removeItem(key);
 }
 
 /** Commit the active UI context without treating URL state as authority. */
@@ -389,10 +409,6 @@ export function opsApiBase(): string {
  * local development the token is intentionally entered by the operator and
  * kept only in browser storage; production uses the OIDC gateway session.
  */
-export function hasOpsCredentials(): boolean {
-  return managedOpsSession || localOpsSessionEnabled || Boolean(readOpsConnectionConfig().token);
-}
-
 export function hasOpsConnection(): boolean {
   const config = readOpsConnectionConfig();
   // The signed OIDC session supplies workbench and tenant scope server-side;
@@ -456,6 +472,9 @@ export async function logoutPlatformOps(): Promise<void> {
   }
   suppressLocalOpsSession();
   markPasswordSessionActive(false);
+  // Drop the local bearer before re-seeding the UI context, otherwise the
+  // still-valid credential outlives the logout and the next refresh succeeds.
+  clearOpsConnectionConfig();
   setOpsWorkbenchContext("platform");
 }
 

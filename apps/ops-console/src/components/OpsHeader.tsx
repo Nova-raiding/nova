@@ -5,6 +5,7 @@ import { describeOpsError, localOpsSessionEnabled, loginPlatformOps, logoutPlatf
 import type { OperationalAlert, OpsDataSource, OpsSession, OpsWorkbench } from "../types/ops.js";
 import type { AuthorizationProjection } from "../authz/authorization.js";
 import { accountLabel } from "../authz/accountLabel.js";
+import { ControlledSessionBar } from "./authz/ControlledSessionBar.js";
 
 interface OpsHeaderProps {
   managedSession: boolean;
@@ -17,10 +18,9 @@ interface OpsHeaderProps {
   refreshing?: boolean;
   session?: OpsSession;
   authorization?: AuthorizationProjection;
+  /** The Ops Console is platform-bound and offers no workbench transition, so
+   * this is only used to pick the notification scope. */
   activeWorkbench?: OpsWorkbench;
-  availableWorkbenches?: readonly OpsWorkbench[];
-  switchingWorkbench?: boolean;
-  onWorkbenchChange?: (workbench: OpsWorkbench) => void;
   onJitExpired?: () => void;
   onJitExit?: () => void;
   alerts?: readonly OperationalAlert[];
@@ -39,9 +39,6 @@ export function OpsHeader({
   session,
   authorization,
   activeWorkbench,
-  availableWorkbenches,
-  switchingWorkbench,
-  onWorkbenchChange,
   onJitExpired,
   onJitExit,
   alerts,
@@ -129,6 +126,12 @@ export function OpsHeader({
 
   return (
     <Layout.Header className="ops-header">
+      <div className="ops-header-identity">
+        {/* Renders nothing unless the server projection carries a live
+            temporary grant. It lives here because it is the only trigger for
+            the expiry cleanup the controller wires into onJitExpired. */}
+        <ControlledSessionBar session={session} onExpired={onJitExpired} onExit={onJitExit} />
+      </div>
       <div className="ops-header-actions">
         <div className="ops-connection-toolbar">
           {shouldShowLogin ? (
