@@ -1064,7 +1064,11 @@ interface RedisAutomationLeasePort {
  * rotating refresh token concurrently and the loser's token is invalidated —
  * every later request from that side then fails until a manual reconnect.
  * Returns undefined without a Redis URL; the connector then falls back to its
- * in-process lock plus a compare-and-swap on the stored credential.
+ * in-process lock plus a best-effort read-check-write on the stored credential
+ * (re-read, and adopt a peer's newer token instead of overwriting it). That is
+ * NOT an atomic compare-and-swap: a peer that writes between the read and the
+ * store is still overwritten. This lock is the only cross-replica mutual
+ * exclusion; the read-check-write merely narrows the window.
  */
 function createRedisCredentialRefreshLock(url: string | undefined) {
   if (!url?.trim()) return undefined
@@ -1709,12 +1713,12 @@ function parseCnyToFen(value: unknown, minimumFen = 100) {
  * to share the same unrounded expression, so the audit could never detect the
  * overcharge it was recomputing.
  */
-function scaleCnyToFen(value: number) {
+export function scaleCnyToFen(value: number) {
   return Number((value * 100).toFixed(6))
 }
 
 /** Ceiling conversion for wallet charges, preserving the 1-fen platform minimum. */
-function chargeFenFromCny(value: number) {
+export function chargeFenFromCny(value: number) {
   return Math.max(1, Math.ceil(scaleCnyToFen(value)))
 }
 
@@ -4335,14 +4339,18 @@ async function requireActiveWorkspace(workspaceId: string, method: string) {
  * publishing. It must not gate the credential-free work a first-time customer
  * can do with material they supply themselves, nor the ability to see their own
  * balance and buy creative points. Gating those made a brand-new paid account
- * unusable: applying this predicate to the plugin's declared surface
- * (`MCP_METHODS` minus the bridge's hidden/disabled sets — 131 tools at the time
- * of writing) left 63 of them returning 428, including the documented
- * "upload an image and get a candidate" path, `catalog.search`, and
- * `commercial.order.create` — so the only recovery guidance the merchant
- * received pointed at a tool the plugin does not expose. The entries below take
- * that count to 47; re-derive it from the predicate and the bridge surface
- * rather than trusting these literals if the merchant surface moves.
+ * unusable: most of the plugin's declared merchant surface returned 428,
+ * including the documented "upload an image and get a candidate" path,
+ * `catalog.search`, and `commercial.order.create` — so the only recovery
+ * guidance the merchant received pointed at a tool the plugin does not expose.
+ *
+ * No count is quoted here on purpose. Two independent reviews derived different
+ * gated-tool totals from this same predicate (one said 84 before and 48 after,
+ * the other 82 and 58), so any literal would be an unverifiable claim in a
+ * comment no gate reads. To measure it yourself, apply the predicate in
+ * `requireStoreOnboarding` below to `MCP_METHODS` minus the bridge's
+ * `MERCHANT_HIDDEN_METHODS` / `COMMERCIAL_DISABLED_METHODS` sets, and exclude
+ * `workspace.bootstrap` (both call sites skip it).
  *
  * This single set is the source of truth for both surfaces. It used to be
  * spelled out inline at three call sites, which is how `asset.upload` and the
@@ -4690,6 +4698,8 @@ function configPositiveNumber(raw: string | undefined, fallback: number) {
 const OPERATIONAL_ALERT_SWEEP_BATCH = Math.max(1, configPositiveNumber(process.env.OPERATIONAL_ALERT_SWEEP_BATCH, 8))
 const OPERATIONAL_ALERT_SWEEP_INTERVAL_MS = Math.max(30_000, configPositiveNumber(process.env.OPERATIONAL_ALERT_SWEEP_INTERVAL_MS, 60_000))
 
+const OPERATIONAL_ALERT_SWEEP_ENABLED = (process.env.OPERATIONAL_ALERT_SWEEP_ENABLED ?? 'true').toLowerCase() !== 'false'
+
 /**
  * Evaluate operational alerts for a rotating batch of tenants in the background.
  *
@@ -4698,12 +4708,34 @@ const OPERATIONAL_ALERT_SWEEP_INTERVAL_MS = Math.max(30_000, configPositiveNumbe
  * at 02:00 produced no persisted row and no webhook until someone looked, and a
  * revoked OAuth token or a stranded settlement could stay invisible for days.
  * Alert derivation reads the hydrated in-memory projection, so this hydrates a
- * bounded rotating batch rather than every tenant in one pass — detection
- * latency becomes `batch / tenantCount * interval` instead of unbounded, and the
- * control-plane pool stays protected from a tenant-list stampede.
+ * rotating batch rather than every tenant in one pass.
+ *
+ * Three costs are known and NOT solved here:
+ *
+ *  1. Detection latency is `tenantCount / batch * interval`. At the defaults (8
+ *     tenants per minute) 300 tenants take ~38 minutes to cover once. Raise
+ *     `OPERATIONAL_ALERT_SWEEP_BATCH` if that is too slow — each extra tenant
+ *     per tick is one more full workspace hydration.
+ *  2. The window is derived from the wall clock, so it is *identical* on every
+ *     replica: N replicas each evaluate and notify for the same batch, which
+ *     duplicates the work rather than partitioning it. It is still the lesser
+ *     evil — a process-local cursor duplicated just as much AND additionally
+ *     reset to zero on every deploy and never advanced past the first batch for
+ *     a pod stuck in a crash loop. Repeat delivery is idempotent because the
+ *     receiver keys receipts on the alert id (a repeat is recorded as delivered,
+ *     not as a failure).
+ *  3. Hydration writes into the process-global `service` projections, which have
+ *     no eviction path, so a long-lived replica accumulates every tenant it has
+ *     swept. That retention problem predates this sweep, but the sweep is what
+ *     drives it toward the whole fleet. Fixing it properly means deriving alerts
+ *     from repository queries instead of hydrating, or evicting per-tenant state
+ *     after the sweep; neither is done here.
+ *
+ * `OPERATIONAL_ALERT_SWEEP_ENABLED=false` stops the sweep and falls back to the
+ * old behaviour of evaluating alerts only when the console reads them.
  */
 async function sweepOperationalAlerts() {
-  if (!persistence.listWorkspaceIds) return
+  if (!OPERATIONAL_ALERT_SWEEP_ENABLED || !persistence.listWorkspaceIds) return
   try {
     await persistenceReady
     const workspaceIds = await persistence.listWorkspaceIds()
@@ -4728,11 +4760,14 @@ async function sweepOperationalAlerts() {
       } catch (error) {
         // One malformed legacy tenant must not stop the sweep; its persisted
         // alert stream stays queryable and the next pass repairs it.
-        console.error(JSON.stringify({ event: 'operational_alert_sync_failed', workspace_id: workspaceId, error_message: error instanceof Error ? error.message : String(error) }))
+        // Same scrubber as the request-error log: this path runs pg work, and a
+        // connection-bearing error message would otherwise reach a log file
+        // unredacted — the exact leak `redactInlineCredentials` was added for.
+        console.error(JSON.stringify({ event: 'operational_alert_sync_failed', workspace_id: workspaceId, error_message: redactInlineCredentials(error instanceof Error ? error.message : String(error)) }))
       }
     })
   } catch (error) {
-    console.error(JSON.stringify({ event: 'operational_alert_sweep_failed', error_message: error instanceof Error ? error.message : String(error) }))
+    console.error(JSON.stringify({ event: 'operational_alert_sweep_failed', error_message: redactInlineCredentials(error instanceof Error ? error.message : String(error)) }))
   }
 }
 async function persistSnapshot(workspaceId: string, entityType: 'product' | 'task' | 'content_version' | 'publish_job' | 'manual_publish_record' | 'publish_batch' | 'platform_account' | 'generation_job' | 'image_generation_job' | 'brand_profile' | 'asset' | 'feedback' | 'sync_job' | 'automation_policy', entity: { id: string; version?: number; revision?: number }, value: Record<string, unknown>) {
@@ -5936,7 +5971,8 @@ const DEFAULT_BODY_LIMIT = 1_048_576
 const MCP_BODY_LIMIT = 70 * 1024 * 1024
 const DEFAULT_RATE_LIMIT = 120
 
-const rateBuckets = new Map<string, { windowStartedAt: number; count: number }>()
+/** Process-local fallback rate buckets, used while Redis is unavailable. Exported for the sweep test. */
+export const rateBuckets = new Map<string, { windowStartedAt: number; count: number }>()
 /** Sweep expired fallback buckets once the map grows past this size. */
 const RATE_BUCKET_SWEEP_THRESHOLD = 10_000
 const metricsStartedAt = process.hrtime.bigint()
@@ -6653,6 +6689,35 @@ function authorizedRoles(principal?: RequestPrincipal) {
   return [...new Set([...(principal.memberRole ? [principal.memberRole] : []), ...gatewayWorkspaceRoles])]
 }
 
+/**
+ * Canonical roles are the only vocabulary an authorization decision may read.
+ * `authorizedRoles` deliberately keeps a workspace member's raw membership role
+ * for audit output and display, and `platform_ops` is simultaneously a platform
+ * gateway role (canonical `ops_admin`) and a workspace membership role that has
+ * no canonical form at all. Comparing those raw strings against a gateway
+ * allow-list therefore let a workspace member holding the `platform_ops`
+ * *membership* role clear platform-operations gates. Every gate derives its
+ * answer from this projection so the rule cannot drift site by site.
+ */
+function canonicalAuthorizationRoles(principal: RequestPrincipal | undefined, rawRoles: readonly string[] = authorizedRoles(principal)): CanonicalRole[] {
+  return principal?.workbench === 'workspace'
+    ? resolveCanonicalRoles({ gatewayRoles: rawRoles.filter(role => role !== principal.memberRole), memberRole: principal.memberRole })
+    : resolveCanonicalRoles({ gatewayRoles: rawRoles })
+}
+
+function canonicalAuthorizationRolesForRequest(req: IncomingMessage): CanonicalRole[] {
+  return canonicalAuthorizationRoles(requestPrincipals.get(req))
+}
+
+/**
+ * The canonical form of the durable workspace membership role. Membership is the
+ * authority for widening a workspace-scoped boundary (brand scope, tenant
+ * scope), so this deliberately ignores gateway assertions.
+ */
+function canonicalMembershipRole(principal: RequestPrincipal | undefined): CanonicalRole | undefined {
+  return principal?.memberRole ? canonicalizeRole(principal.memberRole, 'membership') : undefined
+}
+
 const platformCanonicalRoles = new Set<CanonicalRole>(['platform_admin', 'ops_admin', 'support_agent', 'finance_ops', 'security_admin', 'auditor', 'rules_admin', 'model_admin', 'release_admin'])
 const alwaysEnforcedMcpMethods = new Set([
   'ops.user.suspend', 'ops.user.activate', 'ops.user.risk.transition', 'ops.user.session.revoke',
@@ -6735,9 +6800,7 @@ export function mcpAuthorizationCoverageReport(source: NodeJS.ProcessEnv = proce
 
 function effectiveAuthorizationProjection(principal: RequestPrincipal | undefined, workspaceId: string) {
   const roles = authorizedRoles(principal)
-  const canonicalRoles = principal?.workbench === 'workspace'
-    ? resolveCanonicalRoles({ gatewayRoles: roles.filter(role => role !== principal.memberRole), memberRole: principal.memberRole })
-    : resolveCanonicalRoles({ gatewayRoles: roles })
+  const canonicalRoles = canonicalAuthorizationRoles(principal, roles)
   const atoms: PermissionAtom[] = []
   if (principal?.actorId) atoms.push({ capability: 'authorization.session.read', effect: 'allow', scope: { type: 'self', ids: [principal.actorId] }, source: 'gateway_assertion', sourceId: `authenticated:${principal.identityId ?? principal.actorId}`, obligations: [], ...(principal.authorizationRevision !== undefined ? { revision: String(principal.authorizationRevision) } : {}) })
   for (const role of canonicalRoles) {
@@ -7650,8 +7713,10 @@ async function authenticate(req: IncomingMessage) {
 
 function requireRuleAdmin(req: IncomingMessage): RequestPrincipal {
   const principal = requestPrincipals.get(req)
-  const roles = authorizedRoles(principal)
-  if (!principal || !roles.includes('rules_admin') || !principal.actorId) throw new DomainError(ERROR_CODES.FORBIDDEN, '规则中心写操作需要绑定 actor_id 的 rules_admin 权限', 403)
+  // Compare canonical roles only: matching the raw assertion rejected the
+  // registered `platform_rules_admin` gateway alias (canonical `rules_admin`),
+  // which made the rule center's writes and lifecycle view unusable for it.
+  if (!principal || !canonicalAuthorizationRolesForRequest(req).includes('rules_admin') || !principal.actorId) throw new DomainError(ERROR_CODES.FORBIDDEN, '规则中心写操作需要绑定 actor_id 的 rules_admin 权限', 403)
   const claimedActor = header(req, 'x-actor-id')?.trim()
   if (requiresStrictAuth() && claimedActor && claimedActor !== principal.actorId) throw new DomainError(ERROR_CODES.FORBIDDEN, 'X-Actor-Id 与认证身份不一致', 403)
   return principal
@@ -7660,9 +7725,7 @@ function requireRuleAdmin(req: IncomingMessage): RequestPrincipal {
 function requireOperationsRole(req: IncomingMessage, allowed: readonly string[]) {
   const principal = requestPrincipals.get(req)
   const roles = authorizedRoles(principal)
-  const canonicalRoles = principal?.workbench === 'workspace'
-    ? resolveCanonicalRoles({ gatewayRoles: roles.filter(role => role !== principal.memberRole), memberRole: principal.memberRole })
-    : resolveCanonicalRoles({ gatewayRoles: roles })
+  const canonicalRoles = canonicalAuthorizationRoles(principal, roles)
   const allowedCanonical = new Set(allowed.flatMap(role => [canonicalizeRole(role, 'gateway'), canonicalizeRole(role, 'membership')]).filter((role): role is CanonicalRole => role !== undefined))
   // `platform_ops` is simultaneously a platform gateway role (`ops_admin`) and a
   // workspace membership role. `authorizedRoles` deliberately keeps the raw
@@ -7858,7 +7921,12 @@ function isPlatformOperations(req: IncomingMessage) {
 }
 
 function canViewRuleLifecycle(req: IncomingMessage) {
-  const roles = authorizedRoles(requestPrincipals.get(req))
+  // Canonical roles only. Reading the raw assertion made a workspace member
+  // whose *membership* role is `platform_ops` (no canonical form) pass this
+  // Ops-only predicate and see inactive and manual:// rows the merchant view
+  // must never expose. `platform_admin` stays out deliberately: lifecycle
+  // visibility is scoped to the Ops operator and rules-governance roles.
+  const roles = canonicalAuthorizationRolesForRequest(req)
   // The MCP bridge and merchant UI share the API, including local bearer
   // credentials that may carry an Ops role. Lifecycle rows are an Ops-only
   // view; use the authenticated principal's workbench, never the client
@@ -7868,7 +7936,7 @@ function canViewRuleLifecycle(req: IncomingMessage) {
   const requestedWorkbench = header(req, 'x-ops-workbench')?.trim()
   return requestedWorkbench === authenticatedWorkbench
     && (authenticatedWorkbench === 'platform' || authenticatedWorkbench === 'workspace')
-    && (roles.includes('rules_admin') || roles.includes('platform_ops'))
+    && (roles.includes('rules_admin') || roles.includes('ops_admin'))
 }
 
 function scopeCommercialRolloutTarget(req: IncomingMessage, currentWorkspaceId: string, targetWorkspaceId?: string) {
@@ -7936,8 +8004,12 @@ async function enforceBrandProfileHttpAccess(req: IncomingMessage, workspaceId: 
 }
 
 function hasWorkspaceWideBrandAccess(req: IncomingMessage) {
-  const role = requestPrincipals.get(req)?.memberRole
-  if (role === 'workspace_owner' || role === 'merchant_admin' || role === 'platform_ops') return true
+  // Only the canonical form of the durable *membership* role may widen brand
+  // scope. The raw comparison admitted a workspace member whose membership role
+  // is `platform_ops` — a membership role with no canonical workspace form — to
+  // every brand in the workspace, bypassing all brand-level access checks.
+  const role = canonicalMembershipRole(requestPrincipals.get(req))
+  if (role === 'workspace_owner' || role === 'workspace_admin') return true
   // The isolated local Compose token intentionally uses a wildcard workspace
   // grant and has no durable membership row. Keep that explicit fixture path
   // usable for seeded brand-scoped reads without allowing gateway roles to
@@ -9420,6 +9492,41 @@ async function beginPlatformAuthorization(req: IncomingMessage, platform: Platfo
   return result
 }
 
+/**
+ * Amortized sweep of the process-local fallback rate buckets.
+ *
+ * The previous shape walked the whole map on every request whose bucket was
+ * missing or expired — i.e. the first request of each 60-second window, a
+ * common path — once the map passed `RATE_BUCKET_SWEEP_THRESHOLD`. That is
+ * O(new keys per window × map size), and it fires precisely while Redis is
+ * down, because the fallback is only reached on a Redis failure: the moment
+ * the event loop can least afford a full traversal, the map is at its largest.
+ * Entries younger than 60 seconds are not deletable anyway, so a full pass
+ * often freed nothing at all.
+ *
+ * Inspect a fixed slice per call through a resumable iterator instead, so the
+ * cost is O(1) amortized per request and a large map is still drained across
+ * many requests rather than in one long pause.
+ */
+const RATE_BUCKET_SWEEP_SLICE = 100
+let rateBucketSweepCursor: Iterator<[string, { windowStartedAt: number; count: number }]> | undefined
+
+/** Exported so a unit test can assert the per-call work stays bounded. */
+export function sweepExpiredRateBuckets(now: number) {
+  if (!rateBucketSweepCursor) rateBucketSweepCursor = rateBuckets.entries()
+  for (let inspected = 0; inspected < RATE_BUCKET_SWEEP_SLICE; inspected += 1) {
+    const step = rateBucketSweepCursor.next()
+    if (step.done) {
+      // Restart from the head on the next call; entries inserted since this
+      // cursor started are visited by the fresh iterator.
+      rateBucketSweepCursor = undefined
+      return
+    }
+    const [key, bucket] = step.value
+    if (now - bucket.windowStartedAt >= 60_000) rateBuckets.delete(key)
+  }
+}
+
 async function enforceRateLimit(req: IncomingMessage, workspaceId: string) {
   if (req.method === 'OPTIONS' || req.url?.startsWith('/healthz')) return
   const principal = requestPrincipals.get(req)
@@ -9458,10 +9565,9 @@ async function enforceRateLimit(req: IncomingMessage, workspaceId: string) {
     // Expired entries were previously left in place, so this fallback map grew
     // one permanent entry per distinct (workspace, actor, scope) for the life of
     // the process — a slow leak on every long-lived replica. Sweep
-    // opportunistically instead of adding another timer.
-    if (rateBuckets.size >= RATE_BUCKET_SWEEP_THRESHOLD) {
-      for (const [key, bucket] of rateBuckets) if (now - bucket.windowStartedAt >= 60_000) rateBuckets.delete(key)
-    }
+    // opportunistically instead of adding another timer; the sweep inspects a
+    // bounded slice per call so this hot path stays O(1) amortized.
+    if (rateBuckets.size >= RATE_BUCKET_SWEEP_THRESHOLD) sweepExpiredRateBuckets(now)
     rateBuckets.set(rateScope, { windowStartedAt: now, count: 1 })
     return
   }
@@ -12229,12 +12335,25 @@ function financePrincipal(req: IncomingMessage) {
   return { actorId, roles, authorizedWorkspaceIds: principal?.workspaces.filter(value => value !== '*') ?? [] }
 }
 
+/** Map canonical roles onto the audit center's deliberately small vocabulary. */
+function auditAccessRolesForRequest(req: IncomingMessage): AuditAccessRole[] {
+  const canonical = new Set(canonicalAuthorizationRolesForRequest(req))
+  return [
+    ...(canonical.has('ops_admin') || canonical.has('platform_admin') ? ['platform_ops' as const] : []),
+    ...(canonical.has('support_agent') || canonical.has('workspace_support') ? ['support' as const] : []),
+    ...(canonical.has('finance_ops') || canonical.has('finance') ? ['finance' as const] : []),
+  ]
+}
+
 function auditCenterPrincipal(req: IncomingMessage, workspaceId: string) {
   const principal = requestPrincipals.get(req)
   const actorId = principal?.actorId ?? requestActor(req, 'actor_demo')
-  const claimedRoles = isPlatformOperations(req)
-    ? ['platform_ops' as const]
-    : authorizedRoles(principal).filter((role): role is AuditAccessRole => role === 'support' || role === 'finance' || role === 'platform_ops')
+  // Platform scope must come from the canonical platform projection. Reading
+  // the raw assertion here let a workspace member whose *membership* role is
+  // `platform_ops` claim the platform-wide audit role and skip the audit
+  // center's authorized-workspace check.
+  const platformWide = isPlatformOperations(req)
+  const claimedRoles = platformWide ? ['platform_ops' as const] : auditAccessRolesForRequest(req)
   const decision = requestAuthorizationDecisions.get(req)
   const workspaceReadAuthorized = Boolean(decision?.authorized && decision.capability === 'audit.read'
     && decision.workbench === 'workspace' && decision.scope.required === 'workspace' && decision.scope.resource_id === workspaceId)
@@ -12242,7 +12361,7 @@ function auditCenterPrincipal(req: IncomingMessage, workspaceId: string) {
   // operable without upgrading an explicitly claimed support role to finance.
   const roles: AuditAccessRole[] = !requiresStrictAuth() && claimedRoles.length === 0 ? ['platform_ops'] : [...claimedRoles, ...(workspaceReadAuthorized ? ['reader' as const] : [])]
   const authorizedWorkspaceIds = principal?.workspaces.includes('*') ? [workspaceId] : principal?.workspaces.filter(value => value !== '*') ?? [workspaceId]
-  return { actorId, roles, authorizedWorkspaceIds }
+  return { actorId, roles, authorizedWorkspaceIds, platformWide }
 }
 
 async function externalProviderUsageStatement(input: {
@@ -16694,12 +16813,18 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const knowledgeAssets = knowledgeModule?.queryAssets({ workspaceId })
       const confirmedLearningSuggestions = knowledgeModule?.listLearningSuggestions(workspaceId, 'confirmed')
       const activeBrandPreference = knowledgeModule?.getBrandPreference(workspaceId)
-      // Index the workspace's canonical products once per page instead of
-      // re-reading the whole catalog inside the per-product loop. The previous
-      // shape issued one unbounded `listCanonicalProducts` transaction per
-      // product, so this — the merchant's most-used read — got slower as the
-      // catalog grew, for a fixed page size.
-      const canonicalRowsForPage = await canonicalRepository.listCanonicalProducts({ workspaceId })
+      // Index the page's canonical products once instead of re-reading the
+      // whole catalog inside the per-product loop. The previous shape issued
+      // one unbounded `listCanonicalProducts` transaction per product, and the
+      // shape after that one full-catalog read per request; both were O(catalog)
+      // for a fixed page size. `sourceProductIds` is the exact key set the loop
+      // below looks up, so the bucket contents, their relative order and the
+      // `candidates.length > 1` conflict verdict are unchanged — only the rows
+      // that cannot be referenced by this page are no longer fetched.
+      const canonicalRowsForPage = await canonicalRepository.listCanonicalProducts({
+        workspaceId,
+        sourceProductIds: (page.items as unknown as Product[]).map(product => product.id),
+      })
       const canonicalBySourceProductId = new Map<string, typeof canonicalRowsForPage>()
       for (const row of canonicalRowsForPage) {
         const sourceProductId = row.sourceProductId
@@ -20325,8 +20450,15 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   // Health probes are infrastructure-scoped, not merchant-scoped. Requiring
   // X-Workspace-Id here would make the production container fail its own
   // liveness/readiness check with 401.
-  if (req.method === 'GET' && path === '/livez') return send(res, 200, 'system', { process: { ready: true } }, null, req)
-  if (req.method === 'GET' && path === '/releasez') {
+  // Infrastructure probes answer GET *and* HEAD. nginx now proxies `/healthz`
+  // and `/v1/healthz` to this process instead of answering them locally, and the
+  // documented check is `curl -I` — a HEAD request. Without this, every HEAD
+  // probe fell through to the 404 fallthrough, so a load balancer probing with
+  // HEAD would mark a healthy origin down. Node discards the body for HEAD, so
+  // `send` is unchanged.
+  const probeRead = req.method === 'GET' || req.method === 'HEAD'
+  if (probeRead && path === '/livez') return send(res, 200, 'system', { process: { ready: true } }, null, req)
+  if (probeRead && path === '/releasez') {
     const release = {
       release_id: process.env.RELEASE_ID?.trim() || null,
       release_git_sha: process.env.RELEASE_GIT_SHA?.trim() || null,
@@ -20342,7 +20474,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     if (isProduction() && !valid) return send(res, 503, 'system', { release, ready: false }, { code: 'RELEASE_METADATA_UNAVAILABLE', message: '生产发布元数据未完整注入' }, req)
     return send(res, 200, 'system', { release, ready: valid }, null, req)
   }
-  if (req.method === 'GET' && (path === '/healthz' || path === '/readyz')) {
+  if (probeRead && (path === '/healthz' || path === '/readyz')) {
     if (persistenceError) return send(res, 503, 'system', { ...runtimeHealth(), persistence: { mode: 'postgres', ready: false } }, { code: ERROR_CODES.DATABASE_UNAVAILABLE, message: '数据库未就绪' }, req)
     try {
       await persistenceReady
@@ -22645,6 +22777,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     // traced from the log line to the durable row. This route is where a
     // publish outcome first becomes observable.
     enrichRequestObservation(req, { jobId: publishObservationMatch[1]! })
+
     const state = status.state
     if (!['submitted', 'published', 'rejected', 'unknown'].includes(String(state))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '平台状态观测值无效', 400)
     const rejection = readPlatformRejection(status.platform_rejection)

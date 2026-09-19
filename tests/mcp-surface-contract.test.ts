@@ -38,7 +38,9 @@ const declaredMerchantToolSurface = new Set(
   MCP_METHODS.filter(method => !method.startsWith('ops.') && !merchantHiddenMethods.has(method) && !commercialDisabledMethods.has(method)),
 )
 
-async function runtimeToolNames(root: URL): Promise<string[]> {
+type RuntimeTool = { name: string; inputSchema: { properties?: Record<string, unknown> } }
+
+async function runtimeTools(root: URL): Promise<RuntimeTool[]> {
   const child = spawn(process.execPath, [fileURLToPath(new URL('mcp/bridge.mjs', root))], {
     cwd: fileURLToPath(root),
     env: {
@@ -51,13 +53,13 @@ async function runtimeToolNames(root: URL): Promise<string[]> {
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   try {
-    return await new Promise<string[]>((resolve, reject) => {
+    return await new Promise<RuntimeTool[]>((resolve, reject) => {
       let buffer = ''
       child.stdout.on('data', chunk => {
         buffer += String(chunk)
         const newline = buffer.indexOf('\n')
         if (newline < 0) return
-        resolve((JSON.parse(buffer.slice(0, newline)) as { result: { tools: Array<{ name: string }> } }).result.tools.map(tool => tool.name))
+        resolve((JSON.parse(buffer.slice(0, newline)) as { result: { tools: RuntimeTool[] } }).result.tools)
       })
       child.once('error', reject)
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })}\n`)
@@ -65,6 +67,10 @@ async function runtimeToolNames(root: URL): Promise<string[]> {
   } finally {
     child.kill()
   }
+}
+
+async function runtimeToolNames(root: URL): Promise<string[]> {
+  return (await runtimeTools(root)).map(tool => tool.name)
 }
 
 const productionEvidenceMethods = [
@@ -133,14 +139,53 @@ describe('MCP surface coverage', () => {
       ...MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS,
     ]
     expect(registryDisabled.filter(method => !commercialDisabledMethods.has(method)), 'bridge re-enables a method the shared registry disables').toEqual([])
-    const runtimeTools = await runtimeToolNames(new URL('../apps/plugin/', import.meta.url))
+    const runtimeNames = await runtimeToolNames(new URL('../apps/plugin/', import.meta.url))
     const declared = [...declaredMerchantToolSurface].sort()
     expect(declared.length).toBeGreaterThan(0)
     // Drift guard: what the bridge declares it exposes must be exactly what
     // tools/list returns. A stale hidden/disabled entry (or a missing one)
     // breaks this, so the merchant surface can never silently shrink or grow.
-    expect([...runtimeTools].sort()).toEqual(declared)
-    expect(runtimeTools.some(name => name.startsWith('ops.'))).toBe(false)
+    expect([...runtimeNames].sort()).toEqual(declared)
+    expect(runtimeNames.some(name => name.startsWith('ops.'))).toBe(false)
+  })
+
+  it('never declares a tools/list argument the authoritative contract would reject', async () => {
+    // The bridge schema is what the model actually sees, so a declared argument
+    // the contract does not accept is a deterministic 400: validateMcpRequest
+    // rejects `params.<key> is not accepted for <method>` before any handler can
+    // run. Checking tool names alone (the entry-skill test above) cannot catch
+    // that subclass; this test closes it.
+    const tools = await runtimeTools(new URL('../apps/plugin/', import.meta.url))
+    expect(tools.length).toBeGreaterThan(0)
+    // asset.upload.file_path is the single bridge-local argument: the bridge
+    // itself reads the merchant-attached file and drops the key in
+    // prepareToolArguments, so the server contract must NOT accept it. Pinning
+    // it here keeps the exception explicit: any other undeclared argument fails.
+    const bridgeLocalArguments: Readonly<Record<string, readonly string[]>> = {
+      'asset.upload': ['file_path'],
+    }
+    for (const [method, locals] of Object.entries(bridgeLocalArguments)) {
+      const tool = tools.find(candidate => candidate.name === method)
+      expect(tool, `${method} must stay on the merchant surface`).toBeDefined()
+      for (const local of locals) {
+        expect(tool?.inputSchema.properties, `${method}.${local} must stay declared`).toHaveProperty(local)
+        // A declared-but-forwarded local argument is exactly the drift that
+        // produces the API 400, so the stripping step must still exist.
+        expect(bridgeSource, `${method}.${local} is no longer stripped by the bridge`).toContain(`delete prepared.${local}`)
+      }
+    }
+    const contractSchemas = MCP_METHOD_SCHEMAS as Readonly<Record<string, { properties?: Record<string, unknown> }>>
+    const undeclared: string[] = []
+    for (const tool of tools) {
+      const schema = contractSchemas[tool.name]
+      if (!schema) { undeclared.push(`${tool.name} (no contract)`); continue }
+      const accepted = new Set(Object.keys(schema.properties ?? {}))
+      const locals = new Set(bridgeLocalArguments[tool.name] ?? [])
+      for (const property of Object.keys(tool.inputSchema.properties ?? {})) {
+        if (!accepted.has(property) && !locals.has(property)) undeclared.push(`${tool.name}.${property}`)
+      }
+    }
+    expect(undeclared, `bridge declares arguments validateMcpRequest would reject: ${undeclared.join(', ')}`).toEqual([])
   })
 
   it('never lets a destructive write bypass the interactive merchant consent gate', () => {

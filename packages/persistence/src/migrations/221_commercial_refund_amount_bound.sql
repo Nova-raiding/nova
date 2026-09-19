@@ -15,19 +15,40 @@
 -- money that was already committed. An approved-then-completed request is still
 -- counted once, since both of its revisions carry the same amount.
 --
--- 220 stays byte-for-byte intact because it is a released artifact: a database
--- that already applied it recorded its checksum, and editing the file would
--- fail migration.ts verification with MIGRATION_CHECKSUM_MISMATCH instead of
--- upgrading. This migration CREATE OR REPLACEs the function so every database
--- converges to the corrected bound: 220's body is executed first and is then
--- superseded here in the same chain.
+-- 220 stays in the chain as written and is not edited into a different
+-- mechanism: migrations are append-only history, so the repair is a
+-- CREATE OR REPLACE that supersedes 220's function body in the same chain.
+-- 220's body runs first and is then replaced here, which means the amount
+-- based body below is the only body any database ever installs, and only 220's
+-- header comment (which over-claimed what its trigger enforced) was corrected.
 --
 -- Only 'approved' and 'completed' events commit money. The order-status check
 -- still applies to 'completed' only: an order that already left 'paid' must
 -- never be paid out again.
 --
+-- What actually enforces the bound: the per-order row lock, taken on
+-- commercial_orders_v2, that every money-committing writer shares with
+-- commercial-refund-repository.ts (which locks the same row FOR UPDATE before
+-- it reads the committed sum in committedIn()). The trigger below takes that
+-- lock on the order row before it computes the bound. Without the lock the
+-- trigger was not a backstop at all: its two SELECTs are plain reads, and in
+-- READ COMMITTED a plain read cannot see another transaction's uncommitted
+-- rows, so two writers could each append a full-amount 'approved' chain for the
+-- same paid order, each pass this check against the same unrefunded snapshot,
+-- and both commit (paid = 500000 while committed = 1000000; reproduced on
+-- PostgreSQL with two connections). The lock - not the trigger alone - is what
+-- makes the concurrent write impossible.
+--
+-- Taking the lock requires the UPDATE privilege on commercial_orders_v2, the
+-- same privilege the repository path already needs for its own FOR UPDATE. The
+-- runtime role (merchant_app) holds it, and merchant_ops cannot write these
+-- events at all (171 revoked that). A hypothetical writer holding INSERT on the
+-- event table but not UPDATE on the order table now fails closed with 42501
+-- instead of bypassing the bound.
+--
 -- The per-request maximum is what the repository mirrors in committedIn(); the
--- trigger remains the independent backstop for writers that bypass it.
+-- trigger restates it for writers that bypass the repository, and serializes
+-- with them on the same order row, so the bound holds for every writer.
 
 CREATE OR REPLACE FUNCTION enforce_commercial_refund_cumulative_bound()
 RETURNS trigger LANGUAGE plpgsql AS $commercial_refund_cumulative_bound$
@@ -40,6 +61,16 @@ BEGIN
   IF NEW.event_type NOT IN ('approved', 'completed') THEN
     RETURN NEW;
   END IF;
+
+  -- Serialize every money-committing write for this order on the order row,
+  -- with the same lock and the same lock order as the repository (order row
+  -- first, event row after). A concurrent writer that already holds the lock
+  -- makes this statement wait; once it commits, the reads below run against a
+  -- fresh snapshot and see its committed chains. Re-locking a row this
+  -- transaction already holds is a no-op, so nested calls are free.
+  PERFORM 1 FROM commercial_orders_v2
+   WHERE workspace_id = NEW.workspace_id AND id = NEW.order_id
+     FOR UPDATE;
 
   -- A missing order row (or a session without workspace scope) is left to the
   -- foreign key and the row-level security policy; this trigger never invents

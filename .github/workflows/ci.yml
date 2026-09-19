@@ -24,6 +24,19 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+      # The durable-lease and queue-transport acceptance files are REDIS_URL
+      # gated. Without a service they reported every assertion as pending and
+      # the default suite stayed green, so the Redis reliability proof was never
+      # executed in CI. They now run through their own fail-closed launcher.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -77,6 +90,12 @@ jobs:
           docker pull redis:7-alpine
       - name: Run audited PostgreSQL files in owned disposable containers
         run: npm run test:postgres:isolated
+      # The launcher fails the gate on any pending assertion, so a lost Redis
+      # service can no longer be reported as a passing reliability proof.
+      - name: Run audited Redis queue acceptance without skipped assertions
+        env:
+          REDIS_URL: redis://127.0.0.1:6379
+        run: npm run test:redis:isolated
       - name: Create isolated PostgreSQL migration databases
         run: |
           docker exec "${{ job.services.postgres.id }}" createdb -U merchant legacy_backfill_test

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { operationAudits, server, setAuthorizationRepositoryForTests, workspaceMembers } from './server.js'
+import { operationAudits, server, service, setAuthorizationRepositoryForTests, workspaceMembers } from './server.js'
 import { AUTHZ_POLICY_VERSION } from '../../../packages/contracts/src/authz.js'
 
 type Envelope = {
@@ -38,6 +38,10 @@ describe('Ops RBAC real HTTP brand profile route', () => {
     const allowedActorId = `ops-http-brand-profile-allowed-${Date.now()}`
     const deniedActorId = `ops-http-brand-profile-denied-${Date.now()}`
     const secretProfileMarker = 'brand-profile-marker-must-not-leak'
+    // The marker has to exist in the persisted profile, otherwise "does not
+    // contain the marker" is satisfied by an absent string and the leak
+    // assertion can never fail.
+    service.upsertBrandProfile({ workspaceId, name: secretProfileMarker, positioning: `${secretProfileMarker}-positioning` })
     await workspaceMembers.upsert({ workspaceId, externalSubject: allowedActorId, displayName: 'HTTP brand profile operator', role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
     await workspaceMembers.upsert({ workspaceId, externalSubject: deniedActorId, displayName: 'HTTP brand profile denied operator', role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
     vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
@@ -53,12 +57,13 @@ describe('Ops RBAC real HTTP brand profile route', () => {
     // The request passed the shared HTTP policy and the active-member gate.
     // `GET /v1/brand-profile` is registered as `brand.get`, a read-only view of
     // the workspace's own profile that the store boundary does not gate on
-    // either surface, so the allowed request now gets the real (empty) answer
-    // instead of the store precondition.
+    // either surface, so the allowed request now gets the real answer instead of
+    // the store precondition — and that answer is the seeded profile, which
+    // proves the marker below is a real value and not an absent string.
     expect(allowed.status).toBe(200)
     expect(allowedBody.error).toBeNull()
-    expect(allowedBody.data).toMatchObject({ profile: null })
-    expect(JSON.stringify(allowedBody)).not.toContain(secretProfileMarker)
+    expect(allowedBody.data).toMatchObject({ profile: expect.objectContaining({ name: secretProfileMarker }) })
+    expect(JSON.stringify(allowedBody)).toContain(secretProfileMarker)
     expect(allowedBody.request_id).toMatch(/^req_/)
     expect(allowedBody.trace_id).toBe(allowedBody.request_id)
 

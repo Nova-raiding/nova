@@ -786,6 +786,73 @@ describe('durable outbox dispatcher', () => {
     expect(handler).not.toHaveBeenCalled()
   })
 
+  it('releases every claim a full queue refused instead of dead-lettering a batch no handler ever saw', async () => {
+    // Mirrors the durable repository: a published event is terminal evidence
+    // and is never leased again.
+    class PendingStore extends Store {
+      async claimPending(workspaceId: string, options: { leaseMs?: number; now?: string } = {}): Promise<DurableOutboxEvent[]> {
+        const now = Date.parse(options.now ?? new Date().toISOString())
+        this.claimCount += 1
+        return [...this.events.values()]
+          .filter(candidate => !candidate.publishedAt && !candidate.unknownAt && candidate.lastError?.terminal !== true && (!candidate.leaseUntil || Date.parse(candidate.leaseUntil) <= now))
+          .map(candidate => {
+            const claimed = { ...candidate, attempts: (candidate.attempts ?? 0) + 1, leaseToken: `lease_${this.claimCount}`, leaseUntil: new Date(now + (options.leaseMs ?? 30_000)).toISOString() }
+            this.events.set(candidate.id, claimed)
+            return { ...claimed }
+          })
+      }
+    }
+    /** Depth is what the queue is holding: a delivery past the limit is refused. */
+    class DepthLimitedQueue extends InMemoryQueue<DurableOutboxEvent> {
+      held = 0
+      constructor(public capacity: number, now: () => number = () => Date.now()) { super(now) }
+      async enqueue(message: QueueMessage<DurableOutboxEvent>): Promise<boolean> {
+        if (this.held >= this.capacity) throw Object.assign(new Error('durable queue is at its configured depth limit'), { code: 'WORKER_QUEUE_DEPTH_EXCEEDED' })
+        const added = await super.enqueue(message)
+        if (added) this.held += 1
+        return added
+      }
+      async dequeue(): Promise<QueueMessage<DurableOutboxEvent> | undefined> {
+        const message = await super.dequeue()
+        if (message) this.held -= 1
+        return message
+      }
+      async hasCapacity(): Promise<boolean> { return this.held < this.capacity }
+    }
+
+    const store = new PendingStore(event({ id: 'evt_batch_1' }))
+    for (const id of ['evt_batch_2', 'evt_batch_3']) store.events.set(id, event({ id }))
+    let now = 1_000
+    const handled: string[] = []
+    const queue = new DepthLimitedQueue(1, () => now)
+    const dispatcher = new DurableOutboxDispatcher(store, queue, async ({ event: claimed }) => { handled.push(claimed.id); return { value: true } }, { leaseMs: 300, maxAttempts: 1, now: () => now })
+
+    // The queue accepts one delivery of the batch and refuses the rest.
+    expect(await dispatcher.restore('ws_1', 3)).toBe(1)
+    // A refused delivery must not leave its claim behind: every event the queue
+    // did not accept gives its attempt back and is immediately reclaimable,
+    // instead of spending the batch's claim budget on work that never ran.
+    for (const id of ['evt_batch_2', 'evt_batch_3']) {
+      expect(store.events.get(id)?.attempts).toBe(0)
+      expect(store.events.get(id)?.leaseToken).toBeUndefined()
+      expect(await queue.contains(id)).toBe(false)
+    }
+
+    // Drain the delivery the queue did accept; the queue then has room again and
+    // every remaining event is recovered with a fresh claim.
+    while ((await dispatcher.dispatchOnce()).state !== 'empty') { /* drain */ }
+    now += 10_000
+    queue.capacity = 3
+    expect(await dispatcher.restore('ws_1', 3)).toBe(2)
+    while ((await dispatcher.dispatchOnce()).state !== 'empty') { /* drain */ }
+
+    expect(handled).toEqual(['evt_batch_1', 'evt_batch_2', 'evt_batch_3'])
+    for (const id of ['evt_batch_1', 'evt_batch_2', 'evt_batch_3']) {
+      expect(store.events.get(id)?.lastError).toBeUndefined()
+      expect(store.events.get(id)?.publishedAt).toBeTruthy()
+    }
+  })
+
   it('stops claiming when the durable queue is at its depth limit', async () => {
     const store = new Store(event({ id: 'evt_backpressure' }))
     class FullQueue extends InMemoryQueue<DurableOutboxEvent> { async hasCapacity() { return false } }

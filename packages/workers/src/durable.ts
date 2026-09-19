@@ -452,6 +452,12 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     if (this.queue.hasCapacity && !await this.queue.hasCapacity()) return 0
     const events = await this.store.claimPending(workspaceId, { limit, leaseMs: this.leaseMs, now, ...this.claim })
     let added = 0
+    // A depth limit refuses the delivery, not this event: every remaining claim
+    // of the batch would be refused too. Releasing only the one that hit the
+    // limit would leave the rest leased with no delivery and their attempt
+    // counted, so they would be reclaimed later and dead-letter as
+    // WORKER_CLAIM_ATTEMPTS_EXHAUSTED without a handler ever running.
+    let queueFull = false
     for (const event of events) {
       // RLS/repository scope is a defense-in-depth boundary, not an implicit
       // trust boundary. A faulty store must never hydrate another tenant's
@@ -464,6 +470,10 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
           eventWorkspaceId: event.workspaceId,
         })
       }
+      if (queueFull) {
+        await this.store.releaseClaim?.(workspaceId, event.id, event.leaseToken ?? '')
+        continue
+      }
       if (await this.queue.contains?.(event.id)) continue
       try {
         // The claim is only real once its delivery exists: a queue that refuses
@@ -472,8 +482,8 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
         if (await this.queue.enqueue({ id: event.id, value: event })) added += 1
       } catch (cause) {
         if (!isQueueDepthExceeded(cause)) throw cause
+        queueFull = true
         await this.store.releaseClaim?.(workspaceId, event.id, event.leaseToken ?? '')
-        return added
       }
     }
     return added

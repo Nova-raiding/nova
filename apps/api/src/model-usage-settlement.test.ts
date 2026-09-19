@@ -569,6 +569,81 @@ describe('API model usage settlement invariants', () => {
     expect(harness.refundCalls).toBe(0)
   })
 
+  it('detects a wallet ledger that billed one fen more than the computed charge', async () => {
+    // 0.07 CNY is 7 fen. `Math.ceil(0.07 * 100)` is 8, because `0.07 * 100` is
+    // `7.000000000000001`. The wallet debit and this audit previously derived the
+    // expected amount from that same expression, so an overcharged wallet
+    // recomputed as correct and the reconciliation reported a clean ledger. The
+    // assertion therefore has to compare the ledger against the exact integer.
+    const overchargedWorkspace = `ws_wallet_overcharge_${Date.now()}`
+    const overchargedAction = `model:float-overcharge-${Date.now()}`
+    await harness.actionLedger!.record({
+      workspaceId: overchargedWorkspace,
+      actionKey: overchargedAction,
+      actionKind: 'model_text',
+      settlement: 'wallet',
+      state: 'settled',
+      units: 1,
+      amountFen: 8,
+      actorId: 'finance-operator',
+      description: '模型生成调用',
+      reservedAmountFen: 8,
+      multiplier: 1,
+      settlementStatus: 'settled',
+    })
+    await harness.modelUsage!.record({
+      workspaceId: overchargedWorkspace,
+      actionId: overchargedAction,
+      modality: 'text',
+      model: 'relay-text',
+      providerRequestId: `req-overcharge-${Date.now()}`,
+      costCny: 0.05,
+      customerChargeCny: 0.07,
+      settlementStatus: 'settled',
+    })
+    // The same charge written from the helper's integer is the honest ledger.
+    const exactWorkspace = `ws_wallet_exact_${Date.now()}`
+    const exactAction = `model:float-exact-${Date.now()}`
+    await harness.actionLedger!.record({
+      workspaceId: exactWorkspace,
+      actionKey: exactAction,
+      actionKind: 'model_text',
+      settlement: 'wallet',
+      state: 'settled',
+      units: 1,
+      amountFen: 7,
+      actorId: 'finance-operator',
+      description: '模型生成调用',
+      reservedAmountFen: 7,
+      multiplier: 1,
+      settlementStatus: 'settled',
+    })
+    await harness.modelUsage!.record({
+      workspaceId: exactWorkspace,
+      actionId: exactAction,
+      modality: 'text',
+      model: 'relay-text',
+      providerRequestId: `req-exact-${Date.now()}`,
+      costCny: 0.05,
+      customerChargeCny: 0.07,
+      settlementStatus: 'settled',
+    })
+    vi.stubEnv('NODE_ENV', 'test')
+    const base = await startApi()
+    try {
+      const overcharged = await callMcp(base, overchargedWorkspace, 'billing.reconciliation', { limit: '10' })
+      expect(overcharged.error).toBeNull()
+      expect(overcharged.data?.result).toMatchObject({ model_usage: { reconciliation_checks: { wallet_amount_mismatch_count: 1 }, reconciliation_status: 'needs_review' } })
+
+      const exact = await callMcp(base, exactWorkspace, 'billing.reconciliation', { limit: '10' })
+      expect(exact.error).toBeNull()
+      expect(exact.data?.result).toMatchObject({ model_usage: { reconciliation_checks: { wallet_amount_mismatch_count: 0 } } })
+    } finally {
+      await new Promise<void>(resolve => api.server.close(() => resolve()))
+      vi.stubEnv('NODE_ENV', 'production')
+    }
+  })
+
   it('returns authoritative decisions and requires reason plus evidence for manual resolution', async () => {
     const workspaceId = `ws_manual_resolution_${Date.now()}`
     await api.grantCreativePointsForTests(workspaceId)

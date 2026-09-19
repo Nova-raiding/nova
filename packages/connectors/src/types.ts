@@ -28,6 +28,11 @@ export interface NormalizedPlatformError {
    * Provider rate-limit hint parsed from the `Retry-After` response header
    * (delta-seconds or HTTP-date), in milliseconds. Only set when the provider
    * actually sent a usable value; retry scheduling must not invent one.
+   *
+   * Recorded as evidence only — nothing consumes it for scheduling today.
+   * Retry delay is still derived from the durable lease
+   * (`retryAfterLeaseMs` in `packages/workers/src/durable.ts`), so a provider
+   * hint never changes when an event is retried.
    */
   retryAfterMs?: number
 }
@@ -370,6 +375,15 @@ export interface PlatformConnector {
    * write path must call this for every receipt it uploaded when the
    * `validateWrite` gate (or a cancelled job) stops the write: neither the
    * platform nor the outbox will clean up an orphaned upload.
+   *
+   * NOT YET ENFORCED. No production caller exists today. The only write path
+   * that uploads media — `ConnectorRuntime.executePublish`
+   * (`packages/application/src/connector-runtime.ts`) — throws when the
+   * `validateWrite` gate reports an error and leaves every receipt it uploaded
+   * orphaned, which is exactly the leak this method exists to close. Today the
+   * only callers are `media-upload-boundary.test.ts`, and no production
+   * deployment injects a `deleteMedia` adapter or an `onOrphanedMedia` sink.
+   * Treat the requirement above as an unimplemented contract, not as behaviour.
    */
   discardMedia?(ctx: ConnectorContext, receipt: MediaUploadReceipt, reason?: string, idempotencyKey?: string): Promise<MediaDiscardResult>
   normalizeError(error: unknown): NormalizedPlatformError

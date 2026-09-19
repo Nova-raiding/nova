@@ -36,4 +36,11 @@ export const NON_HERMETIC_TEST_FILES = [
   'packages/persistence/src/knowledge-index-cas.release.postgres.test.ts',
   'packages/persistence/src/commercial-refund-repository.release.postgres.test.ts',
   'apps/api/src/canonical-backfill-contract.test.ts',
+  // These two are `REDIS_URL` gated. They carry no default-suite assertion at
+  // all when the variable is absent (`describe.skipIf` reports every test as
+  // pending and the run stays green), so they are executed only through
+  // `npm run test:redis:isolated`, which requires an owned local Redis and
+  // fails the gate on any pending assertion.
+  'packages/workers/src/durable-redis-recovery.test.ts',
+  'apps/worker/src/redis-queue-transport.test.ts',
 ] as const

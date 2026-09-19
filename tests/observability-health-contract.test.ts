@@ -41,7 +41,12 @@ describe('observability and health contracts', () => {
   })
 
   it('requires health and readiness to report dependency failures as non-healthy', () => {
-    const health = serverSource.slice(serverSource.indexOf("if (req.method === 'GET' && (path === '/healthz' || path === '/readyz'))"), serverSource.indexOf("if (req.method === 'POST' && path === '/v1/internal/automation/tick')"))
+    // The health route now reads `probeRead && ...` so it can answer HEAD probes
+    // (nginx proxies /healthz here, and the documented check is `curl -I`). The
+    // slice must still start at this route, not earlier: starting at `probeRead`
+    // would pull in the /livez branch, whose 200 would then satisfy the
+    // `success` ordering assertion below.
+    const health = serverSource.slice(serverSource.indexOf("if (probeRead && (path === '/healthz' || path === '/readyz'))"), serverSource.indexOf("if (req.method === 'POST' && path === '/v1/internal/automation/tick')"))
     expect(health).toContain("if (persistenceError) return send(res, 503")
     expect(health).toContain("return send(res, 503, 'system', { ...runtimeHealth(), persistence: { mode: persistence.mode, ready: false } }")
     expect(health).toContain("{ code: 'REDIS_UNAVAILABLE'")

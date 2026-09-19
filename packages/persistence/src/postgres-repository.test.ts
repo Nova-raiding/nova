@@ -189,6 +189,44 @@ describe('PostgresOutboxRepository', () => {
     expect(reconciliation?.text).not.toContain('attempts = attempts + 1')
   })
 
+  it('gives a claim back only for the current lease token and only when an attempt was counted', async () => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue(); client.enqueue(row({ attempts: 1 })); client.enqueue()
+    const repository = new PostgresOutboxRepository(new RecordingPool(client))
+    const released = await repository.releaseClaim('ws_1', 'evt_1', 'lease_1')
+    expect(released.id).toBe('evt_1')
+    const update = client.calls.find(call => call.text.includes('UPDATE outbox_events'))
+    // Both guards are load-bearing: releasing a claim another worker already
+    // rotated would refund a delivery that is still running, and decrementing
+    // unconditionally would push `attempts` below the value the queue counted.
+    expect(update?.text).toContain('GREATEST(attempts - 1, 0)')
+    expect(update?.text).toContain('lease_token = $3')
+    expect(update?.text).toContain('attempts > 0')
+    expect(update?.text).toContain('published_at IS NULL')
+    expect(update?.text).toContain('unknown_at IS NULL')
+    // No `next_attempt_at`/`last_error`/`unknown_at` write: the delivery never
+    // happened, so the row must stay claimable at its scheduled time.
+    expect(update?.text).not.toContain('next_attempt_at =')
+    expect(update?.values).toEqual(['ws_1', 'evt_1', 'lease_1'])
+    expect(client.calls.map(call => call.text).slice(0, 2)).toEqual(['BEGIN', `SELECT set_config('app.workspace_id', $1, true)`])
+    expect(client.calls.at(-1)?.text).toBe('COMMIT')
+  })
+
+  it('refuses to release without a lease token, another tenant scope, or a row that no longer matches', async () => {
+    const missingToken = new RecordingClient()
+    await expect(new PostgresOutboxRepository(new RecordingPool(missingToken)).releaseClaim('ws_1', 'evt_1', '')).rejects.toBeInstanceOf(OutboxEventNotFoundError)
+    expect(missingToken.calls).toHaveLength(0)
+    const otherTenant = new RecordingClient()
+    await expect(new PostgresOutboxRepository(new RecordingPool(otherTenant)).releaseClaim('  ', 'evt_1', 'lease_1')).rejects.toBeInstanceOf(TenantScopeError)
+    expect(otherTenant.calls).toHaveLength(0)
+    // The UPDATE matched nothing: the lease was already rotated, acknowledged
+    // or exhausted, so the caller must not report a successful give-back.
+    const noMatch = new RecordingClient()
+    noMatch.enqueue(); noMatch.enqueue(); noMatch.enqueue(); noMatch.enqueue()
+    await expect(new PostgresOutboxRepository(new RecordingPool(noMatch)).releaseClaim('ws_1', 'evt_1', 'lease_1')).rejects.toBeInstanceOf(OutboxEventNotFoundError)
+    expect(noMatch.calls.at(-1)?.text).toBe('ROLLBACK')
+  })
+
   it('rolls back and releases when scoped work fails', async () => {
     const client = new RecordingClient()
     const pool = new RecordingPool(client)

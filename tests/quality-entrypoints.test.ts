@@ -7,6 +7,7 @@ import {
   PLATFORM_CAPABILITY_CONTRACT_PLATFORMS,
 } from '../packages/connectors/src/platform-preflight.js'
 import { NON_HERMETIC_TEST_FILES } from './test-suite-isolation.js'
+import { ISOLATED_REDIS_TEST_FILES } from '../vitest.redis.config.js'
 
 const root = resolve(import.meta.dirname, '..')
 const packageJsonSource = readFileSync(resolve(root, 'package.json'), 'utf8')
@@ -163,11 +164,20 @@ describe('quality entrypoint coverage', () => {
   })
 
   it('keeps non-hermetic coverage explicit instead of silently passing it in the default suite', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(33)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(35)
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/migration-218-release.postgres.test.ts')
     expect(script('test:runtime:isolated')).toContain('--config vitest.runtime.config.ts')
     expect(script('test:postgres:isolated')).toContain('scripts/run-isolated-postgres-tests.ts')
+    // `REDIS_URL`-gated files reported every assertion as pending in the default
+    // suite. They now have their own fail-closed launcher instead.
+    expect(script('test:redis:isolated')).toContain('scripts/run-isolated-redis-tests.ts')
+    expect(ISOLATED_REDIS_TEST_FILES).toEqual([
+      'packages/workers/src/durable-redis-recovery.test.ts',
+      'apps/worker/src/redis-queue-transport.test.ts',
+    ])
+    for (const file of ISOLATED_REDIS_TEST_FILES) expect(NON_HERMETIC_TEST_FILES).toContain(file)
+    expect(readFileSync(resolve(root, 'scripts/run-isolated-redis-tests.ts'), 'utf8')).toContain('numPendingTests !== 0')
     expect(script('test:browser:ops:jit')).toContain('scripts/run-ops-oidc-e2e.ts')
     expect(readFileSync(resolve(root, 'vitest.config.ts'), 'utf8')).toContain('...NON_HERMETIC_TEST_FILES')
     // The legacy canonical API contract still embeds merchant bearer login.

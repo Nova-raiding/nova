@@ -40,12 +40,14 @@ describe('safe default test launcher', () => {
   })
 
   it('keeps the explicit isolation manifest unique and limited to the audited files', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(33)
-    expect(new Set(NON_HERMETIC_TEST_FILES).size).toBe(33)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(35)
+    expect(new Set(NON_HERMETIC_TEST_FILES).size).toBe(35)
     expect(NON_HERMETIC_TEST_FILES).toContain('apps/api/src/canonical-backfill-contract.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/local-creative-points-seed-runtime.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/migration-218-release.postgres.test.ts')
+    expect(NON_HERMETIC_TEST_FILES).toContain('packages/workers/src/durable-redis-recovery.test.ts')
+    expect(NON_HERMETIC_TEST_FILES).toContain('apps/worker/src/redis-queue-transport.test.ts')
   })
 
   const fixture = () => {

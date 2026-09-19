@@ -1,7 +1,20 @@
 import { describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import { createVaultCredentialProviderFromEnv, VaultKvCredentialProvider } from './vault-provider.js'
 
 function response(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }) }
+
+/**
+ * The documented addressing rule: the tenancy and the merchant account are
+ * each addressed by the first 24 hex characters of their own SHA-256 digest
+ * under the shared merchant-marketing prefix. It is recomputed here instead of
+ * being sliced out of the returned `credentialRef`, which made every URL
+ * assertion compare the implementation against itself.
+ */
+function expectedVaultPath(workspaceId: string, accountId: string) {
+  const hashed = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 24)
+  return `merchant-marketing/workspaces/${hashed(workspaceId)}/accounts/${hashed(accountId)}`
+}
 
 describe('VaultKvCredentialProvider', () => {
   it('stores, resolves and revokes KV v2 credentials without exposing token in the ref', async () => {
@@ -18,7 +31,8 @@ describe('VaultKvCredentialProvider', () => {
     expect(ref.credentialRef).toMatch(/^vault:\/\/kv\/merchant-marketing\/workspaces\/[a-f0-9]{24}\/accounts\/[a-f0-9]{24}$/u)
     expect(ref.credentialRef).not.toContain('secret-access')
     expect(ref.credentialRef).not.toContain('acct')
-    const storedPath = ref.credentialRef.slice('vault://kv/'.length)
+    const storedPath = expectedVaultPath('ws-one', 'acct/1')
+    expect(ref.credentialRef).toBe(`vault://kv/${storedPath}`)
     await expect(provider.resolve(ref)).resolves.toMatchObject({ accessToken: 'secret-access', refreshToken: 'secret-refresh' })
     await provider.revoke(ref)
     expect(calls[0]?.url).toContain(`/v1/kv/data/${storedPath}`)
@@ -38,8 +52,10 @@ describe('VaultKvCredentialProvider', () => {
     await expect(provider.resolve({ workspaceId: 'ws-one', accountId: 'acct-1' })).resolves.toMatchObject({ accessToken: 'workspace-token' })
     // store and the (workspace, account) fallback must agree on one path,
     // otherwise a refresh writes a record no reader can find.
-    expect(calls[0]).toContain(stored.credentialRef.slice('vault://kv/'.length))
-    expect(calls[1]).toContain(stored.credentialRef.slice('vault://kv/'.length))
+    const expectedPath = expectedVaultPath('ws-one', 'acct-1')
+    expect(stored.credentialRef).toBe(`vault://kv/${expectedPath}`)
+    expect(calls[0]).toContain(expectedPath)
+    expect(calls[1]).toContain(expectedPath)
   })
 
   it('never reads another workspace record when no credential ref is supplied', async () => {

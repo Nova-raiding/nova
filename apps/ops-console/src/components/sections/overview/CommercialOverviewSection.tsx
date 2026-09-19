@@ -83,17 +83,28 @@ export function CommercialOverviewKpis({ model }: { model: OpsConsoleModel }) {
     <>
       <Col xs={24} sm={12} xl={6}>
         <Card className="ops-overview-kpi-card ops-overview-kpi-cyan">
-          <Statistic title="总接入费收入" value={financeAvailable ? (finance!.verifiedRechargeOrderCny ?? "—") : "—"} precision={2} prefix={financeAvailable ? "¥" : <DollarOutlined />} />
+          {/*
+            `verifiedRechargeOrderCny` is paid recharge (creative-point) orders
+            with the fixture payment mode removed — the finance ledger labels the
+            same field 「真实充值到账」. It was titled 「总接入费收入」, but the
+            onboarding fee is `onboardingOrderCny` (commercial_kind
+            'onboarding'), which the platform snapshot panel above already shows
+            under its own name. The title follows the value it actually renders.
+          */}
+          <Statistic title="真实充值到账" value={financeAvailable ? (finance!.verifiedRechargeOrderCny ?? "—") : "—"} precision={2} prefix={financeAvailable ? "¥" : <DollarOutlined />} />
         </Card>
       </Col>
       <Col xs={24} sm={12} xl={6}>
         <Card className="ops-overview-kpi-card ops-overview-kpi-amber">
-          <Statistic title="月度套餐销售量" value={financeAvailable ? finance!.subscriptionOrderWorkspaceCount : "—"} suffix={financeAvailable ? " 单" : undefined} prefix={financeAvailable ? undefined : <DollarOutlined />} />
+          {/* `ops.finance.search` is requested without a date window, so these
+              sums cover the whole ledger. Labelling them 「月度」 claimed a
+              range the query never asked for. */}
+          <Statistic title="套餐销售量（累计）" value={financeAvailable ? finance!.subscriptionOrderWorkspaceCount : "—"} suffix={financeAvailable ? " 单" : undefined} prefix={financeAvailable ? undefined : <DollarOutlined />} />
         </Card>
       </Col>
       <Col xs={24} sm={12} xl={6}>
         <Card className="ops-overview-kpi-card ops-overview-kpi-violet">
-          <Statistic title="月度套餐销售额" value={financeAvailable ? finance!.subscriptionOrderCny : "—"} precision={2} prefix={financeAvailable ? "¥" : <DollarOutlined />} />
+          <Statistic title="套餐销售额（累计）" value={financeAvailable ? finance!.subscriptionOrderCny : "—"} precision={2} prefix={financeAvailable ? "¥" : <DollarOutlined />} />
         </Card>
       </Col>
     </>

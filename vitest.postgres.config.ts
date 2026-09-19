@@ -32,7 +32,11 @@ export function createIsolatedPostgresConfig(environment: NodeJS.ProcessEnv) {
       && !database.search && !database.hash
       && /^[a-f0-9-]{36}$/u.test(environment.MERCHANT_ISOLATED_POSTGRES_RUN_ID ?? '')
   } catch { /* missing or malformed binding must not activate a localhost fallback */ }
-  if (!valid || !isolatedManifestValid || ISOLATED_POSTGRES_TEST_FILES.length !== 28 || ALL_POSTGRES_TEST_FILES.length < ISOLATED_POSTGRES_TEST_FILES.length) throw new Error('Use the isolated PostgreSQL launcher; generated local fixture bindings and the PostgreSQL manifest are required.')
+  // `isolatedManifestValid` already checks the manifest against the files that
+  // actually exist on disk, so no hand-maintained count is needed here: a stale
+  // literal only turns "someone added a .postgres.test.ts" into a misleading
+  // "Use the isolated PostgreSQL launcher" failure.
+  if (!valid || !isolatedManifestValid || ALL_POSTGRES_TEST_FILES.length < ISOLATED_POSTGRES_TEST_FILES.length) throw new Error('Use the isolated PostgreSQL launcher; generated local fixture bindings and the PostgreSQL manifest are required.')
   const files = environment.MERCHANT_ISOLATED_POSTGRES_ALL === 'true' ? ALL_POSTGRES_TEST_FILES : ISOLATED_POSTGRES_TEST_FILES
   return {
     test: {

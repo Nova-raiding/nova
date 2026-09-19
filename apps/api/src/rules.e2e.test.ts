@@ -266,6 +266,49 @@ describe('durable rule-center HTTP boundary', () => {
     expect((operationsView.data as { result: Array<{ id: string }> }).result.map(item => item.id)).toEqual(['global-rule', 'jd-rule', 'taobao-rule', 'draft-rule', 'inactive-rule'])
   })
 
+  it('keeps the Ops rule lifecycle view on canonical roles instead of the raw membership label', async () => {
+    const repository = new MemoryRuleRepository()
+    setRuleRepositoryForTests(repository)
+    const workspaceId = `ws_rule_lifecycle_roles_${Date.now()}`
+    const now = new Date().toISOString()
+    await repository.insertVersion({ id: 'active-rule', workspaceId, packId: 'active', name: '生效规则', version: '1', scope: 'global', status: 'active', sourceKind: 'official', sourceReference: 'official://active', sourceCheckedAt: now, checksum: 'a'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1 })
+    await repository.insertVersion({ id: 'draft-rule', workspaceId, packId: 'draft', name: '待审批规则', version: '1', scope: 'global', status: 'draft', sourceKind: 'internal', sourceReference: 'internal://draft', sourceCheckedAt: now, checksum: 'b'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1 })
+    const base = await start()
+    const listRuleIds = async (headers: Record<string, string>) => {
+      const response = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, ...headers }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'rule.list', params: { workspace_id: workspaceId } }) }).then(json)
+      expect(response.error).toBeNull()
+      return (response.data as { result: Array<{ id: string }> }).result.map(item => item.id)
+    }
+    // `platform_ops` is also a workspace *membership* role with no canonical
+    // form. Holding it must not widen the merchant view (active rows only) into
+    // the Ops lifecycle view that also exposes drafts and manual:// rows.
+    expect(await listRuleIds({ 'x-role': 'platform_ops', 'x-actor-id': 'membership-ops', 'x-ops-workbench': 'workspace' })).toEqual(['active-rule'])
+    // The legitimate Ops path (canonical ops_admin) keeps the full lifecycle,
+    // through either spelling of the same canonical role.
+    expect(await listRuleIds({ 'x-role': 'platform_ops', 'x-actor-id': 'platform-ops', 'x-ops-workbench': 'platform' })).toEqual(['active-rule', 'draft-rule'])
+    expect(await listRuleIds({ 'x-role': 'ops_admin', 'x-actor-id': 'canonical-ops', 'x-ops-workbench': 'platform' })).toEqual(['active-rule', 'draft-rule'])
+    // So does a canonical rules_admin, including the gateway alias spelling.
+    expect(await listRuleIds({ 'x-role': 'rules_admin', 'x-actor-id': 'rules-admin', 'x-ops-workbench': 'workspace' })).toEqual(['active-rule', 'draft-rule'])
+    expect(await listRuleIds({ 'x-role': 'platform_rules_admin', 'x-actor-id': 'aliased-rules-admin', 'x-ops-workbench': 'workspace' })).toEqual(['active-rule', 'draft-rule'])
+  })
+
+  it('accepts the gateway platform_rules_admin alias for rule-center writes', async () => {
+    const repository = new MemoryRuleRepository()
+    setRuleRepositoryForTests(repository)
+    const workspaceId = `ws_rule_admin_alias_${Date.now()}`
+    const base = await start()
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'aliased-admin', 'x-role': 'platform_rules_admin', 'x-ops-workbench': 'workspace' }
+    const created = await fetch(`${base}/v1/rules/catalog/versions`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ name: '别名规则管理员草稿', version: '1.0.0', scope: 'global', status: 'draft', source_kind: 'internal', source_reference: 'internal://alias/1', source_checked_at: new Date().toISOString(), checks: {}, reason: '网关别名角色验证' }),
+    }).then(json)
+    expect(created.error).toBeNull()
+    expect(repository.versions[0]).toMatchObject({ workspaceId, createdBy: 'aliased-admin', status: 'draft' })
+    const audit = await fetch(`${base}/v1/rules/audit`, { headers }).then(json)
+    expect(audit.error).toBeNull()
+    expect(audit.data).toHaveLength(1)
+  })
+
   it('uses workspace-persisted rules when automation decides whether to pause', async () => {
     const repository = new MemoryRuleRepository()
     setRuleRepositoryForTests(repository)

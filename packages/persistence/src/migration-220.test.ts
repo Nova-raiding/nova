@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { loadMigrations } from './migration.js'
 
 describe('migration 220 commercial refund cumulative bound', () => {
-  // 220 is a released artifact and stays byte-for-byte intact. Its revision
-  // based projection could be bypassed by appending a non-money revision to an
-  // approved request (paid = 500000 while completed = 1000000); migration 221
-  // supersedes the function with an amount based bound. These assertions
-  // describe the historical artifact only — the effective trigger is the one
-  // 221 installs last.
+  // 220's function body stays as written (migrations are append-only history),
+  // and its header comment was corrected to stop claiming a mechanism it never
+  // enforced. Its revision based projection could be bypassed by appending a
+  // non-money revision to an approved request, and it took no order row lock,
+  // so two concurrent writers could both pass it (paid = 500000 while
+  // completed = 1000000); migration 221 supersedes the function with an amount
+  // based bound that serializes on the order row. These assertions describe the
+  // historical body only — the effective trigger is the one 221 installs last.
   it('registers a database-level backstop for the cumulative refund bound', async () => {
     const migration = (await loadMigrations()).find(item => item.version === 220)
     expect(migration).toMatchObject({ version: 220, name: 'commercial_refund_cumulative_bound' })

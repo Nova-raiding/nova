@@ -23,6 +23,27 @@ export interface RedisQueueConnectionOptions {
 
 export const DEFAULT_QUEUE_MAX_DEPTH = 10_000
 
+/**
+ * The one place a queue connection is bound to its server.
+ *
+ * node-redis v5 has no `createClient(url)` overload — the only signature is
+ * `createClient(options)`. A bare string is therefore accepted as an options
+ * object whose every field is `undefined`, and the client silently dials the
+ * driver default (`localhost:6379`) instead of the configured server. Callers
+ * that pass a test seam (`options.clientFactory`) must follow the same shape.
+ *
+ * This is not caught by the type checker at the call sites below, because
+ * `(options.clientFactory ?? redisTransportClient)(url)` resolves the call
+ * against the seam's signature; the bare `createClient(url)` these call sites
+ * used to have would have been a compile error on its own. The binding is
+ * therefore pinned by a test instead
+ * (`redis-queue-transport.test.ts`: "binds every queue connection to the
+ * configured URL instead of the driver default").
+ */
+export function redisTransportClient(url: string): RedisClientType {
+  return createClient({ url }) as RedisClientType
+}
+
 export class RedisQueueDepthExceededError extends Error {
   readonly code = 'WORKER_QUEUE_DEPTH_EXCEEDED'
   constructor() {
@@ -31,41 +52,82 @@ export class RedisQueueDepthExceededError extends Error {
   }
 }
 
+const DEFAULT_REDIS_OPERATION_TIMEOUT_MS = 1_500
+
+function positiveMilliseconds(raw: string | undefined, fallback: number): number {
+  const value = Number(raw)
+  return Number.isInteger(value) && value > 0 ? value : fallback
+}
+
+/**
+ * Bounds a single Redis round trip. Without it a stalled socket — or a command
+ * parked in node-redis' default offline queue while the connection is down —
+ * makes the awaited call below never settle, so every publish on this replica
+ * queues behind a refresh that will never complete. Mirrors
+ * `withRedisOperationTimeout` in `apps/api/src/redis-resilience.ts`.
+ */
+async function withRedisOperationTimeout<T>(operation: Promise<T>, env: NodeJS.ProcessEnv = process.env): Promise<T> {
+  const timeoutMs = positiveMilliseconds(env.REDIS_OPERATION_TIMEOUT_MS, DEFAULT_REDIS_OPERATION_TIMEOUT_MS)
+  let timeout: NodeJS.Timeout | undefined
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(Object.assign(new Error(`Redis operation timed out after ${timeoutMs}ms`), { code: 'REDIS_OPERATION_TIMEOUT' })), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
+}
+
 /**
  * Cross-replica single-flight for OAuth credential refresh, so two worker pods
  * cannot rotate the same refresh token concurrently and invalidate each other.
  *
- * Intentionally duplicated with the API's factory of the same name: the
- * connectors package deliberately owns only the two-method
- * `RedisSingleFlightPort` so it stays free of a `redis` dependency, and neither
- * application can import the other's module.
+ * Deliberately duplicated with the API's factory of the same name
+ * (`apps/api/src/server.ts`): the connectors package deliberately owns only the
+ * two-method `RedisSingleFlightPort` so it stays free of a `redis` dependency,
+ * and neither application can import the other's module. The two Lua scripts
+ * and the per-operation timeout are kept identical in behaviour — this is the
+ * part that must not drift, since a bare `await` here degrades the refresh path
+ * (and every request waiting on it) without bound while the API fails closed.
+ *
+ * Remaining, deliberate differences:
+ *  - this factory accepts `options.clientFactory` (test seam) and reads
+ *    `REDIS_OPERATION_TIMEOUT_MS`, which the API's does not;
+ *  - it still leaves node-redis' socket and offline-queue defaults alone, where
+ *    the API's `redisClientOptions(url)` sets a connect timeout, a reconnect
+ *    backoff and `disableOfflineQueue`, so this connection keeps those defaults.
+ *    The timeout above is what keeps that from becoming an unbounded wait;
+ *    tightening the socket options to match the API is a separate change.
  */
 export function createRedisCredentialRefreshLock(url: string | undefined, options: RedisQueueConnectionOptions = {}) {
   if (!url?.trim()) return undefined
-  const client = (options.clientFactory ?? createClient)(url.trim()) as RedisClientType
+  const client = (options.clientFactory ?? redisTransportClient)(url.trim())
   client.on('error', () => undefined)
   const ready = client.connect()
   return new RedisCredentialRefreshLock({
     async setIfAbsent(key, value, ttlMs) {
-      await ready
-      const result = await client.eval(`
+      await withRedisOperationTimeout(ready)
+      const result = await withRedisOperationTimeout(client.eval(`
         if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'PX', ARGV[2]) then return 1 end
         return 0
-      `, { keys: [key], arguments: [value, String(ttlMs)] })
+      `, { keys: [key], arguments: [value, String(ttlMs)] }))
       return Number(result) === 1
     },
     async deleteIfValue(key, value) {
-      await ready
-      await client.eval(`
+      await withRedisOperationTimeout(ready)
+      await withRedisOperationTimeout(client.eval(`
         if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('DEL', KEYS[1]) end
         return 1
-      `, { keys: [key], arguments: [value] })
+      `, { keys: [key], arguments: [value] }))
     },
   })
 }
 
 export async function connectRedisQueue(url: string, options: RedisQueueConnectionOptions = {}): Promise<{ transport: RedisQueueTransport; scannerHeartbeat: ScannerHeartbeatRedisPort; close: () => Promise<void> }> {
-  const client = (options.clientFactory ?? createClient)(url) as RedisClientType
+  const client = (options.clientFactory ?? redisTransportClient)(url)
   const maxDepth = options.maxDepth ?? DEFAULT_QUEUE_MAX_DEPTH
   if (!Number.isSafeInteger(maxDepth) || maxDepth < 1) throw new RangeError('maxDepth must be a positive integer')
   // node-redis emits connection failures as EventEmitter errors; without a
@@ -107,12 +169,21 @@ else
   if ok and decoded['id'] then redis.call('HINCRBY', KEYS[4], decoded['id'], 1) end
 end
 return 1`
+  // ZREM is the guard, exactly as in discardClaimScript below: removing a claim
+  // that was already acknowledged (or already discarded by a peer) must not
+  // decrement the membership index a second time. The index backs contains(),
+  // and restore() uses that answer to decide whether the event is already
+  // queued; a count driven to zero while another delivery is still sitting in
+  // the ready list would make restore() push a second delivery for an event
+  // whose lease a live worker still owns.
   const removeScript = `
-redis.call('ZREM', KEYS[2], ARGV[1])
-local ok, decoded = pcall(cjson.decode, ARGV[1])
-if ok and decoded['id'] then
-  local remaining = redis.call('HINCRBY', KEYS[3], decoded['id'], -1)
-  if remaining <= 0 then redis.call('HDEL', KEYS[3], decoded['id']) end
+local removed = redis.call('ZREM', KEYS[2], ARGV[1])
+if removed == 1 then
+  local ok, decoded = pcall(cjson.decode, ARGV[1])
+  if ok and decoded['id'] then
+    local remaining = redis.call('HINCRBY', KEYS[3], decoded['id'], -1)
+    if remaining <= 0 then redis.call('HDEL', KEYS[3], decoded['id']) end
+  end
 end
 return 1`
   // Recovery is deliberately two separate steps. A stale liveness score is a

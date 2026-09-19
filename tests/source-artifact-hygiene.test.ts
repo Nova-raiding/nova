@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
@@ -94,6 +94,25 @@ describe('source artifact hygiene', () => {
       generatedEvidencePaths.filter(path => !isIgnored(path)),
       'Runtime evidence must be uploaded to the evidence store; force-add only a deliberately reviewed exception.',
     ).toEqual([])
+  })
+
+  it('treats a force-added artifact as tracked even when a gitignore rule matches it', () => {
+    // The whole point of consulting `git ls-files` before `git check-ignore`:
+    // a force-added artifact matches the ignore rule and would report as
+    // "ignored" from check-ignore alone, while still shipping in every clone.
+    // Every entry in `generatedEvidencePaths` is currently untracked, so
+    // without this fixture the tracked-file branch never executes.
+    const fixture = `artifacts/hygiene-force-added-${process.pid}-${Date.now()}.json`
+    const absolute = join(root, fixture)
+    try {
+      writeFileSync(absolute, '{}\n')
+      expect(isIgnored(fixture), 'the ignore rule must match the fixture path').toBe(true)
+      execFileSync('git', ['add', '-f', '--', fixture], { cwd: root, stdio: 'ignore' })
+      expect(isIgnored(fixture), 'a staged artifact is not excluded from source control').toBe(false)
+    } finally {
+      try { execFileSync('git', ['rm', '--cached', '--quiet', '--', fixture], { cwd: root, stdio: 'ignore' }) } catch { /* the fixture was never staged */ }
+      rmSync(absolute, { force: true })
+    }
   })
 
   it('keeps emitted JavaScript and declarations out of package source trees', () => {

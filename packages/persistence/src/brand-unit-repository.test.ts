@@ -290,6 +290,49 @@ describe('MemoryBrandUnitRepository consistency projections', () => {
   })
 })
 
+describe('listCanonicalProducts sourceProductIds scoping', () => {
+  it('emits the page-scoped predicate and binds the page ids as the third parameter', async () => {
+    const client = new Client()
+    const params: unknown[][] = []
+    const originalQuery = client.query.bind(client)
+    client.query = (async (text: string, values?: unknown[]) => { params.push(values ?? []); return originalQuery(text as never) }) as typeof client.query
+    client.enqueue() // BEGIN
+    client.enqueue() // set_config
+    client.enqueue({ id: 'canonical_1', workspaceId: 'ws_1', brandId: 'brand_1', title: '商品', facts: {}, factsVersion: 1, sourceProductId: 'legacy_1', createdAt: '2026-08-27T00:00:00.000Z', updatedAt: '2026-08-27T00:00:00.000Z' })
+    client.enqueue() // COMMIT
+
+    const rows = await new PostgresBrandUnitRepository({ connect: async () => client } satisfies SqlPool).listCanonicalProducts({
+      workspaceId: 'ws_1',
+      sourceProductIds: ['legacy_1', 'legacy_2'],
+    })
+
+    const canonicalQuery = client.calls.find(text => text.includes('FROM canonical_products WHERE'))
+    expect(canonicalQuery).toBeDefined()
+    // The predicate must stay index-matchable against the partial indexes added
+    // by migrations 076/130, so the read stays proportional to the page.
+    expect(canonicalQuery).toContain('legacy_product_id IS NOT NULL AND legacy_product_id = ANY($3::text[])')
+    expect(params.at(-2)).toEqual(['ws_1', null, ['legacy_1', 'legacy_2']])
+    expect(rows).toMatchObject([{ id: 'canonical_1', sourceProductId: 'legacy_1' }])
+  })
+
+  it('keeps every candidate for a duplicated source product so conflicts are still detected', async () => {
+    const repository = new MemoryBrandUnitRepository()
+    await repository.createCanonicalProduct({ workspaceId: 'ws_scope', id: 'canonical_a', brandId: 'brand_1', title: 'A', sourceProductId: 'legacy_1' })
+    await repository.createCanonicalProduct({ workspaceId: 'ws_scope', id: 'canonical_b', brandId: 'brand_2', title: 'B', sourceProductId: 'legacy_1' })
+    await repository.createCanonicalProduct({ workspaceId: 'ws_scope', id: 'canonical_c', brandId: 'brand_3', title: 'C', sourceProductId: 'legacy_2' })
+    await repository.createCanonicalProduct({ workspaceId: 'ws_scope', id: 'canonical_d', brandId: 'brand_4', title: 'D', sourceProductId: 'legacy_unreferenced' })
+
+    const scoped = await repository.listCanonicalProducts({ workspaceId: 'ws_scope', sourceProductIds: ['legacy_1', 'legacy_2'] })
+    expect(scoped.map(row => row.id).sort()).toEqual(['canonical_a', 'canonical_b', 'canonical_c'])
+    expect(scoped.filter(row => row.sourceProductId === 'legacy_1')).toHaveLength(2)
+    // Unreferenced rows are never fetched, but the buckets a page can reach are intact.
+    expect(await repository.listCanonicalProducts({ workspaceId: 'ws_scope' })).toHaveLength(4)
+
+    const empty = await repository.listCanonicalProducts({ workspaceId: 'ws_scope', sourceProductIds: [] })
+    expect(empty).toEqual([])
+  })
+})
+
 describe('MemoryBrandUnitRepository', () => {
   it('updates canonical titles only when the expected facts revision is current', async () => {
     const repository = new MemoryBrandUnitRepository()

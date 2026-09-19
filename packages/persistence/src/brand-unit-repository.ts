@@ -76,7 +76,7 @@ export interface BrandUnitRepository {
   transitionCampaignLifecycle(input: CampaignLifecycleTransitionInput): Promise<{ campaign: CampaignBatchRow; replayed: boolean }>
   createCanonicalProduct(input: { workspaceId: string; id: string; brandId: string; title: string; facts?: Record<string, unknown>; sourceProductId?: string }): Promise<CanonicalProductRow>
   getCanonicalProduct(input: { workspaceId: string; id: string }): Promise<CanonicalProductRow | undefined>
-  listCanonicalProducts(input: { workspaceId: string; brandIds?: readonly string[] }): Promise<CanonicalProductRow[]>
+  listCanonicalProducts(input: { workspaceId: string; brandIds?: readonly string[]; sourceProductIds?: readonly string[] }): Promise<CanonicalProductRow[]>
   updateCanonicalProductTitle(input: { workspaceId: string; id: string; title: string; expectedFactsVersion: number }): Promise<CanonicalProductRow>
   updateCanonicalProductFacts(input: { workspaceId: string; id: string; facts: Record<string, unknown>; expectedFactsVersion: number }): Promise<CanonicalProductRow>
   createListing(input: { workspaceId: string; id: string; brandId: string; canonicalProductId: string; platform: BrandUnitPlatform; accountId: string; remoteProductId?: string }): Promise<ProductListingRow>
@@ -224,7 +224,7 @@ export class MemoryBrandUnitRepository implements BrandUnitRepository {
   }
   async createCanonicalProduct(input: { workspaceId: string; id: string; brandId: string; title: string; facts?: Record<string, unknown>; sourceProductId?: string }) { validateCanonicalProductIdentity(input); if (this.canonicalProducts.has(`${input.workspaceId}:${input.id}`)) throw new Error('CANONICAL_PRODUCT_CONFLICT'); const timestamp = now(); const row = { ...input, facts: structuredClone(input.facts ?? {}), factsVersion: 1, createdAt: timestamp, updatedAt: timestamp }; this.canonicalProducts.set(`${input.workspaceId}:${input.id}`, row); return row }
   async getCanonicalProduct(input: { workspaceId: string; id: string }) { return this.canonicalProducts.get(`${input.workspaceId}:${input.id}`) }
-  async listCanonicalProducts(input: { workspaceId: string; brandIds?: readonly string[] }) { return [...this.canonicalProducts.values()].filter(row => row.workspaceId === input.workspaceId && (!input.brandIds || input.brandIds.includes(row.brandId))) }
+  async listCanonicalProducts(input: { workspaceId: string; brandIds?: readonly string[]; sourceProductIds?: readonly string[] }) { return [...this.canonicalProducts.values()].filter(row => row.workspaceId === input.workspaceId && (!input.brandIds || input.brandIds.includes(row.brandId)) && (!input.sourceProductIds || (row.sourceProductId !== undefined && input.sourceProductIds.includes(row.sourceProductId)))) }
   async updateCanonicalProductTitle(input: { workspaceId: string; id: string; title: string; expectedFactsVersion: number }) {
     const key = `${input.workspaceId}:${input.id}`
     const current = this.canonicalProducts.get(key)
@@ -459,10 +459,15 @@ export class PostgresBrandUnitRepository implements BrandUnitRepository {
       return result.rows[0]
     })
   }
-  async listCanonicalProducts(input: { workspaceId: string; brandIds?: readonly string[] }) {
+  async listCanonicalProducts(input: { workspaceId: string; brandIds?: readonly string[]; sourceProductIds?: readonly string[] }) {
     requireWorkspaceScope(input.workspaceId)
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
-      const result = await client.query<CanonicalProductRow>(`SELECT id, workspace_id AS "workspaceId", brand_id AS "brandId", title, facts, facts_revision AS "factsVersion", legacy_product_id AS "sourceProductId", created_at AS "createdAt", updated_at AS "updatedAt" FROM canonical_products WHERE workspace_id=$1 AND ($2::text[] IS NULL OR brand_id = ANY($2::text[])) ORDER BY updated_at DESC, id ASC`, [input.workspaceId, input.brandIds ?? null])
+      // `sourceProductIds` keeps this read proportional to the caller's page
+      // instead of the whole catalog. The explicit `legacy_product_id IS NOT
+      // NULL` is implied by `= ANY(...)` for every non-NULL array, but stating
+      // it lets the planner match the partial indexes from migrations 076/130
+      // instead of falling back to a workspace-wide scan of `facts`.
+      const result = await client.query<CanonicalProductRow>(`SELECT id, workspace_id AS "workspaceId", brand_id AS "brandId", title, facts, facts_revision AS "factsVersion", legacy_product_id AS "sourceProductId", created_at AS "createdAt", updated_at AS "updatedAt" FROM canonical_products WHERE workspace_id=$1 AND ($2::text[] IS NULL OR brand_id = ANY($2::text[])) AND ($3::text[] IS NULL OR (legacy_product_id IS NOT NULL AND legacy_product_id = ANY($3::text[]))) ORDER BY updated_at DESC, id ASC`, [input.workspaceId, input.brandIds ?? null, input.sourceProductIds ?? null])
       return result.rows
     })
   }

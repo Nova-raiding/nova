@@ -212,6 +212,14 @@ export function dataSetErrorFor(
   return `部分数据集刷新失败（${failedMethods.join("、")}）。页面保留上次成功数据，这些值可能已过期：${messages.join("；")}`;
 }
 
+/**
+ * Seed for the workspace directory before `ops.workspaces.list` has resolved
+ * (and after a workbench reset). It deliberately carries no `total`: a pending
+ * or failed directory read is unknown, not a measured zero, and the platform
+ * overview renders exactly what this object holds.
+ */
+export const UNRESOLVED_WORKSPACE_DIRECTORY: WorkspaceDirectoryPage = { items: [], offset: 0, limit: 20, hasMore: false };
+
 export type DataDeletionDecision = "approve" | "cancel";
 
 export const DATA_DELETION_REASON_MIN_LENGTH = 4;
@@ -442,7 +450,7 @@ export function useOpsConsoleModel() {
   const userDetailRequestRef = useRef(0);
   const [userDirectoryFilters, setUserDirectoryFilters] = useState<{ query?: string; status?: string; workspaceId?: string; page?: number; pageSize?: number }>({});
   const [workspaceRows, setWorkspaceRows] = useState<WorkspaceSummary[]>([]);
-  const [workspaceDirectory, setWorkspaceDirectory] = useState<WorkspaceDirectoryPage>({ items: [], total: 0, offset: 0, limit: 20, hasMore: false });
+  const [workspaceDirectory, setWorkspaceDirectory] = useState<WorkspaceDirectoryPage>(UNRESOLVED_WORKSPACE_DIRECTORY);
   const [workspaceDirectoryLoading, setWorkspaceDirectoryLoading] = useState(false);
   const workspaceDirectoryRequestRef = useRef(0);
   const [platformFinanceSummary, setPlatformFinanceSummary] = useState<FinanceSearchSummary>();
@@ -617,7 +625,7 @@ export function useOpsConsoleModel() {
     setUserDirectoryError("");
     setUserDetail(undefined);
     setWorkspaceRows([]);
-    setWorkspaceDirectory({ items: [], total: 0, offset: 0, limit: 20, hasMore: false });
+    setWorkspaceDirectory(UNRESOLVED_WORKSPACE_DIRECTORY);
     setPlatformFinanceSummary(undefined);
     setPlatformCommercialCatalog([]);
     setReconciliation(undefined);

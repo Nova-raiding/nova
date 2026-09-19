@@ -1651,7 +1651,31 @@ function formatRuleUpdatedAt(value: string | undefined) {
  * `asset` storage quota, `rule.list`) or be shown as unread — never a fixture
  * value that a paying merchant could mistake for their own business data.
  */
-function TodayDashboard({
+export type RulePackBoardMode = 'unconfigured' | 'loading' | 'read_error' | 'empty' | 'ready'
+
+/**
+ * Knowledge-board state for the rule-pack read. Same five-state contract as
+ * `resolveLibraryData`: a missing API, a read still in flight, a failed read
+ * and a successful read that returned nothing are four different facts, and
+ * only the last one may be described as "no rule versions".
+ */
+export function resolveRulePackBoard({
+  baseUrl,
+  packs,
+  error,
+}: {
+  baseUrl?: string
+  packs: RulePack[] | null
+  error: string
+}): { mode: RulePackBoardMode; message: string } {
+  if (!baseUrl) return { mode: 'unconfigured', message: '未配置 API，无法读取规则版本。' }
+  if (error) return { mode: 'read_error', message: `规则版本读取失败：${error}。当前不显示版本列表。` }
+  if (packs === null) return { mode: 'loading', message: '正在读取…' }
+  if (packs.length === 0) return { mode: 'empty', message: '服务端未返回规则版本。' }
+  return { mode: 'ready', message: '' }
+}
+
+export function TodayDashboard({
   baseUrl,
   metrics,
   billing,
@@ -1661,8 +1685,10 @@ function TodayDashboard({
   billing: BillingStatus | null
 }) {
   // `null` means "the read has not resolved yet"; an empty array is a real
-  // successful read that returned no rule packs.
+  // successful read that returned no rule packs. A failed read keeps `null`
+  // and records the reason, so it is not folded into the successful-empty case.
   const [rulePacks, setRulePacks] = useState<RulePack[] | null>(null)
+  const [rulePacksError, setRulePacksError] = useState('')
   const [storageQuota, setStorageQuota] = useState<StorageQuotaProjection | null>(null)
   const [storageRead, setStorageRead] = useState(false)
   useEffect(() => {
@@ -1681,12 +1707,18 @@ function TodayDashboard({
     return () => { active = false }
   }, [baseUrl])
   useEffect(() => {
-    if (!baseUrl) { setRulePacks(null); return }
+    if (!baseUrl) { setRulePacks(null); setRulePacksError(''); return }
     let active = true
     setRulePacks(null)
+    setRulePacksError('')
     fetchRulePacks(baseUrl)
       .then((packs) => { if (active) setRulePacks(packs ?? []) })
-      .catch(() => { if (active) setRulePacks([]) })
+      .catch((cause) => {
+        if (!active) return
+        // Keep `null`: a read that failed is unknown, not an empty result.
+        setRulePacks(null)
+        setRulePacksError(describeApiError(cause))
+      })
     return () => { active = false }
   }, [baseUrl])
   const readableStoreCount = metrics
@@ -1706,6 +1738,7 @@ function TodayDashboard({
         ? '服务端未返回储存配额，当前不显示用量。'
         : '正在读取储存配额…'
       : '未配置 API，无法读取储存配额。'
+  const ruleBoard = resolveRulePackBoard({ baseUrl, packs: rulePacks, error: rulePacksError })
   const visibleRulePacks = (rulePacks ?? []).slice(0, 4)
 
   return (
@@ -1761,10 +1794,10 @@ function TodayDashboard({
               >
                 <span style={{ width: `${Math.min(100, (storageUsedBytes! / storageLimitBytes!) * 100)}%` }} />
               </div>
-              <div className="today-storage-meta"><span>已用 {formatStorageGb(storageUsedBytes!)}</span><span>剩余 {formatStorageGb(storageAvailableBytes ?? Math.max(0, storageLimitBytes! - storageUsedBytes!))}</span></div>
+              <div className="today-storage-meta" role="status" aria-live="polite"><span>已用 {formatStorageGb(storageUsedBytes!)}</span><span>剩余 {formatStorageGb(storageAvailableBytes ?? Math.max(0, storageLimitBytes! - storageUsedBytes!))}</span></div>
             </>
           ) : (
-            <div className="today-storage-meta"><span>{storageState}</span></div>
+            <div className="today-storage-meta" role="status" aria-live="polite"><span>{storageState}</span></div>
           )}
         </article>
 
@@ -1773,16 +1806,11 @@ function TodayDashboard({
             <span className="today-board-icon" aria-hidden="true"><ShieldCheck size={18} /></span>
             <div><h3>知识库看板</h3><span>规则版本与更新状态</span></div>
           </div>
-          <div className="today-rule-list">
-            {rulePacks === null ? (
+          <div className="today-rule-list" role="status" aria-live="polite">
+            {ruleBoard.mode !== 'ready' ? (
               <div className="today-rule-row">
                 <span className="today-rule-state"><i aria-hidden="true" />规则版本</span>
-                <small>{baseUrl ? '正在读取…' : '未配置 API，无法读取规则版本。'}</small>
-              </div>
-            ) : visibleRulePacks.length === 0 ? (
-              <div className="today-rule-row">
-                <span className="today-rule-state"><i aria-hidden="true" />规则版本</span>
-                <small>未读取到规则版本。</small>
+                <small>{ruleBoard.message}</small>
               </div>
             ) : visibleRulePacks.map((pack) => (
               <div className="today-rule-row" key={pack.id}>
@@ -1817,7 +1845,7 @@ type OverviewStoreRow = {
  * has not resolved (or is unavailable) and is shown as unread rather than being
  * replaced with example connections or example open issues.
  */
-function AccountDashboard({
+export function AccountDashboard({
   onOpenConnections,
   connections,
   stores,
@@ -1841,7 +1869,7 @@ function AccountDashboard({
         <div className="account-block account-platform-block">
           <div className="account-block-heading">
             <div><h3>平台连接</h3><span>统一查看各渠道授权状态。如果需要连接，请联系客户经理。</span></div>
-            <b>{connectedCount === null ? `${UNREAD_METRIC} 已接入` : `${connectedCount}/${connections!.length} 已接入`}</b>
+            <b>{connectedCount === null ? '接入状态未读取' : `${connectedCount}/${connections!.length} 已接入`}</b>
           </div>
           <div className="account-platform-list">
             {connections === null ? (
@@ -1919,7 +1947,7 @@ function TransactionDashboard({
   )
 }
 
-function Overview({
+export function Overview({
   goTask,
   goProducts,
   goTasks,
@@ -2255,12 +2283,21 @@ function Overview({
       <div className="overview-secondary-grid">
         <AccountDashboard
           onOpenConnections={goProducts}
-          connections={rows.map((row) => ({
-            key: `${row.platformId}-${row.accountId ?? 'unbound'}`,
-            name: row.name,
-            mark: Array.from(row.name)[0] ?? '',
-            status: row.status,
-          }))}
+          // `rows` collapses an unresolved/failed account read to `[]`, which
+          // would let the dashboard claim 「当前工作区没有平台连接记录」 while
+          // the read is still pending or has errored. Mirror the `stores` prop:
+          // pass `null` so the panel's explicit unread branch is reachable. The
+          // offline demo keeps its labelled 「演示连接」 fixture rows.
+          connections={
+            apiRows || !baseUrl
+              ? rows.map((row) => ({
+                  key: `${row.platformId}-${row.accountId ?? 'unbound'}`,
+                  name: row.name,
+                  mark: Array.from(row.name)[0] ?? '',
+                  status: row.status,
+                }))
+              : null
+          }
           stores={apiRows ? apiRows.filter((row) => row.status === '可读取' && row.accountId).map((row) => ({ key: `${row.platformId}-${row.accountId}`, name: row.shop, platform: row.name, mark: Array.from(row.name)[0] ?? '' })) : null}
         />
         <TransactionDashboard onOpenIssues={goProducts} issues={overviewIssues} />
@@ -2599,6 +2636,20 @@ type PointPackageOption = {
   blockedReason: string
 }
 
+/**
+ * Why 「确认购买」 cannot create an order for the selected pack.
+ *
+ * A contract-priced SKU has no orderable price in the catalogue, so the button
+ * is disabled — but the checkout only rendered `blockedReason`, leaving a dead
+ * button with no explanation. `blockedReason` keeps priority: when the server
+ * already listed unresolved items, that text is the actionable one.
+ */
+export function resolvePurchaseBlockNotice(selectedPackage: Pick<PointPackageOption, 'priceCny' | 'blockedReason'> | null): string {
+  if (!selectedPackage || selectedPackage.blockedReason) return ''
+  if (selectedPackage.priceCny === null) return '服务端目录未给出可下单价格，当前无法创建充值订单；请联系客户经理确认价格。'
+  return ''
+}
+
 /** Point packs are only those the server commercial catalog actually publishes. */
 function resolvePointPackages(catalog: CommercialCatalogItem[]): PointPackageOption[] {
   return selectMerchantCatalogItems(catalog)
@@ -2670,13 +2721,16 @@ function PointUsageChart({ items, label }: { items: PointUsageItem[]; label: str
   )
 }
 
-function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { baseUrl: string; billing: BillingStatus | null; account: MerchantAuthAccount | null; onOpenSupport: () => void }) {
+export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { baseUrl: string; billing: BillingStatus | null; account: MerchantAuthAccount | null; onOpenSupport: () => void }) {
   const [rangeMode, setRangeMode] = useState<'day' | 'month'>('day')
   const [rangeStart, setRangeStart] = useState('')
   const [rangeEnd, setRangeEnd] = useState('')
   // `null` while the ledger read is unresolved or failed; `[]` is a real read
   // that returned no entries. Neither case may fall back to sample numbers.
   const [statementEntries, setStatementEntries] = useState<CreativePointStatementEntry[] | null>(null)
+  // The ledger read is bounded: a truncated read may not be summed up as the
+  // workspace's complete consumption.
+  const [statementTruncated, setStatementTruncated] = useState(false)
   const [statementNote, setStatementNote] = useState('正在读取创意点流水…')
   const [storageQuota, setStorageQuota] = useState<StorageQuotaProjection | null>(null)
   const [catalogItems, setCatalogItems] = useState<CommercialCatalogItem[] | null>(null)
@@ -2692,6 +2746,7 @@ function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { baseUrl
   useEffect(() => {
     if (!baseUrl) {
       setStatementEntries(null)
+      setStatementTruncated(false)
       setStatementNote('未配置 API，无法读取创意点流水。')
       setStorageQuota(null)
       setCatalogItems(null)
@@ -2700,23 +2755,27 @@ function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { baseUrl
     }
     let active = true
     setStatementEntries(null)
+    setStatementTruncated(false)
     setStatementNote('正在读取创意点流水…')
     setStorageQuota(null)
     setCatalogItems(null)
     setCatalogNote('正在读取创意点套餐…')
     fetchCreativePointStatement(baseUrl)
-      .then((entries) => {
+      .then((page) => {
         if (!active) return
-        if (entries === null) {
+        if (page === null) {
           setStatementEntries(null)
+          setStatementTruncated(false)
           setStatementNote('服务端未返回创意点流水仓储，当前不显示消耗趋势。')
           return
         }
-        setStatementEntries(entries)
+        setStatementEntries(page.entries)
+        setStatementTruncated(page.truncated)
       })
       .catch((cause) => {
         if (!active) return
         setStatementEntries(null)
+        setStatementTruncated(false)
         setStatementNote(`创意点流水读取失败：${describeApiError(cause)}`)
       })
     fetchAssetStorageQuota(baseUrl)
@@ -2734,6 +2793,7 @@ function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { baseUrl
   const pointPackages = useMemo(() => (catalogItems ? resolvePointPackages(catalogItems) : []), [catalogItems])
   const selectedPackage = pointPackages.find((item) => item.id === selectedPointPackage) ?? null
   const selectedPointCount = selectedPackage?.pointsPerUnit ? selectedPackage.pointsPerUnit * purchaseQuantity : null
+  const purchaseBlockNotice = resolvePurchaseBlockNotice(selectedPackage)
   const dailyUsage = useMemo(() => aggregatePointUsage(statementEntries ?? [], 'day'), [statementEntries])
   const monthlyUsage = useMemo(() => aggregatePointUsage(statementEntries ?? [], 'month'), [statementEntries])
   const chartItems = useMemo(() => {
@@ -2783,11 +2843,21 @@ function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { baseUrl
       </div>
       <div className="finance-summary-grid">
         <article className="finance-balance-card accent"><div className="finance-card-icon"><Sparkles size={20} /></div><div className="finance-inline-metric"><span>当前剩余创意点</span><strong>{pointBalance === null ? UNREAD_METRIC : `${pointBalance.toLocaleString('zh-CN')} 点`}</strong></div><div className="finance-inline-metric subtle"><span>钱包余额</span><strong>{billing ? `¥${billing.balance_cny}` : UNREAD_METRIC}</strong></div><button className="primary" type="button" onClick={() => setPricingDialog('points')}>充值创意点</button></article>
-        <article className="finance-balance-card"><div className="finance-card-icon"><Boxes size={20} /></div><div className="finance-inline-metric"><span>储存空间剩余</span><strong>{storageAvailableBytes === null ? UNREAD_METRIC : formatStorageGb(storageAvailableBytes)}</strong></div><div className="finance-storage-summary"><p>{storageKnown ? `已使用 ${formatStorageGb(storageUsedBytes!)} / 共 ${formatStorageGb(storageLimitBytes!)}` : '服务端未返回储存配额，当前不显示用量。'}</p><div className="finance-storage-track"><i style={{ width: storageKnown ? `${Math.min(100, (storageUsedBytes! / storageLimitBytes!) * 100).toFixed(1)}%` : '0%' }} /></div></div><button className="primary" type="button" onClick={() => setPricingDialog('storage')}>购买储存空间</button></article>
+        <article className="finance-balance-card"><div className="finance-card-icon"><Boxes size={20} /></div><div className="finance-inline-metric"><span>储存空间剩余</span><strong>{storageAvailableBytes === null ? UNREAD_METRIC : formatStorageGb(storageAvailableBytes)}</strong></div><div className="finance-storage-summary"><p>{storageKnown ? `已使用 ${formatStorageGb(storageUsedBytes!)} / 共 ${formatStorageGb(storageLimitBytes!)}` : '服务端未返回储存配额，当前不显示用量。'}</p>{storageKnown && <div className="finance-storage-track" role="progressbar" aria-label="储存空间已用" aria-valuemin={0} aria-valuemax={Math.round(storageLimitBytes!)} aria-valuenow={Math.min(Math.round(storageLimitBytes!), Math.max(0, Math.round(storageUsedBytes!)))}><i style={{ width: `${Math.min(100, (storageUsedBytes! / storageLimitBytes!) * 100).toFixed(1)}%` }} /></div>}</div><button className="primary" type="button" onClick={() => setPricingDialog('storage')}>购买储存空间</button></article>
       </div>
       <section className="finance-panel finance-usage-panel">
         <div className="finance-panel-heading"><div><span className="section-kicker">CREATIVE POINTS</span><h3>创意点消耗趋势</h3><p>按服务端创意点流水的发生时间汇总，可查询日期或月份区间。</p></div><form className="finance-range-search" onSubmit={(event) => { event.preventDefault() }}><label><span>查询方式</span><Select className="finance-query-select" popupClassName="finance-query-menu" value={rangeMode} options={[{ value: 'day', label: '按日期' }, { value: 'month', label: '按月份' }]} onChange={(value) => { setRangeMode(value); setRangeStart(''); setRangeEnd('') }} /></label><label><span>开始{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" popupClassName="finance-date-picker-popup" locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeStart ? dayjs(rangeStart).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeStart(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><i>至</i><label><span>结束{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" popupClassName="finance-date-picker-popup" locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeEnd ? dayjs(rangeEnd).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeEnd(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><button className="primary" type="submit">查询</button><button className="secondary" type="button" onClick={resetUsage}>重置</button></form></div>
-        <div className="finance-chart-summary"><span>{chartLabel}</span><b>{chartItems.length} 个数据点</b><strong>合计 {chartItems.reduce((sum, item) => sum + item.value, 0).toLocaleString()} 点</strong></div>
+        {/* The sum may only be stated when the ledger read succeeded: a failed
+            or pending read rendered as 「合计 0 点」 next to an 「已读取流水」
+            caption reports a consumed total that was never measured. */}
+        <div className="finance-chart-summary">{statementEntries === null ? (
+          <><span>创意点流水未读取</span><strong>{UNREAD_METRIC}</strong></>
+        ) : (
+          <><span>{chartLabel}{statementTruncated ? ' · 仅已读取页' : ''}</span><b>{chartItems.length} 个数据点</b><strong>合计 {chartItems.reduce((sum, item) => sum + item.value, 0).toLocaleString()} 点{statementTruncated ? '（仅为已读取流水，非完整合计）' : ''}</strong></>
+        )}</div>
+        {statementEntries !== null && statementTruncated && (
+          <div className="info-notice" role="status">服务端创意点流水超过单次可读取页数，趋势与合计只覆盖已读取的部分流水；未把当前结果误报为完整。</div>
+        )}
         {chartItems.length ? (
           <PointUsageChart items={chartItems} label={chartLabel} />
         ) : (
@@ -2801,7 +2871,7 @@ function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { baseUrl
           {catalogItems === null ? <p className="muted" role="status">{catalogNote}</p> : pointPackages.length === 0 ? <p className="muted" role="status">服务端商业目录未返回可购买的创意点套餐。</p> : (
             <div className="finance-price-table dialog" role="table" aria-label="创意点价格表"><div className="finance-price-row header has-action" role="row"><span>套餐</span><span>创意点</span><span>价格</span><span>说明</span><span>操作</span></div>{pointPackages.map((item) => <div className="finance-price-row has-action" role="row" key={item.id}><strong>{item.name}</strong><span>{item.amountLabel}</span><b>{item.priceLabel}</b><small>{item.note}</small><button className="primary" type="button" disabled={Boolean(item.blockedReason)} onClick={() => { setSelectedPointPackage(item.id); setPurchaseQuantity(1); setAgreementAccepted(false) }}>{selectedPointPackage === item.id ? '已选择' : '选择'}</button></div>)}</div>
           )}
-          {selectedPackage && <section className="finance-checkout" aria-label="创意点购买确认"><div className="finance-checkout-qr">{rechargeOrder?.payment_url || rechargeOrder?.paymentUrl ? <a href={(rechargeOrder.payment_url ?? rechargeOrder.paymentUrl) || '#'} target="_blank" rel="noreferrer">打开支付页面</a> : <strong>确认后生成真实支付订单</strong>}<span>支付完成后由服务端回调或查单入账，未支付不会增加创意点。</span><div className="finance-payment-methods" role="group" aria-label="选择支付方式">{([{ id: 'wechat', label: '微信' }, { id: 'alipay', label: '支付宝' }, { id: 'card', label: '银行卡' }] as const).map((method) => <button key={method.id} className={paymentMethod === method.id ? 'selected' : ''} type="button" onClick={() => setPaymentMethod(method.id)}>{method.label}</button>)}</div></div><div className="finance-checkout-details"><div><span>购买套餐</span><strong>{selectedPackage.name} · {selectedPackage.amountLabel}</strong></div><label><span>购买数量</span><div className="finance-quantity-stepper"><button type="button" aria-label="减少购买数量" onClick={() => setPurchaseQuantity((value) => Math.max(1, value - 1))}>−</button><InputNumber controls={false} min={1} max={99} value={purchaseQuantity} onChange={(value) => setPurchaseQuantity(value || 1)} /><button type="button" aria-label="增加购买数量" onClick={() => setPurchaseQuantity((value) => Math.min(99, value + 1))}>＋</button></div></label><div><span>本次购买创意点</span><strong>{selectedPointCount === null ? '以服务端订单为准' : `共 ${selectedPointCount.toLocaleString()} 点`}</strong></div><div><span>应付金额</span><b>{selectedPackage.priceCny === null ? '以服务端订单为准' : `¥${selectedPackage.priceCny * purchaseQuantity}`}</b></div><div className="finance-checkout-action"><Checkbox checked={agreementAccepted} onChange={(event) => setAgreementAccepted(event.target.checked)}>我已阅读并同意《创意点购买协议》，确认虚拟权益到账后不支持无理由退款。</Checkbox><button className="primary finance-confirm-purchase" type="button" disabled={!agreementAccepted || rechargeLoading || Boolean(selectedPackage.blockedReason) || selectedPackage.priceCny === null} onClick={() => void submitRecharge()}>{rechargeLoading ? '创建订单中…' : '确认购买'}</button></div>{selectedPackage.blockedReason && <p className="error-text" role="alert">{selectedPackage.blockedReason}</p>}{rechargeOrder && <div className="finance-recharge-order" role="status"><strong>充值订单：{rechargeOrder.id}</strong><span>状态：{rechargeOrder.state}{rechargeOrder.warning ? ` · ${rechargeOrder.warning}` : ''}</span><button type="button" onClick={() => void refreshRecharge()}>查询订单</button></div>}{rechargeError && <p className="error-text" role="alert">{rechargeError}</p>}</div></section>}
+          {selectedPackage && <section className="finance-checkout" aria-label="创意点购买确认"><div className="finance-checkout-qr">{rechargeOrder?.payment_url || rechargeOrder?.paymentUrl ? <a href={(rechargeOrder.payment_url ?? rechargeOrder.paymentUrl) || '#'} target="_blank" rel="noreferrer">打开支付页面</a> : <strong>确认后生成真实支付订单</strong>}<span>支付完成后由服务端回调或查单入账，未支付不会增加创意点。</span><div className="finance-payment-methods" role="group" aria-label="选择支付方式">{([{ id: 'wechat', label: '微信' }, { id: 'alipay', label: '支付宝' }, { id: 'card', label: '银行卡' }] as const).map((method) => <button key={method.id} className={paymentMethod === method.id ? 'selected' : ''} type="button" onClick={() => setPaymentMethod(method.id)}>{method.label}</button>)}</div></div><div className="finance-checkout-details"><div><span>购买套餐</span><strong>{selectedPackage.name} · {selectedPackage.amountLabel}</strong></div><label><span>购买数量</span><div className="finance-quantity-stepper"><button type="button" aria-label="减少购买数量" onClick={() => setPurchaseQuantity((value) => Math.max(1, value - 1))}>−</button><InputNumber controls={false} min={1} max={99} value={purchaseQuantity} onChange={(value) => setPurchaseQuantity(value || 1)} /><button type="button" aria-label="增加购买数量" onClick={() => setPurchaseQuantity((value) => Math.min(99, value + 1))}>＋</button></div></label><div><span>本次购买创意点</span><strong>{selectedPointCount === null ? '以服务端订单为准' : `共 ${selectedPointCount.toLocaleString()} 点`}</strong></div><div><span>应付金额</span><b>{selectedPackage.priceCny === null ? '以服务端订单为准' : `¥${selectedPackage.priceCny * purchaseQuantity}`}</b></div><div className="finance-checkout-action"><Checkbox checked={agreementAccepted} onChange={(event) => setAgreementAccepted(event.target.checked)}>我已阅读并同意《创意点购买协议》，确认虚拟权益到账后不支持无理由退款。</Checkbox><button className="primary finance-confirm-purchase" type="button" disabled={!agreementAccepted || rechargeLoading || Boolean(selectedPackage.blockedReason) || selectedPackage.priceCny === null} onClick={() => void submitRecharge()}>{rechargeLoading ? '创建订单中…' : '确认购买'}</button></div>{selectedPackage.blockedReason && <p className="error-text" role="alert">{selectedPackage.blockedReason}</p>}{purchaseBlockNotice && <p className="muted" role="status">{purchaseBlockNotice}</p>}{rechargeOrder && <div className="finance-recharge-order" role="status"><strong>充值订单：{rechargeOrder.id}</strong><span>状态：{rechargeOrder.state}{rechargeOrder.warning ? ` · ${rechargeOrder.warning}` : ''}</span><button type="button" onClick={() => void refreshRecharge()}>查询订单</button></div>}{rechargeError && <p className="error-text" role="alert">{rechargeError}</p>}</div></section>}
         </> : <div className="finance-storage-contact"><Boxes size={28} /><strong>请咨询客服</strong></div>}
       </Modal>
     </section>
@@ -5926,7 +5996,10 @@ function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'br
           <div className="material-workspace-overview">
             <div className="material-workspace-intro"><span className="material-workspace-mark" aria-hidden="true"><FolderOpen size={20} /></span><div><span className="section-kicker">MATERIAL LIBRARY</span><h1>素材库</h1><p>按店铺独立管理图片与视频。</p></div></div>
             <div className="material-workspace-actions-card">
-              <div className="material-workspace-storage" aria-label="共享储存空间"><div><span>共享储存空间</span><strong>{UNREAD_METRIC} <small>服务端配额</small></strong></div><div className="material-storage-track"><i style={{ width: '0%' }} /></div><div><small>本次会话上传 {uploadedGb.toFixed(1)} GB</small><b>剩余 {UNREAD_METRIC}</b></div></div>
+              {/* No storage-quota read is wired into this view, so the panel
+                  states the unknown instead of drawing an empty track that
+                  reads as 「已使用 0%」. */}
+              <div className="material-workspace-storage" aria-label="共享储存空间"><div><span>共享储存空间</span><strong>{UNREAD_METRIC} <small>服务端配额</small></strong></div><div><small>配额读取未接入，本次会话上传 {uploadedGb.toFixed(1)} GB</small><b>剩余 {UNREAD_METRIC}</b></div></div>
               <button type="button" className="material-upload-button" onClick={() => { setUploadStoreId(activeStore.id); setUploadSeries(''); setUploadDialogOpen(true) }}><Upload size={17} /><span>上传素材</span></button>
             </div>
           </div>

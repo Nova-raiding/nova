@@ -1,8 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { OpsConsoleModel } from "../../../hooks/useOpsConsoleModel";
-import type { PlatformModelUsageSummary } from "../../../types/ops";
+import type { PlatformModelUsageSummary, WorkspaceDirectoryPage } from "../../../types/ops";
 import { PlatformOverviewSnapshot } from "./PlatformOverviewSnapshot.js";
+
+/** The unresolved directory as the hook seeds it: no measured count at all. */
+const unresolvedDirectory: WorkspaceDirectoryPage = { items: [], offset: 0, limit: 20, hasMore: false };
 
 const model = (overrides: Record<string, unknown> = {}) => ({
   workspaceDirectory: { total: 0, merchantWorkspaceCount: 0 },
@@ -26,11 +29,19 @@ const usage = (overrides: Partial<PlatformModelUsageSummary> = {}): PlatformMode
   ...overrides,
 });
 
-/** The rendered value + unit of one dashboard tile, sliced from its label. */
+/**
+ * The rendered value + unit of one dashboard tile, sliced from its label.
+ *
+ * The lookup is anchored on the label's own closing tag: a bare
+ * `html.indexOf(label)` matched the first *substring*, so 「平台消耗金额」
+ * resolved to the earlier 「累计平台消耗金额」 tile and the monthly assertion
+ * silently re-checked the cumulative one.
+ */
 const tile = (html: string, label: string) => {
-  const start = html.indexOf(label);
+  const marker = `>${label}</span>`;
+  const start = html.indexOf(marker);
   expect(start, `tile ${label} is missing`).toBeGreaterThan(-1);
-  return html.slice(start + label.length, html.indexOf("</strong>", start));
+  return html.slice(start + marker.length, html.indexOf("</strong>", start));
 };
 
 const render = (overrides: Record<string, unknown> = {}) =>
@@ -44,6 +55,16 @@ describe("PlatformOverviewSnapshot money honesty", () => {
     expect(tile(html, "平台消耗金额")).toContain("12.34");
   });
 
+  it("resolves the monthly tile from its own label, not from an earlier substring match", () => {
+    // Direct proof of the anchored lookup: the cumulative label contains the
+    // monthly one as a substring, and the two tiles carry different values.
+    const synthetic = '<article><span class="l">累计平台消耗金额</span><strong>99 <small>元</small></strong></article>'
+      + '<article><span class="l">平台消耗金额</span><strong>7 <small>元</small></strong></article>';
+    expect(tile(synthetic, "平台消耗金额")).toContain("7");
+    expect(tile(synthetic, "平台消耗金额")).not.toContain("99");
+    expect(tile(synthetic, "累计平台消耗金额")).toContain("99");
+  });
+
   it("shows an explicit unknown when provider cost evidence is not verified", () => {
     // `providerCostStatus: "partial"` means the server could not evidence the
     // cost. Showing the number anyway would state an unverified cost as fact.
@@ -54,7 +75,7 @@ describe("PlatformOverviewSnapshot money honesty", () => {
   });
 
   it("does not present an absent finance, usage or directory read as a measured zero", () => {
-    const html = render({ workspaceDirectory: {} });
+    const html = render({ workspaceDirectory: unresolvedDirectory });
     expect(html).not.toContain("<small>元</small>");
     expect(tile(html, "接入费总收入")).toContain("—");
     expect(tile(html, "接入客户数")).toContain("—");
@@ -63,12 +84,41 @@ describe("PlatformOverviewSnapshot money honesty", () => {
     expect(tile(html, "累计平台消耗金额")).toContain("—");
   });
 
+  it("never renders an unresolved directory as a measured customer count", () => {
+    // Nothing has been read from `ops.workspaces.list`, so no count exists.
+    // The seed the hook actually installs is pinned in
+    // `src/hooks/useOpsConsoleModel.test.ts`.
+    const html = render({ workspaceDirectory: unresolvedDirectory });
+    expect(tile(html, "客户总数")).toContain("—");
+    expect(tile(html, "客户总数")).not.toMatch(/\d/u);
+    expect(tile(html, "有效客户数")).toContain("—");
+  });
+
   it("still renders a genuine measured zero as zero", () => {
     // The unknown state must not swallow real data: a directory that reports
     // zero customers is measured, and must read as 0 rather than "—".
-    const html = render({ workspaceDirectory: { total: 3, merchantWorkspaceCount: 3 } });
+    const html = render({ workspaceDirectory: { total: 0, merchantWorkspaceCount: 0, items: [], offset: 0, limit: 20, hasMore: false } });
+    expect(tile(html, "客户总数")).toContain("0");
+    expect(tile(html, "有效客户数")).toContain("0");
+  });
+
+  it("does not invent a gifted-customer count the server never returned", () => {
+    // `total - merchantWorkspaceCount` was a derived number presented as a
+    // measurement; the directory query carries no gifted semantics at all.
+    const html = render({ workspaceDirectory: { total: 3, merchantWorkspaceCount: 3, items: [], offset: 0, limit: 20, hasMore: false } });
     expect(tile(html, "客户总数")).toContain("3");
-    expect(tile(html, "赠送客户数")).toContain("0");
+    expect(tile(html, "赠送客户数")).toContain("—");
+    expect(tile(html, "赠送客户数")).not.toMatch(/\d/u);
+  });
+
+  it("does not claim a month window the finance query never requested", () => {
+    // `ops.finance.search` is called without a date window, so every finance
+    // figure here is cumulative. The panel used to be titled 「{N}月经营数据」.
+    const html = render({ platformFinanceSummary: { onboardingOrderCny: 1288 } });
+    expect(html).toContain("经营数据（累计口径）");
+    expect(html).not.toContain(`${new Date().getMonth() + 1}月经营数据`);
+    expect(html).not.toContain("<small>本月</small>");
+    expect(html).toContain("累计口径而非本月");
   });
 
   it("never fabricates a zero for the creative-point tiles that have no data source", () => {

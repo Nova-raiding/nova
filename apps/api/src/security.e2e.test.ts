@@ -1748,14 +1748,41 @@ describe('security and access-control acceptance gates', () => {
     // allow-list of gateway role names let a workspace member holding the
     // *membership* role reach platform-only routes. Membership roles must be
     // matched only through their canonical form.
-    await configureBearerMembers([{ token: 'token-role-collision', workspaceId: 'ws_role_collision', role: 'platform_ops', workbenches: ['workspace'] }])
+    //
+    // The collision only exists once the durable membership role has reached
+    // `principal.memberRole`, and `routeMcp` hydrates it from the member row
+    // before the handler gate runs. The `/v1/ops/merchant-accounts/authorize`
+    // HTTP route is dispatched earlier in the request lifecycle, where the role
+    // list is still empty, so its 403 would hold even with the raw comparison
+    // restored and pin nothing. This route is the one that can tell the two
+    // implementations apart.
+    const workspaceId = 'ws_role_collision'
+    await configureBearerMembers([
+      { token: 'token-role-collision', workspaceId, actorId: 'role-collision-member', role: 'platform_ops', workbenches: ['workspace'] },
+      { token: 'token-role-collision-owner', workspaceId, actorId: 'role-collision-owner', role: 'workspace_owner', gatewayRoles: ['workspace_owner'], workbenches: ['workspace'] },
+    ])
     const base = await start()
-    const response = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
+    const members = (token: string) => fetch(`${base}/mcp`, {
       method: 'POST',
-      headers: { authorization: 'Bearer token-role-collision', 'x-workspace-id': 'ws_role_collision', 'content-type': 'application/json' },
-      body: JSON.stringify({ login: 'merchant@example.test', workspace_id: 'ws_role_collision' }),
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ops.members.list', params: {} }),
     })
-    expect(response.status).toBe(403)
+    const denied = await members('token-role-collision')
+    // Without the canonical-only comparison this request returned 200 and the
+    // full workspace member directory: a workspace membership role named
+    // `platform_ops` cleared a platform-operations allow-list.
+    expect(denied.status).toBe(403)
+    expect((await denied.json() as Envelope).error?.code).toBe('FORBIDDEN')
+    // Positive control on the very same call: an authorized workspace owner is
+    // served the real member directory. The denial above therefore cannot be
+    // explained by a broken route, a malformed request, or a blanket 403.
+    const allowed = await members('token-role-collision-owner')
+    expect(allowed.status).toBe(200)
+    const listed = (await allowed.json() as Envelope<{ result: Array<{ externalSubject: string; role: string }> }>).data?.result
+    expect(listed).toEqual(expect.arrayContaining([
+      expect.objectContaining({ externalSubject: 'role-collision-member', role: 'platform_ops' }),
+      expect.objectContaining({ externalSubject: 'role-collision-owner', role: 'workspace_owner' }),
+    ]))
   })
 
   it('still admits a genuine platform operations principal to that endpoint', async () => {
@@ -1764,15 +1791,78 @@ describe('security and access-control acceptance gates', () => {
     const base = await start()
     // A platform-workbench token holds no workspace grant, so no `x-workspace-id`
     // header: the target workspace is named in the body, not asserted by header.
+    // The body is schema-valid, so the request must reach the handler's own
+    // business lookup instead of stopping at request validation.
     const response = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
       method: 'POST',
       headers: { authorization: 'Bearer token-platform-ops', 'x-ops-workbench': 'platform', 'content-type': 'application/json' },
-      body: JSON.stringify({ login: 'merchant@example.test', workspace_id: 'ws_platform_ops' }),
+      body: JSON.stringify({ login: 'absent-merchant@example.test', workspace_id: 'ws_platform_ops', sku_code: 'sku-onboarding-once', amount_fen: 500000, payment_status: 'pending', member_role: 'merchant_admin', reason: '平台角色门禁正向对照', idempotency_key: 'platform-ops-positive-control' }),
     })
-    // The role gate must pass; anything after it is a payload or persistence
-    // concern, never FORBIDDEN.
-    const body = await response.json() as Envelope
-    expect(response.status, JSON.stringify(body.error)).not.toBe(403)
+    // The exact business result is asserted, not `not.toBe(403)`: the role gate
+    // admitted the principal, the handler resolved the workspace and priced the
+    // SKU, and only the missing merchant account stopped it.
+    expect(response.status).toBe(404)
+    expect((await response.json() as Envelope).error?.code).toBe('AUTH_ACCOUNT_NOT_FOUND')
+  })
+
+  it('does not let a workspace membership role named platform_ops read the audit center as a platform operator', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    const workspaceId = `ws_audit_role_collision_${Date.now()}`
+    await operationAudits.append({ workspaceId, actorId: 'audit-target', action: 'member.update', resourceType: 'member', resourceId: 'audit-target', before: { status: 'pending' }, after: { status: 'active' }, reason: '审计中心角色边界验证' })
+    await configureBearerMembers([
+      { token: 'audit-membership-ops-token', workspaceId, actorId: 'audit-membership-ops', role: 'platform_ops', workbenches: ['workspace'] },
+      { token: 'audit-support-token', workspaceId, actorId: 'audit-support', role: 'support', workbenches: ['workspace'] },
+      { token: 'audit-finance-token', workspaceId, actorId: 'audit-finance', role: 'finance', workbenches: ['workspace'] },
+    ])
+    const base = await start()
+    const call = (token: string, method: string) => fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: { workspace_id: workspaceId, ...(method === 'ops.audit.export' ? {} : { limit: '5' }) } }),
+    }).then(response => response.json() as Promise<Envelope<{ result: { records: Array<{ workspaceId: string }> } }>>)
+
+    // The `platform_ops` membership label must not stand in for a platform
+    // operator: it has no canonical role, so this principal carries no audit
+    // capability at all.
+    expect((await call('audit-membership-ops-token', 'ops.audit.list')).error?.code).toBe('AUDIT_CENTER_FORBIDDEN')
+    // Legitimate workspace audit readers keep working, including CSV export for
+    // the finance membership role.
+    const listed = await call('audit-support-token', 'ops.audit.list')
+    expect(listed.error).toBeNull()
+    expect(listed.data?.result.records).toContainEqual(expect.objectContaining({ workspaceId }))
+    expect((await call('audit-finance-token', 'ops.audit.export')).error).toBeNull()
+    expect((await call('audit-support-token', 'ops.audit.export')).error?.code).toBe('AUDIT_CENTER_FORBIDDEN')
+  })
+
+  it('does not let a workspace membership role named platform_ops widen brand scope', async () => {
+    vi.stubEnv('NODE_ENV', 'staging')
+    const workspaceId = `ws_brand_role_collision_${Date.now()}`
+    await configureBearerMembers([
+      { token: 'brand-role-owner-token', workspaceId, actorId: 'brand-role-owner', role: 'workspace_owner', workbenches: ['workspace'] },
+      { token: 'brand-role-admin-token', workspaceId, actorId: 'brand-role-admin', role: 'merchant_admin', workbenches: ['workspace'] },
+      { token: 'brand-role-operator-token', workspaceId, actorId: 'brand-role-operator', role: 'operator', workbenches: ['workspace'] },
+      { token: 'brand-role-ops-token', workspaceId, actorId: 'brand-role-ops', role: 'platform_ops', workbenches: ['workspace'] },
+    ])
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
+    const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `brand-role-store-${workspaceId}`, credentialRef: 'vault://brand-role' })
+    const product = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, localProductKey: `brand-role-${workspaceId}`, title: '角色边界商品', stock: 3 })
+    service.createTask({ workspaceId, productId: product.id, platform: 'taobao', accountId: account.id })
+    const base = await start()
+    const headers = (token: string) => ({ authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-workspace-id': workspaceId })
+    const visibleTasks = (token: string) => fetch(`${base}/v1/tasks?limit=20&offset=0`, { headers: headers(token) }).then(response => response.json() as Promise<Envelope<{ total: number }>>)
+
+    // Only a member with workspace-wide brand access may see a task that carries
+    // no brand binding. `platform_ops` is a membership role with no canonical
+    // workspace role, so it must behave exactly like the restricted `operator`.
+    expect((await visibleTasks('brand-role-owner-token')).data).toMatchObject({ total: 1 })
+    // `merchant_admin` canonicalises to `workspace_admin`, so it keeps the wide
+    // brand scope it always had.
+    expect((await visibleTasks('brand-role-admin-token')).data).toMatchObject({ total: 1 })
+    expect((await visibleTasks('brand-role-operator-token')).data).toMatchObject({ total: 0 })
+    expect((await visibleTasks('brand-role-ops-token')).data).toMatchObject({ total: 0 })
+    const created = await fetch(`${base}/v1/tasks`, { method: 'POST', headers: headers('brand-role-ops-token'), body: JSON.stringify({ product_id: product.id, platform: 'taobao', account_id: account.id }) }).then(response => response.json() as Promise<Envelope>)
+    expect(created.error?.code).toBe('TASK_BRAND_REQUIRED')
   })
 
   it('requires every production task entry to retain an explicit bound store', async () => {

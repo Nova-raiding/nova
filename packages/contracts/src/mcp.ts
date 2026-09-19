@@ -1031,10 +1031,11 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'catalog.import.batch',
-    description: '批量导入最多 50 个商品；可提交商品对象 JSON，或提交已解析且商家确认过的 XLSX/CSV 表格素材；每项必须明确平台和已授权店铺，全部预校验通过后才写入商品档案。',
+    description: '批量导入最多 50 个商品；可提交商品对象 JSON，或提交已解析且商家确认过的 XLSX/CSV 表格素材；显式 draft_only=true 时只建立未绑定商品和待审核知识，不需要已授权店铺；否则每项必须明确平台和已授权店铺，全部预校验通过后才写入商品档案。',
     params: params({
       products_json: { type: 'string', description: '商品对象数组 JSON；每项包含 platform、account_id、title 及可选 SKU/价格/库存/素材/属性；asset_ids 可绑定已上传素材。' },
       source_asset_id: { type: 'string', description: '已解析且商家确认过的 XLSX/CSV 商品表格素材 ID。' },
+      draft_only: { type: 'string', enum: ['true'], description: '仅建立未绑定商品和待审核知识，不连接店铺、不同步、不发布。' },
     }, [], ['products_json', 'source_asset_id']),
   },
   { method: 'catalog.sku.update', description: '独立修改商品 SKU 的名称、价格、库存、图片和规格；修改后必须重新确认商品事实。', params: params({ product_id: { type: 'string' }, sku_id: { type: 'string' }, name: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, images_json: { type: 'string' }, attributes_json: { type: 'string' }, expected_version: { type: 'string' } }, ['product_id', 'sku_id']) },
@@ -1146,8 +1147,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'brand.get',
-    description: 'Read the workspace brand profile used by content generation.',
-    params: params({}),
+    description: 'Read the workspace brand profile used by content generation. Supplying brand_unit_id reads exactly that brand unit and requires viewer access to it, so one brand can never be read through another brand\'s scope.',
+    params: params({ brand_unit_id: { type: 'string', description: '可选；明确读取的品牌单元；省略时返回工作区默认品牌档案。' } }),
   },
   {
     method: 'brand.extract',

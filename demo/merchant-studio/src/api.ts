@@ -1086,18 +1086,34 @@ function normalizeCreativePointStatementEntry(raw: unknown): CreativePointStatem
   }
 }
 
+/** A bounded read of the creative-point ledger, with its own completeness flag. */
+export interface CreativePointStatementPage {
+  entries: CreativePointStatementEntry[]
+  /** The server still had a `next_cursor` when the page budget ran out. */
+  truncated: boolean
+  pagesRead: number
+}
+
 /**
  * Read the workspace creative-point ledger. The server bounds one page to 100
  * entries, so we follow `next_cursor` for a bounded number of pages and never
  * synthesize rows the server did not return: an unavailable ledger yields `null`
  * rather than an empty page that could be mistaken for real zero usage.
+ *
+ * The page budget is finite, so the caller is told when the ledger was longer
+ * than that budget (`truncated`) and must disclose it. Returning only the rows
+ * let the finance panel publish a partial sum as the workspace's total
+ * consumption — the same error the API refuses to make with a missing ledger.
  */
-export async function fetchCreativePointStatement(baseUrl: string, maxPages = 5): Promise<CreativePointStatementEntry[] | null> {
+export async function fetchCreativePointStatement(baseUrl: string, maxPages = 5): Promise<CreativePointStatementPage | null> {
   const entries: CreativePointStatementEntry[] = []
+  const pageBudget = Math.max(1, maxPages)
   let cursor: string | null = null
-  for (let page = 0; page < Math.max(1, maxPages); page += 1) {
+  let pagesRead = 0
+  for (let page = 0; page < pageBudget; page += 1) {
     const response: { entries?: unknown; next_cursor?: unknown } = await requestMcp<{ entries?: unknown; next_cursor?: unknown }>(baseUrl, 'creative-points.statement.list', cursor ? { limit: '100', cursor } : { limit: '100' })
     if (!Array.isArray(response.entries)) return null
+    pagesRead += 1
     for (const raw of response.entries) {
       const entry = normalizeCreativePointStatementEntry(raw)
       if (entry) entries.push(entry)
@@ -1105,7 +1121,7 @@ export async function fetchCreativePointStatement(baseUrl: string, maxPages = 5)
     cursor = typeof response.next_cursor === 'string' && response.next_cursor ? response.next_cursor : null
     if (!cursor) break
   }
-  return entries
+  return { entries, truncated: cursor !== null, pagesRead }
 }
 const assetMimeType = (file: File) => file.type || ({
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif',

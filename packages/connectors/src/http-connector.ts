@@ -46,7 +46,11 @@ export interface ProviderExchangeObservation {
   errorCode?: NormalizedPlatformError['code']
   errorMessage?: string
   retryable?: boolean
-  /** Parsed `Retry-After` hint in milliseconds, when the provider sent one. */
+  /**
+   * Parsed `Retry-After` hint in milliseconds, when the provider sent one.
+   * Carried as exchange evidence only; no retry scheduler reads it yet — see
+   * `NormalizedPlatformError.retryAfterMs`.
+   */
   retryAfterMs?: number
   /** Fetch does not expose negotiated HTTP/TLS protocol versions. */
   transport: 'fetch'
@@ -135,7 +139,9 @@ function readImageUrls(value: unknown): string[] {
 }
 /** Parses `Retry-After` in both documented forms (delta-seconds and
  * HTTP-date). A missing, negative, malformed or absurd value yields undefined:
- * the connector must never invent a delay the provider did not send. */
+ * the connector must never invent a delay the provider did not send. The
+ * result is attached to `NormalizedPlatformError`/`ProviderExchangeObservation`
+ * as evidence; the durable retry scheduler does not consume it yet. */
 export function parseRetryAfterMs(value: string | null | undefined, nowMs = Date.now()): number | undefined {
   const raw = typeof value === 'string' ? value.trim() : ''
   if (!raw || raw.startsWith('-')) return undefined
@@ -396,10 +402,16 @@ export class HttpPlatformConnector implements PlatformConnector {
       throw this.classifyRefreshGrantFailure(error)
     }
     const next = this.parseCredential(payload, current)
-    // Compare-and-swap: the token we refreshed from is the only write we are
-    // allowed to publish. If another process refreshed concurrently and stored
-    // a different access token, its credential is the live one under provider
-    // rotation — overwriting it would destroy the surviving refresh token.
+    // Best-effort read-check-write, NOT a compare-and-swap: `provider.store`
+    // below is unconditional and has nothing to compare against, so this only
+    // *narrows* the overwrite window between two replicas that refreshed from
+    // the same token — it cannot close it. The intent is that the token we
+    // refreshed from is the only write we are allowed to publish: if another
+    // process refreshed concurrently and stored a different access token, its
+    // credential is the live one under provider rotation, and overwriting it
+    // would destroy the surviving refresh token. Adopt-then-store, with the
+    // freshness re-check below, is the best this path can do; the only
+    // cross-replica mutex is the lease in `refreshUnderSingleFlight`.
     const concurrent = await this.readStoredCredential(ref)
     // Adopt the peer's credential only if it is still usable. A *different* but
     // already-expired token would otherwise be adopted here and sent to the
@@ -569,6 +581,11 @@ export class HttpPlatformConnector implements PlatformConnector {
    * so it stays reconcilable. The idempotency cache is only invalidated when
    * the remote object is really gone: an orphaned upload must still be reused
    * by a retry rather than duplicated.
+   *
+   * Unwired at delivery: nothing calls this production-side, and no deployment
+   * injects `deleteMedia`/`onOrphanedMedia` yet. See
+   * `PlatformConnector.discardMedia` for the gap and what still has to be
+   * connected.
    */
   async discardMedia(ctx: ConnectorContext, receipt: MediaUploadReceipt, reason = 'write_rejected', idempotencyKey?: string): Promise<MediaDiscardResult> {
     if (receipt.platform !== this.platform) throw new ConnectorFailure(this.normalizeError({ code: 'VALIDATION_FAILED', message: 'media receipt belongs to another platform', retryable: false }))
@@ -682,9 +699,11 @@ export class HttpPlatformConnector implements PlatformConnector {
    * replicas that share a lease store, and always ends with the credential the
    * vault actually holds. Losing the lease is not a failure: the loser waits
    * for the winner's credential, and only refreshes itself — under the
-   * compare-and-swap guard in `refreshCredential` — when the winner does not
-   * finish in time. A lease store outage therefore degrades to the guarded
-   * read-modify-write path instead of failing every publish.
+   * best-effort read-check-write in `refreshCredential` (adopt-then-store; it
+   * narrows but does not close the overwrite window) — when the winner does
+   * not finish in time. A lease store outage therefore degrades to the guarded
+   * read-modify-write path instead of failing every publish. The lease is the
+   * only cross-replica mutex: nothing else on this path is atomic.
    */
   private async refreshUnderSingleFlight(ref: CredentialRef, current: AccessCredential, signal?: AbortSignal): Promise<AccessCredential> {
     const key = credentialRefreshKey({ platform: this.platform, workspaceId: ref.workspaceId, accountId: ref.accountId })

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createClient, type RedisClientType } from 'redis'
-import { connectRedisQueue, RedisQueueDepthExceededError } from './redis-transport.js'
+import { connectRedisQueue, redisTransportClient, RedisQueueDepthExceededError } from './redis-transport.js'
 import { RedisQueueAdapter, type DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 
 const redisUrl = process.env.REDIS_URL
@@ -12,7 +12,7 @@ describe.skipIf(!redisUrl)('redis durable queue transport', () => {
   let roomyConnection: Awaited<ReturnType<typeof connectRedisQueue>> | undefined
   let inspector: RedisClientType | undefined
   const prefix = `worker_queue_test_${randomUUID()}`
-  const queues = ['recovery', 'retry', 'depth', 'membership', 'pressure', 'delayed_ack', 'indexed']
+  const queues = ['recovery', 'retry', 'depth', 'membership', 'pressure', 'delayed_ack', 'indexed', 'duplicate_ack', 'binding']
   const key = (name: string) => `${prefix}:${name}`
   const transport = () => connection!.transport
 
@@ -32,6 +32,33 @@ describe.skipIf(!redisUrl)('redis durable queue transport', () => {
     }
     await roomyConnection?.close()
     await connection?.close()
+  })
+
+  it('binds every queue connection to the configured URL instead of the driver default', async () => {
+    // The regression this pins: `createClient(url)` reads like a URL overload,
+    // but node-redis v5 only accepts an options object, so a bare string is
+    // taken as options whose every field is undefined and the client dials the
+    // driver default (localhost:6379) instead of the server the caller named.
+    // Nothing above notices: the transport is self-consistent, only a second
+    // connection to the same URL can tell the two keyspaces apart. The call
+    // site does not type-check either, because `(clientFactory ??
+    // redisTransportClient)(url)` resolves against the seam's signature. So the
+    // URL binding itself is asserted here.
+    expect(redisTransportClient(redisUrl!).options.url).toBe(redisUrl!)
+
+    const bound = await connectRedisQueue(redisUrl!, { maxDepth: 10 })
+    try {
+      const queue = key('binding')
+      await bound.transport.push!(queue, encoded('evt_binding'))
+      // The inspector is on the same REDIS_URL and sees nothing this transport
+      // wrote unless the two share a server. A claiming pop covers the same
+      // check for the processing ZSET the Lua scripts write.
+      expect(await inspector!.lLen(queue)).toBe(1)
+      expect(await bound.transport.pop!(queue, 0)).toBe(encoded('evt_binding'))
+      expect(await inspector!.zCard(`${queue}:processing`)).toBe(1)
+    } finally {
+      await bound.close()
+    }
   })
 
   it('offers only claims whose liveness proof stopped being refreshed, and never moves them', async () => {
@@ -151,6 +178,43 @@ describe.skipIf(!redisUrl)('redis durable queue transport', () => {
     await delayed.ack(retried!)
     expect(await delayed.contains('evt_delayed_ack')).toBe(false)
     expect(Number(await inspector!.hExists(`${key('delayed_ack')}:ids`, 'evt_delayed_ack'))).toBe(0)
+  })
+
+  it('keeps the membership index consistent when the same delivery is removed twice', async () => {
+    const queue = key('duplicate_ack')
+    const value = encoded('evt_duplicate_ack')
+
+    // Two deliveries of the same original event: one in flight and one still
+    // waiting in the ready list (a retry pushed before the first claim was
+    // acknowledged). The index counts both.
+    await transport().push!(queue, value)
+    expect(await transport().pop!(queue, 0)).toBe(value)
+    await transport().push!(queue, value)
+    expect(await inspector!.hGet(`${queue}:ids`, 'evt_duplicate_ack')).toBe('2')
+
+    // Acknowledging the in-flight claim releases exactly one count: the ready
+    // delivery is untouched and must stay visible to contains().
+    await transport().remove!(queue, value)
+    expect(await inspector!.zCard(`${queue}:processing`)).toBe(0)
+    expect(await transport().contains!(queue, 'evt_duplicate_ack')).toBe(true)
+
+    // The same raw value is removed again (an at-least-once ack of a delivery
+    // whose claim is already gone). ZREM removes nothing, so the index must not
+    // move either: zeroing it here would hide a delivery that is still queued.
+    await transport().remove!(queue, value)
+    // The ready delivery is still there, so the index and contains() must still
+    // report it: a false here is what lets restore() push a second delivery for
+    // an event whose lease a live worker still owns.
+    expect(await inspector!.lLen(queue)).toBe(1)
+    expect(await inspector!.hGet(`${queue}:ids`, 'evt_duplicate_ack')).toBe('1')
+    expect(await transport().contains!(queue, 'evt_duplicate_ack')).toBe(true)
+
+    // Only the last delivery takes the field away entirely - absent, not 0.
+    expect(await transport().pop!(queue, 0)).toBe(value)
+    await transport().remove!(queue, value)
+    expect(await inspector!.hExists(`${queue}:ids`, 'evt_duplicate_ack')).toBe(0)
+    expect(await inspector!.hGet(`${queue}:ids`, 'evt_duplicate_ack')).toBeNull()
+    expect(await transport().contains!(queue, 'evt_duplicate_ack')).toBe(false)
   })
 
   it('stops admitting work once the queue is full instead of growing without bound', async () => {

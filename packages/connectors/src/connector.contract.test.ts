@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createFakeConnector, profiles, type Platform, type PlatformConnector } from './index.js'
+import { createConfiguredConnector, createFakeConnector, profiles, type Platform, type PlatformConnector } from './index.js'
 
 const platforms = Object.keys(profiles) as Platform[]
 const context = { workspaceId: 'ws_test', accountId: 'acct_test', traceId: 'trace_test' }
@@ -58,7 +58,15 @@ describe.each(platforms)('%s connector contract', (platform) => {
     await expect(current.queryWrite(context, { idempotencyKey: draft.idempotencyKey })).rejects.toMatchObject(notConfigured)
     await expect(current.createProduct(context, draft)).rejects.toMatchObject(notConfigured)
     await expect(current.updateProduct(context, draft)).rejects.toMatchObject(notConfigured)
-    if (typeof current.uploadMedia === 'function') await expect(current.uploadMedia(context, { visualRef: 'v', role: 'main', mimeType: 'image/png', sha256: 'a'.repeat(64), bytes: new Uint8Array(), idempotencyKey: `media-${platform}` })).rejects.toMatchObject(notConfigured)
+    // Media upload is an optional connector capability and the fake connector
+    // deliberately does not implement it, so a `typeof current.uploadMedia ===
+    // 'function'` guard here made this assertion unreachable: it never ran for
+    // any platform. The fake's surface is now asserted directly, and the
+    // operation is exercised on the connector that actually implements it.
+    expect(current.uploadMedia).toBeUndefined()
+    const http = createConfiguredConnector(platform, {})
+    expect(typeof http.uploadMedia).toBe('function')
+    await expect(http.uploadMedia!(context, { visualRef: 'v', role: 'main', mimeType: 'image/png', sha256: 'a'.repeat(64), bytes: new Uint8Array(), idempotencyKey: `media-${platform}` })).rejects.toMatchObject(notConfigured)
   })
 })
 

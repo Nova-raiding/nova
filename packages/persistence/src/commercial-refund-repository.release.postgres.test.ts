@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { Pool } from 'pg'
+import { Pool, type PoolClient } from 'pg'
 import { describe, expect, it } from 'vitest'
 import { PostgresCommercialRefundRepository } from './commercial-refund-repository.js'
 import { loadMigrations, MigrationRunner } from './migration.js'
@@ -10,6 +10,34 @@ const connection = (base: URL, database: string): string => { const value = new 
 
 const workspaceId = 'ws-refund-db'
 const refundEvidence = JSON.stringify({ supplement_agreement_ref: 'SUP-DB-1' })
+
+const raceWorkspaceId = 'ws-refund-race'
+const raceOrderId = 'order-refund-race'
+const raceRefundEvidence = JSON.stringify({ supplement_agreement_ref: 'SUP-RACE-1' })
+const raceApprovalEvidence = JSON.stringify({ supplement_agreement_ref: 'SUP-RACE-1', policy_approval: { legal_review_ref: 'LAW-RACE-1' } })
+
+/** Appends one refund revision as the raw operations writer 220/221 name: no
+ * repository, no order lock of its own, only what the database enforces. */
+const appendRaceEvent = (client: PoolClient, values: readonly [string, string, number, string, number, string]) => client.query(
+  `INSERT INTO commercial_refund_events_v2 (id,workspace_id,order_id,request_id,revision,event_type,refund_kind,amount_fen,points_to_revoke,reason,actor_id,evidence,external_refund_id,created_at)
+   VALUES ($1,$2,$3,$4,$5,$6,'monthly_unused_points',$7,0,'unused monthly fee','ops',$8::jsonb,NULL,'2026-09-08T00:00:00.000Z')`,
+  [values[0], raceWorkspaceId, raceOrderId, values[1], values[2], values[3], values[4], values[5]],
+)
+
+const openRaceWriter = async (pool: Pool): Promise<PoolClient> => {
+  const client = await pool.connect()
+  await client.query('BEGIN')
+  await client.query(`SELECT set_config('app.workspace_id',$1,false)`, [raceWorkspaceId])
+  return client
+}
+
+const raceCommittedFen = async (database: Pool): Promise<number> => (await database.query<{ committed: number }>(
+  `SELECT COALESCE(SUM(chain.amount_fen),0)::int AS committed
+     FROM (SELECT request_id, MAX(amount_fen) AS amount_fen FROM commercial_refund_events_v2
+            WHERE workspace_id=$1 AND order_id=$2 AND event_type IN ('approved','completed')
+            GROUP BY request_id) chain`,
+  [raceWorkspaceId, raceOrderId],
+)).rows[0]!.committed
 
 describe('commercial refund PostgreSQL cumulative bound', () => {
   postgresIt('never pays out more than the customer paid, in the repository and at the database', async () => {
@@ -117,6 +145,82 @@ describe('commercial refund PostgreSQL cumulative bound', () => {
         [workspaceId],
       )).rows[0]!.committed
       expect(committed).toBe(300000)
+    } finally {
+      await database?.end()
+      let active = 1
+      for (let attempt = 0; attempt < 80 && active > 0; attempt += 1) {
+        active = Number((await admin.query<{ count: string }>('SELECT count(*)::text AS count FROM pg_stat_activity WHERE datname=$1', [name])).rows[0]?.count ?? 0)
+        if (active > 0) await new Promise(resolve => setTimeout(resolve, 25))
+      }
+      expect(active, `database clients did not close for ${name}`).toBe(0)
+      await admin.query(`DROP DATABASE IF EXISTS "${name}"`)
+      await admin.end()
+    }
+  }, 240_000)
+
+  // Regression for the unlocked trigger that made 221's claim false: two
+  // operations writers - the audience 220/221 name - each append a
+  // full-amount approved chain for the same paid order without the repository.
+  // Both used to pass the check against the same unrefunded snapshot and both
+  // commit (paid = 500000 while committed = 1000000). The trigger now takes the
+  // same per-order FOR UPDATE lock the repository takes (commercial-refund-
+  // repository.ts), so the second writer waits on that row and is refused as
+  // soon as the first commits.
+  postgresIt('serializes two concurrent database writers on the order row the repository locks', async () => {
+    const base = new URL(databaseUrlValue!)
+    const name = `commercial_refund_race_${randomUUID().replaceAll('-', '')}`
+    const admin = new Pool({ connectionString: base.toString() })
+    let database: Pool | undefined
+    try {
+      await admin.query(`CREATE DATABASE "${name}"`)
+      database = new Pool({ connectionString: connection(base, name) })
+      await new MigrationRunner(database, await loadMigrations()).run()
+      await database.query(`INSERT INTO workspaces(id,status) VALUES ($1,'active')`, [raceWorkspaceId])
+      await database.query(`INSERT INTO commercial_catalog_skus(id,code,kind,visibility) VALUES ('sku-race','refund_race','monthly','public')`)
+      await database.query(`INSERT INTO commercial_catalog_sku_versions(id,sku_id,version,lifecycle,executable,price_fen,currency,price_mode,payload,checksum,effective_at) VALUES ('sku-race-v1','sku-race',1,'approved',true,500000,'CNY','fixed','{}'::jsonb,$1,'2026-09-01T00:00:00.000Z')`, ['a'.repeat(64)])
+      await database.query(`INSERT INTO commercial_orders_v2(id,workspace_id,sku_id,sku_version_id,amount_fen,currency,payment_provider,status,idempotency_key,request_hash,created_by_actor_id,paid_at) VALUES ($1,$2,'sku-race','sku-race-v1',500000,'CNY','alipay','paid','key-race',$3,'actor-1',now())`, [raceOrderId, raceWorkspaceId, 'b'.repeat(64)])
+
+      // Both requests are already pending and committed; each writer only
+      // appends the money revision, so the two approved INSERTs are the
+      // concurrent pair under test.
+      const seeder = await openRaceWriter(database)
+      await appendRaceEvent(seeder, ['cre-race-p1', 'chain-p', 1, 'requested', 500000, raceRefundEvidence])
+      await seeder.query('COMMIT')
+      seeder.release()
+      const seederB = await openRaceWriter(database)
+      await appendRaceEvent(seederB, ['cre-race-q1', 'chain-q', 1, 'requested', 500000, raceRefundEvidence])
+      await seederB.query('COMMIT')
+      seederB.release()
+
+      const opsA = await openRaceWriter(database)
+      const opsB = await openRaceWriter(database)
+      try {
+        await appendRaceEvent(opsA, ['cre-race-p2', 'chain-p', 2, 'approved', 500000, raceApprovalEvidence])
+        let settled = false
+        let rejection: { code?: string } | null = null
+        const secondWriter = appendRaceEvent(opsB, ['cre-race-q2', 'chain-q', 2, 'approved', 500000, raceApprovalEvidence])
+          .then(() => { settled = true; return 'accepted' as const })
+          .catch((error: { code?: string }) => { settled = true; rejection = error; return 'rejected' as const })
+        // Chain Q is issued while chain P is still uncommitted. Without the
+        // order row lock the trigger's reads are plain reads under READ
+        // COMMITTED, so this INSERT resolves immediately against the same
+        // unrefunded snapshot instead of waiting for the other writer.
+        await new Promise(resolve => setTimeout(resolve, 300))
+        expect(settled, 'the second writer did not wait for the order row lock').toBe(false)
+        await opsA.query('COMMIT')
+        expect(await secondWriter).toBe('rejected')
+        expect(rejection).toMatchObject({ code: '23514' })
+        await opsB.query('ROLLBACK')
+      } finally {
+        opsA.release()
+        opsB.release()
+      }
+
+      // One chain committed: the paid amount is the ceiling, and the order is
+      // still payable because only the approved 500000 was committed.
+      expect(await raceCommittedFen(database)).toBe(500000)
+      expect((await database.query<{ approved: number }>(`SELECT count(*)::int AS approved FROM commercial_refund_events_v2 WHERE workspace_id=$1 AND order_id=$2 AND event_type='approved'`, [raceWorkspaceId, raceOrderId])).rows[0]).toEqual({ approved: 1 })
+      expect((await database.query<{ amount_fen: string; status: string }>(`SELECT amount_fen,status FROM commercial_orders_v2 WHERE id=$1`, [raceOrderId])).rows[0]).toEqual({ amount_fen: '500000', status: 'paid' })
     } finally {
       await database?.end()
       let active = 1

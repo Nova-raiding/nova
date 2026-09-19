@@ -127,7 +127,13 @@ export type WorkspaceSummary = {
 };
 export type WorkspaceDirectoryPage = {
   items: WorkspaceSummary[];
-  total: number;
+  /**
+   * Rows the server counted for the current query. Optional on purpose: the
+   * directory only resolves after `ops.workspaces.list` returns, and an unread
+   * directory must not be rendered as a measured `0` ("客户总数 0 家"). A real
+   * server count of zero stays `0` and is displayed as zero.
+   */
+  total?: number;
   merchantWorkspaceCount?: number;
   activeMemberWorkspaceCount?: number;
   offset: number;

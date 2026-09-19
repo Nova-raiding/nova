@@ -6,9 +6,24 @@
 -- The repository takes a row lock on commercial_orders_v2 and re-reads the
 -- committed sum before every decision, but a second writer (an operations
 -- script, a future endpoint, a restored replica) could still append an
--- approved/completed event directly. This trigger makes that impossible: it
--- counts each request at its highest revision only, so an approved request
--- that is later completed is never counted twice.
+-- approved/completed event directly. This body was written as that backstop and
+-- counts each request at its highest revision only, so an approved request that
+-- is later completed is never counted twice.
+--
+-- It is NOT what enforces the bound in any database. Two defects made it
+-- ineffective, and both are corrected by 221, whose CREATE OR REPLACE is the
+-- body a database actually installs (220's body runs first and is replaced in
+-- the same chain):
+--   * counting at the highest revision only let a later non-money revision
+--     erase an approved request's money from the bound, so a second
+--     full-amount chain could be approved and paid out; and
+--   * it read the order and the event table without any lock, so under READ
+--     COMMITTED two concurrent writers could each approve a full-amount chain
+--     for the same paid order and both commit.
+-- The mechanism that makes the concurrent write impossible - in 221 and in the
+-- repository - is the FOR UPDATE row lock on commercial_orders_v2, taken before
+-- the committed sum is read. This body never takes it, and is therefore kept
+-- unchanged only as migration history, not as a guarantee.
 --
 -- Only 'approved' and 'completed' events commit money. 'requested',
 -- 'rejected' and 'reconciliation_required' rows stay unconstrained so that a

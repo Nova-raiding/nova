@@ -2,23 +2,36 @@ import { createHash } from 'node:crypto'
 import { auditSources, parseAuditCenterQuery, parseAuditPlatformQuery, type AuditAccessRole, type AuditCenterExport, type AuditCenterPage, type AuditCenterQuery, type AuditSource } from '../../../../packages/contracts/src/ops/audit-center.js'
 import type { AuditCenterRepository } from '../../../../packages/persistence/src/audit-center-repository.js'
 
-export interface AuditCenterPrincipal { actorId: string; roles: readonly AuditAccessRole[]; authorizedWorkspaceIds: readonly string[] }
+export interface AuditCenterPrincipal {
+  actorId: string
+  roles: readonly AuditAccessRole[]
+  authorizedWorkspaceIds: readonly string[]
+  /**
+   * Set by the caller only from a *canonical* platform role projection. The
+   * `platform_ops` label alone cannot prove platform scope: it is also a
+   * workspace membership role with no canonical form, so a member carrying it
+   * must still satisfy the authorized-workspace check.
+   */
+  platformWide?: boolean
+}
 export class AuditCenterServiceError extends Error {
   constructor(readonly code: 'AUDIT_CENTER_FORBIDDEN' | 'AUDIT_EVENT_NOT_FOUND' | 'AUDIT_CENTER_INVALID_REQUEST', message: string) { super(message); this.name = 'AuditCenterServiceError' }
 }
 const canRead = (roles: readonly AuditAccessRole[]) => roles.some(role => role === 'platform_ops' || role === 'support' || role === 'finance' || role === 'reader')
 const canExport = (roles: readonly AuditAccessRole[]) => roles.some(role => role === 'platform_ops' || role === 'finance')
+/** Platform-wide scope requires the explicit canonical grant, never the label. */
+const isPlatformWide = (principal: AuditCenterPrincipal) => principal.platformWide === true && principal.roles.includes('platform_ops')
 const cell = (value: string | undefined) => { let text = value ?? ''; if (/^[=+@\-\t\r]/.test(text)) text = `'${text}`; return `"${text.replaceAll('"', '""')}"` }
 
 export class AuditCenterService {
   constructor(private readonly repository: AuditCenterRepository, private readonly now: () => Date = () => new Date()) {}
   private authorize(principal: AuditCenterPrincipal, workspaceId: string, operation: 'read' | 'export') {
     if (!principal.actorId.trim() || !(operation === 'export' ? canExport(principal.roles) : canRead(principal.roles))) throw new AuditCenterServiceError('AUDIT_CENTER_FORBIDDEN', 'audit permission is required')
-    if (!principal.roles.includes('platform_ops') && !principal.authorizedWorkspaceIds.includes(workspaceId)) throw new AuditCenterServiceError('AUDIT_CENTER_FORBIDDEN', 'workspace is outside the authorized scope')
+    if (!isPlatformWide(principal) && !principal.authorizedWorkspaceIds.includes(workspaceId)) throw new AuditCenterServiceError('AUDIT_CENTER_FORBIDDEN', 'workspace is outside the authorized scope')
   }
   async list(principal: AuditCenterPrincipal, rawQuery: unknown) { const query = parseAuditCenterQuery(rawQuery); this.authorize(principal, query.workspaceId, 'read'); return this.repository.list(query) }
   async listPlatform(principal: AuditCenterPrincipal, rawQuery: unknown, workspaceIds: readonly string[]) {
-    if (!principal.actorId.trim() || !principal.roles.includes('platform_ops')) throw new AuditCenterServiceError('AUDIT_CENTER_FORBIDDEN', 'platform audit permission is required')
+    if (!principal.actorId.trim() || !isPlatformWide(principal)) throw new AuditCenterServiceError('AUDIT_CENTER_FORBIDDEN', 'platform audit permission is required')
     const query = parseAuditPlatformQuery(rawQuery)
     const authorized = [...new Set(workspaceIds.map(value => value.trim()).filter(Boolean))]
     // Postgres can enforce platform scope once and execute this as one bulk

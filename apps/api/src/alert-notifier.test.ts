@@ -49,6 +49,24 @@ describe('alert notifier', () => {
     await expect(notifyOperationalAlert(alert, { env: { NODE_ENV: 'production', OPS_ALERT_NOTIFICATIONS_ENABLED: 'invalid' } })).resolves.toMatchObject({ delivery: 'blocked', attempts: 0 })
   })
 
+  it('treats a 409 from the receiver as an idempotent re-delivery, not a failure', async () => {
+    // The receiver keys receipts on the alert id, so a repeat delivery answers
+    // 409. Before this branch existed the alert was retried three times and then
+    // reported `failed`, which overwrote an honest "delivered" record and left
+    // operators unable to tell a missed alert from a re-delivered one.
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response('{"detail":"already received"}', { status: 409 }))
+    const result = await notifyOperationalAlert(alert, {
+      env: { NODE_ENV: 'production', OPS_ALERT_NOTIFICATIONS_ENABLED: 'true', OPS_ALERT_WEBHOOK_URL: 'https://alerts.test/hook', OPS_ALERT_WEBHOOK_ALLOWED_HOSTS: 'alerts.test', OPS_ALERT_WEBHOOK_SECRET: 'secret' },
+      fetchImpl,
+      now: () => 1_756_089_600_000,
+      requestId: 'notify_conflict',
+    })
+    expect(result).toEqual({ delivery: 'delivered', attempts: 1, requestId: 'notify_conflict', reason: 'already_received' })
+    // A conflict is terminal: no retry storm against a receiver that already has
+    // the alert.
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
   it('signs a sanitized alert and retries transient webhook failures', async () => {
     const fetchImpl = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response('busy', { status: 503 }))

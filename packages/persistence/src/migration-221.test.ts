@@ -6,11 +6,18 @@ describe('migration 221 commercial refund amount bound', () => {
     const migration = (await loadMigrations()).find(item => item.version === 221)
     expect(migration).toMatchObject({ version: 221, name: 'commercial_refund_amount_bound' })
     const sql = migration?.sql ?? ''
-    // 220 is a released artifact and stays untouched; 221 supersedes its
-    // function body so every database converges to the corrected bound.
+    // 220's body stays as written and 221 supersedes its function body inside
+    // the same chain, so every database installs the corrected bound.
     expect(sql).toContain('CREATE OR REPLACE FUNCTION enforce_commercial_refund_cumulative_bound()')
     expect(sql).toContain('DROP TRIGGER IF EXISTS commercial_refund_events_v2_cumulative_bound')
     expect(sql).toContain('BEFORE INSERT ON commercial_refund_events_v2')
+    // The bound is only sound because every writer serializes on the same
+    // order row the repository locks: without this FOR UPDATE the trigger's
+    // reads are plain READ COMMITTED reads, and two concurrent writers each
+    // pass the check against the same unrefunded snapshot (paid = 500000,
+    // committed = 1000000, reproduced on PostgreSQL with two connections).
+    expect(sql).toMatch(/PERFORM 1 FROM commercial_orders_v2[\s\S]{0,200}?FOR UPDATE/u)
+
     // A request commits the maximum amount it was ever approved/completed for:
     // a later non-money revision cannot erase it, so the bound cannot be
     // lowered from 500000 to 0 by appending a cheap 'requested' revision.

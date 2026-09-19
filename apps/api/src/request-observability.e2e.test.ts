@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { request as httpRequest } from 'node:http'
 import { createWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
-import { server, workspaceMembers } from './server.js'
+import { server, service, workspaceMembers } from './server.js'
 
 async function start() {
   await new Promise<void>((resolve, reject) => {
@@ -97,6 +98,91 @@ describe('API request observability wiring', () => {
     const events = lines.map(line => JSON.parse(line) as Record<string, unknown>)
     expect(events.map(event => event.event)).toEqual(['request.received', 'request.failed'])
     expect(events[1]).toMatchObject({ request_id: 'req-readiness-failed', workspace_id: 'system', status: 503, error_code: expect.stringMatching(/^(?:RELEASE_METADATA_UNAVAILABLE|REDIS_UNAVAILABLE)$/u) })
+  })
+
+  it('correlates a publish observation with its durable publish job id', async () => {
+    const lines: string[] = []
+    vi.spyOn(console, 'info').mockImplementation(value => lines.push(String(value)))
+    vi.stubEnv('NODE_ENV', 'test')
+    vi.stubEnv('AUTH_ENFORCEMENT', 'local')
+    const workspaceId = `ws_publish_job_observed_${Date.now()}`
+    const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `taobao-observed-${Date.now()}`, credentialRef: `fixture-secret/taobao/${workspaceId}` })
+    const product = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, title: '观测关联商品', stock: 3 })
+    service.confirmProductFacts(workspaceId, product.id)
+    const task = service.createTask({ workspaceId, productId: product.id, platform: 'taobao', accountId: account.id })
+    service.selectDirection(task.id, 'A')
+    const draft = service.createDraft(task.id)
+    service.approveContent(task.id, draft.id)
+    const preview = service.preparePublish(task.id)
+    const job = service.confirmPublish({ workspaceId, taskId: task.id, contentVersionId: draft.id, confirmationHash: preview.confirmationHash, remoteSnapshotHash: preview.remoteSnapshotHash, idempotencyKey: `observed-${Date.now()}`, accountId: account.id })
+    const base = await start()
+    const response = await fetch(`${base}/v1/publish-jobs/${job.id}/observation`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-request-id': 'req-publish-observed' },
+      body: JSON.stringify({ status: { found: true, state: 'published', remote_id: 'remote-observed', request_id: 'request-observed', simulated: false } }),
+    })
+
+    expect(response.status).toBe(200)
+    const events = lines.map(line => JSON.parse(line) as Record<string, unknown>)
+    expect(events.map(event => event.event)).toEqual(['request.received', 'request.completed'])
+    // Only the publish-observation route enriches `job_id`. Deleting that call
+    // left the terminal line at `job_id: null` while every other suite passed,
+    // so this is the assertion that keeps the ops runbook correlation real.
+    expect(events[0]).toMatchObject({ event: 'request.received', job_id: null })
+    expect(events[1]).toMatchObject({
+      event: 'request.completed',
+      request_id: 'req-publish-observed',
+      route: `/v1/publish-jobs/${job.id}/observation`,
+      workspace_id: workspaceId,
+      job_id: job.id,
+      status: 200,
+    })
+  })
+
+  it('records a client-disconnected request as an aborted 499 instead of a completed 200', async () => {
+    const lines: string[] = []
+    vi.spyOn(console, 'info').mockImplementation(value => lines.push(String(value)))
+    const workspaceId = `ws_aborted_observed_${Date.now()}`
+    const actorId = `aborted-observer-${Date.now()}`
+    const token = `aborted-observer-token-${Date.now()}`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'workspace_owner', status: 'active', invitedBy: 'observability-test' })
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ [token]: { workspaces: [workspaceId], actor_id: actorId, roles: ['workspace_owner'] } }))
+    const base = await start()
+    const address = new URL(base)
+    // The scrape itself is an in-flight request, so the gauge reads 1 while it
+    // is being served. An abort that only decremented on 'finish' left that
+    // number permanently higher for every later scrape.
+    const inFlightGauge = async () => {
+      const metrics = await (await fetch(`${base}/metrics`)).text()
+      return Number(/^merchant_http_inflight_requests (\d+)$/mu.exec(metrics)?.[1])
+    }
+    const idleGauge = await inFlightGauge()
+    // Announce more body bytes than are ever sent, then destroy the socket: the
+    // handler is still awaiting the request body when the client goes away, so
+    // the response never finishes and 'close' (not 'finish') ends the request.
+    await new Promise<void>(resolve => {
+      const request = httpRequest({ hostname: address.hostname, port: Number(address.port), path: '/mcp', method: 'POST', headers: { 'content-type': 'application/json', 'content-length': '256', 'x-workspace-id': workspaceId, 'x-request-id': 'req-aborted-observed', authorization: `Bearer ${token}` } })
+      request.on('error', () => resolve())
+      request.write('{"jsonrpc":"2.0"')
+      setTimeout(() => { request.destroy(); resolve() }, 50)
+    })
+    await new Promise(resolve => setTimeout(resolve, 200))
+
+    const events = (lines.map(line => JSON.parse(line) as Record<string, unknown>)).filter(event => event.request_id === 'req-aborted-observed')
+    expect(events[0]).toMatchObject({ event: 'request.received' })
+    // The terminal classification for a client disconnect: an abort with the
+    // 499 status, never the `request.completed status:200` that used to be
+    // written into the audit stream for a request the client never received.
+    // The disconnect happens while the body is still unread, so the request
+    // never reached workspace enrichment: the aborted line carries the 499
+    // classification and the correlation ids, not the tenant context.
+    expect(events[1]).toMatchObject({ event: 'request.aborted', status: 499, workspace_id: null, error_code: null, route: '/mcp' })
+    expect(events.some(event => event.event === 'request.completed')).toBe(false)
+    // The rejected await also emits `request.failed`; that redundancy is the
+    // current behaviour and is asserted so a change to it is visible here.
+    expect(events.some(event => event.event === 'request.failed')).toBe(true)
+    // The in-flight gauge must come back down on the abort path too.
+    expect(await inFlightGauge()).toBe(idleGauge)
   })
 
   it('emits redacted worker role and rotation proof evidence on the real API surface', async () => {
