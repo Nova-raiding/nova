@@ -22,6 +22,15 @@ export interface WorkerError {
   message: string
   retryable: boolean
   unknown?: boolean
+  /**
+   * Backpressure window imposed by the failing dependency, in milliseconds
+   * (for example a quota window's `retryAfter`). Unlike the exponential backoff
+   * this is a wall-clock fact, so the durable dispatcher retries at exactly
+   * this delay instead of guessing: a quota window is minutes long, and a
+   * generic 30s ceiling spends the event's whole claim budget on retries that
+   * cannot possibly succeed.
+   */
+  retryAfterMs?: number
   /** Correlation retained when an authorization gate blocks queued work. */
   decisionId?: string
   /** Original principal and policy evidence for manual reconciliation. */
@@ -50,6 +59,13 @@ export interface WorkerContext<T = unknown> {
   job: WorkerJob<T>
   now: number
   attempt: number
+  /**
+   * Request trace id from the authorization snapshot the API wrote at enqueue
+   * time. Callers must supply it when they have it: the in-process job id is
+   * not a request identity, so using it as `trace_id` silently breaks the join
+   * with the API request stream.
+   */
+  traceId?: string
 }
 
 export type WorkerHandler<T, R> = (context: WorkerContext<T>) => Promise<HandlerResult<R> | R>

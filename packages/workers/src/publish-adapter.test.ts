@@ -30,6 +30,34 @@ describe('publish adapter post-write verification', () => {
     expect((job.result as { remoteStatus: { state: string; requestId?: string } }).remoteStatus).toMatchObject({ state: 'published', requestId: 'remote-status-1' })
   })
 
+  it('forwards the request trace id instead of substituting the in-process job id', async () => {
+    const contexts: Array<{ traceId?: string }> = []
+    const base = new FakePlatformConnector(jdProfile, { configured: true, allowFakeWrites: true })
+    const connector = Object.create(base) as typeof base
+    connector.createProduct = async (...args: Parameters<typeof base.createProduct>) => {
+      contexts.push({ ...(args[0].traceId ? { traceId: args[0].traceId } : {}) })
+      return base.createProduct(...args)
+    }
+    const handler = createPublishHandler(connector, async payload => ({
+      ...payload,
+      accountId: 'acct_1',
+      fields: { title: '京选外套', category: '服饰 > 外套', price: 199, stock: 10 },
+    }))
+    const baseJob = {
+      id: 'job_in_process_1', kind: 'publish' as const, workspaceId: 'ws_1', idempotencyKey: 'publish-trace', attempt: 1, maxAttempts: 5,
+      payload: { taskId: 'task_1', contentVersionId: 'cv_1', platform: 'jd', idempotencyKey: 'publish-trace' }, state: 'running' as const, notBefore: 0, createdAt: 0,
+    }
+
+    await handler({ job: baseJob, now: 1, attempt: 1, traceId: 'trace_request_1' })
+    // The per-process `job_<uuid>` used to be published as `traceId`, which made
+    // every connector line unjoinable with the API request and worker streams.
+    expect(contexts[0]?.traceId).toBe('trace_request_1')
+    expect(contexts[0]?.traceId).not.toBe(baseJob.id)
+
+    await handler({ job: baseJob, now: 2, attempt: 1 })
+    expect(contexts[1]?.traceId).toBeUndefined()
+  })
+
   it('marks an unstructured post-write query failure unknown without repeating the write', async () => {
     const base = new FakePlatformConnector(jdProfile, { configured: true, allowFakeWrites: true })
     const connector = Object.create(base) as typeof base

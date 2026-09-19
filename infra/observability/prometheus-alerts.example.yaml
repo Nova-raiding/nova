@@ -1,38 +1,378 @@
+# =============================================================================
+# 未部署的规则模板 —— 当前没有任何一条规则在生效（NOT DEPLOYED）
+# =============================================================================
+#
+# 事实（2026-09-19 全仓核实）：
+#   1. 仓库内没有部署 Prometheus、Alertmanager、Grafana、vmagent、Loki、Tempo，
+#      也没有 kube-state-metrics / node-exporter / postgres-exporter / blackbox-exporter。
+#      对 `alertmanager|grafana|vmagent|loki|tempo|kube-state-metrics|postgres_exporter|
+#      node_exporter|blackbox_exporter` 的全仓 grep 为 0 命中。
+#   2. 代码里只有两个指标面：API 的 `GET /metrics`（`apps/api/src/server.ts` 的
+#      `prometheusMetrics()`）与 Worker 的 `GET /metrics`（`apps/worker/src/worker-metrics.ts`，
+#      默认 127.0.0.1:9102，需 WORKER_METRICS_HOST/PORT 与采集放行）。alert-receiver、
+#      UI、PostgreSQL、Redis 没有指标端点。
+#   3. 因此本文件是「待部署的规则模板」，不是已生效的保护。即使把它加载进一台
+#      并不存在的 Prometheus，下面标注 dependency_status: missing 的规则也永远不会触发。
+#
+# 指标可用性（逐条规则见每条规则的 dependency_status / dependency 注解）：
+#   available —— 依赖指标已在代码中导出（API 或 Worker 的 /metrics）。注意：即便标成
+#                available，也只有采集链路真正打通后序列才会出现（见下方「补充」的 1–3 项）。
+#   available_after_deploy —— 指标已在代码中，但要等对应端点被部署并放行采集后才有序列
+#                （Worker /metrics、Prometheus 自身的 up{}）。不需要额外 exporter。
+#   partial   —— 指标存在，但维度或语义不足以支撑该规则（已逐条注明缺口）。
+#   missing   —— 依赖指标不存在，规则暂不可用；加载后也永远不会触发，不构成保护。
+#
+# 两个指标面（都以「部署 + 采集 + 鉴权」为前提，见下方「补充」）：
+#   * API  `GET /metrics`（apps/api/src/server.ts 的 prometheusMetrics()）：HTTP 计数、
+#     进程 uptime、outbox pending、connector 错误、告警扫描/投递遥测，以及**改为按工作区
+#     从数据库聚合**的队列 gauge（merchant_job_state_count / merchant_queue_oldest_job_age_seconds）。
+#   * Worker `GET /metrics`（apps/worker/src/worker-metrics.ts，容器端口 metrics/9102，
+#     同样要求 `METRICS_AUTH_TOKEN`）：心跳、进程启动时间、轮询结果与失败码，以及 scan
+#     队列的 depth/dead-letter/队龄。非 scan 角色不导出队列序列。
+#     代码内默认绑定 127.0.0.1（不可跨 Pod 采集）；`base/workers.yaml` 显式改为 0.0.0.0。
+#     **但五个非 scan Worker 目前没有任何入向 NetworkPolicy，scan 的隔离策略是
+#     `ingress: []`**，所以在补上放行规则之前：scan 采不到，其余五个任何 Pod 都能连。
+#     该规则不在本次改动范围内，属未完成项。
+#
+# 仍然存在的指标缺口（本文件的规则无法补上，必须先补采集或补代码）：
+#   * HPA 下限：需要 kube-state-metrics；Worker 侧只能给出「up 的副本数」这一近似。
+#   * 复制/连接/锁等待/慢查询：需要 postgres-exporter。
+#   * 磁盘水位：需要 node-exporter；证书过期：需要 blackbox-exporter。
+#   * 支付回调验签失败：只有 `merchant_http_requests_total{status="401"}`，而该 counter
+#     **没有 route 标签**，无法与普通鉴权 401 区分。
+#   * 对账 `attention_required`：有产出、无指标。
+#   * outbox 死信：只有 scan 队列有 `merchant_queue_dead_letter_events{queue="scan"}`；
+#     其余事件类型与 `merchant_outbox_pending_events` 仍把死信计入 pending。
+#   * 队列读失败：API 在覆盖不完整时会**整族省略**队列 gauge（不再把「读不到」渲染成 0），
+#     因此必须同时告警 `merchant_job_queue_metrics_*`，见 MerchantQueueMetricsUnavailable。
+#
+# 关于「有人知道」：本文件一条规则都不能把信号推给人。规则命中后仍需要
+# Alertmanager + 真实 paging 通道（电话/短信/聊天工具 + 值班表），当前都不存在。
+# 告警链路自身的指标（merchant_alert_delivery_* / merchant_alert_sweep_*）只证明
+# 「信号走到了 alert-receiver 并落了库」，**不证明有人看见**：链路的终点仍然是两张
+# 数据库表，这一点见 `doc/todo/release/production-ops-runbook.md` 的「3.4 告警通道现状」。
+#
+# 阈值说明：凡未在生产基线上校准过的阈值都标注为 provisional，需要拿到真实曲线后调整；
+# 不要把这些数字当成已评审的容量结论。
+# =============================================================================
+# 补充（2026-09-19 采集链路核实）：即使将来部署了 Prometheus，本文件的规则在
+# 补上下面三项之前仍然只会拿到空输入 ——
+#   1. `METRICS_AUTH_TOKEN` 必须作为 `merchant-runtime-secrets` 的 key 由托管密钥
+#      系统下发，并经 `secretKeyRef` 注入 API；缺失时 `GET /metrics` 在生产固定
+#      返回 503 METRICS_AUTH_NOT_CONFIGURED，一条序列都不会产生。（契约见
+#      `infra/kubernetes/secret-contract.example.yaml`，注入见
+#      `infra/kubernetes/base/api.yaml`。）
+#   2. 采集任务必须携带 Bearer 头，`prometheus.io/*` 注解本身不带任何凭据。
+#   3. NetworkPolicy/merchant-api-ingress-boundary 必须放行采集方所在命名空间，
+#      否则请求在到达容器前就被丢弃。
+# 可直接照抄的采集契约见 `infra/observability/prometheus-scrape.example.yaml`。
+# ============================================================================
 groups:
+  # ---------------------------------------------------------------------------
+  # 指标已存在（但仍未采集）：把 API `GET /metrics` 接进 Prometheus 后即可评估。
+  # ---------------------------------------------------------------------------
   - name: merchant-marketing-api
     rules:
+      # [依赖: 存在] merchant_http_requests_total{method,status}
+      #   缺口：没有 route 标签，无法按路径区分（例如支付回调验签 401 无法单独告警）；
+      #   进程内 counter，API 重启/滚动发布后归零，rate() 在重启窗口会失真。
       - alert: MerchantApiHigh5xx
         expr: sum(rate(merchant_http_requests_total{status=~"5.."}[5m])) / sum(rate(merchant_http_requests_total[5m])) > 0.005
         for: 10m
         labels: { severity: page }
-        annotations: { summary: "Merchant API 5xx exceeds 0.5%" }
+        annotations:
+          summary: "Merchant API 5xx exceeds 0.5%"
+          dependency_status: available
+          dependency: "merchant_http_requests_total{method,status} (API GET /metrics)"
+          gap: "无 route 标签；进程内 counter，重启归零。阈值 provisional。"
+
+      # [依赖: 存在] merchant_process_uptime_seconds
+      #   只在 API 被采集时可用；Worker 没有 /metrics，因此本规则覆盖不到 Worker 重启。
+      - alert: MerchantApiProcessRestart
+        expr: merchant_process_uptime_seconds < 300
+        for: 1m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Merchant API 进程在过去 5 分钟内重启"
+          dependency_status: available
+          dependency: "merchant_process_uptime_seconds (API GET /metrics)"
+          gap: "每个副本各自上报，重置本身在滚动发布中属预期；需与 deployment 事件对齐后再判断。"
+
+      # [依赖: 存在] merchant_publish_unknown_age_seconds
       - alert: MerchantPublishUnknown
         expr: max(merchant_publish_unknown_age_seconds) > 600
         for: 5m
         labels: { severity: page }
-        annotations: { summary: "Publish job remains unknown for more than 10 minutes" }
-      - alert: MerchantDatabaseConnectionsHigh
-        expr: pg_stat_activity_count / pg_settings_max_connections > 0.8
-        for: 10m
-        labels: { severity: ticket }
-        annotations: { summary: "PostgreSQL connection utilization exceeds 80%" }
+        annotations:
+          summary: "Publish job remains unknown for more than 10 minutes"
+          dependency_status: available
+          dependency: "merchant_publish_unknown_age_seconds (API GET /metrics)"
+          gap: "按工作区从数据库聚合；没有 unknown 任务时**该序列被整条省略**，因此 `absent()` 不等于 0，需要配合 MerchantQueueMetricsUnavailable 判断「读失败」。"
+
+      # [依赖: 存在] merchant_queue_oldest_job_age_seconds{queue}
+      #   值改为按工作区从数据库聚合（旧的进程内投影会把未水合的租户静默丢掉）。
+      #   scan 队列的队龄由 worker 角色导出（见 MerchantQueueScanBacklogAge）。
       - alert: MerchantQueueBacklog
         expr: max(merchant_queue_oldest_job_age_seconds{queue=~"sync|generation|publish|reconcile"}) > 600
         for: 10m
         labels: { severity: ticket }
-        annotations: { summary: "Merchant queue backlog is not converging" }
-      - alert: MerchantConnectorRateLimited
-        expr: sum(rate(merchant_connector_errors_total{code="RATE_LIMITED"}[5m])) > 1
+        annotations:
+          summary: "Merchant queue backlog is not converging"
+          dependency_status: available
+          dependency: "merchant_queue_oldest_job_age_seconds{queue=sync|generation|publish|reconcile} (API GET /metrics，按工作区数据库聚合)"
+          gap: "reconcile 序列复用 publish 的 reconciling|unknown 状态；队列空时该队列序列被省略（无数据 ≠ 0）。scan 队列见 MerchantQueueScanBacklogAge。阈值 provisional。"
+
+      # [依赖: 存在] merchant_job_state_count{queue,state}
+      #   按 role 的队列深度：sync / publish / generation（reconcile 复用 publish）。
+      #   每个状态都显式导出 0，所以 `sum by (queue)` 是安全的；只有**读失败**时整族省略。
+      - alert: MerchantQueueDepthHigh
+        expr: sum by (queue) (merchant_job_state_count{state=~"queued|running|prepared|confirmed|submitting|partial"}) > 50
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Merchant 队列深度超过 50（按 role）"
+          dependency_status: available
+          dependency: "merchant_job_state_count{queue,state} (API GET /metrics，按工作区数据库聚合)"
+          gap: "scan 队列深度由 worker 导出为 merchant_queue_depth{queue=\"scan\"}，本规则不覆盖；阈值 provisional。"
+
+      # [依赖: 存在] merchant_job_queue_metrics_reads_total / merchant_job_queue_metrics_workspaces
+      #   这一条补的是一个新的失败模式：读不到数据库时 API 会**整族省略**队列 gauge，
+      #   于是「读失败」在面板上表现为「没有任何队列序列」，与「队列很健康」无法区分。
+      - alert: MerchantQueueMetricsUnavailable
+        expr: max(merchant_job_queue_metrics_workspaces{scope="covered"}) < max(merchant_job_queue_metrics_workspaces{scope="total"}) or max(increase(merchant_job_queue_metrics_reads_total{outcome="failed"}[15m])) > 0
         for: 5m
         labels: { severity: ticket }
-        annotations: { summary: "Connector rate-limit responses exceed one per second" }
-      - alert: MerchantConnectorTimeouts
-        expr: sum(rate(merchant_connector_errors_total{code="TIMEOUT"}[5m])) > 0.1
-        for: 5m
-        labels: { severity: page }
-        annotations: { summary: "Connector timeouts are producing unknown outcomes" }
+        annotations:
+          summary: "队列 gauge 的工作区覆盖不完整或聚合读失败（队列指标可能整族消失）"
+          dependency_status: available
+          dependency: "merchant_job_queue_metrics_reads_total{outcome=\"ok|failed\"} / merchant_job_queue_metrics_workspaces{scope=\"total|covered\"} (API GET /metrics)"
+          gap: "计数器是进程内的，`increase()` 必须按 series（pod）理解；内存持久化模式下不导出这两个序列，规则无数据。阈值 provisional。"
+
+      # [依赖: 存在，但语义有缺口] merchant_outbox_pending_events
+      #   该 gauge 的 SQL 是 `count(*) FILTER (WHERE published_at IS NULL AND unknown_at IS NULL)`，
+      #   **把 dead-letter 也算作 pending**，因此它无法区分「在重试」与「已放弃」。
       - alert: MerchantOutboxPending
         expr: max(merchant_outbox_pending_events) > 100
         for: 10m
         labels: { severity: ticket }
-        annotations: { summary: "Postgres outbox backlog exceeds replay threshold" }
+        annotations:
+          summary: "Postgres outbox backlog exceeds replay threshold"
+          dependency_status: partial
+          dependency: "merchant_outbox_pending_events (API GET /metrics)"
+          gap: "SQL 把 dead-letter 计入 pending，无法区分已放弃的事件；缺少 dead-letter 指标（见 MerchantOutboxDeadLetter）。阈值 provisional。"
+
+      # [依赖: 存在，但语义有缺口] merchant_connector_errors_total{code="RATE_LIMITED"}
+      #   该序列是 `sum(attempts) FILTER (WHERE last_error->>'code'=...)`，不是单调事件计数：
+      #   事件成功后 last_error 被清空，序列会**下降**，rate() 会给出负值或缺口。
+      - alert: MerchantConnectorRateLimited
+        expr: sum(rate(merchant_connector_errors_total{code="RATE_LIMITED"}[5m])) > 1
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Connector rate-limit responses exceed one per second"
+          dependency_status: partial
+          dependency: "merchant_connector_errors_total{code=\"RATE_LIMITED\"} (API GET /metrics)"
+          gap: "序列是 sum(attempts) 按 last_error 过滤，非单调 counter，重试成功后会下降；只有 RATE_LIMITED/TIMEOUT 两个 code。阈值 provisional。"
+
+      # [依赖: 存在，但语义有缺口] merchant_connector_errors_total{code="TIMEOUT"}
+      - alert: MerchantConnectorTimeouts
+        expr: sum(rate(merchant_connector_errors_total{code="TIMEOUT"}[5m])) > 0.1
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Connector timeouts are producing unknown outcomes"
+          dependency_status: partial
+          dependency: "merchant_connector_errors_total{code=\"TIMEOUT\"} (API GET /metrics)"
+          gap: "同上：非单调 counter，重试成功后序列下降。阈值 provisional。"
+
+  # ---------------------------------------------------------------------------
+  # 今天不可评估：依赖的指标要么在代码中不存在（dependency_status: missing，加载后
+  # 永远不会触发，不代表已有保护），要么只存在于尚未部署/采集的端点上
+  # （available_after_deploy）。每条规则的 dependency 注解写明是哪种，以及由谁提供。
+  # ---------------------------------------------------------------------------
+  - name: merchant-marketing-unavailable-dependencies
+    rules:
+      # 从 merchant-marketing-api 组移到此处：pg_stat_activity_count 不存在。
+      - alert: MerchantDatabaseConnectionsHigh
+        expr: pg_stat_activity_count / pg_settings_max_connections > 0.8
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "PostgreSQL connection utilization exceeds 80%"
+          dependency_status: missing
+          dependency: "pg_stat_activity_count / pg_settings_max_connections —— 需要 postgres-exporter（仓库内未部署，全仓 grep 0 命中）"
+          gap: "规则暂不可用。当前只能靠 API 容器日志与人工 psql 观察连接数。"
+
+      - alert: MerchantDatabaseReplicationLag
+        expr: pg_replication_lag_seconds > 30
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "PostgreSQL 副本延迟超过 30 秒"
+          dependency_status: missing
+          dependency: "pg_replication_lag_seconds —— 需要 postgres-exporter 或托管数据库的监控导出（未部署）"
+          gap: "规则暂不可用。Runbook 要求迁移期间监控副本延迟，但当前没有任何自动信号。"
+
+      # scan 队列的序列来自 worker 角色（worker /metrics 的
+      # merchant_queue_depth{queue="scan"} / merchant_queue_oldest_job_age_seconds{queue="scan"}），
+      # 由 scannerOperationalMetrics() 的数据库判定喂入。
+      - alert: MerchantQueueScanBacklogAge
+        expr: max(merchant_queue_oldest_job_age_seconds{queue="scan"}) > 600 or max(merchant_queue_depth{queue="scan"}) > 50
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "扫描队列队龄/深度超过预算"
+          dependency_status: available_after_deploy
+          dependency: "merchant_queue_oldest_job_age_seconds{queue=\"scan\"} / merchant_queue_depth{queue=\"scan\"} (Worker GET /metrics，默认端口 9102，需 WORKER_METRICS_HOST 允许集群内采集)"
+          gap: "只有 scan 角色导出这两个序列，且要等该角色完成一次扫描队列探测之后才有值；非 scan 队列没有 worker 侧序列（走 API 的数据库聚合）。阈值 provisional。"
+
+      - alert: MerchantWorkerRestartLoop
+        expr: max by (role) (merchant_worker_process_uptime_seconds) < 300
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Worker 进程在过去 5 分钟内重启（按 role）"
+          dependency_status: available_after_deploy
+          dependency: "merchant_worker_process_uptime_seconds{role} / merchant_worker_process_start_time_seconds{role} (Worker GET /metrics)。要按 Pod 维度计数重启仍需 kube-state-metrics 的 kube_pod_container_status_restarts_total（未部署）"
+          gap: "滚动发布本身就会重置 uptime，需与发布窗口对齐后再判断；Worker 侧计数器每次重启归零，且不导出 restart 计数。"
+
+      # min 而不是 max：每个 role 有 2+ 个副本，取 max 会让**一个副本卡死**被另一个
+      # 健康副本的近期心跳完全掩盖（2 副本时 50% 的消费能力停摆却不告警）。
+      # `and on (pod) up == 1` 是为了排除已经消失的 Pod：目标下线后 up=0，其最后
+      # 一次心跳会继续参与聚合直到序列过期，不加这道过滤会在滚动发布的旧 Pod 上误报。
+      - alert: MerchantWorkerHeartbeatMissing
+        expr: time() - min by (role) (merchant_worker_heartbeat_timestamp_seconds and on (pod) up{job="merchant-worker"} == 1) > 300
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Worker 心跳缺失超过 5 分钟（某个 role 存在副本没有成功完成轮询）"
+          dependency_status: available_after_deploy
+          dependency: "merchant_worker_heartbeat_timestamp_seconds{role,pod} (Worker GET /metrics，只在该 role 完成过一次成功轮询后更新；未成功时为 0，因此 `time() - 0` 会立刻触发)"
+          gap: "按 role 聚合，不区分具体副本；需要定位到 Pod 时去掉 min by 聚合、保留 pod 标签。`up{job=\"merchant-worker\"}` 依赖采集任务名与 prometheus-scrape.example.yaml 一致。自动化/扫描角色不参与业务队列，触发前先确认该 role 本应常驻。队列空转但进程正常的情况不会触发，那种失败由 merchant_worker_poll_failures_total{role,code} 覆盖。"
+
+      # 「进程活着、心跳也在动，但每个轮询周期都在失败」——这是心跳规则抓不到的
+      # 另一半失败面。`code` 由 worker 侧白名单化（非法字符折叠为 UNKNOWN，最多 16 个
+      # 不同值 + OTHER），所以这里按 code 聚合的分片数是有限的。
+      # counter 是进程内的：Pod 重启后归零，rate() 在滚动发布窗口会失真，属已知偏差。
+      - alert: MerchantWorkerPollFailing
+        expr: sum by (role) (rate(merchant_worker_poll_failures_total[10m])) > 0.5
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "某个 worker role 的轮询持续失败（>0.5 次/秒 且持续 10 分钟）"
+          dependency_status: available_after_deploy
+          dependency: "merchant_worker_poll_failures_total{role,code} (Worker GET /metrics)"
+          gap: "进程内 counter，重启归零；阈值 provisional，需按真实轮询周期校准。要区分「数据库不可达」与「上游 5xx」，看同一条序列的 code 标签（如 ECONNREFUSED / UNKNOWN）。"
+
+      - alert: MerchantWorkerReplicasBelowFloor
+        expr: count by (role) (merchant_worker_up{role=~"sync|generation|publish|reconcile"}) < 2
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "可用 worker 副本数低于清单声明的 HPA 下限（每类 minReplicas=2）"
+          dependency_status: partial
+          dependency: "count by (role) (merchant_worker_up{role}) (Worker GET /metrics) 作为近似；精确比较需要 kube-state-metrics 的 kube_horizontalpodautoscaler_status_current_replicas / kube_horizontalpodautoscaler_spec_min_replicas（未部署）"
+          gap: "这是近似：它数的是**能被采集到 metrics 的 worker 进程**，其阈值 2 是硬编码的，不读取真实 HPA 规格；进程活着但卡在启动、或端口未放行时会表现为副本数偏低。"
+
+      # 唯一的现成信号是 merchant_http_requests_total{status="401"}，它没有 route 标签，
+      # 与普通鉴权失败混在一起；金额/订单快照校验失败的 4xx 同样无法区分。
+      - alert: MerchantPaymentCallbackSignatureFailures
+        expr: sum(rate(merchant_payment_callback_verifications_total{result="signature_invalid"}[5m])) > 0
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "支付回调验签失败（含时间戳过期/签名错误）"
+          dependency_status: missing
+          dependency: "merchant_payment_callback_verifications_total{result} —— 指标不存在。回调验签代码存在（apps/api/src/server.ts verifyPaymentCallback()，失败抛 PAYMENT_CALLBACK_SIGNATURE_INVALID / PAYMENT_CALLBACK_EXPIRED，HTTP 401）但不记录任何指标"
+          gap: "规则暂不可用。现有唯一线索是 merchant_http_requests_total{status=\"401\"}，且该 counter **没有 route 标签**，无法判断 401 来自支付回调还是普通鉴权。"
+
+      - alert: MerchantReconciliationAttentionRequired
+        expr: max(merchant_reconciliation_status{status="attention_required"}) > 0
+        for: 15m
+        labels: { severity: page }
+        annotations:
+          summary: "对账产出 attention_required 且长时间未收敛"
+          dependency_status: missing
+          dependency: "merchant_reconciliation_status{status} —— 指标不存在。产出点已核实：packages/storage/src/reconciliation.ts（clean|attention_required）、packages/application/src/canonical-product-consistency.ts（contractStatus=attention_required）、支付对账响应 envelope.data.state=attention_required"
+          gap: "规则暂不可用。对账有产出、有运营 API，但没有指标也没有规则；结果只存在数据库与按需查询里。"
+
+      - alert: MerchantOutboxDeadLetter
+        expr: max(merchant_queue_dead_letter_events{queue="scan"}) > 0
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Outbox 出现死信事件（当前仅覆盖 scan 队列）"
+          dependency_status: partial
+          dependency: "merchant_queue_dead_letter_events{queue=\"scan\"} (Worker GET /metrics，scan 角色)。其余事件类型仍无 dead-letter 序列：merchant_outbox_pending_events 的 SQL 把死信一并算作 pending"
+          gap: "只覆盖 scan 队列。非 scan 死信只有结构化日志 worker.outbox.dead_letter（packages/workers/src/dispatch-observability.ts）与人工 SQL 两条路；日志无法被 Prometheus 告警。要覆盖全部事件类型需要 API 侧导出 outbox dead-letter 计数。"
+
+      - alert: MerchantDiskWatermarkHigh
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.15
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "磁盘可用空间低于 15%"
+          dependency_status: missing
+          dependency: "node_filesystem_avail_bytes / node_filesystem_size_bytes —— 需要 node-exporter（未部署）"
+          gap: "规则暂不可用。PostgreSQL / 对象存储缓存写满会先表现为 API 5xx，而不是容量告警。"
+
+      - alert: MerchantCertificateExpiry
+        expr: probe_ssl_earliest_cert_expiry - time() < 14 * 24 * 3600
+        for: 1h
+        labels: { severity: page }
+        annotations:
+          summary: "对外证书 14 天内过期"
+          dependency_status: missing
+          dependency: "probe_ssl_earliest_cert_expiry —— 需要 blackbox-exporter 或 kubelet 证书探针（未部署）"
+          gap: "规则暂不可用。仓库内有 infra/systemd/store-nova-tls-renew.timer 做续期，但续期失败不会被任何告警捕获。"
+
+      # 告警通道自身故障（第一层）：投递尝试存在、却没有任何一次成功投递。
+      # 语义要求：只有在确实有告警要送、却没有成功投递时才告警，
+      # 避免「这段时间本来就没告警」造成的假阳性。
+      - alert: MerchantAlertChannelNoSuccessfulDelivery
+        expr: sum(rate(merchant_alert_delivery_attempts_total[30m])) > 0 and sum(rate(merchant_alert_deliveries_total{result="delivered"}[30m])) == 0
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "最近 30 分钟有告警投递尝试，但没有一次成功投递"
+          dependency_status: available
+          dependency: "merchant_alert_delivery_attempts_total / merchant_alert_deliveries_total{result=\"delivered|failed|blocked|disabled|exception\"} (API GET /metrics)"
+          gap: "计数器是**进程内**的，`rate()` 必须按 series（pod）理解，且每次重启归零；`blocked`/`disabled` 是配置状态而非投递失败，本规则只把「有尝试、无成功」判为故障。旁证指标：merchant_alert_delivery_last_success_timestamp_seconds / _last_failure_timestamp_seconds、merchant_alert_delivery_consecutive_failures、merchant_alert_notification_evidence_failures_total（告警存在但投递证据写不进去）。它仍然只证明「信号到了 receiver」，不证明有人看见。"
+
+      # 告警通道自身故障（第二层 / dead-man's switch）：Alertmanager 之后没有任何东西
+      # 证明「有人真的收到了」。这条规则必须由**外部**通道确认（例如另一套独立通道或
+      # 人工每日确认），否则「没有告警」和「告警链路死了」在本仓库里无法区分。
+      - alert: MerchantAlertPipelineWatchdog
+        expr: sum(rate(alertmanager_notifications_total[1h])) == 0
+        for: 1h
+        labels: { severity: page }
+        annotations:
+          summary: "Alertmanager 一小时内没有发出任何通知（watchdog）"
+          dependency_status: missing
+          dependency: "alertmanager_notifications_total —— 需要部署 Alertmanager 并接入真实 paging 通道；当前仓库没有 Alertmanager"
+          gap: "规则暂不可用。即使部署了 Alertmanager，本规则也必须由仓库外的 dead-man's switch 接收方才成立，否则它只是又一条没人看的告警。"
+
+      # 告警扫描自身未成功：这一条覆盖「扫描器静默失败」——面板看起来一切正常，
+      # 因为根本没有告警被派生出来。
+      - alert: MerchantAlertSweepNotSucceeding
+        # 600s = 默认间隔（OPERATIONAL_ALERT_SWEEP_INTERVAL_MS 60000）的 10 个周期。
+        # 前半段是开关守卫：刻意关闭扫描是配置决定，不应变成永久 page。
+        expr: merchant_alert_sweep_enabled == 1 and time() - max(merchant_alert_sweep_last_success_timestamp_seconds) > 600
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "运营告警扫描超过 10 个周期没有成功完成（默认间隔 60s）"
+          dependency_status: available
+          dependency: "merchant_alert_sweep_last_success_timestamp_seconds / merchant_alert_sweep_runs_total{outcome} / merchant_alert_sweep_consecutive_failures / merchant_alert_sweep_coverage_lag_seconds / merchant_alert_sweep_enabled (API GET /metrics)"
+          gap: "该时间戳在进程启动时就以启动时刻初始化，因此新 pod「从未成功过一次」会表现为从启动起持续增长的年龄（这是刻意的，比缺序列更安全）；用 merchant_alert_sweep_runs_total{outcome=\"succeeded\"} 恒为 0 区分「从未成功」与「成功过又停了」。OPERATIONAL_ALERT_SWEEP_ENABLED=false 时扫描被关闭，此时 merchant_alert_sweep_enabled=0 应被视为配置决定而不是故障。"
+
+      # 随 Prometheus 部署自动可用：采集目标掉线是唯一不需要额外 exporter 的自监控信号。
+      - alert: MerchantScrapeTargetDown
+        expr: up{job=~"merchant-.*"} == 0
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Prometheus 采集目标掉线"
+          dependency_status: available_after_deploy
+          dependency: "up{job} —— Prometheus 自身指标，部署 Prometheus 后自动存在（本规则不需要额外 exporter）"
+          gap: "只有在 Prometheus 被部署并配置了 merchant-* 采集任务后才成立；它无法发现「指标端点了但没人看」。"

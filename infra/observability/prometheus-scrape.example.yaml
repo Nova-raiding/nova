@@ -1,0 +1,168 @@
+# ============================================================================
+# CONTRACT EXAMPLE ONLY - NO PROMETHEUS IS DEPLOYED BY THIS REPOSITORY.
+# ============================================================================
+# This file is a Prometheus configuration fragment, not a Kubernetes manifest
+# and not an applied resource. There is no Prometheus, Alertmanager, or
+# prometheus-operator workload anywhere in `infra/`; the only trace of a
+# monitoring stack in this repository is the `prometheus.io/*` Service
+# annotations in `infra/kubernetes/base/api.yaml`. Those annotations are inert
+# until a scraper that honours them EXISTS and is configured to authenticate.
+#
+# Nothing in this file takes effect on its own. Standing up collection requires
+# all four of the following, and today the repository ships only the second:
+#   1. a Prometheus/agent deployment (managed service or prometheus-operator);
+#   2. the scrape job below, wired to that deployment;
+#   3. `METRICS_AUTH_TOKEN` provisioned through the managed secret store as a
+#      key of `merchant-runtime-secrets`, then projected into the API pod
+#      (`infra/kubernetes/base/api.yaml`) AND mounted here as a file;
+#   4. a NetworkPolicy allowance for the scraper's namespace
+#      (`infra/kubernetes/base/network-policies.yaml`).
+#
+# Feeding this repository's alert contract
+# (`infra/observability/prometheus-alerts.example.yaml`) into a real
+# Alertmanager is a separate, still-unfinished step. Until then, the rules in
+# that file are a specification, not active paging.
+# ============================================================================
+
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+
+# Load the rule contract from the sibling example file once it is promoted to a
+# real path on the Prometheus host. Alerting stays disabled while `alerting:` is
+# absent, which is the honest state of this repository today.
+rule_files:
+  - prometheus-alerts.example.yaml
+
+scrape_configs:
+  # The API and the six workers now serve /metrics. Both answer 503 when
+  # NODE_ENV=production and METRICS_AUTH_TOKEN is unset, and 401 when the bearer
+  # does not match, so `authorization` below is mandatory rather than optional
+  # hardening. Both read the same token from the same managed-secret key.
+  #
+  # The alert receiver is deliberately absent: apps/alert-receiver/src/server.ts
+  # answers only /healthz, /readyz, and /internal/v1/alerts — there is no
+  # /metrics to scrape, and its Deployment carries no scrape annotation.
+  #
+  # WORKER SCRAPING STILL REQUIRES TWO THINGS THIS FILE CANNOT EXPRESS:
+  #   1. A NetworkPolicy ingress rule for the scraper's namespace on TCP 9102.
+  #      `base/workers.yaml` sets WORKER_METRICS_HOST=0.0.0.0 (the in-code
+  #      default is 127.0.0.1, which no scraper can reach), but the five
+  #      non-scan worker Pods have no ingress policy at all and
+  #      `NetworkPolicy/merchant-worker-scan-isolation` is `ingress: []`. Until
+  #      that is fixed the scan worker cannot be scraped at all, and the other
+  #      five are reachable by every Pod in the namespace.
+  #   2. `METRICS_AUTH_TOKEN` provisioned, or every target answers 503 and the
+  #      scrape silently yields no series.
+  # Without both, the annotations in `base/workers.yaml` are inert intent.
+  - job_name: merchant-api
+    honor_labels: false
+    kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names: [merchant]
+    authorization:
+      type: Bearer
+      # The scraper, not the API, owns this file. Materialise it from the same
+      # managed-secret-store entry that backs the API's METRICS_AUTH_TOKEN key;
+      # never copy the value into a ConfigMap, a manifest, or this repository.
+      # With prometheus-operator, mount it via a projected Secret volume while
+      # `spec.secrets`/`additionalScrapeConfigs` cannot express the header.
+      credentials_file: /etc/prometheus/secrets/metrics-auth-token
+    relabel_configs:
+      # Reuse the annotation convention already present on Service/merchant-api
+      # so the base manifests stay the single source of truth for "is scrapped".
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+        action: replace
+        target_label: __address__
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: pod
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: namespace
+      - action: labelmap
+        regex: __meta_kubernetes_service_label_(.+)
+    metric_relabel_configs:
+      # `/metrics` is read-only and carries no tenant payload, but the route is
+      # still bearer-gated. Drop the scrape-internal labels that would otherwise
+      # multiply cardinality on the request counters.
+      - source_labels: [__name__]
+        action: keep
+        regex: "merchant_.*"
+
+  # Queue health is split across the two jobs above and below, and the split
+  # matters when choosing what to page on:
+  #   - sync / generation / publish / reconcile depth and age come from the API
+  #     job, aggregated per workspace straight from Postgres
+  #     (`merchant_job_state_count`, `merchant_queue_oldest_job_age_seconds`).
+  #     They are no longer derived from the per-replica in-memory projection, so
+  #     a single-replica scrape covers every workspace. When any workspace read
+  #     fails the gauge families are omitted rather than published as a smaller
+  #     number: page on `merchant_job_queue_metrics_reads_total{outcome="failed"}`
+  #     instead of reading absence as "no backlog".
+  #   - `merchant_outbox_pending_events` (API) is aggregated across all
+  #     workspaces from the durable outbox and is likewise not projection-scoped.
+  #   - the scan queue has no API series at all. `merchant_queue_depth`,
+  #     `merchant_queue_dead_letter_events` and
+  #     `merchant_queue_oldest_job_age_seconds` with `queue="scan"` come from
+  #     the scan worker below, computed by SQL over `outbox_events`. These are
+  #     durable counts, not a projection.
+  # Same metric names from two exporters is intentional: one rule covers both.
+
+  # Worker fleet. `role: pod` rather than `role: endpoints` on purpose: the
+  # workers deliberately have no Service, so a pod-role job is the only way to
+  # scrape them without publishing a new cluster-routable object. Targets come
+  # from the `prometheus.io/*` annotations on each worker pod template in
+  # `base/workers.yaml`; those annotations are inert until the NetworkPolicy and
+  # token prerequisites in the header are satisfied.
+  - job_name: merchant-worker
+    honor_labels: false
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [merchant]
+    authorization:
+      type: Bearer
+      # Same managed-secret entry the API job uses; one token, one rotation.
+      credentials_file: /etc/prometheus/secrets/metrics-auth-token
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        target_label: __address__
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: pod
+      # `role` is exported by the process itself; the pod label is what makes
+      # `changes(merchant_worker_process_start_time_seconds[30m])` a per-pod
+      # restart count, because a container restart keeps the same pod name.
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        action: replace
+        target_label: workload
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        action: keep
+        regex: "merchant_.*"

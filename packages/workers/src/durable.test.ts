@@ -410,6 +410,63 @@ describe('durable outbox dispatcher', () => {
     expect(handler).toHaveBeenCalledOnce()
   })
 
+  it('reports a completed handler whose outcome could not be recorded as unknown, never as a silent dead letter', async () => {
+    const store = new Store(event({ id: 'evt_unrecorded' }))
+    const queue = new InMemoryQueue<DurableOutboxEvent>()
+    const observations: Array<{ state: string; failure?: { code?: string } }> = []
+    // The repository's `ack` only refuses while `published_at IS NULL`: the row
+    // is still pending, so this delivery lost the claim rather than terminating
+    // the event.
+    vi.spyOn(store, 'ack').mockRejectedValueOnce(staleLeaseError())
+    const handler = vi.fn(async () => ({ value: 'generated-content' }))
+    const dispatcher = new DurableOutboxDispatcher(store, queue, handler, { onDispatch: observation => observations.push(observation) })
+
+    await dispatcher.restore('ws_1')
+    const result = await dispatcher.dispatchOnce()
+
+    // The handler really ran and succeeded; its result must not be re-labelled
+    // as a terminal outcome, because restore() re-delivers the row and the
+    // handler runs again.
+    expect(handler).toHaveBeenCalledOnce()
+    expect(result.state).toBe('unknown')
+    expect(result).toMatchObject({ failure: { code: 'WORKER_OUTCOME_NOT_RECORDED_LEASE_LOST', retryable: false, unknown: true } })
+    expect(observations.at(-1)).toMatchObject({ state: 'unknown', failure: { code: 'WORKER_OUTCOME_NOT_RECORDED_LEASE_LOST' } })
+    // The delivery is still dropped - the next claim is authoritative - and the
+    // durable row is left untouched and pending, so the work is recoverable.
+    await expect(queue.contains('evt_unrecorded')).resolves.toBe(false)
+    expect(store.events.get('evt_unrecorded')?.publishedAt).toBeUndefined()
+    expect(store.events.get('evt_unrecorded')?.unknownAt).toBeUndefined()
+  })
+
+  it('retries at the backpressure window the failure named instead of the generic backoff', async () => {
+    const store = new Store(event({ id: 'evt_quota_window' }))
+    const queue = new InMemoryQueue<DurableOutboxEvent>()
+    const failure = new WorkerFailure({ code: 'QUOTA_EXHAUSTED', message: 'quota exhausted; retry after 45s', retryable: true, unknown: false, retryAfterMs: 45_000 })
+    // maxDelayMs is 30s: a window longer than the backoff ceiling must still be
+    // honoured, otherwise every retry lands inside the closed window.
+    const dispatcher = new DurableOutboxDispatcher(store, queue, async () => { throw failure }, { now: () => 10_000, baseDelayMs: 100, maxDelayMs: 30_000, random: () => 0 })
+
+    await dispatcher.restore('ws_1')
+    expect((await dispatcher.dispatchOnce()).state).toBe('queued')
+    expect(store.events.get('evt_quota_window')?.nextAttemptAt).toBe(new Date(55_000).toISOString())
+    expect(store.events.get('evt_quota_window')?.lastError).toMatchObject({ code: 'QUOTA_EXHAUSTED', retryAfterMs: 45_000 })
+  })
+
+  it('ignores a malformed backpressure window and falls back to the ordinary backoff', async () => {
+    for (const retryAfterMs of [-1, 0, 1.5, 86_400_001, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const store = new Store(event({ id: 'evt_bad_window' }))
+      const queue = new InMemoryQueue<DurableOutboxEvent>()
+      const dispatcher = new DurableOutboxDispatcher(store, queue, async () => {
+        throw { code: 'QUOTA_EXHAUSTED', message: 'quota exhausted', retryable: true, unknown: false, retryAfterMs }
+      }, { now: () => 10_000, baseDelayMs: 100, maxDelayMs: 30_000, random: () => 0 })
+
+      await dispatcher.restore('ws_1')
+      expect((await dispatcher.dispatchOnce()).state).toBe('queued')
+      expect(store.events.get('evt_bad_window')?.nextAttemptAt).toBe(new Date(10_100).toISOString())
+      expect(store.events.get('evt_bad_window')?.lastError).not.toHaveProperty('retryAfterMs')
+    }
+  })
+
   it('persists dead-letter retry timing in milliseconds without inflating the delay', async () => {
     const store = new Store(event({ id: 'evt_dead_letter_timing', attempts: 4 }))
     const queue = new InMemoryQueue<DurableOutboxEvent>()

@@ -175,7 +175,19 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         // queued while the provider's window resets.
         if (error instanceof QuotaExceededError) {
           await options.onGenerationDeferred?.(event, { code: error.code, message: error.message, retryAfterSeconds: error.decision.retryAfterSeconds }, projection, signal)
-          throw new WorkerFailure({ code: error.code, message: error.message, retryable: true, unknown: false })
+          // Carry the provider's window to the dispatcher. The decision already
+          // told the user-facing job when the quota resets; retrying this outbox
+          // event on the generic 100ms..30s backoff instead would hammer a quota
+          // that cannot have reset, spending the whole claim budget on failures
+          // that were guaranteed, and dead-lettering the event inside the very
+          // window it should have waited out.
+          throw new WorkerFailure({
+            code: error.code,
+            message: error.message,
+            retryable: true,
+            unknown: false,
+            retryAfterMs: error.decision.retryAfterSeconds * 1_000,
+          })
         }
         const candidate = error as {
           code?: unknown

@@ -117,6 +117,14 @@ export interface RedisQueueTransport {
  */
 const STALE_CLAIM_SCAN_LIMIT = 32
 
+/**
+ * Upper bound for a dependency-imposed retry window. It matches the largest
+ * delay the dispatcher constructor accepts for `leaseMs`/`maxDelayMs`, so a
+ * malformed or hostile hint can never park an event beyond the range this
+ * module already treats as sane.
+ */
+const MAX_RETRY_DELAY_MS = 86_400_000
+
 export class RedisQueueAdapter<T> implements QueuePort<T> {
   private readonly pendingFingerprints = new Map<string, string>()
 
@@ -376,9 +384,57 @@ export interface DurableDispatcherOptions {
   /** Injectable jitter source so retry spread is deterministic in tests. */
   random?: () => number
   claim?: Pick<OutboxClaimOptions, 'eventTypes' | 'snapshotEntityTypes'>
+  /**
+   * Called once when a delivery is claimed for execution (`started`) and once
+   * per terminal or retry outcome. The production worker wires this to
+   * `writeWorkerDispatchLog` so every dead letter and retry leaves a
+   * structured, joinable line. Defaulting to a no-op keeps this module a pure
+   * queue component.
+   */
+  onDispatch?: (observation: WorkerDispatchObservation) => void
 }
 
-export type DurableDispatchResult<E> = { state: 'succeeded' | 'unknown' | 'queued' | 'dead_letter'; event: E } | { state: 'empty' }
+/**
+ * One observable dispatch transition. `event` is the authoritative durable row
+ * the outcome was written against, so its payload carries the authorization
+ * snapshot used to correlate the line with the originating API request.
+ */
+export interface WorkerDispatchObservation<E extends DurableOutboxEvent = DurableOutboxEvent> {
+  state: 'started' | 'succeeded' | 'unknown' | 'queued' | 'dead_letter'
+  event: E
+  attempt: number
+  failure?: WorkerError
+  retryAt?: string
+}
+
+export type DurableDispatchResult<E> =
+  | {
+    state: 'succeeded' | 'unknown' | 'queued' | 'dead_letter'
+    event: E
+    /**
+     * Failure evidence for an outcome the store did not write, so it cannot be
+     * read back from `event.lastError`. An unrecorded outcome is still an
+     * observable one: without this the dispatch log line for it would carry no
+     * code at all.
+     */
+    failure?: WorkerError
+  }
+  | { state: 'empty' }
+
+/**
+ * The handler completed and produced a result, but the durable store refused to
+ * record it because this delivery no longer owned the claim. The event is *not*
+ * terminal - it stays pending and will be re-executed - so the outcome is
+ * unknown and needs reconciliation rather than a silent dead letter. The code
+ * is what makes the two indistinguishable cases distinguishable in the dispatch
+ * log, the poll counters and any alert built on them.
+ */
+const UNRECORDED_OUTCOME_LEASE_LOST: WorkerError = {
+  code: 'WORKER_OUTCOME_NOT_RECORDED_LEASE_LOST',
+  message: 'handler completed but its outcome was not recorded: the durable claim was no longer owned by this delivery; the event remains pending and will be re-executed, so the result requires reconciliation',
+  retryable: false,
+  unknown: true,
+}
 export type DurableOutboxHandler<E, R> = (context: { event: E; attempt: number; now: number; signal?: AbortSignal }) => Promise<HandlerResult<R> | R>
 
 export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutboxEvent, R = unknown> {
@@ -390,6 +446,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
   private readonly maxAttempts: number
   private readonly random: () => number
   private readonly claim: DurableDispatcherOptions['claim']
+  private readonly onDispatch: ((observation: WorkerDispatchObservation<E>) => void) | undefined
 
   constructor(
     private readonly store: DurableOutboxStore<E>,
@@ -424,6 +481,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     }
     this.random = options.random ?? Math.random
     this.claim = options.claim
+    this.onDispatch = options.onDispatch
   }
 
   async restore(workspaceId: string, limit = 100): Promise<number> {
@@ -489,7 +547,38 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     return added
   }
 
+  /**
+   * Dispatches one delivery and reports the transition. Logging lives in the
+   * wrapper so a throw from the store or the queue (which callers handle as a
+   * poll failure) cannot be mistaken for an outcome that was recorded.
+   */
   async dispatchOnce(): Promise<DurableDispatchResult<E>> {
+    const result = await this.dispatchDelivery()
+    if (result.state !== 'empty') this.observeDispatch(result)
+    return result
+  }
+
+  private observeDispatch(result: Exclude<DurableDispatchResult<E>, { state: 'empty' }>): void {
+    if (!this.onDispatch) return
+    // An outcome the store refused has no recorded `lastError`; the dispatcher
+    // supplies its own evidence for it rather than reporting a bare state.
+    const failure = result.failure ?? result.event.lastError as WorkerError | undefined
+    try {
+      this.onDispatch({
+        state: result.state,
+        event: result.event,
+        attempt: Math.max(0, result.event.attempts ?? 0),
+        ...(failure && typeof failure === 'object' ? { failure } : {}),
+        // `nextAttemptAt` is the durable retry deadline the repository wrote;
+        // it is the only honest answer for when the retry becomes claimable.
+        ...(result.state === 'queued' && typeof result.event.nextAttemptAt === 'string' ? { retryAt: result.event.nextAttemptAt } : {}),
+      })
+    } catch {
+      // A broken observer must never change a recorded outcome.
+    }
+  }
+
+  private async dispatchDelivery(): Promise<DurableDispatchResult<E>> {
     const message = await this.queue.dequeue()
     if (!message) return { state: 'empty' }
     let event = message.value
@@ -532,6 +621,14 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
       }
     } catch (leaseError) {
       return this.handleLeaseError(event, message, leaseError)
+    }
+
+    // The lease is now provably this worker's, so this is the first point where
+    // a line may honestly claim the worker started executing the event.
+    try {
+      this.onDispatch?.({ state: 'started', event, attempt: Math.max(1, event.attempts ?? 0) })
+    } catch {
+      // A broken observer must never stop an authorized execution.
     }
 
     const abortController = new AbortController()
@@ -612,9 +709,21 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
       return { state: 'succeeded', event: updated }
     } catch (persistenceError) {
       if (isStaleOutboxError(persistenceError)) {
-        // The database is authoritative; this queue message carries an expired lease.
+        // The database is authoritative; this queue message carries an expired
+        // lease, so the outcome of a handler that already completed could not be
+        // recorded. That outcome is *not* a dead letter: `ack` only ever refuses
+        // while `published_at IS NULL`, so the row is still pending, restore()
+        // re-delivers it under a fresh claim, and the handler runs again - which
+        // is exactly why this must not be reported as terminal. A silent
+        // `dead_letter` both discards the completed result and hides the
+        // duplicate external side effect that is now possible. Report an
+        // unknown outcome under its own code instead, keeping the authorization
+        // correlation so the event stays joinable with the request that queued
+        // it. The delivery is still dropped (the peer's claim is authoritative)
+        // and no store write is attempted: every write in `DurableOutboxStore`
+        // is lease-scoped, so it would fail with the very error just caught.
         await this.queue.ack(message)
-        return { state: 'dead_letter', event }
+        return { state: 'unknown', event, failure: withAuthorizationCorrelation(event, UNRECORDED_OUTCOME_LEASE_LOST) }
       }
       await this.queue.nack(message, retryAfterLeaseMs(event, this.now(), this.baseDelayMs))
       throw persistenceError
@@ -660,7 +769,17 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
    * of re-hitting the provider in lockstep. baseDelayMs stays the floor so
    * jitter can never collapse a retry into an immediate hot loop.
    */
-  private retryDelayMs(attempts: number): number {
+  private retryDelayMs(attempts: number, failure?: WorkerError): number {
+    // A backpressure window named by the failing dependency is not a congestion
+    // signal: waiting less than it asked guarantees another certain failure, and
+    // jitter could only make that worse. It replaces the backoff outright and is
+    // deliberately allowed to exceed maxDelayMs, which bounds *backoff*, not a
+    // wall-clock window the provider set. baseDelayMs stays the floor and
+    // MAX_RETRY_DELAY_MS the ceiling.
+    const retryAfterMs = failure?.retryAfterMs
+    if (typeof retryAfterMs === 'number' && Number.isSafeInteger(retryAfterMs) && retryAfterMs > 0) {
+      return Math.min(MAX_RETRY_DELAY_MS, Math.max(this.baseDelayMs, retryAfterMs))
+    }
     const ceiling = Math.min(this.maxDelayMs, this.baseDelayMs * 2 ** Math.max(0, attempts - 1))
     if (ceiling <= 0) return 0
     const floor = Math.min(this.baseDelayMs, ceiling)
@@ -684,7 +803,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
         await this.queue.ack(message)
         return { state: 'dead_letter', event: updated }
       }
-      const delay = this.retryDelayMs(event.attempts ?? 0)
+      const delay = this.retryDelayMs(event.attempts ?? 0, failure)
       const updated = await this.store.recordFailure(event.workspaceId, event.id, failure, new Date(this.now() + delay).toISOString(), event.leaseToken)
       await this.queue.ack(message)
       return { state: 'queued', event: updated }
@@ -748,11 +867,19 @@ function normalizeDurableError(cause: unknown): WorkerError {
   const rawMessage = typeof candidate?.message === 'string' && candidate.message.trim()
     ? candidate.message
     : 'Worker execution failed'
+  // The backpressure hint is copied, never trusted: a retry delay is only
+  // accepted as a positive bounded integer, so a malformed field degrades to
+  // the ordinary backoff instead of an unbounded park.
+  const retryAfterMs = candidate?.retryAfterMs
+  const retryAfterHint = typeof retryAfterMs === 'number' && Number.isSafeInteger(retryAfterMs) && retryAfterMs > 0 && retryAfterMs <= MAX_RETRY_DELAY_MS
+    ? { retryAfterMs }
+    : {}
   return {
     code,
     message: rawMessage.replace(/[\u0000-\u001f\u007f]/gu, ' ').slice(0, 2_000),
     retryable: candidate?.retryable === true,
     unknown: candidate?.unknown === true,
+    ...retryAfterHint,
   }
 }
 

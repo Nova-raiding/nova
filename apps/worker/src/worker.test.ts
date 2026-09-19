@@ -685,7 +685,10 @@ describe('worker production entry', () => {
       onGenerationResult: async (_event, result) => { reported.push(result) },
     })
     await expect(handler({ event: { id: 'evt_quota', workspaceId: 'ws_a', aggregateId: 'gen_quota', eventType: 'generation.requested', sequence: 1, payload: { input: {} }, createdAt: new Date().toISOString() }, attempt: 1, now: Date.now() }))
-      .rejects.toMatchObject({ error: { code: 'QUOTA_EXHAUSTED', retryable: true, unknown: false } })
+      // `retryAfterMs` carries the provider's window to the dispatcher. Without
+      // it the event is retried on the generic 100ms..30s backoff and burns its
+      // whole claim budget inside a window that cannot have reset.
+      .rejects.toMatchObject({ error: { code: 'QUOTA_EXHAUSTED', retryable: true, unknown: false, retryAfterMs: 12_000 } })
     expect(reported).toEqual([])
   })
 

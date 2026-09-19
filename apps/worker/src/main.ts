@@ -6,7 +6,8 @@ import { readFileSync } from 'node:fs'
 import { Pool } from 'pg'
 import { contextEnvelopeHash, loadMigrations, PostgresAssetScanAttemptRepository, PostgresCreativePointLifecycleRepository, PostgresCreativePointRepository, PostgresOnboardingGrantDispatchRepository, PostgresOutboxRepository, withWorkspaceTransaction, type AssetScanAttemptRecord, type AssetScanAttemptRepository, type Migration, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { PostgresMappingPreflightApprovalRepository } from '../../../packages/persistence/src/mapping-preflight-approval-repository.js'
-import { DurableOutboxDispatcher, InMemoryQueue, RedisQueueAdapter, type DurableOutboxEvent, type QueuePort, type RedisQueueTransport } from '../../../packages/workers/src/durable.js'
+import { DurableOutboxDispatcher, InMemoryQueue, RedisQueueAdapter, type DurableOutboxEvent, type QueuePort, type RedisQueueTransport, type WorkerDispatchObservation } from '../../../packages/workers/src/durable.js'
+import { buildWorkerDispatchLogRecord, workerDispatchTraceId, writeWorkerDispatchLog, type WorkerDispatchLogEvent } from '../../../packages/workers/src/dispatch-observability.js'
 import { createOutboxHandler, createWorkerProjection } from './handler.js'
 import { connectRedisQueue, createRedisCredentialRefreshLock, DEFAULT_QUEUE_MAX_DEPTH } from './redis-transport.js'
 import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError } from '../../../packages/application/src/connector-runtime.js'
@@ -28,6 +29,7 @@ import { createScannerRequestProof } from '../../../packages/security/src/scanne
 import { createWorkerRequestProof, resolveWorkerId, type WorkerRequestRole } from '../../../packages/security/src/worker-request-proof.js'
 import { createClamAvScanner, type ClamAvScanner } from './clamav-scanner.js'
 import { ScannerHeartbeatController } from './scanner-heartbeat.js'
+import { createWorkerMetricsServer, WORKER_METRICS_DEFAULT_HOST, WORKER_METRICS_DEFAULT_PORT, WorkerMetricsRegistry } from './worker-metrics.js'
 import { createExecutionAuthorizationGuard, executeAfterAuthorizationCheck, WorkerExecutionAuthorizationError, type CriticalWorkerOperation, type WorkerAuthorizationRecheck, type WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
 import { createCommercialAccessGuard, WorkerCommercialAccessError, type WorkerCommercialAccessRecheck } from '../../../packages/workers/src/commercial-access.js'
 import { CUSTOMER_DELIVERY_SCAN_EVENT, CUSTOMER_DELIVERY_SCAN_OPERATION, createDeliveryScanAdmissionGuard, DeliveryScanAdmissionError } from '../../../packages/workers/src/customer-delivery-scan-admission.js'
@@ -73,6 +75,10 @@ export interface WorkerConfig {
   scanRetryBaseMs: number
   scanRetryMaxMs: number
   clamavMaxFileBytes: number
+  /** Prometheus exposition port. 0 disables the listener entirely. */
+  metricsPort: number
+  /** Bind address; loopback by default so an unconfigured worker exposes nothing. */
+  metricsHost: string
 }
 
 export type WorkerRole = 'all' | 'sync' | 'generation' | 'publish' | 'reconcile' | 'automation' | 'scan'
@@ -87,6 +93,43 @@ function imageWorkerTrace(event: string, fields: Record<string, unknown> = {}): 
   } catch {
     // Observability must never change the commercial execution outcome.
   }
+}
+
+/**
+ * Dispatch states map onto the runbook's correlation vocabulary. A failed
+ * publish used to leave no log line at all — only `outbox_events.last_error` —
+ * so an operator could not join it with the API request that queued it.
+ */
+const WORKER_DISPATCH_LOG_EVENTS: Record<WorkerDispatchObservation['state'], WorkerDispatchLogEvent> = {
+  started: 'worker.outbox.dispatch_started',
+  succeeded: 'worker.outbox.succeeded',
+  queued: 'worker.outbox.retry_scheduled',
+  unknown: 'worker.outbox.unknown',
+  dead_letter: 'worker.outbox.dead_letter',
+}
+
+/**
+ * The connector context used to carry `traceId: event.id` — the outbox row id.
+ * That is a durable id, but it is not the request trace id the API request log
+ * and the worker dispatch log both carry, so connector-side lines could never
+ * be joined with the request that caused them. Only the authorization
+ * snapshot's request trace id is propagated; when it is absent the field is
+ * omitted rather than filled with a non-joinable substitute.
+ */
+export function workerTraceContext(event: DurableOutboxEvent): { traceId?: string } {
+  const traceId = workerDispatchTraceId(event)
+  return traceId ? { traceId } : {}
+}
+
+export function emitWorkerDispatchLog(observation: WorkerDispatchObservation<DurableOutboxEvent>, sink?: (line: string) => void): void {
+  writeWorkerDispatchLog(buildWorkerDispatchLogRecord({
+    event: WORKER_DISPATCH_LOG_EVENTS[observation.state],
+    outboxEvent: observation.event,
+    attempt: observation.attempt,
+    ...(observation.failure?.code ? { errorCode: observation.failure.code } : {}),
+    ...(observation.failure?.message ? { errorMessage: observation.failure.message } : {}),
+    ...(observation.retryAt ? { retryAt: observation.retryAt } : {}),
+  }), sink)
 }
 
 function imageWorkerErrorFields(error: unknown): Record<string, unknown> {
@@ -314,6 +357,13 @@ const workerRouting: Record<Exclude<WorkerRole, 'all' | 'automation'>, { eventTy
 
 const DEFAULT_WORKER_API_TIMEOUT_MS = 10_000
 const DEFAULT_WORKER_DEPENDENCY_CHECK_INTERVAL_MS = 10_000
+/**
+ * How often the scan queue depth/age gauge is refreshed from Postgres. The
+ * heartbeat probe already queries the same aggregate every few seconds, but it
+ * is gated on API readiness, so it cannot be the only source for a series whose
+ * whole purpose is to page when consumption stops.
+ */
+const SCANNER_QUEUE_METRICS_INTERVAL_MS = 30_000
 const DEFAULT_STORAGE_RECONCILIATION_INTERVAL_MS = 15 * 60_000
 const DEFAULT_PAYMENT_RECONCILIATION_INTERVAL_MS = 5 * 60_000
 const DEFAULT_PAYMENT_RECONCILIATION_BATCH_SIZE = 10
@@ -479,7 +529,7 @@ function workerAuthIntent(signingSecret: string, workerId = resolveWorkerId()): 
   return { 'x-internal-worker-signing-secret': signingSecret, 'x-worker-id': workerId }
 }
 
-function workerRoleForRequest(method: string, requestTarget: string, body?: string | Uint8Array): WorkerRequestRole {
+export function workerRoleForRequest(method: string, requestTarget: string, body?: string | Uint8Array): WorkerRequestRole {
   const path = new URL(requestTarget, 'http://worker.internal').pathname
   if (/^\/v1\/sync-jobs\//u.test(path)) return 'sync'
   if (path === '/v1/internal/billing/reconciliation') return 'reconcile'
@@ -487,6 +537,16 @@ function workerRoleForRequest(method: string, requestTarget: string, body?: stri
   if (/^\/v1\/(?:generation-jobs|internal\/image-generation-jobs|internal\/image-generation-continuations)\//u.test(path)) return 'generation'
   if (/^\/v1\/publish-jobs\/[^/]+\/observation$/u.test(path)) {
     try { return JSON.parse(typeof body === 'string' ? body : Buffer.from(body ?? []).toString('utf8')).source === 'reconcile' ? 'reconcile' : 'publish' } catch { return 'publish' }
+  }
+  // The publish execution gate is admission-checked for both the publish and
+  // the reconcile worker (workerRouteRoles). The caller declares which
+  // credential set it actually signs and authenticates with; declaring
+  // 'reconcile' only selects that set, it does not grant access — the proof
+  // below is computed with the declared role's secret and the API verifies it
+  // against the bearer token and signing secret of that same role.
+  if (/^\/v1\/publish-jobs\/[^/]+\/execution-check$/u.test(path)) {
+    const declaredRole = new URL(requestTarget, 'http://worker.internal').searchParams.get('worker_role')
+    return declaredRole === 'reconcile' ? 'reconcile' : 'publish'
   }
   if (/^\/v1\/publish-jobs\//u.test(path)) return 'publish'
   if (/^\/v1\/worker-events\//u.test(path)) {
@@ -663,19 +723,29 @@ export async function postPublishObservation(input: {
 }
 
 /** Re-check authorization immediately before a connector write or reconcile.
- * A queued event may outlive an account revoke/re-authorize operation. */
+ * A queued event may outlive an account revoke/re-authorize operation.
+ *
+ * `role` names the credential set that `apiToken`/`signingSecret` belong to.
+ * It is not a privilege claim: the same value drives the `x-worker-role`
+ * header and the role signed into the request proof, and the API verifies all
+ * three against that role's own configured credentials. A caller that does not
+ * actually hold the role's token and signing secret is rejected (403), so
+ * declaring 'reconcile' cannot elevate a publish worker. The default keeps
+ * every existing publish caller byte-identical. */
 export async function assertPublishExecution(input: {
   apiBaseUrl: string
   apiToken: string
   event: DurableOutboxEvent
   fetcher?: typeof fetch
   signingSecret?: string
+  role?: 'publish' | 'reconcile'
   signal?: AbortSignal
   production?: boolean
 }): Promise<{ credentialRef: string; payloadHash: string; mediaRequired: boolean; authorizationSnapshot?: Record<string, unknown> }> {
+  const role = input.role ?? 'publish'
   let response: Response
   try {
-    response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/, '')}/v1/publish-jobs/${encodeURIComponent(input.event.aggregateId)}/execution-check?event_id=${encodeURIComponent(input.event.id)}`, {
+    response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/, '')}/v1/publish-jobs/${encodeURIComponent(input.event.aggregateId)}/execution-check?event_id=${encodeURIComponent(input.event.id)}${role === 'publish' ? '' : `&worker_role=${role}`}`, {
       method: 'GET',
       headers: { accept: 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': input.event.workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret) : {}) },
       redirect: 'error',
@@ -1549,6 +1619,8 @@ export function readWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     scanRetryBaseMs: positiveInt(env.WORKER_SCAN_RETRY_BASE_MS, 5_000, 'WORKER_SCAN_RETRY_BASE_MS'),
     scanRetryMaxMs: positiveInt(env.WORKER_SCAN_RETRY_MAX_MS, 900_000, 'WORKER_SCAN_RETRY_MAX_MS'),
     clamavMaxFileBytes: positiveInt(env.CLAMAV_MAX_FILE_BYTES, DEFAULT_CLAMAV_MAX_FILE_BYTES, 'CLAMAV_MAX_FILE_BYTES'),
+    metricsPort: workerMetricsPort(env.WORKER_METRICS_PORT),
+    metricsHost: env.WORKER_METRICS_HOST?.trim() || WORKER_METRICS_DEFAULT_HOST,
   }
 }
 
@@ -1576,7 +1648,7 @@ export async function pollOnce(
           repository,
           queueFactory(workspaceId),
           createOutboxHandler({ projection: createWorkerProjection(), ...handlerOptions }),
-          { leaseMs: config.leaseMs, claim: config.role && config.role !== 'all' && config.role !== 'automation' ? workerRouting[config.role] : undefined, ...(config.role === 'scan' ? { maxAttempts: config.scanMaxAttempts ?? 12, baseDelayMs: config.scanRetryBaseMs ?? 5_000, maxDelayMs: config.scanRetryMaxMs ?? 900_000 } : {}) },
+          { leaseMs: config.leaseMs, claim: config.role && config.role !== 'all' && config.role !== 'automation' ? workerRouting[config.role] : undefined, ...(config.role === 'scan' ? { maxAttempts: config.scanMaxAttempts ?? 12, baseDelayMs: config.scanRetryBaseMs ?? 5_000, maxDelayMs: config.scanRetryMaxMs ?? 900_000 } : {}), onDispatch: emitWorkerDispatchLog },
         )
         dispatchers.set(workspaceId, dispatcher)
       }
@@ -1602,19 +1674,27 @@ export async function pollOnce(
   return result
 }
 
-export async function scannerOperationalMetrics(pool: SqlPool, workspaceIds: readonly string[], scanMaxAttempts: number): Promise<{ backlog: number; deadLetter: number; lastCallbackAcceptedAt?: string }> {
+export async function scannerOperationalMetrics(pool: SqlPool, workspaceIds: readonly string[], scanMaxAttempts: number): Promise<{ backlog: number; deadLetter: number; lastCallbackAcceptedAt?: string; oldestPendingAt?: string }> {
   let backlog = 0
   let deadLetter = 0
   let lastCallbackAcceptedAt: string | undefined
+  let oldestPendingAt: string | undefined
   for (let offset = 0; offset < workspaceIds.length; offset += 10) {
     const rows = await Promise.all(workspaceIds.slice(offset, offset + 10).map(workspaceId => withWorkspaceTransaction(pool, workspaceId, async client => {
-      const result = await client.query<{ backlog: number | string; dead_letter: number | string; last_callback_accepted_at: Date | string | null }>(
+      const result = await client.query<{ backlog: number | string; dead_letter: number | string; last_callback_accepted_at: Date | string | null; oldest_pending_at: Date | string | null }>(
         `SELECT
            count(*) FILTER (WHERE event.published_at IS NULL
              AND event.unknown_at IS NULL
              AND (event.last_error IS NULL OR (event.last_error->'retryable' = 'true'::jsonb
                AND COALESCE(event.last_error->'unknown', 'false'::jsonb) = 'false'::jsonb))
              AND COALESCE(event.last_error->>'terminal', 'false') <> 'true')::integer AS backlog,
+           -- Same predicate as the backlog count, so the reported age always
+           -- belongs to a row that is actually counted as backlog.
+           min(event.created_at) FILTER (WHERE event.published_at IS NULL
+             AND event.unknown_at IS NULL
+             AND (event.last_error IS NULL OR (event.last_error->'retryable' = 'true'::jsonb
+               AND COALESCE(event.last_error->'unknown', 'false'::jsonb) = 'false'::jsonb))
+             AND COALESCE(event.last_error->>'terminal', 'false') <> 'true') AS oldest_pending_at,
            count(*) FILTER (WHERE event.last_error IS NOT NULL
              AND (event.last_error->>'terminal'='true' OR (event.published_at IS NOT NULL
                AND (event.last_error->>'retryable'='false' OR event.attempts >= $3)))
@@ -1638,9 +1718,64 @@ export async function scannerOperationalMetrics(pool: SqlPool, workspaceIds: rea
       deadLetter += Number(row?.dead_letter ?? 0)
       const acceptedAt = row?.last_callback_accepted_at instanceof Date ? row.last_callback_accepted_at.toISOString() : row?.last_callback_accepted_at ? String(row.last_callback_accepted_at) : undefined
       if (acceptedAt && (!lastCallbackAcceptedAt || acceptedAt > lastCallbackAcceptedAt)) lastCallbackAcceptedAt = acceptedAt
+      // The oldest pending row is the minimum across every workspace, matching
+      // the tenant-wide meaning of the summed backlog it is reported beside.
+      const pendingAt = row?.oldest_pending_at instanceof Date ? row.oldest_pending_at.toISOString() : row?.oldest_pending_at ? String(row.oldest_pending_at) : undefined
+      if (pendingAt && (!oldestPendingAt || pendingAt < oldestPendingAt)) oldestPendingAt = pendingAt
     }
   }
-  return { backlog, deadLetter, ...(lastCallbackAcceptedAt ? { lastCallbackAcceptedAt } : {}) }
+  return { backlog, deadLetter, ...(lastCallbackAcceptedAt ? { lastCallbackAcceptedAt } : {}), ...(oldestPendingAt ? { oldestPendingAt } : {}) }
+}
+
+/**
+ * Projects the durable scan-queue counters onto the exported series. The age is
+ * reported as 0 when nothing is pending so the series always exists once the
+ * scan role has probed: an absent series is indistinguishable from a rule that
+ * was never configured.
+ */
+export function scannerQueueObservation(metrics: { backlog: number; deadLetter: number; oldestPendingAt?: string }): { backlog: number; deadLetter: number; oldestPendingAgeSeconds?: number } {
+  const oldestPendingMs = metrics.oldestPendingAt ? Date.parse(metrics.oldestPendingAt) : Number.NaN
+  return {
+    backlog: metrics.backlog,
+    deadLetter: metrics.deadLetter,
+    ...(Number.isFinite(oldestPendingMs) && metrics.backlog > 0 ? { oldestPendingAgeSeconds: Math.max(0, (Date.now() - oldestPendingMs) / 1000) } : {}),
+  }
+}
+
+/**
+ * Refresh the scan-role queue gauges from the durable aggregate.
+ *
+ * A read failure is never dressed up as a reading. Two failure modes were
+ * possible here and both are wrong: swallowing the error and keeping the
+ * previous observation serves a stale backlog as a current one (a backlog that
+ * started failing to refresh reads as a healthy, unchanged queue), and
+ * publishing a fresh `0` would claim an empty queue that was never observed.
+ * The contract used here is the one the API already applies to
+ * `merchant_job_queue_metrics_reads_total`: withhold the affected gauge family,
+ * count the read outcome, and report the error. That leaves `no data` (which
+ * the backlog rule's dependency note already covers) plus an explicit
+ * `outcome="failed"` signal, instead of a number nobody can trust.
+ *
+ * Returns whether the read succeeded; the caller decides how loud to be about
+ * the failure. The error is reported through `onFailure` rather than thrown so
+ * a metrics refresh can never abort the worker loop that owns real work.
+ */
+export async function refreshScanQueueMetrics(input: {
+  pool: SqlPool
+  workspaces: readonly string[] | Promise<readonly string[]>
+  scanMaxAttempts: number
+  metrics: Pick<WorkerMetricsRegistry, 'recordScannerQueue' | 'recordScannerQueueReadFailure'>
+  onFailure: (error: { message: string; code?: string }) => void
+}): Promise<boolean> {
+  try {
+    const metrics = await scannerOperationalMetrics(input.pool, await input.workspaces, input.scanMaxAttempts)
+    input.metrics.recordScannerQueue(scannerQueueObservation(metrics))
+    return true
+  } catch (error) {
+    input.metrics.recordScannerQueueReadFailure()
+    input.onFailure(serializeError(error))
+    return false
+  }
 }
 
 export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void> {
@@ -1738,6 +1873,9 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     return providerRequestId
   }
   const scanRoleEnabled = config.role === 'scan' || config.role === 'all'
+  // Hoisted to runWorker scope: the scan heartbeat block and the metrics
+  // refresh in the poll loop both need the same workspace scope resolution.
+  const currentWorkspaces = async () => config.autoDiscoverWorkspaces ? await repository.listActiveWorkspaceIds() : config.workspaces
   const clamavHost = process.env.CLAMAV_HOST?.trim() || '127.0.0.1'
   const clamavPort = positiveInt(process.env.CLAMAV_PORT, 3310, 'CLAMAV_PORT')
   const clamavTimeoutMs = positiveInt(process.env.ASSET_SCANNER_TIMEOUT_MS, 90_000, 'ASSET_SCANNER_TIMEOUT_MS')
@@ -1773,7 +1911,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
           },
           invoke: () => providerDispatchAdmission.run({ event, operation: 'publish.execute', signal, providerRequests: 0 }, () => runtime.executePublish({
             platform: platform as 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin',
-            context: { workspaceId: event.workspaceId, accountId, ...(currentExecution ? { credentialRef: currentExecution.credentialRef } : {}), traceId: event.id, signal },
+            context: { workspaceId: event.workspaceId, accountId, ...(currentExecution ? { credentialRef: currentExecution.credentialRef } : {}), ...workerTraceContext(event), signal },
             fields,
             ...(media?.length ? { media } : {}),
             ...(remoteId ? { remoteId } : {}),
@@ -1798,7 +1936,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     if (typeof payload.payload_hash !== 'string' || !/^[a-f0-9]{64}$/u.test(payload.payload_hash)) throw new Error('reconcile event is missing a valid payload hash')
     requirePublishExecutionConfig(config)
     await quotaAdmission.admit(quotaAdmissionForEvent(event, 'platform', `${String(platform)}:${accountId}:reconcile`, config.platformQuotaPerMinute))
-    const execution = config.apiBaseUrl && config.apiToken ? await assertPublishExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), production: config.environment === 'production', signal }) : undefined
+    const execution = config.apiBaseUrl && config.apiToken ? await assertPublishExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), role: 'reconcile', production: config.environment === 'production', signal }) : undefined
     if (execution && payload.payload_hash !== execution.payloadHash) throw new Error('publish event payload hash does not match the frozen publish job')
     // A publish-job id is an internal tenant-scoped identifier, not a platform
     // remote id. When the initial publish only returned a request id, let the
@@ -1814,7 +1952,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
         signal?.throwIfAborted()
         return runtime.executeReconcile({
         platform: platform as 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin',
-        context: { workspaceId: event.workspaceId, accountId, ...(execution ? { credentialRef: execution.credentialRef } : {}), traceId: event.id, signal },
+        context: { workspaceId: event.workspaceId, accountId, ...(execution ? { credentialRef: execution.credentialRef } : {}), ...workerTraceContext(event), signal },
         ...(remoteId ? { remoteId } : {}),
         idempotencyKey: publishIdempotencyKey(event),
       }) })
@@ -1980,7 +2118,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     const envelope = await parseWorkerApiJson(remoteJob) as { data?: { resumeCursor?: string; state?: string } }
     const cursor = typeof envelope.data?.resumeCursor === 'string' ? envelope.data.resumeCursor : typeof event.payload.cursor === 'string' ? event.payload.cursor : undefined
     try {
-      const result = await executeAfterAuthorizationCheck({ guard: executionAuthorization, event, operation: 'catalog.sync.execute', signal, providerCall: () => providerDispatchAdmission.run({ event, operation: 'catalog.sync.execute', signal, providerRequests: 0 }, () => runtime.sync(platform as 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin', { workspaceId: event.workspaceId, accountId, credentialRef: execution.credentialRef, traceId: event.id, signal }, cursor, async page => {
+      const result = await executeAfterAuthorizationCheck({ guard: executionAuthorization, event, operation: 'catalog.sync.execute', signal, providerCall: () => providerDispatchAdmission.run({ event, operation: 'catalog.sync.execute', signal, providerRequests: 0 }, () => runtime.sync(platform as 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin', { workspaceId: event.workspaceId, accountId, credentialRef: execution.credentialRef, ...workerTraceContext(event), signal }, cursor, async page => {
         await postSyncProgress({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, event, page: { pageNumber: page.pageNumber, ...(page.cursor ? { cursor: page.cursor } : {}), ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}), items: page.items as unknown[] }, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
       })) })
       signal?.throwIfAborted()
@@ -2029,6 +2167,20 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
   let nextSupportSlaReportAt = 0
   const readyFile = process.env.WORKER_READY_FILE ?? '/tmp/merchant-worker-ready'
   let scannerHeartbeat: ScannerHeartbeatController | undefined
+  // The registry is created before the loop so a scrape can observe a worker
+  // that has not completed its first cycle yet: `heartbeat_timestamp_seconds`
+  // stays at 0 rather than being absent, which keeps the staleness rule
+  // evaluating instead of silently matching nothing.
+  const workerMetrics = new WorkerMetricsRegistry({ role: config.role })
+  const workerMetricsServer = config.metricsPort > 0
+    ? createWorkerMetricsServer({
+      registry: workerMetrics,
+      port: config.metricsPort,
+      host: config.metricsHost,
+      production: config.environment === 'production',
+      onError: error => log({ level: 'error', message: 'worker metrics endpoint unavailable; continuing without it', error: serializeError(error) }),
+    })
+    : undefined
   const stop = () => { stopping = true }
   process.once('SIGTERM', stop)
   process.once('SIGINT', stop)
@@ -2036,6 +2188,18 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     // Container restarts reuse /tmp. Remove a stale marker before touching any
     // dependency so a failed restart can never inherit readiness.
     await unlink(readyFile).catch(() => undefined)
+    if (workerMetricsServer) {
+      const bound = await workerMetricsServer.start()
+      log({
+        level: bound ? 'info' : 'error',
+        message: bound ? 'worker metrics endpoint listening' : 'worker metrics endpoint disabled; collection is unavailable for this role',
+        role: config.role,
+        host: config.metricsHost,
+        port: config.metricsPort,
+        // Never log the token itself, only whether the production gate is armed.
+        auth: config.environment === 'production' ? (process.env.METRICS_AUTH_TOKEN?.trim() ? 'bearer' : 'fail-closed') : 'open',
+      })
+    }
     const expectedMigrations = await loadMigrations()
     if (scanRoleEnabled) {
       const instanceId = process.env.HOSTNAME?.trim() || `worker-${process.pid}`
@@ -2045,12 +2209,15 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
       const definitionsMaxAgeSeconds = positiveInt(process.env.SCANNER_DEFINITIONS_MAX_AGE_SECONDS, 86_400, 'SCANNER_DEFINITIONS_MAX_AGE_SECONDS')
       const eicarMaxAgeSeconds = positiveInt(process.env.SCANNER_EICAR_MAX_AGE_SECONDS, 900, 'SCANNER_EICAR_MAX_AGE_SECONDS')
       if (heartbeatTtlSeconds * 1000 <= heartbeatIntervalMs * 2) throw new Error('SCANNER_HEARTBEAT_TTL_SECONDS must exceed two heartbeat intervals')
-      const currentWorkspaces = async () => config.autoDiscoverWorkspaces ? await repository.listActiveWorkspaceIds() : config.workspaces
       // Redis heartbeat state is instance-scoped and intentionally ephemeral.
       // Rehydrate the callback proof from the durable tenant records before the
       // first readiness probe so a normal worker restart does not manufacture a
       // false negative, while still keeping the durable callback age gate.
       const durableScannerMetrics = await scannerOperationalMetrics(pool as unknown as SqlPool, await currentWorkspaces(), config.scanMaxAttempts)
+      // Publish the queue observation once here as well. `queueProbe` only runs
+      // after the API readiness probe succeeds, so without this the scan backlog
+      // series would stay absent exactly when the API is the thing that is down.
+      workerMetrics.recordScannerQueue(scannerQueueObservation(durableScannerMetrics))
       if (durableScannerMetrics.lastCallbackAcceptedAt) {
         await redisConnection!.scannerHeartbeat.recordCallbackAccepted(instanceId, durableScannerMetrics.lastCallbackAcceptedAt, callbackMaxAgeSeconds)
       }
@@ -2074,9 +2241,12 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
         },
         queueProbe: async () => {
           const metrics = await scannerOperationalMetrics(pool as unknown as SqlPool, await currentWorkspaces(), config.scanMaxAttempts)
+          // Recording happens on the worker loop's own cadence, not here: this
+          // probe is skipped whenever the API is unready. See the loop comment.
           return { backlog: metrics.backlog, deadLetter: metrics.deadLetter }
         },
         onHeartbeat: heartbeat => {
+          workerMetrics.recordScannerHeartbeat(heartbeat)
           // Compose health describes process/dependency recovery capability.
           // Dead letters remain an operational warning, but must not prevent
           // this worker from draining new scans or performing authorized
@@ -2109,8 +2279,28 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     let dependenciesReady = false
     let nextDependencyCheckAt = 0
     let nextKnowledgeIndexAt = 0
+    let nextScannerQueueMetricsAt = 0
     do {
       const startedAt = Date.now()
+      // Refresh the scan queue gauge on this loop's cadence rather than from
+      // `queueProbe`, which only runs once the API readiness probe succeeds.
+      // Without an independent refresh the series would freeze at its last value
+      // whenever the API is unreachable -- a stalled backlog would keep reading
+      // 0 and the backlog rule could never fire on the failure it exists for.
+      if (scanRoleEnabled && startedAt >= nextScannerQueueMetricsAt) {
+        nextScannerQueueMetricsAt = startedAt + SCANNER_QUEUE_METRICS_INTERVAL_MS
+        await refreshScanQueueMetrics({
+          pool: pool as unknown as SqlPool,
+          workspaces: currentWorkspaces(),
+          scanMaxAttempts: config.scanMaxAttempts,
+          metrics: workerMetrics,
+          // A failing metric read is an operational event, not a caught
+          // exception: the scan queue series is now withheld, and this line is
+          // what tells an operator the difference between that and an idle
+          // scanner worker.
+          onFailure: error => log({ level: 'error', message: 'scan queue metrics read failed; scan queue series withheld until a read succeeds', role: config.role, error }),
+        })
+      }
       try {
         if (!dependenciesReady || startedAt >= nextDependencyCheckAt) {
           dependenciesReady = false
@@ -2203,16 +2393,22 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
           Object.assign(result as unknown as Record<string, unknown>, { supportSlaReport: { scheduled: Boolean(schedule), completed: reports.filter(item => item.status === 'fulfilled').length, failed: reports.filter(item => item.status === 'rejected').length } })
         }
         if (!scannerHeartbeat) await writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, workspaces: workspaces.length, quotaAdmission: quotaConnection.mode, ...result }))
+        // Only aggregate counters reach the endpoint: `workspaces` and the
+        // per-tenant reconciliation summaries stay in the log line.
+        workerMetrics.recordPollSuccess({ startedAtMs: startedAt, finishedAtMs: Date.now(), result })
         log({ level: 'info', message: 'worker poll completed', ...result, durationMs: Date.now() - startedAt })
       } catch (error) {
         dependenciesReady = false
         await unlink(readyFile).catch(() => undefined)
+        const failure = serializeError(error)
+        workerMetrics.recordPollFailure({ finishedAtMs: Date.now(), ...(failure.code ? { code: failure.code } : {}) })
         log({ level: 'error', message: 'worker poll failed; retrying', error: serializeError(error) })
         rethrowPollFailureInOnceMode(config.once, error)
       }
       if (!config.once && !stopping) await sleep(!dependenciesReady ? config.dependencyCheckIntervalMs : config.role === 'automation' ? config.automationIntervalMs : config.pollIntervalMs)
     } while (!config.once && !stopping)
   } finally {
+    await workerMetricsServer?.stop()
     await scannerHeartbeat?.stop()
     await redisConnection?.close()
     await quotaConnection.close()
@@ -2231,6 +2427,19 @@ function positiveInt(raw: string | undefined, fallback: number, name: string): n
 function boundedPositiveInt(raw: string | undefined, fallback: number, maximum: number, name: string): number {
   const value = positiveInt(raw, fallback, name)
   if (value > maximum) throw new Error(`${name} must be at most ${maximum}`)
+  return value
+}
+
+/**
+ * Metrics port parsing accepts 0 as the documented opt-out. Every worker runs in
+ * its own Pod netns, so the fixed default cannot collide across a deployment;
+ * the opt-out exists for single-host scenarios that share one network namespace
+ * and for operators who refuse an extra listener.
+ */
+function workerMetricsPort(raw: string | undefined): number {
+  if (raw === undefined || raw === '') return WORKER_METRICS_DEFAULT_PORT
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value < 0 || value > 65_535) throw new Error('WORKER_METRICS_PORT must be an integer between 0 and 65535')
   return value
 }
 

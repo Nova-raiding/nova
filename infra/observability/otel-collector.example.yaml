@@ -1,3 +1,19 @@
+# =============================================================================
+# 未部署的管道模板 —— 当前没有任何 collector 在运行（NOT DEPLOYED）
+# =============================================================================
+# 事实（2026-09-19 全仓核实）：
+#   1. 仓库内没有 Deployment / DaemonSet / StatefulSet / Compose service 引用本文件，
+#      也没有固定任何 collector 镜像；`infra/` 下没有第二个引用点。
+#   2. `OTEL_EXPORTER_OTLP_ENDPOINT` 全仓只以「注入点」形式出现：Compose 里默认为空
+#      （`infra/local/docker-compose.yml` 的 `${OTEL_EXPORTER_OTLP_ENDPOINT:-}`），
+#      配置模板里是 `${SECRET:...}` 占位。没有任何一处指向真实存在的 collector。
+#   3. 因此下面的 metrics 管道不会导出任何东西；它是「接入托管后应当长什么样」的
+#      契约，不是已生效的遥测。把它当作上线证据是不成立的。
+#
+# 应用侧（`trace_id`/`request_id` 关联、结构化日志脱敏）已在代码中实现并有测试覆盖；
+# 未完成的是**传输与存储**这一段。详见 `doc/todo/release/production-ops-runbook.md`
+# 的「3.3 指标采集、遥测与告警通道现状」。
+# =============================================================================
 receivers:
   otlp:
     protocols:
