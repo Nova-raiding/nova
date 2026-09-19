@@ -39,7 +39,6 @@ describe("ops console component architecture", () => {
       "UsersPage.tsx",
       "TasksPage.tsx",
       "StoresPage.tsx",
-      "FinancePage.tsx",
     ]) {
       const page = readFileSync(new URL(`pages/${pageName}`, srcRoot), "utf8");
       expect(page, pageName).not.toContain("children: ReactNode");
@@ -60,7 +59,6 @@ describe("ops console component architecture", () => {
       "StoresPage",
       "RulesPage",
       "ModelsPage",
-      "FinancePage",
       "AuditPage",
     ]) {
       expect(registry).toContain(`import(\"../pages/${pageName}.js\")`);
@@ -71,7 +69,7 @@ describe("ops console component architecture", () => {
     expect(registry).not.toContain("IncidentsRoute");
     expect(registry).not.toContain("FeatureFlagsRoute");
     expect(registry).toContain('storage: lazy(');
-    expect(registry.match(/lazy\(/gu)).toHaveLength(12);
+    expect(registry.match(/lazy\(/gu)).toHaveLength(11);
   });
 
   it("separates transport and domain types from React page files", () => {

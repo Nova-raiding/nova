@@ -166,6 +166,7 @@ import {
 } from './api'
 import { resolveMerchantEnvironmentStatus } from './environment-status'
 import { MerchantLoginPage } from './MerchantLoginPage'
+import { LocalPluginConnection } from './LocalPluginConnection'
 import { brandUnitSelectionMessage } from './brand-unit-selection'
 import { imageGenerationExecutionLabel, imageGenerationNeedsReconciliation, imageGenerationProviderCallStarted, imageGenerationRetryAllowed, isImageGenerationConfigurationError } from './image-generation-state'
 import { resolveStoreSyncTargets } from './store-sync'
@@ -1012,6 +1013,7 @@ function Topbar({
                 </dl>
               </div>
               <div className="account-dropdown-actions">
+                {apiBaseUrl && account && <LocalPluginConnection apiBaseUrl={apiBaseUrl} account={account} />}
                 {apiBaseUrl && account ? (
                   <button
                     className="account-secondary-button"
@@ -12378,7 +12380,7 @@ export default function App() {
         </div>
       </Modal>
       {utilityPanel === 'support' ? (
-        <ContactManagerModal onClose={closeUtility} />
+        <CustomerSupportPanel apiBaseUrl={apiBaseUrl} relatedTaskId={taskContext?.task.id} onClose={closeUtility} />
       ) : utilityPanel && (
         <UtilityPanel
           panel={utilityPanel}

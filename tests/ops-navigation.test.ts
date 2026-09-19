@@ -6,7 +6,7 @@ describe('ops console page routing', () => {
     expect(domainFromLocation({ pathname: '/ops/overview', hash: '' })).toBe('overview')
     expect(domainFromLocation({ pathname: '/ops/tasks', hash: '' })).toBe('tasks')
     expect(domainFromLocation({ pathname: '/ops/stores', hash: '' })).toBe('stores')
-    expect(domainFromLocation({ pathname: '/ops/finance', hash: '' })).toBe('finance')
+    expect(domainFromLocation({ pathname: '/ops/finance', hash: '' })).toBe('overview')
   })
 
   it('keeps legacy routes and hash bookmarks compatible', () => {

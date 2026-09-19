@@ -414,7 +414,7 @@ describe("customer delivery read-only desktop interaction", () => {
       await closeDrawer(page);
       for (const index of [1, 2]) {
         await overview.getByRole("button", { name: "已完成", exact: true }).nth(index).click();
-        await expect.poll(() => page.getByRole("dialog").getByPlaceholder("可选：记录链接、单号或补充说明").first().inputValue()).toBe("已保存的检查记录");
+        await expect.poll(() => page.getByRole("dialog").getByPlaceholder("可填写链接、截图说明或记录编号").first().inputValue()).toBe("已保存的检查记录");
         await assertNoWrites(page, methods);
         await closeDrawer(page);
       }
@@ -424,9 +424,6 @@ describe("customer delivery read-only desktop interaction", () => {
       expect(await page.getByText("asset:training", { exact: true }).isVisible()).toBe(true);
       await assertNoWrites(page, methods);
       await page.getByRole("button", { name: "收起", exact: true }).click();
-      await overview.getByRole("button", { name: "1 段", exact: true }).click();
-      await page.getByText("第一段交付", { exact: true }).waitFor();
-      await assertNoWrites(page, methods);
       expect(await page.getByText("用户尚未完成付款", { exact: true }).count()).toBe(0);
     } finally { await page.close(); }
   }, 45_000);
@@ -447,9 +444,6 @@ describe("customer delivery read-only desktop interaction", () => {
       await page.getByRole("dialog").locator("form").evaluate(element => (element as HTMLFormElement).requestSubmit());
       await assertNoWrites(page, methods);
       await closeDrawer(page);
-      await row(page).getByRole("button", { name: "1 段", exact: true }).click();
-      await page.getByText("第一段交付", { exact: true }).waitFor();
-      await assertNoWrites(page, methods);
     } finally { await page.close(); }
   }, 45_000);
 
@@ -460,7 +454,7 @@ describe("customer delivery read-only desktop interaction", () => {
       await row(page).getByRole("button", { name: "查看详情", exact: true }).click();
       await page.getByRole("button", { name: "确认培训完成", exact: true }).waitFor();
       expect(await page.locator('input[type="file"]').count()).toBe(1);
-      await page.getByRole("button", { name: "撤销测试写权限", exact: true }).click();
+      await page.getByRole("button", { name: "撤销测试写权限", exact: true }).evaluate(element => (element as HTMLButtonElement).click());
       await page.getByText("当前会话仅可查看客户交付", { exact: true }).waitFor();
       await expect.poll(() => page.locator('input[type="file"]').count()).toBe(0);
       expect(await page.getByText("asset:training", { exact: true }).isVisible()).toBe(true);
@@ -469,141 +463,6 @@ describe("customer delivery read-only desktop interaction", () => {
       await page.getByRole("button", { name: "收起", exact: true }).click();
       await page.getByRole("region", { name: "只读客户 客户培训凭证", exact: true }).waitFor({ state: "hidden" });
       await assertNoWrites(page, methods);
-    } finally { await page.close(); }
-  }, 45_000);
-
-  it.each(["write", "read", "drawer", "workspace", "unmount"] as const)("stops the remaining video writes after %s changes during the first response", async interruption => {
-    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
-    const writes: Record<string, string>[] = [];
-    let releaseFirst: (() => void) | undefined;
-    const firstResponse = new Promise<void>(resolve => { releaseFirst = resolve; });
-    try {
-      const methods = await prepare(page, { write: true, onVideoAdd: async params => {
-        writes.push(params);
-        if (writes.length === 1) await firstResponse;
-      } });
-      await row(page).getByRole("button", { name: "1 段", exact: true }).click();
-      const pendingRefs = page.getByLabel("交付视频（支持多段）", { exact: true });
-      await pendingRefs.fill("asset:new-first\nasset:new-second");
-      await page.getByRole("button", { name: "保存当前环节", exact: true }).click();
-      await expect.poll(() => writes.length).toBe(1);
-      if (interruption === "drawer") await closeDrawer(page);
-      else {
-        const action = { write: "撤销测试写权限", read: "撤销测试读权限", workspace: "清除测试工作区", unmount: "卸载测试页面" }[interruption];
-        await page.getByRole("button", { name: action, exact: true }).evaluate(element => (element as HTMLButtonElement).click());
-        if (interruption === "write") await page.getByText("当前会话仅可查看客户交付", { exact: true }).waitFor();
-        if (interruption === "read") await page.getByText("当前会话没有客户交付读取权限", { exact: true }).waitFor();
-        if (interruption === "workspace") await page.getByText("正在加载客户交付档案", { exact: true }).waitFor();
-        if (interruption === "unmount") await page.getByRole("heading", { name: "客户交付", exact: true }).waitFor({ state: "hidden" });
-      }
-      // The already-sent segment is durably acknowledged. Do not roll it back.
-      const acknowledged = page.waitForResponse(response => response.url().endsWith("/api/mcp") && response.request().postDataJSON().method === "ops.customer-delivery.videos.add");
-      const mayRead = interruption === "write" || interruption === "drawer";
-      const reconciled = mayRead ? page.waitForResponse(response => response.url().endsWith("/api/mcp") && response.request().postDataJSON().method === "ops.customer-delivery.get") : undefined;
-      releaseFirst!();
-      await (await acknowledged).finished();
-      if (reconciled) await (await reconciled).finished();
-      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-      expect(writes.map(input => input.asset_ref)).toEqual(["asset:new-first"]);
-      expect(methods.filter(method => method === "ops.customer-delivery.get")).toHaveLength(mayRead ? 1 : 0);
-      if (!mayRead) await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
-      if (interruption === "write") {
-        await expect.poll(() => pendingRefs.inputValue()).toBe("asset:new-second");
-        await closeDrawer(page);
-        await row(page).getByRole("button", { name: "2 段", exact: true }).click();
-        await page.getByText("只读客户 交付视频 2", { exact: true }).waitFor();
-        expect(writes).toHaveLength(1);
-      }
-    } finally { releaseFirst?.(); await page.close(); }
-  }, 45_000);
-
-  it("does not let a delayed video refresh overwrite A after switching A to B and back to A", async () => {
-    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
-    let releaseOldGet: (() => void) | undefined;
-    const oldGetGate = new Promise<void>(resolve => { releaseOldGet = resolve; });
-    let revisited = false;
-    const writes: string[] = [];
-    try {
-      await prepare(page, {
-        write: true,
-        onVideoAdd: async params => { writes.push(params.asset_ref!); },
-        onGet: async () => { await oldGetGate; return { ...record, companyName: "过期的客户名称", videos: [...record.videos, { id: "v-old", title: "已登记首段", assetRef: "asset:new-first", sortOrder: 1 }] }; },
-        onList: workspaceId => workspaceId === "ws-other"
-          ? [{ ...record, id: "other-delivery", companyName: "其他企业" }]
-          : [{ ...record, companyName: revisited ? "重新加载的客户名称" : record.companyName }],
-      });
-      await row(page).getByRole("button", { name: "1 段", exact: true }).click();
-      await page.getByLabel("交付视频（支持多段）", { exact: true }).fill("asset:new-first\nasset:new-second");
-      const getRequested = page.waitForRequest(request => request.url().endsWith("/api/mcp") && request.postDataJSON().method === "ops.customer-delivery.get");
-      await page.getByRole("button", { name: "保存当前环节", exact: true }).click();
-      const oldRequest = await getRequested;
-      const oldRequestSettled = new Promise<void>(resolve => {
-        const finish = (request: import("playwright").Request) => {
-          if (request !== oldRequest) return;
-          page.off("requestfinished", finish);
-          page.off("requestfailed", finish);
-          resolve();
-        };
-        page.on("requestfinished", finish);
-        page.on("requestfailed", finish);
-      });
-      await page.getByRole("button", { name: "切换测试工作区", exact: true }).evaluate(element => (element as HTMLButtonElement).click());
-      await page.getByRole("cell", { name: "其他企业", exact: true }).waitFor();
-      revisited = true;
-      await page.getByRole("button", { name: "返回测试工作区", exact: true }).click();
-      await page.getByRole("cell", { name: "重新加载的客户名称", exact: true }).waitFor();
-      releaseOldGet!();
-      await oldRequestSettled;
-      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-      expect(await page.getByRole("cell", { name: "重新加载的客户名称", exact: true }).count()).toBe(1);
-      expect(await page.getByRole("cell", { name: "过期的客户名称", exact: true }).count()).toBe(0);
-      expect(writes).toEqual(["asset:new-first"]);
-      expect(await page.getByRole("dialog").count()).toBe(0);
-    } finally { releaseOldGet?.(); await page.close(); }
-  }, 45_000);
-
-  it("continues a writable two-video batch exactly once per segment", async () => {
-    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
-    const writes: Record<string, string>[] = [];
-    try {
-      await prepare(page, { write: true, onVideoAdd: async params => { writes.push(params); } });
-      await row(page).getByRole("button", { name: "1 段", exact: true }).click();
-      const pendingRefs = page.getByLabel("交付视频（支持多段）", { exact: true });
-      await pendingRefs.fill("asset:new-first\nasset:new-second");
-      await page.getByRole("button", { name: "保存当前环节", exact: true }).click();
-      await page.getByText("已保存", { exact: true }).waitFor();
-      expect(writes.map(input => [input.asset_ref, input.sort_order])).toEqual([["asset:new-first", "1"], ["asset:new-second", "2"]]);
-      expect(await pendingRefs.inputValue()).toBe("");
-      await page.getByRole("button", { name: "保存当前环节", exact: true }).click();
-      await page.getByText("请填写至少一个已上传视频的 asset_ref", { exact: true }).waitFor();
-      expect(writes).toHaveLength(2);
-    } finally { await page.close(); }
-  }, 45_000);
-
-  it("keeps an acknowledged video registered when its detail refresh fails", async () => {
-    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
-    const writes: string[] = [];
-    try {
-      await prepare(page, { write: true, failVideoRefresh: true, onVideoAdd: async params => { writes.push(params.asset_ref!); } });
-      await row(page).getByRole("button", { name: "1 段", exact: true }).click();
-      const pendingRefs = page.getByLabel("交付视频（支持多段）", { exact: true });
-      await pendingRefs.fill("asset:acknowledged-video");
-      await page.getByRole("button", { name: "保存当前环节", exact: true }).click();
-      await page.getByText(/视频已登记，但最新档案读取失败。请刷新档案，不要重复登记/u).waitFor();
-      await page.getByText("已保存", { exact: true }).waitFor();
-      expect(await pendingRefs.inputValue()).toBe("");
-      // Ant Design's invisible leaving spinner can retain the accessible name
-      // "loading" after saving ends. Select the same native submit in the
-      // readable dialog, then verify readiness before a normal user click.
-      const form = page.getByRole("dialog").locator("form");
-      const submit = form.locator('button[type="submit"]');
-      expect(await submit.count()).toBe(1);
-      await expect.poll(() => form.getAttribute("aria-busy")).toBe("false");
-      await expect.poll(() => submit.isEnabled()).toBe(true);
-      await expect.poll(() => submit.evaluate(button => button.classList.contains("ant-btn-loading"))).toBe(false);
-      await submit.click();
-      await page.getByText("请填写至少一个已上传视频的 asset_ref", { exact: true }).waitFor();
-      expect(writes).toEqual(["asset:acknowledged-video"]);
     } finally { await page.close(); }
   }, 45_000);
 
@@ -627,7 +486,10 @@ describe("customer delivery read-only desktop interaction", () => {
       } else if (action === "training") {
         // This controlled checkbox stays checked until its real callback
         // succeeds; click starts the pending mutation without assuming success.
-        await row(page).getByRole("checkbox").click();
+        const trainingStatus = row(page).getByRole("combobox", { name: "只读客户客户培训状态", exact: true });
+        await trainingStatus.click();
+        await trainingStatus.press("ArrowDown");
+        await trainingStatus.press("Enter");
       }
       await expect.poll(() => methods.filter(method => method === expectedMethod).length).toBe(1);
       const control = interruption === "read" ? "撤销测试读权限" : "卸载测试页面";

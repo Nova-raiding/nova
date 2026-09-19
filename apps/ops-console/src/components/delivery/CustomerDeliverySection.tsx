@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -310,6 +310,15 @@ export function CustomerDeliverySection({
   const [filterForm] = Form.useForm<CustomerDeliveryFilters>();
   const [createForm] = Form.useForm();
   const [form] = Form.useForm();
+  useEffect(() => {
+    if (!disabled) return;
+    detailRequest.current++;
+    setSelected(undefined);
+    setDetailsRecord(undefined);
+    setLoadingStep(false);
+    setUploading(false);
+    setBindingAccount(false);
+  }, [disabled]);
   const filteredRecords = useMemo(
     () => filterCustomerDeliveryRecords(records ?? [], filters),
     [filters, records],

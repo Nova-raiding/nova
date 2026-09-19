@@ -5,20 +5,16 @@ const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 const api = readFileSync(new URL('./api.ts', import.meta.url), 'utf8')
 
 describe('merchant knowledge consumption contract', () => {
-  it('shows binding lifecycle states and routes unresolved knowledge to an action', () => {
-    expect(app).toContain("approvalStatus: 'pending'")
-    expect(app).toContain("rightsStatus: 'unknown'")
-    expect(app).toContain("indexState: 'queued'")
-    expect(app).toContain('data-testid="task-knowledge-binding"')
-    expect(app).toContain('去知识库处理')
+  it('shows the frozen workspace knowledge consumption state', () => {
+    expect(app).toContain('data-testid="task-knowledge-consumption"')
+    expect(app).toContain('已冻结')
+    expect(app).toContain('生成内容后，这里会显示本次实际使用的 Ops 知识和规则版本。')
   })
 
   it('fails closed before generation while knowledge is not ready', () => {
-    expect(app).toContain('知识绑定尚未 ready，不能生成')
-    expect(app).toContain('!knowledgeSummary.ready')
-    expect(app).toContain('未 ready 前不会调用生成接口')
-    expect(app).toContain('Boolean(blockedBatchKnowledge)')
-    expect(app).toContain('knowledgeSummaryForProduct(product.sourceAssetIds).ready')
+    expect(app).toContain('taskContextBlocked')
+    expect(app).toContain('taskStateBlocked')
+    expect(app).toContain('服务端当前任务尚未返回规则版本；未展示任何演示规则。')
   })
 
   it('shows the frozen Ops knowledge returned by the generated content version', () => {

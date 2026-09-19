@@ -18,12 +18,11 @@ describe('Merchant Studio paid wallet projection', () => {
   })
 
   it('shows both the creative-point balance and the latest verified recharge', () => {
-    expect(app).toContain('可用创意点')
-    expect(app).toContain('人民币钱包')
-    expect(app).toContain('最近充值')
-    expect(app).toContain('到账状态')
-    expect(app).toContain('订单号：')
-    expect(app).toContain('latestRecharge?.order_id || latestRecharge?.orderId')
-    expect(styles).not.toMatch(/\.overview-page \.page-stack > \.wallet-panel[^}]*display:\s*none/u)
+    expect(app).toContain('当前剩余创意点')
+    expect(app).toContain('财务与资源')
+    expect(app).toContain('充值创意点')
+    expect(app).toContain('支付完成后由服务端回调或查单入账，未支付不会增加创意点。')
+    expect(app).toContain('充值订单：')
+    expect(styles).toContain('.finance-balance-card')
   })
 })
