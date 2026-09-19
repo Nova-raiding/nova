@@ -87,28 +87,6 @@ export interface CloudObjectTransport {
   abortMultipartUpload?(input: { key: string; uploadId: string }): Promise<void>
 }
 
-export interface MultipartUploadTransport {
-  createMultipartUpload: NonNullable<CloudObjectTransport['createMultipartUpload']>
-  presignUploadPart: NonNullable<CloudObjectTransport['presignUploadPart']>
-  completeMultipartUpload: NonNullable<CloudObjectTransport['completeMultipartUpload']>
-  abortMultipartUpload: NonNullable<CloudObjectTransport['abortMultipartUpload']>
-}
-
-/** Fail closed when the deployment has only the small-object transport. */
-export function requireMultipartUploadTransport(transport: CloudObjectTransport): MultipartUploadTransport {
-  if (!transport.createMultipartUpload || !transport.presignUploadPart || !transport.completeMultipartUpload || !transport.abortMultipartUpload) {
-    throw new ObjectStorageError('OBJECT_MULTIPART_TRANSPORT_REQUIRED', '对象存储未配置 multipart/presigned 上传能力', 503)
-  }
-  return transport as MultipartUploadTransport
-}
-
-export function validatePresignedUploadUrl(value: string): string {
-  let url: URL
-  try { url = new URL(value) } catch { throw new ObjectStorageError('OBJECT_PRESIGNED_URL_INVALID', '对象存储签名上传地址无效', 502) }
-  if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw new ObjectStorageError('OBJECT_PRESIGNED_URL_INVALID', '对象存储签名上传地址必须是 HTTPS 且不得包含凭证', 502)
-  return url.toString()
-}
-
 /** A transport may use this error to distinguish a missing object from an
  * unavailable provider. The adapter must never turn a provider outage into a
  * successful-looking 404. */

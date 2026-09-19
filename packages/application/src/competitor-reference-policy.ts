@@ -392,16 +392,3 @@ export function evaluateCompetitorReferencePolicy(input: CompetitorReferencePoli
   }
 }
 
-export class CompetitorReferencePolicyError extends Error {
-  readonly code = 'COMPETITOR_REFERENCE_POLICY_BLOCKED'
-  constructor(readonly report: CompetitorReferencePolicyResult) {
-    super('竞品参考未通过合规与防抄袭门禁')
-    this.name = 'CompetitorReferencePolicyError'
-  }
-}
-
-export function assertCompetitorReferencePolicy(input: CompetitorReferencePolicyInput) {
-  const report = evaluateCompetitorReferencePolicy(input)
-  if (!report.allowed) throw new CompetitorReferencePolicyError(report)
-  return report
-}

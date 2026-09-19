@@ -327,8 +327,6 @@ function prompt(input: ContentGenerationInput) {
   })
 }
 
-export function estimateContentGenerationTokens(value: unknown) { return Math.ceil(Buffer.byteLength(JSON.stringify(value), 'utf8') / 3) }
-
 const REPAIR_MESSAGE_TOKEN_RESERVE = 800
 const REPAIR_DIAGNOSTIC_MAX_CHARS = 600
 const REPAIR_MAX_OUTPUT_TOKENS = 2_500

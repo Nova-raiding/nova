@@ -233,11 +233,100 @@ function validUrl(raw: string | undefined): raw is string {
   } catch { return false }
 }
 
+/** The `{AUTH,READ,WRITE}_ENABLED` switch namespace the runtime actually reads
+ * for a platform, or `undefined` when the platform has no wired switch at all.
+ * Taobao and Tmall deliberately share the `TAOBAO` switches, so a
+ * `TMALL_*_ENABLED` key is read by nothing. This is the single source of truth
+ * for both the switch reads below and the unwired-switch rejection further
+ * down: a second hand-written platform list is what let the two drift apart. */
+function managedSwitchPrefixFor(platform: Platform): string | undefined {
+  return platform === 'jd' ? 'JD' : platform === 'taobao' || platform === 'tmall' ? 'TAOBAO' : platform === 'douyin' ? 'DOUYIN' : undefined
+}
+
+const operationSwitchNames = ['AUTH', 'READ', 'WRITE'] as const
+
+export interface UnwiredPlatformSwitch {
+  platform: Platform
+  /** Declared and forwarded, but read by no code path: `TMALL_WRITE_ENABLED`. */
+  key: string
+  /** The key the runtime reads instead, when the platform has one. */
+  effectiveKey?: string
+}
+
+/**
+ * Operation switches that are declared in `.env.example`, forwarded by the ECS
+ * pilot compose and documented, but that no code path reads, because they are
+ * named after `platformPrefixes[platform]` while the runtime reads
+ * `managedSwitchPrefixFor(platform)`. Derived from those two tables rather than
+ * a third hand-written list, so wiring (or deleting) a platform's switches can
+ * never desynchronise from what is rejected here.
+ *
+ * Only an explicit `true` is reported: the compose files default every one of
+ * these to `false`, and a `false`/empty/absent value must keep behaving exactly
+ * as it does today.
+ */
+export function unwiredPlatformSwitches(source: ConfigSource): UnwiredPlatformSwitch[] {
+  const switches: UnwiredPlatformSwitch[] = []
+  for (const platform of Object.keys(platformPrefixes) as Platform[]) {
+    const ownPrefix = platformPrefixes[platform]
+    const effectivePrefix = managedSwitchPrefixFor(platform)
+    if (effectivePrefix === ownPrefix) continue
+    for (const name of operationSwitchNames) {
+      const key = `${ownPrefix}_${name}_ENABLED`
+      if (!explicitlyEnabled(source, key)) continue
+      switches.push({ platform, key, ...(effectivePrefix ? { effectiveKey: `${effectivePrefix}_${name}_ENABLED` } : {}) })
+    }
+  }
+  return switches
+}
+
+/**
+ * A silently ignored switch is worse than a rejected one: an operator sets
+ * `TMALL_WRITE_ENABLED=true`, believes tmall writes are enabled, and the
+ * deployment is simply not what they think it is. Configuration validation
+ * therefore refuses the whole config instead of degrading quietly, the same way
+ * an unconfigured `COMMERCIAL_PAYMENT_PROVIDER` fails loudly rather than
+ * falling back to a simulated payment.
+ */
+export class UnwiredPlatformSwitchError extends Error {
+  constructor(readonly switches: readonly UnwiredPlatformSwitch[]) {
+    super([
+      `unwired platform operation switches set to true: ${switches.map(item => item.key).join(', ')}.`,
+      'These keys are declared and forwarded to the process but read by no code path, so leaving them true would make the deployment look configured when it is not.',
+      ...switches.map(item => item.effectiveKey
+        ? `${item.key}=true does nothing: ${item.platform} is controlled by ${item.effectiveKey}. Set ${item.effectiveKey} instead, or remove ${item.key}.`
+        : `${item.key}=true does nothing: ${item.platform} has no wired operation switch at all, so no *_ENABLED key controls it. Remove ${item.key}, or wire it in packages/connectors/src/config.ts.`),
+    ].join(' '))
+    this.name = 'UnwiredPlatformSwitchError'
+  }
+}
+
+/**
+ * Refuse a configuration whose unwired switches were switched on. Called by
+ * `buildHttpConnectorConfigs` so every environment- and config-service-backed
+ * caller fails at build time rather than at the first silent no-op.
+ *
+ * Scoped to the modes where platform operations are actually switch-governed.
+ * Manual operations mode blocks every platform write before any switch is
+ * consulted (`platformConnectorConfigured()` is false), so one of these keys
+ * being true there cannot mislead anyone about a capability that is globally
+ * off — and refusing to boot over it would turn a harmless no-op into an
+ * outage for a deployment that was previously starting fine. The trap is real
+ * where it can be acted on, which is every other mode, and that is where this
+ * refuses. `unwiredPlatformSwitches` itself stays mode-independent so the
+ * inventory remains a pure function of the platform tables.
+ */
+export function assertNoUnwiredPlatformSwitches(source: ConfigSource): void {
+  if (value(source, 'PLATFORM_OPERATIONS_MODE')?.trim().toLowerCase() === 'manual') return
+  const switches = unwiredPlatformSwitches(source)
+  if (switches.length) throw new UnwiredPlatformSwitchError(switches)
+}
+
 function buildOne(platform: Platform, source: ConfigSource): { config?: HttpConnectorConfig; missing: string[] } {
   const prefix = platformPrefixes[platform]
   // Platform switches are part of the runtime admission contract. Missing,
   // malformed, and false values all disable OAuth for managed platforms.
-  const managedSwitchPrefix = platform === 'jd' ? 'JD' : platform === 'taobao' || platform === 'tmall' ? 'TAOBAO' : platform === 'douyin' ? 'DOUYIN' : undefined
+  const managedSwitchPrefix = managedSwitchPrefixFor(platform)
   if (managedSwitchPrefix && (platform === 'jd' || value(source, 'NODE_ENV') === 'production') && !explicitlyEnabled(source, `${managedSwitchPrefix}_AUTH_ENABLED`)) {
     return { missing: [`${managedSwitchPrefix}_AUTH_ENABLED=true`] }
   }
@@ -327,6 +416,7 @@ function buildOne(platform: Platform, source: ConfigSource): { config?: HttpConn
 }
 
 export function buildHttpConnectorConfigs(source: ConfigSource = process.env, options: { capabilityEvidenceTrust?: ProductionCapabilityEvidenceTrust } = {}): PlatformConfigBuildResult {
+  assertNoUnwiredPlatformSwitches(source)
   const configs: Partial<Record<Platform, HttpConnectorConfig>> = {}
   const allConfigs: Partial<Record<Platform, HttpConnectorConfig>> = {}
   const candidates: Record<string, HttpConnectorConfig | undefined> = {}
@@ -336,7 +426,7 @@ export function buildHttpConnectorConfigs(source: ConfigSource = process.env, op
   for (const platform of Object.keys(platformPrefixes) as Platform[]) {
     const result = buildOne(platform, source)
     if (result.config && capabilityEvidence[platform]) result.config.capabilityEvidence = capabilityEvidence[platform]
-    const switchPrefix = platform === 'jd' ? 'JD' : platform === 'taobao' || platform === 'tmall' ? 'TAOBAO' : platform === 'douyin' ? 'DOUYIN' : undefined
+    const switchPrefix = managedSwitchPrefixFor(platform)
     const state = validateConnectorReadiness(platform, result.config, switchPrefix && (platform === 'jd' || value(source, 'NODE_ENV') === 'production') ? {
       readEnabled: explicitlyEnabled(source, `${switchPrefix}_READ_ENABLED`),
       writeEnabled: explicitlyEnabled(source, `${switchPrefix}_WRITE_ENABLED`),

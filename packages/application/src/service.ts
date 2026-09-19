@@ -105,13 +105,52 @@ export interface Product {
   version?: number
 }
 
+/**
+ * `manually_registered` is the credential-free token state of a store record
+ * that operations staff created for a merchant in manual operations mode
+ * (`PLATFORM_OPERATIONS_MODE=manual`, the documented production mode while no
+ * platform OAuth is wired). It is deliberately NOT `connected`: the record
+ * identifies the target store and nothing else. It carries no credential, no
+ * grant, no scope and no official platform receipt, and `connected` remains the
+ * only value that means "an authorization was completed".
+ */
+export const MANUAL_STORE_RECORD_TOKEN_STATE = 'manually_registered' as const
+
+export type PlatformAccountTokenState = 'connected' | 'refresh_required' | 'revoked' | typeof MANUAL_STORE_RECORD_TOKEN_STATE
+
+/**
+ * Credential ref written for a manual store record.
+ *
+ * `platform_accounts.credential_ref` is `NOT NULL`, so a value has to exist,
+ * but nothing may ever mistake it for a secret. The `manual-store-record:`
+ * scheme is deliberately NOT `vault://`: the credential provider treats a
+ * `vault://` ref as authoritative and reads that exact path, so a fake vault
+ * path could shadow a real secret. A non-`vault://` ref makes the provider fall
+ * back to its (workspace, account) path or fail closed, and no deployment can
+ * hold a secret at this value because no writer ever stores one.
+ */
+export function manualStoreRecordCredentialRef(accountId: string): string {
+  return `manual-store-record:no-credential:${accountId}`
+}
+
+/** True only for the credential-free record manual operations staff create. */
+export function isManualStoreRecord(account: { tokenState: string }): boolean {
+  return account.tokenState === MANUAL_STORE_RECORD_TOKEN_STATE
+}
+
+function validateStoreAlias(alias: string): string {
+  const normalized = alias.normalize('NFKC').trim().replace(/\s+/gu, ' ')
+  if (!normalized || normalized.length > 40 || /[\u0000-\u001f\u007f\p{Cf}]/u.test(normalized)) throw new DomainError('STORE_ALIAS_INVALID', '店铺别名必须是 1 到 40 个可见字符，不能包含控制或零宽格式字符', 400)
+  return normalized
+}
+
 export interface PlatformAccount {
   id: string
   workspaceId: string
   platform: Platform
   remoteAccountId: string
   credentialRef: string
-  tokenState: 'connected' | 'refresh_required' | 'revoked'
+  tokenState: PlatformAccountTokenState
   /** Changes only when the authorization grant generation changes, not on routine token refresh. */
   authRevision?: number
   /** Non-secret scopes actually reported by the token endpoint. Missing means unknown. */
@@ -1395,6 +1434,15 @@ export interface MerchantServiceOptions {
   seedFixture?: boolean
   /** Require every task-bound platform account to be registered and connected. */
   strictAccountScope?: boolean
+  /**
+   * Manual operations mode. Evaluated per call so a runtime configuration
+   * change is never cached: when it returns true, a credential-free store
+   * record that operations staff registered for the merchant
+   * (`manually_registered`) satisfies the platform-scope gate exactly like a
+   * completed authorization, because in this mode no OAuth grant exists at all.
+   * Every other mode keeps the strict `connected`-only rule.
+   */
+  manualStoreRecords?: () => boolean
   contentGenerator?: ContentGenerator
   imageGenerator?: ImageGenerator
   maxActiveJobsPerWorkspace?: number
@@ -2366,7 +2414,12 @@ export class MerchantService {
     }
     if (input.entityType === 'platform_account') {
       const account = input.entity as PlatformAccount
-      this.platformAccounts.set(entity.id, { ...account, authRevision: account.authRevision ?? account.revision ?? 1 })
+      // A manual store record has no authorization generation and must not be
+      // given one: `authRevision` is what a publish job pins itself to, and
+      // inventing it would make a credential-free record look like a grant that
+      // can be pinned. Legacy rows that predate `authRevision` keep the
+      // `revision` fallback.
+      this.platformAccounts.set(entity.id, isManualStoreRecord(account) ? { ...account } : { ...account, authRevision: account.authRevision ?? account.revision ?? 1 })
     }
     if (input.entityType === 'brand_profile') this.brandProfiles.set(entity.id, input.entity as BrandProfile)
     if (input.entityType === 'asset') {
@@ -3372,17 +3425,61 @@ export class MerchantService {
     this.platformAccounts.set(id, account)
     return account
   }
+  /**
+   * Create the credential-free store record that manual operations mode uses
+   * in place of an OAuth connection.
+   *
+   * This is the ONLY writer of `manually_registered`, and it deliberately never
+   * claims an authorization:
+   *  - `tokenState` is `manually_registered`, never `connected`;
+   *  - `credentialRef` is an explicit non-credential placeholder (see
+   *    `manualStoreRecordCredentialRef`) that no credential provider can
+   *    resolve to a secret and no code path exchanges for a token;
+   *  - `lastAuthorizedAt`, `grantedScopes`, `accessTokenExpiresAt` and
+   *    `credentialRefreshable` stay absent, so every downstream
+   *    "is this authorized?" reader sees "no authorization" rather than a
+   *    fabricated one, and `authRevision` is left undefined so the record has
+   *    no authorization generation to pin a publish job to.
+   *
+   * Re-registering an id that already holds a completed authorization is
+   * refused outright: downgrading a live OAuth account to a manual record would
+   * silently drop a real grant.
+   */
+  registerManualPlatformAccount(input: { workspaceId: string; platform: Platform; remoteAccountId: string; storeAlias?: string }) {
+    const id = this.scopedAccountId(input.workspaceId, input.platform, input.remoteAccountId)
+    const existing = this.platformAccounts.get(id)
+    if (existing?.tokenState === 'connected') throw new DomainError('PLATFORM_ACCOUNT_ALREADY_AUTHORIZED', '该店铺已完成官方授权，不能改写为人工店铺记录；如需停用请先撤销授权', 409, { account_id: existing.id, platform: existing.platform })
+    const timestamp = now()
+    const alias = input.storeAlias === undefined ? undefined : validateStoreAlias(input.storeAlias)
+    if (alias !== undefined && this.storeAliasConflict(input.workspaceId, input.platform, id, alias)) throw new DomainError('STORE_ALIAS_CONFLICT', '同一平台内店铺别名不能重复', 409)
+    const account: PlatformAccount = {
+      id,
+      workspaceId: input.workspaceId,
+      platform: input.platform,
+      remoteAccountId: input.remoteAccountId,
+      credentialRef: manualStoreRecordCredentialRef(id),
+      tokenState: MANUAL_STORE_RECORD_TOKEN_STATE,
+      ...(alias ? { storeAlias: alias } : existing?.storeAlias ? { storeAlias: existing.storeAlias } : {}),
+      credentialMetadataObservedAt: timestamp,
+      tokenStateUpdatedAt: timestamp,
+      createdAt: existing?.createdAt ?? timestamp,
+      revision: (existing?.revision ?? 0) + 1,
+    }
+    this.platformAccounts.set(id, account)
+    return account
+  }
   setPlatformAccountAlias(input: { workspaceId: string; platform: Platform; accountId: string; alias: string; expectedRevision: number }) {
     const account = this.getPlatformAccount(input.workspaceId, input.accountId, input.platform)
     if (account.revision !== input.expectedRevision) throw new DomainError('STORE_ALIAS_VERSION_CONFLICT', '店铺信息已更新，请刷新后重试', 409)
-    const alias = input.alias.normalize('NFKC').trim().replace(/\s+/gu, ' ')
-    if (!alias || alias.length > 40 || /[\u0000-\u001f\u007f\p{Cf}]/u.test(alias)) throw new DomainError('STORE_ALIAS_INVALID', '店铺别名必须是 1 到 40 个可见字符，不能包含控制或零宽格式字符', 400)
-    const normalized = alias.toLocaleLowerCase('zh-CN')
-    const conflict = [...this.platformAccounts.values()].find(item => item.workspaceId === input.workspaceId && item.platform === input.platform && item.id !== account.id && item.storeAlias?.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase('zh-CN') === normalized)
-    if (conflict) throw new DomainError('STORE_ALIAS_CONFLICT', '同一平台内店铺别名不能重复', 409)
+    const alias = validateStoreAlias(input.alias)
+    if (this.storeAliasConflict(input.workspaceId, input.platform, account.id, alias)) throw new DomainError('STORE_ALIAS_CONFLICT', '同一平台内店铺别名不能重复', 409)
     account.storeAlias = alias
     account.revision += 1
     return account
+  }
+  private storeAliasConflict(workspaceId: string, platform: Platform, accountId: string, alias: string) {
+    const normalized = alias.toLocaleLowerCase('zh-CN')
+    return [...this.platformAccounts.values()].some(item => item.workspaceId === workspaceId && item.platform === platform && item.id !== accountId && item.storeAlias?.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase('zh-CN') === normalized)
   }
   getPlatformAccount(workspaceId: string, accountId: string, platform?: Platform) {
     const account = this.platformAccounts.get(accountId)
@@ -3393,6 +3490,30 @@ export class MerchantService {
     const account = this.getPlatformAccount(workspaceId, accountId, platform)
     if (account.tokenState !== 'connected') throw new DomainError('PLATFORM_ACCOUNT_REAUTH_REQUIRED', '平台账号已撤销或需要重新授权', 409)
     return account
+  }
+  /**
+   * The store scope a workspace may actually act on.
+   *
+   * Same as `getActivePlatformAccount` for every deployment, except that in
+   * manual operations mode (`options.manualStoreRecords()`) a credential-free
+   * `manually_registered` record that operations staff created for this
+   * merchant is accepted too. In that mode no OAuth grant exists at all, so
+   * requiring one made the documented manual flow impossible: every catalog,
+   * task, generation and publish-preflight call answered 428 at the store
+   * boundary and then 409 here.
+   *
+   * This deliberately does NOT replace the strict method everywhere. The paths
+   * that hand a `credentialRef` to another process (the worker execution-context
+   * endpoints and the worker-side publish gate) keep calling
+   * `getActivePlatformAccount`, so a manual record's placeholder credential can
+   * never leave the API.
+   */
+  getActionablePlatformAccount(workspaceId: string, accountId: string, platform?: Platform) {
+    const account = this.getPlatformAccount(workspaceId, accountId, platform)
+    if (account.tokenState === 'connected') return account
+    if (isManualStoreRecord(account) && this.options.manualStoreRecords?.() === true) return account
+    if (isManualStoreRecord(account)) throw new DomainError('PLATFORM_ACCOUNT_REAUTH_REQUIRED', '人工店铺记录只在人工运营档（PLATFORM_OPERATIONS_MODE=manual）生效；官方接口档必须完成平台 OAuth 授权', 409, { token_state: account.tokenState, account_id: account.id })
+    throw new DomainError('PLATFORM_ACCOUNT_REAUTH_REQUIRED', '平台账号已撤销或需要重新授权', 409)
   }
   revokePlatformAccount(workspaceId: string, accountId: string, platform?: Platform) {
     const account = this.getPlatformAccount(workspaceId, accountId, platform)
@@ -4135,7 +4256,7 @@ export class MerchantService {
     if (product.platform !== input.platform) throw new DomainError('PLATFORM_SCOPE_MISMATCH', '任务平台必须与商品快照一致')
     if (product.accountId && input.accountId && product.accountId !== input.accountId) throw new DomainError('STORE_CONTEXT_MISMATCH', '任务店铺必须与商品所属店铺一致', 409)
     const accountId = product.accountId ?? input.accountId
-    if (this.options.strictAccountScope && accountId) this.getActivePlatformAccount(input.workspaceId, accountId, input.platform)
+    if (this.options.strictAccountScope && accountId) this.getActionablePlatformAccount(input.workspaceId, accountId, input.platform)
     const hasCanonicalProduct = Boolean(input.canonicalProductId?.trim())
     const hasListing = Boolean(input.listingId?.trim())
     if (hasCanonicalProduct !== hasListing) throw new DomainError('CANONICAL_TASK_SCOPE_INCOMPLETE', '规范化任务必须同时绑定 canonicalProductId 和 listingId', 409)
@@ -4787,7 +4908,7 @@ export class MerchantService {
       canonicalBinding = buildCanonicalExecutionBinding({ workspaceId: task.workspaceId, taskId: task.id, productId: task.productId, platform: task.platform, ...(task.accountId ? { accountId: task.accountId } : {}), ...(task.canonicalProductId ? { canonicalProductId: task.canonicalProductId } : {}), ...(task.listingId ? { listingId: task.listingId } : {}), ...(task.campaignId ? { campaignId: task.campaignId } : {}), ...(task.campaignItemId ? { campaignItemId: task.campaignItemId } : {}), inputSnapshotId: task.inputSnapshotId })
     } catch { throw new DomainError('CANONICAL_EXECUTION_BINDING_INCOMPLETE', '发布任务的 canonical 商品、listing、campaign 和 campaign item 绑定不完整，禁止继续', 409) }
     const account = task.accountId ? this.platformAccounts.get(task.accountId) : undefined
-    if (task.accountId && account) this.getActivePlatformAccount(task.workspaceId, task.accountId, task.platform)
+    if (task.accountId && account) this.getActionablePlatformAccount(task.workspaceId, task.accountId, task.platform)
     const selectedVisuals = version.visualSelection ? this.validateVisualSelection(task, version, product) : []
     const deliveryEvidence = this.prepareDeliveryEvidence(task, version, product, selectedVisuals)
     const remoteSnapshotHash = this.remoteSnapshotHash(task, product)

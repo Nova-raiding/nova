@@ -1,7 +1,21 @@
 import { generateKeyPairSync, sign } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildHttpConnectorConfigs, buildHttpConnectorConfigsFromStructured } from './config.js'
+import { UnwiredPlatformSwitchError, buildHttpConnectorConfigs, buildHttpConnectorConfigsFromStructured, platformConfigPrefix, unwiredPlatformSwitches } from './config.js'
 import { validateConnectorAuthorizationReadiness } from './readiness.js'
+
+// Key names are assembled from `platformConfigPrefix` instead of being written
+// out: that is the same table the rejection derives from, so these tests cannot
+// pass against a hand-copied list that has drifted from it.
+const platforms = ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] as const
+type TestPlatform = typeof platforms[number]
+const switchNames = ['AUTH', 'READ', 'WRITE'] as const
+const switchKey = (platform: TestPlatform, name: typeof switchNames[number]) => `${platformConfigPrefix(platform)}_${name}_ENABLED`
+// Platforms whose switches the runtime actually reads; the rest must be refused.
+const wiredSwitchPlatforms: readonly TestPlatform[] = ['jd', 'taobao', 'douyin']
+const unwiredSwitchPlatforms = platforms.filter(platform => !wiredSwitchPlatforms.includes(platform))
+function thrownMessage(source: Record<string, string | undefined>): string | undefined {
+  try { buildHttpConnectorConfigs(source); return undefined } catch (error) { return (error as Error).message }
+}
 
 const base = {
   JD_AUTH_ENABLED: 'true', JD_READ_ENABLED: 'true', JD_WRITE_ENABLED: 'true',
@@ -241,5 +255,105 @@ describe('platform HTTP configuration', () => {
     expect(result.allConfigs.jd).not.toHaveProperty('clientSecret')
     expect(JSON.stringify(result.allConfigs.jd)).not.toContain('jd-secret')
     expect(result.allConfigs.jd?.signer?.kind).toBe('platform')
+  })
+})
+
+const productionSource = {
+  ...base,
+  NODE_ENV: 'production',
+  TAOBAO_AUTH_ENABLED: 'true',
+  TAOBAO_SYNC_PATH: '/products', TAOBAO_CREATE_PATH: '/products/create', TAOBAO_UPDATE_PATH: '/products/update', TAOBAO_QUERY_PATH: '/publish/status',
+  TMALL_SYNC_PATH: '/products', TMALL_CREATE_PATH: '/products/create', TMALL_UPDATE_PATH: '/products/update', TMALL_QUERY_PATH: '/publish/status',
+}
+
+describe('unwired platform operation switches', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('refuses every switch no code path reads and names the key that does', () => {
+    for (const platform of unwiredSwitchPlatforms) {
+      for (const name of switchNames) {
+        const key = switchKey(platform, name)
+        const message = thrownMessage({ ...base, [key]: 'true' })
+        expect(message, `${key}=true must not be accepted silently`).toBeTypeOf('string')
+        expect(message).toContain(key)
+        if (platform === 'tmall') {
+          // Tmall shares the TAOBAO switches, so that is the key to name.
+          expect(message).toContain(`${platformConfigPrefix('taobao')}_${name}_ENABLED`)
+        } else {
+          expect(message).toContain('has no wired operation switch')
+        }
+      }
+    }
+    expect(() => buildHttpConnectorConfigs({ ...base, [switchKey('tmall', 'WRITE')]: 'true' })).toThrow(UnwiredPlatformSwitchError)
+  })
+
+  it('reports exactly the switches that are declared but unread', () => {
+    const allOn = Object.fromEntries(platforms.flatMap(platform => switchNames.map(name => [switchKey(platform, name), 'true'])))
+    const switches = unwiredPlatformSwitches(allOn)
+    expect(switches.map(item => item.key)).toEqual(unwiredSwitchPlatforms.flatMap(platform => switchNames.map(name => switchKey(platform, name))))
+    expect(switches.filter(item => item.effectiveKey).map(item => [item.key, item.effectiveKey]))
+      .toEqual(switchNames.map(name => [switchKey('tmall', name), `${platformConfigPrefix('taobao')}_${name}_ENABLED`]))
+    // Wired keys are never reported, and non-switch tmall keys are never touched.
+    for (const platform of wiredSwitchPlatforms) for (const name of switchNames) {
+      expect(unwiredPlatformSwitches({ [switchKey(platform, name)]: 'true' })).toEqual([])
+    }
+    expect(unwiredPlatformSwitches({ TMALL_CLIENT_ID: 'true', TMALL_OAUTH_AUTHORIZE_URL: 'true', TMALL_HTTP_TIMEOUT_MS: 'true' })).toEqual([])
+  })
+
+  it('refuses only in the modes where a platform switch can be acted on', () => {
+    const key = switchKey('pinduoduo', 'AUTH')
+    // Manual operations mode blocks every platform write before any switch is
+    // consulted, so a meaningless key there cannot mislead anyone about a
+    // capability that is globally off — and refusing to boot over it would turn
+    // a harmless no-op into an outage for a deployment that started fine.
+    expect(() => buildHttpConnectorConfigs({ ...base, PLATFORM_OPERATIONS_MODE: 'manual', [key]: 'true' })).not.toThrow()
+    expect(() => buildHttpConnectorConfigs({ ...base, PLATFORM_OPERATIONS_MODE: 'MANUAL', [key]: 'true' })).not.toThrow()
+    // Every other mode consults the switches, so the trap is live there.
+    for (const mode of ['official_api', undefined]) {
+      const env = { ...base, [key]: 'true', ...(mode === undefined ? {} : { PLATFORM_OPERATIONS_MODE: mode }) }
+      expect(() => buildHttpConnectorConfigs(env), `mode=${String(mode)} must refuse`).toThrow(UnwiredPlatformSwitchError)
+    }
+    // The inventory itself stays mode-independent: it is a pure function of the
+    // platform tables, so the exemption it feeds cannot drift with the mode.
+    expect(unwiredPlatformSwitches({ PLATFORM_OPERATIONS_MODE: 'manual', [key]: 'true' })).toHaveLength(1)
+  })
+
+  it('leaves false, empty and absent switches exactly as they were', () => {
+    for (const setting of ['false', 'FALSE', '0', 'no', '', '   ', undefined]) {
+      for (const platform of unwiredSwitchPlatforms) for (const name of switchNames) {
+        expect(thrownMessage({ ...base, [switchKey(platform, name)]: setting }), `${switchKey(platform, name)}=${String(setting)}`).toBeUndefined()
+      }
+    }
+    // The ECS pilot compose forwards all nine as `false`; that profile must still build.
+    const composeDefaults = Object.fromEntries(unwiredSwitchPlatforms.flatMap(platform => switchNames.map(name => [switchKey(platform, name), 'false'])))
+    const result = buildHttpConnectorConfigs({ ...base, ...composeDefaults })
+    expect(Object.keys(result.allConfigs)).toEqual(['jd', 'taobao', 'tmall', 'pinduoduo'])
+    // Anything else that spells "true" is an explicit opt-in too: the existing
+    // switches compare case-insensitively (`explicitlyEnabled`), so `TRUE` must
+    // be refused as well rather than becoming the one accepted silent no-op.
+    expect(thrownMessage({ ...base, [switchKey('pinduoduo', 'AUTH')]: 'TRUE' })).toBeTypeOf('string')
+  })
+
+  it('keeps the wired switches wired, including tmall sharing the TAOBAO namespace', () => {
+    const disabled = buildHttpConnectorConfigs(productionSource)
+    expect(disabled.readiness.tmall.reasons).toContain('READ_DISABLED')
+    expect(disabled.readiness.tmall.reasons).toContain('WRITE_DISABLED')
+    const enabled = buildHttpConnectorConfigs({ ...productionSource, TAOBAO_READ_ENABLED: 'true', TAOBAO_WRITE_ENABLED: 'true' })
+    expect(enabled.readiness.tmall.reasons).not.toContain('READ_DISABLED')
+    expect(enabled.readiness.tmall.reasons).not.toContain('WRITE_DISABLED')
+    expect(enabled.readiness.taobao.reasons).not.toContain('WRITE_DISABLED')
+    // The shared namespace also drives the auth gate, which is why TMALL_AUTH_ENABLED is the wrong key.
+    const noAuthSwitch = buildHttpConnectorConfigs({ ...productionSource, TAOBAO_AUTH_ENABLED: undefined })
+    expect(noAuthSwitch.missing.tmall).toContain(`${platformConfigPrefix('taobao')}_AUTH_ENABLED=true`)
+    expect(thrownMessage({ ...productionSource, [switchKey('tmall', 'AUTH')]: 'true' })).toContain(`${platformConfigPrefix('taobao')}_AUTH_ENABLED`)
+  })
+
+  it('does not disturb the tmall configuration keys that are read', () => {
+    const result = buildHttpConnectorConfigs({ ...base, TMALL_OAUTH_SCOPES: 'item.read, item.write', TMALL_SYNC_PATH: '/v2/items', TMALL_HTTP_TIMEOUT_MS: '2500' })
+    expect(result.allConfigs.tmall?.clientId).toBe('tmall-app')
+    expect(result.allConfigs.tmall?.oauth.authorizeUrl).toBe('https://tmall.test/authorize')
+    expect(result.allConfigs.tmall?.oauth.scopes).toEqual(['item.read', 'item.write'])
+    expect(result.allConfigs.tmall?.api.syncPath).toBe('/v2/items')
+    expect(result.allConfigs.tmall?.timeoutMs).toBe(2500)
   })
 })
