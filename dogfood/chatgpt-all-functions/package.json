@@ -1,6 +1,7 @@
 {
   "name": "chatgpt-all-functions-dogfood",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
   "devDependencies": {
     "@playwright/test": "1.55.1"

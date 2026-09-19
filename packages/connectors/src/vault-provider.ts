@@ -110,9 +110,7 @@ export class VaultKvCredentialProvider implements VaultCredentialProvider {
   }
 
   async store(input: { workspaceId?: string; accountId: string; credential: AccessCredential }): Promise<CredentialRef> {
-    const path = input.workspaceId
-      ? `${this.pathPrefix}/workspaces/${createHash('sha256').update(input.workspaceId).digest('hex').slice(0, 24)}/accounts/${createHash('sha256').update(input.accountId).digest('hex').slice(0, 24)}`
-      : this.pathFrom({ accountId: input.accountId })
+    const path = this.pathFrom(input)
     const response = await this.request('POST', `/v1/${this.mount}/data/${path}`, { data: input.credential })
     if (!response.ok) throw new Error('Vault credential write failed')
     return {
@@ -131,13 +129,26 @@ export class VaultKvCredentialProvider implements VaultCredentialProvider {
     if (!response.ok && response.status !== 404) throw new Error('Vault credential revoke failed')
   }
 
-  private pathFrom(ref: { accountId: string; credentialRef?: string }): string {
+  /**
+   * A credential ref is opaque but self-describing, so it is authoritative.
+   * Without one the record can only be identified by (workspace, account):
+   * the bare account id is shared by every workspace that connected the same
+   * remote merchant account, so falling back to `${pathPrefix}/${accountId}`
+   * would let one workspace read another workspace's credential record. Callers
+   * that hold no ref must therefore name the workspace explicitly.
+   */
+  private pathFrom(ref: { accountId: string; credentialRef?: string; workspaceId?: string }): string {
     const candidate = ref.credentialRef?.startsWith('vault://') ? ref.credentialRef.slice('vault://'.length) : undefined
     if (candidate) {
       const [mount, ...parts] = candidate.split('/').filter(Boolean)
       if (mount === this.mount && parts.length && parts.every(part => !isUnsafePathPart(part))) return parts.map(cleanPart).join('/')
     }
-    return `${this.pathPrefix}/${encodeURIComponent(ref.accountId)}`
+    if (ref.workspaceId) return this.workspacePath(ref.workspaceId, ref.accountId)
+    throw new Error('Vault credential access requires an opaque credential ref or an explicit workspaceId')
+  }
+
+  private workspacePath(workspaceId: string, accountId: string): string {
+    return `${this.pathPrefix}/workspaces/${createHash('sha256').update(workspaceId).digest('hex').slice(0, 24)}/accounts/${createHash('sha256').update(accountId).digest('hex').slice(0, 24)}`
   }
 
   private async request(method: string, path: string, body?: unknown): Promise<Response> {

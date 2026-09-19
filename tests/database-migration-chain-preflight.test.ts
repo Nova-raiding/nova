@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -44,9 +44,18 @@ function run(extra: Record<string, string> = {}) {
 describe('ECS database migration-chain preflight', () => {
   it('binds the production preflight to the current release migration tail', () => {
     const metadata = JSON.parse(readFileSync('release-metadata.json', 'utf8')) as { expectedMigrationVersion: number }
-    const migration = readFileSync('packages/persistence/src/migrations/218_manual_publish_evidence.sql', 'utf8')
-    expect(metadata.expectedMigrationVersion).toBe(219)
-    expect(migration).toContain('manual_publish_evidence')
+    // Derive the tail from the migrations directory rather than hardcoding it. A
+    // literal here drifts silently the moment a migration is added — which is
+    // the very mismatch this test exists to catch.
+    const migrationFiles = readdirSync('packages/persistence/src/migrations')
+    const versions = migrationFiles.map(name => Number(name.split('_')[0])).filter(version => Number.isSafeInteger(version))
+    const tail = Math.max(...versions)
+    expect(metadata.expectedMigrationVersion).toBe(tail)
+    // The tail migration must exist under the repo's zero-padded naming rule and
+    // carry real SQL, so the metadata cannot name a version that was never written.
+    const tailFile = migrationFiles.find(name => Number(name.split('_')[0]) === tail)!
+    expect(tailFile.startsWith(`${String(tail).padStart(3, '0')}_`)).toBe(true)
+    expect(readFileSync(`packages/persistence/src/migrations/${tailFile}`, 'utf8').trim().length).toBeGreaterThan(0)
   })
 
   it('checks the complete migration history and checksums through both target roles', () => {

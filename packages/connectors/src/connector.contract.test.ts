@@ -44,6 +44,22 @@ describe.each(platforms)('%s connector contract', (platform) => {
     await expect(current.authorize({ workspaceId: 'ws', actorId: 'actor', redirectUri: 'https://example.test/callback', state: 'state' })).resolves.toMatchObject({ ok: false, code: 'NOT_CONFIGURED', mode: 'not_configured' })
     await expect(current.updateProduct(context, { fields: { title: 'ok', category: 'cat', price: 1, stock: 1 }, idempotencyKey: 'not-configured' })).rejects.toMatchObject({ normalized: { code: 'NOT_CONFIGURED' } })
   })
+  it('fails closed with NOT_CONFIGURED on every operation when the official API is not configured', async () => {
+    // A production worker process can be started without connector credentials
+    // even while the API process accepted the job. No operation may answer
+    // from fixture state in that container.
+    const current = createFakeConnector(platform, { configured: false, allowFakeWrites: false })
+    const draft = { fields: { title: 'ok', category: 'cat', price: 1, stock: 1 }, idempotencyKey: `not-configured-${platform}` }
+    const notConfigured = { normalized: { code: 'NOT_CONFIGURED', platform } }
+    await expect(current.exchangeCode({ code: 'code', state: 'state' })).rejects.toMatchObject(notConfigured)
+    await expect(current.refreshCredential({ accountId: context.accountId, credentialRef: `fixture://${platform}` })).rejects.toMatchObject(notConfigured)
+    await expect(current.revoke({ accountId: context.accountId, credentialRef: `fixture://${platform}` })).rejects.toMatchObject(notConfigured)
+    await expect(current.syncProducts(context)).rejects.toMatchObject(notConfigured)
+    await expect(current.queryWrite(context, { idempotencyKey: draft.idempotencyKey })).rejects.toMatchObject(notConfigured)
+    await expect(current.createProduct(context, draft)).rejects.toMatchObject(notConfigured)
+    await expect(current.updateProduct(context, draft)).rejects.toMatchObject(notConfigured)
+    if (typeof current.uploadMedia === 'function') await expect(current.uploadMedia(context, { visualRef: 'v', role: 'main', mimeType: 'image/png', sha256: 'a'.repeat(64), bytes: new Uint8Array(), idempotencyKey: `media-${platform}` })).rejects.toMatchObject(notConfigured)
+  })
 })
 
 describe('connector error normalization', () => {

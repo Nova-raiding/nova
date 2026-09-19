@@ -9,17 +9,18 @@
     "preview": "vite preview",
     "test": "vitest run"
   },
+  "license": "UNLICENSED",
   "dependencies": {
-    "@ant-design/icons": "latest",
-    "@vitejs/plugin-react": "latest",
-    "antd": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "vite": "latest"
+    "@ant-design/icons": "6.3.2",
+    "@vitejs/plugin-react": "6.1.0",
+    "antd": "6.6.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "vite": "8.2.2"
   },
   "devDependencies": {
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "typescript": "latest"
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "typescript": "5.9.3"
   }
 }

@@ -68,9 +68,13 @@ export function validateCapabilityEvidence(document: unknown, options: { require
 function main() {
   const args = process.argv.slice(2)
   const fileIndex = args.indexOf('--file')
-  const path = (fileIndex >= 0 ? args[fileIndex + 1] : undefined) ?? 'doc/todo/platform/platform-capability-evidence.example.json'
+  const path = fileIndex >= 0 ? args[fileIndex + 1] : undefined
   const releaseIndex = args.indexOf('--release-id')
   const expectedReleaseId = releaseIndex >= 0 ? args[releaseIndex + 1] : undefined
+  // Never default to the repository example fixture: silently validating a
+  // non-production example while printing "passed" would misrepresent it as
+  // real platform evidence. Callers must name the evidence file explicitly.
+  if (!path) { console.error('--file is required'); process.exit(2) }
   let document: unknown
   try { document = JSON.parse(readFileSync(path, 'utf8')) } catch (error) { console.error(`unable to read JSON evidence: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
   const errors = validateCapabilityEvidence(document, { requireCanary: args.includes('--require-canary'), expectedReleaseId })

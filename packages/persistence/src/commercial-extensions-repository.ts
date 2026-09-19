@@ -50,7 +50,9 @@ function assertCommercialCoupon(input: { discountType: CouponDiscountType; disco
 const subscriptionChangeProjection = `id, workspace_id AS "workspaceId", from_plan_code AS "fromPlanCode", to_plan_code AS "toPlanCode", from_price_cny::float8 AS "fromPriceCny", to_price_cny::float8 AS "toPriceCny", billing_cycle AS "billingCycle", price_difference_cny::float8 AS "priceDifferenceCny", effective_at AS "effectiveAt", status, reason, created_by AS "createdBy", created_at AS "createdAt"`
 const subscriptionPlanProjection = `workspace_id AS "workspaceId", plan_code AS "planCode", plan_name AS "planName", billing_cycle AS "billingCycle", price_cny::float8 AS "priceCny", included_stores AS "includedStores", included_tasks AS "includedTasks", current_period_start AS "currentPeriodStart", current_period_end AS "currentPeriodEnd", revision, updated_at AS "updatedAt"`
 
-function nextPeriodEnd(start: string, cycle: CommercialBillingCycle) {
+// Exported so `tests/month-anniversary-equivalence.test.ts` can pin every copy
+// of the month-anniversary rule to the same result.
+export function nextPeriodEnd(start: string, cycle: CommercialBillingCycle) {
   const value = new Date(start)
   const originalDay = value.getUTCDate()
   value.setUTCDate(1)

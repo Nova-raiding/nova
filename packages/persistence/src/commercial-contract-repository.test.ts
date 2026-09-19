@@ -173,6 +173,70 @@ describe('PostgresCommercialContractRepository', () => {
     }
   })
 
+  // Regression: this repository previously derived the expected monthly period
+  // with raw `setUTCMonth(+1)` (JS month overflow) while the payment callback
+  // derived it with a clamp to the last day of the target month. The two
+  // disagreed on 6-7 days a year — every 29th, 30th and 31st that lands in a
+  // shorter following month (a payment on 2026-01-31 yielded 2026-03-03 here but
+  // 2026-02-28 from the callback) — so `validatePeriod` threw
+  // COMMERCIAL_POLICY_UNRESOLVED and the payment was never credited. Both sides
+  // now share the month-anniversary rule.
+  it.each([
+    ['2026-08-31T10:00:00Z', '2026-09-30T10:00:00.000Z'],
+    ['2026-10-31T10:00:00Z', '2026-11-30T10:00:00.000Z'],
+    ['2027-01-29T10:00:00Z', '2027-02-28T10:00:00.000Z'],
+    ['2027-01-30T10:00:00Z', '2027-02-28T10:00:00.000Z'],
+    ['2027-01-31T10:00:00Z', '2027-02-28T10:00:00.000Z'],
+    ['2026-09-02T00:00:00Z', '2026-10-02T00:00:00.000Z'],
+  ])('accepts the clamped month anniversary for a payment taken at %s', async (paidAt, expectedEnd) => {
+    const sku = approvedSku()
+    let revision = 0
+    const client = new ScriptedClient((sql, values) => {
+      if (sql.includes('FROM commercial_orders_v2 o')) return { rows: [{
+        id: 'order-1', workspaceId: 'ws-1', skuId: sku.id, skuVersionId: sku.versionId,
+        amountFen: 200000, currency: 'CNY', paymentProvider: 'alipay', status: 'pending',
+        idempotencyKey: 'order-1', requestHash: 'b'.repeat(64), createdByActorId: 'actor-1', providerOrderId: null,
+        createdAt: paidAt, paidAt: null, snapshotId: 'snapshot-1', snapshot: { sku },
+      }] }
+      if (sql.includes('UPDATE creative_point_access_state')) { revision += 1; return { rows: [{ available: 5000, reserved: 0, settled: 0, revision }] } }
+      if (sql.includes("UPDATE commercial_orders_v2 SET status='paid'")) return { rows: [{
+        id: 'order-1', workspaceId: 'ws-1', skuId: sku.id, skuVersionId: sku.versionId,
+        amountFen: 200000, currency: 'CNY', paymentProvider: 'alipay', status: 'paid',
+        idempotencyKey: 'order-1', requestHash: 'b'.repeat(64), createdByActorId: 'actor-1', providerOrderId: values[2],
+        createdAt: paidAt, paidAt: values[3],
+      }] }
+      return { rows: [] }
+    })
+    const repository = new PostgresCommercialContractRepository(pool(client))
+
+    await expect(repository.recordVerifiedPaymentAndGrant({
+      workspaceId: 'ws-1', orderId: 'order-1', provider: 'alipay', providerEventId: 'event-1', providerOrderId: 'trade-1',
+      nonce: 'nonce-1', payloadHash: 'c'.repeat(64), amountFen: 200000, currency: 'CNY', paidAt,
+      period: { start: paidAt, end: expectedEnd },
+    })).resolves.toMatchObject({ availablePoints: 5000, replayed: false })
+    expect(client.calls.some(call => call.sql.includes('INSERT INTO workspace_subscription_periods_v2'))).toBe(true)
+  })
+
+  it('rejects a monthly period derived from JS month overflow', async () => {
+    const sku = approvedSku()
+    const client = new ScriptedClient(sql => {
+      if (sql.includes('FROM commercial_orders_v2 o')) return { rows: [{
+        id: 'order-1', workspaceId: 'ws-1', skuId: sku.id, skuVersionId: sku.versionId,
+        amountFen: 200000, currency: 'CNY', paymentProvider: 'alipay', status: 'pending',
+        idempotencyKey: 'order-1', requestHash: 'b'.repeat(64), createdByActorId: 'actor-1', providerOrderId: null,
+        createdAt: '2026-10-01T10:00:00.000Z', paidAt: null, snapshotId: 'snapshot-1', snapshot: { sku },
+      }] }
+      return { rows: [] }
+    })
+    await expect(new PostgresCommercialContractRepository(pool(client)).recordVerifiedPaymentAndGrant({
+      workspaceId: 'ws-1', orderId: 'order-1', provider: 'alipay', providerEventId: 'event-1', providerOrderId: 'trade-1',
+      nonce: 'nonce-1', payloadHash: 'c'.repeat(64), amountFen: 200000, currency: 'CNY', paidAt: '2026-08-31T10:00:00Z',
+      // `setUTCMonth(+1)` on 2026-08-31 overflows September's 30 days to 2026-10-01.
+      period: { start: '2026-08-31T10:00:00Z', end: '2026-10-01T10:00:00.000Z' },
+    })).rejects.toMatchObject({ code: 'COMMERCIAL_POLICY_UNRESOLVED' })
+    expect(client.calls.some(call => call.sql.includes('INSERT INTO workspace_subscription_periods_v2'))).toBe(false)
+  })
+
   it('keeps unresolved onboarding dates and point-pack expiry fail-closed', async () => {
     const repository = new PostgresCommercialContractRepository(pool(new ScriptedClient(() => ({ rows: [] }))))
     const unavailable = approvedSku({ executable: false, lifecycle: 'pending_business_approval' })

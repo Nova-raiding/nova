@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DurableOutboxDispatcher, InMemoryQueue, RedisQueueAdapter, type DurableOutboxEvent, type DurableOutboxStore, type RedisQueueTransport } from './durable.js'
+import { DurableOutboxDispatcher, InMemoryQueue, RedisQueueAdapter, type DurableOutboxEvent, type DurableOutboxStore, type QueueMessage, type QueuePort, type RedisQueueTransport } from './durable.js'
 import { WorkerFailure } from './runner.js'
 
 const event = (overrides: Partial<DurableOutboxEvent> = {}): DurableOutboxEvent => ({
@@ -25,9 +25,13 @@ class Store implements DurableOutboxStore {
   async claimPending(_workspaceId?: string, options: { leaseMs?: number; now?: string } = {}): Promise<DurableOutboxEvent[]> {
     this.claimCount += 1
     const now = Date.parse(options.now ?? new Date().toISOString())
-    return [...this.events.values()].filter(candidate => !candidate.unknownAt && (!candidate.leaseUntil || Date.parse(candidate.leaseUntil) <= now)).map(candidate => {
+    return [...this.events.values()].filter(candidate => !candidate.unknownAt && candidate.lastError?.terminal !== true && (!candidate.leaseUntil || Date.parse(candidate.leaseUntil) <= now)).map(candidate => {
       const claimed = {
         ...candidate,
+        // Mirrors the durable repository: the claim counter advances atomically
+        // with the lease so a worker that dies mid-handler still consumes its
+        // retry budget.
+        attempts: (candidate.attempts ?? 0) + 1,
         leaseToken: `lease_${this.claimCount}`,
         leaseUntil: new Date(now + (options.leaseMs ?? 30_000)).toISOString(),
       }
@@ -51,14 +55,89 @@ class Store implements DurableOutboxStore {
     const updated = { ...this.events.get(id)!, publishedAt: new Date().toISOString() }
     this.events.set(id, updated); return updated
   }
+  async releaseClaim(_workspaceId: string, id: string, leaseToken?: string): Promise<DurableOutboxEvent> {
+    const current = this.events.get(id)
+    if (!current || (leaseToken !== undefined && current.leaseToken !== leaseToken)) throw staleLeaseError()
+    // Mirrors the durable repository: the claim never delivered any work, so
+    // the attempt it counted is given back.
+    const released = { ...current, attempts: Math.max((current.attempts ?? 1) - 1, 0), leaseToken: undefined, leaseUntil: undefined }
+    this.events.set(id, released); return { ...released }
+  }
   async recordFailure(_workspaceId: string, id: string, failure: { code: string; message: string }, nextAttemptAt: string): Promise<DurableOutboxEvent> {
-    const updated = { ...this.events.get(id)!, attempts: (this.events.get(id)?.attempts ?? 0) + 1, nextAttemptAt, lastError: failure }
+    // The attempt was already counted when the event was claimed.
+    const updated = { ...this.events.get(id)!, nextAttemptAt, lastError: failure }
     this.events.set(id, updated); return updated
   }
   async markUnknown(_workspaceId: string, id: string, failure: { code: string; message: string }): Promise<DurableOutboxEvent> {
     const updated = { ...this.events.get(id)!, unknownAt: new Date().toISOString(), lastError: failure }
     this.events.set(id, updated); return updated
   }
+}
+
+/** Terminal recording, mirroring the durable repository dead-letter write. */
+class DeadLetterStore extends Store {
+  async deadLetter(_workspaceId: string, id: string, failure: { code: string; message: string }): Promise<DurableOutboxEvent> {
+    const updated = { ...this.events.get(id)!, lastError: { ...failure, terminal: true } as unknown as Record<string, unknown> }
+    this.events.set(id, updated); return updated
+  }
+}
+
+/**
+ * Models the shared Redis transport contract (one queue per role+workspace, not
+ * one per worker): a claim is scored with the time of its last liveness proof,
+ * and a stale score only makes the claim a candidate. The delivery is dropped
+ * -- never requeued -- and only when the caller confirms against the durable
+ * store that the claim is gone. Dropped claims come back through restore(),
+ * which re-creates them from the authoritative database claim.
+ */
+class RecoveryQueue<T> implements QueuePort<T> {
+  private readonly ready: QueueMessage<T>[] = []
+  private readonly claims = new Map<string, { message: QueueMessage<T>; liveness: number }>()
+  refreshed = 0
+  dropped = 0
+  staleCandidates = 0
+  constructor(private readonly now: () => number = () => Date.now()) {}
+  async enqueue(message: QueueMessage<T>): Promise<boolean> {
+    if (await this.contains(message.id)) return false
+    this.ready.push({ ...message })
+    return true
+  }
+  async dequeue() {
+    const index = this.ready.findIndex(message => (message.notBefore ?? 0) <= this.now())
+    if (index < 0) return undefined
+    const message = this.ready.splice(index, 1)[0]!
+    this.claims.set(message.id, { message, liveness: this.now() })
+    return message
+  }
+  async ack(message: QueueMessage<T>) { this.claims.delete(message.id) }
+  async nack(message: QueueMessage<T>, delayMs = 0) {
+    this.claims.delete(message.id)
+    this.ready.push({ ...message, ...(delayMs > 0 ? { notBefore: this.now() + delayMs } : {}) })
+  }
+  async refreshClaim(message: QueueMessage<T>) {
+    this.refreshed += 1
+    const claim = this.claims.get(message.id)
+    if (claim) claim.liveness = this.now()
+  }
+  async recoverStale(olderThanMs: number, isLeaseGone?: (message: QueueMessage<T>) => Promise<boolean>) {
+    const cutoff = this.now() - olderThanMs
+    let dropped = 0
+    for (const [id, claim] of [...this.claims]) {
+      if (claim.liveness > cutoff) continue
+      this.staleCandidates += 1
+      // Fail closed: without an authoritative answer a stale score proves
+      // nothing about whether the work is still running.
+      if (!isLeaseGone) continue
+      let gone = false
+      try { gone = await isLeaseGone(claim.message) } catch { gone = false }
+      if (!gone) continue
+      this.claims.delete(id)
+      dropped += 1
+    }
+    this.dropped += dropped
+    return dropped
+  }
+  async contains(id: string) { return this.ready.some(message => message.id === id) || this.claims.has(id) }
 }
 
 const staleLeaseError = () => Object.assign(new Error('outbox event not found'), { code: 'OUTBOX_EVENT_NOT_FOUND' })
@@ -116,7 +195,7 @@ describe('durable outbox dispatcher', () => {
     const conflicting = event({ payload: { taskId: 'task_b' } })
 
     await queue.enqueue({ id: first.id, value: first })
-    await expect(queue.enqueue({ id: equivalent.id, value: equivalent })).resolves.toBeUndefined()
+    await expect(queue.enqueue({ id: equivalent.id, value: equivalent })).resolves.toBe(false)
     await expect(queue.enqueue({ id: conflicting.id, value: conflicting })).rejects.toThrow('WORKER_QUEUE_MESSAGE_CONFLICT')
     expect(pushed).toHaveLength(1)
   })
@@ -150,18 +229,74 @@ describe('durable outbox dispatcher', () => {
     expect(memoryQueue.size).toBe(0)
   })
 
-  it('recovers expired Redis claims before acquiring a fresh database lease', async () => {
-    const calls: string[] = []
+  it('discards a stale Redis claim only when the durable lease is really gone', async () => {
+    const store = new Store(event({ id: 'evt_stale_claim' }))
+    const discarded: string[] = []
+    const scans: number[] = []
+    // A live worker renews its database lease while its queue liveness proof is
+    // stale (the refresh failed). The claim must stay in processing.
+    await store.claimPending('ws_1', { leaseMs: 30_000, now: new Date(60_000).toISOString() })
+    const stale = JSON.stringify({ id: 'evt_stale_claim', value: JSON.stringify(store.events.get('evt_stale_claim')) })
     const queue = new RedisQueueAdapter<DurableOutboxEvent>({
       async push() {},
       async pop() { return undefined },
-      async recover(_key, cutoff) { calls.push(`recover:${cutoff}`); return 1 },
+      async listStaleClaims(_key, cutoff) { scans.push(cutoff); return [stale] },
+      async discardClaim(_key, value) { discarded.push(value); return 1 },
     }, 'queue')
-    const dispatcher = new DurableOutboxDispatcher(new Store(event()), queue, async () => ({ value: true }), { leaseMs: 30_000, now: () => 60_000 })
+    const live = new DurableOutboxDispatcher(store, queue, async () => ({ value: true }), { leaseMs: 30_000, now: () => 60_100 })
+    expect(await live.restore('ws_1')).toBe(0)
+    expect(discarded).toEqual([])
+    expect(scans).toHaveLength(1)
 
-    expect(await dispatcher.restore('ws_1')).toBe(1)
-    expect(calls).toHaveLength(1)
-    expect(Number(calls[0]!.split(':')[1])).toBeGreaterThan(0)
+    // Once the durable lease is gone the same claim is obsolete: it is dropped
+    // and re-created from the authoritative database claim.
+    const expired = new DurableOutboxDispatcher(store, queue, async () => ({ value: true }), { leaseMs: 30_000, now: () => 10_000_000 })
+    expect(await expired.restore('ws_1')).toBe(1)
+    expect(discarded).toEqual([stale])
+  })
+
+  it('keeps a claim whose durable lease is still live out of a peer worker reach', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-19T00:00:00.000Z'))
+    const store = new Store(event({ id: 'evt_live_claim' }))
+    // The queue liveness proof can no longer be refreshed, exactly as it stays
+    // frozen when a heartbeat cannot reach Redis.
+    class HintOutageQueue extends RecoveryQueue<DurableOutboxEvent> {
+      async refreshClaim(): Promise<void> { throw new Error('redis refresh outage') }
+    }
+    const queue = new HintOutageQueue(() => Date.now())
+    let release!: () => void
+    let started!: () => void
+    const entered = new Promise<void>(resolve => { started = resolve })
+    const handler = vi.fn(async () => {
+      started()
+      await new Promise<void>(resolve => { release = resolve })
+      return { value: 'first' }
+    })
+    const worker = new DurableOutboxDispatcher(store, queue, handler, { leaseMs: 300, handlerTimeoutMs: 60_000, now: () => Date.now() })
+    expect(await worker.restore('ws_1')).toBe(1)
+    const dispatch = worker.dispatchOnce()
+    await entered
+    await vi.advanceTimersByTimeAsync(200)
+    // The database lease keeps being renewed while the queue hint fails.
+    expect(store.renewCount).toBe(2)
+    expect(queue.refreshed).toBe(0)
+
+    // The claim score is now older than the lease window and the durable lease
+    // is still live: a peer must neither reclaim nor execute this event.
+    const peerHandler = vi.fn(async () => ({ value: 'peer' }))
+    const peer = new DurableOutboxDispatcher(store, queue, peerHandler, { leaseMs: 300, handlerTimeoutMs: 60_000, now: () => Date.now() })
+    await vi.advanceTimersByTimeAsync(200)
+    expect(await peer.restore('ws_1')).toBe(0)
+    expect(queue.staleCandidates).toBeGreaterThan(0)
+    expect(queue.dropped).toBe(0)
+    await expect(peer.dispatchOnce()).resolves.toEqual({ state: 'empty' })
+    expect(peerHandler).not.toHaveBeenCalled()
+
+    release()
+    await expect(dispatch).resolves.toMatchObject({ state: 'succeeded' })
+    expect(store.events.get('evt_live_claim')?.publishedAt).toBeTruthy()
+    expect(handler).toHaveBeenCalledOnce()
   })
 
   it('rebuilds from pending outbox and idempotently acknowledges success', async () => {
@@ -180,7 +315,7 @@ describe('durable outbox dispatcher', () => {
     await expect(queue.enqueue({ id: 'evt_same', value: event({ payload: { taskId: 'task_b' } }) }))
       .rejects.toThrow('WORKER_QUEUE_MESSAGE_CONFLICT')
     expect(queue.size).toBe(1)
-    await expect(queue.enqueue({ id: 'evt_same', value: event({ payload: { taskId: 'task_a' } }) })).resolves.toBeUndefined()
+    await expect(queue.enqueue({ id: 'evt_same', value: event({ payload: { taskId: 'task_a' } }) })).resolves.toBe(false)
     expect(queue.size).toBe(1)
   })
 
@@ -194,14 +329,14 @@ describe('durable outbox dispatcher', () => {
     await expect(queue.contains(original.id)).resolves.toBe(true)
     await expect(queue.enqueue({ id: conflicting.id, value: conflicting }))
       .rejects.toThrow('WORKER_QUEUE_MESSAGE_CONFLICT')
-    await expect(queue.enqueue({ id: original.id, value: original })).resolves.toBeUndefined()
+    await expect(queue.enqueue({ id: original.id, value: original })).resolves.toBe(false)
     expect(queue.size).toBe(0)
 
     await queue.nack(claimed!, 0)
     expect(queue.size).toBe(1)
     const retry = await queue.dequeue()
     await queue.ack(retry!)
-    await expect(queue.enqueue({ id: conflicting.id, value: conflicting })).resolves.toBeUndefined()
+    await expect(queue.enqueue({ id: conflicting.id, value: conflicting })).resolves.toBe(true)
     expect(queue.size).toBe(1)
   })
 
@@ -420,6 +555,39 @@ describe('durable outbox dispatcher', () => {
     expect(acknowledgeSuccess).not.toHaveBeenCalled()
   })
 
+  it('drops a delivery it can no longer prove is ours and re-delivers it under a fresh claim', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-19T00:00:00.000Z'))
+    const store = new Store(event({ id: 'evt_lost_lease' }))
+    const queue = new RecoveryQueue<DurableOutboxEvent>(() => Date.now())
+    vi.spyOn(store, 'renewLease').mockRejectedValueOnce(Object.assign(new Error('database unavailable'), { code: 'DB_UNAVAILABLE' }))
+    const handler = vi.fn(async ({ signal }: { signal?: AbortSignal }) => {
+      await new Promise<void>(resolve => signal!.addEventListener('abort', () => resolve(), { once: true }))
+      return { value: true }
+    })
+    const dispatcher = new DurableOutboxDispatcher(store, queue, handler, { leaseMs: 300, handlerTimeoutMs: 60_000, now: () => Date.now() })
+    await dispatcher.restore('ws_1')
+
+    // Attach the handler before advancing timers: the rejection happens while
+    // the fake clock runs, and an unhandled rejection would be reported.
+    const dispatched = dispatcher.dispatchOnce().catch((error: unknown) => error)
+    await vi.advanceTimersByTimeAsync(100)
+    await expect(dispatched).resolves.toMatchObject({ code: 'DB_UNAVAILABLE' })
+    expect(handler).toHaveBeenCalledOnce()
+    // Requeueing this delivery would only park a token that the next claim
+    // invalidates, so it must be gone instead of wasting a later claim.
+    await expect(queue.contains('evt_lost_lease')).resolves.toBe(false)
+
+    // The durable row is untouched: the event returns with a fresh claim.
+    await vi.advanceTimersByTimeAsync(300)
+    const peerHandler = vi.fn(async () => ({ value: 'ok' }))
+    const peer = new DurableOutboxDispatcher(store, queue, peerHandler, { leaseMs: 300, handlerTimeoutMs: 60_000, now: () => Date.now() })
+    expect(await peer.restore('ws_1')).toBe(1)
+    await expect(peer.dispatchOnce()).resolves.toMatchObject({ state: 'succeeded' })
+    expect(peerHandler).toHaveBeenCalledOnce()
+    expect(store.events.get('evt_lost_lease')?.publishedAt).toBeTruthy()
+  })
+
   it('bounds a handler that ignores abort and fails closed as unknown', async () => {
     vi.useFakeTimers()
     const store = new Store(event({ id: 'evt_timeout' })); const queue = new InMemoryQueue<DurableOutboxEvent>()
@@ -446,5 +614,202 @@ describe('durable outbox dispatcher', () => {
     expect(result.state).toBe('unknown')
     expect(store.events.get('evt_connector_unknown')?.unknownAt).toBeTruthy()
     expect(store.events.get('evt_connector_unknown')?.publishedAt).toBeUndefined()
+  })
+
+  it('keeps a heartbeating claim out of stale recovery so a peer cannot execute it twice', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-01T00:00:00.000Z'))
+    const store = new Store(event({ id: 'evt_heartbeat_claim' }))
+    const queue = new RecoveryQueue<DurableOutboxEvent>(() => Date.now())
+    let release!: () => void
+    let handlerStarted!: () => void
+    const started = new Promise<void>(resolve => { handlerStarted = resolve })
+    const handler = vi.fn(async () => {
+      handlerStarted()
+      await new Promise<void>(resolve => { release = resolve })
+      return { value: 'first' }
+    })
+    const dispatcher = new DurableOutboxDispatcher(store, queue, handler, { leaseMs: 300, handlerTimeoutMs: 60_000, now: () => Date.now() })
+    expect(await dispatcher.restore('ws_1')).toBe(1)
+
+    const inFlight = dispatcher.dispatchOnce()
+    await started
+    expect(handler).toHaveBeenCalledOnce()
+
+    // Two heartbeats renew the database lease while the platform write is
+    // still in flight. The queue claim must be renewed with it.
+    await vi.advanceTimersByTimeAsync(200)
+    expect(store.renewCount).toBe(2)
+    expect(queue.refreshed).toBe(2)
+
+    // A peer worker polls exactly when the original claim timestamp would have
+    // been stale (claim time + leaseMs) and must not reclaim live work.
+    await vi.advanceTimersByTimeAsync(100)
+    const peerHandler = vi.fn(async () => ({ value: 'peer' }))
+    const peer = new DurableOutboxDispatcher(store, queue, peerHandler, { leaseMs: 300, now: () => Date.now() })
+    expect(await peer.restore('ws_1')).toBe(0)
+    await expect(peer.dispatchOnce()).resolves.toEqual({ state: 'empty' })
+    expect(peerHandler).not.toHaveBeenCalled()
+    expect(queue.staleCandidates).toBe(0)
+    expect(queue.dropped).toBe(0)
+    expect(handler).toHaveBeenCalledOnce()
+
+    release()
+    await expect(inFlight).resolves.toMatchObject({ state: 'succeeded' })
+  })
+
+  it('dead-letters an event that exhausted its claim budget instead of executing it again', async () => {
+    const store = new DeadLetterStore(event({ id: 'evt_claim_budget', attempts: 5 }))
+    const queue = new InMemoryQueue<DurableOutboxEvent>()
+    const handler = vi.fn(async () => ({ value: 'must-not-run' }))
+    const dispatcher = new DurableOutboxDispatcher(store, queue, handler, { leaseMs: 300, maxAttempts: 5, now: () => 1_000 })
+    await dispatcher.restore('ws_1')
+
+    const result = await dispatcher.dispatchOnce()
+    expect(result).toMatchObject({ state: 'dead_letter', event: { id: 'evt_claim_budget' } })
+    expect(handler).not.toHaveBeenCalled()
+    expect(store.events.get('evt_claim_budget')?.lastError).toMatchObject({ code: 'WORKER_CLAIM_ATTEMPTS_EXHAUSTED', terminal: true })
+    expect(store.events.get('evt_claim_budget')?.publishedAt).toBeUndefined()
+    expect(await dispatcher.restore('ws_1')).toBe(0)
+  })
+
+  it('executes exactly maxAttempts times when crashing workers share one durable queue', async () => {
+    vi.useFakeTimers()
+    const store = new DeadLetterStore(event({ id: 'evt_crash_loop' }))
+    let now = 1_000
+    // One queue per role+workspace, exactly like production: the claim a
+    // crashed worker left behind is visible to every later round.
+    const queue = new RecoveryQueue<DurableOutboxEvent>(() => now)
+    let handlerStarted = false
+    let markStarted: (() => void) | undefined
+    const attemptsSeen: number[] = []
+    // A crashed worker enters the handler and never records an outcome: the
+    // only durable evidence of the attempt is the lease itself.
+    const handler = vi.fn(async ({ attempt }: { attempt: number }) => {
+      attemptsSeen.push(attempt)
+      handlerStarted = true
+      markStarted?.()
+      return await new Promise<boolean>(() => undefined)
+    })
+    let claims = 0
+    for (let index = 0; index < 12; index += 1) {
+      now += 301
+      const dispatcher = new DurableOutboxDispatcher(store, queue, handler, { leaseMs: 300, maxAttempts: 3, handlerTimeoutMs: 60_000, now: () => now })
+      if (await dispatcher.restore('ws_1') === 0) break
+      claims += 1
+      handlerStarted = false
+      const started = new Promise<void>(resolve => { markStarted = resolve })
+      const dispatch = dispatcher.dispatchOnce()
+      await Promise.race([started, dispatch.then(() => undefined)])
+      if (!handlerStarted) break
+    }
+
+    expect(claims).toBe(4)
+    // Exactly maxAttempts handlers ran, no claim was burned on a delivery the
+    // worker could not use, and the attempts the handler observed are the
+    // contiguous claim numbers.
+    expect(handler).toHaveBeenCalledTimes(3)
+    expect(attemptsSeen).toEqual([1, 2, 3])
+    expect(queue.dropped).toBe(3)
+    expect(store.events.get('evt_crash_loop')?.attempts).toBe(4)
+    expect(store.events.get('evt_crash_loop')?.lastError).toMatchObject({ code: 'WORKER_CLAIM_ATTEMPTS_EXHAUSTED', terminal: true })
+    const finalQueue = new RecoveryQueue<DurableOutboxEvent>(() => now)
+    expect(await new DurableOutboxDispatcher(store, finalQueue, handler, { now: () => now }).restore('ws_1')).toBe(0)
+  })
+
+  it('schedules a delayed retry without blocking the poll loop', async () => {
+    const delayed: Array<{ value: string; notBefore: number }> = []
+    const transport = {
+      async push() { throw new Error('an unexpired retry must not be pushed as immediately ready') },
+      async pop() { return undefined },
+      async remove() {},
+      async pushDelayed(_key: string, value: string, notBeforeEpochMs: number) { delayed.push({ value, notBefore: notBeforeEpochMs }) },
+    } as RedisQueueTransport
+    const queue = new RedisQueueAdapter<DurableOutboxEvent>(transport, 'queue')
+    const message = { id: 'evt_delayed_retry', value: event({ id: 'evt_delayed_retry' }) }
+
+    // A blocking implementation is still asleep when this race settles.
+    const outcome = await Promise.race([
+      queue.nack(message, 500).then(() => 'resolved' as const),
+      new Promise<'blocked'>(resolve => setTimeout(() => resolve('blocked'), 50)),
+    ])
+    expect(outcome).toBe('resolved')
+    expect(delayed).toEqual([{ value: JSON.stringify({ id: message.id, value: JSON.stringify(message.value) }), notBefore: expect.any(Number) }])
+    expect(delayed[0]!.notBefore).toBeGreaterThan(Date.now() + 400)
+  })
+
+  it('reports only the deliveries the queue really accepted', async () => {
+    const pushes: string[] = []
+    const adapter = new RedisQueueAdapter<DurableOutboxEvent>({
+      async push(_key, value) { pushes.push(value) },
+      async pop() { return undefined },
+    }, 'queue')
+    const message = { id: 'evt_delivery_accounting', value: event({ id: 'evt_delivery_accounting' }) }
+    expect(await adapter.enqueue(message)).toBe(true)
+    // The same delivery is already represented: nothing was pushed, so nothing
+    // may be counted as recovered.
+    expect(await adapter.enqueue({ id: message.id, value: { ...message.value } })).toBe(false)
+    expect(pushes).toHaveLength(1)
+
+    const memory = new InMemoryQueue<DurableOutboxEvent>()
+    expect(await memory.enqueue(message)).toBe(true)
+    expect(await memory.enqueue({ id: message.id, value: { ...message.value } })).toBe(false)
+    expect(memory.size).toBe(1)
+  })
+
+  it('does not count a recovery whose delivery the queue refused to hold', async () => {
+    class RefusingQueue extends InMemoryQueue<DurableOutboxEvent> {
+      async enqueue(): Promise<boolean> { return false }
+    }
+    const store = new Store(event({ id: 'evt_refused' }))
+    const dispatcher = new DurableOutboxDispatcher(store, new RefusingQueue(), async () => ({ value: true }))
+    expect(await dispatcher.restore('ws_1')).toBe(0)
+    // The claim is still real, so a later worker can still recover it.
+    expect(store.events.get('evt_refused')?.leaseToken).toBeTruthy()
+  })
+
+  it('releases a claim whose delivery a full queue refused instead of spending its budget', async () => {
+    const store = new Store(event({ id: 'evt_backpressure_claim' }))
+    class FullQueue extends InMemoryQueue<DurableOutboxEvent> {
+      async enqueue(): Promise<boolean> { throw Object.assign(new Error('durable queue is at its configured depth limit'), { code: 'WORKER_QUEUE_DEPTH_EXCEEDED' }) }
+    }
+    const handler = vi.fn(async () => ({ value: true }))
+    const dispatcher = new DurableOutboxDispatcher(store, new FullQueue(), handler, { leaseMs: 300, maxAttempts: 3, now: () => 1_000 })
+
+    expect(await dispatcher.restore('ws_1')).toBe(0)
+    // The claim never became work: the attempt is given back and the event is
+    // immediately reclaimable instead of dead-lettering without ever running.
+    expect(store.events.get('evt_backpressure_claim')?.attempts).toBe(0)
+    expect(store.events.get('evt_backpressure_claim')?.leaseToken).toBeUndefined()
+    expect(await dispatcher.restore('ws_1')).toBe(0)
+    expect(store.events.get('evt_backpressure_claim')?.attempts).toBe(0)
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  it('stops claiming when the durable queue is at its depth limit', async () => {
+    const store = new Store(event({ id: 'evt_backpressure' }))
+    class FullQueue extends InMemoryQueue<DurableOutboxEvent> { async hasCapacity() { return false } }
+    const handler = vi.fn(async () => ({ value: true }))
+    const dispatcher = new DurableOutboxDispatcher(store, new FullQueue(), handler)
+
+    expect(await dispatcher.restore('ws_1')).toBe(0)
+    expect(store.claimCount).toBe(0)
+    await expect(dispatcher.dispatchOnce()).resolves.toEqual({ state: 'empty' })
+  })
+
+  it('spreads retry delays with full jitter instead of a synchronized backoff', async () => {
+    const delays: number[] = []
+    for (const random of [() => 0, () => 0.999]) {
+      const store = new Store(event({ id: 'evt_jitter', attempts: 1 }))
+      const dispatcher = new DurableOutboxDispatcher(store, new InMemoryQueue<DurableOutboxEvent>(), async () => {
+        throw new WorkerFailure({ code: 'RATE_LIMITED', message: 'slow down', retryable: true, unknown: false })
+      }, { now: () => 1_000, baseDelayMs: 1_000, maxDelayMs: 60_000, random })
+      await dispatcher.restore('ws_1')
+      expect((await dispatcher.dispatchOnce()).state).toBe('queued')
+      delays.push(Date.parse(store.events.get('evt_jitter')!.nextAttemptAt!) - 1_000)
+    }
+    expect(delays[0]).toBeGreaterThanOrEqual(1_000)
+    expect(delays[1]).toBeLessThanOrEqual(2_000)
+    expect(delays[0]).toBeLessThan(delays[1]!)
   })
 })

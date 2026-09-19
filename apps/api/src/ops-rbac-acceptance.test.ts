@@ -145,14 +145,16 @@ describe('Ops RBAC backend API acceptance contracts', () => {
     const headers = { 'x-workspace-id': workspaceId, 'x-ops-workbench': 'workspace' }
 
     const allowed = await fetch(`${base}/v1/products`, { headers: { ...headers, authorization: 'Bearer ops-http-merchant-token' } })
-    // The authorization decision is evaluated before the merchant onboarding
-    // prerequisite. A fresh local workspace therefore returns the expected
-    // business precondition, which is evidence that the HTTP policy allowed
-    // the request rather than treating it as an authorization failure.
-    expect(allowed.status).toBe(428)
+    // The authorization decision is evaluated before any merchant business gate.
+    // `GET /v1/products` is registered as `catalog.search`, a read of the
+    // merchant's own inventory that the store boundary does not gate on either
+    // surface, so the allowed request now returns the workspace's own (empty)
+    // page instead of the store precondition. That 200 plus a workspace-scoped
+    // body — never a 401/403 — is the evidence the HTTP policy allowed it.
+    expect(allowed.status).toBe(200)
     const allowedBody = await allowed.json() as RpcBody<{ items: unknown[]; total: number }>
-    expect(allowedBody.data).toBeNull()
-    expect(allowedBody.error).toMatchObject({ code: 'STORE_ONBOARDING_REQUIRED' })
+    expect(allowedBody.error).toBeNull()
+    expect(allowedBody.data).toMatchObject({ items: [], total: 0 })
 
     const denied = await fetch(`${base}/v1/platform-accounts`, { headers: { ...headers, authorization: 'Bearer ops-http-denied-token' } })
     expect(denied.status).toBe(403)
@@ -317,12 +319,14 @@ describe('Ops RBAC backend API acceptance contracts', () => {
       headers: { ...headers, authorization: 'Bearer ops-http-categories-allowed-token' },
     })
     const allowedBody = await allowed.json() as RpcBody<unknown[]>
-    // Authorization is evaluated before the merchant onboarding prerequisite;
-    // this business-level response proves the registered HTTP policy allowed
-    // the request without exposing category data from an unready workspace.
-    expect(allowed.status).toBe(428)
+    // Authorization is evaluated before the merchant business gates. The store
+    // boundary no longer hides this read (`catalog.categories` is exempt on both
+    // surfaces), so the allowed request now reaches the commercial axis and is
+    // refused there — still without exposing category data from an unready
+    // workspace and still never as an authorization failure.
+    expect(allowed.status).toBe(503)
     expect(allowedBody.data).toBeNull()
-    expect(allowedBody.error).toMatchObject({ code: 'STORE_ONBOARDING_REQUIRED' })
+    expect(allowedBody.error).toMatchObject({ code: 'CREATIVE_POINTS_UNAVAILABLE' })
 
     const denied = await fetch(`${base}/v1/catalog/categories?query=${encodeURIComponent('must-not-leak')}`, {
       headers: { ...headers, authorization: 'Bearer ops-http-categories-denied-token' },

@@ -63,6 +63,7 @@ describe('request observability', () => {
       trace_id: 'trace-client',
       workspace_id: 'workspace-1',
       task_id: 'task-1',
+      job_id: null,
       attempt: 2,
       platform: 'taobao',
       account_id: null,
@@ -97,6 +98,7 @@ describe('request observability', () => {
       trace_id: 'req-error',
       workspace_id: 'workspace-9',
       task_id: 'task-9',
+      job_id: null,
       attempt: 3,
       platform: 'douyin',
       account_id: 'store-3',
@@ -145,7 +147,7 @@ describe('request observability', () => {
       expect(serialized).not.toContain(secret)
     }
     expect(Object.keys(JSON.parse(serialized) as object)).toEqual([
-      'event', 'request_id', 'trace_id', 'workspace_id', 'task_id', 'attempt', 'platform', 'account_id', 'actor_id', 'method', 'route', 'status', 'duration_ms', 'error_code', 'authz_decision_id', 'authz_policy_version', 'authz_mode', 'authz_result', 'authz_reason', 'authz_capability', 'worker_role', 'worker_credential_slot', 'worker_proof_timestamp', 'worker_body_sha256', 'worker_nonce_sha256', 'worker_verified_at',
+      'event', 'request_id', 'trace_id', 'workspace_id', 'task_id', 'job_id', 'attempt', 'platform', 'account_id', 'actor_id', 'method', 'route', 'status', 'duration_ms', 'error_code', 'authz_decision_id', 'authz_policy_version', 'authz_mode', 'authz_result', 'authz_reason', 'authz_capability', 'worker_role', 'worker_credential_slot', 'worker_proof_timestamp', 'worker_body_sha256', 'worker_nonce_sha256', 'worker_verified_at',
     ])
   })
 

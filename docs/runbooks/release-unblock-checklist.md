@@ -17,7 +17,7 @@
 1. 保存当前数据库和 Compose 回滚状态。
 2. 通过候选 release 的迁移入口执行前向迁移；不得直接修改 `schema_migrations`。
 3. 迁移前后分别以 `merchant_app` 和 `merchant_ops` 非 superuser、非 `BYPASSRLS` 角色做只读检查。
-4. 目标版本必须为 `219`，并且 1 至 219 连续、名称和 SQL checksum 与候选源码一致。
+4. 目标版本必须等于 `release-metadata.json` 的 `expectedMigrationVersion`（本文不写死该数字，以免新增迁移后过期），并且 1 至该版本连续、名称和 SQL checksum 与候选源码一致。
 5. 验证 `public_platform_rule_versions` 与 `public_platform_rule_audits` 已创建；商家角色只能读公共规则，运营角色才能写生命周期，审计表 UPDATE/DELETE 必须被拒绝。
 
 ## 3. Scanner callback
@@ -57,4 +57,4 @@ curl -fsS https://yxsona.com/api/releasez
 ssh 101 'docker ps --format "table {{.Names}}\\t{{.Status}}"'
 ```
 
-只有 `/api/releasez` 返回 `ready=true`、数据库目标迁移为 219、scanner healthy 且候选 release 身份一致，才可以向商家开放真实使用。
+只有 `/api/releasez` 返回 `ready=true`、数据库目标迁移等于 `release-metadata.json` 的 `expectedMigrationVersion`、scanner healthy 且候选 release 身份一致，才可以向商家开放真实使用。

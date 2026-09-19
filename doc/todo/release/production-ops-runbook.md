@@ -2,14 +2,14 @@
 
 版本：v1.0（与部署配置和发布版本一起变更）
 
-> 当前迁移链以 `release-metadata.json` 声明的 211 为准；本文较早的迁移说明仅作历史背景，生产 preflight 必须使用 `EXPECTED_MIGRATION_VERSION=211`，不得使用旧值。
+> 当前迁移链以 `release-metadata.json` 声明的 `expectedMigrationVersion` 为准；本文**不写死**迁移号（写死会在每次新增迁移后过期，并让 preflight 以「链尾不匹配」失败）。生产 preflight 必须读取该值填入 `EXPECTED_MIGRATION_VERSION`：`EXPECTED_MIGRATION_VERSION=$(node -p "require('./release-metadata.json').expectedMigrationVersion")`。本文较早的迁移说明仅作历史背景。
 
 本 Runbook 是生产操作清单，不替代云厂商、平台开放文档或安全审批。每次操作必须记录 `release_id`、操作者、`request_id/trace_id`（如有）、开始/结束时间和结论。任何平台写操作、凭证轮换和数据库恢复都需要双人复核。
 
 ## 0. 产品范围与当前证据边界
 
 - 当前产品范围仅包括桌面 ChatGPT 商家插件和桌面运营后台。Merchant Studio 仅供开发调试；手机和平板不属于需求、生产验收或上线阻断项。
-- 当前可执行 release 基线以 `release-metadata.json` 为唯一机器可校验来源；本次文档同步时为 Repository `0.2.0`、plugin `0.1.0+codex.20260915100904`、320 个 MCP 方法、151 个商家工具、12 个 Ops 一级域和 PostgreSQL 迁移 211。发布 manifest、镜像和数据库必须与同一次构建读取到的元数据一致，不能只依赖本文快照。
+- 当前可执行 release 基线以 `release-metadata.json` 为唯一机器可校验来源；本次文档同步时为 Repository `0.2.1`、plugin `0.1.0+codex.20260917171000`、327 个 MCP 方法、131 个商家工具、11 个 Ops 一级域；PostgreSQL 迁移链尾以 `release-metadata.json` 为准（本文不写死）。商家工具数由 151 收敛到 131 是插件范围收窄（资料整理/内容候选/审核/导出）而非功能回退，运营侧能力仍在桌面运营后台完整保留。发布 manifest、镜像和数据库必须与同一次构建读取到的元数据一致，不能只依赖本文快照。
 - 2026-08-29 桌面 ChatGPT 真实宿主对 `merchant.start`、`workspace.health`、`catalog.search`、`billing.status` 四项只读入口验收为 4/4 通过；数据来自本地 `ws_demo`/fixture。该证据只能证明桌面宿主链路，不证明真实平台 OAuth、真实支付、生产身份、云容量或生产数据可用，当前生产结论仍为 `NO-GO`。
 
 ## 1. 发布前 Go/No-Go
@@ -23,7 +23,7 @@
 5. 生产订阅下单、升级补差价和支付回调要求 `PAYMENT_MODE=provider`、HTTPS `PAYMENT_CALLBACK_BASE_URL` 与 `PAYMENT_CALLBACK_SECRET`；支付回调必须通过 HMAC 验签和订单金额快照校验。
 6. 数据库备份成功，备份校验和可验证；迁移已在预生产执行并记录版本。
 7. API、Worker、PostgreSQL、Redis 的健康检查为 healthy；队列老任务年龄和 Outbox backlog 在预算内。
-8. `platform-capability-evidence.json` 通过 `npm run evidence:validate`；正式 preflight 还必须让六个平台九项能力（含媒体上传）全部达到 `production_canary`，否则保持 read/write feature flag 关闭。
+8. `platform-capability-evidence.json` 通过 `npm run evidence:validate -- --file <证据文档>`（`--file` 为必需参数，省略时门禁以退出码 2 失败关闭）；正式 preflight 还必须让六个平台十项能力（`authorize`、`refresh`、`read`、`full_sync`、`incremental_sync`、`create`、`update`、`query_status`、`revoke`、`media_upload`）全部达到 `production_canary`，否则保持 read/write feature flag 关闭。
 9. `model-relay-release-1.json` 必须由五类真实中转探测生成，且 `environment=production`、`simulated=false`；每类都要有 provider request ID、usage 和 cost 证据，不能用 fixture 或“已配置”替代真实成功。正式 preflight 会以 `--require-production` 强制该边界。
 10. 告警接收人、升级电话、回滚版本和 kill switch 已确认，且至少有一名当班工程师在线。
 11. `DATABASE_URL` 与 `OPS_DATABASE_URL` 使用不同的非 owner、非 superuser、非 `BYPASSRLS` 凭据；两者都必须使用 `postgres://`/`postgresql://` 并且恰好包含一个 `sslmode=require`、`verify-ca` 或 `verify-full`。Preflight 会在 URL 规范化后拒绝 `localhost`、IPv4/IPv6 loopback 和未指定本机地址。运行探针必须证明 tenant role 无 feature flag 表权限、Ops role 仅有 feature flag 控制面权限且无 tenant table 权限。`infra/scripts/deploy-preflight.sh` 会强制调用 `verify-runtime-db-role.sh`；URL 门禁、真实 PostgreSQL 连接或任一隔离断言失败时直接拒绝发布。
@@ -51,7 +51,7 @@ MODEL_RELAY_EVIDENCE_PATH=/secure/evidence/model-relay-release-1.json \
 CODEX_APP_HOST_EVIDENCE_PATH=/secure/evidence/codex-app-host-release-1.json \
 OBJECT_STORAGE_EVIDENCE_PATH=/secure/evidence/object-storage-release-1.json \
 CANONICAL_CUTOVER_EVIDENCE_PATH=/secure/evidence/canonical-cutover-release-1.json \
-EXPECTED_MIGRATION_VERSION=211 \
+EXPECTED_MIGRATION_VERSION="$(node -p "require('./release-metadata.json').expectedMigrationVersion")" \
 RELEASE_MANIFEST_PATH=/secure/evidence/release-manifest-release-1.json \
 PAYMENT_EVIDENCE_PATH=/secure/evidence/payment-release-1.json \
 RESTORE_EVIDENCE_PATH=/secure/evidence/restore-release-1.json \
@@ -101,7 +101,7 @@ secret 与 `.env` 文件不进入清单。profile 和镜像内路径不能由 la
 
    `backup-postgres.sh` 会生成 custom-format dump 和本地 checksum sidecar。生产备份还必须由仓库外受保护签名服务生成 `postgres_backup` attestation，至少包含 `schema_version=1`、`kind=postgres_backup`、`environment=production`、固定 `key_id`、准确 `backup_file_name`、备份字节 `backup_sha256`、隐私安全的 `source_database_id_sha256`、`created_at`、`expires_at`、`simulated=false` 和 Ed25519 `signature_base64`。私钥不得进入备份脚本或运行容器。
 
-3. 先执行向后兼容的迁移；迁移失败立即停止放量，不执行自动反向迁移。当前 release 迁移链到 211。060–106 的历史变更包括并发索引、商品/素材完整性、工作区配额、运行时 ACL、canonical 回填和一次性交互确认；107–211 继续加入企业租户、商业目录、客户交付证据、告警回执隔离和 MCP OAuth 身份绑定。生产操作必须逐项审阅 `packages/persistence/src/migrations/` 中 107–211 的真实 SQL，不能用这段摘要替代迁移评审。生产 preflight 必须以 `EXPECTED_MIGRATION_VERSION=211` 绑定工作树和镜像链尾；执行时必须监控锁等待、触发器耗时、WAL/副本延迟和失败恢复，不得把本地静态测试当作生产迁移证明。
+3. 先执行向后兼容的迁移；迁移失败立即停止放量，不执行自动反向迁移。当前 release 迁移链尾以 `release-metadata.json` 的 `expectedMigrationVersion` 为准（本文不写死该数字，写死会在每次新增迁移后过期）。060–106 的历史变更包括并发索引、商品/素材完整性、工作区配额、运行时 ACL、canonical 回填和一次性交互确认；107 之后继续加入企业租户、商业目录、客户交付证据、告警回执隔离、MCP OAuth 身份绑定、客户交付账号绑定、公共平台规则，以及退款累计上界（220 `commercial_refund_cumulative_bound`、221 `commercial_refund_amount_bound`）。生产操作必须逐项审阅 `packages/persistence/src/migrations/` 中相应版本的真实 SQL，不能用这段摘要替代迁移评审。生产 preflight 必须以 `EXPECTED_MIGRATION_VERSION="$(node -p "require('./release-metadata.json').expectedMigrationVersion")"` 绑定工作树和镜像链尾；执行时必须监控锁等待、触发器耗时、WAL/副本延迟和失败恢复，不得把本地静态测试当作生产迁移证明。
 4. 部署 API 和 Worker，等待容器健康检查通过；API 使用 `/healthz`，Worker 使用进程健康检查和队列消费指标共同判断。
 5. 放入小流量 canary，观察至少 30 分钟：API 5xx/P95、数据库连接、Redis 内存、Outbox backlog、队列队龄、Worker 重启次数、connector 错误和 `publish_unknown`。
 6. canary 无回归后逐步放量；所有平台写权限按平台、按工作区、按功能 flag 独立开启。

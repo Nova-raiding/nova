@@ -179,7 +179,9 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
 
 > @Store Nova 开始使用
 
-首次调用会读取工作区和准入状态。正常结果应继续询问上传资料、选择平台或查看工作区；不应出现 `MCP_CONFIGURATION_REQUIRED`、`MERCHANT_MCP_BASE_URL is required` 或“插件连接配置未加载”。
+首次调用会读取工作区和准入状态。正常结果应继续询问上传资料、选择商品或查看工作区；不应出现 `MCP_CONFIGURATION_REQUIRED`、`MERCHANT_MCP_BASE_URL is required` 或“插件连接配置未加载”。
+
+注意 `merchant.start` 本身受商业准入门禁：工作区余额为 0、余额未知或缺套餐权益时分别返回 `CREATIVE_POINTS_EXHAUSTED`（402）、`CREATIVE_POINTS_UNAVAILABLE`（503）、`COMMERCIAL_ENTITLEMENT_REQUIRED`（402）。这是准入阻断而不是安装错误；此时 `onboarding.status` 和 `workspace.health` 仍可正常读取状态，便于区分“装错了”和“还没开通”。
 
 技术人员还可以在插件源仓库执行安装缓存校验：
 
@@ -232,11 +234,21 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
 技术人员完成 A 节后，商家只需：
 
 1. 打开新的 ChatGPT 会话；
-2. 选择第一个快捷提示“@Store Nova 开始使用”，先查看服务端核验的四步进度；
-3. 按当前一步的对话提示确认店铺链接，再经平台官方页面授权。没有可读官方授权时保持 0/4，不用店铺密码或 Cookie 代替；
-4. 需要生成、审核、批准或发布时，按对话中的一次性确认继续。
+2. 选择第一个快捷提示“@Store Nova 开始使用”，先查看服务端核验的进度；
+3. 由平台运营先为该商家建立人工店铺记录并导入商品资料，商家在插件中选择被分配的店铺与商品。**当前上线档为 `manual`，不接入六平台 OAuth，插件内没有“经平台官方页面授权”这一步**（`platform.connect`、`platform.store.list` 已从商家工具面隐藏，调用得到 `Unknown tool`）；
+4. 需要生成、审核、批准时按对话中的一次性确认继续；需要内容上线时，由运营在官方商家后台人工发布并回填结果，插件不提供 `publish.*` 工具。
 
-插件会通过服务端 OAuth 绑定店铺。商家不会把平台登录密码交给插件，插件也不会保存平台 access token。店铺选择始终以“平台 + 店铺账号”为范围，同名店铺不会自动选第一家。
+商家在花钱之前就应知道三类硬前置条件，缺任何一项都会被服务端拒绝：
+
+| 前置条件 | 未满足时返回 |
+| --- | --- |
+| 创意点余额大于 0 | `CREATIVE_POINTS_EXHAUSTED`（402，余额为 0）/ `CREATIVE_POINTS_INSUFFICIENT`（402，余额不足） |
+| 有效月付套餐权益 | `COMMERCIAL_ENTITLEMENT_REQUIRED`（402） |
+| 生产素材扫描器已配置 | `IMAGE_SOURCE_ASSET_INVALID`（409） |
+
+**只买创意点包不能创作**：点包只增加余额，公开目录中只有月付套餐 `basic`（¥2000）/ `growth`（¥5000）才产生套餐权益快照（`packages/persistence/src/commercial-contract-repository.ts` 的 `validatePeriod` 与核销路径）。店铺绑定也仍然必要：未绑定店铺时商品同步、正式任务与发布返回 `STORE_ONBOARDING_REQUIRED`（428）。扫描器由平台配置（`ASSET_SCANNER_MODE=clamav_worker` + 签名回执），商家无需也不能提交扫描证据。
+
+商家不会把平台登录密码交给插件，插件也不会保存平台 access token。店铺选择始终以“平台 + 店铺账号”为范围，同名店铺不会自动选第一家。
 
 ## D. 当前问题的准确解释
 
@@ -265,8 +277,13 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
 | `Selected model is at capacity` | 宿主模型尚未把消息交给插件 | 在 ChatGPT 模型选择器切换可用宿主模型后重试 |
 | `Codex host relay /models 未声明当前 host model` | `CODEX_RELAY_MODEL` 不是中转站实际提供的模型 ID，或缺少 Responses 能力声明 | 管理员先检查 `/v1/models`，用真实 ID 重新执行 `codex:relay:configure`，再通过 `codex:relay:validate` |
 | `codex:relay:validate` 失败 | 宿主或业务 relay 缺少 HTTPS、Key、模型 ID 或 `/models` 目录声明 | 仅管理员补齐中转配置；商家不填写模型 Key |
-| 能看到示例商品但不能读取真实商品 | 使用了 fixture 或平台 OAuth/API 尚未配置 | 标记为演示/待配置，完成官方授权和真实 connector 后再验收 |
-| 生成/支付按钮不可用 | 创意点准入、模型成本证据或支付 provider 未通过 | 只查看服务端返回的阻断原因；不要改前端金额或绕过门禁 |
+| 能看到示例商品但不能读取真实商品 | 使用了 fixture，或运营尚未为该商家建立人工店铺记录 | 标记为演示/待配置；由平台运营建立人工店铺记录并导入资料后再验收 |
+| `STORE_ONBOARDING_REQUIRED`（428） | 当前工作区未绑定任何平台店铺，而该动作属于商品同步、正式任务或发布 | 先用上传素材、生成候选、查看/购买创意点等店铺边界外能力；联系平台运营建立人工店铺记录。错误响应里的 `next_actions` 是可执行的下一步 |
+| `CREATIVE_POINTS_EXHAUSTED`（402） | 创意点余额为 0，零余额先于操作分类，除恢复类方法外全部拒绝 | 在商家后台购买创意点包或月付套餐；不要绕过门禁 |
+| `COMMERCIAL_ENTITLEMENT_REQUIRED`（402） | 余额可能够，但没有有效月付套餐权益快照 | 购买月付套餐（`basic` ¥2000 / `growth` ¥5000）。只买点包不会产生权益 |
+| `COMMERCIAL_PAYMENT_PROVIDER_UNAVAILABLE`（503） | 服务端未配置 `COMMERCIAL_PAYMENT_PROVIDER`，订单未创建、未落库 | 平台管理员配置支付通道；这是平台侧缺失，商家重试无效 |
+| `IMAGE_SOURCE_ASSET_INVALID`（409） | 素材未通过生产安全扫描、商用权益或 AI 修改许可 | 平台会自动扫描，等待即可；扫描通过后按提示确认权益。不要手工改扫描状态 |
+| 生成/支付按钮不可用 | 创意点准入、套餐权益、模型成本证据或支付 provider 未通过 | 只查看服务端返回的阻断原因；不要改前端金额或绕过门禁 |
 
 ## F. 安全边界
 
@@ -287,6 +304,8 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
 - [ ] ChatGPT 已完全重启，并在新会话中重新加载工具。
 - [ ] 首个只读入口能返回工作区/引导状态，而不是 MCP 配置缺失。
 - [ ] 如启用宿主中转，`npm run codex:relay:validate` 通过，且密钥没有写入 `config.toml`。
+- [ ] 服务端已配置 `COMMERCIAL_PAYMENT_PROVIDER`，且商业目录中已有可售的月付套餐（`basic` / `growth`）。**未配置时商家下单返回 503 且订单不落库，运营的人工核验也找不到订单，交付后客户将无法自助开通。**
+- [ ] 生产素材扫描器已按 `ASSET_SCANNER_MODE=clamav_worker` 配置并能签发扫描回执；否则素材永远停在隔离区。
 - [ ] 真实平台 OAuth、模型 usage/cost evidence、支付回调和发布 canary 仍按生产门禁单独验收。
 
 相关文档：

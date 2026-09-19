@@ -24,6 +24,12 @@ export interface NormalizedPlatformError {
   status?: number
   platform: Platform
   details?: Record<string, unknown>
+  /**
+   * Provider rate-limit hint parsed from the `Retry-After` response header
+   * (delta-seconds or HTTP-date), in milliseconds. Only set when the provider
+   * actually sent a usable value; retry scheduling must not invent one.
+   */
+  retryAfterMs?: number
 }
 
 export interface ConnectorContext {
@@ -266,6 +272,32 @@ export interface MediaUploadReceipt {
   simulated: boolean
 }
 
+/**
+ * Reconciliation marker for media that was already accepted by the platform
+ * but can no longer be attributed to a successful write (for example the
+ * `validateWrite` gate rejected the draft after the uploads). When the platform
+ * exposes no delete path the marker is the only durable compensation.
+ */
+export interface OrphanedMediaRecord {
+  platform: Platform
+  workspaceId?: string
+  accountId: string
+  visualRef: string
+  role: 'main' | 'secondary'
+  mediaId: string
+  url?: string
+  sha256: string
+  idempotencyKey: string
+  /** Machine-readable reason the media could not be compensated. */
+  reason: string
+  observedAt: string
+}
+
+export interface MediaDiscardResult {
+  deleted: boolean
+  orphaned?: OrphanedMediaRecord
+}
+
 export interface ValidationFinding {
   field: string
   code: 'NOT_ALLOWED' | 'REQUIRED' | 'INVALID_TYPE' | 'INVALID_VALUE'
@@ -333,6 +365,13 @@ export interface PlatformConnector {
   updateProduct(ctx: ConnectorContext, input: PlatformWriteDraft): Promise<WriteReceipt>
   queryWrite(ctx: ConnectorContext, request: WriteIdentity): Promise<WriteStatus>
   uploadMedia?(ctx: ConnectorContext, input: MediaUploadInput): Promise<MediaUploadReceipt>
+  /**
+   * Compensates media that was uploaded before its write was rejected. The
+   * write path must call this for every receipt it uploaded when the
+   * `validateWrite` gate (or a cancelled job) stops the write: neither the
+   * platform nor the outbox will clean up an orphaned upload.
+   */
+  discardMedia?(ctx: ConnectorContext, receipt: MediaUploadReceipt, reason?: string, idempotencyKey?: string): Promise<MediaDiscardResult>
   normalizeError(error: unknown): NormalizedPlatformError
 }
 

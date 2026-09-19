@@ -33,6 +33,13 @@ export interface DurableOutboxStore<E extends DurableOutboxEvent = DurableOutbox
   recordFailure(workspaceId: string, id: string, failure: WorkerError, nextAttemptAt: string, leaseToken?: string): Promise<E>
   markUnknown(workspaceId: string, id: string, failure: WorkerError, leaseToken?: string): Promise<E>
   deadLetter?(workspaceId: string, id: string, failure: WorkerError, leaseToken?: string): Promise<E>
+  /**
+   * Reverts a claim whose delivery the queue refused (depth limit). Nothing in
+   * the queue carries this token, so no handler can ever run under it: leaving
+   * the claim counter incremented would spend the event's claim budget on an
+   * execution that never started.
+   */
+  releaseClaim?(workspaceId: string, id: string, leaseToken: string): Promise<E>
 }
 
 export interface QueueMessage<T> {
@@ -43,16 +50,33 @@ export interface QueueMessage<T> {
 }
 
 export interface QueuePort<T> {
-  enqueue(message: QueueMessage<T>): Promise<void>
+  /** True when this call really added a delivery the queue did not already hold. */
+  enqueue(message: QueueMessage<T>): Promise<boolean>
   dequeue(): Promise<QueueMessage<T> | undefined>
   /** A queue implementation may use this to delete an acknowledged message. */
   ack(message: QueueMessage<T>): Promise<void>
   /** Requeue is used only when persistence cannot record the outcome. */
   nack(message: QueueMessage<T>, delayMs?: number): Promise<void>
-  /** Requeues claims whose worker lease expired after a crash. */
-  recoverStale?(olderThanMs: number): Promise<number>
+  /**
+   * Drops claims whose worker stopped proving liveness. A liveness score is
+   * only a hint: `isLeaseGone` must confirm against the durable store that the
+   * claim each delivery carries is really gone. Dropped deliveries are
+   * re-created by restore() from the authoritative claim, so a peer can never
+   * be handed a delivery whose lease token a live worker still owns.
+   *
+   * Implementations that cannot ask the store must fail closed and keep the
+   * claim: recovering too eagerly is what let two workers execute one event.
+   */
+  recoverStale?(olderThanMs: number, isLeaseGone?: (message: QueueMessage<T>) => Promise<boolean>): Promise<number>
   /** True only when the durable queue still contains this message. */
   contains?(id: string): Promise<boolean>
+  /**
+   * Proves that a claim is still owned by a live worker. Renewed together with
+   * the database lease so recovery can never reclaim in-flight work.
+   */
+  refreshClaim?(message: QueueMessage<T>): Promise<void>
+  /** False when the queue is full; claiming more work would only strand leases. */
+  hasCapacity?(): Promise<boolean>
 }
 
 /**
@@ -68,27 +92,50 @@ export interface RedisQueueTransport {
   pop(key: string, timeoutSeconds: number): Promise<string | undefined>
   /** Removes an acknowledged claim from the processing list. */
   remove?(key: string, value: string): Promise<void>
-  /** Atomically returns claims older than the cutoff to the ready queue. */
-  recover?(key: string, olderThanEpochMs: number): Promise<number>
+  /**
+   * Read-only view of claims whose liveness proof is older than the cutoff.
+   * Recovery must never move a claim back to the ready queue before the
+   * durable store confirms the claim is gone, so listing and discarding are
+   * deliberately separate operations.
+   */
+  listStaleClaims?(key: string, olderThanEpochMs: number, limit?: number): Promise<string[]>
+  /** Atomically drops one claim from the processing list; 1 when it was still there. */
+  discardClaim?(key: string, value: string): Promise<number>
   contains?(key: string, id: string): Promise<boolean>
+  /** Schedules a retry that only becomes claimable at notBeforeEpochMs. */
+  pushDelayed?(key: string, value: string, notBeforeEpochMs: number): Promise<void>
+  /** Refreshes the liveness score of an in-flight claim. */
+  refresh?(key: string, value: string): Promise<void>
+  /** True when the queue can still accept work without exceeding its depth limit. */
+  hasCapacity?(key: string): Promise<boolean>
 }
+
+/**
+ * Upper bound on stale claims inspected per recovery pass. Every candidate
+ * costs one durable-lease check, so the scan stays small; unexamined claims are
+ * simply left in processing and re-examined by the next pass.
+ */
+const STALE_CLAIM_SCAN_LIMIT = 32
 
 export class RedisQueueAdapter<T> implements QueuePort<T> {
   private readonly pendingFingerprints = new Map<string, string>()
 
   constructor(private readonly transport: RedisQueueTransport, private readonly key: string, private readonly encode: (value: T) => string = value => JSON.stringify(value), private readonly decode: (value: string) => T = value => JSON.parse(value) as T) {}
 
-  async enqueue(message: QueueMessage<T>): Promise<void> {
+  async enqueue(message: QueueMessage<T>): Promise<boolean> {
     assertQueueMessageId(message.id)
     const fingerprint = stableQueueSerialization(message.value)
     const existingFingerprint = this.pendingFingerprints.get(message.id)
     if (existingFingerprint !== undefined) {
       if (existingFingerprint !== fingerprint) throw new Error('WORKER_QUEUE_MESSAGE_CONFLICT')
-      return
+      // The delivery is already represented in this process. Report it as not
+      // added: callers count recovered work from this answer.
+      return false
     }
     const encoded = JSON.stringify({ id: message.id, value: this.encode(message.value) })
     await this.transport.push(this.key, encoded)
     this.pendingFingerprints.set(message.id, fingerprint)
+    return true
   }
 
   async dequeue(): Promise<QueueMessage<T> | undefined> {
@@ -126,76 +173,163 @@ export class RedisQueueAdapter<T> implements QueuePort<T> {
 
   async nack(message: QueueMessage<T>, delayMs = 0): Promise<void> {
     assertQueueRetryDelay(delayMs)
-    if (delayMs > 0) await new Promise<void>(resolve => setTimeout(resolve, delayMs))
     // Push before removing the claim. A crash between these operations can
     // duplicate an idempotent outbox message, while the opposite order could
-    // lose it until the database lease expires.
+    // lose it until the database lease expires. A delayed retry is scheduled in
+    // the transport instead of sleeping here: blocking this call stops the
+    // worker from serving any tenant for up to a full lease.
     const fingerprint = stableQueueSerialization(message.value)
     const existingFingerprint = this.pendingFingerprints.get(message.id)
     if (existingFingerprint !== undefined && existingFingerprint !== fingerprint) {
       throw new Error('WORKER_QUEUE_MESSAGE_CONFLICT')
     }
-    await this.transport.push(this.key, JSON.stringify({ id: message.id, value: this.encode(message.value) }))
+    const encoded = JSON.stringify({ id: message.id, value: this.encode(message.value) })
+    if (delayMs > 0 && this.transport.pushDelayed) await this.transport.pushDelayed(this.key, encoded, Date.now() + delayMs)
+    // A transport without delayed scheduling must still never block the worker
+    // loop; it makes the retry claimable immediately instead.
+    else await this.transport.push(this.key, encoded)
     this.pendingFingerprints.set(message.id, fingerprint)
     await this.ack(message)
   }
 
-  async recoverStale(olderThanMs: number): Promise<number> {
-    return await this.transport.recover?.(this.key, Date.now() - olderThanMs) ?? 0
+  async refreshClaim(message: QueueMessage<T>): Promise<void> {
+    await this.transport.refresh?.(this.key, JSON.stringify({ id: message.id, value: this.encode(message.value) }))
+  }
+
+  /**
+   * Drops claims whose liveness proof went stale and whose durable lease the
+   * caller confirmed is gone. `isLeaseGone` is mandatory here: without an
+   * authoritative answer the claim stays in processing, because a delivery
+   * reclaimed too early is a second concurrent execution of live work.
+   */
+  async recoverStale(olderThanMs: number, isLeaseGone?: (message: QueueMessage<T>) => Promise<boolean>): Promise<number> {
+    if (!isLeaseGone || !this.transport.listStaleClaims || !this.transport.discardClaim) return 0
+    const stale = await this.transport.listStaleClaims(this.key, Date.now() - olderThanMs, STALE_CLAIM_SCAN_LIMIT)
+    const obsolete: string[] = []
+    // The durable check is a store round trip per candidate; run a bounded
+    // number of them at once so recovery cannot stall the poll loop.
+    await forEachWithConcurrency(stale, 8, async raw => {
+      let message: QueueMessage<T>
+      try {
+        const parsed = JSON.parse(raw) as { id: string; value: string }
+        if (typeof parsed?.value !== 'string') {
+          // A claim that cannot be decoded can never become work; drop it so it
+          // cannot occupy queue capacity forever.
+          obsolete.push(raw)
+          return
+        }
+        assertQueueMessageId(parsed.id)
+        message = { id: parsed.id, value: this.decode(parsed.value) }
+      } catch {
+        obsolete.push(raw)
+        return
+      }
+      try {
+        if (await isLeaseGone(message)) obsolete.push(raw)
+      } catch {
+        // An unanswerable store must never be read as "the claim is gone".
+      }
+    })
+    let dropped = 0
+    for (const raw of obsolete) dropped += await this.transport.discardClaim(this.key, raw)
+    return dropped
   }
   async contains(id: string): Promise<boolean> { return await this.transport.contains?.(this.key, id) ?? false }
+  async hasCapacity(): Promise<boolean> { return await this.transport.hasCapacity?.(this.key) ?? true }
 }
 
 export class InMemoryQueue<T> implements QueuePort<T> {
   private readonly messages: QueueMessage<T>[] = []
-  private readonly processingFingerprints = new Map<string, string>()
+  private readonly processingClaims = new Map<string, { fingerprint: string; message: QueueMessage<T>; claimedAt: number }>()
   constructor(private readonly now: () => number = () => Date.now()) {}
-  async enqueue(message: QueueMessage<T>): Promise<void> {
+  async enqueue(message: QueueMessage<T>): Promise<boolean> {
     assertQueueMessageId(message.id)
+    const fingerprint = stableQueueSerialization(message.value)
     const existing = this.messages.find(candidate => candidate.id === message.id)
     if (existing) {
-      if (stableQueueSerialization(existing.value) !== stableQueueSerialization(message.value)) {
+      if (stableQueueSerialization(existing.value) !== fingerprint) {
         throw new Error('WORKER_QUEUE_MESSAGE_CONFLICT')
       }
-      return
+      return false
     }
-    const processingFingerprint = this.processingFingerprints.get(message.id)
-    if (processingFingerprint !== undefined) {
-      if (processingFingerprint !== stableQueueSerialization(message.value)) {
+    const processingClaim = this.processingClaims.get(message.id)
+    if (processingClaim !== undefined) {
+      if (processingClaim.fingerprint !== fingerprint) {
         throw new Error('WORKER_QUEUE_MESSAGE_CONFLICT')
       }
-      return
+      return false
     }
     this.messages.push({ ...message })
+    return true
   }
   async dequeue(): Promise<QueueMessage<T> | undefined> {
     const index = this.messages.findIndex(message => (message.notBefore ?? 0) <= this.now())
     if (index < 0) return undefined
     const message = this.messages.splice(index, 1)[0]
     if (!message) return undefined
-    this.processingFingerprints.set(message.id, stableQueueSerialization(message.value))
+    this.processingClaims.set(message.id, {
+      fingerprint: stableQueueSerialization(message.value),
+      message: { ...message },
+      claimedAt: this.now(),
+    })
     return message
   }
   async ack(message: QueueMessage<T>): Promise<void> {
-    this.processingFingerprints.delete(message.id)
+    this.processingClaims.delete(message.id)
   }
   async nack(message: QueueMessage<T>, delayMs = 0): Promise<void> {
     assertQueueRetryDelay(delayMs)
     const fingerprint = stableQueueSerialization(message.value)
-    const processingFingerprint = this.processingFingerprints.get(message.id)
-    if (processingFingerprint !== undefined && processingFingerprint !== fingerprint) {
+    const processingClaim = this.processingClaims.get(message.id)
+    if (processingClaim !== undefined && processingClaim.fingerprint !== fingerprint) {
       throw new Error('WORKER_QUEUE_MESSAGE_CONFLICT')
     }
-    // The claim is still represented by processingFingerprints, so enqueue()
+    // The claim is still represented by processingClaims, so enqueue()
     // would intentionally deduplicate it. Requeue explicitly, then release
     // the in-flight identity only after the retry is present.
     this.messages.push({ ...message, ...(delayMs > 0 ? { notBefore: this.now() + delayMs } : {}) })
-    this.processingFingerprints.delete(message.id)
+    this.processingClaims.delete(message.id)
+  }
+  /**
+   * Mirrors the Redis transport contract: a stale liveness timestamp only makes
+   * a claim a *candidate*, and the delivery is dropped only when the caller
+   * confirms against the durable store that the claim is really gone.
+   */
+  async recoverStale(olderThanMs: number, isLeaseGone?: (message: QueueMessage<T>) => Promise<boolean>): Promise<number> {
+    const cutoff = this.now() - olderThanMs
+    let dropped = 0
+    for (const [id, claim] of [...this.processingClaims]) {
+      if (claim.claimedAt > cutoff) continue
+      let gone = false
+      if (isLeaseGone) {
+        try {
+          gone = await isLeaseGone(claim.message)
+        } catch { gone = false }
+      }
+      if (!gone) continue
+      this.processingClaims.delete(id)
+      dropped += 1
+    }
+    return dropped
   }
   async contains(id: string): Promise<boolean> {
-    return this.messages.some(message => message.id === id) || this.processingFingerprints.has(id)
+    return this.messages.some(message => message.id === id) || this.processingClaims.has(id)
   }
   get size(): number { return this.messages.length }
+}
+
+/** Bounded fan-out so a batch of store round trips cannot serialize a poll loop. */
+async function forEachWithConcurrency<T>(items: readonly T[], limit: number, visit: (item: T) => Promise<void>): Promise<void> {
+  let cursor = 0
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const item = items[cursor]
+      cursor += 1
+      if (item === undefined) continue
+      await visit(item)
+    }
+  })
+  await Promise.all(runners)
 }
 
 function stableQueueSerialization(value: unknown): string {
@@ -239,6 +373,8 @@ export interface DurableDispatcherOptions {
   maxDelayMs?: number
   maxAttempts?: number
   now?: () => number
+  /** Injectable jitter source so retry spread is deterministic in tests. */
+  random?: () => number
   claim?: Pick<OutboxClaimOptions, 'eventTypes' | 'snapshotEntityTypes'>
 }
 
@@ -252,6 +388,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
   private readonly baseDelayMs: number
   private readonly maxDelayMs: number
   private readonly maxAttempts: number
+  private readonly random: () => number
   private readonly claim: DurableDispatcherOptions['claim']
 
   constructor(
@@ -282,12 +419,38 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     if (!Number.isSafeInteger(this.maxAttempts) || this.maxAttempts < 1 || this.maxAttempts > 100) {
       throw new RangeError('maxAttempts must be an integer between 1 and 100')
     }
+    if (options.random !== undefined && typeof options.random !== 'function') {
+      throw new RangeError('random must be a function')
+    }
+    this.random = options.random ?? Math.random
     this.claim = options.claim
   }
 
   async restore(workspaceId: string, limit = 100): Promise<number> {
-    await this.queue.recoverStale?.(this.leaseMs)
-    const events = await this.store.claimPending(workspaceId, { limit, leaseMs: this.leaseMs, now: new Date(this.now()).toISOString(), ...this.claim })
+    const now = new Date(this.now()).toISOString()
+    // Recovery is gated on the durable lease, never on a queue timestamp. A
+    // worker whose claim refresh fails keeps renewing its database lease while
+    // its handler is still writing to a platform, so a stale queue score alone
+    // is not evidence that the work stopped. Handing such a delivery to a peer
+    // is exactly what let two workers execute one event with one lease token.
+    await this.queue.recoverStale?.(this.leaseMs, async message => {
+      if (message.value.workspaceId !== workspaceId) return true
+      try {
+        // Still the current, unexpired claim: its owner is alive. Keep the
+        // delivery and re-examine it on the next pass.
+        await this.store.validateLease(workspaceId, message.id, message.value.leaseToken ?? '', now)
+        return false
+      } catch (cause) {
+        // Only a definitive "this claim is gone" answer may drop a delivery;
+        // an unreachable store must never be read as a lost claim.
+        return isStaleOutboxError(cause)
+      }
+    })
+    // Backpressure: a database lease that cannot be handed to the queue would
+    // strand the event until the lease expires, so never claim more work than
+    // the queue can hold.
+    if (this.queue.hasCapacity && !await this.queue.hasCapacity()) return 0
+    const events = await this.store.claimPending(workspaceId, { limit, leaseMs: this.leaseMs, now, ...this.claim })
     let added = 0
     for (const event of events) {
       // RLS/repository scope is a defense-in-depth boundary, not an implicit
@@ -302,8 +465,16 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
         })
       }
       if (await this.queue.contains?.(event.id)) continue
-      await this.queue.enqueue({ id: event.id, value: event })
-      added += 1
+      try {
+        // The claim is only real once its delivery exists: a queue that refuses
+        // the delivery (depth limit) must not leave a leased event with no
+        // handler to run it, and must not spend the claim budget for that.
+        if (await this.queue.enqueue({ id: event.id, value: event })) added += 1
+      } catch (cause) {
+        if (!isQueueDepthExceeded(cause)) throw cause
+        await this.store.releaseClaim?.(workspaceId, event.id, event.leaseToken ?? '')
+        return added
+      }
     }
     return added
   }
@@ -320,7 +491,9 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
       await this.queue.ack(message)
       return { state: 'dead_letter', event }
     }
-    const attempt = (event.attempts ?? 0) + 1
+    // `attempts` is the claim counter: the repository increments it atomically
+    // with the lease, so it also counts attempts that ended in a crash.
+    const attempt = Math.max(1, event.attempts ?? 0)
     const leaseToken = event.leaseToken
     if (!leaseToken) {
       await this.queue.ack(message)
@@ -340,6 +513,13 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
         await this.queue.ack(message)
         return { state: 'dead_letter', event: leasedEvent }
       }
+      // A worker that dies mid-handler never records an outcome, so `attempts`
+      // kept by failures alone can never bound the retries. The claim counter
+      // is the only evidence such an attempt ever happened: once it exceeds the
+      // budget the event is terminal instead of being reclaimed forever.
+      if ((leasedEvent.attempts ?? 0) > this.maxAttempts) {
+        return await this.exhaustClaimBudget(leasedEvent, message)
+      }
     } catch (leaseError) {
       return this.handleLeaseError(event, message, leaseError)
     }
@@ -357,11 +537,21 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
       try {
         await this.store.renewLease(event.workspaceId, event.id, leaseToken, this.leaseMs, new Date(this.now()).toISOString())
       } catch (cause) {
+        // The database lease is the only proof this worker owns the event:
+        // without it the outcome write is rejected, so stop the handler.
         leaseError = cause
         abortController.abort(cause)
-      } finally {
-        if (!stopped && leaseError === undefined) heartbeatTimer = setTimeout(runHeartbeat, heartbeatIntervalMs)
+        return
       }
+      try {
+        // The queue claim is a delivery hint, not the ownership proof. Recovery
+        // re-checks every reclaimed delivery against the database lease, so a
+        // failed hint refresh can never hand this work to a peer. Aborting the
+        // handler (and the lease renewal that keeps peers out) on a hint outage
+        // would instead discard the outcome of a handler that is still writing.
+        await this.queue.refreshClaim?.(message)
+      } catch { /* hint only: the durable lease still owns this claim */ }
+      if (!stopped && leaseError === undefined) heartbeatTimer = setTimeout(runHeartbeat, heartbeatIntervalMs)
     }
     const runHeartbeat = () => { heartbeatInFlight = heartbeat() }
     heartbeatTimer = setTimeout(runHeartbeat, heartbeatIntervalMs)
@@ -422,12 +612,49 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
   }
 
   private async handleLeaseError(event: E, message: QueueMessage<E>, leaseError: unknown): Promise<DurableDispatchResult<E>> {
-    if (isStaleOutboxError(leaseError)) {
-      await this.queue.ack(message)
-      return { state: 'dead_letter', event }
-    }
-    await this.queue.nack(message, retryAfterLeaseMs(event, this.now(), this.baseDelayMs))
+    // A claim that could not be renewed is not provably this worker's any more.
+    // Requeueing this delivery only parks a token that the next claim
+    // invalidates - in the poll loop that claim always runs first - and the
+    // dead delivery then costs a claim and delays the retry. Drop it instead:
+    // the durable row stays pending, so restore() re-delivers the event with a
+    // fresh claim once the lease is genuinely reclaimable.
+    await this.queue.ack(message)
+    if (isStaleOutboxError(leaseError)) return { state: 'dead_letter', event }
     throw leaseError
+  }
+
+  /**
+   * Terminal outcome for an event that consumed its whole claim budget: the
+   * handler may never have returned (poison payload, OOM kill, hard restart),
+   * but the claim counter proves the attempts were spent.
+   */
+  private async exhaustClaimBudget(event: E, message: QueueMessage<E>): Promise<DurableDispatchResult<E>> {
+    const failure = withAuthorizationCorrelation(event, {
+      code: 'WORKER_CLAIM_ATTEMPTS_EXHAUSTED',
+      message: `worker claimed this event ${event.attempts ?? 0} times without recording an outcome`,
+      retryable: false,
+      unknown: false,
+    })
+    if (this.store.deadLetter) {
+      const updated = await this.store.deadLetter(event.workspaceId, event.id, failure, event.leaseToken)
+      await this.queue.ack(message)
+      return { state: 'dead_letter', event: updated }
+    }
+    const updated = await this.store.recordFailure(event.workspaceId, event.id, failure, new Date(this.now() + this.maxDelayMs).toISOString(), event.leaseToken)
+    await this.queue.ack(message)
+    return { state: 'dead_letter', event: updated }
+  }
+
+  /**
+   * Full jitter spreads a platform-wide failure across the retry window instead
+   * of re-hitting the provider in lockstep. baseDelayMs stays the floor so
+   * jitter can never collapse a retry into an immediate hot loop.
+   */
+  private retryDelayMs(attempts: number): number {
+    const ceiling = Math.min(this.maxDelayMs, this.baseDelayMs * 2 ** Math.max(0, attempts - 1))
+    if (ceiling <= 0) return 0
+    const floor = Math.min(this.baseDelayMs, ceiling)
+    return Math.min(ceiling, Math.max(floor, Math.floor(this.random() * ceiling)))
   }
 
   private async recordHandlerFailure(event: E, message: QueueMessage<E>, failure: WorkerError): Promise<DurableDispatchResult<E>> {
@@ -437,7 +664,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
         await this.queue.ack(message)
         return { state: 'unknown', event: updated }
       }
-      if (!failure.retryable || (event.attempts ?? 0) + 1 >= this.maxAttempts) {
+      if (!failure.retryable || (event.attempts ?? 0) >= this.maxAttempts) {
         if (this.store.deadLetter) {
           const updated = await this.store.deadLetter(event.workspaceId, event.id, failure, event.leaseToken)
           await this.queue.ack(message)
@@ -447,7 +674,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
         await this.queue.ack(message)
         return { state: 'dead_letter', event: updated }
       }
-      const delay = Math.min(this.maxDelayMs, this.baseDelayMs * 2 ** ((event.attempts ?? 0)))
+      const delay = this.retryDelayMs(event.attempts ?? 0)
       const updated = await this.store.recordFailure(event.workspaceId, event.id, failure, new Date(this.now() + delay).toISOString(), event.leaseToken)
       await this.queue.ack(message)
       return { state: 'queued', event: updated }
@@ -484,6 +711,15 @@ function retryAfterLeaseMs(event: DurableOutboxEvent, now: number, baseDelayMs: 
   const leaseUntil = event.leaseUntil ? Date.parse(event.leaseUntil) : NaN
   if (!Number.isFinite(leaseUntil)) return baseDelayMs
   return Math.max(baseDelayMs, leaseUntil - now + 1)
+}
+
+/**
+ * The depth limit is enforced by the transport when it accepts a delivery, so
+ * a full queue surfaces here after the claim was already taken. It is the only
+ * error restore() treats as backpressure instead of a failure.
+ */
+function isQueueDepthExceeded(error: unknown): boolean {
+  return (error as { code?: unknown } | undefined)?.code === 'WORKER_QUEUE_DEPTH_EXCEEDED'
 }
 
 function isStaleOutboxError(error: unknown): boolean {

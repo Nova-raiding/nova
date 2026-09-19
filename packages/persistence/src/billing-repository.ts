@@ -224,19 +224,38 @@ export class PostgresBillingRepository {
   }
 
   /** Settle a small pre-debit to the provider-reported final customer charge.
-   * The original debit remains immutable; only the delta is appended. */
+   * The original debit remains immutable; only the delta is appended.
+   *
+   * The delta is derived from the amount currently in effect for this debit
+   * key — the original reservation plus every settlement entry already
+   * appended — never from the original reservation alone. A provider can
+   * correct a final charge in either direction, and a delta computed from the
+   * reservation would double-count (or reverse) an earlier settlement. */
   async settleDebit(input: { workspaceId: string; debitIdempotencyKey: string; finalAmountFen: number; actorId: string; description: string }) {
     if (!Number.isSafeInteger(input.finalAmountFen) || input.finalAmountFen <= 0) throw new Error('BILLING_FINAL_AMOUNT_INVALID')
     return withWorkspaceTransaction(this.pool, requireWorkspaceScope(input.workspaceId), async client => {
       await client.query('SELECT id FROM workspaces WHERE id=$1 FOR UPDATE', [input.workspaceId])
       const original = await client.query<TransactionRow>("SELECT id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at FROM billing_transactions WHERE workspace_id=$1 AND order_id=$2 AND type='debit'", [input.workspaceId, input.debitIdempotencyKey])
       if (!original.rows[0]) throw new Error('billing debit not found')
-      const delta = input.finalAmountFen - billingAmountFen(original.rows[0].amount_fen)
-      if (delta === 0) return { original: transaction(original.rows[0]), delta: undefined }
-      const orderId = `${delta > 0 ? 'settlement' : 'settlement-refund'}:${input.debitIdempotencyKey}`
+      const originalAmountFen = billingAmountFen(original.rows[0].amount_fen)
+      const settlementDebitOrderId = `settlement:${input.debitIdempotencyKey}`
+      const settlementRefundOrderId = `settlement-refund:${input.debitIdempotencyKey}`
+      const applied = await client.query<{ appliedFen: string | number }>("SELECT COALESCE(SUM(CASE WHEN type='debit' THEN amount_fen ELSE -amount_fen END),0)::bigint AS \"appliedFen\" FROM billing_transactions WHERE workspace_id=$1 AND order_id IN ($2::text,$3::text) AND type IN ('debit','refund')", [input.workspaceId, settlementDebitOrderId, settlementRefundOrderId])
+      const effectiveFen = originalAmountFen + billingInteger(applied.rows[0]?.appliedFen ?? 0)
+      const delta = input.finalAmountFen - effectiveFen
+      if (delta === 0) {
+        // Still report the entry that produced the effective amount so a
+        // replayed settlement is indistinguishable from the first response.
+        const settlementRow = await client.query<TransactionRow>('SELECT id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at FROM billing_transactions WHERE workspace_id=$1 AND order_id IN ($2::text,$3::text) AND type IN (\'debit\',\'refund\') ORDER BY created_at DESC,id DESC LIMIT 1', [input.workspaceId, settlementDebitOrderId, settlementRefundOrderId])
+        return { original: transaction(original.rows[0]), delta: settlementRow.rows[0] ? transaction(settlementRow.rows[0]) : undefined }
+      }
+      const orderId = delta > 0 ? settlementDebitOrderId : settlementRefundOrderId
       const type: BillingTransaction['type'] = delta > 0 ? 'debit' : 'refund'
       const existing = await client.query<TransactionRow>('SELECT id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at FROM billing_transactions WHERE workspace_id=$1 AND order_id=$2 AND type=$3', [input.workspaceId, orderId, type])
       if (existing.rows[0]) {
+        // The ledger keeps one row per (order_id, type); a correction that
+        // cannot be expressed by the existing key is refused instead of being
+        // written as a second, contradictory amount.
         if (billingAmountFen(existing.rows[0].amount_fen) !== Math.abs(delta)) throw new WalletDebitIdempotencyConflictError()
         return { original: transaction(original.rows[0]), delta: transaction(existing.rows[0]) }
       }

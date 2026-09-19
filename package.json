@@ -1,6 +1,7 @@
 {
   "name": "merchant-marketing-codex",
   "private": true,
+  "license": "UNLICENSED",
   "version": "0.2.1",
   "type": "module",
   "packageManager": "npm@10.9.8",

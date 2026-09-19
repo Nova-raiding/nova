@@ -12,21 +12,58 @@ describe('VaultKvCredentialProvider', () => {
       return response({ data: { version: 1 } })
     })
     const provider = new VaultKvCredentialProvider({ address: 'https://vault.test/', token: 'vault-bootstrap-token', mount: 'kv', fetch: fetchMock })
-    const ref = await provider.store({ accountId: 'acct/1', credential: { accessToken: 'secret-access', refreshToken: 'secret-refresh' } })
-    expect(ref.credentialRef).toBe('vault://kv/merchant-marketing/acct%2F1')
+    const ref = await provider.store({ workspaceId: 'ws-one', accountId: 'acct/1', credential: { accessToken: 'secret-access', refreshToken: 'secret-refresh' } })
+    // The record is addressed by workspace-scoped, hashed path parts: neither
+    // the tenancy nor the merchant account is legible in the Vault path.
+    expect(ref.credentialRef).toMatch(/^vault:\/\/kv\/merchant-marketing\/workspaces\/[a-f0-9]{24}\/accounts\/[a-f0-9]{24}$/u)
     expect(ref.credentialRef).not.toContain('secret-access')
+    expect(ref.credentialRef).not.toContain('acct')
+    const storedPath = ref.credentialRef.slice('vault://kv/'.length)
     await expect(provider.resolve(ref)).resolves.toMatchObject({ accessToken: 'secret-access', refreshToken: 'secret-refresh' })
     await provider.revoke(ref)
-    expect(calls[0]?.url).toContain('/v1/kv/data/merchant-marketing/acct%2F1')
+    expect(calls[0]?.url).toContain(`/v1/kv/data/${storedPath}`)
     expect(calls[0]?.init?.headers).toMatchObject({ 'x-vault-token': 'vault-bootstrap-token' })
     expect(JSON.stringify(calls[0]?.init?.body)).toContain('secret-access')
-    expect(calls[1]?.url).toContain('/v1/kv/data/merchant-marketing/acct%2F1')
-    expect(calls[2]?.url).toContain('/v1/kv/metadata/merchant-marketing/acct%2F1')
+    expect(calls[1]?.url).toContain(`/v1/kv/data/${storedPath}`)
+    expect(calls[2]?.url).toContain(`/v1/kv/metadata/${storedPath}`)
+  })
+
+  it('resolves the same workspace-scoped path from an account identity alone', async () => {
+    const calls: string[] = []
+    const provider = new VaultKvCredentialProvider({
+      address: 'https://vault.test', token: 'token', mount: 'kv',
+      fetch: async (url: string | URL) => { calls.push(String(url)); return response({ data: { data: { access_token: 'workspace-token' } } }) },
+    })
+    const stored = await provider.store({ workspaceId: 'ws-one', accountId: 'acct-1', credential: { accessToken: 'workspace-token' } })
+    await expect(provider.resolve({ workspaceId: 'ws-one', accountId: 'acct-1' })).resolves.toMatchObject({ accessToken: 'workspace-token' })
+    // store and the (workspace, account) fallback must agree on one path,
+    // otherwise a refresh writes a record no reader can find.
+    expect(calls[0]).toContain(stored.credentialRef.slice('vault://kv/'.length))
+    expect(calls[1]).toContain(stored.credentialRef.slice('vault://kv/'.length))
+  })
+
+  it('never reads another workspace record when no credential ref is supplied', async () => {
+    const calls: string[] = []
+    const provider = new VaultKvCredentialProvider({
+      address: 'https://vault.test', token: 'token', mount: 'kv',
+      fetch: async (url: string | URL) => { calls.push(String(url)); return response({ data: { data: { access_token: 'other-workspace-token' } } }) },
+    })
+    // Both workspaces connect the same remote merchant account: without an
+    // explicit workspace (or an opaque ref minted for that workspace) the
+    // account id alone must not resolve a shared credential record.
+    await expect(provider.resolve({ accountId: 'shared-merchant-account' })).rejects.toThrow('explicit workspaceId')
+    await expect(provider.store({ accountId: 'shared-merchant-account', credential: { accessToken: 'one' } })).rejects.toThrow('explicit workspaceId')
+    expect(calls).toEqual([])
+    const first = await provider.resolve({ workspaceId: 'ws-one', accountId: 'shared-merchant-account' })
+    const second = await provider.resolve({ workspaceId: 'ws-two', accountId: 'shared-merchant-account' })
+    expect(first).toMatchObject({ accessToken: 'other-workspace-token' })
+    expect(second).toMatchObject({ accessToken: 'other-workspace-token' })
+    expect(calls[0]).not.toBe(calls[1])
   })
 
   it('returns undefined when KV data is absent and does not configure partial env', async () => {
     const provider = new VaultKvCredentialProvider({ address: 'https://vault.test', token: 'token', fetch: async () => response({}, 404) })
-    await expect(provider.resolve({ accountId: 'acct' })).resolves.toBeUndefined()
+    await expect(provider.resolve({ workspaceId: 'ws-one', accountId: 'acct' })).resolves.toBeUndefined()
     expect(createVaultCredentialProviderFromEnv({ VAULT_ADDR: 'https://vault.test' })).toBeUndefined()
     expect(createVaultCredentialProviderFromEnv({ VAULT_TOKEN: 'token' })).toBeUndefined()
     expect(createVaultCredentialProviderFromEnv({ VAULT_ADDR: 'https://vault.test', VAULT_TOKEN: 'token' })).toMatchObject({ kind: 'vault' })
@@ -55,20 +92,20 @@ describe('VaultKvCredentialProvider', () => {
       mount: 'kv',
       fetch: async (url: string | URL) => { calls.push(String(url)); return response({}, 404) },
     })
-    await expect(provider.resolve({ accountId: 'safe-account', credentialRef: 'vault://kv/merchant-marketing/%2e%2e/sys' })).resolves.toBeUndefined()
-    expect(calls[0]).toContain('/v1/kv/data/merchant-marketing/safe-account')
+    await expect(provider.resolve({ workspaceId: 'ws-safe', accountId: 'safe-account', credentialRef: 'vault://kv/merchant-marketing/%2e%2e/sys' })).resolves.toBeUndefined()
+    expect(calls[0]).toContain('/v1/kv/data/merchant-marketing/workspaces/')
     expect(calls[0]).not.toContain('%2e%2e')
   })
 
   it('bounds Vault responses and propagates a request timeout signal', async () => {
     const oversized = new Response('{"data":{}}', { headers: { 'content-length': String(2 * 1024 * 1024) } })
-    await expect(new VaultKvCredentialProvider({ address: 'https://vault.test', token: 'token', fetch: async () => oversized }).resolve({ accountId: 'acct' })).rejects.toThrow('safety limit')
+    await expect(new VaultKvCredentialProvider({ address: 'https://vault.test', token: 'token', fetch: async () => oversized }).resolve({ workspaceId: 'ws', accountId: 'acct' })).rejects.toThrow('safety limit')
 
     let aborted = false
     const provider = new VaultKvCredentialProvider({ address: 'https://vault.test', token: 'token', timeoutMs: 10, fetch: async (_url, init) => new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener('abort', () => { aborted = true; reject(new DOMException('aborted', 'AbortError')) })
     }) })
-    await expect(provider.resolve({ accountId: 'acct' })).rejects.toThrow('aborted')
+    await expect(provider.resolve({ workspaceId: 'ws', accountId: 'acct' })).rejects.toThrow('aborted')
     expect(aborted).toBe(true)
   })
 })

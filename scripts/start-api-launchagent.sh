@@ -19,7 +19,9 @@ fi
 # LaunchAgent starts outside an interactive shell and Node does not load the
 # repository .env file by itself. Read only the model settings needed by the
 # API; never source the file because it may contain JSON-valued settings.
-project_dir="/Users/lixiaomei/Desktop/code/codexSkills"
+# Derive the repository root from this script's own location so the LaunchAgent
+# works from any checkout path, not just the machine it was written on.
+project_dir=$(cd "$(dirname "$0")/.." && pwd)
 env_file="$project_dir/.env"
 if [ -f "$env_file" ]; then
   for name in \
@@ -66,5 +68,5 @@ export MODEL_RELAY_API_KEY="$relay_key"
 unset relay_key
 
 exec /opt/homebrew/opt/node@22/bin/node \
-  --import /Users/lixiaomei/Desktop/code/codexSkills/node_modules/tsx/dist/loader.mjs \
+  --import "$project_dir/node_modules/tsx/dist/loader.mjs" \
   apps/api/src/server.ts

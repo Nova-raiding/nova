@@ -123,11 +123,15 @@ export function validateCapacityEvidence(document: unknown, options: { requireCl
 function main() {
   const args = process.argv.slice(2)
   const fileIndex = args.indexOf('--file')
-  const path = (fileIndex >= 0 ? args[fileIndex + 1] : undefined) ?? 'doc/todo/infra/capacity-evidence.example.json'
+  const path = fileIndex >= 0 ? args[fileIndex + 1] : undefined
   const releaseIndex = args.indexOf('--release-id')
   const expectedReleaseId = releaseIndex >= 0 ? args[releaseIndex + 1] : undefined
   const profileIndex = args.indexOf('--profile')
   const expectedProfile = profileIndex >= 0 ? args[profileIndex + 1] as Profile : undefined
+  // Never default to the repository example fixture: silently validating a
+  // non-production example while printing "passed" would misrepresent it as
+  // real capacity evidence. Callers must name the evidence file explicitly.
+  if (!path) { console.error('--file is required'); process.exit(2) }
   let document: unknown
   try { document = JSON.parse(readFileSync(path, 'utf8')) } catch (error) { console.error(`unable to read JSON capacity evidence: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
   const errors = validateCapacityEvidence(document, { requireCloudGate: args.includes('--require-cloud-gate'), expectedReleaseId, expectedProfile })

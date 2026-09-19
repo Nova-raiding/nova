@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 
-export type RequestLogEvent = 'request.received' | 'request.completed' | 'request.failed'
+export type RequestLogEvent = 'request.received' | 'request.completed' | 'request.failed' | 'request.aborted'
 
 export interface RequestCorrelation {
   readonly requestId: string
@@ -11,6 +11,9 @@ export interface RequestCorrelation {
 export interface RequestLogInput {
   workspaceId?: unknown
   taskId?: unknown
+  /** Durable job identifier (generation/publish/image). The production ops
+   * runbook requires logs to correlate it, alongside task_id. */
+  jobId?: unknown
   attempt?: unknown
   platform?: unknown
   accountId?: unknown
@@ -40,6 +43,7 @@ export interface RequestLogContext {
   trace_id: string
   workspace_id: string | null
   task_id: string | null
+  job_id: string | null
   attempt: number | null
   platform: string | null
   account_id: string | null
@@ -85,6 +89,7 @@ export function buildRequestLogEvent(request: IncomingMessage, event: RequestLog
     trace_id: correlation.traceId,
     workspace_id: safeText(input.workspaceId),
     task_id: safeText(input.taskId),
+    job_id: safeText(input.jobId),
     attempt: safeInteger(input.attempt, 0),
     platform: safeText(input.platform, 64),
     account_id: safeText(input.accountId),

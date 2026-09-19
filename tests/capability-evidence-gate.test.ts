@@ -1,7 +1,23 @@
+import { spawnSync } from 'node:child_process'
 import { generateKeyPairSync } from 'node:crypto'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { signProductionEvidence } from './production-evidence-gate.js'
 import { REQUIRED_CAPABILITIES, REQUIRED_PLATFORMS, validateCapabilityEvidence, validateCapabilityProductionSignature } from './capability-evidence-gate.js'
+
+const root = resolve(import.meta.dirname, '..')
+const CLI = 'tests/capability-evidence-gate.ts'
+const FIXTURE = 'doc/todo/platform/platform-capability-evidence.example.json'
+// The in-memory documents above never touch the repository fixture, so they
+// cannot catch a fixture that drifted out of the gate's contract. These run the
+// real CLI entrypoint against the real file.
+const runGate = (args: string[]) => spawnSync(process.execPath, ['--import', 'tsx', CLI, ...args], {
+  cwd: root,
+  encoding: 'utf8',
+  timeout: 120_000,
+})
 
 function document(state: string = 'production_canary') {
   return {
@@ -77,6 +93,37 @@ describe('capability evidence gate', () => {
     expect(validateCapabilityProductionSignature(value, bindings)).toEqual([])
     value.platforms[0].capabilities.read.scope = 'tampered'
     expect(validateCapabilityProductionSignature(value, bindings)).toContain('signature_base64 is invalid')
+  })
+
+  it('accepts the on-disk example fixture through the real CLI entrypoint', () => {
+    const result = runGate(['--file', FIXTURE])
+    expect(result.error).toBeUndefined()
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain(`capability evidence schema passed: ${FIXTURE}`)
+    // The fixture is not production evidence and the CLI must say so.
+    expect(result.stdout).toContain('fixture/non-production validation only')
+  })
+
+  it('fails closed when a capability is missing from the fixture instead of silently passing', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'capability-evidence-'))
+    try {
+      const drifted = JSON.parse(readFileSync(resolve(root, FIXTURE), 'utf8')) as { platforms: Array<{ platform: string; capabilities: Record<string, unknown> }> }
+      delete drifted.platforms[0]!.capabilities.refresh
+      const driftedPath = join(directory, 'drifted.json')
+      writeFileSync(driftedPath, JSON.stringify(drifted))
+      const result = runGate(['--file', driftedPath])
+      expect(result.status, result.stderr).toBe(1)
+      expect(result.stderr).toContain(`${drifted.platforms[0]!.platform}.refresh.state is invalid`)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('requires an explicit --file rather than defaulting to the example fixture', () => {
+    const result = runGate([])
+    expect(result.status, result.stderr).toBe(2)
+    expect(result.stderr).toContain('--file is required')
+    expect(result.stdout).not.toContain('passed')
   })
 
   it('rejects a valid signature bound to another manifest or nonce', () => {

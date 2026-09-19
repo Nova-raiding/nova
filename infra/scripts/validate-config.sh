@@ -14,7 +14,10 @@ docker compose -f infra/local/docker-compose.yml config --quiet
 # uses Bash arrays and `set -o pipefail`.  Calling `sh -n` unconditionally is
 # portable on macOS (where `/bin/sh` is Bash) but fails on Linux runners whose
 # `/bin/sh` is dash, so CI would reject an otherwise valid Bash script.
-for script in infra/scripts/*.sh; do
+# Every directory that ships a shell entrypoint is covered here so a syntax
+# error cannot hide outside infra/scripts.
+for script in infra/scripts/*.sh scripts/*.sh tests/*.sh infra/local/*.sh infra/nginx/*.sh; do
+  [ -f "$script" ] || continue
   interpreter=$(sed -n '1s/^#![[:space:]]*//p' "$script")
   case "$interpreter" in
     *bash*) bash -n "$script" ;;

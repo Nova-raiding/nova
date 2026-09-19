@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createConfiguredConnector, type AccessCredential, type CredentialProvider, type HttpConnectorConfig, type PlatformConnector, type ConnectorBeforeRequest } from './index.js'
+import { createConfiguredConnector, createFakeConnector, profiles, type AccessCredential, type CredentialProvider, type HttpConnectorConfig, type PlatformConnector, type ConnectorBeforeRequest } from './index.js'
 
 const config: HttpConnectorConfig = {
   clientId: 'app-test',
@@ -313,6 +313,25 @@ describe('HttpPlatformConnector', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('maps rows read through the platform API as official API data, not fixture data', async () => {
+    const fetchMock = vi.fn(async () => response({ items: [{ id: 'remote-1', title: 'Remote', price: 10, stock: 4, category: 'cat' }] }))
+    const connector = createConfiguredConnector('tmall', {
+      config: { ...readyConfig, mapProducts: undefined, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'tmall' as const })) },
+      credentials: credentials(), fetch: fetchMock, allowTestCredentials: true, allowTestAdapters: true,
+    })
+    const context = { workspaceId: 'ws', accountId: 'acct' }
+    const page = await connector.syncProducts(context)
+    expect(page).toMatchObject({ source: 'official_api', simulated: false })
+    expect(connector.mapToCanonical(page.items[0]!, { id: 'tmall.mapping.v1' })).toMatchObject({ source: 'official_api', platform: 'tmall' })
+    // The shared platform profile maps the fixture shape, so without the
+    // transport override every real sync row would claim to be demo data and
+    // consumers would mark the merchant's live store as simulated.
+    expect(profiles.tmall.mapProduct(page.items[0]!, { id: 'tmall.mapping.v1' }).source).toBe('fixture')
+    const fake = createFakeConnector('tmall', { configured: true })
+    const fakePage = await fake.syncProducts(context)
+    expect(fake.mapToCanonical(fakePage.items[0]!, { id: 'tmall.mapping.v1' }).source).toBe('fixture')
+  })
+
   it('fails closed when a provider write omits or corrupts its request ID', async () => {
     for (const requestId of [undefined, 'bad request', 'x'.repeat(257)]) {
       const connector = createConfiguredConnector('jd', {
@@ -453,6 +472,58 @@ describe('HttpPlatformConnector', () => {
       .resolves.toMatchObject({ found: true, state: 'unknown', simulated: false })
   })
 
+  it('propagates a numeric Retry-After hint from a throttled response', async () => {
+    const observations: Array<{ retryAfterMs?: number }> = []
+    const connector = createConfiguredConnector('jd', {
+      config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },
+      credentials: credentials(),
+      fetch: async () => new Response(JSON.stringify({ code: 'slow_down' }), { status: 429, headers: { 'content-type': 'application/json', 'retry-after': '2' } }),
+      onExchange: observation => observations.push(observation),
+      allowTestCredentials: true,
+      allowTestAdapters: true,
+    })
+    await expect(connector.syncProducts({ workspaceId: 'ws', accountId: 'acct' }))
+      .rejects.toMatchObject({ normalized: { code: 'RATE_LIMITED', retryable: true, status: 429, retryAfterMs: 2_000 } })
+    expect(observations).toMatchObject([{ status: 429, retryAfterMs: 2_000 }])
+  })
+
+  it('supports the HTTP-date Retry-After form and ignores unusable values', async () => {
+    const at = (header: string) => createConfiguredConnector('jd', {
+      config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },
+      credentials: credentials(),
+      fetch: async () => new Response('{}', { status: 429, headers: { 'content-type': 'application/json', 'retry-after': header } }),
+      allowTestCredentials: true,
+      allowTestAdapters: true,
+    }).syncProducts({ workspaceId: 'ws', accountId: 'acct' })
+
+    const before = Date.now()
+    const dated = await at(new Date(before + 30_000).toUTCString()).catch(error => error)
+    expect(dated.normalized.retryAfterMs).toBeGreaterThan(25_000)
+    expect(dated.normalized.retryAfterMs).toBeLessThanOrEqual(31_000)
+    // A past date is a hint to retry now, never a negative delay.
+    expect((await at(new Date(before - 60_000).toUTCString()).catch(error => error)).normalized.retryAfterMs).toBe(0)
+    for (const unusable of ['', 'soon', '-5', 'P1D']) {
+      const error = await at(unusable).catch(reason => reason)
+      expect(error.normalized).toMatchObject({ code: 'RATE_LIMITED', retryable: true })
+      expect(error.normalized.retryAfterMs).toBeUndefined()
+    }
+  })
+
+  it('does not attach a Retry-After hint to a successful response', async () => {
+    const observations: Array<{ retryAfterMs?: number }> = []
+    const connector = createConfiguredConnector('jd', {
+      config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },
+      credentials: credentials(),
+      fetch: async () => new Response(JSON.stringify({ items: [] }), { status: 200, headers: { 'content-type': 'application/json', 'retry-after': '5' } }),
+      onExchange: observation => observations.push(observation),
+      allowTestCredentials: true,
+      allowTestAdapters: true,
+    })
+    await expect(connector.syncProducts({ workspaceId: 'ws', accountId: 'acct' })).resolves.toMatchObject({ source: 'official_api' })
+    expect(observations).toMatchObject([{ status: 200 }])
+    expect(observations[0]?.retryAfterMs).toBeUndefined()
+  })
+
   it('normalizes timeout and HTTP statuses without leaking token data', async () => {
     const connector = createConfiguredConnector('pinduoduo', { config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'pinduoduo' as const })) }, credentials: credentials(), fetch: async () => response({ code: 'bad', token: 'secret' }, 429), allowTestCredentials: true, allowTestAdapters: true })
     await expect(connector.syncProducts({ workspaceId: 'ws', accountId: 'acct' })).rejects.toMatchObject({ normalized: { code: 'RATE_LIMITED', retryable: true, status: 429 } })
@@ -532,6 +603,22 @@ describe('HttpPlatformConnector', () => {
     await expect(unconfigured.syncProducts({ workspaceId: 'ws', accountId: 'acct' })).rejects.toMatchObject({ normalized: { code: 'NOT_CONFIGURED' } })
     const noStore = createConfiguredConnector('jd', { config })
     await expect(noStore.exchangeCode({ code: 'code', state: 'state' })).rejects.toMatchObject({ normalized: { code: 'NOT_CONFIGURED' } })
+  })
+
+  it('fails closed with NOT_CONFIGURED on the whole operation surface when the connector is not configured', async () => {
+    const connector = createConfiguredConnector('jd', {})
+    const context = { workspaceId: 'ws', accountId: 'acct' }
+    const draft = { fields: { title: 'ok', category: 'cat', price: 1, stock: 1 }, idempotencyKey: 'not-configured-http' }
+    const notConfigured = { normalized: { code: 'NOT_CONFIGURED' } }
+    await expect(connector.syncProducts(context)).rejects.toMatchObject(notConfigured)
+    await expect(connector.createProduct(context, draft)).rejects.toMatchObject(notConfigured)
+    await expect(connector.updateProduct(context, draft)).rejects.toMatchObject(notConfigured)
+    await expect(connector.queryWrite(context, { idempotencyKey: draft.idempotencyKey })).rejects.toMatchObject(notConfigured)
+    await expect(connector.uploadMedia!(context, { visualRef: 'v', role: 'main', mimeType: 'image/png', sha256: 'a'.repeat(64), bytes: new Uint8Array(), idempotencyKey: 'media-not-configured' })).rejects.toMatchObject(notConfigured)
+    await expect(connector.exchangeCode({ code: 'code', state: 'state' })).rejects.toMatchObject(notConfigured)
+    await expect(connector.refreshCredential({ accountId: 'acct', credentialRef: 'vault://acct' })).rejects.toMatchObject(notConfigured)
+    await expect(connector.revoke({ accountId: 'acct', credentialRef: 'vault://acct' })).rejects.toMatchObject(notConfigured)
+    await expect(connector.authorize({ workspaceId: 'ws', actorId: 'actor', redirectUri: 'https://app.test/callback', state: 'state' })).resolves.toMatchObject({ ok: false, code: 'NOT_CONFIGURED', mode: 'not_configured' })
   })
 
   it('does not expose provider failures or token-shaped details', async () => {

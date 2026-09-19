@@ -43,6 +43,10 @@ export class FakePlatformConnector implements PlatformConnector {
   async revoke(_ref: CredentialRef) { this.throwFault('revoke'); if (!this.options.configured) this.notConfigured(); this.revoked = true }
   async syncProducts(_ctx: ConnectorContext, cursor?: Cursor): Promise<ProductPage> {
     this.throwFault('syncProducts')
+    // Fixture rows are demo data. An unconfigured connector must fail closed
+    // here too, otherwise a production worker without credentials imports
+    // hard-coded fixture products as if they came from the platform.
+    if (!this.options.configured) this.notConfigured()
     if (this.revoked) this.unauthorized()
     return { items: cursor?.value ? [] : [structuredClone(this.profile.fixture)], source: 'fixture', simulated: true }
   }
@@ -52,6 +56,9 @@ export class FakePlatformConnector implements PlatformConnector {
   async updateProduct(ctx: ConnectorContext, input: PlatformWriteDraft) { return this.write('update', ctx, input) }
   async queryWrite(_ctx: ConnectorContext, request: WriteIdentity): Promise<WriteStatus> {
     this.throwFault('queryWrite')
+    // Write status must never be answered from fixture state when the official
+    // API is not configured for this process.
+    if (!this.options.configured) this.notConfigured()
     if (this.revoked) this.unauthorized()
     return this.writes.get(request.idempotencyKey) ?? { found: false, state: 'unknown', simulated: true }
   }

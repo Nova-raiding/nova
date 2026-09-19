@@ -255,7 +255,12 @@ printf '%s\n' Darwin
     expect(skill).toContain('storyboard-prompt-assistant')
     expect(skill).toContain('读取商品事实与素材扫描结果')
     expect(skill).toContain('用 `creative.brief` 形成结构化视频 brief')
-    expect(skill).toContain('调用 `multimodal.video.request` 的 `output=rendering`')
+    // The merchant bridge does not expose the video rendering tool by default.
+    // The entry skill must gate the call on the current tools/list surface
+    // instead of instructing an unconditional call that returns Unknown tool.
+    expect(skill).toContain('只有当前 `tools/list` 实际暴露视频渲染工具时')
+    expect(skill).toContain('以 `output=rendering` 调用它')
+    expect(skill).not.toContain('调用 `multimodal.video.request`')
     expect(skill).toContain('查询同一 provider job')
     expect(skill).toContain('对象归档、病毒扫描和商品保真复核')
     expect(skill).toContain('不能用脚本、分镜或 fixture 视频冒充可发布商品视频')

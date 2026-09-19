@@ -46,7 +46,21 @@ const generatedEvidencePaths = [
   'tmp/example.py',
 ] as const
 
+// A path only counts as excluded from source control when it is BOTH matched by
+// a .gitignore rule AND absent from the index. `git check-ignore` alone consults
+// ignore rules and never the index, so a force-added or historically committed
+// artifact would report as "ignored" while still shipping in every clone.
 function isIgnored(path: string): boolean {
+  try {
+    execFileSync('git', ['ls-files', '--error-unmatch', '--', path], {
+      cwd: root,
+      stdio: 'ignore',
+    })
+    return false
+  } catch (error) {
+    if ((error as { status?: number }).status !== 1) throw error
+  }
+
   try {
     execFileSync('git', ['check-ignore', '--quiet', '--no-index', path], {
       cwd: root,

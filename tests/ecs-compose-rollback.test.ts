@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -104,7 +104,11 @@ describe('ECS Compose rollback executor', () => {
     expect(script).toContain('BEGIN READ ONLY')
     expect(script).toContain('SELECT version,name,checksum FROM schema_migrations ORDER BY version ASC')
     expect(script).toContain('verifyAppliedMigrations(result.rows,migrations)')
-    expect(metadata.expectedMigrationVersion).toBe(219)
+    // Derive the tail from the migrations directory rather than hardcoding it:
+    // a literal here drifts the moment a migration is added, which is the very
+    // mismatch this assertion exists to catch.
+    const tail = Math.max(...readdirSync('packages/persistence/src/migrations').map(name => Number(name.split('_')[0])).filter(version => Number.isSafeInteger(version)))
+    expect(metadata.expectedMigrationVersion).toBe(tail)
     expect(script).toContain('for(let version=1;version<=expected;version+=1)')
     expect(script).not.toContain('DROP DATABASE')
     expect(script).not.toContain('DELETE FROM schema_migrations')

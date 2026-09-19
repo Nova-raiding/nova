@@ -72,6 +72,13 @@ export interface DurableOutboxRepository extends OutboxRepository {
   deadLetter(workspaceId: string, id: string, failure: OutboxFailure, leaseToken?: string): Promise<OutboxEvent>
   markUnknown(workspaceId: string, id: string, failure: OutboxFailure, leaseToken?: string): Promise<OutboxEvent>
   ack(workspaceId: string, id: string, leaseToken?: string, publishedAt?: string): Promise<OutboxEvent>
+  /**
+   * Reverts a claim that never became work because the queue refused its
+   * delivery. Nothing carries this token, so no handler can run under it;
+   * leaving the counter incremented would spend the retry budget on an
+   * execution that never started.
+   */
+  releaseClaim(workspaceId: string, id: string, leaseToken: string): Promise<OutboxEvent>
   loadStateSnapshots(workspaceId: string, options?: { excludeEntityTypes?: readonly string[] }): Promise<Array<{ aggregateId: string; sequence: number; payload: Record<string, unknown> }>>
   listActiveWorkspaceIds(): Promise<string[]>
 }
@@ -371,7 +378,13 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
          )
          UPDATE outbox_events AS event
             SET lease_token = $${leaseTokenIndex},
-                lease_until = COALESCE($2::timestamptz, now()) + ($${leaseMsIndex} * interval '1 millisecond')
+                lease_until = COALESCE($2::timestamptz, now()) + ($${leaseMsIndex} * interval '1 millisecond'),
+                -- The claim counter is the only durable evidence of an attempt
+                -- that ends without an outcome (crash, OOM kill, hard restart).
+                -- Incrementing it here - atomically with the lease - is what
+                -- makes a crash loop reach a terminal state instead of being
+                -- reclaimed until the provider gives up on us.
+                attempts = event.attempts + 1
            FROM candidates
           WHERE event.id = candidates.id
          RETURNING event.id, event.workspace_id, event.aggregate_id, event.event_type, event.sequence,
@@ -426,9 +439,10 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
     const scope = requireWorkspaceScope(workspaceId)
     return withWorkspaceTransaction(this.pool, scope, async client => {
       const result = await client.query<OutboxRow>(
+        // This attempt was already counted by claimPending; incrementing again
+        // here would spend the retry budget twice as fast as configured.
         `UPDATE outbox_events
-            SET attempts = attempts + 1,
-                next_attempt_at = $4::timestamptz,
+            SET next_attempt_at = $4::timestamptz,
                 last_error = $5::jsonb,
                 lease_token = NULL,
                 lease_until = NULL
@@ -449,8 +463,7 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
     return withWorkspaceTransaction(this.pool, scope, async client => {
       const result = await client.query<OutboxRow>(
         `UPDATE outbox_events
-            SET attempts = attempts + 1,
-                last_error = COALESCE($4::jsonb, '{}'::jsonb) || '{"terminal":true}'::jsonb,
+            SET last_error = COALESCE($4::jsonb, '{}'::jsonb) || '{"terminal":true}'::jsonb,
                 lease_token = NULL,
                 lease_until = NULL
           WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL
@@ -470,8 +483,7 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
     return withWorkspaceTransaction(this.pool, scope, async client => {
       const result = await client.query<OutboxRow>(
         `UPDATE outbox_events
-            SET attempts = attempts + 1,
-                unknown_at = COALESCE(unknown_at, now()),
+            SET unknown_at = COALESCE(unknown_at, now()),
                 last_error = $4::jsonb,
                 lease_token = NULL,
                 lease_until = NULL
@@ -480,6 +492,30 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
           RETURNING id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
                     attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at`,
         [scope, id, leaseToken ?? null, JSON.stringify(failure)],
+      )
+      if (!result.rows[0]) throw new OutboxEventNotFoundError()
+      return toOutboxEvent(result.rows[0])
+    })
+  }
+
+  async releaseClaim(workspaceId: string, id: string, leaseToken: string): Promise<OutboxEvent> {
+    const scope = requireWorkspaceScope(workspaceId)
+    if (!id) throw new Error('outbox event id is required')
+    if (!leaseToken) throw new OutboxEventNotFoundError()
+    return withWorkspaceTransaction(this.pool, scope, async client => {
+      const result = await client.query<OutboxRow>(
+        // The claim never produced a delivery, so the attempt it counted never
+        // started: give it back instead of letting a full queue dead-letter an
+        // event that no handler ever saw.
+        `UPDATE outbox_events
+            SET attempts = GREATEST(attempts - 1, 0),
+                lease_token = NULL,
+                lease_until = NULL
+          WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL
+            AND unknown_at IS NULL AND lease_token = $3 AND attempts > 0
+          RETURNING id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
+                    attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at`,
+        [scope, id, leaseToken],
       )
       if (!result.rows[0]) throw new OutboxEventNotFoundError()
       return toOutboxEvent(result.rows[0])

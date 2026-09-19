@@ -1,12 +1,26 @@
+import { isDeepStrictEqual } from 'node:util'
 import { describe, expect, it } from 'vitest'
 import { PostgresCreativePointLifecycleRepository } from './creative-point-lifecycle-repository.js'
 import type { SqlClient, SqlPool, SqlQueryResult } from './repository.js'
 
 class Client implements SqlClient {
   readonly sql: string[] = []
-  constructor(private readonly respond: (sql: string) => SqlQueryResult | undefined = () => ({ rows: [] })) {}
-  async query<Row>(sql: string): Promise<SqlQueryResult<Row>> { this.sql.push(sql); return (this.respond(sql) ?? { rows: [] }) as SqlQueryResult<Row> }
+  readonly values: Array<readonly unknown[] | undefined> = []
+  constructor(private readonly respond: (sql: string, values?: readonly unknown[]) => SqlQueryResult | undefined = () => ({ rows: [] })) {}
+  async query<Row>(sql: string, values?: readonly unknown[]): Promise<SqlQueryResult<Row>> { this.sql.push(sql); this.values.push(values); return (this.respond(sql, values) ?? { rows: [] }) as SqlQueryResult<Row> }
 }
+
+/** One completed operation row. Before the replay guard compares payloads the
+ * stored request is simply assumed to match, which is exactly the defect. */
+const completedOperation = (stored: Record<string, unknown>, balance: Record<string, unknown>) =>
+  (sql: string, values?: readonly unknown[]) => {
+    if (!sql.includes('FROM creative_point_operations')) return undefined
+    const comparesPayload = sql.includes('requestMatches')
+    const requested = comparesPayload ? (JSON.parse(String(values?.[3] ?? 'null')) as Record<string, unknown>) : stored
+    // Mirrors the SQL: the optimistic-concurrency token is compared by neither side.
+    const comparable = (value: Record<string, unknown>) => JSON.parse(JSON.stringify({ ...value, expected_access_revision: undefined })) as Record<string, unknown>
+    return { rows: [{ result: { balance }, requestMatches: isDeepStrictEqual(comparable(stored), comparable(requested)) }] }
+  }
 const pool = (client: SqlClient): SqlPool => ({ connect: async () => client })
 
 describe('PostgresCreativePointLifecycleRepository', () => {
@@ -68,5 +82,57 @@ describe('PostgresCreativePointLifecycleRepository', () => {
     })
     const repository = new PostgresCreativePointLifecycleRepository(pool(client))
     await expect(repository.recordProviderReceipt({ workspaceId: 'ws-1', operationId: 'operation-1', provider: 'relay', providerRequestId: 'request-1', outcome: 'succeeded', usage: { modality: 'text', model: 'model-1', total_tokens: 1 }, cost: { currency: 'CNY', actual: 0.01 }, verifiedAt: '2026-09-02T00:00:00Z', receiptHash: 'a'.repeat(64), at: '2026-09-02T00:00:00Z' })).rejects.toMatchObject({ code: 'CREATIVE_POINT_IDEMPOTENCY_CONFLICT' })
+  })
+})
+
+const replayedBalance = { workspaceId: 'ws-1', availablePoints: 90, reservedPoints: 0, settledPoints: 100, revision: 3 }
+
+describe('PostgresCreativePointLifecycleRepository idempotent replay payloads', () => {
+  it('replays a reversal only when the recorded request matches', async () => {
+    const stored = { reservation_id: 'R1', points: 100, reason: 'provider refund', actor_id: 'ops-1', evidence: { ticket: 'T-1' } }
+    const client = new Client(completedOperation(stored, replayedBalance))
+    const repository = new PostgresCreativePointLifecycleRepository(pool(client))
+    const replay = { workspaceId: 'ws-1', idempotencyKey: 'k1', reservationId: 'R1', points: 100, kind: 'refund' as const, actorId: 'ops-1', reason: 'provider refund', evidence: { ticket: 'T-1' }, at: '2026-09-02T00:00:00Z' }
+    await expect(repository.reverseSettlement(replay)).resolves.toMatchObject({ availablePoints: 90 })
+    expect(client.sql.some(sql => sql.includes('INSERT INTO creative_point_operations'))).toBe(false)
+  })
+
+  it('rejects a replay key reused for a different reservation or point amount', async () => {
+    const stored = { reservation_id: 'R1', points: 100, reason: 'provider refund', actor_id: 'ops-1', evidence: { ticket: 'T-1' } }
+    const client = new Client(completedOperation(stored, replayedBalance))
+    const repository = new PostgresCreativePointLifecycleRepository(pool(client))
+    const otherReservation = { workspaceId: 'ws-1', idempotencyKey: 'k1', reservationId: 'R2', points: 100, kind: 'refund' as const, actorId: 'ops-1', reason: 'provider refund', evidence: { ticket: 'T-1' }, at: '2026-09-02T00:00:00Z' }
+    const otherPoints = { ...otherReservation, reservationId: 'R1', points: 50 }
+    await expect(repository.reverseSettlement(otherReservation)).rejects.toMatchObject({ code: 'CREATIVE_POINT_IDEMPOTENCY_CONFLICT' })
+    await expect(repository.reverseSettlement(otherPoints)).rejects.toMatchObject({ code: 'CREATIVE_POINT_IDEMPOTENCY_CONFLICT' })
+    expect(client.sql.some(sql => sql.includes('INSERT INTO creative_point_reservations'))).toBe(false)
+    expect(client.sql.some(sql => sql.includes('UPDATE creative_point_access_state'))).toBe(false)
+  })
+
+  it('rejects an expiry replay key reused for a different grant', async () => {
+    const stored = { grant_id: 'grant-1', points: 20 }
+    const client = new Client((sql, values) => {
+      if (sql.includes('SELECT g.points-COALESCE')) return { rows: [{ remaining: 20 }] }
+      return completedOperation(stored, replayedBalance)(sql, values)
+    })
+    const repository = new PostgresCreativePointLifecycleRepository(pool(client))
+    await expect(repository.expireGrant({ workspaceId: 'ws-1', grantId: 'grant-1', idempotencyKey: 'expire-1', at: '2026-09-02T00:00:00Z' })).resolves.toMatchObject({ availablePoints: 90 })
+    await expect(repository.expireGrant({ workspaceId: 'ws-1', grantId: 'grant-2', idempotencyKey: 'expire-1', at: '2026-09-02T00:00:00Z' })).rejects.toMatchObject({ code: 'CREATIVE_POINT_IDEMPOTENCY_CONFLICT' })
+    expect(client.sql.some(sql => sql.includes('WITH active AS'))).toBe(false)
+  })
+
+  it('rejects an adjustment replay key reused for a different approval', async () => {
+    const stored = { approval_id: 'approval-1', points_delta: 10, expected_access_revision: 1, actor_id: 'actor-1', approved_by_actor_id: 'actor-2', reason: 'support correction', evidence: { ticket: 'T-1' } }
+    const client = new Client(completedOperation(stored, replayedBalance))
+    const repository = new PostgresCreativePointLifecycleRepository(pool(client))
+    const input = { workspaceId: 'ws-1', approvalId: 'approval-1', pointsDelta: 10, expectedAccessRevision: 1, actorId: 'actor-1', approvedByActorId: 'actor-2', reason: 'support correction', evidence: { ticket: 'T-1' }, idempotencyKey: 'adjust-1', at: '2026-09-02T00:00:00Z' }
+    await expect(repository.adjust(input)).resolves.toMatchObject({ availablePoints: 90 })
+    // The revision is read from live state at call time: a retry that observes
+    // an advanced revision still replays, it does not become a conflict.
+    await expect(repository.adjust({ ...input, expectedAccessRevision: 99 })).resolves.toMatchObject({ availablePoints: 90 })
+    await expect(repository.adjust({ ...input, approvalId: 'approval-2' })).rejects.toMatchObject({ code: 'CREATIVE_POINT_IDEMPOTENCY_CONFLICT' })
+    await expect(repository.adjust({ ...input, pointsDelta: 11 })).rejects.toMatchObject({ code: 'CREATIVE_POINT_IDEMPOTENCY_CONFLICT' })
+    await expect(repository.adjust({ ...input, evidence: { ticket: 'T-2' } })).rejects.toMatchObject({ code: 'CREATIVE_POINT_IDEMPOTENCY_CONFLICT' })
+    expect(client.sql.some(sql => sql.includes('INSERT INTO creative_point_adjustments_v2'))).toBe(false)
   })
 })

@@ -107,8 +107,11 @@ describe('brand extraction HTTP/MCP parity', () => {
     expect(mcp.body.data).toBeNull()
     expect(http.body.error).toMatchObject({ code: 'STORE_ONBOARDING_REQUIRED' })
     expect(mcp.body.error).toMatchObject({ code: 'STORE_ONBOARDING_REQUIRED' })
-    expect(http.body.error?.details?.next_actions).toEqual(['调用 workspace.health 查看六平台授权入口', '选择平台后调用 platform.connect', '授权回调完成后重新调用 workspace.health'])
-    expect(mcp.body.error?.details?.next_actions).toEqual(['调用 workspace.health 查看六平台授权入口', '选择平台后调用 platform.connect', '授权回调完成后重新调用 workspace.health'])
+    // Recovery guidance must name only what the merchant can actually reach, and
+    // must say which work needs no store at all.
+    const expectedNextActions = ['调用 workspace.health 查看店铺授权状态', '上传素材、生成候选内容、查看与购买创意点无需绑定店铺即可使用', '商品同步、正式任务与发布需要先由平台运营为你的商家建立店铺记录']
+    expect(http.body.error?.details?.next_actions).toEqual(expectedNextActions)
+    expect(mcp.body.error?.details?.next_actions).toEqual(expectedNextActions)
     for (const body of [http.body, mcp.body]) {
       expect(body.request_id).toMatch(/^req_/)
       expect(body.trace_id).toBe(body.request_id)

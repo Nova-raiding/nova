@@ -82,11 +82,6 @@ h1,h2,h3,h4 { font-family: 'Manrope', 'PingFang SC', sans-serif; letter-spacing:
 .sidebar nav button.active em { background:#bfd660; color:#163429; }
 .sidebar-contact-manager { width:100%; min-height:44px; display:flex; align-items:center; justify-content:center; gap:9px; margin-top:auto; padding:11px 12px; border:1px solid rgba(216,237,122,.22); border-radius:9px; background:rgba(216,237,122,.08); color:#dfe9e3; font-size:14px; text-align:center; }
 .sidebar-contact-manager:hover { border-color:rgba(216,237,122,.45); background:rgba(216,237,122,.14); color:#fff; }
-.contact-manager-dialog { display:grid; gap:12px; }
-.contact-manager-dialog p { margin:0 0 4px; color:#66756d; font-size:12px; line-height:1.65; }
-.contact-manager-dialog>div { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:14px 16px; border:1px solid #e0e8e2; border-radius:10px; background:#f7faf8; }
-.contact-manager-dialog span { color:#718078; font-size:12px; }
-.contact-manager-dialog strong { color:#164c38; font-size:15px; }
 .main-shell { margin-left:238px; min-height:100vh; min-width:0; overflow-x:clip; }
 .topbar { height:76px; padding:0 30px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #e0e5df; background:rgba(248,250,247,.94); position:sticky; top:0; z-index:40; backdrop-filter:blur(12px); }
 .eyebrow { color:#7a857e; font-size:11px; margin-bottom:3px; }.topbar h1 { margin:0; font-size:20px; }

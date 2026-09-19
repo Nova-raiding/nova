@@ -303,7 +303,15 @@ export class PostgresBusinessRepository {
       if (table === 'products' && input.remoteProductId) add('remote_product_id = ?', input.remoteProductId)
       if (table === 'products' && input.listingStatus) add("data->>'listingStatus' = ?", input.listingStatus)
       if (table === 'products' && input.productState) clauses.push(input.productState === 'disabled' ? "nullif(data->>'disabledAt', '') IS NOT NULL" : "nullif(data->>'disabledAt', '') IS NULL")
-      if (table === 'products' && input.syncStatus) add(`(SELECT state FROM sync_jobs WHERE sync_jobs.workspace_id = products.workspace_id AND sync_jobs.platform = products.platform AND sync_jobs.platform_account_id = products.platform_account_id ORDER BY sync_jobs.updated_at DESC, sync_jobs.id ASC LIMIT 1) = ?`, input.syncStatus)
+      // There is no `sync_jobs` table: sync jobs are stored as
+      // `business_entity_snapshots` rows with `entity_type = 'sync_job'`, which
+      // migration 011 added to the CHECK constraint. The table name itself only
+      // ever appeared in that migration's filename and comments. Filtering by
+      // `sync_status` therefore raised
+      // `42P01 relation "sync_jobs" does not exist` — a deterministic HTTP 500
+      // for any `catalog.search` that passed the filter. Read the real table;
+      // `business_entity_snapshots_workspace_type_idx` covers this lookup.
+      if (table === 'products' && input.syncStatus) add(`(SELECT payload->>'state' FROM business_entity_snapshots WHERE business_entity_snapshots.workspace_id = products.workspace_id AND business_entity_snapshots.entity_type = 'sync_job' AND payload->>'platform' = products.platform AND payload->>'accountId' = products.platform_account_id ORDER BY business_entity_snapshots.updated_at DESC, business_entity_snapshots.entity_id ASC LIMIT 1) = ?`, input.syncStatus)
       if (table === 'products' && Array.isArray(input.accessibleBrandIds)) {
         values.push(input.accessibleBrandIds)
         const index = values.length

@@ -1056,6 +1056,57 @@ export async function fetchProduct(baseUrl: string, productId: string): Promise<
  * whole workspace collection. */
 export const fetchAssets = (baseUrl: string) => fetchAllPages<AssetMetadata>(baseUrl, '/v1/assets')
 export const fetchAssetStorageQuota = (baseUrl: string) => requestApi<ApiPage<AssetMetadata> & { storage_quota?: StorageQuotaProjection }>(baseUrl, '/v1/assets?limit=1&offset=0').then(value => value.storage_quota)
+
+/** One server-owned creative-point ledger entry. `points_delta` is negative for consumption. */
+export interface CreativePointStatementEntry {
+  id: string
+  event_type: string
+  points_delta: number
+  balance_after: number | null
+  occurred_at: string
+  source: string
+  operation_id: string | null
+}
+
+function normalizeCreativePointStatementEntry(raw: unknown): CreativePointStatementEntry | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const entry = raw as Record<string, unknown>
+  const delta = Number(entry.points_delta)
+  const occurredAt = typeof entry.occurred_at === 'string' ? entry.occurred_at : ''
+  if (!Number.isFinite(delta) || !occurredAt || Number.isNaN(Date.parse(occurredAt))) return null
+  const balanceAfter = Number(entry.balance_after)
+  return {
+    id: typeof entry.id === 'string' ? entry.id : `${occurredAt}:${delta}`,
+    event_type: typeof entry.event_type === 'string' ? entry.event_type : 'unknown',
+    points_delta: delta,
+    balance_after: Number.isFinite(balanceAfter) ? balanceAfter : null,
+    occurred_at: occurredAt,
+    source: typeof entry.source === 'string' ? entry.source : '',
+    operation_id: typeof entry.operation_id === 'string' ? entry.operation_id : null,
+  }
+}
+
+/**
+ * Read the workspace creative-point ledger. The server bounds one page to 100
+ * entries, so we follow `next_cursor` for a bounded number of pages and never
+ * synthesize rows the server did not return: an unavailable ledger yields `null`
+ * rather than an empty page that could be mistaken for real zero usage.
+ */
+export async function fetchCreativePointStatement(baseUrl: string, maxPages = 5): Promise<CreativePointStatementEntry[] | null> {
+  const entries: CreativePointStatementEntry[] = []
+  let cursor: string | null = null
+  for (let page = 0; page < Math.max(1, maxPages); page += 1) {
+    const response: { entries?: unknown; next_cursor?: unknown } = await requestMcp<{ entries?: unknown; next_cursor?: unknown }>(baseUrl, 'creative-points.statement.list', cursor ? { limit: '100', cursor } : { limit: '100' })
+    if (!Array.isArray(response.entries)) return null
+    for (const raw of response.entries) {
+      const entry = normalizeCreativePointStatementEntry(raw)
+      if (entry) entries.push(entry)
+    }
+    cursor = typeof response.next_cursor === 'string' && response.next_cursor ? response.next_cursor : null
+    if (!cursor) break
+  }
+  return entries
+}
 const assetMimeType = (file: File) => file.type || ({
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif',
   '.svg': 'image/svg+xml', '.pdf': 'application/pdf', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

@@ -1,6 +1,7 @@
 {
   "name": "@merchant-marketing/plugin",
   "private": true,
+  "license": "UNLICENSED",
   "version": "0.1.0+codex.20260917171000",
   "type": "module",
   "engines": {

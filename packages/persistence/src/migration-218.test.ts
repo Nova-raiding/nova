@@ -6,8 +6,11 @@ describe('migration 218 manual publish evidence', () => {
     const migrations = await loadMigrations()
     const migration = migrations.find(item => item.version === 218)
 
+    // The chain stays contiguous from 1 to the newest artifact; later
+    // migrations append to it without renaming this one.
+    const latestVersion = migrations.at(-1)?.version ?? 0
     expect(migrations.map(item => item.version)).toEqual(
-      Array.from({ length: 219 }, (_, index) => index + 1),
+      Array.from({ length: latestVersion }, (_, index) => index + 1),
     )
     expect(migration).toMatchObject({ version: 218, name: 'manual_publish_evidence' })
     expect(migration?.sql).toContain('CREATE TABLE manual_publish_evidence')

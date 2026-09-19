@@ -37,6 +37,16 @@ coverage/
 /artifacts/customer-delivery-contract-link/
 /artifacts/local-runtime-tests/
 /artifacts/local-worker-sync/
+
+# Local-only state that must never ship in a clone: Redis persistence dumps,
+# the repair scratch directory, a stray codegraph index, competitor research
+# notes, and the vitest run marker. None of these are deliverables.
+/redis-aof-backup-*.tar.gz
+/.codex-redis-repair-test/
+/report-source.md
+/.codegraph.db
+/test-results/
+
 __pycache__/
 *.py[cod]
 

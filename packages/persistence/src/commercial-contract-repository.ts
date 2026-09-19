@@ -208,10 +208,18 @@ function validatePeriod(sku: CommercialCatalogSkuSnapshot, period: VerifiedPayme
   if (!period) throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'an approved subscription period is required')
   const start = instant(period.start, 'period.start')
   const end = instant(period.end, 'period.end')
-  const expected = new Date(start)
-  if (sku.kind === 'private_trial') expected.setUTCDate(expected.getUTCDate() + 7)
-  else expected.setUTCMonth(expected.getUTCMonth() + 1)
-  if (end !== expected.toISOString()) throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', sku.kind === 'private_trial' ? 'private trial period must be exactly seven days' : 'monthly subscription period must be one calendar month')
+  // A subscription month is an anniversary, not a JS month-overflow addition:
+  // a payment on the 31st renews on the last day of a shorter month, not on the
+  // 3rd of the one after it. Using raw `setUTCMonth(+1)` here rejected every
+  // payment taken on the 29th-31st — 6-7 days a year — because the callback
+  // derives the period through `commercialMonthlyPeriod`'s clamp and the two
+  // sides disagreed.
+  //
+  // `monthlyAnniversary` is the canonical implementation for this path; the
+  // other copies of the rule are listed on its definition and pinned by
+  // `tests/month-anniversary-equivalence.test.ts`.
+  const expected = sku.kind === 'private_trial' ? privateTrialPeriod(start).end : monthlyAnniversary(start, 1)
+  if (end !== expected) throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', sku.kind === 'private_trial' ? 'private trial period must be exactly seven days' : 'monthly subscription period must be one calendar month')
   return { start, end }
 }
 
@@ -222,7 +230,18 @@ function privateTrialPeriod(paidAt: string): { start: string; end: string } {
   return { start: start.toISOString(), end: end.toISOString() }
 }
 
-function monthlyAnniversary(start: string, monthOffset: number): string {
+/**
+ * The canonical calendar-month anniversary rule: a date one month on, clamped to
+ * the last day of the target month, computed in UTC.
+ *
+ * Exported because the subscription repository shares the rule. Note there are
+ * still independent copies in `packages/application/src/service-fulfillment.ts`
+ * (`monthlyAnniversary`) and `commercial-extensions-repository.ts`
+ * (`nextPeriodEnd`), plus PostgreSQL's `interval '1 month'` in the Postgres
+ * subscription path. `tests/month-anniversary-equivalence.test.ts` pins all of
+ * them to the same result so they cannot silently diverge.
+ */
+export function monthlyAnniversary(start: string, monthOffset: number): string {
   const value = new Date(start)
   const targetMonth = value.getUTCMonth() + monthOffset
   const targetYear = value.getUTCFullYear() + Math.floor(targetMonth / 12)

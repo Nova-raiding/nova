@@ -39,8 +39,12 @@ macOS 管理凭据轮换：默认仍优先使用宿主显式环境。只有明�
 在仓库根目录执行：
 
 ```bash
-python3 /Users/lixiaomei/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py apps/plugin
+# Plugin manifest, bridge surface, skill and mirror validation. Runs entirely
+# from this checkout; no machine-local Codex tooling is required.
 env PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin npm test -- --run apps/plugin/install-smoke.test.ts packages/contracts/src/mcp.test.ts
+
+# Confirm a marketplace registration points at this checkout.
+node apps/plugin/scripts/verify-marketplace-source.mjs --marketplace <marketplace-name> --expected "$(pwd)/.codex-marketplace"
 ```
 
 验收通过后，把 `apps/plugin` 作为 `merchant-marketing` 插件源加入团队或个人 marketplace，再按 Codex 的 marketplace 安装流程执行：

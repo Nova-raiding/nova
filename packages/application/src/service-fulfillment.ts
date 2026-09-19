@@ -216,7 +216,9 @@ export function planOnboardingGrantSchedule(input: {
   }))
 }
 
-function monthlyAnniversary(start: Date, monthOffset: number): string {
+// Exported so `tests/month-anniversary-equivalence.test.ts` can pin every copy
+// of the month-anniversary rule to the same result.
+export function monthlyAnniversary(start: Date, monthOffset: number): string {
   const targetMonthIndex = start.getUTCMonth() + monthOffset
   const targetYear = start.getUTCFullYear() + Math.floor(targetMonthIndex / 12)
   const targetMonth = ((targetMonthIndex % 12) + 12) % 12

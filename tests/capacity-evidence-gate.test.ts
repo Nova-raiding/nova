@@ -1,5 +1,15 @@
+import { spawnSync } from 'node:child_process'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { validateCapacityEvidence } from './capacity-evidence-gate.js'
+
+const root = resolve(import.meta.dirname, '..')
+const CAPACITY_FIXTURE = 'doc/todo/infra/capacity-evidence.example.json'
+const runGate = (args: string[]) => spawnSync(process.execPath, ['--import', 'tsx', 'tests/capacity-evidence-gate.ts', ...args], {
+  cwd: root,
+  encoding: 'utf8',
+  timeout: 120_000,
+})
 
 const base = {
   schema_version: '1', status: 'pass', release_id: 'release-1', software_version: 'rc-1', config_version: 'config-1', data_version: 'fixture-v1', environment: 'preproduction', target_url: 'https://capacity.example.com', started_at: '2026-08-23T00:00:00Z', ended_at: '2026-08-23T06:00:00Z', expires_at: '2026-09-30T00:00:00Z', profile: 'pilot_50', cloud_gate: true, raw_metrics_ref: 'artifact://metrics/1', platform_mock_ratio: 0, model_mock_ratio: 0, duration: { sustained_minutes: 30, burst_seconds: 60, stability_hours: 6 }, tenant: { workspace_count: 50, noise_multiplier: 10, isolation_verified: true, max_p95_degradation_percent: 20 }, fault: { injected: true, scenarios: ['redis_restart', 'db_pool_exhaustion', 'platform_timeout'], passed: true }, steady_state: { verified: true, queue_converged: true, stability_hours: 6 }, sign_off: { verified_by: 'qa', verified_at: '2026-08-23T06:00:00Z' }, metrics: { workspaces: 50, client_connections: 150, sustained_rps: 30, sustained_duration_minutes: 30, burst_rps: 60, burst_duration_seconds: 60, async_jobs_per_minute: 50, p95_ms: 100, p99_ms: 150, error_count: 0, duplicate_writes: 0, lost_jobs: 0, fairness_p95_degradation_percent: 10, stability_hours: 6 },
@@ -68,5 +78,21 @@ describe('capacity evidence gate', () => {
   it('rejects duplicate fault scenarios after trimming names', () => {
     const value = { ...base, fault: { ...base.fault, scenarios: ['redis_restart', ' redis_restart '] } }
     expect(validateCapacityEvidence(value, { requireCloudGate: true })).toContain('fault.scenarios must contain unique scenario names')
+  })
+
+  it('accepts the on-disk example fixture through the real CLI entrypoint', () => {
+    const result = runGate(['--file', CAPACITY_FIXTURE])
+    expect(result.error).toBeUndefined()
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain(`capacity evidence schema passed: ${CAPACITY_FIXTURE}`)
+    // The fixture is not real-cloud evidence and the CLI must say so.
+    expect(result.stdout).toContain('fixture/non-production validation only')
+  })
+
+  it('requires an explicit --file rather than defaulting to the example fixture', () => {
+    const result = runGate([])
+    expect(result.status, result.stderr).toBe(2)
+    expect(result.stderr).toContain('--file is required')
+    expect(result.stdout).not.toContain('passed')
   })
 })

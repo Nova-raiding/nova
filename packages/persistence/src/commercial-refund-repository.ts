@@ -57,11 +57,16 @@ export class PostgresCommercialRefundRepository implements CommercialRefundRepos
     const evidenceKey = input.refundKind === 'onboarding_pre_deployment' ? 'deployment_status' : input.refundKind === 'monthly_unused_points' ? 'supplement_agreement_ref' : input.refundKind === 'point_pack_unused_points' ? 'expiry_policy_ref' : input.refundKind === 'outage_compensation' ? 'incident_id' : 'milestone_id'
     if (input.refundKind === 'onboarding_pre_deployment' ? requestEvidence.deployment_status !== 'not_started' : !hasEvidenceRef(requestEvidence, evidenceKey)) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_INPUT_INVALID', `${evidenceKey} is required for this refund kind`)
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      const order = await client.query<{ amountFen: string | number; status: string }>('SELECT amount_fen AS "amountFen",status FROM commercial_orders_v2 WHERE workspace_id=$1 AND id=$2 FOR SHARE', [workspaceId, input.orderId])
+      // Serialize every refund decision for this order: the cumulative bound is
+      // only sound while concurrent requests cannot both read the same
+      // unrefunded order snapshot.
+      const order = await client.query<{ amountFen: string | number; status: string }>('SELECT amount_fen AS "amountFen",status FROM commercial_orders_v2 WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [workspaceId, input.orderId])
       if (!order.rows[0]) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_ORDER_NOT_FOUND', 'commercial order was not found')
-      if (order.rows[0].status !== 'paid' || amountFen > Number(order.rows[0].amountFen)) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'only a paid order with a bounded refund amount can be refunded')
       const existing = await this.latestIn(client, workspaceId, requestId)
-      if (existing) { if (existing.eventType !== 'requested' || existing.amountFen !== amountFen || existing.pointsToRevoke !== pointsToRevoke) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_REQUEST_CONFLICT', 'refund request id is already bound to another request'); return existing }
+      if (existing) { if (existing.orderId !== input.orderId || existing.eventType !== 'requested' || existing.amountFen !== amountFen || existing.pointsToRevoke !== pointsToRevoke) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_REQUEST_CONFLICT', 'refund request id is already bound to another request'); return existing }
+      if (order.rows[0].status !== 'paid') throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'only a paid order can be refunded')
+      const committedFen = await this.committedIn(client, workspaceId, input.orderId)
+      if (amountFen + committedFen > Number(order.rows[0].amountFen)) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'refund amount exceeds the remaining refundable order amount')
       return this.insert(client, workspaceId, { orderId: input.orderId, requestId, revision: 1, eventType: 'requested', refundKind: input.refundKind, amountFen, pointsToRevoke, reason, actorId, evidence: requestEvidence, externalRefundId: null, at: createdAt })
     })
   }
@@ -73,6 +78,14 @@ export class PostgresCommercialRefundRepository implements CommercialRefundRepos
       const prior = await this.latestIn(client, workspaceId, requestId)
       if (!prior || prior.eventType !== 'requested') throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'refund request is not awaiting approval')
       if (prior.actorId === actorId) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'refund requester cannot approve their own request')
+      // Approval commits the money, so it carries the same cumulative bound as
+      // request and completion: the database trigger enforces it for every
+      // writer, and checking it here keeps the refusal a mapped
+      // COMMERCIAL_REFUND_STATE_INVALID instead of a raw constraint error.
+      const order = await client.query<{ amountFen: string | number; status: string }>('SELECT amount_fen AS "amountFen",status FROM commercial_orders_v2 WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [workspaceId, prior.orderId])
+      if (!order.rows[0]) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_ORDER_NOT_FOUND', 'commercial order was not found')
+      const committedFen = await this.committedIn(client, workspaceId, prior.orderId, requestId)
+      if (order.rows[0].status !== 'paid' || prior.amountFen + committedFen > Number(order.rows[0].amountFen)) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'refund amount exceeds the remaining refundable order amount')
       return this.insert(client, workspaceId, { ...prior, revision: prior.revision + 1, eventType: 'approved', actorId, reason, evidence: { ...prior.evidence, policy_approval: policyApproval }, externalRefundId: null, at: createdAt })
     })
   }
@@ -91,8 +104,26 @@ export class PostgresCommercialRefundRepository implements CommercialRefundRepos
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
       const prior = await this.latestIn(client, workspaceId, requestId)
       if (!prior || prior.eventType !== 'approved') throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'refund request is not approved')
+      const order = await client.query<{ amountFen: string | number; status: string }>('SELECT amount_fen AS "amountFen",status FROM commercial_orders_v2 WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [workspaceId, prior.orderId])
+      if (!order.rows[0]) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_ORDER_NOT_FOUND', 'commercial order was not found')
+      // Refunding a request is only sound while every other request for the
+      // same order still fits inside the amount the customer actually paid.
+      const committedFen = await this.committedIn(client, workspaceId, prior.orderId, requestId)
+      if (order.rows[0].status !== 'paid' || prior.amountFen + committedFen > Number(order.rows[0].amountFen)) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'commercial order is no longer refundable within its paid amount')
       const event = await this.insert(client, workspaceId, { ...prior, revision: prior.revision + 1, eventType: 'completed', actorId, reason, evidence: { ...prior.evidence, completion: completionEvidence }, externalRefundId, at: createdAt })
-      await client.query("UPDATE commercial_orders_v2 SET status='refunded' WHERE workspace_id=$1 AND id=$2 AND status='paid'", [workspaceId, prior.orderId])
+      // The order leaves 'paid' only once the money actually paid out equals
+      // what the customer paid. A first partial refund must keep the order
+      // 'paid', otherwise every other approved request for the same order would
+      // be refused by this check (and by the database trigger) while it is
+      // still legitimately refundable, and could no longer be completed or
+      // rejected — the request would be stuck with no legal exit.
+      const refundedFen = await this.completedIn(client, workspaceId, prior.orderId)
+      if (refundedFen >= Number(order.rows[0].amountFen)) {
+        const settled = await client.query("UPDATE commercial_orders_v2 SET status='refunded' WHERE workspace_id=$1 AND id=$2 AND status='paid'", [workspaceId, prior.orderId])
+        // The conditional update is the last line of defence: a completion that
+        // matched no paid order row must never be reported as a success.
+        if (settled.rowCount !== 1) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'commercial order was already refunded')
+      }
       return event
     })
   }
@@ -100,6 +131,43 @@ export class PostgresCommercialRefundRepository implements CommercialRefundRepos
   async latest(workspaceIdInput: string, requestIdInput: string): Promise<CommercialRefundEvent | null> { const workspaceId = requireWorkspaceScope(workspaceIdInput); const requestId = text(requestIdInput, 'requestId'); return withWorkspaceTransaction(this.pool, workspaceId, client => this.latestIn(client, workspaceId, requestId)) }
   async history(workspaceIdInput: string, requestIdInput: string): Promise<CommercialRefundEvent[]> { const workspaceId = requireWorkspaceScope(workspaceIdInput); const requestId = text(requestIdInput, 'requestId'); return withWorkspaceTransaction(this.pool, workspaceId, async client => (await client.query<EventRow>(`SELECT ${projection} FROM commercial_refund_events_v2 WHERE workspace_id=$1 AND request_id=$2 ORDER BY revision ASC`, [workspaceId, requestId])).rows.map(map)) }
   async list(workspaceIdInput: string, limit = 100): Promise<CommercialRefundEvent[]> { const workspaceId = requireWorkspaceScope(workspaceIdInput); if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new RangeError('limit must be between 1 and 200'); return withWorkspaceTransaction(this.pool, workspaceId, async client => (await client.query<EventRow>(`SELECT ${projection} FROM commercial_refund_events_v2 WHERE workspace_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2`, [workspaceId, limit])).rows.map(map)) }
+
+  /** Money already committed against one order. Each request contributes the
+   * largest amount it was ever approved or completed for, so an
+   * approved-then-completed request is counted once (both revisions carry the
+   * same amount) and the request currently being decided is excluded.
+   *
+   * The bound is deliberately keyed on the amount and not on the identity of a
+   * request's highest revision: the event table is append-only, so a later
+   * non-money revision ('requested', 'rejected', 'reconciliation_required')
+   * must never erase money an earlier revision already committed. It mirrors
+   * enforce_commercial_refund_cumulative_bound(), the database backstop. */
+  private async committedIn(client: SqlClient, workspaceId: string, orderId: string, excludeRequestId?: string): Promise<number> {
+    const result = await client.query<{ committedFen: string | number }>(
+      `SELECT COALESCE(SUM(chain.amount_fen),0) AS "committedFen"
+         FROM (
+           SELECT request_id, MAX(amount_fen) AS amount_fen
+             FROM commercial_refund_events_v2
+            WHERE workspace_id=$1 AND order_id=$2 AND event_type IN ('approved','completed')
+            GROUP BY request_id
+         ) chain
+        WHERE ($3::text IS NULL OR chain.request_id <> $3::text)`,
+      [workspaceId, orderId, excludeRequestId ?? null],
+    )
+    return Number(result.rows[0]?.committedFen ?? 0)
+  }
+
+  /** Money actually paid out for one order: every 'completed' revision counts,
+   * and each request can only ever reach one of them. */
+  private async completedIn(client: SqlClient, workspaceId: string, orderId: string): Promise<number> {
+    const result = await client.query<{ refundedFen: string | number }>(
+      `SELECT COALESCE(SUM(amount_fen),0) AS "refundedFen"
+         FROM commercial_refund_events_v2
+        WHERE workspace_id=$1 AND order_id=$2 AND event_type='completed'`,
+      [workspaceId, orderId],
+    )
+    return Number(result.rows[0]?.refundedFen ?? 0)
+  }
 
   private async latestIn(client: SqlClient, workspaceId: string, requestId: string): Promise<CommercialRefundEvent | null> { const result = await client.query<EventRow>(`SELECT ${projection} FROM commercial_refund_events_v2 WHERE workspace_id=$1 AND request_id=$2 ORDER BY revision DESC LIMIT 1`, [workspaceId, requestId]); return result.rows[0] ? map(result.rows[0]) : null }
   private async insert(client: SqlClient, workspaceId: string, input: Omit<CommercialRefundEvent, 'id' | 'workspaceId' | 'createdAt'> & { at: string }): Promise<CommercialRefundEvent> {

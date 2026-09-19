@@ -437,7 +437,12 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
           >
             分配负责人
           </Button>
-          {["rejected", "unknown", "manual_attention"].includes(
+          {/* `reconciling` belongs here: it is the state a drifted publish lands
+              in (the platform succeeded, the local job did not line up), it is
+              the only state that releases the workspace's active-job quota, and
+              without this button the API path exists but no operator can reach
+              it. */}
+          {["rejected", "unknown", "manual_attention", "reconciling"].includes(
             job.remoteState || job.state,
           ) && (
             <>

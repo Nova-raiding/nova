@@ -2,11 +2,12 @@
   "name": "@merchant-marketing/persistence",
   "version": "0.1.0",
   "private": true,
-  "dependencies": { "argon2": "^0.45.1" },
+  "license": "UNLICENSED",
   "type": "module",
   "dependencies": {
     "@merchant-marketing/contracts": "0.1.0",
-    "@merchant-marketing/multimodal": "0.1.0"
+    "@merchant-marketing/multimodal": "0.1.0",
+    "argon2": "^0.45.1"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && mkdir -p dist/migrations && cp src/migrations/*.sql dist/migrations/"

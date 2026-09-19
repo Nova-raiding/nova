@@ -33,8 +33,9 @@ export class PostgresCreativePointLifecycleRepository {
   async reverseSettlement(input: CreativePointReversalInput): Promise<CreativePointBalance> {
     const workspaceId = requireWorkspaceScope(input.workspaceId); const observedAt = at(input.at); points(input.points)
     required(input.idempotencyKey, 'idempotencyKey'); required(input.reservationId, 'reservationId'); required(input.actorId, 'actorId'); required(input.reason, 'reason'); evidence(input.evidence)
+    const request = { reservation_id: input.reservationId, points: input.points, reason: input.reason, actor_id: input.actorId, evidence: input.evidence }
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      const replay = await this.replay(client, workspaceId, input.kind, input.idempotencyKey)
+      const replay = await this.replay(client, workspaceId, input.kind, input.idempotencyKey, request)
       if (replay) return replay
       const reservation = await client.query<{ settled: string | number }>(`SELECT settled_points AS settled FROM creative_point_reservations WHERE workspace_id=$1 AND id=$2 AND status='settled' FOR UPDATE`, [workspaceId, input.reservationId])
       if (!reservation.rows[0]) throw new CreativePointRepositoryError('CREATIVE_POINT_RESERVATION_NOT_FOUND', 'settled creative point reservation was not found')
@@ -42,7 +43,7 @@ export class PostgresCreativePointLifecycleRepository {
       if (integer(reversed.rows[0]?.points ?? 0) + input.points > integer(reservation.rows[0].settled)) throw new CreativePointRepositoryError('CREATIVE_POINT_INSUFFICIENT', 'reversal exceeds settled creative points')
       await this.lockState(client, workspaceId)
       const operationId = `cpo_${randomUUID()}`
-      await this.operation(client, operationId, workspaceId, input.kind, input.idempotencyKey, { reservation_id: input.reservationId, points: input.points, reason: input.reason, actor_id: input.actorId, evidence: input.evidence }, observedAt)
+      await this.operation(client, operationId, workspaceId, input.kind, input.idempotencyKey, request, observedAt)
       await this.reverseAllocations(client, workspaceId, input.reservationId, input.points, observedAt)
       const updated = await client.query<StateRow>(`UPDATE creative_point_access_state SET available_points=available_points+$2,settled_points=GREATEST(settled_points-$2,0),revision=revision+1,updated_at=$3::timestamptz WHERE workspace_id=$1 AND available_points IS NOT NULL RETURNING available_points AS available,reserved_points AS reserved,settled_points AS settled,revision`, [workspaceId, input.points, observedAt])
       if (!updated.rows[0]) throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN', 'creative point balance is unknown')
@@ -57,13 +58,16 @@ export class PostgresCreativePointLifecycleRepository {
   async expireGrant(input: CreativePointExpiryInput): Promise<CreativePointBalance> {
     const workspaceId = requireWorkspaceScope(input.workspaceId); const observedAt = at(input.at); required(input.idempotencyKey, 'idempotencyKey'); required(input.grantId, 'grantId')
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      const replay = await this.replay(client, workspaceId, 'expire', input.idempotencyKey); if (replay) return replay
       await this.lockState(client, workspaceId)
       const grant = await client.query<{ remaining: string | number }>(`SELECT g.points-COALESCE((SELECT sum(a.points_delta) FROM creative_point_allocations a WHERE a.workspace_id=g.workspace_id AND a.grant_id=g.id),0) AS remaining FROM creative_point_grants g WHERE g.workspace_id=$1 AND g.id=$2 AND g.expires_at IS NOT NULL AND g.expires_at<=$3::timestamptz`, [workspaceId, input.grantId, observedAt])
       if (!grant.rows[0]) throw new CreativePointRepositoryError('CREATIVE_POINT_RESERVATION_NOT_FOUND', 'expired creative point grant was not found')
       const expiredPoints = integer(grant.rows[0].remaining)
+      // The recorded request carries the expired amount this grant still held,
+      // so the replay comparison has to happen once that amount is known.
+      const request = { grant_id: input.grantId, points: expiredPoints }
+      const replay = await this.replay(client, workspaceId, 'expire', input.idempotencyKey, request); if (replay) return replay
       const operationId = `cpo_${randomUUID()}`
-      await this.operation(client, operationId, workspaceId, 'expire', input.idempotencyKey, { grant_id: input.grantId, points: expiredPoints }, observedAt)
+      await this.operation(client, operationId, workspaceId, 'expire', input.idempotencyKey, request, observedAt)
       const updated = await client.query<StateRow>(`WITH active AS (SELECT COALESCE(sum(GREATEST(g.points-COALESCE(a.allocated,0),0)),0) AS available FROM creative_point_grants g LEFT JOIN (SELECT workspace_id,grant_id,sum(points_delta) allocated FROM creative_point_allocations WHERE workspace_id=$1 GROUP BY workspace_id,grant_id) a ON a.workspace_id=g.workspace_id AND a.grant_id=g.id WHERE g.workspace_id=$1 AND (g.expires_at IS NULL OR g.expires_at>$2::timestamptz)) UPDATE creative_point_access_state s SET available_points=active.available,revision=s.revision+1,updated_at=$2::timestamptz FROM active WHERE s.workspace_id=$1 AND s.available_points IS NOT NULL RETURNING s.available_points AS available,s.reserved_points AS reserved,s.settled_points AS settled,s.revision`, [workspaceId, observedAt])
       if (!updated.rows[0]) throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN', 'creative point balance is unknown')
       const result = balance(workspaceId, updated.rows[0])
@@ -79,15 +83,16 @@ export class PostgresCreativePointLifecycleRepository {
     if (!Number.isSafeInteger(input.expectedAccessRevision) || input.expectedAccessRevision < 0) throw new TypeError('expectedAccessRevision is invalid')
     required(input.approvalId, 'approvalId'); required(input.idempotencyKey, 'idempotencyKey'); required(input.actorId, 'actorId'); required(input.approvedByActorId, 'approvedByActorId'); required(input.reason, 'reason'); evidence(input.evidence)
     if (input.actorId === input.approvedByActorId) throw new CommercialAdjustmentApprovalError('adjustment maker and approver must be different actors')
+    const request = { approval_id: input.approvalId, points_delta: input.pointsDelta, expected_access_revision: input.expectedAccessRevision, actor_id: input.actorId, approved_by_actor_id: input.approvedByActorId, reason: input.reason, evidence: input.evidence }
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      const replay = await this.replay(client, workspaceId, 'adjust', input.idempotencyKey); if (replay) return replay
+      const replay = await this.replay(client, workspaceId, 'adjust', input.idempotencyKey, request); if (replay) return replay
       await this.lockState(client, workspaceId)
       const state = await client.query<StateRow>(`SELECT available_points AS available,reserved_points AS reserved,settled_points AS settled,revision FROM creative_point_access_state WHERE workspace_id=$1 FOR UPDATE`, [workspaceId])
       if (!state.rows[0] || integer(state.rows[0].revision) !== input.expectedAccessRevision) throw new CreativePointRepositoryError('CREATIVE_POINT_IDEMPOTENCY_CONFLICT', 'creative point access revision is stale')
       const before = integer(state.rows[0].available)
       if (before + input.pointsDelta < 0) throw new CreativePointRepositoryError('CREATIVE_POINT_INSUFFICIENT', 'adjustment would make available creative points negative')
       const operationId = `cpo_${randomUUID()}`
-      await this.operation(client, operationId, workspaceId, 'adjust', input.idempotencyKey, { approval_id: input.approvalId, points_delta: input.pointsDelta, expected_access_revision: input.expectedAccessRevision, actor_id: input.actorId, approved_by_actor_id: input.approvedByActorId, reason: input.reason, evidence: input.evidence }, observedAt)
+      await this.operation(client, operationId, workspaceId, 'adjust', input.idempotencyKey, request, observedAt)
       if (input.pointsDelta > 0) {
         const expiresAt = input.expiresAt == null ? null : at(input.expiresAt)
         await client.query(`INSERT INTO creative_point_grants (id,workspace_id,operation_id,source_type,source_id,points,expires_at,metadata,created_at) VALUES ($1,$2,$3,'ops_adjustment',$4,$5,$6::timestamptz,$7::jsonb,$8::timestamptz)`, [`cpg_${randomUUID()}`, workspaceId, operationId, input.approvalId, input.pointsDelta, expiresAt, JSON.stringify({ actor_id: input.actorId, approved_by_actor_id: input.approvedByActorId }), observedAt])
@@ -131,7 +136,19 @@ export class PostgresCreativePointLifecycleRepository {
   }
 
   private async lockState(client: SqlClient, workspaceId: string) { await client.query(`SELECT workspace_id FROM creative_point_access_state WHERE workspace_id=$1 FOR UPDATE`, [workspaceId]) }
-  private async replay(client: SqlClient, workspaceId: string, kind: string, key: string): Promise<CreativePointBalance | null> { const result = await client.query<{ result: { balance?: CreativePointBalance } }>(`SELECT result FROM creative_point_operations WHERE workspace_id=$1 AND kind=$2 AND idempotency_key=$3 AND status='completed'`, [workspaceId, kind, key]); return result.rows[0]?.result.balance ?? null }
+  /** A completed operation only replays for the request that produced it:
+   * reusing an idempotency key for a different reservation, grant, point
+   * amount or approval is a conflict, never a silent success.
+   *
+   * `expected_access_revision` is the one recorded field excluded from the
+   * comparison. It is an optimistic-concurrency token read from live state at
+   * call time, not part of the caller's intent, and it is expected to have
+   * advanced by the time the same operation is retried. */
+  private async replay(client: SqlClient, workspaceId: string, kind: string, key: string, request: Record<string, unknown>): Promise<CreativePointBalance | null> {
+    const result = await client.query<{ result: { balance?: CreativePointBalance }; requestMatches: boolean }>(`SELECT result,(request-'expected_access_revision')=($4::jsonb-'expected_access_revision') AS "requestMatches" FROM creative_point_operations WHERE workspace_id=$1 AND kind=$2 AND idempotency_key=$3 AND status='completed'`, [workspaceId, kind, key, JSON.stringify(request)])
+    if (result.rows[0] && !result.rows[0].requestMatches) throw new CreativePointRepositoryError('CREATIVE_POINT_IDEMPOTENCY_CONFLICT', 'idempotency key was already used for a different creative point intent')
+    return result.rows[0]?.result.balance ?? null
+  }
   private async operation(client: SqlClient, id: string, workspaceId: string, kind: string, key: string, request: Record<string, unknown>, observedAt: string) { await client.query(`INSERT INTO creative_point_operations (id,workspace_id,kind,idempotency_key,status,request,created_at) VALUES ($1,$2,$3,$4,'pending',$5::jsonb,$6::timestamptz)`, [id, workspaceId, kind, key, JSON.stringify(request), observedAt]) }
   private async complete(client: SqlClient, workspaceId: string, operationId: string, result: CreativePointBalance, observedAt: string) { await client.query(`UPDATE creative_point_operations SET status='completed',result=$3::jsonb,completed_at=$4::timestamptz WHERE workspace_id=$1 AND id=$2`, [workspaceId, operationId, JSON.stringify({ balance: result }), observedAt]) }
   private async ledger(client: SqlClient, workspaceId: string, operationId: string, type: string, delta: number, result: CreativePointBalance, metadata: Record<string, unknown>, observedAt: string) { await client.query(`INSERT INTO creative_point_ledger_events (id,workspace_id,operation_id,event_type,points_delta,available_after,reserved_after,settled_after,access_revision,metadata,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::timestamptz)`, [`cpl_${randomUUID()}`, workspaceId, operationId, type, delta, result.availablePoints, result.reservedPoints, result.settledPoints, result.revision, JSON.stringify(metadata), observedAt]) }

@@ -233,6 +233,7 @@ jobs:
           packages/persistence/src/canonical-backfill-run-repository.postgres.test.ts
           packages/persistence/src/canonical-product-backfill.postgres.test.ts
           packages/persistence/src/commercial-contract-repository.release.postgres.test.ts
+          packages/persistence/src/commercial-refund-repository.release.postgres.test.ts
           packages/persistence/src/commercial-point-adjustment-approval-repository.release.postgres.test.ts
           packages/persistence/src/data-lifecycle-repository.postgres.test.ts
           packages/persistence/src/image-generation-before-provider.release.postgres.test.ts

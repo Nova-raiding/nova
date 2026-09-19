@@ -7,6 +7,8 @@
 
 > **当前上线口径（2026-09-17）**：本文早期章节保留了官方店铺 OAuth、自动同步和自动发布的目标设计，作为未来 `official_api` 集成参考；当前上线 profile 为 `manual`。六个平台商品资料通过公开链接/商家手工资料进入知识库，运营在官方商家后台人工发布并回填结果，商家只读取本租户的人工发布记录。人工记录不是平台 API 官方回执。ChatGPT/MCP 宿主授权仍是当前正式链路必需项。
 
+> **当前上线 profile 的商业与生产前置（2026-09-19 补记，交付前必读）**：商家能否使用业务能力由服务端商业门禁决定，且**三项必须同时成立**——① 创意点余额大于 0；② 存在有效的月付套餐权益快照（公开目录中只有 `monthly` 套餐 `basic` ¥2000 / `growth` ¥5000 会写入 `workspace_entitlement_snapshots_v2`，**只买点数包不能创作**）；③ 生产素材扫描器已按 `ASSET_SCANNER_MODE=clamav_worker` 配置并能签发扫描回执。未满足时分别返回 `CREATIVE_POINTS_EXHAUSTED`（402）/ `CREATIVE_POINTS_UNAVAILABLE`（503）、`COMMERCIAL_ENTITLEMENT_REQUIRED`（402）、`IMAGE_SOURCE_ASSET_INVALID`（409）。零余额判断先于操作分类，除身份/状态、下单、余额与流水、目录、导出等恢复类方法外一律 402——**包括插件入口 `merchant.start` 本身**。未绑店铺时商品同步、正式任务与发布返回 `STORE_ONBOARDING_REQUIRED`（428）。此外，平台运营必须配置支付通道（`COMMERCIAL_PAYMENT_PROVIDER`）并上架可售月付套餐：未配置时下单直接 503 且订单不落库，而运营的人工核验又需要一条已存在的订单（否则 404 `COMMERCIAL_ORDER_NOT_FOUND`），客户与运营都无法推进。上述为当前产品语义，不是待修缺陷；交付文档必须如实告知客户，不得等客户付费后才暴露。
+
 本文是Store Nova项目的产品总文档。它把“用户从安装插件到发布商品”的主链路、三端职责、登录与开通、知识库使用、权限、计费和验收口径放在同一份文档中。
 
 本文中的“目标方案”描述应该如何工作；“当前状态”描述仓库目前能被证实的行为。静态代码、Fixture、Mock 和本地截图不能替代真实生产证据。
@@ -157,6 +159,8 @@ flowchart LR
 ⑨ 商家审核、下载，或在发布中心预览并二次确认
    → Worker 调用官方平台 API，回查真实回执；同时完成点数结算和审计
 ```
+
+> **当前 `manual` 档与上面这条链路的三处差别**：④ 若未配置 `COMMERCIAL_PAYMENT_PROVIDER`，用户在线支付这一步直接 503 且订单不落库，运营的人工核验也找不到订单，必须由平台运营先完成支付通道与月付套餐上架；⑤ 当前不弹 ChatGPT 远程 OAuth，商家在商家后台用账号密码登录后由安装器注入短期 Bearer；⑥ 与 ⑨ 不执行——六平台不接官方 OAuth，商品资料由运营人工导入，发布由运营在官方商家后台人工完成并回填。只有 ①②③④⑤⑦⑧ 是当前可执行路径。
 
 三类凭据必须分开：
 
@@ -589,6 +593,8 @@ brand / 品
 | `expired` | 来源或有效期过期 | 否，需重新确认 |
 
 独立上传图片并要求生成一张未绑定候选图时，可以在安全扫描通过后先生成“未绑定、未批准、不可发布”的候选；这条快捷路径不能升级为正式商品事实或发布素材。
+
+这条快捷路径免除了店铺绑定前置（`catalog.image.generate` 在店铺边界之外），但**免除不了三项商业/生产前置**：创意点余额为 0 返回 `CREATIVE_POINTS_EXHAUSTED`（402），余额未知返回 `CREATIVE_POINTS_UNAVAILABLE`（503），没有月付套餐权益快照返回 `COMMERCIAL_ENTITLEMENT_REQUIRED`（402），素材未通过扫描返回 `IMAGE_SOURCE_ASSET_INVALID`（409）。生产安全扫描由服务端扫描 Worker 完成（`ASSET_SCANNER_MODE=clamav_worker`，签名回执），商家和运营人员都不需要也不能提交扫描证据。
 
 ### 10.5 向量索引元数据（目标能力）
 
@@ -1024,13 +1030,13 @@ quote
 | --- | --- | --- | --- |
 | 1 | ChatGPT 桌面 App | 在市场搜索并安装“Store Nova”，打开插件 | 真实 App/插件标识、版本、MCP 工具发现和宿主 trace；没有宿主证据则标记不可演示 |
 | 2 | Store Nova授权页 | 用测试商家账号密码登录 | 同一 identity、workspace 和受限 token；ChatGPT/日志中没有密码 |
-| 3 | 平台运营后台 | 按登录账号查商家，展示企业、订单、权益与 capability | 未支付保持 pending；支付/核验后才变 active；操作有审计 |
-| 4 | 商家后台 | 官方 OAuth 连接一间店铺并同步 | 平台/account、授权 revision、同步游标、远端 request ID；Fixture 必须明显标识 |
+| 3 | 平台运营后台 | 按登录账号查商家，展示企业、订单、权益与 capability | 未支付保持 pending；支付/核验后才变 active；操作有审计。**当前 `manual` 档必须先配好 `COMMERCIAL_PAYMENT_PROVIDER` 并上架月付套餐，否则 `commercial.order.create` 返回 503 且订单不落库，人工核验也无单可核，本步只能演示阻断** |
+| 4 | 商家后台 | 官方 OAuth 连接一间店铺并同步 | 平台/account、授权 revision、同步游标、远端 request ID；Fixture 必须明显标识。**当前 `manual` 档不可演示：不接六平台 OAuth，改为演示运营建立人工店铺记录并导入商品资料；商家侧调用同步类方法返回 428 `STORE_ONBOARDING_REQUIRED`** |
 | 5 | 商家后台 | 上传一份“一行一 SKU”Excel 和一张原图 | 扫描、解析预览、错误行、事实确认、知识绑定和容量变化 |
 | 6 | ChatGPT 插件 | 输入商品名和指定 SKU，请求生成主图 | 命中当前工作区的事实/知识来源与规则版本；插件不显示数值扣点 |
 | 7 | API/Worker/中转证据 | 等待生成 | relay request ID、usage/cost、任务状态、对象 quarantine→signed scan→clean |
 | 8 | 插件/商家后台 | 查看候选图、审核并下载 | 图片可真实打开；版本、素材权益、扫描状态和审核记录一致 |
-| 9 | 商家后台 | 点击“一键发布” | 先出现 prepare diff/规则/授权检查，再二次确认；远端回查后才显示 published |
+| 9 | 商家后台 | 点击“一键发布” | 先出现 prepare diff/规则/授权检查，再二次确认；远端回查后才显示 published。**当前 `manual` 档不可演示：插件侧 `publish.*` 为隐藏工具，正式发布由运营在官方商家后台人工完成并回填，人工记录不是平台 API 回执** |
 | 10 | 商家/平台账务 | 查看点数和账务 | 商家后台有点数明细；插件只有余额状态；平台可追到订单、provider 成本和对账 |
 
 演示失败时保留浏览器 trace、API/MCP 请求摘要、Worker/outbox 状态、provider request ID、扫描回执和截图。不能通过删除任务、清空数据库或手工把状态改成成功来恢复演示。
@@ -1079,19 +1085,21 @@ quote
 
 ### 19.1 MCP 工具分组
 
-当前 Bridge/共享注册表的运行态工具数量以 `tools/list` 和 release metadata 为准，文档不把数量当作生产就绪证明。主要工具组如下：
+当前 Bridge/共享注册表的运行态工具数量以 `tools/list` 和 release metadata 为准，文档不把数量当作生产就绪证明。主要工具组如下，“商家 Bridge 可达性”一列说明该示例在当前上线档能否被商家调用：
 
-| 工具组 | 示例 | 用途 |
-| --- | --- | --- |
-| 身份/工作区 | `merchant.start`、`workspace.health`、`workspace.bootstrap` | 启动会话、健康和工作区 |
-| 店铺/商品 | `platform.connect`、`catalog.sync.start`、`catalog.search` | 授权、同步、检索 |
-| 品和 SKU | `brand-unit.list`、`brand-unit.product.create`、`catalog.sku.update` | 维护品、商品和变体 |
-| 素材/知识 | `asset.list`、`asset.parse`、`knowledge.asset.list`、`knowledge.rule.list` | 素材、品牌和规则 |
-| 任务/内容 | `task.create`、`task.answer`、`creative.directions`、`content.generate` | 任务和内容生成 |
-| 图片/视频 | `catalog.image.generate`、`catalog.image.get`、`multimodal.video.request` | 视觉候选和视频任务 |
-| 审核/发布 | `content.review`、`content.approve`、`publish.prepare`、`publish.confirm` | 审核、预览和写入 |
-| 商业/钱包 | `commercial.catalog.get`、`commercial.order.create`、`billing.status`、`creative-points.balance.get` | 套餐、订单和点数 |
-| 恢复/反馈 | `task.resume`、`task.timeline`、`feedback.submit` | 恢复任务和记录反馈 |
+| 工具组 | 示例 | 用途 | 商家 Bridge 可达性 |
+| --- | --- | --- | --- |
+| 身份/工作区 | `merchant.start`、`workspace.health`、`workspace.bootstrap` | 启动会话、健康和工作区 | 可达；`merchant.start` 受 `POINT_REQUIRED_NO_CHARGE` 门禁，零余额/无权益返回 402，余额未知返回 503 |
+| 店铺/商品 | `platform.connect`、`catalog.sync.start`、`catalog.search` | 授权、同步、检索 | `platform.connect`、`catalog.sync.start` **隐藏**（调用得到 `Unknown tool`）；`catalog.search` 可达，未绑店铺时 428 |
+| 品和 SKU | `brand-unit.list`、`brand-unit.product.create`、`catalog.sku.update` | 维护品、商品和变体 | 可达，但属平台写入边界，未绑店铺时 428 |
+| 素材/知识 | `asset.list`、`asset.parse`、`knowledge.asset.list`、`knowledge.rule.list` | 素材、品牌和规则 | 可达（素材上传/解析在店铺边界之外） |
+| 任务/内容 | `task.create`、`task.answer`、`creative.directions`、`content.generate` | 任务和内容生成 | `creative.directions` **桥接层禁用**（`COMMERCIAL_DISABLED_METHODS`）；`task.*` 与 `content.generate` 可达但未绑店铺时 428 |
+| 图片/视频 | `catalog.image.generate`、`catalog.image.get`、`multimodal.video.request` | 视觉候选和视频任务 | 图片两项可达（需点数 + 权益 + 已扫描素材）；`multimodal.video.request` **默认禁用**，仅在本地 relay 验收开关下临时开放 |
+| 审核/发布 | `content.review`、`content.approve`、`publish.prepare`、`publish.confirm` | 审核、预览和写入 | `content.review` **桥接层禁用**；`publish.*` **全部隐藏**（当前 `manual` 档不通过插件发布）；`content.approve` 可达但未绑店铺时 428 |
+| 商业/钱包 | `commercial.catalog.get`、`commercial.order.create`、`billing.status`、`creative-points.balance.get` | 套餐、订单和点数 | 可达，且为零余额时仍可用的恢复入口；但未配置 `COMMERCIAL_PAYMENT_PROVIDER` 时下单返回 503 且不落库 |
+| 恢复/反馈 | `task.resume`、`task.timeline`、`feedback.submit` | 恢复任务和记录反馈 | 可达；`task.resume` 未绑店铺时 428 |
+
+“隐藏”指不在 `tools/list` 中且调用被拒绝为 `Unknown tool`（`apps/plugin/mcp/bridge.mjs` 的 `MERCHANT_HIDDEN_METHODS`）；“桥接层禁用”指工具仍声明但 bridge 直接拒绝转发（同文件的 `COMMERCIAL_DISABLED_METHODS`）。表格中标注为隐藏或禁用的入口属于**未来 `official_api` 路线**，不属于当前 `manual` 上线档。
 
 商家 Bridge 不暴露 `ops.*`、内部模型密钥、规则发布管理、支付密钥或平台控制面工具。
 

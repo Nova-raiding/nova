@@ -2,6 +2,10 @@ import { execFileSync } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import {
+  PLATFORM_CAPABILITY_CONTRACT_CAPABILITIES,
+  PLATFORM_CAPABILITY_CONTRACT_PLATFORMS,
+} from '../packages/connectors/src/platform-preflight.js'
 import { NON_HERMETIC_TEST_FILES } from './test-suite-isolation.js'
 
 const root = resolve(import.meta.dirname, '..')
@@ -40,6 +44,28 @@ describe('quality entrypoint coverage', () => {
   it('keeps release gate script names unique in the source manifest', () => {
     const occurrences = packageJsonSource.match(/^\s*"test:release-gates"\s*:/gm) ?? []
     expect(occurrences).toHaveLength(1)
+  })
+
+  it('keeps the capability evidence fixture in lockstep with the platform capability contract', () => {
+    // The example fixture is what `npm run infra:validate` feeds the capability
+    // evidence gate, so a new contract capability that the fixture never adds
+    // turns every CI verify run red. Pin both sides to the same key set.
+    const fixture = JSON.parse(readFileSync(resolve(root, 'doc/todo/platform/platform-capability-evidence.example.json'), 'utf8')) as {
+      platforms?: Array<{ platform?: string; capabilities?: Record<string, { state?: string }> }>
+    }
+    const platforms = fixture.platforms ?? []
+    expect(platforms.map(item => item.platform)).toEqual([...PLATFORM_CAPABILITY_CONTRACT_PLATFORMS])
+
+    for (const item of platforms) {
+      const keys = Object.keys(item.capabilities ?? {}).sort()
+      expect(keys, `${item.platform} capability keys drifted from PLATFORM_CAPABILITY_CONTRACT_CAPABILITIES`).toEqual([...PLATFORM_CAPABILITY_CONTRACT_CAPABILITIES].sort())
+      // The fixture ships in the repository, so every entry must stay an honest
+      // placeholder. Claiming verified evidence here would be fabricated proof.
+      const unsupportedStates = Object.entries(item.capabilities ?? {})
+        .filter(([, evidence]) => evidence?.state !== 'unverified')
+        .map(([capability, evidence]) => `${item.platform}.${capability}=${String(evidence?.state)}`)
+      expect(unsupportedStates, 'the example fixture must not claim verified capability evidence').toEqual([])
+    }
   })
 
   it('keeps every deterministic source test reachable from the root check', () => {
@@ -137,7 +163,7 @@ describe('quality entrypoint coverage', () => {
   })
 
   it('keeps non-hermetic coverage explicit instead of silently passing it in the default suite', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(32)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(33)
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/migration-218-release.postgres.test.ts')
     expect(script('test:runtime:isolated')).toContain('--config vitest.runtime.config.ts')

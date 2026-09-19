@@ -1,4 +1,5 @@
 import { createClient, type RedisClientType } from 'redis'
+import { RedisCredentialRefreshLock } from '../../../packages/connectors/src/index.js'
 import type { RedisQueueTransport } from '../../../packages/workers/src/durable.js'
 import { SCANNER_HEARTBEAT_INDEX_KEY, scannerHeartbeatKey, type ScannerHeartbeat } from '../../../packages/workers/src/scanner-heartbeat.js'
 
@@ -9,27 +10,139 @@ export interface ScannerHeartbeatRedisPort {
   lastCallbackAcceptedAt(instanceId: string): Promise<string | undefined>
 }
 
-export async function connectRedisQueue(url: string): Promise<{ transport: RedisQueueTransport; scannerHeartbeat: ScannerHeartbeatRedisPort; close: () => Promise<void> }> {
-  const client = createClient({ url }) as RedisClientType
+export interface RedisQueueConnectionOptions {
+  /**
+   * Hard bound on ready + delayed entries. A deployment runs Redis with
+   * `noeviction`, so an unbounded queue eventually turns into a write outage
+   * instead of backpressure.
+   */
+  maxDepth?: number
+  /** Test seam: builds the client instead of the default driver. */
+  clientFactory?: (url: string) => RedisClientType
+}
+
+export const DEFAULT_QUEUE_MAX_DEPTH = 10_000
+
+export class RedisQueueDepthExceededError extends Error {
+  readonly code = 'WORKER_QUEUE_DEPTH_EXCEEDED'
+  constructor() {
+    super('durable queue is at its configured depth limit')
+    this.name = 'RedisQueueDepthExceededError'
+  }
+}
+
+/**
+ * Cross-replica single-flight for OAuth credential refresh, so two worker pods
+ * cannot rotate the same refresh token concurrently and invalidate each other.
+ *
+ * Intentionally duplicated with the API's factory of the same name: the
+ * connectors package deliberately owns only the two-method
+ * `RedisSingleFlightPort` so it stays free of a `redis` dependency, and neither
+ * application can import the other's module.
+ */
+export function createRedisCredentialRefreshLock(url: string | undefined, options: RedisQueueConnectionOptions = {}) {
+  if (!url?.trim()) return undefined
+  const client = (options.clientFactory ?? createClient)(url.trim()) as RedisClientType
+  client.on('error', () => undefined)
+  const ready = client.connect()
+  return new RedisCredentialRefreshLock({
+    async setIfAbsent(key, value, ttlMs) {
+      await ready
+      const result = await client.eval(`
+        if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'PX', ARGV[2]) then return 1 end
+        return 0
+      `, { keys: [key], arguments: [value, String(ttlMs)] })
+      return Number(result) === 1
+    },
+    async deleteIfValue(key, value) {
+      await ready
+      await client.eval(`
+        if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('DEL', KEYS[1]) end
+        return 1
+      `, { keys: [key], arguments: [value] })
+    },
+  })
+}
+
+export async function connectRedisQueue(url: string, options: RedisQueueConnectionOptions = {}): Promise<{ transport: RedisQueueTransport; scannerHeartbeat: ScannerHeartbeatRedisPort; close: () => Promise<void> }> {
+  const client = (options.clientFactory ?? createClient)(url) as RedisClientType
+  const maxDepth = options.maxDepth ?? DEFAULT_QUEUE_MAX_DEPTH
+  if (!Number.isSafeInteger(maxDepth) || maxDepth < 1) throw new RangeError('maxDepth must be a positive integer')
   // node-redis emits connection failures as EventEmitter errors; without a
   // listener a transient failover terminates the worker process.
   client.on('error', () => undefined)
   await client.connect()
   const processingKey = (key: string) => `${key}:processing`
+  const delayedKey = (key: string) => `${key}:delayed`
+  const indexKey = (key: string) => `${key}:ids`
+  // Claims are scored with the time of their last liveness proof: the claim
+  // itself, then every heartbeat. Recovery therefore only reclaims work whose
+  // worker stopped proving it was alive, never a handler that is still writing
+  // to a platform. A retry also becomes claimable here instead of blocking the
+  // worker (and every other tenant on it) for the length of its backoff.
   const claimScript = `
+local now = ARGV[1]
 local value = redis.call('RPOP', KEYS[1])
-if value then redis.call('ZADD', KEYS[2], ARGV[1], value) end
-return value`
-  const recoverScript = `
-local values = redis.call('ZRANGEBYSCORE', KEYS[2], '-inf', ARGV[1], 'LIMIT', 0, 1000)
-for _, value in ipairs(values) do
-  redis.call('LPUSH', KEYS[1], value)
-  redis.call('ZREM', KEYS[2], value)
+if not value then
+  local due = redis.call('ZRANGEBYSCORE', KEYS[3], '-inf', now, 'LIMIT', 0, 1)
+  if due[1] then
+    redis.call('ZREM', KEYS[3], due[1])
+    value = due[1]
+  end
 end
-return #values`
-  const claim = async (key: string) => await client.eval(claimScript, { keys: [key, processingKey(key)], arguments: [String(Date.now())] }) as string | null
+if value then redis.call('ZADD', KEYS[2], now, value) end
+return value`
+  const pushScript = `
+if redis.call('LLEN', KEYS[1]) >= tonumber(ARGV[2]) then return 0 end
+redis.call('LPUSH', KEYS[1], ARGV[1])
+local ok, decoded = pcall(cjson.decode, ARGV[1])
+if ok and decoded['id'] then redis.call('HINCRBY', KEYS[4], decoded['id'], 1) end
+return 1`
+  const pushDelayedScript = `
+if redis.call('ZCARD', KEYS[3]) >= tonumber(ARGV[3]) then return 0 end
+if redis.call('ZADD', KEYS[3], 'NX', ARGV[2], ARGV[1]) == 0 then
+  redis.call('ZADD', KEYS[3], 'XX', ARGV[2], ARGV[1])
+else
+  local ok, decoded = pcall(cjson.decode, ARGV[1])
+  if ok and decoded['id'] then redis.call('HINCRBY', KEYS[4], decoded['id'], 1) end
+end
+return 1`
+  const removeScript = `
+redis.call('ZREM', KEYS[2], ARGV[1])
+local ok, decoded = pcall(cjson.decode, ARGV[1])
+if ok and decoded['id'] then
+  local remaining = redis.call('HINCRBY', KEYS[3], decoded['id'], -1)
+  if remaining <= 0 then redis.call('HDEL', KEYS[3], decoded['id']) end
+end
+return 1`
+  // Recovery is deliberately two separate steps. A stale liveness score is a
+  // candidate, not proof the work stopped: moving it back to the ready queue
+  // before the durable lease says the claim is gone is what allowed a peer to
+  // pick up an event whose original handler was still writing. The caller
+  // confirms each candidate against the database and only then discards it.
+  const listStaleClaimsScript = `
+return redis.call('ZRANGEBYSCORE', KEYS[2], '-inf', ARGV[1], 'LIMIT', 0, ARGV[2])`
+  const discardClaimScript = `
+local removed = redis.call('ZREM', KEYS[2], ARGV[1])
+if removed == 1 then
+  local ok, decoded = pcall(cjson.decode, ARGV[1])
+  if ok and decoded['id'] then
+    local remaining = redis.call('HINCRBY', KEYS[3], decoded['id'], -1)
+    if remaining <= 0 then redis.call('HDEL', KEYS[3], decoded['id']) end
+  end
+end
+return removed`
+  const evaluate = async (script: string, keys: string[], args: Array<string | number>) => await client.eval(script, { keys, arguments: args.map(String) })
+  const claim = async (key: string) => await evaluate(claimScript, [key, processingKey(key), delayedKey(key)], [Date.now()]) as string | null
   const transport: RedisQueueTransport = {
-    async push(key, value) { await client.lPush(key, value) },
+    async push(key, value) {
+      const pushed = Number(await evaluate(pushScript, [key, processingKey(key), delayedKey(key), indexKey(key)], [value, maxDepth]))
+      if (pushed !== 1) throw new RedisQueueDepthExceededError()
+    },
+    async pushDelayed(key, value, notBeforeEpochMs) {
+      const pushed = Number(await evaluate(pushDelayedScript, [key, processingKey(key), delayedKey(key), indexKey(key)], [value, notBeforeEpochMs, maxDepth]))
+      if (pushed !== 1) throw new RedisQueueDepthExceededError()
+    },
     async pop(key, timeoutSeconds) {
       if (timeoutSeconds <= 0) return (await claim(key)) ?? undefined
       const deadline = Date.now() + timeoutSeconds * 1000
@@ -40,15 +153,24 @@ return #values`
       } while (Date.now() < deadline)
       return undefined
     },
-    async remove(key, value) { await client.zRem(processingKey(key), value) },
-    async recover(key, olderThanEpochMs) {
-      return Number(await client.eval(recoverScript, { keys: [key, processingKey(key)], arguments: [String(olderThanEpochMs)] }))
+    async remove(key, value) { await evaluate(removeScript, [key, processingKey(key), indexKey(key)], [value]) },
+    async refresh(key, value) {
+      // XX: never resurrect a claim that was already acknowledged.
+      await client.zAdd(processingKey(key), { score: Date.now(), value }, { condition: 'XX' })
     },
-    async contains(key, id) {
-      const ready = await client.lRange(key, 0, -1)
-      if (ready.some(value => { try { return (JSON.parse(value) as { id?: unknown }).id === id } catch { return false } })) return true
-      const processing = await client.zRange(processingKey(key), 0, -1)
-      return processing.some(value => { try { return (JSON.parse(value) as { id?: unknown }).id === id } catch { return false } })
+    async listStaleClaims(key, olderThanEpochMs, limit = 32) {
+      return await evaluate(listStaleClaimsScript, [key, processingKey(key)], [olderThanEpochMs, limit]) as string[]
+    },
+    // ZREM is the guard: a claim that was already acknowledged or already
+    // discarded by a peer decrements the membership index exactly once.
+    async discardClaim(key, value) {
+      return Number(await evaluate(discardClaimScript, [key, processingKey(key), indexKey(key)], [value]))
+    },
+    // O(1) membership over ready + processing + delayed entries instead of
+    // parsing both collections on every poll.
+    async contains(key, id) { return Number(await client.hExists(indexKey(key), id)) === 1 },
+    async hasCapacity(key) {
+      return (await client.lLen(key)) + (await client.zCard(delayedKey(key))) < maxDepth
     },
   }
   const callbackKey = (instanceId: string) => `${scannerHeartbeatKey(instanceId)}:last-callback-accepted-at`

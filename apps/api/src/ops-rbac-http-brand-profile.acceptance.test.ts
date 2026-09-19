@@ -50,11 +50,15 @@ describe('Ops RBAC real HTTP brand profile route', () => {
 
     const allowed = await fetch(path, { headers: { ...headers, authorization: 'Bearer ops-http-brand-profile-allowed-token' } })
     const allowedBody = await allowed.json() as Envelope
-    // The request passed the shared HTTP policy and active-member gate, then
-    // reached the route's local onboarding prerequisite.
-    expect(allowed.status).toBe(428)
-    expect(allowedBody.data).toBeNull()
-    expect(allowedBody.error).toMatchObject({ code: 'STORE_ONBOARDING_REQUIRED' })
+    // The request passed the shared HTTP policy and the active-member gate.
+    // `GET /v1/brand-profile` is registered as `brand.get`, a read-only view of
+    // the workspace's own profile that the store boundary does not gate on
+    // either surface, so the allowed request now gets the real (empty) answer
+    // instead of the store precondition.
+    expect(allowed.status).toBe(200)
+    expect(allowedBody.error).toBeNull()
+    expect(allowedBody.data).toMatchObject({ profile: null })
+    expect(JSON.stringify(allowedBody)).not.toContain(secretProfileMarker)
     expect(allowedBody.request_id).toMatch(/^req_/)
     expect(allowedBody.trace_id).toBe(allowedBody.request_id)
 

@@ -56,7 +56,7 @@ import { assetScanReceiptDigest, parseAssetScanReceipt, verifyAssetScanReceiptSi
 import { verifyScannerRequestProof } from '../../../packages/security/src/scanner-request-proof.js'
 import { verifyWorkerRequestProof, WORKER_ROLES, type WorkerRequestRole } from '../../../packages/security/src/worker-request-proof.js'
 import { bindOidcDisplayLoginProof } from '../../../packages/security/src/oidc-login-proof.js'
-import { ConnectorFailure, createVaultCredentialProviderFromEnv, isProductionCanaryReady, validatePlatformCapabilityEvidence } from '../../../packages/connectors/src/index.js'
+import { ConnectorFailure, createVaultCredentialProviderFromEnv, isProductionCanaryReady, RedisCredentialRefreshLock, validatePlatformCapabilityEvidence } from '../../../packages/connectors/src/index.js'
 import { platformWriteAllowed } from '../../../packages/connectors/src/write-boundary.js'
 import { runFencedSinglePublish, PublishCommitStatusUnknownError } from './publish-fenced-orchestrator.js'
 import { createContentGeneratorFromEnv, validateContentSchema, type ContentModule, type StaticBrief } from '../../../packages/ai/src/generator.js'
@@ -343,7 +343,7 @@ async function recordRelayUsage(usage: RelayUsageRecord) {
       }
       await persistence.actionLedger?.settleProviderUsage({ workspaceId, actionKey: settlementActionKey, actualAmountFen: 0, ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}) })
     } else if ((durableWalletAuthorization || reservation) && recordedUsage.customerChargeCny !== undefined && recordedUsage.customerChargeCny > 0) {
-      const actualAmountFen = Math.max(1, Math.ceil(recordedUsage.customerChargeCny * 100))
+      const actualAmountFen = chargeFenFromCny(recordedUsage.customerChargeCny)
       if (durableWalletAuthorization && usage.actionId) {
         const actionKey = durableAuthorizationActionKey ?? usage.actionId
         if (durableWalletAuthorization.settlementStatus === 'authorized' || durableWalletAuthorization.settlementStatus === 'pending_receipt') {
@@ -722,7 +722,8 @@ const connectorMappingPreflight = createApiConnectorMappingPreflightAdapter({
     return matches.length === 1 ? matches[0] : undefined
   },
 })
-export const connectorRuntime = new ConnectorRuntime({ fixtureMode, allowFixtureWrites: process.env.PLUGIN_WRITE_ENABLED === 'true', credentialProvider: createVaultCredentialProviderFromEnv(), beforeRequest: recheckDeliveryBeforeProvider, mappingPreflight: connectorMappingPreflight, environment: process.env.NODE_ENV === 'production' ? 'production' : process.env.NODE_ENV === 'test' ? 'test' : 'development' })
+const credentialRefreshLock = createRedisCredentialRefreshLock(process.env.REDIS_URL)
+export const connectorRuntime = new ConnectorRuntime({ fixtureMode, allowFixtureWrites: process.env.PLUGIN_WRITE_ENABLED === 'true', credentialProvider: createVaultCredentialProviderFromEnv(), ...(credentialRefreshLock ? { refreshLock: credentialRefreshLock } : {}), beforeRequest: recheckDeliveryBeforeProvider, mappingPreflight: connectorMappingPreflight, environment: process.env.NODE_ENV === 'production' ? 'production' : process.env.NODE_ENV === 'test' ? 'test' : 'development' })
 export const oauthStates = new OAuthStateStore()
 const redisOAuthPort = createRedisOAuthPort(process.env.REDIS_URL)
 type OAuthStateRuntimeStore = Pick<OAuthStateStore, 'issue' | 'consume' | 'consumeCallback'> | Pick<RedisOAuthStateStore, 'issue' | 'consume' | 'consumeCallback'>
@@ -1055,6 +1056,38 @@ interface RedisAutomationLeasePort {
   acquire(key: string, token: string, ttlMs: number): Promise<boolean>
   renew(key: string, token: string, ttlMs: number): Promise<boolean>
   release(key: string, token: string): Promise<void>
+}
+
+/**
+ * Cross-replica single-flight for OAuth credential refresh. Without it each
+ * process serializes only against itself, so two pods can refresh the same
+ * rotating refresh token concurrently and the loser's token is invalidated —
+ * every later request from that side then fails until a manual reconnect.
+ * Returns undefined without a Redis URL; the connector then falls back to its
+ * in-process lock plus a compare-and-swap on the stored credential.
+ */
+function createRedisCredentialRefreshLock(url: string | undefined) {
+  if (!url?.trim()) return undefined
+  const client = createClient(redisClientOptions(url.trim()))
+  client.on('error', () => undefined)
+  const ready = client.connect()
+  return new RedisCredentialRefreshLock({
+    async setIfAbsent(key, value, ttlMs) {
+      await withRedisOperationTimeout(ready)
+      const result = await withRedisOperationTimeout(client.eval(`
+        if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'PX', ARGV[2]) then return 1 end
+        return 0
+      `, { keys: [key], arguments: [value, String(ttlMs)] }))
+      return Number(result) === 1
+    },
+    async deleteIfValue(key, value) {
+      await withRedisOperationTimeout(ready)
+      await withRedisOperationTimeout(client.eval(`
+        if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('DEL', KEYS[1]) end
+        return 1
+      `, { keys: [key], arguments: [value] }))
+    },
+  })
 }
 
 function createRedisAutomationLease(url: string | undefined): RedisAutomationLeasePort | undefined {
@@ -1664,6 +1697,27 @@ function parseCnyToFen(value: unknown, minimumFen = 100) {
   return fen
 }
 
+/**
+ * `customerChargeCny` / `paymentAmountCny` are computed floats (relay-pricing
+ * emits up to 12 decimals), so scaling them by 100 carries binary
+ * representation noise: `0.07 * 100` is `7.000000000000001`. A raw `Math.ceil`
+ * on that billed 8 fen for a 7-fen charge. Rounding the scaled value to 6
+ * decimals first — a tolerance of 1e-6 fen, far below any real cost precision —
+ * gives every caller the same integer fen for the same input.
+ *
+ * This matters most because the wallet debit and the reconciliation audit used
+ * to share the same unrounded expression, so the audit could never detect the
+ * overcharge it was recomputing.
+ */
+function scaleCnyToFen(value: number) {
+  return Number((value * 100).toFixed(6))
+}
+
+/** Ceiling conversion for wallet charges, preserving the 1-fen platform minimum. */
+function chargeFenFromCny(value: number) {
+  return Math.max(1, Math.ceil(scaleCnyToFen(value)))
+}
+
 function walletBalanceFen(workspaceId: string) {
   return walletTransactions.filter(item => item.workspaceId === workspaceId).reduce((sum, item) => sum + (item.type === 'debit' ? -item.amountFen : item.amountFen), 0)
 }
@@ -2053,7 +2107,7 @@ async function settlePendingModelUsage(input: { workspaceId: string; usageId: st
     if (!action) throw new DomainError('MODEL_USAGE_ACTION_NOT_FOUND', '原始扣费授权不存在，需人工核对', 409)
     const actionKey = actionLookup?.actionKey ?? usage.actionId
     if (action.settlement === 'wallet' || action.settlement === 'wallet_overage') {
-      await settlePluginWalletDebit({ workspaceId: input.workspaceId, debitIdempotencyKey: actionKey, finalAmountFen: Math.max(1, Math.ceil(usageCustomerChargeCny * 100)), actorId: input.actorId, ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}) })
+      await settlePluginWalletDebit({ workspaceId: input.workspaceId, debitIdempotencyKey: actionKey, finalAmountFen: chargeFenFromCny(usageCustomerChargeCny), actorId: input.actorId, ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}) })
     } else if (action.settlement === 'entitlement' || action.settlement === 'included_quota') {
       if (action.settlementStatus === 'authorized') await persistence.actionLedger?.transitionSettlementStatus({ workspaceId: input.workspaceId, actionKey, from: ['authorized'], to: 'pending_receipt' })
       await persistence.actionLedger?.settleProviderUsage({ workspaceId: input.workspaceId, actionKey, actualAmountFen: 0, ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}) })
@@ -3646,7 +3700,10 @@ void persistenceReady.then(async () => {
     return
   }
   await passwordAuthRepository.ensurePlatformAccount({ login, passwordHash, roles: ['platform_admin'] })
-  console.log('platform password account bootstrap completed', { login, account_type: 'platform' })
+  // Do not echo the platform account login: it is an email-format identifier and
+  // this line lands in a world-readable log file. The account type is enough to
+  // confirm the bootstrap ran.
+  console.log('platform password account bootstrap completed', { account_type: 'platform' })
 }).catch(error => {
   const code = error instanceof Error ? error.message : String(error)
   console.error('platform password account bootstrap failed', { code })
@@ -3897,10 +3954,12 @@ function assertCommercialDecisionAllowed(req: IncomingMessage, result: Commercia
 }
 
 export async function enforceMcpCommercialAccess(req: IncomingMessage, workspaceId: string, operation: string, requiredAccessRevision?: string) {
-  // Standalone user-uploaded image generation/editing is allowed before a
-  // store is bound; publishing, syncing and content-task operations retain
-  // the store onboarding boundary.
-  if (!['catalog.image.generate', 'multimodal.image.edit', 'content.draft.generate'].includes(operation)) requireStoreOnboarding(workspaceId, operation)
+  // Credential-free creation, uploads, read-only catalog views and the
+  // commercial recovery entry points are reachable before a store is bound;
+  // syncing, formal content tasks and publishing retain the store boundary.
+  // `requireStoreOnboarding` owns the exemption list so this call site cannot
+  // drift from it again.
+  requireStoreOnboarding(workspaceId, operation)
   await ensureLocalFixtureCreativePoints(workspaceId)
   const result = await commercialAccessService.decide({
     surface: 'MCP', operation, workspace_id: workspaceId,
@@ -4268,6 +4327,87 @@ async function requireActiveWorkspace(workspaceId: string, method: string) {
   if (await getWorkspaceStatus(workspaceId) !== 'active') throw new DomainError('WORKSPACE_DISABLED', '工作区已停用；请先重新启用后再执行商家操作', 423)
 }
 
+/**
+ * Methods a merchant must be able to reach before any store is bound.
+ *
+ * The store onboarding boundary exists to gate operations that act *on a
+ * platform* — importing/syncing a catalog, creating formal content tasks, and
+ * publishing. It must not gate the credential-free work a first-time customer
+ * can do with material they supply themselves, nor the ability to see their own
+ * balance and buy creative points. Gating those made a brand-new paid account
+ * unusable: applying this predicate to the plugin's declared surface
+ * (`MCP_METHODS` minus the bridge's hidden/disabled sets — 131 tools at the time
+ * of writing) left 63 of them returning 428, including the documented
+ * "upload an image and get a candidate" path, `catalog.search`, and
+ * `commercial.order.create` — so the only recovery guidance the merchant
+ * received pointed at a tool the plugin does not expose. The entries below take
+ * that count to 47; re-derive it from the predicate and the bridge surface
+ * rather than trusting these literals if the merchant surface moves.
+ *
+ * This single set is the source of truth for both surfaces. It used to be
+ * spelled out inline at three call sites, which is how `asset.upload` and the
+ * read-only catalog methods drifted out of step with `content.draft.generate`.
+ * The HTTP surface resolves its own registered MCP method
+ * (`storeBoundaryScopeForHttp`) instead of keeping a second path list, so a route
+ * can no longer be exempt on one surface and gated on the other.
+ *
+ * Two groups stay OUT of this set on purpose:
+ *  - Platform-acting writes (`catalog.import*`, `catalog.sync*`, `catalog.sku`,
+ *    `catalog.product.*`, `catalog.facts.confirm`, `task.create` plus every
+ *    answer/plan/direction entry point, `content.generate`/`content.approve`/
+ *    `content.restore`/`content.visual.select`/`content.review.decide`,
+ *    `campaign.batch.*`, `brand-unit.*`, `platform.store.alias.set`,
+ *    `brand.upsert`/`brand.extract`, `automation.scan`): they act on a live store
+ *    or produce the formal deliverable only a bound store can use.
+ *  - `task.resume`: its handler only reads the task and reports the pending
+ *    questions, but no store-less workspace can own a task (`task.create` and
+ *    `task.understand` stay gated) and the follow-on methods it leads to
+ *    (`task.answer`, `task.select_direction`, `task.plan.confirm`) stay gated as
+ *    well — exempting it would only change which error a revoked-store workspace
+ *    sees, never restore a capability.
+ */
+const STORE_BOUNDARY_EXEMPT_METHODS = new Set([
+  // Store-less content creation from merchant-supplied material. `catalog.image.get`
+  // is part of this flow, not an extra: the merchant skill polls it after a
+  // `queued` response from `catalog.image.generate`, and the durable execution
+  // mode (IMAGE_GENERATION_EXECUTION_MODE=durable) never returns an inline image,
+  // so gating the poll turned the documented path into a 428 after the creative
+  // point had already been reserved.
+  'catalog.image.generate', 'catalog.image.get', 'multimodal.image.edit', 'content.draft.generate',
+  // Checking the candidate the merchant just produced. Both read the workspace's
+  // own generation job/product and only persist that job's review state; neither
+  // reads or writes a platform store.
+  'catalog.image.review', 'generation.get', 'multimodal.video.get',
+  // Uploading and parsing the merchant's own source material.
+  'asset.upload', 'asset.upload.batch', 'asset.parse', 'asset.list', 'asset.facts.confirm',
+  'upload.session.create', 'upload.session.part', 'upload.session.complete',
+  // The confirmation step of the same asset-level continuation. `asset.upload`
+  // with a generation intent creates an `awaiting_confirmation` continuation and
+  // the bridge asks the merchant to confirm usage rights; leaving the three
+  // confirm/rights/preference methods gated stranded that continuation in a
+  // store-less workspace (the previous round exempted `asset.facts.confirm` from
+  // the same class and missed these).
+  'asset.generation.confirm', 'asset.rights.update', 'asset.preference.update',
+  // Read-only views of the merchant's own catalog, content and work history.
+  'catalog.search', 'catalog.categories', 'deliverable.list', 'task.history', 'task.timeline',
+  'content.versions', 'content.diff', 'feedback.list',
+  // Balance, pricing and the commercial recovery entry points. These carry the
+  // `RECOVERY_CONTROL` classification, so they are usable at a zero balance —
+  // which is what makes the store-less path self-recoverable: a new account can
+  // read its balance, price a point pack, buy points, check that the payment
+  // landed, and only then reach the `POINT_REQUIRED_NO_CHARGE` creation methods.
+  'creative-points.balance.get', 'creative-points.statement.list',
+  'commercial.catalog.get', 'commercial.order.create', 'commercial.access.get',
+  // `commercial.order.payment.get` is the only documented way to verify a
+  // purchase after paying (plugin README), and the billing/workspace-data reads
+  // plus `canonical.product.consistency` are registered as `RECOVERY_CONTROL`:
+  // "usable at any balance, any revision". Gating them contradicts that registry
+  // and the `tests/mcp-surface-contract.test.ts` allowlist equality.
+  'commercial.order.payment.get', 'billing.export',
+  'workspace.data.export.request', 'workspace.data.export.get', 'workspace.data.delete.request',
+  'canonical.product.consistency',
+])
+
 const ONBOARDING_METHODS = new Set([
   'onboarding.status', 'merchant.start', 'workspace.health', 'platform.connect', 'billing.status', 'billing.recharge.create', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.reconciliation', 'billing.model-usage.statement',
   'subscription.get', 'subscription.orders.list', 'subscription.order.create', 'subscription.change', 'platform.model.status',
@@ -4298,9 +4438,46 @@ function requireStoreOnboarding(workspaceId: string, method: string) {
   // Local fixture workflows intentionally support unbound planning data. The
   // production App flow must bind at least one live store before any catalog,
   // asset, task, sync, generation, or publishing operation is reachable.
-  if (!isProduction() || ONBOARDING_METHODS.has(method) || COMMERCIAL_READ_ONLY_METHODS.has(method) || method.startsWith('ops.') || method.startsWith('knowledge.') || method.startsWith('rule.')) return
+  if (!isProduction() || ONBOARDING_METHODS.has(method) || COMMERCIAL_READ_ONLY_METHODS.has(method) || STORE_BOUNDARY_EXEMPT_METHODS.has(method) || method.startsWith('ops.') || method.startsWith('knowledge.') || method.startsWith('rule.')) return
   const hasBoundStore = service.listPlatformAccounts(workspaceId).some(account => account.tokenState === 'connected')
-  if (!hasBoundStore) throw new DomainError('STORE_ONBOARDING_REQUIRED', '请先完成至少一个平台店铺授权绑定，再继续使用商品、素材、任务或生成能力', 428, { onboarding_required: true, next_actions: ['调用 workspace.health 查看六平台授权入口', '选择平台后调用 platform.connect', '授权回调完成后重新调用 workspace.health'] })
+  // The guidance must name only methods the merchant plugin actually exposes.
+  // `platform.connect` is hidden from `tools/list` and rejected as an unknown
+  // tool, so recommending it left the merchant with no actionable next step.
+  if (!hasBoundStore) throw new DomainError('STORE_ONBOARDING_REQUIRED', '请先完成至少一个平台店铺授权绑定，再继续使用商品同步、正式任务与发布能力', 428, {
+    onboarding_required: true,
+    // These are merchant-facing prose, not method names: the previous third step
+    // told the merchant to call `platform.connect`, which the plugin does not
+    // expose — so the only recovery guidance they received was unactionable.
+    next_actions: [
+      '调用 workspace.health 查看店铺授权状态',
+      '上传素材、生成候选内容、查看与购买创意点无需绑定店铺即可使用',
+      '商品同步、正式任务与发布需要先由平台运营为你的商家建立店铺记录',
+    ],
+  })
+}
+
+/**
+ * Store-boundary scope for an HTTP request.
+ *
+ * The HTTP surface and the MCP surface must share ONE exemption table
+ * (`STORE_BOUNDARY_EXEMPT_METHODS`, applied by `requireStoreOnboarding`). Passing
+ * the raw HTTP path as the scope is what let the two surfaces drift: the
+ * exemption set holds MCP method names, so `GET /v1/assets` stayed 428 while
+ * `asset.list` was already exempt over MCP, and every newly exempt method had to
+ * be remembered in a second, hand-kept path list that nobody updated.
+ *
+ * Instead, resolve the MCP method this HTTP operation is registered against in
+ * `HTTP_OPERATION_POLICIES` (the same registry the authorization policy is
+ * resolved from) and hand that to the shared gate. A route with no registered
+ * MCP method keeps its path as the scope, which stays gated exactly as before,
+ * and `isHttpOnboardingExempt` remains only for the routes that have no MCP
+ * equivalent at all (callbacks, worker/system paths, the billing and
+ * creative-points collection prefixes). An exemption — or a new route whose MCP
+ * method is already exempt — therefore takes effect on both surfaces at once,
+ * with no second list of *methods* to keep in step.
+ */
+function storeBoundaryScopeForHttp(policy: HttpOperationPolicy | undefined, path: string) {
+  return policy?.mcpMethod ?? `http:${path}`
 }
 
 function isHttpOnboardingExempt(path: string) {
@@ -4453,7 +4630,31 @@ async function syncOperationalAlerts(workspaceId: string) {
     if (job.state === 'failed' || job.state === 'partial') alerts.push({ alertKey: `sync:${job.id}:${job.state}`, code: 'SYNC_FAILED', severity: 'medium', platform: job.platform, accountId: job.accountId, entityType: 'sync_job', entityId: job.id, title: `${job.platform} 商品同步${job.state === 'partial' ? '部分失败' : '失败'}`, observedAt: job.updatedAt, evidence: { state: job.state, failureCount: job.failedItems.length }, nextAction: '查看失败项和平台原始错误，确认商品事实后再重试。', workspaceId })
   }
   for (const job of service.listPublishJobs(workspaceId)) {
-    if (job.remoteState === 'rejected' || job.state === 'rejected' || job.remoteState === 'unknown' || job.state === 'unknown' || job.state === 'manual_attention') alerts.push({ alertKey: `publish:${job.id}:${job.remoteState ?? job.state}`, code: job.remoteState === 'rejected' || job.state === 'rejected' ? 'PUBLISH_REJECTED' : 'PUBLISH_UNKNOWN', severity: 'high', platform: job.platform, accountId: job.accountId, entityType: 'publish_job', entityId: job.id, title: job.remoteState === 'rejected' || job.state === 'rejected' ? `${job.platform} 发布被平台拒绝` : `${job.platform} 发布结果未知，需要人工核对`, observedAt: job.remoteObservedAt ?? job.createdAt, evidence: { state: job.state, remoteState: job.remoteState, rejectionCode: job.rejection?.rawCode ?? null }, nextAction: '先读取平台回执和任务时间线；拒绝需修正版重新审核，未知状态禁止自动重发。', workspaceId })
+    // An operator who acknowledged an exceptional publish has already taken
+    // responsibility for it with a recorded actor and reason; keeping the alert
+    // open forever would make the alert list unclearable.
+    if (job.operatorAcknowledgement) continue
+    // Delivery drift is the one publish failure that is *not* self-resolving:
+    // the platform accepted the confirmed content while the local task moved to
+    // a different version, so no retry, poll or worker pass can finish it. It is
+    // exactly the case that needs a human, so it is escalated as high severity.
+    const reconciliation = job.state === 'reconciling'
+    if (reconciliation || job.remoteState === 'rejected' || job.state === 'rejected' || job.remoteState === 'unknown' || job.state === 'unknown' || job.state === 'manual_attention') {
+      const rejected = job.remoteState === 'rejected' || job.state === 'rejected'
+      alerts.push({ alertKey: `publish:${job.id}:${job.remoteState ?? job.state}`, code: reconciliation ? 'PUBLISH_DELIVERY_RECONCILIATION_REQUIRED' : rejected ? 'PUBLISH_REJECTED' : 'PUBLISH_UNKNOWN', severity: 'high', platform: job.platform, accountId: job.accountId, entityType: 'publish_job', entityId: job.id, title: reconciliation ? `${job.platform} 发布内容已上线但本地任务内容已漂移，需要人工对账` : rejected ? `${job.platform} 发布被平台拒绝` : `${job.platform} 发布结果未知，需要人工核对`, observedAt: job.remoteObservedAt ?? job.createdAt, evidence: { state: job.state, remoteState: job.remoteState, rejectionCode: job.rejection?.rawCode ?? null, ...(job.deliveryReconciliation ? { deliveryReconciliation: job.deliveryReconciliation } : {}) }, nextAction: reconciliation ? '先核对平台远端商品 ID 与本地任务内容差异；确认后由运营执行 ops.marketing.publish.acknowledge 关闭对账，关闭前禁止重复提交同一发布。' : '先读取平台回执和任务时间线；拒绝需修正版重新审核，未知状态禁止自动重发。', workspaceId })
+    }
+  }
+  // A publish an operator acknowledged is settled. Its alert row must be settled
+  // with the same recorded decision instead of staying open forever: an
+  // acknowledged reconciliation would otherwise keep telling Ops to reconcile it
+  // and keep retrying a notification for work that is already done.
+  const acknowledgedPublishJobIds = new Set(service.listPublishJobs(workspaceId).filter(job => job.operatorAcknowledgement).map(job => job.id))
+  if (acknowledgedPublishJobIds.size) {
+    for (const alert of await repository.list(workspaceId, 'open', 500)) {
+      if (alert.entityType !== 'publish_job' || !acknowledgedPublishJobIds.has(alert.entityId)) continue
+      const acknowledgement = service.publishJobs.get(alert.entityId)?.operatorAcknowledgement
+      await repository.acknowledge({ workspaceId, id: alert.id, actorId: acknowledgement?.actorId ?? 'operator', reason: acknowledgement?.reason ?? '发布异常已由运营确认关闭' })
+    }
   }
   for (const task of service.listTasks(workspaceId)) {
     if (task.state === 'failed_recoverable') alerts.push({ alertKey: `task:${task.id}:${task.state}`, code: 'TASK_FAILED', severity: 'medium', platform: task.platform, accountId: task.accountId, entityType: 'task', entityId: task.id, title: '营销任务失败，需要恢复或人工处理', observedAt: task.createdAt, evidence: { state: task.state }, nextAction: '打开任务时间线确认失败阶段；可恢复任务使用恢复入口，不要重复创建订单或发布。', workspaceId })
@@ -4472,6 +4673,67 @@ async function syncOperationalAlerts(workspaceId: string) {
     void persistOperationalAlertNotification(persisted)
   }
   return repository
+}
+
+/**
+ * Parse a positive numeric env override, falling back to the default rather
+ * than propagating `NaN`. `Math.max(1, Number('eight'))` is `NaN`, and an `NaN`
+ * interval makes `setInterval` fire roughly every millisecond — this is the only
+ * background alerting path, so a typo in either variable must not be able to
+ * silently disable it or turn it into a database flood.
+ */
+function configPositiveNumber(raw: string | undefined, fallback: number) {
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+const OPERATIONAL_ALERT_SWEEP_BATCH = Math.max(1, configPositiveNumber(process.env.OPERATIONAL_ALERT_SWEEP_BATCH, 8))
+const OPERATIONAL_ALERT_SWEEP_INTERVAL_MS = Math.max(30_000, configPositiveNumber(process.env.OPERATIONAL_ALERT_SWEEP_INTERVAL_MS, 60_000))
+
+/**
+ * Evaluate operational alerts for a rotating batch of tenants in the background.
+ *
+ * `syncOperationalAlerts` used to run only from `ops.alerts.list`, so an alert
+ * did not exist until a human opened the console: a publish stuck in `unknown`
+ * at 02:00 produced no persisted row and no webhook until someone looked, and a
+ * revoked OAuth token or a stranded settlement could stay invisible for days.
+ * Alert derivation reads the hydrated in-memory projection, so this hydrates a
+ * bounded rotating batch rather than every tenant in one pass — detection
+ * latency becomes `batch / tenantCount * interval` instead of unbounded, and the
+ * control-plane pool stays protected from a tenant-list stampede.
+ */
+async function sweepOperationalAlerts() {
+  if (!persistence.listWorkspaceIds) return
+  try {
+    await persistenceReady
+    const workspaceIds = await persistence.listWorkspaceIds()
+    if (!workspaceIds.length) return
+    // Derive the window from the wall clock rather than a process-local cursor.
+    // A cursor is per-replica (N replicas each do all the work), resets to zero
+    // on every rolling deploy or scale-up, and for a pod stuck in a crash loop
+    // never advances past the first batch — so some workspaces would never be
+    // swept at all. A time-derived window is identical on every replica and
+    // always progresses.
+    const size = Math.min(OPERATIONAL_ALERT_SWEEP_BATCH, workspaceIds.length)
+    const offset = (Math.floor(Date.now() / OPERATIONAL_ALERT_SWEEP_INTERVAL_MS) * size) % workspaceIds.length
+    // `size <= workspaceIds.length`, so this wraps at most once and never
+    // repeats a workspace inside a single pass.
+    const batch = offset + size <= workspaceIds.length
+      ? workspaceIds.slice(offset, offset + size)
+      : [...workspaceIds.slice(offset), ...workspaceIds.slice(0, offset + size - workspaceIds.length)]
+    await mapWithConcurrency(batch, 4, async workspaceId => {
+      try {
+        await hydrateWorkspace(workspaceId, { readOnly: true })
+        await syncOperationalAlerts(workspaceId)
+      } catch (error) {
+        // One malformed legacy tenant must not stop the sweep; its persisted
+        // alert stream stays queryable and the next pass repairs it.
+        console.error(JSON.stringify({ event: 'operational_alert_sync_failed', workspace_id: workspaceId, error_message: error instanceof Error ? error.message : String(error) }))
+      }
+    })
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'operational_alert_sweep_failed', error_message: error instanceof Error ? error.message : String(error) }))
+  }
 }
 async function persistSnapshot(workspaceId: string, entityType: 'product' | 'task' | 'content_version' | 'publish_job' | 'manual_publish_record' | 'publish_batch' | 'platform_account' | 'generation_job' | 'image_generation_job' | 'brand_profile' | 'asset' | 'feedback' | 'sync_job' | 'automation_policy', entity: { id: string; version?: number; revision?: number }, value: Record<string, unknown>) {
   await persistenceReady
@@ -4742,6 +5004,21 @@ function projectPublishWorkflow(workspaceId: string, job: import('../../../packa
         : { method: 'publish.get', label: '刷新发布状态', allowed: true },
     recovery: { retryable: false, resume_method: 'publish.get', reconciliation_required: unknown, ...(unknown ? { retry_scope: '人工对账' } : {}) },
     evidence: { source: fixtureMode ? 'fixture' : 'official_api', simulated: job.remoteSimulated === true || fixtureMode, ...(job.requestId ? { request_id: job.requestId } : {}) },
+    // Read exit for the delivery-drift record. Until now it was written and
+    // never read: an operator opening the job saw `reconciling` with no statement
+    // of what actually happened. `task_state` is the *current* task pointer,
+    // which diverges from the escalated snapshot once the reconciliation is
+    // closed and the task is handed back for rework.
+    ...(job.deliveryReconciliation ? {
+      reconciliation: {
+        ...job.deliveryReconciliation,
+        settled: Boolean(job.operatorAcknowledgement),
+        ...(job.operatorAcknowledgement ? { acknowledged_by: job.operatorAcknowledgement.actorId, acknowledged_at: job.operatorAcknowledgement.acknowledgedAt, acknowledgement_reason: job.operatorAcknowledgement.reason } : {}),
+        ...(task?.state ? { task_state: task.state } : {}),
+        // Only an operator decision closes this; nothing automatic can.
+        close_method: 'ops.marketing.publish.acknowledge',
+      },
+    } : {}),
   }
 }
 
@@ -4891,7 +5168,11 @@ async function executeAutomationScan(workspaceId: string, platform?: Platform, a
     ...products.filter(product => !product.factsConfirmed).map(product => ({ kind: 'unconfirmed_facts', product_id: product.id, platform: product.platform, account_id: product.accountId ?? null, message: '商品事实尚未确认' })),
     ...products.filter(product => product.stock <= 0).map(product => ({ kind: 'out_of_stock', product_id: product.id, platform: product.platform, account_id: product.accountId ?? null, message: '库存为零' })),
     ...products.filter(product => product.stock > 0 && product.stock <= 10).map(product => ({ kind: 'low_stock', product_id: product.id, platform: product.platform, account_id: product.accountId ?? null, message: `库存偏低：${product.stock}` })),
-    ...jobs.filter(job => ['rejected', 'unknown', 'manual_attention'].includes(job.state)).map(job => ({ kind: 'publish_attention', publish_job_id: job.id, platform: job.platform, account_id: job.accountId ?? null, message: `发布状态需要人工处理：${job.state}` })),
+    // `reconciling` is included because delivery drift (content already live,
+    // task moved on) never resolves itself and must reach an operator's queue.
+    // Jobs an operator already acknowledged are excluded: they are settled, not
+    // pending work, and would otherwise occupy the queue forever.
+    ...jobs.filter(job => !job.operatorAcknowledgement && (['rejected', 'unknown', 'manual_attention'].includes(job.state) || job.state === 'reconciling')).map(job => ({ kind: 'publish_attention', publish_job_id: job.id, platform: job.platform, account_id: job.accountId ?? null, message: job.state === 'reconciling' ? '发布内容可能已上线但本地任务内容已漂移，需人工对账后确认' : `发布状态需要人工处理：${job.state}` })),
   ]
   const alertRepository = persistence.alerts ?? memoryAlerts
   for (const risk of risks) {
@@ -5287,7 +5568,13 @@ function publishEventPayload(job: import('../../../packages/application/src/serv
     workspaceId: job.workspaceId,
     idempotencyKey: job.idempotencyKey,
     ...(job.accountId ? { account_id: job.accountId } : {}),
-    ...(job.payloadSnapshot?.remoteId || job.remoteId ? { remote_id: job.payloadSnapshot?.remoteId ?? job.remoteId } : {}),
+    // Frozen at prepare time, never `job.remoteId`: the publish payload is built
+    // before the write, so a create carries no remote id, while the later
+    // reconcile payload would carry the one the platform just returned. The
+    // worker derives its per-publish Redis lock key from this value, so the two
+    // handlers must read the same field or a create→reconcile pair takes two
+    // different keys and the mutual exclusion silently does nothing.
+    ...(job.payloadSnapshot?.remoteId ? { remote_id: job.payloadSnapshot.remoteId } : {}),
     fields,
     payload_hash: job.payloadHash,
     media_required: job.selectedVisuals.length > 0,
@@ -5534,7 +5821,10 @@ function publishReconcileEventPayload(job: import('../../../packages/application
     contentVersionId: job.contentVersionId,
     platform: job.platform,
     ...(job.accountId ? { account_id: job.accountId } : {}),
-    ...(job.payloadSnapshot?.remoteId || job.remoteId ? { remote_id: job.remoteId ?? job.payloadSnapshot.remoteId } : {}),
+    // Must match the publish payload's derivation exactly — see the comment
+    // there. Both read the frozen snapshot so the reconcile lock key equals the
+    // publish lock key for the same job.
+    ...(job.payloadSnapshot?.remoteId ? { remote_id: job.payloadSnapshot.remoteId } : {}),
     idempotencyKey: job.idempotencyKey,
     payload_hash: job.payloadHash,
     ...(job.selectionHash ? { selection_hash: job.selectionHash } : {}),
@@ -5647,14 +5937,21 @@ const MCP_BODY_LIMIT = 70 * 1024 * 1024
 const DEFAULT_RATE_LIMIT = 120
 
 const rateBuckets = new Map<string, { windowStartedAt: number; count: number }>()
+/** Sweep expired fallback buckets once the map grows past this size. */
+const RATE_BUCKET_SWEEP_THRESHOLD = 10_000
 const metricsStartedAt = process.hrtime.bigint()
 const metricRequests = new Map<string, number>()
 let metricRequestCount = 0
 let metricRequestDurationSeconds = 0
 let metricInFlight = 0
 
-function observeHttpMetric(req: IncomingMessage, res: ServerResponse, startedAt: bigint) {
-  const key = `${req.method ?? 'UNKNOWN'}:${res.statusCode}`
+function observeHttpMetric(req: IncomingMessage, res: ServerResponse, startedAt: bigint, aborted = false) {
+  // A socket destroyed before the response finished never had a status code, and
+  // `res.statusCode` still reads the 200 default — so recording it counted every
+  // client abort as a success and skewed the error-rate denominator. 499 is the
+  // conventional "client closed request".
+  const status = aborted && !res.writableFinished ? 499 : res.statusCode
+  const key = `${req.method ?? 'UNKNOWN'}:${status}`
   metricRequests.set(key, (metricRequests.get(key) ?? 0) + 1)
   metricRequestCount += 1
   metricRequestDurationSeconds += Number(process.hrtime.bigint() - startedAt) / 1_000_000_000
@@ -5936,7 +6233,7 @@ function requestDurationMs(startedAt: bigint) {
   return Number(process.hrtime.bigint() - startedAt) / 1_000_000
 }
 
-function writeRequestObservation(req: IncomingMessage, event: 'request.received' | 'request.completed' | 'request.failed', input: RequestLogInput) {
+function writeRequestObservation(req: IncomingMessage, event: 'request.received' | 'request.completed' | 'request.failed' | 'request.aborted', input: RequestLogInput) {
   if (!requestObservabilityEnabled()) return
   console.info(serializeRequestLogEvent(buildRequestLogEvent(req, event, input)))
 }
@@ -5960,9 +6257,16 @@ function trustedRequestObservationActor(req: IncomingMessage) {
   return requiresStrictAuth() ? requestPrincipals.get(req)?.actorId : undefined
 }
 
-function completeRequestObservation(req: IncomingMessage, res: ServerResponse) {
+function completeRequestObservation(req: IncomingMessage, res: ServerResponse, aborted = false) {
   const state = requestObservationStates.get(req)
   if (!state || state.failed) return
+  if (aborted && !res.writableFinished) {
+    // The client went away before we answered. Recording this as
+    // `request.completed status:200` wrote a false success into the audit
+    // stream; it is neither a completion nor a server failure.
+    writeRequestObservation(req, 'request.aborted', { ...state, status: 499, durationMs: requestDurationMs(state.startedAt) })
+    return
+  }
   if (res.statusCode >= 400) {
     failRequestObservation(req, res.statusCode, typeof state.errorCode === 'string' ? state.errorCode : 'HTTP_ERROR')
     return
@@ -6034,7 +6338,7 @@ function sendOAuthCallbackPage(res: ServerResponse, status: number, input: { sta
   const title = input.state === 'success' ? '店铺授权成功' : '店铺授权未完成'
   const heading = input.state === 'success' ? `已连接${platform}` : '授权失败'
   const body = input.state === 'success'
-    ? `<p>店铺已安全绑定到大麦工作区。</p><p>状态：${escapeHtml(input.syncState === 'queued' ? '首轮商品同步已排队' : '等待同步配置')}</p><p>请返回 Codex App，刷新店铺状态后选择具体店铺继续。</p>`
+    ? `<p>店铺已安全绑定到 Store Nova 工作区。</p><p>状态：${escapeHtml(input.syncState === 'queued' ? '首轮商品同步已排队' : '等待同步配置')}</p><p>请返回 Codex App，刷新店铺状态后选择具体店铺继续。</p>`
     : `<p>${escapeHtml(input.message ?? '授权回调未完成，请返回 Codex App 重试。')}</p><p>请重新发起授权，不要重复使用当前页面参数。</p>`
   const request = req ? requestId(req) : 'oauth-callback'
   res.statusCode = status
@@ -7360,7 +7664,16 @@ function requireOperationsRole(req: IncomingMessage, allowed: readonly string[])
     ? resolveCanonicalRoles({ gatewayRoles: roles.filter(role => role !== principal.memberRole), memberRole: principal.memberRole })
     : resolveCanonicalRoles({ gatewayRoles: roles })
   const allowedCanonical = new Set(allowed.flatMap(role => [canonicalizeRole(role, 'gateway'), canonicalizeRole(role, 'membership')]).filter((role): role is CanonicalRole => role !== undefined))
-  if (requiresStrictAuth() && (!principal?.actorId || (!roles.some(role => allowed.includes(role)) && !canonicalRoles.some(role => allowedCanonical.has(role))))) throw new DomainError(ERROR_CODES.FORBIDDEN, '该运营操作需要对应的工作区或平台运营权限', 403)
+  // `platform_ops` is simultaneously a platform gateway role (`ops_admin`) and a
+  // workspace membership role. `authorizedRoles` deliberately keeps the raw
+  // membership role for audit, so comparing that raw string against an
+  // allow-list of *gateway* role names let a workspace member holding the
+  // `platform_ops` membership role clear a platform-operations gate — it has no
+  // membership canonicalisation, so the canonical branch correctly rejected it
+  // while the raw branch let it through. Membership roles are therefore matched
+  // only through their canonical form.
+  const rawRoles = principal?.workbench === 'workspace' ? roles.filter(role => role !== principal.memberRole) : roles
+  if (requiresStrictAuth() && (!principal?.actorId || (!rawRoles.some(role => allowed.includes(role)) && !canonicalRoles.some(role => allowedCanonical.has(role))))) throw new DomainError(ERROR_CODES.FORBIDDEN, '该运营操作需要对应的工作区或平台运营权限', 403)
   return principal?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'actor_demo'
 }
 
@@ -7739,14 +8052,19 @@ function campaignDeliveryInput(campaign: CampaignBatchRow): CampaignDeliveryMani
   return { id: `delivery-manifest:${campaign.id}`, workspaceId: campaign.workspaceId, campaignId: campaign.id, brandId: campaign.brandId, items, paused: campaign.state === 'paused', ...(campaign.state === 'paused' ? { pauseReason: 'durable campaign state is paused' } : {}), revision: campaign.revision ?? Math.max(1, Math.floor(Date.parse(campaign.updatedAt) / 1_000)) }
 }
 
-async function validateCampaignDelivery(operation: CampaignDeliveryLifecycleOperation, workspaceId: string, campaign: CampaignBatchRow) {
+async function validateCampaignDelivery(operation: CampaignDeliveryLifecycleOperation, workspaceId: string, campaign: CampaignBatchRow, itemIds?: readonly string[]) {
   // This adapter is intentionally request-scoped. Its in-memory replay guard is
   // only a consistency check; the durable campaign row remains the source of truth.
   const input = campaignDeliveryInput(campaign)
   const durableProjection = { ...campaign, items: campaign.items?.map((item, index) => ({ ...item, listingId: item.listingId ?? input.items[index]!.listingId })) }
   const adapter = new CampaignDeliveryOrchestratorAdapter({ execute: async () => ({ row: durableProjection, deliveryItems: input.items, manifestId: input.id, pauseReason: input.pauseReason }) })
   try {
-    const request = { workspaceId, campaignId: campaign.id }
+    // `itemIds` must reach the adapter: a partial `retry_failed` commits the
+    // durable transition for the selected items first, so validating *every*
+    // item afterwards saw the unselected ones still `failed` and threw
+    // CAMPAIGN_INVALID_TRANSITION — returning 409 for work that was already
+    // committed, with no way to retry the same key.
+    const request = { workspaceId, campaignId: campaign.id, ...(itemIds?.length ? { itemIds } : {}) }
     if (operation === 'create') return (await adapter.create(request)).manifest
     if (operation === 'generate') return (await adapter.generate(request)).manifest
     if (operation === 'pause') return (await adapter.pause(request)).manifest
@@ -7772,6 +8090,19 @@ function assertCampaignLifecycleParams(method: string, params: JsonObject) {
   if (String(params.reason).trim().length < 3 || String(params.reason).length > 1_000) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'reason 长度必须为 3 到 1000', 400)
   if (!/^[A-Za-z0-9._:-]{8,200}$/u.test(String(params.idempotency_key))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'idempotency_key 格式无效', 400)
   if (method === 'campaign.batch.retry_failed' && params.item_ids_json !== undefined && typeof params.item_ids_json !== 'string') throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'item_ids_json 必须是 JSON 字符串数组', 400)
+}
+
+/**
+ * The refund repository and the migration-220/221 triggers enforce the same
+ * cumulative bound, but only the repository raises a branded error. A writer
+ * that bypasses it (an ops script, a restored replica, a future endpoint) is
+ * stopped by the trigger with a raw `23514` check_violation, which used to
+ * surface as an unmapped HTTP 500 with no business code the client could act on.
+ */
+function refundError(error: unknown): never {
+  if (error instanceof CommercialRefundRepositoryError) throw new DomainError(error.code, error.message, 409)
+  if (error && typeof error === 'object' && 'code' in error && (error as { code?: unknown }).code === '23514') throw new DomainError('COMMERCIAL_REFUND_STATE_INVALID', '退款金额超过订单实付金额，已拒绝', 409)
+  throw error
 }
 
 function campaignLifecycleError(error: unknown): never {
@@ -9124,6 +9455,13 @@ async function enforceRateLimit(req: IncomingMessage, workspaceId: string) {
   }
   const current = rateBuckets.get(rateScope)
   if (!current || now - current.windowStartedAt >= 60_000) {
+    // Expired entries were previously left in place, so this fallback map grew
+    // one permanent entry per distinct (workspace, actor, scope) for the life of
+    // the process — a slow leak on every long-lived replica. Sweep
+    // opportunistically instead of adding another timer.
+    if (rateBuckets.size >= RATE_BUCKET_SWEEP_THRESHOLD) {
+      for (const [key, bucket] of rateBuckets) if (now - bucket.windowStartedAt >= 60_000) rateBuckets.delete(key)
+    }
     rateBuckets.set(rateScope, { windowStartedAt: now, count: 1 })
     return
   }
@@ -9383,12 +9721,32 @@ export function trustedDashScopeImageArtifactHost(raw: string): string | undefin
   return /^dashscope-[a-z0-9-]{1,96}\.oss-(?:accelerate|cn-[a-z0-9-]{1,48})\.aliyuncs\.com$/u.test(host) ? host : undefined
 }
 
+const ARTIFACT_DOWNLOAD_TIMEOUT_MS = Math.max(1_000, Number(process.env.ARTIFACT_DOWNLOAD_TIMEOUT_MS ?? 30_000))
+
+/**
+ * Bound an outbound artifact download in time, not just in size. The byte caps
+ * at the call sites limit memory, but a host that accepts the connection and
+ * then stalls leaves `reader.read()` pending forever, holding the request, the
+ * socket and any surrounding durable lease. `AbortSignal.timeout` also cancels
+ * the response body stream, so a single signal covers connect, headers and body.
+ */
+function artifactDownloadSignal() {
+  return AbortSignal.timeout(ARTIFACT_DOWNLOAD_TIMEOUT_MS)
+}
+
+/** Map an aborted/stalled artifact download to a retryable gateway timeout. */
+function artifactDownloadFailure(error: unknown, message: string): never {
+  if (error instanceof DomainError) throw error
+  if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) throw new DomainError('ARTIFACT_DOWNLOAD_TIMEOUT', `${message}（下载超时，请稍后重试）`, 504)
+  throw error
+}
+
 async function imageArtifactBody(raw: string): Promise<{ mimeType: string; body: Uint8Array }> {
   const configuredHosts = imageArtifactAllowedHosts()
   const trustedDynamicHost = trustedDashScopeImageArtifactHost(raw)
   const allowedHosts = trustedDynamicHost ? [...(configuredHosts ?? []), trustedDynamicHost] : configuredHosts
   await assertOutboundUrl(raw, { environment: process.env.NODE_ENV, allowedHosts, resolveDns: true })
-  const response = await fetch(raw, { method: 'GET', headers: { accept: 'image/png, image/jpeg, image/webp' }, redirect: 'error' })
+  const response = await fetch(raw, { method: 'GET', headers: { accept: 'image/png, image/jpeg, image/webp' }, redirect: 'error', signal: artifactDownloadSignal() }).catch((error: unknown) => artifactDownloadFailure(error, '图片归档下载失败'))
   if (!response.ok || !response.body) throw new DomainError('IMAGE_ARTIFACT_DOWNLOAD_FAILED', `图片归档下载失败（HTTP ${response.status}）`, 502)
   const declaredSize = Number(response.headers.get('content-length') ?? '')
   if (Number.isFinite(declaredSize) && declaredSize > MAX_ARCHIVED_IMAGE_BYTES) throw new DomainError('GENERATED_IMAGE_TOO_LARGE', '生成图片超过归档大小限制', 413)
@@ -9397,7 +9755,7 @@ async function imageArtifactBody(raw: string): Promise<{ mimeType: string; body:
   let total = 0
   try {
     while (true) {
-      const next = await reader.read()
+      const next = await reader.read().catch((error: unknown) => artifactDownloadFailure(error, '图片归档下载失败'))
       if (next.done) break
       total += next.value.byteLength
       if (total > MAX_ARCHIVED_IMAGE_BYTES) throw new DomainError('GENERATED_IMAGE_TOO_LARGE', '生成图片超过归档大小限制', 413)
@@ -9444,7 +9802,7 @@ async function readBoundedVideoBody(response: Response, limit: number) {
   let total = 0
   try {
     while (true) {
-      const next = await reader.read()
+      const next = await reader.read().catch((error: unknown) => artifactDownloadFailure(error, '视频归档下载失败'))
       if (next.done) break
       total += next.value.byteLength
       if (total > limit) throw new DomainError('VIDEO_ARTIFACT_TOO_LARGE', '视频归档超过 50MB 限制', 413)
@@ -9465,7 +9823,7 @@ async function archiveCompletedVideo(workspaceId: string, rendering: { status: '
   const existing = service.findAssetBySourceProviderJobId(workspaceId, rendering.providerJobId)
   if (existing) return { ...rendering, assetId: existing.id, archiveState: existing.scanStatus === 'clean' ? 'archived' as const : 'quarantined' as const }
   await assertVideoArtifactUrl(rendering.videoUrl)
-  const response = await (videoArtifactFetcherForTests ?? fetch)(rendering.videoUrl, { method: 'GET', headers: { accept: 'video/mp4, video/webm, video/quicktime' }, redirect: 'error' })
+  const response = await (videoArtifactFetcherForTests ?? fetch)(rendering.videoUrl, { method: 'GET', headers: { accept: 'video/mp4, video/webm, video/quicktime' }, redirect: 'error', signal: artifactDownloadSignal() }).catch((error: unknown) => artifactDownloadFailure(error, '视频归档下载失败'))
   if (!response.ok) throw new DomainError('VIDEO_ARTIFACT_DOWNLOAD_FAILED', `视频归档下载失败（HTTP ${response.status}）`, 502)
   const declaredSize = Number(response.headers.get('content-length') ?? '')
   if (Number.isFinite(declaredSize) && declaredSize > MAX_ARCHIVED_VIDEO_BYTES) throw new DomainError('VIDEO_ARTIFACT_TOO_LARGE', '视频归档超过 50MB 限制', 413)
@@ -11059,8 +11417,20 @@ async function invalidateCanonicalFactsAfterSync(workspaceId: string, products: 
   await persistenceReady
   const repository = persistence.brandUnits ?? memoryBrandUnits
   const canonicalRows = await repository.listCanonicalProducts({ workspaceId })
+  // Index by source product once. Scanning the whole catalog per product made
+  // this O(products x canonicals) — millions of comparisons per sync page — for
+  // a lookup that a Map answers in constant time. Candidate order per product is
+  // preserved, so the ambiguity check below still reports the same product first.
+  const canonicalBySourceProductId = new Map<string, typeof canonicalRows>()
+  for (const row of canonicalRows) {
+    const sourceProductId = row.sourceProductId
+    if (!sourceProductId) continue
+    const bucket = canonicalBySourceProductId.get(sourceProductId)
+    if (bucket) bucket.push(row)
+    else canonicalBySourceProductId.set(sourceProductId, [row])
+  }
   for (const product of products) {
-    const candidates = canonicalRows.filter(row => row.sourceProductId === product.id)
+    const candidates = canonicalBySourceProductId.get(product.id) ?? []
     if (candidates.length > 1) throw new DomainError('CANONICAL_PRODUCT_AMBIGUOUS', '同步后发现一个商品对应多个规范商品，已阻断事实继续使用', 409, { product_id: product.id, canonical_product_ids: candidates.map(row => row.id), next_action: 'canonical.product.consistency' })
     const canonical = candidates[0]
     if (!canonical?.facts || Object.keys(canonical.facts).length === 0) continue
@@ -12348,11 +12718,11 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
   if (method !== 'workspace.bootstrap' && workspaceId && !isOpsDomainMethod && !commercialValidationDeferred && !commercialBeforeOnboarding) {
     await enforceMcpCommercialAccess(req, workspaceId, method)
   }
-  // Standalone image generation/editing may start from a user-uploaded asset
-  // before any store is bound. Store authorization remains mandatory for
-  // sync, content tasks, and every publish operation.
-  if (method !== 'workspace.bootstrap' && !bypassWorkspaceLifecycleGate && (commercialValidationDeferred || commercialBeforeOnboarding)
-    && !['catalog.image.generate', 'multimodal.image.edit', 'content.draft.generate'].includes(method)) requireStoreOnboarding(workspaceId, method)
+  // Credential-free creation may start from a merchant-uploaded asset before
+  // any store is bound. Store authorization remains mandatory for sync, formal
+  // content tasks, and every publish operation; `requireStoreOnboarding` owns
+  // the exemption list.
+  if (method !== 'workspace.bootstrap' && workspaceId && !bypassWorkspaceLifecycleGate && (commercialValidationDeferred || commercialBeforeOnboarding)) requireStoreOnboarding(workspaceId, method)
   if (shouldHydrateKnowledgeForMethod(method, bypassWorkspaceLifecycleGate, isOpsDomainMethod)) await hydrateKnowledge(workspaceId)
   const workspaceBillingMethod = method === 'billing.usage.consume' || method === 'billing.usage.refund'
   if (typeof params.task_id === 'string' && params.task_id.trim()) {
@@ -12840,7 +13210,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         }
       }
       if (!transitioned.replayed) await recordOperationAudit({ workspaceId, actorId: requestActor(req), action: `campaign.batch.${operation}`, resourceType: 'campaign', resourceId: campaignId, before: { state: current.state, revision: current.revision ?? 1 }, after: { state: transitioned.campaign.state, revision: transitioned.campaign.revision ?? null, item_ids: itemIds ?? null }, reason: required(params, 'reason').trim() })
-      const deliveryManifest = await validateCampaignDelivery(operation, workspaceId, transitioned.campaign)
+      const deliveryManifest = await validateCampaignDelivery(operation, workspaceId, transitioned.campaign, itemIds)
       return result({ ...transitioned.campaign, ...campaignWorkflow(transitioned.campaign, deliveryManifest), delivery_manifest: deliveryManifest, replayed: transitioned.replayed, storage: persistence.mode, durable: persistence.mode === 'postgres' })
     }
     case 'workspace.bootstrap': {
@@ -13003,8 +13373,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
                 ? '查看这个商品的发布前检查'
                 : '查看当前工作区状态'
       return result({
-        greeting: '欢迎使用大麦。',
-        productName: '大麦商家营销助手',
+        greeting: '欢迎使用 Store Nova。',
+        productName: 'Store Nova 商家营销助手',
         workspace: { id: workspaceId, status: (await getWorkspaceStatus(workspaceId)) === 'active' ? 'ready' : 'disabled' },
         currentStep: { ...current, primaryAction: onboardingV2.current_step.primary_action },
         onboarding_v2: onboardingV2,
@@ -13140,7 +13510,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       onboarding_v2: onboardingV2,
       storeSelection: { requiredForStoreActions: true, key: 'platform + accountId', warning: '别名和店铺名只用于展示与候选匹配，不能替代账号范围确认' },
       capabilityCards: {
-        title: '大麦工作台',
+        title: 'Store Nova 工作台',
         presentation: 'conversation_cards',
         instruction: '优先展示这些卡片；商家选择卡片后再调用 entryMethod，不要求商家记忆工具名或内部 ID。店铺级操作先展示导航列表并确认平台与账号范围。',
         navigation: {
@@ -14382,7 +14752,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         ...(typeof params.price_mode === 'string' ? { priceMode: params.price_mode as CommercialCatalogMutationInput['priceMode'] } : {}),
         ...(typeof params.duration_days === 'string' ? { durationDays: Number(params.duration_days) } : {}),
         ...(params.payload_json ? { payload: parseJsonObjectParameter(params, 'payload_json') } : {}),
-        ...(params.benefits_json ? { benefits: JSON.parse(String(params.benefits_json)) } : {}),
+        // A bare `JSON.parse` here (before the surrounding `try`) turned a caller
+        // typo into a 500 INTERNAL_ERROR with a logged stack instead of a 400.
+        ...(params.benefits_json ? { benefits: parseJsonArrayParameter(params, 'benefits_json') as NonNullable<CommercialCatalogMutationInput['benefits']> } : {}),
         actorId: requestActor(req),
         reason: required(params, 'reason'),
         evidence: parseJsonObjectParameter(params, 'evidence_json'),
@@ -14587,9 +14959,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!sku || sku.kind === 'private_trial' || sku.lifecycle !== 'approved' || !sku.executable) throw new DomainError('COMMERCIAL_PAYMENT_RECONCILIATION_BLOCKED', '该订单不是可由通用人工转账核验的公开可执行 SKU', 409)
       const paidAt = required(params, 'paid_at')
       if (Number.isNaN(Date.parse(paidAt))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'paid_at must be an ISO timestamp', 400)
-      const period = sku.kind === 'monthly'
-        ? (() => { const end = new Date(paidAt); end.setUTCMonth(end.getUTCMonth() + 1); return { start: new Date(paidAt).toISOString(), end: end.toISOString() } })()
-        : undefined
+      // Share the callback's period helper so an operator verification and an
+      // automated callback derive byte-identical periods for the same paidAt;
+      // `validatePeriod` rejects any period that is not the month anniversary.
+      const period = sku.kind === 'monthly' ? commercialMonthlyPeriod(paidAt) : undefined
       const payment = await persistence.commercialContracts.recordVerifiedPaymentAndGrant({
         workspaceId: targetWorkspaceId,
         orderId,
@@ -14618,13 +14991,13 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!persistence.commercialRefunds) throw new DomainError('COMMERCIAL_REFUND_REPOSITORY_UNAVAILABLE', '商业退款流水仓储尚未配置', 503)
       try {
         return result(await persistence.commercialRefunds.request({ workspaceId: required(params, 'target_workspace_id'), orderId: required(params, 'order_id'), requestId: required(params, 'request_id'), refundKind: required(params, 'refund_kind') as never, amountFen: requiredPositiveInteger(params, 'amount_fen'), pointsToRevoke: requiredPositiveInteger(params, 'points_to_revoke', true), reason: required(params, 'reason'), actorId: requestActor(req), evidence: parseJsonObjectParameter(params, 'evidence_json'), at: new Date().toISOString() }))
-      } catch (error) { if (error instanceof CommercialRefundRepositoryError) throw new DomainError(error.code, error.message, 409); throw error }
+      } catch (error) { refundError(error) }
     }
     case 'ops.commercial.order.refund.approve': {
       if (!persistence.commercialRefunds) throw new DomainError('COMMERCIAL_REFUND_REPOSITORY_UNAVAILABLE', '商业退款流水仓储尚未配置', 503)
       try {
         return result(await persistence.commercialRefunds.approve({ workspaceId: required(params, 'target_workspace_id'), requestId: required(params, 'request_id'), actorId: requestActor(req), reason: required(params, 'reason'), policyApproval: parseJsonObjectParameter(params, 'policy_approval_json'), at: new Date().toISOString() }))
-      } catch (error) { if (error instanceof CommercialRefundRepositoryError) throw new DomainError(error.code, error.message, 409); throw error }
+      } catch (error) { refundError(error) }
     }
     case 'ops.commercial.order.refund.complete': {
       if (!persistence.commercialRefunds || !persistence.creativePoints || !persistence.creativePointLifecycle) throw new DomainError('COMMERCIAL_REFUND_REPOSITORY_UNAVAILABLE', '商业退款与创意点生命周期仓储尚未配置', 503)
@@ -14638,7 +15011,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           await persistence.creativePointLifecycle.adjust({ workspaceId, approvalId: `refund:${requestId}`, pointsDelta: -requested.pointsToRevoke, expectedAccessRevision: balance.revision, actorId: requested.actorId, approvedByActorId: approved.actorId, reason: required(params, 'reason'), evidence: { refund_request_id: requestId, external_refund_id: required(params, 'external_refund_id'), refund: parseJsonObjectParameter(params, 'evidence_json') }, idempotencyKey: `commercial.refund.points:${requestId}`, at: new Date().toISOString() })
         }
         return result(await persistence.commercialRefunds.complete({ workspaceId, requestId, actorId: requestActor(req), reason: required(params, 'reason'), externalRefundId: required(params, 'external_refund_id'), evidence: parseJsonObjectParameter(params, 'evidence_json'), at: new Date().toISOString() }))
-      } catch (error) { if (error instanceof DomainError) throw error; if (error instanceof CommercialRefundRepositoryError) throw new DomainError(error.code, error.message, 409); throw error }
+      } catch (error) { if (error instanceof DomainError) throw error; refundError(error) }
     }
     case 'ops.commercial.service-fulfillment.list': {
       if (!persistence.serviceFulfillment) throw new DomainError('COMMERCIAL_SERVICE_FULFILLMENT_REPOSITORY_UNAVAILABLE', '服务履约事实仓储尚未配置，不能虚构服务进度', 503)
@@ -15274,7 +15647,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const actorId = requireWorkspaceDataRole(req)
       const job = service.acknowledgePublish({ workspaceId, publishJobId: required(params, 'publish_job_id'), actorId, reason: required(params, 'reason') })
       await persistSnapshot(workspaceId, 'publish_job', job, job as unknown as Record<string, unknown>)
-      await recordOperationAudit({ workspaceId, actorId, action: 'ops.marketing.publish.acknowledge', resourceType: 'publish_job', resourceId: job.id, before: { operatorAcknowledgement: null }, after: { operatorAcknowledgement: job.operatorAcknowledgement }, reason: job.operatorAcknowledgement?.reason ?? required(params, 'reason') })
+      // Closing a delivery reconciliation also hands the stranded task back to
+      // the merchant; without persisting it that transition is lost on the next
+      // hydration and the task returns to `publishing`, re-blocking the slot.
+      const acknowledgedTask = service.tasks.get(job.taskId)
+      if (acknowledgedTask) await persistSnapshot(workspaceId, 'task', acknowledgedTask, acknowledgedTask as unknown as Record<string, unknown>)
+      await recordOperationAudit({ workspaceId, actorId, action: 'ops.marketing.publish.acknowledge', resourceType: 'publish_job', resourceId: job.id, before: { operatorAcknowledgement: null }, after: { operatorAcknowledgement: job.operatorAcknowledgement, state: job.state }, reason: job.operatorAcknowledgement?.reason ?? required(params, 'reason') })
       return result(job)
     }
     case 'ops.marketing.revision.create': {
@@ -16080,7 +16458,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (!item.actionId || item.customerChargeCny === undefined) return count
         const action = actionByKey.get(item.actionId)
         if (!action || (action.settlement !== 'wallet' && action.settlement !== 'wallet_overage') || !['settled', 'waived'].includes(item.settlementStatus)) return count
-        const expectedFen = Math.max(1, Math.ceil(item.customerChargeCny * 100))
+        const expectedFen = chargeFenFromCny(item.customerChargeCny)
         const direct = walletTransactionsByOrder.get(item.actionId)
         const settlementDebit = walletTransactionsByOrder.get(`settlement:${item.actionId}`)
         const settlementRefund = walletTransactionsByOrder.get(`settlement-refund:${item.actionId}`)
@@ -16316,12 +16694,26 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const knowledgeAssets = knowledgeModule?.queryAssets({ workspaceId })
       const confirmedLearningSuggestions = knowledgeModule?.listLearningSuggestions(workspaceId, 'confirmed')
       const activeBrandPreference = knowledgeModule?.getBrandPreference(workspaceId)
+      // Index the workspace's canonical products once per page instead of
+      // re-reading the whole catalog inside the per-product loop. The previous
+      // shape issued one unbounded `listCanonicalProducts` transaction per
+      // product, so this — the merchant's most-used read — got slower as the
+      // catalog grew, for a fixed page size.
+      const canonicalRowsForPage = await canonicalRepository.listCanonicalProducts({ workspaceId })
+      const canonicalBySourceProductId = new Map<string, typeof canonicalRowsForPage>()
+      for (const row of canonicalRowsForPage) {
+        const sourceProductId = row.sourceProductId
+        if (!sourceProductId) continue
+        const bucket = canonicalBySourceProductId.get(sourceProductId)
+        if (bucket) bucket.push(row)
+        else canonicalBySourceProductId.set(sourceProductId, [row])
+      }
       const products = await Promise.all((page.items as unknown as Product[]).map(async product => {
         const requestedSkuId = typeof params.sku_id === 'string' ? params.sku_id.trim() : ''
         const selectedSkus = requestedSkuId
           ? (product.skus ?? []).filter(sku => sku.id === requestedSkuId || sku.name === requestedSkuId)
           : []
-        const canonicalCandidates = (await canonicalRepository.listCanonicalProducts({ workspaceId })).filter(row => row.sourceProductId === product.id)
+        const canonicalCandidates = canonicalBySourceProductId.get(product.id) ?? []
         const canonical = canonicalCandidates.length === 1 ? canonicalCandidates[0] : undefined
         const listings = canonical ? await canonicalRepository.listListings({ workspaceId, brandId: canonical.brandId, canonicalProductId: canonical.id, platform: product.platform, ...(product.accountId ? { accountId: product.accountId } : {}) }) : []
         const verificationStatus = canonicalCandidates.length > 1 ? 'conflict' : !canonical ? 'legacy_only' : listings.length === 1 ? 'verified' : 'blocked'
@@ -17441,7 +17833,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const severity = params.severity === 'warning' ? 'warning' : params.severity === 'error' || params.severity === undefined ? 'error' : undefined
       const action = ['block', 'warn', 'review', 'allow'].includes(String(params.action)) ? String(params.action) : params.action === undefined ? 'block' : undefined
       if (!severity || !action) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '规则 severity/action 无效', 400)
-      const input: JsonObject = { approval: typeof params.approval_json === 'string' ? JSON.parse(params.approval_json) : undefined }
+      const input: JsonObject = { approval: typeof params.approval_json === 'string' ? parseJsonObjectParameter(params, 'approval_json') : undefined }
       const approval = status === 'active' ? parseApprovalGrant(req, workspaceId, principal.actorId, input) : undefined
       const at = new Date().toISOString()
       const checksum = createHash('sha256').update(canonicalJson(checks)).digest('hex')
@@ -17473,7 +17865,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const principal = requireRuleAdmin(req)
       const packId = required(params, 'pack_id'); const versionValue = required(params, 'version'); const status = required(params, 'status'); const reason = required(params, 'reason')
       if (!['active', 'inactive', 'expired'].includes(status)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '规则状态无效', 400)
-      const approval = status === 'active' ? parseApprovalGrant(req, workspaceId, principal.actorId, { approval: typeof params.approval_json === 'string' ? JSON.parse(params.approval_json) : undefined }) : undefined
+      const approval = status === 'active' ? parseApprovalGrant(req, workspaceId, principal.actorId, { approval: typeof params.approval_json === 'string' ? parseJsonObjectParameter(params, 'approval_json') : undefined }) : undefined
       const repository = ruleRepository()
       if (repository) {
         if (params.public_scope === 'platform') {
@@ -19633,7 +20025,15 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     let payment: Awaited<ReturnType<PostgresCommercialContractRepository['recordVerifiedPaymentAndGrant']>> | undefined
     if (paymentStatus === 'verified') {
       try {
-        if (commercialContracts && sku) payment = await commercialContracts.recordVerifiedPaymentAndGrant({ workspaceId, orderId: order.id, provider: 'manual_transfer', providerEventId, providerOrderId, nonce: paymentNonce, payloadHash: paymentPayloadHash, amountFen, currency: 'CNY', paidAt: new Date(paidAt!).toISOString(), paymentSubjectRef: paymentReference })
+        // A monthly SKU needs an approved period, and only `private_trial`
+        // derives one internally — without this, operator-recorded monthly
+        // payment verification failed with COMMERCIAL_POLICY_UNRESOLVED, so
+        // manual subscription onboarding was impossible in production. Derive it
+        // from the same instant that is passed as `paidAt`, via the callback's
+        // helper, so the two sides agree byte-for-byte.
+        const verifiedPaidAt = new Date(paidAt!).toISOString()
+        const period = sku?.kind === 'monthly' ? commercialMonthlyPeriod(verifiedPaidAt) : undefined
+        if (commercialContracts && sku) payment = await commercialContracts.recordVerifiedPaymentAndGrant({ workspaceId, orderId: order.id, provider: 'manual_transfer', providerEventId, providerOrderId, nonce: paymentNonce, payloadHash: paymentPayloadHash, amountFen, currency: 'CNY', paidAt: verifiedPaidAt, paymentSubjectRef: paymentReference, ...(period ? { period } : {}) })
       } catch (error) {
         const code = error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'MERCHANT_PAYMENT_RECONCILIATION_FAILED'
         throw new DomainError(code, error instanceof Error ? error.message : '支付核验失败，账号未开通', 409)
@@ -19745,7 +20145,9 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   }
   const testWorkspaceFixture = testCommercialFixtureMode && header(req, 'x-test-workspace-fixture') === 'server-e2e'
   if (requestWorkspace !== 'unknown' && requestPrincipals.get(req)?.workbench !== 'platform' && !testWorkspaceFixture && !workerRoute && !assetScannerRoute && !infrastructureProbe && !isOAuthCallback && !isOAuthAuthorization && !paymentCallbackMatch && !isHttpOnboardingExempt(path)) {
-    requireStoreOnboarding(requestWorkspace, `http:${path}`)
+    // Resolve the registered MCP method so both surfaces consult the same
+    // exemption table; `httpOperationPolicy` is already computed above.
+    requireStoreOnboarding(requestWorkspace, storeBoundaryScopeForHttp(httpOperationPolicy, path))
   }
   const httpCommercialValidationDeferred = (req.method === 'PUT' && /^\/v1\/assets\/[^/]+\/preference$/u.test(path))
     || (req.method === 'POST' && path === '/v1/brand-profile/extract')
@@ -19797,6 +20199,51 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const hydrationOptions = { readOnly: !workerRoute && !assetScannerRoute, ...(normalizedPagedCollection || normalizedPagedMcpCollection ? { excludeEntityTypes: ['product', 'task'] as const } : {}) }
     if (requiresFreshAssetRead && persistence.business) await hydrateWorkspaceFromPersistence(hydrateRequestWorkspace, hydrationOptions)
     else await hydrateWorkspace(hydrateRequestWorkspace, hydrationOptions)
+  }
+  const opsDeliveryAssetDownloadMatch = /^\/v1\/ops\/customer-deliveries\/workspaces\/([^/]+)\/([^/]+)\/assets\/([^/]+)\/download$/u.exec(req.method === 'GET' ? path : '')
+  if (opsDeliveryAssetDownloadMatch) {
+    // Platform control-plane read of scanned delivery evidence. The
+    // pre-dispatch gate already resolved this path to the registered
+    // `ops.customer-delivery.assets.get` policy (platform scope, workbench
+    // `platform`, capability `customer.delivery.read`) and recorded its
+    // decision. Restate the platform-operator boundary so a merchant
+    // workbench can never reach the bytes when that shared decision runs in
+    // shadow mode. `isPlatformOperations` reads the authenticated principal
+    // only, so the client-supplied `x-ops-workbench` header cannot widen it.
+    if (!isPlatformOperations(req)) throw new DomainError(ERROR_CODES.FORBIDDEN, '客户交付文件下载仅限平台运营工作台', 403)
+    const targetWorkspaceId = decodeURIComponent(opsDeliveryAssetDownloadMatch[1]!)
+    const deliveryId = decodeURIComponent(opsDeliveryAssetDownloadMatch[2]!)
+    const assetRef = decodeURIComponent(opsDeliveryAssetDownloadMatch[3]!)
+    // The path workspace is caller-supplied and must never be trusted as the
+    // read scope on its own. Bind it to the server-derived request scope
+    // exactly like `routeMcp` binds `target_workspace_id` for
+    // `ops.customer-delivery.*`: a declared header workspace that disagrees
+    // with the path target is a cross-tenant read and is refused before any
+    // durable lookup. Every read below is then scoped to that single id.
+    const declaredWorkspaceId = header(req, 'x-workspace-id')?.trim()
+    if (declaredWorkspaceId && declaredWorkspaceId !== targetWorkspaceId) {
+      throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_MISMATCH, '客户交付文件下载的工作区范围不一致', 403)
+    }
+    const purpose = customerDeliveryUploadPurpose(url.searchParams.get('purpose'))
+    await persistenceReady
+    const delivery = await invokeCustomerDeliveryDomain(() => (persistence.customerDeliveries ?? memoryCustomerDeliveries).get(targetWorkspaceId, deliveryId))
+    if (!delivery) throw new DomainError('CUSTOMER_DELIVERY_NOT_FOUND', '客户交付档案不存在', 404)
+    // Same authorization and binding order as the MCP twin: the delivery and
+    // purpose binding is a 404, an untrusted or unscanned asset is a 409.
+    await requireBoundCustomerDeliveryAsset(targetWorkspaceId, deliveryId, purpose, assetRef)
+    const asset = await loadCustomerDeliveryAsset({ workspaceId: targetWorkspaceId, assetRef, business: persistence.business, memoryAssets: service.assets })
+    // Type-narrowing guard only: `requireBoundCustomerDeliveryAsset` above
+    // already proved this asset exists in this workspace with a clean-zone
+    // storage key, so this branch is unreachable for a real request.
+    if (!asset || typeof asset.storageKey !== 'string' || typeof asset.mimeType !== 'string') throw new DomainError('CUSTOMER_DELIVERY_UPLOAD_NOT_FOUND', '交付文件不存在、不属于当前工作区或尚未通过可信安全扫描', 404)
+    let stored: Awaited<ReturnType<typeof getStoredObjectWithRetry>>
+    try { stored = await getStoredObjectWithRetry(targetWorkspaceId, asset.storageKey) } catch (error) {
+      if (error instanceof ObjectStorageError && error.code === 'OBJECT_NOT_FOUND') throw new DomainError('ASSET_BINARY_UNAVAILABLE', '交付文件不可用，请重新上传', 410)
+      throw error
+    }
+    const storedDigest = createHash('sha256').update(stored.body).digest('hex')
+    if (stored.metadata.sha256 !== asset.sha256 || stored.metadata.sizeBytes !== asset.sizeBytes || stored.metadata.contentType.toLowerCase() !== asset.mimeType.toLowerCase() || storedDigest !== asset.sha256) throw new DomainError('ASSET_BINARY_INTEGRITY_FAILED', '交付文件对象与已扫描快照不一致，已阻止下载', 409)
+    return sendAssetDownload(res, customerDeliveryUploadView(asset, purpose), stored, req)
   }
   if (req.method === 'GET' && path === '/v1/commercial/access') {
     const workspaceId = resolveWorkspace(req)
@@ -19913,6 +20360,12 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         ? { ready: setup.productionGate, reasons: setup.productionGate ? [] : setup.nextActions }
         : { ready: true, reasons: [] as string[] }
       if (!productionReadiness.ready || !commercialReadiness.ready || !setupReadiness.ready) {
+        // The per-gate detail is deliberately kept here. `/readyz` is public and
+        // does leak which subsystems are unconfigured, but this body is the
+        // documented operator triage surface (the runbook and
+        // production-readiness.e2e.test.ts both depend on it), and the endpoint
+        // already fails closed with a stable code. Restrict the ingress if the
+        // reconnaissance surface matters more than that affordance.
         return fail(res, 503, 'system', 'PRODUCTION_READINESS_BLOCKED', '生产关键依赖或发布元数据未就绪', req, {
           gates: productionReadiness.gates,
           commercial: commercialReadiness,
@@ -20464,7 +20917,10 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const order = await (persistence.subscriptions ?? memorySubscriptions).getOrderByOrderNo(workspaceId, orderId)
       if (!order) throw new DomainError('SUBSCRIPTION_ORDER_NOT_FOUND', '支付回调对应的订阅订单不存在', 404)
       if (order.paymentProvider !== paymentCallbackMatch[2]) throw new DomainError('PAYMENT_CALLBACK_CHANNEL_MISMATCH', '支付回调渠道与订阅订单渠道不一致', 400)
-      if (Math.round(order.paymentAmountCny * 100) !== amountFen) throw new DomainError('SUBSCRIPTION_CALLBACK_AMOUNT_MISMATCH', '支付回调金额与订阅订单支付金额快照不一致', 400)
+      // Same scaled-CNY normalisation as the wallet path, so a float amount
+      // snapshot cannot mismatch the provider's integer fen by binary noise.
+      const callbackExpectedFen = Math.round(scaleCnyToFen(order.paymentAmountCny))
+      if (callbackExpectedFen !== amountFen) throw new DomainError('SUBSCRIPTION_CALLBACK_AMOUNT_MISMATCH', '支付回调金额与订阅订单支付金额快照不一致', 400)
       if (state !== 'paid' && state !== 'SUCCESS') return send(res, 200, workspaceId, { accepted: true, order_id: orderId, state }, null, req)
       if (!freshCallbackProof && order.status !== 'paid') throw new DomainError('PAYMENT_CALLBACK_NONCE_REPLAY', '支付回调 nonce 已被使用，且订单尚未进入已支付状态', 409)
       if (order.status === 'paid') {
@@ -21690,6 +22146,13 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       await hydrateDurableIdempotentJob(task.workspaceId, 'generation_job', idempotencyKey)
       existing = [...service.generationJobs.values()].find(candidate => candidate.workspaceId === task.workspaceId && candidate.idempotencyKey === idempotencyKey)
     }
+    // An idempotency key is bound to the task that first used it. Returning
+    // another task's job here told the caller its own generation was queued —
+    // and its creative points reserved — while nothing ever ran for it. The MCP
+    // path already rejects this in `enqueueGeneration`; the HTTP entry point did
+    // not, so the same key reuse produced a 409 on one surface and a silent 202
+    // on the other.
+    if (existing && existing.taskId !== task.id) throw new DomainError('IDEMPOTENCY_KEY_REUSED', '该 Idempotency-Key 已绑定到另一个任务的生成作业', 409, { job_id: existing.id, existing_task_id: existing.taskId, requested_task_id: task.id })
     if (existing) return send(res, 202, task.workspaceId, { ...jobWithQueueMetadata(existing, task.workspaceId, 'generation'), rule_preflight: rulePreflight }, null, req)
     const reservationId = `generation:${idempotencyKey}`
     const reserved = await reserveDistributedJobSlot(task.workspaceId, reservationId)
@@ -22178,6 +22641,10 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     if (!statusInput || typeof statusInput !== 'object' || Array.isArray(statusInput)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '缺少平台状态观测', 400)
     const status = statusInput as Record<string, unknown>
     const source = input.source === 'reconcile' ? 'reconcile' : 'publish'
+    // The ops runbook requires job_id alongside task_id so a stuck publish can be
+    // traced from the log line to the durable row. This route is where a
+    // publish outcome first becomes observable.
+    enrichRequestObservation(req, { jobId: publishObservationMatch[1]! })
     const state = status.state
     if (!['submitted', 'published', 'rejected', 'unknown'].includes(String(state))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '平台状态观测值无效', 400)
     const rejection = readPlatformRejection(status.platform_rejection)
@@ -22327,11 +22794,44 @@ function assertUniqueBatchTaskIds(confirmations: Array<Record<string, unknown>>)
   if (duplicates.length) throw new DomainError('PUBLISH_BATCH_DUPLICATE_TASK', `批量发布请求包含重复任务: ${duplicates.join(', ')}`, 400, { task_ids: duplicates })
 }
 
+// `redactSecrets` redacts by key, so it cannot see a credential embedded inside
+// a free-text message. Low-level pg/redis/connector errors do embed connection
+// strings and bearer tokens, and this log is written to a world-readable file in
+// the local launchd profile. Scrub those shapes before emitting.
+// Redact the whole userinfo segment rather than trying to preserve the
+// username: a password may itself contain `@` or `/` (drivers print the raw
+// string, and base64 secrets routinely contain `/`), so a "keep the user, drop
+// the password" pattern leaked the password tail — `postgres://u:p@ss@h/db`
+// came out as `postgres://u:[REDACTED]@ss@h/db`. Matching greedily to the last
+// `@` before whitespace fails safe: at worst it over-redacts a bare `user@host`
+// URL, which costs a little diagnostic detail and leaks nothing.
+const INLINE_CREDENTIAL_URL = /(\b[a-z][a-z0-9+.-]*:\/\/)[^\s]*@/giu
+// Allow optional quotes and the delimiters (`:`, `,`, `=`) that appear in real
+// bearer values; an empty username (`redis://:password@host`) is a URL concern,
+// not this one. Tokens shorter than 12 characters are left alone by design.
+const INLINE_BEARER_TOKEN = /\b(bearer)\s+["']?[A-Za-z0-9._~+/=:,-]{12,}["']?/giu
+export function redactInlineCredentials(text: string) {
+  return text.replace(INLINE_CREDENTIAL_URL, '$1[REDACTED]@').replace(INLINE_BEARER_TOKEN, '$1 [REDACTED]')
+}
+
 const server = createServer((req, res) => {
   const startedAt = process.hrtime.bigint()
   beginRequestObservation(req)
   metricInFlight += 1
-  res.once('finish', () => { observeHttpMetric(req, res, startedAt); completeRequestObservation(req, res) })
+  // A request whose socket is destroyed (client abort, upstream timeout) emits
+  // 'close' without ever emitting 'finish'. Decrementing only on 'finish' leaked
+  // `merchant_http_inflight_requests` upward permanently after the first abort,
+  // so any alert or autoscaling signal read from that gauge was permanently
+  // inflated. Funnel both events through a single once-guard instead.
+  let requestObserved = false
+  const observeRequestOnce = (aborted: boolean) => () => {
+    if (requestObserved) return
+    requestObserved = true
+    observeHttpMetric(req, res, startedAt, aborted)
+    completeRequestObservation(req, res, aborted)
+  }
+  res.once('finish', observeRequestOnce(false))
+  res.once('close', observeRequestOnce(true))
   route(req, res).catch(error => {
     const settlementError = modelSettlementDomainError(error)
     const publishError = publishCommitDomainError(error)
@@ -22346,10 +22846,17 @@ const server = createServer((req, res) => {
         method: req.method,
         route: (req.url ?? '').split('?')[0],
         error_name: error instanceof Error ? error.name : typeof error,
-        error_message: error instanceof Error ? error.message : String(error),
-        error_stack: error instanceof Error ? error.stack : undefined,
+        error_message: redactInlineCredentials(error instanceof Error ? error.message : String(error)),
+        error_stack: error instanceof Error && error.stack ? redactInlineCredentials(error.stack) : undefined,
       }))
     }
+    // Handlers that answer with a raw `res.end()` (OAuth protocol responses,
+    // signed-asset streaming) can still reject after committing the response.
+    // Writing again would throw ERR_HTTP_HEADERS_SENT from inside this catch,
+    // and that second rejection has no handler: under Node's default
+    // --unhandled-rejections=throw it exits the process and drops every other
+    // in-flight request on the pod. Bail out once the response is committed.
+    if (res.headersSent || res.writableEnded) { res.destroy(); return }
     const workspaceId = (() => { try { return resolveWorkspace(req) } catch { return isProduction() ? 'unknown' : 'ws_demo' } })()
     enrichRequestObservation(req, { workspaceId, actorId: trustedRequestObservationActor(req) })
     failRequestObservation(req, observedFailure.status, observedFailure.code)
@@ -22358,7 +22865,12 @@ const server = createServer((req, res) => {
     if (nativeMcpRequests.has(req) && !res.writableEnded) {
       const id = nativeMcpRequestIds.get(req) ?? null
       const code = nativeMcpErrorCode(error)
-      const message = error instanceof Error ? error.message : 'MCP 请求处理失败'
+      // Only a branded DomainError message is safe to return. Anything else
+      // maps to -32603 (internal error), and echoing its raw text leaked
+      // internal property names and object shapes to the plugin — the REST path
+      // already sanitizes to '内部错误'. The original text stays in the
+      // `request.unhandled_error` log above.
+      const message = error instanceof DomainError && error.message ? error.message : 'MCP 请求处理失败'
       const status = error instanceof DomainError && error.status === 401 ? 401 : 200
       const data = nativeMcpErrorData(error, req)
       return sendNativeMcp(res, status, { jsonrpc: '2.0', id, error: { code, message, ...(data ? { data } : {}) } }, req)
@@ -22391,6 +22903,62 @@ const server = createServer((req, res) => {
 })
 
 if (process.env.NODE_ENV !== 'test') {
+  let shuttingDown = false
+  const shutdownGraceMs = Math.max(1_000, Number(process.env.API_SHUTDOWN_GRACE_MS ?? 15_000))
+
+  // Without a SIGTERM handler the process died instantly on a rolling deploy or
+  // an HPA scale-down, resetting requests that had already committed (creative
+  // points debited, worker job queued) while kube-proxy was still routing to the
+  // pod. Stop accepting first, then drain in-flight work within a bounded window.
+  const drainAndExit = (signal: string) => {
+    if (shuttingDown) return
+    shuttingDown = true
+    const forceTimer = setTimeout(() => {
+      // A drain that ran out of time is slow, not crashed, but the orchestrator
+      // needs a non-zero code to know the pod did not shut down cleanly.
+      console.error(JSON.stringify({ event: 'api.shutdown_forced', signal, grace_ms: shutdownGraceMs }))
+      server.closeAllConnections()
+      process.exit(1)
+    }, shutdownGraceMs)
+    forceTimer.unref()
+    // `closeIdleConnections` only closes sockets that are idle *at the moment it
+    // is called*. A request in flight when the drain starts returns to the
+    // keep-alive idle state once it finishes, and Node does not reap it until
+    // `keepAliveTimeout` (5s by default) — so a single call here made every
+    // rolling deploy wait out that timeout and then fall into the forced path,
+    // exiting 1. Re-sweep until close() reports every connection is gone.
+    const idleSweep = setInterval(() => server.closeIdleConnections(), 250)
+    idleSweep.unref()
+    server.close(() => {
+      // Cancel both timers before the (potentially slow) persistence close, so
+      // a long pool shutdown cannot be reported as a forced drain.
+      clearInterval(idleSweep)
+      clearTimeout(forceTimer)
+      void Promise.resolve(persistence.close?.()).catch(() => undefined).then(() => process.exit(0))
+    })
+  }
+
+  // Node's default --unhandled-rejections=throw turns a single stray rejection
+  // into a silent process exit; there was no handler anywhere in the API. Log
+  // the cause, then exit non-zero so the orchestrator restarts a process whose
+  // state is no longer trustworthy rather than leaving a half-dead pod serving.
+  const reportFatal = (event: string, error: unknown) => {
+    console.error(JSON.stringify({
+      event,
+      error_name: error instanceof Error ? error.name : typeof error,
+      error_message: redactInlineCredentials(error instanceof Error ? error.message : String(error)),
+      error_stack: error instanceof Error && error.stack ? redactInlineCredentials(error.stack) : undefined,
+    }))
+    if (shuttingDown) return
+    shuttingDown = true
+    process.exit(1)
+  }
+
+  process.once('SIGTERM', drainAndExit)
+  process.once('SIGINT', drainAndExit)
+  process.on('unhandledRejection', error => reportFatal('process.unhandled_rejection', error))
+  process.on('uncaughtException', error => reportFatal('process.uncaught_exception', error))
+
   persistenceReady.then(() => {
     if (process.env.NODE_ENV === 'development' && process.env.CONNECTOR_FIXTURE_MODE === 'true' && process.env.MERCHANT_TEST_APPROVED_RATES === 'true' && persistence.creativePoints) {
       void persistence.creativePoints.grant({ workspaceId: 'ws_demo', idempotencyKey: 'fixture-bootstrap:ws_demo', sourceType: 'test_fixture', sourceId: 'fixture-bootstrap-ws_demo', points: 10_000, metadata: { fixture: true, non_production: true } }).catch(error => console.error('fixture creative point bootstrap failed', error))
@@ -22400,6 +22968,13 @@ if (process.env.NODE_ENV !== 'test') {
     cleanupTimer.unref()
     server.once('close', () => clearInterval(cleanupTimer))
     void drainPromotionCleanupTasks()
+    // Operational alerts must be raised by the system, not by a reader: without
+    // this tick an alert existed only once an operator opened the console, so a
+    // stuck publish or a revoked token produced no row and no webhook.
+    const alertSweepTimer = setInterval(() => { void sweepOperationalAlerts() }, OPERATIONAL_ALERT_SWEEP_INTERVAL_MS)
+    alertSweepTimer.unref()
+    server.once('close', () => clearInterval(alertSweepTimer))
+    void sweepOperationalAlerts()
     server.listen(port, process.env.API_BIND_HOST, () => console.log(`merchant API listening on ${JSON.stringify(server.address())} (${persistence.mode})`))
   }).catch(error => {
     console.error('merchant API startup failed: database migration/connection unavailable', error)

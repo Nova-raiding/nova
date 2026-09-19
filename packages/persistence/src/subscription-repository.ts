@@ -6,6 +6,7 @@ import {
   type SqlPool,
   withWorkspaceTransaction,
 } from "./repository.js";
+import { monthlyAnniversary } from "./commercial-contract-repository.js";
 
 export type SubscriptionStatus =
   "trialing" | "active" | "past_due" | "canceled";
@@ -157,10 +158,19 @@ function snapshotChecksum(snapshot: ReturnType<typeof commercialSnapshot>) {
   return createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
 }
 
-function cycleEnd(cycle: BillingCycle) {
-  const date = new Date();
-  date.setMonth(date.getMonth() + (cycle === "annual" ? 12 : 1));
-  return date.toISOString();
+/**
+ * End of a billing cycle starting at `start`.
+ *
+ * This used to be `new Date()` plus a raw `setMonth()`, which was wrong three
+ * ways: `getMonth`/`setMonth` are local-time so the result depended on the
+ * server's timezone, raw `setMonth` overflows instead of clamping (2027-01-31
+ * became 2027-03-03 instead of 2027-02-28), and it anchored on the wall clock
+ * rather than the payment time it is supposed to bill from. The Postgres path
+ * always used `interval '1 month'` (which clamps), so only the memory repository
+ * diverged — which is exactly where local acceptance and tests run.
+ */
+export function cycleEnd(start: string, cycle: BillingCycle) {
+  return monthlyAnniversary(start, cycle === "annual" ? 12 : 1);
 }
 const defaultSubscription = (workspaceId: string): WorkspaceSubscription => {
   const now = new Date().toISOString();
@@ -174,7 +184,9 @@ const defaultSubscription = (workspaceId: string): WorkspaceSubscription => {
     includedStores: 1,
     includedTasks: 5,
     currentPeriodStart: now,
-    currentPeriodEnd: cycleEnd("monthly"),
+    // Anchor the trial period end on the same instant as its start rather than
+    // on a second `new Date()` taken inside the helper.
+    currentPeriodEnd: cycleEnd(now, "monthly"),
     revision: 1,
     updatedAt: now,
   };
@@ -286,7 +298,7 @@ export class MemorySubscriptionRepository implements SubscriptionRepository {
       includedStores: order.includedStores,
       includedTasks: order.includedTasks,
       currentPeriodStart: order.paidAt,
-      currentPeriodEnd: cycleEnd(order.billingCycle),
+      currentPeriodEnd: cycleEnd(order.paidAt, order.billingCycle),
       revision: (await this.get(input.workspaceId)).revision + 1,
       updatedAt: order.paidAt,
     });

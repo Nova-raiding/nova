@@ -18,10 +18,20 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
   const monthLabel = `${new Date().getMonth() + 1}月`;
   const basicSales = finance?.subscriptionOrderBySku?.basic?.orderCount;
   const growthSales = finance?.subscriptionOrderBySku?.growth?.orderCount;
-  const metric = (title: string, value: string | number, unit: string, tone = "") => (
+  // Provider cost is only meaningful when the server marked the cost evidence
+  // verified. `totalTokens` is a token count, not currency: rendering it against
+  // 「元」 overstated platform spend by roughly six orders of magnitude on the
+  // operator's most-screenshotted panel, so it is never used as money here.
+  const platformProviderCost = usage && usage.providerCostStatus === "verified" && usage.providerCostCny !== null
+    ? usage.providerCostCny.toFixed(2)
+    : undefined;
+  // Passing `undefined` renders an explicit unknown. A literal 0 is
+  // indistinguishable from a measured zero, so a failed or absent API read must
+  // not be displayed as one.
+  const metric = (title: string, value: string | number | undefined, unit: string, tone = "") => (
     <article className={`ops-dashboard-metric ${tone}`} key={title}>
       <span className="ops-dashboard-metric-label">{title}</span>
-      <strong>{value} <small>{unit}</small></strong>
+      <strong>{value === undefined ? "—" : value} {value === undefined ? null : <small>{unit}</small>}</strong>
     </article>
   );
 
@@ -32,11 +42,11 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
         <div className="ops-dashboard-current-month">当前月份：<strong>{monthLabel}</strong></div>
       </section>
       <section className="ops-dashboard-panel-grid">
-        <article className="ops-dashboard-panel ops-dashboard-total"><header><div><h3>平台累计总览</h3></div><small>全部</small></header><div className="ops-dashboard-metric-list">{metric("客户总数", totalWorkspaceCount ?? 0, "家", "primary")}{metric("有效客户数", merchantWorkspaceCount ?? 0, "家", "primary")}{metric("赠送客户数", giftedMerchantCount ?? 0, "家")}{metric("接入费总收入", finance?.onboardingOrderCny ?? 0, "元", "revenue")}{metric("累计客户消耗创意点", 0, "点")}{metric("累计平台消耗金额", usage?.totalTokens ?? 0, "元")}</div></article>
+        <article className="ops-dashboard-panel ops-dashboard-total"><header><div><h3>平台累计总览</h3></div><small>全部</small></header><div className="ops-dashboard-metric-list">{metric("客户总数", totalWorkspaceCount, "家", "primary")}{metric("有效客户数", merchantWorkspaceCount, "家", "primary")}{metric("赠送客户数", giftedMerchantCount, "家")}{metric("接入费总收入", finance?.onboardingOrderCny, "元", "revenue")}{metric("累计客户消耗创意点", undefined, "点")}{metric("累计平台消耗金额", platformProviderCost, "元", "revenue")}</div></article>
         <article className="ops-dashboard-panel"><header><div><h3>{monthLabel}经营数据</h3></div><small>本月</small></header><div className="ops-dashboard-monthly-groups">
-          <section><h4>接入月度</h4><div className="ops-dashboard-metric-list">{metric("接入客户数", merchantWorkspaceCount ?? 0, "家", "primary")}{metric("接入费销售额", finance?.onboardingOrderCny ?? 0, "元", "revenue")}</div></section>
-          <section><h4>套餐月度</h4><div className="ops-dashboard-metric-list">{metric("套餐销量", finance?.subscriptionOrderWorkspaceCount ?? 0, "单")}{metric("套餐销售额", finance?.subscriptionOrderCny ?? 0, "元", "revenue")}{metric("2000 版本销量", basicSales ?? 0, "单")}{metric("5000 版本销量", growthSales ?? 0, "单")}</div></section>
-          <section><h4>创意点月度</h4><div className="ops-dashboard-metric-list">{metric("客户消耗创意点", 0, "点")}{metric("平台消耗金额", usage?.totalTokens ?? 0, "元")}{metric("额外创意点充值", 0, "点", "full")}</div></section>
+          <section><h4>接入月度</h4><div className="ops-dashboard-metric-list">{metric("接入客户数", merchantWorkspaceCount, "家", "primary")}{metric("接入费销售额", finance?.onboardingOrderCny, "元", "revenue")}</div></section>
+          <section><h4>套餐月度</h4><div className="ops-dashboard-metric-list">{metric("套餐销量", finance?.subscriptionOrderWorkspaceCount, "单")}{metric("套餐销售额", finance?.subscriptionOrderCny, "元", "revenue")}{metric("2000 版本销量", basicSales, "单")}{metric("5000 版本销量", growthSales, "单")}</div></section>
+          <section><h4>创意点月度</h4><div className="ops-dashboard-metric-list">{metric("客户消耗创意点", undefined, "点")}{metric("平台消耗金额", platformProviderCost, "元", "revenue")}{metric("额外创意点充值", undefined, "点", "full")}</div></section>
         </div></article>
       </section>
     </section>

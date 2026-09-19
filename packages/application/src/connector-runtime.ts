@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util'
-import { buildHttpConnectorConfigs, buildHttpConnectorConfigsFromStructured, createConfiguredConnector, createFakeConnector, isProductionCanaryReady, profiles, validateConnectorAuthorizationReadiness, validateConnectorReadiness, type ConfigSource, type ConnectorReadiness, type CredentialProvider, type HttpConnectorConfig, type Platform, type PlatformConnector, type StructuredPlatformConfig } from '../../../packages/connectors/src/index.js'
+import { buildHttpConnectorConfigs, buildHttpConnectorConfigsFromStructured, createConfiguredConnector, createFakeConnector, isProductionCanaryReady, profiles, validateConnectorAuthorizationReadiness, validateConnectorReadiness, type ConfigSource, type ConnectorReadiness, type CredentialProvider, type CredentialRefreshSingleFlight, type HttpConnectorConfig, type Platform, type PlatformConnector, type StructuredPlatformConfig } from '../../../packages/connectors/src/index.js'
 import { platformWriteAllowed } from '../../../packages/connectors/src/write-boundary.js'
 import type { FetchLike, ConnectorBeforeRequest, ProviderExchangeObservation } from '../../../packages/connectors/src/http-connector.js'
 import { createPublishWorker } from '../../../packages/workers/src/factories.js'
@@ -43,7 +43,7 @@ export class ConnectorRuntime {
   private readonly productionWrites: boolean
   private readonly fixtureMode: boolean
   private readonly allowFixtureWrites: boolean
-  constructor(options: { fixtureMode?: boolean; allowFixtureWrites?: boolean; connectorConfigs?: Partial<Record<Platform, HttpConnectorConfig>>; configSource?: ConfigSource; capabilityEvidenceTrust?: ProductionCapabilityEvidenceTrust; structuredConfig?: Partial<Record<Platform, StructuredPlatformConfig>>; credentialProvider?: CredentialProvider; fetch?: FetchLike; beforeRequest?: ConnectorBeforeRequest; onExchange?: (observation: Readonly<ProviderExchangeObservation>) => void; mappingPreflight?: ConnectorRuntimeMappingPreflightAdapter; environment?: 'development' | 'test' | 'production' } = {}) {
+  constructor(options: { fixtureMode?: boolean; allowFixtureWrites?: boolean; connectorConfigs?: Partial<Record<Platform, HttpConnectorConfig>>; configSource?: ConfigSource; capabilityEvidenceTrust?: ProductionCapabilityEvidenceTrust; structuredConfig?: Partial<Record<Platform, StructuredPlatformConfig>>; credentialProvider?: CredentialProvider; refreshLock?: CredentialRefreshSingleFlight; fetch?: FetchLike; beforeRequest?: ConnectorBeforeRequest; onExchange?: (observation: Readonly<ProviderExchangeObservation>) => void; mappingPreflight?: ConnectorRuntimeMappingPreflightAdapter; environment?: 'development' | 'test' | 'production' } = {}) {
     const fixtureMode = options.fixtureMode ?? false
     this.fixtureMode = fixtureMode
     this.allowFixtureWrites = options.allowFixtureWrites ?? fixtureMode
@@ -73,7 +73,10 @@ export class ConnectorRuntime {
     this.connectors = Object.fromEntries((Object.keys(profiles) as Platform[]).map(platform => {
       const config = configs[platform]
       return [platform, config
-        ? createConfiguredConnector(platform, { config, credentials: options.credentialProvider, fetch: options.fetch, beforeRequest: options.beforeRequest, onExchange: options.onExchange })
+        // `refreshLock` lets the caller share the OAuth refresh single-flight
+        // across replicas; without it each process serializes only against
+        // itself, so two pods still rotate a refresh token concurrently.
+        ? createConfiguredConnector(platform, { config, credentials: options.credentialProvider, ...(options.refreshLock ? { refreshLock: options.refreshLock } : {}), fetch: options.fetch, beforeRequest: options.beforeRequest, onExchange: options.onExchange })
         : createFakeConnector(platform, { configured: fixtureMode, allowFakeWrites: options.allowFixtureWrites ?? fixtureMode })]
     })) as Record<Platform, PlatformConnector>
   }
@@ -184,7 +187,11 @@ export class ConnectorRuntime {
         const mappedItems = [] as ReturnType<typeof connector.mapToCanonical>[]
         for (const item of page.items) {
           await this.preflightSync(platform, context, item)
-          mappedItems.push(connector.mapToCanonical(item, { id: `${platform}.mapping.v1` }))
+          const mapped = connector.mapToCanonical(item, { id: `${platform}.mapping.v1` })
+          // The page is the only authority on where its rows came from: the
+          // shared platform profiles hardcode `source: 'fixture'`, so a real
+          // API page would otherwise be persisted as demo data.
+          mappedItems.push(mapped.source === page.source ? mapped : { ...mapped, source: page.source })
         }
         nextCursor = page.nextCursor?.value
         await onPage?.({ pageNumber: pages, ...(cursor ? { cursor } : {}), ...(nextCursor ? { nextCursor } : {}), items: mappedItems, source: page.source, simulated: page.simulated })

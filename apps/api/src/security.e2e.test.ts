@@ -1624,8 +1624,155 @@ describe('security and access-control acceptance gates', () => {
     expect(billing.error).toBeNull()
     const automationScan = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2.5, method: 'automation.scan', params: {} }) }).then(response => response.json() as Promise<Envelope>)
     expect(automationScan.error?.code).toBe('STORE_ONBOARDING_REQUIRED')
+    // The store boundary gates operations that act *on a platform*: importing a
+    // catalog, formal content tasks, syncing and publishing. It must not hide
+    // the merchant's own catalog, source-material uploads, or the balance and
+    // purchase entry points — gating those left a brand-new paid account unable
+    // to do anything, with recovery guidance pointing at a tool the plugin does
+    // not expose. These all still fail, but on the commercial axis instead.
     const catalog = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'catalog.search', params: {} }) }).then(response => response.json() as Promise<Envelope>)
-    expect(catalog.error?.code).toBe('STORE_ONBOARDING_REQUIRED')
+    expect(catalog.error?.code).not.toBe('STORE_ONBOARDING_REQUIRED')
+    const upload = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'asset.upload', params: { name: 'a.png', mime_type: 'image/png', content_base64: 'aGk=' } }) }).then(response => response.json() as Promise<Envelope>)
+    expect(upload.error?.code).not.toBe('STORE_ONBOARDING_REQUIRED')
+    const importBlocked = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'catalog.import', params: { platform: 'taobao', title: '未绑定商品' } }) }).then(response => response.json() as Promise<Envelope>)
+    expect(importBlocked.error?.code).toBe('STORE_ONBOARDING_REQUIRED')
+  })
+
+  it('lets a funded production workspace create content without any bound store', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    const workspaceId = 'ws_store_less_creation'
+    await configureBearerMembers([{ token: 'token-storeless', workspaceId }])
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
+    const base = await start()
+    const headers = { authorization: 'Bearer token-storeless', 'x-workspace-id': workspaceId, 'content-type': 'application/json' }
+    const call = (id: number, method: string, params: Record<string, unknown>) =>
+      fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }) }).then(response => response.json() as Promise<Envelope>)
+    // No `platform.connect`, no bound store: this is the documented
+    // "upload an image and get a candidate" path from product-usage-guide.md.
+    // `scope: 'workspace'` is what the STORE_SELECTION_REQUIRED guidance tells a
+    // store-less merchant to pass; without it the call asks which store to read.
+    expect((await call(1, 'catalog.search', { scope: 'workspace' })).error, 'catalog.search must not require a store').toBeNull()
+    expect((await call(2, 'creative-points.balance.get', {})).error, 'balance must be readable without a store').toBeNull()
+    // This fixture has no V2 commercial catalog seeded, so the call fails on the
+    // catalog axis — the point being pinned is that the store boundary is gone.
+    expect((await call(3, 'commercial.catalog.get', {})).error?.code, 'point-pack pricing must not require a store').not.toBe('STORE_ONBOARDING_REQUIRED')
+  })
+
+  it('keeps the store-less image candidate chain reachable after catalog.image.generate', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    // Production runs the durable execution mode: `catalog.image.generate`
+    // answers `queued` without an inline image, and the bridge's
+    // resolveGeneratedImagePreview always follows up with `catalog.image.get`.
+    // Gating that poll returned 428 *after* the creative point had already been
+    // reserved — a false failure attached to a real charge. generate alone being
+    // exempt was never enough; the poll has to be reachable too.
+    //
+    // This fixture has no image provider, so `generate` itself stops on the
+    // model/asset axis (the exact code is not the point — reaching it at all is).
+    // The poll is therefore asserted against a job seeded through the same
+    // service the generate handler enqueues with, which is what the bridge polls.
+    vi.stubEnv('IMAGE_GENERATION_EXECUTION_MODE', 'durable')
+    const workspaceId = 'ws_store_less_image_poll'
+    await configureBearerMembers([{ token: 'token-storeless-poll', workspaceId }])
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
+    const productId = `prod_store_less_poll_${Date.now()}`
+    service.products.set(productId, { ...service.products.get('prod_fixture_1')!, id: productId, workspaceId, accountId: undefined, storeName: '未绑定商品' })
+    const job = service.enqueueImageGeneration({ workspaceId, productId, idempotencyKey: `store-less-poll-${workspaceId}` })
+    const base = await start()
+    const headers = { authorization: 'Bearer token-storeless-poll', 'x-workspace-id': workspaceId, 'content-type': 'application/json' }
+    const call = (id: number, method: string, params: Record<string, unknown>) =>
+      fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }) }).then(response => response.json() as Promise<Envelope>)
+    const generated = await call(1, 'catalog.image.generate', { title: '未绑定候选图', asset_ids_json: JSON.stringify(['asset_missing_for_store_less_chain']) })
+    expect(generated.error?.code, 'generate must not be store-gated').not.toBe('STORE_ONBOARDING_REQUIRED')
+    const polled = await call(2, 'catalog.image.get', { job_id: job.id })
+    expect(polled.error?.code, 'the mandatory post-generate poll must not hit the store boundary').not.toBe('STORE_ONBOARDING_REQUIRED')
+    expect(polled.error, JSON.stringify(polled.error)).toBeNull()
+    // Native MCP answers with the JSON-RPC result inside the envelope `data`.
+    expect((polled.data as { result: { job_id: string } }).result.job_id).toBe(job.id)
+  })
+
+  it('keeps the REST and MCP store boundaries in step for the same capability', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    const workspaceId = 'ws_store_boundary_parity'
+    await configureBearerMembers([{ token: 'token-boundary-parity', workspaceId }])
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
+    const base = await start()
+    const headers = { authorization: 'Bearer token-boundary-parity', 'x-workspace-id': workspaceId, 'content-type': 'application/json' }
+    const mcp = (method: string, params: Record<string, unknown>) =>
+      fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) }).then(response => response.json() as Promise<Envelope>)
+    const rest = (httpMethod: string, path: string, body?: unknown) =>
+      fetch(`${base}${path}`, { method: httpMethod, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }).then(response => response.json() as Promise<Envelope>)
+    // The HTTP surface resolves the MCP method each route is registered against
+    // instead of keeping a second path list, so a capability cannot be reachable
+    // on one transport and store-gated on the other. Reads of the merchant's own
+    // material stay open on both; platform-acting writes stay gated on both.
+    const storeIndependent: Array<[string, string, string, Record<string, unknown>]> = [
+      ['GET', '/v1/assets', 'asset.list', {}],
+      ['GET', '/v1/products', 'catalog.search', { scope: 'workspace' }],
+      ['GET', '/v1/commercial/catalog', 'commercial.catalog.get', {}],
+      ['GET', '/v1/commercial/orders/order_store_less_missing/payment', 'commercial.order.payment.get', { order_id: 'order_store_less_missing' }],
+    ]
+    for (const [httpMethod, path, method, params] of storeIndependent) {
+      const httpBody = await rest(httpMethod, path)
+      const mcpBody = await mcp(method, params)
+      expect(httpBody.error?.code, `${httpMethod} ${path} is store-gated while MCP ${method} is not`).not.toBe('STORE_ONBOARDING_REQUIRED')
+      expect(mcpBody.error?.code, `MCP ${method} is store-gated while ${httpMethod} ${path} is not`).not.toBe('STORE_ONBOARDING_REQUIRED')
+    }
+    const platformActing: Array<[string, string, string, Record<string, unknown>, unknown]> = [
+      ['POST', '/v1/products/import', 'catalog.import', { platform: 'taobao', title: '未绑定商品' }, { platform: 'taobao', title: '未绑定商品' }],
+      // Schema-valid payloads: the MCP surface validates the request body before
+      // the store boundary runs, so a malformed payload would prove nothing.
+      ['POST', '/v1/products/import/batch', 'catalog.import.batch', { products_json: JSON.stringify([{ platform: 'taobao', account_id: 'store_missing', title: '未绑定商品' }]) }, { platform: 'taobao', title: '未绑定商品' }],
+      ['GET', '/v1/sync-jobs', 'catalog.sync.get', { job_id: 'sync_missing' }, undefined],
+      ['POST', '/v1/tasks', 'task.create', { product_id: 'prod_missing', platform: 'taobao' }, { product_id: 'prod_missing', platform: 'taobao' }],
+      ['POST', '/v1/tasks/task_missing/content-jobs', 'content.generate', { task_id: 'task_missing' }, {}],
+      ['POST', '/v1/content-versions/version_missing/review-decisions', 'content.review.decide', { content_version_id: 'version_missing', code: 'C1', field: 'body', status: 'acknowledged' }, {}],
+      ['DELETE', '/v1/platform-accounts/taobao', 'platform.revoke', { platform: 'taobao', account_id: 'store_missing' }, undefined],
+    ]
+    for (const [httpMethod, path, method, params, body] of platformActing) {
+      const httpBody = await rest(httpMethod, path, body)
+      const mcpBody = await mcp(method, params)
+      expect(httpBody.error?.code, `${httpMethod} ${path} must stay store-gated`).toBe('STORE_ONBOARDING_REQUIRED')
+      expect(mcpBody.error?.code, `MCP ${method} must stay store-gated`).toBe('STORE_ONBOARDING_REQUIRED')
+    }
+  })
+
+  it('does not let a workspace membership role named platform_ops authorise a platform operations endpoint', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    // `platform_ops` exists as BOTH a platform gateway role (canonicalising to
+    // `ops_admin`) and a workspace membership role. `authorizedRoles` keeps the
+    // raw membership role for audit, so matching that raw string against an
+    // allow-list of gateway role names let a workspace member holding the
+    // *membership* role reach platform-only routes. Membership roles must be
+    // matched only through their canonical form.
+    await configureBearerMembers([{ token: 'token-role-collision', workspaceId: 'ws_role_collision', role: 'platform_ops', workbenches: ['workspace'] }])
+    const base = await start()
+    const response = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer token-role-collision', 'x-workspace-id': 'ws_role_collision', 'content-type': 'application/json' },
+      body: JSON.stringify({ login: 'merchant@example.test', workspace_id: 'ws_role_collision' }),
+    })
+    expect(response.status).toBe(403)
+  })
+
+  it('still admits a genuine platform operations principal to that endpoint', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    await configureBearerMembers([{ token: 'token-platform-ops', workspaceId: 'ws_platform_ops', actorId: 'platform-ops-actor', role: 'platform_ops', gatewayRoles: ['platform_ops'], grantWorkspaces: [], workbenches: ['platform'] }])
+    const base = await start()
+    // A platform-workbench token holds no workspace grant, so no `x-workspace-id`
+    // header: the target workspace is named in the body, not asserted by header.
+    const response = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer token-platform-ops', 'x-ops-workbench': 'platform', 'content-type': 'application/json' },
+      body: JSON.stringify({ login: 'merchant@example.test', workspace_id: 'ws_platform_ops' }),
+    })
+    // The role gate must pass; anything after it is a payload or persistence
+    // concern, never FORBIDDEN.
+    const body = await response.json() as Envelope
+    expect(response.status, JSON.stringify(body.error)).not.toBe(403)
   })
 
   it('requires every production task entry to retain an explicit bound store', async () => {
@@ -1691,9 +1838,19 @@ describe('security and access-control acceptance gates', () => {
     const deniedTaskGroupWithoutExplicitStore = await fetch(`${base}/v1/task-groups`, { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ entries: [{ product_id: productId, platform: 'taobao' }, { product_id: 'missing-second-product', platform: 'jd' }] }) })
     expect(deniedTaskGroupWithoutExplicitStore.status).toBe(428)
     expect((await deniedTaskGroupWithoutExplicitStore.json() as Envelope).error?.code).toBe('STORE_ONBOARDING_REQUIRED')
-    const deniedCatalogAfterLastRevoke = await fetch(`${base}/v1/products`, { headers })
-    expect(deniedCatalogAfterLastRevoke.status).toBe(428)
-    expect((await deniedCatalogAfterLastRevoke.json() as Envelope).error?.code).toBe('STORE_ONBOARDING_REQUIRED')
+    // `GET /v1/products` is registered as `catalog.search`, and the HTTP surface
+    // now consults the same exemption table as MCP. A read of the merchant's own
+    // inventory therefore behaves identically on both surfaces instead of being
+    // 428 on one and reachable on the other; what the revoked store must still
+    // block is the platform-acting work — catalog sync, tasks, publishing.
+    const catalogAfterLastRevoke = await fetch(`${base}/v1/products`, { headers })
+    expect(catalogAfterLastRevoke.status).toBe(200)
+    expect((await catalogAfterLastRevoke.json() as Envelope).error, 'catalog.search is store-independent on both surfaces').toBeNull()
+    const mcpCatalogAfterLastRevoke = await fetch(`${base}/mcp`, { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'catalog.search', params: { scope: 'workspace' } }) }).then(result => result.json() as Promise<Envelope>)
+    expect(mcpCatalogAfterLastRevoke.error).toBeNull()
+    const deniedSyncAfterLastRevoke = await fetch(`${base}/v1/sync-jobs`, { headers })
+    expect(deniedSyncAfterLastRevoke.status).toBe(428)
+    expect((await deniedSyncAfterLastRevoke.json() as Envelope).error?.code).toBe('STORE_ONBOARDING_REQUIRED')
   })
 
   it('keeps worker routes on bearer plus workspace HMAC when OIDC is enabled on the internal merchant-api host', async () => {

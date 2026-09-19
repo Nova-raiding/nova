@@ -107,6 +107,13 @@ export async function notifyOperationalAlert(alert: OperationalAlert, options: A
         redirect: 'error',
       })
       if (response.ok) return { delivery: 'delivered', attempts: attempts + 1, requestId }
+      // The receiver keys receipts on the alert id and answers a repeat with
+      // 409. That is idempotent re-delivery of an alert it already holds, not a
+      // delivery failure. Treating it as one meant every alert older than one
+      // sweep cycle had its `delivered` record overwritten with `failed`,
+      // leaving operators unable to tell "never delivered" from "delivered, then
+      // retried".
+      if (response.status === 409) return { delivery: 'delivered', attempts: attempts + 1, requestId, reason: 'already_received' }
       lastReason = `告警 Webhook 返回 HTTP ${response.status}`
       if (response.status < 500 && response.status !== 429) break
     } catch (error) {

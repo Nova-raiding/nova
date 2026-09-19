@@ -154,27 +154,50 @@ flowchart LR
 - “用我上传的原图优化一张白底主图。”
 - “继续上次任务。”
 - “找出之前批准的交付物。”
-- “准备发布，但先给我看字段变化。”
 
 商家不需要输入商品 ID、任务 ID、哈希、revision 或 JSON。
 
+“准备发布，但先给我看字段变化”这一类发布前确认在当前上线档不可用，原因见下文“发布商品”。
+
+### 开始之前：三个硬前置条件
+
+插件可以完成很多只读和准备工作，但**几乎所有业务动作（包括插件入口 `merchant.start` 本身）都必须同时满足下面三项**。缺任何一项都会被服务端直接拒绝——这是阻断，不是提示。
+
+| 前置条件 | 谁负责 | 未满足时返回的确切错误码 |
+|---|---|---|
+| 创意点余额大于 0 | 商家从商家后台购买创意点包或月付套餐 | `CREATIVE_POINTS_EXHAUSTED`（402，余额为 0）；`CREATIVE_POINTS_INSUFFICIENT`（402，余额不足本次报价） |
+| 有效的月付套餐权益 | 商家购买月付套餐（`basic` ¥2000 / `growth` ¥5000），运营核验后写入权益快照 | `COMMERCIAL_ENTITLEMENT_REQUIRED`（402） |
+| 生产素材扫描器已配置 | 平台运营（`ASSET_SCANNER_MODE=clamav_worker` + 签名扫描回执） | `IMAGE_SOURCE_ASSET_INVALID`（409，素材未通过扫描）；`GENERATED_IMAGE_SCAN_REQUIRED`（409，生成结果仍在隔离区） |
+
+三点必须同时成立，这是最容易误解的地方：
+
+- **只买创意点包不能创作。** 点包只会增加余额，不会产生套餐权益快照——`packages/persistence/src/commercial-contract-repository.ts` 的 `validatePeriod` 对 `point_pack` 和 `onboarding` 返回 `null`，公开目录中只有 `monthly` 套餐才在该文件的核销路径写入 `workspace_entitlement_snapshots_v2`。所以必须买月付套餐。
+- **只买套餐也可能点数为 0**，此时仍是 402。
+- **扫描器没配好，素材永远停在隔离区**，再多点数也无法生成。
+
+余额为 0 时，除身份/状态、下单、余额与流水、目录、导出等恢复类方法外，**其余业务方法一律返回 402 `CREATIVE_POINTS_EXHAUSTED`**；零余额判断先于操作分类，与操作类型无关（`packages/application/src/commercial-access-service.ts` 的 `CommercialAccessService.decide()` 中 `available_points === 0` 分支）。
+
+**注意：“开始使用Store Nova”（`merchant.start`）也在这道门禁之内。** 它被归类为 `POINT_REQUIRED_NO_CHARGE`，必须同时有可用点数和套餐权益；余额为 0 返回 `CREATIVE_POINTS_EXHAUSTED`（402），余额未知返回 `CREATIVE_POINTS_UNAVAILABLE`（503），没有权益快照返回 `COMMERCIAL_ENTITLEMENT_REQUIRED`（402）（分类见 `packages/contracts/src/commercial-access.ts` 的 `COMMERCIAL_MCP_FOUNDATION_POLICIES`；逐条行为断言见 `apps/api/src/server.test.ts` 的 `central commercial access gate` 用例）。零余额工作区里真正还能读的第一入口是 `onboarding.status` 和 `workspace.health`。
+
+> **交付给客户前必须先完成的两件事**：平台运营要配置支付通道（`COMMERCIAL_PAYMENT_PROVIDER`）并上架可售月付套餐。未配置支付通道时 `commercial.order.create` 直接返回 `COMMERCIAL_PAYMENT_PROVIDER_UNAVAILABLE`（503）且**订单不会落库**——`apps/api/src/server.ts` 的 `commercialPaymentProvider()` 在 `createFromServerSnapshot` 调用 `createOrder` 之前抛错；而运营的人工核验 `ops.commercial.order.payment.verify` 需要一条**已存在**的订单，否则返回 `COMMERCIAL_ORDER_NOT_FOUND`（404）。两边都推不动，客户无法自助，运营也无法代为履约。
+
 ### 三步拿到第一个可审阅结果
 
-1. 在桌面 ChatGPT 中输入“开始使用Store Nova”，让插件确认身份、工作区和创意点准入。
-2. 选择已同步的商品，或上传真实商品图片并补全必要事实。
+1. 先让插件读取工作区与准入状态（“开始使用Store Nova”在余额为 0 或权益缺失时会直接返回 402/503，见上文；此时可改用 `onboarding.status` / `workspace.health` 读取状态）。
+2. 选择一件已由运营导入的商品，或上传真实商品图片并补全必要事实。
 3. 说明目标平台和制作要求，回答插件当前提出的一个问题，即可得到带来源和状态标记的文案草稿或候选图。
 
-这一步得到的是可审阅候选。要形成批准版本或发布结果，还需要继续完成规则审核、人工批准和发布确认。
+第 2、3 步只有在上面三个前置条件全部满足时才能走通。这一步得到的是可审阅候选；要形成批准版本或发布结果，还需要继续完成规则审核、人工批准（以及当前上线档的人工发布）。
 
 ### 首次使用
 
 1. 在桌面 ChatGPT 中启用“Store Nova”插件，并输入“开始使用Store Nova”。
-2. 插件读取宿主身份，恢复或创建工作区，并检查创意点准入。
-3. 如果要读取平台商品，选择平台并进入官方 OAuth 授权。
-4. 授权完成后选择具体店铺，再同步或选择商品。
-5. 如果只想根据已上传图片做候选图，可直接上传并说明要求，不需要先连接店铺。
+2. 插件读取宿主身份，恢复或创建工作区，并检查创意点余额和套餐权益。
+3. 当前上线档为 `manual`：**插件不连接六平台 OAuth，插件内也没有可用的“连接店铺/授权”步骤**。`platform.connect` 与 `platform.store.list` 已从商家工具面隐藏，调用会得到 `Unknown tool`（`apps/plugin/mcp/bridge.mjs` 的 `MERCHANT_HIDDEN_METHODS`）。要读取平台商品，需要平台运营先在运营后台为该商家建立人工店铺记录并导入商品资料，商家再从中选择。
+4. 要使用商品同步、正式任务与发布能力，需要已绑定至少一个店铺；未绑定时这些方法返回 `STORE_ONBOARDING_REQUIRED`（428），响应里的 `next_actions` 会指向可执行的下一步（`apps/api/src/server.ts` 的 `requireStoreOnboarding()`）。
+5. 如果只想根据已上传图片做候选图，**不需要先连接店铺**——`catalog.image.generate` 等创作入口在店铺边界之外（该文件中的 `STORE_BOUNDARY_EXEMPT_METHODS`）——但**仍必须**同时满足“有创意点余额 + 有月付套餐权益 + 生产扫描器已配置”，否则分别得到 `CREATIVE_POINTS_EXHAUSTED`（402）、`COMMERCIAL_ENTITLEMENT_REQUIRED`（402）或 `IMAGE_SOURCE_ASSET_INVALID`（409）。
 
-如果工作区、MCP 地址、身份映射、创意点或模型中转缺失，插件会停止在当前步骤并给出一个恢复动作，不会回退到演示工作区。
+如果工作区、MCP 地址、身份映射、创意点、套餐权益或模型中转缺失，插件会停止在当前步骤并给出一个恢复动作，不会回退到演示工作区。
 
 ### 生成商品文案
 
@@ -193,7 +216,9 @@ flowchart LR
 
 ### 生成或优化主图
 
-上传图片并明确要求生成时，插件会优先处理当前图片：安全扫描通过后生成“未绑定商品、未批准、未发布”的候选图。
+上传图片并明确要求生成时，插件会优先处理当前图片。这条路径不需要先绑定店铺，但必须同时满足“创意点余额大于 0 + 有效月付套餐权益 + 素材已通过安全扫描”，否则分别得到 402、402 和 409（见上文“三个硬前置条件”）。
+
+安全扫描在生产环境由服务端扫描 Worker 自动完成，配置为 `ASSET_SCANNER_MODE=clamav_worker`（就绪检查会要求 `asset_scanner_mode_must_be_clamav_worker`），只有拿到签名扫描回执并进入 `clean` 存储的素材才能用于生成。商家和运营人员都不需要、也不能提交扫描证据；素材未通过时生成请求在 `apps/api/src/server.ts` 的 `requireApprovedAssetForImageGeneration()` 直接返回 `IMAGE_SOURCE_ASSET_INVALID`（409）。全部通过后才会生成“未绑定商品、未批准、未发布”的候选图。
 
 正式商品任务中的主图流程是：
 
@@ -209,15 +234,17 @@ flowchart LR
 
 ### 发布商品
 
-批准内容不等于批准发布。发布必须独立执行：
+**当前上线档（`manual`）不由插件发布。** 插件的 `publish.prepare`、`publish.confirm`、`publish.get`、`publish.batch.*` 都是隐藏工具：它们不出现在 `tools/list` 中，调用会直接得到 `Unknown tool`（`apps/plugin/mcp/bridge.mjs` 的 `MERCHANT_HIDDEN_METHODS`）。当前档的发布由平台运营在官方商家后台人工完成并回填结果，人工记录始终标记为未获官方 API 验证。
 
-1. 生成最新发布预览；
+下面是**未来 `official_api` 路线的目标流程**，不是当前可执行流程（因此也没有对应的当前错误码可查）：
+
+1. 生成最新发布预览（目标工具 `publish.prepare`）；
 2. 展示平台、店铺、商品、SKU、字段差异和冻结选图；
 3. 绑定最新内容版本、远端快照和两个确认哈希；
 4. 商家针对这次预览明确确认；
-5. 提交平台并查询真实状态。
+5. 提交平台并查询真实状态（目标工具 `publish.confirm` + 远端回查）。
 
-发布状态的含义：
+发布状态的含义（用于描述运营回填的人工记录与未来 API 回执）：
 
 | 状态 | 对商家的含义 |
 |---|---|
@@ -228,7 +255,9 @@ flowchart LR
 | `rejected` | 展示平台错误码、原因和字段问题，修正后重新审核与确认 |
 | `unknown` / `reconciling` / `manual_attention` | 结果不确定，等待对账或人工处理 |
 
-任何内容版本、商品事实、店铺授权或选图变化都会使旧发布预览失效，必须重新准备和确认。
+`rejected` 一行之后的表项同样只描述状态机本身。当前档客户看不到 `publish.*` 工具，发布结果由平台运营在运营后台展示的人工发布记录体现。
+
+任何内容版本、商品事实、店铺授权或选图变化都会使旧发布预览失效，必须重新准备和确认（目标流程约束）。
 
 ### 插件最终产出
 
@@ -240,7 +269,7 @@ flowchart LR
 - 主图/副图候选及商家选图结果；
 - 审核 finding、修改和人工批准记录；
 - 内容版本和来源映射；
-- 发布预览与真实平台回执（如果已经发布）；
+- 发布预览（仅目标流程；当前档插件不提供）；
 - JSON、Markdown 或 bundle 导出文件。
 
 `content.export` 只导出内容及其证据文件，不包含历史图片字节或输入素材。文件卡片出现只代表文件已生成，不代表用户已经下载，也不代表内容已发布。
@@ -317,11 +346,11 @@ flowchart LR
 
 | 阶段 | ChatGPT 插件 | 商家运营后台 | 平台运营 |
 |---|---|---|---|
-| 开通 | 恢复/创建商家工作区，展示唯一下一步 | 维护成员和工作区范围 | 配置身份、商业准入和平台能力 |
-| 数据准备 | 引导授权、同步、上传、事实确认 | Excel 导入、素材/事实异常处理 | 保障 OAuth、连接器、扫描和存储可用 |
-| 内容制作 | 收集目标、选方向、生成和展示版本 | 处理队列、审核与知识治理 | 保障模型中转、费率和预算门禁 |
+| 开通 | 恢复/创建商家工作区，展示唯一下一步 | 维护成员和工作区范围 | 配置身份、商业准入和平台能力；**配置支付通道并上架可售月付套餐** |
+| 数据准备 | 上传与事实确认（当前档不由插件授权/同步） | 建立人工店铺记录、Excel 导入、素材/事实异常处理 | 保障扫描器、连接器和存储可用 |
+| 内容制作 | 收集目标、生成和展示版本 | 处理队列、审核与知识治理 | 保障模型中转、费率和预算门禁 |
 | 视觉制作 | 展示候选并收集明确选图 | 处理扫描、真实性和归档异常 | 管理媒体规格、渲染与成本证据 |
-| 发布 | 展示最新 diff 并获得最终确认 | 查看任务和发布异常 | 管理平台写入开关、canary 和对账 |
+| 发布 | **当前档不参与**（`publish.*` 为隐藏工具） | 查看任务和发布异常 | 在官方商家后台人工发布并回填结果；管理未来平台写入开关、canary 和对账 |
 | 售后与恢复 | 恢复任务、展示驳回或未知状态 | 工单、事故、重试和修订 | 跨租户告警、紧急关闭和审计 |
 | 交付证明 | 给商家展示可执行产物和回执 | 核查五项交付门禁 | 维护真实性、渲染、OCR、人审和哈希证据链 |
 
@@ -372,23 +401,25 @@ flowchart LR
 
 ## 当前运行状态
 
-以下是截至 2026-09-15 候选版本的本地/远端真实探针结果，不代表生产环境已经上线：
+以下是截至 2026-09-19 候选版本的本地/远端真实探针结果，不代表生产环境已经上线：
 
 | 项目 | 当前状态 |
 |---|---|
-| Repository / Plugin | `0.2.0` / `0.1.0+codex.20260915012616` |
-| MCP 契约 | 共享注册表与当前代码为准；当前商家 Bridge 的真实 `tools/list` 返回 152 个工具，且不含 `ops.*` |
-| Ops Console | 12 个一级域，平台/工作区双工作台 |
-| PostgreSQL / Redis | 本地与候选远端运行就绪；当前发布基线迁移版本 201（以 `release-metadata.json` 为准） |
+| Repository / Plugin | `0.2.1` / `0.1.0+codex.20260917171000` |
+| MCP 契约 | 共享注册表与当前代码为准；商家 Bridge 工具数不写死在文档中，以运行态 `tools/list` 和 `release-metadata.json` 为准，且不含 `ops.*` |
+| Ops Console | 域数量以 `release-metadata.json` 为准；平台/工作区双工作台 |
+| PostgreSQL / Redis | 本地与候选远端运行就绪；当前发布基线迁移版本以 `release-metadata.json` 为准，不写死在文档中 |
 | 五模态模型中转 | 本地 relay contract 可解析，但五模态生产配置/成本证据尚未就绪 |
 | 六个平台 | 采用 `manual_operations`；商品资料由运营人工上传、审核并分配给商家，不接入平台 OAuth/API |
 | 平台写入 | 关闭 |
-| 支付 | fixture 环境未配置真实 provider |
+| 支付 | fixture 环境未配置真实 provider。**未配置时客户无法下单自助，运营也无法人工核验**（见上文“三个硬前置条件”） |
 | 告警通知 | webhook 未配置 |
 | 对象存储 | 本地模式 |
 | Production gate | 未通过 |
 | 交付证据 gate | 未验证，缺少真实性、真实渲染、OCR、人审和 bundle 哈希证据 |
 | 本次插件入口实时探针 | 受支持的 `sh apps/plugin/mcp/bridge.sh` 入口与本地 API 健康调用通过；外部 ChatGPT 宿主刷新工具快照的生产证据仍缺失 |
+
+商家 Bridge 的工具面比共享注册表窄，这是插件范围收窄的结果，不是功能回退。当前插件面向商家的对外承诺收敛为四条主链路——资料整理、内容候选、审核、导出；此前挂在 Bridge 上、但不属于这四条链路的内部调试/运营辅助入口，以及当前上线档不启用的店铺授权与发布入口，都已从商家工具面移除，运营侧能力仍完整保留在桌面运营后台。工具总数以共享注册表和运行态 `tools/list` 为准（当前值见 `release-metadata.json`），不在文档中写死。
 
 本地自动化证据：全仓 4678 项测试通过，71 项跳过；隔离 PostgreSQL 专项由独立入口执行并保留原始分母；Merchant Studio 浏览器主链路 22/22 通过；Ops Console OIDC 全量 10/10 通过；类型检查和前端生产构建通过。跳过项和本地隔离证据均不替代生产验收。
 
@@ -398,27 +429,28 @@ flowchart LR
 
 ### 平台运营准备
 
-1. 部署 API、PostgreSQL、Redis、对象存储、扫描器和各类 Worker。
+1. 部署 API、PostgreSQL、Redis、对象存储、扫描器和各类 Worker；确认扫描器以 `ASSET_SCANNER_MODE=clamav_worker` 运行并且能签发扫描回执。
 2. 配置企业身份与工作区 bootstrap，验证跨租户 RLS。
 3. 配置模型中转的五模态 provider、鉴权、费率和成本证据。
-4. 逐平台完成官方 OAuth、读取、同步、写入、状态查询和撤权 canary。
-5. 配置支付、退款、对账、告警和事故值守。
+4. **配置支付通道（`COMMERCIAL_PAYMENT_PROVIDER`），并在商业目录上架可售月付套餐（`basic` / `growth`）。** 这两项没完成时，客户下单直接 503 且订单不落库，运营的人工核验又找不到订单可核验——必须在上线前完成，否则客户什么都做不了。
+5. 配置退款、对账、告警和事故值守。
 6. 生成并签署 capability、容量、备份、回滚和 release evidence。
+7. （未来 `official_api` 路线，不属于当前 `manual` 档）逐平台完成官方 OAuth、读取、同步、写入、状态查询和撤权 canary。
 
 ### 商家运营准备
 
-1. 建立客户工作区和成员角色。
-2. 连接店铺，或通过 Excel/CSV 导入客户商品与 SKU。
+1. 建立客户工作区和成员角色，并确认该工作区已购买月付套餐、有可用创意点余额。
+2. 建立人工店铺记录（`平台 + account_id`），上传公开商品资料、商品图片、SKU 与必要的人工核验信息，选择目标商家后发布；商家只能看到被分配的数据。
 3. 上传品牌资料、商品原图、权益证明和规则来源。
 4. 核对素材扫描、商品事实、知识和规则版本。
-5. 处理一次完整任务，验证审核、批准和发布预览。
+5. 处理一次完整任务，验证审核和人工批准；当前档的发布由运营在官方商家后台人工完成并回填结果，没有可用的“发布预览 / 一键发布”。
 
 ### 商家开始使用
 
 1. 在桌面 ChatGPT 安装并启用“Store Nova”。
 2. 输入“开始使用Store Nova”。
-3. 根据插件当前唯一问题选择平台、店铺、商品或上传资料。
-4. 每次只确认当前一步；最终发布时核对平台、店铺、商品、SKU、字段 diff 和图片。
+3. 根据插件当前唯一问题选择商品或上传资料。
+4. 每次只确认当前一步；需要内容上线时，向运营确认人工发布结果。
 
 ## 常见问题
 
@@ -438,9 +470,31 @@ flowchart LR
 
 这是平台能力尚未启用，不是商家输入错误。商品、素材和任务会保留；平台配置完成后可继续。
 
+### 插件返回 `STORE_ONBOARDING_REQUIRED`（428）
+
+这是新客户最可能撞上的错误码：当前工作区还没有绑定任何一个平台店铺，而该动作属于商品同步、正式任务或发布类写入。错误响应里的 `next_actions` 已经写成可执行的商家话术，不会指向插件不暴露的工具。
+
+处理方式：先做不需要店铺的动作——上传素材、生成候选内容、查看余额与购买创意点都可以正常使用；要解锁正式链路，请联系平台运营为该商家建立店铺记录（当前档不由商家自行授权）。
+
+### 插件返回 `CREATIVE_POINTS_EXHAUSTED`（402）
+
+创意点余额为 0。零余额判断先于操作分类，所以除身份/状态、下单、余额与流水、目录等恢复类方法外，**其余业务方法全部返回这个错误**。恢复路径是 `commercial.catalog.get` → `commercial.order.create` → `commercial.order.payment.get`。
+
+### 插件返回 `COMMERCIAL_ENTITLEMENT_REQUIRED`（402）
+
+创意点可能够，但当前工作区没有有效的月付套餐权益快照。**只买创意点包不会产生这个快照**，必须购买月付套餐（`basic` ¥2000 / `growth` ¥5000）并由运营核验后写入。
+
+### 插件返回 `COMMERCIAL_PAYMENT_PROVIDER_UNAVAILABLE`（503）
+
+服务端没有配置支付通道，订单没有创建、也不会落库。这是平台侧配置缺失，不是商家操作问题，需要平台运营配置 `COMMERCIAL_PAYMENT_PROVIDER` 后重试。
+
+### 插件返回 `IMAGE_SOURCE_ASSET_INVALID`（409）
+
+指定的素材还没有通过生成所需的检查：生产安全扫描（`ASSET_SCANNER_MODE=clamav_worker`，签名回执）、商用权益或 AI 修改许可。安全扫描由平台自动完成，商家不需要提交扫描证据；扫描通过后按提示确认权益即可继续。
+
 ### 发布一直不是“已发布”
 
-`queued`、`submitted` 和 `reviewing` 都不是发布完成。只有远端回查确认 `published`，并且回执不是模拟数据时，才能显示为已发布。
+`queued`、`submitted` 和 `reviewing` 都不是发布完成。只有远端回查确认 `published`，并且回执不是模拟数据时，才能显示为已发布。当前 `manual` 档插件不提供发布工具，客户看到的应是运营在官方商家后台人工发布后回填的记录。
 
 ### 运营后台一直显示“未验证”
 

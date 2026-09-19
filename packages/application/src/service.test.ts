@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { DomainError, MerchantService, isTrustedCleanAsset, type AssetMetadata } from './service.js'
+import { DomainError, MerchantService, isTrustedCleanAsset, type AssetMetadata, type ContentVersion, type PublishJob, type Task } from './service.js'
 import { CampaignDeliveryOrchestratorAdapter, type CampaignDeliveryLifecyclePort } from './campaign-delivery-orchestrator.js'
 import type { CampaignDeliveryManifestInput } from './campaign-delivery-manifest.js'
 import { verifyDeliveryBundle, type DeliveryBundleFile, type DeliveryBundleManifest } from '../../multimodal/src/delivery-bundle-manifest.js'
@@ -2734,5 +2734,324 @@ describe('manual platform operations records', () => {
     service.selectDirection(otherTask.id, 'A')
     const unapproved = service.createDraft(otherTask.id)
     expect(() => service.recordManualPublish({ ...base, taskId: otherTask.id, contentVersionId: unapproved.id, state: 'export_ready' })).toThrowError(expect.objectContaining({ code: 'MANUAL_PUBLISH_CONTENT_NOT_APPROVED' }))
+  })
+})
+
+describe('publish delivery drift, idempotency key binding and jsonb-stable digests', () => {
+  /**
+   * Postgres `jsonb` does not preserve object key order; it returns keys sorted
+   * by length and then bytewise. Emulating that read-back is what makes the
+   * persistence round trip visible inside a unit test.
+   */
+  const asJsonb = (value: unknown): unknown => Array.isArray(value)
+    ? value.map(item => asJsonb(item))
+    : value && typeof value === 'object'
+      ? Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, asJsonb(item)] as [string, unknown]).sort(([left], [right]) => left.length - right.length || (left < right ? -1 : left > right ? 1 : 0)))
+      : value
+
+  const publishingTask = (service: MerchantService, idempotencyKey: string) => {
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', accountId: 'acct_taobao_1' })
+    service.selectDirection(task.id, 'A')
+    const version = service.createDraft(task.id)
+    service.approveContent(task.id, version.id)
+    const preview = service.preparePublish(task.id)
+    const job = service.confirmPublish({ workspaceId: 'ws_demo', taskId: task.id, contentVersionId: version.id, confirmationHash: preview.confirmationHash, remoteSnapshotHash: preview.remoteSnapshotHash, idempotencyKey })
+    return { task, version, preview, job }
+  }
+
+  it('refuses content modify and module regeneration while a publish is in flight', () => {
+    const service = new MerchantService()
+    const { task, version, job } = publishingTask(service, 'publishing-guard-1')
+    expect(task.state).toBe('publishing')
+    const versionsBefore = service.listContentVersions('ws_demo', task.id).length
+
+    expect(() => service.modifyContentVersion({ workspaceId: 'ws_demo', sourceVersionId: version.id, changes: { title: '发布中被修改的标题' }, reason: 'concurrent_edit' })).toThrowError(expect.objectContaining({ code: 'INVALID_TASK_TRANSITION', status: 409 }))
+    expect(() => service.regenerateContentModule({ workspaceId: 'ws_demo', sourceVersionId: version.id, moduleKey: 'hero', reason: 'concurrent_regenerate' })).toThrowError(expect.objectContaining({ code: 'INVALID_TASK_TRANSITION', status: 409 }))
+
+    expect(task.contentVersionId).toBe(version.id)
+    expect(task.state).toBe('publishing')
+    expect(service.listContentVersions('ws_demo', task.id)).toHaveLength(versionsBefore)
+    expect(service.getContentVersion('ws_demo', version.id).body.title).not.toBe('发布中被修改的标题')
+    expect(job.state).toBe('queued')
+  })
+
+  it('escalates a published receipt instead of delivering a version the task no longer points at', () => {
+    const service = new MerchantService()
+    const { task, version, job } = publishingTask(service, 'publish-drift-1')
+    // A concurrent writer (older process generation, or a snapshot restored by a
+    // different replica) moved the task pointer to a newer, unapproved version
+    // while the confirmed publish job stayed bound to the approved one.
+    const drifted = { ...structuredClone(version), id: 'cv_drifted_unapproved', state: 'review_required' as const, revision: 1 }
+    service.contentVersions.set(drifted.id, drifted)
+    task.contentVersionId = drifted.id
+
+    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: job.id, status: { found: true, state: 'published', remoteId: 'TB-DRIFT-1', requestId: 'request-drift-1', simulated: false } })
+
+    expect(job).toMatchObject({ state: 'reconciling', remoteState: 'published', remoteId: 'TB-DRIFT-1' })
+    expect(job.deliveryReconciliation).toMatchObject({ code: 'PUBLISH_DELIVERY_TASK_DRIFT', remoteState: 'published', taskState: 'publishing', jobContentVersionId: version.id, taskContentVersionId: drifted.id })
+    expect(task.state).toBe('publishing')
+    expect(task.contentVersionId).toBe(drifted.id)
+    // The unapproved version must stay approvable/unpublished, and the confirmed
+    // version must not be flipped to delivered by a task it no longer belongs to.
+    expect(service.getContentVersion('ws_demo', drifted.id).state).toBe('review_required')
+    expect(service.getContentVersion('ws_demo', version.id).state).toBe('approved')
+  })
+
+  it('escalates a rejection receipt that belongs to a version the task already left', () => {
+    const service = new MerchantService()
+    const { task, version, job } = publishingTask(service, 'publish-drift-rejected')
+    const drifted = { ...structuredClone(version), id: 'cv_drifted_rejected', state: 'review_required' as const, revision: 1 }
+    service.contentVersions.set(drifted.id, drifted)
+    task.contentVersionId = drifted.id
+
+    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: job.id, status: { found: true, state: 'rejected', requestId: 'request-drift-rejected', simulated: false, rejection: { rawCode: 'TOP-27', message: '标题过长', fields: [] } } })
+
+    expect(job).toMatchObject({ state: 'reconciling', remoteState: 'rejected' })
+    expect(job.deliveryReconciliation).toMatchObject({ code: 'PUBLISH_DELIVERY_TASK_DRIFT', remoteState: 'rejected', jobContentVersionId: version.id })
+    expect(task.state).toBe('publishing')
+    expect(service.getContentVersion('ws_demo', drifted.id).state).toBe('review_required')
+  })
+
+  /** Moves the task pointer to a newer version the confirmed job never owned. */
+  const driftTask = (service: MerchantService, task: Task, version: ContentVersion, suffix: string) => {
+    const moved: ContentVersion = { ...structuredClone(version), id: `cv_drift_${suffix}`, state: 'review_required', revision: 1 }
+    service.contentVersions.set(moved.id, moved)
+    task.contentVersionId = moved.id
+    return moved
+  }
+
+  const driftByPublishedReceipt = (service: MerchantService, task: Task, version: ContentVersion, job: PublishJob, suffix: string, remoteId?: string) => {
+    const moved = driftTask(service, task, version, suffix)
+    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: job.id, status: { found: true, state: 'published', ...(remoteId ? { remoteId } : {}), requestId: `request-drift-${suffix}`, simulated: false } })
+    return moved
+  }
+
+  it('releases the workspace job quota only when an operator closes a drifted delivery reconciliation', () => {
+    const service = new MerchantService()
+    // Registered so the worker execution gate can be exercised on the closed job
+    // instead of failing earlier on a missing account.
+    service.registerPlatformAccount({ workspaceId: 'ws_demo', platform: 'taobao', remoteAccountId: 'acct_taobao_1', credentialRef: 'fixture-secret/taobao/acct_taobao_1', grantedScopes: ['fixture.product.read', 'fixture.product.write'] })
+    const drifted = [0, 1, 2].map(index => {
+      const { task, version, job } = publishingTask(service, `drift-quota-${index}`)
+      const moved = driftByPublishedReceipt(service, task, version, job, `quota_${index}`, `TB-DRIFT-Q${index}`)
+      return { task, moved, job }
+    })
+    expect(drifted.map(entry => entry.job.state)).toEqual(['reconciling', 'reconciling', 'reconciling'])
+
+    // REPRO (problem 1): every drifted job still occupies one of the three
+    // default workspace slots and nothing ever releases it, so the fourth
+    // publish of this workspace is refused permanently.
+    const stranded = (() => {
+      const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', accountId: 'acct_taobao_1' })
+      service.selectDirection(task.id, 'A')
+      const version = service.createDraft(task.id)
+      service.approveContent(task.id, version.id)
+      return { task, version, preview: service.preparePublish(task.id) }
+    })()
+    const confirmStranded = () => service.confirmPublish({ workspaceId: 'ws_demo', taskId: stranded.task.id, contentVersionId: stranded.version.id, confirmationHash: stranded.preview.confirmationHash, remoteSnapshotHash: stranded.preview.remoteSnapshotHash, idempotencyKey: 'drift-quota-stranded' })
+    expect(confirmStranded).toThrowError(expect.objectContaining({ code: 'WORKSPACE_JOB_QUOTA_EXCEEDED', status: 429 }))
+
+    // The generation queue shares the same budget: three drifts also stop the
+    // merchant from generating any new content, with a retry hint that can never
+    // become true.
+    const generation = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(generation.id, 'A')
+    service.confirmProductionPlan('ws_demo', generation.id, 'test-merchant')
+    const enqueue = () => service.enqueueGeneration({ workspaceId: 'ws_demo', taskId: generation.id, idempotencyKey: 'drift-quota-generation' })
+    expect(enqueue).toThrowError(expect.objectContaining({ code: 'WORKSPACE_JOB_QUOTA_EXCEEDED', status: 429, details: expect.objectContaining({ limit: 3, active: 3, retry_after_seconds: 5 }) }))
+
+    // The operator exit: one acknowledgement closes one reconciliation and writes
+    // the decision (actor + reason) onto the job.
+    const acknowledged = service.acknowledgePublish({ workspaceId: 'ws_demo', publishJobId: drifted[0]!.job.id, actorId: 'ops:reconciler', reason: '已与平台核对：内容确已上线，任务内容漂移，关闭对账并交回商家' })
+    expect(acknowledged).toMatchObject({ state: 'manual_attention', operatorAcknowledgement: { actorId: 'ops:reconciler', reason: expect.stringContaining('关闭对账') } })
+    // The stranded task leaves `publishing`, so the merchant can edit and publish again.
+    expect(drifted[0]!.task.state).toBe('review_required')
+    expect(drifted[0]!.task.pendingPublish).toBeUndefined()
+    // The closed job is terminal for the worker gate (no second remote write)...
+    expect(() => service.assertPublishExecutionAllowed({ workspaceId: 'ws_demo', publishJobId: drifted[0]!.job.id })).toThrowError(expect.objectContaining({ code: 'PUBLISH_JOB_NOT_EXECUTABLE', status: 409 }))
+    // ...and a late poll cannot re-open it or erase the live-publication fact.
+    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: drifted[0]!.job.id, status: { found: true, state: 'rejected', requestId: 'request-late-reject', simulated: false, rejection: { rawCode: 'TOP-27', fields: [] } } })
+    expect(drifted[0]!.job).toMatchObject({ state: 'manual_attention', remoteState: 'published', deliveryReconciliation: { code: 'PUBLISH_DELIVERY_TASK_DRIFT', remoteState: 'published', jobContentVersionId: drifted[0]!.job.contentVersionId, taskContentVersionId: drifted[0]!.moved.id } })
+    expect(drifted[0]!.job.rejection).toBeUndefined()
+
+    // Exactly one slot came back: the fourth publish now fits, and the shared
+    // budget is exhausted again while two drifts stay open.
+    const confirmed = confirmStranded()
+    expect(confirmed).toMatchObject({ idempotencyKey: 'drift-quota-stranded', state: 'queued' })
+    expect(stranded.task.state).toBe('publishing')
+    expect(enqueue).toThrowError(expect.objectContaining({ code: 'WORKSPACE_JOB_QUOTA_EXCEEDED', status: 429 }))
+
+    service.acknowledgePublish({ workspaceId: 'ws_demo', publishJobId: drifted[1]!.job.id, actorId: 'ops:reconciler', reason: '已核对，关闭对账' })
+    service.acknowledgePublish({ workspaceId: 'ws_demo', publishJobId: drifted[2]!.job.id, actorId: 'ops:reconciler', reason: '已核对，关闭对账' })
+    expect(drifted.slice(1).map(entry => entry.task.state)).toEqual(['review_required', 'review_required'])
+    expect(service.enqueueGeneration({ workspaceId: 'ws_demo', taskId: generation.id, idempotencyKey: 'drift-quota-generation' }).state).toBe('queued')
+
+    // A second acknowledgement is an idempotent no-op, and a reconciled job that
+    // was never in drift (rejected receipt) keeps its previous shape.
+    expect(service.acknowledgePublish({ workspaceId: 'ws_demo', publishJobId: drifted[0]!.job.id, actorId: 'ops:reconciler', reason: '重复确认' })).toBe(drifted[0]!.job)
+    expect(drifted[0]!.job.operatorAcknowledgement?.reason).toContain('关闭对账')
+  })
+
+  it('keeps a delivery reconciliation monotonic against late rejected and unknown polls', () => {
+    const service = new MerchantService()
+    const { task, version, job } = publishingTask(service, 'publish-drift-monotonic')
+    const moved = driftTask(service, task, version, 'monotonic')
+    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: job.id, status: { found: true, state: 'published', requestId: 'request-drift-monotonic', simulated: false } })
+    expect(job).toMatchObject({ state: 'reconciling', remoteState: 'published', deliveryReconciliation: { remoteState: 'published' } })
+
+    // A stale `rejected` for an earlier submission attempt used to overwrite the
+    // remote state, the rejection and the reconciliation record itself, erasing
+    // the fact that this content is live.
+    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: job.id, status: { found: true, state: 'rejected', requestId: 'request-stale-reject', simulated: false, rejection: { rawCode: 'TOP-27', fields: [] } } })
+    expect(job).toMatchObject({ state: 'reconciling', remoteState: 'published' })
+    expect(job.rejection).toBeUndefined()
+    expect(job.deliveryReconciliation).toMatchObject({ remoteState: 'published', taskContentVersionId: moved.id })
+
+    // A timeout (`found: false`) must not park a reconciling job in `unknown` either.
+    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: job.id, status: { found: false, state: 'unknown' } })
+    expect(job.state).toBe('reconciling')
+
+    // The single accepted write is additive: a real receipt may fill in the
+    // remote object id the escalation never captured, which is what lets the
+    // acknowledge pin the live object. A simulated or incomplete receipt is not
+    // evidence and cannot plant an id.
+    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: job.id, status: { found: true, state: 'published', remoteId: 'TB-SIMULATED', requestId: 'request-simulated', simulated: true } })
+    expect(job.remoteId).toBeUndefined()
+    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: job.id, status: { found: false, state: 'published', remoteId: 'TB-UNFOUND', requestId: 'request-unfound', simulated: false } })
+    expect(job.remoteId).toBeUndefined()
+    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: job.id, status: { found: true, state: 'published', remoteId: 'TB-DRIFT-MONO', requestId: 'request-drift-monotonic', simulated: false } })
+    expect(job.remoteId).toBe('TB-DRIFT-MONO')
+    expect(job.deliveryReconciliation).toMatchObject({ remoteState: 'published' })
+    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: job.id, status: { found: true, state: 'published', remoteId: 'TB-SECOND-LISTING', requestId: 'request-other', simulated: false } })
+    expect(job.remoteId).toBe('TB-DRIFT-MONO')
+    expect(job.state).toBe('reconciling')
+  })
+
+  it('closes a reconciliation that only escalated after an earlier acknowledgement', () => {
+    const service = new MerchantService()
+    const { task, version, job } = publishingTask(service, 'publish-drift-late-escalation')
+    // The job was already annotated as an unknown exception ...
+    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: job.id, status: { found: false, state: 'unknown' } })
+    expect(service.acknowledgePublish({ workspaceId: 'ws_demo', publishJobId: job.id, actorId: 'ops:first', reason: '先登记异常' })).toMatchObject({ state: 'unknown', operatorAcknowledgement: { actorId: 'ops:first' } })
+    // ... and only afterwards does a real receipt reveal that the content is live
+    // while the task moved on.
+    driftTask(service, task, version, 'late_escalation')
+    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: job.id, status: { found: true, state: 'published', remoteId: 'TB-LATE-ESCALATION', requestId: 'request-late-escalation', simulated: false } })
+    expect(job).toMatchObject({ state: 'reconciling', remoteState: 'published' })
+    expect(task.state).toBe('publishing')
+
+    // The earlier annotation must not block the exit; the closing decision is
+    // the one recorded.
+    service.acknowledgePublish({ workspaceId: 'ws_demo', publishJobId: job.id, actorId: 'ops:closer', reason: '核对平台后关闭对账' })
+    expect(job).toMatchObject({ state: 'manual_attention', operatorAcknowledgement: { actorId: 'ops:closer', reason: '核对平台后关闭对账' } })
+    expect(task.state).toBe('review_required')
+  })
+
+  it('closes a live drift without letting the merchant duplicate the remote listing', () => {
+    const service = new MerchantService({ seedFixture: false })
+    // A product created locally has no remote identity yet, so the confirmed
+    // publish is a platform `create`: this is the shape where a re-publish after
+    // a drift would create a *second* listing.
+    const product = service.importProduct({ workspaceId: 'ws_demo', platform: 'taobao', title: '本地新建防晒外套', stock: 12, price: 219, category: '女装外套' })
+    service.confirmProductFacts('ws_demo', product.id)
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: product.id, platform: 'taobao' })
+    service.answerTask('ws_demo', task.id, { confirm_facts: true })
+    service.selectDirection(task.id, 'A')
+    const version = service.createDraft(task.id)
+    service.approveContent(task.id, version.id)
+    const preview = service.preparePublish(task.id)
+    expect(preview.operation).toBe('create')
+    const job = service.confirmPublish({ workspaceId: 'ws_demo', taskId: task.id, contentVersionId: version.id, confirmationHash: preview.confirmationHash, remoteSnapshotHash: preview.remoteSnapshotHash, idempotencyKey: 'publish-drift-duplicate' })
+
+    driftByPublishedReceipt(service, task, version, job, 'duplicate', 'TB-LIVE-88117')
+    expect(job).toMatchObject({ state: 'reconciling', remoteId: 'TB-LIVE-88117' })
+
+    service.acknowledgePublish({ workspaceId: 'ws_demo', publishJobId: job.id, actorId: 'ops:reconciler', reason: '平台确认已上线，关闭对账' })
+    // The observed remote object is pinned onto the product, so the content that
+    // is already live is now addressable instead of orphaned.
+    expect(product.remoteId).toBe('TB-LIVE-88117')
+    expect(task.state).toBe('review_required')
+
+    // The merchant reworks the drifted version and publishes again. The payload
+    // targets the exact remote object instead of issuing a second `create`.
+    service.approveContent(task.id, task.contentVersionId!)
+    const reprepared = service.preparePublish(task.id)
+    expect(reprepared.operation).toBe('update')
+    expect(reprepared.task.pendingPublish?.payloadSnapshot).toMatchObject({ operation: 'update', remoteId: 'TB-LIVE-88117' })
+  })
+
+  it('binds a content generation idempotency key to the task that first used it', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const first = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(first.id, 'A')
+    service.confirmProductionPlan('ws_demo', first.id, 'test-merchant')
+    const second = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(second.id, 'A')
+    service.confirmProductionPlan('ws_demo', second.id, 'test-merchant')
+
+    const job = service.enqueueGeneration({ workspaceId: 'ws_demo', taskId: first.id, idempotencyKey: 'shared-content-key' })
+    expect(() => service.enqueueGeneration({ workspaceId: 'ws_demo', taskId: second.id, idempotencyKey: 'shared-content-key' })).toThrowError(expect.objectContaining({ code: 'IDEMPOTENCY_KEY_REUSED', status: 409 }))
+    expect(service.generationJobs.size).toBe(1)
+    expect(second.state).toBe('plan_confirmed')
+    expect(service.enqueueGeneration({ workspaceId: 'ws_demo', taskId: first.id, idempotencyKey: 'shared-content-key' }).id).toBe(job.id)
+  })
+
+  it('binds an image retry idempotency key to the failed job it retries', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const first = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'image-original-a', direction: 'white background', count: 1 })
+    service.markImageGenerationFailed({ workspaceId: 'ws_demo', jobId: first.id, errorCode: 'IMAGE_GENERATION_NOT_CONFIGURED', errorMessage: 'provider missing' })
+    const second = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'image-original-b', direction: ' lifestyle scene', count: 2 })
+    service.markImageGenerationFailed({ workspaceId: 'ws_demo', jobId: second.id, errorCode: 'IMAGE_GENERATION_NOT_CONFIGURED', errorMessage: 'provider missing' })
+
+    const retried = service.retryImageGeneration({ workspaceId: 'ws_demo', jobId: first.id, idempotencyKey: 'shared-retry-key' })
+    expect(retried.alreadyExists).toBe(false)
+    expect(service.retryImageGeneration({ workspaceId: 'ws_demo', jobId: first.id, idempotencyKey: 'shared-retry-key' })).toMatchObject({ alreadyExists: true, job: { id: retried.job.id } })
+    expect(() => service.retryImageGeneration({ workspaceId: 'ws_demo', jobId: second.id, idempotencyKey: 'shared-retry-key' })).toThrowError(expect.objectContaining({ code: 'IDEMPOTENCY_KEY_REUSED', status: 409 }))
+    expect(service.imageGenerationJobs.size).toBe(3)
+  })
+
+  it('keeps a task group idempotency key bound to its original intent across a rejected reuse', () => {
+    const service = new MerchantService({ seedFixture: false })
+    const taobao = service.importProduct({ workspaceId: 'ws_group_binding', platform: 'taobao', title: '淘宝防晒衣', stock: 5 })
+    const jd = service.importProduct({ workspaceId: 'ws_group_binding', platform: 'jd', title: '京东防晒衣', stock: 5 })
+    const entries = [{ productId: taobao.id, platform: 'taobao' as const }, { productId: jd.id, platform: 'jd' as const }]
+    const created = service.createTaskGroup({ workspaceId: 'ws_group_binding', entries, requestText: '多平台详情页', idempotencyKey: 'group-binding-1' })
+    expect(created.replayed).toBe(false)
+
+    expect(() => service.createTaskGroup({ workspaceId: 'ws_group_binding', entries, requestText: '改成主图素材', idempotencyKey: 'group-binding-1' })).toThrowError(expect.objectContaining({ code: 'IDEMPOTENCY_KEY_REUSED', status: 409 }))
+    // The rejected reuse must neither rebind the key nor create a second group.
+    expect(service.tasks.size).toBe(2)
+    const replay = service.createTaskGroup({ workspaceId: 'ws_group_binding', entries: [...entries].reverse(), requestText: '多平台详情页', idempotencyKey: 'group-binding-1' })
+    expect(replay).toMatchObject({ id: created.id, taskIds: created.taskIds, replayed: true })
+    expect(service.tasks.size).toBe(2)
+
+    const restarted = new MerchantService({ seedFixture: false })
+    for (const product of [taobao, jd]) restarted.hydrateSnapshot({ entityType: 'product', entity: structuredClone(product) })
+    for (const task of created.tasks) restarted.hydrateSnapshot({ entityType: 'task', entity: structuredClone(task) })
+    expect(() => restarted.createTaskGroup({ workspaceId: 'ws_group_binding', entries, requestText: '改成主图素材', idempotencyKey: 'group-binding-1' })).toThrowError(expect.objectContaining({ code: 'IDEMPOTENCY_KEY_REUSED' }))
+    expect(restarted.tasks.size).toBe(2)
+  })
+
+  it('keeps publish prepare and confirm valid across a jsonb snapshot round trip', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const product = service.products.get('prod_fixture_1')!
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: product.id, platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    const version = service.createDraft(task.id)
+    service.approveContent(task.id, version.id)
+    const preview = service.preparePublish(task.id)
+    expect(task.pendingPublish?.payloadHash).toMatch(/^[a-f0-9]{64}$/u)
+
+    // The 1s workspace snapshot TTL re-hydrates the same task from
+    // `business_entity_snapshots.payload jsonb` between prepare and confirm.
+    const restarted = new MerchantService({ fixtureMode: true })
+    restarted.hydrateSnapshot({ entityType: 'product', entity: asJsonb(structuredClone(product)) })
+    restarted.hydrateSnapshot({ entityType: 'task', entity: asJsonb(structuredClone(task)) })
+    restarted.hydrateSnapshot({ entityType: 'content_version', entity: asJsonb(structuredClone(version)) })
+
+    const job = restarted.confirmPublish({ workspaceId: 'ws_demo', taskId: task.id, contentVersionId: version.id, confirmationHash: preview.confirmationHash, remoteSnapshotHash: preview.remoteSnapshotHash, idempotencyKey: 'jsonb-round-trip' })
+    expect(job.state).toBe('queued')
+    expect(job.payloadHash).toBe(preview.payloadHash)
+    expect(restarted.tasks.get(task.id)?.state).toBe('publishing')
   })
 })

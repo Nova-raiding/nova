@@ -46,9 +46,9 @@ describe('API request observability wiring', () => {
 
     const events = lines.map(line => JSON.parse(line) as Record<string, unknown>)
     expect(events.map(event => event.event)).toEqual(['request.received', 'request.completed'])
-    expect(events[0]).toMatchObject({ workspace_id: null, task_id: null, attempt: null, platform: null, account_id: null, actor_id: null })
+    expect(events[0]).toMatchObject({ workspace_id: null, task_id: null, job_id: null, attempt: null, platform: null, account_id: null, actor_id: null })
     expect(events[1]).toMatchObject({ request_id: 'req-observed', trace_id: 'trace-observed', workspace_id: workspaceId, account_id: null, actor_id: actorId, method: 'POST', route: '/mcp', status: 200, error_code: null })
-    expect(Object.keys(events[1]!)).toEqual(['event', 'request_id', 'trace_id', 'workspace_id', 'task_id', 'attempt', 'platform', 'account_id', 'actor_id', 'method', 'route', 'status', 'duration_ms', 'error_code', 'authz_decision_id', 'authz_policy_version', 'authz_mode', 'authz_result', 'authz_reason', 'authz_capability', 'worker_role', 'worker_credential_slot', 'worker_proof_timestamp', 'worker_body_sha256', 'worker_nonce_sha256', 'worker_verified_at'])
+    expect(Object.keys(events[1]!)).toEqual(['event', 'request_id', 'trace_id', 'workspace_id', 'task_id', 'job_id', 'attempt', 'platform', 'account_id', 'actor_id', 'method', 'route', 'status', 'duration_ms', 'error_code', 'authz_decision_id', 'authz_policy_version', 'authz_mode', 'authz_result', 'authz_reason', 'authz_capability', 'worker_role', 'worker_credential_slot', 'worker_proof_timestamp', 'worker_body_sha256', 'worker_nonce_sha256', 'worker_verified_at'])
     expect(lines.join('\n')).not.toMatch(/forged-store|forged-actor|cookie-secret|query_secret|must-not-log-body|Bearer|cookie|body_secret/u)
   })
 
@@ -73,7 +73,7 @@ describe('API request observability wiring', () => {
     })
     const events = lines.map(line => JSON.parse(line) as Record<string, unknown>)
     expect(events.map(event => event.event)).toEqual(['request.received', 'request.failed'])
-    expect(events[0]).toMatchObject({ workspace_id: null, task_id: null, attempt: null, platform: null, account_id: null, actor_id: null })
+    expect(events[0]).toMatchObject({ workspace_id: null, task_id: null, job_id: null, attempt: null, platform: null, account_id: null, actor_id: null })
     expect(events[1]).toMatchObject({ request_id: 'req-failed-observed', trace_id: 'req-failed-observed', workspace_id: workspaceId, task_id: null, attempt: null, platform: null, account_id: null, actor_id: actorId, status: 403, error_code: 'FORBIDDEN' })
     expect(lines.join('\n')).not.toMatch(/body-token-secret|forged-failed-store|forged-failed-actor|untrusted-task|untrusted-store/u)
   })

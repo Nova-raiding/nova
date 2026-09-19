@@ -1,10 +1,70 @@
+import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { MCP_METHOD_SCHEMAS, MCP_METHODS } from '../packages/contracts/src/mcp.js'
+import {
+  MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS,
+  MCP_POINT_CHARGED_DISABLED_METHODS,
+  MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS,
+  MCP_RECOVERY_DISABLED_METHODS,
+  MCP_RECOVERY_ENABLED_METHODS,
+} from '../packages/contracts/src/commercial-operation-registry.js'
 
 function methodsFromAllowlist(source: string): string[] {
   const block = source.match(/export const MCP_METHODS = \[(.*?)\]\s+as const/s)?.[1] ?? ''
   return [...block.matchAll(/'([^']+)'/g)].map(match => match[1]!)
+}
+
+// The bridge hides/disables methods through two literal sets. Read them from
+// the bridge source instead of keeping a third hand-copied snapshot that can
+// silently go stale.
+function literalSetFromBridge(source: string, name: string): Set<string> {
+  const block = source.match(new RegExp(`const ${name} = new Set\\(\\[([\\s\\S]*?)\\]\\)`))?.[1] ?? ''
+  return new Set([...block.matchAll(/'([^']+)'/g)].map(match => match[1]!))
+}
+
+const bridgeSource = readFileSync(new URL('../apps/plugin/mcp/bridge.mjs', import.meta.url), 'utf8')
+const merchantHiddenMethods = literalSetFromBridge(bridgeSource, 'MERCHANT_HIDDEN_METHODS')
+const commercialDisabledMethods = literalSetFromBridge(bridgeSource, 'COMMERCIAL_DISABLED_METHODS')
+const safeWithoutInteractiveWrite = new Set<string>([
+  ...literalSetFromBridge(bridgeSource, 'READ_ONLY_METHODS'),
+  ...literalSetFromBridge(bridgeSource, 'SAFE_WITHOUT_INTERACTIVE_WRITE'),
+])
+const destructiveWriteMethods = literalSetFromBridge(bridgeSource, 'DESTRUCTIVE_WRITE_METHODS')
+const commercialRecoveryMethods = literalSetFromBridge(bridgeSource, 'COMMERCIAL_RECOVERY_METHODS')
+
+const declaredMerchantToolSurface = new Set(
+  MCP_METHODS.filter(method => !method.startsWith('ops.') && !merchantHiddenMethods.has(method) && !commercialDisabledMethods.has(method)),
+)
+
+async function runtimeToolNames(root: URL): Promise<string[]> {
+  const child = spawn(process.execPath, [fileURLToPath(new URL('mcp/bridge.mjs', root))], {
+    cwd: fileURLToPath(root),
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      MERCHANT_MCP_BASE_URL: 'https://merchant.example.com',
+      MERCHANT_WORKSPACE_ID: 'ws_mcp_surface_contract',
+      MERCHANT_MCP_WRITE_ENABLED: 'false',
+    },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  try {
+    return await new Promise<string[]>((resolve, reject) => {
+      let buffer = ''
+      child.stdout.on('data', chunk => {
+        buffer += String(chunk)
+        const newline = buffer.indexOf('\n')
+        if (newline < 0) return
+        resolve((JSON.parse(buffer.slice(0, newline)) as { result: { tools: Array<{ name: string }> } }).result.tools.map(tool => tool.name))
+      })
+      child.once('error', reject)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })}\n`)
+    })
+  } finally {
+    child.kill()
+  }
 }
 
 const productionEvidenceMethods = [
@@ -18,43 +78,12 @@ const productionEvidenceMethods = [
   'delivery.bundle.verify',
 ] as const
 const campaignControlMethods = ['campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed'] as const
-const merchantHiddenMethods = new Set([
-  'platform.connect', 'platform.store.list', 'workspace.content_setup.confirm',
-  'catalog.sync', 'catalog.sync.start', 'catalog.sync.get', 'sync.retry_failed',
-  'automation.policy.get', 'automation.policy.list', 'automation.policy.update',
-  'automation.scan', 'automation.tick', 'automation.pause',
-  'publish.prepare', 'publish.confirm', 'publish.get',
-  'publish.batch.prepare', 'publish.batch.confirm', 'publish.batch.get',
-  'publish.batch.pause', 'publish.batch.resume', 'publish.batch.retry_failed',
-  'billing.reconciliation',
-  'billing.model-usage.reconciliation.run',
-  'billing.model-usage.resolve',
-  'billing.usage.consume',
-  'billing.usage.refund',
-  'billing.refund',
-  'billing.reconciliation.run',
-  'platform.settings.update',
-  'platform.revoke',
-  'platform.model.status',
-  'asset.scan',
-  'content.codex.prepare',
-  'content.codex.commit',
-  'knowledge.rule.update',
-])
-const commercialDisabledMethods = new Set([
-  'ops.commercial.offers.list', 'ops.commercial.offer.upsert', 'ops.commercial.addons.list', 'ops.commercial.addon.upsert',
-  'ops.commercial.coupons.list', 'ops.commercial.export', 'ops.commercial.coupon.upsert', 'ops.commercial.rollouts.list',
-  'ops.commercial.rollout.upsert', 'ops.commercial.model-markup.get', 'ops.commercial.model-markup.update',
-  'subscription.order.create', 'subscription.change', 'ops.marketing.generation.retry',
-  'campaign.batch.generate', 'campaign.batch.retry_failed', 'catalog.title.optimize', 'catalog.image.retry',
-  'brand.tone.preview', 'task.understand', 'creative.directions',
-  'content.codex.prepare', 'content.codex.commit', 'content.review', 'content.modify',
-  'multimodal.generate', 'multimodal.video.request', 'workspace.commercial.get',
-  'workspace.commercial.update', 'workspace.usage.get', 'billing.usage.consume', 'billing.usage.refund', 'billing.refund',
-])
 
 describe('MCP surface coverage', () => {
   it('keeps merchant.start intent fields optional, bounded, and fail-closed', () => {
+    // The shared contract keeps the integer wire string canonical: the API
+    // parses only that shape (apps/api/src/server.ts merchant.start), so
+    // widening the contract to numbers would reintroduce a silent drop there.
     expect(MCP_METHOD_SCHEMAS['merchant.start']).toMatchObject({
       additionalProperties: false,
       properties: {
@@ -65,12 +94,18 @@ describe('MCP surface coverage', () => {
       },
     })
     expect(MCP_METHOD_SCHEMAS['merchant.start'].required).toBeUndefined()
+    // The plugin surface must accept both the canonical string and the
+    // documented number alias, and must never drop a schema-conformant value.
+    // The alias branch is `integer` on purpose: the bridge normalizer only
+    // accepts integers, so a `number` branch would let e.g. 5.5 pass validation
+    // and then vanish from the forwarded request without any error.
+    const bridgeMerchantStart = bridgeSource.match(/^\s*attachment_count: (\{ anyOf: \[.*?\}\])/mu)?.[1] ?? ''
+    expect(bridgeMerchantStart).toContain("{ type: 'string', pattern: '^(?:[0-9]|1[0-9]|20)$', maxLength: 2 }")
+    expect(bridgeMerchantStart).toContain("{ type: 'integer', minimum: 0, maximum: 20 }")
   })
 
   it('keeps authoritative docs free of stale fixed merchant-tool counts', () => {
-    const merchantMethodCount = MCP_METHODS.filter(method =>
-      !method.startsWith('ops.') && !merchantHiddenMethods.has(method) && !commercialDisabledMethods.has(method),
-    ).length
+    const merchantMethodCount = declaredMerchantToolSurface.size
     const rootReadme = readFileSync(new URL('../README.md', import.meta.url), 'utf8')
     const status = readFileSync(new URL('../doc/todo/quality/implementation-status.md', import.meta.url), 'utf8')
     const pluginReadme = readFileSync(new URL('../apps/plugin/README.md', import.meta.url), 'utf8')
@@ -82,6 +117,66 @@ describe('MCP surface coverage', () => {
     expect(status).not.toMatch(/bridge 当前实测为 \d+ 个工具/u)
     expect(pluginReadme).toContain('实际工具以当前连接的 `tools/list` 与运行态契约测试为准')
     expect(pluginReadme).not.toMatch(/tools\/list` (?:实测)?为 \d+ 个 MCP 工具/u)
+  })
+
+  it('keeps the merchant hidden/disabled sets resolvable against the allowlist and the runtime tools/list', async () => {
+    for (const method of [...merchantHiddenMethods, ...commercialDisabledMethods]) {
+      expect(MCP_METHODS, `${method} is filtered by the bridge but is not an allowlisted MCP method`).toContain(method)
+    }
+    // The bridge may narrow the merchant surface below the server, but every
+    // commercial operation the shared registry disables must also be disabled
+    // at the bridge, otherwise the plugin would forward a known-dead request.
+    const registryDisabled = [
+      ...MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS,
+      ...MCP_RECOVERY_DISABLED_METHODS,
+      ...MCP_POINT_CHARGED_DISABLED_METHODS,
+      ...MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS,
+    ]
+    expect(registryDisabled.filter(method => !commercialDisabledMethods.has(method)), 'bridge re-enables a method the shared registry disables').toEqual([])
+    const runtimeTools = await runtimeToolNames(new URL('../apps/plugin/', import.meta.url))
+    const declared = [...declaredMerchantToolSurface].sort()
+    expect(declared.length).toBeGreaterThan(0)
+    // Drift guard: what the bridge declares it exposes must be exactly what
+    // tools/list returns. A stale hidden/disabled entry (or a missing one)
+    // breaks this, so the merchant surface can never silently shrink or grow.
+    expect([...runtimeTools].sort()).toEqual(declared)
+    expect(runtimeTools.some(name => name.startsWith('ops.'))).toBe(false)
+  })
+
+  it('never lets a destructive write bypass the interactive merchant consent gate', () => {
+    const overlap = [...destructiveWriteMethods].filter(method => safeWithoutInteractiveWrite.has(method))
+    expect(overlap, `destructive tools exempted from workspace.interactive.confirm: ${overlap.join(', ')}`).toEqual([])
+    // The consent gate is the only merchant approval on the stdio plugin path,
+    // so the destructive classification itself must stay populated.
+    expect(destructiveWriteMethods.has('workspace.data.delete.request')).toBe(true)
+    expect(destructiveWriteMethods.has('workspace.deactivate')).toBe(true)
+    expect(destructiveWriteMethods.has('catalog.product.disable')).toBe(true)
+    expect(safeWithoutInteractiveWrite.has('workspace.data.export.request')).toBe(true)
+  })
+
+  it('keeps the bridge zero-point recovery allowlist equal to the shared commercial registry', () => {
+    const registry: string[] = [...MCP_RECOVERY_ENABLED_METHODS]
+    const bridge = [...commercialRecoveryMethods]
+    expect(bridge.filter(method => !registry.includes(method)), 'bridge allows recovery methods the server does not').toEqual([])
+    expect(registry.filter(method => !bridge.includes(method)), 'bridge blocks recovery methods the server allows').toEqual([])
+    expect(bridge).toEqual(registry)
+  })
+
+  it('keeps every tool named by the entry skill reachable through tools/list', async () => {
+    const runtimeTools = new Set(await runtimeToolNames(new URL('../apps/plugin/', import.meta.url)))
+    const rootReadme = readFileSync(new URL('../apps/plugin/skills/merchant-marketing/SKILL.md', import.meta.url), 'utf8')
+    const installedSkill = readFileSync(new URL('../.codex-marketplace/plugins/merchant-marketing/skills/merchant-marketing/SKILL.md', import.meta.url), 'utf8')
+    expect(installedSkill).toBe(rootReadme)
+    const allowlisted = new Set<string>(MCP_METHODS)
+    const tokens = new Set([...rootReadme.matchAll(/`([a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+)`/gu)].map(match => match[1]!))
+    expect(tokens.size).toBeGreaterThan(0)
+    for (const token of tokens) {
+      // Tool-shaped tokens must be reachable. Tokens that are not MCP methods
+      // at all (permissions such as customer.content.update, artifact names
+      // such as review-findings.json) are documentation, not tool calls.
+      if (!allowlisted.has(token)) continue
+      expect(runtimeTools.has(token), `SKILL.md tells the model to use ${token}, but the bridge does not expose it`).toBe(true)
+    }
   })
 
   it('keeps the 23 domain methods and four audit-center reads on the declared surface', () => {

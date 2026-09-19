@@ -1,8 +1,8 @@
 # 商家营销内容助手（桌面 ChatGPT 插件）
 
-发布元数据同步基线（2026-09-15）：MCP 契约和商家插件工具面以共享注册表与运行态校验为准，不在文档中固化易过期的工具数量；PostgreSQL 迁移链已进入 213。
+发布元数据同步基线（2026-09-19）：MCP 契约和商家插件工具面以共享注册表与运行态校验为准，不在文档中固化易过期的工具数量；PostgreSQL 迁移链尾以 `release-metadata.json` 为准，不在文档中写死迁移号。
 
-当前仓库包含一个可运行的工程 RC：桌面 ChatGPT 插件 manifest/入口 Skill、MCP/API、统一契约、任务/内容/发布领域状态机、六平台 fixture profile 与可配置 HTTP connector、同步/生成/发布/对账 Worker、租户隔离 Outbox、OAuth state 安全组件，以及仅供开发调试的 Merchant Studio。小红书和抖音在官方 OAuth/API、字段映射与 canary 未完成前保持 fixture/API 或只读，不宣称生产可写。
+当前仓库包含一个可运行的工程 RC：桌面 ChatGPT 插件 manifest/入口 Skill、MCP/API、统一契约、任务/内容/发布领域状态机、六平台 fixture profile 与可配置 HTTP connector、同步/生成/发布/对账 Worker、租户隔离 Outbox、OAuth state 安全组件，以及面向付费商家的 Merchant Studio Web 界面（构建产物为 `merchant-ui`）。小红书和抖音在官方 OAuth/API、字段映射与 canary 未完成前保持 fixture/API 或只读，不宣称生产可写。
 
 当前发布验收基线以 `release-metadata.json` 和运行时门禁为唯一权威：Repository、plugin、商家 Bridge 工具面、Ops 域和迁移版本均由机器校验。正式发布仍须由 metadata、真实宿主证据和生产发布门禁共同通过。
 
@@ -10,7 +10,7 @@
 
 **发布结论仍为 NO-GO。** capability 正式签名 preflight、固定 trust/nonce 路径、部署后 `/releasez` 与认证业务路径 canary、签名 known-good rollback bundle、回滚资源 kind 限制和生产备份签名 attestation 均已进入 fail-closed 代码路径。尚缺的是同一正式 release 的外部真实证明：六平台真实 OAuth/读写/媒体 canary、真实支付、托管对象存储/KMS/PITR、容量与长稳、告警值守，以及由发布安全控制面实际配置并演练过的信任锚、原子 nonce consumer、capability attester 和签名 artifacts。
 
-2026-08-29 发布审计复核：仓库版本、插件镜像、MCP 注册表和迁移链已有 fail-closed metadata gate，release manifest 同时绑定 `VERSION`、`CHANGELOG`、metadata、Git SHA、插件、OpenAPI 与 MCP 源码。正式 trust anchor 检查因 `/run/release-security/evidence-trust` 未配置而拒绝，容量示例也因 `cloud_gate=false`、非生产环境、非 HTTPS 且包含 mock 流量而被真实云门禁拒绝。因此仓库门禁可验收，但生产发布继续 **NO-GO**。当前检查项和外部缺口见 [0.1.2 发布 checklist](doc/todo/release/release-checklist-0.1.2.md)。
+2026-08-29 发布审计复核：仓库版本、插件镜像、MCP 注册表和迁移链已有 fail-closed metadata gate，release manifest 同时绑定 `VERSION`、`CHANGELOG`、metadata、Git SHA、插件、OpenAPI 与 MCP 源码。正式 trust anchor 检查因 `/run/release-security/evidence-trust` 未配置而拒绝，容量示例也因 `cloud_gate=false`、非生产环境、非 HTTPS 且包含 mock 流量而被真实云门禁拒绝。因此仓库门禁可验收，但生产发布继续 **NO-GO**。当前检查项和外部缺口见 [Store Nova 发布解阻清单](docs/runbooks/release-unblock-checklist.md)。
 
 ## 快速开始
 
@@ -23,7 +23,7 @@ npm run test:release-gates
 npm run dev:stack
 ```
 
-项目要求 Node 22+ 和 npm；`dev:doctor` 会统一检查 Node、npm、Git/worktree、Docker/Compose/buildx、浏览器验收工具、Ops API 地址、模型中转配置、生产配置和本地运行端点，且不会输出密钥。`dev:stack` 启动本地 Compose 栈并在前台启动 Ops Console；仅启动 API 时可使用 `npm run dev:api`，仅启动运营台可使用 `npm run dev:ops-console`。
+项目要求 Node 22+、npm，以及已启动的 Docker Desktop（含 Compose v2）；Docker daemon 未启动时 `dev:doctor` 会返回非零状态，这是预期行为，启动 Docker Desktop 后重试即可。`dev:doctor` 会统一检查 Node、npm、Git/worktree、Docker/Compose/buildx、浏览器验收工具、Ops API 地址、模型中转配置、生产配置和本地运行端点，且不会输出密钥。`dev:stack` 启动本地 Compose 栈并在前台启动 Ops Console；仅启动 API 时可使用 `npm run dev:api`，仅启动运营台可使用 `npm run dev:ops-console`。
 
 生产部署前使用 `npm run dev:doctor:production`。Git、buildx、持久 Secret 或显式生产配置缺失时会返回非零状态。
 
@@ -45,7 +45,10 @@ CONNECTOR_FIXTURE_MODE=true PLUGIN_WRITE_ENABLED=true npm run dev:api
 
 本地 PostgreSQL/Redis：
 
+`.env` 被 `.gitignore` 忽略，干净 clone 中并不存在，必须先自行创建；仓库只提供模板 `.env.example`：
+
 ```bash
+cp .env.example .env   # 干净 clone 必做：按需修改其中的配置项
 docker compose --env-file .env -f infra/local/docker-compose.yml up -d
 ```
 
@@ -68,16 +71,17 @@ UI Demo：见 [demo/merchant-studio/README.md](demo/merchant-studio/README.md)�
 - Worker：[packages/workers/src/runner.ts](packages/workers/src/runner.ts)
 - 持久化与 RLS：[packages/persistence/src/schema.sql](packages/persistence/src/schema.sql)
 - 技术方案：[doc/todo/architecture/technical-solution-design.md](doc/todo/architecture/technical-solution-design.md)
-- 发布检查清单：[doc/todo/release/release-checklist-0.1.2.md](doc/todo/release/release-checklist-0.1.2.md)
+- 发布检查清单：[docs/runbooks/release-unblock-checklist.md](docs/runbooks/release-unblock-checklist.md)
 - 云资源与部署：[doc/todo/infra/cloud-resources-and-deployment.md](doc/todo/infra/cloud-resources-and-deployment.md)
 - Kubernetes 部署基线：[infra/kubernetes/README.md](infra/kubernetes/README.md)
-- 能力/容量证据校验：`npm run evidence:validate`、`npm run capacity:evidence:validate`
+- 能力/容量证据校验（`--file` 为必需参数，指向待校验证据文档）：`npm run evidence:validate -- --file doc/todo/platform/platform-capability-evidence.example.json`、`npm run capacity:evidence:validate -- --file doc/todo/infra/capacity-evidence.example.json`
 
 ## 当前明确边界
 
-- 本项目唯一商家产品界面是安装在桌面 ChatGPT 中的插件；Merchant Studio 仅用于开发调试。平台运营后台是桌面工作台。
+- 商家产品界面有两个，二者共享同一套 MCP/API 契约：安装在桌面 ChatGPT 中的插件，以及浏览器中的 Merchant Studio（`demo/merchant-studio`）。Merchant Studio 由 `infra/docker/ui.Dockerfile` 构建为 `merchant-ui` 镜像，在 `infra/kubernetes/base/ingress.yaml` 中绑定 `host: yxsona.com` 的 `path: /`，ECS/Compose 路径同样由 `infra/nginx/pilot-gateway-https.conf` 的 `location /` 代理到 `pilot_ui`；`infra/scripts/validate-rendered-production-config.rb` 会在该绑定缺失时拒绝生产部署。因此商家访问 `https://yxsona.com/` 落地页即为 Merchant Studio 的运营概览，其展示内容对客户可见，必须来自真实 API 数据，不得使用演示数值。平台运营后台是桌面工作台。
 - 手机和平板不在产品范围、验收范围或上线门禁范围内；不得因移动端适配、移动视口或响应式表现阻断上线，也不得据此扩展需求。
-- 真实平台 OAuth、商品读取和写入尚未因代码自动获得权限；未配置时 API 返回 `NOT_CONFIGURED` 并 fail closed。
+- 真实平台 OAuth、商品读取和写入尚未因代码自动获得权限；未配置时 API 返回 `NOT_CONFIGURED` 并 fail closed。当前上线 profile 为 `manual`：六平台不接 OAuth，商品资料由运营人工上传，发布由运营在官方商家后台人工完成并回填。
+- 商业准入是硬门禁，不是提示：零创意点余额会锁死除恢复类方法外的全部业务方法（包括插件入口 `merchant.start`），且只有月付套餐（`basic` / `growth`）会产生权益快照，**点数包不产生权益**。因此上线前必须配置 `COMMERCIAL_PAYMENT_PROVIDER` 并上架可售月付套餐——未配置时下单返回 503 且订单不落库，运营的人工核验又需要一条已存在的订单，客户与运营都无法推进。未绑店铺时商品同步、正式任务与发布返回 428 `STORE_ONBOARDING_REQUIRED`。详见 [产品使用介绍](docs/product-usage-guide.md)。
 - fixture connector 的数据和写入只用于契约测试和本地演示，不能作为平台上线证据。
 - 未设置 `DATABASE_URL` 时应用默认使用内存 service，便于本地单测；设置 `DATABASE_URL` 后启动迁移并使用 PostgreSQL Outbox。生产必须保留 RLS、Outbox 和幂等约束。
 - 生产 API 必须同时提供不同凭据的 `DATABASE_URL` 与 `OPS_DATABASE_URL`；前者是强制 workspace RLS 的租户运行角色，后者只能访问平台 feature flag 控制面，不能访问租户业务表。

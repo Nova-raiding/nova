@@ -3,18 +3,20 @@
 <plist version="1.0">
 <dict>
   <key>Label</key><string>com.merchant.codex.api</string>
-  <key>WorkingDirectory</key><string>/Users/lixiaomei/Desktop/code/codexSkills</string>
+  <!-- Replace __REPO_ROOT__ with the absolute path to your checkout, and
+       __HOME__ / __USER__ with the account that will run the agent. -->
+  <key>WorkingDirectory</key><string>__REPO_ROOT__</string>
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/opt/node@22/bin/node</string>
     <string>--import</string>
-    <string>/Users/lixiaomei/Desktop/code/codexSkills/node_modules/tsx/dist/loader.mjs</string>
-    <string>/Users/lixiaomei/Desktop/code/codexSkills/scripts/start-api-launchagent.mjs</string>
+    <string>__REPO_ROOT__/node_modules/tsx/dist/loader.mjs</string>
+    <string>__REPO_ROOT__/scripts/start-api-launchagent.mjs</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>HOME</key><string>/Users/lixiaomei</string>
-    <key>USER</key><string>lixiaomei</string>
+    <key>HOME</key><string>__HOME__</string>
+    <key>USER</key><string>__USER__</string>
     <key>NODE_ENV</key><string>development</string>
     <key>CONNECTOR_FIXTURE_MODE</key><string>true</string>
     <key>PLUGIN_WRITE_ENABLED</key><string>true</string>

@@ -50,9 +50,15 @@ describe('Ops RBAC real HTTP product detail route', () => {
 
     const allowed = await fetch(path, { headers: { ...headers, authorization: 'Bearer ops-http-product-detail-allowed-token' } })
     const allowedBody = await allowed.json() as Envelope
-    expect(allowed.status).toBe(428)
+    // `GET /v1/products/{productId}` is registered as `catalog.search`, which the
+    // store boundary no longer gates on either surface. The allowed request
+    // therefore reaches the commercial axis and is refused there; the product
+    // lookup is never performed, so the unknown product still cannot leak
+    // through this route.
+    expect(allowed.status).toBe(503)
     expect(allowedBody.data).toBeNull()
-    expect(allowedBody.error).toMatchObject({ code: 'STORE_ONBOARDING_REQUIRED' })
+    expect(allowedBody.error).toMatchObject({ code: 'CREATIVE_POINTS_UNAVAILABLE' })
+    expect(JSON.stringify(allowedBody)).not.toContain(productId)
     expect(allowedBody.request_id).toMatch(/^req_/)
     expect(allowedBody.trace_id).toBe(allowedBody.request_id)
 

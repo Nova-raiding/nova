@@ -74,7 +74,9 @@ describe.skipIf(!databaseUrl)('PostgreSQL durable outbox retry recovery', () => 
     now += 1
     expect(await restored.restore(scope)).toBe(1)
     const completed = await restored.dispatchOnce()
-    expect(completed).toMatchObject({ state: 'succeeded', event: { id: event.id, attempts: 1, lastError: queued.event!.lastError } })
+    // The claim counter advances with every claim, so the retry that just
+    // succeeded is the second attempt the handler saw (calls below is 2).
+    expect(completed).toMatchObject({ state: 'succeeded', event: { id: event.id, attempts: 2, lastError: queued.event!.lastError } })
     if (completed.state !== 'succeeded') throw new Error('expected the restored retry to succeed')
     expect(completed.event?.publishedAt).toBeTruthy()
     expect(calls).toBe(2)

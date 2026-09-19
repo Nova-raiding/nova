@@ -128,19 +128,25 @@ const READ_ONLY_METHODS = new Set([
   'content.versions', 'content.diff', 'publish.get', 'publish.manual.get', 'publish.manual.list', 'publish.batch.get',
   'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get', 'knowledge.learning.list', 'knowledge.competitor.list', 'knowledge.competitor.reference', 'automation.policy.get', 'automation.policy.list',
 ])
-// Generated from packages/contracts COMMERCIAL_MCP_FOUNDATION_POLICIES.
-// Keep this standalone snapshot exact: bridge contract tests compare every
-// entry with the shared server registry. It is intentionally separate from
-// READ_ONLY_METHODS, which controls MCP annotations and transport retries,
-// not commercial access or zero-point recovery.
 const COMMERCIAL_REGISTRY_VERSION = 'commercial-operation-registry.v1'
+// Mirrors packages/contracts/src/commercial-operation-registry.ts
+// MCP_RECOVERY_ENABLED_METHODS. The plugin bundle is installed standalone, so
+// it cannot import the TypeScript registry at runtime; instead this snapshot
+// must stay equal entry-for-entry and order-for-order, and
+// tests/mcp-surface-contract.test.ts fails with the exact drift if it does not.
+// It is intentionally separate from READ_ONLY_METHODS, which controls MCP
+// annotations and transport retries, not commercial access or zero-point
+// recovery.
 const COMMERCIAL_RECOVERY_METHODS = new Set([
-  'subscription.get', 'subscription.orders.list', 'billing.status',
-  'billing.recharge.get', 'billing.recharge.list', 'billing.transactions',
-  'billing.export', 'workspace.data.export.request', 'workspace.data.export.get', 'workspace.data.delete.request', 'workspace.bootstrap',
-  'workspace.health', 'canonical.product.consistency', 'platform.mapping.preflight',
+  'workspace.bootstrap', 'onboarding.status', 'workspace.content_setup.confirm',
+  'workspace.health', 'canonical.product.consistency',
   'commercial.access.get', 'commercial.catalog.get', 'commercial.order.create', 'commercial.order.payment.get',
-  'creative-points.balance.get', 'creative-points.statement.list', 'content.draft.generate',
+  'creative-points.balance.get', 'creative-points.statement.list',
+  'subscription.get', 'subscription.orders.list',
+  'billing.export', 'billing.status', 'billing.recharge.get', 'billing.recharge.list', 'billing.recharge.create', 'billing.transactions',
+  'upload.session.create', 'upload.session.part', 'upload.session.complete',
+  'workspace.data.export.request', 'workspace.data.export.get', 'workspace.data.delete.request',
+  'platform.mapping.preflight',
 ])
 const COMMERCIAL_DISABLED_METHODS = new Set([
   'ops.commercial.offers.list', 'ops.commercial.offer.upsert',
@@ -217,6 +223,10 @@ const reasonProperty = boundedString(1000, 3, '当前交互写操作的可审计
 // write confirmation. It is not a commercial recovery allowlist and cannot
 // bypass the server-side CommercialAccessDecision. In particular,
 // platform.connect/catalog.sync/content.export remain business operations.
+// It must stay disjoint from DESTRUCTIVE_WRITE_METHODS: a destructive tool can
+// never be reachable without the merchant's in-session confirmation, which is
+// the only consent gate on the stdio plugin path. tests/mcp-surface-contract
+// asserts the empty intersection.
 const SAFE_WITHOUT_INTERACTIVE_WRITE = new Set([
   ...READ_ONLY_METHODS,
   'merchant.start',
@@ -225,7 +235,9 @@ const SAFE_WITHOUT_INTERACTIVE_WRITE = new Set([
   // preview. Uploading the source and invoking candidate generation are part
   // of that same non-publishing workflow; binding/publishing remains gated.
   'asset.upload', 'catalog.image.generate',
-  'workspace.data.export.request', 'workspace.data.delete.request',
+  // Registering a data-deletion request is destructive (7-30 day grace period
+  // plus dual approval) and stays gated behind workspace.interactive.confirm.
+  'workspace.data.export.request',
   'workspace.interactive.confirm',
   'platform.connect', 'catalog.sync', 'catalog.sync.start',
 ])
@@ -257,7 +269,14 @@ const METHODS = {
       properties: {
         requested_platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'], description: '用户在当前消息中明确指定的平台' },
         requested_goal: { type: 'string', description: '用户在当前消息中明确提出的任务目标' },
-        attachment_count: { type: 'string', pattern: '^(?:[0-9]|1[0-9]|20)$', maxLength: 2, description: 'Number of ChatGPT attachments associated with this intent, encoded as a wire-level integer string from 0 through 20.' },
+        // The wire-level integer string is the canonical form declared by
+        // packages/contracts and is the only shape the API parses. A JSON
+        // integer 0-20 is accepted as a documented alias; the bridge normalizes
+        // both to the canonical string before forwarding. The alias branch is
+        // `integer` (not `number`) on purpose: normalizeAttachmentCount drops a
+        // non-integer, so a `number` branch would let 5.5 pass validation and
+        // then vanish from the forwarded request with no error at all.
+        attachment_count: { anyOf: [{ type: 'string', pattern: '^(?:[0-9]|1[0-9]|20)$', maxLength: 2 }, { type: 'integer', minimum: 0, maximum: 20 }], description: 'Number of ChatGPT attachments associated with this intent. Canonical form is a wire-level integer string from 0 through 20; a JSON integer 0-20 is accepted as a documented alias.' },
         idempotency_key: { type: 'string', minLength: 8, maxLength: 200, description: '同一开始意图重试时保持稳定；通常由插件自动生成' },
       },
       additionalProperties: false,
@@ -703,7 +722,11 @@ const METHODS = {
   },
   'upload.session.complete': {
     description: '完成并校验分片上传会话。',
-    inputSchema: { type: 'object', properties: { session_id: { type: 'string' }, parts_json: { type: 'string' } }, required: ['session_id'], additionalProperties: false },
+    // No `parts_json`: it was never read by the bridge or the API, and the
+    // authoritative contract in packages/contracts/mcp.ts accepts only
+    // session_id, so advertising it made the bridge forward an argument the API
+    // rejects with "params.parts_json is not accepted".
+    inputSchema: { type: 'object', properties: { session_id: { type: 'string' } }, required: ['session_id'], additionalProperties: false },
   },
   'asset.scan': {
     description: '平台安全扫描服务内部回调；商家和 ChatGPT 不应调用或提交扫描证据。',
@@ -1594,6 +1617,16 @@ function toolErrorPresentation(method, args, code, details) {
   return { text: userFacingErrorText(code, details) }
 }
 
+// packages/contracts/mcp.ts declares `workspace_id` on every MCP method (its
+// params() helper injects the property into all schemas) and SKILL.md documents
+// it to the model as a consistency check against the bound workspace. The bridge
+// deliberately does not redeclare it on each tool because it injects the bound
+// workspace itself in callRemote. It is therefore an implicit property of every
+// tool here: declaring the exception once keeps the bridge and the authoritative
+// contract aligned, whereas copying the property into 131 schemas would drift
+// again as soon as a tool is added. The declared shape matches the contract.
+const CONTRACT_DECLARED_IMPLICIT_PROPERTIES = { workspace_id: { type: 'string' } }
+
 function validateToolArguments(name, args) {
   const schema = METHODS[name]?.inputSchema
   if (!schema || schema.type !== 'object') return undefined
@@ -1607,6 +1640,17 @@ function validateToolArguments(name, args) {
     if (propertySchema.type === 'string' && typeof value !== 'string') return fail(`${path} must be a string`)
     if (propertySchema.type === 'array' && !Array.isArray(value)) return fail(`${path} must be an array`)
     if (propertySchema.type === 'object' && (!value || typeof value !== 'object' || Array.isArray(value))) return fail(`${path} must be an object`)
+    // Numeric aliases (e.g. merchant.start.attachment_count) must satisfy the
+    // declared type and range here. The bridge normalizer only accepts integers,
+    // so a number branch declared as `number` would let e.g. 5.5 pass this check
+    // and then be dropped silently instead of failing at the boundary; the
+    // alias branch is therefore declared as `integer`.
+    if ((propertySchema.type === 'number' || propertySchema.type === 'integer')
+      && (typeof value !== 'number' || !Number.isFinite(value) || (propertySchema.type === 'integer' && !Number.isInteger(value)))) {
+      return fail(`${path} must be a ${propertySchema.type}`)
+    }
+    if (typeof propertySchema.minimum === 'number' && typeof value === 'number' && value < propertySchema.minimum) return fail(`${path} is below the minimum`)
+    if (typeof propertySchema.maximum === 'number' && typeof value === 'number' && value > propertySchema.maximum) return fail(`${path} is above the maximum`)
     if (typeof propertySchema.minLength === 'number' && typeof value === 'string' && value.length < propertySchema.minLength) return fail(`${path} is too short`)
     if (typeof propertySchema.maxLength === 'number' && typeof value === 'string' && value.length > propertySchema.maxLength) return fail(`${path} is too long`)
     if (typeof propertySchema.pattern === 'string' && typeof value === 'string' && !(new RegExp(propertySchema.pattern, 'u')).test(value)) return fail(`${path} has an invalid format`)
@@ -1619,10 +1663,14 @@ function validateToolArguments(name, args) {
   }
   if (schema.additionalProperties === false) {
     const properties = schema.properties ?? {}
-    for (const key of Object.keys(args)) if (!Object.prototype.hasOwnProperty.call(properties, key)) return fail(`unexpected property ${key}`)
+    for (const key of Object.keys(args)) {
+      if (Object.prototype.hasOwnProperty.call(properties, key)) continue
+      if (Object.prototype.hasOwnProperty.call(CONTRACT_DECLARED_IMPLICIT_PROPERTIES, key)) continue
+      return fail(`unexpected property ${key}`)
+    }
   }
   for (const [key, value] of Object.entries(args)) {
-    const issue = validate(value, schema.properties?.[key], key)
+    const issue = validate(value, schema.properties?.[key] ?? CONTRACT_DECLARED_IMPLICIT_PROPERTIES[key], key)
     if (issue) return issue
   }
   return undefined
@@ -1826,15 +1874,26 @@ function actionCards(method, result) {
     : result
 }
 
+// Canonical wire format for merchant.start.attachment_count is the integer
+// string declared in packages/contracts and parsed by the API; a JSON number in
+// the same 0-20 range is a documented alias. Both normalize to a finite integer
+// so the downstream conversation projection sees the same value for either.
+const ATTACHMENT_COUNT_WIRE_PATTERN = /^(?:[0-9]|1[0-9]|20)$/u
+function normalizeAttachmentCount(value) {
+  if (typeof value === 'string') return ATTACHMENT_COUNT_WIRE_PATTERN.test(value) ? Number(value) : undefined
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 20) return value
+  return undefined
+}
+
 function merchantStartContext(args) {
   const platform = typeof args?.requested_platform === 'string' ? args.requested_platform.trim().toLowerCase() : ''
   const requestedGoal = typeof args?.requested_goal === 'string' ? args.requested_goal.trim() : ''
-  const hasAttachmentCount = Number.isInteger(args?.attachment_count) && args.attachment_count >= 0
+  const attachmentCount = normalizeAttachmentCount(args?.attachment_count)
   const goalLabels = { generate_product_image: '生成商品主图', generate_white_background_image: '生成白底主图' }
   return {
     ...(platform ? { platform } : {}),
     ...(requestedGoal ? { requested_goal: requestedGoal, goal: goalLabels[requestedGoal] ?? sanitizeMerchantAction(requestedGoal) } : {}),
-    ...(hasAttachmentCount ? { attachment_count: args.attachment_count } : {}),
+    ...(attachmentCount === undefined ? {} : { attachment_count: attachmentCount }),
   }
 }
 
@@ -2557,7 +2616,9 @@ function prepareToolArguments(method, params) {
     const normalized = {
       ...(context.platform ? { requested_platform: context.platform } : {}),
       ...(context.requested_goal ? { requested_goal: context.requested_goal } : {}),
-      ...(Number.isInteger(context.attachment_count) ? { attachment_count: String(context.attachment_count) } : {}),
+      // merchantStartContext has already normalized both accepted shapes; the
+      // API only parses the canonical integer string.
+      ...(context.attachment_count === undefined ? {} : { attachment_count: String(context.attachment_count) }),
     }
     const suppliedKey = typeof params.idempotency_key === 'string' ? params.idempotency_key.trim() : ''
     const generatedKey = `merchant-start-${createHash('sha256').update(JSON.stringify(normalized)).digest('hex').slice(0, 32)}`
@@ -3326,13 +3387,6 @@ async function handle(request) {
     if (name === 'billing.recharge.get' && Object.prototype.hasOwnProperty.call(args, 'confirm_test_payment')) {
       return jsonRpcError(id, -32602, 'Unsupported tool argument: confirm_test_payment')
     }
-    // Rule creation is a user-facing MCP contract with a large required
-    // set. Validate it at the boundary so ChatGPT cannot send an incomplete
-    // tools/call that the API will reject only after forwarding.
-    if (name === 'knowledge.rule.create') {
-      const argumentError = validateToolArguments(name, args)
-      if (argumentError) return jsonRpcError(id, -32602, argumentError.message)
-    }
     if (name === 'catalog.image.select') {
       const ticketHash = /^[a-f0-9]{64}$/u
       if (!ticketHash.test(String(args.confirmation_ticket_nonce_hash ?? '')) || !ticketHash.test(String(args.confirmation_ticket_intent_hash ?? ''))) {
@@ -3357,6 +3411,13 @@ async function handle(request) {
       }
       return jsonRpc(id, { content: [{ type: 'text', text: userFacingErrorText(structuredContent.code) }], structuredContent, ...(toolResultUiMetadata(name) ? { _meta: toolResultUiMetadata(name) } : {}), isError: true })
     }
+    // Every tool schema is a user-facing MCP contract. Validate at the boundary
+    // so ChatGPT cannot send undeclared or malformed arguments that the API
+    // would only reject (or silently ignore) after forwarding.
+    // validateToolArguments is a pure in-memory check over the METHODS schema, so
+    // it runs after the consent gate but before any transport work.
+    const argumentError = validateToolArguments(name, args)
+    if (argumentError) return jsonRpcError(id, -32602, argumentError.message)
     try {
       const remoteResult = await callRemote(name, prepareToolArguments(name, args))
       if (name === 'catalog.image.generate' || name === 'catalog.image.get') imageTrace('api.result', { method: name, job_id: remoteResult?.job_id ?? remoteResult?.job?.jobId ?? remoteResult?.job?.id ?? 'unknown', image_count: Array.isArray(remoteResult?.images) ? remoteResult.images.length : 0, state: remoteResult?.state ?? remoteResult?.execution_state ?? remoteResult?.candidate_state?.state ?? 'missing', archive_state: remoteResult?.job?.archiveState ?? remoteResult?.job?.archive_state ?? remoteResult?.candidate_state?.archive_state ?? 'unknown' })

@@ -8,7 +8,7 @@ import { contextEnvelopeHash, loadMigrations, PostgresAssetScanAttemptRepository
 import { PostgresMappingPreflightApprovalRepository } from '../../../packages/persistence/src/mapping-preflight-approval-repository.js'
 import { DurableOutboxDispatcher, InMemoryQueue, RedisQueueAdapter, type DurableOutboxEvent, type QueuePort, type RedisQueueTransport } from '../../../packages/workers/src/durable.js'
 import { createOutboxHandler, createWorkerProjection } from './handler.js'
-import { connectRedisQueue } from './redis-transport.js'
+import { connectRedisQueue, createRedisCredentialRefreshLock, DEFAULT_QUEUE_MAX_DEPTH } from './redis-transport.js'
 import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError } from '../../../packages/application/src/connector-runtime.js'
 import { createVaultCredentialProviderFromEnv } from '../../../packages/connectors/src/index.js'
 import { readBoundedResponseText } from '../../../packages/connectors/src/bounded-response.js'
@@ -56,6 +56,8 @@ export interface WorkerConfig {
   batchSize: number
   workspaceBatchSize: number
   leaseMs: number
+  /** Hard bound on ready + delayed durable queue entries before claims stop. */
+  queueMaxDepth: number
   once: boolean
   apiBaseUrl?: string
   apiToken?: string
@@ -236,6 +238,29 @@ export function imageReconciliationQueryTimeoutMs(workerApiTimeoutMs: number): n
 export function publishIdempotencyKey(event: DurableOutboxEvent): string {
   const configured = event.payload.idempotencyKey
   return typeof configured === 'string' && configured.trim() ? configured : event.aggregateId
+}
+
+/**
+ * The platform remote id a publish/reconcile event refers to. `remote_id` is
+ * the frozen job field; `fields.remoteId` is the pre-execution binding the
+ * publish handler also writes with. An absent value means "create", which the
+ * connector must resolve through the stable idempotency key.
+ */
+export function resolvePublishRemoteId(payload: Record<string, unknown>): string | undefined {
+  if (typeof payload.remote_id === 'string' && payload.remote_id) return payload.remote_id
+  const fields = isObject(payload.fields) ? payload.fields : undefined
+  return typeof fields?.remoteId === 'string' && fields.remoteId ? fields.remoteId : undefined
+}
+
+/**
+ * Mutex key for one platform write. `publish.requested` and
+ * `publish.reconcile_requested` for the same job must derive the exact same
+ * key, otherwise a reconcile can observe (and overwrite) a create that is
+ * still in flight on another worker replica. A create has no remote id yet, so
+ * it is keyed by the stable aggregate id instead of the literal `undefined`.
+ */
+export function publishLockKey(input: { workspaceId: string; platform: string; accountId: string; remoteId?: string; aggregateId: string }): string {
+  return `publish:${input.workspaceId}:${input.platform}:${input.accountId}:${input.remoteId ?? `create:${input.aggregateId}`}`
 }
 
 /**
@@ -1509,6 +1534,7 @@ export function readWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     batchSize: positiveInt(env.WORKER_BATCH_SIZE, 100, 'WORKER_BATCH_SIZE'),
     workspaceBatchSize: positiveInt(env.WORKER_WORKSPACE_BATCH_SIZE, 10, 'WORKER_WORKSPACE_BATCH_SIZE'),
     leaseMs,
+    queueMaxDepth: positiveInt(env.WORKER_QUEUE_MAX_DEPTH, DEFAULT_QUEUE_MAX_DEPTH, 'WORKER_QUEUE_MAX_DEPTH'),
     once: env.WORKER_ONCE === 'true',
     role,
     environment: env.NODE_ENV === 'production' ? 'production' : 'non-production',
@@ -1620,7 +1646,7 @@ export async function scannerOperationalMetrics(pool: SqlPool, workspaceIds: rea
 export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void> {
   const repository = new PostgresOutboxRepository(pool as unknown as SqlPool)
   const dispatchers = new Map<string, DurableOutboxDispatcher<DurableOutboxEvent>>()
-  const redisConnection = process.env.REDIS_URL?.trim() ? await connectRedisQueue(process.env.REDIS_URL.trim()) : undefined
+  const redisConnection = process.env.REDIS_URL?.trim() ? await connectRedisQueue(process.env.REDIS_URL.trim(), { maxDepth: config.queueMaxDepth }) : undefined
   const quotaConnection = await createQuotaCounterStore(process.env.REDIS_URL)
   const quotaAdmission = new FixedWindowQuotaAdmission(quotaConnection.store)
   const executionAuthorization = createApiExecutionAuthorizationGuard(config)
@@ -1638,8 +1664,17 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
   const creativePointSettlement = new CreativePointRelaySettlement(new PostgresCreativePointRepository(sqlPool), new PostgresCreativePointLifecycleRepository(sqlPool), relayProviderIdentity(process.env))
   const knowledgeRepository = new PostgresKnowledgeRepository(sqlPool)
   const relayPricing = createRelayPricingClientFromEnv(process.env)
+  // Share the OAuth refresh single-flight across replicas; without it the
+  // publish and reconcile pods each serialize only against themselves and can
+  // rotate the same refresh token concurrently.
+  // Only the roles that actually talk to a platform need the cross-replica
+  // refresh lock; creating it unconditionally opened a second Redis connection
+  // for every worker process, including the automation and scan roles.
+  const connectorRole = config.role === 'all' || config.role === 'sync' || config.role === 'publish' || config.role === 'reconcile'
+  const credentialRefreshLock = connectorRole ? createRedisCredentialRefreshLock(process.env.REDIS_URL) : undefined
   const runtime = new ConnectorRuntime({
     configSource: process.env,
+    ...(credentialRefreshLock ? { refreshLock: credentialRefreshLock } : {}),
     beforeRequest: providerDispatchAdmission.beforeConnectorRequest,
     capabilityEvidenceTrust: (() => {
       const evidencePath = process.env.CAPABILITY_EVIDENCE_PATH?.trim()
@@ -1722,15 +1757,11 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     const execution = config.apiBaseUrl && config.apiToken ? await assertPublishExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), production: config.environment === 'production', signal }) : undefined
     if (execution && payload.payload_hash !== execution.payloadHash) throw new Error('publish event payload hash does not match the frozen publish job')
     const media = execution?.mediaRequired && config.apiBaseUrl && config.apiToken ? await fetchPublishMedia({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal }) : undefined
-    const remoteId = typeof payload.remote_id === 'string' && payload.remote_id
-      ? payload.remote_id
-      : typeof fields.remoteId === 'string' && fields.remoteId
-        ? fields.remoteId
-        : undefined
-    const lockRemoteId = remoteId ?? `create:${event.aggregateId}`
+    const remoteId = resolvePublishRemoteId(payload)
+    const lockKey = publishLockKey({ workspaceId: event.workspaceId, platform: String(platform), accountId, remoteId, aggregateId: event.aggregateId })
     const idempotencyKey = publishIdempotencyKey(event)
     try {
-      return await quotaConnection.lock.run(`publish:${event.workspaceId}:${String(platform)}:${accountId}:${lockRemoteId}`, () => mappingExecution.run(event, async () => {
+      return await quotaConnection.lock.run(lockKey, () => mappingExecution.run(event, async () => {
         let currentExecution = execution
         return executeWorkerProviderAfterPreflight({
           event, operation: 'publish.execute', authorization: executionAuthorization, signal,
@@ -1773,14 +1804,18 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     // remote id. When the initial publish only returned a request id, let the
     // connector resolve the write by the stable idempotency key instead of
     // querying a fabricated platform id.
-    const remoteId = typeof payload.remote_id === 'string' && payload.remote_id ? payload.remote_id : undefined
+    const remoteId = resolvePublishRemoteId(payload)
+    // Must match the publish handler's key exactly, including the
+    // `create:<aggregate id>` fallback, or this query races the create it is
+    // meant to observe.
+    const lockKey = publishLockKey({ workspaceId: event.workspaceId, platform: String(platform), accountId, remoteId, aggregateId: event.aggregateId })
     try {
-      return await quotaConnection.lock.run(`publish:${event.workspaceId}:${String(platform)}:${accountId}:${remoteId}`, () => {
+      return await quotaConnection.lock.run(lockKey, () => {
         signal?.throwIfAborted()
         return runtime.executeReconcile({
         platform: platform as 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin',
         context: { workspaceId: event.workspaceId, accountId, ...(execution ? { credentialRef: execution.credentialRef } : {}), traceId: event.id, signal },
-        ...(typeof payload.remote_id === 'string' ? { remoteId: payload.remote_id } : {}),
+        ...(remoteId ? { remoteId } : {}),
         idempotencyKey: publishIdempotencyKey(event),
       }) })
     } catch (error) {

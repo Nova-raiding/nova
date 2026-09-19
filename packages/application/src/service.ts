@@ -926,6 +926,12 @@ export interface ImageGenerationJob {
   revision: number
 }
 
+/**
+ * The exact intent `retryImageGeneration` copies onto the replacement job. Two
+ * image jobs may only share an idempotency key when this material is identical.
+ */
+const imageGenerationRetryIntent = (job: ImageGenerationJob) => ({ productId: job.productId, taskId: job.taskId ?? null, contentVersionId: job.contentVersionId ?? null, direction: job.direction, imageMode: job.imageMode, count: job.count, skuIds: job.skuIds ?? [], sourceAssetIds: job.sourceAssetIds ?? [], sourceProductVersion: job.sourceProductVersion, visualBrief: job.visualBrief ?? null, intentHash: job.intentHash, artifactRole: job.artifactRole })
+
 export type SyncJobState = 'queued' | 'running' | 'succeeded' | 'partial' | 'failed'
 export interface SyncFailureItem {
   id: string
@@ -1001,6 +1007,16 @@ function zipStored(files: Record<string, string | Uint8Array>): Uint8Array {
   return Buffer.concat([localBytes, centralBytes, end])
 }
 
+export interface PublishDeliveryReconciliation {
+  /** The only drift reason today: the task moved away from the confirmed version. */
+  code: 'PUBLISH_DELIVERY_TASK_DRIFT'
+  remoteState: 'published' | 'rejected'
+  taskState: TaskState
+  jobContentVersionId: string
+  taskContentVersionId: string | null
+  observedAt: string
+}
+
 export interface PublishJob {
   id: string
   workspaceId: string
@@ -1037,6 +1053,9 @@ export interface PublishJob {
   remoteState?: 'submitted' | 'published' | 'rejected' | 'unknown'
   remoteSimulated?: boolean
   rejection?: PlatformRejection
+  /** Platform evidence that could not be applied to the task because the task
+   * left the confirmed content version while the publish was in flight. */
+  deliveryReconciliation?: PublishDeliveryReconciliation
   operatorAcknowledgement?: { actorId: string; reason: string; acknowledgedAt: string }
   assignedOperatorId?: string
   assignedAt?: string
@@ -1282,6 +1301,32 @@ function assertProductionReleaseMetadata() {
 }
 const id = (prefix: string) => `${prefix}_${randomUUID()}`
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+/**
+ * Recursively key-sorted JSON used by every digest that has to survive a
+ * persistence round trip. Postgres `jsonb` does not preserve object key order,
+ * so an insertion-order digest such as `hash()` changes value as soon as the
+ * snapshot is read back and any comparison against the value captured before
+ * the write fails with a spurious STALE_* error. Arrays keep their order
+ * because it is semantic (for example the ordered selected visual candidates).
+ */
+const canonicalJson = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(item => canonicalJson(item)).join(',')}]`
+  if (value && typeof value === 'object') {
+    // Class instances with a custom `toJSON`/prototype (Date, Buffer, ...) keep
+    // their native serialization instead of degrading to `{}`.
+    if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) return JSON.stringify(value) ?? 'null'
+    return `{${Object.entries(value as Record<string, unknown>).filter(([, item]) => item !== undefined).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'null'
+}
+const stableHash = (value: unknown) => createHash('sha256').update(canonicalJson(value)).digest('hex')
+/**
+ * Accepts a digest produced before canonical hashing was introduced, so a
+ * publish preparation that was written by the previous process generation still
+ * matches after a rolling deploy. Both branches hash the same value; this never
+ * accepts a different payload, it only tolerates the legacy key ordering.
+ */
+const matchesStoredHash = (value: unknown, stored: string | undefined | null) => Boolean(stored) && (stableHash(value) === stored || hash(value) === stored)
 const escapeXml = (value: string) => value.replace(/[&<>"']/gu, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[character] ?? character))
 function generatedMainImage(product: Product, jobId: string, index: number, direction: string) {
   // Fixture mode must show a useful product artifact in the Codex demo. The
@@ -2572,7 +2617,7 @@ export class MerchantService {
     asset.preview = {
       status: plan.status === 'ready' ? 'planned' : plan.status,
       externallyUnverified: true,
-      source: { ...plan.source }, plan: frozenPlan, planHash: hash(frozenPlan),
+      source: { ...plan.source }, plan: frozenPlan, planHash: stableHash(frozenPlan),
     }
     asset.revision += 1
     return asset.preview
@@ -2582,7 +2627,7 @@ export class MerchantService {
     if (!asset || asset.workspaceId !== input.workspaceId) throw new DomainError('ASSET_NOT_FOUND', '素材不存在或不属于当前工作区', 404)
     const preview = asset.preview
     if (!preview || preview.status !== 'planned' || preview.plan.status !== 'ready' || preview.plan.jobs.length === 0) throw new DomainError('ASSET_PREVIEW_NOT_PLANNED', '素材没有可执行的安全预览计划', 409)
-    if (hash(preview.plan) !== preview.planHash || input.cacheKey !== preview.plan.cacheKey || input.sourceSha256.toLowerCase() !== asset.sha256 || input.sourceSha256.toLowerCase() !== preview.source.sha256 || input.sourceRevision !== (asset.sourceRevision ?? 1) || input.sourceRevision !== preview.source.revision) throw new DomainError('ASSET_PREVIEW_SOURCE_STALE', '预览结果与当前素材 SHA、source revision 或计划不一致', 409)
+    if (!matchesStoredHash(preview.plan, preview.planHash) || input.cacheKey !== preview.plan.cacheKey || input.sourceSha256.toLowerCase() !== asset.sha256 || input.sourceSha256.toLowerCase() !== preview.source.sha256 || input.sourceRevision !== (asset.sourceRevision ?? 1) || input.sourceRevision !== preview.source.revision) throw new DomainError('ASSET_PREVIEW_SOURCE_STALE', '预览结果与当前素材 SHA、source revision 或计划不一致', 409)
     const byJob = new Map(input.artifacts.map(artifact => [artifact.jobId, artifact]))
     const expectedMime = { svg: 'image/svg+xml', webp: 'image/webp', jpeg: 'image/jpeg', png: 'image/png' } as const
     const valid = byJob.size === input.artifacts.length && input.artifacts.length === preview.plan.jobs.length && preview.plan.jobs.every(job => {
@@ -2930,7 +2975,13 @@ export class MerchantService {
     if (previous.state !== 'failed' || previous.providerAttemptState !== 'not_started' || previous.archiveState !== 'external_unarchived' || previous.images?.length || previous.outputs?.length) throw new DomainError('IMAGE_GENERATION_RETRY_NOT_SAFE', '当前失败任务已经启动过 Provider、存在候选或等待对账，不允许自动重试', 409, { retryable: false, reconciliation_required: previous.providerAttemptState === 'unknown' || previous.providerAttemptState === 'started' })
     if (!['IMAGE_GENERATION_NOT_CONFIGURED', 'IMAGE_GENERATION_PRE_PROVIDER_FAILED'].includes(previous.errorCode ?? '')) throw new DomainError('IMAGE_GENERATION_RETRY_NOT_SAFE', '当前失败原因不满足安全重试条件', 409, { retryable: false })
     const existing = [...this.imageGenerationJobs.values()].find(job => job.workspaceId === input.workspaceId && job.idempotencyKey === input.idempotencyKey)
-    if (existing) return { previous, job: existing, alreadyExists: true }
+    if (existing) {
+      // A retry key is bound to the failed job it retries. Reusing it for an
+      // unrelated product/task/version must not silently hand back the other
+      // job as if this retry had been executed.
+      if (stableHash(imageGenerationRetryIntent(existing)) !== stableHash(imageGenerationRetryIntent(previous))) throw new DomainError('IDEMPOTENCY_KEY_REUSED', '相同幂等键已绑定其他图片生成重试意图', 409, { job_id: existing.id, previous_job_id: previous.id })
+      return { previous, job: existing, alreadyExists: true }
+    }
     const createdAt = now()
     const job: ImageGenerationJob = { id: id('imggen'), workspaceId: previous.workspaceId, productId: previous.productId, state: 'queued', idempotencyKey: input.idempotencyKey, direction: previous.direction, ...(previous.visualBrief ? { visualBrief: clone(previous.visualBrief) } : {}), imageMode: previous.imageMode, count: previous.count, ...(previous.skuIds ? { skuIds: [...previous.skuIds] } : {}), ...(previous.sourceAssetIds ? { sourceAssetIds: [...previous.sourceAssetIds] } : {}), ...(previous.taskId ? { taskId: previous.taskId } : {}), ...(previous.contentVersionId ? { contentVersionId: previous.contentVersionId } : {}), sourceProductVersion: previous.sourceProductVersion, intentHash: previous.intentHash, artifactRole: 'candidate', archiveState: 'pending', providerAttemptState: 'not_started', retryCount: (previous.retryCount ?? 0) + 1, createdAt, updatedAt: createdAt, revision: 1 }
     this.imageGenerationJobs.set(job.id, job)
@@ -3103,7 +3154,7 @@ export class MerchantService {
       }
       return { visualRef, role: index === 0 ? 'main' as const : 'secondary' as const, ...(job.skuIds?.length ? { skuIds: [...job.skuIds] } : {}), ordinal: output.ordinal, sha256: output.sha256, mimeType: output.mimeType, sizeBytes: output.sizeBytes, sourceProductVersion: job.sourceProductVersion, reviewStatus: 'passed' as const, ...(output.authenticity ? { authenticity: clone(output.authenticity) } : {}) }
     })
-    const selectionHash = hash(items.map(item => ({ visualRef: item.visualRef, role: item.role, ...(item.skuIds?.length ? { skuIds: item.skuIds } : {}), ordinal: item.ordinal, sha256: item.sha256, mimeType: item.mimeType, sizeBytes: item.sizeBytes, sourceProductVersion: item.sourceProductVersion, ...(item.authenticity ? { authenticity: item.authenticity } : {}) })))
+    const selectionHash = stableHash(items.map(item => ({ visualRef: item.visualRef, role: item.role, ...(item.skuIds?.length ? { skuIds: item.skuIds } : {}), ordinal: item.ordinal, sha256: item.sha256, mimeType: item.mimeType, sizeBytes: item.sizeBytes, sourceProductVersion: item.sourceProductVersion, ...(item.authenticity ? { authenticity: item.authenticity } : {}) })))
     const version: ContentVersion = {
       id: id('cv'), taskId: task.id, parentId: source.id, version: this.nextContentVersionNumber(input.workspaceId, task.id), body: clone(source.body), lockedFields: source.lockedFields ? [...source.lockedFields] : undefined,
       factVersionIds: [...source.factVersionIds], ruleVersionIds: [...source.ruleVersionIds], ...(source.brandSnapshot ? { brandSnapshot: clone(source.brandSnapshot) } : {}),
@@ -3137,7 +3188,14 @@ export class MerchantService {
     if (task.workspaceId !== input.workspaceId) throw new DomainError('TENANT_SCOPE_DENIED', '无权访问该任务', 403)
     this.assertTaskState(task, ['plan_confirmed'])
     const existing = [...this.generationJobs.values()].find(job => job.workspaceId === input.workspaceId && job.idempotencyKey === input.idempotencyKey)
-    if (existing) return existing
+    if (existing) {
+      // The key is bound to the task it was first used for. A different task
+      // reusing it must fail loudly: silently returning the first task's job
+      // leaves the second task stuck in plan_confirmed with its reserved
+      // creative points never executed.
+      if (existing.taskId !== input.taskId) throw new DomainError('IDEMPOTENCY_KEY_REUSED', '相同幂等键已绑定其他任务的内容生成意图', 409, { job_id: existing.id, existing_task_id: existing.taskId, requested_task_id: input.taskId })
+      return existing
+    }
     this.assertActiveJobCapacity(input.workspaceId)
     const job: GenerationJob = { id: id('gen'), workspaceId: input.workspaceId, taskId: input.taskId, state: 'queued', idempotencyKey: input.idempotencyKey, attempt: 0, createdAt: now(), updatedAt: now(), revision: 1 }
     this.generationJobs.set(job.id, job)
@@ -3242,10 +3300,49 @@ export class MerchantService {
   acknowledgePublish(input: { workspaceId: string; publishJobId: string; actorId: string; reason: string }) {
     const job = this.getPublishJob(input.publishJobId)
     if (job.workspaceId !== input.workspaceId) throw new DomainError('TENANT_SCOPE_DENIED', '无权更新该发布任务', 403)
-    if (!['rejected', 'unknown', 'manual_attention'].includes(job.state) && !['rejected', 'unknown'].includes(job.remoteState ?? '')) throw new DomainError('PUBLISH_ACK_NOT_ALLOWED', '只有异常或未知发布任务才能确认', 409)
-    if (job.operatorAcknowledgement) return job
+    const reconciling = job.state === 'reconciling'
+    if (!reconciling && !['rejected', 'unknown', 'manual_attention'].includes(job.state) && !['rejected', 'unknown'].includes(job.remoteState ?? '')) throw new DomainError('PUBLISH_ACK_NOT_ALLOWED', '只有异常或未知发布任务才能确认', 409)
+    if (!reconciling && job.operatorAcknowledgement) return job
+    // Closing a reconciliation is a decision, not an annotation: it records the
+    // operator of *this* call even when the job already carried an earlier
+    // acknowledgement (a rejected receipt annotated before a late published
+    // receipt escalated it into drift). Annotating an already annotated
+    // non-reconciling job stays the idempotent no-op it always was.
     job.operatorAcknowledgement = { actorId: input.actorId, reason: input.reason, acknowledgedAt: now() }
     job.revision += 1
+    // Delivery drift is the only exception an operator can *close* rather than
+    // merely annotate: the confirmed content is already live remotely while the
+    // task moved on, so nothing will ever resolve it on its own. Closing writes
+    // the decision (actor + reason above) and then releases everything the
+    // escalation froze.
+    if (reconciling) {
+      // `manual_attention` is terminal for every automatic writer: the worker
+      // gate `assertPublishExecutionAllowed` rejects it (no second remote
+      // write), `assertActiveJobCapacity` does not count it (quota is released),
+      // and `recordPublishObservation` keeps it monotonic (a late poll cannot
+      // re-open the closed job).
+      job.state = 'manual_attention'
+      const task = this.mustTask(job.taskId)
+      // Hand back only the task this escalation stranded in `publishing`. A task
+      // already moved by another writer keeps its state and version untouched.
+      if (task.state === 'publishing') {
+        task.state = 'review_required'
+        // The confirmed preparation describes the version this job owns, not the
+        // version the task points at now, so it must not be replayable.
+        delete task.pendingPublish
+        task.version += 1
+      }
+      // Pin the remote object this job observed onto the local product. Without
+      // it the next `preparePublish` computes `operation: 'create'` and the
+      // platform would receive a *second* listing for content that is already
+      // live; with it the payload is an `update` of the exact remote object.
+      // Only fills an unbound product: an existing different binding is left for
+      // the operator to resolve rather than silently rebound here.
+      if (job.remoteState === 'published' && job.remoteId) {
+        const product = this.products.get(task.productId)
+        if (product && product.workspaceId === input.workspaceId && !product.remoteId) this.bindProductRemoteId(input.workspaceId, task.id, job.remoteId)
+      }
+    }
     return job
   }
   registerPlatformAccount(input: { workspaceId: string; platform: Platform; remoteAccountId: string; credentialRef: string; grantedScopes?: string[]; accessTokenExpiresAt?: string; credentialRefreshable?: boolean }) {
@@ -3744,6 +3841,10 @@ export class MerchantService {
   modifyContentVersion(input: { workspaceId: string; sourceVersionId: string; changes: Partial<ContentVersion['body']>; lockedFields?: string[]; reason: string; expectedRevision?: number }) {
     const source = this.getContentVersion(input.workspaceId, input.sourceVersionId)
     const task = this.mustTask(source.taskId)
+    // A confirmed publish job still owns the confirmed content version. While it
+    // is in flight the task pointer must stay aligned with that job, otherwise a
+    // late platform receipt would deliver a version that was never approved.
+    if (task.state === 'publishing') throw new DomainError('INVALID_TASK_TRANSITION', '发布进行中不能修改内容版本', 409)
     const current = task.contentVersionId ? this.contentVersions.get(task.contentVersionId) : undefined
     if (current && current.taskId === task.id && current.id !== source.id) {
       const baseCurrentChanges = this.diffContentVersions(input.workspaceId, current.id, source.id).changes
@@ -3798,6 +3899,9 @@ export class MerchantService {
     this.contentVersions.set(version.id, version)
     task.contentVersionId = version.id
     task.state = 'review_required'
+    // The previous preparation no longer describes the task pointer, so it must
+    // not be replayable through confirmPublish.
+    delete task.pendingPublish
     task.version += 1
     return { task, source, version }
   }
@@ -3814,6 +3918,9 @@ export class MerchantService {
     const locked = new Set(input.lockedFields ?? source.lockedFields ?? [])
     if (locked.has('modules') || locked.has(moduleKey)) throw new DomainError('CONTENT_FIELD_LOCKED', `模块 ${moduleKey} 已锁定，不能局部重生成`, 409)
     const task = this.mustTask(source.taskId)
+    // Same guard as modify/restore: an in-flight publish owns the confirmed
+    // version and the task pointer must not move until its receipt is resolved.
+    if (task.state === 'publishing') throw new DomainError('INVALID_TASK_TRANSITION', '发布进行中不能重生成内容版本', 409)
     const product = this.products.get(task.productId)
     if (!product || product.workspaceId !== input.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品快照不存在或不属于当前工作区', 404)
     const frozenProduct = task.inputSnapshot?.product ?? product
@@ -3828,6 +3935,7 @@ export class MerchantService {
     this.contentVersions.set(version.id, version)
     task.contentVersionId = version.id
     task.state = 'review_required'
+    delete task.pendingPublish
     task.version += 1
     return { task, source, version, regeneratedModule: replacement }
   }
@@ -4685,10 +4793,12 @@ export class MerchantService {
     const remoteSnapshotHash = this.remoteSnapshotHash(task, product)
     const payloadSnapshot = this.buildPublishPayloadSnapshot(version, product, selectedVisuals.length > 0)
     const { operation, fields } = payloadSnapshot
-    const payloadHash = hash(payloadSnapshot)
+    // These digests are compared after the task snapshot has been persisted and
+    // read back (jsonb reorders object keys), so they must be canonical.
+    const payloadHash = stableHash(payloadSnapshot)
     const selectionHash = version.visualSelection?.selectionHash ?? null
-    const deliveryEvidenceHash = deliveryEvidence ? hash(deliveryEvidence) : undefined
-    const confirmationHash = hash({ taskId, contentVersionId: version.id, remoteSnapshotHash, payloadHash, selectionHash, deliveryEvidenceHash: deliveryEvidenceHash ?? null, canonicalBindingHash: canonicalBinding.snapshotHash })
+    const deliveryEvidenceHash = deliveryEvidence ? stableHash(deliveryEvidence) : undefined
+    const confirmationHash = stableHash({ taskId, contentVersionId: version.id, remoteSnapshotHash, payloadHash, selectionHash, deliveryEvidenceHash: deliveryEvidenceHash ?? null, canonicalBindingHash: canonicalBinding.snapshotHash })
     task.pendingPublish = { contentVersionId: version.id, payloadSnapshot: clone(payloadSnapshot), payloadHash, remoteSnapshotHash, confirmationHash, selectionHash, selectedVisuals: clone(selectedVisuals), canonicalBinding, ...(deliveryEvidence ? { deliveryEvidence: clone(deliveryEvidence), deliveryEvidenceHash } : {}), preparedAt: now() }
     task.state = 'publish_prepared'
     task.version += 1
@@ -4814,7 +4924,7 @@ export class MerchantService {
     const currentRemoteSnapshotHash = this.remoteSnapshotHash(task, product)
     if (currentRemoteSnapshotHash !== input.remoteSnapshotHash) throw new DomainError('STALE_PUBLISH_CONFIRMATION', '商品事实已发生变化，请重新准备发布', 409)
     const pending = task.pendingPublish
-    if (!pending || pending.contentVersionId !== input.contentVersionId || pending.remoteSnapshotHash !== input.remoteSnapshotHash || pending.confirmationHash !== input.confirmationHash || hash(pending.payloadSnapshot) !== pending.payloadHash) throw new DomainError('STALE_PUBLISH_CONFIRMATION', '确认摘要与当前内容、选图或发布载荷不匹配，请重新准备发布', 409)
+    if (!pending || pending.contentVersionId !== input.contentVersionId || pending.remoteSnapshotHash !== input.remoteSnapshotHash || pending.confirmationHash !== input.confirmationHash || !matchesStoredHash(pending.payloadSnapshot, pending.payloadHash)) throw new DomainError('STALE_PUBLISH_CONFIRMATION', '确认摘要与当前内容、选图或发布载荷不匹配，请重新准备发布', 409)
     const version = this.mustContentVersion(input.contentVersionId)
     const currentSelection = version.visualSelection ? this.validateVisualSelection(task, version, product) : []
     const currentSelectionHash = version.visualSelection?.selectionHash ?? null
@@ -4823,9 +4933,9 @@ export class MerchantService {
       canonicalBinding = buildCanonicalExecutionBinding({ workspaceId: task.workspaceId, taskId: task.id, productId: task.productId, platform: task.platform, ...(task.accountId ? { accountId: task.accountId } : {}), ...(task.canonicalProductId ? { canonicalProductId: task.canonicalProductId } : {}), ...(task.listingId ? { listingId: task.listingId } : {}), ...(task.campaignId ? { campaignId: task.campaignId } : {}), ...(task.campaignItemId ? { campaignItemId: task.campaignItemId } : {}), inputSnapshotId: task.inputSnapshotId })
     } catch { throw new DomainError('CANONICAL_EXECUTION_BINDING_INCOMPLETE', '发布任务的 canonical 商品、listing、campaign 和 campaign item 绑定不完整，禁止继续', 409) }
     if (canonicalBinding.mode === 'standard' && (!pending.canonicalBinding || !sameCanonicalExecutionBinding(pending.canonicalBinding, canonicalBinding))) throw new DomainError('CANONICAL_EXECUTION_BINDING_STALE', '发布确认缺少或不匹配 canonical 商品链绑定，请重新准备发布', 409)
-    const expectedConfirmationHash = hash({ taskId: task.id, contentVersionId: input.contentVersionId, remoteSnapshotHash: input.remoteSnapshotHash, payloadHash: pending.payloadHash, selectionHash: currentSelectionHash, deliveryEvidenceHash: pending.deliveryEvidenceHash ?? null, canonicalBindingHash: pending.canonicalBinding?.snapshotHash ?? canonicalBinding.snapshotHash })
+    const confirmationFields = { taskId: task.id, contentVersionId: input.contentVersionId, remoteSnapshotHash: input.remoteSnapshotHash, payloadHash: pending.payloadHash, selectionHash: currentSelectionHash, deliveryEvidenceHash: pending.deliveryEvidenceHash ?? null, canonicalBindingHash: pending.canonicalBinding?.snapshotHash ?? canonicalBinding.snapshotHash }
     const currentPayload = this.buildPublishPayloadSnapshot(version, product, currentSelection.length > 0)
-    if (expectedConfirmationHash !== input.confirmationHash || hash(currentSelection) !== hash(pending.selectedVisuals) || hash(currentPayload) !== pending.payloadHash || pending.deliveryEvidence && hash(pending.deliveryEvidence) !== pending.deliveryEvidenceHash) throw new DomainError('STALE_PUBLISH_CONFIRMATION', '确认摘要与当前内容、选图、交付证据或远端快照不匹配，请重新准备发布', 409)
+    if (!matchesStoredHash(confirmationFields, input.confirmationHash) || stableHash(currentSelection) !== stableHash(pending.selectedVisuals) || !matchesStoredHash(currentPayload, pending.payloadHash) || Boolean(pending.deliveryEvidence && !matchesStoredHash(pending.deliveryEvidence, pending.deliveryEvidenceHash))) throw new DomainError('STALE_PUBLISH_CONFIRMATION', '确认摘要与当前内容、选图、交付证据或远端快照不匹配，请重新准备发布', 409)
     if (pending.selectedVisuals.length && input.mediaAdapterReady !== true) throw new DomainError('IMAGE_PUBLISH_ADAPTER_UNAVAILABLE', '选中的候选图已冻结到预览，但当前平台媒体上传适配器尚未配置，禁止退回旧商品图发布', 503, { selected_count: pending.selectedVisuals.length, next_step: '配置对应平台官方图片上传适配器后重新准备发布' })
     if (input.accountId && task.accountId && input.accountId !== task.accountId) throw new DomainError('PLATFORM_ACCOUNT_SCOPE_MISMATCH', '发布账号与任务账号不一致', 409)
     const accountId = task.accountId ?? input.accountId
@@ -4902,6 +5012,26 @@ export class MerchantService {
     // monotonic and must not be downgraded by a late timeout or stale poll.
     if (job.state === 'published') return job
     if (job.state === 'rejected' && status.state !== 'published') return job
+    // An operator-closed or escalated job is monotonic too. A settled delivery
+    // reconciliation states that the confirmed content was observed live; a
+    // duplicate or delayed `rejected`/`unknown` receipt for the same job must not
+    // erase that, and the closed job must not fall back into `reconciling` (it
+    // would re-consume a workspace job slot and re-alert forever).
+    if (job.state === 'manual_attention') return job
+    if (job.state === 'reconciling') {
+      // Reconciliation is decided by an operator (`acknowledgePublish`), never by
+      // a passive poll. The single accepted write is strictly additive evidence:
+      // a real published receipt may fill in a remote object id the escalation
+      // never captured, which is what lets the acknowledge pin the live remote
+      // object. Nothing else — state, remoteState, rejection, and the
+      // reconciliation record itself — can be overwritten or downgraded, and the
+      // same verifiable-evidence rule as below applies to the id itself.
+      if (status.state !== 'published' || status.simulated === true || !status.found || !status.remoteId || job.remoteId) return job
+      job.remoteId = status.remoteId
+      job.requestId = status.requestId ?? job.requestId
+      job.revision += 1
+      return job
+    }
     if (status.state === 'published' && (status.simulated === true || !status.found || (!status.remoteId && !status.requestId))) throw new DomainError('PLATFORM_WRITE_UNKNOWN', '平台未提供可验证的真实发布证据', 409)
     const observedAt = input.observedAt ?? now()
     job.remoteId = status.remoteId ?? job.remoteId
@@ -4917,9 +5047,16 @@ export class MerchantService {
       return job
     }
     if (status.state === 'published') {
-      job.state = 'published'
       const task = this.mustTask(job.taskId)
       if (task.workspaceId !== input.workspaceId) throw new DomainError('TENANT_SCOPE_DENIED', '发布任务与工作区不一致', 403)
+      // A platform receipt may only deliver the exact content version that was
+      // confirmed with this job. When the task moved away from it (for example a
+      // concurrent content.modify/regenerate produced a newer unapproved
+      // version), the task must never be advanced to `delivered`; the remote
+      // observation stays on the job and the mismatch is escalated to human
+      // reconciliation instead of silently marking unapproved content shipped.
+      if (task.state !== 'publishing' || task.contentVersionId !== job.contentVersionId) return this.escalatePublishObservation(job, status.state, task, observedAt)
+      job.state = 'published'
       task.state = 'delivered'
       task.version += 1
       const version = this.contentVersions.get(job.contentVersionId)
@@ -4929,8 +5066,31 @@ export class MerchantService {
     job.state = status.state
     if (status.state === 'rejected') {
       const task = this.mustTask(job.taskId)
+      // The same drift rule applies to a rejection: it must not overwrite the
+      // state of a content version that this publish never confirmed.
+      if (task.workspaceId !== input.workspaceId) throw new DomainError('TENANT_SCOPE_DENIED', '发布任务与工作区不一致', 403)
+      if (task.state !== 'publishing' || task.contentVersionId !== job.contentVersionId) return this.escalatePublishObservation(job, status.state, task, observedAt)
       task.state = 'failed_recoverable'
       task.version += 1
+    }
+    return job
+  }
+
+  /**
+   * Records platform evidence that cannot be applied to the business task
+   * because the task no longer points at the confirmed content version. The job
+   * is parked in `reconciling` so operations reconcile the duplicate/unknown
+   * publication manually; no task or content version state is advanced.
+   */
+  private escalatePublishObservation(job: PublishJob, remoteState: 'published' | 'rejected', task: Task, observedAt: string) {
+    job.state = 'reconciling'
+    job.deliveryReconciliation = {
+      code: 'PUBLISH_DELIVERY_TASK_DRIFT',
+      remoteState,
+      taskState: task.state,
+      jobContentVersionId: job.contentVersionId,
+      taskContentVersionId: task.contentVersionId ?? null,
+      observedAt,
     }
     return job
   }
@@ -4940,7 +5100,7 @@ export class MerchantService {
 
   private remoteSnapshotHash(task: Task, product: Product) {
     const account = task.accountId ? this.platformAccounts.get(task.accountId) : undefined
-    return hash({ taskId: task.id, platform: task.platform, accountId: task.accountId ?? null, authorizationRevision: account ? account.authRevision ?? account.revision : null, remoteProduct: { id: product.remoteId, title: product.title, stock: product.stock, skuCount: product.skuCount, ...(product.skus ? { skus: product.skus } : {}), version: product.version ?? 1 } })
+    return stableHash({ taskId: task.id, platform: task.platform, accountId: task.accountId ?? null, authorizationRevision: account ? account.authRevision ?? account.revision : null, remoteProduct: { id: product.remoteId, title: product.title, stock: product.stock, skuCount: product.skuCount, ...(product.skus ? { skus: product.skus } : {}), version: product.version ?? 1 } })
   }
 
   private prepareDeliveryEvidence(task: Task, version: ContentVersion, product: Product, selectedVisuals: readonly SelectedVisualSnapshot[]): DeliveryEvidenceSnapshot | undefined {
@@ -4978,13 +5138,13 @@ export class MerchantService {
       if (job.skuIds && version.versionVector?.skuIds && hash(job.skuIds) !== hash(version.versionVector.skuIds)) throw new DomainError('VISUAL_SELECTION_SKU_SCOPE_MISMATCH', '图片候选的 SKU 范围与发布版本不一致，请重新生成', 409)
       const current = { visualRef: output.visualRef, role: index === 0 ? 'main' as const : 'secondary' as const, ...(job.skuIds?.length ? { skuIds: [...job.skuIds] } : {}), ordinal: output.ordinal, sha256: output.sha256, mimeType: output.mimeType, sizeBytes: output.sizeBytes, sourceProductVersion: job.sourceProductVersion, reviewStatus: 'passed' as const, ...(output.authenticity ? { authenticity: clone(output.authenticity) } : {}) }
       const normalizedSnapshot = { ...snapshot, role: snapshot.role ?? current.role }
-      const currentHash = hash(current)
+      const currentHash = stableHash(current)
       const legacyCurrentHash = hash({ ...current, skuIds: undefined, authenticity: undefined })
       const legacySnapshotHash = hash({ ...normalizedSnapshot, skuIds: undefined, authenticity: undefined })
-      if (currentHash !== hash(normalizedSnapshot) && legacyCurrentHash !== legacySnapshotHash) throw new DomainError('VISUAL_SELECTION_INTEGRITY_FAILED', '图片选择快照完整性校验失败', 409)
+      if (currentHash !== stableHash(normalizedSnapshot) && legacyCurrentHash !== legacySnapshotHash) throw new DomainError('VISUAL_SELECTION_INTEGRITY_FAILED', '图片选择快照完整性校验失败', 409)
       return current
     })
-    const currentHash = hash(items.map(item => ({ visualRef: item.visualRef, role: item.role, ...(item.skuIds?.length ? { skuIds: item.skuIds } : {}), ordinal: item.ordinal, sha256: item.sha256, mimeType: item.mimeType, sizeBytes: item.sizeBytes, sourceProductVersion: item.sourceProductVersion, ...(item.authenticity ? { authenticity: item.authenticity } : {}) })))
+    const currentHash = stableHash(items.map(item => ({ visualRef: item.visualRef, role: item.role, ...(item.skuIds?.length ? { skuIds: item.skuIds } : {}), ordinal: item.ordinal, sha256: item.sha256, mimeType: item.mimeType, sizeBytes: item.sizeBytes, sourceProductVersion: item.sourceProductVersion, ...(item.authenticity ? { authenticity: item.authenticity } : {}) })))
     const legacyHash = hash(items.map(item => ({ visualRef: item.visualRef, ordinal: item.ordinal, sha256: item.sha256, mimeType: item.mimeType, sizeBytes: item.sizeBytes, sourceProductVersion: item.sourceProductVersion })))
     if (currentHash !== selection.selectionHash && legacyHash !== selection.selectionHash) throw new DomainError('VISUAL_SELECTION_INTEGRITY_FAILED', '图片选择摘要已失效', 409)
     return items

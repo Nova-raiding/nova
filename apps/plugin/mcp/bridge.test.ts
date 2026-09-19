@@ -228,6 +228,74 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('keeps the destructive data-deletion request behind the interactive write gate', async () => {
+    const forwarded: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body).method)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { accepted: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const deletion = { scope: 'workspace', reason: '商家要求删除工作区数据', idempotency_key: 'delete-request-1' }
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'false' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.data.delete.request', arguments: deletion } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(forwarded).toEqual([])
+      // A sibling destructive tool behaves the same way, so the exemption was
+      // not re-introduced for one method only.
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.deactivate', arguments: { reason: '商家要求停用' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(forwarded).toEqual([])
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'workspace.data.delete.request', arguments: deletion } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { accepted: true } })
+      // The interactive confirmation is what unlocks the destructive write.
+      expect(forwarded).toEqual(['workspace.data.delete.request'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('rejects undeclared tool arguments before forwarding them to the API', async () => {
+    const forwarded: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body).method)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { items: [] } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'false' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.search', arguments: { scope: 'workspace', totally_undeclared_field: 'x' } } })}\n`)
+      const rejected = await nextLine(child.stdout)
+      expect(rejected.error).toMatchObject({ code: -32602 })
+      expect(String(rejected.error.message)).toContain('unexpected property totally_undeclared_field')
+      expect(forwarded).toEqual([])
+      // The declared surface still works unchanged.
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'catalog.search', arguments: { scope: 'workspace', limit: '10' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { items: [] } })
+      expect(forwarded).toEqual(['catalog.search'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('does not let DEPLOY_ENV production bypass the interactive write gate', async () => {
     let requests = 0
     const server = createServer((_req, res) => { requests += 1; res.writeHead(200).end('{}') })
@@ -238,7 +306,7 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.approve', arguments: { content_version_id: 'version_1', expected_version: '1' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.approve', arguments: { task_id: 'task_1', content_version_id: 'version_1', expected_version: '1' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
       expect(requests).toBe(0)
     } finally {
@@ -263,7 +331,7 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true, automation: 'read_only' } })
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'catalog.facts.confirm', arguments: { product_id: 'product_1', confirmation_json: '{}' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'catalog.facts.confirm', arguments: { product_id: 'product_1' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { accepted: true } })
       // Confirmation is forwarded to the API and the confirmed write is
       // forwarded as a second request.
@@ -288,8 +356,15 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
+      // The bridge now validates every tools/call against the declared schema,
+      // so each probed tool needs schema-conformant arguments.
+      const declaredArguments: Record<string, Record<string, string>> = {
+        'platform.media.spec.get': { id: 'spec_1' },
+        'platform.mapping.preflight': { input_json: '{}' },
+        'delivery.bundle.verify': { manifest_json: '{}', files_json: '[]', expected_manifest_hash: 'sha256:' + 'a'.repeat(64) },
+      }
       for (const [index, name] of ['platform.connect', 'billing.recharge.create', 'catalog.sync', 'catalog.sync.start', 'platform.media.spec.list', 'platform.media.spec.get', 'platform.mapping.preflight', 'delivery.bundle.verify', 'task.understand'].entries()) {
-        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: {} } })}\n`)
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: declaredArguments[name] ?? {} } })}\n`)
         const response = await nextLine(child.stdout)
         if (name === 'billing.recharge.create' || MERCHANT_HIDDEN_METHODS.has(name)) {
           expect(response.error).toMatchObject({ code: -32602, message: `Unknown tool: ${name}` })
@@ -640,7 +715,9 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.start', arguments: { requested_platform: 'jd', requested_goal: 'generate_white_background_image', attachment_count: 1 } } })}\n`)
+      // The schema declares the wire-level integer string, so this is what a
+      // compliant host sends. The value must survive the bridge unchanged.
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.start', arguments: { requested_platform: 'jd', requested_goal: 'generate_white_background_image', attachment_count: '1' } } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result.structuredContent).toEqual({
         conversation_state: { stage: 'start', status: 'needs_input', selected_platform: 'jd', primary_action: { method: 'catalog.search', label: '选择平台、店铺和商品' } },
@@ -660,6 +737,61 @@ describe('Codex stdio MCP bridge', () => {
         idempotency_key: expect.stringMatching(/^merchant-start-[a-f0-9]{32}$/u),
         workspace_id: 'ws_test',
       })])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('forwards the declared attachment-count wire string and the documented number alias identically', async () => {
+    const forwarded: Array<Record<string, unknown>> = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body).params)
+      res.setHeader('content-type', 'application/json')
+      // The upstream only reports an automatic scan when the attachment count
+      // survives the bridge, so this payload makes a dropped value visible.
+      res.end(JSON.stringify({ data: { result: { workspace_id: 'ws_test', currentStep: { id: 'add-assets', state: 'in_progress' }, automation: { asset_scan: 'automatic' } } }, warnings: [], next_actions: [], error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      for (const [index, attachmentCount] of ['1', 1].entries()) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name: 'merchant.start', arguments: { requested_platform: 'jd', requested_goal: 'generate_white_background_image', attachment_count: attachmentCount } } })}\n`)
+        const response = await nextLine(child.stdout)
+        // Both shapes are accepted, both normalize to the canonical API string,
+        // and neither silently loses the value.
+        expect(response.error).toBeUndefined()
+        expect(response.result.structuredContent.conversation_state).toMatchObject({ stage: 'automatic_scan', status: 'processing' })
+        expect(response.result.structuredContent.completed_summary).toContain('图片已收到，正在自动检查')
+      }
+      expect(forwarded.map(params => params.attachment_count)).toEqual(['1', '1'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('rejects an out-of-range or non-numeric attachment count instead of dropping it', async () => {
+    const forwarded: Array<Record<string, unknown>> = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body).params)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: {} }, warnings: [], next_actions: [], error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      for (const [index, attachmentCount] of ['21', 21, true].entries()) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name: 'merchant.start', arguments: { attachment_count: attachmentCount } } })}\n`)
+        const response = await nextLine(child.stdout)
+        expect(response.error).toMatchObject({ code: -32602 })
+        expect(String(response.error.message)).toContain('attachment_count')
+      }
+      expect(forwarded).toEqual([])
     } finally {
       child.kill()
       await close(server)
@@ -935,7 +1067,16 @@ describe('Codex stdio MCP bridge', () => {
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'merchant.start').inputSchema.properties).toMatchObject({
         requested_platform: { type: 'string', enum: expect.arrayContaining(['jd']) },
         requested_goal: { type: 'string' },
-        attachment_count: { type: 'string' },
+        // The declared wire format is the canonical integer string; a JSON
+        // integer in the same range is exposed as a documented alias. The alias
+        // branch is `integer` so a fractional value is rejected at the boundary
+        // instead of being normalized away to undefined.
+        attachment_count: {
+          anyOf: [
+            { type: 'string', pattern: '^(?:[0-9]|1[0-9]|20)$', maxLength: 2 },
+            { type: 'integer', minimum: 0, maximum: 20 },
+          ],
+        },
       })
       for (const name of ['catalog.search', 'billing.status', 'billing.transactions', 'billing.recharge.get', 'multimodal.image.edit']) {
         expect(listed.result.tools.find((tool: { name: string }) => tool.name === name)._meta).toBeUndefined()
@@ -1053,6 +1194,104 @@ describe('Codex stdio MCP bridge', () => {
         expect(request).toMatchObject({ jsonrpc: '2.0', method: expected[0], params: { ...expected[1], workspace_id: 'ws_test' } })
         expect(validateMcpRequest(request), `${request.method} bridge request must satisfy the authoritative contract`).toEqual({ valid: true, errors: [] })
       }
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('accepts the contract-declared workspace_id on exposed tools and still rejects undeclared arguments', async () => {
+    const requests: any[] = []
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      requests.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { accepted: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
+      const listed = await nextLine(child.stdout)
+      const exposed = listed.result.tools as Array<{ name: string; inputSchema: { properties: Record<string, unknown> } }>
+      expect(exposed.length).toBeGreaterThan(0)
+      // The bridge does not redeclare workspace_id on each tool; validateToolArguments
+      // accepts it as an implicit property because the authoritative contract
+      // declares it on every method. Fail here if that contract guarantee changes,
+      // so the implicit property cannot silently go stale.
+      const contractSchemas = MCP_METHOD_SCHEMAS as Readonly<Record<string, { properties?: Record<string, unknown> }>>
+      const contractWithoutWorkspaceId = exposed
+        .filter(tool => contractSchemas[tool.name]?.properties?.workspace_id === undefined)
+        .map(tool => tool.name)
+      expect(contractWithoutWorkspaceId).toEqual([])
+      for (const [index, [name, args]] of ([['onboarding.status', {}], ['task.history', { limit: '10' }]] as const).entries()) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 2, method: 'tools/call', params: { name, arguments: { ...args, workspace_id: 'ws_test' } } })}\n`)
+        const envelope = await nextLine(child.stdout)
+        expect(envelope.error, `${name} must accept the contract-declared workspace_id`).toBeUndefined()
+        expect(envelope.result.isError).toBe(false)
+      }
+      expect(requests.map(request => request.params.workspace_id)).toEqual(['ws_test', 'ws_test'])
+      for (const request of requests) expect(validateMcpRequest(request)).toEqual({ valid: true, errors: [] })
+      // A mismatching workspace_id must reach the bridge's own guard instead of
+      // being rejected as an undeclared argument.
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 10, method: 'tools/call', params: { name: 'onboarding.status', arguments: { workspace_id: 'ws_other' } } })}\n`)
+      const mismatch = await nextLine(child.stdout)
+      expect(mismatch.result.isError).toBe(true)
+      expect(mismatch.result.structuredContent).toMatchObject({ code: 'WORKSPACE_SCOPE_MISMATCH' })
+      // The exception is only for the contract-declared property: the type is
+      // still checked, and genuinely undeclared arguments stay rejected.
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'tools/call', params: { name: 'onboarding.status', arguments: { workspace_id: 5 } } })}\n`)
+      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: 'Invalid arguments for onboarding.status: workspace_id must be a string' })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 12, method: 'tools/call', params: { name: 'onboarding.status', arguments: { store_links_text: 'x', unexpected_context: 'y' } } })}\n`)
+      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: 'Invalid arguments for onboarding.status: unexpected property unexpected_context' })
+      expect(requests).toHaveLength(2)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('rejects a fractional attachment_count at the argument boundary instead of dropping it silently', async () => {
+    const requests: any[] = []
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      requests.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { accepted: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      let id = 0
+      for (const attachmentCount of ['1', 1, '20', 20]) {
+        id += 1
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'merchant.start', arguments: { attachment_count: attachmentCount } } })}\n`)
+        const envelope = await nextLine(child.stdout)
+        expect(envelope.error, `attachment_count ${JSON.stringify(attachmentCount)} must be accepted`).toBeUndefined()
+        expect(envelope.result.isError).toBe(false)
+        expect(requests.at(-1)!.params.attachment_count).toBe(String(attachmentCount))
+      }
+      for (const attachmentCount of [5.5, 21, '21', '', null, -1, true]) {
+        id += 1
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'merchant.start', arguments: { attachment_count: attachmentCount } } })}\n`)
+        expect((await nextLine(child.stdout)).error, `attachment_count ${JSON.stringify(attachmentCount)} must be rejected`).toMatchObject({
+          code: -32602,
+          message: 'Invalid arguments for merchant.start: attachment_count does not match any allowed shape',
+        })
+      }
+      // No rejected value may ever be forwarded without the argument.
+      expect(requests).toHaveLength(4)
+      expect(requests.every(request => typeof request.params.attachment_count === 'string')).toBe(true)
     } finally {
       child.kill()
       await close(server)
@@ -2105,7 +2344,7 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.approve', arguments: { content_version_id: 'version_1', expected_version: '1' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.approve', arguments: { task_id: 'task_1', content_version_id: 'version_1', expected_version: '1' } } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'API_UNAVAILABLE' } })
       expect(response.result.content[0].text).toContain('请稍后重试')
@@ -2131,7 +2370,7 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.approve', arguments: { content_version_id: 'version_1', expected_version: '1' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.approve', arguments: { task_id: 'task_1', content_version_id: 'version_1', expected_version: '1' } } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'RATE_LIMITED' } })
       expect(attempts).toBe(1)
@@ -2154,7 +2393,7 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.approve', arguments: { content_version_id: 'version_1', expected_version: '1' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.approve', arguments: { task_id: 'task_1', content_version_id: 'version_1', expected_version: '1' } } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result).toMatchObject({
         isError: true,
@@ -2233,8 +2472,10 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: { query: 'first' } } })}\n`)
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.health', arguments: { query: 'second' } } })}\n`)
+      // workspace.health declares no arguments; the schema boundary rejects
+      // undeclared fields, so this only exercises request serialization.
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
       await nextLine(child.stdout)
       await nextLine(child.stdout)
       expect(requests).toEqual(['/mcp', '/mcp'])

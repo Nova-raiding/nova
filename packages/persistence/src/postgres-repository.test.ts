@@ -153,6 +153,42 @@ describe('PostgresOutboxRepository', () => {
     expect(renewal?.text).toContain('lease_token = $3 AND lease_until > GREATEST($4::timestamptz, now())')
   })
 
+  it('counts a claim as an attempt so a crashed worker still spends its retry budget', async () => {
+    const client = new RecordingClient()
+    // RETURNING projects the post-increment value, which is what makes a
+    // crash-looping event reach `maxAttempts` instead of being reclaimed
+    // forever (failures alone are never recorded for a process that died).
+    client.enqueue(); client.enqueue(); client.enqueue(row({ attempts: 1, lease_token: 'lease_claim', lease_until: '2026-08-29T00:00:30.000Z' })); client.enqueue()
+    const repository = new PostgresOutboxRepository(new RecordingPool(client))
+    const claimed = await repository.claimPending('ws_1', { now: '2026-08-29T00:00:00.000Z', leaseMs: 30_000 })
+    expect(claimed[0]?.attempts).toBe(1)
+    const claim = client.calls.find(call => call.text.includes('WITH candidates AS'))
+    expect(claim?.text).toContain('attempts = event.attempts + 1')
+    expect(claim?.text).toContain('lease_token = $')
+    expect(claim?.values?.slice(0, 2)).toEqual(['ws_1', '2026-08-29T00:00:00.000Z'])
+  })
+
+  it('does not count an attempt twice when the outcome is recorded', async () => {
+    const failure = { code: 'RATE_LIMITED', message: 'retry after backoff', retryable: true }
+    const recorded = new RecordingClient()
+    recorded.enqueue(); recorded.enqueue(); recorded.enqueue(row({ attempts: 3 })); recorded.enqueue()
+    await new PostgresOutboxRepository(new RecordingPool(recorded)).recordFailure('ws_1', 'evt_1', failure, '2026-08-29T00:01:00.000Z', 'lease_1')
+    const retry = recorded.calls.find(call => call.text.includes('next_attempt_at = $4'))
+    expect(retry?.text).not.toContain('attempts = attempts + 1')
+
+    const dead = new RecordingClient()
+    dead.enqueue(); dead.enqueue(); dead.enqueue(row({ attempts: 3 })); dead.enqueue()
+    await new PostgresOutboxRepository(new RecordingPool(dead)).deadLetter('ws_1', 'evt_1', failure, 'lease_1')
+    const terminal = dead.calls.find(call => call.text.includes('last_error = COALESCE'))
+    expect(terminal?.text).not.toContain('attempts = attempts + 1')
+
+    const unknown = new RecordingClient()
+    unknown.enqueue(); unknown.enqueue(); unknown.enqueue(row({ attempts: 3 })); unknown.enqueue()
+    await new PostgresOutboxRepository(new RecordingPool(unknown)).markUnknown('ws_1', 'evt_1', { ...failure, unknown: true }, 'lease_1')
+    const reconciliation = unknown.calls.find(call => call.text.includes('unknown_at = COALESCE'))
+    expect(reconciliation?.text).not.toContain('attempts = attempts + 1')
+  })
+
   it('rolls back and releases when scoped work fails', async () => {
     const client = new RecordingClient()
     const pool = new RecordingPool(client)

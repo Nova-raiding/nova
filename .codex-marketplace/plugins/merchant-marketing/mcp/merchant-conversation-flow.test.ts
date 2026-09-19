@@ -346,7 +346,12 @@ describe('Codex App merchant conversation flow', () => {
     })
   })
 
-  it('preserves a new conversation goal and completes automatic scanning in the same turn', async () => {
+  // issue 1: the schema declares a wire-level integer string. A caller that
+  // follows the schema ("1") used to lose the value; a JSON number 1 is kept as
+  // the documented alias. Both must reach the same attachment projection.
+  it.each([['the declared wire string', '1'], ['the documented number alias', 1]] as const)(
+    'preserves a new conversation goal and completes automatic scanning in the same turn (%s)',
+    async (_label, attachmentCount) => {
     await withBridge((request, res) => {
       const method = request.method
       const result = method === 'merchant.start'
@@ -357,7 +362,7 @@ describe('Codex App merchant conversation flow', () => {
       res.setHeader('content-type', 'application/json')
       res.end(json(ok(request, result)))
     }, async (child, calls) => {
-      const started = await request(child, 1, 'merchant.start', { requested_platform: 'jd', requested_goal: 'generate_white_background_image', attachment_count: 1 })
+      const started = await request(child, 1, 'merchant.start', { requested_platform: 'jd', requested_goal: 'generate_white_background_image', attachment_count: attachmentCount })
       expect(started.result).toMatchObject({
         isError: false,
         structuredContent: {
@@ -380,7 +385,8 @@ describe('Codex App merchant conversation flow', () => {
       expect(JSON.stringify(uploaded.result)).not.toMatch(/管理员|运营后台|扫描证据|automation\.scan/u)
       expect(calls.map(call => call.method)).toEqual(['merchant.start', 'asset.upload', 'asset.list'])
     })
-  })
+    },
+  )
 
   it('returns an existing successful deliverable as an actionable artifact card', async () => {
     await withBridge((request, res) => {
