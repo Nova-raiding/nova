@@ -4,6 +4,7 @@ namespace: merchant
 resources:
   - namespace.yaml
   - configmap.yaml
+  - clamav-config.yaml
   - migration.yaml
   - api.yaml
   - alert-receiver.yaml

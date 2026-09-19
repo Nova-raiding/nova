@@ -13,6 +13,7 @@ merchant_bearer_hostname: null
 auth_enforcement: null
 session_id_hash_secret_ref: null
 platform_operations_mode: null
+require_approved_asset_for_generation: null
 jd_auth_enabled: null
 jd_read_enabled: null
 jd_write_enabled: null
@@ -60,6 +61,7 @@ payment_callback_base_url: null
 payment_callback_secret_ref: null
 payment_reconciliation_enabled: null
 payment_refund_enabled: null
+commercial_payment_provider: null
 model_relay_base_url: null
 model_relay_api_key_ref: null
 text_model: null
@@ -79,6 +81,8 @@ object_storage_region: null
 object_storage_endpoint: null
 asset_display_base_url: null
 asset_display_url_signing_secret_ref: null
+image_artifact_allowed_hosts: null
+video_artifact_allowed_hosts: null
 platform_rule_sync_manifest_url: null
 platform_rule_sync_signing_secret_ref: null
 platform_rule_sync_interval_hours: null

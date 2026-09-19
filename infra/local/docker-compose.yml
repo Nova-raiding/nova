@@ -30,6 +30,15 @@ x-worker-environment: &worker-environment
   WORKER_DB_CONNECTION_TIMEOUT_MS: 3000
   WORKER_API_BASE_URL: http://api:8787
   OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+  # Prometheus exposition for the worker fleet. No host port is published: the
+  # listener is reachable only on the Compose network (`worker-sync:9102`, ...),
+  # so this adds an in-network endpoint, not a host-exposed one.
+  # These workers set NODE_ENV=production, so GET /metrics answers
+  # 503 METRICS_AUTH_NOT_CONFIGURED until METRICS_AUTH_TOKEN is supplied in the
+  # environment -- the same fail-closed contract as the API. Export it in the
+  # shell to scrape locally; never commit a token to this file.
+  WORKER_METRICS_HOST: 0.0.0.0
+  WORKER_METRICS_PORT: 9102
 
 x-worker-common: &worker-common
   restart: unless-stopped

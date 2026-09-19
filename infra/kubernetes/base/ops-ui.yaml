@@ -22,6 +22,15 @@ spec:
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
       volumes: [{name: nginx-conf, emptyDir: {sizeLimit: 1Mi}}, {name: nginx-cache, emptyDir: {sizeLimit: 16Mi}}, {name: nginx-run, emptyDir: {sizeLimit: 1Mi}}, {name: nginx-tmp, emptyDir: {sizeLimit: 64Mi}}]
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: merchant-ops-ui}
+spec:
+  # Same gap as merchant-ui: without a budget a drain takes every ops-console
+  # replica down together.
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: merchant-ops-ui}}
+---
 apiVersion: v1
 kind: Service
 metadata: {name: merchant-ops-ui, labels: {app.kubernetes.io/name: merchant-ops-ui, app.kubernetes.io/part-of: merchant-marketing-codex}}

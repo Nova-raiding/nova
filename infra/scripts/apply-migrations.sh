@@ -15,6 +15,79 @@ sha256_file() {
   fi
 }
 
+# Explicit, operator-approved checksum baseline.
+#
+# A schema_migrations row with no recorded checksum is an UNVERIFIED identity.
+# Stamping it with the digest of whatever SQL file happens to be on disk would
+# permanently certify an in-place edit made while the checksum was still null,
+# so this runner fails closed instead. MIGRATION_BASELINE_ACCEPTED=true is the
+# operator's explicit approval, and MIGRATION_BASELINE_CHECKSUMS carries the
+# release-captured `version=sha256hex` entries, comma separated, that the
+# approval covers. Nothing is honoured without the flag.
+baseline_accepted=0
+case "$(printf '%s' "${MIGRATION_BASELINE_ACCEPTED:-}" | tr '[:upper:]' '[:lower:]')" in
+  true) baseline_accepted=1 ;;
+esac
+
+normalise_version() {
+  value=$(printf '%s' "$1" | sed -E 's/^0+//')
+  printf '%s' "${value:-0}"
+}
+
+# Accepted checksums for one version, pipe-delimited and padded ("|a|b|") so
+# membership can be tested with position(...) inside psql. Just "|" when the
+# operator has approved nothing for this version.
+accepted_checksums() {
+  version=$1
+  approved=
+  if [ "$baseline_accepted" -eq 1 ]; then
+    case "$version" in
+      144) approved="$approved 9519b2dbee21371a0bc7429c50e61ab3a677a4fd3965707328bd18489f2ad2e7" ;;
+      168) approved="$approved 37f633fb25a7d1536f65a644a1adee3611c36ed416ac9a1bf3a10a1e92ab1ef1" ;;
+      191) approved="$approved 36f8c9669ba99a392a874a76fa8d28b658211376a0e7e3131281247926202ba2" ;;
+    esac
+  fi
+  for entry in $(printf '%s' "${MIGRATION_BASELINE_CHECKSUMS:-}" | tr ',' ' '); do
+    case "$entry" in
+      "$version"=*)
+        candidate=${entry#*=}
+        if printf '%s' "$candidate" | grep -Eq '^[a-f0-9]{64}$'; then approved="$approved $candidate"; fi
+        ;;
+    esac
+  done
+  printf '|'
+  for checksum in $approved; do printf '%s|' "$checksum"; done
+}
+
+# Builds the post-apply probe for the indexes a non-transactional migration
+# declares, empty when it declares none.
+#
+# CREATE INDEX CONCURRENTLY IF NOT EXISTS matches on the index NAME only, so a
+# build that died mid-flight (deadlock, killed connection, unique violation,
+# full disk) leaves an indisvalid=false index that every later retry silently
+# skips. Recording that as applied would lose the index forever.
+concurrent_index_probe() {
+  names=$(sed -e 's/--.*$//' "$1" \
+    | grep -Eoi 'CREATE[[:space:]]+(UNIQUE[[:space:]]+)?INDEX[[:space:]]+CONCURRENTLY[[:space:]]+(IF[[:space:]]+NOT[[:space:]]+EXISTS[[:space:]]+)?([A-Za-z_][A-Za-z0-9_$]*[[:space:]]*[.][[:space:]]*)?[A-Za-z_][A-Za-z0-9_$]*' \
+    | sed -E 's/.*[^A-Za-z0-9_$]([A-Za-z_][A-Za-z0-9_$]*)$/\1/' \
+    | sort -u)
+  [ -n "$names" ] || return 0
+  values=
+  for name in $names; do values="${values}${values:+,}('$name')"; done
+  cat <<PROBE
+SELECT count(*) AS invalid_concurrent_indexes
+  FROM (VALUES $values) AS probe(name)
+  LEFT JOIN pg_class c ON c.relname = probe.name AND c.relkind = 'i' AND pg_table_is_visible(c.oid)
+  LEFT JOIN pg_index i ON i.indexrelid = c.oid
+ WHERE c.oid IS NULL OR NOT i.indisvalid \\gset
+\\if :invalid_concurrent_indexes
+\\echo MIGRATION_CONCURRENT_INDEX_INVALID version :migration_version
+\\echo indexes declared by this migration are missing or indisvalid=false
+SELECT 1 / 0;
+\\endif
+PROBE
+}
+
 # Validate the migration artifact before opening a database connection. The
 # shell runner must never execute a partial, duplicated, or unsafe filename
 # set merely because the database history happens to be compatible.
@@ -80,13 +153,16 @@ for migration in /migrations/[0-9][0-9][0-9]_*.sql; do
   [ -f "$migration" ] || continue
   file=$(basename "$migration")
   version=$(printf '%s' "$file" | cut -d_ -f1)
+  version_key=$(normalise_version "$version")
   name=$(printf '%s' "$file" | sed -E 's/^[0-9]+_(.*)\.sql$/\1/')
   checksum=$(sha256_file "$migration")
+  accepted=$(accepted_checksums "$version_key")
   if grep -Eq '^-- migrate:no-transaction$' "$migration"; then
     # Concurrent index operations cannot run in a transaction. Keep the
     # session lock and applied check in the same psql session. PostgreSQL
     # releases the lock automatically if ON_ERROR_STOP terminates psql.
-    psql -v ON_ERROR_STOP=1 -v migration_version="$version" -v migration_name="$name" -v migration_checksum="$checksum" <<SQL
+    index_probe=$(concurrent_index_probe "$migration")
+    psql -v ON_ERROR_STOP=1 -v migration_version="$version" -v migration_name="$name" -v migration_checksum="$checksum" -v accepted_checksums="$accepted" -v baseline_accepted="$baseline_accepted" <<SQL
 SELECT pg_advisory_lock(731942851);
 SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = :migration_version) AS migration_already_applied,
        COALESCE((SELECT name FROM schema_migrations WHERE version = :migration_version), '') AS applied_name,
@@ -97,9 +173,14 @@ SELECT (:'applied_name' <> :'migration_name' AND NOT (:migration_version = 14 AN
 \echo MIGRATION_NAME_MISMATCH version :migration_version
 SELECT 1 / 0;
 \endif
-SELECT (:'applied_checksum' <> '' AND :'applied_checksum' <> :'migration_checksum' AND NOT ((:migration_version = 144 AND :'applied_checksum' = '9519b2dbee21371a0bc7429c50e61ab3a677a4fd3965707328bd18489f2ad2e7') OR (:migration_version = 168 AND :'applied_checksum' = '37f633fb25a7d1536f65a644a1adee3611c36ed416ac9a1bf3a10a1e92ab1ef1') OR (:migration_version = 191 AND :'applied_checksum' = '36f8c9669ba99a392a874a76fa8d28b658211376a0e7e3131281247926202ba2'))) AS migration_checksum_mismatch \gset
+SELECT (:'applied_checksum' <> '' AND :'applied_checksum' <> :'migration_checksum' AND position(('|' || :'applied_checksum' || '|') IN :'accepted_checksums') = 0) AS migration_checksum_mismatch \gset
 \if :migration_checksum_mismatch
 \echo MIGRATION_CHECKSUM_MISMATCH version :migration_version
+SELECT 1 / 0;
+\endif
+SELECT (:'applied_checksum' = '' AND position(('|' || :'migration_checksum' || '|') IN :'accepted_checksums') = 0 AND NOT (:migration_version = 14 AND :'applied_name' = 'read_only_schedules' AND :'baseline_accepted' = '1')) AS migration_checksum_unverified \gset
+\if :migration_checksum_unverified
+\echo MIGRATION_CHECKSUM_UNVERIFIED version :migration_version has no approved checksum baseline
 SELECT 1 / 0;
 \endif
 UPDATE schema_migrations SET checksum = :'migration_checksum' WHERE version = :migration_version AND checksum IS NULL AND NOT (:migration_version = 14 AND :'applied_name' = 'read_only_schedules');
@@ -107,12 +188,13 @@ UPDATE schema_migrations SET checksum = :'migration_checksum' WHERE version = :m
 \\else
 \\echo applying migration :migration_version (:migration_name)
 \\i '$migration'
+$index_probe
 INSERT INTO schema_migrations (version, name, checksum) VALUES (:migration_version, :'migration_name', :'migration_checksum');
 \\endif
 SELECT pg_advisory_unlock(731942851);
 SQL
   else
-    psql -v ON_ERROR_STOP=1 -v migration_version="$version" -v migration_name="$name" -v migration_checksum="$checksum" <<SQL
+    psql -v ON_ERROR_STOP=1 -v migration_version="$version" -v migration_name="$name" -v migration_checksum="$checksum" -v accepted_checksums="$accepted" -v baseline_accepted="$baseline_accepted" <<SQL
 BEGIN;
 SELECT pg_advisory_xact_lock(731942851);
 SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = :migration_version) AS migration_already_applied,
@@ -124,9 +206,14 @@ SELECT (:'applied_name' <> :'migration_name' AND NOT (:migration_version = 14 AN
 \echo MIGRATION_NAME_MISMATCH version :migration_version
 SELECT 1 / 0;
 \endif
-SELECT (:'applied_checksum' <> '' AND :'applied_checksum' <> :'migration_checksum' AND NOT ((:migration_version = 144 AND :'applied_checksum' = '9519b2dbee21371a0bc7429c50e61ab3a677a4fd3965707328bd18489f2ad2e7') OR (:migration_version = 168 AND :'applied_checksum' = '37f633fb25a7d1536f65a644a1adee3611c36ed416ac9a1bf3a10a1e92ab1ef1') OR (:migration_version = 191 AND :'applied_checksum' = '36f8c9669ba99a392a874a76fa8d28b658211376a0e7e3131281247926202ba2'))) AS migration_checksum_mismatch \gset
+SELECT (:'applied_checksum' <> '' AND :'applied_checksum' <> :'migration_checksum' AND position(('|' || :'applied_checksum' || '|') IN :'accepted_checksums') = 0) AS migration_checksum_mismatch \gset
 \if :migration_checksum_mismatch
 \echo MIGRATION_CHECKSUM_MISMATCH version :migration_version
+SELECT 1 / 0;
+\endif
+SELECT (:'applied_checksum' = '' AND position(('|' || :'migration_checksum' || '|') IN :'accepted_checksums') = 0 AND NOT (:migration_version = 14 AND :'applied_name' = 'read_only_schedules' AND :'baseline_accepted' = '1')) AS migration_checksum_unverified \gset
+\if :migration_checksum_unverified
+\echo MIGRATION_CHECKSUM_UNVERIFIED version :migration_version has no approved checksum baseline
 SELECT 1 / 0;
 \endif
 UPDATE schema_migrations SET checksum = :'migration_checksum' WHERE version = :migration_version AND checksum IS NULL AND NOT (:migration_version = 14 AND :'applied_name' = 'read_only_schedules');

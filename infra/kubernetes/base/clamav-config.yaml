@@ -1,0 +1,60 @@
+# Effective ClamAV daemon configuration for Deployment/merchant-worker-scan.
+#
+# WHY THIS FILE EXISTS
+# The pinned upstream image (clamav/clamav@sha256:761f6c99...) declares no
+# `USER`, and its `/init` rewrites /etc/clamav/clamd.conf in place with `sed -i`
+# to materialise the CLAMD_CONF_* environment variables. Neither works under
+# this Pod's `runAsNonRoot: true` / `runAsUser: 10001` policy:
+#
+#   * no `USER` in the image -> kubelet refuses the container outright with
+#     "container has runAsNonRoot and image will run as root", so the whole
+#     scan Pod (worker container included) never starts;
+#   * `sed -i` needs a writable /etc/clamav, which uid 10001 does not have.
+#
+# Switching that container to the image's own `/init-unprivileged` entrypoint is
+# NOT an acceptable fix on its own. That entrypoint deliberately skips the
+# CLAMD_CONF_* rewrite, so clamd would come up on its compiled defaults. On the
+# pinned digest those are:
+#
+#   AlertExceedsMax  disabled        (instead of yes)
+#   MaxScanSize      419430400 (400M) (instead of 104857600)
+#   StreamMaxLength  104857600        (already 100M)
+#   MaxFileSize      104857600        (already 100M)
+#
+# The first two are a silent weakening of the antivirus boundary: an archive
+# whose expansion exceeds a scan limit used to be reported as
+# `Heuristics.Limits.Exceeded.* FOUND` and would instead be admitted as OK.
+# Measured on the pinned digest with a ZIP declaring a 300 MiB entry:
+# stock conf -> "OK" (exit 0), this file -> "Heuristics.Limits.Exceeded.MaxScanSize
+# FOUND" (exit 1).
+#
+# So the four limits are declared HERE, mounted read-only over
+# /etc/clamav/clamd.conf. That single file is what clamd, clamdscan (and the
+# Pod probes) read, and the release validator refuses to ship a manifest whose
+# mounted clamd.conf does not set them as uncommented directives.
+#
+# PARITY WITH THE IMAGE
+# This reproduces every uncommented directive of the image's shipped
+# clamd.conf, with two deliberate differences:
+#   * `User clamav` is omitted. It only has an effect when clamd is started by
+#     root, which this Pod forbids; the process keeps uid 10001 instead.
+#   * the four limit directives above are added at the values this deployment
+#     advertises through CLAMAV_MAX_FILE_BYTES=104857600.
+# Every other clamd option is left absent, which yields the same compiled
+# default as the image's own commented-out sample lines.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: merchant-clamav-config
+  labels: {app.kubernetes.io/part-of: merchant-marketing-codex}
+data:
+  clamd.conf: |
+    LogFile /var/log/clamav/clamd.log
+    LogTime yes
+    LocalSocket /tmp/clamd.sock
+    TCPSocket 3310
+    TCPAddr 0.0.0.0
+    StreamMaxLength 100M
+    MaxFileSize 100M
+    MaxScanSize 100M
+    AlertExceedsMax yes

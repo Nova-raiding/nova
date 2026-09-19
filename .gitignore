@@ -43,6 +43,11 @@ coverage/
 # notes, and the vitest run marker. None of these are deliverables.
 /redis-aof-backup-*.tar.gz
 /.codex-redis-repair-test/
+# `backup-postgres.sh` defaults BACKUP_DIR to `./backups`, i.e. the working
+# directory it is run from — the runbook runs it from the repository root. Those
+# archives are unencrypted merchant data, so a clone must never be able to
+# stage one by accident.
+/backups/
 /report-source.md
 /.codegraph.db
 /test-results/

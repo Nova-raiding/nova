@@ -13,7 +13,7 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: merchant-api, app.kubernetes.io/part-of: merchant-marketing-codex}
       annotations:
-        merchant.example.com/config-sha256: sha256:ff10827fede9f4135e9b5cbae7c3b5317392c7b5587ba4e724d0d8ee3d3f8139
+        merchant.example.com/config-sha256: sha256:f8437cbf2a10e05e6b4d29393dfb32014de062f0016be9768168264ab5d63af4
     spec:
       serviceAccountName: merchant-api-rrsa
       terminationGracePeriodSeconds: 30
@@ -52,6 +52,11 @@ spec:
             - {name: PAYMENT_PROVIDER_API_KEY, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: PAYMENT_PROVIDER_API_KEY}}}
             - {name: PAYMENT_CALLBACK_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: PAYMENT_CALLBACK_SECRET}}}
             - {name: OPS_CUSTOMER_ACCESS_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: OPS_CUSTOMER_ACCESS_SIGNING_SECRET}}}
+            # GET /metrics compares this bearer before emitting any series. With
+            # NODE_ENV=production and no token the route answers 503, so the
+            # scrape annotations below are inert until the managed secret store
+            # provisions this key. Key name only; no value lives in this repo.
+            - {name: METRICS_AUTH_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: METRICS_AUTH_TOKEN}}}
           resources:
             requests: {cpu: 500m, memory: 1Gi}
             limits: {cpu: "2", memory: 4Gi}

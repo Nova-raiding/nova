@@ -25,6 +25,16 @@ spec:
           volumeMounts: [{name: tmp, mountPath: /tmp}, {name: nginx-conf, mountPath: /etc/nginx/conf.d}, {name: nginx-cache, mountPath: /var/cache/nginx}, {name: nginx-run, mountPath: /var/run}]
       volumes: [{name: tmp, emptyDir: {sizeLimit: 16Mi}}, {name: nginx-conf, emptyDir: {sizeLimit: 1Mi}}, {name: nginx-cache, emptyDir: {sizeLimit: 16Mi}}, {name: nginx-run, emptyDir: {sizeLimit: 1Mi}}]
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: merchant-ui}
+spec:
+  # A node drain evicted both UI replicas at once for a short, unplanned
+  # full-site UI outage. One available replica keeps the merchant surface
+  # serving throughout a voluntary disruption.
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: merchant-ui}}
+---
 apiVersion: v1
 kind: Service
 metadata: {name: merchant-ui}

@@ -6,7 +6,8 @@ command -v ruby >/dev/null 2>&1 || { echo "ruby is required" >&2; exit 1; }
 command -v docker >/dev/null 2>&1 || { echo "docker is required" >&2; exit 1; }
 ruby -e 'require "yaml"; ARGV.each { |p| YAML.load_file(p); puts "valid yaml: #{p}" }' \
   doc/todo/infra/production-config.example.yaml infra/config/staging.example.yaml \
-  infra/observability/prometheus-alerts.example.yaml infra/observability/otel-collector.example.yaml \
+  infra/observability/prometheus-alerts.example.yaml infra/observability/prometheus-scrape.example.yaml \
+  infra/observability/otel-collector.example.yaml \
   infra/backup/backup-policy.example.yaml
 docker compose -f infra/local/docker-compose.yml config --quiet
 # Validate each script with the interpreter it declares.  Most release
@@ -14,8 +15,11 @@ docker compose -f infra/local/docker-compose.yml config --quiet
 # uses Bash arrays and `set -o pipefail`.  Calling `sh -n` unconditionally is
 # portable on macOS (where `/bin/sh` is Bash) but fails on Linux runners whose
 # `/bin/sh` is dash, so CI would reject an otherwise valid Bash script.
-# Every directory that ships a shell entrypoint is covered here so a syntax
-# error cannot hide outside infra/scripts.
+# These are the release and operations entrypoint directories. This glob does
+# NOT reach the developer-only plugin scripts under `apps/plugin/**` and
+# `.codex-marketplace/**` (each ships `mcp/bridge.sh` and
+# `scripts/install-local-macos.sh`; the two copies of each are byte-identical).
+# A syntax error there would not be caught by this gate.
 for script in infra/scripts/*.sh scripts/*.sh tests/*.sh infra/local/*.sh infra/nginx/*.sh; do
   [ -f "$script" ] || continue
   interpreter=$(sed -n '1s/^#![[:space:]]*//p' "$script")

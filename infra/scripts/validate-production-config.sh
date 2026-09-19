@@ -26,7 +26,7 @@ yaml_validator=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)/validate-production-
 # Every required setting must be an actual YAML key. The value checks below
 # intentionally remain dependency-free, but an unanchored grep can otherwise
 # mistake text such as `note: "plugin_enabled: true"` for configuration.
-required_keys='plugin_enabled merchant_bearer_hostname auth_enforcement session_id_hash_secret_ref jd_auth_enabled jd_read_enabled jd_write_enabled taobao_tmall_auth_enabled taobao_tmall_read_enabled taobao_tmall_write_enabled pinduoduo_auth_enabled pinduoduo_read_enabled pinduoduo_write_enabled object_storage_versioning lifecycle_policy_ref asset_quarantine_retention_days asset_clean_retention_days deletion_request_grace_days backup_retention_days alert_notifications_enabled point_in_time_recovery_enabled database_pooler_enabled database_max_backend_connections database_connection_utilization_alert_percent secret_provider worker_api_credentials_ref worker_sync_api_token_ref worker_sync_api_signing_secret_ref worker_generation_api_token_ref worker_generation_api_signing_secret_ref worker_publish_api_token_ref worker_publish_api_signing_secret_ref worker_reconcile_api_token_ref worker_reconcile_api_signing_secret_ref worker_automation_api_token_ref worker_automation_api_signing_secret_ref merchant_ui_api_token_ref merchant_ui_workspace_id_ref payment_mode payment_provider_adapters payment_checkout_base_url payment_provider_checkout_api_url payment_provider_query_api_url payment_provider_refund_query_api_url payment_provider_refund_api_url payment_provider_api_key_ref payment_provider_merchant_id payment_callback_base_url payment_callback_secret_ref payment_reconciliation_enabled payment_refund_enabled model_relay_base_url model_relay_api_key_ref text_model image_model image_edit_model ocr_model video_model embedding_model embedding_dimensions embedding_max_request_cny knowledge_vector_index_enabled approved_requests_per_minute approved_tokens_per_minute maximum_task_cost_cny object_storage_bucket object_storage_region object_storage_endpoint asset_display_base_url asset_display_url_signing_secret_ref platform_rule_sync_manifest_url platform_rule_sync_signing_secret_ref platform_rule_sync_interval_hours asset_scanner_mode allow_local_asset_scan_fixture asset_scanner_api_token_ref asset_scanner_workspace_signing_secret_ref asset_scan_receipt_key_id asset_scan_receipt_private_key_ref asset_scan_policy_version clamav_image_digest clamav_signature_max_age_minutes clamav_max_file_bytes'
+required_keys='plugin_enabled merchant_bearer_hostname auth_enforcement session_id_hash_secret_ref jd_auth_enabled jd_read_enabled jd_write_enabled taobao_tmall_auth_enabled taobao_tmall_read_enabled taobao_tmall_write_enabled pinduoduo_auth_enabled pinduoduo_read_enabled pinduoduo_write_enabled object_storage_versioning lifecycle_policy_ref asset_quarantine_retention_days asset_clean_retention_days deletion_request_grace_days backup_retention_days alert_notifications_enabled point_in_time_recovery_enabled database_pooler_enabled database_max_backend_connections database_connection_utilization_alert_percent secret_provider worker_api_credentials_ref worker_sync_api_token_ref worker_sync_api_signing_secret_ref worker_generation_api_token_ref worker_generation_api_signing_secret_ref worker_publish_api_token_ref worker_publish_api_signing_secret_ref worker_reconcile_api_token_ref worker_reconcile_api_signing_secret_ref worker_automation_api_token_ref worker_automation_api_signing_secret_ref merchant_ui_api_token_ref merchant_ui_workspace_id_ref payment_mode payment_provider_adapters payment_checkout_base_url payment_provider_checkout_api_url payment_provider_query_api_url payment_provider_refund_query_api_url payment_provider_refund_api_url payment_provider_api_key_ref payment_provider_merchant_id payment_callback_base_url payment_callback_secret_ref payment_reconciliation_enabled payment_refund_enabled commercial_payment_provider model_relay_base_url model_relay_api_key_ref text_model image_model image_edit_model ocr_model video_model embedding_model embedding_dimensions embedding_max_request_cny knowledge_vector_index_enabled approved_requests_per_minute approved_tokens_per_minute maximum_task_cost_cny object_storage_bucket object_storage_region object_storage_endpoint asset_display_base_url asset_display_url_signing_secret_ref image_artifact_allowed_hosts video_artifact_allowed_hosts platform_rule_sync_manifest_url platform_rule_sync_signing_secret_ref platform_rule_sync_interval_hours asset_scanner_mode allow_local_asset_scan_fixture asset_scanner_api_token_ref asset_scanner_workspace_signing_secret_ref asset_scan_receipt_key_id asset_scan_receipt_private_key_ref asset_scan_policy_version clamav_image_digest clamav_signature_max_age_minutes clamav_max_file_bytes require_approved_asset_for_generation'
 required_keys="$required_keys mcp_authorization_mode durable_platform_assignments_required platform_operations_mode"
 REQUIRED_PRODUCTION_CONFIG_KEYS="$required_keys" ruby "$yaml_validator" "$rendered_config_path"
 filtered_config_path=$(mktemp "${TMPDIR:-/tmp}/merchant-production-config.XXXXXX")
@@ -70,6 +70,11 @@ grep -Eq '^[[:space:]]*plugin_enabled:[[:space:]]*true[[:space:]]*$' "$config_pa
 grep -Eq '^[[:space:]]*auth_enforcement:[[:space:]]*"?strict"?[[:space:]]*$' "$config_path" || { echo 'auth_enforcement must be strict in rendered production config' >&2; exit 1; }
 grep -Eq '^[[:space:]]*mcp_authorization_mode:[[:space:]]*"?enforce"?[[:space:]]*$' "$config_path" || { echo 'mcp_authorization_mode must be enforce in rendered production config' >&2; exit 1; }
 grep -Eq '^[[:space:]]*durable_platform_assignments_required:[[:space:]]*true[[:space:]]*$' "$config_path" || { echo 'durable platform assignments must be authoritative in rendered production config' >&2; exit 1; }
+# The runtime reads REQUIRE_APPROVED_ASSET_FOR_GENERATION with a fail-open
+# default (`!== 'true'` returns early), so an unset or false value silently
+# disables the asset rights/safety gate in front of product-image generation.
+# Pin it to true here as well; the boolean has no legitimate production `false`.
+grep -Eq '^[[:space:]]*require_approved_asset_for_generation:[[:space:]]*true[[:space:]]*$' "$config_path" || { echo 'require_approved_asset_for_generation must be true in rendered production config' >&2; exit 1; }
 grep -Eq 'session_id_hash_secret_ref:[[:space:]]*[^"'"'"' ]+' "$config_path" || { echo 'session_id_hash_secret_ref must be configured' >&2; exit 1; }
 grep -Eq '^[[:space:]]*merchant_bearer_hostname:[[:space:]]*"?[a-z0-9][a-z0-9.-]*[a-z0-9]"?[[:space:]]*$' "$config_path" || { echo 'merchant_bearer_hostname must be configured for the merchant bearer boundary' >&2; exit 1; }
 if grep -Eq '^[[:space:]]*merchant_bearer_hostname:[[:space:]]*"?[^[:space:]]*\*[^[:space:]]*"?[[:space:]]*$' "$config_path"; then
@@ -222,6 +227,17 @@ grep -Eq 'payment_callback_base_url:[[:space:]]*https://' "$config_path" || { ec
 grep -Eq "payment_callback_secret_ref:[[:space:]]*[^\"' ]+" "$config_path" || { echo 'payment_callback_secret_ref must be configured' >&2; exit 1; }
 grep -Eq '^[[:space:]]*payment_reconciliation_enabled:[[:space:]]*true[[:space:]]*$' "$config_path" || { echo 'payment reconciliation must be enabled' >&2; exit 1; }
 grep -Eq '^[[:space:]]*payment_refund_enabled:[[:space:]]*true[[:space:]]*$' "$config_path" || { echo 'payment refund must be enabled' >&2; exit 1; }
+# The V2 commercial order channel. `commercialPaymentProvider()` reads this
+# before the order row is written, so an unset value makes
+# `commercial.order.create` fail closed with 503 and leaves the operator's
+# `ops.commercial.order.payment.verify` with no order to verify. A fully
+# configured PAYMENT_MODE/PAYMENT_PROVIDER_ADAPTERS pair does not cover it.
+commercial_provider=$(awk -v key=commercial_payment_provider '$0 ~ "^[[:space:]]*" key "[[:space:]]*:" { value=$0; sub(/^[^:]*:[[:space:]]*/, "", value); gsub(/["'"'"'[:space:]]/, "", value); print value; exit }' "$config_path")
+printf '%s' "$commercial_provider" | grep -Eq '^[a-z][a-z0-9_-]{1,63}$' || { echo 'commercial_payment_provider must be a lowercase channel label' >&2; exit 1; }
+if [ "$commercial_provider" = sandbox ]; then
+  echo 'commercial_payment_provider must not be sandbox in production' >&2
+  exit 1
+fi
 # Business model traffic has one approved egress: the platform-owned relay.
 # Keep this gate aligned with the runtime MODEL_RELAY_* contract; legacy
 # per-provider endpoints/keys must never pass a rendered production config.
@@ -262,5 +278,22 @@ if grep -Eq 'object_storage_sse_mode:[[:space:]]*"?aws:kms' "$config_path" && ! 
 fi
 grep -Eq '^[[:space:]]*asset_display_base_url:[[:space:]]*"?https://' "$config_path" || { echo 'asset_display_base_url must be HTTPS' >&2; exit 1; }
 grep -Eq "^[[:space:]]*asset_display_url_signing_secret_ref:[[:space:]]*[^\"'[:space:]]+" "$config_path" || { echo 'asset_display_url_signing_secret_ref must be configured' >&2; exit 1; }
+# The artifact fetch allowlists. The API already fails closed in production with
+# IMAGE_ARTIFACT_ALLOWLIST_MISSING / VIDEO_ARTIFACT_ALLOWLIST_MISSING when they
+# are empty, so a blank value cannot start. A *placeholder* is the worse case
+# and the one this gate exists for: it is non-empty, so the API treats it as a
+# configured allowlist and starts normally, while every real artifact host is
+# rejected at runtime. The rendered Kubernetes ConfigMap shipped
+# `image-cdn.example.com` / `video-cdn.example.com` with nothing to catch it.
+for artifact_field in image_artifact_allowed_hosts video_artifact_allowed_hosts; do
+  artifact_hosts=$(awk -v key="$artifact_field" '$0 ~ "^[[:space:]]*" key "[[:space:]]*:" { value=$0; sub(/^[^:]*:[[:space:]]*/, "", value); gsub(/["'"'"'[:space:]]/, "", value); print value; exit }' "$config_path")
+  [ -n "$artifact_hosts" ] || { echo "${artifact_field} must list at least one artifact host" >&2; exit 1; }
+  case "$artifact_hosts" in
+    *example.com*|*example.net*|*example.org*|*invalid*|*localhost*|*127.0.0.1*)
+      echo "${artifact_field} must not list reserved placeholder hosts" >&2
+      exit 1
+      ;;
+  esac
+done
 
 echo "production config gate passed: $rendered_config_path"

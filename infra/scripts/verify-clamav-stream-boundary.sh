@@ -4,6 +4,15 @@ set -eu
 # Isolated runtime acceptance for the daemon transport boundary only. This
 # never mounts business data, restarts shared services, or claims API/worker
 # end-to-end or cloud acceptance.
+#
+# Scope note: both targets drive the *image's own* /init as root, which is what
+# the Compose service does. Deployment/merchant-worker-scan deliberately does
+# NOT: it runs as uid 10001, so /init cannot rewrite /etc/clamav/clamd.conf and
+# the daemon limits come from ConfigMap/merchant-clamav-config instead. This
+# script therefore does not prove the Kubernetes Pod's effective configuration;
+# that is asserted by infra/scripts/validate-kubernetes-release.rb (which reads
+# the mounted clamd.conf out of the rendered manifest) and by the scan Pod's
+# own probes, which grep the file clamd was handed.
 case "${1:-compose}" in
   compose)
     image='clamav/clamav-debian@sha256:bcfc3d6117a6cfbeb6cd041c00164097916291b870c6183e06def6fed7fb740b'

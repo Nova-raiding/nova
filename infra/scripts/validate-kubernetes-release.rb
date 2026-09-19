@@ -41,6 +41,7 @@ WORKLOAD_SECRET_KEYS = {
       PLATFORM_RULE_SYNC_SIGNING_SECRET MODEL_RELAY_API_KEY
       PAYMENT_PROVIDER_API_KEY PAYMENT_CALLBACK_SECRET
       OPS_CUSTOMER_ACCESS_SIGNING_SECRET
+      METRICS_AUTH_TOKEN
     ],
     'merchant-scanner-secrets' => %w[ASSET_SCANNER_API_TOKEN ASSET_SCANNER_WORKSPACE_SIGNING_SECRET ASSET_SCAN_TRUSTED_PUBLIC_KEYS],
   },
@@ -81,11 +82,30 @@ SCANNER_CONFIG = {
   'CLAMAV_PORT' => '3310',
   'CLAMAV_MAX_FILE_BYTES' => '104857600',
 }.freeze
-CLAMAV_DAEMON_CONFIG = {
-  'CLAMD_CONF_StreamMaxLength' => '100M',
-  'CLAMD_CONF_MaxFileSize' => '100M',
-  'CLAMD_CONF_MaxScanSize' => '100M',
-  'CLAMD_CONF_AlertExceedsMax' => 'yes',
+# The effective daemon limits the scan Pod must actually run with, expressed as
+# the uncommented `clamd.conf` directives the mounted ConfigMap has to declare.
+# These are NOT environment variables: the upstream image only materialises
+# CLAMD_CONF_* into clamd.conf through a root-only `sed -i`, and a non-root
+# container cannot perform that rewrite. Asserting the env vars would pass a
+# manifest whose daemon silently runs on weaker compiled defaults.
+CLAMAV_DAEMON_LIMITS = {
+  'StreamMaxLength' => '100M',
+  'MaxFileSize' => '100M',
+  'MaxScanSize' => '100M',
+  'AlertExceedsMax' => 'yes',
+}.freeze
+CLAMD_CONF_PATH = '/etc/clamav/clamd.conf'.freeze
+# Images whose release build is attested to end with a non-root `USER`, so a
+# container that inherits `runAsNonRoot: true` still passes kubelet's admission
+# check without declaring its own `runAsUser`. Every entry names the build file
+# that pins it, and tests/kubernetes-release-gate.test.ts re-reads those files
+# and fails if the attestation stops being true. `clamav` is deliberately
+# absent: the pinned upstream digest sets no USER, which is what made kubelet
+# reject the scan Pod.
+NON_ROOT_IMAGE_CONTRACTS = {
+  'merchant-api' => 'infra/docker/api.Dockerfile',
+  'merchant-worker' => 'infra/docker/worker.Dockerfile',
+  'merchant-alert-receiver' => 'infra/docker/alert-receiver.Dockerfile',
 }.freeze
 AUTHORIZATION_CONFIG = {
   'MCP_AUTHZ_MODE' => 'enforce',
@@ -300,8 +320,70 @@ def validate_secret_volume_reference(reference, workload_name, context)
   end
 end
 
+def security_context_of(container)
+  context = container['securityContext']
+  context.is_a?(Hash) ? context : {}
+end
+
+# `convert_yaml_node` yields the raw scalar text for every leaf, so booleans
+# arrive as the strings "true"/"false" and integers as numeric strings. Compare
+# them as text throughout, exactly like `optional_reference?` does.
+def enabled_flag?(value)
+  value.to_s.casecmp('true').zero?
+end
+
+def container_label(container, index)
+  name = container['name']
+  name.is_a?(String) && !name.empty? ? name : index.to_s
+end
+
+# Kubelet refuses a Pod whose PodSpec enforces `runAsNonRoot: true` while any of
+# its containers would still resolve to uid 0. When a container declares no
+# `runAsUser`, kubelet falls back to inspecting the image, and an image without a
+# `USER` directive (like the pinned ClamAV digest) makes it fail the whole Pod
+# with "container has runAsNonRoot and image will run as root". That failure is
+# invisible to a manifest-only review, so it is checked here at release time
+# rather than discovered as a CrashLoop in the cluster.
+def validate_pod_container_identity(pod_spec, context)
+  pod_context = pod_spec['securityContext'].is_a?(Hash) ? pod_spec['securityContext'] : {}
+  pod_enforces_non_root = enabled_flag?(pod_context['runAsNonRoot'])
+  pod_run_as_user = pod_context['runAsUser']
+
+  CONTAINER_FIELDS.each do |field|
+    entries = pod_spec[field]
+    next unless entries.is_a?(Array)
+
+    entries.each_with_index do |container, index|
+      next unless container.is_a?(Hash)
+
+      security = security_context_of(container)
+      entry_context = "#{context}.#{field}[#{container_label(container, index)}]"
+      container_flag = security['runAsNonRoot']
+
+      if pod_enforces_non_root && security.key?('runAsNonRoot') && !enabled_flag?(container_flag)
+        raise ReleaseManifestError, "#{entry_context} sets runAsNonRoot=#{container_flag.inspect} inside a Pod that enforces runAsNonRoot: true, which re-permits a root container"
+      end
+      next unless pod_enforces_non_root || enabled_flag?(container_flag)
+
+      run_as_user = security.key?('runAsUser') ? security['runAsUser'] : pod_run_as_user
+      if run_as_user.nil?
+        image = image_name(container['image'].to_s)
+        next if NON_ROOT_IMAGE_CONTRACTS.key?(image)
+
+        raise ReleaseManifestError, "#{entry_context} inherits runAsNonRoot but declares no runAsUser; kubelet rejects such a container as 'container has runAsNonRoot and image will run as root' unless its image sets a non-root USER. Declare an explicit non-zero runAsUser, or attest the image in NON_ROOT_IMAGE_CONTRACTS"
+      end
+
+      resolved = run_as_user.to_s.match?(/\A\d+\z/) ? run_as_user.to_s.to_i : nil
+      unless resolved&.positive?
+        raise ReleaseManifestError, "#{entry_context} sets runAsNonRoot but runAsUser is #{run_as_user.inspect}; a root (0) container is rejected under runAsNonRoot"
+      end
+    end
+  end
+end
+
 def validate_pod_spec(pod_spec, expected_digests, observed_images, workload_name, config_maps, context)
   raise ReleaseManifestError, "#{context} must be a mapping" unless pod_spec.is_a?(Hash)
+  validate_pod_container_identity(pod_spec, context)
 
   containers = pod_spec['containers']
   raise ReleaseManifestError, "#{context}.containers must be a non-empty array" unless containers.is_a?(Array) && !containers.empty?
@@ -511,6 +593,51 @@ def probe_command(container, probe_name)
   command.is_a?(Array) ? command.join(' ') : ''
 end
 
+def mounted_config_map_name(pod_spec, container, mount_path)
+  mount = (container['volumeMounts'] || []).find { |candidate| candidate.is_a?(Hash) && candidate['mountPath'] == mount_path }
+  return nil unless mount
+
+  volume = (pod_spec['volumes'] || []).find { |candidate| candidate.is_a?(Hash) && candidate['name'] == mount['name'] }
+  volume&.dig('configMap', 'name')
+end
+
+# The scan Pod must take its daemon limits from a read-only ConfigMap rather
+# than from an in-image `sed -i` rewrite that a non-root container cannot
+# perform. Enforcing the *file* keeps the manifest honest about the limits the
+# daemon actually runs with; enforcing the environment would accept a Pod whose
+# clamd fell back to weaker compiled defaults.
+def validate_clamav_daemon_config(scanner, clamav, config_maps)
+  pod_spec = scanner.dig('spec', 'template', 'spec')
+  config_name = mounted_config_map_name(pod_spec, clamav, CLAMD_CONF_PATH)
+  unless config_name
+    raise ReleaseManifestError, "merchant-worker-scan clamav container must mount the effective clamd.conf from a ConfigMap at #{CLAMD_CONF_PATH}; the image's own entrypoint rewrites that file with a root-only sed -i, which this non-root Pod cannot do"
+  end
+
+  config_map = config_maps[config_name]
+  raise ReleaseManifestError, "ConfigMap/#{config_name} mounted by the clamav container is not bound into the rendered manifest" unless config_map
+  body = config_map.dig('data', 'clamd.conf')
+  raise ReleaseManifestError, "ConfigMap/#{config_name} must define data.clamd.conf for the mounted daemon configuration" unless body.is_a?(String) && !body.empty?
+
+  directives = body.each_line.map(&:strip).reject { |line| line.empty? || line.start_with?('#') }
+  CLAMAV_DAEMON_LIMITS.each do |directive, value|
+    next if directives.include?("#{directive} #{value}")
+
+    raise ReleaseManifestError, "ConfigMap/#{config_name} clamd.conf must set the uncommented directive `#{directive} #{value}`; a commented or weaker value lets clamd run below the 100 MiB scan boundary this deployment advertises"
+  end
+
+  %w[startupProbe livenessProbe].each do |probe|
+    command = probe_command(clamav, probe)
+    next if command.include?('clamdscan --ping 1') && command.include?(CLAMD_CONF_PATH) && CLAMAV_DAEMON_LIMITS.all? { |directive, value| command.include?(directive) && command.include?(value) }
+
+    raise ReleaseManifestError, "clamav #{probe} must fail closed on clamd PING and on the effective 100 MiB daemon limits read from #{CLAMD_CONF_PATH}"
+  end
+
+  readiness = probe_command(clamav, 'readinessProbe')
+  unless readiness.include?('clamdscan --ping 1') && readiness.include?(CLAMD_CONF_PATH) && readiness.include?('-mmin -1440') && CLAMAV_DAEMON_LIMITS.all? { |directive, value| readiness.include?(directive) && readiness.include?(value) }
+    raise ReleaseManifestError, "clamav readinessProbe must require the effective 100 MiB daemon limits read from #{CLAMD_CONF_PATH}, clamd PING, and signatures no older than 1440 minutes"
+  end
+end
+
 def validate_asset_scanner_contract(documents, config_maps)
   resources = flattened_resources(documents)
   runtime = config_maps['merchant-runtime']
@@ -546,17 +673,7 @@ def validate_asset_scanner_contract(documents, config_maps)
   raise ReleaseManifestError, 'merchant-worker-scan clamav container must use clamav image' unless image_name(clamav['image'].to_s) == 'clamav'
   require_literal_environment(worker, 'WORKER_ROLE', 'scan')
   require_secret_environment(worker, SCANNER_WORKER_SECRET_ENV)
-  CLAMAV_DAEMON_CONFIG.each { |name, expected| require_literal_environment(clamav, name, expected) }
-  %w[startupProbe livenessProbe].each do |probe|
-    command = probe_command(clamav, probe)
-    unless command.include?('clamdscan --ping 1') && CLAMAV_DAEMON_CONFIG.all? { |name, expected| command.include?(name.delete_prefix('CLAMD_CONF_')) && command.include?(expected) }
-      raise ReleaseManifestError, "clamav #{probe} must fail closed on clamd PING and its effective 100 MiB daemon limits"
-    end
-  end
-  readiness = probe_command(clamav, 'readinessProbe')
-  unless readiness.include?('clamdscan --ping 1') && readiness.include?('-mmin -1440') && CLAMAV_DAEMON_CONFIG.all? { |name, expected| readiness.include?(name.delete_prefix('CLAMD_CONF_')) && readiness.include?(expected) }
-    raise ReleaseManifestError, 'clamav readinessProbe must require effective 100 MiB daemon limits, clamd PING, and signatures no older than 1440 minutes'
-  end
+  validate_clamav_daemon_config(scanner, clamav, config_maps)
 end
 
 def parse_expected_digests(specification)

@@ -12,6 +12,10 @@ data:
   # next request instead of waiting for an upstream session refresh.
   MCP_AUTHZ_MODE: enforce
   AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: "true"
+  # Product-image generation must prove the source asset is scanned clean and
+  # carries approved commercial rights. The API reads this boolean with a
+  # fail-open default, so the rendered runtime has to state it explicitly.
+  REQUIRE_APPROVED_ASSET_FOR_GENERATION: "true"
   # The merchant host uses the bearer boundary; ops.yxsona.com
   # remains OIDC-gateway-only. The API compares this exact host value.
   MERCHANT_BEARER_HOSTNAME: yxsona.com
@@ -98,6 +102,11 @@ data:
   ALERT_CHANNEL_SECRET_REF: vault://merchant-alert-channel
   MODEL_RELAY_BASE_URL: https://model-relay.example.com/v1
   MODEL_RELAY_ALLOWED_HOSTS: model-relay.example.com
+  # Artifact fetch allowlists. These are illustrative template values, not a
+  # deployable configuration: the manifest binding gate requires each one to
+  # equal the operator's production config value, and that config may not list a
+  # reserved placeholder host. Shipping an unsubstituted value therefore fails
+  # the gate rather than starting with an allowlist that rejects every real host.
   VIDEO_ARTIFACT_ALLOWED_HOSTS: video-cdn.example.com
   IMAGE_ARTIFACT_ALLOWED_HOSTS: image-cdn.example.com
   MODEL_RELAY_PRICING_DERIVATION_ENABLED: "true"
@@ -168,6 +177,12 @@ data:
   PAYMENT_CALLBACK_BASE_URL: https://yxsona.com/v1
   PAYMENT_RECONCILIATION_ENABLED: "true"
   PAYMENT_REFUND_ENABLED: "true"
+  # Channel label for V2 commercial orders. Required even when the PAYMENT_*
+  # gateway above is fully configured: `commercialPaymentProvider()` runs before
+  # the order is written and returns 503 when this is unset, so a missing value
+  # makes `commercial.order.create` fail closed with no order row and leaves the
+  # operator's `ops.commercial.order.payment.verify` with nothing to verify.
+  COMMERCIAL_PAYMENT_PROVIDER: alipay
   VAULT_KV_MOUNT: secret
   VAULT_CREDENTIAL_PATH_PREFIX: merchant-marketing
   PLUGIN_WRITE_ENABLED: "false"

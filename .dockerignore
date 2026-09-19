@@ -1,3 +1,10 @@
+# Build-context hygiene. `infra/docker/candidate-gates.Dockerfile` is the only
+# Dockerfile that uses `COPY . .`, and it is normally built from a `git archive`
+# extraction (see infra/scripts/build-ecs-candidate-gates-image.sh) which already
+# excludes ignored files. A manual `docker build .` from the repository root does
+# not, so every local runtime secret and generated artifact must be excluded here
+# as well. Defence in depth: the Dockerfile also asserts that local secret files
+# never reached the context.
 node_modules
 demo/merchant-studio/node_modules
 demo/merchant-studio/dist
@@ -8,3 +15,26 @@ coverage
 *.log
 artifacts
 dogfood
+
+# Local runtime secrets. `.env.example` is the tracked, secret-free template and
+# stays in the context so provenance tooling can still read it.
+.env
+.env.*
+!.env.example
+.env.production-config-path
+
+# Generated evidence and local inventories that inflate or leak workstation state.
+test-results
+.codegraph
+.codegraph.db
+.cache
+*.tar.gz
+screenshots
+# Matches merchant-inventory.json, merchant-all-inventory.json,
+# ops-inventory.json, ops-all-inventory.json and
+# ops-workspace-visual-inventory.json. The narrower
+# `merchant-*-inventory.json` / `ops-*-inventory.json` do NOT match the
+# unsuffixed merchant-inventory.json / ops-inventory.json, which were still
+# reaching the build context.
+*-inventory.json
+.DS_Store

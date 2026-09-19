@@ -1,3 +1,23 @@
+# Worker fleet.
+#
+# Metrics exposure (added for the observability gap):
+#   Every worker process now serves Prometheus text format on containerPort
+#   `metrics` (9102) at GET /metrics. `WORKER_METRICS_HOST=0.0.0.0` is set
+#   explicitly here because the in-code default is 127.0.0.1, which is
+#   unreachable from a scraper running in another Pod.
+#
+#   The endpoint is read-only, exposes no tenant data, and is fail-closed in
+#   production: without METRICS_AUTH_TOKEN it answers 503, and a non-matching
+#   bearer answers 401. Provisioning the token is what makes these series
+#   readable; see infra/observability/prometheus-scrape.example.yaml.
+#
+#   REQUIRED COMPANION (not yet applied): these Pods currently have no ingress
+#   NetworkPolicy except merchant-worker-scan, whose policy is `ingress: []`.
+#   Until a rule allowing the scraper's namespace on 9102 is added to
+#   infra/kubernetes/base/network-policies.yaml, the annotated targets are
+#   either unreachable (scan) or reachable by every Pod in the namespace
+#   (the other five). The annotations below declare intent; they do not
+#   themselves grant access.
 apiVersion: apps/v1
 kind: Deployment
 metadata: {name: merchant-worker-sync, labels: {app.kubernetes.io/name: merchant-worker-sync, app.kubernetes.io/part-of: merchant-marketing-codex}}
@@ -5,12 +25,12 @@ spec:
   replicas: 2
   selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-sync}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: merchant-worker-sync, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:ff10827fede9f4135e9b5cbae7c3b5317392c7b5587ba4e724d0d8ee3d3f8139"}}
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-sync, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:f8437cbf2a10e05e6b4d29393dfb32014de062f0016be9768168264ab5d63af4", prometheus.io/scrape: "true", prometheus.io/path: /metrics, prometheus.io/port: "9102"}}
     spec:
       terminationGracePeriodSeconds: 45
       automountServiceAccountToken: false
       securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
-      containers: [{name: worker, image: "merchant-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", envFrom: [{configMapRef: {name: merchant-runtime}}], env: [{name: WORKER_ROLE, value: sync}, {name: WORKER_READY_FILE, value: /tmp/merchant-worker-sync-ready}, {name: OTEL_SERVICE_NAME, value: merchant-worker-sync}, {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: DATABASE_URL}}}, {name: REDIS_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: REDIS_URL}}}, {name: WORKER_API_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_SYNC_API_TOKEN}}}, {name: WORKER_API_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_SYNC_API_SIGNING_SECRET}}}, {name: VAULT_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: VAULT_TOKEN}}}], volumeMounts: [{name: tmp, mountPath: /tmp}], readinessProbe: {exec: {command: ["/bin/sh", "-c", "test -s /tmp/merchant-worker-sync-ready && find /tmp/merchant-worker-sync-ready -mmin -2 -print -quit | grep -q ."]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 6}, livenessProbe: {exec: {command: ["/bin/sh", "-c", "find /tmp/merchant-worker-sync-ready -mmin -2 -print -quit | grep -q ."]}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}, resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "2", memory: 4Gi}}, securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}}]
+      containers: [{name: worker, image: "merchant-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", envFrom: [{configMapRef: {name: merchant-runtime}}], env: [{name: WORKER_ROLE, value: sync}, {name: WORKER_READY_FILE, value: /tmp/merchant-worker-sync-ready}, {name: OTEL_SERVICE_NAME, value: merchant-worker-sync}, {name: WORKER_METRICS_HOST, value: "0.0.0.0"}, {name: WORKER_METRICS_PORT, value: "9102"}, {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: DATABASE_URL}}}, {name: REDIS_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: REDIS_URL}}}, {name: WORKER_API_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_SYNC_API_TOKEN}}}, {name: WORKER_API_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_SYNC_API_SIGNING_SECRET}}}, {name: VAULT_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: VAULT_TOKEN}}}], ports: [{name: metrics, containerPort: 9102, protocol: TCP}], volumeMounts: [{name: tmp, mountPath: /tmp}], readinessProbe: {exec: {command: ["/bin/sh", "-c", "test -s /tmp/merchant-worker-sync-ready && find /tmp/merchant-worker-sync-ready -mmin -2 -print -quit | grep -q ."]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 6}, livenessProbe: {exec: {command: ["/bin/sh", "-c", "find /tmp/merchant-worker-sync-ready -mmin -2 -print -quit | grep -q ."]}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}, resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "2", memory: 4Gi}}, securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}}]
       volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
 ---
 apiVersion: apps/v1
@@ -20,12 +40,12 @@ spec:
   replicas: 2
   selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-generation}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: merchant-worker-generation, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:ff10827fede9f4135e9b5cbae7c3b5317392c7b5587ba4e724d0d8ee3d3f8139"}}
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-generation, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:f8437cbf2a10e05e6b4d29393dfb32014de062f0016be9768168264ab5d63af4", prometheus.io/scrape: "true", prometheus.io/path: /metrics, prometheus.io/port: "9102"}}
     spec:
       terminationGracePeriodSeconds: 45
       automountServiceAccountToken: false
       securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
-      containers: [{name: worker, image: "merchant-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", envFrom: [{configMapRef: {name: merchant-runtime}}], env: [{name: WORKER_ROLE, value: generation}, {name: WORKER_READY_FILE, value: /tmp/merchant-worker-generation-ready}, {name: OTEL_SERVICE_NAME, value: merchant-worker-generation}, {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: DATABASE_URL}}}, {name: REDIS_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: REDIS_URL}}}, {name: WORKER_API_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_GENERATION_API_TOKEN}}}, {name: WORKER_API_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_GENERATION_API_SIGNING_SECRET}}}, {name: MODEL_RELAY_API_KEY, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: MODEL_RELAY_API_KEY}}}], volumeMounts: [{name: tmp, mountPath: /tmp}], readinessProbe: {exec: {command: ["/bin/sh", "-c", "test -s /tmp/merchant-worker-generation-ready && find /tmp/merchant-worker-generation-ready -mmin -2 -print -quit | grep -q ."]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 6}, livenessProbe: {exec: {command: ["/bin/sh", "-c", "find /tmp/merchant-worker-generation-ready -mmin -2 -print -quit | grep -q ."]}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}, resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "2", memory: 4Gi}}, securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}}]
+      containers: [{name: worker, image: "merchant-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", envFrom: [{configMapRef: {name: merchant-runtime}}], env: [{name: WORKER_ROLE, value: generation}, {name: WORKER_READY_FILE, value: /tmp/merchant-worker-generation-ready}, {name: OTEL_SERVICE_NAME, value: merchant-worker-generation}, {name: WORKER_METRICS_HOST, value: "0.0.0.0"}, {name: WORKER_METRICS_PORT, value: "9102"}, {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: DATABASE_URL}}}, {name: REDIS_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: REDIS_URL}}}, {name: WORKER_API_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_GENERATION_API_TOKEN}}}, {name: WORKER_API_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_GENERATION_API_SIGNING_SECRET}}}, {name: MODEL_RELAY_API_KEY, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: MODEL_RELAY_API_KEY}}}], ports: [{name: metrics, containerPort: 9102, protocol: TCP}], volumeMounts: [{name: tmp, mountPath: /tmp}], readinessProbe: {exec: {command: ["/bin/sh", "-c", "test -s /tmp/merchant-worker-generation-ready && find /tmp/merchant-worker-generation-ready -mmin -2 -print -quit | grep -q ."]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 6}, livenessProbe: {exec: {command: ["/bin/sh", "-c", "find /tmp/merchant-worker-generation-ready -mmin -2 -print -quit | grep -q ."]}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}, resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "2", memory: 4Gi}}, securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}}]
       volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
 ---
 apiVersion: apps/v1
@@ -35,12 +55,12 @@ spec:
   replicas: 2
   selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-publish}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: merchant-worker-publish, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:ff10827fede9f4135e9b5cbae7c3b5317392c7b5587ba4e724d0d8ee3d3f8139"}}
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-publish, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:f8437cbf2a10e05e6b4d29393dfb32014de062f0016be9768168264ab5d63af4", prometheus.io/scrape: "true", prometheus.io/path: /metrics, prometheus.io/port: "9102"}}
     spec:
       terminationGracePeriodSeconds: 45
       automountServiceAccountToken: false
       securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
-      containers: [{name: worker, image: "merchant-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", envFrom: [{configMapRef: {name: merchant-runtime}}], env: [{name: WORKER_ROLE, value: publish}, {name: WORKER_READY_FILE, value: /tmp/merchant-worker-publish-ready}, {name: OTEL_SERVICE_NAME, value: merchant-worker-publish}, {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: DATABASE_URL}}}, {name: REDIS_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: REDIS_URL}}}, {name: WORKER_API_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_PUBLISH_API_TOKEN}}}, {name: WORKER_API_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_PUBLISH_API_SIGNING_SECRET}}}, {name: VAULT_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: VAULT_TOKEN}}}], volumeMounts: [{name: tmp, mountPath: /tmp}], readinessProbe: {exec: {command: ["/bin/sh", "-c", "test -s /tmp/merchant-worker-publish-ready && find /tmp/merchant-worker-publish-ready -mmin -2 -print -quit | grep -q ."]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 6}, livenessProbe: {exec: {command: ["/bin/sh", "-c", "find /tmp/merchant-worker-publish-ready -mmin -2 -print -quit | grep -q ."]}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}, resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "1", memory: 2Gi}}, securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}}]
+      containers: [{name: worker, image: "merchant-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", envFrom: [{configMapRef: {name: merchant-runtime}}], env: [{name: WORKER_ROLE, value: publish}, {name: WORKER_READY_FILE, value: /tmp/merchant-worker-publish-ready}, {name: OTEL_SERVICE_NAME, value: merchant-worker-publish}, {name: WORKER_METRICS_HOST, value: "0.0.0.0"}, {name: WORKER_METRICS_PORT, value: "9102"}, {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: DATABASE_URL}}}, {name: REDIS_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: REDIS_URL}}}, {name: WORKER_API_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_PUBLISH_API_TOKEN}}}, {name: WORKER_API_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_PUBLISH_API_SIGNING_SECRET}}}, {name: VAULT_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: VAULT_TOKEN}}}], ports: [{name: metrics, containerPort: 9102, protocol: TCP}], volumeMounts: [{name: tmp, mountPath: /tmp}], readinessProbe: {exec: {command: ["/bin/sh", "-c", "test -s /tmp/merchant-worker-publish-ready && find /tmp/merchant-worker-publish-ready -mmin -2 -print -quit | grep -q ."]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 6}, livenessProbe: {exec: {command: ["/bin/sh", "-c", "find /tmp/merchant-worker-publish-ready -mmin -2 -print -quit | grep -q ."]}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}, resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "1", memory: 2Gi}}, securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}}]
       volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
 ---
 apiVersion: apps/v1
@@ -50,12 +70,12 @@ spec:
   replicas: 2
   selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-reconcile}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: merchant-worker-reconcile, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:ff10827fede9f4135e9b5cbae7c3b5317392c7b5587ba4e724d0d8ee3d3f8139"}}
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-reconcile, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:f8437cbf2a10e05e6b4d29393dfb32014de062f0016be9768168264ab5d63af4", prometheus.io/scrape: "true", prometheus.io/path: /metrics, prometheus.io/port: "9102"}}
     spec:
       terminationGracePeriodSeconds: 45
       automountServiceAccountToken: false
       securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
-      containers: [{name: worker, image: "merchant-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", envFrom: [{configMapRef: {name: merchant-runtime}}], env: [{name: WORKER_ROLE, value: reconcile}, {name: WORKER_READY_FILE, value: /tmp/merchant-worker-reconcile-ready}, {name: OTEL_SERVICE_NAME, value: merchant-worker-reconcile}, {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: DATABASE_URL}}}, {name: REDIS_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: REDIS_URL}}}, {name: WORKER_API_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_RECONCILE_API_TOKEN}}}, {name: WORKER_API_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_RECONCILE_API_SIGNING_SECRET}}}, {name: VAULT_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: VAULT_TOKEN}}}], volumeMounts: [{name: tmp, mountPath: /tmp}], readinessProbe: {exec: {command: ["/bin/sh", "-c", "test -s /tmp/merchant-worker-reconcile-ready && find /tmp/merchant-worker-reconcile-ready -mmin -2 -print -quit | grep -q ."]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 6}, livenessProbe: {exec: {command: ["/bin/sh", "-c", "find /tmp/merchant-worker-reconcile-ready -mmin -2 -print -quit | grep -q ."]}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}, resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "1", memory: 2Gi}}, securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}}]
+      containers: [{name: worker, image: "merchant-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", envFrom: [{configMapRef: {name: merchant-runtime}}], env: [{name: WORKER_ROLE, value: reconcile}, {name: WORKER_READY_FILE, value: /tmp/merchant-worker-reconcile-ready}, {name: OTEL_SERVICE_NAME, value: merchant-worker-reconcile}, {name: WORKER_METRICS_HOST, value: "0.0.0.0"}, {name: WORKER_METRICS_PORT, value: "9102"}, {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: DATABASE_URL}}}, {name: REDIS_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: REDIS_URL}}}, {name: WORKER_API_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_RECONCILE_API_TOKEN}}}, {name: WORKER_API_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_RECONCILE_API_SIGNING_SECRET}}}, {name: VAULT_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: VAULT_TOKEN}}}], ports: [{name: metrics, containerPort: 9102, protocol: TCP}], volumeMounts: [{name: tmp, mountPath: /tmp}], readinessProbe: {exec: {command: ["/bin/sh", "-c", "test -s /tmp/merchant-worker-reconcile-ready && find /tmp/merchant-worker-reconcile-ready -mmin -2 -print -quit | grep -q ."]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 6}, livenessProbe: {exec: {command: ["/bin/sh", "-c", "find /tmp/merchant-worker-reconcile-ready -mmin -2 -print -quit | grep -q ."]}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}, resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "1", memory: 2Gi}}, securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}}]
       volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
 ---
 apiVersion: policy/v1
@@ -72,19 +92,26 @@ spec:
   replicas: 2
   selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-automation}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: merchant-worker-automation, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:ff10827fede9f4135e9b5cbae7c3b5317392c7b5587ba4e724d0d8ee3d3f8139"}}
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-automation, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:f8437cbf2a10e05e6b4d29393dfb32014de062f0016be9768168264ab5d63af4", prometheus.io/scrape: "true", prometheus.io/path: /metrics, prometheus.io/port: "9102"}}
     spec:
       terminationGracePeriodSeconds: 45
       automountServiceAccountToken: false
       securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
-      containers: [{name: worker, image: "merchant-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", envFrom: [{configMapRef: {name: merchant-runtime}}], env: [{name: WORKER_ROLE, value: automation}, {name: WORKER_AUTOMATION_INTERVAL_MS, value: "30000"}, {name: WORKER_READY_FILE, value: /tmp/merchant-worker-automation-ready}, {name: OTEL_SERVICE_NAME, value: merchant-worker-automation}, {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: DATABASE_URL}}}, {name: REDIS_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: REDIS_URL}}}, {name: WORKER_API_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_AUTOMATION_API_TOKEN}}}, {name: WORKER_API_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_AUTOMATION_API_SIGNING_SECRET}}}], volumeMounts: [{name: tmp, mountPath: /tmp}], readinessProbe: {exec: {command: ["/bin/sh", "-c", "test -s /tmp/merchant-worker-automation-ready && find /tmp/merchant-worker-automation-ready -mmin -2 -print -quit | grep -q ."]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 6}, livenessProbe: {exec: {command: ["/bin/sh", "-c", "find /tmp/merchant-worker-automation-ready -mmin -2 -print -quit | grep -q ."]}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}, resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}, securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}}]
+      containers: [{name: worker, image: "merchant-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", envFrom: [{configMapRef: {name: merchant-runtime}}], env: [{name: WORKER_ROLE, value: automation}, {name: WORKER_AUTOMATION_INTERVAL_MS, value: "30000"}, {name: WORKER_READY_FILE, value: /tmp/merchant-worker-automation-ready}, {name: OTEL_SERVICE_NAME, value: merchant-worker-automation}, {name: WORKER_METRICS_HOST, value: "0.0.0.0"}, {name: WORKER_METRICS_PORT, value: "9102"}, {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: DATABASE_URL}}}, {name: REDIS_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: REDIS_URL}}}, {name: WORKER_API_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_AUTOMATION_API_TOKEN}}}, {name: WORKER_API_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_AUTOMATION_API_SIGNING_SECRET}}}], ports: [{name: metrics, containerPort: 9102, protocol: TCP}], volumeMounts: [{name: tmp, mountPath: /tmp}], readinessProbe: {exec: {command: ["/bin/sh", "-c", "test -s /tmp/merchant-worker-automation-ready && find /tmp/merchant-worker-automation-ready -mmin -2 -print -quit | grep -q ."]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 6}, livenessProbe: {exec: {command: ["/bin/sh", "-c", "find /tmp/merchant-worker-automation-ready -mmin -2 -print -quit | grep -q ."]}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}, resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}, securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}}]
       volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata: {name: merchant-worker-automation}
 spec:
-  minAvailable: 1
+  # `maxUnavailable`, not `minAvailable: 1`. Every production overlay scales
+  # automation to a single replica, and the automation worker deliberately
+  # excludes itself from lease-based claiming (see the `config.role !==
+  # 'automation'` dispatch guard), so it is a singleton on purpose. A
+  # `minAvailable: 1` budget over one replica forbids every voluntary eviction
+  # and blocks node drains indefinitely. One unavailable pod still protects the
+  # two-replica base rendering, which is what this budget was written for.
+  maxUnavailable: 1
   selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-automation}}
 ---
 apiVersion: apps/v1
@@ -97,7 +124,7 @@ spec:
     rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
   selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-scan}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: merchant-worker-scan, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:ff10827fede9f4135e9b5cbae7c3b5317392c7b5587ba4e724d0d8ee3d3f8139"}}
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-scan, app.kubernetes.io/part-of: merchant-marketing-codex}, annotations: {merchant.example.com/config-sha256: "sha256:f8437cbf2a10e05e6b4d29393dfb32014de062f0016be9768168264ab5d63af4", prometheus.io/scrape: "true", prometheus.io/path: /metrics, prometheus.io/port: "9102"}}
     spec:
       terminationGracePeriodSeconds: 90
       nodeSelector: {kubernetes.io/arch: amd64}
@@ -138,6 +165,12 @@ spec:
             - {name: SCANNER_EICAR_MAX_AGE_SECONDS, value: "900"}
             - {name: SCANNER_CALLBACK_MAX_AGE_SECONDS, value: "86400"}
             - {name: SCANNER_MINIMUM_READY_INSTANCES, value: "2"}
+            # Pod IP binding is deliberate: a scraper cannot reach another
+            # Pod's loopback. See the header note for the NetworkPolicy that
+            # must exist before this listener is reachable by a scraper.
+            - {name: WORKER_METRICS_HOST, value: "0.0.0.0"}
+            - {name: WORKER_METRICS_PORT, value: "9102"}
+          ports: [{name: metrics, containerPort: 9102, protocol: TCP}]
           volumeMounts:
             - {name: tmp, mountPath: /tmp}
             - {name: scanner-signing-key, mountPath: /var/run/secrets/merchant-scanner, readOnly: true}
@@ -145,20 +178,45 @@ spec:
           livenessProbe: {exec: {command: ["/bin/sh", "-c", "node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3, failureThreshold: 3}
           resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "2", memory: 2Gi}}
           securityContext: {runAsUser: 10001, runAsGroup: 10001, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+        # The pinned upstream image declares no `USER` and its `/init` needs root
+        # (it runs `install -d`, `chown -R` and `sed -i` over /etc/clamav), so
+        # leaving this container on the image default made kubelet refuse the
+        # Pod with "container has runAsNonRoot and image will run as root".
+        #
+        # Fix: run the image's own non-root entrypoint as uid 10001 and feed it
+        # the effective daemon config as a read-only ConfigMap mount, instead of
+        # letting the entrypoint rewrite /etc/clamav/clamd.conf in place.
+        # `/init-unprivileged` is shipped by the pinned digest; it skips the
+        # root-only steps and reads /etc/clamav/clamd.conf, which is exactly the
+        # mounted ConfigMap. See infra/kubernetes/base/clamav-config.yaml for why
+        # the daemon limits must not be left to the image defaults.
         - name: clamav
           image: "clamav/clamav@sha256:761f6c99b8d9134b39431f8c200189cda749b17310091561bfa8b732f32bfada"
-          env: [{name: FRESHCLAM_CHECKS, value: "24"}, {name: CLAMD_CONF_StreamMaxLength, value: "100M"}, {name: CLAMD_CONF_MaxFileSize, value: "100M"}, {name: CLAMD_CONF_MaxScanSize, value: "100M"}, {name: CLAMD_CONF_AlertExceedsMax, value: "yes"}]
+          command: ["/init-unprivileged"]
+          env: [{name: FRESHCLAM_CHECKS, value: "24"}]
           ports: [{name: clamd, containerPort: 3310, protocol: TCP}]
-          startupProbe: {exec: {command: ["/bin/sh", "-c", "test \"$CLAMD_CONF_StreamMaxLength\" = 100M && test \"$CLAMD_CONF_MaxFileSize\" = 100M && test \"$CLAMD_CONF_MaxScanSize\" = 100M && test \"$CLAMD_CONF_AlertExceedsMax\" = yes && clamdscan --ping 1 >/dev/null 2>&1"]}, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 30}
-          readinessProbe: {exec: {command: ["/bin/sh", "-c", "test \"$CLAMD_CONF_StreamMaxLength\" = 100M && test \"$CLAMD_CONF_MaxFileSize\" = 100M && test \"$CLAMD_CONF_MaxScanSize\" = 100M && test \"$CLAMD_CONF_AlertExceedsMax\" = yes && clamdscan --ping 1 >/dev/null 2>&1 && find /var/lib/clamav -maxdepth 1 -type f \\( -name daily.cvd -o -name daily.cld \\) -mmin -1440 | grep -q ."]}, periodSeconds: 15, timeoutSeconds: 10, failureThreshold: 2}
-          livenessProbe: {exec: {command: ["/bin/sh", "-c", "test \"$CLAMD_CONF_StreamMaxLength\" = 100M && test \"$CLAMD_CONF_MaxFileSize\" = 100M && test \"$CLAMD_CONF_MaxScanSize\" = 100M && test \"$CLAMD_CONF_AlertExceedsMax\" = yes && clamdscan --ping 1 >/dev/null 2>&1"]}, initialDelaySeconds: 30, periodSeconds: 30, timeoutSeconds: 10, failureThreshold: 3}
+          # These probes deliberately read /etc/clamav/clamd.conf -- the file
+          # clamd was handed -- rather than echoing the CLAMD_CONF_* environment
+          # variables, which is what the previous version checked. That check was
+          # a tautology: it asserted the value of the variable it had just set,
+          # never the value the daemon was actually running with.
+          startupProbe: {exec: {command: ["/bin/sh", "-c", "grep -qx 'StreamMaxLength 100M' /etc/clamav/clamd.conf && grep -qx 'MaxFileSize 100M' /etc/clamav/clamd.conf && grep -qx 'MaxScanSize 100M' /etc/clamav/clamd.conf && grep -qx 'AlertExceedsMax yes' /etc/clamav/clamd.conf && clamdscan --ping 1 >/dev/null 2>&1"]}, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 30}
+          readinessProbe: {exec: {command: ["/bin/sh", "-c", "grep -qx 'StreamMaxLength 100M' /etc/clamav/clamd.conf && grep -qx 'MaxFileSize 100M' /etc/clamav/clamd.conf && grep -qx 'MaxScanSize 100M' /etc/clamav/clamd.conf && grep -qx 'AlertExceedsMax yes' /etc/clamav/clamd.conf && clamdscan --ping 1 >/dev/null 2>&1 && find /var/lib/clamav -maxdepth 1 -type f \\( -name daily.cvd -o -name daily.cld \\) -mmin -1440 | grep -q ."]}, periodSeconds: 15, timeoutSeconds: 10, failureThreshold: 2}
+          livenessProbe: {exec: {command: ["/bin/sh", "-c", "grep -qx 'StreamMaxLength 100M' /etc/clamav/clamd.conf && grep -qx 'MaxFileSize 100M' /etc/clamav/clamd.conf && grep -qx 'MaxScanSize 100M' /etc/clamav/clamd.conf && grep -qx 'AlertExceedsMax yes' /etc/clamav/clamd.conf && clamdscan --ping 1 >/dev/null 2>&1"]}, initialDelaySeconds: 30, periodSeconds: 30, timeoutSeconds: 10, failureThreshold: 3}
           resources: {requests: {cpu: 500m, memory: 3Gi}, limits: {cpu: "2", memory: 4Gi}}
-          volumeMounts: [{name: clamav-database, mountPath: /var/lib/clamav}, {name: clamav-tmp, mountPath: /tmp}]
-          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          # /var/log/clamav must be writable: the image's freshclam.conf pins
+          # UpdateLogFile there and freshclam aborts when it cannot open it.
+          volumeMounts: [{name: clamav-config, mountPath: /etc/clamav/clamd.conf, subPath: clamd.conf, readOnly: true}, {name: clamav-database, mountPath: /var/lib/clamav}, {name: clamav-logs, mountPath: /var/log/clamav}, {name: clamav-tmp, mountPath: /tmp}]
+          securityContext: {runAsUser: 10001, runAsGroup: 10001, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
       volumes:
         - {name: tmp, emptyDir: {sizeLimit: 64Mi}}
         - {name: clamav-tmp, emptyDir: {sizeLimit: 256Mi}}
+        - {name: clamav-logs, emptyDir: {sizeLimit: 64Mi}}
         - {name: clamav-database, emptyDir: {sizeLimit: 2Gi}}
+        # defaultMode 0444: a subPath mount is not chowned by kubelet's fsGroup
+        # handling, so the file has to be readable without it. It carries no
+        # secret material.
+        - {name: clamav-config, configMap: {name: merchant-clamav-config, defaultMode: 292}}
         - name: scanner-signing-key
           projected:
             defaultMode: 288 # 0440; readable only by root and fsGroup 10001.
@@ -172,7 +230,16 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata: {name: merchant-worker-scan}
 spec:
-  minAvailable: 2
+  # `minAvailable: 2` over `replicas: 2` was unsatisfiable by construction: the
+  # budget equalled the replica count, so evicting either scan pod violated it.
+  # The scan pod additionally carries a REQUIRED podAntiAffinity on
+  # kubernetes.io/hostname, so the two replicas always land on different nodes
+  # and BOTH nodes became permanently undrainable. One available scanner still
+  # keeps the 100 MiB ClamAV boundary serving while a node drains; the drain
+  # window is the only time the scanner runs below its two-instance quorum.
+  # Raising replicas to 3 instead would make the required anti-affinity demand
+  # a third schedulable node, which the pilot overlay does not guarantee.
+  minAvailable: 1
   selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-scan}}
 ---
 apiVersion: policy/v1

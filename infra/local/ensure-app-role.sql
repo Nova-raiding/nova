@@ -116,11 +116,27 @@ BEGIN
   END IF;
 END
 $$;
+-- `REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM merchant_app` above is
+-- deliberately blanket, so every SECURITY DEFINER entry point the runtime is
+-- allowed to call has to be re-granted after it. Migration 223 adds the
+-- capability-trimmed commercial catalog projection; like the 051 worker
+-- catalog it is useless without this re-grant, because the deployed migrate
+-- entrypoint runs this script again *after* the migration chain.
 DO $$
 BEGIN
   IF to_regprocedure('public.worker_active_workspace_catalog()') IS NOT NULL THEN
     REVOKE ALL ON FUNCTION public.worker_active_workspace_catalog() FROM PUBLIC;
     GRANT EXECUTE ON FUNCTION public.worker_active_workspace_catalog() TO merchant_app;
+  END IF;
+
+  IF to_regprocedure('public.merchant_entitlement_snapshots_v2(integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.merchant_entitlement_snapshots_v2(integer) FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.merchant_entitlement_snapshots_v2(integer) TO merchant_app;
+  END IF;
+
+  IF to_regprocedure('public.merchant_onboarding_sku_v2()') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.merchant_onboarding_sku_v2() FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.merchant_onboarding_sku_v2() TO merchant_app;
   END IF;
 END
 $$;
@@ -300,6 +316,41 @@ BEGIN
       FROM PUBLIC, merchant_app, merchant_ops, merchant_alert_receiver;
     GRANT EXECUTE ON FUNCTION public.alert_webhook_receipts_ready()
       TO merchant_alert_receiver;
+  END IF;
+END
+$$;
+
+-- The global commercial catalog is a platform control-plane surface. Migration
+-- 146 revokes every privilege on these six tables from `merchant_app`, but the
+-- blanket `GRANT ... ON ALL TABLES IN SCHEMA public` near the top of this file
+-- runs again *after* the migration chain and silently undid that REVOKE, so
+-- the deny list was a no-op in every deployed environment. Pinning it here, at
+-- the end of the script, matches migration 146's stated intent ("Merchant
+-- runtime must consume a capability-trimmed application response; it never
+-- receives direct access to global catalog base tables") and makes the final
+-- state independent of any earlier `ALL TABLES` compatibility grant. Migration
+-- 223 provides the replacement projection the runtime now reads.
+--
+-- Sequences: confirmed none of these six relations owns a sequence. All six are
+-- keyed by caller-supplied TEXT ids with no DEFAULT, so
+-- `GRANT USAGE, SELECT ON ALL SEQUENCES` has nothing to widen here and needs no
+-- matching revoke. The loop still runs under the advisory lock taken at the top
+-- of this file, so a concurrent bootstrap cannot interleave between the blanket
+-- grant and this deny list.
+DO $$
+DECLARE
+  relation_name TEXT;
+BEGIN
+  IF to_regclass('public.commercial_catalog_skus') IS NOT NULL THEN
+    FOREACH relation_name IN ARRAY ARRAY[
+      'commercial_catalog_skus', 'commercial_catalog_sku_versions',
+      'commercial_catalog_sku_benefits', 'creative_point_rate_card_versions_v2',
+      'creative_point_rate_rules_v2', 'commercial_catalog_events_v2'
+    ] LOOP
+      IF to_regclass(format('public.%I', relation_name)) IS NOT NULL THEN
+        EXECUTE format('REVOKE ALL ON TABLE %I FROM merchant_app', relation_name);
+      END IF;
+    END LOOP;
   END IF;
 END
 $$;

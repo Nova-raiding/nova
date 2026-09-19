@@ -1,8 +1,35 @@
+# Docker replaces the repository-root .dockerignore with this file whenever it
+# builds `candidate-gates.Dockerfile` (the `<dockerfile>.dockerignore` rule), so
+# this list must stay a SUPERSET of the root .dockerignore. It carries the same
+# local-secret and generated-evidence exclusions plus the `**/` variants the
+# nested demo workspace needs. Keep both files in sync when adding entries.
 node_modules
 **/node_modules
 dist
 **/dist
 .git
+.gstack
 artifacts
+dogfood
 coverage
 *.log
+
+# Local runtime secrets. `.env.example` is the tracked, secret-free template.
+.env
+.env.*
+!.env.example
+.env.production-config-path
+
+# Generated evidence and local inventories that inflate or leak workstation state.
+test-results
+**/test-results
+.codegraph
+.codegraph.db
+.cache
+*.tar.gz
+screenshots
+# See the root .dockerignore: the broader glob is required because
+# merchant-inventory.json / ops-inventory.json have no middle segment.
+*-inventory.json
+.DS_Store
+**/.DS_Store

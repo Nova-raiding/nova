@@ -31,6 +31,16 @@ spec:
   ingress:
     # Public traffic can reach only the public Service through the ingress
     # controller. The Ingress itself rejects /v1/internal before proxying.
+    #
+    # This rule is L3/L4 only: every route the API serves (merchant REST, /mcp
+    # and the worker callbacks under /v1/sync-jobs, /v1/generation-jobs,
+    # /v1/publish-jobs, /v1/worker-events, /v1/assets/{id}/scan and
+    # /v1/ops/data-deletion/complete) shares pod port 8787, so a NetworkPolicy
+    # cannot separate them by path. The worker callbacks are therefore protected
+    # by `requireWorkerAuthorization` (role-bound HMAC proof) rather than by this
+    # policy, and the public path filter is the ingress-nginx
+    # `configuration-snippet` in ingress.yaml, which only matches
+    # ^/v1/internal. Do not read this rule as a worker-callback boundary.
     - from:
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
@@ -53,6 +63,15 @@ spec:
                   - merchant-worker-reconcile
                   - merchant-worker-automation
                   - merchant-worker-scan
+      ports: [{protocol: TCP, port: 8787}]
+    # Metrics collection. A Prometheus outside the namespace that is not
+    # explicitly allowed here is dropped by this policy, so minting
+    # METRICS_AUTH_TOKEN alone would still produce an empty scrape. Adjust the
+    # namespace label to wherever the scraper actually runs, and delete this
+    # rule if metrics are instead relayed through an in-namespace collector.
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: prometheus}}
       ports: [{protocol: TCP, port: 8787}]
 ---
 apiVersion: networking.k8s.io/v1

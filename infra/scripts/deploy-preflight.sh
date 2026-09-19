@@ -141,6 +141,14 @@ npx --no-install tsx "$(dirname "$0")/../../tests/release-manifest-gate.ts" \
 workspace_latest_migration=$(find "$repo_root/packages/persistence/src/migrations" -maxdepth 1 -type f -name '[0-9][0-9][0-9]_*.sql' -exec basename {} \; | sed 's/_.*//' | sort -n | tail -1)
 case "$EXPECTED_MIGRATION_VERSION" in ''|*[!0-9]*) echo 'EXPECTED_MIGRATION_VERSION must be numeric' >&2; exit 1 ;; esac
 [ "$workspace_latest_migration" = "$EXPECTED_MIGRATION_VERSION" ] || { echo "release migration chain tail mismatch: expected $EXPECTED_MIGRATION_VERSION, workspace has $workspace_latest_migration" >&2; exit 1; }
+# The tail version alone only proves that the workspace and the release agree on
+# a number: a rewritten, reordered, or deleted migration keeps the same tail and
+# still passes. The ECS path has always also verified the live chain (contiguous
+# workspace numbering plus per-migration name/checksum equality against both the
+# tenant and the Ops schema_migrations history). Run the same script here; it
+# needs only DATABASE_URL, OPS_DATABASE_URL and EXPECTED_MIGRATION_VERSION, all
+# required above, and psql/shasum, already required by the role probe below.
+sh "$(dirname "$0")/verify-database-migration-chain.sh"
 # The receiver credential is inherited only through its existing environment
 # variable or projected-file path. Never copy it into argv, logs, or a derived
 # shell variable while handing it to the runtime role/ACL probe.

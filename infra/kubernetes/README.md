@@ -30,3 +30,27 @@ digest、Secret 合同和回调网络策略的情况下手工追加一个 paymen
 对象存储身份使用 ACK RRSA，不使用节点 ECS metadata。上线前须在目标 ACK 集群启用 RRSA 和 `ack-pod-identity-webhook`，创建 `StoreNovaAckOssRole`，将信任策略的 `oidc:sub` 精确限制为 `system:serviceaccount:merchant:merchant-api-rrsa`，并只授予 `codex-image-20260914/merchant-assets/*` 所需的 OSS 权限。Webhook 必须向 API Pod 注入 `ALIBABA_CLOUD_ROLE_ARN`、`ALIBABA_CLOUD_OIDC_PROVIDER_ARN` 和 `ALIBABA_CLOUD_OIDC_TOKEN_FILE`；任一缺失时 `/readyz` 保持 503，禁止回退到共享节点角色或长期 AccessKey。
 
 API HPA 上限为 12；sync/generation/publish/reconcile 分别声明 HPA/PDB，automation 保持单副本并使用 PDB，扩缩容边界与 `scale-workloads.sh` 保持一致。当前 HPA 使用 CPU 作为无供应商依赖的最低门槛，生产还必须接入队列深度/最老任务年龄的 custom metrics，不能把 CPU HPA 当作队列容量证据。
+
+## 指标采集现状（未打通）
+
+`Service/merchant-api` 上的 `prometheus.io/scrape|path|port` 注解只是**约定**：本仓库没有部署 Prometheus，也没有任何进程读取这些注解，所以**当前没有任何指标被采集**。要真正采到，必须依次补齐四项，缺一项都只会得到空序列：
+
+1. **令牌**：`METRICS_AUTH_TOKEN` 作为 `merchant-runtime-secrets` 的 key 由托管密钥系统下发（契约见 `secret-contract.example.yaml`），并已通过 `secretKeyRef` 注入 API（`base/api.yaml`）。`NODE_ENV=production` 下缺失该值时 `GET /metrics` 固定返回 `503 METRICS_AUTH_NOT_CONFIGURED`，值不匹配返回 401。它是 Secret key 而非 ConfigMap key：发布门禁会拒绝任何形如 `*_TOKEN` 的 ConfigMap 键。
+2. **采集任务**：必须携带 `Authorization: Bearer <token>`，注解本身不带凭据。可照抄的契约见 `infra/observability/prometheus-scrape.example.yaml`。
+3. **网络**：`NetworkPolicy/merchant-api-ingress-boundary` 默认只放行 ingress-nginx 与本命名空间内的 UI/Worker；跨命名空间采集必须显式放行，否则请求在到达容器前即被丢弃（症状是采集超时，而不是 401）。`base/network-policies.yaml` 中已为 `monitoring` 命名空间的 `prometheus` Pod 预留了一条规则，**部署前必须按实际命名空间和标签改写**。
+4. **告警通道**：`infra/observability/prometheus-alerts.example.yaml` 是未部署的规则模板，需要 Alertmanager 与真实 paging 通道才会「有人知道」。
+
+**Worker 与 alert-receiver 现在无法靠加注解采集**：
+
+- `alert-receiver` 只应答 `/healthz`、`/readyz`、`/internal/v1/alerts`，没有 `/metrics`。
+- 已提交的 Worker 运行时也不监听任何 HTTP 端口（`apps/worker/src/main.ts` 是轮询循环），给它加 `prometheus.io/scrape` 只会指向不存在的端点。
+
+真正可用的队列信号目前由 API 的 `/metrics` 导出（`merchant_queue_oldest_job_age_seconds`、`merchant_job_state_count`、`merchant_outbox_pending_events`）。
+
+**即使 Worker 将来暴露了 `/metrics`，只加注解仍然不够。**以下三项必须同时成立，缺任何一项的表现都是采集超时或连接被拒（而不是 401）：
+
+1. 端点必须绑定到 Pod 的可达地址。仓库中的 Worker 指标服务默认绑定 `127.0.0.1`（`WORKER_METRICS_HOST`/`WORKER_METRICS_PORT`），loopback 对跨 Pod 采集永远不可达，必须显式改为 `0.0.0.0`。
+2. Worker Deployment 必须声明对应的 `containerPort` 并加上 `prometheus.io/scrape|path|port` 注解（当前 `base/workers.yaml` 两者都没有）。
+3. 必须有一条 NetworkPolicy 放行采集方到该端口；现有策略里 Worker 只有出向规则，入向默认拒绝。
+
+因此本次**没有**给六个 Worker Deployment 或 alert-receiver 添加采集注解：在端点本身不存在（或绑定 loopback）时加注解，等于把一个不存在的目标写成「已接入监控」，比不加更糟。补完上述三项后，注解应加到 Worker 自己的指标端口，而不是 API 的 8787。
