@@ -10,7 +10,6 @@ import { imageCandidateLoading } from './image-candidate-loading'
 import { mergeImageGenerationJobs } from './image-job-list'
 import { isRealReadableStore, merchantConnectionPresentation } from './platform-connection-status'
 import { DetailDecisionContract } from './DetailDecisionContract'
-import { LocalPluginConnection } from './LocalPluginConnection'
 import storeNovaLogo from './assets/store-nova-primary-horizontal.png'
 import {
   evidenceSafeTopLevelContent,
@@ -30,7 +29,6 @@ import {
   ChevronRight,
   CircleHelp,
   Clock3,
-  CreditCard,
   FileCheck2,
   FileText,
   FolderOpen,
@@ -60,9 +58,9 @@ import {
   Undo2,
   Upload,
   UserRound,
+  WalletCards,
   X,
   Zap,
-  WalletCards,
 } from 'lucide-react'
 import {
   answerTask,
@@ -100,7 +98,6 @@ import {
   fetchProductsByAsset,
   fetchProductPage,
   fetchPublishJobs,
-  fetchManualPublishRecords,
   fetchRulePacks,
   fetchSyncJobs,
   fetchTask,
@@ -152,7 +149,6 @@ import {
   type ContentVersion,
   type ProductAssetBinding,
   type PublishJob,
-  type ManualPublishRecord,
   type PublishPreview,
   type ReviewCategory,
   type ReviewFinding,
@@ -178,11 +174,6 @@ import {
   validateTaskStoreIdentity,
 } from './store-identity'
 import { resolveLibraryData } from './library-data'
-import {
-  KnowledgeBindingStatus as KnowledgeBindingStatusPanel,
-  resolveKnowledgeBindingStatus,
-  resolveKnowledgeBindingSummary,
-} from './knowledge-binding-status.js'
 
 const taskQuestionEvidenceLabels: Record<NonNullable<TaskQuestion['evidenceKind']>, string> = {
   merchant_request: '依据：你的任务描述',
@@ -226,7 +217,6 @@ import { resolveProductAssetRelation } from './product-assets.js'
 import { ContextRecoveryCard } from './ContextRecoveryCard.js'
 import { canonicalProductActionAllowed, groupTasksForRecovery, prioritizeProducts } from './merchant-ia.js'
 import { resolveDetailSopSteps } from './detail-sop.js'
-import { ProductSpreadsheetImport } from './ProductSpreadsheetImport.js'
 
 const MERCHANT_READ_ONLY_ROLES = new Set(['viewer', 'knowledge_reader'])
 const merchantRole = (import.meta.env.VITE_MERCHANT_ROLE ?? '').trim().toLowerCase()
@@ -282,6 +272,7 @@ const navItems: Array<{
   { id: 'overview', label: '运营概览', icon: LayoutDashboard },
   // 商品资产不再作为独立工作台；相关能力收敛到知识库二级工作区。
   { id: 'products', label: '知识库', icon: BookOpen, entry: 'knowledge' },
+  { id: 'finance', label: '财务概况', icon: WalletCards },
 ]
 
 const knowledgeSubItems: Array<{
@@ -743,13 +734,7 @@ const activity = [
 ]
 
 function BrandMark() {
-  return (
-    <div className="brand-mark" aria-hidden="true">
-      <span />
-      <span />
-      <span />
-    </div>
-  )
+  return <img className="brand-logo" src={storeNovaLogo} alt="Store Nova" />
 }
 
 function StatusChip({
@@ -937,27 +922,20 @@ function Topbar({
   // notifications for the currently signed-in merchant.
   const issueItems = (issueMetrics?.riskItems ?? []).filter(item => item.evidence?.unboundLocalData !== true && item.evidence?.fixtureData !== true)
   const issueCount = issueItems.length
-  const environmentStatus = resolveMerchantEnvironmentStatus({
-    apiBaseUrl,
-    apiOnline,
-    apiHealth,
-    modelStatus,
-    modelStatusRead,
-  })
   const openIssueDetail = (item: WorkspaceMetrics['riskItems'][number]) => {
     setNotificationOpen(false)
     setIssueDetail(item)
   }
   const notificationPanel = (
     <div className="merchant-notification-panel" role="region" aria-label="待处理问题">
-      {issueMetrics?.dataCoverage?.fixtureDataPresent ? <div className="merchant-notification-fixture-warning">当前工作区包含本地演示数据；未绑定或演示店铺的问题已隐藏，不计入工作区待处理问题。</div> : null}
-      <div className="merchant-notification-heading">
-        <div><strong>工作区待处理问题</strong><span>{issueCount ? `${issueCount} 项需要关注` : '当前没有待处理问题'}</span></div>
-        <button type="button" className="text-button" onClick={() => { setNotificationOpen(false); onOpenIssues() }}>查看全部</button>
-      </div>
-      {issueItems.length ? <List
+      {issueItems.length ? <>
+        <div className="merchant-notification-heading">
+          <div><strong>工作区待处理问题</strong><span>{issueCount} 项需要关注</span></div>
+        </div>
+        <List
+        className="merchant-notification-list"
         size="small"
-        dataSource={issueItems.slice(0, 8)}
+        dataSource={issueItems}
         renderItem={(item, index) => <List.Item className="merchant-notification-item">
           <button
             type="button"
@@ -971,8 +949,8 @@ function Topbar({
             <span className="merchant-notification-index">{index + 1}</span>
           </button>
         </List.Item>}
-      /> : <div className="merchant-notification-empty"><CheckCircle2 size={18} />暂无需要处理的问题</div>}
-      {issueCount > 8 ? <div className="merchant-notification-footer">还有 {issueCount - 8} 项问题，请打开商品与问题查看</div> : null}
+        />
+      </> : <div className="merchant-notification-empty">暂无需要处理的问题</div>}
     </div>
   )
   return (
@@ -988,32 +966,9 @@ function Topbar({
         <Menu size={20} />
       </button>
       <div>
-        <div className="eyebrow">
-          云朵轻户外 ·{' '}
-          {!apiBaseUrl
-            ? '离线演示工作区'
-            : apiOnline === false
-              ? 'API 不可用'
-              : apiMode === 'fixture'
-                ? '本地演示工作区'
-              : apiMode === 'local'
-                  ? '本地 API 工作区'
-                  : '工作区 API'}
-        </div>
         <h1>{titles[page]}</h1>
       </div>
       <div className="topbar-actions">
-        {apiBaseUrl && account && <LocalPluginConnection apiBaseUrl={apiBaseUrl} account={account} />}
-        <button
-          className={`health-button ${environmentStatus.tone}`}
-          onClick={() => onOpenUtility('health')}
-          aria-label="查看系统健康与上线状态"
-        >
-          <span
-            className={`pulse-dot ${environmentStatus.tone === 'warning' ? 'warning' : ''}`}
-          />
-          环境状态 <b>{environmentStatus.topbarLabel}</b>
-        </button>
         <Dropdown trigger={['click']} placement="bottomRight" open={notificationOpen} onOpenChange={setNotificationOpen} dropdownRender={() => notificationPanel}>
           <Badge count={issueCount > 99 ? '99+' : issueCount} overflowCount={99} offset={[-2, 4]}>
             <button type="button" className="icon-button notification-trigger" aria-label={`工作区待处理问题${issueCount ? `，${issueCount} 项` : '，暂无'}`}>
@@ -1049,28 +1004,10 @@ function Topbar({
                 <div className="account-dropdown-section-title"><UserRound size={15} />个人信息</div>
                 <dl className="account-dropdown-facts">
                   <div><dt>登录账号</dt><dd>{account?.login || '未读取'}</dd></div>
-                  <div><dt>联系人</dt><dd>{account?.contactName || '未设置'}</dd></div>
+                  <div><dt>账号所属</dt><dd>XXX公司</dd></div>
+                  <div><dt>账号版本</dt><dd>PRO版</dd></div>
+                  <div><dt>账号有效期</dt><dd>2026/09/18 - 2027/09/17</dd></div>
                 </dl>
-              </div>
-              <div className="account-dropdown-section">
-                <div className="account-dropdown-section-title"><CreditCard size={15} />业务归属</div>
-                <dl className="account-dropdown-facts">
-                  <div><dt>当前租户</dt><dd>{tenantName}</dd></div>
-                  <div><dt>当前工作区</dt><dd>{workspaceName}</dd></div>
-                  <div><dt>角色</dt><dd>{account?.roles?.join('、') || '未分配'}</dd></div>
-                </dl>
-              </div>
-              <div className="account-dropdown-section account-wallet-section">
-                <div className="account-dropdown-section-title"><WalletCards size={15} />钱包信息</div>
-                {walletUnavailable ? (
-                  <div className="account-wallet-pending">正在读取服务端钱包状态…</div>
-                ) : (
-                  <div className="account-wallet-grid">
-                    <div><span>剩余创意点</span><strong>{points === null || points === undefined ? '待确认' : points.toLocaleString('zh-CN')}<small>{points === null || points === undefined ? '' : ' 点'}</small></strong></div>
-                    <div><span>钱包余额</span><strong>{balance ? `¥${balance}` : '待确认'}</strong></div>
-                  </div>
-                )}
-                <p className="account-wallet-note">每次生成、编辑和相关任务按服务端实际消耗扣除创意点。</p>
               </div>
               <div className="account-dropdown-actions">
                 {apiBaseUrl && account ? (
@@ -1239,7 +1176,6 @@ function Sidebar({
   onOpenUtility,
   onOpenEntry,
   activeEntry,
-  target,
 }: {
   page: Page
   setPage: (page: Page) => void
@@ -1253,12 +1189,8 @@ function Sidebar({
   ) => void
   onOpenEntry: (entry: MerchantEntryPoint) => void
   activeEntry?: MerchantEntryPoint
-  target?: Target
 }) {
   const sidebarRef = useRef<HTMLElement>(null)
-  const [knowledgeExpanded, setKnowledgeExpanded] = useState(
-    page === 'products' || page === 'task' || page === 'publish',
-  )
   const closeAction = useRef(close)
   const restoreFocusOnClose = useRef(true)
   closeAction.current = close
@@ -1331,10 +1263,6 @@ function Sidebar({
       >
         <div className="brand">
           <BrandMark />
-          <div>
-            <strong>Merchant Studio</strong>
-            <span>商家营销助手</span>
-          </div>
         </div>
         <nav aria-label="主导航">
           <div className="nav-label">工作台</div>
@@ -1345,27 +1273,24 @@ function Sidebar({
               : page === item.id
             return (
               <Fragment key={item.id}>
-                <button
-                  className={active ? 'active' : ''}
-                  onClick={() => closeForAction(() => {
-                    if (item.id === 'products') {
-                      setKnowledgeExpanded((expanded) => !expanded)
-                      if (item.entry && page !== 'products') onOpenEntry(item.entry)
-                    } else {
-                      setPage(item.id)
-                    }
-                  })}
-                  title={item.description}
-                  aria-current={active && item.id !== 'products' ? 'page' : undefined}
-                  aria-expanded={item.id === 'products' ? knowledgeExpanded : undefined}
-                  aria-controls={item.id === 'products' ? 'merchant-knowledge-subnav' : undefined}
-                >
-                  <Icon size={19} />
-                  <span>{item.label}</span>
-                  {item.id === 'products' && <ChevronDown className={`nav-chevron ${knowledgeExpanded ? 'expanded' : ''}`} size={16} aria-hidden="true" />}
-                  {item.badge && <em>{item.badge}</em>}
-                </button>
-                {item.id === 'products' && knowledgeExpanded && (
+                {item.id === 'products' ? (
+                  <div className={`nav-group-title ${active ? 'active' : ''}`} aria-label={item.label}>
+                    <Icon size={19} />
+                    <span>{item.label}</span>
+                  </div>
+                ) : (
+                  <button
+                    className={active ? 'active' : ''}
+                    onClick={() => closeForAction(() => setPage(item.id))}
+                    title={item.description}
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    <Icon size={19} />
+                    <span>{item.label}</span>
+                    {item.badge && <em>{item.badge}</em>}
+                  </button>
+                )}
+                {item.id === 'products' && (
                   <div className="entry-nav" id="merchant-knowledge-subnav" aria-label="知识库二级菜单">
                     {knowledgeSubItems.map((subItem) => {
                       const SubIcon = subItem.icon
@@ -1383,7 +1308,6 @@ function Sidebar({
                           <SubIcon size={18} />
                           <span>
                             {subItem.label}
-                            {subItem.description && <small className="nav-description">{subItem.description}</small>}
                           </span>
                         </button>
                       )
@@ -1394,25 +1318,15 @@ function Sidebar({
             )
           })}
         </nav>
+        <button
+          className="sidebar-contact-manager"
+          type="button"
+          onClick={(event) => closeForAction(() => onOpenUtility('support', event.currentTarget))}
+        >
+          <CircleHelp size={18} />
+          <span>联系客服经理</span>
+        </button>
         <nav aria-label="新会话入口" className="sr-only" aria-hidden="true" />
-        <section className="sidebar-context" aria-label="当前商品上下文">
-          <div className="nav-label">当前上下文</div>
-          {target ? (
-            <div className="context-path">
-              <b title={target.title}>{target.title}</b>
-              <span>
-                <span>{platformNames[target.platform]}</span>
-                <i aria-hidden="true">→</i>
-                <span>{target.storeName ?? '店铺待确认'}</span>
-              </span>
-              <small>
-                {target.accountId ? '店铺账号已确认' : '店铺身份缺失'}
-              </small>
-            </div>
-          ) : (
-            <p>尚未选择商品。进入资料库后，按商品、平台和店铺建立任务。</p>
-          )}
-        </section>
       </aside>
     </>
   )
@@ -1564,6 +1478,18 @@ function UtilityPanel({
         </div>
       </div>
     </div>
+  )
+}
+
+function ContactManagerModal({ onClose }: { onClose: () => void }) {
+  return (
+    <Modal title="联系客服经理" open footer={null} width={460} onCancel={onClose}>
+      <div className="contact-manager-dialog">
+        <p>如需购买储存空间、升级账号版本或处理其他商务问题，请联系专属客服经理。</p>
+        <div><span>客服经理微信</span><strong>Jw594662</strong></div>
+        <div><span>客服经理电话</span><strong>15068161678</strong></div>
+      </div>
+    </Modal>
   )
 }
 
@@ -2980,37 +2906,8 @@ function AssetLibrary({
       width: 140,
       render: (rightsStatus: AssetMetadata['rightsStatus']) => rightsStatus === 'approved' ? <StatusChip tone="green">已确认</StatusChip> : '待确认',
     },
-    {
-      title: '知识绑定',
-      key: 'knowledgeBinding',
-      width: 330,
-      render: (_: unknown, asset: AssetMetadata) => (
-        <KnowledgeBindingStatusPanel
-          asset={asset}
-          onAction={() => {
-            const binding = resolveKnowledgeBindingStatus(asset)
-            if (
-              binding.indexState === 'queued' &&
-              binding.approvalStatus === 'approved' &&
-              binding.rightsStatus === 'cleared'
-            ) {
-              void load()
-              return
-            }
-            runPrimaryAssetAction(asset)
-          }}
-          actionLabel={
-            resolveKnowledgeBindingStatus(asset).indexState === 'queued' &&
-            resolveKnowledgeBindingStatus(asset).approvalStatus === 'approved' &&
-            resolveKnowledgeBindingStatus(asset).rightsStatus === 'cleared'
-              ? '刷新状态'
-              : '处理'
-          }
-        />
-      ),
-    },
   ]
-  const knowledgeReadyCount = visibleAssets.filter((asset) => resolveKnowledgeBindingStatus(asset).ready).length
+  const knowledgeReadyCount = visibleAssets.filter((asset) => asset.parseStatus === 'succeeded' && asset.rightsStatus === 'approved').length
   const knowledgePendingCount = Math.max(0, visibleAssets.length - knowledgeReadyCount)
   const load = async () => {
     if (!baseUrl) {
@@ -3581,7 +3478,7 @@ function AssetLibrary({
     >
       <div className="knowledge-context-bar" aria-label="当前位置">
         <div className="knowledge-breadcrumb">
-          <span>工作台</span><ChevronRight size={14} aria-hidden="true" /><span>知识库</span><ChevronRight size={14} aria-hidden="true" /><strong>{assetEntry === 'knowledge' ? '资料库' : assetEntry === 'images' ? '店铺素材' : assetEntry === 'assets' ? '品牌资产' : '规则库'}</strong>
+          <span>工作台</span><ChevronRight size={14} aria-hidden="true" /><span>知识库</span><ChevronRight size={14} aria-hidden="true" /><strong>{assetEntry === 'knowledge' ? '素材库' : assetEntry === 'images' ? '店铺素材' : assetEntry === 'assets' ? '品牌资产' : '规则库'}</strong>
         </div>
         <span className="knowledge-context-status"><span className="status-dot" aria-hidden="true" />当前工作区</span>
       </div>
@@ -3661,7 +3558,7 @@ function AssetLibrary({
           onClick={() => setAssetEntry('knowledge')}
         >
           <BookOpen size={15} aria-hidden="true" />
-          资料库
+          素材库
         </button>
         <button
           id="asset-images-tab"
@@ -3733,7 +3630,7 @@ function AssetLibrary({
         <div className="knowledge-plan-step">{assetEntry === 'knowledge' ? '01' : assetEntry === 'images' ? '02' : assetEntry === 'rules' ? '03' : '04'}</div>
         <div className="knowledge-plan-copy">
           <strong>
-            {assetEntry === 'knowledge' ? '资料库：上传并确认知识' : assetEntry === 'images' ? '店铺素材：查看已授权内容' : assetEntry === 'rules' ? '规则库：检查发布前约束' : '全部资料：统一检索工作区内容'}
+            {assetEntry === 'knowledge' ? '素材库：上传并确认素材' : assetEntry === 'images' ? '店铺素材：查看已授权内容' : assetEntry === 'rules' ? '规则库：检查发布前约束' : '全部资料：统一检索工作区内容'}
           </strong>
           <span>
             {assetEntry === 'knowledge' ? '上传 Excel、图片或文档；完成扫描、读取和权益确认后，才会进入生成上下文。' : assetEntry === 'images' ? '店铺同步后，系统只展示当前工作区已授权且可读取的素材，不会混用其他企业数据。' : assetEntry === 'rules' ? '查看广告、促销、品类和平台规则命中结果；未通过的内容不能直接发布。' : '按来源、状态和权益快速查找工作区资料。'}
@@ -5944,8 +5841,6 @@ function Products({
   )
   const [accountsLoading, setAccountsLoading] = useState(Boolean(baseUrl))
   const [accountsError, setAccountsError] = useState('')
-  const [catalogKnowledgeAssets, setCatalogKnowledgeAssets] = useState<AssetMetadata[] | null>(null)
-  const [catalogKnowledgeError, setCatalogKnowledgeError] = useState('')
   const [selectedTargets, setSelectedTargets] = useState<Target[]>([])
   const [productFilter, setProductFilter] = useState<'all' | 'needsReview'>(
     'all',
@@ -6091,18 +5986,6 @@ function Products({
   }
   useEffect(() => {
     loadAccounts()
-  }, [baseUrl])
-  useEffect(() => {
-    if (!baseUrl) {
-      setCatalogKnowledgeAssets([])
-      setCatalogKnowledgeError('')
-      return
-    }
-    setCatalogKnowledgeAssets(null)
-    setCatalogKnowledgeError('')
-    fetchAssets(baseUrl)
-      .then(setCatalogKnowledgeAssets)
-      .catch((cause) => setCatalogKnowledgeError(describeApiError(cause)))
   }, [baseUrl])
   useEffect(() => {
     if (!baseUrl) return
@@ -6378,24 +6261,6 @@ function Products({
     Boolean(baseUrl),
     selectedTargets.length,
   )
-  const knowledgeSummaryForProduct = (sourceAssetIds: string[]) => {
-    if (!catalogKnowledgeAssets) {
-      return {
-        approvalStatus: 'pending' as const,
-        rightsStatus: 'unknown' as const,
-        indexState: 'queued' as const,
-        ready: false,
-        reasons: [catalogKnowledgeError || '正在读取知识绑定状态'],
-        boundAssetCount: sourceAssetIds.length,
-        missingAssetCount: 0,
-      }
-    }
-    return resolveKnowledgeBindingSummary(catalogKnowledgeAssets, sourceAssetIds)
-  }
-  const blockedBatchKnowledge = selectedTargets
-    .map((target) => rows.find((row) => row.id === target.productId)?.sourceAssetIds ?? [])
-    .map(knowledgeSummaryForProduct)
-    .find((summary) => !summary.ready)
   const consistencyItems = resolveDataConsistency({
     apiConfigured: Boolean(baseUrl),
     productsLoaded: !loading && !productListUnavailable,
@@ -6413,10 +6278,6 @@ function Products({
   })
   const createGroup = async () => {
     if (!baseUrl || selectedTargets.length < 2) return
-    if (blockedBatchKnowledge) {
-      setError(`知识绑定尚未 ready，不能批量生成：${blockedBatchKnowledge.reasons.join('、')}`)
-      return
-    }
     setGroupCreating(true)
     setError('')
     setGroupMessage('')
@@ -6543,9 +6404,9 @@ function Products({
           <button
             className="secondary"
             onClick={() => setGroupConfirmOpen(true)}
-            disabled={!batchReadiness.canCreateGroup || groupCreating || Boolean(blockedBatchKnowledge)}
+            disabled={!batchReadiness.canCreateGroup || groupCreating}
             aria-describedby="batch-action-help"
-            title={blockedBatchKnowledge ? `知识绑定未 ready：${blockedBatchKnowledge.reasons.join('、')}` : batchReadiness.nextStep}
+            title={batchReadiness.nextStep}
           >
             {groupCreating
               ? '创建任务组中…'
@@ -6591,11 +6452,6 @@ function Products({
           </small>
         </div>
       </section>
-      <ProductSpreadsheetImport
-        baseUrl={baseUrl}
-        accounts={accounts ?? []}
-        canWrite={!merchantReadOnly}
-      />
       <section className="products-summary" aria-label="商品目录概览">
         <div className="products-summary-main">
           <span className="section-kicker">当前目录</span>
@@ -6672,12 +6528,6 @@ function Products({
           <span>3 逐个生成 → 审核 → 发布</span>
         </div>
       </section>
-      {showAssetLibrary && (
-        <AssetLibrary
-          baseUrl={baseUrl}
-          initialEntry={initialEntry as Exclude<MerchantEntryPoint, 'products'>}
-        />
-      )}
       {!baseUrl && (
         <div className="info-notice" role="status">
           <CircleHelp size={16} />
@@ -7009,15 +6859,10 @@ function Products({
                               setError(`暂不能生成图片：${canonicalCopy.detail}。请先点击“打开商品关系并核验”。`)
                               return
                             }
-                            const knowledge = knowledgeSummaryForProduct(product.sourceAssetIds)
-                            if (!knowledge.ready) {
-                              setError(`暂不能生成图片：知识绑定未 ready。${knowledge.reasons.join('、')}`)
-                              return
-                            }
                             setImageGenerationError(''); setImageGenerationErrorField(null); setImageGenerationMode(product.sourceAssetIds.length ? 'optimize' : 'create'); setImageGenerationTarget(target); setImageGenerationCount('1')
                           }}
-                          disabled={!baseUrl || productListUnavailable || Boolean(identityError) || !product.factsConfirmed || !knowledgeSummaryForProduct(product.sourceAssetIds).ready}
-                          title={!baseUrl ? '尚未连接商家 API' : identityError ?? (!product.factsConfirmed ? '请先确认商品事实' : canonicalUnverified ? canonicalCopy.detail : `知识绑定未 ready：${knowledgeSummaryForProduct(product.sourceAssetIds).reasons.join('、')}`)}
+                          disabled={!baseUrl || productListUnavailable || Boolean(identityError) || !product.factsConfirmed}
+                          title={!baseUrl ? '尚未连接商家 API' : identityError ?? (!product.factsConfirmed ? '请先确认商品事实' : canonicalUnverified ? canonicalCopy.detail : undefined)}
                         >
                           生成图片 <ImageIcon size={14} />
                         </button>
@@ -8085,7 +7930,6 @@ function TaskWorkspace({
   onTaskResolved,
   onBack,
   onBackToProducts,
-  onOpenKnowledge,
 }: {
   openPublish: () => void
   baseUrl?: string
@@ -8095,7 +7939,6 @@ function TaskWorkspace({
   onTaskResolved: (taskId: string) => void
   onBack: () => void
   onBackToProducts: () => void
-  onOpenKnowledge: () => void
 }) {
   const taskListRequestId = useRef(0)
   const taskProductsRequestId = useRef(0)
@@ -8168,10 +8011,6 @@ function TaskWorkspace({
   const [taskProducts, setTaskProducts] = useState<ApiProduct[]>([])
   const [taskPage, setTaskPage] = useState(0)
   const [product, setProduct] = useState<ApiProduct | null>(null)
-  const [knowledgeAssets, setKnowledgeAssets] = useState<AssetMetadata[] | null>(null)
-  const [knowledgeBoundAssetIds, setKnowledgeBoundAssetIds] = useState<string[]>([])
-  const [knowledgeLoading, setKnowledgeLoading] = useState(Boolean(baseUrl))
-  const [knowledgeError, setKnowledgeError] = useState('')
   const [taskListError, setTaskListError] = useState('')
   const [taskListLoading, setTaskListLoading] = useState(Boolean(baseUrl))
   const [taskProductsError, setTaskProductsError] = useState('')
@@ -8222,36 +8061,9 @@ function TaskWorkspace({
   const consumedKnowledgeRuleCount = consumedKnowledge?.rules.length ?? 0
   const consumedKnowledgeAssetCount = consumedKnowledge?.assets.length ?? 0
   const consumedLearningCount = consumedKnowledge?.confirmedLearningSuggestions.length ?? 0
-  const knowledgeSummary = useMemo(() => {
-    if (knowledgeLoading) {
-      return {
-        approvalStatus: 'pending' as const,
-        rightsStatus: 'unknown' as const,
-        indexState: 'queued' as const,
-        ready: false,
-        reasons: ['正在读取知识绑定状态'],
-        boundAssetCount: knowledgeBoundAssetIds.length,
-        missingAssetCount: 0,
-      }
-    }
-    if (knowledgeError) {
-      return {
-        approvalStatus: 'pending' as const,
-        rightsStatus: 'unknown' as const,
-        indexState: 'queued' as const,
-        ready: false,
-        reasons: [`知识绑定状态读取失败：${knowledgeError}`],
-        boundAssetCount: knowledgeBoundAssetIds.length,
-        missingAssetCount: 0,
-      }
-    }
-    return resolveKnowledgeBindingSummary(knowledgeAssets ?? [], knowledgeBoundAssetIds)
-  }, [knowledgeAssets, knowledgeBoundAssetIds, knowledgeError, knowledgeLoading])
   const recentTimeline = timeline.slice().reverse().slice(0, 4)
   const generateDraft = (created: Task) => {
     if (!baseUrl) return Promise.reject(new Error('API 未配置'))
-    if (!knowledgeSummary.ready)
-      return Promise.reject(new Error(`知识绑定尚未 ready，不能生成：${knowledgeSummary.reasons.join('、')}`))
     if (!['direction_selected', 'plan_confirmed'].includes(created.state))
       return Promise.reject(new Error('请先选择创意方向并确认制作方案'))
     return (
@@ -8278,10 +8090,6 @@ function TaskWorkspace({
     setTaskCreationAttempted(false)
     setTask(null)
     setProduct(null)
-    setKnowledgeAssets(null)
-    setKnowledgeBoundAssetIds([])
-    setKnowledgeLoading(Boolean(baseUrl))
-    setKnowledgeError('')
     setRemoteDirections(null)
     setDirectionsError('')
     setApproved(false)
@@ -8320,26 +8128,6 @@ function TaskWorkspace({
       )
       if (productIdentityError) throw new Error(productIdentityError)
       if (!cancelled) setProduct(selectedProduct)
-      if (!cancelled) {
-        setKnowledgeBoundAssetIds(selectedProduct.sourceAssetIds ?? [])
-        const [bindingResult, assetResult] = await Promise.allSettled([
-          fetchProductAssetBindings(baseUrl, selectedProduct.id),
-          fetchAssets(baseUrl),
-        ])
-        if (bindingResult.status === 'fulfilled') {
-          setKnowledgeBoundAssetIds(
-            bindingResult.value.items
-              .filter((item) => item.status === 'active')
-              .sort((left, right) => left.ordinal - right.ordinal)
-              .map((item) => item.assetId),
-          )
-        } else {
-          setKnowledgeError(describeApiError(bindingResult.reason))
-        }
-        if (assetResult.status === 'fulfilled') setKnowledgeAssets(assetResult.value)
-        else setKnowledgeError(describeApiError(assetResult.reason))
-        setKnowledgeLoading(false)
-      }
       const current = target.taskId
         ? (target.resolvedTask ?? (await fetchTask(baseUrl, target.taskId)))
         : null
@@ -10163,22 +9951,6 @@ function TaskWorkspace({
                   </>
                 )}
               </div>
-              <div className="context-section" data-testid="task-knowledge-binding">
-                <div className="subhead">
-                  <b>知识绑定状态</b>
-                  <span>{knowledgeSummary.boundAssetCount} 份绑定</span>
-                </div>
-                <KnowledgeBindingStatusPanel
-                  summary={knowledgeSummary}
-                  onAction={onOpenKnowledge}
-                  actionLabel="去知识库处理"
-                />
-                {!knowledgeSummary.ready && (
-                  <div className="knowledge-generation-blocker" role="status">
-                    未 ready 前不会调用生成接口；完成 approval、rights 和 index 后请重新检查。
-                  </div>
-                )}
-              </div>
               <div className="context-section" data-testid="task-knowledge-consumption">
                 <div className="subhead">
                   <b>工作区知识消费</b>
@@ -10249,7 +10021,6 @@ function TaskWorkspace({
                       Boolean(operation) ||
                       !baseUrl ||
                       Boolean(content) ||
-                      !knowledgeSummary.ready ||
                       !task?.selectedDirectionId ||
                       !['direction_selected', 'plan_confirmed'].includes(
                         task.state,
@@ -10789,8 +10560,6 @@ function PublishCenter({
   canOpenPublish: boolean
 }) {
   const [jobs, setJobs] = useState<PublishJob[] | null>(null)
-  const [manualRecords, setManualRecords] = useState<ManualPublishRecord[] | null>(null)
-  const [manualError, setManualError] = useState('')
   const [initialError, setInitialError] = useState('')
   const [refreshError, setRefreshError] = useState('')
   const [loading, setLoading] = useState(Boolean(baseUrl))
@@ -10805,13 +10574,10 @@ function PublishCenter({
       setJobs(null)
       setInitialError('')
       setRefreshError('')
-      setManualRecords(null)
-      setManualError('')
       return
     }
     let cancelled = false
     let inFlight = false
-    let manualInFlight = false
     const hasCachedJobs = jobsSourceRef.current === baseUrl && jobs !== null
     let hasLoadedJobs = hasCachedJobs
     // Keep the last successful list visible during both background refresh and
@@ -10871,27 +10637,8 @@ function PublishCenter({
           if (!cancelled && showLoading) setLoading(false)
         })
     }
-    const loadManualRecords = () => {
-      if (manualInFlight) return
-      manualInFlight = true
-      fetchManualPublishRecords(baseUrl)
-        .then((records) => {
-          if (!cancelled) {
-            setManualRecords(records)
-            setManualError('')
-          }
-        })
-        .catch((cause) => {
-          if (!cancelled) setManualError(describeApiError(cause))
-        })
-        .finally(() => { manualInFlight = false })
-    }
     load(true)
-    loadManualRecords()
-    const timer = window.setInterval(() => {
-      load(false)
-      loadManualRecords()
-    }, 5000)
+    const timer = window.setInterval(() => load(false), 5000)
     return () => {
       cancelled = true
       window.clearInterval(timer)
@@ -11048,28 +10795,37 @@ function PublishCenter({
         <div className="panel receipt-panel">
           <div className="panel-heading">
             <div>
-              <span className="section-kicker">MANUAL OPERATIONS</span>
-              <h3>运营人工发布结果</h3>
+              <span className="section-kicker">RECEIPTS</span>
+              <h3>最近回执</h3>
             </div>
           </div>
-          <div className="info-notice" role="note">人工记录由运营回填，不是平台 API 官方回执；“已报告”仍需以公开页面或平台后台复核为准。</div>
-          {manualError && <ErrorNotice message={`人工发布记录读取失败：${manualError}`} onRetry={() => setReloadKey(key => key + 1)} />}
-          {baseUrl && manualRecords === null && !manualError && <LoadingState label="正在读取人工发布记录…" />}
-          {manualRecords?.map(record => (
-            <div className="receipt-row" key={`manual-${record.id}`}>
-              <span className={`receipt-icon ${record.state === 'manual_review_required' ? 'fail' : ''}`}>
-                {record.state === 'manual_review_required' ? <X size={14} /> : <FileCheck2 size={14} />}
-              </span>
-              <b>{platformNames[record.platform] ?? record.platform} · {{ export_ready: '交付包已就绪', manual_publish_in_progress: '运营发布中', manual_publish_reported: '运营已报告', manual_review_required: '需要人工复核' }[record.state] ?? record.state}</b>
-              <span>{record.platformDisplayStatus || '未提供平台显示状态'} · {new Date(record.operatedAt || record.recordedAt).toLocaleString('zh-CN', { hour12: false })}</span>
-              <small className="receipt-detail">任务 {record.taskId || '未关联'} · 店铺账号 {record.accountId || '未提供'} · 内容版本 {record.contentVersionId || '未提供'}</small>
-              {record.reviewedAt && <small className="receipt-detail">人工复核：{new Date(record.reviewedAt).toLocaleString('zh-CN', { hour12: false })}</small>}
-              {record.publicUrl && <a href={record.publicUrl} target="_blank" rel="noreferrer">查看公开页面</a>}
-            </div>
-          ))}
-          {manualRecords?.length === 0 && (
+          {loading && <LoadingState label="正在读取平台回执…" />}
+          {listReady &&
+            Boolean(jobs.length) &&
+            jobs.slice(0, 5).map((job) => (
+              <div className="receipt-row" key={`receipt-${job.id}`}>
+                <span
+                  className={`receipt-icon ${job.state === 'rejected' ? 'fail' : ''}`}
+                >
+                  {job.state === 'rejected' ? (
+                    <X size={14} />
+                  ) : (
+                    <Check size={14} />
+                  )}
+                </span>
+                <b>
+                  {platformNames[job.platform] ?? job.platform} ·{' '}
+                  {statusLabel(job.state)}
+                </b>
+                <span>
+                  回执已保留 ·{' '}
+                  {job.rejection?.rawCode ?? job.remoteState ?? '等待观测'}
+                </span>
+              </div>
+            ))}
+          {listReady && jobs.length === 0 && (
             <div className="empty-state">
-              <span>暂无运营人工发布记录</span>
+              <span>暂无回执</span>
             </div>
           )}
         </div>
@@ -11874,6 +11630,7 @@ export default function App() {
   )
   const [routeTargetError, setRouteTargetError] = useState('')
   const [routeReloadKey, setRouteReloadKey] = useState(0)
+  const [workspaceNavigationKey, setWorkspaceNavigationKey] = useState(0)
   const [authState, setAuthState] = useState<'loading' | 'authenticated' | 'signed_out' | 'error'>(
     apiBaseUrl ? 'loading' : 'authenticated',
   )
@@ -12033,6 +11790,7 @@ export default function App() {
     setUtilityPanel(null)
     setMobileNav(false)
     setRouteTargetError('')
+    setWorkspaceNavigationKey((key) => key + 1)
     if (!route.target) {
       setTarget(undefined)
       setRouteTargetLoading(false)
@@ -12173,6 +11931,7 @@ export default function App() {
     setActiveEntry(requestedEntry)
     setRouteTargetLoading(false)
     setRouteTargetError('')
+    setWorkspaceNavigationKey((key) => key + 1)
     setMobileNav(false)
     setPublishModal(false)
     setUtilityPanel(null)
@@ -12438,7 +12197,6 @@ export default function App() {
           navigateTo('products', { entry, clearContext: true })
         }
         activeEntry={activeEntry}
-        target={target}
       />
       <div
         className="app-content"
@@ -12470,14 +12228,6 @@ export default function App() {
             searchQuery={globalSearch}
             onSearchQuery={setGlobalSearch}
             onSearch={searchProducts}
-          />
-          <EnvironmentStatusBanner
-            apiOnline={apiOnline}
-            apiBaseUrl={apiBaseUrl}
-            apiHealth={apiHealth}
-            modelStatus={modelStatus}
-            modelStatusRead={modelStatusRead}
-            onOpenHealth={() => openUtility('health')}
           />
           <main
             ref={mainContentRef}
@@ -12531,21 +12281,27 @@ export default function App() {
                     onOpenUtility={openUtility}
                   />
                 )}
+                {page === 'finance' && <FinanceOverview onOpenSupport={() => openUtility('support')} />}
                 {page === 'products' && (
-                  <Products
-                    baseUrl={apiBaseUrl}
-                    modelStatus={modelStatus}
-                    modelStatusRead={modelStatusRead}
-                    onRefreshModelStatus={refreshEnvironmentStatus}
-                    initialQuery={globalSearch}
-                    initialEntry={activeEntry}
-                    onSelectTarget={(next) =>
-                      navigateTo('task', { target: next, clearContext: true })
-                    }
-                    onOpenTasks={() =>
-                      navigateTo('task', { clearContext: true })
-                    }
-                  />
+                  activeEntry === 'products' ? (
+                    <StoreCatalogExperience key={`products-${workspaceNavigationKey}`} />
+                  ) : (
+                    <Products
+                      key={`${activeEntry ?? 'knowledge'}-${workspaceNavigationKey}`}
+                      baseUrl={apiBaseUrl}
+                      modelStatus={modelStatus}
+                      modelStatusRead={modelStatusRead}
+                      onRefreshModelStatus={refreshEnvironmentStatus}
+                      initialQuery={globalSearch}
+                      initialEntry={activeEntry}
+                      onSelectTarget={(next) =>
+                        navigateTo('task', { target: next, clearContext: true })
+                      }
+                      onOpenTasks={() =>
+                        navigateTo('task', { clearContext: true })
+                      }
+                    />
+                  )
                 )}
                 {page === 'task' && (
                   <TaskWorkspace
@@ -12569,9 +12325,6 @@ export default function App() {
                     onBack={() => navigateTo('task', { clearContext: true })}
                     onBackToProducts={() =>
                       navigateTo('products', { clearContext: true })
-                    }
-                    onOpenKnowledge={() =>
-                      navigateTo('products', { entry: 'knowledge', clearContext: true })
                     }
                   />
                 )}
@@ -12603,7 +12356,7 @@ export default function App() {
         </div>
       </Modal>
       {utilityPanel === 'support' ? (
-        <CustomerSupportPanel apiBaseUrl={apiBaseUrl} relatedTaskId={taskContext?.task.id} onClose={closeUtility} />
+        <ContactManagerModal onClose={closeUtility} />
       ) : utilityPanel && (
         <UtilityPanel
           panel={utilityPanel}
