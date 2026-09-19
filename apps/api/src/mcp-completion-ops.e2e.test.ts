@@ -56,6 +56,7 @@ async function callMcp<T = unknown>(
   method: string,
   params: Record<string, unknown> = {},
   paramsWorkspaceId = headerWorkspaceId,
+  extraHeaders: Record<string, string> = {},
 ): Promise<McpResponse<T>> {
   const response = await fetch(`${base}/mcp`, {
     method: 'POST',
@@ -63,6 +64,7 @@ async function callMcp<T = unknown>(
       authorization: `Bearer ${token}`,
       'content-type': 'application/json',
       'x-workspace-id': headerWorkspaceId,
+      ...extraHeaders,
     },
     body: JSON.stringify({
       jsonrpc: '2.0',
@@ -117,9 +119,9 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       { token: tokens.operatorA, workspaceId: workspaceA, actorId: `operator-a-${suffix}`, role: 'operator' },
       { token: tokens.supportA, workspaceId: workspaceA, actorId: `support-a-${suffix}`, role: 'support' },
       { token: tokens.financeA, workspaceId: workspaceA, actorId: `finance-a-${suffix}`, role: 'finance' },
-      { token: tokens.platformA, workspaceId: workspaceA, actorId: `platform-a-${suffix}`, role: 'platform_ops' },
+      { token: tokens.platformA, workspaceId: workspaceA, actorId: `platform-a-${suffix}`, role: 'platform_ops', workbenches: ['platform', 'workspace'] },
       { token: tokens.commercialFinance, workspaceId: workspaceA, actorId: `commercial-finance-${suffix}`, role: 'finance', gatewayRoles: ['finance_ops'], workbenches: ['platform'] },
-      { token: tokens.commercialOps, workspaceId: workspaceA, actorId: `commercial-ops-${suffix}`, role: 'platform_ops', gatewayRoles: ['platform_ops'], workbenches: ['platform'] },
+      { token: tokens.commercialOps, workspaceId: workspaceA, actorId: `commercial-ops-${suffix}`, role: 'platform_ops', gatewayRoles: ['platform_ops'], workbenches: ['platform', 'workspace'] },
       { token: tokens.ownerB, workspaceId: workspaceB, actorId: `owner-b-${suffix}`, role: 'workspace_owner' },
       { token: tokens.adminB, workspaceId: workspaceB, actorId: `admin-b-${suffix}`, role: 'merchant_admin' },
     ])
@@ -157,7 +159,7 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       ['ops.commercial.coupons.list', {}, tokens.commercialFinance],
       ['ops.commercial.rollouts.list', {}, tokens.commercialOps],
     ] as const) {
-      const disabled = await callMcp(base, token, workspaceA, method, params)
+      const disabled = await callMcp(base, token, workspaceA, method, params, workspaceA, token === tokens.commercialOps ? { 'x-ops-workbench': 'platform' } : {})
       expect(disabled.status, method).toBe(503)
       expect(disabled.body.error, method).toMatchObject({
         code: 'COMMERCIAL_OPERATION_DISABLED',
@@ -204,21 +206,14 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       state: 'completed', checked: 0, settled: [], pending: [], actor_id: `commercial-finance-${suffix}`,
     })
 
-    const alerts = resultOf<any[]>(await callMcp(base, tokens.commercialOps, workspaceA, 'ops.alerts.list', {
+    const restrictedAlerts = await callMcp(base, tokens.platformA, workspaceA, 'ops.alerts.list', {
       status: 'open',
       code: 'OAUTH_REAUTH_REQUIRED',
       entity_id: revokedAccount.id,
-    }))
-    expect(alerts).toHaveLength(1)
-    const acknowledged = resultOf<any>(await callMcp(base, tokens.commercialOps, workspaceA, 'ops.alert.ack', {
-      alert_id: alerts[0].id,
-      reason: '已联系商家重新授权',
-    }))
-    expect(acknowledged).toMatchObject({ id: alerts[0].id, workspaceId: workspaceA, status: 'acknowledged', acknowledgedBy: `commercial-ops-${suffix}` })
-    const acknowledgedList = resultOf<any[]>(await callMcp(base, tokens.commercialOps, workspaceA, 'ops.alerts.list', {
-      status: 'acknowledged', entity_id: revokedAccount.id,
-    }))
-    expect(acknowledgedList).toEqual([expect.objectContaining({ id: alerts[0].id, acknowledgementReason: '已联系商家重新授权' })])
+      platform_scope: 'platform',
+    }, workspaceA, { 'x-ops-workbench': 'platform' })
+    expect(restrictedAlerts.status).toBe(403)
+    expect(restrictedAlerts.body.error).toMatchObject({ code: 'OPS_CUSTOMER_ACCESS_REQUIRED' })
 
     const exportKey = `workspace-export-${suffix}`
     const exportRequest = resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'workspace.data.export.request', {
@@ -299,7 +294,7 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       { token: tokens.supportA, method: 'ops.data.delete.cancel', params: { request_id: foreignRequest.id, reason: '低权限撤销' } },
       { token: tokens.supportA, method: 'ops.data.delete.approve', params: { request_id: foreignRequest.id, reason: '低权限审批' } },
       { token: tokens.financeA, method: 'ops.members.list' },
-      { token: tokens.financeA, method: 'ops.alert.ack', params: { alert_id: alerts[0].id, reason: '低权限确认' } },
+      { token: tokens.financeA, method: 'ops.alert.ack', params: { alert_id: 'customer-alert-guess', reason: '低权限确认' } },
       { token: tokens.operatorA, method: 'billing.model-usage.reconciliation.run', params: { limit: '1' } },
       { token: tokens.operatorA, method: 'workspace.data.delete.request', params: { scope: 'assets', reason: '低权限删除', idempotency_key: `denied-${suffix}` } },
       { token: tokens.operatorA, method: 'workspace.data.export.request', params: { reason: '低权限导出', idempotency_key: `export-denied-${suffix}` } },

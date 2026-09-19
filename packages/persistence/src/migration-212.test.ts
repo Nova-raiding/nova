@@ -3,7 +3,7 @@ import { loadMigrations } from './migration.js'
 
 describe('customer delivery account binding migration', () => {
   it('keeps history unbound and enforces immutable identity/workspace relationships', async () => {
-    const migration = (await loadMigrations()).find(value => value.version === 212)
+    const migration = (await loadMigrations()).find(value => value.version === 215)
     expect(migration).toMatchObject({ name: 'customer_delivery_account_binding' })
     const sql = migration!.sql
     expect(sql).toContain('CHECK ((target_account_id IS NULL) = (target_identity_id IS NULL))')
@@ -16,9 +16,9 @@ describe('customer delivery account binding migration', () => {
     expect(sql).not.toContain('ADD COLUMN target_account_login')
   })
   it('locks all exact eligibility rows through the least-privileged helper', async () => {
-    const sql = (await loadMigrations()).find(value => value.version === 212)!.sql
+    const sql = (await loadMigrations()).find(value => value.version === 215)!.sql
     expect(sql).toContain('SECURITY DEFINER')
-    expect(sql).toContain('SET search_path = pg_catalog, public')
+    expect(sql).toContain('SET search_path = pg_catalog, public, pg_temp')
     expect(sql).toContain("current_setting('app.workspace_id', true) IS DISTINCT FROM p_workspace_id")
     expect(sql).toContain("current_setting('app.platform_scope', true) IS DISTINCT FROM 'platform_ops'")
     expect(sql).toContain("a.account_type='merchant' AND a.status='active'")

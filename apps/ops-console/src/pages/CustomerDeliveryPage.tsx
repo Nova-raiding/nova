@@ -62,7 +62,12 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   // Customer delivery is a shared operations workflow. Keep using the
   // platform's active workspace context for API compatibility, but do not
   // expose a tenant-switching control to sales/operations users.
-  const targetWorkspaceId = model.authorizationTargetWorkspaceId?.trim() || model.workspaceRows[0]?.workspaceId || "";
+  // An explicit empty target means that the operator cleared the shared
+  // workbench context. Only an undefined target falls back to the first
+  // active workspace during initial bootstrap.
+  const targetWorkspaceId = model.authorizationTargetWorkspaceId === undefined
+    ? model.workspaceRows[0]?.workspaceId || ""
+    : model.authorizationTargetWorkspaceId.trim();
   const [records, setRecords] = useState<import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -413,6 +418,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       ) : <CustomerDeliverySection
         key={targetWorkspaceId || "unselected"}
         disabled={!canRead || !targetWorkspaceId}
+        readOnly={canRead && !canUpdate}
         records={records}
         onCreate={canUpdate && canRead ? createRecord : undefined}
         onCreateNavigate={canUpdate && canRead ? () => { setMutationError(""); pendingCreate.current = undefined; setCreatePage(true); } : undefined}

@@ -545,7 +545,7 @@ describe('PostgreSQL delivery evidence read protocol', () => {
       else current.videos = []
     }
     const result = await new PostgresCustomerDeliveryRepository(new RecordingPool(client)).get('ws_pg', 'cd_pg')
-    expect(result).toMatchObject({ effectiveAt: changed === 'video' ? null : client.row.effective_at, revision: 4 })
+    expect(result).toMatchObject({ effectiveAt: changed === 'parent' ? client.row.effective_at : null, revision: 4 })
     expect(client.row.effective_at).not.toBeNull()
     expect(client.calls.filter(call => call.text === 'BEGIN')).toHaveLength(2)
     expect(client.calls.filter(call => call.text === 'ROLLBACK')).toHaveLength(1)
@@ -888,13 +888,11 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     expect((await repo.get(d.workspaceId, d.id))?.systemIntegrationStatus).toBe('complete')
   })
 
-  it('allows manual payment, checklist and training confirmation without uploaded evidence', async () => {
+  it('requires scanned evidence before checklist completion', async () => {
     const repo = new MemoryCustomerDeliveryRepository()
     const draft = await repo.create({ workspaceId: 'ws_required_evidence', companyName: 'Evidence Co', actorId: 'operator-1' })
     const paid = await repo.update({ workspaceId: draft.workspaceId, id: draft.id, actorId: 'operator-1', expectedRevision: draft.revision, patch: { paymentStatus: 'paid', paymentDate: '2026-09-14' } })
-    await repo.updateChecklistItem!({ workspaceId: paid.workspaceId, deliveryId: paid.id, checklistKey: 'system_integration', itemKey: '店铺连接', completed: true, evidence: { note: '人工核验' }, actorId: 'operator-1', expectedRevision: paid.revision })
-    const afterItem = (await repo.get(paid.workspaceId, paid.id))!
-    await expect(repo.update({ workspaceId: paid.workspaceId, id: paid.id, actorId: 'operator-1', expectedRevision: afterItem.revision, patch: { trainingCompleted: true } })).resolves.toMatchObject({ trainingCompleted: true, trainingEvidenceRefs: [] })
+    await expect(repo.updateChecklistItem!({ workspaceId: paid.workspaceId, deliveryId: paid.id, checklistKey: 'system_integration', itemKey: '店铺连接', completed: true, evidence: { note: '人工核验' }, actorId: 'operator-1', expectedRevision: paid.revision })).rejects.toMatchObject({ code: 'EVIDENCE_REQUIRED' })
   })
 
   it('never marks an otherwise complete delivery effective while unpaid', async () => {
@@ -1067,7 +1065,7 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
       client.videos = state === 'video' ? [] : [postgresVideo()]
       client.items = items
       const result = await new PostgresCustomerDeliveryRepository(new RecordingPool(client)).get('ws_pg', 'cd_pg')
-      expect(result?.effectiveAt).toBe(['ready', 'missing-item-evidence', 'payment', 'training'].includes(state) ? row.effective_at : null)
+      expect(result?.effectiveAt).toBe(['ready', 'payment', 'training'].includes(state) ? row.effective_at : null)
       expect(result?.systemIntegrationStatus).toBe('complete')
       expect(row.effective_at).toBe('2026-09-13T00:00:00.000Z')
       expect(client.calls.some(call => call.text.startsWith('UPDATE'))).toBe(false)

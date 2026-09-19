@@ -191,6 +191,32 @@ export function deliveryStatusLabel(result: ReturnType<typeof deliveryCompletion
   return result.ready ? "交付已完成" : `${result.completed}/${result.total}`;
 }
 
+export function CustomerDeliveryTrainingEvidence({ record, readOnly = false, disabled = false, onUpload, onGetAsset, onConfirm, onClose }: {
+  record: CustomerDeliveryRecord;
+  readOnly?: boolean;
+  disabled?: boolean;
+  onUpload?: (source: CustomerDeliveryUploadSource, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
+  onGetAsset?: (assetRef: string, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
+  onConfirm: (refs: string[]) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [refs, setRefs] = useState<string[]>(record.trainingEvidenceRefs ?? []);
+  const [error, setError] = useState("");
+  return <section aria-label={`${record.companyName} 客户培训凭证`} style={{ padding: "8px 0" }}>
+    <Space style={{ width: "100%", justifyContent: "space-between" }}>
+      <Typography.Text strong>客户培训</Typography.Text>
+      <Space>
+        {!readOnly ? <Button type="primary" disabled={disabled} onClick={() => void onConfirm(refs).catch(cause => setError(cause instanceof Error ? cause.message : "培训确认失败，请重试"))}>确认培训完成</Button> : null}
+        <Button aria-label="收起" onClick={onClose}>收起</Button>
+      </Space>
+    </Space>
+    <Input aria-label="已上传培训凭证" value={refs.join("\n")} disabled readOnly placeholder="尚未上传培训凭证" />
+    {refs.map(ref => <Typography.Text key={ref} style={{ display: "block", marginTop: 4 }}>{ref}</Typography.Text>)}
+    {!readOnly && onUpload && onGetAsset ? <CustomerDeliveryUpload purpose="training" disabled={disabled} onUpload={onUpload} onGetAsset={onGetAsset} onReady={asset => setRefs(current => [...new Set([...current, asset.assetRef])])} /> : null}
+    {error ? <Typography.Text type="danger" role="alert">{error}</Typography.Text> : null}
+  </section>;
+}
+
 export function isCustomerProfileFilled(record: CustomerDeliveryRecord) {
   return record.profile || Boolean(
     record.companyName.trim() &&
@@ -217,6 +243,7 @@ export function deliveryLaunchDateLabel(record: Pick<CustomerDeliveryRecord, "cr
 }
 
 export function CustomerDeliverySection({
+  readOnly = false,
   disabled = false,
   records = [],
   onOpen,
@@ -235,6 +262,7 @@ export function CustomerDeliverySection({
   onAccountList,
   onAccountBind,
 }: {
+  readOnly?: boolean;
   disabled?: boolean;
   records?: CustomerDeliveryRecord[];
   onOpen?: (
@@ -619,6 +647,7 @@ export function CustomerDeliverySection({
         width={620}
       >
         {detailsRecord ? (
+          <>
           <Descriptions bordered column={1} size="small">
             <Descriptions.Item label="公司名称">{detailsRecord.companyName}</Descriptions.Item>
             <Descriptions.Item label="合同编号">{detailsRecord.contractNo || "未填写"}</Descriptions.Item>
@@ -637,6 +666,20 @@ export function CustomerDeliverySection({
                 : detailsRecord.updatedByActorId || "未记录"}
             </Descriptions.Item>
           </Descriptions>
+          <CustomerDeliveryTrainingEvidence
+            record={detailsRecord}
+            readOnly={readOnly || !onTrainingSave}
+            disabled={disabled || saving || uploading}
+            onUpload={onAssetUpload ? (source, purpose, signal) => onAssetUpload(detailsRecord, source, purpose, signal) : undefined}
+            onGetAsset={onAssetGet ? (assetRef, purpose, signal) => onAssetGet(detailsRecord, assetRef, purpose, signal) : undefined}
+            onConfirm={async refs => {
+              if (!onTrainingSave) return;
+              const saved = await onTrainingSave(detailsRecord, true, refs);
+              if (saved) setDetailsRecord(saved);
+            }}
+            onClose={() => setDetailsRecord(undefined)}
+          />
+          </>
         ) : null}
         {detailsRecord && onArchive ? <div style={{ marginTop: 24, textAlign: "right" }}><Button danger onClick={() => Modal.confirm({ title: `停用并删除“${detailsRecord.companyName}”记录？`, content: "该记录会从当前列表移除，但业务数据会保留，管理员仍可恢复。", okText: "确认停用并删除", cancelText: "取消", okButtonProps: { danger: true }, onOk: async () => { await onArchive(detailsRecord); setDetailsRecord(undefined); message.success("记录已停用并从列表移除"); } })}>停用并删除记录</Button></div> : null}
       </Drawer>

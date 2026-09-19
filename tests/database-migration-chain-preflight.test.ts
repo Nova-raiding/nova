@@ -45,7 +45,7 @@ describe('ECS database migration-chain preflight', () => {
   it('binds the production preflight to the current release migration tail', () => {
     const metadata = JSON.parse(readFileSync('release-metadata.json', 'utf8')) as { expectedMigrationVersion: number }
     const migration = readFileSync('packages/persistence/src/migrations/218_manual_publish_evidence.sql', 'utf8')
-    expect(metadata.expectedMigrationVersion).toBe(218)
+    expect(metadata.expectedMigrationVersion).toBe(219)
     expect(migration).toContain('manual_publish_evidence')
   })
 

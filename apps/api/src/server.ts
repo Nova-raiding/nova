@@ -556,11 +556,17 @@ let paymentProvider = createPaymentProviderFromEnv()
 const fixturePaymentProvider = new FixturePaymentProvider()
 
 type PaymentChannel = 'alipay' | 'wechat'
+export function paymentChannelDisabled(channel: PaymentChannel, source: NodeJS.ProcessEnv = process.env): boolean {
+  return channel === 'wechat' && (source.NODE_ENV === 'production' || source.PAYMENT_ALIPAY_ONLY === 'true')
+}
 export function fixturePaymentAllowed(source: NodeJS.ProcessEnv = process.env) {
   return paymentFixturePolicy(source).fixtureAllowed
 }
 function paymentChannel(params: Record<string, unknown>): PaymentChannel {
   if (params.channel !== 'alipay' && params.channel !== 'wechat') throw new DomainError('BILLING_CHANNEL_INVALID', '订阅支付渠道必须是支付宝或微信', 400)
+  if (paymentChannelDisabled(params.channel, process.env)) {
+    throw new DomainError('PAYMENT_CHANNEL_DISABLED', '当前仅开放支付宝支付，微信支付暂未开放', 409, { channel: 'wechat', enabled_channels: ['alipay'] })
+  }
   return params.channel
 }
 
@@ -6472,7 +6478,23 @@ function effectiveAuthorizationProjection(principal: RequestPrincipal | undefine
       atoms.push({ capability: value as CapabilityId, effect: 'allow', scope: { type: rawType, ids: rawIds as string[] }, source: 'temporary_grant', sourceId: grant.id, obligations: [], effectLimit: grant.accessMode, expiresAt: grant.expiresAt, revision: String(grant.authorizationRevision) })
     }
   }
-  for (const capability of principal?.explicitDeniedCapabilities ?? []) atoms.push({ capability, effect: 'deny', scope: { type: 'self', ids: principal?.actorId ? [principal.actorId] : [] }, source: 'explicit_deny', sourceId: `identity:${principal?.identityId ?? principal?.actorId ?? 'unknown'}`, obligations: [] })
+  for (const capability of principal?.explicitDeniedCapabilities ?? []) {
+    const deniedScopes = [...new Set(MCP_METHODS
+      .map(method => getMcpMethodPolicy(method))
+      .filter((policy): policy is NonNullable<ReturnType<typeof getMcpMethodPolicy>> => policy?.capability === capability)
+      .filter(policy => policy.scope === 'self'
+        || principal?.workbench === 'platform' && policy.scope === 'platform'
+        || principal?.workbench === 'workspace' && policy.scope !== 'platform')
+      .map(policy => policy.scope))]
+    for (const scope of deniedScopes) {
+      const ids = scope === 'self' ? (principal?.actorId ? [principal.actorId] : [])
+        : scope === 'platform' ? ['*']
+          : scope === 'workspace' && workspaceId ? [workspaceId]
+            : scope === 'account' ? workspaceStoreDirectory(workspaceId).map(store => store.accountId)
+              : []
+      if (ids.length) atoms.push({ capability, effect: 'deny', scope: { type: scope, ids }, source: 'explicit_deny', sourceId: `identity:${principal?.identityId ?? principal?.actorId ?? 'unknown'}`, obligations: [] })
+    }
+  }
   const deniedCapabilities = new Set(atoms.filter(atom => atom.effect === 'deny').map(atom => atom.capability))
   const allowedAtoms = atoms.filter(atom => atom.effect === 'allow' && !deniedCapabilities.has(atom.capability))
   const capabilities = [...new Set(allowedAtoms.map(atom => atom.capability))].sort()
@@ -6800,7 +6822,10 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
   // must remain reachable before a membership role projection is hydrated;
   // this does not grant mutation or cross-workspace access.
   const bootstrapPrincipal = requestPrincipals.get(req)
-  if (['workspace.health', 'onboarding.status'].includes(method) && bootstrapPrincipal?.identityId && bootstrapPrincipal.workspaces.includes(workspaceId)) return policy
+  if (['workspace.health', 'onboarding.status'].includes(method)
+    && bootstrapPrincipal?.identityId
+    && bootstrapPrincipal.workspaces.includes(workspaceId)
+    && !bootstrapPrincipal.explicitDeniedCapabilities?.includes(policy.capability)) return policy
   // A signed OIDC principal is intentionally allowed to create its first
   // workspace before membership exists. All subsequent methods require the
   // projected capability and active membership.
@@ -10183,6 +10208,16 @@ async function requireAssetUploadSecurity(workspaceId: string, name: string, mim
   const result = classifyAssetUpload({ fileName: name, declaredMime: mimeType, bytes }, { workspaceId, actorId: req ? requestActor(req) : undefined, requestId: req ? requestId(req) : undefined })
   if (result.decision === 'reject') throw assetUploadRejectionError(result, await persistRejectedAssetUpload(workspaceId, result, batchIndex))
   return result
+}
+
+export function merchantVideoUploadDisabled(name: string, mimeType: string): boolean {
+  return /^video\//iu.test(mimeType) || /\.(?:mp4|webm|mov|m4v)$/iu.test(name)
+}
+
+function rejectMerchantVideoUpload(name: string, mimeType: string): void {
+  if (merchantVideoUploadDisabled(name, mimeType)) {
+    throw new DomainError('MERCHANT_VIDEO_UPLOAD_DISABLED', '商家素材库暂不支持视频上传；运营客户交付视频请使用客户交付专用入口', 415, { enabled_asset_types: ['image', 'document'] })
+  }
 }
 
 export function securityAuditEventsForTests(workspaceId: string) {
@@ -15789,6 +15824,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const actorId = requestActor(req, 'actor_demo')
       const channel = params.channel === 'alipay' || params.channel === 'wechat' ? params.channel : undefined
       if (!channel) throw new DomainError('BILLING_CHANNEL_INVALID', '充值渠道必须是支付宝或微信', 400)
+      if (paymentChannelDisabled(channel, process.env)) {
+        throw new DomainError('PAYMENT_CHANNEL_DISABLED', '当前仅开放支付宝支付，微信支付暂未开放', 409, { channel, enabled_channels: ['alipay'] })
+      }
       const idempotencyKey = typeof params.idempotency_key === 'string' && params.idempotency_key.trim() ? params.idempotency_key.trim() : `recharge-${workspaceId}-${actorId}-${randomUUID()}`
       const oneFenTestAllowed = process.env.PAYMENT_ONE_FEN_TEST_ENABLED === 'true'
         && process.env.PAYMENT_ONE_FEN_TEST_WORKSPACE_ID?.trim() === workspaceId
@@ -17624,6 +17662,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       catch (error) { throw new DomainError('UPLOAD_TRANSPORT_NOT_CONFIGURED', error instanceof Error ? error.message : '上传服务未配置', 503) }
     }
     case 'asset.upload': {
+      rejectMerchantVideoUpload(required(params, 'name'), required(params, 'mime_type'))
       return result(await uploadAssetForMcp(workspaceId, params, req))
     }
     case 'asset.upload.batch': {
@@ -17632,6 +17671,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       try { entries = JSON.parse(raw) } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'assets_json 必须是 JSON 数组', 400) }
       if (!Array.isArray(entries) || entries.length === 0 || entries.length > 20 || entries.some(item => !item || typeof item !== 'object' || Array.isArray(item))) throw new DomainError('ASSET_BATCH_LIMIT', '单批素材数量必须在 1 到 20 个之间', 413)
       const items = entries as JsonObject[]
+      for (const item of items) rejectMerchantVideoUpload(typeof item.name === 'string' ? item.name : '', typeof item.mime_type === 'string' ? item.mime_type : '')
       const totalBytes = items.reduce((sum, item) => {
         const value = typeof item.content_base64 === 'string' ? item.content_base64 : ''
         return sum + Math.floor(value.replace(/=+$/u, '').length * 3 / 4)
@@ -20990,6 +21030,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const encodedName = headerRequired(req, 'x-asset-name')
     let name = encodedName
     try { name = decodeURIComponent(encodedName) } catch { /* Preserve legacy raw header names. */ }
+    rejectMerchantVideoUpload(name, contentType)
     const expectedSha256 = header(req, 'x-asset-sha256')?.trim()
     const bytes = await binaryBody(req, limit)
     await requireAssetUploadSecurity(workspaceId, name, contentType, bytes, req)

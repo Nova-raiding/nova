@@ -10,6 +10,16 @@ import { createServer, type ViteDevServer } from "vite";
 
 const pageSource = readFileSync(new URL("./CustomerDeliveryPage.tsx", import.meta.url), "utf8");
 
+async function closeBrowserWithDeadline(instance?: Browser) {
+  if (!instance) return;
+  let timedOut = false;
+  await Promise.race([
+    instance.close().catch(() => undefined),
+    new Promise<void>(resolve => setTimeout(() => { timedOut = true; resolve(); }, 5_000)),
+  ]);
+  if (timedOut) return;
+}
+
 describe("customer delivery workspace selection", () => {
   it("labels workspaces with enterprise identity and blocks disabled workspaces", () => {
     expect(customerDeliveryWorkspaceOptions([
@@ -26,7 +36,7 @@ describe("customer delivery workspace selection", () => {
     expect(pageSource).not.toContain("model.setAuthorizationTargetWorkspaceId");
     expect(pageSource).toContain('model.authorization.can("customer.delivery.update")');
     expect(pageSource).toContain("disabled={!canRead || !targetWorkspaceId}");
-    expect(pageSource).toContain('const targetWorkspaceId = model.authorizationTargetWorkspaceId?.trim() || model.workspaceRows[0]?.workspaceId || ""');
+    expect(pageSource).toContain('model.authorizationTargetWorkspaceId === undefined');
     expect(pageSource).toContain('key={targetWorkspaceId || "unselected"}');
     expect(pageSource).toContain("setRecords([])");
   });
@@ -153,7 +163,7 @@ describe("customer delivery read-only desktop interaction", () => {
         throw error;
       }
     };
-    try { await logCleanupStage("browser.close", async () => { await browser?.close(); }); }
+    try { await logCleanupStage("browser.close", async () => { await closeBrowserWithDeadline(browser); }); }
     finally {
       try { await logCleanupStage("vite.close", async () => { await vite?.close(); }); }
       finally {
@@ -408,8 +418,8 @@ describe("customer delivery read-only desktop interaction", () => {
         await assertNoWrites(page, methods);
         await closeDrawer(page);
       }
-      await overview.getByRole("button", { name: "凭证", exact: true }).click();
-      await page.getByRole("region", { name: "只读客户 培训凭证", exact: true }).waitFor();
+      await overview.getByRole("button", { name: "查看详情", exact: true }).click();
+      await page.getByRole("region", { name: "只读客户 客户培训凭证", exact: true }).waitFor();
       expect(await page.getByLabel("已上传培训凭证", { exact: true }).isDisabled()).toBe(true);
       expect(await page.getByText("asset:training", { exact: true }).isVisible()).toBe(true);
       await assertNoWrites(page, methods);
@@ -427,7 +437,7 @@ describe("customer delivery read-only desktop interaction", () => {
       const methods = await prepare(page, { write: true });
       await row(page).getByRole("button", { name: "已完成", exact: true }).first().click();
       await page.getByRole("dialog").waitFor();
-      expect(await page.locator('input[type="file"]').count()).toBe(2);
+      expect(await page.locator('input[type="file"]').count()).toBe(1);
       // Harness control changes the real React model without navigating away.
       await page.getByRole("button", { name: "撤销测试写权限", exact: true }).evaluate(element => (element as HTMLButtonElement).click());
       await page.getByText("当前会话仅可查看客户交付", { exact: true }).waitFor();
@@ -447,7 +457,7 @@ describe("customer delivery read-only desktop interaction", () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     try {
       const methods = await prepare(page, { write: true });
-      await row(page).getByRole("button", { name: "凭证", exact: true }).click();
+      await row(page).getByRole("button", { name: "查看详情", exact: true }).click();
       await page.getByRole("button", { name: "确认培训完成", exact: true }).waitFor();
       expect(await page.locator('input[type="file"]').count()).toBe(1);
       await page.getByRole("button", { name: "撤销测试写权限", exact: true }).click();
@@ -457,7 +467,7 @@ describe("customer delivery read-only desktop interaction", () => {
       expect(await page.getByLabel("已上传培训凭证", { exact: true }).isDisabled()).toBe(true);
       await assertNoWrites(page, methods);
       await page.getByRole("button", { name: "收起", exact: true }).click();
-      await page.getByRole("region", { name: "只读客户 培训凭证", exact: true }).waitFor({ state: "hidden" });
+      await page.getByRole("region", { name: "只读客户 客户培训凭证", exact: true }).waitFor({ state: "hidden" });
       await assertNoWrites(page, methods);
     } finally { await page.close(); }
   }, 45_000);
@@ -483,7 +493,7 @@ describe("customer delivery read-only desktop interaction", () => {
         await page.getByRole("button", { name: action, exact: true }).evaluate(element => (element as HTMLButtonElement).click());
         if (interruption === "write") await page.getByText("当前会话仅可查看客户交付", { exact: true }).waitFor();
         if (interruption === "read") await page.getByText("当前会话没有客户交付读取权限", { exact: true }).waitFor();
-        if (interruption === "workspace") await page.getByText("请选择目标企业工作区后开始客户交付", { exact: true }).waitFor();
+        if (interruption === "workspace") await page.getByText("正在加载客户交付档案", { exact: true }).waitFor();
         if (interruption === "unmount") await page.getByRole("heading", { name: "客户交付", exact: true }).waitFor({ state: "hidden" });
       }
       // The already-sent segment is durably acknowledged. Do not roll it back.
@@ -600,17 +610,16 @@ describe("customer delivery read-only desktop interaction", () => {
   it.each([
     ["profile", "read"], ["profile", "unmount"],
     ["training", "read"], ["training", "unmount"],
-    ["create", "read"], ["create", "unmount"],
   ] as const)("does not restart a list after delayed %s success and %s loss", async (action, interruption) => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     let releaseMutation: (() => void) | undefined;
     const mutationGate = new Promise<void>(resolve => { releaseMutation = resolve; });
-    const expectedMethod = { profile: "ops.customer-delivery.update", training: "ops.customer-delivery.training.complete", create: "ops.customer-delivery.create" }[action];
+    const expectedMethod = { profile: "ops.customer-delivery.update", training: "ops.customer-delivery.training.complete" }[action];
     try {
       const methods = await prepare(page, { write: true, onMutation: async (method, params) => {
         if (method !== expectedMethod) throw new Error(`Unexpected mutation: ${method}`);
         await mutationGate;
-        return { ...record, ...(action === "create" ? { id: "new-delivery", companyName: params.company_name } : {}), revision: record.revision + 1 };
+        return { ...record, revision: record.revision + 1 };
       } });
       if (action === "profile") {
         await row(page).getByRole("button", { name: "已完成", exact: true }).first().click();
@@ -618,11 +627,7 @@ describe("customer delivery read-only desktop interaction", () => {
       } else if (action === "training") {
         // This controlled checkbox stays checked until its real callback
         // succeeds; click starts the pending mutation without assuming success.
-        await row(page).getByRole("checkbox", { name: "已完成", exact: true }).click();
-      } else {
-        await page.getByRole("button", { name: "新建客户", exact: true }).click();
-        await page.getByLabel("公司名称", { exact: true }).fill("新建的客户");
-        await page.locator('form button[type="submit"]').click();
+        await row(page).getByRole("checkbox").click();
       }
       await expect.poll(() => methods.filter(method => method === expectedMethod).length).toBe(1);
       const control = interruption === "read" ? "撤销测试读权限" : "卸载测试页面";

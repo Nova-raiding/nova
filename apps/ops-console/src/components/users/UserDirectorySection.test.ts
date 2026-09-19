@@ -75,8 +75,7 @@ describe("UserDirectorySection sorting", () => {
   it("keeps the wide directory table inside a horizontal scroll surface on mobile", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain('scroll={{ x: "max-content" }}');
-    expect(source).toContain('width: 330');
-    expect(source).toContain('className="ops-token ops-token-single-line"');
+    expect(source).toContain('aria-label="用户目录数据表"');
   });
 
   it("makes table, drawer, and failed action forms recoverable for keyboard users", () => {
@@ -95,12 +94,11 @@ describe("UserDirectorySection sorting", () => {
   it("gives desktop directory controls stable, row-specific accessible names", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain('aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`}');
-    expect(source).toContain('rowClassName={(row) => row.status === "suspended" ? "ops-user-row-suspended" : ""}');
-    expect(source).toContain('aria-label={`${row.status === "suspended" ? "启用" : "停用"} ${row.displayName || row.externalSubject} 的访问`}');
-    expect(source).toContain('{row.status === "suspended" ? "启用" : "停用"}');
+    expect(source).toContain('aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`}');
+    expect(source).toContain('{row.status === "suspended" ? "恢复" : "停用"}');
     expect(source).toContain('aria-label="按关键词筛选用户目录"');
     expect(source).toContain('aria-label="按成员状态筛选用户目录"');
-    expect(source).toContain('aria-label="按用户属性筛选用户目录"');
+    expect(source).toContain('aria-label="按企业主体筛选用户目录"');
   });
 
   it("keeps directory refresh errors distinguishable and recoverable without stealing focus during background refresh", () => {

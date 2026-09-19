@@ -24,7 +24,7 @@ function completeEnvironment(): Record<string, string> {
     MODEL_RELAY_BASE_URL: 'https://relay.yxsona.com', TEXT_MODEL: 'text-v1', IMAGE_MODEL: 'image-v1', IMAGE_EDIT_MODEL: 'edit-v1', OCR_MODEL: 'ocr-v1', VIDEO_MODEL: 'video-v1',
     EMBEDDING_MODEL: 'embedding-v1', EMBEDDING_DIMENSIONS: '1536', EMBEDDING_MAX_REQUEST_CNY: '0.10', KNOWLEDGE_VECTOR_INDEX_ENABLED: 'true',
     APPROVED_REQUESTS_PER_MINUTE: '100', APPROVED_TOKENS_PER_MINUTE: '100000', MAXIMUM_TASK_COST_CNY: '0.50',
-    PLATFORM_RULE_SYNC_MANIFEST_URL: 'https://rules.yxsona.com/manifest.json', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
+    PLATFORM_RULE_SYNC_MANIFEST_URL: 'https://rules.yxsona.com/manifest.json', PLATFORM_RULE_SYNC_SIGNING_SECRET: 'vault://acceptance/rules-signing', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
     OBJECT_STORAGE_BUCKET: 'acceptance-assets', OBJECT_STORAGE_REGION: 'cn', OBJECT_STORAGE_ENDPOINT: 'https://storage.yxsona.com', OBJECT_STORAGE_SSE_MODE: 'AES256',
     ASSET_DISPLAY_BASE_URL: 'https://merchant.yxsona.com', ASSET_QUARANTINE_RETENTION_DAYS: '7', ASSET_CLEAN_RETENTION_DAYS: '90', DELETION_REQUEST_GRACE_DAYS: '7', BACKUP_RETENTION_DAYS: '30',
     RELEASE_ID: 'acceptance-release', ASSET_SCAN_TRUSTED_PUBLIC_KEYS_REF: 'vault://acceptance/trusted-keys',
@@ -60,6 +60,9 @@ describe('production renderer real-gate contract regressions', () => {
       expect(validated.status, String(validated.stderr)).toBe(0)
       expect(config).toContain('payment_mode: "provider"')
       expect(config).toContain('object_storage_bucket: "acceptance-assets"')
+      expect(config).toContain('platform_rule_sync_manifest_url: "disabled"')
+      expect(config).toContain('platform_rule_sync_signing_secret_ref: disabled')
+      expect(config).toContain('platform_rule_sync_interval_hours: 0')
       expect(statSync(resolve(dir, 'production.yaml')).mode & 0o777).toBe(0o600)
       expect(JSON.parse(String(result.stdout)).ready).toBe(false)
     })
@@ -76,7 +79,7 @@ describe('production renderer real-gate contract regressions', () => {
     })
   })
   it('preserves enabled alerts, KMS and full social opt-in through the real gate', () => {
-    const env: Record<string, string> = { ...completeEnvironment(), PLATFORM_OPERATIONS_MODE: 'official_api', ALERT_NOTIFICATIONS_ENABLED: 'true', ALERT_CHANNEL_SECRET_REF: 'vault://acceptance/alerts', OBJECT_STORAGE_SSE_MODE: 'aws:kms', OBJECT_STORAGE_KMS_KEY: 'kms-key-acceptance' }
+    const env: Record<string, string> = { ...completeEnvironment(), PLATFORM_OPERATIONS_MODE: 'official_api', PLATFORM_RULE_SYNC_MANIFEST_URL: 'https://rules.yxsona.com/manifest.json', PLATFORM_RULE_SYNC_SIGNING_SECRET: 'vault://acceptance/rules-signing', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24', ALERT_NOTIFICATIONS_ENABLED: 'true', ALERT_CHANNEL_SECRET_REF: 'vault://acceptance/alerts', OBJECT_STORAGE_SSE_MODE: 'aws:kms', OBJECT_STORAGE_KMS_KEY: 'kms-key-acceptance' }
     for (const key of ['JD_AUTH_ENABLED', 'JD_READ_ENABLED', 'JD_WRITE_ENABLED', 'TAOBAO_TMALL_AUTH_ENABLED', 'TAOBAO_TMALL_READ_ENABLED', 'TAOBAO_TMALL_WRITE_ENABLED', 'PINDUODUO_AUTH_ENABLED', 'PINDUODUO_READ_ENABLED', 'PINDUODUO_WRITE_ENABLED']) env[key] = 'true'
     for (const platform of ['XIAOHONGSHU', 'DOUYIN']) for (const capability of ['AUTH', 'READ', 'WRITE']) env[`${platform}_${capability}_ENABLED`] = 'true'
     withRendered(env, (result, config, dir) => {

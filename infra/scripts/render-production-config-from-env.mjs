@@ -48,6 +48,15 @@ try {
     if (primary !== undefined && alias !== undefined && primary !== alias) throw new Error('conflicting environment aliases');
     return [key, primary ?? alias];
   }));
+  // Manual platform operations are intentionally credential-free: rules are
+  // uploaded and published by platform operators, so the production config
+  // must not carry a remote rule-sync URL, signing secret or polling interval.
+  // Keep official_api explicit so it still requires the signed remote manifest.
+  if (resolved.get('platform_operations_mode') === 'manual') {
+    resolved.set('platform_rule_sync_manifest_url', 'disabled');
+    resolved.set('platform_rule_sync_signing_secret_ref', 'disabled');
+    resolved.set('platform_rule_sync_interval_hours', '0');
+  }
   const required = new Set(requiredKeys);
   if (resolved.get('alert_notifications_enabled') === 'true') required.add('alert_channel_secret_ref');
   if (resolved.get('object_storage_sse_mode') === 'aws:kms') required.add('object_storage_kms_key');

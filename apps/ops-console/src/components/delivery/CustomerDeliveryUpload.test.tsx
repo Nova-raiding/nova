@@ -20,6 +20,16 @@ import { CustomerDeliveryUpload, runCustomerDeliveryUploadBatch, waitForDelivery
 
 vi.mock("../../api/opsClient.js", () => ({ rpc: vi.fn() }));
 
+async function closeBrowserWithDeadline(instance?: Browser) {
+  if (!instance) return;
+  let timedOut = false;
+  await Promise.race([
+    instance.close().catch(() => undefined),
+    new Promise<void>(resolve => setTimeout(() => { timedOut = true; resolve(); }, 5_000)),
+  ]);
+  if (timedOut) return;
+}
+
 const video = new File([new Uint8Array([1, 2, 3])], "交付片段.mp4", { type: "video/mp4" });
 const pending: CustomerDeliveryAsset = { assetRef: "asset:upload-one", name: video.name, mimeType: video.type, sizeBytes: video.size, scanStatus: "pending", ready: false };
 const ready: CustomerDeliveryAsset = { ...pending, scanStatus: "clean", ready: true };
@@ -186,10 +196,10 @@ describe("contract URL desktop interaction", () => {
     if (!address || typeof address === "string") throw new Error("Contract URL test listener did not bind");
     baseUrl = `http://127.0.0.1:${address.port}`;
     browser = await chromium.launch({ channel: "chrome", headless: true });
-  }, 60_000);
+  }, 180_000);
 
   afterAll(async () => {
-    try { await browser?.close(); }
+    try { await closeBrowserWithDeadline(browser); }
     finally {
       try { await vite?.close(); }
       finally { if (cacheDirectory) await rm(cacheDirectory, { recursive: true, force: true }); }

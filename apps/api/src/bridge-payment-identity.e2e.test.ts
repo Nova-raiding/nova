@@ -113,11 +113,26 @@ describe('ChatGPT bridge payment identity vertical slice', () => {
 
     try {
       await callBridge(child, 1, 'workspace.interactive.confirm', { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' })
-      const order = await callBridge(child, 2, 'billing.recharge.create', {
-        channel: 'alipay',
-        amount_cny: '10.00',
-        idempotency_key: `bridge-payment-${suffix}`,
-      })
+      // Payment initiation is intentionally owned by the authenticated
+      // merchant backend. The ChatGPT bridge may only read the resulting
+      // order, so create it through the same MCP API that the backend uses.
+      const createdResponse = await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          'x-ops-workbench': 'workspace',
+          'x-workspace-id': workspaceId,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'billing.recharge.create',
+          params: { workspace_id: workspaceId, channel: 'alipay', amount_cny: '10.00', idempotency_key: `bridge-payment-${suffix}` },
+        }),
+      }).then(response => response.json() as Promise<Envelope<{ result: Record<string, any> }>>)
+      expect(createdResponse.error).toBeNull()
+      const order = createdResponse.data?.result as Record<string, any>
       expect(order).toMatchObject({
         state: 'pending',
         amount_cny: '10.00',

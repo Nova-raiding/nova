@@ -78,14 +78,14 @@ describe("customer delivery completion", () => {
     expect(deliveryLaunchDateLabel({})).toBe("未填写");
   });
 
-  it("uses only the training status selector and never asks for a training proof", () => {
+  it("exposes training evidence without making read-only sessions writable", () => {
     const html = renderToStaticMarkup(<CustomerDeliverySection disabled records={[base]} />);
     expect(html).toContain("示例企业");
     expect(html).toContain('aria-label="示例企业客户培训状态"');
     expect(html).not.toContain("交付视频");
     expect(html).toContain("查看详情");
-    expect(html).not.toContain("培训凭证");
-    expect(html).not.toContain("上传培训");
+    expect(html).toContain("客户培训凭证");
+    expect(html).toContain("已上传培训凭证");
   });
 
   it("filters records by company name and configured owners", () => {

@@ -96,10 +96,9 @@ describe("operations navigation", () => {
     expect(visible).not.toContain("feature-flags");
   });
 
-  it("keeps platform finance as a first-class, platform-only route", () => {
-    expect(domainFromLocation({ pathname: "/ops/finance", hash: "" })).toBe("finance");
-    expect(domainFromLocation({ pathname: "/", hash: "#finance" })).toBe("finance");
-    expect(requiredWorkbenchForDomain("finance")).toBe("platform");
+  it("canonicalizes the retired finance route to the overview workbench", () => {
+    expect(domainFromLocation({ pathname: "/ops/finance", hash: "" })).toBe("overview");
+    expect(domainFromLocation({ pathname: "/", hash: "#finance" })).toBe("overview");
   });
 
   it("keeps remaining Ops Console routes in their intended workbench", () => {

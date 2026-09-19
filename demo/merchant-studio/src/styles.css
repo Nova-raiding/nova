@@ -534,6 +534,7 @@ select:focus-visible,textarea:focus-visible,[role="tab"]:focus-visible,[role="ta
 .overview-page .page-stack > .metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .overview-page .page-stack > .metric-grid > :nth-child(3) { display: none; }
 .overview-page .page-stack > .dashboard-grid { grid-template-columns: minmax(0, 1fr); }
+.overview-page .page-stack > .wallet-panel { margin-top: 0; }
 @media (min-width: 1200px) {
   .overview-page{padding:14px 30px 20px}
   .overview-page .page-stack{gap:12px}

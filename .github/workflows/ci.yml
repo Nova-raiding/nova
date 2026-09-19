@@ -247,6 +247,7 @@ jobs:
           packages/persistence/src/migration-212-release.postgres.test.ts
           packages/persistence/src/migration-214-release.postgres.test.ts
           packages/persistence/src/migration-218-release.postgres.test.ts
+          packages/persistence/src/migration-219-release.postgres.test.ts
           packages/persistence/src/object-orphan-repository.postgres.test.ts
           packages/persistence/src/ops-workspace-summary-rls.postgres.test.ts
           packages/persistence/src/platform-authorization-audit.postgres.test.ts

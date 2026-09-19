@@ -7,7 +7,7 @@ describe('migration 218 manual publish evidence', () => {
     const migration = migrations.find(item => item.version === 218)
 
     expect(migrations.map(item => item.version)).toEqual(
-      Array.from({ length: 218 }, (_, index) => index + 1),
+      Array.from({ length: 219 }, (_, index) => index + 1),
     )
     expect(migration).toMatchObject({ version: 218, name: 'manual_publish_evidence' })
     expect(migration?.sql).toContain('CREATE TABLE manual_publish_evidence')

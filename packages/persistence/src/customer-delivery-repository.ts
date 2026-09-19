@@ -304,7 +304,8 @@ function missingCustomerProfileFields(candidate: CustomerDelivery): string[] {
 }
 const complete = (d: CustomerDelivery, items: readonly CustomerDeliveryChecklistItem[]) =>
   d.customerProfileStatus === "complete" &&
-  Boolean(d.contractNumber?.trim() && d.projectOwner?.trim() && d.supportOwner?.trim()) &&
+  d.paymentStatus === "paid" &&
+  Boolean(d.contractNumber?.trim() && d.projectOwner?.trim() && d.supportOwner?.trim() && d.paymentDate) &&
   isValidCustomerDeliveryContractRef(d.contractRef) &&
   d.systemIntegrationStatus === "complete" &&
   d.functionalAcceptanceStatus === "complete" &&
