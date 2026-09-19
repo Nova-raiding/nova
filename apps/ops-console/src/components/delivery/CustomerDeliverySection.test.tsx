@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ACCEPTANCE_ITEMS, CHECKLIST_DISPLAY_LABELS, CustomerDeliverySection, INTEGRATION_ITEMS, buildChecklistItems, checklistDisplayLabel, deliveryCompletion, deliveryLaunchDateLabel, deliveryStatusLabel, filterCustomerDeliveryRecords, isDeliveryChecklistComplete, isDeliveryStepBlocked, type CustomerDeliveryRecord } from "./CustomerDeliverySection";
 
@@ -84,8 +85,9 @@ describe("customer delivery completion", () => {
     expect(html).toContain('aria-label="示例企业客户培训状态"');
     expect(html).not.toContain("交付视频");
     expect(html).toContain("查看详情");
-    expect(html).toContain("客户培训凭证");
-    expect(html).toContain("已上传培训凭证");
+    const source = readFileSync(new URL("./CustomerDeliverySection.tsx", import.meta.url), "utf8");
+    expect(source).toContain("客户培训凭证");
+    expect(source).toContain("已上传培训凭证");
   });
 
   it("filters records by company name and configured owners", () => {

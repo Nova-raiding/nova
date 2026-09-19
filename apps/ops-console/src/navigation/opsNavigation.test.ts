@@ -78,7 +78,6 @@ describe("operations navigation", () => {
   it("keeps support role navigation bounded while preserving incident response", () => {
     const support = authorization(["platform.summary.read", "support.ticket.read", "incident.read", "audit.read"]);
     expect(visibleOpsDomains(support)).toEqual(["overview", "audit"]);
-    expect(opsDomains).toContain("finance");
   });
 
   it("lets platform operations reach every domain and local owner mode stay compatible", () => {

@@ -286,11 +286,12 @@ export function isValidCustomerDeliveryContractRef(value: string | null | undefi
   return /^(?:asset:\/\/|asset_ref[:_]|asset[:_])[A-Za-z0-9][A-Za-z0-9._:/-]*$/u.test(ref);
 }
 function checklistComplete(checklistKey: "system_integration" | "functional_acceptance", items: readonly CustomerDeliveryChecklistItem[]) {
-  // These checklists capture an operator's manual confirmation. Evidence is
-  // optional audit context and must not make a fully checked list incomplete.
+  // A completed checklist must retain at least one scanned asset reference per
+  // item; free-text operator notes alone are not durable delivery evidence.
   return CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS[checklistKey].every(itemKey => {
     const matches = items.filter(item => item.checklistKey === checklistKey && item.itemKey === itemKey);
-    return matches.length === 1 && matches[0]!.completed;
+    return matches.length === 1 && matches[0]!.completed
+      && customerDeliveryEvidenceRefs(matches[0]!.evidence?.asset_refs).length > 0;
   });
 }
 function missingCustomerProfileFields(candidate: CustomerDelivery): string[] {
@@ -310,6 +311,11 @@ const complete = (d: CustomerDelivery, items: readonly CustomerDeliveryChecklist
   d.systemIntegrationStatus === "complete" &&
   d.functionalAcceptanceStatus === "complete" &&
   d.trainingCompleted &&
+  // A delivery is not effective until the operator has retained at least one
+  // non-deleted delivered video asset.  This keeps read projections and
+  // mutation-time readiness checks aligned when a video is removed or races
+  // with another evidence update.
+  d.videos.some(video => !video.deletedAt) &&
   (["system_integration", "functional_acceptance"] as const).every(checklistKey =>
     checklistComplete(checklistKey, items.filter(item => item.workspaceId === d.workspaceId && item.deliveryId === d.id)));
 export class MemoryCustomerDeliveryRepository implements CustomerDeliveryRepository {
@@ -586,6 +592,8 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
         "INVALID_INPUT",
         "unknown checklist item",
       );
+    if (input.completed && customerDeliveryEvidenceRefs(input.evidence?.asset_refs).length === 0)
+      throw new CustomerDeliveryError("EVIDENCE_REQUIRED", "完成清单项前必须上传并扫描通过证据");
     const key = `${ws}:${d.id}:${input.checklistKey}:${input.itemKey.trim()}`;
     const now = new Date().toISOString();
     const prev = this.items.get(key);
@@ -681,6 +689,8 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
           "INVALID_INPUT",
           "evidence must be an object",
         );
+      if (x.completed && customerDeliveryEvidenceRefs(x.evidence?.asset_refs).length === 0)
+        throw new CustomerDeliveryError("EVIDENCE_REQUIRED", "完成清单项前必须上传并扫描通过证据");
       seen.add(key);
     }
     const beforeItems = [...this.items.values()].filter(item => item.workspaceId === ws

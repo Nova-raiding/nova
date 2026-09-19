@@ -98,7 +98,7 @@ describe("UserDirectorySection sorting", () => {
     expect(source).toContain('{row.status === "suspended" ? "恢复" : "停用"}');
     expect(source).toContain('aria-label="按关键词筛选用户目录"');
     expect(source).toContain('aria-label="按成员状态筛选用户目录"');
-    expect(source).toContain('aria-label="按企业主体筛选用户目录"');
+    expect(source).toContain('aria-label="按用户属性筛选用户目录"');
   });
 
   it("keeps directory refresh errors distinguishable and recoverable without stealing focus during background refresh", () => {

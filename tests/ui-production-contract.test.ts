@@ -158,12 +158,13 @@ describe('Merchant Studio production UI contract', () => {
     expect(app).toContain('清除筛选')
   })
 
-  it('shows a persistent mock recharge order card and supports status queries', () => {
+  it('creates a server-owned recharge order and supports status queries', () => {
     expect(app).toContain('充值订单')
-    expect(app).toContain('不会产生真实扣款')
-    expect(app).toContain('paymentMode === \'fixture\'')
+    expect(app).toContain('createRechargeOrder(baseUrl')
+    expect(app).toContain('支付完成后由服务端回调或查单入账')
     expect(app).toContain('查询订单')
     expect(app).toContain('fetchRechargeOrder(baseUrl, rechargeOrder.id)')
+    expect(api).toContain("'billing.recharge.create'")
     expect(api).toContain("'billing.recharge.get'")
   })
 

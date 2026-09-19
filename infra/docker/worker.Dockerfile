@@ -1,4 +1,4 @@
-FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS build
+FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps ./apps
@@ -13,7 +13,7 @@ RUN node infra/scripts/generate-container-source-manifest.mjs generate api /app 
   /app/.release-source/api.manifest /app/.release-source/api.manifest.sha256 \
   && node infra/scripts/generate-container-source-manifest.mjs generate worker /app \
   /app/.release-source/worker.manifest /app/.release-source/worker.manifest.sha256
-RUN npm ci --prefer-offline --no-audit --fund=false
+RUN --mount=type=cache,id=merchant-npm-cache,target=/root/.npm npm ci --prefer-offline --no-audit --fund=false
 # Build only the worker dependency graph.  The root build also compiles
 # operational scripts that are not part of this image and can fail on
 # environment-only typings, unnecessarily blocking worker rollout.

@@ -72,6 +72,7 @@ import {
   confirmAssetFacts,
   confirmPublish,
   confirmTaskPlan,
+  createRechargeOrder,
   createCampaignBatch,
   createTask,
   decideReviewFinding,
@@ -99,6 +100,7 @@ import {
   fetchProductPage,
   fetchPublishJobs,
   fetchRulePacks,
+  fetchRechargeOrder,
   fetchSyncJobs,
   fetchTask,
   fetchTaskFeedback,
@@ -2512,7 +2514,7 @@ function PointUsageChart({ items, label }: { items: PointUsageItem[]; label: str
   )
 }
 
-function FinanceOverview({ onOpenSupport }: { onOpenSupport: () => void }) {
+function FinanceOverview({ baseUrl, onOpenSupport }: { baseUrl: string; onOpenSupport: () => void }) {
   const [rangeMode, setRangeMode] = useState<'day' | 'month'>('day')
   const [rangeStart, setRangeStart] = useState('')
   const [rangeEnd, setRangeEnd] = useState('')
@@ -2523,8 +2525,28 @@ function FinanceOverview({ onOpenSupport }: { onOpenSupport: () => void }) {
   const [purchaseQuantity, setPurchaseQuantity] = useState(1)
   const [agreementAccepted, setAgreementAccepted] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState<'wechat' | 'alipay' | 'card'>('wechat')
+  const [rechargeOrder, setRechargeOrder] = useState<Awaited<ReturnType<typeof createRechargeOrder>> | null>(null)
+  const [rechargeLoading, setRechargeLoading] = useState(false)
+  const [rechargeError, setRechargeError] = useState('')
   const selectedPackage = pointPackages.find((item) => item.name === selectedPointPackage)
   const selectedPointCount = selectedPackage ? Number(selectedPackage.amount.replace(/[^0-9]/g, '')) * purchaseQuantity : 0
+  const submitRecharge = async () => {
+    if (!selectedPackage || !agreementAccepted || !baseUrl) return
+    if (paymentMethod === 'card') { setRechargeError('当前仅支持支付宝或微信，银行卡支付暂未开放。'); return }
+    setRechargeLoading(true); setRechargeError('')
+    try {
+      const amount = String(Number(selectedPackage.price.replace(/[^0-9.]/g, '')) * purchaseQuantity)
+      const order = await createRechargeOrder(baseUrl, amount, paymentMethod)
+      setRechargeOrder(order)
+      if (order.payment_url || order.paymentUrl) window.open(order.payment_url ?? order.paymentUrl, '_blank', 'noopener,noreferrer')
+    } catch (error) {
+      setRechargeError(error instanceof Error ? error.message : '创建充值订单失败')
+    } finally { setRechargeLoading(false) }
+  }
+  const refreshRecharge = async () => {
+    if (!rechargeOrder?.id || !baseUrl) return
+    try { setRechargeOrder(await fetchRechargeOrder(baseUrl, rechargeOrder.id)) } catch (error) { setRechargeError(error instanceof Error ? error.message : '查询充值订单失败') }
+  }
   const queryUsage = () => {
     if (!rangeStart || !rangeEnd) {
       setChartItems(dailyPointUsage)
@@ -2578,7 +2600,7 @@ function FinanceOverview({ onOpenSupport }: { onOpenSupport: () => void }) {
         {pricingDialog === 'points' ? <>
           <p className="finance-pricing-dialog-note">选择适合当前创作量的创意点套餐。</p>
           <div className="finance-price-table dialog" role="table" aria-label="创意点价格表"><div className="finance-price-row header has-action" role="row"><span>套餐</span><span>创意点</span><span>价格</span><span>说明</span><span>操作</span></div>{pointPackages.map((item) => <div className="finance-price-row has-action" role="row" key={item.name}><strong>{item.name}</strong><span>{item.amount}</span><b>{item.price}</b><small>{item.note}</small><button className="primary" type="button" onClick={() => { setSelectedPointPackage(item.name); setPurchaseQuantity(1); setAgreementAccepted(false) }}>{selectedPointPackage === item.name ? '已选择' : '选择'}</button></div>)}</div>
-          {selectedPackage && <section className="finance-checkout" aria-label="创意点购买确认"><div className="finance-checkout-qr"><PaymentQrCode /><strong>扫码完成支付</strong><span>二维码仅用于本次购买</span><div className="finance-payment-methods" role="group" aria-label="选择支付方式">{([{ id: 'wechat', label: '微信' }, { id: 'alipay', label: '支付宝' }, { id: 'card', label: '银行卡' }] as const).map((method) => <button key={method.id} className={paymentMethod === method.id ? 'selected' : ''} type="button" onClick={() => setPaymentMethod(method.id)}>{method.label}</button>)}</div></div><div className="finance-checkout-details"><div><span>购买套餐</span><strong>{selectedPackage.name} · {selectedPackage.amount}</strong></div><label><span>购买数量</span><div className="finance-quantity-stepper"><button type="button" aria-label="减少购买数量" onClick={() => setPurchaseQuantity((value) => Math.max(1, value - 1))}>−</button><InputNumber controls={false} min={1} max={99} value={purchaseQuantity} onChange={(value) => setPurchaseQuantity(value || 1)} /><button type="button" aria-label="增加购买数量" onClick={() => setPurchaseQuantity((value) => Math.min(99, value + 1))}>＋</button></div></label><div><span>本次购买创意点</span><strong>共 {selectedPointCount.toLocaleString()} 点</strong></div><div><span>应付金额</span><b>¥{Number(selectedPackage.price.replace(/[^0-9]/g, '')) * purchaseQuantity}</b></div><div className="finance-checkout-action"><Checkbox checked={agreementAccepted} onChange={(event) => setAgreementAccepted(event.target.checked)}>我已阅读并同意《创意点购买协议》，确认虚拟权益到账后不支持无理由退款。</Checkbox><button className="primary finance-confirm-purchase" type="button" disabled={!agreementAccepted}>确认购买</button></div></div></section>}
+          {selectedPackage && <section className="finance-checkout" aria-label="创意点购买确认"><div className="finance-checkout-qr">{rechargeOrder?.payment_url || rechargeOrder?.paymentUrl ? <a href={(rechargeOrder.payment_url ?? rechargeOrder.paymentUrl) || '#'} target="_blank" rel="noreferrer">打开支付页面</a> : <strong>确认后生成真实支付订单</strong>}<span>支付完成后由服务端回调或查单入账，未支付不会增加创意点。</span><div className="finance-payment-methods" role="group" aria-label="选择支付方式">{([{ id: 'wechat', label: '微信' }, { id: 'alipay', label: '支付宝' }, { id: 'card', label: '银行卡' }] as const).map((method) => <button key={method.id} className={paymentMethod === method.id ? 'selected' : ''} type="button" onClick={() => setPaymentMethod(method.id)}>{method.label}</button>)}</div></div><div className="finance-checkout-details"><div><span>购买套餐</span><strong>{selectedPackage.name} · {selectedPackage.amount}</strong></div><label><span>购买数量</span><div className="finance-quantity-stepper"><button type="button" aria-label="减少购买数量" onClick={() => setPurchaseQuantity((value) => Math.max(1, value - 1))}>−</button><InputNumber controls={false} min={1} max={99} value={purchaseQuantity} onChange={(value) => setPurchaseQuantity(value || 1)} /><button type="button" aria-label="增加购买数量" onClick={() => setPurchaseQuantity((value) => Math.min(99, value + 1))}>＋</button></div></label><div><span>本次购买创意点</span><strong>共 {selectedPointCount.toLocaleString()} 点</strong></div><div><span>应付金额</span><b>¥{Number(selectedPackage.price.replace(/[^0-9.]/g, '')) * purchaseQuantity}</b></div><div className="finance-checkout-action"><Checkbox checked={agreementAccepted} onChange={(event) => setAgreementAccepted(event.target.checked)}>我已阅读并同意《创意点购买协议》，确认虚拟权益到账后不支持无理由退款。</Checkbox><button className="primary finance-confirm-purchase" type="button" disabled={!agreementAccepted || rechargeLoading} onClick={() => void submitRecharge()}>{rechargeLoading ? '创建订单中…' : '确认购买'}</button></div>{rechargeOrder && <div className="finance-recharge-order" role="status"><strong>充值订单：{rechargeOrder.id}</strong><span>状态：{rechargeOrder.state}{rechargeOrder.warning ? ` · ${rechargeOrder.warning}` : ''}</span><button type="button" onClick={() => void refreshRecharge()}>查询订单</button></div>}{rechargeError && <p className="error-text" role="alert">{rechargeError}</p>}</div></section>}
         </> : <div className="finance-storage-contact"><Boxes size={28} /><strong>请咨询客服</strong></div>}
       </Modal>
     </section>
@@ -12281,7 +12303,7 @@ export default function App() {
                     onOpenUtility={openUtility}
                   />
                 )}
-                {page === 'finance' && <FinanceOverview onOpenSupport={() => openUtility('support')} />}
+                {page === 'finance' && <FinanceOverview baseUrl={apiBaseUrl ?? ''} onOpenSupport={() => openUtility('support')} />}
                 {page === 'products' && (
                   activeEntry === 'products' ? (
                     <StoreCatalogExperience key={`products-${workspaceNavigationKey}`} />
