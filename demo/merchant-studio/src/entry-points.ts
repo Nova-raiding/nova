@@ -7,6 +7,7 @@ export function entryPointActionLabel(index: number, label: string, description:
 }
 
 export function merchantEntryPointFromQuery(value: string | null): MerchantEntryPoint | undefined {
+  if (value === 'rules') return undefined
   return merchantEntryPoints.includes(value as MerchantEntryPoint) ? value as MerchantEntryPoint : undefined
 }
 
