@@ -1,6 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { registeredMcpAuthorizationDecision, resolveAuthorizationResourceScope, resolveLoadedAuthorizationResourceScope, service, workspaceAccountPermissionAtoms } from './server.js'
+import { persistenceReady, registeredMcpAuthorizationDecision, resolveAuthorizationResourceScope, resolveLoadedAuthorizationResourceScope, service, workspaceAccountPermissionAtoms } from './server.js'
 import { AUTHZ_POLICY_VERSION, MCP_METHODS, getHttpOperationPolicy, getMcpMethodPolicy, type MethodPolicy } from '../../../packages/contracts/src/index.js'
+import { MemoryBrandUnitRepository, type CanonicalProductRow } from '../../../packages/persistence/src/index.js'
+
+/**
+ * Records what each canonical read asked for and how many rows the storage
+ * layer actually returned, so a test can assert a request is page-scoped
+ * instead of catalog-scoped.
+ */
+class RecordingBrandUnits extends MemoryBrandUnitRepository {
+  readonly calls: Array<{ workspaceId: string; brandIds?: readonly string[]; sourceProductIds?: readonly string[] }> = []
+  readonly rowCounts: number[] = []
+  override async listCanonicalProducts(input: { workspaceId: string; brandIds?: readonly string[]; sourceProductIds?: readonly string[] }): Promise<CanonicalProductRow[]> {
+    this.calls.push({ ...input })
+    const rows = await super.listCanonicalProducts(input)
+    this.rowCounts.push(rows.length)
+    return rows
+  }
+}
 
 describe('registered MCP authorization coverage', () => {
   it('keeps HTTP account/task routes on the same MCP scope contract', () => {
@@ -82,6 +99,53 @@ describe('registered MCP authorization coverage', () => {
     const policy = getMcpMethodPolicy('platform.store.alias.set')!
 
     await expect(resolveLoadedAuthorizationResourceScope(policy, workspaceId, { task_id: task.id, account_id: 'local_account' })).resolves.toEqual({ type: 'account', id: undefined })
+  })
+
+  it('scopes the canonical lookup of a task-bound request to that task product instead of the whole catalog', async () => {
+    const suffix = Date.now()
+    const workspaceId = `ws_task_canonical_scope_${suffix}`
+    const productId = `product_task_canonical_scope_${suffix}`
+    service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `remote_canonical_scope_${suffix}`, credentialRef: 'vault://canonical-scope' })
+    const accountId = service.listPlatformAccounts(workspaceId)[0]!.id
+    service.products.set(productId, { ...service.products.get('prod_fixture_1')!, id: productId, workspaceId, accountId })
+    const created = service.createTask({ workspaceId, productId, platform: 'taobao', accountId })
+    service.tasks.get(created.id)!.brandId = 'brand_task_scope'
+
+    const persistence = await persistenceReady
+    const previousBrandUnits = persistence.brandUnits
+    const repository = new RecordingBrandUnits()
+    persistence.brandUnits = repository
+    try {
+      await repository.createBrand({ workspaceId, id: 'brand_task_scope', name: 'Task brand' })
+      await repository.createBrand({ workspaceId, id: 'brand_catalog_tail', name: 'Catalog tail brand' })
+      await repository.createCanonicalProduct({ workspaceId, id: 'canonical_task_scope', brandId: 'brand_task_scope', title: 'Task product', sourceProductId: productId })
+      // A catalog-sized tail whose rows this request must never read.
+      for (let index = 0; index < 25; index += 1) {
+        await repository.createCanonicalProduct({ workspaceId, id: `canonical_catalog_tail_${index}`, brandId: 'brand_catalog_tail', title: `Tail ${index}`, sourceProductId: `${productId}_tail_${index}` })
+      }
+      const policy = getMcpMethodPolicy('task.timeline')!
+
+      // Reference verdict of the previous call shape, derived from the data the
+      // old code read: the whole catalog plus a JS `sourceProductId === id`
+      // filter. Stating it from the rows themselves keeps the comparison
+      // independent of the implementation under test.
+      const legacyCandidates = (await repository.listCanonicalProducts({ workspaceId })).filter(row => row.sourceProductId === productId)
+      const legacyBrandIds = [...new Set(legacyCandidates.map(row => row.brandId))]
+      expect(legacyCandidates).toHaveLength(1)
+      expect(legacyBrandIds).toEqual(['brand_task_scope'])
+
+      const scoped = await resolveLoadedAuthorizationResourceScope(policy, workspaceId, { task_id: created.id })
+
+      // The page-scoped read must not change the authorization verdict.
+      expect(scoped).toEqual({ type: 'brand', id: legacyBrandIds.length === 1 ? legacyBrandIds[0] : undefined })
+      // The request only reads the rows bound to its own task product: the
+      // whole catalog holds 26 canonical rows, this request reads exactly one.
+      expect(repository.calls.at(-1)).toEqual({ workspaceId, sourceProductIds: [productId] })
+      expect(repository.rowCounts.at(-1)).toBe(1)
+      expect(await repository.listCanonicalProducts({ workspaceId })).toHaveLength(26)
+    } finally {
+      persistence.brandUnits = previousBrandUnits
+    }
   })
 
   it('produces one unique strict authorization decision for every live MCP method', () => {

@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
+import { alertingSelfMetricLines, jobQueueMetricLines } from './server.js'
 import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, authorizationRepositoryDomainError, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, nativeMcpErrorData, persistAssetSnapshotAndEvent, prioritizeQueueAssets, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
 import { requireApprovedAssetForImageGeneration, requirePublishAuthorizationSnapshot } from './server.js'
 import { merchantEntryBillingReadAllowed } from './server.js'
@@ -1096,5 +1097,78 @@ describe('uploaded image candidate admission', () => {
   it('rejects another workspace source', () => {
     const asset = source()
     expect(() => requireApprovedAssetForImageGeneration('ws_other_candidate', { platform: 'jd' }, [asset.id], true)).toThrow()
+  })
+})
+
+describe('durable job-queue metrics coverage', () => {
+  const group = (queue: 'sync' | 'publish' | 'generation', state: string, count: number, oldest: string, unknown: string | null = null) => ({
+    queue, state, count, oldestCreatedAt: oldest, oldestUpdatedAt: oldest, oldestRemoteObservedAt: unknown,
+  })
+  const value = (lines: string[], series: string) => {
+    const line = lines.find(candidate => candidate.startsWith(`${series} `))
+    return line === undefined ? undefined : Number(line.slice(series.length + 1))
+  }
+
+  it('reports every enumerable state, and reports zero only for a state the read actually covered', () => {
+    const lines = jobQueueMetricLines({ groups: [group('publish', 'unknown', 2, '2026-09-19T00:00:00.000Z')], workspacesTotal: 3, workspacesCovered: 3, readFailures: 0, durable: true })
+
+    // Enumerated states are present as an explicit 0 so `sum by (queue)` and a
+    // future alert can tell "empty" from "not reported".
+    expect(value(lines, 'merchant_job_state_count{queue="publish",state="published"}')).toBe(0)
+    expect(value(lines, 'merchant_job_state_count{queue="publish",state="unknown"}')).toBe(2)
+    expect(value(lines, 'merchant_job_state_count{queue="generation",state="queued"}')).toBe(0)
+    expect(lines.some(line => line.startsWith('merchant_job_queue_metrics_reads_total{outcome="ok"} '))).toBe(true)
+    expect(value(lines, 'merchant_job_queue_metrics_workspaces{scope="total"}')).toBe(3)
+    expect(value(lines, 'merchant_job_queue_metrics_workspaces{scope="covered"}')).toBe(3)
+  })
+
+  it('omits the gauges entirely when the durable read failed, instead of publishing a smaller number', () => {
+    const lines = jobQueueMetricLines({ groups: [group('publish', 'unknown', 2, '2026-09-19T00:00:00.000Z')], workspacesTotal: 4, workspacesCovered: 1, readFailures: 3, durable: true })
+
+    expect(lines.some(line => line.startsWith('merchant_job_state_count'))).toBe(false)
+    expect(lines.some(line => line.startsWith('merchant_queue_oldest_job_age_seconds'))).toBe(false)
+    expect(lines.some(line => line.startsWith('merchant_publish_unknown_age_seconds'))).toBe(false)
+    // The failure itself stays visible: coverage collapsed from 4 to 1.
+    expect(value(lines, 'merchant_job_queue_metrics_workspaces{scope="covered"}')).toBe(1)
+    expect(value(lines, 'merchant_job_queue_metrics_workspaces{scope="total"}')).toBe(4)
+  })
+
+  it('emits no age series for an empty queue rather than a zero age', () => {
+    // The old `Math.max(0, ...[])` produced `0`, which Prometheus cannot tell
+    // apart from "a job entered the queue this instant".
+    const lines = jobQueueMetricLines({ groups: [], workspacesTotal: 1, workspacesCovered: 1, readFailures: 0, durable: false })
+    expect(lines.some(line => line.startsWith('merchant_queue_oldest_job_age_seconds'))).toBe(false)
+    expect(lines.some(line => line.startsWith('merchant_publish_unknown_age_seconds'))).toBe(false)
+  })
+
+  it('ages the unknown gauge from when the job became unknown, not from when it was created', () => {
+    const created = new Date(Date.now() - 9 * 60 * 60 * 1000).toISOString()
+    const becameUnknown = new Date(Date.now() - 60 * 1000).toISOString()
+    const lines = jobQueueMetricLines({ groups: [group('publish', 'unknown', 1, created, becameUnknown)], workspacesTotal: 1, workspacesCovered: 1, readFailures: 0, durable: true })
+
+    const age = value(lines, 'merchant_publish_unknown_age_seconds')
+    expect(age).toBeGreaterThanOrEqual(55)
+    expect(age).toBeLessThan(120)
+  })
+})
+
+describe('alerting self-monitoring metrics', () => {
+  const value = (lines: string[], series: string) => {
+    const line = lines.find(candidate => candidate.startsWith(`${series} `))
+    return line === undefined ? undefined : Number(line.slice(series.length + 1))
+  }
+
+  it('publishes the sweep switch, success timestamp and failure counters', () => {
+    const lines = alertingSelfMetricLines()
+    expect(value(lines, 'merchant_alert_sweep_enabled')).toBe(1)
+    expect(value(lines, 'merchant_alert_sweep_last_success_timestamp_seconds')).toBeGreaterThan(0)
+    expect(value(lines, 'merchant_alert_sweep_runs_total{outcome="succeeded"}')).toBe(0)
+    expect(value(lines, 'merchant_alert_sweep_runs_total{outcome="failed"}')).toBe(0)
+    expect(value(lines, 'merchant_alert_delivery_attempts_total')).toBe(0)
+    expect(value(lines, 'merchant_alert_deliveries_total{result="delivered"}')).toBe(0)
+    // No delivery has happened yet, so a `0` here would decode as a 1970
+    // delivery. The series must be absent until the event exists.
+    expect(lines.some(line => line.startsWith('merchant_alert_delivery_last_success_timestamp_seconds'))).toBe(false)
+    expect(lines.some(line => line.startsWith('merchant_alert_delivery_last_failure_timestamp_seconds'))).toBe(false)
   })
 })

@@ -1693,6 +1693,48 @@ describe('security and access-control acceptance gates', () => {
     expect((polled.data as { result: { job_id: string } }).result.job_id).toBe(job.id)
   })
 
+  it('keeps candidate selection, workspace membership and platform availability out of the store boundary', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    const workspaceId = 'ws_store_less_membership'
+    await configureBearerMembers([{ token: 'token-storeless-membership', workspaceId }])
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
+    const base = await start()
+    const headers = { authorization: 'Bearer token-storeless-membership', 'x-workspace-id': workspaceId, 'content-type': 'application/json' }
+    const call = (id: number, method: string, params: Record<string, unknown>) =>
+      fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }) }).then(response => response.json() as Promise<Envelope>)
+    // None of these acts on a platform store, so none belongs on the store
+    // boundary. `requireStoreOnboarding` reached them only because it gates by
+    // method-name prefix: they start with neither `ops.`/`knowledge.`/`rule.` nor
+    // with `platform.connect`, so a workspace with no bound store could not invite
+    // a colleague, ask which platforms are enabled, or record which candidate
+    // image the merchant just tapped.
+    //
+    // `catalog.image.select` is the third step of the store-less chain pinned
+    // above: generate -> inspect -> tap. Exempting `catalog.image.review` but not
+    // `select` meant the tap that saves the choice was the one call that 428'd.
+    // Schema-valid payloads are required: the MCP surface validates the request
+    // body before the store boundary runs, so a malformed payload proves nothing.
+    const storeIndependent: Array<[string, Record<string, unknown>]> = [
+      ['workspace.invitations.list', {}],
+      ['workspace.invitation.accept', { expected_revision: '1' }],
+      ['platform.settings.get', {}],
+      ['catalog.image.select', {
+        job_id: 'job_store_less_select',
+        visual_ref: 'visual_store_less_select',
+        expected_revision: '1',
+        idempotency_key: 'store-less-select-1',
+        reason: '记录商家选择的首选主图',
+        confirmation_ticket_nonce_hash: 'a'.repeat(64),
+        confirmation_ticket_intent_hash: 'b'.repeat(64),
+      }],
+    ]
+    for (const [method, params] of storeIndependent) {
+      const body = await call(1, method, params)
+      expect(body.error?.code, `${method} must not be store-gated`).not.toBe('STORE_ONBOARDING_REQUIRED')
+    }
+  })
+
   it('keeps the REST and MCP store boundaries in step for the same capability', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     const workspaceId = 'ws_store_boundary_parity'

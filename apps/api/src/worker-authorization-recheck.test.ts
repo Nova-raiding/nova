@@ -6,6 +6,7 @@ import { InMemoryOutbox, type OutboxRepository } from '../../../packages/persist
 import { createWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
 import type { WorkerAuthorizationSnapshot } from '../../../packages/workers/src/execution-authorization.js'
 import { buildCanonicalExecutionBinding } from '../../../packages/application/src/canonical-execution-binding.js'
+import { assertPublishExecution } from '../../../apps/worker/src/main.js'
 import type { PublishJob, Task } from '../../../packages/application/src/service.js'
 
 // The composition root reads these at import time. Keep this suite offline
@@ -287,6 +288,7 @@ async function withHttpExecutionFixture(operation: HttpOperation, test: (fixture
   vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({
     generation: { token: 'test-authz-generation-token', signing_secret: 'test-authz-generation-secret' },
     publish: { token: 'test-authz-publish-token', signing_secret: 'test-authz-publish-secret' },
+    reconcile: { token: 'test-authz-reconcile-token', signing_secret: 'test-authz-reconcile-secret' },
     scan: { token: 'test-authz-scan-token', signing_secret: 'test-authz-scan-secret' },
   }))
   vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
@@ -390,6 +392,7 @@ async function createFixture(operation: HttpOperation) {
   })
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('HTTP fixture failed to bind loopback')
+  const baseUrl = `http://127.0.0.1:${address.port}`
   const request = async (options: { workspaceId?: string; eventId?: string; resourceId?: string; operation?: HttpOperation; invalidProof?: boolean } = {}) => {
     const requestedWorkspace = options.workspaceId ?? workspaceId
     const requestedResource = options.resourceId ?? resourceId
@@ -404,7 +407,7 @@ async function createFixture(operation: HttpOperation) {
     } })
     return { status: response.status, body: await response.json() as ExecutionEnvelope }
   }
-  return { workspaceId, identityId, resourceId, repository, grant, reserve, outbox, event, snapshot, job, listEvents, request }
+  return { baseUrl, workspaceId, identityId, resourceId, repository, grant, reserve, outbox, event, snapshot, job, listEvents, request }
 }
 
 describe('E1 worker execution-check: real signed HTTP with controlled memory repositories', () => {
@@ -457,6 +460,35 @@ describe('E1 worker execution-check: real signed HTTP with controlled memory rep
         expect(await request({ eventId })).toMatchObject({ status: 403, body: { error: { code: 'AUTHZ_EXECUTION_REVOKED' }, data: null } })
         expect(reserve).toHaveBeenCalledTimes(reserveCalls)
       }
+    })
+  })
+
+  it('publish.execute: a reconcile worker rechecks through its own role, not the publish role', async () => {
+    await withHttpExecutionFixture('publish.execute', async fixture => {
+      const path = `/v1/publish-jobs/${fixture.resourceId}/execution-check?event_id=${fixture.event.id}`
+      const workerId = 'authz-http-fixture'
+      // Pre-fix production shape: the reconcile worker signs with its own
+      // credentials but the proof is labelled with the publish role. The API
+      // selects the publish credential set from x-worker-role, so neither the
+      // reconcile bearer token nor the reconcile signature can match: 403, and
+      // the worker treats a 403 as non-retryable, so the event dead-letters.
+      const mislabelled = createWorkerRequestProof({ secret: 'test-authz-reconcile-secret', role: 'publish', workerId, method: 'GET', requestTarget: path, workspaceId: fixture.workspaceId })
+      const mislabelledResponse = await fetch(`${fixture.baseUrl}${path}`, { headers: { authorization: 'Bearer test-authz-reconcile-token', 'x-workspace-id': fixture.workspaceId, ...mislabelled.headers } })
+      expect(mislabelledResponse.status).toBe(403)
+
+      // Fixed shape: the reconcile credentials are signed, labelled and
+      // authenticated as reconcile, which is the role the route already admits.
+      const execution = await assertPublishExecution({
+        apiBaseUrl: fixture.baseUrl, apiToken: 'test-authz-reconcile-token', signingSecret: 'test-authz-reconcile-secret', role: 'reconcile', event: fixture.event,
+      })
+      expect(execution).toMatchObject({ payloadHash: fixture.job!.payloadHash, mediaRequired: false })
+      expect(execution.credentialRef).toMatch(/^vault:\/\/test-only\//u)
+
+      // Declaring the reconcile role is not an escalation: a caller that only
+      // holds publish credentials still fails the role's bearer and proof check.
+      const forged = createWorkerRequestProof({ secret: 'test-authz-publish-secret', role: 'reconcile', workerId, method: 'GET', requestTarget: path, workspaceId: fixture.workspaceId })
+      const forgedResponse = await fetch(`${fixture.baseUrl}${path}`, { headers: { authorization: 'Bearer test-authz-publish-token', 'x-workspace-id': fixture.workspaceId, ...forged.headers } })
+      expect(forgedResponse.status).toBe(403)
     })
   })
 

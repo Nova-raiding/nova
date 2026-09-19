@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { csvCell } from './csv-cell.js'
 import { auditSources, parseAuditCenterQuery, parseAuditPlatformQuery, type AuditAccessRole, type AuditCenterExport, type AuditCenterPage, type AuditCenterQuery, type AuditSource } from '../../../../packages/contracts/src/ops/audit-center.js'
 import type { AuditCenterRepository } from '../../../../packages/persistence/src/audit-center-repository.js'
 
@@ -21,7 +22,8 @@ const canRead = (roles: readonly AuditAccessRole[]) => roles.some(role => role =
 const canExport = (roles: readonly AuditAccessRole[]) => roles.some(role => role === 'platform_ops' || role === 'finance')
 /** Platform-wide scope requires the explicit canonical grant, never the label. */
 const isPlatformWide = (principal: AuditCenterPrincipal) => principal.platformWide === true && principal.roles.includes('platform_ops')
-const cell = (value: string | undefined) => { let text = value ?? ''; if (/^[=+@\-\t\r]/.test(text)) text = `'${text}`; return `"${text.replaceAll('"', '""')}"` }
+/** Shared with every other user-downloadable export; see `csv-cell.ts`. */
+const cell = csvCell
 
 export class AuditCenterService {
   constructor(private readonly repository: AuditCenterRepository, private readonly now: () => Date = () => new Date()) {}

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { csvCell } from './csv-cell.js'
 import {
   financeRecordKinds,
   parseFinanceSearchQuery,
@@ -42,12 +43,6 @@ const optionalTimestamp = (value: unknown) => {
   if (value === undefined) return undefined
   if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) throw new FinanceSearchServiceError('FINANCE_SEARCH_INVALID_REQUEST', 'snapshotAt is invalid')
   return new Date(value).toISOString()
-}
-
-function csvCell(value: string | number | undefined) {
-  let text = value === undefined ? '' : String(value)
-  if (/^[=+@\-\t\r]/.test(text)) text = `'${text}`
-  return `"${text.replaceAll('"', '""')}"`
 }
 
 function stableExportId(principal: FinanceSearchPrincipal, query: FinanceSearchQuery, snapshotAt: string) {

@@ -32,7 +32,10 @@ describe('content review decision API', () => {
     service.selectDirection(task.id, 'A')
     const version = service.createDraft(task.id)
     const base = await start()
-    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'merchant-e2e' }
+    // A review decision is a commercial write. This case is about the audit
+    // trail, not about commercial admission, so the workspace is opened through
+    // the standard funded fixture like every other gated e2e write.
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'merchant-e2e', 'x-test-commercial-fixture': 'server-e2e' }
 
     const before = await fetch(`${base}/v1/content-versions/${version.id}/review`, { headers }).then(response => response.json()) as Envelope<{ findings: Array<{ code: string; field: string; status: string }> }>
     const duplicate = before.data?.findings.find(finding => finding.code === 'DUPLICATE_IMAGE')

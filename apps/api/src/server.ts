@@ -9,7 +9,7 @@ import { alertNotificationReadiness, notifyOperationalAlert } from './alert-noti
 import { Pool } from 'pg'
 import { createClient } from 'redis'
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
-import { MerchantService, assetReadiness, imageArchiveReceiptDigest, imageGenerationCandidateUsability, isTrustedCleanAsset, DomainError, type AssetRegistrationResult, type BrandVisualRules, type KnowledgeGenerationContext, type Platform, type PlatformAccount, type PlatformRejection, type Product, type Task } from '../../../packages/application/src/service.js'
+import { MerchantService, MANUAL_STORE_RECORD_TOKEN_STATE, assetReadiness, imageArchiveReceiptDigest, imageGenerationCandidateUsability, isManualStoreRecord, isTrustedCleanAsset, DomainError, type AssetRegistrationResult, type BrandVisualRules, type KnowledgeGenerationContext, type Platform, type PlatformAccount, type PlatformRejection, type Product, type ProductSku, type Task } from '../../../packages/application/src/service.js'
 import { confirmedStoreBrandClues } from '../../../packages/application/src/brand-extractor.js'
 import { CommercialAccessService, type CommercialAccessServiceResult } from '../../../packages/application/src/commercial-access-service.js'
 import { CommercialPurchaseError, CommercialPurchaseService } from '../../../packages/application/src/commercial-purchase-service.js'
@@ -20,7 +20,7 @@ import { canonicalBackfillConflictQueueFailure, canonicalBackfillRunCanRetry } f
 import { defaultRuleCenterSeeds, type RuleHit, type RulePack } from '../../../packages/review/src/rule-center.js'
 import { reviewProductImages } from '../../../packages/review/src/review.js'
 import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError, type ConnectorRuntimeMappingPreflightAdapter } from '../../../packages/application/src/connector-runtime.js'
-import { allowedModelUsageSettlementDecisions, AssetScanRedriveError, AuthorizationRepositoryError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, CommercialContractError, loadMigrations, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialCatalogRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryCreativePointRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialCatalogRepository, PostgresCommercialContractRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresCreativePointRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresServiceFulfillmentRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialCatalogRepository, type CommercialCatalogSkuSnapshot, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type CreativePointRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ModelUsageSettlementDecision, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type ServiceFulfillmentRepository, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
+import { allowedModelUsageSettlementDecisions, AssetScanRedriveError, AuthorizationRepositoryError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, CommercialContractError, compareMembersByRecency, DEFAULT_MEMBER_ENTERPRISE_NAME, loadMigrations, memberIdentityKey, memberMatchesQuery, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialCatalogRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryCreativePointRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialCatalogRepository, PostgresCommercialContractRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresCreativePointRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresServiceFulfillmentRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialCatalogRepository, type CommercialCatalogSkuSnapshot, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type CreativePointRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ModelUsageSettlementDecision, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type ServiceFulfillmentRepository, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type WorkspaceMember, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
 import type { OutboxEvent, OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import { ServiceFulfillmentRepositoryError, type ServiceFulfillmentEventRecord } from '../../../packages/persistence/src/service-fulfillment-repository.js'
 import { CustomerDeliveryError, MemoryCustomerDeliveryRepository, PostgresCustomerDeliveryRepository, normalizeCustomerDeliveryAccountListInput, customerDeliveryAccountCursor, type CustomerDeliveryRepository } from '../../../packages/persistence/src/customer-delivery-repository.js'
@@ -32,6 +32,7 @@ import { downloadCustomerDeliveryContract } from './customer-delivery-contract-d
 import { CUSTOMER_DELIVERY_SCAN_EVENT, CUSTOMER_DELIVERY_SCAN_OPERATION, parseDeliveryScanAdmission, type DeliveryScanAdmission } from '../../../packages/workers/src/customer-delivery-scan-admission.js'
 import type { SqlClient } from '../../../packages/persistence/src/repository.js'
 import { CommercialCatalogUnavailableError, type CommercialCatalogMutationInput } from '../../../packages/persistence/src/commercial-catalog-repository.js'
+import { PostgresMerchantJobQueueMetricsRepository, type MerchantJobQueueGroup, type MerchantJobQueueMetricsRepository } from '../../../packages/persistence/src/job-queue-metrics-repository.js'
 import { IdentityLifecycleError, MemoryIdentityLifecycleRepository, PostgresIdentityLifecycleRepository, type IdentityAuthorizationSnapshot, type IdentityLifecycleRepository, type IdentityOperationsDetail } from '../../../packages/persistence/src/identity-lifecycle-repository.js'
 import { MemoryReconciliationStatusRepository, PostgresReconciliationStatusRepository, type ReconciliationStatusRepository } from '../../../packages/persistence/src/reconciliation-status-repository.js'
 import { MemoryCanonicalBackfillRunRepository, PostgresCanonicalBackfillRunRepository, type CanonicalBackfillRunRepository } from '../../../packages/persistence/src/canonical-backfill-run-repository.js'
@@ -105,6 +106,7 @@ import { FinanceSearchService, FinanceSearchServiceError } from './ops/finance-s
 import { AuditCenterService, AuditCenterServiceError } from './ops/audit-center-service.js'
 import { CommercialOpsReadModelError, authorizeCommercialCatalogRead, commercialOpsPageLimit, decodeCreativePointStatementCursor, paginateCommercialRows, projectCommercialAccessBlocks, projectCommercialAccessSummary, projectCommercialCatalogItem, projectCommercialEntitlement as projectCommercialOpsEntitlement, projectCommercialOpsCapabilities, projectCommercialOrder, projectCreativePointLedgerEntry, projectCreativePointRate, projectServiceFulfillment } from './ops/commercial-ops-read-model.js'
 import { CommercialPointAdjustmentCommandError, decideCommercialPointAdjustment, proposeCommercialPointAdjustment } from './ops/commercial-point-adjustment.js'
+import { csvCell } from './ops/csv-cell.js'
 import { supportRolePermissions, type SupportPermission, type SupportRole, type SupportTicketContract, type SupportTicketPageCursor, type SupportTicketPriority, type SupportTicketStatus } from '../../../packages/contracts/src/ops/support.js'
 import { FeatureFlagValidationError, type FeatureFlagEmergencyRequest, type FeatureFlagEvaluationContext, type FeatureFlagListRequest, type FeatureFlagMutationRequest } from '../../../packages/contracts/src/ops/feature-flags.js'
 import { FinanceSearchValidationError, type FinanceRecordKind, type FinanceSearchQuery } from '../../../packages/contracts/src/ops/finance-search.js'
@@ -136,7 +138,7 @@ import { evaluatePlatformFieldMapping, type PlatformFieldMappingGateInput, type 
 import { buildDeliveryBundleManifest, evaluateVideoStoryboardQuality, evaluateVisualAuthenticity, verifyDeliveryBundle, type DeliveryBundleFile, type DeliveryBundleManifest, type DeliveryBundleManifestInput, type VideoStoryboardQualityInput, type VisualAuthenticityGateInput } from '../../../packages/multimodal/src/index.js'
 import { projectPlatformCapabilityEvidence } from './platform-capability-response.js'
 import { MemoryPasswordAuthRepository, PostgresPasswordAuthRepository, type PasswordAccount, type PasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
-import { MemoryKnowledgeRepository, PostgresKnowledgeRepository, type KnowledgeRepository } from '../../../packages/persistence/src/knowledge.js'
+import { MemoryKnowledgeRepository, PostgresKnowledgeRepository, type KnowledgeRepository, type KnowledgeSearchResult } from '../../../packages/persistence/src/knowledge.js'
 import { projectImportedProductsToKnowledge } from '../../../packages/application/src/knowledge-import.js'
 
 const port = Number(process.env.PORT ?? 8787)
@@ -144,6 +146,18 @@ const uploadSessions = new UploadSessionManager()
 
 const fixtureMode = process.env.CONNECTOR_FIXTURE_MODE === 'true'
 const manualPlatformOperationsMode = process.env.PLATFORM_OPERATIONS_MODE?.trim().toLowerCase() === 'manual'
+/**
+ * Manual operations mode, read per call rather than cached at module load.
+ *
+ * The store boundary is evaluated long after import, and a deployment that
+ * switches `PLATFORM_OPERATIONS_MODE` must not keep gating on the old value.
+ * `workspaceOnboarding` already read the variable dynamically while
+ * `requireStoreOnboarding` compared a different field entirely, which is how
+ * the two surfaces drifted apart; both now call this one predicate.
+ */
+function manualPlatformOperations() {
+  return process.env.PLATFORM_OPERATIONS_MODE?.trim().toLowerCase() === 'manual'
+}
 const fixtureCommercialTestMode = fixtureMode && process.env.MERCHANT_TEST_APPROVED_RATES === 'true'
 const testCommercialFixtureMode = process.env.VITEST === 'true' || process.env.VITEST_WORKER_ID !== undefined || process.argv.some(argument => /(?:^|[/\\])vitest(?:[/\\]|$)/u.test(argument))
 let testCommercialFixtureHarnessEnabled = false
@@ -491,6 +505,11 @@ const service = new MerchantService({
   fixtureMode,
   seedFixture: fixtureMode || process.env.NODE_ENV === 'test',
   strictAccountScope: true,
+  // Manual operations mode is read per call (see `manualPlatformOperations`) so
+  // a deployment that switches PLATFORM_OPERATIONS_MODE cannot keep serving the
+  // old answer out of a module-load constant. Outside manual mode this returns
+  // false and every account gate keeps requiring a completed authorization.
+  manualStoreRecords: () => manualPlatformOperations(),
   contentGenerator,
   imageGenerator,
   contextSnapshotSink: async ({ task, envelope, inputTokensEstimate, maxInputTokens, versions }) => {
@@ -1238,7 +1257,13 @@ export interface ApiPersistence {
   persistTrustedScanPromotion?: (input: TrustedScanPromotionPersistenceInput) => Promise<AssetPromotionCleanupTask>
   ensureWorkspace?: (workspaceId: string) => Promise<void>
   listWorkspaceIds?: () => Promise<string[]>
-  listWorkspaceSummaries?: () => Promise<Array<{ workspaceId: string; enterpriseName: string; status: 'active' | 'disabled'; planName: string; monthlyPriceCny: number; usedTasks: number; includedTasks: number; subscriptionStatus: string; memberCount: number }>>
+  /**
+   * Durable, tenant-scoped job-queue aggregation for `GET /metrics`. Absent in
+   * memory persistence, where the process maps are the only (and complete)
+   * source of truth, so the metrics fall back to them.
+   */
+  jobQueueMetrics?: MerchantJobQueueMetricsRepository
+  listWorkspaceSummaries?: (query?: { workspaceIds?: readonly string[] }) => Promise<Array<{ workspaceId: string; enterpriseName: string; status: 'active' | 'disabled'; planName: string; monthlyPriceCny: number; usedTasks: number; includedTasks: number; subscriptionStatus: string; memberCount: number }>>
   listWorkspaceDirectory?: (query: { query?: string; status?: 'active' | 'disabled'; subscriptionStatus?: string; merchantOnly?: boolean; offset: number; limit: number }) => Promise<{ items: Array<{ workspaceId: string; enterpriseName: string; status: 'active' | 'disabled'; planName: string; monthlyPriceCny: number; usedTasks: number; includedTasks: number; subscriptionStatus: string; memberCount: number }>; total: number; offset: number; limit: number; hasMore: boolean }>
   getWorkspaceStatus?: (workspaceId: string) => Promise<'active' | 'disabled'>
   setWorkspaceStatus?: (workspaceId: string, status: 'active' | 'disabled') => Promise<void>
@@ -1680,11 +1705,12 @@ function publicRechargeOrder(order: RechargeOrder) {
   return { id: order.id, workspace_id: order.workspaceId, channel: order.channel, amount_cny: (order.amountFen / 100).toFixed(2), state: order.state, payment_mode: order.paymentMode, payment_url: order.paymentUrl ?? null, provider_trade_id: order.providerTradeId ?? null, created_by_actor_id: order.createdByActorId ?? null, attribution_status: order.createdByActorId ? 'attributed' : 'legacy_unattributed', expires_at: null, paid_at: order.state === 'paid' ? order.updatedAt : null, created_at: order.createdAt, updated_at: order.updatedAt }
 }
 
-/** Prefix spreadsheet formula-like cells before emitting a user-downloadable CSV. */
-export function csvCell(value: string) {
-  const safe = /^[=+\-@]/u.test(value) ? `'${value}` : value
-  return `"${safe.replace(/"/gu, '""')}"`
-}
+/**
+ * Re-exported so the existing `./server.js` import path keeps working. The
+ * implementation is shared with the finance-search and audit-center exports;
+ * see `ops/csv-cell.ts` for the escaping rule and why it is not duplicated.
+ */
+export { csvCell } from './ops/csv-cell.js'
 
 export async function readWorkspaceStatusInTransaction(pool: SqlPool, workspaceId: string): Promise<'active' | 'disabled'> {
   return withWorkspaceTransaction(pool, workspaceId, async client => {
@@ -1791,6 +1817,37 @@ type PlatformUserCommercialSummary = {
   walletBalanceCny: string
 }
 
+/**
+ * How many workspaces the *fallback* user directory may load members from in one
+ * request.
+ *
+ * `MembersRepository.searchPrefix` is the real read: the predicate, the
+ * `offset`/`limit` window and the totals are the query's job, so the response no
+ * longer grows with the platform. This bound survives only for a deployment
+ * whose member repository cannot hold the platform scope (`OPS_DATABASE_URL`
+ * absent), where the only bulk read is the per-workspace `listMany` and the
+ * predicate and the window are applied in JavaScript after all of it is in
+ * memory. Bounding that scan is the honest degradation there.
+ *
+ * Deterministic on purpose: the workspace ids are ordered before the cut so a
+ * truncated scan always covers the same prefix, and a truncated answer says so
+ * (`scan_truncated`, `scanned_workspace_count`) instead of reporting a partial
+ * `total` as if it were the platform total. A `workspace_id`-scoped request
+ * never reaches the bound because it scans one workspace.
+ */
+const OPS_USERS_SCAN_WORKSPACE_LIMIT_DEFAULT = 500
+function opsUserScanWorkspaceLimit() {
+  const configured = process.env.OPS_USERS_SCAN_WORKSPACE_LIMIT?.trim()
+  if (!configured) return OPS_USERS_SCAN_WORKSPACE_LIMIT_DEFAULT
+  const parsed = Number(configured)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : OPS_USERS_SCAN_WORKSPACE_LIMIT_DEFAULT
+}
+function boundOpsUserWorkspaceScan(workspaceIds: readonly string[]): { workspaceIds: readonly string[]; scanTruncated: boolean } {
+  const limit = opsUserScanWorkspaceLimit()
+  if (workspaceIds.length <= limit) return { workspaceIds, scanTruncated: false }
+  return { workspaceIds: [...workspaceIds].sort().slice(0, limit), scanTruncated: true }
+}
+
 async function loadPlatformUserCommercialSummaries(workspaceIds: readonly string[]) {
   const usageRepository = persistence.usage ?? memoryUsage
   const subscriptionRepository = persistence.subscriptions ?? memorySubscriptions
@@ -1818,7 +1875,12 @@ async function loadPlatformWorkspaceEnterpriseNames(workspaceIds: readonly strin
   const names = new Map<string, string>()
   if (!requested.size) return names
   if (persistence.listWorkspaceSummaries) {
-    for (const summary of await persistence.listWorkspaceSummaries()) {
+    // Ask for the requested workspaces only. The underlying read is a
+    // `security_barrier` view, so an unfiltered call materializes every
+    // workspace on the platform to build a map that is then filtered down to
+    // this set — the lookup is called by ops.users.list/export and
+    // ops.user.detail, so that cost was paid on every platform user page.
+    for (const summary of await persistence.listWorkspaceSummaries({ workspaceIds: [...requested] })) {
       if (requested.has(summary.workspaceId) && summary.enterpriseName.trim()) names.set(summary.workspaceId, summary.enterpriseName.trim())
     }
   }
@@ -2910,7 +2972,9 @@ async function generationRulePreflight(workspaceId: string, productId: string) {
   let category = product.category
   if ((await canonicalProductReadControl(workspaceId)).mode === 'canonical_read') {
     const repository = persistence.brandUnits ?? memoryBrandUnits
-    const candidates = (await repository.listCanonicalProducts({ workspaceId })).filter(row => row.sourceProductId === product.id)
+    // Only this product's canonical rows can become a candidate; `sourceProductIds`
+    // keeps the read proportional to the request instead of the whole catalog.
+    const candidates = await repository.listCanonicalProducts({ workspaceId, sourceProductIds: [product.id] })
     if (candidates.length > 1) throw new DomainError('CANONICAL_PRODUCT_AMBIGUOUS', '生成前发现多个规范商品映射，已阻断规则预检', 409, { product_id: product.id, canonical_product_ids: candidates.map(row => row.id), next_action: 'canonical.product.consistency' })
     const canonical = candidates[0]
     if (!canonical) throw new DomainError('CANONICAL_PRODUCT_MAPPING_REQUIRED', '生成前缺少规范商品映射，已阻断规则预检', 409, { product_id: product.id, next_action: 'canonical.product.consistency' })
@@ -3500,10 +3564,18 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const entitlements = new PostgresEntitlementRepository(sqlPool)
     const operations = new PostgresOperationsRepository(sqlPool)
     const subscriptions = new PostgresSubscriptionRepository(sqlPool, (client, event) => outbox.appendInTransaction(client, event))
-    const members = new PostgresMembersRepository(sqlPool)
+    // The second pool is what makes the platform user directory a single query:
+    // `workspace_members` is only visible across workspaces to the operations
+    // role (migration 091), so the platform read of `ops.users.list`/`export`/
+    // `user.detail` uses the same isolated credential as every other control-plane
+    // read here, while every tenant-scoped member operation stays on `sqlPool`.
+    const members = new PostgresMembersRepository(sqlPool, opsSqlPool)
     const commercialExtensions = new PostgresCommercialExtensionsRepository(sqlPool, opsSqlPool)
     const growth = new PostgresGrowthRepository(sqlPool)
     const alerts = new PostgresOperationalAlertsRepository(sqlPool)
+    // `/metrics` must not read per-process projections: each replica only holds
+    // the tenants it happened to hydrate, so the aggregate under-reported.
+    const jobQueueMetrics = new PostgresMerchantJobQueueMetricsRepository(sqlPool)
     const dataLifecycle = new PostgresDataLifecycleRepository(sqlPool)
     const workspaceDataExport = new PostgresWorkspaceDataExportRepository(sqlPool)
     const rules = new PostgresRuleRepository(sqlPool)
@@ -3521,7 +3593,15 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const supportSlaReporting = new PostgresSupportSlaReportingRepository(sqlPool)
     const incidents = new PostgresIncidentRepository(sqlPool)
     const featureFlags = new PostgresFeatureFlagsRepository(opsSqlPool)
-    const financeSearch = new PostgresFinanceSearchRepository(opsSqlPool)
+    // Finance search joins `commercial_catalog_skus`, which the tenant runtime
+    // role is denied (migration 146's REVOKE, made effective by the role
+    // bootstrap). It therefore requires a real `OPS_DATABASE_URL` rather than
+    // the `opsPool ?? pool` fallback: without the ops role the query would fail
+    // with a raw `permission denied` instead of the caller-facing 503 that
+    // `ops.finance.search` already reports for an absent repository. Production
+    // requires `OPS_DATABASE_URL` (see the check above), so this only changes
+    // the single-role deployment shape, and it changes it to fail honestly.
+    const financeSearch = opsPool ? new PostgresFinanceSearchRepository(opsSqlPool) : undefined
     const auditCenter = new PostgresAuditCenterRepository(sqlPool)
     const platformAuthorizationAudit = new PostgresPlatformAuthorizationAuditRepository(opsSqlPool)
     // Workspace directory is a platform projection. Keep it on the isolated
@@ -3678,7 +3758,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', creativePoints, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', creativePoints, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -4162,16 +4242,89 @@ function serializedWorkerCommercialRecheck(recheck: WorkerCommercialAccessRechec
   }
 }
 
+/**
+ * Self-monitoring for the two background alerting paths in this process.
+ *
+ * Before this existed, both failure modes were invisible: `notifyOperationalAlert`
+ * swallowed a notifier outage and a `recordNotification` write failure in the
+ * same empty `catch {}`, and `sweepOperationalAlerts` wrote one stderr line per
+ * failure that nothing scraped. The mechanism whose job is to tell a human that
+ * something is wrong had no way to tell anyone that *it* was wrong.
+ *
+ * Every field here is process-local and cumulative. Two consequences follow and
+ * are intentional:
+ *   - counters are per pod, so `rate()` on them is only meaningful per series
+ *     (`sum by (pod)`), never as a fleet-wide total;
+ *   - `sweepLastSuccessAt` starts at process start, so a fresh pod that never
+ *     completes a sweep reports an age growing from boot rather than an absent
+ *     series. `sweepRunsTotal{outcome="succeeded"}` distinguishes "never
+ *     succeeded" (counter stays 0) from "succeeded, then stopped".
+ */
+export const alertingTelemetry = {
+  sweepLastSuccessAt: Date.now(),
+  sweepConsecutiveFailures: 0,
+  sweepLastBatchTenants: 0,
+  sweepCoverageLagSeconds: 0,
+  sweepRuns: { succeeded: 0, failed: 0 },
+  sweepTenantSyncs: { succeeded: 0, failed: 0 },
+  deliveryAttempts: 0,
+  deliveries: { delivered: 0, failed: 0, blocked: 0, disabled: 0, exception: 0 } as Record<'delivered' | 'failed' | 'blocked' | 'disabled' | 'exception', number>,
+  deliveryLastSuccessAt: null as number | null,
+  deliveryLastFailureAt: null as number | null,
+  deliveryConsecutiveFailures: 0,
+  /** `recordNotification` write failures: the alert exists, its delivery evidence does not. */
+  deliveryEvidenceFailures: 0,
+}
+
+/**
+ * Durable job-queue aggregation reads for `GET /metrics`. Counted separately
+ * from the gauges they feed so "the database read failed" can never be mistaken
+ * for "there are no jobs" — see `jobQueueMetricLines`.
+ */
+export const jobQueueMetricReads = { ok: 0, failed: 0 }
+
 /** Keep notification delivery evidence durable without coupling alert creation
  * to a remote receiver's latency or availability. */
 async function persistOperationalAlertNotification(alert: OperationalAlert): Promise<void> {
+  alertingTelemetry.deliveryAttempts += 1
+  let result: Awaited<ReturnType<typeof notifyOperationalAlert>>
   try {
     await persistenceReady
-    const result = await notifyOperationalAlert(alert)
+    result = await notifyOperationalAlert(alert)
+  } catch (error) {
+    // Two different failures land here and both stay counted as one class
+    // because in neither case was anything attempted or recorded: persistence
+    // never became ready (so no alert row exists either), or the notifier threw
+    // instead of answering `delivery: 'failed'`. Neither may reach the caller —
+    // every call site is `void`ed, and an unhandled rejection is fatal here.
+    alertingTelemetry.deliveries.exception += 1
+    alertingTelemetry.deliveryLastFailureAt = Date.now()
+    alertingTelemetry.deliveryConsecutiveFailures += 1
+    console.error(JSON.stringify({ event: 'operational_alert_notification_threw', workspace_id: alert.workspaceId, alert_id: alert.id, code: alert.code, error_message: redactInlineCredentials(error instanceof Error ? error.message : String(error)) }))
+    return
+  }
+  alertingTelemetry.deliveries[result.delivery] += 1
+  if (result.delivery === 'delivered') {
+    alertingTelemetry.deliveryLastSuccessAt = Date.now()
+    alertingTelemetry.deliveryConsecutiveFailures = 0
+  } else if (result.delivery === 'failed') {
+    alertingTelemetry.deliveryLastFailureAt = Date.now()
+    alertingTelemetry.deliveryConsecutiveFailures += 1
+  }
+  if (result.delivery === 'failed') {
+    // `reason` can carry a transport error string, so it goes through the same
+    // credential scrubber as every other pg/network error on this path.
+    console.error(JSON.stringify({ event: 'operational_alert_notification_failed', workspace_id: alert.workspaceId, alert_id: alert.id, code: alert.code, severity: alert.severity, attempts: result.attempts, reason: result.reason ? redactInlineCredentials(result.reason) : null }))
+  }
+  try {
     await persistence.alerts?.recordNotification({ workspaceId: alert.workspaceId, alertId: alert.id, delivery: result.delivery, attempts: result.attempts, ...(result.requestId ? { requestId: result.requestId } : {}), ...(result.reason ? { reason: result.reason } : {}) })
-  } catch {
+  } catch (error) {
     // Alert persistence remains authoritative. A database or notifier outage
     // must not turn an already-recorded operational alert into a lost API error.
+    // It must not be silent either: without this counter, a webhook that only
+    // ever fails to persist looks identical to one that was never called.
+    alertingTelemetry.deliveryEvidenceFailures += 1
+    console.error(JSON.stringify({ event: 'operational_alert_notification_evidence_failed', workspace_id: alert.workspaceId, alert_id: alert.id, delivery: result.delivery, error_message: redactInlineCredentials(error instanceof Error ? error.message : String(error)) }))
   }
 }
 
@@ -4386,6 +4539,15 @@ const STORE_BOUNDARY_EXEMPT_METHODS = new Set([
   // own generation job/product and only persist that job's review state; neither
   // reads or writes a platform store.
   'catalog.image.review', 'generation.get', 'multimodal.video.get',
+  // Saving the candidate the merchant just picked. This is the third step of the
+  // same store-less chain the two entries above belong to: the bridge renders the
+  // candidate card after `catalog.image.generate`, the merchant taps one, and the
+  // card calls `catalog.image.select` before re-reading with `catalog.image.get`.
+  // Exempting `review` but not `select` split one "merchant picks their preferred
+  // image" action across the boundary — the merchant could generate and inspect
+  // candidates and then got a 428 on the tap that records the choice. It writes
+  // only the workspace's own generation job preference and never touches a store.
+  'catalog.image.select',
   // Uploading and parsing the merchant's own source material.
   'asset.upload', 'asset.upload.batch', 'asset.parse', 'asset.list', 'asset.facts.confirm',
   'upload.session.create', 'upload.session.part', 'upload.session.complete',
@@ -4414,6 +4576,16 @@ const STORE_BOUNDARY_EXEMPT_METHODS = new Set([
   'commercial.order.payment.get', 'billing.export',
   'workspace.data.export.request', 'workspace.data.export.get', 'workspace.data.delete.request',
   'canonical.product.consistency',
+  // Workspace membership and platform availability. Neither acts on a platform
+  // store, and `requireStoreOnboarding` only reached them because it gates by
+  // name prefix: they neither start with `ops.`/`knowledge.`/`rule.` nor appear
+  // in a set, so a workspace with no bound store could not invite a colleague or
+  // ask which platforms are enabled. `workspace.invitation.*` is registered in
+  // `MCP_OPS_CONTROL_METHODS` alongside `ops.members.list` — membership control,
+  // not store control — and `platform.settings.get` is a read the merchant bridge
+  // already exposes (`READ_ONLY_METHODS` in the plugin), so gating it here
+  // contradicted the surface the plugin actually ships.
+  'workspace.invitations.list', 'workspace.invitation.accept', 'platform.settings.get',
 ])
 
 const ONBOARDING_METHODS = new Set([
@@ -4442,12 +4614,36 @@ const COMMERCIAL_READ_ONLY_METHODS = new Set([
   'automation.policy.get', 'automation.policy.list',
 ])
 
+/**
+ * THE single fact both store-boundary surfaces are built from: which
+ * `tokenState` means "this workspace has a platform store scope it may act on".
+ *
+ * `tokenState` is the authoritative field. The store directory's derived
+ * `dataMode` is a presentation detail and must never decide eligibility — using
+ * one here and the other there is exactly how the two surfaces drifted apart:
+ * `requireStoreOnboarding` compared `tokenState` while `workspaceOnboarding`
+ * compared `dataMode`, so a merchant could be shown a bound store by
+ * `workspace.health` and still receive 428 from every platform-side method, with
+ * no operator-side method able to create the record either surface wanted.
+ *
+ * Outside manual operations mode this is precisely the rule the boundary always
+ * applied: only a completed authorization counts. Manual mode has no OAuth at
+ * all, so the credential-free record operations staff explicitly registered for
+ * this merchant carries the same scope in place of the missing grant.
+ */
+function storeGrantsPlatformScope(tokenState: string) {
+  if (tokenState === 'connected') return true
+  return manualPlatformOperations() && tokenState === MANUAL_STORE_RECORD_TOKEN_STATE
+}
+
 function requireStoreOnboarding(workspaceId: string, method: string) {
   // Local fixture workflows intentionally support unbound planning data. The
   // production App flow must bind at least one live store before any catalog,
   // asset, task, sync, generation, or publishing operation is reachable.
   if (!isProduction() || ONBOARDING_METHODS.has(method) || COMMERCIAL_READ_ONLY_METHODS.has(method) || STORE_BOUNDARY_EXEMPT_METHODS.has(method) || method.startsWith('ops.') || method.startsWith('knowledge.') || method.startsWith('rule.')) return
-  const hasBoundStore = service.listPlatformAccounts(workspaceId).some(account => account.tokenState === 'connected')
+  // The one shared fact, asked over the account records directly: a store
+  // directory entry's `state` is exactly the account's `tokenState`.
+  const hasBoundStore = service.listPlatformAccounts(workspaceId).some(account => storeGrantsPlatformScope(account.tokenState))
   // The guidance must name only methods the merchant plugin actually exposes.
   // `platform.connect` is hidden from `tools/list` and rejected as an unknown
   // tool, so recommending it left the merchant with no actionable next step.
@@ -4734,12 +4930,39 @@ const OPERATIONAL_ALERT_SWEEP_ENABLED = (process.env.OPERATIONAL_ALERT_SWEEP_ENA
  * `OPERATIONAL_ALERT_SWEEP_ENABLED=false` stops the sweep and falls back to the
  * old behaviour of evaluating alerts only when the console reads them.
  */
+function recordAlertSweepSuccess() {
+  alertingTelemetry.sweepRuns.succeeded += 1
+  alertingTelemetry.sweepConsecutiveFailures = 0
+  alertingTelemetry.sweepLastSuccessAt = Date.now()
+}
+
+function recordAlertSweepFailure() {
+  alertingTelemetry.sweepRuns.failed += 1
+  alertingTelemetry.sweepConsecutiveFailures += 1
+}
+
 async function sweepOperationalAlerts() {
   if (!OPERATIONAL_ALERT_SWEEP_ENABLED || !persistence.listWorkspaceIds) return
   try {
     await persistenceReady
     const workspaceIds = await persistence.listWorkspaceIds()
-    if (!workspaceIds.length) return
+    const sweepBatchSize = Math.max(1, Math.min(OPERATIONAL_ALERT_SWEEP_BATCH, workspaceIds.length))
+    // Derived, never used for control flow: the number of intervals one full
+    // tenant pass takes at the current batch size. Detection latency is
+    // `tenantCount / batch * interval`, which until now existed only in the
+    // doc comment above — so no dashboard or rule could tell a sweep that is
+    // merely slow from one that is stuck.
+    alertingTelemetry.sweepCoverageLagSeconds = workspaceIds.length
+      ? Math.ceil(workspaceIds.length / sweepBatchSize) * (OPERATIONAL_ALERT_SWEEP_INTERVAL_MS / 1000)
+      : 0
+    if (!workspaceIds.length) {
+      // An empty directory is a completed pass, not a failure: recording it
+      // keeps `merchant_alert_sweep_last_success_timestamp_seconds` moving on a
+      // freshly initialised deployment instead of paging on a healthy system.
+      alertingTelemetry.sweepLastBatchTenants = 0
+      recordAlertSweepSuccess()
+      return
+    }
     // Derive the window from the wall clock rather than a process-local cursor.
     // A cursor is per-replica (N replicas each do all the work), resets to zero
     // on every rolling deploy or scale-up, and for a pod stuck in a crash loop
@@ -4753,20 +4976,32 @@ async function sweepOperationalAlerts() {
     const batch = offset + size <= workspaceIds.length
       ? workspaceIds.slice(offset, offset + size)
       : [...workspaceIds.slice(offset), ...workspaceIds.slice(0, offset + size - workspaceIds.length)]
+    let failedTenants = 0
     await mapWithConcurrency(batch, 4, async workspaceId => {
       try {
         await hydrateWorkspace(workspaceId, { readOnly: true })
         await syncOperationalAlerts(workspaceId)
+        alertingTelemetry.sweepTenantSyncs.succeeded += 1
       } catch (error) {
         // One malformed legacy tenant must not stop the sweep; its persisted
         // alert stream stays queryable and the next pass repairs it.
         // Same scrubber as the request-error log: this path runs pg work, and a
         // connection-bearing error message would otherwise reach a log file
         // unredacted — the exact leak `redactInlineCredentials` was added for.
+        failedTenants += 1
+        alertingTelemetry.sweepTenantSyncs.failed += 1
         console.error(JSON.stringify({ event: 'operational_alert_sync_failed', workspace_id: workspaceId, error_message: redactInlineCredentials(error instanceof Error ? error.message : String(error)) }))
       }
     })
+    alertingTelemetry.sweepLastBatchTenants = batch.length
+    // A pass that silently degraded on every tenant is not a success. Only a
+    // pass where every workspace committed counts, otherwise the sweep gauge
+    // would stay green while the alert stream stopped advancing for the tenants
+    // that keep failing.
+    if (failedTenants > 0) recordAlertSweepFailure()
+    else recordAlertSweepSuccess()
   } catch (error) {
+    recordAlertSweepFailure()
     console.error(JSON.stringify({ event: 'operational_alert_sweep_failed', error_message: redactInlineCredentials(error instanceof Error ? error.message : String(error)) }))
   }
 }
@@ -5994,14 +6229,269 @@ function observeHttpMetric(req: IncomingMessage, res: ServerResponse, startedAt:
   metricInFlight = Math.max(0, metricInFlight - 1)
 }
 
-async function prometheusMetrics() {
+type DurableJobQueue = 'sync' | 'publish' | 'generation'
+
+/**
+ * Fully enumerated state list per queue. Emitting an explicit `0` for a state
+ * with no rows is what makes `merchant_job_state_count` countable by
+ * `sum by (queue)`: a state that is missing because it is empty and a state
+ * that is missing because the read failed would otherwise be indistinguishable.
+ * The list is deliberately closed — a state value can reach the exposition
+ * format from `business_entity_snapshots.payload->>'state'`, which is stored
+ * JSON, and only these literals are ever written as labels.
+ */
+const JOB_QUEUE_STATES: Readonly<Record<DurableJobQueue, readonly string[]>> = {
+  sync: ['queued', 'running', 'succeeded', 'partial', 'failed'],
+  publish: ['prepared', 'confirmed', 'queued', 'submitting', 'submitted', 'reviewing', 'published', 'rejected', 'unknown', 'reconciling', 'manual_attention'],
+  generation: ['queued', 'running', 'succeeded', 'failed'],
+}
+
+/**
+ * Which durable queue backs each exported `queue` label, which of its states
+ * count as backlog, and therefore which timestamp the age is measured from.
+ *
+ * These three lists are carried over unchanged from the in-process projection
+ * this replaced, so only the data source changes: publish ages from
+ * `created_at` (when the job entered the queue) while sync and generation age
+ * from their last update.
+ */
+const JOB_QUEUE_BACKLOG: Readonly<Record<string, { queue: DurableJobQueue; states: readonly string[] }>> = {
+  sync: { queue: 'sync', states: ['queued', 'running', 'partial'] },
+  publish: { queue: 'publish', states: ['prepared', 'confirmed', 'queued', 'submitting', 'reconciling', 'unknown'] },
+  generation: { queue: 'generation', states: ['queued', 'running'] },
+  reconcile: { queue: 'publish', states: ['reconciling', 'unknown'] },
+}
+
+function oldestIso(current: string | null, candidate: string | null): string | null {
+  if (!candidate) return current
+  if (!Number.isFinite(Date.parse(candidate))) return current
+  if (!current) return candidate
+  return Date.parse(candidate) < Date.parse(current) ? candidate : current
+}
+
+/**
+ * The in-process projection, used only under memory persistence where it is the
+ * complete dataset (one process, no replicas, nothing left un-hydrated). It is
+ * the multi-replica case that made this projection systematically under-report.
+ */
+function jobQueueGroupsFromProcessMaps(): MerchantJobQueueGroup[] {
+  const groups = new Map<string, MerchantJobQueueGroup>()
+  const add = (queue: DurableJobQueue, state: string, createdAt: string, updatedAt: string, remoteObservedAt: string | null) => {
+    const key = `${queue}:${state}`
+    const existing = groups.get(key)
+    if (!existing) {
+      groups.set(key, { queue, state, count: 1, oldestCreatedAt: createdAt, oldestUpdatedAt: updatedAt, oldestRemoteObservedAt: remoteObservedAt })
+      return
+    }
+    existing.count += 1
+    existing.oldestCreatedAt = oldestIso(existing.oldestCreatedAt, createdAt)
+    existing.oldestUpdatedAt = oldestIso(existing.oldestUpdatedAt, updatedAt)
+    existing.oldestRemoteObservedAt = oldestIso(existing.oldestRemoteObservedAt, remoteObservedAt)
+  }
+  for (const job of service.syncJobs.values()) add('sync', job.state, job.createdAt, job.updatedAt, null)
+  for (const job of service.publishJobs.values()) add('publish', job.state, job.createdAt, job.createdAt, job.remoteObservedAt ?? null)
+  for (const job of service.generationJobs.values()) add('generation', job.state, job.createdAt, job.updatedAt, null)
+  return [...groups.values()]
+}
+
+export interface JobQueueMetricInput {
+  groups: readonly MerchantJobQueueGroup[]
+  /** Workspaces the aggregation was supposed to cover. */
+  workspacesTotal: number
+  workspacesCovered: number
+  readFailures: number
+  /** True when `groups` came from the durable aggregate rather than a process projection. */
+  durable: boolean
+}
+
+/**
+ * Render the durable job-queue gauges, or omit them.
+ *
+ * The bug this closes: the gauges were computed from the per-replica in-memory
+ * projection, so each pod reported only the tenants it happened to hydrate. A
+ * `max()` across replicas then took the worst value some replica happened to
+ * have seen and silently dropped every workspace no replica had hydrated, and
+ * `Math.max(0, ...[])` turned "we have no data for this" into a confident `0`,
+ * which Prometheus cannot tell apart from "there is no backlog".
+ *
+ * Invariant kept here: a failed read is never rendered as `0`. When coverage is
+ * incomplete the three gauge families are omitted entirely and only
+ * `merchant_job_queue_metrics_reads_total{outcome="failed"}` and the coverage
+ * gauges are published.
+ */
+export function jobQueueMetricLines(input: JobQueueMetricInput): string[] {
+  const lines: string[] = []
+  if (input.durable) {
+    lines.push(
+      '# HELP merchant_job_queue_metrics_reads_total Durable job-queue aggregation reads by outcome.',
+      '# TYPE merchant_job_queue_metrics_reads_total counter',
+      `merchant_job_queue_metrics_reads_total{outcome="ok"} ${jobQueueMetricReads.ok}`,
+      `merchant_job_queue_metrics_reads_total{outcome="failed"} ${jobQueueMetricReads.failed}`,
+      '# HELP merchant_job_queue_metrics_workspaces Workspace coverage of the durable job-queue gauges.',
+      '# TYPE merchant_job_queue_metrics_workspaces gauge',
+      `merchant_job_queue_metrics_workspaces{scope="total"} ${input.workspacesTotal}`,
+      `merchant_job_queue_metrics_workspaces{scope="covered"} ${input.workspacesCovered}`,
+    )
+    if (input.readFailures > 0 || input.workspacesCovered !== input.workspacesTotal) return lines
+  }
+  const counts = new Map<string, number>()
+  const oldest = new Map<string, string | null>()
+  const oldestUnknown = new Map<string, string | null>()
+  for (const group of input.groups) {
+    const key = `${group.queue}:${group.state}`
+    counts.set(key, (counts.get(key) ?? 0) + group.count)
+    const backlogStamp = group.queue === 'publish' ? (group.oldestCreatedAt ?? group.oldestUpdatedAt) : (group.oldestUpdatedAt ?? group.oldestCreatedAt)
+    oldest.set(key, oldestIso(oldest.get(key) ?? null, backlogStamp))
+    if (group.queue === 'publish' && group.state === 'unknown') oldestUnknown.set(key, oldestIso(oldestUnknown.get(key) ?? null, group.oldestRemoteObservedAt ?? backlogStamp))
+  }
   const nowMs = Date.now()
-  const ageSeconds = (value: string) => Math.max(0, (nowMs - Date.parse(value)) / 1000)
-  const stateCounts = new Map<string, number>()
-  for (const job of service.syncJobs.values()) stateCounts.set(`sync:${job.state}`, (stateCounts.get(`sync:${job.state}`) ?? 0) + 1)
-  for (const job of service.publishJobs.values()) stateCounts.set(`publish:${job.state}`, (stateCounts.get(`publish:${job.state}`) ?? 0) + 1)
-  for (const job of service.generationJobs.values()) stateCounts.set(`generation:${job.state}`, (stateCounts.get(`generation:${job.state}`) ?? 0) + 1)
-  const oldest = (prefix: string, states: readonly string[]) => Math.max(0, ...[...service.syncJobs.values()].filter(job => prefix === 'sync' && states.includes(job.state)).map(job => ageSeconds(job.updatedAt)), ...[...service.publishJobs.values()].filter(job => prefix === 'publish' && states.includes(job.state)).map(job => ageSeconds(job.createdAt)), ...[...service.generationJobs.values()].filter(job => prefix === 'generation' && states.includes(job.state)).map(job => ageSeconds(job.updatedAt)))
+  const ageSeconds = (value: string | null | undefined) => {
+    if (!value) return null
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) ? Math.max(0, (nowMs - parsed) / 1000) : null
+  }
+  lines.push('# HELP merchant_job_state_count Current durable business jobs by queue and state.', '# TYPE merchant_job_state_count gauge')
+  for (const [queue, states] of Object.entries(JOB_QUEUE_STATES)) {
+    for (const state of states) lines.push(`merchant_job_state_count{queue="${queue}",state="${state}"} ${counts.get(`${queue}:${state}`) ?? 0}`)
+  }
+  lines.push('# HELP merchant_queue_oldest_job_age_seconds Age of the oldest active job by queue.', '# TYPE merchant_queue_oldest_job_age_seconds gauge')
+  for (const [queue, spec] of Object.entries(JOB_QUEUE_BACKLOG)) {
+    let oldestMs: number | null = null
+    for (const state of spec.states) {
+      const stamp = oldest.get(`${spec.queue}:${state}`)
+      if (!stamp) continue
+      const parsed = Date.parse(stamp)
+      if (!Number.isFinite(parsed)) continue
+      if (oldestMs === null || parsed < oldestMs) oldestMs = parsed
+    }
+    // An empty backlog queue has no oldest job. A literal `0` would claim a job
+    // that entered the queue this instant, so the series is omitted instead.
+    if (oldestMs === null) continue
+    lines.push(`merchant_queue_oldest_job_age_seconds{queue="${queue}"} ${Math.max(0, (nowMs - oldestMs) / 1000)}`)
+  }
+  const unknownAge = ageSeconds(oldestUnknown.get('publish:unknown') ?? null)
+  if (unknownAge !== null) {
+    lines.push('# HELP merchant_publish_unknown_age_seconds Age of the oldest unknown publish job.', '# TYPE merchant_publish_unknown_age_seconds gauge', `merchant_publish_unknown_age_seconds ${unknownAge}`)
+  }
+  return lines
+}
+
+/**
+ * Self-monitoring for the alerting path itself.
+ *
+ * Each family answers a question that previously had no answer at all: "is the
+ * background sweep still completing?" (`sweep_last_success_timestamp_seconds`,
+ * `sweep_consecutive_failures`, `sweep_runs_total`), "how stale is the coverage
+ * it provides?" (`sweep_coverage_lag_seconds`), and "is the notification
+ * channel delivering?" (`deliveries_total{result}`,
+ * `delivery_last_success_timestamp_seconds`).
+ *
+ * The two `last_*` gauges are omitted, never zeroed, until the event has
+ * happened in this process: a `0` here is the Unix epoch, which reads as a
+ * successful delivery in 1970 rather than "none yet".
+ */
+export function alertingSelfMetricLines(): string[] {
+  const telemetry = alertingTelemetry
+  const lines = [
+    '# HELP merchant_alert_sweep_enabled Whether the background operational-alert sweep is enabled in this process.',
+    '# TYPE merchant_alert_sweep_enabled gauge',
+    `merchant_alert_sweep_enabled ${OPERATIONAL_ALERT_SWEEP_ENABLED ? 1 : 0}`,
+    '# HELP merchant_alert_sweep_last_success_timestamp_seconds Unix time of the last sweep pass where every tenant committed, or process start when none has succeeded yet.',
+    '# TYPE merchant_alert_sweep_last_success_timestamp_seconds gauge',
+    `merchant_alert_sweep_last_success_timestamp_seconds ${telemetry.sweepLastSuccessAt / 1000}`,
+    '# HELP merchant_alert_sweep_consecutive_failures Consecutive sweep passes that failed or degraded.',
+    '# TYPE merchant_alert_sweep_consecutive_failures gauge',
+    `merchant_alert_sweep_consecutive_failures ${telemetry.sweepConsecutiveFailures}`,
+    '# HELP merchant_alert_sweep_last_batch_tenants Tenants covered by the last completed sweep pass.',
+    '# TYPE merchant_alert_sweep_last_batch_tenants gauge',
+    `merchant_alert_sweep_last_batch_tenants ${telemetry.sweepLastBatchTenants}`,
+    '# HELP merchant_alert_sweep_coverage_lag_seconds Seconds one full tenant pass takes at the current batch size.',
+    '# TYPE merchant_alert_sweep_coverage_lag_seconds gauge',
+    `merchant_alert_sweep_coverage_lag_seconds ${telemetry.sweepCoverageLagSeconds}`,
+    '# HELP merchant_alert_sweep_runs_total Operational-alert sweep passes by outcome.',
+    '# TYPE merchant_alert_sweep_runs_total counter',
+    `merchant_alert_sweep_runs_total{outcome="succeeded"} ${telemetry.sweepRuns.succeeded}`,
+    `merchant_alert_sweep_runs_total{outcome="failed"} ${telemetry.sweepRuns.failed}`,
+    '# HELP merchant_alert_sweep_tenant_syncs_total Per-tenant alert evaluations inside sweep passes, by outcome.',
+    '# TYPE merchant_alert_sweep_tenant_syncs_total counter',
+    `merchant_alert_sweep_tenant_syncs_total{outcome="succeeded"} ${telemetry.sweepTenantSyncs.succeeded}`,
+    `merchant_alert_sweep_tenant_syncs_total{outcome="failed"} ${telemetry.sweepTenantSyncs.failed}`,
+    '# HELP merchant_alert_delivery_attempts_total Operational alerts that entered the notification path.',
+    '# TYPE merchant_alert_delivery_attempts_total counter',
+    `merchant_alert_delivery_attempts_total ${telemetry.deliveryAttempts}`,
+    '# HELP merchant_alert_deliveries_total Alert notification outcomes. `blocked` and `disabled` are configuration states, not delivery failures.',
+    '# TYPE merchant_alert_deliveries_total counter',
+    ...Object.entries(telemetry.deliveries).map(([result, value]) => `merchant_alert_deliveries_total{result="${result}"} ${value}`),
+    '# HELP merchant_alert_delivery_consecutive_failures Consecutive failed or throwing notification attempts.',
+    '# TYPE merchant_alert_delivery_consecutive_failures gauge',
+    `merchant_alert_delivery_consecutive_failures ${telemetry.deliveryConsecutiveFailures}`,
+    '# HELP merchant_alert_notification_evidence_failures_total Alert deliveries whose evidence row could not be written. The alert itself is unaffected.',
+    '# TYPE merchant_alert_notification_evidence_failures_total counter',
+    `merchant_alert_notification_evidence_failures_total ${telemetry.deliveryEvidenceFailures}`,
+  ]
+  if (telemetry.deliveryLastSuccessAt !== null) {
+    lines.push('# HELP merchant_alert_delivery_last_success_timestamp_seconds Unix time of the last successful alert notification delivery.', '# TYPE merchant_alert_delivery_last_success_timestamp_seconds gauge', `merchant_alert_delivery_last_success_timestamp_seconds ${telemetry.deliveryLastSuccessAt / 1000}`)
+  }
+  if (telemetry.deliveryLastFailureAt !== null) {
+    lines.push('# HELP merchant_alert_delivery_last_failure_timestamp_seconds Unix time of the last failed alert notification delivery.', '# TYPE merchant_alert_delivery_last_failure_timestamp_seconds gauge', `merchant_alert_delivery_last_failure_timestamp_seconds ${telemetry.deliveryLastFailureAt / 1000}`)
+  }
+  return lines
+}
+
+/**
+ * Read the durable job-queue gauges across every workspace in the directory.
+ *
+ * One query per workspace, not one query for all of them:
+ * `publish_jobs`, `generation_jobs` and `business_entity_snapshots` are all
+ * `FORCE ROW LEVEL SECURITY` with a `workspace_id = current_setting('app.workspace_id')`
+ * policy and no platform-scope policy, so the runtime role cannot legally read
+ * across tenants in a single statement. The cost is bounded concurrency and a
+ * fixed number of round trips per scrape, the same trade the durable outbox
+ * metric next to it already makes.
+ */
+async function jobQueueMetricLinesForScrape(): Promise<string[]> {
+  const repository = persistence.jobQueueMetrics
+  if (!repository || !persistence.listWorkspaceIds) {
+    return jobQueueMetricLines({ groups: jobQueueGroupsFromProcessMaps(), workspacesTotal: 0, workspacesCovered: 0, readFailures: 0, durable: false })
+  }
+  let workspaceIds: string[]
+  try {
+    workspaceIds = await persistence.listWorkspaceIds()
+  } catch (error) {
+    // Even the tenant directory is unreadable. Count it and publish the failure
+    // rather than letting the whole scrape 500 or, worse, render an empty fleet
+    // as a healthy one. `readFailures: 1` is what suppresses the gauges.
+    jobQueueMetricReads.failed += 1
+    console.error(JSON.stringify({ event: 'metrics_job_queue_aggregate_failed', scope: 'workspace_directory', error_message: redactInlineCredentials(error instanceof Error ? error.message : String(error)) }))
+    return jobQueueMetricLines({ groups: [], workspacesTotal: 0, workspacesCovered: 0, readFailures: 1, durable: true })
+  }
+  const results = await mapWithConcurrency(workspaceIds, 8, async workspaceId => {
+    try {
+      return { ok: true as const, groups: await repository.jobQueueGroups(workspaceId) }
+    } catch (error) {
+      return { ok: false as const, error }
+    }
+  })
+  const groups: MerchantJobQueueGroup[] = []
+  let covered = 0
+  let firstError: unknown
+  for (const result of results) {
+    if (result.ok) {
+      covered += 1
+      groups.push(...result.groups)
+    } else if (firstError === undefined) firstError = result.error
+  }
+  const failed = results.length - covered
+  jobQueueMetricReads.ok += covered
+  jobQueueMetricReads.failed += failed
+  if (failed > 0) {
+    console.error(JSON.stringify({ event: 'metrics_job_queue_aggregate_failed', scope: 'workspace', workspaces_total: results.length, workspaces_covered: covered, read_failures: failed, error_message: redactInlineCredentials(firstError instanceof Error ? firstError.message : String(firstError ?? 'unknown')) }))
+  }
+  return jobQueueMetricLines({ groups, workspacesTotal: results.length, workspacesCovered: covered, readFailures: failed, durable: true })
+}
+
+async function prometheusMetrics() {
+  const jobQueueLines = await jobQueueMetricLinesForScrape()
   let outboxPending = 0
   const connectorErrors: Record<string, number> = { RATE_LIMITED: 0, TIMEOUT: 0 }
   if (persistence.outbox?.metrics && persistence.listWorkspaceIds) {
@@ -6030,24 +6520,15 @@ async function prometheusMetrics() {
     '# HELP merchant_process_uptime_seconds Process uptime in seconds.',
     '# TYPE merchant_process_uptime_seconds gauge',
     `merchant_process_uptime_seconds ${Number(process.hrtime.bigint() - metricsStartedAt) / 1_000_000_000}`,
-    '# HELP merchant_job_state_count Current durable business jobs by queue and state.',
-    '# TYPE merchant_job_state_count gauge',
-    ...[...stateCounts.entries()].map(([key, value]) => { const [queue, state] = key.split(':'); return `merchant_job_state_count{queue="${queue}",state="${state}"} ${value}` }),
-    '# HELP merchant_queue_oldest_job_age_seconds Age of the oldest active job by queue.',
-    '# TYPE merchant_queue_oldest_job_age_seconds gauge',
-    `merchant_queue_oldest_job_age_seconds{queue="sync"} ${oldest('sync', ['queued', 'running', 'partial'])}`,
-    `merchant_queue_oldest_job_age_seconds{queue="publish"} ${oldest('publish', ['prepared', 'confirmed', 'queued', 'submitting', 'reconciling', 'unknown'])}`,
-    `merchant_queue_oldest_job_age_seconds{queue="generation"} ${oldest('generation', ['queued', 'running'])}`,
-    `merchant_queue_oldest_job_age_seconds{queue="reconcile"} ${oldest('publish', ['reconciling', 'unknown'])}`,
+    // Durable job-queue gauges, or nothing at all when their read was partial.
+    ...jobQueueLines,
     '# HELP merchant_connector_errors_total Durable connector failures recorded by code.',
     '# TYPE merchant_connector_errors_total counter',
     ...Object.entries(connectorErrors).map(([code, value]) => `merchant_connector_errors_total{code="${code}"} ${value}`),
     '# HELP merchant_outbox_pending_events Durable outbox events awaiting successful publication.',
     '# TYPE merchant_outbox_pending_events gauge',
     `merchant_outbox_pending_events ${outboxPending}`,
-    '# HELP merchant_publish_unknown_age_seconds Age of the oldest unknown publish job.',
-    '# TYPE merchant_publish_unknown_age_seconds gauge',
-    `merchant_publish_unknown_age_seconds ${oldest('publish', ['unknown'])}`,
+    ...alertingSelfMetricLines(),
   ]
   return `${lines.join('\n')}\n`
 }
@@ -6728,6 +7209,13 @@ const alwaysEnforcedMcpMethods = new Set([
   'automation.policy.update', 'automation.pause',
   'brand.upsert',
   'ops.marketing.asset_scan.retry',
+  // Registering a merchant's manual store record decides whether that paid
+  // workspace may act on a platform at all, so it must never run under a
+  // shadow-only authorization rollout: an unaudited shadow allow would widen a
+  // customer's platform scope. Enforcing it here also makes both the allow and
+  // the deny land in `platform_authorization_audit`, because the decision is
+  // then `enforced` regardless of the global MCP_AUTHZ_MODE.
+  'ops.platform.store.record.create',
 ])
 const knownAuthorizationDomains = new Set(CAPABILITIES.map(capability => capability.split('.')[0]!))
 
@@ -6951,8 +7439,11 @@ export async function resolveLoadedAuthorizationResourceScope(policy: NonNullabl
         : undefined
   if (task?.workspaceId === workspaceId) {
     if (direct.type === 'brand') {
-      const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId })
-      const canonicalBrandIds = [...new Set(canonical.filter(item => item.sourceProductId === task.productId).map(item => item.brandId))]
+      // Authorization only needs the canonical rows bound to this task's legacy
+      // product; reading the whole catalog made every resource-scoped request
+      // pay for catalog size.
+      const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId, sourceProductIds: [task.productId] })
+      const canonicalBrandIds = [...new Set(canonical.map(item => item.brandId))]
       if (task.brandId && canonicalBrandIds.length === 1 && canonicalBrandIds[0] === task.brandId) return { type: 'brand' as const, id: task.brandId }
       // A historical task may retain an explicit frozen brand scope while its
       // canonical mapping is not available yet. Preserve that narrow scope
@@ -6981,8 +7472,8 @@ export async function resolveLoadedAuthorizationResourceScope(policy: NonNullabl
       : undefined
   if (!product || product.workspaceId !== workspaceId) return direct
   if (direct.type === 'account') return { type: 'account' as const, id: product.accountId }
-  const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId })
-  const brandIds = [...new Set(canonical.filter(item => item.sourceProductId === product.id).map(item => item.brandId))]
+  const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId, sourceProductIds: [product.id] })
+  const brandIds = [...new Set(canonical.map(item => item.brandId))]
   return { type: 'brand' as const, id: brandIds.length === 1 ? brandIds[0] : undefined }
 }
 
@@ -8023,6 +8514,26 @@ async function enforceBrandAccess(req: IncomingMessage, workspaceId: string, bra
   rememberProviderResourceAccess(req, ['brand', workspaceId, brandId, minimumRole], () => assertBrandAccess(req, workspaceId, brandId, minimumRole))
 }
 
+/**
+ * Page-level brand filter for the list endpoints (`brand-unit.list`,
+ * `brand-unit.listing.list`, the navigation tree, the task/asset read paths).
+ *
+ * `hasBrandAccess` resolves one brand inside its own transaction
+ * (BEGIN / set_config / SELECT / COMMIT), so filtering a page with
+ * `Promise.all(rows.map(...))` cost one transaction per row — for the
+ * navigation tree that is a transaction per brand in the workspace on a path
+ * that already exists to render a picker. `hasBrandAccessMany` answers the whole
+ * page with a single `brand_id = ANY(...)` read. Row order is preserved and the
+ * predicate is the same one the per-row call used.
+ */
+async function filterByBrandAccess<T>(req: IncomingMessage, workspaceId: string, rows: T[], brandIdOf: (row: T) => string, minimumRole: BrandAccessRole = 'viewer'): Promise<T[]> {
+  if (!requiresStrictAuth() || hasWorkspaceWideBrandAccess(req)) return rows
+  const actorId = requestPrincipals.get(req)?.actorId
+  if (!actorId) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '品权限筛选缺少成员身份', 401)
+  const grantedBrandIds = await (persistence.brandUnits ?? memoryBrandUnits).hasBrandAccessMany({ workspaceId, brandIds: rows.map(brandIdOf), externalSubject: actorId, minimumRole })
+  return rows.filter(row => grantedBrandIds.has(brandIdOf(row)))
+}
+
 async function assertBrandAccess(req: IncomingMessage, workspaceId: string, brandId: string, minimumRole: BrandAccessRole) {
   if (!requiresStrictAuth() || hasWorkspaceWideBrandAccess(req)) return
   const principal = requestPrincipals.get(req)
@@ -8190,9 +8701,7 @@ function campaignLifecycleError(error: unknown): never {
 async function accessibleBrandNavigation(req: IncomingMessage, workspaceId: string) {
   const repository = persistence.brandUnits ?? memoryBrandUnits
   const brands = await repository.listBrands({ workspaceId })
-  const visible = !requiresStrictAuth() || hasWorkspaceWideBrandAccess(req)
-    ? brands
-    : (await Promise.all(brands.map(async brand => await repository.hasBrandAccess({ workspaceId, brandId: brand.id, externalSubject: requestPrincipals.get(req)!.actorId }) ? brand : undefined))).filter((brand): brand is typeof brands[number] => Boolean(brand))
+  const visible = await filterByBrandAccess(req, workspaceId, brands, brand => brand.id)
   return visible.map(brand => ({
     id: brand.id,
     title: brand.name,
@@ -8372,7 +8881,7 @@ function connectedPlatformAccountId(workspaceId: string, platform: Platform) {
 
 function requireActivePlatformAccount(workspaceId: string, accountId: string, platform: Platform) {
   try {
-    return service.getActivePlatformAccount(workspaceId, accountId, platform)
+    return service.getActionablePlatformAccount(workspaceId, accountId, platform)
   } catch (error) {
     if (error instanceof DomainError && error.code === 'PLATFORM_ACCOUNT_NOT_FOUND') {
       throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', `请先在 Codex 中完成${platform}店铺授权，再同步商品`, 400)
@@ -9307,13 +9816,19 @@ function merchantPlatformOptions(workspaceId: string, directory = workspaceStore
 
 function workspaceOnboarding(workspaceId: string, directory = workspaceStoreDirectory(workspaceId)) {
   const products = service.listProducts(workspaceId)
-  const manualOperations = process.env.PLATFORM_OPERATIONS_MODE === 'manual'
-  // Manual operations use credential-free, tenant-scoped account records that
-  // operations staff assign to a merchant. They identify the target store but
+  const manualOperations = manualPlatformOperations()
+  // Which stores this workspace may act on comes from `isUsableStoreAccount`,
+  // the same predicate `requireStoreOnboarding` applies, so the onboarding view
+  // and the store boundary can no longer report different answers. Manual
+  // operations use credential-free, tenant-scoped account records that
+  // operations staff assign to a merchant; they identify the target store but
   // never imply an OAuth connection or an official platform receipt.
   const realDirectory = directory.filter(store => store.dataMode === 'official_api' && store.readable)
-  const manualDirectory = directory.filter(store => store.dataMode === 'account_record_only')
-  const eligibleDirectory = manualOperations ? manualDirectory : realDirectory
+  const manualDirectory = directory.filter(store => store.state === MANUAL_STORE_RECORD_TOKEN_STATE)
+  // Same shared fact as `requireStoreOnboarding`, plus the one pre-existing
+  // presentation rule: a fixture store stays visible in the directory but is
+  // demo data, never formal onboarding evidence.
+  const eligibleDirectory = directory.filter(store => storeGrantsPlatformScope(store.state) && store.dataMode !== 'fixture')
   const selectedStoreKeys = new Set(eligibleDirectory.map(store => `${store.platform}:${store.accountId}`))
   const boundProducts = products.filter(product => product.accountId ? selectedStoreKeys.has(`${product.platform}:${product.accountId}`) : false)
   const assets = service.listAssets(workspaceId)
@@ -11345,7 +11860,7 @@ async function merchantFirstValuePreview(workspaceId: string, params: JsonObject
     if (accountId && product.accountId !== accountId) throw new DomainError('STORE_CONTEXT_MISMATCH', '首个价值预览的商品不属于所选店铺', 409, { next_actions: ['重新选择与商品一致的 platform + account_id'] })
     if (isProduction()) {
       if (!product.accountId) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '生产首个价值预览的商品必须绑定已授权店铺', 409, { next_actions: ['调用 catalog.search 选择已绑定店铺商品'] })
-      service.getActivePlatformAccount(workspaceId, product.accountId, product.platform)
+      service.getActionablePlatformAccount(workspaceId, product.accountId, product.platform)
     }
   } else if (accountId && platform) {
     service.getPlatformAccount(workspaceId, accountId, platform)
@@ -11454,13 +11969,10 @@ async function filterByTaskBrandAccess<T extends { brandId?: string }>(req: Inco
   const actorId = requestPrincipals.get(req)?.actorId
   if (!actorId) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '品权限筛选缺少成员身份', 401)
   const repository = persistence.brandUnits ?? memoryBrandUnits
-  const access = new Map<string, boolean>()
-  const visible = await Promise.all(tasks.map(async task => {
-    if (!task.brandId) return undefined
-    if (!access.has(task.brandId)) access.set(task.brandId, await repository.hasBrandAccess({ workspaceId, brandId: task.brandId, externalSubject: actorId }))
-    return access.get(task.brandId) ? task : undefined
-  }))
-  return visible.filter(Boolean) as T[]
+  // The memo only collapsed repeated brands; one grant read per page removes the
+  // per-brand transactions entirely and returns the same subset in the same order.
+  const grantedBrandIds = await repository.hasBrandAccessMany({ workspaceId, brandIds: tasks.flatMap(task => (task.brandId ? [task.brandId] : [])), externalSubject: actorId })
+  return tasks.filter(task => Boolean(task.brandId && grantedBrandIds.has(task.brandId)))
 }
 
 async function accessibleTaskBrandIds(req: IncomingMessage, workspaceId: string): Promise<readonly string[] | undefined> {
@@ -11469,8 +11981,11 @@ async function accessibleTaskBrandIds(req: IncomingMessage, workspaceId: string)
   if (!actorId) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '品牌权限筛选缺少成员身份', 401)
   const repository = persistence.brandUnits ?? memoryBrandUnits
   const brands = await repository.listBrands({ workspaceId })
-  const visible = await Promise.all(brands.map(async brand => await repository.hasBrandAccess({ workspaceId, brandId: brand.id, externalSubject: actorId }) ? brand.id : undefined))
-  return visible.filter((brandId): brandId is string => Boolean(brandId))
+  // One grant read for the whole workspace; `catalog.search` calls this before
+  // it pages the catalog, so a per-brand transaction here was one transaction
+  // per brand on every page request.
+  const grantedBrandIds = await repository.hasBrandAccessMany({ workspaceId, brandIds: brands.map(brand => brand.id), externalSubject: actorId })
+  return brands.filter(brand => grantedBrandIds.has(brand.id)).map(brand => brand.id)
 }
 
 async function accessibleProductIds(req: IncomingMessage, workspaceId: string): Promise<ReadonlySet<string> | undefined> {
@@ -11481,6 +11996,17 @@ async function accessibleProductIds(req: IncomingMessage, workspaceId: string): 
 }
 
 /**
+ * Candidate canonical rows for a target that already names its canonical
+ * product. Equivalent to filtering a workspace-wide `listCanonicalProducts`
+ * call by `id` (unique per workspace) and by `brandIds`, without paying for
+ * catalog size; returns at most one row, exactly like the filtered read.
+ */
+async function canonicalCandidateRows(repository: import('../../../packages/persistence/src/index.js').BrandUnitRepository, workspaceId: string, canonicalProductId: string, brandId?: string) {
+  const row = await repository.getCanonicalProduct({ workspaceId, id: canonicalProductId })
+  return row && (!brandId || row.brandId === brandId) ? [row] : []
+}
+
+/**
  * Resolve the normalized product/listing chain before creating a task. Legacy
  * fixture products may legitimately have no canonical row; once a canonical
  * row exists, silently creating a legacy task would split the execution graph.
@@ -11488,10 +12014,16 @@ async function accessibleProductIds(req: IncomingMessage, workspaceId: string): 
 async function resolveCanonicalTaskScope(input: { workspaceId: string; productId: string; platform: Platform; accountId?: string; brandId?: string; canonicalProductId?: string; listingId?: string; requireListing?: boolean; requireCanonical?: boolean }) {
   const repository = persistence.brandUnits ?? memoryBrandUnits
   const readControl = await canonicalProductReadControl(input.workspaceId)
-  const canonicalRows = await repository.listCanonicalProducts({ workspaceId: input.workspaceId, ...(input.brandId ? { brandIds: [input.brandId] } : {}) })
-  const candidates = input.canonicalProductId
-    ? canonicalRows.filter(row => row.id === input.canonicalProductId)
-    : canonicalRows.filter(row => row.sourceProductId === input.productId)
+  // A legacy target only ever resolves the canonical rows bound to its own
+  // product id, so the page-scoped read replaces a workspace-wide catalog scan
+  // that this helper performed once per task entry. A target that names its
+  // canonical row by primary key is resolved directly: `id` is unique per
+  // workspace, so the point read and the `brandIds` scope below can only ever
+  // yield the same single candidate.
+  const canonicalRows = input.canonicalProductId
+    ? await canonicalCandidateRows(repository, input.workspaceId, input.canonicalProductId, input.brandId)
+    : await repository.listCanonicalProducts({ workspaceId: input.workspaceId, ...(input.brandId ? { brandIds: [input.brandId] } : {}), sourceProductIds: [input.productId] })
+  const candidates = input.canonicalProductId ? canonicalRows.filter(row => row.id === input.canonicalProductId) : canonicalRows
   if (!candidates.length) {
     if (readControl.mode === 'canonical_read' || input.requireCanonical) throw new DomainError('CANONICAL_PRODUCT_MAPPING_REQUIRED', '标准商品链未完成验证，已阻断任务创建，停止创建任务', 409, { reason: 'CANONICAL_MAPPING_MISSING', next_action: 'canonical.product.consistency', read_mode: readControl.mode, product_id: input.productId, canonical_product_id: input.canonicalProductId ?? null })
     return undefined
@@ -11522,7 +12054,9 @@ async function invalidateCanonicalFactsAfterSync(workspaceId: string, products: 
   if ((await canonicalProductReadControl(workspaceId)).mode !== 'canonical_read' || !products.length) return
   await persistenceReady
   const repository = persistence.brandUnits ?? memoryBrandUnits
-  const canonicalRows = await repository.listCanonicalProducts({ workspaceId })
+  // The loop below only ever looks up the products in this sync page, so the
+  // read is scoped to exactly those source ids instead of the whole catalog.
+  const canonicalRows = await repository.listCanonicalProducts({ workspaceId, sourceProductIds: products.map(product => product.id) })
   // Index by source product once. Scanning the whole catalog per product made
   // this O(products x canonicals) — millions of comparisons per sync page — for
   // a lookup that a Map answers in constant time. Candidate order per product is
@@ -11662,13 +12196,15 @@ async function assertAssetAccess(req: IncomingMessage, workspaceId: string, asse
   // An unbound upload has no brand scope yet. Its authenticated uploader may
   // finish parse, rights and facts steps; after binding, brand grants govern.
   if (!boundProducts.length && actorId && asset?.workspaceId === workspaceId && asset.uploadedByActorIds?.includes(actorId)) return
-  const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId })
-  const brandIds = [...new Set(canonical.filter(product => product.sourceProductId && boundProducts.includes(product.sourceProductId)).map(product => product.brandId))]
+  // Only the brands bound to this asset's products can decide access; the read
+  // is scoped to those legacy product ids rather than the whole catalog.
+  const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId, sourceProductIds: boundProducts })
+  const brandIds = [...new Set(canonical.map(product => product.brandId))]
   if (!brandIds.length) throw new DomainError('ASSET_NOT_FOUND', '素材不存在或未绑定可编辑品牌', 404)
   if (!actorId) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '素材权限校验缺少成员身份', 401)
   const repository = persistence.brandUnits ?? memoryBrandUnits
-  const editable = await Promise.all(brandIds.map(brandId => repository.hasBrandAccess({ workspaceId, brandId, externalSubject: actorId, minimumRole })))
-  if (!editable.some(Boolean)) throw new DomainError('ASSET_NOT_FOUND', '素材不存在或当前成员没有编辑权限', 404)
+  const editable = await repository.hasBrandAccessMany({ workspaceId, brandIds, externalSubject: actorId, minimumRole })
+  if (!editable.size) throw new DomainError('ASSET_NOT_FOUND', '素材不存在或当前成员没有编辑权限', 404)
 }
 
 async function enforceProductBrandAccess(req: IncomingMessage, workspaceId: string, productId: string, minimumRole: BrandAccessRole = 'viewer') {
@@ -11683,17 +12219,17 @@ async function assertProductBrandAccess(req: IncomingMessage, workspaceId: strin
   const actorId = requestPrincipals.get(req)?.actorId
   if (!actorId) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '品权限校验缺少成员身份', 401)
   const repository = persistence.brandUnits ?? memoryBrandUnits
-  const canonical = (await repository.listCanonicalProducts({ workspaceId })).filter(product => product.sourceProductId === productId)
+  const canonical = await repository.listCanonicalProducts({ workspaceId, sourceProductIds: [productId] })
   if (!canonical.length) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前可访问品', 404)
-  const grants = await Promise.all(canonical.map(product => repository.hasBrandAccess({ workspaceId, brandId: product.brandId, externalSubject: actorId, minimumRole })))
-  if (!grants.some(Boolean)) throw new DomainError(ERROR_CODES.FORBIDDEN, '当前成员没有该品所需权限', 403, { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand', brand_ids: canonical.map(product => product.brandId), required_role: minimumRole })
+  const grants = await repository.hasBrandAccessMany({ workspaceId, brandIds: canonical.map(product => product.brandId), externalSubject: actorId, minimumRole })
+  if (!grants.size) throw new DomainError(ERROR_CODES.FORBIDDEN, '当前成员没有该品所需权限', 403, { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand', brand_ids: canonical.map(product => product.brandId), required_role: minimumRole })
 }
 
 async function enforceProductBrandBinding(req: IncomingMessage, workspaceId: string, productId: string, brandId: string) {
   await enforceProductBrandAccess(req, workspaceId, productId)
   if (!requiresStrictAuth() || hasWorkspaceWideBrandAccess(req)) return
-  const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId, brandIds: [brandId] })
-  if (!canonical.some(product => product.sourceProductId === productId)) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前可访问品', 404)
+  const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId, brandIds: [brandId], sourceProductIds: [productId] })
+  if (!canonical.length) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前可访问品', 404)
 }
 
 async function taskWriteBrandForProduct(req: IncomingMessage, workspaceId: string, productId: string): Promise<string | undefined> {
@@ -11702,10 +12238,9 @@ async function taskWriteBrandForProduct(req: IncomingMessage, workspaceId: strin
   if (!actorId) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '品牌权限校验缺少成员身份', 401)
   const repository = persistence.brandUnits ?? memoryBrandUnits
   const brands = await repository.listBrands({ workspaceId })
-  const editableBrandIds = (await Promise.all(brands.map(async brand => await repository.hasBrandAccess({ workspaceId, brandId: brand.id, externalSubject: actorId, minimumRole: 'editor' }) ? brand.id : undefined)))
-    .filter((brandId): brandId is string => Boolean(brandId))
-  const matches = (await repository.listCanonicalProducts({ workspaceId, brandIds: editableBrandIds }))
-    .filter(product => product.sourceProductId === productId)
+  const grantedBrandIds = await repository.hasBrandAccessMany({ workspaceId, brandIds: brands.map(brand => brand.id), externalSubject: actorId, minimumRole: 'editor' })
+  const editableBrandIds = brands.filter(brand => grantedBrandIds.has(brand.id)).map(brand => brand.id)
+  const matches = (await repository.listCanonicalProducts({ workspaceId, brandIds: editableBrandIds, sourceProductIds: [productId] }))
     .sort((left, right) => left.brandId.localeCompare(right.brandId) || left.id.localeCompare(right.id))
   if (!matches.length) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前可编辑品', 404)
   const brandIds = [...new Set(matches.map(product => product.brandId))]
@@ -11760,6 +12295,39 @@ function scopeContentVersion(req: IncomingMessage, contentVersionId: string) {
   const task = service.getTask(version.taskId)
   resolveWorkspace(req, task.workspaceId)
   return { task, version }
+}
+
+type ReviewDecisionRules = Parameters<typeof service.setReviewFindingDecision>[1]
+
+/**
+ * Read-only preflight shared by the MCP and REST `content.review.decide` paths.
+ *
+ * `content.review.decide` is deliberately excluded from the central commercial
+ * gate so an unsafe P0 waiver or an unknown finding keeps its precise error
+ * contract instead of being reported as a wallet failure. The gate therefore
+ * belongs inside each handler, immediately before the durable write — the same
+ * shape as `asset.preference.update` and `platform.mapping.preflight`.
+ *
+ * Running the gate first would make `REVIEW_P0_DECISION_FORBIDDEN`
+ * unobservable whenever the balance is unknown, so this mirrors the guard order
+ * of `setReviewFindingDecision` exactly and must stay in step with it.
+ */
+function assertReviewDecisionPreflight(input: {
+  workspaceId: string
+  contentVersionId: string
+  code: string
+  field: string
+  status: string
+  reason?: string
+  expectedRevision?: number
+  rules?: ReviewDecisionRules
+}) {
+  const version = service.getContentVersion(input.workspaceId, input.contentVersionId)
+  if (input.expectedRevision !== undefined && version.revision !== input.expectedRevision) throw new DomainError('VERSION_CONFLICT', '内容版本已被其他操作更新，请刷新后重试', 409, { current_revision: version.revision, expected_revision: input.expectedRevision, content_version_id: version.id })
+  const target = service.reviewContentReport(input.workspaceId, input.contentVersionId, input.rules).findings.find(item => item.code === input.code && item.field === input.field)
+  if (!target) throw new DomainError('REVIEW_FINDING_NOT_FOUND', '审核发现项不存在或已通过修改消除', 404)
+  if (target.priority === 'P0' || target.severity === 'error') throw new DomainError('REVIEW_P0_DECISION_FORBIDDEN', 'P0 阻断项不能知悉或接受，必须修改内容并重新检查', 409)
+  if (input.status === 'waived' && !input.reason?.trim()) throw new DomainError('REVIEW_DECISION_REASON_REQUIRED', '接受 P1/P2 风险必须填写原因', 400)
 }
 
 function oauthError(error: OAuthStateError): { status: number; code: string } {
@@ -12948,9 +13516,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await persistenceReady
       const listed = await (persistence.brandUnits ?? memoryBrandUnits).listBrands({ workspaceId, ...(brandId ? { brandId } : {}), ...(platform ? { platform } : {}), ...(accountId ? { accountId } : {}) })
       if (brandId) await enforceBrandAccess(req, workspaceId, brandId)
-      const items = !requiresStrictAuth() || hasWorkspaceWideBrandAccess(req)
-        ? listed
-        : (await Promise.all(listed.map(async item => await (persistence.brandUnits ?? memoryBrandUnits).hasBrandAccess({ workspaceId, brandId: item.id, externalSubject: requestPrincipals.get(req)!.actorId }) ? item : undefined))).filter((item): item is typeof listed[number] => Boolean(item))
+      const items = await filterByBrandAccess(req, workspaceId, listed, item => item.id)
       return result({ items, count: items.length, storage: persistence.mode, durable: persistence.mode === 'postgres', ...(persistence.mode === 'memory' ? { message: '当前为本地 fixture 运行；生产环境会写入 PostgreSQL。' } : {}) })
     }
     case 'brand-unit.create': {
@@ -12978,7 +13544,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const expectedRevision = params.expected_revision === undefined ? undefined : Number(params.expected_revision)
       if (params.expected_revision !== undefined && (typeof params.expected_revision !== 'string' || !/^[1-9][0-9]*$/u.test(params.expected_revision) || !Number.isSafeInteger(expectedRevision))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_revision 必须是正整数字符串', 400)
       await persistenceReady
-      const account = isProduction() ? service.getActivePlatformAccount(workspaceId, accountId, platform) : service.getPlatformAccount(workspaceId, accountId, platform)
+      const account = isProduction() ? service.getActionablePlatformAccount(workspaceId, accountId, platform) : service.getPlatformAccount(workspaceId, accountId, platform)
       if (!account) throw new DomainError('PLATFORM_ACCOUNT_NOT_FOUND', '平台账号不存在或不属于当前工作区', 404)
       const brands = await (persistence.brandUnits ?? memoryBrandUnits).listBrands({ workspaceId })
       const existingStores = new Set(brands.flatMap(brand => brand.storeBindings.map(binding => `${binding.platform}:${binding.accountId}`)))
@@ -13049,7 +13615,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!canonicalProduct || canonicalProduct.brandId !== brandId) throw new DomainError('CANONICAL_PRODUCT_SCOPE_MISMATCH', 'canonical product 不属于当前品或工作区，不能创建店铺 listing', 409, { canonical_product_id: canonicalProductId, brand_id: brandId })
       const brands = await (persistence.brandUnits ?? memoryBrandUnits).listBrands({ workspaceId, brandId, platform, accountId })
       if (!brands[0]) throw new DomainError('BRAND_STORE_BINDING_REQUIRED', '创建 listing 前必须先将店铺绑定到该品', 409, { brand_id: brandId, platform, account_id: accountId })
-      const account = isProduction() ? service.getActivePlatformAccount(workspaceId, accountId, platform) : service.getPlatformAccount(workspaceId, accountId, platform)
+      const account = isProduction() ? service.getActionablePlatformAccount(workspaceId, accountId, platform) : service.getPlatformAccount(workspaceId, accountId, platform)
       if (!account) throw new DomainError('PLATFORM_ACCOUNT_NOT_FOUND', '平台账号不存在或不属于当前工作区', 404)
       const id = typeof params.listing_id === 'string' && params.listing_id.trim() ? params.listing_id.trim() : `listing_${randomUUID().replaceAll('-', '').slice(0, 24)}`
       try {
@@ -13070,9 +13636,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (accountId && !platform) throw new DomainError('STORE_PLATFORM_REQUIRED', '使用 account_id 筛选 listing 时必须同时指定 platform', 400)
       if (brandId) await enforceBrandAccess(req, workspaceId, brandId)
       const listed = await (persistence.brandUnits ?? memoryBrandUnits).listListings({ workspaceId, ...(brandId ? { brandId } : {}), ...(typeof params.canonical_product_id === 'string' && params.canonical_product_id.trim() ? { canonicalProductId: params.canonical_product_id.trim() } : {}), ...(platform ? { platform } : {}), ...(accountId ? { accountId } : {}) })
-      const listings = !requiresStrictAuth() || hasWorkspaceWideBrandAccess(req)
-        ? listed
-        : (await Promise.all(listed.map(async item => await (persistence.brandUnits ?? memoryBrandUnits).hasBrandAccess({ workspaceId, brandId: item.brandId, externalSubject: requestPrincipals.get(req)!.actorId }) ? item : undefined))).filter((item): item is typeof listed[number] => Boolean(item))
+      const listings = await filterByBrandAccess(req, workspaceId, listed, listing => listing.brandId)
       return result({ items: listings, count: listings.length, storage: persistence.mode, durable: persistence.mode === 'postgres' })
     }
     case 'brand-unit.access.grant': {
@@ -13170,7 +13734,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           const listings = await (persistence.brandUnits ?? memoryBrandUnits).listListings({ workspaceId, brandId, listingId: target.listingId, platform: target.platform, accountId: target.accountId })
           if (!listings[0] || (target.canonicalProductId && listings[0].canonicalProductId !== target.canonicalProductId)) throw new DomainError('LISTING_TARGET_MISMATCH', 'listing_id 不属于当前品、平台或店铺', 409, { listing_id: target.listingId, brand_id: brandId, platform: target.platform, account_id: target.accountId })
         }
-        const account = isProduction() ? service.getActivePlatformAccount(workspaceId, target.accountId, target.platform) : service.getPlatformAccount(workspaceId, target.accountId, target.platform)
+        const account = isProduction() ? service.getActionablePlatformAccount(workspaceId, target.accountId, target.platform) : service.getPlatformAccount(workspaceId, target.accountId, target.platform)
         if (!account) throw new DomainError('PLATFORM_ACCOUNT_NOT_FOUND', '平台账号不存在或不属于当前工作区', 404)
         const productId = target.productId
         const product = service.products.get(productId)
@@ -14548,6 +15112,14 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'limit 必须是 1 到 100 的整数', 400)
       if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1_000_000) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'offset 必须是 0 到 1000000 的整数', 400)
       if (isPlatformOperations(req) && hasDirectoryParams && persistence.listWorkspaceDirectory) return result(await persistence.listWorkspaceDirectory({ query: query || undefined, status: status as 'active' | 'disabled' | undefined, subscriptionStatus, merchantOnly, offset, limit: requestedLimit }))
+      // Reached only when a caller sends none of query/status/subscription_status/
+      // merchant_only/offset/limit; the Ops console always sends offset+limit and
+      // therefore takes the paged branch below. This branch is the one remaining
+      // unfiltered summary read: it returns a bare array, so capping it here would
+      // turn an honest list into a silently truncated one. The paged branch — and
+      // the array branch with it — is dominated by the `security_barrier` view's
+      // full materialization anyway, so the bound belongs in the view/projection
+      // rather than in a server-side LIMIT.
       if (isPlatformOperations(req) && persistence.listWorkspaceSummaries && !hasDirectoryParams) return result(await persistence.listWorkspaceSummaries())
       const principal = requestPrincipals.get(req)
       const granted = requiresStrictAuth() ? (principal?.workspaces.filter(id => id !== '*') ?? []) : [...knownWorkspaces]
@@ -14580,6 +15152,58 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       }
       const items = [...groups.values()].map(group => ({ platform: group.platform, accountId: `platform-aggregate:${group.platform}:${group.state}:${group.dataMode}`, label: `${group.count} 个${PLATFORM_LABELS[group.platform]}店铺`, state: group.state, dataMode: group.dataMode, readable: group.readable, writeEnabled: group.writeEnabled, revision: 0, aggregate: true }))
       return result({ items, total: items.length, aggregate: true })
+    }
+    case 'ops.platform.store.record.create': {
+      // Platform operations only. This is an authority check, not a parameter
+      // check: a merchant principal must be refused for *who it is*, never
+      // because it happened to omit a field. `requireOperationsRole` is the
+      // guard the rest of the platform-scope writes use; it canonicalizes the
+      // gateway aliases (`ops_admin`, `platform_admin`) onto `platform_ops` and
+      // deliberately refuses a raw `platform_ops` *membership* role, so a
+      // merchant workspace member cannot clear it by holding a same-named role.
+      //
+      // Independently of this call, the method's registry policy pins it to the
+      // platform workbench and the platform scope, so a workspace-workbench
+      // caller is denied by the authorization decision before the handler runs,
+      // and the `ops.` prefix keeps it out of every merchant tools/list. This
+      // guard is the layer that still holds in local (non-strict) mode.
+      const actorId = requireOperationsRole(req, ['platform_ops'])
+      const targetWorkspaceId = required(params, 'workspace_id')
+      const platform = required(params, 'platform') as Platform
+      if (!SUPPORTED_PLATFORMS.includes(platform)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'platform 无效', 400)
+      const accountId = required(params, 'account_id')
+      const reason = required(params, 'reason')
+      // The target workspace is caller-supplied scope. Make the two ways of
+      // declaring it agree instead of silently preferring the header.
+      const headerWorkspace = header(req, 'x-workspace-id')?.trim()
+      if (headerWorkspace && headerWorkspace !== targetWorkspaceId) throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_MISMATCH, '人工店铺记录的工作区范围声明不一致', 403)
+      if (persistence.listWorkspaceIds) {
+        const workspaceIds = await persistence.listWorkspaceIds()
+        if (!workspaceIds.includes(targetWorkspaceId)) throw new DomainError('WORKSPACE_NOT_FOUND', '目标商家工作区不存在', 404, { workspace_id: targetWorkspaceId })
+      }
+      const storeAlias = typeof params.store_alias === 'string' && params.store_alias.trim() ? params.store_alias : undefined
+      const account = service.registerManualPlatformAccount({ workspaceId: targetWorkspaceId, platform, remoteAccountId: accountId, ...(storeAlias ? { storeAlias } : {}) })
+      await persistSnapshot(targetWorkspaceId, 'platform_account', account, account as unknown as Record<string, unknown>)
+      await persistEvent(targetWorkspaceId, account.id, 'platform_account.manual_record_created', account.revision, { platform, account_id: account.id, token_state: account.tokenState, credential_free: true, reason })
+      // The operator's stated reason is what a `platform_authorization_audit`
+      // row cannot hold: that row records the authorization *decision* (written
+      // automatically because this method's policy audits allow_and_deny),
+      // while `reason` obliges the operator to state a business justification.
+      // Persisting it here keeps the justification queryable next to the
+      // decision through `ops.audit.*` and the audit center.
+      await recordOperationAudit({ workspaceId: targetWorkspaceId, actorId, action: 'platform.store.record.create', resourceType: 'platform_account', resourceId: account.id, before: {}, after: { platform, account_id: account.id, remote_account_id: account.remoteAccountId, token_state: account.tokenState, store_alias: account.storeAlias ?? null, credential_free: true }, reason })
+      const store = workspaceStoreDirectory(targetWorkspaceId, platform).find(item => item.accountId === account.id)
+      return result({
+        workspace_id: targetWorkspaceId,
+        store,
+        selectionKey: { platform, accountId: account.id },
+        // Never report a connection. The record has no credential, no scope and
+        // no platform receipt; `applies_to_store_boundary` tells the operator
+        // whether this deployment currently lets it stand in for a store scope,
+        // which is true only in manual operations mode.
+        connection: { mode: 'manual_store_record', token_state: account.tokenState, credential_free: true, authorization_receipt: null },
+        applies_to_store_boundary: manualPlatformOperations(),
+      })
     }
     case 'ops.brand-units.summary': {
       requirePlatformReadRole(req)
@@ -14652,13 +15276,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'limit 必须是 1 到 100 的整数', 400)
       if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1_000_000) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'offset 必须是 0 到 1000000 的整数', 400)
       const allWorkspaceIds = persistence.listWorkspaceIds ? await persistence.listWorkspaceIds() : [...knownWorkspaces]
-      const workspaceIds = targetWorkspaceId ? allWorkspaceIds.filter(id => id === targetWorkspaceId) : allWorkspaceIds
+      const scopedWorkspaceIds = targetWorkspaceId ? allWorkspaceIds.filter(id => id === targetWorkspaceId) : allWorkspaceIds
       const memberRepository = persistence.members ?? memoryMembers
-      const memberRows = memberRepository.listMany
-        ? await memberRepository.listMany(workspaceIds)
-        : (await Promise.all(workspaceIds.map(id => memberRepository.list(id)))).flat()
-      const enterpriseNames = await loadPlatformWorkspaceEnterpriseNames(workspaceIds)
-      const scopedMemberRows = memberRows.map(member => ({ ...member, enterpriseName: enterpriseNames.get(member.workspaceId) ?? '未命名企业主体' }))
       const platformAccounts = await passwordAuthRepository.listAccounts()
       const accountRows = platformAccounts
         .filter(account => account.accountType === 'platform')
@@ -14679,18 +15298,83 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           accountType: 'platform' as const,
           scope: 'platform' as const,
         }))
-      const filtered = [
-        ...scopedMemberRows.map(member => ({ ...member, accountType: 'merchant' as const, scope: 'workspace' as const })),
-        ...(targetWorkspaceId ? [] : accountRows),
-      ]
-        .filter(member => (!status || member.status === status) && (!query || [member.externalSubject, member.displayName, member.enterpriseName ?? '', member.workspaceId, member.role].some(value => value.toLocaleLowerCase().includes(query))))
-        .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime() || left.externalSubject.localeCompare(right.externalSubject))
-      const pageRows = filtered.slice(offset, offset + requestedLimit)
+      // Platform accounts are a second relation in the same directory: they carry
+      // no workspace, they are never scoped to one, and they are small enough to
+      // merge in memory. The member half is the one that grows with the platform.
+      const visibleAccountRows = targetWorkspaceId ? [] : accountRows.filter(member => (!status || member.status === status) && (!query || memberMatchesQuery(member, query)))
+      let pageRows: Array<typeof accountRows[number] | (WorkspaceMember & { enterpriseName: string; accountType: 'merchant'; scope: 'workspace' })>
+      let total: number
+      let identityCount: number
+      let workspaceCount: number
+      let scannedWorkspaceCount: number
+      let scanTruncated: boolean
+      if (memberRepository.searchWindow) {
+        // The repository cuts the window and counts the totals in SQL. Its rows
+        // are sorted and sliced here for the same reason the accounts are: the
+        // two relations only sort correctly together once they are merged, and
+        // `mergeMargin` is what makes the repository hand back a window wide
+        // enough for account rows to push into it.
+        //
+        // A `query` matches the enterprise name, so it needs the name projection
+        // for every workspace in scope. Without one only the page is rendered, and
+        // the projection is read for the page's workspaces — the same values,
+        // bounded by `limit` instead of by the platform.
+        const searchNames = query ? await loadPlatformWorkspaceEnterpriseNames(scopedWorkspaceIds) : undefined
+        const found = await memberRepository.searchWindow({
+          workspaceIds: scopedWorkspaceIds,
+          ...(status ? { status: status as MemberStatus } : {}),
+          ...(query ? { query } : {}),
+          offset,
+          limit: requestedLimit,
+          mergeMargin: visibleAccountRows.length,
+          identityKeys: visibleAccountRows.map(memberIdentityKey),
+          ...(searchNames ? { enterpriseNames: searchNames } : {}),
+        })
+        const pageNames = searchNames ?? await loadPlatformWorkspaceEnterpriseNames([...new Set(found.items.map(member => member.workspaceId))])
+        const decorate = (member: WorkspaceMember) => ({ ...member, enterpriseName: pageNames.get(member.workspaceId) ?? DEFAULT_MEMBER_ENTERPRISE_NAME, accountType: 'merchant' as const, scope: 'workspace' as const })
+        // `items` starts at `itemsFrom`, not at position 0, so the page is where
+        // the window's own start sits below the caller's offset.
+        const pageStart = offset - found.itemsFrom
+        pageRows = [...found.items.map(decorate), ...visibleAccountRows].sort(compareMembersByRecency).slice(pageStart, pageStart + requestedLimit)
+        total = found.total + visibleAccountRows.length
+        identityCount = found.identityCount
+        workspaceCount = found.workspaceCount
+        // The scan now covers every workspace in scope, so it cannot be
+        // truncated: `scan_truncated` stays in the response as a stable field and
+        // reports `false` because it is `false`, not because the bound moved.
+        scannedWorkspaceCount = scopedWorkspaceIds.length
+        scanTruncated = false
+      } else {
+        const bounded = boundOpsUserWorkspaceScan(scopedWorkspaceIds)
+        const memberRows = memberRepository.listMany
+          ? await memberRepository.listMany(bounded.workspaceIds)
+          : (await Promise.all(bounded.workspaceIds.map(id => memberRepository.list(id)))).flat()
+        const enterpriseNames = await loadPlatformWorkspaceEnterpriseNames(bounded.workspaceIds)
+        const filtered = [
+          ...memberRows.map(member => ({ ...member, enterpriseName: enterpriseNames.get(member.workspaceId) ?? DEFAULT_MEMBER_ENTERPRISE_NAME, accountType: 'merchant' as const, scope: 'workspace' as const })),
+          ...visibleAccountRows,
+        ]
+          .filter(member => (!status || member.status === status) && (!query || memberMatchesQuery(member, query)))
+          .sort(compareMembersByRecency)
+        pageRows = filtered.slice(offset, offset + requestedLimit)
+        total = filtered.length
+        identityCount = new Set(filtered.map(memberIdentityKey)).size
+        workspaceCount = new Set(filtered.map(member => member.workspaceId).filter(Boolean)).size
+        scannedWorkspaceCount = bounded.workspaceIds.length
+        scanTruncated = bounded.scanTruncated
+      }
       const pageWorkspaceIds = [...new Set(pageRows.map(member => member.workspaceId).filter(Boolean))]
       const workspaceStatuses = new Map(await mapWithConcurrency(pageWorkspaceIds, 8, async id => [id, await getWorkspaceStatus(id)] as const))
       const commercialSummaries = await loadPlatformUserCommercialSummaries(pageWorkspaceIds)
       const items = pageRows.map(member => ({ ...member, workspaceStatus: member.workspaceId ? workspaceStatuses.get(member.workspaceId) ?? 'active' : 'active', commercial: member.workspaceId ? commercialSummaries.get(member.workspaceId) : undefined }))
-      return result({ items, total: filtered.length, identityCount: new Set(filtered.map(member => member.identityId ?? `subject:${member.externalSubject}`)).size, workspaceCount: new Set(filtered.map(member => member.workspaceId).filter(Boolean)).size, offset, limit: requestedLimit, truncated: offset + requestedLimit < filtered.length })
+      // `truncated` means "this page is not the last one". `scanTruncated` is a
+      // different fact and gets a different name: it is only reachable through
+      // the bounded fallback above, where the workspace scan stopped at the bound
+      // and `total`/`identityCount`/`workspaceCount` therefore describe the
+      // scanned prefix — lower bounds on the platform totals. The window read
+      // covers every workspace in scope, so it reports `false` and counts them
+      // all.
+      return result({ items, total, identityCount, workspaceCount, offset, limit: requestedLimit, truncated: offset + requestedLimit < total, scanned_workspace_count: scannedWorkspaceCount, scan_truncated: scanTruncated })
     }
     case 'ops.users.export': {
       requirePlatformReadRole(req)
@@ -14705,22 +15389,41 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const allWorkspaceIds = persistence.listWorkspaceIds ? await persistence.listWorkspaceIds() : [...knownWorkspaces]
       const workspaceIds = targetWorkspaceId ? allWorkspaceIds.filter(id => id === targetWorkspaceId) : allWorkspaceIds
       const memberRepository = persistence.members ?? memoryMembers
-      const memberRows = memberRepository.listMany
-        ? await memberRepository.listMany(workspaceIds)
-        : (await Promise.all(workspaceIds.map(id => memberRepository.list(id)))).flat()
       // Filter and cap before enrichment. Platform test/prod history can contain
       // many workspaces; enriching every member would turn a narrow CSV export
       // into an unbounded fan-out across usage, subscription and wallet stores.
-      const enterpriseNames = await loadPlatformWorkspaceEnterpriseNames(workspaceIds)
-      const selectedMembers = memberRows
-        .map(member => ({ ...member, enterpriseName: enterpriseNames.get(member.workspaceId) ?? '未命名企业主体' }))
-        .filter(member => (!status || member.status === status) && (!query || [member.externalSubject, member.displayName, member.enterpriseName, member.workspaceId, member.role].some(value => value.toLocaleLowerCase().includes(query))))
-        .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime() || left.externalSubject.localeCompare(right.externalSubject))
-        .slice(0, requestedLimit)
+      //
+      // A `query` matches the enterprise name, so it needs the name projection
+      // for every workspace in scope; without one only the exported rows are
+      // rendered, and the projection is read for their workspaces — the same
+      // values, bounded by `limit` instead of by the platform.
+      const searchNames = query ? await loadPlatformWorkspaceEnterpriseNames(workspaceIds) : undefined
+      const enterpriseNameOf = (workspaceId: string, names: ReadonlyMap<string, string> | undefined) => names?.get(workspaceId) ?? DEFAULT_MEMBER_ENTERPRISE_NAME
+      // The repository caps the export in SQL and already returns the rows in
+      // the order below, but the sort stays: it is the shared definition of the
+      // order, and the fallback path needs it anyway.
+      const selectedMembers = memberRepository.searchWindow
+        ? (await memberRepository.searchWindow({
+            workspaceIds,
+            ...(status ? { status: status as MemberStatus } : {}),
+            ...(query ? { query } : {}),
+            offset: 0,
+            limit: requestedLimit,
+            ...(searchNames ? { enterpriseNames: searchNames } : {}),
+          })).items.sort(compareMembersByRecency).slice(0, requestedLimit)
+        : (await (memberRepository.listMany
+            ? memberRepository.listMany(workspaceIds)
+            : Promise.all(workspaceIds.map(id => memberRepository.list(id))).then(rows => rows.flat())))
+          .map(member => ({ ...member, enterpriseName: enterpriseNameOf(member.workspaceId, searchNames) }))
+          .filter(member => (!status || member.status === status) && (!query || memberMatchesQuery(member, query)))
+          .sort(compareMembersByRecency)
+          .slice(0, requestedLimit)
       const selectedWorkspaceIds = [...new Set(selectedMembers.map(member => member.workspaceId))]
+      const selectedNames = searchNames ?? await loadPlatformWorkspaceEnterpriseNames(selectedWorkspaceIds)
+      const namedMembers = selectedMembers.map(member => ({ ...member, enterpriseName: enterpriseNameOf(member.workspaceId, selectedNames) }))
       const workspaceStatuses = new Map(await mapWithConcurrency(selectedWorkspaceIds, 8, async id => [id, await getWorkspaceStatus(id)] as const))
       const commercialSummaries = await loadPlatformUserCommercialSummaries(selectedWorkspaceIds)
-      const filtered = selectedMembers.map(member => ({ ...member, workspaceStatus: workspaceStatuses.get(member.workspaceId) ?? 'active', commercial: commercialSummaries.get(member.workspaceId) }))
+      const filtered = namedMembers.map(member => ({ ...member, workspaceStatus: workspaceStatuses.get(member.workspaceId) ?? 'active', commercial: commercialSummaries.get(member.workspaceId) }))
       const rows = filtered.map(member => ({ external_subject: member.externalSubject, display_name: member.displayName, enterprise_name: member.enterpriseName, workspace_id: member.workspaceId, role: member.role, status: member.status, workspace_status: member.workspaceStatus, plan_code: member.commercial?.planCode ?? null, plan_name: member.commercial?.planName ?? null, subscription_status: member.commercial?.subscriptionStatus ?? null, used_tasks: member.commercial?.usedTasks ?? null, included_tasks: member.commercial?.includedTasks ?? null, remaining_tasks: member.commercial?.remainingTasks ?? null, wallet_balance_cny: member.commercial?.walletBalanceCny ?? null, invited_by: member.invitedBy ?? null, created_at: member.createdAt, updated_at: member.updatedAt }))
       if (format === 'json') return result({ filename: `ops-users-${new Date().toISOString().slice(0, 10)}.json`, content: JSON.stringify(rows, null, 2), count: rows.length, truncated: rows.length === requestedLimit })
       const headers = ['external_subject', 'display_name', 'workspace_id', 'enterprise_name', 'role', 'status', 'workspace_status', 'plan_code', 'plan_name', 'subscription_status', 'used_tasks', 'included_tasks', 'remaining_tasks', 'wallet_balance_cny', 'invited_by', 'created_at', 'updated_at']
@@ -14742,9 +15445,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       } catch (error) { mapIdentityLifecycleError(error) }
       const allWorkspaceIds = persistence.listWorkspaceIds ? await persistence.listWorkspaceIds() : [...knownWorkspaces]
       const memberRepository = persistence.members ?? memoryMembers
-      const allMembers = memberRepository.listMany
-        ? await memberRepository.listMany(allWorkspaceIds)
-        : (await Promise.all(allWorkspaceIds.map(id => memberRepository.list(id)))).flat()
       const accountForSubject = externalSubject
         ? (await passwordAuthRepository.listAccounts()).find(account => account.login === externalSubject)
         : undefined
@@ -14754,9 +15454,21 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         } catch (error) { mapIdentityLifecycleError(error) }
       }
       const resolvedIdentityId = requestedIdentityId ?? identityDetail?.identity.id ?? accountForSubject?.identityId
-      const matchingMembers = allMembers.filter(member => resolvedIdentityId
-        ? member.identityId === resolvedIdentityId || member.externalSubject === externalSubject
-        : member.externalSubject === externalSubject)
+      // One membership is a point lookup, not a directory read: asking the
+      // repository for the subject keeps this endpoint off the path that used to
+      // load every member of every workspace to find one person.
+      const matchingMembers = memberRepository.findBySubject
+        ? await memberRepository.findBySubject({
+            workspaceIds: allWorkspaceIds,
+            ...(resolvedIdentityId ? { identityId: resolvedIdentityId } : {}),
+            ...(externalSubject ? { externalSubject } : {}),
+          })
+        : (await (memberRepository.listMany
+            ? memberRepository.listMany(allWorkspaceIds)
+            : Promise.all(allWorkspaceIds.map(id => memberRepository.list(id))).then(rows => rows.flat())))
+          .filter(member => resolvedIdentityId
+            ? member.identityId === resolvedIdentityId || member.externalSubject === externalSubject
+            : member.externalSubject === externalSubject)
       if (!matchingMembers.length && !identityDetail) throw new DomainError('USER_IDENTITY_NOT_FOUND', '未找到该平台身份或成员关系', 404)
       const workspaceStatuses = new Map(await Promise.all(matchingMembers.map(async member => [member.workspaceId, await getWorkspaceStatus(member.workspaceId)] as const)))
       const matchingWorkspaceIds = [...new Set(matchingMembers.map(member => member.workspaceId))]
@@ -16025,6 +16737,11 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const manifest = parseJsonObjectParameter(params, 'manifest_json') as unknown as DeliveryBundleManifest
       if (manifest.scope?.workspaceId !== workspaceId) throw new DomainError(ERROR_CODES.TENANT_SCOPE_DENIED, '交付 bundle manifest 不属于当前工作区', 403)
       const files = parseDeliveryBundleFiles(parseJsonArrayParameter(params, 'files_json'))
+      // Cross-tenant manifests and malformed bundles keep their own error
+      // contract; the commercial gate runs after them, immediately before this
+      // operation does its work, because the method is excluded from the
+      // central gate above.
+      await enforceMcpCommercialAccess(req, workspaceId, method)
       let verification
       try { verification = verifyDeliveryBundle(manifest, files, required(params, 'expected_manifest_hash')) } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, '交付 bundle manifest 或文件结构无效', 400) }
       return result({ ...verification, expected_manifest_hash: required(params, 'expected_manifest_hash').replace(/^sha256:/iu, '').toLowerCase(), verified_at: new Date().toISOString() })
@@ -16821,9 +17538,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       // below looks up, so the bucket contents, their relative order and the
       // `candidates.length > 1` conflict verdict are unchanged — only the rows
       // that cannot be referenced by this page are no longer fetched.
+      const pageProducts = page.items as unknown as Product[]
       const canonicalRowsForPage = await canonicalRepository.listCanonicalProducts({
         workspaceId,
-        sourceProductIds: (page.items as unknown as Product[]).map(product => product.id),
+        sourceProductIds: pageProducts.map(product => product.id),
       })
       const canonicalBySourceProductId = new Map<string, typeof canonicalRowsForPage>()
       for (const row of canonicalRowsForPage) {
@@ -16833,14 +17551,121 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (bucket) bucket.push(row)
         else canonicalBySourceProductId.set(sourceProductId, [row])
       }
-      const products = await Promise.all((page.items as unknown as Product[]).map(async product => {
-        const requestedSkuId = typeof params.sku_id === 'string' ? params.sku_id.trim() : ''
+      // One listing read for the page. The per-product read this replaces asked
+      // for `(canonicalProductId, brandId, platform, accountId?)`; the rows below
+      // are filtered on exactly those columns in memory, and because
+      // `product_listings` has one `brand_id` per canonical product the group key
+      // carries the same brand predicate the old query did. `ORDER BY updated_at
+      // DESC` is preserved: a subsequence of an ordered result is still ordered,
+      // so each product's subset and its cursor-relevant order are unchanged.
+      const pageCanonicalIds = new Set<string>()
+      for (const candidates of canonicalBySourceProductId.values()) if (candidates.length === 1) pageCanonicalIds.add(candidates[0]!.id)
+      const listingsForPage = pageCanonicalIds.size
+        ? await canonicalRepository.listListings({ workspaceId, canonicalProductIds: [...pageCanonicalIds] })
+        : []
+      // Listing rows and page products are matched on the exact triple the
+      // per-product read filtered on. `\u001f` cannot occur in a canonical id,
+      // a brand id or a platform name, so the key cannot be ambiguous.
+      const pageListingKey = (canonicalProductId: string, brandId: string, platform: string) => `${canonicalProductId}\u001f${brandId}\u001f${platform}`
+      const listingsByCanonicalPlatform = new Map<string, typeof listingsForPage>()
+      for (const listing of listingsForPage) {
+        const key = pageListingKey(listing.canonicalProductId, listing.brandId, listing.platform)
+        const bucket = listingsByCanonicalPlatform.get(key)
+        if (bucket) bucket.push(listing)
+        else listingsByCanonicalPlatform.set(key, [listing])
+      }
+      // `knowledge_status` is reported per product as an exact
+      // `pendingKnowledge.length`, so the page read must stay complete: a `limit`
+      // would turn an honest count into a truncated one and could silently drop
+      // the blocker. It is one workspace-scoped read that replaces one identical
+      // read per product, not a page-sized cap.
+      const knowledgeStatusEnabled = Boolean(includeKnowledge && knowledgeRepository)
+      const knowledgeDocumentsForPage = knowledgeStatusEnabled ? await knowledgeRepository!.listDocuments(workspaceId) : []
+      const knowledgeDocumentsByProductId = new Map<string, typeof knowledgeDocumentsForPage>()
+      for (const document of knowledgeDocumentsForPage) {
+        const productId = document.productId
+        if (!productId) continue
+        const bucket = knowledgeDocumentsByProductId.get(productId)
+        if (bucket) bucket.push(document)
+        else knowledgeDocumentsByProductId.set(productId, [document])
+      }
+      // `search` scopes one call to one store/platform/SKU scope, so the page is
+      // grouped by every filter that is not the product id and asked once per
+      // group instead of once per product. The resolved `sku_id` belongs to the
+      // key even though the page filter above already matched it by SKU id — so
+      // every product of a SKU-filtered page resolves to the same value today.
+      // Keeping it in the key costs nothing and keeps the batch correct if a
+      // page source ever resolves a SKU *name* per product, which would
+      // otherwise fold products with different resolved SKUs into one shared
+      // `sku_id` and change what `search` returns for them.
+      const requestedSkuId = typeof params.sku_id === 'string' ? params.sku_id.trim() : ''
+      const knowledgeQuery = typeof params.query === 'string' && params.query.trim() ? params.query.trim() : undefined
+      const selectedSkusByProductId = new Map<string, ProductSku[]>()
+      const searchGroups = new Map<string, { platform: Platform; accountId?: string; storeName?: string; skuId?: string; productIds: string[]; seen: Set<string>; hasCandidate: boolean }>()
+      for (const product of pageProducts) {
         const selectedSkus = requestedSkuId
           ? (product.skus ?? []).filter(sku => sku.id === requestedSkuId || sku.name === requestedSkuId)
           : []
+        selectedSkusByProductId.set(product.id, selectedSkus)
+        if (!knowledgeStatusEnabled) continue
+        const resolvedSkuId = selectedSkus[0]?.id ? selectedSkus[0].id : requestedSkuId ? requestedSkuId : undefined
+        // `\u001f` cannot occur in a platform name, an account id, a store name or a
+        // SKU id, so the key cannot conflate two different scopes.
+        const groupKey = [product.platform, product.accountId ?? '', product.storeName ?? '', resolvedSkuId ?? ''].join('\u001f')
+        const group = searchGroups.get(groupKey) ?? {
+          platform: product.platform,
+          ...(product.accountId ? { accountId: product.accountId } : {}),
+          ...(product.storeName ? { storeName: product.storeName } : {}),
+          ...(resolvedSkuId ? { skuId: resolvedSkuId } : {}),
+          productIds: [],
+          seen: new Set<string>(),
+          hasCandidate: false,
+        }
+        if (!group.seen.has(product.id)) { group.seen.add(product.id); group.productIds.push(product.id) }
+        // The page read above holds every document of the product and `search`
+        // only ever returns ready + approved + cleared documents, so a group in
+        // which no product has such a candidate can only answer `[]` for each of
+        // its products. Skipping is sound only while that coarse predicate stays
+        // no narrower than the one inside `search`; a document that is ready and
+        // approved here but that `search` rejects (stale store scope) is still
+        // filtered by `search` itself, because the group call is made whenever
+        // any member has a candidate.
+        if (!group.hasCandidate) group.hasCandidate = (knowledgeDocumentsByProductId.get(product.id) ?? []).some(document => document.indexState === 'ready' && document.approvalStatus === 'approved' && document.rightsStatus === 'cleared')
+        searchGroups.set(groupKey, group)
+      }
+      // One `search` per group for the whole page. `search` answers the batch as
+      // the concatenation of each product's ranked slice, in the order of
+      // `productIds`, so bucketing the response by `document.productId` gives
+      // every product exactly the list its own call returned.
+      const persistedKnowledgeByProductId = new Map<string, KnowledgeSearchResult[]>()
+      if (knowledgeStatusEnabled) {
+        const batches = await Promise.all([...searchGroups.values()].filter(group => group.hasCandidate).map(group => knowledgeRepository!.search({
+          workspaceId,
+          platform: group.platform,
+          ...(group.accountId ? { accountId: group.accountId } : {}),
+          ...(group.storeName ? { storeName: group.storeName } : {}),
+          ...(knowledgeQuery ? { query: knowledgeQuery } : {}),
+          productIds: group.productIds,
+          ...(group.skuId ? { skuId: group.skuId } : {}),
+          limit: 8,
+        })))
+        for (const batch of batches) for (const item of batch) {
+          const productId = item.document.productId
+          if (!productId) continue
+          const bucket = persistedKnowledgeByProductId.get(productId)
+          if (bucket) bucket.push(item)
+          else persistedKnowledgeByProductId.set(productId, [item])
+        }
+      }
+      // No I/O is left in this loop: every read it used to await is now a page
+      // or group-level read hoisted above it, so the projection below is pure.
+      const products = pageProducts.map(product => {
+        const selectedSkus = selectedSkusByProductId.get(product.id) ?? []
         const canonicalCandidates = canonicalBySourceProductId.get(product.id) ?? []
         const canonical = canonicalCandidates.length === 1 ? canonicalCandidates[0] : undefined
-        const listings = canonical ? await canonicalRepository.listListings({ workspaceId, brandId: canonical.brandId, canonicalProductId: canonical.id, platform: product.platform, ...(product.accountId ? { accountId: product.accountId } : {}) }) : []
+        const listings = canonical
+          ? (listingsByCanonicalPlatform.get(pageListingKey(canonical.id, canonical.brandId, product.platform)) ?? []).filter(listing => !product.accountId || listing.accountId === product.accountId)
+          : []
         const verificationStatus = canonicalCandidates.length > 1 ? 'conflict' : !canonical ? 'legacy_only' : listings.length === 1 ? 'verified' : 'blocked'
         const knowledgeContext = knowledgeModule ? buildBoundedKnowledgeGenerationContext({
           rules: knowledgeModule.findApplicableRules({ platform: product.platform, ...(product.category ? { category: product.category } : {}), ...(product.storeName ? { store: product.storeName } : {}) }, new Date().toISOString(), workspaceId),
@@ -16848,18 +17673,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           learningSuggestions: confirmedLearningSuggestions ?? [],
           ...(activeBrandPreference?.status === 'active' ? { brandPreference: activeBrandPreference } : {}),
         }) : undefined
-        const persistedKnowledge = knowledgeRepository
-          ? await knowledgeRepository.search({
-              workspaceId,
-              platform: product.platform,
-              ...(product.accountId ? { accountId: product.accountId } : {}),
-              ...(product.storeName ? { storeName: product.storeName } : {}),
-              ...(typeof params.query === 'string' && params.query.trim() ? { query: params.query.trim() } : {}),
-              productId: product.id,
-              ...(selectedSkus[0]?.id ? { skuId: selectedSkus[0].id } : requestedSkuId ? { skuId: requestedSkuId } : {}),
-              limit: 8,
-            })
-          : []
+        // This product's slice of the page read above, in the same order the
+        // per-product read returned it (`updated_at DESC, id`).
+        const knowledgeStatus = knowledgeStatusEnabled ? (knowledgeDocumentsByProductId.get(product.id) ?? []) : []
+        // This product's slice of its group's call above, ranked by `search`
+        // exactly as the per-product call ranked it.
+        const persistedKnowledge = knowledgeStatusEnabled ? (persistedKnowledgeByProductId.get(product.id) ?? []) : []
         const knowledgeDocuments = persistedKnowledge.map(({ document, chunks, score }) => ({
           id: document.id,
           title: document.title,
@@ -16872,9 +17691,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           source_version: document.sourceVersion,
           revision: document.revision,
         }))
-        const knowledgeStatus = includeKnowledge && knowledgeRepository
-          ? await knowledgeRepository.listDocuments(workspaceId, { productId: product.id })
-          : []
         const pendingKnowledge = knowledgeStatus.filter(document =>
           document.indexState !== 'ready' || document.approvalStatus !== 'approved' || document.rightsStatus !== 'cleared',
         )
@@ -16897,7 +17713,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           ...(includeKnowledge ? { knowledge_documents: knowledgeDocuments } : {}),
           ...(knowledgeBlocker ? { knowledge_status: knowledgeBlocker } : {}),
         }
-      }))
+      })
       const product_actions = products.map(product => {
         const base = { product_id: product.id, title: product.title, platform: product.platform, account_id: product.accountId ?? null, facts_confirmed: product.factsConfirmed }
         if (!product.accountId) return { ...base, action: { method: 'platform.connect', label: '绑定商品所属店铺', required_inputs: ['platform'], confirmation: 'interactive_confirmation' } }
@@ -16935,7 +17751,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (requestedPlatform !== product.platform) throw new DomainError('TITLE_PLATFORM_SCOPE_MISMATCH', '标题优化的平台必须与当前商品平台一致', 409, { product_platform: product.platform, requested_platform: requestedPlatform })
       const readControl = await canonicalProductReadControl(workspaceId)
       const canonicalRepository = persistence.brandUnits ?? memoryBrandUnits
-      const canonicalCandidates = (await canonicalRepository.listCanonicalProducts({ workspaceId })).filter(row => row.sourceProductId === product.id)
+      const canonicalCandidates = await canonicalRepository.listCanonicalProducts({ workspaceId, sourceProductIds: [product.id] })
       const canonical = canonicalCandidates.length === 1 ? canonicalCandidates[0] : undefined
       const canonicalListings = canonical
         ? await canonicalRepository.listListings({ workspaceId, brandId: canonical.brandId, canonicalProductId: canonical.id, platform: requestedPlatform, ...(product.accountId ? { accountId: product.accountId } : {}) })
@@ -16988,7 +17804,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const trimmedTitle = title.trim()
         if (!trimmedTitle) throw new DomainError('PRODUCT_TITLE_REQUIRED', 'SEO/GEO 标题不能为空', 400)
         const canonicalRepository = persistence.brandUnits ?? memoryBrandUnits
-        const candidates = (await canonicalRepository.listCanonicalProducts({ workspaceId })).filter(row => row.sourceProductId === product.id)
+        const candidates = await canonicalRepository.listCanonicalProducts({ workspaceId, sourceProductIds: [product.id] })
         if (candidates.length !== 1) throw new DomainError('CANONICAL_PRODUCT_MAPPING_REQUIRED', '标准商品映射不唯一，已阻断标题写回', 409, { product_id: product.id, next_action: 'canonical.product.consistency' })
         const canonical = candidates[0]!
         const listings = await canonicalRepository.listListings({ workspaceId, brandId: canonical.brandId, canonicalProductId: canonical.id, platform, ...(product.accountId ? { accountId: product.accountId } : {}) })
@@ -17050,7 +17866,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const brandId = typeof params.brand_id === 'string' && params.brand_id.trim() ? params.brand_id.trim() : undefined
       if (!SUPPORTED_PLATFORMS.includes(platform)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'platform 无效', 400)
       if (isProduction() && !accountId && !draftOnly) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '生产商品导入必须绑定已授权平台账号；如仅需做内容草稿，请显式传 draft_only=true', 400)
-      if (accountId) service.getActivePlatformAccount(workspaceId, accountId, platform)
+      if (accountId) service.getActionablePlatformAccount(workspaceId, accountId, platform)
       if (brandId) {
         if (!accountId) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '绑定品牌导入商品必须同时指定已授权店铺', 400)
         await enforceBrandAccess(req, workspaceId, brandId, 'editor')
@@ -17112,7 +17928,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (!SUPPORTED_PLATFORMS.includes(platform)) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 platform 无效`, 400)
         const accountId = typeof item.account_id === 'string' && item.account_id.trim() ? item.account_id.trim() : undefined
         if (isProduction() && !accountId && !draftOnly) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', `第 ${index + 1} 项生产导入必须绑定已授权平台账号；如仅需建立待审核知识草稿，请显式传 draft_only=true`, 400)
-        if (accountId) service.getActivePlatformAccount(workspaceId, accountId, platform)
+        if (accountId) service.getActionablePlatformAccount(workspaceId, accountId, platform)
         const title = typeof item.title === 'string' ? item.title.trim() : ''
         if (!title) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 title 不能为空`, 400)
         const images = Array.isArray(item.images) ? item.images.filter((value): value is string => typeof value === 'string' && value.trim().length > 0).map(value => value.trim()) : typeof item.images === 'string' ? item.images.split(',').map(value => value.trim()).filter(Boolean) : undefined
@@ -17175,7 +17991,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (readControl.mode !== 'canonical_read') return result({ ...product, product_id: product.id, factsConfirmationRequired: false, humanConfirmed: true, facts_confirmation: productFactsConfirmation(product), resumed_task_ids: resumedTasks.map(task => task.id) })
       await persistenceReady
       const canonicalRepository = persistence.brandUnits ?? memoryBrandUnits
-      const candidates = (await canonicalRepository.listCanonicalProducts({ workspaceId })).filter(row => row.sourceProductId === product.id)
+      const candidates = await canonicalRepository.listCanonicalProducts({ workspaceId, sourceProductIds: [product.id] })
       if (candidates.length > 1) throw new DomainError('CANONICAL_PRODUCT_AMBIGUOUS', '一个商品对应多个规范商品，已阻止同步事实，请先完成映射治理', 409, { product_id: product.id, canonical_product_ids: candidates.map(row => row.id), next_action: 'canonical.product.consistency' })
       const canonical = candidates[0]
       if (!canonical) throw new DomainError('CANONICAL_PRODUCT_MAPPING_REQUIRED', '商品事实已确认，但尚未绑定规范商品，无法完成 canonical_read 同步', 409, { product_id: product.id, next_action: 'canonical.product.consistency' })
@@ -17205,7 +18021,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       let canonicalBefore: Awaited<ReturnType<typeof canonicalRepository.getCanonicalProduct>>
       if (readControl.mode === 'canonical_read') {
         await persistenceReady
-        const candidates = (await canonicalRepository.listCanonicalProducts({ workspaceId })).filter(row => row.sourceProductId === productId)
+        const candidates = await canonicalRepository.listCanonicalProducts({ workspaceId, sourceProductIds: [productId] })
         if (candidates.length > 1) throw new DomainError('CANONICAL_PRODUCT_AMBIGUOUS', '一个商品对应多个规范商品，已阻止 SKU 事实修改，请先完成映射治理', 409, { product_id: productId, canonical_product_ids: candidates.map(row => row.id), next_action: 'canonical.product.consistency' })
         canonicalBefore = candidates[0]
         if (!canonicalBefore) throw new DomainError('CANONICAL_PRODUCT_MAPPING_REQUIRED', '标准商品映射未完成，已阻止只写 legacy 的 SKU 修改', 409, { product_id: productId, next_action: 'canonical.product.consistency' })
@@ -17260,7 +18076,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       let canonicalBefore: Awaited<ReturnType<typeof canonicalRepository.getCanonicalProduct>>
       if (readControl.mode === 'canonical_read') {
         await persistenceReady
-        const candidates = (await canonicalRepository.listCanonicalProducts({ workspaceId })).filter(row => row.sourceProductId === productId)
+        const candidates = await canonicalRepository.listCanonicalProducts({ workspaceId, sourceProductIds: [productId] })
         if (candidates.length > 1) throw new DomainError('CANONICAL_PRODUCT_AMBIGUOUS', '一个商品对应多个规范商品，已阻止事实修改，请先完成映射治理', 409, { product_id: productId, canonical_product_ids: candidates.map(row => row.id), next_action: 'canonical.product.consistency' })
         canonicalBefore = candidates[0]
         if (!canonicalBefore) throw new DomainError('CANONICAL_PRODUCT_MAPPING_REQUIRED', '标准商品映射未完成，已阻止只写 legacy 的事实修改', 409, { product_id: productId, next_action: 'canonical.product.consistency' })
@@ -18457,9 +19273,15 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'platform_ops'])
       const platform = required(params, 'platform') as Platform
       const accountId = required(params, 'account_id')
+      const manualRecord = isManualStoreRecord(service.getPlatformAccount(workspaceId, accountId, platform))
       const account = service.revokePlatformAccount(workspaceId, accountId, platform)
       await persistSnapshot(workspaceId, 'platform_account', account, account as unknown as Record<string, unknown>)
-      await persistEvent(workspaceId, account.id, 'platform_account.revoked', account.revision, { account_id: account.id, platform, remote_revoked: false })
+      await persistEvent(workspaceId, account.id, 'platform_account.revoked', account.revision, { account_id: account.id, platform, remote_revoked: false, ...(manualRecord ? { credential_free: true } : {}) })
+      // A manual store record never had a credential, so there is nothing to
+      // revoke remotely. Calling the connector with its placeholder ref would
+      // both be a lie to the operator and an attempt to use a value that is not
+      // a secret. Report the truth instead of a fabricated receipt.
+      if (manualRecord) return result({ platform, accountId: account.id, state: account.tokenState, remoteRevoked: false, remoteRevocation: 'not_applicable_manual_store_record' })
       try {
         await connectorRuntime.connector(platform).revoke({ accountId: account.remoteAccountId, credentialRef: account.credentialRef })
       } catch (error) {
@@ -18476,7 +19298,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const brandId = await taskCreationBrand(req, workspaceId, params.brand_id)
       await enforceProductBrandAccess(req, workspaceId, productId)
       requireProductionTaskStore(taskPlatform, taskAccountId)
-      if ((isProduction() || fixtureMode) && taskAccountId) service.getActivePlatformAccount(workspaceId, taskAccountId, taskPlatform)
+      if ((isProduction() || fixtureMode) && taskAccountId) service.getActionablePlatformAccount(workspaceId, taskAccountId, taskPlatform)
       const canonicalScope = await resolveCanonicalTaskScope({ workspaceId, productId, platform: taskPlatform, ...(taskAccountId ? { accountId: taskAccountId } : {}), ...(brandId ? { brandId } : {}), requireListing: true })
       const task = service.createTask({ workspaceId, productId, platform: taskPlatform, ...(taskAccountId ? { accountId: taskAccountId } : {}), ...(canonicalScope ?? (brandId ? { brandId } : {})), ...(typeof params.region === 'string' ? { region: params.region } : {}) })
       await persistSnapshot(workspaceId, 'task', task, task as unknown as Record<string, unknown>)
@@ -18545,7 +19367,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           const product = service.products.get(entry.product_id)
           const accountId = resolveTaskAccountId(workspaceId, platform, typeof entry.account_id === 'string' ? entry.account_id : undefined) ?? (product?.workspaceId === workspaceId && product.platform === platform ? product.accountId : undefined)
           requireProductionTaskStore(platform, accountId)
-          if ((isProduction() || fixtureMode) && accountId) service.getActivePlatformAccount(workspaceId, accountId, platform)
+          if ((isProduction() || fixtureMode) && accountId) service.getActionablePlatformAccount(workspaceId, accountId, platform)
           return { productId: entry.product_id, platform, ...(accountId ? { accountId } : {}), ...(typeof entry.region === 'string' && entry.region.trim() ? { region: entry.region.trim() } : {}), ...(typeof entry.sku_id === 'string' && entry.sku_id.trim() ? { skuId: entry.sku_id.trim() } : {}) }
         })
       } catch (error) {
@@ -18758,7 +19580,14 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await assertCanonicalTaskScopeForAction(scoped.task)
       const status = required(params, 'status')
       if (!['acknowledged', 'waived'].includes(status)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'status 必须是 acknowledged 或 waived', 400)
-      const decided = service.setReviewFindingDecision({ workspaceId, contentVersionId: scoped.version.id, code: required(params, 'code'), field: required(params, 'field'), status: status as 'acknowledged' | 'waived', ...(typeof params.reason === 'string' ? { reason: params.reason } : {}), actorId: requestActor(req), ...(typeof params.expected_revision === 'string' && /^\d+$/u.test(params.expected_revision) ? { expectedRevision: Number(params.expected_revision) } : {}) }, await evaluationRules(workspaceId, ruleContextForTask(scoped.task)))
+      const reviewRules = await evaluationRules(workspaceId, ruleContextForTask(scoped.task))
+      assertReviewDecisionPreflight({ workspaceId, contentVersionId: scoped.version.id, code: required(params, 'code'), field: required(params, 'field'), status, ...(typeof params.reason === 'string' ? { reason: params.reason } : {}), ...(typeof params.expected_revision === 'string' && /^\d+$/u.test(params.expected_revision) ? { expectedRevision: Number(params.expected_revision) } : {}), rules: reviewRules })
+      // This operation is excluded from the central gate above, so it re-runs
+      // the effective gate here, immediately before the durable write. Without
+      // it a workspace with an unknown or exhausted balance could still waive
+      // blocking review findings and unlock publishing.
+      await enforceMcpCommercialAccess(req, workspaceId, method)
+      const decided = service.setReviewFindingDecision({ workspaceId, contentVersionId: scoped.version.id, code: required(params, 'code'), field: required(params, 'field'), status: status as 'acknowledged' | 'waived', ...(typeof params.reason === 'string' ? { reason: params.reason } : {}), actorId: requestActor(req), ...(typeof params.expected_revision === 'string' && /^\d+$/u.test(params.expected_revision) ? { expectedRevision: Number(params.expected_revision) } : {}) }, reviewRules)
       await persistSnapshot(workspaceId, 'content_version', decided.version, decided.version as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, decided.version.id, 'content.review_decided', decided.version.revision, { content_version_id: decided.version.id, finding_key: decided.decision.key, status: decided.decision.status, reason: decided.decision.reason, actor_id: decided.decision.actorId })
       return result(decided)
@@ -18942,7 +19771,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           if (!contentVersionId || !confirmationHash || !remoteSnapshotHash) throw new DomainError(ERROR_CODES.CONFIRMATION_REQUIRED, `任务 ${taskId} 缺少新鲜确认哈希`, 400)
           const accountId = resolveTaskPublishAccount(task, typeof confirmation.account_id === 'string' ? confirmation.account_id : undefined)
           if ((isProduction() || fixtureMode) && !accountId) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', `任务 ${taskId} 未绑定店铺`, 400)
-          if (isProduction() || fixtureMode) service.getActivePlatformAccount(workspaceId, accountId!, task.platform)
+          if (isProduction() || fixtureMode) service.getActionablePlatformAccount(workspaceId, accountId!, task.platform)
           if (!task.contentVersionId || task.contentVersionId !== contentVersionId) throw new DomainError(ERROR_CODES.CONFIRMATION_REQUIRED, `任务 ${taskId} 内容版本已变化`, 400)
           assertPublishIdempotency(workspaceId, { taskId, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: itemKey })
           let existing = [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === itemKey)
@@ -19049,7 +19878,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           const accountId = resolveTaskPublishAccount(task, typeof confirmation.account_id === 'string' ? confirmation.account_id : undefined)
           await requireEnabledPlatform(workspaceId, task.platform)
           if ((isProduction() || fixtureMode) && !accountId) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', `任务 ${taskId} 未绑定店铺`, 400)
-          if (isProduction() || fixtureMode) service.getActivePlatformAccount(workspaceId, accountId!, task.platform)
+          if (isProduction() || fixtureMode) service.getActionablePlatformAccount(workspaceId, accountId!, task.platform)
           if (!task.contentVersionId || task.contentVersionId !== contentVersionId) throw new DomainError(ERROR_CODES.CONFIRMATION_REQUIRED, `任务 ${taskId} 内容版本已变化`, 400)
           assertPublishIdempotency(workspaceId, { taskId, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: itemKey })
           let existing = [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === itemKey)
@@ -19094,7 +19923,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!task.contentVersionId || task.contentVersionId !== contentVersionId) throw new DomainError(ERROR_CODES.CONFIRMATION_REQUIRED, '缺少有效的一次性发布确认 token', 400)
       if (isProduction() && !((typeof params.account_id === 'string' && params.account_id.trim()) || task.accountId)) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '生产发布必须绑定已授权平台账号', 400)
       const publishAccountId = resolveTaskPublishAccount(task, typeof params.account_id === 'string' ? params.account_id : undefined)
-      if (isProduction() || fixtureMode) service.getActivePlatformAccount(workspaceId, publishAccountId!, task.platform)
+      if (isProduction() || fixtureMode) service.getActionablePlatformAccount(workspaceId, publishAccountId!, task.platform)
       if (isProduction() && !platformWriteReady(task.platform)) throw new DomainError('PLATFORM_WRITE_NOT_READY', '平台尚未完成生产写入能力验证，当前不会创建发布任务', 503)
       assertPublishIdempotency(workspaceId, { taskId, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: key })
       let existing = [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === key)
@@ -20579,6 +21408,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     await requireWorkerAuthorization(req)
     const workspaceId = headerRequired(req, 'x-workspace-id')
     const jobId = decodeURIComponent(imageGenerationResultMatch[1]!)
+    enrichRequestObservation(req, { jobId })
     await hydrateWorkspace(workspaceId)
     const input = await body(req)
     let callback: ReturnType<typeof validateImageGenerationCallbackResult>
@@ -20628,6 +21458,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     await requireWorkerAuthorization(req)
     const workspaceId = headerRequired(req, 'x-workspace-id')
     const jobId = decodeURIComponent(imageGenerationExecutionMatch[1]!)
+    enrichRequestObservation(req, { jobId })
     const input = await body(req)
     const repository = persistence.imageGenerationExecutions
     if (!repository) throw new DomainError('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED', '图片生成执行租约存储未配置', 503)
@@ -20693,6 +21524,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     await requireWorkerAuthorization(req)
     const workspaceId = headerRequired(req, 'x-workspace-id')
     const jobId = decodeURIComponent(imageContinuationMatch[1]!)
+    enrichRequestObservation(req, { jobId })
     const executed = await executeReadyImageContinuation(workspaceId, jobId)
     return send(res, 200, workspaceId, { job_id: executed.job.id, state: executed.job.state, continuation_state: executed.job.continuation?.state, already_completed: executed.alreadyCompleted }, null, req)
   }
@@ -20734,6 +21566,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     await requireWorkerAuthorization(req)
     const workspaceId = headerRequired(req, 'x-workspace-id')
     const jobId = decodeURIComponent(imageGenerationEvidenceMatch[1]!)
+    enrichRequestObservation(req, { jobId })
     await hydrateWorkspace(workspaceId)
     const input = await body(req)
     const repository = persistence.imageGenerationExecutions
@@ -21710,7 +22543,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       if (!SUPPORTED_PLATFORMS.includes(platform)) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 platform 无效`, 400)
       const accountId = typeof raw.account_id === 'string' && raw.account_id.trim() ? raw.account_id.trim() : undefined
       if (isProduction() && !accountId) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', `第 ${index + 1} 项生产导入必须绑定已授权平台账号`, 400)
-      if (accountId) service.getActivePlatformAccount(workspaceId, accountId, platform)
+      if (accountId) service.getActionablePlatformAccount(workspaceId, accountId, platform)
       const title = typeof raw.title === 'string' ? raw.title.trim() : ''
       if (!title) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 title 不能为空`, 400)
       const sourceAssetIds = Array.isArray(raw.asset_ids) ? raw.asset_ids.filter((value): value is string => typeof value === 'string' && value.trim().length > 0).map(value => value.trim()) : undefined
@@ -21760,7 +22593,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const accountId = typeof input.account_id === 'string' && input.account_id.trim() ? input.account_id.trim() : undefined
     if (!SUPPORTED_PLATFORMS.includes(platform)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'platform 无效', 400)
     if (isProduction() && !accountId) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '生产商品导入必须绑定已授权平台账号', 400)
-    if (accountId) service.getActivePlatformAccount(workspaceId, accountId, platform)
+    if (accountId) service.getActionablePlatformAccount(workspaceId, accountId, platform)
     const product = service.importProduct({ workspaceId, platform, ...(accountId ? { accountId } : {}), ...(typeof input.remote_id === 'string' && input.remote_id.trim() ? { remoteId: input.remote_id } : {}), ...(typeof input.local_product_key === 'string' ? { localProductKey: input.local_product_key } : {}), title: required(input, 'title'), skuCount: typeof input.sku_count === 'number' ? input.sku_count : undefined, ...(skus ? { skus } : {}), stock: typeof input.stock === 'number' ? input.stock : undefined, price: typeof input.price === 'number' ? input.price : undefined, category: typeof input.category === 'string' ? input.category : undefined, images: Array.isArray(input.images) ? input.images.filter((item): item is string => typeof item === 'string') : undefined, ...(sourceAssetIds ? { sourceAssetIds } : {}), attributes: input.attributes && typeof input.attributes === 'object' && !Array.isArray(input.attributes) ? Object.fromEntries(Object.entries(input.attributes).filter(([, value]) => typeof value === 'string').map(([key, value]) => [key, value as string])) : undefined, ...(sellingPoints ? { sellingPoints } : {}), storeName: typeof input.store_name === 'string' ? input.store_name : undefined, storeDifferentiation: typeof input.store_differentiation === 'string' ? input.store_differentiation : undefined })
     await scanImportedProductRules(workspaceId, product)
     await persistSnapshot(workspaceId, 'product', product, product as unknown as Record<string, unknown>)
@@ -21814,9 +22647,12 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const platform = revokeMatch[1] as Platform
     const accountId = header(req, 'x-account-id')?.trim() || new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`).searchParams.get('account_id')?.trim()
     if (!accountId) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '撤销授权必须指定平台账号', 400)
+    const manualRecord = isManualStoreRecord(service.getPlatformAccount(workspaceId, accountId, platform))
     const account = service.revokePlatformAccount(workspaceId, accountId, platform)
     await persistSnapshot(workspaceId, 'platform_account', account, account as unknown as Record<string, unknown>)
-    await persistEvent(workspaceId, account.id, 'platform_account.revoked', account.revision, { account_id: account.id, platform, remote_revoked: false })
+    await persistEvent(workspaceId, account.id, 'platform_account.revoked', account.revision, { account_id: account.id, platform, remote_revoked: false, ...(manualRecord ? { credential_free: true } : {}) })
+    // See the MCP revoke handler: a manual store record has no remote grant.
+    if (manualRecord) return send(res, 200, workspaceId, { platform, accountId: account.id, state: account.tokenState, remoteRevoked: false, remoteRevocation: 'not_applicable_manual_store_record' }, null, req)
     try {
       await connectorRuntime.connector(platform).revoke({ accountId: account.remoteAccountId, credentialRef: account.credentialRef })
     } catch (error) {
@@ -21885,7 +22721,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     if (!platformConnectorConfigured(platform)) throw new DomainError('NOT_CONFIGURED', `${platform} 官方 API 尚未配置，无法同步商品`, 503)
     const accountId = (typeof input.account_id === 'string' && input.account_id.trim()) || header(req, 'x-account-id')?.trim() || (isProduction() ? '' : defaultFixtureAccountId(workspaceId, platform))
     if (!accountId) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '生产同步必须指定已授权平台账号', 400)
-    if (isProduction()) service.getActivePlatformAccount(workspaceId, accountId, platform)
+    if (isProduction()) service.getActionablePlatformAccount(workspaceId, accountId, platform)
     // REST worker acceptance flows may enqueue before a worker starts. In the
     // local fixture, materialize the same logical account used by the MCP
     // path so normalized product rows satisfy their account foreign key.
@@ -21942,6 +22778,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const workspaceId = resolveWorkspace(req)
     const input = await body(req)
     const job = service.getSyncJob(workspaceId, syncProgressMatch[1]!)
+    enrichRequestObservation(req, { jobId: job.id })
     if (['succeeded', 'partial', 'failed'].includes(job.state)) return send(res, 200, workspaceId, job, null, req)
     const pageNumber = Number(input.page_number)
     if (!Number.isInteger(pageNumber) || pageNumber < 1) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'page_number 无效', 400)
@@ -21985,6 +22822,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const workspaceId = resolveWorkspace(req)
     const input = await body(req)
     const job = service.getSyncJob(workspaceId, syncResultMatch[1]!)
+    enrichRequestObservation(req, { jobId: job.id })
     const state = input.state === 'failed' || input.state === 'partial' ? input.state : 'succeeded'
     if (['succeeded', 'partial', 'failed'].includes(job.state)) {
       if (job.state === state) return send(res, 200, workspaceId, { ...job, replayed: true }, null, req)
@@ -22002,7 +22840,14 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     await requireWorkerCredentialAuthorization(req)
     const workspaceId = resolveWorkspace(req)
     const job = service.getSyncJob(workspaceId, syncExecutionContextMatch[1]!)
+    enrichRequestObservation(req, { jobId: job.id })
     if (['succeeded', 'partial', 'failed'].includes(job.state)) throw new DomainError('SYNC_JOB_TERMINAL', '同步任务已结束，不再签发执行上下文', 409, { state: job.state })
+    // Deliberately the strict gate, not `getActionablePlatformAccount`: this is
+    // the one sync endpoint that hands `credential_ref` to another process. A
+    // manual store record has no credential to hand over, and a sync job for one
+    // cannot be created in manual mode anyway (`platformConnectorConfigured` is
+    // false there). Keeping the strict gate means a manual record's placeholder
+    // ref can never leave the API.
     const account = service.getActivePlatformAccount(workspaceId, job.accountId, job.platform)
     return send(res, 200, workspaceId, { job_id: job.id, account_id: account.id, credential_ref: account.credentialRef }, null, req)
   }
@@ -22062,7 +22907,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const platform = entry.platform as Platform
       const accountId = resolveProductTaskAccount(workspaceId, platform, entry.product_id, typeof entry.account_id === 'string' ? entry.account_id : undefined)
       requireProductionTaskStore(platform, accountId)
-      if ((isProduction() || fixtureMode) && accountId) service.getActivePlatformAccount(workspaceId, accountId, platform)
+      if ((isProduction() || fixtureMode) && accountId) service.getActionablePlatformAccount(workspaceId, accountId, platform)
       return { productId: entry.product_id, platform, ...(accountId ? { accountId } : {}), ...(typeof entry.region === 'string' && entry.region.trim() ? { region: entry.region.trim() } : {}), ...(typeof entry.sku_id === 'string' && entry.sku_id.trim() ? { skuId: entry.sku_id.trim() } : {}) }
     })
     const entryBrandIds = await resolveTaskWriteBrands(req, workspaceId, entries.map(entry => entry.productId))
@@ -22124,7 +22969,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     await enforceProductBrandAccess(req, workspaceId, productId)
     const taskAccountId = resolveProductTaskAccount(workspaceId, taskPlatform, productId, typeof input.account_id === 'string' ? input.account_id : undefined)
     requireProductionTaskStore(taskPlatform, taskAccountId)
-    if ((isProduction() || fixtureMode) && taskAccountId) service.getActivePlatformAccount(workspaceId, taskAccountId, taskPlatform)
+    if ((isProduction() || fixtureMode) && taskAccountId) service.getActionablePlatformAccount(workspaceId, taskAccountId, taskPlatform)
     const taskId = idempotencyKey ? `task_request_${createHash('sha256').update(`${workspaceId}:${idempotencyKey}`).digest('hex').slice(0, 32)}` : undefined
     const keyHash = idempotencyKey ? createHash('sha256').update(idempotencyKey).digest('hex') : undefined
     const intentHash = idempotencyKey ? contextEnvelopeHash({ productId, brandId: brandId ?? null, platform: taskPlatform, accountId: taskAccountId ?? null, region: typeof input.region === 'string' ? input.region.trim() : '', requestText: typeof input.request_text === 'string' ? input.request_text.trim() : '', answers: input.answers && typeof input.answers === 'object' && !Array.isArray(input.answers) ? input.answers : null }) : undefined
@@ -22285,6 +23130,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     // not, so the same key reuse produced a 409 on one surface and a silent 202
     // on the other.
     if (existing && existing.taskId !== task.id) throw new DomainError('IDEMPOTENCY_KEY_REUSED', '该 Idempotency-Key 已绑定到另一个任务的生成作业', 409, { job_id: existing.id, existing_task_id: existing.taskId, requested_task_id: task.id })
+    if (existing) enrichRequestObservation(req, { jobId: existing.id })
     if (existing) return send(res, 202, task.workspaceId, { ...jobWithQueueMetadata(existing, task.workspaceId, 'generation'), rule_preflight: rulePreflight }, null, req)
     const reservationId = `generation:${idempotencyKey}`
     const reserved = await reserveDistributedJobSlot(task.workspaceId, reservationId)
@@ -22294,6 +23140,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         await reserveDailyModelBudget(task.workspaceId, `model:${usageKey}`, task.id, 'text')
         const prepared = await service.prepareGenerationContext(task.id, `model:${usageKey}`)
       const job = service.enqueueGeneration({ workspaceId: task.workspaceId, taskId: task.id, idempotencyKey })
+      enrichRequestObservation(req, { jobId: job.id })
       const authorizationSnapshot = workerAuthorizationSnapshot(req, task.workspaceId, job.id, 'generation.execute', { route: 'POST /v1/tasks/:id/content-jobs', task_id: task.id, task_version: task.version })
       if (!authorizationSnapshot && isProduction()) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '内容生成缺少持久身份授权快照，已拒绝入队', 503)
       await persistSnapshot(task.workspaceId, 'generation_job', job, job as unknown as Record<string, unknown>)
@@ -22314,6 +23161,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   const generationJobGetMatch = path.match(/^\/v1\/generation-jobs\/([^/]+)$/)
   if (req.method === 'GET' && generationJobGetMatch) {
     const job = service.getGenerationJob(resolveWorkspace(req), generationJobGetMatch[1]!)
+    enrichRequestObservation(req, { jobId: job.id })
     return send(res, 200, job.workspaceId, jobWithQueueMetadata(job, job.workspaceId, 'generation'), null, req)
   }
   if (req.method === 'GET' && path === '/v1/image-generation-jobs') {
@@ -22340,6 +23188,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const workspaceId = resolveWorkspace(req)
     await hydrateWorkspace(workspaceId)
     let job = service.getImageGenerationJob(workspaceId, decodeURIComponent(imageGenerationJobGetMatch[1]!))
+    enrichRequestObservation(req, { jobId: job.id })
     // Scanner promotion can finish after the Provider callback. The callback
     // leaves the job pending until every output is clean; promote that durable
     // state on the REST read as well as the MCP read path so the merchant UI
@@ -22418,6 +23267,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const input = await body(req)
     const retryAfterSeconds = typeof input.retry_after_seconds === 'number' && Number.isFinite(input.retry_after_seconds) ? Math.max(1, Math.ceil(input.retry_after_seconds)) : 60
     const deferred = service.deferGeneration({ workspaceId, jobId: generationJobDeferMatch[1]!, code: typeof input.code === 'string' ? input.code : 'QUOTA_EXHAUSTED', message: typeof input.message === 'string' ? input.message : '模型/平台配额暂满，任务将在配额窗口恢复后重试', retryAfterSeconds })
+    enrichRequestObservation(req, { jobId: deferred.id })
     await persistSnapshot(workspaceId, 'generation_job', deferred, deferred as unknown as Record<string, unknown>)
     await persistEvent(workspaceId, deferred.id, 'generation.deferred', deferred.revision, { job_id: deferred.id, task_id: deferred.taskId, code: deferred.errorCode ?? 'QUOTA_EXHAUSTED', retry_after_seconds: retryAfterSeconds, next_attempt_at: deferred.nextAttemptAt })
     return send(res, 200, workspaceId, jobWithQueueMetadata(deferred, workspaceId, 'generation'), null, req)
@@ -22428,6 +23278,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const workspaceId = resolveWorkspace(req)
     const input = await body(req)
     const job = service.getGenerationJob(workspaceId, generationJobResultMatch[1]!)
+    enrichRequestObservation(req, { jobId: job.id })
     if (input.error && typeof input.error === 'object' && !Array.isArray(input.error)) {
       const error = input.error as Record<string, unknown>
       const failed = service.failGeneration({ workspaceId, jobId: job.id, code: typeof error.code === 'string' ? error.code : 'AI_GENERATION_FAILED', message: typeof error.message === 'string' ? error.message : '内容生成失败' })
@@ -22554,7 +23405,13 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const input = await body(req)
     const status = required(input, 'status')
     if (!['acknowledged', 'waived'].includes(status)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'status 必须是 acknowledged 或 waived', 400)
-    const decided = service.setReviewFindingDecision({ workspaceId: scoped.task.workspaceId, contentVersionId: scoped.version.id, code: required(input, 'code'), field: required(input, 'field'), status: status as 'acknowledged' | 'waived', ...(typeof input.reason === 'string' ? { reason: input.reason } : {}), actorId: requestActor(req), ...(typeof input.expected_revision === 'number' ? { expectedRevision: input.expected_revision } : {}) }, await evaluationRules(scoped.task.workspaceId, ruleContextForTask(scoped.task)))
+    const reviewRules = await evaluationRules(scoped.task.workspaceId, ruleContextForTask(scoped.task))
+    assertReviewDecisionPreflight({ workspaceId: scoped.task.workspaceId, contentVersionId: scoped.version.id, code: required(input, 'code'), field: required(input, 'field'), status, ...(typeof input.reason === 'string' ? { reason: input.reason } : {}), ...(typeof input.expected_revision === 'number' ? { expectedRevision: input.expected_revision } : {}), rules: reviewRules })
+    // `POST /v1/content-versions/{id}/review-decisions` is deferred from the
+    // shared HTTP gate, so it re-runs the same effective gate here, before the
+    // durable write, exactly like `PUT /v1/assets/{id}/preference`.
+    if (httpOperationPolicy) await enforceHttpCommercialAccess(req, scoped.task.workspaceId, httpOperationPolicy.operation)
+    const decided = service.setReviewFindingDecision({ workspaceId: scoped.task.workspaceId, contentVersionId: scoped.version.id, code: required(input, 'code'), field: required(input, 'field'), status: status as 'acknowledged' | 'waived', ...(typeof input.reason === 'string' ? { reason: input.reason } : {}), actorId: requestActor(req), ...(typeof input.expected_revision === 'number' ? { expectedRevision: input.expected_revision } : {}) }, reviewRules)
     await persistSnapshot(scoped.task.workspaceId, 'content_version', decided.version, decided.version as unknown as Record<string, unknown>)
     await persistEvent(scoped.task.workspaceId, decided.version.id, 'content.review_decided', decided.version.revision, { content_version_id: decided.version.id, finding_key: decided.decision.key, status: decided.decision.status, reason: decided.decision.reason, actor_id: decided.decision.actorId })
     return send(res, 200, scoped.task.workspaceId, decided, null, req)
@@ -22622,7 +23479,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     if (isProduction() && !((typeof input.account_id === 'string' && input.account_id.trim()) || task.accountId)) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '生产发布必须绑定已授权平台账号', 400)
     const publishAccountId = resolveTaskPublishAccount(task, typeof input.account_id === 'string' ? input.account_id : undefined)
     if (isProduction()) {
-      service.getActivePlatformAccount(workspaceId, publishAccountId!, task.platform)
+      service.getActionablePlatformAccount(workspaceId, publishAccountId!, task.platform)
       if (!platformWriteReady(task.platform)) throw new DomainError('PLATFORM_WRITE_NOT_READY', '平台尚未完成生产写入能力验证，当前不会创建发布任务', 503)
     }
     assertPublishIdempotency(workspaceId, { taskId, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: key })
@@ -22727,6 +23584,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     await requireWorkerCredentialAuthorization(req)
     const workspaceId = resolveWorkspace(req)
     const job = service.assertPublishExecutionAllowed({ workspaceId, publishJobId: publishExecutionCheckMatch[1]! })
+    enrichRequestObservation(req, { jobId: job.id })
     const eventId = url.searchParams.get('event_id')?.trim() ?? ''
     if (!eventId) throw new DomainError('AUTHZ_EXECUTION_EVENT_REQUIRED', '发布执行缺少持久事件标识，已拒绝释放凭据', 400)
     if (!persistence.outbox) throw new DomainError('AUTHORIZATION_EVENT_REPOSITORY_UNAVAILABLE', '持久事件仓储不可用，已拒绝发布执行', 503)
@@ -22744,6 +23602,9 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const expectedTaskRevision = preparedTaskRevision === null ? null : preparedTaskRevision + 1
       if (preparedTaskRevision === null || !Number.isSafeInteger(preparedTaskRevision) || currentTask.state !== 'publishing' || currentTask.version !== expectedTaskRevision) throw new DomainError('AUTHZ_EXECUTION_RESOURCE_STALE', '发布任务引用的任务版本已变化，禁止释放发布凭证', 409, { expected_revision: Number.isSafeInteger(expectedTaskRevision) ? expectedTaskRevision : null, current_revision: currentTask.version })
     }
+    // Strict on purpose: like the sync execution context above, this endpoint
+    // releases a stored credential to the worker, and a manual store record has
+    // none. See `getActionablePlatformAccount`.
     const account = service.getActivePlatformAccount(workspaceId, job.accountId!, job.platform)
     const snapshot = job.authorizationSnapshot
     if (!snapshot) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '发布执行缺少入队授权快照，已拒绝释放凭据', 403)
@@ -23118,4 +23979,4 @@ if (process.env.NODE_ENV !== 'test') {
   })
 }
 
-export { assertUniqueBatchTaskIds, server, service, persistenceReady, memoryMembers as workspaceMembers, memoryOperations as operationAudits, memoryPlatformAuthorizationAudit as platformAuthorizationAuditForTests, memoryCreativePoints as creativePointsForTests }
+export { assertUniqueBatchTaskIds, server, service, persistenceReady, memoryMembers as workspaceMembers, memoryOperations as operationAudits, memoryPlatformAuthorizationAudit as platformAuthorizationAuditForTests, memoryCreativePoints as creativePointsForTests, memoryKnowledge as knowledgeDocumentsForTests }
