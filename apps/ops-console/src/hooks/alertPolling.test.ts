@@ -14,7 +14,9 @@ describe("alert poller", () => {
   afterEach(() => { vi.useRealTimers(); });
 
   it("re-reads the alert list on its own so an already-open tab discovers a new incident", async () => {
-    const poll = vi.fn().mockResolvedValue(undefined);
+    // `true` is the poller's contract for "this attempt really read": these
+    // scenarios describe reads that landed, and the stamp follows that answer.
+    const poll = vi.fn().mockResolvedValue(true);
     const onRefreshed = vi.fn();
     const time = clock();
     const poller = createAlertPoller({ poll, onRefreshed, now: time.now });
@@ -48,8 +50,8 @@ describe("alert poller", () => {
   });
 
   it("never overlaps two alert reads", async () => {
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => { release = resolve; });
+    let release!: (read: boolean) => void;
+    const pending = new Promise<boolean>((resolve) => { release = resolve; });
     const poll = vi.fn().mockReturnValue(pending);
     const poller = createAlertPoller({ poll, onRefreshed: vi.fn() });
     poller.start();
@@ -57,7 +59,7 @@ describe("alert poller", () => {
     const second = poller.refresh();
     expect(await second).toBe(false);
     expect(poll).toHaveBeenCalledTimes(1);
-    release();
+    release(true);
     expect(await first).toBe(true);
     poller.stop();
   });
@@ -65,7 +67,7 @@ describe("alert poller", () => {
   it("refreshes on demand even while the tab is hidden", async () => {
     // Re-focus and the manual button must read immediately rather than wait a
     // full interval, so this path deliberately ignores the visibility gate.
-    const poll = vi.fn().mockResolvedValue(undefined);
+    const poll = vi.fn().mockResolvedValue(true);
     const onRefreshed = vi.fn();
     const poller = createAlertPoller({ poll, onRefreshed, isVisible: () => false });
     poller.start();
@@ -90,6 +92,40 @@ describe("alert poller", () => {
     await vi.advanceTimersByTimeAsync(ALERT_POLL_INTERVAL_MS);
     expect(onRefreshed).not.toHaveBeenCalled();
     expect(onError).toHaveBeenCalledTimes(2);
+    poller.stop();
+  });
+
+  it("does not stamp a poll that read nothing", async () => {
+    // `refreshAlerts` returns false without throwing when it declines to issue
+    // a request (no connection, or the active workbench cannot read the alert
+    // capability). The promise still settles successfully, and the stamp used
+    // to follow the settle rather than the read — turning 「未确认数读取中」
+    // into a green 「0 条未确认」 beside a clock that had just moved, over a
+    // request that was never sent.
+    const poll = vi.fn().mockResolvedValue(false);
+    const onRefreshed = vi.fn();
+    const poller = createAlertPoller({ poll, onRefreshed });
+    poller.start();
+    expect(await poller.refresh()).toBe(false);
+    await vi.advanceTimersByTimeAsync(ALERT_POLL_INTERVAL_MS * 2);
+    expect(poll).toHaveBeenCalledTimes(3);
+    expect(onRefreshed).not.toHaveBeenCalled();
+    poller.stop();
+  });
+
+  it("still stamps the next poll that does read", async () => {
+    // The fix must not make the panel un-refreshable: one declined attempt
+    // followed by a real one has to advance the stamp again.
+    const poll = vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    const onRefreshed = vi.fn();
+    const poller = createAlertPoller({ poll, onRefreshed });
+    poller.start();
+    expect(await poller.refresh()).toBe(false);
+    expect(onRefreshed).not.toHaveBeenCalled();
+    expect(await poller.refresh()).toBe(true);
+    expect(onRefreshed).toHaveBeenCalledTimes(1);
     poller.stop();
   });
 

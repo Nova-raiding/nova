@@ -92,6 +92,14 @@ export function canPublishToProduction(row: PlatformOperation): boolean {
  * in flight, or after it failed, states a measured all-clear that was never
  * measured — the operator reads "0 条未确认" over a table that is empty because
  * the request 500'd.
+ *
+ * `loadedAt` therefore carries a stronger meaning than "some clock ticked": it
+ * may only be set by a read that actually landed. Both sources feeding it are
+ * held to that — `alertsLoadedAt` is written solely on a committed alert read,
+ * and `polling.lastRefreshedAt` only advances when `refreshAlerts` reports a
+ * landed read (`createAlertPoller` no longer stamps a poll that declined to
+ * issue a request). A poll that reads nothing must leave this tag saying
+ * 「未确认数读取中」 rather than reprinting the count as freshly measured.
  */
 export function alertCountPresentation(
   count: number,
@@ -129,6 +137,8 @@ export function OperationalAlertsPanel({ model }: OverviewSectionProps) {
     enabled: Boolean(model.opsSession),
     poll: refreshAlerts,
   });
+  // Both inputs are read times, never "the timer fired": nothing here may be
+  // fed by an attempt that did not read the dataset.
   const alertsReadAt = latestRefreshAt(alertsLoadedAt, polling.lastRefreshedAt);
   const alertCount = alertCountPresentation(alerts.length, { error: alertsError, loadedAt: alertsReadAt });
   return (

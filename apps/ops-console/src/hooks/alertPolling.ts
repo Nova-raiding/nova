@@ -20,7 +20,21 @@ export const ALERT_POLL_INTERVAL_MS = 60_000;
 type TimerHandle = ReturnType<typeof globalThis.setInterval>;
 
 export interface AlertPollerOptions {
-  poll: () => Promise<unknown>;
+  /**
+   * One read attempt. The resolved value is part of the contract, not a
+   * by-product, and both sides of the call read it the same way:
+   *
+   * - `true`  — a read answered. The data now rendered is this attempt's, so
+   *             the freshness stamp may advance.
+   * - `false` — nothing was measured. The attempt declined to issue a request
+   *             (no connection, missing capability, invalidated authorization
+   *             generation) or the request did not answer.
+   *
+   * `false` must never advance a stamp or produce a count: a "last refreshed"
+   * clock printed beside "0 条未确认" is a measured all-clear that nobody
+   * measured, and the panel exists precisely to keep those apart.
+   */
+  poll: () => Promise<boolean>;
   onRefreshed: (at: Date) => void;
   onError?: (error: unknown) => void;
   intervalMs?: number;
@@ -34,7 +48,11 @@ export interface AlertPollerOptions {
 export interface AlertPoller {
   start: () => void;
   stop: () => void;
-  /** Runs outside the interval: used by the manual button and on re-focus. */
+  /**
+   * Runs outside the interval: used by the manual button and on re-focus.
+   * Resolves `true` only when this attempt really read the dataset; `false`
+   * covers "declined to read", "already in flight" and "the read failed".
+   */
   refresh: () => Promise<boolean>;
   running: () => boolean;
 }
@@ -55,7 +73,14 @@ export function createAlertPoller(options: AlertPollerOptions): AlertPoller {
     if (inFlight) return false;
     inFlight = true;
     try {
-      await options.poll();
+      const read = await options.poll();
+      // `poll()` answers whether it read, and the stamp follows that answer —
+      // not the mere fact that the promise settled. A poll that returned early
+      // (no connection, missing capability, invalidated generation) settles
+      // successfully without having measured anything, and stamping it turned
+      // 「未确认数读取中」 into a green 「0 条未确认」 over a request that was
+      // never sent.
+      if (!read) return false;
       options.onRefreshed(now());
       return true;
     } catch (error) {
@@ -106,7 +131,8 @@ export function formatAlertRefreshedAt(value: Date | undefined): string {
 export interface AlertPollingOptions {
   /** Polling only while the alert dataset is actually readable and in view. */
   enabled: boolean;
-  poll: () => Promise<unknown>;
+  /** Same contract as `AlertPollerOptions.poll`: `true` means a read landed. */
+  poll: () => Promise<boolean>;
   intervalMs?: number;
 }
 

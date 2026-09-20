@@ -11,6 +11,62 @@ interface KnowledgeGovernanceSectionProps {
   title?: string;
 }
 
+/** The value a statistic shows when its dataset was never read. */
+export const UNREAD_STATISTIC_VALUE = "—";
+
+/**
+ * Counts a knowledge dataset, or states that it was never read.
+ *
+ * A knowledge list is `undefined` until a read lands, so `0` is always a
+ * measurement: the previous `?? []` seed made a failed `knowledge.learning.list`
+ * render as a green 「0 条待处理建议」 next to four zeroed statistics.
+ */
+export function knowledgeStatisticValue(
+  rows: readonly unknown[] | undefined,
+): number | string {
+  return rows === undefined ? UNREAD_STATISTIC_VALUE : rows.length;
+}
+
+export function knowledgeLearningTabLabel(
+  rows: readonly unknown[] | undefined,
+): string {
+  return `学习建议（${rows === undefined ? "未读取" : rows.length}）`;
+}
+
+/**
+ * What the pending-work tag is allowed to claim, following
+ * `alertCountPresentation`: a failed or missing read is never a green
+ * all-clear, and a count kept from an earlier successful read is marked as no
+ * longer current instead of being reprinted as a fresh measurement.
+ */
+export function knowledgePendingTagPresentation({
+  suggestionCount,
+  pendingAssetCount,
+  error,
+}: {
+  suggestionCount?: number;
+  pendingAssetCount?: number;
+  error?: string;
+}): { color: "green" | "orange" | "red" | "default"; label: string } {
+  if (suggestionCount === undefined) {
+    return error
+      ? { color: "red", label: "待处理建议未读取（读取失败）" }
+      : { color: "default", label: "待处理建议未读取" };
+  }
+  if (error) {
+    return {
+      color: "red",
+      label: `${suggestionCount} 条待处理建议（读取失败，可能已过期）`,
+    };
+  }
+  // A green tag is an all-clear for the whole block, so it needs both counts
+  // this section summarizes to have been read.
+  const color = pendingAssetCount === undefined || suggestionCount || pendingAssetCount
+    ? "orange"
+    : "green";
+  return { color, label: `${suggestionCount} 条待处理建议` };
+}
+
 export function KnowledgeGovernanceSection({
   model,
   title = "营销能力运营治理",
@@ -21,10 +77,20 @@ export function KnowledgeGovernanceSection({
     knowledgeRules,
     learningSuggestions,
   } = model;
-  const pendingAssetCount = knowledgeAssets.filter(
+  const pendingAssetCount = knowledgeAssets?.filter(
     (item) =>
       item.approvalStatus !== "approved" || item.rightsStatus !== "cleared",
   ).length;
+  const pendingTag = knowledgePendingTagPresentation({
+    suggestionCount: learningSuggestions?.length,
+    pendingAssetCount,
+    error: model.dataSetError(
+      "knowledge.rule.list",
+      "knowledge.asset.list",
+      "knowledge.learning.list",
+      "knowledge.competitor.list",
+    ),
+  });
 
   return (
     <Card
@@ -32,12 +98,8 @@ export function KnowledgeGovernanceSection({
       className="ops-section-anchor"
       title={title}
       extra={
-        <Tag
-          color={
-            learningSuggestions.length || pendingAssetCount ? "orange" : "green"
-          }
-        >
-          {learningSuggestions.length} 条待处理建议
+        <Tag color={pendingTag.color}>
+          {pendingTag.label}
         </Tag>
       }
     >
@@ -49,16 +111,19 @@ export function KnowledgeGovernanceSection({
       />
       <Row gutter={[16, 16]}>
         <Col xs={12} md={6}>
-          <Statistic title="工作区规则" value={knowledgeRules.length} />
+          <Statistic title="工作区规则" value={knowledgeStatisticValue(knowledgeRules)} />
         </Col>
         <Col xs={12} md={6}>
-          <Statistic title="待审核资产" value={pendingAssetCount} />
+          <Statistic
+            title="待审核资产"
+            value={pendingAssetCount === undefined ? UNREAD_STATISTIC_VALUE : pendingAssetCount}
+          />
         </Col>
         <Col xs={12} md={6}>
-          <Statistic title="竞品参考" value={competitors.length} />
+          <Statistic title="竞品参考" value={knowledgeStatisticValue(competitors)} />
         </Col>
         <Col xs={12} md={6}>
-          <Statistic title="待确认学习" value={learningSuggestions.length} />
+          <Statistic title="待确认学习" value={knowledgeStatisticValue(learningSuggestions)} />
         </Col>
       </Row>
       <Tabs
@@ -80,7 +145,7 @@ export function KnowledgeGovernanceSection({
           },
           {
             key: "learning",
-            label: `学习建议（${learningSuggestions.length}）`,
+            label: knowledgeLearningTabLabel(learningSuggestions),
             children: <LearningSuggestionsPanel model={model} />,
           },
           {

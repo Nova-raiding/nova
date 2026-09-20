@@ -11,6 +11,11 @@ export function CompetitorReferencesPanel({
 }: CompetitorReferencesPanelProps) {
   const { canCompetitor, competitorForm, competitors, createCompetitor } =
     model;
+  // Same distinction as the other knowledge tables: an unread competitor list
+  // must not claim there is nothing recorded.
+  const competitorsEmptyText = competitors === undefined
+    ? "竞品参考尚未读取；空列表不代表没有参考——请确认本次读取未失败，或重新加载。"
+    : "尚无合规竞品参考；只能录入可追溯的公开来源";
 
   return (
     <>
@@ -90,7 +95,7 @@ export function CompetitorReferencesPanel({
         rowKey="id"
         pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         dataSource={competitors}
-        locale={{ emptyText: "尚无合规竞品参考；只能录入可追溯的公开来源" }}
+        locale={{ emptyText: competitorsEmptyText }}
         scroll={{ x: 720 }}
         columns={[
           { title: "竞品", dataIndex: "competitorName" },

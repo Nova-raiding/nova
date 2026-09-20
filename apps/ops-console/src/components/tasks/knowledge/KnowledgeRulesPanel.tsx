@@ -13,6 +13,11 @@ function knowledgeRuleStatusLabel(value: string | undefined): string {
 export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
   const { canRules, createKnowledgeRule, updateKnowledgeRule, knowledgeRuleForm, knowledgeRules } =
     model;
+  // An unread rule list is not an empty one: say which it is instead of letting
+  // "尚未录入" claim the workspace has no rules.
+  const rulesEmptyText = knowledgeRules === undefined
+    ? "工作区规则尚未读取；空列表不代表没有规则——请确认本次读取未失败，或重新加载。"
+    : "尚未录入工作区规则；平台官方规则请前往“平台规则”查看";
 
   return (
     <>
@@ -97,7 +102,7 @@ export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
         rowKey="id"
         pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         dataSource={knowledgeRules}
-        locale={{ emptyText: "尚未录入工作区规则；平台官方规则请前往“平台规则”查看" }}
+        locale={{ emptyText: rulesEmptyText }}
         scroll={{ x: 720 }}
         columns={[
           { title: "规则", dataIndex: "name" },

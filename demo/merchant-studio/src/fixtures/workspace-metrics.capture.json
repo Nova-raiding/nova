@@ -1,0 +1,629 @@
+{
+  "request_id": "req_106f44fa-5375-4705-aa1e-bdc859ccb888",
+  "trace_id": "req_106f44fa-5375-4705-aa1e-bdc859ccb888",
+  "workspace_id": "ws_demo",
+  "data": {
+    "jsonrpc": "2.0",
+    "id": "studio-capture",
+    "result": {
+      "generatedAt": "2026-09-20T13:12:01.330Z",
+      "source": "durable_repository",
+      "dataCompleteness": "complete",
+      "hydration": {
+        "status": "hydrated",
+        "attempted": true,
+        "invalidSnapshotCount": 0
+      },
+      "selection": {
+        "mode": "workspace",
+        "platform": null,
+        "accountId": null,
+        "alias": null,
+        "matchedStores": 1
+      },
+      "period": {
+        "from": null,
+        "to": null,
+        "activityFiltered": false,
+        "productRisksAreCurrentSnapshot": true
+      },
+      "comparisonAvailable": false,
+      "comparisonReason": "baseline_unavailable",
+      "dataCoverage": {
+        "firstObservedAt": "2026-08-29T00:05:00.000Z",
+        "lastObservedAt": "2026-09-20T09:12:54.930Z",
+        "products": 9,
+        "tasks": 6,
+        "syncJobs": 0,
+        "publishJobs": 0,
+        "fixtureDataPresent": true
+      },
+      "stores": [
+        {
+          "platform": "taobao",
+          "accountId": "fixture-store-ws_demo-taobao",
+          "storeName": "淘宝 Fixture 店",
+          "storeAlias": "淘宝 Fixture 店",
+          "platformStoreName": "导入店铺 等 2 个店铺名",
+          "storeNames": [
+            "导入店铺",
+            "淘宝 Fixture 店"
+          ],
+          "connection": {
+            "state": "connected",
+            "dataMode": "fixture",
+            "readable": true,
+            "simulated": true
+          },
+          "authorization": {
+            "state": "fixture",
+            "reauthorizationRequired": false,
+            "grantedScopes": [],
+            "scopeState": "unknown",
+            "lastKnownAccessTokenExpiresAt": null,
+            "lastKnownExpiryState": "unknown",
+            "renewalMode": "unknown",
+            "refreshSupported": null,
+            "lastAuthorizedAt": null,
+            "metadataObservedAt": null,
+            "metadataFreshness": "unknown",
+            "stateChangedAt": null,
+            "revokedAt": null
+          },
+          "product": {
+            "total": 8,
+            "onSale": 0,
+            "lowStock": 7,
+            "missingImages": 8,
+            "mappingWarnings": 0,
+            "unconfirmedFacts": 7,
+            "lastUpdatedAt": "2026-09-20T09:12:54.930Z"
+          },
+          "sync": {
+            "total": 0,
+            "succeeded": 0,
+            "partial": 0,
+            "failed": 0,
+            "latestJobId": null,
+            "latestState": null,
+            "latestAt": null,
+            "lastAttemptAt": null,
+            "lastSuccessfulAt": null,
+            "lastUsableAt": null,
+            "failedItems": 0
+          },
+          "tasks": {
+            "created": 6,
+            "byState": {
+              "draft": 2,
+              "failed_recoverable": 1,
+              "ready_for_direction": 2,
+              "review_required": 1
+            }
+          },
+          "publish": {
+            "total": 0,
+            "submitted": 0,
+            "published": 0,
+            "rejected": 0,
+            "unknown": 0,
+            "latestJobId": null,
+            "latestState": null,
+            "latestAt": null
+          },
+          "quality": {
+            "blockingFindings": 0
+          }
+        }
+      ],
+      "unboundLocalData": {
+        "products": 1,
+        "tasks": 0,
+        "publishJobs": 0,
+        "risks": 1,
+        "note": "这些本地数据没有 accountId，不归入任何真实店铺聚合"
+      },
+      "riskItems": [
+        {
+          "key": "LOW_STOCK:prod_taobao_e132c3d468e5_REPLICA-1789894969254",
+          "type": "LOW_STOCK",
+          "severity": "high",
+          "platform": "taobao",
+          "accountId": "fixture-store-ws_demo-taobao",
+          "storeName": "淘宝 Fixture 店",
+          "entityType": "product",
+          "entityId": "prod_taobao_e132c3d468e5_REPLICA-1789894969254",
+          "title": "Replica consistency smoke",
+          "status": "low_stock",
+          "observedAt": "2026-09-20T09:02:49.226Z",
+          "evidence": {
+            "stock": 7,
+            "threshold": 10,
+            "fixtureData": true
+          },
+          "nextAction": "确认补货、下架或调整推广计划"
+        },
+        {
+          "key": "LOW_STOCK:prod_taobao_e132c3d468e5_REPLICA-1789895113989",
+          "type": "LOW_STOCK",
+          "severity": "high",
+          "platform": "taobao",
+          "accountId": "fixture-store-ws_demo-taobao",
+          "storeName": "淘宝 Fixture 店",
+          "entityType": "product",
+          "entityId": "prod_taobao_e132c3d468e5_REPLICA-1789895113989",
+          "title": "Replica consistency smoke",
+          "status": "low_stock",
+          "observedAt": "2026-09-20T09:05:14.012Z",
+          "evidence": {
+            "stock": 7,
+            "threshold": 10,
+            "fixtureData": true
+          },
+          "nextAction": "确认补货、下架或调整推广计划"
+        },
+        {
+          "key": "LOW_STOCK:prod_taobao_e132c3d468e5_REPLICA-1789895357379",
+          "type": "LOW_STOCK",
+          "severity": "high",
+          "platform": "taobao",
+          "accountId": "fixture-store-ws_demo-taobao",
+          "storeName": "淘宝 Fixture 店",
+          "entityType": "product",
+          "entityId": "prod_taobao_e132c3d468e5_REPLICA-1789895357379",
+          "title": "Replica consistency smoke",
+          "status": "low_stock",
+          "observedAt": "2026-09-20T09:09:19.025Z",
+          "evidence": {
+            "stock": 7,
+            "threshold": 10,
+            "fixtureData": true
+          },
+          "nextAction": "确认补货、下架或调整推广计划"
+        },
+        {
+          "key": "LOW_STOCK:prod_taobao_e132c3d468e5_REPLICA-1789895388207",
+          "type": "LOW_STOCK",
+          "severity": "high",
+          "platform": "taobao",
+          "accountId": "fixture-store-ws_demo-taobao",
+          "storeName": "淘宝 Fixture 店",
+          "entityType": "product",
+          "entityId": "prod_taobao_e132c3d468e5_REPLICA-1789895388207",
+          "title": "Replica consistency smoke",
+          "status": "low_stock",
+          "observedAt": "2026-09-20T09:09:48.240Z",
+          "evidence": {
+            "stock": 7,
+            "threshold": 10,
+            "fixtureData": true
+          },
+          "nextAction": "确认补货、下架或调整推广计划"
+        },
+        {
+          "key": "LOW_STOCK:prod_taobao_e132c3d468e5_REPLICA-1789895452191",
+          "type": "LOW_STOCK",
+          "severity": "high",
+          "platform": "taobao",
+          "accountId": "fixture-store-ws_demo-taobao",
+          "storeName": "淘宝 Fixture 店",
+          "entityType": "product",
+          "entityId": "prod_taobao_e132c3d468e5_REPLICA-1789895452191",
+          "title": "Replica consistency smoke",
+          "status": "low_stock",
+          "observedAt": "2026-09-20T09:10:52.213Z",
+          "evidence": {
+            "stock": 7,
+            "threshold": 10,
+            "fixtureData": true
+          },
+          "nextAction": "确认补货、下架或调整推广计划"
+        },
+        {
+          "key": "LOW_STOCK:prod_taobao_e132c3d468e5_REPLICA-1789895453353",
+          "type": "LOW_STOCK",
+          "severity": "high",
+          "platform": "taobao",
+          "accountId": "fixture-store-ws_demo-taobao",
+          "storeName": "淘宝 Fixture 店",
+          "entityType": "product",
+          "entityId": "prod_taobao_e132c3d468e5_REPLICA-1789895453353",
+          "title": "Replica consistency smoke",
+          "status": "low_stock",
+          "observedAt": "2026-09-20T09:10:53.377Z",
+          "evidence": {
+            "stock": 7,
+            "threshold": 10,
+            "fixtureData": true
+          },
+          "nextAction": "确认补货、下架或调整推广计划"
+        },
+        {
+          "key": "LOW_STOCK:prod_taobao_e132c3d468e5_REPLICA-1789895574826",
+          "type": "LOW_STOCK",
+          "severity": "high",
+          "platform": "taobao",
+          "accountId": "fixture-store-ws_demo-taobao",
+          "storeName": "淘宝 Fixture 店",
+          "entityType": "product",
+          "entityId": "prod_taobao_e132c3d468e5_REPLICA-1789895574826",
+          "title": "Replica consistency smoke",
+          "status": "low_stock",
+          "observedAt": "2026-09-20T09:12:54.930Z",
+          "evidence": {
+            "stock": 7,
+            "threshold": 10,
+            "fixtureData": true
+          },
+          "nextAction": "确认补货、下架或调整推广计划"
+        },
+        {
+          "key": "MISSING_IMAGES:prod_demo_fixture_1",
+          "type": "MISSING_IMAGES",
+          "severity": "high",
+          "platform": "taobao",
+          "accountId": "fixture-store-ws_demo-taobao",
+          "storeName": "淘宝 Fixture 店",
+          "entityType": "product",
+          "entityId": "prod_demo_fixture_1",
+          "title": "本地演示保温杯（Fixture）",
+          "status": "missing",
+          "observedAt": "2026-08-29T00:05:00.000Z",
+          "evidence": {
+            "imageCount": 0,
+            "fixtureData": true
+          },
+          "nextAction": "在交互会话中补齐主图并完成权益与安全审查"
+        },
+        {
+          "key": "MISSING_IMAGES:prod_fixture_1",
+          "type": "MISSING_IMAGES",
+          "severity": "high",
+          "platform": "taobao",
+          "entityType": "product",
+          "entityId": "prod_fixture_1",
+          "title": "轻云防晒外套 2026",
+          "status": "missing",
+          "observedAt": "2026-09-17T23:20:58.684Z",
+          "evidence": {
+            "imageCount": 0,
+            "unboundLocalData": true
+          },
+          "nextAction": "先在交互会话中确认商品所属店铺，再补齐主图并完成权益与安全审查"
+        },
+        {
+          "key": "MISSING_IMAGES:prod_taobao_e132c3d468e5_REPLICA-1789894969254",
+          "type": "MISSING_IMAGES",
+          "severity": "high",
+          "platform": "taobao",
+          "accountId": "fixture-store-ws_demo-taobao",
+          "storeName": "淘宝 Fixture 店",
+          "entityType": "product",
+          "entityId": "prod_taobao_e132c3d468e5_REPLICA-1789894969254",
+          "title": "Replica consistency smoke",
+          "status": "missing",
+          "observedAt": "2026-09-20T09:02:49.226Z",
+          "evidence": {
+            "imageCount": 0,
+            "fixtureData": true
+          },
+          "nextAction": "在交互会话中补齐主图并完成权益与安全审查"
+        },
+        {
+          "key": "MISSING_IMAGES:prod_taobao_e132c3d468e5_REPLICA-1789895113989",
+          "type": "MISSING_IMAGES",
+          "severity": "high",
+          "platform": "taobao",
+          "accountId": "fixture-store-ws_demo-taobao",
+          "storeName": "淘宝 Fixture 店",
+          "entityType": "product",
+          "entityId": "prod_taobao_e132c3d468e5_REPLICA-1789895113989",
+          "title": "Replica consistency smoke",
+          "status": "missing",
+          "observedAt": "2026-09-20T09:05:14.012Z",
+          "evidence": {
+            "imageCount": 0,
+            "fixtureData": true
+          },
+          "nextAction": "在交互会话中补齐主图并完成权益与安全审查"
+        },
+        {
+          "key": "MISSING_IMAGES:prod_taobao_e132c3d468e5_REPLICA-1789895357379",
+          "type": "MISSING_IMAGES",
+          "severity": "high",
+          "platform": "taobao",
+          "accountId": "fixture-store-ws_demo-taobao",
+          "storeName": "淘宝 Fixture 店",
+          "entityType": "product",
+          "entityId": "prod_taobao_e132c3d468e5_REPLICA-1789895357379",
+          "title": "Replica consistency smoke",
+          "status": "missing",
+          "observedAt": "2026-09-20T09:09:19.025Z",
+          "evidence": {
+            "imageCount": 0,
+            "fixtureData": true
+          },
+          "nextAction": "在交互会话中补齐主图并完成权益与安全审查"
+        },
+        {
+          "key": "MISSING_IMAGES:prod_taobao_e132c3d468e5_REPLICA-1789895388207",
+          "type": "MISSING_IMAGES",
+          "severity": "high",
+          "platform": "taobao",
+          "accountId": "fixture-store-ws_demo-taobao",
+          "storeName": "淘宝 Fixture 店",
+          "entityType": "product",
+          "entityId": "prod_taobao_e132c3d468e5_REPLICA-1789895388207",
+          "title": "Replica consistency smoke",
+          "status": "missing",
+          "observedAt": "2026-09-20T09:09:48.240Z",
+          "evidence": {
+            "imageCount": 0,
+            "fixtureData": true
+          },
+          "nextAction": "在交互会话中补齐主图并完成权益与安全审查"
+        },
+        {
+          "key": "MISSING_IMAGES:prod_taobao_e132c3d468e5_REPLICA-1789895452191",
+          "type": "MISSING_IMAGES",
+          "severity": "high",
+          "platform": "taobao",
+          "accountId": "fixture-store-ws_demo-taobao",
+          "storeName": "淘宝 Fixture 店",
+          "entityType": "product",
+          "entityId": "prod_taobao_e132c3d468e5_REPLICA-1789895452191",
+          "title": "Replica consistency smoke",
+          "status": "missing",
+          "observedAt": "2026-09-20T09:10:52.213Z",
+          "evidence": {
+            "imageCount": 0,
+            "fixtureData": true
+          },
+          "nextAction": "在交互会话中补齐主图并完成权益与安全审查"
+        },
+        {
+          "key": "MISSING_IMAGES:prod_taobao_e132c3d468e5_REPLICA-1789895453353",
+          "type": "MISSING_IMAGES",
+          "severity": "high",
+          "platform": "taobao",
+          "accountId": "fixture-store-ws_demo-taobao",
+          "storeName": "淘宝 Fixture 店",
+          "entityType": "product",
+          "entityId": "prod_taobao_e132c3d468e5_REPLICA-1789895453353",
+          "title": "Replica consistency smoke",
+          "status": "missing",
+          "observedAt": "2026-09-20T09:10:53.377Z",
+          "evidence": {
+            "imageCount": 0,
+            "fixtureData": true
+          },
+          "nextAction": "在交互会话中补齐主图并完成权益与安全审查"
+        },
+        {
+          "key": "MISSING_IMAGES:prod_taobao_e132c3d468e5_REPLICA-1789895574826",
+          "type": "MISSING_IMAGES",
+          "severity": "high",
+          "platform": "taobao",
+          "accountId": "fixture-store-ws_demo-taobao",
+          "storeName": "淘宝 Fixture 店",
+          "entityType": "product",
+          "entityId": "prod_taobao_e132c3d468e5_REPLICA-1789895574826",
+          "title": "Replica consistency smoke",
+          "status": "missing",
+          "observedAt": "2026-09-20T09:12:54.930Z",
+          "evidence": {
+            "imageCount": 0,
+            "fixtureData": true
+          },
+          "nextAction": "在交互会话中补齐主图并完成权益与安全审查"
+        }
+      ],
+      "riskSummary": {
+        "total": 16,
+        "returned": 16,
+        "truncated": false,
+        "limit": 100
+      },
+      "snapshotHash": "bb438b4faafe41203383ba7b085e90f1a02163ef3770296616d63817ae1da444",
+      "productSummary": {
+        "total": 9,
+        "lowStock": 7,
+        "missingImages": 9
+      },
+      "recommendations": [
+        {
+          "code": "LOW_STOCK",
+          "priority": "high",
+          "title": "检查低库存商品",
+          "action": "有 7 个商品库存低于安全线，建议先确认补货或调整投放。",
+          "evidence": [
+            "Replica consistency smoke",
+            "Replica consistency smoke",
+            "Replica consistency smoke",
+            "Replica consistency smoke",
+            "Replica consistency smoke"
+          ]
+        },
+        {
+          "code": "MISSING_IMAGES",
+          "priority": "high",
+          "title": "补齐商品主图",
+          "action": "有 9 个商品没有可审阅主图，建议先从素材库上传并完成权益/安全扫描。",
+          "evidence": [
+            "轻云防晒外套 2026",
+            "本地演示保温杯（Fixture）",
+            "Replica consistency smoke",
+            "Replica consistency smoke",
+            "Replica consistency smoke"
+          ]
+        }
+      ],
+      "platformMetrics": {
+        "jd": {
+          "accounts": {
+            "total": 0,
+            "connected": 0,
+            "revoked": 0,
+            "refreshRequired": 0
+          },
+          "sync": {
+            "total": 0,
+            "succeeded": 0,
+            "partial": 0,
+            "failed": 0
+          },
+          "publish": {
+            "total": 0,
+            "submitted": 0,
+            "published": 0,
+            "rejected": 0,
+            "unknown": 0
+          }
+        },
+        "taobao": {
+          "accounts": {
+            "total": 1,
+            "connected": 1,
+            "revoked": 0,
+            "refreshRequired": 0
+          },
+          "sync": {
+            "total": 0,
+            "succeeded": 0,
+            "partial": 0,
+            "failed": 0
+          },
+          "publish": {
+            "total": 0,
+            "submitted": 0,
+            "published": 0,
+            "rejected": 0,
+            "unknown": 0
+          }
+        },
+        "tmall": {
+          "accounts": {
+            "total": 0,
+            "connected": 0,
+            "revoked": 0,
+            "refreshRequired": 0
+          },
+          "sync": {
+            "total": 0,
+            "succeeded": 0,
+            "partial": 0,
+            "failed": 0
+          },
+          "publish": {
+            "total": 0,
+            "submitted": 0,
+            "published": 0,
+            "rejected": 0,
+            "unknown": 0
+          }
+        },
+        "pinduoduo": {
+          "accounts": {
+            "total": 0,
+            "connected": 0,
+            "revoked": 0,
+            "refreshRequired": 0
+          },
+          "sync": {
+            "total": 0,
+            "succeeded": 0,
+            "partial": 0,
+            "failed": 0
+          },
+          "publish": {
+            "total": 0,
+            "submitted": 0,
+            "published": 0,
+            "rejected": 0,
+            "unknown": 0
+          }
+        },
+        "xiaohongshu": {
+          "accounts": {
+            "total": 0,
+            "connected": 0,
+            "revoked": 0,
+            "refreshRequired": 0
+          },
+          "sync": {
+            "total": 0,
+            "succeeded": 0,
+            "partial": 0,
+            "failed": 0
+          },
+          "publish": {
+            "total": 0,
+            "submitted": 0,
+            "published": 0,
+            "rejected": 0,
+            "unknown": 0
+          }
+        },
+        "douyin": {
+          "accounts": {
+            "total": 0,
+            "connected": 0,
+            "revoked": 0,
+            "refreshRequired": 0
+          },
+          "sync": {
+            "total": 0,
+            "succeeded": 0,
+            "partial": 0,
+            "failed": 0
+          },
+          "publish": {
+            "total": 0,
+            "submitted": 0,
+            "published": 0,
+            "rejected": 0,
+            "unknown": 0
+          }
+        }
+      },
+      "taskFunnel": {
+        "ready_for_direction": 2,
+        "draft": 2,
+        "failed_recoverable": 1,
+        "review_required": 1
+      },
+      "quality": {
+        "p0FindingCount": 0,
+        "recoverableTaskRate": 0.16666666666666666,
+        "recoveryRate": 0.16666666666666666,
+        "modelFailureRate": 0
+      },
+      "jobs": {
+        "sync": 0,
+        "generation": 0,
+        "generationFailed": 0,
+        "publish": 0
+      },
+      "cost": {
+        "available": true,
+        "source": "model_usage_ledger",
+        "model_usage_records": 1,
+        "total_tokens": 20,
+        "model_charge_cny": "0.000000",
+        "note": "仅展示当前工作区已结算的模型使用费；内部成本和定价策略不对商家端暴露"
+      },
+      "storageReconciliation": {
+        "status": "unavailable",
+        "message": "尚未收到对象清单对账结果"
+      },
+      "warnings": [
+        "指标来自当前工作区可持久化业务状态；平台外部吞吐和最终审核不在本地统计中，模型中转 usage/cost 以 model_usage_ledger 为准",
+        "quality.recoveryRate 是历史兼容字段，实际表示可恢复失败任务占比；新客户端请使用 quality.recoverableTaskRate",
+        "新增、升级和已恢复风险需由 Codex App 原生运行历史根据稳定 risk key 比较，当前响应不伪造历史基线"
+      ]
+    }
+  },
+  "warnings": [],
+  "next_actions": [],
+  "error": null
+}

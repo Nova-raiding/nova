@@ -246,8 +246,8 @@ import { resolveProductAssetRelation } from './product-assets.js'
 import { ContextRecoveryCard } from './ContextRecoveryCard.js'
 import { canonicalProductActionAllowed, groupTasksForRecovery, prioritizeProducts } from './merchant-ia.js'
 import { resolveDetailSopSteps } from './detail-sop.js'
-import { resolveIssueReadState, type IssueReadState } from './issue-read-state.js'
-import { BRAND_UNCONFIGURED, BRAND_DOCUMENT_LOCAL_ANALYSIS, BRAND_DOCUMENT_NONE, resolveBrandColorFacts, resolveBrandDocumentFacts } from './material-brand-facts.js'
+import { actionableIssueItems, createIssueReadSession, resolveIssueReadState, resolveIssueReadStateFromOutcome, type IssueReadOutcome, type IssueReadState } from './issue-read-state.js'
+import { BRAND_UNCONFIGURED, BRAND_DOCUMENT_LOCAL_ANALYSIS, BRAND_DOCUMENT_NONE, resolveBrandColorFacts, resolveBrandDocumentFacts, resolveBrandLogoFacts } from './material-brand-facts.js'
 
 // There is deliberately no client-side read-only role projection here. It used
 // to read a build-time `VITE_MERCHANT_ROLE`, which no build path ever set, and
@@ -882,6 +882,14 @@ export function IssueNotificationBell({ state, ...rest }: { state: IssueReadStat
   )
 }
 
+/**
+ * The topbar's workspace-metrics read, at module scope so that a re-render does
+ * not reset its staleness guard. `Topbar` only binds it; the chain — pending,
+ * outcome, failure, retry — is `createIssueReadSession` and is driven directly
+ * by `issue-read-state.test.ts`.
+ */
+const issueReadSession = createIssueReadSession({ load: fetchWorkspaceMetrics, describeError: describeApiError })
+
 export function IssueNotificationPanel({ state, items, onOpenIssue, onClose, onRetry }: {
   state: IssueReadState
   items: WorkspaceMetrics['riskItems']
@@ -969,11 +977,11 @@ function Topbar({
   const [passwordModalOpen, setPasswordModalOpen] = useState(false)
   const [passwordSubmitting, setPasswordSubmitting] = useState(false)
   const [passwordError, setPasswordError] = useState('')
-  const [issueMetrics, setIssueMetrics] = useState<WorkspaceMetrics | null>(null)
-  // The read's own outcome, kept apart from its result. It used to be discarded:
-  // the catch only set `issueMetrics` to `null`, which the panel rendered as
-  // 「暂无需要处理的问题」. 未配置 / 正在读取 / 读取失败 are three different facts and
-  // `resolveIssueReadState` renders each of them as itself.
+  // The read's outcome, kept as the three facts it actually is. They used to be
+  // one `WorkspaceMetrics | null`: the catch only set it to `null`, which the
+  // panel rendered as 「暂无需要处理的问题」. 未配置 / 正在读取 / 读取失败 are three
+  // different facts and `resolveIssueReadState` renders each of them as itself.
+  const [issueItems, setIssueItems] = useState<IssueReadOutcome['items']>(null)
   const [issueReadError, setIssueReadError] = useState('')
   const [issueReadPending, setIssueReadPending] = useState(Boolean(apiBaseUrl))
   const [issueReload, setIssueReload] = useState(0)
@@ -997,25 +1005,15 @@ function Topbar({
     }
   }, [accountMenuOpen])
   useEffect(() => {
-    if (!apiBaseUrl) {
-      setIssueMetrics(null)
-      setIssueReadError('')
-      setIssueReadPending(false)
-      return
-    }
-    let active = true
-    setIssueMetrics(null)
-    setIssueReadError('')
-    setIssueReadPending(true)
-    fetchWorkspaceMetrics(apiBaseUrl)
-      .then((result) => { if (active) { setIssueMetrics(result); setIssueReadPending(false) } })
-      .catch((cause) => {
-        if (!active) return
-        setIssueMetrics(null)
-        setIssueReadError(describeApiError(cause))
-        setIssueReadPending(false)
-      })
-    return () => { active = false }
+    // The read itself lives in `issue-read-state.ts`, where it can be driven
+    // with a real response and a real rejection. What stays here is the binding:
+    // the effect is one call to the session, and `issueReload` — bumped by the
+    // panel's 重新读取 button — is what makes the effect run again.
+    void issueReadSession.read(apiBaseUrl, (outcome) => {
+      setIssueItems(outcome.items)
+      setIssueReadError(outcome.error)
+      setIssueReadPending(outcome.loading)
+    })
   }, [apiBaseUrl, issueReload])
   const titles: Record<Page, string> = {
     overview: '运营概览',
@@ -1036,15 +1034,17 @@ function Topbar({
   // returns unbound and fixture records for reconciliation, but those are not
   // notifications for the currently signed-in merchant.
   // `null` — not `[]` — until the read answers. `[]` is a real answer.
-  const issueItems = issueMetrics === null ? null : issueMetrics.riskItems.filter(item => item.evidence?.unboundLocalData !== true && item.evidence?.fixtureData !== true)
-  const issueRead = resolveIssueReadState({ baseUrl: apiBaseUrl, items: issueItems, error: issueReadError, loading: issueReadPending })
+  const actionableIssues = actionableIssueItems(issueItems)
+  // From the settled outcome to the words: one call, so the chain under the bell
+  // is the chain `issue-read-state.test.ts` drives through a real response.
+  const issueRead = resolveIssueReadStateFromOutcome({ baseUrl: apiBaseUrl, outcome: { items: issueItems, error: issueReadError, loading: issueReadPending } })
   const openIssueDetail = (item: WorkspaceMetrics['riskItems'][number]) => {
     setNotificationOpen(false)
     setIssueDetail(item)
   }
   const notificationPanel = <IssueNotificationPanel
     state={issueRead}
-    items={issueItems ?? []}
+    items={actionableIssues ?? []}
     onOpenIssue={openIssueDetail}
     onClose={() => setNotificationOpen(false)}
     onRetry={() => setIssueReload((value) => value + 1)}
@@ -1694,6 +1694,12 @@ function MetricCard({
 }
 
 const UNREAD_METRIC = '未读取'
+/**
+ * A read that settled *without* an answer is not a read that answered "none".
+ * `UNREAD_METRIC` covers the read that has not come back yet; this is the one
+ * that came back as an error.
+ */
+const READ_FAILED_METRIC = '读取失败'
 
 /** Storage bytes are only rendered from the server quota projection. */
 function formatStorageGb(bytes: number) {
@@ -1980,13 +1986,34 @@ export function AccountDashboard({
   )
 }
 
-function TransactionDashboard({
+/** The count tag for a read that produced no number, named per mode. */
+function transactionCountLabel(read: IssueReadState): string {
+  if (read.count !== null) return `${read.count} 项待处理`
+  if (read.mode === 'read_error') return '读取失败'
+  if (read.mode === 'loading') return '读取中'
+  return `${UNREAD_METRIC} 待处理`
+}
+
+export function TransactionDashboard({
   onOpenIssues,
   issues,
+  read,
 }: {
   onOpenIssues: () => void
-  issues: WorkspaceMetrics['riskItems'] | null
+  issues: WorkspaceMetrics['riskItems']
+  /**
+   * The dashboard answers the same question as the topbar bell about the same
+   * `workspace.metrics` read, so it resolves that read with the same helper.
+   * It used to infer readiness from `issues === null` alone and print
+   * 「未读取」 while the bell beside it said 「工作区待处理问题读取失败：…」 —
+   * two conclusions about one request, and the wrong one was the reassuring
+   * one.
+   */
+  read: IssueReadState
 }) {
+  // Only `read.count` may produce a number: a count the helper did not measure
+  // stays off the page instead of being guessed from the list length.
+  const count = read.count
   return (
       <aside className="transaction-dashboard" aria-labelledby="transaction-dashboard-title">
         <div className="transaction-dashboard-heading">
@@ -1995,10 +2022,10 @@ function TransactionDashboard({
             <h2 id="transaction-dashboard-title">事务看板</h2>
             <p>集中查看需要处理的授权、素材与运营事项。</p>
           </div>
-          <span className="transaction-count">{issues === null ? `${UNREAD_METRIC} 待处理` : `${issues.length} 项待处理`}</span>
+          <span className="transaction-count">{transactionCountLabel(read)}</span>
         </div>
-        {issues === null ? (
-          <div className="account-all-clear"><RefreshCw size={28} /><strong>工作区事务尚未从服务端读取</strong></div>
+        {count === null ? (
+          <div className="account-all-clear"><RefreshCw size={28} /><strong>{read.notice}</strong></div>
         ) : issues.length ? (
           <div className="account-issue-list">
             {issues.map((issue, index) => (
@@ -2268,6 +2295,16 @@ export function Overview({
   const overviewIssues = metrics
     ? metrics.riskItems.filter((item) => item.evidence?.unboundLocalData !== true && item.evidence?.fixtureData !== true)
     : null
+  // `metricsError` starts empty and `metrics` starts null, so `items === null`
+  // already carries the pending state; the failure is the third fact the
+  // dashboard used to drop. The bell resolves this same `workspace.metrics`
+  // read through this same helper, so both surfaces now reach one conclusion.
+  const overviewIssueRead = resolveIssueReadState({
+    baseUrl,
+    items: overviewIssues,
+    error: metricsError,
+    loading: false,
+  })
   const approvedCount = metrics ? String(metrics.taskFunnel.approved ?? 0) : '—'
   const riskCount = metrics ? String(metrics.riskSummary.total) : '—'
   const highRiskCount = metrics
@@ -2369,7 +2406,7 @@ export function Overview({
           }
           stores={apiRows ? apiRows.filter((row) => row.status === '可读取' && row.accountId).map((row) => ({ key: `${row.platformId}-${row.accountId}`, name: row.shop, platform: row.name, mark: Array.from(row.name)[0] ?? '' })) : null}
         />
-        <TransactionDashboard onOpenIssues={goProducts} issues={overviewIssues} />
+        <TransactionDashboard onOpenIssues={goProducts} issues={overviewIssues ?? []} read={overviewIssueRead} />
       </div>
 
       <WorkspaceDataIntegrityNotice metrics={metrics} />
@@ -5481,6 +5518,11 @@ export function MaterialBrandFields({ value, onChange, label, logoLabel, leading
   const [draftColor, setDraftColor] = useState(value.color)
   const [assetAnalysisStatus, setAssetAnalysisStatus] = useState<'idle' | 'analyzing' | 'done' | 'empty'>('idle')
   useEffect(() => setDraftColor(value.color), [value.color])
+  // Local by design, and it says so. This reads the picked image with
+  // `FileReader` and keeps the data URL in component state — there is no request
+  // on this path, so the picker may not say 「上传 Logo」 and the output card may
+  // not call the result 「生效 Logo」. Both now say 「仅本地，未上传」 through
+  // `resolveBrandLogoFacts`, the same sentence the document row below uses.
   const updateLogo = (file?: File) => {
     if (!file) return
     const reader = new FileReader()
@@ -5519,7 +5561,7 @@ export function MaterialBrandFields({ value, onChange, label, logoLabel, leading
     {leadingCard}
     <div className="material-brand-logo-field">
       <span>{logoLabel ?? `${label} Logo`}</span>
-      <label htmlFor={logoInputId}><Upload size={14} />{value.logoUrl ? '更换 Logo' : '上传 Logo'}<input id={logoInputId} type="file" accept="image/*" multiple={false} onChange={(event) => updateLogo(event.target.files?.[0])} /></label>
+      <label htmlFor={logoInputId}><Upload size={14} />{value.logoUrl ? '重新选择 Logo' : '选择 Logo'}<input id={logoInputId} type="file" accept="image/*" multiple={false} onChange={(event) => updateLogo(event.target.files?.[0])} /></label>
     </div>
     <div className="material-brand-color-field"><span>品牌色</span><div><input type="color" value={/^#[0-9a-f]{6}$/i.test(draftColor) ? draftColor : value.color} onChange={(event) => setDraftColor(event.target.value)} /><label className="material-brand-color-code"><span>#</span><input aria-label={`${label}品牌色值`} value={draftColor.replace(/^#/, '')} maxLength={6} inputMode="text" onChange={(event) => setDraftColor(`#${event.target.value.replace(/[^0-9a-f]/gi, '').slice(0, 6)}`)} /></label><button type="button" disabled={!/^#[0-9a-f]{6}$/i.test(draftColor) || draftColor.toLowerCase() === value.color.toLowerCase()} onClick={() => onChange({ ...value, color: draftColor })}>确定</button></div></div>
     <div className="material-brand-asset-file"><span>品牌资产文档</span><label htmlFor={assetInputId}><Upload size={14} /><strong>{assetAnalysisStatus === 'analyzing' ? '正在本机解析文档…' : '选择文档并解析'}</strong><input id={assetInputId} type="file" accept=".txt,.md,.csv,.json,.doc,.docx,.pdf,.zip" multiple={false} onChange={(event) => { void updateAssetFile(event.target.files?.[0]) }} /></label><small className={`material-brand-analysis-status ${assetAnalysisStatus}`}>{assetAnalysisStatus === 'analyzing' ? '正在本机提取用户画像与品牌卖点；不会上传服务端' : assetAnalysisStatus === 'done' ? BRAND_DOCUMENT_LOCAL_ANALYSIS : assetAnalysisStatus === 'empty' ? '未识别到可填写内容，请在下方手动补充' : ''}</small></div>
@@ -5529,16 +5571,19 @@ export function MaterialBrandFields({ value, onChange, label, logoLabel, leading
 }
 
 export function MaterialBrandOutput({ value, label, enabled, onEnabledChange, context, transitionLabel }: { value: MaterialBrandSettings; label: string; enabled: boolean; onEnabledChange?: (enabled: boolean) => void; context?: { label: string; value: string }; transitionLabel?: string }) {
-  // The card may only present a colour the workspace actually configured, and a
-  // document name only as far as the server is concerned — see
-  // `material-brand-facts.ts`.
+  // The card may only present a colour the workspace actually configured, a
+  // document name only as far as the server is concerned, and a Logo only as far
+  // as it actually got — see `material-brand-facts.ts`. The Logo row and the
+  // document row are both read in this browser and never sent anywhere, so they
+  // print the same sentence.
   const colorFacts = resolveBrandColorFacts(value.color)
   const documentFacts = resolveBrandDocumentFacts(value.assetFileName)
+  const logoFacts = resolveBrandLogoFacts(value.logoUrl)
   return <aside className={`material-brand-output${enabled ? '' : ' disabled'}${transitionLabel ? ' switching' : ''}`} aria-label={`${label}${enabled ? '已经启用' : '已经停用'}的配置`}>
-    <div className="material-brand-output-heading"><span>BRAND PROFILE</span><strong>当前品牌资产</strong>{onEnabledChange ? <div className="material-brand-output-switch" aria-label={`${label}启用状态`}><button type="button" className={enabled ? 'active' : ''} onClick={() => onEnabledChange(true)}>启用{label}</button><button type="button" className={!enabled ? 'active' : ''} onClick={() => onEnabledChange(false)}>停用{label}</button></div> : <small className="material-brand-output-live">上传后实时更新</small>}</div>
+    <div className="material-brand-output-heading"><span>BRAND PROFILE</span><strong>当前品牌资产</strong>{onEnabledChange ? <div className="material-brand-output-switch" aria-label={`${label}启用状态`}><button type="button" className={enabled ? 'active' : ''} onClick={() => onEnabledChange(true)}>启用{label}</button><button type="button" className={!enabled ? 'active' : ''} onClick={() => onEnabledChange(false)}>停用{label}</button></div> : <small className="material-brand-output-live">本地预览，不会写入服务端</small>}</div>
     <div className={`material-brand-output-card${context ? ' has-context' : ''}`} style={{ '--brand-preview-color': colorFacts.value || 'transparent' } as CSSProperties}>
       {context && <div className="material-brand-output-context"><span>{context.label}</span><strong>{context.value}</strong></div>}
-      <div className="material-brand-output-item material-brand-output-logo"><span>品牌 Logo</span><div>{value.logoUrl ? <img src={value.logoUrl} alt={`${label}生效 Logo`} /> : <><ImageIcon size={24} /><small>{BRAND_UNCONFIGURED}</small></>}</div></div>
+      <div className="material-brand-output-item material-brand-output-logo"><span>品牌 Logo</span><div>{logoFacts.picked ? <><img src={value.logoUrl} alt={`${label} ${logoFacts.imageAlt}`} /><small>{logoFacts.label}</small></> : <><ImageIcon size={24} /><small>{BRAND_UNCONFIGURED}</small></>}</div></div>
       <div className="material-brand-output-item material-brand-output-color"><span>品牌主色</span><div>{colorFacts.configured ? <><i /><strong>{colorFacts.value}</strong></> : <small>{colorFacts.label}</small>}</div></div>
       <div className="material-brand-output-item material-brand-output-copy"><span>用户画像</span><p>{value.persona.trim() || '尚未填写，将在生成内容时使用上一级配置。'}</p></div>
       <div className="material-brand-output-item material-brand-output-copy"><span>品牌卖点</span><p>{value.sellingPoints.trim() || '尚未填写，将在生成内容时使用上一级配置。'}</p></div>
@@ -6430,7 +6475,80 @@ export function MaterialLibraryWorkspace({
   )
 }
 
-function Products({
+/**
+ * How the catalogue prints a count that comes out of a server read.
+ *
+ * `null` is not `0`. Both numbers in the header are projections of a read that
+ * may not have answered — the readable stores come from
+ * `/v1/platform-accounts`, the product total from `/v1/products` — and the
+ * catalogue used to fold an unanswered read into `0`, so a failed read was
+ * rendered as 「已连接店铺 0」 / 「当前目录 0 个商品」 next to panels that said
+ * both reads had failed. `failed` separates 「读取失败」 from 「未读取」; a read
+ * that answered, including one that answered `0`, is printed as its count.
+ *
+ * See `catalog-read-honesty.test.ts`.
+ */
+export function resolveCatalogReadCountText({ count, failed }: {
+  /** The read's answer, or `null` while it has not answered. */
+  count: number | null
+  /** Whether the read settled without an answer, as opposed to still being in flight. */
+  failed: boolean
+}): string {
+  if (count !== null) return count.toLocaleString()
+  return failed ? READ_FAILED_METRIC : UNREAD_METRIC
+}
+
+/**
+ * The sync control — its label and the hint under it — for one store-read state.
+ *
+ * Only a store read that *answered* can say 「等待店铺连接」 or 「先连接一个可读取
+ * 的店铺」: those sentences claim the workspace has no readable store, which a
+ * read that failed or has not come back cannot know. The four states are kept
+ * apart here because the shipped bug printed the failed read as that claim.
+ */
+export function resolveCatalogSyncControl({
+  baseUrl,
+  syncableStores,
+  accountsLoading,
+  accountsError,
+  syncing,
+  idleHint,
+}: {
+  /** The configured API, or `undefined` for the offline demo. */
+  baseUrl?: string
+  /** Syncable stores as the read answered them, or `null` while it has not answered. */
+  syncableStores: number | null
+  accountsLoading: boolean
+  accountsError: string
+  syncing: boolean
+  /** What the hint says once the store read has answered (or with no API at all). */
+  idleHint: string
+}): { label: string; hint: string } {
+  const label = syncing
+    ? '同步全部店铺…'
+    : accountsLoading
+      ? '正在发现店铺…'
+      : !baseUrl
+        ? '演示数据'
+        : syncableStores === 0
+          ? '等待店铺连接'
+          : syncableStores === null
+            ? accountsError
+              ? READ_FAILED_METRIC
+              : '店铺连接未读取'
+            : '同步全部店铺'
+  const hint =
+    baseUrl && !accountsLoading && syncableStores === 0
+      ? '下一步：先连接一个可读取的店铺，再回来同步商品。'
+      : baseUrl && !accountsLoading && syncableStores === null
+        ? accountsError
+          ? '下一步：重试店铺发现，确认店铺身份后再同步商品。'
+          : '店铺连接未读取，无法判断是否已连接可读取的店铺。'
+        : idleHint
+  return { label, hint }
+}
+
+export function Products({
   baseUrl,
   modelStatus,
   modelStatusRead,
@@ -6489,7 +6607,9 @@ function Products({
     }
   }, [platformMenuOpen])
   const [productPage, setProductPage] = useState(0)
-  const [productTotal, setProductTotal] = useState(0)
+  // `null` — not `0` — until `/v1/products` answers. The total is what the
+  // header's 「当前目录 N 个商品」 is drawn from, and a failed read has no total.
+  const [productTotal, setProductTotal] = useState<number | null>(null)
   const [groupCreating, setGroupCreating] = useState(false)
   const [groupMessage, setGroupMessage] = useState('')
   const [importOpen, setImportOpen] = useState(false)
@@ -6563,7 +6683,9 @@ function Products({
       .catch((cause: Error) => {
         if (requestId === productsRequestId.current) {
           setRemoteProducts(null)
-          setProductTotal(0)
+          // A failed read leaves the total unknown, not zero: `0` here became
+          // 「当前目录 0 个商品」 on a page that said the list was unavailable.
+          setProductTotal(null)
           setError(`商品读取失败：${describeApiError(cause)} 当前不会执行任何外部写入。`)
         }
       })
@@ -6713,10 +6835,12 @@ function Products({
   // Keep the catalog readable at desktop density and align with the backend
   // list contract: every page is a stable 20-row window.
   const productPageSize = 20
+  // `null` while `/v1/products` has not answered; the offline demo reads its
+  // local fixture rows, so it always has a number here.
   const effectiveProductTotal = baseUrl ? productTotal : visible.length
   const productPageCount = Math.max(
     1,
-    Math.ceil(effectiveProductTotal / productPageSize),
+    Math.ceil((effectiveProductTotal ?? 0) / productPageSize),
   )
   const pagedVisible = baseUrl
     ? visible
@@ -6746,9 +6870,15 @@ function Products({
     baseUrl && !loading && remoteProducts === null,
   )
   const showAssetLibrary = initialEntry !== 'products'
-  const syncableAccountCount = (accounts ?? []).filter(
-    (account) => account.readEnabled && Boolean(account.accountId),
-  ).length
+  // `null` — not `0` — while `/v1/platform-accounts` has not answered. `accounts`
+  // is `null` for a read in flight and for a read that failed, and both used to
+  // be counted as "no readable store", which the page then acted on.
+  const syncableAccountCount =
+    accounts === null
+      ? null
+      : accounts.filter(
+          (account) => account.readEnabled && Boolean(account.accountId),
+        ).length
   const sync = async () => {
     if (!baseUrl) return
     const resolution = resolveStoreSyncTargets(accounts)
@@ -6784,6 +6914,10 @@ function Products({
         setProductTotal(refreshed.total)
       } catch (cause) {
         setRemoteProducts(null)
+        // The refresh failed, so the list is gone and so is the total it came
+        // with; keeping the previous total would draw a count beside a list the
+        // page has just declared unavailable.
+        setProductTotal(null)
         setSelectedTargets([])
         failures.push(`商品列表刷新失败：${describeApiError(cause)}`)
       }
@@ -6883,6 +7017,18 @@ function Products({
     Boolean(baseUrl),
     selectedTargets.length,
   )
+  // The sync control's label and hint are resolved from the store read's state
+  // so that a read that never answered cannot be phrased as "no store to sync".
+  const syncControl = resolveCatalogSyncControl({
+    baseUrl,
+    syncableStores: syncableAccountCount,
+    accountsLoading,
+    accountsError,
+    syncing,
+    idleHint: batchReadiness.canCreateGroup
+      ? '已满足批量条件：将按商品 + 平台 + 店铺拆成独立子任务。'
+      : batchReadiness.nextStep,
+  })
   const consistencyItems = resolveDataConsistency({
     apiConfigured: Boolean(baseUrl),
     productsLoaded: !loading && !productListUnavailable,
@@ -7058,29 +7204,17 @@ function Products({
                 loading || syncing || accountsLoading ? 'spin' : undefined
               }
             />
-            {syncing
-              ? '同步全部店铺…'
-              : accountsLoading
-                ? '正在发现店铺…'
-                : !baseUrl
-                  ? '演示数据'
-                  : syncableAccountCount === 0
-                    ? '等待店铺连接'
-                    : '同步全部店铺'}
+            {syncControl.label}
           </button>
           <small id="batch-action-help" className="action-help">
-            {syncableAccountCount === 0 && baseUrl && !accountsLoading
-              ? '下一步：先连接一个可读取的店铺，再回来同步商品。'
-              : batchReadiness.canCreateGroup
-                ? '已满足批量条件：将按商品 + 平台 + 店铺拆成独立子任务。'
-                : batchReadiness.nextStep}
+            {syncControl.hint}
           </small>
         </div>
       </section>
       <section className="products-summary" aria-label="商品目录概览">
         <div className="products-summary-main">
           <span className="section-kicker">当前目录</span>
-          <strong>{effectiveProductTotal.toLocaleString()}</strong>
+          <strong>{resolveCatalogReadCountText({ count: effectiveProductTotal, failed: productListUnavailable })}</strong>
           <span>个商品</span>
         </div>
         <div className="products-summary-item">
@@ -7089,7 +7223,7 @@ function Products({
         </div>
         <div className="products-summary-item">
           <span>已连接店铺</span>
-          <b>{syncableAccountCount}</b>
+          <b>{resolveCatalogReadCountText({ count: syncableAccountCount, failed: Boolean(accountsError) })}</b>
         </div>
         <div className="products-summary-item">
           <span>已选择任务目标</span>
@@ -7301,7 +7435,7 @@ function Products({
               className={'filter ' + (productFilter === 'all' ? 'active' : '')}
               onClick={() => setProductFilter('all')}
             >
-              全部 {productStats.total}
+              全部{productStats.total === null ? '' : ` ${productStats.total}`}
             </button>
             <button
               className={
@@ -7535,7 +7669,11 @@ function Products({
           <span>
             {effectiveProductTotal
               ? `显示 ${productPage * productPageSize + 1}–${Math.min((productPage + 1) * productPageSize, effectiveProductTotal)} / ${effectiveProductTotal} 个匹配商品`
-              : '显示 0 个商品'}
+              : effectiveProductTotal === null
+                ? productListUnavailable
+                  ? '商品列表暂不可用'
+                  : '正在读取商品列表…'
+                : '显示 0 个商品'}
           </span>
           <div>
             <button

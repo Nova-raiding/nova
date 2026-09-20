@@ -31,12 +31,13 @@
  * check that cannot fail, and an empty check reads as a passing one — the exact
  * false confidence this file was written to remove.
  */
+import { execFileSync } from 'node:child_process'
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
-import { evidenceGatesOnBinding, unsupportedRequires, type InvariantMutation } from './registry.js'
+import { EVERY_ASSERTION_SKIPPED, evidenceGatesOnBinding, stripAnsi, unsupportedRequires, type InvariantMutation } from './registry.js'
 import { findRuleMatches, missingAuditFields, ruleIsVacuous, ruleMatchesItsSample, scanFiles, symbolReferences } from './uniqueness.js'
 
 const root = resolve(import.meta.dirname, '../..')
@@ -272,6 +273,72 @@ describe('invariant registry', () => {
       'a row claims a binding its own evidence does not gate itself on — the gate would report it NOT RUN and `npm run check` would tolerate it, which turns a broken guard into a non-finding',
     ).toEqual([])
   })
+
+  /**
+   * `unsupportedRequires` reads the *source* of a `requires` row and says the
+   * evidence is written to stand down. It cannot say the file loads — and the
+   * gate's observation of these rows was a non-zero exit every single time,
+   * because `vitest.postgres.config.ts` refuses to load without the binding. A
+   * non-zero exit cannot tell "no database here" apart from "this file does not
+   * compile", and it was tolerated as the first either way, so a broken evidence
+   * file was reported NOT RUN by a run that exited 0.
+   *
+   * So the claim is observed rather than inferred: the evidence is run without
+   * the binding under a configuration that loads regardless, and the run has to
+   * report every collected assertion skipped. That is the same observable the
+   * gate reads (`EVERY_ASSERTION_SKIPPED`), so the two cannot drift.
+   *
+   * The unit is the evidence file, not the row: gating is a property of the file,
+   * so one run per distinct file covers every row that names it.
+   */
+  it('observes the evidence of every requires row stand down without its binding', async () => {
+    const { mutations } = await loadMutations()
+    const required = mutations.filter(mutation => mutation.requires?.trim())
+    const evidenceFiles = [...new Set(required.map(mutation => mutation.evidence))].sort()
+    expect(evidenceFiles.length, 'no row declares a binding, so this check could never fail').toBeGreaterThan(0)
+    // The observable is narrow on purpose: a file that ran *some* of its
+    // assertions is not standing down, and must not be read as if it were.
+    expect(EVERY_ASSERTION_SKIPPED.test('      Tests  2 skipped (2)'), 'the observable no longer sees a fully skipped file').toBe(true)
+    expect(EVERY_ASSERTION_SKIPPED.test('      Tests  2 passed | 1 skipped (3)'), 'the observable accepts a partially skipped file, so a half-gated evidence would pass for a fully gated one').toBe(false)
+    // The launcher hands its child a whitelisted environment, and there vitest
+    // colours the summary even through a pipe. Validating only against a plain
+    // literal is how this observable came to match nothing on exactly the
+    // machines the tolerant mode exists for.
+    const coloured = '\u001B[2m      Tests \u001B[22m \u001B[33m2 skipped\u001B[39m\u001B[90m (2)\u001B[39m'
+    expect(EVERY_ASSERTION_SKIPPED.test(coloured), 'the observable does not see a coloured summary as fully skipped').toBe(false)
+    expect(EVERY_ASSERTION_SKIPPED.test(stripAnsi(coloured)), 'the observable does not see a de-coloured summary as fully skipped').toBe(true)
+
+    const environment: NodeJS.ProcessEnv = { ...process.env }
+    for (const mutation of required) delete environment[mutation.requires!.trim()]
+    // A leftover fixture binding is an activation, not a name: clear the run id
+    // too, or the PostgreSQL config this deliberately bypasses starts looking
+    // like it should have been used.
+    delete environment.MERCHANT_ISOLATED_POSTGRES_RUN_ID
+    delete environment.MERCHANT_ISOLATED_POSTGRES_ALL
+
+    const offenders: string[] = []
+    for (const evidence of evidenceFiles) {
+      const postgres = evidence.endsWith('.postgres.test.ts')
+      const args = ['vitest', 'run', evidence, '--reporter=default', ...(postgres ? ['--exclude', 'node_modules/**'] : [])]
+      let status = 0
+      let output = ''
+      try {
+        output = execFileSync('npx', args, { cwd: root, stdio: 'pipe', encoding: 'utf8', env: environment, maxBuffer: 32 * 1024 * 1024 })
+      } catch (error) {
+        const failure = error as { status?: number; stdout?: string; stderr?: string }
+        status = failure.status ?? -1
+        output = `${failure.stdout ?? ''}\n${failure.stderr ?? ''}`
+      }
+      if (!EVERY_ASSERTION_SKIPPED.test(stripAnsi(output))) {
+        const summary = output.split('\n').filter(line => /^\s*(?:Tests|Test Files)\s/u.test(line)).join(' | ')
+        offenders.push(`${evidence} (exit ${status}): ${summary || output.trim().split('\n').slice(-6).join(' | ')}`)
+      }
+    }
+    expect(
+      offenders,
+      'a `requires` row names an evidence file that does not report every assertion skipped without the binding — the gate has no way to observe the block it is asked to tolerate there, and a file that cannot be collected at all is a defect in the evidence rather than a missing database',
+    ).toEqual([])
+  }, 180_000)
 
   it('rejects evidence that guards by string match, by mocking, or by skipping', async () => {
     const { mutations } = await loadMutations()

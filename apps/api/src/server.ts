@@ -16323,6 +16323,13 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (isPlatformAggregate && (accountId || entityType || entityId)) throw new DomainError('OPS_CUSTOMER_ACCESS_REQUIRED', '平台告警聚合不接受店铺或客户对象筛选；请切换到明确工作区授权会话', 403)
       const targetWorkspaceIds = isPlatformAggregate && persistence.listWorkspaceIds ? await persistence.listWorkspaceIds() : [workspaceId]
       const alerts: OperationalAlert[] = []
+      // A tenant whose alert evaluation throws is skipped, not silently dropped
+      // from the aggregate's meaning. Without this count the response for a
+      // platform aggregate where every tenant failed is byte-identical to the
+      // response for a platform where nothing is wrong — the exact "failure
+      // collapsed into all clear" shape the sibling summaries already refuse
+      // (`ops.tasks.summary.failedWorkspaceCount`, `ops.model-usage.summary`).
+      let failedWorkspaceCount = 0
       for (let offset = 0; offset < targetWorkspaceIds.length; offset += 24) {
         const batch = await Promise.all(targetWorkspaceIds.slice(offset, offset + 24).map(async targetWorkspaceId => {
           let repository: OperationalAlertsRepository
@@ -16333,6 +16340,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
             // alert read. The persisted alert stream remains queryable and
             // the next reconciliation can repair the source record.
             if (!isPlatformAggregate) throw error
+            failedWorkspaceCount += 1
             repository = persistence.alerts ?? memoryAlerts
           }
           return repository.list(targetWorkspaceId, status, 500)
@@ -16367,7 +16375,18 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         evidence: { scope: 'platform', count: group.count, notification_delivery: group.delivery },
         nextAction: '切换到明确工作区授权会话后查看客户告警明细。',
       }))
-      return result({ items: items.slice(0, Math.min(500, Math.max(1, limit))), aggregate: true, truncated: items.length > limit })
+      return result({
+        items: items.slice(0, Math.min(500, Math.max(1, limit))),
+        aggregate: true,
+        truncated: items.length > limit,
+        // `workspaceCount` is the fan-out the aggregate claims to cover and
+        // `failedWorkspaceCount` the part of it that could not be evaluated.
+        // `partial` names the state once: a caller that only knows the old
+        // shape must not read a degraded read as a complete one.
+        workspaceCount: targetWorkspaceIds.length,
+        failedWorkspaceCount,
+        partial: failedWorkspaceCount > 0,
+      })
     }
     case 'ops.alert.ack': {
       const actorId = requireWorkspaceDataRole(req)

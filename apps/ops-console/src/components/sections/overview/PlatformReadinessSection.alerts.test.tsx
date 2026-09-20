@@ -1,7 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { OpsConsoleModel } from "../../../hooks/useOpsConsoleModel";
-import type { AlertNotificationReadiness, OperationalAlert } from "../../../types/ops";
+import type { AlertNotificationReadiness, OperationalAlert, OpsSession } from "../../../types/ops";
+import { canViewDomain, createAuthorizationProjection } from "../../../authz/authorization.js";
+import { createAlertPoller, latestRefreshAt } from "../../../hooks/alertPolling.js";
 import { PlatformReadinessSection, alertCountPresentation } from "./PlatformReadinessSection.js";
 
 const alert = (overrides: Partial<OperationalAlert>): OperationalAlert => ({
@@ -236,6 +238,70 @@ describe("alert panel unacknowledged count", () => {
     const tag = countTag(markup)!;
     expect(tagLabel(tag)).toBe("1 条未确认");
     expect(tagColor(tag)).toBe("red");
+  });
+});
+
+describe("alert count over a poll that read nothing", () => {
+  /**
+   * The 60s timer and the window-focus handler both call `refreshAlerts`
+   * through `createAlertPoller`, so the panel's freshness stamp is only as
+   * honest as the poller's handling of a poll that declined to read.
+   *
+   * Both inputs are the real ones: a session whose active workbench is
+   * `workspace` (so the platform-scoped `marketing.summary.read` is dropped
+   * from the allow set and `refreshAlerts` returns early without issuing a
+   * request), the real `createAlertPoller`, and the same
+   * `latestRefreshAt(...)` → `alertCountPresentation(...)` pair the panel
+   * renders. A DOM mount cannot run the effect in this repo, so the
+   * computation the panel performs is asserted directly.
+   */
+  const workspaceWorkbenchSession: OpsSession = {
+    actor_id: "actor-1",
+    workspace_id: "ws-1",
+    roles: [],
+    workspace_granted: true,
+    workbench: "workspace",
+    effective_permissions: [
+      { capability: "workspace.summary.read", effect: "allow", scope: { type: "workspace", ids: ["ws-1"] } },
+      { capability: "marketing.summary.read", effect: "allow", scope: { type: "platform" } },
+    ],
+  };
+
+  const panelTagAfterRefresh = async () => {
+    const authorization = createAuthorizationProjection(workspaceWorkbenchSession, true);
+    let requests = 0;
+    const refreshAlerts = async (): Promise<boolean> => {
+      if (!authorization.can("marketing.summary.read")) return false;
+      requests += 1;
+      return true;
+    };
+    let lastRefreshedAt: Date | undefined;
+    const poller = createAlertPoller({
+      poll: refreshAlerts,
+      onRefreshed: (at) => { lastRefreshedAt = at; },
+      now: () => new Date(2026, 8, 20, 2, 0, 0),
+    });
+    const refreshed = await poller.refresh();
+    // The full console load takes the same gate, so `alertsLoadedAt` is unset.
+    const alertsReadAt = latestRefreshAt(undefined, lastRefreshedAt);
+    return { requests, refreshed, tag: alertCountPresentation(0, { error: undefined, loadedAt: alertsReadAt }), alertsReadAt };
+  };
+
+  it("requires the capability that the workspace workbench removes", () => {
+    const authorization = createAuthorizationProjection(workspaceWorkbenchSession, true);
+    // The panel is reachable (`platform.summary.read` / `workspace.summary.read`
+    // open `overview`) while the alert dataset is not.
+    expect(canViewDomain(authorization, "overview")).toBe(true);
+    expect(authorization.can("marketing.summary.read")).toBe(false);
+  });
+
+  it("leaves the count unmeasured instead of printing a green zero", async () => {
+    const { requests, refreshed, tag, alertsReadAt } = await panelTagAfterRefresh();
+    // The user-visible claim first: the tag is what the operator reads.
+    expect(tag).toEqual({ color: "default", label: "未确认数读取中" });
+    expect(requests).toBe(0);
+    expect(alertsReadAt).toBeUndefined();
+    expect(refreshed).toBe(false);
   });
 });
 

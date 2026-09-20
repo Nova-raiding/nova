@@ -25,6 +25,11 @@ export function AssetRightsPanel({ model }: AssetRightsPanelProps) {
     knowledgeAssets,
     updateKnowledgeAsset,
   } = model;
+  // Same distinction as the rules table: an unread asset list must not read as
+  // "尚无知识资产".
+  const assetsEmptyText = knowledgeAssets === undefined
+    ? "知识资产尚未读取；空列表不代表没有资产——请确认本次读取未失败，或重新加载。"
+    : "尚无知识资产；录入后仍需完成确认与版权状态审核";
 
   return (
     <>
@@ -71,7 +76,7 @@ export function AssetRightsPanel({ model }: AssetRightsPanelProps) {
         rowKey="id"
         pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         dataSource={knowledgeAssets}
-        locale={{ emptyText: "尚无知识资产；录入后仍需完成确认与版权状态审核" }}
+        locale={{ emptyText: assetsEmptyText }}
         scroll={{ x: 760 }}
         columns={[
           { title: "名称", dataIndex: "name" },

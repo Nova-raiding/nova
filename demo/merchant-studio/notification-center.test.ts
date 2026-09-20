@@ -4,11 +4,21 @@ import { describe, expect, it } from 'vitest'
 const appSource = readFileSync(new URL('./src/App.tsx', import.meta.url), 'utf8')
 const styleSource = readFileSync(new URL('./src/styles.css', import.meta.url), 'utf8')
 
+/**
+ * Structural assertions on App.tsx. These pin *where* the notification centre
+ * is wired, not what it does — an earlier revision of the line below matched
+ * `fetchWorkspaceMetrics(apiBaseUrl)`, which a refactor into
+ * `issueReadSession.read(...)` legitimately removed while the behaviour stayed
+ * correct. The behaviour of that read chain is covered by
+ * `src/issue-read-state.test.ts` against captured response shapes; when a
+ * literal here goes stale, re-anchor it rather than concluding the feature
+ * regressed.
+ */
 describe('merchant overview notification center', () => {
   it('moves the action queue into the top-right notification trigger', () => {
     expect(appSource).toContain("<Bell size={18}")
     expect(appSource).toContain('<Dropdown trigger={[\'click\']} placement="bottomRight"')
-    expect(appSource).toContain('fetchWorkspaceMetrics(apiBaseUrl)')
+    expect(appSource).toContain('issueReadSession.read(apiBaseUrl')
     expect(appSource).toContain('onOpenIssues={() => navigateTo(\'products\', { clearContext: true })}')
     expect(appSource).not.toContain('issue-queue-panel')
   })

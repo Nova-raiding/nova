@@ -8,9 +8,12 @@ import {
   BRAND_DOCUMENT_LOCAL_ONLY,
   BRAND_DOCUMENT_NONE,
   BRAND_DOCUMENT_PENDING,
+  BRAND_LOCAL_ONLY,
+  BRAND_LOGO_LOCAL_ONLY,
   BRAND_UNCONFIGURED,
   resolveBrandColorFacts,
   resolveBrandDocumentFacts,
+  resolveBrandLogoFacts,
 } from './material-brand-facts'
 import platformAccountsCapture from './fixtures/platform-accounts.capture.json'
 import productsCapture from './fixtures/products.capture.json'
@@ -47,6 +50,13 @@ afterEach(() => vi.unstubAllGlobals())
 const settings = (color: string, assetFileName: string) => ({ logoUrl: '', color, persona: '', sellingPoints: '', personaFileName: '', sellingPointsFileName: '', assetFileName })
 const card = (color: string, assetFileName: string) => renderToStaticMarkup(createElement(MaterialBrandOutput, {
   value: settings(color, assetFileName),
+  label: '全局配置',
+  enabled: true,
+}))
+/** The same card with an image the merchant picked in this browser. */
+const pickedLogo = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=='
+const cardWithLogo = (assetFileName = '') => renderToStaticMarkup(createElement(MaterialBrandOutput, {
+  value: { ...settings('', assetFileName), logoUrl: pickedLogo },
   label: '全局配置',
   enabled: true,
 }))
@@ -103,6 +113,81 @@ describe('a locally picked document is never called received', () => {
     // The literal may only live in the module that documents why it is true.
     expect(cardSource).not.toContain('已接收')
     expect(styles).not.toContain('已接收')
+  })
+})
+
+/**
+ * The same card called the document 「仅本地，未上传」 and the Logo 「生效」.
+ *
+ * Live reproduction (real browser behind a request-logging proxy, 2026-09-20):
+ * picking `brand-logo-probe.png` on 品牌资产 produced **zero** requests, and the
+ * 全局/店铺/系列 cards then rendered `alt="…生效 Logo"` — while the document row of
+ * that same card, after `brand-doc.txt` was picked on the same page in the same
+ * session, read 「brand-doc.txt · 仅本地，未上传」. Two rows, one origin (a
+ * `FileReader` reading a local file into React state), two opposite claims.
+ */
+describe('a Logo read in this browser is never called 生效', () => {
+  it('reports a picked Logo as local and unsent, because no request is made', () => {
+    expect(resolveBrandLogoFacts(pickedLogo)).toEqual({
+      picked: true,
+      uploaded: false,
+      label: '仅本地，未上传',
+      imageAlt: 'Logo 本地预览（仅本地，未上传）',
+    })
+    expect(resolveBrandLogoFacts('')).toEqual({ picked: false, uploaded: false, label: BRAND_UNCONFIGURED, imageAlt: '' })
+    expect(resolveBrandLogoFacts('   ')).toMatchObject({ picked: false, label: BRAND_UNCONFIGURED })
+  })
+
+  it('prints the same sentence as the document row of the same card', () => {
+    // The defect was these two rows disagreeing, so the assertion is that they
+    // agree on one shared literal rather than on two copies of it.
+    expect(BRAND_LOGO_LOCAL_ONLY).toBe(BRAND_DOCUMENT_LOCAL_ONLY)
+    const html = cardWithLogo('brand-doc.txt')
+    expect(html).toContain('brand-doc.txt')
+    expect(html).toContain(pickedLogo)
+    // One occurrence for the Logo row, one for the Logo preview's alt, one for
+    // the document row — and no state where one of them says something else.
+    const sentences = html.split(BRAND_LOCAL_ONLY).length - 1
+    expect(sentences).toBe(3)
+    expect(html).not.toContain(BRAND_DOCUMENT_PENDING)
+  })
+
+  it('renders the shipped claim for no Logo this pane can produce', () => {
+    // The mutation this catches is the shipped code: `alt={`${label}生效 Logo`}`.
+    const html = cardWithLogo()
+    expect(html).not.toContain('生效')
+    expect(html).toContain('Logo 本地预览（仅本地，未上传）')
+    expect(html).toMatch(/alt="全局配置 Logo 本地预览（仅本地，未上传）"/u)
+    // The scope label survives, so four stacked cards stay distinguishable.
+    expect(html).toContain('全局配置')
+  })
+
+  it('cannot claim an upload while the Logo path makes no server call', () => {
+    // `updateLogo` is a `FileReader` and nothing else. Same shape as the document
+    // guard above: the absence of a request is not observable from a rendered
+    // string, so the pane is read for the calls that would make 「仅本地，未上传」
+    // a lie. (The absence itself was verified live, in a browser, not here.)
+    const pane = appSource.slice(appSource.indexOf('function MaterialBrandFields('), appSource.indexOf('type RecycleMaterialItem'))
+    const updateLogo = pane.slice(pane.indexOf('const updateLogo ='), pane.indexOf('const updateAssetFile ='))
+    expect(updateLogo.length).toBeGreaterThan(200)
+    expect(updateLogo).toContain('new FileReader()')
+    for (const serverCall of ['fetch(', 'uploadAsset(', 'saveBrandProfile(', 'extractBrandProfile(', 'XMLHttpRequest']) {
+      expect(updateLogo, `${serverCall} would make 「${BRAND_LOGO_LOCAL_ONLY}」 a lie`).not.toContain(serverCall)
+    }
+    // ... and the picker does not offer an upload it cannot perform.
+    const fields = renderToStaticMarkup(createElement(MaterialBrandFields, { value: settings('', ''), onChange: () => undefined, label: '全局' }))
+    expect(fields).toContain('选择 Logo')
+    expect(fields).not.toContain('上传 Logo')
+    expect(renderToStaticMarkup(createElement(MaterialBrandFields, { value: { ...settings('', ''), logoUrl: pickedLogo }, onChange: () => undefined, label: '全局' }))).toContain('重新选择 Logo')
+  })
+
+  it('routes the card through the resolver instead of an inline claim', () => {
+    const cardSource = appSource.slice(appSource.indexOf('export function MaterialBrandOutput'), appSource.indexOf('type RecycleMaterialItem'))
+    expect(cardSource).toContain('resolveBrandLogoFacts(value.logoUrl)')
+    expect(cardSource).toContain('logoFacts.label')
+    // The claim may only live in the module that documents why it is false.
+    expect(cardSource).not.toContain('生效')
+    expect(styles).not.toContain('生效 Logo')
   })
 })
 

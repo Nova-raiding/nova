@@ -541,13 +541,20 @@ export function useOpsConsoleModel() {
   const [ruleSyncLoading, setRuleSyncLoading] = useState(false);
   const [ruleMutationKey, setRuleMutationKey] = useState<string>();
   const ruleMutationInFlight = useRef(false);
-  const [knowledgeRules, setKnowledgeRules] = useState<Rule[]>([]);
-  const [knowledgeAssets, setKnowledgeAssets] = useState<KnowledgeAsset[]>([]);
+  // `undefined` is the knowledge datasets' "not read" state, and it is not the
+  // same statement as `[]`. `authorizedOptional` answers `undefined` both when
+  // the read failed and when the capability for it is missing under the active
+  // workbench, and `applyLoadedValue` leaves the previous value untouched on a
+  // failed refresh — so seeding these as `[]` made the governance section print
+  // a green “0 条待处理建议” and four zeroed statistics over a knowledge read
+  // that never landed. Rendering a measured zero requires a read that landed.
+  const [knowledgeRules, setKnowledgeRules] = useState<Rule[]>();
+  const [knowledgeAssets, setKnowledgeAssets] = useState<KnowledgeAsset[]>();
   const [brandPreference, setBrandPreference] = useState<BrandPreference>();
   const [learningSuggestions, setLearningSuggestions] = useState<
     LearningSuggestion[]
-  >([]);
-  const [competitors, setCompetitors] = useState<CompetitorAnalysis[]>([]);
+  >();
+  const [competitors, setCompetitors] = useState<CompetitorAnalysis[]>();
   const [workspaceMetrics, setWorkspaceMetrics] = useState<WorkspaceMetrics>();
   const [storageReconciliationWorkspaces, setStorageReconciliationWorkspaces] = useState<NonNullable<WorkspaceMetrics["storageReconciliation"]>[]>([]);
   const [marketingQueue, setMarketingQueue] = useState<MarketingQueue>({
@@ -560,6 +567,11 @@ export function useOpsConsoleModel() {
     uploadedAssetRisks: [],
     imageExecutions: [],
   });
+  // When the queue rows on screen were last read. `undefined` means no queue
+  // read ever landed in this view (capability missing, no connection, or the
+  // first read still failing), which is what the tasks tab label needs to tell
+  // apart from a queue that really is empty.
+  const [marketingQueueLoadedAt, setMarketingQueueLoadedAt] = useState<Date>();
   const [platformTaskSummary, setPlatformTaskSummary] = useState<PlatformTaskSummary>();
   const [platformBrandUnitSummary, setPlatformBrandUnitSummary] = useState<PlatformBrandUnitSummary>();
   const [canonicalProductConsistency, setCanonicalProductConsistency] = useState<CanonicalProductConsistencyReport>();
@@ -692,13 +704,16 @@ export function useOpsConsoleModel() {
     setRules([]);
     setRuleSyncStatuses([]);
     setRuleSyncLoading(false);
-    setKnowledgeRules([]);
-    setKnowledgeAssets([]);
-    setLearningSuggestions([]);
-    setCompetitors([]);
+    // Back to "not read", not to "read empty": the workbench this data belonged
+    // to is gone, so nothing may be presented as a measured zero.
+    setKnowledgeRules(undefined);
+    setKnowledgeAssets(undefined);
+    setLearningSuggestions(undefined);
+    setCompetitors(undefined);
     setWorkspaceMetrics(undefined);
     setStorageReconciliationWorkspaces([]);
     setMarketingQueue({ generation: [], publish: [], visuals: [], batches: [], learningSuggestions: [], assetRisks: [], uploadedAssetRisks: [], imageExecutions: [] });
+    setMarketingQueueLoadedAt(undefined);
     setPlatformTaskSummary(undefined);
     setPlatformBrandUnitSummary(undefined);
     setCanonicalProductConsistency(undefined);
@@ -1036,7 +1051,11 @@ export function useOpsConsoleModel() {
       applyLoadedValue(learningResult, (value) => setLearningSuggestions((value ?? []) as unknown as LearningSuggestion[]));
       applyLoadedValue(competitorResult, (value) => setCompetitors((value ?? []) as unknown as CompetitorAnalysis[]));
       applyLoadedValue(knowledgeRuleResult, (value) => setKnowledgeRules((value ?? []) as unknown as Rule[]));
-      if (queueResult && typeof queueResult === "object")
+      if (queueResult && typeof queueResult === "object") {
+        // The queue read landed: only this branch may stamp the tab label's
+        // "read" state, so a refresh that failed above cannot reprint the last
+        // count as if it had just been measured.
+        setMarketingQueueLoadedAt(new Date());
         setMarketingQueue({
           generation: [],
           publish: [],
@@ -1048,6 +1067,7 @@ export function useOpsConsoleModel() {
           imageExecutions: [],
           ...(queueResult as unknown as Partial<MarketingQueue>),
         });
+      }
       if (
         automationResult &&
         typeof automationResult === "object" &&
@@ -2006,6 +2026,16 @@ export function useOpsConsoleModel() {
    * domain, so pointing a 60s poll at it would re-fetch the whole console for
    * one list. Callers state their own failure instead of raising the global
    * "部分运营数据未刷新" banner on every missed poll.
+   *
+   * The returned boolean is the poller's contract, and it means "this attempt
+   * really read the dataset" — `true` only from the branch below that commits
+   * rows and stamps `alertsLoadedAt`. Every early `return false` (no connection,
+   * capability missing under the active workbench, authorization generation
+   * invalidated, or the request failing) means nothing was measured, so
+   * `createAlertPoller` must not advance the panel's freshness stamp for it.
+   * Otherwise 「未确认数读取中」 becomes a green 「0 条未确认」 over a request
+   * that was never sent — the exact all-clear this panel was fixed to stop
+   * printing.
    */
   const refreshAlerts = async (): Promise<boolean> => {
     if (!hasOpsConnection()) return false;
@@ -2055,8 +2085,10 @@ export function useOpsConsoleModel() {
         suggestion_id: suggestion.id,
         note: "运营台确认证据，未自动激活全局规则",
       });
+      // Confirming removes the row from whatever was last read; it must not
+      // turn an unread list into a measured empty one.
       setLearningSuggestions((current) =>
-        current.filter((item) => item.id !== suggestion.id),
+        (current ?? []).filter((item) => item.id !== suggestion.id),
       );
       message.success(
         `建议已确认：${(result as LearningSuggestion)?.id ?? suggestion.id}；仍需规则管理员单独发布`,
@@ -2968,6 +3000,7 @@ export function useOpsConsoleModel() {
     setWorkspaceMetrics,
     storageReconciliationWorkspaces,
     marketingQueue,
+    marketingQueueLoadedAt,
     platformTaskSummary,
     setPlatformTaskSummary,
     platformBrandUnitSummary,

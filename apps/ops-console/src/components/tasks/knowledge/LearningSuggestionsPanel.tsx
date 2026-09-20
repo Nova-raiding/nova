@@ -16,6 +16,11 @@ export function LearningSuggestionsPanel({
     dismissLearning,
     learningSuggestions,
   } = model;
+  // A failed `knowledge.learning.list` leaves the list unread; the default
+  // "暂无数据" would present that as a measured empty queue.
+  const suggestionsEmptyText = learningSuggestions === undefined
+    ? "学习建议尚未读取；空列表不代表没有待确认建议——请确认本次读取未失败，或重新加载。"
+    : "当前没有待确认的学习建议。";
   const [dismissTarget, setDismissTarget] = useState<LearningSuggestion>();
   const [dismissReason, setDismissReason] = useState("当前证据不足，不沉淀为规则");
   const [dismissing, setDismissing] = useState(false);
@@ -34,6 +39,7 @@ export function LearningSuggestionsPanel({
       rowKey="id"
       pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
       dataSource={learningSuggestions}
+      locale={{ emptyText: suggestionsEmptyText }}
       columns={[
         { title: "建议", dataIndex: "summary" },
         {

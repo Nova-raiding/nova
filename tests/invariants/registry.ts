@@ -217,6 +217,41 @@ export function evidenceGatesOnBinding(source: string, binding: string): boolean
 }
 
 /**
+ * The one line of Vitest's summary that shows a whole evidence file stood down:
+ * every collected assertion was skipped — `Tests  2 skipped (2)`.
+ *
+ * `evidenceGatesOnBinding` reads the *source* and says the file is written to
+ * stand down; it cannot say the file loads, and a module that never loads
+ * reports nothing about itself, not even that it is skippable. So the
+ * declaration is only granted on this line, read from a run of the evidence
+ * without the binding. Gate and `registry.test.ts` share the constant so the
+ * two cannot drift into accepting different things.
+ *
+ * A partially skipped file (`Tests  2 passed | 1 skipped (3)`) is deliberately
+ * not this: something ran, so the declaration did not decide the whole row.
+ */
+export const EVERY_ASSERTION_SKIPPED = /^\s*Tests\s+\d+\s+skipped\s+\(\d+\)\s*$/mu
+
+/**
+ * Removes SGR colour sequences before an observable reads a run's output.
+ *
+ * The safe test launcher hands its child a whitelisted environment, and in that
+ * environment vitest colours its summary even through a pipe:
+ *
+ *     "[2m      Tests [22m [33m1 skipped[39m[90m (1)[39m"
+ *
+ * `EVERY_ASSERTION_SKIPPED` is anchored on `Tests` and therefore matched
+ * nothing, so a row that genuinely stood down was classified as broken — which
+ * is fatal in both modes — on exactly the machines the tolerant mode exists
+ * for. The observable had been validated against a plain-text literal, a shape
+ * the launcher never produces, which is why it looked correct.
+ */
+export function stripAnsi(value: string): string {
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/\u001B\[[0-9;]*m/gu, '')
+}
+
+/**
  * Why a row's `requires` declaration is unsupported by its own evidence, or
  * `undefined` when the evidence really is gated on the binding.
  *
