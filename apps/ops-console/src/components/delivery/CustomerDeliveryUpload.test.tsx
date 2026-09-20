@@ -210,7 +210,13 @@ describe("contract URL desktop interaction", () => {
   const contractReady = { ...contractPending, scanStatus: "clean", ready: true };
   async function prepare(page: Page) {
     page.setDefaultTimeout(5_000);
-    await page.goto(`${baseUrl}/__contract-url-test`);
+    // The first navigation pays for the Vite dev server cold start. A 5s budget
+    // for it — the same as the interaction timeout below — is only enough when
+    // this file runs alone; under the suite's default file parallelism it
+    // exceeded 5s every time and the whole ops-console run went red at 3/3.
+    // The interactions keep the tight budget so a real regression still fails
+    // fast; only the server's first response gets more room.
+    await page.goto(`${baseUrl}/__contract-url-test`, { timeout: 30_000 });
     await page.getByText("链接导入", { exact: true }).click();
     expect(await page.getByRole("radio", { name: "链接导入", exact: true }).isChecked()).toBe(true);
   }
