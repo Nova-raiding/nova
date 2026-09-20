@@ -45,29 +45,11 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
   const shots = resolve('screenshots', 'merchant-interactions')
   await mkdir(shots, { recursive: true })
 
-  const health = page.getByRole('button', { name: /系统健康/ }).first()
-  await health.click(); await page.waitForTimeout(500)
-  steps.push(await state(page, '系统健康面板'))
-  const healthDialog = page.getByRole('dialog')
-  expect((await healthDialog.innerText()), 'Merchant-facing health copy should not expose internal relay error codes').not.toContain('api_key_missing')
-  const refreshRelay = healthDialog.getByRole('button', { name: '重新检查模型中转' })
-  // A ready local relay has no recovery CTA. Exercise the retry path when
-  // the health probe is degraded, while accepting the healthy production
-  // state as the successful branch.
-  if (await refreshRelay.count()) {
-    await expect(refreshRelay).toBeVisible()
-    await refreshRelay.click()
-    await expect(refreshRelay).toBeEnabled()
-  } else {
-    await expect(healthDialog).toContainText(/模型中转|可用|正常|就绪/)
-  }
-  await page.screenshot({ path: resolve(shots, '1-health.png') })
-  if (await healthDialog.count()) {
-    const closeHealth = healthDialog.getByRole('button', { name: /关闭|知道了|返回/ }).first()
-    if (await closeHealth.count()) await closeHealth.click()
-    else await page.keyboard.press('Escape')
-    await expect(healthDialog).toBeHidden({ timeout: 3_000 }).catch(() => {})
-  }
+  // The 系统健康 utility walk was retired with the environment-readiness
+  // surface: the 系统健康 button was removed in 2e055921 and the health dialog
+  // it opened is now unreachable from the merchant UI. The copy assertion it
+  // carried (no internal relay error codes in merchant-facing text) has no
+  // merchant-facing surface left to apply to. See retired-merchant-assertions.md.
 
   const recharge = page.getByRole('button', { name: /充值并解锁|创建充值订单/u, exact: true })
   if (await recharge.count()) {
@@ -81,22 +63,18 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
     steps.push(await state(page, '钱包已解锁'))
   }
 
-  await page.getByRole('button', { name: '知识库', exact: true }).first().click(); await page.waitForTimeout(400)
-  const knowledgeEntry = page.getByRole('button', { name: /资料库/ }).first()
-  if (await knowledgeEntry.count()) await knowledgeEntry.click()
-  await page.waitForTimeout(1_200)
+  // The reviewed sidebar exposes 平台&店铺&商品 / 品牌资产 / 素材库 / 回收站 as
+  // first-class entries; the 知识库 group label is no longer a button and the
+  // 资料库 sub-entry is gone (fdd6deac). The product catalog that carries the
+  // search box and the 创建任务 entry point now renders behind merchant/tasks/new.
+  await page.goto(new URL('merchant/tasks/new', studioUrl).toString())
+  await page.waitForTimeout(1_500)
   const productSearch = page.getByPlaceholder('搜索商品或平台')
-  if (await productSearch.count()) {
-    await productSearch.fill('轻云'); await page.waitForTimeout(400)
-    steps.push(await state(page, '商品搜索'))
-    await page.getByRole('button', { name: /待确认/ }).first().click(); await page.waitForTimeout(300)
-    steps.push(await state(page, '待确认筛选'))
-  } else {
-    // Empty knowledge workspaces intentionally show the section tabpanel and
-    // upload guidance without rendering a zero-row "知识资料" heading.
-    await expect(page.getByRole('tabpanel', { name: '资料库' }).or(page.getByRole('heading', { name: '知识资料' }))).toBeVisible()
-    steps.push(await state(page, '知识资料列表'))
-  }
+  await expect(productSearch, 'the catalog search box must exist for this interaction walk to mean anything').toHaveCount(1)
+  await productSearch.fill('轻云'); await page.waitForTimeout(400)
+  steps.push(await state(page, '商品搜索'))
+  await page.getByRole('button', { name: /待确认/ }).first().click(); await page.waitForTimeout(300)
+  steps.push(await state(page, '待确认筛选'))
   await page.screenshot({ path: resolve(shots, '3-product-filter.png') })
 
   const firstCreateTask = page.getByRole('button', { name: /创建任务/ }).first()
@@ -134,10 +112,9 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
 
   await expect(page.getByRole('button', { name: '工作区信息', exact: true })).toHaveCount(0)
 
-  // The product-first shell keeps only knowledge as a separate self-ops entry;
-  // product, visual, and asset work all begin inside 知识库.
-  for (const entry of ['知识库']) {
-    const entryButton = page.getByRole('button', { name: new RegExp(`^${entry}`) }).first()
+  // The reviewed product-first shell exposes these six self-ops entries.
+  for (const entry of ['运营概览', '平台&店铺&商品', '品牌资产', '素材库', '回收站', '财务概况']) {
+    const entryButton = page.getByRole('button', { name: entry, exact: true }).first()
     await expect(entryButton, `Merchant self-ops entry ${entry} should be available`).toBeVisible()
   }
 

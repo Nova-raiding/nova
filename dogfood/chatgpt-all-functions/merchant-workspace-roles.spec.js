@@ -65,7 +65,10 @@ test('browser merchant workbench preserves role-specific session context', async
     activeToken = role.token
     await page.goto(studioUrl, { waitUntil: 'domcontentloaded' })
     await expect(page.locator('body')).toContainText('Store Nova')
-    await expect(page.locator('.environment-banner')).toBeVisible()
+    // The environment banner this used to assert was unmounted in 2e055921 and
+    // has no merchant-facing replacement. Assert the reviewed shell rendered
+    // for the role instead (see retired-merchant-assertions.md).
+    await expect(page.getByRole('button', { name: '运营概览', exact: true }).first()).toBeVisible()
     expect(observedAuth.at(-1)).toBe(`Bearer ${role.token}`)
   }
 })

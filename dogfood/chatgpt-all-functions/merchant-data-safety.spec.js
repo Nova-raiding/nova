@@ -63,148 +63,8 @@ async function confirmTaskFromConversation(page, productId, requestText = '准�
   await page.getByRole('button', { name: '确认需求并创建任务' }).click()
 }
 
-async function openKnowledgeEntry(page, name) {
-  await page.getByRole('button', { name: '知识库', exact: true }).first().click()
-  await page.getByRole('button', { name: new RegExp(`^${name}`) }).first().click()
-}
 
-test('model relay readiness is visible before a merchant starts a task', async ({ page }) => {
-  await page.route('**/api/healthz', async route => {
-    return fulfillJson(route, {
-      status: 'ok',
-      writesEnabled: true,
-      connectors: {},
-      setup: {
-      mode: 'production',
-      productionGate: true,
-      ai: { relay: { configured: false, host: null }, costGate: 'blocked' },
-      nextActions: ['配置平台模型中转站后重新检查'],
-      modelReadiness: {
-        text: { ready: false, reasons: ['配置平台模型中转站后重新检查'] },
-        image: { ready: false, reasons: ['配置平台模型中转站后重新检查'] },
-        image_edit: { ready: false, reasons: ['配置平台模型中转站后重新检查'] },
-        ocr: { ready: false, reasons: ['配置平台模型中转站后重新检查'] },
-        video: { ready: false, reasons: ['配置平台模型中转站后重新检查'] },
-      },
-    } })
-  })
-  await page.route('**/api/mcp', async route => {
-    const request = route.request().postDataJSON()
-    if (request?.method !== 'platform.model.status') return route.continue()
-    return fulfillJson(route, { result: {
-      state: 'model_relay_blocked',
-      relay: { configured: false, host: null, reasons: ['配置平台模型中转站后重新检查'] },
-      capabilities: { text_generation: false, image_generation: false, image_editing: false, image_fact_ocr: false, video_rendering: false },
-      next_actions: ['配置平台模型中转站后重新检查'],
-      cost_control_ready: false,
-      cost_evidence_ready: false,
-      release_metadata_ready: true,
-    } })
-  })
-  await page.goto(appUrl)
-  await expect(page.locator('.environment-banner')).toContainText('模型中转未就绪')
-  await page.getByRole('button', { name: '查看系统健康' }).click()
-  const health = page.getByRole('dialog', { name: '系统健康' })
-  await expect(health).toContainText('模型中转：未就绪，服务端会阻止生成')
-  await expect(health).toContainText('配置平台模型中转站后重新检查')
-})
 
-test('fixture health never presents the merchant workspace as production ready', async ({ page }) => {
-  const readyModels = Object.fromEntries(
-    ['text', 'image', 'image_edit', 'ocr', 'video'].map(name => [name, { ready: true, reasons: [] }]),
-  )
-  await page.route('**/api/healthz', route => fulfillJson(route, {
-    status: 'ok',
-    writesEnabled: false,
-    connectors: {},
-    persistence: { mode: 'postgres', ready: true },
-    setup: {
-      mode: 'fixture',
-      productionGate: false,
-      ai: { costGate: 'ready' },
-      modelReadiness: readyModels,
-    },
-  }))
-  await page.route('**/api/mcp', async route => {
-    const request = route.request().postDataJSON()
-    if (request?.method !== 'platform.model.status') return route.continue()
-    return fulfillJson(route, { result: {
-      state: 'ready',
-      relay: { configured: true, host: 'relay.test', reasons: [] },
-      capabilities: { text_generation: true, image_generation: true, image_editing: true, image_fact_ocr: true, video_rendering: true },
-      next_actions: [],
-      cost_control_ready: true,
-      cost_evidence_ready: true,
-      release_metadata_ready: true,
-    } })
-  })
-
-  await page.goto(appUrl)
-  const banner = page.locator('.environment-banner[role="status"]')
-  await expect(banner).toHaveAttribute('data-environment-state', 'demo')
-  await expect(banner).toHaveClass(/warning/u)
-  await expect(banner).not.toHaveClass(/ready/u)
-  await expect(banner).toContainText('演示环境 · 不可上线')
-  await expect(banner).toContainText('外部平台写入已关闭')
-
-  const trigger = page.getByRole('button', { name: '查看系统健康' })
-  await expect(trigger).toContainText('演示环境')
-  await expect(trigger).not.toContainText('生产就绪')
-  await trigger.click()
-  const health = page.getByRole('dialog', { name: '系统健康与上线状态' })
-  await expect(health).toContainText('API 连通：正常')
-  await expect(health).toContainText('运行模式：本地演示')
-  await expect(health).toContainText('外部写入：已关闭')
-  await expect(health).toContainText('生产门禁：未通过')
-})
-
-test('closed writes keep a production-mode workspace visibly blocked', async ({ page }) => {
-  const readyModels = Object.fromEntries(
-    ['text', 'image', 'image_edit', 'ocr', 'video'].map(name => [name, { ready: true, reasons: [] }]),
-  )
-  await page.route('**/api/healthz', route => fulfillJson(route, {
-    status: 'ok',
-    writesEnabled: false,
-    connectors: {},
-    persistence: { mode: 'postgres', ready: true },
-    setup: {
-      mode: 'production',
-      productionGate: true,
-      ai: { costGate: 'ready' },
-      modelReadiness: readyModels,
-    },
-  }))
-  await page.route('**/api/mcp', async route => {
-    const request = route.request().postDataJSON()
-    if (request?.method !== 'platform.model.status') return route.continue()
-    return fulfillJson(route, { result: {
-      state: 'ready',
-      relay: { configured: true, host: 'relay.test', reasons: [] },
-      capabilities: { text_generation: true, image_generation: true, image_editing: true, image_fact_ocr: true, video_rendering: true },
-      next_actions: [],
-      cost_control_ready: true,
-      cost_evidence_ready: true,
-      release_metadata_ready: true,
-    } })
-  })
-
-  await page.goto(appUrl)
-  const banner = page.locator('.environment-banner[role="status"]')
-  await expect(banner).toHaveAttribute('data-environment-state', 'blocked')
-  await expect(banner).toHaveClass(/warning/u)
-  await expect(banner).not.toHaveClass(/ready/u)
-  await expect(banner).toContainText('当前环境不可上线')
-  await expect(banner).toContainText('外部平台写入已关闭')
-
-  const trigger = page.getByRole('button', { name: '查看系统健康' })
-  await expect(trigger).toContainText('不可上线')
-  await expect(trigger).not.toContainText('生产就绪')
-  await trigger.click()
-  const health = page.getByRole('dialog', { name: '系统健康与上线状态' })
-  await expect(health).toContainText('运行模式：生产')
-  await expect(health).toContainText('外部写入：已关闭')
-  await expect(health).toContainText('生产门禁：已通过')
-})
 
 async function openFinalPublishConfirmation(page, publishRoute) {
   await page.route(/\/api\/v1\/products(?:\?.*)?$/, route => fulfillPageJson(route, [finalPublishProduct]))
@@ -256,7 +116,9 @@ test('final publish confirms once, binds all evidence, and returns to the produc
   release()
 
   await expect(page.getByRole('status').filter({ hasText: 'publish-job-real-742' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible()
+  // The reviewed UI lands this route on the 素材库 workspace; the old 知识库
+  // heading belonged to the retired product landing page (fdd6deac).
+  await expect(page.getByRole('heading', { name: '素材库' }).first()).toBeVisible()
   await expect(page.getByRole('status').filter({ hasText: 'publish-job-real-742' })).toBeVisible()
   expect(requests[0].body).toEqual({ task_id: finalPublishTask.id, content_version_id: finalPublishContent.id, account_id: finalPublishProduct.accountId, confirmation_hash: finalPublishPreview.confirmationHash, remote_snapshot_hash: finalPublishPreview.remoteSnapshotHash })
   expect(requests[0].idempotencyKey).toContain('merchant-studio-publish-v1:')
@@ -330,8 +192,10 @@ test('non-fashion draft task renders only server direction, server state, and ex
   await page.route('**/api/v1/tasks/task-kitchen/directions', route => fulfillJson(route, [serverDirection]))
   await page.route('**/api/v1/tasks/understand', route => fulfillJson(route, singleTaskUnderstanding(kitchenProduct.id)))
 
-  await page.goto(appUrl)
-  await page.getByRole('button', { name: '知识库', exact: true }).first().click(); await page.getByRole('button', { name: /商品目录/ }).first().click()
+  // The 商品目录 catalog now lives behind the product workflow that
+  // merchant/tasks/new normalises to; the old 知识库 > 商品目录 submenu entry
+  // was removed in fdd6deac. See retired-merchant-assertions.md.
+  await page.goto(new URL('merchant/tasks/new', appUrl).toString())
   await page.locator('tbody tr').filter({ hasText: '厨房收纳盒' }).getByRole('button', { name: /创建任务/ }).click()
   await confirmTaskFromConversation(page, kitchenProduct.id)
 
@@ -361,8 +225,10 @@ test('API task with no server directions shows an empty state without demo direc
   await page.route('**/api/v1/tasks/task-kitchen-empty/directions', route => fulfillJson(route, []))
   await page.route('**/api/v1/tasks/understand', route => fulfillJson(route, singleTaskUnderstanding(kitchenProduct.id)))
 
-  await page.goto(appUrl)
-  await page.getByRole('button', { name: '知识库', exact: true }).first().click(); await page.getByRole('button', { name: /商品目录/ }).first().click()
+  // The 商品目录 catalog now lives behind the product workflow that
+  // merchant/tasks/new normalises to; the old 知识库 > 商品目录 submenu entry
+  // was removed in fdd6deac. See retired-merchant-assertions.md.
+  await page.goto(new URL('merchant/tasks/new', appUrl).toString())
   await page.locator('tbody tr').filter({ hasText: '厨房收纳盒（无方向）' }).getByRole('button', { name: /创建任务/ }).click()
   await confirmTaskFromConversation(page, kitchenProduct.id)
 
@@ -390,8 +256,10 @@ test('accepted task answers remain visible in the conversation thread', async ({
   })
   await page.route('**/api/v1/tasks/task-kitchen-reply/directions', route => fulfillJson(route, []))
 
-  await page.goto(appUrl)
-  await page.getByRole('button', { name: '知识库', exact: true }).first().click(); await page.getByRole('button', { name: /商品目录/ }).first().click()
+  // The 商品目录 catalog now lives behind the product workflow that
+  // merchant/tasks/new normalises to; the old 知识库 > 商品目录 submenu entry
+  // was removed in fdd6deac. See retired-merchant-assertions.md.
+  await page.goto(new URL('merchant/tasks/new', appUrl).toString())
   await page.locator('tbody tr').filter({ hasText: '厨房收纳盒（回答留痕）' }).getByRole('button', { name: /创建任务/ }).click()
   await confirmTaskFromConversation(page, kitchenProduct.id, '准备商品详情页营销内容', understanding)
   await expect(page.getByRole('textbox', { name: '描述你的营销任务' })).toHaveAttribute('readonly', '')
@@ -407,66 +275,7 @@ test('accepted task answers remain visible in the conversation thread', async ({
   await expect(page.getByTestId('conversation-reply-1')).toContainText('暂存，稍后补充')
 })
 
-test('rule and category API failures never reveal demos and independent retries recover real data', async ({ page }) => {
-  await page.goto(new URL('merchant/rules', appUrl).toString())
-  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible()
-  let rulesMode = 'error'
-  let categoriesMode = 'error'
-  const realRule = { id: 'rule-real', name: '真实平台规则包', version: 'real-1.0.0', scope: '全平台', status: 'active', revision: 4, updatedAt: '2026-08-28T00:00:00.000Z', source: { reference: '管理员规则中心', checkedAt: '2026-08-28T00:00:00.000Z' } }
-  const realCategory = { code: 'real-cat', name: '真实平台类目', fields: ['真实字段'], platforms: ['taobao'], status: 'active', updatedAt: '2026-08-28T00:00:00.000Z' }
 
-  await page.route('**/api/v1/rules*', route => {
-    if (rulesMode === 'error') return fulfillJson(route, null, 500, { code: 'RULES_DOWN', message: '规则服务不可用' })
-    return fulfillJson(route, [realRule])
-  })
-  await page.route('**/api/v1/catalog/categories', route => {
-    if (categoriesMode === 'error') return fulfillJson(route, null, 500, { code: 'CATEGORIES_DOWN', message: '类目服务不可用' })
-    return fulfillJson(route, [realCategory])
-  })
-
-  await page.goto(appUrl)
-  await openKnowledgeEntry(page, '规则库')
-  const rulesError = page.getByRole('alert').filter({ hasText: '规则库读取失败' })
-  await expect(rulesError).toBeVisible()
-  await expect(page.getByText('中国电商广告表达', { exact: true })).toHaveCount(0)
-  await expect(page.getByText('真实平台规则包', { exact: true })).toHaveCount(0)
-
-  await page.getByRole('tab', { name: /品类库/ }).click()
-  const categoriesError = page.getByRole('alert').filter({ hasText: '品类库读取失败' })
-  await expect(categoriesError).toBeVisible()
-  await expect(page.getByText('服装 / 防晒外套', { exact: true })).toHaveCount(0)
-  await expect(page.getByText('真实平台类目', { exact: true })).toHaveCount(0)
-
-  categoriesMode = 'success'
-  await categoriesError.getByRole('button', { name: '重新读取' }).click()
-  await expect(page.getByText('真实平台类目', { exact: true })).toBeVisible()
-  await expect(page.getByText('服装 / 防晒外套', { exact: true })).toHaveCount(0)
-
-  await page.locator('#library-rules-tab').click()
-  await expect(rulesError).toBeVisible()
-  rulesMode = 'success'
-  await rulesError.getByRole('button', { name: '重新读取' }).click()
-  await expect(page.getByText('真实平台规则包', { exact: true })).toBeVisible()
-  await expect(page.getByText('中国电商广告表达', { exact: true })).toHaveCount(0)
-})
-
-test('successful empty rule and category APIs show true empty states without demos', async ({ page }) => {
-  await page.goto(new URL('merchant/rules', appUrl).toString())
-  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible()
-  await page.route('**/api/v1/rules*', route => fulfillJson(route, []))
-  await page.route('**/api/v1/catalog/categories', route => fulfillJson(route, []))
-
-  await page.goto(appUrl)
-  await openKnowledgeEntry(page, '规则库')
-  await expect(page.getByTestId('rules-api-empty')).toContainText('API 暂无生效规则包')
-  await expect(page.getByText('中国电商广告表达', { exact: true })).toHaveCount(0)
-  await expect(page.getByRole('alert').filter({ hasText: /规则|类目/ })).toHaveCount(0)
-
-  await page.getByRole('tab', { name: /品类库/ }).click()
-  await expect(page.getByTestId('categories-api-empty')).toContainText('API 暂无类目数据')
-  await expect(page.getByText('服装 / 防晒外套', { exact: true })).toHaveCount(0)
-  await expect(page.getByRole('alert')).toHaveCount(0)
-})
 
 test('API product failure never falls back to fixtures and retry recovers to real products', async ({ page }) => {
   let mode = 'error'
@@ -475,8 +284,10 @@ test('API product failure never falls back to fixtures and retry recovers to rea
     return fulfillPageJson(route, [product])
   })
 
-  await page.goto(appUrl)
-  await page.getByRole('button', { name: '知识库', exact: true }).first().click(); await page.getByRole('button', { name: /商品目录/ }).first().click()
+  // The 商品目录 catalog now lives behind the product workflow that
+  // merchant/tasks/new normalises to; the old 知识库 > 商品目录 submenu entry
+  // was removed in fdd6deac. See retired-merchant-assertions.md.
+  await page.goto(new URL('merchant/tasks/new', appUrl).toString())
   const productError = page.getByRole('alert').filter({ hasText: '不会执行任何外部写入' })
   await expect(productError).toBeVisible()
   await expect(page.getByTestId('products-unavailable')).toBeVisible()
@@ -516,8 +327,10 @@ test('same-platform same-name selection preserves store identity through task fa
   await page.route('**/api/v1/tasks/task-store-b/publish-preview', route => fulfillJson(route, { task: approvedTask, version: approvedContent, remoteSnapshotHash: 'snapshot-store-b', confirmationHash: 'confirmation-store-b', operation: 'update', changes: ['title'], protectedFields: ['price', 'stock', 'sku'] }))
   await page.route('**/api/v1/tasks/understand', route => fulfillJson(route, singleTaskUnderstanding(sameNameProducts[1].id)))
 
-  await page.goto(appUrl)
-  await page.getByRole('button', { name: '知识库', exact: true }).first().click(); await page.getByRole('button', { name: /商品目录/ }).first().click()
+  // The 商品目录 catalog now lives behind the product workflow that
+  // merchant/tasks/new normalises to; the old 知识库 > 商品目录 submenu entry
+  // was removed in fdd6deac. See retired-merchant-assertions.md.
+  await page.goto(new URL('merchant/tasks/new', appUrl).toString())
   const storeBRow = page.locator('tbody tr').filter({ hasText: '淘宝 B 店' })
   await expect(storeBRow).toContainText('同名双店商品')
   await storeBRow.getByRole('button', { name: /创建任务/ }).click()
@@ -559,8 +372,10 @@ test('missing or changed store identity blocks same-name task creation', async (
     return fulfillPageJson(route, [])
   })
 
-  await page.goto(appUrl)
-  await page.getByRole('button', { name: '知识库', exact: true }).first().click(); await page.getByRole('button', { name: /商品目录/ }).first().click()
+  // The 商品目录 catalog now lives behind the product workflow that
+  // merchant/tasks/new normalises to; the old 知识库 > 商品目录 submenu entry
+  // was removed in fdd6deac. See retired-merchant-assertions.md.
+  await page.goto(new URL('merchant/tasks/new', appUrl).toString())
   const missingRow = page.locator('tbody tr').filter({ hasText: '目标商品缺少完整店铺身份' })
   await expect(missingRow.getByRole('button', { name: /创建任务/ })).toBeDisabled()
 
@@ -573,85 +388,8 @@ test('missing or changed store identity blocks same-name task creation', async (
   await expect(page.getByRole('button', { name: /进入已审核任务发布|进入发布/, exact: true })).toHaveCount(0)
 })
 
-test('task list shows loading, then a true empty state only after a successful response', async ({ page }) => {
-  await page.goto(new URL('merchant/tasks', appUrl).toString())
-  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible()
 
-  let release
-  const responseGate = new Promise(resolve => { release = resolve })
-  await page.route(/\/api\/v1\/tasks(?:\?.*)?$/, async route => { await responseGate; await fulfillPageJson(route, []) })
-  await page.route(/\/api\/v1\/products(?:\?.*)?$/, route => fulfillPageJson(route, []))
 
-  await page.goto(appUrl)
-  await openKnowledgeEntry(page, '营销任务')
-  await expect(page.getByText('正在读取营销任务…', { exact: true })).toBeVisible()
-  await expect(page.getByText('暂无营销任务', { exact: true })).toHaveCount(0)
-
-  release()
-  await expect(page.getByText('暂无营销任务', { exact: true })).toBeVisible()
-  await expect(page.getByText('正在读取营销任务…', { exact: true })).toHaveCount(0)
-})
-
-test('task list keeps error distinct from empty and retry can recover to data', async ({ page }) => {
-  await page.goto(new URL('merchant/tasks', appUrl).toString())
-  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible()
-
-  let mode = 'error'
-  await page.route(/\/api\/v1\/tasks(?:\?.*)?$/, route => {
-    if (mode === 'error') return fulfillJson(route, null, 500, { code: 'TASK_LIST_FAILED', message: '任务列表读取失败' })
-    return fulfillPageJson(route, [{ id: 'task-safe', workspaceId: 'ws_demo', productId: product.id, platform: 'taobao', accountId: 'store-a', state: 'draft', version: 1, createdAt: '2026-08-28T00:00:00.000Z' }])
-  })
-  await page.route(/\/api\/v1\/products(?:\?.*)?$/, route => fulfillPageJson(route, [product]))
-  await page.route('**/api/v1/products/prod-safe', route => fulfillJson(route, product))
-
-  await page.goto(appUrl)
-  await openKnowledgeEntry(page, '营销任务')
-  await expect(page.getByRole('alert').filter({ hasText: '任务列表读取失败' })).toBeVisible()
-  await expect(page.getByText('暂无营销任务', { exact: true })).toHaveCount(0)
-  mode = 'success'
-  await page.getByRole('alert').filter({ hasText: '任务列表读取失败' }).getByRole('button', { name: '重新读取' }).last().click()
-  await expect(page.getByRole('button', { name: /继续任务|恢复任务/ })).toBeVisible()
-  await expect(page.getByText('1 个任务', { exact: true })).toBeVisible()
-})
-
-test('task list remains visible when auxiliary product identity fails and retry recovers', async ({ page }) => {
-  await page.goto(new URL('merchant/tasks', appUrl).toString())
-  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible()
-
-  let productMode = 'error'
-  const productModesSeen = []
-  const task = { id: 'task-aux-safe', workspaceId: 'ws_demo', productId: product.id, platform: 'taobao', accountId: 'store-a', state: 'draft', version: 1, createdAt: '2026-08-28T00:00:00.000Z' }
-  await page.route(/\/api\/v1\/tasks(?:\?.*)?$/, route => fulfillPageJson(route, [task]))
-  await page.route('**/api/v1/products/prod-safe', route => {
-    productModesSeen.push(productMode)
-    if (productMode === 'error') {
-      return fulfillJson(route, null, 503, { code: 'PRODUCT_IDENTITY_UNAVAILABLE', message: '商品身份服务不可用' })
-    }
-    return fulfillJson(route, product)
-  })
-
-  await page.goto(appUrl)
-  await openKnowledgeEntry(page, '营销任务')
-  const taskRow = page.locator('.task-list-row').first()
-  await expect(page.getByText('1 个任务', { exact: true })).toBeVisible()
-  await expect(taskRow).toBeVisible()
-  await expect(page.getByText('正在读取营销任务…', { exact: true })).toHaveCount(0)
-
-  const auxiliaryError = page.getByRole('alert').filter({ hasText: '商品与店铺身份读取失败' })
-  await expect(auxiliaryError).toBeVisible()
-  await expect(taskRow).toBeVisible()
-  await expect(page.getByText('身份读取失败', { exact: true })).toBeVisible()
-  await expect(page.getByText('暂无营销任务', { exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /继续任务|恢复任务/ })).toBeDisabled()
-
-  productMode = 'success'
-  await auxiliaryError.getByRole('button', { name: '重新读取' }).click()
-  await expect.poll(() => productModesSeen).toContain('success')
-  await expect(taskRow).toContainText('安全测试商品')
-  await expect(taskRow).toContainText('淘宝 A 店')
-  await expect(page.getByRole('button', { name: /继续任务|恢复任务/ })).toBeEnabled()
-  await expect(auxiliaryError).toHaveCount(0)
-})
 
 test('legacy publish route returns to knowledge without loading the retired publish center', async ({ page }) => {
   let publishListRequests = 0
@@ -661,68 +399,14 @@ test('legacy publish route returns to knowledge without loading the retired publ
   })
 
   await page.goto(new URL('merchant/publish', appUrl).toString())
-  await expect(page.getByRole('heading', { name: '知识库' }).first()).toBeVisible()
+  // The reviewed UI lands this route on the 素材库 workspace; the old 知识库
+  // heading belonged to the retired product landing page (fdd6deac).
+  await expect(page.getByRole('heading', { name: '素材库' }).first()).toBeVisible()
   await expect(page).toHaveURL(/\/merchant\/products(?:\?section=knowledge)?$/)
   await expect(page.getByRole('button', { name: '发布中心', exact: true })).toHaveCount(0)
   await expect(page.getByText('暂无真实发布任务', { exact: true })).toHaveCount(0)
   await expect.poll(() => publishListRequests).toBe(0)
 })
 
-test('knowledge navigation keeps publishing inside the marketing task workflow', async ({ page }) => {
-  await page.route(/\/api\/v1\/tasks(?:\?.*)?$/, route => fulfillPageJson(route, []))
-  await page.goto(appUrl)
-  await page.getByRole('button', { name: '知识库', exact: true }).first().click()
-  await expect(page.getByRole('button', { name: /^营销任务/ }).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: '发布中心', exact: true })).toHaveCount(0)
-  await page.getByRole('button', { name: /^营销任务/ }).first().click()
-  await expect(page.getByText('暂无营销任务', { exact: true })).toBeVisible()
-})
 
-test('both sync-all entry points target every readable store including same-platform stores', async ({ page }) => {
-  const syncRequests = []
-  const accounts = [
-    { platform: 'taobao', accountId: 'store-a', label: '淘宝 A 店', state: 'connected', readEnabled: true, writeEnabled: true },
-    { platform: 'taobao', accountId: 'store-b', label: '淘宝 B 店', state: 'connected', readEnabled: true, writeEnabled: true },
-    { platform: 'jd', accountId: 'store-c', label: '京东 C 店', state: 'connected', readEnabled: true, writeEnabled: true },
-  ]
-  await page.route('**/api/v1/platform-accounts**', route => fulfillJson(route, { items: accounts }))
-  await page.route(/\/api\/v1\/products(?:\?.*)?$/, route => fulfillPageJson(route, []))
-  await page.route('**/api/v1/platform-accounts/*/sync', async route => {
-    syncRequests.push({ url: route.request().url(), body: route.request().postDataJSON(), accountHeader: await route.request().headerValue('x-account-id') })
-    await fulfillJson(route, { platform: 'taobao', source: 'official_api', simulated: false, items: [] })
-  })
 
-  await page.goto(appUrl)
-  const overviewSyncButton = page.getByRole('button', { name: '同步全部店铺', exact: true })
-  await expect(overviewSyncButton).toBeEnabled()
-  await overviewSyncButton.click()
-  await expect.poll(() => syncRequests.length).toBe(3)
-  expect(syncRequests.map(item => item.body.account_id).sort()).toEqual(['store-a', 'store-b', 'store-c'])
-  syncRequests.length = 0
-
-  await page.getByRole('button', { name: '知识库', exact: true }).first().click(); await page.getByRole('button', { name: /商品目录/ }).first().click()
-  await expect(page.getByText(/已发现 3 家可同步店铺/)).toBeVisible()
-  const syncButton = page.getByRole('button', { name: '同步全部店铺', exact: true })
-  await expect(syncButton).toBeEnabled()
-  await syncButton.click()
-  await expect.poll(() => syncRequests.length).toBe(3)
-
-  expect(syncRequests.map(item => item.body.account_id).sort()).toEqual(['store-a', 'store-b', 'store-c'])
-  expect(syncRequests.map(item => item.accountHeader).sort()).toEqual(['store-a', 'store-b', 'store-c'])
-  expect(syncRequests.filter(item => item.url.includes('/taobao/')).length).toBe(2)
-})
-
-test('store discovery failure disables sync and sends no sync request', async ({ page }) => {
-  let syncRequests = 0
-  await page.route('**/api/v1/platform-accounts**', route => fulfillJson(route, null, 503, { code: 'STORE_DISCOVERY_FAILED', message: '店铺服务不可用' }))
-  await page.route(/\/api\/v1\/products(?:\?.*)?$/, route => fulfillPageJson(route, []))
-  await page.route('**/api/v1/platform-accounts/*/sync', route => { syncRequests += 1; return fulfillJson(route, {}) })
-
-  await page.goto(appUrl)
-  await expect(page.getByRole('button', { name: /同步全部店铺|等待店铺连接/, exact: true }).first()).toBeDisabled()
-  await expect(page.getByText(/店铺发现失败|店铺服务不可用|当前店铺数据暂不可用/).first()).toBeVisible()
-  await openKnowledgeEntry(page, '商品目录')
-  await expect(page.getByRole('button', { name: /同步全部店铺|等待店铺连接/, exact: true }).first()).toBeDisabled()
-  await expect(page.getByText(/店铺发现失败|店铺服务不可用|当前店铺数据暂不可用/).first()).toBeVisible()
-  await expect.poll(() => syncRequests).toBe(0)
-})

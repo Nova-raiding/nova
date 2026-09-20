@@ -7,9 +7,12 @@ test.setTimeout(180_000)
 const root = resolve('.')
 const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:18081/'
 const screenshots = resolve(root, 'screenshots', 'merchant-pages')
-const sections = ['运营概览', '知识库']
-const utilitySections = ['查看系统健康与上线状态']
-const slug = new Map(sections.map((name, index) => [name, `${index + 1}-${['overview', 'catalog'][index]}`]))
+// The reviewed sidebar (fdd6deac) exposes these six sections directly. The
+// former 知识库 group label is no longer a button, and the 查看系统健康与上线状态
+// utility entry no longer exists — see retired-merchant-assertions.md.
+const sections = ['运营概览', '平台&店铺&商品', '品牌资产', '素材库', '回收站', '财务概况']
+const sectionSlugs = ['overview', 'catalog', 'brand-assets', 'materials', 'trash', 'finance']
+const slug = new Map(sections.map((name, index) => [name, `${index + 1}-${sectionSlugs[index]}`]))
 
 const snapshot = async page => page.evaluate(() => ({
   url: location.href,
@@ -55,43 +58,30 @@ test('walk every Merchant Studio section through the real browser UI', async () 
     await page.getByRole('button', { name: section, exact: true }).first().click()
     await page.waitForTimeout(1_500)
     if (section === '运营概览') {
-      const platformPanel = page.locator('article.platform-panel')
-      await expect(platformPanel).toHaveAttribute('aria-busy', 'false')
-      await expect(page.locator('.data-integrity-panel')).toBeVisible()
+      // The reviewed overview (c2eafb72, "visual review") hides the dashboard
+      // grid, the sync actions row and the data-integrity panel with CSS. The
+      // old layout block measured `article.platform-panel` inside that hidden
+      // grid, so it could only ever report zeroed rects. Assert the visible
+      // overview landmarks instead, and pin the review decision so a future
+      // change that re-shows those surfaces is noticed rather than silently
+      // restoring stale layout expectations.
+      await expect(page.getByRole('heading', { name: '运营概览' })).toBeVisible()
+      for (const landmark of ['今日看板', '账号看板', '事务看板']) {
+        await expect(page.getByRole('heading', { name: landmark })).toBeVisible()
+      }
+      for (const hidden of ['.overview-sync-actions', '.data-integrity-panel', '.dashboard-grid']) {
+        await expect(page.locator(hidden), `${hidden} is hidden by the visual-review decision`).toBeHidden()
+      }
       await page.evaluate(async () => {
         await document.fonts.ready
         await new Promise(resolveFrame => requestAnimationFrame(() => requestAnimationFrame(resolveFrame)))
       })
-      const layout = await platformPanel.evaluate(panel => {
-        const grid = panel.parentElement
-        const pageNode = document.querySelector('main.page')
-        if (!(grid instanceof HTMLElement) || !(pageNode instanceof HTMLElement)) throw new Error('merchant overview layout root missing')
-        const platformRect = panel.getBoundingClientRect()
-        const gridRect = grid.getBoundingClientRect()
-        const visibleChildren = [...grid.children].filter(node => {
-          const rect = node.getBoundingClientRect()
-          return getComputedStyle(node).display !== 'none' && rect.width > 0 && rect.height > 0
-        })
-        return {
-          viewportWidth: innerWidth,
-          viewportHeight: innerHeight,
-          scrollWidth: document.documentElement.scrollWidth,
-          scrollHeight: document.documentElement.scrollHeight,
-          visibleDashboardChildren: visibleChildren.length,
-          platformShare: platformRect.width / gridRect.width,
-          leftDelta: Math.abs(platformRect.left - gridRect.left),
-          rightDelta: Math.abs(platformRect.right - gridRect.right),
-          platformBottom: platformRect.bottom,
-          safeBottom: innerHeight - Number.parseFloat(getComputedStyle(pageNode).paddingBottom),
-        }
-      })
-      expect(layout).toMatchObject({ viewportWidth: 1440, viewportHeight: 1000, visibleDashboardChildren: 1 })
-      expect(layout.platformShare).toBeGreaterThanOrEqual(0.98)
-      expect(layout.leftDelta).toBeLessThanOrEqual(2)
-      expect(layout.rightDelta).toBeLessThanOrEqual(2)
+      const layout = await page.evaluate(() => ({
+        viewportWidth: innerWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+      }))
+      expect(layout).toMatchObject({ viewportWidth: 1440 })
       expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewportWidth + 1)
-      expect(layout.scrollHeight).toBeLessThanOrEqual(layout.viewportHeight + 1)
-      expect(layout.platformBottom).toBeLessThanOrEqual(layout.safeBottom + 2)
     }
     await page.screenshot({ path: resolve(screenshots, `${slug.get(section)}.png`) })
     pages.push({ section, ...(await snapshot(page)) })
@@ -102,28 +92,21 @@ test('walk every Merchant Studio section through the real browser UI', async () 
     }
   }
 
-  for (const section of utilitySections) {
-    activeSection = section
-    await page.getByRole('button', { name: new RegExp(section) }).click()
-    await page.waitForTimeout(500)
-    pages.push({ section, ...(await snapshot(page)) })
-    const dialog = page.getByRole('dialog')
-    if (await dialog.count()) {
-      const close = dialog.getByRole('button', { name: /关闭面板|知道了/ }).first()
-      if (await close.count()) await close.click()
-    }
-  }
+  // The 查看系统健康与上线状态 utility walk was retired with the rest of the
+  // environment-readiness surface (2e055921). See retired-merchant-assertions.md.
 
   activeSection = '全局搜索'
-  await page.getByRole('button', { name: '运营概览', exact: true }).first().click()
+  // The global search box now lives on the product catalog rather than the
+  // overview; the overview has no search input since the visual review.
+  await page.goto(new URL('merchant/tasks/new', studioUrl).toString())
+  await page.waitForTimeout(1_500)
   const search = page.getByLabel('搜索商品')
-  if (await search.count()) {
-    await search.fill('轻云')
-    await page.waitForTimeout(800)
-    pages.push({ section: '全局搜索', ...(await snapshot(page)) })
-    await page.screenshot({ path: resolve(screenshots, '8-global-search.png') })
-    await search.fill('')
-  }
+  await expect(search, 'the product catalog search box must exist for this walk to mean anything').toHaveCount(1)
+  await search.fill('轻云')
+  await page.waitForTimeout(800)
+  pages.push({ section: '全局搜索', ...(await snapshot(page)) })
+  await page.screenshot({ path: resolve(screenshots, '8-global-search.png') })
+  await search.fill('')
 
   const result = { generatedAt: new Date().toISOString(), pages, consoleMessages, requestFailures, badResponses }
   await writeFile(resolve(root, 'merchant-all-inventory.json'), JSON.stringify(result, null, 2))
