@@ -16,19 +16,19 @@
 
 | # | 用例位置 | 原断言的安全面 | 移除提交 | 当前覆盖情况 |
 |---|---|---|---|---|
-| 1 | `merchant-data-safety.spec.js:71` `model relay readiness is visible before a merchant starts a task` | `.environment-banner` 显示「模型中转未就绪」+ `查看系统健康` 对话框 | `2e055921` | 服务端契约由 `apps/api/src/server.e2e.test.ts` 覆盖；**商家界面无任何替代面** |
-| 2 | `merchant-data-safety.spec.js:112` `fixture health never presents the merchant workspace as production ready` | 同上，`data-environment-state="demo"` / `演示环境 · 不可上线` | `2e055921` | 同上 |
-| 3 | `merchant-data-safety.spec.js:161` `closed writes keep a production-mode workspace visibly blocked` | 同上，`data-environment-state="blocked"` / `当前环境不可上线` | `2e055921` | 同上 |
-| 4 | `merchant-interactions.spec.js:17`（`exercise Merchant Studio safe interactions…` 的系统健康段落） | `系统健康` 按钮 → `系统健康与上线状态` 对话框、`重新检查模型中转` 重试路径 | `2e055921` | 同上 |
+| 1 | `merchant-data-safety.spec.js:71` `model relay readiness is visible before a merchant starts a task` | `.environment-banner` 显示「模型中转未就绪」+ `查看系统健康` 对话框 | `2e055921` | 服务端只到「健康接口如实上报」这一层：`apps/api/src/server.e2e.test.ts:2013` 断言 `writesEnabled === false`、`:2026` 断言 `setup.productionGate === false`，`apps/api/src/server.test.ts:1049` 同向。**「把该状态呈现给商家」这一层在商家界面已无任何替代面** |
+| 2 | `merchant-data-safety.spec.js:112` `fixture health never presents the merchant workspace as production ready` | 同上，`data-environment-state="demo"` / `演示环境 · 不可上线` | `2e055921` | 同 1；退役的是「fixture 环境不得被呈现为生产就绪」的界面断言，服务端上报由同两个用例覆盖 |
+| 3 | `merchant-data-safety.spec.js:161` `closed writes keep a production-mode workspace visibly blocked` | 同上，`data-environment-state="blocked"` / `当前环境不可上线` | `2e055921` | 同 1 |
+| 4 | `merchant-interactions.spec.js:17`（`exercise Merchant Studio safe interactions…` 的系统健康段落） | `系统健康` 按钮 → `系统健康与上线状态` 对话框、`重新检查模型中转` 重试路径 | `2e055921` | 同 1；该段落还承担「商家可见文案不得出现内部错误码（如 `api_key_missing`）」，这一条随对话框一起失去承载面 |
 | 5 | `merchant-workspace-roles.spec.js` 的 `.environment-banner` 断言 | `.environment-banner` 可见 | `2e055921` | 该文件未装载进 `test:browser:merchant`；断言已改为「该角色能看到评审版外壳」（`运营概览` 入口可见），角色→鉴权头的断言保留 |
-| 6 | `merchant-data-safety.spec.js:410` `rule and category API failures never reveal demos and independent retries recover real data` | `知识库 > 规则库` 入口、规则/品类 API 失败与重试的界面状态 | `fdd6deac` | 规则读写的服务端契约由规则相关 API 测试覆盖；**商家界面无规则库入口** |
-| 7 | `merchant-data-safety.spec.js:453` `successful empty rule and category APIs show true empty states without demos` | 同上，`rules-api-empty` / `categories-api-empty` 空态 | `fdd6deac` | 同上 |
-| 8 | `merchant-data-safety.spec.js:576` `task list shows loading, then a true empty state only after a successful response` | `知识库 > 营销任务` 任务队列的加载/空态区分 | `fdd6deac` | 任务列表服务端契约由任务 API 测试覆盖；**商家侧任务队列已无一等入口** |
-| 9 | `merchant-data-safety.spec.js:595` `task list keeps error distinct from empty and retry can recover to data` | 同上，错误态与空态区分 | `fdd6deac` | 同上 |
-| 10 | `merchant-data-safety.spec.js:617` `task list remains visible when auxiliary product identity fails and retry recovers` | 同上，附属商品身份失败时的列表恢复 | `fdd6deac` | 同上 |
+| 6 | `merchant-data-safety.spec.js:410` `rule and category API failures never reveal demos and independent retries recover real data` | `知识库 > 规则库` 入口、规则/品类 API 失败与重试的界面状态 | `fdd6deac` | 规则 API 契约由 `apps/api/src/rules.e2e.test.ts`、`merchant-rule-trust-boundary.e2e.test.ts` 等覆盖；**「失败不得回退到演示数据」这一界面保证无替代面，商家界面亦无规则库入口** |
+| 7 | `merchant-data-safety.spec.js:453` `successful empty rule and category APIs show true empty states without demos` | 同上，`rules-api-empty` / `categories-api-empty` 空态 | `fdd6deac` | 同 6 |
+| 8 | `merchant-data-safety.spec.js:576` `task list shows loading, then a true empty state only after a successful response` | `知识库 > 营销任务` 任务队列的加载/空态区分 | `fdd6deac` | 任务 API 契约由 `apps/api/src/task-answers.e2e.test.ts`、`task-create-idempotency.e2e.test.ts` 覆盖；**「加载态不得冒充空态」这一界面保证无替代面**。任务队列仍可从「批量计划」创建后出现的 `查看营销任务` 进入，但没有一等入口，不足以支撑列表状态用例 |
+| 9 | `merchant-data-safety.spec.js:595` `task list keeps error distinct from empty and retry can recover to data` | 同上，错误态与空态区分 | `fdd6deac` | 同 8 |
+| 10 | `merchant-data-safety.spec.js:617` `task list remains visible when auxiliary product identity fails and retry recovers` | 同上，附属商品身份失败时的列表恢复 | `fdd6deac` | 同 8 |
 | 11 | `merchant-data-safety.spec.js:671` `knowledge navigation keeps publishing inside the marketing task workflow` | `知识库 > 营销任务` 一级入口存在，且发布不脱离营销任务流 | `fdd6deac` | 「发布中心不存在」这半条仍成立，已并入 `:656` 的替代用例 |
-| 12 | `merchant-data-safety.spec.js:681` `both sync-all entry points target every readable store including same-platform stores` | 概览 `同步全部店铺` 按钮逐店同步 | `c2eafb72`（CSS 注释：`Overview simplification requested during visual review.`） | 店铺同步的服务端契约由平台账号/同步 API 测试覆盖；**商家工作台已无同步入口** |
-| 13 | `merchant-data-safety.spec.js:715` `store discovery failure disables sync and sends no sync request` | 店铺发现失败时同步按钮禁用且不发请求 | `c2eafb72` | 同上 |
+| 12 | `merchant-data-safety.spec.js:681` `both sync-all entry points target every readable store including same-platform stores` | 概览 `同步全部店铺` 按钮逐店同步 | `c2eafb72`（CSS 注释：`Overview simplification requested during visual review.`） | 同步服务端契约由 `apps/api/src/sync-job.e2e.test.ts`、`platform-rule-sync.e2e.test.ts` 覆盖；**「逐店同步且不遗漏同平台多店」这一界面保证无替代面，商家工作台已无同步入口** |
+| 13 | `merchant-data-safety.spec.js:715` `store discovery failure disables sync and sends no sync request` | 店铺发现失败时同步按钮禁用且不发请求 | `c2eafb72` | 同 12；「失败时不得发出同步请求」原本由按钮的 disabled 保证，入口移除后该保证无处断言 |
 | 14 | `merchant-all.spec.js` 的概览版式断言（`.platformShare ≥ 0.98`、`visibleDashboardChildren === 1`、`scrollHeight ≤ viewportHeight`） | 概览 `article.platform-panel` 铺满 `dashboard-grid` 且整页不滚动 | `c2eafb72` | 被测量的 `article.platform-panel` 父级就是被 CSS 隐藏的 `.dashboard-grid`，量到的一律是 0；已改为断言可见的概览地标（`今日看板`/`账号看板`/`事务看板`）与「被视觉评审隐藏的三个面保持隐藏」 |
 | 15 | `merchant-all.spec.js` 的 `utilitySections = ['查看系统健康与上线状态']` 遍历 | 逐个打开工具面板 | `2e055921` | 与 1–4 同因；该面板已无法从商家界面打开 |
 | 16 | `merchant-all.spec.js` 在**概览页**做的全局搜索 | 概览存在 `搜索商品` 输入并可按关键词过滤 | `c2eafb72` | 概览已无搜索框；搜索框现在只在商品目录页（`merchant/tasks/new`）。原代码用 `if (await search.count())` 包着，界面改掉后是**静默跳过**、仍然绿灯——已改为在商品目录页执行并硬断言 `toHaveCount(1)`，不再允许静默流失 |
