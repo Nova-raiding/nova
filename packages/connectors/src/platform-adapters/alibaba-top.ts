@@ -31,6 +31,9 @@ export function createAlibabaTopSigner(options: AlibabaTopSignerOptions): Reques
   return {
     kind: 'platform',
     requiredApiSelectors: PLATFORM_API_SELECTORS,
+    // `params.session` below is the real access token: the credential rides the
+    // signed set, so the read path must carry a body.
+    signedParametersCarryCredential: true,
     sign(request) {
       const url = new URL(request.url)
       const params: Record<string, string> = {}
@@ -53,10 +56,9 @@ export function createAlibabaTopSigner(options: AlibabaTopSignerOptions): Reques
       delete params.sign
       const canonical = Object.keys(params).sort().map(key => `${key}${params[key]}`).join('')
       params.sign = signTop(options.signMethod ?? 'hmac-sha256', options.appSecret, canonical)
-      // GET APIs (`taobao.item.seller.get` and the other read methods) carry the
-      // signed parameters in the query: a form body on a GET is rejected by
-      // `fetch` before any network call, which made the whole read path
-      // undispatchable instead of failing at the provider.
+      // The read methods (`taobao.item.seller.get` and friends) are dispatched
+      // as POST like every other signed operation: the signed set carries
+      // `session` (the real access token), so it must stay in the body.
       applySignedRequest(request, url, params)
       return {}
     },

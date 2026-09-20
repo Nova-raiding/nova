@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AccountDashboard, FinanceOverview, Overview, TodayDashboard, resolvePurchaseBlockNotice, resolveRulePackBoard } from './App'
 import { fetchCreativePointStatement } from './api'
+import capture from './fixtures/creative-point-statement.capture.json'
 
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 
@@ -120,7 +121,13 @@ describe('creative point statement discloses its page budget', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  const entry = (id: string) => ({ id, event_type: 'consume', points_delta: -1, balance_after: 9, occurred_at: '2026-09-01T00:00:00.000Z', source: 'task', operation_id: null })
+  // Real server rows, not a hand-written stub: this fixture is a verbatim
+  // capture of `creative-points.statement.list` on the local candidate stack.
+  // The snake_case stub that used to live here matched only the dormant
+  // contracts declaration and hid the fact that the client could not read a
+  // single real row (see creative-point-statement-contract.test.ts).
+  const capturedEntry = capture.data.result.entries[0]!
+  const entry = (id: string) => ({ ...capturedEntry, id, eventType: 'settled', pointsDelta: -1, createdAt: '2026-09-01T00:00:00.000Z' })
   const envelope = (data: unknown) => new Response(JSON.stringify({
     request_id: 'merchant-studio-test', trace_id: 'merchant-studio-test', workspace_id: 'ws_demo',
     data, warnings: [], next_actions: [], error: null,

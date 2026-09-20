@@ -44,32 +44,45 @@ describe('JD Open Platform adapter', () => {
     expect(new URLSearchParams(request.body).get('method')).toBe('jingdong.ware.status.get')
   })
 
-  it('signs the GET read path into the URL query so the request stays dispatchable', async () => {
-    // `syncProducts` dispatches with GET; a signed form body there makes
-    // `fetch` throw "Request with GET/HEAD method cannot have body" before any
-    // network call, so the read path never left the process.
-    const request = { method: 'GET', url: 'https://api.jd.com/routerjson', headers: {} as Record<string, string>, body: JSON.stringify({ ware_id: '1' }), platform: 'jd' as const, operation: 'sync_products' as const, credential: { accessToken: 'token-1' } }
+  it('keeps the read path credential out of the URL', async () => {
+    // The read path is dispatched as POST, exactly like the write path. It used
+    // to be a GET whose signed parameters — access_token, app_key and the
+    // signature included — were written into the query string, which every hop
+    // that logs a request line could then read.
+    const request: { method: string; url: string; headers: Record<string, string>; body?: string; platform: 'jd'; operation: 'sync_products'; credential: { accessToken: string } } = { method: 'POST', url: 'https://api.jd.com/routerjson?cursor=page-2', headers: {}, platform: 'jd', operation: 'sync_products', credential: { accessToken: 'token-1' } }
     await createJdSigner({ appKey: 'jd-app', appSecret: 'secret', methods: { sync: 'jd.product.sync' }, now: () => new Date('2026-08-23T04:05:06Z') }).sign(request)
-    expect(request.body).toBeUndefined()
-    expect(() => new Request(request.url, { method: 'GET', body: request.body })).not.toThrow()
-    const query = new URL(request.url).searchParams
-    expect(new URL(request.url).pathname).toBe('/routerjson')
-    expect(query.get('method')).toBe('jd.product.sync')
-    expect(query.get('360buy_param_json')).toBe('{"ware_id":"1"}')
-    expect(query.get('access_token')).toBe('token-1')
-    expect(query.get('app_key')).toBe('jd-app')
-    expect(query.get('timestamp')).toBe('2026-08-23 12:05:06')
-    expect(request.headers['content-type']).toBeUndefined()
-    // The parameter set is identical to the form-body test above, so the same
-    // documented digest pins the query-string signature: only the transport
-    // moved, and the gateway verifies the same canonical string.
-    expect(query.get('sign')).toBe('1BEB12E427C2BF00A37FC5CA490FA3DE')
+    const url = new URL(request.url)
+    expect(url.pathname).toBe('/routerjson')
+    expect(url.search).toBe('')
+    expect(request.url).not.toContain('token-1')
+    const body = new URLSearchParams(request.body)
+    expect(body.get('method')).toBe('jd.product.sync')
+    expect(body.get('360buy_param_json')).toBe('{}')
+    expect(body.get('access_token')).toBe('token-1')
+    expect(body.get('app_key')).toBe('jd-app')
+    expect(body.get('timestamp')).toBe('2026-08-23 12:05:06')
+    expect(body.get('cursor')).toBe('page-2')
+    expect(request.headers['content-type']).toContain('application/x-www-form-urlencoded')
   })
 
-  it('does not let a GET query parameter retarget the signed router method', async () => {
-    const request = { method: 'GET', url: 'https://api.jd.com/routerjson?method=jd.ware.delete', headers: {} as Record<string, string>, platform: 'jd' as const, operation: 'sync_products' as const, credential: { accessToken: 'token-1' } }
+  it('refuses the read path on a bodyless method instead of publishing the credential', async () => {
+    // Fail closed: there is no transport for a signed parameter set on GET/HEAD
+    // that does not put the access token in the URL, so the signer must refuse
+    // rather than silently choose the query string.
+    const request: { method: string; url: string; headers: Record<string, string>; body?: string; platform: 'jd'; operation: 'sync_products'; credential: { accessToken: string } } = { method: 'GET', url: 'https://api.jd.com/routerjson', headers: {}, platform: 'jd', operation: 'sync_products', credential: { accessToken: 'token-1' } }
+    await expect(Promise.resolve().then(() => createJdSigner({ appKey: 'jd-app', appSecret: 'secret', methods: { sync: 'jd.product.sync' } }).sign(request)))
+      .rejects.toMatchObject({ code: 'NOT_CONFIGURED', retryable: false, message: expect.stringContaining('credentials must stay out of the URL') })
+    expect(request.body).toBeUndefined()
+    expect(new URL(request.url).search).toBe('')
+  })
+
+  it('drops a method smuggled in through the URL query instead of signing it', async () => {
+    const request = { method: 'POST', url: 'https://api.jd.com/routerjson?method=jd.ware.delete', headers: {} as Record<string, string>, body: JSON.stringify({ ware_id: '1' }), platform: 'jd' as const, operation: 'sync_products' as const, credential: { accessToken: 'token-1' } }
     await createJdSigner({ appKey: 'jd-app', appSecret: 'secret', methods: { sync: 'jd.product.sync' }, now: () => new Date('2026-08-23T04:05:06Z') }).sign(request)
-    expect(new URL(request.url).searchParams.getAll('method')).toEqual(['jd.product.sync'])
+    // The URL is cleared, so the smuggled value is neither dispatched nor
+    // signed; only the configured selector reaches the gateway.
+    expect(new URL(request.url).search).toBe('')
+    expect(new URLSearchParams(request.body).get('method')).toBe('jd.product.sync')
   })
 
   it('refuses to sign an operation whose router method is not configured', async () => {

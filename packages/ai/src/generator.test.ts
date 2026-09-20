@@ -332,6 +332,14 @@ describe('content generator', () => {
     expect(() => createContentGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example.com/v1', MODEL_RELAY_API_KEY: 'secret', AI_MODEL: 'text-model', AI_MAX_INPUT_TOKENS: 'unbounded' })).toThrow('TOKEN_BUDGET_INVALID')
   })
 
+  it('rejects a model timeout that would abort every request instead of bounding it', () => {
+    const relay = { MODEL_RELAY_BASE_URL: 'https://relay.example/v1', MODEL_RELAY_API_KEY: 'secret', AI_MODEL: 'text-model' }
+    expect(() => createContentGeneratorFromEnv({ ...relay, AI_TIMEOUT_MS: 'unbounded' })).toThrow('PROVIDER_TIMEOUT_INVALID')
+    expect(() => createContentGeneratorFromEnv({ ...relay, AI_TIMEOUT_MS: '0' })).toThrow('PROVIDER_TIMEOUT_INVALID')
+    // An empty value means "unset" and keeps the default timeout.
+    expect(createContentGeneratorFromEnv({ ...relay, AI_TIMEOUT_MS: '' })).toBeDefined()
+  })
+
   it('stops after the initial response and two failed repair attempts', async () => {
     let calls = 0
     const generator = new OpenAICompatibleContentGenerator({

@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
 import { visibleModelsPageSections } from "./modelsPageVisibility.js";
+import { ModelsPage } from "./ModelsPage.js";
+import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 
 describe("models page sections", () => {
   it("hides markup configuration without platform_ops permission", () => {
@@ -11,13 +14,35 @@ describe("models page sections", () => {
     expect(visibleModelsPageSections(true)).toEqual(["model-status", "model-markup"]);
   });
 
-  it("keeps the model page organized around runtime, capability, usage and billing sections without a redundant hero", () => {
-    const source = readFileSync(new URL("./ModelsPage.tsx", import.meta.url), "utf8");
-    expect(source).not.toContain('className="ops-models-hero"');
-    expect(source).toContain('aria-label="模型服务关键指标"');
-    expect(source).toContain('id="models-runtime-heading"');
-    expect(source).toContain('id="models-capability-heading"');
-    expect(source).toContain("平台模型用量");
-    expect(source).toContain("BILLING CONTROL");
+  it("renders the merged-model notice and the billing markup controls without a redundant hero", () => {
+    // This case used to grep the page source for the retired 模型服务 anchors
+    // and their headings, which the source satisfied from a comment alone - it
+    // stayed green while the page rendered none of them. Assert on what is
+    // rendered instead, so a comment can never satisfy it again.
+    const markup = renderToStaticMarkup(createElement(ModelsPage, {
+      model: {
+        canModelMarkup: true,
+        canModelMarkupUpdate: true,
+        modelMarkup: undefined,
+        modelMarkupLoading: false,
+        modelMarkupError: "",
+        modelMarkupReason: "",
+        setModelMarkup: vi.fn(),
+        setModelMarkupReason: vi.fn(),
+        saveModelMarkup: vi.fn(async () => undefined),
+        loadModelMarkup: vi.fn(async () => undefined),
+      } as unknown as OpsConsoleModel,
+    }));
+
+    expect(markup).not.toContain("ops-models-hero");
+    expect(markup).toContain("模型服务页已合并");
+    expect(markup).toContain("Token 成本倍率");
+    expect(markup).toContain("Token 计费倍率");
+    expect(markup).toContain("模型计费设置");
+    // None of the retired anchors exist in rendered output, only in the
+    // explanatory comment.
+    expect(markup).not.toContain("BILLING CONTROL");
+    expect(markup).not.toContain("models-runtime-heading");
+    expect(markup).not.toContain("模型服务关键指标");
   });
 });

@@ -1,7 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { assertProviderResponseAccepted, ProviderOutcomeUnknownError, ProviderRequestFailedError, rethrowProviderTransportFailure, withProviderRequestRetry } from './provider-request.js'
+import { assertProviderResponseAccepted, ProviderOutcomeUnknownError, ProviderRequestFailedError, resolveProviderTimeoutMs, rethrowProviderTransportFailure, withProviderRequestRetry } from './provider-request.js'
 
 describe('provider request outcome evidence', () => {
+  it('rejects a provider timeout that setTimeout would turn into an instant abort', () => {
+    // Any delay outside the timer range is clamped to 1ms, which aborts the
+    // request before the provider can answer and is then reported as an
+    // ambiguous (possibly billed) provider outcome.
+    for (const value of ['abc', '90,000', '90s', '0', '-1', '1.5', '90000.5', String(2_147_483_648)]) {
+      expect(() => resolveProviderTimeoutMs(value, 90_000, 'AI_TIMEOUT_MS')).toThrow('PROVIDER_TIMEOUT_INVALID')
+    }
+  })
+
+  it('keeps an unset provider timeout on its fallback and accepts the timer range', () => {
+    for (const value of [undefined, '', '  ']) expect(resolveProviderTimeoutMs(value, 90_000, 'AI_TIMEOUT_MS')).toBe(90_000)
+    expect(resolveProviderTimeoutMs('90000', 1_000, 'AI_TIMEOUT_MS')).toBe(90_000)
+    expect(resolveProviderTimeoutMs(90_000, 1_000, 'AI_TIMEOUT_MS')).toBe(90_000)
+    expect(resolveProviderTimeoutMs(String(2_147_483_647), 1_000, 'AI_TIMEOUT_MS')).toBe(2_147_483_647)
+  })
+
   it('retries bounded 429 failures with Retry-After plus jitter, then returns success', async () => {
     let attempts = 0
     const waits: number[] = []

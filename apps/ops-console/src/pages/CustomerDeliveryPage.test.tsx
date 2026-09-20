@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { customerDeliveryWorkspaceOptions, isCustomerDeliveryRevisionConflict } from "./CustomerDeliveryPage.js";
+import { customerDeliveryWorkspaceOptions, isCustomerDeliveryRevisionConflict, withChecklistRevision } from "./CustomerDeliveryPage.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -61,6 +61,20 @@ describe("customer delivery workspace selection", () => {
     expect(isCustomerDeliveryRevisionConflict(new Error("network unavailable"))).toBe(false);
     expect(pageSource).toContain("currentRecord = await customerDeliveryClient.get");
     expect(pageSource).toContain("const latest = await customerDeliveryClient.get");
+  });
+
+  it("never erases a known record revision when the checklist save reports none", () => {
+    // `ops.customer-delivery.checklist.update` answers with the saved item
+    // list, so `updateChecklist().revision` is normally undefined. Writing
+    // that undefined over a revision the record already carries makes every
+    // later write on the same row fail as "缺少有效版本".
+    const stored = { id: "delivery-1", revision: 4 } as unknown as Parameters<typeof withChecklistRevision>[0];
+    expect(withChecklistRevision(stored, undefined)).toBe(stored);
+    expect(withChecklistRevision(stored, undefined).revision).toBe(4);
+    expect(withChecklistRevision(stored, 7)).toMatchObject({ id: "delivery-1", revision: 7 });
+    expect(withChecklistRevision(stored, 7)).not.toBe(stored);
+    expect(pageSource).toContain("withChecklistRevision(currentRecord, revision)");
+    expect(pageSource).not.toContain("{ ...currentRecord, revision }");
   });
 
   it("uses creation time for launch display and removes the manual launch field", () => {
@@ -593,5 +607,36 @@ describe("customer delivery read-only desktop interaction", () => {
       expect(methods.filter(method => method === expectedMethod)).toHaveLength(1);
       await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
     } finally { releaseMutation?.(); await page.close(); }
+  }, 45_000);
+
+  it("still writes the same row after a checklist save whose refresh failed", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    const calls: Array<{ method: string; params: Record<string, string> }> = [];
+    try {
+      // The batch checklist endpoint answers with the saved item list, so its
+      // response carries no revision, and `ops.customer-delivery.get` fails
+      // here - the page has to keep the revision it already read.
+      await prepare(page, { write: true, failVideoRefresh: true, onMutation: async (method, params) => {
+        if (method !== "ops.customer-delivery.checklist.update") throw new Error(`Unexpected mutation: ${method}`);
+        calls.push({ method, params });
+        return [{ itemKey: "插件账号", completed: true, evidence: {} }];
+      } });
+      await row(page).getByRole("button", { name: "已完成", exact: true }).nth(1).click();
+      await expect.poll(() => page.getByPlaceholder("可填写链接、截图说明或记录编号").first().inputValue()).toBe("已保存的检查记录");
+      // The antd button keeps a leaving loading icon whose label hides it from
+      // an exact accessible-name match, so match on its text.
+      const saveStep = page.getByRole("dialog").locator('button:has-text("保存当前环节")');
+      await saveStep.click();
+      await expect.poll(() => calls.length).toBe(1);
+      expect(calls[0].params.expected_revision).toBe("4");
+      await page.getByText("清单已保存，但最新档案读取失败", { exact: false }).waitFor();
+      // The follow-up read failed, but the record's revision is still known:
+      // the next save must reach the API instead of being refused locally as
+      // "客户交付记录缺少有效版本".
+      await saveStep.click();
+      await expect.poll(() => calls.length).toBe(2);
+      expect(calls[1].params.expected_revision).toBe("4");
+      expect(await page.getByText("客户交付记录缺少有效版本", { exact: false }).count()).toBe(0);
+    } finally { await page.close(); }
   }, 45_000);
 });

@@ -1,8 +1,15 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import {
+  declaredProducers,
+  envTemplateKeys,
+  preflightAssertions,
+  productionLayerPaths,
+  requiredProductionVariables,
+} from './invariants/release-env-closure.js'
 
 const digest = (character: string) => `sha256:${character.repeat(64)}`
 const digests = {
@@ -107,6 +114,7 @@ function releaseLayerRequiredVariables(): string[] {
   return [...new Set([...readFileSync(releaseLayerPath, 'utf8').matchAll(/\$\{([A-Z0-9_]+):\?/gu)].map(match => match[1]!))]
 }
 
+
 /** Artifact -> services, from the digest manifest the release gate enforces. */
 function requiredReleaseArtifacts(): Map<string, string[]> {
   const source = readFileSync('infra/scripts/validate-ecs-compose-release.rb', 'utf8')
@@ -114,15 +122,15 @@ function requiredReleaseArtifacts(): Map<string, string[]> {
   return new Map([...body.matchAll(/'([a-z0-9-]+)' => %w\[([a-z0-9 -]+)\]/gu)].map(match => [match[1]!, match[2]!.split(' ')]))
 }
 
-/** Variables a repository script asserts as required, plus the `.env.example` template keys. */
-function declaredVariables(): Set<string> {
-  const declared = new Set([...readFileSync('.env.example', 'utf8').matchAll(/^([A-Z][A-Z0-9_]*)=/gmu)].map(match => match[1]!))
-  for (const entry of readdirSync('infra/scripts')) {
-    if (!entry.endsWith('.sh')) continue
-    for (const match of readFileSync(join('infra/scripts', entry), 'utf8').matchAll(/: "\$\{([A-Z0-9_]+):\?/gu)) declared.add(match[1]!)
-  }
-  return declared
-}
+/**
+ * NOTE ON LAYERING. `declaredProducers()` lives in
+ * `tests/invariants/release-env-closure.ts`, not here, so this gate and the
+ * invariant evidence in `tests/release-env-closure.invariant.test.ts` share one
+ * definition of "closed" instead of two that can drift. Its doc comment carries
+ * the false-green history this gate shipped with: deleting the preflight half of
+ * the `PILOT_GATEWAY_IMAGE_REF`/`MIGRATION_IMAGE_REF` fix left all six tests in
+ * this file green, because a bare `.env.example` key counted as a producer.
+ */
 
 describe('ECS Compose release gate', () => {
   it('accepts only a complete immutable image set, including both gateways', () => {
@@ -198,8 +206,45 @@ describe('ECS Compose release gate', () => {
 
     const requiredVariables = releaseLayerRequiredVariables()
     expect(requiredVariables.length).toBeGreaterThan(0)
-    const declared = declaredVariables()
+    const declared = declaredProducers()
     const undeclared = requiredVariables.filter(name => !declared.has(name))
     expect(undeclared, `these variables are required by ${releaseLayerPath} but have no producer: declare each as ": "\${NAME:?NAME is required}"" in an infra/scripts preflight and list it in .env.example, so the deploy-time .env template and the preflight contract name it before the render fails: ${undeclared.join(', ')}`).toEqual([])
+  })
+
+  it('closes the whole production chain: every `:?` variable in every layer has both producers', () => {
+    // The release layer is rendered last. The base layers are interpolated
+    // first, so a variable nobody declared fails there — with the release
+    // layer's own missing values hidden behind Compose's error cap.
+    const required = requiredProductionVariables()
+    // Non-vacuity: the chain really is being scanned, and it reaches past the
+    // release layer whose closure the test above already covers on its own.
+    expect(productionLayerPaths.length).toBeGreaterThanOrEqual(2)
+    expect(productionLayerPaths).toContain(releaseLayerPath)
+    expect(required.size).toBeGreaterThan(releaseLayerRequiredVariables().length)
+
+    const inTemplate = envTemplateKeys()
+    const inPreflight = preflightAssertions()
+    const names = [...required.keys()].sort()
+    const missingFromTemplate = names.filter(name => !inTemplate.has(name))
+    expect(missingFromTemplate, `these variables are required by the production Compose chain but .env.example never declares them, so an operator building the ECS host .env from the repository's only template cannot supply them: ${missingFromTemplate.join(', ')}`).toEqual([])
+    const missingFromPreflight = names.filter(name => !inPreflight.has(name))
+    expect(missingFromPreflight, `these variables are required by the production Compose chain but no infra/scripts/*.sh preflight refuses to run without them, so the render fails before anything names the missing key (Compose truncates its interpolation errors): add ": "\${NAME:?NAME is required}"" to the ECS preflight for each: ${missingFromPreflight.join(', ')}`).toEqual([])
+  })
+
+  it('keeps the two producer halves genuinely distinct, so their intersection is not a union in disguise', () => {
+    // `declaredProducers()` is the intersection of the template keys and the
+    // preflight assertions. If either half were a superset of the other — or if
+    // a helper silently fell back to one of them — the intersection would stop
+    // being stricter than the halves and the closure above would go vacuously
+    // green, which is exactly the failure the preflight half was missing.
+    const inTemplate = envTemplateKeys()
+    const inPreflight = preflightAssertions()
+    const templateOnly = [...inTemplate].filter(name => !inPreflight.has(name))
+    const preflightOnly = [...inPreflight].filter(name => !inTemplate.has(name))
+    expect(templateOnly.length, 'a `.env.example` key no preflight asserts is expected (local-only settings), but there must be at least one for the two halves to differ').toBeGreaterThan(0)
+    expect(preflightOnly.length, 'a preflight assertion with no `.env.example` key is expected (release-pipeline values), but there must be at least one for the two halves to differ').toBeGreaterThan(0)
+    const declared = declaredProducers()
+    expect(declared.size).toBeLessThan(inTemplate.size)
+    expect(declared.size).toBeLessThan(inPreflight.size)
   })
 })

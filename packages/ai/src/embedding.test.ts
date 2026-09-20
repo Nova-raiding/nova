@@ -31,5 +31,6 @@ describe('relay embedding client', () => {
     await expect(client.embed({ texts: ['text', 'more'] })).rejects.toThrow('EMBEDDING_RESPONSE_DIMENSIONS_INVALID')
     expect(createEmbeddingClientFromEnv({ NODE_ENV: 'production', MODEL_RELAY_BASE_URL: 'https://relay.example.test', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example.test', MODEL_RELAY_API_KEY: 'key' })).toBeUndefined()
     expect(createEmbeddingClientFromEnv({ NODE_ENV: 'production', MODEL_RELAY_BASE_URL: 'https://relay.example.test', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example.test', MODEL_RELAY_API_KEY: 'key', EMBEDDING_MODEL: 'embed-v1' })).toBeDefined()
+    expect(() => createEmbeddingClientFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example.test', MODEL_RELAY_API_KEY: 'key', EMBEDDING_MODEL: 'embed-v1', EMBEDDING_TIMEOUT_MS: 'nope' })).toThrow('PROVIDER_TIMEOUT_INVALID')
   })
 })

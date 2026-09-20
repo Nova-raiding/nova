@@ -40,6 +40,30 @@ describe('knowledge module', () => {
     expect(knowledge.queryRules({ asOf: '2026-08-25T00:00:00.000Z' }).map(rule => rule.id)).toEqual([global.id])
   })
 
+  it('matches a scoped rule whose scope value was submitted with surrounding whitespace', () => {
+    // A padded `scope_value` used to be stored untrimmed in `target[key]` while
+    // the rule's own `scopeValue` alias was trimmed. The rule was then listed by
+    // `queryRules` but never applicable to generation, and every later update
+    // threw RULE_SCOPE_TARGET_CONFLICT comparing the rule against itself, so it
+    // could not even be deactivated through the API.
+    const knowledge = createModule()
+    const padded = knowledge.createRule({ name: '平台标题长度', content: '标题不超过 30 字', scope: 'platform', scopeValue: ' taobao ', source, version: '1', status: 'active' })
+    expect(padded.target).toEqual({ platform: 'taobao' })
+    expect(padded.scopeValue).toBe('taobao')
+    expect(knowledge.findApplicableRules({ platform: 'taobao' }, '2026-08-25T00:00:00.000Z').map(rule => rule.id)).toEqual([padded.id])
+    expect(knowledge.queryRules({ scopeValue: 'taobao' }).map(rule => rule.id)).toEqual([padded.id])
+    expect(knowledge.updateRule(padded.id, { status: 'inactive' }).status).toBe('inactive')
+
+    // A pre-existing untrimmed record is repaired by the next update instead of
+    // being permanently un-editable.
+    const legacy = createModule()
+    const broken = legacy.createRule({ name: '历史规则', content: '历史内容', scope: 'store', scopeValue: 's1', source, version: '1', status: 'active' })
+    legacy.hydrate([{ eventType: 'knowledge.rule.created', aggregateId: broken.id, sequence: 1, payload: { ...broken, scopeValue: 's1', target: { store: ' s1 ' } } as unknown as Record<string, unknown> }])
+    expect(legacy.getRule(broken.id)?.target).toEqual({ store: ' s1 ' })
+    expect(legacy.updateRule(broken.id, { content: '修订内容' }).target).toEqual({ store: 's1' })
+    expect(legacy.findApplicableRules({ store: 's1' }, '2026-08-25T00:00:00.000Z').map(rule => rule.id)).toEqual([broken.id])
+  })
+
   it('validates effective windows and protects rule CRUD', () => {
     const knowledge = createModule()
     expect(() => knowledge.createRule({ name: 'bad', content: 'bad', scope: 'store', scopeValue: 's1', source, version: '1', status: 'draft', effectiveFrom: '2026-08-26T00:00:00.000Z', effectiveTo: '2026-08-25T00:00:00.000Z' })).toThrowError(new KnowledgeError('RULE_EFFECTIVE_WINDOW_INVALID'))

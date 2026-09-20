@@ -33,6 +33,20 @@ async function waitForCleanDeliveryAsset(initialAsset: CustomerDeliveryAsset, in
   return asset;
 }
 
+/**
+ * The batch checklist endpoint answers with the saved item list, so the client
+ * only reports a `revision` when the response happens to carry one. Merging
+ * that absent value into the record would erase a revision the record already
+ * had, and the next write on the same row would then be refused as "missing a
+ * version" - a failure the operator cannot fix without a full reload.
+ */
+export function withChecklistRevision(
+  record: CustomerDeliveryRecord,
+  revision: number | undefined,
+): CustomerDeliveryRecord {
+  return revision === undefined ? record : { ...record, revision };
+}
+
 export function buildCustomerDeliveryProfilePatch(record: CustomerDeliveryRecord) {
   return {
     companyName: record.companyName.trim(),
@@ -199,7 +213,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     // The checklist write is already durable. Only reconcile its aggregate
     // while the exact authorization generation that initiated it is current;
     // otherwise a late completion must not read the old tenant.
-    const fallback = { ...currentRecord, revision };
+    const fallback = withChecklistRevision(currentRecord, revision);
     if (!hasCurrentReadAccess(mutationWorkspaceId, mutationGeneration)) return fallback;
     const request = startCurrentRead(mutationWorkspaceId, mutationGeneration);
     if (!request) return fallback;

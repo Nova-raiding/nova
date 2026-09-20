@@ -3,24 +3,24 @@
   "messages": [
     {
       "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)"
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
     }
   ],
   "failedRequests": [],
   "badResponses": [
     {
-      "url": "http://127.0.0.1:18081/api/healthz",
+      "url": "http://127.0.0.1:28181/api/v1/auth/session",
       "method": "GET",
       "requestBody": null,
-      "status": 503,
-      "statusText": "Service Unavailable",
-      "body": "{\"request_id\":\"req_e24c0a50-327e-4dd7-a246-31caa7362249\",\"trace_id\":\"req_e24c0a50-327e-4dd7-a246-31caa7362249\",\"workspace_id\":\"system\",\"data\":null,\"warnings\":[],\"next_actions\":[],\"error\":{\"code\":\"REDIS_UNAVAILABLE\",\"message\":\"Redis 未就绪\"}}"
+      "status": 401,
+      "statusText": "Unauthorized",
+      "body": "{\"request_id\":\"req_36f76611-acd8-4fe4-9ed4-2430fce41b6b\",\"trace_id\":\"req_36f76611-acd8-4fe4-9ed4-2430fce41b6b\",\"workspace_id\":\"ws_demo\",\"data\":null,\"warnings\":[],\"next_actions\":[],\"error\":{\"code\":\"AUTH_SESSION_INVALID\",\"message\":\"会话已过期，请重新登录\"}}"
     }
   ],
   "inventory": {
     "title": "Merchant Studio · 商家营销工作台",
-    "url": "http://127.0.0.1:18081/merchant/overview",
-    "bodyText": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n运营概览\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转已就绪。\n查看健康状态\n正在读取业务数据\n把商品事实变成\n可放心发布的内容\n\n同步商品、确认事实、生成营销内容，并在发布前看清每一处变化。\n\n选择商品开始任务\n同步全部店铺\nAI\n事实确认\n内容生成\n检查发布\nNEW SESSION\n从你已有的内容开始\n\n按“知识库 → 商品 → 图片/素材”的顺序准备内容；每个入口都会保留到地址栏。\n\n1\n知识库\n品牌资料与规则依据\n进入知识库\n2\n商品\n选择平台商品开始任务\n进入商品\n3\n图片\n主图、副图与视觉检查\n进入图片\n4\n素材\n上传并确认权益与事实\n进入素材\n已连接店铺\n—\n等待真实工作区数据\n已批准内容\n—\n等待真实工作区数据\n平均首稿耗时\n—\n当前接口暂无耗时统计\n需处理问题\n—\n等待真实工作区数据\nPLUGIN WALLET\n钱包与能力状态\n读取中…\n¥—\n\n正在读取钱包状态…\n\n余额、套餐额度、生成和平台发布分别判断；支付订单只有回调确认后才会到账。\n创建充值订单\nCONNECTIONS\n平台连接\n管理连接\n京\n京东\njd 店铺\n可读取\n可同步\n同步\n撤销\n淘\n淘宝\ntaobao 店铺 等 3 个店铺名\n可读取\n可同步\n同步\n撤销\n淘\n淘宝\ntaobao 店铺\n可读取\n可同步\n同步\n撤销\n天\n天猫\ntmall 店铺\n可读取\n可同步\n同步\n撤销\n拼\n拼多多\npinduoduo 店铺\n可读取\n可同步\n同步\n撤销\n小\n小红书\n小红书未验证 Fixture\n连接状态待确认\n暂不可读取\n抖\n抖音\ndouyin 店铺\n可读取\n可同步\n同步\n撤销\nRECENT\n最近动态\n查看全部\n京东同步\n1 项 · 未发现失败项\n已完成\n京东同步\n1 项 · 未发现失败项\n已完成\n拼多多同步\n1 项 · 未发现失败项\n已完成\n淘宝同步\n1 项 · 未发现失败项\n已完成\nSYNC RECOVERY\n同步任务与失败项\n刷新\n当前同步任务没有失败项\nCAPABILITY EVIDENCE\n平台能力证据\n平台能力证据属于平台运营工作台；商家工作台仅展示店铺授权和交付就绪状态。",
+    "url": "http://127.0.0.1:28181/merchant/overview",
+    "bodyText": "跳到主要内容\n工作台\n运营概览\n知识库\n平台&店铺&商品\n品牌资产\n素材库\n回收站\n财务概况\n联系客服经理\n运营概览\n本\n本地演示商家\nDAILY BRIEFING\n今日看板\n\n汇总当前工作区数据、规则版本和素材容量，全部来自服务端读取。\n\n当前剩余创意点\n未读取\n等待服务端账务数据\n数据看板\n当前工作区摘要\n已连接店铺\n未读取\n家\n商品总数\n未读取\n件\n待处理风险\n未读取\n项\n素材看板\n店铺与储存空间\n已连接\n未读取\n家电商店铺\n已用储存\n未读取\n素材\n剩余储存\n未读取\n可用\n储存空间\n未读取\n服务端未返回储存配额，当前不显示用量。\n知识库看板\n规则版本与更新状态\n规则版本\n服务端未返回规则版本。\nACCOUNT OVERVIEW\n账号看板\n\n汇总平台授权与已连接店铺，快速掌握账号接入状态。\n\n平台连接\n统一查看各渠道授权状态。如果需要连接，请联系客户经理。\n0/6 已接入\n京\n京东\n演示连接\n淘\n淘宝\n演示连接\n天\n天猫\n演示连接\n拼\n拼多多\n演示连接\n小\n小红书\n演示连接\n抖\n抖音\n演示连接\n已连接店铺 0 家\n当前可管理的店铺账号\n进入店铺连接\n暂无\n当前没有可读取的真实店铺\nACTION CENTER\n事务看板\n\n集中查看需要处理的授权、素材与运营事项。\n\n未读取 待处理\n工作区事务尚未从服务端读取",
     "buttons": [
       {
         "index": 0,
@@ -34,196 +34,102 @@
       },
       {
         "index": 2,
-        "text": "商品与资产",
+        "text": "平台&店铺&商品",
         "disabled": false
       },
       {
         "index": 3,
-        "text": "营销任务",
+        "text": "品牌资产",
         "disabled": false
       },
       {
         "index": 4,
-        "text": "发布中心",
+        "text": "素材库",
         "disabled": false
       },
       {
         "index": 5,
-        "text": "规则与检查",
+        "text": "回收站",
         "disabled": false
       },
       {
         "index": 6,
-        "text": "知识库 品牌资料与规则依据",
+        "text": "财务概况",
         "disabled": false
       },
       {
         "index": 7,
-        "text": "商品 选择平台商品开始任务",
+        "text": "联系客服经理",
         "disabled": false
       },
       {
         "index": 8,
-        "text": "图片 主图、副图与视觉检查",
-        "disabled": false
-      },
-      {
-        "index": 9,
-        "text": "素材 上传并确认权益与事实",
-        "disabled": false
-      },
-      {
-        "index": 10,
-        "text": "帮助与诊断",
-        "disabled": false
-      },
-      {
-        "index": 11,
-        "text": "工作区信息",
-        "disabled": false
-      },
-      {
-        "index": 12,
         "text": "打开主菜单",
         "disabled": false
       },
       {
+        "index": 9,
+        "text": "工作区待处理问题，暂无",
+        "disabled": false
+      },
+      {
+        "index": 10,
+        "text": "本 本地演示商家",
+        "disabled": false
+      },
+      {
+        "index": 11,
+        "text": "等待店铺连接",
+        "disabled": true
+      },
+      {
+        "index": 12,
+        "text": "进入店铺连接",
+        "disabled": false
+      },
+      {
         "index": 13,
-        "text": "系统健康 在线",
-        "disabled": false
-      },
-      {
-        "index": 14,
-        "text": "林",
-        "disabled": false
-      },
-      {
-        "index": 15,
-        "text": "查看健康状态",
-        "disabled": false
-      },
-      {
-        "index": 16,
-        "text": "选择商品开始任务",
-        "disabled": false
-      },
-      {
-        "index": 17,
-        "text": "同步全部店铺",
-        "disabled": false
-      },
-      {
-        "index": 18,
-        "text": "1 知识库 品牌资料与规则依据 进入知识库",
-        "disabled": false
-      },
-      {
-        "index": 19,
-        "text": "2 商品 选择平台商品开始任务 进入商品",
-        "disabled": false
-      },
-      {
-        "index": 20,
-        "text": "3 图片 主图、副图与视觉检查 进入图片",
-        "disabled": false
-      },
-      {
-        "index": 21,
-        "text": "4 素材 上传并确认权益与事实 进入素材",
-        "disabled": false
-      },
-      {
-        "index": 22,
-        "text": "创建充值订单",
-        "disabled": false
-      },
-      {
-        "index": 23,
         "text": "管理连接",
         "disabled": false
       },
       {
-        "index": 24,
-        "text": "同步",
+        "index": 14,
+        "text": "连接",
         "disabled": false
       },
       {
-        "index": 25,
-        "text": "撤销",
+        "index": 15,
+        "text": "连接",
         "disabled": false
       },
       {
-        "index": 26,
-        "text": "同步",
+        "index": 16,
+        "text": "连接",
         "disabled": false
       },
       {
-        "index": 27,
-        "text": "撤销",
+        "index": 17,
+        "text": "连接",
         "disabled": false
       },
       {
-        "index": 28,
-        "text": "同步",
+        "index": 18,
+        "text": "连接",
         "disabled": false
       },
       {
-        "index": 29,
-        "text": "撤销",
-        "disabled": false
-      },
-      {
-        "index": 30,
-        "text": "同步",
-        "disabled": false
-      },
-      {
-        "index": 31,
-        "text": "撤销",
-        "disabled": false
-      },
-      {
-        "index": 32,
-        "text": "同步",
-        "disabled": false
-      },
-      {
-        "index": 33,
-        "text": "撤销",
-        "disabled": false
-      },
-      {
-        "index": 34,
-        "text": "同步",
-        "disabled": false
-      },
-      {
-        "index": 35,
-        "text": "撤销",
-        "disabled": false
-      },
-      {
-        "index": 36,
+        "index": 19,
         "text": "查看全部",
         "disabled": false
       },
       {
-        "index": 37,
+        "index": 20,
         "text": "刷新",
         "disabled": false
       }
     ],
     "links": [],
-    "inputs": [
-      {
-        "index": 0,
-        "tag": "INPUT",
-        "type": null,
-        "placeholder": "搜索商品",
-        "label": "搜索商品",
-        "value": ""
-      }
-    ],
+    "inputs": [],
     "headings": [
       {
         "level": "H1",
@@ -231,15 +137,35 @@
       },
       {
         "level": "H2",
-        "text": "把商品事实变成可放心发布的内容"
+        "text": "今日看板"
       },
       {
         "level": "H3",
-        "text": "从你已有的内容开始"
+        "text": "数据看板"
       },
       {
         "level": "H3",
-        "text": "钱包与能力状态"
+        "text": "素材看板"
+      },
+      {
+        "level": "H3",
+        "text": "知识库看板"
+      },
+      {
+        "level": "H2",
+        "text": "账号看板"
+      },
+      {
+        "level": "H3",
+        "text": "平台连接"
+      },
+      {
+        "level": "H3",
+        "text": "已连接店铺 0 家"
+      },
+      {
+        "level": "H2",
+        "text": "事务看板"
       },
       {
         "level": "H3",

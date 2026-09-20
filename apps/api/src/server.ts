@@ -20,7 +20,7 @@ import { canonicalBackfillConflictQueueFailure, canonicalBackfillRunCanRetry } f
 import { defaultRuleCenterSeeds, type RuleHit, type RulePack } from '../../../packages/review/src/rule-center.js'
 import { reviewProductImages } from '../../../packages/review/src/review.js'
 import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError, type ConnectorRuntimeMappingPreflightAdapter } from '../../../packages/application/src/connector-runtime.js'
-import { allowedModelUsageSettlementDecisions, AssetScanRedriveError, AuthorizationRepositoryError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, CommercialContractError, compareMembersByRecency, DEFAULT_MEMBER_ENTERPRISE_NAME, loadMigrations, memberIdentityKey, memberMatchesQuery, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialCatalogRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryCreativePointRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialCatalogRepository, PostgresCommercialContractRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresCreativePointRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresServiceFulfillmentRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialCatalogRepository, type CommercialCatalogSkuSnapshot, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type CreativePointRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ModelUsageSettlementDecision, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type ServiceFulfillmentRepository, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type WorkspaceMember, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
+import { allowedModelUsageSettlementDecisions, AssetScanRedriveError, AuthorizationRepositoryError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, CommercialContractError, compareMembersByRecency, DEFAULT_MEMBER_ENTERPRISE_NAME, effectiveDebitFenOf, effectiveDebitFensOf, loadMigrations, reversalOrderId, settlementOrderId, visibleProductIds, memberIdentityKey, memberMatchesQuery, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialCatalogRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryCreativePointRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialCatalogRepository, PostgresCommercialContractRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresCreativePointRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresServiceFulfillmentRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialCatalogRepository, type CommercialCatalogSkuSnapshot, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type CreativePointRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ModelUsageSettlementDecision, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type ServiceFulfillmentRepository, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type WorkspaceMember, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
 import type { OutboxEvent, OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import { ServiceFulfillmentRepositoryError, type ServiceFulfillmentEventRecord } from '../../../packages/persistence/src/service-fulfillment-repository.js'
 import { CustomerDeliveryError, MemoryCustomerDeliveryRepository, PostgresCustomerDeliveryRepository, normalizeCustomerDeliveryAccountListInput, customerDeliveryAccountCursor, type CustomerDeliveryRepository } from '../../../packages/persistence/src/customer-delivery-repository.js'
@@ -77,9 +77,10 @@ import { buildCanonicalChainConsistencyReport, canonicalProductReadModeFromFlag,
 import { CampaignDeliveryOrchestratorAdapter, type CampaignDeliveryLifecycleOperation } from '../../../packages/application/src/campaign-delivery-orchestrator.js'
 import { CampaignManifestError, type CampaignDeliveryManifestInput } from '../../../packages/application/src/campaign-delivery-manifest.js'
 import { LocalObjectStorage, ObjectStorageError, ObjectStoragePartialWriteError, S3CompatibleObjectStorage, withObjectStorageReadRetry, runReconciliationCycle, type CloudObjectTransport, type ObjectStoragePort, type PutQuarantineObjectInput, MemoryReconciliationStatusStore, type ReconciliationReport, type ReconciliationStatusStore, type DurableObjectReference, type ObjectInventoryEntry } from '../../../packages/storage/src/index.js'
+import { objectKeyIdentity, reservationKeyFor, reservationKeyForObjectKey } from '../../../packages/storage/src/reservation-key.js'
 import { UploadSessionManager } from '../../../packages/storage/src/upload-session.js'
 import { checkDurableArchiveReference } from '../../../packages/storage/src/archive-lifecycle-contract.js'
-import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, CAPABILITIES, COMMERCIAL_OPERATION_REGISTRY, COMMERCIAL_OPERATION_REGISTRY_VERSION, MCP_METHODS, MCP_METHOD_CONTRACTS, MCP_METHOD_SCHEMAS, MCP_METHOD_POLICIES, MCP_NON_PRODUCTION_METHODS, MCP_POINT_CHARGED_ENABLED_METHODS, MCP_POINT_CHARGED_DISABLED_METHODS, MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS, MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS, MCP_RECOVERY_ENABLED_METHODS, MCP_RECOVERY_DISABLED_METHODS, MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS, capabilitiesForRoles, canonicalizeRole, evaluateAuthorizationDecision, evaluatePermissionAtoms, getHttpOperationPolicy, getMcpMethodPolicy, resolveCanonicalRoles, resolveCommercialOperation, ERROR_CODES, isCommercialAccessErrorCode, isCommercialPurchaseErrorCode, isMcpMethod, validateMcpRequest, validateImageGenerationCallbackResult, type ApiEnvelope, type AuthorizationDecision, type AuthorizationDecisionMode, type AuthorizationObligation, type CanonicalRole, type CapabilityId, type CommercialAccessDecision, type HttpOperationPolicy, type McpRequest, type OpsWorkbench, type PermissionAtom } from '../../../packages/contracts/src/index.js'
+import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, CAPABILITIES, COMMERCIAL_OPERATION_REGISTRY, COMMERCIAL_OPERATION_REGISTRY_VERSION, MCP_METHODS, MCP_METHOD_CONTRACTS, MCP_METHOD_SCHEMAS, MCP_METHOD_POLICIES, MCP_NON_PRODUCTION_METHODS, MCP_POINT_CHARGED_ENABLED_METHODS, MCP_POINT_CHARGED_DISABLED_METHODS, MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS, MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS, MCP_RECOVERY_ENABLED_METHODS, MCP_RECOVERY_DISABLED_METHODS, MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS, capabilitiesForRoles, canonicalizeRole, evaluateAuthorizationDecision, evaluatePermissionAtoms, generationJobWriteRefused, getHttpOperationPolicy, getMcpMethodPolicy, isGenerationJobFinished, resolveCanonicalRoles, resolveCommercialOperation, ERROR_CODES, isCommercialAccessErrorCode, isCommercialPurchaseErrorCode, isMcpMethod, validateMcpRequest, validateImageGenerationCallbackResult, type ApiEnvelope, type AuthorizationDecision, type AuthorizationDecisionMode, type AuthorizationObligation, type CanonicalRole, type CapabilityId, type CommercialAccessDecision, type HttpOperationPolicy, type McpRequest, type OpsWorkbench, type PermissionAtom } from '../../../packages/contracts/src/index.js'
 import { KnowledgeError, KnowledgeModule, type AssetEntry, type LearningSuggestion, type RuleEntry } from '../../../packages/knowledge/src/index.js'
 import { cleanObjectStorageOrphans } from '../../../packages/workers/src/object-orphan-cleaner.js'
 import { createAliyunEcsRoleCredentials } from './aliyun-ecs-role-credentials.js'
@@ -1752,6 +1753,37 @@ function walletBalanceFen(workspaceId: string) {
   return walletTransactions.filter(item => item.workspaceId === workspaceId).reduce((sum, item) => sum + (item.type === 'debit' ? -item.amountFen : item.amountFen), 0)
 }
 
+/**
+ * The one read of "what did this debit key cost" for every wallet consumer.
+ *
+ * The durable ledger answers it through
+ * `PostgresBillingRepository.effectiveDebitFens` (one SQL statement over
+ * `debit-key.ts`'s row set); the memory fixture answers it from its own rows
+ * through `effectiveDebitFensOf`, the same definition, so the two backends of
+ * one report cannot disagree. Keys that own no ledger row are absent from the
+ * map, which is what a caller falls back on when the ledger has no evidence at
+ * all for an action (the `NODE_ENV=test` fixture ledger records no rows).
+ *
+ * `actorId` narrows the read exactly like the statement's transaction list.
+ */
+async function walletEffectiveDebitFens(workspaceId: string, debitKeys: readonly string[], actorId?: string): Promise<Map<string, number>> {
+  const keys = [...new Set(debitKeys.filter(key => key.trim()))]
+  if (!keys.length) return new Map()
+  if (persistence.billing) return persistence.billing.effectiveDebitFens(workspaceId, keys, actorId)
+  return effectiveDebitFensOf(walletTransactions.filter(item => item.workspaceId === workspaceId && (!actorId || item.actorId === actorId)), keys)
+}
+
+/**
+ * The memory wallet's effective amount for one debit key — `debit-key.ts`'s
+ * definition again, with the `COALESCE(SUM(…),0)` the durable aggregate gives a
+ * key whose rows are all absent. Used by the memory settlement and reversal so
+ * they derive their amounts the way the durable ledger does instead of from the
+ * raw pre-authorization.
+ */
+function walletLedgerEffectiveFen(workspaceId: string, debitKey: string): number {
+  return effectiveDebitFenOf(walletTransactions.filter(item => item.workspaceId === workspaceId), debitKey) ?? 0
+}
+
 function actionKindForDescription(description: string): ActionKind {
   if (description.includes('同步')) return 'catalog_sync'
   if (description.includes('连接')) return 'platform_connect'
@@ -2144,13 +2176,25 @@ async function settlePluginWalletDebit(input: { workspaceId: string; debitIdempo
   } else if (process.env.NODE_ENV !== 'test') {
     const original = walletTransactions.find(item => item.workspaceId === input.workspaceId && item.type === 'debit' && item.orderId === input.debitIdempotencyKey)
     if (!original) throw new Error('billing debit not found')
-    const delta = input.finalAmountFen - original.amountFen
-    const orderId = `${delta > 0 ? 'settlement' : 'settlement-refund'}:${input.debitIdempotencyKey}`
-    const type: WalletTransaction['type'] = delta > 0 ? 'debit' : 'refund'
-    const existing = walletTransactions.find(item => item.workspaceId === input.workspaceId && item.type === type && item.orderId === orderId)
-    if (!existing && delta !== 0) {
-      if (delta > 0 && walletBalanceFen(input.workspaceId) < delta) throw new DomainError('RECHARGE_REQUIRED', '模型已返回真实用量，但钱包不足以完成结算，请充值', 402)
-      walletTransactions.push({ id: `billing_tx_${randomUUID()}`, workspaceId: input.workspaceId, type, amountFen: Math.abs(delta), orderId, actorId: input.actorId, description: `模型真实用量结算（${input.actorId}）`, createdAt: new Date().toISOString() })
+    // The delta is measured against the key's effective amount, not against the
+    // original reservation: a reversal or an earlier settlement already on the
+    // ledger must not be paid out a second time. This is the memory twin of
+    // `PostgresBillingRepository.settleDebit`, and both read
+    // `packages/persistence/src/debit-key.ts`.
+    const delta = input.finalAmountFen - walletLedgerEffectiveFen(input.workspaceId, input.debitIdempotencyKey)
+    if (delta !== 0) {
+      const type: WalletTransaction['type'] = delta > 0 ? 'debit' : 'refund'
+      const orderId = settlementOrderId(input.debitIdempotencyKey, type)
+      const existing = walletTransactions.find(item => item.workspaceId === input.workspaceId && item.type === type && item.orderId === orderId)
+      // The ledger keeps one row per (order_id, type); a correction that cannot
+      // be expressed by the existing key is refused instead of being written as
+      // a second, contradictory amount. Same rule as the durable path.
+      if (existing) {
+        if (existing.amountFen !== Math.abs(delta)) throw new DomainError('WALLET_DEBIT_IDEMPOTENCY_CONFLICT', '结算金额与账本中已有的结算记录不一致，需人工核对', 409)
+      } else {
+        if (delta > 0 && walletBalanceFen(input.workspaceId) < delta) throw new DomainError('RECHARGE_REQUIRED', '模型已返回真实用量，但钱包不足以完成结算，请充值', 402)
+        walletTransactions.push({ id: `billing_tx_${randomUUID()}`, workspaceId: input.workspaceId, type, amountFen: Math.abs(delta), orderId, actorId: input.actorId, description: `模型真实用量结算（${input.actorId}）`, createdAt: new Date().toISOString() })
+      }
     }
   }
   await persistence.actionLedger?.settleProviderUsage({ workspaceId: input.workspaceId, actionKey: input.debitIdempotencyKey, ...(input.providerRequestId ? { providerRequestId: input.providerRequestId } : {}), actualAmountFen: input.finalAmountFen })
@@ -2231,10 +2275,15 @@ async function refundPluginWalletDebit(input: { workspaceId: string; debitIdempo
   }
   const debit = walletTransactions.find(item => item.workspaceId === input.workspaceId && item.type === 'debit' && item.orderId === input.debitIdempotencyKey)
   if (!debit) { await refundActionSettlement({ workspaceId: input.workspaceId, actionKey: input.debitIdempotencyKey, reason: input.reason }); return { refunded: false } }
-  const refundOrderId = `refund:${input.debitIdempotencyKey}`
+  const refundOrderId = reversalOrderId(input.debitIdempotencyKey)
   const existing = walletTransactions.find(item => item.workspaceId === input.workspaceId && item.type === 'refund' && item.orderId === refundOrderId)
   if (existing) return { refunded: false, transaction: existing }
-  const transaction = { id: `billing_tx_${randomUUID()}`, workspaceId: input.workspaceId, type: 'refund' as const, amountFen: debit.amountFen, orderId: refundOrderId, actorId: input.actorId, description: `模型失败退款（${input.actorId}）：${input.reason}`, createdAt: new Date().toISOString() }
+  // The memory twin of `PostgresBillingRepository.refundDebit`: the amount
+  // reversed is the key's effective amount, not the raw reservation, so the
+  // settled difference on an action that produced no result is not left charged.
+  const refundFen = walletLedgerEffectiveFen(input.workspaceId, input.debitIdempotencyKey)
+  if (refundFen <= 0) throw new Error('BILLING_AMOUNT_INVALID')
+  const transaction = { id: `billing_tx_${randomUUID()}`, workspaceId: input.workspaceId, type: 'refund' as const, amountFen: refundFen, orderId: refundOrderId, actorId: input.actorId, description: `模型失败退款（${input.actorId}）：${input.reason}`, createdAt: new Date().toISOString() }
   walletTransactions.push(transaction)
   await refundActionSettlement({ workspaceId: input.workspaceId, actionKey: input.debitIdempotencyKey, reason: input.reason })
   return { refunded: true, transaction }
@@ -3331,55 +3380,100 @@ async function compensateStoredObject(workspaceId: string, objectKey: string, re
   }
 }
 
+/**
+ * Whether `error` is the ledger's "the reservation key and the delete receipt
+ * name different objects" refusal.
+ *
+ * `assertDeletionIdentity` (packages/persistence/src/storage-quota-repository.ts)
+ * throws a plain `Error` whose message *is* the code, the shape every
+ * `STORAGE_QUOTA_*` refusal in that file has, so there is no class to catch. The
+ * comparison is deliberately the exact code: if it is ever renamed this stops
+ * matching and the alert is lost, which is why the invariant's evidence drives a
+ * real mismatch through the real repository rather than a stub that throws the
+ * message - the coupling fails the row instead of passing quietly.
+ */
+function isDeletionIdentityMismatch(error: unknown): boolean {
+  return error instanceof Error && error.message === 'STORAGE_QUOTA_DELETION_IDENTITY_MISMATCH'
+}
+
+/**
+ * Records the one failure of `releaseStorageQuotaAfterConfirmedDeletion` that
+ * has no other reporter.
+ *
+ * Every other failure on that path has an owner: the caller keeps the original
+ * error and the retry or reconciliation behind it. The identity refusal has
+ * none. By the time it is raised the object has already been deleted, so the
+ * settled row is not stale - it is the only record left of bytes that are gone -
+ * and its `used_bytes` stays charged until a human reconciles it. Swallowing it
+ * therefore turns a refusal into a permanent over-count with no signal, which is
+ * strictly worse than the credit the guard declined to give.
+ *
+ * The alert is the durable record (`ops.alerts.list` surfaces it, and `alertKey`
+ * dedupes repeats for the same reservation); the log line above it is what
+ * survives a store that is itself unavailable. Neither may throw into the
+ * caller: this runs inside compensation paths whose original failure is the one
+ * that must be preserved.
+ */
+async function reportStorageQuotaDeletionIdentityMismatch(input: { workspaceId: string; reservationKey: string; objectKey: string }): Promise<void> {
+  console.error(JSON.stringify({ event: 'storage_quota_deletion_identity_mismatch', workspace_id: input.workspaceId, reservation_key: input.reservationKey, object_key: input.objectKey }))
+  try {
+    const alert = await (persistence.alerts ?? memoryAlerts).upsert({
+      workspaceId: input.workspaceId,
+      alertKey: `storage-quota-deletion-identity:${input.reservationKey}`,
+      code: 'STORAGE_QUOTA_DELETION_IDENTITY_MISMATCH',
+      severity: 'high',
+      entityType: 'storage_quota',
+      entityId: input.reservationKey,
+      title: '对象已删除但配额账本拒绝释放，工作区已用容量高于实际占用',
+      observedAt: new Date().toISOString(),
+      evidence: { reservation_key: input.reservationKey, object_key: input.objectKey },
+      nextAction: '核对预留键与已删除对象键的归属（对象可能被改名或跨资产复用）；确认后由运营释放该条已结算预留，释放前不得重复删除同一对象。',
+    })
+    void persistOperationalAlertNotification(alert)
+  } catch (error) {
+    // The alert store is the reporter, not the report: failing to write it must
+    // not replace the caller's original failure.
+    console.error(JSON.stringify({ event: 'storage_quota_deletion_identity_mismatch_alert_failed', workspace_id: input.workspaceId, reservation_key: input.reservationKey, error_message: error instanceof Error ? error.message : String(error) }))
+  }
+}
+
 /** Reclaim settled quota only after physical deletion is confirmed. */
 export async function releaseStorageQuotaAfterConfirmedDeletion(input: { quota: StorageQuotaRepository; workspaceId: string; reservationKey: string; objectKey: string; deleteObject: () => Promise<boolean | void> }) {
   const deleted = await input.deleteObject()
   if (deleted === false) return
   try {
     await input.quota.releaseAfterPhysicalDeletion({ workspaceId: input.workspaceId, reservationKey: input.reservationKey, receipt: { objectKey: input.objectKey, deletedAt: new Date().toISOString(), verification: 'delete_ack' } })
-  } catch { /* preserve the original failure; reconciliation will surface the reservation */ }
+  } catch (error) {
+    // The original failure is preserved for the caller and for reconciliation;
+    // the identity refusal is the one that has no other reporter (see the
+    // function above), so it is recorded instead of being swallowed with it.
+    if (isDeletionIdentityMismatch(error)) await reportStorageQuotaDeletionIdentityMismatch(input)
+  }
 }
 
 async function compensateStoredAsset(workspaceId: string, assetId: string, objectKey: string, reason: string) {
   const quota = persistence.storageQuota
   // The ledger row belongs to one physical object, so it can only be repaid by
-  // deleting the object it was reserved for (see
-  // `assetReservationKeyForDeletedObject`). An object key that does not belong
-  // to this asset is deleted without touching a foreign reservation.
-  const reservationKey = assetReservationKeyForDeletedObject(workspaceId, objectKey)
-  if (!quota || !reservationKey?.startsWith(`asset:${assetId}/`)) {
+  // deleting the object it was reserved for. The key is derived from the stored
+  // object key by the same single implementation the write side uses
+  // (`reservationKeyFor`/`objectKeyIdentity` in
+  // packages/storage/src/reservation-key.ts) - never from the file name the
+  // caller happens to hold, and never by matching a prefix of the ledger. An
+  // object key that does not belong to this asset is deleted without touching a
+  // foreign reservation.
+  const identity = objectKey ? objectKeyIdentity(objectKey, workspaceId) : undefined
+  const reservationKey = identity && identity.assetId === assetId ? reservationKeyFor(identity) : undefined
+  if (!quota || !reservationKey) {
     await compensateStoredObject(workspaceId, objectKey, reason)
     return
   }
   await releaseStorageQuotaAfterConfirmedDeletion({ quota, workspaceId, reservationKey, objectKey, deleteObject: () => compensateStoredObject(workspaceId, objectKey, reason) })
 }
 
-/**
- * Storage file names are canonicalized by the object storage layer
- * (`safeFileName` in packages/storage/src/object-storage.ts) before they become
- * the last segment of an object key. A quota reservation is bound to one
- * physical object, so its key has to be derived from the same canonical name;
- * keep this transform in sync with that implementation.
- */
-function canonicalStorageFileName(fileName: string): string {
-  return fileName.trim().normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}._-]/gu, '_').replace(/^\.+/u, '_').slice(0, 160)
-}
-
-/** Ledger key for the object `putQuarantineObject` is about to write. */
-function assetReservationKeyForObject(workspaceId: string, assetId: string, fileName: string): string {
-  return `asset:${assetId}/${canonicalStorageFileName(fileName)}`
-}
-
-function assetReservationKeyForDeletedObject(workspaceId: string, objectKey: string): string | undefined {
-  const parts = objectKey.split('/')
-  if (parts.length < 4 || !['quarantine', 'clean'].includes(parts[0] ?? '') || parts[1] !== workspaceId || !parts[2]?.trim() || parts[3]?.endsWith('.merchant-meta.json')) return undefined
-  return `asset:${parts[2]}/${parts.slice(3).join('/')}`
-}
-
 async function putQuarantineObject(input: PutQuarantineObjectInput) {
   await persistenceReady
   const quota = persistence.storageQuota
-  const reservationKey = assetReservationKeyForObject(input.workspaceId, input.assetId, input.fileName)
+  const reservationKey = reservationKeyFor({ assetId: input.assetId, fileName: input.fileName })
   if (quota) {
     await persistence.ensureWorkspace?.(input.workspaceId)
     await quota.reserve({ workspaceId: input.workspaceId, reservationKey, assetId: input.assetId, bytes: input.body.byteLength, limitBytes: configuredStorageQuotaLimit() })
@@ -8628,6 +8722,45 @@ function campaignWorkflow(campaign: CampaignBatchRow, deliveryManifest?: { state
   return { items, readiness: deliveryBlocked > 0 ? 'blocked' as const : 'ready' as const, summary: { total: items.length, planned: items.filter(item => item.state === 'pending').length, published: items.filter(item => item.state === 'published').length, blocked: items.filter(item => ['blocked', 'failed', 'unknown', 'manual_attention'].includes(item.state)).length, delivery_blocked: deliveryBlocked, review_required: items.filter(item => ['review_required', 'approved'].includes(item.state)).length, in_progress: items.filter(item => ['generating', 'publishing'].includes(item.state)).length } }
 }
 
+/**
+ * The delivery evidence a durable campaign item state proves.
+ *
+ * `CampaignDeliveryOrchestratorAdapter.materialize` refuses a durable row whose
+ * item state contradicts its delivery evidence: `approved` requires
+ * `review.status === 'approved'`, `publishing`/`published` require the matching
+ * `publish.status`, and `failed` requires `publish.status === 'failed'`. A
+ * projection that answered `blocked`/`not_ready` for *every* item therefore
+ * contradicted every campaign that had moved past review, and because
+ * `CAMPAIGN_INVALID_TRANSITION` is not one of the codes the evidence gate below
+ * degrades to a blocked manifest, each `campaign.batch.*` call on such a
+ * campaign answered a hard 409 — for a state the campaign workflow itself
+ * produces.
+ *
+ * The mapping states what the durable row proves and nothing more. An item that
+ * reached `approved`/`publishing`/`published` did pass review, so its review
+ * status is `approved`; the approval, confirmation and receipt *records* are not
+ * on the campaign row, so they stay absent. That absence is the missing evidence
+ * this projection already refuses to invent, and the manifest machine reports it
+ * as `CAMPAIGN_ITEM_EVIDENCE_REQUIRED` — an actionable blocked manifest, not a
+ * contradiction. States that prove nothing about review keep the previous
+ * `blocked`/`not_ready` reading (no approval may be carried unless the review
+ * status is `approved`).
+ */
+function campaignItemEvidence(item: CampaignItemRow) {
+  switch (item.state) {
+    case 'approved':
+      return { review: { status: 'approved' as const }, publish: { status: 'not_ready' as const, attempts: 0 } }
+    case 'publishing':
+      return { review: { status: 'approved' as const }, publish: { status: 'publishing' as const, attempts: 1 } }
+    case 'published':
+      return { review: { status: 'approved' as const }, publish: { status: 'published' as const, attempts: 1 } }
+    case 'failed':
+      return { review: { status: 'blocked' as const, reason: item.error?.message ?? 'campaign item failed' }, publish: { status: 'failed' as const, attempts: 1, error: { code: item.error?.code ?? 'CAMPAIGN_ITEM_FAILED', message: item.error?.message ?? 'campaign item failed' } } }
+    default:
+      return { review: { status: 'blocked' as const, reason: ['blocked', 'failed', 'unknown', 'manual_attention'].includes(item.state) ? item.error?.message ?? 'campaign item blocked' : 'platform specification and rule evidence are externally unverified' }, publish: { status: 'not_ready' as const, attempts: 0 } }
+  }
+}
+
 function campaignDeliveryInput(campaign: CampaignBatchRow): CampaignDeliveryManifestInput {
   const manifestHash = campaign.manifestHash ?? createHash('sha256').update(JSON.stringify({ workspaceId: campaign.workspaceId, campaignId: campaign.id, brandId: campaign.brandId, productIds: campaign.productIds })).digest('hex')
   const items = (campaign.items ?? []).map(item => {
@@ -8649,7 +8782,6 @@ function campaignDeliveryInput(campaign: CampaignBatchRow): CampaignDeliveryMani
     const ruleSnapshot = { id: `unverified-campaign-rules:${campaign.id}:${item.id}`, hash: createHash('sha256').update(`${manifestHash}:${campaign.workspaceId}:${item.id}:rules:unverified`).digest('hex'), checkedAt: campaign.updatedAt, evidenceRef: '' }
     const visualVersions = [visualVersion]
     const versionVector = { campaignId: campaign.id, brandId: campaign.brandId, productId: item.productId, listingId, skuIds: [`planned-sku:${item.productId}`], platform: item.platform, accountId: item.accountId, contentVersionId, visualVersionIds: visualVersions.map(version => version.id), specificationId: specification.id, ruleSnapshotId: ruleSnapshot.id }
-    const blocked = ['blocked', 'failed', 'unknown', 'manual_attention'].includes(item.state)
     return {
       id: item.id,
       productId: item.productId,
@@ -8662,8 +8794,7 @@ function campaignDeliveryInput(campaign: CampaignBatchRow): CampaignDeliveryMani
       specification,
       ruleSnapshot,
       versionVector,
-      review: { status: 'blocked' as const, reason: blocked ? item.error?.message ?? 'campaign item blocked' : 'platform specification and rule evidence are externally unverified' },
-      publish: item.state === 'failed' ? { status: 'failed' as const, attempts: 1, error: { code: item.error?.code ?? 'CAMPAIGN_ITEM_FAILED', message: item.error?.message ?? 'campaign item failed' } } : { status: 'not_ready' as const, attempts: 0 },
+      ...campaignItemEvidence(item),
     }
   })
   return { id: `delivery-manifest:${campaign.id}`, workspaceId: campaign.workspaceId, campaignId: campaign.id, brandId: campaign.brandId, items, paused: campaign.state === 'paused', ...(campaign.state === 'paused' ? { pauseReason: 'durable campaign state is paused' } : {}), revision: campaign.revision ?? Math.max(1, Math.floor(Date.parse(campaign.updatedAt) / 1_000)) }
@@ -12030,15 +12161,40 @@ async function assertTaskBrandAccess(req: IncomingMessage, task: { workspaceId: 
   if (requiresStrictAuth() && !hasWorkspaceWideBrandAccess(req)) throw new DomainError('TASK_BRAND_ACCESS_DENIED', '任务未绑定可访问的品', 404)
 }
 
+/**
+ * The single brand-scope predicate for every read path that aggregates over
+ * tasks and over the records a task owns — publish jobs, generation jobs and
+ * content versions.
+ *
+ * This is the chokepoint the audit asked for. `workspace.metrics` and
+ * `GET /v1/publish-jobs` both aggregate over `service.listPublishJobs`, and the
+ * metrics handler read the unfiltered list while the REST page filtered by task
+ * brand: a brand restricted member received the hidden brand's task ids, publish
+ * job ids and platform rejection codes through `workspace.metrics`, while the
+ * same objects answered 404 on the point reads and `GET /v1/products`. Copying
+ * the predicate by hand into each handler is what left the siblings asymmetric,
+ * so the predicate is defined once here and no read path inlines it again.
+ *
+ * `brandIds === undefined` means workspace-wide access — an owner/admin member,
+ * or non-strict auth — and nothing is filtered. Otherwise a task is visible only
+ * when it names a brand the subject holds a viewer grant on, so a task with no
+ * brand is hidden, exactly as `GET /v1/tasks` hides it.
+ */
+export interface AccessibleTaskScope {
+  readonly brandIds: readonly string[] | undefined
+  readonly taskVisible: (task: { brandId?: string } | undefined | null) => boolean
+}
+
+export async function accessibleTaskScope(req: IncomingMessage, workspaceId: string): Promise<AccessibleTaskScope> {
+  const brandIds = await accessibleTaskBrandIds(req, workspaceId)
+  if (brandIds === undefined) return { brandIds: undefined, taskVisible: () => true }
+  const brandSet = new Set(brandIds)
+  return { brandIds, taskVisible: task => Boolean(task?.brandId && brandSet.has(task.brandId)) }
+}
+
 async function filterByTaskBrandAccess<T extends { brandId?: string }>(req: IncomingMessage, workspaceId: string, tasks: T[]) {
-  if (!requiresStrictAuth() || hasWorkspaceWideBrandAccess(req)) return tasks
-  const actorId = requestPrincipals.get(req)?.actorId
-  if (!actorId) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '品权限筛选缺少成员身份', 401)
-  const repository = persistence.brandUnits ?? memoryBrandUnits
-  // The memo only collapsed repeated brands; one grant read per page removes the
-  // per-brand transactions entirely and returns the same subset in the same order.
-  const grantedBrandIds = await repository.hasBrandAccessMany({ workspaceId, brandIds: tasks.flatMap(task => (task.brandId ? [task.brandId] : [])), externalSubject: actorId })
-  return tasks.filter(task => Boolean(task.brandId && grantedBrandIds.has(task.brandId)))
+  const scope = await accessibleTaskScope(req, workspaceId)
+  return scope.brandIds === undefined ? tasks : tasks.filter(scope.taskVisible)
 }
 
 async function accessibleTaskBrandIds(req: IncomingMessage, workspaceId: string): Promise<readonly string[] | undefined> {
@@ -12054,48 +12210,48 @@ async function accessibleTaskBrandIds(req: IncomingMessage, workspaceId: string)
   return brands.filter(brand => grantedBrandIds.has(brand.id)).map(brand => brand.id)
 }
 
-async function accessibleProductIds(req: IncomingMessage, workspaceId: string): Promise<ReadonlySet<string> | undefined> {
-  const brandIds = await accessibleTaskBrandIds(req, workspaceId)
+/**
+ * The one product-visibility predicate: which products a brand restricted
+ * member may read.
+ *
+ * A product is visible exactly when a canonical product row for it is bound to a
+ * brand the member holds a grant on. That rule — and its SQL twin for the
+ * durable product page — is defined in
+ * `packages/persistence/src/product-brand-visibility.ts`; nothing here
+ * re-derives it. In particular a legacy product with no canonical row is not
+ * attributable to any brand, so it is hidden on every surface that asks:
+ * `GET /v1/products`, `workspace.metrics`, MCP `catalog.search`,
+ * `GET /v1/delivery-readiness`, `GET /v1/assets/:id/products` and
+ * `GET /v1/image-generation-jobs`.
+ *
+ * Those surfaces used to disagree. `accessibleProductIds` (the point read and
+ * the in-memory catalog) required a granted canonical row, while
+ * `catalogProductFilterFor` (the in-memory `GET /v1/products` page and
+ * `workspace.metrics`) additionally admitted a product with no canonical row
+ * when a task on it carried a granted brand, or when no task on it carried any
+ * brand, and the durable page carried that wider clause in SQL. Reproduced over
+ * real HTTP before this collapsed: one legacy product was listed by
+ * `GET /v1/products`, answered 404 on the point read, and was absent from MCP
+ * `catalog.search`. The narrower direction was chosen deliberately so every
+ * surface fails closed; the price is that a brand restricted member no longer
+ * sees legacy products that have no canonical row — including ones whose tasks
+ * they can still list — and a member holding no grant at all can read no
+ * product.
+ *
+ * Built on `accessibleTaskScope`'s already resolved brand set, so a handler that
+ * filters tasks and products from the same request resolves the subject's brands
+ * exactly once. `undefined` means workspace-wide access (owner/admin, or
+ * non-strict auth) and nothing is filtered; an empty set means every product is
+ * hidden.
+ */
+async function accessibleProductIdSet(workspaceId: string, brandIds: readonly string[] | undefined): Promise<ReadonlySet<string> | undefined> {
   if (brandIds === undefined) return undefined
-  const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId, brandIds })
-  return new Set(canonical.flatMap(product => product.sourceProductId ? [product.sourceProductId] : []))
+  const repository = persistence.brandUnits ?? memoryBrandUnits
+  return visibleProductIds(brandIds, await repository.listCanonicalProducts({ workspaceId }))
 }
 
-/**
- * Row level brand scope for every handler that reads `service.listProducts`
- * instead of the durable product page. `GET /v1/products` and MCP
- * `workspace.metrics` are two paths across the same permission boundary, so
- * they must share one predicate: a brand restricted member that the catalog
- * surface hides a product from must not read that product's id, title or
- * per-store aggregates through the metrics surface.
- *
- * A product stays visible when its canonical row is bound to a granted brand,
- * or when it has no canonical binding and a task on it carries a granted brand
- * (the legacy/fixture path). `accessibleTaskBrandIds` returns `undefined` for
- * workspace wide members and for non strict auth, which disables the filter.
- */
-async function accessibleCatalogProductFilter(req: IncomingMessage, workspaceId: string): Promise<(product: Product) => boolean> {
-  const accessibleBrandIds = await accessibleTaskBrandIds(req, workspaceId)
-  if (accessibleBrandIds === undefined) return () => true
-  const accessibleBrandSet = new Set(accessibleBrandIds)
-  const repository = persistence.brandUnits ?? memoryBrandUnits
-  const canonicalRows = await repository.listCanonicalProducts({ workspaceId })
-  const accessibleIds = new Set(canonicalRows.filter(row => row.sourceProductId && accessibleBrandSet.has(row.brandId)).map(row => row.sourceProductId).filter((value): value is string => Boolean(value)))
-  const canonicalLinkedProductIds = new Set(canonicalRows.map(row => row.sourceProductId).filter((value): value is string => Boolean(value)))
-  const taskBrandIdsByProduct = new Map<string, Set<string>>()
-  for (const task of service.listTasks(workspaceId)) {
-    if (!task.brandId) continue
-    const brands = taskBrandIdsByProduct.get(task.productId)
-    if (brands) brands.add(task.brandId)
-    else taskBrandIdsByProduct.set(task.productId, new Set([task.brandId]))
-  }
-  return product => {
-    if (accessibleIds.has(product.id)) return true
-    if (canonicalLinkedProductIds.has(product.id)) return false
-    const taskBrands = taskBrandIdsByProduct.get(product.id)
-    if (!taskBrands || taskBrands.size === 0) return true
-    return [...taskBrands].some(taskBrandId => accessibleBrandSet.has(taskBrandId))
-  }
+async function accessibleProductIds(req: IncomingMessage, workspaceId: string): Promise<ReadonlySet<string> | undefined> {
+  return accessibleProductIdSet(workspaceId, (await accessibleTaskScope(req, workspaceId)).brandIds)
 }
 
 /**
@@ -16257,7 +16413,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'ops.marketing.queue': {
       requireWorkspaceDataRole(req)
-      const visibleBrandIds = await accessibleTaskBrandIds(req, workspaceId)
+      const taskScope = await accessibleTaskScope(req, workspaceId)
+      const visibleBrandIds = taskScope.brandIds
       const visibleProductIds = visibleBrandIds === undefined
         ? undefined
         : new Set((await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId, brandIds: visibleBrandIds })).flatMap(product => product.sourceProductId ? [product.sourceProductId] : []))
@@ -16271,7 +16428,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const taskForQueue = (taskId: string) => {
         try {
           const task = service.getTask(taskId)
-          return task.workspaceId === workspaceId && (visibleBrandIds === undefined ? true : Boolean(task.brandId && visibleBrandIds.includes(task.brandId))) ? task : undefined
+          return task.workspaceId === workspaceId && taskScope.taskVisible(task) ? task : undefined
         } catch { return undefined }
       }
       const matchesTask = (taskId: string, platform?: Platform, accountId?: string, productId?: string, state?: string) => {
@@ -16946,11 +17103,22 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       // it a brand restricted member could read the hidden brand's product ids
       // and titles (LOW_STOCK / MISSING_IMAGES risk items) and its per-store
       // product aggregates here while `GET /v1/products` correctly hid them.
-      const catalogProductVisible = await accessibleCatalogProductFilter(req, workspaceId)
-      const allProducts = service.listProducts(workspaceId).filter(catalogProductVisible)
-      const allTasks = await filterByTaskBrandAccess(req, workspaceId, await listNormalizedTasksForMetrics(workspaceId))
+      const taskScope = await accessibleTaskScope(req, workspaceId)
+      // One predicate, resolved once for tasks and products: `GET /v1/products`
+      // and this surface answer with the same product set.
+      const catalogProductIds = await accessibleProductIdSet(workspaceId, taskScope.brandIds)
+      const allProducts = service.listProducts(workspaceId).filter(product => catalogProductIds === undefined || catalogProductIds.has(product.id))
+      const normalizedTasks = await listNormalizedTasksForMetrics(workspaceId)
+      const normalizedTaskById = new Map(normalizedTasks.map(task => [task.id, task]))
+      const allTasks = normalizedTasks.filter(taskScope.taskVisible)
       const allSyncJobs = service.listSyncJobs(workspaceId)
-      const allPublishJobs = service.listPublishJobs(workspaceId)
+      // Publish jobs are visible exactly when their task is: `GET /v1/publish-jobs`
+      // filters `service.listPublishJobs` by the same task predicate. Reading the
+      // unfiltered list here handed a brand restricted member the hidden brand's
+      // task id, publish job id and platform rejection code through the
+      // `PUBLISH_REJECTED` risk item, `jobs.publish`, `dataCoverage.publishJobs`
+      // and `platformMetrics.*.publish`.
+      const allPublishJobs = service.listPublishJobs(workspaceId).filter(job => taskScope.taskVisible(normalizedTaskById.get(job.taskId)))
       const productByIdAll = new Map(allProducts.map(product => [product.id, product]))
       const taskAccount = (task: typeof allTasks[number]) => task.accountId ?? productByIdAll.get(task.productId)?.accountId
       const selected = (platform: Platform, accountId: string | undefined) => (!selectedPlatform || platform === selectedPlatform) && (!selectedAccountId || accountId === selectedAccountId)
@@ -17404,7 +17572,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const actorByAction = new Map(actionLedger.map(item => [item.actionKey, item.actorId]))
       const actionByKey = new Map(actionLedger.map(item => [item.actionKey, item]))
       const modelUsage = billingScope.scope === 'mine' && persistence.mode === 'memory' ? candidateModelUsage.filter(item => item.actionId && actorByAction.get(item.actionId) === billingScope.actorId) : candidateModelUsage
-      const walletTransactionsByOrder = new Map(allTransactions.filter(item => item.orderId).map(item => [item.orderId!, item]))
       const actionSummary = actionLedger.reduce((acc, item) => { const key = `${item.actionKind}:${item.settlement}:${item.settlementStatus ?? item.state}`; acc[key] = (acc[key] ?? 0) + 1; return acc }, {} as Record<string, number>)
       const modelUsageTotals = modelUsage.reduce((acc, item) => {
         acc.totalTokens += item.totalTokens ?? 0
@@ -17437,15 +17604,21 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const provider = paymentProviderReadiness()
       const unsettledModelUsage = modelUsage.filter(item => !['settled', 'waived'].includes(item.settlementStatus))
       const unknownActorCount = byActor.filter(item => item.actor_id === 'unknown').reduce((sum, item) => sum + item.record_count, 0)
+      // The wallet side of the check reads the ledger through the one definition
+      // of what a debit key costs (`packages/persistence/src/debit-key.ts`),
+      // never through a local aggregate. Aggregating here used to miss the
+      // `refund:<key>` row, so this branch's corrected reversal-first ledger was
+      // reported `needs_review` while a ledger that over-credited the workspace
+      // reconciled clean.
+      const walletEffectiveFen = await walletEffectiveDebitFens(workspaceId, modelUsage.flatMap(item => item.actionId ? [item.actionId] : []), billingScope.scope === 'mine' ? billingScope.actorId : undefined)
       const walletMismatchCount = modelUsage.reduce((count, item) => {
         if (!item.actionId || item.customerChargeCny === undefined) return count
         const action = actionByKey.get(item.actionId)
         if (!action || (action.settlement !== 'wallet' && action.settlement !== 'wallet_overage') || !['settled', 'waived'].includes(item.settlementStatus)) return count
         const expectedFen = chargeFenFromCny(item.customerChargeCny)
-        const direct = walletTransactionsByOrder.get(item.actionId)
-        const settlementDebit = walletTransactionsByOrder.get(`settlement:${item.actionId}`)
-        const settlementRefund = walletTransactionsByOrder.get(`settlement-refund:${item.actionId}`)
-        const actualFen = direct ? direct.amountFen + (settlementDebit?.type === 'debit' ? settlementDebit.amountFen : 0) - (settlementRefund?.type === 'refund' ? settlementRefund.amountFen : 0) : action.amountFen
+        // No ledger row for the key at all is the fixture ledger's `NODE_ENV=test`
+        // shape; the action's authorized amount is the only evidence there is.
+        const actualFen = walletEffectiveFen.get(item.actionId) ?? action.amountFen
         return actualFen === expectedFen ? count : count + 1
       }, 0)
       const orphanActionCount = modelUsage.filter(item => item.actionId && !actionByKey.has(item.actionId)).length
@@ -22090,15 +22263,16 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         ...(facts !== null ? { factsConfirmed: facts === 'true' } : {}),
       }), null, req)
     }
-    // Same predicate as MCP `workspace.metrics`: one row level brand filter for
-    // every handler that pages the in-memory service catalog.
-    const catalogProductVisible = await accessibleCatalogProductFilter(req, workspaceId)
+    // Same predicate as MCP `workspace.metrics` and the point read: one row
+    // level brand filter for every handler that pages the in-memory service
+    // catalog.
+    const accessibleIds = await accessibleProductIds(req, workspaceId)
     const products = service.listProducts(workspaceId, {
       ...(url.searchParams.get('query') ? { query: url.searchParams.get('query')! } : {}),
       ...(url.searchParams.get('platform') ? { platform: url.searchParams.get('platform') as Platform } : {}),
       ...(url.searchParams.get('account_id') ? { accountId: url.searchParams.get('account_id')! } : {}),
       ...(url.searchParams.get('store_name') ? { storeName: url.searchParams.get('store_name')! } : {}),
-    }).filter(catalogProductVisible)
+    }).filter(product => accessibleIds === undefined || accessibleIds.has(product.id))
     .filter(product =>
       url.searchParams.get('facts_confirmed') === null || product.factsConfirmed === (url.searchParams.get('facts_confirmed') === 'true')
     )
@@ -22894,7 +23068,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       deleteObject: objectKey => getAssetStorage().delete(workspaceId, objectKey, { includeQuarantine: true }),
       onDeleted: async row => {
         const quota = persistence.storageQuota
-        const reservationKey = assetReservationKeyForDeletedObject(workspaceId, row.objectKey)
+        const reservationKey = reservationKeyForObjectKey(row.objectKey, workspaceId)
         if (!quota || !reservationKey) return
         await quota.releaseAfterPhysicalDeletion({ workspaceId, reservationKey, receipt: { objectKey: row.objectKey, deletedAt: new Date().toISOString(), verification: 'delete_ack' } })
       },
@@ -23229,7 +23403,11 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       await releaseDistributedJobSlot(workspaceId, `generation:${completed.job.idempotencyKey}`)
     } catch (error) {
       const job = service.getGenerationJob(workspaceId, jobId)
-      if (job.state === 'succeeded' || job.state === 'failed') return
+      // A job whose outcome is already decided must not be failed a second time:
+      // re-failing an already failed fixture job would only bump its revision
+      // and repeat the event. The classification is
+      // `packages/contracts/src/generation-job-state.ts`'s, not this demo path's.
+      if (isGenerationJobFinished(job.state)) return
       const failed = service.failGeneration({ workspaceId, jobId, code: error instanceof DomainError ? error.code : 'FIXTURE_GENERATION_FAILED', message: error instanceof Error ? error.message : '本地演示生成失败' })
       await persistSnapshot(workspaceId, 'generation_job', failed, failed as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, failed.id, 'generation.failed', failed.revision, { job_id: failed.id, task_id: failed.taskId, error_code: failed.errorCode ?? 'FIXTURE_GENERATION_FAILED', error_message: failed.errorMessage ?? '本地演示生成失败' })
@@ -23408,8 +23586,14 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const retryAfterSeconds = typeof input.retry_after_seconds === 'number' && Number.isFinite(input.retry_after_seconds) ? Math.max(1, Math.ceil(input.retry_after_seconds)) : 60
     const deferred = service.deferGeneration({ workspaceId, jobId: generationJobDeferMatch[1]!, code: typeof input.code === 'string' ? input.code : 'QUOTA_EXHAUSTED', message: typeof input.message === 'string' ? input.message : '模型/平台配额暂满，任务将在配额窗口恢复后重试', retryAfterSeconds })
     enrichRequestObservation(req, { jobId: deferred.id })
-    await persistSnapshot(workspaceId, 'generation_job', deferred, deferred as unknown as Record<string, unknown>)
-    await persistEvent(workspaceId, deferred.id, 'generation.deferred', deferred.revision, { job_id: deferred.id, task_id: deferred.taskId, code: deferred.errorCode ?? 'QUOTA_EXHAUSTED', retry_after_seconds: retryAfterSeconds, next_attempt_at: deferred.nextAttemptAt })
+    // Same terminal-state guard as the two `failGeneration` branches below: a
+    // late or redelivered `/defer` for a delivered job must not write a phantom
+    // `generation.deferred` event after `generation.completed`. The worker outbox
+    // redelivers non-2xx posts, so this branch is reachable after success.
+    if (!generationJobWriteRefused(deferred)) {
+      await persistSnapshot(workspaceId, 'generation_job', deferred, deferred as unknown as Record<string, unknown>)
+      await persistEvent(workspaceId, deferred.id, 'generation.deferred', deferred.revision, { job_id: deferred.id, task_id: deferred.taskId, code: deferred.errorCode ?? 'QUOTA_EXHAUSTED', retry_after_seconds: retryAfterSeconds, next_attempt_at: deferred.nextAttemptAt })
+    }
     return send(res, 200, workspaceId, jobWithQueueMetadata(deferred, workspaceId, 'generation'), null, req)
   }
   const generationJobResultMatch = path.match(/^\/v1\/generation-jobs\/([^/]+)\/result$/)
@@ -23427,7 +23611,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       // still write a `generation.failed` outbox event and refund the task's
       // usage — a phantom failure that both under-charged the merchant and made
       // the event stream disagree with the job record.
-      if (failed.state === 'succeeded') return send(res, 200, workspaceId, failed, null, req)
+      if (generationJobWriteRefused(failed)) return send(res, 200, workspaceId, failed, null, req)
       await persistSnapshot(workspaceId, 'generation_job', failed, failed as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, failed.id, 'generation.failed', failed.revision, { job_id: failed.id, task_id: failed.taskId, error_code: failed.errorCode ?? 'AI_GENERATION_FAILED', error_message: failed.errorMessage ?? '内容生成失败' })
       if (!providerSucceededButSettlementPending(error)) await refundTaskUsage(workspaceId, failed.taskId, `generation:${failed.idempotencyKey}`, header(req, 'x-actor-id')?.trim() || 'worker', '异步内容生成失败')
@@ -23446,13 +23630,13 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       rulePreflightBeforeWrite = await requireGenerationRulePreflight(workspaceId, completedTaskBeforeWrite.productId, '排队期间平台规则已发生变化，不能提交该生成结果')
     } catch (error) {
       const failed = service.failGeneration({ workspaceId, jobId: job.id, code: error instanceof DomainError ? error.code : 'PLATFORM_RULE_PREFLIGHT_BLOCKED', message: error instanceof Error ? error.message : '排队期间平台规则已发生变化，不能提交该生成结果' })
-      // Same monotonicity guard as the `input.error` branch above: a job that
+      // Same terminal-state guard as the `input.error` branch above: a job that
       // already succeeded is returned unchanged, so a late (or redelivered)
       // failure report must not write a phantom `generation.failed` event,
       // refund the settled usage or free the slot of a delivered job. The worker
       // outbox redelivers non-2xx result posts, so this branch is reachable
       // after success whenever the queued-time rule preflight starts failing.
-      if (failed.state === 'succeeded') return send(res, 200, workspaceId, failed, null, req)
+      if (generationJobWriteRefused(failed)) return send(res, 200, workspaceId, failed, null, req)
       await persistSnapshot(workspaceId, 'generation_job', failed, failed as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, failed.id, 'generation.failed', failed.revision, { job_id: failed.id, task_id: failed.taskId, error_code: failed.errorCode ?? 'PLATFORM_RULE_PREFLIGHT_BLOCKED', error_message: failed.errorMessage ?? '排队期间平台规则已发生变化，不能提交该生成结果' })
       await refundTaskUsage(workspaceId, failed.taskId, `generation:${failed.idempotencyKey}`, header(req, 'x-actor-id')?.trim() || 'worker', '排队期间平台规则变化导致生成阻断')
@@ -24132,4 +24316,4 @@ if (process.env.NODE_ENV !== 'test') {
   })
 }
 
-export { assertUniqueBatchTaskIds, server, service, persistenceReady, memoryMembers as workspaceMembers, memoryOperations as operationAudits, memoryPlatformAuthorizationAudit as platformAuthorizationAuditForTests, memoryCreativePoints as creativePointsForTests, memoryKnowledge as knowledgeDocumentsForTests }
+export { assertUniqueBatchTaskIds, server, service, persistenceReady, memoryMembers as workspaceMembers, memoryOperations as operationAudits, memoryPlatformAuthorizationAudit as platformAuthorizationAuditForTests, memoryCreativePoints as creativePointsForTests, memoryKnowledge as knowledgeDocumentsForTests, memoryAlerts as operationalAlertsForTests }

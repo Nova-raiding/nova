@@ -207,11 +207,16 @@ export class PostgresPrivateTrialConversionRepository implements PrivateTrialCon
 
   async prepareCredit(input: Parameters<PrivateTrialConversionPort['prepareCredit']>[0]): Promise<{ id: string; status: 'pending_accounting_approval' | 'approved' | 'applied' | 'rejected' | 'expired'; expiresAt: string }> {
     const workspaceId = requireWorkspaceScope(input.workspaceId); const now = instant(input.now, 'now')
-    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+    // The expiry below is a bookkeeping write that has to outlive the rejection
+    // this call returns: `withWorkspaceTransaction` rolls back on a throw, so
+    // throwing here left `status='expired'` (and its revision bump) unpersisted
+    // and the eligibility 'approved' forever - a terminal state no call could
+    // ever reach. The rejection is therefore raised after the commit.
+    const outcome = await withWorkspaceTransaction(this.pool, workspaceId, async client => {
       const eligibility = await this.lockEligibility(client, workspaceId, input.eligibilityId)
       if (eligibility.status !== 'approved' || !eligibility.trialOrderId || !eligibility.paymentSubjectRef || !eligibility.expiresAt) throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_VALIDATION_UNVERIFIED', 'an approved validation-bound eligibility is required before creating a credit')
       const expiresAt = instant(date(eligibility.expiresAt)!, 'expiresAt')
-      if (Date.parse(expiresAt) <= Date.parse(now)) { await client.query(`UPDATE private_trial_eligibilities_v2 SET status='expired',revision=revision+1 WHERE workspace_id=$1 AND id=$2 AND status='approved'`, [workspaceId, eligibility.id]); throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_WINDOW_EXPIRED', 'private trial conversion window has expired') }
+      if (Date.parse(expiresAt) <= Date.parse(now)) { await client.query(`UPDATE private_trial_eligibilities_v2 SET status='expired',revision=revision+1 WHERE workspace_id=$1 AND id=$2 AND status='approved'`, [workspaceId, eligibility.id]); return { windowExpired: true } as const }
       const existing = await client.query<CreditRow>(`SELECT id,status,eligibility_id AS "eligibilityId",trial_order_id AS "trialOrderId",onboarding_order_id AS "onboardingOrderId",offset_fen AS "offsetFen",payable_fen AS "payableFen",expires_at AS "expiresAt",payment_subject_ref AS "paymentSubjectRef",accounting_approved_by_actor_id AS "approvedByActorId" FROM private_trial_credits_v2 WHERE workspace_id=$1 AND trial_order_id=$2 FOR UPDATE`, [workspaceId, eligibility.trialOrderId])
       if (existing.rows[0]) return this.creditSummary(existing.rows[0])
       const id = `ptc_${randomUUID()}`
@@ -221,15 +226,20 @@ export class PostgresPrivateTrialConversionRepository implements PrivateTrialCon
       await this.creditEvent(client, workspaceId, credit.id, 'prepared', input.actorId, input.idempotencyKey, input.reason, { ...input.evidence, eligibility_id: eligibility.id, list_amount_fen: 500000, offset_amount_fen: 199900, payable_amount_fen: 300100 }, now)
       return this.creditSummary(credit)
     })
+    if ('windowExpired' in outcome) throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_WINDOW_EXPIRED', 'private trial conversion window has expired')
+    return outcome
   }
 
   async approveCredit(input: Parameters<PrivateTrialConversionPort['approveCredit']>[0]): Promise<{ id: string; status: 'approved' | 'applied'; expiresAt: string }> {
     const workspaceId = requireWorkspaceScope(input.workspaceId); const now = instant(input.now, 'now')
-    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+    // Same settled-then-rejected shape as `prepareCredit`: the credit's own
+    // 'expired' stamp is bookkeeping that must survive the rejection, so the
+    // rejection is raised after the commit instead of rolling it back.
+    const outcome = await withWorkspaceTransaction(this.pool, workspaceId, async client => {
       const credit = await this.lockCredit(client, workspaceId, input.creditId)
       if (credit.status === 'applied') return this.creditSummary(credit) as { id: string; status: 'approved' | 'applied'; expiresAt: string }
       if (credit.status !== 'pending_accounting_approval') throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_ACCOUNTING_APPROVAL_REQUIRED', 'credit is not pending accounting approval')
-      if (!credit.expiresAt || Date.parse(date(credit.expiresAt)!) <= Date.parse(now)) { await client.query(`UPDATE private_trial_credits_v2 SET status='expired' WHERE workspace_id=$1 AND id=$2 AND status='pending_accounting_approval'`, [workspaceId, credit.id]); throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_WINDOW_EXPIRED', 'private trial conversion window has expired') }
+      if (!credit.expiresAt || Date.parse(date(credit.expiresAt)!) <= Date.parse(now)) { await client.query(`UPDATE private_trial_credits_v2 SET status='expired' WHERE workspace_id=$1 AND id=$2 AND status='pending_accounting_approval'`, [workspaceId, credit.id]); return { windowExpired: true } as const }
       const eligibility = credit.eligibilityId ? await this.lockEligibility(client, workspaceId, credit.eligibilityId) : undefined
       if (!eligibility || eligibility.approvedByActorId === input.actorId) throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_ELIGIBILITY_STATE_INVALID', 'accounting approval must be performed by a different actor after business approval')
       const updated = await client.query<CreditRow>(`UPDATE private_trial_credits_v2 SET status='approved', accounting_approved_by_actor_id=$3, accounting_approved_at=$4::timestamptz, approval_evidence=$5::jsonb WHERE workspace_id=$1 AND id=$2 AND status='pending_accounting_approval' RETURNING id,status,eligibility_id AS "eligibilityId",trial_order_id AS "trialOrderId",onboarding_order_id AS "onboardingOrderId",offset_fen AS "offsetFen",payable_fen AS "payableFen",expires_at AS "expiresAt",payment_subject_ref AS "paymentSubjectRef",accounting_approved_by_actor_id AS "approvedByActorId"`, [workspaceId, credit.id, input.actorId, now, JSON.stringify(input.evidence)])
@@ -237,6 +247,8 @@ export class PostgresPrivateTrialConversionRepository implements PrivateTrialCon
       await this.creditEvent(client, workspaceId, credit.id, 'accounting_approved', input.actorId, input.idempotencyKey, input.reason, input.evidence, now)
       return this.creditSummary(updated.rows[0]) as { id: string; status: 'approved' | 'applied'; expiresAt: string }
     })
+    if ('windowExpired' in outcome) throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_WINDOW_EXPIRED', 'private trial conversion window has expired')
+    return outcome
   }
 
   async createConversionOrder(input: Parameters<PrivateTrialConversionPort['createConversionOrder']>[0]): Promise<PrivateTrialConversionOrderView> {

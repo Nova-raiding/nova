@@ -145,11 +145,41 @@ function isBlockedIpv4(hostname: string): boolean {
     first >= 224
 }
 
+/** Expands an IPv6 literal into its eight 16-bit groups, or `undefined` when the
+ * text is not one. Only the canonical serialization is handled: `new URL`
+ * rewrites an IPv6 host into compressed hex, and that is the shape a
+ * configuration-derived host arrives in. */
+function ipv6Groups(hostname: string): number[] | undefined {
+  if (isIP(hostname) !== 6 || hostname.includes('.')) return undefined
+  const [head = '', tail, ...rest] = hostname.split('::')
+  if (rest.length) return undefined
+  const read = (value: string): number[] => value ? value.split(':').map(part => Number.parseInt(part, 16)) : []
+  const headGroups = read(head)
+  if (tail === undefined) return headGroups.length === 8 ? headGroups : undefined
+  const tailGroups = read(tail)
+  const zeros = 8 - headGroups.length - tailGroups.length
+  if (zeros < 1) return undefined
+  return [...headGroups, ...Array<number>(zeros).fill(0), ...tailGroups]
+}
+
 function isBlockedEndpointHost(hostname: string): boolean {
   const normalized = hostname.trim().toLowerCase().replace(/^\[|\]$/gu, '').replace(/\.$/u, '')
   if (!normalized || normalized === 'localhost' || normalized.endsWith('.local') || normalized.endsWith('.internal')) return true
   if (isIP(normalized) === 4) return isBlockedIpv4(normalized)
   if (isIP(normalized) !== 6) return false
+  // The IPv4-embedding prefixes — `::a.b.c.d`, the IPv4-mapped `::ffff:a.b.c.d`
+  // and the RFC 2765 translator form `::ffff:0:a.b.c.d` — all carry an IPv4
+  // address in their low 32 bits, and the URL parser rewrites the dotted tail
+  // into hex: `https://[::ffff:169.254.169.254]/` reaches this function as
+  // `[::ffff:a9fe:a9fe]`. Classifying only the dotted text left the cloud
+  // metadata service and loopback admitted in production where
+  // `https://169.254.169.254/` and `https://127.0.0.1/` were refused, so the
+  // embedded address is classified with the same IPv4 rules.
+  const groups = ipv6Groups(normalized)
+  const embeddedIpv4Prefix = groups !== undefined
+    && groups.slice(0, 4).every(group => group === 0)
+    && ((groups[4] === 0 && (groups[5] === 0 || groups[5] === 0xffff)) || (groups[4] === 0xffff && groups[5] === 0))
+  if (embeddedIpv4Prefix) return isBlockedIpv4(`${groups[6]! >> 8}.${groups[6]! & 0xff}.${groups[7]! >> 8}.${groups[7]! & 0xff}`)
   if (normalized.startsWith('::ffff:')) {
     const mappedIpv4 = normalized.slice('::ffff:'.length)
     if (isIP(mappedIpv4) === 4) return isBlockedIpv4(mappedIpv4)
@@ -331,7 +361,18 @@ function assertPromotionEvidence(metadata: ObjectMetadata, expectedSha256: strin
   }
 }
 
-function safeFileName(fileName: string): string {
+/**
+ * The only file-name normalizer in the system.
+ *
+ * An object key's last segment is this function's output, and the storage quota
+ * reservation key binds to that same canonical name
+ * (`reservationKeyFor`/`parseReservationKey` in ./reservation-key.ts). Anything
+ * that needs the canonical name — the write side, the delete side, a backfill —
+ * must call this function rather than restate the transform: a hand-written copy
+ * that drifts (`config.merchant-meta.json`, an uppercase name, a >160 character
+ * name) silently detaches a reservation from the object it paid for.
+ */
+export function safeFileName(fileName: string): string {
   const trimmed = fileName.trim()
   if (!trimmed || trimmed === '.' || trimmed === '..' || trimmed.includes('/') || trimmed.includes('\\') || /[\u0000-\u001f\u007f]/u.test(trimmed)) {
     throw new ObjectStorageError('OBJECT_NAME_INVALID', '素材文件名无效', 400)
@@ -586,6 +627,22 @@ export class LocalObjectStorage implements ObjectStoragePort {
     } catch (error) {
       if (!(error instanceof ObjectStorageError) || error.code !== 'OBJECT_NOT_FOUND') throw error
     }
+    // This object has no metadata record of its own, but the path its body is
+    // about to occupy can still be another object's file: the local layout keeps
+    // the record of `X` at `X.meta.json`, so a body canonically named
+    // `X.meta.json` would land exactly on the record of the sibling `X`. The
+    // rename below replaces it, and the sibling then keeps its bytes with a
+    // record that describes no object of its own: reads fail with
+    // OBJECT_INTEGRITY_FAILED and `list` stops inventoring it, so reconciliation
+    // reports a durable reference as MISSING while the bytes are still stored.
+    // A suffix-named body with no such sibling stays supported (the tests and the
+    // reservation ledger both require it), so only the real collision is refused.
+    if (parsed.relative.endsWith(LOCAL_METADATA_SUFFIX)) {
+      const siblingKey = parsed.relative.slice(0, -LOCAL_METADATA_SUFFIX.length)
+      if (await this.hasMetadataRecord(input.workspaceId, siblingKey)) {
+        throw new ObjectStorageError('OBJECT_ALREADY_EXISTS', '对象 key 与同目录对象的元数据记录冲突', 409)
+      }
+    }
     const suffix = `.tmp-${process.pid}-${randomUUID()}`
     const objectTemp = `${objectPath}${suffix}`
     const metadataTemp = `${metadataPath}${suffix}`
@@ -612,6 +669,11 @@ export class LocalObjectStorage implements ObjectStoragePort {
     } finally {
       await handle.close()
     }
+  }
+
+  /** Whether a readable metadata record already registers `key` as an object. */
+  private async hasMetadataRecord(workspaceId: string, key: string): Promise<boolean> {
+    try { await this.readMetadata(workspaceId, key); return true } catch { return false }
   }
 
   private async readMetadata(workspaceId: string, key: string): Promise<ObjectMetadata> {

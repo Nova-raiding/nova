@@ -14,6 +14,16 @@ export class OpsLoadCoordinator {
     return request === this.latestRequest;
   }
 
+  /**
+   * Read the current generation without starting or invalidating a load.
+   * A read that is not part of the coordinated load still has to notice that
+   * the authorization boundary moved while it was on the wire; `begin()` would
+   * cancel the console's in-flight load to make that point.
+   */
+  generation() {
+    return this.latestRequest;
+  }
+
   commit(request: number, update: () => void) {
     if (!this.isCurrent(request)) return false;
     update();

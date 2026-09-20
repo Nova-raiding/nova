@@ -436,7 +436,9 @@ export function CustomerDeliverySection({
         });
       } else if (step === "training") {
         if (!onTrainingSave) throw new Error("客户培训保存接口未配置");
-        persisted = await onTrainingSave(selected, Boolean(values.training), []);
+        // `training.complete` replaces trainingEvidenceRefs with what we send,
+        // so an untouched evidence list must be carried forward, not reset.
+        persisted = await onTrainingSave(selected, Boolean(values.training), selected.trainingEvidenceRefs ?? []);
       } else if (step === "profile") {
         if (!onSave) throw new Error("客户档案保存接口未配置");
         persisted = await onSave(next);
@@ -458,7 +460,11 @@ export function CustomerDeliverySection({
     }
     setSaving(true);
     try {
-      const persisted = await onTrainingSave(row, completed, []);
+      // The table switch is a coarse completion toggle, not an evidence edit:
+      // dropping the record's refs here deleted training evidence that had been
+      // uploaded through the delivery detail drawer (the server replaces the
+      // whole list from `evidence_refs_json`).
+      const persisted = await onTrainingSave(row, completed, row.trainingEvidenceRefs ?? []);
       if (persisted) setSelected((current) => current?.id === row.id ? persisted : current);
       message.success(completed ? "客户培训已完成" : "客户培训已取消");
     } catch (error) {

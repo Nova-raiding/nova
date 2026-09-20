@@ -100,6 +100,17 @@ export interface PlatformAccount {
   alias?: string
   storeName?: string
   readiness?: { ready: boolean; reasons: string[]; verifiedCapabilities: string[] }
+  /** Present once the account is connected; absent on the platform placeholder rows. */
+  readable?: boolean
+  revision?: number
+  /** The server's last sync record. All fields are null until a sync happens. */
+  sync?: {
+    latestState?: string | null
+    lastAttemptAt?: string | null
+    lastSuccessfulAt?: string | null
+    lastUsableAt?: string | null
+    failedItems?: number
+  }
 }
 
 export interface CapabilityEvidenceRow {
@@ -389,6 +400,8 @@ export interface Product {
   stock: number
   factsConfirmed: boolean
   source: string
+  /** The date the server recorded this product into the workspace. */
+  createdAt?: string
   updatedAt: string
   version?: number
   brandId?: string
@@ -1070,32 +1083,68 @@ export async function fetchProduct(baseUrl: string, productId: string): Promise<
 export const fetchAssets = (baseUrl: string) => fetchAllPages<AssetMetadata>(baseUrl, '/v1/assets')
 export const fetchAssetStorageQuota = (baseUrl: string) => requestApi<ApiPage<AssetMetadata> & { storage_quota?: StorageQuotaProjection }>(baseUrl, '/v1/assets?limit=1&offset=0').then(value => value.storage_quota)
 
-/** One server-owned creative-point ledger entry. `points_delta` is negative for consumption. */
+/**
+ * One server-owned creative-point ledger entry, in the exact shape the server
+ * sends. `pointsDelta` is negative for consumption.
+ *
+ * The authoritative contract is the producing repository DTO
+ * (`packages/persistence/src/creative-point-repository.ts`,
+ * `CreativePointStatementEntry`): both statement surfaces serialise
+ * `statement.items` verbatim — MCP `creative-points.statement.list` returns
+ * `entries: statement.items` and `GET /v1/creative-points/statement` projects
+ * the same rows. `packages/contracts` also declares a
+ * `CreativePointsStatementListResult` with snake_case fields
+ * (`points_delta`/`occurred_at`/`kind`), but nothing produces or consumes it, so
+ * it is not the wire shape. Reading the declared-but-dormant shape here is what
+ * silently dropped every real entry as `NaN` and let the finance panel report
+ * 「合计 0 点」 over a ledger that was never read.
+ *
+ * The field list is pinned against the producer by
+ * `creative-point-statement-contract.test.ts`, so a rename on either side turns
+ * the suite red instead of dropping rows at runtime.
+ */
 export interface CreativePointStatementEntry {
   id: string
-  event_type: string
-  points_delta: number
-  balance_after: number | null
-  occurred_at: string
-  source: string
-  operation_id: string | null
+  workspaceId: string
+  /** Non-nullable in the producing DTO; '' when the server omitted it. */
+  operationId: string
+  eventType: string
+  pointsDelta: number
+  availableAfter: number | null
+  reservedAfter: number | null
+  settledAfter: number | null
+  accessRevision: number
+  createdAt: string
+  intent: Record<string, unknown>
+  grantSourceType: string | null
+  grantSourceId: string | null
 }
 
+/** `null` means "this row is not in the wire shape the client understands". */
 function normalizeCreativePointStatementEntry(raw: unknown): CreativePointStatementEntry | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const entry = raw as Record<string, unknown>
-  const delta = Number(entry.points_delta)
-  const occurredAt = typeof entry.occurred_at === 'string' ? entry.occurred_at : ''
-  if (!Number.isFinite(delta) || !occurredAt || Number.isNaN(Date.parse(occurredAt))) return null
-  const balanceAfter = Number(entry.balance_after)
+  const delta = Number(entry.pointsDelta)
+  const createdAt = typeof entry.createdAt === 'string' ? entry.createdAt : ''
+  // A row the client cannot read is dropped — never coerced into a 0-点 row.
+  if (!Number.isFinite(delta) || !createdAt || Number.isNaN(Date.parse(createdAt))) return null
+  const optionalNumber = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : null
   return {
-    id: typeof entry.id === 'string' ? entry.id : `${occurredAt}:${delta}`,
-    event_type: typeof entry.event_type === 'string' ? entry.event_type : 'unknown',
-    points_delta: delta,
-    balance_after: Number.isFinite(balanceAfter) ? balanceAfter : null,
-    occurred_at: occurredAt,
-    source: typeof entry.source === 'string' ? entry.source : '',
-    operation_id: typeof entry.operation_id === 'string' ? entry.operation_id : null,
+    id: typeof entry.id === 'string' ? entry.id : `${createdAt}:${delta}`,
+    workspaceId: typeof entry.workspaceId === 'string' ? entry.workspaceId : '',
+    // `operationId` is non-nullable in the producing DTO; an absent value is
+    // reported as empty rather than as a fabricated id.
+    operationId: typeof entry.operationId === 'string' ? entry.operationId : '',
+    eventType: typeof entry.eventType === 'string' ? entry.eventType : 'unknown',
+    pointsDelta: delta,
+    availableAfter: optionalNumber(entry.availableAfter),
+    reservedAfter: optionalNumber(entry.reservedAfter),
+    settledAfter: optionalNumber(entry.settledAfter),
+    accessRevision: Number.isFinite(Number(entry.accessRevision)) ? Number(entry.accessRevision) : 0,
+    createdAt,
+    intent: entry.intent && typeof entry.intent === 'object' && !Array.isArray(entry.intent) ? entry.intent as Record<string, unknown> : {},
+    grantSourceType: typeof entry.grantSourceType === 'string' ? entry.grantSourceType : null,
+    grantSourceId: typeof entry.grantSourceId === 'string' ? entry.grantSourceId : null,
   }
 }
 
@@ -1105,6 +1154,12 @@ export interface CreativePointStatementPage {
   /** The server still had a `next_cursor` when the page budget ran out. */
   truncated: boolean
   pagesRead: number
+  /**
+   * Rows the server returned that this client could not read. A non-zero count
+   * means any sum drawn from `entries` understates the server's ledger and must
+   * be disclosed rather than published as the total.
+   */
+  unreadableEntries: number
 }
 
 /**
@@ -1117,24 +1172,35 @@ export interface CreativePointStatementPage {
  * than that budget (`truncated`) and must disclose it. Returning only the rows
  * let the finance panel publish a partial sum as the workspace's total
  * consumption — the same error the API refuses to make with a missing ledger.
+ *
+ * A page whose rows are all unreadable is not an answer: the server clearly has
+ * a ledger, so returning `{ entries: [] }` would let the caller report
+ * 「该区间内没有服务端创意点流水」 about a ledger it could not parse. That case
+ * yields `null` (unread) instead.
  */
 export async function fetchCreativePointStatement(baseUrl: string, maxPages = 5): Promise<CreativePointStatementPage | null> {
   const entries: CreativePointStatementEntry[] = []
   const pageBudget = Math.max(1, maxPages)
   let cursor: string | null = null
   let pagesRead = 0
+  let unreadableEntries = 0
   for (let page = 0; page < pageBudget; page += 1) {
     const response: { entries?: unknown; next_cursor?: unknown } = await requestMcp<{ entries?: unknown; next_cursor?: unknown }>(baseUrl, 'creative-points.statement.list', cursor ? { limit: '100', cursor } : { limit: '100' })
     if (!Array.isArray(response.entries)) return null
     pagesRead += 1
-    for (const raw of response.entries) {
-      const entry = normalizeCreativePointStatementEntry(raw)
+    const pageEntries = response.entries.map((raw) => normalizeCreativePointStatementEntry(raw))
+    // A page that returned rows none of which match the wire contract is not a
+    // ledger read: the server has a ledger this client cannot parse, so the read
+    // is unresolved (`null`) rather than an empty result.
+    if (pageEntries.length && pageEntries.every((entry) => entry === null)) return null
+    for (const entry of pageEntries) {
       if (entry) entries.push(entry)
+      else unreadableEntries += 1
     }
     cursor = typeof response.next_cursor === 'string' && response.next_cursor ? response.next_cursor : null
     if (!cursor) break
   }
-  return { entries, truncated: cursor !== null, pagesRead }
+  return { entries, truncated: cursor !== null, pagesRead, unreadableEntries }
 }
 const assetMimeType = (file: File) => file.type || ({
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif',

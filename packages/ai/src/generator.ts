@@ -3,7 +3,7 @@ import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './r
 import { inspectOutboundUrl } from '../../connectors/src/outbound-security.js'
 import { assertRelayBaseUrl, assertRelayUrl, relaySecurityFromEnv, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
-import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
+import { assertProviderResponseAccepted, providerIdempotencyKey, resolveProviderTimeoutMs, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface ContentGenerationInput {
@@ -477,5 +477,5 @@ export function createContentGeneratorFromEnv(source: Record<string, string | un
   const maxInputTokens = resolveTokenBudget(source.AI_MAX_INPUT_TOKENS, 4_000, 'input')
   const maxOutputTokens = resolveTokenBudget(source.AI_MAX_OUTPUT_TOKENS, 2_500, 'output')
   if (isPlaceholderModelConfiguration(relayUrl) || isPlaceholderModelConfiguration(apiKey) || isPlaceholderModelConfiguration(model)) return undefined
-  return new OpenAICompatibleContentGenerator({ baseUrl: relayUrl, apiKey, model, relaySecurity, timeoutMs: Number(source.AI_TIMEOUT_MS ?? 90_000), maxInputTokens, maxOutputTokens, ...(thinkingMode === 'disabled' ? { disableThinking: true } : {}), ...(usageSink ? { usageSink } : {}), ...(beforeRequest ? { beforeRequest } : {}) })
+  return new OpenAICompatibleContentGenerator({ baseUrl: relayUrl, apiKey, model, relaySecurity, timeoutMs: resolveProviderTimeoutMs(source.AI_TIMEOUT_MS, 90_000, 'AI_TIMEOUT_MS'), maxInputTokens, maxOutputTokens, ...(thinkingMode === 'disabled' ? { disableThinking: true } : {}), ...(usageSink ? { usageSink } : {}), ...(beforeRequest ? { beforeRequest } : {}) })
 }

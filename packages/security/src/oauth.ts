@@ -55,7 +55,12 @@ export class OAuthStateStore {
 // OAuth clients and provider SDKs. Redaction is deliberately key-based: the
 // value is never inspected or partially retained once a secret-shaped field
 // is encountered.
-const SECRET_KEYS = /(?:(?:access|refresh|session|reset|bearer|mcp|metrics|webhook|worker|scanner|oidc)[\s_-]?token|(?:client|app|signing|webhook|worker|scanner|oidc)[\s_-]?secret|^(?:token|secret)$|(?:authorization|auth)[\s_-]?(?:code|token)|api[\s_-]?key|private[\s_-]?key|code[\s_-]?(?:verifier|challenge)|credential|password|passphrase)/iu
+// `authorization`, `cookie`/`set-cookie` and `signature` carry raw credentials
+// too, and every other redactor in the repository (the sibling
+// `isolateSensitiveFields`, the connector evidence scrubber, the plugin bridge
+// log scrubber) redacts them. A key list that omits them keeps a bearer token
+// verbatim, which is the one thing this helper exists to prevent.
+const SECRET_KEYS = /(?:(?:access|refresh|session|reset|bearer|mcp|metrics|webhook|worker|scanner|oidc)[\s_-]?token|(?:client|app|signing|webhook|worker|scanner|oidc)[\s_-]?secret|^(?:token|secret)$|authorization|cookie|set[\s_-]?cookie|signature|(?:authorization|auth)[\s_-]?(?:code|token)|api[\s_-]?key|private[\s_-]?key|code[\s_-]?(?:verifier|challenge)|credential|password|passphrase)/iu
 const REDACTION_MAX_DEPTH = 8
 const REDACTION_MAX_STRING = 2048
 export function redactSecrets(value: unknown): unknown {

@@ -17,37 +17,41 @@ describe('Pinduoduo adapter', () => {
     expect(request.headers['content-type']).toContain('application/x-www-form-urlencoded')
   })
 
-  it('signs the GET read path into the URL query so the request stays dispatchable', async () => {
-    // `syncProducts` dispatches with GET; a signed form body there makes
-    // `fetch` throw "Request with GET/HEAD method cannot have body" before any
-    // network call, so the read path never left the process.
-    const sign = async (method: string) => {
-      const request = { method, url: 'https://open.pinduoduo.com/api/router?cursor=page-2', headers: {} as Record<string, string>, body: JSON.stringify({ goods_sign: 'sign-1' }), platform: 'pinduoduo' as const, operation: 'sync_products' as const, credential: { accessToken: 'token-1' } }
-      await createPinduoduoSigner({ clientId: 'pdd-app', clientSecret: 'secret', methods: { sync: 'pdd.goods.detail' }, now: () => new Date(2026, 7, 23, 4, 5, 6) }).sign(request)
-      return request
-    }
-    const get = await sign('GET')
-    expect(get.body).toBeUndefined()
-    expect(() => new Request(get.url, { method: 'GET', body: get.body })).not.toThrow()
-    const query = new URL(get.url).searchParams
-    expect(new URL(get.url).pathname).toBe('/api/router')
-    expect(query.get('type')).toBe('pdd.goods.detail')
-    expect(query.get('client_id')).toBe('pdd-app')
-    expect(query.get('access_token')).toBe('token-1')
-    expect(query.get('data_type')).toBe('JSON')
-    expect(query.get('sign')).toMatch(/^[A-F0-9]{32}$/)
-    // The sync cursor still has to reach the provider.
-    expect(query.get('cursor')).toBe('page-2')
-    // Same parameters, same signature: only the transport moved.
-    const post = await sign('POST')
-    expect(new URL(post.url).search).toBe('')
-    expect(query.get('sign')).toBe(new URLSearchParams(post.body).get('sign'))
+  it('keeps the read path access token out of the URL and carries the cursor in the body', async () => {
+    // The read path is dispatched as POST. It used to be a GET whose signed
+    // parameters were written into the query string, which put the real
+    // `access_token` in the request line of every hop that logs one.
+    const request: { method: string; url: string; headers: Record<string, string>; body?: string; platform: 'pinduoduo'; operation: 'sync_products'; credential: { accessToken: string } } = { method: 'POST', url: 'https://open.pinduoduo.com/api/router?cursor=page-2', headers: {}, body: JSON.stringify({ goods_sign: 'sign-1' }), platform: 'pinduoduo', operation: 'sync_products', credential: { accessToken: 'token-1' } }
+    await createPinduoduoSigner({ clientId: 'pdd-app', clientSecret: 'secret', methods: { sync: 'pdd.goods.detail' }, now: () => new Date(2026, 7, 23, 4, 5, 6) }).sign(request)
+    const url = new URL(request.url)
+    expect(url.pathname).toBe('/api/router')
+    expect(url.search).toBe('')
+    expect(request.url).not.toContain('token-1')
+    const body = new URLSearchParams(request.body)
+    expect(body.get('type')).toBe('pdd.goods.detail')
+    expect(body.get('client_id')).toBe('pdd-app')
+    expect(body.get('access_token')).toBe('token-1')
+    expect(body.get('data_type')).toBe('JSON')
+    expect(body.get('sign')).toMatch(/^[A-F0-9]{32}$/)
+    // The sync cursor still reaches the provider.
+    expect(body.get('cursor')).toBe('page-2')
+    expect(request.headers['content-type']).toContain('application/x-www-form-urlencoded')
   })
 
-  it('does not let a GET query parameter retarget the signed router type', async () => {
-    const request = { method: 'GET', url: 'https://open.pinduoduo.com/api/router?type=pdd.goods.delete', headers: {} as Record<string, string>, platform: 'pinduoduo' as const, operation: 'sync_products' as const, credential: { accessToken: 'token-1' } }
+  it('refuses the read path on a bodyless method instead of publishing the access token', async () => {
+    const request = { method: 'GET', url: 'https://open.pinduoduo.com/api/router', headers: {} as Record<string, string>, body: JSON.stringify({ goods_sign: 'sign-1' }), platform: 'pinduoduo' as const, operation: 'sync_products' as const, credential: { accessToken: 'token-1' } }
+    await expect(Promise.resolve().then(() => createPinduoduoSigner({ clientId: 'pdd-app', clientSecret: 'secret', methods: { sync: 'pdd.goods.detail' } }).sign(request)))
+      .rejects.toMatchObject({ code: 'NOT_CONFIGURED', retryable: false, message: expect.stringContaining('credentials must stay out of the URL') })
+    expect(new URL(request.url).search).toBe('')
+  })
+
+  it('drops a type smuggled in through the URL query instead of signing it', async () => {
+    const request = { method: 'POST', url: 'https://open.pinduoduo.com/api/router?type=pdd.goods.delete', headers: {} as Record<string, string>, body: JSON.stringify({ goods_sign: 'sign-1' }), platform: 'pinduoduo' as const, operation: 'sync_products' as const, credential: { accessToken: 'token-1' } }
     await createPinduoduoSigner({ clientId: 'pdd-app', clientSecret: 'secret', methods: { sync: 'pdd.goods.detail' }, now: () => new Date(2026, 7, 23, 4, 5, 6) }).sign(request)
-    expect(new URL(request.url).searchParams.getAll('type')).toEqual(['pdd.goods.detail'])
+    expect(new URL(request.url).search).toBe('')
+    const body = new URLSearchParams(request.body)
+    expect(body.get('type')).toBe('pdd.goods.detail')
+    expect(body.get('access_token')).toBe('token-1')
   })
 
   it('refuses to sign an operation whose router type is not configured', async () => {

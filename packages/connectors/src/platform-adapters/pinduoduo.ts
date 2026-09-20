@@ -28,6 +28,9 @@ export function createPinduoduoSigner(options: PinduoduoSignerOptions): RequestS
   return {
     kind: 'platform',
     requiredApiSelectors: PLATFORM_API_SELECTORS,
+    // `params.access_token` below: the credential rides the signed set, so the
+    // read path must be dispatched with a body-carrying method.
+    signedParametersCarryCredential: true,
     sign(request) {
       const url = new URL(request.url)
       const params: Record<string, string> = {}
@@ -48,8 +51,9 @@ export function createPinduoduoSigner(options: PinduoduoSignerOptions): RequestS
       delete params.sign
       const canonical = Object.keys(params).sort().map(key => `${key}${params[key]}`).join('')
       params.sign = createHash('md5').update(`${options.clientSecret}${canonical}${options.clientSecret}`, 'utf8').digest('hex').toUpperCase()
-      // The read path (`pdd.goods.list.get` and friends) is dispatched as GET;
-      // a form body there is rejected by `fetch` before any network call.
+      // The read path (`pdd.goods.list.get` and friends) is dispatched as POST
+      // like every other signed operation: the signed set carries
+      // `access_token`, so it must stay in the body.
       applySignedRequest(request, url, params)
       return {}
     },

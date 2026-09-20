@@ -31,6 +31,21 @@ describe("OpsLoadCoordinator", () => {
     expect(coordinator.commit(oldRequest, update)).toBe(false);
   });
 
+  it("reports the generation without cancelling the load it belongs to", () => {
+    // A read that is not part of the coordinated load (the 60s alert poll) has
+    // to notice a boundary clear that happens while it is on the wire. `begin()`
+    // would invalidate the console's own in-flight load to make that point.
+    const coordinator = new OpsLoadCoordinator();
+    const inFlight = coordinator.begin();
+    const generation = coordinator.generation();
+
+    expect(coordinator.isCurrent(inFlight)).toBe(true);
+
+    // The boundary clear is what invalidates the polled read.
+    coordinator.invalidate();
+    expect(coordinator.generation()).not.toBe(generation);
+  });
+
   it("preserves existing section data on failure but accepts a successful empty result", () => {
     let rows = ["existing"];
 

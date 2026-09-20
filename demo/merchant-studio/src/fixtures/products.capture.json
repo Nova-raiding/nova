@@ -1,0 +1,40 @@
+{
+  "request_id": "req_849e8f00-31dd-4848-a680-645bbe2679a1",
+  "trace_id": "req_849e8f00-31dd-4848-a680-645bbe2679a1",
+  "workspace_id": "ws_demo",
+  "data": {
+    "items": [
+      {
+        "id": "prod_demo_fixture_1",
+        "seed": "local_compose_seed",
+        "price": 89,
+        "stock": 36,
+        "title": "本地演示保温杯（Fixture）",
+        "images": [],
+        "source": "fixture",
+        "version": 1,
+        "category": "demo_fixture_category",
+        "platform": "taobao",
+        "remoteId": "demo_fixture_product_1",
+        "skuCount": 2,
+        "accountId": "fixture-store-ws_demo-taobao",
+        "createdAt": "2026-08-29T00:05:00+00:00",
+        "storeName": "淘宝 Fixture 店",
+        "updatedAt": "2026-08-29T00:05:00+00:00",
+        "attributes": {
+          "provenance": "local_compose_seed"
+        },
+        "workspaceId": "ws_demo",
+        "factsConfirmed": true,
+        "sourceAssetIds": [],
+        "productionEvidence": false
+      }
+    ],
+    "total": 1,
+    "limit": 50,
+    "offset": 0
+  },
+  "warnings": [],
+  "next_actions": [],
+  "error": null
+}

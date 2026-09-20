@@ -72,6 +72,18 @@ afterEach(async () => {
   vi.unstubAllEnvs()
 })
 
+/** Drive one task to an approved content version and a rejected publish job. */
+function rejectedPublishFor(workspaceId: string, productId: string, brandId: string, tag: string) {
+  const task = service.createTask({ workspaceId, productId, platform: 'taobao', brandId })
+  service.selectDirection(task.id, 'A')
+  const draft = service.createDraft(task.id)
+  service.approveContent(task.id, draft.id)
+  const preview = service.preparePublish(task.id)
+  const job = service.confirmPublish({ workspaceId, taskId: task.id, contentVersionId: draft.id, confirmationHash: preview.confirmationHash, remoteSnapshotHash: preview.remoteSnapshotHash, idempotencyKey: `brand-scope-publish-${tag}-${Date.now()}` })
+  service.recordPublishObservation({ workspaceId, publishJobId: job.id, status: { found: true, state: 'rejected', requestId: `brand-scope-${tag}`, simulated: false, rejection: { rawCode: `BRAND_SCOPE_${tag.toUpperCase()}`, message: '标题违规', fields: [{ path: 'title', rawCode: 'TITLE', message: '标题超出限制' }] } } })
+  return { taskId: task.id, jobId: job.id }
+}
+
 describe('catalog brand scope on the HTTP surface', () => {
   it('hands the brand restricted member filter to the durable product page', async () => {
     const context = await setupBrandScopedWorkspace()
@@ -122,6 +134,73 @@ describe('catalog brand scope on the HTTP surface', () => {
     const body = await response.json() as Envelope<{ items: Array<{ id: string }> }>
     expect(calls[0]!.accessibleBrandIds).toBeUndefined()
     expect(body.data?.items.map(item => item.id)).toEqual([context.visibleProduct.id, context.hiddenProduct.id])
+  })
+
+  /**
+   * `workspace.metrics` and `GET /v1/publish-jobs` are two read paths across
+   * one permission boundary. The metrics handler used to aggregate the
+   * unfiltered `service.listPublishJobs`, so a brand restricted member received
+   * the hidden brand's task id, publish job id and platform rejection code
+   * through the `PUBLISH_REJECTED` risk item and the publish counters while the
+   * REST page and the point reads answered 404 for the same objects.
+   */
+  it('does not leak a hidden brand publish job through workspace.metrics', async () => {
+    const context = await setupBrandScopedWorkspace()
+    const visible = rejectedPublishFor(context.workspaceId, context.visibleProduct.id, 'brand_visible', 'visible')
+    const hidden = rejectedPublishFor(context.workspaceId, context.hiddenProduct.id, 'brand_hidden', 'hidden')
+
+    const metrics = await mcpCall(context.base, context.viewerHeaders, 90, 'workspace.metrics', { workspace_id: context.workspaceId })
+    expect(metrics.error).toBeNull()
+    const data = (metrics as Envelope<{ result: any }>).data!.result as any
+
+    // The granted brand's publish job is still reported, so the assertions below
+    // prove a filter rather than an empty response.
+    expect(data.riskItems, 'the metrics surface hides exactly the publish jobs the task scope hides').toContainEqual(expect.objectContaining({ type: 'PUBLISH_REJECTED', entityId: visible.jobId }))
+    expect(data.jobs.publish, 'the metrics surface hides exactly the publish jobs the task scope hides').toBe(1)
+    expect(data.dataCoverage.publishJobs, 'the metrics surface hides exactly the publish jobs the task scope hides').toBe(1)
+    expect(data.platformMetrics.taobao.publish.total, 'the metrics surface hides exactly the publish jobs the task scope hides').toBe(1)
+
+    // The hidden brand's task id, publish job id and rejection code must not
+    // appear anywhere in the payload — not in a risk item, a store aggregate or
+    // the unbound-local-data section.
+    const serialized = JSON.stringify(metrics)
+    expect(serialized, 'the metrics surface hides exactly the publish jobs the task scope hides').not.toContain(hidden.jobId)
+    expect(serialized).not.toContain(hidden.taskId)
+    expect(serialized).not.toContain('BRAND_SCOPE_HIDDEN')
+  })
+
+  /**
+   * One product, three surfaces, one answer. A legacy product with no canonical
+   * row whose only task carries the granted brand used to be listed by
+   * `GET /v1/products` (the wider predicate that admitted a task-brand fallback
+   * and, before that, any canonical-row-less product) while the point read
+   * answered 404 `PRODUCT_NOT_FOUND` and MCP `catalog.search` omitted it
+   * entirely. Reproduced over real HTTP before the predicate was collapsed; the
+   * narrow direction hides it everywhere, so every surface fails closed.
+   */
+  it('answers the product list, the point read and catalog.search the same way for a legacy product', async () => {
+    const context = await setupBrandScopedWorkspace()
+    const legacy = service.importProduct({ workspaceId: context.workspaceId, platform: 'taobao', localProductKey: 'brand-scope-legacy', title: '无 canonical 的旧商品', stock: 2 })
+    // The task is visible to the viewer — it carries the granted brand — so the
+    // product is the only thing that can disagree between surfaces.
+    service.createTask({ workspaceId: context.workspaceId, productId: legacy.id, platform: 'taobao', brandId: 'brand_visible' })
+
+    const list = await fetch(`${context.base}/v1/products`, { headers: context.viewerHeaders })
+    expect(list.status).toBe(200)
+    const listIds = ((await list.json()) as Envelope<{ items: Array<{ id: string }> }>).data!.items.map(item => item.id)
+    const point = await fetch(`${context.base}/v1/products/${legacy.id}`, { headers: context.viewerHeaders })
+    const pointBody = await point.json() as Envelope
+    const search = await mcpCall(context.base, context.viewerHeaders, 91, 'catalog.search', { workspace_id: context.workspaceId, scope: 'workspace' })
+    const searchIds = ((search as Envelope<{ result: { products: Array<{ id: string }> } }>).data!.result.products).map(item => item.id)
+
+    // The granted product is still visible on both listing surfaces, so this is
+    // a filter and not an empty catalog.
+    expect(listIds).toContain(context.visibleProduct.id)
+    expect(searchIds).toContain(context.visibleProduct.id)
+    expect(listIds, 'the list hides exactly what the point read hides').not.toContain(legacy.id)
+    expect(searchIds).not.toContain(legacy.id)
+    expect(point.status).toBe(404)
+    expect(pointBody.error?.code).toBe('PRODUCT_NOT_FOUND')
   })
 
   it('enforces the brand boundary when an individual image generation job is read', async () => {

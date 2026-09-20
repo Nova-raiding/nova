@@ -48,6 +48,21 @@ describe('platform-owned model gate', () => {
     expect(evaluatePlatformModelGate({ MODEL_RELAY_BASE_URL: 'https://relay.example', AI_API_KEY: 'direct-key', AI_MODEL: 'text-v1' }, 'text')).toMatchObject({ ready: false, reasons: ['api_key_missing'] })
   })
 
+  it('never reports a relay ready that the runtime security boundary refuses', () => {
+    // `relaySecurityFromEnv` returns undefined for these endpoints, so no
+    // adapter is ever assembled: readiness must not claim otherwise.
+    const privateHost = { NODE_ENV: 'production', MODEL_RELAY_BASE_URL: 'https://10.20.30.40/v1', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example', MODEL_RELAY_API_KEY: 'relay-key', AI_MODEL: 'text-v1' }
+    expect(evaluatePlatformModelRelayGate(privateHost)).toMatchObject({ ready: false, reasons: ['model_relay_host_blocked'] })
+    expect(evaluatePlatformModelGate(privateHost, 'text')).toMatchObject({ ready: false, reasons: ['model_relay_host_blocked'] })
+    const metadataHost = { ...privateHost, MODEL_RELAY_BASE_URL: 'https://169.254.169.254/v1' }
+    expect(evaluatePlatformModelGate(metadataHost, 'text')).toMatchObject({ ready: false })
+    const credentialUrl = { ...privateHost, MODEL_RELAY_BASE_URL: 'https://user:secret@relay.example/v1' }
+    expect(evaluatePlatformModelRelayGate(credentialUrl)).toMatchObject({ ready: false, reasons: ['model_relay_endpoint_invalid'] })
+    expect(evaluatePlatformModelGate(credentialUrl, 'text')).toMatchObject({ ready: false, reasons: ['endpoint_invalid'] })
+    // A public allowlisted relay keeps reporting ready.
+    expect(evaluatePlatformModelGate({ ...privateHost, MODEL_RELAY_BASE_URL: 'https://relay.example/v1' }, 'text')).toMatchObject({ ready: true, reasons: [] })
+  })
+
   it('reports OCR and video model readiness through the same relay gate', () => {
     expect(evaluatePlatformModelGate({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'relay-key', OCR_MODEL: 'vision-v1' }, 'ocr')).toMatchObject({ ready: true, endpointHost: 'relay.example' })
     expect(evaluatePlatformModelGate({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'relay-key' }, 'video')).toMatchObject({ ready: false, reasons: ['model_missing'] })

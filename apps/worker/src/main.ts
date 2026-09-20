@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { unlink, utimes, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { Pool, type PoolConfig } from 'pg'
+import type { RedisClientType } from 'redis'
 import { contextEnvelopeHash, loadMigrations, PostgresAssetScanAttemptRepository, PostgresCreativePointLifecycleRepository, PostgresCreativePointRepository, PostgresOnboardingGrantDispatchRepository, PostgresOutboxRepository, withWorkspaceTransaction, type AssetScanAttemptRecord, type AssetScanAttemptRepository, type Migration, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { PostgresMappingPreflightApprovalRepository } from '../../../packages/persistence/src/mapping-preflight-approval-repository.js'
 import { DurableOutboxDispatcher, InMemoryQueue, RedisQueueAdapter, type DurableOutboxEvent, type QueuePort, type RedisQueueTransport, type WorkerDispatchObservation } from '../../../packages/workers/src/durable.js'
@@ -35,7 +36,7 @@ import { createCommercialAccessGuard, WorkerCommercialAccessError, type WorkerCo
 import { CUSTOMER_DELIVERY_SCAN_EVENT, CUSTOMER_DELIVERY_SCAN_OPERATION, createDeliveryScanAdmissionGuard, DeliveryScanAdmissionError } from '../../../packages/workers/src/customer-delivery-scan-admission.js'
 import { assertClamAvExecutionAdmission } from '../../../packages/workers/src/scanner-heartbeat.js'
 import { planSupportSlaReportSchedule } from '../../../packages/workers/src/support-sla-scan.js'
-import { validateImageGenerationCallbackResult } from '../../../packages/contracts/src/index.js'
+import { isGenerationJobExecutable, isGenerationJobFinished, validateImageGenerationCallbackResult } from '../../../packages/contracts/src/index.js'
 import { assertGenerationInput } from './generation-input.js'
 import { CreativePointRelaySettlement, relayProviderIdentity } from './creative-point-relay-settlement.js'
 import { PostgresKnowledgeRepository } from '../../../packages/persistence/src/knowledge.js'
@@ -470,6 +471,20 @@ const SCANNER_QUEUE_METRICS_INTERVAL_MS = 30_000
  * window, which is precisely the failure the fourth budget above closes. Adding
  * a new dependency call to the loop without a budget re-opens it.
  *
+ * Removing the marker is only half of it, and the half that was missing: the
+ * next iteration's dependency check used to write it straight back, so a worker
+ * failing *every* iteration was advertised as ready again within one poll
+ * interval. `failureThreshold` counts consecutive probe failures, and a marker
+ * that reappears between two of them never reaches it. The loop therefore
+ * carries `consecutiveIterationFailures` and stops writing the idle marker once
+ * its failure streak passes `READY_MARKER_TOLERATED_FAILURES`, so a loop that
+ * stops progressing keeps the marker revoked until it recovers on its own -
+ * which is what lets the probe restart it. The same counter is what keeps the
+ * revocation from outliving the failure: a *single* transient failure must not
+ * suppress the marker for the whole of the next (possibly multi-minute)
+ * iteration. See that constant's own note for the threshold and how it is
+ * derived from the probe's restart budget.
+ *
  * A progress-gated refresh ("only touch while the loop reports advancement")
  * was considered and rejected: with the deployed budgets an honest gap between
  * two steps reaches minutes (`WORKER_API_TIMEOUT_MS=360000` in the shipped
@@ -481,6 +496,53 @@ const SCANNER_QUEUE_METRICS_INTERVAL_MS = 30_000
  * at the points where it has real evidence to report.
  */
 const READY_FILE_HEARTBEAT_MS = 30_000
+/**
+ * Consecutive failed iterations after which the idle marker is no longer written
+ * back by the dependency check: the failure path's revocation then lasts until
+ * an iteration actually completes.
+ *
+ * The budget it is derived from is the probe's, not the loop's. The shipped
+ * liveness probe (`infra/kubernetes/base/workers.yaml`) is
+ * `find <ready-file> -mmin -2` with `initialDelaySeconds` 15, `periodSeconds`
+ * 10, `timeoutSeconds` 3 and *no* `failureThreshold`, i.e. the Kubernetes
+ * default of 3 - three consecutive failures, ~30s, is the entire restart
+ * budget, and the readiness probe is the same ~30s (`periodSeconds` 5,
+ * `failureThreshold` 6). `failureThreshold` counts *consecutive* failures, so
+ * every marker the loop writes back inside a failing streak restarts that
+ * count; the tolerance has to be strictly smaller than the probe's threshold
+ * for the count to ever be reached, and it is `1` rather than `2` because the
+ * failure path *unlinks* the marker rather than leaving it stale - each
+ * tolerated iteration is a full probe-success window, and every one of them
+ * postpones the restart of a genuinely wedged loop. One failed iteration is the
+ * smallest streak that is not evidence about the next iteration; anything
+ * larger buys nothing but delay.
+ *
+ * Why tolerate a failure at all: with `0` (the previous `iterationFailed`
+ * boolean) a single transient failure - one Redis round trip over
+ * `REDIS_OPERATION_TIMEOUT_MS`, one API 503, one statement timeout - leaves the
+ * marker revoked for the whole of the *next* iteration. That iteration is
+ * allowed to run for minutes (`WORKER_API_TIMEOUT_MS` 360s across
+ * `WORKER_BATCH_SIZE` events and `WORKER_WORKSPACE_BATCH_SIZE` workspaces), and
+ * the heartbeat cannot restore the marker it does not have (`touch()` is
+ * `utimes`, and its ENOENT is swallowed). The liveness probe then fires after
+ * ~30s and SIGTERMs a worker whose dependencies are healthy and whose events are
+ * leased - the #29 stall, re-entered from the other side and with every probe
+ * green. Both directions are registered in `tests/invariants/registry.ts`.
+ */
+const READY_MARKER_TOLERATED_FAILURES = 1
+
+/**
+ * Whether the poll loop may write the ready marker after `consecutiveFailures`
+ * consecutive failed iterations.
+ *
+ * The single decision point for the gate: the dependency-check write is the only
+ * production caller, and it is exported so a future writer of the marker has one
+ * place to ask rather than a comparison to copy - the branch's recurring defect
+ * is a rule implemented twice and one copy drifting.
+ */
+export function readyMarkerRefreshAllowed(consecutiveFailures: number): boolean {
+  return consecutiveFailures <= READY_MARKER_TOLERATED_FAILURES
+}
 const DEFAULT_STORAGE_RECONCILIATION_INTERVAL_MS = 15 * 60_000
 const DEFAULT_PAYMENT_RECONCILIATION_INTERVAL_MS = 5 * 60_000
 const DEFAULT_PAYMENT_RECONCILIATION_BATCH_SIZE = 10
@@ -1290,8 +1352,17 @@ export function imageReconciliationIdempotencyKey(input: { workspaceId: string; 
   return `image-reconcile:${createHash('sha256').update(canonical).digest('hex')}`
 }
 
+/**
+ * The image reconciliation statuses that end the polling loop. This is a
+ * *different* set from the content generation job states
+ * (`packages/contracts/src/generation-job-state.ts`): the provider only ever
+ * reports `succeeded`, `failed` or `unknown`, and the two are named apart so a
+ * terminal-state predicate is never mistaken for the generation job guard.
+ */
+const IMAGE_RECONCILIATION_FINISHED_STATES = ['succeeded', 'failed'] as const
+
 export function imageReconciliationNextAttemptAt(input: { observedAt: string; state: ImageGenerationReconciliationEvidence['state']; queryAttempt: number }) {
-  if (input.state === 'succeeded' || input.state === 'failed') return undefined
+  if ((IMAGE_RECONCILIATION_FINISHED_STATES as readonly string[]).includes(input.state)) return undefined
   const exponent = Math.min(Math.max(input.queryAttempt - 1, 0), 6)
   const delaySeconds = Math.min(3600, (input.state === 'unknown' ? 60 : 30) * 2 ** exponent)
   return new Date(Date.parse(input.observedAt) + delaySeconds * 1000).toISOString()
@@ -1487,10 +1558,16 @@ export async function assertGenerationExecution(input: { apiBaseUrl: string; api
   if (typeof authoritativeTaskId !== 'string' || authoritativeTaskId !== input.event.payload.task_id) {
     throw Object.assign(new Error('generation execution gate task binding mismatch'), { code: 'GENERATION_EXECUTION_GATE_INVALID' })
   }
-  if (envelope.data?.state === 'succeeded' || envelope.data?.state === 'failed') {
-    throw Object.assign(new Error(`generation job is already ${envelope.data.state}`), { code: 'GENERATION_JOB_TERMINAL' })
+  // The state classification is `packages/contracts/src/generation-job-state.ts`'s,
+  // shared with the API's write guard: a job whose outcome is already decided
+  // (`succeeded` or `failed`) dead-letters the event, and any other state an
+  // execution cannot start from is a gate error. Keeping a second list here is
+  // what let the worker treat `failed` as terminal while the API treated it as
+  // rewritable.
+  if (isGenerationJobFinished(envelope.data?.state)) {
+    throw Object.assign(new Error(`generation job is already ${String(envelope.data?.state)}`), { code: 'GENERATION_JOB_TERMINAL' })
   }
-  if (envelope.data?.state !== 'queued' && envelope.data?.state !== 'running') {
+  if (!isGenerationJobExecutable(envelope.data?.state)) {
     throw Object.assign(new Error('generation execution gate returned an invalid state'), { code: 'GENERATION_EXECUTION_GATE_INVALID' })
   }
 }
@@ -1903,11 +1980,14 @@ export async function refreshScanQueueMetrics(input: {
  * every slow cycle again, which is the restart loop #29 fixed. No production
  * path passes it.
  */
-export async function runWorker(config: WorkerConfig, pool: Pool, options: { readyFileHeartbeatIntervalMs?: number } = {}): Promise<void> {
+export async function runWorker(config: WorkerConfig, pool: Pool, options: { readyFileHeartbeatIntervalMs?: number; redisClientFactory?: (url: string) => RedisClientType } = {}): Promise<void> {
   const repository = new PostgresOutboxRepository(pool as unknown as SqlPool)
   const dispatchers = new Map<string, DurableOutboxDispatcher<DurableOutboxEvent>>()
-  const redisConnection = process.env.REDIS_URL?.trim() ? await connectRedisQueue(process.env.REDIS_URL.trim(), { maxDepth: config.queueMaxDepth }) : undefined
-  const quotaConnection = await createQuotaCounterStore(process.env.REDIS_URL)
+  // `redisClientFactory` is the same seam the transports already accept, threaded
+  // through so the loop's own evidence can drive it with a socket that never
+  // answers. No production path passes it.
+  const redisConnection = process.env.REDIS_URL?.trim() ? await connectRedisQueue(process.env.REDIS_URL.trim(), { maxDepth: config.queueMaxDepth, ...(options.redisClientFactory ? { clientFactory: options.redisClientFactory } : {}) }) : undefined
+  const quotaConnection = await createQuotaCounterStore(process.env.REDIS_URL, options.redisClientFactory ? { clientFactory: options.redisClientFactory } : {})
   const quotaAdmission = new FixedWindowQuotaAdmission(quotaConnection.store)
   const executionAuthorization = createApiExecutionAuthorizationGuard(config)
   const providerDispatchAdmission = createWorkerProviderDispatchAdmission(executionAuthorization)
@@ -2411,6 +2491,15 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
       await scannerHeartbeat.start()
     }
     let dependenciesReady = false
+    // How many iterations have failed since the loop last completed one. The
+    // dependency check below writes the idle marker back on every iteration it
+    // passes, unwinding the failure path's revocation one iteration later; a
+    // loop that never completes an iteration therefore stays revoked once this
+    // count passes `READY_MARKER_TOLERATED_FAILURES`, which is what lets the
+    // probes accumulate the consecutive failures that restart a pod. It is a
+    // count and not a boolean because a *single* transient failure is not
+    // evidence about the next iteration - see the constant's own note.
+    let consecutiveIterationFailures = 0
     let nextDependencyCheckAt = 0
     let nextKnowledgeIndexAt = 0
     let nextScannerQueueMetricsAt = 0
@@ -2446,7 +2535,11 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
           if (clamavReadiness && !scannerHeartbeat) await clamavReadiness.ping()
           dependenciesReady = true
           nextDependencyCheckAt = startedAt + config.dependencyCheckIntervalMs
-          if (!scannerHeartbeat) await writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, state: 'idle', quotaAdmission: quotaConnection.mode, migrationVersion: dependencyState.migrationVersion, apiReady: dependencyState.apiReady }))
+          // A passing dependency check is not progress, so a failing loop must
+          // stay revoked; it *is* a fallible probe of the next iteration, so a
+          // single failure must not suppress one - see
+          // `READY_MARKER_TOLERATED_FAILURES`.
+          if (!scannerHeartbeat && readyMarkerRefreshAllowed(consecutiveIterationFailures)) await writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, state: 'idle', quotaAdmission: quotaConnection.mode, migrationVersion: dependencyState.migrationVersion, apiReady: dependencyState.apiReady }))
         }
         const workspaces = config.autoDiscoverWorkspaces ? await repository.listActiveWorkspaceIds() : config.workspaces
         const result = config.role === 'automation'
@@ -2541,6 +2634,9 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
           nextSupportSlaReportAt = Date.now() + config.supportSlaReportIntervalMs
           Object.assign(result as unknown as Record<string, unknown>, { supportSlaReport: { scheduled: Boolean(schedule), completed: reports.filter(item => item.status === 'fulfilled').length, failed: reports.filter(item => item.status === 'rejected').length } })
         }
+        // Completed iteration: the marker is allowed back, and the write below
+        // is the one piece of evidence that says the loop is draining.
+        consecutiveIterationFailures = 0
         if (!scannerHeartbeat) await writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, workspaces: workspaces.length, quotaAdmission: quotaConnection.mode, ...result }))
         // Only aggregate counters reach the endpoint: `workspaces` and the
         // per-tenant reconciliation summaries stay in the log line.
@@ -2548,6 +2644,13 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
         log({ level: 'info', message: 'worker poll completed', ...result, durationMs: Date.now() - startedAt })
       } catch (error) {
         dependenciesReady = false
+        // The marker stays revoked until an iteration completes or the streak
+        // is still inside the tolerated window, so consecutive failures stay
+        // consecutive from the probe's point of view and `failureThreshold`
+        // can be reached. Rewriting it on the next dependency check is the
+        // regression this pins; keeping the *first* failure from rewriting it
+        // is the regression the tolerance above pins.
+        consecutiveIterationFailures += 1
         await unlink(readyFile).catch(() => undefined)
         const failure = serializeError(error)
         workerMetrics.recordPollFailure({ finishedAtMs: Date.now(), ...(failure.code ? { code: failure.code } : {}) })
@@ -2652,8 +2755,25 @@ const entrypoint = process.argv[1]
 if (entrypoint && import.meta.url === pathToFileURL(entrypoint).href) {
   const config = readWorkerConfig()
   const pool = new Pool(workerDatabasePoolOptions(config))
-  runWorker(config, pool).catch(error => {
+  runWorker(config, pool).catch(async error => {
     log({ level: 'fatal', message: 'worker stopped', error: serializeError(error) })
     process.exitCode = 1
+    // An orchestrator can only recover a stopped worker when the process
+    // actually exits - the same reason the API exits on a startup failure
+    // (`apps/api/src/server.ts`). Setting the exit code is not enough here:
+    // `runWorker` closes every connection it owns in its own `finally`, but that
+    // block only covers what was open when the poll loop started, so an error
+    // raised *after* the Redis connections are dialled and before it - a
+    // configured `AI_THINKING_MODE` that `createContentGeneratorFromEnv`
+    // rejects, the vector-indexing contract check, a failed
+    // `createQuotaCounterStore` - leaves those sockets referenced. The event
+    // loop then never drains, the process stays alive with a fatal line logged
+    // and an exit code nothing reads, and a container with
+    // `restart: unless-stopped` (`infra/local/docker-compose.yml`) is restarted
+    // on exit, never on a hang: the worker sits there processing nothing.
+    // `process.exit` does not wait for a piped stdout, and the line above is the
+    // only evidence of why the container restarted, so flush it first.
+    await new Promise<void>(resolve => { process.stdout.write('', () => resolve()) })
+    process.exit(1)
   }).finally(() => { void pool.end() })
 }

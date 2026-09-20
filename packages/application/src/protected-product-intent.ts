@@ -46,7 +46,13 @@ interface ProtectedRule {
   message: string
 }
 
-const mutationAction = /(?:改变|更改|修改|调整|替换|更换|改写|重写|重做|重塑|重构|改成|换成|变成|去掉|移除|删除|抹掉|隐藏|新增|添加|增加|缩小|放大|拉长|压缩|扭曲|重新设计|(?:改|换)(?=(?:商品|产品|物品|鞋子?|包装|标签|颜色|配色|结构|造型|形状|材质|材料|logo|徽标|商标|配件|附件|认证))|\b(?:alter(?:ing)?|adjust(?:ing)?|chang(?:e|ed|ing)|modify|modifying|replace|replacing|rewrit(?:e|ing)|reword(?:ing)?|swap|remove|removing|delete|deleting|erase|hide|hiding|add|adding|redesign|reshape|resize|distort)\b|\bmake\s+(?:it|the\s+(?:product|item|package))\b)/iu
+// Every protected attribute is only reported when a recognised mutation verb
+// co-occurs with its term, so this alternation is the single point of failure
+// for detection. A missing everyday synonym (删掉/换掉/更新, update/edit/get rid
+// of/obscure/cover) silently turns "delete the product accessories" into an
+// allowed request, which is the opposite of what a protected-attribute gate is
+// for. Keep the list complete for the verbs merchants actually type.
+const mutationAction = /(?:改变|更改|修改|调整|替换|更换|改写|重写|重做|重塑|重构|改成|换成|变成|去掉|移除|删除|删掉|拿掉|换掉|丢掉|去除|消除|修掉|干掉|抹掉|抹去|隐藏|遮盖|遮挡|模糊|新增|添加|增加|变更|更新|编辑|缩小|放大|拉长|压缩|扭曲|重新设计|(?:改|换|调|删)(?:一下|下|点儿|点)|(?:改|换|删|移)(?=(?:商品|产品|物品|鞋子?|包包|服装|衣服|瓶子?|盒子?|包装|盒身|瓶身|标签|颜色|配色|色彩|结构|造型|形状|轮廓|比例|尺寸|材质|材料|质地|纹理|logo|徽标|商标|标志|标识|配件|附件|零件|赠品|认证|文字|文案|字体|字样|图案|印花))|\b(?:alter(?:ing|ed|s)?|adjust(?:ing|ed|s)?|chang(?:e|ed|ing|es)|modify|modifying|replace|replacing|rewrit(?:e|ing)|reword(?:ing)?|swap|remove|removing|delete|deleting|erase|erasing|hide|hiding|add|adding|redesign|reshape|resize|distort|update|updating|edit|editing|rework|reworking|obscure|obscuring|blur|blurring|cover|covering|crop\s+out|swap\s+out|get\s+rid\s+of|take\s+(?:off|out)|drop)\b|\bmake\s+(?:it|the\s+(?:product|item|package))\b)/iu
 
 const preservationPatterns = [
   /(?:不要|不应|不得|不能|请勿|禁止|避免|无需|无须|不需要)(?:[^，。；;,.!?]{0,24})(?:改变|更改|修改|调整|替换|更换|重做|重塑|改成|换成|变成|去掉|移除|删除|隐藏|新增|添加)/iu,

@@ -9,6 +9,11 @@ import { getImageCandidatePage } from './image-candidate-pagination'
 import { imageCandidateLoading } from './image-candidate-loading'
 import { mergeImageGenerationJobs } from './image-job-list'
 import { isRealReadableStore, merchantConnectionPresentation } from './platform-connection-status'
+import {
+  buildCatalogPlatforms,
+  catalogProductsForStore,
+  type CatalogProduct,
+} from './catalog-data'
 import { DetailDecisionContract } from './DetailDecisionContract'
 import storeNovaLogo from './assets/store-nova-primary-horizontal.png'
 import {
@@ -101,6 +106,7 @@ import {
   fetchProductAssetBindings,
   fetchProductsByAsset,
   fetchProductPage,
+  fetchProducts,
   fetchPublishJobs,
   fetchRulePacks,
   fetchRechargeOrder,
@@ -2598,16 +2604,22 @@ type PointUsageItem = { label: string; value: number; dateLabel?: string }
  * deltas are consumption, and buckets are keyed by the server timestamp, so an
  * empty or unavailable ledger produces an empty chart rather than a
  * plausible-looking trend the server never reported.
+ *
+ * `pointsDelta`/`createdAt` are the field names the producing ledger repository
+ * serialises (`packages/persistence/src/creative-point-repository.ts`); the
+ * snake_case names this used to read matched only the dormant
+ * `packages/contracts` declaration, so every real row was filtered out and the
+ * panel published 「合计 0 点」 over an unread ledger.
  */
-function aggregatePointUsage(entries: CreativePointStatementEntry[], mode: 'day' | 'month'): PointUsageItem[] {
+export function aggregatePointUsage(entries: CreativePointStatementEntry[], mode: 'day' | 'month'): PointUsageItem[] {
   const buckets = new Map<string, number>()
   for (const entry of entries) {
-    if (!Number.isFinite(entry.points_delta) || entry.points_delta >= 0) continue
-    const occurredAt = new Date(entry.occurred_at)
+    if (!Number.isFinite(entry.pointsDelta) || entry.pointsDelta >= 0) continue
+    const occurredAt = new Date(entry.createdAt)
     if (Number.isNaN(occurredAt.getTime())) continue
     const month = `${occurredAt.getFullYear()}/${String(occurredAt.getMonth() + 1).padStart(2, '0')}`
     const key = mode === 'day' ? `${month}/${String(occurredAt.getDate()).padStart(2, '0')}` : month
-    buckets.set(key, (buckets.get(key) ?? 0) + Math.abs(entry.points_delta))
+    buckets.set(key, (buckets.get(key) ?? 0) + Math.abs(entry.pointsDelta))
   }
   return [...buckets.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
@@ -2755,6 +2767,9 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
   // The ledger read is bounded: a truncated read may not be summed up as the
   // workspace's complete consumption.
   const [statementTruncated, setStatementTruncated] = useState(false)
+  // Rows the server returned in a shape this client could not read. They are
+  // missing from the sum, so the sum must not be published as if it were whole.
+  const [statementUnreadable, setStatementUnreadable] = useState(0)
   const [statementNote, setStatementNote] = useState('正在读取创意点流水…')
   const [storageQuota, setStorageQuota] = useState<StorageQuotaProjection | null>(null)
   const [catalogItems, setCatalogItems] = useState<CommercialCatalogItem[] | null>(null)
@@ -2776,6 +2791,7 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
     if (!baseUrl) {
       setStatementEntries(null)
       setStatementTruncated(false)
+      setStatementUnreadable(0)
       setStatementNote('未配置 API，无法读取创意点流水。')
       setStorageQuota(null)
       setCatalogItems(null)
@@ -2785,6 +2801,7 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
     let active = true
     setStatementEntries(null)
     setStatementTruncated(false)
+    setStatementUnreadable(0)
     setStatementNote('正在读取创意点流水…')
     setStorageQuota(null)
     setCatalogItems(null)
@@ -2795,16 +2812,19 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
         if (page === null) {
           setStatementEntries(null)
           setStatementTruncated(false)
-          setStatementNote('服务端未返回创意点流水仓储，当前不显示消耗趋势。')
+          setStatementUnreadable(0)
+          setStatementNote('服务端创意点流水未按可识别的格式返回，当前不显示消耗趋势，也不断言该区间没有流水。')
           return
         }
         setStatementEntries(page.entries)
         setStatementTruncated(page.truncated)
+        setStatementUnreadable(page.unreadableEntries)
       })
       .catch((cause) => {
         if (!active) return
         setStatementEntries(null)
         setStatementTruncated(false)
+        setStatementUnreadable(0)
         setStatementNote(`创意点流水读取失败：${describeApiError(cause)}`)
       })
     fetchAssetStorageQuota(baseUrl)
@@ -2893,15 +2913,25 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
         <div className="finance-chart-summary">{statementEntries === null ? (
           <><span>创意点流水未读取</span><strong>{UNREAD_METRIC}</strong></>
         ) : (
-          <><span>{chartLabel}{statementTruncated ? ' · 仅已读取页' : ''}</span><b>{chartItems.length} 个数据点</b><strong>合计 {chartItems.reduce((sum, item) => sum + item.value, 0).toLocaleString()} 点{statementTruncated ? '（仅为已读取流水，非完整合计）' : ''}</strong></>
+          <><span>{chartLabel}{statementTruncated ? ' · 仅已读取页' : ''}</span><b>{chartItems.length} 个数据点</b><strong>合计 {chartItems.reduce((sum, item) => sum + item.value, 0).toLocaleString()} 点{statementTruncated ? '（仅为已读取流水，非完整合计）' : ''}{statementUnreadable ? `（另有 ${statementUnreadable} 条流水无法识别，未计入）` : ''}</strong></>
         )}</div>
         {statementEntries !== null && statementTruncated && (
           <div className="info-notice" role="status">服务端创意点流水超过单次可读取页数，趋势与合计只覆盖已读取的部分流水；未把当前结果误报为完整。</div>
         )}
+        {statementEntries !== null && statementUnreadable > 0 && (
+          <div className="info-notice" role="status">服务端有 {statementUnreadable} 条流水未按可识别格式返回，未计入趋势与合计；当前合计不是该区间的完整消耗。</div>
+        )}
         {chartItems.length ? (
           <PointUsageChart items={chartItems} label={chartLabel} />
         ) : (
-          <p className="muted" role="status">{statementEntries === null ? statementNote : '该区间内没有服务端创意点流水，不显示趋势图。'}</p>
+          /* Only an actually empty ledger may be reported as having no flow:
+             a ledger the client read but could not bucket (grants, reserves,
+             releases) is not the same statement as an empty one. */
+          <p className="muted" role="status">{statementEntries === null
+            ? statementNote
+            : statementEntries.length === 0
+              ? '服务端未返回该区间的创意点流水，不显示趋势图。'
+              : `服务端已读取 ${statementEntries.length} 条创意点流水，其中没有消耗记录（只有消耗类流水计入趋势），不显示趋势图。`}</p>
         )}
       </section>
       <section className="finance-account-panel"><div><span className="section-kicker">ACCOUNT</span><h3>账号与工作区</h3><p>{account ? `当前登录账号 ${account.login}，企业主体 ${account.enterpriseName?.trim() || UNREAD_METRIC}，账号状态 ${merchantAccountStatusLabel(account.status)}。` : '当前未读取到商家账号信息。'}</p></div><div className="finance-account-facts"><span><b>{account?.login || UNREAD_METRIC}</b>登录账号</span><span><b>{account?.enterpriseName?.trim() || UNREAD_METRIC}</b>企业主体</span><span><b>{account ? merchantAccountStatusLabel(account.status) : UNREAD_METRIC}</b>账号状态</span></div><button className="primary" type="button" onClick={onOpenSupport}>咨询客服升级账号</button></section>
@@ -4555,6 +4585,11 @@ function ProductAssetRelationDialog({
   const [assets, setAssets] = useState<AssetMetadata[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  // A failed binding write is not a failed read. Sharing one state replaced the
+  // successfully read relation view with 「关系读取失败」 and offered a retry that
+  // only re-read, so the merchant lost the (still valid) binding list and was
+  // told the read had failed when the write had.
+  const [saveError, setSaveError] = useState('')
   const [selectedAssetId, setSelectedAssetId] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -4562,6 +4597,7 @@ function ProductAssetRelationDialog({
     let active = true
     setLoading(true)
     setError('')
+    setSaveError('')
     Promise.all([
       fetchProduct(baseUrl, productId),
       fetchProductAssetBindings(baseUrl, productId),
@@ -4599,6 +4635,7 @@ function ProductAssetRelationDialog({
   const reload = () => {
     setLoading(true)
     setError('')
+    setSaveError('')
     void Promise.all([
       fetchProduct(baseUrl, productId),
       fetchProductAssetBindings(baseUrl, productId),
@@ -4619,10 +4656,11 @@ function ProductAssetRelationDialog({
   }
   const mutateBinding = (assetId: string, mode: 'bind' | 'unbind') => {
     if (!product?.brandId || !product.version) {
-      setError('商品缺少品牌或版本信息，无法安全写入关系')
+      setSaveError('商品缺少品牌或版本信息，无法安全写入关系')
       return
     }
     setSaving(true)
+    setSaveError('')
     void changeProductAssetBinding(
       baseUrl,
       product.id,
@@ -4638,7 +4676,7 @@ function ProductAssetRelationDialog({
       mode,
     )
       .then(reload)
-      .catch((cause) => setError(describeApiError(cause)))
+      .catch((cause) => setSaveError(describeApiError(cause)))
       .finally(() => setSaving(false))
   }
   return (
@@ -4652,7 +4690,7 @@ function ProductAssetRelationDialog({
           <button
             className="secondary"
             onClick={() => product && onContinue(product)}
-            disabled={!product || loading || Boolean(error)}
+            disabled={!product || loading || Boolean(error) || Boolean(saveError)}
           >
             使用已绑定素材继续生成
           </button>
@@ -4669,6 +4707,7 @@ function ProductAssetRelationDialog({
           message={`关系读取失败：${error}`}
           onRetry={() => {
             setError('')
+            setSaveError('')
             setLoading(true)
             void Promise.all([
               fetchProduct(baseUrl, productId),
@@ -4810,6 +4849,26 @@ function ProductAssetRelationDialog({
               当前素材均未通过安全扫描；扫描完成后点击“刷新状态”，再回来绑定。
             </small>
           )}
+          {saveError && (
+            <div
+              className="inline-error"
+              role="alert"
+              data-testid="product-asset-relation-write-error"
+            >
+              <AlertCircle size={16} />
+              <span>
+                关系写入失败：{saveError}。上面的绑定列表仍是最近一次成功读取的结果，可能未包含这次变更；请重新读取关系确认后再继续。
+              </span>
+              <button
+                type="button"
+                className="text-button"
+                onClick={reload}
+                disabled={saving}
+              >
+                重新读取关系
+              </button>
+            </div>
+          )}
           <div className="relation-note">
             <Link2 size={15} />
             <span>
@@ -4835,17 +4894,20 @@ type CatalogStore = {
   tone: string
 }
 
-type CatalogProduct = {
-  id: string
-  title: string
-  subtitle: string
-  price: number
-  addedAt: string
-  tone: string
-  series: string
-}
-
-const catalogStores: CatalogStore[] = [
+/**
+ * Demo seed for the local material library only.
+ *
+ * These rows are *not* the workspace's stores: the platform & store & product
+ * page builds `CatalogStoreView`s from `/v1/platform-accounts` and
+ * `/v1/products` (see `catalog-data.ts`). This demo catalogue used to feed that
+ * page too, which is how it claimed eight stores, three connections and nine
+ * products for a workspace whose server reported one fixture account.
+ *
+ * The material-library surfaces are a separate local preview with their own
+ * (unassigned) audit trail, so their seed is left as it is — but it is no
+ * longer reachable from the store page.
+ */
+const demoMaterialStores: CatalogStore[] = [
   { id: 'taobao-flagship', mark: '淘', logoUrl: storeNovaLogo, name: 'Store Nova 旗舰店', platform: '淘宝', category: '家居日用', connected: true, products: 9, updated: '刚刚同步', tone: 'mint' },
   { id: 'taobao-outlet', mark: '淘', logoUrl: storeNovaLogo, name: 'Store Nova 淘宝生活店', platform: '淘宝', category: '生活百货', connected: false, products: 0, updated: '等待连接', tone: 'mint' },
   { id: 'tmall-official', mark: '天', logoUrl: storeNovaLogo, name: 'Store Nova 天猫旗舰店', platform: '天猫', category: '品牌直营', connected: false, products: 0, updated: '等待连接', tone: 'lime' },
@@ -4854,20 +4916,6 @@ const catalogStores: CatalogStore[] = [
   { id: 'douyin-brand', mark: '抖', logoUrl: storeNovaLogo, name: 'Store Nova 品牌店', platform: '抖音小店', category: '趋势好物', connected: true, products: 9, updated: '20 分钟前同步', tone: 'rose' },
   { id: 'pdd-special', mark: '拼', logoUrl: storeNovaLogo, name: 'Store Nova 品牌专营店', platform: '拼多多', category: '日用百货', connected: false, products: 0, updated: '等待连接', tone: 'amber' },
   { id: 'red-lifestyle', mark: '红', logoUrl: storeNovaLogo, name: 'Store Nova 生活方式店', platform: '小红书店', category: '生活美学', connected: false, products: 0, updated: '等待连接', tone: 'violet' },
-]
-
-const catalogPlatformOrder = ['淘宝', '天猫', '京东', '抖音小店', '拼多多', '小红书店']
-
-const catalogProductTemplates: Omit<CatalogProduct, 'id'>[] = [
-  { title: '恒温暖饮杯垫礼盒', subtitle: '三档恒温 · 自动断电 · 礼盒装', price: 129, addedAt: '2026-09-17', tone: 'sage', series: '恒温饮具' },
-  { title: '轻量随行保温杯', subtitle: '316L 内胆 · 480ml · 一键开盖', price: 99, addedAt: '2026-09-15', tone: 'sand', series: '恒温饮具' },
-  { title: '桌面香氛加湿器', subtitle: '静音雾化 · 柔光夜灯 · 便携补水', price: 159, addedAt: '2026-09-11', tone: 'mist', series: '桌面生活' },
-  { title: '模块化桌面收纳盒', subtitle: '自由组合 · 磁吸定位 · 环保材质', price: 79, addedAt: '2026-09-05', tone: 'clay', series: '桌面生活' },
-  { title: '云感午睡抱枕毯', subtitle: '一物两用 · 亲肤面料 · 可机洗', price: 119, addedAt: '2026-08-29', tone: 'peach', series: '礼赠套装' },
-  { title: '智能感应氛围灯', subtitle: '人体感应 · 无级调光 · Type-C', price: 139, addedAt: '2026-08-18', tone: 'night', series: '桌面生活' },
-  { title: '折叠旅行收纳套装', subtitle: '六件分装 · 防泼水 · 轻量便携', price: 89, addedAt: '2026-07-30', tone: 'sky', series: '礼赠套装' },
-  { title: '磁吸无线充电支架', subtitle: '15W 快充 · 横竖可用 · 稳固支撑', price: 169, addedAt: '2026-07-12', tone: 'graphite', series: '桌面生活' },
-  { title: '柔雾护眼阅读灯', subtitle: '无蓝光频闪 · 三档色温 · 定时休息', price: 189, addedAt: '2026-06-26', tone: 'cream', series: '未分类' },
 ]
 
 const defaultCatalogSeriesNames = ['恒温饮具', '桌面生活', '礼赠套装', '未分类']
@@ -4908,16 +4956,6 @@ function readStoreSeriesReassignments(): Record<string, Record<string, string>> 
 function seriesForStore(storeId: string) {
   const saved = readStoreSeriesRegistry()[storeId]
   return saved?.length ? saved : defaultSeriesForStore(storeId)
-}
-
-function storeProducts(store: CatalogStore): CatalogProduct[] {
-  const storeSeries = defaultSeriesForStore(store.id)
-  const baseSeries = defaultCatalogSeriesNames
-  const reassignments = readStoreSeriesReassignments()[store.id] ?? {}
-  return catalogProductTemplates.map((product, index) => {
-    const mappedSeries = storeSeries[baseSeries.indexOf(product.series)] ?? product.series
-    return { ...product, id: `${store.id}-product-${index + 1}`, series: reassignments[mappedSeries] ?? mappedSeries }
-  })
 }
 
 function CatalogProductVisual({ product, large = false }: { product: CatalogProduct; large?: boolean }) {
@@ -4994,7 +5032,7 @@ function CatalogFilterMenu({
   )
 }
 
-function StoreCatalogExperience() {
+function StoreCatalogExperience({ baseUrl }: { baseUrl?: string }) {
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null)
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null)
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
@@ -5013,18 +5051,74 @@ function StoreCatalogExperience() {
   const [catalogPage, setCatalogPage] = useState(1)
   const [catalogSelectedIds, setCatalogSelectedIds] = useState<string[]>([])
   const [catalogSeriesRevision, setCatalogSeriesRevision] = useState(0)
-  const [catalogProductsByStore, setCatalogProductsByStore] = useState<Record<string, CatalogProduct[]>>(() => Object.fromEntries(catalogStores.map((store) => [store.id, store.connected ? storeProducts(store) : []])))
+  // This page owns no catalogue data of its own. Stores come from
+  // `/v1/platform-accounts` and products from `/v1/products`; `null` means the
+  // read has not answered and must be reported as unread rather than as an empty
+  // workspace. The page used to render eight invented stores (three of them
+  // 「已接入」), nine invented products and a 「12 分钟前同步」 sync time without a
+  // single server request, contradicting the server-driven overview in the same
+  // session.
+  const [accounts, setAccounts] = useState<PlatformAccount[] | null>(null)
+  const [products, setProducts] = useState<ApiProduct[] | null>(null)
+  const [catalogReadNote, setCatalogReadNote] = useState('正在读取平台与店铺…')
+  const [productsNote, setProductsNote] = useState('正在读取商品…')
+  // A local, per-session series label the merchant assigned to selected
+  // products. It is an organisational label only — the server publishes no
+  // series, and this never claims a server write.
+  const [seriesOverrides, setSeriesOverrides] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (!baseUrl) {
+      setAccounts(null)
+      setProducts(null)
+      setCatalogReadNote('未配置 API，无法读取平台、店铺与商品。')
+      setProductsNote('未配置 API，无法读取商品。')
+      return
+    }
+    let active = true
+    setAccounts(null)
+    setProducts(null)
+    setCatalogReadNote('正在读取平台与店铺…')
+    setProductsNote('正在读取商品…')
+    // Independent reads: a failed product read must not hide the stores the
+    // server did return, and neither read falls back to a demo catalogue.
+    fetchPlatformAccounts(baseUrl)
+      .then((page) => { if (active) setAccounts(Array.isArray(page.items) ? page.items : []) })
+      .catch((cause) => { if (active) { setAccounts(null); setCatalogReadNote(`平台与店铺读取失败：${describeApiError(cause)}`) } })
+    fetchProducts(baseUrl)
+      .then((items) => { if (active) setProducts(items) })
+      .catch((cause) => { if (active) { setProducts(null); setProductsNote(`商品读取失败：${describeApiError(cause)}`) } })
+    return () => { active = false }
+  }, [baseUrl])
+
+  // `null` while the account read is unresolved.
+  const platforms = useMemo(() => buildCatalogPlatforms(accounts, products), [accounts, products])
+  const catalogStores = useMemo(() => (platforms ?? []).flatMap((platform) => platform.stores), [platforms])
+  const realConnectedStores = catalogStores.filter((store) => store.realConnected).length
   const selectedStore = catalogStores.find((store) => store.id === selectedStoreId) ?? null
-  const selectedPlatformStores = selectedPlatform ? catalogStores.filter((store) => store.platform === selectedPlatform) : []
-  const storeItems = selectedStore ? catalogProductsByStore[selectedStore.id] ?? [] : []
-  const selectedProduct = storeItems.find((product) => product.id === selectedProductId) ?? null
+  const selectedPlatformView = (platforms ?? []).find((platform) => platform.id === selectedPlatform) ?? null
+  const selectedPlatformStores = selectedPlatformView?.stores ?? []
+  // `null` while the product read is unresolved (distinct from a store with no
+  // products, which is a real answer).
+  const storeItems = useMemo(
+    () => (selectedStore ? catalogProductsForStore(products, selectedStore.id, readStoreSeriesReassignments()[selectedStore.id] ?? {}) : null),
+    // `catalogSeriesRevision` re-reads the local series registry after a series change.
+    [products, selectedStore, catalogSeriesRevision],
+  )
+  const storeItemsRead = storeItems !== null
+  const storeProducts = useMemo(
+    () => (storeItems ?? []).map((product) => seriesOverrides[product.id] ? { ...product, series: seriesOverrides[product.id]! } : product),
+    [seriesOverrides, storeItems],
+  )
+  const selectedProduct = storeProducts.find((product) => product.id === selectedProductId) ?? null
   const visibleStoreItems = useMemo(() => {
     const normalizedQuery = catalogQuery.trim().toLocaleLowerCase()
-    const filtered = storeItems.filter((product) => {
+    const now = Date.now()
+    const filtered = storeProducts.filter((product) => {
       const matchesQuery = !normalizedQuery || `${product.title} ${product.subtitle}`.toLocaleLowerCase().includes(normalizedQuery)
-      const newestAddedAt = new Date(`${catalogProductTemplates[0].addedAt}T00:00:00`).getTime()
-      const productAddedAt = new Date(`${product.addedAt}T00:00:00`).getTime()
-      const ageInDays = Math.floor((newestAddedAt - productAddedAt) / 86_400_000)
+      // "Added in the last N days" is measured from today. A product whose
+      // server date was not returned is unknown, not recent.
+      const ageInDays = product.addedAt ? Math.floor((now - new Date(`${product.addedAt}T00:00:00`).getTime()) / 86_400_000) : Number.POSITIVE_INFINITY
       const matchesAddedTime = catalogAddedTime === 'all'
         || (catalogAddedTime === '7-days' && ageInDays <= 7)
         || (catalogAddedTime === '30-days' && ageInDays <= 30)
@@ -5034,13 +5128,13 @@ function StoreCatalogExperience() {
     })
     if (catalogSort === 'added-asc') return [...filtered].sort((left, right) => left.addedAt.localeCompare(right.addedAt))
     return [...filtered].sort((left, right) => right.addedAt.localeCompare(left.addedAt))
-  }, [catalogAddedTime, catalogQuery, catalogSeries, catalogSort, storeItems])
+  }, [catalogAddedTime, catalogQuery, catalogSeries, catalogSort, storeProducts])
   const catalogPageSize = 6
   const catalogPageCount = Math.max(1, Math.ceil(visibleStoreItems.length / catalogPageSize))
   const pagedStoreItems = visibleStoreItems.slice((catalogPage - 1) * catalogPageSize, catalogPage * catalogPageSize)
   const hasCatalogFilters = Boolean(catalogQuery.trim()) || catalogAddedTime !== 'all' || catalogSeries !== 'all' || catalogSort !== 'default'
   const allVisibleCatalogSelected = pagedStoreItems.length > 0 && pagedStoreItems.every((product) => catalogSelectedIds.includes(product.id))
-  const selectedCatalogSeries = new Set(storeItems.filter((product) => catalogSelectedIds.includes(product.id)).map((product) => product.series))
+  const selectedCatalogSeries = new Set(storeProducts.filter((product) => catalogSelectedIds.includes(product.id)).map((product) => product.series))
   const selectedCatalogCurrentSeries = selectedCatalogSeries.size === 1 ? Array.from(selectedCatalogSeries)[0] : ''
   const catalogSeriesOptions = selectedStore ? seriesForStore(selectedStore.id) : defaultCatalogSeriesNames
 
@@ -5055,13 +5149,10 @@ function StoreCatalogExperience() {
   useEffect(() => {
     const syncSeriesChange = (event: Event) => {
       const detail = (event as CustomEvent<{ storeId: string; deleted?: string; fallback?: string }>).detail
-      if (detail?.storeId && detail.deleted && detail.fallback) {
-        setCatalogProductsByStore((current) => ({
-          ...current,
-          [detail.storeId]: (current[detail.storeId] ?? []).map((product) => product.series === detail.deleted ? { ...product, series: detail.fallback! } : product),
-        }))
-        if (selectedStoreId === detail.storeId && catalogSeries === detail.deleted) setCatalogSeries('all')
-      }
+      // Series live in the local registry, so re-reading it (via the revision
+      // below) is enough: a deleted series' products fall back through the
+      // registry's reassignment map rather than a local product copy.
+      if (detail?.storeId && detail.deleted && detail.fallback && selectedStoreId === detail.storeId && catalogSeries === detail.deleted) setCatalogSeries('all')
       setCatalogSeriesRevision((current) => current + 1)
     }
     window.addEventListener(storeSeriesChangedEvent, syncSeriesChange)
@@ -5094,18 +5185,17 @@ function StoreCatalogExperience() {
   }
   const assignSelectedCatalogSeries = (targetSeries: string) => {
     if (!selectedStore || !catalogSelectedIds.length) return
-    setCatalogProductsByStore((current) => ({ ...current, [selectedStore.id]: (current[selectedStore.id] ?? []).map((product) => catalogSelectedIds.includes(product.id) ? { ...product, series: targetSeries } : product) }))
-    setCatalogSelectedIds([])
-  }
-  const deleteSelectedCatalogProducts = () => {
-    if (!selectedStore || !catalogSelectedIds.length) return
-    setCatalogProductsByStore((current) => ({ ...current, [selectedStore.id]: (current[selectedStore.id] ?? []).filter((product) => !catalogSelectedIds.includes(product.id)) }))
+    // A local re-labelling of selected products; the server publishes no series.
+    setSeriesOverrides((current) => Object.fromEntries([
+      ...Object.entries(current),
+      ...catalogSelectedIds.map((id) => [id, targetSeries] as const),
+    ]))
     setCatalogSelectedIds([])
   }
   const assetDownload = (label: string) =>
     `data:text/plain;charset=utf-8,${encodeURIComponent(`${selectedProduct?.title ?? '商品'} · ${label}\n演示素材文件，正式接入后将下载原始素材。`)}`
 
-  if (selectedStore && !selectedStore.connected) {
+  if (selectedStore && !selectedStore.readable) {
     return (
       <div className="store-catalog-page catalog-connection-page">
         <button className="catalog-back" onClick={() => setSelectedStoreId(null)}><ArrowLeft size={17} />返回店铺选择</button>
@@ -5121,12 +5211,9 @@ function StoreCatalogExperience() {
   }
 
   if (selectedStore && selectedProduct) {
-    const skus = [
-      { name: '暖米白 · 单杯礼盒', price: selectedProduct.price },
-      { name: '雾绿色 · 单杯礼盒', price: selectedProduct.price + 10 },
-      { name: '暖米白 · 双杯组合', price: selectedProduct.price * 2 - 19 },
-      { name: '雾绿色 · 双杯组合', price: selectedProduct.price * 2 - 9 },
-    ]
+    // Only the specifications the server published: this list used to be four
+    // invented SKUs whose prices were derived from the product price.
+    const skus = selectedProduct.skus
     const assetGroups = [
       { id: 'videos', label: '商品视频', description: '讲解、展示与场景视频', video: true, items: [
         { id: 'video-main', name: '商品讲解视频', description: '功能与使用方式讲解', size: '1920 × 1080', fileSize: '18.6 MB', format: 'MP4' },
@@ -5146,7 +5233,7 @@ function StoreCatalogExperience() {
       { label: '材质细节' },
       { label: '尺寸说明' },
     ]
-    const selectedSku = skus[selectedSkuIndex]
+    const selectedSku = skus[selectedSkuIndex] ?? null
     const activeAssetGroup = assetGroups.find((group) => group.id === activeAssetGroupId) ?? null
     const selectedAssets = activeAssetGroup?.items.filter((item) => selectedAssetIds.includes(item.id)) ?? []
     const assetPageSize = 10
@@ -5179,17 +5266,23 @@ function StoreCatalogExperience() {
           <div className="catalog-detail-info">
             <div className="catalog-detail-source"><span>{selectedStore.platform}</span><small>{selectedStore.name}</small></div>
             <h1>{selectedProduct.title}</h1>
-            <p>{selectedProduct.subtitle}。甄选耐用材质与克制设计，为日常使用带来更轻松的体验。</p>
-            <div className="catalog-detail-price"><span>所选 SKU 价格</span><strong><small>¥</small>{selectedSku.price.toFixed(2)}</strong></div>
+            <p>{selectedProduct.subtitle || '服务端未返回该商品的品类、库存与规格事实。'}</p>
+            <div className="catalog-detail-price"><span>{selectedSku ? '所选 SKU 价格' : '商品价格'}</span><strong>{selectedSku
+              ? selectedSku.price === null ? '服务端未给出该规格价格' : <><small>¥</small>{selectedSku.price.toFixed(2)}</>
+              : selectedProduct.price === null ? '服务端未给出价格' : <><small>¥</small>{selectedProduct.price.toFixed(2)}</>}</strong></div>
             <div className="catalog-sku-section">
-              <span>选择规格</span>
-              <div className="catalog-sku-grid">
-                {skus.map((sku, index) => (
-                  <button type="button" className={selectedSkuIndex === index ? 'active' : ''} aria-pressed={selectedSkuIndex === index} key={sku.name} onClick={() => setSelectedSkuIndex(index)}>
-                    <span>{sku.name}</span><strong>¥{sku.price.toFixed(2)}</strong>
-                  </button>
-                ))}
-              </div>
+              <span>{skus.length ? '选择规格' : '商品规格'}</span>
+              {skus.length ? (
+                <div className="catalog-sku-grid">
+                  {skus.map((sku, index) => (
+                    <button type="button" className={selectedSkuIndex === index ? 'active' : ''} aria-pressed={selectedSkuIndex === index} key={sku.id} onClick={() => setSelectedSkuIndex(index)}>
+                      <span>{sku.name}</span><strong>{sku.price === null ? '价格未读取' : `¥${sku.price.toFixed(2)}`}</strong>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="muted" role="status">服务端未返回该商品的规格明细，当前不显示可选规格；价格以商品事实为准。</p>
+              )}
             </div>
           </div>
         </section>
@@ -5279,9 +5372,12 @@ function StoreCatalogExperience() {
     return (
       <div className="store-catalog-page catalog-products-page">
         <section className={`catalog-store-hero ${selectedStore.tone}`}>
-          <div className="catalog-store-logo" aria-label={`${selectedStore.name}店铺 Logo`}><img src={selectedStore.logoUrl} alt="" /></div>
+          <div className="catalog-store-logo" aria-label={`${selectedStore.name}店铺 Logo`}><img src={storeNovaLogo} alt="" /></div>
           <div><h1>{selectedStore.name}</h1></div>
-          <div className="catalog-store-stat"><strong>{storeItems.length}</strong><span>已上架商品</span></div>
+          {/* The count is the store's products as the server returned them, and
+              it is reported as unread until that read answers. It used to be a
+              fixed 9 「已上架商品」 for every connected store. */}
+          <div className="catalog-store-stat"><strong>{storeItemsRead ? storeProducts.length : UNREAD_METRIC}</strong><span>件商品</span></div>
         </section>
         <section className="catalog-products-panel">
           <div className="catalog-products-toolbar">
@@ -5297,18 +5393,25 @@ function StoreCatalogExperience() {
               <button className={viewMode === 'list' ? 'active' : ''} aria-pressed={viewMode === 'list'} onClick={() => setViewMode('list')}><Rows3 size={16} />列表</button>
             </div>
           </div>
-          <div className="catalog-search-summary"><div className="catalog-summary-leading"><button className="catalog-back catalog-back-inline" onClick={() => setSelectedStoreId(null)}><ArrowLeft size={15} />返回店铺选择</button><div className="catalog-result-count-card"><span>共找到 <strong>{visibleStoreItems.length}</strong> 件商品</span>{hasCatalogFilters && <button onClick={() => { setCatalogQuery(''); setCatalogAddedTime('all'); setCatalogSeries('all'); setCatalogSort('default'); setCatalogSelectedIds([]) }}>重置条件</button>}</div></div><div className="catalog-batch-operation-card"><span className={catalogSelectedIds.length ? 'active' : ''}>已选 <strong>{catalogSelectedIds.length}</strong> 件</span><button type="button" onClick={() => setCatalogSelectedIds(allVisibleCatalogSelected ? catalogSelectedIds.filter((id) => !pagedStoreItems.some((product) => product.id === id)) : Array.from(new Set([...catalogSelectedIds, ...pagedStoreItems.map((product) => product.id)])))}>{allVisibleCatalogSelected ? '取消全选' : '全选当前'}</button><CatalogFilterMenu label="添加至其他系列" buttonLabel="添加至其他系列" disabled={!catalogSelectedIds.length} value={selectedCatalogCurrentSeries} onChange={assignSelectedCatalogSeries} options={catalogSeriesOptions.map((item) => ({ value: item, label: item }))} /><button type="button" className="danger" disabled={!catalogSelectedIds.length} onClick={deleteSelectedCatalogProducts}><Trash2 size={13} />批量删除</button></div></div>
+          <div className="catalog-search-summary"><div className="catalog-summary-leading"><button className="catalog-back catalog-back-inline" onClick={() => setSelectedStoreId(null)}><ArrowLeft size={15} />返回店铺选择</button><div className="catalog-result-count-card"><span>共找到 <strong>{visibleStoreItems.length}</strong> 件商品</span>{hasCatalogFilters && <button onClick={() => { setCatalogQuery(''); setCatalogAddedTime('all'); setCatalogSeries('all'); setCatalogSort('default'); setCatalogSelectedIds([]) }}>重置条件</button>}</div></div><div className="catalog-batch-operation-card"><span className={catalogSelectedIds.length ? 'active' : ''}>已选 <strong>{catalogSelectedIds.length}</strong> 件</span><button type="button" onClick={() => setCatalogSelectedIds(allVisibleCatalogSelected ? catalogSelectedIds.filter((id) => !pagedStoreItems.some((product) => product.id === id)) : Array.from(new Set([...catalogSelectedIds, ...pagedStoreItems.map((product) => product.id)])))}>{allVisibleCatalogSelected ? '取消全选' : '全选当前'}</button><CatalogFilterMenu label="添加至其他系列" buttonLabel="添加至其他系列" disabled={!catalogSelectedIds.length} value={selectedCatalogCurrentSeries} onChange={assignSelectedCatalogSeries} options={catalogSeriesOptions.map((item) => ({ value: item, label: item }))} /><button type="button" className="danger" disabled aria-label="批量删除（服务端未提供商品删除接口）" title="服务端未提供商品删除接口，当前不能删除服务端商品"><Trash2 size={13} />批量删除</button></div></div>
           {viewMode === 'list' && <div className="catalog-list-header"><span>商品图片</span><span>添加时间</span><span>商品名称</span><span>系列</span><span>商品卖点</span><span>价格</span></div>}
           <div className={`catalog-product-collection ${viewMode}`}>
             {pagedStoreItems.map((product) => (
               <article className={`catalog-product-card${catalogSelectedIds.includes(product.id) ? ' selected' : ''}`} key={product.id} role="button" tabIndex={0} onClick={() => openProduct(product.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') openProduct(product.id) }}>
                 <label className="catalog-product-select" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`选择${product.title}`} checked={catalogSelectedIds.includes(product.id)} onChange={() => toggleCatalogProduct(product.id)} /><span><Check size={13} /></span></label>
                 <CatalogProductVisual product={product} />
-                <div className="catalog-product-copy"><div className="catalog-product-meta"><span className="catalog-product-date">添加于 {product.addedAt}</span><span className="catalog-product-series">{product.series}</span></div><h3>{product.title}</h3><p>{product.subtitle}</p><div className="catalog-product-price"><strong>¥ {product.price.toFixed(2)}</strong></div></div>
+                <div className="catalog-product-copy"><div className="catalog-product-meta"><span className="catalog-product-date">添加于 {product.addedAt || '未读取'}</span><span className="catalog-product-series">{product.series}</span></div><h3>{product.title}</h3><p>{product.subtitle || '服务端未返回该商品的品类、库存与规格事实。'}</p><div className="catalog-product-price"><strong>{product.price === null ? '价格未读取' : `¥ ${product.price.toFixed(2)}`}</strong></div></div>
                 <ArrowRight className="catalog-product-arrow" size={18} />
               </article>
             ))}
-            {!visibleStoreItems.length && <div className="catalog-no-results"><PackageSearch size={25} /><strong>没有找到符合条件的商品</strong><span>可以减少筛选条件，或换一个关键词再试。</span><button onClick={() => { setCatalogQuery(''); setCatalogAddedTime('all'); setCatalogSeries('all'); setCatalogSort('default'); setCatalogSelectedIds([]) }}>清除全部条件</button></div>}
+            {!visibleStoreItems.length && (
+              <div className="catalog-no-results">
+                <PackageSearch size={25} />
+                <strong>{!storeItemsRead ? '商品列表未读取' : storeProducts.length ? '没有找到符合条件的商品' : '该店铺还没有商品'}</strong>
+                <span>{!storeItemsRead ? productsNote : storeProducts.length ? '可以减少筛选条件，或换一个关键词再试。' : '服务端未返回这家店铺的商品事实。'}</span>
+                {storeItemsRead && storeProducts.length > 0 && <button onClick={() => { setCatalogQuery(''); setCatalogAddedTime('all'); setCatalogSeries('all'); setCatalogSort('default'); setCatalogSelectedIds([]) }}>清除全部条件</button>}
+              </div>
+            )}
           </div>
           {visibleStoreItems.length > 0 && <nav className="catalog-product-pagination" aria-label="商品分页"><span>共 {visibleStoreItems.length} 件 · 第 {catalogPage} / {catalogPageCount} 页</span><div><button type="button" disabled={catalogPage === 1} onClick={() => setCatalogPage((page) => Math.max(1, page - 1))}>上一页</button>{Array.from({ length: catalogPageCount }, (_, index) => index + 1).map((page) => <button type="button" className={page === catalogPage ? 'active' : ''} aria-current={page === catalogPage ? 'page' : undefined} key={page} onClick={() => setCatalogPage(page)}>{page}</button>)}<button type="button" disabled={catalogPage === catalogPageCount} onClick={() => setCatalogPage((page) => Math.min(catalogPageCount, page + 1))}>下一页</button></div></nav>}
         </section>
@@ -5320,42 +5423,43 @@ function StoreCatalogExperience() {
     <div className="store-catalog-page catalog-stores-page">
       <section className="catalog-page-hero">
         <div><span className="section-kicker">PLATFORM & STORE</span><h1>选择平台与店铺</h1><p>从左侧选择平台，再从右侧进入对应店铺的商品页。</p></div>
-        <div className="catalog-hero-summary"><div><strong>{catalogPlatformOrder.length}</strong><span>个电商平台</span></div><small>{catalogStores.length} 家店铺 · {catalogStores.filter((store) => store.connected).length} 家已连接</small></div>
+        {/* Every number here is a server answer: the platform set and store
+            counts come from /v1/platform-accounts, and 「已连接」 is only claimed
+            for a real (non-fixture) readable account — the same rule the
+            overview uses. Before the read answers the page says so. */}
+        <div className="catalog-hero-summary"><div><strong>{platforms === null ? UNREAD_METRIC : platforms.length}</strong><span>{platforms === null ? '电商平台' : '个电商平台'}</span></div><small>{platforms === null ? '店铺列表尚未从服务端读取' : `${catalogStores.length} 家店铺 · ${realConnectedStores} 家已连接`}</small></div>
       </section>
       <section className="catalog-platform-store-browser">
         <aside className="catalog-platform-rail" aria-label="平台列表">
           <div className="catalog-platform-rail-heading"><span>平台</span><small>选择后查看店铺</small></div>
           <div className="catalog-platform-list">
-          {catalogPlatformOrder.map((platform) => {
-            const stores = catalogStores.filter((store) => store.platform === platform)
-            const connected = stores.filter((store) => store.connected).length
-            const isConnected = connected > 0
-            return (
-              <button className={`${selectedPlatform === platform ? 'active ' : ''}${isConnected ? 'connected' : 'disconnected'}`} type="button" aria-pressed={selectedPlatform === platform} key={platform} onClick={() => setSelectedPlatform(platform)}>
-                <span className="catalog-platform-mark" aria-hidden="true">{stores[0]?.mark}</span><span className="catalog-platform-list-copy"><strong>{platform}</strong><small>{stores.length} 家店铺</small></span><span className="catalog-platform-connection"><i />{isConnected ? '已接入' : '未接入'}</span><ChevronRight size={16} aria-hidden="true" />
-              </button>
-            )
-          })}
+          {platforms === null ? (
+            <p className="muted" role="status">{catalogReadNote}</p>
+          ) : platforms.map((platform) => (
+            <button className={`${selectedPlatform === platform.id ? 'active ' : ''}${platform.connected ? 'connected' : 'disconnected'}`} type="button" aria-pressed={selectedPlatform === platform.id} key={platform.id} onClick={() => setSelectedPlatform(platform.id)}>
+              <span className="catalog-platform-mark" aria-hidden="true">{platform.mark}</span><span className="catalog-platform-list-copy"><strong>{platform.label}</strong><small>{platform.stores.length} 家店铺</small></span><span className="catalog-platform-connection"><i />{platform.statusLabel}</span><ChevronRight size={16} aria-hidden="true" />
+            </button>
+          ))}
           </div>
         </aside>
         <section className="catalog-platform-result" aria-live="polite">
-          {!selectedPlatform ? (
+          {!selectedPlatformView ? (
             <div className="catalog-platform-empty"><span><Store size={28} /></span><strong>请选择平台</strong><p>请点击左侧平台，选择店铺后进入商品页。</p></div>
-          ) : selectedPlatformStores.some((store) => store.connected) ? (
+          ) : selectedPlatformStores.length ? (
             <>
-              <div className="catalog-platform-result-heading"><div><span className="section-kicker">SELECT STORE</span><h2>{selectedPlatform}店铺</h2><p>选择要查看的店铺。</p></div><span>{selectedPlatformStores.length} 家店铺 · {selectedPlatformStores.filter((store) => store.connected).length} 家已接入</span></div>
+              <div className="catalog-platform-result-heading"><div><span className="section-kicker">SELECT STORE</span><h2>{selectedPlatformView.label}店铺</h2><p>选择要查看的店铺。</p></div><span>{selectedPlatformStores.length} 家店铺 · {selectedPlatformView.connectedCount} 家已接入</span></div>
               <div className={`catalog-store-grid catalog-store-results-grid ${selectedPlatformStores.length === 1 ? 'single' : selectedPlatformStores.length === 2 ? 'pair' : ''}`}>
                 {selectedPlatformStores.map((store) => (
-                  <article className={`catalog-store-card ${store.tone} ${store.connected ? 'connected' : 'disconnected'}`} key={store.id}>
-                    <header className="catalog-store-identity"><span className="catalog-store-mark" aria-hidden="true">{store.mark}</span><div><h3>{store.name}</h3><small>{store.category}</small></div><span className={`catalog-live-state ${store.connected ? '' : 'disconnected'}`}><i />{store.connected ? '已接入' : '未接入'}</span></header>
-                    <div className="catalog-store-summary">{store.connected ? <><strong><b>{store.products}</b> 件商品</strong><span>最近同步：{store.updated}</span></> : <><strong>连接后可查看商品</strong><span>商品数据暂不可读</span></>}</div>
-                    <footer className="catalog-store-action"><button type="button" onClick={() => openStore(store.id)}>{store.connected ? '进入商品库' : '去连接'} <ArrowRight size={15} /></button></footer>
+                  <article className={`catalog-store-card ${store.tone} ${store.readable ? 'connected' : 'disconnected'}`} key={store.id}>
+                    <header className="catalog-store-identity"><span className="catalog-store-mark" aria-hidden="true">{store.mark}</span><div><h3>{store.name}</h3><small>{store.dataModeLabel}</small></div><span className={`catalog-live-state ${store.realConnected ? '' : 'disconnected'}`}><i />{store.connectionLabel}</span></header>
+                    <div className="catalog-store-summary">{store.readable ? <><strong>{store.products === null ? '商品数量未读取' : <><b>{store.products}</b> 件商品</>}</strong><span>{store.syncLabel ? `最近同步：${store.syncLabel}` : '尚无同步记录'}</span></> : <><strong>连接后可查看商品</strong><span>商品数据暂不可读</span></>}</div>
+                    <footer className="catalog-store-action"><button type="button" onClick={() => openStore(store.id)}>{store.readable ? '进入商品库' : '去连接'} <ArrowRight size={15} /></button></footer>
                   </article>
                 ))}
               </div>
             </>
           ) : (
-            <div className="catalog-platform-empty disconnected"><span><AlertCircle size={28} /></span><strong>{selectedPlatform}尚未接入</strong><p>请联系工作人员完成平台接入。</p></div>
+            <div className="catalog-platform-empty disconnected"><span><AlertCircle size={28} /></span><strong>{selectedPlatformView.label}尚未接入</strong><p>请联系工作人员完成平台接入。</p></div>
           )}
         </section>
       </section>
@@ -5652,7 +5756,10 @@ function MaterialRecycleBinWorkspace() {
 }
 
 function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'brands' }) {
-  const stores = useMemo(() => catalogStores.filter((store) => store.connected), [])
+  // The demo material library keeps its own local store seed (see
+  // `demoMaterialStores`); it is not the server's store list and the catalogue
+  // page no longer reads it.
+  const stores = useMemo(() => demoMaterialStores.filter((store) => store.connected), [])
   const materialStores = useMemo<CatalogStore[]>(() => view === 'library' ? [...stores, { id: 'unclassified', mark: '未', logoUrl: storeNovaLogo, name: '未分类', platform: '未分类', category: '待归属素材', connected: true, products: 0, updated: '本地整理', tone: 'mist' }] : stores, [stores, view])
   const [activeStoreId, setActiveStoreId] = useState(materialStores[0]?.id ?? '')
   const [query, setQuery] = useState('')
@@ -10883,6 +10990,38 @@ function TaskWorkspace({
   )
 }
 
+/**
+ * Merchant-facing projection of the publish list.
+ *
+ * Rejected jobs come first, and the row keeps a positional label instead of the
+ * raw job id. What it must not do is rewrite the platform's rejection evidence:
+ * the list renders 「平台拒绝码：{rawCode}」 and marks each blocked field with the
+ * platform's own code, and the PRD requires the merchant-visible receipt to keep
+ * the original error code, the field paths and the actionable message so a
+ * correction can be argued with platform support. This used to overwrite
+ * `rejection.rawCode` with the literal string '平台拒绝' and drop every field
+ * code, so every rejection — whatever the platform actually reported — rendered
+ * the same meaningless "code" and the UI's own '平台未返回代码' fallback was
+ * unreachable.
+ */
+export function projectPublishJobRows(next: PublishJob[]): PublishJob[] {
+  return next
+    .slice()
+    .sort(
+      (left, right) =>
+        Number(right.state === 'rejected') -
+          Number(left.state === 'rejected') ||
+        Date.parse(right.createdAt) - Date.parse(left.createdAt),
+    )
+    .map((job, index) => ({
+      ...job,
+      id: `发布请求 ${index + 1}`,
+      remoteState: undefined,
+      // `rejection` is deliberately carried through untouched: its rawCode,
+      // message and field codes are the evidence the merchant card renders.
+    }))
+}
+
 function PublishCenter({
   openPublish,
   openCorrection,
@@ -10928,29 +11067,7 @@ function PublishCenter({
         .then((next) => {
           if (!cancelled) {
             hasLoadedJobs = true
-            const safeJobs = next
-              .slice()
-              .sort(
-                (left, right) =>
-                  Number(right.state === 'rejected') -
-                    Number(left.state === 'rejected') ||
-                  Date.parse(right.createdAt) - Date.parse(left.createdAt),
-              )
-              .map((job, index) => ({
-                ...job,
-                id: `发布请求 ${index + 1}`,
-                remoteState: undefined,
-                rejection: job.rejection
-                  ? {
-                      ...job.rejection,
-                      rawCode: '平台拒绝',
-                      fields: job.rejection.fields.map((field) => ({
-                        ...field,
-                        rawCode: undefined,
-                      })),
-                    }
-                  : undefined,
-              }))
+            const safeJobs = projectPublishJobRows(next)
             lastSuccessfulJobsRef.current = safeJobs
             setJobs(safeJobs)
             setInitialError('')
@@ -12607,7 +12724,7 @@ export default function App() {
                 {page === 'finance' && <FinanceOverview baseUrl={apiBaseUrl ?? ''} billing={accountBilling} account={authAccount} onOpenSupport={() => openUtility('support')} />}
                 {page === 'products' && (
                   activeEntry === 'products' ? (
-                    <StoreCatalogExperience key={`products-${workspaceNavigationKey}`} />
+                    <StoreCatalogExperience key={`products-${workspaceNavigationKey}`} baseUrl={apiBaseUrl} />
                   ) : (
                     <Products
                       key={`${activeEntry ?? 'knowledge'}-${workspaceNavigationKey}`}

@@ -277,12 +277,12 @@ describe('platform HTTP configuration', () => {
       jd: { clientId: 'jd', clientSecret: 'jd-secret', oauth: { authorizeUrl: 'https://jd.test/a', tokenUrl: 'https://jd.test/t' }, api: { baseUrl: 'https://jd.test/api', syncPath: '/i', createPath: '/c', updatePath: '/u', queryPath: '/q', methods: { sync: 'jingdong.ware.search' } } },
     })
     expect(result.allConfigs.jd?.api.methods).toEqual({ sync: 'jingdong.ware.search' })
-    const sync: HttpRequestDescriptor = { method: 'GET', url: 'https://jd.test/api/products', headers: {}, platform: 'jd', operation: 'sync_products' }
+    const sync: HttpRequestDescriptor = { method: 'POST', url: 'https://jd.test/api/products', headers: {}, platform: 'jd', operation: 'sync_products' }
     await result.allConfigs.jd?.signer?.sign(sync)
-    // The sync operation is dispatched as GET, so the selector travels in the
-    // query and the request must stay bodyless (`fetch` rejects a GET body).
-    expect(sync.body).toBeUndefined()
-    expect(new URL(sync.url).searchParams.get('method')).toBe('jingdong.ware.search')
+    // The sync operation is dispatched as POST with the signed form body, so
+    // the selector travels there and never reaches the request URL.
+    expect(new URL(sync.url).search).toBe('')
+    expect(new URLSearchParams(sync.body).get('method')).toBe('jingdong.ware.search')
   })
 
   it('does not expose a structured client secret to the API/MCP connector config', () => {

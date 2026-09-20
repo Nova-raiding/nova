@@ -17,6 +17,52 @@ const NONCE = /^[A-Za-z0-9_-]{22,128}$/u
 const SAFE_KEYS = new Set(['platform','operation','workspaceId','accountId','method','origin','status','observedAt','providerRequestId','errorCode','errorMessage','retryable','transport'])
 const TOP_KEYS = new Set(['schema_version','release_id','platform','workspace_id','account_id','exchanges'])
 const STRICT_UTC_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u
+
+/**
+ * The read transport each platform family is dispatched with, as a policy the
+ * protected verifier holds itself.
+ *
+ * The decision belongs to exactly one runtime point:
+ * `HttpPlatformConnector.syncProducts` reads
+ * `RequestSigner.signedParametersCarryCredential` off the signer the production
+ * configuration produced, and carries the body when that declaration is true.
+ * The router-gateway signers (jd, taobao/tmall, pinduoduo) fold the access
+ * token, app key and signature into one parameter set, so a bodyless method
+ * would put that set in the request URL; the bearer signers (xiaohongshu,
+ * douyin) keep the token in the `authorization` header, so their parameter set
+ * is empty, nothing reaches the URL, and they keep the GET their platform was
+ * already called with.
+ *
+ * This file deliberately does not import that code. It is the verifier of the
+ * evidence that attests the connector, it is installed outside the repository
+ * as a digest-pinned root-owned executable, and a verifier that certifies
+ * whatever the code under attestation currently says cannot refuse it. So the
+ * family policy is declared here and pinned to the implementation from the
+ * repository side: `tests/platform-read-transport-agreement.test.ts` dispatches
+ * a real read through the shipped signers for all six platforms and fails if the
+ * method it observes stops matching this table — which is what makes a silent
+ * divergence between the two impossible rather than unlikely.
+ *
+ * The tolerated body-carrying POST on a bearer read is deliberate: the bearer's
+ * credential is not in the parameter set either way, so refusing that shape would
+ * reject evidence without removing any exposure.
+ */
+export const PLATFORM_READ_METHODS = Object.freeze({
+  jd: Object.freeze(['POST']),
+  taobao: Object.freeze(['POST']),
+  tmall: Object.freeze(['POST']),
+  pinduoduo: Object.freeze(['POST']),
+  xiaohongshu: Object.freeze(['GET', 'POST']),
+  douyin: Object.freeze(['GET', 'POST']),
+})
+
+/** Whether `method` is a shape the shipped connector may dispatch for a read on
+ * `platform`. Unknown platforms fail closed on the strict reading, because the
+ * six-platform matrix is asserted before any transcript is read. */
+export function readMethodAllowed(platform, method) {
+  return (PLATFORM_READ_METHODS[platform] ?? ['POST']).includes(method)
+}
+
 export const PLATFORM_TRANSCRIPT_CANDIDATE_MAX_AGE_MS = 24 * 60 * 60_000
 export const PLATFORM_TRANSCRIPT_FUTURE_SKEW_MS = 5 * 60_000
 
@@ -54,7 +100,17 @@ function transcript(entry, releaseId, root, generatedAt) {
     assert(item && typeof item === 'object' && !Array.isArray(item) && Object.keys(item).every(key => SAFE_KEYS.has(key)), 'invalid provider exchange fields')
     assert(item.platform === entry.platform && item.workspaceId === entry.tenant_context.workspace_id && (item.accountId === undefined || item.accountId === entry.tenant_context.account_id), 'provider exchange tenant mismatch')
     assert(item.transport === 'fetch' && Number.isInteger(item.status) && item.status >= 100 && item.status <= 599, 'invalid provider exchange status')
-    assert(item.method === (item.operation === 'sync_products' ? 'GET' : 'POST'), 'provider exchange method mismatch')
+    // The read transport follows the platform's signer family — see
+    // `PLATFORM_READ_METHODS` above for the table, why the decision belongs to
+    // the connector rather than to this verifier, and how the two are pinned
+    // together. A router gateway's read that a transcript records as a GET is
+    // describing the request that published the signed set in the URL, and is
+    // refused; the bearer platforms' reads are dispatched as GET and demanding a
+    // body here rejected the only truthful transcript those two platforms can
+    // produce. Every other exchange is signed and must carry its parameter set in
+    // a body.
+    const dispatchedRead = item.operation === 'sync_products'
+    assert(dispatchedRead ? readMethodAllowed(item.platform, item.method) : item.method === 'POST', 'provider exchange method mismatch')
     const origin = new URL(item.origin)
     assert(origin.protocol === 'https:' && origin.origin === item.origin && !origin.username && !origin.password && origin.pathname === '/' && !origin.search && !origin.hash, 'provider exchange origin invalid')
     const observedAt = typeof item.observedAt === 'string' && STRICT_UTC_INSTANT.test(item.observedAt) ? Date.parse(item.observedAt) : Number.NaN

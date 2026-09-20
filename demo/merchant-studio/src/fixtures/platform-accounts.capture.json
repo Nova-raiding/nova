@@ -1,0 +1,161 @@
+{
+  "request_id": "req_e33ce4e8-5c53-44c2-9cf7-c6068a642b2b",
+  "trace_id": "req_e33ce4e8-5c53-44c2-9cf7-c6068a642b2b",
+  "workspace_id": "ws_demo",
+  "data": {
+    "items": [
+      {
+        "platform": "jd",
+        "state": "fixture_ready",
+        "readEnabled": false,
+        "writeEnabled": false,
+        "readiness": {
+          "platform": "jd",
+          "ready": true,
+          "reasons": [
+            "FIXTURE_MODE"
+          ],
+          "verifiedCapabilities": [],
+          "mediaUpload": {
+            "configured": false,
+            "evidence": false,
+            "ready": false,
+            "reason": "fixture 模式不计入真实媒体上传证据"
+          }
+        }
+      },
+      {
+        "platform": "taobao",
+        "accountId": "fixture-store-ws_demo-taobao",
+        "alias": "淘宝 Fixture 店",
+        "storeName": "淘宝 Fixture 店",
+        "label": "淘宝 Fixture 店",
+        "state": "connected",
+        "dataMode": "fixture",
+        "readable": true,
+        "writeEnabled": false,
+        "authorization": {
+          "state": "fixture",
+          "reauthorizationRequired": false,
+          "grantedScopes": [],
+          "scopeState": "unknown",
+          "lastKnownAccessTokenExpiresAt": null,
+          "lastKnownExpiryState": "unknown",
+          "renewalMode": "unknown",
+          "refreshSupported": null,
+          "lastAuthorizedAt": null,
+          "metadataObservedAt": null,
+          "metadataFreshness": "unknown",
+          "stateChangedAt": null,
+          "revokedAt": null
+        },
+        "sync": {
+          "latestState": null,
+          "lastAttemptAt": null,
+          "lastSuccessfulAt": null,
+          "lastUsableAt": null,
+          "failedItems": 0
+        },
+        "revision": 1,
+        "readEnabled": true,
+        "readiness": {
+          "platform": "taobao",
+          "ready": true,
+          "reasons": [
+            "FIXTURE_MODE"
+          ],
+          "verifiedCapabilities": [],
+          "mediaUpload": {
+            "configured": false,
+            "evidence": false,
+            "ready": false,
+            "reason": "fixture 模式不计入真实媒体上传证据"
+          }
+        }
+      },
+      {
+        "platform": "tmall",
+        "state": "fixture_ready",
+        "readEnabled": false,
+        "writeEnabled": false,
+        "readiness": {
+          "platform": "tmall",
+          "ready": true,
+          "reasons": [
+            "FIXTURE_MODE"
+          ],
+          "verifiedCapabilities": [],
+          "mediaUpload": {
+            "configured": false,
+            "evidence": false,
+            "ready": false,
+            "reason": "fixture 模式不计入真实媒体上传证据"
+          }
+        }
+      },
+      {
+        "platform": "pinduoduo",
+        "state": "fixture_ready",
+        "readEnabled": false,
+        "writeEnabled": false,
+        "readiness": {
+          "platform": "pinduoduo",
+          "ready": true,
+          "reasons": [
+            "FIXTURE_MODE"
+          ],
+          "verifiedCapabilities": [],
+          "mediaUpload": {
+            "configured": false,
+            "evidence": false,
+            "ready": false,
+            "reason": "fixture 模式不计入真实媒体上传证据"
+          }
+        }
+      },
+      {
+        "platform": "xiaohongshu",
+        "state": "fixture_ready",
+        "readEnabled": false,
+        "writeEnabled": false,
+        "readiness": {
+          "platform": "xiaohongshu",
+          "ready": true,
+          "reasons": [
+            "FIXTURE_MODE"
+          ],
+          "verifiedCapabilities": [],
+          "mediaUpload": {
+            "configured": false,
+            "evidence": false,
+            "ready": false,
+            "reason": "fixture 模式不计入真实媒体上传证据"
+          }
+        }
+      },
+      {
+        "platform": "douyin",
+        "state": "fixture_ready",
+        "readEnabled": false,
+        "writeEnabled": false,
+        "readiness": {
+          "platform": "douyin",
+          "ready": true,
+          "reasons": [
+            "FIXTURE_MODE"
+          ],
+          "verifiedCapabilities": [],
+          "mediaUpload": {
+            "configured": false,
+            "evidence": false,
+            "ready": false,
+            "reason": "fixture 模式不计入真实媒体上传证据"
+          }
+        }
+      }
+    ]
+  },
+  "warnings": [],
+  "next_actions": [],
+  "error": null
+}

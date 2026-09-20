@@ -64,6 +64,7 @@ export const POSTGRES_SCOPE_FIXTURE_PREFIXES = [
   'release_210_',
   'release_211_',
   'release_231_',
+  'release_232_',
   'release_canonical_brand_',
   'release_fresh_',
   'release_migration_integrity_',

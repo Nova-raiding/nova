@@ -1,7 +1,7 @@
 import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
-import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
+import { assertProviderResponseAccepted, providerIdempotencyKey, resolveProviderTimeoutMs, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface ImageEditInput {
@@ -120,5 +120,5 @@ export function createImageEditGeneratorFromEnv(source: Record<string, string | 
   if (!relayUrl || !apiKey || !model || isPlaceholderModelConfiguration(relayUrl) || isPlaceholderModelConfiguration(apiKey) || isPlaceholderModelConfiguration(model)) return undefined
   const relaySecurity = relaySecurityFromEnv(source)
   if (!relaySecurity) return undefined
-  try { return new OpenAICompatibleImageEditGenerator({ baseUrl: relayUrl, apiKey, model, relaySecurity, ...(source.IMAGE_EDIT_PATH?.trim() ? { path: source.IMAGE_EDIT_PATH.trim() } : {}), timeoutMs: Number(source.IMAGE_EDIT_TIMEOUT_MS ?? 300_000), ...(usageSink ? { usageSink } : {}), ...(beforeRequest ? { beforeRequest } : {}) }) } catch { return undefined }
+  try { return new OpenAICompatibleImageEditGenerator({ baseUrl: relayUrl, apiKey, model, relaySecurity, ...(source.IMAGE_EDIT_PATH?.trim() ? { path: source.IMAGE_EDIT_PATH.trim() } : {}), timeoutMs: resolveProviderTimeoutMs(source.IMAGE_EDIT_TIMEOUT_MS, 300_000, 'IMAGE_EDIT_TIMEOUT_MS'), ...(usageSink ? { usageSink } : {}), ...(beforeRequest ? { beforeRequest } : {}) }) } catch { return undefined }
 }

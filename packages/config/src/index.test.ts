@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   assertEnvironmentIsolation,
@@ -5,6 +6,7 @@ import {
   ConfigurationError,
   isPlaceholderValue,
   loadRuntimeConfig,
+  SENSITIVE_CONFIGURATION_KEYS,
 } from './index.js'
 
 const productionBase = {
@@ -23,6 +25,24 @@ describe('runtime configuration gates', () => {
     expect(isPlaceholderValue('your-secret-here')).toBe(true)
     expect(isPlaceholderValue('relay-live-key')).toBe(false)
     expect(isPlaceholderValue(undefined)).toBe(true)
+  })
+
+  it('rejects the placeholder spellings the shipped example environment uses', () => {
+    // `.env.example` is the template operators copy. Every secret it fills in
+    // must be refused at production boot, or the published example value ships.
+    const exampleEnvironment = new Map<string, string>()
+    for (const line of readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8').split('\n')) {
+      const match = /^\s*([A-Z0-9_]+)\s*=\s*(.*)$/u.exec(line)
+      if (match) exampleEnvironment.set(match[1]!, match[2]!.trim())
+    }
+    expect(exampleEnvironment.get('SESSION_ID_HASH_SECRET')).toBeTruthy()
+    expect(() => assertSensitiveConfiguration({ SESSION_ID_HASH_SECRET: exampleEnvironment.get('SESSION_ID_HASH_SECRET') }, ['SESSION_ID_HASH_SECRET'])).toThrowError(
+      expect.objectContaining({ code: 'CONFIG_PLACEHOLDER', key: 'SESSION_ID_HASH_SECRET' }),
+    )
+    for (const key of SENSITIVE_CONFIGURATION_KEYS) {
+      const exampleValue = exampleEnvironment.get(key)
+      expect(() => assertSensitiveConfiguration({ [key]: exampleValue }, [key])).toThrowError(ConfigurationError)
+    }
   })
 
   it('allows local development without production secrets', () => {

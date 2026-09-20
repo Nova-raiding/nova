@@ -49,6 +49,7 @@ export async function executeCharged<T>(input: {
     rate_card_version: input.rate_card_version,
   })
   await input.audit.record({ workspace_id: input.workspace_id, action_key: input.action_key, state: 'reserved', reservation_id: reservation.reservation_id, details: { points: reservation.points, rate_card_version: reservation.rate_card_version } })
+  let providerSucceeded = false
   try {
     const result = await input.provider(reservation)
     const receipt = result.receipt
@@ -63,13 +64,20 @@ export async function executeCharged<T>(input: {
       throw Object.assign(new Error('provider reported failure'), { code: 'PROVIDER_FAILED', providerSucceeded: false })
     }
     if (!receipt.usage || !receipt.cost) throw Object.assign(new Error('successful provider receipt requires usage and cost evidence'), { code: 'MODEL_USAGE_EVIDENCE_MISSING', providerSucceeded: true })
+    // The provider has already been billed for this request and returned a
+    // verified receipt, so the charge is owed from here on.  A later local
+    // failure (settlement or audit) must never release the reservation.
+    providerSucceeded = true
     await input.ledger.settle({ workspace_id: input.workspace_id, idempotency_key: `${input.idempotency_key}:settle`, reservation_id: reservation.reservation_id, actual_points: reservation.points, provider_request_id: receipt.provider_request_id, receipt_hash: receipt.receipt_hash, usage: receipt.usage, cost: receipt.cost })
     await input.audit.record({ workspace_id: input.workspace_id, action_key: input.action_key, state: 'settled', reservation_id: reservation.reservation_id, provider_request_id: receipt.provider_request_id, details: { receipt_hash: receipt.receipt_hash, usage: receipt.usage, cost: receipt.cost } })
     return { value: result.value, reservation, receipt }
   } catch (error) {
     // Reserve failures and provider errors before a verified request identity
-    // must release.  Unknown outcomes are deliberately retained for recovery.
-    if ((error as { code?: string }).code !== 'PROVIDER_OUTCOME_UNKNOWN' && (error as { providerSucceeded?: boolean }).providerSucceeded !== true) {
+    // must release.  Unknown outcomes, and every failure that happens after the
+    // provider already succeeded, are deliberately retained for recovery:
+    // releasing them would hand back points for work the provider performed.
+    const providerSucceededFailure = (error as { providerSucceeded?: boolean }).providerSucceeded === true
+    if ((error as { code?: string }).code !== 'PROVIDER_OUTCOME_UNKNOWN' && !providerSucceededFailure && !providerSucceeded) {
       try { await input.ledger.release({ workspace_id: input.workspace_id, idempotency_key: `${input.idempotency_key}:release`, reservation_id: reservation.reservation_id, reason: 'execution_failed' }) } catch { /* reconciliation owns a failed compensation */ }
     }
     throw error

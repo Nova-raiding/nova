@@ -224,7 +224,12 @@ export function reviewDeterministic(input: DeterministicReviewInput): ReviewFind
   for (const ruleFinding of evaluatedRules?.findings ?? []) findings.push(finding({
     code: ruleFinding.code,
     severity: ruleFinding.severity,
-    priority: 'P0',
+    // P0 means "must be fixed, never acknowledged" (`validateReviewDecision`,
+    // `MerchantService.setReviewFindingDecision`) and marks the category
+    // `blocking`. An advisory rule expiry is neither: `RuleCenter` reports it
+    // with severity `warning`, the report keeps the category non-blocking, and
+    // labelling it P0 left the merchant a finding that could never be decided.
+    priority: ruleFinding.severity === 'error' ? 'P0' : 'P1',
     field: ruleFinding.field,
     message: ruleFinding.message,
     repairSuggestion: '更新或替换为当前有效的规则版本后重新审核',

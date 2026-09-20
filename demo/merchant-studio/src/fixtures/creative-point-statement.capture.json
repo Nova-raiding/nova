@@ -1,0 +1,66 @@
+{
+  "request_id": "req_feeead08-15e4-45c1-ad64-e89cace747ab",
+  "trace_id": "req_feeead08-15e4-45c1-ad64-e89cace747ab",
+  "workspace_id": "ws_demo",
+  "data": {
+    "jsonrpc": "2.0",
+    "id": "fixture-capture",
+    "result": {
+      "schema_version": "creative-points.statement.v1",
+      "entries": [
+        {
+          "id": "cpl_a1a38555-9980-4cc7-90fb-2304e1e33b3c",
+          "workspaceId": "ws_demo",
+          "operationId": "cpo_cdc05586-a77f-4e95-b9ca-c6234cfff59a",
+          "eventType": "granted",
+          "pointsDelta": 10000,
+          "availableAfter": 20000,
+          "reservedAfter": 0,
+          "settledAfter": 0,
+          "accessRevision": 2,
+          "createdAt": "2026-09-20T03:07:03.643Z",
+          "intent": {
+            "points": 10000,
+            "metadata": {
+              "fixture": true,
+              "non_production": true
+            },
+            "source_id": "fixture-bootstrap-ws_demo",
+            "expires_at": null,
+            "source_type": "test_fixture"
+          },
+          "grantSourceType": "test_fixture",
+          "grantSourceId": "fixture-bootstrap-ws_demo"
+        },
+        {
+          "id": "cpl_demo_fixture_grant",
+          "workspaceId": "ws_demo",
+          "operationId": "cpo_demo_fixture_grant",
+          "eventType": "granted",
+          "pointsDelta": 10000,
+          "availableAfter": 10000,
+          "reservedAfter": 0,
+          "settledAfter": 0,
+          "accessRevision": 1,
+          "createdAt": "2026-08-29T00:02:00.000Z",
+          "intent": {
+            "points": 10000,
+            "metadata": {
+              "fixture": true,
+              "productionEvidence": false
+            },
+            "source_id": "ws_demo",
+            "expires_at": null,
+            "source_type": "local_fixture"
+          },
+          "grantSourceType": "local_fixture",
+          "grantSourceId": "ws_demo"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  "warnings": [],
+  "next_actions": [],
+  "error": null
+}

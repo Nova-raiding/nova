@@ -686,25 +686,26 @@ describe('HttpPlatformConnector', () => {
   })
 })
 
-describe('router gateway read path is dispatchable', () => {
-  // `syncProducts` dispatches with GET. Each router signer used to move its
-  // signed parameters into `request.body`, which made the global `fetch` throw
-  // `TypeError: Request with GET/HEAD method cannot have body` before any
-  // network call: the read path could never produce `read`/`full_sync`/
-  // `incremental_sync` evidence, so no router platform could pass the canary.
-  const routers: Array<{ platform: 'taobao' | 'jd' | 'pinduoduo'; selector: string; parameter: 'method' | 'type'; signer(methods: PlatformApiMethods): import('./types.js').RequestSigner }> = [
-    { platform: 'taobao', selector: 'taobao.item.seller.get', parameter: 'method', signer: methods => createAlibabaTopSigner({ appKey: 'top-app', appSecret: 'top-secret', methods }) },
-    { platform: 'jd', selector: 'jd.product.sync', parameter: 'method', signer: methods => createJdSigner({ appKey: 'jd-app', appSecret: 'jd-secret', methods }) },
-    { platform: 'pinduoduo', selector: 'pdd.goods.detail', parameter: 'type', signer: methods => createPinduoduoSigner({ clientId: 'pdd-app', clientSecret: 'pdd-secret', methods }) },
+describe('router gateway read path keeps its credentials out of the URL', () => {
+  // `syncProducts` used to dispatch with GET, and each router signer moved its
+  // signed parameter set into the query string to keep the request
+  // dispatchable. That set is not business data: it carries the platform access
+  // token (`access_token`/`session`) together with `app_key` and the signature,
+  // so the read path was the one place in the system that published a live
+  // credential to every hop that logs a request line. The read is now a POST
+  // carrying the same signed form body the write path has always used.
+  const routers: Array<{ platform: 'taobao' | 'jd' | 'pinduoduo'; selector: string; parameter: 'method' | 'type'; credentialKey: string; signer(methods: PlatformApiMethods): import('./types.js').RequestSigner }> = [
+    { platform: 'taobao', selector: 'taobao.item.seller.get', parameter: 'method', credentialKey: 'session', signer: methods => createAlibabaTopSigner({ appKey: 'top-app', appSecret: 'top-secret', methods }) },
+    { platform: 'jd', selector: 'jd.product.sync', parameter: 'method', credentialKey: 'access_token', signer: methods => createJdSigner({ appKey: 'jd-app', appSecret: 'jd-secret', methods }) },
+    { platform: 'pinduoduo', selector: 'pdd.goods.detail', parameter: 'type', credentialKey: 'access_token', signer: methods => createPinduoduoSigner({ clientId: 'pdd-app', clientSecret: 'pdd-secret', methods }) },
   ]
 
-  it.each(routers)('$platform syncs a product with the signed parameters in the query', async ({ platform, selector, parameter, signer }) => {
+  it.each(routers)('$platform syncs a product with the signed parameters in the body', async ({ platform, selector, parameter, credentialKey, signer }) => {
     const seen: Array<{ method: string; url: string; body: string | null }> = []
     const product = { remoteId: `${platform}-read-1`, title: `${platform} product`, description: '', price: 10, stock: 1, sku: [], images: [], category: '', attributes: {}, platformFields: {}, observedAt: new Date().toISOString() }
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
-      // The real fetch constructor rejects a GET carrying a body before any
-      // network call; mirroring it here proves the request the connector signs
-      // is dispatchable, which a fetch stub that ignores `init` would not.
+      // The real fetch constructor is used, not a stub that ignores `init`: a
+      // body on a bodyless method would throw here before any network call.
       const request = new Request(String(url), init)
       seen.push({ method: request.method, url: request.url, body: typeof init?.body === 'string' ? init.body : null })
       return response({ items: [product] })
@@ -714,33 +715,97 @@ describe('router gateway read path is dispatchable', () => {
       credentials: credentials(), allowTestCredentials: true, allowTestAdapters: true, fetch: fetchMock,
     })
     const context = { workspaceId: 'ws-router', accountId: `acct-${platform}`, credentialRef: `vault://${platform}` }
-    // The cursor the sync asks for has to survive into the signed query, or the
+    // The cursor the sync asks for has to survive into the signed body, or the
     // provider would silently keep serving page one.
     await expect(connector.syncProducts(context, { value: 'page-2' })).resolves.toMatchObject({
       items: [{ remoteId: `${platform}-read-1` }], source: 'official_api', simulated: false,
     })
     expect(seen).toHaveLength(1)
-    expect(seen[0]).toMatchObject({ method: 'GET', body: null })
+    expect(seen[0]).toMatchObject({ method: 'POST' })
     const url = new URL(seen[0]!.url)
     expect(url.pathname).toBe('/api/products')
-    expect(url.searchParams.get(parameter)).toBe(selector)
-    expect(url.searchParams.get('cursor')).toBe('page-2')
-    // A real signature, not an empty placeholder.
-    expect(url.searchParams.get('sign')).toMatch(/^[A-F0-9]{32,64}$/)
+    // Nothing — and above all no credential — travels in the URL.
+    expect(url.search).toBe('')
+    expect(seen[0]!.url).not.toContain('access-token')
+    const body = new URLSearchParams(seen[0]!.body!)
+    expect(body.get(parameter)).toBe(selector)
+    expect(body.get('cursor')).toBe('page-2')
+    // The resolved credential and a real signature, not empty placeholders.
+    expect(body.get(credentialKey)).toBe('access-token')
+    expect(body.get('sign')).toMatch(/^[A-F0-9]{32,64}$/)
   })
 
-  it('refuses a signed GET that still carries a body instead of letting fetch throw', async () => {
-    // Defense in depth for any other signer that repeats the mistake: the raw
-    // `TypeError` from `fetch` was normalized into a retryable `REMOTE_ERROR`
-    // whose message named nothing, so a local signing defect looked like a
-    // provider outage and the outbox replayed it.
-    const fetchMock = vi.fn()
+  it('keeps the write path on the same transport, so the read is no longer the exception', async () => {
+    const seen: Array<{ url: string; body: string | null }> = []
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      seen.push({ url: String(url), body: typeof init?.body === 'string' ? init.body : null })
+      return response({ found: true, state: 'submitted', remoteId: 'remote-1', requestId: 'request-1' })
+    })
     const connector = createConfiguredConnector('jd', {
-      config: { ...readyConfig, signer: { kind: 'platform', sign: request => { request.body = 'method=jd.ware.delete'; return {} } } },
+      config: { ...readyConfig, signer: createJdSigner({ appKey: 'jd-app', appSecret: 'jd-secret', methods: { query: 'jingdong.ware.status.get' } }) },
       credentials: credentials(), allowTestCredentials: true, allowTestAdapters: true, fetch: fetchMock,
     })
-    await expect(connector.syncProducts({ workspaceId: 'ws-router', accountId: 'acct-router', credentialRef: 'vault://router' }))
-      .rejects.toMatchObject({ normalized: { code: 'NOT_CONFIGURED', retryable: false, unknown: false, message: expect.stringContaining('GET sync_products was signed with a request body') } })
-    expect(fetchMock).not.toHaveBeenCalled()
+    await expect(connector.queryWrite({ workspaceId: 'ws-router', accountId: 'acct-router', credentialRef: 'vault://router' }, { idempotencyKey: 'jd-query-1', remoteId: 'remote-1' })).resolves.toBeDefined()
+    expect(seen).toHaveLength(1)
+    expect(new URL(seen[0]!.url).search).toBe('')
+    expect(seen[0]!.url).not.toContain('access-token')
+    const body = new URLSearchParams(seen[0]!.body!)
+    expect(body.get('method')).toBe('jingdong.ware.status.get')
+    expect(body.get('access_token')).toBe('access-token')
+  })
+})
+
+describe('router gateway provider errors delivered with HTTP 200', () => {
+  // These gateways answer a failed business call with HTTP 200 and the
+  // documented envelope, so the status code alone cannot separate a throttled
+  // read from an empty page. Mapping the envelope made a rate-limited sync look
+  // like a successful read of a catalog with zero products — a silent, false
+  // success rather than a retryable failure.
+  const routers = [
+    { platform: 'taobao' as const, envelope: { error_response: { code: 7, msg: 'App Call Limited', sub_code: 'isv.rate-limit' } } },
+    { platform: 'jd' as const, envelope: { error_response: { error_code: 'JD-RATE-001', error_msg: '请求被平台拒绝', request_id: 'jd-req-9' } } },
+    { platform: 'pinduoduo' as const, envelope: { result: { error_response: { error_code: 'PDD-400', error_msg: '商品校验失败' } } } },
+  ]
+
+  it.each(routers)('$platform fails the read instead of returning an empty page', async ({ platform, envelope }) => {
+    const observed: unknown[] = []
+    const connector = createConfiguredConnector(platform, {
+      config: { ...readyConfig, mapProducts: undefined, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform })) },
+      credentials: credentials(), allowTestCredentials: true, allowTestAdapters: true,
+      onExchange: observation => observed.push(observation),
+      fetch: async () => response(envelope),
+    })
+    const failure = await connector.syncProducts({ workspaceId: 'ws', accountId: 'acct' })
+      .then(() => undefined, error => error as { normalized?: Record<string, unknown> })
+    // A provider answer, not a local defect: retryable, and not an unknown
+    // outcome (nothing was dispatched ambiguously).
+    expect(failure?.normalized).toMatchObject({ code: 'REMOTE_ERROR', retryable: true, unknown: false, status: 200 })
+    expect(String(failure?.normalized?.message)).toContain('provider error response')
+    // The reason the provider gave is retained as evidence.
+    expect(failure?.normalized?.details).toMatchObject({ rejection: { fields: [] } })
+    expect(failure?.normalized?.details).toHaveProperty('rejection.rawCode')
+  })
+
+  it('still reads an honestly empty page as a successful, empty sync', async () => {
+    // The positive control: the guard must key on the provider's error
+    // envelope, not on "the page contained no products". A successful envelope
+    // with an empty list is a real (if unwelcome) catalog observation.
+    const empty = createConfiguredConnector('jd', {
+      config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },
+      credentials: credentials(), allowTestCredentials: true, allowTestAdapters: true,
+      fetch: async () => response({ jingdong_pop_product_search_response: { products: [] } }),
+    })
+    await expect(empty.syncProducts({ workspaceId: 'ws', accountId: 'acct' })).resolves.toMatchObject({ items: [], source: 'official_api' })
+
+    // The rejection contract on the status path (a rejected publish is a
+    // successful *query*) is pinned where the platform mapper is reachable —
+    // see the rejection cases in platform-adapters/alibaba-top.test.ts and
+    // pinduoduo.test.ts. This guard is deliberately not on that path.
+    const status = createConfiguredConnector('taobao', {
+      config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'taobao' as const })) },
+      credentials: credentials(), allowTestCredentials: true, allowTestAdapters: true,
+      fetch: async () => response({ error_response: { code: 27, sub_msg: '类目属性缺失' } }),
+    })
+    await expect(status.queryWrite({ workspaceId: 'ws', accountId: 'acct' }, { idempotencyKey: 'taobao-status-1' })).resolves.toBeDefined()
   })
 })

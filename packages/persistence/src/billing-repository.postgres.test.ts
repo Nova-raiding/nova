@@ -164,7 +164,7 @@ describe('billing PostgreSQL bigint release acceptance', () => {
         // The reversal serialized on the same workspace row, and took the lock
         // before it read the aggregate its amount is derived from.
         const lockIndex = refundStatements.findIndex(statement => statement.includes('SELECT id FROM workspaces WHERE id=$1 FOR UPDATE'))
-        const aggregateIndex = refundStatements.findIndex(statement => statement.includes('AS "appliedFen"'))
+        const aggregateIndex = refundStatements.findIndex(statement => statement.includes('AS effective_fen'))
         expect(lockIndex).toBeGreaterThan(0)
         expect(aggregateIndex).toBeGreaterThan(lockIndex)
         // The failed action nets to zero against the provider charge.

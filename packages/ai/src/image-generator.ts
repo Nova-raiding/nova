@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
-import { assertProviderResponseAccepted, ProviderRequestFailedError, ProviderOutcomeUnknownError, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
+import { assertProviderResponseAccepted, ProviderRequestFailedError, ProviderOutcomeUnknownError, providerIdempotencyKey, resolveProviderTimeoutMs, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 import { composeMarketingImages } from './image-marketing-compositor.js'
 
@@ -490,7 +490,7 @@ export function createImageGeneratorFromEnv(source: Record<string, string | unde
     ...(source.IMAGE_GENERATION_PATH?.trim() ? { path: source.IMAGE_GENERATION_PATH.trim() } : {}),
     ...(source.IMAGE_EDIT_PATH?.trim() ? { editPath: source.IMAGE_EDIT_PATH.trim() } : {}),
     ...(source.IMAGE_STATUS_PATH?.trim() ? { statusPath: source.IMAGE_STATUS_PATH.trim() } : {}),
-    timeoutMs: Number(source.IMAGE_TIMEOUT_MS ?? 300_000),
+    timeoutMs: resolveProviderTimeoutMs(source.IMAGE_TIMEOUT_MS, 300_000, 'IMAGE_TIMEOUT_MS'),
     size: source.IMAGE_SIZE?.trim() || '1024x1024',
     ...(source.IMAGE_QUALITY?.trim() ? { quality: source.IMAGE_QUALITY.trim() } : {}),
     ...(outputFormat ? { outputFormat } : {}),

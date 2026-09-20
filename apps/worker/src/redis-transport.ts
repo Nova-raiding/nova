@@ -91,17 +91,88 @@ export async function withRedisOperationTimeout<T>(operation: Promise<T>, env: N
 }
 
 /**
- * Closes a Redis connection without letting a blackholed socket turn shutdown
- * into a hang. `quit()` (like `close()`) waits for pending commands, so an
- * unanswering peer keeps the awaited call pending for the whole
- * `terminationGracePeriodSeconds` and the runtime SIGKILLs the container;
- * `destroy()` rejects everything and releases the socket immediately.
+ * The one place a Redis connection is closed. Every connection the worker
+ * opens - the queue transport, the quota counters and the credential refresh
+ * lock - goes through this function, because the shutdown contract is one
+ * thing and not three: it returns within a bounded time, it never throws into
+ * the caller's `finally`, and it releases the TCP socket. The last part is what
+ * lets the container exit on SIGTERM instead of waiting out
+ * `terminationGracePeriodSeconds` and being SIGKILLed, and node-redis makes it
+ * the hard part:
+ *
+ *  - `quit()` is the graceful path, but it flips the socket's open flag to
+ *    false *before* it awaits the QUIT reply (`RedisSocket.quit`). A peer that
+ *    never answers - the blackholed socket this exists for - leaves that reply
+ *    pending, so the budget abandons the call with the flag already false;
+ *  - `close()` flips the same flag and then waits for the command queue to
+ *    drain, which on a round trip no peer ever answered is never;
+ *  - `destroy()` is the only method that rejects the queued commands and drops
+ *    the socket without waiting, and it checks that same flag first: it throws
+ *    `ClientClosedError` once the flag is false, which is exactly the state a
+ *    timed-out `quit()` leaves behind.
+ *
+ * So the fallback below cannot be a bare `destroy()`: on the connection this
+ * function exists for it throws, the socket stays referenced, and the caller's
+ * `finally` is interrupted by a rejection it cannot distinguish from a real
+ * teardown failure. The socket is released through node-redis' own teardown
+ * step instead - `destroySocket()`, the call both `quit()` and `close()` make
+ * on their success path, and the one that does not consult the open flag -
+ * reached through `_ejectSocket()`, the client's hand-off of the live socket.
+ *
+ * Three states, all bounded and none of them thrown: an already-closed or
+ * never-connected client has nothing to release and returns immediately; a
+ * client whose teardown is already in flight (open flag false) returns
+ * immediately as well; a live one gets the graceful attempt and then the
+ * unconditional release.
  */
-export async function closeRedisConnection(client: RedisClientType): Promise<void> {
+export async function closeRedisClient(client: RedisClientType): Promise<void> {
+  if (!redisClientIsOpen(client)) return
+  const quit = client.quit()
+  // The teardown below rejects this command out of the client's queue when the
+  // peer never answered. Without a handler that rejection is unhandled, and
+  // Node's default policy for an unhandled rejection is to terminate the
+  // process - during its own shutdown.
+  quit.catch(() => undefined)
   try {
-    await withRedisOperationTimeout(client.quit())
+    await withRedisOperationTimeout(quit)
+    return
   } catch {
+    // The peer did not answer (or refused) the QUIT inside the budget.
+  }
+  try {
+    // Not wasted even though the open flag is already false: `destroy()` flushes
+    // the command queue before it looks at the socket, so every round trip the
+    // budget abandoned settles with `DisconnectsClientError` instead of hanging
+    // forever. When the flag is still open it also drops the socket, making the
+    // release below a no-op.
     client.destroy()
+  } catch {
+    // The open flag was flipped by the QUIT above, so `destroy()` refused to
+    // touch the socket; `destroyEjectedSocket` below is what releases it.
+    destroyEjectedSocket(client)
+  }
+}
+
+/** `isOpen` reads the client's socket, which is null after `_ejectSocket`. */
+function redisClientIsOpen(client: RedisClientType): boolean {
+  try {
+    return client.isOpen
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Destroys the socket of a client node-redis will no longer destroy for us.
+ * Guarded end to end: a client that was already released, or never dialled,
+ * has nothing here and must not turn shutdown into a rejection.
+ */
+function destroyEjectedSocket(client: RedisClientType): void {
+  try {
+    const socket = (client as unknown as { _ejectSocket?: () => { destroySocket(): void } | null })._ejectSocket?.()
+    socket?.destroySocket()
+  } catch {
+    // Nothing left to release.
   }
 }
 
@@ -160,9 +231,10 @@ export function createRedisCredentialRefreshLock(url: string | undefined, option
   })
   return {
     lock,
-    async close() {
-      try { await client.close() } catch { /* already closed or never connected */ }
-    },
+    // Same chokepoint as the queue and quota connections: a bare `close()` here
+    // waits for the command queue to drain, so one abandoned OAuth refresh
+    // round trip parks this call until the container is SIGKILLed.
+    close: () => closeRedisClient(client),
   }
 }
 
@@ -311,5 +383,5 @@ return removed`
       return await withRedisOperationTimeout(client.get(callbackKey(instanceId))) ?? undefined
     },
   }
-  return { transport, scannerHeartbeat, close: () => closeRedisConnection(client) }
+  return { transport, scannerHeartbeat, close: () => closeRedisClient(client) }
 }

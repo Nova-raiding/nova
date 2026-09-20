@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { accessibleProductBrandClause } from './product-brand-visibility.js'
 import { withWorkspaceTransaction, requireWorkspaceScope, type SqlClient, type SqlPool } from './repository.js'
 
 export type BusinessEntityType = 'product' | 'task' | 'content_version' | 'publish_job' | 'manual_publish_record' | 'publish_batch' | 'platform_account' | 'generation_job' | 'image_generation_job' | 'brand_profile' | 'asset' | 'feedback' | 'sync_job' | 'automation_policy' | 'merchant_intent'
@@ -314,9 +315,23 @@ export class PostgresBusinessRepository {
       if (table === 'products' && input.syncStatus) add(`(SELECT payload->>'state' FROM business_entity_snapshots WHERE business_entity_snapshots.workspace_id = products.workspace_id AND business_entity_snapshots.entity_type = 'sync_job' AND payload->>'platform' = products.platform AND payload->>'accountId' = products.platform_account_id ORDER BY business_entity_snapshots.updated_at DESC, business_entity_snapshots.entity_id ASC LIMIT 1) = ?`, input.syncStatus)
       if (table === 'products' && Array.isArray(input.accessibleBrandIds)) {
         values.push(input.accessibleBrandIds)
-        const index = values.length
-        clauses.push(`(EXISTS (SELECT 1 FROM canonical_products WHERE canonical_products.workspace_id = products.workspace_id AND canonical_products.legacy_product_id = products.id AND canonical_products.brand_id = ANY($${index}::text[]))
-          OR NOT EXISTS (SELECT 1 FROM canonical_products WHERE canonical_products.workspace_id = products.workspace_id AND canonical_products.legacy_product_id = products.id))`)
+        // Row level brand scope for the durable product page: the SQL twin of
+        // `visibleProductIds`, both defined in
+        // `packages/persistence/src/product-brand-visibility.ts`. A product is
+        // visible exactly when a canonical row for it is bound to a granted
+        // brand — for a legacy product with no canonical row that is never, so
+        // the durable page now answers what
+        // `apps/api/src/server.ts`'s single predicate, the point read
+        // (`assertProductBrandAccess`) and MCP `catalog.search` answer.
+        //
+        // Both previous forms were wider: `EXISTS(granted canonical) OR NOT
+        // EXISTS(any canonical)` (the audit finding), and the task-brand
+        // fallback that replaced it, which still admitted a canonical-row-less
+        // product when a task on it carried a granted brand or no task on it
+        // carried any brand. Verified on real PostgreSQL 17 with the full
+        // migration chain that the in-memory predicate hid the same products the
+        // durable page returned.
+        clauses.push(accessibleProductBrandClause(values.length))
       }
       if (table === 'tasks' && input.state) add('state = ?', input.state)
       if (table === 'tasks' && input.productId) add('product_id = ?', input.productId)

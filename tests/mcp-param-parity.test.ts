@@ -89,7 +89,11 @@ function dispatchBlocks(): DispatchBlock[] {
   const labels: Array<{ method: string; line: number }> = []
   lines.forEach((line, index) => {
     const match = /^    case '([^']+)':/u.exec(line)
-    if (match && index < switchEnd) labels.push({ method: match[1]!, line: index })
+    // Both bounds matter: without the lower one, any 4-space-indented `case`
+    // label earlier in the file joins the method list. A switch over item state
+    // added elsewhere in server.ts (`case 'approved':`) made this gate report
+    // 332 methods and fail for a reason that had nothing to do with parity.
+    if (match && index > switchLine && index < switchEnd) labels.push({ method: match[1]!, line: index })
   })
   const groups: Array<{ methods: string[]; start: number; last: number }> = []
   for (const label of labels) {

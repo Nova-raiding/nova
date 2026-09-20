@@ -59,6 +59,11 @@ export function isPlaceholderValue(value: string | undefined): boolean {
     'changeme',
     'replace-me',
     'replace_me',
+    // `.env.example` ships `SESSION_ID_HASH_SECRET=replace-with-32-byte-secret`
+    // and `{"replace-with-secret": …}` as its API token example, so the
+    // `replace-with…` spelling is the one an operator is most likely to copy.
+    'replace-with',
+    'placeholder',
     'example',
     'example.com',
     'dummy',

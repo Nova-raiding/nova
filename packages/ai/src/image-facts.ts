@@ -1,7 +1,7 @@
 import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
-import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
+import { assertProviderResponseAccepted, providerIdempotencyKey, resolveProviderTimeoutMs, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface ImageFactsExtractor {
@@ -100,5 +100,5 @@ export function createImageFactsExtractorFromEnv(source: Record<string, string |
   if (!relayUrl || !apiKey || !model || isPlaceholderModelConfiguration(relayUrl) || isPlaceholderModelConfiguration(apiKey) || isPlaceholderModelConfiguration(model)) return undefined
   const relaySecurity = relaySecurityFromEnv(source)
   if (!relaySecurity) return undefined
-  return new OpenAICompatibleImageFactsExtractor({ baseUrl: relayUrl, apiKey, model, relaySecurity, timeoutMs: Number(source.OCR_TIMEOUT_MS ?? 90_000), ...(usageSink ? { usageSink } : {}), ...(beforeRequest ? { beforeRequest } : {}) })
+  return new OpenAICompatibleImageFactsExtractor({ baseUrl: relayUrl, apiKey, model, relaySecurity, timeoutMs: resolveProviderTimeoutMs(source.OCR_TIMEOUT_MS, 90_000, 'OCR_TIMEOUT_MS'), ...(usageSink ? { usageSink } : {}), ...(beforeRequest ? { beforeRequest } : {}) })
 }

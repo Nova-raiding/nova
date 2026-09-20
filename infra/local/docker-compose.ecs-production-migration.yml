@@ -3,8 +3,32 @@
 # The base Compose migration intentionally seeds local demo data. Production
 # keeps the same role bootstrap, migration lock/checksum enforcement and ACL
 # verification, but must never execute seed-demo.sql.
+#
+# The base layer also hard-codes the local acceptance database identity for that
+# service (`PGHOST: postgres`, `PGPASSWORD: merchant_local_only`, and runtime
+# URLs carrying the `*_local_only` passwords). The entrypoint's psql calls read
+# exactly those: apply-migrations.sh and ensure-app-role.sql connect as the
+# schema owner through the PG* family, and verify-runtime-db-role.sh checks the
+# three runtime roles through DATABASE_URL / OPS_DATABASE_URL /
+# ALERT_RECEIVER_DATABASE_URL. A production host cannot reach its database that
+# way — the runtime URLs the preflight accepts are TLS-only, non-local endpoints
+# — so `docker compose run --rm --no-deps migrate` either aborted on an
+# unresolvable `postgres` host or, on a host that happened to run such a
+# service, migrated and verified a database the API never uses. Every value
+# below is therefore taken from the host `.env`; the local identity stays only
+# as the fallback for a single-node host that really runs those services under
+# those names. deploy-preflight-ecs.sh names each one before the render runs.
 services:
   migrate:
+    environment:
+      PGHOST: ${PGHOST:-postgres}
+      PGPORT: ${PGPORT:-5432}
+      PGDATABASE: ${PGDATABASE:-merchant}
+      PGUSER: ${PGUSER:-merchant}
+      PGPASSWORD: ${PGPASSWORD:-merchant_local_only}
+      DATABASE_URL: ${DATABASE_URL:-postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant}
+      OPS_DATABASE_URL: ${OPS_DATABASE_URL:-postgres://merchant_ops:merchant_ops_local_only@postgres:5432/merchant}
+      ALERT_RECEIVER_DATABASE_URL: ${ALERT_RECEIVER_DATABASE_URL:-postgres://merchant_alert_receiver:merchant_alert_receiver_local_only@postgres:5432/merchant}
     entrypoint:
       - /bin/sh
       - -c

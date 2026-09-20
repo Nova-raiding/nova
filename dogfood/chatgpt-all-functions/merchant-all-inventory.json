@@ -1,17 +1,22 @@
 {
-  "generatedAt": "2026-09-06T12:55:13.551Z",
+  "generatedAt": "2026-09-20T06:31:27.524Z",
   "pages": [
     {
       "section": "运营概览",
-      "url": "http://127.0.0.1:18081/merchant/overview",
+      "url": "http://127.0.0.1:28181/merchant/overview",
       "title": "Merchant Studio · 商家营销工作台",
-      "text": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n运营概览\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转已就绪。\n查看健康状态\n工作区数据已读取\n把商品事实变成\n可放心发布的内容\n\n同步商品、确认事实、生成营销内容，并在发布前看清每一处变化。\n\n选择商品开始任务\n同步全部店铺\nAI\n事实确认\n内容生成\n检查发布\nNEW SESSION\n从你已有的内容开始\n\n按“知识库 → 商品 → 图片/素材”的顺序准备内容；每个入口都会保留到地址栏。\n\n1\n知识库\n品牌资料与规则依据\n进入知识库\n2\n商品\n选择平台商品开始任务\n进入商品\n3\n图片\n主图、副图与视觉检查\n进入图片\n4\n素材\n上传并确认权益与事实\n进入素材\n已连接店铺\n7\n2 家需处理或未就绪\n已批准内容\n0\n当前工作区累计\n平均首稿耗时\n—\n当前接口暂无耗时统计\n需处理问题\n75\n其中 50 项高风险\nACTION QUEUE\n优先处理的问题\n查看商品与问题\n1\n店铺授权需重新连接\n小红书 · 小红书未验证 Fixture · refresh_required\n在交互会话中重新发起官方授权\n查看并处理\n2\n任务 task_5898f03b-3480-45e0-a849-0ab43075d5f2 存在内容阻断\n淘宝 · taobao 店铺 等 3 个店铺名 · review_required\n在交会话中修正内容并重新审核\n查看并处理\n3\n任务 task_128bbaea-94fb-48f6-8b54-1bf9e581a5f8 存在内容阻断\n淘宝 · taobao 店铺 等 3 个店铺名 · review_required\n在交会话中修正内容并重新审核\n查看并处理\n还有 72 项问题，已按优先级排序。\nPLUGIN WALLET\n创意点与能力状态\n可用\n可用创意点\n20,000点\n\n模型额度可用，具体生成仍受内容与平台门禁约束。\n\n可用\n生成、OCR、图片和视频按服务端确认的创意点直接扣费；余额未知或不足时不会调用模型。\n余额\n可用\n服务端尚未返回说明。\n套餐剩余次数\n可用\n服务端尚未返回说明。\n生成能力\n暂不可生成\n服务端尚未返回说明。\n平台发布能力\n暂不可发布\n服务端尚未返回说明。\nCONNECTIONS\n平台连接\n管理连接\n京\n京东\njd 店铺\n可读取\n可同步\n同步\n撤销\n淘\n淘宝\ntaobao 店铺 等 3 个店铺名\n可读取\n可同步\n同步\n撤销\n淘\n淘宝\ntaobao 店铺\n可读取\n可同步\n同步\n撤销\n淘\n淘宝\ntaobao 店铺\n可读取\n可同步\n同步\n撤销\n天\n天猫\ntmall 店铺\n可读取\n可同步\n同步\n撤销\n拼\n拼多多\npinduoduo 店铺\n可读取\n可同步\n同步\n撤销\n小\n小红书\n小红书未验证 Fixture\n连接状态待确认\n暂不可读取\n抖\n抖音\ndouyin 店铺\n可读取\n可同步\n同步\n撤销\nRECENT\n最近动态\n查看全部\n淘宝同步\n1 项 · 未发现失败项\n已完成\n京东同步\n1 项 · 未发现失败项\n已完成\n京东同步\n1 项 · 未发现失败项\n已完成\n拼多多同步\n1 项 · 未发现失败项\n已完成\nSYNC RECOVERY\n同步任务与失败项\n刷新\n当前同步任务没有失败项\nCAPABILITY EVIDENCE\n平台能力证据\n平台能力证据属于平台运营工作台；商家工作台仅展示店铺授权和交付就绪状态。",
+      "text": "跳到主要内容\n工作台\n运营概览\n知识库\n平台&店铺&商品\n品牌资产\n素材库\n回收站\n财务概况\n联系客服经理\n运营概览\n本\n本地演示商家\nDAILY BRIEFING\n今日看板\n\n汇总当前工作区数据、规则版本和素材容量，全部来自服务端读取。\n\n当前剩余创意点\n20,000 点\n钱包余额 ¥0.00\n数据看板\n当前工作区摘要\n已连接店铺\n0\n家\n商品总数\n2\n件\n待处理风险\n2\n项\n素材看板\n店铺与储存空间\n已连接\n0\n家电商店铺\n已用储存\n未读取\n素材\n剩余储存\n未读取\n可用\n储存空间\n未读取\n服务端未返回储存配额，当前不显示用量。\n知识库看板\n规则版本与更新状态\n规则版本\n服务端未返回规则版本。\nACCOUNT OVERVIEW\n账号看板\n\n汇总平台授权与已连接店铺，快速掌握账号接入状态。\n\n平台连接\n统一查看各渠道授权状态。如果需要连接，请联系客户经理。\n0/6 已接入\n京\n京东\n演示连接\n淘\n淘宝\n演示连接\n天\n天猫\n演示连接\n拼\n拼多多\n演示连接\n小\n小红书\n演示连接\n抖\n抖音\n演示连接\n已连接店铺 0 家\n当前可管理的店铺账号\n进入店铺连接\n暂无\n当前没有可读取的真实店铺\nACTION CENTER\n事务看板\n\n集中查看需要处理的授权、素材与运营事项。\n\n0 项待处理\n当前没有待处理事务",
       "headings": [
         "运营概览",
-        "把商品事实变成可放心发布的内容",
-        "从你已有的内容开始",
-        "优先处理的问题",
-        "创意点与能力状态",
+        "今日看板",
+        "数据看板",
+        "素材看板",
+        "知识库看板",
+        "账号看板",
+        "平台连接",
+        "已连接店铺 0 家",
+        "事务看板",
+        "当前经营数据范围",
         "平台连接",
         "最近动态",
         "同步任务与失败项",
@@ -27,43 +32,27 @@
           "disabled": false
         },
         {
-          "text": "商品与资产",
+          "text": "平台&店铺&商品",
           "disabled": false
         },
         {
-          "text": "营销任务",
+          "text": "品牌资产",
           "disabled": false
         },
         {
-          "text": "发布中心",
+          "text": "素材库",
           "disabled": false
         },
         {
-          "text": "规则与检查",
+          "text": "回收站",
           "disabled": false
         },
         {
-          "text": "知识库 品牌资料与规则依据",
+          "text": "财务概况",
           "disabled": false
         },
         {
-          "text": "商品 选择平台商品开始任务",
-          "disabled": false
-        },
-        {
-          "text": "图片 主图、副图与视觉检查",
-          "disabled": false
-        },
-        {
-          "text": "素材 上传并确认权益与事实",
-          "disabled": false
-        },
-        {
-          "text": "帮助与诊断",
-          "disabled": false
-        },
-        {
-          "text": "工作区信息",
+          "text": "联系客服经理",
           "disabled": false
         },
         {
@@ -71,55 +60,19 @@
           "disabled": false
         },
         {
-          "text": "系统健康 在线",
+          "text": "工作区待处理问题，暂无",
           "disabled": false
         },
         {
-          "text": "林",
+          "text": "本 本地演示商家",
           "disabled": false
         },
         {
-          "text": "查看健康状态",
-          "disabled": false
+          "text": "等待店铺连接",
+          "disabled": true
         },
         {
-          "text": "选择商品开始任务",
-          "disabled": false
-        },
-        {
-          "text": "同步全部店铺",
-          "disabled": false
-        },
-        {
-          "text": "1 知识库 品牌资料与规则依据 进入知识库",
-          "disabled": false
-        },
-        {
-          "text": "2 商品 选择平台商品开始任务 进入商品",
-          "disabled": false
-        },
-        {
-          "text": "3 图片 主图、副图与视觉检查 进入图片",
-          "disabled": false
-        },
-        {
-          "text": "4 素材 上传并确认权益与事实 进入素材",
-          "disabled": false
-        },
-        {
-          "text": "查看商品与问题",
-          "disabled": false
-        },
-        {
-          "text": "查看并处理",
-          "disabled": false
-        },
-        {
-          "text": "查看并处理",
-          "disabled": false
-        },
-        {
-          "text": "查看并处理",
+          "text": "进入店铺连接",
           "disabled": false
         },
         {
@@ -127,59 +80,23 @@
           "disabled": false
         },
         {
-          "text": "同步",
+          "text": "连接",
           "disabled": false
         },
         {
-          "text": "撤销",
+          "text": "连接",
           "disabled": false
         },
         {
-          "text": "同步",
+          "text": "连接",
           "disabled": false
         },
         {
-          "text": "撤销",
+          "text": "连接",
           "disabled": false
         },
         {
-          "text": "同步",
-          "disabled": false
-        },
-        {
-          "text": "撤销",
-          "disabled": false
-        },
-        {
-          "text": "同步",
-          "disabled": false
-        },
-        {
-          "text": "撤销",
-          "disabled": false
-        },
-        {
-          "text": "同步",
-          "disabled": false
-        },
-        {
-          "text": "撤销",
-          "disabled": false
-        },
-        {
-          "text": "同步",
-          "disabled": false
-        },
-        {
-          "text": "撤销",
-          "disabled": false
-        },
-        {
-          "text": "同步",
-          "disabled": false
-        },
-        {
-          "text": "撤销",
+          "text": "连接",
           "disabled": false
         },
         {
@@ -191,26 +108,17 @@
           "disabled": false
         }
       ],
-      "inputs": [
-        {
-          "tag": "INPUT",
-          "type": null,
-          "placeholder": "搜索商品",
-          "label": "搜索商品",
-          "value": ""
-        }
-      ],
+      "inputs": [],
       "dialogs": []
     },
     {
-      "section": "商品与资产",
-      "url": "http://127.0.0.1:18081/merchant/products",
+      "section": "平台&店铺&商品",
+      "url": "http://127.0.0.1:28181/merchant/products?section=products",
       "title": "Merchant Studio · 商家营销工作台",
-      "text": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n商品与资产\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转已就绪。\n查看健康状态\nCOMMERCE FACTS\n一处管理商品事实与来源\n\n平台原值、本地确认值和来源证据同时保留。AI 不会覆盖你的商品真相。\n\n导入待创建商品\n创建独立任务组\n同步全部店铺\n至少选择 2 个商品 + 平台 + 店铺目标\nCURRENT SCOPE\n全部平台\n→\n全部店铺\n先用上方筛选确定平台和店铺，再选择商品。素材库只处理上传、解析和权益确认。\nCANONICAL STATUS\n规范商品状态\n\n只展示服务端已确认的商品关系；读取失败、过期或未验证都不会被标记为通过。\n\n重新检查\n报告新鲜\n当前结果可以作为只读工作区依据。\n标准链待核验\n10 个当前范围商品，标准链结果尚未取得\n下一步：打开商品关系并完成标准链核验\n打开商品关系并核验\n当前工作区待处理：5 项\n标准链状态尚未确认\n平台 / 店铺\n待处理\n6 / 10 个商品身份已核对\n下一步：确认平台和店铺身份\n商品\n待处理\n10 个当前范围商品，标准链结果尚未取得\n下一步：打开商品关系并完成标准链核验\n批量任务\n待处理\n已选择 0 个目标\n下一步：至少选择 2 个商品 / 平台 / 店铺\n素材关系\n已验证\n4 个商品返回素材绑定\n下一步：打开商品关系逐个确认\n规则预检\n待真实流程\n需在任务内容生成后由服务端检查\n下一步：进入任务并等待规则检查结果\n发布状态\n待真实流程\n未有已批准内容，不可判断发布状态\n下一步：完成生成、审核和二次发布确认\nBATCH WORKFLOW\n批量入口只创建任务组\n已选择 0 个目标 · 至少选择 2 个商品 + 平台 + 店铺目标\n1 选择商品/平台/店铺\n2 创建独立子任务\n3 逐个生成 → 审核 → 发布\n已发现 7 家可同步店铺；同步会逐店执行，不会默认选择同平台第一家店。\n搜索商品\n按平台筛选\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n按店铺筛选\n全部店铺\njd 店铺 · 京东\ntaobao 店铺 等 3 个店铺名 · 淘宝\ntaobao 店铺 · 淘宝\ntaobao 店铺 · 淘宝\ntmall 店铺 · 天猫\npinduoduo 店铺 · 拼多多\n小红书未验证 Fixture · 小红书\ndouyin 店铺 · 抖音\n全部 49\n待确认 —\n任务组\t商品\t平台\t店铺\t素材关系\t事实来源\t可售库存\t状态\t\n操作\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\ntaobao 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n事实已确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n1 SKU\n\t抖音\t\ndouyin 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n待确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n拼多多轻量防晒外套\n1 SKU\n\t拼多多\t\npinduoduo 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t2,400\t\n待确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n京选轻量防晒外套\n1 SKU\n\t京东\t\njd 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t860\t\n待确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套｜旗舰店\n1 SKU\n\t天猫\t\ntmall 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t520\t\n待确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\ntaobao 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n待确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n浅蓝色轻薄连帽外套\n0 SKU\n\t京东\t\n未绑定商品\n店铺身份待确认\n\t\n1 份已绑定\n查看关系\n\t\n服务端数据\t0\t\n目标商品缺少完整店铺身份，已阻止继续操作。请重新同步商品后再试。标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n浅蓝色连帽防晒外套\n0 SKU\n\t淘宝\t\n未绑定商品\n店铺身份待确认\n\t\n1 份已绑定\n查看关系\n\t\n服务端数据\t0\t\n目标商品缺少完整店铺身份，已阻止继续操作。请重新同步商品后再试。标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n浅蓝色连帽防晒外套\n0 SKU\n\t京东\t\n未绑定商品\n店铺身份待确认\n\t\n1 份已绑定\n查看关系\n\t\n服务端数据\t0\t\n目标商品缺少完整店铺身份，已阻止继续操作。请重新同步商品后再试。标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n防晒外套\n0 SKU\n\t京东\t\n未绑定商品\n店铺身份待确认\n\t\n1 份已绑定\n查看关系\n\t\n服务端数据\t0\t\n目标商品缺少完整店铺身份，已阻止继续操作。请重新同步商品后再试。标准链未取得\n\t主图检查生成图片\n创建任务\n显示 1–10 / 49 个匹配商品\n上一页第 1 / 5 页下一页",
+      "text": "跳到主要内容\n工作台\n运营概览\n知识库\n平台&店铺&商品\n品牌资产\n素材库\n回收站\n财务概况\n联系客服经理\n知识库\n本\n本地演示商家\nPLATFORM & STORE\n选择平台与店铺\n\n从左侧选择平台，再从右侧进入对应店铺的商品页。\n\n6\n个电商平台\n8 家店铺 · 3 家已连接\n平台\n选择后查看店铺\n淘\n淘宝\n2 家店铺\n已接入\n天\n天猫\n1 家店铺\n未接入\n京\n京东\n2 家店铺\n已接入\n抖\n抖音小店\n1 家店铺\n已接入\n拼\n拼多多\n1 家店铺\n未接入\n红\n小红书店\n1 家店铺\n未接入\n请选择平台\n\n请点击左侧平台，选择店铺后进入商品页。",
       "headings": [
-        "商品与资产",
-        "一处管理商品事实与来源",
-        "规范商品状态"
+        "知识库",
+        "选择平台与店铺"
       ],
       "buttons": [
         {
@@ -222,43 +130,27 @@
           "disabled": false
         },
         {
-          "text": "商品与资产",
+          "text": "平台&店铺&商品",
           "disabled": false
         },
         {
-          "text": "营销任务",
+          "text": "品牌资产",
           "disabled": false
         },
         {
-          "text": "发布中心",
+          "text": "素材库",
           "disabled": false
         },
         {
-          "text": "规则与检查",
+          "text": "回收站",
           "disabled": false
         },
         {
-          "text": "知识库 品牌资料与规则依据",
+          "text": "财务概况",
           "disabled": false
         },
         {
-          "text": "商品 选择平台商品开始任务",
-          "disabled": false
-        },
-        {
-          "text": "图片 主图、副图与视觉检查",
-          "disabled": false
-        },
-        {
-          "text": "素材 上传并确认权益与事实",
-          "disabled": false
-        },
-        {
-          "text": "帮助与诊断",
-          "disabled": false
-        },
-        {
-          "text": "工作区信息",
+          "text": "联系客服经理",
           "disabled": false
         },
         {
@@ -266,15 +158,720 @@
           "disabled": false
         },
         {
-          "text": "系统健康 在线",
+          "text": "工作区待处理问题，暂无",
           "disabled": false
         },
         {
-          "text": "林",
+          "text": "本 本地演示商家",
           "disabled": false
         },
         {
-          "text": "查看健康状态",
+          "text": "淘 淘宝 2 家店铺 已接入",
+          "disabled": false
+        },
+        {
+          "text": "天 天猫 1 家店铺 未接入",
+          "disabled": false
+        },
+        {
+          "text": "京 京东 2 家店铺 已接入",
+          "disabled": false
+        },
+        {
+          "text": "抖 抖音小店 1 家店铺 已接入",
+          "disabled": false
+        },
+        {
+          "text": "拼 拼多多 1 家店铺 未接入",
+          "disabled": false
+        },
+        {
+          "text": "红 小红书店 1 家店铺 未接入",
+          "disabled": false
+        }
+      ],
+      "inputs": [],
+      "dialogs": []
+    },
+    {
+      "section": "品牌资产",
+      "url": "http://127.0.0.1:28181/merchant/products?section=assets",
+      "title": "Merchant Studio · 商家营销工作台",
+      "text": "跳到主要内容\n工作台\n运营概览\n知识库\n平台&店铺&商品\n品牌资产\n素材库\n回收站\n财务概况\n联系客服经理\n品牌资产\n本\n本地演示商家\nBRAND ASSETS\n品牌资产\n\n维护全局、系列与单图品牌信息。\n\nBRAND SETTINGS\n品牌配置\n\n统一维护全局、店铺、系列与单图品牌信息，生成内容时自动按优先级应用。\n\n资产应用原则：\n单图配置 > 系列配置 > 店铺配置 > 全局配置\n01\n全局配置\n所有系列与图片的默认品牌资产\n全局 Logo\n更换 Logo\n品牌色\n#\n确定\n品牌资产文档\n上传并分析\n用户画像\n品牌卖点\nBRAND PROFILE\n当前品牌资产\n启用全局配置\n停用全局配置\n品牌 Logo\n品牌主色\n#17543C\n用户画像\n\n尚未填写，将在生成内容时使用上一级配置。\n\n品牌卖点\n\n尚未填写，将在生成内容时使用上一级配置。\n\n品牌资产文档\nStore Nova 品牌资产手册.pdf\n已接收\n02\n店铺配置\n覆盖全局配置并应用到当前店铺\n选择店铺\nStore Nova 旗舰店\n店铺 Logo\n上传 Logo\n品牌色\n#\n确定\n品牌资产文档\n上传并分析\n用户画像\n品牌卖点\nBRAND PROFILE\n当前品牌资产\n启用店铺配置\n停用店铺配置\n当前店铺\nStore Nova 旗舰店\n品牌 Logo\n品牌主色\n#17543C\n用户画像\n\n尚未填写，将在生成内容时使用上一级配置。\n\n品牌卖点\n\n尚未填写，将在生成内容时使用上一级配置。\n\n品牌资产文档\nStore Nova 品牌资产手册.pdf\n已接收\n03\n系列配置\n覆盖店铺配置并应用到当前系列\n当前系列\n恒温饮具\n管理系列\n恒温饮具 Logo\n上传 Logo\n品牌色\n#\n确定\n品牌资产文档\n上传并分析\n用户画像\n品牌卖点\nBRAND PROFILE\n当前品牌资产\n启用系列配置\n停用系列配置\n当前系列\n恒温饮具\n品牌 Logo\n品牌主色\n#17543C\n用户画像\n\n尚未填写，将在生成内容时使用上一级配置。\n\n品牌卖点\n\n尚未填写，将在生成内容时使用上一级配置。\n\n品牌资产文档\nStore Nova 品牌资产手册.pdf\n已接收\n04\n单图配置请前往素材库进行配置\n优先级最高，只应用于指定图片",
+      "headings": [
+        "品牌资产",
+        "品牌资产",
+        "品牌配置"
+      ],
+      "buttons": [
+        {
+          "text": "跳到主要内容",
+          "disabled": false
+        },
+        {
+          "text": "运营概览",
+          "disabled": false
+        },
+        {
+          "text": "平台&店铺&商品",
+          "disabled": false
+        },
+        {
+          "text": "品牌资产",
+          "disabled": false
+        },
+        {
+          "text": "素材库",
+          "disabled": false
+        },
+        {
+          "text": "回收站",
+          "disabled": false
+        },
+        {
+          "text": "财务概况",
+          "disabled": false
+        },
+        {
+          "text": "联系客服经理",
+          "disabled": false
+        },
+        {
+          "text": "打开主菜单",
+          "disabled": false
+        },
+        {
+          "text": "工作区待处理问题，暂无",
+          "disabled": false
+        },
+        {
+          "text": "本 本地演示商家",
+          "disabled": false
+        },
+        {
+          "text": "确定",
+          "disabled": true
+        },
+        {
+          "text": "启用全局配置",
+          "disabled": false
+        },
+        {
+          "text": "停用全局配置",
+          "disabled": false
+        },
+        {
+          "text": "Store Nova 旗舰店",
+          "disabled": false
+        },
+        {
+          "text": "确定",
+          "disabled": true
+        },
+        {
+          "text": "启用店铺配置",
+          "disabled": false
+        },
+        {
+          "text": "停用店铺配置",
+          "disabled": false
+        },
+        {
+          "text": "管理系列",
+          "disabled": false
+        },
+        {
+          "text": "确定",
+          "disabled": true
+        },
+        {
+          "text": "启用系列配置",
+          "disabled": false
+        },
+        {
+          "text": "停用系列配置",
+          "disabled": false
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": "file",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "color",
+          "placeholder": null,
+          "label": null,
+          "value": "#17543c"
+        },
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": null,
+          "label": "全局品牌色值",
+          "value": "17543c"
+        },
+        {
+          "tag": "INPUT",
+          "type": "file",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "TEXTAREA",
+          "type": null,
+          "placeholder": "例如：25–35 岁、关注设计感与使用效率的城市职场人",
+          "label": "全局用户画像",
+          "value": ""
+        },
+        {
+          "tag": "TEXTAREA",
+          "type": null,
+          "placeholder": "例如：原创设计、耐用材质、礼赠友好",
+          "label": "全局品牌卖点",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "file",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "color",
+          "placeholder": null,
+          "label": null,
+          "value": "#17543c"
+        },
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": null,
+          "label": "Store Nova 旗舰店品牌色值",
+          "value": "17543c"
+        },
+        {
+          "tag": "INPUT",
+          "type": "file",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "TEXTAREA",
+          "type": null,
+          "placeholder": "例如：25–35 岁、关注设计感与使用效率的城市职场人",
+          "label": "Store Nova 旗舰店用户画像",
+          "value": ""
+        },
+        {
+          "tag": "TEXTAREA",
+          "type": null,
+          "placeholder": "例如：原创设计、耐用材质、礼赠友好",
+          "label": "Store Nova 旗舰店品牌卖点",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "file",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "color",
+          "placeholder": null,
+          "label": null,
+          "value": "#17543c"
+        },
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": null,
+          "label": "恒温饮具品牌色值",
+          "value": "17543c"
+        },
+        {
+          "tag": "INPUT",
+          "type": "file",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "TEXTAREA",
+          "type": null,
+          "placeholder": "例如：25–35 岁、关注设计感与使用效率的城市职场人",
+          "label": "恒温饮具用户画像",
+          "value": ""
+        },
+        {
+          "tag": "TEXTAREA",
+          "type": null,
+          "placeholder": "例如：原创设计、耐用材质、礼赠友好",
+          "label": "恒温饮具品牌卖点",
+          "value": ""
+        }
+      ],
+      "dialogs": []
+    },
+    {
+      "section": "素材库",
+      "url": "http://127.0.0.1:28181/merchant/products?section=knowledge",
+      "title": "Merchant Studio · 商家营销工作台",
+      "text": "跳到主要内容\n工作台\n运营概览\n知识库\n平台&店铺&商品\n品牌资产\n素材库\n回收站\n财务概况\n联系客服经理\n素材库\n本\n本地演示商家\nMATERIAL LIBRARY\n素材库\n\n按店铺独立管理图片与视频。\n\n共享储存空间\n未读取 服务端配额\n配额读取未接入，本次会话上传 0.0 GB\n剩余 未读取\n上传素材\n店铺\nStore Nova 旗舰店\n系列\n全部系列\n素材分类\n全部\n已选 0 项\n全选当前\n下载已选\n找到 8 项素材\n上传目标：Store Nova 旗舰店\n商品主图\nStore Nova 旗舰店 · 商品首图\n恒温饮具 · 1200 × 1200 · JPG\n686 KB · 2026-09-17\n素材分类\n商品主图\n所属系列\n恒温饮具\n下载\n商品主图\nStore Nova 旗舰店 · 核心卖点图\n恒温饮具 · 1200 × 1200 · JPG\n742 KB · 2026-09-16\n素材分类\n商品主图\n所属系列\n恒温饮具\n下载\n详情页图\nStore Nova 旗舰店 · 详情页首屏\n桌面生活 · 750 × 1000 · JPG\n918 KB · 2026-09-15\n素材分类\n详情页图\n所属系列\n桌面生活\n下载\n详情页图\nStore Nova 旗舰店 · 材质工艺长图\n桌面生活 · 750 × 1400 · JPG\n1.3 MB · 2026-09-14\n素材分类\n详情页图\n所属系列\n桌面生活\n下载\nSKU 图\nStore Nova 旗舰店 · 暖米白规格图\n恒温饮具 · 1200 × 1200 · PNG\n824 KB · 2026-09-13\n素材分类\nSKU 图\n所属系列\n恒温饮具\n下载\nSKU 图\nStore Nova 旗舰店 · 雾绿色规格图\n恒温饮具 · 1200 × 1200 · PNG\n856 KB · 2026-09-12\n素材分类\nSKU 图\n所属系列\n恒温饮具\n下载\n商品视频\nStore Nova 旗舰店 · 商品讲解视频\n礼赠套装 · 1920 × 1080 · MP4\n18.6 MB · 2026-09-11\n素材分类\n商品视频\n所属系列\n礼赠套装\n下载\n未分类\nStore Nova 旗舰店 · 包装与说明书\n未分类 · 1600 × 1200 · JPG\n1.1 MB · 2026-09-10\n素材分类\n未分类\n所属系列\n未分类\n下载",
+      "headings": [
+        "素材库",
+        "素材库"
+      ],
+      "buttons": [
+        {
+          "text": "跳到主要内容",
+          "disabled": false
+        },
+        {
+          "text": "运营概览",
+          "disabled": false
+        },
+        {
+          "text": "平台&店铺&商品",
+          "disabled": false
+        },
+        {
+          "text": "品牌资产",
+          "disabled": false
+        },
+        {
+          "text": "素材库",
+          "disabled": false
+        },
+        {
+          "text": "回收站",
+          "disabled": false
+        },
+        {
+          "text": "财务概况",
+          "disabled": false
+        },
+        {
+          "text": "联系客服经理",
+          "disabled": false
+        },
+        {
+          "text": "打开主菜单",
+          "disabled": false
+        },
+        {
+          "text": "工作区待处理问题，暂无",
+          "disabled": false
+        },
+        {
+          "text": "本 本地演示商家",
+          "disabled": false
+        },
+        {
+          "text": "上传素材",
+          "disabled": false
+        },
+        {
+          "text": "Store Nova 旗舰店",
+          "disabled": false
+        },
+        {
+          "text": "全部系列",
+          "disabled": false
+        },
+        {
+          "text": "全部",
+          "disabled": false
+        },
+        {
+          "text": "全选当前",
+          "disabled": false
+        },
+        {
+          "text": "商品主图",
+          "disabled": false
+        },
+        {
+          "text": "选择Store Nova 旗舰店 · 商品首图",
+          "disabled": false
+        },
+        {
+          "text": "商品主图",
+          "disabled": false
+        },
+        {
+          "text": "恒温饮具",
+          "disabled": false
+        },
+        {
+          "text": "商品主图",
+          "disabled": false
+        },
+        {
+          "text": "选择Store Nova 旗舰店 · 核心卖点图",
+          "disabled": false
+        },
+        {
+          "text": "商品主图",
+          "disabled": false
+        },
+        {
+          "text": "恒温饮具",
+          "disabled": false
+        },
+        {
+          "text": "详情页图",
+          "disabled": false
+        },
+        {
+          "text": "选择Store Nova 旗舰店 · 详情页首屏",
+          "disabled": false
+        },
+        {
+          "text": "详情页图",
+          "disabled": false
+        },
+        {
+          "text": "桌面生活",
+          "disabled": false
+        },
+        {
+          "text": "详情页图",
+          "disabled": false
+        },
+        {
+          "text": "选择Store Nova 旗舰店 · 材质工艺长图",
+          "disabled": false
+        },
+        {
+          "text": "详情页图",
+          "disabled": false
+        },
+        {
+          "text": "桌面生活",
+          "disabled": false
+        },
+        {
+          "text": "SKU 图",
+          "disabled": false
+        },
+        {
+          "text": "选择Store Nova 旗舰店 · 暖米白规格图",
+          "disabled": false
+        },
+        {
+          "text": "SKU 图",
+          "disabled": false
+        },
+        {
+          "text": "恒温饮具",
+          "disabled": false
+        },
+        {
+          "text": "SKU 图",
+          "disabled": false
+        },
+        {
+          "text": "选择Store Nova 旗舰店 · 雾绿色规格图",
+          "disabled": false
+        },
+        {
+          "text": "SKU 图",
+          "disabled": false
+        },
+        {
+          "text": "恒温饮具",
+          "disabled": false
+        },
+        {
+          "text": "商品视频",
+          "disabled": false
+        },
+        {
+          "text": "选择Store Nova 旗舰店 · 商品讲解视频",
+          "disabled": false
+        },
+        {
+          "text": "商品视频",
+          "disabled": false
+        },
+        {
+          "text": "礼赠套装",
+          "disabled": false
+        },
+        {
+          "text": "未分类",
+          "disabled": false
+        },
+        {
+          "text": "选择Store Nova 旗舰店 · 包装与说明书",
+          "disabled": false
+        },
+        {
+          "text": "未分类",
+          "disabled": false
+        },
+        {
+          "text": "未分类",
+          "disabled": false
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": "搜索素材名称、分类或格式",
+          "label": null,
+          "value": ""
+        }
+      ],
+      "dialogs": []
+    },
+    {
+      "section": "回收站",
+      "url": "http://127.0.0.1:28181/merchant/products?section=trash",
+      "title": "Merchant Studio · 商家营销工作台",
+      "text": "跳到主要内容\n工作台\n运营概览\n知识库\n平台&店铺&商品\n品牌资产\n素材库\n回收站\n财务概况\n联系客服经理\n回收站\n本\n本地演示商家\nRECYCLE BIN\n回收站\n\n删除的素材会保留 7 天，到期后自动彻底删除。\n\n1\n项待处理素材\n最长保留 7 天\n已删除素材\n\n可恢复到原店铺，也可以提前彻底删除。\n\n已选 0 项\n全选\n恢复\n彻底删除\n详情页图\nStore Nova 旗舰店 · 旧版包装展示图\n礼赠套装 · 1600 × 1200 · JPG\nStore Nova 旗舰店 · 淘宝\n剩余 6 天\n2026/9/19 删除",
+      "headings": [
+        "回收站",
+        "回收站",
+        "已删除素材"
+      ],
+      "buttons": [
+        {
+          "text": "跳到主要内容",
+          "disabled": false
+        },
+        {
+          "text": "运营概览",
+          "disabled": false
+        },
+        {
+          "text": "平台&店铺&商品",
+          "disabled": false
+        },
+        {
+          "text": "品牌资产",
+          "disabled": false
+        },
+        {
+          "text": "素材库",
+          "disabled": false
+        },
+        {
+          "text": "回收站",
+          "disabled": false
+        },
+        {
+          "text": "财务概况",
+          "disabled": false
+        },
+        {
+          "text": "联系客服经理",
+          "disabled": false
+        },
+        {
+          "text": "打开主菜单",
+          "disabled": false
+        },
+        {
+          "text": "工作区待处理问题，暂无",
+          "disabled": false
+        },
+        {
+          "text": "本 本地演示商家",
+          "disabled": false
+        },
+        {
+          "text": "全选",
+          "disabled": false
+        },
+        {
+          "text": "恢复",
+          "disabled": true
+        },
+        {
+          "text": "彻底删除",
+          "disabled": true
+        },
+        {
+          "text": "放大Store Nova 旗舰店 · 旧版包装展示图",
+          "disabled": false
+        },
+        {
+          "text": "选择Store Nova 旗舰店 · 旧版包装展示图",
+          "disabled": false
+        }
+      ],
+      "inputs": [],
+      "dialogs": []
+    },
+    {
+      "section": "财务概况",
+      "url": "http://127.0.0.1:28181/merchant/finance",
+      "title": "Merchant Studio · 商家营销工作台",
+      "text": "跳到主要内容\n工作台\n运营概览\n知识库\n平台&店铺&商品\n品牌资产\n素材库\n回收站\n财务概况\n联系客服经理\n财务概况\n本\n本地演示商家\nACCOUNT & BILLING\n财务与资源\n\n统一查看创意点、储存空间和账号信息，全部来自服务端账本。\n\n当前剩余创意点\n20,000 点\n钱包余额\n¥0.00\n充值创意点\n储存空间剩余\n未读取\n\n服务端未返回储存配额，当前不显示用量。\n\n购买储存空间\nCREATIVE POINTS\n创意点消耗趋势\n\n按服务端创意点流水的发生时间汇总，可查询日期或月份区间。\n\n查询方式\n按日期\n开始日期\n至\n结束日期\n查询\n重置\n已读取流水（按日汇总）\n0 个数据点\n合计 0 点\n\n该区间内没有服务端创意点流水，不显示趋势图。\n\nACCOUNT\n账号与工作区\n\n当前登录账号 merchant-demo@example.com，企业主体 本地演示企业，账号状态 已启用。\n\nmerchant-demo@example.com\n登录账号\n本地演示企业\n企业主体\n已启用\n账号状态\n咨询客服升级账号",
+      "headings": [
+        "财务概况",
+        "财务与资源",
+        "创意点消耗趋势",
+        "账号与工作区"
+      ],
+      "buttons": [
+        {
+          "text": "跳到主要内容",
+          "disabled": false
+        },
+        {
+          "text": "运营概览",
+          "disabled": false
+        },
+        {
+          "text": "平台&店铺&商品",
+          "disabled": false
+        },
+        {
+          "text": "品牌资产",
+          "disabled": false
+        },
+        {
+          "text": "素材库",
+          "disabled": false
+        },
+        {
+          "text": "回收站",
+          "disabled": false
+        },
+        {
+          "text": "财务概况",
+          "disabled": false
+        },
+        {
+          "text": "联系客服经理",
+          "disabled": false
+        },
+        {
+          "text": "打开主菜单",
+          "disabled": false
+        },
+        {
+          "text": "工作区待处理问题，暂无",
+          "disabled": false
+        },
+        {
+          "text": "本 本地演示商家",
+          "disabled": false
+        },
+        {
+          "text": "充值创意点",
+          "disabled": false
+        },
+        {
+          "text": "购买储存空间",
+          "disabled": false
+        },
+        {
+          "text": "查询",
+          "disabled": false
+        },
+        {
+          "text": "重置",
+          "disabled": false
+        },
+        {
+          "text": "咨询客服升级账号",
+          "disabled": false
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": "年 / 月 / 日",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": "年 / 月 / 日",
+          "label": null,
+          "value": ""
+        }
+      ],
+      "dialogs": []
+    },
+    {
+      "section": "全局搜索",
+      "url": "http://127.0.0.1:28181/merchant/tasks",
+      "title": "Merchant Studio · 商家营销工作台",
+      "text": "跳到主要内容\n工作台\n运营概览\n知识库\n平台&店铺&商品\n品牌资产\n素材库\n回收站\n财务概况\n联系客服经理\n知识库\n本\n本地演示商家\nPRODUCT CATALOG\n管理商品事实与素材\n\n先确认商品事实与店铺身份，再生成内容或创建批量任务。所有操作都会保留来源证据。\n\n导入待创建商品\n创建独立任务组\n同步全部店铺\n至少选择 2 个商品 + 平台 + 店铺目标\n当前目录\n0\n个商品\n当前范围\n全部平台\n已连接店铺\n1\n已选择任务目标\n0\nCURRENT SCOPE\n全部平台\n→\n全部店铺\n先用上方筛选确定平台和店铺，再选择商品。素材库只处理上传、解析和权益确认。\nCANONICAL STATUS\n规范商品状态\n\n只展示服务端已确认的商品关系；读取失败、过期或未验证都不会被标记为通过。\n\n重新检查\n报告新鲜\n当前结果可以作为只读工作区依据。\n标准链待核验\n当前范围没有商品\n下一步：选择要处理的商品\n打开商品关系并核验\n当前工作区需关注：4 项\n标准链状态尚未确认\n平台 / 店铺\n待处理\n0 / 0 个商品身份已核对\n下一步：确认平台和店铺身份\n商品\n待处理\n当前范围没有商品\n下一步：选择要处理的商品\n批量任务\n待处理\n已选择 0 个目标\n下一步：至少选择 2 个商品 / 平台 / 店铺\n素材关系\n待处理\n当前未确认素材绑定\n下一步：打开商品关系逐个确认\n规则预检\n待真实流程\n需在任务内容生成后由服务端检查\n下一步：进入任务并等待规则检查结果\n发布状态\n待真实流程\n未有已批准内容，不可判断发布状态\n下一步：完成生成、审核和二次发布确认\nBATCH WORKFLOW\n批量入口只创建任务组\n已选择 0 个目标 · 至少选择 2 个商品 + 平台 + 店铺目标\n1 选择商品/平台/店铺\n2 创建独立子任务\n3 逐个生成 → 审核 → 发布\n已发现 1 家可同步店铺；同步会逐店执行，不会默认选择同平台第一家店。\nCATALOG\n商品目录\n已确认\n待确认\n待流程\n搜索商品\n按平台筛选\n全部平台\n按店铺筛选\n全部店铺\n淘宝 Fixture 店 · 淘宝\n全部 0\n待确认\n清除筛选\n没有匹配商品调整搜索条件，或重新同步平台商品。\n显示 0 个商品\n上一页第 1 / 1 页下一页",
+      "headings": [
+        "知识库",
+        "管理商品事实与素材",
+        "规范商品状态",
+        "商品目录"
+      ],
+      "buttons": [
+        {
+          "text": "跳到主要内容",
+          "disabled": false
+        },
+        {
+          "text": "运营概览",
+          "disabled": false
+        },
+        {
+          "text": "平台&店铺&商品",
+          "disabled": false
+        },
+        {
+          "text": "品牌资产",
+          "disabled": false
+        },
+        {
+          "text": "素材库",
+          "disabled": false
+        },
+        {
+          "text": "回收站",
+          "disabled": false
+        },
+        {
+          "text": "财务概况",
+          "disabled": false
+        },
+        {
+          "text": "联系客服经理",
+          "disabled": false
+        },
+        {
+          "text": "打开主菜单",
+          "disabled": false
+        },
+        {
+          "text": "工作区待处理问题，暂无",
+          "disabled": false
+        },
+        {
+          "text": "本 本地演示商家",
           "disabled": false
         },
         {
@@ -298,172 +895,20 @@
           "disabled": false
         },
         {
-          "text": "全部 49",
+          "text": "全部平台",
           "disabled": false
         },
         {
-          "text": "待确认 —",
+          "text": "全部 0",
           "disabled": false
         },
         {
-          "text": "查看关系",
+          "text": "待确认",
           "disabled": false
         },
         {
-          "text": "主图检查",
+          "text": "清除筛选",
           "disabled": false
-        },
-        {
-          "text": "生成图片",
-          "disabled": false
-        },
-        {
-          "text": "创建任务",
-          "disabled": false
-        },
-        {
-          "text": "查看关系",
-          "disabled": false
-        },
-        {
-          "text": "主图检查",
-          "disabled": false
-        },
-        {
-          "text": "生成图片",
-          "disabled": true
-        },
-        {
-          "text": "创建任务",
-          "disabled": false
-        },
-        {
-          "text": "查看关系",
-          "disabled": false
-        },
-        {
-          "text": "主图检查",
-          "disabled": false
-        },
-        {
-          "text": "生成图片",
-          "disabled": true
-        },
-        {
-          "text": "创建任务",
-          "disabled": false
-        },
-        {
-          "text": "查看关系",
-          "disabled": false
-        },
-        {
-          "text": "主图检查",
-          "disabled": false
-        },
-        {
-          "text": "生成图片",
-          "disabled": true
-        },
-        {
-          "text": "创建任务",
-          "disabled": false
-        },
-        {
-          "text": "查看关系",
-          "disabled": false
-        },
-        {
-          "text": "主图检查",
-          "disabled": false
-        },
-        {
-          "text": "生成图片",
-          "disabled": true
-        },
-        {
-          "text": "创建任务",
-          "disabled": false
-        },
-        {
-          "text": "查看关系",
-          "disabled": false
-        },
-        {
-          "text": "主图检查",
-          "disabled": false
-        },
-        {
-          "text": "生成图片",
-          "disabled": true
-        },
-        {
-          "text": "创建任务",
-          "disabled": false
-        },
-        {
-          "text": "查看关系",
-          "disabled": false
-        },
-        {
-          "text": "主图检查",
-          "disabled": false
-        },
-        {
-          "text": "生成图片",
-          "disabled": true
-        },
-        {
-          "text": "创建任务",
-          "disabled": true
-        },
-        {
-          "text": "查看关系",
-          "disabled": false
-        },
-        {
-          "text": "主图检查",
-          "disabled": false
-        },
-        {
-          "text": "生成图片",
-          "disabled": true
-        },
-        {
-          "text": "创建任务",
-          "disabled": true
-        },
-        {
-          "text": "查看关系",
-          "disabled": false
-        },
-        {
-          "text": "主图检查",
-          "disabled": false
-        },
-        {
-          "text": "生成图片",
-          "disabled": true
-        },
-        {
-          "text": "创建任务",
-          "disabled": true
-        },
-        {
-          "text": "查看关系",
-          "disabled": false
-        },
-        {
-          "text": "主图检查",
-          "disabled": false
-        },
-        {
-          "text": "生成图片",
-          "disabled": true
-        },
-        {
-          "text": "创建任务",
-          "disabled": true
         },
         {
           "text": "上一页",
@@ -471,1123 +916,44 @@
         },
         {
           "text": "下一页",
-          "disabled": false
+          "disabled": true
         }
       ],
       "inputs": [
-        {
-          "tag": "INPUT",
-          "type": null,
-          "placeholder": "搜索商品",
-          "label": "搜索商品",
-          "value": ""
-        },
         {
           "tag": "INPUT",
           "type": null,
           "placeholder": "搜索商品或平台",
           "label": null,
-          "value": ""
-        },
-        {
-          "tag": "SELECT",
-          "type": null,
-          "placeholder": null,
-          "label": null,
-          "value": "all"
-        },
-        {
-          "tag": "SELECT",
-          "type": null,
-          "placeholder": null,
-          "label": null,
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "选择轻云防晒外套 2026（taobao 店铺）加入任务组",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "选择轻云防晒外套 2026（douyin 店铺）加入任务组",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "选择拼多多轻量防晒外套（pinduoduo 店铺）加入任务组",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "选择京选轻量防晒外套（jd 店铺）加入任务组",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "选择轻云防晒外套｜旗舰店（tmall 店铺）加入任务组",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "选择轻云防晒外套 2026（taobao 店铺）加入任务组",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "选择浅蓝色轻薄连帽外套（未绑定商品）加入任务组",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "选择浅蓝色连帽防晒外套（未绑定商品）加入任务组",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "选择浅蓝色连帽防晒外套（未绑定商品）加入任务组",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "选择防晒外套（未绑定商品）加入任务组",
-          "value": "on"
-        }
-      ],
-      "dialogs": []
-    },
-    {
-      "section": "营销任务",
-      "url": "http://127.0.0.1:18081/merchant/tasks",
-      "title": "Merchant Studio · 商家营销工作台",
-      "text": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n营销任务\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转已就绪。\n查看健康状态\nIMAGE TASKS\n图片任务\n48 个任务\n轻云防晒外套 2026\ntaobao · taobao 店铺 · 状态待确认 · 1 张候选\n状态待确认\n查看任务\n轻云防晒外套 2026\ntaobao · taobao 店铺 · 状态待确认 · 1 张候选\n状态待确认\n查看任务\n浅蓝色轻薄连帽外套\njd · 未绑定商品 · 状态待确认 · 1 张候选\n状态待确认\n查看任务\n浅蓝色连帽防晒外套\ntaobao · 未绑定商品 · 状态待确认 · 1 张候选\n状态待确认\n查看任务\n轻云防晒外套 2026\ntaobao · taobao 店铺 · 归档中，等待安全扫描 · 0 张候选\n归档中，等待安全扫描\n查看任务\n轻云防晒外套 2026\ntaobao · 云朵轻户外 · 状态待确认 · 1 张候选\n状态待确认\n查看任务\n轻云防晒外套 2026\ntaobao · taobao 店铺 · 状态待确认 · 1 张候选\n状态待确认\n查看任务\n轻量连帽防晒外套\ntaobao · 未绑定商品 · 结果待对账，禁止重复生成 · 0 张候选\n结果待对账，禁止重复生成\n查看任务\n冲锋防水衣\ntaobao · 未绑定商品 · 状态待确认 · 1 张候选\n状态待确认\n查看任务\n冲锋防水衣\ntaobao · 未绑定商品 · 状态待确认 · 1 张候选\n状态待确认\n查看任务\n冲锋防水衣\ntaobao · 未绑定商品 · 归档中，等待安全扫描 · 0 张候选\n归档中，等待安全扫描\n查看任务\n冲锋防水衣\ntaobao · 未绑定商品 · 状态待确认 · 1 张候选\n状态待确认\n查看任务\n冲锋防水衣\ntaobao · 未绑定商品 · 状态待确认 · 1 张候选\n状态待确认\n查看任务\n浅冰蓝连帽防风冲锋衣\ntaobao · 未绑定商品 · 结果待对账，禁止重复生成 · 0 张候选\n结果待对账，禁止重复生成\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 状态待确认 · 1 张候选\n状态待确认\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 结果待对账，禁止重复生成 · 0 张候选\n结果待对账，禁止重复生成\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 结果待对账，禁止重复生成 · 0 张候选\n结果待对账，禁止重复生成\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 正在提交模型请求，等待受理确认 · 0 张候选\n正在提交模型请求，等待受理确认\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 结果待对账，禁止重复生成 · 0 张候选\n结果待对账，禁止重复生成\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 结果待对账，禁止重复生成 · 0 张候选\n结果待对账，禁止重复生成\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 结果待对账，禁止重复生成 · 0 张候选\n结果待对账，禁止重复生成\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 结果待对账，禁止重复生成 · 0 张候选\n结果待对账，禁止重复生成\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 结果待对账，禁止重复生成 · 0 张候选\n结果待对账，禁止重复生成\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 结果待对账，禁止重复生成 · 0 张候选\n结果待对账，禁止重复生成\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 结果待对账，禁止重复生成 · 0 张候选\n结果待对账，禁止重复生成\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 结果待对账，禁止重复生成 · 0 张候选\n结果待对账，禁止重复生成\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 结果待对账，禁止重复生成 · 0 张候选\n结果待对账，禁止重复生成\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 结果待对账，禁止重复生成 · 0 张候选\n结果待对账，禁止重复生成\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 结果待对账，禁止重复生成 · 0 张候选\n结果待对账，禁止重复生成\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 状态待确认 · 0 张候选\n状态待确认\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 状态待确认 · 0 张候选\n状态待确认\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 归档中，等待安全扫描 · 0 张候选\n归档中，等待安全扫描\n查看任务\n冲锋防水衣服\ntaobao · 未绑定商品 · 归档中，等待安全扫描 · 0 张候选\n归档中，等待安全扫描\n查看任务\n京选轻量防晒外套\njd · jd 店铺 · 归档中，等待安全扫描 · 1 张候选\n归档中，等待安全扫描\n查看任务\n京选轻量防晒外套\njd · jd 店铺 · 生成完成，等待审查 · 1 张候选\n生成完成，等待审查\n查看任务\n京选轻量防晒外套\njd · jd 店铺 · 生成完成，等待审查 · 1 张候选\n生成完成，等待审查\n查看任务\n京选轻量防晒外套\njd · jd 店铺 · 生成完成，等待审查 · 1 张候选\n生成完成，等待审查\n查看任务\n京选轻量防晒外套\njd · jd 店铺 · 归档中，等待安全扫描 · 0 张候选\n归档中，等待安全扫描\n查看任务\n京选轻量防晒外套\njd · jd 店铺 · 归档中，等待安全扫描 · 0 张候选\n归档中，等待安全扫描\n查看任务\n京选轻量防晒外套\njd · jd 店铺 · 归档中，等待安全扫描 · 0 张候选\n归档中，等待安全扫描\n查看任务\n京选轻量防晒外套\njd · jd 店铺 · 归档中，等待安全扫描 · 0 张候选\n归档中，等待安全扫描\n查看任务\n京选轻量防晒外套\njd · jd 店铺 · 归档中，等待安全扫描 · 0 张候选\n归档中，等待安全扫描\n查看任务\n京选轻量防晒外套\njd · jd 店铺 · 归档未确认，等待对账 · 0 张候选\n归档未确认，等待对账\n查看任务\nRuntime signed continuation product\njd · 导入店铺 · 生成完成，等待审查 · 1 张候选\n生成完成，等待审查\n查看任务\nRuntime continuation product\njd · 导入店铺 · 归档中，等待安全扫描 · 0 张候选\n归档中，等待安全扫描\n查看任务\n轻云防晒外套 2026\ntaobao · 云朵轻户外 · 归档中，等待安全扫描 · 0 张候选\n归档中，等待安全扫描\n查看任务\n轻云防晒外套 2026\ntaobao · taobao 店铺 · 归档中，等待安全扫描 · 0 张候选\n归档中，等待安全扫描\n查看任务\n轻云防晒外套 2026\ntaobao · taobao 店铺 · 归档中，等待安全扫描 · 0 张候选\n归档中，等待安全扫描\n查看任务\nTASK QUEUE\n任务队列\n\n从这里恢复已有任务；只有从商品页点击“创建任务”才会新建任务。\n\n151 个任务\nBATCH ACTIONS\n批量任务操作\n\n暂停、恢复或重试失败项属于高级操作；所有操作都会记录原因并再次校验状态。\n\n选择商品开始任务\n打开高级控制\n京选轻量防晒外套 · 京东 · jd 店铺\n需要我处理 · 恢复任务 · 店铺账号已确认 · 2026/9/1 18:39:53 · 内容版本 v2\n待补充信息\n恢复任务\n京选轻量防晒外套 · 京东 · jd 店铺\n需要我处理 · 恢复任务 · 店铺账号已确认 · 2026/9/1 18:39:49 · 内容版本 v2\n待补充信息\n恢复任务\n京选轻量防晒外套 · 京东 · jd 店铺\n需要我处理 · 恢复任务 · 店铺账号已确认 · 2026/9/1 18:39:42 · 内容版本 v2\n待补充信息\n恢复任务\n京选轻量防晒外套 · 京东 · jd 店铺\n需要我处理 · 恢复任务 · 店铺账号已确认 · 2026/9/1 18:39:37 · 内容版本 v4\n待补充信息\n恢复任务\n京选轻量防晒外套 · 京东 · jd 店铺\n需要我处理 · 恢复任务 · 店铺账号已确认 · 2026/9/1 18:38:13 · 内容版本 v2\n待补充信息\n恢复任务\nCompose 验收商品 · 淘宝 · 导入店铺\n需要我处理 · 恢复任务 · 店铺账号已确认 · 2026/9/1 14:03:48 · 内容版本 v1\n店铺身份异常\n恢复任务\nCompose 验收商品 · 淘宝 · 导入店铺\n需要我处理 · 恢复任务 · 店铺账号已确认 · 2026/9/1 13:57:24 · 内容版本 v1\n店铺身份异常\n恢复任务\nCompose 验收商品 · 淘宝 · 导入店铺\n需要我处理 · 恢复任务 · 店铺账号已确认 · 2026/9/1 13:56:46 · 内容版本 v1\n店铺身份异常\n恢复任务\nCompose 验收商品 · 淘宝 · 导入店铺\n需要我处理 · 恢复任务 · 店铺账号已确认 · 2026/9/1 13:55:59 · 内容版本 v1\n店铺身份异常\n恢复任务\nReplica consistency smoke · 淘宝 · 导入店铺\n需要我处理 · 恢复任务 · 店铺账号已确认 · 2026/8/31 19:18:57 · 内容版本 v1\n待补充信息\n恢复任务\n轻云防晒外套 2026 · 淘宝 · taobao 店铺\n可以继续 · 恢复任务 · 店铺账号已确认 · 2026/9/1 15:08:39 · 内容版本 v7\n待审核\n恢复任务\n轻云防晒外套 2026 · 淘宝 · taobao 店铺\n可以继续 · 恢复任务 · 店铺账号已确认 · 2026/9/1 14:37:12 · 内容版本 v5\n待确认制作方案\n恢复任务\n第 1 / 13 页\n上一页下一页",
-      "headings": [
-        "营销任务",
-        "图片任务",
-        "任务队列",
-        "批量任务操作"
-      ],
-      "buttons": [
-        {
-          "text": "跳到主要内容",
-          "disabled": false
-        },
-        {
-          "text": "运营概览",
-          "disabled": false
-        },
-        {
-          "text": "商品与资产",
-          "disabled": false
-        },
-        {
-          "text": "营销任务",
-          "disabled": false
-        },
-        {
-          "text": "发布中心",
-          "disabled": false
-        },
-        {
-          "text": "规则与检查",
-          "disabled": false
-        },
-        {
-          "text": "知识库 品牌资料与规则依据",
-          "disabled": false
-        },
-        {
-          "text": "商品 选择平台商品开始任务",
-          "disabled": false
-        },
-        {
-          "text": "图片 主图、副图与视觉检查",
-          "disabled": false
-        },
-        {
-          "text": "素材 上传并确认权益与事实",
-          "disabled": false
-        },
-        {
-          "text": "帮助与诊断",
-          "disabled": false
-        },
-        {
-          "text": "工作区信息",
-          "disabled": false
-        },
-        {
-          "text": "打开主菜单",
-          "disabled": false
-        },
-        {
-          "text": "系统健康 在线",
-          "disabled": false
-        },
-        {
-          "text": "林",
-          "disabled": false
-        },
-        {
-          "text": "查看健康状态",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "查看任务",
-          "disabled": false
-        },
-        {
-          "text": "选择商品开始任务",
-          "disabled": false
-        },
-        {
-          "text": "打开高级控制",
-          "disabled": false
-        },
-        {
-          "text": "恢复任务",
-          "disabled": false
-        },
-        {
-          "text": "恢复任务",
-          "disabled": false
-        },
-        {
-          "text": "恢复任务",
-          "disabled": false
-        },
-        {
-          "text": "恢复任务",
-          "disabled": false
-        },
-        {
-          "text": "恢复任务",
-          "disabled": false
-        },
-        {
-          "text": "恢复任务",
-          "disabled": true
-        },
-        {
-          "text": "恢复任务",
-          "disabled": true
-        },
-        {
-          "text": "恢复任务",
-          "disabled": true
-        },
-        {
-          "text": "恢复任务",
-          "disabled": true
-        },
-        {
-          "text": "恢复任务",
-          "disabled": false
-        },
-        {
-          "text": "恢复任务",
-          "disabled": false
-        },
-        {
-          "text": "恢复任务",
-          "disabled": false
-        },
-        {
-          "text": "上一页",
-          "disabled": true
-        },
-        {
-          "text": "下一页",
-          "disabled": false
-        }
-      ],
-      "inputs": [
-        {
-          "tag": "INPUT",
-          "type": null,
-          "placeholder": "搜索商品",
-          "label": "搜索商品",
-          "value": ""
-        }
-      ],
-      "dialogs": []
-    },
-    {
-      "section": "发布中心",
-      "url": "http://127.0.0.1:18081/merchant/publish",
-      "title": "Merchant Studio · 商家营销工作台",
-      "text": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n发布中心\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转已就绪。\n查看健康状态\nCONTROLLED WRITES\n每一次线上变更都有确认和回执\n\n“平台已受理”不等于“已生效”。未知状态先对账，不盲目重复提交。\n\n进入已审核任务发布\n请先在商品与资产中选择商品并完成内容审核。\nIN FLIGHT\n进行中的发布\n0 个任务\n暂无真实发布任务完成内容审核后，发布任务会显示在这里。\nRECEIPTS\n最近回执\n暂无回执",
-      "headings": [
-        "发布中心",
-        "每一次线上变更都有确认和回执",
-        "进行中的发布",
-        "最近回执"
-      ],
-      "buttons": [
-        {
-          "text": "跳到主要内容",
-          "disabled": false
-        },
-        {
-          "text": "运营概览",
-          "disabled": false
-        },
-        {
-          "text": "商品与资产",
-          "disabled": false
-        },
-        {
-          "text": "营销任务",
-          "disabled": false
-        },
-        {
-          "text": "发布中心",
-          "disabled": false
-        },
-        {
-          "text": "规则与检查",
-          "disabled": false
-        },
-        {
-          "text": "知识库 品牌资料与规则依据",
-          "disabled": false
-        },
-        {
-          "text": "商品 选择平台商品开始任务",
-          "disabled": false
-        },
-        {
-          "text": "图片 主图、副图与视觉检查",
-          "disabled": false
-        },
-        {
-          "text": "素材 上传并确认权益与事实",
-          "disabled": false
-        },
-        {
-          "text": "帮助与诊断",
-          "disabled": false
-        },
-        {
-          "text": "工作区信息",
-          "disabled": false
-        },
-        {
-          "text": "打开主菜单",
-          "disabled": false
-        },
-        {
-          "text": "系统健康 在线",
-          "disabled": false
-        },
-        {
-          "text": "林",
-          "disabled": false
-        },
-        {
-          "text": "查看健康状态",
-          "disabled": false
-        },
-        {
-          "text": "进入已审核任务发布",
-          "disabled": true
-        }
-      ],
-      "inputs": [
-        {
-          "tag": "INPUT",
-          "type": null,
-          "placeholder": "搜索商品",
-          "label": "搜索商品",
-          "value": ""
-        }
-      ],
-      "dialogs": []
-    },
-    {
-      "section": "规则与检查",
-      "url": "http://127.0.0.1:18081/merchant/rules",
-      "title": "Merchant Studio · 商家营销工作台",
-      "text": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n规则与检查\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转已就绪。\n查看健康状态\nPOLICY & TAXONOMY\n规则库与品类库\n\n先选对品类，再按平台规则生成内容；每条规则都能追溯版本、适用范围和阻断原因。\n\n只读证据中心\n规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。\n生效规则包\n8\n已连接 API · 管理员发布数据 · 当前作用域：全部平台\n已覆盖品类\n3\n已连接 API · 管理员发布数据\n属性模板字段\n13\n来自当前类目目录\n字段映射\n实时读取\n不伪造校验比例\n规则库\n8\n品类库\n3\n规则平台\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n搜索规则或品类\nACTIVE RULE PACKS\n生效规则包\n8 个结果\n服装鞋包事实完整性\napparel-1.0.0 · 修订 1\ncategory\n生效中\nmanual://apparel-facts · 2026-08-20T00:00:00.000Z\n中国电商广告表达\ncn-commerce-1.0.0 · 修订 1\nglobal\n生效中\nmanual://cn-commerce-advertising · 2026-08-22T00:00:00.000Z\n抖音商品内容安全边界\ndouyin-content-1.0.0 · 修订 1\nplatform\n生效中\nmanual://douyin-content-safety · 2026-08-26T00:00:00.000Z\n京东商品写入策略\njd-apparel-write-1.0.0 · 修订 1\nplatform\n生效中\nmanual://jd-write · 2026-08-15T00:00:00.000Z\n拼多多字段映射\npinduoduo-apparel-1.0.0 · 修订 1\nplatform\n生效中\nmanual://pinduoduo-mapping · 2026-08-16T00:00:00.000Z\n淘宝字段映射\ntaobao-apparel-1.0.0 · 修订 1\nplatform\n生效中\nmanual://taobao-mapping · 2026-08-17T00:00:00.000Z\n淘宝/天猫字段映射\ntmall-apparel-1.0.0 · 修订 1\nplatform\n生效中\nmanual://tmall-mapping · 2026-08-17T00:00:00.000Z\n小红书商品内容安全边界\nxiaohongshu-content-1.0.0 · 修订 1\nplatform\n生效中\nmanual://xiaohongshu-content-safety · 2026-08-26T00:00:00.000Z\n已读取 49 项字段检查、0 个交付包\nDELIVERY READINESS\n平台交付状态\n\n只有来源、版本、有效期和批准状态同时完整才显示可用；技术校验详情只用于运营排查。\n\n刷新状态\n媒体规格由平台运营统一维护\n商家工作台不读取平台级能力证据；发布时由服务端按已批准且未过期的规格执行门禁。\n平台字段检查\n抖音 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n拼多多 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n天猫 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n拼多多 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n交付包校验\n尚无交付包校验结果\n未获得完整性和篡改检查结果，禁止宣称交付包有效。\n图片真实性 / 视频成片\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证",
-      "headings": [
-        "规则与检查",
-        "规则库与品类库",
-        "生效规则包",
-        "平台交付状态",
-        "平台字段检查",
-        "交付包校验",
-        "图片真实性 / 视频成片"
-      ],
-      "buttons": [
-        {
-          "text": "跳到主要内容",
-          "disabled": false
-        },
-        {
-          "text": "运营概览",
-          "disabled": false
-        },
-        {
-          "text": "商品与资产",
-          "disabled": false
-        },
-        {
-          "text": "营销任务",
-          "disabled": false
-        },
-        {
-          "text": "发布中心",
-          "disabled": false
-        },
-        {
-          "text": "规则与检查",
-          "disabled": false
-        },
-        {
-          "text": "知识库 品牌资料与规则依据",
-          "disabled": false
-        },
-        {
-          "text": "商品 选择平台商品开始任务",
-          "disabled": false
-        },
-        {
-          "text": "图片 主图、副图与视觉检查",
-          "disabled": false
-        },
-        {
-          "text": "素材 上传并确认权益与事实",
-          "disabled": false
-        },
-        {
-          "text": "帮助与诊断",
-          "disabled": false
-        },
-        {
-          "text": "工作区信息",
-          "disabled": false
-        },
-        {
-          "text": "打开主菜单",
-          "disabled": false
-        },
-        {
-          "text": "系统健康 在线",
-          "disabled": false
-        },
-        {
-          "text": "林",
-          "disabled": false
-        },
-        {
-          "text": "查看健康状态",
-          "disabled": false
-        },
-        {
-          "text": "规则库 8",
-          "disabled": false
-        },
-        {
-          "text": "品类库 3",
-          "disabled": false
-        },
-        {
-          "text": "刷新状态",
-          "disabled": false
-        }
-      ],
-      "inputs": [
-        {
-          "tag": "INPUT",
-          "type": null,
-          "placeholder": "搜索商品",
-          "label": "搜索商品",
-          "value": ""
-        },
-        {
-          "tag": "SELECT",
-          "type": null,
-          "placeholder": null,
-          "label": null,
-          "value": "all"
-        },
-        {
-          "tag": "INPUT",
-          "type": null,
-          "placeholder": "搜索规则名称、平台或版本",
-          "label": null,
-          "value": ""
-        }
-      ],
-      "dialogs": []
-    },
-    {
-      "section": "帮助与诊断",
-      "url": "http://127.0.0.1:18081/merchant/rules",
-      "title": "Merchant Studio · 商家营销工作台",
-      "text": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n规则与检查\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转已就绪。\n查看健康状态\nPOLICY & TAXONOMY\n规则库与品类库\n\n先选对品类，再按平台规则生成内容；每条规则都能追溯版本、适用范围和阻断原因。\n\n只读证据中心\n规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。\n生效规则包\n8\n已连接 API · 管理员发布数据 · 当前作用域：全部平台\n已覆盖品类\n3\n已连接 API · 管理员发布数据\n属性模板字段\n13\n来自当前类目目录\n字段映射\n实时读取\n不伪造校验比例\n规则库\n8\n品类库\n3\n规则平台\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n搜索规则或品类\nACTIVE RULE PACKS\n生效规则包\n8 个结果\n服装鞋包事实完整性\napparel-1.0.0 · 修订 1\ncategory\n生效中\nmanual://apparel-facts · 2026-08-20T00:00:00.000Z\n中国电商广告表达\ncn-commerce-1.0.0 · 修订 1\nglobal\n生效中\nmanual://cn-commerce-advertising · 2026-08-22T00:00:00.000Z\n抖音商品内容安全边界\ndouyin-content-1.0.0 · 修订 1\nplatform\n生效中\nmanual://douyin-content-safety · 2026-08-26T00:00:00.000Z\n京东商品写入策略\njd-apparel-write-1.0.0 · 修订 1\nplatform\n生效中\nmanual://jd-write · 2026-08-15T00:00:00.000Z\n拼多多字段映射\npinduoduo-apparel-1.0.0 · 修订 1\nplatform\n生效中\nmanual://pinduoduo-mapping · 2026-08-16T00:00:00.000Z\n淘宝字段映射\ntaobao-apparel-1.0.0 · 修订 1\nplatform\n生效中\nmanual://taobao-mapping · 2026-08-17T00:00:00.000Z\n淘宝/天猫字段映射\ntmall-apparel-1.0.0 · 修订 1\nplatform\n生效中\nmanual://tmall-mapping · 2026-08-17T00:00:00.000Z\n小红书商品内容安全边界\nxiaohongshu-content-1.0.0 · 修订 1\nplatform\n生效中\nmanual://xiaohongshu-content-safety · 2026-08-26T00:00:00.000Z\n已读取 49 项字段检查、0 个交付包\nDELIVERY READINESS\n平台交付状态\n\n只有来源、版本、有效期和批准状态同时完整才显示可用；技术校验详情只用于运营排查。\n\n刷新状态\n媒体规格由平台运营统一维护\n商家工作台不读取平台级能力证据；发布时由服务端按已批准且未过期的规格执行门禁。\n平台字段检查\n抖音 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n拼多多 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n天猫 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n拼多多 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n交付包校验\n尚无交付包校验结果\n未获得完整性和篡改检查结果，禁止宣称交付包有效。\n图片真实性 / 视频成片\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\nHELP & DIAGNOSTICS\n如何使用 Merchant Studio\n\n先在商品与资产中确认平台商品，再创建营销任务。完成事实确认、方向选择、内容审核后，才能进入发布确认。\n\n商品与资产：绑定平台店铺、同步商品和管理素材\n营销任务：确认事实、生成文案、查看规则和版本记录\n发布中心：只展示已审核任务，并在提交前再次确认\n知道了",
-      "headings": [
-        "规则与检查",
-        "规则库与品类库",
-        "生效规则包",
-        "平台交付状态",
-        "平台字段检查",
-        "交付包校验",
-        "图片真实性 / 视频成片",
-        "如何使用 Merchant Studio"
-      ],
-      "buttons": [
-        {
-          "text": "跳到主要内容",
-          "disabled": false
-        },
-        {
-          "text": "运营概览",
-          "disabled": false
-        },
-        {
-          "text": "商品与资产",
-          "disabled": false
-        },
-        {
-          "text": "营销任务",
-          "disabled": false
-        },
-        {
-          "text": "发布中心",
-          "disabled": false
-        },
-        {
-          "text": "规则与检查",
-          "disabled": false
-        },
-        {
-          "text": "知识库 品牌资料与规则依据",
-          "disabled": false
-        },
-        {
-          "text": "商品 选择平台商品开始任务",
-          "disabled": false
-        },
-        {
-          "text": "图片 主图、副图与视觉检查",
-          "disabled": false
-        },
-        {
-          "text": "素材 上传并确认权益与事实",
-          "disabled": false
-        },
-        {
-          "text": "帮助与诊断",
-          "disabled": false
-        },
-        {
-          "text": "工作区信息",
-          "disabled": false
-        },
-        {
-          "text": "打开主菜单",
-          "disabled": false
-        },
-        {
-          "text": "系统健康 在线",
-          "disabled": false
-        },
-        {
-          "text": "林",
-          "disabled": false
-        },
-        {
-          "text": "查看健康状态",
-          "disabled": false
-        },
-        {
-          "text": "规则库 8",
-          "disabled": false
-        },
-        {
-          "text": "品类库 3",
-          "disabled": false
-        },
-        {
-          "text": "刷新状态",
-          "disabled": false
-        },
-        {
-          "text": "关闭面板",
-          "disabled": false
-        },
-        {
-          "text": "知道了",
-          "disabled": false
-        }
-      ],
-      "inputs": [
-        {
-          "tag": "INPUT",
-          "type": null,
-          "placeholder": "搜索商品",
-          "label": "搜索商品",
-          "value": ""
-        },
-        {
-          "tag": "SELECT",
-          "type": null,
-          "placeholder": null,
-          "label": null,
-          "value": "all"
-        },
-        {
-          "tag": "INPUT",
-          "type": null,
-          "placeholder": "搜索规则名称、平台或版本",
-          "label": null,
-          "value": ""
-        }
-      ],
-      "dialogs": [
-        "HELP & DIAGNOSTICS如何使用 Merchant Studio先在商品与资产中确认平台商品，再创建营销任务。完成事实确认、方向选择、内容审核后，才能进入发布确认。商品与资产：绑定平台店铺、同步商品和管理素材营销任务：确认事实、生成文案、查看规则和版本记录发布中心：只展示已审核任务，并在提交前再次确认知道了"
-      ]
-    },
-    {
-      "section": "工作区信息",
-      "url": "http://127.0.0.1:18081/merchant/rules",
-      "title": "Merchant Studio · 商家营销工作台",
-      "text": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n规则与检查\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转已就绪。\n查看健康状态\nPOLICY & TAXONOMY\n规则库与品类库\n\n先选对品类，再按平台规则生成内容；每条规则都能追溯版本、适用范围和阻断原因。\n\n只读证据中心\n规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。\n生效规则包\n8\n已连接 API · 管理员发布数据 · 当前作用域：全部平台\n已覆盖品类\n3\n已连接 API · 管理员发布数据\n属性模板字段\n13\n来自当前类目目录\n字段映射\n实时读取\n不伪造校验比例\n规则库\n8\n品类库\n3\n规则平台\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n搜索规则或品类\nACTIVE RULE PACKS\n生效规则包\n8 个结果\n服装鞋包事实完整性\napparel-1.0.0 · 修订 1\ncategory\n生效中\nmanual://apparel-facts · 2026-08-20T00:00:00.000Z\n中国电商广告表达\ncn-commerce-1.0.0 · 修订 1\nglobal\n生效中\nmanual://cn-commerce-advertising · 2026-08-22T00:00:00.000Z\n抖音商品内容安全边界\ndouyin-content-1.0.0 · 修订 1\nplatform\n生效中\nmanual://douyin-content-safety · 2026-08-26T00:00:00.000Z\n京东商品写入策略\njd-apparel-write-1.0.0 · 修订 1\nplatform\n生效中\nmanual://jd-write · 2026-08-15T00:00:00.000Z\n拼多多字段映射\npinduoduo-apparel-1.0.0 · 修订 1\nplatform\n生效中\nmanual://pinduoduo-mapping · 2026-08-16T00:00:00.000Z\n淘宝字段映射\ntaobao-apparel-1.0.0 · 修订 1\nplatform\n生效中\nmanual://taobao-mapping · 2026-08-17T00:00:00.000Z\n淘宝/天猫字段映射\ntmall-apparel-1.0.0 · 修订 1\nplatform\n生效中\nmanual://tmall-mapping · 2026-08-17T00:00:00.000Z\n小红书商品内容安全边界\nxiaohongshu-content-1.0.0 · 修订 1\nplatform\n生效中\nmanual://xiaohongshu-content-safety · 2026-08-26T00:00:00.000Z\n已读取 49 项字段检查、0 个交付包\nDELIVERY READINESS\n平台交付状态\n\n只有来源、版本、有效期和批准状态同时完整才显示可用；技术校验详情只用于运营排查。\n\n刷新状态\n媒体规格由平台运营统一维护\n商家工作台不读取平台级能力证据；发布时由服务端按已批准且未过期的规格执行门禁。\n平台字段检查\n抖音 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n拼多多 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n天猫 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n拼多多 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n京东 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n淘宝 · 商品字段\n尚无持久化字段映射预检审批 · 下一步：执行 platform.mapping.preflight 并完成商家确认\n已阻断\n交付包校验\n尚无交付包校验结果\n未获得完整性和篡改检查结果，禁止宣称交付包有效。\n图片真实性 / 视频成片\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\n视频成片\n验证依据未提供\n无可展示的验证说明\n未验证\nWORKSPACE INFORMATION\n工作区信息\n\n这里是只读运行信息，不会在浏览器中修改真实凭证、模型中转站或生产权限；这些配置由服务端安全管理。\n\n工作区：ws_demo\nAPI 地址：/api\n数据范围：当前工作区隔离；不会跨店铺复用商品事实\n知道了",
-      "headings": [
-        "规则与检查",
-        "规则库与品类库",
-        "生效规则包",
-        "平台交付状态",
-        "平台字段检查",
-        "交付包校验",
-        "图片真实性 / 视频成片",
-        "工作区信息"
-      ],
-      "buttons": [
-        {
-          "text": "跳到主要内容",
-          "disabled": false
-        },
-        {
-          "text": "运营概览",
-          "disabled": false
-        },
-        {
-          "text": "商品与资产",
-          "disabled": false
-        },
-        {
-          "text": "营销任务",
-          "disabled": false
-        },
-        {
-          "text": "发布中心",
-          "disabled": false
-        },
-        {
-          "text": "规则与检查",
-          "disabled": false
-        },
-        {
-          "text": "知识库 品牌资料与规则依据",
-          "disabled": false
-        },
-        {
-          "text": "商品 选择平台商品开始任务",
-          "disabled": false
-        },
-        {
-          "text": "图片 主图、副图与视觉检查",
-          "disabled": false
-        },
-        {
-          "text": "素材 上传并确认权益与事实",
-          "disabled": false
-        },
-        {
-          "text": "帮助与诊断",
-          "disabled": false
-        },
-        {
-          "text": "工作区信息",
-          "disabled": false
-        },
-        {
-          "text": "打开主菜单",
-          "disabled": false
-        },
-        {
-          "text": "系统健康 在线",
-          "disabled": false
-        },
-        {
-          "text": "林",
-          "disabled": false
-        },
-        {
-          "text": "查看健康状态",
-          "disabled": false
-        },
-        {
-          "text": "规则库 8",
-          "disabled": false
-        },
-        {
-          "text": "品类库 3",
-          "disabled": false
-        },
-        {
-          "text": "刷新状态",
-          "disabled": false
-        },
-        {
-          "text": "关闭面板",
-          "disabled": false
-        },
-        {
-          "text": "知道了",
-          "disabled": false
-        }
-      ],
-      "inputs": [
-        {
-          "tag": "INPUT",
-          "type": null,
-          "placeholder": "搜索商品",
-          "label": "搜索商品",
-          "value": ""
-        },
-        {
-          "tag": "SELECT",
-          "type": null,
-          "placeholder": null,
-          "label": null,
-          "value": "all"
-        },
-        {
-          "tag": "INPUT",
-          "type": null,
-          "placeholder": "搜索规则名称、平台或版本",
-          "label": null,
-          "value": ""
-        }
-      ],
-      "dialogs": [
-        "WORKSPACE INFORMATION工作区信息这里是只读运行信息，不会在浏览器中修改真实凭证、模型中转站或生产权限；这些配置由服务端安全管理。工作区：ws_demoAPI 地址：/api数据范围：当前工作区隔离；不会跨店铺复用商品事实知道了"
-      ]
-    },
-    {
-      "section": "全局搜索",
-      "url": "http://127.0.0.1:18081/merchant/overview",
-      "title": "Merchant Studio · 商家营销工作台",
-      "text": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n运营概览\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转已就绪。\n查看健康状态\n工作区数据已读取\n把商品事实变成\n可放心发布的内容\n\n同步商品、确认事实、生成营销内容，并在发布前看清每一处变化。\n\n选择商品开始任务\n同步全部店铺\nAI\n事实确认\n内容生成\n检查发布\nNEW SESSION\n从你已有的内容开始\n\n按“知识库 → 商品 → 图片/素材”的顺序准备内容；每个入口都会保留到地址栏。\n\n1\n知识库\n品牌资料与规则依据\n进入知识库\n2\n商品\n选择平台商品开始任务\n进入商品\n3\n图片\n主图、副图与视觉检查\n进入图片\n4\n素材\n上传并确认权益与事实\n进入素材\n已连接店铺\n7\n2 家需处理或未就绪\n已批准内容\n0\n当前工作区累计\n平均首稿耗时\n—\n当前接口暂无耗时统计\n需处理问题\n75\n其中 50 项高风险\nACTION QUEUE\n优先处理的问题\n查看商品与问题\n1\n店铺授权需重新连接\n小红书 · 小红书未验证 Fixture · refresh_required\n在交互会话中重新发起官方授权\n查看并处理\n2\n任务 task_5898f03b-3480-45e0-a849-0ab43075d5f2 存在内容阻断\n淘宝 · taobao 店铺 等 3 个店铺名 · review_required\n在交会话中修正内容并重新审核\n查看并处理\n3\n任务 task_128bbaea-94fb-48f6-8b54-1bf9e581a5f8 存在内容阻断\n淘宝 · taobao 店铺 等 3 个店铺名 · review_required\n在交会话中修正内容并重新审核\n查看并处理\n还有 72 项问题，已按优先级排序。\nPLUGIN WALLET\n创意点与能力状态\n可用\n可用创意点\n20,000点\n\n模型额度可用，具体生成仍受内容与平台门禁约束。\n\n可用\n生成、OCR、图片和视频按服务端确认的创意点直接扣费；余额未知或不足时不会调用模型。\n余额\n可用\n服务端尚未返回说明。\n套餐剩余次数\n可用\n服务端尚未返回说明。\n生成能力\n暂不可生成\n服务端尚未返回说明。\n平台发布能力\n暂不可发布\n服务端尚未返回说明。\nCONNECTIONS\n平台连接\n管理连接\n京\n京东\njd 店铺\n可读取\n可同步\n同步\n撤销\n淘\n淘宝\ntaobao 店铺 等 3 个店铺名\n可读取\n可同步\n同步\n撤销\n淘\n淘宝\ntaobao 店铺\n可读取\n可同步\n同步\n撤销\n淘\n淘宝\ntaobao 店铺\n可读取\n可同步\n同步\n撤销\n天\n天猫\ntmall 店铺\n可读取\n可同步\n同步\n撤销\n拼\n拼多多\npinduoduo 店铺\n可读取\n可同步\n同步\n撤销\n小\n小红书\n小红书未验证 Fixture\n连接状态待确认\n暂不可读取\n抖\n抖音\ndouyin 店铺\n可读取\n可同步\n同步\n撤销\nRECENT\n最近动态\n查看全部\n淘宝同步\n1 项 · 未发现失败项\n已完成\n京东同步\n1 项 · 未发现失败项\n已完成\n京东同步\n1 项 · 未发现失败项\n已完成\n拼多多同步\n1 项 · 未发现失败项\n已完成\nSYNC RECOVERY\n同步任务与失败项\n刷新\n当前同步任务没有失败项\nCAPABILITY EVIDENCE\n平台能力证据\n平台能力证据属于平台运营工作台；商家工作台仅展示店铺授权和交付就绪状态。",
-      "headings": [
-        "运营概览",
-        "把商品事实变成可放心发布的内容",
-        "从你已有的内容开始",
-        "优先处理的问题",
-        "创意点与能力状态",
-        "平台连接",
-        "最近动态",
-        "同步任务与失败项",
-        "平台能力证据"
-      ],
-      "buttons": [
-        {
-          "text": "跳到主要内容",
-          "disabled": false
-        },
-        {
-          "text": "运营概览",
-          "disabled": false
-        },
-        {
-          "text": "商品与资产",
-          "disabled": false
-        },
-        {
-          "text": "营销任务",
-          "disabled": false
-        },
-        {
-          "text": "发布中心",
-          "disabled": false
-        },
-        {
-          "text": "规则与检查",
-          "disabled": false
-        },
-        {
-          "text": "知识库 品牌资料与规则依据",
-          "disabled": false
-        },
-        {
-          "text": "商品 选择平台商品开始任务",
-          "disabled": false
-        },
-        {
-          "text": "图片 主图、副图与视觉检查",
-          "disabled": false
-        },
-        {
-          "text": "素材 上传并确认权益与事实",
-          "disabled": false
-        },
-        {
-          "text": "帮助与诊断",
-          "disabled": false
-        },
-        {
-          "text": "工作区信息",
-          "disabled": false
-        },
-        {
-          "text": "打开主菜单",
-          "disabled": false
-        },
-        {
-          "text": "系统健康 在线",
-          "disabled": false
-        },
-        {
-          "text": "林",
-          "disabled": false
-        },
-        {
-          "text": "查看健康状态",
-          "disabled": false
-        },
-        {
-          "text": "选择商品开始任务",
-          "disabled": false
-        },
-        {
-          "text": "同步全部店铺",
-          "disabled": false
-        },
-        {
-          "text": "1 知识库 品牌资料与规则依据 进入知识库",
-          "disabled": false
-        },
-        {
-          "text": "2 商品 选择平台商品开始任务 进入商品",
-          "disabled": false
-        },
-        {
-          "text": "3 图片 主图、副图与视觉检查 进入图片",
-          "disabled": false
-        },
-        {
-          "text": "4 素材 上传并确认权益与事实 进入素材",
-          "disabled": false
-        },
-        {
-          "text": "查看商品与问题",
-          "disabled": false
-        },
-        {
-          "text": "查看并处理",
-          "disabled": false
-        },
-        {
-          "text": "查看并处理",
-          "disabled": false
-        },
-        {
-          "text": "查看并处理",
-          "disabled": false
-        },
-        {
-          "text": "管理连接",
-          "disabled": false
-        },
-        {
-          "text": "同步",
-          "disabled": false
-        },
-        {
-          "text": "撤销",
-          "disabled": false
-        },
-        {
-          "text": "同步",
-          "disabled": false
-        },
-        {
-          "text": "撤销",
-          "disabled": false
-        },
-        {
-          "text": "同步",
-          "disabled": false
-        },
-        {
-          "text": "撤销",
-          "disabled": false
-        },
-        {
-          "text": "同步",
-          "disabled": false
-        },
-        {
-          "text": "撤销",
-          "disabled": false
-        },
-        {
-          "text": "同步",
-          "disabled": false
-        },
-        {
-          "text": "撤销",
-          "disabled": false
-        },
-        {
-          "text": "同步",
-          "disabled": false
-        },
-        {
-          "text": "撤销",
-          "disabled": false
-        },
-        {
-          "text": "同步",
-          "disabled": false
-        },
-        {
-          "text": "撤销",
-          "disabled": false
-        },
-        {
-          "text": "查看全部",
-          "disabled": false
-        },
-        {
-          "text": "刷新",
-          "disabled": false
-        }
-      ],
-      "inputs": [
-        {
-          "tag": "INPUT",
-          "type": null,
-          "placeholder": "搜索商品",
-          "label": "搜索商品",
           "value": "轻云"
+        },
+        {
+          "tag": "SELECT",
+          "type": null,
+          "placeholder": null,
+          "label": null,
+          "value": ""
         }
       ],
       "dialogs": []
     }
   ],
-  "consoleMessages": [],
+  "consoleMessages": [
+    {
+      "section": "启动",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    }
+  ],
   "requestFailures": [],
-  "badResponses": []
+  "badResponses": [
+    {
+      "section": "启动",
+      "method": "GET",
+      "url": "http://127.0.0.1:28181/api/v1/auth/session",
+      "status": 401,
+      "requestBody": null,
+      "body": "{\"request_id\":\"req_062887dd-8ebf-4f41-8509-3e5fb0c59b5a\",\"trace_id\":\"req_062887dd-8ebf-4f41-8509-3e5fb0c59b5a\",\"workspace_id\":\"ws_demo\",\"data\":null,\"warnings\":[],\"next_actions\":[],\"error\":{\"code\":\"AUTH_SESSION_INVALID\",\"message\":\"会话已过期，请重新登录\"}}"
+    }
+  ]
 }

@@ -46,6 +46,23 @@ export function validateSpreadsheetImportMode(
 
 const spreadsheetMime = (name: string) => name.toLowerCase().endsWith('.csv') ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
+/**
+ * Preview rows for the confirmation table.
+ *
+ * Every row resolves its own store account. The table used to look the account
+ * up by product title, so two rows sharing a title — the same product listed on
+ * a second platform, or the same name twice in one sheet — both rendered the
+ * first product's account: the merchant is asked to verify this table before a
+ * real-store import, and it named a store that row would not be imported into.
+ * The label lives on the row so the table cannot re-derive it.
+ */
+export function spreadsheetPreviewRows(products: SpreadsheetProduct[], mode: SpreadsheetImportMode) {
+  return products.flatMap((product, index) => (product.skus?.length
+    ? product.skus.map((sku) => ({ key: `${index}-${sku.id}`, title: product.title, sku: sku.id, price: sku.price, stock: sku.stock, accountId: product.account_id ?? '' }))
+    : [{ key: `${index}`, title: product.title, sku: '—', price: product.price, stock: product.stock, accountId: product.account_id ?? '' }]))
+    .map((row) => ({ ...row, storeLabel: row.accountId || (mode === 'draft_only' ? '仅草稿' : '待填写') }))
+}
+
 export function ProductSpreadsheetImport({
   baseUrl,
   accounts,
@@ -149,7 +166,7 @@ export function ProductSpreadsheetImport({
     }
   }
 
-  const rows = products.flatMap((product, index) => (product.skus?.length ? product.skus.map((sku) => ({ key: `${index}-${sku.id}`, title: product.title, sku: sku.id, price: sku.price, stock: sku.stock })) : [{ key: `${index}`, title: product.title, sku: '—', price: product.price, stock: product.stock }]))
+  const rows = spreadsheetPreviewRows(products, mode)
   const storeModeBlocked = !accounts.some((account) => account.readEnabled && account.accountId)
 
   return <section className="table-panel merchant-spreadsheet-import" data-testid="merchant-product-spreadsheet-import" aria-labelledby="merchant-spreadsheet-import-title">
@@ -165,7 +182,7 @@ export function ProductSpreadsheetImport({
       {asset && <p className="source-note">当前文件：<b>{asset.name}</b> · revision {asset.revision} · 已确认素材事实后才能提交</p>}
       {error && <div ref={errorRef} id="merchant-spreadsheet-import-error" className="error-notice" role="alert" tabIndex={-1} aria-live="assertive"><b>无法导入</b><span>{error}</span></div>}
       {phase && <div className="info-notice" role="status" aria-live="polite">{phase}</div>}
-      {!!rows.length && <><div className="import-preview-summary"><b>预览：{products.length} 个商品，{rows.length} 个 SKU / 商品记录</b><span>{mode === 'draft_only' ? '草稿模式：不会写入任何平台店铺' : '真实店铺模式：按表格中的店铺账号绑定'}</span></div><div className="table-wrap"><table><thead><tr><th>商品</th><th>SKU</th><th>店铺账号</th><th>价格（元）</th><th>库存</th></tr></thead><tbody>{rows.map((row) => <tr key={row.key}><td>{row.title}</td><td>{row.sku}</td><td>{products.find((product) => product.title === row.title)?.account_id || (mode === 'draft_only' ? '仅草稿' : '待填写')}</td><td>{row.price}</td><td>{row.stock}</td></tr>)}</tbody></table></div><button className="primary" type="button" onClick={() => void commit()} disabled={busy || !!importedIds.length || !canWrite}>{importedIds.length ? '已提交' : mode === 'draft_only' ? '确认并创建草稿' : '确认并导入真实店铺'}</button></>}
+      {!!rows.length && <><div className="import-preview-summary"><b>预览：{products.length} 个商品，{rows.length} 个 SKU / 商品记录</b><span>{mode === 'draft_only' ? '草稿模式：不会写入任何平台店铺' : '真实店铺模式：按表格中的店铺账号绑定'}</span></div><div className="table-wrap"><table><thead><tr><th>商品</th><th>SKU</th><th>店铺账号</th><th>价格（元）</th><th>库存</th></tr></thead><tbody>{rows.map((row) => <tr key={row.key}><td>{row.title}</td><td>{row.sku}</td><td>{row.storeLabel}</td><td>{row.price}</td><td>{row.stock}</td></tr>)}</tbody></table></div><button className="primary" type="button" onClick={() => void commit()} disabled={busy || !!importedIds.length || !canWrite}>{importedIds.length ? '已提交' : mode === 'draft_only' ? '确认并创建草稿' : '确认并导入真实店铺'}</button></>}
       {!!importedIds.length && <p className="source-note">商品编号：{importedIds.join('、')}。请在商品目录中继续审核事实、知识权益和索引状态。</p>}
     </div>
   </section>

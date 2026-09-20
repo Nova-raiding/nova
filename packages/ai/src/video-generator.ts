@@ -1,7 +1,7 @@
 import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
-import { assertProviderResponseAccepted, ProviderRequestFailedError, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
+import { assertProviderResponseAccepted, ProviderRequestFailedError, providerIdempotencyKey, resolveProviderTimeoutMs, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface VideoGenerationInput {
@@ -292,7 +292,7 @@ export function createVideoGeneratorFromEnv(source: Record<string, string | unde
     ...(source.VIDEO_GENERATION_PATH?.trim() ? { path: source.VIDEO_GENERATION_PATH.trim() } : {}),
     ...(source.VIDEO_STATUS_PATH?.trim() ? { statusPath: source.VIDEO_STATUS_PATH.trim() } : {}),
     durationSeconds: videoDurationSeconds(source.VIDEO_DURATION_SECONDS),
-    timeoutMs: Number(source.VIDEO_TIMEOUT_MS ?? 180_000),
+    timeoutMs: resolveProviderTimeoutMs(source.VIDEO_TIMEOUT_MS, 180_000, 'VIDEO_TIMEOUT_MS'),
     ...(usageSink ? { usageSink } : {}),
     ...(beforeRequest ? { beforeRequest } : {}),
   })

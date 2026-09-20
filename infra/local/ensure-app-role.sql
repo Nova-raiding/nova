@@ -1,3 +1,17 @@
+-- ROLE PASSWORDS ARE SET ONLY WHEN THE ROLE IS CREATED.
+--
+-- This file is not local-only: the ECS production chain mounts it into the
+-- migrate service (infra/local/docker-compose.ecs-production-migration.yml) and
+-- runs it before and after every migration. The CREATE branch below is the
+-- local acceptance identity, and re-running it locally is a no-op because the
+-- role already holds that password. The ELSE branch used to `ALTER ROLE ...
+-- PASSWORD '<local value>'` as well, which meant a deploy against a database
+-- whose runtime credentials were provisioned out of band (the only shape
+-- `deploy-preflight-ecs.sh` and validate-ecs-production-compose.mjs accept)
+-- silently reset merchant_app/merchant_ops/merchant_alert_receiver to the
+-- passwords published in this repository, after which the API's own
+-- DATABASE_URL could no longer authenticate. An existing role keeps its
+-- credential and only has its privilege attributes normalized here.
 BEGIN;
 SELECT pg_advisory_xact_lock(731942852);
 
@@ -7,8 +21,7 @@ BEGIN
     CREATE ROLE merchant_app LOGIN PASSWORD 'merchant_app_local_only'
       NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
   ELSE
-    ALTER ROLE merchant_app LOGIN PASSWORD 'merchant_app_local_only'
-      NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+    ALTER ROLE merchant_app NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
   END IF;
 END
 $$;
@@ -22,8 +35,7 @@ BEGIN
     CREATE ROLE merchant_alert_receiver LOGIN PASSWORD 'merchant_alert_receiver_local_only'
       NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
   ELSE
-    ALTER ROLE merchant_alert_receiver LOGIN PASSWORD 'merchant_alert_receiver_local_only'
-      NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+    ALTER ROLE merchant_alert_receiver NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
   END IF;
 END
 $$;
@@ -198,8 +210,9 @@ BEGIN
     CREATE ROLE merchant_ops LOGIN PASSWORD 'merchant_ops_local_only'
       NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
   ELSE
-    ALTER ROLE merchant_ops LOGIN PASSWORD 'merchant_ops_local_only'
-      NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+    -- Same rule as the other two roles: normalize the attributes, never the
+    -- credential. See the header note.
+    ALTER ROLE merchant_ops NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
   END IF;
 END
 $$;

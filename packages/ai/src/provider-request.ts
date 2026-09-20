@@ -83,6 +83,29 @@ export class ProviderRequestFailedError extends Error {
 
 const MAX_RETRY_AFTER_MS = 60_000
 
+/** `setTimeout` treats any delay outside this range as 1ms. */
+const MAX_PROVIDER_TIMEOUT_MS = 2_147_483_647
+
+/**
+ * Resolve a provider timeout from environment configuration.
+ *
+ * An unparsable, zero, negative or out-of-range value would otherwise reach
+ * `setTimeout` and abort the request it is meant to bound within about a
+ * millisecond. The adapters classify that client-side abort as an ambiguous
+ * provider outcome, so a typo would park every call for reconciliation
+ * (`providerSucceeded` + `reconciliationRequired`) instead of failing as local
+ * configuration. An empty value keeps meaning "unset" and uses the fallback.
+ */
+export function resolveProviderTimeoutMs(value: string | number | undefined, fallback: number, name: string): number {
+  const text = typeof value === 'number' ? String(value) : value?.trim()
+  if (!text) return fallback
+  const parsed = Number(text)
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > MAX_PROVIDER_TIMEOUT_MS) {
+    throw new Error(`PROVIDER_TIMEOUT_INVALID: ${name} must be an integer between 1 and ${MAX_PROVIDER_TIMEOUT_MS} milliseconds`)
+  }
+  return parsed
+}
+
 export interface ProviderRetryOptions {
   /** Total attempts, including the initial request. Never allow unbounded retries. */
   maxAttempts?: number

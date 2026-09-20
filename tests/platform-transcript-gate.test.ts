@@ -8,20 +8,31 @@ import { validatePlatformExchangeTranscripts } from './platform-transcript-gate.
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
-function fixture() {
+/**
+ * The read method the shipped connector dispatches per platform, as probed
+ * through the real signers: the router gateways fold the credential into their
+ * signed parameter set and must carry a body, the bearer platforms keep it in
+ * `authorization` and dispatch GET. Whichever the fixture records, it is what
+ * the protected verifier's policy has to agree with.
+ */
+const dispatchedReadMethod: Record<string, string> = { jd: 'POST', taobao: 'POST', tmall: 'POST', pinduoduo: 'POST', xiaohongshu: 'GET', douyin: 'GET' }
+
+function fixture(platform = 'jd', overrideReadMethod?: string) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'platform-transcript-gate-'))); roots.push(root)
   const observedAt = new Date(Date.now() - 1_000).toISOString()
+  const workspaceId = `ws_${platform}`, accountId = `acct_${platform}`, origin = `https://api.${platform}.example`
   const exchanges = ['exchange_code', 'refresh_credential', 'sync_products', 'create_product', 'update_product', 'query_write', 'upload_media', 'revoke'].map(operation => ({
-    platform: 'jd', operation, workspaceId: 'ws_jd', accountId: 'acct_jd', method: operation === 'sync_products' ? 'GET' : 'POST',
-    origin: 'https://api.jd.example', status: 200, observedAt, transport: 'fetch',
+    platform, operation, workspaceId, accountId,
+    method: operation === 'sync_products' ? (overrideReadMethod ?? dispatchedReadMethod[platform] ?? 'POST') : 'POST',
+    origin, status: 200, observedAt, transport: 'fetch',
     ...(['create_product', 'update_product', 'query_write'].includes(operation) ? { providerRequestId: `provider-${operation}` } : {}),
   }))
-  const transcript = { schema_version: 'provider-exchanges/1', release_id: 'release-1', platform: 'jd', workspace_id: 'ws_jd', account_id: 'acct_jd', exchanges }
-  const path = join(root, 'capability.json.jd.exchanges.json')
+  const transcript = { schema_version: 'provider-exchanges/1', release_id: 'release-1', platform, workspace_id: workspaceId, account_id: accountId, exchanges }
+  const path = join(root, `capability.json.${platform}.exchanges.json`)
   const bytes = Buffer.from(`${JSON.stringify(transcript)}\n`)
   writeFileSync(path, bytes)
-  const ref = `artifact://production/capability.json.jd.exchanges.json#${createHash('sha256').update(bytes).digest('hex')}`
-  const document = { release_id: 'release-1', generated_at: new Date().toISOString(), platforms: [{ platform: 'jd', tenant_context: { workspace_id: 'ws_jd', account_id: 'acct_jd' }, exchange_transcript_ref: ref }] }
+  const ref = `artifact://production/capability.json.${platform}.exchanges.json#${createHash('sha256').update(bytes).digest('hex')}`
+  const document = { release_id: 'release-1', generated_at: new Date().toISOString(), platforms: [{ platform, tenant_context: { workspace_id: workspaceId, account_id: accountId }, exchange_transcript_ref: ref }] }
   return { root, path, bytes, document, transcript, observedAt }
 }
 
@@ -63,7 +74,7 @@ describe('platform transcript metadata gate', () => {
   })
   it('matches a scoped negative response to the claimed canary error evidence', () => {
     const input = fixture()
-    input.transcript.exchanges.push({ platform: 'jd', operation: 'sync_products', workspaceId: 'ws_jd', accountId: 'acct_jd', method: 'GET', origin: 'https://api.jd.example', status: 422, observedAt: input.observedAt, providerRequestId: 'negative-1', errorCode: 'REMOTE_ERROR', errorMessage: 'platform HTTP 422', retryable: false, transport: 'fetch' } as typeof input.transcript.exchanges[number])
+    input.transcript.exchanges.push({ platform: 'jd', operation: 'sync_products', workspaceId: 'ws_jd', accountId: 'acct_jd', method: 'POST', origin: 'https://api.jd.example', status: 422, observedAt: input.observedAt, providerRequestId: 'negative-1', errorCode: 'REMOTE_ERROR', errorMessage: 'platform HTTP 422', retryable: false, transport: 'fetch' } as typeof input.transcript.exchanges[number])
     const bytes = Buffer.from(JSON.stringify(input.transcript)); writeFileSync(input.path, bytes)
     input.document.platforms[0]!.exchange_transcript_ref = `artifact://production/capability.json.jd.exchanges.json#${createHash('sha256').update(bytes).digest('hex')}`
     Object.assign(input.document.platforms[0]!, { capabilities: { read: { state: 'production_canary', error_evidence: { request_id: 'negative-1', code: 'REMOTE_ERROR', message: 'platform HTTP 422', observed_at: input.observedAt, retryable: false } } } })
@@ -78,13 +89,35 @@ describe('platform transcript metadata gate', () => {
     const laterObservedAt = new Date(Date.parse(input.observedAt) + 1_000).toISOString()
     input.document.generated_at = new Date(Date.parse(laterObservedAt) + 1_000).toISOString()
     input.transcript.exchanges.push({ platform: 'jd', operation: 'exchange_code', workspaceId: 'ws_jd', accountId: 'acct_jd', method: 'POST', origin: 'https://api.jd.example', status: 200, observedAt: input.observedAt, transport: 'fetch' })
-    input.transcript.exchanges.push({ platform: 'jd', operation: 'sync_products', workspaceId: 'ws_jd', accountId: 'acct_jd', method: 'GET', origin: 'https://api.jd.example', status: 422, observedAt: laterObservedAt, providerRequestId: 'negative-1', errorCode: 'VALIDATION_FAILED', errorMessage: 'HTTP connector jd request failed', retryable: false, transport: 'fetch' } as typeof input.transcript.exchanges[number])
+    input.transcript.exchanges.push({ platform: 'jd', operation: 'sync_products', workspaceId: 'ws_jd', accountId: 'acct_jd', method: 'POST', origin: 'https://api.jd.example', status: 422, observedAt: laterObservedAt, providerRequestId: 'negative-1', errorCode: 'VALIDATION_FAILED', errorMessage: 'HTTP connector jd request failed', retryable: false, transport: 'fetch' } as typeof input.transcript.exchanges[number])
     bytes = Buffer.from(JSON.stringify(input.transcript)); writeFileSync(input.path, bytes)
     input.document.platforms[0]!.exchange_transcript_ref = `artifact://production/capability.json.jd.exchanges.json#${createHash('sha256').update(bytes).digest('hex')}`
     const error_evidence = { request_id: 'negative-1', code: 'VALIDATION_FAILED', message: 'HTTP connector jd request failed', observed_at: laterObservedAt, retryable: false }
     Object.assign(input.document.platforms[0]!, { capabilities: { read: { state: 'production_canary', error_evidence }, full_sync: { state: 'production_canary', error_evidence } } })
     expect(validatePlatformExchangeTranscripts(input.document, input.root)).toContain('jd.full_sync production canary error evidence lacks matching provider failure')
   })
+  it('accepts the read method the platform signer dispatches and refuses a contradiction', () => {
+    // A bearer platform's read really is a GET — that is the shape
+    // `HttpPlatformConnector.syncProducts` dispatches for its `authorization`
+    // credential — so the gate has to accept it instead of driving operators to
+    // record a request the connector never sends. The router half has to keep
+    // biting: a GET read there is the leak the rule exists for, and a bodyless
+    // write is not a shape the signer can produce either.
+    const douyin = fixture('douyin')
+    expect(validatePlatformExchangeTranscripts(douyin.document, douyin.root)).toEqual([])
+    const xiaohongshu = fixture('xiaohongshu')
+    expect(validatePlatformExchangeTranscripts(xiaohongshu.document, xiaohongshu.root)).toEqual([])
+    const toleratedPost = fixture('douyin', 'POST')
+    expect(validatePlatformExchangeTranscripts(toleratedPost.document, toleratedPost.root)).toEqual([])
+    const leakedRouterRead = fixture('jd', 'GET')
+    expect(validatePlatformExchangeTranscripts(leakedRouterRead.document, leakedRouterRead.root)).toContain('jd.exchange_transcript_ref exchange operation/status/method invalid')
+    const bearerReadWithoutBody = fixture('douyin')
+    bearerReadWithoutBody.transcript.exchanges.find(item => item.operation === 'create_product')!.method = 'GET'
+    const bytes = Buffer.from(JSON.stringify(bearerReadWithoutBody.transcript)); writeFileSync(bearerReadWithoutBody.path, bytes)
+    bearerReadWithoutBody.document.platforms[0]!.exchange_transcript_ref = `artifact://production/capability.json.douyin.exchanges.json#${createHash('sha256').update(bytes).digest('hex')}`
+    expect(validatePlatformExchangeTranscripts(bearerReadWithoutBody.document, bearerReadWithoutBody.root)).toContain('douyin.exchange_transcript_ref exchange operation/status/method invalid')
+  })
+
   it('rejects stale or future candidates and replayed, future or non-monotonic exchanges', () => {
     const input = fixture()
     const now = new Date()

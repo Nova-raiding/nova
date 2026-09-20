@@ -682,6 +682,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const evidenceAndSnapshotAppendOnlyGuards = await readFile(new URL('./migrations/229_evidence_and_snapshot_append_only_guards.sql', import.meta.url), 'utf8')
   const revokeTenantDmlOnSharedPlatformRules = await readFile(new URL('./migrations/230_revoke_tenant_dml_on_shared_platform_rules.sql', import.meta.url), 'utf8')
   const storageQuotaPerObjectReservationKeys = await readFile(new URL('./migrations/231_storage_quota_per_object_reservation_keys.sql', import.meta.url), 'utf8')
+  const storageQuotaUnnameableReservationKeys = await readFile(new URL('./migrations/232_storage_quota_unnameable_reservation_keys.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -914,6 +915,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 229, name: 'evidence_and_snapshot_append_only_guards', sql: evidenceAndSnapshotAppendOnlyGuards },
     { version: 230, name: 'revoke_tenant_dml_on_shared_platform_rules', sql: revokeTenantDmlOnSharedPlatformRules },
     { version: 231, name: 'storage_quota_per_object_reservation_keys', sql: storageQuotaPerObjectReservationKeys },
+    { version: 232, name: 'storage_quota_unnameable_reservation_keys', sql: storageQuotaUnnameableReservationKeys },
   ]
 }
 

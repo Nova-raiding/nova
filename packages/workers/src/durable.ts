@@ -543,7 +543,23 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
         await this.store.releaseClaim?.(workspaceId, event.id, event.leaseToken ?? '')
         continue
       }
-      if (await this.queue.contains?.(event.id)) continue
+      if (await this.queue.contains?.(event.id)) {
+        // The queue already holds a delivery for this id, but that delivery was
+        // created under an earlier claim and this claim minted a new lease
+        // token, so the handler holding it can never be executed: lease
+        // validation rejects the outdated token. This claim therefore produced
+        // no delivery, exactly like one the queue refused, and keeping it would
+        // spend the event's claim budget on an execution that cannot start -
+        // an event whose delivery outlives its lease (a persistence-failure
+        // retry parked until the lease expires, or a worker too busy to drain
+        // its queue) would then dead-letter as
+        // WORKER_CLAIM_ATTEMPTS_EXHAUSTED with no handler ever running under
+        // those attempts. Give the attempt back instead: the stale delivery is
+        // dropped by the next dispatch and restore() re-creates it under the
+        // fresh claim.
+        await this.store.releaseClaim?.(workspaceId, event.id, event.leaseToken ?? '')
+        continue
+      }
       try {
         // The claim is only real once its delivery exists: a queue that refuses
         // the delivery (depth limit) must not leave a leased event with no

@@ -15,9 +15,33 @@ function literalRpcMethods(): string[] {
   return [...new Set(methods)]
 }
 
+/**
+ * Every MCP method the API router dispatches.
+ *
+ * Scoped to the `switch (method)` block on purpose. Matching every `case` label
+ * in the file instead made this inventory pick up unrelated switches: adding a
+ * `switch (item.state)` with `case 'approved':` elsewhere in server.ts grew the
+ * method list from 328 to 332 and failed this gate for a reason that had
+ * nothing to do with the console surface.
+ */
 function routeMethods(): string[] {
   const source = readFileSync(new URL('../apps/api/src/server.ts', import.meta.url), 'utf8')
-  return [...new Set([...source.matchAll(/case ['"]([^'"]+)['"]\s*:/gu)].map(match => match[1]!))]
+  const lines = source.split('\n')
+  const switchLine = lines.findIndex(line => /^\s+switch \(method\) \{\s*$/u.test(line))
+  if (switchLine < 0) throw new Error('the MCP dispatch switch must stay recognizable')
+  let depth = 0
+  let end = lines.length
+  for (let index = switchLine; index < lines.length; index += 1) {
+    for (const character of lines[index]!) {
+      if (character === '{') depth += 1
+      else if (character === '}') { depth -= 1; if (depth === 0) { end = index; break } }
+    }
+    if (end !== lines.length) break
+  }
+  const methods = lines
+    .slice(switchLine, end)
+    .flatMap(line => [...line.matchAll(/case ['"]([^'"]+)['"]\s*:/gu)].map(match => match[1]!))
+  return [...new Set(methods)]
 }
 
 describe('operations console API surface', () => {

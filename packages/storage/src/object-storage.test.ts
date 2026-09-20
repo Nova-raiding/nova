@@ -206,6 +206,25 @@ describe('LocalObjectStorage', () => {
     expect(listed.map(item => item.key)).not.toContain('quarantine/ws_a/asset_meta_name/config')
   })
 
+  it('refuses a suffix-named body that would take over a sibling object metadata record', async () => {
+    const store = await storage()
+    const body = new TextEncoder().encode('victim image bytes')
+    const victim = await store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_record', fileName: 'photo.png', contentType: 'image/png', body, expectedSha256: digest(body) })
+
+    // `quarantine/ws_a/asset_record/photo.png.meta.json` is exactly where the
+    // record of `photo.png` lives; writing a body there used to replace it, so
+    // reads of the victim failed with OBJECT_INTEGRITY_FAILED and `list` stopped
+    // inventoring it while its bytes were still stored.
+    await expect(store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_record', fileName: 'photo.png.meta.json', contentType: 'application/json', body: new TextEncoder().encode('{"note":"taken over"}') }))
+      .rejects.toMatchObject({ code: 'OBJECT_ALREADY_EXISTS', status: 409 })
+    await expect(store.get('ws_a', victim.key, { includeQuarantine: true })).resolves.toMatchObject({ body })
+    expect((await store.list('ws_a')).map(item => item.key)).toEqual([victim.key])
+
+    // The same name is still a legitimate body when no sibling holds the path.
+    const alone = await store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_record_alone', fileName: 'config.meta.json', contentType: 'application/json', body })
+    expect(alone.key).toBe('quarantine/ws_a/asset_record_alone/config.meta.json')
+  })
+
   it('ignores a forged metadata body that claims to describe another object', async () => {
     const store = await storage()
     const body = new TextEncoder().encode(JSON.stringify({ note: 'forged inventory' }))
@@ -246,6 +265,28 @@ describe('S3CompatibleObjectStorage', () => {
     for (const endpoint of ['https://169.254.169.254', 'https://10.0.0.5', 'https://[fd00::1]']) {
       expect(() => parseS3CompatibleObjectStorageConfig({ ...base, endpoint })).toThrowError('对象存储 endpoint 不得包含凭证、查询参数或本地地址')
     }
+  })
+
+  it('blocks an IPv4 address embedded in an IPv6 endpoint host', () => {
+    const base = { bucket: 'merchant-assets', region: 'cn-shanghai', sseMode: 'AES256' as const }
+    // `new URL` rewrites these to compressed hex (`[::ffff:a9fe:a9fe]`), so the
+    // dotted form the blocklist knows about never reaches it.
+    for (const endpoint of [
+      'https://[::ffff:169.254.169.254]',
+      'https://[0:0:0:0:0:ffff:169.254.169.254]',
+      'https://[::169.254.169.254]',
+      'https://[::ffff:0:169.254.169.254]',
+      'https://[::ffff:127.0.0.1]',
+      'https://[::ffff:10.0.0.5]',
+      'https://[::ffff:172.16.0.1]',
+      'https://[::ffff:192.168.0.1]',
+      'https://[::ffff:100.64.0.1]',
+    ]) {
+      expect(() => parseS3CompatibleObjectStorageConfig({ ...base, endpoint })).toThrowError('对象存储 endpoint 不得包含凭证、查询参数或本地地址')
+    }
+    // The same rule must not refuse a public address written either way.
+    expect(parseS3CompatibleObjectStorageConfig({ ...base, endpoint: 'https://[::ffff:93.184.216.34]' })).toMatchObject({ endpoint: 'https://[::ffff:93.184.216.34]' })
+    expect(parseS3CompatibleObjectStorageConfig({ ...base, endpoint: 'https://[2606:2800:220:1:248:1893:25c8:1946]' })).toMatchObject({ endpoint: 'https://[2606:2800:220:1:248:1893:25c8:1946]' })
   })
 
   it('allows AES256 cloud encryption without a KMS key', () => {

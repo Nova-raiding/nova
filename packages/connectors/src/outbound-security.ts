@@ -43,6 +43,28 @@ function ipv4Parts(host: string): number[] | undefined {
   return parts.every(part => Number.isInteger(part) && part >= 0 && part <= 255) ? parts : undefined
 }
 
+/**
+ * Expands an IPv6 literal into its eight 16-bit groups, or `undefined` when the
+ * text is not one. Only the canonical serialization is handled: `new URL`
+ * always rewrites an IPv6 host into compressed hex with a dotted-quad tail
+ * folded into the last two groups, so that is the shape a URL-derived host
+ * arrives in. A dotted tail that survives verbatim (for example a `dns.lookup`
+ * answer) is left to `ipv4Parts`.
+ */
+function ipv6Groups(host: string): number[] | undefined {
+  const text = normalizedHost(host)
+  if (isIP(text) !== 6 || text.includes('.')) return undefined
+  const [head = '', tail, ...rest] = text.split('::')
+  if (rest.length) return undefined
+  const read = (value: string): number[] => value ? value.split(':').map(part => Number.parseInt(part, 16)) : []
+  const headGroups = read(head)
+  if (tail === undefined) return headGroups.length === 8 ? headGroups : undefined
+  const tailGroups = read(tail)
+  const zeros = 8 - headGroups.length - tailGroups.length
+  if (zeros < 1) return undefined
+  return [...headGroups, ...Array<number>(zeros).fill(0), ...tailGroups]
+}
+
 function isBlockedIp(host: string): boolean {
   const normalized = normalizedHost(host)
   const parts = ipv4Parts(normalized)
@@ -56,6 +78,21 @@ function isBlockedIp(host: string): boolean {
       || a >= 224
   }
   if (isIP(normalized) !== 6) return false
+  // The IPv4-embedding prefixes (`::a.b.c.d`, `::ffff:a.b.c.d`, and the
+  // RFC 2765 translator form `::ffff:0:a.b.c.d`) all carry an IPv4 address in
+  // their low 32 bits. The URL parser rewrites the dotted tail into hex —
+  // `https://[::ffff:127.0.0.1]/` becomes `[::ffff:7f00:1]` — so a check written
+  // against the dotted text never fires for a URL host, and
+  // `https://[::ffff:169.254.169.254]/` (the cloud metadata service) was
+  // admitted where `https://169.254.169.254/` was blocked. The embedded address
+  // is classified with the same IPv4 rules instead.
+  const groups = ipv6Groups(normalized)
+  const embeddedIpv4Prefix = groups !== undefined
+    && groups.slice(0, 4).every(group => group === 0)
+    && ((groups[4] === 0 && (groups[5] === 0 || groups[5] === 0xffff)) || (groups[4] === 0xffff && groups[5] === 0))
+  if (embeddedIpv4Prefix) {
+    return isBlockedIp(`${groups[6]! >> 8}.${groups[6]! & 0xff}.${groups[7]! >> 8}.${groups[7]! & 0xff}`)
+  }
   const ipv6 = normalized.replace(/^::ffff:(?:0:)?/i, '')
   if (ipv4Parts(ipv6)) return isBlockedIp(ipv6)
   return normalized === '::' || normalized === '::1'

@@ -1,3 +1,4 @@
+import { deletionMatchesReservation, parseReservationKey } from '../../storage/src/reservation-key.js'
 import { requireWorkspaceScope, type SqlPool, withWorkspaceTransaction } from './repository.js'
 
 export type StorageQuotaReservationStatus = 'active' | 'settled' | 'released' | 'over_limit'
@@ -73,6 +74,22 @@ function validatePhysicalDeletion(input: Parameters<StorageQuotaRepository['rele
   const receipt = input.receipt
   if (!input.reservationKey.trim() || !receipt || !isSafePhysicalObjectKey(receipt.objectKey, workspaceId) || !['delete_ack', 'head_absent'].includes(receipt.verification) || !Number.isFinite(Date.parse(receipt.deletedAt))) throw new Error('STORAGE_QUOTA_DELETION_RECEIPT_INVALID')
   return workspaceId
+}
+
+/**
+ * A settled row may only be released by the deletion of the object it describes.
+ *
+ * The ledger key is derived from the object key, so the two must agree: a caller
+ * that hands over a reservation key belonging to object A together with a
+ * deletion receipt for object B is describing two different objects, and
+ * honouring it would credit bytes that are still stored. Keys this build cannot
+ * parse (a legacy bare row) carry no object claim, and the caller is the one
+ * that established which asset's object was deleted.
+ */
+function assertDeletionIdentity(input: { workspaceId: string; reservationKey: string; receipt: StoragePhysicalDeletionReceipt }) {
+  if (!deletionMatchesReservation({ workspaceId: input.workspaceId, reservationKey: input.reservationKey, objectKey: input.receipt.objectKey })) {
+    throw new Error('STORAGE_QUOTA_DELETION_IDENTITY_MISMATCH')
+  }
 }
 
 function isSafePhysicalObjectKey(objectKey: unknown, workspaceId: string): objectKey is string {
@@ -165,6 +182,7 @@ export class MemoryStorageQuotaRepository implements StorageQuotaRepository {
 
   async releaseAfterPhysicalDeletion(input: Parameters<StorageQuotaRepository['releaseAfterPhysicalDeletion']>[0]) {
     const workspaceId = validatePhysicalDeletion(input)
+    assertDeletionIdentity({ workspaceId, reservationKey: input.reservationKey, receipt: input.receipt })
     const key = `${workspaceId}:${input.reservationKey}`
     const reservation = this.reservations.get(key)
     if (!reservation) return undefined
@@ -189,27 +207,30 @@ const map = (row: QuotaRow): StorageQuotaReservation => ({ workspaceId: row.work
 const projection = 'workspace_id,reservation_key,asset_id,reserved_bytes,actual_bytes,status,revision,created_at,updated_at'
 
 /**
- * Legacy keys a per-object reservation key has to fall back to.
+ * The legacy key a per-object reservation key may fall back to.
  *
- * A reservation key is bound to one physical object (`asset:<assetId>/<file>`,
- * see `assetReservationKeyForObject` in apps/api/src/server.ts), and
- * `reservation_key` is half of the table's primary key. Rows written before
- * that shape existed carry `asset:<assetId>` instead: migration 231 rewrites
- * the ones whose object it can name, but a row whose asset has no durable
- * record left cannot be named and keeps the old key. A release can only be
- * driven by the object that is being deleted, so without this fallback such a
- * row is unreachable forever and `used_bytes` never falls - the workspace then
- * reports STORAGE_QUOTA_EXCEEDED while holding far less than its limit.
+ * A reservation key is bound to one physical object
+ * (`asset:<assetId>/<canonical file name>`, see `reservationKeyFor` in
+ * packages/storage/src/reservation-key.ts), and `reservation_key` is half of
+ * the table's primary key. Rows written before that shape existed carry
+ * `asset:<assetId>` instead: migration 231 rewrites the ones whose object it can
+ * name, and migration 232 names more of the rest, but a row whose asset has no
+ * durable object record left keeps the old key. Without a fallback such a row is
+ * unreachable forever and `used_bytes` never falls - the workspace then reports
+ * STORAGE_QUOTA_EXCEEDED while holding far less than its limit.
  *
- * Order matters: the bare legacy key is preferred over the prefix, because it
- * is the row that paid for the asset before the key changed, while a prefix
- * match may be the reservation of a *different* object of the same asset.
+ * The fallback is the *bare* key only, and the caller has to prove the row
+ * belongs to the asset that owns the deleted object (`asset_id=$3`). It must
+ * never be a prefix match: `LIKE 'asset:<assetId>/%'` also matches the
+ * reservations of the asset's *other* objects, so deleting one object released
+ * a sibling's row while that sibling was still stored and the ledger silently
+ * under-counted. A row that only a prefix can reach is not reclaimable by a
+ * deletion, and the migration that can name it is where that is repaired.
  */
-function legacyReservationKeyCandidates(reservationKey: string): { bare: string; prefix: string } | undefined {
-  const assetId = /^asset:([^/]+)\/.+/u.exec(reservationKey)?.[1]
-  if (!assetId) return undefined
-  // `asset:%` and `asset:_` are LIKE wildcards; an asset id may legally contain them.
-  return { bare: `asset:${assetId}`, prefix: `asset:${assetId.replace(/[\\%_]/gu, character => `\\${character}`)}/%` }
+function legacyReservationKeyCandidate(reservationKey: string): { key: string; assetId: string } | undefined {
+  const identity = parseReservationKey(reservationKey)
+  if (!identity) return undefined
+  return { key: `asset:${identity.assetId}`, assetId: identity.assetId }
 }
 
 export class PostgresStorageQuotaRepository implements StorageQuotaRepository {
@@ -291,14 +312,14 @@ export class PostgresStorageQuotaRepository implements StorageQuotaRepository {
       let current = found.rows[0] ? map(found.rows[0]) : undefined
       // The exact key is the reservation for this object. Only when it is
       // absent - a row written before reservation keys became per-object, and
-      // which migration 231 could not name - is the asset's other key shapes
-      // considered (see `legacyReservationKeyCandidates`).
+      // which migration 231 (and 232) could not name - is the asset's bare
+      // legacy key considered (see `legacyReservationKeyCandidate`). The match
+      // is exact and the row has to carry the same asset id, so a release can
+      // never reach a *sibling object's* reservation by prefix.
       if (!current) {
-        const candidates = legacyReservationKeyCandidates(input.reservationKey)
-        if (candidates) {
-          const fallback = await client.query<QuotaRow>(`SELECT ${projection} FROM storage_quota_reservations
-             WHERE workspace_id=$1 AND status<>'released' AND (reservation_key=$2 OR reservation_key LIKE $3 ESCAPE '\\')
-             ORDER BY (reservation_key=$2) DESC, updated_at DESC, reservation_key ASC FOR UPDATE`, [workspaceId, candidates.bare, candidates.prefix])
+        const legacy = legacyReservationKeyCandidate(input.reservationKey)
+        if (legacy) {
+          const fallback = await client.query<QuotaRow>(`SELECT ${projection} FROM storage_quota_reservations WHERE workspace_id=$1 AND status<>'released' AND reservation_key=$2 AND asset_id=$3 ORDER BY updated_at DESC, revision DESC FOR UPDATE`, [workspaceId, legacy.key, legacy.assetId])
           current = fallback.rows[0] ? map(fallback.rows[0]) : undefined
         }
       }
@@ -318,7 +339,8 @@ export class PostgresStorageQuotaRepository implements StorageQuotaRepository {
   }
 
   async releaseAfterPhysicalDeletion(input: Parameters<StorageQuotaRepository['releaseAfterPhysicalDeletion']>[0]) {
-    validatePhysicalDeletion(input)
+    const workspaceId = validatePhysicalDeletion(input)
+    assertDeletionIdentity({ workspaceId, reservationKey: input.reservationKey, receipt: input.receipt })
     return this.releaseInternal({ ...input, at: input.at ?? input.receipt.deletedAt }, true)
   }
 }

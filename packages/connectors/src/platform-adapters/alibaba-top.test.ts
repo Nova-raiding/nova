@@ -53,50 +53,44 @@ describe('Alibaba TOP signer', () => {
     expect(new URLSearchParams(request.body).get('method')).toBe('taobao.item.update')
   })
 
-  it('signs the GET read path into the URL query so the request stays dispatchable', async () => {
-    // `syncProducts` dispatches with GET. A signed form body on a GET makes
-    // `fetch` throw "Request with GET/HEAD method cannot have body" before any
-    // network call, so the read path never left the process: no cursor, no
-    // product, and no honest `read`/`full_sync` evidence for the canary.
-    const sign = async (method: string) => {
-      const request = { method, url: 'https://gw.api.taobao.com/router/rest?cursor=page-2&updated_since=2026-01-01T00:00:00Z', headers: {} as Record<string, string>, body: JSON.stringify({ fields: 'num_iid,title' }), platform: 'taobao' as const, operation: 'sync_products' as const, credential: { accessToken: 'session-1' } }
-      await createAlibabaTopSigner({ appKey: '12345678', appSecret: 'secret', methods: { sync: 'taobao.item.seller.get' }, now: () => new Date('2026-08-23T04:05:06Z') }).sign(request)
-      return request
-    }
-    const get = await sign('GET')
-    expect(get.body).toBeUndefined()
-    // What the real fetch constructor enforces, without leaving the process.
-    expect(() => new Request(get.url, { method: 'GET', body: get.body })).not.toThrow()
-    const query = new URL(get.url).searchParams
-    expect(new URL(get.url).pathname).toBe('/router/rest')
-    expect(query.get('method')).toBe('taobao.item.seller.get')
-    expect(query.get('app_key')).toBe('12345678')
-    expect(query.get('session')).toBe('session-1')
-    expect(query.get('timestamp')).toBe('2026-08-23 12:05:06')
-    expect(query.get('sign_method')).toBe('hmac-sha256')
-    expect(query.get('sign')).toMatch(/^[A-F0-9]{64}$/)
-    // The sync cursor and window still have to reach the provider.
-    expect(query.get('cursor')).toBe('page-2')
-    expect(query.get('updated_since')).toBe('2026-01-01T00:00:00Z')
-    expect(query.get('fields')).toBe('num_iid,title')
-    // Same parameters, same signature: only the transport moved.
-    const post = await sign('POST')
-    expect(new URL(post.url).search).toBe('')
-    expect(query.get('sign')).toBe(new URLSearchParams(post.body).get('sign'))
-  })
-
-  it('does not let a GET query parameter retarget the signed TOP method', async () => {
-    const request = { method: 'GET', url: 'https://gw.api.taobao.com/router/rest?method=tmall.item.delete', headers: {} as Record<string, string>, platform: 'taobao' as const, operation: 'sync_products' as const, credential: { accessToken: 'session-1' } }
+  it('keeps the read path session out of the URL and carries the cursor in the body', async () => {
+    // The read path is dispatched as POST. It used to be a GET whose signed
+    // parameters were written into the query string, which put TOP's `session`
+    // (the real access token) in the request line of every hop that logs one.
+    const request: { method: string; url: string; headers: Record<string, string>; body?: string; platform: 'taobao'; operation: 'sync_products'; credential: { accessToken: string } } = { method: 'POST', url: 'https://gw.api.taobao.com/router/rest?cursor=page-2&updated_since=2026-01-01T00:00:00Z', headers: {}, body: JSON.stringify({ fields: 'num_iid,title' }), platform: 'taobao', operation: 'sync_products', credential: { accessToken: 'session-1' } }
     await createAlibabaTopSigner({ appKey: '12345678', appSecret: 'secret', methods: { sync: 'taobao.item.seller.get' }, now: () => new Date('2026-08-23T04:05:06Z') }).sign(request)
-    // Exactly one value, and it is the configured one: appending instead of
-    // replacing would leave the gateway free to read the smuggled occurrence.
-    expect(new URL(request.url).searchParams.getAll('method')).toEqual(['taobao.item.seller.get'])
+    const url = new URL(request.url)
+    expect(url.pathname).toBe('/router/rest')
+    expect(url.search).toBe('')
+    expect(request.url).not.toContain('session-1')
+    const body = new URLSearchParams(request.body)
+    expect(body.get('method')).toBe('taobao.item.seller.get')
+    expect(body.get('app_key')).toBe('12345678')
+    expect(body.get('session')).toBe('session-1')
+    expect(body.get('timestamp')).toBe('2026-08-23 12:05:06')
+    expect(body.get('sign_method')).toBe('hmac-sha256')
+    expect(body.get('sign')).toMatch(/^[A-F0-9]{64}$/)
+    // The sync cursor, window and business fields still reach the provider.
+    expect(body.get('cursor')).toBe('page-2')
+    expect(body.get('updated_since')).toBe('2026-01-01T00:00:00Z')
+    expect(body.get('fields')).toBe('num_iid,title')
+    expect(request.headers['content-type']).toContain('application/x-www-form-urlencoded')
   })
 
-  it('pins the GET signature to the same digest as the form-body path', async () => {
-    const request = { method: 'GET', url: 'https://gw.api.taobao.com/router/rest', headers: {} as Record<string, string>, body: JSON.stringify({ fields: 'title' }), platform: 'taobao' as const, operation: 'sync_products' as const }
-    await createAlibabaTopSigner({ appKey: '12345678', appSecret: 'secret', signMethod: 'md5', methods: { sync: 'taobao.item.seller.get' }, now: () => new Date('2026-08-23T04:05:06Z') }).sign(request)
-    expect(new URL(request.url).searchParams.get('sign')).toBe('3A6B5BA64522D4A813BDD7BA7DEBF3AE')
+  it('refuses the read path on a bodyless method instead of publishing the session', async () => {
+    const request = { method: 'GET', url: 'https://gw.api.taobao.com/router/rest', headers: {} as Record<string, string>, body: JSON.stringify({ fields: 'title' }), platform: 'taobao' as const, operation: 'sync_products' as const, credential: { accessToken: 'session-1' } }
+    await expect(Promise.resolve().then(() => createAlibabaTopSigner({ appKey: '12345678', appSecret: 'secret', methods: { sync: 'taobao.item.seller.get' } }).sign(request)))
+      .rejects.toMatchObject({ code: 'NOT_CONFIGURED', retryable: false, message: expect.stringContaining('credentials must stay out of the URL') })
+    expect(new URL(request.url).search).toBe('')
+  })
+
+  it('drops a method smuggled in through the URL query instead of signing it', async () => {
+    const request = { method: 'POST', url: 'https://gw.api.taobao.com/router/rest?method=tmall.item.delete', headers: {} as Record<string, string>, body: JSON.stringify({ num_iid: '11223344' }), platform: 'taobao' as const, operation: 'sync_products' as const, credential: { accessToken: 'session-1' } }
+    await createAlibabaTopSigner({ appKey: '12345678', appSecret: 'secret', methods: { sync: 'taobao.item.seller.get' }, now: () => new Date('2026-08-23T04:05:06Z') }).sign(request)
+    expect(new URL(request.url).search).toBe('')
+    const body = new URLSearchParams(request.body)
+    expect(body.get('method')).toBe('taobao.item.seller.get')
+    expect(body.get('session')).toBe('session-1')
   })
 
   it('refuses to sign an operation whose TOP method is not configured', async () => {

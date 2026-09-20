@@ -868,6 +868,40 @@ describe('durable outbox dispatcher', () => {
     expect(handler).not.toHaveBeenCalled()
   })
 
+  it('gives back a claim whose delivery the queue was already holding instead of spending its budget', async () => {
+    // A delivery can outlive the claim that created it: the worker may be too
+    // busy to drain the queue, and a persistence failure parks the retry to
+    // become claimable exactly when the lease expires. That delivery carries a
+    // token the next claim invalidates, so no handler can run under it. Keeping
+    // that claim would spend an attempt on an execution that cannot start, and
+    // an event can then dead-letter as WORKER_CLAIM_ATTEMPTS_EXHAUSTED with the
+    // handler never having run once.
+    let now = 1_000
+    const store = new Store(event({ id: 'evt_stale_delivery' }))
+    const queue = new InMemoryQueue<DurableOutboxEvent>(() => now)
+    const handler = vi.fn(async () => ({ value: 'ok' }))
+    const dispatcher = new DurableOutboxDispatcher(store, queue, handler, { leaseMs: 300, maxAttempts: 2, handlerTimeoutMs: 60_000, now: () => now })
+    expect(await dispatcher.restore('ws_1')).toBe(1)
+
+    // The claim expires while its delivery is still waiting in the queue.
+    now += 301
+    expect(await dispatcher.restore('ws_1')).toBe(0)
+    expect(store.events.get('evt_stale_delivery')?.attempts).toBe(1)
+    expect(store.events.get('evt_stale_delivery')?.leaseToken).toBeUndefined()
+    // The delivery the queue still holds predates this claim, so dispatching it
+    // only drops it - the handler must not run under an invalidated token.
+    expect((await dispatcher.dispatchOnce()).state).toBe('dead_letter')
+    expect(handler).not.toHaveBeenCalled()
+
+    // The event still has its whole budget and a fresh delivery.
+    now += 301
+    expect(await dispatcher.restore('ws_1')).toBe(1)
+    expect((await dispatcher.dispatchOnce()).state).toBe('succeeded')
+    expect(handler).toHaveBeenCalledOnce()
+    expect(store.events.get('evt_stale_delivery')?.publishedAt).toBeTruthy()
+    expect(store.events.get('evt_stale_delivery')?.lastError).toBeUndefined()
+  })
+
   it('releases every claim a full queue refused instead of dead-lettering a batch no handler ever saw', async () => {
     // Mirrors the durable repository: a published event is terminal evidence
     // and is never leased again.

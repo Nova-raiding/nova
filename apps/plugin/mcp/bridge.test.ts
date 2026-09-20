@@ -3033,6 +3033,111 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('retries with the rotated credential even when the retry budget is one attempt', async () => {
+    const authorizations: string[] = []
+    let refreshes = 0
+    const server = createServer((req, res) => {
+      if (req.url === '/v1/auth/mcp-token/refresh') {
+        refreshes += 1
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ data: { result: { access_token: 'fresh-access', refresh_token: 'fresh-refresh' } } }))
+        return
+      }
+      authorizations.push(String(req.headers.authorization ?? ''))
+      if (req.headers.authorization !== 'Bearer fresh-access') {
+        res.writeHead(401, { 'content-type': 'application/json' }).end('{}')
+        return
+      }
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { ready: true } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'expired-access', MERCHANT_MCP_REFRESH_TOKEN: 'valid-refresh', MERCHANT_MCP_RETRY_ATTEMPTS: '1' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: false })
+      expect(refreshes).toBe(1)
+      expect(authorizations).toEqual(['Bearer expired-access', 'Bearer fresh-access'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('mirrors the rotated refresh token to launchd before the short-lived access token', async () => {
+    // The hosted install reads its credential pair back from the current user's
+    // launchd session, so the mirror is the durable copy. A mirror that fails
+    // part way through must leave behind the half that can still recover: the
+    // refresh token just exchanged is already consumed server-side, so a
+    // surviving (new access, old refresh) pair can never refresh again and
+    // forces the merchant to re-bind by hand.
+    const launchdDirectory = await mkdtemp(join(TEST_ARTIFACT_DIR, 'fake-launchd-'))
+    const callsFile = join(launchdDirectory, 'calls.log')
+    const counterFile = join(launchdDirectory, 'setenv.count')
+    const launchdPath = join(launchdDirectory, 'launchctl')
+    await writeFile(launchdPath, [
+      '#!/bin/sh',
+      'op="$1"; name="$2"; value="$3"',
+      'if [ "$op" = "getenv" ]; then',
+      '  case "$name" in',
+      '    MERCHANT_MCP_BASE_URL) printf %s "$FAKE_LAUNCHD_BASE_URL" ;;',
+      '    MERCHANT_WORKSPACE_ID) printf %s "ws_test" ;;',
+      '    MERCHANT_MCP_TOKEN) printf %s "launchd-access" ;;',
+      '    MERCHANT_MCP_REFRESH_TOKEN) printf %s "launchd-refresh" ;;',
+      '  esac',
+      '  exit 0',
+      'fi',
+      'if [ "$op" = "setenv" ]; then',
+      '  count=0',
+      `  [ -f "${counterFile}" ] && count=$(cat "${counterFile}")`,
+      '  count=$((count + 1))',
+      `  printf %s "$count" > "${counterFile}"`,
+      '  # Second write fails: the mirror stops part way through.',
+      '  [ "$count" -gt 1 ] && exit 1',
+      `  printf "setenv %s %s\\n" "$name" "$value" >> "${callsFile}"`,
+      '  exit 0',
+      'fi',
+      'exit 0',
+      '',
+    ].join('\n'), { mode: 0o755 })
+    const server = createServer((req, res) => {
+      if (req.url === '/v1/auth/mcp-token/refresh') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ data: { result: { access_token: 'rotated-access', refresh_token: 'rotated-refresh' } } }))
+        return
+      }
+      if (req.headers.authorization !== 'Bearer rotated-access') { res.writeHead(401, { 'content-type': 'application/json' }).end('{}'); return }
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { ready: true } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: {
+        ...TEST_PROCESS_ENV,
+        PATH: `${launchdDirectory}:${process.env.PATH ?? ''}`,
+        FAKE_LAUNCHD_BASE_URL: `http://127.0.0.1:${address.port}`,
+        MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
+        MERCHANT_WORKSPACE_ID: 'ws_test',
+        MERCHANT_MCP_TOKEN_SOURCE: 'launchd',
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      await nextLine(child.stdout)
+      expect(await readFile(callsFile, 'utf8')).toContain('setenv MERCHANT_MCP_REFRESH_TOKEN rotated-refresh')
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it.each([401, 409, 500])('fails closed without replaying the MCP request when token refresh returns HTTP %s', async refreshStatus => {
     let mcpRequests = 0
     let refreshes = 0

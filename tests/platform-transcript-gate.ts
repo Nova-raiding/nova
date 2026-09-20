@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
+import { readMethodAllowed } from '../infra/protected/attest-capability-evidence.mjs'
 
 const artifact = /^artifact:\/\/production\/([A-Za-z0-9._-]+)#[a-f0-9]{64}$/u
 const operations = new Set(['exchange_code', 'refresh_credential', 'revoke', 'sync_products', 'create_product', 'update_product', 'query_write', 'upload_media'])
@@ -57,7 +58,17 @@ export function validatePlatformExchangeTranscripts(document: unknown, artifactR
       const exchange = item as Record<string, unknown>
       if (Object.keys(exchange).some(key => !safeKeys.has(key))) errors.push(`${platform}.exchange_transcript_ref contains disallowed exchange fields`)
       if (exchange.platform !== platform || exchange.workspaceId !== tenant?.workspace_id || (exchange.accountId !== undefined && exchange.accountId !== tenant?.account_id)) errors.push(`${platform}.exchange_transcript_ref exchange scope mismatch`)
-      const methodValid = exchange.operation === 'sync_products' ? exchange.method === 'GET' : exchange.method === 'POST'
+      // Every signed exchange carries its parameter set in a body — except a
+      // read whose signer keeps the credential in the `authorization` header
+      // instead. That family rule has one owner per trust domain: the connector
+      // dispatches from the signer it was configured with, and the protected
+      // verifier that signs this document holds the policy for the evidence.
+      // This gate reads the same policy from that verifier rather than deciding
+      // for itself, so it can no longer demand a POST for a read the shipped
+      // connector has always dispatched as a GET (which forced operators to
+      // record such a request as something it was not).
+      const readDispatched = String(exchange.operation) === 'sync_products'
+      const methodValid = readDispatched ? readMethodAllowed(platform, String(exchange.method)) : exchange.method === 'POST'
       if (!operations.has(String(exchange.operation)) || exchange.transport !== 'fetch' || !Number.isInteger(exchange.status) || Number(exchange.status) < 100 || Number(exchange.status) > 599 || !methodValid) errors.push(`${platform}.exchange_transcript_ref exchange operation/status/method invalid`)
       try { const origin = new URL(String(exchange.origin)); if (origin.protocol !== 'https:' || origin.origin !== exchange.origin || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash) throw new Error('unsafe origin') } catch { errors.push(`${platform}.exchange_transcript_ref exchange origin invalid`) }
       const observedAt = typeof exchange.observedAt === 'string' && strictUtcInstant.test(exchange.observedAt) ? Date.parse(exchange.observedAt) : Number.NaN

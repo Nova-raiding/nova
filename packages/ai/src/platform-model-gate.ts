@@ -9,7 +9,21 @@ export function isPlaceholderModelConfiguration(value: string | undefined): bool
   const normalized = value.trim().toLowerCase()
   return /(?:replace[_-]?with|your[_-]?|change[_-]?me|dummy|example\.com|test-secret|<secret>|<value>|\$\{[^}]+\}|由.+注入|你的)/u.test(normalized)
 }
-import { inspectOutboundUrl, isSecureEnvironment } from '../../connectors/src/outbound-security.js'
+import { inspectOutboundUrl, isSecureEnvironment, type OutboundSecurityReason } from '../../connectors/src/outbound-security.js'
+
+/**
+ * Classify an outbound-security rejection so readiness can report the same
+ * verdict the adapters enforce. `relaySecurityFromEnv` refuses every one of
+ * these reasons, so a gate that only surfaces `HOST_NOT_ALLOWLISTED` claims a
+ * private, credentialed or otherwise unsafe relay is usable while no adapter
+ * can ever be assembled from it.
+ */
+function outboundEndpointRejection(reason: OutboundSecurityReason | undefined): 'host_not_allowlisted' | 'host_blocked' | 'endpoint_invalid' | 'endpoint_must_use_https' | undefined {
+  if (reason === undefined) return undefined
+  if (reason === 'HOST_NOT_ALLOWLISTED') return 'host_not_allowlisted'
+  if (reason === 'PRIVATE_ADDRESS_BLOCKED') return 'host_blocked'
+  return reason === 'HTTPS_REQUIRED' ? 'endpoint_must_use_https' : 'endpoint_invalid'
+}
 
 export interface PlatformModelGateResult {
   ready: boolean
@@ -81,7 +95,11 @@ export function evaluatePlatformModelRelayGate(source: ModelEnvironment): { read
     const allowedHosts = (source.MODEL_RELAY_ALLOWED_HOSTS ?? '').split(',').map(value => value.trim()).filter(Boolean)
     if (isSecureEnvironment(source.NODE_ENV) && !allowedHosts.length) return { ready: false, reasons: ['model_relay_allowed_hosts_missing'], endpointHost: parsed.host }
     const reason = inspectOutboundUrl(relay, { environment: source.NODE_ENV, ...(allowedHosts.length ? { allowedHosts } : {}), resolveDns: false })
-    if (reason === 'HOST_NOT_ALLOWLISTED') return { ready: false, reasons: ['model_relay_host_not_allowlisted'], endpointHost: parsed.host }
+    const rejection = outboundEndpointRejection(reason)
+    if (rejection === 'host_not_allowlisted') return { ready: false, reasons: ['model_relay_host_not_allowlisted'], endpointHost: parsed.host }
+    if (rejection === 'host_blocked') return { ready: false, reasons: ['model_relay_host_blocked'], endpointHost: parsed.host }
+    if (rejection === 'endpoint_must_use_https') return { ready: false, reasons: ['model_relay_endpoint_must_use_https'], endpointHost: parsed.host }
+    if (rejection) return { ready: false, reasons: ['model_relay_endpoint_invalid'], endpointHost: parsed.host }
     return { ready: true, reasons: [], endpointHost: parsed.host }
   } catch { return { ready: false, reasons: ['model_relay_endpoint_invalid'] } }
 }
@@ -114,7 +132,13 @@ export function evaluatePlatformModelGate(source: ModelEnvironment, kind: Platfo
       if (!https) reasons.push('endpoint_must_use_https')
       const allowedHosts = (source.MODEL_RELAY_ALLOWED_HOSTS ?? '').split(',').map(value => value.trim()).filter(Boolean)
       if (isSecureEnvironment(source.NODE_ENV) && !allowedHosts.length) reasons.push('model_relay_allowed_hosts_missing')
-      else if (allowedHosts.length && inspectOutboundUrl(endpoint, { environment: source.NODE_ENV, allowedHosts, resolveDns: false }) === 'HOST_NOT_ALLOWLISTED') reasons.push('model_relay_host_not_allowlisted')
+      else {
+        const rejection = outboundEndpointRejection(inspectOutboundUrl(endpoint, { environment: source.NODE_ENV, ...(allowedHosts.length ? { allowedHosts } : {}), resolveDns: false }))
+        // `endpoint_must_use_https` is already reported from the protocol check above.
+        if (rejection === 'host_not_allowlisted') reasons.push('model_relay_host_not_allowlisted')
+        else if (rejection === 'host_blocked') reasons.push('model_relay_host_blocked')
+        else if (rejection === 'endpoint_invalid') reasons.push('endpoint_invalid')
+      }
     } catch { reasons.push('endpoint_invalid') }
   }
   if (!apiKey) reasons.push('api_key_missing')

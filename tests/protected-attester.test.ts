@@ -13,11 +13,20 @@ const required = ['refresh_credential','sync_products','create_product','update_
 const observedAt = new Date(Date.now() - 1_000).toISOString()
 const binding = { releaseId:'release-1', imageSetDigest:`sha256:${'a'.repeat(64)}`, manifestSha256:'b'.repeat(64), releaseGitSha:'c'.repeat(40), deploymentNonce:'d'.repeat(24), keyId:'trusted-key-1' }
 
-function candidate() {
+/**
+ * The read method the shipped connector dispatches per platform family: the
+ * router gateways carry the credential in their signed parameter set and their
+ * reads are POST, the bearer platforms keep it in `authorization` and their
+ * reads are GET. A transcript that records anything else is not a record of a
+ * request the connector sends, which is why the attester refuses it.
+ */
+const dispatchedReadMethod: Record<string, string> = { jd:'POST', taobao:'POST', tmall:'POST', pinduoduo:'POST', xiaohongshu:'GET', douyin:'GET' }
+
+function candidate(overrideMethod?: (platform: string, operation: string) => string | undefined) {
   const root = realpathSync(mkdtempSync(join(tmpdir(),'protected-attester-')))
   const entries = platforms.map(platform => {
     const workspaceId = `ws_${platform}`, accountId = `acct_${platform}`
-    const exchange = (name:string, status:number, id:string) => ({ platform, operation:name, workspaceId, accountId, method:name === 'sync_products' ? 'GET' : 'POST', origin:'https://provider.example', status, observedAt, providerRequestId:id, transport:'fetch', ...(status >= 400 ? { errorCode:'REJECTED', errorMessage:'controlled test rejection', retryable:false } : {}) })
+    const exchange = (name:string, status:number, id:string) => ({ platform, operation:name, workspaceId, accountId, method:(overrideMethod?.(platform, name) ?? (name === 'sync_products' ? dispatchedReadMethod[platform] : 'POST'))!, origin:'https://provider.example', status, observedAt, providerRequestId:id, transport:'fetch', ...(status >= 400 ? { errorCode:'REJECTED', errorMessage:'controlled test rejection', retryable:false } : {}) })
     const exchanges = [exchange('exchange_code',200,'auth-good'), ...required.map(name => exchange(name,200,`good-${name}`)), ...names.map(name => exchange(operation[name]!,400,`bad-${name}`))]
     const bytes = Buffer.from(JSON.stringify({ schema_version:'provider-exchanges/1', release_id:binding.releaseId, platform, workspace_id:workspaceId, account_id:accountId, exchanges }))
     const filename = `matrix.${platform}.exchanges.json`
@@ -37,6 +46,20 @@ describe('protected capability attester', () => {
     expect(signed.deployment_nonce).toBe(binding.deploymentNonce)
     expect(signed.signature_base64).toMatch(/^[A-Za-z0-9+/]{86}==$/)
     expect(validateCapabilityProductionSignature(signed, { ...binding, publicKeyPem: pair.publicKey.export({ format:'pem', type:'spki' }).toString(), trustedKeyId:binding.keyId })).toEqual([])
+  })
+  it('refuses a read whose recorded method is not the one its signer family dispatches', () => {
+    // Both directions of the transport rule, on the same fixture that the rest
+    // of this file signs: a router gateway's read recorded as a GET is a record
+    // of the request that publishes its signed set in the URL, and a bearer
+    // platform's write recorded as bodyless is not a shape the connector can
+    // send at all. Tightening either half would be as wrong as loosening it, so
+    // the accepted shape and the refused one are asserted together.
+    const dispatched = candidate()
+    expect(() => validateCandidate(dispatched.document, binding, dispatched.root)).not.toThrow()
+    const leakedRouterRead = candidate((platform, operation) => platform === 'jd' && operation === 'sync_products' ? 'GET' : undefined)
+    expect(() => validateCandidate(leakedRouterRead.document, binding, leakedRouterRead.root)).toThrow(/provider exchange method mismatch/)
+    const bodylessWrite = candidate((platform, operation) => platform === 'douyin' && operation === 'create_product' ? 'GET' : undefined)
+    expect(() => validateCandidate(bodylessWrite.document, binding, bodylessWrite.root)).toThrow(/provider exchange method mismatch/)
   })
   it('rejects tampered transcript, missing negative path and mismatched key', () => {
     const { root, document } = candidate()

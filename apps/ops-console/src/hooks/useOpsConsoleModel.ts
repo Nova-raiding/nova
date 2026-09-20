@@ -1998,11 +1998,18 @@ export function useOpsConsoleModel() {
       managedOpsSession,
       (managedOpsSession ? undefined : localStorage.getItem("ops_workspace_id")) ?? undefined,
     );
+    // The poll is the one alert read that runs on its own timer, so it is the
+    // one that can still be on the wire when a JIT grant expires or an operator
+    // logs out. Committing its rows would repaint the panel with alert text read
+    // under a scope the server no longer honors, after the boundary clear already
+    // emptied it. `clearAuthorizationScopedData` bumps this generation.
+    const generation = loadCoordinatorRef.current.generation();
     try {
       const value = await rpc(
         "ops.alerts.list",
         alertListParams(alertFilters, platformOperator, workspaceId || undefined),
       );
+      if (generation !== loadCoordinatorRef.current.generation()) return false;
       const rows = Array.isArray(value) ? value : (value as { items?: unknown[] } | null | undefined)?.items ?? [];
       setAlerts(rows as unknown as OperationalAlert[]);
       setAlertsLoadedAt(new Date());

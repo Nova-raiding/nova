@@ -28,6 +28,9 @@ export function createJdSigner(options: JdSignerOptions): RequestSigner {
   return {
     kind: 'platform',
     requiredApiSelectors: PLATFORM_API_SELECTORS,
+    // `params.access_token` below: the credential rides the signed set, so the
+    // read path must be dispatched with a body-carrying method.
+    signedParametersCarryCredential: true,
     sign(request) {
       const url = new URL(request.url)
       const params: Record<string, string> = {}
@@ -49,8 +52,9 @@ export function createJdSigner(options: JdSignerOptions): RequestSigner {
       delete params.sign
       const canonical = Object.keys(params).sort().map(key => `${key}${params[key]}`).join('')
       params.sign = createHash('md5').update(`${options.appSecret}${canonical}${options.appSecret}`, 'utf8').digest('hex').toUpperCase()
-      // The read path (`consolidated/ware/query` and friends) is dispatched as
-      // GET; a form body there is rejected by `fetch` before any network call.
+      // The read path is dispatched as POST like every other signed operation:
+      // its parameter set carries the access token, and a bodyless method would
+      // publish it (see signed-request.ts).
       applySignedRequest(request, url, params)
       return {}
     },

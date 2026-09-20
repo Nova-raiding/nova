@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildReviewReport, isReviewBlocking, reviewDeterministic, reviewProductImages, REVIEW_EVIDENCE_BOUNDARY, validateReviewDecision } from './review.js'
+import { buildReviewReport, isReviewBlocking, reviewDeterministic, reviewProductImages, REVIEW_EVIDENCE_BOUNDARY, validateReviewDecision, type ReviewFinding } from './review.js'
 import { defaultRuleCenterSeeds, RuleCenter } from './rule-center.js'
 
 describe('deterministic content review', () => {
@@ -204,6 +204,31 @@ describe('deterministic content review', () => {
     const result = center.evaluate({ brand: 'brand-1' }, '2026-08-24T12:00:00.000Z')
     expect(result.findings).toContainEqual(expect.objectContaining({ code: 'RULE_EXPIRED', severity: 'warning', action: 'warn' }))
     expect(isReviewBlocking(reviewDeterministic({ ...base, ruleCenter: center, ruleContext: { brand: 'brand-1' }, reviewAt: '2026-08-24T12:00:00.000Z' }))).toBe(false)
+  })
+
+  it('keeps an advisory rule finding decidable instead of marking it P0', () => {
+    const decision = (item: Pick<ReviewFinding, 'code' | 'field' | 'status' | 'severity' | 'priority'>) => validateReviewDecision({
+      finding: item, status: 'acknowledged', actorId: 'reviewer-1', canDecide: true, expectedRevision: 1, currentRevision: 1, contentStatus: 'review_required',
+    }, '2026-08-31T00:00:00.000Z')
+    const advisory = new RuleCenter(() => '2026-08-24T12:00:00.000Z', [{
+      packId: 'advisory-brand', name: '品牌建议规则', version: '1', scope: 'brand', targetId: 'brand-1', status: 'active',
+      effectiveTo: '2026-08-24T11:00:00.000Z', severity: 'warning', action: 'warn', checks: { conflictKeys: ['visual-density'] },
+      source: { kind: 'internal', reference: 'manual://advisory-expired', checkedAt: '2026-08-20T00:00:00.000Z' },
+    }])
+    const advisoryFinding = reviewDeterministic({ ...base, ruleCenter: advisory, ruleContext: { brand: 'brand-1' }, reviewAt: '2026-08-24T12:00:00.000Z' }).find(item => item.code === 'RULE_EXPIRED')!
+    expect(advisoryFinding).toMatchObject({ severity: 'warning', priority: 'P1' })
+    expect(decision(advisoryFinding)).toMatchObject({ key: 'RULE_EXPIRED:rules', status: 'acknowledged' })
+
+    // The blocking direction must not be downgraded with it: a platform rule
+    // that expired stays P0 and stays undecidable even when configured advisory.
+    const blocking = new RuleCenter(() => '2026-08-24T12:00:00.000Z', [{
+      packId: 'advisory-platform', name: '平台建议规则', version: '1', scope: 'platform', targetId: 'taobao', status: 'active',
+      effectiveTo: '2026-08-24T11:00:00.000Z', severity: 'warning', action: 'allow',
+      source: { kind: 'official', reference: 'manual://platform-expired', checkedAt: '2026-08-20T00:00:00.000Z' },
+    }])
+    const blockingFinding = reviewDeterministic({ ...base, ruleCenter: blocking, ruleContext: { platform: 'taobao' }, reviewAt: '2026-08-24T12:00:00.000Z' }).find(item => item.code === 'RULE_EXPIRED')!
+    expect(blockingFinding).toMatchObject({ severity: 'error', priority: 'P0' })
+    expect(() => decision(blockingFinding)).toThrow('REVIEW_P0_DECISION_FORBIDDEN')
   })
 
   it('keeps expired platform rules P0 fail-closed even when configured as advisory', () => {

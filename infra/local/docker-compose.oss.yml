@@ -14,7 +14,16 @@ services:
       ASSET_STORAGE_REGION: ${ASSET_STORAGE_REGION:?ASSET_STORAGE_REGION is required}
       ASSET_STORAGE_ENDPOINT: ${ASSET_STORAGE_ENDPOINT:?ASSET_STORAGE_ENDPOINT is required}
       ASSET_STORAGE_FORCE_PATH_STYLE: ${ASSET_STORAGE_FORCE_PATH_STYLE:-false}
-      ASSET_STORAGE_CREDENTIAL_MODE: ${ASSET_STORAGE_CREDENTIAL_MODE:-aliyun_ecs_ram_role}
+      # The API reads ASSET_STORAGE_CREDENTIAL_PROVIDER, and names
+      # ASSET_STORAGE_ECS_RAM_ROLE as the credential it then resolves; the older
+      # ASSET_STORAGE_CREDENTIAL_MODE key this overlay used to set is read by
+      # nothing, so applying this file in production rendered an API whose every
+      # object-storage call failed closed with
+      # ASSET_STORAGE_CREDENTIAL_PROVIDER_INVALID (503) instead of using the
+      # ECS-bound RAM role this overlay exists for. Same contract as the ECS
+      # cutover layer, infra/local/docker-compose.ecs-oss-cutover.yml.
+      ASSET_STORAGE_CREDENTIAL_PROVIDER: aliyun_ecs_ram_role
+      ASSET_STORAGE_ECS_RAM_ROLE: ${ASSET_STORAGE_ECS_RAM_ROLE:?ASSET_STORAGE_ECS_RAM_ROLE is required}
       ASSET_STORAGE_SSE_MODE: ${ASSET_STORAGE_SSE_MODE:-AES256}
       ASSET_STORAGE_KMS_KEY_ID: ${ASSET_STORAGE_KMS_KEY_ID:-}
       OBJECT_STORAGE_VERSIONING: ${OBJECT_STORAGE_VERSIONING:?OBJECT_STORAGE_VERSIONING=true is required}

@@ -171,6 +171,26 @@ export interface RequestSigner {
    * consumes the selectors, so a new router signer cannot be added without it.
    */
   readonly requiredApiSelectors?: readonly PlatformApiSelector[]
+  /**
+   * True when `sign` folds the platform credential into the signed parameter
+   * set it hands back — the router gateways do this (`access_token` for
+   * JD/Pinduoduo, `session` for Alibaba TOP, next to `app_key`/`client_id` and
+   * the signature).
+   *
+   * It is the signer, not the caller, that knows this, and it decides the
+   * transport: such a set has no way to travel except a body, because a
+   * bodyless method would put it in the URL where every hop that logs a request
+   * line records it (`applySignedRequest` in `platform-adapters/signed-request.ts`
+   * refuses that outright). A signer that leaves the credential in the
+   * `authorization` header — `createBearerSigner`, used by xiaohongshu and
+   * douyin — declares nothing here: its parameter set is empty, so its reads
+   * keep the plain GET those platforms were already called with.
+   *
+   * Declared by the signer that writes the credential into `params`, so the
+   * read transport follows the code that produces the credential instead of a
+   * platform list kept at the call site. A mutation gate row pins that.
+   */
+  readonly signedParametersCarryCredential?: boolean
   sign(request: HttpRequestDescriptor): Promise<Record<string, string>> | Record<string, string>
 }
 

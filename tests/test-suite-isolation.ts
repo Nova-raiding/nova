@@ -99,8 +99,12 @@ export const DEFAULT_SUITE_PENDING_ALLOWANCES: readonly DefaultSuitePendingAllow
   { file: 'packages/persistence/src/authorization-repository.release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/authorization-rls-boundary.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/authorization-rls-probe.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/billing-effective-amount.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/billing-repository.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
-  { file: 'packages/persistence/src/business-repository.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  // Two `postgresIt` blocks: the task brand projection and the durable product
+  // page's brand predicate. Both report one pending assertion without the
+  // binding, and both run for real in the CI PostgreSQL step.
+  { file: 'packages/persistence/src/business-repository.postgres.test.ts', pending: 2, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/commercial-contract-repository.release.postgres.test.ts', pending: 5, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/creative-point-security-release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/migration-067-release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
@@ -136,6 +140,7 @@ export const DEFAULT_SUITE_PENDING_ALLOWANCES: readonly DefaultSuitePendingAllow
   { file: 'packages/persistence/src/migration-211-release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/migration-219-release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/migration-231-release.postgres.test.ts', pending: 3, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/migration-232-release.postgres.test.ts', pending: 5, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/migration-integrity-release.postgres.test.ts', pending: 3, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/object-orphan-repository.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/ops-workspace-summary-rls.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },

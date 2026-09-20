@@ -55,8 +55,16 @@ async function refreshLocalDesktopToken() {
   process.env.MERCHANT_MCP_REFRESH_TOKEN = nextRefreshToken
   if (process.env.MERCHANT_MCP_TOKEN_SOURCE === 'launchd' && process.platform === 'darwin') {
     try {
-      execFileSync('launchctl', ['setenv', 'MERCHANT_MCP_TOKEN', accessToken], { stdio: 'ignore', timeout: 2000 })
+      // Persist the rotated refresh token before the access token. The rotation
+      // is single-use: the token just exchanged is already consumed server-side,
+      // so a mirror that fails part way through must not leave launchd holding
+      // the consumed pair. The refresh token is the durable half — it can mint a
+      // new access token — while the access token is short-lived and derived, so
+      // a surviving (old access, new refresh) pair still recovers on the next
+      // start, whereas (new access, old refresh) can never refresh again and
+      // forces a manual re-bind.
       execFileSync('launchctl', ['setenv', 'MERCHANT_MCP_REFRESH_TOKEN', nextRefreshToken], { stdio: 'ignore', timeout: 2000 })
+      execFileSync('launchctl', ['setenv', 'MERCHANT_MCP_TOKEN', accessToken], { stdio: 'ignore', timeout: 2000 })
     } catch { return false }
   }
   return true
@@ -2848,6 +2856,14 @@ async function callRemote(method, params) {
           credentialRefreshAttempted = true
           if (await refreshLocalDesktopToken()) {
             headers.authorization = `Bearer ${process.env.MERCHANT_MCP_TOKEN}`
+            // The rotation replay is not a retry against the caller's budget.
+            // `credentialRefreshAttempted` already bounds it to one per call,
+            // so refunding the attempt keeps the loop finite. Without this the
+            // refresh that lands on the final attempt (for example with
+            // MERCHANT_MCP_RETRY_ATTEMPTS=1) fell out of the loop and returned
+            // `undefined`, which the caller reported as a successful tool call
+            // with no result instead of a retried request or a hard failure.
+            attempt -= 1
             continue
           }
         }

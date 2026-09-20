@@ -1316,8 +1316,20 @@ components:
       properties:
         workspace_id: { type: string, minLength: 1 }
         run_id: { type: string, minLength: 1, maxLength: 200 }
-        expected_revision: { type: string, pattern: '^[1-9][0-9]*$' }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
         reason: { type: string, minLength: 3, maxLength: 500 }
+      additionalProperties: false
+    # `ops.canonical.backfill.run` executes one batch and records a synthesized
+    # audit reason, so it does not accept the caller-supplied `reason` that
+    # pause/resume require. Pointing it at the control schema above advertised a
+    # required field the wire validator rejects; it has its own exact schema.
+    McpCanonicalBackfillRunExecuteParams:
+      type: object
+      required: [run_id, expected_revision]
+      properties:
+        workspace_id: { type: string, minLength: 1 }
+        run_id: { type: string, minLength: 1, maxLength: 200 }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
       additionalProperties: false
     McpCanonicalBackfillConflictListParams:
       type: object
@@ -1325,7 +1337,7 @@ components:
         workspace_id: { type: string, minLength: 1 }
         run_id: { type: string, minLength: 1, maxLength: 200 }
         status: { type: string, enum: [open, claimed, resolved, dismissed] }
-        limit: { type: string, pattern: '^(?:[1-9][0-9]?|100)$' }
+        limit: { type: string, pattern: '^(?:[1-9]|[1-9][0-9]|100)$', maxLength: 3 }
       additionalProperties: false
     McpCanonicalBackfillConflictClaimParams:
       type: object
@@ -1333,7 +1345,7 @@ components:
       properties:
         workspace_id: { type: string, minLength: 1 }
         conflict_id: { type: string, minLength: 1, maxLength: 200 }
-        expected_revision: { type: string, pattern: '^[1-9][0-9]*$' }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
         reason: { type: string, minLength: 3, maxLength: 500 }
       additionalProperties: false
     McpCanonicalBackfillConflictResolveParams:
@@ -1342,13 +1354,13 @@ components:
       properties:
         workspace_id: { type: string, minLength: 1 }
         conflict_id: { type: string, minLength: 1, maxLength: 200 }
-        expected_revision: { type: string, pattern: '^[1-9][0-9]*$' }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
         status: { type: string, enum: [resolved, dismissed] }
         resolution_note: { type: string, minLength: 3, maxLength: 1000 }
         reason: { type: string, minLength: 3, maxLength: 1000 }
         remediation_type: { type: string, enum: [set_legacy_brand] }
         brand_id: { type: string, minLength: 1, maxLength: 200 }
-        expected_product_version: { type: string, pattern: '^[1-9][0-9]*$' }
+        expected_product_version: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
         reference: { type: string, minLength: 1, maxLength: 500 }
       additionalProperties: false
     McpCanonicalProductConsistencyResult:
@@ -1414,7 +1426,7 @@ components:
       description: Workspace-scoped read-only audit of image archive receipts, asset scope, digests, and trusted scan state. It never deletes or repairs data.
       properties:
         workspace_id: { type: string, description: Compatibility value; authorization comes from the authenticated workspace scope. }
-        limit: { type: string, pattern: '^[1-9][0-9]{0,2}$', description: Maximum findings to return; the server caps this at 100. }
+        limit: { type: string, pattern: '^(?:[1-9]|[1-9][0-9]|100)$', maxLength: 3, description: Maximum findings to return; 1 through 100. }
       additionalProperties: false
     McpMarketingImageBillingAuditParams:
       type: object
@@ -1763,7 +1775,7 @@ components:
         device: { type: string, enum: [desktop, mobile] }
         version: { type: string, minLength: 1, maxLength: 100 }
         spec_json: { type: string, contentMediaType: application/json, x-json-shape: object }
-        source_url: { type: string, format: uri, maxLength: 2000 }
+        source_url: { type: string, minLength: 1, format: uri, maxLength: 2000 }
         source_sha256: { type: string, pattern: '^(?:sha256:)?[A-Fa-f0-9]{64}$' }
         checked_at: { type: string, format: date-time }
         evidence_artifact_ref: { type: string, minLength: 1, maxLength: 2000 }
@@ -1833,8 +1845,8 @@ components:
         target_workspace_id: { type: string, minLength: 1, maxLength: 200 }
         delivery_id: { type: string, minLength: 1, maxLength: 256 }
         target_account_id: { type: string, minLength: 1, maxLength: 256 }
-        expected_revision: { type: string, pattern: '^[1-9][0-9]*$' }
-        reason: { type: string, minLength: 3, maxLength: 500 }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
+        reason: { type: string, minLength: 3, maxLength: 1000 }
       additionalProperties: false
     McpCustomerDeliveryAssetUploadParams:
       type: object
@@ -1894,7 +1906,7 @@ components:
             ops.canonical.backfill.get: '#/components/schemas/McpCanonicalBackfillRunGetParams'
             ops.canonical.backfill.pause: '#/components/schemas/McpCanonicalBackfillRunControlParams'
             ops.canonical.backfill.resume: '#/components/schemas/McpCanonicalBackfillRunControlParams'
-            ops.canonical.backfill.run: '#/components/schemas/McpCanonicalBackfillRunControlParams'
+            ops.canonical.backfill.run: '#/components/schemas/McpCanonicalBackfillRunExecuteParams'
             ops.canonical.backfill.conflicts.list: '#/components/schemas/McpCanonicalBackfillConflictListParams'
             ops.canonical.backfill.conflict.claim: '#/components/schemas/McpCanonicalBackfillConflictClaimParams'
             ops.canonical.backfill.conflict.resolve: '#/components/schemas/McpCanonicalBackfillConflictResolveParams'

@@ -99,9 +99,16 @@ export function generateSeoGeoSuggestions(input: SeoGeoInput): SeoGeoSuggestion[
     ...(normalized.keyword ? [{ source: 'merchant_keyword' as const, value: normalized.keyword }] : []),
   ]
   const base = normalize([normalized.title, normalized.category, ...dedupedKeywords].filter(Boolean).join(' '))
-  const title = base.slice(0, platformLimits[normalized.platform])
+  const limit = platformLimits[normalized.platform]
+  // Cut by characters, not UTF-16 code units. `slice` splits a surrogate pair,
+  // and the lone half survives JSON but is encoded as U+FFFD by the first UTF-8
+  // writer (the publish body or the database), so a title truncated inside an
+  // emoji reached the platform ending in a replacement character. The risk note
+  // counts characters too, or it reports a truncation that did not happen for a
+  // title shorter than the limit in characters.
+  const title = Array.from(base).slice(0, limit).join('')
   const risks = [
-    ...(normalized.title.length > platformLimits[normalized.platform] ? ['原商品标题超过平台建议长度，已截断'] : []),
+    ...(Array.from(normalized.title).length > limit ? ['原商品标题超过平台建议长度，已截断'] : []),
     ...(points.length === 0 ? ['缺少已确认卖点，未自动补写功效或承诺'] : []),
     'SEO/GEO 分数是本地建议，不代表平台排名、收录或转化结果',
   ]

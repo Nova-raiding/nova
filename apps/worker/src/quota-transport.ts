@@ -1,13 +1,13 @@
 import { createClient, type RedisClientType } from 'redis'
 import { InMemoryQuotaCounterStore, type QuotaCounterStore } from '../../../packages/quotas/src/admission.js'
 import { InMemoryLeaseLockStore, KeyedLeaseLock, type LeaseLockStore } from '../../../packages/quotas/src/lock.js'
-import { closeRedisConnection, withRedisOperationTimeout } from './redis-transport.js'
+import { closeRedisClient, withRedisOperationTimeout, type RedisQueueConnectionOptions } from './redis-transport.js'
 
 interface RedisQuotaCounterStore extends QuotaCounterStore {}
 
-export async function createQuotaCounterStore(url: string | undefined): Promise<{ store: QuotaCounterStore; lock: KeyedLeaseLock; close: () => Promise<void>; mode: 'redis_atomic' | 'process_local' }> {
+export async function createQuotaCounterStore(url: string | undefined, options: RedisQueueConnectionOptions = {}): Promise<{ store: QuotaCounterStore; lock: KeyedLeaseLock; close: () => Promise<void>; mode: 'redis_atomic' | 'process_local' }> {
   if (!url?.trim()) return { store: new InMemoryQuotaCounterStore(), lock: new KeyedLeaseLock(new InMemoryLeaseLockStore()), close: async () => undefined, mode: 'process_local' }
-  const client = createClient({ url: url.trim() }) as RedisClientType
+  const client = (options.clientFactory ?? defaultQuotaClient)(url.trim())
   client.on('error', () => undefined)
   await client.connect()
   const store: RedisQuotaCounterStore = {
@@ -32,5 +32,11 @@ export async function createQuotaCounterStore(url: string | undefined): Promise<
       await withRedisOperationTimeout(client.eval(`if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end`, { keys: [`merchant:lock:${key}`], arguments: [token] }))
     },
   }
-  return { store, lock: new KeyedLeaseLock(lock), close: () => closeRedisConnection(client), mode: 'redis_atomic' }
+  return { store, lock: new KeyedLeaseLock(lock), close: () => closeRedisClient(client), mode: 'redis_atomic' }
+}
+
+/** Same shape and the same reason as `redisTransportClient`: node-redis v5 has
+ * no `createClient(url)` overload, so the URL has to travel as an option. */
+function defaultQuotaClient(url: string): RedisClientType {
+  return createClient({ url }) as RedisClientType
 }

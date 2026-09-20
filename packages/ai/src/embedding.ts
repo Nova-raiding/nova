@@ -1,6 +1,6 @@
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
-import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
+import { assertProviderResponseAccepted, providerIdempotencyKey, resolveProviderTimeoutMs, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry, type ProviderBeforeRequest } from './provider-request.js'
 import { assertRelayBaseUrl, assertRelayUrl, relaySecurityFromEnv, type RelaySecurityPolicy } from './relay-security.js'
 import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 
@@ -66,5 +66,5 @@ export function createEmbeddingClientFromEnv(source: Record<string, string | und
   if (!baseUrl || !apiKey || !model || [baseUrl, apiKey, model].some(isPlaceholderModelConfiguration)) return undefined
   const relaySecurity = relaySecurityFromEnv(source); if (!relaySecurity) return undefined
   const rawDimensions = source.EMBEDDING_DIMENSIONS?.trim(); const dimensions = rawDimensions ? Number(rawDimensions) : undefined
-  return new OpenAICompatibleEmbeddingClient({ baseUrl, apiKey, model, ...(dimensions !== undefined ? { dimensions } : {}), timeoutMs: Number(source.EMBEDDING_TIMEOUT_MS ?? 90_000), relaySecurity, ...(usageSink ? { usageSink } : {}), ...(beforeRequest ? { beforeRequest } : {}) })
+  return new OpenAICompatibleEmbeddingClient({ baseUrl, apiKey, model, ...(dimensions !== undefined ? { dimensions } : {}), timeoutMs: resolveProviderTimeoutMs(source.EMBEDDING_TIMEOUT_MS, 90_000, 'EMBEDDING_TIMEOUT_MS'), relaySecurity, ...(usageSink ? { usageSink } : {}), ...(beforeRequest ? { beforeRequest } : {}) })
 }

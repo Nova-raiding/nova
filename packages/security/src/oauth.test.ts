@@ -25,6 +25,20 @@ describe('OAuth security', () => {
     expect(hashPkceVerifier('verifier')).toMatch(/^[A-Za-z0-9_-]+$/)
   })
 
+  it('redacts the credential carriers every other redactor in the repository covers', () => {
+    // `authorization`/`cookie`/`signature` are redacted by the sibling
+    // `isolateSensitiveFields`, by the connector evidence scrubber and by the
+    // bridge log scrubber; a key-based redactor that keeps them leaks a bearer
+    // token verbatim into whatever it is asked to sanitize.
+    expect(redactSecrets({ authorization: 'Bearer secret-token', cookie: 'session=secret', setCookie: 'sid=secret', signature: 'deadbeef', visible: 'ok' })).toEqual({
+      authorization: '[REDACTED]',
+      cookie: '[REDACTED]',
+      setCookie: '[REDACTED]',
+      signature: '[REDACTED]',
+      visible: 'ok',
+    })
+  })
+
   it('bounds audit redaction for circular and deeply nested evidence', () => {
     const circular: Record<string, unknown> = { safe: 'ok', accessToken: 'secret' }
     circular.self = circular

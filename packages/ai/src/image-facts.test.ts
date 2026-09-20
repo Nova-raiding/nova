@@ -17,6 +17,7 @@ describe('platform-relay image facts extraction', () => {
     expect(createImageFactsExtractorFromEnv({ OCR_MODEL: 'vision-v1', AI_BASE_URL: 'https://direct.example', AI_API_KEY: 'direct-key' })).toBeUndefined()
     expect(createImageFactsExtractorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', OCR_MODEL: 'vision-v1' })).toBeUndefined()
     expect(createImageFactsExtractorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'relay-key', OCR_MODEL: 'vision-v1' })).toBeDefined()
+    expect(() => createImageFactsExtractorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'relay-key', OCR_MODEL: 'vision-v1', OCR_TIMEOUT_MS: '90s' })).toThrow('PROVIDER_TIMEOUT_INVALID')
   })
 
   it('does not assemble an OCR provider from placeholder relay configuration', () => {

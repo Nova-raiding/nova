@@ -11,7 +11,8 @@ import { createServer } from 'node:http'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pool, type PoolClient, type QueryResult } from 'pg'
-import { createClient } from 'redis'
+import { createClient, type RedisClientType } from 'redis'
+import { closeRedisClient } from '../apps/worker/src/redis-transport.js'
 import type { PaymentRefundStatusResult, PaymentStatusResult } from '../packages/billing/src/payment-provider.js'
 import { PostgresBillingRepository } from '../packages/persistence/src/billing-repository.js'
 import { PostgresOutboxRepository } from '../packages/persistence/src/repository.js'
@@ -107,7 +108,7 @@ async function main() {
   let fixture: IsolatedOpsFixture | undefined
   let pool: Pool | undefined
   let appPool: Pool | undefined
-  let redis: ReturnType<typeof createClient> | undefined
+  let redis: RedisClientType | undefined
   let child: ChildProcess | undefined
   let disposal: IsolatedFixtureDisposal | undefined
   const checks: Record<string, unknown>[] = []
@@ -655,7 +656,12 @@ async function main() {
     for (const gate of gates) gate.completion.release()
     await stopChild(child).catch(() => errors.push('VERIFY_PAYMENT_CHILD_DISPOSAL_FAILED'))
     if (stub.listening) { stub.closeAllConnections(); await new Promise<void>(resolveClose => stub.close(() => resolveClose())) }
-    if (redis?.isOpen) await redis.quit().catch(() => { redis?.destroy(); errors.push('VERIFY_PAYMENT_REDIS_DISCONNECT_FAILED') })
+    // The worker's one close implementation, not a raw `quit()`: `quit()` flips
+    // the socket's open flag and then awaits the QUIT reply, and nothing here
+    // bounds that wait — a fixture Redis that stopped answering parks this
+    // `finally` forever and the acceptance never writes its report.
+    // `closeRedisClient` bounds the attempt and releases the socket.
+    if (redis) await closeRedisClient(redis).catch(() => errors.push('VERIFY_PAYMENT_REDIS_DISCONNECT_FAILED'))
     await pool?.end().catch(() => errors.push('VERIFY_PAYMENT_DATABASE_DISCONNECT_FAILED'))
     await appPool?.end().catch(() => errors.push('VERIFY_PAYMENT_APP_DATABASE_DISCONNECT_FAILED'))
     if (fixture) {

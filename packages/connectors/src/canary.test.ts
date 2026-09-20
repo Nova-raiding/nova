@@ -48,6 +48,10 @@ function localSandboxConnector(options: { statusRequestId?: string; omitCursor?:
     const requestUrl = new URL(String(url))
     if (requestUrl.pathname === '/oauth/revoke') return new Response('{}', { status: 200 })
     if (requestUrl.pathname === '/api/products/status') return new Response(JSON.stringify({ found: true, state: 'published', remoteId: fixture.remoteId, requestId: options.statusRequestId ?? writeRequestId }), { status: 200 })
+    // This sandbox config carries no signer, so its reads keep the plain GET and
+    // are told apart from a write by the method: only the write path POSTs. A
+    // signed (router) config is the one that changes, and it is covered in
+    // tests/credential-transport.invariant.test.ts.
     if (requestUrl.pathname === '/api/products' && init?.method === 'GET') {
       return new Response(JSON.stringify(requestUrl.searchParams.has('cursor') ? { items: [], nextCursor: undefined } : { items: [fixture], ...(options.omitCursor ? {} : { nextCursor: 'sandbox-page-2' }) }), { status: 200 })
     }

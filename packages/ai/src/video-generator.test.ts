@@ -126,6 +126,8 @@ describe('video generator relay', () => {
     expect(createVideoGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'http://relay.example', MODEL_RELAY_API_KEY: 'relay', VIDEO_MODEL: 'v1' })).toBeUndefined()
     expect(createVideoGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'relay', VIDEO_MODEL: 'v1' })).toBeDefined()
     expect(createVideoGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', VIDEO_MODEL_RELAY_API_KEY: 'video-relay', VIDEO_MODEL: 'v1' })).toBeDefined()
+    expect(() => createVideoGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'relay', VIDEO_MODEL: 'v1', VIDEO_TIMEOUT_MS: '3m' })).toThrow('PROVIDER_TIMEOUT_INVALID')
+    expect(createVideoGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'relay', VIDEO_MODEL: 'v1', VIDEO_TIMEOUT_MS: '180000' })).toBeDefined()
   })
 
   it('passes a bounded configurable duration required by per-duration relay billing', async () => {

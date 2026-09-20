@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { debitKeyOrderIds, effectiveDebitFensOf, reversalOrderId, settlementOrderId } from './debit-key.js'
 import { withWorkspaceTransaction, requireWorkspaceScope, type OutboxEventInput, type SqlClient, type SqlPool } from './repository.js'
 
 export type BillingChannel = 'alipay' | 'wechat'
@@ -202,22 +203,83 @@ export class PostgresBillingRepository {
     })
   }
 
-  async balanceFen(workspaceId: string) {
+  /** The one reader of a workspace's spendable balance. */
+  private static async workspaceBalanceFen(client: SqlClient, workspaceId: string): Promise<number> {
+    const result = await client.query<{ balance_fen: string | number }>("SELECT COALESCE(SUM(CASE WHEN type = 'debit' THEN -amount_fen ELSE amount_fen END),0)::bigint AS balance_fen FROM billing_transactions WHERE workspace_id=$1", [workspaceId])
+    return billingInteger(result.rows[0]?.balance_fen ?? 0)
+  }
+
+  /**
+   * The SQL half of `debit-key.ts`'s one definition of "what this debit key is
+   * worth right now": the reservation, plus every settlement delta already
+   * appended, minus any reversal already written. The row set is that module's
+   * `debitKeyOrderIds`, not a second list kept here.
+   *
+   * `settleDebit` and `refundDebit` derive their amounts from this and are not
+   * allowed to aggregate for themselves — the defect this replaces was exactly
+   * one reader being taught about a new row kind while its sibling stayed on
+   * the old arithmetic, so the two halves of the same settlement disagreed
+   * about what the key cost.
+   *
+   * Callers must hold the workspace row lock before calling: an amount is only
+   * actionable while no sibling transaction can append between this read and
+   * the write it decides. An existing `refund:<key>` row belongs in the sum — a
+   * reversal taken before the settlement arrives — otherwise the settlement
+   * re-derives its delta from the pre-reversal amount and hands the whole
+   * pre-authorization back to the workspace.
+   */
+  private static async effectiveDebitFen(client: SqlClient, workspaceId: string, debitKey: string): Promise<number> {
+    const result = await client.query<{ effective_fen: string | number }>("SELECT COALESCE(SUM(CASE WHEN type='debit' THEN amount_fen ELSE -amount_fen END),0)::bigint AS effective_fen FROM billing_transactions WHERE workspace_id=$1 AND order_id = ANY($2::text[]) AND type IN ('debit','refund')", [workspaceId, debitKeyOrderIds(debitKey)])
+    return billingInteger(result.rows[0]?.effective_fen ?? 0)
+  }
+
+  /**
+   * The public read of the effective amount, for consumers outside a
+   * settlement transaction — the reconciliation report that compares the wallet
+   * ledger against the provider's reported charge.
+   *
+   * Row set and arithmetic are `debit-key.ts`'s, not this method's: the report
+   * used to aggregate `actionId + settlement:* - settlement-refund:*` for itself,
+   * without the `refund:<key>` row, so a correct reversal-first ledger was
+   * reported `needs_review` while a ledger that over-credited the workspace
+   * reconciled clean. The returned map holds only the keys that own at least one
+   * ledger row, so a caller can tell "never debited" from "sums to zero".
+   *
+   * `actorId` narrows the read the same way `listTransactions` narrows the
+   * statement it feeds: a personal-scope statement must not see the workspace's
+   * rows, and a settlement row is written under the actor of its reservation.
+   */
+  async effectiveDebitFens(workspaceId: string, debitKeys: readonly string[], actorId?: string): Promise<Map<string, number>> {
+    const keys = [...new Set(debitKeys.filter(key => key.trim()))]
+    if (!keys.length) return new Map()
     return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => {
-      const result = await client.query<{ balance_fen: string | number }>('SELECT COALESCE(SUM(CASE WHEN type = \'debit\' THEN -amount_fen ELSE amount_fen END),0)::bigint AS balance_fen FROM billing_transactions WHERE workspace_id=$1', [workspaceId])
-      return billingInteger(result.rows[0]?.balance_fen ?? 0)
+      const result = await client.query<TransactionRow>("SELECT id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at FROM billing_transactions WHERE workspace_id=$1 AND order_id = ANY($2::text[]) AND type IN ('debit','refund') AND ($3::text IS NULL OR actor_id=$3)", [workspaceId, keys.flatMap(key => debitKeyOrderIds(key)), actorId ?? null])
+      return effectiveDebitFensOf(result.rows.map(row => ({ type: row.type, amountFen: billingInteger(row.amount_fen), orderId: row.order_id })), keys)
     })
   }
 
-  /** Atomically reserve wallet funds by serializing on the workspace row. */
+  async balanceFen(workspaceId: string) {
+    return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => PostgresBillingRepository.workspaceBalanceFen(client, workspaceId))
+  }
+
+  /** Atomically reserve wallet funds by serializing on the workspace row.
+   *
+   * The workspace lock is the *first* statement, before the idempotency lookup.
+   * Look the key up first and two concurrent replays of one key both read an
+   * empty ledger — the winner's row is still uncommitted — so both pass the
+   * lookup and the loser surfaces PostgreSQL's duplicate-key error from
+   * `UNIQUE (workspace_id, order_id, type)` to a caller that is waiting for
+   * `created:false` to decide whether a compensating refund is owed. The
+   * constraint stays as the backstop; the normal path is supposed to hit the
+   * replay branch. */
   async debit(input: WalletDebitInput) {
     billingAmountFen(input.amountFen)
     return withWorkspaceTransaction(this.pool, requireWorkspaceScope(input.workspaceId), async client => {
+      await client.query('SELECT id FROM workspaces WHERE id=$1 FOR UPDATE', [input.workspaceId])
       const existing = await client.query<TransactionRow>('SELECT id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at FROM billing_transactions WHERE workspace_id=$1 AND order_id=$2 AND type=\'debit\'', [input.workspaceId, input.idempotencyKey])
       if (existing.rows[0]) { if (billingAmountFen(existing.rows[0].amount_fen) !== input.amountFen || existing.rows[0].description !== `${input.description}（${input.actorId}）`) throw new WalletDebitIdempotencyConflictError(); return { ...transaction(existing.rows[0]), created: false } satisfies WalletDebitResult }
-      await client.query('SELECT id FROM workspaces WHERE id=$1 FOR UPDATE', [input.workspaceId])
-      const balance = await client.query<{ balance_fen: string }>('SELECT COALESCE(SUM(CASE WHEN type = \'debit\' THEN -amount_fen ELSE amount_fen END),0)::bigint AS balance_fen FROM billing_transactions WHERE workspace_id=$1', [input.workspaceId])
-      if (billingInteger(balance.rows[0]?.balance_fen ?? 0) < input.amountFen) throw new Error('BILLING_INSUFFICIENT_BALANCE')
+      const balanceFen = await PostgresBillingRepository.workspaceBalanceFen(client, input.workspaceId)
+      if (balanceFen < input.amountFen) throw new Error('BILLING_INSUFFICIENT_BALANCE')
       const inserted = await client.query<TransactionRow>('INSERT INTO billing_transactions (id,workspace_id,type,amount_fen,order_id,actor_id,description) VALUES ($1,$2,\'debit\',$3,$4,$5,$6) RETURNING id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at', [billingTransactionId(), input.workspaceId, input.amountFen, input.idempotencyKey, input.actorId, `${input.description}（${input.actorId}）`])
       return { ...transaction(inserted.rows[0]!), created: true } satisfies WalletDebitResult
     })
@@ -226,27 +288,27 @@ export class PostgresBillingRepository {
   /** Settle a small pre-debit to the provider-reported final customer charge.
    * The original debit remains immutable; only the delta is appended.
    *
-   * The delta is derived from the amount currently in effect for this debit
-   * key — the original reservation plus every settlement entry already
-   * appended — never from the original reservation alone. A provider can
-   * correct a final charge in either direction, and a delta computed from the
-   * reservation would double-count (or reverse) an earlier settlement. */
+   * The delta is derived from `effectiveDebitFen` for this debit key — the
+   * original reservation plus every settlement entry already appended, minus
+   * any reversal already written — never from the original reservation alone.
+   * A provider can correct a final charge in either direction, and a delta
+   * computed from the reservation would double-count (or reverse) an earlier
+   * settlement, while one computed without the reversal would refund the whole
+   * pre-authorization a second time. */
   async settleDebit(input: { workspaceId: string; debitIdempotencyKey: string; finalAmountFen: number; actorId: string; description: string }) {
     if (!Number.isSafeInteger(input.finalAmountFen) || input.finalAmountFen <= 0) throw new Error('BILLING_FINAL_AMOUNT_INVALID')
     return withWorkspaceTransaction(this.pool, requireWorkspaceScope(input.workspaceId), async client => {
       await client.query('SELECT id FROM workspaces WHERE id=$1 FOR UPDATE', [input.workspaceId])
       const original = await client.query<TransactionRow>("SELECT id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at FROM billing_transactions WHERE workspace_id=$1 AND order_id=$2 AND type='debit'", [input.workspaceId, input.debitIdempotencyKey])
       if (!original.rows[0]) throw new Error('billing debit not found')
-      const originalAmountFen = billingAmountFen(original.rows[0].amount_fen)
-      const settlementDebitOrderId = `settlement:${input.debitIdempotencyKey}`
-      const settlementRefundOrderId = `settlement-refund:${input.debitIdempotencyKey}`
-      const applied = await client.query<{ appliedFen: string | number }>("SELECT COALESCE(SUM(CASE WHEN type='debit' THEN amount_fen ELSE -amount_fen END),0)::bigint AS \"appliedFen\" FROM billing_transactions WHERE workspace_id=$1 AND order_id IN ($2::text,$3::text) AND type IN ('debit','refund')", [input.workspaceId, settlementDebitOrderId, settlementRefundOrderId])
-      const effectiveFen = originalAmountFen + billingInteger(applied.rows[0]?.appliedFen ?? 0)
+      const settlementDebitOrderId = settlementOrderId(input.debitIdempotencyKey, 'debit')
+      const settlementRefundOrderId = settlementOrderId(input.debitIdempotencyKey, 'refund')
+      const effectiveFen = await PostgresBillingRepository.effectiveDebitFen(client, input.workspaceId, input.debitIdempotencyKey)
       const delta = input.finalAmountFen - effectiveFen
       if (delta === 0) {
         // Still report the entry that produced the effective amount so a
         // replayed settlement is indistinguishable from the first response.
-        const settlementRow = await client.query<TransactionRow>('SELECT id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at FROM billing_transactions WHERE workspace_id=$1 AND order_id IN ($2::text,$3::text) AND type IN (\'debit\',\'refund\') ORDER BY created_at DESC,id DESC LIMIT 1', [input.workspaceId, settlementDebitOrderId, settlementRefundOrderId])
+        const settlementRow = await client.query<TransactionRow>('SELECT id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at FROM billing_transactions WHERE workspace_id=$1 AND order_id = ANY($2::text[]) AND type IN (\'debit\',\'refund\') ORDER BY created_at DESC,id DESC LIMIT 1', [input.workspaceId, debitKeyOrderIds(input.debitIdempotencyKey)])
         return { original: transaction(original.rows[0]), delta: settlementRow.rows[0] ? transaction(settlementRow.rows[0]) : undefined }
       }
       const orderId = delta > 0 ? settlementDebitOrderId : settlementRefundOrderId
@@ -260,8 +322,8 @@ export class PostgresBillingRepository {
         return { original: transaction(original.rows[0]), delta: transaction(existing.rows[0]) }
       }
       if (delta > 0) {
-        const balance = await client.query<{ balance_fen: string }>("SELECT COALESCE(SUM(CASE WHEN type = 'debit' THEN -amount_fen ELSE amount_fen END),0)::bigint AS balance_fen FROM billing_transactions WHERE workspace_id=$1", [input.workspaceId])
-        if (billingInteger(balance.rows[0]?.balance_fen ?? 0) < delta) throw new Error('BILLING_INSUFFICIENT_BALANCE')
+        const balanceFen = await PostgresBillingRepository.workspaceBalanceFen(client, input.workspaceId)
+        if (balanceFen < delta) throw new Error('BILLING_INSUFFICIENT_BALANCE')
       }
       const inserted = await client.query<TransactionRow>('INSERT INTO billing_transactions (id,workspace_id,type,amount_fen,order_id,actor_id,description) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at', [billingTransactionId(), input.workspaceId, type, Math.abs(delta), orderId, original.rows[0].actor_id ?? input.actorId, `${input.description}（${input.actorId}）`])
       return { original: transaction(original.rows[0]), delta: transaction(inserted.rows[0]!) }
@@ -272,31 +334,30 @@ export class PostgresBillingRepository {
    * The debit and refund are separate immutable ledger entries; the refund
    * key is derived from the original debit key so retries remain idempotent.
    *
-   * The refund reverses the amount currently in effect for the debit key — the
+   * The amount reversed is `effectiveDebitFen` for the debit key — the
    * pre-authorization plus every settlement delta `settleDebit` appended — not
    * the original reservation. Reversing only the reservation would leave the
    * settled difference charged on an action that produced no result, and would
    * over-credit a reservation whose final charge was settled downwards.
    *
-   * That amount and the delta `settleDebit` computes are two reads of the same
-   * settlement aggregate, so they have to be taken under the same workspace row
-   * lock. Without it the pair interleaves as a write skew: settlement derives
-   * its delta from the pre-refund aggregate while the reversal derives its
-   * amount from the pre-settlement one, and a failed action no longer nets to
-   * zero against what the provider actually charged. Taking the lock before the
-   * first read — the same order `debit` and `settleDebit` use — also makes a
-   * concurrent duplicate reversal replay its existing row instead of racing it
-   * into the `UNIQUE (workspace_id, order_id, type)` constraint. */
+   * That amount and the delta `settleDebit` computes are two reads of one
+   * aggregate, so both are taken under the same workspace row lock, which each
+   * method grabs as its first statement. Without that order the pair
+   * interleaves as a write skew: settlement derives its delta from the
+   * pre-refund aggregate while the reversal derives its amount from the
+   * pre-settlement one, and a failed action no longer nets to zero against what
+   * the provider actually charged. The same first-statement lock is what makes
+   * a concurrent duplicate reversal replay its existing row instead of racing
+   * it into the `UNIQUE (workspace_id, order_id, type)` constraint. */
   async refundDebit(input: { workspaceId: string; debitIdempotencyKey: string; actorId: string; reason: string }) {
     return withWorkspaceTransaction(this.pool, requireWorkspaceScope(input.workspaceId), async client => {
       await client.query('SELECT id FROM workspaces WHERE id=$1 FOR UPDATE', [input.workspaceId])
       const debit = await client.query<TransactionRow>("SELECT id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at FROM billing_transactions WHERE workspace_id=$1 AND order_id=$2 AND type='debit'", [input.workspaceId, input.debitIdempotencyKey])
       if (!debit.rows[0]) throw new Error('billing debit not found')
-      const refundOrderId = `refund:${input.debitIdempotencyKey}`
+      const refundOrderId = reversalOrderId(input.debitIdempotencyKey)
       const existing = await client.query<TransactionRow>("SELECT id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at FROM billing_transactions WHERE workspace_id=$1 AND order_id=$2 AND type='refund'", [input.workspaceId, refundOrderId])
       if (existing.rows[0]) return transaction(existing.rows[0])
-      const applied = await client.query<{ appliedFen: string | number }>("SELECT COALESCE(SUM(CASE WHEN type='debit' THEN amount_fen ELSE -amount_fen END),0)::bigint AS \"appliedFen\" FROM billing_transactions WHERE workspace_id=$1 AND order_id IN ($2::text,$3::text) AND type IN ('debit','refund')", [input.workspaceId, `settlement:${input.debitIdempotencyKey}`, `settlement-refund:${input.debitIdempotencyKey}`])
-      const refundFen = billingAmountFen(debit.rows[0].amount_fen) + billingInteger(applied.rows[0]?.appliedFen ?? 0)
+      const refundFen = await PostgresBillingRepository.effectiveDebitFen(client, input.workspaceId, input.debitIdempotencyKey)
       const inserted = await client.query<TransactionRow>('INSERT INTO billing_transactions (id,workspace_id,type,amount_fen,order_id,actor_id,description) VALUES ($1,$2,\'refund\',$3,$4,$5,$6) RETURNING id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at', [billingTransactionId(), input.workspaceId, billingAmountFen(refundFen), refundOrderId, debit.rows[0].actor_id ?? input.actorId, `模型失败退款（${input.actorId}）：${input.reason}`])
       return transaction(inserted.rows[0]!)
     })
@@ -368,9 +429,9 @@ export class PostgresBillingRepository {
       const active = reservations.rows.find(row => row.order_id && !releasedKeys.has(row.order_id))
       if (active) return { ...transaction(active), created: false, completed: false }
       await client.query('SELECT id FROM workspaces WHERE id=$1 FOR UPDATE', [input.workspaceId])
-      const balance = await client.query<{ balance_fen: string | number }>("SELECT COALESCE(SUM(CASE WHEN type = 'debit' THEN -amount_fen ELSE amount_fen END),0)::bigint AS balance_fen FROM billing_transactions WHERE workspace_id=$1", [input.workspaceId])
+      const balanceFen = await PostgresBillingRepository.workspaceBalanceFen(client, input.workspaceId)
       const amountFen = billingAmountFen(current.amount_fen)
-      if (billingInteger(balance.rows[0]?.balance_fen ?? 0) < amountFen) throw new RechargeRefundBalanceUnavailableError()
+      if (balanceFen < amountFen) throw new RechargeRefundBalanceUnavailableError()
       const reservationKey = `${prefix}${reservations.rows.length + 1}`
       const inserted = await client.query<TransactionRow>("INSERT INTO billing_transactions (id,workspace_id,type,amount_fen,order_id,actor_id,description) VALUES ($1,$2,'debit',$3,$4,$5,$6) RETURNING id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at", [billingTransactionId(), input.workspaceId, amountFen, reservationKey, current.created_by_actor_id ?? input.actorId, `充值原路退款预留（${input.actorId}）：${input.reason}`])
       return { ...transaction(inserted.rows[0]!), created: true, completed: false }

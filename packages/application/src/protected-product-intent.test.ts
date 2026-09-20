@@ -79,6 +79,40 @@ describe('protected product intent validator', () => {
     expect(validateProtectedProductIntent(request).findings).toContainEqual(expect.objectContaining({ attribute }))
   })
 
+  it.each<[ProtectedProductAttribute, string]>([
+    ['accessories', '删掉商品配件'],
+    ['accessories', '拿掉商品配件'],
+    ['color', '换掉商品颜色'],
+    ['color', '去除商品颜色'],
+    ['logo', '更新商品 logo'],
+    ['packaging_text', '编辑包装文字'],
+    ['material', '消除商品材质'],
+    ['structure', '改一下商品结构'],
+  ])('fails closed for everyday mutation verbs on %s: %s', (attribute, request) => {
+    const result = validateProtectedProductIntent(request)
+    expect(result.allowed).toBe(false)
+    expect(result.findings).toContainEqual(expect.objectContaining({ attribute }))
+  })
+
+  it.each([
+    'update the product color',
+    'edit the product color',
+    'get rid of the product logo',
+    'take off the product logo',
+    'obscure the product logo',
+    'cover the packaging text',
+    'blur the certification mark',
+    'crop out the product logo',
+    'drop the product accessories',
+  ])('fails closed for everyday English mutation verbs: %s', request => {
+    expect(validateProtectedProductIntent(request).allowed).toBe(false)
+  })
+
+  it('still allows a safe-target-only request phrased with the new verbs', () => {
+    expect(validateProtectedProductIntent('把背景调一下，更新光影和构图').allowed).toBe(true)
+    expect(validateProtectedProductIntent('Update the background lighting and crop the frame').allowed).toBe(true)
+  })
+
   it('detects protected attributes joined by Chinese enumeration punctuation', () => {
     const result = validateProtectedProductIntent('修改商品颜色、结构、材质、Logo 和配件')
     expect(result.findings.map(item => item.attribute)).toEqual(['color', 'structure', 'material', 'logo', 'accessories'])

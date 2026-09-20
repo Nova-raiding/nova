@@ -35,13 +35,19 @@ export class PostgresCreativePointLifecycleRepository {
     required(input.idempotencyKey, 'idempotencyKey'); required(input.reservationId, 'reservationId'); required(input.actorId, 'actorId'); required(input.reason, 'reason'); evidence(input.evidence)
     const request = { reservation_id: input.reservationId, points: input.points, reason: input.reason, actor_id: input.actorId, evidence: input.evidence }
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      // The state lock is taken before the replay lookup, as `expireGrant`
+      // already does: a concurrent retry of one idempotency key that read the
+      // operation before the winner committed used to block here, re-read the
+      // settled reservation and apply a *second* reversal (or die on the
+      // operation's unique key with a raw SQLSTATE). Under the lock the loser
+      // finds the winner's completed operation and replays its result.
+      await this.lockState(client, workspaceId)
       const replay = await this.replay(client, workspaceId, input.kind, input.idempotencyKey, request)
       if (replay) return replay
       const reservation = await client.query<{ settled: string | number }>(`SELECT settled_points AS settled FROM creative_point_reservations WHERE workspace_id=$1 AND id=$2 AND status='settled' FOR UPDATE`, [workspaceId, input.reservationId])
       if (!reservation.rows[0]) throw new CreativePointRepositoryError('CREATIVE_POINT_RESERVATION_NOT_FOUND', 'settled creative point reservation was not found')
       const reversed = await client.query<{ points: string | number }>(`SELECT COALESCE(sum(points),0) AS points FROM creative_point_reversals_v2 WHERE workspace_id=$1 AND original_reservation_id=$2`, [workspaceId, input.reservationId])
       if (integer(reversed.rows[0]?.points ?? 0) + input.points > integer(reservation.rows[0].settled)) throw new CreativePointRepositoryError('CREATIVE_POINT_INSUFFICIENT', 'reversal exceeds settled creative points')
-      await this.lockState(client, workspaceId)
       const operationId = `cpo_${randomUUID()}`
       await this.operation(client, operationId, workspaceId, input.kind, input.idempotencyKey, request, observedAt)
       await this.reverseAllocations(client, workspaceId, input.reservationId, input.points, observedAt)
@@ -85,8 +91,12 @@ export class PostgresCreativePointLifecycleRepository {
     if (input.actorId === input.approvedByActorId) throw new CommercialAdjustmentApprovalError('adjustment maker and approver must be different actors')
     const request = { approval_id: input.approvalId, points_delta: input.pointsDelta, expected_access_revision: input.expectedAccessRevision, actor_id: input.actorId, approved_by_actor_id: input.approvedByActorId, reason: input.reason, evidence: input.evidence }
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      const replay = await this.replay(client, workspaceId, 'adjust', input.idempotencyKey, request); if (replay) return replay
+      // Lock first, then replay (the order `expireGrant` uses). With the replay
+      // lookup first, a retry that raced the original blocked on the lock here
+      // and then failed its revision fence with `CREATIVE_POINT_IDEMPOTENCY_CONFLICT`
+      // instead of replaying the balance the caller's key already produced.
       await this.lockState(client, workspaceId)
+      const replay = await this.replay(client, workspaceId, 'adjust', input.idempotencyKey, request); if (replay) return replay
       const state = await client.query<StateRow>(`SELECT available_points AS available,reserved_points AS reserved,settled_points AS settled,revision FROM creative_point_access_state WHERE workspace_id=$1 FOR UPDATE`, [workspaceId])
       if (!state.rows[0] || integer(state.rows[0].revision) !== input.expectedAccessRevision) throw new CreativePointRepositoryError('CREATIVE_POINT_IDEMPOTENCY_CONFLICT', 'creative point access revision is stale')
       const before = integer(state.rows[0].available)

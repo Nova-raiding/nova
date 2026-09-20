@@ -339,14 +339,19 @@ const validDate = (value: string | undefined, code: string): string | undefined 
 }
 
 const normalizeTarget = (scope: RuleScope, scopeValue: string | undefined, target: RuleTarget | undefined): RuleTarget => {
-  const normalized = { ...(target ?? {}) }
+  const raw = { ...(target ?? {}) }
   if (scope === 'global') {
-    if (scopeValue || Object.values(normalized).some(Boolean)) throw new KnowledgeError('RULE_TARGET_NOT_ALLOWED')
+    if (scopeValue || Object.values(raw).some(Boolean)) throw new KnowledgeError('RULE_TARGET_NOT_ALLOWED')
     return {}
   }
+  // Scope values are identifiers compared by exact equality in `matchesContext`
+  // and stored trimmed as `scopeValue`, so the target must be trimmed too. An
+  // untrimmed value here produced a rule whose `target[key]` no longer matched
+  // its own `scopeValue`: it was listed by `queryRules` but never applicable,
+  // and every later update threw RULE_SCOPE_TARGET_CONFLICT against itself.
+  const normalized = Object.fromEntries(Object.entries(raw).map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value])) as RuleTarget
   const key: keyof RuleTarget = scope
-  const value = scopeValue ?? normalized[key]
-  requiredText(value, 'RULE_SCOPE_VALUE_REQUIRED')
+  const value = requiredText(scopeValue ?? normalized[key], 'RULE_SCOPE_VALUE_REQUIRED')
   if (normalized[key] && normalized[key] !== value) throw new KnowledgeError('RULE_SCOPE_TARGET_CONFLICT')
   return { ...normalized, [key]: value }
 }
@@ -532,7 +537,10 @@ export class KnowledgeModule {
     if (patch.expectedRevision !== undefined && patch.expectedRevision !== current.revision) throw new KnowledgeError('VERSION_CONFLICT')
     assertRuleEnums(patch)
     const nextScope = patch.scope ?? current.scope
-    const scopeValue = patch.scopeValue ?? (patch.scope ? undefined : current.scopeValue)
+    // Stored `scopeValue` is the trimmed alias of the target the rule matches
+    // on; keep it trimmed here too so `queryRules` and `findApplicableRules`
+    // agree about the same rule.
+    const scopeValue = (patch.scopeValue ?? (patch.scope ? undefined : current.scopeValue))?.trim() || undefined
     const target = normalizeTarget(nextScope, scopeValue, patch.target ?? (patch.scope ? undefined : current.target))
     const effectiveFrom = validDate(patch.effectiveFrom ?? current.effectiveFrom, 'RULE_EFFECTIVE_WINDOW_INVALID')
     const effectiveTo = validDate(patch.effectiveTo ?? current.effectiveTo, 'RULE_EFFECTIVE_WINDOW_INVALID')

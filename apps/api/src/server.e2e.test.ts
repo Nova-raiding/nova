@@ -497,9 +497,21 @@ describe('API HTTP vertical slice', () => {
     expect((await mcp(ownerHeaders, 5.1, 'brand-unit.listing.create', { brand_id: 'brand_visible', canonical_product_id: `canonical-visible-${workspaceId}`, platform: 'taobao', account_id: account.id, remote_product_id: `remote-visible-${workspaceId}` })).error).toBeNull()
     expect((await mcp(ownerHeaders, 6, 'brand-unit.access.grant', { brand_id: 'brand_visible', external_subject: memberId, role: 'editor', reason: '品牌边界验收' })).error).toBeNull()
 
+    // The list answers with exactly the products the point read admits. This
+    // assertion used to keep `unbrandedProduct` in the list — the pre-fix
+    // in-memory predicate admitted a product with no canonical row — while the
+    // loop below already asserted that the same product answered 404 on both
+    // point reads, so the two surfaces of one endpoint disagreed about one
+    // product. The catalog surfaces now share `visibleProductIds`, and a
+    // canonical-row-less product is not attributable to any brand, so the
+    // narrow direction hides it everywhere.
     const products = await fetch(`${base}/v1/products?limit=20&offset=0`, { headers: memberHeaders }).then(json)
-    expect(products.data).toMatchObject({ total: 2, limit: 20, offset: 0 })
-    expect(products.data?.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: visibleProduct.id }), expect.objectContaining({ id: unbrandedProduct.id })]))
+    expect(products.data).toMatchObject({ total: 1, limit: 20, offset: 0 })
+    expect(products.data?.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: visibleProduct.id })]))
+    const listedProductIds = (products.data?.items as Array<{ id: string }>).map(item => item.id)
+    expect(listedProductIds).toContain(visibleProduct.id)
+    expect(listedProductIds, 'the list hides exactly what the point read hides').not.toContain(hiddenProduct.id)
+    expect(listedProductIds, 'the list hides exactly what the point read hides').not.toContain(unbrandedProduct.id)
     for (const productId of [hiddenProduct.id, unbrandedProduct.id]) {
       const detail = await fetch(`${base}/v1/products/${encodeURIComponent(productId)}`, { headers: memberHeaders }).then(json)
       expect(detail.error?.code).toBe('PRODUCT_NOT_FOUND')
@@ -1051,6 +1063,72 @@ describe('API HTTP vertical slice', () => {
     expect(awaitingReview.data).toMatchObject({ result: { state: 'review_required', items: [expect.objectContaining({ state: 'review_required', next_action: 'content.review' })] } })
     const tooMany = await call(5, 'campaign.batch.create', { brand_id: `brand_${workspaceId}`, platform: 'taobao', account_id: account.id, product_ids_json: JSON.stringify(Array.from({ length: 51 }, (_, index) => `product_${index}`)) })
     expect(tooMany.error?.code).toBe('CAMPAIGN_PRODUCT_LIMIT')
+  })
+
+  it('keeps a campaign readable once an item is approved, publishing or published', async () => {
+    const base = await start()
+    const workspaceId = `ws_campaign_advanced_${Date.now()}`
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+    const call = async (id: number, method: string, params: Record<string, unknown>) => fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { workspace_id: workspaceId, ...params } }) }).then(json)
+    const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `advanced-${workspaceId}`, credentialRef: `fixture://${workspaceId}` })
+    const product = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, localProductKey: `advanced-product-${workspaceId}`, title: '已审核商品', stock: 3 })
+    const brandId = `brand_${workspaceId}`
+    expect((await call(1, 'catalog.facts.confirm', { product_id: product.id })).error).toBeNull()
+    expect((await call(2, 'brand-unit.create', { brand_id: brandId, name: '已审核品' })).error).toBeNull()
+    expect((await call(3, 'brand-unit.bind-store', { brand_id: brandId, platform: 'taobao', account_id: account.id })).error).toBeNull()
+    const canonical = await call(4, 'brand-unit.product.create', { brand_id: brandId, product_id: `canonical_${workspaceId}`, title: '已审核商品', source_product_id: product.id })
+    const canonicalId = (canonical.data as { result: { id: string } }).result.id
+    const listing = await call(5, 'brand-unit.listing.create', { brand_id: brandId, canonical_product_id: canonicalId, listing_id: `listing_${workspaceId}`, platform: 'taobao', account_id: account.id, remote_product_id: 'tb-advanced-1' })
+    expect(listing.error).toBeNull()
+    const listingId = (listing.data as { result: { id: string } }).result.id
+    const campaign = await call(6, 'campaign.batch.create', { brand_id: brandId, targets_json: JSON.stringify([{ product_id: product.id, canonical_product_id: canonicalId, listing_id: listingId, platform: 'taobao', account_id: account.id }]) })
+    expect(campaign.error).toBeNull()
+    const campaignId = (campaign.data as { result: { id: string } }).result.id
+    const generated = await call(7, 'campaign.batch.generate', { campaign_id: campaignId })
+    const taskId = (generated.data as { result: { taskIds: string[] } }).result.taskIds[0]!
+    expect((await call(8, 'task.select_direction', { task_id: taskId, direction_id: 'A' })).error).toBeNull()
+    expect((await call(9, 'task.plan.confirm', { task_id: taskId, actor_id: 'campaign-approval-test' })).error).toBeNull()
+    const content = await call(10, 'content.codex.commit', { task_id: taskId, body_json: JSON.stringify(generatedDecisionBody('审核通过标题', '审核通过详情', ['已确认卖点'])) })
+    const versionId = (content.data as { result: { id: string } }).result.id
+    expect((await call(11, 'content.review', { content_version_id: versionId })).error).toBeNull()
+    const approved = await call(12, 'content.approve', { task_id: taskId, content_version_id: versionId })
+    expect(approved.data).toMatchObject({ result: { task: { state: 'approved' } } })
+
+    // The durable item now reads `approved`. The projection has to map that back
+    // onto the delivery evidence it proves (a review that passed) rather than
+    // onto a contradiction (`review.status: 'blocked'`), which is what turned
+    // every one of the calls below into a hard 409 CAMPAIGN_INVALID_TRANSITION.
+    const read = await call(13, 'campaign.batch.get', { campaign_id: campaignId })
+    expect(read.error).toBeNull()
+    expect(read.data).toMatchObject({ result: { state: 'review_required', items: [expect.objectContaining({ state: 'approved', next_action: 'publish.batch.prepare', blocker: expect.objectContaining({ code: 'PUBLISH_PREPARATION_READY' }) })], delivery_manifest: { state: 'blocked', externallyUnverified: true, validation: { valid: false, code: 'CAMPAIGN_ITEM_EVIDENCE_REQUIRED' } } } })
+    const listed = await call(14, 'campaign.batch.list', { platform: 'taobao', account_id: account.id })
+    expect(listed.error).toBeNull()
+    expect(listed.data).toMatchObject({ result: { items: expect.arrayContaining([expect.objectContaining({ id: campaignId, state: 'review_required' })]) } })
+    const replayedGenerate = await call(15, 'campaign.batch.generate', { campaign_id: campaignId })
+    expect(replayedGenerate.error).toBeNull()
+    expect(replayedGenerate.data).toMatchObject({ result: { replayed: true, taskIds: [taskId] } })
+
+    // The lifecycle pair refreshes and validates the same durable row, and pause
+    // parks the approved item as `paused` before resume restores it.
+    const approvedRevision = (read.data as { result: { revision: number } }).result.revision
+    const pausedCampaign = await call(15.1, 'campaign.batch.pause', { campaign_id: campaignId, expected_revision: String(approvedRevision), idempotency_key: `campaign-approved-pause-${workspaceId}`, reason: '审核通过后暂停批次' })
+    expect(pausedCampaign.error).toBeNull()
+    expect(pausedCampaign.data).toMatchObject({ result: { state: 'paused', items: [{ state: 'paused' }], delivery_manifest: { paused: true, state: 'paused' } } })
+    const pausedRevision = (pausedCampaign.data as { result: { revision: number } }).result.revision
+    const resumedCampaign = await call(15.2, 'campaign.batch.resume', { campaign_id: campaignId, expected_revision: String(pausedRevision), idempotency_key: `campaign-approved-resume-${workspaceId}`, reason: '恢复审核通过的批次' })
+    expect(resumedCampaign.error).toBeNull()
+    expect(resumedCampaign.data).toMatchObject({ result: { state: 'review_required', items: [expect.objectContaining({ state: 'approved' })] } })
+
+    // `publishing` and `published` items are the other two durable states the
+    // evidence gate constrains, and both used to answer the same 409.
+    service.tasks.get(taskId)!.state = 'publishing'
+    const publishing = await call(16, 'campaign.batch.get', { campaign_id: campaignId })
+    expect(publishing.error).toBeNull()
+    expect(publishing.data).toMatchObject({ result: { state: 'publishing', items: [expect.objectContaining({ state: 'publishing' })] } })
+    service.tasks.get(taskId)!.state = 'delivered'
+    const published = await call(17, 'campaign.batch.get', { campaign_id: campaignId })
+    expect(published.error).toBeNull()
+    expect(published.data).toMatchObject({ result: { state: 'completed', items: [expect.objectContaining({ state: 'published' })] } })
   })
 
   it('fails closed atomically for every canonical read mode when one batch target is unmapped', async () => {

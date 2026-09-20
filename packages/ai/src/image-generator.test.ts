@@ -10,6 +10,12 @@ describe('image generator', () => {
     expect(createImageEditGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'real-relay-key', IMAGE_EDIT_MODEL: 'your-image-edit-model' })).toBeUndefined()
   })
 
+  it('never assembles an image edit provider whose timeout would abort every edit', () => {
+    const relay = { MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'real-relay-key', IMAGE_EDIT_MODEL: 'edit-model' }
+    expect(createImageEditGeneratorFromEnv({ ...relay, IMAGE_EDIT_TIMEOUT_MS: '300s' })).toBeUndefined()
+    expect(createImageEditGeneratorFromEnv({ ...relay, IMAGE_EDIT_TIMEOUT_MS: '300000' })).toBeDefined()
+  })
+
   it('queries provider status fail-closed and returns verified artifacts', async () => {
     let method = ''
     const generator = new OpenAICompatibleImageGenerator({
@@ -253,6 +259,13 @@ describe('image generator', () => {
   it('does not assemble an image provider from placeholder relay configuration', () => {
     expect(createImageGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: '${MODEL_RELAY_API_KEY}', IMAGE_MODEL: 'REPLACE_WITH_IMAGE_MODEL' })).toBeUndefined()
     expect(createImageGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'real-relay-key', IMAGE_MODEL: 'your-image-model' })).toBeUndefined()
+  })
+
+  it('rejects an image timeout that would abort the provider call instantly', () => {
+    const relay = { MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'real-relay-key', IMAGE_MODEL: 'image-model' }
+    expect(() => createImageGeneratorFromEnv({ ...relay, IMAGE_TIMEOUT_MS: '2m' })).toThrow('PROVIDER_TIMEOUT_INVALID')
+    expect(() => createImageGeneratorFromEnv({ ...relay, IMAGE_TIMEOUT_MS: '0' })).toThrow('PROVIDER_TIMEOUT_INVALID')
+    expect(createImageGeneratorFromEnv({ ...relay, IMAGE_TIMEOUT_MS: '120000' })).toBeDefined()
   })
 
   it('allows a provider-specific image path while rejecting absolute paths', async () => {

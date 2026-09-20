@@ -43,6 +43,19 @@ describe('generateSeoGeoSuggestions', () => {
     expect(() => generateSeoGeoSuggestions({ ...validInput, title: '，。！？' })).toThrow(SeoGeoInputError)
   })
 
+  it('never truncates inside a character', () => {
+    const suggestion = generateSeoGeoSuggestions({ ...validInput, platform: 'xiaohongshu', title: '😀'.repeat(30) })[0]!
+
+    // `slice` left a lone high surrogate here, which the first UTF-8 writer
+    // turned into U+FFFD in the published title.
+    expect(/[\uD800-\uDFFF]/u.test(suggestion.title)).toBe(false)
+    expect(suggestion.title).toBe('😀'.repeat(25))
+    // A title shorter than the limit in characters is not reported as truncated
+    // just because its emoji are two UTF-16 code units each.
+    expect(generateSeoGeoSuggestions({ ...validInput, platform: 'xiaohongshu', title: '😀'.repeat(20) })[0]!.risks)
+      .not.toContain('原商品标题超过平台建议长度，已截断')
+  })
+
   it('keeps platform title limits and the no-guarantee contract', () => {
     const suggestion = generateSeoGeoSuggestions({ ...validInput, platform: 'xiaohongshu', title: '非常长的商品标题'.repeat(20) })[0]!
 

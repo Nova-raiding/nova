@@ -10,7 +10,6 @@ import { validateConnectorAuthorizationReadiness, validateConnectorReadiness, ty
 import { assertOutboundUrl, inspectOutboundUrl, isSecureEnvironment, officialHostsFor } from './outbound-security.js'
 import { deduplicateSyncProducts, SyncContractError, validateNextSyncCursor, validateSyncCursor, validateSyncWindow } from './sync-safety.js'
 import { mapPlatformRejection, platformEnvelope, providerRequestId } from './platform-adapters/rejection.js'
-import { isBodylessMethod } from './platform-adapters/signed-request.js'
 import {
   credentialRefreshKey, DEFAULT_REFRESH_LEASE_TTL_MS, InProcessCredentialRefreshLock,
   type CredentialRefreshLease, type CredentialRefreshSingleFlight,
@@ -509,15 +508,32 @@ export class HttpPlatformConnector implements PlatformConnector {
     if (requestedCursor) url.searchParams.set('cursor', requestedCursor)
     if (syncWindow?.updatedSince) url.searchParams.set('updated_since', syncWindow.updatedSince)
     if (syncWindow?.updatedUntil) url.searchParams.set('updated_until', syncWindow.updatedUntil)
+    // The read transport belongs to the signer, not to this call site. A signer
+    // that folds the credential into its signed parameter set has no transport
+    // for it except a body — a bodyless method would push the set into the URL,
+    // which `applySignedRequest` refuses outright (see
+    // platform-adapters/signed-request.ts). A signer that leaves the credential
+    // in the `authorization` header has an empty parameter set, nothing to put in
+    // a body, and keeps the GET its platform was already called with.
+    //
+    // Hard-coding POST here flipped `xiaohongshu` and `douyin` — both bearer
+    // signers — from GET to a bodyless POST as a side effect of a router fix.
+    // For those two the change bought no security (their credential never
+    // reaches `applySignedRequest`, so it was never in the URL) while silently
+    // altering the wire shape of a live read path with no test pinning it.
+    const readMethod = config.signer?.signedParametersCarryCredential === true ? 'POST' : 'GET'
     let payload: unknown
     try {
-      payload = await this.request('sync_products', 'GET', url.toString(), await this.resolveCredential(ctx), undefined, 'json', false, ctx.signal, ctx)
+      // The cursor/window query parameters set above are folded into the signed
+      // body by a credential-carrying signer, and stay in the URL for the rest.
+      payload = await this.request('sync_products', readMethod, url.toString(), await this.resolveCredential(ctx), undefined, 'json', false, ctx.signal, ctx)
     } catch (error) {
       if (error instanceof ConnectorFailure && error.normalized.code === 'TIMEOUT') {
         throw new ConnectorFailure({ ...error.normalized, unknown: true, retryable: true, details: { ...(error.normalized.details ?? {}), reconcileRequired: true, syncCursor: requestedCursor ?? null } })
       }
       throw error
     }
+    this.rejectProviderErrorPage(payload, requestedCursor)
     let items: RawProduct[]
     try {
       items = deduplicateSyncProducts(config.mapProducts?.(payload, this.platform) ?? defaultProducts(payload, this.platform), this.platform, syncWindow)
@@ -528,6 +544,44 @@ export class HttpPlatformConnector implements PlatformConnector {
       if (error instanceof SyncContractError) throw new ConnectorFailure(this.normalizeError({ code: 'VALIDATION_FAILED', message: error.message, retryable: false }))
       throw error
     }
+  }
+
+  /**
+   * Refuses a catalog page that is really the provider's error envelope.
+   *
+   * Every router gateway here answers a failed business call with HTTP 200 and
+   * the documented envelope — `{"error_response":{"code":7,"msg":"App Call
+   * Limited"}}` for Alibaba TOP, `{"error_response":{"error_code":...,"error_msg":...}}`
+   * for Pinduoduo and JD routerjson. The status code therefore cannot tell a
+   * throttled or rejected read from an honestly empty page, and mapping it
+   * produced `items: []` with `source: 'official_api'` and no error at all: a
+   * rate-limited sync was reported to the operator as a successful read of an
+   * empty catalog. The read is the only path guarded. The write and status
+   * paths map the same envelope deliberately — a rejected publish is a
+   * successful *query* (`mapWriteStatus` turns it into rejection evidence) and
+   * its provider request id is the write's own correlation evidence
+   * (`providerRequestId` follows `error_response` for exactly that reason) — so
+   * refusing to read it there would delete the rejection contract.
+   */
+  private rejectProviderErrorPage(payload: unknown, syncCursor?: string): void {
+    const errorResponse = platformEnvelope(payload)?.error_response
+    if (!isRecord(errorResponse)) return
+    const rejection = mapPlatformRejection(payload)
+    const requestId = providerRequestId(payload)
+    const reason = rejection?.rawCode ? `provider error response ${rejection.rawCode}` : 'an unlabelled provider error response'
+    throw new ConnectorFailure({
+      code: 'REMOTE_ERROR',
+      message: `HTTP connector ${this.platform} read was answered with ${reason}`.replace(CONTROL_CHARS, ' ').slice(0, 300),
+      retryable: true,
+      unknown: false,
+      status: 200,
+      platform: this.platform,
+      details: redact({
+        ...(rejection ? { rejection } : {}),
+        ...(requestId ? { requestId } : {}),
+        ...(syncCursor === undefined ? {} : { syncCursor }),
+      }) as Record<string, unknown>,
+    })
   }
 
   mapToCanonical(raw: RawProduct, mapping: MappingVersion) {
@@ -818,19 +872,15 @@ export class HttpPlatformConnector implements PlatformConnector {
     Object.assign(headers, descriptor.headers)
     const requestUrl = descriptor.url
     const requestBody = descriptor.body
-    // A signer that leaves a body on a bodyless method produces a request the
-    // platform can never receive: `fetch` throws
-    // `TypeError: Request with GET/HEAD method cannot have body` before DNS.
-    // That TypeError was normalized into a retryable `REMOTE_ERROR` naming only
-    // "request failed", so a local signing defect looked like a provider outage
-    // and the outbox replayed it. Refuse it here instead, as a terminal local
-    // defect that names the method and operation.
-    if (isBodylessMethod(method) && requestBody !== undefined) {
-      // `normalizeSignerError` rather than `normalizeError`: the latter scrubs a
-      // `NOT_CONFIGURED` message down to "HTTP connector <platform> request
-      // failed", which is the cause-erasing text this guard exists to replace.
-      throw new ConnectorFailure(this.normalizeSignerError({ code: 'NOT_CONFIGURED', message: `${method} ${operation} was signed with a request body; a bodyless method must carry its parameters in the URL query`, retryable: false, unknown: false }))
-    }
+    // The former check here for a signed GET carrying a body is gone, and it was
+    // already unreachable: the one place that decides that transport is
+    // `applySignedRequest`, which refuses a bodyless method as a terminal local
+    // defect, and `syncProducts` asks a credential-carrying signer for the POST
+    // that keeps the signed set out of the URL. Its message ("a bodyless method
+    // must carry its parameters in the URL query") also named the exact transport
+    // that must never happen. See platform-adapters/signed-request.ts for the
+    // single enforcement point; a signer that carries no credential produces no
+    // signed set at all and its read stays GET.
     if (isSecureEnvironment()) {
       const outboundPolicy = {
         environment: process.env.NODE_ENV,

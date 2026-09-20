@@ -240,6 +240,7 @@ jobs:
           tests/commercial-zero-side-effect-release.postgres.test.ts
           packages/persistence/src/storage-quota-repository.postgres.test.ts
           packages/persistence/src/migration-231-release.postgres.test.ts
+          packages/persistence/src/migration-232-release.postgres.test.ts
           packages/persistence/src/platform-media-spec-repository.test.ts
           packages/persistence/src/mapping-preflight-approval-repository.test.ts
           packages/persistence/src/asset-parse-repository.test.ts
@@ -253,6 +254,7 @@ jobs:
           packages/persistence/src/authorization-execution-reservation-rls.postgres.test.ts
           packages/persistence/src/authorization-repository.postgres.test.ts
           packages/persistence/src/authorization-rls-probe.postgres.test.ts
+          packages/persistence/src/billing-effective-amount.postgres.test.ts
           packages/persistence/src/billing-repository.postgres.test.ts
           packages/persistence/src/business-repository.postgres.test.ts
           packages/persistence/src/canonical-backfill-run-repository.postgres.test.ts

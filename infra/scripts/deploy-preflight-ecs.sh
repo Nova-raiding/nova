@@ -16,6 +16,20 @@ config_path=${1:-${PRODUCTION_CONFIG_PATH:-}}
 : "${DATABASE_URL:?DATABASE_URL is required}"
 : "${OPS_DATABASE_URL:?OPS_DATABASE_URL is required}"
 : "${REDIS_URL:?REDIS_URL is required and must use rediss://}"
+# The production migrate service does not read DATABASE_URL/OPS_DATABASE_URL for
+# its own connection: its psql calls go through the PG* family, because the
+# migration and the role bootstrap it re-applies connect as the schema owner,
+# not as the runtime role. Its Compose layer takes each of them from the host
+# `.env` (infra/local/docker-compose.ecs-production-migration.yml); left unset,
+# the local acceptance identity is used and `docker compose run --rm migrate`
+# connects to a database named `postgres` with a password published in this
+# repository instead of the production one. Name them here so the failure is a
+# missing variable rather than a connection error after the deploy has started.
+: "${PGHOST:?PGHOST is required so the migration targets the production database}"
+: "${PGDATABASE:?PGDATABASE is required so the migration targets the production database}"
+: "${PGUSER:?PGUSER is required so the migration runs as the schema owner}"
+: "${PGPASSWORD:?PGPASSWORD is required so the migration runs as the schema owner}"
+: "${ALERT_RECEIVER_DATABASE_URL:?ALERT_RECEIVER_DATABASE_URL is required so the migration can verify the receiver role}"
 : "${SECRET_PROVIDER:?SECRET_PROVIDER is required}"
 : "${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required}"
 : "${CAPACITY_REPORT_PATH:?CAPACITY_REPORT_PATH is required}"
@@ -54,6 +68,58 @@ config_path=${1:-${PRODUCTION_CONFIG_PATH:-}}
 : "${PUBLIC_ASSET_BASE_URL:?PUBLIC_ASSET_BASE_URL is required}"
 : "${ASSET_DISPLAY_URL_SIGNING_SECRET:?ASSET_DISPLAY_URL_SIGNING_SECRET is required}"
 : "${ASSET_DISPLAY_URL_SIGNING_KEY_ID:?ASSET_DISPLAY_URL_SIGNING_KEY_ID is required}"
+# Every remaining variable the production Compose chain refuses to interpolate
+# without (`${VAR:?}` in infra/local/docker-compose.ecs-pilot.yml and
+# docker-compose.ecs-oss-cutover.yml, the two layers before the release layer).
+# They were previously named only by the Compose files themselves, so an
+# operator who prepared `.env` from the runbook and this preflight still had
+# `docker compose config` exit 1 on thirty-seven variables — and Docker Compose
+# truncates the interpolation errors, so the report could not be trusted to
+# name them. Each name below is read from exactly one place: the Compose layer
+# that requires it. Keeping the list here is what makes the preflight able to
+# name a missing value before the render, which is the whole point of it.
+: "${WORKER_API_CREDENTIALS:?WORKER_API_CREDENTIALS is required}"
+: "${WORKER_WORKSPACES:?WORKER_WORKSPACES=auto or an explicit production workspace allowlist is required}"
+: "${WORKER_SYNC_API_TOKEN:?WORKER_SYNC_API_TOKEN is required}"
+: "${WORKER_SYNC_API_SIGNING_SECRET:?WORKER_SYNC_API_SIGNING_SECRET is required}"
+: "${WORKER_GENERATION_API_TOKEN:?WORKER_GENERATION_API_TOKEN is required}"
+: "${WORKER_GENERATION_API_SIGNING_SECRET:?WORKER_GENERATION_API_SIGNING_SECRET is required}"
+: "${WORKER_PUBLISH_API_TOKEN:?WORKER_PUBLISH_API_TOKEN is required}"
+: "${WORKER_PUBLISH_API_SIGNING_SECRET:?WORKER_PUBLISH_API_SIGNING_SECRET is required}"
+: "${WORKER_RECONCILE_API_TOKEN:?WORKER_RECONCILE_API_TOKEN is required}"
+: "${WORKER_RECONCILE_API_SIGNING_SECRET:?WORKER_RECONCILE_API_SIGNING_SECRET is required}"
+: "${WORKER_AUTOMATION_API_TOKEN:?WORKER_AUTOMATION_API_TOKEN is required}"
+: "${WORKER_AUTOMATION_API_SIGNING_SECRET:?WORKER_AUTOMATION_API_SIGNING_SECRET is required}"
+: "${API_AUTH_TOKENS:?API_AUTH_TOKENS is required}"
+: "${SESSION_ID_HASH_SECRET:?SESSION_ID_HASH_SECRET is required}"
+: "${MODEL_COST_ESTIMATE_VERSION:?MODEL_COST_ESTIMATE_VERSION production value is required}"
+: "${ASSET_SCANNER_API_TOKEN:?ASSET_SCANNER_API_TOKEN is required}"
+: "${ASSET_SCANNER_WORKSPACE_SIGNING_SECRET:?ASSET_SCANNER_WORKSPACE_SIGNING_SECRET is required}"
+: "${ASSET_SCAN_RECEIPT_KEY_ID:?ASSET_SCAN_RECEIPT_KEY_ID is required}"
+: "${ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM_B64:?ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM_B64 is required}"
+: "${ASSET_SCAN_TRUSTED_PUBLIC_KEYS:?ASSET_SCAN_TRUSTED_PUBLIC_KEYS is required}"
+: "${ASSET_STORAGE_ECS_RAM_ROLE:?ASSET_STORAGE_ECS_RAM_ROLE is required}"
+: "${DATA_RETENTION_DAYS:?DATA_RETENTION_DAYS is required}"
+: "${ASSET_QUARANTINE_RETENTION_DAYS:?ASSET_QUARANTINE_RETENTION_DAYS is required}"
+: "${ASSET_CLEAN_RETENTION_DAYS:?ASSET_CLEAN_RETENTION_DAYS is required}"
+: "${DELETION_REQUEST_GRACE_DAYS:?DELETION_REQUEST_GRACE_DAYS is required}"
+: "${BACKUP_RETENTION_DAYS:?BACKUP_RETENTION_DAYS is required}"
+: "${MERCHANT_API_TOKEN:?MERCHANT_API_TOKEN is required for pilot preflight}"
+: "${MERCHANT_WORKSPACE_ID:?MERCHANT_WORKSPACE_ID is required for pilot preflight}"
+: "${ALIPAY_APP_ID:?ALIPAY_APP_ID is required}"
+: "${PAYMENT_MODE:?PAYMENT_MODE=provider is required for ECS}"
+: "${PAYMENT_PROVIDER_ADAPTERS:?PAYMENT_PROVIDER_ADAPTERS=alipay is required}"
+: "${PAYMENT_CHECKOUT_BASE_URL:?public HTTPS payment checkout base URL is required}"
+: "${PAYMENT_PROVIDER_CHECKOUT_API_URL:?public HTTPS payment gateway checkout URL is required}"
+: "${PAYMENT_PROVIDER_QUERY_API_URL:?public HTTPS payment gateway query URL is required}"
+: "${PAYMENT_PROVIDER_REFUND_QUERY_API_URL:?public HTTPS payment gateway refund query URL is required}"
+: "${PAYMENT_PROVIDER_REFUND_API_URL:?public HTTPS payment gateway refund URL is required}"
+: "${PAYMENT_PROVIDER_API_KEY:?PAYMENT_PROVIDER_API_KEY is required}"
+: "${PAYMENT_PROVIDER_MERCHANT_ID:?PAYMENT_PROVIDER_MERCHANT_ID is required}"
+: "${PAYMENT_CALLBACK_BASE_URL:?public HTTPS payment callback base URL is required}"
+: "${PAYMENT_CALLBACK_SECRET:?PAYMENT_CALLBACK_SECRET is required}"
+: "${PAYMENT_RECONCILIATION_ENABLED:?PAYMENT_RECONCILIATION_ENABLED=true is required}"
+: "${PAYMENT_REFUND_ENABLED:?PAYMENT_REFUND_ENABLED=true is required}"
 printf '%s' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9._-]+$' || { echo 'unsafe RELEASE_ID' >&2; exit 1; }
 printf '%s' "$DEPLOYMENT_NONCE" | grep -Eq '^[A-Za-z0-9_-]{22,128}$' || { echo 'DEPLOYMENT_NONCE must contain 22-128 URL-safe random characters' >&2; exit 1; }
 case "$REDIS_URL" in

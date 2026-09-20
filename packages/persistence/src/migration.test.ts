@@ -25,7 +25,7 @@ describe('MigrationRunner', () => {
   it('loads the ordered production migration set', async () => {
     const migrations = await loadMigrations()
     const latestVersion = migrations.at(-1)?.version ?? 0
-    expect(latestVersion).toBe(231)
+    expect(latestVersion).toBe(232)
     expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(migrations[1]?.sql).toContain('FORCE ROW LEVEL SECURITY')
     const byVersion = new Map(migrations.map(migration => [migration.version, migration]))
@@ -67,6 +67,22 @@ describe('MigrationRunner', () => {
     expect(byVersion.get(231)?.sql).toContain('storage_quota_reservations FORCE ROW LEVEL SECURITY')
     expect(byVersion.get(231)?.sql).toContain("'asset:' || r.asset_id")
     expect(byVersion.get(231)?.sql).toContain('business_entity_snapshots')
+    expect(byVersion.get(232)).toMatchObject({ name: 'storage_quota_unnameable_reservation_keys' })
+    expect(byVersion.get(232)?.sql).toContain('storage_quota_reservations NO FORCE ROW LEVEL SECURITY')
+    expect(byVersion.get(232)?.sql).toContain('storage_quota_reservations FORCE ROW LEVEL SECURITY')
+    expect(byVersion.get(232)?.sql).toContain("r.reservation_key = 'asset:' || r.asset_id")
+    expect(byVersion.get(232)?.sql).toContain('object_storage_orphans')
+    // The asset-projection and outbox payloads are snake_case, but the
+    // generation-job snapshot stores the domain object verbatim and its
+    // `VisualGenerationOutput` entries are camel-case. Reading the wrong
+    // spelling matches no row and silently drops the source.
+    expect(byVersion.get(232)?.sql).toContain("s.payload->>'storageKey'")
+    expect(byVersion.get(232)?.sql).toContain("output.object->>'storageKey'")
+    expect(byVersion.get(232)?.sql).toContain("output.object->>'assetId'")
+    expect(byVersion.get(232)?.sql).toContain("event.payload->>'storage_key'")
+    expect(byVersion.get(232)?.sql).toContain("event.payload->>'asset_id'")
+    // An orphan row in state 'cleaned' names an object that is already deleted.
+    expect(byVersion.get(232)?.sql).toContain("orphan.state <> 'cleaned'")
     expect(byVersion.get(100)).toMatchObject({ name: 'operation_alert_notifications' })
     expect(byVersion.get(101)).toMatchObject({ name: 'canonical_backfill_runs' })
     expect(byVersion.get(102)).toMatchObject({ name: 'canonical_backfill_conflicts' })

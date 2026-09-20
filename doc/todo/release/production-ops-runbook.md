@@ -96,7 +96,9 @@ ECS 发布链把 release 层的每个产物固定为不可变镜像。`infra/loc
 - `infra/scripts/deploy-preflight-ecs.sh` 的必需清单 —— 发布契约，缺失时以指名道姓的信息提前失败；
 - `.env.example` —— 部署 `.env` 模板，运维据此准备值。
 
-`tests/ecs-compose-release-gate.test.ts` 的 fixed-release-manifest 门禁静态校验这层闭环：`validate-ecs-compose-release.rb` 的 digest 清单要求的每个服务都必须在 release 层被固定，且每个被固定的变量都必须有生产者。新增固定清单（新服务、新 digest 键）而不同时补生产者会直接让该门禁变红。
+同一契约适用于整条渲染链，而不只是 release 层：`render-ecs-production-compose.sh` 会在 release 层之前先插值 base 层，所以任一层的 `${VAR:?}` 缺生产者都会让渲染失败，而报错文本已被 Compose 截断、不能用来判断缺了哪些名字。因此本仓库的全部五个层（`infra/local/ecs-production-compose.layers`）里每一个被 `${VAR:?}` 强校验的变量都必须同时出现在上面两处生产者。
+
+`tests/ecs-compose-release-gate.test.ts` 静态校验这层闭环：`validate-ecs-compose-release.rb` 的 digest 清单要求的每个服务都必须在 release 层被固定；并且全部五个层的每个 `${VAR:?}` 变量都必须在 `.env.example` 与 `infra/scripts/*.sh` 的前置校验里**同时**出现 —— 只有一半不算生产者（模板里的一个空键运维不知道要填什么，光有断言的值永远不会进渲染器读的 `.env`）。`tests/invariants/release-env-closure.ts` 是判定「生产者」的唯一实现，`tests/release-env-closure.invariant.test.ts` 用真实 `docker compose config` 渲染整条链来验证它。新增固定清单（新服务、新 digest 键）或给任一层加一个 `${VAR:?}` 而不同时补两处生产者，会让门禁与变异门禁同时变红。
 
 **仓库外的动作（发布流水线负责）**：仓库内**没有**任何脚本构建或推送 `pilot-gateway` 镜像，这一点适用于全部发布镜像：`infra/docker/pilot-gateway.Dockerfile`、`infra/docker/pilot-gateway-https.Dockerfile` 只是 Dockerfile，对全仓库 grep `docker build` 只有候选门禁测试镜像一处（`infra/scripts/build-ecs-candidate-gates-image.sh`），本地 Compose 的 `build:` 只用于开发机。公网网关镜像的构建与推送必须由仓库外的发布流水线完成，运维必须：
 
