@@ -131,7 +131,18 @@ function main() {
   // Never default to the repository example fixture: silently validating a
   // non-production example while printing "passed" would misrepresent it as
   // real capacity evidence. Callers must name the evidence file explicitly.
-  if (!path) { console.error('--file is required'); process.exit(2) }
+  if (!path) {
+    // The bare `npm run` form cannot work by design: this gate must never
+    // fall back to the repository's example fixture, because printing
+    // "passed" for a non-production example misrepresents it as real
+    // capacity evidence. The npm wrapper therefore only works with an
+    // explicit path, and the failure has to say so — an operator who ran
+    // the declared script and got a bare `--file is required` had no way
+    // to know the command they needed.
+    console.error('--file is required')
+    console.error('Usage: npm run capacity:evidence:validate -- --file <capacity evidence.json> [--release-id <id>]')
+    process.exit(2)
+  }
   let document: unknown
   try { document = JSON.parse(readFileSync(path, 'utf8')) } catch (error) { console.error(`unable to read JSON capacity evidence: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
   const errors = validateCapacityEvidence(document, { requireCloudGate: args.includes('--require-cloud-gate'), expectedReleaseId, expectedProfile })
