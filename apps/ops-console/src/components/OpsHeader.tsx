@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { DownOutlined, LogoutOutlined } from "@ant-design/icons";
 import { Alert, Button, Dropdown, Empty, Input, Layout, List, Modal, Space, Typography } from "antd";
 import { describeOpsError, localOpsSessionEnabled, loginPlatformOps, logoutPlatformOps, suppressLocalOpsSession } from "../api/opsClient.js";
@@ -6,7 +6,7 @@ import type { OperationalAlert, OpsDataSource, OpsSession, OpsWorkbench } from "
 import type { AuthorizationProjection } from "../authz/authorization.js";
 import { accountLabel } from "../authz/accountLabel.js";
 import { ControlledSessionBar } from "./authz/ControlledSessionBar.js";
-import { RoleScopeBar } from "./authz/RoleScopeBar.js";
+import { RoleScopeBar, notificationFeed } from "./authz/RoleScopeBar.js";
 
 interface OpsHeaderProps {
   managedSession: boolean;
@@ -65,7 +65,13 @@ export function OpsHeader({
   const hasSession = Boolean(sessionLoaded && session);
   const shouldShowLogin = !hasSession || isDemoSession;
   const merchantNotificationsEnabled = (activeWorkbench ?? session?.workbench) === "workspace" || authorization?.scope.kind !== "platform";
-  const allNotifications = merchantNotificationsEnabled ? (notifications ?? alerts ?? []) : [];
+  // Same feed as the bell badge: `notifications` is always an array, so a
+  // nullish fallback to `alerts` never fired and the menu center claimed
+  // 「暂无消息」 while the badge counted unread alerts.
+  const allNotifications = useMemo(
+    () => (merchantNotificationsEnabled ? notificationFeed(alerts, notifications) : []),
+    [alerts, merchantNotificationsEnabled, notifications],
+  );
   const accountName = hasSession ? accountLabel(session) : (isDemoSession ? "本机演示账号" : "平台运营账号");
   const accountDisplayName = accountName.length > 12 ? `${accountName.slice(0, 8)}…` : accountName;
   const accountInitial = Array.from(accountName)[0] ?? "运";

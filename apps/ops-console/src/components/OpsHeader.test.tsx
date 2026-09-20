@@ -152,6 +152,7 @@ describe("ops header logout failure feedback", () => {
             import { createRoot } from 'react-dom/client';
             import { App } from 'antd';
             import { OpsHeader } from '/src/components/OpsHeader.tsx';
+            import { createAuthorizationProjection } from '/src/authz/authorization.ts';
             sessionStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform' }));
             const session = {
               actor_id: 'ops-actor-1',
@@ -162,6 +163,15 @@ describe("ops header logout failure feedback", () => {
               workspace_granted: false,
               scope: { type: 'platform' },
             };
+            // ?alerts=1 selects the scope the console reaches with
+            // ?workbench=workspace: a platform-scoped session whose active
+            // workbench is the merchant one, so both notification surfaces show.
+            const withAlerts = new URLSearchParams(window.location.search).get('alerts') === '1';
+            const alert = {
+              id: 'alert-1', code: 'PUBLISH_STALLED', severity: 'high', platform: 'taobao',
+              entityType: 'publish_batch', entityId: 'batch_1', title: '发布批次卡住',
+              status: 'open', observedAt: '2026-09-19T02:00:00.000Z', evidence: {}, nextAction: '人工处理',
+            };
             function Harness() {
               const [refreshed, setRefreshed] = useState(false);
               return React.createElement(App, null,
@@ -170,6 +180,12 @@ describe("ops header logout failure feedback", () => {
                   sessionLoaded: true,
                   session,
                   onRefresh: () => setRefreshed(true),
+                  ...(withAlerts ? {
+                    authorization: createAuthorizationProjection(session, false),
+                    activeWorkbench: 'workspace',
+                    alerts: [alert],
+                    notifications: [],
+                  } : {}),
                 }),
                 React.createElement('span', { 'data-testid': 'refreshed' }, refreshed ? '已刷新' : '未刷新'));
             }
@@ -238,6 +254,24 @@ describe("ops header logout failure feedback", () => {
       await page.getByRole("button", { name: /退出登录/u }).click();
       await expect.poll(() => page.getByTestId("refreshed").innerText()).toBe("已刷新");
       expect(await page.getByRole("alert").filter({ hasText: "退出登录失败" }).count()).toBe(0);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("shows the same unread alerts in the account menu as in the bell badge", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      await page.goto(`${baseUrl}/__ops-header-test?alerts=1`);
+      // The bell counts the alert the console read...
+      const bell = page.getByRole("button", { name: /通知消息/u });
+      await expect.poll(() => bell.getAttribute("aria-label")).toContain("1 条未读");
+      await page.getByRole("button", { name: "打开账号信息", exact: true }).click();
+      const messageCenter = page.locator(".ops-account-message-center");
+      await messageCenter.waitFor();
+      // ...so the account menu must not answer the same click with 「暂无消息」.
+      await expect.poll(() => page.locator(".ops-account-message-heading").innerText()).toContain("1 条消息");
+      const text = await messageCenter.innerText();
+      expect(text).toContain("发布批次卡住");
+      expect(text).not.toContain("暂无消息");
     } finally { await page.close(); }
   }, 45_000);
 });

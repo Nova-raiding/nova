@@ -246,6 +246,8 @@ import { resolveProductAssetRelation } from './product-assets.js'
 import { ContextRecoveryCard } from './ContextRecoveryCard.js'
 import { canonicalProductActionAllowed, groupTasksForRecovery, prioritizeProducts } from './merchant-ia.js'
 import { resolveDetailSopSteps } from './detail-sop.js'
+import { resolveIssueReadState, type IssueReadState } from './issue-read-state.js'
+import { BRAND_UNCONFIGURED, BRAND_DOCUMENT_LOCAL_ANALYSIS, BRAND_DOCUMENT_NONE, resolveBrandColorFacts, resolveBrandDocumentFacts } from './material-brand-facts.js'
 
 // There is deliberately no client-side read-only role projection here. It used
 // to read a build-time `VITE_MERCHANT_ROLE`, which no build path ever set, and
@@ -859,6 +861,66 @@ function merchantAccountStatusLabel(status: MerchantAuthAccount['status'] | unde
   return merchantAccountStatusLabels[status] ?? status
 }
 
+/**
+ * The bell and its panel read one resolved state, never the raw list.
+ *
+ * Both are exported so the four states can be rendered directly: the dropdown
+ * body is only built once the merchant opens it, so a static render of the
+ * topbar cannot see what the panel would say. They carry no state of their own
+ * — the reviewed markup is unchanged, only the text it is allowed to show.
+ */
+export function IssueNotificationBell({ state, ...rest }: { state: IssueReadState } & React.HTMLAttributes<HTMLSpanElement> & React.RefAttributes<HTMLSpanElement>) {
+  return (
+    // `...rest` is the click/ref contract antd's `Dropdown` clones onto its
+    // direct child; `Badge` puts them on its wrapper span, which is what makes
+    // the bell open the panel. Dropping them would close the dropdown for good.
+    <Badge {...rest} count={state.badgeCount} overflowCount={99} offset={[-2, 4]}>
+      <button type="button" className="icon-button notification-trigger" aria-label={state.ariaLabel}>
+        <Bell size={18} aria-hidden="true" />
+      </button>
+    </Badge>
+  )
+}
+
+export function IssueNotificationPanel({ state, items, onOpenIssue, onClose, onRetry }: {
+  state: IssueReadState
+  items: WorkspaceMetrics['riskItems']
+  onOpenIssue: (item: WorkspaceMetrics['riskItems'][number]) => void
+  onClose: () => void
+  onRetry: () => void
+}) {
+  return (
+    <div className="merchant-notification-panel" role="region" aria-label="待处理问题">
+      {state.mode === 'ready' && items.length ? <>
+        <div className="merchant-notification-heading">
+          <div><strong>工作区待处理问题</strong><span>{items.length} 项需要关注</span></div>
+        </div>
+        <List
+        className="merchant-notification-list"
+        size="small"
+        dataSource={items}
+        renderItem={(item, index) => <List.Item className="merchant-notification-item">
+          <button
+            type="button"
+            className="merchant-notification-item-button"
+            aria-label={`查看问题：${item.title ?? item.type}`}
+            onMouseDown={onClose}
+            onClick={() => { onOpenIssue(item) }}
+          >
+            <span className={`merchant-notification-dot ${item.severity}`} aria-hidden="true" />
+            <span className="merchant-notification-copy"><strong>{item.title ?? item.type}</strong><small>{[item.platform ? platformNames[item.platform] : '', item.storeName ?? '', item.status ?? ''].filter(Boolean).join(' · ') || '当前工作区'}</small><em>{item.nextAction ?? '查看详情并处理'}</em></span>
+            <span className="merchant-notification-index">{index + 1}</span>
+          </button>
+        </List.Item>}
+        />
+      </> : <div className="merchant-notification-empty" role="status" aria-live="polite">
+        <span>{state.notice}</span>
+        {state.mode === 'read_error' && <button className="text-button" type="button" onClick={onRetry}>重新读取</button>}
+      </div>}
+    </div>
+  )
+}
+
 function Topbar({
   page,
   activeEntry,
@@ -908,6 +970,13 @@ function Topbar({
   const [passwordSubmitting, setPasswordSubmitting] = useState(false)
   const [passwordError, setPasswordError] = useState('')
   const [issueMetrics, setIssueMetrics] = useState<WorkspaceMetrics | null>(null)
+  // The read's own outcome, kept apart from its result. It used to be discarded:
+  // the catch only set `issueMetrics` to `null`, which the panel rendered as
+  // 「暂无需要处理的问题」. 未配置 / 正在读取 / 读取失败 are three different facts and
+  // `resolveIssueReadState` renders each of them as itself.
+  const [issueReadError, setIssueReadError] = useState('')
+  const [issueReadPending, setIssueReadPending] = useState(Boolean(apiBaseUrl))
+  const [issueReload, setIssueReload] = useState(0)
   const [issueDetail, setIssueDetail] = useState<WorkspaceMetrics['riskItems'][number] | null>(null)
   const [passwordForm] = Form.useForm<{ current_password: string; new_password: string; confirm_password: string }>()
   const accountMenuRef = useRef<HTMLDivElement>(null)
@@ -928,11 +997,26 @@ function Topbar({
     }
   }, [accountMenuOpen])
   useEffect(() => {
-    if (!apiBaseUrl) { setIssueMetrics(null); return }
+    if (!apiBaseUrl) {
+      setIssueMetrics(null)
+      setIssueReadError('')
+      setIssueReadPending(false)
+      return
+    }
     let active = true
-    fetchWorkspaceMetrics(apiBaseUrl).then((result) => { if (active) setIssueMetrics(result) }).catch(() => { if (active) setIssueMetrics(null) })
+    setIssueMetrics(null)
+    setIssueReadError('')
+    setIssueReadPending(true)
+    fetchWorkspaceMetrics(apiBaseUrl)
+      .then((result) => { if (active) { setIssueMetrics(result); setIssueReadPending(false) } })
+      .catch((cause) => {
+        if (!active) return
+        setIssueMetrics(null)
+        setIssueReadError(describeApiError(cause))
+        setIssueReadPending(false)
+      })
     return () => { active = false }
-  }, [apiBaseUrl])
+  }, [apiBaseUrl, issueReload])
   const titles: Record<Page, string> = {
     overview: '运营概览',
     products: activeEntry === 'assets' ? '品牌资产' : activeEntry === 'trash' ? '回收站' : activeEntry === 'knowledge' ? '素材库' : '知识库',
@@ -951,39 +1035,20 @@ function Topbar({
   // Only show actionable risks belonging to a real bound store. The API also
   // returns unbound and fixture records for reconciliation, but those are not
   // notifications for the currently signed-in merchant.
-  const issueItems = (issueMetrics?.riskItems ?? []).filter(item => item.evidence?.unboundLocalData !== true && item.evidence?.fixtureData !== true)
-  const issueCount = issueItems.length
+  // `null` — not `[]` — until the read answers. `[]` is a real answer.
+  const issueItems = issueMetrics === null ? null : issueMetrics.riskItems.filter(item => item.evidence?.unboundLocalData !== true && item.evidence?.fixtureData !== true)
+  const issueRead = resolveIssueReadState({ baseUrl: apiBaseUrl, items: issueItems, error: issueReadError, loading: issueReadPending })
   const openIssueDetail = (item: WorkspaceMetrics['riskItems'][number]) => {
     setNotificationOpen(false)
     setIssueDetail(item)
   }
-  const notificationPanel = (
-    <div className="merchant-notification-panel" role="region" aria-label="待处理问题">
-      {issueItems.length ? <>
-        <div className="merchant-notification-heading">
-          <div><strong>工作区待处理问题</strong><span>{issueCount} 项需要关注</span></div>
-        </div>
-        <List
-        className="merchant-notification-list"
-        size="small"
-        dataSource={issueItems}
-        renderItem={(item, index) => <List.Item className="merchant-notification-item">
-          <button
-            type="button"
-            className="merchant-notification-item-button"
-            aria-label={`查看问题：${item.title ?? item.type}`}
-            onMouseDown={() => setNotificationOpen(false)}
-            onClick={() => { openIssueDetail(item) }}
-          >
-            <span className={`merchant-notification-dot ${item.severity}`} aria-hidden="true" />
-            <span className="merchant-notification-copy"><strong>{item.title ?? item.type}</strong><small>{[item.platform ? platformNames[item.platform] : '', item.storeName ?? '', item.status ?? ''].filter(Boolean).join(' · ') || '当前工作区'}</small><em>{item.nextAction ?? '查看详情并处理'}</em></span>
-            <span className="merchant-notification-index">{index + 1}</span>
-          </button>
-        </List.Item>}
-        />
-      </> : <div className="merchant-notification-empty">暂无需要处理的问题</div>}
-    </div>
-  )
+  const notificationPanel = <IssueNotificationPanel
+    state={issueRead}
+    items={issueItems ?? []}
+    onOpenIssue={openIssueDetail}
+    onClose={() => setNotificationOpen(false)}
+    onRetry={() => setIssueReload((value) => value + 1)}
+  />
   return (
     <header className="topbar">
       <button
@@ -1001,11 +1066,7 @@ function Topbar({
       </div>
       <div className="topbar-actions">
         <Dropdown trigger={['click']} placement="bottomRight" open={notificationOpen} onOpenChange={setNotificationOpen} dropdownRender={() => notificationPanel}>
-          <Badge count={issueCount > 99 ? '99+' : issueCount} overflowCount={99} offset={[-2, 4]}>
-            <button type="button" className="icon-button notification-trigger" aria-label={`工作区待处理问题${issueCount ? `，${issueCount} 项` : '，暂无'}`}>
-              <Bell size={18} aria-hidden="true" />
-            </button>
-          </Badge>
+          <IssueNotificationBell state={issueRead} />
         </Dropdown>
         <div className="account-menu" ref={accountMenuRef}>
           <button
@@ -5409,9 +5470,12 @@ type MaterialBrandSettings = {
   sellingPointsFileName: string
   assetFileName: string
 }
-const emptyMaterialBrandSettings: MaterialBrandSettings = { logoUrl: '', color: '#17543c', persona: '', sellingPoints: '', personaFileName: '', sellingPointsFileName: '', assetFileName: '' }
+// No colour is a reading: `'#17543c'` used to sit here as the "brand primary"
+// of every workspace that never configured one. `resolveBrandColorFacts` turns
+// the empty string into 「未单独配置」.
+const emptyMaterialBrandSettings: MaterialBrandSettings = { logoUrl: '', color: '', persona: '', sellingPoints: '', personaFileName: '', sellingPointsFileName: '', assetFileName: '' }
 
-function MaterialBrandFields({ value, onChange, label, logoLabel, leadingCard }: { value: MaterialBrandSettings; onChange: (next: MaterialBrandSettings) => void; label: string; logoLabel?: string; leadingCard?: ReactNode }) {
+export function MaterialBrandFields({ value, onChange, label, logoLabel, leadingCard }: { value: MaterialBrandSettings; onChange: (next: MaterialBrandSettings) => void; label: string; logoLabel?: string; leadingCard?: ReactNode }) {
   const logoInputId = useId()
   const assetInputId = useId()
   const [draftColor, setDraftColor] = useState(value.color)
@@ -5423,6 +5487,12 @@ function MaterialBrandFields({ value, onChange, label, logoLabel, leadingCard }:
     reader.addEventListener('load', () => onChange({ ...value, logoUrl: typeof reader.result === 'string' ? reader.result : '' }))
     reader.readAsDataURL(file)
   }
+  // Local by design, and it says so. This reads the picked file with
+  // `file.text()` and fills 用户画像/品牌卖点 from its text — there is no request
+  // on this path, so the pane may not label the document 「已接收」: it says
+  // 「仅本地，未上传」 through `resolveBrandDocumentFacts`. See
+  // `material-brand-facts.ts` for why the two brand endpoints that exist cannot
+  // be reached from here.
   const updateAssetFile = async (file?: File) => {
     if (!file) return
     setAssetAnalysisStatus('analyzing')
@@ -5452,22 +5522,27 @@ function MaterialBrandFields({ value, onChange, label, logoLabel, leadingCard }:
       <label htmlFor={logoInputId}><Upload size={14} />{value.logoUrl ? '更换 Logo' : '上传 Logo'}<input id={logoInputId} type="file" accept="image/*" multiple={false} onChange={(event) => updateLogo(event.target.files?.[0])} /></label>
     </div>
     <div className="material-brand-color-field"><span>品牌色</span><div><input type="color" value={/^#[0-9a-f]{6}$/i.test(draftColor) ? draftColor : value.color} onChange={(event) => setDraftColor(event.target.value)} /><label className="material-brand-color-code"><span>#</span><input aria-label={`${label}品牌色值`} value={draftColor.replace(/^#/, '')} maxLength={6} inputMode="text" onChange={(event) => setDraftColor(`#${event.target.value.replace(/[^0-9a-f]/gi, '').slice(0, 6)}`)} /></label><button type="button" disabled={!/^#[0-9a-f]{6}$/i.test(draftColor) || draftColor.toLowerCase() === value.color.toLowerCase()} onClick={() => onChange({ ...value, color: draftColor })}>确定</button></div></div>
-    <div className="material-brand-asset-file"><span>品牌资产文档</span><label htmlFor={assetInputId}><Upload size={14} /><strong>{assetAnalysisStatus === 'analyzing' ? '正在分析文档…' : '上传并分析'}</strong><input id={assetInputId} type="file" accept=".txt,.md,.csv,.json,.doc,.docx,.pdf,.zip" multiple={false} onChange={(event) => { void updateAssetFile(event.target.files?.[0]) }} /></label><small className={`material-brand-analysis-status ${assetAnalysisStatus}`}>{assetAnalysisStatus === 'analyzing' ? '正在提取用户画像与品牌卖点' : assetAnalysisStatus === 'done' ? '分析完成，结果已填入下方字段' : assetAnalysisStatus === 'empty' ? '未识别到可填写内容，请在下方手动补充' : ''}</small></div>
+    <div className="material-brand-asset-file"><span>品牌资产文档</span><label htmlFor={assetInputId}><Upload size={14} /><strong>{assetAnalysisStatus === 'analyzing' ? '正在本机解析文档…' : '选择文档并解析'}</strong><input id={assetInputId} type="file" accept=".txt,.md,.csv,.json,.doc,.docx,.pdf,.zip" multiple={false} onChange={(event) => { void updateAssetFile(event.target.files?.[0]) }} /></label><small className={`material-brand-analysis-status ${assetAnalysisStatus}`}>{assetAnalysisStatus === 'analyzing' ? '正在本机提取用户画像与品牌卖点；不会上传服务端' : assetAnalysisStatus === 'done' ? BRAND_DOCUMENT_LOCAL_ANALYSIS : assetAnalysisStatus === 'empty' ? '未识别到可填写内容，请在下方手动补充' : ''}</small></div>
     <div className="material-brand-text-field"><div className="material-brand-field-heading"><span>用户画像</span></div><textarea aria-label={`${label}用户画像`} value={value.persona} onChange={(event) => onChange({ ...value, persona: event.target.value })} placeholder="例如：25–35 岁、关注设计感与使用效率的城市职场人" /></div>
     <div className="material-brand-text-field"><div className="material-brand-field-heading"><span>品牌卖点</span></div><textarea aria-label={`${label}品牌卖点`} value={value.sellingPoints} onChange={(event) => onChange({ ...value, sellingPoints: event.target.value })} placeholder="例如：原创设计、耐用材质、礼赠友好" /></div>
   </div>
 }
 
-function MaterialBrandOutput({ value, label, enabled, onEnabledChange, context, transitionLabel }: { value: MaterialBrandSettings; label: string; enabled: boolean; onEnabledChange?: (enabled: boolean) => void; context?: { label: string; value: string }; transitionLabel?: string }) {
+export function MaterialBrandOutput({ value, label, enabled, onEnabledChange, context, transitionLabel }: { value: MaterialBrandSettings; label: string; enabled: boolean; onEnabledChange?: (enabled: boolean) => void; context?: { label: string; value: string }; transitionLabel?: string }) {
+  // The card may only present a colour the workspace actually configured, and a
+  // document name only as far as the server is concerned — see
+  // `material-brand-facts.ts`.
+  const colorFacts = resolveBrandColorFacts(value.color)
+  const documentFacts = resolveBrandDocumentFacts(value.assetFileName)
   return <aside className={`material-brand-output${enabled ? '' : ' disabled'}${transitionLabel ? ' switching' : ''}`} aria-label={`${label}${enabled ? '已经启用' : '已经停用'}的配置`}>
     <div className="material-brand-output-heading"><span>BRAND PROFILE</span><strong>当前品牌资产</strong>{onEnabledChange ? <div className="material-brand-output-switch" aria-label={`${label}启用状态`}><button type="button" className={enabled ? 'active' : ''} onClick={() => onEnabledChange(true)}>启用{label}</button><button type="button" className={!enabled ? 'active' : ''} onClick={() => onEnabledChange(false)}>停用{label}</button></div> : <small className="material-brand-output-live">上传后实时更新</small>}</div>
-    <div className={`material-brand-output-card${context ? ' has-context' : ''}`} style={{ '--brand-preview-color': value.color } as CSSProperties}>
+    <div className={`material-brand-output-card${context ? ' has-context' : ''}`} style={{ '--brand-preview-color': colorFacts.value || 'transparent' } as CSSProperties}>
       {context && <div className="material-brand-output-context"><span>{context.label}</span><strong>{context.value}</strong></div>}
-      <div className="material-brand-output-item material-brand-output-logo"><span>品牌 Logo</span><div>{value.logoUrl ? <img src={value.logoUrl} alt={`${label}生效 Logo`} /> : <><ImageIcon size={24} /><small>未单独配置</small></>}</div></div>
-      <div className="material-brand-output-item material-brand-output-color"><span>品牌主色</span><div><i /><strong>{value.color}</strong></div></div>
+      <div className="material-brand-output-item material-brand-output-logo"><span>品牌 Logo</span><div>{value.logoUrl ? <img src={value.logoUrl} alt={`${label}生效 Logo`} /> : <><ImageIcon size={24} /><small>{BRAND_UNCONFIGURED}</small></>}</div></div>
+      <div className="material-brand-output-item material-brand-output-color"><span>品牌主色</span><div>{colorFacts.configured ? <><i /><strong>{colorFacts.value}</strong></> : <small>{colorFacts.label}</small>}</div></div>
       <div className="material-brand-output-item material-brand-output-copy"><span>用户画像</span><p>{value.persona.trim() || '尚未填写，将在生成内容时使用上一级配置。'}</p></div>
       <div className="material-brand-output-item material-brand-output-copy"><span>品牌卖点</span><p>{value.sellingPoints.trim() || '尚未填写，将在生成内容时使用上一级配置。'}</p></div>
-      <div className={`material-brand-output-document${value.assetFileName.trim() ? '' : ' pending'}`}><FileCheck2 size={18} /><div><span>品牌资产文档</span><strong>{value.assetFileName.trim() || '暂无资产文件'}</strong></div><small>{value.assetFileName.trim() ? '已接收' : '待接收'}</small></div>
+      <div className={`material-brand-output-document${documentFacts.pending ? ' pending' : ''}`}><FileCheck2 size={18} /><div><span>品牌资产文档</span><strong>{documentFacts.fileName || BRAND_DOCUMENT_NONE}</strong></div><small>{documentFacts.label}</small></div>
     </div>
     {transitionLabel && <div className="material-brand-output-transition" role="status" aria-live="polite"><span>{transitionLabel}</span></div>}
   </aside>

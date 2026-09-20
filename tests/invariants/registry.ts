@@ -169,6 +169,13 @@ export interface InvariantMutation {
   /**
    * Environment the evidence needs (e.g. `PERSISTENCE_RELEASE_DATABASE_URL`).
    * Recorded so a skip reads as "not run" rather than as "passed".
+   *
+   * This is a claim about the *evidence file*, so it is checked against that
+   * file and not taken on faith: the evidence must read `process.env.<binding>`
+   * in a skip guard (`skipIf`/`runIf`/`it.skip`), or the declaration is
+   * unsupported and the row runs anyway — see `unsupportedRequires`. Declaring a
+   * binding the evidence does not use used to be enough to turn a broken guard
+   * from red into a tolerated NOT RUN.
    */
   requires?: string
   /** Why this mutation is the one that matters. */
@@ -181,4 +188,48 @@ export interface InvariantMutation {
  */
 export interface InvariantFragment {
   mutations: readonly InvariantMutation[]
+}
+
+/* ------------------------------------------------------------------ *
+ * `requires` — a claim about another file, so it is read from that file
+ * ------------------------------------------------------------------ */
+
+/**
+ * Whether an evidence file gates itself on an environment binding.
+ *
+ * `requires` is unlike every other field on a row: it is a claim about a
+ * *different* file — that the evidence cannot run without the binding, so a run
+ * without it reports NOT RUN rather than a pass. Nothing read it, and the claim
+ * decided the verdict: a row whose guard was broken only had to add
+ * `requires: 'PERSISTENCE_RELEASE_DATABASE_URL'` to be reported NOT RUN and
+ * *tolerated* by `npm run check` on a machine where the fixture could not start.
+ * The same broken code was fatal without the field — one declaration, and the
+ * gate went from exit 1 to exit 0. A field that decides a verdict is the exact
+ * failure this registry exists to remove, so the declaration now has to be
+ * visible in the file it makes a claim about: the evidence reads the binding and
+ * uses it to decide whether to skip.
+ */
+export function evidenceGatesOnBinding(source: string, binding: string): boolean {
+  const escaped = binding.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  const read = new RegExp(`process\\.env(?:\\.${escaped}\\b|\\[\\s*['"\`]${escaped}['"\`]\\s*\\])`, 'u')
+  if (!read.test(source)) return false
+  return /\bskipIf\b|\brunIf\b|\b(?:it|test|describe)\.skip\b/u.test(source)
+}
+
+/**
+ * Why a row's `requires` declaration is unsupported by its own evidence, or
+ * `undefined` when the evidence really is gated on the binding.
+ *
+ * Read by `registry.test.ts` (so the unsupported declaration fails the suite
+ * rather than only the machine that happens to lack the fixture) and by the gate
+ * (so a row cannot excuse itself from running).
+ */
+export function unsupportedRequires(
+  mutation: Pick<InvariantMutation, 'requires' | 'evidence'>,
+  evidenceSource: string,
+): string | undefined {
+  const binding = mutation.requires?.trim()
+  if (!binding) return undefined
+  if (evidenceGatesOnBinding(evidenceSource, binding)) return undefined
+  return `declares requires: ${binding}, but ${mutation.evidence} never reads process.env.${binding} to decide whether to skip (no skipIf/runIf/it.skip next to it), so the declaration cannot excuse the row from running`
 }

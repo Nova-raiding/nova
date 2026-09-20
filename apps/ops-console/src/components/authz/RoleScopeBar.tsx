@@ -29,6 +29,25 @@ export function workbenchBoundaryMessage(workbench: OpsWorkbench) {
     : "企业主体运营视图：仅作用于当前授权企业主体；不包含平台运营能力。";
 }
 
+/**
+ * The single notification feed behind both notification surfaces.
+ *
+ * The bell badge and the account menu's message center are two views of one
+ * dataset. Each used to merge its own sources: the badge unioned `alerts` with
+ * `notifications`, while the account menu read `notifications ?? alerts` — and
+ * because the model seeds `notifications` with `[]` (never undefined) and only
+ * fills it for a non-platform scope, a platform operator on `?workbench=workspace`
+ * saw a badge counting N unread alerts next to 「暂无消息」.
+ */
+export function notificationFeed(
+  alerts?: readonly OperationalAlert[],
+  notifications?: readonly OperationalAlert[],
+): OperationalAlert[] {
+  const deduped = new Map<string, OperationalAlert>();
+  for (const item of [...(notifications ?? []), ...(alerts ?? [])]) deduped.set(item.id, item);
+  return [...deduped.values()].sort((left, right) => String(right.observedAt).localeCompare(String(left.observedAt)) || right.id.localeCompare(left.id));
+}
+
 export function RoleScopeBar({
   session,
   authorization,
@@ -90,13 +109,10 @@ export function RoleScopeBar({
   const availableWorkbenches = session?.available_workbenches ?? projectedWorkbenches ?? [workbench];
   const authorizationVerified = Boolean(session);
   const merchantNotificationsEnabled = workbench === "workspace" || authorization.scope.kind !== "platform";
-  const allNotifications = useMemo(() => {
-    if (!merchantNotificationsEnabled) return [];
-    const list = [...(notifications ?? []), ...(alerts ?? [])];
-    const deduped = new Map<string, OperationalAlert>();
-    for (const item of list) deduped.set(item.id, item);
-    return [...deduped.values()].sort((left, right) => String(right.observedAt).localeCompare(String(left.observedAt)) || right.id.localeCompare(left.id));
-  }, [alerts, merchantNotificationsEnabled, notifications]);
+  const allNotifications = useMemo(
+    () => (merchantNotificationsEnabled ? notificationFeed(alerts, notifications) : []),
+    [alerts, merchantNotificationsEnabled, notifications],
+  );
   const unreadNotifications = allNotifications.filter((alert) => alert.status === "open");
   return (
     <section className="role-scope-bar" aria-label="当前身份与权限范围" aria-describedby="role-scope-verification role-scope-boundary">

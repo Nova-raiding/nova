@@ -478,6 +478,10 @@ export function useOpsConsoleModel() {
   const [workspaceRows, setWorkspaceRows] = useState<WorkspaceSummary[]>([]);
   const [workspaceDirectory, setWorkspaceDirectory] = useState<WorkspaceDirectoryPage>(UNRESOLVED_WORKSPACE_DIRECTORY);
   const [workspaceDirectoryLoading, setWorkspaceDirectoryLoading] = useState(false);
+  // Kept apart from `workspaceDirectory`, whose `items: []` seed is
+  // indistinguishable from a directory the server answered with nothing.
+  // Without this, a failed read rendered 「共 0 个工作区」.
+  const [workspaceDirectoryError, setWorkspaceDirectoryError] = useState("");
   const workspaceDirectoryRequestRef = useRef(0);
   const [platformFinanceSummary, setPlatformFinanceSummary] = useState<FinanceSearchSummary>();
   const [platformCommercialCatalog, setPlatformCommercialCatalog] = useState<CommercialCatalogItem[]>([]);
@@ -659,6 +663,7 @@ export function useOpsConsoleModel() {
     setUserDetail(undefined);
     setWorkspaceRows([]);
     setWorkspaceDirectory(UNRESOLVED_WORKSPACE_DIRECTORY);
+    setWorkspaceDirectoryError("");
     setPlatformFinanceSummary(undefined);
     setPlatformCommercialCatalog([]);
     setReconciliation(undefined);
@@ -1549,6 +1554,7 @@ export function useOpsConsoleModel() {
     const page = filters.page ?? Math.floor(workspaceDirectory.offset / workspaceDirectory.limit) + 1;
     const pageSize = filters.pageSize ?? workspaceDirectory.limit;
     setWorkspaceDirectoryLoading(true);
+    setWorkspaceDirectoryError("");
     try {
       const value = await rpc("ops.workspaces.list", {
         offset: String((page - 1) * pageSize),
@@ -1562,9 +1568,22 @@ export function useOpsConsoleModel() {
       const next = value as unknown as WorkspaceDirectoryPage;
       setWorkspaceDirectory(next);
       setWorkspaceRows(next.items ?? []);
+      // A recovered read clears the failure recorded by an earlier one, the same
+      // way the alert poll clears `ops.alerts.list`; otherwise the table keeps
+      // showing stale failure text over fresh rows.
+      setDataSetErrors((previous) => {
+        if (!("ops.workspaces.list" in previous)) return previous;
+        const nextErrors = { ...previous };
+        delete nextErrors["ops.workspaces.list"];
+        return nextErrors;
+      });
       return true;
     } catch (cause) {
-      if (!controller.signal.aborted && requestId === workspaceDirectoryRequestRef.current) message.error(describeOpsError(cause));
+      if (!controller.signal.aborted && requestId === workspaceDirectoryRequestRef.current) {
+        const failure = describeOpsError(cause);
+        setWorkspaceDirectoryError(failure);
+        message.error(failure);
+      }
       return false;
     } finally {
       if (requestId === workspaceDirectoryRequestRef.current) {
@@ -2876,6 +2895,7 @@ export function useOpsConsoleModel() {
     setWorkspaceRows,
     workspaceDirectory,
     workspaceDirectoryLoading,
+    workspaceDirectoryError,
     platformFinanceSummary,
     setPlatformFinanceSummary,
     platformCommercialCatalog,

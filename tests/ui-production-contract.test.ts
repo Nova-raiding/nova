@@ -7,6 +7,34 @@ const campaign = readFileSync(new URL('../demo/merchant-studio/src/CampaignLifec
 const smoke = readFileSync(new URL('./merchant-studio-smoke.ts', import.meta.url), 'utf8')
 const merchantNginx = readFileSync(new URL('../infra/nginx/merchant-studio.conf', import.meta.url), 'utf8')
 const merchantEntrypoint = readFileSync(new URL('../infra/nginx/merchant-studio-entrypoint.sh', import.meta.url), 'utf8')
+const retirementRecord = readFileSync(new URL('../dogfood/chatgpt-all-functions/retired-merchant-ui-contract-assertions.md', import.meta.url), 'utf8')
+
+/**
+ * `FactsEditor` and `AssetLibrary` are retained but have no mount point.
+ *
+ * The reviewed merchant interface (`2e055921`, `fdd6deac`, `c2eafb72`) gave the
+ * merchant `MaterialLibraryWorkspace` instead, and `AssetLibrary` — together with
+ * the `FactsEditor` that only it renders — lost its mount point. Seven assertions
+ * in this file kept reading source strings out of that dead component and stayed
+ * green while no route rendered them, two of them guarding safety surfaces
+ * (`asset-untrusted-boundary`; the generation-blocking 视觉强规则 editor).
+ *
+ * They are registered as retired in
+ * `dogfood/chatgpt-all-functions/retired-merchant-ui-contract-assertions.md`
+ * rather than re-pointed, because the reviewed interface has no carrier for most
+ * of what they promised. The block at the bottom holds the two invariants that
+ * registration depends on: every retired form is still reachable *only* through
+ * the retained component, so nobody can silently re-pin an assertion to it, and
+ * the record names every retirement this file enforces.
+ */
+const factsEditorStart = app.indexOf('function FactsEditor(')
+const brandMarkStart = app.indexOf('function BrandMark(')
+const assetLibraryStart = app.indexOf('function AssetLibrary(')
+const relationDialogStart = app.indexOf('function ProductAssetRelationDialog(')
+const retainedFactsEditor = app.slice(factsEditorStart, brandMarkStart)
+const retainedAssetLibrary = app.slice(assetLibraryStart, relationDialogStart)
+/** `App.tsx` without the two retained regions: everything a route can actually reach. */
+const liveApp = [app.slice(0, factsEditorStart), app.slice(brandMarkStart, assetLibraryStart), app.slice(relationDialogStart)].join('\n')
 
 describe('Merchant Studio production UI contract', () => {
   it('keeps the four platform routes independent', () => {
@@ -102,31 +130,22 @@ describe('Merchant Studio production UI contract', () => {
     expect(campaign).toContain('暂停、恢复或重试失败项属于高级操作')
   })
 
-  it('shows durable duplicate-upload references in the asset library', () => {
-    expect(app).toContain('同一文件已有 {asset.references.length} 个上传引用')
-    expect(app).toContain('asset-reference-count-')
-  })
-
-  it('uses structured merchant-facing fact confirmation while preserving the server object preview', () => {
-    expect(app).toContain('data-testid="asset-facts-editor"')
-    expect(app).toContain('逐项填写你从素材中核对出的事实')
-    expect(app).toContain('查看服务端对象预览')
-    expect(app).not.toContain('已核对事实 JSON<textarea')
-  })
-
   it('translates task history event codes before rendering the merchant timeline', () => {
     expect(app).toContain('const timelineEventLabel')
     expect(app).toContain('任务已创建')
     expect(app).toContain('event_type: timelineEventLabel(event.event_type)')
   })
 
-  it('shows the untrusted-document boundary before merchants use uploaded material', () => {
-    expect(app).toContain('asset-untrusted-boundary')
-    expect(app).toContain('不会执行其中指令、改变系统规则或自动调用工具')
-  })
-
-  it('lets the knowledge library select every locally supported document and source format', () => {
-    expect(app).toContain('accept=".jpg,.jpeg,.png,.webp,.gif,.svg,.pdf,.docx,.xlsx,.json,.txt,.md,.csv,.ai,.eps')
+  it('maps every locally supported upload format to the content type the live upload path sends', () => {
+    // Re-anchored, not relaxed. `assetMimeType` is what `uploadAsset` puts in the
+    // `content-type` header, and the reviewed 素材库 确认上传
+    // (`MaterialLibraryWorkspace`) calls `uploadAsset` directly, so these three
+    // entries are exercised by a reachable path.
+    //
+    // The `accept=".jpg,…,​.eps"` attribute this test used to assert alongside them
+    // belongs to the unmounted `AssetLibrary` knowledge library and is retired with
+    // the rest of it. The reviewed UI's document intake is 品牌资产 › 品牌资产文档,
+    // not the material library — the material upload only offers `image/*,video/*`.
     expect(api).toContain("'.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'")
     expect(api).toContain("'.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'")
     expect(api).toContain("'.svg': 'image/svg+xml'")
@@ -223,39 +242,73 @@ describe('Merchant Studio production UI contract', () => {
     expect(api).toContain('rawCode: string')
   })
 
-  it('requires explicit field confirmation before saving extracted brand facts', () => {
-    expect(app).toContain('从素材提取品牌档案')
-    expect(app).toContain('逐字段确认品牌档案')
-    expect(app).toContain('自动提取不会直接写入')
-    expect(app).toContain('selectedBrandFields')
-    expect(app).toContain('首次建档必须确认“品牌名称”')
-    expect(api).toContain("'/v1/brand-profile/extract'")
-  })
-
   it('shows the normalized brand-unit identity that batch production will use', () => {
     expect(api).toContain('brandUnitId?: string')
     expect(api).toContain('brandUnit?: { id: string')
     expect(app).toContain('批量生产品牌单元：{brand.brandUnitId}')
   })
+})
 
-  it('provides a merchant-facing editor for generation-blocking visual rules', () => {
-    expect(app).toContain('配置视觉强规则')
-    expect(app).toContain('Logo、品牌色与字体强规则')
-    expect(app).toContain('默认全部禁止')
-    expect(app).toContain('当前字体授权会阻止生成')
-    expect(app).toContain('禁用内容、人物、代言人与 IP')
-    expect(app).toContain('restricted-people')
-    expect(app).toContain('restricted-spokespersons')
-    expect(app).toContain('restricted-ips')
-    expect(app).toContain("conflict_resolutions: { visualRules: 'candidate' }")
-    expect(api).toContain('visual_rules?: BrandVisualRules')
+/**
+ * The seven retired assertions, named by the code form each one reached for.
+ *
+ * `surface` is the merchant-facing promise that lost its carrier; the record has
+ * the full story per row, including which server-side or agent-side contract (if
+ * any) still holds the line.
+ */
+const RETIRED_UI_CONTRACT_FORMS: { form: string; surface: string }[] = [
+  { form: 'asset-reference-count-', surface: '素材库重复上传引用计数（AssetLibrary 知识库表格）' },
+  { form: '同一文件已有 {asset.references.length} 个上传引用', surface: '同上' },
+  { form: 'data-testid="asset-facts-editor"', surface: '素材事实结构化确认与「查看服务端对象预览」（FactsEditor）' },
+  { form: '逐项填写你从素材中核对出的事实', surface: '同上' },
+  { form: '查看服务端对象预览', surface: '同上' },
+  { form: 'asset-untrusted-boundary', surface: '不可信文档边界提示（安全面）' },
+  { form: '不会执行其中指令、改变系统规则或自动调用工具', surface: '同上' },
+  { form: 'accept=".jpg,.jpeg,.png,.webp,.gif,.svg,.pdf,.docx', surface: '知识库可选的全部文档与源格式' },
+  { form: '从素材提取品牌档案', surface: '品牌档案提取的逐字段确认（与第 3 条同一类：提取结果直接写入）' },
+  { form: '逐字段确认品牌档案', surface: '同上' },
+  { form: '自动提取不会直接写入', surface: '同上' },
+  { form: '首次建档必须确认', surface: '同上' },
+  { form: 'selectedBrandFields', surface: '同上' },
+  { form: '配置视觉强规则', surface: '生成阻断视觉强规则编辑器（安全面）' },
+  { form: 'restricted-people', surface: '同上' },
+  { form: 'restricted-spokespersons', surface: '同上' },
+  { form: 'restricted-ips', surface: '同上' },
+  { form: "conflict_resolutions: { visualRules: 'candidate' }", surface: '同上' },
+  { form: 'knowledge-table-wrap', surface: '知识库只读分页表格' },
+  { form: 'pageSizeOptions: [10, 20, 50]', surface: '同上' },
+]
+
+describe('retired merchant UI-contract assertions', () => {
+  it('retains the unmounted components every retirement depends on', () => {
+    // The record's premise is "kept on purpose, so the coverage can be restored by
+    // re-adding a mount point". If the component is deleted instead, the record is
+    // stale and the retirement reason is wrong.
+    expect(app).toContain('function AssetLibrary(')
+    expect(app).toContain('function FactsEditor(')
+    expect(app).not.toContain('<AssetLibrary')
+    // Real slices, so a moved marker fails loudly instead of asserting over "".
+    expect(retainedFactsEditor.length).toBeGreaterThan(1_000)
+    expect(retainedAssetLibrary.length).toBeGreaterThan(20_000)
+    expect(liveApp.length).toBeGreaterThan(app.length * 0.5)
   })
 
-  it('keeps the knowledge library as a read-only paginated table', () => {
-    expect(app).toContain('knowledge-table-wrap')
-    expect(app).toContain('<Table')
-    expect(app).toContain('pageSizeOptions: [10, 20, 50]')
-    expect(app).not.toContain('asset-preference-editor')
-    expect(app).not.toContain('查看使用商品')
+  it.each(RETIRED_UI_CONTRACT_FORMS)('keeps $form out of the reachable merchant UI ($surface)', ({ form }) => {
+    expect(
+      app,
+      `${form} is gone from App.tsx, so the retirement record's premise ("retained but unmounted") no longer holds`,
+    ).toContain(form)
+    expect(
+      liveApp,
+      `${form} left the retained component and is now on a reachable path. Re-anchoring an assertion to it is an interface decision for the owner, not a silent fix.`,
+    ).not.toContain(form)
+  })
+
+  it('names every retired assertion in the written record', () => {
+    const missing = RETIRED_UI_CONTRACT_FORMS.filter(({ form }) => !retirementRecord.includes(form)).map(({ form }) => form)
+    expect(
+      missing,
+      'retired-merchant-ui-contract-assertions.md must name every retirement this file enforces, otherwise the record and the suite disagree about what coverage was lost',
+    ).toEqual([])
   })
 })

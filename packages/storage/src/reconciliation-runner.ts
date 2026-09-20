@@ -93,6 +93,14 @@ export async function runReconciliationCycle(input: ReconciliationCycleInput): P
       reports.push(report)
     } catch (error) {
       failed += 1
+      // Report before recording. The durable status store is the component most
+      // likely to be the one that is failing, so the write of the failure
+      // snapshot is the write most likely to reject - and while it rejected
+      // first, the caller's `onError` was skipped entirely and the rejection
+      // escaped this cycle as an unhandled one. `onError` is the only reporter
+      // for a cycle whose own evidence could not be written, so it has to run
+      // before the write it is reporting on.
+      input.onError?.(workspaceId, error)
       const failure = {
         workspaceId,
         status: 'attention_required' as const,
@@ -104,22 +112,7 @@ export async function runReconciliationCycle(input: ReconciliationCycleInput): P
         error: reconciliationErrorEvidence(error),
       }
       await input.status.put(failure)
-      input.onError?.(workspaceId, error)
     }
   }
   return { completed: reports.length, failed, reports }
-}
-
-export function startReconciliationScheduler(input: ReconciliationCycleInput & { intervalMs: number; setTimer?: typeof setInterval; clearTimer?: typeof clearInterval }) {
-  if (!Number.isSafeInteger(input.intervalMs) || input.intervalMs < 1_000) throw new Error('STORAGE_RECONCILIATION_INTERVAL_INVALID')
-  const setTimer = input.setTimer ?? setInterval
-  const clearTimer = input.clearTimer ?? clearInterval
-  let running = false
-  const tick = async () => {
-    if (running) return
-    running = true
-    try { await runReconciliationCycle(input) } finally { running = false }
-  }
-  const timer = setTimer(() => { void tick() }, input.intervalMs)
-  return { runNow: tick, stop: () => clearTimer(timer) }
 }

@@ -9,6 +9,10 @@
  *     (`uniqueness`, `overRejection`, `evidenceFailsWith`);
  *   - the uniqueness rules are live (each one matches the sample it names, and
  *     none of them exempts a whole scan root, which would make it unfireable);
+ *   - a `requires` declaration is a claim about the evidence file, so it is read
+ *     from that file: the evidence has to gate itself on the binding, or the row
+ *     cannot use the declaration to be reported NOT RUN — and tolerated — by the
+ *     gate while its guard is broken;
  *   - a registered evidence file is not one of the shapes that made the suite
  *     green through two audit rounds:
  *
@@ -32,7 +36,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
-import type { InvariantMutation } from './registry.js'
+import { evidenceGatesOnBinding, unsupportedRequires, type InvariantMutation } from './registry.js'
 import { findRuleMatches, missingAuditFields, ruleIsVacuous, ruleMatchesItsSample, scanFiles, symbolReferences } from './uniqueness.js'
 
 const root = resolve(import.meta.dirname, '../..')
@@ -236,6 +240,36 @@ describe('invariant registry', () => {
     expect(
       offenders,
       'a registered invariant has more than one implementation, so the mutation below it proves nothing about the sentence it claims to guard',
+    ).toEqual([])
+  })
+
+  /**
+   * `requires` is the one field that makes a claim about a *different* file, and
+   * nothing checked it. The gate took the claim on faith, so a broken guard
+   * could be turned from a red into a tolerated NOT RUN — exit 1 into exit 0 on
+   * a machine where the fixture could not start — by adding
+   * `requires: 'PERSISTENCE_RELEASE_DATABASE_URL'` to a row whose evidence never
+   * mentions that binding. Auditing it here means the unsupported declaration is
+   * a registry defect that fails the suite, not only a hole on somebody's
+   * Docker-less laptop.
+   */
+  it('only accepts a requires declaration the evidence file gates itself on', async () => {
+    const { mutations } = await loadMutations()
+    // Proved in both directions first: a check that reports nothing certifies
+    // every row above it.
+    const gated = "const databaseUrl = process.env.PERSISTENCE_RELEASE_DATABASE_URL\nconst postgresIt = databaseUrl ? it : it.skip"
+    expect(evidenceGatesOnBinding(gated, 'PERSISTENCE_RELEASE_DATABASE_URL'), 'the detector no longer sees a binding read in a skip guard').toBe(true)
+    expect(evidenceGatesOnBinding("import { it } from 'vitest'", 'PERSISTENCE_RELEASE_DATABASE_URL'), 'the detector accepts an evidence file that never reads the binding').toBe(false)
+    expect(evidenceGatesOnBinding(gated, 'REDIS_URL'), 'the detector accepts any binding name, not the one the evidence reads').toBe(false)
+
+    const offenders: string[] = []
+    for (const mutation of mutations) {
+      const unsupported = unsupportedRequires(mutation, readFileSync(resolve(root, mutation.evidence), 'utf8'))
+      if (unsupported) offenders.push(`${mutation.id}: ${unsupported}`)
+    }
+    expect(
+      offenders,
+      'a row claims a binding its own evidence does not gate itself on — the gate would report it NOT RUN and `npm run check` would tolerate it, which turns a broken guard into a non-finding',
     ).toEqual([])
   })
 

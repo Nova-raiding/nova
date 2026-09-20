@@ -85,6 +85,24 @@ export function canPublishToProduction(row: PlatformOperation): boolean {
 }
 
 /**
+ * What the unacknowledged-count tag is allowed to claim.
+ *
+ * `alerts` starts as `[]` and is only replaced by a successful read, so the
+ * count is unknown until one lands. Rendering it green while the read is still
+ * in flight, or after it failed, states a measured all-clear that was never
+ * measured — the operator reads "0 条未确认" over a table that is empty because
+ * the request 500'd.
+ */
+export function alertCountPresentation(
+  count: number,
+  { error, loadedAt }: { error?: string; loadedAt?: Date },
+): { color: "green" | "red" | "default"; label: string } {
+  if (error) return { color: "red", label: "未确认数未知（读取失败）" };
+  if (!loadedAt) return { color: "default", label: "未确认数读取中" };
+  return { color: count ? "red" : "green", label: `${count} 条未确认` };
+}
+
+/**
  * The alert review surface: what happened, whether anyone outside this page
  * was told, and how old the reading is.
  *
@@ -111,16 +129,18 @@ export function OperationalAlertsPanel({ model }: OverviewSectionProps) {
     enabled: Boolean(model.opsSession),
     poll: refreshAlerts,
   });
+  const alertsReadAt = latestRefreshAt(alertsLoadedAt, polling.lastRefreshedAt);
+  const alertCount = alertCountPresentation(alerts.length, { error: alertsError, loadedAt: alertsReadAt });
   return (
     <Card
       title="待处理平台告警"
       extra={
         <Space>
           <Typography.Text type="secondary" className="ops-alerts-refreshed-at">
-            上次刷新：{formatAlertRefreshedAt(latestRefreshAt(alertsLoadedAt, polling.lastRefreshedAt))}
+            上次刷新：{formatAlertRefreshedAt(alertsReadAt)}
           </Typography.Text>
-          <Tag color={alerts.length ? "red" : "green"}>
-            {alerts.length} 条未确认
+          <Tag color={alertCount.color}>
+            {alertCount.label}
           </Tag>
           {canAuditExport ? <Button size="small" onClick={() => void exportOperations()}>导出运营审计</Button> : null}
           <Button size="small" loading={polling.refreshing} onClick={() => void polling.refresh()}>

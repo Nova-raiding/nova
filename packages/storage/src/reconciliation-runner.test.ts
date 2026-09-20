@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MemoryReconciliationStatusStore, runReconciliationCycle, startReconciliationScheduler } from './reconciliation-runner.js'
+import { MemoryReconciliationStatusStore, runReconciliationCycle, type ReconciliationStatusStore } from './reconciliation-runner.js'
 
 const refs = [{ workspaceId: 'ws_a', assetId: 'asset_1', storageKey: 'clean/ws_a/asset_1/source.png', sha256: 'a'.repeat(64), sizeBytes: 4 }]
 const inventory = [{ workspaceId: 'ws_a', storageKey: 'clean/ws_a/asset_1/source.png', sha256: 'a'.repeat(64), sizeBytes: 4 }]
@@ -80,19 +80,26 @@ describe('storage reconciliation runner', () => {
     expect(message).not.toMatch(/secret-[a-d]/u)
   })
 
-  it('coalesces overlapping timer ticks and can be stopped', async () => {
-    const callbacks: Array<() => void> = []
-    const cleared: unknown[] = []
-    const status = new MemoryReconciliationStatusStore()
-    let release!: () => void
-    const blocked = new Promise<void>(resolve => { release = resolve })
-    const scheduler = startReconciliationScheduler({ intervalMs: 1_000, workspaces: ['ws_a'], inventory: { list: async () => { await blocked; return inventory } }, references: { list: async () => refs }, status, setTimer: ((callback: () => void) => { callbacks.push(callback); return callbacks.length as unknown as ReturnType<typeof setInterval> }) as typeof setInterval, clearTimer: ((timer: ReturnType<typeof setInterval>) => { cleared.push(timer) }) as typeof clearInterval })
-    const first = scheduler.runNow()
-    callbacks[0]!()
-    expect(callbacks).toHaveLength(1)
-    release()
-    await first
-    scheduler.stop()
-    expect(cleared).toEqual([1])
+  it('reports the provider failure to onError even when the failure snapshot cannot be written', async () => {
+    const storeFailure = new Error('status store unavailable')
+    const status: ReconciliationStatusStore = {
+      put: async () => { throw storeFailure },
+      get: async () => undefined,
+      list: async () => [],
+    }
+    const reported: Array<{ workspaceId: string; error: unknown }> = []
+    const providerError = new Error('provider unavailable')
+    // The store that holds the failure snapshot is the component most likely to
+    // be down when a cycle fails. Its rejection must not skip the caller's
+    // reporter, and the reporter must name the provider failure that caused the
+    // cycle to fail rather than the store failure that followed it.
+    await expect(runReconciliationCycle({
+      workspaces: ['ws_report'],
+      inventory: { list: async () => { throw providerError } },
+      references: { list: async () => refs },
+      status,
+      onError: (workspaceId, error) => reported.push({ workspaceId, error }),
+    })).rejects.toThrow('status store unavailable')
+    expect(reported).toEqual([{ workspaceId: 'ws_report', error: providerError }])
   })
 })

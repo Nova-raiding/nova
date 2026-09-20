@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { OpsConsoleModel } from "../../../hooks/useOpsConsoleModel";
 import type { AlertNotificationReadiness, OperationalAlert } from "../../../types/ops";
-import { PlatformReadinessSection } from "./PlatformReadinessSection.js";
+import { PlatformReadinessSection, alertCountPresentation } from "./PlatformReadinessSection.js";
 
 const alert = (overrides: Partial<OperationalAlert>): OperationalAlert => ({
   id: "alert_1",
@@ -187,5 +187,64 @@ describe("alert panel freshness and empty state", () => {
     } as unknown as OpsConsoleModel;
     const html = renderToStaticMarkup(<PlatformReadinessSection model={errored} />);
     expect(html).toContain("告警数据集读取失败");
+  });
+});
+
+/** The unacknowledged-count tag itself, located by the label it renders. */
+const countTag = (html: string) =>
+  html.match(/<span[^>]*class="ant-tag[^"]*"[^>]*>(未确认数未知（读取失败）|未确认数读取中|\d+ 条未确认)<\/span>/u)?.[0];
+
+const withLoadTime = (alerts: OperationalAlert[]) =>
+  ({ ...model(alerts, ready()), alertsLoadedAt: new Date(2026, 8, 19, 2, 5, 7) }) as unknown as OpsConsoleModel;
+
+describe("alert panel unacknowledged count", () => {
+  it("does not answer an unread list with a measured zero", () => {
+    // `alerts` starts as `[]` and is only replaced by a successful read, so a
+    // green 「0 条未确认」 over it claimed an all-clear nobody measured.
+    const html = render([], ready());
+    const tag = countTag(html);
+    expect(tag, "the unacknowledged-count tag is missing").toBeTruthy();
+    expect(tagLabel(tag!)).toBe("未确认数读取中");
+    expect(tagColor(tag!)).toBe("default");
+    expect(html).not.toContain("0 条未确认");
+  });
+
+  it("does not answer a failed list with a measured zero", () => {
+    const errored = {
+      ...model([], ready()),
+      dataSetError: (method: string) => (method === "ops.alerts.list" ? "告警数据集读取失败" : undefined),
+    } as unknown as OpsConsoleModel;
+    const html = renderToStaticMarkup(<PlatformReadinessSection model={errored} />);
+    const tag = countTag(html);
+    expect(tag, "the unacknowledged-count tag is missing").toBeTruthy();
+    expect(tagLabel(tag!)).toBe("未确认数未知（读取失败）");
+    expect(tagColor(tag!)).toBe("red");
+    expect(html).not.toContain("0 条未确认");
+    // The failure is also stated in words next to the count, not by hue alone.
+    expect(html).toContain("告警数据集读取失败");
+  });
+
+  it("still reports a zero that was actually read as a green all-clear", () => {
+    const markup = renderToStaticMarkup(<PlatformReadinessSection model={withLoadTime([])} />);
+    const tag = countTag(markup)!;
+    expect(tagLabel(tag)).toBe("0 条未确认");
+    expect(tagColor(tag)).toBe("green");
+  });
+
+  it("keeps counting the alerts that were read", () => {
+    const markup = renderToStaticMarkup(<PlatformReadinessSection model={withLoadTime([withNotification("a1", "delivered", 1)])} />);
+    const tag = countTag(markup)!;
+    expect(tagLabel(tag)).toBe("1 条未确认");
+    expect(tagColor(tag)).toBe("red");
+  });
+});
+
+describe("alertCountPresentation", () => {
+  it("ranks a recorded failure over a stale count, and an unread list over both", () => {
+    expect(alertCountPresentation(3, { loadedAt: new Date(2026, 8, 19) })).toEqual({ color: "red", label: "3 条未确认" });
+    expect(alertCountPresentation(0, { loadedAt: new Date(2026, 8, 19) })).toEqual({ color: "green", label: "0 条未确认" });
+    expect(alertCountPresentation(0, { error: "告警数据集读取失败", loadedAt: new Date(2026, 8, 19) }))
+      .toEqual({ color: "red", label: "未确认数未知（读取失败）" });
+    expect(alertCountPresentation(0, {})).toEqual({ color: "default", label: "未确认数读取中" });
   });
 });

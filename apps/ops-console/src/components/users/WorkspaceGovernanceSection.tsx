@@ -3,6 +3,7 @@ import { Button, Card, Descriptions, Form, Input, Select, Space, Table, Tag, Typ
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { WorkspaceSummary } from "../../types/ops";
 import { EnterpriseIdentity } from "../EnterpriseIdentity.js";
+import { OpsPageError } from "../OpsPageError.js";
 
 const subscriptionLabels: Record<string, string> = { active: "订阅中", trialing: "试用中", inactive: "未订阅", canceled: "已取消" };
 
@@ -14,14 +15,22 @@ export function WorkspaceGovernanceSection({ model }: { model: OpsConsoleModel }
     const keyword = query.trim().toLowerCase();
     return (!keyword || `${row.enterpriseName ?? ""} ${row.workspaceId} ${row.planName}`.toLowerCase().includes(keyword)) && (!status || row.status === status);
   });
+  // `workspaceRows` starts empty and keeps the last successful page, so an
+  // unread directory and a directory the server answered with nothing rendered
+  // the same 「共 0 个工作区」 + 「暂无月费工作区记录」. The manual refresh records its
+  // failure in `workspaceDirectoryError`; the console-wide bootstrap records
+  // `ops.workspaces.list` in the shared dataset errors.
+  const directoryError = model.workspaceDirectoryError || model.dataSetError("ops.workspaces.list") || "";
+  const reloadDirectory = () => void model.loadWorkspaceDirectory({ query: query.trim() || undefined, status, merchantOnly: true, page: 1, pageSize: model.workspaceDirectory.limit });
   return <>
-    <Card title="用户月费详情" extra={<Typography.Text type="secondary">共 {rows.length} 个工作区</Typography.Text>}>
+    <Card title="用户月费详情" extra={<Typography.Text type="secondary">{directoryError ? "工作区数量未知：月费工作区列表读取失败" : `共 ${rows.length} 个工作区`}</Typography.Text>}>
       <Form layout="inline" style={{ marginBottom: 16 }} onFinish={() => void model.loadWorkspaceDirectory({ query: query.trim() || undefined, status, merchantOnly: true, page: 1, pageSize: model.workspaceDirectory.limit })}>
         <Form.Item label="搜索"><Input allowClear value={query} onChange={(event) => setQuery(event.target.value)} placeholder="用户名或店铺名" style={{ width: 240 }} /></Form.Item>
         <Form.Item label="状态"><Select allowClear value={status} onChange={setStatus} placeholder="全部" options={[{ label: "正常", value: "active" }, { label: "已停用", value: "disabled" }]} style={{ width: 140 }} /></Form.Item>
         <Space><Button type="primary" htmlType="submit" loading={model.workspaceDirectoryLoading}>查询</Button><Button onClick={() => void model.loadWorkspaceDirectory({ query: query.trim() || undefined, status, merchantOnly: true, page: 1, pageSize: model.workspaceDirectory.limit })} loading={model.workspaceDirectoryLoading}>刷新列表</Button></Space>
       </Form>
-      <Table<WorkspaceSummary> rowKey="workspaceId" loading={model.workspaceDirectoryLoading} dataSource={rows} locale={{ emptyText: "暂无月费工作区记录" }} pagination={{ pageSize: model.workspaceDirectory.limit, showTotal: (total) => `共 ${total} 条记录` }} scroll={{ x: 900 }} columns={[
+      <OpsPageError error={directoryError} onRetry={reloadDirectory} />
+      <Table<WorkspaceSummary> rowKey="workspaceId" loading={model.workspaceDirectoryLoading} dataSource={rows} locale={{ emptyText: directoryError ? "月费工作区读取失败，这不是空列表：请查看上方错误摘要后重试，不要把没有读到的记录当成没有月费工作区。" : "暂无月费工作区记录" }} pagination={{ pageSize: model.workspaceDirectory.limit, showTotal: (total) => `共 ${total} 条记录` }} scroll={{ x: 900 }} columns={[
         { title: "用户 / 企业主体", key: "enterprise", width: 260, render: (_: unknown, row) => <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
         { title: "套餐", dataIndex: "planName", width: 160 },
         { title: "月费", dataIndex: "monthlyPriceCny", width: 110, render: (value: number) => `¥${value.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}` },

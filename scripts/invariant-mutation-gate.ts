@@ -52,6 +52,18 @@
  * tolerance cannot hide a broken guard; it only stops "no database here" from
  * being reported as either a pass or a branch failure.
  *
+ * The tolerance is not extended to a row's own say-so. `requires` is a claim
+ * about the evidence file, and it used to be the whole test: a row whose guard
+ * was broken added `requires: 'PERSISTENCE_RELEASE_DATABASE_URL'` to its entry
+ * and was reported NOT RUN — tolerated, exit 0 — on a machine whose fixture
+ * could not start, while the identical broken code without the field was exit 1.
+ * One declaration decided whether a broken guard was fatal. So a blocked row now
+ * has to *show* it is blocked, twice over: its evidence must read the binding in
+ * a skip guard (see `unsupportedRequires`), and, when it does, the evidence is
+ * run and has to report its assertions skipped. A row that declares a binding it
+ * does not use, or that reads it somewhere that decides nothing, runs like every
+ * other row and its mutation is applied.
+ *
  * Evidence tests needing a real dependency are run against an owned, isolated
  * PostgreSQL fixture created for this run when the binding is not already
  * exported (the same fixture the isolated acceptance runner uses). If the
@@ -63,7 +75,7 @@ import { readFileSync, writeFileSync, readdirSync, existsSync, unlinkSync } from
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Pool } from 'pg'
-import type { InvariantMutation } from '../tests/invariants/registry.js'
+import { unsupportedRequires, type InvariantMutation } from '../tests/invariants/registry.js'
 import { auditUniqueness, type UniquenessAudit } from '../tests/invariants/uniqueness.js'
 
 const root = resolve(import.meta.dirname, '..')
@@ -345,6 +357,11 @@ interface RowResult {
    * wrong. Only this kind of NOT RUN may be tolerated by the `check`
    * entrypoint (`--tolerate-missing-bindings`); a NOT RUN caused by evidence
    * that is already red stays fatal, because that is a finding.
+   *
+   * Set only once the row has been *observed* to be blocked: its evidence
+   * declares the dependency and, run without the binding, reports its assertions
+   * as skipped or cannot start at all. A row that merely declares a binding it
+   * does not use never reaches this verdict — it runs.
    */
   preconditionUnavailable?: boolean
 }
@@ -358,6 +375,65 @@ function attempt(mutation: InvariantMutation, environment: NodeJS.ProcessEnv): R
   } finally {
     restoreAll()
   }
+}
+
+/**
+ * What the evidence does when the row's declared binding is absent. NOT RUN is
+ * granted on observation only: the assertions must report as skipped, or the run
+ * must show it cannot start at all without the binding. Anything else — a green
+ * run with no skips — means the declaration decided nothing, and the row is run.
+ */
+function observedPrecondition(mutation: InvariantMutation, environment: NodeJS.ProcessEnv): { blocked: true; detail: string } | { blocked: false } {
+  const baseline = tryRunEvidence(mutation, environment)
+  if (baseline.status !== 0) {
+    return { blocked: true, detail: `${mutation.requires} is unset and no owned fixture was created; run without it, ${mutation.evidence} cannot start at all (observed, not declared)` }
+  }
+  if (/\bTests\s+[^\n]*\bskipped\b/u.test(baseline.output)) {
+    return { blocked: true, detail: `${mutation.requires} is unset and ${mutation.evidence} reported its assertions as skipped, so the guard did not run (observed, not declared)` }
+  }
+  return { blocked: false }
+}
+
+/**
+ * How a row is scored when its declared binding is not in the environment.
+ *
+ * The declaration is a claim about the evidence file, so it is checked against
+ * that file rather than trusted:
+ *
+ *   1. if the evidence does not gate itself on the binding (`unsupportedRequires`),
+ *      the row has no excuse and runs exactly as it would on a machine that has
+ *      the binding — this is what closes "declare a binding you never read and
+ *      your broken guard is reported NOT RUN instead of FAIL";
+ *   2. if it does gate itself on the binding, the evidence is run and the block
+ *      has to be visible in its output. A binding read in a comment, in an unused
+ *      constant, or in a guard that is not on the assertions, leaves the run
+ *      green and skipped-free, and the row runs too.
+ *
+ * Only then is the row NOT RUN — and NOT RUN is not a pass: it is counted
+ * separately, named in the headline, and excluded from the certified total.
+ */
+function rowResult(mutation: InvariantMutation, environment: NodeJS.ProcessEnv): RowResult {
+  const binding = mutation.requires?.trim()
+  if (!binding || environment[binding]?.trim()) return attempt(mutation, environment)
+
+  const evidencePath = resolve(root, mutation.evidence)
+  // A missing evidence file is `check`'s finding, not a reason to skip the row.
+  if (!existsSync(evidencePath)) return attempt(mutation, environment)
+
+  const unsupported = unsupportedRequires(mutation, readFileSync(evidencePath, 'utf8'))
+  if (unsupported) {
+    const result = attempt(mutation, environment)
+    if (result.verdict === 'OK') return result
+    return { ...result, detail: `${result.detail}\n  the row ${unsupported}` }
+  }
+
+  const observed = observedPrecondition(mutation, environment)
+  if (!observed.blocked) {
+    const result = attempt(mutation, environment)
+    if (result.verdict === 'OK') return result
+    return { ...result, detail: `${result.detail}\n  the row declares requires: ${binding}, but its evidence ran green with nothing skipped when the binding was absent` }
+  }
+  return { id: mutation.id, verdict: 'NOT RUN', preconditionUnavailable: true, detail: observed.detail }
 }
 
 function check(mutation: InvariantMutation, environment: NodeJS.ProcessEnv): RowResult {
@@ -496,15 +572,7 @@ async function runVerified(filter: string[]): Promise<void> {
   try {
     for (const mutation of selected) {
       process.stdout.write(`- ${mutation.id} … `)
-      const blocker = mutation.requires && !environment[mutation.requires]?.trim()
-      const result: RowResult = blocker
-        ? {
-            id: mutation.id,
-            verdict: 'NOT RUN' as const,
-            preconditionUnavailable: true,
-            detail: `${mutation.requires} is unset and no owned fixture was created, so the evidence would skip rather than fail`,
-          }
-        : attempt(mutation, environment)
+      const result: RowResult = rowResult(mutation, environment)
       if (result.preconditionUnavailable) preconditionUnavailable += 1
       if (result.verdict === 'OK') { ok += 1; console.log('OK') } else {
         if (result.verdict === 'FAIL') failed += 1
@@ -536,7 +604,7 @@ async function runVerified(filter: string[]): Promise<void> {
   const unattributedNotRun = notRun - preconditionUnavailable
   const tolerated = tolerateMissingBindings && preconditionUnavailable > 0
   if (tolerated) {
-    console.log(`\ninvariant gate: NOT RUN — ${preconditionUnavailable} row(s) had no ${requiredBindings.join(', ') || 'required'} binding and no owned fixture could be created.`)
+    console.log(`\ninvariant gate: NOT RUN — ${preconditionUnavailable} row(s) had no ${requiredBindings.join(', ') || 'required'} binding, no owned fixture could be created, and their evidence was observed to skip rather than run.`)
     console.log('invariant gate: those guards are NOT certified by this run. Run `npm run invariants:verify` on a machine where the isolated PostgreSQL fixture can start.')
   }
   const blocking = failed > 0 || unattributedNotRun > 0 || audit.certified.length !== selected.length

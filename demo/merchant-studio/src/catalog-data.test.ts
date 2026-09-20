@@ -49,6 +49,22 @@ const catalogComponent = appSource.slice(
   appSource.indexOf('function StoreCatalogExperience'),
   materialWorkspaceStart,
 )
+/**
+ * The end of the material slice, guarded like its start.
+ *
+ * `appSource.slice(start, appSource.indexOf('function Products('))` was the
+ * original, and `indexOf` answers `-1` for a marker that moved. `slice(start,
+ * -1)` does not fail: it silently becomes "everything from `start` to one
+ * character before the end of the file", so renaming `function Products(` — a
+ * rename the compiler would happily accept — turned the slice into most of
+ * `App.tsx` while all thirteen assertions kept passing. A `-1` is a missing
+ * marker, not an offset, so it throws here like the start guard above.
+ */
+const productsComponentStart = appSource.indexOf('function Products(')
+if (productsComponentStart < 0) throw new Error('the products component must exist for the material slice to end at it')
+if (productsComponentStart < materialWorkspaceStart) throw new Error('the products component must follow the material workspace for the slice to end at it')
+const materialSource = appSource.slice(materialWorkspaceStart, productsComponentStart)
+if (materialSource.length >= appSource.length) throw new Error('the material slice must end before the end of the file')
 
 describe('the store page renders the server catalogue', () => {
   it('keeps the reviewed platform set and order, with the real store count per platform', () => {
@@ -163,9 +179,9 @@ describe('the page cannot fall back to a hardcoded catalogue', () => {
   it('no longer exempts the material surfaces from the server-data rule', () => {
     // The material library used to be sliced out of this file by name. It now
     // reads the same server stores the catalogue does, and its own tests live
-    // in `material-library.test.ts`.
-    const materialSource = appSource.slice(materialWorkspaceStart, appSource.indexOf('function Products('))
+    // in `material-library.test.ts`. Both ends of the slice are guarded above.
     expect(materialSource.length).toBeGreaterThan(5_000)
+    expect(materialSource.length).toBeLessThan(appSource.length / 2)
     expect(materialSource).toContain('buildCatalogPlatforms(accounts, products)')
     expect(materialSource).toContain('resolveMaterialRead(')
     expect(appSource).not.toContain('demoStoreMaterials')

@@ -42,8 +42,28 @@ const IGNORED_DIRECTORIES = new Set([
   'screenshots', '.next', '.turbo', '.vite', 'tmp', 'playwright-report',
 ])
 
-const VITEST_TEST_FILE = /\.test\.tsx?$/u
-const BROWSER_SPEC_FILE = /\.spec\.js$/u
+/**
+ * Extensions a test file is written in. The previous pair covered `.test.ts`,
+ * `.test.tsx` and `.spec.js` only, which made `.test.js`, `.test.mjs` and
+ * `.spec.ts` invisible to *both* sides of the ledger: the "what exists" scan
+ * never saw them, so nothing could report them as uncollected no matter what the
+ * collector enumeration said. Two probes dropped into the tree —
+ * `orphan-probe2.test.js` and `orphan-probe3.spec.ts` — left this whole file
+ * green. That is the same shape of defect as the dead plugin tests the widened
+ * scan root was introduced for: a file nothing runs, and nothing that says so.
+ *
+ * Widening the suffix cannot pull in generated trees: `filesOnDisk` prunes
+ * directories by name (`IGNORED_DIRECTORIES` — `node_modules`, `dist`, `build`,
+ * `coverage`, …) before it matches anything, and the matcher only ever sees a
+ * file's own name.
+ */
+const TEST_EXTENSIONS = 'ts|tsx|js|jsx|mjs|cjs|mts|cts'
+const VITEST_TEST_FILE = new RegExp(`\\.test\\.(?:${TEST_EXTENSIONS})$`, 'u')
+const BROWSER_SPEC_FILE = new RegExp(`\\.spec\\.(?:${TEST_EXTENSIONS})$`, 'u')
+/** The same shapes where they are named inside a command or a document. */
+const TEST_PATH_IN_COMMAND = new RegExp(`([A-Za-z0-9_./-]*\\.test\\.(?:${TEST_EXTENSIONS}))(?=[\\s"']|$)`, 'gu')
+const SPEC_PATH_IN_SCRIPT = new RegExp(`['"\`]([A-Za-z0-9_][A-Za-z0-9_./-]*\\.spec\\.(?:${TEST_EXTENSIONS}))['"\`]`, 'gu')
+const TEST_LINK_IN_DOCUMENT = new RegExp(`\\]\\(<?([^)\\s>]+\\.(?:test|spec)\\.(?:${TEST_EXTENSIONS}))>?\\)`, 'gu')
 
 /** Every file under `root` whose name matches, ignoring generated directories. */
 export function filesOnDisk(root: string, matches: (name: string) => boolean, directory = root): string[] {
@@ -84,7 +104,7 @@ export function packageScriptTestFiles(root: string): Set<string> {
   const scripts = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts
   const files = new Set<string>()
   for (const command of Object.values(scripts)) {
-    for (const match of command.matchAll(/([A-Za-z0-9_./-]*\.test\.tsx?)(?=[\s"']|$)/gu)) files.add(match[1]!)
+    for (const match of command.matchAll(TEST_PATH_IN_COMMAND)) files.add(match[1]!)
   }
   return files
 }
@@ -124,8 +144,16 @@ export interface UncollectedTestFile {
  */
 export const UNCOLLECTED_VITEST_TEST_FILES: readonly UncollectedTestFile[] = [
   {
+    file: '.codex-marketplace/plugins/merchant-marketing/skills/six-platform-public-import/scripts/extract-product.test.mjs',
+    reason: 'Vendored plugin-skill self-test: a hand-rolled `node:assert` script run by hand with `node`, never by a test runner. Nothing collects it — the vitest `include` lists `.test.ts`/`.test.tsx` only, and the plugin package declares no scripts at all — so it was invisible until the scan stopped requiring a `.ts`/`.tsx` suffix. The identical file is duplicated under `apps/plugin/**`, and both are named here rather than left unseen; wire them into a script, or delete them, to remove these two entries.',
+  },
+  {
     file: 'apps/api/src/canonical-backfill-contract.test.ts',
     reason: 'Quarantined merchant bearer-login contract. It is excluded from the default suite (NON_HERMETIC_TEST_FILES) and no dedicated launcher binds it: its own comment says it is not claimed as passing until a signed, isolated runtime migration exists. Not a placeholder — a gap with an owner, tracked here because "has no entrypoint at all" is a different defect from "runs somewhere else".',
+  },
+  {
+    file: 'apps/plugin/skills/six-platform-public-import/scripts/extract-product.test.mjs',
+    reason: 'Second copy of the vendored plugin-skill self-test above, byte-identical to the `.codex-marketplace` one. Same gap, same answer: it asserts on `extract-product.mjs` and is executed by nothing — no package script, no launcher manifest, and a vitest `include` that cannot match `.mjs`. Named here so the ledger reports it instead of silently missing it.',
   },
 ]
 
@@ -204,7 +232,7 @@ export function runnerArgumentSpecs(root: string): Set<string> {
   const files = new Set<string>()
   for (const file of filesOnDisk(root, name => /\.(?:ts|mjs|js)$/u.test(name)).filter(name => name.startsWith('scripts/'))) {
     const source = readFileSync(resolve(root, file), 'utf8')
-    for (const match of source.matchAll(/['"`]([A-Za-z0-9_][A-Za-z0-9_./-]*\.spec\.js)['"`]/gu)) {
+    for (const match of source.matchAll(SPEC_PATH_IN_SCRIPT)) {
       if (match[1]!.includes('/')) files.add(match[1]!)
     }
   }
@@ -236,7 +264,7 @@ export function brokenDocumentTestReferences(root: string): string[] {
   const broken: string[] = []
   for (const file of filesOnDisk(root, name => name.endsWith('.md'))) {
     const directory = file.includes('/') ? file.slice(0, file.lastIndexOf('/')) : ''
-    for (const match of readFileSync(resolve(root, file), 'utf8').matchAll(/\]\(<?([^)\s>]+\.(?:spec\.js|test\.tsx?))>?\)/gu)) {
+    for (const match of readFileSync(resolve(root, file), 'utf8').matchAll(TEST_LINK_IN_DOCUMENT)) {
       const target = match[1]!
       if (/^[a-z][a-z0-9+.-]*:/iu.test(target)) continue
       const resolved = target.startsWith('/') ? target.slice(1) : join(directory, target)
