@@ -1,4 +1,4 @@
-import { deletionMatchesReservation, parseReservationKey } from '../../storage/src/reservation-key.js'
+import { deletionMatchesReservation, parseReservationKey } from '@merchant-marketing/storage'
 import { requireWorkspaceScope, type SqlPool, withWorkspaceTransaction } from './repository.js'
 
 export type StorageQuotaReservationStatus = 'active' | 'settled' | 'released' | 'over_limit'

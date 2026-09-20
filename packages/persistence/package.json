@@ -7,6 +7,7 @@
   "dependencies": {
     "@merchant-marketing/contracts": "0.1.0",
     "@merchant-marketing/multimodal": "0.1.0",
+    "@merchant-marketing/storage": "0.1.0",
     "argon2": "^0.45.1"
   },
   "scripts": {

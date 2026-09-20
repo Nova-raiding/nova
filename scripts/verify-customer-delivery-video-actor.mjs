@@ -1,5 +1,9 @@
 /**
- * Build first: npm run build --workspace @merchant-marketing/persistence
+ * Build first: npm run build:packages
+ * (Building @merchant-marketing/persistence alone is no longer enough: it now
+ * declares @merchant-marketing/storage as a dependency and resolves the
+ * reservation-key derivation through the published export rather than a
+ * relative path into storage's src, so storage's dist must exist first.)
  * Then: node scripts/verify-customer-delivery-video-actor.mjs
  * Exercises the built package export, not a source-file import or Vitest mock.
  * Scope: in-memory record attribution only. No upload, scanner, API, DB or grant.
