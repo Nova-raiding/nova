@@ -84,6 +84,13 @@ jobs:
           SAFE_TEST_TIMEOUT_MS: '900000'
       - name: Run explicit repository release gates
         run: npm run test:release-gates
+      # The mutation gate is the only mechanism in this repository that proves
+      # the other assertions can fail. `npm run check` runs it in its tolerant
+      # mode (a row whose PostgreSQL binding is unavailable reports NOT RUN);
+      # this step is the strict one, because a Docker-capable runner can always
+      # create the owned fixture, so "not run" here is a defect.
+      - name: Verify every registered invariant turns its evidence red
+        run: npm run invariants:verify
       - name: Prepare isolated PostgreSQL acceptance images
         run: |
           docker pull postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73

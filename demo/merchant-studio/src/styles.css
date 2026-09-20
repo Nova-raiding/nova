@@ -1598,6 +1598,7 @@ body {
 .material-card-inline-field .material-category-dropdown-options>button { min-height:30px; padding:0 8px; font-size:8px; }
 .material-card-actions>a { display:flex; min-height:32px; align-items:center; justify-content:center; gap:5px; border-top:1px solid #e6ebe8; border-radius:0 0 10px 10px; color:#1f6849; background:#fafcfa; font-size:9px; font-weight:800; text-decoration:none; }
 .material-card-actions>a:hover { background:#eef5f0; }
+.material-download-error { margin:8px 1px 0; color:#a5372a; font-size:9px; }
 .material-empty { display:grid; min-height:220px; place-content:center; justify-items:center; gap:8px; color:#7f8d85; text-align:center; }
 .material-empty strong { color:#34473d; font-size:12px; }
 .material-empty span { font-size:9px; }

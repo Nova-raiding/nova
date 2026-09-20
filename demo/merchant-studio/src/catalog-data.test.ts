@@ -28,11 +28,26 @@ import productsCapture from './fixtures/products.capture.json'
 const accounts = (platformAccountsCapture as { data: { items: PlatformAccount[] } }).data.items
 const products = (productsCapture as { data: { items: Product[] } }).data.items
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
-// Exactly the store catalogue component: the demo material library that follows
-// it (its own seed, its own audit trail) is deliberately out of scope here.
+/**
+ * Exactly the store catalogue component: the material library that follows it
+ * is covered by `material-library.test.ts`.
+ *
+ * This slice used to end at `function demoStoreMaterials`, and the comment
+ * above it read「the demo material library that follows it (its own seed, its
+ * own audit trail) is deliberately out of scope here」. That exemption is the
+ * reason the material library kept rendering eight invented materials per store
+ * for a workspace whose server reported one fixture account, and kept serving
+ * 「下载」 files that were four lines of text: the same class of defect this
+ * file was written to pin down, one component to the right, excluded by name
+ * from the only test that looked at this region. There is no longer any such
+ * component to slice around — the seed builders are deleted — and the material
+ * surfaces now carry their own behaviour tests instead of an exemption.
+ */
+const materialWorkspaceStart = appSource.indexOf('export function MaterialRecycleBinWorkspace')
+if (materialWorkspaceStart < 0) throw new Error('the material workspace must exist for the catalogue slice to end at it')
 const catalogComponent = appSource.slice(
   appSource.indexOf('function StoreCatalogExperience'),
-  appSource.indexOf('function demoStoreMaterials'),
+  materialWorkspaceStart,
 )
 
 describe('the store page renders the server catalogue', () => {
@@ -143,6 +158,17 @@ describe('the page cannot fall back to a hardcoded catalogue', () => {
     for (const removed of ['catalogProductTemplates', 'storeProducts(']) {
       expect(appSource, `${removed} must not be part of the store page`).not.toContain(removed)
     }
+  })
+
+  it('no longer exempts the material surfaces from the server-data rule', () => {
+    // The material library used to be sliced out of this file by name. It now
+    // reads the same server stores the catalogue does, and its own tests live
+    // in `material-library.test.ts`.
+    const materialSource = appSource.slice(materialWorkspaceStart, appSource.indexOf('function Products('))
+    expect(materialSource.length).toBeGreaterThan(5_000)
+    expect(materialSource).toContain('buildCatalogPlatforms(accounts, products)')
+    expect(materialSource).toContain('resolveMaterialRead(')
+    expect(appSource).not.toContain('demoStoreMaterials')
   })
 
   it('does not claim 已连接 for a store the server did not connect', () => {

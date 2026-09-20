@@ -15,7 +15,7 @@
 ## 证据
 
 - [`demo/merchant-studio/src/asset-status.ts`](/Users/lixiaomei/Desktop/code/codexSkills/demo/merchant-studio/src/asset-status.ts)
-- [`demo/merchant-studio/src/asset-status.test.ts`](/Users/lixiaomei/Desktop/code/codexSkills/demo/merchant-studio/src/asset-status.test.ts)
+- [`demo/merchant-studio/src/asset-status.test.ts`](/demo/merchant-studio/src/asset-status.test.ts)
 - [`demo/merchant-studio/src/App.tsx`](/Users/lixiaomei/Desktop/code/codexSkills/demo/merchant-studio/src/App.tsx)
 
 ## 边界与未完成项

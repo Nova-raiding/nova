@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import { readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { NON_HERMETIC_TEST_FILES } from './tests/test-suite-isolation.js'
+import { DEFAULT_SUITE_PENDING_ALLOWANCES, NON_HERMETIC_TEST_FILES } from './tests/test-suite-isolation.js'
 
 export const ISOLATED_POSTGRES_TEST_FILES = NON_HERMETIC_TEST_FILES.filter(file => (
   file.startsWith('packages/persistence/src/')
@@ -17,8 +17,26 @@ function discover(directory: string, prefix = ''): string[] {
     return entry.name.endsWith('.postgres.test.ts') ? [`${directory}/${relative}`] : []
   }).sort()
 }
-export const ALL_POSTGRES_TEST_FILES = ['packages/persistence', 'apps/worker', 'tests'].flatMap(directory => discover(directory)).sort()
-const discoveredPostgresFiles = new Set(ALL_POSTGRES_TEST_FILES)
+/** Every `*.postgres.test.ts` under the directories that own them. */
+export const DISCOVERED_POSTGRES_TEST_FILES = ['packages/persistence', 'apps/worker', 'tests'].flatMap(directory => discover(directory)).sort()
+
+/**
+ * Database-gated files whose name does not end in `.postgres.test.ts`, taken
+ * from the pending-assertion manifest rather than from a name convention. The
+ * default suite collects these, reports their `postgresIt` block as pending,
+ * and the CI step binds them; until this list existed no local launcher could
+ * select them at all, so fourteen files could only ever run in CI.
+ */
+export const PENDING_BINDING_TEST_FILES = [...new Set(DEFAULT_SUITE_PENDING_ALLOWANCES.map(entry => entry.file))].sort()
+
+/**
+ * The full local denominator: every database-gated test file the repository
+ * knows about. `npm run test:postgres:all-local` runs all of them against the
+ * owned fixture, which is what makes the CI-only assertions reproducible on a
+ * developer machine.
+ */
+export const ALL_POSTGRES_TEST_FILES = [...new Set([...DISCOVERED_POSTGRES_TEST_FILES, ...PENDING_BINDING_TEST_FILES])].sort()
+const discoveredPostgresFiles = new Set(DISCOVERED_POSTGRES_TEST_FILES)
 const isolatedManifestValid = new Set(ISOLATED_POSTGRES_TEST_FILES).size === ISOLATED_POSTGRES_TEST_FILES.length
   && ISOLATED_POSTGRES_TEST_FILES.every(file => discoveredPostgresFiles.has(file))
 

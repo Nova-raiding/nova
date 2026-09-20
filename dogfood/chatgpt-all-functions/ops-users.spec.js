@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { openPlatformConsole, openWorkspaceConsole } from './ops-auth.js'
 
@@ -7,8 +7,10 @@ test.setTimeout(120_000)
 test.use({ channel: 'chrome' })
 const baseUrl = process.env.OPS_BASE_URL ?? 'http://127.0.0.1:18082/'
 
+// 7f6cf3f4 renamed the directory column 成员状态 -> 激活状态; the filter control
+// was left behind and now carries the same canonical name again.
 const userDirectoryTable = page => page.getByRole('table').filter({
-  has: page.getByRole('columnheader', { name: '成员状态' }),
+  has: page.getByRole('columnheader', { name: '激活状态' }),
 })
 
 async function filterUserDirectory(page, keyword = '') {
@@ -75,24 +77,34 @@ test('operates the platform user directory without destructive confirmation', as
       throw error
     }
   }
-  const exportDownload = page.waitForEvent('download')
-  await page.getByRole('button', { name: '导出当前筛选' }).click()
-  const downloaded = await exportDownload
-  expect(downloaded.suggestedFilename()).toMatch(/^ops-users-\d{4}-\d{2}-\d{2}\.csv$/u)
-  const exportedContent = await readFile(await downloaded.path(), 'utf8')
-  expect(exportedContent).toContain('external_subject,display_name,workspace_id')
-  expect(exportedContent).toContain('external_subject')
+  // RETIRED (cc2f01cb `ui: simplify user status filter`): the directory panel no
+  // longer renders the `导出当前筛选` control, so there is no browser download
+  // left to assert. The export contract itself keeps server-side coverage
+  // (apps/api/src/ops-users-directory.e2e.test.ts:168 asserts json + csv
+  // payload, count and truncation), but the `ops-users-<date>.csv` filename and
+  // the `external_subject,display_name,workspace_id` CSV header lost their only
+  // carrier. Re-adding the control is a UI change that must come back through
+  // review, so it is deliberately not restored here. Registered as entry 7 in
+  // ./retired-ops-assertions.md. The walk continues below with the detail
+  // drawer.
   const detailButton = supportRow.getByRole('button', { name: /用户详情/u })
   await detailButton.focus()
   await page.keyboard.press('Enter')
   const detailDrawer = page.getByRole('dialog', { name: /用户详情/u })
   await expect(detailDrawer).toBeVisible()
-  await expect(detailDrawer.getByText('认证会话（已脱敏）')).toBeVisible({ timeout: 20_000 })
-  await expect(detailDrawer.getByRole('heading', { name: '平台身份生命周期' })).toBeVisible()
-  await expect(detailDrawer.getByText('所属租户与角色')).toBeVisible()
-  // Existing local members may already have audited operations; the detail
-  // contract is satisfied by rendering the operation-history section itself.
-  await expect(detailDrawer.getByRole('heading', { name: '成员操作历史' })).toBeVisible()
+  // RETIRED (f84b9561 `ui: remove sessions and simplify store details`, 1b7d8799
+  // `ui: simplify user detail drawer`): the drawer is now a per-workspace
+  // commercial view. The masked-session list, the identity lifecycle section,
+  // the tenant/role summary and the member operation history are gone from it,
+  // so this asserts what the drawer renders today: the identity header plus the
+  // store / monthly-fee / wallet / usage tables of every membership it loaded.
+  // Registered as entry 9 in ./retired-ops-assertions.md — those four sections
+  // have no carrier left anywhere in the user center, they are not renames.
+  await expect(detailDrawer.getByRole('heading', { name: '店铺详情' })).toBeVisible({ timeout: 20_000 })
+  await expect(detailDrawer.getByRole('heading', { name: '月费详情' })).toBeVisible()
+  await expect(detailDrawer.getByRole('heading', { name: '钱包' })).toBeVisible()
+  await expect(detailDrawer.getByRole('heading', { name: '当月消耗表' })).toBeVisible()
+  await expect(detailDrawer.getByRole('heading', { name: /用户总消耗金额/u })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(detailDrawer).toBeHidden()
   await expect(detailButton).toBeFocused()
@@ -102,7 +114,12 @@ test('operates the platform user directory without destructive confirmation', as
   await keyword.fill('不存在的用户')
   await filters.getByRole('button', { name: /查\s*询/u }).click()
   await expect(page.getByText('没有符合条件的用户成员关系')).toBeVisible({ timeout: 20_000 })
-  await filters.getByRole('button', { name: /清\s*空/u }).click()
+  // The `清空` button was removed by the same commit, so the filter is reset by
+  // clearing the keyword and querying again (the assertion below still proves
+  // the filtered-empty state is reversible). This is a re-anchor, not a
+  // retirement — see entry 8 in ./retired-ops-assertions.md.
+  await keyword.fill('')
+  await filters.getByRole('button', { name: /查\s*询/u }).click()
   await expect(filters.getByRole('button', { name: /查\s*询/u })).toBeEnabled({ timeout: 20_000 })
   await expect(userDirectoryTable(page).getByRole('row')).not.toHaveCount(1, { timeout: 20_000 })
   // The filtered identity can be the currently logged-in platform actor,
@@ -130,6 +147,11 @@ test('operates the platform user directory without destructive confirmation', as
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('button', { name: /确认停用/u })).toBeDisabled()
   await dialog.getByLabel('操作原因（至少 4 个字符）').fill('浏览器验收测试，不提交')
+  // The dialog now also requires an approver, and a reason alone must not arm
+  // the confirmation.
+  await expect(dialog.getByRole('button', { name: /确认停用/u })).toBeDisabled()
+  await dialog.getByLabel('审批人').click()
+  await page.locator('.ant-select-dropdown:visible .ant-select-item-option:has-text("姜伟")').click()
   await expect(dialog.getByRole('button', { name: /确认停用/u })).toBeEnabled()
   await dialog.getByRole('button', { name: /Cancel|取\s*消/u }).click()
   await expect(dialog).toBeHidden()

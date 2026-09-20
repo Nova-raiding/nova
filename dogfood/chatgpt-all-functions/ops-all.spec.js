@@ -1,5 +1,5 @@
 import { expect, test, chromium } from '@playwright/test'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { openPlatformConsole } from './ops-auth.js'
 
@@ -10,7 +10,20 @@ const baseUrl = process.env.OPS_OIDC_BASE_URL ?? process.env.OPS_BASE_URL ?? 'ht
 // only exercised with a workspace membership fixture below.
 // These domains require a workspace-scoped policy and are covered by
 // workspace fixtures, never by the platform token walk.
-const platformSections = ['总览', '用户中心', '模型服务', '账务与退款']
+// The platform sidebar was intentionally converged to a single navigation
+// group (365c5d84: 总览/用户中心/客户交付). A browser walk can only click what
+// the sidebar exposes: `models` is deliberately absent from
+// OpsSidebar.navigationGroups, and `/ops/finance` now canonicalizes back to the
+// overview domain, so 模型服务 and 账务与退款 have no reachable button. 客户交付
+// renders no page heading (OpsPage hideTitle) and is walked by the
+// ops-delivery-*.spec.js fixtures instead.
+//
+// Shrinking this list is a retirement, not a convenience: every entry that left
+// it is written down in ./retired-ops-assertions.md, with what it asserted, the
+// commit that removed the surface, and what coverage survives. The withdrawal
+// itself is now asserted by the reverse gate below rather than being merely
+// absent — re-mounting either surface has to turn that gate red.
+const platformSections = ['总览', '用户中心']
 const headings = { '总览': '运营总览', '成员与权限': '成员与权限', '客服': '客服工作台', '平台连接': '平台连接汇总', '存储与对账': '存储与对账', '账务与退款': '平台财务中心' }
 
 const snapshot = async (page, section) => ({
@@ -64,13 +77,7 @@ test('walk every Ops Console section through the real browser UI', async () => {
   await mkdir(shots, { recursive: true })
   for (const [index, section] of platformSections.entries()) {
     const sectionButton = page.locator('button').filter({ hasText: new RegExp(`^${section}$`, 'u') }).first()
-    if (await sectionButton.count() === 0) {
-      // Model diagnostics are intentionally merged into the billing center.
-      if (section === '模型服务') {
-        continue
-      }
-      throw new Error(`OPS_SECTION_BUTTON_MISSING:${section}`)
-    }
+    if (await sectionButton.count() === 0) throw new Error(`OPS_SECTION_BUTTON_MISSING:${section}`)
     await sectionButton.click()
     const expectedHeading = headings[section] ?? section
     await page.locator('h1,h2,h3').filter({ hasText: new RegExp(`^${expectedHeading}$`, 'u') }).waitFor({ state: 'visible', timeout: 20_000 })
@@ -85,20 +92,6 @@ test('walk every Ops Console section through the real browser UI', async () => {
         await expect(page.getByText(/当前角色没有用户治理视图|没有用户治理读取能力/)).toBeVisible()
       }
       await expect(page.getByText('当前租户成员')).toHaveCount(0)
-    }
-    if (section === '账务与退款') {
-      await expect(page.getByText('当前租户成员')).toHaveCount(0)
-      await expect(page.getByText('成员角色调整')).toHaveCount(0)
-      const exportButton = page.getByRole('button', { name: '导出商业配置' })
-      if (await exportButton.count() === 0) {
-        await expect(page.getByText(/商业配置|商业访问|上线门禁|商业化生产门禁/).first()).toBeVisible()
-      } else {
-        const commercialDownload = page.waitForEvent('download')
-        await exportButton.click()
-        const downloaded = await commercialDownload
-        expect(downloaded.suggestedFilename()).toMatch(/^ops-commercial-\d{4}-\d{2}-\d{2}\.csv$/u)
-        expect(await readFile(await downloaded.path(), 'utf8')).toContain('kind,id,code')
-      }
     }
     pages.push(await snapshot(page, section))
     await page.screenshot({ path: resolve(shots, `${index + 1}-${section}.png`) })
@@ -132,6 +125,53 @@ test('walk every Ops Console section through the real browser UI', async () => {
   await closeWithDeadline(() => browser.close())
 })
 
+// The walk above used to cover 模型服务 and 账务与退款. 365c5d84 converged the
+// platform sidebar to a single navigation group, dropped `models` from
+// OpsSidebar.navigationGroups, removed `finance` from opsDomains /
+// domainReadCapabilities / navigationGroups and deleted FinancePage. The two
+// walk entries were therefore removed — as a registered retirement, see
+// ./retired-ops-assertions.md — and this test is the coverage that replaces
+// them: it asserts the withdrawal itself.
+//
+// Why a reverse gate instead of nothing: an entry that merely disappears from
+// `platformSections` leaves no signal. If the destination is ever mounted
+// again, the walk would stay green while `OpsSidebar.test.tsx` (which asserts
+// the same product fact from the unit side) and this test would go red, so the
+// decision has to come back through review instead of arriving as a silent
+// re-add.
+test('keeps the withdrawn finance and model navigation surfaces unreachable', async () => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true })
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+  context.setDefaultTimeout(10_000)
+  await context.addInitScript(() => {
+    localStorage.setItem('ops_workspace_id', 'ws_demo')
+    localStorage.setItem('ops_actor_id', 'actor_demo')
+    localStorage.setItem('ops_api_token', 'pilot-local-token')
+    localStorage.setItem('ops_workbench', 'platform')
+  })
+  const page = await context.newPage()
+  try {
+    // Boot straight onto the withdrawn deep link so the assertion covers the
+    // canonicalization in `domainFromLocation` and not just the sidebar.
+    await openPlatformConsole(page, '/ops/finance')
+    const sidebar = page.getByRole('navigation', { name: '平台运营功能导航' })
+    await expect(sidebar).toBeVisible({ timeout: 20_000 })
+    for (const label of ['账务与退款', '模型服务', '存储与对账', '审计中心']) {
+      await expect(sidebar.getByRole('button', { name: label, exact: true })).toHaveCount(0)
+    }
+    // The commercial export button exists only inside PlanBillingSection, which
+    // has never been mounted (2440b44b onward), so it must not appear anywhere.
+    await expect(page.getByRole('button', { name: '导出商业配置' })).toHaveCount(0)
+    // /ops/finance canonicalizes back to the overview domain and FinancePage is
+    // gone: the deep link must land on 运营总览, never on 平台财务中心.
+    await expect(page.locator('h1,h2,h3').filter({ hasText: /^运营总览$/u })).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByText('平台财务中心')).toHaveCount(0)
+  } finally {
+    await context.close()
+    await browser.close()
+  }
+})
+
 test('does not report model configuration success when model status fails', async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
@@ -141,9 +181,13 @@ test('does not report model configuration success when model status fails', asyn
     localStorage.setItem('ops_api_token', 'pilot-local-token')
     localStorage.setItem('ops_workbench', 'platform')
   })
+  // Fail exactly one dataset: every other read stays real, so any warning the
+  // assertions below see has to come from `platform.model.status`.
+  const failedModelStatusCalls = []
   await context.route('**/api/mcp', async route => {
     const body = route.request().postDataJSON()
     if (body?.method === 'platform.model.status') {
+      failedModelStatusCalls.push(body?.id ?? null)
       await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'MODEL_STATUS_UNAVAILABLE', message: '模型状态暂不可用' } }) })
       return
     }
@@ -151,8 +195,24 @@ test('does not report model configuration success when model status fails', asyn
   })
   const page = await context.newPage()
   await openPlatformConsole(page)
-  await expect(page.getByText('状态不可用').first()).toBeVisible({ timeout: 20_000 })
+  // The converged platform console does not mount ModelStatusSection or
+  // ModelServiceSummary, so `状态不可用` is unreachable there — that surface is
+  // registered as a re-anchored retirement in ./retired-ops-assertions.md
+  // (entry 6). The product's fail-closed signal for a failed model-status read
+  // is the global load warning: it must be visible and it must name the dataset
+  // that failed. Swallowing the failure would leave the operator reading a
+  // console that looks like the model configuration is healthy.
+  const loadWarning = page.locator('.ops-global-load-warning')
+  await expect(loadWarning).toBeVisible({ timeout: 20_000 })
+  expect(failedModelStatusCalls.length).toBeGreaterThan(0)
+  await expect(loadWarning.getByText('部分运营数据未刷新')).toBeVisible()
+  await expect(loadWarning.getByText(/个数据集刷新失败/u)).toBeVisible()
+  await loadWarning.getByText('查看失败数据集与原因').click()
+  await expect(loadWarning.getByText(/platform\.model\.status/u)).toBeVisible()
+  // A failed model status read must never be presented as a successful model
+  // configuration.
   await expect(page.getByText('平台模型配置完整')).toHaveCount(0)
+  await expect(page.getByText('状态不可用')).toHaveCount(0)
   await context.close()
   await browser.close()
 })

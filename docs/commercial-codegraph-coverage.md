@@ -165,7 +165,7 @@ CodeGraph 证明了“文件、符号和关系被索引”，不证明运行环�
 
 ## 8. 本次新增的关键门禁测试
 
-新增文件：[tests/commercial-plan-coverage.test.ts](/Users/lixiaomei/Desktop/code/codexSkills/tests/commercial-plan-coverage.test.ts)
+新增文件：[tests/commercial-plan-coverage.test.ts](/tests/commercial-plan-coverage.test.ts)
 
 锁定三条门禁：
 

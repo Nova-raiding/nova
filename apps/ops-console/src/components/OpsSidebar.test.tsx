@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { mainItems, OpsSidebar } from "./OpsSidebar.js";
+import { mainItems, navigationGroups, OpsSidebar } from "./OpsSidebar.js";
 
 describe("OpsSidebar navigation", () => {
   it("uses Store Nova branding for platform operations", () => {
@@ -80,6 +80,57 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain("风险与系统");
     expect(markup).not.toContain("存储与对账");
     expect(markup).not.toContain("审计中心");
+  });
+
+  // The `账务与退款` line above is asserted against a role-filtered render, so on
+  // its own it stays green even if finance is put back into `mainItems` — the
+  // filter would keep hiding it. 365c5d84 removed `finance` from `opsDomains`,
+  // from `domainReadCapabilities` and from `navigationGroups`, and deleted
+  // FinancePage. That is the product fact these tests have to share, so pin it
+  // directly: restoring the destination turns this red and forces the decision
+  // back through review. Everything that left the platform sidebar is written
+  // down in dogfood/chatgpt-all-functions/retired-ops-assertions.md, and the
+  // same fact is asserted from the browser side by
+  // ops-all.spec.js `keeps the withdrawn finance and model navigation surfaces
+  // unreachable`.
+  it("keeps the withdrawn finance destination out of the platform navigation", () => {
+    expect(mainItems.map(({ domain }) => domain)).not.toContain("finance");
+    expect(mainItems.map(({ label }) => label)).not.toContain("账务与退款");
+    expect(navigationGroups.flatMap(({ items }) => [...items])).not.toContain("finance");
+    const markup = renderToStaticMarkup(
+      <OpsSidebar
+        activeDomain="overview"
+        stores={[]}
+        platformLabels={{}}
+        selectedStoreScope=""
+        onNavigate={() => undefined}
+        onSelectStore={() => undefined}
+      />,
+    );
+    // No `visibleDomains` here, so this is the unfiltered navigation: if a
+    // finance entry returns to any navigation group it renders and this fails.
+    expect(markup).not.toContain("账务与退款");
+    expect(markup).not.toContain("模型与计费");
+  });
+
+  it("keeps the model services entry out of the rendered platform navigation", () => {
+    // `models` is intentionally retained in `mainItems` for backwards-compatible
+    // labels, but 365c5d84 left it out of `navigationGroups`, so the sidebar
+    // renders no button for it. The browser walk in ops-all.spec.js asserts the
+    // same absence; this pins it at the unit level.
+    expect(mainItems.map(({ domain }) => domain)).toContain("models");
+    expect(navigationGroups.flatMap(({ items }) => [...items])).not.toContain("models");
+    const markup = renderToStaticMarkup(
+      <OpsSidebar
+        activeDomain="overview"
+        stores={[]}
+        platformLabels={{}}
+        selectedStoreScope=""
+        onNavigate={() => undefined}
+        onSelectStore={() => undefined}
+      />,
+    );
+    expect(markup).not.toContain("模型服务");
   });
 
   it("does not render customer store scope in the platform operations navigation", () => {

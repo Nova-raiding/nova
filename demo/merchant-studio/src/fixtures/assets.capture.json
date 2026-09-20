@@ -1,0 +1,84 @@
+{
+  "request_id": "req_capture_assets",
+  "trace_id": "req_capture_assets",
+  "workspace_id": "ws_demo",
+  "data": {
+    "items": [
+      {
+        "id": "asset_cf71b39b-33f4-49bd-82f4-143b8f1b18a1",
+        "name": "qa-packaging-main.png",
+        "sha256": "e940aaed4fa2e0eccb2d8d6e31b3391f952522f072ffb1591a38ef818ab81a34",
+        "mimeType": "image/png",
+        "revision": 1,
+        "createdAt": "2026-09-20T10:38:38.323Z",
+        "sizeBytes": 95,
+        "references": [
+          {
+            "name": "qa-packaging-main.png",
+            "mimeType": "image/png",
+            "firstSeenAt": "2026-09-20T10:38:38.323Z"
+          }
+        ],
+        "scanStatus": "quarantined",
+        "storageKey": "quarantine/ws_demo/asset_cf71b39b-33f4-49bd-82f4-143b8f1b18a1/qa-packaging-main.png",
+        "parseStatus": "pending",
+        "workspaceId": "ws_demo",
+        "contentTrust": {
+          "mode": "data_only",
+          "classification": "untrusted",
+          "canTriggerTools": false,
+          "canOverrideInstructions": false,
+          "requiresMerchantConfirmation": true
+        },
+        "rightsStatus": "pending",
+        "deduplication": {
+          "mode": "created",
+          "referenceAdded": true,
+          "rightsAndScanStatePreserved": false
+        },
+        "sourceRevision": 1,
+        "uploadedByActorIds": [
+          "00000000-0000-4000-8000-000000000101"
+        ],
+        "readiness": {
+          "status": "draft",
+          "reasons": [
+            "等待安全扫描",
+            "等待素材事实解析",
+            "等待商用权益确认",
+            "等待商家确认素材事实"
+          ]
+        },
+        "display": {
+          "sourceState": "draft",
+          "reasons": [
+            "等待安全扫描",
+            "等待素材事实解析",
+            "等待商用权益确认",
+            "等待商家确认素材事实"
+          ],
+          "primaryStatus": "awaiting_scan",
+          "label": "正在安全检查",
+          "nextAction": {
+            "method": "asset.list",
+            "label": "刷新状态",
+            "allowed": true
+          }
+        }
+      }
+    ],
+    "total": 1,
+    "limit": 50,
+    "offset": 0,
+    "storage_quota": {
+      "usedBytes": 95,
+      "reservedBytes": 0,
+      "limitBytes": 5368709120,
+      "availableBytes": 5368709025,
+      "status": "available"
+    }
+  },
+  "warnings": [],
+  "next_actions": [],
+  "error": null
+}

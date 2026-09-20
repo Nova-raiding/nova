@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { once } from 'node:events'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { server } from '../../api/src/server.js'
+import { server } from '../../../../apps/api/src/server.js'
 
 const bridgePath = fileURLToPath(new URL('./bridge.mjs', import.meta.url))
 let child: ChildProcessWithoutNullStreams | undefined

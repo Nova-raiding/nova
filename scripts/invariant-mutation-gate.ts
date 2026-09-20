@@ -34,6 +34,23 @@
  *   npm run invariants:verify              # every registered invariant
  *   npm run invariants:verify -- <id>      # one, by id or id prefix
  *   npm run invariants:verify -- --explain # print why a run failed to attribute
+ *   npm run invariants:check               # what `npm run check` runs
+ *
+ * Concurrency: `npm run check` runs this gate, so it now runs while other work
+ * may be in progress. It edits the working tree in place and takes an exclusive
+ * lock, so a second run waits instead of interleaving, and a file that changes
+ * while a mutation is applied is *refused* a restore — reported for manual
+ * repair rather than silently reverted. In a shared worktree, do not edit a file
+ * this gate mutates while `check` is running; the registry (`tests/invariants/`)
+ * names every one of them.
+ *
+ * `invariants:check` adds `--tolerate-missing-bindings`: rows whose declared
+ * PostgreSQL binding is unset and whose owned fixture could not be created are
+ * reported as NOT RUN — named, counted and explicitly excluded from the
+ * headline — instead of failing a machine that has no Docker daemon. A row that
+ * FAILS, or that cannot even run its baseline, is fatal in both modes, so the
+ * tolerance cannot hide a broken guard; it only stops "no database here" from
+ * being reported as either a pass or a branch failure.
  *
  * Evidence tests needing a real dependency are run against an owned, isolated
  * PostgreSQL fixture created for this run when the binding is not already
@@ -54,6 +71,13 @@ const fragmentDirectory = resolve(root, 'tests/invariants')
 const lockPath = join(root, '.invariants-verify.lock')
 const explain = process.argv.includes('--explain')
 const skipPostgres = process.env.INVARIANTS_SKIP_POSTGRES === '1'
+/**
+ * `check` runs the gate with this flag: rows whose only problem is a missing
+ * PostgreSQL binding report NOT RUN and do not fail the run, so a machine
+ * without Docker can still finish `check`. The strict default — what
+ * `invariants:verify` and CI run — keeps NOT RUN fatal.
+ */
+const tolerateMissingBindings = process.argv.includes('--tolerate-missing-bindings')
 
 async function loadMutations(): Promise<InvariantMutation[]> {
   const files = readdirSync(fragmentDirectory).filter(name => name.endsWith('.invariant.ts'))
@@ -311,7 +335,19 @@ async function createOwnedPostgres(): Promise<OwnedPostgres> {
  * The run
  * ------------------------------------------------------------------ */
 
-interface RowResult { id: string; verdict: 'OK' | 'FAIL' | 'NOT RUN'; detail: string }
+interface RowResult {
+  id: string
+  verdict: 'OK' | 'FAIL' | 'NOT RUN'
+  detail: string
+  /**
+   * The row did not run because its declared binding and the owned fixture
+   * that supplies it were both unavailable — not because anything was found
+   * wrong. Only this kind of NOT RUN may be tolerated by the `check`
+   * entrypoint (`--tolerate-missing-bindings`); a NOT RUN caused by evidence
+   * that is already red stays fatal, because that is a finding.
+   */
+  preconditionUnavailable?: boolean
+}
 
 /** A row that throws (a bad anchor, an unreadable file) fails that row, not the run. */
 function attempt(mutation: InvariantMutation, environment: NodeJS.ProcessEnv): RowResult {
@@ -456,13 +492,20 @@ async function runVerified(filter: string[]): Promise<void> {
   let ok = 0
   let failed = 0
   let notRun = 0
+  let preconditionUnavailable = 0
   try {
     for (const mutation of selected) {
       process.stdout.write(`- ${mutation.id} … `)
       const blocker = mutation.requires && !environment[mutation.requires]?.trim()
-      const result = blocker
-        ? { id: mutation.id, verdict: 'NOT RUN' as const, detail: `${mutation.requires} is unset and no owned fixture was created, so the evidence would skip rather than fail` }
+      const result: RowResult = blocker
+        ? {
+            id: mutation.id,
+            verdict: 'NOT RUN' as const,
+            preconditionUnavailable: true,
+            detail: `${mutation.requires} is unset and no owned fixture was created, so the evidence would skip rather than fail`,
+          }
         : attempt(mutation, environment)
+      if (result.preconditionUnavailable) preconditionUnavailable += 1
       if (result.verdict === 'OK') { ok += 1; console.log('OK') } else {
         if (result.verdict === 'FAIL') failed += 1
         else notRun += 1
@@ -483,9 +526,23 @@ async function runVerified(filter: string[]): Promise<void> {
   // were applied", of which the nine needing PostgreSQL had not run at all.
   console.log(`\ninvariant gate: ${ok}/${selected.length} mutations turned their evidence red on a named assertion${notRun ? `; ${notRun} not run (${requiredBindings.join(', ') || 'binding unavailable'})` : ''}${failed ? `; ${failed} FAILED` : ''}`)
   console.log(`invariant gate: uniqueness ${audit.certified.length}/${selected.length} certified${uniquenessFailed ? `, ${uniquenessFailed} row(s) with a second implementation or an unaudited rule` : ''}`)
+
+  // An unavailable precondition is not a pass and is not a failure of the
+  // branch. `check` runs with `--tolerate-missing-bindings` because a developer
+  // machine may have no Docker daemon, and a gate that can never complete
+  // locally is a gate everybody learns to bypass. What tolerance must never do
+  // is let those rows read as green: they are counted separately, named in the
+  // headline, and the run explicitly refuses to certify them.
+  const unattributedNotRun = notRun - preconditionUnavailable
+  const tolerated = tolerateMissingBindings && preconditionUnavailable > 0
+  if (tolerated) {
+    console.log(`\ninvariant gate: NOT RUN — ${preconditionUnavailable} row(s) had no ${requiredBindings.join(', ') || 'required'} binding and no owned fixture could be created.`)
+    console.log('invariant gate: those guards are NOT certified by this run. Run `npm run invariants:verify` on a machine where the isolated PostgreSQL fixture can start.')
+  }
+  const blocking = failed > 0 || unattributedNotRun > 0 || audit.certified.length !== selected.length
   const incomplete = notRun > 0 || audit.certified.length !== selected.length
-  console.log(`invariant gate: ${failed ? 'NO-GO' : incomplete ? 'INCOMPLETE — this run does not certify the branch' : 'GO — every registered row is a guard and is unique'}`)
-  if (failed || notRun || audit.certified.length !== selected.length) process.exitCode = 1
+  console.log(`invariant gate: ${blocking ? 'NO-GO' : incomplete ? (tolerated ? 'INCOMPLETE — precondition unavailable, nothing certified by this run' : 'INCOMPLETE — this run does not certify the branch') : 'GO — every registered row is a guard and is unique'}`)
+  if (blocking || (incomplete && !tolerated)) process.exitCode = 1
 }
 
 async function main(): Promise<void> {

@@ -8,6 +8,18 @@ import {
 } from '../packages/connectors/src/platform-preflight.js'
 import { NON_HERMETIC_TEST_FILES } from './test-suite-isolation.js'
 import { ISOLATED_REDIS_TEST_FILES } from '../vitest.redis.config.js'
+import {
+  UNSCHEDULED_BROWSER_SPECS,
+  UNCOLLECTED_VITEST_TEST_FILES,
+  brokenDocumentTestReferences,
+  browserSpecFilesOnDisk,
+  entrypointTestFiles,
+  findUnscheduledBrowserSpecs,
+  findUncollectedVitestTests,
+  staleManifestEntries,
+  vitestTestFilesOnDisk,
+} from './test-entrypoint-coverage.js'
+import { UNINVOKED_SCRIPTS, uninvokedScriptNames } from './package-script-entrypoints.js'
 
 const root = resolve(import.meta.dirname, '..')
 const packageJsonSource = readFileSync(resolve(root, 'package.json'), 'utf8')
@@ -69,27 +81,72 @@ describe('quality entrypoint coverage', () => {
     }
   })
 
-  it('keeps every deterministic source test reachable from the root check', () => {
+  it('keeps the root check wired to the deterministic entrypoints, including the mutation gate', () => {
     const check = script('check')
-    const testFiles = ['apps', 'packages', 'tests', 'demo/merchant-studio']
-      .flatMap(filesUnder)
-      .filter(file => /\.test\.tsx?$/.test(file))
-      .filter(file => !file.includes('/dist/') && !file.includes('/node_modules/'))
-
-    const uncovered = testFiles.filter(file => {
-      if ((NON_HERMETIC_TEST_FILES as readonly string[]).includes(file)) return false
-      if (file.startsWith('apps/ops-console/') && file.endsWith('.test.tsx')) {
-        return !check.includes('npm run test:ops-console')
-      }
-      return !file.endsWith('.test.ts') || !check.includes('npm test')
-    })
-
-    expect(uncovered).toEqual([])
     expect(script('test')).toContain('scripts/run-safe-tests-sharded.ts')
     expect(check).toContain('npm run typecheck')
     expect(check).toContain('npm run release:metadata:validate')
     expect(check).toContain('npm run build:ops-console')
     expect(check).toContain('npm run build:merchant-studio')
+    // `invariants:verify` was the only mechanism in this repository that proves
+    // other assertions can fail, and nothing executed it: the 23/23 headline
+    // was a one-off run, not a gate. The strict pass needs an isolated
+    // PostgreSQL fixture; the `check` step tolerates its absence and reports
+    // NOT RUN rather than folding it into a green.
+    expect(check).toContain('npm run invariants:check')
+    expect(script('invariants:verify')).toContain('scripts/invariant-mutation-gate.ts')
+    expect(script('invariants:verify')).not.toContain('--tolerate-missing-bindings')
+    expect(script('invariants:check')).toContain('--tolerate-missing-bindings')
+  })
+
+  it('collects every test file on disk into an enumerated entrypoint ledger', () => {
+    // Side one: an actual enumeration (`vitest list --filesOnly` against the
+    // real configuration) plus the launcher manifests and script arguments.
+    // Side two: a scan of the whole repository, `.codex-marketplace/**` and
+    // `dogfood/**` included — the directories the old scan root left out, which
+    // is where six uncollected plugin tests and a dead import were hiding.
+    const onDisk = vitestTestFilesOnDisk(root)
+    expect(onDisk.some(file => file.startsWith('.codex-marketplace/')), 'the scan must include .codex-marketplace/**').toBe(true)
+    expect(onDisk.some(file => file.startsWith('dogfood/')), 'the scan must include dogfood/**').toBe(true)
+    expect(onDisk.length).toBeGreaterThan(500)
+
+    const collected = entrypointTestFiles(root)
+    expect(collected.size, 'the enumeration returned nothing, so "collected" would be vacuously true').toBeGreaterThan(0)
+    expect(staleManifestEntries(root), 'an entrypoint list names a file that no longer exists').toEqual([])
+
+    expect(findUncollectedVitestTests(root)).toEqual(UNCOLLECTED_VITEST_TEST_FILES.map(entry => entry.file))
+    for (const entry of UNCOLLECTED_VITEST_TEST_FILES) {
+      expect(onDisk).toContain(entry.file)
+      expect(entry.reason.length, `${entry.file} must explain itself in a sentence, not a word`).toBeGreaterThan(80)
+    }
+  })
+
+  it('schedules every browser spec in a Playwright project or a runner argument', () => {
+    expect(browserSpecFilesOnDisk(root).length).toBeGreaterThan(0)
+    expect(findUnscheduledBrowserSpecs(root)).toEqual(UNSCHEDULED_BROWSER_SPECS.map(entry => entry.file))
+    for (const entry of UNSCHEDULED_BROWSER_SPECS) {
+      expect(browserSpecFilesOnDisk(root)).toContain(entry.file)
+      expect(entry.reason.length).toBeGreaterThan(80)
+    }
+  })
+
+  it('keeps every document reference to a test file pointing at a file that exists', () => {
+    expect(brokenDocumentTestReferences(root)).toEqual([])
+  })
+
+  it('names every package.json script that no entrypoint invokes', () => {
+    // A script nothing invokes is invisible: the four Alibaba Cloud /
+    // object-storage evidence commands appear in no document, no runbook and
+    // no caller, so the whole evidence chain had to be reconstructed by hand.
+    // Anything new that nobody calls must be registered with a reason.
+    const registered = new Set(UNINVOKED_SCRIPTS.map(entry => entry.script))
+    for (const entry of UNINVOKED_SCRIPTS) {
+      expect(packageJson.scripts[entry.script], `${entry.script} is registered but no longer exists`).toBeDefined()
+      expect(entry.requires.length).toBeGreaterThan(10)
+      expect(entry.reason.length).toBeGreaterThan(60)
+    }
+    const unregistered = uninvokedScriptNames(root).filter(name => !registered.has(name))
+    expect(unregistered, 'these scripts have no caller and no register entry').toEqual([])
   })
 
   it('keeps all fail-closed gate tests in the explicit release suite', () => {

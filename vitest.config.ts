@@ -10,7 +10,12 @@ export default defineConfig({
     // stubbing process env. Transforming that graph can exceed Vitest's 10s
     // hook default even though the server subsequently binds successfully.
     hookTimeout: 30_000,
-    include: ['packages/**/*.test.ts', 'apps/**/*.test.ts', 'apps/**/*.test.tsx', 'tests/**/*.test.ts', 'demo/merchant-studio/*.test.ts', 'demo/merchant-studio/src/**/*.test.ts', '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.test.ts'],
+    // `.codex-marketplace/**` used to be reachable only through a single
+    // hard-coded bridge file, so five of the six plugin contract tests were
+    // collected by nothing at all. The glob keeps the whole plugin surface in
+    // the default denominator; `tests/quality-entrypoints.test.ts` fails when a
+    // test file anywhere on disk has no collecting entrypoint.
+    include: ['packages/**/*.test.ts', 'apps/**/*.test.ts', 'apps/**/*.test.tsx', 'tests/**/*.test.ts', 'demo/merchant-studio/*.test.ts', 'demo/merchant-studio/src/**/*.test.ts', '.codex-marketplace/**/*.test.ts', 'dogfood/**/*.test.ts'],
     // A `postgresIt`/`skipIf` file that loses its binding reports every
     // DB-backed assertion as pending and still exits 0, so a green default run
     // proved nothing about them. The gate reporter fails the run unless every

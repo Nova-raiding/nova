@@ -97,7 +97,9 @@ describe("UserDirectorySection sorting", () => {
     expect(source).toContain('aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`}');
     expect(source).toContain('{row.status === "suspended" ? "恢复" : "停用"}');
     expect(source).toContain('aria-label="按关键词筛选用户目录"');
-    expect(source).toContain('aria-label="按成员状态筛选用户目录"');
+    // The column was renamed 成员状态 -> 激活状态 (7f6cf3f4); the filter has to
+    // carry the same name as the column it filters.
+    expect(source).toContain('aria-label="按激活状态筛选用户目录"');
     expect(source).toContain('aria-label="按用户属性筛选用户目录"');
   });
 

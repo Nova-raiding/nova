@@ -12,9 +12,22 @@ import { isRealReadableStore, merchantConnectionPresentation } from './platform-
 import {
   buildCatalogPlatforms,
   catalogProductsForStore,
+  type CatalogPlatformView,
   type CatalogProduct,
+  type CatalogStoreView,
 } from './catalog-data'
 import { DetailDecisionContract } from './DetailDecisionContract'
+import {
+  formatMaterialFileSize,
+  materialDownloadHref,
+  materialEmptyCopy,
+  materialStoreCategories,
+  materialSummaryText,
+  resolveMaterialRead,
+  uploadMaterialFiles,
+  type StoreMaterialCategory,
+  type StoreMaterialItem,
+} from './material-library'
 import storeNovaLogo from './assets/store-nova-primary-horizontal.png'
 import {
   evidenceSafeTopLevelContent,
@@ -4881,51 +4894,66 @@ function ProductAssetRelationDialog({
   )
 }
 
+/**
+ * The material workspace's own store row.
+ *
+ * It used to be a hardcoded list of eight `Store Nova` stores, and the material
+ * library rendered those eight while the catalogue page — already fixed — read
+ * the server's one fixture account. This page is bound to
+ * `https://yxsona.com/`, so a store the server did not report may not appear,
+ * let alone be labelled 已接入.
+ */
 type CatalogStore = {
   id: string
   mark: string
   logoUrl: string
   name: string
   platform: string
-  category: string
-  connected: boolean
-  products: number
-  updated: string
-  tone: string
+}
+
+/** The server's store, in the shape the material workspace renders. */
+function catalogStoreForMaterials(store: CatalogStoreView): CatalogStore {
+  return {
+    id: store.id,
+    mark: store.mark,
+    // `GET /v1/platform-accounts` publishes no store logo. An empty string is
+    // the truth; the card falls back to the store mark instead of a broken img.
+    logoUrl: '',
+    name: store.name,
+    platform: store.platform,
+  }
 }
 
 /**
- * Demo seed for the local material library only.
+ * The series list a store starts with before the merchant has declared any.
  *
- * These rows are *not* the workspace's stores: the platform & store & product
- * page builds `CatalogStoreView`s from `/v1/platform-accounts` and
- * `/v1/products` (see `catalog-data.ts`). This demo catalogue used to feed that
- * page too, which is how it claimed eight stores, three connections and nine
- * products for a workspace whose server reported one fixture account.
+ * It used to be 恒温饮具 / 桌面生活 / 礼赠套装 — three invented series handed to
+ * every real store, plus two more invented sets keyed on the ids of stores that
+ * only ever existed in the deleted store seed. Nothing on the server carries a
+ * series: `GET /v1/products` publishes no series field at all (see
+ * `catalog-data.ts`, which fills every product's series with 未分类), so the
+ * 「选择系列」 filter, the card's 所属系列 editor and 品牌配置 › 系列配置 all
+ * presented those names to the merchant as if their store already had them.
  *
- * The material-library surfaces are a separate local preview with their own
- * (unassigned) audit trail, so their seed is left as it is — but it is no
- * longer reachable from the store page.
+ * 未分类 is the only honest entry: it is the bucket for "no series declared",
+ * and it is the one value the product mapper itself produces. Everything past it
+ * is what this merchant actually created, kept in `merchant-store-series-v1`.
  */
-const demoMaterialStores: CatalogStore[] = [
-  { id: 'taobao-flagship', mark: '淘', logoUrl: storeNovaLogo, name: 'Store Nova 旗舰店', platform: '淘宝', category: '家居日用', connected: true, products: 9, updated: '刚刚同步', tone: 'mint' },
-  { id: 'taobao-outlet', mark: '淘', logoUrl: storeNovaLogo, name: 'Store Nova 淘宝生活店', platform: '淘宝', category: '生活百货', connected: false, products: 0, updated: '等待连接', tone: 'mint' },
-  { id: 'tmall-official', mark: '天', logoUrl: storeNovaLogo, name: 'Store Nova 天猫旗舰店', platform: '天猫', category: '品牌直营', connected: false, products: 0, updated: '等待连接', tone: 'lime' },
-  { id: 'jd-official', mark: '京', logoUrl: storeNovaLogo, name: 'Store Nova 京东自营店', platform: '京东', category: '品质生活', connected: true, products: 9, updated: '12 分钟前同步', tone: 'blue' },
-  { id: 'jd-flagship', mark: '京', logoUrl: storeNovaLogo, name: 'Store Nova 京东旗舰店', platform: '京东', category: '品牌旗舰', connected: false, products: 0, updated: '等待连接', tone: 'blue' },
-  { id: 'douyin-brand', mark: '抖', logoUrl: storeNovaLogo, name: 'Store Nova 品牌店', platform: '抖音小店', category: '趋势好物', connected: true, products: 9, updated: '20 分钟前同步', tone: 'rose' },
-  { id: 'pdd-special', mark: '拼', logoUrl: storeNovaLogo, name: 'Store Nova 品牌专营店', platform: '拼多多', category: '日用百货', connected: false, products: 0, updated: '等待连接', tone: 'amber' },
-  { id: 'red-lifestyle', mark: '红', logoUrl: storeNovaLogo, name: 'Store Nova 生活方式店', platform: '小红书店', category: '生活美学', connected: false, products: 0, updated: '等待连接', tone: 'violet' },
-]
-
-const defaultCatalogSeriesNames = ['恒温饮具', '桌面生活', '礼赠套装', '未分类']
+const defaultCatalogSeriesNames = ['未分类']
 const storeSeriesStorageKey = 'merchant-store-series-v1'
 const storeSeriesReassignmentsStorageKey = 'merchant-store-series-reassignments-v1'
 const storeSeriesChangedEvent = 'merchant-store-series-changed'
 
-function defaultSeriesForStore(storeId: string) {
-  if (storeId === 'jd-official') return ['品质饮具', '桌面效率', '企业礼赠', '未分类']
-  if (storeId === 'douyin-brand') return ['趋势新品', '桌面美学', '达人礼盒', '未分类']
+/**
+ * The store id is taken and deliberately unused: series are scoped per store by
+ * the registry, but the server publishes none for any store, so the honest
+ * starting point is the same single 未分类 bucket for all of them. A store that
+ * really has series gets them the moment the merchant creates one.
+ *
+ * Exported for `reviewed-surface-data.test.ts`, which pins the default against
+ * the names this function used to invent.
+ */
+export function initialSeriesForStore(_storeId: string) {
   return [...defaultCatalogSeriesNames]
 }
 
@@ -4955,7 +4983,7 @@ function readStoreSeriesReassignments(): Record<string, Record<string, string>> 
 
 function seriesForStore(storeId: string) {
   const saved = readStoreSeriesRegistry()[storeId]
-  return saved?.length ? saved : defaultSeriesForStore(storeId)
+  return saved?.length ? saved : initialSeriesForStore(storeId)
 }
 
 function CatalogProductVisual({ product, large = false }: { product: CatalogProduct; large?: boolean }) {
@@ -5039,10 +5067,6 @@ function StoreCatalogExperience({ baseUrl }: { baseUrl?: string }) {
   const [selectedMediaIndex, setSelectedMediaIndex] = useState(1)
   const [videoPlaying, setVideoPlaying] = useState(false)
   const [selectedSkuIndex, setSelectedSkuIndex] = useState(0)
-  const [activeAssetGroupId, setActiveAssetGroupId] = useState<string | null>(null)
-  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([])
-  const [assetPage, setAssetPage] = useState(1)
-  const [assetPreview, setAssetPreview] = useState<{ name: string; description: string; video: boolean; top: number; left: number } | null>(null)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [catalogQuery, setCatalogQuery] = useState('')
   const [catalogAddedTime, setCatalogAddedTime] = useState('all')
@@ -5174,10 +5198,6 @@ function StoreCatalogExperience({ baseUrl }: { baseUrl?: string }) {
     setSelectedMediaIndex(1)
     setVideoPlaying(false)
     setSelectedSkuIndex(0)
-    setActiveAssetGroupId(null)
-    setSelectedAssetIds([])
-    setAssetPage(1)
-    setAssetPreview(null)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
   const toggleCatalogProduct = (productId: string) => {
@@ -5192,9 +5212,6 @@ function StoreCatalogExperience({ baseUrl }: { baseUrl?: string }) {
     ]))
     setCatalogSelectedIds([])
   }
-  const assetDownload = (label: string) =>
-    `data:text/plain;charset=utf-8,${encodeURIComponent(`${selectedProduct?.title ?? '商品'} · ${label}\n演示素材文件，正式接入后将下载原始素材。`)}`
-
   if (selectedStore && !selectedStore.readable) {
     return (
       <div className="store-catalog-page catalog-connection-page">
@@ -5214,18 +5231,15 @@ function StoreCatalogExperience({ baseUrl }: { baseUrl?: string }) {
     // Only the specifications the server published: this list used to be four
     // invented SKUs whose prices were derived from the product price.
     const skus = selectedProduct.skus
-    const assetGroups = [
-      { id: 'videos', label: '商品视频', description: '讲解、展示与场景视频', video: true, items: [
-        { id: 'video-main', name: '商品讲解视频', description: '功能与使用方式讲解', size: '1920 × 1080', fileSize: '18.6 MB', format: 'MP4' },
-        { id: 'video-scene', name: '桌面使用场景', description: '办公桌面实拍展示', size: '1920 × 1080', fileSize: '12.4 MB', format: 'MP4' },
-      ] },
-      { id: 'main-images', label: '商品主图', description: '主图、白底图与场景图', items: Array.from({ length: 12 }, (_, index) => ({ id: `main-${index + 1}`, name: `商品主图 ${String(index + 1).padStart(2, '0')}`, description: index === 0 ? '商品首图' : index < 4 ? '核心卖点展示' : index < 8 ? '商品场景展示' : '材质与细节展示', size: index < 8 ? '1200 × 1200' : '1600 × 1200', fileSize: index < 8 ? `${486 + index * 17} KB` : `${(1.08 + (index - 8) * .11).toFixed(2)} MB`, format: 'JPG' })) },
-      { id: 'sku-images', label: '各 SKU 图', description: '每个规格对应的商品图', items: skus.flatMap((sku, index) => [
-        { id: `sku-${index + 1}-front`, name: `${sku.name} · 正面`, description: '对应规格正面展示', size: '1200 × 1200', fileSize: `${512 + index * 24} KB`, format: 'JPG' },
-        { id: `sku-${index + 1}-side`, name: `${sku.name} · 侧面`, description: '对应规格侧面展示', size: '1200 × 1200', fileSize: `${498 + index * 21} KB`, format: 'JPG' },
-      ]) },
-      { id: 'detail-images', label: '详情页图', description: '卖点、参数与服务长图', items: ['详情首屏', '三档温控卖点', '自动断电卖点', '桌面使用场景', '材质工艺', '适配杯型', '尺寸说明', '操作步骤', '清洁说明', '包装展示', '礼赠场景', '商品参数', '配送说明', '售后服务', '品牌故事', '详情页尾图'].map((name, index) => ({ id: `detail-${index + 1}`, name, description: '商品详情页内容图片', size: `750 × ${index % 3 === 0 ? '1000' : '900'}`, fileSize: `${638 + index * 31} KB`, format: 'JPG' })) },
-    ]
+    // The 「商品素材」 dialog that used to open from here listed four fabricated
+    // groups — 2 invented videos, 12 商品主图 slots, 2 images per SKU and 16
+    // 详情页图 slots — with invented 尺寸/文件大小, and every row's 「下载」 was a
+    // `data:text/plain` URL (the same broken pattern the material library's
+    // download was fixed for). Nothing ever opened it: `setActiveAssetGroupId`
+    // was only ever called with `null`, so the table was unreachable dead code
+    // carrying fabricated data. `GET /v1/assets` publishes no per-product
+    // material slots, so there was no server read to put in its place; the
+    // fabricated table is deleted rather than left for a future mount.
     const galleryMedia = [
       { label: '商品视频', video: true },
       { label: '商品主图' },
@@ -5234,12 +5248,6 @@ function StoreCatalogExperience({ baseUrl }: { baseUrl?: string }) {
       { label: '尺寸说明' },
     ]
     const selectedSku = skus[selectedSkuIndex] ?? null
-    const activeAssetGroup = assetGroups.find((group) => group.id === activeAssetGroupId) ?? null
-    const selectedAssets = activeAssetGroup?.items.filter((item) => selectedAssetIds.includes(item.id)) ?? []
-    const assetPageSize = 10
-    const assetPageCount = Math.max(1, Math.ceil((activeAssetGroup?.items.length ?? 0) / assetPageSize))
-    const visibleAssets = activeAssetGroup?.items.slice((assetPage - 1) * assetPageSize, assetPage * assetPageSize) ?? []
-    const toggleAsset = (assetId: string) => setSelectedAssetIds((current) => current.includes(assetId) ? current.filter((id) => id !== assetId) : [...current, assetId])
     return (
       <div className="store-catalog-page catalog-detail-page">
         <button className="catalog-back" onClick={() => setSelectedProductId(null)}><ArrowLeft size={17} />返回商品列表</button>
@@ -5286,84 +5294,6 @@ function StoreCatalogExperience({ baseUrl }: { baseUrl?: string }) {
             </div>
           </div>
         </section>
-        {activeAssetGroup && (
-          <DialogFrame
-            title={activeAssetGroup.label}
-            kicker="PRODUCT ASSETS"
-            onClose={() => setActiveAssetGroupId(null)}
-            testId="catalog-asset-list"
-            actions={<>
-              <button type="button" className="catalog-asset-cancel" onClick={() => setActiveAssetGroupId(null)}>关闭</button>
-              <a
-                className={`catalog-batch-download ${selectedAssets.length ? '' : 'disabled'}`}
-                href={selectedAssets.length ? assetDownload(selectedAssets.map((item) => item.name).join('、')) : undefined}
-                download={`${selectedProduct.title}-${activeAssetGroup.label}-已选素材.txt`}
-                aria-disabled={!selectedAssets.length}
-              ><Download size={15} />下载已选（{selectedAssets.length}）</a>
-            </>}
-          >
-            <div className="catalog-asset-list-toolbar">
-              <p>共 {activeAssetGroup.items.length} 项，可多选后批量下载。</p>
-              <button type="button" onClick={() => setSelectedAssetIds(selectedAssetIds.length === activeAssetGroup.items.length ? [] : activeAssetGroup.items.map((item) => item.id))}>{selectedAssetIds.length === activeAssetGroup.items.length ? '取消全选' : '全选'}</button>
-            </div>
-            <div className="catalog-asset-table-wrap">
-              <table className="catalog-asset-table">
-                <thead><tr><th aria-label="选择" /><th>序号</th><th>素材名</th><th>素材描述</th><th>尺寸</th><th>文件大小</th><th>格式</th><th>操作</th></tr></thead>
-                <tbody>
-                  {visibleAssets.map((item, index) => {
-                    const selected = selectedAssetIds.includes(item.id)
-                    const serialNumber = (assetPage - 1) * assetPageSize + index + 1
-                    return (
-                      <tr className={selected ? 'selected' : ''} key={item.id}>
-                        <td><button type="button" className="catalog-asset-checkbox" aria-label={`选择${item.name}`} aria-pressed={selected} onClick={() => toggleAsset(item.id)}>{selected && <Check size={13} />}</button></td>
-                        <td className="catalog-asset-serial">{String(serialNumber).padStart(2, '0')}</td>
-                        <td
-                          className="catalog-asset-name"
-                          tabIndex={0}
-                          onMouseEnter={(event) => {
-                            const rect = event.currentTarget.getBoundingClientRect()
-                            setAssetPreview({ name: item.name, description: item.description, video: Boolean(activeAssetGroup.video), top: Math.max(16, Math.min(rect.top - 42, window.innerHeight - 178)), left: Math.min(rect.right + 12, window.innerWidth - 202) })
-                          }}
-                          onMouseLeave={() => setAssetPreview(null)}
-                          onFocus={(event) => {
-                            const rect = event.currentTarget.getBoundingClientRect()
-                            setAssetPreview({ name: item.name, description: item.description, video: Boolean(activeAssetGroup.video), top: Math.max(16, Math.min(rect.top - 42, window.innerHeight - 178)), left: Math.min(rect.right + 12, window.innerWidth - 202) })
-                          }}
-                          onBlur={() => setAssetPreview(null)}
-                        ><strong>{item.name}</strong></td>
-                        <td>{item.description}</td>
-                        <td>{item.size}</td>
-                        <td className="catalog-asset-file-size">{item.fileSize}</td>
-                        <td><span className="catalog-format-badge">{item.format}</span></td>
-                        <td><a href={assetDownload(item.name)} download={`${selectedProduct.title}-${item.name}-演示素材.txt`} aria-label={`下载${item.name}`}><Download size={14} />下载</a></td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-            {assetPreview && (
-              <div className="catalog-asset-hover-preview" style={{ top: assetPreview.top, left: assetPreview.left }} role="tooltip">
-                <div className="catalog-asset-hover-image">
-                  <CatalogProductVisual product={selectedProduct} />
-                  {assetPreview.video && <span className="catalog-asset-video-cover"><Play size={24} fill="currentColor" /></span>}
-                </div>
-                <strong>{assetPreview.name}</strong>
-                <small>{assetPreview.description}</small>
-              </div>
-            )}
-            {assetPageCount > 1 && (
-              <div className="catalog-asset-pagination" aria-label="素材分页">
-                <span>每页 10 项 · 第 {assetPage} / {assetPageCount} 页</span>
-                <div>
-                  <button type="button" disabled={assetPage === 1} onClick={() => { setAssetPreview(null); setAssetPage((page) => Math.max(1, page - 1)) }}>上一页</button>
-                  {Array.from({ length: assetPageCount }, (_, index) => index + 1).map((page) => <button type="button" className={page === assetPage ? 'active' : ''} aria-current={page === assetPage ? 'page' : undefined} key={page} onClick={() => { setAssetPreview(null); setAssetPage(page) }}>{page}</button>)}
-                  <button type="button" disabled={assetPage === assetPageCount} onClick={() => { setAssetPreview(null); setAssetPage((page) => Math.min(assetPageCount, page + 1)) }}>下一页</button>
-                </div>
-              </div>
-            )}
-          </DialogFrame>
-        )}
       </div>
     )
   }
@@ -5467,25 +5397,9 @@ function StoreCatalogExperience({ baseUrl }: { baseUrl?: string }) {
   )
 }
 
-type StoreMaterialCategory = '商品主图' | '详情页图' | 'SKU 图' | '商品视频' | '未分类'
-type StoreMaterialSeries = string
-
-type StoreMaterialItem = {
-  id: string
-  name: string
-  category: StoreMaterialCategory
-  series: StoreMaterialSeries
-  sizeLabel: string
-  fileSizeLabel: string
-  format: string
-  addedAt: string
-  previewUrl?: string
-  downloadUrl: string
-  bytes?: number
-}
-
-const storeMaterialCategories: Array<'全部' | StoreMaterialCategory> = ['全部', '商品主图', '详情页图', 'SKU 图', '商品视频', '未分类']
-const storeMaterialSeries: Array<'全部' | StoreMaterialSeries> = ['全部', '恒温饮具', '桌面生活', '礼赠套装', '未分类']
+// `StoreMaterialCategory` / `StoreMaterialSeries` / `StoreMaterialItem` and the
+// card taxonomy now live in `material-library.ts`, next to the mapper that fills
+// them from a real `GET /v1/assets` row.
 type MaterialBrandSettings = {
   logoUrl: string
   color: string
@@ -5567,44 +5481,64 @@ type RecycleMaterialItem = StoreMaterialItem & {
 }
 const materialRecycleStorageKey = 'merchant-material-recycle-bin-v1'
 
-function initialRecycleMaterials(): RecycleMaterialItem[] {
-  const deletedAt = new Date()
-  deletedAt.setDate(deletedAt.getDate() - 1)
-  const expiresAt = new Date(deletedAt)
-  expiresAt.setDate(expiresAt.getDate() + 7)
-  return [{
-    id: 'recycle-demo-packaging-v1',
-    name: 'Store Nova 旗舰店 · 旧版包装展示图',
-    category: '详情页图',
-    series: '礼赠套装',
-    sizeLabel: '1600 × 1200',
-    fileSizeLabel: '1.8 MB',
-    format: 'JPG',
-    addedAt: '2026-09-08',
-    downloadUrl: `data:text/plain;charset=utf-8,${encodeURIComponent('回收站演示素材')}`,
-    storeId: 'taobao-flagship',
-    storeName: 'Store Nova 旗舰店',
-    platform: '淘宝',
-    deletedAt: deletedAt.toISOString(),
-    expiresAt: expiresAt.toISOString(),
-  }]
-}
-
+/**
+ * The recycle bin never seeds itself.
+ *
+ * It used to open with `recycle-demo-packaging-v1` — 「Store Nova 旗舰店 · 旧版包装
+ * 展示图」, deleted "yesterday", expiring in seven days — so a brand-new account
+ * that had never removed anything saw 「1 项待处理素材 · 剩余 6 天 · 2026/9/19 删除」
+ * next to the claim 「删除的素材会保留 7 天，到期后自动彻底删除」. No server held
+ * that item and no server enforces that retention: `GET /v1/assets` has no
+ * deleted-materials counterpart and there is no delete endpoint at all.
+ *
+ * What is left is only what this browser actually recorded: an item appears
+ * here after the merchant removes it from the material library in this profile.
+ */
 function readRecycleMaterials(): RecycleMaterialItem[] {
   try {
     const saved = window.localStorage.getItem(materialRecycleStorageKey)
-    const items = saved === null ? initialRecycleMaterials() : JSON.parse(saved) as RecycleMaterialItem[]
+    if (saved === null) return []
+    const items = JSON.parse(saved) as RecycleMaterialItem[]
     const active = items.filter((item) => new Date(item.expiresAt).getTime() > Date.now())
-    if (saved === null || active.length !== items.length) window.localStorage.setItem(materialRecycleStorageKey, JSON.stringify(active))
+    if (active.length !== items.length) window.localStorage.setItem(materialRecycleStorageKey, JSON.stringify(active))
     return active
   } catch {
-    return initialRecycleMaterials()
+    return []
   }
 }
 
 function writeRecycleMaterials(items: RecycleMaterialItem[]) {
   try {
     window.localStorage.setItem(materialRecycleStorageKey, JSON.stringify(items))
+  } catch {
+    // 本地预览禁用储存时仍保留当前页面状态。
+  }
+}
+
+/**
+ * The ids this browser has removed from the material library.
+ *
+ * `GET /v1/assets` has no delete counterpart, so removing a server material is
+ * a browser-local decision: the id is recorded here, the library filters it out,
+ * and 恢复 in the recycle bin drops it again. Without this the delete button on
+ * a server material would do nothing at all.
+ */
+const materialRemovedStorageKey = 'merchant-material-removed-v1'
+
+function readRemovedMaterialIds(): string[] {
+  try {
+    const saved = window.localStorage.getItem(materialRemovedStorageKey)
+    if (saved === null) return []
+    const ids = JSON.parse(saved) as unknown
+    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function writeRemovedMaterialIds(ids: string[]) {
+  try {
+    window.localStorage.setItem(materialRemovedStorageKey, JSON.stringify(Array.from(new Set(ids))))
   } catch {
     // 本地预览禁用储存时仍保留当前页面状态。
   }
@@ -5669,42 +5603,7 @@ function MaterialCategoryDropdown({
   )
 }
 
-function formatMaterialFileSize(bytes: number) {
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`
-}
-
-function demoStoreMaterials(store: CatalogStore, storeIndex: number): StoreMaterialItem[] {
-  const definitions: Array<[StoreMaterialCategory, StoreMaterialSeries, string, string, string, string]> = [
-    ['商品主图', '恒温饮具', '商品首图', '1200 × 1200', 'JPG', '686 KB'],
-    ['商品主图', '恒温饮具', '核心卖点图', '1200 × 1200', 'JPG', '742 KB'],
-    ['详情页图', '桌面生活', '详情页首屏', '750 × 1000', 'JPG', '918 KB'],
-    ['详情页图', '桌面生活', '材质工艺长图', '750 × 1400', 'JPG', '1.3 MB'],
-    ['SKU 图', '恒温饮具', '暖米白规格图', '1200 × 1200', 'PNG', '824 KB'],
-    ['SKU 图', '恒温饮具', '雾绿色规格图', '1200 × 1200', 'PNG', '856 KB'],
-    ['商品视频', '礼赠套装', '商品讲解视频', '1920 × 1080', 'MP4', '18.6 MB'],
-    ['未分类', '未分类', '包装与说明书', '1600 × 1200', 'JPG', '1.1 MB'],
-  ]
-  const baseSeries = defaultCatalogSeriesNames
-  const mappedSeries = defaultSeriesForStore(store.id)
-  const reassignments = readStoreSeriesReassignments()[store.id] ?? {}
-  return definitions.map(([category, series, label, sizeLabel, format, fileSizeLabel], index) => {
-    const storeSeries = mappedSeries[baseSeries.indexOf(series)] ?? series
-    return {
-      id: `${store.id}-material-${index + 1}`,
-      name: `${store.name} · ${label}`,
-      category,
-      series: reassignments[storeSeries] ?? storeSeries,
-      sizeLabel,
-      fileSizeLabel,
-      format,
-      addedAt: `2026-09-${String(17 - storeIndex * 2 - index).padStart(2, '0')}`,
-      downloadUrl: `data:text/plain;charset=utf-8,${encodeURIComponent(`${store.name}\n${label}\n${category}\n演示素材文件`)}`,
-    }
-  })
-}
-
-function MaterialRecycleBinWorkspace() {
+export function MaterialRecycleBinWorkspace() {
   const [items, setItems] = useState<RecycleMaterialItem[]>(() => readRecycleMaterials())
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [previewId, setPreviewId] = useState<string | null>(null)
@@ -5720,19 +5619,29 @@ function MaterialRecycleBinWorkspace() {
     setSelectedIds([])
   }
 
+  // 恢复 must put the material back in the library, so it drops the id from the
+  // shared removed-set the library filters on. 彻底删除 keeps it there.
+  const restoreFromRecycleBin = (ids: string[]) => {
+    removeFromRecycleBin(ids)
+    writeRemovedMaterialIds(readRemovedMaterialIds().filter((id) => !ids.includes(id)))
+  }
+
   return (
     <div className="material-recycle-page" data-testid="material-recycle-bin">
       <section className="material-recycle-hero">
-        <div><span className="section-kicker">RECYCLE BIN</span><h1>回收站</h1><p>删除的素材会保留 7 天，到期后自动彻底删除。</p></div>
-        <div className="material-recycle-summary"><strong>{items.length}</strong><span>项待处理素材</span><small>最长保留 7 天</small></div>
+        {/* 无法声明的保留策略不许写成服务端行为：`GET /v1/assets` 没有已删除素材
+            的对应接口，服务端也不存在素材删除接口，此前那句「删除的素材会保留 7 天，
+            到期后自动彻底删除」描述的是一条服务端不存在的记录。 */}
+        <div><span className="section-kicker">RECYCLE BIN</span><h1>回收站</h1><p>回收站只记录本浏览器实际移除的素材；服务端已删除素材的读取尚未接入。</p></div>
+        <div className="material-recycle-summary"><strong>{items.length}</strong><span>项待处理素材</span><small>本地记录 7 天后过期</small></div>
       </section>
       <section className="material-recycle-workspace">
         <div className="material-recycle-toolbar">
-          <div><h2>已删除素材</h2><p>可恢复到原店铺，也可以提前彻底删除。</p></div>
+          <div><h2>已删除素材</h2><p>可恢复到原店铺，也可以提前彻底删除。</p><p>列表来自本浏览器的记录，不是服务端读取结果。</p></div>
           <div className="material-recycle-actions">
             <span>已选 <strong>{selectedItems.length}</strong> 项</span>
             <button type="button" disabled={!items.length} onClick={() => setSelectedIds(allSelected ? [] : items.map((item) => item.id))}>{allSelected ? '取消全选' : '全选'}</button>
-            <button type="button" disabled={!selectedItems.length} onClick={() => removeFromRecycleBin(selectedIds)}><Undo2 size={14} />恢复</button>
+            <button type="button" disabled={!selectedItems.length} onClick={() => restoreFromRecycleBin(selectedIds)}><Undo2 size={14} />恢复</button>
             <button type="button" className="danger" disabled={!selectedItems.length} onClick={() => setPermanentDeleteOpen(true)}><Trash2 size={14} />彻底删除</button>
           </div>
         </div>
@@ -5747,7 +5656,7 @@ function MaterialRecycleBinWorkspace() {
             <div className="material-recycle-copy"><strong title={item.name}>{item.name}</strong><span>{item.series} · {item.sizeLabel} · {item.format}</span><small>{item.storeName} · {item.platform}</small></div>
             <div className="material-recycle-expiry"><Clock3 size={13} /><span>剩余 {recycleDaysRemaining(item.expiresAt)} 天</span><small>{new Date(item.deletedAt).toLocaleDateString('zh-CN')} 删除</small></div>
           </article>
-        })}</div> : <div className="material-empty"><Trash2 size={30} /><strong>回收站为空</strong><span>删除的素材会在这里保留 7 天。</span></div>}
+        })}</div> : <div className="material-empty"><Trash2 size={30} /><strong>回收站为空</strong><span>本浏览器还没有记录到已移除的素材；服务端已删除素材的读取尚未接入。</span></div>}
       </section>
       {previewItem && <button type="button" className="material-upload-lightbox" aria-label="关闭回收站图片预览" onClick={() => setPreviewId(null)}><span>{previewItem.previewUrl && previewItem.format !== 'MP4' ? <img src={previewItem.previewUrl} alt={previewItem.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{previewItem.name}</strong><small>点击任意位置关闭</small></span></button>}
       {permanentDeleteOpen && selectedItems.length > 0 && <DialogFrame title="彻底删除素材" kicker="PERMANENT DELETE" onClose={() => setPermanentDeleteOpen(false)} actions={<><button type="button" className="catalog-asset-cancel" onClick={() => setPermanentDeleteOpen(false)}>取消</button><button type="button" className="material-delete-confirm" onClick={() => { removeFromRecycleBin(selectedIds); setPermanentDeleteOpen(false) }}><Trash2 size={14} />彻底删除</button></>}><div className="material-delete-dialog"><Trash2 size={24} /><div><strong>确定彻底删除已选的 {selectedItems.length} 项素材？</strong><p>此操作完成后，这些素材将无法从回收站恢复。</p></div></div></DialogFrame>}
@@ -5755,33 +5664,98 @@ function MaterialRecycleBinWorkspace() {
   )
 }
 
-function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'brands' }) {
-  // The demo material library keeps its own local store seed (see
-  // `demoMaterialStores`); it is not the server's store list and the catalogue
-  // page no longer reads it.
-  const stores = useMemo(() => demoMaterialStores.filter((store) => store.connected), [])
-  const materialStores = useMemo<CatalogStore[]>(() => view === 'library' ? [...stores, { id: 'unclassified', mark: '未', logoUrl: storeNovaLogo, name: '未分类', platform: '未分类', category: '待归属素材', connected: true, products: 0, updated: '本地整理', tone: 'mist' }] : stores, [stores, view])
+export function MaterialLibraryWorkspace({
+  baseUrl,
+  accounts,
+  products,
+  view = 'library',
+}: {
+  baseUrl?: string
+  accounts: PlatformAccount[] | null
+  products: ApiProduct[] | null
+  view?: 'library' | 'brands'
+}) {
+  // Both the store list and the material list are server reads now. The store
+  // list reuses the catalogue page's `buildCatalogPlatforms` so the two pages
+  // can never disagree about how many stores the workspace has again.
+  const catalogPlatforms: CatalogPlatformView[] | null = useMemo(
+    () => buildCatalogPlatforms(accounts, products),
+    [accounts, products],
+  )
+  const catalogStores = useMemo(
+    () => catalogPlatforms?.flatMap((platform) => platform.stores) ?? null,
+    [catalogPlatforms],
+  )
+  // `GET /v1/assets` is the only honest source for the material cards. Before
+  // it answers the page says so; when it answers empty the page says empty.
+  const [remoteAssets, setRemoteAssets] = useState<AssetMetadata[] | null>(null)
+  const [assetsError, setAssetsError] = useState('')
+  const [materialDownloadError, setMaterialDownloadError] = useState('')
+  useEffect(() => {
+    if (!baseUrl) {
+      setRemoteAssets(null)
+      setAssetsError('')
+      return
+    }
+    let active = true
+    setRemoteAssets(null)
+    setAssetsError('')
+    fetchAssets(baseUrl)
+      .then((assets) => { if (active) setRemoteAssets(assets) })
+      .catch((cause) => { if (active) setAssetsError(describeApiError(cause)) })
+    return () => { active = false }
+  }, [baseUrl])
+  const materialsRead = resolveMaterialRead({ baseUrl, remote: remoteAssets, error: assetsError })
+  const stores = useMemo(
+    () => (catalogStores ?? []).filter((store) => store.readable).map(catalogStoreForMaterials),
+    [catalogStores],
+  )
+  const materialStores = useMemo<CatalogStore[]>(
+    () =>
+      view === 'library'
+        ? [...stores, { id: 'unclassified', mark: '未', logoUrl: '', name: '未分类', platform: '未分类' }]
+        : stores,
+    [stores, view],
+  )
   const [activeStoreId, setActiveStoreId] = useState(materialStores[0]?.id ?? '')
+  // The initial render happens before `/v1/platform-accounts` answers, so the
+  // selection starts on the local 未分类 bucket. Remember whether the merchant
+  // picked a store themselves before moving the default to a real one.
+  const [storeChosenByMerchant, setStoreChosenByMerchant] = useState(false)
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<'全部' | StoreMaterialCategory>('全部')
-  const [series, setSeries] = useState<'全部' | StoreMaterialSeries>('全部')
+  const [series, setSeries] = useState<string>('全部')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [materialsByStore, setMaterialsByStore] = useState<Record<string, StoreMaterialItem[]>>(() => {
-    const recycledIds = new Set(readRecycleMaterials().map((item) => item.id))
-    return Object.fromEntries(materialStores.map((store, index) => [store.id, store.id === 'unclassified' ? [] : demoStoreMaterials(store, index).filter((item) => !recycledIds.has(item.id))]))
-  })
+  // Materials this browser itself selected and handed to the workspace. They
+  // are kept per store because the merchant picked the store; nothing else is
+  // seeded here — the eight invented materials per store are gone.
+  const [materialsByStore, setMaterialsByStore] = useState<Record<string, StoreMaterialItem[]>>({})
+  const [removedMaterialIds, setRemovedMaterialIds] = useState<string[]>(() => readRemovedMaterialIds())
   const [uploadedBytes, setUploadedBytes] = useState(0)
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
   const [uploadStoreId, setUploadStoreId] = useState(materialStores[0]?.id ?? '')
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [pendingSelectedKeys, setPendingSelectedKeys] = useState<string[]>([])
   const [uploadCategory, setUploadCategory] = useState<StoreMaterialCategory>('未分类')
-  const [uploadSeries, setUploadSeries] = useState<StoreMaterialSeries | ''>('')
+  const [uploadSeries, setUploadSeries] = useState('')
+  // The upload is a server write now, so it has a busy state and its own error
+  // line: 确认上传 may not close on a refusal.
+  const [uploadBusy, setUploadBusy] = useState(false)
+  const [uploadError, setUploadError] = useState('')
   const [pendingPreviewIndex, setPendingPreviewIndex] = useState<number | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [detailMaterialId, setDetailMaterialId] = useState<string | null>(null)
   const [detailPreviewOpen, setDetailPreviewOpen] = useState(false)
-  const [globalBrand, setGlobalBrand] = useState<MaterialBrandSettings>({ ...emptyMaterialBrandSettings, logoUrl: storeNovaLogo, assetFileName: 'Store Nova 品牌资产手册.pdf' })
+  // The global brand slot starts empty, like every other level of the stack.
+  //
+  // It used to open with `logoUrl: storeNovaLogo` and
+  // `assetFileName: 'Store Nova 品牌资产手册.pdf'`, which made 品牌资产 › 全局配置
+  // report a Logo taken from the app bundle and a 品牌资产文档 marked 「已接收」 for
+  // a document no server ever received. `GET /v1/brand-profile` answers
+  // `{profile: null}` for this workspace and this panel reads no server brand
+  // profile at all, so there was nothing to seed from: 未单独配置 and 暂无资产文件
+  // are the two facts it can actually stand behind.
+  const [globalBrand, setGlobalBrand] = useState<MaterialBrandSettings>({ ...emptyMaterialBrandSettings })
   const [globalBrandEnabled, setGlobalBrandEnabled] = useState(true)
   const [storeBrands, setStoreBrands] = useState<Record<string, MaterialBrandSettings>>({})
   const [storeBrandEnabled, setStoreBrandEnabled] = useState<Record<string, boolean>>({})
@@ -5789,7 +5763,7 @@ function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'br
   const [seriesBrandTransition, setSeriesBrandTransition] = useState('')
   const [seriesByStore, setSeriesByStore] = useState<Record<string, string[]>>(() => {
     const saved = readStoreSeriesRegistry()
-    return Object.fromEntries(materialStores.map((store) => [store.id, saved[store.id]?.length ? saved[store.id] : defaultSeriesForStore(store.id)]))
+    return Object.fromEntries(materialStores.map((store) => [store.id, saved[store.id]?.length ? saved[store.id] : initialSeriesForStore(store.id)]))
   })
   const [newSeriesName, setNewSeriesName] = useState('')
   const [activeBrandSeries, setActiveBrandSeries] = useState(() => seriesForStore(stores[0]?.id ?? '')[0] ?? '未分类')
@@ -5807,6 +5781,34 @@ function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'br
   const activeSeriesKey = `${activeStoreId}::${activeBrandSeries}`
 
   useEffect(() => () => pendingPreviews.forEach((item) => URL.revokeObjectURL(item.url)), [pendingPreviews])
+
+  // The store list arrives asynchronously from `/v1/platform-accounts`. Until
+  // the merchant picks a store, follow the server's first real store rather
+  // than leaving the selection on the 未分类 bucket (which is only ever an
+  // upload target of last resort).
+  useEffect(() => {
+    if (storeChosenByMerchant) return
+    const first = materialStores.find((store) => store.id !== 'unclassified') ?? materialStores[0]
+    if (!first || first.id === activeStoreId) return
+    setActiveStoreId(first.id)
+    setUploadStoreId(first.id)
+    setActiveBrandSeries((seriesByStore[first.id] ?? initialSeriesForStore(first.id))[0] ?? '未分类')
+  }, [materialStores, storeChosenByMerchant, activeStoreId, seriesByStore])
+
+  // Give every store that appears after the account read its series list. The
+  // initialiser ran on an empty list, so without this the first store would
+  // render with no series at all.
+  useEffect(() => {
+    setSeriesByStore((current) => {
+      const missing = materialStores.filter((store) => !current[store.id])
+      if (!missing.length) return current
+      const saved = readStoreSeriesRegistry()
+      return {
+        ...current,
+        ...Object.fromEntries(missing.map((store) => [store.id, saved[store.id]?.length ? saved[store.id] : initialSeriesForStore(store.id)])),
+      }
+    })
+  }, [materialStores])
 
   useEffect(() => () => {
     if (storeBrandTransitionTimer.current !== null) window.clearTimeout(storeBrandTransitionTimer.current)
@@ -5842,14 +5844,56 @@ function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'br
   }, [seriesManagerOpen])
   const activeStore = materialStores.find((store) => store.id === activeStoreId) ?? materialStores[0]
   const uploadStore = (materialStores.find((store) => store.id === uploadStoreId) ?? activeStore)!
-  const uploadAvailableSeries = seriesByStore[uploadStoreId] ?? defaultSeriesForStore(uploadStoreId)
-  const activeMaterials = materialsByStore[activeStoreId] ?? []
+  const uploadAvailableSeries = seriesByStore[uploadStoreId] ?? initialSeriesForStore(uploadStoreId)
+  // The listed inventory is the workspace read plus whatever this browser
+  // actually selected during the session. `GET /v1/assets` is workspace-scoped
+  // and publishes no store attribution, so the store selector cannot honestly
+  // partition the server rows; it stays what the summary already calls it, the
+  // upload target (and the brand-config scope). Attributing a server asset to a
+  // store would be the same class of invention the seed was removed for.
+  // A session upload is a server asset now, so the re-read returns the same row
+  // the upload acknowledged. The session copy is kept — it is the one carrying the
+  // merchant's 素材分类/所属系列 — and the server row for the same id is not
+  // rendered twice beside it.
+  const sessionMaterials = materialsByStore[activeStoreId] ?? []
+  const sessionMaterialIds = new Set(sessionMaterials.map((item) => item.id))
+  const activeMaterials = [
+    ...sessionMaterials,
+    ...materialsRead.items.filter((item) => !sessionMaterialIds.has(item.id)),
+  ].filter((item) => !removedMaterialIds.includes(item.id))
   const visibleMaterials = activeMaterials.filter((item) => {
     const matchesCategory = category === '全部' || item.category === category
     const matchesSeries = series === '全部' || item.series === series
     const normalizedQuery = query.trim().toLocaleLowerCase()
     return matchesCategory && matchesSeries && (!normalizedQuery || `${item.name} ${item.category} ${item.series} ${item.format}`.toLocaleLowerCase().includes(normalizedQuery))
   })
+  // A read that has not answered may not be rendered as 「找到 0 项素材」: the
+  // page has to say which of the four states it is in, exactly like the rest of
+  // the workspace. The count only appears once `GET /v1/assets` has answered.
+  const materialsSummary = materialsRead.state === 'ready'
+    ? <>找到 <strong>{visibleMaterials.length}</strong> 项素材</>
+    : materialSummaryText(materialsRead)
+  const { title: materialEmptyTitle, detail: materialEmptyDetail } = materialEmptyCopy(materialsRead)
+  // `GET /v1/assets/:id/download` is authenticated, so the bytes are re-read
+  // with the merchant session under the asset's own name. The old href was a
+  // `data:text/plain` URL, which downloaded a four-line text file.
+  const downloadMaterial = async (item: StoreMaterialItem) => {
+    if (!baseUrl || !item.assetId) return
+    setMaterialDownloadError('')
+    try {
+      const blob = await fetchAssetBlob(baseUrl, item.assetId)
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = item.name
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (cause) {
+      setMaterialDownloadError(`素材下载失败：${describeApiError(cause)}`)
+    }
+  }
   // The storage quota is server-owned and this local library has no API base
   // URL to read it, so it reports only what it can actually observe (the bytes
   // uploaded in this session) and marks the quota itself as unread. Showing a
@@ -5944,8 +5988,9 @@ function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'br
     const nextStore = stores.find((store) => store.id === storeId)
     if (!nextStore) return
     if (storeBrandTransitionTimer.current !== null) window.clearTimeout(storeBrandTransitionTimer.current)
-    const nextSeries = (seriesByStore[storeId] ?? defaultSeriesForStore(storeId))[0] ?? '未分类'
+    const nextSeries = (seriesByStore[storeId] ?? initialSeriesForStore(storeId))[0] ?? '未分类'
     setStoreBrandTransition(`切换至 ${nextStore.name}`)
+    setStoreChosenByMerchant(true)
     setActiveStoreId(storeId)
     setActiveBrandSeries(nextSeries)
     showSeriesTransition(nextSeries)
@@ -5991,8 +6036,9 @@ function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'br
   }
 
   const switchStore = (storeId: string) => {
+    setStoreChosenByMerchant(true)
     setActiveStoreId(storeId)
-    setActiveBrandSeries((seriesByStore[storeId] ?? defaultSeriesForStore(storeId))[0] ?? '未分类')
+    setActiveBrandSeries((seriesByStore[storeId] ?? initialSeriesForStore(storeId))[0] ?? '未分类')
     setQuery('')
     setCategory('全部')
     setSeries('全部')
@@ -6007,6 +6053,8 @@ function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'br
     setPendingSelectedKeys([])
     setUploadCategory('未分类')
     setUploadSeries('')
+    setUploadError('')
+    setUploadBusy(false)
     setPendingPreviewIndex(null)
     if (uploadInput.current) uploadInput.current.value = ''
   }
@@ -6032,32 +6080,54 @@ function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'br
     setPendingPreviewIndex(null)
   }
 
-  const confirmUpload = () => {
-    if (!pendingFiles.length || !uploadStore || !uploadSeries) return
+  /**
+   * 确认上传 sends the files to `POST /v1/assets/upload`.
+   *
+   * It used to only call `URL.createObjectURL` and push a hand-written item into
+   * local state: the server never saw the bytes, so a refresh lost every material
+   * the merchant had just "uploaded", and the card's 下载 served the object URL of
+   * a file that never existed outside the tab. The upload endpoint was always
+   * there — `ProductSpreadsheetImport.tsx` already used it. The card is now built
+   * from the row the server acknowledged, so 格式/文件大小/上传时间 are the
+   * server's facts instead of the invented 「1920 × 1080」/「刚刚上传」.
+   */
+  const confirmUpload = async () => {
+    if (!pendingFiles.length || !uploadStore || !uploadSeries || uploadBusy) return
+    if (!baseUrl) {
+      // No API means no server: saying 「上传成功」 here is exactly the lie the
+      // local-only version told.
+      setUploadError('未配置 API，素材无法上传到服务端；配置 API 后再上传。')
+      return
+    }
     const incoming = pendingFiles
-    const additions = incoming.map((file, index): StoreMaterialItem => {
-      const video = file.type.startsWith('video/')
-      const extension = file.name.includes('.') ? file.name.split('.').pop()?.toUpperCase() ?? 'FILE' : 'FILE'
-      const objectUrl = URL.createObjectURL(file)
-      return {
-        id: `${uploadStore.id}-upload-${Date.now()}-${index}`,
-        name: file.name,
-        category: uploadCategory,
-        series: uploadSeries,
-        sizeLabel: video ? '1920 × 1080' : '读取中',
-        fileSizeLabel: formatMaterialFileSize(file.size),
-        format: extension,
-        addedAt: '刚刚上传',
-        previewUrl: objectUrl,
-        downloadUrl: objectUrl,
-        bytes: file.size,
-      }
+    setUploadBusy(true)
+    setUploadError('')
+    const { accepted, failures } = await uploadMaterialFiles({
+      files: incoming,
+      upload: (file) => uploadAsset(baseUrl, file),
+      labels: { category: uploadCategory, series: uploadSeries },
+      // A thumbnail of the file this browser just sent: an object URL for this
+      // session only, never a second copy of the asset.
+      previewUrlFor: (file) => URL.createObjectURL(file),
     })
-    setMaterialsByStore((current) => ({ ...current, [uploadStore.id]: [...additions, ...(current[uploadStore.id] ?? [])] }))
-    setUploadedBytes((current) => current + incoming.reduce((total, file) => total + file.size, 0))
-    setCategory('全部')
-    setSeries('全部')
-    setQuery('')
+    if (accepted.length) {
+      setMaterialsByStore((current) => ({ ...current, [uploadStore.id]: [...accepted, ...(current[uploadStore.id] ?? [])] }))
+      setUploadedBytes((current) => current + accepted.reduce((total, item) => total + (item.bytes ?? 0), 0))
+      setCategory('全部')
+      setSeries('全部')
+      setQuery('')
+      // Re-read so the list is the server's answer rather than this browser's.
+      void fetchAssets(baseUrl)
+        .then((assets) => setRemoteAssets(assets))
+        .catch((cause) => setAssetsError(describeApiError(cause)))
+    }
+    setUploadBusy(false)
+    if (failures.length) {
+      // Partial success stays visible: the accepted files are listed and the
+      // rejects are named, so 确认上传 is never reported as a blanket success.
+      setUploadError(`以下素材未通过服务端检查：${failures.join('；')}`)
+      return
+    }
     closeUploadDialog()
   }
 
@@ -6070,28 +6140,60 @@ function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'br
 
   const deleteSelectedMaterials = () => {
     if (!activeStore) return
-    const deletedBytes = selectedMaterials.reduce((total, item) => total + (item.bytes ?? 0), 0)
+    // `uploadedBytes` counts what this session actually sent to
+    // `POST /v1/assets/upload` and nothing else, so nothing is subtracted here.
+    // Removing a material from the list — whether it was uploaded here or read
+    // from `GET /v1/assets` — is a browser-local list change, not a server-side
+    // removal (`GET /v1/assets` has no delete counterpart), and the bytes were
+    // uploaded either way.
     const now = new Date()
     const expiresAt = new Date(now)
     expiresAt.setDate(expiresAt.getDate() + 7)
     const recycled = readRecycleMaterials()
-    const additions = selectedMaterials.map((item): RecycleMaterialItem => ({ ...item, storeId: activeStore.id, storeName: activeStore.name, platform: activeStore.platform, deletedAt: now.toISOString(), expiresAt: expiresAt.toISOString() }))
+    const additions = selectedMaterials.map((item): RecycleMaterialItem => ({
+      ...item,
+      // `GET /v1/assets` publishes no store attribution, so a server asset is
+      // recorded as 未归属 rather than filed under whichever store happened to
+      // be selected. Session uploads really did pick a store.
+      storeId: item.assetId ? '' : activeStore.id,
+      storeName: item.assetId ? '未归属' : activeStore.name,
+      platform: item.assetId ? '未归属' : activeStore.platform,
+      deletedAt: now.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+    }))
     writeRecycleMaterials([...additions, ...recycled.filter((item) => !selectedIds.includes(item.id))])
+    const nextRemoved = Array.from(new Set([...readRemovedMaterialIds(), ...selectedIds]))
+    writeRemovedMaterialIds(nextRemoved)
+    setRemovedMaterialIds(nextRemoved)
     setMaterialsByStore((current) => ({
       ...current,
       [activeStoreId]: (current[activeStoreId] ?? []).filter((item) => !selectedIds.includes(item.id)),
     }))
-    setUploadedBytes((current) => Math.max(0, current - deletedBytes))
     setSelectedIds([])
     setDeleteDialogOpen(false)
   }
 
-  if (activeStore && detailMaterial) {
+  // A workspace the server reports no store for is a real state (the catalogue
+  // page has the same case). Without this the brand panel read `activeStore.name`
+  // on an undefined store and took the page down.
+  if (!activeStore) {
+    return <div className="material-library-page" data-testid="material-library-workspace">
+      <section className="material-store-workspace">
+        <div className="material-empty">
+          <FolderOpen size={28} />
+          <strong>{catalogStores === null ? '店铺列表尚未从服务端读取' : '当前工作区没有可管理的店铺'}</strong>
+          <span>{catalogStores === null ? '店铺列表来自服务端，读取完成后才会显示素材与品牌配置。' : '素材与品牌配置按店铺管理；服务端未报告店铺时不显示任何店铺。'}</span>
+        </div>
+      </section>
+    </div>
+  }
+
+  if (detailMaterial) {
     return <div className="material-detail-page" data-testid="material-detail-page">
       <button type="button" className="material-detail-back" onClick={() => { setDetailMaterialId(null); setDetailPreviewOpen(false) }}><ArrowLeft size={16} />返回素材库</button>
       <section className="material-detail-hero">
         <button type="button" className={`material-detail-preview ${detailMaterial.previewUrl ? 'has-image' : ''}`} aria-label={`放大${detailMaterial.name}`} onClick={() => setDetailPreviewOpen(true)}>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : detailMaterial.category === '商品视频' ? <Play size={64} fill="currentColor" /> : <ImageIcon size={64} />}<span>点击放大预览</span></button>
-        <div className="material-detail-info"><span className="section-kicker">MATERIAL DETAILS</span><h1>{detailMaterial.name}</h1><p>查看素材文件、归属店铺与管理信息。</p><dl><div><dt>素材分类</dt><dd>{detailMaterial.category}</dd></div><div><dt>所属系列</dt><dd>{detailMaterial.series}</dd></div><div><dt>所属店铺</dt><dd>{activeStore.name}</dd></div><div><dt>平台</dt><dd>{activeStore.platform}</dd></div><div><dt>文件格式</dt><dd>{detailMaterial.format}</dd></div><div><dt>图片尺寸</dt><dd>{detailMaterial.sizeLabel}</dd></div><div><dt>文件大小</dt><dd>{detailMaterial.fileSizeLabel}</dd></div><div><dt>上传时间</dt><dd>{detailMaterial.addedAt}</dd></div></dl><a href={detailMaterial.downloadUrl} download={detailMaterial.name}><Download size={15} />下载素材</a></div>
+        <div className="material-detail-info"><span className="section-kicker">MATERIAL DETAILS</span><h1>{detailMaterial.name}</h1><p>查看素材文件、归属店铺与管理信息。</p><dl><div><dt>素材分类</dt><dd>{detailMaterial.category}</dd></div><div><dt>所属系列</dt><dd>{detailMaterial.series}</dd></div><div><dt>所属店铺</dt><dd>{detailMaterial.assetId ? '未归属' : activeStore.name}</dd></div><div><dt>平台</dt><dd>{detailMaterial.assetId ? '未归属' : activeStore.platform}</dd></div><div><dt>文件格式</dt><dd>{detailMaterial.format}</dd></div><div><dt>图片尺寸</dt><dd>{detailMaterial.sizeLabel}</dd></div><div><dt>文件大小</dt><dd>{detailMaterial.fileSizeLabel}</dd></div><div><dt>上传时间</dt><dd>{detailMaterial.addedAt}</dd></div></dl><a href={materialDownloadHref(detailMaterial, baseUrl)} download={detailMaterial.name} onClick={(event) => { if (!detailMaterial.assetId) return; event.preventDefault(); void downloadMaterial(detailMaterial) }}><Download size={15} />下载素材</a></div>
       </section>
       <section className="material-image-brand-settings">
         <div className="material-brand-panel-heading"><div><span className="section-kicker">IMAGE BRAND SETTINGS</span><h2>单图品牌配置</h2><p>此处设置只应用于当前图片，并覆盖“{detailMaterial.series}”系列、店铺和全局品牌设置。</p></div><div className="material-brand-priority" aria-label="资产应用原则"><strong>资产应用原则：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div></div>
@@ -6156,7 +6258,7 @@ function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'br
               <label className="material-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索素材名称、分类或格式" /></label>
               <div className="material-store-filter"><span>店铺</span><MaterialCategoryDropdown ariaLabel="店铺筛选" value={activeStoreId} options={materialStores.map((store) => ({ value: store.id, label: store.name }))} onChange={switchStore} searchable searchPlaceholder="搜索店铺" /></div>
               <div className="material-series-filter"><span>系列</span><MaterialCategoryDropdown ariaLabel="系列筛选" value={series} options={[{ value: '全部', label: '全部系列' }, ...availableSeries.map((item) => ({ value: item, label: item }))]} onChange={(value) => { setSeries(value); setSelectedIds([]) }} /></div>
-              <div className="material-category-filter"><span>素材分类</span><MaterialCategoryDropdown ariaLabel="素材分类筛选" value={category} options={storeMaterialCategories.map((item) => ({ value: item, label: item }))} onChange={(value) => { setCategory(value as '全部' | StoreMaterialCategory); setSelectedIds([]) }} /></div>
+              <div className="material-category-filter"><span>素材分类</span><MaterialCategoryDropdown ariaLabel="素材分类筛选" value={category} options={materialStoreCategories.map((item) => ({ value: item, label: item }))} onChange={(value) => { setCategory(value as '全部' | StoreMaterialCategory); setSelectedIds([]) }} /></div>
             </div>
             <div className="material-toolbar-actions">
               <span className={selectedMaterials.length ? 'has-selection' : ''}>已选 <strong>{selectedMaterials.length}</strong> 项</span>
@@ -6166,7 +6268,8 @@ function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'br
             </div>
           </div>
 
-          <div className="material-result-summary"><span>找到 <strong>{visibleMaterials.length}</strong> 项素材</span><small>上传目标：{activeStore.name}</small></div>
+          <div className="material-result-summary"><span>{materialsSummary}</span><small>上传目标：{activeStore.name}</small></div>
+          {materialDownloadError && <p className="material-download-error" role="alert">{materialDownloadError}</p>}
           {visibleMaterials.length ? (
             <div className="material-card-grid">
               {visibleMaterials.map((item, index) => {
@@ -6180,17 +6283,17 @@ function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'br
                     <div className="material-card-copy"><strong title={item.name}>{item.name}</strong><span>{item.series} · {item.sizeLabel} · {item.format}</span><small>{item.fileSizeLabel} · {item.addedAt}</small></div>
                     <div className="material-card-actions">
                       <div className="material-card-inline-editor">
-                        <div className="material-card-inline-field"><span>素材分类</span><MaterialCategoryDropdown ariaLabel={`修改${item.name}的素材分类`} value={item.category} options={storeMaterialCategories.filter((value): value is StoreMaterialCategory => value !== '全部').map((value) => ({ value, label: value }))} onChange={(value) => updateMaterialMetadata(item.id, { category: value as StoreMaterialCategory })} /></div>
+                        <div className="material-card-inline-field"><span>素材分类</span><MaterialCategoryDropdown ariaLabel={`修改${item.name}的素材分类`} value={item.category} options={materialStoreCategories.filter((value): value is StoreMaterialCategory => value !== '全部').map((value) => ({ value, label: value }))} onChange={(value) => updateMaterialMetadata(item.id, { category: value as StoreMaterialCategory })} /></div>
                         <div className="material-card-inline-field"><span>所属系列</span><MaterialCategoryDropdown ariaLabel={`修改${item.name}的所属系列`} value={item.series} options={availableSeries.map((value) => ({ value, label: value }))} onChange={(value) => updateMaterialMetadata(item.id, { series: value })} /></div>
                       </div>
-                      <a href={item.downloadUrl} download={item.name}><Download size={14} />下载</a>
+                      <a href={materialDownloadHref(item, baseUrl)} download={item.name} onClick={(event) => { if (!item.assetId) return; event.preventDefault(); void downloadMaterial(item) }}><Download size={14} />下载</a>
                     </div>
                   </article>
                 )
               })}
             </div>
           ) : (
-            <div className="material-empty"><FolderOpen size={28} /><strong>当前条件下没有素材</strong><span>调整搜索或分类，也可以直接上传到当前店铺。</span></div>
+            <div className="material-empty"><FolderOpen size={28} /><strong>{materialEmptyTitle}</strong><span>{materialEmptyDetail}</span></div>
           )}
         </section>
       )}
@@ -6202,17 +6305,17 @@ function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'br
           testId="material-upload-dialog"
           actions={<>
             <button type="button" className="catalog-asset-cancel" onClick={closeUploadDialog}>取消</button>
-            <button type="button" className="material-upload-confirm" disabled={!pendingFiles.length || !uploadSeries} onClick={confirmUpload}><Upload size={15} />确认上传{pendingFiles.length ? `（${pendingFiles.length}）` : ''}</button>
+            <button type="button" className="material-upload-confirm" disabled={!pendingFiles.length || !uploadSeries || uploadBusy} onClick={() => { void confirmUpload() }}><Upload size={15} />{uploadBusy ? '正在上传…' : `确认上传${pendingFiles.length ? `（${pendingFiles.length}）` : ''}`}</button>
           </>}
         >
           <div className="material-upload-dialog">
             <div className="material-upload-top">
-              <div className="material-upload-store"><MaterialCategoryDropdown ariaLabel="选择上传店铺" value={uploadStore.id} options={materialStores.map((store) => ({ value: store.id, label: store.name }))} onChange={(value) => { setUploadStoreId(value); setUploadSeries('') }} searchable searchPlaceholder="搜索店铺" triggerContent={<span className="material-upload-store-trigger"><span className="catalog-store-logo" aria-hidden="true"><img src={uploadStore.logoUrl} alt="" /></span><span className="material-upload-store-copy"><small>上传到店铺</small><strong>{uploadStore.name}</strong><em>{uploadStore.platform} · 素材仅归属于所选店铺</em></span></span>} /></div>
+              <div className="material-upload-store"><MaterialCategoryDropdown ariaLabel="选择上传店铺" value={uploadStore.id} options={materialStores.map((store) => ({ value: store.id, label: store.name }))} onChange={(value) => { setUploadStoreId(value); setUploadSeries('') }} searchable searchPlaceholder="搜索店铺" triggerContent={<span className="material-upload-store-trigger"><span className="catalog-store-logo" aria-hidden="true">{uploadStore.logoUrl ? <img src={uploadStore.logoUrl} alt="" /> : uploadStore.mark}</span><span className="material-upload-store-copy"><small>上传到店铺</small><strong>{uploadStore.name}</strong><em>{uploadStore.platform} · 素材仅归属于所选店铺</em></span></span>} /></div>
               <button type="button" className="material-upload-picker" data-dialog-initial-focus disabled={pendingFiles.length >= 50} onClick={() => uploadInput.current?.click()}><Upload size={18} /><span><strong>{pendingFiles.length ? '继续选择' : '选择图片或视频'}</strong><small>最多 50 个文件</small></span></button>
             </div>
             <input ref={uploadInput} className="sr-only" type="file" accept="image/*,video/*" multiple onChange={(event) => addPendingFiles(event.target.files)} />
             <div className="material-upload-controls">
-              <div className="material-upload-category"><span>素材分类</span><MaterialCategoryDropdown ariaLabel="素材分类" value={uploadCategory} options={storeMaterialCategories.filter((item): item is StoreMaterialCategory => item !== '全部').map((item) => ({ value: item, label: item }))} onChange={(value) => setUploadCategory(value as StoreMaterialCategory)} /></div>
+              <div className="material-upload-category"><span>素材分类</span><MaterialCategoryDropdown ariaLabel="素材分类" value={uploadCategory} options={materialStoreCategories.filter((item): item is StoreMaterialCategory => item !== '全部').map((item) => ({ value: item, label: item }))} onChange={(value) => setUploadCategory(value as StoreMaterialCategory)} /></div>
               <div className="material-upload-category"><span>所属系列</span><MaterialCategoryDropdown ariaLabel="所属系列" value={uploadSeries} options={[{ value: '', label: '请选择系列' }, ...uploadAvailableSeries.map((item) => ({ value: item, label: item }))]} onChange={(value) => setUploadSeries(value)} /></div>
             </div>
             <div className="material-upload-preview-heading"><span>待上传素材 <strong>{pendingFiles.length}</strong> / 50</span><div className="material-upload-batch-actions"><button type="button" disabled={!pendingFiles.length} onClick={() => setPendingSelectedKeys(pendingSelectedKeys.length === pendingFiles.length ? [] : pendingFiles.map(pendingFileKey))}>{pendingSelectedKeys.length === pendingFiles.length && pendingFiles.length ? '取消全选' : '全选'}</button><span>已选 {pendingSelectedKeys.length} 项</span><button type="button" className="danger" disabled={!pendingSelectedKeys.length} onClick={deleteSelectedPendingFiles}><Trash2 size={13} />批量删除</button></div></div>
@@ -6228,7 +6331,8 @@ function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'br
                 </article>
               }) : <div><ImageIcon size={30} /><strong>尚未选择素材</strong><span>点击上方按钮，可一次选择或继续追加多张图片。</span></div>}
             </div>
-            <p className="material-upload-note">本次文件将上传至“{uploadStore.name}”，统一归入“{uploadCategory}”{uploadSeries ? `，所属“${uploadSeries}”系列` : '；请选择所属系列'}。</p>
+            <p className="material-upload-note">本次文件将上传至“{uploadStore.name}”，统一归入“{uploadCategory}”{uploadSeries ? `，所属“${uploadSeries}”系列` : '；请选择所属系列'}。上传通过服务端素材接口写入，服务端未接受的素材不会出现在素材库中。</p>
+            {uploadError && <p className="material-download-error" role="alert" data-testid="material-upload-error">{uploadError}</p>}
             {pendingPreviewIndex !== null && pendingPreviews[pendingPreviewIndex] && <button type="button" className="material-upload-lightbox" aria-label="关闭图片预览" onClick={() => setPendingPreviewIndex(null)}><span>{pendingPreviews[pendingPreviewIndex].file.type.startsWith('image/') ? <img src={pendingPreviews[pendingPreviewIndex].url} alt={pendingPreviews[pendingPreviewIndex].file.name} /> : <span className="material-upload-video-preview"><Play size={52} fill="currentColor" /></span>}<strong>{pendingPreviews[pendingPreviewIndex].file.name}</strong><small>点击任意位置关闭</small></span></button>}
           </div>
         </DialogFrame>
@@ -6244,7 +6348,7 @@ function MaterialLibraryWorkspace({ view = 'library' }: { view?: 'library' | 'br
             <button type="button" className="material-delete-confirm" onClick={deleteSelectedMaterials}><Trash2 size={14} />移入回收站</button>
           </>}
         >
-          <div className="material-delete-dialog"><Trash2 size={24} /><div><strong>确定将已选的 {selectedMaterials.length} 项素材移入回收站？</strong><p>素材会从“{activeStore.name}”移除，并在回收站保留 7 天。</p></div></div>
+          <div className="material-delete-dialog"><Trash2 size={24} /><div><strong>确定将已选的 {selectedMaterials.length} 项素材移入回收站？</strong><p>素材会从“{activeStore.name}”的列表移除，并记录在本浏览器的回收站中。</p></div></div>
         </DialogFrame>
       )}
     </div>
@@ -6817,13 +6921,17 @@ function Products({
     window.requestAnimationFrame(() => imageGenerationErrorRef.current?.focus({ preventScroll: true }))
   }, [imageGenerationBusy, imageGenerationError, imageGenerationTarget])
   if (showAssetLibrary) {
+    // The store rows come from the reads this page already performs, so the
+    // material workspace can never disagree with the catalogue about the
+    // workspace's stores (it used to read its own eight-store seed instead).
+    const materialWorkspaceProps = { baseUrl, accounts, products: remoteProducts } as const
     return initialEntry === 'knowledge'
-      ? <MaterialLibraryWorkspace view="library" />
+      ? <MaterialLibraryWorkspace {...materialWorkspaceProps} view="library" />
       : initialEntry === 'assets'
-        ? <MaterialLibraryWorkspace view="brands" />
+        ? <MaterialLibraryWorkspace {...materialWorkspaceProps} view="brands" />
       : initialEntry === 'trash'
         ? <MaterialRecycleBinWorkspace />
-      : <MaterialLibraryWorkspace view="library" />
+      : <MaterialLibraryWorkspace {...materialWorkspaceProps} view="library" />
   }
   return (
     <div className="page-stack products-page">

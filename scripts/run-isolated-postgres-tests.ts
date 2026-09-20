@@ -5,7 +5,7 @@ import { dirname, join, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pool } from 'pg'
 import { createIsolatedOpsFixture, type IsolatedFixtureDisposal } from '../tests/isolated-ops-fixture.js'
-import { ISOLATED_POSTGRES_TEST_FILES } from '../vitest.postgres.config.js'
+import { ALL_POSTGRES_TEST_FILES, ISOLATED_POSTGRES_TEST_FILES } from '../vitest.postgres.config.js'
 import { buildSafeTestEnvironment } from './run-safe-tests.js'
 
 export { ISOLATED_POSTGRES_TEST_FILES }
@@ -47,7 +47,16 @@ export async function selectIsolatedPostgresTests(args: readonly string[]): Prom
     }
     return [...ISOLATED_POSTGRES_TEST_FILES]
   }
-  if (args.length === 1 && args[0] === '--all') return allPostgresTests()
+  // `--all` is the full denominator: discovered `*.postgres.test.ts` files plus
+  // the database-gated files listed in the pending-assertion manifest. A
+  // manifest entry that no longer exists fails closed here rather than
+  // silently shrinking the run.
+  if (args.length === 1 && args[0] === '--all') {
+    const discovered = new Set(await allPostgresTests())
+    const missing = ALL_POSTGRES_TEST_FILES.filter(file => !discovered.has(file) && !existsSync(join(projectRoot, file)))
+    if (missing.length > 0) throw new Error(`ISOLATED_POSTGRES_ALL_MANIFEST_INVALID: ${missing.join(', ')}`)
+    return [...ALL_POSTGRES_TEST_FILES]
+  }
   const selected = args.map(argument => posix.normalize(argument.replaceAll('\\', '/')))
   if (selected.some(file => !ISOLATED_POSTGRES_TEST_FILES.some(expected => file === expected)) || new Set(selected).size !== selected.length) {
     throw new Error('This entrypoint accepts only exact audited PostgreSQL test files or --all; omit arguments to run the audited PostgreSQL files.')
@@ -85,6 +94,8 @@ export function validateIsolatedPostgresReport(value: unknown, expectedFiles: re
 interface IsolatedPostgresFixture {
   runId: string
   adminDatabaseUrl: string
+  /** Empty databases inside the owned container, for the intermediate-migration files. */
+  acceptanceDatabaseUrls?: { legacyBackfill: string; workspaceCatalog: string }
   containerEvidence: readonly { kind: string; runId: string; hostPort: number }[]
   dispose(): Promise<IsolatedFixtureDisposal>
 }
@@ -161,9 +172,24 @@ export async function runIsolatedPostgresTests(args: readonly string[], source: 
       ...buildSafeTestEnvironment(source, join(evidenceDir, 'local-objects')),
       PERSISTENCE_RELEASE_DATABASE_URL: fixture.adminDatabaseUrl,
       MERCHANT_ISOLATED_POSTGRES_RUN_ID: fixture.runId,
+      // Every binding the CI PostgreSQL step provides, pointed at the fixture
+      // this process just created. CI and this launcher must agree on the set;
+      // a binding only CI sets is a binding that can only be exercised in CI.
       ...(allMode ? {
         PLATFORM_MEDIA_SPEC_DATABASE_URL: fixture.adminDatabaseUrl,
         MODEL_BUDGET_DATABASE_URL: fixture.adminDatabaseUrl,
+        // These two apply the migration chain from the beginning and assert
+        // part-way through it, so they need an empty database: against the
+        // fully migrated `merchant` one, MigrationRunner refuses with
+        // "migration N is not present in this release". They fall back to the
+        // migrated URL only when the fixture is older than this field, which
+        // reports the same refusal instead of silently skipping.
+        LEGACY_BACKFILL_DATABASE_URL: fixture.acceptanceDatabaseUrls?.legacyBackfill ?? fixture.adminDatabaseUrl,
+        WORKSPACE_CATALOG_DATABASE_URL: fixture.acceptanceDatabaseUrls?.workspaceCatalog ?? fixture.adminDatabaseUrl,
+        WORKSPACE_BOOTSTRAP_DATABASE_URL: fixture.adminDatabaseUrl,
+        BRAND_CANONICAL_DATABASE_URL: fixture.adminDatabaseUrl,
+        ASSET_PARSE_DATABASE_URL: fixture.adminDatabaseUrl,
+        STORAGE_QUOTA_DATABASE_URL: fixture.adminDatabaseUrl,
         ...matchingPostgres17Tools(),
       } : {}),
       ...(selectedFiles.length !== ISOLATED_POSTGRES_TEST_FILES.length ? { MERCHANT_ISOLATED_POSTGRES_ALL: 'true' } : {}),

@@ -7,6 +7,7 @@ import {
   NON_HERMETIC_TEST_FILES,
   type DefaultSuitePendingAllowance,
 } from './test-suite-isolation.js'
+import { ALL_POSTGRES_TEST_FILES } from '../vitest.postgres.config.js'
 import {
   buildPendingReport,
   normalizeReportPath,
@@ -187,6 +188,25 @@ describe('default suite pending-assertion gate', () => {
       const source = readFileSync(resolve(root, entry.file), 'utf8')
       expect(/it\.skip|skipIf|\? it : it\.skip|postgresIt/u.test(source), entry.file).toBe(true)
       expect(source, entry.file).toContain(entry.binding)
+    }
+  })
+
+  it('binds every pending database allowance from a local entrypoint, not only CI', () => {
+    // CI is one execution environment, not the only one that may certify these
+    // assertions. Before this existed, a binding only CI set was a binding that
+    // could never be exercised on a developer machine, so the file's whole
+    // PostgreSQL half was unverifiable locally.
+    const scripts = (JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts
+    expect(scripts['test:postgres:all-local']).toContain('scripts/run-isolated-postgres-tests.ts')
+    expect(scripts['test:postgres:all-local']).toContain('--all')
+    const runner = readFileSync(resolve(root, 'scripts/run-isolated-postgres-tests.ts'), 'utf8')
+    for (const binding of new Set(DEFAULT_SUITE_PENDING_ALLOWANCES.map(entry => entry.binding))) {
+      expect(runner, `the local full-surface launcher must bind ${binding}`).toContain(binding)
+    }
+    // And the local denominator must actually contain the files: a binding with
+    // no file selected is as unverifiable as no binding at all.
+    for (const entry of DEFAULT_SUITE_PENDING_ALLOWANCES) {
+      expect(ALL_POSTGRES_TEST_FILES, `${entry.file} must be selected by --all`).toContain(entry.file)
     }
   })
 

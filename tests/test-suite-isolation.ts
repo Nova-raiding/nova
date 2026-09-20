@@ -82,7 +82,11 @@ export const CI_POSTGRES_ACCEPTANCE_STEP = 'Run PostgreSQL migration acceptance 
  * The repository's own CI step states the intent explicitly: "The local safe
  * launcher intentionally runs only its audited disposable subset; CI's
  * dedicated PostgreSQL service is the authoritative full-surface execution
- * environment."
+ * environment." `npm run test:postgres:all-local` now creates the same owned
+ * fixture locally and binds every variable this manifest names, so "only CI
+ * provides the binding" is no longer a reason a file cannot be executed on a
+ * developer machine. CI remains the environment that runs it on every push.
+ * See docs/runbooks/local-postgres-acceptance.md.
  *
  * Files that should NOT appear here:
  *   - anything in NON_HERMETIC_TEST_FILES (excluded from the default suite),

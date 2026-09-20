@@ -28,6 +28,23 @@ export interface IsolatedFixtureDisposal {
   stopped: string[]
   leftRunning: { id: string; reason: string }[]
 }
+/**
+ * Empty databases inside the fixture's own container, for the acceptance files
+ * that assert *intermediate* migration states.
+ *
+ * `migration-049`, `migration-051` and `migration-053` apply the chain from the
+ * beginning and assert part-way through it. Pointed at the fixture's fully
+ * migrated `merchant` database, `MigrationRunner` correctly refuses with
+ * "migration N is not present in this release" — which is why those three files
+ * could only ever run in CI, where the bound database starts empty. Giving them
+ * an empty database inside the owned container keeps them executable locally
+ * without weakening anything: the database dies with the container.
+ */
+export const ISOLATED_ACCEPTANCE_DATABASES = {
+  legacyBackfill: 'legacy_backfill_test',
+  workspaceCatalog: 'workspace_catalog_test',
+} as const
+
 export interface IsolatedOpsFixture {
   runId: string
   databaseUrl: string
@@ -35,6 +52,13 @@ export interface IsolatedOpsFixture {
   adminDatabaseUrl: string
   opsDatabaseUrl: string
   redisUrl: string
+  /**
+   * Empty databases for the intermediate-migration acceptance files. Optional
+   * so test doubles that model the fixture do not have to fabricate database
+   * URLs; a consumer that finds them missing is pointed at the migrated
+   * database and fails loudly with a migration-integrity error.
+   */
+  acceptanceDatabaseUrls?: Record<keyof typeof ISOLATED_ACCEPTANCE_DATABASES, string>
   workspaceId: string
   subjectIdentityId: string
   workspaceActorSubject: string
@@ -185,6 +209,9 @@ export async function createIsolatedOpsFixture({ evidenceDir }: { evidenceDir: s
     assertIsolatedMigrationChain(migrations, expectedMigrationVersion)
     const applied = await new MigrationRunner(admin, migrations).run()
     if (applied.length !== expectedMigrationVersion || (await new MigrationRunner(admin, migrations).run()).length !== 0) throw new Error('ISOLATED_FIXTURE_MIGRATION_APPLY_MISMATCH')
+    // Empty databases for the intermediate-migration acceptance files. Created
+    // only inside this owned container, from this fixture's admin connection.
+    for (const name of Object.values(ISOLATED_ACCEPTANCE_DATABASES)) await admin.query(`CREATE DATABASE "${name}"`)
     await admin.query(roleSql)
     const appPassword = randomBytes(32).toString('hex')
     const opsPassword = randomBytes(32).toString('hex')
@@ -243,10 +270,14 @@ export async function createIsolatedOpsFixture({ evidenceDir }: { evidenceDir: s
       } finally { await client.query('ROLLBACK'); client.release() }
     } finally { await app.end() }
     const redisUrl = new URL(`redis://127.0.0.1:${redis.hostPort}/0`); redisUrl.password = redisPassword
-    await writeFile(join(output, `fixture-ready-${runId}.json`), JSON.stringify({ runId, containers: evidence, serverVersion, migrationVersions: applied, workspaceId, actorIdentityId, subjectIdentityId, approverIdentityId, approverId, issuer, actorSubject, actorRoles: roles.map(role => role.role), runtimeRoles: roleFlags, commercialModelCalls: 0, fixtureOnly: true }, null, 2), { mode: 0o600, flag: 'wx' })
+    const acceptanceDatabaseUrls = Object.fromEntries(Object.entries(ISOLATED_ACCEPTANCE_DATABASES).map(([key, name]) => {
+      const url = new URL(adminUrl); url.pathname = `/${name}`
+      return [key, url.toString()]
+    })) as IsolatedOpsFixture['acceptanceDatabaseUrls']
+    await writeFile(join(output, `fixture-ready-${runId}.json`), JSON.stringify({ runId, containers: evidence, serverVersion, migrationVersions: applied, workspaceId, actorIdentityId, subjectIdentityId, approverIdentityId, approverId, issuer, actorSubject, actorRoles: roles.map(role => role.role), runtimeRoles: roleFlags, acceptanceDatabases: Object.values(ISOLATED_ACCEPTANCE_DATABASES), commercialModelCalls: 0, fixtureOnly: true }, null, 2), { mode: 0o600, flag: 'wx' })
     await ops.end(); ops = undefined
     await admin.end(); admin = undefined
-    return { runId, databaseUrl: appUrl.toString(), adminDatabaseUrl: adminUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: redisUrl.toString(), workspaceId, subjectIdentityId, workspaceActorSubject: `ops-fixture-target-${runId}`, approverId, issuer, actorSubject, containerEvidence: evidence, dispose }
+    return { runId, databaseUrl: appUrl.toString(), adminDatabaseUrl: adminUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: redisUrl.toString(), acceptanceDatabaseUrls, workspaceId, subjectIdentityId, workspaceActorSubject: `ops-fixture-target-${runId}`, approverId, issuer, actorSubject, containerEvidence: evidence, dispose }
   } catch (error) {
     await ops?.end(); ops = undefined
     await admin?.end(); admin = undefined

@@ -62,13 +62,15 @@
     "test:watch": "node --import tsx scripts/run-safe-tests.ts watch",
     "test:runtime:isolated": "vitest run --config vitest.runtime.config.ts --no-file-parallelism",
     "test:postgres:isolated": "node --import tsx scripts/run-isolated-postgres-tests.ts",
+    "test:postgres:all-local": "node --import tsx scripts/run-isolated-postgres-tests.ts --all",
     "test:redis:isolated": "node --import tsx scripts/run-isolated-redis-tests.ts",
     "test:browser:ops:jit": "node --import tsx scripts/run-ops-oidc-e2e.ts",
     "typecheck": "tsc -b --pretty false && tsc -p apps/ops-console/tsconfig.json --pretty false && tsc -p demo/merchant-studio/tsconfig.json --pretty false",
     "build:ops-console": "npm run build --workspace merchant-ops-console",
     "build:merchant-studio": "npm run build --prefix demo/merchant-studio",
-    "check": "npm run typecheck && npm test && npm run test:ops-console && npm run audit:ops-surface && npm run release:metadata:validate && npm run build:ops-console && npm run build:merchant-studio",
-    "invariants:verify": "tsx scripts/invariant-mutation-gate.ts"
+    "check": "npm run typecheck && npm test && npm run test:ops-console && npm run audit:ops-surface && npm run release:metadata:validate && npm run build:ops-console && npm run build:merchant-studio && npm run invariants:check",
+    "invariants:verify": "tsx scripts/invariant-mutation-gate.ts",
+    "invariants:check": "tsx scripts/invariant-mutation-gate.ts --tolerate-missing-bindings"
   },
   "workspaces": [
     "apps/*",
