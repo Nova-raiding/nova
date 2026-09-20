@@ -84,6 +84,7 @@ export function PlatformOpsLoginPage({
                 id="ops-login-account"
                 size="large"
                 autoFocus
+                placeholder="例如 ops@example.com"
                 autoComplete="username"
               />
             </Form.Item>
@@ -94,6 +95,7 @@ export function PlatformOpsLoginPage({
             >
               <Input.Password
                 id="ops-login-password"
+                placeholder="请输入平台运营密码"
                 size="large"
                 autoComplete="current-password"
               />

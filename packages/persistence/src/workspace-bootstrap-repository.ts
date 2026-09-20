@@ -81,10 +81,48 @@ type BindingRow = { workspaceId: string; displayName: string }
 type StatusRow = { workspaceStatus: string; memberStatus: string; memberRole: string; identityId: string | null }
 
 export class PostgresWorkspaceBootstrapRepository implements WorkspaceBootstrapRepository {
-  constructor(private readonly pool: SqlPool) {}
+  /**
+   * `platform_identities` belongs to the isolated control-plane role: migration
+   * 186 and the role bootstrap (`infra/local/ensure-app-role.sql`) revoke it
+   * from `merchant_app`, so the tenant pool cannot read even its own identity
+   * row. The second pool is therefore required for the identity check, exactly
+   * like `PostgresMembersRepository`'s platform read, while every tenant-scoped
+   * statement below stays on `pool`.
+   */
+  constructor(private readonly pool: SqlPool, private readonly platformPool?: SqlPool) {}
+
+  /**
+   * Verifies the observed identity against `platform_identities` on the
+   * control-plane pool. The read carries its own issuer/subject scope because
+   * that is the branch of `platform_identities_scope` (migration 091) that holds
+   * for both deployment shapes: the isolated `merchant_ops` role and the
+   * single-role fallback where `platformPool` is the tenant pool. It runs before
+   * the tenant transaction so no connection is held while another is acquired.
+   */
+  private async assertIdentity(input: WorkspaceBootstrapInput, identityId: string): Promise<void> {
+    const client = await this.identityPool.connect()
+    let committed = false
+    try {
+      await client.query('BEGIN')
+      await client.query(`SELECT set_config('app.identity_issuer', $1, true)`, [input.issuer])
+      await client.query(`SELECT set_config('app.identity_subject', $1, true)`, [input.externalSubject])
+      const identity = await client.query<{ id: string }>(`SELECT id FROM platform_identities WHERE id=$1 AND issuer=$2 AND external_subject=$3`, [identityId, input.issuer, input.externalSubject])
+      if (!identity.rows[0]) throw new WorkspaceBootstrapError('WORKSPACE_BOOTSTRAP_IDENTITY_MISMATCH')
+      await client.query('COMMIT')
+      committed = true
+    } catch (error) {
+      if (!committed) try { await client.query('ROLLBACK') } catch { /* preserve the original error */ }
+      throw error
+    } finally { client.release?.() }
+  }
+
+  private get identityPool(): SqlPool {
+    return this.platformPool ?? this.pool
+  }
 
   async bootstrap(raw: WorkspaceBootstrapInput): Promise<WorkspaceBootstrapResult> {
     const input = normalized(raw)
+    if (input.identityId) await this.assertIdentity(input, input.identityId)
     const client = await this.pool.connect()
     let committed = false
     try {
@@ -95,12 +133,6 @@ export class PostgresWorkspaceBootstrapRepository implements WorkspaceBootstrapR
       // key remains the final integrity boundary; the lock avoids loser-created
       // workspace rows and makes the canonical result available in one pass.
       await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [JSON.stringify(['workspace-bootstrap', input.issuer, input.externalSubject])])
-
-      if (input.identityId) {
-        await client.query(`SELECT set_config('app.identity_id', $1, true)`, [input.identityId])
-        const identity = await client.query<{ id: string }>(`SELECT id FROM platform_identities WHERE id=$1 AND issuer=$2 AND external_subject=$3`, [input.identityId, input.issuer, input.externalSubject])
-        if (!identity.rows[0]) throw new WorkspaceBootstrapError('WORKSPACE_BOOTSTRAP_IDENTITY_MISMATCH')
-      }
 
       const existing = await client.query<BindingRow>(`SELECT workspace_id AS "workspaceId", display_name AS "displayName" FROM workspace_identity_bindings WHERE issuer=$1 AND external_subject=$2 FOR UPDATE`, [input.issuer, input.externalSubject])
       if (existing.rows[0]) {

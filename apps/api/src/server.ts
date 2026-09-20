@@ -3714,7 +3714,12 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const passwordAuth = new PostgresPasswordAuthRepository(opsSqlPool)
     passwordAuthRepository = passwordAuth
     const authorization = new PostgresAuthorizationRepository(opsSqlPool)
-    const workspaceBootstrap = new PostgresWorkspaceBootstrapRepository(sqlPool)
+    // Bootstrap validates the observed identity against `platform_identities`,
+    // which migrations 091/186 and `infra/local/ensure-app-role.sql` keep on the
+    // isolated control-plane role. Constructing it with the tenant pool alone
+    // made every strict-role deployment fail the first request of a new session
+    // with `permission denied for table platform_identities`.
+    const workspaceBootstrap = new PostgresWorkspaceBootstrapRepository(sqlPool, opsSqlPool)
     const workspaceContentSetup = new PostgresWorkspaceContentSetupRepository(sqlPool)
     const paymentCallbackNonces = new PostgresPaymentCallbackNonceRepository(sqlPool)
     const support = new PostgresSupportRepository(sqlPool)

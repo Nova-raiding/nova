@@ -91,7 +91,19 @@ export function readCapacityWorkloadConfig(env: Record<string, string | undefine
   const mode = (env.CAPACITY_WORKLOAD_MODE ?? 'compose') as CapacityWorkloadMode
   if (mode !== 'compose' && mode !== 'real_cloud') throw new Error('CAPACITY_WORKLOAD_MODE must be compose or real_cloud')
   const target = env.CAPACITY_WORKLOAD_URL?.trim()
-  if (!target) throw new Error('CAPACITY_WORKLOAD_URL is required')
+  if (!target) {
+    // The bare `npm run` form cannot work by design: this runner executes a
+    // long workload against a live API and must never invent a target. The
+    // npm script passes no arguments, so the failure has to name the command
+    // an operator actually needs — a bare "CAPACITY_WORKLOAD_URL is required"
+    // left them with no next step.
+    throw new Error([
+      'CAPACITY_WORKLOAD_URL is required',
+      'Usage: CAPACITY_WORKLOAD_URL=http://127.0.0.1:8787 npm run test:capacity-workload',
+      'Every knob is an environment variable (CAPACITY_WORKLOAD_PROFILE, CAPACITY_WORKLOAD_MODE, CAPACITY_WORKLOAD_SUSTAINED_MINUTES, ...); this command takes no CLI arguments.',
+      'The target API must already have ws_capacity_0..ws_capacity_<workspaces-1> workspaces, each bound to a Taobao account, and compose mode also requires every service in LOCAL_CAPACITY_REQUIRED_SERVICES to be running and healthy.',
+    ].join('\n'))
+  }
   const parsed = new URL(target)
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('CAPACITY_WORKLOAD_URL must use HTTP(S)')
   if (mode === 'real_cloud') {

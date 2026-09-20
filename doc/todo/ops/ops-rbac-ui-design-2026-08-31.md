@@ -383,7 +383,7 @@ type AccessDecision = {
 
 | 设计项 | 当前代码证据 | 判定 |
 | --- | --- | --- |
-| `RoleScopeBar` / 工作台切换 | `components/authz/RoleScopeBar.tsx`（**未挂载**）；工作台切换判定在 `OpsConsoleController.tsx` 的 `canActivateOpsWorkbench` / `domainNavigationBlockedReason` | **部分撤回，非「已落地」**：`RoleScopeBar` 由提交 `234c426c` 有意摘除（现仅被测试引用），`OpsWorkbenchSwitcher.tsx` 已删除（无挂载点、props 被忽略、且会在深链 bootstrap 成 workspace 工作台时错误显示「平台控制台」）。平台工作台不再切换身份面，改由 `canActivateOpsWorkbench` 在实际执行点断言，并对不可达域给出可见提示。**若产品要恢复工作台切换或受控会话的可撤销面，需先改这条契约再实现。** |
+| `RoleScopeBar` / 工作台切换 | `components/authz/RoleScopeBar.tsx`（**已挂载**于 `OpsHeader.tsx` 的 `ops-header-identity`）；工作台切换判定在 `OpsConsoleController.tsx` 的 `canActivateOpsWorkbench` / `domainNavigationBlockedReason` | **身份/范围面已落地，工作台切换仍为撤回态**：`RoleScopeBar` 曾被提交 `234c426c` 摘除而只剩测试引用，导致运营台登录后不再渲染服务端验证状态（`ops-auth.js` 的平台登录门禁因此长期必红）。现已按本表原注记「先改契约再实现」重新挂载，只负责身份、已验证角色、资源范围、policy version 与授权验证状态；受控（JIT）会话面仍由 `ControlledSessionBar` 独占，`onJitExpired`/`onJitExit` 不再交给 `RoleScopeBar`，以保留单一到期触发点。`OpsWorkbenchSwitcher.tsx` 保持删除（无挂载点、props 被忽略、且会在深链 bootstrap 成 workspace 工作台时错误显示「平台控制台」）；平台工作台不切换身份面，改由 `canActivateOpsWorkbench` 在实际执行点断言，并对不可达域给出可见提示。**工作台切换（含受控会话的可撤销面）仍未恢复，需先改这条契约再实现。** |
 | 连接诊断抽屉/折叠区 | `OpsHeader.tsx` 的连接状态摘要与可展开诊断字段 | 本地已落地 |
 | 权限边界与 403 | `AccessDeniedResult.tsx`；controller 深链拒绝显示 capability、scope、request ID | 本地已落地 |
 | 能力驱动导航与 deny-all | `authorization.ts` 消费服务端 projection；托管会话缺 projection 时不从 raw role 扩权 | 本地已落地 |

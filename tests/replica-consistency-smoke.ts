@@ -60,7 +60,14 @@ async function main() {
   // product. Task creation is tested against an explicitly provisioned,
   // authorized canonical chain so this check measures replica persistence,
   // rather than manufacturing a business relationship in the smoke test.
+  const taskTargetHint = [
+    `replica persistence is not the failure: task creation needs a pre-provisioned target in workspace ${workspaceId}`,
+    `REPLICA_TASK_PRODUCT_ID=${taskProductId}, REPLICA_TASK_ACCOUNT_ID=${taskAccountId}, REPLICA_TASK_BRAND_ID=${taskBrandId}, REPLICA_TASK_CANONICAL_PRODUCT_ID=${taskCanonicalProductId}, REPLICA_TASK_LISTING_ID=${taskListingId}`,
+    'A missing product makes the API fall back to REPLICA_TASK_ACCOUNT_ID and answer PLATFORM_ACCOUNT_NOT_FOUND, which reads like a workspace defect.',
+    'infra/local/seed-demo.sql alone is not enough: it seeds the account, brand and product for a fresh local stack, but not this canonical product or listing. Point REPLICA_A_URL/REPLICA_B_URL at a stack that holds the whole chain, or override the ids above.',
+  ].join('\n')
   const task = await request<{ id: string; productId: string }>(aUrl, '/v1/tasks', { method: 'POST', body: JSON.stringify({ product_id: taskProductId, platform: 'taobao', account_id: taskAccountId, brand_id: taskBrandId, canonical_product_id: taskCanonicalProductId, listing_id: taskListingId }) })
+    .catch(error => fail(`${error instanceof Error ? error.message : String(error)}\n${taskTargetHint}`))
   const taskOnB = await request<{ id: string; productId: string }>(bUrl, `/v1/tasks/${encodeURIComponent(task.id)}`)
   if (taskOnB.id !== task.id || taskOnB.productId !== taskProductId) fail('replica B did not observe the task written by replica A')
   console.log(JSON.stringify({ status: 'PASS', workspaceId, importedProductId: product.id, taskProductId: taskOnB.productId, taskId: task.id, writer: aUrl, reader: bUrl }, null, 2))

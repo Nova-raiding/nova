@@ -6,6 +6,7 @@ import type { OperationalAlert, OpsDataSource, OpsSession, OpsWorkbench } from "
 import type { AuthorizationProjection } from "../authz/authorization.js";
 import { accountLabel } from "../authz/accountLabel.js";
 import { ControlledSessionBar } from "./authz/ControlledSessionBar.js";
+import { RoleScopeBar } from "./authz/RoleScopeBar.js";
 
 interface OpsHeaderProps {
   managedSession: boolean;
@@ -139,6 +140,26 @@ export function OpsHeader({
   return (
     <Layout.Header className="ops-header">
       <div className="ops-header-identity">
+        {/* The operator's own authorization state: the server-projected roles,
+            the exact resource scope and the policy version the projection was
+            built from, and whether the server has actually verified it. Without
+            a projection the bar says so instead of implying access it cannot
+            prove. It is not optional furniture — the login gate waits for this
+            region before it will treat the console as authenticated.
+            Responsibility is split with `ControlledSessionBar` below: this bar
+            owns identity/roles/scope/policy/verification, that one owns the
+            controlled (JIT) session. The JIT callbacks stay on that bar so the
+            expiry cleanup keeps exactly one trigger. */}
+        {authorization ? (
+          <RoleScopeBar
+            session={session}
+            authorization={authorization}
+            activeWorkbench={activeWorkbench}
+            alerts={alerts}
+            notifications={notifications}
+            onAcknowledgeAlert={onAcknowledgeAlert}
+          />
+        ) : null}
         {/* Renders nothing unless the server projection carries a live
             temporary grant. It lives here because it is the only trigger for
             the expiry cleanup the controller wires into onJitExpired. */}
