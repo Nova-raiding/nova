@@ -183,8 +183,11 @@ for scanner_pod in $scanner_pods; do
     const config = readWorkerConfig(process.env)
     if (config.role !== "scan") throw new Error("scanner rollback acceptance ran with the wrong worker role")
     for (const name of ["ASSET_SCANNER_API_TOKEN", "ASSET_SCANNER_WORKSPACE_SIGNING_SECRET", "ASSET_SCAN_RECEIPT_KEY_ID", "ASSET_SCAN_POLICY_VERSION", "CLAMAV_HOST"]) if (!process.env[name]?.trim()) throw new Error(`rollback scanner configuration missing: ${name}`)
-    const heartbeat = JSON.parse(await readFile(process.env.WORKER_READY_FILE, "utf8"))
-    if (!heartbeat.ready || heartbeat.schemaVersion !== "scanner-heartbeat/1.0" || heartbeat.instanceId !== process.env.HOSTNAME || Date.parse(heartbeat.expiresAt) <= Date.now()) throw new Error("rollback scanner heartbeat is missing, stale, or not bound to this pod")
+    // Same wrapper shape as the deploy-side check: `state` and `heartbeat` are
+    // top-level, the scanner evidence is nested. See deploy-verified-manifest.sh.
+    const document = JSON.parse(await readFile(process.env.WORKER_READY_FILE, "utf8"))
+    const heartbeat = document.heartbeat ?? {}
+    if (document.state !== "ready" || heartbeat.schemaVersion !== "scanner-heartbeat/1.0" || heartbeat.instanceId !== process.env.HOSTNAME || Date.parse(heartbeat.expiresAt) <= Date.now()) throw new Error("rollback scanner heartbeat is missing, stale, or not bound to this pod")
     if (!heartbeat.checks?.databaseReady || !heartbeat.checks?.redisReady || !heartbeat.checks?.apiReady || !heartbeat.clamav?.reachable || !heartbeat.clamav?.definitionsVersion || !heartbeat.eicar?.passed || heartbeat.eicar?.signature !== "Eicar-Test-Signature" || !heartbeat.callback?.configured || !heartbeat.callback?.capable || !heartbeat.callback?.lastAcceptedAt) throw new Error("rollback scanner ClamAV, EICAR, configuration, or callback evidence is incomplete")
   ' >/dev/null
 done

@@ -42,6 +42,10 @@ const dynamicKeyFamilies: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
     reason: 'packages/connectors/src/config.ts reads `${prefix}_{SYNC,CREATE,UPDATE,QUERY}_PATH` for every entry of `platformPrefixes` (the production branch even fails closed on a missing one), so these never appear as literals.',
   },
   {
+    pattern: /^(?:JD|TAOBAO|TMALL|PDD|XHS|DOUYIN)_(?:SYNC|CREATE|UPDATE|QUERY|MEDIA)_METHOD$/,
+    reason: 'packages/connectors/src/config.ts `apiMethodsFromSource(source, prefix)` reads `${prefix}_${selector.toUpperCase()}_METHOD` by construction, once per selector in `PLATFORM_API_SELECTORS` and once per entry of `platformPrefixes`. These are the router-gateway API selectors (`method` for TOP/JD, `type` for Pinduoduo) that the signers resolve per operation; they replaced scraping `?method=` off the request URL, which readiness forbids.',
+  },
+  {
     pattern: /^(?:JD|TAOBAO|TMALL|PDD|XHS|DOUYIN)_(?:AUTH|READ|WRITE)_ENABLED$/,
     reason: 'packages/connectors/src/config.ts builds `${prefix}_{AUTH,READ,WRITE}_ENABLED` for every entry of `platformPrefixes` (prefix = that table) in two places: `managedSwitchPrefixFor` reads `${managedSwitchPrefix}_AUTH_ENABLED` and `${switchPrefix}_{READ,WRITE}_ENABLED` for JD/TMALL-shared-TAOBAO/DOUYIN, and `unwiredPlatformSwitches` rejects the same keys for JD/TAOBAO/DOUYIN and for the prefixes no switch reads (TMALL, PDD, XHS) when they are explicitly `true`. So all six prefixes are read by construction; none of them can appear as a literal.',
   },

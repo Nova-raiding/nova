@@ -48,6 +48,29 @@ platform_acl_exposure=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
     WHERE has_table_privilege(current_user, 'public.' || name, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')")
 [ -z "$platform_acl_exposure" ] || { echo "tenant runtime role can access platform control-plane tables: $platform_acl_exposure" >&2; exit 1; }
 
+# Shared platform rules are read by the tenant role on purpose (migration 219
+# grants SELECT), but they are maintained by the operations role. Check DML
+# only, and check it against the whole class of workspace-free tables rather
+# than a hand-picked list: the blanket bootstrap grant is `GRANT ... ON ALL
+# TABLES`, so a newly added global table is widened by default and an explicit
+# list would have to be remembered every time. `workspaces` is the one table a
+# tenant legitimately writes without a workspace scope (its own bootstrap row);
+# every other exception has to be added here deliberately.
+global_table_write_exposure=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+  "SELECT coalesce(string_agg(c.relname, ',' ORDER BY c.relname), '')
+     FROM pg_class c
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.relkind IN ('r','p')
+      AND n.nspname = 'public'
+      AND c.relname <> ALL(ARRAY['workspaces'])
+      AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns col
+         WHERE col.table_schema = 'public'
+           AND col.table_name = c.relname
+           AND col.column_name = 'workspace_id')
+      AND has_table_privilege(current_user, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE')")
+[ -z "$global_table_write_exposure" ] || { echo "tenant runtime role can mutate workspace-free tables: $global_table_write_exposure" >&2; exit 1; }
+
 alert_receipt_runtime_exposure=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
   "SELECT CASE WHEN to_regclass('public.alert_webhook_receipts') IS NOT NULL
                     AND has_table_privilege(current_user, 'public.alert_webhook_receipts', 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')

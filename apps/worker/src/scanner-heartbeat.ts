@@ -17,6 +17,21 @@ export interface ScannerHeartbeatControllerOptions {
   queueProbe: () => Promise<{ backlog: number; deadLetter: number }>
   now?: () => Date
   onHeartbeat?: (heartbeat: ScannerHeartbeat) => void
+  /**
+   * Serializes the readiness document written to `readyFile`. The ready file is
+   * a deployment contract, not an internal detail: the Kubernetes scan
+   * readiness probe (`workers.yaml`, `h.state !== 'ready' || !h.heartbeat`) and
+   * the compose `worker-scan` healthcheck both parse the **wrapper** and read
+   * the bare scan evidence under `heartbeat`. Writing the bare heartbeat here
+   * left both probes failing on a healthy pod, so the probe-compatible wrapper
+   * is the default and callers only extend it (for example with `role`).
+   */
+  formatReadyDocument?: (heartbeat: ScannerHeartbeat, now: Date) => Record<string, unknown>
+}
+
+/** The one document shape every probe of this file already parses. */
+function defaultReadyDocument(heartbeat: ScannerHeartbeat, now: Date): Record<string, unknown> {
+  return { readyAt: now.toISOString(), state: heartbeat.ready ? 'ready' : 'recovery', heartbeat }
 }
 
 export class ScannerHeartbeatController {
@@ -123,8 +138,17 @@ export class ScannerHeartbeatController {
       throw error
     }
     this.latestHeartbeat = heartbeat
-    if (heartbeat.ready) await writeFile(this.options.readyFile, JSON.stringify(heartbeat))
-    else await unlink(this.options.readyFile).catch(() => undefined)
+    // `recoveryCapable` - not `ready` - decides whether the marker exists: a
+    // scanner that cannot accept a new callback yet must still be able to
+    // recover, and `state` tells the probes which of the two it is. The marker
+    // is written here and nowhere else, so a probe can never observe a
+    // different shape from a second writer racing this one.
+    if (heartbeat.recoveryCapable) {
+      const document = (this.options.formatReadyDocument ?? defaultReadyDocument)(heartbeat, now)
+      await writeFile(this.options.readyFile, JSON.stringify(document))
+    } else {
+      await unlink(this.options.readyFile).catch(() => undefined)
+    }
     this.options.onHeartbeat?.(heartbeat)
     return heartbeat
   }

@@ -203,11 +203,19 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // only with an explicit async lifecycle status; task_id/job_id remain
   // bounded identifiers regardless of status. This covers both the legacy
   // `{data:{id,status}}` envelope and the newer `task_status` response.
-  const explicitVideoJobId = Boolean(videoEvidenceNode && ['task_id', 'job_id'].some(key => typeof videoEvidenceNode[key] === 'string' && videoEvidenceNode[key].trim()))
+  const explicitVideoJobIdValue = videoEvidenceNode
+    ? ['task_id', 'job_id'].map(key => evidenceIdentity(videoEvidenceNode[key])).find((value): value is string => Boolean(value))
+    : undefined
+  const explicitVideoJobId = Boolean(explicitVideoJobIdValue)
   const videoStatus = typeof videoEvidenceNode?.status === 'string' ? videoEvidenceNode.status : typeof videoEvidenceNode?.task_status === 'string' ? videoEvidenceNode.task_status : undefined
   const acceptedVideoStatuses = new Set(['queued', 'pending', 'created', 'submitted', 'processing', 'running', 'in_progress'])
-  const statusBoundVideoId = typeof videoEvidenceNode?.id === 'string' && videoEvidenceNode.id.trim().length > 0 && typeof videoStatus === 'string' && acceptedVideoStatuses.has(videoStatus.toLowerCase())
+  const statusBoundVideoIdValue = typeof videoStatus === 'string' && acceptedVideoStatuses.has(videoStatus.toLowerCase()) ? evidenceIdentity(videoEvidenceNode?.id) : undefined
+  const statusBoundVideoId = Boolean(statusBoundVideoIdValue)
   const videoRequestAccepted = defaults.modality === 'video' && Boolean(providerRequestId || defaults.context?.providerAttemptId) && (explicitVideoJobId || statusBoundVideoId)
+  // The durable provider job id of an accepted video request, whichever
+  // envelope carried it. Persisting it keeps a queued (and possibly billed)
+  // job reconcilable even when its usage cannot be settled locally.
+  const videoJobId = defaults.modality === 'video' && videoRequestAccepted ? explicitVideoJobIdValue ?? statusBoundVideoIdValue : undefined
   const usageObserved = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || providerDurationSeconds !== undefined || ((defaults.modality === 'image' || defaults.modality === 'image_edit') && outputImageCount !== undefined && outputImageCount > 0) || imageResultObserved
   const preauthorizationDurationSeconds = defaults.context?.preauthorizationDurationSeconds ?? defaults.context?.durationSeconds
   return {
@@ -228,6 +236,11 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
     metadata: {
       usage_observed: usageObserved,
       ...(videoRequestAccepted ? { video_request_accepted: true } : {}),
+      // Persist the relay's durable video job id. When settlement cannot be
+      // recorded the usage receipt is still the only durable record of the
+      // call, and without this id the queued (possibly billed) provider job
+      // has no reconcilable identity anywhere in the ledger.
+      ...(videoJobId ? { provider_job_id: videoJobId } : {}),
       ...(defaults.context?.billingUnits ? { billing_units: defaults.context.billingUnits } : {}),
       ...(defaults.context?.resolution ? { resolution: defaults.context.resolution } : {}),
       ...(providerDurationSeconds !== undefined ? { duration_seconds: providerDurationSeconds, duration_evidence: 'provider_usage' } : {}),

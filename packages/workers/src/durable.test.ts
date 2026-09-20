@@ -308,6 +308,31 @@ describe('durable outbox dispatcher', () => {
     expect(store.events.get('evt_1')?.publishedAt).toBeTruthy()
   })
 
+  it('re-evaluates dynamic claim routing on every restore so a narrowed worker recovers', async () => {
+    // A worker that owns several queues may have to withhold one of them while
+    // it cannot run (an unready local scanner, for example). `claim` is fixed
+    // when the dispatcher is built, so a static filter could only express the
+    // narrow case permanently; `claimFor` is consulted per restore.
+    const claims: Array<{ eventTypes?: readonly string[] }> = []
+    const store: DurableOutboxStore = {
+      claimPending: async (_workspaceId, options = {}) => { claims.push(options); return [] },
+      validateLease: async () => event(), renewLease: async () => event(), ack: async () => event(),
+      recordFailure: async () => event(), markUnknown: async () => event(),
+    }
+    let withheld = true
+    const dispatcher = new DurableOutboxDispatcher(store, new InMemoryQueue<DurableOutboxEvent>(), async () => ({ value: true }), {
+      claim: { eventTypes: ['publish.requested'] },
+      claimFor: () => withheld ? { eventTypes: ['state.snapshot'] } : undefined,
+    })
+    await dispatcher.restore('ws_1')
+    expect(claims.at(-1)?.eventTypes).toEqual(['state.snapshot'])
+    withheld = false
+    await dispatcher.restore('ws_1')
+    // Returning `undefined` falls back to the static claim rather than opening
+    // the filter to everything.
+    expect(claims.at(-1)?.eventTypes).toEqual(['publish.requested'])
+  })
+
   it('rejects a duplicate queue id whose durable payload intent changed', async () => {
     const queue = new InMemoryQueue<DurableOutboxEvent>()
     await queue.enqueue({ id: 'evt_same', value: event({ payload: { taskId: 'task_a' } }) })

@@ -2,25 +2,16 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
 
 const videoProvider = vi.hoisted(() => ({
-  generate: vi.fn(async () => ({ status: 'queued' as const, providerJobId: 'video-provider-must-not-run' })),
+  generate: vi.fn(async () => ({ status: 'queued' as const, providerJobId: 'video-provider-job-1' })),
   getStatus: vi.fn(),
 }))
 
-const pricingQuote = vi.hoisted(() => vi.fn(async () => ({
-  costCny: 544.265625,
-  metadata: {
-    pricing_version: 'video-cost-preflight-e2e',
-    pricing_group: 'VIP',
-  },
-})))
-
-vi.mock('../../../packages/ai/src/video-generator.js', () => ({
+// Only the provider adapter is replaced. The pricing client below is the real
+// one, so the preflight's pricing boundary is exercised end to end instead of
+// being satisfied by a stubbed quote.
+vi.mock('../../../packages/ai/src/video-generator.js', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../packages/ai/src/video-generator.js')>(),
   createVideoGeneratorFromEnv: () => videoProvider,
-  videoDurationSeconds: () => 5,
-}))
-
-vi.mock('../../../packages/ai/src/relay-pricing.js', () => ({
-  createRelayPricingClientFromEnv: () => ({ quote: pricingQuote }),
 }))
 
 type Envelope<T = unknown> = {
@@ -32,6 +23,28 @@ type ApiModule = typeof import('./server.js')
 
 let api: ApiModule
 let baseUrl = ''
+let pricingSnapshotRequests = 0
+
+const realFetch = globalThis.fetch
+const pricingSnapshot = {
+  pricing_version: 'video-cost-preflight-e2e-v1',
+  group_ratio: { VIP: 1 },
+  data: [{ model_name: 'agnes-video-v2.0', quota_type: 1, model_ratio: 37.5, model_price: 0, completion_ratio: 1, enable_groups: ['VIP'] }],
+}
+
+/** Serve the relay snapshot the real RelayPricingClient reads, and leave every
+ * other request (including the test's own MCP calls) on the real fetch. */
+const snapshotFetch: typeof fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+  if (url.startsWith('https://relay.example.test/api/pricing')) {
+    pricingSnapshotRequests += 1
+    return new Response(JSON.stringify(pricingSnapshot))
+  }
+  if (url.startsWith('https://relay.example.test/api/status')) {
+    return new Response(JSON.stringify({ data: { quota_per_unit: 500_000, usd_exchange_rate: 6.83, quota_display_type: 'CNY' } }))
+  }
+  return realFetch(input, init)
+}
 
 async function startServer() {
   await new Promise<void>((resolve, reject) => {
@@ -78,14 +91,23 @@ beforeAll(async () => {
   vi.stubEnv('SESSION_ID_HASH_SECRET', 'video-cost-preflight-session-secret')
   vi.stubEnv('MODEL_RELAY_BASE_URL', 'https://relay.example.test')
   vi.stubEnv('MODEL_RELAY_ALLOWED_HOSTS', 'relay.example.test')
+  vi.stubEnv('MODEL_RELAY_PRICING_DERIVATION_ENABLED', 'true')
+  vi.stubEnv('MODEL_RELAY_API_KEY', 'video-cost-preflight-relay-key')
+  vi.stubEnv('MODEL_RELAY_PRICING_GROUP', 'VIP')
+  // The relay publishes CNY-per-second billing for this model; the preflight
+  // estimate is therefore exactly 2 CNY per requested second.
+  vi.stubEnv('MODEL_RELAY_VIDEO_PRICING_OVERRIDES', JSON.stringify({ 'agnes-video-v2.0': 2 }))
   vi.stubEnv('VIDEO_MODEL_RELAY_API_KEY', 'video-cost-preflight-key')
   vi.stubEnv('VIDEO_MODEL', 'agnes-video-v2.0')
-  vi.stubEnv('VIDEO_DURATION_SECONDS', '5')
+  vi.stubEnv('VIDEO_DURATION_SECONDS', '3')
   vi.stubEnv('MODEL_RPM_LIMIT', '100')
   vi.stubEnv('MODEL_TPM_LIMIT', '100000')
   vi.stubEnv('MODEL_DAILY_CNY_LIMIT', '1000')
   vi.stubEnv('MODEL_MAX_TASK_COST_CNY', '10')
+  vi.stubEnv('MODEL_VIDEO_MAX_REQUEST_CNY', '10')
+  vi.stubEnv('MODEL_COST_ESTIMATE_VERSION', 'video-cost-preflight-e2e-v1')
   vi.stubEnv('MODEL_RELAY_VIDEO_COST_EVIDENCE', 'true')
+  vi.stubGlobal('fetch', snapshotFetch)
   api = await import('./server.js')
   baseUrl = await startServer()
 })
@@ -93,6 +115,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (api?.server.listening) await new Promise<void>(resolve => api.server.close(() => resolve()))
   api?.setRuleRepositoryForTests(undefined)
+  vi.unstubAllGlobals()
   vi.unstubAllEnvs()
 })
 
@@ -137,20 +160,26 @@ describe('video cost preflight over the real HTTP boundary', () => {
     const before = resultOf<any>(await callMcp<any>(token, workspaceId, 'billing.status', {}))
 
     vi.stubEnv('NODE_ENV', 'production')
-    const requestParams = {
-      prompt: '根据已确认商品事实生成五秒通勤场景视频',
-      output: 'rendering',
-      idempotency_key: `video-cost-render-${suffix}`,
-      context_json: JSON.stringify({
-        brand: { id: 'brand-video-cost', version: '1' },
-        product: { id: product.id, version: String(product.version) },
-        rules: [{ id: 'rule-video-cost', version: '1' }],
-      }),
+    const contextJson = JSON.stringify({
+      brand: { id: 'brand-video-cost', version: '1' },
+      product: { id: product.id, version: String(product.version) },
+      rules: [{ id: 'rule-video-cost', version: '1' }],
+    })
+    const requestParams = (durationSeconds: string, idempotencyKey: string) => {
+      return {
+        prompt: '根据已确认商品事实生成通勤场景视频',
+        output: 'rendering',
+        idempotency_key: idempotencyKey,
+        context_json: contextJson,
+      }
     }
 
-    const missingIdempotency = await callMcp(token, workspaceId, 'multimodal.video.request', { ...requestParams, idempotency_key: undefined })
-    const first = await callMcp(token, workspaceId, 'multimodal.video.request', requestParams)
-    const retry = await callMcp(token, workspaceId, 'multimodal.video.request', requestParams)
+    const missingIdempotency = await callMcp(token, workspaceId, 'multimodal.video.request', { ...requestParams('3', `video-cost-render-missing-${suffix}`), idempotency_key: undefined })
+    // 15 requested seconds at the relay's published 2 CNY/second is 30 CNY,
+    // above the 10 CNY per-task ceiling: the preflight must refuse it.
+    vi.stubEnv('VIDEO_DURATION_SECONDS', '15')
+    const first = await callMcp(token, workspaceId, 'multimodal.video.request', requestParams('15', `video-cost-render-over-${suffix}`))
+    const retry = await callMcp(token, workspaceId, 'multimodal.video.request', requestParams('15', `video-cost-render-over-${suffix}`))
     const after = resultOf<any>(await callMcp<any>(token, workspaceId, 'billing.status', {}))
 
     expect(missingIdempotency.status).toBe(400)
@@ -158,14 +187,24 @@ describe('video cost preflight over the real HTTP boundary', () => {
     expect(first.status).toBe(422)
     expect(first.body.error).toMatchObject({
       code: 'MODEL_TASK_COST_LIMIT_EXCEEDED',
-      details: { estimated_cost_cny: 544.265625, maximum_task_cost_cny: 10 },
+      details: { estimated_cost_cny: 30, maximum_task_cost_cny: 10 },
     })
     expect(retry.status).toBe(first.status)
     expect(retry.body.error).toEqual(first.body.error)
-    expect(pricingQuote).toHaveBeenCalledTimes(2)
     expect(videoProvider.generate).not.toHaveBeenCalled()
     expect(after.balance_cny).toBe(before.balance_cny)
     expect(after.action_entitlement).toEqual(before.action_entitlement)
+    // The three-second request stays inside the same ceiling, so the very same
+    // real pricing snapshot must release it to the provider. Before the fix
+    // every request failed here with MODEL_VIDEO_COST_PREFLIGHT_FAILED.
+    vi.stubEnv('VIDEO_DURATION_SECONDS', '3')
+    const allowed = await callMcp<any>(token, workspaceId, 'multimodal.video.request', requestParams('3', `video-cost-render-under-${suffix}`))
+    expect(allowed.status).toBe(200)
+    expect(allowed.body.error).toBeNull()
+    expect(allowed.body.data?.result).toMatchObject({ rendering: { status: 'queued', providerJobId: 'video-provider-job-1' } })
+    expect(videoProvider.generate).toHaveBeenCalledTimes(1)
+    // Live pricing, not a stub: the snapshot was really fetched and cached.
+    expect(pricingSnapshotRequests).toBe(1)
   })
 })
 

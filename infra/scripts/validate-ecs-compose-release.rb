@@ -22,6 +22,7 @@ required = {
   'merchant-ui' => %w[ui],
   'merchant-ops-ui' => %w[ops-ui],
   'payment-gateway' => %w[payment-gateway],
+  'pilot-gateway' => %w[pilot-gateway],
   'clamav' => %w[clamav]
 }
 services = document.is_a?(Hash) && document['services'].is_a?(Hash) ? document['services'] : {}

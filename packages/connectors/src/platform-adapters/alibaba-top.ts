@@ -1,35 +1,49 @@
 import { createHash, createHmac } from 'node:crypto'
-import type { PlatformWriteDraft, RawProduct, RequestSigner, WriteIdentity, WriteReceipt, WriteStatus } from '../types.js'
+import type { PlatformApiMethods, PlatformWriteDraft, RawProduct, RequestSigner, WriteIdentity, WriteReceipt, WriteStatus } from '../types.js'
 import { mapPlatformRejection, platformEnvelope, providerRequestId } from './rejection.js'
+import { PLATFORM_API_SELECTORS, resolveApiSelector } from './api-selector.js'
+import { applySignedRequest } from './signed-request.js'
 
 export interface AlibabaTopSignerOptions {
   appKey: string
   appSecret: string
   now?: () => Date
   signMethod?: 'hmac-sha256' | 'hmac' | 'md5'
+  /**
+   * Explicit TOP API selector (`method`) per connector operation, for example
+   * `{ sync: 'taobao.item.seller.get', create: 'taobao.item.add' }`. TOP selects
+   * the API with this form parameter, so it cannot come from the URL path; the
+   * connector supplies it from `api.methods`.
+   */
+  methods?: PlatformApiMethods
 }
 
 /**
- * Alibaba TOP signer for Taobao/Tmall HTTP calls. The endpoint path must carry
- * the TOP `method` query parameter (for example
- * `?method=taobao.item.seller.get`). The access token is held in memory and
- * emitted as TOP's `session` form parameter for this request only.
+ * Alibaba TOP signer for Taobao/Tmall HTTP calls. The `method` parameter is
+ * connector configuration keyed by the connector operation
+ * (`HttpConnectorConfig.api.methods`) — it is never read from the request URL,
+ * which can only ever be a relative API path without a query string. The access
+ * token is held in memory and emitted as TOP's `session` form parameter for
+ * this request only.
  */
 export function createAlibabaTopSigner(options: AlibabaTopSignerOptions): RequestSigner {
   if (!options.appKey.trim() || !options.appSecret.trim()) throw new Error('TOP app key and app secret are required')
   return {
     kind: 'platform',
+    requiredApiSelectors: PLATFORM_API_SELECTORS,
     sign(request) {
       const url = new URL(request.url)
       const params: Record<string, string> = {}
       for (const [key, value] of url.searchParams.entries()) params[key] = value
-      if (!params.method) throw new Error('TOP request URL must include method')
       if (request.body) {
         try {
           const body = JSON.parse(request.body) as Record<string, unknown>
           for (const [key, value] of Object.entries(body)) if (value !== undefined && value !== null) params[key] = typeof value === 'string' ? value : JSON.stringify(value)
         } catch { /* non-JSON bodies are signed as-is by their caller */ }
       }
+      // Assigned last, so neither a query parameter nor a business field can
+      // redirect the call to another TOP API.
+      params.method = resolveApiSelector(request, options.methods, { signer: 'Alibaba TOP', parameter: 'method' })
       params.app_key = options.appKey
       params.timestamp = formatTopTimestamp((options.now ?? (() => new Date()))())
       params.v = params.v ?? '2.0'
@@ -39,10 +53,11 @@ export function createAlibabaTopSigner(options: AlibabaTopSignerOptions): Reques
       delete params.sign
       const canonical = Object.keys(params).sort().map(key => `${key}${params[key]}`).join('')
       params.sign = signTop(options.signMethod ?? 'hmac-sha256', options.appSecret, canonical)
-      url.search = ''
-      request.url = url.toString()
-      request.body = new URLSearchParams(params).toString()
-      request.headers['content-type'] = 'application/x-www-form-urlencoded;charset=UTF-8'
+      // GET APIs (`taobao.item.seller.get` and the other read methods) carry the
+      // signed parameters in the query: a form body on a GET is rejected by
+      // `fetch` before any network call, which made the whole read path
+      // undispatchable instead of failing at the provider.
+      applySignedRequest(request, url, params)
       return {}
     },
   }

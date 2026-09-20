@@ -20,6 +20,9 @@ async function closeBrowserWithDeadline(instance?: Browser) {
   if (timedOut) return;
 }
 
+/** Lets the mounted page flush any request it had already queued. */
+const settle = (page: Page) => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+
 describe("customer delivery workspace selection", () => {
   it("labels workspaces with enterprise identity and blocks disabled workspaces", () => {
     expect(customerDeliveryWorkspaceOptions([
@@ -35,10 +38,12 @@ describe("customer delivery workspace selection", () => {
     expect(pageSource).not.toContain('aria-label="客户交付目标企业工作区"');
     expect(pageSource).not.toContain("model.setAuthorizationTargetWorkspaceId");
     expect(pageSource).toContain('model.authorization.can("customer.delivery.update")');
-    expect(pageSource).toContain("disabled={!canRead || !targetWorkspaceId}");
-    expect(pageSource).toContain('model.authorizationTargetWorkspaceId === undefined');
     expect(pageSource).toContain('key={targetWorkspaceId || "unselected"}');
     expect(pageSource).toContain("setRecords([])");
+    // The platform-wide directory is never a tenant source for this page. The
+    // behaviour behind that - no read, no enabled write control, when the
+    // shared target is empty - is asserted in Chromium below, not here.
+    expect(pageSource).not.toContain("workspaceRows[0]?.workspaceId");
   });
 
   it("uploads the contract, omits delivery video, and resumes an interrupted draft", () => {
@@ -106,28 +111,42 @@ describe("customer delivery read-only desktop interaction", () => {
             import { createRoot } from 'react-dom/client';
             import { App } from 'antd';
             import { CustomerDeliveryPage } from '/src/pages/CustomerDeliveryPage.tsx';
+            import { UnsavedChangesProvider, useUnsavedChangesState } from '/src/components/authz/UnsavedChangesContext.tsx';
             sessionStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform' }));
+            function DirtyLabelProbe() {
+              const { labels } = useUnsavedChangesState();
+              return React.createElement('span', { 'data-testid': 'dirty-labels' }, labels.join('、'));
+            }
             function Harness() {
-              const [write, setWrite] = useState(new URLSearchParams(location.search).get('write') === 'true');
+              const query = new URLSearchParams(location.search);
+              const [write, setWrite] = useState(query.get('write') === 'true');
               const [read, setRead] = useState(true);
               const [mounted, setMounted] = useState(true);
-              const [workspace, setWorkspace] = useState('ws-readonly');
+              // Mirrors the model's real state: an empty string is the initial
+              // shared target, and only a picked workspace makes it non-empty.
+              const [workspace, setWorkspace] = useState(query.get('target') ?? 'ws-readonly');
               const model = {
                 authorization: { can: capability => capability === 'customer.delivery.update' ? write : capability === 'customer.delivery.read' ? read : capability === 'workspace.directory.read' },
                 authorizationTargetWorkspaceId: workspace,
                 setAuthorizationTargetWorkspaceId: setWorkspace,
                 loadWorkspaceDirectory: async () => {},
                 workspaceDirectoryLoading: false,
-                workspaceRows: [{ workspaceId: 'ws-readonly', enterpriseName: '只读客户', status: 'active' }],
+                // The platform-wide workspace directory. Entry [0] is only the
+                // first tenant in that directory; it is deliberately NOT the
+                // workspace this operator selects, so a fallback to it is
+                // observable.
+                workspaceRows: [{ workspaceId: 'ws-directory-first', enterpriseName: '目录首家企业', status: 'active' }],
               };
-              return React.createElement(App, null,
-                React.createElement('button', { onClick: () => setWrite(false) }, '撤销测试写权限'),
-                React.createElement('button', { onClick: () => setRead(false) }, '撤销测试读权限'),
-                React.createElement('button', { onClick: () => setWorkspace('') }, '清除测试工作区'),
-                React.createElement('button', { onClick: () => setWorkspace('ws-other') }, '切换测试工作区'),
-                React.createElement('button', { onClick: () => setWorkspace('ws-readonly') }, '返回测试工作区'),
-                React.createElement('button', { onClick: () => setMounted(false) }, '卸载测试页面'),
-                mounted ? React.createElement(CustomerDeliveryPage, { model }) : null);
+              return React.createElement(UnsavedChangesProvider, null,
+                React.createElement(App, null,
+                  React.createElement(DirtyLabelProbe, null),
+                  React.createElement('button', { onClick: () => setWrite(false) }, '撤销测试写权限'),
+                  React.createElement('button', { onClick: () => setRead(false) }, '撤销测试读权限'),
+                  React.createElement('button', { onClick: () => setWorkspace('') }, '清除测试工作区'),
+                  React.createElement('button', { onClick: () => setWorkspace('ws-other') }, '切换测试工作区'),
+                  React.createElement('button', { onClick: () => setWorkspace('ws-readonly') }, '返回测试工作区'),
+                  React.createElement('button', { onClick: () => setMounted(false) }, '卸载测试页面'),
+                  mounted ? React.createElement(CustomerDeliveryPage, { model }) : null));
             }
             createRoot(document.getElementById('root')).render(React.createElement(Harness));
           `;
@@ -184,6 +203,11 @@ describe("customer delivery read-only desktop interaction", () => {
   async function prepare(page: Page, options: {
     unpaid?: boolean;
     write?: boolean;
+    /** Initial value of the shared authorization target; `""` is the cold
+     * start the real model always has before a workspace is picked. */
+    target?: string;
+    /** An empty target must not read any tenant, so the list never resolves. */
+    awaitRows?: boolean;
     onVideoAdd?: (params: Record<string, string>) => Promise<void>;
     onGet?: (params: Record<string, string>) => Promise<unknown>;
     onList?: (workspaceId: string) => unknown[];
@@ -211,8 +235,8 @@ describe("customer delivery read-only desktop interaction", () => {
       else return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: { code: "FORBIDDEN", message: "Read-only test does not allow mutations" } }) });
       return route.fulfill({ contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: request.id, result }) });
     });
-    await page.goto(`${baseUrl}/__delivery-readonly-test?write=${options.write === true}`);
-    await page.getByRole("cell", { name: "只读客户", exact: true }).waitFor();
+    await page.goto(`${baseUrl}/__delivery-readonly-test?write=${options.write === true}${options.target === undefined ? "" : `&target=${encodeURIComponent(options.target)}`}`);
+    if (options.awaitRows !== false) await page.getByRole("cell", { name: "只读客户", exact: true }).waitFor();
     return methods;
   }
 
@@ -230,6 +254,71 @@ describe("customer delivery read-only desktop interaction", () => {
     await page.getByRole("combobox", { name: "选择生效账号", exact: true }).click();
     await page.locator(".ant-select-item-option-content").filter({ hasText: login }).click();
   }
+
+  it("reads and writes no tenant at all while the shared target is empty", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      // The shared authorization target is "" until an operator picks a
+      // workspace on the surface that owns the selection, which is exactly the
+      // state the sidebar entry produces. The platform-wide workspace
+      // directory is loaded, so a fallback to `workspaceRows[0]` would silently
+      // read `ws-directory-first` - a tenant the operator never chose - and
+      // would enable the write controls that target it. Nothing may be read
+      // and no write control may be enabled in that state.
+      const methods = await prepare(page, { write: true, target: "", awaitRows: false });
+      await page.getByText("客户建档", { exact: true }).waitFor();
+      await settle(page);
+      // Nothing at all may be requested: `ws-directory-first` was never chosen.
+      expect(methods).toEqual([]);
+      expect(await page.getByText("尚未选择客户工作区", { exact: true }).count()).toBe(1);
+      const create = page.getByRole("button", { name: "新建客户", exact: true });
+      expect(await create.isDisabled()).toBe(true);
+      // Neither a user click nor a programmatic activation may reach a tenant
+      // that was never selected: no RPC of any kind, and no create form.
+      await create.evaluate(element => (element as HTMLButtonElement).click());
+      await settle(page);
+      expect(methods).toEqual([]);
+      expect(await page.getByRole("dialog").count()).toBe(0);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("retargets nothing when a selected workspace is cleared", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      const methods = await prepare(page, { write: true, target: "ws-readonly" });
+      expect(methods).toEqual(["ops.customer-delivery.list"]);
+      expect(await page.getByRole("button", { name: "新建客户", exact: true }).isEnabled()).toBe(true);
+      await page.getByRole("button", { name: "清除测试工作区", exact: true }).evaluate(element => (element as HTMLButtonElement).click());
+      await page.getByText("客户建档", { exact: true }).waitFor();
+      await settle(page);
+      // `""` is a cleared selection, not a licence to fall back to the first
+      // entry of the platform directory: no second read is issued and the
+      // write control stays disabled.
+      expect(methods).toEqual(["ops.customer-delivery.list"]);
+      expect(await page.getByText("尚未选择客户工作区", { exact: true }).count()).toBe(1);
+      const create = page.getByRole("button", { name: "新建客户", exact: true });
+      expect(await create.isDisabled()).toBe(true);
+      await create.evaluate(element => (element as HTMLButtonElement).click());
+      await settle(page);
+      expect(methods).toEqual(["ops.customer-delivery.list"]);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("registers the open customer profile draft so losing it cannot be silent", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      await prepare(page, { write: true });
+      // Nothing is armed while the list view is idle.
+      expect(await page.getByTestId("dirty-labels").innerText()).toBe("");
+      await page.getByRole("button", { name: "新建客户", exact: true }).click();
+      await page.getByLabel("公司名称", { exact: true }).fill("测试客户");
+      // The workbench switch confirmation is driven by these labels; without a
+      // registrant `shouldConfirmWorkbenchTransition` can never return true.
+      await expect.poll(() => page.getByTestId("dirty-labels").innerText()).toBe("客户建档表单");
+      await page.getByRole("button", { name: "返回客户建档", exact: true }).click();
+      await expect.poll(() => page.getByTestId("dirty-labels").innerText()).toBe("");
+    } finally { await page.close(); }
+  }, 45_000);
 
   it("shows a bound login but no internal identifiers or binding controls to read-only operators", async () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });

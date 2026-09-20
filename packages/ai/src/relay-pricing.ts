@@ -29,26 +29,59 @@ interface StatusPayload {
   }
 }
 
+export interface RelayPricingMetadata {
+  pricing_version: string
+  pricing_group: string
+  group_ratio: number
+  usd_exchange_rate: number
+  quota_per_unit: number
+  quota_type: number
+  model_pricing_version?: string
+  model_ratio: number
+  model_price: number
+  completion_ratio: number
+  raw_quota: number
+  rounded_quota: number
+  formula_version: 'new-api-quota-v1' | 'relay-video-cny-per-second-v1' | 'relay-video-resolution-v1'
+  video_price_cny_per_second?: number
+}
+
 export interface RelayPricingQuote {
   costCny: number
-  metadata: {
+  metadata: RelayPricingMetadata & {
     cost_source: 'relay_pricing_snapshot'
-    pricing_version: string
-    pricing_group: string
-    group_ratio: number
-    usd_exchange_rate: number
-    quota_per_unit: number
-    quota_type: number
-    model_pricing_version?: string
-    model_ratio: number
-    model_price: number
-    completion_ratio: number
-    raw_quota: number
-    rounded_quota: number
-    formula_version: 'new-api-quota-v1' | 'relay-video-cny-per-second-v1' | 'relay-video-resolution-v1'
-    video_price_cny_per_second?: number
   }
 }
+
+/**
+ * A request-side estimate used for budget preauthorization, never for
+ * settlement. It is deliberately a separate type from `RelayPricingQuote` and
+ * carries a different `cost_source`, so an estimate can never be handed to a
+ * settlement sink or mistaken for provider-verified cost evidence.
+ */
+export interface RelayPricingEstimate {
+  costCny: number
+  metadata: RelayPricingMetadata & {
+    cost_source: 'relay_pricing_snapshot_estimate'
+    estimate: true
+  }
+}
+
+/**
+ * The two pricing boundaries a caller may ask for.
+ *
+ * - `settlement` requires provider-reported metering evidence and is the only
+ *   boundary that may be persisted as cost evidence.
+ * - `request_estimate` accepts the caller's own bounded request-side inputs
+ *   (for example the requested video duration) and must never be recorded as
+ *   an actual cost.
+ */
+export type RelayPricingBoundary = 'settlement' | 'request_estimate'
+
+/** Snapshot reads are internal settlement dependencies, so bound them in time
+ * instead of inheriting undici's default (which is neither configured nor
+ * cancellable by this process). */
+const DEFAULT_PRICING_REQUEST_TIMEOUT_MS = 10_000
 
 export class RelayPricingError extends Error {
   constructor(readonly code: string, message: string) {
@@ -66,6 +99,9 @@ export interface RelayPricingClientOptions {
   videoPriceCnyPerSecond?: Record<string, number>
   fetch?: FetchLike
   ttlMs?: number
+  /** Hard bound for each snapshot request; a stalled relay must not hold a
+   * settlement or API request open until undici's default timeout. */
+  requestTimeoutMs?: number
   relaySecurity?: RelaySecurityPolicy
 }
 
@@ -83,11 +119,21 @@ function pricingOrigin(baseUrl: string) {
   return parsed.origin
 }
 
-async function json(fetchImpl: FetchLike, url: string, apiKey?: string): Promise<unknown> {
-  const response = await fetchImpl(url, {
-    headers: { accept: 'application/json', ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
-    redirect: 'error',
-  })
+async function json(fetchImpl: FetchLike, url: string, apiKey: string | undefined, requestTimeoutMs: number): Promise<unknown> {
+  let response: Response
+  try {
+    response = await fetchImpl(url, {
+      headers: { accept: 'application/json', ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
+      redirect: 'error',
+      // A relay that accepts the connection and then stalls must fail the
+      // settlement/settlement-preflight read deterministically instead of
+      // pinning the caller (and its durable lease) for undici's default.
+      signal: AbortSignal.timeout(requestTimeoutMs),
+    })
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) throw new RelayPricingError('MODEL_PRICING_FETCH_TIMEOUT', `relay pricing did not answer within ${requestTimeoutMs}ms`)
+    throw error
+  }
   if (!response.ok) throw new RelayPricingError('MODEL_PRICING_FETCH_FAILED', `relay pricing returned HTTP ${response.status}`)
   const text = await response.text()
   if (Buffer.byteLength(text, 'utf8') > 2 * 1024 * 1024) throw new RelayPricingError('MODEL_PRICING_RESPONSE_TOO_LARGE', 'relay pricing response is too large')
@@ -112,12 +158,16 @@ function parseStatus(value: unknown): StatusPayload['data'] {
 
 export class RelayPricingClient {
   private readonly fetchImpl: FetchLike
+  private readonly requestTimeoutMs: number
   private snapshot?: { expiresAt: number; pricing: PricingPayload; status: StatusPayload['data'] }
 
   constructor(private readonly options: RelayPricingClientOptions) {
     if (!options.apiKey.trim() || !options.group.trim()) throw new RelayPricingError('MODEL_PRICING_CONFIG_INVALID', 'relay pricing key and group are required')
     pricingOrigin(options.baseUrl)
     this.fetchImpl = options.fetch ?? fetch
+    const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_PRICING_REQUEST_TIMEOUT_MS
+    if (!Number.isFinite(requestTimeoutMs) || requestTimeoutMs <= 0) throw new RelayPricingError('MODEL_PRICING_CONFIG_INVALID', 'relay pricing request timeout must be positive')
+    this.requestTimeoutMs = requestTimeoutMs
   }
 
   private async load() {
@@ -125,17 +175,37 @@ export class RelayPricingClient {
     const origin = pricingOrigin(this.options.baseUrl)
     if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(origin, this.options.relaySecurity)
     const [pricing, status] = await Promise.all([
-      json(this.fetchImpl, `${origin}/api/pricing`, this.options.apiKey).then(parsePricing),
+      json(this.fetchImpl, `${origin}/api/pricing`, this.options.apiKey, this.requestTimeoutMs).then(parsePricing),
       // Pricing and currency conversion are one authenticated relay snapshot.
       // Do not let the status half of the snapshot cross the boundary without
       // the same credential as the pricing half.
-      json(this.fetchImpl, `${origin}/api/status`, this.options.apiKey).then(parseStatus),
+      json(this.fetchImpl, `${origin}/api/status`, this.options.apiKey, this.requestTimeoutMs).then(parseStatus),
     ])
     this.snapshot = { pricing, status, expiresAt: Date.now() + (this.options.ttlMs ?? 60_000) }
     return this.snapshot
   }
 
+  /** Provider/settlement-evidence pricing. Rejects every request-side estimate. */
   async quote(usage: RelayUsageRecord): Promise<RelayPricingQuote> {
+    const derived = await this.deriveCost(usage, 'settlement')
+    return { costCny: derived.costCny, metadata: { cost_source: 'relay_pricing_snapshot', ...derived.metadata } }
+  }
+
+  /**
+   * Budget preauthorization pricing for a call that has not happened yet.
+   *
+   * This is the only entry point that accepts a caller-supplied duration, and
+   * it only reads `preauthorization_duration_seconds` (never the provider
+   * `duration_seconds`/`duration_evidence` pair), so the settlement boundary
+   * in `quote()` stays intact. The returned metadata is marked as an estimate
+   * and must not be persisted as actual cost.
+   */
+  async estimateRequestCost(usage: RelayUsageRecord): Promise<RelayPricingEstimate> {
+    const derived = await this.deriveCost(usage, 'request_estimate')
+    return { costCny: derived.costCny, metadata: { cost_source: 'relay_pricing_snapshot_estimate', estimate: true, ...derived.metadata } }
+  }
+
+  private async deriveCost(usage: RelayUsageRecord, boundary: RelayPricingBoundary): Promise<{ costCny: number; metadata: RelayPricingMetadata }> {
     const { pricing, status } = await this.load()
     const group = (this.options.modalityGroups?.[usage.modality] ?? this.options.group).trim()
     const groupRatio = pricing.group_ratio[group]
@@ -162,10 +232,21 @@ export class RelayPricingClient {
       const units = typeof rawUnits === 'number' && Number.isInteger(rawUnits) && rawUnits > 0 ? rawUnits : 1
       rawQuota = model.model_price * units * groupRatio * status.quota_per_unit
     } else if (model.quota_type === 1 && usage.modality === 'video') {
+      // The provider-reported duration and the caller's requested duration are
+      // different facts. Settlement may only use the former; the request-side
+      // estimate boundary may only use the latter, so neither path can silently
+      // borrow the other's evidence.
+      const estimatedDuration = usage.metadata?.preauthorization_estimate === true ? usage.metadata?.preauthorization_duration_seconds : undefined
       const rawDuration = usage.metadata?.duration_seconds
       const durationEvidence = usage.metadata?.duration_evidence
-      const durationSeconds = durationEvidence === 'provider_usage' && typeof rawDuration === 'number' && Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : undefined
-      if (!durationSeconds) throw new RelayPricingError('MODEL_PRICING_DURATION_EVIDENCE_MISSING', 'duration-priced video requires positive duration evidence')
+      const durationSeconds = boundary === 'request_estimate'
+        ? (typeof estimatedDuration === 'number' && Number.isFinite(estimatedDuration) && estimatedDuration > 0 ? estimatedDuration : undefined)
+        : (durationEvidence === 'provider_usage' && typeof rawDuration === 'number' && Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : undefined)
+      if (!durationSeconds) {
+        throw boundary === 'request_estimate'
+          ? new RelayPricingError('MODEL_PRICING_ESTIMATE_DURATION_MISSING', 'duration-priced video requires a positive request-side preauthorization duration estimate')
+          : new RelayPricingError('MODEL_PRICING_DURATION_EVIDENCE_MISSING', 'duration-priced video requires positive duration evidence')
+      }
       videoPriceCnyPerSecond = this.options.videoPriceCnyPerSecond?.[usage.model]
       if (model.billing_mode === 'per_duration' && model.duration_pricing) {
         videoPriceCnyPerSecond = undefined
@@ -196,7 +277,6 @@ export class RelayPricingClient {
     return {
       costCny,
       metadata: {
-        cost_source: 'relay_pricing_snapshot',
         pricing_version: pricing.pricing_version,
         pricing_group: group,
         group_ratio: groupRatio,

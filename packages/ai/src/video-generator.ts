@@ -157,7 +157,18 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
       const remoteError = record(payload) && record(payload.error) ? payload.error : record(payload) ? payload : {}
       const errorSummary = !response.ok ? [remoteError.code, remoteError.type, remoteError.message].filter(value => typeof value === 'string').join(': ').replace(/data:image\/[^\s]+/gu, '[image redacted]').slice(0, 500) : undefined
       assertProviderResponseAccepted(response, providerKey, 'video provider', errorSummary)
-      await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'video', model, context: { ...input.usageContext, preauthorizationDurationSeconds: this.options.durationSeconds ?? 5, resolution: this.options.resolution, providerAttemptId: providerKey } })
+      // Capture the relay's durable job identity before settlement. Usage
+      // settlement must still fail closed, but it must not discard an accepted
+      // provider job: without the id neither `video.get` nor provider-side
+      // reconciliation can identify work the relay has already queued (and may
+      // already be billing for).
+      const acceptedJob = videoJobIdentity(payload)
+      try {
+        await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'video', model, context: { ...input.usageContext, preauthorizationDurationSeconds: this.options.durationSeconds ?? 5, resolution: this.options.resolution, providerAttemptId: providerKey } })
+      } catch (error) {
+        if (acceptedJob.providerJobId && error instanceof Error) Object.assign(error, { ...acceptedJob, providerAttemptId: providerKey })
+        throw error
+      }
       return parseVideoResult(payload, providerKey)
     } finally {
       clearTimeout(timeout)
@@ -202,6 +213,29 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
   }
 }
 
+/** Bound provider-controlled identifiers before they cross into evidence rows. */
+function boundedIdentifier(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim()
+  if (!normalized || normalized.length > 256 || /[\u0000-\u001f\u007f]/u.test(normalized)) return undefined
+  return normalized
+}
+
+/**
+ * The provider job identity carried by an accepted relay response. This is the
+ * single source of truth for both the success result and the reconciliation
+ * evidence attached to a settlement failure, so the two can never diverge.
+ */
+export function videoJobIdentity(payload: unknown): { providerJobId?: string; providerStatus?: string } {
+  const root = record(payload) ? payload : undefined
+  const data = root && record(root.data) ? root.data : root
+  if (!record(data)) return {}
+  const nested = record(data.data) ? data.data : undefined
+  const providerJobId = [data.task_id, data.job_id, data.id].map(boundedIdentifier).find((value): value is string => Boolean(value))
+  const rawStatus = typeof data.status === 'string' ? data.status : typeof nested?.status === 'string' ? nested.status : undefined
+  return { ...(providerJobId ? { providerJobId } : {}), ...(rawStatus ? { providerStatus: rawStatus.toLowerCase() } : {}) }
+}
+
 function parseVideoResult(payload: unknown, providerKey?: string): VideoGenerationResult {
   const root = record(payload) ? payload : undefined
   const relayCode = root && (typeof root.code === 'number' || typeof root.code === 'string') ? String(root.code).trim() : undefined
@@ -220,7 +254,7 @@ function parseVideoResult(payload: unknown, providerKey?: string): VideoGenerati
   const videoUrl = httpsUrl(data.result_url) ?? httpsUrl(data.video_url) ?? httpsUrl(data.output_url) ?? httpsUrl(data.url)
     ?? httpsUrl(nestedData?.result_url) ?? httpsUrl(nestedData?.video_url) ?? httpsUrl(nestedData?.output_url) ?? httpsUrl(nestedData?.url)
     ?? httpsOutput(nestedData?.output)
-  const providerJobId = typeof data.task_id === 'string' && data.task_id.trim() ? data.task_id.trim() : typeof data.job_id === 'string' && data.job_id.trim() ? data.job_id.trim() : typeof data.id === 'string' && data.id.trim() ? data.id.trim() : undefined
+  const providerJobId = videoJobIdentity(payload).providerJobId
   const rawStatus = typeof data.status === 'string' ? data.status.toLowerCase() : typeof nestedData?.status === 'string' ? nestedData.status.toLowerCase() : ''
   if (['failed', 'failure', 'error', 'cancelled', 'canceled', 'rejected', 'expired'].includes(rawStatus)) {
     const failureReason = typeof data.fail_reason === 'string' ? data.fail_reason.slice(0, 500) : rawStatus

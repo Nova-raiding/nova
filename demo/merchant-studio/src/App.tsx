@@ -228,26 +228,15 @@ import { ContextRecoveryCard } from './ContextRecoveryCard.js'
 import { canonicalProductActionAllowed, groupTasksForRecovery, prioritizeProducts } from './merchant-ia.js'
 import { resolveDetailSopSteps } from './detail-sop.js'
 
-const MERCHANT_READ_ONLY_ROLES = new Set(['viewer', 'knowledge_reader'])
-const merchantRole = (import.meta.env.VITE_MERCHANT_ROLE ?? '').trim().toLowerCase()
-const merchantReadOnly = MERCHANT_READ_ONLY_ROLES.has(merchantRole)
-
-function projectMerchantWriteControls(root: HTMLElement, readOnly: boolean) {
-  const writeAction = /同步|授权|撤销|导入|上传|保存|充值|发布|生成|创建|绑定|解除|确认(?:需求|商品|方案|事实|选择)|修改|评价|解析|重试/iu
-  const readAction = /关闭|取消|查看|刷新|回到|返回|帮助|诊断|下一步/iu
-  root.querySelectorAll<HTMLElement>('button, input, select, textarea').forEach((control) => {
-    if (!readOnly) {
-      control.removeAttribute('data-permission-state')
-      control.removeAttribute('aria-disabled')
-      return
-    }
-    const label = `${control.getAttribute('aria-label') ?? ''} ${control.textContent ?? ''} ${control.getAttribute('placeholder') ?? ''}`
-    if (!writeAction.test(label) || readAction.test(label)) return
-    control.setAttribute('data-permission-state', 'read-only')
-    control.setAttribute('aria-disabled', 'true')
-    if ('disabled' in control) (control as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).disabled = true
-  })
-}
+// There is deliberately no client-side read-only role projection here. It used
+// to read a build-time `VITE_MERCHANT_ROLE`, which no build path ever set, and
+// the session account cannot supply one either: `platform_password_accounts.roles`
+// is written as `ARRAY['merchant']` at registration and activation and never
+// updated, while the read-only canonical roles (`viewer`, `knowledge_reader`)
+// are gateway/OIDC aliases that no workspace membership can carry. A projection
+// fed by either source would disable nothing. Writes are refused by the API
+// (FORBIDDEN), and the refusal surfaces through the `merchant-capability-denied`
+// event rendered as 「当前账号没有此操作权限」 below.
 import {
   resolveAssetPrimaryAction,
   resolveAssetPrimaryStatus,
@@ -2650,6 +2639,41 @@ export function resolvePurchaseBlockNotice(selectedPackage: Pick<PointPackageOpt
   return ''
 }
 
+/**
+ * The order amount in fen.
+ *
+ * `priceCny` is decoded from the catalogue's `price_label` as a decimal number,
+ * so charging `priceCny * quantity` as a float leaks binary residue into the
+ * request: a ¥99.90 pack times three is 299.70000000000005, and the API's
+ * `parseCnyToFen` (`^\d{1,8}(?:\.\d{1,2})?$`) rejects anything with more than
+ * two decimals as BILLING_AMOUNT_INVALID — the quantity simply could not be
+ * bought, and the same residue was shown as the payable amount.
+ */
+export function rechargeAmountFen(priceCny: number, quantity: number): number {
+  return Math.round(priceCny * 100) * quantity
+}
+
+/** Fen as the two-decimal CNY string the billing API accepts. */
+export function formatAmountCny(fen: number): string {
+  return (fen / 100).toFixed(2)
+}
+
+/**
+ * Carry the idempotency key across retries of one purchase intent.
+ *
+ * Same intent in, same key out: a retry after a client timeout reaches the
+ * order the server already created instead of minting a second payable one.
+ * A different intent (other pack, amount, quantity or channel) gets a fresh
+ * key so an unrelated purchase is never collapsed into the previous order.
+ */
+export function resolveRechargeIdempotency(
+  intent: string,
+  previous: { intent: string; key: string },
+): { intent: string; key: string } {
+  if (previous.key && previous.intent === intent) return previous
+  return { intent, key: `studio-${intent}-${crypto.randomUUID()}` }
+}
+
 /** Point packs are only those the server commercial catalog actually publishes. */
 function resolvePointPackages(catalog: CommercialCatalogItem[]): PointPackageOption[] {
   return selectMerchantCatalogItems(catalog)
@@ -2743,6 +2767,11 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
   const [rechargeOrder, setRechargeOrder] = useState<Awaited<ReturnType<typeof createRechargeOrder>> | null>(null)
   const [rechargeLoading, setRechargeLoading] = useState(false)
   const [rechargeError, setRechargeError] = useState('')
+  // One idempotency key per purchase intent. It must survive a failed or timed
+  // out attempt so the retry replays the order the server already created, and
+  // it must change when the merchant really does change what they are buying.
+  const rechargeIntent = useRef('')
+  const rechargeIdempotencyKey = useRef('')
   useEffect(() => {
     if (!baseUrl) {
       setStatementEntries(null)
@@ -2818,12 +2847,23 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
     if (selectedPackage.priceCny === null) { setRechargeError('服务端目录未给出可下单价格，无法创建充值订单。'); return }
     if (paymentMethod === 'card') { setRechargeError('当前仅支持支付宝或微信，银行卡支付暂未开放。'); return }
     setRechargeLoading(true); setRechargeError('')
+    const amount = formatAmountCny(rechargeAmountFen(selectedPackage.priceCny, purchaseQuantity))
+    const intent = [selectedPackage.id, amount, paymentMethod, purchaseQuantity].join('|')
+    const resolved = resolveRechargeIdempotency(intent, { intent: rechargeIntent.current, key: rechargeIdempotencyKey.current })
+    rechargeIntent.current = resolved.intent
+    rechargeIdempotencyKey.current = resolved.key
+    const idempotencyKey = resolved.key
     try {
-      const amount = String(selectedPackage.priceCny * purchaseQuantity)
-      const order = await createRechargeOrder(baseUrl, amount, paymentMethod)
+      const order = await createRechargeOrder(baseUrl, amount, paymentMethod, idempotencyKey)
+      // The intent is settled: the next click is a new purchase and must not be
+      // collapsed into this order by the server's dedupe.
+      rechargeIntent.current = ''
+      rechargeIdempotencyKey.current = ''
       setRechargeOrder(order)
       if (order.payment_url || order.paymentUrl) window.open(order.payment_url ?? order.paymentUrl, '_blank', 'noopener,noreferrer')
     } catch (error) {
+      // The key is deliberately kept: the server may already have created the
+      // order, so the retry must reach the same one instead of a second one.
       setRechargeError(error instanceof Error ? error.message : '创建充值订单失败')
     } finally { setRechargeLoading(false) }
   }
@@ -2871,7 +2911,7 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
           {catalogItems === null ? <p className="muted" role="status">{catalogNote}</p> : pointPackages.length === 0 ? <p className="muted" role="status">服务端商业目录未返回可购买的创意点套餐。</p> : (
             <div className="finance-price-table dialog" role="table" aria-label="创意点价格表"><div className="finance-price-row header has-action" role="row"><span>套餐</span><span>创意点</span><span>价格</span><span>说明</span><span>操作</span></div>{pointPackages.map((item) => <div className="finance-price-row has-action" role="row" key={item.id}><strong>{item.name}</strong><span>{item.amountLabel}</span><b>{item.priceLabel}</b><small>{item.note}</small><button className="primary" type="button" disabled={Boolean(item.blockedReason)} onClick={() => { setSelectedPointPackage(item.id); setPurchaseQuantity(1); setAgreementAccepted(false) }}>{selectedPointPackage === item.id ? '已选择' : '选择'}</button></div>)}</div>
           )}
-          {selectedPackage && <section className="finance-checkout" aria-label="创意点购买确认"><div className="finance-checkout-qr">{rechargeOrder?.payment_url || rechargeOrder?.paymentUrl ? <a href={(rechargeOrder.payment_url ?? rechargeOrder.paymentUrl) || '#'} target="_blank" rel="noreferrer">打开支付页面</a> : <strong>确认后生成真实支付订单</strong>}<span>支付完成后由服务端回调或查单入账，未支付不会增加创意点。</span><div className="finance-payment-methods" role="group" aria-label="选择支付方式">{([{ id: 'wechat', label: '微信' }, { id: 'alipay', label: '支付宝' }, { id: 'card', label: '银行卡' }] as const).map((method) => <button key={method.id} className={paymentMethod === method.id ? 'selected' : ''} type="button" onClick={() => setPaymentMethod(method.id)}>{method.label}</button>)}</div></div><div className="finance-checkout-details"><div><span>购买套餐</span><strong>{selectedPackage.name} · {selectedPackage.amountLabel}</strong></div><label><span>购买数量</span><div className="finance-quantity-stepper"><button type="button" aria-label="减少购买数量" onClick={() => setPurchaseQuantity((value) => Math.max(1, value - 1))}>−</button><InputNumber controls={false} min={1} max={99} value={purchaseQuantity} onChange={(value) => setPurchaseQuantity(value || 1)} /><button type="button" aria-label="增加购买数量" onClick={() => setPurchaseQuantity((value) => Math.min(99, value + 1))}>＋</button></div></label><div><span>本次购买创意点</span><strong>{selectedPointCount === null ? '以服务端订单为准' : `共 ${selectedPointCount.toLocaleString()} 点`}</strong></div><div><span>应付金额</span><b>{selectedPackage.priceCny === null ? '以服务端订单为准' : `¥${selectedPackage.priceCny * purchaseQuantity}`}</b></div><div className="finance-checkout-action"><Checkbox checked={agreementAccepted} onChange={(event) => setAgreementAccepted(event.target.checked)}>我已阅读并同意《创意点购买协议》，确认虚拟权益到账后不支持无理由退款。</Checkbox><button className="primary finance-confirm-purchase" type="button" disabled={!agreementAccepted || rechargeLoading || Boolean(selectedPackage.blockedReason) || selectedPackage.priceCny === null} onClick={() => void submitRecharge()}>{rechargeLoading ? '创建订单中…' : '确认购买'}</button></div>{selectedPackage.blockedReason && <p className="error-text" role="alert">{selectedPackage.blockedReason}</p>}{purchaseBlockNotice && <p className="muted" role="status">{purchaseBlockNotice}</p>}{rechargeOrder && <div className="finance-recharge-order" role="status"><strong>充值订单：{rechargeOrder.id}</strong><span>状态：{rechargeOrder.state}{rechargeOrder.warning ? ` · ${rechargeOrder.warning}` : ''}</span><button type="button" onClick={() => void refreshRecharge()}>查询订单</button></div>}{rechargeError && <p className="error-text" role="alert">{rechargeError}</p>}</div></section>}
+          {selectedPackage && <section className="finance-checkout" aria-label="创意点购买确认"><div className="finance-checkout-qr">{rechargeOrder?.payment_url || rechargeOrder?.paymentUrl ? <a href={(rechargeOrder.payment_url ?? rechargeOrder.paymentUrl) || '#'} target="_blank" rel="noreferrer">打开支付页面</a> : <strong>确认后生成真实支付订单</strong>}<span>支付完成后由服务端回调或查单入账，未支付不会增加创意点。</span><div className="finance-payment-methods" role="group" aria-label="选择支付方式">{([{ id: 'wechat', label: '微信' }, { id: 'alipay', label: '支付宝' }, { id: 'card', label: '银行卡' }] as const).map((method) => <button key={method.id} className={paymentMethod === method.id ? 'selected' : ''} type="button" onClick={() => setPaymentMethod(method.id)}>{method.label}</button>)}</div></div><div className="finance-checkout-details"><div><span>购买套餐</span><strong>{selectedPackage.name} · {selectedPackage.amountLabel}</strong></div><label><span>购买数量</span><div className="finance-quantity-stepper"><button type="button" aria-label="减少购买数量" onClick={() => setPurchaseQuantity((value) => Math.max(1, value - 1))}>−</button><InputNumber controls={false} min={1} max={99} value={purchaseQuantity} onChange={(value) => setPurchaseQuantity(value || 1)} /><button type="button" aria-label="增加购买数量" onClick={() => setPurchaseQuantity((value) => Math.min(99, value + 1))}>＋</button></div></label><div><span>本次购买创意点</span><strong>{selectedPointCount === null ? '以服务端订单为准' : `共 ${selectedPointCount.toLocaleString()} 点`}</strong></div><div><span>应付金额</span><b>{selectedPackage.priceCny === null ? '以服务端订单为准' : `¥${formatAmountCny(rechargeAmountFen(selectedPackage.priceCny, purchaseQuantity))}`}</b></div><div className="finance-checkout-action"><Checkbox checked={agreementAccepted} onChange={(event) => setAgreementAccepted(event.target.checked)}>我已阅读并同意《创意点购买协议》，确认虚拟权益到账后不支持无理由退款。</Checkbox><button className="primary finance-confirm-purchase" type="button" disabled={!agreementAccepted || rechargeLoading || Boolean(selectedPackage.blockedReason) || selectedPackage.priceCny === null} onClick={() => void submitRecharge()}>{rechargeLoading ? '创建订单中…' : '确认购买'}</button></div>{selectedPackage.blockedReason && <p className="error-text" role="alert">{selectedPackage.blockedReason}</p>}{purchaseBlockNotice && <p className="muted" role="status">{purchaseBlockNotice}</p>}{rechargeOrder && <div className="finance-recharge-order" role="status"><strong>充值订单：{rechargeOrder.id}</strong><span>状态：{rechargeOrder.state}{rechargeOrder.warning ? ` · ${rechargeOrder.warning}` : ''}</span><button type="button" onClick={() => void refreshRecharge()}>查询订单</button></div>}{rechargeError && <p className="error-text" role="alert">{rechargeError}</p>}</div></section>}
         </> : <div className="finance-storage-contact"><Boxes size={28} /><strong>请咨询客服</strong></div>}
       </Modal>
     </section>
@@ -6591,7 +6631,6 @@ function Products({
           ...(item.canonicalProductId ? { canonical_product_id: item.canonicalProductId } : {}),
           ...(item.listingId ? { listing_id: item.listingId } : {}),
         })),
-        request_text: '批量生产商品营销内容：标题、卖点、详情表达及主图候选',
         idempotency_key: `merchant-studio-campaign-${selectedTargets.map((item) => batchTargetKey(item)).sort().join('|')}`,
       })
       const campaignId = campaign.id ?? campaign.campaignId
@@ -11969,14 +12008,6 @@ export default function App() {
     window.addEventListener('merchant-capability-denied', onDenied)
     return () => window.removeEventListener('merchant-capability-denied', onDenied)
   }, [])
-  useEffect(() => {
-    const root = mainContentRef.current
-    if (!root) return
-    projectMerchantWriteControls(root, merchantReadOnly)
-    const observer = new MutationObserver(() => projectMerchantWriteControls(root, merchantReadOnly))
-    observer.observe(root, { childList: true, subtree: true, characterData: true })
-    return () => observer.disconnect()
-  }, [page, utilityPanel, merchantReadOnly])
   const routeCanonicalized = useRef(false)
   const focusMainAfterNavigation = () =>
     focusMainAfterMerchantNavigation(
@@ -12466,12 +12497,7 @@ export default function App() {
     )
   }
   return (
-    <div className="app-shell" data-merchant-role={merchantRole || 'workspace_owner'} data-merchant-permission={merchantReadOnly ? 'read-only' : 'write'}>
-      {merchantReadOnly && (
-        <div className="info-notice" role="status" data-testid="merchant-read-only-banner">
-          当前账号为只读角色，商品、素材、任务、充值和发布等写操作已禁用；如需修改，请联系工作区管理员。
-        </div>
-      )}
+    <div className="app-shell">
       <button
         className="skip-link"
         inert={publishModal || Boolean(utilityPanel)}

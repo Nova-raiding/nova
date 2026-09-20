@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   CAPABILITIES,
   COMMERCIAL_OPERATION_REGISTRY,
-  COMMERCIAL_OPERATION_REGISTRY_CHECKSUM,
   COMMERCIAL_OPERATION_REGISTRY_COVERAGE,
   COMMERCIAL_OPERATION_RUNTIME_MANIFEST,
   HTTP_OPERATION_POLICIES,
@@ -200,9 +199,5 @@ describe('complete commercial operation registry E1 totality', () => {
       policy: { domain: 'COMMERCIAL', enabled: true, classification: 'RECOVERY_CONTROL', authorization_policy_ref: 'commercial.order.create' },
     })
     expect(getMcpMethodPolicy('commercial.order.create')).toMatchObject({ scope: 'workspace', workbench: 'workspace', effect: 'write' })
-  })
-
-  it('publishes a deterministic reviewed-registry checksum', () => {
-    expect(COMMERCIAL_OPERATION_REGISTRY_CHECKSUM).toBe('fnv1a32:c075d591')
   })
 })

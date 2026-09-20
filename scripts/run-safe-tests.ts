@@ -28,6 +28,20 @@ const ISOLATION_OVERRIDES = new Set([
   '--setupFiles', '--globalSetup', '--execArgv',
 ])
 
+/**
+ * Vitest replaces `test.reporters` wholesale when the CLI supplies `--reporter`
+ * (see the `cliReporters` branch of its config resolution), so a caller passing
+ * an ordinary output preference such as `--reporter=verbose` would silently
+ * unregister the pending-assertion gate and let a wholly skipped file report a
+ * green suite. The gate is part of the default configuration, not of the
+ * caller's output choices, so every CLI reporter list is extended with it
+ * instead of being trusted to include it. `tests/test-summary.ts` is the reason
+ * this is an append rather than a rejection: it needs `--reporter=json` for its
+ * machine-readable evidence.
+ */
+export const PENDING_GATE_REPORTER = './scripts/pending-assertion-gate.ts'
+const REPORTER_OPTIONS = new Set(['--reporter', '--reporters'])
+
 export function buildSafeVitestArgs(input: readonly string[]): string[] {
   const command = input[0] === 'watch' ? 'watch' : 'run'
   const args = input[0] === 'run' || input[0] === 'watch' ? input.slice(1) : [...input]
@@ -46,9 +60,14 @@ export function buildSafeVitestArgs(input: readonly string[]): string[] {
       || selection === basename(file).replace(/\.test\.ts$/u, ''))
     if (blocked) throw new Error(`${blocked} requires a dedicated integration entrypoint with an explicitly isolated runtime; it is excluded from the safe default suite.`)
   }
+  // A CLI reporter list replaces the configuration's reporters instead of
+  // extending them, so the gate has to be re-added here to survive it.
+  const withGate = args.some(argument => REPORTER_OPTIONS.has(argument.split('=', 1)[0]!))
+    ? [...args, `--reporter=${PENDING_GATE_REPORTER}`]
+    : args
   // A typo, excluded filter, or empty project must fail rather than claim a
   // passing test run. The default config owns the audited exclusion manifest.
-  return [command, ...args, '--passWithNoTests=false']
+  return [command, ...withGate, '--passWithNoTests=false']
 }
 
 export interface SafeTestRuntime {

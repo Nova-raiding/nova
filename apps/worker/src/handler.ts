@@ -338,7 +338,20 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
           throw new WorkerFailure({ code: error.code, message: error.message, retryable: error.retryable, unknown: false, eventId: event.id, workspaceId: event.workspaceId })
         }
         if (error instanceof QuotaExceededError) {
-          throw new WorkerFailure({ code: error.code, message: error.message, retryable: true, unknown: false })
+          // Same contract as the generation branch above: the platform quota
+          // window is a wall-clock interval the provider already named, so the
+          // retry must wait it out. Without `retryAfterMs` the dispatcher falls
+          // back to the generic 100ms..30s jittered backoff, spends the whole
+          // claim budget (5 attempts by default) in a couple of seconds, and
+          // dead-letters a publish that the quota would have admitted after at
+          // most one window.
+          throw new WorkerFailure({
+            code: error.code,
+            message: error.message,
+            retryable: true,
+            unknown: false,
+            retryAfterMs: error.decision.retryAfterSeconds * 1_000,
+          })
         }
         const candidate = error as { normalized?: { code?: string; message?: string; retryable?: boolean; unknown?: boolean } }
         const normalized = candidate.normalized ?? { code: 'PUBLISH_EXECUTION_FAILED', message: error instanceof Error ? error.message : 'publish execution failed', retryable: false, unknown: true }

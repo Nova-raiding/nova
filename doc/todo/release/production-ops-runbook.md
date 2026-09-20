@@ -89,6 +89,23 @@ secret 与 `.env` 文件不进入清单。profile 和镜像内路径不能由 la
 
 上述发布、回滚和恢复代码门禁已经实现并 fail closed；当前 NO-GO 不再是 capability 签名、固定路径或 signed rollback 缺少代码，而是生产环境尚未实际配置受保护 trust/consumer/attester、真实签名 artifacts，并完成同一 release 的部署、回滚和恢复演练。
 
+### 1.1 ECS Compose 发布镜像引用的生产者与仓库外动作
+
+ECS 发布链把 release 层的每个产物固定为不可变镜像。`infra/local/docker-compose.ecs-pilot-release.yml` 以 `${VAR:?}` 强校验八个变量：`MIGRATION_IMAGE_REF`、`API_IMAGE_REF`、`WORKER_IMAGE_REF`、`UI_IMAGE_REF`、`OPS_UI_IMAGE_REF`、`PAYMENT_GATEWAY_IMAGE_REF`、`PILOT_GATEWAY_IMAGE_REF`、`CLAMAV_IMAGE_REF`。渲染器通过 `--env-file .env` 读取它们，缺任何一项都会让 `docker compose config` 以 `error while interpolating ...: required variable <NAME> is missing a value` 非零退出；Compose 最多报告 91 条插值错误，base 层的错误会把 release 层自己的那条挤掉，所以不能靠错误文本判断真正缺了哪些变量。八个变量必须同时出现在两处生产者：
+
+- `infra/scripts/deploy-preflight-ecs.sh` 的必需清单 —— 发布契约，缺失时以指名道姓的信息提前失败；
+- `.env.example` —— 部署 `.env` 模板，运维据此准备值。
+
+`tests/ecs-compose-release-gate.test.ts` 的 fixed-release-manifest 门禁静态校验这层闭环：`validate-ecs-compose-release.rb` 的 digest 清单要求的每个服务都必须在 release 层被固定，且每个被固定的变量都必须有生产者。新增固定清单（新服务、新 digest 键）而不同时补生产者会直接让该门禁变红。
+
+**仓库外的动作（发布流水线负责）**：仓库内**没有**任何脚本构建或推送 `pilot-gateway` 镜像，这一点适用于全部发布镜像：`infra/docker/pilot-gateway.Dockerfile`、`infra/docker/pilot-gateway-https.Dockerfile` 只是 Dockerfile，对全仓库 grep `docker build` 只有候选门禁测试镜像一处（`infra/scripts/build-ecs-candidate-gates-image.sh`），本地 Compose 的 `build:` 只用于开发机。公网网关镜像的构建与推送必须由仓库外的发布流水线完成，运维必须：
+
+1. 构建并推送网关镜像，向发布链提供 `repository@sha256:<digest>` 形式的 `PILOT_GATEWAY_IMAGE_REF`，并把同一引用 `docker pull` 到 ECS 宿主；
+2. 在 `IMAGE_DIGESTS_JSON` 中增加 `pilot-gateway` 键，值是该镜像的 `sha256:<64 位小写十六进制>`；`validate-ecs-compose-release.rb` 要求它与 release 层的镜像引用逐字节一致，键缺失或摘要不等都会拒绝发布；
+3. 同样为 `MIGRATION_IMAGE_REF` 提供 `postgres:17-alpine@sha256:<digest>`（必须是 PostgreSQL 17，校验器会拒绝其他大版本）。
+
+上述任一项未完成时，ECS 发布链在渲染这一步就中止，并且**没有**“用宿主上手工构建的镜像顶一下”的降级路径：`deploy-verified-ecs-compose.sh` 与 `rollback-ecs-compose.sh` 都以 `up -d --no-build` 启动 `pilot-gateway`，宿主机上不存在该镜像时只会得到 `No such image`。
+
 ## 2. 标准部署顺序
 
 1. 锁定 `release_id`、配置版本、镜像 digest 和迁移版本。

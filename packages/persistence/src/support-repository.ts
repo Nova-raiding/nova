@@ -46,7 +46,22 @@ export interface SupportTicketEvent {
 }
 
 export interface SupportTicketPageCursor { createdAt: string; id: string }
-export interface SupportTicketPage { items: SupportTicket[]; nextCursor?: SupportTicketPageCursor }
+export interface SupportTicketPage {
+  items: SupportTicket[]
+  nextCursor?: SupportTicketPageCursor
+  /**
+   * Set when an `slaState` filter hit the bounded scan in `list()` and the queue
+   * may not have been walked to its end. `items` is then a truthful but possibly
+   * partial answer: more matching tickets can exist behind `nextCursor`, which a
+   * caller that follows cursors reaches without needing this flag. A caller that
+   * reads a single page must treat the result as the first matches, not as all
+   * of them. The flag is conservative - it can be set when the scan happened to
+   * end exactly on the last row, and the follow-up call then returns an empty
+   * page - but it is never set for a page that did reach the end, so it can
+   * never turn a complete answer into a partial one.
+   */
+  scanTruncated?: boolean
+}
 export interface CreateSupportTicketInput {
   workspaceId: string
   subject: string
@@ -124,6 +139,19 @@ export class SupportTicketIdempotencyConflictError extends Error {
 const now = () => new Date().toISOString()
 const cloneTicket = (ticket: SupportTicket): SupportTicket => ({ ...ticket, tags: [...ticket.tags] })
 const cloneEvent = (event: SupportTicketEvent): SupportTicketEvent => ({ ...event, payload: { ...event.payload } })
+// Rows scanned per statement when an SLA-state filter cannot be pushed into
+// SQL and the page has to be filled from projected tickets.
+const SLA_FILTER_SCAN_BATCH = 200
+// Hard ceiling on that scan, in batches. The SLA state is a read-time
+// projection of the event stream against the current clock, so no SQL predicate
+// and no index can express it (see `list()`): a rare state such as `breached`
+// on a healthy queue would otherwise cost one page read plus one batched event
+// read per 200 rows, for as long as it takes to fill the page or empty the
+// table - a single request could scan a 100,000-ticket workspace inside one
+// transaction, on one connection, 1,003 statements deep. The ceiling keeps a
+// request at 23 statements and 2,000 rows while `nextCursor` still lets a
+// caller walk the whole queue, 200 rows at a time, in resumable steps.
+const SLA_FILTER_SCAN_MAX_BATCHES = 10
 const clampLimit = (limit = 50, max = 100) => {
   if (!Number.isInteger(limit) || limit < 1) throw new RangeError('SUPPORT_PAGE_LIMIT_INVALID')
   return Math.min(max, limit)
@@ -358,36 +386,86 @@ export class PostgresSupportRepository implements SupportRepository {
     const workspaceId = requireWorkspaceScope(input.workspaceId)
     const limit = clampLimit(input.limit)
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      const result = await client.query<TicketRow>(`SELECT ${ticketColumns} FROM workspace_support_tickets
+      // `sla.state` is a read-time projection: deriveSupportSlaState evaluates
+      // the event stream against the current clock. `sla_snapshot_json` is
+      // frozen at creation by migration 112 and can only ever hold 'on_track' or
+      // 'at_risk', so filtering that column returned nothing for 'breached' and
+      // 'met' while the very same ticket reported that state in the response
+      // body. The SLA predicate is therefore applied to the projected ticket,
+      // and the keyset scan continues until a full page (plus one, to detect a
+      // next page) of matching rows is collected - but never further than
+      // SLA_FILTER_SCAN_MAX_BATCHES, so one request stays bounded no matter how
+      // rare the requested state is in the workspace.
+      const slaFilter = input.slaState !== undefined
+      const batch = slaFilter ? Math.max(limit + 1, SLA_FILTER_SCAN_BATCH) : limit + 1
+      const maxBatches = slaFilter ? SLA_FILTER_SCAN_MAX_BATCHES : 1
+      const items: SupportTicket[] = []
+      // Doubles as the next batch's keyset position. It advances once per row
+      // that the scan has fully accounted for, which is what makes a truncated
+      // scan resumable: the cursor reports where the scan stopped, not where the
+      // page ended, so the rows a bounded scan did not reach are not skipped.
+      let cursor = input.cursor
+      let hasMoreRows = true
+      let batches = 0
+      let scanTruncated = false
+      while (hasMoreRows && items.length <= limit) {
+        if (batches >= maxBatches) { scanTruncated = true; break }
+        const rows = await this.listPageRows(client, workspaceId, input, batch, cursor)
+        batches += 1
+        if (!rows.length) break
+        hasMoreRows = rows.length === batch
+        const eventsByTicket = await this.eventsForRows(client, workspaceId, rows)
+        for (const row of rows) {
+          cursor = { createdAt: iso(row.created_at), id: row.id }
+          const ticket = projectTicketSla(mapTicket(row), eventsByTicket.get(row.id) ?? [])
+          if (input.slaState && ticket.sla.state !== input.slaState) continue
+          items.push(ticket)
+          if (items.length > limit) break
+        }
+      }
+      const page = items.slice(0, limit)
+      const last = page.at(-1)
+      // A full page is the pre-existing contract: the cursor continues at the
+      // last returned row. A truncated scan ends on a row the caller was never
+      // shown, so its cursor is the scan position instead.
+      const nextCursor = items.length > limit
+        ? (last ? { createdAt: last.createdAt, id: last.id } : undefined)
+        : (scanTruncated ? cursor : undefined)
+      return { items: page, ...(nextCursor ? { nextCursor } : {}), ...(scanTruncated ? { scanTruncated: true } : {}) }
+    })
+  }
+
+  /** One keyset page of ticket rows. The SLA state is deliberately absent from
+   * the SQL predicate: the list() projection filter owns it, and list() bounds
+   * how many of these pages it will read. */
+  private async listPageRows(client: SqlClient, workspaceId: string, input: SupportTicketListInput, batch: number, cursor?: SupportTicketPageCursor): Promise<TicketRow[]> {
+    const result = await client.query<TicketRow>(`SELECT ${ticketColumns} FROM workspace_support_tickets
         WHERE workspace_id=$1
           AND ($2::text IS NULL OR status=$2)
           AND ($3::text IS NULL OR priority=$3)
-          AND ($4::text IS NULL OR (sla_snapshot_json->>'state')=$4)
-          AND ($5::text IS NULL OR assigned_to=$5)
-          AND ($6::text IS NULL OR customer_id=$6)
-          AND ($7::text IS NULL OR related_order_id=$7)
-          AND ($8::text IS NULL OR related_task_id=$8)
-          AND ($9::text IS NULL OR ticket_number ILIKE '%' || $9 || '%' OR subject ILIKE '%' || $9 || '%' OR customer_id ILIKE '%' || $9 || '%' OR customer_name ILIKE '%' || $9 || '%')
-          AND ($10::timestamptz IS NULL OR (created_at,id) < ($10::timestamptz,$11::uuid))
-        ORDER BY created_at DESC, id DESC LIMIT $12`, [workspaceId, input.status ?? null, input.priority ?? null,
-        input.slaState ?? null, input.assigneeId ?? null, input.customerId ?? null, input.relatedOrderId ?? null, input.relatedTaskId ?? null,
-        input.query?.trim() || null, input.cursor?.createdAt ?? null, input.cursor?.id ?? null, limit + 1])
-      if (!result.rows.length) return { items: [] }
-      // One batched event read for the whole page instead of one read per
-      // ticket: the per-ticket loop cost 2 x (limit + 1) statements inside a
-      // single transaction.
-      const events = await client.query<EventRow>(`SELECT ${eventColumns} FROM workspace_support_ticket_events WHERE workspace_id=$1 AND ticket_id = ANY($2::uuid[]) ORDER BY ticket_id, sequence ASC`, [workspaceId, result.rows.map(row => row.id)])
-      const eventsByTicket = new Map<string, SupportTicketEvent[]>()
-      for (const event of events.rows.map(mapEvent)) {
-        const existing = eventsByTicket.get(event.ticketId)
-        if (existing) existing.push(event)
-        else eventsByTicket.set(event.ticketId, [event])
-      }
-      const rows = result.rows.map(row => projectTicketSla(mapTicket(row), eventsByTicket.get(row.id) ?? []))
-      const items = rows.slice(0, limit)
-      const last = items.at(-1)
-      return { items, ...(rows.length > limit && last ? { nextCursor: { createdAt: last.createdAt, id: last.id } } : {}) }
-    })
+          AND ($4::text IS NULL OR assigned_to=$4)
+          AND ($5::text IS NULL OR customer_id=$5)
+          AND ($6::text IS NULL OR related_order_id=$6)
+          AND ($7::text IS NULL OR related_task_id=$7)
+          AND ($8::text IS NULL OR ticket_number ILIKE '%' || $8 || '%' OR subject ILIKE '%' || $8 || '%' OR customer_id ILIKE '%' || $8 || '%' OR customer_name ILIKE '%' || $8 || '%')
+          AND ($9::timestamptz IS NULL OR (created_at,id) < ($9::timestamptz,$10::uuid))
+        ORDER BY created_at DESC, id DESC LIMIT $11`, [workspaceId, input.status ?? null, input.priority ?? null,
+      input.assigneeId ?? null, input.customerId ?? null, input.relatedOrderId ?? null, input.relatedTaskId ?? null,
+      input.query?.trim() || null, cursor?.createdAt ?? null, cursor?.id ?? null, batch])
+    return result.rows
+  }
+
+  /** One batched event read per scanned batch instead of one read per ticket:
+   * the per-ticket loop cost 2 x batch statements inside a single transaction. */
+  private async eventsForRows(client: SqlClient, workspaceId: string, rows: readonly TicketRow[]): Promise<Map<string, SupportTicketEvent[]>> {
+    const events = await client.query<EventRow>(`SELECT ${eventColumns} FROM workspace_support_ticket_events WHERE workspace_id=$1 AND ticket_id = ANY($2::uuid[]) ORDER BY ticket_id, sequence ASC`, [workspaceId, rows.map(row => row.id)])
+    const eventsByTicket = new Map<string, SupportTicketEvent[]>()
+    for (const event of events.rows.map(mapEvent)) {
+      const existing = eventsByTicket.get(event.ticketId)
+      if (existing) existing.push(event)
+      else eventsByTicket.set(event.ticketId, [event])
+    }
+    return eventsByTicket
   }
 
   async get(workspaceId: string, ticketId: string) {

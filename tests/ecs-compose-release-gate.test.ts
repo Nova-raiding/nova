@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -11,6 +11,7 @@ const digests = {
   'merchant-ui': digest('c'),
   'merchant-ops-ui': digest('d'),
   'payment-gateway': digest('e'),
+  'pilot-gateway': digest('1'),
   clamav: digest('f'),
   'postgres-migration': digest('0'),
 }
@@ -21,6 +22,7 @@ const groups: Record<string, string[]> = {
   'merchant-ui': ['ui'],
   'merchant-ops-ui': ['ops-ui'],
   'payment-gateway': ['payment-gateway'],
+  'pilot-gateway': ['pilot-gateway'],
   clamav: ['clamav'],
 }
 
@@ -50,11 +52,90 @@ function runContract(document: unknown, env: Record<string, string>) {
   return execFileSync('ruby', ['infra/scripts/validate-ecs-compose-release.rb', path, JSON.stringify(digests)], { encoding: 'utf8', env: { ...process.env, ...env } })
 }
 
+/**
+ * The release layer is the only Compose layer that pins release artifacts to
+ * immutable images, and `validate-ecs-compose-release.rb` refuses to release
+ * unless every artifact in its `required` map carries the matching digest. Both
+ * are consumer-side fixed lists. The producer side is the operator contract: a
+ * `:?` assertion in a repository script (the ECS preflights) or a declaration in
+ * `.env.example`, which the renderer reads through `--env-file .env`.
+ *
+ * `pilot-gateway` broke that closure. The service was pinned in the release layer
+ * and added to the digest manifest, but `grep -rn PILOT_GATEWAY_IMAGE_REF` over
+ * the whole repository returned exactly one line — the consumer. An operator who
+ * supplied every variable the runbooks and the preflight named still stopped at
+ * `error while interpolating services.pilot-gateway.image: required variable
+ * PILOT_GATEWAY_IMAGE_REF is missing a value` (`docker compose ... config` exits
+ * non-zero), and the pinned migration image had no producer for the same reason.
+ * Docker Compose stops after 91 interpolation errors, so the release layer's own
+ * failures stayed hidden behind the base layer's.
+ *
+ * This gate closes the loop in both directions: every service the digest manifest
+ * requires must be pinned in the release layer, and every pinned variable must be
+ * declared somewhere an operator can find it.
+ */
+const releaseLayerPath = 'infra/local/docker-compose.ecs-pilot-release.yml'
+
+/** Service -> pinned image variable, following the `&anchor` / `<<: *anchor` shorthand. */
+function releaseLayerPinnedImages(): Map<string, string> {
+  const services: { name: string; varName?: string; anchorName?: string; anchorRef?: string }[] = []
+  let current: (typeof services)[number] | undefined
+  for (const line of readFileSync(releaseLayerPath, 'utf8').split('\n')) {
+    const service = /^ {2}([a-z0-9][a-z0-9-]*):(?: &([A-Za-z0-9_-]+))?$/.exec(line)
+    if (service) {
+      current = { name: service[1]!, anchorName: service[2] }
+      services.push(current)
+      continue
+    }
+    const image = /^ {4}image: \$\{([A-Z0-9_]+):\?/.exec(line)
+    if (image && current) {
+      current.varName = image[1]
+      continue
+    }
+    const anchor = /^ {4}<<: \*([A-Za-z0-9_-]+)$/.exec(line)
+    if (anchor && current) current.anchorRef = anchor[1]
+  }
+  // The anchored mapping (not the service name) is what `<<:` names, so resolve
+  // through the anchor table — `worker-generation` inherits `WORKER_IMAGE_REF`
+  // from the `&release-worker-image` anchor declared on `worker-sync`.
+  const anchored = new Map(services.filter(service => service.anchorName && service.varName).map(service => [service.anchorName!, service.varName!]))
+  return new Map(services.map(service => [service.name, service.varName ?? anchored.get(service.anchorRef ?? '') ?? '']))
+}
+
+/** Every variable the release layer refuses to interpolate without (`${VAR:?}`). */
+function releaseLayerRequiredVariables(): string[] {
+  return [...new Set([...readFileSync(releaseLayerPath, 'utf8').matchAll(/\$\{([A-Z0-9_]+):\?/gu)].map(match => match[1]!))]
+}
+
+/** Artifact -> services, from the digest manifest the release gate enforces. */
+function requiredReleaseArtifacts(): Map<string, string[]> {
+  const source = readFileSync('infra/scripts/validate-ecs-compose-release.rb', 'utf8')
+  const body = /required = \{(?<body>[\s\S]*?)\n\}/u.exec(source)?.groups?.body ?? ''
+  return new Map([...body.matchAll(/'([a-z0-9-]+)' => %w\[([a-z0-9 -]+)\]/gu)].map(match => [match[1]!, match[2]!.split(' ')]))
+}
+
+/** Variables a repository script asserts as required, plus the `.env.example` template keys. */
+function declaredVariables(): Set<string> {
+  const declared = new Set([...readFileSync('.env.example', 'utf8').matchAll(/^([A-Z][A-Z0-9_]*)=/gmu)].map(match => match[1]!))
+  for (const entry of readdirSync('infra/scripts')) {
+    if (!entry.endsWith('.sh')) continue
+    for (const match of readFileSync(join('infra/scripts', entry), 'utf8').matchAll(/: "\$\{([A-Z0-9_]+):\?/gu)) declared.add(match[1]!)
+  }
+  return declared
+}
+
 describe('ECS Compose release gate', () => {
-  it('accepts only a complete immutable image set, including payment gateway', () => {
+  it('accepts only a complete immutable image set, including both gateways', () => {
     expect(run(fixture())).toMatch(/^sha256:[0-9a-f]{64}$/)
     const { ['payment-gateway']: _, ...missingPayment } = digests
     expect(() => run(fixture(), missingPayment)).toThrow(/payment-gateway digest/)
+    // The public pilot gateway was the one service in the release layer that
+    // still carried a `build:` directive instead of a pinned `image:`, so the
+    // deploy and rollback paths (`up -d --no-build`) could not start it at all.
+    // It must be pinned like every other artifact, and a missing digest must
+    // fail closed rather than silently ship an unpinned public entry point.
+    const { ['pilot-gateway']: __, ...missingPilot } = digests
+    expect(() => run(fixture(), missingPilot)).toThrow(/pilot-gateway digest/)
   })
 
   it('requires migrate to use its own immutable PostgreSQL 17 image', () => {
@@ -100,5 +181,25 @@ describe('ECS Compose release gate', () => {
     expect(runContract(document, { RELEASE_ID: 'release-1', RELEASE_GIT_SHA: 'a'.repeat(40) })).toContain('ECS Compose release gate passed')
     document.services.api.environment.RELEASE_ID = 'different-release'
     expect(() => runContract(document, { RELEASE_ID: 'release-1', RELEASE_GIT_SHA: 'a'.repeat(40) })).toThrow(/api RELEASE_ID does not match/)
+  })
+
+  it('closes the fixed release manifest: every required variable has a producer, every required artifact is pinned', () => {
+    const pinned = releaseLayerPinnedImages()
+    const required = requiredReleaseArtifacts()
+    // Non-vacuity: both halves of the closure must actually be parsed. A missing
+    // artifact is caught by the digest test above, a missing pinned image by the
+    // per-service assertion below.
+    expect(required.size).toBeGreaterThan(0)
+    expect(pinned.size).toBeGreaterThan(0)
+
+    const unpinned = [...required].flatMap(([artifact, services]) =>
+      services.filter(service => !pinned.get(service)).map(service => `${artifact} -> ${service}`))
+    expect(unpinned, `these artifacts are in the digest manifest but are not pinned in ${releaseLayerPath}: add an \`image: \${VAR:?}\` line for each service and declare VAR (see the check below): ${unpinned.join(', ')}`).toEqual([])
+
+    const requiredVariables = releaseLayerRequiredVariables()
+    expect(requiredVariables.length).toBeGreaterThan(0)
+    const declared = declaredVariables()
+    const undeclared = requiredVariables.filter(name => !declared.has(name))
+    expect(undeclared, `these variables are required by ${releaseLayerPath} but have no producer: declare each as ": "\${NAME:?NAME is required}"" in an infra/scripts preflight and list it in .env.example, so the deploy-time .env template and the preflight contract name it before the render fails: ${undeclared.join(', ')}`).toEqual([])
   })
 })

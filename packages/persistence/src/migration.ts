@@ -680,6 +680,8 @@ export async function loadMigrations(): Promise<Migration[]> {
   const platformMediaSpecAuditAppendOnly = await readFile(new URL('./migrations/227_platform_media_spec_audit_append_only.sql', import.meta.url), 'utf8')
   const auditLedgerErrnoContract = await readFile(new URL('./migrations/228_audit_ledger_errno_contract.sql', import.meta.url), 'utf8')
   const evidenceAndSnapshotAppendOnlyGuards = await readFile(new URL('./migrations/229_evidence_and_snapshot_append_only_guards.sql', import.meta.url), 'utf8')
+  const revokeTenantDmlOnSharedPlatformRules = await readFile(new URL('./migrations/230_revoke_tenant_dml_on_shared_platform_rules.sql', import.meta.url), 'utf8')
+  const storageQuotaPerObjectReservationKeys = await readFile(new URL('./migrations/231_storage_quota_per_object_reservation_keys.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -910,6 +912,8 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 227, name: 'platform_media_spec_audit_append_only', sql: platformMediaSpecAuditAppendOnly },
     { version: 228, name: 'audit_ledger_errno_contract', sql: auditLedgerErrnoContract },
     { version: 229, name: 'evidence_and_snapshot_append_only_guards', sql: evidenceAndSnapshotAppendOnlyGuards },
+    { version: 230, name: 'revoke_tenant_dml_on_shared_platform_rules', sql: revokeTenantDmlOnSharedPlatformRules },
+    { version: 231, name: 'storage_quota_per_object_reservation_keys', sql: storageQuotaPerObjectReservationKeys },
   ]
 }
 

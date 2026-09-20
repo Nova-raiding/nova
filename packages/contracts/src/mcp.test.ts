@@ -293,6 +293,17 @@ describe('MCP method contract', () => {
     expect(getMcpMethodContract('merchant.first_value')?.description).toMatch(/safe first-value preview bundle.*never publishes/iu)
     expect(MCP_METHOD_SCHEMAS['brand-unit.bind-store'].required).toEqual(['brand_id', 'platform', 'account_id'])
     expect(MCP_METHOD_SCHEMAS['brand-unit.bind-store'].properties.expected_revision).toEqual({ type: 'string', pattern: '^[1-9][0-9]*$', maxLength: 10 })
+    // The Ops console always sends an auditable reason and the handler reads it
+    // (server.ts brand-unit.bind-store -> recordOperationAudit). Declaring the
+    // optional key is what keeps that write from being rejected as off-contract.
+    expect(MCP_METHOD_SCHEMAS['brand-unit.bind-store'].properties.reason).toEqual({ type: 'string', minLength: 3, maxLength: 1_000, description: 'Auditable operator reason for this interactive write.' })
+    // task.sku.split/task.request.create declare idempotency_key and the handler
+    // reads params.idempotency_key, so task.group.create must not be stricter.
+    expect(MCP_METHOD_SCHEMAS['task.group.create'].properties.idempotency_key).toEqual({ type: 'string' })
+    // mcpPagination reads limit/offset and the handler switches to
+    // listContentVersionsPage when either is supplied; the schema must allow both.
+    expect(MCP_METHOD_SCHEMAS['content.versions'].properties.limit).toEqual({ type: 'string', pattern: '^(?:[1-9]|[1-9][0-9]|100)$', maxLength: 3 })
+    expect(MCP_METHOD_SCHEMAS['content.versions'].properties.offset).toEqual({ type: 'string', pattern: '^(?:0|[1-9][0-9]*)$', maxLength: 10 })
     expect(MCP_METHOD_SCHEMAS['campaign.batch.create'].required).toEqual(['brand_id'])
     expect(MCP_METHOD_SCHEMAS['campaign.batch.create'].properties.product_ids_json).toMatchObject({ type: 'string', description: expect.stringContaining('1 至 50') })
     expect(MCP_METHOD_SCHEMAS['campaign.batch.generate'].properties.request_text).toMatchObject({ type: 'string', description: expect.stringContaining('素材类型') })

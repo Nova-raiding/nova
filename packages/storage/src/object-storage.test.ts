@@ -192,6 +192,39 @@ describe('LocalObjectStorage', () => {
       .rejects.toMatchObject({ code: 'OBJECT_INTEGRITY_FAILED', status: 500 })
   })
 
+  it('lists a body named like metadata as an object instead of reading it as another key', async () => {
+    const store = await storage()
+    const body = new TextEncoder().encode(JSON.stringify({ note: '普通 JSON 素材' }))
+    const uploaded = await store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_meta_name', fileName: 'config.meta.json', contentType: 'application/json', body, expectedSha256: digest(body) })
+    expect(uploaded.key).toBe('quarantine/ws_a/asset_meta_name/config.meta.json')
+
+    const listed = await store.list('ws_a')
+    expect(listed).toHaveLength(1)
+    expect(listed[0]).toMatchObject({ key: 'quarantine/ws_a/asset_meta_name/config.meta.json', sha256: digest(body), sizeBytes: body.byteLength })
+    // The body must never be interpreted as the metadata record of the
+    // extension-stripped key `.../config`.
+    expect(listed.map(item => item.key)).not.toContain('quarantine/ws_a/asset_meta_name/config')
+  })
+
+  it('ignores a forged metadata body that claims to describe another object', async () => {
+    const store = await storage()
+    const body = new TextEncoder().encode(JSON.stringify({ note: 'forged inventory' }))
+    const uploaded = await store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_forged', fileName: 'config.meta.json', contentType: 'application/json', body })
+    // Simulate a body whose contents impersonate an ObjectMetadata record for
+    // the extension-stripped key plus a body that matches it.
+    const forged = { key: 'quarantine/ws_a/asset_forged/config', workspaceId: 'ws_a', zone: 'quarantine', sha256: 'a'.repeat(64), sizeBytes: 9_007_199_254_740, contentType: 'application/json', createdAt: new Date().toISOString() }
+    await writeFile(join(store.rootDir, uploaded.key), JSON.stringify(forged))
+    await writeFile(join(store.rootDir, 'quarantine/ws_a/asset_forged/config'), 'forged-body')
+
+    const listed = await store.list('ws_a')
+    // Only the object that really was uploaded is inventoried. The forged body
+    // is neither read as the metadata of `.../config` nor allowed to inject its
+    // claimed size/digest into reconciliation.
+    expect(listed).toHaveLength(1)
+    expect(listed[0]).toMatchObject({ key: 'quarantine/ws_a/asset_forged/config.meta.json', sizeBytes: body.byteLength })
+    expect(listed.map(item => item.sha256)).not.toContain('a'.repeat(64))
+  })
+
   it('fails closed when a clean metadata record loses or corrupts scanner evidence', async () => {
     const store = await storage()
     const body = new TextEncoder().encode('evidence-bound clean object')
@@ -504,6 +537,25 @@ describe('S3CompatibleObjectStorage', () => {
     objects.set(`merchant/${cleanKey}`, { body: targetBody, contentType: 'text/plain', metadata: { workspaceId: 'ws_conflict', zone: 'clean' } })
     await expect(store.promoteClean({ workspaceId: 'ws_conflict', quarantineKey: quarantine.key, scanEvidenceRef: 'scanner://conflict' })).rejects.toMatchObject({ code: 'OBJECT_PROMOTION_CONFLICT' })
     await expect(store.get('ws_conflict', quarantine.key, { includeQuarantine: true })).resolves.toMatchObject({ body: sourceBody })
+  })
+
+  it('does not read a cloud object body as another key’s metadata record', async () => {
+    const objects = new Map<string, { body: Uint8Array; contentType: string; metadata: Record<string, string> }>()
+    const transport: CloudObjectTransport = {
+      async head(key) { const item = objects.get(key); return item ? { contentType: item.contentType, sizeBytes: item.body.byteLength, metadata: item.metadata } : null },
+      async list(prefix) { return [...objects.keys()].filter(key => key.startsWith(prefix)).sort() },
+      async get(key) { const item = objects.get(key); if (!item) throw new CloudObjectNotFoundError(); return { body: item.body, contentType: item.contentType, metadata: item.metadata } },
+      async put(key, input) { objects.set(key, { body: input.body, contentType: input.contentType, metadata: input.metadata }) },
+      async delete(key) { objects.delete(key) },
+    }
+    const store = new S3CompatibleObjectStorage(transport, { keyPrefix: 'merchant' })
+    const body = new TextEncoder().encode(JSON.stringify({ note: '普通 JSON 素材' }))
+    const uploaded = await store.putQuarantine({ workspaceId: 'ws_cloud', assetId: 'asset_meta_name', fileName: 'config.merchant-meta.json', contentType: 'application/json', body })
+
+    const listed = await store.list('ws_cloud')
+    expect(listed).toHaveLength(1)
+    expect(listed[0]).toMatchObject({ key: uploaded.key, sha256: digest(body), sizeBytes: body.byteLength })
+    expect(listed.map(item => item.key)).not.toContain('quarantine/ws_cloud/asset_meta_name/config')
   })
 
   it('makes cloud deletion converge when the body or metadata was already removed', async () => {

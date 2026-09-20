@@ -1457,6 +1457,19 @@ export interface MerchantServiceOptions {
   requireProductionDeliveryEvidence?: boolean
 }
 
+/** Normalize a promotion validity bound. The instant is validated before
+ * `toISOString()` runs: an unparseable date string would otherwise raise
+ * RangeError, which the request layer maps to a 500 instead of the
+ * PROMOTION_DATE_INVALID 400 the surrounding contract promises. */
+function promotionTimestamp(value: unknown): string | undefined {
+  if (value === undefined) return undefined
+  const detail = '促销有效期必须是合法且 valid_from 早于 valid_to 的时间'
+  if (typeof value !== 'string' || !value.trim()) throw new DomainError('PROMOTION_DATE_INVALID', detail, 400)
+  const parsed = Date.parse(value)
+  if (!Number.isFinite(parsed)) throw new DomainError('PROMOTION_DATE_INVALID', detail, 400)
+  return new Date(parsed).toISOString()
+}
+
 export class MerchantService {
   readonly products = new Map<string, Product>()
   readonly tasks = new Map<string, Task>()
@@ -1549,9 +1562,9 @@ export class MerchantService {
         const prices = new Set((product.skus ?? []).map(sku => sku.price.toFixed(2)))
         if (prices.size > 1) throw new DomainError('PROMOTION_SKU_SCOPE_REQUIRED', '多 SKU 价格不一致时，促销项必须明确 sku_ids', 409)
       }
-      const validFrom = typeof value.valid_from === 'string' && value.valid_from.trim() ? new Date(value.valid_from).toISOString() : undefined
-      const validTo = typeof value.valid_to === 'string' && value.valid_to.trim() ? new Date(value.valid_to).toISOString() : undefined
-      if ((value.valid_from !== undefined && !validFrom) || (value.valid_to !== undefined && !validTo) || (validFrom && validTo && Date.parse(validFrom) >= Date.parse(validTo))) throw new DomainError('PROMOTION_DATE_INVALID', '促销有效期必须是合法且 valid_from 早于 valid_to 的时间', 400)
+      const validFrom = promotionTimestamp(value.valid_from)
+      const validTo = promotionTimestamp(value.valid_to)
+      if (validFrom && validTo && Date.parse(validFrom) >= Date.parse(validTo)) throw new DomainError('PROMOTION_DATE_INVALID', '促销有效期必须是合法且 valid_from 早于 valid_to 的时间', 400)
       if (kind === 'activity' || kind === 'coupon' || kind === 'final_price' || kind === 'presale' || kind === 'deposit_balance') {
         if (!validTo || Date.parse(validTo) <= Date.now()) throw new DomainError('PROMOTION_EXPIRED', '活动价、券后价和预售促销必须有未过期的 valid_to', 409)
       }
@@ -3291,6 +3304,12 @@ export class MerchantService {
   }
   failGeneration(input: { workspaceId: string; jobId: string; code: string; message: string }) {
     const job = this.getGenerationJob(input.workspaceId, input.jobId)
+    // 'succeeded' is terminal: completeGeneration/deferGeneration/
+    // markImageGenerationFailed all refuse to downgrade a delivered job, and a
+    // late failure report from a second executor must not rewrite it into
+    // failed. The caller still has to guard its own compensation — the worker
+    // result endpoint refunds from the report, not from this return value.
+    if (job.state === 'succeeded') return job
     if (job.state === 'queued') this.startGeneration(input.workspaceId, input.jobId)
     job.state = 'failed'; job.errorCode = input.code; job.errorMessage = input.message; job.nextAttemptAt = undefined; job.waitingReason = undefined; job.revision += 1; job.updatedAt = now()
     return job

@@ -4,6 +4,7 @@ import { validateConnectorReadiness, type ConnectorReadiness } from './readiness
 import { createAlibabaTopSigner, mapAlibabaTopProducts, mapAlibabaTopWriteReceipt, mapAlibabaTopWriteStatus } from './platform-adapters/alibaba-top.js'
 import { createJdSigner, mapJdProducts, mapJdWriteReceipt, mapJdWriteStatus } from './platform-adapters/jd.js'
 import { createPinduoduoSigner, mapPinduoduoProducts, mapPinduoduoWriteReceipt, mapPinduoduoWriteStatus } from './platform-adapters/pinduoduo.js'
+import { missingApiSelectors, PLATFORM_API_SELECTORS } from './platform-adapters/api-selector.js'
 import { providerRequestId } from './platform-adapters/rejection.js'
 
 /**
@@ -322,6 +323,35 @@ export function assertNoUnwiredPlatformSwitches(source: ConfigSource): void {
   if (switches.length) throw new UnwiredPlatformSwitchError(switches)
 }
 
+/** Router gateways (TOP, JD routerjson, Pinduoduo) select the API with a
+ * request parameter, not with the URL path. The selector is read from
+ * `{SYNC,CREATE,UPDATE,QUERY,MEDIA}_METHOD` for the same reason the paths are:
+ * the URL cannot carry it (`validRelativePath` rejects `?`), so leaving it out
+ * of the configuration layer forced the signer to guess. It is never replaced
+ * by another operation's API: the signer that consumes the selector declares it
+ * (`RequestSigner.requiredApiSelectors`) and readiness refuses the whole
+ * platform (`API_SELECTOR_MISSING`) when it is absent, so the deployment cannot
+ * be admitted and then dead-letter every call with a terminal NOT_CONFIGURED. */
+function apiMethodsFromSource(source: ConfigSource, prefix: string): HttpConnectorConfig['api']['methods'] | undefined {
+  const methods: NonNullable<HttpConnectorConfig['api']['methods']> = {}
+  for (const selector of PLATFORM_API_SELECTORS) {
+    const configured = value(source, `${prefix}_${selector.toUpperCase()}_METHOD`)
+    if (configured) methods[selector] = configured
+  }
+  return Object.keys(methods).length ? methods : undefined
+}
+
+/** Names the configuration a router-gateway signer still needs, in the terms
+ * its caller writes it. Readiness reports the machine code
+ * (`API_SELECTOR_MISSING`); without the key name an operator reading `/readyz`
+ * sees only which platform is blocked, which is how a deployment could pass
+ * every gate and still dead-letter every JD/TOP/PDD call. */
+function missingApiSelectorKeys(platform: Platform, config: HttpConnectorConfig | undefined, style: 'environment' | 'structured'): string[] {
+  const missing = missingApiSelectors(config?.api.methods, config?.signer?.requiredApiSelectors)
+  const prefix = platformPrefixes[platform]
+  return missing.map(selector => style === 'environment' ? `${prefix}_${selector.toUpperCase()}_METHOD` : `api.methods.${selector}`)
+}
+
 function buildOne(platform: Platform, source: ConfigSource): { config?: HttpConnectorConfig; missing: string[] } {
   const prefix = platformPrefixes[platform]
   // Platform switches are part of the runtime admission contract. Missing,
@@ -349,12 +379,14 @@ function buildOne(platform: Platform, source: ConfigSource): { config?: HttpConn
   }
   if (missing.length) return { missing }
   const apiDefaults = defaults[platform]
+  const apiMethods = apiMethodsFromSource(source, prefix)
   const api: HttpConnectorConfig['api'] = {
       baseUrl: baseUrl!,
     syncPath: value(source, `${prefix}_SYNC_PATH`) ?? apiDefaults.syncPath,
     createPath: value(source, `${prefix}_CREATE_PATH`) ?? apiDefaults.createPath,
     updatePath: value(source, `${prefix}_UPDATE_PATH`) ?? apiDefaults.updatePath,
     queryPath: value(source, `${prefix}_QUERY_PATH`) ?? apiDefaults.queryPath,
+    ...(apiMethods ? { methods: apiMethods } : {}),
   }
   const mappingEvidence = (() => {
     const version = value(source, `${prefix}_MAPPING_EVIDENCE_VERSION`)
@@ -389,9 +421,9 @@ function buildOne(platform: Platform, source: ConfigSource): { config?: HttpConn
       ...(mappingEvidence ? { mappingEvidence } : {}),
       ...(responseMapping ? { responseMapping } : {}),
       ...(value(source, `${prefix}_MEDIA_UPLOAD_PATH`) && responseMapping?.mediaIdPath ? { mapMediaUpload: (payload: unknown, input: import('./types.js').MediaUploadInput, current: Platform) => genericMediaUpload(payload, input, current, responseMapping) } : {}),
-      ...(clientSecret && platform === 'jd' ? { signer: createJdSigner({ appKey: clientId!, appSecret: clientSecret }) } : {}),
-      ...(clientSecret && (platform === 'taobao' || platform === 'tmall') ? { signer: createAlibabaTopSigner({ appKey: clientId!, appSecret: clientSecret }) } : {}),
-      ...(clientSecret && platform === 'pinduoduo' ? { signer: createPinduoduoSigner({ clientId: clientId!, clientSecret }) } : {}),
+      ...(clientSecret && platform === 'jd' ? { signer: createJdSigner({ appKey: clientId!, appSecret: clientSecret, ...(apiMethods ? { methods: apiMethods } : {}) }) } : {}),
+      ...(clientSecret && (platform === 'taobao' || platform === 'tmall') ? { signer: createAlibabaTopSigner({ appKey: clientId!, appSecret: clientSecret, ...(apiMethods ? { methods: apiMethods } : {}) }) } : {}),
+      ...(clientSecret && platform === 'pinduoduo' ? { signer: createPinduoduoSigner({ clientId: clientId!, clientSecret, ...(apiMethods ? { methods: apiMethods } : {}) }) } : {}),
       ...(platform === 'xiaohongshu' || platform === 'douyin' ? { signer: createBearerSigner(), mapProducts: (payload: unknown, current: Platform) => genericProducts(payload, current, responseMapping), mapWriteReceipt: (payload: unknown, input: import('./types.js').PlatformWriteDraft, operation: 'create' | 'update', current: Platform) => genericWriteReceipt(payload, input, operation, current, responseMapping), mapWriteStatus: (payload: unknown, request: WriteIdentity, current: Platform) => genericWriteStatus(payload, request, current, responseMapping) } : {}),
       ...(platform === 'jd' ? {
         mapProducts: mapJdProducts,
@@ -435,7 +467,7 @@ export function buildHttpConnectorConfigs(source: ConfigSource = process.env, op
     if (result.config) allConfigs[platform] = result.config
     if (result.config && state.ready) configs[platform] = result.config
     if (result.config && state.ready) candidates[platform] = result.config
-    missing[platform] = [...result.missing, ...state.reasons]
+    missing[platform] = [...result.missing, ...state.reasons, ...missingApiSelectorKeys(platform, result.config, 'environment')]
   }
   return { configs, allConfigs, candidates, missing, readiness }
 }
@@ -466,7 +498,7 @@ export function buildHttpConnectorConfigsFromStructured(source: Partial<Record<P
     if (candidate) allConfigs[platform] = candidate
     if (candidate && state.ready) configs[platform] = candidate
     if (candidate && state.ready) candidates[platform] = candidate
-    missing[platform] = [...missingFields, ...state.reasons]
+    missing[platform] = [...missingFields, ...state.reasons, ...missingApiSelectorKeys(platform, candidate, 'structured')]
   }
   return { configs, allConfigs, candidates, missing, readiness }
 }
@@ -490,23 +522,24 @@ export function platformConfigPrefix(platform: Platform): string { return platfo
  * environment loading. Explicit reviewed adapters always win; built-ins only
  * fill the platform boundary when the platform secret is present. */
 function withPlatformAdapters(platform: Platform, config: HttpConnectorConfig): HttpConnectorConfig {
+  const methods = config.api.methods
   if (platform === 'jd') return {
     ...config,
-    ...(config.clientSecret && !config.signer ? { signer: createJdSigner({ appKey: config.clientId, appSecret: config.clientSecret }) } : {}),
+    ...(config.clientSecret && !config.signer ? { signer: createJdSigner({ appKey: config.clientId, appSecret: config.clientSecret, ...(methods ? { methods } : {}) }) } : {}),
     ...(config.mapProducts ? {} : { mapProducts: mapJdProducts }),
     ...(config.mapWriteReceipt ? {} : { mapWriteReceipt: mapJdWriteReceipt }),
     ...(config.mapWriteStatus ? {} : { mapWriteStatus: mapJdWriteStatus }),
   }
   if (platform === 'pinduoduo') return {
     ...config,
-    ...(config.clientSecret && !config.signer ? { signer: createPinduoduoSigner({ clientId: config.clientId, clientSecret: config.clientSecret }) } : {}),
+    ...(config.clientSecret && !config.signer ? { signer: createPinduoduoSigner({ clientId: config.clientId, clientSecret: config.clientSecret, ...(methods ? { methods } : {}) }) } : {}),
     ...(config.mapProducts ? {} : { mapProducts: mapPinduoduoProducts }),
     ...(config.mapWriteReceipt ? {} : { mapWriteReceipt: mapPinduoduoWriteReceipt }),
     ...(config.mapWriteStatus ? {} : { mapWriteStatus: mapPinduoduoWriteStatus }),
   }
   if ((platform === 'taobao' || platform === 'tmall') && config.clientSecret) return {
     ...config,
-    ...(config.signer ? {} : { signer: createAlibabaTopSigner({ appKey: config.clientId, appSecret: config.clientSecret }) }),
+    ...(config.signer ? {} : { signer: createAlibabaTopSigner({ appKey: config.clientId, appSecret: config.clientSecret, ...(methods ? { methods } : {}) }) }),
     ...(config.mapProducts ? {} : { mapProducts: (payload: unknown, current: Platform) => mapAlibabaTopProducts(payload, current as 'taobao' | 'tmall') }),
     ...(config.mapWriteReceipt ? {} : { mapWriteReceipt: (payload: unknown, input: Parameters<NonNullable<HttpConnectorConfig['mapWriteReceipt']>>[1], operation: 'create' | 'update', current: Platform) => mapAlibabaTopWriteReceipt(payload, input, operation, current as 'taobao' | 'tmall') }),
     ...(config.mapWriteStatus ? {} : { mapWriteStatus: (payload: unknown, request: Parameters<NonNullable<HttpConnectorConfig['mapWriteStatus']>>[1], current: Platform) => mapAlibabaTopWriteStatus(payload, request, current as 'taobao' | 'tmall') }),

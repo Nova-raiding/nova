@@ -1278,7 +1278,7 @@ components:
   schemas:
     McpBrandUnitBindStoreParams:
       type: object
-      description: Bind an authorized platform store to a brand unit. expected_revision is optional for backward compatibility and, when supplied, provides optimistic concurrency protection.
+      description: Bind an authorized platform store to a brand unit. expected_revision is optional for backward compatibility and, when supplied, provides optimistic concurrency protection. reason is optional and is recorded in the operation audit trail.
       required: [brand_id, platform, account_id]
       properties:
         workspace_id: { type: string, description: Compatibility field; authorization comes from the server-side token/workspace scope. }
@@ -1286,6 +1286,7 @@ components:
         platform: { type: string, enum: [jd, taobao, tmall, pinduoduo, xiaohongshu, douyin] }
         account_id: { type: string, minLength: 1, maxLength: 256 }
         expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10, description: Optional current brand revision; stale values fail with 409 BRAND_STORE_REVISION_CONFLICT. }
+        reason: { type: string, minLength: 3, maxLength: 1000, description: Optional auditable operator reason; defaults to the built-in binding reason when omitted. }
       additionalProperties: false
     McpCanonicalProductConsistencyParams:
       type: object

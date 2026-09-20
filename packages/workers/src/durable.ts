@@ -385,6 +385,15 @@ export interface DurableDispatcherOptions {
   random?: () => number
   claim?: Pick<OutboxClaimOptions, 'eventTypes' | 'snapshotEntityTypes'>
   /**
+   * Claim routing re-evaluated on every `restore()`, for a worker that owns
+   * several queues in one process and must narrow what it claims when one of
+   * them is temporarily unable to run. Returning `undefined` falls back to the
+   * static `claim`. This exists because a static filter cannot express
+   * "everything except the queue that is gated", and freezing the whole worker
+   * instead takes the healthy queues down with the gated one.
+   */
+  claimFor?: () => Pick<OutboxClaimOptions, 'eventTypes' | 'snapshotEntityTypes'> | undefined
+  /**
    * Called once when a delivery is claimed for execution (`started`) and once
    * per terminal or retry outcome. The production worker wires this to
    * `writeWorkerDispatchLog` so every dead letter and retry leaves a
@@ -446,6 +455,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
   private readonly maxAttempts: number
   private readonly random: () => number
   private readonly claim: DurableDispatcherOptions['claim']
+  private readonly claimFor: DurableDispatcherOptions['claimFor']
   private readonly onDispatch: ((observation: WorkerDispatchObservation<E>) => void) | undefined
 
   constructor(
@@ -481,6 +491,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     }
     this.random = options.random ?? Math.random
     this.claim = options.claim
+    this.claimFor = options.claimFor
     this.onDispatch = options.onDispatch
   }
 
@@ -508,7 +519,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     // strand the event until the lease expires, so never claim more work than
     // the queue can hold.
     if (this.queue.hasCapacity && !await this.queue.hasCapacity()) return 0
-    const events = await this.store.claimPending(workspaceId, { limit, leaseMs: this.leaseMs, now, ...this.claim })
+    const events = await this.store.claimPending(workspaceId, { limit, leaseMs: this.leaseMs, now, ...(this.claimFor?.() ?? this.claim) })
     let added = 0
     // A depth limit refuses the delivery, not this event: every remaining claim
     // of the batch would be refused too. Releasing only the one that hit the

@@ -327,6 +327,75 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('does not open the interactive write window when the server-side confirmation fails', async () => {
+    const forwarded: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body).method)
+      // The API rejects (or cannot settle) the interactive confirmation.
+      res.writeHead(500).end()
+    })
+    const address = await listen(server)
+    const deletion = { scope: 'workspace', reason: '商家要求删除工作区数据', idempotency_key: 'delete-request-1' }
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      // A configured token makes the confirmation API-backed, while the legacy
+      // write env stays disabled so the interactive window is the only gate.
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: 'false' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.data.delete.request', arguments: deletion } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      // The merchant is told the confirmation failed, so no window may open.
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true })
+      expect(forwarded).toEqual(['workspace.interactive.confirm'])
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'workspace.data.delete.request', arguments: deletion } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'workspace.deactivate', arguments: { reason: '商家要求停用' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      // Only the failed confirmation attempt ever reached the API.
+      expect(forwarded).toEqual(['workspace.interactive.confirm'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('still opens the interactive write window on the local path that has no remote confirmation', async () => {
+    const forwarded: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body).method)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { accepted: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const deletion = { scope: 'workspace', reason: '商家要求删除工作区数据', idempotency_key: 'delete-request-1' }
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      // No token and no restricted DEPLOY_ENV: there is no remote confirmation
+      // step at all, so the window must still open locally.
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'false' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true, automation: 'read_only' } })
+      // No token means no server-side ticket round trip was attempted.
+      expect(forwarded).toEqual([])
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.data.delete.request', arguments: deletion } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { accepted: true } })
+      expect(forwarded).toEqual(['workspace.data.delete.request'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('rejects undeclared tool arguments before forwarding them to the API', async () => {
     const forwarded: string[] = []
     const server = createServer(async (req, res) => {

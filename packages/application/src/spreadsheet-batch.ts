@@ -55,6 +55,22 @@ function nonNegativeNumber(value: unknown, row: number, field: string, integer =
   return result
 }
 
+const productIdentityFields = ['title', 'category', 'local_product_key', 'remote_id', 'store_name', 'store_differentiation']
+
+/** Merge one row's product-level fields into the group that already holds the
+ * same platform identity. Two rows of the same product may only disagree on
+ * fields that are stored per SKU. */
+function mergeProductFields(existing: Record<string, unknown>, product: Record<string, unknown>, rowNumber: number, fields: readonly string[]): void {
+  for (const field of fields) {
+    if (existing[field] !== undefined && product[field] !== undefined && existing[field] !== product[field]) throw new SpreadsheetBatchImportError(rowNumber, `同一商品的 ${field} 不一致`)
+    if (existing[field] === undefined && product[field] !== undefined) existing[field] = product[field]
+  }
+  for (const field of ['images', 'asset_ids']) {
+    const combined = [...new Set([...(existing[field] as string[] ?? []), ...(product[field] as string[] ?? [])])]
+    if (combined.length) existing[field] = combined
+  }
+}
+
 /** One SKU per row; stable product keys keep distinct products separate. */
 export function spreadsheetFactsToBatchProducts(facts: Record<string, unknown>): Record<string, unknown>[] {
   if ((facts.format !== 'xlsx' && facts.format !== 'csv') || !Array.isArray(facts.rows)) throw new SpreadsheetBatchImportError(1, '仅支持已解析的 XLSX 或 CSV 商品表格')
@@ -96,8 +112,26 @@ export function spreadsheetFactsToBatchProducts(facts: Record<string, unknown>):
       ...Object.fromEntries(['account_id', 'remote_id', 'local_product_key', 'category', 'store_name', 'store_differentiation'].filter(field => text(field)).map(field => [field, text(field)])),
       ...(price === undefined ? {} : { price }), ...(stock === undefined ? {} : { stock }),
       ...(skuCount === undefined ? {} : { sku_count: skuCount }), ...(assetIds ? { asset_ids: assetIds } : {}), ...(images ? { images } : {}) }
+    // A product-level row carries the same platform identity as its SKU rows,
+    // so it has to join the same group. Emitting it directly left the group
+    // empty (or stale) and a later SKU row for the same product produced a
+    // second record with that identity, which the import batch then rejected
+    // wholesale as a duplicate platform identity.
+    const remoteIdentity = text('remote_id') || text('local_product_key')
+    const key = JSON.stringify([platform, text('account_id'), remoteIdentity])
     const hasSku = ['sku_id', 'sku_name', 'color', 'size', 'sku_price', 'sku_stock', 'sku_images', 'sku_asset_ids'].some(field => text(field))
-    if (!hasSku) { output.push(product); return }
+    if (!hasSku) {
+      // Without an explicit product identity the row is identified by its
+      // title, so grouping on an empty key would collapse unrelated products
+      // of the same store into one record.
+      const grouped = remoteIdentity ? groups.get(key) : undefined
+      if (!grouped) {
+        if (remoteIdentity) groups.set(key, product)
+        output.push(product); return
+      }
+      mergeProductFields(grouped, product, rowNumber, grouped.skus === undefined ? [...productIdentityFields, 'price', 'stock'] : productIdentityFields)
+      return
+    }
     if (!text('sku_id')) throw new SpreadsheetBatchImportError(rowNumber, 'SKU 行必须填写 SKU编码')
     if (!text('remote_id') && !text('local_product_key')) throw new SpreadsheetBatchImportError(rowNumber, 'SKU 行必须填写商品货号或平台商品ID')
     const skuPrice = nonNegativeNumber(text('sku_price') || row.price, rowNumber, 'SKU价格')
@@ -107,23 +141,16 @@ export function spreadsheetFactsToBatchProducts(facts: Record<string, unknown>):
     const skuImages = splitList(row.sku_images)
     const skuAssetIds = splitList(row.sku_asset_ids)
     const sku = { ...(skuAssetIds ? { sourceAssetIds: skuAssetIds } : {}), id: text('sku_id'), name: text('sku_name') || [text('color'), text('size')].filter(Boolean).join(' / ') || text('sku_id'), price: skuPrice, stock: skuStock, ...(Object.keys(attributes).length ? { attributes } : {}), ...(skuImages ? { images: skuImages } : images ? { images } : {}) }
-    const key = JSON.stringify([platform, text('account_id'), text('remote_id') || text('local_product_key')])
     const existing = groups.get(key)
     if (!existing) {
       const first = { ...product, skus: [sku], sku_count: 1, price: skuPrice, stock: skuStock }
       groups.set(key, first); output.push(first); return
     }
-    for (const field of ['title', 'category', 'local_product_key', 'remote_id', 'store_name', 'store_differentiation']) {
-      if (existing[field] !== undefined && product[field] !== undefined && existing[field] !== product[field]) throw new SpreadsheetBatchImportError(rowNumber, `同一商品的 ${field} 不一致`)
-      if (existing[field] === undefined && product[field] !== undefined) existing[field] = product[field]
-    }
-    const skus = existing.skus as typeof sku[]
+    mergeProductFields(existing, product, rowNumber, productIdentityFields)
+    // A product-level row may have opened the group without a SKU list yet.
+    const skus = (Array.isArray(existing.skus) ? existing.skus : (existing.skus = [])) as typeof sku[]
     if (skus.some(item => item.id === sku.id)) throw new SpreadsheetBatchImportError(rowNumber, `同一商品存在重复 SKU编码 ${sku.id}`)
     skus.push(sku); existing.sku_count = skus.length; existing.price = Math.min(...skus.map(item => item.price)); existing.stock = skus.reduce((sum, item) => sum + item.stock, 0)
-    for (const field of ['images', 'asset_ids']) {
-      const combined = [...new Set([...(existing[field] as string[] ?? []), ...(product[field] as string[] ?? [])])]
-      if (combined.length) existing[field] = combined
-    }
   })
   if (!output.length) throw new SpreadsheetBatchImportError(2, '没有可导入的商品')
   if (output.length > 50) throw new SpreadsheetBatchImportError(1, '一次最多导入 50 个商品，请拆分表格')

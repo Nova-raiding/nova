@@ -27,10 +27,16 @@ describe('scanner heartbeat controller', () => {
     configured = true
     expect(await controller.tick()).toMatchObject({ ready: false, recoveryCapable: true, callback: { capable: false } })
     expect(controller.canProcessScans()).toBe(true)
-    await expect(stat(readyFile)).rejects.toMatchObject({ code: 'ENOENT' })
+    // Execution is admitted before readiness is. The marker exists so an
+    // operator can see *why*, but it carries `state: 'recovery'` and the probes
+    // (which require `state === 'ready'`) keep this pod out of rotation.
+    expect(JSON.parse(await readFile(readyFile, 'utf8'))).toMatchObject({ state: 'recovery', heartbeat: { ready: false, recoveryCapable: true, callback: { capable: false } } })
     acceptedAt = '2026-08-30T09:59:59.000Z'
     expect(await controller.tick()).toMatchObject({ ready: true, callback: { capable: true } })
-    expect(JSON.parse(await readFile(readyFile, 'utf8')).ready).toBe(true)
+    // The marker is the probe-parsed wrapper, not the bare heartbeat: the k8s
+    // scan readiness probe and the compose worker-scan healthcheck both read
+    // `state` and `heartbeat.expiresAt`.
+    expect(JSON.parse(await readFile(readyFile, 'utf8'))).toMatchObject({ readyAt: '2026-08-30T10:00:00.000Z', state: 'ready', heartbeat: { ready: true, schemaVersion: 'scanner-heartbeat/1.0' } })
   })
   it('publishes real probe evidence and immediately revokes the ready marker on dependency loss', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'scanner-heartbeat-'))
@@ -50,7 +56,7 @@ describe('scanner heartbeat controller', () => {
     expect((await controller.tick()).ready).toBe(true)
     expect(controller.canProcessScans()).toBe(true)
     expect(redis.lastCallbackAcceptedAt).toHaveBeenCalledWith('scan-a')
-    expect(JSON.parse(await readFile(readyFile, 'utf8'))).toMatchObject({ ready: true, queue: { backlog: 3, deadLetter: 0 } })
+    expect(JSON.parse(await readFile(readyFile, 'utf8'))).toMatchObject({ state: 'ready', heartbeat: { ready: true, queue: { backlog: 3, deadLetter: 0 } } })
     dependencyReady = false
     expect((await controller.tick()).ready).toBe(false)
     expect(controller.canProcessScans()).toBe(false)
@@ -68,7 +74,7 @@ describe('scanner heartbeat controller', () => {
     const directory = await mkdtemp(join(tmpdir(), 'scanner-heartbeat-'))
     const controller = new ScannerHeartbeatController({ instanceId: 'scan-b', readyFile: join(directory, 'ready'), scanner: { version: async () => 'ClamAV 1.4.2/28108/Sat Aug 30 09:30:00 2026', scan: async () => ({ status: 'infected', target: 'stream', signature: 'Eicar-Test-Signature', raw: 'FOUND' }) }, redis: { publish: async () => undefined, remove: async () => undefined, recordCallbackAccepted: async () => undefined, lastCallbackAcceptedAt: async () => undefined }, thresholds: { ttlSeconds: 15, definitionsMaxAgeSeconds: 86_400, eicarMaxAgeSeconds: 900, callbackMaxAgeSeconds: 86_400, minimumReadyInstances: 1 }, intervalMs: 5000, callbackConfigured: true, dependencyProbe: async () => ({ databaseReady: true, apiReady: true }), queueProbe: async () => ({ backlog: 0, deadLetter: 0 }), now: () => new Date('2026-08-30T10:00:00.000Z') })
     expect(await controller.tick()).toMatchObject({ ready: false, callback: { configured: true, capable: false } })
-    await expect(stat(join(directory, 'ready'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(JSON.parse(await readFile(join(directory, 'ready'), 'utf8'))).toMatchObject({ state: 'recovery', heartbeat: { ready: false, callback: { configured: true, capable: false } } })
     expect(controller.canProcessScans()).toBe(true)
   })
 
@@ -88,6 +94,19 @@ describe('scanner heartbeat controller', () => {
     })
     await expect(controller.tick()).resolves.toMatchObject({ ready: false, recoveryCapable: true, callback: { capable: true } })
     expect(controller.canProcessScans()).toBe(true)
+    // Recovery writes the marker too (recovery capability, not full readiness,
+    // decides that), but with `state: 'recovery'` so the probes keep the pod
+    // out of rotation instead of advertising a scanner that cannot yet accept
+    // a new callback.
+    expect(JSON.parse(await readFile(join(directory, 'ready'), 'utf8'))).toMatchObject({ state: 'recovery', heartbeat: { ready: false, recoveryCapable: true } })
+  })
+
+  it('lets the worker extend the readiness document without changing its shape', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'scanner-heartbeat-'))
+    const readyFile = join(directory, 'ready')
+    const controller = new ScannerHeartbeatController({ instanceId: 'scan-role', readyFile, scanner: { version: async () => 'ClamAV 1.4.2/28108/Sat Aug 30 09:30:00 2026', scan: async () => ({ status: 'infected', target: 'stream', signature: 'Eicar-Test-Signature', raw: 'FOUND' }) }, redis: { publish: async () => undefined, remove: async () => undefined, recordCallbackAccepted: async () => undefined, lastCallbackAcceptedAt: async () => '2026-08-30T09:58:00.000Z' }, thresholds: { ttlSeconds: 15, definitionsMaxAgeSeconds: 86_400, eicarMaxAgeSeconds: 900, callbackMaxAgeSeconds: 86_400, minimumReadyInstances: 1 }, intervalMs: 5000, callbackConfigured: true, dependencyProbe: async () => ({ databaseReady: true, apiReady: true }), queueProbe: async () => ({ backlog: 0, deadLetter: 0 }), now: () => new Date('2026-08-30T10:00:00.000Z'), formatReadyDocument: (heartbeat, at) => ({ ...{ readyAt: at.toISOString(), state: heartbeat.ready ? 'ready' : 'recovery', heartbeat }, role: 'scan' }) })
+    await controller.tick()
+    expect(JSON.parse(await readFile(readyFile, 'utf8'))).toMatchObject({ role: 'scan', state: 'ready', heartbeat: { instanceId: 'scan-role' } })
   })
 
   it('blocks business scans when ClamAV definitions exceed the freshness threshold', async () => {

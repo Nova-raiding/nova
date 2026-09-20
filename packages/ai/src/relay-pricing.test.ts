@@ -107,6 +107,63 @@ it('uses explicit resolution pricing instead of an overflowing fallback or stale
   await expect(value.quote({ ...usage, metadata: { duration_seconds: 5, duration_evidence: 'provider_usage' } })).rejects.toMatchObject({ code: 'MODEL_PRICING_RESOLUTION_REQUIRED' })
 })
 
+describe('RelayPricingClient request-side estimates', () => {
+  const preauthorization = (durationSeconds: number, resolution?: string) => ({
+    modality: 'video' as const,
+    model: 'agnes-video-v2.0',
+    observedAt: new Date().toISOString(),
+    metadata: { preauthorization_duration_seconds: durationSeconds, preauthorization_estimate: true, ...(resolution ? { resolution } : {}) },
+  })
+
+  it('prices a requested video duration that settlement pricing must refuse', async () => {
+    const estimating = new RelayPricingClient({ baseUrl: 'https://relay.example/v1', apiKey: 'secret', group: 'VIP', fetch: client().fetch })
+    const estimate = await estimating.estimateRequestCost(preauthorization(5))
+    expect(estimate).toMatchObject({ costCny: 544.265625, metadata: { cost_source: 'relay_pricing_snapshot_estimate', estimate: true, formula_version: 'new-api-quota-v1', pricing_group: 'VIP' } })
+    // The same snapshot and the same request-side inputs stay refused at the
+    // settlement boundary.
+    await expect(estimating.quote(preauthorization(5))).rejects.toMatchObject({ code: 'MODEL_PRICING_DURATION_EVIDENCE_MISSING' })
+  })
+
+  it('keeps the estimate boundary distinct from settled cost evidence', async () => {
+    const value = new RelayPricingClient({ baseUrl: 'https://relay.example/v1', apiKey: 'secret', group: 'VIP', fetch: client().fetch })
+    const settled = await value.quote({ modality: 'video', model: 'agnes-video-v2.0', observedAt: new Date().toISOString(), metadata: { duration_seconds: 5, duration_evidence: 'provider_usage' } })
+    expect(settled.metadata.cost_source).toBe('relay_pricing_snapshot')
+    expect(settled.metadata).not.toHaveProperty('estimate')
+  })
+
+  it('requires an explicit request-side estimate and never reads provider duration fields', async () => {
+    const value = new RelayPricingClient({ baseUrl: 'https://relay.example/v1', apiKey: 'secret', group: 'VIP', fetch: client().fetch })
+    await expect(value.estimateRequestCost({ modality: 'video', model: 'agnes-video-v2.0', observedAt: new Date().toISOString(), metadata: { duration_seconds: 5, duration_evidence: 'provider_usage' } })).rejects.toMatchObject({ code: 'MODEL_PRICING_ESTIMATE_DURATION_MISSING' })
+    await expect(value.estimateRequestCost({ modality: 'video', model: 'agnes-video-v2.0', observedAt: new Date().toISOString(), metadata: { preauthorization_duration_seconds: 5 } })).rejects.toMatchObject({ code: 'MODEL_PRICING_ESTIMATE_DURATION_MISSING' })
+    await expect(value.estimateRequestCost({ modality: 'video', model: 'agnes-video-v2.0', observedAt: new Date().toISOString(), metadata: {} })).rejects.toMatchObject({ code: 'MODEL_PRICING_ESTIMATE_DURATION_MISSING' })
+  })
+
+  it('estimates through the CNY-per-second override and resolution size prices', async () => {
+    const override = new RelayPricingClient({
+      baseUrl: 'https://relay.example/v1', apiKey: 'secret', group: 'SVIP', videoPriceCnyPerSecond: { 'happyhorse-1.1-t2v': 0.4508 },
+      fetch: client({ ...pricing, data: [{ model_name: 'happyhorse-1.1-t2v', quota_type: 1, model_ratio: 37.5, model_price: 0, completion_ratio: 1, enable_groups: ['SVIP'] }] }).fetch,
+    })
+    await expect(override.estimateRequestCost({ modality: 'video', model: 'happyhorse-1.1-t2v', observedAt: new Date().toISOString(), metadata: { preauthorization_duration_seconds: 5, preauthorization_estimate: true } })).resolves.toMatchObject({ costCny: 2.254, metadata: { formula_version: 'relay-video-cny-per-second-v1', estimate: true } })
+    const resolutionPricing = { ...pricing, data: [{ model_name: 'video-i2v', quota_type: 1, model_ratio: 37.5, model_price: 0, completion_ratio: 1, enable_groups: ['SVIP'], billing_mode: 'per_duration', duration_pricing: { fallback_price: 90000000, size_prices: { '1080P': 0.176 } } }] }
+    const resolution = new RelayPricingClient({ baseUrl: 'https://relay.example/v1', apiKey: 'secret', group: 'SVIP', fetch: client(resolutionPricing).fetch })
+    await expect(resolution.estimateRequestCost({ modality: 'video', model: 'video-i2v', observedAt: new Date().toISOString(), metadata: { preauthorization_duration_seconds: 5, preauthorization_estimate: true, resolution: '1080P' } })).resolves.toMatchObject({ costCny: 3.0052, metadata: { formula_version: 'relay-video-resolution-v1', estimate: true } })
+    await expect(resolution.estimateRequestCost({ modality: 'video', model: 'video-i2v', observedAt: new Date().toISOString(), metadata: { preauthorization_duration_seconds: 5, preauthorization_estimate: true } })).rejects.toMatchObject({ code: 'MODEL_PRICING_RESOLUTION_REQUIRED' })
+  })
+})
+
+it('bounds every snapshot request in time instead of inheriting the transport default', async () => {
+  const stalled = vi.fn((_url: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    const signal = init?.signal
+    const abort = () => reject(Object.assign(new Error('This operation was aborted'), { name: 'AbortError' }))
+    if (signal?.aborted) abort()
+    else signal?.addEventListener('abort', abort, { once: true })
+  }))
+  const value = new RelayPricingClient({ baseUrl: 'https://relay.example/v1', apiKey: 'secret', group: 'SVIP', fetch: stalled as unknown as typeof fetch, requestTimeoutMs: 20 })
+  await expect(value.quote({ modality: 'text', model: 'deepseek-v4-pro', inputTokens: 1, outputTokens: 1, observedAt: new Date().toISOString() })).rejects.toMatchObject({ code: 'MODEL_PRICING_FETCH_TIMEOUT' })
+  expect(stalled).toHaveBeenCalledTimes(2)
+  expect((stalled.mock.calls[0]?.[1] as RequestInit | undefined)?.signal).toBeInstanceOf(AbortSignal)
+})
+
 it('rejects requested duration and untrusted duration fields as settlement evidence', async () => {
   const { fetch } = client()
   const value = new RelayPricingClient({ baseUrl: 'https://relay.example/v1', apiKey: 'secret', group: 'VIP', fetch })

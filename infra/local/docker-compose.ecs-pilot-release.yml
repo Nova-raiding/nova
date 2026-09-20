@@ -33,6 +33,14 @@ services:
   payment-gateway:
     build: !reset null
     image: ${PAYMENT_GATEWAY_IMAGE_REF:?PAYMENT_GATEWAY_IMAGE_REF must be an immutable repository@sha256 reference}
+  # The public gateway is a production service like any other. Without this
+  # override it keeps the base layer's `build:` and no `image:`, while deploy
+  # and rollback start it with `up -d --no-build`, which fails with
+  # "No such image" on a host that never built it and silently freezes a
+  # hand-built mutable `:latest` on a host that did.
+  pilot-gateway:
+    build: !reset null
+    image: ${PILOT_GATEWAY_IMAGE_REF:?PILOT_GATEWAY_IMAGE_REF must be an immutable repository@sha256 reference}
   worker-sync: &release-worker-image
     build: !reset null
     image: ${WORKER_IMAGE_REF:?WORKER_IMAGE_REF must be an immutable repository@sha256 reference}

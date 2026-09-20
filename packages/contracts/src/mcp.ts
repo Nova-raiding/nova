@@ -596,8 +596,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'brand-unit.bind-store',
-    description: 'Bind an existing authorized platform account to a brand unit. When supplied, expected_revision prevents overwriting a newer store-binding change.',
-    params: params({ brand_id: { type: 'string' }, platform: platformProperty, account_id: { type: 'string' }, expected_revision: positiveIntegerString }, ['brand_id', 'platform', 'account_id']),
+    description: 'Bind an existing authorized platform account to a brand unit. When supplied, expected_revision prevents overwriting a newer store-binding change, and an optional reason is recorded in the operation audit trail.',
+    params: params({ brand_id: { type: 'string' }, platform: platformProperty, account_id: { type: 'string' }, expected_revision: positiveIntegerString, reason: reasonProperty }, ['brand_id', 'platform', 'account_id']),
   },
   {
     method: 'brand-unit.product.create',
@@ -606,8 +606,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'brand-unit.listing.create',
-    description: '将 canonical product 映射到一个已绑定的平台店铺。',
-    params: params({ brand_id: { type: 'string' }, canonical_product_id: { type: 'string' }, listing_id: { type: 'string' }, platform: platformProperty, account_id: { type: 'string' }, remote_product_id: { type: 'string' } }, ['brand_id', 'canonical_product_id', 'platform', 'account_id']),
+    description: '将 canonical product 映射到一个已绑定的平台店铺。可选的 reason 会写入操作审计，与 brand-unit.bind-store 一致。',
+    params: params({ brand_id: { type: 'string' }, canonical_product_id: { type: 'string' }, listing_id: { type: 'string' }, platform: platformProperty, account_id: { type: 'string' }, remote_product_id: { type: 'string' }, reason: reasonProperty }, ['brand_id', 'canonical_product_id', 'platform', 'account_id']),
   },
   {
     method: 'brand-unit.listing.list',
@@ -723,7 +723,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     params: params({ platform: platformProperty, account_id: { type: 'string' }, date_from: { type: 'string' }, date_to: { type: 'string' }, risk_limit: { type: 'string' } }),
   },
   { method: 'workspace.commercial.get', description: 'Return adjustable workspace pricing, quotas, and platform settings.', params: params({}) },
-  { method: 'workspace.commercial.update', description: 'Update workspace pricing in CNY and included quotas with optimistic concurrency.', params: params({ plan_code: { type: 'string' }, plan_name: { type: 'string' }, monthly_price_cny: { type: 'string' }, annual_price_cny: { type: 'string' }, included_stores: { type: 'string' }, included_tasks: { type: 'string' }, expected_revision: { type: 'string' } }, ['plan_code', 'plan_name']) },
+  { method: 'workspace.commercial.update', description: 'Update workspace pricing in CNY and included quotas with optimistic concurrency; an optional reason is recorded in the operation audit trail.', params: params({ plan_code: { type: 'string' }, plan_name: { type: 'string' }, monthly_price_cny: { type: 'string' }, annual_price_cny: { type: 'string' }, included_stores: { type: 'string' }, included_tasks: { type: 'string' }, expected_revision: { type: 'string' }, reason: reasonProperty }, ['plan_code', 'plan_name']) },
   { method: 'workspace.usage.get', description: 'Return current monthly task quota usage for the workspace.', params: params({}) },
   { method: 'commercial.access.get', description: 'Return the server-owned CommercialAccessDecision for the authenticated workspace; unknown values remain null and never fall back to wallet or legacy task quota.', params: params({}) },
   { method: 'commercial.catalog.get', description: 'Return the versioned workspace-visible commercial catalog; unavailable catalog state is explicit and never falls back to legacy offer DTOs.', params: params({}) },
@@ -1089,8 +1089,12 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'catalog.image.review',
-    description: 'Run deterministic checks against generated or supplied product main images.',
-    params: params({ product_id: { type: 'string' }, images: { type: 'string' }, visual_refs_json: { type: 'string' } }, ['product_id']),
+    description: 'Run deterministic checks against generated or supplied product main images. authenticity_evidence_json carries the per-candidate authenticity inputs that the evaluator binds to the archived candidate SHA-256.',
+    // authenticity_evidence_json was previously served by an API-local schema
+    // (OPS_MCP_SCHEMA_OVERRIDE_METHODS). It is declared here so the method is
+    // validated like every other one instead of hiding the drift behind an
+    // exemption.
+    params: params({ product_id: { type: 'string' }, images: { type: 'string' }, visual_refs_json: { type: 'string' }, authenticity_evidence_json: boundedString(65_536, 2, 'JSON object for a single visual_ref, or an array of one entry per visual_ref.') }, ['product_id']),
   },
   {
     method: 'sync.retry_failed',
@@ -1179,6 +1183,14 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'asset.upload',
+    // `file_path` is deliberately NOT part of this wire contract. It is a
+    // bridge-only field: apps/plugin/mcp/bridge.mjs reads the local file the
+    // user attached, and inlines it as content_base64 before the request
+    // reaches the API (see prepUploadParams there). The bridge therefore
+    // requires only name+mime_type and enforces oneOf(file_path,
+    // content_base64), which is exactly this contract's required list after the
+    // rewrite. A caller that sends file_path straight to the API is rejected by
+    // additionalProperties, because the API has no access to the attachment.
     description: 'Upload a small text or image asset into quarantine for automatic scanning. When the user already requested image generation, include the continuation fields so the backend can resume it without another user message.',
     params: params({ name: { type: 'string' }, mime_type: { type: 'string' }, content_base64: { type: 'string' }, sha256: { type: 'string' }, rights_scope: { type: 'string', enum: ['owned', 'commercial_authorized', 'limited_use', 'internal_only', 'unknown', 'unusable'] }, applicable_platforms_json: { type: 'string' }, applicable_regions_json: { type: 'string' }, usage_scopes_json: { type: 'string' }, valid_from: { type: 'string' }, valid_to: { type: 'string' }, ai_modification_allowed: { type: 'string', enum: ['true', 'false'] }, continuation_kind: { type: 'string', enum: ['image_generation'] }, continuation_product_id: { type: 'string' }, continuation_task_id: { type: 'string' }, continuation_content_version_id: { type: 'string' }, continuation_sku_ids_json: { type: 'string' }, continuation_direction: { type: 'string' }, continuation_count: { type: 'string' }, continuation_idempotency_key: { type: 'string' } }, ['name', 'mime_type', 'content_base64']),
   },
@@ -1302,8 +1314,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'task.group.create',
-    description: 'Create up to 50 independent platform/store/SKU subtasks under one auditable task group; the same platform/store may appear more than once only with different account_id or sku_id bindings.',
-    params: params({ entries_json: { type: 'string' }, request_text: { type: 'string' } }, ['entries_json']),
+    description: 'Create up to 50 independent platform/store/SKU subtasks under one auditable task group; the same platform/store may appear more than once only with different account_id or sku_id bindings. An optional idempotency_key replays the same group instead of creating a duplicate one.',
+    params: params({ entries_json: { type: 'string' }, request_text: { type: 'string' }, idempotency_key: { type: 'string' } }, ['entries_json']),
   },
   {
     method: 'creative.directions',
@@ -1352,8 +1364,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'content.codex.commit',
-    description: 'Commit a local/test Codex draft; production rejects this host-model path so all model tokens remain platform-metered.',
-    params: params({ task_id: { type: 'string' }, body_json: { type: 'string' }, reason: { type: 'string' } }, ['task_id', 'body_json']),
+    description: 'Commit a local/test Codex draft; production rejects this host-model path so all model tokens remain platform-metered. expected_version names the draft revision this commit replaces and scopes the metering key.',
+    params: params({ task_id: { type: 'string' }, body_json: { type: 'string' }, reason: { type: 'string' }, expected_version: positiveIntegerString }, ['task_id', 'body_json']),
   },
   {
     method: 'generation.get',
@@ -1377,8 +1389,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'content.versions',
-    description: 'List immutable content versions for a task.',
-    params: params({ task_id: { type: 'string' } }, ['task_id']),
+    description: 'List immutable content versions for a task. When limit or offset is supplied the list is server-paginated; otherwise the full list is returned.',
+    params: params({ task_id: { type: 'string' }, limit: pageLimit100, offset: nonNegativeIntegerString }, ['task_id']),
   },
   {
     method: 'content.diff',

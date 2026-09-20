@@ -10,12 +10,13 @@ import { validateConnectorAuthorizationReadiness, validateConnectorReadiness, ty
 import { assertOutboundUrl, inspectOutboundUrl, isSecureEnvironment, officialHostsFor } from './outbound-security.js'
 import { deduplicateSyncProducts, SyncContractError, validateNextSyncCursor, validateSyncCursor, validateSyncWindow } from './sync-safety.js'
 import { mapPlatformRejection, platformEnvelope, providerRequestId } from './platform-adapters/rejection.js'
+import { isBodylessMethod } from './platform-adapters/signed-request.js'
 import {
   credentialRefreshKey, DEFAULT_REFRESH_LEASE_TTL_MS, InProcessCredentialRefreshLock,
   type CredentialRefreshLease, type CredentialRefreshSingleFlight,
 } from './refresh-lock.js'
 import type {
-  AccessCredential, AuthorizeInput, AuthorizeResult, ConnectorContext, CredentialProvider, CredentialRef, Cursor, ExchangeCodeInput,
+  AccessCredential, AuthorizeInput, AuthorizeResult, ConnectorContext, ConnectorOperation, CredentialProvider, CredentialRef, Cursor, ExchangeCodeInput,
   HttpConnectorConfig, HttpRequestBodyEncoding, HttpRequestDescriptor, MappingVersion, MediaDiscardResult, NormalizedPlatformError, OrphanedMediaRecord, Platform, PlatformConnector,
   PlatformProfile, PlatformWriteDraft, ProductPage, RawProduct, RequestSigner, VaultCredentialProvider, WriteIdentity, WriteReceipt, WriteStatus, MediaUploadInput, MediaUploadReceipt,
 } from './types.js'
@@ -25,7 +26,7 @@ export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Res
 /** Trusted host admission, executed after credential/signing/DNS work and
  * before each actual request. Correlation IDs are not proof of authorization. */
 export type ConnectorBeforeRequest = (context: Readonly<{
-  operation: 'exchange_code' | 'refresh_credential' | 'revoke' | 'sync_products' | 'create_product' | 'update_product' | 'query_write' | 'upload_media'
+  operation: ConnectorOperation
   platform: Platform
   workspaceId?: string
   accountId?: string
@@ -103,6 +104,8 @@ const DEFAULT_REFRESH_POLL_MS = 100
 /** Providers report a rotated/replayed refresh token through these codes. */
 const REFRESH_RACE_CODES = /^(invalid_grant|invalid_token|invalid_refresh_token|refresh_token_expired|refresh_token_reused|expired_token|token_expired)$/iu
 const ERROR_CODES = new Set(['NOT_CONFIGURED', 'UNAUTHORIZED', 'RATE_LIMITED', 'TIMEOUT', 'CONFLICT', 'VALIDATION_FAILED', 'NOT_FOUND', 'HTTPS_REQUIRED', 'HOST_NOT_ALLOWLISTED', 'PRIVATE_ADDRESS_BLOCKED', 'INVALID_OUTBOUND_URL', 'REMOTE_ERROR'])
+/** Keeps locally generated failure reasons printable before they reach logs or audit rows. */
+const CONTROL_CHARS = new RegExp('[\\u0000-\\u001f\\u007f]', 'gu')
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function readString(value: unknown): string | undefined { return typeof value === 'string' && value.length > 0 ? value : undefined }
@@ -648,6 +651,23 @@ export class HttpPlatformConnector implements PlatformConnector {
     return { code, message, retryable, unknown, status, platform: this.platform, ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...(details ? { details } : {}) }
   }
 
+  /**
+   * Normalizes a signer failure. A signer runs before anything is dispatched,
+   * so its failure holds no provider payload and can only describe a local
+   * defect. A signer that classifies itself as `NOT_CONFIGURED` (the platform
+   * adapters do this when the operation's API selector is not configured)
+   * therefore keeps its reason: the generic provider-failure message would
+   * hide the exact setting an operator has to fix and dress a permanent
+   * misconfiguration up as a retryable remote error. Every other failure keeps
+   * the standard normalization and message scrubbing.
+   */
+  private normalizeSignerError(error: unknown): NormalizedPlatformError {
+    const normalized = this.normalizeError(error)
+    if (normalized.code !== 'NOT_CONFIGURED') return normalized
+    const reason = isRecord(error) && typeof error.message === 'string' ? error.message.replace(CONTROL_CHARS, ' ').trim().slice(0, 300) : ''
+    return { ...normalized, retryable: false, unknown: false, ...(reason ? { message: reason } : {}) }
+  }
+
   private async write(operation: 'create' | 'update', ctx: ConnectorContext, input: PlatformWriteDraft): Promise<WriteReceipt> {
     const config = this.requireConfig()
     const findings = this.validateWrite(input)
@@ -775,15 +795,42 @@ export class HttpPlatformConnector implements PlatformConnector {
         serialized = JSON.stringify(body)
       }
     }
-    const descriptor: HttpRequestDescriptor = { method, url, headers: { ...headers }, ...(serialized ? { body: serialized } : {}), platform: this.platform, ...(credential ? { credential } : {}) }
+    const descriptor: HttpRequestDescriptor = { method, url, headers: { ...headers }, ...(serialized ? { body: serialized } : {}), platform: this.platform, operation, ...(credential ? { credential } : {}) }
     signal?.throwIfAborted()
     // Provider business-API signers must never rewrite OAuth token requests.
-    const signed = oauthTransport ? undefined : await config.signer?.sign(descriptor)
+    let signed: Record<string, string> | undefined
+    if (!oauthTransport) {
+      try {
+        signed = await config.signer?.sign(descriptor)
+      } catch (error) {
+        // Nothing has been dispatched yet, so a signing failure is a local
+        // connector defect (for example a missing per-operation API selector),
+        // never a provider outcome. Normalizing it here keeps its reason, code
+        // and terminal classification; letting it escape to the caller made the
+        // publish path re-derive `REMOTE_ERROR`/`retryable: true` from an
+        // unstructured error and replay a permanently unsignable request until
+        // it dead-lettered, with the real cause replaced by a generic message.
+        throw new ConnectorFailure(this.normalizeSignerError(error))
+      }
+    }
     signal?.throwIfAborted()
     Object.assign(headers, signed ?? {})
     Object.assign(headers, descriptor.headers)
     const requestUrl = descriptor.url
     const requestBody = descriptor.body
+    // A signer that leaves a body on a bodyless method produces a request the
+    // platform can never receive: `fetch` throws
+    // `TypeError: Request with GET/HEAD method cannot have body` before DNS.
+    // That TypeError was normalized into a retryable `REMOTE_ERROR` naming only
+    // "request failed", so a local signing defect looked like a provider outage
+    // and the outbox replayed it. Refuse it here instead, as a terminal local
+    // defect that names the method and operation.
+    if (isBodylessMethod(method) && requestBody !== undefined) {
+      // `normalizeSignerError` rather than `normalizeError`: the latter scrubs a
+      // `NOT_CONFIGURED` message down to "HTTP connector <platform> request
+      // failed", which is the cause-erasing text this guard exists to replace.
+      throw new ConnectorFailure(this.normalizeSignerError({ code: 'NOT_CONFIGURED', message: `${method} ${operation} was signed with a request body; a bodyless method must carry its parameters in the URL query`, retryable: false, unknown: false }))
+    }
     if (isSecureEnvironment()) {
       const outboundPolicy = {
         environment: process.env.NODE_ENV,

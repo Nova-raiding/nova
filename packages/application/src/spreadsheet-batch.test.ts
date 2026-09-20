@@ -43,6 +43,20 @@ it('groups SKU rows by product key and preserves per-SKU price, images and attri
   expect(output[0]).toMatchObject({ platform: 'jd', sku_count: 2, price: 199, stock: 3, skus: [{ id: 'blue-m', price: 199, stock: 0, attributes: { color: '蓝色', size: 'M' }, images: ['https://images.example/blue.png'] }, { id: 'red-l', price: 209, stock: 3, attributes: { color: '红色', size: 'L' }, images: ['https://images.example/red.png'] }] });
 });
 
+it('merges a product-level row with the SKU rows of the same platform identity in either order', () => {
+  const header = { A: '平台', B: '平台商品id', C: '商品名称', D: 'SKU编码', E: 'SKU价格', F: 'SKU库存' };
+  const productRow = { A: 'jd', B: 'R1', C: '外套', D: '', E: '', F: '' };
+  const skuRows = [{ A: 'jd', B: 'R1', C: '外套', D: 'blue-m', E: '199', F: '1' }, { A: 'jd', B: 'R1', C: '外套', D: 'red-l', E: '209', F: '2' }];
+  const noIdentity = spreadsheetFactsToBatchProducts({ format: 'xlsx', rows: [{ A: '平台', B: '商品名称', C: '价格' }, { A: 'taobao', B: '外套', C: '99' }, { A: 'taobao', B: '背包', C: '129' }] });
+  expect(noIdentity).toEqual([{ platform: 'taobao', title: '外套', price: 99 }, { platform: 'taobao', title: '背包', price: 129 }]);
+  const productFirst = spreadsheetFactsToBatchProducts({ format: 'xlsx', rows: [header, productRow, ...skuRows] });
+  expect(productFirst).toHaveLength(1);
+  expect(productFirst[0]).toMatchObject({ platform: 'jd', remote_id: 'R1', title: '外套', sku_count: 2, skus: [{ id: 'blue-m' }, { id: 'red-l' }] });
+  const skusFirst = spreadsheetFactsToBatchProducts({ format: 'xlsx', rows: [header, ...skuRows, productRow] });
+  expect(skusFirst).toHaveLength(1);
+  expect(skusFirst[0]).toMatchObject({ platform: 'jd', remote_id: 'R1', sku_count: 2, skus: [{ id: 'blue-m' }, { id: 'red-l' }] });
+});
+
 it('rejects duplicate SKU codes, conflicting product names and missing SKU prices with row numbers', () => {
   const header = { A: '平台', B: '商品货号', C: '商品名称', D: 'SKU编码', E: 'SKU价格', F: 'SKU库存' };
   const first = { A: 'jd', B: 'J1', C: '外套', D: 'm', E: '199', F: '1' };

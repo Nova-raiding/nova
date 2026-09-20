@@ -47,7 +47,15 @@ export function platformRuleSyncStatus(
   return PLATFORM_RULE_SOURCES.map(source => {
     // A manual:// row is a fixture or human draft. It must never make a
     // platform look synced; only a signed-manifest source is eligible here.
-    const platformRules = rules.filter(rule => rule.status === 'active' && rule.scope === 'platform' && rule.targetId === source.platform && !rule.source.reference.startsWith('manual://'))
+    // A signed public platform rule carries its platform in `scopeValue`, not
+    // `targetId`: `PostgresRuleRepository.listPublic` projects the shared table
+    // as `NULL::text AS target_id, platform AS scope_value`. Matching on
+    // `targetId` alone therefore never found them, so every platform reported
+    // `not_configured` even after a successful signed import — and the
+    // production generation preflight 503s on exactly that state. Both fields
+    // are the same concept elsewhere in the rule center (`rule-center.ts`,
+    // `server.ts`), so accept either.
+    const platformRules = rules.filter(rule => rule.status === 'active' && rule.scope === 'platform' && (rule.targetId ?? rule.scopeValue) === source.platform && !rule.source.reference.startsWith('manual://'))
     const latest = [...platformRules].sort((a, b) => Date.parse(b.source.checkedAt) - Date.parse(a.source.checkedAt))[0]
     const checkedAt = validDate(latest?.source.checkedAt)
     const ageHours = checkedAt ? Math.max(0, (now - Date.parse(checkedAt)) / 3_600_000) : null

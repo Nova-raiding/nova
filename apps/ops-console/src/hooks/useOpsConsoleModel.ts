@@ -222,6 +222,30 @@ export function dataSetErrorFor(
  */
 export const UNRESOLVED_WORKSPACE_DIRECTORY: WorkspaceDirectoryPage = { items: [], offset: 0, limit: 20, hasMore: false };
 
+/**
+ * Wire params for `ops.audit.export`. The contract declares only the audit
+ * filters — it always exports CSV (at most 5000 rows) — and rejects undeclared
+ * keys, so the previous `{ format, limit }` params made every request fail with
+ * `params.format is not accepted` before the handler ran.
+ */
+export function operationsAuditExportParams(): Record<string, string> {
+  return {};
+}
+
+/**
+ * The audit export handler answers with `AuditCenterExport`, whose payload
+ * fields are `fileName`/`csv`. The previous reader expected
+ * `filename`/`content`, which downloaded a Blob of `undefined` even when the
+ * request itself was accepted.
+ */
+export function operationsAuditExportPayload(result: unknown): { fileName: string; csv: string } {
+  const value = result as { fileName?: unknown; csv?: unknown } | null | undefined;
+  if (typeof value?.fileName !== "string" || !value.fileName.trim() || typeof value.csv !== "string" || !value.csv) {
+    throw new Error("运营审计导出未返回 CSV 内容，请稍后重试");
+  }
+  return { fileName: value.fileName, csv: value.csv };
+}
+
 export type DataDeletionDecision = "approve" | "cancel";
 
 export const DATA_DELETION_REASON_MIN_LENGTH = 4;
@@ -1923,17 +1947,15 @@ export function useOpsConsoleModel() {
   };
   const exportOperations = async () => {
     try {
-      const result = (await rpc("ops.audit.export", {
-        format: "csv",
-        limit: "5000",
-      })) as unknown as { filename: string; content: string };
-      const blob = new Blob([result.content], {
+      const result = await rpc("ops.audit.export", operationsAuditExportParams());
+      const { fileName, csv } = operationsAuditExportPayload(result);
+      const blob = new Blob([csv], {
         type: "text/csv;charset=utf-8",
       });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = result.filename;
+      anchor.download = fileName;
       anchor.click();
       URL.revokeObjectURL(url);
       message.success("运营审计已导出");

@@ -35,6 +35,13 @@ config_path=${1:-${PRODUCTION_CONFIG_PATH:-}}
 : "${UI_IMAGE_REF:?UI_IMAGE_REF is required}"
 : "${OPS_UI_IMAGE_REF:?OPS_UI_IMAGE_REF is required}"
 : "${PAYMENT_GATEWAY_IMAGE_REF:?PAYMENT_GATEWAY_IMAGE_REF is required}"
+# The public pilot gateway and the one-shot migration image are pinned by the
+# release layer exactly like the application images. Both were consumed by
+# infra/local/docker-compose.ecs-pilot-release.yml without any producer in the
+# repository, so the Compose render failed on the operator's missing value
+# before this contract could name it. Keep every pinned image declared here.
+: "${PILOT_GATEWAY_IMAGE_REF:?PILOT_GATEWAY_IMAGE_REF is required}"
+: "${MIGRATION_IMAGE_REF:?MIGRATION_IMAGE_REF is required}"
 : "${CLAMAV_IMAGE_REF:?CLAMAV_IMAGE_REF is required}"
 : "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"
 : "${ASSET_STORAGE_BUCKET:?ASSET_STORAGE_BUCKET is required}"

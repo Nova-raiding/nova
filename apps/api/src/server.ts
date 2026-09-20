@@ -79,7 +79,7 @@ import { CampaignManifestError, type CampaignDeliveryManifestInput } from '../..
 import { LocalObjectStorage, ObjectStorageError, ObjectStoragePartialWriteError, S3CompatibleObjectStorage, withObjectStorageReadRetry, runReconciliationCycle, type CloudObjectTransport, type ObjectStoragePort, type PutQuarantineObjectInput, MemoryReconciliationStatusStore, type ReconciliationReport, type ReconciliationStatusStore, type DurableObjectReference, type ObjectInventoryEntry } from '../../../packages/storage/src/index.js'
 import { UploadSessionManager } from '../../../packages/storage/src/upload-session.js'
 import { checkDurableArchiveReference } from '../../../packages/storage/src/archive-lifecycle-contract.js'
-import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, CAPABILITIES, COMMERCIAL_OPERATION_REGISTRY, COMMERCIAL_OPERATION_REGISTRY_VERSION, MCP_METHODS, MCP_METHOD_CONTRACTS, MCP_METHOD_POLICIES, MCP_NON_PRODUCTION_METHODS, MCP_POINT_CHARGED_ENABLED_METHODS, MCP_POINT_CHARGED_DISABLED_METHODS, MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS, MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS, MCP_RECOVERY_ENABLED_METHODS, MCP_RECOVERY_DISABLED_METHODS, MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS, capabilitiesForRoles, canonicalizeRole, evaluateAuthorizationDecision, evaluatePermissionAtoms, getHttpOperationPolicy, getMcpMethodPolicy, resolveCanonicalRoles, resolveCommercialOperation, ERROR_CODES, isCommercialAccessErrorCode, isCommercialPurchaseErrorCode, isMcpMethod, validateMcpRequest, validateImageGenerationCallbackResult, type ApiEnvelope, type AuthorizationDecision, type AuthorizationDecisionMode, type AuthorizationObligation, type CanonicalRole, type CapabilityId, type CommercialAccessDecision, type HttpOperationPolicy, type McpRequest, type OpsWorkbench, type PermissionAtom } from '../../../packages/contracts/src/index.js'
+import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, CAPABILITIES, COMMERCIAL_OPERATION_REGISTRY, COMMERCIAL_OPERATION_REGISTRY_VERSION, MCP_METHODS, MCP_METHOD_CONTRACTS, MCP_METHOD_SCHEMAS, MCP_METHOD_POLICIES, MCP_NON_PRODUCTION_METHODS, MCP_POINT_CHARGED_ENABLED_METHODS, MCP_POINT_CHARGED_DISABLED_METHODS, MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS, MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS, MCP_RECOVERY_ENABLED_METHODS, MCP_RECOVERY_DISABLED_METHODS, MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS, capabilitiesForRoles, canonicalizeRole, evaluateAuthorizationDecision, evaluatePermissionAtoms, getHttpOperationPolicy, getMcpMethodPolicy, resolveCanonicalRoles, resolveCommercialOperation, ERROR_CODES, isCommercialAccessErrorCode, isCommercialPurchaseErrorCode, isMcpMethod, validateMcpRequest, validateImageGenerationCallbackResult, type ApiEnvelope, type AuthorizationDecision, type AuthorizationDecisionMode, type AuthorizationObligation, type CanonicalRole, type CapabilityId, type CommercialAccessDecision, type HttpOperationPolicy, type McpRequest, type OpsWorkbench, type PermissionAtom } from '../../../packages/contracts/src/index.js'
 import { KnowledgeError, KnowledgeModule, type AssetEntry, type LearningSuggestion, type RuleEntry } from '../../../packages/knowledge/src/index.js'
 import { cleanObjectStorageOrphans } from '../../../packages/workers/src/object-orphan-cleaner.js'
 import { createAliyunEcsRoleCredentials } from './aliyun-ecs-role-credentials.js'
@@ -2727,6 +2727,15 @@ export function setPaymentProviderForTests(provider?: PaymentProvider) {
   paymentProvider = provider
 }
 
+/** Test-only seam for exercising the handlers that read through the durable
+ * business repository (brand scoping, projection, pagination) without a
+ * PostgreSQL instance. Test runs use the memory persistence object, so the
+ * override is visible to the handler exactly like a real durable backend. */
+export function setBusinessRepositoryForTests(repository?: PostgresBusinessRepository) {
+  if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('BUSINESS_REPOSITORY_OVERRIDE_TEST_ONLY')
+  memoryPersistence.business = repository
+}
+
 function ruleRepository() { return ruleRepositoryOverride ?? persistence.rules }
 
 function iso(value: string | Date) { return typeof value === 'string' ? value : new Date(String(value)).toISOString() }
@@ -3333,23 +3342,44 @@ export async function releaseStorageQuotaAfterConfirmedDeletion(input: { quota: 
 
 async function compensateStoredAsset(workspaceId: string, assetId: string, objectKey: string, reason: string) {
   const quota = persistence.storageQuota
-  if (!quota) {
+  // The ledger row belongs to one physical object, so it can only be repaid by
+  // deleting the object it was reserved for (see
+  // `assetReservationKeyForDeletedObject`). An object key that does not belong
+  // to this asset is deleted without touching a foreign reservation.
+  const reservationKey = assetReservationKeyForDeletedObject(workspaceId, objectKey)
+  if (!quota || !reservationKey?.startsWith(`asset:${assetId}/`)) {
     await compensateStoredObject(workspaceId, objectKey, reason)
     return
   }
-  await releaseStorageQuotaAfterConfirmedDeletion({ quota, workspaceId, reservationKey: `asset:${assetId}`, objectKey, deleteObject: () => compensateStoredObject(workspaceId, objectKey, reason) })
+  await releaseStorageQuotaAfterConfirmedDeletion({ quota, workspaceId, reservationKey, objectKey, deleteObject: () => compensateStoredObject(workspaceId, objectKey, reason) })
+}
+
+/**
+ * Storage file names are canonicalized by the object storage layer
+ * (`safeFileName` in packages/storage/src/object-storage.ts) before they become
+ * the last segment of an object key. A quota reservation is bound to one
+ * physical object, so its key has to be derived from the same canonical name;
+ * keep this transform in sync with that implementation.
+ */
+function canonicalStorageFileName(fileName: string): string {
+  return fileName.trim().normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}._-]/gu, '_').replace(/^\.+/u, '_').slice(0, 160)
+}
+
+/** Ledger key for the object `putQuarantineObject` is about to write. */
+function assetReservationKeyForObject(workspaceId: string, assetId: string, fileName: string): string {
+  return `asset:${assetId}/${canonicalStorageFileName(fileName)}`
 }
 
 function assetReservationKeyForDeletedObject(workspaceId: string, objectKey: string): string | undefined {
   const parts = objectKey.split('/')
   if (parts.length < 4 || !['quarantine', 'clean'].includes(parts[0] ?? '') || parts[1] !== workspaceId || !parts[2]?.trim() || parts[3]?.endsWith('.merchant-meta.json')) return undefined
-  return `asset:${parts[2]}`
+  return `asset:${parts[2]}/${parts.slice(3).join('/')}`
 }
 
 async function putQuarantineObject(input: PutQuarantineObjectInput) {
   await persistenceReady
   const quota = persistence.storageQuota
-  const reservationKey = `asset:${input.assetId}`
+  const reservationKey = assetReservationKeyForObject(input.workspaceId, input.assetId, input.fileName)
   if (quota) {
     await persistence.ensureWorkspace?.(input.workspaceId)
     await quota.reserve({ workspaceId: input.workspaceId, reservationKey, assetId: input.assetId, bytes: input.body.byteLength, limitBytes: configuredStorageQuotaLimit() })
@@ -3578,7 +3608,11 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const jobQueueMetrics = new PostgresMerchantJobQueueMetricsRepository(sqlPool)
     const dataLifecycle = new PostgresDataLifecycleRepository(sqlPool)
     const workspaceDataExport = new PostgresWorkspaceDataExportRepository(sqlPool)
-    const rules = new PostgresRuleRepository(sqlPool)
+    // Shared platform rules are read through the tenant pool and written through
+    // the operations pool: migration 219 grants merchant_app SELECT only on the
+    // shared rule tables, so a tenant-pool write is either an ACL escalation
+    // (ECS, whose bootstrap re-widens merchant_app) or a 42501 failure (k8s).
+    const rules = new PostgresRuleRepository(sqlPool, opsSqlPool)
     const brandUnits = new PostgresBrandUnitRepository(sqlPool)
     const objectOrphans = new PostgresObjectOrphanRepository(sqlPool)
     const contextSnapshots = new PostgresContextSnapshotRepository(sqlPool)
@@ -8977,14 +9011,18 @@ async function requireVideoModelCostPreflight(imageConditioned = false) {
   if (!isProduction()) return
   const model = imageConditioned ? process.env.VIDEO_IMAGE_MODEL?.trim() : process.env.VIDEO_MODEL?.trim() || process.env.AI_VIDEO_MODEL?.trim()
   if (!relayPricing || !model) throw new DomainError('MODEL_VIDEO_COST_PREFLIGHT_UNAVAILABLE', '生产视频生成缺少可验证的预调用定价快照，已阻断上游请求', 503)
-  let quote: Awaited<ReturnType<typeof relayPricing.quote>>
+  let estimate: Awaited<ReturnType<typeof relayPricing.estimateRequestCost>>
   try {
-    quote = await relayPricing.quote({ modality: 'video', model, observedAt: new Date().toISOString(), metadata: { duration_seconds: videoDurationSeconds(process.env.VIDEO_DURATION_SECONDS), resolution: process.env.VIDEO_RESOLUTION } })
+    // This runs before the provider call, so the only duration that exists is
+    // the requested one. Use the request-estimate pricing boundary explicitly
+    // instead of the settlement boundary, which requires provider-reported
+    // duration evidence and can therefore never succeed here.
+    estimate = await relayPricing.estimateRequestCost({ modality: 'video', model, observedAt: new Date().toISOString(), metadata: { preauthorization_duration_seconds: videoDurationSeconds(process.env.VIDEO_DURATION_SECONDS), preauthorization_estimate: true, resolution: process.env.VIDEO_RESOLUTION } })
   } catch (error) {
     throw new DomainError('MODEL_VIDEO_COST_PREFLIGHT_FAILED', '生产视频生成无法完成预调用成本核算，已阻断上游请求', 503, { pricing_error: (error as { code?: string })?.code ?? 'unknown' })
   }
-  const gate = evaluatePlatformModelTaskRequestCost(quote.costCny, process.env)
-  if (!gate.ready) throw new DomainError(gate.reasons.includes('request_cost_exceeds_task_limit') ? 'MODEL_TASK_COST_LIMIT_EXCEEDED' : 'MODEL_TASK_COST_PREFLIGHT_UNAVAILABLE', gate.reasons.includes('request_cost_exceeds_task_limit') ? '本次视频生成预计成本超过单任务安全上限，未扣款，也未调用生成服务；请减少视频时长后重试' : '单任务成本保护未就绪，未调用上游', gate.reasons.includes('request_cost_exceeds_task_limit') ? 422 : 503, { estimated_cost_cny: quote.costCny, maximum_task_cost_cny: gate.limitCny })
+  const gate = evaluatePlatformModelTaskRequestCost(estimate.costCny, process.env)
+  if (!gate.ready) throw new DomainError(gate.reasons.includes('request_cost_exceeds_task_limit') ? 'MODEL_TASK_COST_LIMIT_EXCEEDED' : 'MODEL_TASK_COST_PREFLIGHT_UNAVAILABLE', gate.reasons.includes('request_cost_exceeds_task_limit') ? '本次视频生成预计成本超过单任务安全上限，未扣款，也未调用生成服务；请减少视频时长后重试' : '单任务成本保护未就绪，未调用上游', gate.reasons.includes('request_cost_exceeds_task_limit') ? 422 : 503, { estimated_cost_cny: estimate.costCny, maximum_task_cost_cny: gate.limitCny })
 }
 
 function lifecycleControlReferenceReasons(source: NodeJS.ProcessEnv) {
@@ -11781,6 +11819,34 @@ function paramsOf(input: JsonObject): JsonObject {
   return params as JsonObject
 }
 
+/**
+ * One dispatch head can serve several MCP methods, and the shared handlers
+ * below read the union of their fields (`ops.incident.*`,
+ * `ops.commercial.private-trial.*`, `ops.finance.*`, ...). `validateMcpRequest`
+ * already rejects any key a method does not declare, so such a read can never
+ * observe a caller value - but it still lets a handler silently depend on a
+ * sibling method's schema, and it hides which fields the method really accepts.
+ *
+ * Scoping the handler's view to the keys its own contract declares makes "what
+ * the handler can read" and "what the contract declares" the same set by
+ * construction. The platform-ops methods whose schemas are still intentionally
+ * served by an API-local schema keep the unfiltered view (see
+ * `OPS_MCP_SCHEMA_OVERRIDE_METHODS`).
+ *
+ * tests/mcp-param-parity.test.ts pins this mechanically.
+ */
+export function methodScopedParams(method: string, params: JsonObject): JsonObject {
+  if (OPS_MCP_SCHEMA_OVERRIDE_METHODS.has(method) || !isMcpMethod(method)) return params
+  const declared = Object.keys(MCP_METHOD_SCHEMAS[method].properties)
+  if (declared.every(key => Object.prototype.hasOwnProperty.call(params, key))
+    && Object.keys(params).length === declared.length) return params
+  const scoped: JsonObject = {}
+  for (const key of declared) {
+    if (Object.prototype.hasOwnProperty.call(params, key)) scoped[key] = params[key]
+  }
+  return scoped
+}
+
 function assertMcpEnvelope(input: JsonObject) {
   const errors: string[] = []
   if (input.jsonrpc !== '2.0') errors.push('jsonrpc must be 2.0')
@@ -11993,6 +12059,43 @@ async function accessibleProductIds(req: IncomingMessage, workspaceId: string): 
   if (brandIds === undefined) return undefined
   const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId, brandIds })
   return new Set(canonical.flatMap(product => product.sourceProductId ? [product.sourceProductId] : []))
+}
+
+/**
+ * Row level brand scope for every handler that reads `service.listProducts`
+ * instead of the durable product page. `GET /v1/products` and MCP
+ * `workspace.metrics` are two paths across the same permission boundary, so
+ * they must share one predicate: a brand restricted member that the catalog
+ * surface hides a product from must not read that product's id, title or
+ * per-store aggregates through the metrics surface.
+ *
+ * A product stays visible when its canonical row is bound to a granted brand,
+ * or when it has no canonical binding and a task on it carries a granted brand
+ * (the legacy/fixture path). `accessibleTaskBrandIds` returns `undefined` for
+ * workspace wide members and for non strict auth, which disables the filter.
+ */
+async function accessibleCatalogProductFilter(req: IncomingMessage, workspaceId: string): Promise<(product: Product) => boolean> {
+  const accessibleBrandIds = await accessibleTaskBrandIds(req, workspaceId)
+  if (accessibleBrandIds === undefined) return () => true
+  const accessibleBrandSet = new Set(accessibleBrandIds)
+  const repository = persistence.brandUnits ?? memoryBrandUnits
+  const canonicalRows = await repository.listCanonicalProducts({ workspaceId })
+  const accessibleIds = new Set(canonicalRows.filter(row => row.sourceProductId && accessibleBrandSet.has(row.brandId)).map(row => row.sourceProductId).filter((value): value is string => Boolean(value)))
+  const canonicalLinkedProductIds = new Set(canonicalRows.map(row => row.sourceProductId).filter((value): value is string => Boolean(value)))
+  const taskBrandIdsByProduct = new Map<string, Set<string>>()
+  for (const task of service.listTasks(workspaceId)) {
+    if (!task.brandId) continue
+    const brands = taskBrandIdsByProduct.get(task.productId)
+    if (brands) brands.add(task.brandId)
+    else taskBrandIdsByProduct.set(task.productId, new Set([task.brandId]))
+  }
+  return product => {
+    if (accessibleIds.has(product.id)) return true
+    if (canonicalLinkedProductIds.has(product.id)) return false
+    const taskBrands = taskBrandIdsByProduct.get(product.id)
+    if (!taskBrands || taskBrands.size === 0) return true
+    return [...taskBrands].some(taskBrandId => accessibleBrandSet.has(taskBrandId))
+  }
 }
 
 /**
@@ -12210,6 +12313,34 @@ async function assertAssetAccess(req: IncomingMessage, workspaceId: string, asse
 async function enforceProductBrandAccess(req: IncomingMessage, workspaceId: string, productId: string, minimumRole: BrandAccessRole = 'viewer') {
   await assertProductBrandAccess(req, workspaceId, productId, minimumRole)
   rememberProviderResourceAccess(req, ['product', workspaceId, productId, minimumRole], () => assertProductBrandAccess(req, workspaceId, productId, minimumRole))
+}
+
+/**
+ * The single predicate behind the "standalone candidate" brand-scope
+ * exemption, shared by the MCP `catalog.image.get` read and its REST twin
+ * `GET /v1/image-generation-jobs/:id` so the two surfaces cannot drift.
+ *
+ * A standalone candidate is a local shell product a merchant created from
+ * their own uploaded assets before any store or brand existed. Reading its
+ * task state, outputs and archived image bytes must not require a brand
+ * grant, because there is no brand to grant yet.
+ *
+ * The exemption is decided by authorization facts, not by display fields.
+ * `storeName` is merchant-settable through `catalog.import` /
+ * `POST /v1/products/import` (`store_name`) and is stored verbatim, so a
+ * product bound to a brand keeps whatever name it was imported with. Keying
+ * the exemption on that string let a merchant label a product '未绑定商品'
+ * and read a brand-bound job with no grant on that brand. The marker is
+ * therefore only a necessary condition: the product must additionally have
+ * no canonical product row, which is the same durable fact
+ * `assertProductBrandAccess` uses to decide who may read the product at all.
+ */
+async function isExemptUnboundImageCandidateProduct(workspaceId: string, productId: string) {
+  const product = service.products.get(productId)
+  if (!product || product.accountId || product.storeName !== '未绑定商品') return false
+  const repository = persistence.brandUnits ?? memoryBrandUnits
+  const canonical = await repository.listCanonicalProducts({ workspaceId, sourceProductIds: [productId] })
+  return canonical.length === 0
 }
 
 async function assertProductBrandAccess(req: IncomingMessage, workspaceId: string, productId: string, minimumRole: BrandAccessRole) {
@@ -12465,7 +12596,11 @@ function effectiveMcpMethodPolicy(method: string, params: Record<string, unknown
 export function isPlatformScopeMethod(method: string, params: Record<string, unknown> = {}): boolean {
   return effectiveMcpMethodPolicy(method, params)?.scope === 'platform'
 }
-const OPS_MCP_SCHEMA_OVERRIDE_METHODS = new Set(['ops.member.upsert', 'ops.member.suspend', 'catalog.image.review'])
+// Methods whose wire schema is still served by an API-local schema rather than
+// the shared contract. Each entry is a standing admission that the contract and
+// the handler can drift, so the set is pinned by
+// tests/mcp-param-parity.test.ts and must not grow silently.
+const OPS_MCP_SCHEMA_OVERRIDE_METHODS = new Set(['ops.member.upsert', 'ops.member.suspend'])
 const OPS_DOMAIN_PARAMS_MAX_BYTES = 128 * 1024
 
 type PersistedVisualAuthenticity = {
@@ -13273,7 +13408,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
   assertMcpEnvelope(input)
   const request = input as unknown as McpRequest
   const method = typeof request.method === 'string' ? request.method : ''
-  const params = paramsOf(input)
+  // Reassigned to the method-scoped view immediately before dispatch so the
+  // authorization, tenant and onboarding layers above keep the full request.
+  let params = paramsOf(input)
   if (method.startsWith('ops.customer-delivery.')) {
     const target = typeof params.target_workspace_id === 'string' ? params.target_workspace_id.trim() : ''
     if (!target) throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_REQUIRED, '客户交付平台操作必须明确 target_workspace_id', 400)
@@ -13446,6 +13583,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     const scopedProduct = service.products.get(params.product_id.trim())
     if (scopedProduct?.workspaceId === workspaceId) enrichRequestObservation(req, { platform: scopedProduct.platform, accountId: scopedProduct.accountId })
   }
+  // Every handler below must only observe the parameters its own contract
+  // declares; a shared dispatch head must not read a sibling method's fields.
+  params = methodScopedParams(method, params)
   switch (method) {
     case 'commercial.access.get': {
       const access = await commercialAccessService.decide({ surface: 'MCP', operation: 'commercial.access.get', workspace_id: workspaceId })
@@ -13511,7 +13651,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const brandId = typeof params.brand_id === 'string' && params.brand_id.trim() ? params.brand_id.trim() : undefined
       const platform = typeof params.platform === 'string' ? params.platform as Platform : undefined
       const accountId = typeof params.account_id === 'string' && params.account_id.trim() ? params.account_id.trim() : undefined
-      const draftOnly = params.draft_only === true || params.draft_only === 'true'
       if (accountId && !platform) throw new DomainError('STORE_PLATFORM_REQUIRED', '使用 account_id 筛选品时必须同时指定 platform', 400)
       await persistenceReady
       const listed = await (persistence.brandUnits ?? memoryBrandUnits).listBrands({ workspaceId, ...(brandId ? { brandId } : {}), ...(platform ? { platform } : {}), ...(accountId ? { accountId } : {}) })
@@ -14473,7 +14612,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const checklistKey = requiredStringValue(params, 'checklistKey', 'checklist_key')
       if (!['customer_profile', 'system_integration', 'functional_acceptance'].includes(checklistKey)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'checklist_key 无效', 400)
       const repository = persistence.customerDeliveries ?? memoryCustomerDeliveries
-      const rawItems = params.itemsJson ?? params.items_json
+      // The contract declares items_json only; the camelCase alias was a dead
+      // branch the validator always rejected.
+      const rawItems = params.items_json
       if (rawItems !== undefined && params.completed !== undefined) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'completed 与 items_json 不能同时提供', 400)
       if (rawItems !== undefined) {
         if (checklistKey === 'customer_profile' || !repository.updateChecklistItems) throw new DomainError('CUSTOMER_DELIVERY_NOT_IMPLEMENTED', '该客户交付清单暂不支持批量逐项写入', 501)
@@ -16800,8 +16941,14 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const selectedAccountId = typeof params.account_id === 'string' && params.account_id.trim() ? params.account_id.trim() : undefined
       if (selectedAccountId && !selectedPlatform) throw new DomainError('STORE_PLATFORM_REQUIRED', '使用 account_id 选择店铺时必须同时指定 platform', 400)
       const selectedAccount = selectedAccountId ? service.getPlatformAccount(workspaceId, selectedAccountId, selectedPlatform) : undefined
-      const allProducts = service.listProducts(workspaceId)
-      const allTasks = await listNormalizedTasksForMetrics(workspaceId)
+      // `workspace.metrics` is workspace scoped exactly like `catalog.search`,
+      // so the handler owns the row level brand filter on both surfaces. Without
+      // it a brand restricted member could read the hidden brand's product ids
+      // and titles (LOW_STOCK / MISSING_IMAGES risk items) and its per-store
+      // product aggregates here while `GET /v1/products` correctly hid them.
+      const catalogProductVisible = await accessibleCatalogProductFilter(req, workspaceId)
+      const allProducts = service.listProducts(workspaceId).filter(catalogProductVisible)
+      const allTasks = await filterByTaskBrandAccess(req, workspaceId, await listNormalizedTasksForMetrics(workspaceId))
       const allSyncJobs = service.listSyncJobs(workspaceId)
       const allPublishJobs = service.listPublishJobs(workspaceId)
       const productByIdAll = new Map(allProducts.map(product => [product.id, product]))
@@ -18503,11 +18650,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const visualRef = typeof params.visual_ref === 'string' && params.visual_ref.trim() ? params.visual_ref.trim() : undefined
       if (Boolean(jobId) === Boolean(visualRef)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'job_id 与 visual_ref 必须且只能提供一个', 400)
       let job = jobId ? service.getImageGenerationJob(workspaceId, jobId) : service.resolveImageGenerationByVisualRef(workspaceId, visualRef!)
-      const jobProduct = service.products.get(job.productId)
       // Standalone uploaded-image candidates use a local shell product with no
-      // store/account binding. Reading their status/results must not require a
+      // canonical binding. Reading their status/results must not require a
       // brand grant; binding/selecting/publishing remains permission-gated.
-      const unboundCandidate = jobProduct?.storeName === '未绑定商品' && !jobProduct.accountId
+      // The exemption is a function of the durable canonical binding, never of
+      // the merchant-settable `storeName` display field.
+      const unboundCandidate = await isExemptUnboundImageCandidateProduct(workspaceId, job.productId)
       if (!unboundCandidate) await enforceProductBrandAccess(req, workspaceId, job.productId)
       if (!unboundCandidate && (await canonicalProductReadControl(workspaceId)).mode === 'canonical_read') {
         const product = service.products.get(job.productId)
@@ -20471,7 +20619,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const sourceProduct = service.products.get(context.product?.id)
       let sourceImage: string | undefined
       if (candidateOnly) {
-        if (!sourceProduct || sourceProduct.workspaceId !== workspaceId || sourceProduct.accountId || sourceProduct.storeName !== '未绑定商品' || !sourceProduct.sourceAssetIds?.length) throw new DomainError('VIDEO_CANDIDATE_SOURCE_REQUIRED', '未绑定视频必须引用当前工作区上传图片创建的候选商品', 409)
+        // Same exemption, same authorization fact as the image reads: a
+        // merchant-settable `storeName` must not be able to turn a
+        // brand-bound product into an unbound candidate.
+        if (!sourceProduct || sourceProduct.workspaceId !== workspaceId || !sourceProduct.sourceAssetIds?.length || !(await isExemptUnboundImageCandidateProduct(workspaceId, sourceProduct.id))) throw new DomainError('VIDEO_CANDIDATE_SOURCE_REQUIRED', '未绑定视频必须引用当前工作区上传图片创建的候选商品', 409)
         for (const assetId of sourceProduct.sourceAssetIds) await enforceAssetAccess(req, workspaceId, assetId, 'viewer')
         requireApprovedAssetForImageGeneration(workspaceId, sourceProduct, sourceProduct.sourceAssetIds, true)
         const sourceAsset = assetForWorkspace(workspaceId, sourceProduct.sourceAssetIds[0]!)
@@ -21922,7 +22073,11 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   if (req.method === 'GET' && path === '/v1/products') {
     const workspaceId = resolveWorkspace(req, url.searchParams.get('workspace_id') ?? undefined)
     const page = paginationRequest(url)
-    const accessibleBrandIds = persistence.business ? undefined : await accessibleTaskBrandIds(req, workspaceId)
+    // The capability decision for `catalog.search` is workspace scoped, so the
+    // brand filter is the handler's responsibility on both backends. Passing
+    // `undefined` to the durable page means "no brand condition" in SQL, so
+    // this must stay unconditional — exactly like GET /v1/tasks below.
+    const accessibleBrandIds = await accessibleTaskBrandIds(req, workspaceId)
     if (persistence.business) {
       const facts = url.searchParams.get('facts_confirmed')
       return send(res, 200, workspaceId, await persistence.business.listProductsPage(workspaceId, {
@@ -21935,37 +22090,15 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         ...(facts !== null ? { factsConfirmed: facts === 'true' } : {}),
       }), null, req)
     }
-    const repository = persistence.brandUnits ?? memoryBrandUnits
-    const canonicalRows = accessibleBrandIds === undefined ? [] : await repository.listCanonicalProducts({ workspaceId })
-    const accessibleBrandSet = accessibleBrandIds === undefined ? undefined : new Set(accessibleBrandIds)
-    const accessibleIds = accessibleBrandIds === undefined
-      ? undefined
-      : new Set(canonicalRows.filter(row => row.sourceProductId && accessibleBrandSet?.has(row.brandId)).map(product => product.sourceProductId).filter((value): value is string => Boolean(value)))
-    const canonicalLinkedProductIds = new Set(canonicalRows.map(product => product.sourceProductId).filter((value): value is string => Boolean(value)))
-    const taskBrandIdsByProduct = new Map<string, Set<string>>()
-    if (accessibleBrandIds !== undefined) {
-      for (const task of service.listTasks(workspaceId)) {
-        if (!task.brandId) continue
-        const brands = taskBrandIdsByProduct.get(task.productId)
-        if (brands) brands.add(task.brandId)
-        else taskBrandIdsByProduct.set(task.productId, new Set([task.brandId]))
-      }
-    }
+    // Same predicate as MCP `workspace.metrics`: one row level brand filter for
+    // every handler that pages the in-memory service catalog.
+    const catalogProductVisible = await accessibleCatalogProductFilter(req, workspaceId)
     const products = service.listProducts(workspaceId, {
       ...(url.searchParams.get('query') ? { query: url.searchParams.get('query')! } : {}),
       ...(url.searchParams.get('platform') ? { platform: url.searchParams.get('platform') as Platform } : {}),
       ...(url.searchParams.get('account_id') ? { accountId: url.searchParams.get('account_id')! } : {}),
       ...(url.searchParams.get('store_name') ? { storeName: url.searchParams.get('store_name')! } : {}),
-    }).filter(product => {
-      const visibleByCanonical = (accessibleIds === undefined || accessibleIds.has(product.id))
-      const hasCanonicalBinding = canonicalLinkedProductIds.has(product.id)
-      if (accessibleBrandIds === undefined) return visibleByCanonical
-      if (visibleByCanonical) return true
-      if (hasCanonicalBinding) return false
-      const taskBrands = taskBrandIdsByProduct.get(product.id)
-      if (!taskBrands || taskBrands.size === 0) return true
-      return [...taskBrands].some(taskBrandId => accessibleBrandSet!.has(taskBrandId))
-    })
+    }).filter(catalogProductVisible)
     .filter(product =>
       url.searchParams.get('facts_confirmed') === null || product.factsConfirmed === (url.searchParams.get('facts_confirmed') === 'true')
     )
@@ -23189,6 +23322,13 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     await hydrateWorkspace(workspaceId)
     let job = service.getImageGenerationJob(workspaceId, decodeURIComponent(imageGenerationJobGetMatch[1]!))
     enrichRequestObservation(req, { jobId: job.id })
+    // `catalog.image.get` is workspace scoped, so the brand boundary has to be
+    // enforced here (the MCP read does the same, through the same predicate).
+    // Standalone uploaded-image candidates use a local shell product with no
+    // canonical binding; reading their status/results must not require a brand
+    // grant — binding, selecting and publishing stay permission gated.
+    const unboundCandidate = await isExemptUnboundImageCandidateProduct(workspaceId, job.productId)
+    if (!unboundCandidate) await enforceProductBrandAccess(req, workspaceId, job.productId)
     // Scanner promotion can finish after the Provider callback. The callback
     // leaves the job pending until every output is clean; promote that durable
     // state on the REST read as well as the MCP read path so the merchant UI
@@ -23282,6 +23422,12 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     if (input.error && typeof input.error === 'object' && !Array.isArray(input.error)) {
       const error = input.error as Record<string, unknown>
       const failed = service.failGeneration({ workspaceId, jobId: job.id, code: typeof error.code === 'string' ? error.code : 'AI_GENERATION_FAILED', message: typeof error.message === 'string' ? error.message : '内容生成失败' })
+      // `failGeneration` is monotonic: a job that already succeeded is returned
+      // unchanged. A late failure report for such a job used to fall through and
+      // still write a `generation.failed` outbox event and refund the task's
+      // usage — a phantom failure that both under-charged the merchant and made
+      // the event stream disagree with the job record.
+      if (failed.state === 'succeeded') return send(res, 200, workspaceId, failed, null, req)
       await persistSnapshot(workspaceId, 'generation_job', failed, failed as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, failed.id, 'generation.failed', failed.revision, { job_id: failed.id, task_id: failed.taskId, error_code: failed.errorCode ?? 'AI_GENERATION_FAILED', error_message: failed.errorMessage ?? '内容生成失败' })
       if (!providerSucceededButSettlementPending(error)) await refundTaskUsage(workspaceId, failed.taskId, `generation:${failed.idempotencyKey}`, header(req, 'x-actor-id')?.trim() || 'worker', '异步内容生成失败')
@@ -23300,6 +23446,13 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       rulePreflightBeforeWrite = await requireGenerationRulePreflight(workspaceId, completedTaskBeforeWrite.productId, '排队期间平台规则已发生变化，不能提交该生成结果')
     } catch (error) {
       const failed = service.failGeneration({ workspaceId, jobId: job.id, code: error instanceof DomainError ? error.code : 'PLATFORM_RULE_PREFLIGHT_BLOCKED', message: error instanceof Error ? error.message : '排队期间平台规则已发生变化，不能提交该生成结果' })
+      // Same monotonicity guard as the `input.error` branch above: a job that
+      // already succeeded is returned unchanged, so a late (or redelivered)
+      // failure report must not write a phantom `generation.failed` event,
+      // refund the settled usage or free the slot of a delivered job. The worker
+      // outbox redelivers non-2xx result posts, so this branch is reachable
+      // after success whenever the queued-time rule preflight starts failing.
+      if (failed.state === 'succeeded') return send(res, 200, workspaceId, failed, null, req)
       await persistSnapshot(workspaceId, 'generation_job', failed, failed as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, failed.id, 'generation.failed', failed.revision, { job_id: failed.id, task_id: failed.taskId, error_code: failed.errorCode ?? 'PLATFORM_RULE_PREFLIGHT_BLOCKED', error_message: failed.errorMessage ?? '排队期间平台规则已发生变化，不能提交该生成结果' })
       await refundTaskUsage(workspaceId, failed.taskId, `generation:${failed.idempotencyKey}`, header(req, 'x-actor-id')?.trim() || 'worker', '排队期间平台规则变化导致生成阻断')

@@ -11,6 +11,12 @@ interface RulesPageProps {
 }
 
 export function RulesPage({ model }: RulesPageProps) {
+  // Scope the error to the two datasets this page actually reads. The console
+  // level `model.error` is reused across semantics: it is written by any
+  // failing optional dataset and cleared whenever `loadRules` succeeds, so
+  // using it here both mislabels unrelated outages as rule-sync failures and
+  // erases the global staleness warning after a successful rule refresh.
+  const ruleError = model.dataSetError("rule.list", "rule.sync.status");
   return (
     <OpsPage
       eyebrow="PLATFORM RULES"
@@ -19,7 +25,7 @@ export function RulesPage({ model }: RulesPageProps) {
       actions={<Button type="primary" loading={model.ruleSyncLoading} onClick={() => void model.loadRules()}>刷新规则</Button>}
     >
       <div className="ops-rules-page">
-      <OpsPageError error={model.error} onRetry={() => void model.loadRules()} />
+      <OpsPageError error={ruleError} onRetry={() => void model.loadRules()} />
       <Alert
         type="info"
         showIcon
@@ -30,7 +36,7 @@ export function RulesPage({ model }: RulesPageProps) {
       <RuleSyncStatusSection
         loading={model.ruleSyncLoading}
         statuses={model.ruleSyncStatuses}
-        error={model.error}
+        error={ruleError}
         onRefresh={() => void model.loadRules()}
         canSync={model.canRules}
         onSyncNow={() => void model.syncRulesNow()}

@@ -41,6 +41,18 @@ describe('relay usage normalization', () => {
     expect(usage?.metadata).not.toHaveProperty('duration_seconds')
   })
 
+  it('persists the accepted video job id so an unsettled job stays reconcilable', () => {
+    const usage = parseRelayUsage({ data: { task_id: 'job_1', status: 'queued' } }, new Headers({ 'x-request-id': 'video_request_1' }), { modality: 'video', model: 'video-v1' })
+    expect(usage?.metadata).toMatchObject({ video_request_accepted: true, provider_job_id: 'job_1' })
+    const statusBound = parseRelayUsage({ data: { id: 'video_job_2', status: 'queued' } }, new Headers({ 'x-request-id': 'video_request_2' }), { modality: 'video', model: 'video-v1' })
+    expect(statusBound?.metadata).toMatchObject({ video_request_accepted: true, provider_job_id: 'video_job_2' })
+    // A relay that merely echoes an id without an async lifecycle status has
+    // not accepted a job, so it must not contribute a job identity.
+    const echoed = parseRelayUsage({ data: { id: 'echoed_response_id' } }, new Headers({ 'x-request-id': 'video_request_3' }), { modality: 'video', model: 'video-v1' })
+    expect(echoed?.metadata).not.toHaveProperty('provider_job_id')
+    expect(parseRelayUsage({ data: [{ url: 'https://cdn.example/image.png' }] }, new Headers(), { modality: 'image', model: 'image-v1' })?.metadata).not.toHaveProperty('provider_job_id')
+  })
+
   it('uses only provider-reported video duration as observed settlement evidence', () => {
     const usage = parseRelayUsage({ data: { task_id: 'video_job_1', status: 'completed', usage: { duration_seconds: '7' } } }, new Headers({ 'x-request-id': 'video_request_1' }), { modality: 'video', model: 'video-v1', context: { preauthorizationDurationSeconds: 5 } })
     expect(usage).toMatchObject({ metadata: { usage_observed: true, duration_seconds: 7, duration_evidence: 'provider_usage', preauthorization_duration_seconds: 5 } })

@@ -18,7 +18,7 @@ type MerchantLoginPageProps = {
 
 export function MerchantLoginPage({
   apiBaseUrl,
-  error: _error,
+  error,
   loading = false,
   onAuthenticated,
   onRetry: _onRetry,
@@ -37,10 +37,14 @@ export function MerchantLoginPage({
     }
   }
 
-  // Authentication errors are shown only after the user submits the form.
-  // The initial session probe may report an unauthenticated state, which is
-  // expected on this page and must not look like a failed login.
-  const visibleError = formError
+  // A failed submit is the freshest message, so it wins. The `error` prop
+  // carries what only the parent knows: the session expired, the password was
+  // just changed and must be re-entered, or the account is not a merchant. That
+  // prop used to be dropped entirely (the parent renders nothing else while
+  // `authState !== 'authenticated'`), so a merchant who changed their password
+  // was returned to a blank form with no reason given. It is never a plain
+  // "unauthenticated probe" notice — the parent stores '' for that case.
+  const visibleError = formError || error || ''
   return (
     <main className="merchant-login-page" aria-labelledby="merchant-login-title">
       <section className="merchant-login-form-panel">

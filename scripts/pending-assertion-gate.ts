@@ -6,13 +6,16 @@
  * reports every DB-backed assertion as `pending`, and the run still exits 0.
  * A green `npm test` therefore proved nothing about those assertions.
  *
- * This gate is wired in through `vitest.config.ts` (`test.reporters`) rather
- * than through the safe launcher's CLI arguments, because the launcher's
- * argument and environment contracts are themselves pinned by
- * `tests/safe-test-launcher.test.ts`. Running as a reporter means every
- * invocation of the default configuration is covered: `npm test`,
- * `npm run test:watch`, `npm run test:release-gates`, and a bare
- * `npx vitest run <file>`.
+ * It is registered in `vitest.config.ts` (`test.reporters`), and it is not a
+ * choice a caller can make: Vitest lets a CLI `--reporter` replace the
+ * configured reporters outright, so `scripts/run-safe-tests.ts` appends this
+ * reporter back to any caller-supplied reporter list. Every entrypoint that
+ * goes through the launcher is therefore covered — `npm test`,
+ * `npm run test:watch`, `npm run test:release-gates`, `npm run test:summary`
+ * (which needs `--reporter=json`) — as is a bare `npx vitest run <file>`, which
+ * loads `vitest.config.ts` and never reaches the launcher. The one uncovered
+ * shape is a bare `npx vitest run <file> --reporter=...`, which bypasses the
+ * launcher and therewith the gate.
  *
  * Shape mirrors `validateIsolatedPostgresReport` / `validateIsolatedRedisReport`:
  * read a report, then assert that nothing was reported as pending or todo

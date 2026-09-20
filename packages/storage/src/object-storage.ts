@@ -294,6 +294,13 @@ function requireExpectedSize(value: number): number {
   return value
 }
 
+/** Local adapter metadata suffix. Object bodies may end with the same suffix,
+ * so a suffix match alone never proves that a file is a metadata record. */
+const LOCAL_METADATA_SUFFIX = '.meta.json'
+
+/** S3-compatible adapter metadata suffix, reserved for metadata keys. */
+const CLOUD_METADATA_SUFFIX = '.merchant-meta.json'
+
 function requireScanEvidence(value: string): string {
   const evidence = value.trim()
   if (!evidence || evidence.length > 512 || /[\u0000\r\n]/u.test(evidence)) throw new ObjectStorageError('SCAN_EVIDENCE_REQUIRED', '转入 clean 区域必须提供外部扫描证据引用', 400)
@@ -405,8 +412,18 @@ export class LocalObjectStorage implements ObjectStoragePort {
           const relative = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name
           const fullPath = resolve(directory, entry.name)
           if (entry.isDirectory()) await visit(fullPath, relative)
-          else if (entry.isFile() && entry.name.endsWith('.meta.json')) {
-            const key = `${zone}/${scope}/${relative.slice(0, -'.meta.json'.length)}`
+          else if (entry.isFile() && entry.name.endsWith(LOCAL_METADATA_SUFFIX)) {
+            // An object body may legally be named `*.meta.json` (the upload
+            // policy only classifies the final extension), so the suffix alone
+            // never proves a file is a metadata record. A metadata record is
+            // one whose object is still beside it and which is not itself a
+            // registered object; otherwise a body would be parsed as another
+            // key's metadata, permanently failing reconciliation for the
+            // workspace and letting a crafted body forge inventory rows.
+            const objectName = entry.name.slice(0, -LOCAL_METADATA_SUFFIX.length)
+            const isFileInDirectory = (name: string) => entries.some(candidate => candidate.isFile() && candidate.name === name)
+            if (!isFileInDirectory(objectName) || isFileInDirectory(entry.name + LOCAL_METADATA_SUFFIX)) continue
+            const key = `${zone}/${scope}/${relative.slice(0, -LOCAL_METADATA_SUFFIX.length)}`
             result.push(await this.readMetadata(scope, key))
           }
         }
@@ -540,7 +557,7 @@ export class LocalObjectStorage implements ObjectStoragePort {
   private async writeObject(input: { key: string; workspaceId: string; zone: ObjectZone; contentType: string; body: Uint8Array; sha256: string; scanEvidenceRef?: string }): Promise<ObjectMetadata> {
     const parsed = requireKeyForWorkspace(input.workspaceId, input.key, input.zone)
     const objectPath = await this.safePath(parsed.relative)
-    const metadataPath = `${objectPath}.meta.json`
+    const metadataPath = `${objectPath}${LOCAL_METADATA_SUFFIX}`
     const createdAt = new Date().toISOString()
     const metadata: ObjectMetadata = { key: parsed.relative, workspaceId: input.workspaceId, zone: input.zone, contentType: input.contentType, sizeBytes: input.body.byteLength, sha256: input.sha256, createdAt, ...(input.scanEvidenceRef ? { scanEvidenceRef: input.scanEvidenceRef } : {}) }
     await this.ensureDirectory(dirname(objectPath))
@@ -599,7 +616,7 @@ export class LocalObjectStorage implements ObjectStoragePort {
 
   private async readMetadata(workspaceId: string, key: string): Promise<ObjectMetadata> {
     const parsed = requireKeyForWorkspace(workspaceId, key)
-    const metadataPath = `${await this.safePath(parsed.relative)}.meta.json`
+    const metadataPath = `${await this.safePath(parsed.relative)}${LOCAL_METADATA_SUFFIX}`
     try {
       const metadata = JSON.parse(await readFile(metadataPath, 'utf8')) as Partial<ObjectMetadata>
       if (metadata.key !== parsed.relative || metadata.workspaceId !== workspaceId || metadata.zone !== parsed.zone || typeof metadata.sha256 !== 'string' || !SHA256.test(metadata.sha256) || typeof metadata.sizeBytes !== 'number' || !Number.isSafeInteger(metadata.sizeBytes) || typeof metadata.contentType !== 'string' || typeof metadata.createdAt !== 'string') throw new ObjectStorageError('OBJECT_METADATA_INVALID', '对象元数据损坏', 500)
@@ -663,7 +680,7 @@ export class LocalObjectStorage implements ObjectStoragePort {
   private async removeObject(relative: string): Promise<void> {
     const objectPath = await this.safePath(relative)
     await rm(objectPath, { force: true })
-    await rm(`${objectPath}.meta.json`, { force: true })
+    await rm(`${objectPath}${LOCAL_METADATA_SUFFIX}`, { force: true })
   }
 }
 
@@ -687,7 +704,7 @@ export class S3CompatibleObjectStorage implements ObjectStoragePort {
   }
   private readonly keyPrefix: string
   private objectKey(key: string) { return this.keyPrefix ? `${this.keyPrefix}/${key}` : key }
-  private metadataKey(key: string) { return `${this.objectKey(key)}.merchant-meta.json` }
+  private metadataKey(key: string) { return `${this.objectKey(key)}${CLOUD_METADATA_SUFFIX}` }
 
   async putQuarantine(input: PutQuarantineObjectInput): Promise<ObjectMetadata> {
     const workspaceId = requireId(input.workspaceId, 'workspaceId')
@@ -711,11 +728,18 @@ export class S3CompatibleObjectStorage implements ObjectStoragePort {
     for (const zone of ['quarantine', 'clean'] as const) {
       const providerPrefix = this.objectKey(`${zone}/${scope}/`)
       const keys = await this.transport.list(providerPrefix)
+      const listed = new Set(keys)
       for (const providerKey of keys) {
-        if (!providerKey.endsWith('.merchant-meta.json')) continue
+        if (!providerKey.endsWith(CLOUD_METADATA_SUFFIX)) continue
+        // The suffix alone does not prove this is a metadata record: an object
+        // body uploaded under the same name ends in the same suffix. Count it
+        // only when the object it describes is listed beside it and it is not
+        // itself a listed object, so a body can never be read as another key's
+        // metadata (or forge inventory rows).
+        if (!listed.has(providerKey.slice(0, -CLOUD_METADATA_SUFFIX.length)) || listed.has(providerKey + CLOUD_METADATA_SUFFIX)) continue
         const logicalKey = this.keyPrefix && providerKey.startsWith(`${this.keyPrefix}/`)
-          ? providerKey.slice(this.keyPrefix.length + 1, -'.merchant-meta.json'.length)
-          : providerKey.slice(0, -'.merchant-meta.json'.length)
+          ? providerKey.slice(this.keyPrefix.length + 1, -CLOUD_METADATA_SUFFIX.length)
+          : providerKey.slice(0, -CLOUD_METADATA_SUFFIX.length)
         result.push(await this.readMetadata(scope, logicalKey))
       }
     }

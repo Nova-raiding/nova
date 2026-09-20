@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { buildSafeTestEnvironment, buildSafeVitestArgs, runSafeTests, type SafeTestRuntime } from '../scripts/run-safe-tests.js'
+import { PENDING_GATE_REPORTER, buildSafeTestEnvironment, buildSafeVitestArgs, runSafeTests, type SafeTestRuntime } from '../scripts/run-safe-tests.js'
 import { NON_HERMETIC_TEST_FILES } from './test-suite-isolation.js'
 
 describe('safe default test launcher', () => {
@@ -17,9 +17,30 @@ describe('safe default test launcher', () => {
   })
 
   it('retains ordinary Vitest arguments while forcing a failing empty selection', () => {
-    expect(buildSafeVitestArgs(['tests/safe-test-launcher.test.ts', '--reporter=json', '--outputFile=/tmp/test-report.json']))
-      .toEqual(['run', 'tests/safe-test-launcher.test.ts', '--reporter=json', '--outputFile=/tmp/test-report.json', '--passWithNoTests=false'])
+    expect(buildSafeVitestArgs(['tests/safe-test-launcher.test.ts', '--outputFile=/tmp/test-report.json']))
+      .toEqual(['run', 'tests/safe-test-launcher.test.ts', '--outputFile=/tmp/test-report.json', '--passWithNoTests=false'])
     expect(buildSafeVitestArgs(['run', '--no-file-parallelism'])).toEqual(['run', '--no-file-parallelism', '--passWithNoTests=false'])
+  })
+
+  it('re-adds the pending-assertion gate to every caller-supplied reporter list', () => {
+    // A CLI `--reporter` replaces `test.reporters` instead of extending it, so
+    // without this the gate would be silently unregistered by an ordinary
+    // output preference. `tests/test-summary.ts` is why `--reporter=json` must
+    // keep working rather than be rejected outright.
+    expect(buildSafeVitestArgs(['--reporter=json', '--outputFile=/tmp/test-report.json']))
+      .toEqual(['run', '--reporter=json', '--outputFile=/tmp/test-report.json', `--reporter=${PENDING_GATE_REPORTER}`, '--passWithNoTests=false'])
+    expect(buildSafeVitestArgs(['run', 'tests/a.test.ts', '--reporter', 'verbose']))
+      .toEqual(['run', 'tests/a.test.ts', '--reporter', 'verbose', `--reporter=${PENDING_GATE_REPORTER}`, '--passWithNoTests=false'])
+    // No reporter argument: the configuration's own list (which already
+    // contains the gate) stays in charge and must not be replaced.
+    expect(buildSafeVitestArgs(['tests/a.test.ts']))
+      .toEqual(['run', 'tests/a.test.ts', '--passWithNoTests=false'])
+  })
+
+  it('names the same gate reporter the default configuration registers', async () => {
+    const { default: config } = await import('../vitest.config.js')
+    const configured = (config.test?.reporters ?? []) as readonly (string | readonly [string, ...unknown[]])[]
+    expect(configured.map(reporter => (Array.isArray(reporter) ? reporter[0] : reporter))).toContain(PENDING_GATE_REPORTER)
   })
 
   it.each(NON_HERMETIC_TEST_FILES)('rejects an explicit real-runtime test before spawning: %s', file => {
@@ -40,8 +61,8 @@ describe('safe default test launcher', () => {
   })
 
   it('keeps the explicit isolation manifest unique and limited to the audited files', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(35)
-    expect(new Set(NON_HERMETIC_TEST_FILES).size).toBe(35)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(36)
+    expect(new Set(NON_HERMETIC_TEST_FILES).size).toBe(36)
     expect(NON_HERMETIC_TEST_FILES).toContain('apps/api/src/canonical-backfill-contract.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/local-creative-points-seed-runtime.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')

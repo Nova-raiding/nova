@@ -3,6 +3,7 @@ import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
 import { PostgresBillingRepository } from './billing-repository.js'
 import { loadMigrations, MigrationRunner } from './migration.js'
+import type { SqlClient, SqlPool } from './repository.js'
 
 const databaseUrlValue = process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const postgresIt = databaseUrlValue ? it : it.skip
@@ -82,6 +83,97 @@ describe('billing PostgreSQL bigint release acceptance', () => {
       expect((await app.query('SELECT id FROM billing_transactions')).rows).toEqual([])
       expect((await database.query('SELECT count(*)::int AS orders FROM billing_orders')).rows).toEqual([{ orders: 1 }])
       expect((await database.query('SELECT count(*)::int AS transactions FROM billing_transactions')).rows).toEqual([{ transactions: 3 }])
+
+      // A failed action must net to zero: the reversal has to cover the
+      // settlement delta settleDebit appended, not just the reservation.
+      const refund = await repository.refundDebit({ workspaceId, debitIdempotencyKey: debitInput.idempotencyKey, actorId: debitInput.actorId, reason: 'provider 调用后落库失败' })
+      expect(refund).toMatchObject({ type: 'refund', amountFen: 150, orderId: `refund:${debitInput.idempotencyKey}` })
+      expect(await repository.balanceFen(workspaceId)).toBe(1000)
+      expect(await repository.refundDebit({ workspaceId, debitIdempotencyKey: debitInput.idempotencyKey, actorId: debitInput.actorId, reason: 'provider 调用后落库失败' })).toEqual(refund)
+      expect((await database.query('SELECT count(*)::int AS transactions FROM billing_transactions')).rows).toEqual([{ transactions: 4 }])
+
+      // ---------------------------------------------------------------------
+      // Interleaved settlement and model-failure reversal on one debit key.
+      //
+      // Both derive their amount from the same settlement aggregate, so they
+      // must take the same workspace row lock. The gate suspends `settleDebit`
+      // the instant it holds that lock — after it has read the aggregate but
+      // before it appends its delta — and the reversal is then started into
+      // exactly that window. Unserialized, the reversal fixes its amount
+      // against the pre-settlement aggregate while the settlement fixes its
+      // delta against the pre-reversal one: the wallet gets the reservation
+      // back and is charged only the delta, so a failed action stops netting to
+      // zero against what the provider actually charged. Migration 013's
+      // `UNIQUE (workspace_id, order_id, type)` does not help — the two rows
+      // have different keys.
+      // ---------------------------------------------------------------------
+      const raceWorkspace = 'ws_billing_settle_race'
+      const raceDebitKey = 'model_settle_race'
+      await database.query("INSERT INTO workspaces (id,status) VALUES ($1,'active')", [raceWorkspace])
+      await database.query("INSERT INTO billing_transactions (id,workspace_id,type,amount_fen,order_id,description) VALUES ('tx_settle_race_topup',$1,'recharge',1000,'recharge_settle_race','充值')", [raceWorkspace])
+
+      const settlePool = new Pool({ connectionString: connection(base, databaseName, 'merchant_app', 'merchant_app_local_only'), max: 1 })
+      const refundPool = new Pool({ connectionString: connection(base, databaseName, 'merchant_app', 'merchant_app_local_only'), max: 1 })
+      let releaseSettle: (() => void) | undefined
+      try {
+        const plain = new PostgresBillingRepository(settlePool)
+        expect(await plain.debit({ workspaceId: raceWorkspace, amountFen: 100, idempotencyKey: raceDebitKey, actorId: 'merchant_race', description: '模型生成预授权' })).toMatchObject({ amountFen: 100, created: true })
+
+        let settleLocked!: () => void
+        const lockObserved = new Promise<void>(resolve => { settleLocked = resolve })
+        const settleHeld = new Promise<void>(resolve => { releaseSettle = resolve })
+
+        const gatedPool: SqlPool = {
+          async connect(): Promise<SqlClient> {
+            const client = await settlePool.connect()
+            return {
+              async query<R = Record<string, unknown>>(text: string, values?: readonly unknown[]) {
+                const result = await client.query(text, values as unknown[])
+                if (text.includes('SELECT id FROM workspaces WHERE id=$1 FOR UPDATE')) { settleLocked(); await settleHeld }
+                return result as { rows: R[] }
+              },
+              release: (error?: Error) => client.release(error),
+            }
+          },
+        }
+        const refundStatements: string[] = []
+        const recordingPool: SqlPool = {
+          async connect(): Promise<SqlClient> {
+            const client = await refundPool.connect()
+            return {
+              async query<R = Record<string, unknown>>(text: string, values?: readonly unknown[]) {
+                refundStatements.push(text)
+                return await client.query(text, values as unknown[]) as unknown as { rows: R[] }
+              },
+              release: (error?: Error) => client.release(error),
+            }
+          },
+        }
+
+        const settling = new PostgresBillingRepository(gatedPool).settleDebit({ workspaceId: raceWorkspace, debitIdempotencyKey: raceDebitKey, finalAmountFen: 150, actorId: 'merchant_race', description: '模型真实用量结算' })
+        await lockObserved
+        const refunding = new PostgresBillingRepository(recordingPool).refundDebit({ workspaceId: raceWorkspace, debitIdempotencyKey: raceDebitKey, actorId: 'merchant_race', reason: 'provider 调用后落库失败' })
+        // Give the reversal the whole window to read the aggregate and append a
+        // stale refund before the settlement is allowed to commit.
+        await new Promise(resolve => setTimeout(resolve, 250))
+        releaseSettle!()
+        const [settlement, reversal] = await Promise.all([settling, refunding])
+
+        expect(settlement.delta).toMatchObject({ amountFen: 50 })
+        expect(reversal.amountFen).toBe(150)
+        // The reversal serialized on the same workspace row, and took the lock
+        // before it read the aggregate its amount is derived from.
+        const lockIndex = refundStatements.findIndex(statement => statement.includes('SELECT id FROM workspaces WHERE id=$1 FOR UPDATE'))
+        const aggregateIndex = refundStatements.findIndex(statement => statement.includes('AS "appliedFen"'))
+        expect(lockIndex).toBeGreaterThan(0)
+        expect(aggregateIndex).toBeGreaterThan(lockIndex)
+        // The failed action nets to zero against the provider charge.
+        expect(await plain.balanceFen(raceWorkspace)).toBe(1000)
+      } finally {
+        releaseSettle?.()
+        await settlePool.end()
+        await refundPool.end()
+      }
     } finally {
       try {
         await app?.end()

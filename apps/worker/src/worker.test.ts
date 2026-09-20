@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { Pool } from 'pg'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, workerQueueKey } from './main.js'
-import type { PostgresOutboxRepository, SqlPool } from '../../../packages/persistence/src/index.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, workerDatabasePoolOptions, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
+import { loadMigrations, type PostgresOutboxRepository, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { DurableOutboxDispatcher, InMemoryQueue, type DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
 import type { WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
@@ -692,6 +695,19 @@ describe('worker production entry', () => {
     expect(reported).toEqual([])
   })
 
+  it('keeps a platform-quota-rejected publish queued for the quota window instead of dead-lettering it', async () => {
+    const handler = createAuthorizedOutboxHandler({
+      publishRequested: async () => { throw new QuotaExceededError({ allowed: false, retryAfterSeconds: 42, limitPerWindow: 60, used: 61 }) },
+    })
+    // The publish branch must carry the provider's window exactly like the
+    // generation branch. Without it the dispatcher retries on the generic
+    // 100ms..30s backoff (dead-lettering inside ~1.5s) while the platform quota
+    // window is 60s, so a batch publish loses every event that the quota would
+    // have admitted after one window.
+    await expect(handler({ event: { id: 'evt_publish_quota', workspaceId: 'ws_a', aggregateId: 'job_quota', eventType: 'publish.requested', sequence: 1, payload: {}, createdAt: new Date().toISOString() }, attempt: 1, now: Date.now() }))
+      .rejects.toMatchObject({ error: { code: 'QUOTA_EXHAUSTED', retryable: true, unknown: false, retryAfterMs: 42_000 } })
+  })
+
   it('keeps provider-accepted generation settlement unknown reserved for reconciliation', async () => {
     const reported: unknown[] = []
     const pending = Object.assign(new Error('model usage settlement is pending'), {
@@ -830,6 +846,31 @@ describe('worker production entry', () => {
     const repository = { claimPending } as unknown as PostgresOutboxRepository
     await expect(pollOnce(repository, new Map(), { workspaces: ['ws_a'], batchSize: 1, leaseMs: 30_000, role: 'scan', claimAdmission: () => false }, () => new InMemoryQueue())).resolves.toEqual({ restored: 0, processed: 0, succeeded: 0, unknown: 0, queued: 0, deadLetter: 0 })
     expect(claimPending).not.toHaveBeenCalled()
+  })
+
+  it('keeps the non-scan queues draining while the scan routing is withheld from an all-role worker', async () => {
+    const claimCalls: Array<{ eventTypes?: readonly string[] }> = []
+    const claimPending = vi.fn(async (_workspaceId: string, options: { eventTypes?: readonly string[] } = {}) => { claimCalls.push(options); return [] })
+    const repository = { claimPending } as unknown as PostgresOutboxRepository
+    const dispatchers = new Map<string, DurableOutboxDispatcher<DurableOutboxEvent>>()
+    // `ROLE=all` owns every queue in one process. An unready local scanner must
+    // narrow the claim to the non-scan queues instead of freezing the poll:
+    // publish/sync/generation have nothing to do with ClamAV or EICAR state.
+    let scannerReady = false
+    const claimFor = () => scannerReady ? undefined : { eventTypes: NON_SCAN_EVENT_TYPES }
+    await pollOnce(repository, dispatchers, { workspaces: ['ws_a'], batchSize: 1, leaseMs: 30_000, role: 'all', claimFor }, () => new InMemoryQueue())
+    expect(claimCalls.at(-1)?.eventTypes).toEqual(expect.arrayContaining(['publish.requested', 'publish.reconcile_requested', 'sync.requested', 'generation.requested', 'state.snapshot']))
+    for (const scanEventType of ['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested']) {
+      expect(claimCalls.at(-1)?.eventTypes).not.toContain(scanEventType)
+    }
+
+    // Re-evaluated per restore, so the scan queue resumes the moment the
+    // scanner is admitted again - the dispatcher cached for this workspace is
+    // not stuck with the earlier routing.
+    scannerReady = true
+    await pollOnce(repository, dispatchers, { workspaces: ['ws_a'], batchSize: 1, leaseMs: 30_000, role: 'all', claimFor }, () => new InMemoryQueue())
+    expect(claimCalls.at(-1)?.eventTypes).toBeUndefined()
+    expect(claimPending).toHaveBeenCalledTimes(2)
   })
 
   it('includes redrive requests in the scan worker claim filter', async () => {
@@ -1197,4 +1238,201 @@ describe('knowledge embedding worker API contract', () => {
     await postModelUsage({ apiBaseUrl: 'https://api.test', apiToken: 'worker-token', signingSecret: 'worker-secret', fetcher, usage: { ...common, modality: 'text' } })
     expect(roles).toEqual(['automation', 'generation'])
   })
+})
+
+/**
+ * The non-scanner roles are probed with `find <ready-file> -mmin -2`, but the
+ * file is only rewritten when a cycle finishes. A cycle is not bounded by two
+ * minutes - one API call is allowed to run for minutes - so a slow but healthy
+ * worker used to fail its liveness probe, get restarted, and leave its work
+ * leased for the rest of the 15-minute durable lease. The heartbeat proves
+ * liveness on its own cadence instead of relying on cycle completion.
+ */
+describe('worker ready file heartbeat', () => {
+  const waitFor = async (predicate: () => Promise<boolean>, timeoutMs = 2_000) => {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      if (await predicate()) return true
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    return false
+  }
+
+  it('refreshes the marker modification time while a long cycle is still running', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'worker-ready-heartbeat-'))
+    const readyFile = join(directory, 'ready')
+    await writeFile(readyFile, JSON.stringify({ readyAt: '2026-09-20T00:00:00.000Z', role: 'publish', state: 'idle' }))
+    const before = await stat(readyFile)
+    const heartbeat = createReadyFileHeartbeat({ readyFile, intervalMs: 20 })
+    heartbeat.start()
+    try {
+      expect(await waitFor(async () => (await stat(readyFile)).mtimeMs > before.mtimeMs)).toBe(true)
+    } finally {
+      heartbeat.stop()
+    }
+    // Only the timestamp moves: the document is the last real poll evidence and
+    // a timer must never be able to forge it.
+    expect(JSON.parse(await readFile(readyFile, 'utf8'))).toEqual({ readyAt: '2026-09-20T00:00:00.000Z', role: 'publish', state: 'idle' })
+  })
+
+  it('never creates the marker for a worker that has not proven readiness', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'worker-ready-absent-'))
+    const readyFile = join(directory, 'ready')
+    const heartbeat = createReadyFileHeartbeat({ readyFile, intervalMs: 20 })
+    heartbeat.start()
+    try {
+      // A revoked marker (dependency loss, failed poll) must stay revoked; a
+      // timer that recreates it would advertise a worker nothing is checking.
+      expect(await heartbeat.touch()).toBe(false)
+      await new Promise(resolve => setTimeout(resolve, 60))
+      await expect(stat(readyFile)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      heartbeat.stop()
+    }
+  })
+
+  it('stops refreshing once the cycle ends so a dead loop still trips the probe', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'worker-ready-stop-'))
+    const readyFile = join(directory, 'ready')
+    await writeFile(readyFile, '{}')
+    const started = (await stat(readyFile)).mtimeMs
+    const heartbeat = createReadyFileHeartbeat({ readyFile, intervalMs: 20 })
+    heartbeat.start()
+    expect(await waitFor(async () => (await stat(readyFile)).mtimeMs > started)).toBe(true)
+    // The timer is scoped to the executing part of the cycle: once it is
+    // stopped, nothing refreshes the marker, which is what lets a genuinely
+    // wedged or dead loop fall outside the probe window.
+    heartbeat.stop()
+    const stopped = (await stat(readyFile)).mtimeMs
+    await new Promise(resolve => setTimeout(resolve, 80))
+    expect((await stat(readyFile)).mtimeMs).toBe(stopped)
+  })
+
+  it('rejects a heartbeat interval that could not keep the marker fresh', () => {
+    expect(() => createReadyFileHeartbeat({ readyFile: '/tmp/x', intervalMs: 0 })).toThrow('ready file heartbeat interval')
+    expect(() => createReadyFileHeartbeat({ readyFile: '/tmp/x', intervalMs: 1.5 })).toThrow('ready file heartbeat interval')
+  })
+})
+
+/**
+ * Every await the poll loop reaches has to carry a budget of its own, because
+ * the ready file the probes read is refreshed by the loop's own heartbeat: a
+ * dependency call that can park forever parks the loop with a marker that still
+ * looks fresh, and the role's throughput goes to zero with every probe green.
+ * These pin the two budgets the loop relies on besides the worker API and the
+ * handler (`WORKER_API_TIMEOUT_MS`, `handlerTimeoutMs`) - Postgres, and (in
+ * `redis-operation-budget.test.ts`) Redis.
+ */
+const waitForFile = async (path: string, timeoutMs = 5_000): Promise<boolean> => {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (await stat(path).then(() => true, () => false)) return true
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  return false
+}
+
+describe('worker dependency budgets', () => {
+  it('bounds Postgres statements inside the ready-file probe window', () => {
+    const options = workerDatabasePoolOptions({ databaseUrl: 'postgres://worker@127.0.0.1:5432/worker' }, {})
+    // Without these a statement the server never answers parks the loop with a
+    // fresh marker (`connectionTimeoutMillis` only bounds acquiring the socket).
+    expect(options.query_timeout).toBeGreaterThan(0)
+    expect(options.statement_timeout).toBe(options.query_timeout)
+    expect(options.query_timeout).toBeLessThanOrEqual(READY_FILE_PROBE_WINDOW_MS)
+    // ...and well above the loop's short queries, so a slow but healthy
+    // statement is not aborted either.
+    expect(options.query_timeout).toBeGreaterThanOrEqual(5_000)
+    expect(workerDatabasePoolOptions({ databaseUrl: 'postgres://worker' }, { WORKER_DB_QUERY_TIMEOUT_MS: '120000' }).query_timeout).toBe(READY_FILE_PROBE_WINDOW_MS)
+    expect(() => workerDatabasePoolOptions({ databaseUrl: 'postgres://worker' }, { WORKER_DB_QUERY_TIMEOUT_MS: '120001' })).toThrow('probe window')
+  })
+
+  it('keeps the marker fresh while a slow cycle is still running, and drops it when that cycle fails', async () => {
+    // #29 in one case: a cycle is allowed to be slow, the probes read the marker
+    // with `-mmin -2`, and the marker used to be written only when the cycle
+    // finished - so a healthy slow cycle was restarted mid-flight. The loop has
+    // to keep the marker inside the window *while it is executing*, and any
+    // failure has to drop it again.
+    const directory = await mkdtemp(join(tmpdir(), 'worker-ready-slow-cycle-'))
+    const readyFile = join(directory, 'ready')
+    const previousReadyFile = process.env.WORKER_READY_FILE
+    const previousRedisUrl = process.env.REDIS_URL
+    process.env.WORKER_READY_FILE = readyFile
+    delete process.env.REDIS_URL
+    const migrations = await loadMigrations()
+    const slowCatalogMs = 400
+    // Answers the dependency check, then parks workspace discovery long enough
+    // for the heartbeat to prove itself, and finally fails the cycle.
+    const pool = {
+      async query(sql: string) {
+        if (/schema_migrations/u.test(sql)) return { rows: migrations.map(migration => ({ version: migration.version, name: migration.name })) }
+        return { rows: [] }
+      },
+      async connect() {
+        return {
+          async query(sql: string) {
+            if (/worker_active_workspace_catalog/u.test(sql)) {
+              await new Promise(resolve => setTimeout(resolve, slowCatalogMs))
+              throw new Error('worker_active_workspace_catalog unavailable')
+            }
+            return { rows: [] }
+          },
+          release: () => undefined,
+        }
+      },
+    } as unknown as Pool
+    const config = readWorkerConfig({ ...process.env, NODE_ENV: 'test', WORKER_ROLE: 'publish', WORKER_WORKSPACES: 'auto', WORKER_ONCE: 'true', WORKER_METRICS_PORT: '0', DATABASE_URL: 'postgres://worker@127.0.0.1:9/worker' })
+    try {
+      const running = runWorker(config, pool, { readyFileHeartbeatIntervalMs: 20 })
+      // Once the cycle has written the marker, a slow step must not let it age
+      // out of the probe window: the heartbeat is armed for exactly this.
+      const armed = await waitForFile(readyFile)
+      expect(armed).toBe(true)
+      const before = (await stat(readyFile)).mtimeMs
+      await new Promise(resolve => setTimeout(resolve, slowCatalogMs / 2))
+      expect((await stat(readyFile)).mtimeMs).toBeGreaterThan(before)
+      // The same cycle then fails, and the failure has to leave no marker: the
+      // probe must fail on the next period rather than read a heartbeat whose
+      // loop is parked.
+      await expect(running).rejects.toThrow()
+      await expect(stat(readyFile)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      if (previousReadyFile === undefined) delete process.env.WORKER_READY_FILE
+      else process.env.WORKER_READY_FILE = previousReadyFile
+      if (previousRedisUrl !== undefined) process.env.REDIS_URL = previousRedisUrl
+    }
+  }, 30_000)
+
+  it('leaves no ready marker behind when a dependency cannot be reached', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'worker-ready-iteration-'))
+    const readyFile = join(directory, 'ready')
+    const previousReadyFile = process.env.WORKER_READY_FILE
+    const previousRedisUrl = process.env.REDIS_URL
+    process.env.WORKER_READY_FILE = readyFile
+    // The loop reads REDIS_URL itself; without one it uses the in-memory queue
+    // factory and this case needs no server.
+    delete process.env.REDIS_URL
+    const config = readWorkerConfig({ ...process.env, NODE_ENV: 'test', WORKER_ROLE: 'publish', WORKER_WORKSPACES: 'ws_a', WORKER_ONCE: 'true', WORKER_METRICS_PORT: '0', DATABASE_URL: 'postgres://worker@127.0.0.1:9/worker' })
+    const pool = new Pool(workerDatabasePoolOptions(config, {}))
+    try {
+      await writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: 'publish', state: 'idle' }))
+      // The dependency check cannot reach the database, so the iteration fails
+      // instead of completing - and in once mode the failure surfaces instead
+      // of being swallowed. This is the same path a dependency that runs out of
+      // its budget takes (see the Redis and Postgres budgets above).
+      await expect(runWorker(config, pool)).rejects.toThrow()
+      // No marker survives the failed iteration, so `test -s <file> && find
+      // <file> -mmin -2` is false and the probes fail on their next period. The
+      // marker this case wrote before the loop started cannot advertise
+      // readiness for a worker that never reached a dependency, and the same
+      // removal is pinned for a marker the loop wrote itself by the slow-cycle
+      // case above (which goes red if the failure path stops removing it).
+      await expect(stat(readyFile)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await pool.end()
+      if (previousReadyFile === undefined) delete process.env.WORKER_READY_FILE
+      else process.env.WORKER_READY_FILE = previousReadyFile
+      if (previousRedisUrl !== undefined) process.env.REDIS_URL = previousRedisUrl
+    }
+  }, 30_000)
 })

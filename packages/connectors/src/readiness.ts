@@ -1,6 +1,7 @@
 import type { CapabilityEvidence, CapabilityEvidenceState, CapabilityName } from './capability-evidence.js'
 import type { HttpConnectorConfig, Platform } from './types.js'
 import { inspectOutboundUrl, isSecureEnvironment, officialHostsFor } from './outbound-security.js'
+import { missingApiSelectors } from './platform-adapters/api-selector.js'
 
 export const REQUIRED_CONNECTOR_CAPABILITIES: readonly CapabilityName[] = [
   'authorize', 'refresh', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload',
@@ -19,6 +20,7 @@ export type ConnectorReadinessReason =
   | 'INVALID_OUTBOUND_URL'
   | 'SIGNER_MISSING'
   | 'SIGNER_NOT_ATTESTED'
+  | 'API_SELECTOR_MISSING'
   | 'RESPONSE_MAPPING_MISSING'
   | 'PRODUCT_MAPPING_MISSING'
   | 'WRITE_RECEIPT_MAPPING_MISSING'
@@ -145,6 +147,16 @@ export function validateConnectorReadiness(
   if (allowTestAdapters) return { platform, ready: reasons.length === 0, reasons, verifiedCapabilities: [] }
   if (!config.signer) reasons.push('SIGNER_MISSING')
   else if (config.signer.kind !== 'platform') reasons.push('SIGNER_NOT_ATTESTED')
+  // Router-gateway signers select the platform API from `api.methods` at
+  // request time and refuse with a terminal `NOT_CONFIGURED` when a selector is
+  // absent. That failure is unreachable from this gate's caller, so a missing
+  // selector must block admission here instead: otherwise a deployment that
+  // passes every other gate (paths, evidence, switches) accepts traffic and
+  // dead-letters every call of the unconfigured operation. The requirement is
+  // read off the signer that will actually sign, so declaring it and consuming
+  // it can never drift apart, and a bearer signer (which resolves no selector)
+  // is never asked for one.
+  if (missingApiSelectors(config.api.methods, config.signer?.requiredApiSelectors).length) reasons.push('API_SELECTOR_MISSING')
   // Social platforms are intentionally backed by a generic bearer transport
   // until their official payload contract is configured. Generic fallback
   // fields must never be mistaken for an approved platform mapping.

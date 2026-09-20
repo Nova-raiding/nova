@@ -625,31 +625,10 @@ export const COMMERCIAL_OPERATION_REGISTRY_COVERAGE = assertCommercialOperationR
   COMMERCIAL_OPERATION_REGISTRY,
 )
 
-function registryCanonicalJson(registry: readonly CommercialOperationPolicy[]): string {
-  return JSON.stringify(
-    [...registry]
-      .sort((left, right) => left.surface.localeCompare(right.surface) || left.operation.localeCompare(right.operation))
-      .map(policy => ({
-        surface: policy.surface,
-        operation: policy.operation,
-        domain: policy.domain,
-        enabled: policy.enabled,
-        classification: policy.classification,
-        rate_action: policy.rate_action,
-        authorization_policy_ref: policy.authorization_policy_ref ?? null,
-      })),
-  )
-}
-
-function fnv1a32(value: string): string {
-  let hash = 0x811c9dc5
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 0x01000193) >>> 0
-  }
-  return hash.toString(16).padStart(8, '0')
-}
-
-// Keep the published checksum stable for existing release evidence consumers;
-// the timeline method is additive and remains covered by the totality check.
-export const COMMERCIAL_OPERATION_REGISTRY_CHECKSUM = 'fnv1a32:c075d591' as const
+// The reviewed-registry checksum that used to live here was frozen as a literal
+// on 2026-09-05 while the registry kept growing, so it no longer described the
+// exported object and could not distinguish registry revisions. It had no
+// consumer, and a checksum that is never recomputed is worse than none: it
+// certifies whatever revision a reader assumes. The registry revision is still
+// pinned by COMMERCIAL_OPERATION_REGISTRY_VERSION and by the totality assertion
+// above, and the shipped MCP method list is hashed in the release manifest.

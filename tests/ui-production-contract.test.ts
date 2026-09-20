@@ -40,12 +40,19 @@ describe('Merchant Studio production UI contract', () => {
     expect(merchantNginx.match(/add_header Cache-Control "no-store" always;/gu)).toHaveLength(3)
   })
 
-  it('projects read-only merchant roles into disabled write controls', () => {
-    expect(app).toContain("new Set(['viewer', 'knowledge_reader'])")
-    expect(app).toContain("data-testid=\"merchant-read-only-banner\"")
-    expect(app).toContain("data-merchant-permission={merchantReadOnly ? 'read-only' : 'write'}")
-    expect(app).toContain("control.setAttribute('aria-disabled', 'true')")
-    expect(app).toContain(".disabled = true")
+  it('keeps write refusals server-driven instead of guessing a role in the browser', () => {
+    // This used to assert a client-side read-only projection built from a
+    // build-time `VITE_MERCHANT_ROLE` that no build path set, so it disabled
+    // nothing in any delivered image while still reading like a guard. No
+    // reachable session can supply the role either (see the comment in App.tsx),
+    // so the promise was removed rather than re-sourced. These assertions keep
+    // it removed and keep the surface that actually refuses writes.
+    for (const gone of ['import.meta.env.VITE_MERCHANT_ROLE', 'merchantReadOnly', 'projectMerchantWriteControls', 'data-merchant-permission', 'data-merchant-role', 'merchant-read-only-banner']) {
+      expect(app, `${gone} was removed; do not reintroduce an unfed client-side permission gate`).not.toContain(gone)
+    }
+    expect(api).toContain("'merchant-capability-denied'")
+    expect(app).toContain("window.addEventListener('merchant-capability-denied', onDenied)")
+    expect(app).toContain('当前账号没有此操作权限')
   })
 
   it('bounds API outage waits and presents a distinct timeout error', () => {

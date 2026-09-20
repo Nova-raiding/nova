@@ -1,4 +1,5 @@
 import { createCanvas, loadImage } from '@napi-rs/canvas'
+import { assertOutboundUrl } from '../../connectors/src/outbound-security.js'
 
 export interface MarketingCompositorBrief {
   productTitle: string
@@ -24,15 +25,48 @@ function clean(values: Array<string | undefined>, max: number, excluded: string[
     .slice(0, max)
 }
 
-async function resolveImageSource(source: string, fetchImpl: typeof fetch): Promise<string> {
+const MAX_COMPOSITED_IMAGE_BYTES = 32 * 1024 * 1024
+const COMPOSITOR_DOWNLOAD_TIMEOUT_MS = Math.max(1_000, Number(process.env.ARTIFACT_DOWNLOAD_TIMEOUT_MS ?? 30_000))
+
+/** Mirror of the API's artifact host rule (server.ts `trustedDashScopeImageArtifactHost`). */
+export function trustedDashScopeImageArtifactHost(raw: string): string | undefined {
+  let host: string
+  try { host = new URL(raw).hostname.toLowerCase().replace(/\.$/u, '') } catch { return undefined }
+  return /^dashscope-[a-z0-9-]{1,96}\.oss-(?:accelerate|cn-[a-z0-9-]{1,48})\.aliyuncs\.com$/u.test(host) ? host : undefined
+}
+
+/**
+ * The compositor fetches provider-controlled artifact URLs, which is the same
+ * trust boundary the API's `imageArtifactBody` guards. Apply the identical host
+ * policy here: in a secure environment an unconfigured allowlist fails closed
+ * instead of fetching whatever host the relay names.
+ */
+function compositorArtifactAllowedHosts(raw: string): readonly string[] | undefined {
+  const configured = (process.env.IMAGE_ARTIFACT_ALLOWED_HOSTS ?? '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean)
+  const dynamic = trustedDashScopeImageArtifactHost(raw)
+  const allowedHosts = dynamic ? [...configured, dynamic] : configured
+  if (allowedHosts.length) return allowedHosts
+  if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging') throw new Error('marketing compositor requires IMAGE_ARTIFACT_ALLOWED_HOSTS before fetching provider image URLs')
+  return undefined
+}
+
+/** Bound the download in time (and follow the caller's cancellation), so a host
+ * that accepts the connection and stalls cannot hang image generation. */
+function compositorDownloadSignal(signal?: AbortSignal) {
+  const timeout = AbortSignal.timeout(COMPOSITOR_DOWNLOAD_TIMEOUT_MS)
+  return signal ? AbortSignal.any([signal, timeout]) : timeout
+}
+
+async function resolveImageSource(source: string, fetchImpl: typeof fetch, signal?: AbortSignal): Promise<string> {
   if (/^data:image\/(?:png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/iu.test(source)) return source
   if (!/^https:\/\//iu.test(source)) throw new Error('marketing compositor requires a data-url or HTTPS image')
-  const response = await fetchImpl(source, { method: 'GET', headers: { accept: 'image/png,image/jpeg,image/webp' }, redirect: 'error' })
+  await assertOutboundUrl(source, { environment: process.env.NODE_ENV, allowedHosts: compositorArtifactAllowedHosts(source), resolveDns: true })
+  const response = await fetchImpl(source, { method: 'GET', headers: { accept: 'image/png,image/jpeg,image/webp' }, redirect: 'error', signal: compositorDownloadSignal(signal) })
   if (!response.ok) throw new Error(`marketing compositor image fetch failed with HTTP ${response.status}`)
   const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
   if (!['image/png', 'image/jpeg', 'image/webp'].includes(contentType ?? '')) throw new Error('marketing compositor received a non-image response')
   const bytes = Buffer.from(await response.arrayBuffer())
-  if (bytes.length === 0 || bytes.length > 32 * 1024 * 1024) throw new Error('marketing compositor image response is empty or too large')
+  if (bytes.length === 0 || bytes.length > MAX_COMPOSITED_IMAGE_BYTES) throw new Error('marketing compositor image response is empty or too large')
   return `data:${contentType};base64,${bytes.toString('base64')}`
 }
 
@@ -56,7 +90,7 @@ function wrapToWidth(context: { measureText(value: string): { width: number } },
  * are deliberately instructed not to render copy because generated Chinese
  * glyphs are not reliable enough for a merchant-facing asset.
  */
-export async function composeMarketingImages(images: string[], brief: MarketingCompositorBrief, fetchImpl: typeof fetch = fetch): Promise<string[]> {
+export async function composeMarketingImages(images: string[], brief: MarketingCompositorBrief, fetchImpl: typeof fetch = fetch, options: { signal?: AbortSignal } = {}): Promise<string[]> {
   const title = brief.productTitle.trim()
   if (!title) throw new Error('marketing compositor requires a product title')
   const headline = brief.headline?.trim() || title
@@ -72,7 +106,7 @@ export async function composeMarketingImages(images: string[], brief: MarketingC
   try {
     const output: string[] = []
     for (const [index, source] of images.entries()) {
-      const resolvedSource = await resolveImageSource(source, fetchImpl)
+      const resolvedSource = await resolveImageSource(source, fetchImpl, options.signal)
       const image = await loadImage(Buffer.from(resolvedSource.slice(resolvedSource.indexOf(',') + 1), 'base64'))
       const width = image.width
       const height = image.height

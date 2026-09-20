@@ -40,6 +40,39 @@ describe('video generator relay', () => {
     await expect(invalid.generate({ prompt: '生成视频', output: 'rendering', context: {} })).rejects.toThrow('neither an HTTPS artifact URL nor a provider job id')
   })
 
+  it('keeps the accepted provider job id when usage settlement fails', async () => {
+    const usageRecords: Array<{ metadata?: Record<string, unknown> }> = []
+    const generator = new OpenAICompatibleVideoGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1',
+      usageSink: record => {
+        usageRecords.push(record)
+        throw Object.assign(new Error('relay pricing snapshot is missing this model'), { code: 'MODEL_USAGE_COST_MISSING' })
+      },
+      fetch: (async () => new Response(JSON.stringify({ task_id: 'job_queued_1', status: 'completed', video_url: 'https://cdn.example/video.mp4', usage: { duration_seconds: 5 } }), { status: 200, headers: { 'x-request-id': 'req_video_1' } })) as typeof fetch,
+    })
+    await expect(generator.generate({ prompt: '生成视频', output: 'rendering', context: {} })).rejects.toMatchObject({
+      code: 'MODEL_USAGE_COST_MISSING',
+      providerJobId: 'job_queued_1',
+      providerStatus: 'completed',
+      providerAttemptId: expect.any(String),
+    })
+    // The ledger record of the same call must carry the job id too, otherwise
+    // the provider-side job cannot be reconciled from persisted evidence.
+    expect(usageRecords[0]?.metadata).toMatchObject({ provider_job_id: 'job_queued_1', duration_seconds: 5, duration_evidence: 'provider_usage' })
+  })
+
+  it('keeps the accepted provider job id when a queued job has no settlement evidence yet', async () => {
+    const generator = new OpenAICompatibleVideoGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1', usageSink: () => ({ recorded: true, costEvidence: true }),
+      fetch: (async () => new Response(JSON.stringify({ data: { id: 'video_job_2', status: 'queued' } }), { status: 200, headers: { 'x-request-id': 'req_video_2' } })) as typeof fetch,
+    })
+    await expect(generator.generate({ prompt: '生成视频', output: 'rendering', context: {} })).rejects.toMatchObject({
+      code: 'MODEL_USAGE_EVIDENCE_MISSING',
+      providerJobId: 'video_job_2',
+      providerStatus: 'queued',
+    })
+  })
+
   it('queries an opaque provider job without charging the wallet again', async () => {
     let method = ''
     let url = ''

@@ -1015,7 +1015,20 @@ export const fetchPlatformModelStatus = async (baseUrl: string): Promise<Platfor
   return requestMcp<PlatformModelStatus>(baseUrl, 'platform.model.status')
 }
 export const fetchWorkspaceMetrics = (baseUrl: string) => requestMcp<WorkspaceMetrics>(baseUrl, 'workspace.metrics', { risk_limit: '100' })
-export const createRechargeOrder = (baseUrl: string, amountCny: string, channel: 'alipay' | 'wechat' = 'alipay') => requestMcp<RechargeOrder>(baseUrl, 'billing.recharge.create', { amount_cny: amountCny, channel, idempotency_key: `studio-${channel}-${amountCny}-${Date.now()}` })
+/**
+ * `idempotencyKey` is a required part of the call, not a convenience.
+ *
+ * The server deduplicates `billing.recharge.create` on
+ * `${workspaceId}:${idempotencyKey}` and replays the existing order only when
+ * channel, amount and actor all match; the order id is derived from that key.
+ * This used to be built here with a `Date.now()` suffix, so every call produced
+ * a fresh key and the dedupe could never be hit: when the client timed out
+ * (API_REQUEST_TIMEOUT_MS) the server had already created the charge and the
+ * provider checkout, the UI showed only "API 请求超时", and the merchant's next
+ * click created a second payable order for the same purchase. The caller now
+ * owns the key so a retry of one purchase intent keeps it.
+ */
+export const createRechargeOrder = (baseUrl: string, amountCny: string, channel: 'alipay' | 'wechat', idempotencyKey: string) => requestMcp<RechargeOrder>(baseUrl, 'billing.recharge.create', { amount_cny: amountCny, channel, idempotency_key: idempotencyKey })
 export const fetchRechargeOrder = (baseUrl: string, orderId: string) => requestMcp<RechargeOrder>(baseUrl, 'billing.recharge.get', { order_id: orderId })
 export const optimizeProductTitle = (baseUrl: string, input: { product_id: string; platform?: PlatformId; keyword?: string; objective?: string }) => requestMcp<{ product_id: string; platform: PlatformId; suggestions: Array<{ title: string; score: { seo: number; geo: number; total: number }; keywords: string[]; evidence: Array<{ source: string; value: string }>; risks: string[]; rankingGuarantee: false }>; humanConfirmationRequired: boolean; rankingGuarantee: false }>(baseUrl, 'catalog.title.optimize', input)
 
@@ -1200,7 +1213,11 @@ export interface CustomerSupportRepliesResult {
   replies?: CustomerSupportReply[]
   next_cursor?: string
 }
-export const createCampaignBatch = (baseUrl: string, input: { brand_id: string; targets: Array<{ product_id: string; platform: PlatformId; account_id: string; canonical_product_id?: string; listing_id?: string }>; request_text?: string; idempotency_key: string }) => requestMcp<CampaignBatchResult>(baseUrl, 'campaign.batch.create', { brand_id: input.brand_id, targets_json: JSON.stringify(input.targets), ...(input.request_text ? { request_text: input.request_text } : {}), idempotency_key: input.idempotency_key })
+// campaign.batch.create only records the durable plan; request_text belongs to
+// campaign.batch.generate, which the UI calls right after. The contract does
+// not declare request_text here, and sending it made every batch plan fail the
+// MCP parameter validation with a 400.
+export const createCampaignBatch = (baseUrl: string, input: { brand_id: string; targets: Array<{ product_id: string; platform: PlatformId; account_id: string; canonical_product_id?: string; listing_id?: string }>; idempotency_key: string }) => requestMcp<CampaignBatchResult>(baseUrl, 'campaign.batch.create', { brand_id: input.brand_id, targets_json: JSON.stringify(input.targets), idempotency_key: input.idempotency_key })
 export const generateCampaignBatch = (baseUrl: string, campaignId: string, requestText?: string, idempotencyKey = `merchant-studio-campaign-generate-${campaignId}`) => requestMcp<CampaignBatchResult>(baseUrl, 'campaign.batch.generate', { campaign_id: campaignId, ...(requestText ? { request_text: requestText } : {}), idempotency_key: idempotencyKey })
 export const fetchCustomerSupportReplies = (baseUrl: string, input: { ticketId?: string; relatedTaskId?: string; relatedOrderId?: string }, limit = 50, cursor?: string) => requestMcp<CustomerSupportRepliesResult>(baseUrl, 'support.customer.replies.list', { ...(input.ticketId ? { ticket_id: input.ticketId } : {}), ...(input.relatedTaskId ? { related_task_id: input.relatedTaskId } : {}), ...(input.relatedOrderId ? { related_order_id: input.relatedOrderId } : {}), limit: String(limit), ...(cursor ? { cursor } : {}) })
 export const selectDirection = (baseUrl: string, taskId: string, directionId: string) => requestApi<Task>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/directions`, { method: 'POST', body: JSON.stringify({ direction_id: directionId }) })

@@ -188,6 +188,30 @@ const iso = (value: string | Date) => value instanceof Date ? value.toISOString(
 const map = (row: QuotaRow): StorageQuotaReservation => ({ workspaceId: row.workspace_id, reservationKey: row.reservation_key, assetId: row.asset_id, reservedBytes: Number(row.reserved_bytes), ...(row.actual_bytes !== null ? { actualBytes: Number(row.actual_bytes) } : {}), status: row.status, revision: row.revision, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) })
 const projection = 'workspace_id,reservation_key,asset_id,reserved_bytes,actual_bytes,status,revision,created_at,updated_at'
 
+/**
+ * Legacy keys a per-object reservation key has to fall back to.
+ *
+ * A reservation key is bound to one physical object (`asset:<assetId>/<file>`,
+ * see `assetReservationKeyForObject` in apps/api/src/server.ts), and
+ * `reservation_key` is half of the table's primary key. Rows written before
+ * that shape existed carry `asset:<assetId>` instead: migration 231 rewrites
+ * the ones whose object it can name, but a row whose asset has no durable
+ * record left cannot be named and keeps the old key. A release can only be
+ * driven by the object that is being deleted, so without this fallback such a
+ * row is unreachable forever and `used_bytes` never falls - the workspace then
+ * reports STORAGE_QUOTA_EXCEEDED while holding far less than its limit.
+ *
+ * Order matters: the bare legacy key is preferred over the prefix, because it
+ * is the row that paid for the asset before the key changed, while a prefix
+ * match may be the reservation of a *different* object of the same asset.
+ */
+function legacyReservationKeyCandidates(reservationKey: string): { bare: string; prefix: string } | undefined {
+  const assetId = /^asset:([^/]+)\/.+/u.exec(reservationKey)?.[1]
+  if (!assetId) return undefined
+  // `asset:%` and `asset:_` are LIKE wildcards; an asset id may legally contain them.
+  return { bare: `asset:${assetId}`, prefix: `asset:${assetId.replace(/[\\%_]/gu, character => `\\${character}`)}/%` }
+}
+
 export class PostgresStorageQuotaRepository implements StorageQuotaRepository {
   constructor(private readonly pool: SqlPool) {}
 
@@ -264,11 +288,24 @@ export class PostgresStorageQuotaRepository implements StorageQuotaRepository {
       const quota = await client.query<TotalRow>(`SELECT limit_bytes,used_bytes,reserved_bytes FROM workspace_storage_quotas WHERE workspace_id=$1 FOR UPDATE`, [workspaceId])
       if (!quota.rows[0]) throw new Error('STORAGE_QUOTA_NOT_CONFIGURED')
       const found = await client.query<QuotaRow>(`SELECT ${projection} FROM storage_quota_reservations WHERE workspace_id=$1 AND reservation_key=$2 FOR UPDATE`, [workspaceId, input.reservationKey])
-      const current = found.rows[0] ? map(found.rows[0]) : undefined
+      let current = found.rows[0] ? map(found.rows[0]) : undefined
+      // The exact key is the reservation for this object. Only when it is
+      // absent - a row written before reservation keys became per-object, and
+      // which migration 231 could not name - is the asset's other key shapes
+      // considered (see `legacyReservationKeyCandidates`).
+      if (!current) {
+        const candidates = legacyReservationKeyCandidates(input.reservationKey)
+        if (candidates) {
+          const fallback = await client.query<QuotaRow>(`SELECT ${projection} FROM storage_quota_reservations
+             WHERE workspace_id=$1 AND status<>'released' AND (reservation_key=$2 OR reservation_key LIKE $3 ESCAPE '\\')
+             ORDER BY (reservation_key=$2) DESC, updated_at DESC, reservation_key ASC FOR UPDATE`, [workspaceId, candidates.bare, candidates.prefix])
+          current = fallback.rows[0] ? map(fallback.rows[0]) : undefined
+        }
+      }
       if (!current || current.status === 'released') return current
       if (!allowSettled && current.status !== 'active') throw new Error('STORAGE_QUOTA_SETTLED_RELEASE_REQUIRES_PHYSICAL_DELETION')
       const at = input.at ?? now()
-      const updated = await client.query<QuotaRow>(`UPDATE storage_quota_reservations SET reserved_bytes=0,actual_bytes=NULL,status='released',revision=revision+1,updated_at=$3 WHERE workspace_id=$1 AND reservation_key=$2 RETURNING ${projection}`, [workspaceId, input.reservationKey, at])
+      const updated = await client.query<QuotaRow>(`UPDATE storage_quota_reservations SET reserved_bytes=0,actual_bytes=NULL,status='released',revision=revision+1,updated_at=$3 WHERE workspace_id=$1 AND reservation_key=$2 RETURNING ${projection}`, [workspaceId, current.reservationKey, at])
       const releasedBytes = current.status === 'active' ? current.reservedBytes : 0
       const settledBytes = current.status === 'active' ? 0 : (current.actualBytes ?? 0)
       await client.query(`UPDATE workspace_storage_quotas SET reserved_bytes=reserved_bytes-$2,used_bytes=used_bytes-$3,revision=revision+1,updated_at=$4 WHERE workspace_id=$1`, [workspaceId, releasedBytes, settledBytes, at])

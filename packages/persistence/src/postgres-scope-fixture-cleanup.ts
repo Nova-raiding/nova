@@ -63,6 +63,7 @@ export const POSTGRES_SCOPE_FIXTURE_PREFIXES = [
   'release_209_',
   'release_210_',
   'release_211_',
+  'release_231_',
   'release_canonical_brand_',
   'release_fresh_',
   'release_migration_integrity_',
@@ -71,6 +72,7 @@ export const POSTGRES_SCOPE_FIXTURE_PREFIXES = [
   'release_restore_',
   'release_upgrade_',
   'service_154_',
+  'support_sla_scan_',
   'workspace_bootstrap_',
 ] as const
 

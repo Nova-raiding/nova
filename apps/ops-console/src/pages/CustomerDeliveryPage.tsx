@@ -8,6 +8,7 @@ import type { WorkspaceSummary } from "../types/ops.js";
 import { customerDeliveryClient, type CustomerDeliveryAsset } from "../api/customerDeliveryClient.js";
 import { describeOpsError } from "../api/opsClient.js";
 import { accountLabel } from "../authz/accountLabel.js";
+import { useUnsavedChanges } from "../components/authz/UnsavedChangesContext.js";
 import type { CustomerDeliveryRecord } from "../components/delivery/CustomerDeliverySection.js";
 import { waitForDeliveryScan } from "../components/delivery/CustomerDeliveryUpload.js";
 
@@ -62,12 +63,18 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   // Customer delivery is a shared operations workflow. Keep using the
   // platform's active workspace context for API compatibility, but do not
   // expose a tenant-switching control to sales/operations users.
-  // An explicit empty target means that the operator cleared the shared
-  // workbench context. Only an undefined target falls back to the first
-  // active workspace during initial bootstrap.
-  const targetWorkspaceId = model.authorizationTargetWorkspaceId === undefined
-    ? model.workspaceRows[0]?.workspaceId || ""
-    : model.authorizationTargetWorkspaceId.trim();
+  //
+  // The shared target is a plain string that only the surface which owns the
+  // selection (the commercial overview) ever writes, and `""` is its real
+  // "nothing selected yet" state. `model.workspaceRows` is the platform-wide
+  // workspace directory, so `workspaceRows[0]` is simply the first entry of
+  // that directory - a tenant the operator never chose. Falling back to it
+  // retargets every read *and* every write on this page (create, contract
+  // upload, checklist, training, archive) at that tenant. An empty target is
+  // therefore refused rather than substituted: reads and writes stay disabled
+  // until the operator selects a workspace on the surface that owns the
+  // selection.
+  const targetWorkspaceId = model.authorizationTargetWorkspaceId?.trim() ?? "";
   const [records, setRecords] = useState<import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -79,6 +86,12 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const [integrationChecks, setIntegrationChecks] = useState<string[]>([]);
   const [acceptanceChecks, setAcceptanceChecks] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
+  const [createDraftDirty, setCreateDraftDirty] = useState(false);
+  // The workbench switch confirmation only fires for a form that registered
+  // itself as dirty. Without a live registrant the guard could never arm and a
+  // half-filled customer profile was discarded without any prompt, so the one
+  // reachable draft form on this page registers itself here.
+  useUnsavedChanges(createPage && createDraftDirty, "客户建档表单");
   const createErrorRef = useRef<HTMLDivElement>(null);
   const createSubmissionController = useRef<AbortController | undefined>(undefined);
   const pendingCreate = useRef<{
@@ -261,6 +274,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       createForm.resetFields();
       setUploadedContractFile(undefined);
       setUploadedContractName("");
+      setCreateDraftDirty(false);
       setCreatePage(false);
       message.success("客户创建成功");
     } catch (cause) {
@@ -370,11 +384,11 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     >
       {!canRead ? <Alert type="warning" showIcon title="当前会话没有客户交付读取权限" description="请切换到具备 customer.delivery.read 的平台运营工作区。" /> : null}
       {canRead && !canUpdate ? <Alert style={{ marginBottom: 16 }} type="info" showIcon title="当前会话仅可查看客户交付" description="保存、上传和流程变更需要 customer.delivery.update 权限。" /> : null}
-      {!targetWorkspaceId && canRead ? <Alert style={{ marginBottom: 16 }} type="info" showIcon title="正在加载客户交付档案" description="请稍候，运营数据加载完成后即可新建客户。" /> : null}
+      {!targetWorkspaceId && canRead ? <Alert style={{ marginBottom: 16 }} type="warning" showIcon title="尚未选择客户工作区" description="客户交付只能读取和写入操作员显式选择的工作区。请先在「商业化总览」中选择目标企业，本页的档案读取与建档、上传、验收写动作会随该选择启用。" /> : null}
       {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon title="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
       {mutationError && !createPage ? <Alert style={{ marginBottom: 16 }} type="error" showIcon title="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
       {createPage ? (<>
-        <Form id="customer-create-form" className="customer-delivery-create-form" form={createForm} layout="vertical" onFinish={submitCreatePage}>
+        <Form id="customer-create-form" className="customer-delivery-create-form" form={createForm} layout="vertical" onFinish={submitCreatePage} onValuesChange={() => setCreateDraftDirty(true)}>
         <Card title="用户建档">
             <div className="customer-delivery-profile-fields">
             <Form.Item name="companyName" label="公司名称" rules={[{ required: true, message: "请输入公司名称" }]}>
@@ -385,7 +399,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             <Form.Item name="paymentDate" label="付款时间" rules={[{ required: true, message: "请选择付款日期" }]}><DatePicker classNames={{ popup: { root: "customer-delivery-date-popup" } }} format="YYYY-MM-DD" placeholder="请选择付款日期" style={{ width: "100%" }} /></Form.Item>
             <Form.Item name="contractFile" label="合同文件或链接" rules={[{ required: true, message: "请上传合同或填写合同链接" }]}>
               <Input placeholder="" suffix={<Button type="text" className="customer-delivery-upload-button" aria-label="上传合同文件" title="上传合同文件" icon={<UploadOutlined />} onClick={() => contractFileInput.current?.click()} />} />
-              <input ref={contractFileInput} hidden type="file" accept=".pdf,.docx,.png,.jpg,.jpeg" onChange={(event) => { const file = event.target.files?.[0]; if (file) { createForm.setFieldValue("contractFile", file.name); setUploadedContractName(file.name); setUploadedContractFile(file); } }} />
+              <input ref={contractFileInput} hidden type="file" accept=".pdf,.docx,.png,.jpg,.jpeg" onChange={(event) => { const file = event.target.files?.[0]; if (file) { createForm.setFieldValue("contractFile", file.name); setUploadedContractName(file.name); setUploadedContractFile(file); setCreateDraftDirty(true); } }} />
               {uploadedContractName ? <div className="customer-delivery-uploaded-file">已选择：{uploadedContractName}<Button type="text" size="small" className="customer-delivery-clear-upload" aria-label="取消已选合同文件" title="取消已选文件" icon={<CloseOutlined />} onClick={() => { createForm.setFieldValue("contractFile", ""); setUploadedContractName(""); setUploadedContractFile(undefined); if (contractFileInput.current) contractFileInput.current.value = ""; }} /></div> : null}
             </Form.Item>
             <Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input placeholder="例如：姜伟" /></Form.Item>
@@ -396,19 +410,19 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         <Card title={<span>系统接入确认 <em className="customer-delivery-required-mark">*</em></span>}>
           <div className="customer-delivery-check-grid customer-delivery-check-grid-five">
             {INTEGRATION_ITEMS.map((itemKey) => { const label = checklistDisplayLabel(itemKey); return (
-              <label className="customer-delivery-check-item" key={itemKey}><span>{label === "创作点" || label === "商品资料" ? `${label}\u00a0` : label}</span><Checkbox checked={integrationChecks.includes(itemKey)} onChange={(event) => setIntegrationChecks((current) => event.target.checked ? [...current, itemKey] : current.filter((item) => item !== itemKey))} /></label>
+              <label className="customer-delivery-check-item" key={itemKey}><span>{label === "创作点" || label === "商品资料" ? `${label}\u00a0` : label}</span><Checkbox checked={integrationChecks.includes(itemKey)} onChange={(event) => { setCreateDraftDirty(true); setIntegrationChecks((current) => event.target.checked ? [...current, itemKey] : current.filter((item) => item !== itemKey)); }} /></label>
             ); })}
           </div>
         </Card>
         <Card title={<span>功能测试及验收 <em className="customer-delivery-required-mark">*</em></span>}>
           <div className="customer-delivery-check-grid customer-delivery-check-grid-four">
-            {ACCEPTANCE_ITEMS.map((itemKey) => <label className="customer-delivery-check-item" key={itemKey}><span className={itemKey === "店铺/商品读取" ? "customer-delivery-four-char-label" : undefined}>{checklistDisplayLabel(itemKey)}</span><Checkbox checked={acceptanceChecks.includes(itemKey)} onChange={(event) => setAcceptanceChecks((current) => event.target.checked ? [...current, itemKey] : current.filter((item) => item !== itemKey))} /></label>)}
+            {ACCEPTANCE_ITEMS.map((itemKey) => <label className="customer-delivery-check-item" key={itemKey}><span className={itemKey === "店铺/商品读取" ? "customer-delivery-four-char-label" : undefined}>{checklistDisplayLabel(itemKey)}</span><Checkbox checked={acceptanceChecks.includes(itemKey)} onChange={(event) => { setCreateDraftDirty(true); setAcceptanceChecks((current) => event.target.checked ? [...current, itemKey] : current.filter((item) => item !== itemKey)); }} /></label>)}
           </div>
         </Card>
         </div>
         {mutationError ? <div ref={createErrorRef} className="customer-delivery-create-error" tabIndex={-1}><Alert type="error" showIcon title="创建客户失败" description={mutationError} /></div> : null}
         <div className="customer-delivery-create-actions">
-          <Button disabled={creating} onClick={() => setCreatePage(false)}>返回客户建档</Button>
+          <Button disabled={creating} onClick={() => { setCreateDraftDirty(false); setCreatePage(false); }}>返回客户建档</Button>
           <Space>
             <Button type="primary" htmlType="submit" form="customer-create-form" loading={creating}>{creating ? "正在创建" : "创建客户"}</Button>
           </Space>
@@ -421,7 +435,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         readOnly={canRead && !canUpdate}
         records={records}
         onCreate={canUpdate && canRead ? createRecord : undefined}
-        onCreateNavigate={canUpdate && canRead ? () => { setMutationError(""); pendingCreate.current = undefined; setCreatePage(true); } : undefined}
+        onCreateNavigate={canUpdate && canRead ? () => { setMutationError(""); pendingCreate.current = undefined; setCreateDraftDirty(false); setCreatePage(true); } : undefined}
         onSave={canUpdate && canRead ? saveProfile : undefined}
         onChecklistSave={canUpdate && canRead ? saveChecklist : undefined}
         onChecklistLoad={loadChecklist}

@@ -270,15 +270,34 @@ export class PostgresBillingRepository {
 
   /** Reverse a model debit after the downstream generation request failed.
    * The debit and refund are separate immutable ledger entries; the refund
-   * key is derived from the original debit key so retries remain idempotent. */
+   * key is derived from the original debit key so retries remain idempotent.
+   *
+   * The refund reverses the amount currently in effect for the debit key — the
+   * pre-authorization plus every settlement delta `settleDebit` appended — not
+   * the original reservation. Reversing only the reservation would leave the
+   * settled difference charged on an action that produced no result, and would
+   * over-credit a reservation whose final charge was settled downwards.
+   *
+   * That amount and the delta `settleDebit` computes are two reads of the same
+   * settlement aggregate, so they have to be taken under the same workspace row
+   * lock. Without it the pair interleaves as a write skew: settlement derives
+   * its delta from the pre-refund aggregate while the reversal derives its
+   * amount from the pre-settlement one, and a failed action no longer nets to
+   * zero against what the provider actually charged. Taking the lock before the
+   * first read — the same order `debit` and `settleDebit` use — also makes a
+   * concurrent duplicate reversal replay its existing row instead of racing it
+   * into the `UNIQUE (workspace_id, order_id, type)` constraint. */
   async refundDebit(input: { workspaceId: string; debitIdempotencyKey: string; actorId: string; reason: string }) {
     return withWorkspaceTransaction(this.pool, requireWorkspaceScope(input.workspaceId), async client => {
+      await client.query('SELECT id FROM workspaces WHERE id=$1 FOR UPDATE', [input.workspaceId])
       const debit = await client.query<TransactionRow>("SELECT id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at FROM billing_transactions WHERE workspace_id=$1 AND order_id=$2 AND type='debit'", [input.workspaceId, input.debitIdempotencyKey])
       if (!debit.rows[0]) throw new Error('billing debit not found')
       const refundOrderId = `refund:${input.debitIdempotencyKey}`
       const existing = await client.query<TransactionRow>("SELECT id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at FROM billing_transactions WHERE workspace_id=$1 AND order_id=$2 AND type='refund'", [input.workspaceId, refundOrderId])
       if (existing.rows[0]) return transaction(existing.rows[0])
-      const inserted = await client.query<TransactionRow>('INSERT INTO billing_transactions (id,workspace_id,type,amount_fen,order_id,actor_id,description) VALUES ($1,$2,\'refund\',$3,$4,$5,$6) RETURNING id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at', [billingTransactionId(), input.workspaceId, billingAmountFen(debit.rows[0].amount_fen), refundOrderId, debit.rows[0].actor_id ?? input.actorId, `模型失败退款（${input.actorId}）：${input.reason}`])
+      const applied = await client.query<{ appliedFen: string | number }>("SELECT COALESCE(SUM(CASE WHEN type='debit' THEN amount_fen ELSE -amount_fen END),0)::bigint AS \"appliedFen\" FROM billing_transactions WHERE workspace_id=$1 AND order_id IN ($2::text,$3::text) AND type IN ('debit','refund')", [input.workspaceId, `settlement:${input.debitIdempotencyKey}`, `settlement-refund:${input.debitIdempotencyKey}`])
+      const refundFen = billingAmountFen(debit.rows[0].amount_fen) + billingInteger(applied.rows[0]?.appliedFen ?? 0)
+      const inserted = await client.query<TransactionRow>('INSERT INTO billing_transactions (id,workspace_id,type,amount_fen,order_id,actor_id,description) VALUES ($1,$2,\'refund\',$3,$4,$5,$6) RETURNING id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at', [billingTransactionId(), input.workspaceId, billingAmountFen(refundFen), refundOrderId, debit.rows[0].actor_id ?? input.actorId, `模型失败退款（${input.actorId}）：${input.reason}`])
       return transaction(inserted.rows[0]!)
     })
   }

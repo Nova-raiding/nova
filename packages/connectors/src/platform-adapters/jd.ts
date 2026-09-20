@@ -1,18 +1,33 @@
 import { createHash } from 'node:crypto'
-import type { PlatformWriteDraft, RawProduct, RequestSigner, WriteIdentity, WriteReceipt, WriteStatus } from '../types.js'
+import type { PlatformApiMethods, PlatformWriteDraft, RawProduct, RequestSigner, WriteIdentity, WriteReceipt, WriteStatus } from '../types.js'
 import { mapPlatformRejection, platformEnvelope, providerRequestId } from './rejection.js'
+import { PLATFORM_API_SELECTORS, resolveApiSelector } from './api-selector.js'
+import { applySignedRequest } from './signed-request.js'
 
 export interface JdSignerOptions {
   appKey: string
   appSecret: string
   now?: () => Date
+  /**
+   * Explicit routerjson `method` per connector operation, for example
+   * `{ sync: 'jd.product.sync', create: 'jingdong.ware.create' }`. JD selects
+   * the API with this form parameter, so it cannot come from the URL path; the
+   * connector supplies it from `api.methods`.
+   */
+  methods?: PlatformApiMethods
 }
 
-/** JD Open Platform routerjson signer. Values are signed before URL encoding. */
+/**
+ * JD Open Platform routerjson signer. Values are signed before URL encoding.
+ * The router `method` (the API selector) is read from the connector
+ * configuration for the operation in flight; it is never defaulted to another
+ * operation's API and never read from the request URL.
+ */
 export function createJdSigner(options: JdSignerOptions): RequestSigner {
   if (!options.appKey.trim() || !options.appSecret.trim()) throw new Error('JD app key and app secret are required')
   return {
     kind: 'platform',
+    requiredApiSelectors: PLATFORM_API_SELECTORS,
     sign(request) {
       const url = new URL(request.url)
       const params: Record<string, string> = {}
@@ -22,19 +37,21 @@ export function createJdSigner(options: JdSignerOptions): RequestSigner {
         try { business = JSON.parse(request.body) as Record<string, unknown> } catch { /* caller supplied a non-JSON body */ }
       }
       params.app_key = options.appKey
-      params.method = params.method ?? `${request.platform}.product.sync`
       params.timestamp = formatJdTimestamp((options.now ?? (() => new Date()))())
       params.v = params.v ?? '2.0'
       params.format = params.format ?? 'json'
       if (request.credential?.accessToken) params.access_token = request.credential.accessToken
       params['360buy_param_json'] = JSON.stringify(business)
+      // Assigned last: a query parameter cannot redirect the call, and a
+      // missing selector is a terminal configuration error rather than a silent
+      // fallback to the sync API for create/update/query.
+      params.method = resolveApiSelector(request, options.methods, { signer: 'JD routerjson', parameter: 'method' })
       delete params.sign
       const canonical = Object.keys(params).sort().map(key => `${key}${params[key]}`).join('')
       params.sign = createHash('md5').update(`${options.appSecret}${canonical}${options.appSecret}`, 'utf8').digest('hex').toUpperCase()
-      url.search = ''
-      request.url = url.toString()
-      request.body = new URLSearchParams(params).toString()
-      request.headers['content-type'] = 'application/x-www-form-urlencoded;charset=UTF-8'
+      // The read path (`consolidated/ware/query` and friends) is dispatched as
+      // GET; a form body there is rejected by `fetch` before any network call.
+      applySignedRequest(request, url, params)
       return {}
     },
   }

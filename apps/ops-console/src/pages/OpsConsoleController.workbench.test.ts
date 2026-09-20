@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { canActivateOpsWorkbench, commitOpsWorkbenchTransition, domainNavigationBlockedReason, initialOpsWorkbench, shouldConfirmWorkbenchTransition, workbenchSwitchWarning } from "./OpsConsoleController.js";
+import { canActivateOpsWorkbench, commitOpsWorkbenchTransition, domainNavigationBlockedReason, initialOpsWorkbench, popstateWorkbenchWarning, shouldConfirmWorkbenchTransition, workbenchSwitchWarning } from "./OpsConsoleController.js";
 import { opsDomains, requiredWorkbenchForDomain } from "../navigation/opsNavigation.js";
 import { hasRuleDraftChanges, validateRuleChecksJson } from "../components/tasks/RuleCenterSection.js";
 
@@ -72,6 +72,17 @@ describe("ops workbench transition", () => {
     expect(domainNavigationBlockedReason("members", "workspace")).toBeUndefined();
     expect(domainNavigationBlockedReason("users", "workspace")).toBeUndefined();
     expect(domainNavigationBlockedReason("overview", "platform")).toBeUndefined();
+  });
+
+  it("explains a history entry for a workbench the console can never enter", () => {
+    // Backing into /ops/rules restores a merchant-workbench history entry that
+    // can never be activated. The popstate used to be consumed silently.
+    expect(popstateWorkbenchWarning("workspace", "platform")).toContain("商家工作区");
+    expect(popstateWorkbenchWarning("workspace", "platform")).toContain("不可进入");
+    expect(popstateWorkbenchWarning("platform", "workspace")).toBeUndefined();
+    expect(popstateWorkbenchWarning("platform", "platform")).toBeUndefined();
+    const controller = readFileSync(new URL("./OpsConsoleController.tsx", import.meta.url), "utf8");
+    expect(controller).toContain("popstateWorkbenchWarning(targetWorkbench, activeWorkbench)");
   });
 
   it("no longer routes the 403 recovery action at an unreachable merchant domain", () => {

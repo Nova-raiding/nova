@@ -111,6 +111,13 @@ const platformAndVaultKeys = [
     `${prefix}_OAUTH_AUTHORIZE_URL`, `${prefix}_OAUTH_TOKEN_URL`, `${prefix}_OAUTH_REDIRECT_URI`,
     `${prefix}_API_BASE_URL`, `${prefix}_SYNC_PATH`, `${prefix}_CREATE_PATH`, `${prefix}_UPDATE_PATH`, `${prefix}_QUERY_PATH`,
   ]),
+  // Router-gateway API selectors. They are part of the signed request, so a
+  // replica that renders a different value (or none at all) signs a different
+  // API — or refuses terminally — for the same operation. Only the platforms
+  // whose signers resolve a selector carry them.
+  ...['JD', 'TAOBAO', 'TMALL', 'PDD'].flatMap(prefix => [
+    `${prefix}_SYNC_METHOD`, `${prefix}_CREATE_METHOD`, `${prefix}_UPDATE_METHOD`, `${prefix}_QUERY_METHOD`, `${prefix}_MEDIA_METHOD`,
+  ]),
   'JD_APP_KEY', 'JD_APP_SECRET',
   'TAOBAO_APP_KEY', 'TAOBAO_APP_SECRET', 'TAOBAO_OAUTH_REFRESH_URL', 'TAOBAO_OAUTH_REVOKE_URL', 'TAOBAO_OAUTH_SCOPES',
   'TMALL_CLIENT_ID', 'TMALL_CLIENT_SECRET', 'TMALL_OAUTH_REFRESH_URL', 'TMALL_OAUTH_REVOKE_URL', 'TMALL_OAUTH_SCOPES',

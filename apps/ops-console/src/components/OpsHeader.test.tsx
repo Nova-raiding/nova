@@ -1,5 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { chromium, type Browser } from "playwright";
+import { createServer, type ViteDevServer } from "vite";
 import { OpsHeader } from "./OpsHeader.js";
 
 describe("OpsHeader account authentication UX", () => {
@@ -111,4 +117,127 @@ describe("OpsHeader account authentication UX", () => {
     expect(styles).toMatch(/\.ops-account-trigger-copy\s*\{[^}]*display:\s*flex/s);
     expect(styles).toMatch(/\.ops-account-trigger\s*\{[^}]*width:\s*132px/s);
   });
+});
+
+// Real Chromium mounts the header and performs the logout fetch. Only the
+// logout response is simulated: this is UI regression evidence, not API proof.
+describe("ops header logout failure feedback", () => {
+  let browser: Browser | undefined;
+  let vite: ViteDevServer | undefined;
+  let cacheDirectory: string | undefined;
+  let baseUrl: string;
+
+  beforeAll(async () => {
+    cacheDirectory = await mkdtemp(join(tmpdir(), "ops-header-logout-"));
+    const entryPath = "/__ops-header-entry.tsx";
+    vite = await createServer({
+      configFile: false,
+      root: resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
+      cacheDir: cacheDirectory,
+      logLevel: "error",
+      define: {
+        "import.meta.env.VITE_OPS_AUTH_MODE": JSON.stringify("oidc"),
+        "import.meta.env.VITE_OPS_BUILD_MODE": JSON.stringify("oidc"),
+        "import.meta.env.VITE_API_BASE": JSON.stringify("/api"),
+        "import.meta.env.VITE_OPS_LOCAL_SESSION": JSON.stringify("false"),
+      },
+      server: { host: "127.0.0.1", port: 0, strictPort: true, hmr: false },
+      plugins: [{
+        name: "ops-header-logout-regression",
+        resolveId(id: string) { if (id === entryPath) return `\0${entryPath}`; },
+        load(id: string) {
+          if (id !== `\0${entryPath}`) return;
+          return `
+            import React, { useState } from 'react';
+            import { createRoot } from 'react-dom/client';
+            import { App } from 'antd';
+            import { OpsHeader } from '/src/components/OpsHeader.tsx';
+            sessionStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform' }));
+            const session = {
+              actor_id: 'ops-actor-1',
+              account_login: 'ops@example.com',
+              workspace_id: '',
+              roles: ['platform_ops'],
+              workbench: 'platform',
+              workspace_granted: false,
+              scope: { type: 'platform' },
+            };
+            function Harness() {
+              const [refreshed, setRefreshed] = useState(false);
+              return React.createElement(App, null,
+                React.createElement(OpsHeader, {
+                  managedSession: false,
+                  sessionLoaded: true,
+                  session,
+                  onRefresh: () => setRefreshed(true),
+                }),
+                React.createElement('span', { 'data-testid': 'refreshed' }, refreshed ? '已刷新' : '未刷新'));
+            }
+            createRoot(document.getElementById('root')).render(React.createElement(Harness));
+          `;
+        },
+        configureServer(server) {
+          server.middlewares.use((req, res, next) => {
+            if (!req.url?.startsWith("/__ops-header-test")) return next();
+            const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="${entryPath}"></script></body></html>`;
+            void server.transformIndexHtml(req.url, html).then(output => {
+              res.setHeader("Content-Type", "text/html; charset=utf-8");
+              res.end(output);
+            }).catch(next);
+          });
+        },
+      }],
+    });
+    await vite.listen();
+    const address = vite.httpServer?.address();
+    if (!address || typeof address === "string") throw new Error("Ops header listener did not bind");
+    baseUrl = `http://127.0.0.1:${address.port}`;
+    browser = await chromium.launch({ channel: "chrome", headless: true });
+  }, 60_000);
+
+  afterAll(async () => {
+    try { await browser?.close().catch(() => undefined); }
+    finally {
+      try { await vite?.close(); }
+      finally { if (cacheDirectory) await rm(cacheDirectory, { recursive: true, force: true }); }
+    }
+  }, 60_000);
+
+  async function openAccountPanel(page: Awaited<ReturnType<Browser["newPage"]>>) {
+    await page.goto(`${baseUrl}/__ops-header-test`);
+    await page.getByRole("button", { name: "打开账号信息", exact: true }).click();
+    await page.getByRole("button", { name: /退出登录/u }).waitFor();
+  }
+
+  it("reports a rejected logout in the open account panel instead of dropping it", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      await page.route("**/v1/auth/logout", route => route.fulfill({
+        status: 502,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "SERVICE_UNAVAILABLE", message: "网关不可用" } }),
+      }));
+      await openAccountPanel(page);
+      await page.getByRole("button", { name: /退出登录/u }).click();
+      const alert = page.getByRole("alert").filter({ hasText: "退出登录失败" });
+      await alert.waitFor();
+      expect(await alert.isVisible()).toBe(true);
+      expect(await alert.innerText()).toContain("退出登录失败（HTTP 502）");
+      // The failure is not dressed up as a success: the session stays and the
+      // console is not refreshed.
+      expect(await page.getByText("ops@example.com", { exact: false }).count()).toBeGreaterThan(0);
+      expect(await page.getByTestId("refreshed").innerText()).toBe("未刷新");
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("still logs out and refreshes when the server accepts the logout", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      await page.route("**/v1/auth/logout", route => route.fulfill({ status: 204, body: "" }));
+      await openAccountPanel(page);
+      await page.getByRole("button", { name: /退出登录/u }).click();
+      await expect.poll(() => page.getByTestId("refreshed").innerText()).toBe("已刷新");
+      expect(await page.getByRole("alert").filter({ hasText: "退出登录失败" }).count()).toBe(0);
+    } finally { await page.close(); }
+  }, 45_000);
 });

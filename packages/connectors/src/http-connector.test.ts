@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createConfiguredConnector, createFakeConnector, profiles, type AccessCredential, type CredentialProvider, type HttpConnectorConfig, type PlatformConnector, type ConnectorBeforeRequest } from './index.js'
+import { createAlibabaTopSigner, createConfiguredConnector, createFakeConnector, createJdSigner, createPinduoduoSigner, profiles, type AccessCredential, type CredentialProvider, type HttpConnectorConfig, type PlatformApiMethods, type PlatformConnector, type ConnectorBeforeRequest } from './index.js'
 
 const config: HttpConnectorConfig = {
   clientId: 'app-test',
@@ -428,6 +428,39 @@ describe('HttpPlatformConnector', () => {
     }
   })
 
+  it('classifies a signer configuration failure as terminal and keeps its reason', async () => {
+    // A signer runs before anything is dispatched, so its failure can only be a
+    // local defect. Letting it escape unclassified made the publish path
+    // re-derive `REMOTE_ERROR`/`retryable: true` from it and replay a
+    // permanently unsignable request until it dead-lettered, with the real
+    // cause replaced by 'HTTP connector jd request failed'.
+    const fetchMock = vi.fn()
+    const connector = createConfiguredConnector('jd', {
+      config: {
+        ...readyConfig,
+        signer: { kind: 'platform', sign: () => { throw Object.assign(new Error('JD routerjson has no API method configured for the create_product operation: set api.methods.create.'), { code: 'NOT_CONFIGURED', retryable: false }) } },
+        capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })),
+      },
+      credentials: credentials(), fetch: fetchMock, allowTestCredentials: true, allowTestAdapters: true,
+    })
+    await expect(connector.createProduct({ workspaceId: 'ws', accountId: 'acct' }, { fields: { title: 'Product', category: 'cat', price: 1, stock: 1 }, idempotencyKey: 'signer-config' }))
+      .rejects.toMatchObject({ normalized: { code: 'NOT_CONFIGURED', retryable: false, unknown: false, message: 'JD routerjson has no API method configured for the create_product operation: set api.methods.create.' } })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('scrubs a signer failure that does not declare itself a local configuration defect', async () => {
+    const connector = createConfiguredConnector('jd', {
+      config: {
+        ...readyConfig,
+        signer: { kind: 'platform', sign: () => { throw new Error('provider payload: token=super-secret') } },
+        capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })),
+      },
+      credentials: credentials(), fetch: vi.fn(), allowTestCredentials: true, allowTestAdapters: true,
+    })
+    await expect(connector.queryWrite({ workspaceId: 'ws', accountId: 'acct' }, { idempotencyKey: 'signer-opaque' }))
+      .rejects.toMatchObject({ normalized: { code: 'REMOTE_ERROR', message: 'HTTP connector jd request failed' } })
+  })
+
   it('normalizes numeric-string commerce fields and image object envelopes in the fallback mapper', async () => {
     const fetchMock = vi.fn(async (url: string | URL) => String(url).endsWith('/products')
       ? response({ items: [{ id: 'remote-2', title: 'Social', price: '19.90', stock: '8', sku: [{ id: 'sku-2', name: '红色', price: '21.00', stock: '2' }], images: [{ image_url: 'https://img.example/main.jpg' }, { url: 'https://img.example/secondary.jpg' }] }] })
@@ -650,5 +683,64 @@ describe('HttpPlatformConnector', () => {
     const connector = createConfiguredConnector('jd', { config })
     const normalized = connector.normalizeError({ status: 500, details: { accessToken: 'secret-token', requestId: 'safe-request-id' } })
     expect(normalized.details).toEqual({ accessToken: '[REDACTED]', requestId: 'safe-request-id' })
+  })
+})
+
+describe('router gateway read path is dispatchable', () => {
+  // `syncProducts` dispatches with GET. Each router signer used to move its
+  // signed parameters into `request.body`, which made the global `fetch` throw
+  // `TypeError: Request with GET/HEAD method cannot have body` before any
+  // network call: the read path could never produce `read`/`full_sync`/
+  // `incremental_sync` evidence, so no router platform could pass the canary.
+  const routers: Array<{ platform: 'taobao' | 'jd' | 'pinduoduo'; selector: string; parameter: 'method' | 'type'; signer(methods: PlatformApiMethods): import('./types.js').RequestSigner }> = [
+    { platform: 'taobao', selector: 'taobao.item.seller.get', parameter: 'method', signer: methods => createAlibabaTopSigner({ appKey: 'top-app', appSecret: 'top-secret', methods }) },
+    { platform: 'jd', selector: 'jd.product.sync', parameter: 'method', signer: methods => createJdSigner({ appKey: 'jd-app', appSecret: 'jd-secret', methods }) },
+    { platform: 'pinduoduo', selector: 'pdd.goods.detail', parameter: 'type', signer: methods => createPinduoduoSigner({ clientId: 'pdd-app', clientSecret: 'pdd-secret', methods }) },
+  ]
+
+  it.each(routers)('$platform syncs a product with the signed parameters in the query', async ({ platform, selector, parameter, signer }) => {
+    const seen: Array<{ method: string; url: string; body: string | null }> = []
+    const product = { remoteId: `${platform}-read-1`, title: `${platform} product`, description: '', price: 10, stock: 1, sku: [], images: [], category: '', attributes: {}, platformFields: {}, observedAt: new Date().toISOString() }
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      // The real fetch constructor rejects a GET carrying a body before any
+      // network call; mirroring it here proves the request the connector signs
+      // is dispatchable, which a fetch stub that ignores `init` would not.
+      const request = new Request(String(url), init)
+      seen.push({ method: request.method, url: request.url, body: typeof init?.body === 'string' ? init.body : null })
+      return response({ items: [product] })
+    })
+    const connector = createConfiguredConnector(platform, {
+      config: { ...config, signer: signer({ sync: selector }), mapProducts: () => [product], api: { ...config.api, baseUrl: `https://${platform}.test/api` } },
+      credentials: credentials(), allowTestCredentials: true, allowTestAdapters: true, fetch: fetchMock,
+    })
+    const context = { workspaceId: 'ws-router', accountId: `acct-${platform}`, credentialRef: `vault://${platform}` }
+    // The cursor the sync asks for has to survive into the signed query, or the
+    // provider would silently keep serving page one.
+    await expect(connector.syncProducts(context, { value: 'page-2' })).resolves.toMatchObject({
+      items: [{ remoteId: `${platform}-read-1` }], source: 'official_api', simulated: false,
+    })
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatchObject({ method: 'GET', body: null })
+    const url = new URL(seen[0]!.url)
+    expect(url.pathname).toBe('/api/products')
+    expect(url.searchParams.get(parameter)).toBe(selector)
+    expect(url.searchParams.get('cursor')).toBe('page-2')
+    // A real signature, not an empty placeholder.
+    expect(url.searchParams.get('sign')).toMatch(/^[A-F0-9]{32,64}$/)
+  })
+
+  it('refuses a signed GET that still carries a body instead of letting fetch throw', async () => {
+    // Defense in depth for any other signer that repeats the mistake: the raw
+    // `TypeError` from `fetch` was normalized into a retryable `REMOTE_ERROR`
+    // whose message named nothing, so a local signing defect looked like a
+    // provider outage and the outbox replayed it.
+    const fetchMock = vi.fn()
+    const connector = createConfiguredConnector('jd', {
+      config: { ...readyConfig, signer: { kind: 'platform', sign: request => { request.body = 'method=jd.ware.delete'; return {} } } },
+      credentials: credentials(), allowTestCredentials: true, allowTestAdapters: true, fetch: fetchMock,
+    })
+    await expect(connector.syncProducts({ workspaceId: 'ws-router', accountId: 'acct-router', credentialRef: 'vault://router' }))
+      .rejects.toMatchObject({ normalized: { code: 'NOT_CONFIGURED', retryable: false, unknown: false, message: expect.stringContaining('GET sync_products was signed with a request body') } })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

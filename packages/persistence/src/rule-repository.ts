@@ -75,7 +75,26 @@ const audit = (row: RuleAuditRow): PersistedRuleAudit => ({
  * registry remains useful for fixture mode; production callers can persist
  * immutable versions and append-only audits through this repository. */
 export class PostgresRuleRepository {
-  constructor(private readonly pool: SqlPool) {}
+  /**
+   * Shared platform rules are a control-plane surface, so the split between the
+   * two pools is load-bearing rather than cosmetic:
+   *
+   * - Reads stay on the tenant pool. Migration 219 deliberately grants
+   *   `merchant_app` SELECT on the shared rule tables, and every merchant reads
+   *   platform policy through its own connection.
+   * - Writes must go through the operations role. 219 grants INSERT/UPDATE only
+   *   to `merchant_ops`; writing through the tenant pool happens to work on the
+   *   ECS Compose path (whose bootstrap re-runs a blanket `GRANT ... ON ALL
+   *   TABLES` after the migrations, silently widening `merchant_app` back to
+   *   full DML on every shared table) and fails with 42501 on the Kubernetes
+   *   path (no such bootstrap). Both outcomes are wrong: one escalates the
+   *   tenant role across tenants, the other breaks platform-rule publishing.
+   */
+  constructor(private readonly pool: SqlPool, private readonly platformPool?: SqlPool) {}
+
+  private get publicWritePool(): SqlPool {
+    return this.platformPool ?? this.pool
+  }
 
   async list(workspaceId: string, packId?: string): Promise<PersistedRuleVersion[]> {
     const scope = requireWorkspaceScope(workspaceId)
@@ -120,7 +139,7 @@ export class PostgresRuleRepository {
     const createdAt = input.version.createdAt ?? new Date().toISOString()
     const updatedAt = input.version.updatedAt ?? createdAt
     const auditInput = input.audit
-    return withWorkspaceTransaction(this.pool, '__platform_rules__', async client => {
+    return withWorkspaceTransaction(this.publicWritePool, '__platform_rules__', async client => {
       const result = await client.query<RuleVersionRow>(
         `INSERT INTO public_platform_rule_versions
          (id, platform, pack_id, name, version, status, source_kind, source_reference, source_checked_at,
@@ -151,7 +170,7 @@ export class PostgresRuleRepository {
   }
 
   async transitionPublicStatus(input: { platform: string; packId: string; version: string; status: string; actorId: string; reason: string; occurredAt: string }): Promise<PersistedRuleVersion> {
-    return withWorkspaceTransaction(this.pool, '__platform_rules__', async client => {
+    return withWorkspaceTransaction(this.publicWritePool, '__platform_rules__', async client => {
       const updated = await client.query<RuleVersionRow>(
         `UPDATE public_platform_rule_versions
             SET status = $4, revision = revision + 1, updated_at = $5,

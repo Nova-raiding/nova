@@ -97,12 +97,38 @@ describe('worker execution-time authorization', () => {
     expect(recheck).not.toHaveBeenCalled()
   })
 
-  it('rejects stale or future enqueue snapshots before authoritative recheck', async () => {
+  it('rejects only a future-dated enqueue snapshot before authoritative recheck', async () => {
     const recheck = vi.fn()
     const guard = createExecutionAuthorizationGuard(recheck, { now: () => now, maxEvidenceAgeMs: 30_000 })
-    await expect(guard.assertAuthorized(event({ decided_at: '2026-08-31T09:59:00.000Z' }), 'publish.execute')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID', retryable: false })
     await expect(guard.assertAuthorized(event({ decided_at: '2026-08-31T10:00:06.000Z' }), 'publish.execute')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID', retryable: false })
     expect(recheck).not.toHaveBeenCalled()
+  })
+
+  it('admits a recovered event whose enqueue snapshot predates the production lease window', async () => {
+    // `decided_at` is minted once at enqueue. A crash recovery or a backlog can
+    // deliver the event long after that instant - the production lease alone is
+    // 15 minutes - and the durable row must still be executable. Applying a
+    // wall-clock age window here dead-lettered the event permanently, because
+    // the snapshot error is not retryable and `claimPending` only reclaims
+    // retryable rows.
+    const decidedAt = new Date(now - 15 * 60_000).toISOString()
+    const recheck = vi.fn(async ({ snapshot }: { snapshot: WorkerAuthorizationSnapshot }) => ({
+      recheckId: 'decision_execute', actorId: snapshot.actorId, identityId: snapshot.identityId, workspaceId: 'ws_a', workbench: 'workspace' as const, contextId: 'workspace:ws_a', contextVersion: 'ctx_8', policyVersion: 'policy_4', grantRevision: 'grant_12', grantIds: snapshot.grantIds, scopeHash: snapshot.scopeHash, capability: 'publish.execute' as const, resourceId: 'publish_1', resourceRevision: snapshot.resourceRevision, requestId: snapshot.requestId, traceId: snapshot.traceId, authorized: true, checkedAt: new Date(now - 1_000).toISOString(),
+    }))
+    const guard = createExecutionAuthorizationGuard(recheck, { now: () => now })
+    await expect(guard.assertAuthorized(event({ decided_at: decidedAt }), 'publish.execute')).resolves.toMatchObject({ authorized: true })
+    expect(recheck).toHaveBeenCalledOnce()
+  })
+
+  it('still bounds the live recheck evidence by maxEvidenceAgeMs', async () => {
+    // The enqueue snapshot is deliberately old here: `maxEvidenceAgeMs` must
+    // apply to the live `checkedAt` evidence, not to the snapshot, so an old
+    // snapshot with stale live evidence is still refused.
+    const decidedAt = new Date(now - 15 * 60_000).toISOString()
+    const guard = createExecutionAuthorizationGuard(async ({ snapshot }: { snapshot: WorkerAuthorizationSnapshot }) => ({
+      recheckId: 'decision_execute', actorId: snapshot.actorId, identityId: snapshot.identityId, workspaceId: 'ws_a', workbench: 'workspace' as const, contextId: 'workspace:ws_a', contextVersion: 'ctx_8', policyVersion: 'policy_4', grantRevision: 'grant_12', grantIds: snapshot.grantIds, scopeHash: snapshot.scopeHash, capability: 'publish.execute' as const, resourceId: 'publish_1', resourceRevision: snapshot.resourceRevision, requestId: snapshot.requestId, traceId: snapshot.traceId, authorized: true, checkedAt: new Date(now - 60_000).toISOString(),
+    }), { now: () => now, maxEvidenceAgeMs: 30_000 })
+    await expect(guard.assertAuthorized(event({ decided_at: decidedAt }), 'publish.execute')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_RECHECK_INVALID', retryable: true })
   })
 
   it('rejects invalid snapshot freshness configuration', () => {

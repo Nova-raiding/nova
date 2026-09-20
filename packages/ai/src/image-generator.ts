@@ -408,7 +408,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       // OCR, edit and video adapters' fail-closed boundary.
       await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'image', model: this.options.model, context: { ...input.usageContext, billingUnits: input.count, providerAttemptId: providerKey } })
       const finalImages = hasMarketingLayer
-        ? await composeMarketingImages(images, { productTitle: input.productTitle, ...brief }, this.fetchImpl)
+        ? await composeMarketingImages(images, { productTitle: input.productTitle, ...brief }, this.fetchImpl, { signal: controller.signal })
         : images
       imageTrace('compositor.completed', { provider_request_id: providerKey, input_count: images.length, output_count: finalImages.length, marketing_layer: hasMarketingLayer })
       return finalImages

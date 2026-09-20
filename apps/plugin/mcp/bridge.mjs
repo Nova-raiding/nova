@@ -335,8 +335,8 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { brand_id: { type: 'string' }, name: { type: 'string' } }, required: ['name'], additionalProperties: false },
   },
   'brand-unit.bind-store': {
-    description: '将已存在的平台授权店铺绑定到指定品；可传入品当前 revision，避免并发覆盖。',
-    inputSchema: { type: 'object', properties: { brand_id: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, expected_revision: positiveIntegerString }, required: ['brand_id', 'platform', 'account_id'], additionalProperties: false },
+    description: '将已存在的平台授权店铺绑定到指定品；可传入品当前 revision，避免并发覆盖；可传入审计原因。',
+    inputSchema: { type: 'object', properties: { brand_id: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, expected_revision: positiveIntegerString, reason: reasonProperty }, required: ['brand_id', 'platform', 'account_id'], additionalProperties: false },
   },
   'brand-unit.product.create': {
     description: '在品下创建可跨平台复用的商品事实。',
@@ -344,7 +344,7 @@ const METHODS = {
   },
   'brand-unit.listing.create': {
     description: '将商品事实映射到已绑定的平台店铺。',
-    inputSchema: { type: 'object', properties: { brand_id: { type: 'string' }, canonical_product_id: { type: 'string' }, listing_id: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, remote_product_id: { type: 'string' } }, required: ['brand_id', 'canonical_product_id', 'platform', 'account_id'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { brand_id: { type: 'string' }, canonical_product_id: { type: 'string' }, listing_id: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, remote_product_id: { type: 'string' }, reason: reasonProperty }, required: ['brand_id', 'canonical_product_id', 'platform', 'account_id'], additionalProperties: false },
   },
   'brand-unit.listing.list': {
     description: '查看商品在多个平台和店铺上的映射。只读。',
@@ -678,7 +678,7 @@ const METHODS = {
   },
   'catalog.image.review': {
     description: '检查商品主图链接、缺失和重复问题，并将校验结果持久化到候选任务的审查快照。',
-    inputSchema: { type: 'object', properties: { product_id: { type: 'string' }, images: { type: 'string' }, visual_refs_json: { type: 'string' } }, required: ['product_id'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { product_id: { type: 'string' }, images: { type: 'string' }, visual_refs_json: { type: 'string' }, authenticity_evidence_json: boundedString(65_536, 2, '单候选的 JSON 对象，或按 visual_ref 一一对应的 JSON 数组；用于把候选绑定到归档 SHA-256。') }, required: ['product_id'], additionalProperties: false },
   },
   'sync.retry_failed': {
     description: '重试商品同步中可重试的失败项。',
@@ -872,7 +872,7 @@ const METHODS = {
   },
   'task.group.create': {
     description: '批量生成入口：为多个商品、平台、店铺或 SKU 创建彼此独立的营销子任务；同一商品在同一平台/店铺/SKU 下不可重复，不同商品可以属于同一店铺。必须先从当前品和商品列表多选，不能跨品复用选择。',
-    inputSchema: { type: 'object', properties: { entries_json: { type: 'string' }, request_text: { type: 'string' } }, required: ['entries_json'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { entries_json: { type: 'string' }, request_text: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['entries_json'], additionalProperties: false },
   },
   'creative.directions': {
     description: '为任务返回三个可审阅的创意方向。',
@@ -936,8 +936,8 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { content_version_id: { type: 'string' }, visual_refs_json: { type: 'string' }, expected_revision: { type: 'string' }, idempotency_key: { type: 'string' }, reason: { type: 'string' } }, required: ['content_version_id', 'visual_refs_json', 'expected_revision', 'reason'], additionalProperties: false },
   },
   'content.versions': {
-    description: '列出任务的不可变内容版本。',
-    inputSchema: { type: 'object', properties: { task_id: { type: 'string' } }, required: ['task_id'], additionalProperties: false },
+    description: '列出任务的不可变内容版本；传入 limit/offset 时由服务端分页。',
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, limit: pageLimit100, offset: { type: 'string', pattern: '^(?:0|[1-9][0-9]*)$', maxLength: 10 } }, required: ['task_id'], additionalProperties: false },
   },
   'content.diff': {
     description: '比较同一任务的两个内容版本，不覆盖历史版本。',
@@ -2614,10 +2614,15 @@ async function confirmInteractiveWrites(args) {
     error.code = 'INTERACTIVE_CONFIRMATION_REQUIRED'
     throw error
   }
-  interactiveWriteUntil = Date.now() + INTERACTIVE_WRITE_TTL_MS
   const remoteTicketRequired = ['production', 'staging', 'preview'].includes(deploymentEnvironment()) || Boolean(configuredEnv('MERCHANT_MCP_TOKEN'))
-  let remoteConfirmation
-  if (remoteTicketRequired) remoteConfirmation = await callRemote('workspace.interactive.confirm', args)
+  // The local window opens only after the server-side confirmation succeeds.
+  // `await callRemote` can reject (403/5xx/connection loss) and the caller then
+  // reports an error result: opening the window first would unlock every
+  // destructive tool for the full TTL even though the merchant never completed
+  // confirmation. The local no-token path performs no remote call at all and
+  // must still open the window, so the assignment stays outside the branch.
+  const remoteConfirmation = remoteTicketRequired ? await callRemote('workspace.interactive.confirm', args) : undefined
+  interactiveWriteUntil = Date.now() + INTERACTIVE_WRITE_TTL_MS
   return {
     enabled: true,
     expires_at: remoteConfirmation?.ticket?.expires_at ?? new Date(interactiveWriteUntil).toISOString(),
@@ -2665,6 +2670,11 @@ function prepareToolArguments(method, params) {
     return { ...normalized, idempotency_key: suppliedKey || generatedKey }
   }
   if (method !== 'asset.upload') return params
+  // `file_path` is bridge-only by contract: the shared MCP contract for
+  // asset.upload (packages/contracts/src/mcp.ts) declares content_base64 and
+  // rejects file_path with additionalProperties, while the tool schema above
+  // requires name+mime_type plus oneOf(file_path, content_base64). This rewrite
+  // is what makes the two equivalent - the API never sees file_path.
   const filePath = typeof params.file_path === 'string' ? params.file_path.trim() : ''
   const inlineContent = typeof params.content_base64 === 'string' ? params.content_base64.trim() : ''
   if (filePath && inlineContent) throw new Error('asset.upload 只能提供 file_path 或 content_base64 其中一个')

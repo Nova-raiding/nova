@@ -90,17 +90,32 @@ export function shouldConfirmWorkbenchTransition(
   return next !== current && unsavedLabels.length > 0;
 }
 
+const opsWorkbenchLabels: Record<OpsWorkbench, string> = {
+  platform: "平台控制台",
+  workspace: "商家工作区",
+};
+
+/**
+ * Warning to show when a browser history entry points at a workbench this
+ * console cannot activate, or `undefined` when the transition may proceed.
+ * The refusal used to be a silent `return`, so backing into the merchant
+ * workbench consumed the popstate and nothing visibly happened.
+ */
+export function popstateWorkbenchWarning(
+  next: OpsWorkbench,
+  active: OpsWorkbench,
+): string | undefined {
+  if (next === active || canActivateOpsWorkbench(next)) return undefined;
+  return `“${opsWorkbenchLabels[next]}”在平台运营控制台中不可进入，已停留在当前页面。`;
+}
+
 export function workbenchSwitchWarning(
   current: OpsWorkbench,
   next: OpsWorkbench,
   unsavedLabels: readonly string[],
 ) {
-  const labels: Record<OpsWorkbench, string> = {
-    platform: "平台控制台",
-    workspace: "商家工作区",
-  };
   const dirtyContent = unsavedLabels.join("、");
-  return `当前在${labels[current]}，切换到${labels[next]}将清除未保存内容：${dirtyContent}。该内容无法恢复。`;
+  return `当前在${opsWorkbenchLabels[current]}，切换到${opsWorkbenchLabels[next]}将清除未保存内容：${dirtyContent}。该内容无法恢复。`;
 }
 
 export function initialOpsWorkbench(
@@ -191,6 +206,14 @@ function Dashboard({
     const currentLocation = new URL(currentDomainUrl, window.location.origin);
     const currentUrl = urlForWorkbench(currentLocation, activeWorkbench);
     window.history.replaceState(null, "", currentUrl);
+    const blockedWarning = popstateWorkbenchWarning(targetWorkbench, activeWorkbench);
+    if (blockedWarning) {
+      // The restored history entry points at a workbench this console cannot
+      // enter, so it can never be reached again. Report it instead of
+      // swallowing the back button with no visible effect.
+      void message.warning(blockedWarning);
+      return true;
+    }
     onWorkbenchChange(targetWorkbench, false, () => {
       window.history.replaceState(null, "", targetUrl);
       commit();

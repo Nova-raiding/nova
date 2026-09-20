@@ -107,12 +107,45 @@ export interface VaultCredentialProvider extends CredentialProvider {
   revoke(ref: CredentialRef): Promise<void>
 }
 
+/**
+ * Every operation the generic connector can dispatch. OAuth operations
+ * (`exchange_code`, `refresh_credential`, `revoke`) address the token
+ * endpoints; the rest address the platform's business API.
+ */
+export type ConnectorOperation =
+  | 'exchange_code'
+  | 'refresh_credential'
+  | 'revoke'
+  | 'sync_products'
+  | 'create_product'
+  | 'update_product'
+  | 'query_write'
+  | 'upload_media'
+
+/**
+ * Which business API a connector operation targets.
+ *
+ * Router gateways (Alibaba TOP, JD routerjson, Pinduoduo) select the API with a
+ * request parameter (`method` / `type`) instead of a URL path, so the selector
+ * is connector configuration (see `HttpConnectorConfig.api.methods`). It must
+ * never be recovered from the URL: the URL is built from `api.*Path`, which
+ * readiness requires to be a relative path without a query string.
+ */
+export type PlatformApiSelector = 'sync' | 'create' | 'update' | 'query' | 'media'
+
+/** Explicit API selector per operation. A missing entry is a configuration
+ * defect, not a licence for a signer to reuse another operation's API. */
+export type PlatformApiMethods = Partial<Record<PlatformApiSelector, string>>
+
 export interface HttpRequestDescriptor {
   method: string
   url: string
   headers: Record<string, string>
   body?: string
   platform: Platform
+  /** The connector operation that produced this request. Signers derive the
+   * platform API from it; it is never inferred from the URL. */
+  operation: ConnectorOperation
   /** Credential is only held for the duration of signing and is never persisted. */
   credential?: AccessCredential
 }
@@ -124,6 +157,20 @@ export type HttpRequestBodyEncoding = 'json' | 'form'
 export interface RequestSigner {
   /** Production adapters must identify themselves as a platform signer. */
   readonly kind?: 'platform' | 'test'
+  /**
+   * Selectors this signer resolves from `api.methods`, i.e. the platform APIs
+   * it signs requests for. Present only on router-gateway signers (JD
+   * routerjson, Alibaba TOP, Pinduoduo), which choose the API with a request
+   * parameter instead of the URL path.
+   *
+   * Readiness refuses a connector whose configuration leaves one of these
+   * unset: the signer resolves the selector at request time and reports a
+   * terminal `NOT_CONFIGURED` there, so without this an admitted, canary-ready
+   * deployment would dead-letter every call of that operation. Declaring the
+   * contract on the signer keeps the requirement tied to the code that actually
+   * consumes the selectors, so a new router signer cannot be added without it.
+   */
+  readonly requiredApiSelectors?: readonly PlatformApiSelector[]
   sign(request: HttpRequestDescriptor): Promise<Record<string, string>> | Record<string, string>
 }
 
@@ -177,6 +224,14 @@ export interface HttpConnectorConfig {
     createPath: string
     updatePath: string
     queryPath: string
+    /**
+     * Explicit API selector per operation for router gateways (Alibaba TOP,
+     * JD routerjson, Pinduoduo), which carry the API name in a request
+     * parameter rather than in the URL path. Configured through
+     * `{SYNC,CREATE,UPDATE,QUERY,MEDIA}_METHOD`; a signer that needs a selector
+     * for an operation refuses to sign when the entry is absent.
+     */
+    methods?: PlatformApiMethods
   }
   /** Optional bounded window for incremental synchronization. */
   sync?: {

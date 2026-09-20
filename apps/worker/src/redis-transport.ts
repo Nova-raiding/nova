@@ -63,10 +63,19 @@ function positiveMilliseconds(raw: string | undefined, fallback: number): number
  * Bounds a single Redis round trip. Without it a stalled socket — or a command
  * parked in node-redis' default offline queue while the connection is down —
  * makes the awaited call below never settle, so every publish on this replica
- * queues behind a refresh that will never complete. Mirrors
- * `withRedisOperationTimeout` in `apps/api/src/redis-resilience.ts`.
+ * queues behind a refresh that will never complete.
+ *
+ * The queue path needs this for a second reason, and a worse one. The poll
+ * loop's only liveness evidence is the ready file whose mtime it refreshes
+ * while an iteration is executing (`READY_FILE_HEARTBEAT_MS` in `main.ts`), so
+ * an await that never settles parks the loop with a marker the probe still
+ * reads as fresh: `find <ready-file> -mmin -2` stays true, kubelet never
+ * restarts the pod, and that role's throughput goes to zero with every probe
+ * green. Every round trip this module performs is bounded for that reason, and
+ * a timeout surfaces as a failed iteration, which removes the marker.
+ * Mirrors `withRedisOperationTimeout` in `apps/api/src/redis-resilience.ts`.
  */
-async function withRedisOperationTimeout<T>(operation: Promise<T>, env: NodeJS.ProcessEnv = process.env): Promise<T> {
+export async function withRedisOperationTimeout<T>(operation: Promise<T>, env: NodeJS.ProcessEnv = process.env): Promise<T> {
   const timeoutMs = positiveMilliseconds(env.REDIS_OPERATION_TIMEOUT_MS, DEFAULT_REDIS_OPERATION_TIMEOUT_MS)
   let timeout: NodeJS.Timeout | undefined
   try {
@@ -78,6 +87,21 @@ async function withRedisOperationTimeout<T>(operation: Promise<T>, env: NodeJS.P
     ])
   } finally {
     if (timeout) clearTimeout(timeout)
+  }
+}
+
+/**
+ * Closes a Redis connection without letting a blackholed socket turn shutdown
+ * into a hang. `quit()` (like `close()`) waits for pending commands, so an
+ * unanswering peer keeps the awaited call pending for the whole
+ * `terminationGracePeriodSeconds` and the runtime SIGKILLs the container;
+ * `destroy()` rejects everything and releases the socket immediately.
+ */
+export async function closeRedisConnection(client: RedisClientType): Promise<void> {
+  try {
+    await withRedisOperationTimeout(client.quit())
+  } catch {
+    client.destroy()
   }
 }
 
@@ -101,13 +125,23 @@ async function withRedisOperationTimeout<T>(operation: Promise<T>, env: NodeJS.P
  *    backoff and `disableOfflineQueue`, so this connection keeps those defaults.
  *    The timeout above is what keeps that from becoming an unbounded wait;
  *    tightening the socket options to match the API is a separate change.
+ *
+ * The returned `close` is part of the contract, not a convenience: node-redis
+ * keeps its socket referenced, so a worker that never closes this connection
+ * cannot exit on SIGTERM. A rolling update then waits out the whole
+ * `terminationGracePeriodSeconds` before the runtime SIGKILLs the container.
+ * `connectRedisQueue` already returns its own `close` for the same reason; this
+ * factory previously returned only the lock and left the socket live.
  */
-export function createRedisCredentialRefreshLock(url: string | undefined, options: RedisQueueConnectionOptions = {}) {
+export function createRedisCredentialRefreshLock(url: string | undefined, options: RedisQueueConnectionOptions = {}): { lock: RedisCredentialRefreshLock; close: () => Promise<void> } | undefined {
   if (!url?.trim()) return undefined
   const client = (options.clientFactory ?? redisTransportClient)(url.trim())
   client.on('error', () => undefined)
   const ready = client.connect()
-  return new RedisCredentialRefreshLock({
+  // A failed connect must not turn shutdown into a rejection that the finally
+  // block cannot distinguish from a real teardown failure.
+  ready.catch(() => undefined)
+  const lock = new RedisCredentialRefreshLock({
     async setIfAbsent(key, value, ttlMs) {
       await withRedisOperationTimeout(ready)
       const result = await withRedisOperationTimeout(client.eval(`
@@ -124,6 +158,12 @@ export function createRedisCredentialRefreshLock(url: string | undefined, option
       `, { keys: [key], arguments: [value] }))
     },
   })
+  return {
+    lock,
+    async close() {
+      try { await client.close() } catch { /* already closed or never connected */ }
+    },
+  }
 }
 
 export async function connectRedisQueue(url: string, options: RedisQueueConnectionOptions = {}): Promise<{ transport: RedisQueueTransport; scannerHeartbeat: ScannerHeartbeatRedisPort; close: () => Promise<void> }> {
@@ -203,7 +243,10 @@ if removed == 1 then
   end
 end
 return removed`
-  const evaluate = async (script: string, keys: string[], args: Array<string | number>) => await client.eval(script, { keys, arguments: args.map(String) })
+  // Every command below is bounded (see `withRedisOperationTimeout`): a claim,
+  // an acknowledgement or a membership probe that never settles parks the poll
+  // loop with a marker that still looks fresh to the liveness probe.
+  const evaluate = async (script: string, keys: string[], args: Array<string | number>) => await withRedisOperationTimeout(client.eval(script, { keys, arguments: args.map(String) }))
   const claim = async (key: string) => await evaluate(claimScript, [key, processingKey(key), delayedKey(key)], [Date.now()]) as string | null
   const transport: RedisQueueTransport = {
     async push(key, value) {
@@ -227,7 +270,7 @@ return removed`
     async remove(key, value) { await evaluate(removeScript, [key, processingKey(key), indexKey(key)], [value]) },
     async refresh(key, value) {
       // XX: never resurrect a claim that was already acknowledged.
-      await client.zAdd(processingKey(key), { score: Date.now(), value }, { condition: 'XX' })
+      await withRedisOperationTimeout(client.zAdd(processingKey(key), { score: Date.now(), value }, { condition: 'XX' }))
     },
     async listStaleClaims(key, olderThanEpochMs, limit = 32) {
       return await evaluate(listStaleClaimsScript, [key, processingKey(key)], [olderThanEpochMs, limit]) as string[]
@@ -239,9 +282,10 @@ return removed`
     },
     // O(1) membership over ready + processing + delayed entries instead of
     // parsing both collections on every poll.
-    async contains(key, id) { return Number(await client.hExists(indexKey(key), id)) === 1 },
+    async contains(key, id) { return Number(await withRedisOperationTimeout(client.hExists(indexKey(key), id))) === 1 },
     async hasCapacity(key) {
-      return (await client.lLen(key)) + (await client.zCard(delayedKey(key))) < maxDepth
+      const [ready, delayed] = await withRedisOperationTimeout(Promise.all([client.lLen(key), client.zCard(delayedKey(key))]))
+      return ready + delayed < maxDepth
     },
   }
   const callbackKey = (instanceId: string) => `${scannerHeartbeatKey(instanceId)}:last-callback-accepted-at`
@@ -249,23 +293,23 @@ return removed`
     async publish(heartbeat, ttlSeconds) {
       const key = scannerHeartbeatKey(heartbeat.instanceId)
       const expiresAtMs = Date.parse(heartbeat.expiresAt)
-      await client.multi()
+      await withRedisOperationTimeout(client.multi()
         .set(key, JSON.stringify(heartbeat), { EX: ttlSeconds })
         .zAdd(SCANNER_HEARTBEAT_INDEX_KEY, { score: expiresAtMs, value: key })
         .zRemRangeByScore(SCANNER_HEARTBEAT_INDEX_KEY, 0, Date.now())
-        .exec()
+        .exec())
     },
     async remove(instanceId) {
       const key = scannerHeartbeatKey(instanceId)
-      await client.multi().del(key).zRem(SCANNER_HEARTBEAT_INDEX_KEY, key).exec()
+      await withRedisOperationTimeout(client.multi().del(key).zRem(SCANNER_HEARTBEAT_INDEX_KEY, key).exec())
     },
     async recordCallbackAccepted(instanceId, acceptedAt, ttlSeconds) {
       if (!Number.isFinite(Date.parse(acceptedAt))) throw new Error('SCANNER_CALLBACK_ACCEPTED_AT_INVALID')
-      await client.set(callbackKey(instanceId), acceptedAt, { EX: ttlSeconds })
+      await withRedisOperationTimeout(client.set(callbackKey(instanceId), acceptedAt, { EX: ttlSeconds }))
     },
     async lastCallbackAcceptedAt(instanceId) {
-      return await client.get(callbackKey(instanceId)) ?? undefined
+      return await withRedisOperationTimeout(client.get(callbackKey(instanceId))) ?? undefined
     },
   }
-  return { transport, scannerHeartbeat, close: () => client.quit().then(() => undefined) }
+  return { transport, scannerHeartbeat, close: () => closeRedisConnection(client) }
 }

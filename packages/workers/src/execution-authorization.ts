@@ -122,6 +122,14 @@ export function createReservedExecutionGate(
   }
 }
 
+/**
+ * `maxEvidenceAgeMs` bounds the **live recheck evidence** (`checkedAt`), which
+ * the worker obtains moments before provider I/O. It deliberately does not
+ * bound the enqueue-time `decidedAt` snapshot: that snapshot is minted once
+ * when the event is queued and the durable lease (15 minutes in production)
+ * can legitimately outlast any wall-clock window applied here. See
+ * `validateSnapshotTimestamp`.
+ */
 export function createExecutionAuthorizationGuard(
   recheck: WorkerAuthorizationRecheckPort,
   options: { now?: () => number; maxEvidenceAgeMs?: number } = {},
@@ -133,7 +141,7 @@ export function createExecutionAuthorizationGuard(
     async assertAuthorized(event, operation, signal) {
       signal?.throwIfAborted()
       const snapshot = parseWorkerAuthorizationSnapshot(event, operation)
-      validateSnapshotFreshness(snapshot, now(), maxEvidenceAgeMs)
+      validateSnapshotTimestamp(snapshot, now())
       let current: WorkerAuthorizationRecheck
       try {
         current = await recheck({ event, operation, snapshot, ...(signal ? { signal } : {}) })
@@ -228,9 +236,23 @@ function validateRecheck(current: WorkerAuthorizationRecheck, snapshot: WorkerAu
   if (!nonEmpty(current.contextVersion) || !nonEmpty(current.policyVersion) || !nonEmpty(current.grantRevision) || !nonEmpty(current.identityId) || current.workbench !== 'workspace' || current.scopeHash !== snapshot.scopeHash || current.resourceRevision !== snapshot.resourceRevision || current.requestId !== snapshot.requestId || current.traceId !== snapshot.traceId || !Array.isArray(current.grantIds) || [...current.grantIds].sort().join(',') !== [...(snapshot.grantIds ?? [])].sort().join(',')) throw recheckInvalid('execution authorization version or scope evidence is incomplete')
 }
 
-function validateSnapshotFreshness(snapshot: WorkerAuthorizationSnapshot, now: number, maxAgeMs: number): void {
+/**
+ * The enqueue snapshot is an immutable baseline, not a live proof. Reject only
+ * evidence dated in the future (a clock skew or forgery signal); a past
+ * `decidedAt` is expected and unavoidable. Durable work may be reclaimed after
+ * a crash or wait out a backlog far longer than any freshness window, and the
+ * production lease is 15 minutes. Applying a wall-clock window here turns
+ * every recovered or backlogged event into `AUTHZ_EXECUTION_SNAPSHOT_INVALID`,
+ * which is not retryable, so it is dead-lettered and never reclaimed.
+ *
+ * This mirrors the sister commercial gate (`validateSnapshotTimestamp` in
+ * `commercial-access.ts`). The authoritative check is the live recheck below,
+ * which detects any grant, scope, or revision drift immediately before the
+ * provider call.
+ */
+function validateSnapshotTimestamp(snapshot: WorkerAuthorizationSnapshot, now: number): void {
   const decidedAt = Date.parse(snapshot.decidedAt)
-  if (decidedAt > now + 5_000 || now - decidedAt > maxAgeMs) throw snapshotError('authorization snapshot evidence is stale')
+  if (decidedAt > now + 5_000) throw snapshotError('authorization snapshot evidence is from the future')
 }
 
 function snapshotError(message: string) {

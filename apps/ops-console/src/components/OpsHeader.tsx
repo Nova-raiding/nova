@@ -52,6 +52,11 @@ export function OpsHeader({
   const [platformLoginError, setPlatformLoginError] = useState("");
   const [platformLoginPending, setPlatformLoginPending] = useState(false);
   const [logoutPending, setLogoutPending] = useState(false);
+  // The login modal is closed while logging out, so a failure written into
+  // `platformLoginError` rendered nowhere: the operator saw a button that
+  // looked like it worked. Report logout failures inside the account panel,
+  // which is open for the whole interaction.
+  const [logoutError, setLogoutError] = useState("");
 
   const isDemoSession = localOpsSessionEnabled && (
     !session?.session_id || session.actor_id === "actor_demo"
@@ -73,14 +78,16 @@ export function OpsHeader({
   async function handleLogout() {
     if (logoutPending) return;
     setLogoutPending(true);
+    setLogoutError("");
     try {
       await logoutPlatformOps();
       suppressLocalOpsSession();
+      setLogoutError("");
       setAccountOpen(false);
       onSessionReset?.();
       onRefresh();
     } catch (cause) {
-      setPlatformLoginError(describeOpsError(cause));
+      setLogoutError(describeOpsError(cause));
     } finally {
       setLogoutPending(false);
     }
@@ -117,6 +124,11 @@ export function OpsHeader({
           ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无消息" />}
         </div>
       ) : null}
+      {logoutError ? (
+        <div className="ops-account-popover-error">
+          <Alert role="alert" showIcon type="error" title="退出登录失败" description={logoutError} />
+        </div>
+      ) : null}
       <div className="ops-account-popover-actions">
         {shouldShowLogin ? <Button type="primary" onClick={openPlatformLogin}>平台运营账号登录</Button> : null}
         {hasSession ? <Button danger icon={<LogoutOutlined />} onClick={() => void handleLogout()} loading={logoutPending}>退出登录</Button> : null}
@@ -139,7 +151,7 @@ export function OpsHeader({
               平台运营账号登录
             </Button>
           ) : null}
-          <Dropdown trigger={["click"]} placement="bottomRight" open={accountOpen} onOpenChange={setAccountOpen} popupRender={() => accountPanel}>
+          <Dropdown trigger={["click"]} placement="bottomRight" open={accountOpen} onOpenChange={(open) => { setAccountOpen(open); if (!open) setLogoutError(""); }} popupRender={() => accountPanel}>
             <button type="button" className="ops-account-trigger" aria-label="打开账号信息" aria-haspopup="dialog" aria-expanded={accountOpen}>
               <span className="ops-account-trigger-avatar" aria-hidden="true">{accountInitial}</span>
               <span className="ops-account-trigger-copy">

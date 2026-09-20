@@ -1365,6 +1365,23 @@ describe('MerchantService', () => {
     expect(() => service.answerTask('ws_promotion', expiredTask.id, { sku_id: 'sku-black-m', promotion_json: JSON.stringify([{ kind: 'coupon', label: '过期券', coupon_price_cny: 99, sku_ids: ['sku-black-m'], valid_to: '2026-01-01T00:00:00Z' }]) })).toThrowError(expect.objectContaining({ code: 'PROMOTION_EXPIRED' }))
   })
 
+  it('reports an unparseable promotion validity date as a 400 instead of a RangeError', () => {
+    const service = new MerchantService({ seedFixture: false })
+    const product = service.importProduct({ workspaceId: 'ws_promotion_date', platform: 'taobao', title: '日期校验外套', stock: 5, price: 199 })
+    service.confirmProductFacts('ws_promotion_date', product.id)
+    const task = service.createTask({ workspaceId: 'ws_promotion_date', productId: product.id, platform: 'taobao' })
+    const invalid = [
+      { kind: 'activity', label: '暑期活动', price_cny: 179.99, valid_from: '2026-13-45T00:00:00Z', valid_to: '2026-09-30T00:00:00Z' },
+      { kind: 'activity', label: '暑期活动', price_cny: 179.99, valid_from: '   ', valid_to: '2026-09-30T00:00:00Z' },
+      { kind: 'activity', label: '暑期活动', price_cny: 179.99, valid_from: 20260825, valid_to: '2026-09-30T00:00:00Z' },
+      { kind: 'activity', label: '暑期活动', price_cny: 179.99, valid_from: '2026-10-01T00:00:00Z', valid_to: '2026-09-30T00:00:00Z' },
+    ]
+    for (const entry of invalid) {
+      expect(() => service.answerTask('ws_promotion_date', task.id, { promotion_json: JSON.stringify([entry]) })).toThrowError(expect.objectContaining({ code: 'PROMOTION_DATE_INVALID', status: 400 }))
+    }
+    expect(task.answers.promotion_json).toBeUndefined()
+  })
+
   it('revalidates a frozen promotion before export while preserving historical evidence', () => {
     const service = new MerchantService({ seedFixture: false })
     const product = service.importProduct({ workspaceId: 'ws_promotion_export', platform: 'taobao', title: '导出促销外套', stock: 10, price: 199 })
@@ -1409,6 +1426,27 @@ describe('MerchantService', () => {
     expect(completed.version.state).toBe('review_required')
     expect(service.generationJobs.size).toBe(1)
     expect(service.completeGeneration({ workspaceId: 'ws_demo', jobId: first.id, body: { title: '不同标题', detail: '不同详情', sellingPoints: ['不同卖点'] } }).version.id).toBe(completed.version.id)
+  })
+
+  it('keeps a succeeded generation job terminal when a late failure report arrives', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    service.confirmProductionPlan('ws_demo', task.id, 'test-merchant')
+    const job = service.enqueueGeneration({ workspaceId: 'ws_demo', taskId: task.id, idempotencyKey: 'gen-terminal' })
+    const completed = service.completeGeneration({ workspaceId: 'ws_demo', jobId: job.id, body: { title: '模型标题', detail: '模型详情', sellingPoints: ['事实卖点'] } })
+    const revision = completed.job.revision
+    const late = service.failGeneration({ workspaceId: 'ws_demo', jobId: job.id, code: 'PROVIDER_TIMEOUT', message: '迟到的失败回报' })
+    expect(late).toMatchObject({ id: job.id, state: 'succeeded', contentVersionId: completed.version.id, revision })
+    expect(late.errorCode).toBeUndefined()
+    expect(service.getGenerationJob('ws_demo', job.id)).toMatchObject({ state: 'succeeded', revision })
+    expect(service.getTask(task.id).state).toBe('review_required')
+    // A job that never succeeded still fails normally.
+    const task2 = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(task2.id, 'A')
+    service.confirmProductionPlan('ws_demo', task2.id, 'test-merchant')
+    const job2 = service.enqueueGeneration({ workspaceId: 'ws_demo', taskId: task2.id, idempotencyKey: 'gen-terminal-2' })
+    expect(service.failGeneration({ workspaceId: 'ws_demo', jobId: job2.id, code: 'PROVIDER_TIMEOUT', message: 'provider timeout' })).toMatchObject({ state: 'failed', errorCode: 'PROVIDER_TIMEOUT' })
   })
 
   it('applies the same explicit dynamic module plan to sync, Codex and async generation', async () => {

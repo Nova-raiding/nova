@@ -116,19 +116,40 @@ describe('PostgresBillingRepository model debit reversal', () => {
     const client = new RecordingClient()
     client.enqueue() // BEGIN
     client.enqueue() // tenant scope
+    client.enqueue({ id: 'ws_wallet' }) // workspace row lock
     client.enqueue(debit) // original debit
     client.enqueue() // no existing refund
+    client.enqueue({ appliedFen: '0' }) // settlement deltas applied to this key
     client.enqueue(refund) // refund insert
     client.enqueue() // COMMIT
     const result = await new PostgresBillingRepository(new RecordingPool(client)).refundDebit({ workspaceId: 'ws_wallet', debitIdempotencyKey: 'model:request-1', actorId: 'merchant', reason: 'provider timeout' })
     expect(result).toMatchObject({ type: 'refund', amountFen: 1, orderId: 'refund:model:request-1' })
     const insert = client.calls.find(call => call.text.includes("INSERT INTO billing_transactions") && call.text.includes("'refund'"))
     expect(insert?.values?.slice(1)).toEqual(['ws_wallet', 1, 'refund:model:request-1', 'merchant', '模型失败退款（merchant）：provider timeout'])
+    // Both readers of the settlement aggregate must serialize on the same
+    // workspace row, and the lock has to precede the first read of it: taken
+    // any later the refund amount can still be fixed against a snapshot the
+    // concurrent settlement is about to invalidate.
+    const statements = client.calls.map(call => call.text)
+    const lockIndex = statements.findIndex(statement => statement.includes('FOR UPDATE'))
+    const aggregateIndex = statements.findIndex(statement => statement.includes('AS "appliedFen"'))
+    expect(lockIndex).toBeGreaterThan(0)
+    expect(aggregateIndex).toBeGreaterThan(lockIndex)
+  })
+
+  it('reverses the settled amount, not the pre-authorization, so a failed action nets to zero', async () => {
+    const settled = new RecordingClient()
+    settled.enqueue(); settled.enqueue(); settled.enqueue(); settled.enqueue(debit); settled.enqueue(); settled.enqueue({ appliedFen: '39' }); settled.enqueue({ ...refund, amount_fen: 40 }); settled.enqueue()
+    await expect(new PostgresBillingRepository(new RecordingPool(settled)).refundDebit({ workspaceId: 'ws_wallet', debitIdempotencyKey: 'model:request-1', actorId: 'merchant', reason: '多模态结果记录失败' })).resolves.toMatchObject({ amountFen: 40 })
+
+    const downgraded = new RecordingClient()
+    downgraded.enqueue(); downgraded.enqueue(); downgraded.enqueue(); downgraded.enqueue({ ...debit, amount_fen: 100 }); downgraded.enqueue(); downgraded.enqueue({ appliedFen: '-60' }); downgraded.enqueue({ ...refund, amount_fen: 40 }); downgraded.enqueue()
+    await expect(new PostgresBillingRepository(new RecordingPool(downgraded)).refundDebit({ workspaceId: 'ws_wallet', debitIdempotencyKey: 'model:request-1', actorId: 'merchant', reason: '多模态结果记录失败' })).resolves.toMatchObject({ amountFen: 40 })
   })
 
   it('returns an existing reversal without creating a second wallet credit', async () => {
     const client = new RecordingClient()
-    client.enqueue(); client.enqueue(); client.enqueue(debit); client.enqueue(refund); client.enqueue()
+    client.enqueue(); client.enqueue(); client.enqueue(); client.enqueue(debit); client.enqueue(refund); client.enqueue()
     const result = await new PostgresBillingRepository(new RecordingPool(client)).refundDebit({ workspaceId: 'ws_wallet', debitIdempotencyKey: 'model:request-1', actorId: 'merchant', reason: 'retry' })
     expect(result.id).toBe('refund_1')
     expect(client.calls.some(call => call.text.includes("INSERT INTO billing_transactions") && call.text.includes("'refund'"))).toBe(false)

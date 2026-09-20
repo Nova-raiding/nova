@@ -1,9 +1,9 @@
 import { pathToFileURL } from 'node:url'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
-import { unlink, writeFile } from 'node:fs/promises'
+import { unlink, utimes, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
-import { Pool } from 'pg'
+import { Pool, type PoolConfig } from 'pg'
 import { contextEnvelopeHash, loadMigrations, PostgresAssetScanAttemptRepository, PostgresCreativePointLifecycleRepository, PostgresCreativePointRepository, PostgresOnboardingGrantDispatchRepository, PostgresOutboxRepository, withWorkspaceTransaction, type AssetScanAttemptRecord, type AssetScanAttemptRepository, type Migration, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { PostgresMappingPreflightApprovalRepository } from '../../../packages/persistence/src/mapping-preflight-approval-repository.js'
 import { DurableOutboxDispatcher, InMemoryQueue, RedisQueueAdapter, type DurableOutboxEvent, type QueuePort, type RedisQueueTransport, type WorkerDispatchObservation } from '../../../packages/workers/src/durable.js'
@@ -355,8 +355,74 @@ const workerRouting: Record<Exclude<WorkerRole, 'all' | 'automation'>, { eventTy
   scan: { eventTypes: ['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested', CUSTOMER_DELIVERY_SCAN_EVENT] },
 }
 
+/**
+ * Everything `ROLE=all` owns except the platform scan queue, derived from
+ * `workerRouting` so a new event type cannot be silently dropped from the
+ * `all` claim. `state.snapshot` is included: the snapshot projection is not a
+ * scan side effect and must keep flowing while the local scanner is unready.
+ */
+export const NON_SCAN_EVENT_TYPES: readonly string[] = [...new Set(
+  (['sync', 'generation', 'publish', 'reconcile'] as const).flatMap(role => workerRouting[role].eventTypes),
+)]
+
+/**
+ * Keeps the ready file's modification time inside the probe window while the
+ * poll loop is working, without ever writing, creating, or removing it.
+ *
+ * `touch()` deliberately fails silently when the file is absent: a worker whose
+ * dependencies are not verified has no marker and must not acquire one from a
+ * timer. `start()` is bounded to the moment the loop is actually executing, so
+ * the heartbeat cannot outlive the work it is evidence for; `stop()` runs in
+ * the loop body's `finally`, which is also what makes a blocked event loop or a
+ * dead process stop refreshing and be restarted by the probe.
+ */
+export function createReadyFileHeartbeat(options: { readyFile: string; intervalMs?: number }): { start: () => void; stop: () => void; touch: () => Promise<boolean> } {
+  const intervalMs = options.intervalMs ?? READY_FILE_HEARTBEAT_MS
+  if (!Number.isSafeInteger(intervalMs) || intervalMs < 1) throw new RangeError('ready file heartbeat interval must be a positive integer')
+  let timer: ReturnType<typeof setInterval> | undefined
+  const touch = async (): Promise<boolean> => {
+    const at = new Date()
+    try {
+      await utimes(options.readyFile, at, at)
+      return true
+    } catch {
+      // Absent (never ready, or revoked) or unreadable: nothing to refresh.
+      return false
+    }
+  }
+  return {
+    touch,
+    start() {
+      if (timer !== undefined) return
+      timer = setInterval(() => { void touch() }, intervalMs)
+      // A liveness hint must never be the reason a shutting-down process stays
+      // alive (see the credential refresh lock, which had exactly that bug).
+      timer.unref?.()
+    },
+    stop() {
+      if (timer === undefined) return
+      clearInterval(timer)
+      timer = undefined
+    },
+  }
+}
+
 const DEFAULT_WORKER_API_TIMEOUT_MS = 10_000
 const DEFAULT_WORKER_DEPENDENCY_CHECK_INTERVAL_MS = 10_000
+/**
+ * The freshness window the non-scanner probes read: `find <ready-file> -mmin -2`
+ * (`infra/kubernetes/base/workers.yaml`). It is the budget every dependency call
+ * the poll loop awaits has to fail inside - a call that can outlive it is
+ * indistinguishable from a wedged loop while the ready-file heartbeat is
+ * running. See `READY_FILE_HEARTBEAT_MS` and `workerDatabasePoolOptions`.
+ */
+export const READY_FILE_PROBE_WINDOW_MS = 120_000
+/**
+ * Postgres statement budget for the worker pool. The loop's queries are all
+ * short (claim, lease, acknowledge, per-workspace aggregates); the only thing
+ * this is sized against is the probe window above.
+ */
+const DEFAULT_WORKER_DB_QUERY_TIMEOUT_MS = 30_000
 /**
  * How often the scan queue depth/age gauge is refreshed from Postgres. The
  * heartbeat probe already queries the same aggregate every few seconds, but it
@@ -364,6 +430,57 @@ const DEFAULT_WORKER_DEPENDENCY_CHECK_INTERVAL_MS = 10_000
  * whole purpose is to page when consumption stops.
  */
 const SCANNER_QUEUE_METRICS_INTERVAL_MS = 30_000
+/**
+ * How often the poll loop proves it is still running by refreshing the ready
+ * file's modification time.
+ *
+ * The non-scanner roles are probed with `find <ready-file> -mmin -2`, but the
+ * file used to be rewritten only at the end of a whole cycle (or after a
+ * dependency check). A cycle is not bounded by that: a single worker API call
+ * is allowed `WORKER_API_TIMEOUT_MS` (minutes, not seconds), and one cycle runs
+ * up to `WORKER_BATCH_SIZE` events across `WORKER_WORKSPACE_BATCH_SIZE`
+ * workspaces. A legitimately slow cycle therefore tripped the liveness probe,
+ * kubelet restarted the pod, and the 15-minute durable lease kept the work from
+ * being picked up anywhere else - the queue stalled, with no log line saying
+ * why.
+ *
+ * Raising the probe threshold instead would only move the collision: any window
+ * large enough for the worst legitimate cycle is too large to catch a genuinely
+ * dead process. Proving liveness on a cadence shorter than the window is what
+ * the scanner role already does (heartbeat every 5s, TTL 15s), and this is the
+ * same idea for the roles that have no heartbeat controller of their own.
+ *
+ * The refresh is therefore only honest while "the loop is executing" implies
+ * "the loop will finish what it is doing". That is the invariant this file and
+ * the queue transport have to keep, and it is why every await the loop reaches
+ * is bounded by a budget of its own:
+ *
+ *  - worker API calls: `WORKER_API_TIMEOUT_MS` (see `fetchWorkerApi`);
+ *  - a single event's handler: `handlerTimeoutMs` on the dispatcher;
+ *  - Postgres: the query/statement timeout on the pool this loop is handed
+ *    (see `workerDatabasePoolOptions`), which also covers the transaction
+ *    wrapper the repository opens;
+ *  - Redis: `REDIS_OPERATION_TIMEOUT_MS` around every round trip the queue,
+ *    scanner-heartbeat and quota transports perform (see `redis-transport.ts`).
+ *
+ * A bounded await that runs out of budget throws, the iteration's `catch`
+ * removes the marker and its `finally` stops this timer, so the probe fails and
+ * kubelet restarts the pod within one probe window. An *unbounded* await does
+ * the opposite: it parks the loop while the timer keeps the marker inside the
+ * window, which is precisely the failure the fourth budget above closes. Adding
+ * a new dependency call to the loop without a budget re-opens it.
+ *
+ * A progress-gated refresh ("only touch while the loop reports advancement")
+ * was considered and rejected: with the deployed budgets an honest gap between
+ * two steps reaches minutes (`WORKER_API_TIMEOUT_MS=360000` in the shipped
+ * configmap, and a handler is allowed its whole lease), so any gate tight enough
+ * to catch a stall would have restarted healthy workers again - the regression
+ * this heartbeat exists to prevent. Bounding the steps keeps both properties.
+ *
+ * Only the mtime is refreshed; the document itself is still written by the loop
+ * at the points where it has real evidence to report.
+ */
+const READY_FILE_HEARTBEAT_MS = 30_000
 const DEFAULT_STORAGE_RECONCILIATION_INTERVAL_MS = 15 * 60_000
 const DEFAULT_PAYMENT_RECONCILIATION_INTERVAL_MS = 5 * 60_000
 const DEFAULT_PAYMENT_RECONCILIATION_BATCH_SIZE = 10
@@ -1627,7 +1744,7 @@ export function readWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
 export async function pollOnce(
   repository: PostgresOutboxRepository,
   dispatchers: Map<string, DurableOutboxDispatcher<DurableOutboxEvent>>,
-  config: Pick<WorkerConfig, 'workspaces' | 'batchSize' | 'leaseMs'> & { role?: WorkerRole; workspaceBatchSize?: number; scanMaxAttempts?: number; scanRetryBaseMs?: number; scanRetryMaxMs?: number; claimAdmission?: () => boolean | Promise<boolean> },
+  config: Pick<WorkerConfig, 'workspaces' | 'batchSize' | 'leaseMs'> & { role?: WorkerRole; workspaceBatchSize?: number; scanMaxAttempts?: number; scanRetryBaseMs?: number; scanRetryMaxMs?: number; claimAdmission?: () => boolean | Promise<boolean>; claimFor?: () => { eventTypes?: readonly string[]; snapshotEntityTypes?: readonly string[] } | undefined },
   queueFactory: (workspaceId: string) => QueuePort<DurableOutboxEvent> = () => new InMemoryQueue<DurableOutboxEvent>(),
   handlerOptions: Parameters<typeof createOutboxHandler>[0] = {},
 ): Promise<WorkerPollResult> {
@@ -1648,7 +1765,7 @@ export async function pollOnce(
           repository,
           queueFactory(workspaceId),
           createOutboxHandler({ projection: createWorkerProjection(), ...handlerOptions }),
-          { leaseMs: config.leaseMs, claim: config.role && config.role !== 'all' && config.role !== 'automation' ? workerRouting[config.role] : undefined, ...(config.role === 'scan' ? { maxAttempts: config.scanMaxAttempts ?? 12, baseDelayMs: config.scanRetryBaseMs ?? 5_000, maxDelayMs: config.scanRetryMaxMs ?? 900_000 } : {}), onDispatch: emitWorkerDispatchLog },
+          { leaseMs: config.leaseMs, claim: config.role && config.role !== 'all' && config.role !== 'automation' ? workerRouting[config.role] : undefined, ...(config.claimFor ? { claimFor: config.claimFor } : {}), ...(config.role === 'scan' ? { maxAttempts: config.scanMaxAttempts ?? 12, baseDelayMs: config.scanRetryBaseMs ?? 5_000, maxDelayMs: config.scanRetryMaxMs ?? 900_000 } : {}), onDispatch: emitWorkerDispatchLog },
         )
         dispatchers.set(workspaceId, dispatcher)
       }
@@ -1778,7 +1895,15 @@ export async function refreshScanQueueMetrics(input: {
   }
 }
 
-export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void> {
+/**
+ * `options` exists for one caller - the test that pins the loop's side of the
+ * ready-file heartbeat. The shipped cadence is `READY_FILE_HEARTBEAT_MS` (30s),
+ * which no unit test can wait out, and without an observable cadence nothing
+ * would notice the arming below being dropped: the marker would go stale during
+ * every slow cycle again, which is the restart loop #29 fixed. No production
+ * path passes it.
+ */
+export async function runWorker(config: WorkerConfig, pool: Pool, options: { readyFileHeartbeatIntervalMs?: number } = {}): Promise<void> {
   const repository = new PostgresOutboxRepository(pool as unknown as SqlPool)
   const dispatchers = new Map<string, DurableOutboxDispatcher<DurableOutboxEvent>>()
   const redisConnection = process.env.REDIS_URL?.trim() ? await connectRedisQueue(process.env.REDIS_URL.trim(), { maxDepth: config.queueMaxDepth }) : undefined
@@ -1806,10 +1931,10 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
   // refresh lock; creating it unconditionally opened a second Redis connection
   // for every worker process, including the automation and scan roles.
   const connectorRole = config.role === 'all' || config.role === 'sync' || config.role === 'publish' || config.role === 'reconcile'
-  const credentialRefreshLock = connectorRole ? createRedisCredentialRefreshLock(process.env.REDIS_URL) : undefined
+  const credentialRefresh = connectorRole ? createRedisCredentialRefreshLock(process.env.REDIS_URL) : undefined
   const runtime = new ConnectorRuntime({
     configSource: process.env,
-    ...(credentialRefreshLock ? { refreshLock: credentialRefreshLock } : {}),
+    ...(credentialRefresh ? { refreshLock: credentialRefresh.lock } : {}),
     beforeRequest: providerDispatchAdmission.beforeConnectorRequest,
     capabilityEvidenceTrust: (() => {
       const evidencePath = process.env.CAPABILITY_EVIDENCE_PATH?.trim()
@@ -2134,6 +2259,14 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     }
   }
   const scanRequested = async (event: DurableOutboxEvent, _projection: unknown, signal?: AbortSignal) => {
+    // The scan side effect itself is what must be deferred, not the queue that
+    // carries unrelated work. A delivery taken while the scanner was ready
+    // survives in the queue, so the claim routing alone cannot hold it back;
+    // refusing here keeps the event retryable and leaves it for the cycle in
+    // which this process is allowed to scan again.
+    if (scannerHeartbeat !== undefined && !scannerHeartbeat.canProcessScans()) {
+      throw Object.assign(new Error('asset scan is deferred until this worker can process scans'), { code: 'ASSET_SCANNER_NOT_READY', retryable: true })
+    }
     const apiToken = process.env.ASSET_SCANNER_API_TOKEN?.trim()
     const signingSecret = process.env.ASSET_SCANNER_WORKSPACE_SIGNING_SECRET?.trim()
     const privateKey = assetScanReceiptPrivateKeyPem(process.env)
@@ -2166,6 +2299,9 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
   let nextSupportSlaScanAt = 0
   let nextSupportSlaReportAt = 0
   const readyFile = process.env.WORKER_READY_FILE ?? '/tmp/merchant-worker-ready'
+  // The scanner role proves liveness through its heartbeat controller; every
+  // other role has only this marker, which the probes read with `-mmin -2`.
+  const readyFileHeartbeat = createReadyFileHeartbeat({ readyFile, ...(options.readyFileHeartbeatIntervalMs !== undefined ? { intervalMs: options.readyFileHeartbeatIntervalMs } : {}) })
   let scannerHeartbeat: ScannerHeartbeatController | undefined
   // The registry is created before the loop so a scrape can observe a worker
   // that has not completed its first cycle yet: `heartbeat_timestamp_seconds`
@@ -2245,15 +2381,13 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
           // probe is skipped whenever the API is unready. See the loop comment.
           return { backlog: metrics.backlog, deadLetter: metrics.deadLetter }
         },
+        // `role` is the only field this worker adds to the readiness document.
+        // The controller owns writing it, so the marker cannot be produced in
+        // two shapes by two writers - the reason the release acceptance scripts
+        // and the scan probes disagreed about what was on disk.
+        formatReadyDocument: (heartbeat, at) => ({ readyAt: at.toISOString(), role: config.role, state: heartbeat.ready ? 'ready' : 'recovery', heartbeat }),
         onHeartbeat: heartbeat => {
           workerMetrics.recordScannerHeartbeat(heartbeat)
-          // Compose health describes process/dependency recovery capability.
-          // Dead letters remain an operational warning, but must not prevent
-          // this worker from draining new scans or performing authorized
-          // recovery.
-          void (heartbeat.recoveryCapable
-            ? writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, state: heartbeat.ready ? 'ready' : 'recovery', heartbeat }))
-            : unlink(readyFile).catch(() => undefined))
           const notReadyReasons = [
             ...(!heartbeat.checks.databaseReady ? ['database_not_ready'] : []),
             ...(!heartbeat.checks.apiReady ? ['api_not_ready'] : []),
@@ -2301,6 +2435,10 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
           onFailure: error => log({ level: 'error', message: 'scan queue metrics read failed; scan queue series withheld until a read succeeds', role: config.role, error }),
         })
       }
+      // From here on the loop is executing, not sleeping. Proving that on a
+      // cadence shorter than the probe window is what keeps a slow cycle (a
+      // minute-long API call, a deep batch) from being read as a dead process.
+      readyFileHeartbeat.start()
       try {
         if (!dependenciesReady || startedAt >= nextDependencyCheckAt) {
           dependenciesReady = false
@@ -2311,9 +2449,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
           if (!scannerHeartbeat) await writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, state: 'idle', quotaAdmission: quotaConnection.mode, migrationVersion: dependencyState.migrationVersion, apiReady: dependencyState.apiReady }))
         }
         const workspaces = config.autoDiscoverWorkspaces ? await repository.listActiveWorkspaceIds() : config.workspaces
-        const result = scannerHeartbeat && !scannerHeartbeat.canProcessScans()
-          ? { restored: 0, processed: 0, succeeded: 0, unknown: 0, queued: 0, deadLetter: 0 }
-          : config.role === 'automation'
+        const result = config.role === 'automation'
           ? await (async () => {
             if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for automation ticks')
             return runAutomationMaintenance({
@@ -2323,7 +2459,20 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
               onError: (workspaceId, operation, error) => log({ level: 'error', message: 'automation workspace maintenance failed; continuing', workspaceId, operation, error: serializeError(error) }),
             })
           })()
-          : await pollOnce(repository, dispatchers, { ...config, workspaces, ...(scannerHeartbeat ? { claimAdmission: () => scannerHeartbeat!.canProcessScans() } : {}) }, queueFactory, { executionAuthorization, commercialAccess, deliveryScanAdmission, publishRequested, reconcileRequested, generationRequested, imageGenerationRequested, syncRequested, scanRequested, imageContinuationRequested, onGenerationResult, onGenerationDeferred, onPublishObservation })
+          : await pollOnce(repository, dispatchers, {
+            ...config,
+            workspaces,
+            // A scan-only worker owns nothing else, so an unready scanner means
+            // there is no work for it to claim at all.
+            ...(config.role === 'scan' && scannerHeartbeat ? { claimAdmission: () => scannerHeartbeat!.canProcessScans() } : {}),
+            // `all` owns every queue in one process. Withholding the scan
+            // routing while the scanner is unready keeps platform scans
+            // deferred, but the publish/sync/generation queues must keep
+            // draining: freezing the whole poll (the previous behaviour) turned
+            // one optional local dependency into a total outbox outage with no
+            // distinguishing signal.
+            ...(config.role === 'all' && scannerHeartbeat ? { claimFor: () => scannerHeartbeat!.canProcessScans() ? undefined : { eventTypes: NON_SCAN_EVENT_TYPES } } : {}),
+          }, queueFactory, { executionAuthorization, commercialAccess, deliveryScanAdmission, publishRequested, reconcileRequested, generationRequested, imageGenerationRequested, syncRequested, scanRequested, imageContinuationRequested, onGenerationResult, onGenerationDeferred, onPublishObservation })
         if ((config.role === 'automation' || config.role === 'all') && startedAt >= nextKnowledgeIndexAt && workspaces.length) {
           const indexed = await allSettledWithConcurrency(workspaces, Math.min(2, config.workspaceBatchSize), workspaceId => indexApprovedKnowledge({
             repository: knowledgeRepository, workspaceId, limit: Math.min(20, config.batchSize),
@@ -2404,13 +2553,22 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
         workerMetrics.recordPollFailure({ finishedAtMs: Date.now(), ...(failure.code ? { code: failure.code } : {}) })
         log({ level: 'error', message: 'worker poll failed; retrying', error: serializeError(error) })
         rethrowPollFailureInOnceMode(config.once, error)
+      } finally {
+        // Scoped to the executing part of the cycle: the idle sleep below is
+        // not progress, and the marker it would refresh has been removed by the
+        // failure path above anyway.
+        readyFileHeartbeat.stop()
       }
       if (!config.once && !stopping) await sleep(!dependenciesReady ? config.dependencyCheckIntervalMs : config.role === 'automation' ? config.automationIntervalMs : config.pollIntervalMs)
     } while (!config.once && !stopping)
   } finally {
     await workerMetricsServer?.stop()
     await scannerHeartbeat?.stop()
+    readyFileHeartbeat.stop()
     await redisConnection?.close()
+    // Without this the connector roles keep a referenced node-redis socket and
+    // never exit on SIGTERM; the pod is SIGKILLed after the full grace period.
+    await credentialRefresh?.close()
     await quotaConnection.close()
     process.removeListener('SIGTERM', stop)
     process.removeListener('SIGINT', stop)
@@ -2464,10 +2622,36 @@ function isObject(value: unknown): value is Record<string, unknown> { return Boo
 
 function log(value: Record<string, unknown>) { process.stdout.write(`${JSON.stringify({ ts: new Date().toISOString(), service: 'worker', ...value })}\n`) }
 
+/**
+ * Connection options for the pool the poll loop is handed.
+ *
+ * `connectionTimeoutMillis` only bounds *acquiring* a connection. A statement
+ * that the server never answers - a lock wait, a blackholed peer, a query
+ * parked behind a saturated Postgres - left the loop parked on an await with no
+ * deadline, which the ready-file heartbeat could not distinguish from a slow
+ * cycle (see `READY_FILE_HEARTBEAT_MS`). `query_timeout` aborts the query
+ * client-side and `statement_timeout` cancels it on the server, so a stuck read
+ * becomes a failed iteration: the marker is removed and the probe restarts the
+ * container. Both are kept well under the two-minute probe window
+ * (`READY_FILE_PROBE_WINDOW_MS`) so the failure, not a stale marker, is what the
+ * probe sees.
+ */
+export function workerDatabasePoolOptions(config: Pick<WorkerConfig, 'databaseUrl'>, env: NodeJS.ProcessEnv = process.env): PoolConfig {
+  const queryTimeoutMs = positiveInt(env.WORKER_DB_QUERY_TIMEOUT_MS, DEFAULT_WORKER_DB_QUERY_TIMEOUT_MS, 'WORKER_DB_QUERY_TIMEOUT_MS')
+  if (queryTimeoutMs > READY_FILE_PROBE_WINDOW_MS) throw new Error(`WORKER_DB_QUERY_TIMEOUT_MS must not exceed the ${READY_FILE_PROBE_WINDOW_MS}ms ready-file probe window`)
+  return {
+    connectionString: config.databaseUrl,
+    max: positiveInt(env.WORKER_DB_POOL_MAX, 5, 'WORKER_DB_POOL_MAX'),
+    connectionTimeoutMillis: positiveInt(env.WORKER_DB_CONNECTION_TIMEOUT_MS, 3_000, 'WORKER_DB_CONNECTION_TIMEOUT_MS'),
+    query_timeout: queryTimeoutMs,
+    statement_timeout: queryTimeoutMs,
+  }
+}
+
 const entrypoint = process.argv[1]
 if (entrypoint && import.meta.url === pathToFileURL(entrypoint).href) {
   const config = readWorkerConfig()
-  const pool = new Pool({ connectionString: config.databaseUrl, max: Number(process.env.WORKER_DB_POOL_MAX ?? 5), connectionTimeoutMillis: Number(process.env.WORKER_DB_CONNECTION_TIMEOUT_MS ?? 3000) })
+  const pool = new Pool(workerDatabasePoolOptions(config))
   runWorker(config, pool).catch(error => {
     log({ level: 'fatal', message: 'worker stopped', error: serializeError(error) })
     process.exitCode = 1

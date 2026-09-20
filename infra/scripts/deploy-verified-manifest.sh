@@ -105,8 +105,16 @@ for scanner_pod in $scanner_pods; do
     const config = readWorkerConfig(process.env)
     if (config.role !== "scan") throw new Error("scanner acceptance ran with the wrong worker role")
     for (const name of ["ASSET_SCANNER_API_TOKEN", "ASSET_SCANNER_WORKSPACE_SIGNING_SECRET", "ASSET_SCAN_RECEIPT_KEY_ID", "ASSET_SCAN_POLICY_VERSION", "CLAMAV_HOST"]) if (!process.env[name]?.trim()) throw new Error(`scanner configuration missing: ${name}`)
-    const heartbeat = JSON.parse(await readFile(process.env.WORKER_READY_FILE, "utf8"))
-    if (!heartbeat.ready || heartbeat.schemaVersion !== "scanner-heartbeat/1.0" || heartbeat.instanceId !== process.env.HOSTNAME) throw new Error("scanner heartbeat is not ready or is not bound to this pod")
+    // The ready document is the probe-shaped wrapper the Kubernetes liveness
+    // probe and the local Compose healthcheck both parse
+    // (`h.state === "ready" && Date.parse(h.heartbeat.expiresAt) > now`), with
+    // the scanner evidence nested under `heartbeat`. Reading the top level as if
+    // it were the heartbeat rejected every healthy cluster, which is what made
+    // this verification step fail on a working deployment.
+    const document = JSON.parse(await readFile(process.env.WORKER_READY_FILE, "utf8"))
+    if (document.state !== "ready") throw new Error("scanner heartbeat is not ready or is not bound to this pod")
+    const heartbeat = document.heartbeat ?? {}
+    if (heartbeat.schemaVersion !== "scanner-heartbeat/1.0" || heartbeat.instanceId !== process.env.HOSTNAME) throw new Error("scanner heartbeat is not ready or is not bound to this pod")
     if (!heartbeat.checks?.databaseReady || !heartbeat.checks?.redisReady || !heartbeat.checks?.apiReady) throw new Error("scanner dependencies are not ready")
     if (!heartbeat.clamav?.reachable || !heartbeat.clamav?.engineVersion || !heartbeat.clamav?.definitionsVersion || !heartbeat.clamav?.definitionsPublishedAt) throw new Error("ClamAV engine or definitions evidence is missing")
     if (!heartbeat.eicar?.passed || heartbeat.eicar?.signature !== "Eicar-Test-Signature" || !heartbeat.eicar?.checkedAt) throw new Error("ClamAV EICAR evidence is missing")

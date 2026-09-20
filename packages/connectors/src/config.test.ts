@@ -2,6 +2,7 @@ import { generateKeyPairSync, sign } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { UnwiredPlatformSwitchError, buildHttpConnectorConfigs, buildHttpConnectorConfigsFromStructured, platformConfigPrefix, unwiredPlatformSwitches } from './config.js'
 import { validateConnectorAuthorizationReadiness } from './readiness.js'
+import type { HttpRequestDescriptor } from './types.js'
 
 // Key names are assembled from `platformConfigPrefix` instead of being written
 // out: that is the same table the rejection derives from, so these tests cannot
@@ -244,6 +245,44 @@ describe('platform HTTP configuration', () => {
     expect(result.configs.pinduoduo).toBeUndefined()
     expect(result.allConfigs.jd?.signer?.kind).toBe('platform')
     expect(result.allConfigs.pinduoduo?.signer?.kind).toBe('platform')
+  })
+
+  it('reads the router API selector as connector configuration, never from the URL', async () => {
+    // The router `method`/`type` selects the platform API. It used to be
+    // scraped from the request URL, where it could never appear: `api.*Path`
+    // must pass `validRelativePath`, which rejects `?`. It is configuration now.
+    const result = buildHttpConnectorConfigs({
+      ...base,
+      JD_APP_SECRET: 'jd-secret',
+      JD_SYNC_METHOD: 'jingdong.ware.search', JD_CREATE_METHOD: 'jingdong.ware.create', JD_UPDATE_METHOD: 'jingdong.ware.update', JD_QUERY_METHOD: 'jingdong.ware.status.get', JD_MEDIA_METHOD: 'jingdong.ware.image.upload',
+    })
+    expect(result.allConfigs.jd?.api.methods).toEqual({
+      sync: 'jingdong.ware.search', create: 'jingdong.ware.create', update: 'jingdong.ware.update', query: 'jingdong.ware.status.get', media: 'jingdong.ware.image.upload',
+    })
+    const create = { method: 'POST', url: 'https://jd.test/api/products/create', headers: {} as Record<string, string>, body: '{}', platform: 'jd' as const, operation: 'create_product' as const }
+    await result.allConfigs.jd?.signer?.sign(create)
+    expect(new URLSearchParams(create.body).get('method')).toBe('jingdong.ware.create')
+  })
+
+  it('leaves an unconfigured router selector unset so the signer refuses instead of guessing', async () => {
+    const result = buildHttpConnectorConfigs({ ...base, JD_APP_SECRET: 'jd-secret', JD_SYNC_METHOD: 'jingdong.ware.search' })
+    expect(result.allConfigs.jd?.api.methods).toEqual({ sync: 'jingdong.ware.search' })
+    const create = { method: 'POST', url: 'https://jd.test/api/products/create', headers: {} as Record<string, string>, body: '{}', platform: 'jd' as const, operation: 'create_product' as const }
+    await expect(Promise.resolve().then(() => result.allConfigs.jd?.signer?.sign(create)))
+      .rejects.toMatchObject({ code: 'NOT_CONFIGURED', message: expect.stringContaining('api.methods.create') })
+  })
+
+  it('passes structured router selectors through to the built-in signers', async () => {
+    const result = buildHttpConnectorConfigsFromStructured({
+      jd: { clientId: 'jd', clientSecret: 'jd-secret', oauth: { authorizeUrl: 'https://jd.test/a', tokenUrl: 'https://jd.test/t' }, api: { baseUrl: 'https://jd.test/api', syncPath: '/i', createPath: '/c', updatePath: '/u', queryPath: '/q', methods: { sync: 'jingdong.ware.search' } } },
+    })
+    expect(result.allConfigs.jd?.api.methods).toEqual({ sync: 'jingdong.ware.search' })
+    const sync: HttpRequestDescriptor = { method: 'GET', url: 'https://jd.test/api/products', headers: {}, platform: 'jd', operation: 'sync_products' }
+    await result.allConfigs.jd?.signer?.sign(sync)
+    // The sync operation is dispatched as GET, so the selector travels in the
+    // query and the request must stay bodyless (`fetch` rejects a GET body).
+    expect(sync.body).toBeUndefined()
+    expect(new URL(sync.url).searchParams.get('method')).toBe('jingdong.ware.search')
   })
 
   it('does not expose a structured client secret to the API/MCP connector config', () => {

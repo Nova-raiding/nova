@@ -25,7 +25,7 @@ describe('MigrationRunner', () => {
   it('loads the ordered production migration set', async () => {
     const migrations = await loadMigrations()
     const latestVersion = migrations.at(-1)?.version ?? 0
-    expect(latestVersion).toBe(229)
+    expect(latestVersion).toBe(231)
     expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(migrations[1]?.sql).toContain('FORCE ROW LEVEL SECURITY')
     const byVersion = new Map(migrations.map(migration => [migration.version, migration]))
@@ -62,6 +62,11 @@ describe('MigrationRunner', () => {
     expect(byVersion.get(221)?.sql).toContain('CREATE OR REPLACE FUNCTION enforce_commercial_refund_cumulative_bound()')
     expect(byVersion.get(221)?.sql).toContain('MAX(amount_fen)')
     expect(byVersion.get(221)?.sql).toContain('commercial_refund_events_v2_cumulative_bound')
+    expect(byVersion.get(231)).toMatchObject({ name: 'storage_quota_per_object_reservation_keys' })
+    expect(byVersion.get(231)?.sql).toContain('storage_quota_reservations NO FORCE ROW LEVEL SECURITY')
+    expect(byVersion.get(231)?.sql).toContain('storage_quota_reservations FORCE ROW LEVEL SECURITY')
+    expect(byVersion.get(231)?.sql).toContain("'asset:' || r.asset_id")
+    expect(byVersion.get(231)?.sql).toContain('business_entity_snapshots')
     expect(byVersion.get(100)).toMatchObject({ name: 'operation_alert_notifications' })
     expect(byVersion.get(101)).toMatchObject({ name: 'canonical_backfill_runs' })
     expect(byVersion.get(102)).toMatchObject({ name: 'canonical_backfill_conflicts' })

@@ -65,6 +65,8 @@ $$;
 -- privilege: these projections and durable execution records are never
 -- deleted by the merchant runtime.
 DO $$
+DECLARE
+  relation_name TEXT;
 BEGIN
   IF to_regclass('public.canonical_products') IS NOT NULL THEN
     EXECUTE 'REVOKE DELETE, TRUNCATE ON TABLE canonical_products FROM merchant_app';
@@ -114,6 +116,34 @@ BEGIN
     EXECUTE 'REVOKE ALL ON TABLE asset_scan_redrives FROM merchant_app';
     EXECUTE 'GRANT SELECT, INSERT ON TABLE asset_scan_redrives TO merchant_app';
   END IF;
+  -- Migrations 067/068/079/218 each revoked DELETE from merchant_app on these
+  -- tables and granted back only SELECT/INSERT/UPDATE, because they hold audit
+  -- and control-plane records the runtime must not destroy: manual publish
+  -- reports, batch campaign plans, frozen context/task snapshots, export
+  -- requests, private-trial invites, orphan-reconciliation rows and the
+  -- preflight approvals. The blanket grant at the top of this file puts DELETE
+  -- back, and none of them carries a BEFORE DELETE trigger, so the revocation
+  -- was only ever true until the bootstrap re-ran. Verified before adding: no
+  -- production call site issues DELETE against any of them (only migrations,
+  -- tests and retention tooling do), so this removes a permission nothing uses.
+  FOREACH relation_name IN ARRAY ARRAY[
+    'manual_publish_evidence',
+    'batch_campaigns',
+    'batch_campaign_items',
+    'context_snapshots',
+    'task_snapshots',
+    'knowledge_hydration_snapshots',
+    'object_storage_orphans',
+    'platform_mapping_preflight_approvals',
+    'workspace_data_export_requests',
+    'private_trial_invites_v2',
+    'workspace_growth_events',
+    'workspace_usage_ledger'
+  ] LOOP
+    IF to_regclass(format('public.%I', relation_name)) IS NOT NULL THEN
+      EXECUTE format('REVOKE DELETE ON TABLE %I FROM merchant_app', relation_name);
+    END IF;
+  END LOOP;
 END
 $$;
 -- `REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM merchant_app` above is
@@ -352,6 +382,30 @@ BEGIN
       END IF;
     END LOOP;
   END IF;
+END
+$$;
+
+-- Migration 219 grants `merchant_app` SELECT on the shared platform rule tables
+-- and reserves INSERT/UPDATE for `merchant_ops`. The blanket `GRANT ... ON ALL
+-- TABLES` above re-widens them to full DML every time this bootstrap runs. That
+-- escalates the tenant role across every merchant at once: these two tables have
+-- no `workspace_id`, so there is no tenant boundary to fall back on, and the
+-- audits table's append-only trigger rejects UPDATE/DELETE but not INSERT, so a
+-- forged operations audit row is accepted. Deliberately narrower than the deny
+-- list above: SELECT stays, because the tenant runtime reads public rules
+-- through its own connection and migration 219 grants exactly that.
+DO $$
+DECLARE
+  relation_name TEXT;
+BEGIN
+  FOREACH relation_name IN ARRAY ARRAY[
+    'public_platform_rule_versions', 'public_platform_rule_audits'
+  ] LOOP
+    IF to_regclass(relation_name) IS NOT NULL THEN
+      EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE %s FROM merchant_app', relation_name);
+      EXECUTE format('GRANT SELECT ON TABLE %s TO merchant_app', relation_name);
+    END IF;
+  END LOOP;
 END
 $$;
 
