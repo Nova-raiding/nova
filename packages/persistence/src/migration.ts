@@ -689,6 +689,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const repairOpsReadAcl = await readFile(new URL('./migrations/236_repair_ops_read_acl.sql', import.meta.url), 'utf8')
   const repairControlPlaneIdentityAcl = await readFile(new URL('./migrations/237_repair_control_plane_identity_acl.sql', import.meta.url), 'utf8')
   const repairDurableAuthorizationAcl = await readFile(new URL('./migrations/238_repair_durable_authorization_acl.sql', import.meta.url), 'utf8')
+  const repairMcpOauthOpsAcl = await readFile(new URL('./migrations/239_repair_mcp_oauth_ops_acl.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -928,6 +929,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 236, name: 'repair_ops_read_acl', sql: repairOpsReadAcl },
     { version: 237, name: 'repair_control_plane_identity_acl', sql: repairControlPlaneIdentityAcl },
     { version: 238, name: 'repair_durable_authorization_acl', sql: repairDurableAuthorizationAcl },
+    { version: 239, name: 'repair_mcp_oauth_ops_acl', sql: repairMcpOauthOpsAcl },
   ]
 }
 

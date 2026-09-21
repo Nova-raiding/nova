@@ -25,7 +25,7 @@ describe('MigrationRunner', () => {
   it('loads the ordered production migration set', async () => {
     const migrations = await loadMigrations()
     const latestVersion = migrations.at(-1)?.version ?? 0
-    expect(latestVersion).toBe(238)
+    expect(latestVersion).toBe(239)
     expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(migrations[1]?.sql).toContain('FORCE ROW LEVEL SECURITY')
     const byVersion = new Map(migrations.map(migration => [migration.version, migration]))
@@ -95,6 +95,8 @@ describe('MigrationRunner', () => {
     expect(byVersion.get(237)?.sql).toContain('GRANT SELECT, INSERT, UPDATE ON platform_identities TO merchant_ops')
     expect(byVersion.get(238)).toMatchObject({ name: 'repair_durable_authorization_acl' })
     expect(byVersion.get(238)?.sql).toContain('GRANT SELECT, INSERT ON authorization_revisions TO merchant_ops')
+    expect(byVersion.get(239)).toMatchObject({ name: 'repair_mcp_oauth_ops_acl' })
+    expect(byVersion.get(239)?.sql).toContain('GRANT SELECT, INSERT, UPDATE ON mcp_oauth_tokens TO merchant_ops')
     expect(byVersion.get(100)).toMatchObject({ name: 'operation_alert_notifications' })
     expect(byVersion.get(101)).toMatchObject({ name: 'canonical_backfill_runs' })
     expect(byVersion.get(102)).toMatchObject({ name: 'canonical_backfill_conflicts' })
