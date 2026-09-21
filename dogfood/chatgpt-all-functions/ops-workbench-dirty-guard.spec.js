@@ -57,6 +57,9 @@ test('keeps a dirty desktop form until workbench switch is confirmed', async ({ 
   await page.getByRole('button', { name: '新建客户', exact: true }).click()
   const companyName = page.getByLabel('公司名称').last()
   await companyName.fill('未保存的演示客户')
+  // Registration is effect-driven; wait one paint so the controller sees the
+  // dirty label before the synthetic history transition fires.
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 
   const attemptWorkspaceSwitch = async () => {
     const current = page.url()
