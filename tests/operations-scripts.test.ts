@@ -496,6 +496,23 @@ describe('deployment operation scripts', () => {
     expect(() => run('infra/scripts/deploy-preflight.sh', [], { VITEST: 'true', NODE_ENV: 'production' })).toThrow(/VITEST.*NODE_ENV=test/)
   })
 
+  it('requires explicit production schema-owner connection fields for the ECS migration', () => {
+    const preflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
+    // The migrate container uses psql through PG*, independently of the API
+    // runtime URLs. A candidate must therefore fail before any evidence gate
+    // or compose/deploy step when one of these credentials is absent; falling
+    // back to the local compose defaults is how an unhealthy API can otherwise
+    // reach the candidate runtime with the wrong merchant_ops password.
+    for (const variable of ['PGHOST', 'PGDATABASE', 'PGUSER', 'PGPASSWORD']) {
+      expect(preflight).toContain(`: "\${${variable}:?${variable} is required so the migration`)
+    }
+    const firstEvidenceRequirement = preflight.indexOf(': "${CAPABILITY_EVIDENCE_PATH:?')
+    expect(firstEvidenceRequirement).toBeGreaterThan(0)
+    for (const variable of ['PGHOST', 'PGDATABASE', 'PGUSER', 'PGPASSWORD']) {
+      expect(preflight.indexOf(`: "\${${variable}:?`)).toBeLessThan(firstEvidenceRequirement)
+    }
+  })
+
   it('rejects unsafe release identities before evaluating deployment inputs', () => {
     const directory = mkdtempSync(join(tmpdir(), 'merchant-release-id-gate-'))
     const config = join(directory, 'rendered.yaml')
