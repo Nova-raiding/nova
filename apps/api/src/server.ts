@@ -4741,6 +4741,11 @@ const COMMERCIAL_READ_ONLY_METHODS = new Set([
   'billing.status', 'billing.transactions', 'billing.reconciliation', 'billing.model-usage.statement',
   'subscription.get', 'subscription.orders.list', 'platform.model.status',
   'platform.media.spec.list', 'platform.media.spec.get',
+  // Store discovery only reads the workspace-scoped directory. It must remain
+  // available before commercial activation so a merchant can see whether an
+  // operator-assigned/manual store is ready; sync, revoke and publishing keep
+  // their separate commercial and store-boundary gates.
+  'platform.store.list',
   'brand.get', 'support.customer.replies.list',
   'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get',
   'knowledge.learning.list', 'knowledge.competitor.list',
