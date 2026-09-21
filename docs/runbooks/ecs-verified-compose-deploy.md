@@ -4,7 +4,9 @@
 
 渲染器、部署器、回滚器、release control installer、受保护的 backup/bundle/preidentity 控制源码和 bundle verifier 必须同时出现在候选对比清单与 release manifest 的 SHA-256 artifacts 中。候选包里的完整 `candidate-source.tar` 以同一个 Git SHA 生成，因此也包含这些文件；任一文件缺失或字节变化都必须重新生成发布清单，不能沿用旧签名证据。
 
-受保护控制只能从精确发布提交的已审查源码安装。安装时以 root 在干净环境中显式调用 `node infra/scripts/install-ecs-release-controls.mjs`，并完整传入 `--control`、绝对 `--source`、`--source-sha256`、绝对 `--node` 和 `--node-sha256`；具体命令见 evidence bundle attester runbook。仓库源码的 executable bit 不构成授权，安装器也不负责密钥、签名、部署或业务数据变更。preidentity 的操作接口尚未最终冻结，在对应合同落地前不得从 runbook 推断或手工拼接 capture、phase、verify、recover 命令。
+受保护控制只能从精确发布提交的已审查源码安装。安装时以 root 在干净环境中显式调用 `node infra/scripts/install-ecs-release-controls.mjs`，并完整传入 `--control`、绝对 `--source`、`--source-sha256`、绝对 `--node` 和 `--node-sha256`；固定 runtime、安装顺序、backup source policy 和逐项命令见 evidence bundle attester runbook。仓库源码的 executable bit 不构成授权，安装器也不负责密钥、签名、部署或业务数据变更。
+
+当前生产 backup 已完成独立验签，但独立 restore 验收尚未完成，因此不能据此宣称 restore gate 或整套 release gates 已通过。`tests/postgres-backup-attester-cli-e2e.sh` 是显式 shell runner，不加入 Vitest 列表。preidentity 使用 `tests/run-ecs-preidentity-isolated-cli.sh` 运行隔离 shell/FD9 演练，其中 Docker 与 `psql` 等依赖由 `tests/fixtures/ecs-preidentity-isolated/` 下的部分 stub 提供；它只证明受控 CLI 合同，明确不是 real recovery evidence，不能替代生产恢复或切流验收。
 
 运行前必须由宿主发布控制面提供：
 

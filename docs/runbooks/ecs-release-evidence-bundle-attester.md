@@ -8,18 +8,65 @@ The release manifest declares `productionEvidenceBundle.required=true` and schem
 
 Provision the final executable bytes outside the repository, root-owned and not group/other writable. Store their reviewed SHA-256 as `/run/release-security/evidence-trust/production-evidence-bundle-attester-sha256`; the trust directory is rebuilt independently after reboot. The executable, every parent directory, public key, private key, and digest file must be regular non-symlink paths with protected ownership and modes.
 
-Install the reviewed bytes from the exact release commit before loading any private key. Run this from a root-owned release checkout after independently comparing the source hash with the release manifest:
+Install the reviewed bytes from the exact release commit before loading any private key. The production runtime is fixed at `/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node`; do not substitute `/usr/bin/node`. Verify and record that runtime's SHA-256 before installing controls. The backup attester likewise invokes only `/usr/pgsql-16/bin/psql` and `/usr/pgsql-16/bin/pg_dump`. PostgreSQL 13 may remain installed for existing server duties, but it must not replace or be placed in front of these fixed PostgreSQL 16 paths.
+
+Use this installation order from the root-owned reviewed release checkout:
+
+1. Provision and independently verify the fixed Node runtime and the PostgreSQL 16 client binaries.
+2. Pre-create `/usr/local/libexec/merchant`, `/run/release-security/evidence-trust`, and `/var/lib/merchant-release-security` as canonical root-owned paths with no group/other write access.
+3. Write and independently review the backup source policy at the fixed path `/run/release-security/evidence-trust/production-backup-source.json`. Its only fields are `system_identifier_sha256`, `database_oid`, and `database_name`; derive them from the approved production PostgreSQL source and do not accept a caller-selected policy path.
+4. Install capability, backup, preidentity, then bundle controls with the same reviewed runtime digest. Installation does not authorize executing any control.
+5. Provision each control's keys and operational inputs separately, then run its dedicated validation before use.
+
+Run the exact installer interface once per control, substituting only the reviewed release ID and independently recorded SHA-256 values:
 
 ```sh
 env -u NODE_OPTIONS -u NODE_PATH node infra/scripts/install-ecs-release-controls.mjs \
+  --control capability \
+  --source /opt/merchant-releases/RELEASE_ID/source/infra/protected/attest-capability-evidence.mjs \
+  --source-sha256 REVIEWED_CAPABILITY_SOURCE_SHA256 \
+  --node /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
+  --node-sha256 REVIEWED_NODE_SHA256
+
+env -u NODE_OPTIONS -u NODE_PATH node infra/scripts/install-ecs-release-controls.mjs \
+  --control backup \
+  --source /opt/merchant-releases/RELEASE_ID/source/infra/protected/attest-postgres-backup.mjs \
+  --source-sha256 REVIEWED_BACKUP_SOURCE_SHA256 \
+  --node /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
+  --node-sha256 REVIEWED_NODE_SHA256
+
+env -u NODE_OPTIONS -u NODE_PATH node infra/scripts/install-ecs-release-controls.mjs \
+  --control preidentity \
+  --source /opt/merchant-releases/RELEASE_ID/source/infra/protected/ecs-preidentity-recovery.mjs \
+  --source-sha256 REVIEWED_PREIDENTITY_SOURCE_SHA256 \
+  --node /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
+  --node-sha256 REVIEWED_NODE_SHA256
+
+env -u NODE_OPTIONS -u NODE_PATH node infra/scripts/install-ecs-release-controls.mjs \
   --control bundle \
-  --source /root/reviewed-release/infra/protected/attest-release-evidence-bundle.mjs \
-  --source-sha256 REVIEWED_SOURCE_SHA256 \
-  --node /usr/bin/node \
+  --source /opt/merchant-releases/RELEASE_ID/source/infra/protected/attest-release-evidence-bundle.mjs \
+  --source-sha256 REVIEWED_BUNDLE_SOURCE_SHA256 \
+  --node /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
   --node-sha256 REVIEWED_NODE_SHA256
 ```
 
 All five options are mandatory and must use independently reviewed SHA-256 values. Run the installer as root only after its protected destination, trust and state directories exist with root ownership and no group/other write access. Invoke repository `.mjs` sources explicitly with `node`; their checkout executable bit is not a trust signal. The installer binds the reviewed source bytes to the reviewed Node runtime, installs atomically, records protected history, and does not generate keys, sign evidence, deploy containers, or provision production data.
+
+The isolated backup CLI drill is intentionally a shell runner, not a Vitest entry. Run it explicitly after the pinned Docker images are locally available:
+
+```sh
+sh tests/postgres-backup-attester-cli-e2e.sh
+```
+
+That runner uses an isolated Docker PostgreSQL 16 instance and synthetic keys/data to exercise snapshot, dump, restore and rejection behavior. It does not validate a production restore. The production backup has passed independent signature verification, but release readiness still requires its separate restore acceptance and evidence review; do not report the complete release gate as passed from the signature result or this drill alone.
+
+The preidentity CLI/FD9 drill is also an explicit shell runner:
+
+```sh
+sh tests/run-ecs-preidentity-isolated-cli.sh
+```
+
+It uses partial Docker and `psql` stubs from `tests/fixtures/ecs-preidentity-isolated/`. It is a deterministic isolated contract drill, NOT real recovery evidence, and must not be cited as proof of a production recovery, restore, deployment, or cutover.
 
 `validate-production-evidence-trust.sh` checks the installed executable against that digest during the release gate. Installation does not create or copy a private key; key provisioning remains a separate host security operation.
 

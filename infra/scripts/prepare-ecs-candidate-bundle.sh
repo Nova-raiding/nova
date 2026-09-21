@@ -83,7 +83,12 @@ tests/release-evidence-bundle-gate.ts
 tests/ecs-release-control-installer.container-check.mjs
 tests/ecs-release-control-installer.test.ts
 tests/postgres-backup-attester.test.ts
+tests/postgres-backup-attester-cli-e2e.sh
 tests/ecs-preidentity-recovery.test.ts
+tests/run-ecs-preidentity-isolated-cli.sh
+tests/fixtures/ecs-preidentity-isolated/docker.mjs
+tests/fixtures/ecs-preidentity-isolated/psql.mjs
+tests/fixtures/ecs-preidentity-isolated/setup.mjs
 tests/worker-apk-repository.test.ts
 infra/scripts/validate-ecs-production-compose.mjs
 infra/scripts/validate-production-config.sh
