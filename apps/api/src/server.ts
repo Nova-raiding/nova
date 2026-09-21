@@ -21630,6 +21630,12 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     // wallet error before the findings can be returned.
     || (req.method === 'GET' && /^\/v1\/products\/[^/]+\/image-review$/u.test(path))
     || ((req.method === 'GET' && /^\/v1\/content-versions\/[^/]+\/review$/u.test(path)) || (req.method === 'POST' && /^\/v1\/content-versions\/[^/]+\/review-decisions$/u.test(path)))
+    // Keep HTTP read-only recovery and workspace-directory views aligned with
+    // the MCP commercial read-only allowlist. These routes do not invoke a
+    // model, reserve points, charge money, or mutate commercial state; letting
+    // the generic HTTP gate run here turns a harmless read into a misleading
+    // COMMERCIAL_ENTITLEMENT_UNAVAILABLE 503 before the handler executes.
+    || (httpOperationPolicy !== undefined && COMMERCIAL_READ_ONLY_METHODS.has(httpOperationPolicy.operation))
   if (httpOperationPolicy && requestWorkspace !== 'unknown' && !workerRoute && !assetScannerRoute && !infrastructureProbe && !isOAuthCallback && !isOAuthAuthorization && !paymentCallbackMatch && !httpCommercialValidationDeferred) {
     await enforceHttpCommercialAccess(req, requestWorkspace, httpOperationPolicy.operation)
   }
