@@ -5,7 +5,7 @@ test.use({ channel: 'chrome' })
 
 const baseUrl = process.env.OPS_BASE_URL ?? 'http://127.0.0.1:18082/'
 
-test('keeps a dirty desktop form until workbench switch is confirmed', async ({ page }) => {
+test('keeps a dirty desktop form when browser history targets the unavailable merchant workbench', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.addInitScript(() => {
     localStorage.setItem('ops_workspace_id', 'ws_demo')
@@ -70,16 +70,7 @@ test('keeps a dirty desktop form until workbench switch is confirmed', async ({ 
     await page.goBack()
   }
   await attemptWorkspaceSwitch()
-  const warning = page.getByRole('dialog', { name: '放弃未保存内容并切换工作台？' })
-  await expect(warning).toBeVisible()
-  await warning.getByRole('button', { name: '继续编辑' }).click()
-  await expect(warning).toBeHidden()
+  await expect(page.getByText('“商家工作区”在平台运营控制台中不可进入，已停留在当前页面。', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/ops\/customer-delivery\?workbench=platform$/u)
   await expect(companyName).toHaveValue('未保存的演示客户')
-
-  await attemptWorkspaceSwitch()
-  await expect(warning).toBeVisible()
-  await warning.getByRole('button', { name: '放弃并切换' }).click()
-  await expect(page).toHaveURL(/\/ops\/rules\?workbench=workspace$/u)
-  await expect(page.getByRole('heading', { name: '平台规则', exact: true })).toBeVisible()
-  await expect(page.getByLabel('公司名称')).toHaveCount(0)
 })
