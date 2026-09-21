@@ -1,0 +1,45 @@
+// Run inside a disposable, network-disabled Node container as root. Never run on a host.
+import { createHash } from 'node:crypto';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+
+assert(existsSync('/.dockerenv'), 'isolated container required');
+assert(process.getuid() === 0);
+assert.deepEqual(readdirSync('/sys/class/net'), ['lo'], 'network-disabled container required');
+const hash = data => createHash('sha256').update(data).digest('hex');
+const root = '/var/lib/merchant-release-security';
+const bin = '/usr/local/libexec/merchant';
+const trust = '/run/release-security/evidence-trust';
+assert(!existsSync(root), 'refuse existing release-security state');
+for (const path of [root, bin, trust, '/reviewed']) mkdirSync(path, { recursive: true, mode: 0o700 });
+const runtime = realpathSync(process.execPath);
+const fixture = Buffer.from('#!/usr/bin/env node\nconsole.log("isolated-reviewed-fixture");\n');
+writeFileSync('/reviewed/control.mjs', fixture, { mode: 0o600, flag: 'wx' });
+const installer = '/source/infra/scripts/install-ecs-release-controls.mjs';
+const args = [installer, '--control', 'backup', '--source', '/reviewed/control.mjs', '--source-sha256', hash(fixture), '--node', runtime, '--node-sha256', hash(readFileSync(runtime))];
+const run = extra => spawnSync(runtime, extra ?? args, { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } });
+let result = run();
+assert.equal(result.status, 0, result.stderr);
+const receipt = JSON.parse(result.stdout);
+const installed = `${bin}/attest-postgres-backup`;
+assert.equal(receipt.previous_sha256, null);
+assert.equal(hash(readFileSync(installed)), receipt.installed_sha256);
+assert.equal(readFileSync(`${trust}/production-backup-attester-sha256`, 'utf8').trim(), receipt.installed_sha256);
+assert.equal(statSync(installed).mode & 0o777, 0o755);
+assert.equal(execFileSync(installed, { encoding: 'utf8' }).trim(), 'isolated-reviewed-fixture');
+const bad = [...args]; bad[bad.indexOf('--source-sha256') + 1] = '0'.repeat(64);
+assert.notEqual(run(bad).status, 0);
+assert.equal(hash(readFileSync(installed)), receipt.installed_sha256);
+mkdirSync(`${root}/control-install.lock`, { mode: 0o700 });
+assert.notEqual(run().status, 0, 'concurrent lock must reject');
+assert.equal(hash(readFileSync(installed)), receipt.installed_sha256);
+// All data lives in this disposable container. Remove only our empty test lock.
+const { rmdirSync } = await import('node:fs');
+rmdirSync(`${root}/control-install.lock`);
+result = run();
+assert.equal(result.status, 0, result.stderr);
+assert.equal(JSON.parse(result.stdout).previous_sha256, receipt.installed_sha256);
+assert(readdirSync(`${root}/control-install-history`).some(name => name === `attest-postgres-backup-${receipt.installed_sha256}`));
+assert(!existsSync(`${root}/production-capability-private.pem`), 'installer must not generate keys');
+console.log('PASS: real root installation, executable/digest readback, checksum rejection, concurrent lock rejection and old-control archival');
