@@ -10362,7 +10362,13 @@ function resolveWorkspace(req: IncomingMessage, candidate?: unknown): string {
     : undefined
   if (!fromHeader && !sessionWorkspace && requiresStrictAuth()) throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_REQUIRED, '受控环境请求必须携带 X-Workspace-Id', 401)
   const workspaceId = fromHeader || sessionWorkspace || 'ws_demo'
-  if (requiresStrictAuth() && principal?.workbench === 'workspace' && principal.workspaces.length > 0 && !principal.workspaces.includes(workspaceId)) {
+  // Local Compose capacity tests may use the explicitly opt-in wildcard grant
+  // to exercise many isolated workspaces with one test token. Authentication
+  // already rejects wildcard grants outside local/non-production mode; keep
+  // the tenant resolver consistent with that boundary instead of turning every
+  // valid wildcard request into a false cross-tenant denial.
+  if (requiresStrictAuth() && principal?.workbench === 'workspace' && principal.workspaces.length > 0
+    && !principal.workspaces.includes(workspaceId) && !principal.workspaces.includes('*')) {
     throw new DomainError(ERROR_CODES.FORBIDDEN, '请求工作区与认证身份不一致', 403)
   }
   knownWorkspaces.add(workspaceId)

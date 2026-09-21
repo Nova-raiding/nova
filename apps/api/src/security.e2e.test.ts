@@ -1508,6 +1508,18 @@ describe('security and access-control acceptance gates', () => {
     expect(allowed.status).toBe(403)
   })
 
+  it('keeps an explicitly enabled local wildcard grant usable across isolated capacity workspaces', async () => {
+    vi.stubEnv('NODE_ENV', 'development')
+    vi.stubEnv('ALLOW_WILDCARD_WORKSPACE_GRANT', 'true')
+    const workspaceId = `ws_capacity_scope_${Date.now()}`
+    await configureBearerMembers([{ token: 'capacity-wildcard-token', workspaceId, grantWorkspaces: ['*'] }])
+    const base = await start()
+    const response = await fetch(`${base}/v1/products`, {
+      headers: { authorization: 'Bearer capacity-wildcard-token', 'x-workspace-id': workspaceId, 'x-ops-workbench': 'workspace' },
+    })
+    expect(response.status).not.toBe(403)
+  })
+
   it('requires an HTTPS OAuth callback in production', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     await configureBearerMembers([{ token: 'token-a', workspaceId: 'ws_oauth' }])
