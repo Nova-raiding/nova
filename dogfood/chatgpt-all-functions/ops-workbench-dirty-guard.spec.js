@@ -55,15 +55,15 @@ test('keeps a dirty desktop form until workbench switch is confirmed', async ({ 
   await workspace.press('Enter')
   await expect(page.getByRole('button', { name: /刷新交付档案/u })).not.toHaveClass(/ant-btn-loading/u)
   await page.getByRole('button', { name: '新建客户', exact: true }).click()
-  const draft = page.locator('form.customer-delivery-create-form')
-  await draft.getByLabel('公司名称').fill('未保存的演示客户')
+  const companyName = page.getByLabel('公司名称').last()
+  await companyName.fill('未保存的演示客户')
 
   await page.getByRole('button', { name: '用户中心', exact: true }).click()
   const warning = page.getByRole('dialog', { name: '放弃未保存内容并切换工作台？' })
   await expect(warning).toBeVisible()
   await warning.getByRole('button', { name: '继续编辑' }).click()
   await expect(warning).toBeHidden()
-  await expect(draft.getByLabel('公司名称')).toHaveValue('未保存的演示客户')
+  await expect(companyName).toHaveValue('未保存的演示客户')
 
   await page.getByRole('button', { name: '用户中心', exact: true }).click()
   await expect(warning).toBeVisible()

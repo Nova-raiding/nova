@@ -19,6 +19,7 @@ import { deliveryDateTimeInputValue } from "./deliveryDateTime.js";
 import { confirmPolicyPropsFor } from "../../utils/destructiveConfirm.js";
 import { CustomerDeliveryUpload } from "./CustomerDeliveryUpload.js";
 import { CustomerDeliveryAccountBinding } from "./CustomerDeliveryAccountBinding.js";
+import { useUnsavedChanges } from "../authz/UnsavedChangesContext.js";
 import type {
   CustomerDeliveryAccount,
   CustomerDeliveryAccountPage,
@@ -306,6 +307,8 @@ export function CustomerDeliverySection({
   const detailRequest = useRef(0);
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [createDirty, setCreateDirty] = useState(false);
+  useUnsavedChanges(showCreate && createDirty, "客户快速建档表单");
   const [filters, setFilters] = useState<CustomerDeliveryFilters>({});
   const [currentPage, setCurrentPage] = useState(1);
   const [filterForm] = Form.useForm<CustomerDeliveryFilters>();
@@ -380,6 +383,7 @@ export function CustomerDeliverySection({
       form.resetFields();
       form.setFieldsValue(record);
       createForm.resetFields();
+      setCreateDirty(false);
       setShowCreate(false);
       message.success("客户档案已创建");
     } catch (error) {
@@ -570,6 +574,7 @@ export function CustomerDeliverySection({
             onClick={() => {
               if (onCreateNavigate) { onCreateNavigate(); return; }
               createForm.resetFields();
+              setCreateDirty(false);
               setShowCreate(true);
             }}
           >
@@ -581,11 +586,11 @@ export function CustomerDeliverySection({
       <Drawer
         title="新建客户档案"
         open={showCreate}
-        onClose={() => setShowCreate(false)}
+        onClose={() => { setCreateDirty(false); setShowCreate(false); }}
         size={480}
         extra={<Button type="primary" loading={creating} onClick={() => createForm.submit()}>创建</Button>}
       >
-        <Form form={createForm} layout="vertical" onFinish={create}>
+        <Form form={createForm} layout="vertical" onFinish={create} onValuesChange={() => setCreateDirty(true)}>
           <Form.Item
             name="companyName"
             label="公司名称"
