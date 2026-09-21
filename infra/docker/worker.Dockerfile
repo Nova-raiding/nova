@@ -22,7 +22,17 @@ RUN npm run build:packages && npx tsc -p apps/worker/tsconfig.build.json
 FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
-RUN apk add --no-cache font-noto-cjk
+ARG APK_REPOSITORY=""
+RUN set -eu; \
+  original_repositories="$(cat /etc/apk/repositories)"; \
+  restore_repositories() { printf '%s\n' "$original_repositories" > /etc/apk/repositories; }; \
+  trap restore_repositories EXIT; \
+  if [ -n "$APK_REPOSITORY" ]; then \
+    repository="$(node -e 'const value = process.argv[1]; const url = new URL(value); const path = url.pathname.replace(/\/$/u, ""); if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || path !== "/alpine/v3.24") process.exit(1); process.stdout.write(`${url.origin}${path}`)' "$APK_REPOSITORY")" \
+      || { echo 'APK_REPOSITORY must be an HTTPS Alpine v3.24 repository root without credentials, query, or fragment' >&2; exit 1; }; \
+    printf '%s/main\n%s/community\n' "$repository" "$repository" > /etc/apk/repositories; \
+  fi; \
+  apk add --no-cache font-noto-cjk
 RUN addgroup -g 10001 -S merchant && adduser -u 10001 -S -D -H -G merchant merchant
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --prefer-offline --no-audit --fund=false
