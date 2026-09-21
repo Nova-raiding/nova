@@ -17,7 +17,13 @@ describe("visibleUsersGovernanceSections", () => {
     expect(visibleUsersGovernanceSections(authorization([
       "workspace.directory.read",
       "authorization.grant.read",
-    ]))).toEqual(["workspaces"]);
+    ]))).toEqual(["workspaces", "authorization"]);
+  });
+
+  it("exposes the authorization center only to sessions with an authorization read capability", () => {
+    expect(visibleUsersGovernanceSections(authorization(["authorization.role.read"]))).toEqual(["authorization"]);
+    expect(visibleUsersGovernanceSections(authorization(["authorization.grant.read"]))).toEqual(["authorization"]);
+    expect(visibleUsersGovernanceSections(authorization(["authorization.role.manage"]))).toEqual([]);
   });
 
   it("returns no task area when the session has no governance read capability", () => {
@@ -39,5 +45,13 @@ describe("visibleUsersGovernanceSections", () => {
     expect(markup).toContain('aria-labelledby="users-governance-unavailable-title"');
     expect(markup).toContain("刷新用户治理权限");
     expect(markup).toContain("不会把未授权结果显示为空数据");
+  });
+
+  it("mounts the authorization center from the user governance route", () => {
+    const markup = renderToStaticMarkup(createElement(UsersGovernanceWorkspace, {
+      model: { authorization: authorization(["authorization.grant.read"]) } as never,
+    }));
+    expect(markup).toContain('role="tab"');
+    expect(markup).toContain("权限与授权");
   });
 });

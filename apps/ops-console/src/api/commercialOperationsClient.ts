@@ -233,6 +233,23 @@ export interface CommercialOrderItem {
   requestId: string | null;
 }
 
+export interface CommercialRefundEvent {
+  id: string;
+  workspaceId: string;
+  orderId: string;
+  requestId: string;
+  revision: number;
+  eventType: string;
+  refundKind: CommercialRefundKind;
+  amountFen: number;
+  pointsToRevoke: number;
+  reason: string;
+  actorId: string;
+  evidence: RecordValue;
+  externalRefundId: string | null;
+  createdAt: string;
+}
+
 export interface CreativePointRateItem {
   id: string;
   actionCode: string;
@@ -430,6 +447,30 @@ export function parseOrders(value: unknown): CommercialPage<CommercialOrderItem>
   })) };
 }
 
+export function parseCommercialRefunds(value: unknown): CommercialPage<CommercialRefundEvent> {
+  const method = commercialOperationsMethods.refundList;
+  const page = pageRows(value, method);
+  const kinds: CommercialRefundKind[] = ["onboarding_pre_deployment", "monthly_unused_points", "point_pack_unused_points", "outage_compensation", "custom_milestone"];
+  return { total: page.total, items: page.rows.map((row) => {
+    const revision = finiteNumber(row.revision);
+    const amountFen = finiteNumber(pick(row, "amount_fen", "amountFen"));
+    const pointsToRevoke = finiteNumber(pick(row, "points_to_revoke", "pointsToRevoke"));
+    const refundKind = pick(row, "refund_kind", "refundKind");
+    if (revision === null || !Number.isSafeInteger(revision) || revision < 1) invalid(method, "revision 缺失");
+    if (amountFen === null || !Number.isSafeInteger(amountFen) || amountFen < 1) invalid(method, "amount_fen 缺失");
+    if (pointsToRevoke === null || !Number.isSafeInteger(pointsToRevoke) || pointsToRevoke < 0) invalid(method, "points_to_revoke 缺失");
+    if (typeof refundKind !== "string" || !kinds.includes(refundKind as CommercialRefundKind)) invalid(method, "refund_kind 无效");
+    return {
+      id: requiredText(row, method, "id", "id"), workspaceId: requiredText(row, method, "workspace_id", "workspace_id", "workspaceId"),
+      orderId: requiredText(row, method, "order_id", "order_id", "orderId"), requestId: requiredText(row, method, "request_id", "request_id", "requestId"),
+      revision, eventType: requiredText(row, method, "event_type", "event_type", "eventType"), refundKind: refundKind as CommercialRefundKind,
+      amountFen, pointsToRevoke, reason: requiredText(row, method, "reason", "reason"), actorId: requiredText(row, method, "actor_id", "actor_id", "actorId"),
+      evidence: object(row.evidence) ? row.evidence : {}, externalRefundId: optionalText(pick(row, "external_refund_id", "externalRefundId")),
+      createdAt: requiredText(row, method, "created_at", "created_at", "createdAt"),
+    };
+  }) };
+}
+
 export function parseRates(value: unknown): CommercialPage<CreativePointRateItem> {
   const method = commercialOperationsMethods.rates;
   const page = pageRows(value, method);
@@ -529,7 +570,7 @@ export const commercialOperationsClient = {
   createPrivateTrialConversionOrder: (workspace: string, creditId: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.privateTrialConversionCreate, { target_workspace_id: workspace, credit_id: creditId, idempotency_key: operationId("private_trial_conversion"), reason }, { signal }),
   verifyPrivateTrialTransfer: (workspace: string, creditId: string, orderId: string, paymentSubjectRef: string, providerEventId: string, providerOrderId: string, nonce: string, payloadHash: string, paidAt: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.privateTrialPaymentVerify, { target_workspace_id: workspace, credit_id: creditId, order_id: orderId, payment_subject_ref: paymentSubjectRef, provider_event_id: providerEventId, provider_order_id: providerOrderId, nonce, payload_hash: payloadHash, paid_at: paidAt, idempotency_key: operationId("private_trial_transfer_verify"), reason, evidence_json: JSON.stringify({ source: "ops_console", action: "manual_transfer_verified" }) }, { signal }),
   verifyCommercialOrderTransfer: (workspace: string, orderId: string, paymentSubjectRef: string, providerEventId: string, providerOrderId: string, nonce: string, payloadHash: string, paidAt: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.orderPaymentVerify, { target_workspace_id: workspace, order_id: orderId, payment_subject_ref: paymentSubjectRef, provider_event_id: providerEventId, provider_order_id: providerOrderId, nonce, payload_hash: payloadHash, paid_at: paidAt, idempotency_key: operationId("commercial_order_transfer_verify"), reason, evidence_json: JSON.stringify({ source: "ops_console", action: "commercial_order_manual_transfer_verified" }) }, { signal }),
-  listCommercialRefunds: (workspace: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.refundList, { target_workspace_id: workspace, limit: "100" }, { signal }),
+  listCommercialRefunds: async (workspace: string, signal?: AbortSignal) => parseCommercialRefunds(await rpc(commercialOperationsMethods.refundList, { target_workspace_id: workspace, limit: "100" }, { signal })),
   requestCommercialRefund: (input: { workspace: string; orderId: string; requestId: string; kind: CommercialRefundKind; amountFen: number; pointsToRevoke: number; reason: string; evidenceRef: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.refundRequest, { target_workspace_id: input.workspace, order_id: input.orderId, request_id: input.requestId, refund_kind: input.kind, amount_fen: String(input.amountFen), points_to_revoke: String(input.pointsToRevoke), reason: input.reason, evidence_json: JSON.stringify(commercialRefundEvidence(input.kind, input.evidenceRef)) }, { signal }),
   approveCommercialRefund: (workspace: string, requestId: string, policyApproval: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.refundApprove, { target_workspace_id: workspace, request_id: requestId, reason, policy_approval_json: JSON.stringify(refundPolicyApproval(policyApproval)) }, { signal }),
   completeCommercialRefund: (workspace: string, requestId: string, externalRefundId: string, evidenceJson: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.refundComplete, { target_workspace_id: workspace, request_id: requestId, external_refund_id: externalRefundId, reason, evidence_json: evidenceJson }, { signal }),

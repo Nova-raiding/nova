@@ -10,6 +10,7 @@ import {
   type CommercialEntitlement,
   type CommercialOperationsClient,
   type CommercialOrderItem,
+  type CommercialRefundEvent,
   type CommercialPage,
   type CreativePointLedgerEntry,
   type CreativePointRateItem,
@@ -194,10 +195,13 @@ export function useCommercialOperations(
   const view = queryState.view;
   const [summary, setSummary] = useState<CommercialDataState<CommercialAccessSummary>>({ status: "idle" });
   const [data, setData] = useState(initialDataStates);
+  const [refunds, setRefunds] = useState<CommercialDataState<CommercialPage<CommercialRefundEvent>>>({ status: "idle" });
   const requestRef = useRef(0);
   const controllerRef = useRef<AbortController | undefined>(undefined);
   const summaryRequestRef = useRef(0);
   const summaryControllerRef = useRef<AbortController | undefined>(undefined);
+  const refundRequestRef = useRef(0);
+  const refundControllerRef = useRef<AbortController | undefined>(undefined);
   const privateSkuReadable = authorization.can(commercialCapabilities.privateSkuRead);
   const targetWorkspaceId = readCommercialTargetWorkspace(typeof window === "undefined" ? "" : window.location.search, authorization);
 
@@ -231,10 +235,13 @@ export function useCommercialOperations(
     sensitiveScopeRef.current = targetWorkspaceId;
     controllerRef.current?.abort();
     summaryControllerRef.current?.abort();
+    refundControllerRef.current?.abort();
     requestRef.current += 1;
     summaryRequestRef.current += 1;
+    refundRequestRef.current += 1;
     setSummary({ status: "idle" });
     setData(initialDataStates());
+    setRefunds({ status: "idle" });
     setQueryState((current) => ({ ...current, record: "", page: 1 }));
     if (typeof window !== "undefined") window.history.replaceState({}, "", commercialQueryUrl(window.location, { record: "", page: 1 }));
   }, [targetWorkspaceId]);
@@ -301,13 +308,34 @@ export function useCommercialOperations(
     }
   }, [authorization, client, enabled, privateSkuReadable, targetWorkspaceId, view]);
 
+  const loadRefunds = useCallback(async () => {
+    refundControllerRef.current?.abort();
+    const request = ++refundRequestRef.current;
+    if (!enabled || !authorization.can(commercialCapabilities.paymentReconcile) || !targetWorkspaceId) {
+      setRefunds({ status: "forbidden" });
+      return;
+    }
+    const controller = new AbortController();
+    refundControllerRef.current = controller;
+    setRefunds({ status: "loading" });
+    try {
+      const result = await client.listCommercialRefunds(targetWorkspaceId, controller.signal);
+      if (request === refundRequestRef.current) setRefunds({ status: "ready", data: result });
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      const error = errorEvidence(cause);
+      if (request === refundRequestRef.current) setRefunds({ status: isForbiddenError(error) ? "forbidden" : "error", error });
+    }
+  }, [authorization, client, enabled, targetWorkspaceId]);
+
   useEffect(() => {
     void loadSummary();
     return () => summaryControllerRef.current?.abort();
   }, [loadSummary]);
 
   useEffect(() => { void loadView(view); }, [loadView, view]);
-  useEffect(() => () => controllerRef.current?.abort(), []);
+  useEffect(() => { void loadRefunds(); }, [loadRefunds]);
+  useEffect(() => () => { controllerRef.current?.abort(); refundControllerRef.current?.abort(); }, []);
 
   const permissions = useMemo(() => ({
     privateSkuReadable,
@@ -323,7 +351,7 @@ export function useCommercialOperations(
     canWriteService: authorization.can(commercialCapabilities.serviceWrite),
   }), [authorization, privateSkuReadable]);
 
-  return { view, setView, query: queryState, setQuery, setTargetWorkspace, summary, data, loadSummary, loadView, permissions, targetWorkspaceId, client };
+  return { view, setView, query: queryState, setQuery, setTargetWorkspace, summary, data, refunds, loadSummary, loadView, loadRefunds, permissions, targetWorkspaceId, client };
 }
 
 export type CommercialOperationsController = ReturnType<typeof useCommercialOperations>;

@@ -26,6 +26,7 @@ import type {
   ServiceFulfillmentItem,
   CommercialTimelineEvent,
   CommercialRefundKind,
+  CommercialRefundEvent,
 } from "../../api/commercialOperationsClient.js";
 import {
   commercialViewCapability,
@@ -593,7 +594,9 @@ function CommercialRefundOperationsPanel({ controller }: { controller: Commercia
   const run = async (id: CommercialOperationId, action: () => Promise<unknown>) => {
     if (!commercialOperationDecision(id, false).execute) return;
     setBusy(true); setOutcome(idleCommercialOperationOutcome);
-    setOutcome(await settleCommercialOperation(action)); setBusy(false);
+    const result = await settleCommercialOperation(action);
+    setOutcome(result); setBusy(false);
+    if (result.status === "success") refreshRefunds();
   };
   const requestConfirmation = (next: PendingCommercialOperation, trigger: HTMLElement | null) => {
     confirmTriggerRef.current = trigger;
@@ -610,12 +613,37 @@ function CommercialRefundOperationsPanel({ controller }: { controller: Commercia
     const result = await settleCommercialOperation(() => target.run(pendingReason));
     setBusy(false); setOutcome(result);
     if (result.status === "error") { setPendingError(result.text); return; }
+    refreshRefunds();
     setPending(undefined);
   };
   const reason = "商业化方案：订单退款人工审核";
+  const refundState = controller.refunds;
+  const refundItems = refundState.data?.items ?? [];
+  const refreshRefunds = () => void controller.loadRefunds();
+  const refundKindLabel = (kind: CommercialRefundKind) => ({ onboarding_pre_deployment: "部署前实施费", monthly_unused_points: "月费未使用点数", point_pack_unused_points: "点数包未使用点数", outage_compensation: "故障补偿", custom_milestone: "定制里程碑" }[kind]);
+  const refundEventLabel = (eventType: string) => ({ requested: "已申请", approved: "已审批", rejected: "已拒绝", completed: "已完成", reconciliation_required: "待对账" }[eventType] ?? eventType);
+  const refundList = refundState.status === "forbidden" ? <Alert type="info" showIcon title="退款记录不可读" description="当前会话没有 commercial.payment.reconcile；不会发起退款记录请求。" />
+    : refundState.status === "error" ? <Alert type="error" showIcon title="退款记录读取失败" description={refundState.error?.message ?? "服务端未返回退款记录"} action={<Button onClick={refreshRefunds}>重试</Button>} />
+      : refundState.status === "loading" && !refundState.data ? <Skeleton active paragraph={{ rows: 3 }} />
+        : <>
+          <Space><Typography.Text strong>服务端退款请求与状态</Typography.Text><Typography.Text type="secondary">{refundItems.length} 条事件（同一请求的申请、审批、完成均保留）</Typography.Text><Button size="small" icon={<ReloadOutlined />} onClick={refreshRefunds}>刷新记录</Button></Space>
+          <Table<CommercialRefundEvent> rowKey="id" size="small" pagination={{ pageSize: 10 }} dataSource={refundItems} locale={{ emptyText: "服务端未返回退款记录" }} scroll={{ x: 1420 }} columns={[
+            { title: "事件时间", dataIndex: "createdAt", width: 180, render: time },
+            { title: "状态", dataIndex: "eventType", width: 120, render: (value: string) => <StateTag value={refundEventLabel(value)} semanticValue={value} /> },
+            { title: "退款请求", dataIndex: "requestId", width: 220, render: (value: string) => <Typography.Text code copyable>{value}</Typography.Text> },
+            { title: "订单", dataIndex: "orderId", width: 210, render: (value: string) => <Typography.Text code>{value}</Typography.Text> },
+            { title: "类型", dataIndex: "refundKind", width: 150, render: (value: CommercialRefundKind) => refundKindLabel(value) },
+            { title: "金额", dataIndex: "amountFen", width: 110, align: "right", render: (value: number) => `¥${(value / 100).toFixed(2)}` },
+            { title: "回滚点数", dataIndex: "pointsToRevoke", width: 100, align: "right", render: point },
+            { title: "操作者", dataIndex: "actorId", width: 150, render: (value: string) => <Typography.Text code>{value}</Typography.Text> },
+            { title: "外部退款凭证", dataIndex: "externalRefundId", width: 210, render: dash },
+          ]} />
+        </>;
   return <section aria-label="商业订单退款" className="commercial-manual-operations">
     <Typography.Title level={5}>商业订单退款 / 点数回滚</Typography.Title>
     <Alert type="warning" showIcon title="退款必须经过双人审批、法律/补充协议证据和外部支付退款凭证；不会因为前端点击直接退款。" />
+    <Space orientation="vertical" size="middle" className="full-width">
+    {refundList}
     <Space wrap>
       <Input aria-label="退款目标 Workspace" placeholder="目标 Workspace" value={workspace} onChange={event => setWorkspace(event.target.value)} />
       <Input aria-label="退款订单 ID" placeholder="订单 ID" value={orderId} onChange={event => setOrderId(event.target.value)} />
@@ -640,6 +668,7 @@ function CommercialRefundOperationsPanel({ controller }: { controller: Commercia
         defaultReason: reason,
         run: confirmedReason => controller.client.completeCommercialRefund(workspace, requestId, externalRefundId, JSON.stringify({ source: "ops_console", action: "external_refund_verified" }), confirmedReason),
       }, event.currentTarget)}>登记退款并回滚点数</Button>
+    </Space>
     </Space>
     <CommercialOperationOutcomeAlert outcome={outcome} />
     <DangerActionModal
