@@ -53,6 +53,16 @@ function normalizedContainers(containers) {
 }
 function workloadDigest(containers) { return `sha256:${digest(Buffer.from(canonical(normalizedContainers(containers))))}` }
 function inventoryDigest(containers) { return `sha256:${digest(Buffer.from(canonical(containers)))}` }
+export function productionApiBaseUrl(value) {
+  assert(typeof value === 'string' && value.length <= 2048, 'production API base URL is invalid')
+  const url = new URL(value)
+  assert(url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash, 'production API base URL must be HTTPS without credentials, query, or fragment')
+  assert(url.pathname === '/' || /^\/(?:[A-Za-z0-9_-]+)(?:\/[A-Za-z0-9_-]+)*\/?$/u.test(url.pathname), 'production API path prefix is unsafe')
+  const prefix = url.pathname === '/' ? '' : url.pathname.replace(/\/$/u, '')
+  const canonicalValue = `${url.origin}${prefix}`
+  assert(value === canonicalValue || value === `${canonicalValue}/`, 'production API base URL must be canonical')
+  return canonicalValue
+}
 function validateRelease(value, label) {
   assert(value && /^[A-Za-z0-9._:-]{1,128}$/u.test(value.releaseId ?? ''), `${label} release id is invalid`)
   assert(GIT.test(value.gitSha ?? '') && HEX.test(value.manifestSha256 ?? '') && IMAGE.test(value.imageSetDigest ?? ''), `${label} identity is invalid`)
@@ -223,6 +233,7 @@ const SPECS = Object.freeze({
 })
 function main(args) {
   assertRuntime(); const command = args[0]; assert(Object.hasOwn(SPECS, command), 'expected capture, phase, verify, or recover'); const options = parseOptions(args.slice(1), SPECS[command]); const get = name => options[name]; const statePath = get('--state'); assertInheritedLock(get('--lock-path'))
+  const productionBase = command === 'recover' ? productionApiBaseUrl(get('--production-api-base-url')) : undefined
   const privatePem = readRegular(PRIVATE_KEY_PATH, 8192), publicPem = readRegular(PUBLIC_KEY_PATH, 8192)
   if (command === 'capture') {
     const planPath = get('--recovery-plan'), mapPath = get('--service-map'), candidateDigestsPath = get('--candidate-image-digests')
@@ -259,10 +270,9 @@ function main(args) {
   const after = collectDatabase(process.env.DATABASE_URL); assert(after.invalidConcurrentIndexes.length === 0 && after.version === recovery.migrationTail && after.historySha256 === recovery.allowedPrefixSha256[recovery.migrationTail], 'forward recovery did not reach a valid target prefix; manual recovery required')
   const up = spawnSync(BIN.docker, ['compose', '-p', project, '--env-file', env, '-f', compose, 'up', '-d', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', timeout, ...document.recovery_target.services], { stdio: 'inherit', env: {} })
   assert(up.status === 0, 'forward recovery runtime failed; manual recovery required')
-  const baseUrl = new URL(get('--production-api-base-url')); assert(baseUrl.protocol === 'https:' && baseUrl.origin === baseUrl.href.replace(/\/$/u, ''), 'production API base URL must be an exact HTTPS origin')
-  cleanExec(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${baseUrl.origin}/livez`])
-  cleanExec(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${baseUrl.origin}/readyz`])
-  const release = jsonCommand(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${baseUrl.origin}/releasez`])
+  cleanExec(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/livez`])
+  cleanExec(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/readyz`])
+  const release = jsonCommand(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/releasez`])
   const identity = release.data?.release ?? release.release
   assert(identity?.release_id === recovery.releaseId && identity?.release_git_sha === recovery.gitSha && identity?.manifest_sha256 === recovery.manifestSha256 && identity?.image_set_digest === recovery.imageSetDigest, 'recovery runtime release identity mismatch; manual recovery required')
   const recoveryStarted = JSON.parse(readRegular(statePath).toString('utf8'))

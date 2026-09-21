@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   createSignedSnapshot,
+  productionApiBaseUrl,
   transitionJournal,
   verifyRecoveryAuthorization,
 } from '../infra/protected/ecs-preidentity-recovery.mjs'
@@ -37,6 +38,20 @@ const binding = {
 }
 
 describe('protected ECS pre-identity recovery', () => {
+  it('normalizes safe HTTPS API prefixes and rejects unsafe URLs before recovery mutation', () => {
+    expect(productionApiBaseUrl('https://yxsona.com/api')).toBe('https://yxsona.com/api')
+    expect(productionApiBaseUrl('https://yxsona.com/api/')).toBe('https://yxsona.com/api')
+    expect(productionApiBaseUrl('https://yxsona.com')).toBe('https://yxsona.com')
+    for (const value of ['http://yxsona.com/api', 'https://user@yxsona.com/api', 'https://yxsona.com/api?q=1', 'https://yxsona.com/api#x', 'https://yxsona.com/api//v1', 'https://yxsona.com/%2e%2e/admin']) expect(() => productionApiBaseUrl(value)).toThrow()
+    const source = readFileSync('infra/protected/ecs-preidentity-recovery.mjs', 'utf8')
+    const validation = source.indexOf("productionApiBaseUrl(get('--production-api-base-url'))")
+    expect(validation).toBeGreaterThan(0)
+    expect(validation).toBeLessThan(source.indexOf("transitionJournal(document, 'recovery_started'"))
+    expect(validation).toBeLessThan(source.indexOf("'never', 'migrate'"))
+    expect(source).toContain('`${productionBase}/livez`')
+    expect(source).toContain('`${productionBase}/readyz`')
+    expect(source).toContain('`${productionBase}/releasez`')
+  })
   it('pins child executables, cleans child environments, hides DB credentials from argv, and requires inherited FD 9', () => {
     const source = readFileSync('infra/protected/ecs-preidentity-recovery.mjs', 'utf8')
     for (const path of ['/usr/bin/docker', '/usr/bin/psql', '/usr/bin/flock', '/usr/bin/curl']) expect(source).toContain(path)

@@ -58,3 +58,5 @@ export function verifyRecoveryAuthorization(
   publicPem: string | Buffer,
   now?: Date,
 ): { authorized: true; targetMigration: number }
+
+export function productionApiBaseUrl(value: string): string
