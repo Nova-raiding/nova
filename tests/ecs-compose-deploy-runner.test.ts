@@ -62,15 +62,26 @@ describe('verified ECS Compose deployment runner', () => {
 
   it('captures rollback state and invokes the protected entrypoint on post-mutation failure', () => {
     const script = source()
-    expect(script).toContain('schema_version:"ecs-predeploy-state/1"')
-    expect(script).toContain('fs.openSync(process.env.STATE_PATH,"wx",0o600)')
+    expect(script).toContain('ECS_PREIDENTITY_RECOVERY_ENTRYPOINT')
+    expect(script).toContain('capture')
+    for (const phase of ['nonce_consumed', 'migration_started', 'migration_complete', 'runtime_cutover_started', 'runtime_identity_verified']) expect(script).toContain(`--phase ${phase}`)
+    expect(script).toContain('recover --state "$state_path"')
+    expect(script).toContain('Ordinary rollback deliberately retains its complete /releasez current')
     expect(script).toContain('mutation_started=true')
-    expect(script).toContain('ECS_DEPLOY_STATE_PATH="$state_path"')
+    expect(script).not.toContain('ECS_DEPLOY_STATE_PATH="$state_path"')
     expect(script).toContain('protected rollback entrypoint failed; production remains blocked')
     expect(script).toContain('flock -u 9')
     for (const name of ['ECS_ROLLBACK_PLAN_PATH', 'ECS_ROLLBACK_COMPOSE_PATH', 'ECS_ROLLBACK_ENV_FILE', 'ECS_ROLLBACK_IMAGE_DIGESTS_JSON', 'ECS_ROLLBACK_STATE_PATH']) expect(script).toContain(name)
     expect(script).toContain('invoke-ecs-automatic-rollback.sh')
-    expect(script.indexOf('mutation_started=true')).toBeLessThan(script.indexOf('run --rm --no-deps --pull never migrate'))
+    const consume = script.indexOf('consume-production-evidence-nonce.sh')
+    const noncePhase = script.indexOf('--phase nonce_consumed')
+    const migrationPhase = script.indexOf('--phase migration_started')
+    const mutation = script.indexOf('mutation_started=true')
+    const migration = script.indexOf('run --rm --no-deps --pull never migrate')
+    expect(consume).toBeLessThan(noncePhase)
+    expect(noncePhase).toBeLessThan(migrationPhase)
+    expect(migrationPhase).toBeLessThan(mutation)
+    expect(mutation).toBeLessThan(migration)
   })
 
   it('executes the automatic rollback entrypoint with the complete frozen capsule contract', () => {
@@ -91,6 +102,10 @@ describe('verified ECS Compose deployment runner', () => {
       PRODUCTION_API_BASE_URL: expected.api, DATABASE_URL: expected.database, ECS_FAILED_RELEASE_ID: expected.failed,
     } })
     expect(JSON.parse(readFileSync(capture, 'utf8'))).toEqual(expected)
+    // The legacy rollback wrapper never parsed ecs-predeploy-state/1 and still
+    // receives only its frozen capsule contract. The new signed journal is not
+    // smuggled in as a replacement release identity.
+    expect(readFileSync('infra/scripts/invoke-ecs-automatic-rollback.sh', 'utf8')).not.toContain('ECS_DEPLOY_STATE_PATH')
   })
 
   it('accepts only matching release metadata and then runs the authenticated canary', () => {

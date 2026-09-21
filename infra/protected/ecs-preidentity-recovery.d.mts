@@ -1,0 +1,60 @@
+export interface ReleaseBinding {
+  releaseId: string
+  gitSha: string
+  manifestSha256: string
+  imageSetDigest: string
+}
+
+export interface RecoveryBinding extends ReleaseBinding {
+  composeSha256: string
+  envSha256: string
+  imageDigestsSha256: string
+  migrationTail: number
+  allowedPrefixSha256: Record<number, string>
+  services: string[]
+}
+
+export interface ObservedRecoveryState {
+  composeProject: string
+  containers: Array<{ service: string; id: string; imageId: string; configHash: string; state: string }>
+  inventory: Array<Record<string, unknown>>
+  candidateImageIds: string[]
+  candidateExclusiveRunning?: boolean
+  candidateIdentityRunning?: boolean
+  database: { version: number; historySha256: string; invalidConcurrentIndexes: string[] }
+}
+
+export interface SignedRecoveryJournal extends Record<string, unknown> {
+  phase: string
+  signature_base64: string
+  predeployment_workload: {
+    services: Array<Record<string, unknown>>
+    container_set_digest: string
+    inventory_digest: string
+  }
+  database_before: { migration_version: number; migration_history_sha256: string }
+  deployment_nonce_sha256: string
+}
+
+export function createSignedSnapshot(
+  observed: ObservedRecoveryState,
+  binding: { attemptId: string; deploymentNonce: string; keyId: string; candidate: ReleaseBinding; recovery: RecoveryBinding },
+  privatePem: string | Buffer,
+  publicPem: string | Buffer,
+  now?: Date,
+): SignedRecoveryJournal
+
+export function transitionJournal(document: SignedRecoveryJournal, nextPhase: string, privatePem: string | Buffer, publicPem: string | Buffer, now?: Date): SignedRecoveryJournal
+
+export function verifyRecoveryAuthorization(
+  document: SignedRecoveryJournal,
+  input: {
+    observed: Pick<ObservedRecoveryState, 'composeProject' | 'containers' | 'inventory'>
+    deploymentNonce: string
+    recovery: RecoveryBinding
+    candidateContainersRunning?: boolean
+    database: ObservedRecoveryState['database']
+  },
+  publicPem: string | Buffer,
+  now?: Date,
+): { authorized: true; targetMigration: number }

@@ -4,12 +4,14 @@ set -eu
 # Apply an already-rendered, digest-pinned ECS Compose release. This script is
 # intentionally host-local: transport and SSH remain an operator boundary.
 root=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd -P)
+readonly ECS_PREIDENTITY_RECOVERY_ENTRYPOINT=/usr/local/libexec/merchant/ecs-preidentity-recovery
 
 : "${CONFIRM_ECS_DEPLOY:?Set CONFIRM_ECS_DEPLOY=YES after reviewing the exact candidate}"
 : "${PRODUCTION_CONFIG_PATH:?PRODUCTION_CONFIG_PATH is required}"
 : "${RENDERED_COMPOSE_PATH:?RENDERED_COMPOSE_PATH is required}"
 : "${ECS_CANDIDATE_IDENTITY_PATH:?ECS_CANDIDATE_IDENTITY_PATH is required}"
 : "${ECS_DEPLOY_STATE_DIR:?ECS_DEPLOY_STATE_DIR is required}"
+: "${ECS_PREIDENTITY_SERVICE_MAP_PATH:?ECS_PREIDENTITY_SERVICE_MAP_PATH is required}"
 : "${ECS_DEPLOY_LOCK_PATH:?ECS_DEPLOY_LOCK_PATH is required}"
 : "${ECS_ROLLBACK_ENTRYPOINT:?ECS_ROLLBACK_ENTRYPOINT is required}"
 : "${ECS_ROLLBACK_PLAN_PATH:?ECS_ROLLBACK_PLAN_PATH is required}"
@@ -39,6 +41,8 @@ APP_URL="$PRODUCTION_API_BASE_URL" APPROVED_ORIGIN="$PRODUCTION_APPROVED_ORIGIN"
 for path in "$PRODUCTION_CONFIG_PATH" "$RENDERED_COMPOSE_PATH" "$ECS_CANDIDATE_IDENTITY_PATH"; do
   [ -f "$path" ] && [ ! -L "$path" ] || { echo "deployment input must be a regular non-symlink file: $path" >&2; exit 2; }
 done
+[ -x "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" ] && [ -f "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" ] && [ ! -L "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" ] || { echo 'protected preidentity recovery entrypoint is not installed safely' >&2; exit 2; }
+[ -f "$ECS_PREIDENTITY_SERVICE_MAP_PATH" ] && [ ! -L "$ECS_PREIDENTITY_SERVICE_MAP_PATH" ] || { echo 'preidentity reviewed service map must be a regular non-symlink file' >&2; exit 2; }
 for path in "$ECS_ROLLBACK_PLAN_PATH" "$ECS_ROLLBACK_COMPOSE_PATH" "$ECS_ROLLBACK_ENV_FILE"; do
   [ -f "$path" ] && [ ! -L "$path" ] || { echo "rollback capsule input must be a regular non-symlink file: $path" >&2; exit 2; }
   case "$path" in /*) ;; *) echo "rollback capsule input must be absolute: $path" >&2; exit 2 ;; esac
@@ -77,6 +81,8 @@ assert_parent_chain "$state_dir" 'deployment state directory'
 assert_protected "$ECS_DEPLOY_LOCK_PATH" 'deployment lock'
 assert_parent_chain "$lock_dir" 'deployment lock'
 assert_protected "$ECS_ROLLBACK_ENTRYPOINT" 'rollback entrypoint'
+assert_protected "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" 'preidentity recovery entrypoint'
+assert_protected "$ECS_PREIDENTITY_SERVICE_MAP_PATH" 'preidentity reviewed service map'
 for protected_input in "$ECS_ROLLBACK_PLAN_PATH" "$ECS_ROLLBACK_COMPOSE_PATH" "$ECS_ROLLBACK_ENV_FILE"; do
   assert_protected "$protected_input" 'rollback capsule input'
   assert_parent_chain "$(dirname "$protected_input")" 'rollback capsule input'
@@ -146,6 +152,7 @@ verified_compose=$(mktemp "${TMPDIR:-/tmp}/merchant-ecs-compose.XXXXXXXX.yml")
 verified_config=$(mktemp "${TMPDIR:-/tmp}/merchant-ecs-config.XXXXXXXX.yml")
 mutation_started=false
 rollback_attempted=false
+runtime_cutover_started=false
 state_path=
 cleanup() { rm -f -- "$verified_compose" "$verified_config"; }
 rollback_on_failure() {
@@ -153,16 +160,28 @@ rollback_on_failure() {
   trap - EXIT HUP INT TERM
   if [ "$mutation_started" = true ] && [ "$rollback_attempted" = false ]; then
     rollback_attempted=true
-    echo "ECS deployment failed after mutation; invoking protected rollback entrypoint" >&2
-    # The rollback runner acquires this same canonical lock and validates the
-    # live failed candidate before applying its frozen capsule.
-    flock -u 9
-    ECS_DEPLOY_STATE_PATH="$state_path" ECS_FAILED_RELEASE_ID="$RELEASE_ID" \
-      ECS_COMPOSE_PROJECT="$project" ECS_DEPLOY_LOCK_PATH="$ECS_DEPLOY_LOCK_PATH" \
-      ECS_ROLLBACK_PLAN_PATH="$ECS_ROLLBACK_PLAN_PATH" ECS_ROLLBACK_COMPOSE_PATH="$ECS_ROLLBACK_COMPOSE_PATH" \
-      ECS_ROLLBACK_ENV_FILE="$ECS_ROLLBACK_ENV_FILE" ECS_ROLLBACK_IMAGE_DIGESTS_JSON="$ECS_ROLLBACK_IMAGE_DIGESTS_JSON" \
-      ECS_ROLLBACK_STATE_PATH="$ECS_ROLLBACK_STATE_PATH" PRODUCTION_API_BASE_URL="$PRODUCTION_API_BASE_URL" DATABASE_URL="$DATABASE_URL" \
-      sh "$root/infra/scripts/invoke-ecs-automatic-rollback.sh" || echo 'protected rollback entrypoint failed; production remains blocked' >&2
+    recovery_succeeded=false
+    if [ "$runtime_cutover_started" = false ]; then
+      echo "ECS deployment failed before runtime cutover; invoking protected preidentity forward recovery" >&2
+      # The helper verifies and locks inherited FD 9 against the canonical lock,
+      # independently re-inspects the old workload/DB, and refuses partial cutover.
+      DATABASE_URL="$DATABASE_URL" "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" recover --state "$state_path" --service-map "$ECS_PREIDENTITY_SERVICE_MAP_PATH" \
+        --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH" \
+        --recovery-compose "$ECS_ROLLBACK_COMPOSE_PATH" --recovery-env "$ECS_ROLLBACK_ENV_FILE" \
+        --recovery-image-digests "$rollback_capsule_dir/image-digests.json" --compose-project "$project" \
+        --lock-path "$ECS_DEPLOY_LOCK_PATH" --production-api-base-url "$PRODUCTION_API_BASE_URL" && recovery_succeeded=true
+    fi
+    if [ "$recovery_succeeded" = false ]; then
+      echo "ECS deployment failed after mutation; invoking protected rollback entrypoint" >&2
+      flock -u 9
+      # Ordinary rollback deliberately retains its complete /releasez current
+      # identity check; no preidentity exception is passed into that executor.
+      ECS_FAILED_RELEASE_ID="$RELEASE_ID" ECS_COMPOSE_PROJECT="$project" ECS_DEPLOY_LOCK_PATH="$ECS_DEPLOY_LOCK_PATH" \
+        ECS_ROLLBACK_PLAN_PATH="$ECS_ROLLBACK_PLAN_PATH" ECS_ROLLBACK_COMPOSE_PATH="$ECS_ROLLBACK_COMPOSE_PATH" \
+        ECS_ROLLBACK_ENV_FILE="$ECS_ROLLBACK_ENV_FILE" ECS_ROLLBACK_IMAGE_DIGESTS_JSON="$ECS_ROLLBACK_IMAGE_DIGESTS_JSON" \
+        ECS_ROLLBACK_STATE_PATH="$ECS_ROLLBACK_STATE_PATH" PRODUCTION_API_BASE_URL="$PRODUCTION_API_BASE_URL" DATABASE_URL="$DATABASE_URL" \
+        sh "$root/infra/scripts/invoke-ecs-automatic-rollback.sh" || echo 'protected rollback entrypoint failed; production remains blocked' >&2
+    fi
   fi
   cleanup
   exit "$status"
@@ -212,7 +231,9 @@ mkdir -m 0700 "$rollback_capsule_dir" 2>/dev/null || { echo 'rollback capsule sn
 cp "$ECS_ROLLBACK_PLAN_PATH" "$rollback_capsule_dir/plan.json"
 cp "$ECS_ROLLBACK_COMPOSE_PATH" "$rollback_capsule_dir/compose.yml"
 cp "$ECS_ROLLBACK_ENV_FILE" "$rollback_capsule_dir/runtime.env"
-chmod 0400 "$rollback_capsule_dir/plan.json" "$rollback_capsule_dir/compose.yml" "$rollback_capsule_dir/runtime.env"
+printf '%s' "$ECS_ROLLBACK_IMAGE_DIGESTS_JSON" > "$rollback_capsule_dir/image-digests.json"
+printf '%s' "$IMAGE_DIGESTS_JSON" > "$rollback_capsule_dir/candidate-image-digests.json"
+chmod 0400 "$rollback_capsule_dir/plan.json" "$rollback_capsule_dir/compose.yml" "$rollback_capsule_dir/runtime.env" "$rollback_capsule_dir/image-digests.json" "$rollback_capsule_dir/candidate-image-digests.json"
 ECS_ROLLBACK_PLAN_PATH="$rollback_capsule_dir/plan.json"
 ECS_ROLLBACK_COMPOSE_PATH="$rollback_capsule_dir/compose.yml"
 ECS_ROLLBACK_ENV_FILE="$rollback_capsule_dir/runtime.env"
@@ -237,9 +258,13 @@ required(plan.database?.strategy==='forward_only'&&plan.database?.schema_downgra
 required(digests&&Object.keys(digests).length>0&&Object.values(digests).every(value=>/^sha256:[0-9a-f]{64}$/.test(value)),'rollback capsule image digests are invalid')
 NODE
 state_path="$ECS_DEPLOY_STATE_DIR/${RELEASE_ID}.predeploy.json"
-CURRENT_RELEASE_ID="$RELEASE_ID" CURRENT_GIT_SHA="$git_sha" CURRENT_MANIFEST_SHA256="$manifest_sha256" CURRENT_IMAGE_SET_DIGEST="$image_set_digest" \
-  docker compose -p "$project" -f "$verified_compose" ps --format json | \
-  STATE_PATH="$state_path" node -e 'const fs=require("fs");const raw=fs.readFileSync(0,"utf8").trim();let compose=[];if(raw){try{const parsed=JSON.parse(raw);compose=Array.isArray(parsed)?parsed:[parsed]}catch{compose=raw.split(/\n+/).map(line=>JSON.parse(line))}}const payload={schema_version:"ecs-predeploy-state/1",candidate:{release_id:process.env.CURRENT_RELEASE_ID,git_sha:process.env.CURRENT_GIT_SHA,manifest_sha256:process.env.CURRENT_MANIFEST_SHA256,image_set_digest:process.env.CURRENT_IMAGE_SET_DIGEST},captured_at:new Date().toISOString(),compose_ps:compose};const fd=fs.openSync(process.env.STATE_PATH,"wx",0o600);try{fs.writeFileSync(fd,JSON.stringify(payload)+"\n")}finally{fs.closeSync(fd)}'
+attempt_id="attempt_$(printf '%s:%s:%s' "$RELEASE_ID" "$DEPLOYMENT_NONCE" "$$" | shasum -a 256 | awk '{print $1}')"
+DATABASE_URL="$DATABASE_URL" "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" capture --state "$state_path" --attempt-id "$attempt_id" \
+  --lock-path "$ECS_DEPLOY_LOCK_PATH" \
+  --service-map "$ECS_PREIDENTITY_SERVICE_MAP_PATH" --compose-project "$project" \
+  --candidate-release-id "$RELEASE_ID" --candidate-git-sha "$git_sha" --candidate-manifest-sha256 "$manifest_sha256" \
+  --candidate-image-set-digest "$image_set_digest" --candidate-image-digests "$rollback_capsule_dir/candidate-image-digests.json" \
+  --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH"
 [ -s "$state_path" ] || { echo 'pre-deploy state capture failed' >&2; exit 1; }
 
 # Consume only after every read-only gate passes and immediately before the
@@ -247,18 +272,23 @@ CURRENT_RELEASE_ID="$RELEASE_ID" CURRENT_GIT_SHA="$git_sha" CURRENT_MANIFEST_SHA
 assert_inputs_unchanged
 IMAGE_DIGEST="$image_set_digest" PRODUCTION_EVIDENCE_MANIFEST_SHA256="$manifest_sha256" RELEASE_GIT_SHA="$git_sha" PRODUCTION_EVIDENCE_REPO_ROOT="$root" \
   sh "$root/infra/scripts/consume-production-evidence-nonce.sh"
-mutation_started=true
+"$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase nonce_consumed
 
 # Migration must finish before any candidate runtime container is recreated.
 # Destructive service, volume, and database cleanup is deliberately absent.
 assert_inputs_unchanged
+"$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase migration_started
+mutation_started=true
 docker compose -p "$project" -f "$verified_compose" run --rm --no-deps --pull never migrate
 assert_inputs_unchanged
 # The read-only preflight accepts only an immutable prefix of this candidate's
 # chain. Before any runtime container is recreated, prove the migration job
 # advanced both runtime roles to the complete reviewed chain.
 MIGRATION_CHAIN_MODE=complete sh "$root/infra/scripts/verify-database-migration-chain.sh"
+"$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase migration_complete
 assert_inputs_unchanged
+"$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase runtime_cutover_started
+runtime_cutover_started=true
 docker compose -p "$project" -f "$verified_compose" up -d --no-build --pull never --remove-orphans --wait --wait-timeout "${ECS_COMPOSE_WAIT_TIMEOUT_SECONDS:-300}" \
   api api-replica ui ops-ui payment-gateway worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan clamav pilot-gateway
 
@@ -290,6 +320,7 @@ else
     --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$git_sha" \
     --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_root" --key-id "$trusted_key_id"
 fi
+"$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase runtime_identity_verified
 
 mutation_started=false
 trap - EXIT HUP INT TERM
