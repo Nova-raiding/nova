@@ -142,6 +142,7 @@ jobs:
           packages/persistence/src/migration-078-release.postgres.test.ts
           packages/persistence/src/migration-079-release.postgres.test.ts
           packages/persistence/src/migration-integrity-release.postgres.test.ts
+          packages/persistence/src/migration-rls-integrity-release.postgres.test.ts
           packages/persistence/src/migration-081-release.postgres.test.ts
           packages/persistence/src/migration-082.test.ts
           packages/persistence/src/migration-083.test.ts
