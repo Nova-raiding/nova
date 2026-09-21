@@ -56,6 +56,7 @@ const paymentEnvironment = {
   WORKER_AUTOMATION_API_SIGNING_SECRET: 'prod-automation-signing-secret',
   DATABASE_URL: 'postgres://merchant_app:opaque-production-secret@postgres:5432/merchant',
   OPS_DATABASE_URL: 'postgres://merchant_ops:opaque-production-ops-secret@postgres:5432/merchant',
+  PGPASSWORD: 'opaque-production-schema-owner-secret',
   MODEL_COST_ESTIMATE_VERSION: 'production-rate-card-2026-09-15',
 }
 

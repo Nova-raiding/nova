@@ -505,6 +505,23 @@ services:
       - ${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required}:/run/release-evidence/platform-capability.json:ro
       - /run/release-security/evidence-trust:/run/release-security/evidence-trust:ro
 
+  # ECS keeps the stateful single-node services in the Compose release so a
+  # fresh 101 host has a deterministic persistence boundary. Their runtime
+  # credentials must come from the protected production env, never from the
+  # local acceptance defaults in the base file. Host ports stay private to the
+  # Compose network; the API reaches them by the service names below.
+  postgres:
+    environment:
+      POSTGRES_DB: merchant
+      POSTGRES_USER: merchant
+      POSTGRES_PASSWORD: ${PGPASSWORD:?PGPASSWORD is required for the ECS database service}
+    ports: !override []
+
+  redis:
+    ports: !override []
+    volumes: !override
+      - merchant-redis:/data
+
   worker-sync:
     <<: *ecs-node-hardening
     environment:
@@ -570,3 +587,6 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
+
+volumes:
+  merchant-redis:
