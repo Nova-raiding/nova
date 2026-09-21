@@ -1,3 +1,3 @@
 export function visibleModelsPageSections(canModelMarkup: boolean): string[] {
-  return ["model-status", ...(canModelMarkup ? ["model-markup"] : [])];
+  return canModelMarkup ? ["model-markup"] : [];
 }

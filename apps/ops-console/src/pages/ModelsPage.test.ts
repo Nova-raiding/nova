@@ -7,11 +7,25 @@ import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 
 describe("models page sections", () => {
   it("hides markup configuration without platform_ops permission", () => {
-    expect(visibleModelsPageSections(false)).toEqual(["model-status"]);
+    expect(visibleModelsPageSections(false)).toEqual([]);
   });
 
   it("shows markup configuration to platform_ops", () => {
-    expect(visibleModelsPageSections(true)).toEqual(["model-status", "model-markup"]);
+    expect(visibleModelsPageSections(true)).toEqual(["model-markup"]);
+  });
+
+  it("does not render billing data or controls without commercial read permission", () => {
+    const markup = renderToStaticMarkup(createElement(ModelsPage, {
+      model: {
+        canModelMarkup: false,
+        canModelMarkupUpdate: false,
+      } as unknown as OpsConsoleModel,
+    }));
+
+    expect(markup).toContain("当前会话没有商业计费读取权限");
+    expect(markup).not.toContain("Token 成本倍率");
+    expect(markup).not.toContain("Token 计费倍率");
+    expect(markup).not.toContain("Revision");
   });
 
   it("renders the merged-model notice and the billing markup controls without a redundant hero", () => {

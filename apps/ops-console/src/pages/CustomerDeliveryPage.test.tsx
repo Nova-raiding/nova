@@ -24,6 +24,12 @@ async function closeBrowserWithDeadline(instance?: Browser) {
 const settle = (page: Page) => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 
 describe("customer delivery workspace selection", () => {
+  it("points operators to the real shared workspace selection action", () => {
+    expect(pageSource).toContain("商家经营台账");
+    expect(pageSource).toContain("查看该企业授权");
+    expect(pageSource).not.toContain("请先在「商业化总览」中选择目标企业");
+  });
+
   it("labels workspaces with enterprise identity and blocks disabled workspaces", () => {
     expect(customerDeliveryWorkspaceOptions([
       { workspaceId: "ws_active", enterpriseName: "Store Nova测试商家", status: "active", planName: "专业版", monthlyPriceCny: 0, usedTasks: 0, includedTasks: 100, subscriptionStatus: "active", memberCount: 1 },

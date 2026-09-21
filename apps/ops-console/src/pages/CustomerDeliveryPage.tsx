@@ -400,7 +400,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     >
       {!canRead ? <Alert type="warning" showIcon title="当前会话没有客户交付读取权限" description="请切换到具备 customer.delivery.read 的平台运营工作区。" /> : null}
       {canRead && !canUpdate ? <Alert style={{ marginBottom: 16 }} type="info" showIcon title="当前会话仅可查看客户交付" description="保存、上传和流程变更需要 customer.delivery.update 权限。" /> : null}
-      {!targetWorkspaceId && canRead ? <Alert style={{ marginBottom: 16 }} type="warning" showIcon title="尚未选择客户工作区" description="客户交付只能读取和写入操作员显式选择的工作区。请先在「商业化总览」中选择目标企业，本页的档案读取与建档、上传、验收写动作会随该选择启用。" /> : null}
+      {!targetWorkspaceId && canRead ? <Alert style={{ marginBottom: 16 }} type="warning" showIcon title="尚未选择客户工作区" description="客户交付只能读取和写入操作员显式选择的工作区。请先在平台总览的「商家经营台账」中点击“查看该企业授权”，再返回本页；档案读取与建档、上传、验收写动作会随该选择启用。" /> : null}
       {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon title="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
       {mutationError && !createPage ? <Alert style={{ marginBottom: 16 }} type="error" showIcon title="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
       {createPage ? (<>
