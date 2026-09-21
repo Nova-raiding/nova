@@ -114,14 +114,13 @@ Codex CLI 目前把本地插件源也归在 `plugin marketplace` 命令组下；
 推荐使用仓库提供的 macOS 安装器交接凭据。它从标准输入读取短期 token，写入当前用户的
 launchd 会话，只输出脱敏结果；不会把 token 写入仓库、命令历史或插件 manifest：
 
-    printf '%s\n' '<从商家后台一次性获取的短期 token>' | \
-      sh apps/plugin/scripts/install-local-macos.sh \
-        --base-url 'https://yxsona.com' --workspace 'ws_<管理员分配的工作区>'
+    sh apps/plugin/scripts/install-local-macos.sh \
+      --base-url 'https://yxsona.com' --workspace 'ws_<管理员分配的工作区>'
 
-生产操作不应把真实 token 放在 `printf` 或命令行中（上例仅展示管道形状，实际应在隐藏输入
-提示中粘贴）。直接运行脚本会关闭回显并提示输入。它只支持 macOS，拒绝远程 HTTP、带查询参数
-的地址和缺少工作区的配置；完成后仍须完全退出并重新打开 ChatGPT/Codex。脚本不会声称已完成
-ChatGPT 授权，也不会替代商家后台登录。
+脚本会依次关闭回显并读取 access token 和 refresh token；不要把真实 token 放在 `printf`、命令行
+参数或 shell 历史中。它只支持 macOS，拒绝远程 HTTP、带查询参数的地址和缺少工作区的配置；
+完成后仍须完全退出并重新打开 ChatGPT/Codex。脚本不会声称已完成 ChatGPT 授权，也不会替代
+商家后台登录。
 
 若用户只在本机运行 API，可将 `--base-url` 换为 `http://127.0.0.1:8787`；正式云端请求使用
 HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 token。

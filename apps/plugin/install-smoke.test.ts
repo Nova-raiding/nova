@@ -161,9 +161,9 @@ esac
     const launchctl = resolve(directory, 'launchctl')
     const uname = resolve(directory, 'uname')
     const node = resolve(directory, 'node-probe')
-    writeFileSync(launchctl, `#!/bin/sh\ncase "$2" in\n  MERCHANT_MCP_BASE_URL) printf '%s' 'http://127.0.0.1:8790' ;;\n  MERCHANT_WORKSPACE_ID) printf '%s' 'ws_demo' ;;\n  MERCHANT_MCP_TOKEN) printf '%s' 'test-token' ;;\n  MERCHANT_STRICT_AUTH) printf '%s' 'true' ;;\n  MERCHANT_ALLOW_FIXTURE_FALLBACK) printf '%s' 'true' ;;\n  MERCHANT_MCP_WRITE_ENABLED) printf '%s' 'false' ;;\n  MERCHANT_ASSET_RESOURCE_DOMAINS) printf '%s' 'https://assets.example.test' ;;\nesac\n`)
+    writeFileSync(launchctl, `#!/bin/sh\ncase "$2" in\n  MERCHANT_MCP_BASE_URL) printf '%s' 'http://127.0.0.1:8790' ;;\n  MERCHANT_WORKSPACE_ID) printf '%s' 'ws_demo' ;;\n  MERCHANT_MCP_TOKEN) printf '%s' 'test-token' ;;\n  MERCHANT_MCP_REFRESH_TOKEN) printf '%s' 'test-refresh-token' ;;\n  MERCHANT_STRICT_AUTH) printf '%s' 'true' ;;\n  MERCHANT_ALLOW_FIXTURE_FALLBACK) printf '%s' 'true' ;;\n  MERCHANT_MCP_WRITE_ENABLED) printf '%s' 'false' ;;\n  MERCHANT_ASSET_RESOURCE_DOMAINS) printf '%s' 'https://assets.example.test' ;;\nesac\n`)
     writeFileSync(uname, `#!/bin/sh\nprintf '%s\n' Darwin\n`)
-    writeFileSync(node, `#!/bin/sh\ncase "\${1:-}" in\n  -e) exit 0 ;;\n  -p) printf '%s' '22.0.0'; exit 0 ;;\nesac\nprintf '%s|%s|%s|%s|%s|%s|%s' "$MERCHANT_MCP_BASE_URL" "$MERCHANT_WORKSPACE_ID" "$MERCHANT_MCP_TOKEN" "$MERCHANT_STRICT_AUTH" "$MERCHANT_ALLOW_FIXTURE_FALLBACK" "$MERCHANT_MCP_WRITE_ENABLED" "$MERCHANT_ASSET_RESOURCE_DOMAINS"\n`)
+    writeFileSync(node, `#!/bin/sh\ncase "\${1:-}" in\n  -e) exit 0 ;;\n  -p) printf '%s' '22.0.0'; exit 0 ;;\nesac\nprintf '%s|%s|%s|%s|%s|%s|%s|%s' "$MERCHANT_MCP_BASE_URL" "$MERCHANT_WORKSPACE_ID" "$MERCHANT_MCP_TOKEN" "$MERCHANT_MCP_REFRESH_TOKEN" "$MERCHANT_STRICT_AUTH" "$MERCHANT_ALLOW_FIXTURE_FALLBACK" "$MERCHANT_MCP_WRITE_ENABLED" "$MERCHANT_ASSET_RESOURCE_DOMAINS"\n`)
     chmodSync(launchctl, 0o755)
     chmodSync(uname, 0o755)
     chmodSync(node, 0o755)
@@ -176,11 +176,12 @@ esac
           MERCHANT_MCP_BASE_URL: '',
           MERCHANT_WORKSPACE_ID: '${MERCHANT_WORKSPACE_ID}',
           MERCHANT_MCP_TOKEN: 'host-token',
+          MERCHANT_MCP_REFRESH_TOKEN: '${MERCHANT_MCP_REFRESH_TOKEN}',
           MERCHANT_STRICT_AUTH: '${MERCHANT_STRICT_AUTH}',
         },
       })
       expect(result.status).toBe(0)
-      expect(result.stdout).toBe('http://127.0.0.1:8790|ws_demo|host-token|true|true|false|https://assets.example.test')
+      expect(result.stdout).toBe('http://127.0.0.1:8790|ws_demo|host-token|test-refresh-token|true|true|false|https://assets.example.test')
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
