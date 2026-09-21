@@ -112,12 +112,17 @@ x-ecs-worker-environment: &ecs-worker-environment
   NODE_ENV: production
   DATABASE_URL: ${DATABASE_URL:?DATABASE_URL production secret is required}
   WORKER_WORKSPACES: ${WORKER_WORKSPACES:?WORKER_WORKSPACES=auto or an explicit production workspace allowlist is required}
+  NODE_EXTRA_CA_CERTS: /run/secrets/postgres_server.crt
 
 x-ecs-node-hardening: &ecs-node-hardening
   user: "10001:10001"
   read_only: true
   security_opt: [no-new-privileges:true]
   cap_drop: [ALL]
+  environment:
+    NODE_EXTRA_CA_CERTS: /run/secrets/postgres_server.crt
+  volumes:
+    - /opt/merchant-deploy/deploy/secrets/postgres_server.crt:/run/secrets/postgres_server.crt:ro
   tmpfs:
     - "/tmp:rw,nosuid,nodev,noexec,size=64m"
 
@@ -235,6 +240,7 @@ services:
       PLATFORM_ACCOUNT_PASSWORD_HASH: ""
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL production secret is required}
       OPS_DATABASE_URL: ${OPS_DATABASE_URL:?OPS_DATABASE_URL production secret is required}
+      NODE_EXTRA_CA_CERTS: /run/secrets/postgres_server.crt
       API_AUTH_TOKENS: ${API_AUTH_TOKENS:?API_AUTH_TOKENS is required}
       SESSION_ID_HASH_SECRET: ${SESSION_ID_HASH_SECRET:?SESSION_ID_HASH_SECRET is required}
       WORKER_API_CREDENTIALS: ${WORKER_API_CREDENTIALS:?WORKER_API_CREDENTIALS is required}
@@ -494,6 +500,7 @@ services:
     volumes:
       - ${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required}:/run/release-evidence/platform-capability.json:ro
       - /run/release-security/evidence-trust:/run/release-security/evidence-trust:ro
+      - /opt/merchant-deploy/deploy/secrets/postgres_server.crt:/run/secrets/postgres_server.crt:ro
 
   api-replica:
     <<: *ecs-node-hardening
