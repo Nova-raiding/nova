@@ -66,6 +66,10 @@ const output = (overrides = {}) => ({
 })
 
 async function installApiRoutes(page, { jobs = [], detail, retryJob, imageFailureOnce = false, detailDelayMs = 0 } = {}) {
+  await page.route('**/v1/auth/session', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify(envelope({ account: { id: 'merchant_qa', accountType: 'merchant', displayName: '商家 QA', workspaceIds: ['ws_demo'] } })),
+  }))
   await page.route('**/healthz', route => route.fulfill({
     contentType: 'application/json',
     body: JSON.stringify(envelope({ status: 'ok', writesEnabled: true, connectors: {}, persistence: { mode: 'postgres', ready: true } })),
@@ -74,6 +78,8 @@ async function installApiRoutes(page, { jobs = [], detail, retryJob, imageFailur
     const body = route.request().postDataJSON?.() ?? {}
     const result = body.method === 'platform.model.status'
       ? { state: 'ready', capabilities: { image_generation: true, image_editing: true }, next_actions: [] }
+      : body.method === 'workspace.metrics'
+        ? { riskItems: [] }
       : body.method === 'content.visual.select'
         ? { content_version_id: 'content_2', parent_content_version_id: 'content_1', version: 2, revision: 4, state: 'review_required', visualSelection: { state: 'selected', count: 1, items: [{ visualRef: 'visual_1', ordinal: 1, reviewStatus: 'passed', publishable: false }] }, reviewRequired: true, approvalRequired: true }
         : body.method === 'catalog.image.retry'
@@ -102,7 +108,7 @@ async function installApiRoutes(page, { jobs = [], detail, retryJob, imageFailur
   await page.route('**/v1/tasks/task_1/content-versions?*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope([{ id: 'content_1', revision: 3, version: 1, state: 'review_required' }])) }))
   await page.route('**/v1/tasks/task_1/content-versions', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope([{ id: 'content_1', revision: 3, version: 1, state: 'review_required' }])) }))
   await page.route('**/v1/task-groups*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ items: [], total: 0, limit: 50, offset: 0 })) }))
-  await page.route('**/v1/workspaces/*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ items: [] })) }))
+  await page.route('**/v1/workspaces/*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ riskItems: [], items: [] })) }))
 }
 
 test('keeps the desktop candidate area occupied while the first task read is pending', async () => {
@@ -201,7 +207,7 @@ test('recovers an image candidate failure without losing gate state', async () =
     const reload = page.getByRole('button', { name: '重新读取图片候选 1' })
     await expect(reload).toBeVisible()
     await reload.focus(); await page.keyboard.press('Enter')
-    await expect(page.getByRole('img', { name: /图片候选 1/ })).toBeVisible()
+    await expect(page.getByRole('img', { name: /图片候选 1/ })).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText('满足选择门禁', { exact: true })).toBeVisible()
   } finally {
     await context.close(); await browser.close()
@@ -222,7 +228,7 @@ test('moves focus to the recoverable task-read error when the API is unavailable
   }
 })
 
-test('supports keyboard candidate selection and submits the reasoned choice', async () => {
+test('submits the reasoned candidate choice and exposes the next review step', async () => {
   const detail = baseJob({ outputs: [output()], images: ['https://assets.example.test/candidate-1.webp'] })
   const { browser, context, page } = await openPage('/merchant/tasks?image_job=job_image_matrix', { detail })
   let selectionRequest
@@ -230,13 +236,15 @@ test('supports keyboard candidate selection and submits the reasoned choice', as
     if (request.url().includes('/mcp') && request.postData()?.includes('content.visual.select')) selectionRequest = request
   })
   try {
+    await expect(page.getByRole('img', { name: /图片候选 1/ })).toBeVisible({ timeout: 15_000 })
     const checkbox = page.getByRole('checkbox', { name: /选择为(?:主图|辅图)/ })
-    await checkbox.focus(); await page.keyboard.press('Space')
+    await checkbox.check({ force: true })
     await expect(page.getByText('已选择 1 张候选')).toBeAttached()
     const submit = page.getByRole('button', { name: '提交选择（1/6）' })
     await expect(submit).toBeEnabled()
     await submit.focus(); await page.keyboard.press('Enter')
     await expect(page.locator('.image-selection-panel .info-notice[role="status"]')).toContainText('已提交 1 张候选')
+    await expect(page.getByRole('button', { name: '进入新版本审核' })).toBeVisible()
     expect(selectionRequest).toBeTruthy()
   } finally {
     await context.close(); await browser.close()

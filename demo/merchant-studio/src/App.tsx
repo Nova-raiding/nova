@@ -169,6 +169,7 @@ import {
   type FeedbackRating,
   type ImageGenerationJob,
   type ImageGenerationJobListItem,
+  type ManualPublishRecord,
   type PlatformAccount,
   type PlatformCapability,
   type PlatformId,
@@ -8578,6 +8579,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
   const [selectionReason, setSelectionReason] = useState('人工确认候选图并进入内容版本审阅')
   const [selectionState, setSelectionState] = useState<'idle' | 'submitting' | 'succeeded' | 'failed'>('idle')
   const [selectionMessage, setSelectionMessage] = useState('')
+  const [selectedContentVersionId, setSelectedContentVersionId] = useState('')
   const [selectionNotice, setSelectionNotice] = useState('')
   const selectionErrorRef = useRef<HTMLDivElement>(null)
   const imageJobReadErrorRef = useRef<HTMLDivElement>(null)
@@ -8634,6 +8636,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
     return () => { active = false; if (timer !== undefined) window.clearTimeout(timer) }
   }, [baseUrl, currentJobId, reload, job?.state])
   useEffect(() => { setCandidatePage(1) }, [currentJobId])
+  useEffect(() => { setSelectedContentVersionId('') }, [currentJobId])
   useEffect(() => {
     if (error && !loading && (!job || retryErrorFocusRequestedRef.current)) {
       retryErrorFocusRequestedRef.current = false
@@ -8670,6 +8673,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
       const current = versions.find(version => version.id === job.contentVersionId)
       if (!current) throw new Error('当前内容版本不存在或已变化，请返回任务页刷新')
       const selected = await selectVisualCandidates(baseUrl, current.id, selectedVisualRefs, current.revision, selectionReason.trim(), `merchant-studio-visual-selection-${job.jobId}-${current.revision}`)
+      setSelectedContentVersionId(selected.content_version_id)
       setSelectionState('succeeded'); setSelectionMessage(`已提交 ${selected.visualSelection.count} 张候选，生成新的待审核内容版本 ${selected.content_version_id}。`)
     } catch (cause) {
       setSelectionState('failed')
@@ -8687,6 +8691,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
   const displayStateLabels: Record<string, string> = { ...labels, succeeded: succeededDisplayLabel, archiving: '归档中，等待安全扫描', partial_archive: '部分归档，等待补偿', external_unarchived: '归档未确认，等待对账' }
   const displayStateTone = displayState === 'failed' || displayState === 'outcome_unknown' || displayState === 'external_unarchived' ? 'amber' : displayState === 'succeeded' && job?.archiveState === 'archived' ? 'green' : 'blue'
   const candidatePageData = getImageCandidatePage(job?.images?.map((src, index) => ({ src, index })) ?? [], candidatePage)
+  const reviewTaskId = job?.taskId ?? ''
   const focusImageError = () => document.getElementById('image-job-error')?.focus()
   const backToTaskQueue = () => {
     window.location.href = window.location.pathname
@@ -8735,7 +8740,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
     })}</div>
       {candidatePageData.pageCount > 1 && <nav className="image-candidate-pagination" aria-label="图片候选分页"><button className="secondary-button" type="button" onClick={() => setCandidatePage(candidatePageData.page - 1)} disabled={candidatePageData.page === 1}>上一页</button><span aria-live="polite">第 {candidatePageData.page} / {candidatePageData.pageCount} 页 · 共 {candidatePageData.total} 张候选</span><button className="secondary-button" type="button" onClick={() => setCandidatePage(candidatePageData.page + 1)} disabled={candidatePageData.page === candidatePageData.pageCount}>下一页</button></nav>}
     </> : null}
-    {job?.contentVersionId ? <div className="image-selection-panel" aria-label="候选选择"><label htmlFor="visual-selection-reason">选图原因（必填）</label><input id="visual-selection-reason" value={selectionReason} maxLength={300} onChange={event => { setSelectionReason(event.target.value); setSelectionNotice('') }} disabled={selectionState === 'submitting'} /><div className="action-row"><button className="primary-button" type="button" onClick={() => void submitVisualSelection()} disabled={selectionState === 'submitting' || !selectedVisualRefs.length || !selectionReason.trim()} aria-describedby="visual-selection-hint">{selectionState === 'submitting' ? '提交中…' : `提交选择（${selectedVisualRefs.length}/6）`}</button><span id="visual-selection-hint" className="muted-note">服务端会再次校验任务、商品、版本、扫描和审核状态。</span></div><div className="sr-only" role="status" aria-live="polite" aria-atomic="true">已选择 {selectedVisualRefs.length} 张候选{selectionNotice ? `。${selectionNotice}` : ''}</div>{selectionMessage && <div ref={selectionErrorRef} tabIndex={selectionState === 'failed' ? -1 : undefined} className={selectionState === 'failed' ? 'error-notice' : 'info-notice'} role={selectionState === 'failed' ? 'alert' : 'status'}>{selectionMessage}</div>}</div> : <div className="info-notice" role="status">当前图片任务未绑定内容版本，不能直接选择候选；请从营销任务进入内容版本后再操作。</div>}
+    {job?.contentVersionId ? <div className="image-selection-panel" aria-label="候选选择"><label htmlFor="visual-selection-reason">选图原因（必填）</label><input id="visual-selection-reason" value={selectionReason} maxLength={300} onChange={event => { setSelectionReason(event.target.value); setSelectionNotice('') }} disabled={selectionState === 'submitting'} /><div className="action-row"><button className="primary-button" type="button" onClick={() => void submitVisualSelection()} disabled={selectionState === 'submitting' || !selectedVisualRefs.length || !selectionReason.trim()} aria-describedby="visual-selection-hint">{selectionState === 'submitting' ? '提交中…' : `提交选择（${selectedVisualRefs.length}/6）`}</button><span id="visual-selection-hint" className="muted-note">服务端会再次校验任务、商品、版本、扫描和审核状态。</span></div><div className="sr-only" role="status" aria-live="polite" aria-atomic="true">已选择 {selectedVisualRefs.length} 张候选{selectionNotice ? `。${selectionNotice}` : ''}</div>{selectionMessage && <div ref={selectionErrorRef} tabIndex={selectionState === 'failed' ? -1 : undefined} className={selectionState === 'failed' ? 'error-notice' : 'info-notice'} role={selectionState === 'failed' ? 'alert' : 'status'}>{selectionMessage}</div>}{selectionState === 'succeeded' && selectedContentVersionId && reviewTaskId && <div className="action-row"><button className="primary-button" type="button" onClick={() => { window.location.href = urlForMerchantRoute(window.location, { page: 'task', target: { kind: 'task', taskId: reviewTaskId } }) }}>进入新版本审核</button><span className="muted-note">先审核并批准新版本，再提交人工发布任务。</span></div>}</div> : <div className="info-notice" role="status">当前图片任务未绑定内容版本，不能直接选择候选；请从营销任务进入内容版本后再操作。</div>}
     {job?.nextAction && <div className="info-notice" role={job.reconciliationRequired || imageGenerationNeedsReconciliation(job.executionState) ? 'alert' : 'status'}><ShieldCheck size={16} /><span>{imageGenerationNeedsReconciliation(job.executionState) ? '模型结果尚未确认；请先对账，系统不会再次生成或扣费。' : `下一步：${job.nextAction.label}`}</span>{job.nextAction.type === 'review_error' && job.nextAction.allowed && <button className="text-button" type="button" onClick={focusImageError}>查看失败原因</button>}{imageGenerationRetryAllowed({ state: job.state, executionState: job.executionState, nextActionAllowed: job.nextAction.allowed }) && !job.reconciliationRequired && ['IMAGE_GENERATION_NOT_CONFIGURED', 'IMAGE_GENERATION_PRE_PROVIDER_FAILED'].includes(job.errorCode ?? '') && <button className="text-button" type="button" onClick={() => void retrySafeImageJob()} disabled={retrying}>{retrying ? '重试入队中…' : '安全重试'}</button>}</div>}
     <div className="action-row"><button className="secondary-button" type="button" onClick={() => { setError(''); setFailedImages(new Set()); setReload(value => value + 1) }} disabled={loading} aria-label="刷新图片任务状态" aria-describedby="image-job-refresh-hint"><RefreshCw size={15} aria-hidden="true" />刷新任务状态</button><span id="image-job-refresh-hint" className="sr-only">刷新期间按钮不可重复操作，当前状态和候选不会被清空。</span>{imageGenerationProviderCallStarted(job?.executionState) && <span className="muted-note">Provider 已进入提交链路，结果未收口前禁止重复生成。</span>}{isTerminal && job?.images?.length ? <span className="muted-note">候选仍需单独通过人工审核和内容版本选择，生成完成不等于可发布。</span> : null}</div>
   </section>
@@ -11400,6 +11405,15 @@ export function projectPublishJobRows(next: PublishJob[]): PublishJob[] {
     }))
 }
 
+export function manualPublishStateLabel(state: string): string {
+  return ({
+    export_ready: '待人工发布',
+    manual_publish_in_progress: '人工发布中',
+    manual_publish_reported: '已报告，待复核',
+    manual_review_required: '需人工复核',
+  } as Record<string, string>)[state] ?? '状态待确认'
+}
+
 function PublishCenter({
   openPublish,
   openCorrection,
@@ -11412,6 +11426,7 @@ function PublishCenter({
   canOpenPublish: boolean
 }) {
   const [jobs, setJobs] = useState<PublishJob[] | null>(null)
+  const [manualRecords, setManualRecords] = useState<ManualPublishRecord[] | null>(null)
   const [initialError, setInitialError] = useState('')
   const [refreshError, setRefreshError] = useState('')
   const [loading, setLoading] = useState(Boolean(baseUrl))
@@ -11424,6 +11439,7 @@ function PublishCenter({
       lastSuccessfulJobsRef.current = []
       setLoading(false)
       setJobs(null)
+      setManualRecords(null)
       setInitialError('')
       setRefreshError('')
       return
@@ -11441,13 +11457,14 @@ function PublishCenter({
       if (showLoading && !hasLoadedJobs) setLoading(true)
       setInitialError('')
       setRefreshError('')
-      fetchPublishJobs(baseUrl)
-        .then((next) => {
+      Promise.all([fetchPublishJobs(baseUrl), fetchManualPublishRecords(baseUrl)])
+        .then(([next, nextManualRecords]) => {
           if (!cancelled) {
             hasLoadedJobs = true
             const safeJobs = projectPublishJobRows(next)
             lastSuccessfulJobsRef.current = safeJobs
             setJobs(safeJobs)
+            setManualRecords(nextManualRecords)
             setInitialError('')
             setRefreshError('')
           }
@@ -11490,14 +11507,14 @@ function PublishCenter({
       : ['rejected', 'unknown', 'manual_attention'].includes(state)
         ? 'amber'
         : 'blue'
-  const listReady = !loading && jobs !== null
+  const listReady = !loading && jobs !== null && manualRecords !== null
   return (
     <div className="page-stack">
       <section className="page-intro">
         <div>
           <span className="section-kicker">CONTROLLED WRITES</span>
-          <h2>每一次线上变更都有确认和回执</h2>
-          <p>“平台已受理”不等于“已生效”。待确认状态先对账，不盲目重复提交。</p>
+          <h2>审核后创建人工发布任务，并保留操作证据</h2>
+          <p>Merchant Studio 负责冻结交付包；运营人员在平台后台发布并回填证据。人工记录不等于平台 API 回执。</p>
         </div>
         <button
           className="primary"
@@ -11537,7 +11554,7 @@ function PublishCenter({
           <div className="panel-heading">
             <div>
               <span className="section-kicker">IN FLIGHT</span>
-              <h3>进行中的发布</h3>
+              <h3>人工发布任务</h3>
             </div>
             <StatusChip tone={refreshError ? 'amber' : 'blue'}>
               {loading
@@ -11617,8 +11634,8 @@ function PublishCenter({
           {listReady && jobs.length === 0 && (
             <div className="empty-state">
               <PackageSearch size={22} />
-              <b>暂无真实发布任务</b>
-              <span>完成内容审核后，发布任务会显示在这里。</span>
+              <b>暂无人工发布任务</b>
+              <span>完成内容审核并二次确认后，待运营处理的任务会显示在这里。</span>
             </div>
           )}
         </div>
@@ -11626,36 +11643,35 @@ function PublishCenter({
           <div className="panel-heading">
             <div>
               <span className="section-kicker">RECEIPTS</span>
-              <h3>最近回执</h3>
+              <h3>人工发布记录</h3>
             </div>
           </div>
-          {loading && <LoadingState label="正在读取平台回执…" />}
+          {loading && <LoadingState label="正在读取人工发布记录…" />}
           {listReady &&
-            Boolean(jobs.length) &&
-            jobs.slice(0, 5).map((job) => (
-              <div className="receipt-row" key={`receipt-${job.id}`}>
+            Boolean(manualRecords.length) &&
+            manualRecords.slice(0, 5).map((record) => (
+              <div className="receipt-row" key={`manual-${record.id}`}>
                 <span
-                  className={`receipt-icon ${job.state === 'rejected' ? 'fail' : ''}`}
+                  className={`receipt-icon ${record.state === 'manual_review_required' ? 'fail' : ''}`}
                 >
-                  {job.state === 'rejected' ? (
+                  {record.state === 'manual_review_required' ? (
                     <X size={14} />
                   ) : (
-                    <Check size={14} />
+                    <Clock3 size={14} />
                   )}
                 </span>
                 <b>
-                  {platformNames[job.platform] ?? job.platform} ·{' '}
-                  {statusLabel(job.state)}
+                  {platformNames[record.platform] ?? record.platform} ·{' '}
+                  {manualPublishStateLabel(record.state)}
                 </b>
                 <span>
-                  回执已保留 ·{' '}
-                  {job.rejection?.rawCode ?? job.remoteState ?? '等待观测'}
+                  {record.platformContentId ?? record.publicUrl ?? record.platformDisplayStatus ?? '等待运营回填证据'}
                 </span>
               </div>
             ))}
-          {listReady && jobs.length === 0 && (
+          {listReady && manualRecords.length === 0 && (
             <div className="empty-state">
-              <span>暂无回执</span>
+              <span>暂无人工发布记录；人工记录不等于平台 API 回执。</span>
             </div>
           )}
         </div>
@@ -12291,10 +12307,7 @@ function PublishModal({
           </div>
           <div>
             <span className="section-kicker">SECOND CONFIRMATION</span>
-            <h2 id="publish-title">
-              确认{actionLabel}
-              {platform}商品
-            </h2>
+            <h2 id="publish-title">提交人工发布任务</h2>
           </div>
           <button
             className="icon-button"
@@ -12337,7 +12350,7 @@ function PublishModal({
           {identityError && <ErrorNotice message={identityError} compact />}
           <div className="change-summary">
             <h3>
-              本次将{actionLabel}并写入 {changes.length || 0} 个字段
+              交付包计划{actionLabel} {changes.length || 0} 个字段
             </h3>
             {changes.length ? (
               changes.map((change) => (
@@ -12362,7 +12375,7 @@ function PublishModal({
             <div>
               <b>发布保护已开启</b>
               <span>
-                请求使用一次性确认令牌和幂等键。若平台超时，系统将保留确认状态并使用同一幂等键重试。
+                系统只创建绑定当前内容版本、店铺和快照的人工发布任务，并保留幂等证据；当前不代表平台已受理或已生效。
               </span>
             </div>
           </div>
@@ -12387,8 +12400,8 @@ function PublishModal({
               disabled={loading || !preview || Boolean(identityError)}
             />
             <span>
-              我确认将审核后的内容写入{confirmationTarget}的上述{platform}
-              商品，并理解平台可能进入审核。
+              我确认将审核后的内容交付给运营人员，由其在{confirmationTarget}的上述{platform}
+              商品中人工发布，并在完成后回填平台 ID、公开链接或截图证据。
             </span>
           </label>
         </div>
@@ -12419,7 +12432,7 @@ function PublishModal({
                 <Rocket size={16} />
                 {submitError
                   ? '重新安全提交'
-                  : `确认${actionLabel}${platform}商品`}
+                  : '提交人工发布任务'}
               </>
             )}
           </button>
@@ -12904,7 +12917,7 @@ export default function App() {
     setPublishPreview(null)
     navigateTo('products')
     showToast(
-      `发布请求已受理：${jobId}。平台生效前会持续显示为“审核中”。`,
+      `人工发布任务已创建：${jobId}。需由运营人员完成平台操作并回填证据，当前不代表平台已受理或已生效。`,
       'info',
     )
   }
