@@ -77,6 +77,13 @@ describe('protected ECS pre-identity recovery', () => {
     expect(result.status).not.toBe(0)
     expect(result.stderr).toMatch(/must run as root|must run from \/usr\/local\/libexec\/merchant\/ecs-preidentity-recovery/u)
   })
+  it('keeps the isolated replay digest-pinned, networkless, socketless, and explicit about stubs', () => {
+    const replay = readFileSync('tests/run-ecs-preidentity-isolated-cli.sh', 'utf8')
+    expect(replay).toContain("node@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32")
+    expect(replay).toContain('--network none')
+    expect(replay).not.toContain('/var/run/docker.sock')
+    expect(replay).toContain('Docker/psql deterministic stubs; no real Docker recovery claimed')
+  })
   it('signs only independently observed workload and database state', () => {
     const snapshot = createSignedSnapshot(observed, binding, keys.privateKey, keys.publicKey, now)
     expect(snapshot.schema_version).toBe('ecs-preidentity-recovery/1')
