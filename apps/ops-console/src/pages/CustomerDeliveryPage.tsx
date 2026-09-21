@@ -449,11 +449,11 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         </>
       ) : <CustomerDeliverySection
         key={targetWorkspaceId || "unselected"}
-        disabled={!canRead || !targetWorkspaceId}
+        disabled={!canRead || !canUpdate || !targetWorkspaceId}
         readOnly={canRead && !canUpdate}
         records={records}
         onCreate={canUpdate && canRead ? createRecord : undefined}
-        onCreateNavigate={canUpdate && canRead ? () => { setMutationError(""); pendingCreate.current = undefined; setCreateDraftDirty(false); setCreatePage(true); } : undefined}
+        onCreateNavigate={() => { setMutationError(""); pendingCreate.current = undefined; setCreateDraftDirty(false); setCreatePage(true); }}
         onSave={canUpdate && canRead ? saveProfile : undefined}
         onChecklistSave={canUpdate && canRead ? saveChecklist : undefined}
         onChecklistLoad={loadChecklist}

@@ -53,6 +53,7 @@ test('keeps a dirty desktop form until workbench switch is confirmed', async ({ 
   await workspace.click()
   await workspace.press('ArrowDown')
   await workspace.press('Enter')
+  await expect(page.getByRole('button', { name: /刷新交付档案/u })).not.toHaveClass(/ant-btn-loading/u)
   await page.getByRole('button', { name: '新建客户', exact: true }).click()
   const draft = page.locator('form.customer-delivery-create-form')
   await draft.getByLabel('公司名称').fill('未保存的演示客户')
