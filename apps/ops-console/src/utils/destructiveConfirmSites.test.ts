@@ -70,6 +70,12 @@ describe("destructive confirmation call sites", () => {
     expect(refund).toContain("message.info(");
   });
 
+  it("authorizes refunds with the refund capability instead of the unrelated reconciliation capability", () => {
+    expect(refund).toContain("if (!canFinance)");
+    expect(refund).not.toContain("canPaymentReconciliation");
+    expect(refund).toContain("缺少退款权限");
+  });
+
   it("keeps the keyboard off the confirm button when archiving a delivery record", () => {
     expect(deliverySection).toContain('confirmPolicyPropsFor("delivery.record.archive")');
   });

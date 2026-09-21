@@ -1822,8 +1822,8 @@ export function useOpsConsoleModel() {
     }
   };
   const refund = async (values: { orderId: string; reason: string }) => {
-    if (!canPaymentReconciliation) {
-      message.error("当前会话为只读，缺少账务权限");
+    if (!canFinance) {
+      message.error("当前会话为只读，缺少退款权限");
       return;
     }
     const confirmed = await new Promise<boolean>((resolve) => {

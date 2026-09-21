@@ -13,6 +13,8 @@ export type PaymentReconciliationReport = {
   refund_settled?: readonly unknown[];
   refund_pending?: readonly unknown[];
   refund_failed?: readonly unknown[];
+  audit_projection_failures?: readonly unknown[];
+  queue_rotation_failures?: readonly unknown[];
 };
 
 export const rechargeOrderStates = [
@@ -69,10 +71,12 @@ export function paymentReconciliationOutcome(report: PaymentReconciliationReport
   const settled = report.settled?.length ?? 0;
   const refundSettled = report.refund_settled?.length ?? 0;
   const pending = (report.pending?.length ?? 0) + (report.refund_pending?.length ?? 0);
-  const failed = (report.failed?.length ?? 0) + (report.refund_failed?.length ?? 0);
+  const providerFailed = (report.failed?.length ?? 0) + (report.refund_failed?.length ?? 0);
+  const operationalFailed = (report.audit_projection_failures?.length ?? 0) + (report.queue_rotation_failures?.length ?? 0);
+  const failed = providerFailed + operationalFailed;
   if (report.state === "not_configured") return { level: "warning" as const, message: "支付 provider 查单未配置：未查询任何订单，也未发生入账" };
   if (report.state === "completed" && (report.skipped_fixture_orders ?? 0) > 0 && settled === 0 && pending === 0 && failed === 0) return { level: "info" as const, message: `没有可查的 Provider 订单：跳过 ${report.skipped_fixture_orders} 条 fixture 订单，未发生入账` };
-  if (report.state === "attention_required" || pending > 0 || failed > 0) return { level: "warning" as const, message: `支付对账未收口：充值入账 ${settled}，退款确认 ${refundSettled}，仍待确认 ${pending}，异常 ${failed}` };
+  if (report.state === "attention_required" || pending > 0 || failed > 0) return { level: "warning" as const, message: `支付对账未收口：充值入账 ${settled}，退款确认 ${refundSettled}，仍待确认 ${pending}，Provider 异常 ${providerFailed}，审计/队列异常 ${operationalFailed}` };
   if (report.state === "completed") return { level: "success" as const, message: `支付对账完成：充值入账 ${settled}，退款确认 ${refundSettled}` };
   return { level: "error" as const, message: "支付对账返回未识别状态：未确认任何入账，请先核对服务端对账证据" };
 }
