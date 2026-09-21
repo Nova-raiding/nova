@@ -7168,6 +7168,10 @@ async function binaryBody(req: IncomingMessage, limit: number): Promise<Uint8Arr
 
 function isProduction() { return process.env.NODE_ENV === 'production' }
 
+export function signedAssetScanCallbackRequired(source: NodeJS.ProcessEnv = process.env) {
+  return ['staging', 'preview', 'production'].includes(source.NODE_ENV ?? '')
+}
+
 function imageTrace(event: string, fields: Record<string, unknown> = {}) {
   if (isProduction() && process.env.MERCHANT_IMAGE_TRACE_LOGS !== 'true') return
   try { console.info(JSON.stringify({ event: `merchant.image.${event}`, ts: new Date().toISOString(), ...fields })) } catch { /* diagnostics must not affect delivery */ }
@@ -19481,7 +19485,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result({ assets, items: batchItems, count: batchItems.length, succeeded: assets.length, failed, counts: { total: batchItems.length, succeeded: assets.length, failed }, partial: failed > 0 && assets.length > 0, totalBytes })
     }
     case 'asset.scan': {
-      if (isProduction()) throw new DomainError('MCP_ASSET_SCAN_DISABLED', 'production asset scans are accepted only through the signed platform scanner callback', 410)
+      if (signedAssetScanCallbackRequired()) throw new DomainError('MCP_ASSET_SCAN_DISABLED', 'controlled-environment asset scans are accepted only through the signed platform scanner callback', 410)
       await requireWorkerAuthorization(req)
       const asset = assetForWorkspace(workspaceId, required(params, 'asset_id'))
       if (asset.scanStatus !== 'quarantined' || !asset.storageKey.startsWith('quarantine/')) throw new DomainError('ASSET_SCAN_STATE_INVALID', '素材当前不在待扫描隔离状态', 409)
@@ -22850,7 +22854,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   }
   const assetScanMatch = path.match(/^\/v1\/assets\/([^/]+)\/scan$/)
   if (req.method === 'POST' && assetScanMatch) {
-    if (isProduction()) throw new DomainError('LEGACY_ASSET_SCAN_DISABLED', 'production asset scans are completed only by the platform scanner', 410)
+    if (signedAssetScanCallbackRequired()) throw new DomainError('LEGACY_ASSET_SCAN_DISABLED', 'controlled-environment asset scans are completed only by the platform scanner', 410)
     const workspaceId = resolveWorkspace(req)
     const input = await body(req)
     const asset = assetForWorkspace(workspaceId, assetScanMatch[1]!)

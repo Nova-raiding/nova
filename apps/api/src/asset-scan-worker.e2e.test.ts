@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ASSET_SCAN_RECEIPT_SCHEMA, parseAssetScanReceipt, signAssetScanReceipt } from '../../../packages/security/src/asset-scan-receipt.js'
-import { assetContinuationReadyEventsForTests, assetScanJobIdForTests, creativePointsForTests, grantContinuousFeatureEntitlementForTests, server, service, workspaceMembers } from './server.js'
+import { assetContinuationReadyEventsForTests, assetScanJobIdForTests, creativePointsForTests, grantContinuousFeatureEntitlementForTests, server, service, signedAssetScanCallbackRequired, workspaceMembers } from './server.js'
 
 type Envelope<T> = { data: T; error: { code: string } | null }
 
@@ -202,6 +202,36 @@ describe('automatic platform asset scanner boundary', () => {
       const mcpScan = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${merchantToken}`, 'x-workspace-id': workspaceId, 'content-type': 'application/json' }, body: mcpBody })
       expect(mcpScan.status).toBe(410)
       expect((await mcpScan.json() as Envelope<null>).error?.code).toBe('MCP_ASSET_SCAN_DISABLED')
+      expect(service.assets.get(asset.id)?.scanStatus).toBe('quarantined')
+    } finally {
+      vi.stubEnv('NODE_ENV', 'test')
+      vi.stubEnv('API_AUTH_TOKENS', '{}')
+      vi.stubEnv('SESSION_ID_HASH_SECRET', '')
+    }
+  })
+
+  it.each(['staging', 'preview'])('keeps unsigned legacy scan promotion disabled in %s', async environment => {
+    const asset = await upload(`${environment}-unsigned-scan.png`)
+    const merchantToken = `merchant-${environment}-scan-boundary`
+    const merchantActor = `merchant-${environment}-scan-owner`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: merchantActor, displayName: merchantActor, role: 'workspace_owner', status: 'active', invitedBy: 'scanner-boundary-test' })
+    vi.stubEnv('NODE_ENV', environment)
+    vi.stubEnv('SESSION_ID_HASH_SECRET', 'scanner-boundary-session-secret')
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ [merchantToken]: { workspaces: [workspaceId], actor_id: merchantActor, roles: ['workspace_owner'] } }))
+    try {
+      expect(signedAssetScanCallbackRequired()).toBe(true)
+      const headers = { authorization: `Bearer ${merchantToken}`, 'x-workspace-id': workspaceId, 'content-type': 'application/json' }
+      const mcpScan = await fetch(`${base}/mcp`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ jsonrpc: '2.0', id: 91, method: 'asset.scan', params: { asset_id: asset.id, scan_evidence_ref: 'attacker-controlled-evidence' } }),
+      })
+      expect(mcpScan.status).toBe(410)
+      expect((await mcpScan.json() as Envelope<null>).error?.code).toBe('MCP_ASSET_SCAN_DISABLED')
+
+      const httpScan = await fetch(`${base}/v1/assets/${encodeURIComponent(asset.id)}/scan`, {
+        method: 'POST', headers, body: JSON.stringify({ scan_evidence_ref: 'attacker-controlled-evidence' }),
+      })
+      expect(httpScan.status).toBeGreaterThanOrEqual(400)
       expect(service.assets.get(asset.id)?.scanStatus).toBe('quarantined')
     } finally {
       vi.stubEnv('NODE_ENV', 'test')
