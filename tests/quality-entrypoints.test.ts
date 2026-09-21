@@ -149,6 +149,20 @@ describe('quality entrypoint coverage', () => {
     expect(unregistered, 'these scripts have no caller and no register entry').toEqual([])
   })
 
+  it('keeps the commercial read-boundary acceptance runner behind a named entrypoint', () => {
+    // `scripts/verify-commercial-read-boundaries.ts` is a fail-closed security
+    // acceptance runner — real PostgreSQL 17, row-level security, a signed OIDC
+    // identity, the HTTP route and the native MCP transport — and it had no
+    // package.json script at all, so nothing could invoke it and the inventory
+    // above could not even see the file. It has a named entrypoint now, and the
+    // register entry in `package-script-entrypoints.ts` records the environment
+    // it needs. Promoting it into `check` is a deliberate decision, not a side
+    // effect of discovering the file, so pin the exclusion here as well.
+    expect(script('verify:commercial-read-boundaries')).toBe('tsx scripts/verify-commercial-read-boundaries.ts')
+    expect(script('check')).not.toContain('verify:commercial-read-boundaries')
+    expect(UNINVOKED_SCRIPTS.map(entry => entry.script)).toContain('verify:commercial-read-boundaries')
+  })
+
   it('keeps all fail-closed gate tests in the explicit release suite', () => {
     const releaseGate = script('test:release-gates')
     const missing = filesUnder('tests')

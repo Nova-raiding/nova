@@ -45,6 +45,21 @@ const relaySecurity = relaySecurityFromEnv(process.env)
 const artifactRoot = process.env.MODEL_RELAY_ARTIFACT_ROOT?.trim()
 const releaseId = process.env.RELEASE_ID?.trim() || ''
 
+export function shouldBlockForCostGuard(input: {
+  modality: ProbeResult['modality']
+  confirmCost: boolean
+  existingVideoTaskId?: string
+}): boolean {
+  return !input.confirmCost
+    && (input.modality === 'image' || input.modality === 'image_edit' || (input.modality === 'video' && !input.existingVideoTaskId))
+}
+
+export function requireProductionReleaseBinding(input: { environment?: string; releaseId: string }): void {
+  if (input.environment?.trim() === 'production' && !input.releaseId.trim()) {
+    throw new Error('RELEASE_ID is required for production model relay evidence')
+  }
+}
+
 function modelFor(modality: ProbeResult['modality']) {
   if (modality === 'text') return process.env.AI_MODEL?.trim() || process.env.MODEL_ID?.trim() || ''
   if (modality === 'image') return process.env.IMAGE_MODEL?.trim() || process.env.AI_IMAGE_MODEL?.trim() || ''
@@ -282,7 +297,7 @@ async function probe(modality: ProbeResult['modality']): Promise<ProbeResult> {
   const common = { modality, endpoint, model }
   if (!model) return { ...common, state: 'blocked', detail: 'model_missing' }
   if (!keyFor(modality)) return { ...common, state: 'blocked', detail: modality === 'video' ? 'VIDEO_MODEL_RELAY_API_KEY missing' : 'MODEL_RELAY_API_KEY missing' }
-  if (!confirmCost && (modality === 'image' || modality === 'image_edit' || (modality === 'video' && !existingVideoTaskId))) return { ...common, state: 'not_run_cost_guard', detail: 'set MODEL_RELAY_CANARY_CONFIRM=true to run potentially billable media probes' }
+  if (shouldBlockForCostGuard({ modality, confirmCost, ...(existingVideoTaskId ? { existingVideoTaskId } : {}) })) return { ...common, state: 'not_run_cost_guard', detail: 'set MODEL_RELAY_CANARY_CONFIRM=true to run potentially billable media probes' }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -383,6 +398,7 @@ export async function main() {
       process.exitCode = 1
     } else {
       try {
+        requireProductionReleaseBinding({ environment: process.env.NODE_ENV, releaseId })
         if (!relaySecurity) throw new Error('MODEL_RELAY_BASE_URL/ALLOWED_HOSTS 不满足 relay 安全配置')
         for (const modality of modalities) results.push(await probe(modality))
         // The evidence contract stores the relay origin; each result carries its

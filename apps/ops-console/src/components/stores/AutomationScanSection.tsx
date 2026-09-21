@@ -57,8 +57,17 @@ export function AutomationScanSection({
         size="small"
         loading={loading}
         extra={
+          // A scan that never ran, or whose read failed, produced no result to
+          // colour. Using green for that made "unknown" and "clean"
+          // pixel-identical; green now requires an actual scan result.
           <Tag
-            color={automationScan?.recommendations?.length ? "orange" : "green"}
+            color={
+              !automationScan
+                ? "default"
+                : automationScan.recommendations?.length
+                  ? "orange"
+                  : "green"
+            }
           >
             {loading || !automationScan ? "状态待确认" : `${automationScan.recommendations?.length ?? 0} 条`}
           </Tag>
@@ -243,8 +252,14 @@ export function AutomationScanSection({
               { title: "说明", dataIndex: "message" },
             ]}
           />
-        ) : (
+        ) : automationScan ? (
           <Typography.Text type="secondary">暂无扫描风险。</Typography.Text>
+        ) : (
+          // No scan result is not a clean scan: 暂无扫描风险 asserted a measured
+          // zero for a scan that never ran or whose read failed.
+          <Typography.Text type="secondary">
+            {loading ? "正在读取扫描结果…" : "尚未取得扫描结果；可能尚未执行扫描，或本次读取失败，不代表已确认无风险。"}
+          </Typography.Text>
         )}
       </Card>
     </>

@@ -15,6 +15,10 @@ import { opsChildEnvironment } from './run-ops-oidc-e2e.js'
 // imports a .env, calls a payment gateway, starts a worker, or grants points.
 // Pending orders and checkout URLs below are explicitly synthetic test seeds;
 // PostgreSQL/RLS, the API, authentication, and native MCP transport are real.
+// Entrypoint: the `verify:commercial-read-boundaries` package.json script, or
+// `node --import tsx scripts/verify-commercial-read-boundaries.ts` directly. It
+// needs a Docker host able to start that fixture and a free loopback port; the
+// absence of a database URL is the point, not a missing binding.
 const parent = resolve('artifacts/commercial-read-boundaries')
 await mkdir(parent, { recursive: true, mode: 0o700 })
 const evidenceDir = await mkdtemp(join(parent, 'run-'))

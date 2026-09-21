@@ -40,14 +40,24 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
   const markdownInputRef = useRef<HTMLInputElement>(null);
   const [markdownImporting, setMarkdownImporting] = useState(false);
   const [activationTarget, setActivationTarget] = useState<Rule>();
-  const [activationForm] = Form.useForm<{ approvalRef: string; approvedBy: string; approvedAt: string; reason: string }>();
+  const [activationForm] = Form.useForm<{ approvalRef: string; approvedBy: string; approvedAt: string; reason: string; approvalToken: string }>();
   const unverifiedRules = rules.filter((rule) => !isOfficialPlatformRule(rule));
   const verifiedRules = rules.filter((rule) => !unverifiedRules.includes(rule));
 
   const activateRule = async () => {
     if (!activationTarget) return;
     const values = await activationForm.validateFields();
-    const activated = await updateRuleStatus(activationTarget, "active", values);
+    const activated = await updateRuleStatus(activationTarget, "active", {
+      reason: values.reason,
+      approvalRef: values.approvalRef,
+      approvedBy: values.approvedBy,
+      approvedAt: values.approvedAt,
+      // Read out of the form at submit time only; never mirrored into component
+      // state, never handed to a persistence helper. The success path below
+      // clears it together with the rest of the form, and the failure path keeps
+      // it so the operator can resubmit the same evidence.
+      ruleApprovalToken: values.approvalToken,
+    });
     if (!activated) return;
     setActivationTarget(undefined);
     activationForm.resetFields();
@@ -202,14 +212,33 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
         }}
         destroyOnHidden
       >
+        {/* The form used to take the approver's name, a reference and a timestamp
+            as free text, which is exactly the forgeable interaction: nothing
+            proved an approval act happened, so under AUTH_ENFORCEMENT=strict the
+            control could never succeed (parseApprovalGrant throws
+            RULE_APPROVAL_REQUIRED without the token header). The proof is now a
+            server-issued token the approver holds; the typed approver id is kept
+            only because the server still requires `approved_by` in the body and
+            rejects it when it disagrees with the grant. */}
+        <Alert
+          showIcon
+          type="warning"
+          role="status"
+          title="审批证明来自审批人令牌，而不是表单里的姓名"
+          description="服务端只从 x-rule-approval-token 请求头解析审批人，并要求它与下方“审批人 ID”一致；不一致或自审批会被拒绝（RULE_APPROVAL_INVALID / RULE_SEPARATION_OF_DUTIES_REQUIRED）。令牌由规则治理管理员发放给审批人本人。"
+          style={{ marginBottom: 16 }}
+        />
         <Form name="rule-activation-approval" form={activationForm} layout="vertical" aria-label="规则激活审批">
-          <Form.Item name="approvalRef" label="审批引用" rules={[{ required: true, message: "请输入审批引用" }]}>
+          <Form.Item name="approvalToken" label="审批人令牌" rules={[{ required: true, whitespace: true, message: "请填写审批人令牌" }]}>
+            <Input.Password autoComplete="off" placeholder="由审批人提供的令牌" />
+          </Form.Item>
+          <Form.Item name="approvedBy" label="审批人 ID" extra="必须与令牌绑定的审批人一致；不一致时服务端拒绝整次激活" rules={[{ required: true, message: "请输入令牌绑定的审批人 ID" }]}>
+            <Input placeholder="令牌绑定的审批人 ID" />
+          </Form.Item>
+          <Form.Item name="approvalRef" label="审批引用" extra="服务端仍要求该字段；仅作审批记录留存，不是审批证明" rules={[{ required: true, message: "请输入审批引用" }]}>
             <Input placeholder="工单或审批记录 ID" />
           </Form.Item>
-          <Form.Item name="approvedBy" label="审批人 ID" rules={[{ required: true, message: "请输入不同于当前操作者的审批人 ID" }]}>
-            <Input placeholder="独立审批人 ID" />
-          </Form.Item>
-          <Form.Item name="approvedAt" label="审批时间" rules={[{ required: true, message: "请输入 ISO 8601 审批时间" }, { pattern: /^\d{4}-\d{2}-\d{2}T/u, message: "请输入 ISO 8601 时间" }]}>
+          <Form.Item name="approvedAt" label="审批时间" extra="仅为记录：审批证明来自令牌，本字段不参与服务端审批判定" rules={[{ required: true, message: "请输入 ISO 8601 审批时间" }, { pattern: /^\d{4}-\d{2}-\d{2}T/u, message: "请输入 ISO 8601 时间" }]}>
             <Input placeholder="2026-08-29T08:00:00.000Z" />
           </Form.Item>
           <Form.Item name="reason" label="激活原因" rules={[{ required: true, message: "请输入激活原因" }]}>

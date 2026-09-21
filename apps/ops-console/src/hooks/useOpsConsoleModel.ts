@@ -1303,7 +1303,7 @@ export function useOpsConsoleModel() {
   const updateRuleStatus = async (
     row: Rule,
     status: "active" | "inactive" | "expired",
-    options?: { reason?: string; approvalRef?: string; approvedBy?: string; approvedAt?: string },
+    options?: { reason?: string; approvalRef?: string; approvedBy?: string; approvedAt?: string; ruleApprovalToken?: string },
   ) => {
     if (!canKnowledge) {
       message.error("当前会话为只读，缺少知识库编辑权限");
@@ -1313,6 +1313,13 @@ export function useOpsConsoleModel() {
     ruleMutationInFlight.current = true;
     setRuleMutationKey(`${row.id}:${status}`);
     try {
+      // The rule approver is resolved server-side from the `x-rule-approval-token`
+      // grant (parseApprovalGrant in apps/api/src/server.ts), never from the body
+      // approval_json. The token therefore travels as an OpsRpcOptions header: if
+      // it rode in params it would be as forgeable as the `approved_by` claim the
+      // token exists to replace, and under requiresStrictAuth() a tokenless
+      // activation is rejected outright (RULE_APPROVAL_REQUIRED) — which is the
+      // dead control this wiring removes.
       await rpc("rule.status", {
         pack_id: row.packId,
         version: row.version,
@@ -1324,7 +1331,7 @@ export function useOpsConsoleModel() {
           approved_by: options?.approvedBy?.trim(),
           approved_at: options?.approvedAt,
         }) } : {}),
-      });
+      }, { ruleApprovalToken: options?.ruleApprovalToken?.trim() });
       message.success("规则状态已更新");
       await loadRules();
       return true;
@@ -1894,8 +1901,17 @@ export function useOpsConsoleModel() {
       return true;
     } catch (cause) {
       if (requestId === rechargeOrdersRequestRef.current && rechargeOrdersLoadCoordinatorRef.current.isCurrent(scopeRequest)) {
+        // Back to "not read", not to "read empty" — the same reset
+        // `loadModelMarkup` below performs. A fabricated `{ orders: [] }` is a
+        // dataset the section cannot tell from a list the server answered with
+        // nothing, so a failed read still rendered a summary row of measured
+        // zeros — `订单总数 0 / 待支付 0 / 已支付 0 / 异常 0` and `全部 0`, with
+        // "异常 0" reading as the all-clear — directly above the alert saying the
+        // read had failed. `undefined` is the model's not-read state, and the
+        // held rows must not survive either: `setRechargeOrderStateFilter` above
+        // has already moved the scope, so they answer the previous filter.
         setRechargeOrdersError(describeOpsError(cause));
-        setRechargeOrders({ orders: [] });
+        setRechargeOrders(undefined);
       }
       return false;
     } finally {

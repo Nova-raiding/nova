@@ -48,6 +48,24 @@ describe("AuthorizationGovernanceSection", () => {
     expect(describeGrantStatus({ expiresAt: "2026-09-02T10:05:00.000Z", useCount: 2, maxUses: 2 }, now)).toEqual({ label: "已用尽", color: "gold" });
   });
 
+  it("transports the approver credential as a request option instead of an rpc param", () => {
+    // The `approval` obligation is resolved server-side from the token grant
+    // alone (`verifiedApprovalActor`), so the console must deliver it through
+    // OpsRpcOptions and keep it out of the rpc body, component state and any
+    // browser storage.
+    expect(source).toContain("Input.Password");
+    expect(source).toContain('label="审批人令牌"');
+    expect(source).toContain('{ authorizationApprovalToken: String(values.approval_token ?? "").trim() }');
+    expect(source).not.toContain("approval_token: values");
+    expect(source).not.toContain("localStorage");
+    expect(source).not.toContain("sessionStorage");
+    // The typed name is a claim that must agree with the token grant, not the
+    // thing that authorises the grant.
+    expect(source).toContain('label="审批人身份"');
+    expect(source).not.toContain('label="审批人"');
+    expect(source).toContain("审批证据来自令牌");
+  });
+
   it("keeps role and JIT recovery keyboard reachable while retaining form input", () => {
     expect(source).toContain('aria-label="分配平台角色"');
     expect(source).toContain('aria-label="签发 JIT 授权"');
@@ -153,6 +171,9 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
     body: JSON.stringify({ jsonrpc: "2.0", id: request.id, result }),
   });
   const grantList = { subject_identity_id: "subject-jit-ui", workspace_id: "ws_jit_ui_fixture", authorization_revision: 7, grants: [] };
+  // The approver holds this token; the server resolves the approver from it
+  // alone (`verifiedApprovalActor`), so the console may only transport it.
+  const APPROVAL_TOKEN = "jit-ui-approver-token";
 
   async function fillGrantForm(page: Page) {
     await page.goto(`${baseUrl}/__jit-submit-test`);
@@ -166,7 +187,8 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
     const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
     await form.getByLabel("能力（逗号分隔）", { exact: true }).fill(" customer.content.read, ,workspace.summary.read ");
     await form.getByLabel("工单/事故", { exact: true }).fill("JIT-COMPONENT-REGRESSION");
-    await form.getByLabel("审批人", { exact: true }).fill("independent-approver");
+    await form.getByLabel("审批人身份", { exact: true }).fill("independent-approver");
+    await form.getByLabel("审批人令牌", { exact: true }).fill(APPROVAL_TOKEN);
     await form.getByLabel("审批时间（ISO UTC）", { exact: true }).fill(approvedAt);
     await form.getByLabel("到期时间（读≤15m / 写≤5m）", { exact: true }).fill(expiresAt);
     await form.getByLabel("授权原因", { exact: true }).fill("核验精确工作区授权");
@@ -176,16 +198,26 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
   it("submits the real JIT form with the API workspace_ids contract and the loaded revision", async () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     const requests: RpcRequest[] = [];
+    const approvalHeaders: (string | undefined)[] = [];
     try {
       await page.route(`${baseUrl}/api/mcp`, async route => {
         const request = route.request().postDataJSON() as RpcRequest;
         requests.push(request);
+        approvalHeaders.push(route.request().headers()["x-authorization-approval-token"]);
         await respond(route, request, request.method === "ops.authorization.grants.list" ? grantList : { id: "issued-jit-ui" });
       });
       const { form, approvedAt, expiresAt } = await fillGrantForm(page);
       await form.getByRole("button", { name: "签发 JIT", exact: true }).click();
       await expect.poll(() => requests.filter(request => request.method === "ops.authorization.grant.issue").length).toBe(1);
-      const params = requests.find(request => request.method === "ops.authorization.grant.issue")!.params;
+      const issuedIndex = requests.findIndex(request => request.method === "ops.authorization.grant.issue");
+      const params = requests[issuedIndex]!.params;
+      // The approval obligation is satisfiable only by the server-issued token,
+      // so it must reach the API as the header the approver holds...
+      expect(approvalHeaders[issuedIndex]).toBe(APPROVAL_TOKEN);
+      // ...and never as a body field, which would recreate the caller-supplied
+      // `approved_by` claim this change removed.
+      expect(params).not.toHaveProperty("approval_token");
+      expect(JSON.stringify(params)).not.toContain(APPROVAL_TOKEN);
       expect(JSON.parse(params.resource_scope_json)).toEqual({ workspace_ids: ["ws_jit_ui_fixture"] });
       expect(params).toMatchObject({
         subject_identity_id: "subject-jit-ui", target_workspace_id: "ws_jit_ui_fixture",
@@ -196,12 +228,15 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
       expect(JSON.parse(params.capabilities_json)).toEqual(["customer.content.read", "workspace.summary.read"]);
       await expect.poll(() => requests.filter(request => request.method === "ops.authorization.grants.list").length).toBe(2);
       await expect.poll(() => form.getByLabel("授权原因", { exact: true }).inputValue()).toBe("");
+      // A bearer credential must not outlive the submit it accompanied.
+      await expect.poll(() => form.getByLabel("审批人令牌", { exact: true }).inputValue()).toBe("");
     } finally { await page.close(); }
   }, 45_000);
 
   it("retains entered values on RPC failure and does not submit again while a request is pending", async () => {
     const page = await browser!.newPage({ viewport: { width: 1280, height: 800 } });
     const issued: RpcRequest[] = [];
+    const issuedApprovalHeaders: (string | undefined)[] = [];
     let releaseRequest: (() => void) | undefined;
     const requestReleased = new Promise<void>(resolve => { releaseRequest = resolve; });
     try {
@@ -209,6 +244,7 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
         const request = route.request().postDataJSON() as RpcRequest;
         if (request.method === "ops.authorization.grants.list") return respond(route, request, grantList);
         issued.push(request);
+        issuedApprovalHeaders.push(route.request().headers()["x-authorization-approval-token"]);
         if (issued.length === 1) {
           await requestReleased;
           return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: { code: "AUTHORIZATION_REVISION_CONFLICT", message: "授权修订已变化，请重新核对" } }) });
@@ -229,9 +265,13 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
       await page.getByRole("button", { name: "重试加载运营数据", exact: true }).waitFor();
       expect(await form.getByLabel("授权原因", { exact: true }).inputValue()).toBe("核验精确工作区授权");
       expect(await form.getByLabel("到期时间（读≤15m / 写≤5m）", { exact: true }).inputValue()).toBe(expiresAt);
+      // The retry control resubmits the form directly, so the token has to
+      // survive a failed submit; only the success path clears it.
+      expect(await form.getByLabel("审批人令牌", { exact: true }).inputValue()).toBe(APPROVAL_TOKEN);
       await page.getByRole("button", { name: "重试加载运营数据", exact: true }).click();
       await expect.poll(() => issued.length).toBe(2);
       expect(issued[1].params).toEqual(issued[0].params);
+      expect(issuedApprovalHeaders).toEqual([APPROVAL_TOKEN, APPROVAL_TOKEN]);
       expect(JSON.parse(issued[1].params.resource_scope_json)).toEqual({ workspace_ids: ["ws_jit_ui_fixture"] });
     } finally { releaseRequest?.(); await page.close(); }
   }, 45_000);

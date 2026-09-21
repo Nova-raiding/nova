@@ -683,6 +683,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const revokeTenantDmlOnSharedPlatformRules = await readFile(new URL('./migrations/230_revoke_tenant_dml_on_shared_platform_rules.sql', import.meta.url), 'utf8')
   const storageQuotaPerObjectReservationKeys = await readFile(new URL('./migrations/231_storage_quota_per_object_reservation_keys.sql', import.meta.url), 'utf8')
   const storageQuotaUnnameableReservationKeys = await readFile(new URL('./migrations/232_storage_quota_unnameable_reservation_keys.sql', import.meta.url), 'utf8')
+  const supportSlaCorrectionApprovalApprover = await readFile(new URL('./migrations/233_support_sla_correction_approval_approver.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -916,6 +917,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 230, name: 'revoke_tenant_dml_on_shared_platform_rules', sql: revokeTenantDmlOnSharedPlatformRules },
     { version: 231, name: 'storage_quota_per_object_reservation_keys', sql: storageQuotaPerObjectReservationKeys },
     { version: 232, name: 'storage_quota_unnameable_reservation_keys', sql: storageQuotaUnnameableReservationKeys },
+    { version: 233, name: 'support_sla_correction_approval_approver', sql: supportSlaCorrectionApprovalApprover },
   ]
 }
 

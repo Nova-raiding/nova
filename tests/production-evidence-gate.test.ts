@@ -61,6 +61,16 @@ describe('production payment and restore evidence gates', () => {
     expect(validateProductionEvidence(evidence('payment'), { ...options('payment'), publicKeyPem: rsaPublicKey })).toContain('trusted public key must be Ed25519')
   })
 
+  it.each(['fixture', 'mock', 'synthetic'])('rejects %s as a real production payment provider', provider => {
+    const value = evidence('payment'); value.provider = provider; value.signature_base64 = signProductionEvidence(value, privateKeyPem)
+    expect(validateProductionEvidence(value, options('payment'))).toContain('provider must identify a real provider')
+  })
+
+  it('rejects a synthetic payment evidence document even when its signature and provider fields look valid', () => {
+    const value = evidence('payment'); value.simulated = true; value.signature_base64 = signProductionEvidence(value, privateKeyPem)
+    expect(validateProductionEvidence(value, options('payment'))).toContain('simulated must be false')
+  })
+
   it('rejects stale attestations, wrong binding, local artifacts and non-isolated restore', () => {
     const value = evidence('restore'); value.attested_at = '1970-01-01T00:00:00Z'; value.release_git_sha = '0'.repeat(40); value.recovery_target_isolated = false
     ;(value.checks as Record<string, { evidence_ref: string }>).application_smoke!.evidence_ref = 'http://localhost/smoke'

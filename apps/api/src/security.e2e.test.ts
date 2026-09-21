@@ -379,12 +379,29 @@ describe('security and access-control acceptance gates', () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED', 'true')
     vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
+    // Deliberate security-contract change. The `approval` obligation on JIT
+    // grant issuance used to be satisfied by the caller-supplied `approved_by`
+    // / `approved_at` strings alone. That proved nothing about whether an
+    // approval act happened or whether the named approver existed and was
+    // entitled to the target workspace, yet the value was persisted into
+    // `ops_access_grants.approved_by` and the audit stream as the record of an
+    // approval. It now requires a server-issued credential
+    // (`x-authorization-approval-token`, matched against
+    // `AUTHORIZATION_APPROVAL_TOKENS`), mirroring the rule-approval token that
+    // `verifiedApprovalActor` mirrors `parseApprovalGrant` for. The claimed
+    // `approved_by` may only confirm the token's `actor_id`, and that actor
+    // must still differ from the requester, so this test now carries the token
+    // instead of relying on the forgeable field. The old assertions encoded the
+    // forgeable contract; they are updated, not relaxed.
+    vi.stubEnv('AUTHORIZATION_APPROVAL_TOKENS', JSON.stringify({
+      'authz-approval-token': { workspaces: [workspaceId], actor_id: 'security-approver' },
+    }))
     await configureBearerMembers([{ token: 'authz-admin-token', workspaceId, actorId: 'authz-admin-actor', role: 'platform_ops', gatewayRoles: ['platform_admin'], grantWorkspaces: [], workbenches: ['platform'] }])
     const base = await start()
     const session = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: 'Bearer authz-admin-token', 'content-type': 'application/json', 'x-ops-workbench': 'platform' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ops.session', params: {} }) }).then(response => response.json() as Promise<Envelope<{ result: { identity_id: string } }>>)
     const adminIdentityId = session.data!.result.identity_id
     await repository.assignPlatformRole({ subjectIdentityId: adminIdentityId, role: 'platform_admin', assignedBy: 'seed', reason: '安全测试管理员', expectedAuthorizationRevision: 0 })
-    const call = (method: string, params: Record<string, unknown>) => fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: 'Bearer authz-admin-token', 'content-type': 'application/json', 'x-ops-workbench': 'platform' }, body: JSON.stringify({ jsonrpc: '2.0', id: method, method, params }) }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
+    const call = (method: string, params: Record<string, unknown>) => fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: 'Bearer authz-admin-token', 'content-type': 'application/json', 'x-ops-workbench': 'platform', 'x-authorization-approval-token': 'authz-approval-token' }, body: JSON.stringify({ jsonrpc: '2.0', id: method, method, params }) }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
     const target = 'identity-managed-target'
     const assigned = await call('ops.authorization.role.assign', { subject_identity_id: target, role: 'support_agent', expected_authorization_revision: '0', reason: '客服值班角色' })
     expect(assigned.error).toBeNull()

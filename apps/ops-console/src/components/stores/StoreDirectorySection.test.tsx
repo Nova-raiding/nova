@@ -31,6 +31,31 @@ describe("StoreDirectorySection", () => {
     expect(storeAuthorizationStateLabel("unexpected_state")).toBe("状态待确认");
   });
 
+  it("labels a credential-free manual store record as unauthorized, never as connected", () => {
+    const label = storeAuthorizationStateLabel("manually_registered");
+
+    expect(label).toBe("人工登记（未授权）");
+    // 真实授权 is taken by `connected`; the manual record writes no credential,
+    // scope or platform receipt and must not be mistaken for it.
+    expect(label).not.toBe("真实授权");
+    expect(label).not.toBe(storeAuthorizationStateLabel("connected"));
+    expect(label).not.toBe("状态待确认");
+  });
+
+  it("keeps refresh_required out of the unknown bucket", () => {
+    expect(storeAuthorizationStateLabel("refresh_required")).toBe("需重新授权");
+    expect(storeAuthorizationStateLabel("refresh_required")).not.toBe("状态待确认");
+  });
+
+  it("renders a manually registered store as unauthorized instead of all clear", () => {
+    const markup = render({
+      storeDirectory: [{ ...store, state: "manually_registered", dataMode: "account_record_only", readable: false }],
+    });
+
+    expect(markup).toContain("人工登记（未授权）");
+    expect(markup).not.toContain("真实授权");
+  });
+
   it("keeps the last successful rows visible while a refresh is loading", () => {
     const markup = render({ loading: true });
 

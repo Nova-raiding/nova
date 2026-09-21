@@ -13,6 +13,7 @@ import type {
   TransitionSupportTicketCommand,
 } from "../../../../packages/contracts/src/ops/support.js";
 import type { SupportSlaCorrectionApprovalProgress, SupportSlaCorrectionDecision, SupportSlaCorrectionRun, SupportSlaMonthlyReport } from "../../../../packages/contracts/src/ops/support-sla-report.js";
+import type { OpsRpcOptions } from "../api/opsClient.js";
 
 export interface SupportTicketDetail {
   ticket: SupportTicketContract;
@@ -45,7 +46,13 @@ export interface SupportDomainClient {
   comment(command: CommentOnSupportTicketCommand): Promise<SupportMutationResult>;
   report(input: { workspaceId: string; periodStart: string; periodEnd: string; cutoffAt: string; reportId?: string }): Promise<SupportSlaMonthlyReport>;
   createCorrection(input: { workspaceId: string; originalReportId: string; periodStart: string; periodEnd: string; cutoffAt: string; reason: string; idempotencyKey: string }): Promise<SupportSlaCorrectionRun | { status: "no_change"; originalReportId: string; checksum: string }>;
-  decideCorrection(input: { workspaceId: string; correctionId: string; decision: "approved" | "rejected"; reason: string; idempotencyKey: string }): Promise<SupportSlaCorrectionDecision | SupportSlaCorrectionApprovalProgress>;
+  // The `approval` obligation on the correction decision is resolved
+  // server-side from the token grant alone (verifiedApprovalActor in
+  // apps/api/src/server.ts), so the approver's token travels as an
+  // OpsRpcOptions header. Without the parameter here the transport arg on
+  // opsDomainClients.decideCorrection was unreachable from any typed caller,
+  // which made the 批准/拒绝 controls dead under requiresStrictAuth().
+  decideCorrection(input: { workspaceId: string; correctionId: string; decision: "approved" | "rejected"; reason: string; idempotencyKey: string }, options?: OpsRpcOptions): Promise<SupportSlaCorrectionDecision | SupportSlaCorrectionApprovalProgress>;
 }
 
 export interface SupportFilters {
@@ -84,7 +91,10 @@ export interface SupportDomainModel {
   correctionDecision?: SupportSlaCorrectionDecision | SupportSlaCorrectionApprovalProgress;
   correctionLoading?: boolean;
   createCorrection?: (reason: string) => Promise<void>;
-  decideCorrection?: (decision: "approved" | "rejected", reason: string) => Promise<void>;
+  // The token is optional so existing callers keep compiling, but under
+  // requiresStrictAuth() a decision submitted without it is rejected by the
+  // server, so the UI must always supply it.
+  decideCorrection?: (decision: "approved" | "rejected", reason: string, approvalToken?: string) => Promise<void>;
 }
 
 const errorMessage = (error: unknown) => error instanceof Error && error.message
@@ -269,14 +279,19 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
     }
   }, [client, report, workspaceId]);
 
-  const decideCorrection = useCallback(async (decision: "approved" | "rejected", reason: string) => {
+  const decideCorrection = useCallback(async (decision: "approved" | "rejected", reason: string, approvalToken?: string) => {
     if (!correction || correction.status === "no_change") throw new Error("当前没有待审批 correction。");
     const request = ++correctionRequest.current;
     const requestWorkspaceId = workspaceId;
     setCorrectionLoading(true);
     setError("");
     try {
-      const loaded = await client.decideCorrection({ workspaceId, correctionId: correction.correctionId, decision, reason, idempotencyKey: crypto.randomUUID() });
+      // The token rides in the second argument (OpsRpcOptions) so the console
+      // emits it as the x-authorization-approval-token header, never as an rpc
+      // param: a param field would recreate the caller-supplied `approved_by`
+      // claim the token exists to replace, and a whitespace-only token trims to
+      // empty here so no blank header is sent.
+      const loaded = await client.decideCorrection({ workspaceId, correctionId: correction.correctionId, decision, reason, idempotencyKey: crypto.randomUUID() }, { authorizationApprovalToken: approvalToken?.trim() });
       if (isCurrentSupportRequest(request, correctionRequest.current, requestWorkspaceId, workspaceRef.current)) setCorrectionDecision(loaded);
     } catch (cause) {
       if (isCurrentSupportRequest(request, correctionRequest.current, requestWorkspaceId, workspaceRef.current)) setError(errorMessage(cause));

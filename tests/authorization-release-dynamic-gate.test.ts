@@ -3,6 +3,22 @@ import { describe, expect, it } from 'vitest'
 import { MCP_METHODS } from '../packages/contracts/src/mcp.js'
 import { MCP_METHOD_POLICIES } from '../packages/contracts/src/authz.js'
 import { HTTP_OPERATION_POLICIES, assertHttpOperationPolicyCoverage } from '../packages/contracts/src/http-authz.js'
+/**
+ * The routes `apps/api/src/server.ts` really dispatches have exactly one
+ * derivation, and it belongs to `tests/http-route-authz-coverage.test.ts`.
+ * Importing it rather than writing a second parser here keeps this gate from
+ * disagreeing with that file about the same router: the parser is the part that
+ * goes stale, and a copy would go stale silently.
+ *
+ * Importing also registers that file's suite in this one. That is wanted here:
+ * `test:release-gates` runs this file on its own, so the dispatch coverage has
+ * to be exercised from inside it. Before this import the assertion below called
+ * `assertHttpOperationPolicyCoverage()` with no inventory at all, and the
+ * default `[]` skips both the uncovered-route check and the stale-exemption
+ * check — a test named for the authorization release gate that proved nothing
+ * about the router.
+ */
+import { dispatchedHttpOperations } from './http-route-authz-coverage.test.js'
 
 const workerExecutionAuthorization = readFileSync(new URL('../packages/workers/src/execution-authorization.ts', import.meta.url), 'utf8')
 const workerMain = readFileSync(new URL('../apps/worker/src/main.ts', import.meta.url), 'utf8')
@@ -38,8 +54,15 @@ function authorizationReleaseReport() {
 describe('authorization release dynamic gate', () => {
   it('computes live registry denominators and requires complete local coverage', () => {
     const report = authorizationReleaseReport()
+    const dispatched = dispatchedHttpOperations()
 
-    expect(assertHttpOperationPolicyCoverage()).toMatchObject({ registered: HTTP_OPERATION_POLICIES.length })
+    // An empty inventory is what made this assertion vacuous, and an empty
+    // inventory is exactly what the scan returns if a router refactor moves the
+    // dispatch guards out of the regions it reads. The floor is the owning
+    // file's, restated because this gate runs without it: fail here rather than
+    // let the coverage check below pass by having nothing to check.
+    expect(dispatched.length).toBeGreaterThan(80)
+    expect(assertHttpOperationPolicyCoverage(dispatched)).toMatchObject({ registered: HTTP_OPERATION_POLICIES.length })
     expect(report.mcp_total).toBeGreaterThan(0)
     expect(report.policy_total).toBe(report.mcp_total)
     expect(report.mcp_policy_coverage).toBe(1)

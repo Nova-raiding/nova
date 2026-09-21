@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
 import { OpenAICompatibleVideoGenerator } from '../packages/ai/src/video-generator.js'
-import { blockHttpProbe, buildVideoProbeRequest, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, writeRelayResponseArtifact } from '../scripts/model-relay-canary.js'
+import { blockHttpProbe, buildVideoProbeRequest, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, requireProductionReleaseBinding, shouldBlockForCostGuard, writeRelayResponseArtifact } from '../scripts/model-relay-canary.js'
 import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
 describe('production model relay contract', () => {
@@ -22,6 +22,26 @@ describe('production model relay contract', () => {
     costSource: 'provider_receipt' as const,
     costCny: 0.01,
     responseValid: true,
+  })
+
+  it.each(['image', 'image_edit', 'video'] as const)('requires explicit cost confirmation before billable %s probes', modality => {
+    expect(shouldBlockForCostGuard({ modality, confirmCost: false })).toBe(true)
+    expect(shouldBlockForCostGuard({ modality, confirmCost: true })).toBe(false)
+  })
+
+  it('allows polling an existing video job without re-confirming a new billable request', () => {
+    expect(shouldBlockForCostGuard({ modality: 'video', confirmCost: false, existingVideoTaskId: 'job-existing' })).toBe(false)
+  })
+
+  it.each([
+    { environment: 'production', releaseId: '' },
+    { environment: 'production', releaseId: '   ' },
+  ])('fails closed when production evidence has no release binding', input => {
+    expect(() => requireProductionReleaseBinding(input)).toThrow('RELEASE_ID is required for production model relay evidence')
+  })
+
+  it('does not require a release binding for non-production canaries', () => {
+    expect(() => requireProductionReleaseBinding({ environment: 'test', releaseId: '' })).not.toThrow()
   })
 
   it('does not disguise a response or async job id as a provider request id', () => {

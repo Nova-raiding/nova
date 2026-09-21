@@ -89,20 +89,39 @@ describe("operations navigation", () => {
   it("does not expose platform-only domains to a workspace owner", () => {
     const visible = visibleOpsDomains(authorization(["workspace.summary.read", "workspace.member.read", "support.ticket.read", "incident.read", "customer.content.read", "store.connection.read", "rule.read", "model.status.read", "billing.workspace.read", "audit.read"]));
     expect(visible).toEqual([
-      "overview", "members", "tasks", "knowledge", "stores", "rules", "models", "storage", "audit",
+      "overview", "members", "tasks", "knowledge", "stores", "rules", "models", "storage", "finance", "audit",
     ]);
     expect(visible).not.toContain("users");
     expect(visible).not.toContain("feature-flags");
   });
 
-  it("canonicalizes the retired finance route to the overview workbench", () => {
-    expect(domainFromLocation({ pathname: "/ops/finance", hash: "" })).toBe("overview");
-    expect(domainFromLocation({ pathname: "/", hash: "#finance" })).toBe("overview");
+  // 365c5d84 withdrew `/ops/finance` and this assertion was inverted to pin the
+  // canonicalization to overview. The owner reversed that on 2026-09-20
+  // (docs/qa/four-product-decisions-2026-09-20.md, option A restore), so the
+  // route resolves to its own domain again. The `it.each(opsDomains)` cases
+  // above already cover the plain path and hash forms now that finance is a
+  // domain; what is finance-specific is the legacy merchant-tasks redirect.
+  it("routes finance to its own domain instead of the overview fallback", () => {
+    expect(domainFromLocation({ pathname: "/ops/finance", hash: "" })).toBe("finance");
+    expect(domainFromLocation({ pathname: "/", hash: "#finance" })).toBe("finance");
+    expect(domainFromLocation({ pathname: "/ops/finance/merchant/tasks", hash: "" })).toBe("tasks");
   });
 
-  it("keeps remaining Ops Console routes in their intended workbench", () => {
+  it("keeps finance dual-scope while all other Ops Console routes stay platform-scoped", () => {
+    // `undefined` is the dual-scope signal, not a missing entry: it is what lets
+    // 账务与退款 serve both the platform ledger and the enterprise-side
+    // 账务与商业配置 from one domain. Assigning a workbench here would silently
+    // drop one of those two faces.
+    expect(requiredWorkbenchForDomain("finance")).toBeUndefined();
     expect(requiredWorkbenchForDomain("audit")).toBe("platform");
     expect(requiredWorkbenchForDomain("tasks")).toBe("workspace");
     expect(requiredWorkbenchForDomain("knowledge")).toBe("workspace");
+  });
+
+  it("opens finance for a platform ledger, a workspace refund role or a self-scoped reader", () => {
+    expect(canViewOpsDomain("finance", authorization(["billing.platform.read"]))).toBe(true);
+    expect(canViewOpsDomain("finance", authorization(["billing.workspace.read", "billing.refund.execute"]))).toBe(true);
+    expect(canViewOpsDomain("finance", authorization(["billing.self.read"]))).toBe(true);
+    expect(canViewOpsDomain("finance", authorization(["customer.content.read"]))).toBe(false);
   });
 });

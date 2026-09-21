@@ -47,11 +47,21 @@ export function RechargeOrdersSection({ model }: RechargeOrdersSectionProps) {
   } = model;
   const orders = rechargeOrders?.orders ?? [];
   const summary = rechargeOrders?.summary;
+  // `undefined` means the read has not resolved — it failed, or it has not run.
+  // Coalescing that to `[]` made a failed read render the identical summary row
+  // as a server that legitimately answered with no orders: `订单总数 0 / 待支付
+  // 0 / 已支付 0 / 异常 0`, where "异常 0" reads as the all-clear directly above
+  // the alert saying the read failed. `loadRechargeOrders` resets to undefined on
+  // failure precisely so this distinction is expressible; the section has to stop
+  // erasing it.
+  const notRead = rechargeOrders === undefined;
 
   const stateOptions = [
-    { label: `全部 ${rechargeOrderTotal(summary, orders, rechargeOrders?.total)}`, value: "all" },
+    { label: notRead ? "全部" : `全部 ${rechargeOrderTotal(summary, orders, rechargeOrders?.total)}`, value: "all" },
     ...rechargeOrderStates.map((state) => ({
-      label: `${rechargeOrderPresentation[state].label} ${rechargeOrderCount(state, summary, orders)}`,
+      label: notRead
+        ? rechargeOrderPresentation[state].label
+        : `${rechargeOrderPresentation[state].label} ${rechargeOrderCount(state, summary, orders)}`,
       value: state,
     })),
   ];
@@ -74,19 +84,19 @@ export function RechargeOrdersSection({ model }: RechargeOrdersSectionProps) {
     >
       <Row gutter={[16, 16]} className="finance-summary" aria-label="充值订单汇总">
         <Col xs={12} md={6}>
-          <Statistic title="订单总数" value={rechargeOrderTotal(summary, orders, rechargeOrders?.total)} />
+          <Statistic title="订单总数" value={notRead ? "—" : rechargeOrderTotal(summary, orders, rechargeOrders?.total)} />
         </Col>
         <Col xs={12} md={6}>
-          <Statistic title="待支付" value={rechargeOrderCount("pending", summary, orders)} />
+          <Statistic title="待支付" value={notRead ? "—" : rechargeOrderCount("pending", summary, orders)} />
         </Col>
         <Col xs={12} md={6}>
-          <Statistic title="已支付" value={rechargeOrderCount("paid", summary, orders)} />
+          <Statistic title="已支付" value={notRead ? "—" : rechargeOrderCount("paid", summary, orders)} />
         </Col>
         <Col xs={12} md={6}>
           <Statistic
             title="异常"
-            value={rechargeOrderCount("failed", summary, orders)}
-            styles={rechargeOrderCount("failed", summary, orders) ? { content: { color: "#b91c1c" } } : undefined}
+            value={notRead ? "—" : rechargeOrderCount("failed", summary, orders)}
+            styles={!notRead && rechargeOrderCount("failed", summary, orders) ? { content: { color: "#b91c1c" } } : undefined}
           />
         </Col>
       </Row>
@@ -125,7 +135,7 @@ export function RechargeOrdersSection({ model }: RechargeOrdersSectionProps) {
           size="small"
           loading={rechargeOrdersLoading}
           pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
-          locale={{ emptyText: "当前筛选条件下没有充值订单" }}
+          locale={{ emptyText: notRead ? "尚未读取充值订单；空表不代表没有订单。" : "当前筛选条件下没有充值订单" }}
           dataSource={orders}
           scroll={{ x: 1380 }}
           columns={[

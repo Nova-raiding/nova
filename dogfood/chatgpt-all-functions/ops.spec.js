@@ -57,7 +57,7 @@ test('inventory Ops Console through the real browser UI', async () => {
   }
 })
 
-test('fails closed with no local connection credentials and exposes platform login', async () => {
+test('fails closed with no local connection credentials and exposes managed SSO reauthentication', async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
   const requests = []
@@ -76,13 +76,13 @@ test('fails closed with no local connection credentials and exposes platform log
   })
   const page = await context.newPage()
   await page.goto(noAuthBaseUrl, { waitUntil: 'domcontentloaded' })
-  // With no local credential, the production-shaped console intentionally
-  // lands on the dedicated platform login page rather than the post-session
-  // recovery result. Both paths fail closed; this one must expose login.
-  await expect(page.getByText('登录平台运营后台', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByPlaceholder('例如 ops@example.com')).toBeVisible()
-  await expect(page.getByPlaceholder('请输入平台运营密码')).toBeVisible()
-  await expect(page.getByRole('button', { name: '登录平台运营后台', exact: true })).toBeVisible()
+  // Managed deployments intentionally use organization SSO and do not expose
+  // a local username/password form. Missing credentials must still fail closed
+  // and expose the managed reauthentication path.
+  await expect(page.getByRole('heading', { name: '组织 SSO 会话已失效' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText('当前部署使用组织 SSO 认证，平台运营控制台不提供账号密码登录。', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '重新登录组织账号', exact: true })).toBeVisible()
+  await expect(page.getByPlaceholder('例如 ops@example.com')).toHaveCount(0)
   await expect(page.getByText('运营 API 连接配置')).toHaveCount(0)
   // Managed OIDC builds may still issue the unauthenticated ops.session RPC;
   // the contract is that no local bearer credential is attached to it.
@@ -114,9 +114,9 @@ test('turns an authenticated-session 401 into a reauthentication form', async ()
   })
   const page = await context.newPage()
   await page.goto(noAuthBaseUrl, { waitUntil: 'domcontentloaded' })
-  await expect(page.getByText('登录平台运营后台', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('heading', { name: '组织 SSO 会话已失效' })).toBeVisible({ timeout: 20_000 })
   await expect(page.getByText('当前尚未登录', { exact: true })).not.toBeVisible()
-  await expect(page.getByPlaceholder('请输入平台运营密码', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '重新登录组织账号', exact: true })).toBeVisible()
   expect(sessionRequests).toBe(1)
   await context.close()
   await closeWithDeadline(() => browser.close())

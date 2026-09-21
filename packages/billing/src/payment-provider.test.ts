@@ -27,6 +27,31 @@ describe('payment provider adapter', () => {
     expect(() => verifyPaymentCallbackSignature({ secret: 'server-secret', channel: 'wechat', workspaceId: 'ws-1', payload, signature, timestamp, nonce: 'nonce-123456789012', nowMs: 1799614800_000 + 300_001 })).toThrow('expired')
   })
 
+  it.each([
+    ['unsupported currency', { currency: 'USD' as never }, 'unsupported'],
+    ['unsupported state', { state: 'settled' as never }, 'state is invalid'],
+    ['short nonce', {}, 'nonce is invalid'],
+  ])('rejects callback evidence with %s', (_name, change, message) => {
+    const timestamp = '1799614800'
+    const payload = { orderId: 'order-boundary', providerTradeId: 'trade-boundary', amountFen: 1000, currency: 'CNY' as const, state: 'paid' as const }
+    const nonce = 'nonce-123456789012'
+    const canonical = ['alipay', 'ws-boundary', payload.orderId, payload.providerTradeId, payload.amountFen, payload.currency, payload.state, timestamp, nonce].join('|')
+    const signature = createHmac('sha256', 'server-secret').update(canonical).digest('hex')
+    const changedPayload = { ...payload, ...change }
+    const changedNonce = _name === 'short nonce' ? 'short' : nonce
+    expect(() => verifyPaymentCallbackSignature({ secret: 'server-secret', channel: 'alipay', workspaceId: 'ws-boundary', payload: changedPayload, signature, timestamp, nonce: changedNonce, nowMs: 1799614800_000 })).toThrow(message)
+  })
+
+  it('accepts a callback exactly at the freshness boundary but rejects one millisecond later', () => {
+    const timestamp = '1799614800'
+    const payload = { orderId: 'order-freshness', providerTradeId: 'trade-freshness', amountFen: 1000, currency: 'CNY' as const, state: 'paid' as const }
+    const nonce = 'nonce-123456789012'
+    const canonical = ['alipay', 'ws-freshness', payload.orderId, payload.providerTradeId, payload.amountFen, payload.currency, payload.state, timestamp, nonce].join('|')
+    const signature = createHmac('sha256', 'server-secret').update(canonical).digest('hex')
+    expect(() => verifyPaymentCallbackSignature({ secret: 'server-secret', channel: 'alipay', workspaceId: 'ws-freshness', payload, signature, timestamp, nonce, nowMs: 1799614800_000 + 300_000 })).not.toThrow()
+    expect(() => verifyPaymentCallbackSignature({ secret: 'server-secret', channel: 'alipay', workspaceId: 'ws-freshness', payload, signature, timestamp, nonce, nowMs: 1799614800_000 + 300_001 })).toThrow('expired')
+  })
+
   it('completes a deterministic local fixture checkout and refund without network access', async () => {
     const provider = new FixturePaymentProvider()
     const input = { channel: 'alipay' as const, orderId: 'fixture-order-1', idempotencyKey: 'fixture-key-1', workspaceId: 'ws-fixture', amountFen: 1000, callbackUrl: 'fixture://callback', description: 'local test' }

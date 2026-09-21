@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Alert, App as AntApp, Button, Layout, Modal, Result, Skeleton } from "antd";
 import { OpsHeader } from "../components/OpsHeader";
+import { ManagedOpsReauthentication } from "../components/ManagedOpsReauthentication.js";
 import { PlatformOpsLoginPage } from "../components/PlatformOpsLogin.js";
 import { mainItems, OpsSidebar } from "../components/OpsSidebar";
 import { useOpsConsoleModel, type OpsConsoleModel } from "../hooks/useOpsConsoleModel";
@@ -30,6 +31,7 @@ export function OpsSessionRecoveryGuidance({ managed: _managed, error }: { manag
     <details><summary>查看失败详情（供管理员排查）</summary><p>{error ?? "权限会话加载失败"}</p></details>
   </div>;
 }
+
 
 export function commitOpsWorkbenchTransition(
   next: OpsWorkbench,
@@ -228,6 +230,13 @@ function Dashboard({
   const sessionError = !model.opsSession && !expectedUnauthenticated
     ? sessionDataSetError ?? (managedOpsSession && !hasOpsConnection() ? "尚未登录组织运营账号" : undefined)
     : undefined;
+  // The managed SSO surface must not reuse `sessionDataSetError`: every message
+  // the client has for an unauthenticated session is written for the password
+  // path ("请使用平台运营账号和密码重新登录"), which is the advice that cannot
+  // work there. The server's own code and request id are mode-neutral.
+  const sessionDiagnostic = sessionErrorEvidence?.code
+    ? `服务端返回 ${sessionErrorEvidence.code}${sessionErrorEvidence.requestId ? `，请求 ${sessionErrorEvidence.requestId}` : ""}`
+    : undefined;
   const sessionAccessDeniedEvidence = accessDeniedEvidence(sessionErrorEvidence);
   const sessionGate = opsSessionGateState(managedOpsSession, Boolean(model.opsSession), sessionError);
   const sessionErrorRef = useRef<HTMLDivElement>(null);
@@ -255,7 +264,7 @@ function Dashboard({
     navigateToRoute(domain);
   };
   const canAutoLoadModelMarkup =
-    activeDomain === "models" &&
+    (activeDomain === "models" || activeDomain === "finance") &&
     model.canModelMarkup &&
     model.modelStatus?.state === "ready" &&
     model.modelStatus.relay?.configured === true &&
@@ -288,10 +297,25 @@ function Dashboard({
     return () => window.cancelAnimationFrame(focusTimer);
   }, [sessionGate]);
 
-  if ((sessionGate === "blocked" && !managedOpsSession) || expectedUnauthenticated) {
+  if (managedOpsSession && expectedUnauthenticated) {
+    // A managed deployment has no working password path, so it must not be
+    // offered one: the operator gets gateway re-entry instead of a form that
+    // can only report success and fail again.
+    return (
+      <ManagedOpsReauthentication
+        detail={sessionDiagnostic}
+        loading={model.loading}
+        onReauthenticate={() => window.location.reload()}
+      />
+    );
+  }
+
+  if (!managedOpsSession && (sessionGate === "blocked" || expectedUnauthenticated)) {
     return (
       <PlatformOpsLoginPage
-        managedSession={false}
+        // Only a password-backed deployment reaches this branch; a managed
+        // session was routed to the SSO re-authentication surface above.
+        managedSession={managedOpsSession}
         error={sessionError}
         loading={model.loading}
         onRetry={() => void model.load()}

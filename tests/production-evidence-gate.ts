@@ -67,7 +67,7 @@ export function validateProductionEvidence(document: unknown, options: { kind: P
       else seenArtifactRefs.set(check.evidence_ref, name)
     }
   }
-  if (options.kind === 'payment') { if (!text(value.provider) || /mock|fixture/iu.test(value.provider)) errors.push('provider must identify a real provider'); if (typeof value.amount_cny !== 'number' || value.amount_cny <= 0) errors.push('amount_cny must be positive'); if (!/^[a-f0-9]{64}$/u.test(String(value.provider_trade_id_sha256 ?? ''))) errors.push('provider_trade_id_sha256 must be a SHA-256 hash') }
+  if (options.kind === 'payment') { if (!text(value.provider) || /mock|fixture|synthetic/iu.test(value.provider)) errors.push('provider must identify a real provider'); if (typeof value.amount_cny !== 'number' || value.amount_cny <= 0) errors.push('amount_cny must be positive'); if (!/^[a-f0-9]{64}$/u.test(String(value.provider_trade_id_sha256 ?? ''))) errors.push('provider_trade_id_sha256 must be a SHA-256 hash') }
   else {
     if (value.recovery_target_isolated !== true) errors.push('recovery_target_isolated must be true')
     if (!/^[a-f0-9]{64}$/u.test(String(value.backup_sha256 ?? ''))) errors.push('backup_sha256 must be a SHA-256 hash')

@@ -1,4 +1,4 @@
-import { rpc } from "./opsClient.js";
+import { rpc, type OpsRpcOptions } from "./opsClient.js";
 
 export const commercialOperationsMethods = {
   accessSummary: "ops.commercial.access.summary",
@@ -52,8 +52,39 @@ export function refundPolicyApproval(value: string): Record<string, unknown> {
 
 const operationId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 const SERVICE_BOUNDARY_POLICY_CHECKSUM = "94cd78089cf960d4b556ed9990fcd653c03473bd143b94d0203ab978ea84d685";
-const serviceCommand = async (method: string, targetWorkspaceId: string, allocationId: string, expectedRevision: number, reason: string, extra: Record<string, string> = {}) => rpc(method, { target_workspace_id: targetWorkspaceId, allocation_id: allocationId, expected_revision: String(expectedRevision), idempotency_key: operationId("service_fulfillment"), reason, evidence_json: JSON.stringify({ source: "ops_console", mode: "test" }), ...extra });
-const createServiceAllocation = async (input: { workspace: string; order: string; entitlement: string; serviceType: string; unit: string; quantity: number; checksum: string; reason: string; acceptanceRef: string; customerSubjectRef: string; acceptedAt: string }) => rpc("ops.commercial.service-allocation.create", { target_workspace_id: input.workspace, order_snapshot_id: input.order, entitlement_snapshot_id: input.entitlement, service_type: input.serviceType, unit: input.unit, allocated_quantity: String(input.quantity), source_checksum: input.checksum, expected_revision: "0", idempotency_key: operationId("service_allocation_create"), reason: input.reason, evidence_json: JSON.stringify({ source: "ops_console", service_boundary_acceptance: { accepted: true, policy_version: "commercial.service-boundary.v1", policy_checksum: SERVICE_BOUNDARY_POLICY_CHECKSUM, acceptance_ref: input.acceptanceRef, customer_subject_ref: input.customerSubjectRef, accepted_at: input.acceptedAt } }) });
+
+/**
+ * The service-fulfilment writes carry the `approval` authorization obligation,
+ * and the API resolves the approver ONLY from the maker-checker token grant in
+ * the `x-authorization-approval-token` header (`verifiedApprovalActor` in
+ * apps/api/src/server.ts). Under strict auth a command sent without that header
+ * is rejected, so a body `approved_by` would not be evidence and the console's
+ * service controls would be dead.
+ *
+ * The token is an explicit parameter at every layer — never read from ambient
+ * session state, because an approval is the act of a named approver, not
+ * whatever identity happens to be active. An empty/whitespace token is treated
+ * as "no token" so callers can pass a blank form field without fabricating a
+ * header.
+ */
+const approvalOptions = (approvalToken?: string): OpsRpcOptions => {
+  const token = approvalToken?.trim();
+  return token ? { authorizationApprovalToken: token } : {};
+};
+
+const serviceCommand = async (method: string, targetWorkspaceId: string, allocationId: string, expectedRevision: number, reason: string, extra: Record<string, string> = {}, approvalToken?: string) => rpc(method, { target_workspace_id: targetWorkspaceId, allocation_id: allocationId, expected_revision: String(expectedRevision), idempotency_key: operationId("service_fulfillment"), reason, evidence_json: JSON.stringify({ source: "ops_console", mode: "test" }), ...extra }, approvalOptions(approvalToken));
+
+/**
+ * `approvalToken` is a trailing argument, never a field of `input`, for the same
+ * reason it is never read from ambient state: `input` is the object the
+ * JSON-RPC params are derived from, and the approver's bearer token must never
+ * travel as a param, where it would be logged, traced and echoed back in
+ * evidence. The params literal below is explicit today, so no spread leaks it —
+ * but with the token inside `input`, a later `...input` spread would put it on
+ * the wire. Keeping it out of the shape makes that accident impossible instead
+ * of merely absent. The other four service writes already take it this way.
+ */
+const createServiceAllocation = async (input: { workspace: string; order: string; entitlement: string; serviceType: string; unit: string; quantity: number; checksum: string; reason: string; acceptanceRef: string; customerSubjectRef: string; acceptedAt: string }, approvalToken?: string) => rpc("ops.commercial.service-allocation.create", { target_workspace_id: input.workspace, order_snapshot_id: input.order, entitlement_snapshot_id: input.entitlement, service_type: input.serviceType, unit: input.unit, allocated_quantity: String(input.quantity), source_checksum: input.checksum, expected_revision: "0", idempotency_key: operationId("service_allocation_create"), reason: input.reason, evidence_json: JSON.stringify({ source: "ops_console", service_boundary_acceptance: { accepted: true, policy_version: "commercial.service-boundary.v1", policy_checksum: SERVICE_BOUNDARY_POLICY_CHECKSUM, acceptance_ref: input.acceptanceRef, customer_subject_ref: input.customerSubjectRef, accepted_at: input.acceptedAt } }) }, approvalOptions(approvalToken));
 
 export const commercialCapabilities = {
   accessRead: "commercial.access.read",
@@ -504,10 +535,10 @@ export const commercialOperationsClient = {
   completeCommercialRefund: (workspace: string, requestId: string, externalRefundId: string, evidenceJson: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.refundComplete, { target_workspace_id: workspace, request_id: requestId, external_refund_id: externalRefundId, reason, evidence_json: evidenceJson }, { signal }),
   proposePointAdjustment: async (targetWorkspaceId: string, pointsDelta: number, reason: string, signal?: AbortSignal) => rpc("ops.commercial.points.adjust.propose", { target_workspace_id: targetWorkspaceId, points_delta: String(pointsDelta), expected_revision: "0", idempotency_key: operationId("point_adjust_propose"), reason, evidence_json: JSON.stringify({ source: "ops_console", mode: "test" }) }, { signal }),
   decidePointAdjustment: async (targetWorkspaceId: string, proposalId: string, decision: "approved" | "rejected", reason: string, signal?: AbortSignal) => rpc("ops.commercial.points.adjust.decide", { target_workspace_id: targetWorkspaceId, proposal_id: proposalId, decision, idempotency_key: operationId("point_adjust_decide"), reason, evidence_json: JSON.stringify({ source: "ops_console", mode: "test" }) }, { signal }),
-  scheduleService: (workspace: string, allocation: string, revision: number, scheduleAt: string, reason: string) => serviceCommand("ops.commercial.service-fulfillment.schedule", workspace, allocation, revision, reason, { schedule_at: scheduleAt }),
-  startService: (workspace: string, allocation: string, revision: number, reason: string) => serviceCommand("ops.commercial.service-fulfillment.start", workspace, allocation, revision, reason),
-  completeService: (workspace: string, allocation: string, revision: number, quantity: number, reason: string) => serviceCommand("ops.commercial.service-fulfillment.complete", workspace, allocation, revision, reason, { actual_quantity: String(quantity) }),
-  adjustService: (workspace: string, allocation: string, revision: number, eventId: string, quantity: number, reason: string) => serviceCommand("ops.commercial.service-fulfillment.adjust", workspace, allocation, revision, reason, { corrects_event_id: eventId, actual_quantity: String(quantity) }),
+  scheduleService: (workspace: string, allocation: string, revision: number, scheduleAt: string, reason: string, approvalToken?: string) => serviceCommand("ops.commercial.service-fulfillment.schedule", workspace, allocation, revision, reason, { schedule_at: scheduleAt }, approvalToken),
+  startService: (workspace: string, allocation: string, revision: number, reason: string, approvalToken?: string) => serviceCommand("ops.commercial.service-fulfillment.start", workspace, allocation, revision, reason, {}, approvalToken),
+  completeService: (workspace: string, allocation: string, revision: number, quantity: number, reason: string, approvalToken?: string) => serviceCommand("ops.commercial.service-fulfillment.complete", workspace, allocation, revision, reason, { actual_quantity: String(quantity) }, approvalToken),
+  adjustService: (workspace: string, allocation: string, revision: number, eventId: string, quantity: number, reason: string, approvalToken?: string) => serviceCommand("ops.commercial.service-fulfillment.adjust", workspace, allocation, revision, reason, { corrects_event_id: eventId, actual_quantity: String(quantity) }, approvalToken),
   createServiceAllocation,
 };
 

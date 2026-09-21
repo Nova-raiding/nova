@@ -8,7 +8,7 @@ import type { SupportSlaCorrectionApprovalProgress, SupportSlaCorrectionDecision
 import { incidentSeverities, incidentStatuses } from "../../../../packages/contracts/src/ops/incidents.js";
 import { auditSources, type AuditCenterExport, type AuditCenterPage, type AuditCenterDetail, type AuditCenterQuery } from "../../../../packages/contracts/src/ops/audit-center.js";
 import type { ModelStatus, StorageReconciliationSummary } from "../types/ops.js";
-import { MAX_OPS_EXPORT_RESPONSE_BYTES, OPS_EXPORT_TIMEOUT_MS, rpc, rpcForWorkspace } from "./opsClient.js";
+import { MAX_OPS_EXPORT_RESPONSE_BYTES, OPS_EXPORT_TIMEOUT_MS, rpc, rpcForWorkspace, type OpsRpcOptions } from "./opsClient.js";
 
 export class OpsDomainResponseError extends Error {
   readonly code = "OPS_INVALID_RESPONSE";
@@ -289,7 +289,16 @@ export const supportClient: SupportDomainClient = {
   comment: async (input) => parseSupportMutation(await rpcForWorkspace(input.workspaceId, "ops.support.ticket.comment", { ticket_id: input.ticketId, body: input.body, visibility: input.visibility, expected_revision: String(input.expectedRevision), idempotency_key: input.idempotencyKey })),
   report: async (input) => parseSupportSlaReport(await rpcForWorkspace<SupportSlaMonthlyReport>(input.workspaceId, "ops.support.sla.report", { period_start: input.periodStart, period_end: input.periodEnd, cutoff_at: input.cutoffAt, ...(input.reportId ? { report_id: input.reportId } : {}) })),
   createCorrection: async (input) => parseSupportSlaCorrection(await rpcForWorkspace<SupportSlaCorrectionRun | { status: "no_change"; original_report_id: string; checksum: string }>(input.workspaceId, "ops.support.sla.correction.create", { original_report_id: input.originalReportId, period_start: input.periodStart, period_end: input.periodEnd, cutoff_at: input.cutoffAt, reason: input.reason, idempotency_key: input.idempotencyKey })),
-  decideCorrection: async (input) => parseSupportSlaCorrectionDecision(await rpcForWorkspace<SupportSlaCorrectionDecision | SupportSlaCorrectionApprovalProgress>(input.workspaceId, "ops.support.sla.correction.decide", { correction_id: input.correctionId, decision: input.decision, reason: input.reason, idempotency_key: input.idempotencyKey })),
+  // `authz.ts` puts the `approval` obligation on
+  // `ops.support.sla.correction.decide`, and the server resolves the approver
+  // ONLY from the `x-authorization-approval-token` grant (`verifiedApprovalActor`
+  // in apps/api/src/server.ts). Sending no token therefore made the decide
+  // control render and then be denied under strict auth: a control that could
+  // never fire. The token must be handed in by the calling component as an
+  // explicit option — never read from a module-level or ambient value — so the
+  // approval still travels as evidence the approver actually holds, not as a
+  // caller-asserted body field.
+  decideCorrection: async (input, options?: OpsRpcOptions) => parseSupportSlaCorrectionDecision(await rpcForWorkspace<SupportSlaCorrectionDecision | SupportSlaCorrectionApprovalProgress>(input.workspaceId, "ops.support.sla.correction.decide", { correction_id: input.correctionId, decision: input.decision, reason: input.reason, idempotency_key: input.idempotencyKey }, options)),
 };
 
 const financeQueryParams = (query: FinanceSearchQuery, includeCursor = true): Record<string, string> => ({

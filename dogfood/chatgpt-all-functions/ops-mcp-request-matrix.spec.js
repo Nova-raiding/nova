@@ -9,11 +9,23 @@ import { openPlatformConsole, openWorkspaceConsole } from './ops-auth.js'
 test.setTimeout(240_000)
 test.use({ channel: 'chrome', trace: 'off', video: 'off', screenshot: 'off' })
 
+// This list mirrors the platform workbench's *route* set — the domains
+// `requiredWorkbenchForDomain` serves from the platform workbench, plus the two
+// dual-scope domains (`overview`, `finance`) — not the sidebar's
+// `navigationGroups`. `stores` / `storage` / `audit` have no sidebar entry at
+// all and the route walk still has to cover them; conversely a domain can be
+// withdrawn from the sidebar while its route stays registered for bookmarks.
 const platformSections = [
   ['总览', '/ops/overview?workbench=platform'],
   ['用户中心', '/ops/users?workbench=platform'],
+  ['客户交付', '/ops/customer-delivery?workbench=platform'],
   ['平台连接', '/ops/stores?workbench=platform'],
-  ['模型服务', '/ops/models?workbench=platform'],
+  // `models` is the route's own accessible name, not the withdrawn sidebar
+  // entry's label: `OpsPage` carries `aria-label` = `title`, and the page kept
+  // for old /ops/models links is titled 模型计费设置. Expecting the withdrawn
+  // navigation label here made this walk time out on a heading the page has
+  // never rendered.
+  ['模型计费设置', '/ops/models?workbench=platform'],
   ['存储与对账', '/ops/storage?workbench=platform'],
   ['账务与退款', '/ops/finance?workbench=platform'],
   ['审计中心', '/ops/audit?workbench=platform'],
@@ -27,8 +39,16 @@ const workspaceSections = [
   ['账务与退款', '/ops/finance?workbench=workspace'],
 ]
 
-// These are the opposite-boundary methods. Other methods are allowed to be
-// domain-specific and are checked by the server response and session scope.
+// These are the opposite-boundary methods. Every name below is declared in
+// `packages/contracts/src/authz.ts` (`POLICY_GROUPS`) with the *other*
+// workbench's policy scope: `platformForbidden` is the workspace-scoped set,
+// `workspaceForbidden` the platform-scoped one. `createAuthorizationProjection`
+// drops any capability whose projected scope does not match the session's
+// workbench (`scopeMatchesWorkbench`), so a request that stays inside its own
+// workbench cannot carry the opposite set; a name landing here means a page
+// reached past that projection and is the finding, not noise. Other methods are
+// allowed to be domain-specific and are checked by the server response and
+// session scope.
 const platformForbidden = new Set([
   'workspace.commercial.get', 'ops.audit.list', 'ops.members.list',
   'canonical.product.consistency', 'billing.model-usage.statement',
@@ -47,17 +67,25 @@ const workspaceForbidden = new Set([
   'ops.commercial.rollouts.list', 'ops.finance.search', 'ops.finance.detail',
   'ops.finance.export',
 ])
+// Accessible name each walk section must end up on, keyed by the walk label.
+// Everything here is a heading the page really renders, except 客户交付, whose
+// `OpsPage` is `hideTitle` — it is matched through the page region's
+// `aria-label` instead. `客服工作台` and `事故中心` used to sit in this map but
+// no walk could ever reach them and nothing was asserted by keeping them: the
+// pages still exist and are unit-tested, but their route modules
+// (`navigation/routes/SupportRoute.tsx`, `IncidentsRoute.tsx`) are imported by
+// nothing, and neither label is in `opsDomains` nor in the `/ops/...` regex
+// `domainFromLocation` matches, so those paths fall back to `overview`.
 const headingByLabel = {
   '总览': '平台运营实时概况',
   '用户中心': '用户中心',
+  '客户交付': '客户交付',
   '成员与权限': '成员与权限',
-  '客服': '客服工作台',
-  '事故中心': '事故中心',
   '任务与内容': '任务与内容',
   '知识库': '知识库',
   '平台连接': '平台连接汇总',
   '平台规则': '平台规则',
-  '模型服务': '模型服务',
+  '模型计费设置': '模型计费设置',
   '存储与对账': '存储与对账',
   '账务与退款': '平台财务中心',
   '审计中心': '审计中心',

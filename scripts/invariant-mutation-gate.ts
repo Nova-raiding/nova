@@ -97,6 +97,12 @@ const skipPostgres = process.env.INVARIANTS_SKIP_POSTGRES === '1'
  * `invariants:verify` and CI run — keeps NOT RUN fatal.
  */
 const tolerateMissingBindings = process.argv.includes('--tolerate-missing-bindings')
+const evidenceTimeoutMs = readPositiveInteger(process.env.INVARIANTS_EVIDENCE_TIMEOUT_MS, 120_000)
+
+function readPositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
+}
 
 async function loadMutations(): Promise<InvariantMutation[]> {
   const files = readdirSync(fragmentDirectory).filter(name => name.endsWith('.invariant.ts'))
@@ -252,17 +258,30 @@ interface EvidenceRun { status: number; output: string }
 
 /** Vitest, in this repository's root, with `args`; the exit code is the caller's to read. */
 function spawnEvidence(mutation: InvariantMutation, environment: NodeJS.ProcessEnv, args: readonly string[], postgres: boolean): EvidenceRun {
-  const result = execFileSync('npx', [...args], {
-    cwd: root,
-    stdio: 'pipe',
-    encoding: 'utf8',
-    // The PostgreSQL evidence files are excluded from the last three isolated
-    // manifests unless the run says it is sweeping everything; without this the
-    // postgres config collects nothing and the run fails to load.
-    env: { ...environment, INVARIANT_MUTATION: mutation.id, ...(postgres ? { MERCHANT_ISOLATED_POSTGRES_ALL: 'true' } : {}) },
-    maxBuffer: 32 * 1024 * 1024,
-  })
-  return { status: 0, output: result }
+  try {
+    const result = execFileSync('npx', [...args], {
+      cwd: root,
+      stdio: 'pipe',
+      encoding: 'utf8',
+      timeout: evidenceTimeoutMs,
+      killSignal: 'SIGTERM',
+      // The PostgreSQL evidence files are excluded from the last three isolated
+      // manifests unless the run says it is sweeping everything; without this the
+      // postgres config collects nothing and the run fails to load.
+      env: { ...environment, INVARIANT_MUTATION: mutation.id, ...(postgres ? { MERCHANT_ISOLATED_POSTGRES_ALL: 'true' } : {}) },
+      maxBuffer: 32 * 1024 * 1024,
+    })
+    return { status: 0, output: result }
+  } catch (error) {
+    const failure = error as { status?: number; stdout?: string; stderr?: string; signal?: string; killed?: boolean; code?: string }
+    if (failure.killed || failure.code === 'ETIMEDOUT') {
+      return {
+        status: -1,
+        output: `evidence process timed out after ${evidenceTimeoutMs}ms (killed by ${failure.signal ?? 'SIGTERM'})\n${failure.stdout ?? ''}\n${failure.stderr ?? ''}`,
+      }
+    }
+    throw error
+  }
 }
 
 /** The evidence test as the tree currently stands, under the configuration its row runs it with. */
@@ -514,7 +533,12 @@ function check(mutation: InvariantMutation, environment: NodeJS.ProcessEnv): Row
   // Baseline first. Without it, an evidence test that is already red for an
   // unrelated reason would be scored as "went red as required" and the gate
   // would certify a guard that has no teeth.
-  const baseline = tryRunEvidence(mutation, environment)
+  const runStage = (stage: string): EvidenceRun => {
+    console.log(`\n  [${mutation.id}] ${stage} (timeout ${evidenceTimeoutMs}ms)`)
+    return tryRunEvidence(mutation, environment)
+  }
+
+  const baseline = runStage('baseline')
   if (baseline.status !== 0) {
     const attributed = attribution(mutation, baseline, explain)
     return { id: mutation.id, verdict: 'NOT RUN', detail: `NOT ATTRIBUTABLE — the evidence was already failing before the mutation (${attributed.ok ? 'reported a named assertion' : attributed.detail})` }
@@ -525,7 +549,7 @@ function check(mutation: InvariantMutation, environment: NodeJS.ProcessEnv): Row
     const applied = applyReplacements(mutation.file, [{ find: mutation.find, replace: mutation.replace }])
     let mutated: EvidenceRun
     try {
-      mutated = tryRunEvidence(mutation, environment)
+      mutated = runStage('guard mutation')
     } finally {
       applied.restore()
     }
@@ -537,7 +561,7 @@ function check(mutation: InvariantMutation, environment: NodeJS.ProcessEnv): Row
     // red really was caused by the mutation and not by state it left behind
     // (the worker evidence asserts on wall-clock behaviour and flakes under
     // load; a flake here would otherwise be read as a guard).
-    const restored = tryRunEvidence(mutation, environment)
+    const restored = runStage('restored tree')
     if (restored.status !== 0) {
       const restoredAttribution = attribution(mutation, restored, explain)
       return { id: mutation.id, verdict: 'FAIL', detail: `the evidence did not return to green after the file was restored — the red was not caused by the mutation alone (${restoredAttribution.detail})` }
@@ -551,7 +575,7 @@ function check(mutation: InvariantMutation, environment: NodeJS.ProcessEnv): Row
     const overApplied = applyReplacements(over.file ?? mutation.file, [{ find: over.find, replace: over.replace }])
     let overRun: EvidenceRun
     try {
-      overRun = tryRunEvidence(mutation, environment)
+      overRun = runStage('over-rejection mutation')
     } finally {
       overApplied.restore()
     }
@@ -570,7 +594,7 @@ function check(mutation: InvariantMutation, environment: NodeJS.ProcessEnv): Row
       let ruleRun: EvidenceRun
       try {
         ruleApplied = applyReplacements(rule.file, [{ find: rule.find, replace: rule.replace }])
-        ruleRun = tryRunEvidence(mutation, environment)
+        ruleRun = runStage('code + rule mutation')
       } finally {
         ruleApplied?.restore()
         codeAndRule.restore()

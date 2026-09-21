@@ -24,7 +24,7 @@ export function RegistrationApplications({ model }: { model: OpsConsoleModel }) 
   return <Card title="入驻申请" extra={<Button onClick={() => void load()} loading={loading}>刷新申请</Button>} style={{ marginBottom: 16 }}><Alert type="info" showIcon title="入驻申请与已入驻用户不是两套账号" description="这里处理尚未完成入驻的客户；审核通过并绑定工作区后，会进入“已入驻用户”目录继续管理。" style={{ marginBottom: 16 }} /><OpsPageError error={loadError} onRetry={() => void load()} /><Table rowKey="application_id" loading={loading} dataSource={items} locale={{ emptyText: loadError ? "入驻申请读取失败，这不是空表：请查看上方错误摘要后重试，不要把没有读到的申请当成没有申请。" : "暂无入驻申请" }} pagination={{ pageSize: 10 }} columns={[{ title: "申请编号", dataIndex: "application_id", render: (v: string) => <Typography.Text copyable>{v}</Typography.Text> }, { title: "登录邮箱", dataIndex: "login" }, { title: "企业名称", dataIndex: "enterprise_name" }, { title: "联系人", dataIndex: "contact_name" }, { title: "状态", dataIndex: "status", render: (v: string) => <Tag color={v === "merchant_pending" ? "gold" : v === "active" ? "green" : "red"}>{v === "merchant_pending" ? "待审核" : v === "active" ? "已通过" : "已拒绝"}</Tag> }, { title: "操作", render: (_: unknown, row: Registration) => row.status === "merchant_pending" ? <Button onClick={() => { setTarget(row); setDecision("approved"); setWorkspaceIds(""); setMemberRole("merchant_admin"); setSkuCode("sku-onboarding-once"); setAmountFen("500000"); }}>审核</Button> : <Typography.Text type="secondary">已处理</Typography.Text> }]} /><Drawer title={target ? `审核入驻申请 · ${target.enterprise_name ?? target.login}` : "审核入驻申请"} open={Boolean(target)} onClose={() => setTarget(undefined)} size={460} extra={<Button type="primary" loading={loading} disabled={reason.trim().length < 4 || (decision === "approved" && (!workspaceIds.trim() || !skuCode.trim()))} onClick={() => void submit()}>提交审核</Button>}><Form layout="vertical"><Form.Item label="审核决定"><Select value={decision} onChange={setDecision} options={[{ value: "approved", label: "通过" }, { value: "rejected", label: "拒绝" }]} /></Form.Item>{decision === "approved" && <><Form.Item label="绑定企业工作区" required><Input value={workspaceIds} onChange={e => setWorkspaceIds(e.target.value)} placeholder="workspace_id（可填多个，以空格分隔）" /></Form.Item><Form.Item label="工作区角色" required><Select value={memberRole} onChange={setMemberRole} options={[{ value: "merchant_admin", label: "企业管理员" }, { value: "operator", label: "运营" }, { value: "support", label: "支持" }, { value: "finance", label: "财务" }]} /></Form.Item><Form.Item label="套餐" required><Select value={skuCode} onChange={(value) => { setSkuCode(value); setAmountFen(value === "sku-monthly-2000" ? "200000" : value === "sku-monthly-5000" ? "500000" : value === "sku-monthly-10000" ? "1000000" : "500000"); }} options={["sku-onboarding-once", "sku-monthly-2000", "sku-monthly-5000", "sku-monthly-10000"].map(value => ({ value, label: packageCodeLabel(value) }))} /></Form.Item><Form.Item label="套餐金额（分）" required><Input value={amountFen} onChange={e => setAmountFen(e.target.value)} inputMode="numeric" /></Form.Item><Alert type="info" showIcon title="审核通过后立即绑定工作区角色和套餐，但收款状态保持待核验，不开放已付权益。" /></>}<Form.Item label="审核原因" required><Input.TextArea value={reason} onChange={e => setReason(e.target.value)} minLength={4} rows={4} placeholder="至少填写 4 个字符" /></Form.Item></Form></Drawer></Card>;
 }
 
-export type UsersGovernanceSectionKey = "directory" | "workspaces" | "members";
+export type UsersGovernanceSectionKey = "directory" | "workspaces" | "members" | "registrations";
 
 type CapabilityReader = Pick<OpsConsoleModel["authorization"], "can">;
 
@@ -33,6 +33,17 @@ export function visibleUsersGovernanceSections(authorization: CapabilityReader):
   if (authorization.can("identity.read")) sections.push("directory");
   if (authorization.can("workspace.directory.read")) sections.push("workspaces");
   if (authorization.can("workspace.member.read")) sections.push("members");
+  // The registration review tab was rendered with a `registrations` key that
+  // was never listed here, so the guard in `UsersGovernanceWorkspace` snapped
+  // `activeSection` back to `sectionKeys[0]` on every click: the tab was drawn
+  // but permanently inert, and approving a registration had no reachable UI at
+  // all. It is a platform identity mutation (the server serves both routes through
+  // `requireOperationsRole(['platform_ops','platform_admin','ops_admin'])`, and
+  // approval activates the account the way `ops.user.activate` does), so it is
+  // gated by the write capability rather than the `identity.read` the table
+  // needs to load: a read-only identity role such as rules_admin must not be
+  // handed the write surface it is denied server-side.
+  if (authorization.can("identity.update")) sections.push("registrations");
   return sections;
 }
 
@@ -72,7 +83,7 @@ export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConso
   if (sectionKeys.includes("directory")) tabs.push({ key: "directory", label: "接入详情", children: <section id="user-directory" className="ops-users-section" aria-labelledby="user-directory-heading"><OpsPageError error={model.userDirectoryError} onRetry={() => void model.loadUsers()} /><UserDirectorySection model={model} /></section> });
   if (sectionKeys.includes("workspaces")) tabs.push({ key: "workspaces", label: "月费详情", children: <section id="workspace-governance" className="ops-users-section"><WorkspaceGovernanceSection model={model} /></section> });
   if (sectionKeys.includes("members")) tabs.push({ key: "members", label: "创意点详情", children: <section id="member-governance" className="ops-users-section"><MembersSection model={model} /></section> });
-  if (model.authorization.can("identity.read")) tabs.push({ key: "registrations", label: "创意点详情", children: <section className="ops-users-section"><RegistrationApplications model={model} /></section> });
+  if (sectionKeys.includes("registrations")) tabs.push({ key: "registrations", label: "入驻申请", children: <section className="ops-users-section"><RegistrationApplications model={model} /></section> });
 
   return (
     <div className="ops-users-workspace" aria-label="用户治理工作区">

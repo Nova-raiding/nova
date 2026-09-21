@@ -48,7 +48,7 @@ describe('resolveMerchantEnvironmentStatus', () => {
       caseName: 'fixture mode',
       apiHealth: health({ setup: { mode: 'fixture', productionGate: true } }),
       expectedState: 'demo',
-      evidence: '当前是本地演示环境',
+      evidence: '当前是本地演示模式',
     },
     {
       caseName: 'failed production gate',
@@ -65,6 +65,15 @@ describe('resolveMerchantEnvironmentStatus', () => {
       expectedState: 'blocked',
       evidence: '外部平台写入已关闭',
     },
+    {
+      caseName: 'manual operations mode',
+      apiHealth: health({
+        writesEnabled: false,
+        setup: { mode: 'manual', productionGate: false },
+      }),
+      expectedState: 'manual',
+      evidence: '当前是人工运营模式',
+    },
   ] as const)('blocks production readiness when only $caseName is unmet', ({
     apiHealth,
     expectedState,
@@ -73,9 +82,26 @@ describe('resolveMerchantEnvironmentStatus', () => {
     const result = resolve(apiHealth)
 
     expect(result).toMatchObject({ state: expectedState, tone: 'warning' })
-    expect(result.title).toContain('不可上线')
+    if (expectedState !== 'manual') expect(result.title).toContain('不可上线')
     expect(result.detail).toContain(evidence)
     expect(result.topbarLabel).not.toBe('生产就绪')
+  })
+
+  it('explains that manual operations are intentional and does not suggest switching to production', () => {
+    const result = resolve(health({
+      writesEnabled: false,
+      setup: { mode: 'manual', productionGate: false },
+    }))
+
+    expect(result).toMatchObject({
+      state: 'manual',
+      topbarLabel: '人工运营模式',
+      title: '人工运营模式 · 不自动写入平台',
+    })
+    expect(result.detail).toContain('不代表生产就绪')
+    expect(result.actions.join('；')).toContain('由运营人员在官方后台完成')
+    expect(result.actions.join('；')).not.toContain('切换到生产模式')
+    expect(result.actions.join('；')).not.toContain('完成可写平台连接')
   })
 
   it('fails closed when write or gate evidence is missing', () => {

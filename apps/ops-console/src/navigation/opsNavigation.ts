@@ -11,13 +11,20 @@ export const opsDomains = [
   "rules",
   "models",
   "storage",
+  "finance",
   "audit",
 ] as const;
 
 export type OpsDomain = (typeof opsDomains)[number];
 
 /** Domains served by the platform operations console. Merchant operations are
- * handled by Merchant Studio, so the Ops Console never switches workbench. */
+ * handled by Merchant Studio, so the Ops Console never switches workbench.
+ *
+ * `finance` is deliberately absent from both lists below, which is what makes
+ * it dual-scope: `domainNavigationBlockedReason` treats an undefined
+ * requirement as reachable, so 账务与退款 serves both the platform ledger and
+ * the enterprise-side 账务与商业配置 view. Giving it a workbench would silently
+ * drop one of those two faces, so adding it here needs a product decision. */
 export function requiredWorkbenchForDomain(domain: OpsDomain): "platform" | "workspace" | undefined {
   if (["users", "customer-delivery", "stores", "models", "storage", "audit"].includes(domain)) return "platform";
   if (["members", "tasks", "knowledge", "rules"].includes(domain)) return "workspace";
@@ -47,9 +54,8 @@ export function domainFromLocation(
   // Older finance links incorrectly nested the operations task queue under
   // the finance route. Keep them usable, but canonicalize to /ops/tasks.
   if (/\/ops\/finance\/merchant\/tasks\/?$/u.test(location.pathname)) return "tasks";
-  if (/\/ops\/finance\/?$/u.test(location.pathname)) return "overview";
   const pathDomain = location.pathname
-    .match(/\/ops\/(?:governance|overview|users|customer-delivery|members|tasks|knowledge|stores|rules|models|storage|audit)\/?$/u)?.[0]
+    .match(/\/ops\/(?:governance|overview|users|customer-delivery|members|tasks|knowledge|stores|rules|models|storage|finance|audit)\/?$/u)?.[0]
     .split("/")
     .filter(Boolean)
     .at(-1);
@@ -68,7 +74,7 @@ export function urlForDomain(
   domain: OpsDomain,
 ): string {
   const currentOpsRoute =
-    /\/ops\/(?:governance|overview|users|customer-delivery|members|tasks|knowledge|stores|rules|models|storage|audit)\/?$/u;
+    /\/ops\/(?:governance|overview|users|customer-delivery|members|tasks|knowledge|stores|rules|models|storage|finance|audit)\/?$/u;
   const legacyMerchantTasksRoute = /\/ops\/finance\/merchant\/tasks\/?$/u;
   const opsRootRoute = /\/ops\/?$/u;
   const unknownOpsDeepLink = /\/ops\/.*$/u;

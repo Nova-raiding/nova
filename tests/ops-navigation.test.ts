@@ -6,7 +6,9 @@ describe('ops console page routing', () => {
     expect(domainFromLocation({ pathname: '/ops/overview', hash: '' })).toBe('overview')
     expect(domainFromLocation({ pathname: '/ops/tasks', hash: '' })).toBe('tasks')
     expect(domainFromLocation({ pathname: '/ops/stores', hash: '' })).toBe('stores')
-    expect(domainFromLocation({ pathname: '/ops/finance', hash: '' })).toBe('overview')
+    // Restored to its own domain on 2026-09-20 by owner decision; this asserted
+    // the overview fallback while the finance domain was withdrawn.
+    expect(domainFromLocation({ pathname: '/ops/finance', hash: '' })).toBe('finance')
   })
 
   it('keeps legacy routes and hash bookmarks compatible', () => {
@@ -17,6 +19,7 @@ describe('ops console page routing', () => {
 
   it('builds independent page URLs and preserves query parameters', () => {
     expect(urlForDomain({ pathname: '/ops/tasks', search: '?workspace=demo' }, 'users')).toBe('/ops/users?workspace=demo')
+    expect(urlForDomain({ pathname: '/ops/tasks', search: '?workspace=demo' }, 'finance')).toBe('/ops/finance?workspace=demo')
     expect(urlForDomain({ pathname: '/console/', search: '' }, 'stores')).toBe('/console/ops/stores')
   })
 })

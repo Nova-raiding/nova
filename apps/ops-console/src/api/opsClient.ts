@@ -178,6 +178,34 @@ export interface OpsRpcOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
   maxResponseBytes?: number;
+  /**
+   * Server-issued maker-checker approval token for the `approval`
+   * authorization obligation on JIT privilege grants.
+   *
+   * It is transported as the `x-authorization-approval-token` request header
+   * rather than a body field on purpose. The API resolves the approver ONLY
+   * from the token grant (`verifiedApprovalActor` in apps/api/src/server.ts),
+   * so with `AUTH_ENFORCEMENT=strict` / `MCP_AUTHZ_MODE=enforce` a body
+   * `approved_by` is not evidence at all — it was the forgeable claim that let
+   * an operator assert someone else's approval and have that name persisted
+   * into `ops_access_grants.approved_by` and the audit stream. A header the
+   * approver holds mirrors the rule-approval precedent (`x-rule-approval-token`).
+   */
+  authorizationApprovalToken?: string;
+  /**
+   * Server-issued maker-checker approval token for the `approval` obligation on
+   * rule activation (the `rule.status` activation path driven by the rule
+   * center).
+   *
+   * It is transported as the `x-rule-approval-token` request header rather than
+   * a body field on purpose. The API's rule-activation gate
+   * (`parseApprovalGrant` in apps/api/src/server.ts, which throws
+   * `RULE_APPROVAL_REQUIRED`) resolves the approver ONLY from the server-issued
+   * grant: a body `approved_by` that disagrees with the grant's actor, or that
+   * equals the acting operator (self-approval), is rejected outright. A body
+   * field would therefore be exactly the forgeable claim this transport removes.
+   */
+  ruleApprovalToken?: string;
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -551,6 +579,19 @@ async function rpcAtWorkspace<T>(
     if (connection.actorId) headers["x-actor-id"] = connection.actorId;
     if (connection.token) headers.authorization = `Bearer ${connection.token}`;
   }
+  // The approver identity is resolved server-side from this token grant alone,
+  // so the approval token must travel as a header the approver holds. Sending
+  // it as a body field would recreate the caller-supplied `approved_by` claim
+  // that this transport option exists to replace.
+  const approvalToken = options.authorizationApprovalToken?.trim();
+  if (approvalToken) headers["x-authorization-approval-token"] = approvalToken;
+  // Same reason as the authorization token above, and a distinct header key so
+  // the two grants can ride the same request without overwriting each other:
+  // the rule approver is resolved from the server-issued grant, not a body
+  // `approved_by` the caller could fabricate. A blank/whitespace token is
+  // dropped rather than sent as an empty header.
+  const ruleApprovalToken = options.ruleApprovalToken?.trim();
+  if (ruleApprovalToken) headers["x-rule-approval-token"] = ruleApprovalToken;
   const controller = new AbortController();
   const requestEpoch = opsRequestEpoch;
   activeOpsRequests.add(controller);

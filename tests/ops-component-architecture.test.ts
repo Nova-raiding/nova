@@ -69,7 +69,9 @@ describe("ops console component architecture", () => {
     expect(registry).not.toContain("IncidentsRoute");
     expect(registry).not.toContain("FeatureFlagsRoute");
     expect(registry).toContain('storage: lazy(');
-    expect(registry.match(/lazy\(/gu)).toHaveLength(11);
+    // One entry per `opsDomains` member; 12 since `finance` was restored
+    // (2026-09-20), and locked to `release-metadata.json`'s opsDomainCount.
+    expect(registry.match(/lazy\(/gu)).toHaveLength(12);
   });
 
   it("separates transport and domain types from React page files", () => {

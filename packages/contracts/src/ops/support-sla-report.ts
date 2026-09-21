@@ -56,7 +56,29 @@ export interface SupportSlaCorrectionApproval {
   workspaceId: string
   decision: 'approved' | 'rejected'
   reason: string
+  /**
+   * The authenticated caller that submitted this approval act (`x-actor-id` on
+   * the request, `requestActor` in `server.ts`). This is the identity the
+   * two-person rule counts - `ops.support.sla.correction.decide` requires two
+   * distinct `actorId` values, backed by migration 116's
+   * `UNIQUE (workspace_id, correction_id, actor_id)`. It says who acted, not
+   * who authorised the act.
+   */
   actorId: string
+  /**
+   * The approver proven by the server-issued `x-authorization-approval-token`
+   * grant of this request, i.e. who authorised the act that `actorId`
+   * performed. The two are deliberately separate fields: persisting only
+   * `actorId` is what left the audit trail unable to name a token-holding
+   * approver, and copying the caller into this field re-creates that false
+   * record.
+   *
+   * Absent when the `approval` obligation was satisfied without a token (a
+   * deployment that does not enforce authentication) or when the caller *is*
+   * the token's own actor, in which case `verifiedApprovalActor` returns
+   * nothing rather than confirming the caller as their own approver.
+   */
+  approvedByActorId?: string
   idempotencyKey: string
   approvedAt: string
 }

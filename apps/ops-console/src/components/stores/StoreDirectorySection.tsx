@@ -12,10 +12,18 @@ interface StoreDirectorySectionProps {
   onRevoke: (store: StoreDirectory) => Promise<void>;
 }
 
+// Every value `platform_accounts.token_state` can hold needs an honest label here.
+// Missing keys used to fall through to 状态待确认, which made a KNOWN state look like a
+// broken one: `manually_registered` (written by ops.platform.store.record.create, the
+// credential-free manual registration path) and `refresh_required` both collapsed into
+// "unknown". `manually_registered` must never read as 真实授权 — that label belongs to
+// `connected`, and the manual record carries no credential, scope or platform receipt.
 export function storeAuthorizationStateLabel(state: string): string {
   return ({
     connected: "真实授权",
+    refresh_required: "需重新授权",
     revoked: "已撤销",
+    manually_registered: "人工登记（未授权）",
     pending: "待授权",
     unknown: "状态待确认",
   } as Record<string, string>)[state] ?? "状态待确认";

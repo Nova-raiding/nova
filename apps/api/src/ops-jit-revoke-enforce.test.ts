@@ -5,6 +5,25 @@ import { MemoryAuthorizationRepository, type AuthorizationGrant, type IssueAutho
 import { MemoryIdentityLifecycleRepository } from '../../../packages/persistence/src/identity-lifecycle-repository.js'
 import { MemoryPlatformAuthorizationAuditRepository } from '../../../packages/persistence/src/platform-authorization-audit-repository.js'
 
+// Deliberate security-contract change. These tests used to reach the `approval`
+// obligation on `ops.authorization.grant.issue` by sending only the
+// caller-supplied `approved_by` + `approved_at` fields, i.e. they exercised the
+// forgeable contract. The obligation is now satisfied solely by server-issued
+// evidence: `verifiedApprovalActor` resolves the approver from the
+// `x-authorization-approval-token` header against the `AUTHORIZATION_APPROVAL_TOKENS`
+// token registry, so every call that needs `approval` must carry that token.
+//
+// The token is stubbed per test because its grant is bound to the workspace the
+// grant request targets, and the workspace is regenerated in `beforeEach`. The
+// grant's `actor_id` is `approverActorId`, which must differ from the acting
+// principal (separation of duties) and must match any claimed `approved_by`
+// (the claim may only confirm the token, never establish it).
+const approvalToken = 'jit-revoke-http-fixture-approval-token'
+// A second token for the same approver but a different tenant, used to prove the
+// approval cannot be replayed across workspaces.
+const otherWorkspaceApprovalToken = 'jit-revoke-http-fixture-approval-token-other-workspace'
+const approverActorId = 'independent-security-approver'
+
 const issueMethod = 'ops.authorization.grant.issue'
 const revokeMethod = 'ops.authorization.grant.revoke'
 const signingSecret = 'jit-revoke-http-fixture-signing-secret'
@@ -78,6 +97,10 @@ describe('E1 signed OIDC JIT revoke under enforced durable authorization', () =>
     const runId = randomUUID()
     issuer = `https://jit-fixture.invalid/${runId}`
     workspaceId = `ws_jit_revoke_${runId.replaceAll('-', '')}`
+    vi.stubEnv('AUTHORIZATION_APPROVAL_TOKENS', JSON.stringify({
+      [approvalToken]: { actor_id: approverActorId, workspaces: [workspaceId] },
+      [otherWorkspaceApprovalToken]: { actor_id: approverActorId, workspaces: [`ws_other_${runId.replaceAll('-', '')}`] },
+    }))
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error) => reject(error)
       api.server.once('error', onError)
@@ -112,7 +135,10 @@ describe('E1 signed OIDC JIT revoke under enforced durable authorization', () =>
     return { subject: subjectId, sessionId, identityId: observed.identity.id, roles: gatewayRoles }
   }
 
-  async function call<T = unknown>(who: Actor, method: string, params: Record<string, unknown> = {}, workbench: 'platform' | 'workspace' = 'platform', tamperSignature = false) {
+  // `approvalTokenHeader` defaults to the valid server-issued token; pass `null`
+  // to send no approval evidence at all, or another value to present a token the
+  // registry does not bind to this operation.
+  async function call<T = unknown>(who: Actor, method: string, params: Record<string, unknown> = {}, workbench: 'platform' | 'workspace' = 'platform', tamperSignature = false, approvalTokenHeader: string | null = approvalToken) {
     const nonce = randomUUID().replaceAll('-', '')
     const timestamp = String(Math.floor(Date.now() / 1000))
     const authTime = String(Number(timestamp) - 10)
@@ -124,13 +150,16 @@ describe('E1 signed OIDC JIT revoke under enforced durable authorization', () =>
     const signature = createHmac('sha256', signingSecret).update(canonical).digest('hex')
     const response = await fetch(`${base}/mcp`, {
       method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000), body,
-      headers: { 'content-type': 'application/json', 'x-oidc-workbench': workbench, 'x-oidc-issuer': issuer, 'x-oidc-sub': who.subject, 'x-oidc-sid': who.sessionId, 'x-oidc-roles': who.roles.join(','), 'x-oidc-amr': 'mfa', 'x-oidc-auth-time': authTime, 'x-oidc-session-expires-at': expiresAt, 'x-oidc-timestamp': timestamp, 'x-oidc-body-sha256': digest, 'x-oidc-nonce': nonce, 'x-oidc-signature': tamperSignature ? '0'.repeat(64) : signature, ...(selectedWorkspace ? { 'x-workspace-id': selectedWorkspace, 'x-oidc-workspace': selectedWorkspace } : {}) },
+      headers: { 'content-type': 'application/json', 'x-oidc-workbench': workbench, 'x-oidc-issuer': issuer, 'x-oidc-sub': who.subject, 'x-oidc-sid': who.sessionId, 'x-oidc-roles': who.roles.join(','), 'x-oidc-amr': 'mfa', 'x-oidc-auth-time': authTime, 'x-oidc-session-expires-at': expiresAt, 'x-oidc-timestamp': timestamp, 'x-oidc-body-sha256': digest, 'x-oidc-nonce': nonce, 'x-oidc-signature': tamperSignature ? '0'.repeat(64) : signature, ...(approvalTokenHeader ? { 'x-authorization-approval-token': approvalTokenHeader } : {}), ...(selectedWorkspace ? { 'x-workspace-id': selectedWorkspace, 'x-oidc-workspace': selectedWorkspace } : {}) },
     })
     return { status: response.status, body: await response.json() as Envelope<T> }
   }
 
   async function issueParams() {
-    return { subject_identity_id: subject.identityId, target_workspace_id: workspaceId, grant_kind: 'support', access_mode: 'read', capabilities_json: JSON.stringify(['customer.content.read']), resource_scope_json: JSON.stringify({ workspace_ids: [workspaceId] }), ticket_ref: `JIT-${randomUUID()}`, approved_by: 'independent-security-approver', approved_at: new Date().toISOString(), expires_at: new Date(Date.now() + 600_000).toISOString(), max_uses: '3', expected_authorization_revision: String(await repository.getAuthorizationRevision(subject.identityId)), reason: 'Grant isolated support access after independent approval' }
+    // `approved_by` only confirms the approver the server-issued token
+    // establishes; it must equal the token grant's `actor_id` or the claim is
+    // rejected as a contradiction.
+    return { subject_identity_id: subject.identityId, target_workspace_id: workspaceId, grant_kind: 'support', access_mode: 'read', capabilities_json: JSON.stringify(['customer.content.read']), resource_scope_json: JSON.stringify({ workspace_ids: [workspaceId] }), ticket_ref: `JIT-${randomUUID()}`, approved_by: approverActorId, approved_at: new Date().toISOString(), expires_at: new Date(Date.now() + 600_000).toISOString(), max_uses: '3', expected_authorization_revision: String(await repository.getAuthorizationRevision(subject.identityId)), reason: 'Grant isolated support access after independent approval' }
   }
 
   async function issue(who = admin) {
@@ -184,6 +213,48 @@ describe('E1 signed OIDC JIT revoke under enforced durable authorization', () =>
     const response = await call(admin, issueMethod, params)
     expect(response.status).toBe(400)
     expect(response.body.error?.code).toBe('INVALID_REQUEST')
+    expect(await repository.getAuthorizationRevision(subject.identityId)).toBe(revision)
+    expect(await repository.listActiveGrants(subject.identityId, workspaceId)).toEqual([])
+    expect(repository.successfulMutations).toEqual([])
+  })
+
+  // The forgery that motivated the change: `approved_by` + `approved_at` alone
+  // proved nothing, so a caller could mint their own maker-checker approval.
+  // Under `MCP_AUTHZ_MODE=enforce` the obligation must now be missing and the
+  // issue must be denied before it reaches the repository.
+  it('issue rejects a claimed approved_by/approved_at presented without a server-issued token', async () => {
+    const revision = await repository.getAuthorizationRevision(subject.identityId)
+    const response = await call(admin, issueMethod, await issueParams(), 'platform', false, null)
+    expect(response.status, JSON.stringify(response.body)).toBe(403)
+    expect(response.body.error?.code).toBe('FORBIDDEN')
+    expect(response.body.error?.details).toMatchObject({ reason_code: 'AUTHZ_OBLIGATION_REQUIRED', obligations_missing: ['approval'] })
+    expect(await repository.getAuthorizationRevision(subject.identityId)).toBe(revision)
+    expect(await repository.listActiveGrants(subject.identityId, workspaceId)).toEqual([])
+    expect(repository.successfulMutations).toEqual([])
+  })
+
+  // A claimed approver that disagrees with the token grant is a contradiction,
+  // not an approval: the claim may only confirm the identity the server
+  // established, never substitute for it.
+  it('issue rejects a valid approval token whose grant actor contradicts the claimed approved_by', async () => {
+    const revision = await repository.getAuthorizationRevision(subject.identityId)
+    const response = await call(admin, issueMethod, { ...await issueParams(), approved_by: 'claimed-approver-that-contradicts-the-grant' })
+    expect(response.status, JSON.stringify(response.body)).toBe(403)
+    expect(response.body.error?.code).toBe('FORBIDDEN')
+    expect(response.body.error?.details).toMatchObject({ reason_code: 'AUTHZ_OBLIGATION_REQUIRED', obligations_missing: ['approval'] })
+    expect(await repository.getAuthorizationRevision(subject.identityId)).toBe(revision)
+    expect(await repository.listActiveGrants(subject.identityId, workspaceId)).toEqual([])
+    expect(repository.successfulMutations).toEqual([])
+  })
+
+  // The token is bound to the workspace the grant request targets, so a token
+  // issued for another tenant cannot approve this tenant's privilege grant.
+  it('issue rejects a valid approval token that is not bound to the target workspace', async () => {
+    const revision = await repository.getAuthorizationRevision(subject.identityId)
+    const response = await call(admin, issueMethod, await issueParams(), 'platform', false, otherWorkspaceApprovalToken)
+    expect(response.status, JSON.stringify(response.body)).toBe(403)
+    expect(response.body.error?.code).toBe('FORBIDDEN')
+    expect(response.body.error?.details).toMatchObject({ reason_code: 'AUTHZ_OBLIGATION_REQUIRED', obligations_missing: ['approval'] })
     expect(await repository.getAuthorizationRevision(subject.identityId)).toBe(revision)
     expect(await repository.listActiveGrants(subject.identityId, workspaceId)).toEqual([])
     expect(repository.successfulMutations).toEqual([])

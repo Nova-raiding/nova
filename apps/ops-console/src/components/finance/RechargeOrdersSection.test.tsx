@@ -59,4 +59,41 @@ describe("RechargeOrdersSection", () => {
     expect(html).toContain("支付渠道暂不可用");
     expect(html).toContain('aria-label="重试加载充值订单"');
   });
+
+  it("renders a failed or unrun read as unread instead of as measured zeros", () => {
+    // `rechargeOrders === undefined` is the model's "not read" state — what
+    // `loadRechargeOrders` resets to on failure. Coalescing it to `[]` produced
+    // the identical summary row as a server that legitimately answered with no
+    // orders: `订单总数 0 / 待支付 0 / 已支付 0 / 异常 0`, where "异常 0" reads
+    // as the all-clear directly above the alert saying the read failed.
+    const html = renderToStaticMarkup(
+      <RechargeOrdersSection
+        model={{ ...model, rechargeOrders: undefined, rechargeOrdersError: "支付渠道暂不可用" } as OpsConsoleModel}
+      />,
+    );
+
+    expect(html).not.toContain("全部 0");
+    expect(html).not.toContain("异常 0");
+    expect(html).toContain("—");
+    expect(html).toContain("尚未读取充值订单");
+    expect(html).not.toContain("当前筛选条件下没有充值订单");
+  });
+
+  it("still reports a successful read that legitimately returned nothing as zero", () => {
+    // The other half of the same distinction: an honest zero must stay a zero,
+    // otherwise the fix would have traded one lie for another.
+    const html = renderToStaticMarkup(
+      <RechargeOrdersSection
+        model={{
+          ...model,
+          rechargeOrders: { orders: [], summary: { total: 0, by_state: { pending: 0, paid: 0, closed: 0, failed: 0 } } },
+        } as OpsConsoleModel}
+      />,
+    );
+
+    expect(html).toContain("全部 0");
+    expect(html).toContain("异常 0");
+    expect(html).toContain("当前筛选条件下没有充值订单");
+    expect(html).not.toContain("尚未读取充值订单");
+  });
 });

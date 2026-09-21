@@ -6,9 +6,24 @@ export function ServiceFulfillmentPanel({ controller }: { controller: Commercial
   const [action, setAction] = useState<"create" | "schedule" | "start" | "complete" | "adjust">("start");
   const [allocation, setAllocation] = useState(""); const [revision, setRevision] = useState<number | null>(null); const [order, setOrder] = useState(""); const [entitlement, setEntitlement] = useState(""); const [serviceType, setServiceType] = useState(""); const [checksum, setChecksum] = useState(""); const [acceptanceRef, setAcceptanceRef] = useState(""); const [customerSubjectRef, setCustomerSubjectRef] = useState(""); const [acceptedAt, setAcceptedAt] = useState(""); const [unit, setUnit] = useState("count");
   const [quantity, setQuantity] = useState<number | null>(null); const [scheduleAt, setScheduleAt] = useState(""); const [eventId, setEventId] = useState(""); const [reason, setReason] = useState(""); const [error, setError] = useState(""); const [success, setSuccess] = useState(""); const [busy, setBusy] = useState(false);
+  // The approver's token lives in component state only: never persisted, never
+  // mirrored into a URL, and cleared on success so a second command needs a
+  // fresh approval act. Kept on failure so the operator can resubmit the same
+  // evidence without retyping it.
+  const [approvalToken, setApprovalToken] = useState("");
   const enabled = controller.permissions.canWriteService && Boolean(controller.targetWorkspaceId);
   const submit = async () => {
-    if (!enabled || reason.trim().length < 3 || busy) return;
+    // All five service-fulfilment methods carry the `approval` obligation, and
+    // the API enforces it in EVERY authz mode from `x-authorization-approval-token`
+    // alone (verifiedApprovalActor). A submit without the approver's token can
+    // only be a 403, so it is refused here rather than round-tripped as a dead
+    // command: the panel's controls would otherwise be rendered but unfirable.
+    const token = approvalToken.trim();
+    if (!enabled || busy) return;
+    // Refuse silently would read as "nothing happened"; the operator gets the
+    // reason instead, because the failure is a known one, not an unknown one.
+    if (!token) { setSuccess(""); setError("缺少审批人令牌：服务端只从审批人令牌解析审批人，无令牌的命令必然被拒绝"); return; }
+    if (reason.trim().length < 3) return;
     if (action === "create" && (!order.trim() || !entitlement.trim() || !serviceType.trim() || !checksum.trim() || !acceptanceRef.trim() || !customerSubjectRef.trim() || !acceptedAt.trim() || Number.isNaN(Date.parse(acceptedAt)) || quantity === null || quantity < 1)) return;
     if (action !== "create" && (!allocation.trim() || revision === null)) return;
     if ((action === "complete" || action === "adjust") && (quantity === null || quantity < 1)) return;
@@ -16,11 +31,12 @@ export function ServiceFulfillmentPanel({ controller }: { controller: Commercial
     if (action === "adjust" && !eventId.trim()) return;
     setBusy(true); setError(""); setSuccess("");
     try {
-      if (action === "create") await controller.client.createServiceAllocation({ workspace: controller.targetWorkspaceId, order: order.trim(), entitlement: entitlement.trim(), serviceType: serviceType.trim(), unit, quantity: quantity!, checksum: checksum.trim(), acceptanceRef: acceptanceRef.trim(), customerSubjectRef: customerSubjectRef.trim(), acceptedAt: new Date(acceptedAt).toISOString(), reason: reason.trim() });
-      if (action === "schedule") await controller.client.scheduleService(controller.targetWorkspaceId, allocation.trim(), revision!, scheduleAt.trim(), reason.trim());
-      if (action === "start") await controller.client.startService(controller.targetWorkspaceId, allocation.trim(), revision!, reason.trim());
-      if (action === "complete") await controller.client.completeService(controller.targetWorkspaceId, allocation.trim(), revision!, quantity!, reason.trim());
-      if (action === "adjust") await controller.client.adjustService(controller.targetWorkspaceId, allocation.trim(), revision!, eventId.trim(), quantity!, reason.trim());
+      if (action === "create") await controller.client.createServiceAllocation({ workspace: controller.targetWorkspaceId, order: order.trim(), entitlement: entitlement.trim(), serviceType: serviceType.trim(), unit, quantity: quantity!, checksum: checksum.trim(), acceptanceRef: acceptanceRef.trim(), customerSubjectRef: customerSubjectRef.trim(), acceptedAt: new Date(acceptedAt).toISOString(), reason: reason.trim() }, token);
+      if (action === "schedule") await controller.client.scheduleService(controller.targetWorkspaceId, allocation.trim(), revision!, scheduleAt.trim(), reason.trim(), token);
+      if (action === "start") await controller.client.startService(controller.targetWorkspaceId, allocation.trim(), revision!, reason.trim(), token);
+      if (action === "complete") await controller.client.completeService(controller.targetWorkspaceId, allocation.trim(), revision!, quantity!, reason.trim(), token);
+      if (action === "adjust") await controller.client.adjustService(controller.targetWorkspaceId, allocation.trim(), revision!, eventId.trim(), quantity!, reason.trim(), token);
+      setApprovalToken("");
       setSuccess("服务履约命令已被服务端接受；请刷新列表核验状态和证据。");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "履约命令失败"); }
     finally { setBusy(false); }
@@ -37,6 +53,8 @@ export function ServiceFulfillmentPanel({ controller }: { controller: Commercial
       {action === "schedule" && <Input aria-label="schedule at" placeholder="schedule_at（ISO 时间）" value={scheduleAt} onChange={event => setScheduleAt(event.target.value)} disabled={!enabled} />}
       {action === "adjust" && <Input aria-label="corrects event id" placeholder="corrects_event_id" value={eventId} onChange={event => setEventId(event.target.value)} disabled={!enabled} />}
       <Input aria-label="fulfillment reason" placeholder="审计原因（至少 3 字符）" value={reason} onChange={event => setReason(event.target.value)} disabled={!enabled} />
+      <Input.Password aria-label="审批人令牌" autoComplete="off" placeholder="审批人令牌（由审批人本人提供）" value={approvalToken} onChange={event => setApprovalToken(event.target.value)} disabled={!enabled} />
+      <Typography.Text type="secondary">审批令牌由审批人本人提供，只随本次请求以请求头提交，不写入本地存储，提交成功后自动清空</Typography.Text>
       <Button type="primary" loading={busy} disabled={!enabled} onClick={() => void submit()}>提交命令</Button>
     </Space>
     {success && <Alert type="success" showIcon title={success} style={{ marginTop: 12 }} />}{error && <Alert type="error" showIcon title="履约命令未完成" description={error} style={{ marginTop: 12 }} />}

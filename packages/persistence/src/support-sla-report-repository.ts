@@ -90,6 +90,10 @@ export class MemorySupportSlaReportingRepository implements SupportSlaReportingR
       return structuredClone(existing)
     }
     if ([...this.approvals.values()].some(item => item.workspaceId === input.approval.workspaceId && item.correctionId === input.approval.correctionId && item.actorId === input.approval.actorId)) throw new Error('SUPPORT_SLA_CORRECTION_APPROVAL_ACTOR_DUPLICATE')
+    // The optional `approvedByActorId` rides along inside the stored object, so
+    // this implementation already writes and returns it. The Postgres side
+    // normalises the nullable column to the same absent property; the two must
+    // not disagree on whether the approver is unknown or merely unset.
     this.approvals.set(key, structuredClone(input.approval))
     return structuredClone(input.approval)
   }
@@ -98,6 +102,20 @@ export class MemorySupportSlaReportingRepository implements SupportSlaReportingR
     requireWorkspaceScope(input.workspaceId)
     return [...this.approvals.values()].filter(item => item.workspaceId === input.workspaceId && item.correctionId === input.correctionId).sort((a, b) => a.approvedAt.localeCompare(b.approvedAt)).map(item => structuredClone(item))
   }
+}
+
+/**
+ * `approved_by_actor_id` is nullable (migration 233): NULL records an approval
+ * act that carried no approval-token grant. The Memory implementation keeps the
+ * property absent for that case, so the Postgres read path normalises NULL to
+ * `undefined` as well - returning `null` here would expose a third, phantom
+ * state that the contract does not have and the two implementations would
+ * disagree on.
+ */
+type SupportSlaCorrectionApprovalRow = Omit<SupportSlaCorrectionApproval, 'approvedByActorId'> & { approvedByActorId?: string | null }
+const approvalFromRow = (row: SupportSlaCorrectionApprovalRow): SupportSlaCorrectionApproval => {
+  const { approvedByActorId, ...rest } = row
+  return { ...rest, ...(typeof approvedByActorId === 'string' ? { approvedByActorId } : {}) }
 }
 
 const reportFromRow = (row: Record<string, unknown>): SupportSlaMonthlyReport => ({
@@ -192,12 +210,17 @@ export class PostgresSupportSlaReportingRepository implements SupportSlaReportin
     const approval = input.approval
     requireWorkspaceScope(approval.workspaceId)
     return withWorkspaceTransaction(this.pool, approval.workspaceId, async client => {
-      const existing = await client.query<SupportSlaCorrectionApproval>('SELECT approval_id AS "approvalId", correction_id AS "correctionId", workspace_id AS "workspaceId", decision, reason, actor_id AS "actorId", idempotency_key AS "idempotencyKey", approved_at AS "approvedAt" FROM support_sla_correction_approvals WHERE workspace_id=$1 AND approval_id=$2', [approval.workspaceId, approval.approvalId])
+      const existing = await client.query<SupportSlaCorrectionApprovalRow>('SELECT approval_id AS "approvalId", correction_id AS "correctionId", workspace_id AS "workspaceId", decision, reason, actor_id AS "actorId", approved_by_actor_id AS "approvedByActorId", idempotency_key AS "idempotencyKey", approved_at AS "approvedAt" FROM support_sla_correction_approvals WHERE workspace_id=$1 AND approval_id=$2', [approval.workspaceId, approval.approvalId])
       if (existing.rows[0]) {
         if (existing.rows[0].idempotencyKey !== approval.idempotencyKey) throw new Error('SUPPORT_SLA_CORRECTION_APPROVAL_IMMUTABLE_CONFLICT')
-        return existing.rows[0]
+        return approvalFromRow(existing.rows[0])
       }
-      await client.query('INSERT INTO support_sla_correction_approvals (workspace_id, approval_id, correction_id, decision, reason, actor_id, idempotency_key, approved_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [approval.workspaceId, approval.approvalId, approval.correctionId, approval.decision, approval.reason, approval.actorId, approval.idempotencyKey, approval.approvedAt])
+      // `approvedByActorId` is written at INSERT time and only here: migration
+      // 116's immutability trigger rejects any later UPDATE, so an approver that
+      // is not recorded with the approval act can never be added afterwards.
+      // Passing NULL (not the caller) when no token proved an approver keeps
+      // "unknown" distinguishable from "recorded".
+      await client.query('INSERT INTO support_sla_correction_approvals (workspace_id, approval_id, correction_id, decision, reason, actor_id, approved_by_actor_id, idempotency_key, approved_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)', [approval.workspaceId, approval.approvalId, approval.correctionId, approval.decision, approval.reason, approval.actorId, approval.approvedByActorId ?? null, approval.idempotencyKey, approval.approvedAt])
       return structuredClone(approval)
     })
   }
@@ -205,8 +228,8 @@ export class PostgresSupportSlaReportingRepository implements SupportSlaReportin
   async listCorrectionApprovals(input: { workspaceId: string; correctionId: string }) {
     requireWorkspaceScope(input.workspaceId)
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
-      const result = await client.query<SupportSlaCorrectionApproval>('SELECT approval_id AS "approvalId", correction_id AS "correctionId", workspace_id AS "workspaceId", decision, reason, actor_id AS "actorId", idempotency_key AS "idempotencyKey", approved_at AS "approvedAt" FROM support_sla_correction_approvals WHERE workspace_id=$1 AND correction_id=$2 ORDER BY approved_at, approval_id', [input.workspaceId, input.correctionId])
-      return result.rows
+      const result = await client.query<SupportSlaCorrectionApprovalRow>('SELECT approval_id AS "approvalId", correction_id AS "correctionId", workspace_id AS "workspaceId", decision, reason, actor_id AS "actorId", approved_by_actor_id AS "approvedByActorId", idempotency_key AS "idempotencyKey", approved_at AS "approvedAt" FROM support_sla_correction_approvals WHERE workspace_id=$1 AND correction_id=$2 ORDER BY approved_at, approval_id', [input.workspaceId, input.correctionId])
+      return result.rows.map(approvalFromRow)
     })
   }
 }

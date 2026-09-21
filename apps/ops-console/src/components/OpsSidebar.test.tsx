@@ -82,21 +82,19 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain("审计中心");
   });
 
-  // The `账务与退款` line above is asserted against a role-filtered render, so on
-  // its own it stays green even if finance is put back into `mainItems` — the
-  // filter would keep hiding it. 365c5d84 removed `finance` from `opsDomains`,
-  // from `domainReadCapabilities` and from `navigationGroups`, and deleted
-  // FinancePage. That is the product fact these tests have to share, so pin it
-  // directly: restoring the destination turns this red and forces the decision
-  // back through review. Everything that left the platform sidebar is written
-  // down in dogfood/chatgpt-all-functions/retired-ops-assertions.md, and the
-  // same fact is asserted from the browser side by
-  // ops-all.spec.js `keeps the withdrawn finance and model navigation surfaces
-  // unreachable`.
-  it("keeps the withdrawn finance destination out of the platform navigation", () => {
-    expect(mainItems.map(({ domain }) => domain)).not.toContain("finance");
-    expect(mainItems.map(({ label }) => label)).not.toContain("账务与退款");
-    expect(navigationGroups.flatMap(({ items }) => [...items])).not.toContain("finance");
+  // This assertion used to pin the opposite product fact. 365c5d84 removed
+  // `finance` from `opsDomains`, from `domainReadCapabilities` and from
+  // `navigationGroups`, and deleted FinancePage; the gate that replaced it was
+  // written so that "restoring the destination turns this red and forces the
+  // decision back through review". That is exactly what happened: the owner
+  // restored the finance domain on 2026-09-20
+  // (docs/qa/four-product-decisions-2026-09-20.md, option A). The models half
+  // of that withdrawal was NOT reversed, so it stays pinned in the test right
+  // below — only the finance half inverts.
+  it("renders the restored finance destination in the platform navigation", () => {
+    expect(mainItems.map(({ domain }) => domain)).toContain("finance");
+    expect(mainItems.map(({ label }) => label)).toContain("账务与退款");
+    expect(navigationGroups.flatMap(({ items }) => [...items])).toContain("finance");
     const markup = renderToStaticMarkup(
       <OpsSidebar
         activeDomain="overview"
@@ -107,9 +105,14 @@ describe("OpsSidebar navigation", () => {
         onSelectStore={() => undefined}
       />,
     );
-    // No `visibleDomains` here, so this is the unfiltered navigation: if a
-    // finance entry returns to any navigation group it renders and this fails.
-    expect(markup).not.toContain("账务与退款");
+    // No `visibleDomains` here, so this is the unfiltered navigation.
+    expect(markup).toContain("账务与退款");
+    // Records the owner's group-label choice. Note this is a data assertion,
+    // not a visual one: `OpsSidebar` renders no heading for a navigation group
+    // (it maps `group.items` and uses `group.label` nowhere), so renaming the
+    // group changes nothing an operator sees. Asserting it here keeps the
+    // decision written down rather than letting it drift.
+    expect(navigationGroups.find(({ key }) => key === "model-billing")?.label).toBe("财务");
     expect(markup).not.toContain("模型与计费");
   });
 

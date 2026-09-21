@@ -37,6 +37,9 @@ export const opsPageRegistry: Record<OpsDomain, OpsDomainPage> = {
   storage: lazy(() =>
     import("../pages/StoragePage.js").then(({ StoragePage }) => ({ default: StoragePage })),
   ),
+  finance: lazy(() =>
+    import("../pages/FinancePage.js").then(({ FinancePage }) => ({ default: FinancePage })),
+  ),
   audit: lazy(() =>
     import("../pages/AuditPage.js").then(({ AuditPage }) => ({ default: AuditPage })),
   ),

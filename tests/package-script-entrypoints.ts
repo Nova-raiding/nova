@@ -99,6 +99,12 @@ export const UNINVOKED_SCRIPTS: readonly UninvokedScript[] = [
     requires: 'A human release decision',
     reason: 'Mutates VERSION and the release metadata with --apply. It is a deliberate release action, not a gate; running it inside check would rewrite the tree on every test run.',
   },
+  {
+    script: 'verify:commercial-read-boundaries',
+    category: 'release-operator',
+    requires: 'A host with Docker that can start the isolated PostgreSQL 17 / Redis fixture, plus a free loopback port for the real API process',
+    reason: 'Fail-closed acceptance for the commercial payment read path: the creator-only PostgreSQL reader, row-level security, the HTTP route and the native MCP tool must each deny every non-creator read and disclose no checkout URL. It is registered rather than wired because it starts a real API process against an isolated PostgreSQL 17 fixture and takes minutes — folding it into `check` would change the delivery gate runtime, and that promotion is a separate decision. The runner provisions its own fixture and reads no database URL and no .env, so `npm run verify:commercial-read-boundaries` is the whole setup.',
+  },
 ]
 
 const TEXT_FILE = /\.(?:ts|tsx|mts|cts|js|mjs|cjs|jsx|json|ya?ml|md|sh|bash)$/u

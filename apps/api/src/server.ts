@@ -6960,7 +6960,7 @@ function send<T>(res: ServerResponse, status: number, workspaceId: string, data:
     res.setHeader('access-control-allow-credentials', 'true')
     res.setHeader('vary', 'Origin')
   }
-  res.setHeader('access-control-allow-headers', 'authorization, content-type, idempotency-key, x-workspace-id, x-ops-workbench, x-account-id, x-actor-id, x-request-id, x-trace-id, x-role, x-rule-approval-token')
+  res.setHeader('access-control-allow-headers', 'authorization, content-type, idempotency-key, x-workspace-id, x-ops-workbench, x-account-id, x-actor-id, x-request-id, x-trace-id, x-role, x-rule-approval-token, x-authorization-approval-token')
   res.setHeader('access-control-allow-methods', 'DELETE,GET,POST,PUT,OPTIONS')
   res.setHeader('access-control-expose-headers', 'x-request-id, x-trace-id')
   res.setHeader('x-request-id', id)
@@ -7503,12 +7503,53 @@ function canonicalRoleMethodAccess(role: CanonicalRole, policy: (typeof MCP_METH
   return authorizationGovernanceCapabilities.has(policy.capability) ? 'govern' as const : 'operate' as const
 }
 
-function satisfiedAuthorizationObligations(params: Record<string, unknown>, req: IncomingMessage) {
+/**
+ * Resolve the maker-checker approver for the `approval` obligation from
+ * server-issued evidence only.
+ *
+ * The obligation used to be satisfied by the caller-supplied `approved_by` /
+ * `approved_at` strings. Nothing proved that an approval act happened, that the
+ * named approver existed, was authorised for the target workspace, or differed
+ * from the requester, and the value was then persisted into
+ * `ops_access_grants.approved_by` and the audit event stream as if it were the
+ * record of an approval. The database backstop is only string inequality for
+ * write grants (`packages/persistence/src/migrations/105_durable_authorization_grants.sql`
+ * `CHECK (access_mode <> 'write' OR approved_by <> issued_by)`), so the proof has
+ * to come from the server. This mirrors `parseApprovalGrant`: the approver
+ * identity is resolved from a server-side token grant, a claimed `approved_by`
+ * may only confirm that identity, and an unparseable token configuration fails
+ * closed instead of degrading into an unverified approval.
+ */
+function verifiedApprovalActor(params: Record<string, unknown>, req: IncomingMessage, workspaceId: string) {
+  const token = header(req, 'x-authorization-approval-token')?.trim()
+  if (!token) return undefined
+  let grants: Record<string, unknown>
+  try {
+    const parsed: unknown = JSON.parse(process.env.AUTHORIZATION_APPROVAL_TOKENS ?? '{}')
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid')
+    grants = parsed as Record<string, unknown>
+  } catch { throw new DomainError('AUTHORIZATION_APPROVAL_CONFIG_INVALID', '授权审批令牌配置无效', 503) }
+  const matched = Object.keys(grants).find(known => safeEqual(known, token))
+  const grant = matched && grants[matched] && typeof grants[matched] === 'object' && !Array.isArray(grants[matched]) ? grants[matched] as Record<string, unknown> : undefined
+  const grantActor = typeof grant?.actor_id === 'string' ? grant.actor_id.trim() : ''
+  const grantWorkspaces = Array.isArray(grant?.workspaces) ? grant.workspaces.filter((value): value is string => typeof value === 'string') : []
+  // Bind the approval to the workspace the operation targets, so a token issued
+  // for one tenant cannot approve another tenant's grant request.
+  const target = [params.target_workspace_id, params.workspace_id, workspaceId].find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim() ?? ''
+  const claimedBy = typeof params.approved_by === 'string' ? params.approved_by.trim() : ''
+  const actorId = requestPrincipals.get(req)?.actorId
+  if (!grantActor || !target || !grantWorkspaces.includes(target)) return undefined
+  if (actorId && grantActor === actorId) return undefined
+  if (claimedBy && claimedBy !== grantActor) return undefined
+  return grantActor
+}
+
+function satisfiedAuthorizationObligations(params: Record<string, unknown>, req: IncomingMessage, workspaceId: string) {
   const principal = requestPrincipals.get(req)
   const satisfied: AuthorizationObligation[] = []
   if (typeof params.reason === 'string' && params.reason.trim()) satisfied.push('reason')
   if ((typeof params.expected_revision === 'string' && params.expected_revision.trim()) || (typeof params.expected_authorization_revision === 'string' && params.expected_authorization_revision.trim()) || (typeof params.expected_asset_revision === 'string' && params.expected_asset_revision.trim())) satisfied.push('revision')
-  if (typeof params.approved_by === 'string' && params.approved_by.trim() && typeof params.approved_at === 'string' && params.approved_at.trim()) satisfied.push('approval')
+  if (verifiedApprovalActor(params, req, workspaceId)) satisfied.push('approval')
   if ((typeof params.idempotency_key === 'string' && params.idempotency_key.trim()) || header(req, 'idempotency-key')?.trim()) satisfied.push('idempotency')
   if ((typeof params.confirmation_hash === 'string' && params.confirmation_hash.trim()) || (typeof params.confirmations_json === 'string' && params.confirmations_json.trim())) satisfied.push('confirmation')
   if (principal?.mfaVerified) satisfied.push('mfa')
@@ -7838,7 +7879,7 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
     method,
     policy,
     atoms: decisionAtoms,
-    satisfiedObligations: satisfiedAuthorizationObligations(params, req),
+    satisfiedObligations: satisfiedAuthorizationObligations(params, req, workspaceId),
     resourceScope,
     workbench: principal?.workbench ?? 'workspace',
     mode: enforce ? 'enforce' : 'shadow',
@@ -7851,7 +7892,24 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
   }
   await recordAuthorizationDecision(req, workspaceId, decision)
   requestAuthorizationDecisions.set(req, decision)
-  if (!decision.allowed) throw new DomainError(ERROR_CODES.FORBIDDEN, `当前身份授权决策拒绝 ${policy.capability}`, 403, authorizationDenialDetails(decision))
+  // The `approval` obligation is the maker-checker control on JIT privilege
+  // grants and on SLA/commercial approvals. Its provenance is server-only:
+  // `verifiedApprovalActor` resolves the approver from a server-issued token
+  // (`x-authorization-approval-token`), so the caller-supplied
+  // `approved_by`/`approved_at` no longer satisfies it at all.
+  //
+  // This is the ONE obligation that is enforced regardless of mode, and the
+  // reason is the sink: under `strict` the grant handler refuses an unverified
+  // approver outright, but in a non-strict deployment it still falls back to
+  // persisting `required(params, 'approved_by')`. Letting shadow observe-and-allow
+  // here would therefore write a caller-asserted name into
+  // `ops_access_grants.approved_by` and the audit stream as though an approval
+  // had happened — the exact fabrication this control exists to stop. A shadow
+  // allow is only safe for obligations whose failure leaves no false record.
+  // Every other obligation keeps the ordinary `allowed = authorized || !enforced`
+  // behaviour from `evaluatePermissionAtoms`; see
+  // tests/approval-obligation-provenance.test.ts, which pins this exception.
+  if (!decision.allowed || decision.obligations.missing.includes('approval')) throw new DomainError(ERROR_CODES.FORBIDDEN, `当前身份授权决策拒绝 ${policy.capability}`, 403, authorizationDenialDetails(decision))
   if (decision.authorized && principal?.identityId) {
     const matches = (atom: PermissionAtom) => atom.capability === policy.capability
       && atom.effect === 'allow'
@@ -14890,7 +14948,18 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const idempotencyKey = requiredStringValue(params, 'idempotencyKey', 'idempotency_key')
       const actorId = requestActor(req)
       const decidedAt = new Date().toISOString()
-      const approval: SupportSlaCorrectionApproval = { approvalId: idempotencyKey, correctionId, workspaceId, decision, reason, actorId, idempotencyKey, approvedAt: decidedAt }
+      // `actorId` above is the authenticated caller submitting this approval act
+      // - the identity the two-person rule below counts, and the identity the
+      // database backstop (`UNIQUE (workspace_id, correction_id, actor_id)`)
+      // enforces. The approver that *authorised* the act is a different
+      // identity, resolved from the server-issued `x-authorization-approval-token`
+      // grant exactly as the `approval` obligation resolves it. Recording only
+      // the caller left the audit trail unable to name a token holder, so the
+      // resolved approver is persisted alongside it. When no token satisfied the
+      // obligation the field stays absent - the caller is never copied into it,
+      // because a fabricated approver is worse than a missing one.
+      const approvedByActorId = verifiedApprovalActor(params, req, workspaceId)
+      const approval: SupportSlaCorrectionApproval = { approvalId: idempotencyKey, correctionId, workspaceId, decision, reason, actorId, ...(approvedByActorId ? { approvedByActorId } : {}), idempotencyKey, approvedAt: decidedAt }
       await reporting.addCorrectionApproval({ approval })
       const approvals = await reporting.listCorrectionApprovals({ workspaceId, correctionId })
       if (decision === 'rejected') return result(await reporting.decideCorrection({ decision: { decisionId: `final:${correctionId}:rejected`, correctionId, workspaceId, decision: 'rejected', reason, actorId, idempotencyKey: `final:${correctionId}:rejected`, decidedAt } }))
@@ -15392,7 +15461,40 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const grantKind = required(params, 'grant_kind')
       const accessMode = required(params, 'access_mode')
       if ((grantKind !== 'temporary' && grantKind !== 'support') || (accessMode !== 'read' && accessMode !== 'write')) throw new DomainError('AUTHORIZATION_GRANT_INVALID', 'JIT 类型或读写模式无效', 400)
-      return result(await repository.issueGrant({ grantKind, accessMode, subjectIdentityId: required(params, 'subject_identity_id'), workspaceId: targetWorkspaceId, capabilities, resourceScope, reason: required(params, 'reason'), ticketRef: required(params, 'ticket_ref'), issuedBy: requestActor(req), approvedBy: required(params, 'approved_by'), approvedAt: required(params, 'approved_at'), expectedAuthorizationRevision: Number(required(params, 'expected_authorization_revision')), expiresAt: required(params, 'expires_at'), maxUses: Number(required(params, 'max_uses')) }))
+      // `approved_by` is not a request field to store: it is the maker-checker
+      // evidence that an independent approver existed and was entitled to this
+      // target workspace, and it becomes an immutable row in `ops_access_grants`
+      // plus the `ops_access_grant_events` audit stream. Writing the caller's
+      // claim here is what let any operator reach this method and persist
+      // someone else's name as the record of an approval, so the value written
+      // is the one `verifiedApprovalActor` resolves from the server-issued
+      // `x-authorization-approval-token` grant — the same evidence the
+      // `approval` obligation is decided from. Under enforced authentication the
+      // credential is mandatory at the sink, exactly as `parseApprovalGrant`
+      // demands `x-rule-approval-token` under `requiresStrictAuth()`: this is a
+      // refusal to record unverified evidence, not a second enforcement line, so
+      // it also holds for a shadow-mode deployment whose policy merely observes
+      // the missing obligation. When authentication is not enforced there is no
+      // authenticated identity to record at all — `issuedBy` below is likewise
+      // `requestActor`, i.e. the caller's `x-actor-id` header or the `merchant`
+      // fallback — and the claimed approver is retained there as
+      // `parseApprovalGrant` retains it.
+      const verifiedApprover = verifiedApprovalActor(params, req, targetWorkspaceId)
+      if (!verifiedApprover && requiresStrictAuth()) throw new DomainError('AUTHORIZATION_APPROVAL_REQUIRED', '严格认证环境签发 JIT 授权必须携带有效的 X-Authorization-Approval-Token', 409)
+      const approvedBy = verifiedApprover ?? required(params, 'approved_by')
+      // The token grant proves WHO approved, not WHEN: it carries only the actor
+      // id and the workspaces it may approve. The approval time therefore stays
+      // the approval act's own recorded time, but only as a claim the server can
+      // bound — it must parse and it may not postdate the server's observation of
+      // the credential. A claim that fails either bound is replaced by that
+      // observed instant instead of being persisted as an unverified string; the
+      // repository and `CHECK (approved_at <= issued_at)` re-validate it against
+      // the issuance clock afterwards.
+      const observedAt = new Date().toISOString()
+      const claimedAt = required(params, 'approved_at')
+      const claimedInstant = Date.parse(claimedAt)
+      const approvedAt = Number.isFinite(claimedInstant) && claimedInstant <= Date.parse(observedAt) ? claimedAt : observedAt
+      return result(await repository.issueGrant({ grantKind, accessMode, subjectIdentityId: required(params, 'subject_identity_id'), workspaceId: targetWorkspaceId, capabilities, resourceScope, reason: required(params, 'reason'), ticketRef: required(params, 'ticket_ref'), issuedBy: requestActor(req), approvedBy, approvedAt, expectedAuthorizationRevision: Number(required(params, 'expected_authorization_revision')), expiresAt: required(params, 'expires_at'), maxUses: Number(required(params, 'max_uses')) }))
     }
     case 'ops.authorization.grant.revoke': {
       const repository = authorizationRepository()

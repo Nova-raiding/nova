@@ -5,6 +5,18 @@ import { FeatureFlagAuthorizationError, FeatureFlagsService } from './feature-fl
 const input = { key: 'search.semantic', environment: 'production', description: 'Semantic search', defaultValue: { type: 'boolean' as const, value: true }, reason: 'controlled release', idempotencyKey: 'semantic-create-01' }
 
 describe('FeatureFlagsService', () => {
+  it('keeps the read surface separate from mutation and emergency roles', async () => {
+    const repository = new MemoryFeatureFlagsRepository()
+    const service = new FeatureFlagsService(repository)
+
+    await expect(service.list({ id: 'support', roles: ['support'] })).resolves.toMatchObject({ items: [] })
+    await expect(service.events({ id: 'reviewer', roles: ['reviewer'] }, 'missing-flag')).resolves.toEqual([])
+    await expect(service.list({ id: 'member', roles: ['member'] })).rejects.toBeInstanceOf(FeatureFlagAuthorizationError)
+    await expect(service.events({ id: 'finance', roles: ['finance'] }, 'missing-flag')).rejects.toBeInstanceOf(FeatureFlagAuthorizationError)
+    await expect(service.save({ id: 'support', roles: ['support'] }, input)).rejects.toBeInstanceOf(FeatureFlagAuthorizationError)
+    await expect(service.setEmergency({ id: 'ops', roles: ['ops_admin'] }, { id: 'missing-flag', disabled: true, expectedRevision: 1, reason: 'incident response', idempotencyKey: 'incident-read-role-01' })).rejects.toBeInstanceOf(FeatureFlagAuthorizationError)
+  })
+
   it('enforces read/write/emergency RBAC', async () => {
     const service = new FeatureFlagsService(new MemoryFeatureFlagsRepository())
     await expect(service.save({ id: 'member', roles: ['member'] }, input)).rejects.toBeInstanceOf(FeatureFlagAuthorizationError)
@@ -27,6 +39,13 @@ describe('FeatureFlagsService', () => {
     await expect(service.evaluate({ id: 'user-a', roles: ['member'], workspaceIds: ['ws-a'] }, { flagKey: 'x', environment: 'production', workspaceId: 'ws-b' })).rejects.toBeInstanceOf(FeatureFlagAuthorizationError)
     await expect(service.evaluate({ id: 'user-a', roles: ['member'], workspaceIds: ['ws-a'] }, { flagKey: 'x', environment: 'production', identityId: 'user-b' })).rejects.toBeInstanceOf(FeatureFlagAuthorizationError)
     await expect(service.evaluate({ id: 'user-a', roles: ['member'], workspaceIds: ['ws-a'] }, { flagKey: 'x', environment: 'production', workspaceId: 'ws-a' })).resolves.toMatchObject({ enabled: false, matchedBy: 'missing' })
+  })
+
+  it('allows platform readers to evaluate an explicit target workspace, while tenant readers stay bounded', async () => {
+    const service = new FeatureFlagsService(new MemoryFeatureFlagsRepository())
+
+    await expect(service.evaluate({ id: 'support', roles: ['support'] }, { flagKey: 'x', environment: 'production', workspaceId: 'ws-other' })).resolves.toMatchObject({ enabled: false, matchedBy: 'missing' })
+    await expect(service.evaluate({ id: 'member', roles: ['member'], workspaceIds: ['ws-own'] }, { flagKey: 'x', environment: 'production', workspaceId: 'ws-other' })).rejects.toBeInstanceOf(FeatureFlagAuthorizationError)
   })
 
   it('does not trust client-supplied target row identifiers', async () => {

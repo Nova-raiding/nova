@@ -44,6 +44,16 @@ export const domainReadCapabilities: Readonly<Record<OpsDomain, readonly OpsCapa
   rules: ["rule.read", "platform.media_spec.read"],
   models: ["model.status.read", "model.cost.read", "model.policy.update"],
   storage: ["storage.reconciliation.read", "workspace.summary.read"],
+  // `canViewDomain` is `canAny`, so any one of these opens 账务与退款. The list is
+  // long because finance is the dual-scope domain: the platform-side ledger
+  // reads `billing.platform.read` while the enterprise-side 账务与商业配置
+  // reads the `commercial.*` family, and a workspace owner should reach the
+  // page with only `billing.workspace.read`.
+  finance: [
+    "billing.self.read", "billing.workspace.read", "billing.platform.read", "commercial.read", "model.cost.read",
+    "commercial.access.read", "commercial.entitlement.read", "commercial.point.read", "commercial.catalog.read",
+    "commercial.order.read", "commercial.rate.read", "commercial.service_fulfillment.read",
+  ],
   audit: ["audit.read", "audit.export"],
 };
 

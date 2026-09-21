@@ -47,6 +47,17 @@ spec:
             - {name: ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON}}}
             - {name: VAULT_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: VAULT_TOKEN}}}
             - {name: RULE_APPROVAL_TOKENS, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: RULE_APPROVAL_TOKENS}}}
+            # Server-side approver registry for the `approval` authorization
+            # obligation (JIT privilege grants, SLA corrections, commercial
+            # service-fulfilment writes). The API used to accept the caller's
+            # `approved_by`/`approved_at` as proof of the approval act, so the
+            # holder of an issue capability could name their own approver and
+            # have it persisted to ops_access_grants.approved_by and the audit
+            # stream. The approver now has to come from a token in this
+            # registry, which is why it has to be injected: with it unset, the
+            # resolver finds no grant and `enforce`/`strict` denies every caller
+            # (fail closed), so its absence is an outage, not a hardened state.
+            - {name: AUTHORIZATION_APPROVAL_TOKENS, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: AUTHORIZATION_APPROVAL_TOKENS}}}
             - {name: PLATFORM_RULE_SYNC_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: PLATFORM_RULE_SYNC_SIGNING_SECRET}}}
             - {name: MODEL_RELAY_API_KEY, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: MODEL_RELAY_API_KEY}}}
             - {name: PAYMENT_PROVIDER_API_KEY, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: PAYMENT_PROVIDER_API_KEY}}}

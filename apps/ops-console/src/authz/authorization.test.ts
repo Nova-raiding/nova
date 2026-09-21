@@ -22,6 +22,9 @@ describe("authorization projection", () => {
     expect(authorization.source).toBe("server");
     expect(canViewDomain(authorization, "rules")).toBe(true);
     expect(authorization.can("billing.platform.read")).toBe(false);
+    // Domain-level counterpart: a denied capability must not leak in through
+    // `canAny` over finance's twelve-capability floor.
+    expect(canViewDomain(authorization, "finance")).toBe(false);
     expect(canViewDomain(authorization, "users")).toBe(false);
   });
 
@@ -66,10 +69,11 @@ describe("authorization projection", () => {
     expect(authorization.can("billing.platform.read")).toBe(false);
   });
 
-  it("keeps finance capabilities available without exposing a finance page", () => {
+  it("keeps finance navigation aligned with canonical finance actions", () => {
     const authorization = createAuthorizationProjection(session(["finance"], {
       capabilities: ["billing.workspace.read", "billing.refund.execute"],
     }), true);
+    expect(canViewDomain(authorization, "finance")).toBe(true);
     expect(authorization.can("billing.refund.execute")).toBe(true);
   });
 
@@ -111,7 +115,11 @@ describe("authorization projection", () => {
     expect(canViewDomain(authorization, "users")).toBe(false);
   });
 
-  it("maps a real canonical server projection across all 13 domains", () => {
+  // Deliberately count-free: this previously said "13 domains", which was
+  // already wrong before finance returned (the loop below derives the count
+  // from `domainReadCapabilities`). A hardcoded number in the title can only
+  // rot against a set that is defined elsewhere.
+  it("maps a real canonical server projection across every read domain", () => {
     const capabilities = [
       "platform.summary.read", "identity.read", "workspace.member.read", "support.ticket.read",
       "incident.read", "marketing.summary.read", "customer.content.read", "platform.settings.read", "rule.read",

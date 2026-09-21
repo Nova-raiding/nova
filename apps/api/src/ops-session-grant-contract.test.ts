@@ -58,6 +58,25 @@ function configureToken(token: string, actorId: string, workspaceId: string) {
   }))
 }
 
+// SECURITY CONTRACT CHANGE: `ops.authorization.grant.issue` carries the
+// `approval` obligation (maker-checker on a JIT privilege grant), and this file
+// used to satisfy it with nothing but the caller-supplied `approved_by` /
+// `approved_at` fields — a name anyone could type. The server now resolves the
+// approver from server-issued evidence only: the `x-authorization-approval-token`
+// header, matched against the JSON env var `AUTHORIZATION_APPROVAL_TOKENS`
+// (shape `{ "<token>": { actor_id, workspaces } }`), exactly like the existing
+// `RULE_APPROVAL_TOKENS`. A claimed `approved_by` may now only *confirm* the
+// identity the token proves. The issue calls below therefore carry a real token,
+// and keep `approved_by` equal to that token grant's `actor_id`.
+const APPROVAL_TOKEN = 'session-grant-approval-token'
+const APPROVER_ACTOR_ID = 'security-approver'
+
+function configureApprovalToken(token: string, actorId: string, workspaces: string[]) {
+  vi.stubEnv('AUTHORIZATION_APPROVAL_TOKENS', JSON.stringify({
+    [token]: { actor_id: actorId, workspaces },
+  }))
+}
+
 beforeEach(() => {
   vi.stubEnv('NODE_ENV', 'production')
   vi.stubEnv('SESSION_ID_HASH_SECRET', 'ops-session-grant-contract-secret')
@@ -97,6 +116,10 @@ describe('Ops session and grant API local contracts', () => {
     const actorId = `grant-lifecycle-actor-${Date.now()}`
     await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: 'Grant operator', role: 'merchant_admin', status: 'active', invitedBy: 'contract-test' })
     configureToken('grant-lifecycle-token', actorId, workspaceId)
+    // This test used to rely on a forgeable approval (`approved_by` as a bare
+    // string). It now presents the server-issued approval token for the
+    // independent approver, which is the only thing that satisfies `approval`.
+    configureApprovalToken(APPROVAL_TOKEN, APPROVER_ACTOR_ID, [workspaceId])
     const base = await start()
     const session = await call<Session>(base, 'grant-lifecycle-token', 'ops.session', {}, { 'x-workspace-id': workspaceId, 'x-ops-workbench': 'workspace' })
     expect(session.response.status).toBe(200)
@@ -112,13 +135,13 @@ describe('Ops session and grant API local contracts', () => {
       capabilities_json: JSON.stringify(['customer.content.read']),
       resource_scope_json: JSON.stringify({ workspace_ids: [workspaceId] }),
       ticket_ref: 'OPS-SESSION-GRANT-1',
-      approved_by: 'security-approver',
+      approved_by: APPROVER_ACTOR_ID,
       approved_at: new Date().toISOString(),
       expires_at: expiresAt,
       max_uses: '1',
       expected_authorization_revision: String(authorizationRevision),
       reason: '验证受控支持访问',
-    }, { 'x-workspace-id': workspaceId, 'x-ops-workbench': 'platform' })
+    }, { 'x-workspace-id': workspaceId, 'x-ops-workbench': 'platform', 'x-authorization-approval-token': APPROVAL_TOKEN })
     expect(issued.response.status).toBe(200)
     expect(issued.body.error).toBeNull()
     const grant = issued.body.data!.result
@@ -146,6 +169,10 @@ describe('Ops session and grant API local contracts', () => {
     const actorId = `grant-expiry-actor-${Date.now()}`
     await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: 'Expiry operator', role: 'merchant_admin', status: 'active', invitedBy: 'contract-test' })
     configureToken('grant-expiry-token', actorId, workspaceId)
+    // Same security contract change as the lifecycle test above: the expiry
+    // fixture issues a real grant, so it presents the server-issued approval
+    // token instead of the previously forgeable `approved_by` string.
+    configureApprovalToken(APPROVAL_TOKEN, APPROVER_ACTOR_ID, [workspaceId])
     const base = await start()
     const session = await call<Session>(base, 'grant-expiry-token', 'ops.session', {}, { 'x-workspace-id': workspaceId, 'x-ops-workbench': 'workspace' })
     const result = await call<Grant>(base, 'grant-expiry-token', 'ops.authorization.grant.issue', {
@@ -156,13 +183,13 @@ describe('Ops session and grant API local contracts', () => {
       capabilities_json: JSON.stringify(['customer.content.read']),
       resource_scope_json: JSON.stringify({ workspace_ids: [workspaceId] }),
       ticket_ref: 'OPS-SESSION-GRANT-EXPIRY',
-      approved_by: 'security-approver',
+      approved_by: APPROVER_ACTOR_ID,
       approved_at: new Date().toISOString(),
       expires_at: new Date(Date.now() + 100).toISOString(),
       max_uses: '1',
       expected_authorization_revision: String(session.body.data!.result.authorization_revision),
       reason: '过期 grant 应被拒绝',
-    }, { 'x-workspace-id': workspaceId, 'x-ops-workbench': 'platform' })
+    }, { 'x-workspace-id': workspaceId, 'x-ops-workbench': 'platform', 'x-authorization-approval-token': APPROVAL_TOKEN })
     expect(result.response.status).toBe(200)
     expect(result.body.data?.result).toMatchObject({ id: expect.any(String), expiresAt: expect.any(String) })
     await new Promise(resolve => setTimeout(resolve, 150))

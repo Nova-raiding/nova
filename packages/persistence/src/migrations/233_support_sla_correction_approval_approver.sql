@@ -1,0 +1,33 @@
+-- 233_support_sla_correction_approval_approver: record which identity
+-- authorised an SLA correction approval, not only which operator submitted the
+-- act.
+--
+-- The hole this closes. `ops.support.sla.correction.decide`
+-- (apps/api/src/server.ts) writes the authenticated caller into
+-- `support_sla_correction_approvals.actor_id`, and the two-person rule there
+-- counts two distinct `actor_id` values - backed by migration 116's
+-- `UNIQUE (workspace_id, correction_id, actor_id)`. The maker-checker approver
+-- that actually authorised the act is resolved from the server-issued
+-- `x-authorization-approval-token` grant (`verifiedApprovalActor`) and was
+-- then discarded, so no row can name the token holder. An approval ledger that
+-- can only name the submitter is not evidence that an independent approver
+-- existed: it is the same defect the JIT grant path fixed when it stopped
+-- persisting the caller-supplied `approved_by`.
+--
+-- Nullable, and no DEFAULT. Rows written before this column existed predate the
+-- approval-token mechanism, and this table is append-only - 116 installs
+-- `reject_support_sla_correction_approval_mutation`, which raises on every
+-- UPDATE and DELETE - so those rows can never be backfilled and a NOT NULL
+-- would only reject them. A NULL therefore means "the approval act was recorded
+-- without a token", and the writer must leave it NULL rather than paper over it
+-- by copying `actor_id`, which would forge an approver.
+--
+-- Additive DDL only: this touches neither the RLS policy (116's
+-- `workspace_id = current_setting('app.workspace_id', true)`), the immutability
+-- trigger, the table ACL, nor the `UNIQUE (workspace_id, correction_id,
+-- actor_id)` backstop for the two-person rule.
+--
+-- Idempotent via `ADD COLUMN IF NOT EXISTS`, so a re-run is a no-op. The
+-- rewrite is metadata-only and takes no table rewrite.
+
+ALTER TABLE support_sla_correction_approvals ADD COLUMN IF NOT EXISTS approved_by_actor_id TEXT;
