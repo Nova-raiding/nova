@@ -107,6 +107,7 @@ export function buildReleaseManifest(input: {
     resolve(root, 'infra/protected/attest-postgres-backup.mjs'),
     resolve(root, 'infra/protected/attest-postgres-backup.d.mts'),
     resolve(root, 'infra/protected/ecs-preidentity-recovery.mjs'),
+    resolve(root, 'infra/protected/ecs-preidentity-recovery.d.mts'),
     resolve(root, 'tests/release-evidence-bundle-gate.ts'),
   ]
   const artifacts = artifactPaths.map(path => {

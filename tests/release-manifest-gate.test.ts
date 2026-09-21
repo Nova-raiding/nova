@@ -74,6 +74,7 @@ describe('release manifest production gate', () => {
       'infra/protected/attest-postgres-backup.mjs',
       'infra/protected/attest-postgres-backup.d.mts',
       'infra/protected/ecs-preidentity-recovery.mjs',
+      'infra/protected/ecs-preidentity-recovery.d.mts',
       'tests/release-evidence-bundle-gate.ts',
     ]
     const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })

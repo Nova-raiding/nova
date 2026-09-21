@@ -78,6 +78,7 @@ infra/protected/attest-release-evidence-bundle.d.mts
 infra/protected/attest-postgres-backup.mjs
 infra/protected/attest-postgres-backup.d.mts
 infra/protected/ecs-preidentity-recovery.mjs
+infra/protected/ecs-preidentity-recovery.d.mts
 tests/release-evidence-bundle-gate.ts
 tests/ecs-release-control-installer.container-check.mjs
 tests/ecs-release-control-installer.test.ts
