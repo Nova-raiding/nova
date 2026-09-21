@@ -5,6 +5,7 @@ import {
   parseCommercialAccessSummary,
   parseLedger,
   parseCommercialTimeline,
+  parseCommercialRefunds,
   commercialRefundEvidence,
   refundPolicyApproval,
   provisionableCatalogItems,
@@ -78,5 +79,16 @@ describe("commercial operations DTO parsers", () => {
     expect(refundPolicyApproval('{"legal_review_ref":"LAW-1"}')).toEqual({ legal_review_ref: "LAW-1" });
     expect(() => refundPolicyApproval('{"legal_review_ref":""}')).toThrow("非空 legal_review_ref");
     expect(() => refundPolicyApproval("not-json")).toThrow("JSON 对象");
+  });
+
+  it("parses immutable refund events with server status and evidence", () => {
+    const result = parseCommercialRefunds({ items: [{
+      id: "refund-event-1", workspace_id: "ws_1", order_id: "order_1", request_id: "refund-request-1", revision: 2,
+      event_type: "approved", refund_kind: "monthly_unused_points", amount_fen: 2000, points_to_revoke: 10,
+      reason: "政策退款", actor_id: "finance-1", evidence: { legal_review_ref: "LAW-1" }, external_refund_id: null,
+      created_at: "2026-09-21T00:00:00.000Z",
+    }] });
+    expect(result).toMatchObject({ total: 1, items: [{ requestId: "refund-request-1", eventType: "approved", amountFen: 2000, pointsToRevoke: 10, evidence: { legal_review_ref: "LAW-1" } }] });
+    expect(() => parseCommercialRefunds({ items: [{ ...result.items[0], refund_kind: "made_up" }] })).toThrow("refund_kind 无效");
   });
 });
