@@ -12,18 +12,32 @@
 
 2026-08-29 发布审计复核：仓库版本、插件镜像、MCP 注册表和迁移链已有 fail-closed metadata gate，release manifest 同时绑定 `VERSION`、`CHANGELOG`、metadata、Git SHA、插件、OpenAPI 与 MCP 源码。正式 trust anchor 检查因 `/run/release-security/evidence-trust` 未配置而拒绝，容量示例也因 `cloud_gate=false`、非生产环境、非 HTTPS 且包含 mock 流量而被真实云门禁拒绝。因此仓库门禁可验收，但生产发布继续 **NO-GO**。当前检查项和外部缺口见 [Store Nova 发布解阻清单](docs/runbooks/release-unblock-checklist.md)。
 
-## 快速开始
+## 本地一键启动
+
+首次使用先安装依赖并检查本机环境：
 
 ```bash
-npm install
+npm ci
 npm run dev:doctor
-npm run check
-npm run release:metadata:validate
-npm run test:release-gates
+```
+
+检查通过后，一条命令启动本地 Compose 服务和桌面 Ops Console：
+
+```bash
 npm run dev:stack
 ```
 
-项目要求 Node 22+、npm，以及已启动的 Docker Desktop（含 Compose v2）；Docker daemon 未启动时 `dev:doctor` 会返回非零状态，这是预期行为，启动 Docker Desktop 后重试即可。`dev:doctor` 会统一检查 Node、npm、Git/worktree、Docker/Compose/buildx、浏览器验收工具、Ops API 地址、模型中转配置、生产配置和本地运行端点，且不会输出密钥。`dev:stack` 启动本地 Compose 栈并在前台启动 Ops Console；仅启动 API 时可使用 `npm run dev:api`，仅启动运营台可使用 `npm run dev:ops-console`。
+项目要求 Node 22+、npm，以及已启动的 Docker Desktop（含 Compose v2）；Docker daemon 未启动时 `dev:doctor` 会返回非零状态，这是预期行为，启动 Docker Desktop 后重试即可。`dev:doctor` 会统一检查 Node、npm、Git/worktree、Docker/Compose/buildx、浏览器验收工具、Ops API 地址、模型中转配置、生产配置和本地运行端点，且不会输出密钥。`dev:stack` 会初始化本地扫描器密钥、启动 Compose 栈，并在前台启动 Ops Console；仅启动 API 时可使用 `npm run dev:api`，仅启动运营台可使用 `npm run dev:ops-console`。
+
+这条命令只部署本地服务，不会安装或更新 ChatGPT 插件，也不会注入商家凭据。插件包须已由管理员交付到桌面宿主；连接配置使用 [安装与配置手册](docs/store-nova-chatgpt-plugin-install-manual.md) 中的 `install-local-macos.sh`。当前 Codex CLI 的 `plugin add` 只接受 marketplace selector，本仓库不把写入 `~/.codex/plugins/cache` 冒充为受支持的本地安装方式。
+
+完整仓库验收不是首次启动步骤。准备候选发布时再运行：
+
+```bash
+npm run check
+npm run release:metadata:validate
+npm run test:release-gates
+```
 
 生产部署前使用 `npm run dev:doctor:production`。Git、buildx、持久 Secret 或显式生产配置缺失时会返回非零状态。
 
@@ -45,10 +59,10 @@ CONNECTOR_FIXTURE_MODE=true PLUGIN_WRITE_ENABLED=true npm run dev:api
 
 本地 PostgreSQL/Redis：
 
-`.env` 被 `.gitignore` 忽略，干净 clone 中并不存在，必须先自行创建；仓库只提供模板 `.env.example`：
+`.env` 被 `.gitignore` 忽略，干净 clone 中并不存在。使用 `npm run dev:stack` 时脚本会按需创建权限为 `0600` 的 `.env` 并写入本地扫描器密钥；如需覆盖默认配置，再从模板创建并编辑：
 
 ```bash
-cp .env.example .env   # 干净 clone 必做：按需修改其中的配置项
+cp .env.example .env
 docker compose --env-file .env -f infra/local/docker-compose.yml up -d
 ```
 
