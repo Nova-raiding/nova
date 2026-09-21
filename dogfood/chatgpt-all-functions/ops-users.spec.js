@@ -147,11 +147,11 @@ test('operates the platform user directory without destructive confirmation', as
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('button', { name: /确认停用/u })).toBeDisabled()
   await dialog.getByLabel('操作原因（至少 4 个字符）').fill('浏览器验收测试，不提交')
-  // The dialog now also requires an approver, and a reason alone must not arm
-  // the confirmation.
-  await expect(dialog.getByRole('button', { name: /确认停用/u })).toBeDisabled()
-  await dialog.getByLabel('审批人').click()
-  await page.locator('.ant-select-dropdown:visible .ant-select-item-option:has-text("姜伟")').click()
+  // The actor is the authenticated server session. The UI must not accept a
+  // forgeable typed approver; a concrete audit reason arms the operation and
+  // the server revalidates identity.update before writing.
+  await expect(dialog.getByText('本操作由当前会话授权', { exact: true })).toBeVisible()
+  await expect(dialog.getByLabel('审批人')).toHaveCount(0)
   await expect(dialog.getByRole('button', { name: /确认停用/u })).toBeEnabled()
   await dialog.getByRole('button', { name: /Cancel|取\s*消/u }).click()
   await expect(dialog).toBeHidden()
