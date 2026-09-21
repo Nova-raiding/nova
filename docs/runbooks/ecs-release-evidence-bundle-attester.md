@@ -21,30 +21,30 @@ Use this installation order from the root-owned reviewed release checkout:
 Run the exact installer interface once per control, substituting only the reviewed release ID and independently recorded SHA-256 values:
 
 ```sh
-env -u NODE_OPTIONS -u NODE_PATH node infra/scripts/install-ecs-release-controls.mjs \
+env -i /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node /srv/merchant-releases/RELEASE_ID/infra/scripts/install-ecs-release-controls.mjs \
   --control capability \
-  --source /opt/merchant-releases/RELEASE_ID/source/infra/protected/attest-capability-evidence.mjs \
+  --source /srv/merchant-releases/RELEASE_ID/infra/protected/attest-capability-evidence.mjs \
   --source-sha256 REVIEWED_CAPABILITY_SOURCE_SHA256 \
   --node /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
   --node-sha256 REVIEWED_NODE_SHA256
 
-env -u NODE_OPTIONS -u NODE_PATH node infra/scripts/install-ecs-release-controls.mjs \
+env -i /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node /srv/merchant-releases/RELEASE_ID/infra/scripts/install-ecs-release-controls.mjs \
   --control backup \
-  --source /opt/merchant-releases/RELEASE_ID/source/infra/protected/attest-postgres-backup.mjs \
+  --source /srv/merchant-releases/RELEASE_ID/infra/protected/attest-postgres-backup.mjs \
   --source-sha256 REVIEWED_BACKUP_SOURCE_SHA256 \
   --node /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
   --node-sha256 REVIEWED_NODE_SHA256
 
-env -u NODE_OPTIONS -u NODE_PATH node infra/scripts/install-ecs-release-controls.mjs \
+env -i /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node /srv/merchant-releases/RELEASE_ID/infra/scripts/install-ecs-release-controls.mjs \
   --control preidentity \
-  --source /opt/merchant-releases/RELEASE_ID/source/infra/protected/ecs-preidentity-recovery.mjs \
+  --source /srv/merchant-releases/RELEASE_ID/infra/protected/ecs-preidentity-recovery.mjs \
   --source-sha256 REVIEWED_PREIDENTITY_SOURCE_SHA256 \
   --node /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
   --node-sha256 REVIEWED_NODE_SHA256
 
-env -u NODE_OPTIONS -u NODE_PATH node infra/scripts/install-ecs-release-controls.mjs \
+env -i /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node /srv/merchant-releases/RELEASE_ID/infra/scripts/install-ecs-release-controls.mjs \
   --control bundle \
-  --source /opt/merchant-releases/RELEASE_ID/source/infra/protected/attest-release-evidence-bundle.mjs \
+  --source /srv/merchant-releases/RELEASE_ID/infra/protected/attest-release-evidence-bundle.mjs \
   --source-sha256 REVIEWED_BUNDLE_SOURCE_SHA256 \
   --node /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
   --node-sha256 REVIEWED_NODE_SHA256
@@ -55,10 +55,10 @@ All five options are mandatory and must use independently reviewed SHA-256 value
 The isolated backup CLI drill is intentionally a shell runner, not a Vitest entry. Run it explicitly after the pinned Docker images are locally available:
 
 ```sh
-sh tests/postgres-backup-attester-cli-e2e.sh
+bash tests/postgres-backup-attester-cli-e2e.sh
 ```
 
-That runner uses an isolated Docker PostgreSQL 16 instance and synthetic keys/data to exercise snapshot, dump, restore and rejection behavior. It does not validate a production restore. The production backup has passed independent signature verification, but release readiness still requires its separate restore acceptance and evidence review; do not report the complete release gate as passed from the signature result or this drill alone.
+That runner uses an isolated Docker PostgreSQL 16 instance and synthetic keys/data to exercise snapshot, dump, restore and rejection behavior. It does not validate a production restore. As of 2026-09-21, the production backup has passed independent signature verification, but release readiness still requires its separate restore acceptance and evidence review; do not report the complete release gate as passed from the signature result or this drill alone.
 
 The preidentity CLI/FD9 drill is also an explicit shell runner:
 
