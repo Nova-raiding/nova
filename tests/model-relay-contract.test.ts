@@ -184,6 +184,27 @@ describe('production model relay contract', () => {
     expect(finalizeSuccessfulProbe(completeProbe(modality))).toMatchObject({ state: 'ready' })
   })
 
+  it.each([
+    ['text', { billingUnits: 1 }, 'token_usage_evidence_missing'],
+    ['ocr', { durationSeconds: 1 }, 'token_usage_evidence_missing'],
+    ['image', { billingUnits: 0 }, 'billing_unit_evidence_missing'],
+    ['image_edit', { billingUnits: 1.5 }, 'billing_unit_evidence_missing'],
+    ['video', { durationSeconds: 0 }, 'duration_evidence_missing'],
+  ] as const)('keeps %s blocked when its modality-specific usage evidence is invalid', (modality, usage, detail) => {
+    expect(finalizeSuccessfulProbe({ ...completeProbe(modality), usage })).toMatchObject({ state: 'blocked', detail })
+  })
+
+  it('rejects malformed numeric evidence and inconsistent token totals before reporting ready', () => {
+    expect(finalizeSuccessfulProbe({ ...completeProbe('text'), usage: { totalTokens: Number.NaN } })).toMatchObject({ state: 'blocked', detail: 'numeric_usage_evidence_missing' })
+    expect(finalizeSuccessfulProbe({ ...completeProbe('text'), usage: { inputTokens: 1, outputTokens: 1, totalTokens: 3 } })).toMatchObject({ state: 'blocked', detail: 'token_usage_evidence_inconsistent' })
+    expect(finalizeSuccessfulProbe({ ...completeProbe('text'), costCny: -0.01 })).toMatchObject({ state: 'blocked', detail: 'cost_evidence_missing' })
+  })
+
+  it('requires immutable pricing identity when cost is derived from a relay snapshot', () => {
+    expect(finalizeSuccessfulProbe({ ...completeProbe('text'), costSource: 'relay_pricing_snapshot' })).toMatchObject({ state: 'blocked', detail: 'pricing_snapshot_identity_missing' })
+    expect(finalizeSuccessfulProbe({ ...completeProbe('text'), costSource: 'relay_pricing_snapshot', pricingVersion: 'pricing-v1', pricingGroup: 'default' })).toMatchObject({ state: 'ready' })
+  })
+
   it('reads nested relay usage but never treats unversioned quota as CNY', async () => {
     await expect(evaluateRelayUsageEvidence(
       { data: { quota: 12345, data: { request_id: 'request_nested', usage: { duration_seconds: 5, billed_units: 1 } } } },

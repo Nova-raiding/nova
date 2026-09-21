@@ -288,9 +288,32 @@ export function finalizeSuccessfulProbe(input: SuccessfulProbe): ProbeResult {
   if (!responseValid) return { ...result, state: 'blocked', detail: responseFailure ?? 'response_contract_invalid' }
   if (!result.providerRequestId) return { ...result, state: 'blocked', detail: 'provider_request_id_missing' }
   if (result.usageObserved !== true) return { ...result, state: 'blocked', detail: 'usage_evidence_missing' }
-  if (!result.usage || Object.keys(result.usage).length === 0) return { ...result, state: 'blocked', detail: 'numeric_usage_evidence_missing' }
+  const numericUsage = result.usage && Object.values(result.usage).filter(value => value !== undefined)
+  if (!result.usage || !numericUsage?.length || numericUsage.some(value => typeof value !== 'number' || !Number.isFinite(value) || value < 0)) {
+    return { ...result, state: 'blocked', detail: 'numeric_usage_evidence_missing' }
+  }
+  if ((result.modality === 'text' || result.modality === 'ocr')
+    && result.usage.inputTokens === undefined && result.usage.outputTokens === undefined && result.usage.totalTokens === undefined) {
+    return { ...result, state: 'blocked', detail: 'token_usage_evidence_missing' }
+  }
+  if ((result.modality === 'image' || result.modality === 'image_edit')
+    && (!Number.isSafeInteger(result.usage.billingUnits) || (result.usage.billingUnits ?? 0) <= 0)) {
+    return { ...result, state: 'blocked', detail: 'billing_unit_evidence_missing' }
+  }
+  if (result.modality === 'video' && (typeof result.usage.durationSeconds !== 'number' || result.usage.durationSeconds <= 0)) {
+    return { ...result, state: 'blocked', detail: 'duration_evidence_missing' }
+  }
+  if (result.usage.totalTokens !== undefined && result.usage.inputTokens !== undefined && result.usage.outputTokens !== undefined
+    && result.usage.totalTokens !== result.usage.inputTokens + result.usage.outputTokens) {
+    return { ...result, state: 'blocked', detail: 'token_usage_evidence_inconsistent' }
+  }
   if (!result.usageProviderRequestId || result.usageProviderRequestId !== result.providerRequestId) return { ...result, state: 'blocked', detail: 'usage_request_id_mismatch' }
-  if (result.costObserved !== true || result.costCny === undefined || !result.costSource) return { ...result, state: 'blocked', detail: 'cost_evidence_missing' }
+  if (result.costObserved !== true || typeof result.costCny !== 'number' || !Number.isFinite(result.costCny) || result.costCny < 0 || !result.costSource) {
+    return { ...result, state: 'blocked', detail: 'cost_evidence_missing' }
+  }
+  if (result.costSource === 'relay_pricing_snapshot' && (!result.pricingVersion || !result.pricingGroup)) {
+    return { ...result, state: 'blocked', detail: 'pricing_snapshot_identity_missing' }
+  }
   return { ...result, state: 'ready' }
 }
 
