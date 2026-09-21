@@ -4,14 +4,14 @@ set -eu
 # Shell/FD9/flock/SQLite/signing/journal are real. Docker and psql are
 # deterministic fixed-path stubs. This does NOT prove a real Docker recovery.
 readonly NODE_IMAGE='node@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32'
-readonly CONTAINER='merchant-preidentity-isolated-cli'
+readonly CONTAINER="merchant-preidentity-isolated-cli-$$"
 root=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd -P)
 fixture="$root/tests/fixtures/ecs-preidentity-isolated"
 
-cleanup() { docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; }
+container_id=''
+cleanup() { if [ -n "$container_id" ]; then docker rm -f "$container_id" >/dev/null 2>&1 || true; fi; }
 trap cleanup EXIT HUP INT TERM
-cleanup
-docker run -d --name "$CONTAINER" --network none "$NODE_IMAGE" sleep 600 >/dev/null
+container_id=$(docker run -d --name "$CONTAINER" --network none "$NODE_IMAGE" sleep 600)
 docker exec "$CONTAINER" mkdir -p /fixture
 tar -C "$root" -cf - infra/protected/ecs-preidentity-recovery.mjs | docker exec -i "$CONTAINER" tar -C / -xf -
 tar -C "$fixture" -cf - docker.mjs psql.mjs setup.mjs | docker exec -i "$CONTAINER" tar -C /fixture -xf -
