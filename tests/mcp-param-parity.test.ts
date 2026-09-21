@@ -141,13 +141,6 @@ function merchantClientCallSites(): Array<{ method: string; keys: Set<string> }>
   return sites
 }
 
-/** The API-local schema override set, read from source so it cannot grow silently. */
-function schemaOverrideMethods(): string[] {
-  const match = /const OPS_MCP_SCHEMA_OVERRIDE_METHODS = new Set\(\[([^\]]*)\]\)/u.exec(serverSource)
-  if (!match) throw new Error('OPS_MCP_SCHEMA_OVERRIDE_METHODS must stay recognizable')
-  return [...match[1]!.matchAll(/'([^']+)'/gu)].map(entry => entry[1]!)
-}
-
 describe('MCP handler/contract parameter parity', () => {
   it('covers every method exactly once', () => {
     const covered = blocks.flatMap(block => block.methods)
@@ -185,13 +178,9 @@ describe('MCP handler/contract parameter parity', () => {
   it('only lets a handler read parameters the wire validator accepts', () => {
     // Either the key is declared, or `validateMcpRequest` rejects it for that
     // method - in which case the read can never observe a caller value. The
-    // API-local schema override methods skip validation entirely, so for them
-    // every read key must be declared; they are pinned in their own test.
-    const overrides = new Set(schemaOverrideMethods())
     const failures: string[] = []
     for (const block of blocks) {
       for (const method of block.methods) {
-        if (overrides.has(method)) continue
         const declared = declaredKeys(method)
         const readKeys = new Set([...block.direct, ...block.helperCalls.map(call => call.camel)])
         for (const key of readKeys) {
@@ -206,11 +195,19 @@ describe('MCP handler/contract parameter parity', () => {
     expect(failures).toEqual([])
   })
 
-  it('pins the API-local schema override set', () => {
-    // Both remaining entries serve API-local schemas on purpose; every other
-    // method is validated against the shared contract. Growing this set is a
-    // decision, not an accident.
-    expect(schemaOverrideMethods()).toEqual(['ops.member.upsert', 'ops.member.suspend'])
+  it('has no API-local schema validation bypass', () => {
+    expect(serverSource).not.toContain('OPS_MCP_SCHEMA_OVERRIDE_METHODS')
+    expect(serverSource).toMatch(/if \(isMcpMethod\(method\)\) \{\n    const validation = validateMcpRequest\(input\)/u)
+    for (const method of ['ops.member.upsert', 'ops.member.suspend'] as const) {
+      const result = validateMcpRequest({
+        jsonrpc: '2.0',
+        id: 1,
+        method,
+        params: { external_subject: 'member_1', expectedRevision: '2', reason: 'contract parity check', ...(method === 'ops.member.upsert' ? { role: 'operator' } : {}) },
+      })
+      expect(result.valid).toBe(false)
+      expect(result.errors).toContain(`params.expectedRevision is not accepted for ${method}`)
+    }
   })
 
   it('scopes the handler view to the active method before dispatch', () => {
@@ -225,8 +222,7 @@ describe('MCP handler/contract parameter parity', () => {
     expect(columns(methodScopedParams('billing.reconciliation', { workspace_id: 'ws', from_at: 'a', to_at: 'b' }))).toEqual({ workspace_id: 'ws' })
     expect(columns(methodScopedParams('ops.customer-delivery.checklist.update', { workspace_id: 'ws', delivery_id: 'd', itemsJson: '[]', checklistKey: 'system_integration' }))).toEqual({ workspace_id: 'ws', delivery_id: 'd' })
     expect(columns(methodScopedParams('ops.incident.get', { workspace_id: 'ws', incident_id: 'i', title: 't' }))).toEqual({ workspace_id: 'ws', incident_id: 'i' })
-    // API-local schema methods keep the unfiltered view.
-    expect(columns(methodScopedParams('ops.member.upsert', { expectedRevision: '2', whatever: 'x' }))).toEqual({ expectedRevision: '2', whatever: 'x' })
+    expect(columns(methodScopedParams('ops.member.upsert', { expected_revision: '2', expectedRevision: '3', whatever: 'x' }))).toEqual({ expected_revision: '2' })
   })
 })
 
@@ -311,7 +307,6 @@ describe('audit remediation pins', () => {
 
   it('validates catalog.image.review against the declared authenticity evidence', () => {
     expect(MCP_METHOD_SCHEMAS['catalog.image.review'].properties).toHaveProperty('authenticity_evidence_json')
-    expect(schemaOverrideMethods()).not.toContain('catalog.image.review')
     expect(validateMcpRequest({ jsonrpc: '2.0', id: 1, method: 'catalog.image.review', params: { product_id: 'p1', off_contract: 'x' } }).valid).toBe(false)
   })
 

@@ -1090,10 +1090,9 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'catalog.image.review',
     description: 'Run deterministic checks against generated or supplied product main images. authenticity_evidence_json carries the per-candidate authenticity inputs that the evaluator binds to the archived candidate SHA-256.',
-    // authenticity_evidence_json was previously served by an API-local schema
-    // (OPS_MCP_SCHEMA_OVERRIDE_METHODS). It is declared here so the method is
-    // validated like every other one instead of hiding the drift behind an
-    // exemption.
+    // authenticity_evidence_json was previously served by an API-local schema.
+    // It is declared here so the method is validated like every other one
+    // instead of hiding the drift behind an exemption.
     params: params({ product_id: { type: 'string' }, images: { type: 'string' }, visual_refs_json: { type: 'string' }, authenticity_evidence_json: boundedString(65_536, 2, 'JSON object for a single visual_ref, or an array of one entry per visual_ref.') }, ['product_id']),
   },
   {

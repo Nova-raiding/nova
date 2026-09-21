@@ -12023,14 +12023,12 @@ function paramsOf(input: JsonObject): JsonObject {
  *
  * Scoping the handler's view to the keys its own contract declares makes "what
  * the handler can read" and "what the contract declares" the same set by
- * construction. The platform-ops methods whose schemas are still intentionally
- * served by an API-local schema keep the unfiltered view (see
- * `OPS_MCP_SCHEMA_OVERRIDE_METHODS`).
+ * construction.
  *
  * tests/mcp-param-parity.test.ts pins this mechanically.
  */
 export function methodScopedParams(method: string, params: JsonObject): JsonObject {
-  if (OPS_MCP_SCHEMA_OVERRIDE_METHODS.has(method) || !isMcpMethod(method)) return params
+  if (!isMcpMethod(method)) return params
   const declared = Object.keys(MCP_METHOD_SCHEMAS[method].properties)
   if (declared.every(key => Object.prototype.hasOwnProperty.call(params, key))
     && Object.keys(params).length === declared.length) return params
@@ -12815,11 +12813,6 @@ function effectiveMcpMethodPolicy(method: string, params: Record<string, unknown
 export function isPlatformScopeMethod(method: string, params: Record<string, unknown> = {}): boolean {
   return effectiveMcpMethodPolicy(method, params)?.scope === 'platform'
 }
-// Methods whose wire schema is still served by an API-local schema rather than
-// the shared contract. Each entry is a standing admission that the contract and
-// the handler can drift, so the set is pinned by
-// tests/mcp-param-parity.test.ts and must not grow silently.
-const OPS_MCP_SCHEMA_OVERRIDE_METHODS = new Set(['ops.member.upsert', 'ops.member.suspend'])
 const OPS_DOMAIN_PARAMS_MAX_BYTES = 128 * 1024
 
 type PersistedVisualAuthenticity = {
@@ -13621,9 +13614,6 @@ async function routeNativeMcp(req: IncomingMessage, res: ServerResponse, input: 
 }
 
 async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonObject, transport: 'legacy' | 'native' = 'legacy') {
-  // Some methods use API-local parameter schemas while their shared contract
-  // catches up. They must still pass the JSON-RPC envelope boundary before
-  // authorization, tenant lookup, or handler dispatch.
   assertMcpEnvelope(input)
   const request = input as unknown as McpRequest
   const method = typeof request.method === 'string' ? request.method : ''
@@ -13676,7 +13666,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
   const isCampaignLifecycleMethod = CAMPAIGN_LIFECYCLE_METHODS.has(method)
   if (requestPrincipals.get(req)?.credentialSource === 'mcp_oauth' && method.startsWith('ops.')) throw new DomainError(ERROR_CODES.FORBIDDEN, '商家 OAuth 会话不能访问平台运营工作台', 403)
   if (!isMcpMethod(method) && !isFirstValueMethod && !isOpsDomainMethod && !isCampaignLifecycleMethod) throw new DomainError(ERROR_CODES.MCP_METHOD_NOT_FOUND, `不支持的 MCP 方法: ${method}`, 404)
-  if (isMcpMethod(method) && !OPS_MCP_SCHEMA_OVERRIDE_METHODS.has(method)) {
+  if (isMcpMethod(method)) {
     const validation = validateMcpRequest(input)
     if (!validation.valid) throw new DomainError(ERROR_CODES.INVALID_REQUEST, validation.errors.join('; '), 400)
   }
