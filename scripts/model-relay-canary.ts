@@ -40,6 +40,11 @@ const confirmCost = process.env.MODEL_RELAY_CANARY_CONFIRM === 'true'
 const timeoutMs = resolveBoundedInteger(process.env.MODEL_RELAY_CANARY_TIMEOUT_MS, 120_000, 2_000, 120_000, 'MODEL_RELAY_CANARY_TIMEOUT_MS')
 const rawVideoDurationSeconds = Number(process.env.VIDEO_DURATION_SECONDS ?? 5)
 const videoDurationSeconds = Number.isFinite(rawVideoDurationSeconds) ? Math.max(3, Math.min(15, rawVideoDurationSeconds)) : 5
+// Keep the default canary prompt deliberately neutral. Some relay safety
+// filters reject vague or non-deterministic test prompts before a provider
+// job is created, which would test the filter rather than video readiness.
+const videoCanaryPrompt = process.env.MODEL_RELAY_CANARY_VIDEO_PROMPT?.trim()
+  || 'A simple blue geometric cube on a plain white background, no people, no text.'
 const base = source.replace(/\/+$/u, '')
 const pricingClient = createRelayPricingClientFromEnv(process.env)
 const relaySecurity = relaySecurityFromEnv(process.env)
@@ -405,13 +410,13 @@ async function probe(modality: ProbeResult['modality']): Promise<ProbeResult> {
           ? { model, prompt: '生成一张纯白测试图，只用于中转站连通性验收', n: 1, size: '1024x1024', response_format: 'url' }
           : modality === 'image_edit'
             ? { model, prompt: '对测试素材做最小编辑：保持主体不变', image: ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAFklEQVR4nGP4TyFgGDVg1IBRA4aLAQBdePwur/3haQAAAABJRU5ErkJggg=='], image_mode: 'optimize', edit_region: { x: 0, y: 0, width: 1, height: 1 }, n: 1, size: '1024x1024', response_format: 'url' }
-            : { model, prompt: '创建一个最小成本的中转站测试任务', duration: videoDurationSeconds }
+            : { model, prompt: videoCanaryPrompt, duration: videoDurationSeconds }
     const usesVideoStatusPath = Boolean(existingVideoTaskId && endpoint.includes('{job_id}'))
     const requestEndpoint = existingVideoTaskId ? endpoint.replace(/\{job_id\}/gu, encodeURIComponent(existingVideoTaskId)) : endpoint
     const videoRequest = modality === 'video' && !existingVideoTaskId
       ? buildVideoProbeRequest({
         model,
-        prompt: '创建一个最小成本的中转站测试任务',
+        prompt: videoCanaryPrompt,
         durationSeconds: videoDurationSeconds,
         ...(process.env.VIDEO_RESOLUTION?.trim() ? { resolution: process.env.VIDEO_RESOLUTION.trim().toUpperCase() } : {}),
         ...(process.env.VIDEO_REQUEST_FORMAT?.trim() ? { requestFormat: process.env.VIDEO_REQUEST_FORMAT.trim() } : {}),
