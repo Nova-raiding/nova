@@ -118,7 +118,8 @@ x-ecs-node-hardening: &ecs-node-hardening
   read_only: true
   security_opt: [no-new-privileges:true]
   cap_drop: [ALL]
-  tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=64m]
+  tmpfs:
+    - "/tmp:rw,nosuid,nodev,noexec,size=64m"
 
 x-ecs-nginx-hardening: &ecs-nginx-hardening
   user: "101:101"
@@ -161,7 +162,8 @@ services:
     read_only: true
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
-    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=32m]
+    tmpfs:
+      - "/tmp:rw,nosuid,nodev,noexec,size=32m"
     restart: unless-stopped
     build:
       context: ../..
