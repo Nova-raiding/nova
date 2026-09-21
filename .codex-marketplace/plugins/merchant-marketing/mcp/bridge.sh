@@ -30,6 +30,7 @@ if [ "$(uname -s 2>/dev/null || true)" = "Darwin" ] && command -v launchctl >/de
     MERCHANT_WORKSPACE_ID \
     MERCHANT_MCP_TOKEN \
     MERCHANT_MCP_REFRESH_TOKEN \
+    MERCHANT_MCP_TOKEN_EXPIRES_AT \
     MERCHANT_MCP_TOKEN_SOURCE \
     MERCHANT_STRICT_AUTH \
     MERCHANT_ALLOW_FIXTURE_FALLBACK \

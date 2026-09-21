@@ -8,48 +8,28 @@
 4. 商家能在新会话中查看工作区状态或上传资料；
 5. 模型、支付和平台授权缺少时，页面明确阻断，不把演示数据说成真实能力。
 
-商家不需要提供平台账号密码、模型 API Key 或支付宝/微信商户密钥。平台 OAuth、模型中转和支付密钥由管理员在服务端配置。
+商家不需要提供平台账号密码、模型 API Key 或支付宝/微信商户密钥。当前六平台运营采用人工流程；模型中转和支付密钥由管理员在服务端配置。
 
 ## 重要：本地部署与 ChatGPT OAuth 是两条不同链路
 
-如果交付目标是“用户本地安装”，默认采用本地桌面模式：Codex/桌面宿主通过本机
-stdio bridge 访问本地 API，业务请求再由本地 API 按配置转发到 Store Nova 服务端。
-这条链路不使用 ChatGPT 的远程 MCP OAuth，也不会在 ChatGPT 中弹出授权页。
+如果交付目标是“用户本地安装”，默认采用本地桌面模式：ChatGPT/Codex 启动本机
+stdio bridge，由 bridge 连接 Store Nova API/MCP。这条链路不使用 ChatGPT 远程 MCP OAuth，
+不要求 OpenAI Apps challenge，也不发布到公开或团队插件市场。
 
 本地模式仍然需要 Store Nova 自己的身份边界：商家在运营后台用账号密码登录，插件
 使用平台为该工作区签发的短期 Bearer 凭据调用 `/mcp`。账号密码不会写入插件、环境变量、
 聊天或日志；不能用 Cookie、平台密码或共享演示 token 代替用户凭据。
 
-本地 bridge 也可以把业务请求发到公网 `https://yxsona.com`：此时必须使用 HTTPS 和由
-服务端签发的工作区 Bearer/OIDC 凭据，但仍不需要 ChatGPT OAuth，因为 ChatGPT 只启动本机
-stdio bridge。只有把公网 `/mcp` 作为“远程 MCP”直接登记到 ChatGPT 云端时，才需要按
-[ChatGPT MCP OAuth 手册](chatgpt-mcp-oauth-runbook.md)完成 ChatGPT OAuth。不能取消 Store
-Nova 自己的登录、工作区/RLS 或审计授权。
+默认业务地址是 `https://yxsona.com`，必须使用服务端签发、绑定工作区且可撤销的 Bearer
+凭据。浏览器中出现的 Store Nova 授权确认页是本地 CLI 的 PKCE 登录，不是 ChatGPT OAuth；
+不能取消 Store Nova 自己的登录、工作区/RLS 或审计授权。
 
 ### 本地桌面模式（推荐给本地安装用户）
 
-在项目根目录启动本地 API、数据库和运营后台：
-
-    docker compose --env-file .env -f infra/local/docker-compose.yml up -d --build
-
-然后在 `http://127.0.0.1:18082` 登录商家账号，在同一台电脑配置插件：
-
-    launchctl setenv MERCHANT_MCP_BASE_URL "http://127.0.0.1:8787"
-    launchctl setenv MERCHANT_WORKSPACE_ID "<平台为该商家分配的工作区>"
-    launchctl setenv MERCHANT_STRICT_AUTH "false"
-    launchctl setenv DEPLOY_ENV "local_desktop"
-
-如果不想在用户电脑运行 API，只把第一行改为我们的服务端地址，并由平台管理员把该商家
-工作区的短期 token 注入同一用户的密钥管理器：
-
-    launchctl setenv MERCHANT_MCP_BASE_URL "https://yxsona.com"
-    launchctl setenv MERCHANT_STRICT_AUTH "true"
-    launchctl setenv DEPLOY_ENV "local_desktop"
-    launchctl setenv MERCHANT_MCP_TOKEN "<由服务端签发的短期 token>"
-
-本地验收可以使用 Compose 注入的测试 token；正式交付不得把测试 token 打包给所有用户，
-应由服务端为每个商家/工作区签发独立、可撤销、带过期时间的 Bearer 凭据，并通过系统密钥
-管理器注入 `MERCHANT_MCP_TOKEN`。本地 bridge 只保存 token 的哈希绑定，不保存明文密码。
+先完成 A2 的本地源码安装，再从实际已安装的插件目录执行 Keychain helper 构建与本地登录。
+CLI 会打开浏览器；商家登录 Store Nova 并确认工作区后，短期 access/refresh token 作为一个
+绑定 API origin 与 workspace 的原子包写入当前 macOS 用户的 Keychain。token 不进入命令行、
+launchd、仓库或聊天。
 
 本地模式的请求路径是：
 
@@ -60,18 +40,14 @@ Nova 自己的登录、工作区/RLS 或审计授权。
 
 ### 本地连接凭据如何产生
 
-商家先在同一 API 根地址的运营后台完成账号密码登录。登录成功后，安装页（或运营后台的
-“连接本地插件”按钮）应在同源请求 `POST /v1/auth/mcp-token`，请求体可带当前的
-`workspace_id`。浏览器只通过 HttpOnly `damai_session` 证明登录状态，服务端会校验商家账号、
-工作区成员和身份状态，再一次性签发短期 `access_token`/`refresh_token`。响应仅用于本机
-安装器写入系统密钥管理器；密码、Cookie 和 token 都不能复制到 ChatGPT 对话或日志。
+CLI 生成随机 state 和 PKCE S256 verifier/challenge，打开
+`GET /v1/auth/local-plugin/authorize`。商家在浏览器登录并确认后，服务端经
+`POST /v1/auth/local-plugin/authorize` 把一次性 code 返回 CLI 的 `127.0.0.1` 随机端口；CLI 再
+调用 `POST /v1/auth/local-plugin/token` 完成交换。服务端校验浏览器同源、商家会话、唯一工作区、
+精确回调和 PKCE，CLI 校验 state、响应工作区和 token 契约后才写 Keychain。
 
-该端点拒绝跨来源 `Origin`、未登录账号、多工作区账号和停用成员；生产 `/mcp` 仍只接受
-服务端验证的 Bearer 身份。安装器拿到 token 后设置 `MERCHANT_MCP_TOKEN`，本地 bridge
-直接请求 `https://yxsona.com/mcp`，不需要 ChatGPT OAuth。access token 过期后由安装器用
-refresh token 轮换，不能回退到共享 token；过期时仅可调用同源
-`POST /v1/auth/mcp-token/refresh`（提交上一次的 refresh token）轮换，服务端会撤销旧 refresh
-token。撤销账号或身份会立即使现有 token 失效。
+access token 过期时 bridge 沿用 `POST /v1/auth/mcp-token/refresh` 轮换并原子更新 Keychain，
+不能回退到共享 token。撤销账号或身份会使现有 token 失效。
 
 ## 先判断你是哪一种使用者
 
@@ -86,11 +62,10 @@ token。撤销账号或身份会立即使现有 token 失效。
 ### A1. 准备条件
 
 - macOS 桌面端 ChatGPT/Codex 已安装并能启动。
-- 技术安装人员有该电脑的用户权限，可以执行 `codex`、`launchctl` 和 `open`。
+- 技术安装人员有该电脑的用户权限，可以执行 `codex`、`node`、`xcrun swiftc` 和 `open`。
 - 已从平台管理员拿到以下非敏感配置：
   - 商家 API 根地址，例如 `https://merchant.example.com`；地址不能带 `/mcp`、查询参数或凭据。
   - 管理员分配的工作区标识，例如 `ws_xxx`。
-  - 如果网关没有使用宿主 OIDC，才需要一个由网关签发的 Bearer token。
 - 已拿到 Store Nova 插件源码目录。本项目直接本地部署，不发布到公开插件市场。
 
 ### A2. 从当前源码直接本地安装插件
@@ -109,52 +84,23 @@ Codex CLI 目前把本地插件源也归在 `plugin marketplace` 命令组下；
 
 应看到 `merchant-marketing@merchant-local` 为 `installed, enabled`。插件更新后重新执行本地安装脚本，再重启 ChatGPT；已经打开的对话不会自动刷新旧的 MCP 工具快照。
 
-### A3. 注入插件连接环境
+### A3. 构建 Keychain helper 并登录
 
-推荐使用仓库提供的 macOS 安装器交接凭据。它从标准输入读取短期 token，写入当前用户的
-launchd 会话，只输出脱敏结果；不会把 token 写入仓库、命令历史或插件 manifest：
+进入 A2 实际安装得到的插件目录，而不是继续使用源码路径示例：
 
-    sh apps/plugin/scripts/install-local-macos.sh \
-      --base-url 'https://yxsona.com' --workspace 'ws_<管理员分配的工作区>'
+    cd /absolute/path/to/installed/merchant-marketing/<version>
+    node scripts/build-keychain-helper.mjs
+    node scripts/login-local-macos.mjs \
+      --base-url https://yxsona.com \
+      --workspace ws_<管理员分配的工作区>
 
-脚本会依次关闭回显并读取 access token 和 refresh token；不要把真实 token 放在 `printf`、命令行
-参数或 shell 历史中。它只支持 macOS，拒绝远程 HTTP、带查询参数的地址和缺少工作区的配置；
-完成后仍须完全退出并重新打开 ChatGPT/Codex。脚本不会声称已完成 ChatGPT 授权，也不会替代
-商家后台登录。
+第一条命令只在本机构建 Keychain helper，不读取凭据；构建失败时不会降级到文件或环境变量
+存储。第二条命令打开浏览器，商家登录并确认工作区后才交换凭据。成功输出不包含 token，
+并明确 `credential_source=keychain`、`host_verified=false`：这表示本地凭据配置完成，不表示
+ChatGPT 宿主已经加载或验收通过。
 
-若用户只在本机运行 API，可将 `--base-url` 换为 `http://127.0.0.1:8787`；正式云端请求使用
-HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 token。
-
-在启动 ChatGPT 的同一个 macOS 用户会话中执行：
-
-    launchctl setenv MERCHANT_MCP_BASE_URL "https://<商家API根地址>"
-    launchctl setenv MERCHANT_WORKSPACE_ID "ws_<管理员分配的工作区>"
-    launchctl setenv MERCHANT_STRICT_AUTH "true"
-    launchctl setenv DEPLOY_ENV "local_desktop"
-
-只有网关明确要求静态 Bearer token 时才设置：
-
-    launchctl setenv MERCHANT_MCP_TOKEN "<网关签发的短期token>"
-    launchctl setenv MERCHANT_MCP_REFRESH_TOKEN "<网关签发的轮换refresh token>"
-
-生产环境不要设置以下开发开关：
-
-    launchctl setenv MERCHANT_ALLOW_FIXTURE_FALLBACK "false"
-    launchctl setenv MERCHANT_MCP_WRITE_ENABLED "false"
-
-检查变量是否存在，但不要打印 token：
-
-    for name in MERCHANT_MCP_BASE_URL MERCHANT_WORKSPACE_ID MERCHANT_MCP_TOKEN MERCHANT_MCP_REFRESH_TOKEN MERCHANT_STRICT_AUTH DEPLOY_ENV; do
-      value=$(launchctl getenv "$name" 2>/dev/null || true)
-      if [ -n "$value" ]; then
-        case "$name" in
-          *TOKEN) echo "$name=PRESENT" ;;
-          *) echo "$name=$value" ;;
-        esac
-      else
-        echo "$name=MISSING"
-      fi
-    done
+`install-local-macos.sh` 是旧 launchd token 部署的兼容入口，只供既有安装迁移和维护；新用户
+不得使用它，也不要手工把 `MERCHANT_MCP_TOKEN` 或 refresh token 写入 launchd。
 
 ### A4. 完全重启 ChatGPT
 
@@ -165,9 +111,9 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
 
 ### A5. 做只读验收
 
-在新会话中选择第一个快捷提示，或输入：
+在新会话中直接调用只读入口，或输入：
 
-> @Store Nova 开始使用
+> 请调用 Store Nova 的 onboarding.status，检查当前身份和工作区。
 
 首次调用会读取工作区和准入状态。正常结果应继续询问上传资料、选择商品或查看工作区；不应出现 `MCP_CONFIGURATION_REQUIRED`、`MERCHANT_MCP_BASE_URL is required` 或“插件连接配置未加载”。
 
@@ -185,7 +131,7 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
       --source "$REPO_ROOT/apps/plugin" \
       --installed /absolute/path/to/installed/merchant-marketing/<version>
 
-校验器只证明 bridge 和 manifest 一致，不代表真实平台 OAuth、支付或发布已经开通。
+校验器只证明 bridge 和 manifest 一致，不代表 ChatGPT 宿主、支付、模型中转或发布已经验收。
 
 ## B. 平台管理员：配置模型中转
 
@@ -210,14 +156,13 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
 | --- | --- | --- |
 | `MERCHANT_MCP_BASE_URL` | ChatGPT 插件 → 商家 API/MCP | 技术安装人员/平台管理员 |
 | `MERCHANT_WORKSPACE_ID` | 请求的租户边界 | 平台管理员分配 |
-| `MERCHANT_MCP_TOKEN` | 插件到网关的可选 Bearer 身份 | 网关管理员注入 |
-| `MERCHANT_MCP_REFRESH_TOKEN` | access token 过期后单次轮换并恢复连接；每次使用后必须替换旧值 | 网关管理员注入 |
+| Keychain credential package | 插件到网关的 access/refresh token、API origin 与 workspace 原子包 | 本地登录 CLI 写入；商家不手工复制 |
 | `MERCHANT_STRICT_AUTH` | 非本机 API 的强制鉴权门禁；生产必须为 `true` | 技术安装人员/平台管理员 |
 | `DEPLOY_ENV` | 本地插件 bridge 的部署环境判定；安装到用户电脑时必须为 `local_desktop` | 技术安装人员/平台管理员 |
 | `MODEL_RELAY_BASE_URL`、`MODEL_RELAY_API_KEY`、`AI_MODEL` 等 | 商家 API → 业务模型 | 服务端密钥管理器 |
 | `CODEX_RELAY_BASE_URL`、`CODEX_RELAY_MODEL`、`WORMHOLE_API_KEY` | ChatGPT/Codex 宿主 → 宿主模型中转 | 平台管理员 |
 
-不要把 `MERCHANT_MCP_TOKEN` 当成模型 Key，也不要把宿主模型配置复制给普通商家。
+不要把 Keychain 中的本地插件凭据当成模型 Key，也不要把宿主模型配置复制给普通商家。
 
 ## C. 商家第一次使用
 
@@ -259,10 +204,10 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
 
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
-| `MCP_CONFIGURATION_REQUIRED`，缺少 `MERCHANT_MCP_BASE_URL` | ChatGPT 进程没有收到插件 API 根地址 | 执行 A3，确认 `launchctl getenv` 有值，完全退出并重启 ChatGPT |
-| `MERCHANT_WORKSPACE_ID is required` | 未分配工作区或环境注入到错误用户 | 让管理员分配工作区，在启动 ChatGPT 的同一用户会话执行 A3 |
+| `MCP_CONFIGURATION_REQUIRED`，缺少 `MERCHANT_MCP_BASE_URL` | 本地登录未完成，或 ChatGPT 尚未重启读取非敏感连接配置 | 重新执行 A3，完全退出并重启 ChatGPT 后开启新会话 |
+| `MERCHANT_WORKSPACE_ID is required` | 未分配工作区，或登录 CLI 配置到错误用户 | 让管理员确认工作区，在启动 ChatGPT 的同一 macOS 用户会话重新执行 A3 |
 | `401/403`、角色无权限 | OIDC/Bearer 映射失败或 token 过期 | 管理员检查网关身份映射和 token，不要改客户端角色变量 |
-| `MCP_STRICT_AUTH_REQUIRED` | 连接远程 API 时没有启用严格鉴权 | 执行 A3 设置 `MERCHANT_STRICT_AUTH=true`，完全退出并重启 ChatGPT |
+| `MCP_STRICT_AUTH_REQUIRED` | 本地登录配置未完成或旧 launchd 配置仍在生效 | 重新执行 A3；不要手工注入 token，完全退出并重启 ChatGPT |
 | 工具列表少、旧入口仍出现 | 本地插件缓存未更新，或对话保存了旧快照 | 重新执行本地安装脚本，重启 ChatGPT，开启新会话 |
 | `Selected model is at capacity` | 宿主模型尚未把消息交给插件 | 在 ChatGPT 模型选择器切换可用宿主模型后重试 |
 | `Codex host relay /models 未声明当前 host model` | `CODEX_RELAY_MODEL` 不是中转站实际提供的模型 ID，或缺少 Responses 能力声明 | 管理员先检查 `/v1/models`，用真实 ID 重新执行 `codex:relay:configure`，再通过 `codex:relay:validate` |
@@ -289,14 +234,15 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
 
 - [ ] `codex plugin list` 显示插件 `installed, enabled`。
 - [ ] `install-local-plugin.mjs` 返回 `ok: true`、`mode: local_stdio`、`public_marketplace_required: false`；安装缓存与源码版本一致。
-- [ ] `MERCHANT_MCP_BASE_URL`、`MERCHANT_WORKSPACE_ID`、`MERCHANT_STRICT_AUTH=true`、`DEPLOY_ENV=local_desktop` 在启动 ChatGPT 的用户 launchd 环境中存在。
+- [ ] 在实际安装包目录运行 `build-keychain-helper.mjs` 成功。
+- [ ] `login-local-macos.mjs` 完成浏览器确认并返回 `credential_source=keychain`；输出中没有 token。
 - [ ] 生产没有开启 `MERCHANT_ALLOW_FIXTURE_FALLBACK=true` 或全局 `MERCHANT_MCP_WRITE_ENABLED=true`。
 - [ ] ChatGPT 已完全重启，并在新会话中重新加载工具。
-- [ ] 首个只读入口能返回工作区/引导状态，而不是 MCP 配置缺失。
+- [ ] 新会话调用 `onboarding.status` 能返回真实工作区/引导状态，而不是 MCP 配置缺失。
 - [ ] 如启用宿主中转，`npm run codex:relay:validate` 通过，且密钥没有写入 `config.toml`。
 - [ ] 服务端已配置 `COMMERCIAL_PAYMENT_PROVIDER`，且商业目录中已有可售的月付套餐（`basic` / `growth`）。**未配置时商家下单返回 503 且订单不落库，运营的人工核验也找不到订单，交付后客户将无法自助开通。**
 - [ ] 生产素材扫描器已按 `ASSET_SCANNER_MODE=clamav_worker` 配置并能签发扫描回执；否则素材永远停在隔离区。
-- [ ] 真实平台 OAuth、模型 usage/cost evidence、支付回调和发布 canary 仍按生产门禁单独验收。
+- [ ] 模型 usage/cost evidence、支付回调和发布 canary 仍按生产门禁单独验收；当前人工平台流程不要求六平台 OAuth。
 
 相关文档：
 

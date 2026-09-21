@@ -11,7 +11,7 @@ const account: MerchantAuthAccount = {
 }
 
 describe('local plugin connection entry', () => {
-  it('renders a real connection action only for an active merchant', () => {
+  it('renders installation guidance only for an active merchant', () => {
     const markup = renderToStaticMarkup(React.createElement(LocalPluginConnection, { apiBaseUrl: '/api', account }))
     expect(markup).toContain('连接本地插件')
     expect(markup).toContain('<button')
@@ -21,47 +21,41 @@ describe('local plugin connection entry', () => {
     expect(renderToStaticMarkup(React.createElement(LocalPluginConnection, { apiBaseUrl: '/api', account: { ...account, accountType: 'platform' } }))).toBe('')
   })
 
-  it('is wired to the authenticated topbar and never presents installation as completed', () => {
+  it('keeps the authenticated topbar and safe body Portal contract', () => {
     const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
     const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
     expect(app).toContain('apiBaseUrl && account && <LocalPluginConnection apiBaseUrl={apiBaseUrl} account={account}')
-    expect(component).toContain('requestLocalPluginCredential(apiBaseUrl, account, controller.signal)')
-    expect(component).toContain('当前没有可信安装器交接')
-    expect(component).toContain('此操作不会安装插件，也不会完成连接')
     expect(component).toContain('wrapClassName="merchant-local-plugin-modal"')
     expect(component).not.toContain('getContainer={false}')
     expect(app).toContain("event.target.closest('.merchant-local-plugin-modal')")
-    expect(component).toContain('待安装器接管 · 本地插件尚未连接')
-    expect(component).toContain('当前也未接入可信安装器交接通道')
-    expect(component).toContain('本次临时凭据已丢弃')
-    expect(component).not.toMatch(/localStorage\s*\.|sessionStorage\s*\.|console\.|navigator\.clipboard|createObjectURL/u)
-    expect(component).toContain('latestScope.current !== scope')
-    expect(component).toContain('request.current?.abort()')
   })
 
-  it('opens confirmation without issuing a credential and requires a separate explicit confirmation', () => {
+  it('points to the installed local CLI without claiming installation or connection', () => {
     const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
-    expect(component).toContain("<Button onClick={() => { setState({ scope, status: 'confirmation' }); setOpen(true) }}>连接本地插件</Button>")
-    expect(component).toContain("current?.status === 'confirmation' && <Button type=\"primary\" onClick={(event) => { event.stopPropagation(); void connect() }}>确认签发短期凭据</Button>")
-    expect(component.indexOf("status: 'confirmation'")).toBeLessThan(component.indexOf('requestLocalPluginCredential(apiBaseUrl, account, controller.signal)'))
-    expect(component).not.toMatch(/连接本地插件<\/Button>[\s\S]{0,80}connect\(\)/u)
+    expect(component).toContain('node scripts/login-local-macos.mjs --base-url ${apiOrigin} --workspace ${workspaceId}')
+    expect(component).toContain('node scripts/build-keychain-helper.mjs')
+    expect(component).toContain('请从已安装的本地插件发起登录')
+    expect(component).toContain('不代表插件已经安装或连接成功')
+    expect(component).toContain('macOS 系统钥匙串')
+    expect(component).toContain('onboarding.status')
+    expect(component).toContain('不要执行远程 curl 管道命令')
   })
 
-  it('cancels without requesting and keeps retry behind an explicit action', () => {
-    const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
-    const closeBody = component.match(/const close = \(\) => \{([\s\S]*?)\n  \}/u)?.[1] ?? ''
-    expect(closeBody).toContain('request.current?.abort()')
-    expect(closeBody).toContain('setOpen(false)')
-    expect(closeBody).not.toContain('requestLocalPluginCredential')
-    expect(component).toContain("current?.status === 'error' && <Button type=\"primary\" onClick={(event) => { event.stopPropagation(); void connect() }}>重试验证</Button>")
-    expect(component).toContain("<Button onClick={(event) => { event.stopPropagation(); close() }}>")
-  })
-
-  it('invalidates an in-flight request when the account scope changes', () => {
+  it('keeps account and workspace guidance isolated when identity changes', () => {
     const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
     expect(component).toContain('const scope = JSON.stringify([apiBaseUrl, account.id, account.login, account.status, account.workspaceIds])')
-    expect(component).toContain('latestScope.current !== scope')
-    expect(component).toMatch(/useEffect\(\(\) => \{[\s\S]*request\.current\?\.abort\(\)[\s\S]*\}, \[scope\]\)/u)
-    expect(component).toContain("open={open && state?.scope === scope}")
+    expect(component).toContain('open={openScope === scope}')
+    expect(component).toContain('/^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u')
+    expect(component).toContain("base.protocol === 'http:' && base.hostname === '127.0.0.1'")
+    expect(component).toContain('base.username || base.password')
+    expect(component).toContain('shellSafeOrigin.test(base.origin)')
+    expect(component).not.toContain('<API_ORIGIN>')
+  })
+
+  it('does not expose browser credential, storage, download, or protocol-handler paths', () => {
+    const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
+    expect(component).not.toContain('requestLocalPluginCredential')
+    expect(component).not.toContain('/v1/auth/mcp-token')
+    expect(component).not.toMatch(/access_token|refresh_token|localStorage\s*\.|sessionStorage\s*\.|console\.|navigator\.clipboard|createObjectURL|location\.href\s*=|window\.open/u)
   })
 })

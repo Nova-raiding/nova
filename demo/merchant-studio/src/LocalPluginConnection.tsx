@@ -1,85 +1,60 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { Alert, Button, Descriptions, Modal, Space, Typography } from 'antd'
 import type { MerchantAuthAccount } from './api'
-import { LocalPluginConnectionError, requestLocalPluginCredential } from './local-plugin-connection'
 
-type CredentialStatus = Awaited<ReturnType<typeof requestLocalPluginCredential>>
-type ConnectionState =
-  | { scope: string; status: 'confirmation' }
-  | { scope: string; status: 'requesting' }
-  | { scope: string; status: 'installer_required'; result: CredentialStatus }
-  | { scope: string; status: 'error'; message: string }
+function localLoginOrigin(apiBaseUrl: string): string | null {
+  try {
+    const base = new URL(apiBaseUrl, typeof window === 'undefined' ? 'https://yxsona.com' : window.location.origin)
+    const localHttp = base.protocol === 'http:' && base.hostname === '127.0.0.1'
+    if (base.username || base.password || !(base.protocol === 'https:' || localHttp)) return null
+    const shellSafeOrigin = /^(?:https:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?|http:\/\/127\.0\.0\.1(?::\d{1,5})?)$/u
+    if (!shellSafeOrigin.test(base.origin)) return null
+    return base.origin
+  } catch {
+    return null
+  }
+}
+
+export function localPluginLoginCommand(apiBaseUrl: string, workspaceIds: string[]) {
+  const candidateWorkspaceId = workspaceIds.length === 1 ? workspaceIds[0] : null
+  const workspaceId = candidateWorkspaceId && /^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(candidateWorkspaceId) ? candidateWorkspaceId : null
+  const apiOrigin = localLoginOrigin(apiBaseUrl)
+  return workspaceId && apiOrigin
+    ? `node scripts/login-local-macos.mjs --base-url ${apiOrigin} --workspace ${workspaceId}`
+    : null
+}
 
 export function LocalPluginConnection({ apiBaseUrl, account }: {
   apiBaseUrl: string
   account: MerchantAuthAccount
 }) {
-  const [open, setOpen] = useState(false)
-  const [state, setState] = useState<ConnectionState | null>(null)
-  const request = useRef<AbortController | null>(null)
+  const [openScope, setOpenScope] = useState<string | null>(null)
   const scope = JSON.stringify([apiBaseUrl, account.id, account.login, account.status, account.workspaceIds])
-  const latestScope = useRef(scope)
-  latestScope.current = scope
-  const current = state?.scope === scope ? state : null
   const eligible = account.accountType === 'merchant' && account.status === 'active'
-
-  useEffect(() => {
-    return () => { request.current?.abort(); request.current = null }
-  }, [scope])
-
-  const close = () => {
-    request.current?.abort()
-    request.current = null
-    setOpen(false)
-    setState(null)
-  }
-  const connect = async () => {
-    if (!eligible || request.current) return
-    const controller = new AbortController()
-    request.current = controller
-    setState({ scope, status: 'requesting' })
-    try {
-      const result = await requestLocalPluginCredential(apiBaseUrl, account, controller.signal)
-      if (controller.signal.aborted || request.current !== controller || latestScope.current !== scope) return
-      setState({ scope, status: 'installer_required', result })
-    } catch (cause) {
-      if (controller.signal.aborted || request.current !== controller || latestScope.current !== scope) return
-      setState({ scope, status: 'error', message: cause instanceof LocalPluginConnectionError ? cause.message : '连接验证未完成，请检查网络后重试。' })
-    } finally {
-      if (request.current === controller) request.current = null
-    }
-  }
+  const candidateWorkspaceId = account.workspaceIds.length === 1 ? account.workspaceIds[0] : null
+  const workspaceId = candidateWorkspaceId && /^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(candidateWorkspaceId) ? candidateWorkspaceId : null
+  const command = localPluginLoginCommand(apiBaseUrl, account.workspaceIds)
 
   if (!eligible) return null
   return <>
-    <Button onClick={() => { setState({ scope, status: 'confirmation' }); setOpen(true) }}>连接本地插件</Button>
-    <Modal title="连接本地插件" wrapClassName="merchant-local-plugin-modal" open={open && state?.scope === scope} onCancel={close} destroyOnHidden footer={
-      <Space>
-        {current?.status === 'confirmation' && <Button type="primary" onClick={(event) => { event.stopPropagation(); void connect() }}>确认签发短期凭据</Button>}
-        {current?.status === 'error' && <Button type="primary" onClick={(event) => { event.stopPropagation(); void connect() }}>重试验证</Button>}
-        <Button onClick={(event) => { event.stopPropagation(); close() }}>{current?.status === 'confirmation' || current?.status === 'requesting' ? '取消' : '关闭'}</Button>
-      </Space>
+    <Button onClick={() => setOpenScope(scope)}>连接本地插件</Button>
+    <Modal title="连接本地插件" wrapClassName="merchant-local-plugin-modal" open={openScope === scope} onCancel={() => setOpenScope(null)} destroyOnHidden footer={
+      <Button onClick={(event) => { event.stopPropagation(); setOpenScope(null) }}>关闭</Button>
     }>
       <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-        <Typography.Paragraph style={{ margin: 0 }}>确认后将仅为当前登录账号和工作区申请短期插件凭据，不修改生产鉴权或店铺授权。</Typography.Paragraph>
-        <Alert type="warning" title="当前没有可信安装器交接" showIcon description="签发的临时凭据无法安全交给本地插件，系统会立即丢弃；此操作不会安装插件，也不会完成连接。请仅在明确了解这一限制后确认。" />
+        <Alert type="info" title="请从已安装的本地插件发起登录" showIcon description="此页面只提供操作说明，不会创建、显示或保存插件凭据，也不代表插件已经安装或连接成功。" />
         <Descriptions size="small" column={1} items={[
-          { key: 'account', label: '登录账号', children: account.login },
-          { key: 'workspace', label: '工作区', children: current?.status === 'installer_required' ? current.result.workspaceId : account.workspaceIds.length === 1 ? account.workspaceIds[0] : '需要绑定唯一工作区' },
-          { key: 'credential', label: '凭据状态', children: current?.status === 'requesting' ? '正在验证…' : current?.status === 'installer_required' ? '已签发，未安装' : current?.status === 'error' ? '签发失败' : '尚未签发' },
+          { key: 'account', label: '当前登录账号', children: account.login },
+          { key: 'workspace', label: '目标工作区', children: workspaceId ?? '当前账号必须绑定且只能绑定一个工作区' },
+          { key: 'platform', label: '支持环境', children: 'macOS 本地安装版' },
         ]} />
-        {current?.status === 'requesting' && <div role="status" aria-live="polite" aria-busy="true">正在通过当前登录会话验证连接凭据，可取消。</div>}
-        {current?.status === 'error' && <div role="alert"><Alert type="error" title="连接验证未完成" description={current.message} showIcon /></div>}
-        {current?.status === 'installer_required' && <div role="status" aria-live="polite">
-          <Alert type="warning" title="待安装器接管 · 本地插件尚未连接" showIcon description={
-            <Space orientation="vertical" size="small">
-              <span>浏览器不能安全写入系统钥匙串，当前也未接入可信安装器交接通道。本次临时凭据已丢弃，未写入浏览器存储。</span>
-              <span>请使用平台提供的可信本地安装器完成登录和系统凭据保存；没有安装器时请联系平台获取，不要复制密码或凭据到聊天、配置文件。</span>
-              <span>安装器需要重新申请凭据。完成安装并通过插件状态核验前，不代表已连接或可调用模型。</span>
-            </Space>
-          } />
-        </div>}
-        <Typography.Text type="secondary">凭据不会在页面显示、下载或写入 localStorage。</Typography.Text>
+        {command ? <>
+          <Typography.Paragraph style={{ margin: 0 }}>在你已可信安装并核验来源的 Store Nova 插件目录中运行：</Typography.Paragraph>
+          <Typography.Paragraph copyable={false} style={{ margin: 0 }}><Typography.Text code>node scripts/build-keychain-helper.mjs</Typography.Text></Typography.Paragraph>
+          <Typography.Paragraph copyable={false} style={{ margin: 0 }}><Typography.Text code>{command}</Typography.Text></Typography.Paragraph>
+          <Typography.Paragraph style={{ margin: 0 }}>命令会通过本地 CLI 打开商家浏览器完成授权，并把凭据写入 macOS 系统钥匙串。完成后仍需重启 ChatGPT，并在新会话中调用 <Typography.Text code>onboarding.status</Typography.Text> 验证；验证通过前不要视为已连接。</Typography.Paragraph>
+        </> : <Alert type="warning" showIcon title="无法生成安全的本地登录命令" description="当前 API 地址或工作区绑定未通过安全校验。请联系管理员确认 HTTPS API 地址，以及唯一且有效的工作区绑定。" />}
+        <Typography.Text type="secondary">不要从此页面下载脚本，不要执行远程 curl 管道命令，也不要把 token、密码或授权地址粘贴到聊天或配置文件。</Typography.Text>
       </Space>
     </Modal>
   </>

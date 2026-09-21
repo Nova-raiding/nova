@@ -265,6 +265,8 @@ export const HTTP_ROUTE_COVERAGE_EXEMPTIONS: readonly HttpRouteCoverageExemption
   { pathTemplate: '/v1/auth/mcp-token', methods: AUTH_FORM_METHODS, reason: 'local desktop MCP token exchange; authenticated by the caller session cookie plus origin check' },
   { pathTemplate: '/v1/auth/mcp-token/refresh', methods: AUTH_FORM_METHODS, reason: 'local desktop MCP token refresh; authenticated by the refresh token itself' },
   { pathTemplate: '/v1/auth/mcp-token/revoke', methods: AUTH_FORM_METHODS, reason: 'local desktop MCP token revocation; authenticated by the token being revoked' },
+  { pathTemplate: '/v1/auth/local-plugin/authorize', methods: AUTH_FORM_METHODS, reason: 'local desktop PKCE consent; GET renders explicit consent and POST requires the existing same-origin merchant session' },
+  { pathTemplate: '/v1/auth/local-plugin/token', methods: ['POST'], reason: 'local desktop PKCE code exchange; authenticates the one-time code and verifier, not a ChatGPT OAuth client' },
   // Local Ops Console bootstrap. Disabled unless OPS_LOCAL_SESSION_ENABLED is
   // set outside production, answers 404 otherwise, requires a loopback host and
   // loopback origin, and gets its bearer from the API environment. The dispatch

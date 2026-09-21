@@ -8,7 +8,8 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { assertRelayEvidence } from './relay-evidence.mjs'
-import { loadManagedToken } from './managed-token.mjs'
+import { loadManagedToken, validatedRotatedCredential } from './managed-token.mjs'
+import { writeKeychainCredential } from './keychain-credential.mjs'
 
 // ChatGPT/Codex may launch the JavaScript entrypoint with a bundled Node binary.
 // On macOS, recover only missing configuration from launchd;
@@ -32,11 +33,13 @@ if (process.platform === 'darwin' && process.env.NODE_ENV !== 'test' && process.
   }
 }
 
-loadManagedToken(process.env, process.platform, name => execFileSync('launchctl', ['getenv', name], {
+await loadManagedToken(process.env, process.platform, name => execFileSync('launchctl', ['getenv', name], {
   encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000,
 }))
 
-async function refreshLocalDesktopToken() {
+let credentialRefreshPromise
+
+async function performLocalDesktopTokenRefresh() {
   const refreshToken = process.env.MERCHANT_MCP_REFRESH_TOKEN?.trim()
   if (!refreshToken || /^\$\{[^}]+\}$/u.test(refreshToken)) return false
   const origin = new URL(baseUrl()).origin
@@ -48,12 +51,20 @@ async function refreshLocalDesktopToken() {
   if (!response.ok) return false
   const payload = await response.json()
   const result = payload?.data?.result ?? payload?.data
-  const accessToken = typeof result?.access_token === 'string' ? result.access_token.trim() : ''
-  const nextRefreshToken = typeof result?.refresh_token === 'string' ? result.refresh_token.trim() : ''
-  if (!accessToken || !nextRefreshToken) return false
-  process.env.MERCHANT_MCP_TOKEN = accessToken
-  process.env.MERCHANT_MCP_REFRESH_TOKEN = nextRefreshToken
-  if (process.env.MERCHANT_MCP_TOKEN_SOURCE === 'launchd' && process.platform === 'darwin') {
+  const workspaceId = process.env.MERCHANT_WORKSPACE_ID?.trim()
+  const tokenSource = process.env.MERCHANT_MCP_TOKEN_SOURCE?.trim() || 'environment'
+  const rotated = validatedRotatedCredential(result, { tokenSource, workspaceId, apiOrigin: origin })
+  if (!rotated) return false
+  const { accessToken, refreshToken: nextRefreshToken, expiresAt } = rotated
+  if (tokenSource === 'keychain') {
+    if (process.platform !== 'darwin') return false
+    try {
+      writeKeychainCredential(
+        { apiOrigin: origin, workspaceId },
+        rotated.bundle,
+      )
+    } catch { return false }
+  } else if (tokenSource === 'launchd' && process.platform === 'darwin') {
     try {
       // Persist the rotated refresh token before the access token. The rotation
       // is single-use: the token just exchanged is already consumed server-side,
@@ -67,7 +78,17 @@ async function refreshLocalDesktopToken() {
       execFileSync('launchctl', ['setenv', 'MERCHANT_MCP_TOKEN', accessToken], { stdio: 'ignore', timeout: 2000 })
     } catch { return false }
   }
+  process.env.MERCHANT_MCP_TOKEN = accessToken
+  process.env.MERCHANT_MCP_REFRESH_TOKEN = nextRefreshToken
+  process.env.MERCHANT_MCP_TOKEN_EXPIRES_AT = expiresAt ?? ''
   return true
+}
+
+async function refreshLocalDesktopToken() {
+  if (!credentialRefreshPromise) {
+    credentialRefreshPromise = performLocalDesktopTokenRefresh().finally(() => { credentialRefreshPromise = undefined })
+  }
+  return credentialRefreshPromise
 }
 
 const PROTOCOL_VERSION = '2025-06-18'

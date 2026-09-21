@@ -1,34 +1,33 @@
 # Store Nova Codex 插件
 
-macOS 管理凭据轮换：默认仍优先使用宿主显式环境。只有明确配置 `MERCHANT_MCP_TOKEN_SOURCE=launchd` 才读取系统凭据；系统与宿主的完整 API 地址和工作区必须一致，否则拒绝启动。安装器同时注入 access/refresh token；远端返回 401 时 bridge 只自动轮换一次并重试原请求，旋转后的凭据同步回当前用户 launchd。此模式不支持显式 actor/role 覆盖。
+macOS 新安装默认使用本地登录：CLI 在 `127.0.0.1` 随机端口接收 PKCE S256 回调，服务端签发的工作区 access/refresh token 作为一个绑定 API origin 与 workspace 的原子包写入 macOS Keychain。launchd 只保存非敏感连接配置。旧 `install-local-macos.sh` 仅用于既有 launchd token 部署的兼容维护，不推荐新用户使用。
 
 当前商家主流程为：**公开链接/手工资料 → 内容生产 → 工具支持时审核、导出**。这是产品范围与目标顺序，每个阶段以实际工具支持和服务端结果为准；未绑定候选的审核/导出缺口见下文。实际工具以当前连接的 `tools/list` 与运行态契约测试为准，不在文档中固化工具数量，也不以数量证明生产就绪。
 
 这是可安装的 Codex Plugin 源目录，包含：
 
-- `.codex-plugin/plugin.json`：正式 manifest，版本 `0.1.0+codex.20260917171000`。
+- `.codex-plugin/plugin.json`：正式 manifest；其版本必须与插件 `package.json` 一致，安装时以当前包内值为准。
 - `skills/merchant-marketing/SKILL.md`：唯一入口 Skill。
 - `.mcp.json`：Codex 标准 stdio MCP 配置；`mcp/bridge.mjs` 将标准 `tools/list`、`tools/call` 转发到现有 API 的 `/mcp` 业务方法。
 - `mcp/bridge.mjs`：插件侧传输适配器，固定注入 `X-Workspace-Id`，并将 API 的统一 envelope 解包为 Codex MCP 响应。
 
-交给技术安装人员或商家时，先阅读仓库根目录的[安装与配置手册](../../docs/store-nova-chatgpt-plugin-install-manual.md)。手册包含 marketplace 安装、macOS launchd 环境、工作区绑定、模型中转边界、重启验收和 `MCP_CONFIGURATION_REQUIRED` 排障；不要把下面的开发环境示例直接复制到生产商家电脑。
+交给技术安装人员或商家时，先阅读仓库根目录的[安装与配置手册](../../docs/store-nova-chatgpt-plugin-install-manual.md)。手册包含本地源码安装、macOS Keychain 登录、工作区绑定、模型中转边界、重启验收和 `MCP_CONFIGURATION_REQUIRED` 排障；不要把开发环境示例直接复制到生产商家电脑。
 
 ### 本地安装（不使用 ChatGPT OAuth）
 
-本插件支持本地桌面模式：bridge 通过 stdio 连接本机 API，API 再请求 Store Nova 服务端；
-不会使用 ChatGPT 远程 MCP OAuth，也不会在 ChatGPT 中显示授权页。请先启动
-`infra/local/docker-compose.yml`，再在运营后台登录商家账号，并由服务端为当前工作区注入
-独立 Bearer 凭据。`MERCHANT_MCP_TOKEN` 是 Store Nova 的内部调用凭据，不是平台 Cookie，
-不能把账号密码写进插件或聊天，也不能向所有用户分发共享测试 token。
+本插件支持本地桌面模式：ChatGPT/Codex 启动已安装包中的 stdio bridge，bridge 通过 HTTPS
+连接 Store Nova API。它不使用 ChatGPT 远程 MCP OAuth，也不要求 OpenAI Apps challenge 或
+公开/团队插件市场上架。浏览器中的确认页属于 Store Nova 本地插件登录，只用于把当前商家
+会话授权给本机 CLI，不是 ChatGPT OAuth。
 
 若 `MERCHANT_MCP_BASE_URL` 指向公网 `https://yxsona.com`，本地 bridge 仍可通过 HTTPS 和
 服务端签发的短期 Bearer 调用，不需要 ChatGPT OAuth；只有把公网 `/mcp` 直接登记为 ChatGPT
 云端远程 MCP 时才需要 OAuth。“本地安装”不能绕过公网服务端的身份、工作区/RLS 和审计门禁。
 
-本地连接凭据由已登录的 Store Nova 商家后台通过同源 `POST /v1/auth/mcp-token` 申请。服务端
-会校验 HttpOnly 登录会话、商家账号和唯一工作区，并返回短期 access/refresh token；安装器应
-把它写入系统密钥管理器后再启动 bridge。插件不接收密码、Cookie，也不把 ChatGPT OAuth
-当作本地登录方式。未登录、跨来源、停用账号或工作区不唯一时必须失败关闭。
+新安装流程为：CLI 生成 PKCE S256 与 state，打开 Store Nova
+`/v1/auth/local-plugin/authorize`，在 `127.0.0.1` 随机端口接收一次性回调，再向
+`/v1/auth/local-plugin/token` 交换短期凭据并写入 Keychain。插件不接收密码或 Cookie；未登录、
+跨来源、停用账号、工作区不匹配或 Keychain 写入失败时均失败关闭。
 
 ## 商品视频策划
 
@@ -47,35 +46,28 @@ env PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin npm test -- --run apps/plug
 node apps/plugin/scripts/verify-marketplace-source.mjs --marketplace <marketplace-name> --expected "$(pwd)/.codex-marketplace"
 ```
 
-验收通过后，把 `apps/plugin` 作为 `merchant-marketing` 插件源加入团队或个人 marketplace，再按 Codex 的 marketplace 安装流程执行：
+验收通过后，从当前源码执行本地安装：
 
 ```bash
-codex plugin add merchant-marketing@<marketplace-name>
+node apps/plugin/scripts/install-local-plugin.mjs
 ```
 
-安装环境示例（在启动 Codex 的环境中设置）：
+Codex CLI 将本地源码适配器放在 `plugin marketplace` 命令组下，这是本机发现和缓存安装协议，
+不等于发布到公共或团队插件市场。脚本不会上传插件。
+
+在安装后的插件目录中构建本机 Keychain helper，然后发起登录：
 
 ```bash
-export MERCHANT_MCP_BASE_URL=https://merchant.example.com
-export MERCHANT_WORKSPACE_ID=<workspace-id>
-# 可选：由网关校验的 Bearer token；插件不会保存平台账号密码或 access token
-export MERCHANT_MCP_TOKEN=<mcp-token>
-export MERCHANT_MCP_REFRESH_TOKEN=<rotating-refresh-token>
-# 连接非本机 API 时必须开启；否则 bridge 会在发送请求前失败关闭
-export MERCHANT_STRICT_AUTH=true
-# 仅本地 fixture 开发可显式开启；Automation 和生产环境禁止设置
-# export MERCHANT_ALLOW_FIXTURE_FALLBACK=true
-# 仅已明确确认的交互会话按需开启；Automation 禁止设置
-# export MERCHANT_MCP_WRITE_ENABLED=true
-# 生产激活规则时由审批系统注入，不要写入仓库
-export MERCHANT_RULE_APPROVAL_TOKEN=<rule-approval-token>
+cd /absolute/path/to/installed/merchant-marketing/<version>
+node scripts/build-keychain-helper.mjs
+node scripts/login-local-macos.mjs \
+  --base-url https://yxsona.com \
+  --workspace ws_<平台分配的工作区>
 ```
 
-OpenAI Apps 域名验证由 API 的 `/.well-known/openai-apps-challenge` 路由承载。
-生产发布前，必须在服务端密钥管理器注入 OpenAI 发放的
-`OPENAI_APPS_CHALLENGE_TOKEN`；未注入时该路由返回 `503`
-`OPENAI_APPS_CHALLENGE_NOT_CONFIGURED`，不会把未验证的域名状态冒充为已上线。
-挑战 token 不写入插件包、仓库、日志或 ChatGPT 对话。
+浏览器打开后，先登录对应商家账号并确认当前工作区授权。CLI 成功只证明凭据已写入
+Keychain 且非敏感连接配置已设置，不代表 ChatGPT 已加载插件。完全退出并重新打开
+ChatGPT/Codex，新建对话后调用只读 `onboarding.status` 验证真实宿主、身份与工作区。
 
 商家身份与角色由服务端 Bearer/OIDC 授权映射决定。安装包不会静态声明 `MERCHANT_ACTOR_ID` 或 `MERCHANT_MCP_ROLE`，也不会用客户端角色覆盖服务端成员权限；本地非严格鉴权测试需要模拟身份时，应在独立测试进程中显式注入，不能写进正式插件清单。
 
@@ -155,7 +147,7 @@ node apps/plugin/scripts/verify-installed-bridge.mjs \
   --installed /absolute/path/to/installed/merchant-marketing/<version>
 ```
 
-升级时不要手工覆盖 `~/.codex/plugins/cache`。使用下面的入口让 Codex CLI 安装当前 marketplace 版本，并立即比较完整 Skill 运行树、bridge 文件与实际 `tools/list`；任一步不一致都会以非零状态失败：
+升级时不要手工覆盖 `~/.codex/plugins/cache`。使用下面的入口让 Codex CLI 从本地源码适配器安装当前版本，并立即比较完整 Skill 运行树、bridge 文件与实际 `tools/list`；任一步不一致都会以非零状态失败：
 
 ```bash
 node apps/plugin/scripts/upgrade-installed-plugin.mjs \
@@ -163,7 +155,7 @@ node apps/plugin/scripts/upgrade-installed-plugin.mjs \
   --marketplace merchant-local
 ```
 
-同一版本的内容必须保持不可变；源码内容变化时先更新插件版本并同步 marketplace。升级验真通过后仍须完全退出 ChatGPT/Codex，并在新会话重新发现工具。
+同一版本的内容必须保持不可变；源码内容变化时先更新插件版本并同步本地源码适配器。升级验真通过后仍须完全退出 ChatGPT/Codex，并在新会话重新发现工具。
 
 主图候选先由 `catalog.image.get` 展示，并按现有 `catalog.image.review` 与人工审阅要求检查。独立未绑定候选保持未批准、未发布。已有正式内容版本需要选图时，商家明确选择 1–6 张及顺序后才调用 `content.visual.select`，派生新的 `review_required` 版本；选图、审核与批准分别确认，不复用旧版本证据，也不附带平台发布操作。
 

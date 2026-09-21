@@ -57,6 +57,7 @@ import { assetScanReceiptDigest, parseAssetScanReceipt, verifyAssetScanReceiptSi
 import { verifyScannerRequestProof } from '../../../packages/security/src/scanner-request-proof.js'
 import { verifyWorkerRequestProof, WORKER_ROLES, type WorkerRequestRole } from '../../../packages/security/src/worker-request-proof.js'
 import { bindOidcDisplayLoginProof } from '../../../packages/security/src/oidc-login-proof.js'
+import { LOCAL_PLUGIN_CLIENT_ID, LocalPluginAuthorizationRequestError, localPluginAuthorizationHtml, localPluginLoginRequiredHtml, parseLocalPluginAuthorizationRequest, parseLocalPluginTokenRequest } from './local-plugin-auth.js'
 import { ConnectorFailure, createVaultCredentialProviderFromEnv, isProductionCanaryReady, RedisCredentialRefreshLock, validatePlatformCapabilityEvidence } from '../../../packages/connectors/src/index.js'
 import { platformWriteAllowed } from '../../../packages/connectors/src/write-boundary.js'
 import { runFencedSinglePublish, PublishCommitStatusUnknownError } from './publish-fenced-orchestrator.js'
@@ -21038,7 +21039,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
 async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', `${publicRequestOrigin(req)}/`)
   const path = url.pathname
-  const isPasswordAuthRoute = path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm' || path === '/v1/auth/password/change' || path === '/v1/auth/mcp-token' || path === '/v1/auth/mcp-token/refresh' || path === '/v1/auth/mcp-token/revoke'
+  const isPasswordAuthRoute = path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm' || path === '/v1/auth/password/change' || path === '/v1/auth/mcp-token' || path === '/v1/auth/mcp-token/refresh' || path === '/v1/auth/mcp-token/revoke' || path === '/v1/auth/local-plugin/authorize' || path === '/v1/auth/local-plugin/token'
   const passwordSessionToken = () => {
     const encoded = (header(req, 'cookie') ?? '').split(';').map(value => value.trim()).find(value => value.startsWith('damai_session='))?.slice('damai_session='.length)
     if (!encoded) return ''
@@ -21092,6 +21093,63 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const current = await passwordAuthRepository.authenticate(passwordSessionToken())
       if (!current) throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请重新登录', 401)
       return send(res, 200, 'unknown', { account: current.account, session_id: current.sessionId, issued_at: current.issuedAt, expires_at: current.expiresAt, workspaces: current.account.workspaceIds, roles: current.account.roles }, null, req)
+    }
+    if (path === '/v1/auth/local-plugin/authorize' && (req.method === 'GET' || req.method === 'POST')) {
+      if (isProduction() && mcpIntegrationMode() !== 'local_stdio') throw new DomainError('MCP_LOCAL_TOKEN_FLOW_DISABLED', '当前部署未启用本地插件凭据', 409)
+      const contentType = header(req, 'content-type')?.split(';')[0]?.trim().toLowerCase()
+      if (req.method === 'POST' && contentType !== 'application/x-www-form-urlencoded') throw new DomainError('LOCAL_PLUGIN_AUTH_INVALID_REQUEST', '本地插件授权请求格式无效', 415)
+      const requestOrigin = header(req, 'origin')?.trim()
+      if (req.method === 'POST' && requestOrigin !== publicRequestOrigin(req)) throw new DomainError('AUTH_CSRF_ORIGIN_INVALID', '本地插件授权来源无效', 403)
+      const params = req.method === 'GET' ? url.searchParams : new URLSearchParams((await requestBodyBytes(req, 32 * 1024)).toString('utf8'))
+      let authorization
+      try { authorization = parseLocalPluginAuthorizationRequest(params) }
+      catch (error) {
+        if (error instanceof LocalPluginAuthorizationRequestError) throw new DomainError(`LOCAL_PLUGIN_AUTH_${error.code}`, '本地插件授权请求无效', 400)
+        throw error
+      }
+      const current = await passwordAuthRepository.authenticate(passwordSessionToken())
+      if (!current || current.account.accountType !== 'merchant' || current.account.status !== 'active') {
+        if (req.method === 'GET') {
+          res.statusCode = 401; res.setHeader('content-type', 'text/html; charset=utf-8'); res.setHeader('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"); res.end(localPluginLoginRequiredHtml(authorization)); return
+        }
+        throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请先登录商家后台再重新授权', 401)
+      }
+      const workspaceIds = [...new Set(current.account.workspaceIds.filter(Boolean))]
+      if (workspaceIds.length !== 1) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '当前账号必须绑定且只能绑定一个工作区', 409)
+      const workspaceId = workspaceIds[0]!
+      const origin = publicRequestOrigin(req)
+      if (authorization.resource !== `${origin}/mcp` || authorization.workspaceId !== workspaceId) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '本地插件请求与当前账号工作区不一致', 409)
+      if (req.method === 'GET') {
+        res.statusCode = 200; res.setHeader('content-type', 'text/html; charset=utf-8'); res.setHeader('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"); res.end(localPluginAuthorizationHtml(authorization, { login: current.account.login, workspaceId })); return
+      }
+      const context = { clientId: LOCAL_PLUGIN_CLIENT_ID, issuer: origin, audience: `${origin}/mcp`, resource: `${origin}/mcp`, scope: ['merchant'] }
+      const issued = await passwordAuthRepository.issueMcpAuthorizationCode({ ...context, account: current.account, redirectUri: authorization.redirectUri, codeChallenge: authorization.codeChallenge })
+      const target = new URL(authorization.redirectUri)
+      target.searchParams.set('code', issued.code)
+      target.searchParams.set('state', authorization.state)
+      res.statusCode = 303; res.setHeader('location', target.toString()); res.setHeader('referrer-policy', 'no-referrer'); res.end(); return
+    }
+    if (req.method === 'POST' && path === '/v1/auth/local-plugin/token') {
+      if (isProduction() && mcpIntegrationMode() !== 'local_stdio') throw new DomainError('MCP_LOCAL_TOKEN_FLOW_DISABLED', '当前部署未启用本地插件凭据', 409)
+      if (header(req, 'content-type')?.split(';')[0]?.trim().toLowerCase() !== 'application/x-www-form-urlencoded') throw new DomainError('LOCAL_PLUGIN_TOKEN_INVALID_REQUEST', '本地插件 token 请求格式无效', 415)
+      let input
+      try { input = parseLocalPluginTokenRequest(new URLSearchParams((await requestBodyBytes(req, 32 * 1024)).toString('utf8'))) }
+      catch (error) {
+        if (error instanceof LocalPluginAuthorizationRequestError) throw new DomainError(`LOCAL_PLUGIN_TOKEN_${error.code}`, '本地插件 token 请求无效', 400)
+        throw error
+      }
+      const origin = publicRequestOrigin(req)
+      if (input.resource !== `${origin}/mcp`) throw new DomainError('LOCAL_PLUGIN_TOKEN_INVALID_RESOURCE', '本地插件 token resource 无效', 400)
+      const context = { clientId: LOCAL_PLUGIN_CLIENT_ID, issuer: origin, audience: `${origin}/mcp`, resource: `${origin}/mcp`, scope: ['merchant'] }
+      try {
+        const pair = await passwordAuthRepository.exchangeMcpAuthorizationCode({ ...context, redirectUri: input.redirectUri, code: input.code, codeVerifier: input.codeVerifier })
+        const principal = await passwordAuthRepository.authenticateMcpAccessToken({ ...context, accessToken: pair.accessToken })
+        if (!principal || principal.workspaceId !== input.workspaceId) {
+          await passwordAuthRepository.revokeMcpOAuthToken({ ...context, token: pair.refreshToken, tokenTypeHint: 'refresh_token' })
+          throw new Error('MCP_OAUTH_INVALID_GRANT')
+        }
+        return send(res, 200, principal.workspaceId, { access_token: pair.accessToken, refresh_token: pair.refreshToken, token_type: 'Bearer', expires_in: pair.expiresIn, scope: pair.scope.join(' '), workspace_id: principal.workspaceId, account_login: principal.accountLogin }, null, req)
+      } catch { throw new DomainError('MCP_OAUTH_INVALID_GRANT', '本地插件授权码无效、已使用或已过期', 400) }
     }
     if (req.method === 'POST' && path === '/v1/auth/mcp-token') {
       if (isProduction() && mcpIntegrationMode() !== 'local_stdio') throw new DomainError('MCP_LOCAL_TOKEN_FLOW_DISABLED', '当前部署未启用本地插件凭据', 409)

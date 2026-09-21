@@ -1,5 +1,9 @@
 node_modules/
 dist/
+# Machine-local Keychain helper builds must not enter source archives.
+**/mcp/keychain-credential-helper
+**/mcp/keychain-credential-helper.build.json
+**/mcp/.keychain-build-*/
 .env
 .env.*
 !.env.example
