@@ -5,6 +5,8 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 suffix="${PPID}-$$"
 pg_container="backup-attester-cli-pg16-${suffix}"
 node_container="backup-attester-cli-node22-${suffix}"
+pg_image='postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685'
+node_image='node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32'
 scratch=$(mktemp -d)
 
 cleanup() {
@@ -16,10 +18,10 @@ trap cleanup EXIT INT TERM
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 inside() { docker exec "$pg_container" "$@"; }
 
-docker image inspect postgres:16-alpine >/dev/null
-docker image inspect node:22-alpine >/dev/null
-docker run -d --name "$pg_container" -e POSTGRES_HOST_AUTH_METHOD=trust postgres:16-alpine >/dev/null
-docker create --name "$node_container" node:22-alpine >/dev/null
+docker image inspect "$pg_image" >/dev/null
+docker image inspect "$node_image" >/dev/null
+docker run -d --network none --name "$pg_container" -e POSTGRES_HOST_AUTH_METHOD=trust "$pg_image" >/dev/null
+docker create --network none --name "$node_container" "$node_image" >/dev/null
 
 for _ in $(seq 1 30); do
   inside pg_isready -U postgres >/dev/null 2>&1 && break
