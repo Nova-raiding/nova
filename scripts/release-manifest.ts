@@ -100,8 +100,13 @@ export function buildReleaseManifest(input: {
     resolve(root, 'infra/scripts/deploy-verified-ecs-compose.sh'),
     resolve(root, 'infra/scripts/rollback-ecs-compose.sh'),
     resolve(root, 'infra/scripts/invoke-ecs-automatic-rollback.sh'),
+    resolve(root, 'infra/scripts/install-ecs-release-controls.mjs'),
+    resolve(root, 'infra/scripts/install-ecs-release-controls.d.mts'),
     resolve(root, 'infra/protected/attest-release-evidence-bundle.mjs'),
     resolve(root, 'infra/protected/attest-release-evidence-bundle.d.mts'),
+    resolve(root, 'infra/protected/attest-postgres-backup.mjs'),
+    resolve(root, 'infra/protected/attest-postgres-backup.d.mts'),
+    resolve(root, 'infra/protected/ecs-preidentity-recovery.mjs'),
     resolve(root, 'tests/release-evidence-bundle-gate.ts'),
   ]
   const artifacts = artifactPaths.map(path => {

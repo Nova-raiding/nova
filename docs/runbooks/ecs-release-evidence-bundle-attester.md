@@ -11,14 +11,15 @@ Provision the final executable bytes outside the repository, root-owned and not 
 Install the reviewed bytes from the exact release commit before loading any private key. Run this from a root-owned release checkout after independently comparing the source hash with the release manifest:
 
 ```sh
-install -d -o root -g root -m 0755 /usr/local/libexec/merchant
-test ! -L /usr/local/libexec/merchant/attest-release-evidence-bundle
-install -o root -g root -m 0755 infra/protected/attest-release-evidence-bundle.mjs /usr/local/libexec/merchant/attest-release-evidence-bundle
-install -d -o root -g root -m 0755 /run/release-security/evidence-trust
-sha256sum /usr/local/libexec/merchant/attest-release-evidence-bundle | awk '{print "sha256:" $1}' > /run/release-security/evidence-trust/production-evidence-bundle-attester-sha256
-chown root:root /run/release-security/evidence-trust/production-evidence-bundle-attester-sha256
-chmod 0444 /run/release-security/evidence-trust/production-evidence-bundle-attester-sha256
+env -u NODE_OPTIONS -u NODE_PATH node infra/scripts/install-ecs-release-controls.mjs \
+  --control bundle \
+  --source /root/reviewed-release/infra/protected/attest-release-evidence-bundle.mjs \
+  --source-sha256 REVIEWED_SOURCE_SHA256 \
+  --node /usr/bin/node \
+  --node-sha256 REVIEWED_NODE_SHA256
 ```
+
+All five options are mandatory and must use independently reviewed SHA-256 values. Run the installer as root only after its protected destination, trust and state directories exist with root ownership and no group/other write access. Invoke repository `.mjs` sources explicitly with `node`; their checkout executable bit is not a trust signal. The installer binds the reviewed source bytes to the reviewed Node runtime, installs atomically, records protected history, and does not generate keys, sign evidence, deploy containers, or provision production data.
 
 `validate-production-evidence-trust.sh` checks the installed executable against that digest during the release gate. Installation does not create or copy a private key; key provisioning remains a separate host security operation.
 

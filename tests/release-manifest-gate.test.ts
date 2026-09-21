@@ -67,8 +67,13 @@ describe('release manifest production gate', () => {
       'infra/scripts/deploy-verified-ecs-compose.sh',
       'infra/scripts/rollback-ecs-compose.sh',
       'infra/scripts/invoke-ecs-automatic-rollback.sh',
+      'infra/scripts/install-ecs-release-controls.mjs',
+      'infra/scripts/install-ecs-release-controls.d.mts',
       'infra/protected/attest-release-evidence-bundle.mjs',
       'infra/protected/attest-release-evidence-bundle.d.mts',
+      'infra/protected/attest-postgres-backup.mjs',
+      'infra/protected/attest-postgres-backup.d.mts',
+      'infra/protected/ecs-preidentity-recovery.mjs',
       'tests/release-evidence-bundle-gate.ts',
     ]
     const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })
