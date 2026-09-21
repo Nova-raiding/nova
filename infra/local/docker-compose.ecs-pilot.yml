@@ -511,11 +511,23 @@ services:
   # local acceptance defaults in the base file. Host ports stay private to the
   # Compose network; the API reaches them by the service names below.
   postgres:
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/run/secrets/postgres_server.crt
+      - -c
+      - ssl_key_file=/run/secrets/postgres_server.key
     environment:
       POSTGRES_DB: merchant
       POSTGRES_USER: merchant
       POSTGRES_PASSWORD: ${PGPASSWORD:?PGPASSWORD is required for the ECS database service}
     ports: !override []
+    volumes: !override
+      - merchant-postgres:/var/lib/postgresql/data
+      - /opt/merchant-deploy/deploy/secrets/postgres_server.crt:/run/secrets/postgres_server.crt:ro
+      - /opt/merchant-deploy/deploy/secrets/postgres_server.key:/run/secrets/postgres_server.key:ro
 
   redis:
     ports: !override []
