@@ -22,4 +22,12 @@ describe('customer delivery control-plane migration', () => {
     expect(gate).toContain('Customer delivery control-plane ACL mismatch')
     expect(gate).toContain('Customer delivery audit must be append-only')
   })
+
+  it('registers an idempotent ACL repair for restored databases', async () => {
+    const migration = (await loadMigrations()).find(item => item.version === 234)
+    expect(migration?.name).toBe('repair_customer_delivery_control_plane_acl')
+    expect(migration?.sql).toContain('GRANT UPDATE (deleted_at)')
+    expect(migration?.sql).toContain('GRANT INSERT ON workspace_operation_audit')
+    expect(migration?.sql).not.toMatch(/DROP TABLE|DELETE FROM|TRUNCATE TABLE/u)
+  })
 })
