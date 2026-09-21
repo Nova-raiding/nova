@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url'
 
 const TRUST_ROOT = '/run/release-security/evidence-trust'
 const PRIVATE_KEY = '/var/lib/merchant-release-security/production-capability-private.pem'
+const SOURCE_POLICY = join(TRUST_ROOT, 'production-backup-source.json')
+const BACKUP_ROOT = '/var/lib/merchant-release-security/backups'
 const INSTALLED_PATH = '/usr/local/libexec/merchant/attest-postgres-backup'
 const INSTALLED_DIGEST = join(TRUST_ROOT, 'production-backup-attester-sha256')
 const PSQL = '/usr/bin/psql'
@@ -66,6 +68,8 @@ function assertProtectedPath(path, { kind, mode } = {}) {
 function protectedOutput(path) {
   assert(path === resolve(path), 'output path must be absolute')
   const parent = realpathSync(dirname(path))
+  assert(parent === BACKUP_ROOT || parent.startsWith(`${BACKUP_ROOT}${sep}`), 'output must be inside the protected backup root')
+  assertProtectedPath(BACKUP_ROOT, { kind: 'directory' })
   assertProtectedPath(parent, { kind: 'directory' })
   assert(resolve(path) === join(parent, basename(path)), 'output path must be a direct child of the protected root')
   try { lstatSync(path); throw new Error('output already exists') } catch (error) { if (error?.code !== 'ENOENT') throw error }
@@ -91,6 +95,8 @@ function assertInstalledIdentity() {
 export const SNAPSHOT_SQL = [
   'BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;',
   "SELECT 'SYSTEM_IDENTIFIER=' || system_identifier FROM pg_control_system();",
+  "SELECT 'DATABASE_OID=' || oid::text FROM pg_database WHERE datname = current_database();",
+  "SELECT 'DATABASE_NAME_HEX=' || encode(convert_to(current_database(),'UTF8'),'hex');",
   "SELECT 'MIGRATION_VERSION=' || COALESCE(max(version),0)::text FROM public.schema_migrations;",
   "SELECT 'SNAPSHOT=' || pg_export_snapshot();",
 ]
@@ -99,10 +105,30 @@ export function pgDumpArguments(snapshot, output) {
   return ['--format=custom', '--no-owner', '--no-privileges', `--snapshot=${snapshot}`, `--file=${output}`]
 }
 
-export function signBackupAttestation({ backupBytes, backupFileName, systemIdentifier, migrationVersion, keyId, privatePem, publicPem, now = new Date(), validitySeconds = MAX_VALIDITY_SECONDS }) {
+export function parseSourcePolicy(bytes) {
+  let value
+  try { value = JSON.parse(Buffer.isBuffer(bytes) ? bytes.toString('utf8') : bytes) } catch { throw new Error('backup source policy must be valid JSON') }
+  assert(value && typeof value === 'object' && !Array.isArray(value), 'backup source policy must be an object')
+  assert(Object.keys(value).sort().join(',') === 'database_name,database_oid,system_identifier_sha256', 'backup source policy fields are invalid')
+  assert(HEX.test(value.system_identifier_sha256), 'backup source policy system identifier hash is invalid')
+  assert(Number.isInteger(value.database_oid) && value.database_oid > 0 && value.database_oid <= 4_294_967_295, 'backup source policy database OID is invalid')
+  assert(typeof value.database_name === 'string' && value.database_name.length > 0 && Buffer.byteLength(value.database_name, 'utf8') <= 63 && !value.database_name.includes('\0'), 'backup source policy database name is invalid')
+  return value
+}
+export function assertSourcePolicy({ systemIdentifier, databaseOid, databaseName }, policy) {
+  const clusterHash = createHash('sha256').update(systemIdentifier).digest('hex')
+  assert(clusterHash === policy.system_identifier_sha256, 'database cluster does not match protected source policy')
+  assert(databaseOid === policy.database_oid, 'database OID does not match protected source policy')
+  assert(databaseName === policy.database_name, 'database name does not match protected source policy')
+  return clusterHash
+}
+
+export function signBackupAttestation({ backupBytes, backupFileName, systemIdentifier, databaseOid, databaseName, migrationVersion, keyId, privatePem, publicPem, now = new Date(), validitySeconds = MAX_VALIDITY_SECONDS }) {
   assert(Buffer.isBuffer(backupBytes) && backupBytes.length > 0, 'backup bytes are required')
   assert(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(backupFileName), 'backup file name is invalid')
   assert(/^\d{1,32}$/u.test(systemIdentifier), 'database system identifier is invalid')
+  assert(Number.isInteger(databaseOid) && databaseOid > 0 && databaseOid <= 4_294_967_295, 'database OID is invalid')
+  assert(typeof databaseName === 'string' && databaseName.length > 0 && Buffer.byteLength(databaseName, 'utf8') <= 63 && !databaseName.includes('\0'), 'database name is invalid')
   assert(Number.isSafeInteger(migrationVersion) && migrationVersion > 0, 'migration version is invalid')
   assert(/^[A-Za-z0-9._:-]{1,128}$/u.test(keyId), 'trusted key ID is invalid')
   assert(Number.isSafeInteger(validitySeconds) && validitySeconds > 0 && validitySeconds <= MAX_VALIDITY_SECONDS, 'attestation validity exceeds the protected maximum')
@@ -114,6 +140,8 @@ export function signBackupAttestation({ backupBytes, backupFileName, systemIdent
     backup_file_name: backupFileName,
     backup_sha256: createHash('sha256').update(backupBytes).digest('hex'),
     source_database_id_sha256: createHash('sha256').update(systemIdentifier).digest('hex'),
+    source_database_oid: databaseOid,
+    source_database_name: databaseName,
     migration_version: migrationVersion,
     created_at: now.toISOString(), expires_at: new Date(now.getTime() + validitySeconds * 1000).toISOString(), key_id: keyId,
   }
@@ -134,11 +162,15 @@ export function captureSnapshot() {
       stdout += chunk.toString('utf8')
       if (Buffer.byteLength(stdout) > MAX_CAPTURE_BYTES) return finish(new Error('database snapshot metadata exceeded limit'))
       const system = /(?:^|\n)SYSTEM_IDENTIFIER=(\d{1,32})(?:\n|$)/u.exec(stdout)?.[1]
+      const databaseOidText = /(?:^|\n)DATABASE_OID=(\d{1,10})(?:\n|$)/u.exec(stdout)?.[1]
+      const databaseNameHex = /(?:^|\n)DATABASE_NAME_HEX=([a-f0-9]{2,126})(?:\n|$)/u.exec(stdout)?.[1]
       const migration = /(?:^|\n)MIGRATION_VERSION=(\d+)(?:\n|$)/u.exec(stdout)?.[1]
       const snapshot = /(?:^|\n)SNAPSHOT=([^\n]+)(?:\n|$)/u.exec(stdout)?.[1]
-      if (system && migration && snapshot && SNAPSHOT.test(snapshot)) {
+      if (system && databaseOidText && databaseNameHex && migration && snapshot && SNAPSHOT.test(snapshot)) {
+        const databaseName = Buffer.from(databaseNameHex, 'hex').toString('utf8'), databaseOid = Number(databaseOidText)
+        if (Buffer.from(databaseName, 'utf8').toString('hex') !== databaseNameHex || !Number.isInteger(databaseOid) || databaseOid <= 0 || databaseOid > 4_294_967_295) return finish(new Error('database snapshot identity is invalid'))
         settled = true; clearTimeout(timer)
-        resolveSnapshot({ systemIdentifier: system, migrationVersion: Number(migration), snapshot, release: () => { if (!child.stdin.destroyed) child.stdin.end('ROLLBACK;\n\\q\n') } })
+        resolveSnapshot({ systemIdentifier: system, databaseOid, databaseName, migrationVersion: Number(migration), snapshot, release: () => { if (!child.stdin.destroyed) child.stdin.end('ROLLBACK;\n\\q\n') } })
       }
     })
     child.on('error', finish)
@@ -159,17 +191,18 @@ function realDump(snapshot, path) {
   })
 }
 
-export async function produceBackup({ backupPath, attestationPath, checksumPath = `${backupPath}.sha256`, validitySeconds = MAX_VALIDITY_SECONDS, now = new Date(), privatePem, publicPem, keyId }, adapter = { snapshot: captureSnapshot, dump: realDump }) {
+export async function produceBackup({ backupPath, attestationPath, checksumPath = `${backupPath}.sha256`, validitySeconds = MAX_VALIDITY_SECONDS, now = new Date(), privatePem, publicPem, keyId, sourcePolicy }, adapter = { snapshot: captureSnapshot, dump: realDump }) {
   assert(new Set([resolve(backupPath), resolve(attestationPath), resolve(checksumPath)]).size === 3, 'backup outputs must be distinct')
   const tempBackup = `${backupPath}.${process.pid}.${randomBytes(12).toString('hex')}.dump.tmp`
   try { lstatSync(tempBackup); throw new Error('temporary backup path already exists') } catch (error) { if (error?.code !== 'ENOENT') throw error }
   let held
   try {
     held = await adapter.snapshot()
+    assertSourcePolicy(held, sourcePolicy)
     await adapter.dump(held.snapshot, tempBackup)
     syncPath(tempBackup)
     const bytes = readRegular(tempBackup, Number.MAX_SAFE_INTEGER)
-    const document = signBackupAttestation({ backupBytes: bytes, backupFileName: basename(backupPath), systemIdentifier: held.systemIdentifier, migrationVersion: held.migrationVersion, keyId, privatePem, publicPem, now, validitySeconds })
+    const document = signBackupAttestation({ backupBytes: bytes, backupFileName: basename(backupPath), systemIdentifier: held.systemIdentifier, databaseOid: held.databaseOid, databaseName: held.databaseName, migrationVersion: held.migrationVersion, keyId, privatePem, publicPem, now, validitySeconds })
     linkSync(tempBackup, backupPath)
     syncParent(backupPath)
     atomicExclusive(checksumPath, Buffer.from(`${document.backup_sha256}  ${backupPath}\n`))
@@ -205,10 +238,12 @@ async function main(args) {
   assertProtectedPath(PRIVATE_KEY, { kind: 'file', mode: 0o600 })
   assertProtectedPath(keyIdPath, { kind: 'file' })
   assertProtectedPath(publicKeyPath, { kind: 'file' })
+  assertProtectedPath(SOURCE_POLICY, { kind: 'file' })
   const keyId = readRegular(keyIdPath, 128).toString('utf8').trim()
   const privatePem = readRegular(PRIVATE_KEY), publicPem = readRegular(publicKeyPath)
+  const sourcePolicy = parseSourcePolicy(readRegular(SOURCE_POLICY))
   const old = process.umask(0o077)
-  try { await produceBackup({ backupPath, checksumPath, attestationPath, privatePem, publicPem, keyId }) }
+  try { await produceBackup({ backupPath, checksumPath, attestationPath, privatePem, publicPem, keyId, sourcePolicy }) }
   finally { process.umask(old) }
   process.stdout.write(`protected postgres backup written: ${basename(backupPath)}\n`)
 }
