@@ -218,6 +218,19 @@ describe('production readiness fail-closed', () => {
     }
   })
 
+  it('keeps lexical knowledge search production-ready when optional vector indexing is disabled', () => {
+    const environment = productionEnvironment()
+    delete environment.EMBEDDING_MODEL
+    delete environment.EMBEDDING_DIMENSIONS
+    delete environment.MODEL_EMBEDDING_MAX_REQUEST_CNY
+    delete environment.MODEL_RELAY_EMBEDDING_COST_EVIDENCE
+    environment.KNOWLEDGE_VECTOR_INDEX_ENABLED = 'false'
+
+    const result = productionReadinessDiagnostics(environment)
+    expect(result.ready).toBe(true)
+    expect(result.gates.cost).toMatchObject({ ready: true })
+  })
+
   it.each([
     ['MCP_OAUTH_REQUIRED', 'false', 'mcp_oauth_required_must_be_true'],
     ['MCP_OAUTH_REQUIRED', ' true ', 'mcp_oauth_required_must_be_true'],

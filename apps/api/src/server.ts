@@ -9197,6 +9197,15 @@ function modelCostEvidenceByModality(source: NodeJS.ProcessEnv = process.env) {
   return Object.fromEntries(Object.keys(MODEL_COST_EVIDENCE_KEYS).map(kind => [kind, modelCostEvidenceReady(kind as keyof typeof MODEL_COST_EVIDENCE_KEYS, source)])) as Record<keyof typeof MODEL_COST_EVIDENCE_KEYS, boolean>
 }
 
+/** Embedding is optional while knowledge search remains lexical. If vector
+ * indexing is explicitly enabled, embedding cost evidence becomes mandatory. */
+function requiredModelCostEvidenceByModality(source: NodeJS.ProcessEnv = process.env) {
+  const evidence = modelCostEvidenceByModality(source)
+  if (source.KNOWLEDGE_VECTOR_INDEX_ENABLED === 'true') return evidence
+  const { embedding: _embedding, ...lexicalEvidence } = evidence
+  return lexicalEvidence as Omit<typeof evidence, 'embedding'>
+}
+
 function requirePlatformModelCostGate(kind: PlatformModelKind) {
   if (!isProduction()) return
   const relayGate = evaluatePlatformModelRelayGate(process.env)
@@ -9627,7 +9636,7 @@ export function productionReadinessDiagnostics(source: NodeJS.ProcessEnv = proce
   }
   const costGate = evaluatePlatformModelCostGate(source)
   const taskCostGate = evaluatePlatformModelTaskCostLimit(source)
-  const costEvidence = modelCostEvidenceByModality(source)
+  const costEvidence = requiredModelCostEvidenceByModality(source)
   const cost: ProductionReadinessGate = {
     ready: costGate.ready && taskCostGate.ready && Object.values(costEvidence).every(Boolean),
     reasons: [
@@ -9743,7 +9752,7 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
   if (!imageEditProviderConfigured) nextActions.push('配置 IMAGE_EDIT_MODEL（或复用 IMAGE_MODEL）和图片编辑中转 provider 后启用局部图片编辑；未配置时保留原图并阻断编辑请求')
   if (!imageFactsConfigured) nextActions.push('配置平台模型中转站、MODEL_RELAY_API_KEY 和 OCR_MODEL 后启用图片 OCR 候选；未配置时继续要求商家人工确认图片事实')
   if (!videoProviderConfigured) nextActions.push('配置平台模型中转站、MODEL_RELAY_API_KEY、VIDEO_MODEL 和视频 provider 后启用视频渲染；未配置时只能生成无渲染分镜')
-  if (!embeddingProviderConfigured) nextActions.push('知识库向量索引尚未启用：需配置 EMBEDDING_MODEL/EMBEDDING_DIMENSIONS，并完成后台索引专用授权、预算预留和用量结算后设置 KNOWLEDGE_VECTOR_INDEX_ENABLED=true；当前保持词法索引')
+  if (process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED === 'true' && !embeddingProviderConfigured) nextActions.push('知识库向量索引已显式启用但未通过门禁：需配置 EMBEDDING_MODEL/EMBEDDING_DIMENSIONS，并完成后台索引专用授权、预算预留和用量结算；当前保持阻断')
   if (!modelCostGateConfigured) nextActions.push('配置平台模型 RPM、TPM 和每日人民币成本上限；成本门禁未通过时生产模型请求保持阻断')
   if (production && !paymentReadiness.ready) nextActions.push('配置支付宝/微信服务端 checkout provider、商户号、回调验签、对账和退款能力：' + paymentReadiness.reasons.join('、'))
   if (platformOperationsMode === 'official_api' && !vaultConfigured) nextActions.push('official_api 模式需配置 VAULT_ADDR 和 VAULT_TOKEN（或接入外部凭据服务），让服务端安全读取商家授权凭据；不要把平台 token 放进插件参数')
@@ -9760,7 +9769,7 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
   if (!capacityEvidence.configured) nextActions.push('运营后台未检测到通过真实云门禁的容量报告；必须绑定 release、profile、云环境、零 mock 和签署人')
   if (!production) nextActions.push('当前不是生产模式；上线前还需完成 TLS/DNS/WAF、备份恢复、容量压测及所选运营模式验收')
   const platformOperationsReady = manualPlatformOperations || (platformOperationsMode === 'official_api' && Object.values(platformDiagnostics).every(item => item.ready) && vaultConfigured && capabilityEvidence.configured)
-  const productionGate = production && !fixtureMode && platformOperationsMode !== 'invalid' && platformOperationsReady && commercialReadiness.ready && controlPlaneReadiness.ready && relayGate.ready && paymentReadiness.ready && contentProviderConfigured && imageProviderConfigured && imageEditProviderConfigured && imageFactsConfigured && videoProviderConfigured && embeddingProviderConfigured && modelCostGateConfigured && objectStorageConfigured && dataLifecycle.configured && alertNotifications.ready && capacityEvidence.configured
+  const productionGate = production && !fixtureMode && platformOperationsMode !== 'invalid' && platformOperationsReady && commercialReadiness.ready && controlPlaneReadiness.ready && relayGate.ready && paymentReadiness.ready && contentProviderConfigured && imageProviderConfigured && imageEditProviderConfigured && imageFactsConfigured && videoProviderConfigured && modelCostGateConfigured && objectStorageConfigured && dataLifecycle.configured && alertNotifications.ready && capacityEvidence.configured
   const payment = paymentCapabilityStatus({
     mode: process.env.PAYMENT_MODE,
     providerReady: paymentReadiness.ready,
@@ -17190,19 +17199,21 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const rpm = costGate.rpm
       const tpm = costGate.tpm
       const dailyCnyLimit = costGate.dailyCnyLimit
-      const costEvidenceByModality = modelCostEvidenceByModality()
+      const costEvidenceByModality = requiredModelCostEvidenceByModality()
       const costEvidenceReady = Object.values(costEvidenceByModality).every(Boolean)
       const costControlReady = costGate.ready && costEvidenceReady
       const ocrReady = ocrGate.ready && Boolean(imageFactsExtractor)
       const imageEditReady = imageEditGate.ready && Boolean(imageEditGenerator)
       const videoReady = videoGate.ready && Boolean(videoGenerator)
-      const embeddingReady = embeddingGate.ready && process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED === 'true'
+      const vectorIndexEnabled = process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED === 'true'
+      const embeddingConfigured = vectorIndexEnabled && embeddingGate.ready
+      const embeddingReady = !vectorIndexEnabled || embeddingConfigured
       const allModelReady = textReady && imageReady && imageEditReady && ocrReady && videoReady && embeddingReady
       return result({
         ownership: 'platform', user_key_binding: false, relay: { configured: relayGate.ready, host: relayGate.endpointHost ?? null, reasons: relayGate.reasons }, state: allModelReady && costControlReady && releaseMetadataReady && (!isProduction() || relayGate.ready) ? 'ready' : !releaseMetadataReady ? 'release_metadata_blocked' : isProduction() && !relayGate.ready ? 'model_relay_blocked' : allModelReady ? 'cost_gate_blocked' : textReady ? 'partial_model_readiness' : 'not_configured',
         provider_host: relayGate.endpointHost ?? textGate.endpointHost ?? providerHost ?? null, image_provider_host: relayGate.endpointHost ?? imageGate.endpointHost ?? null, text_model: process.env.AI_MODEL?.trim() || process.env.MODEL_ID?.trim() || null, image_model: process.env.IMAGE_MODEL?.trim() || process.env.AI_IMAGE_MODEL?.trim() || null, vision_model: process.env.OCR_MODEL?.trim() || process.env.AI_VISION_MODEL?.trim() || null, video_model: process.env.VIDEO_MODEL?.trim() || process.env.AI_VIDEO_MODEL?.trim() || null, embedding_model: process.env.EMBEDDING_MODEL?.trim() || null,
-        capabilities: { text_generation: textReady, image_generation: imageReady, image_editing: imageEditReady, image_fact_ocr: ocrReady, video_rendering: videoReady, knowledge_vector_indexing: embeddingReady }, endpoints: { text_https: textGate.https, image_https: imageGate.https, image_edit_https: imageEditGate.https, ocr_https: ocrGate.https, video_https: videoGate.https, embedding_https: embeddingGate.https },
-        model_readiness: { text: { ...textGate, provider_configured: textReady }, image: { ...imageGate, provider_configured: imageReady }, image_edit: { ...imageEditGate, provider_configured: imageEditReady }, ocr: { ...ocrGate, provider_configured: ocrReady }, video: { ...videoGate, provider_configured: videoReady }, embedding: { ...embeddingGate, provider_configured: embeddingReady } },
+        capabilities: { text_generation: textReady, image_generation: imageReady, image_editing: imageEditReady, image_fact_ocr: ocrReady, video_rendering: videoReady, knowledge_vector_indexing: embeddingConfigured }, endpoints: { text_https: textGate.https, image_https: imageGate.https, image_edit_https: imageEditGate.https, ocr_https: ocrGate.https, video_https: videoGate.https, embedding_https: embeddingGate.https },
+        model_readiness: { text: { ...textGate, provider_configured: textReady }, image: { ...imageGate, provider_configured: imageReady }, image_edit: { ...imageEditGate, provider_configured: imageEditReady }, ocr: { ...ocrGate, provider_configured: ocrReady }, video: { ...videoGate, provider_configured: videoReady }, embedding: { ...embeddingGate, provider_configured: embeddingConfigured } },
         quotas: { rpm: rpm || null, tpm: tpm || null, daily_cny_limit: dailyCnyLimit ? dailyCnyLimit.toFixed(2) : null },
         cost_control_ready: costControlReady, cost_evidence_ready: costEvidenceReady, cost_evidence_by_modality: costEvidenceByModality,
         release_metadata_ready: releaseMetadataReady, release_metadata_missing: releaseMetadataMissing,
