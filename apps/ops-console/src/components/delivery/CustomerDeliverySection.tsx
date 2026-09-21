@@ -566,7 +566,7 @@ export function CustomerDeliverySection({
         <Space>
           <Button
             type="primary"
-            disabled={disabled}
+            disabled={disabled || readOnly}
             onClick={() => {
               if (onCreateNavigate) { onCreateNavigate(); return; }
               createForm.resetFields();
