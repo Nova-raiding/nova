@@ -3,7 +3,7 @@
 // This process owns pg_dump, the exported snapshot and the production key.
 import { createHash, createPrivateKey, createPublicKey, randomBytes, sign, verify } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { constants, closeSync, fstatSync, linkSync, lstatSync, openSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs'
+import { constants, closeSync, fstatSync, fsyncSync, linkSync, lstatSync, openSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, parse, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -32,9 +32,19 @@ function readRegular(path, maxBytes = 8192) {
   try { const stat = fstatSync(fd); assert(stat.isFile() && stat.size > 0 && stat.size <= maxBytes, 'unsafe protected input'); return readFileSync(fd) }
   finally { closeSync(fd) }
 }
+function syncPath(path, flags = constants.O_RDONLY) {
+  const fd = openSync(path, flags | constants.O_NOFOLLOW)
+  try { fsyncSync(fd) } finally { closeSync(fd) }
+}
+function syncParent(path) { syncPath(dirname(path)) }
 function atomicExclusive(path, bytes) {
   const temp = `${path}.${process.pid}.tmp`, old = process.umask(0o077)
-  try { writeFileSync(temp, bytes, { flag: 'wx', mode: 0o600 }); linkSync(temp, path) }
+  try {
+    writeFileSync(temp, bytes, { flag: 'wx', mode: 0o600 })
+    syncPath(temp)
+    linkSync(temp, path)
+    syncParent(path)
+  }
   finally { try { unlinkSync(temp) } catch {} process.umask(old) }
 }
 function assertProtectedPath(path, { kind, mode } = {}) {
@@ -72,7 +82,7 @@ function assertInstalledIdentity() {
   assertProtectedPath(invoked, { kind: 'file' })
   assertProtectedPath(PSQL, { kind: 'file' })
   assertProtectedPath(PG_DUMP, { kind: 'file' })
-  assertProtectedPath('/opt/node-v22-current/bin/node', { kind: 'file' })
+  assertProtectedPath(process.execPath, { kind: 'file' })
   assertProtectedPath(INSTALLED_DIGEST, { kind: 'file' })
   const expected = readRegular(INSTALLED_DIGEST, 128).toString('utf8').trim()
   assert(HEX.test(expected) && createHash('sha256').update(readRegular(invoked, 4 * 1024 * 1024)).digest('hex') === expected, 'installed attester digest mismatch')
@@ -157,9 +167,11 @@ export async function produceBackup({ backupPath, attestationPath, checksumPath 
   try {
     held = await adapter.snapshot()
     await adapter.dump(held.snapshot, tempBackup)
+    syncPath(tempBackup)
     const bytes = readRegular(tempBackup, Number.MAX_SAFE_INTEGER)
     const document = signBackupAttestation({ backupBytes: bytes, backupFileName: basename(backupPath), systemIdentifier: held.systemIdentifier, migrationVersion: held.migrationVersion, keyId, privatePem, publicPem, now, validitySeconds })
     linkSync(tempBackup, backupPath)
+    syncParent(backupPath)
     atomicExclusive(checksumPath, Buffer.from(`${document.backup_sha256}  ${backupPath}\n`))
     atomicExclusive(attestationPath, Buffer.from(`${JSON.stringify(document, null, 2)}\n`))
     return document
