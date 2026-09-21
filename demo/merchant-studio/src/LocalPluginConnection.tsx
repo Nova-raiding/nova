@@ -5,6 +5,7 @@ import { LocalPluginConnectionError, requestLocalPluginCredential } from './loca
 
 type CredentialStatus = Awaited<ReturnType<typeof requestLocalPluginCredential>>
 type ConnectionState =
+  | { scope: string; status: 'confirmation' }
   | { scope: string; status: 'requesting' }
   | { scope: string; status: 'installer_required'; result: CredentialStatus }
   | { scope: string; status: 'error'; message: string }
@@ -36,7 +37,6 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
     if (!eligible || request.current) return
     const controller = new AbortController()
     request.current = controller
-    setOpen(true)
     setState({ scope, status: 'requesting' })
     try {
       const result = await requestLocalPluginCredential(apiBaseUrl, account, controller.signal)
@@ -52,19 +52,21 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
 
   if (!eligible) return null
   return <>
-    <Button onClick={() => void connect()}>连接本地插件</Button>
-    <Modal title="连接本地插件" open={open && state?.scope === scope} onCancel={close} destroyOnHidden footer={
+    <Button onClick={() => { setState({ scope, status: 'confirmation' }); setOpen(true) }}>连接本地插件</Button>
+    <Modal title="连接本地插件" wrapClassName="merchant-local-plugin-modal" open={open && state?.scope === scope} onCancel={close} destroyOnHidden footer={
       <Space>
-        {current?.status === 'error' && <Button type="primary" onClick={() => void connect()}>重试验证</Button>}
-        <Button onClick={close}>{current?.status === 'requesting' ? '取消' : '关闭'}</Button>
+        {current?.status === 'confirmation' && <Button type="primary" onClick={(event) => { event.stopPropagation(); void connect() }}>确认签发短期凭据</Button>}
+        {current?.status === 'error' && <Button type="primary" onClick={(event) => { event.stopPropagation(); void connect() }}>重试验证</Button>}
+        <Button onClick={(event) => { event.stopPropagation(); close() }}>{current?.status === 'confirmation' || current?.status === 'requesting' ? '取消' : '关闭'}</Button>
       </Space>
     }>
       <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-        <Typography.Paragraph style={{ margin: 0 }}>仅为当前登录账号和工作区申请短期插件凭据，不修改生产鉴权或店铺授权。</Typography.Paragraph>
+        <Typography.Paragraph style={{ margin: 0 }}>确认后将仅为当前登录账号和工作区申请短期插件凭据，不修改生产鉴权或店铺授权。</Typography.Paragraph>
+        <Alert type="warning" title="当前没有可信安装器交接" showIcon description="签发的临时凭据无法安全交给本地插件，系统会立即丢弃；此操作不会安装插件，也不会完成连接。请仅在明确了解这一限制后确认。" />
         <Descriptions size="small" column={1} items={[
           { key: 'account', label: '登录账号', children: account.login },
           { key: 'workspace', label: '工作区', children: current?.status === 'installer_required' ? current.result.workspaceId : account.workspaceIds.length === 1 ? account.workspaceIds[0] : '需要绑定唯一工作区' },
-          { key: 'credential', label: '凭据状态', children: current?.status === 'requesting' ? '正在验证…' : current?.status === 'installer_required' ? '已签发，未安装' : '未确认' },
+          { key: 'credential', label: '凭据状态', children: current?.status === 'requesting' ? '正在验证…' : current?.status === 'installer_required' ? '已签发，未安装' : current?.status === 'error' ? '签发失败' : '尚未签发' },
         ]} />
         {current?.status === 'requesting' && <div role="status" aria-live="polite" aria-busy="true">正在通过当前登录会话验证连接凭据，可取消。</div>}
         {current?.status === 'error' && <div role="alert"><Alert type="error" title="连接验证未完成" description={current.message} showIcon /></div>}

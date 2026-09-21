@@ -7,6 +7,12 @@ export interface ApiHealth {
   persistence?: { mode: string; ready: boolean }
   setup?: {
     mode?: string
+    platformOperations?: {
+      mode?: 'manual' | 'official_api' | string
+      ready?: boolean
+      automatedWritesEnabled?: boolean
+      manualReportsAreOfficialReceipts?: boolean
+    }
     productionGate?: boolean
     nextActions?: string[]
     objectStorage?: { configured: boolean; mode: string }

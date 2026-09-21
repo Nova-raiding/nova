@@ -18,24 +18,26 @@ describe('manual platform account discovery', () => {
     expect(app).toContain('if (requestId === syncJobsRequestId.current) setSyncJobs(jobs)')
   })
 
-  it('uses setup.mode as the platform operations mode, never the health top-level mode', () => {
-    const health = { mode: 'fixture', setup: { mode: 'manual' } }
-    expect(platformOperationsModeFromHealth(health as never)).toBe('manual')
+  it('uses setup.platformOperations.mode, never the environment setup.mode', () => {
+    const fixtureHealth = { status: 'ok', connectors: {}, setup: { mode: 'fixture', platformOperations: { mode: 'manual' } } }
+    const productionHealth = { status: 'ok', connectors: {}, setup: { mode: 'production', platformOperations: { mode: 'manual' } } }
+    expect(platformOperationsModeFromHealth(fixtureHealth)).toBe('manual')
+    expect(platformOperationsModeFromHealth(productionHealth)).toBe('manual')
     expect(app).toContain('setApiMode(platformOperationsModeFromHealth(healthResult.value))')
-    expect(app).not.toContain('setApiMode(healthResult.value.mode')
+    expect(app).not.toContain('return health?.setup?.mode')
   })
 
   it('waits for the server mode before deciding whether discovery is allowed', () => {
     expect(shouldDiscoverPlatformAccounts('/api', null)).toBe(false)
     expect(shouldDiscoverPlatformAccounts('/api', undefined)).toBe(false)
-    expect(platformOperationsModeFromHealth({ setup: {} } as never)).toBeNull()
+    expect(platformOperationsModeFromHealth({ status: 'ok', connectors: {}, setup: {} })).toBeNull()
     expect(app).toContain('平台运营模式未确认，已停止自动发现店铺和读取同步任务')
   })
 
-  it('keeps real entitlement and permission errors visible outside manual mode', () => {
-    for (const mode of ['production', 'fixture', 'demo', 'test', 'local']) {
-      expect(shouldDiscoverPlatformAccounts('/api', mode), mode).toBe(true)
-    }
+  it('allows platform automation only for an explicit official_api mode', () => {
+    expect(shouldDiscoverPlatformAccounts('/api', 'official_api')).toBe(true)
+    expect(shouldDiscoverPlatformAccounts('/api', ' OFFICIAL_API ')).toBe(true)
+    for (const mode of ['production', 'fixture', 'demo', 'test', 'local', 'unexpected']) expect(shouldDiscoverPlatformAccounts('/api', mode), mode).toBe(false)
     expect(app).toContain('店铺发现失败：${describeApiError(error)}')
     expect(app).toContain('平台与店铺读取失败：${describeApiError(cause)}')
     expect(app).toContain('店铺发现失败：${describeApiError(cause)}')

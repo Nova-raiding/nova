@@ -7,122 +7,130 @@ const readyModel: PlatformModelStatus = { state: 'ready' }
 function health(overrides: Partial<ApiHealth> = {}): ApiHealth {
   return {
     status: 'ok',
-    writesEnabled: true,
+    writesEnabled: false,
     connectors: {},
-    setup: { mode: 'production', productionGate: true },
+    setup: {
+      mode: 'production',
+      productionGate: true,
+      platformOperations: { mode: 'manual', ready: true, automatedWritesEnabled: false },
+    },
     ...overrides,
   }
 }
 
-function resolve(apiHealth: ApiHealth) {
+function resolve(apiHealth: ApiHealth, modelStatus: PlatformModelStatus | null = readyModel) {
   return resolveMerchantEnvironmentStatus({
-    apiBaseUrl: '/api',
-    apiOnline: true,
-    apiHealth,
-    modelStatus: readyModel,
-    modelStatusRead: true,
+    apiBaseUrl: '/api', apiOnline: true, apiHealth, modelStatus, modelStatusRead: true,
   })
 }
 
 describe('resolveMerchantEnvironmentStatus', () => {
-  it('never presents fixture mode with closed writes and a failed gate as online', () => {
+  it('keeps fixture/manual as demo even when manual operations are expected', () => {
     const result = resolve(health({
-      writesEnabled: false,
-      setup: { mode: 'fixture', productionGate: false },
+      setup: {
+        mode: 'fixture', productionGate: false,
+        platformOperations: { mode: 'manual', ready: true, automatedWritesEnabled: false },
+      },
     }))
 
-    expect(result).toMatchObject({
-      state: 'demo',
-      tone: 'warning',
-      topbarLabel: '演示环境',
-      title: '演示环境 · 不可上线',
-    })
-    expect(result.detail).toContain('外部平台写入已关闭')
+    expect(result).toMatchObject({ state: 'demo', tone: 'warning', topbarLabel: '演示环境' })
+    expect(result.detail).toContain('当前是本地演示模式')
+    expect(result.facts).toContain('平台运营：人工处理（预期不自动写入）')
+    expect(result.actions.join('；')).not.toMatch(/授权|同步|OAuth/iu)
+  })
+
+  it('blocks production/manual when the production gate is false without treating manual writes as missing', () => {
+    const result = resolve(health({
+      setup: {
+        mode: 'production', productionGate: false,
+        platformOperations: { mode: 'manual', ready: true, automatedWritesEnabled: false },
+      },
+    }))
+
+    expect(result).toMatchObject({ state: 'blocked', tone: 'warning', topbarLabel: '不可上线' })
     expect(result.detail).toContain('生产上线门禁未通过')
-    expect(result.detail).toContain('不代表生产就绪')
-    expect(`${result.title}${result.topbarLabel}`).not.toContain('在线')
+    expect(result.detail).not.toContain('外部平台写入已关闭')
+    expect(result.actions.join('；')).not.toMatch(/授权|同步|OAuth/iu)
+  })
+
+  it('marks production/manual ready when gate and model pass while automated writes remain off', () => {
+    const result = resolve(health())
+
+    expect(result).toMatchObject({ state: 'ready', tone: 'ready', topbarLabel: '生产就绪' })
+    expect(result.detail).toContain('平台作业按预期由人工完成')
+    expect(result.detail).toContain('不启用自动写入')
+    expect(result.facts).toContain('自动平台写入：已关闭')
+  })
+
+  it('still blocks production/manual when the model relay is not ready', () => {
+    const result = resolve(health(), { state: 'blocked' })
+
+    expect(result).toMatchObject({ state: 'blocked', tone: 'warning' })
+    expect(result.detail).toContain('模型中转未就绪')
   })
 
   it.each([
-    {
-      caseName: 'fixture mode',
-      apiHealth: health({ setup: { mode: 'fixture', productionGate: true } }),
-      expectedState: 'demo',
-      evidence: '当前是本地演示模式',
-    },
-    {
-      caseName: 'failed production gate',
-      apiHealth: health({ setup: { mode: 'production', productionGate: false } }),
-      expectedState: 'blocked',
-      evidence: '生产上线门禁未通过',
-    },
-    {
-      caseName: 'closed external writes',
-      apiHealth: health({
-        writesEnabled: false,
-        setup: { mode: 'production', productionGate: true },
-      }),
-      expectedState: 'blocked',
-      evidence: '外部平台写入已关闭',
-    },
-    {
-      caseName: 'manual operations mode',
-      apiHealth: health({
-        writesEnabled: false,
-        setup: { mode: 'manual', productionGate: false },
-      }),
-      expectedState: 'manual',
-      evidence: '当前是人工运营模式',
-    },
-  ] as const)('blocks production readiness when only $caseName is unmet', ({
-    apiHealth,
-    expectedState,
-    evidence,
-  }) => {
-    const result = resolve(apiHealth)
-
-    expect(result).toMatchObject({ state: expectedState, tone: 'warning' })
-    if (expectedState !== 'manual') expect(result.title).toContain('不可上线')
-    expect(result.detail).toContain(evidence)
-    expect(result.topbarLabel).not.toBe('生产就绪')
-  })
-
-  it('explains that manual operations are intentional and does not suggest switching to production', () => {
+    { caseName: 'explicitly false', ready: false, evidence: '平台运营未就绪' },
+    { caseName: 'missing', ready: undefined, evidence: '未返回平台运营就绪证据' },
+  ] as const)('blocks production/manual when platform readiness is $caseName', ({ ready, evidence }) => {
     const result = resolve(health({
-      writesEnabled: false,
-      setup: { mode: 'manual', productionGate: false },
-    }))
-
-    expect(result).toMatchObject({
-      state: 'manual',
-      topbarLabel: '人工运营模式',
-      title: '人工运营模式 · 不自动写入平台',
-    })
-    expect(result.detail).toContain('不代表生产就绪')
-    expect(result.actions.join('；')).toContain('由运营人员在官方后台完成')
-    expect(result.actions.join('；')).not.toContain('切换到生产模式')
-    expect(result.actions.join('；')).not.toContain('完成可写平台连接')
-  })
-
-  it('fails closed when write or gate evidence is missing', () => {
-    const result = resolve(health({
-      writesEnabled: undefined,
-      setup: { mode: 'production' },
+      setup: {
+        mode: 'production', productionGate: true,
+        platformOperations: { mode: 'manual', ready, automatedWritesEnabled: false },
+      },
     }))
 
     expect(result).toMatchObject({ state: 'blocked', tone: 'warning' })
-    expect(result.detail).toContain('未返回外部写入能力证据')
-    expect(result.detail).toContain('未返回生产上线门禁证据')
+    expect(result.detail).toContain(evidence)
   })
 
-  it('shows production ready only after all server gates pass', () => {
-    const result = resolve(health())
+  it('blocks a contradictory manual mode that advertises automated writes', () => {
+    const result = resolve(health({
+      writesEnabled: true,
+      setup: {
+        mode: 'production', productionGate: true,
+        platformOperations: { mode: 'manual', ready: true, automatedWritesEnabled: true },
+      },
+    }))
 
-    expect(result).toMatchObject({
-      state: 'ready',
-      tone: 'ready',
-      topbarLabel: '生产就绪',
-      title: '生产环境已就绪',
-    })
+    expect(result).toMatchObject({ state: 'blocked', tone: 'warning' })
+    expect(result.detail).toContain('人工运营模式的自动写入边界未确认')
+  })
+
+  it('fails closed for an unknown platform operations mode', () => {
+    const result = resolve(health({
+      writesEnabled: undefined,
+      setup: { mode: 'production', productionGate: true, platformOperations: undefined },
+    }))
+
+    expect(result).toMatchObject({ state: 'blocked', tone: 'warning' })
+    expect(result.detail).toContain('未返回可识别的平台运营模式')
+    expect(result.topbarLabel).not.toBe('生产就绪')
+  })
+
+  it('fails closed for an unknown environment mode even when manual operations are ready', () => {
+    const result = resolve(health({
+      setup: {
+        productionGate: true,
+        platformOperations: { mode: 'manual', ready: true, automatedWritesEnabled: false },
+      },
+    }))
+
+    expect(result).toMatchObject({ state: 'blocked', tone: 'warning' })
+    expect(result.detail).toContain('未确认当前为生产环境')
+  })
+
+  it('keeps official API mode fail-closed without write evidence', () => {
+    const result = resolve(health({
+      writesEnabled: false,
+      setup: {
+        mode: 'production', productionGate: true,
+        platformOperations: { mode: 'official_api', ready: false, automatedWritesEnabled: false },
+      },
+    }))
+
+    expect(result).toMatchObject({ state: 'blocked', tone: 'warning' })
+    expect(result.detail).toContain('官方接口写入已关闭')
+    expect(result.detail).toContain('官方接口自动写入未就绪')
   })
 })

@@ -994,6 +994,9 @@ function Topbar({
   useEffect(() => {
     if (!accountMenuOpen) return
     const closeOnOutside = (event: MouseEvent) => {
+      // This account-menu child renders into a body portal. Its dialog clicks
+      // must not unmount the child before confirmation or cancellation runs.
+      if (event.target instanceof Element && event.target.closest('.merchant-local-plugin-modal')) return
       if (!accountMenuRef.current?.contains(event.target as Node))
         setAccountMenuOpen(false)
     }
@@ -2051,11 +2054,11 @@ export function isManualPlatformOperationsMode(apiMode: string | null | undefine
 }
 
 export function platformOperationsModeFromHealth(health: ApiHealth | null | undefined): string | null {
-  return health?.setup?.mode?.trim() || null
+  return health?.setup?.platformOperations?.mode?.trim().toLowerCase() || null
 }
 
 export function shouldDiscoverPlatformAccounts(baseUrl: string | undefined, apiMode: string | null | undefined): boolean {
-  return Boolean(baseUrl && apiMode && !isManualPlatformOperationsMode(apiMode))
+  return Boolean(baseUrl && apiMode?.trim().toLowerCase() === 'official_api')
 }
 
 export function Overview({

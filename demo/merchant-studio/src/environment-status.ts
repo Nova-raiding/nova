@@ -33,11 +33,9 @@ const modeLabels: Record<string, string> = {
   test: '测试',
   local: '本地开发',
   production: '生产',
-  manual: '人工运营',
 }
 
 const demoModes = new Set(['fixture', 'demo', 'test', 'local'])
-const manualModes = new Set(['manual'])
 
 function modelFact(
   modelStatus: PlatformModelStatus | null,
@@ -94,20 +92,32 @@ export function resolveMerchantEnvironmentStatus({
   const mode = apiHealth.setup?.mode?.trim().toLowerCase() || 'unknown'
   const modeLabel = modeLabels[mode] ?? mode
   const isDemo = demoModes.has(mode)
-  const isManual = manualModes.has(mode)
+  const platformOperationsMode = apiHealth.setup?.platformOperations?.mode?.trim().toLowerCase() || 'unknown'
+  const manualPlatformOperations = platformOperationsMode === 'manual'
+  const officialApiPlatformOperations = platformOperationsMode === 'official_api'
+  const platformOperationsReady = apiHealth.setup?.platformOperations?.ready
+  const automatedWritesEnabled = apiHealth.setup?.platformOperations?.automatedWritesEnabled
   const productionGate = apiHealth.setup?.productionGate
   const writesEnabled = apiHealth.writesEnabled
   const modelReady = modelStatusRead && modelStatus?.state === 'ready'
   const productionReady = mode === 'production'
     && productionGate === true
-    && writesEnabled === true
+    && platformOperationsReady === true
+    && (manualPlatformOperations
+      ? automatedWritesEnabled === false
+      : officialApiPlatformOperations && automatedWritesEnabled === true && writesEnabled === true)
     && modelReady
   const blockers: string[] = []
 
-  if (isDemo || isManual) blockers.push(`当前是${modeLabel}模式`)
+  if (isDemo) blockers.push(`当前是${modeLabel}模式`)
   else if (mode !== 'production') blockers.push('未确认当前为生产环境')
-  if (writesEnabled === false) blockers.push('外部平台写入已关闭')
-  else if (writesEnabled !== true) blockers.push('未返回外部写入能力证据')
+  if (!manualPlatformOperations && !officialApiPlatformOperations) blockers.push('未返回可识别的平台运营模式')
+  if (platformOperationsReady === false) blockers.push('平台运营未就绪')
+  else if (platformOperationsReady !== true) blockers.push('未返回平台运营就绪证据')
+  if (manualPlatformOperations && automatedWritesEnabled !== false) blockers.push('人工运营模式的自动写入边界未确认')
+  if (officialApiPlatformOperations && writesEnabled === false) blockers.push('官方接口写入已关闭')
+  else if (officialApiPlatformOperations && writesEnabled !== true) blockers.push('未返回官方接口写入能力证据')
+  if (officialApiPlatformOperations && automatedWritesEnabled !== true) blockers.push('官方接口自动写入未就绪')
   if (productionGate === false) blockers.push('生产上线门禁未通过')
   else if (productionGate !== true) blockers.push('未返回生产上线门禁证据')
   if (!modelStatusRead) blockers.push('模型中转状态仍在读取')
@@ -116,17 +126,18 @@ export function resolveMerchantEnvironmentStatus({
   const facts = [
     'API 连通：正常',
     `运行模式：${modeLabel}`,
-    `外部写入：${writesEnabled === true ? '已开放' : writesEnabled === false ? '已关闭' : '未确认'}`,
+    `平台运营：${manualPlatformOperations ? '人工处理（预期不自动写入）' : officialApiPlatformOperations ? '官方接口' : '未确认'}`,
+    `自动平台写入：${automatedWritesEnabled === true ? '已开放' : automatedWritesEnabled === false ? '已关闭' : '未确认'}`,
     `生产门禁：${productionGate === true ? '已通过' : productionGate === false ? '未通过' : '未确认'}`,
     modelFact(modelStatus, modelStatusRead),
   ]
   const actions: string[] = []
   if (isDemo)
-    actions.push('如需上线，请管理员切换到生产模式，并完成平台官方授权与生产门禁。')
-  if (isManual)
-    actions.push('当前为人工运营模式：平台授权、商品同步和正式发布由运营人员在官方后台完成；本页面不会自动写入平台。')
-  if (writesEnabled !== true && !isManual)
-    actions.push('请管理员完成可写平台连接；当前页面不会提交真实平台写入。')
+    actions.push('如需上线，请管理员切换到生产环境，并完成生产门禁。')
+  if (manualPlatformOperations)
+    actions.push('当前为预期的人工运营模式：商品数据采集、核验和平台发布由运营人员完成；本页面不会自动写入平台。')
+  if (officialApiPlatformOperations && (writesEnabled !== true || automatedWritesEnabled !== true))
+    actions.push('请管理员检查官方接口写入能力；当前页面不会提交真实平台写入。')
   if (!isDemo && productionGate !== true)
     actions.push('请管理员在运营后台查看并处理未通过或缺失的生产门禁。')
 
@@ -136,7 +147,9 @@ export function resolveMerchantEnvironmentStatus({
       tone: 'ready',
       topbarLabel: '生产就绪',
       title: '生产环境已就绪',
-      detail: '生产上线门禁、外部平台写入和模型中转均已通过服务端检查。',
+      detail: manualPlatformOperations
+        ? '生产上线门禁和模型中转已通过服务端检查；平台作业按预期由人工完成，不启用自动写入。'
+        : '生产上线门禁、官方接口写入和模型中转均已通过服务端检查。',
       facts,
       actions,
     }
@@ -147,10 +160,10 @@ export function resolveMerchantEnvironmentStatus({
     : '生成、图片、OCR 和视频能力将继续受服务端门禁限制。'
 
   return {
-    state: isDemo ? 'demo' : isManual ? 'manual' : 'blocked',
+    state: isDemo ? 'demo' : 'blocked',
     tone: 'warning',
-    topbarLabel: isDemo ? '演示环境' : isManual ? '人工运营模式' : '不可上线',
-    title: isDemo ? '演示环境 · 不可上线' : isManual ? '人工运营模式 · 不自动写入平台' : '当前环境不可上线',
+    topbarLabel: isDemo ? '演示环境' : '不可上线',
+    title: isDemo ? '演示环境 · 不可上线' : '当前环境不可上线',
     detail: `${blockers.join('；')}。${modelDetail}`,
     facts,
     actions,
