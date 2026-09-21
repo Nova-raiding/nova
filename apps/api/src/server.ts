@@ -4741,7 +4741,6 @@ const COMMERCIAL_READ_ONLY_METHODS = new Set([
   'billing.status', 'billing.transactions', 'billing.reconciliation', 'billing.model-usage.statement',
   'subscription.get', 'subscription.orders.list', 'platform.model.status',
   'platform.media.spec.list', 'platform.media.spec.get',
-  'catalog.sync.get',
   // Store discovery only reads the workspace-scoped directory. It must remain
   // available before commercial activation so a merchant can see whether an
   // operator-assigned/manual store is ready; sync, revoke and publishing keep
@@ -21654,10 +21653,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     // model, reserve points, charge money, or mutate commercial state; letting
     // the generic HTTP gate run here turns a harmless read into a misleading
     // COMMERCIAL_ENTITLEMENT_UNAVAILABLE 503 before the handler executes.
-    || (httpOperationPolicy !== undefined && (
-      COMMERCIAL_READ_ONLY_METHODS.has(httpOperationPolicy.operation)
-      || (httpOperationPolicy.mcpMethod !== undefined && COMMERCIAL_READ_ONLY_METHODS.has(httpOperationPolicy.mcpMethod))
-    ))
+    || (httpOperationPolicy !== undefined && COMMERCIAL_READ_ONLY_METHODS.has(httpOperationPolicy.operation))
   if (httpOperationPolicy && requestWorkspace !== 'unknown' && !workerRoute && !assetScannerRoute && !infrastructureProbe && !isOAuthCallback && !isOAuthAuthorization && !paymentCallbackMatch && !httpCommercialValidationDeferred) {
     await enforceHttpCommercialAccess(req, requestWorkspace, httpOperationPolicy.operation)
   }
