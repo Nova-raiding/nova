@@ -376,8 +376,22 @@ describe('durable outbox dispatcher', () => {
     // Simulate a duplicate transport delivery carrying the pre-ack claim.
     await queue.enqueue({ id: 'evt_duplicate', value: { ...event({ id: 'evt_duplicate' }), leaseToken: store.events.get('evt_duplicate')?.leaseToken, leaseUntil: store.events.get('evt_duplicate')?.leaseUntil } })
     const duplicate = await dispatcher.dispatchOnce()
-    expect(duplicate.state).toBe('dead_letter')
+    expect(duplicate.state).toBe('succeeded')
     expect(handler).toHaveBeenCalledOnce()
+  })
+
+  it('preserves an authoritative unknown outcome when a duplicate delivery arrives', async () => {
+    const unknownAt = new Date().toISOString()
+    const current = event({ id: 'evt_duplicate_unknown', leaseToken: 'lease_unknown', leaseUntil: new Date(Date.now() + 30_000).toISOString(), unknownAt })
+    const store = new Store(current)
+    const queue = new InMemoryQueue<DurableOutboxEvent>()
+    const handler = vi.fn(async () => ({ value: 'must-not-run' }))
+    await queue.enqueue({ id: current.id, value: current })
+
+    const result = await new DurableOutboxDispatcher(store, queue, handler).dispatchOnce()
+
+    expect(result).toMatchObject({ state: 'unknown', event: { unknownAt } })
+    expect(handler).not.toHaveBeenCalled()
   })
 
   it('executes the authoritative payload returned by lease validation', async () => {
@@ -411,10 +425,24 @@ describe('durable outbox dispatcher', () => {
     await queue.enqueue({ id: 'evt_other', value: { ...event({ id: 'evt_authoritative' }), leaseToken: 'lease_1', leaseUntil: new Date(Date.now() + 30_000).toISOString() } })
     const result = await dispatcher.dispatchOnce()
 
-    expect(result).toMatchObject({ state: 'dead_letter', event: { id: 'evt_authoritative' } })
+    expect(result).toMatchObject({ state: 'queued', event: { id: 'evt_authoritative' }, failure: { code: 'WORKER_QUEUE_DELIVERY_INVALID' } })
     expect(handler).not.toHaveBeenCalled()
     expect(acknowledge).toHaveBeenCalledOnce()
     expect(store.events.get('evt_authoritative')?.publishedAt).toBeUndefined()
+  })
+
+  it('discards a delivery without a lease token without reporting a dead letter', async () => {
+    const queued = event({ id: 'evt_missing_lease' })
+    const store = new Store(queued)
+    const queue = new InMemoryQueue<DurableOutboxEvent>()
+    const handler = vi.fn(async () => ({ value: 'must-not-run' }))
+    await queue.enqueue({ id: queued.id, value: queued })
+
+    const result = await new DurableOutboxDispatcher(store, queue, handler).dispatchOnce()
+
+    expect(result).toMatchObject({ state: 'queued', failure: { code: 'WORKER_QUEUE_DELIVERY_INVALID' } })
+    expect(handler).not.toHaveBeenCalled()
+    await expect(queue.contains(queued.id)).resolves.toBe(false)
   })
 
   it('fails closed when persistence returns an event outside the requested RLS workspace', async () => {
@@ -584,10 +612,11 @@ describe('durable outbox dispatcher', () => {
     const dispatcher = new DurableOutboxDispatcher(store, queue, handler, { leaseMs: 300, now: () => now })
     await dispatcher.restore('ws_1')
     now += 301
-    expect((await dispatcher.dispatchOnce()).state).toBe('dead_letter')
+    expect(await dispatcher.dispatchOnce()).toMatchObject({ state: 'queued', failure: { code: 'WORKER_DELIVERY_LEASE_LOST', retryable: true, unknown: false } })
     expect(handler).not.toHaveBeenCalled()
     expect(ack).toHaveBeenCalledOnce()
     expect(nack).not.toHaveBeenCalled()
+    expect(store.events.get('evt_stale')?.lastError).toBeUndefined()
   })
 
   it('renews a live lease every leaseMs/3 while a long handler is running', async () => {
@@ -632,9 +661,27 @@ describe('durable outbox dispatcher', () => {
     const dispatched = dispatcher.dispatchOnce()
     await vi.advanceTimersByTimeAsync(100)
 
-    await expect(dispatched).resolves.toMatchObject({ state: 'dead_letter' })
+    await expect(dispatched).resolves.toMatchObject({ state: 'unknown', failure: { code: 'WORKER_OUTCOME_NOT_RECORDED_LEASE_LOST', unknown: true } })
     expect(handler).toHaveBeenCalledOnce()
     expect(acknowledgeSuccess).not.toHaveBeenCalled()
+    expect(store.events.get('evt_lost')?.lastError).toBeUndefined()
+  })
+
+  it('reports a handler failure that lost its lease before persistence as unknown, not dead-lettered', async () => {
+    const store = new Store(event({ id: 'evt_failure_lease_lost' }))
+    const queue = new InMemoryQueue<DurableOutboxEvent>()
+    vi.spyOn(store, 'recordFailure').mockRejectedValueOnce(staleLeaseError())
+    const dispatcher = new DurableOutboxDispatcher(store, queue, async () => {
+      throw new WorkerFailure({ code: 'PROVIDER_REJECTED', message: 'provider rejected request', retryable: false, unknown: false })
+    })
+
+    await dispatcher.restore('ws_1')
+    await expect(dispatcher.dispatchOnce()).resolves.toMatchObject({
+      state: 'unknown',
+      failure: { code: 'WORKER_OUTCOME_NOT_RECORDED_LEASE_LOST', unknown: true },
+    })
+    expect(store.events.get('evt_failure_lease_lost')?.lastError).toBeUndefined()
+    await expect(queue.contains('evt_failure_lease_lost')).resolves.toBe(false)
   })
 
   it('drops a delivery it can no longer prove is ours and re-delivers it under a fresh claim', async () => {
@@ -890,7 +937,7 @@ describe('durable outbox dispatcher', () => {
     expect(store.events.get('evt_stale_delivery')?.leaseToken).toBeUndefined()
     // The delivery the queue still holds predates this claim, so dispatching it
     // only drops it - the handler must not run under an invalidated token.
-    expect((await dispatcher.dispatchOnce()).state).toBe('dead_letter')
+    expect((await dispatcher.dispatchOnce()).state).toBe('queued')
     expect(handler).not.toHaveBeenCalled()
 
     // The event still has its whole budget and a fresh delivery.

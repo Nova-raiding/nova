@@ -444,6 +444,18 @@ const UNRECORDED_OUTCOME_LEASE_LOST: WorkerError = {
   retryable: false,
   unknown: true,
 }
+const UNSTARTED_DELIVERY_LEASE_LOST: WorkerError = {
+  code: 'WORKER_DELIVERY_LEASE_LOST',
+  message: 'delivery lease expired before execution started; the durable event remains pending for a fresh claim',
+  retryable: true,
+  unknown: false,
+}
+const INVALID_QUEUE_DELIVERY: WorkerError = {
+  code: 'WORKER_QUEUE_DELIVERY_INVALID',
+  message: 'queue delivery identity is invalid; the durable event was not executed',
+  retryable: true,
+  unknown: false,
+}
 export type DurableOutboxHandler<E, R> = (context: { event: E; attempt: number; now: number; signal?: AbortSignal }) => Promise<HandlerResult<R> | R>
 
 export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutboxEvent, R = unknown> {
@@ -615,7 +627,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     // restore() can rebuild the authoritative event by its own id.
     if (message.id !== event.id) {
       await this.queue.ack(message)
-      return { state: 'dead_letter', event }
+      return { state: 'queued', event, failure: withAuthorizationCorrelation(event, INVALID_QUEUE_DELIVERY) }
     }
     // `attempts` is the claim counter: the repository increments it atomically
     // with the lease, so it also counts attempts that ended in a crash.
@@ -623,7 +635,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     const leaseToken = event.leaseToken
     if (!leaseToken) {
       await this.queue.ack(message)
-      return { state: 'dead_letter', event }
+      return { state: 'queued', event, failure: withAuthorizationCorrelation(event, INVALID_QUEUE_DELIVERY) }
     }
 
     try {
@@ -637,7 +649,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
       // invoke the handler again once the durable outcome is already recorded.
       if (leasedEvent.publishedAt || leasedEvent.unknownAt) {
         await this.queue.ack(message)
-        return { state: 'dead_letter', event: leasedEvent }
+        return { state: leasedEvent.unknownAt ? 'unknown' : 'succeeded', event: leasedEvent }
       }
       // A worker that dies mid-handler never records an outcome, so `attempts`
       // kept by failures alone can never bound the retries. The claim counter
@@ -647,7 +659,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
         return await this.exhaustClaimBudget(leasedEvent, message)
       }
     } catch (leaseError) {
-      return this.handleLeaseError(event, message, leaseError)
+      return this.handleLeaseError(event, message, leaseError, false)
     }
 
     // The lease is now provably this worker's, so this is the first point where
@@ -714,7 +726,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     } catch (cause) {
       if (timeoutRejectTimer !== undefined) clearTimeout(timeoutRejectTimer)
       await stopHeartbeat()
-      if (leaseError !== undefined) return this.handleLeaseError(event, message, leaseError)
+      if (leaseError !== undefined) return this.handleLeaseError(event, message, leaseError, true)
       if (handlerTimedOut || cause instanceof WorkerTimeoutError) {
         return this.recordHandlerFailure(event, message, withAuthorizationCorrelation(event, { code: 'WORKER_HANDLER_TIMEOUT', message: 'worker handler timed out; outcome requires reconciliation', retryable: false, unknown: true }))
       }
@@ -723,7 +735,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     }
     if (timeoutRejectTimer !== undefined) clearTimeout(timeoutRejectTimer)
     await stopHeartbeat()
-    if (leaseError !== undefined) return this.handleLeaseError(event, message, leaseError)
+    if (leaseError !== undefined) return this.handleLeaseError(event, message, leaseError, true)
 
     try {
       if (normalized.state === 'unknown') {
@@ -757,7 +769,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     }
   }
 
-  private async handleLeaseError(event: E, message: QueueMessage<E>, leaseError: unknown): Promise<DurableDispatchResult<E>> {
+  private async handleLeaseError(event: E, message: QueueMessage<E>, leaseError: unknown, executionStarted: boolean): Promise<DurableDispatchResult<E>> {
     // A claim that could not be renewed is not provably this worker's any more.
     // Requeueing this delivery only parks a token that the next claim
     // invalidates - in the poll loop that claim always runs first - and the
@@ -765,7 +777,15 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     // the durable row stays pending, so restore() re-delivers the event with a
     // fresh claim once the lease is genuinely reclaimable.
     await this.queue.ack(message)
-    if (isStaleOutboxError(leaseError)) return { state: 'dead_letter', event }
+    if (isStaleOutboxError(leaseError)) {
+      // Losing a delivery lease does not make the durable event terminal. If
+      // execution never started, the row is simply waiting for a fresh claim.
+      // If it started, an external side effect may already exist and the
+      // unrecorded outcome requires reconciliation. Reporting either case as a
+      // dead letter makes metrics and logs contradict the still-pending row.
+      const failure = withAuthorizationCorrelation(event, executionStarted ? UNRECORDED_OUTCOME_LEASE_LOST : UNSTARTED_DELIVERY_LEASE_LOST)
+      return executionStarted ? { state: 'unknown', event, failure } : { state: 'queued', event, failure }
+    }
     throw leaseError
   }
 
@@ -836,9 +856,11 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
       return { state: 'queued', event: updated }
     } catch (persistenceError) {
       if (isStaleOutboxError(persistenceError)) {
-        // The database is authoritative; this queue message carries an expired lease.
+        // The handler ran but its failure could not be recorded. The durable
+        // row remains pending and will be claimed again, so this is an unknown
+        // unrecorded outcome rather than a terminal dead letter.
         await this.queue.ack(message)
-        return { state: 'dead_letter', event }
+        return { state: 'unknown', event, failure: withAuthorizationCorrelation(event, UNRECORDED_OUTCOME_LEASE_LOST) }
       }
       await this.queue.nack(message, retryAfterLeaseMs(event, this.now(), this.baseDelayMs))
       throw persistenceError
