@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, posix, resolve } from 'node:path'
@@ -77,6 +78,27 @@ export interface SafeTestRuntime {
 }
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+
+const EXPLICIT_TEST_FILE = /\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/u
+
+/**
+ * Vitest exits successfully when one requested file exists even if another
+ * explicit file argument is misspelled. Release scripts enumerate long test
+ * lists, so that behaviour can silently shrink the gate while leaving it
+ * green. Validate path-shaped test selections before allocating fixtures or
+ * starting the child process; ordinary name-pattern filters remain supported.
+ */
+export function validateExplicitTestFiles(input: readonly string[], root = projectRoot): void {
+  for (const argument of input) {
+    if (argument.startsWith('-') || ['run', 'watch'].includes(argument)) continue
+    const selection = argument.replace(/:\d+(?:-\d+)?$/u, '')
+    if (!EXPLICIT_TEST_FILE.test(selection) || !/[\\/]/u.test(selection)) continue
+    if (!existsSync(resolve(root, selection))) {
+      throw new Error(`Explicit test file does not exist: ${argument}`)
+    }
+  }
+}
+
 const ownedStorageRoots = new Set<string>()
 const defaultRuntime: SafeTestRuntime = {
   async createStorageRoot() {
@@ -135,6 +157,7 @@ const defaultRuntime: SafeTestRuntime = {
 
 export async function runSafeTests(args: readonly string[], source: NodeJS.ProcessEnv = process.env, runtime: SafeTestRuntime = defaultRuntime): Promise<number> {
   const vitestArgs = buildSafeVitestArgs(args)
+  validateExplicitTestFiles(args)
   const storageRoot = await runtime.createStorageRoot()
   try {
     return await runtime.runVitest(vitestArgs, buildSafeTestEnvironment(source, storageRoot))

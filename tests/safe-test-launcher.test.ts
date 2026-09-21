@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { PENDING_GATE_REPORTER, buildSafeTestEnvironment, buildSafeVitestArgs, runSafeTests, type SafeTestRuntime } from '../scripts/run-safe-tests.js'
+import { PENDING_GATE_REPORTER, buildSafeTestEnvironment, buildSafeVitestArgs, runSafeTests, type SafeTestRuntime, validateExplicitTestFiles } from '../scripts/run-safe-tests.js'
 import { NON_HERMETIC_TEST_FILES } from './test-suite-isolation.js'
 
 describe('safe default test launcher', () => {
@@ -20,6 +20,14 @@ describe('safe default test launcher', () => {
     expect(buildSafeVitestArgs(['tests/safe-test-launcher.test.ts', '--outputFile=/tmp/test-report.json']))
       .toEqual(['run', 'tests/safe-test-launcher.test.ts', '--outputFile=/tmp/test-report.json', '--passWithNoTests=false'])
     expect(buildSafeVitestArgs(['run', '--no-file-parallelism'])).toEqual(['run', '--no-file-parallelism', '--passWithNoTests=false'])
+  })
+
+  it('rejects one missing explicit test file even when other selections can pass', () => {
+    expect(() => validateExplicitTestFiles([
+      'tests/safe-test-launcher.test.ts',
+      'tests/misspelled-release-gate.test.ts',
+    ])).toThrow('Explicit test file does not exist: tests/misspelled-release-gate.test.ts')
+    expect(() => validateExplicitTestFiles(['safe test name filter'])).not.toThrow()
   })
 
   it('re-adds the pending-assertion gate to every caller-supplied reporter list', () => {
@@ -104,6 +112,14 @@ describe('safe default test launcher', () => {
   it('fails before filesystem or child activity for a forbidden explicit selection', async () => {
     const runtime = fixture()
     await expect(runSafeTests(['tests/local-docker-fault-acceptance.test.ts'], {}, runtime)).rejects.toThrow(/dedicated integration entrypoint/u)
+    expect(runtime.createStorageRoot).not.toHaveBeenCalled()
+    expect(runtime.runVitest).not.toHaveBeenCalled()
+    expect(runtime.removeStorageRoot).not.toHaveBeenCalled()
+  })
+
+  it('fails before filesystem or child activity for a missing explicit test file', async () => {
+    const runtime = fixture()
+    await expect(runSafeTests(['tests/safe-test-launcher.test.ts', 'tests/missing.test.ts'], {}, runtime)).rejects.toThrow(/does not exist/u)
     expect(runtime.createStorageRoot).not.toHaveBeenCalled()
     expect(runtime.runVitest).not.toHaveBeenCalled()
     expect(runtime.removeStorageRoot).not.toHaveBeenCalled()

@@ -88,6 +88,9 @@ describe('quality entrypoint coverage', () => {
     expect(check).toContain('npm run release:metadata:validate')
     expect(check).toContain('npm run build:ops-console')
     expect(check).toContain('npm run build:merchant-studio')
+    expect(check).toContain('npm run test:plugin-import-contract')
+    expect(script('test:plugin-import-contract')).toContain('apps/plugin/skills/six-platform-public-import/scripts/extract-product.test.mjs')
+    expect(script('test:plugin-import-contract')).toContain('.codex-marketplace/plugins/merchant-marketing/skills/six-platform-public-import/scripts/extract-product.test.mjs')
     // `invariants:verify` was the only mechanism in this repository that proves
     // other assertions can fail, and nothing executed it: the 23/23 headline
     // was a one-off run, not a gate. The strict pass needs an isolated
@@ -119,7 +122,7 @@ describe('quality entrypoint coverage', () => {
       expect(onDisk).toContain(entry.file)
       expect(entry.reason.length, `${entry.file} must explain itself in a sentence, not a word`).toBeGreaterThan(80)
     }
-  })
+  }, 15_000)
 
   it('schedules every browser spec in a Playwright project or a runner argument', () => {
     expect(browserSpecFilesOnDisk(root).length).toBeGreaterThan(0)
