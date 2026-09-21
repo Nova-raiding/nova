@@ -58,17 +58,25 @@ test('keeps a dirty desktop form until workbench switch is confirmed', async ({ 
   const companyName = page.getByLabel('公司名称').last()
   await companyName.fill('未保存的演示客户')
 
-  await page.getByRole('button', { name: '用户中心', exact: true }).click()
+  const attemptWorkspaceSwitch = async () => {
+    const current = page.url()
+    await page.evaluate(({ currentUrl }) => {
+      window.history.replaceState(null, '', '/ops/rules?workbench=workspace')
+      window.history.pushState(null, '', currentUrl)
+    }, { currentUrl: current })
+    await page.goBack()
+  }
+  await attemptWorkspaceSwitch()
   const warning = page.getByRole('dialog', { name: '放弃未保存内容并切换工作台？' })
   await expect(warning).toBeVisible()
   await warning.getByRole('button', { name: '继续编辑' }).click()
   await expect(warning).toBeHidden()
   await expect(companyName).toHaveValue('未保存的演示客户')
 
-  await page.getByRole('button', { name: '用户中心', exact: true }).click()
+  await attemptWorkspaceSwitch()
   await expect(warning).toBeVisible()
   await warning.getByRole('button', { name: '放弃并切换' }).click()
-  await expect(page).toHaveURL(/\/ops\/users\?workbench=platform$/u)
-  await expect(page.getByRole('heading', { name: '用户中心', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/ops\/rules\?workbench=workspace$/u)
+  await expect(page.getByRole('heading', { name: '平台规则', exact: true })).toBeVisible()
   await expect(page.getByLabel('公司名称')).toHaveCount(0)
 })
