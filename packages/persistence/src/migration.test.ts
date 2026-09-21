@@ -97,6 +97,8 @@ describe('MigrationRunner', () => {
     expect(byVersion.get(238)?.sql).toContain('GRANT SELECT, INSERT ON authorization_revisions TO merchant_ops')
     expect(byVersion.get(239)).toMatchObject({ name: 'repair_mcp_oauth_ops_acl' })
     expect(byVersion.get(239)?.sql).toContain('GRANT SELECT, INSERT, UPDATE ON mcp_oauth_tokens TO merchant_ops')
+    expect(byVersion.get(239)?.sql).toContain('REVOKE ALL ON mcp_oauth_authorization_codes FROM PUBLIC, merchant_app')
+    expect(byVersion.get(239)?.sql).toContain('REVOKE ALL ON mcp_oauth_tokens FROM PUBLIC, merchant_app')
     expect(byVersion.get(100)).toMatchObject({ name: 'operation_alert_notifications' })
     expect(byVersion.get(101)).toMatchObject({ name: 'canonical_backfill_runs' })
     expect(byVersion.get(102)).toMatchObject({ name: 'canonical_backfill_conflicts' })

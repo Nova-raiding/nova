@@ -12,10 +12,12 @@ BEGIN
       GRANT SELECT ON workspaces TO merchant_ops;
     END IF;
     IF to_regclass('public.mcp_oauth_authorization_codes') IS NOT NULL THEN
+      REVOKE ALL ON mcp_oauth_authorization_codes FROM PUBLIC, merchant_app;
       GRANT SELECT, INSERT, UPDATE ON mcp_oauth_authorization_codes TO merchant_ops;
       REVOKE DELETE, TRUNCATE ON mcp_oauth_authorization_codes FROM merchant_ops;
     END IF;
     IF to_regclass('public.mcp_oauth_tokens') IS NOT NULL THEN
+      REVOKE ALL ON mcp_oauth_tokens FROM PUBLIC, merchant_app;
       GRANT SELECT, INSERT, UPDATE ON mcp_oauth_tokens TO merchant_ops;
       REVOKE DELETE, TRUNCATE ON mcp_oauth_tokens FROM merchant_ops;
     END IF;
