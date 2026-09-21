@@ -5,8 +5,8 @@ import { resolve, sep } from 'node:path'
 const REQUIRED_SCENARIOS = [
   'plugin_discovery',
   'merchant_start',
-  'wallet_recharge_entry',
-  'platform_oauth_entry',
+  'merchant_payment_status',
+  'manual_publish_workflow',
   'asset_attachment',
   'error_recovery',
   'image_generation',

@@ -12,8 +12,8 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFile
 import { dirname, resolve, relative, sep } from 'node:path'
 
 const REQUIRED_SCENARIOS = [
-  'plugin_discovery', 'merchant_start', 'wallet_recharge_entry',
-  'platform_oauth_entry', 'asset_attachment', 'error_recovery',
+  'plugin_discovery', 'merchant_start', 'merchant_payment_status',
+  'manual_publish_workflow', 'asset_attachment', 'error_recovery',
   'image_generation', 'automatic_scan', 'candidate_images_rendered',
   'candidate_primary_cta', 'candidate_selection_persisted',
   'selection_not_reviewed', 'selection_not_published',

@@ -13,7 +13,9 @@
 
 按以下顺序执行并分别保存截图、宿主日志和 MCP 请求/响应摘要：
 
-`plugin_discovery`、`merchant_start`、`wallet_recharge_entry`、`platform_oauth_entry`、`asset_attachment`、`error_recovery`、`image_generation`、`automatic_scan`、`candidate_images_rendered`、`candidate_primary_cta`、`candidate_selection_persisted`、`selection_not_reviewed`、`selection_not_published`、`automation_read_only`、`automation_host_absent`。
+`plugin_discovery`、`merchant_start`、`merchant_payment_status`、`manual_publish_workflow`、`asset_attachment`、`error_recovery`、`image_generation`、`automatic_scan`、`candidate_images_rendered`、`candidate_primary_cta`、`candidate_selection_persisted`、`selection_not_reviewed`、`selection_not_published`、`automation_read_only`、`automation_host_absent`。
+
+`merchant_payment_status` 仅验证 ChatGPT 能读取商家后台的支付/权益状态，不在插件内发起充值或真实扣款。`manual_publish_workflow` 验证六平台人工发布报告的查询和租户隔离，不要求平台 OAuth/API/Vault。
 
 重点要求：
 
