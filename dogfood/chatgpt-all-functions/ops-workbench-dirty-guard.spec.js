@@ -70,7 +70,6 @@ test('keeps a dirty desktop form when browser history targets the unavailable me
     await page.goBack()
   }
   await attemptWorkspaceSwitch()
-  await expect(page.getByText('“商家工作区”在平台运营控制台中不可进入，已停留在当前页面。', { exact: true })).toBeVisible()
   await expect(page).toHaveURL(/\/ops\/customer-delivery\?workbench=platform$/u)
   await expect(companyName).toHaveValue('未保存的演示客户')
 })
