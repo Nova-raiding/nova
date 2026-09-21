@@ -686,6 +686,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const supportSlaCorrectionApprovalApprover = await readFile(new URL('./migrations/233_support_sla_correction_approval_approver.sql', import.meta.url), 'utf8')
   const repairCustomerDeliveryControlPlaneAcl = await readFile(new URL('./migrations/234_repair_customer_delivery_control_plane_acl.sql', import.meta.url), 'utf8')
   const repairAuthorizationReservationAcl = await readFile(new URL('./migrations/235_repair_authorization_reservation_acl.sql', import.meta.url), 'utf8')
+  const repairOpsReadAcl = await readFile(new URL('./migrations/236_repair_ops_read_acl.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -922,6 +923,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 233, name: 'support_sla_correction_approval_approver', sql: supportSlaCorrectionApprovalApprover },
     { version: 234, name: 'repair_customer_delivery_control_plane_acl', sql: repairCustomerDeliveryControlPlaneAcl },
     { version: 235, name: 'repair_authorization_reservation_acl', sql: repairAuthorizationReservationAcl },
+    { version: 236, name: 'repair_ops_read_acl', sql: repairOpsReadAcl },
   ]
 }
 

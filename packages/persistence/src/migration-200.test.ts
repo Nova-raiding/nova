@@ -37,4 +37,11 @@ describe('customer delivery control-plane migration', () => {
     expect(migration?.sql).toContain('GRANT SELECT, INSERT ON authorization_execution_reservations TO merchant_ops')
     expect(migration?.sql).not.toMatch(/DROP TABLE|DELETE FROM|TRUNCATE TABLE/u)
   })
+
+  it('registers an idempotent Ops read ACL repair for restored databases', async () => {
+    const migration = (await loadMigrations()).find(item => item.version === 236)
+    expect(migration?.name).toBe('repair_ops_read_acl')
+    expect(migration?.sql).toContain('GRANT SELECT ON TABLE %I TO merchant_ops')
+    expect(migration?.sql).not.toMatch(/DROP TABLE|DELETE FROM|TRUNCATE TABLE/u)
+  })
 })
