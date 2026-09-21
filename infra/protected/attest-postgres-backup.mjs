@@ -1,4 +1,4 @@
-#!/opt/node-v22-current/bin/node
+#!/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node
 // Install as a root-owned, digest-pinned executable outside the repository.
 // This process owns pg_dump, the exported snapshot and the production key.
 import { createHash, createPrivateKey, createPublicKey, randomBytes, sign, verify } from 'node:crypto'
@@ -13,8 +13,8 @@ const SOURCE_POLICY = join(TRUST_ROOT, 'production-backup-source.json')
 const BACKUP_ROOT = '/var/lib/merchant-release-security/backups'
 const INSTALLED_PATH = '/usr/local/libexec/merchant/attest-postgres-backup'
 const INSTALLED_DIGEST = join(TRUST_ROOT, 'production-backup-attester-sha256')
-const PSQL = '/usr/bin/psql'
-const PG_DUMP = '/usr/bin/pg_dump'
+const PSQL = '/usr/pgsql-16/bin/psql'
+const PG_DUMP = '/usr/pgsql-16/bin/pg_dump'
 const MAX_VALIDITY_SECONDS = 24 * 60 * 60
 const MAX_CAPTURE_BYTES = 16 * 1024
 const SNAPSHOT_TIMEOUT_MS = 30_000
