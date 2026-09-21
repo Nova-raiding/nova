@@ -36,8 +36,10 @@ printf '%s' "${ECS_POST_DEPLOY_HEALTH_TIMEOUT_SECONDS:-300}" | grep -Eq '^[1-9][
 APP_URL="$PRODUCTION_API_BASE_URL" APPROVED_ORIGIN="$PRODUCTION_APPROVED_ORIGIN" node -e '
   const app=new URL(process.env.APP_URL),approved=new URL(process.env.APPROVED_ORIGIN)
   const exactOrigin=url=>url.protocol==="https:"&&!url.username&&!url.password&&!url.search&&!url.hash&&url.pathname==="/"&&url.href===url.origin+"/"
-  if(!exactOrigin(app)||!exactOrigin(approved)||app.origin!==approved.origin) throw new Error("production API URL must exactly match the approved HTTPS origin")
-' || { echo 'PRODUCTION_API_BASE_URL must exactly match PRODUCTION_APPROVED_ORIGIN' >&2; exit 2; }
+  const safeBase=url=>url.protocol==="https:"&&!url.username&&!url.password&&!url.search&&!url.hash&&(url.pathname==="/"||/^\/(?:[A-Za-z0-9_-]+)(?:\/[A-Za-z0-9_-]+)*\/?$/.test(url.pathname))
+  const prefix=app.pathname==="/"?"":app.pathname.replace(/\/$/,"")
+  if(!exactOrigin(approved)||!safeBase(app)||app.origin!==approved.origin||![app.origin+prefix,app.origin+prefix+"/"].includes(process.env.APP_URL)) throw new Error("production API URL must be a canonical path under the approved HTTPS origin")
+' || { echo 'PRODUCTION_API_BASE_URL must be a canonical HTTPS path under PRODUCTION_APPROVED_ORIGIN' >&2; exit 2; }
 for path in "$PRODUCTION_CONFIG_PATH" "$RENDERED_COMPOSE_PATH" "$ECS_CANDIDATE_IDENTITY_PATH"; do
   [ -f "$path" ] && [ ! -L "$path" ] || { echo "deployment input must be a regular non-symlink file: $path" >&2; exit 2; }
 done

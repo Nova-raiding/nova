@@ -17,6 +17,10 @@ describe('verified ECS Compose deployment runner', () => {
     expect(script).toContain('ECS_DEPLOY_STATE_DIR must be absolute')
     expect(script).toContain('ECS_DEPLOY_LOCK_PATH must be canonical')
     expect(script).toContain('flock -n 9')
+    expect(script).toContain('const safeBase=url=>')
+    expect(script).toContain('app.origin!==approved.origin')
+    expect(script).toContain('app.origin+prefix')
+    expect(script).toContain('PRODUCTION_API_BASE_URL must be a canonical HTTPS path under PRODUCTION_APPROVED_ORIGIN')
   })
 
   it('binds the committed candidate before consuming the nonce or mutating Compose', () => {
