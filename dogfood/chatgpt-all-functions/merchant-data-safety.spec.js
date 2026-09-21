@@ -88,7 +88,7 @@ async function openFinalPublishConfirmation(page, publishRoute) {
   const publishEntry = page.getByRole('button', { name: /进入发布|继续确认发布/ })
   await expect(publishEntry).toBeEnabled({ timeout: 15_000 })
   await publishEntry.click()
-  const dialog = page.getByRole('dialog', { name: /确认更新淘宝商品/ })
+  const dialog = page.getByRole('dialog', { name: /提交人工发布任务/ })
   await expect(dialog).toBeVisible()
   await dialog.getByRole('checkbox').check()
   return dialog
@@ -140,7 +140,7 @@ test('500 keeps confirmation recoverable and replay uses one idempotency intent'
     return fulfillJson(route, job, 202)
   })
 
-  await dialog.getByRole('button', { name: '确认更新淘宝商品' }).click()
+  await dialog.getByRole('button', { name: '提交人工发布任务' }).click()
   const error = dialog.getByRole('alert').filter({ hasText: '发布响应丢失' })
   await expect(error).toBeVisible()
   await expect(error).toBeFocused()
@@ -170,7 +170,7 @@ test('publish timeout never shows success and retry preserves confirmation and i
     return fulfillJson(route, acceptedJob, 202)
   })
 
-  await dialog.getByRole('button', { name: '确认更新淘宝商品' }).click()
+  await dialog.getByRole('button', { name: '提交人工发布任务' }).click()
   const error = dialog.getByRole('alert').filter({ hasText: 'API 请求超时' })
   await expect(error).toBeVisible({ timeout: 15_000 })
   await expect(error).toBeFocused()
@@ -350,9 +350,9 @@ test('same-platform same-name selection preserves store identity through task fa
   await expect(approval).toBeChecked()
   await expect(page.getByRole('button', { name: /继续确认发布/ })).toBeEnabled()
   await page.getByRole('button', { name: /继续确认发布/ }).click()
-  const dialog = page.getByRole('dialog', { name: /确认更新淘宝商品/ })
+  const dialog = page.getByRole('dialog', { name: /提交人工发布任务/ })
   await expect(dialog).toContainText('淘宝 B 店 · 店铺身份已确认')
-  await expect(dialog).toContainText('写入店铺“淘宝 B 店”')
+  await expect(dialog).toContainText('在店铺“淘宝 B 店”的上述淘宝商品中人工发布')
   await expect(dialog).not.toContainText('淘宝 A 店')
 })
 
@@ -407,6 +407,5 @@ test('legacy publish route returns to knowledge without loading the retired publ
   await expect(page.getByText('暂无真实发布任务', { exact: true })).toHaveCount(0)
   await expect.poll(() => publishListRequests).toBe(0)
 })
-
 
 
