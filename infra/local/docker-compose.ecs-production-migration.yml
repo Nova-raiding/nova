@@ -26,6 +26,7 @@ services:
       PGDATABASE: ${PGDATABASE:-merchant}
       PGUSER: ${PGUSER:-merchant}
       PGPASSWORD: ${PGPASSWORD:-merchant_local_only}
+      PGSSLMODE: ${PGSSLMODE:-require}
       DATABASE_URL: ${DATABASE_URL:-postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant}
       OPS_DATABASE_URL: ${OPS_DATABASE_URL:-postgres://merchant_ops:merchant_ops_local_only@postgres:5432/merchant}
       ALERT_RECEIVER_DATABASE_URL: ${ALERT_RECEIVER_DATABASE_URL:-postgres://merchant_alert_receiver:merchant_alert_receiver_local_only@postgres:5432/merchant}
