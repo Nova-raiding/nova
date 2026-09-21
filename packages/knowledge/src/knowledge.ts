@@ -298,6 +298,11 @@ const stableSerialize = (value: unknown): string => {
     .join(',')}}`
 }
 
+const restoreMap = <K, V>(target: Map<K, V>, snapshot: ReadonlyMap<K, V>): void => {
+  target.clear()
+  for (const [key, value] of snapshot) target.set(key, value)
+}
+
 const requiredText = (value: string | undefined, code: string): string => {
   if (typeof value !== 'string' || !value.trim()) throw new KnowledgeError(code)
   return value.trim()
@@ -382,6 +387,7 @@ const matchesContext = (rule: RuleEntry, context: RuleContext): boolean => {
 const containsText = (values: readonly string[], text: string): boolean => values.some(value => value.toLocaleLowerCase().includes(text))
 
 const forbiddenCompetitorKeys = new Set(['originalText', 'copiedText', 'copyBrand', 'exactCopy', 'verbatimText'])
+const knownKnowledgeEventTypes = new Set(['knowledge.rule.created', 'knowledge.rule.updated', 'knowledge.asset.created', 'knowledge.asset.updated', 'knowledge.brand.preference.updated', 'knowledge.competitor.created', 'knowledge.feedback.recorded', 'knowledge.learning.confirmed', 'knowledge.learning.dismissed', 'task_feedback_submitted', 'publish.observation'])
 
 function assertCompetitorInput(input: object): void {
   const visit = (value: unknown): void => {
@@ -436,9 +442,39 @@ export class KnowledgeModule {
 
   /** Rebuild knowledge state from append-only events after an API restart. */
   hydrate(events: readonly KnowledgeEvent[]): void {
-    for (const event of events) {
-      const known = new Set(['knowledge.rule.created', 'knowledge.rule.updated', 'knowledge.asset.created', 'knowledge.asset.updated', 'knowledge.brand.preference.updated', 'knowledge.competitor.created', 'knowledge.feedback.recorded', 'knowledge.learning.confirmed', 'knowledge.learning.dismissed', 'task_feedback_submitted', 'publish.observation'])
-      if (!known.has(event.eventType)) throw new KnowledgeError('KNOWLEDGE_EVENT_UNKNOWN', `unsupported knowledge event: ${event.eventType}`)
+    const checkpoint = {
+      sequence: this.sequence,
+      rules: new Map(this.rules), assets: new Map(this.assets), brandPreferences: new Map(this.brandPreferences),
+      feedback: new Map(this.feedback), suggestions: new Map(this.suggestions), competitors: new Map(this.competitors),
+      hydratedSequences: new Map(this.hydratedSequences), hydratedEventFingerprints: new Map(this.hydratedEventFingerprints),
+    }
+    try {
+      // Validate the whole batch before applying its first projection. Snapshot
+      // hydration bypasses the API's incremental-event checks, so this module is
+      // the final tenant and aggregate trust boundary for every replay source.
+      for (const event of events) {
+        if (!knownKnowledgeEventTypes.has(event.eventType)) throw new KnowledgeError('KNOWLEDGE_EVENT_UNKNOWN', `unsupported knowledge event: ${event.eventType}`)
+        if (!event.payload || typeof event.payload !== 'object' || Array.isArray(event.payload)) throw new KnowledgeError('KNOWLEDGE_EVENT_PAYLOAD_INVALID')
+        const envelopeWorkspace = event.workspaceId === undefined ? undefined : requiredText(event.workspaceId, 'KNOWLEDGE_EVENT_SCOPE_INVALID')
+        const camelWorkspace = typeof event.payload.workspaceId === 'string' ? requiredText(event.payload.workspaceId, 'KNOWLEDGE_EVENT_SCOPE_INVALID') : undefined
+        const snakeWorkspace = typeof event.payload.workspace_id === 'string' ? requiredText(event.payload.workspace_id, 'KNOWLEDGE_EVENT_SCOPE_INVALID') : undefined
+        if (camelWorkspace && snakeWorkspace && camelWorkspace !== snakeWorkspace) throw new KnowledgeError('KNOWLEDGE_EVENT_SCOPE_MISMATCH')
+        const payloadWorkspace = camelWorkspace ?? snakeWorkspace
+        if (envelopeWorkspace && payloadWorkspace && envelopeWorkspace !== payloadWorkspace) throw new KnowledgeError('KNOWLEDGE_EVENT_SCOPE_MISMATCH')
+        const observation = event.payload.knowledge_observation
+        if ((event.eventType === 'task_feedback_submitted' || event.eventType === 'publish.observation') && observation && typeof observation === 'object' && !Array.isArray(observation)) {
+          const observationWorkspace = typeof (observation as Record<string, unknown>).workspaceId === 'string'
+            ? requiredText((observation as Record<string, unknown>).workspaceId as string, 'KNOWLEDGE_EVENT_SCOPE_INVALID')
+            : undefined
+          if (envelopeWorkspace && observationWorkspace && envelopeWorkspace !== observationWorkspace) throw new KnowledgeError('KNOWLEDGE_EVENT_SCOPE_MISMATCH')
+        }
+        if (event.eventType.startsWith('knowledge.')) {
+          const payloadId = requiredText(typeof event.payload.id === 'string' ? event.payload.id : undefined, 'KNOWLEDGE_EVENT_ENTITY_ID_REQUIRED')
+          if (event.aggregateId !== undefined && requiredText(event.aggregateId, 'KNOWLEDGE_EVENT_AGGREGATE_INVALID') !== payloadId) throw new KnowledgeError('KNOWLEDGE_EVENT_AGGREGATE_MISMATCH')
+        }
+      }
+
+      for (const event of events) {
       const fingerprint = stableSerialize(event)
       const eventKey = event.id ? `event:${event.id}` : undefined
       if (eventKey) {
@@ -489,6 +525,18 @@ export class KnowledgeModule {
           this.recordObservedFeedback({ workspaceId: item.workspaceId, sourceKey: item.sourceKey, kind: item.kind, reason: item.reason, ...(typeof item.platform === 'string' ? { platform: item.platform } : {}), ...(typeof item.contentId === 'string' ? { contentId: item.contentId } : {}), ...(typeof item.details === 'string' ? { details: item.details } : {}), ...(item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata) ? { metadata: item.metadata as Record<string, string> } : {}), ...(typeof item.createdAt === 'string' ? { createdAt: item.createdAt } : {}) })
         }
       }
+      }
+    } catch (error) {
+      this.sequence = checkpoint.sequence
+      restoreMap(this.rules, checkpoint.rules)
+      restoreMap(this.assets, checkpoint.assets)
+      restoreMap(this.brandPreferences, checkpoint.brandPreferences)
+      restoreMap(this.feedback, checkpoint.feedback)
+      restoreMap(this.suggestions, checkpoint.suggestions)
+      restoreMap(this.competitors, checkpoint.competitors)
+      restoreMap(this.hydratedSequences, checkpoint.hydratedSequences)
+      restoreMap(this.hydratedEventFingerprints, checkpoint.hydratedEventFingerprints)
+      throw error
     }
   }
 

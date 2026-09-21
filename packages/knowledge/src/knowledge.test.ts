@@ -242,4 +242,56 @@ describe('knowledge module', () => {
     expect(() => restored.hydrate([{ ...event, id: 'event-asset-2', payload: { ...event.payload, content: 'tampered' } }]))
       .toThrowError(new KnowledgeError('KNOWLEDGE_EVENT_CONFLICT'))
   })
+
+  it('rejects mis-scoped durable events without partially hydrating the batch', () => {
+    const restored = createModule()
+    const valid = {
+      id: 'event-asset-1', workspaceId: 'ws-a', aggregateId: 'asset-1', sequence: 1,
+      eventType: 'knowledge.asset.created',
+      payload: { id: 'asset-1', workspaceId: 'ws-a', kind: 'brand', name: 'A', content: 'x', approvalStatus: 'pending', rightsStatus: 'unknown', tags: [], revision: 1, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
+    } as const
+    const foreign = {
+      id: 'event-asset-2', workspaceId: 'ws-a', aggregateId: 'asset-2', sequence: 1,
+      eventType: 'knowledge.asset.created',
+      payload: { ...valid.payload, id: 'asset-2', workspaceId: 'ws-b' },
+    } as const
+
+    expect(() => restored.hydrate([valid, foreign]))
+      .toThrowError(new KnowledgeError('KNOWLEDGE_EVENT_SCOPE_MISMATCH'))
+    expect(restored.getAsset('ws-a', 'asset-1')).toBeUndefined()
+
+    restored.hydrate([valid])
+    expect(restored.getAsset('ws-a', 'asset-1')).toEqual(valid.payload)
+
+    expect(() => restored.hydrate([{
+      id: 'event-observation-1', workspaceId: 'ws-a', aggregateId: 'task-1', sequence: 1,
+      eventType: 'task_feedback_submitted',
+      payload: { knowledge_observation: { workspaceId: 'ws-b', sourceKey: 'task_feedback:1', kind: 'feedback', reason: 'foreign' } },
+    }])).toThrowError(new KnowledgeError('KNOWLEDGE_EVENT_SCOPE_MISMATCH'))
+    expect(restored.listFeedback('ws-b')).toEqual([])
+  })
+
+  it('rejects a durable event whose aggregate does not own the payload', () => {
+    const restored = createModule()
+    expect(() => restored.hydrate([{
+      id: 'event-asset-1', workspaceId: 'ws-a', aggregateId: 'asset-foreign', sequence: 1,
+      eventType: 'knowledge.asset.created',
+      payload: { id: 'asset-1', workspaceId: 'ws-a', kind: 'brand', name: 'A', content: 'x', approvalStatus: 'pending', rightsStatus: 'unknown', tags: [], revision: 1, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
+    }])).toThrowError(new KnowledgeError('KNOWLEDGE_EVENT_AGGREGATE_MISMATCH'))
+    expect(restored.getAsset('ws-a', 'asset-1')).toBeUndefined()
+  })
+
+  it('rolls back projections and replay bookkeeping when a later event fails', () => {
+    const restored = createModule()
+    const asset = (id: string) => ({ id, workspaceId: 'ws-a', kind: 'brand' as const, name: id, content: 'x', approvalStatus: 'pending' as const, rightsStatus: 'unknown' as const, tags: [], revision: 1, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' })
+    const first = { id: 'event-asset-1', workspaceId: 'ws-a', aggregateId: 'asset-1', sequence: 1, eventType: 'knowledge.asset.created', payload: asset('asset-1') }
+    const newer = { id: 'event-asset-2-new', workspaceId: 'ws-a', aggregateId: 'asset-2', sequence: 2, eventType: 'knowledge.asset.created', payload: asset('asset-2') }
+    const older = { id: 'event-asset-2-old', workspaceId: 'ws-a', aggregateId: 'asset-2', sequence: 1, eventType: 'knowledge.asset.updated', payload: asset('asset-2') }
+
+    expect(() => restored.hydrate([first, newer, older])).toThrowError(new KnowledgeError('KNOWLEDGE_EVENT_SEQUENCE_OUT_OF_ORDER'))
+    expect(restored.getAsset('ws-a', 'asset-1')).toBeUndefined()
+    expect(restored.getAsset('ws-a', 'asset-2')).toBeUndefined()
+    restored.hydrate([first])
+    expect(restored.getAsset('ws-a', 'asset-1')).toEqual(first.payload)
+  })
 })
