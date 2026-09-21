@@ -420,6 +420,11 @@ describe("container source freshness gate", () => {
     expect(preflight).toContain("API_IMAGE_REF");
     expect(preflight).toContain("WORKER_IMAGE_REF");
     const apiDockerfile = readFileSync("infra/docker/api.Dockerfile", "utf8");
+    const [apiBuildStage, apiRuntimeStage] = apiDockerfile.split(" AS runtime");
+    expect(apiBuildStage).toContain(
+      "COPY infra/scripts/install-ecs-release-controls.mjs infra/scripts/install-ecs-release-controls.d.mts ./infra/scripts/",
+    );
+    expect(apiRuntimeStage).not.toContain("install-ecs-release-controls");
     const workerDockerfile = readFileSync(
       "infra/docker/worker.Dockerfile",
       "utf8",

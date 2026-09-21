@@ -11,6 +11,7 @@ COPY scripts ./scripts
 # attestation helpers. Keep them in the build stage only; they are not copied
 # into the runtime image.
 COPY infra/protected ./infra/protected
+COPY infra/scripts/install-ecs-release-controls.mjs infra/scripts/install-ecs-release-controls.d.mts ./infra/scripts/
 COPY tsconfig.json vitest*.config.ts ./
 COPY infra/scripts/generate-container-source-manifest.mjs ./infra/scripts/generate-container-source-manifest.mjs
 # Host-side incremental state must never control which checked-in source is
