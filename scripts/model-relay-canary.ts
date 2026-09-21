@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { readBoundedResponseText } from '../packages/connectors/src/bounded-response.js'
 import { createRelayPricingClientFromEnv } from '../packages/ai/src/relay-pricing.js'
 import { parseRelayUsage } from '../packages/ai/src/relay-usage.js'
+import { retryAfterMilliseconds } from '../packages/ai/src/provider-request.js'
 import { assertRelayUrl, relaySecurityFromEnv } from '../packages/ai/src/relay-security.js'
 
 export type ProbeResult = {
@@ -36,7 +37,7 @@ const source = process.env.MODEL_RELAY_BASE_URL?.trim() ?? ''
 const key = process.env.MODEL_RELAY_API_KEY?.trim() ?? ''
 const videoKey = process.env.VIDEO_MODEL_RELAY_API_KEY?.trim() || key
 const confirmCost = process.env.MODEL_RELAY_CANARY_CONFIRM === 'true'
-const timeoutMs = Math.min(120_000, Math.max(2_000, Number(process.env.MODEL_RELAY_CANARY_TIMEOUT_MS ?? 120_000)))
+const timeoutMs = resolveBoundedInteger(process.env.MODEL_RELAY_CANARY_TIMEOUT_MS, 120_000, 2_000, 120_000, 'MODEL_RELAY_CANARY_TIMEOUT_MS')
 const rawVideoDurationSeconds = Number(process.env.VIDEO_DURATION_SECONDS ?? 5)
 const videoDurationSeconds = Number.isFinite(rawVideoDurationSeconds) ? Math.max(3, Math.min(15, rawVideoDurationSeconds)) : 5
 const base = source.replace(/\/+$/u, '')
@@ -44,6 +45,31 @@ const pricingClient = createRelayPricingClientFromEnv(process.env)
 const relaySecurity = relaySecurityFromEnv(process.env)
 const artifactRoot = process.env.MODEL_RELAY_ARTIFACT_ROOT?.trim()
 const releaseId = process.env.RELEASE_ID?.trim() || ''
+
+export function resolveBoundedInteger(value: string | undefined, fallback: number, minimum: number, maximum: number, name: string): number {
+  const text = value?.trim()
+  if (!text) return fallback
+  const parsed = Number(text)
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}`)
+  }
+  return parsed
+}
+
+export function canaryIdempotencyKey(input: { releaseId: string; modality: ProbeResult['modality']; model: string; existingVideoTaskId?: string }): string {
+  const identity = JSON.stringify([input.releaseId.trim(), input.modality, input.model.trim(), input.existingVideoTaskId?.trim() ?? ''])
+  return `model_relay_canary_${createHash('sha256').update(identity, 'utf8').digest('hex')}`
+}
+
+export function canRetryCanaryResponse(status: number, attempt: number, maximumAttempts = 3): boolean {
+  return status === 429 && attempt < Math.max(1, Math.min(3, Math.trunc(maximumAttempts)))
+}
+
+export function canaryRetryDelayMs(headers: Headers, attempt: number): number {
+  const hinted = retryAfterMilliseconds(headers.get('retry-after')) ?? 0
+  const exponential = Math.min(5_000, 250 * (2 ** Math.max(0, attempt - 1)))
+  return Math.min(60_000, Math.max(hinted, exponential))
+}
 
 export function shouldBlockForCostGuard(input: {
   modality: ProbeResult['modality']
@@ -57,6 +83,9 @@ export function shouldBlockForCostGuard(input: {
 export function requireProductionReleaseBinding(input: { environment?: string; releaseId: string }): void {
   if (input.environment?.trim() === 'production' && !input.releaseId.trim()) {
     throw new Error('RELEASE_ID is required for production model relay evidence')
+  }
+  if (input.environment?.trim() === 'production' && !/^[A-Za-z0-9._-]+$/u.test(input.releaseId.trim())) {
+    throw new Error('RELEASE_ID must be a safe production evidence identifier')
   }
 }
 
@@ -323,18 +352,33 @@ async function probe(modality: ProbeResult['modality']): Promise<ProbeResult> {
         ...(process.env.VIDEO_REQUEST_FORMAT?.trim() ? { requestFormat: process.env.VIDEO_REQUEST_FORMAT.trim() } : {}),
       })
       : undefined
-    const response = await fetch(`${base}${requestEndpoint}`, {
-      method: existingVideoTaskId ? usesVideoStatusPath ? 'GET' : 'POST' : 'POST',
-      headers: {
-        accept: 'application/json',
-        ...(!videoRequest || videoRequest.contentType ? { 'content-type': videoRequest?.contentType ?? 'application/json' } : {}),
-        authorization: `Bearer ${keyFor(modality)}`,
-        'x-damai-canary': 'true',
-      },
-      ...(!existingVideoTaskId ? { body: videoRequest?.body ?? JSON.stringify(body) } : usesVideoStatusPath ? {} : { body: JSON.stringify({ job_id: existingVideoTaskId }) }),
-      signal: controller.signal,
-      redirect: 'error',
-    })
+    const requestBody = !existingVideoTaskId ? videoRequest?.body ?? JSON.stringify(body) : usesVideoStatusPath ? undefined : JSON.stringify({ job_id: existingVideoTaskId })
+    const idempotencyKey = canaryIdempotencyKey({ releaseId, modality, model, ...(existingVideoTaskId ? { existingVideoTaskId } : {}) })
+    let response: Response | undefined
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      response = await fetch(`${base}${requestEndpoint}`, {
+        method: existingVideoTaskId ? usesVideoStatusPath ? 'GET' : 'POST' : 'POST',
+        headers: {
+          accept: 'application/json',
+          ...(!videoRequest || videoRequest.contentType ? { 'content-type': videoRequest?.contentType ?? 'application/json' } : {}),
+          authorization: `Bearer ${keyFor(modality)}`,
+          'x-damai-canary': 'true',
+          'x-idempotency-key': idempotencyKey,
+        },
+        ...(requestBody === undefined ? {} : { body: requestBody }),
+        signal: controller.signal,
+        redirect: 'error',
+      })
+      if (!canRetryCanaryResponse(response.status, attempt)) break
+      await new Promise<void>((resolveWait, rejectWait) => {
+        const retryTimer = setTimeout(resolveWait, canaryRetryDelayMs(response!.headers, attempt))
+        controller.signal.addEventListener('abort', () => {
+          clearTimeout(retryTimer)
+          rejectWait(controller.signal.reason ?? new DOMException('relay canary retry aborted', 'AbortError'))
+        }, { once: true })
+      })
+    }
+    if (!response) throw new Error('relay canary produced no response')
     const payload = await readBoundedResponseText(response, 1 * 1024 * 1024, 'model relay response')
       .then(text => JSON.parse(text) as unknown)
       .catch(() => undefined)
@@ -406,7 +450,7 @@ export async function main() {
         // field and makes generated evidence compatible with its validator.
         const relayOrigin = new URL(base).origin
         const generatedAt = new Date()
-        const ttlSeconds = Math.min(7 * 24 * 60 * 60, Math.max(60, Number(process.env.MODEL_RELAY_EVIDENCE_TTL_SECONDS ?? 24 * 60 * 60)))
+        const ttlSeconds = resolveBoundedInteger(process.env.MODEL_RELAY_EVIDENCE_TTL_SECONDS, 24 * 60 * 60, 60, 7 * 24 * 60 * 60, 'MODEL_RELAY_EVIDENCE_TTL_SECONDS')
         const evidence = {
           schema_version: '1', release_id: releaseId, generated_at: generatedAt.toISOString(),
           expires_at: new Date(generatedAt.getTime() + ttlSeconds * 1000).toISOString(),

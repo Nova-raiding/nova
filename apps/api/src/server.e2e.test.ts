@@ -1265,6 +1265,16 @@ describe('API HTTP vertical slice', () => {
     expect((transactions.data as { result: { transactions: Array<{ type: string }> } }).result.transactions.filter(item => item.type === 'recharge')).toHaveLength(1)
   })
 
+  it('rejects a zero-value signed callback before accepting payment evidence', async () => {
+    vi.stubEnv('PAYMENT_CALLBACK_SECRET', 'callback-secret')
+    const base = await start()
+    const workspaceId = `ws_callback_zero_${Date.now()}`
+    const proof = signedPaymentCallback({ channel: 'alipay', workspaceId, orderId: 'order-zero', providerTradeId: 'trade-zero', amountFen: 0, state: 'paid', nonce: `zeroCallbackNonce${Date.now()}` })
+    const response = await fetch(`${base}/v1/billing/callback/alipay`, { method: 'POST', headers: proof.headers, body: JSON.stringify(proof.body) })
+    expect(response.status).toBe(400)
+    expect((await json(response)).error?.code).toBe('PAYMENT_CALLBACK_INVALID')
+  })
+
   it('reports exact recharge totals beyond the 100-row display limit', async () => {
     const base = await start()
     const workspaceId = `ws_billing_volume_${Date.now()}`

@@ -34,9 +34,10 @@ describe("customer delivery workspace selection", () => {
     ]);
   });
 
-  it("uses the shared platform workspace without exposing a tenant selector", () => {
-    expect(pageSource).not.toContain('aria-label="客户交付目标企业工作区"');
-    expect(pageSource).not.toContain("model.setAuthorizationTargetWorkspaceId");
+  it("requires an explicit active tenant selection for customer-delivery reads and writes", () => {
+    expect(pageSource).toContain('aria-label="客户交付目标企业工作区"');
+    expect(pageSource).toContain("model.setAuthorizationTargetWorkspaceId(workspaceId)");
+    expect(pageSource).toContain("disabled={!canRead || createDraftDirty}");
     expect(pageSource).toContain('model.authorization.can("customer.delivery.update")');
     expect(pageSource).toContain('key={targetWorkspaceId || "unselected"}');
     expect(pageSource).toContain("setRecords([])");

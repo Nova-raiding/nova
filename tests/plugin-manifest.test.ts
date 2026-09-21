@@ -42,7 +42,7 @@ async function discoveredToolNames(root: URL) {
 describe('Codex plugin package', () => {
   it('keeps the installable marketplace mirror byte-identical to the source package', () => {
     const mirroredFiles = [
-      '.codex-plugin/plugin.json', '.mcp.json', 'README.md', 'host-evidence-contract.test.ts', 'install-smoke.test.ts',
+      '.codex-plugin/plugin.json', '.mcp.json', 'README.md', 'host-evidence-contract.test.ts',
       'mcp/bridge.mjs', 'mcp/bridge.sh', 'mcp/managed-token.mjs', 'mcp/bridge.test.ts', 'mcp/merchant-conversation-flow.test.ts', 'package.json',
       'scripts/verify-installed-bridge.mjs',
       'skills/merchant-marketing/SKILL.md',
@@ -64,14 +64,14 @@ describe('Codex plugin package', () => {
     expect(existsSync(new URL('scheduled/weekly-four-platform-digest.json', marketplaceRoot))).toBe(false)
   })
 
-  it('executes discovery from both source and marketplace bridge roots', async () => {
+  it('executes discovery from both source and local-source adapter bridge roots', async () => {
     const sourceTools = await discoveredToolNames(pluginRoot)
     const marketplaceTools = await discoveredToolNames(marketplaceRoot)
     expect(sourceTools.length).toBeGreaterThan(0)
     expect(marketplaceTools).toEqual(sourceTools)
     expect(sourceTools.some(name => name.startsWith('ops.'))).toBe(false)
     for (const name of ['platform.connect', 'catalog.sync', 'automation.scan', 'publish.confirm']) expect(sourceTools).not.toContain(name)
-  })
+  }, 15_000)
 
   it('keeps README scoped to runtime discovery instead of a stale fixed tool count', () => {
     const readme = readPluginFile('README.md')

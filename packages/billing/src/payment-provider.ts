@@ -316,8 +316,9 @@ export class HttpPaymentProvider implements PaymentProvider {
       const state = rawState === 'success' || rawState === 'paid' || rawState === 'trade_success' ? 'paid' : rawState === 'closed' || rawState === 'cancelled' ? 'closed' : rawState === 'failed' || rawState === 'refunded' ? 'failed' : rawState === 'pending' || rawState === 'processing' ? 'pending' : undefined
       if (!state) throw new Error('payment provider status returned an unknown state')
       if (isRecord(payload) && payload.order_id !== undefined && payload.order_id !== input.orderId) throw new Error('payment provider status response did not match the order')
-      if (state === 'paid' && (!isRecord(payload) || payload.order_id !== input.orderId)) throw new Error('payment provider paid status must identify the requested order')
-      if (state === 'paid' && (!isRecord(payload) || payload.workspace_id !== input.workspaceId)) throw new Error('payment provider paid status must identify the requested workspace')
+      const terminal = state === 'paid' || state === 'closed' || state === 'failed'
+      if (terminal && (!isRecord(payload) || payload.order_id !== input.orderId)) throw new Error('payment provider terminal status must identify the requested order')
+      if (terminal && (!isRecord(payload) || payload.workspace_id !== input.workspaceId)) throw new Error('payment provider terminal status must identify the requested workspace')
       const providerTradeId = isRecord(payload) && typeof payload.provider_trade_id === 'string' ? payload.provider_trade_id : isRecord(payload) && typeof payload.trade_no === 'string' ? payload.trade_no : undefined
       const rawAmountFen = isRecord(payload) ? payload.amount_fen : undefined
       const amountFen = typeof rawAmountFen === 'number' && Number.isSafeInteger(rawAmountFen) && rawAmountFen > 0 ? rawAmountFen : undefined

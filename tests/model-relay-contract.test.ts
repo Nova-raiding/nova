@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
 import { OpenAICompatibleVideoGenerator } from '../packages/ai/src/video-generator.js'
-import { blockHttpProbe, buildVideoProbeRequest, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, requireProductionReleaseBinding, shouldBlockForCostGuard, writeRelayResponseArtifact } from '../scripts/model-relay-canary.js'
+import { blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, requireProductionReleaseBinding, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact } from '../scripts/model-relay-canary.js'
 import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
 describe('production model relay contract', () => {
@@ -42,6 +42,36 @@ describe('production model relay contract', () => {
 
   it('does not require a release binding for non-production canaries', () => {
     expect(() => requireProductionReleaseBinding({ environment: 'test', releaseId: '' })).not.toThrow()
+  })
+
+  it('rejects unsafe production release identities before writing evidence', () => {
+    for (const releaseId of ['../release', 'release/child', 'release\nspoofed']) {
+      expect(() => requireProductionReleaseBinding({ environment: 'production', releaseId })).toThrow('safe production evidence identifier')
+    }
+  })
+
+  it('fails closed on malformed timeout and evidence TTL configuration', () => {
+    for (const value of ['NaN', '1.5', '0', '120001']) {
+      expect(() => resolveBoundedInteger(value, 120_000, 2_000, 120_000, 'MODEL_RELAY_CANARY_TIMEOUT_MS')).toThrow('MODEL_RELAY_CANARY_TIMEOUT_MS')
+    }
+    expect(resolveBoundedInteger(undefined, 120_000, 2_000, 120_000, 'MODEL_RELAY_CANARY_TIMEOUT_MS')).toBe(120_000)
+    expect(resolveBoundedInteger(' 60000 ', 120_000, 2_000, 120_000, 'MODEL_RELAY_CANARY_TIMEOUT_MS')).toBe(60_000)
+  })
+
+  it('retries only explicit 429 rejection with bounded Retry-After', () => {
+    expect(canRetryCanaryResponse(429, 1)).toBe(true)
+    expect(canRetryCanaryResponse(429, 3)).toBe(false)
+    for (const status of [408, 500, 502, 503, 504]) expect(canRetryCanaryResponse(status, 1)).toBe(false)
+    expect(canaryRetryDelayMs(new Headers({ 'retry-after': '2' }), 1)).toBe(2_000)
+    expect(canaryRetryDelayMs(new Headers({ 'retry-after': '999999' }), 1)).toBe(60_000)
+  })
+
+  it('binds a stable canary idempotency key to release, modality, model and video job', () => {
+    const first = canaryIdempotencyKey({ releaseId: 'release-1', modality: 'video', model: 'video-v1', existingVideoTaskId: 'job-1' })
+    expect(first).toMatch(/^model_relay_canary_[a-f0-9]{64}$/u)
+    expect(canaryIdempotencyKey({ releaseId: 'release-1', modality: 'video', model: 'video-v1', existingVideoTaskId: 'job-1' })).toBe(first)
+    expect(canaryIdempotencyKey({ releaseId: 'release-2', modality: 'video', model: 'video-v1', existingVideoTaskId: 'job-1' })).not.toBe(first)
+    expect(canaryIdempotencyKey({ releaseId: 'release-1', modality: 'video', model: 'video-v1', existingVideoTaskId: 'job-2' })).not.toBe(first)
   })
 
   it('does not disguise a response or async job id as a provider request id', () => {

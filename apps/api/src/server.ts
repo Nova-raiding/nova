@@ -22290,7 +22290,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const currency = typeof input.currency === 'string' ? input.currency : carriesModernProof ? '' : 'CNY'
     const state = typeof input.state === 'string' ? input.state : ''
     const workspaceId = typeof input.workspace_id === 'string' && input.workspace_id.trim() ? input.workspace_id.trim() : ''
-    if (!workspaceId || !Number.isSafeInteger(amountFen) || amountFen < 0) throw new DomainError('PAYMENT_CALLBACK_INVALID', '支付回调缺少有效订单、工作区或金额', 400)
+    if (!workspaceId || !Number.isSafeInteger(amountFen) || amountFen <= 0) throw new DomainError('PAYMENT_CALLBACK_INVALID', '支付回调缺少有效订单、工作区或金额', 400)
     // Currency is part of the signed callback payload. Reject an unsupported
     // value before consuming its one-time nonce, so a malformed/foreign
     // callback cannot burn the nonce that the valid CNY callback must use.

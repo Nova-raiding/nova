@@ -231,5 +231,22 @@ describe('payment gateway process contract', () => {
       timestamp: String(forwarded.headers['x-payment-timestamp']),
       nonce: String(forwarded.headers['x-payment-nonce']),
     })).not.toThrow()
+
+    for (const invalidNotification of [
+      { ...notification, total_amount: '0.00' },
+      { ...notification, trade_status: 'UNRECOGNIZED_STATUS' },
+    ]) {
+      const invalidSign = createSign('RSA-SHA256')
+        .update(signingContent(invalidNotification, { includeSignType: false }), 'utf8')
+        .sign(alipayPrivateKey, 'base64')
+      const invalidResponse = await fetch(`${gatewayBase}/v1/notify/alipay`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded; charset=utf-8' },
+        body: encodeAlipayParams({ ...invalidNotification, sign: invalidSign }),
+      })
+      expect(invalidResponse.status).toBe(400)
+      await expect(invalidResponse.json()).resolves.toEqual({ error: 'INVALID_NOTIFY' })
+    }
+    expect(apiRequests).toHaveLength(1)
   }, 20_000)
 })

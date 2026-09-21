@@ -31,6 +31,19 @@ function latestCatalogVersions(items: readonly CommercialCatalogItem[]): Commerc
 }
 
 /**
+ * Keep the editable amount tied to the server's integer-fen value. Display
+ * labels are localized presentation and may contain thousands separators; the
+ * old `match(/[0-9.]+/)` fallback turned `¥1,999.00` into `1` yuan.
+ */
+export function catalogPriceYuan(item: Pick<CommercialCatalogItem, "priceFen" | "priceLabel">): number {
+  if (typeof item.priceFen === "number" && Number.isFinite(item.priceFen) && item.priceFen >= 0)
+    return fenToYuan(item.priceFen);
+  const normalized = item.priceLabel.replace(/[,_\s]/gu, "");
+  const matched = normalized.match(/\d+(?:\.\d+)?/u)?.[0];
+  return matched ? Number(matched) : 0;
+}
+
+/**
  * What the public-catalog count line is allowed to claim.
  *
  * `platformCommercialCatalog` seeds as `[]` and is only replaced by a read that
@@ -67,7 +80,7 @@ function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
   const canPublish = model.authorization.can("commercial.catalog.publish");
   const openEditor = (row?: CommercialCatalogItem) => {
     setEditor(row ?? null);
-    form.setFieldsValue({ code: row?.skuCode ?? "", name: row?.name ?? "", kind: row?.type ?? "monthly", priceYuan: row ? Number((row.priceLabel.match(/[0-9.]+/)?.[0] ?? "0")) : 0, benefits: row?.benefits?.map((benefit) => ({ code: benefit.code, value: benefit.rawValue ?? (benefit.quantity === null ? "" : String(benefit.quantity)), unit: benefit.rawUnit ?? "" })) ?? [] });
+    form.setFieldsValue({ code: row?.skuCode ?? "", name: row?.name ?? "", kind: row?.type ?? "monthly", priceYuan: row ? catalogPriceYuan(row) : 0, benefits: row?.benefits?.map((benefit) => ({ code: benefit.code, value: benefit.rawValue ?? (benefit.quantity === null ? "" : String(benefit.quantity)), unit: benefit.rawUnit ?? "" })) ?? [] });
   };
   const saveDraft = async () => {
     const values = await form.validateFields();

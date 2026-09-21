@@ -91,32 +91,23 @@ token。撤销账号或身份会立即使现有 token 失效。
   - 商家 API 根地址，例如 `https://merchant.example.com`；地址不能带 `/mcp`、查询参数或凭据。
   - 管理员分配的工作区标识，例如 `ws_xxx`。
   - 如果网关没有使用宿主 OIDC，才需要一个由网关签发的 Bearer token。
-- 已拿到Store Nova插件 marketplace 的来源。来源可以是公司内部 Git marketplace，也可以是本机的 marketplace 目录。
+- 已拿到 Store Nova 插件源码目录。本项目直接本地部署，不发布到公开插件市场。
 
-### A2. 注册 marketplace 并安装插件
+### A2. 从当前源码直接本地安装插件
 
-先核对注册来源。多工作树机器上，`merchant-local` 可能仍指向旧候选目录；即使当前源码和测试已更新，直接 `codex plugin add` 也只会从旧目录重新安装。技术人员在目标仓库运行：
+在目标仓库根目录执行：
 
-    codex plugin marketplace list
-    node apps/plugin/scripts/verify-marketplace-source.mjs --expected .codex-marketplace
+    node apps/plugin/scripts/install-local-plugin.mjs
 
-只有检查输出 `ok: true` 才继续安装。若显示 `marketplace_points_to_different_checkout`，先由维护者确定要发布的工作树及其未提交改动，再按 Codex marketplace 管理流程调整来源；不要覆盖另一个工作树或直接改插件缓存。
+该脚本只使用当前仓库里的本地源适配器完成 ChatGPT/Codex 所需的插件发现和缓存安装，随后比较源码与安装缓存的 manifest、Skill、Bridge 哈希和实际 `tools/list`。它不会上传插件、不会发布到公开或团队插件市场，也不要求真实 ChatGPT OAuth。
 
-如果管理员给的是本机 marketplace 目录：
-
-    codex plugin marketplace add /absolute/path/to/.codex-marketplace
-    codex plugin add merchant-marketing@merchant-local
-
-如果管理员给的是 Git marketplace：
-
-    codex plugin marketplace add https://github.com/your-org/your-marketplace.git --ref main
-    codex plugin add merchant-marketing@your-marketplace
+Codex CLI 目前把本地插件源也归在 `plugin marketplace` 命令组下；这是本机安装协议的命令名称，不代表项目需要上架插件市场。脚本发现同名本地源指向另一个工作树时会失败关闭，不会覆盖另一个候选目录。
 
 检查安装状态：
 
     codex plugin list
 
-应看到 `merchant-marketing@<marketplace>` 为 `installed, enabled`。插件更新后必须重新执行 `codex plugin add ...`，再重启 ChatGPT；已经打开的对话不会自动刷新旧的 MCP 工具快照。
+应看到 `merchant-marketing@merchant-local` 为 `installed, enabled`。插件更新后重新执行本地安装脚本，再重启 ChatGPT；已经打开的对话不会自动刷新旧的 MCP 工具快照。
 
 ### A3. 注入插件连接环境
 
@@ -259,9 +250,9 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
 
 这表示 ChatGPT 宿主没有把插件连接地址注入 bridge，请求还没有到业务 API；它不是模型容量问题，也不是支付宝配置问题。
 
-另一个常见问题是插件缓存落后于 marketplace 源码。修复方式是重新安装当前 marketplace 版本：
+另一个常见问题是插件缓存落后于本地源码。修复方式是重新执行本地安装并验真：
 
-    codex plugin add merchant-marketing@<marketplace>
+    node apps/plugin/scripts/install-local-plugin.mjs
 
 然后退出并重启 ChatGPT，再开启新会话。不要手工修改 `~/.codex/plugins/cache`，否则下次更新会被覆盖。
 
@@ -273,7 +264,7 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
 | `MERCHANT_WORKSPACE_ID is required` | 未分配工作区或环境注入到错误用户 | 让管理员分配工作区，在启动 ChatGPT 的同一用户会话执行 A3 |
 | `401/403`、角色无权限 | OIDC/Bearer 映射失败或 token 过期 | 管理员检查网关身份映射和 token，不要改客户端角色变量 |
 | `MCP_STRICT_AUTH_REQUIRED` | 连接远程 API 时没有启用严格鉴权 | 执行 A3 设置 `MERCHANT_STRICT_AUTH=true`，完全退出并重启 ChatGPT |
-| 工具列表少、旧入口仍出现 | 本地插件缓存未更新，或对话保存了旧快照 | 重新执行 `codex plugin add`，重启 ChatGPT，开启新会话 |
+| 工具列表少、旧入口仍出现 | 本地插件缓存未更新，或对话保存了旧快照 | 重新执行本地安装脚本，重启 ChatGPT，开启新会话 |
 | `Selected model is at capacity` | 宿主模型尚未把消息交给插件 | 在 ChatGPT 模型选择器切换可用宿主模型后重试 |
 | `Codex host relay /models 未声明当前 host model` | `CODEX_RELAY_MODEL` 不是中转站实际提供的模型 ID，或缺少 Responses 能力声明 | 管理员先检查 `/v1/models`，用真实 ID 重新执行 `codex:relay:configure`，再通过 `codex:relay:validate` |
 | `codex:relay:validate` 失败 | 宿主或业务 relay 缺少 HTTPS、Key、模型 ID 或 `/models` 目录声明 | 仅管理员补齐中转配置；商家不填写模型 Key |
@@ -298,7 +289,7 @@ HTTPS。凭据交接失败时保持 fail-closed，不回退 fixture 或共享 to
 技术人员交付前逐项确认：
 
 - [ ] `codex plugin list` 显示插件 `installed, enabled`。
-- [ ] marketplace 来源核对为本次交付仓库，`verify-marketplace-source.mjs` 返回 `ok: true`；安装缓存与源码版本一致。
+- [ ] `install-local-plugin.mjs` 返回 `ok: true`、`mode: local_stdio`、`public_marketplace_required: false`；安装缓存与源码版本一致。
 - [ ] `MERCHANT_MCP_BASE_URL`、`MERCHANT_WORKSPACE_ID`、`MERCHANT_STRICT_AUTH=true`、`DEPLOY_ENV=local_desktop` 在启动 ChatGPT 的用户 launchd 环境中存在。
 - [ ] 生产没有开启 `MERCHANT_ALLOW_FIXTURE_FALLBACK=true` 或全局 `MERCHANT_MCP_WRITE_ENABLED=true`。
 - [ ] ChatGPT 已完全重启，并在新会话中重新加载工具。

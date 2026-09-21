@@ -74,20 +74,10 @@ export function customerDeliveryWorkspaceOptions(workspaces: WorkspaceSummary[])
 export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const canRead = model.authorization.can("customer.delivery.read");
   const canUpdate = model.authorization.can("customer.delivery.update");
-  // Customer delivery is a shared operations workflow. Keep using the
-  // platform's active workspace context for API compatibility, but do not
-  // expose a tenant-switching control to sales/operations users.
-  //
-  // The shared target is a plain string that only the surface which owns the
-  // selection (the commercial overview) ever writes, and `""` is its real
-  // "nothing selected yet" state. `model.workspaceRows` is the platform-wide
-  // workspace directory, so `workspaceRows[0]` is simply the first entry of
-  // that directory - a tenant the operator never chose. Falling back to it
-  // retargets every read *and* every write on this page (create, contract
-  // upload, checklist, training, archive) at that tenant. An empty target is
-  // therefore refused rather than substituted: reads and writes stay disabled
-  // until the operator selects a workspace on the surface that owns the
-  // selection.
+  // Every read and write is bound to an explicit operator-selected workspace.
+  // Never fall back to `workspaceRows[0]`: directory order is not consent to
+  // target a tenant. Customer delivery owns this selector because the former
+  // commercial-overview selector is no longer mounted in the converged console.
   const targetWorkspaceId = model.authorizationTargetWorkspaceId?.trim() ?? "";
   const [records, setRecords] = useState<import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -394,7 +384,19 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       title="客户交付"
       hideTitle
       description="以客户为中心跟进建档、系统接入、功能验收、培训和上线。付款未核验时，受控环节会保持阻断。"
-      actions={<Button onClick={() => void load()} loading={loading} disabled={!canRead || !targetWorkspaceId}>刷新交付档案</Button>}
+      actions={<Space wrap>
+        <Select
+          aria-label="客户交付目标企业工作区"
+          placeholder="选择目标企业"
+          value={targetWorkspaceId || undefined}
+          options={customerDeliveryWorkspaceOptions(model.workspaceRows)}
+          loading={model.workspaceDirectoryLoading}
+          disabled={!canRead || createDraftDirty}
+          onChange={(workspaceId) => model.setAuthorizationTargetWorkspaceId(workspaceId)}
+          style={{ minWidth: 280 }}
+        />
+        <Button onClick={() => void load()} loading={loading} disabled={!canRead || !targetWorkspaceId}>刷新交付档案</Button>
+      </Space>}
     >
       {!canRead ? <Alert type="warning" showIcon title="当前会话没有客户交付读取权限" description="请切换到具备 customer.delivery.read 的平台运营工作区。" /> : null}
       {canRead && !canUpdate ? <Alert style={{ marginBottom: 16 }} type="info" showIcon title="当前会话仅可查看客户交付" description="保存、上传和流程变更需要 customer.delivery.update 权限。" /> : null}
@@ -411,8 +413,10 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             <Form.Item name="contractNumber" label="合同编号" rules={[{ required: true, message: "请输入合同编号" }]}><Input placeholder="例如：2026090801" /></Form.Item>
             <Form.Item name="paymentStatus" label="付款形式" rules={[{ required: true, message: "请选择付款形式" }]}><Select className="customer-delivery-payment-select" options={[{ value: "paid", label: "接入费" }, { value: "unpaid", label: "赠送" }]} /></Form.Item>
             <Form.Item name="paymentDate" label="付款时间" rules={[{ required: true, message: "请选择付款日期" }]}><DatePicker classNames={{ popup: { root: "customer-delivery-date-popup" } }} format="YYYY-MM-DD" placeholder="请选择付款日期" style={{ width: "100%" }} /></Form.Item>
-            <Form.Item name="contractFile" label="合同文件或链接" rules={[{ required: true, message: "请上传合同或填写合同链接" }]}>
-              <Input placeholder="" suffix={<Button type="text" className="customer-delivery-upload-button" aria-label="上传合同文件" title="上传合同文件" icon={<UploadOutlined />} onClick={() => contractFileInput.current?.click()} />} />
+            <Form.Item label="合同文件或链接" required>
+              <Form.Item name="contractFile" noStyle rules={[{ required: true, message: "请上传合同或填写合同链接" }]}>
+                <Input placeholder="" suffix={<Button type="text" className="customer-delivery-upload-button" aria-label="上传合同文件" title="上传合同文件" icon={<UploadOutlined />} onClick={() => contractFileInput.current?.click()} />} />
+              </Form.Item>
               <input ref={contractFileInput} hidden type="file" accept=".pdf,.docx,.png,.jpg,.jpeg" onChange={(event) => { const file = event.target.files?.[0]; if (file) { createForm.setFieldValue("contractFile", file.name); setUploadedContractName(file.name); setUploadedContractFile(file); setCreateDraftDirty(true); } }} />
               {uploadedContractName ? <div className="customer-delivery-uploaded-file">已选择：{uploadedContractName}<Button type="text" size="small" className="customer-delivery-clear-upload" aria-label="取消已选合同文件" title="取消已选文件" icon={<CloseOutlined />} onClick={() => { createForm.setFieldValue("contractFile", ""); setUploadedContractName(""); setUploadedContractFile(undefined); if (contractFileInput.current) contractFileInput.current.value = ""; }} /></div> : null}
             </Form.Item>

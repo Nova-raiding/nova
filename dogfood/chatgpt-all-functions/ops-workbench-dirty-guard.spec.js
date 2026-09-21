@@ -11,13 +11,13 @@ test('keeps a dirty desktop form until workbench switch is confirmed', async ({ 
     localStorage.setItem('ops_workspace_id', 'ws_demo')
     localStorage.setItem('ops_actor_id', 'ops-dirty-guard-qa')
     localStorage.setItem('ops_api_token', 'ops-dirty-guard-local-token')
-    localStorage.setItem('ops_workbench', 'workspace')
+    localStorage.setItem('ops_workbench', 'platform')
   })
   await page.route('**/api/mcp', async route => {
     const body = route.request().postDataJSON?.() ?? {}
     const workbench = await route.request().headerValue('x-ops-workbench') ?? 'platform'
     if (body.method === 'ops.session') {
-      const capabilities = ['platform.summary.read', 'feature_flag.read', 'feature_flag.update', 'rule.read', 'rule.update', 'rule.publish.approve']
+      const capabilities = ['platform.summary.read', 'identity.read', 'workspace.directory.read', 'customer.delivery.read', 'customer.delivery.update']
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
         jsonrpc: '2.0', id: body.id ?? 'dirty-guard', result: {
           actor_id: 'ops-dirty-guard-qa', workspace_id: 'ws_demo', roles: ['rules_admin'], canonical_roles: ['rules_admin'],
@@ -30,48 +30,44 @@ test('keeps a dirty desktop form until workbench switch is confirmed', async ({ 
       }) })
       return
     }
+    if (body.method === 'ops.workspaces.list') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        jsonrpc: '2.0', id: body.id ?? 'dirty-guard', result: {
+          items: [{ workspaceId: 'ws_demo', enterpriseName: '演示商家', status: 'active', planName: '演示套餐', subscriptionStatus: 'active', monthlyPriceCny: 0, memberCount: 1 }],
+          total: 1, offset: 0, limit: 20, hasMore: false,
+        },
+      }) })
+      return
+    }
+    if (body.method === 'ops.customer-delivery.list') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ jsonrpc: '2.0', id: body.id ?? 'dirty-guard', result: [] }) })
+      return
+    }
     const result = body.method === 'ops.feature-flags.list' ? { items: [] } : []
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ jsonrpc: '2.0', id: body.id ?? 'dirty-guard', result }) })
   })
 
-  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: '总览' })).toBeVisible({ timeout: 20_000 })
-  await page.getByRole('button', { name: '平台规则', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '平台规则' })).toBeVisible({ timeout: 20_000 })
-  const draft = page.getByRole('form', { name: '创建规则草稿' })
-  await draft.getByLabel('规则包 ID').fill('dirty_guard_demo')
+  await page.goto(new URL('/ops/customer-delivery?workbench=platform', baseUrl).toString(), { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('region', { name: '当前身份与权限范围' })).toContainText('已由服务端验证', { timeout: 30_000 })
+  const workspace = page.getByLabel('客户交付目标企业工作区')
+  await workspace.click()
+  await workspace.press('ArrowDown')
+  await workspace.press('Enter')
+  await page.getByRole('button', { name: '新建客户', exact: true }).click()
+  const draft = page.locator('form.customer-delivery-create-form')
+  await draft.getByLabel('公司名称').fill('未保存的演示客户')
 
-  await page.getByText('平台控制台', { exact: true }).click()
+  await page.getByRole('button', { name: '用户中心', exact: true }).click()
   const warning = page.getByRole('dialog', { name: '放弃未保存内容并切换工作台？' })
   await expect(warning).toBeVisible()
   await warning.getByRole('button', { name: '继续编辑' }).click()
   await expect(warning).toBeHidden()
-  await expect(draft.getByLabel('规则包 ID')).toHaveValue('dirty_guard_demo')
+  await expect(draft.getByLabel('公司名称')).toHaveValue('未保存的演示客户')
 
-  await page.getByRole('button', { name: '功能开关', exact: true }).click()
-  await expect(warning).toBeVisible()
-  await expect(page.getByRole('heading', { name: '平台规则' })).toBeVisible()
-  await expect(draft.getByLabel('规则包 ID')).toHaveValue('dirty_guard_demo')
-  await expect(page.getByText('平台控制台', { exact: true })).toBeVisible()
-  await expect(page.getByRole('radio', { name: '商家工作区' })).toBeChecked()
-  await warning.getByRole('button', { name: '继续编辑' }).click()
-
-  const currentUrl = page.url()
-  await page.evaluate(({ current }) => {
-    window.history.replaceState(null, '', '/ops/feature-flags?workbench=platform')
-    window.history.pushState(null, '', current)
-  }, { current: currentUrl })
-  await page.goBack()
-  await expect(warning).toBeVisible()
-  await expect(page.getByRole('heading', { name: '平台规则' })).toBeVisible()
-  await expect(draft.getByLabel('规则包 ID')).toHaveValue('dirty_guard_demo')
-  await warning.getByRole('button', { name: '继续编辑' }).click()
-  await expect(page).toHaveURL(/\/ops\/rules\?workbench=workspace$/u)
-
-  await page.getByText('平台控制台', { exact: true }).click()
+  await page.getByRole('button', { name: '用户中心', exact: true }).click()
   await expect(warning).toBeVisible()
   await warning.getByRole('button', { name: '放弃并切换' }).click()
-  await expect(page).toHaveURL(/workbench=platform/u)
-  await expect(page.getByRole('form', { name: '创建规则草稿' }).getByLabel('规则包 ID')).toHaveValue('')
-  await expect(page.getByRole('radio', { name: '平台控制台' })).toBeChecked({ timeout: 20_000 })
+  await expect(page).toHaveURL(/\/ops\/users\?workbench=platform$/u)
+  await expect(page.getByRole('heading', { name: '用户中心', exact: true })).toBeVisible()
+  await expect(page.getByLabel('公司名称')).toHaveCount(0)
 })

@@ -103,6 +103,57 @@ describe('Codex plugin installation package', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
+  }, 15_000)
+
+  it('installs and verifies the plugin from a local checkout without public marketplace or ChatGPT OAuth', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-direct-local-install-'))
+    const bin = resolve(directory, 'bin')
+    const fakeCodex = resolve(bin, 'codex')
+    const commandLog = resolve(directory, 'commands.log')
+    const localSource = resolve(directory, 'local-source')
+    const installed = resolve(directory, 'installed')
+    mkdirSync(bin)
+    mkdirSync(localSource)
+    cpSync(root, installed, { recursive: true })
+    writeFileSync(resolve(localSource, 'marketplace.json'), JSON.stringify({
+      name: 'merchant-local-test',
+      plugins: [{ name: 'merchant-marketing', source: { source: 'local', path: root } }],
+    }))
+    writeFileSync(fakeCodex, `#!/bin/sh
+printf '%s\\n' "$*" >> '${commandLog}'
+case "$*" in
+  'plugin marketplace list') printf 'MARKETPLACE ROOT\\n' ;;
+  'plugin marketplace add '*' --json') printf '{"ok":true}\\n' ;;
+  'plugin add merchant-marketing@merchant-local-test --json') printf '{"ok":true}\\n' ;;
+  *) exit 2 ;;
+esac
+`)
+    chmodSync(fakeCodex, 0o755)
+    try {
+      const result = spawnSync(process.execPath, [
+        resolve(root, 'scripts/install-local-plugin.mjs'),
+        '--source', root,
+        '--local-source', localSource,
+        '--codex', fakeCodex,
+        '--installed', installed,
+      ], { encoding: 'utf8' })
+      expect(result.status, result.stderr).toBe(0)
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        ok: true,
+        mode: 'local_stdio',
+        public_marketplace_required: false,
+        chatgpt_oauth_required: false,
+        plugin: 'merchant-marketing',
+        restart_required: true,
+      })
+      const commands = readFileSync(commandLog, 'utf8')
+      expect(commands).toContain(`plugin marketplace add ${localSource} --json`)
+      expect(commands).toContain('plugin add merchant-marketing@merchant-local-test --json')
+      expect(commands).not.toMatch(/https?:\/\//u)
+      expect(commands).not.toMatch(/oauth/iu)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 
   it('recovers local merchant settings from the macOS user session without exposing them in the manifest', () => {

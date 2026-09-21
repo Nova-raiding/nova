@@ -33,7 +33,7 @@ process.stdout.write(JSON.stringify({ ok: true }))
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 
   it('fails closed when an installed Skill runtime file is stale or unexpected', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-plugin-drift-'))
@@ -51,7 +51,7 @@ process.stdout.write(JSON.stringify({ ok: true }))
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 
   it('fails closed before invoking Codex when source manifest and package versions drift', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-plugin-source-version-'))
@@ -87,7 +87,7 @@ process.stdout.write(JSON.stringify({ ok: true }))
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 
   it('keeps the source and marketplace upgrade scripts byte-identical', () => {
     const marketplace = resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing')

@@ -113,6 +113,7 @@ import {
   fetchPlatformAccounts,
   fetchPlatformModelStatus,
   fetchMerchantSession,
+  fetchManualPublishRecords,
   logoutMerchantAccount,
   changeMerchantPassword,
   fetchProduct,
@@ -189,6 +190,7 @@ import {
   type TaskUnderstanding,
   type WorkspaceMetrics,
   type MerchantAuthAccount,
+  type ManualPublishRecord,
 } from './api'
 import { resolveMerchantEnvironmentStatus } from './environment-status'
 import { MerchantLoginPage } from './MerchantLoginPage'
@@ -2893,6 +2895,8 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
   const [rechargeOrder, setRechargeOrder] = useState<Awaited<ReturnType<typeof createRechargeOrder>> | null>(null)
   const [rechargeLoading, setRechargeLoading] = useState(false)
   const [rechargeError, setRechargeError] = useState('')
+  const [manualPublishRecords, setManualPublishRecords] = useState<ManualPublishRecord[] | null>(null)
+  const [manualPublishNote, setManualPublishNote] = useState('正在读取人工发布状态…')
   // One idempotency key per purchase intent. It must survive a failed or timed
   // out attempt so the retry replays the order the server already created, and
   // it must change when the merchant really does change what they are buying.
@@ -2907,6 +2911,8 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
       setStorageQuota(null)
       setCatalogItems(null)
       setCatalogNote('未配置 API，无法读取创意点套餐。')
+      setManualPublishRecords(null)
+      setManualPublishNote('未配置 API，无法读取人工发布状态。')
       return
     }
     let active = true
@@ -2917,6 +2923,8 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
     setStorageQuota(null)
     setCatalogItems(null)
     setCatalogNote('正在读取创意点套餐…')
+    setManualPublishRecords(null)
+    setManualPublishNote('正在读取人工发布状态…')
     fetchCreativePointStatement(baseUrl)
       .then((page) => {
         if (!active) return
@@ -2947,6 +2955,17 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
         if (!active) return
         setCatalogItems(null)
         setCatalogNote(`创意点套餐读取失败：${describeApiError(cause)}`)
+      })
+    fetchManualPublishRecords(baseUrl)
+      .then((records) => {
+        if (!active) return
+        setManualPublishRecords(records.slice().sort((left, right) => Date.parse(right.recordedAt) - Date.parse(left.recordedAt)))
+        setManualPublishNote('')
+      })
+      .catch((cause) => {
+        if (!active) return
+        setManualPublishRecords(null)
+        setManualPublishNote(`人工发布状态读取失败：${describeApiError(cause)}`)
       })
     return () => { active = false }
   }, [baseUrl])
@@ -3046,6 +3065,15 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
         )}
       </section>
       <section className="finance-account-panel"><div><span className="section-kicker">ACCOUNT</span><h3>账号与工作区</h3><p>{account ? `当前登录账号 ${account.login}，企业主体 ${account.enterpriseName?.trim() || UNREAD_METRIC}，账号状态 ${merchantAccountStatusLabel(account.status)}。` : '当前未读取到商家账号信息。'}</p></div><div className="finance-account-facts"><span><b>{account?.login || UNREAD_METRIC}</b>登录账号</span><span><b>{account?.enterpriseName?.trim() || UNREAD_METRIC}</b>企业主体</span><span><b>{account ? merchantAccountStatusLabel(account.status) : UNREAD_METRIC}</b>账号状态</span></div><button className="primary" type="button" onClick={onOpenSupport}>咨询客服升级账号</button></section>
+      <section className="finance-panel" aria-label="人工发布状态">
+        <div className="finance-panel-heading"><div><span className="section-kicker">MANUAL PUBLISH</span><h3>人工发布状态</h3><p>六平台由人工执行发布；这里仅展示服务端记录的进度和平台回填，不会自动提交平台。</p></div></div>
+        {manualPublishRecords === null ? <p className="muted" role="status">{manualPublishNote}</p> : manualPublishRecords.length === 0 ? <p className="muted" role="status">暂无人工发布记录。内容审核完成并导出后，进度会显示在这里。</p> : (
+          <div className="finance-price-table" role="table" aria-label="人工发布记录">
+            <div className="finance-price-row header" role="row"><span>平台</span><span>任务</span><span>状态</span><span>平台结果</span></div>
+            {manualPublishRecords.map((record) => <div className="finance-price-row" role="row" key={record.id}><strong>{platformNames[record.platform] ?? record.platform}</strong><span>{record.taskId}</span><b>{{ export_ready: '待人工发布', manual_publish_in_progress: '人工发布中', manual_publish_reported: '已回填平台结果', manual_review_required: '需人工复核' }[record.state] ?? record.state}</b><small>{record.platformDisplayStatus || record.platformContentId || record.publicUrl || '尚未回填'}</small></div>)}
+          </div>
+        )}
+      </section>
       <Modal title={pricingDialog === 'points' ? '创意点套餐' : '储存空间购买'} open={Boolean(pricingDialog)} footer={null} width={720} onCancel={() => { setPricingDialog(null); setSelectedPointPackage(''); setPurchaseQuantity(1); setAgreementAccepted(false); setPaymentMethod('wechat') }}>
         {pricingDialog === 'points' ? <>
           <p className="finance-pricing-dialog-note">以下套餐来自服务端商业目录，价格与权益以服务端返回为准。</p>

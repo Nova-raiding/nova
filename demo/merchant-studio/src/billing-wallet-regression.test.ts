@@ -29,6 +29,14 @@ describe('Merchant Studio paid wallet projection', () => {
     expect(app).toContain('充值订单：')
     expect(styles).toContain('.finance-balance-card')
   })
+
+  it('keeps payment and manual publishing in the merchant workspace without enabling automatic platform writes', () => {
+    expect(api).toContain("requestMcp<ApiPage<ManualPublishRecord> | ManualPublishRecord[]>(baseUrl, 'publish.manual.list'")
+    expect(app).toContain('fetchManualPublishRecords(baseUrl)')
+    expect(app).toContain('六平台由人工执行发布')
+    expect(app).toContain('不会自动提交平台')
+    expect(app).toContain("manual_publish_reported: '已回填平台结果'")
+  })
 })
 
 describe('Merchant Studio recharge order safety', () => {

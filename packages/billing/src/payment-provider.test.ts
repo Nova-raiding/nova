@@ -286,6 +286,11 @@ describe('payment provider adapter', () => {
     await expect(provider.queryStatus?.({ channel: 'alipay', orderId: 'recharge-9', workspaceId: 'ws-9' })).rejects.toThrow('did not match the order')
   })
 
+  it.each(['closed', 'failed'] as const)('rejects an unbound %s terminal query before it can close an order', async state => {
+    const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', queryEndpoint: 'https://payments.example/query', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ state })) })
+    await expect(provider.queryStatus?.({ channel: 'alipay', orderId: 'order-terminal', workspaceId: 'ws-terminal' })).rejects.toThrow('terminal status must identify the requested order')
+  })
+
   it('rejects paid query evidence that is not explicitly bound to the requested order', async () => {
     const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', queryEndpoint: 'https://payments.example/query', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ state: 'paid', workspace_id: 'ws-9', trade_no: 'trade-9', amount_fen: 1000 }), { status: 200 }) })
     await expect(provider.queryStatus?.({ channel: 'alipay', orderId: 'recharge-9', workspaceId: 'ws-9' })).rejects.toThrow('must identify the requested order')
