@@ -23,8 +23,9 @@ describe('verified ECS Compose deployment runner', () => {
     const script = source()
     const preflight = script.indexOf('deploy-preflight-ecs.sh')
     const consume = script.indexOf('consume-production-evidence-nonce.sh')
-    const migration = script.indexOf('run --rm --no-deps migrate')
-    const rollout = script.indexOf('up -d --no-build --remove-orphans')
+    const localImages = script.indexOf('config --images')
+    const migration = script.indexOf('run --rm --no-deps --pull never migrate')
+    const rollout = script.indexOf('up -d --no-build --pull never --remove-orphans')
     expect(script).toContain('candidate identity Git SHA does not match')
     expect(script).toContain('candidate identity source digest does not match')
     expect(script).toContain('candidate identity release ID does not match requested release')
@@ -35,9 +36,25 @@ describe('verified ECS Compose deployment runner', () => {
     expect(script).toContain('chmod 0400 "$verified_compose" "$verified_config"')
     expect(script.match(/assert_inputs_unchanged/g)?.length).toBeGreaterThanOrEqual(4)
     expect(preflight).toBeGreaterThan(0)
+    expect(localImages).toBeGreaterThan(preflight)
     expect(consume).toBeGreaterThan(preflight)
+    expect(localImages).toBeLessThan(consume)
     expect(migration).toBeGreaterThan(consume)
     expect(rollout).toBeGreaterThan(migration)
+  })
+
+  it('preflights every immutable image locally and forbids deploy-time pulls', () => {
+    const script = source()
+    const localImages = script.indexOf('config --images')
+    const consume = script.indexOf('consume-production-evidence-nonce.sh')
+
+    expect(script).toContain("docker image inspect --format '{{.Id}}' \"$image\"")
+    expect(script).toContain('verified release image is unavailable locally')
+    expect(script).toContain('verified release image resolved to an invalid local image ID')
+    expect(script).toContain('run --rm --no-deps --pull never migrate')
+    expect(script).toContain('up -d --no-build --pull never --remove-orphans')
+    expect(localImages).toBeGreaterThan(0)
+    expect(localImages).toBeLessThan(consume)
   })
 
   it('captures rollback state and invokes the protected entrypoint on post-mutation failure', () => {
@@ -50,7 +67,7 @@ describe('verified ECS Compose deployment runner', () => {
     expect(script).toContain('flock -u 9')
     for (const name of ['ECS_ROLLBACK_PLAN_PATH', 'ECS_ROLLBACK_COMPOSE_PATH', 'ECS_ROLLBACK_ENV_FILE', 'ECS_ROLLBACK_IMAGE_DIGESTS_JSON', 'ECS_ROLLBACK_STATE_PATH']) expect(script).toContain(name)
     expect(script).toContain('invoke-ecs-automatic-rollback.sh')
-    expect(script.indexOf('mutation_started=true')).toBeLessThan(script.indexOf('run --rm --no-deps migrate'))
+    expect(script.indexOf('mutation_started=true')).toBeLessThan(script.indexOf('run --rm --no-deps --pull never migrate'))
   })
 
   it('executes the automatic rollback entrypoint with the complete frozen capsule contract', () => {

@@ -10,7 +10,7 @@ const source = () => readFileSync(path, 'utf8')
 describe('ECS Compose rollback executor', () => {
   it('binds the approved plan to current and target release identities before mutation', () => {
     const script = source()
-    const apply = script.indexOf('compose up -d --no-build')
+    const apply = script.indexOf('compose up -d --no-build --pull never')
 
     expect(script).toContain("plan.database?.strategy==='forward_only'")
     expect(script).toContain("plan.database.schema_downgrade===false")
@@ -32,7 +32,7 @@ describe('ECS Compose rollback executor', () => {
   it('freezes reviewed inputs and serializes host mutations before validation', () => {
     const script = source()
     const validation = script.indexOf('target Compose checksum does not match rollback plan')
-    const apply = script.indexOf('compose up -d --no-build')
+    const apply = script.indexOf('compose up -d --no-build --pull never')
 
     expect(script).toContain('ECS_DEPLOY_LOCK_PATH')
     expect(script).toContain('flock -n 9')
@@ -92,8 +92,8 @@ describe('ECS Compose rollback executor', () => {
   it('proves the rollback image can read the forward-only live schema before apply', () => {
     const script = source()
     const metadata = JSON.parse(readFileSync('release-metadata.json', 'utf8')) as { expectedMigrationVersion: number }
-    const probe = script.indexOf('compose run --rm --no-deps --entrypoint node')
-    const apply = script.indexOf('compose up -d --no-build')
+    const probe = script.indexOf('compose run --rm --no-deps --pull never --entrypoint node')
+    const apply = script.indexOf('compose up -d --no-build --pull never')
 
     expect(probe).toBeGreaterThan(0)
     expect(probe).toBeLessThan(apply)
@@ -112,6 +112,20 @@ describe('ECS Compose rollback executor', () => {
     expect(script).toContain('for(let version=1;version<=expected;version+=1)')
     expect(script).not.toContain('DROP DATABASE')
     expect(script).not.toContain('DELETE FROM schema_migrations')
+  })
+
+  it('preflights every rollback image locally and forbids rollback-time pulls', () => {
+    const script = source()
+    const localImages = script.indexOf('compose config --images')
+    const probe = script.indexOf('compose run --rm --no-deps --pull never --entrypoint node')
+    const apply = script.indexOf('compose up -d --no-build --pull never')
+
+    expect(script).toContain("docker image inspect --format '{{.Id}}' \"$image\"")
+    expect(script).toContain('target rollback image is unavailable locally')
+    expect(script).toContain('target rollback images are not fully available locally')
+    expect(localImages).toBeGreaterThan(0)
+    expect(localImages).toBeLessThan(probe)
+    expect(probe).toBeLessThan(apply)
   })
 
   it('never removes volumes and persists an explicit failure state', () => {

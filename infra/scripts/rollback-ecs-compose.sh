@@ -165,6 +165,20 @@ actual_manifest=$(ruby "$root/infra/scripts/validate-ecs-compose-release.rb" "$E
 [ "$actual_manifest" = "$TARGET_MANIFEST_SHA256" ] || fail validation_failed 'target manifest checksum does not match rollback plan'
 RELEASE_ID="$TARGET_RELEASE_ID" RELEASE_GIT_SHA="$TARGET_GIT_SHA" ruby "$root/infra/scripts/validate-ecs-compose-release.rb" "$ECS_ROLLBACK_COMPOSE_PATH" "$ECS_ROLLBACK_IMAGE_DIGESTS_JSON" >/dev/null || fail validation_failed 'target Compose release contract failed'
 
+project=${ECS_COMPOSE_PROJECT:-merchant-production}
+compose() { docker compose -p "$project" --env-file "$ECS_ROLLBACK_ENV_FILE" -f "$ECS_ROLLBACK_COMPOSE_PATH" "$@"; }
+rollback_images=$(compose config --images) || fail validation_failed 'could not enumerate target rollback images'
+[ -n "$rollback_images" ] || fail validation_failed 'target rollback release contains no images'
+printf '%s\n' "$rollback_images" | while IFS= read -r image; do
+  [ -n "$image" ] || continue
+  local_image_id=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null) || {
+    echo "target rollback image is unavailable locally: $image" >&2; exit 1;
+  }
+  printf '%s' "$local_image_id" | grep -Eq '^sha256:[0-9a-f]{64}$' || {
+    echo "target rollback image resolved to an invalid local image ID: $image" >&2; exit 1;
+  }
+done || fail validation_failed 'target rollback images are not fully available locally'
+
 # Prevent a stale operator from rolling back over a newer release.
 live_release=$(curl --fail --silent --show-error --max-time 15 "${PRODUCTION_API_BASE_URL%/}/releasez") || fail validation_failed 'could not read current production release identity'
 LIVE="$live_release" EXPECTED_ID="$CURRENT_RELEASE_ID" EXPECTED_GIT="$CURRENT_GIT_SHA" EXPECTED_MANIFEST="$CURRENT_MANIFEST_SHA256" EXPECTED_IMAGES="$CURRENT_IMAGE_SET_DIGEST" node -e '
@@ -176,11 +190,9 @@ if(!value||Object.entries(expected).some(([key,want])=>value[key]!==want)){proce
 live_migration=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT max(version)::int FROM schema_migrations') || fail validation_failed 'could not read live database migration version'
 [ "$live_migration" = "$PLANNED_LIVE_MIGRATION" ] || fail validation_failed 'live database migration version changed after rollback plan approval'
 
-project=${ECS_COMPOSE_PROJECT:-merchant-production}
-compose() { docker compose -p "$project" --env-file "$ECS_ROLLBACK_ENV_FILE" -f "$ECS_ROLLBACK_COMPOSE_PATH" "$@"; }
 # Execute target-image code in an ephemeral container. It only reads the
 # migration registry and live schema; it never invokes the migration runner.
-compose run --rm --no-deps --entrypoint node --env "ROLLBACK_LIVE_MIGRATION=$live_migration" api --input-type=module -e '
+compose run --rm --no-deps --pull never --entrypoint node --env "ROLLBACK_LIVE_MIGRATION=$live_migration" api --input-type=module -e '
   const {Pool}=await import("pg");const {loadMigrations,verifyAppliedMigrations}=await import("./dist/packages/persistence/src/migration.js")
   const expected=Number(process.env.ROLLBACK_LIVE_MIGRATION);const migrations=await loadMigrations();const versions=new Set(migrations.map(x=>x.version))
   if((migrations.at(-1)?.version??0)<expected)throw new Error("rollback image migration tail is older than live schema")
@@ -191,7 +203,7 @@ compose run --rm --no-deps --entrypoint node --env "ROLLBACK_LIVE_MIGRATION=$liv
 ROLLBACK_MUTATION_STARTED=true; export ROLLBACK_MUTATION_STARTED
 state applying 'validated rollback is being applied; volumes and database are preserved'
 # Update only the reviewed services. No data cleanup is part of rollback.
-compose up -d --no-build \
+compose up -d --no-build --pull never \
   api api-replica ui ops-ui payment-gateway clamav \
   worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan pilot-gateway \
   || fail apply_failed 'Compose rollback apply failed after mutation began; services may be partially switched, data was preserved, and manual recovery is required'

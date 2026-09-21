@@ -193,6 +193,19 @@ assert_inputs_unchanged() {
 image_set_digest=$(ruby "$root/infra/scripts/validate-ecs-compose-release.rb" "$verified_compose" "$IMAGE_DIGESTS_JSON" --print-image-set-digest)
 manifest_sha256=$(ruby "$root/infra/scripts/validate-ecs-compose-release.rb" "$verified_compose" "$IMAGE_DIGESTS_JSON" --print-manifest-sha256)
 project=${ECS_COMPOSE_PROJECT:-merchant-production}
+release_images=$(docker compose -p "$project" -f "$verified_compose" config --images) || {
+  echo 'could not enumerate verified release images' >&2; exit 1;
+}
+[ -n "$release_images" ] || { echo 'verified release contains no images' >&2; exit 1; }
+printf '%s\n' "$release_images" | while IFS= read -r image; do
+  [ -n "$image" ] || continue
+  local_image_id=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null) || {
+    echo "verified release image is unavailable locally: $image" >&2; exit 1;
+  }
+  printf '%s' "$local_image_id" | grep -Eq '^sha256:[0-9a-f]{64}$' || {
+    echo "verified release image resolved to an invalid local image ID: $image" >&2; exit 1;
+  }
+done
 umask 077
 rollback_capsule_dir="$ECS_DEPLOY_STATE_DIR/${RELEASE_ID}.rollback-capsule"
 mkdir -m 0700 "$rollback_capsule_dir" 2>/dev/null || { echo 'rollback capsule snapshot already exists or cannot be created' >&2; exit 1; }
@@ -239,9 +252,9 @@ mutation_started=true
 # Migration must finish before any candidate runtime container is recreated.
 # Destructive service, volume, and database cleanup is deliberately absent.
 assert_inputs_unchanged
-docker compose -p "$project" -f "$verified_compose" run --rm --no-deps migrate
+docker compose -p "$project" -f "$verified_compose" run --rm --no-deps --pull never migrate
 assert_inputs_unchanged
-docker compose -p "$project" -f "$verified_compose" up -d --no-build --remove-orphans --wait --wait-timeout "${ECS_COMPOSE_WAIT_TIMEOUT_SECONDS:-300}" \
+docker compose -p "$project" -f "$verified_compose" up -d --no-build --pull never --remove-orphans --wait --wait-timeout "${ECS_COMPOSE_WAIT_TIMEOUT_SECONDS:-300}" \
   api api-replica ui ops-ui payment-gateway worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan clamav pilot-gateway
 
 health_deadline=$(( $(date +%s) + ${ECS_POST_DEPLOY_HEALTH_TIMEOUT_SECONDS:-300} ))
