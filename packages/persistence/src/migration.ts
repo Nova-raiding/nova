@@ -685,6 +685,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const storageQuotaUnnameableReservationKeys = await readFile(new URL('./migrations/232_storage_quota_unnameable_reservation_keys.sql', import.meta.url), 'utf8')
   const supportSlaCorrectionApprovalApprover = await readFile(new URL('./migrations/233_support_sla_correction_approval_approver.sql', import.meta.url), 'utf8')
   const repairCustomerDeliveryControlPlaneAcl = await readFile(new URL('./migrations/234_repair_customer_delivery_control_plane_acl.sql', import.meta.url), 'utf8')
+  const repairAuthorizationReservationAcl = await readFile(new URL('./migrations/235_repair_authorization_reservation_acl.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -920,6 +921,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 232, name: 'storage_quota_unnameable_reservation_keys', sql: storageQuotaUnnameableReservationKeys },
     { version: 233, name: 'support_sla_correction_approval_approver', sql: supportSlaCorrectionApprovalApprover },
     { version: 234, name: 'repair_customer_delivery_control_plane_acl', sql: repairCustomerDeliveryControlPlaneAcl },
+    { version: 235, name: 'repair_authorization_reservation_acl', sql: repairAuthorizationReservationAcl },
   ]
 }
 
