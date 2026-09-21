@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveKnowledgeBindingStatus, resolveKnowledgeBindingSummary } from './knowledge-binding-status.js'
+import { countKnowledgeAssets, resolveKnowledgeBindingStatus, resolveKnowledgeBindingSummary } from './knowledge-binding-status.js'
 import type { AssetMetadata } from './api.js'
 
 const asset = (overrides: Partial<AssetMetadata> = {}): AssetMetadata => ({
@@ -56,6 +56,27 @@ describe('knowledge binding status', () => {
       rightsStatus: 'unknown',
       indexState: 'queued',
       ready: false,
+    })
+  })
+
+  it('does not count parsed and rights-approved assets before every knowledge gate passes', () => {
+    const incomplete = asset({
+      rightsStatus: 'approved',
+      parseStatus: 'succeeded',
+      readiness: { status: 'ready', reasons: [] },
+    })
+    const ready = asset({
+      id: 'asset-2',
+      rightsStatus: 'approved',
+      factsConfirmedBy: 'merchant-1',
+      factsConfirmedAt: '2026-09-01T00:01:00Z',
+      readiness: { status: 'ready', reasons: [] },
+    })
+
+    expect(countKnowledgeAssets([incomplete, ready])).toEqual({
+      total: 2,
+      ready: 1,
+      pending: 1,
     })
   })
 })

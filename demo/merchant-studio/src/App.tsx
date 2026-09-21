@@ -250,6 +250,7 @@ import { canonicalProductActionAllowed, groupTasksForRecovery, prioritizeProduct
 import { resolveDetailSopSteps } from './detail-sop.js'
 import { actionableIssueItems, createIssueReadSession, resolveIssueReadState, resolveIssueReadStateFromOutcome, type IssueReadOutcome, type IssueReadState } from './issue-read-state.js'
 import { BRAND_UNCONFIGURED, BRAND_DOCUMENT_LOCAL_ANALYSIS, BRAND_DOCUMENT_NONE, resolveBrandColorFacts, resolveBrandDocumentFacts, resolveBrandLogoFacts } from './material-brand-facts.js'
+import { countKnowledgeAssets, KnowledgeBindingStatus, resolveKnowledgeBindingStatus } from './knowledge-binding-status.js'
 
 // There is deliberately no client-side read-only role projection here. It used
 // to read a build-time `VITE_MERCHANT_ROLE`, which no build path ever set, and
@@ -3408,9 +3409,36 @@ function AssetLibrary({
       width: 140,
       render: (rightsStatus: AssetMetadata['rightsStatus']) => rightsStatus === 'approved' ? <StatusChip tone="green">已确认</StatusChip> : '待确认',
     },
+    {
+      title: '生成状态 / 下一步',
+      key: 'knowledgeBinding',
+      width: 300,
+      render: (_: unknown, asset: AssetMetadata) => {
+        const binding = resolveKnowledgeBindingStatus(asset)
+        const action = resolveAssetPrimaryAction(asset, {
+          configured: Boolean(baseUrl),
+          busy: Boolean(assetAction),
+        })
+        const actionLabel = action.kind === 'none' && !binding.ready ? '刷新状态' : action.label
+        const onAction = action.kind !== 'none'
+          ? () => runPrimaryAssetAction(asset)
+          : !binding.ready
+            ? () => void load()
+            : undefined
+        return (
+          <KnowledgeBindingStatus
+            asset={asset}
+            compact
+            actionLabel={actionLabel}
+            onAction={onAction}
+          />
+        )
+      },
+    },
   ]
-  const knowledgeReadyCount = visibleAssets.filter((asset) => asset.parseStatus === 'succeeded' && asset.rightsStatus === 'approved').length
-  const knowledgePendingCount = Math.max(0, visibleAssets.length - knowledgeReadyCount)
+  const knowledgeCounts = countKnowledgeAssets(visibleAssets)
+  const knowledgeReadyCount = knowledgeCounts.ready
+  const knowledgePendingCount = knowledgeCounts.pending
   const load = async () => {
     if (!baseUrl) {
       setLoading(false)
@@ -4554,6 +4582,7 @@ function AssetLibrary({
                   size="middle"
                   columns={knowledgeColumns}
                   dataSource={orderedAssets}
+                  scroll={{ x: 1050 }}
                   pagination={{
                     current: knowledgePage,
                     pageSize: knowledgePageSize,

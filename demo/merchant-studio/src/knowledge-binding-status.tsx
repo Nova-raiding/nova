@@ -17,6 +17,12 @@ export type KnowledgeBindingSummary = KnowledgeBindingStatus & {
   missingAssetCount: number
 }
 
+export type KnowledgeAssetCounts = {
+  total: number
+  ready: number
+  pending: number
+}
+
 /**
  * Project the existing merchant-facing asset lifecycle into the knowledge
  * binding vocabulary. No client-side state is treated as authoritative:
@@ -62,6 +68,16 @@ export function resolveKnowledgeBindingStatus(
       asset.scanStatus === 'clean' &&
       asset.parseStatus === 'succeeded',
     reasons: [...new Set(reasons)],
+  }
+}
+
+/** Keep every knowledge-library count on the same fail-closed readiness gate. */
+export function countKnowledgeAssets(assets: AssetMetadata[]): KnowledgeAssetCounts {
+  const ready = assets.filter((asset) => resolveKnowledgeBindingStatus(asset).ready).length
+  return {
+    total: assets.length,
+    ready,
+    pending: assets.length - ready,
   }
 }
 
