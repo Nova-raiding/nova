@@ -305,7 +305,7 @@ services:
       MCP_VERSION: ${MCP_VERSION:-2025-06-18}
       CONNECTOR_BUILD: ${CONNECTOR_BUILD:-merchant-connectors-0.1.0}
       PROMPT_BUNDLE_VERSION: ${PROMPT_BUNDLE_VERSION:-merchant-prompts-0.1.0}
-      WORKER_API_CREDENTIALS: '${WORKER_API_CREDENTIALS:-{"sync":{"token":"sync-local-token","signing_secret":"sync-local-signing-secret"},"generation":{"token":"generation-local-token","signing_secret":"generation-local-signing-secret"},"publish":{"token":"publish-local-token","signing_secret":"publish-local-signing-secret"},"reconcile":{"token":"reconcile-local-token","signing_secret":"reconcile-local-signing-secret"},"automation":{"token":"automation-local-token","signing_secret":"automation-local-signing-secret"},"scan":{"token":"scanner-local-token","signing_secret":"scanner-local-signing-secret"}}}'
+      WORKER_API_CREDENTIALS: '${WORKER_API_CREDENTIALS:-{"sync":{"token":"sync-local-token","signing_secret":"sync-local-signing-secret"},"generation":{"token":"generation-local-token","signing_secret":"generation-local-signing-secret"},"publish":{"token":"publish-local-token","signing_secret":"publish-local-signing-secret"},"reconcile":{"token":"reconcile-local-token","signing_secret":"reconcile-local-signing-secret"},"automation":{"token":"automation-local-token","signing_secret":"automation-local-signing-secret"},"scan":{"token":"scan-local-token","signing_secret":"scan-local-signing-secret"}}}'
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_SERVICE_NAME: merchant-api
     deploy:
@@ -448,8 +448,11 @@ services:
       <<: *worker-environment
       WORKER_ROLE: scan
       # The scanner identity is intentionally distinct from every other worker.
-      WORKER_API_TOKEN: ${ASSET_SCANNER_API_TOKEN:-scanner-local-token}
-      WORKER_API_SIGNING_SECRET: ${ASSET_SCANNER_WORKSPACE_SIGNING_SECRET:-scanner-local-signing-secret}
+      # Keep the worker's role-scoped API identity separate from the scanner
+      # callback identity. The API authorizes the worker role with the former;
+      # scanner receipts use the latter and must not share credentials.
+      WORKER_API_TOKEN: ${WORKER_SCAN_API_TOKEN:-scan-local-token}
+      WORKER_API_SIGNING_SECRET: ${WORKER_SCAN_API_SIGNING_SECRET:-scan-local-signing-secret}
       ASSET_SCANNER_API_TOKEN: ${ASSET_SCANNER_API_TOKEN:-scanner-local-token}
       ASSET_SCANNER_WORKSPACE_SIGNING_SECRET: ${ASSET_SCANNER_WORKSPACE_SIGNING_SECRET:-scanner-local-signing-secret}
       ASSET_SCAN_RECEIPT_KEY_ID: ${ASSET_SCAN_RECEIPT_KEY_ID:-local-scanner-key}
