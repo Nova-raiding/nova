@@ -27,6 +27,20 @@ describe('password authentication', () => {
     expect((await auth.authenticate(refreshed.token))?.sessionId).toBe(refreshed.principal.sessionId)
   })
 
+  it('allows only one winner when the same session is refreshed concurrently', async () => {
+    const auth = new MemoryPasswordAuthRepository()
+    await auth.register({ login: 'refresh-race@example.com', password: 'CorrectHorse123', enterpriseName: '企业', contactName: '管理员', termsAgreed: true })
+    await auth.activateMerchantAccount({ login: 'refresh-race@example.com', workspaceIds: ['ws_demo'] })
+    const logged = await auth.login({ login: 'refresh-race@example.com', password: 'CorrectHorse123' })
+    const outcomes = await Promise.allSettled([auth.refresh(logged.token), auth.refresh(logged.token)])
+    const winners = outcomes.filter((outcome): outcome is PromiseFulfilledResult<Awaited<ReturnType<typeof auth.refresh>>> => outcome.status === 'fulfilled')
+    const losers = outcomes.filter(outcome => outcome.status === 'rejected')
+    expect(winners).toHaveLength(1)
+    expect(losers).toHaveLength(1)
+    expect(losers[0]).toMatchObject({ reason: { code: 'AUTH_SESSION_INVALID' } })
+    expect(await auth.authenticate(winners[0]!.value.token)).toBeDefined()
+  })
+
   it('locks after five failures and uses one-time reset to revoke sessions', async () => {
     const auth = new MemoryPasswordAuthRepository()
     await auth.register({ login: 'lock@example.com', password: 'CorrectHorse123', enterpriseName: '企业', contactName: '李四', termsAgreed: true })

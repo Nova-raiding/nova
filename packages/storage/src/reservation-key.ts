@@ -54,7 +54,7 @@ function requireAssetId(assetId: string): string {
  */
 export function reservationKeyFor(input: ReservationIdentity): string {
   const assetId = requireAssetId(input.assetId)
-  return `${RESERVATION_KEY_PREFIX}${assetId}/${''}`
+  return `${RESERVATION_KEY_PREFIX}${assetId}/${safeFileName(input.fileName)}`
 }
 
 /**

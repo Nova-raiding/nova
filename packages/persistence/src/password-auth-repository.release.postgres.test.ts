@@ -197,6 +197,17 @@ describe('password registration and enterprise projection PostgreSQL acceptance'
       )
       const oauthA = new PostgresPasswordAuthRepository(ops)
       const oauthB = new PostgresPasswordAuthRepository(ops)
+      const passwordSession = await oauthA.login({ login, password: 'CorrectHorse123' })
+      const passwordRefreshes = await Promise.allSettled([
+        oauthA.refresh(passwordSession.token),
+        oauthB.refresh(passwordSession.token),
+      ])
+      const passwordRefreshWinners = passwordRefreshes.filter((result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof oauthA.refresh>>> => result.status === 'fulfilled')
+      const passwordRefreshLosers = passwordRefreshes.filter(result => result.status === 'rejected')
+      expect(passwordRefreshWinners).toHaveLength(1)
+      expect(passwordRefreshLosers).toHaveLength(1)
+      expect(passwordRefreshLosers[0]).toMatchObject({ reason: { code: 'AUTH_SESSION_INVALID' } })
+      await expect(oauthA.authenticate(passwordRefreshWinners[0]!.value.token)).resolves.toBeDefined()
       const verifier = 'postgres-oauth-concurrency-verifier-0123456789abcdef'
       const context = {
         clientId: 'chatgpt-postgres-concurrency-client',

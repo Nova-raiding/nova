@@ -191,7 +191,6 @@ import {
   type TaskUnderstanding,
   type WorkspaceMetrics,
   type MerchantAuthAccount,
-  type ManualPublishRecord,
 } from './api'
 import { resolveMerchantEnvironmentStatus } from './environment-status'
 import { MerchantLoginPage } from './MerchantLoginPage'
