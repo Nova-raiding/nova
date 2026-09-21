@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -112,7 +112,7 @@ describe('production model relay contract', () => {
       new Headers(),
       'text',
       'text-v1',
-    )).resolves.toEqual({ usageObserved: true, costObserved: false })
+    )).resolves.toEqual({ usageObserved: true, usage: { totalTokens: 1 }, costObserved: false })
   })
 
   it('blocks queued and failed async video states until an HTTPS artifact is complete', () => {
@@ -211,7 +211,92 @@ describe('production model relay contract', () => {
       new Headers(),
       'video',
       'video-v1',
-    )).resolves.toEqual({ usageObserved: true, costObserved: false })
+    )).resolves.toEqual({ usageObserved: true, usage: { durationSeconds: 5 }, usageProviderRequestId: 'request_nested', costObserved: false })
+  })
+
+  it.each([
+    ['duration with explicit seconds', { duration: 5, duration_unit: 'seconds' }],
+    ['duration corroborated by output duration', { duration: 5, output_video_duration: 5 }],
+    ['output_video_duration', { output_video_duration: '5' }],
+    ['duration_seconds', { duration_seconds: 5 }],
+    ['durationSeconds', { durationSeconds: 5 }],
+  ] as const)('accepts positive provider video seconds from %s and binds them to pricing evidence', async (_field, usage) => {
+    const quote = vi.fn(async () => ({ costCny: 1.25, metadata: {
+      cost_source: 'relay_pricing_snapshot' as const, pricing_version: 'pricing-v2', pricing_group: 'VIP', group_ratio: 1,
+      usd_exchange_rate: 7, quota_per_unit: 500_000, quota_type: 1, model_ratio: 1, model_price: 0,
+      completion_ratio: 1, raw_quota: 1, rounded_quota: 1, formula_version: 'new-api-quota-v1' as const,
+    } }))
+    await expect(evaluateRelayUsageEvidence(
+      { data: { data: { request_id: 'request-video-real', usage } } },
+      new Headers(),
+      'video',
+      'wan3.0-video',
+      { pricing: { quote } },
+    )).resolves.toMatchObject({ usageObserved: true, usage: { durationSeconds: 5 }, usageProviderRequestId: 'request-video-real', costObserved: true, costCny: 1.25 })
+    expect(quote).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ duration_seconds: 5, duration_evidence: 'provider_usage' }) }))
+  })
+
+  it.each([
+    ['zero duration', { duration: 0 }],
+    ['negative duration', { output_video_duration: -1 }],
+    ['generic duration without unit or corroboration', { duration: 5 }],
+    ['generic duration explicitly in milliseconds', { duration: 5000, duration_unit: 'ms' }],
+    ['output duration with non-seconds unit', { output_video_duration: 5000, unit: 'milliseconds' }],
+    ['wrong unit field', { duration_ms: 5000 }],
+    ['conflicting seconds', { duration: 5, output_video_duration: 6 }],
+  ])('rejects invalid provider video duration evidence: %s', async (_case, usage) => {
+    const quote = vi.fn()
+    await expect(evaluateRelayUsageEvidence(
+      { data: { data: { request_id: 'request-video-invalid', usage } } },
+      new Headers(),
+      'video',
+      'wan3.0-video',
+      { pricing: { quote } },
+    )).resolves.toEqual({ usageObserved: false, costObserved: false })
+    expect(quote).not.toHaveBeenCalled()
+  })
+
+  it('never prices video from request duration when provider duration is invalid even if token usage exists', async () => {
+    const quote = vi.fn(async () => { throw new Error('pricing must not be called') })
+    await expect(evaluateRelayUsageEvidence(
+      { data: { data: { request_id: 'request-video-token-only', usage: { total_tokens: 9, duration: 5000, duration_unit: 'ms' } } } },
+      new Headers(),
+      'video',
+      'wan3.0-video',
+      { durationSeconds: 5, pricing: { quote } },
+    )).resolves.toEqual({ usageObserved: true, usage: { totalTokens: 9 }, usageProviderRequestId: 'request-video-token-only', costObserved: false })
+    expect(quote).not.toHaveBeenCalled()
+  })
+
+  it('normalizes the real provider SR payload and uses only output resolution for pricing', async () => {
+    const quote = vi.fn(async () => ({ costCny: 5.10884, metadata: {
+      cost_source: 'relay_pricing_snapshot' as const, pricing_version: 'a42d372ccf0b5dd13ecf71203521f9d2', pricing_group: 'VIP', group_ratio: 1,
+      usd_exchange_rate: 6.83, quota_per_unit: 500_000, quota_type: 1, model_ratio: 1, model_price: 0,
+      completion_ratio: 1, raw_quota: 374_000, rounded_quota: 374_000, formula_version: 'relay-video-resolution-v1' as const,
+    } }))
+    await expect(evaluateRelayUsageEvidence(
+      { code: 200, data: { task_id: 'job-real', status: 'SUCCESS', result_url: 'https://cdn.example/video.mp4', data: { request_id: 'request-real', usage: { SR: 1080, duration: 5, output_video_duration: 5, fps: 30, video_count: 1 } } } },
+      new Headers(),
+      'video',
+      'wan3.0-video',
+      { resolution: '720P', pricing: { quote } },
+    )).resolves.toMatchObject({ usageObserved: true, usage: { durationSeconds: 5 }, costObserved: true, costCny: 5.10884, pricingVersion: 'a42d372ccf0b5dd13ecf71203521f9d2', pricingGroup: 'VIP' })
+    expect(quote).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ duration_seconds: 5, duration_evidence: 'provider_usage', resolution: '1080P' }) }))
+  })
+
+  it.each([
+    ['unknown SR', { SR: 1440 }],
+    ['conflicting output resolutions', { SR: 1080, output_resolution: '720P' }],
+  ])('refuses pricing for %s instead of falling back to requested resolution', async (_case, resolutionUsage) => {
+    const quote = vi.fn()
+    await expect(evaluateRelayUsageEvidence(
+      { data: { data: { request_id: 'request-resolution-invalid', usage: { duration_seconds: 5, ...resolutionUsage } } } },
+      new Headers(),
+      'video',
+      'wan3.0-video',
+      { resolution: '1080P', pricing: { quote } },
+    )).resolves.toEqual({ usageObserved: true, usage: { durationSeconds: 5 }, usageProviderRequestId: 'request-resolution-invalid', costObserved: false })
+    expect(quote).not.toHaveBeenCalled()
   })
 
   it('does not treat requested video duration as observed provider usage', async () => {

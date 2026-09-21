@@ -225,7 +225,45 @@ export async function evaluateRelayUsageEvidence(
     : nested && Array.isArray(nested.data) ? nested.data.length
       : result && Array.isArray(result.data) ? result.data.length : 0
   const reportedBillingUnits = nonNegativeNumber(rawUsage?.billing_units ?? rawUsage?.billed_units ?? rawUsage?.output_image_count)
-  const reportedDuration = nonNegativeNumber(rawUsage?.duration_seconds ?? rawUsage?.durationSeconds)
+  // The suffixed fields are defined in seconds. A generic `duration` is only
+  // trusted when the provider explicitly says seconds or when the same
+  // receipt corroborates it with `output_video_duration`. Never infer its
+  // unit from the request-side duration used for preauthorization.
+  const explicitDurationUnit = typeof rawUsage?.duration_unit === 'string'
+    ? rawUsage.duration_unit.trim().toLowerCase()
+    : typeof rawUsage?.unit === 'string' ? rawUsage.unit.trim().toLowerCase() : undefined
+  const secondsUnit = explicitDurationUnit === undefined || ['s', 'sec', 'second', 'seconds'].includes(explicitDurationUnit)
+  const outputVideoDuration = rawUsage?.output_video_duration
+  const genericDuration = rawUsage?.duration
+  const genericDurationCorroborated = outputVideoDuration !== undefined && outputVideoDuration !== null
+  const rawReportedDurations = secondsUnit
+    ? [rawUsage?.duration_seconds, rawUsage?.durationSeconds, outputVideoDuration,
+        ...(genericDuration !== undefined && genericDuration !== null && (explicitDurationUnit !== undefined || genericDurationCorroborated) ? [genericDuration] : [])]
+    .filter(value => value !== undefined && value !== null)
+    : []
+  const parsedReportedDurations = rawReportedDurations.map(nonNegativeNumber)
+  const reportedDuration = rawReportedDurations.length > 0
+    && parsedReportedDurations.every((value): value is number => value !== undefined && value > 0)
+    && parsedReportedDurations.every(value => value === parsedReportedDurations[0])
+    ? parsedReportedDurations[0]
+    : undefined
+  const rawReportedResolutions = [rawUsage?.SR, rawUsage?.resolution, rawUsage?.output_resolution]
+    .filter(value => value !== undefined && value !== null)
+  const normalizeVideoResolution = (value: unknown): '720P' | '1080P' | undefined => {
+    const normalized = typeof value === 'number' && Number.isSafeInteger(value)
+      ? String(value)
+      : typeof value === 'string' ? value.trim().toUpperCase() : ''
+    if (normalized === '720' || normalized === '720P') return '720P'
+    if (normalized === '1080' || normalized === '1080P') return '1080P'
+    return undefined
+  }
+  const parsedReportedResolutions = rawReportedResolutions.map(normalizeVideoResolution)
+  const reportedResolution = rawReportedResolutions.length > 0
+    && parsedReportedResolutions.every((value): value is '720P' | '1080P' => value !== undefined)
+    && parsedReportedResolutions.every(value => value === parsedReportedResolutions[0])
+    ? parsedReportedResolutions[0]
+    : undefined
+  const invalidReportedResolution = rawReportedResolutions.length > 0 && reportedResolution === undefined
   const usage = {
     ...(parsed?.inputTokens !== undefined ? { inputTokens: parsed.inputTokens } : {}),
     ...(parsed?.outputTokens !== undefined ? { outputTokens: parsed.outputTokens } : {}),
@@ -245,11 +283,15 @@ export async function evaluateRelayUsageEvidence(
     return { usageObserved, ...metering, costObserved: true, costSource: 'provider_receipt' as const, costCny: providerCost }
   }
   const quoteClient = options.pricing ?? pricingClient
-  if (quoteClient && parsed && usageObserved) {
-    const quote = await quoteClient.quote(parsed)
+  if (quoteClient && parsed && usageObserved && (modality !== 'video' || (reportedDuration !== undefined && !invalidReportedResolution))) {
+    const { resolution: _requestResolution, ...providerNeutralMetadata } = parsed.metadata ?? {}
+    const pricingUsage = modality === 'video' && reportedDuration !== undefined
+      ? { ...parsed, metadata: { ...providerNeutralMetadata, duration_seconds: reportedDuration, duration_evidence: 'provider_usage', ...(reportedResolution ? { resolution: reportedResolution } : {}) } }
+      : parsed
+    const quote = await quoteClient.quote(pricingUsage)
     return { usageObserved: true, ...metering, costObserved: true, costSource: 'relay_pricing_snapshot' as const, costCny: quote.costCny, pricingVersion: quote.metadata.pricing_version, pricingGroup: quote.metadata.pricing_group }
   }
-  return { usageObserved, costObserved: false }
+  return { usageObserved, ...metering, costObserved: false }
 }
 
 export function evaluateVideoProbePayload(payload: unknown): { ready: boolean; providerJobId?: string; reason?: string } {
