@@ -513,6 +513,7 @@ services:
     volumes:
       - ${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required}:/run/release-evidence/platform-capability.json:ro
       - /run/release-security/evidence-trust:/run/release-security/evidence-trust:ro
+      - /opt/merchant-deploy/deploy/secrets/postgres_server.crt:/run/secrets/postgres_server.crt:ro
 
   # ECS keeps the stateful single-node services in the Compose release so a
   # fresh 101 host has a deterministic persistence boundary. Their runtime
