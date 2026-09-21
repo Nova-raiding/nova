@@ -3107,7 +3107,7 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
           /* Only an actually empty ledger may be reported as having no flow:
              a ledger the client read but could not bucket (grants, reserves,
              releases) is not the same statement as an empty one. */
-          <p className="muted" role="status">{statementEntries === null
+          <p className="finance-chart finance-chart-empty" role="status">{statementEntries === null
             ? statementNote
             : statementEntries.length === 0
               ? '服务端未返回该区间的创意点流水，不显示趋势图。'
