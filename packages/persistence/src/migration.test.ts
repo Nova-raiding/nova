@@ -25,7 +25,7 @@ describe('MigrationRunner', () => {
   it('loads the ordered production migration set', async () => {
     const migrations = await loadMigrations()
     const latestVersion = migrations.at(-1)?.version ?? 0
-    expect(latestVersion).toBe(233)
+    expect(latestVersion).toBe(235)
     expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(migrations[1]?.sql).toContain('FORCE ROW LEVEL SECURITY')
     const byVersion = new Map(migrations.map(migration => [migration.version, migration]))
@@ -88,6 +88,8 @@ describe('MigrationRunner', () => {
     // before the approval-token mechanism cannot be backfilled.
     expect(byVersion.get(233)).toMatchObject({ name: 'support_sla_correction_approval_approver' })
     expect(byVersion.get(233)?.sql).toContain('ADD COLUMN IF NOT EXISTS approved_by_actor_id TEXT;')
+    expect(byVersion.get(234)).toMatchObject({ name: 'repair_customer_delivery_control_plane_acl' })
+    expect(byVersion.get(235)).toMatchObject({ name: 'repair_authorization_reservation_acl' })
     expect(byVersion.get(100)).toMatchObject({ name: 'operation_alert_notifications' })
     expect(byVersion.get(101)).toMatchObject({ name: 'canonical_backfill_runs' })
     expect(byVersion.get(102)).toMatchObject({ name: 'canonical_backfill_conflicts' })
