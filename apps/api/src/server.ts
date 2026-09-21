@@ -9716,8 +9716,9 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
   // Configuration alone must not advertise vector indexing. The worker stays
   // lexical until the dedicated durable authorization/budget workflow is
   // explicitly enabled for the release.
-  const embeddingProviderConfigured = embeddingModelGate.ready && process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED === 'true'
-  const modelCostGateConfigured = evaluatePlatformModelCostGate(process.env).ready && Object.values(modelCostEvidenceByModality()).every(Boolean)
+  const vectorIndexEnabled = process.env.KNOWLEDGE_VECTOR_INDEX_ENABLED === 'true'
+  const embeddingProviderConfigured = vectorIndexEnabled && embeddingModelGate.ready
+  const modelCostGateConfigured = evaluatePlatformModelCostGate(process.env).ready && Object.values(requiredModelCostEvidenceByModality()).every(Boolean)
   const vaultConfigured = connectorRuntime.credentialProviderConfigured && !fixtureMode
   const localAcceptanceObjectStorage = production && process.env.DEPLOYMENT_PROFILE === 'local_acceptance' && process.env.ALLOW_LOCAL_DURABLE_OBJECT_STORAGE === 'true' && (process.env.ASSET_STORAGE_ROOT?.startsWith('/var/lib/merchant-assets/') ?? false)
   const configuredSseMode = String(process.env.ASSET_STORAGE_SSE_MODE?.trim() || (configuredEnv('ASSET_STORAGE_KMS_KEY_ID') ? 'aws:kms' : 'AES256')).toLowerCase()
