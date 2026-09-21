@@ -103,6 +103,15 @@ describe("UserDirectorySection sorting", () => {
     expect(source).toContain('aria-label="按用户属性筛选用户目录"');
   });
 
+  it("does not manufacture member approval from a browser-selected name", () => {
+    const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
+    expect(source).toContain("本操作由当前会话授权");
+    expect(source).toContain("记录真实操作人");
+    expect(source).not.toContain("suspendApprover");
+    expect(source).not.toContain('aria-label="审批人"');
+    expect(source).not.toContain("审批人：${");
+  });
+
   it("keeps directory refresh errors distinguishable and recoverable without stealing focus during background refresh", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain('aria-busy={model.userDirectoryLoading}');
