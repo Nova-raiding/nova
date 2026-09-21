@@ -109,9 +109,10 @@ function run(value: string) {
 
 describe('production config gate', () => {
   it('requires release-bound manual workflow evidence to reject official receipt claims', () => {
-    const evidence = { schema_version: 'manual-operations-evidence/1', release_id: 'release-1', environment: 'production', workflow: 'public_import_manual_publish', official_api_receipt: false, tenant_isolation_verified: true, checks: [{ name: 'tenant_scope', status: 'pass' }, { name: 'manual_report', status: 'pass' }, { name: 'merchant_visibility', status: 'pass' }] }
-    expect(validateManualOperationsEvidence(evidence, 'release-1')).toEqual([])
-    expect(validateManualOperationsEvidence({ ...evidence, official_api_receipt: true }, 'release-1')).toContain('official_api_receipt must be false')
+    const now = new Date('2026-09-21T08:00:00Z')
+    const evidence = { schema_version: 'manual-operations-evidence/1', release_id: 'release-1', environment: 'production', workflow: 'public_import_manual_publish', official_api_receipt: false, tenant_isolation_verified: true, simulated: false, generated_at: '2026-09-21T07:00:00Z', expires_at: '2026-09-22T07:00:00Z', checks: [{ name: 'tenant_scope', status: 'pass' }, { name: 'manual_report', status: 'pass' }, { name: 'merchant_visibility', status: 'pass' }] }
+    expect(validateManualOperationsEvidence(evidence, 'release-1', now)).toEqual([])
+    expect(validateManualOperationsEvidence({ ...evidence, official_api_receipt: true }, 'release-1', now)).toContain('official_api_receipt must be false')
   })
   it('keeps every platform connector disabled in manual operations mode', () => {
     expect(run(config())()).toContain('production config gate passed')
