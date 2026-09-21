@@ -77,7 +77,10 @@ describe("registration applications error state", () => {
     if (!address || typeof address === "string") throw new Error("Registration applications listener did not bind");
     baseUrl = `http://127.0.0.1:${address.port}`;
     browser = await chromium.launch({ channel: "chrome", headless: true });
-  }, 60_000);
+  // Vite + Chromium startup can exceed Vitest's default hook budget when the
+  // full sharded suite is running concurrently. Keep the suite deterministic
+  // without weakening any assertion timeout.
+  }, 120_000);
 
   afterAll(async () => {
     try { await browser?.close().catch(() => undefined); }
