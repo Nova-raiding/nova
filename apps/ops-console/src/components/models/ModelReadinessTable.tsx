@@ -35,7 +35,7 @@ export function ModelReadinessTable({ status }: ModelReadinessTableProps) {
             ),
           },
           {
-            title: "最终 readiness",
+            title: "运行态 ready",
             dataIndex: "ready",
             width: 150,
             render: (ready: boolean) => (

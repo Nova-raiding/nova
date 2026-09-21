@@ -193,7 +193,7 @@ npx --no-install tsx tests/canonical-product-cutover-evidence-gate.ts --file "$C
 npx --no-install tsx tests/release-manifest-gate.ts --file "$RELEASE_MANIFEST_PATH" --release-id "$RELEASE_ID" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id" --capability-evidence "$CAPABILITY_EVIDENCE_PATH" --capacity-evidence "$CAPACITY_REPORT_PATH" --model-relay-evidence "$MODEL_RELAY_EVIDENCE_PATH" --payment-evidence "$PAYMENT_EVIDENCE_PATH" --restore-evidence "$RESTORE_EVIDENCE_PATH" --object-storage-evidence "$OBJECT_STORAGE_EVIDENCE_PATH" --codex-app-host-evidence "$CODEX_APP_HOST_EVIDENCE_PATH" --canonical-cutover-evidence "$CANONICAL_CUTOVER_EVIDENCE_PATH"
 workspace_latest_migration=$(find packages/persistence/src/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_*.sql' -exec basename {} \; | sed 's/_.*//' | sort -n | tail -1)
 [ "$workspace_latest_migration" = "$EXPECTED_MIGRATION_VERSION" ] || { echo "release migration chain tail mismatch: expected $EXPECTED_MIGRATION_VERSION, workspace has $workspace_latest_migration" >&2; exit 1; }
-sh infra/scripts/verify-database-migration-chain.sh
+MIGRATION_CHAIN_MODE=prefix sh infra/scripts/verify-database-migration-chain.sh
 sh infra/scripts/verify-runtime-db-role.sh
 api_digest=$(IMAGE_DIGESTS_JSON="$IMAGE_DIGESTS_JSON" node -e 'const x=JSON.parse(process.env.IMAGE_DIGESTS_JSON);process.stdout.write(x["merchant-api"]||"")')
 worker_digest=$(IMAGE_DIGESTS_JSON="$IMAGE_DIGESTS_JSON" node -e 'const x=JSON.parse(process.env.IMAGE_DIGESTS_JSON);process.stdout.write(x["merchant-worker"]||"")')

@@ -2046,11 +2046,24 @@ export function TransactionDashboard({
   )
 }
 
+export function isManualPlatformOperationsMode(apiMode: string | null | undefined): boolean {
+  return apiMode?.trim().toLowerCase() === 'manual'
+}
+
+export function platformOperationsModeFromHealth(health: ApiHealth | null | undefined): string | null {
+  return health?.setup?.mode?.trim() || null
+}
+
+export function shouldDiscoverPlatformAccounts(baseUrl: string | undefined, apiMode: string | null | undefined): boolean {
+  return Boolean(baseUrl && apiMode && !isManualPlatformOperationsMode(apiMode))
+}
+
 export function Overview({
   goTask,
   goProducts,
   goTasks,
   baseUrl,
+  apiMode,
   billing,
   onOpenUtility,
 }: {
@@ -2058,10 +2071,12 @@ export function Overview({
   goProducts: () => void
   goTasks: () => void
   baseUrl?: string
+  apiMode?: string | null
   billing: BillingStatus | null
   onOpenUtility: (panel: UtilityPanel) => void
 }) {
   const accountsRequestId = useRef(0)
+  const syncJobsRequestId = useRef(0)
   const [accounts, setAccounts] = useState<PlatformAccount[] | null>(null)
   const [accountsLoading, setAccountsLoading] = useState(Boolean(baseUrl))
   const [accountsError, setAccountsError] = useState('')
@@ -2079,8 +2094,19 @@ export function Overview({
   const [metrics, setMetrics] = useState<WorkspaceMetrics | null>(null)
   const [metricsError, setMetricsError] = useState('')
   const loadAccounts = () => {
-    if (!baseUrl) return
     const requestId = ++accountsRequestId.current
+    if (!baseUrl || isManualPlatformOperationsMode(apiMode)) {
+      setAccounts(null)
+      setAccountsLoading(false)
+      setAccountsError('')
+      return
+    }
+    if (!shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {
+      setAccounts(null)
+      setAccountsLoading(false)
+      setAccountsError('')
+      return
+    }
     setAccountsLoading(true)
     setAccountsError('')
     setAccounts(null)
@@ -2102,17 +2128,31 @@ export function Overview({
   }
   useEffect(() => {
     loadAccounts()
-  }, [baseUrl])
+  }, [baseUrl, apiMode])
   const loadSyncJobs = () => {
-    if (!baseUrl) return
+    const requestId = ++syncJobsRequestId.current
+    if (!baseUrl) {
+      setSyncJobs(null)
+      setSyncJobsError('')
+      return
+    }
+    if (!shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {
+      setSyncJobs(null)
+      setSyncJobsError('')
+      return
+    }
     setSyncJobsError('')
     fetchSyncJobs(baseUrl)
-      .then(setSyncJobs)
-      .catch((error) => setSyncJobsError(`同步记录暂时无法读取：${describeApiError(error)}。不会改变已有任务或店铺授权状态。`))
+      .then((jobs) => {
+        if (requestId === syncJobsRequestId.current) setSyncJobs(jobs)
+      })
+      .catch((error) => {
+        if (requestId === syncJobsRequestId.current) setSyncJobsError(`同步记录暂时无法读取：${describeApiError(error)}。不会改变已有任务或店铺授权状态。`)
+      })
   }
   useEffect(() => {
     loadSyncJobs()
-  }, [baseUrl])
+  }, [baseUrl, apiMode])
   const loadMetrics = () => {
     if (!baseUrl) return
     setMetricsError('')
@@ -2360,7 +2400,7 @@ export function Overview({
         />
       )}
 
-      {baseUrl && (
+      {shouldDiscoverPlatformAccounts(baseUrl, apiMode) && (
         <div className="action-row overview-sync-actions">
           <button
             className="primary"
@@ -2385,6 +2425,12 @@ export function Overview({
                 : `将逐店同步 ${syncableStoreCount} 家可读取店铺。`}
           </small>
         </div>
+      )}
+      {baseUrl && isManualPlatformOperationsMode(apiMode) && (
+        <div className="info-notice" role="status">当前为人工运营模式，六平台店铺由运营人员在官方后台处理；首页不会自动发现、授权或同步店铺。</div>
+      )}
+      {baseUrl && !apiMode && (
+        <div className="info-notice" role="status">平台运营模式未确认，已停止自动发现店铺和读取同步任务；不会用默认模式绕过服务端权限。</div>
       )}
 
       <TodayDashboard baseUrl={baseUrl} metrics={metrics} billing={billing} />
@@ -5215,7 +5261,7 @@ function CatalogFilterMenu({
   )
 }
 
-function StoreCatalogExperience({ baseUrl }: { baseUrl?: string }) {
+function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMode?: string | null }) {
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null)
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null)
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
@@ -5261,14 +5307,22 @@ function StoreCatalogExperience({ baseUrl }: { baseUrl?: string }) {
     setProductsNote('正在读取商品…')
     // Independent reads: a failed product read must not hide the stores the
     // server did return, and neither read falls back to a demo catalogue.
-    fetchPlatformAccounts(baseUrl)
-      .then((page) => { if (active) setAccounts(Array.isArray(page.items) ? page.items : []) })
-      .catch((cause) => { if (active) { setAccounts(null); setCatalogReadNote(`平台与店铺读取失败：${describeApiError(cause)}`) } })
+    if (isManualPlatformOperationsMode(apiMode)) {
+      setAccounts([])
+      setCatalogReadNote('人工运营模式不执行平台店铺发现；商品来自商家知识库与人工导入。')
+    } else if (shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {
+      fetchPlatformAccounts(baseUrl)
+        .then((page) => { if (active) setAccounts(Array.isArray(page.items) ? page.items : []) })
+        .catch((cause) => { if (active) { setAccounts(null); setCatalogReadNote(`平台与店铺读取失败：${describeApiError(cause)}`) } })
+    } else {
+      setAccounts(null)
+      setCatalogReadNote('平台运营模式未确认，已停止自动发现店铺；商品仍从知识库读取。')
+    }
     fetchProducts(baseUrl)
       .then((items) => { if (active) setProducts(items) })
       .catch((cause) => { if (active) { setProducts(null); setProductsNote(`商品读取失败：${describeApiError(cause)}`) } })
     return () => { active = false }
-  }, [baseUrl])
+  }, [baseUrl, apiMode])
 
   // `null` while the account read is unresolved.
   const platforms = useMemo(() => buildCatalogPlatforms(accounts, products), [accounts, products])
@@ -6607,6 +6661,7 @@ export function resolveCatalogSyncControl({
 
 export function Products({
   baseUrl,
+  apiMode,
   modelStatus,
   modelStatusRead,
   onRefreshModelStatus,
@@ -6616,6 +6671,7 @@ export function Products({
   onOpenTasks,
 }: {
   baseUrl?: string
+  apiMode?: string | null
   modelStatus: PlatformModelStatus | null
   modelStatusRead: boolean
   onRefreshModelStatus: () => void
@@ -6760,8 +6816,14 @@ export function Products({
   }, [baseUrl])
   const loadAccounts = () => {
     const requestId = ++accountsRequestId.current
-    if (!baseUrl) {
+    if (!baseUrl || isManualPlatformOperationsMode(apiMode)) {
       setAccounts([])
+      setAccountsLoading(false)
+      setAccountsError('')
+      return
+    }
+    if (!shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {
+      setAccounts(null)
       setAccountsLoading(false)
       setAccountsError('')
       return
@@ -6787,7 +6849,7 @@ export function Products({
   }
   useEffect(() => {
     loadAccounts()
-  }, [baseUrl])
+  }, [baseUrl, apiMode])
   useEffect(() => {
     if (!baseUrl) return
     productsRequestId.current += 1
@@ -12562,7 +12624,7 @@ export default function App() {
       if (healthResult.status === 'fulfilled' && healthResult.value) {
         setApiHealth(healthResult.value)
         setApiOnline(true)
-        setApiMode(healthResult.value.setup?.mode ?? null)
+        setApiMode(platformOperationsModeFromHealth(healthResult.value))
       } else {
         setApiHealth(null)
         setApiOnline(false)
@@ -12600,7 +12662,7 @@ export default function App() {
       if (healthResult.status === 'fulfilled' && healthResult.value) {
         setApiHealth(healthResult.value)
         setApiOnline(true)
-        setApiMode(healthResult.value.setup?.mode ?? null)
+        setApiMode(platformOperationsModeFromHealth(healthResult.value))
       } else {
         setApiHealth(null)
         setApiOnline(false)
@@ -13107,6 +13169,7 @@ export default function App() {
                     goProducts={() => navigateTo('products')}
                     goTasks={() => navigateTo('task', { clearContext: true })}
                     baseUrl={apiBaseUrl}
+                    apiMode={apiMode}
                     billing={accountBilling}
                     onOpenUtility={openUtility}
                   />
@@ -13114,11 +13177,12 @@ export default function App() {
                 {page === 'finance' && <FinanceOverview baseUrl={apiBaseUrl ?? ''} billing={accountBilling} account={authAccount} onOpenSupport={() => openUtility('support')} />}
                 {page === 'products' && (
                   activeEntry === 'products' ? (
-                    <StoreCatalogExperience key={`products-${workspaceNavigationKey}`} baseUrl={apiBaseUrl} />
+                    <StoreCatalogExperience key={`products-${workspaceNavigationKey}`} baseUrl={apiBaseUrl} apiMode={apiMode} />
                   ) : (
                     <Products
                       key={`${activeEntry ?? 'knowledge'}-${workspaceNavigationKey}`}
                       baseUrl={apiBaseUrl}
+                      apiMode={apiMode}
                       modelStatus={modelStatus}
                       modelStatusRead={modelStatusRead}
                       onRefreshModelStatus={refreshEnvironmentStatus}

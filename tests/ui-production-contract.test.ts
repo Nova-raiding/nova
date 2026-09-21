@@ -54,8 +54,9 @@ describe('Merchant Studio production UI contract', () => {
     expect(api).toContain("API_WORKSPACE_ID_MISSING")
   })
 
-  it('requires an explicit workspace at the production UI proxy boundary', () => {
-    expect(merchantNginx).toContain('proxy_set_header X-Workspace-Id "${MERCHANT_WORKSPACE_ID}"')
+  it('preserves session-scoped requests instead of forcing all merchants into the deployment workspace', () => {
+    expect(merchantNginx.match(/proxy_set_header X-Workspace-Id \$http_x_workspace_id;/gu)).toHaveLength(3)
+    expect(merchantNginx).not.toContain('proxy_set_header X-Workspace-Id "${MERCHANT_WORKSPACE_ID}"')
     expect(merchantNginx).not.toContain('proxy_set_header X-Workspace-Id "ws_demo"')
     expect(merchantEntrypoint).toContain('MERCHANT_WORKSPACE_ID must be injected')
   })

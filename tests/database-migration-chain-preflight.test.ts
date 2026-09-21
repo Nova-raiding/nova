@@ -61,13 +61,32 @@ describe('ECS database migration-chain preflight', () => {
   it('checks the complete migration history and checksums through both target roles', () => {
     const result = run()
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain('versions=1-3 checksums=matched')
+    expect(result.stdout).toContain('mode=complete versions=1-3 checksums=matched')
+  })
+
+  it('accepts the same checksum-matched candidate prefix through both runtime roles', () => {
+    const baseline = fixture()
+    const prefix = baseline.rows.split('\n').slice(0, 2).join('\n') + '\n'
+    const result = run({ MIGRATION_CHAIN_MODE: 'prefix', FAKE_TENANT_ROWS: prefix, FAKE_OPS_ROWS: prefix })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('mode=prefix applied=1-2 candidate=1-3 checksums=matched')
+  })
+
+  it('keeps complete mode fail-closed when migrations are still pending', () => {
+    const baseline = fixture()
+    const prefix = baseline.rows.split('\n').slice(0, 2).join('\n') + '\n'
+    const result = run({ FAKE_TENANT_ROWS: prefix, FAKE_OPS_ROWS: prefix })
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('migration history length mismatch: expected 3, found 2')
   })
 
   it('fails closed when the tenant history is missing an intermediate migration', () => {
-    const result = run({ FAKE_TENANT_ROWS: '1|migration_1|bad\n3|migration_3|bad\n' })
+    const baseline = fixture()
+    const rows = baseline.rows.trimEnd().split('\n')
+    const missing = `${rows[0]}\n${rows[2]}\n`
+    const result = run({ MIGRATION_CHAIN_MODE: 'prefix', FAKE_TENANT_ROWS: missing, FAKE_OPS_ROWS: missing })
     expect(result.status).not.toBe(0)
-    expect(result.stderr).toMatch(/DATABASE_URL: migration 1 checksum mismatch|missing or has an unexpected version/)
+    expect(result.stderr).toContain('DATABASE_URL: migration history is missing or has an unexpected version at 2')
   })
 
   it('fails closed when Ops sees a different checksum', () => {
@@ -78,9 +97,32 @@ describe('ECS database migration-chain preflight', () => {
     expect(result.stderr).toContain('OPS_DATABASE_URL: migration 3 checksum mismatch')
   })
 
+  it('rejects a checksum-matched history that is ahead of the candidate', () => {
+    const baseline = fixture()
+    const ahead = `${baseline.rows}4|future|${'a'.repeat(64)}\n`
+    const result = run({ MIGRATION_CHAIN_MODE: 'prefix', FAKE_TENANT_ROWS: ahead, FAKE_OPS_ROWS: ahead })
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('migration history is ahead of candidate at version 4')
+  })
+
+  it('rejects different tenant and Ops prefixes even when each is independently valid', () => {
+    const baseline = fixture()
+    const tenant = baseline.rows.split('\n').slice(0, 2).join('\n') + '\n'
+    const ops = baseline.rows.split('\n').slice(0, 1).join('\n') + '\n'
+    const result = run({ MIGRATION_CHAIN_MODE: 'prefix', FAKE_TENANT_ROWS: tenant, FAKE_OPS_ROWS: ops })
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('tenant and Ops migration histories differ')
+  })
+
+  it('rejects an unknown verification mode', () => {
+    const result = run({ MIGRATION_CHAIN_MODE: 'relaxed' })
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('MIGRATION_CHAIN_MODE must be prefix or complete')
+  })
+
   it('is wired before the runtime role/RLS boundary gate', () => {
     const preflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
-    expect(preflight).toContain('verify-database-migration-chain.sh')
+    expect(preflight).toContain('MIGRATION_CHAIN_MODE=prefix sh infra/scripts/verify-database-migration-chain.sh')
     expect(preflight.indexOf('verify-database-migration-chain.sh')).toBeLessThan(preflight.indexOf('verify-runtime-db-role.sh'))
   })
 })

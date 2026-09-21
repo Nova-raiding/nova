@@ -30,6 +30,17 @@ const blockedStatus: ModelStatus = {
 };
 
 describe("ModelServiceSummary", () => {
+  it("labels model-local ready evidence without claiming global release readiness", () => {
+    const html = renderToStaticMarkup(
+      <ModelServiceSummary status={{ ...blockedStatus, state: "ready", release_metadata_ready: true }} loading={false} onOpen={vi.fn()} />,
+    );
+    expect(html).toContain("模型状态接口中的插件构建字段标记");
+    expect(html).toContain("/api/releasez");
+    expect(html).toContain("不能判定全局发布状态");
+    expect(html).toContain("都不代表生产门禁通过");
+    expect(html).not.toContain("release metadata 已就绪");
+  });
+
   it("renders a compact readiness summary and the models-page entry", () => {
     const html = renderToStaticMarkup(
       <ModelServiceSummary status={blockedStatus} loading={false} onOpen={vi.fn()} />,

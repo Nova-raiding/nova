@@ -254,6 +254,11 @@ mutation_started=true
 assert_inputs_unchanged
 docker compose -p "$project" -f "$verified_compose" run --rm --no-deps --pull never migrate
 assert_inputs_unchanged
+# The read-only preflight accepts only an immutable prefix of this candidate's
+# chain. Before any runtime container is recreated, prove the migration job
+# advanced both runtime roles to the complete reviewed chain.
+MIGRATION_CHAIN_MODE=complete sh "$root/infra/scripts/verify-database-migration-chain.sh"
+assert_inputs_unchanged
 docker compose -p "$project" -f "$verified_compose" up -d --no-build --pull never --remove-orphans --wait --wait-timeout "${ECS_COMPOSE_WAIT_TIMEOUT_SECONDS:-300}" \
   api api-replica ui ops-ui payment-gateway worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan clamav pilot-gateway
 

@@ -6,7 +6,7 @@ describe("model readiness presentation", () => {
     expect(modelReadinessRows(undefined)).toEqual([]);
   });
 
-  it("does not treat a configured provider as final readiness", () => {
+  it("does not treat a configured provider as runtime readiness", () => {
     const rows = modelReadinessRows({
       state: "partial_model_readiness",
       model_readiness: {
@@ -22,6 +22,15 @@ describe("model readiness presentation", () => {
       providerConfigured: true,
       ready: false,
       reasons: ["SVIP 计费组未启用"],
+    });
+  });
+
+  it("keeps unknown runtime state blocked even when a modality says ready", () => {
+    const rows = modelReadinessRows({ state: "unknown", model_readiness: { text: { ready: true, provider_configured: true } } });
+    expect(rows.find((row) => row.key === "text")).toMatchObject({
+      providerConfigured: true,
+      ready: false,
+      reasons: ["平台模型运行状态为 状态待确认，不能据此判定生产上线"],
     });
   });
 

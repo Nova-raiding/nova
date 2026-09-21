@@ -31,12 +31,12 @@ export function ModelServiceSummary({ status, loading, onOpen }: ModelServiceSum
           <Statistic title="阻断能力" value={status ? blockedCount : "暂无数据"} />
         </Col>
         <Col xs={24} md={12}>
-          <Tag color={!status ? "default" : status.state === "ready" ? "green" : "red"}>
+          <Tag color={!status ? "default" : status.state === "ready" ? "blue" : "red"}>
             {loading && !status ? "加载中" : status ? modelStateLabel(status.state) : "状态不可用"}
           </Tag>
           <Typography.Text type="secondary">
-            运行时状态与发布证据分别核验；Provider 配置不代表生产可用。当前 release metadata{" "}
-            {status?.release_metadata_ready ? "已就绪" : "未就绪"}，完整发布门禁仍由服务端决定。
+            Provider 配置和模型运行 ready 都不代表生产门禁通过。模型状态接口中的插件构建字段标记{" "}
+            {status?.release_metadata_ready ? "已返回" : "未通过"}；该标记不是 /api/releasez 发布身份，本卡不能判定全局发布状态。
           </Typography.Text>
         </Col>
       </Row>

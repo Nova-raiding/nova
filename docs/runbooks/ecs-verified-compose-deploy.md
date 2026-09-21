@@ -1,6 +1,6 @@
 # ECS Compose 受验证部署执行器
 
-`infra/scripts/deploy-verified-ecs-compose.sh` 只在 ECS 宿主的已审查发布目录运行。它不建立 SSH 连接，也不会从开发机复制配置、密钥或生产证据。执行器依次绑定干净提交和 `candidate-identity.txt`、复制并校验 rendered Compose 与生产配置、运行完整 ECS preflight、保存现网容器状态、消费 deployment nonce、执行迁移、启动摘要固定的服务，最后核对 `/livez`、`/readyz`、`/releasez`、数据库支持的鉴权请求和生产 canary。
+`infra/scripts/deploy-verified-ecs-compose.sh` 只在 ECS 宿主的已审查发布目录运行。它不建立 SSH 连接，也不会从开发机复制配置、密钥或生产证据。执行器依次绑定干净提交和 `candidate-identity.txt`、复制并校验 rendered Compose 与生产配置、运行完整 ECS preflight、保存现网容器状态、消费 deployment nonce、执行迁移、通过两个运行角色验证数据库已到候选完整迁移链、启动摘要固定的服务，最后核对 `/livez`、`/readyz`、`/releasez`、数据库支持的鉴权请求和生产 canary。
 
 渲染器、部署器、回滚器、release evidence bundle attester 源码和 bundle verifier 必须同时出现在候选对比清单与 release manifest 的 SHA-256 artifacts 中。候选包里的完整 `candidate-source.tar` 以同一个 Git SHA 生成，因此也包含这些文件；任一文件缺失或字节变化都必须重新生成发布清单，不能沿用旧签名证据。
 

@@ -13,6 +13,65 @@ function render(modelStatusLoading: boolean) {
 }
 
 describe("ModelStatusSection", () => {
+  const readyStatus = {
+    ownership: "platform", user_key_binding: false, state: "ready", provider_host: "relay.example",
+    text_model: "text", image_model: "image", vision_model: "ocr", video_model: "video",
+    relay: { configured: true, host: "relay.example" },
+    capabilities: { text_generation: true, image_generation: true, image_editing: true, image_fact_ocr: true, video_rendering: true },
+    model_readiness: {
+      text: { ready: true, provider_configured: true, reasons: [] },
+      image: { ready: true, provider_configured: true, reasons: [] },
+      image_edit: { ready: true, provider_configured: true, reasons: [] },
+      ocr: { ready: true, provider_configured: true, reasons: [] },
+      video: { ready: true, provider_configured: true, reasons: [] },
+    },
+    quotas: { rpm: 1, tpm: 1, daily_cny_limit: "1" },
+    cost_control_ready: true,
+    cost_evidence_ready: true,
+    release_metadata_ready: true,
+    release_metadata_missing: [],
+    next_actions: [],
+  };
+
+  it("does not promote model-local ready metadata to global production readiness", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ModelStatusSection, {
+        model: {
+          modelStatus: readyStatus,
+          modelStatusLoading: false,
+          dataSource: { fixtureDataPresent: false },
+          dataSetError: () => undefined,
+          load: async () => undefined,
+        } as unknown as OpsConsoleModel,
+      }),
+    );
+    expect(markup).toContain("五模态运行状态均返回 ready");
+    expect(markup).toContain("这不是生产门禁通过");
+    expect(markup).toContain("/api/releasez");
+    expect(markup).toContain("生产发布身份未核验");
+    expect(markup).toContain("该标记不是 /api/releasez 发布身份");
+    expect(markup).not.toContain("平台模型配置完整");
+    expect(markup).not.toContain("当前模型运行时和发布元数据均已返回就绪");
+    expect(markup).not.toContain("最终 readiness");
+  });
+
+  it("does not infer success from an empty next-actions list when model state is blocked", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ModelStatusSection, {
+        model: {
+          modelStatus: { ...readyStatus, state: "release_metadata_blocked", release_metadata_ready: false },
+          modelStatusLoading: false,
+          dataSource: { fixtureDataPresent: false },
+          dataSetError: () => undefined,
+          load: async () => undefined,
+        } as unknown as OpsConsoleModel,
+      }),
+    );
+    expect(markup).toContain("模型状态未达到就绪");
+    expect(markup).toContain("不得按空建议推断为通过");
+    expect(markup).not.toContain("平台模型配置完整");
+  });
+
   it("fails closed instead of showing a previous ready snapshot after refresh failure", () => {
     const markup = renderToStaticMarkup(
       createElement(ModelStatusSection, {

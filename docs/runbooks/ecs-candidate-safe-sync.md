@@ -34,7 +34,9 @@ staging 执行器会重新校验身份文件中源码归档、比较清单和同
 
 ## 切换前门禁
 
-ECS preflight 会以只读查询分别使用目标 `DATABASE_URL` 和 `OPS_DATABASE_URL` 核对 `schema_migrations`：数据库必须包含当前候选从 1 到 `EXPECTED_MIGRATION_VERSION` 的完整连续链，迁移名称和 SQL SHA-256 必须与候选源码一致，且两个运行角色必须看到同一历史。随后才执行租户、Ops 的非 superuser／非 BYPASSRLS、表所有权、ACL 和动态 RLS 边界探针。任一凭据连接失败、历史缺口、未知版本或 checksum 漂移都会阻断发布；不得通过修改生产迁移记录绕过门禁。
+ECS preflight 会以只读查询分别使用目标 `DATABASE_URL` 和 `OPS_DATABASE_URL` 核对 `schema_migrations`。迁移前允许数据库处于当前候选迁移链的任一不可变前缀：已应用版本必须从 1 连续、名称和 SQL SHA-256 与候选源码一致、不得出现候选之外的超前版本，且两个运行角色必须看到逐行完全相同的历史。随后才执行租户、Ops 的非 superuser／非 BYPASSRLS、表所有权、ACL 和动态 RLS 边界探针。任一凭据连接失败、历史缺口、角色视图差异、未知或超前版本、名称或 checksum 漂移都会阻断发布；不得通过修改生产迁移记录绕过门禁。
+
+部署执行器消费 nonce 后使用固定摘要的 PostgreSQL 17 迁移镜像执行前向迁移；迁移命令成功并不足以切流。执行器必须再次通过 `DATABASE_URL` 和 `OPS_DATABASE_URL` 运行完整链校验，确认两个运行角色都精确包含 1 到 `EXPECTED_MIGRATION_VERSION` 的候选链，才允许重建 API、Worker、UI 或网关容器。完整链校验失败会在业务容器切换前中止并进入受保护回退流程；数据库仍遵循 forward-only 策略，不执行 schema downgrade。
 
 1. 在独立目录解包并完成三方合并。
 2. 对合并结果运行类型检查、OSS/证据/生产配置测试及 `pilot-compose-preflight.sh`。

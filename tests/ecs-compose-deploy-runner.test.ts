@@ -25,6 +25,7 @@ describe('verified ECS Compose deployment runner', () => {
     const consume = script.indexOf('consume-production-evidence-nonce.sh')
     const localImages = script.indexOf('config --images')
     const migration = script.indexOf('run --rm --no-deps --pull never migrate')
+    const completeMigrationVerification = script.indexOf('MIGRATION_CHAIN_MODE=complete sh "$root/infra/scripts/verify-database-migration-chain.sh"')
     const rollout = script.indexOf('up -d --no-build --pull never --remove-orphans')
     expect(script).toContain('candidate identity Git SHA does not match')
     expect(script).toContain('candidate identity source digest does not match')
@@ -40,6 +41,8 @@ describe('verified ECS Compose deployment runner', () => {
     expect(consume).toBeGreaterThan(preflight)
     expect(localImages).toBeLessThan(consume)
     expect(migration).toBeGreaterThan(consume)
+    expect(completeMigrationVerification).toBeGreaterThan(migration)
+    expect(completeMigrationVerification).toBeLessThan(rollout)
     expect(rollout).toBeGreaterThan(migration)
   })
 

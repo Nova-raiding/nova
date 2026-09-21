@@ -16,7 +16,11 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
   const displayStatus = modelError ? undefined : modelStatus;
   const errorRef = useRef<HTMLDivElement>(null);
   const statusLabel = displayStatus?.state ?? (modelStatusLoading ? "加载中" : "不可用");
-  const statusColor = !displayStatus ? (modelStatusLoading ? "processing" : "red") : fixtureData ? "orange" : displayStatus.state === "ready" ? "green" : "red";
+  // `platform.model.status` is a model-service diagnostic. Even when it says
+  // ready, it does not carry the immutable identity returned by `/api/releasez`.
+  // Blue means this endpoint reports model runtime ready; green is reserved
+  // for evidence that can actually establish production release readiness.
+  const statusColor = !displayStatus ? (modelStatusLoading ? "processing" : "red") : fixtureData ? "orange" : displayStatus.state === "ready" ? "blue" : "red";
 
   useEffect(() => {
     if (modelError) errorRef.current?.focus({ preventScroll: true });
@@ -67,16 +71,16 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
       </Row>
       <Typography.Paragraph type="secondary">
         用户不能填写或绑定模型 Key；平台负责模型费用，商家通过充值和套餐额度使用插件能力。中转站{" "}
-        {displayStatus?.relay?.host ?? "-"}，TPM {displayStatus?.quotas.tpm ?? "-"}，发布元数据{" "}
-        {displayStatus?.release_metadata_ready ? "已就绪" : "未就绪"}。
+        {displayStatus?.relay?.host ?? "-"}，TPM {displayStatus?.quotas.tpm ?? "-"}，模型状态接口中的插件构建字段标记{" "}
+        {displayStatus?.release_metadata_ready ? "已返回" : "未通过"}；该标记不是 /api/releasez 发布身份，全局生产发布状态尚未由本页核验。
       </Typography.Paragraph>
       <Alert
-        type={!fixtureData && displayStatus?.release_metadata_ready && displayStatus.state === "ready" ? "success" : "warning"}
+        type="warning"
         showIcon
-        title="运行时 readiness 与发布证据分别核验"
+        title="模型运行门禁不等于生产发布就绪"
         description={!fixtureData && displayStatus?.release_metadata_ready && displayStatus.state === "ready"
-          ? "当前模型运行时和发布元数据均已返回就绪；生产写入仍需通过支付、平台、存储、宿主和完整 release evidence 门禁。"
-          : "中转站已配置不等于生产可用。运行时状态和 release evidence 必须分别通过；任一项缺失时生成与生产写入保持阻断。"}
+          ? "五模态运行状态均返回 ready，但这不是生产门禁通过。本响应没有 /api/releasez 的 release_id、git_sha、manifest_sha256 和 image_set_digest；全局发布身份未核验前，不得标记为生产通过。"
+          : "中转站已配置不等于生产可用。模型运行门禁和全局 release evidence 必须分别通过；任一项缺失时生成与生产写入保持阻断。"}
       />
       <ModelReadinessTable status={displayStatus} />
       {modelError ? (
@@ -106,8 +110,10 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
           />
         ) : modelStatus.next_actions.length ? (
           <Alert type="warning" showIcon title="模型上线门禁" description={modelStatus.next_actions.join("；")} />
+        ) : modelStatus.state === "ready" ? (
+          <Alert type="info" showIcon title="模型运行状态为 ready，生产发布身份未核验" description="请以 /api/releasez 的完整不可变发布身份和 ready=true 作为生产发布结论。" />
         ) : (
-          <Alert type="success" showIcon title="平台模型配置完整" />
+          <Alert type="warning" showIcon title="模型状态未达到就绪" description={`服务端模型状态为 ${modelStatus.state}，且未返回可执行的修复建议；不得按空建议推断为通过。`} />
         )
       ) : null}
       </> : null}

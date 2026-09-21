@@ -1655,6 +1655,26 @@ describe('security and access-control acceptance gates', () => {
     expect(importBlocked.error?.code).toBe('STORE_ONBOARDING_REQUIRED')
   })
 
+  it('lets an unfunded merchant read billing status but blocks paid generation', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    const workspaceId = `ws_unfunded_billing_${Date.now()}`
+    await configureBearerMembers([{ token: 'token-unfunded-billing', workspaceId }])
+    const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `unfunded-${workspaceId}`, credentialRef: 'vault://unfunded-commercial-gate' })
+    const product = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, title: '商业门禁回归商品', stock: 1 })
+    const task = service.createTask({ workspaceId, productId: product.id, platform: 'taobao', accountId: account.id })
+    const base = await start()
+    const headers = { authorization: 'Bearer token-unfunded-billing', 'x-workspace-id': workspaceId, 'content-type': 'application/json' }
+    const call = (id: number, method: string, params: Record<string, unknown> = {}) =>
+      fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }) }).then(response => response.json() as Promise<Envelope>)
+
+    const billing = await call(1, 'billing.status')
+    expect(billing.error).toBeNull()
+    expect(billing.data?.result).toMatchObject({ balance_cny: '0.00' })
+
+    const generation = await call(2, 'content.generate', { task_id: task.id })
+    expect(generation.error?.code).toBe('CREATIVE_POINTS_UNAVAILABLE')
+  })
+
   it('lets a funded production workspace create content without any bound store', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     const workspaceId = 'ws_store_less_creation'

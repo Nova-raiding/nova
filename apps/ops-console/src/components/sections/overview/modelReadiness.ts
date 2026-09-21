@@ -37,13 +37,13 @@ export function modelReadinessRows(
       label,
       providerConfigured: readiness?.provider_configured === true,
       // Fail closed: provider configuration alone never means the capability
-      // passed its final runtime and commercial readiness gates.
+      // has a verified ready runtime result.
       ready: status.state === "ready" && readiness?.ready === true,
       reasons: status.state === "ready"
         ? readiness?.reasons ?? []
         : readiness?.reasons?.length
           ? readiness.reasons
-          : [`平台模型最终状态为 ${modelStateLabel(status.state)}，尚未通过上线门禁`],
+          : [`平台模型运行状态为 ${modelStateLabel(status.state)}，不能据此判定生产上线`],
     };
   });
 }
