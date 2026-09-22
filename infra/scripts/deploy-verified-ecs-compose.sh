@@ -156,11 +156,45 @@ verified_config=$(mktemp "${TMPDIR:-/tmp}/merchant-ecs-config.XXXXXXXX.yml")
 mutation_started=false
 rollback_attempted=false
 runtime_cutover_started=false
+external_gateway_state=
+external_gateway_handoff_started=false
+candidate_gateway_image=
+candidate_gateway_network=
 state_path=
 cleanup() { rm -f -- "$verified_compose" "$verified_config"; }
+external_gateway_action() {
+  node "$root/infra/scripts/ecs-external-gateway-handoff.mjs" "$1" \
+    --state "$external_gateway_state" --lock-path "$ECS_DEPLOY_LOCK_PATH" \
+    --container-id "$ECS_EXTERNAL_GATEWAY_ID" --project "$ECS_EXTERNAL_GATEWAY_PROJECT" --service pilot-gateway \
+    --required-network "$candidate_gateway_network"
+}
+restore_external_gateway() {
+  # Stop only a gateway proven to belong to this candidate. Never remove it.
+  # Other workload rollback still requires the ordinary signed identity checks.
+  node --input-type=module - "$project" "$RELEASE_ID" "$candidate_gateway_image" <<'NODE' || return 1
+import { execFileSync } from 'node:child_process'
+const [project, release, image] = process.argv.slice(2)
+const docker = args => execFileSync('/usr/bin/docker', args, {encoding:'utf8',stdio:['ignore','pipe','pipe']})
+try {
+  const ids = docker(['ps','-a','-q','--no-trunc','--filter',`label=com.docker.compose.project=${project}`,'--filter','label=com.docker.compose.service=pilot-gateway']).trim().split(/\s+/).filter(Boolean)
+  if (ids.length > 1) throw new Error('ambiguous candidate gateway')
+  for (const id of ids) {
+    const x = JSON.parse(docker(['inspect',id]))[0]
+    const expected = JSON.parse(docker(['image','inspect',image]))[0]
+    if (!x || x.Id !== id || x.Image !== expected.Id || x.Config?.Labels?.['com.storenova.release.id'] !== release || x.Config?.Labels?.['com.docker.compose.project'] !== project || x.Config?.Labels?.['com.docker.compose.service'] !== 'pilot-gateway') throw new Error('candidate gateway identity mismatch')
+    if (x.State?.Running) docker(['stop','--time','30',id])
+  }
+} catch { console.error('candidate gateway could not be safely stopped; external recovery requires inspection'); process.exit(1) }
+NODE
+  external_gateway_action restore
+}
 rollback_on_failure() {
   status=$?
   trap - EXIT HUP INT TERM
+  if [ "$external_gateway_handoff_started" = true ]; then
+    # This restores the old public listener, not the old API/worker release.
+    restore_external_gateway || echo 'external gateway recovery failed; protected snapshot retained for operator recovery' >&2
+  fi
   if [ "$mutation_started" = true ] && [ "$rollback_attempted" = false ]; then
     rollback_attempted=true
     recovery_succeeded=false
@@ -215,6 +249,20 @@ assert_inputs_unchanged() {
 image_set_digest=$(ruby "$root/infra/scripts/validate-ecs-compose-release.rb" "$verified_compose" "$IMAGE_DIGESTS_JSON" --print-image-set-digest)
 manifest_sha256=$(ruby "$root/infra/scripts/validate-ecs-compose-release.rb" "$verified_compose" "$IMAGE_DIGESTS_JSON" --print-manifest-sha256)
 project=${ECS_COMPOSE_PROJECT:-merchant-production}
+if [ -n "${ECS_EXTERNAL_GATEWAY_ID:-}" ]; then
+  : "${ECS_EXTERNAL_GATEWAY_PROJECT:?reviewed external gateway project is required}"
+  [ "$ECS_EXTERNAL_GATEWAY_PROJECT" != "$project" ] || { echo 'external gateway must belong to a different Compose project' >&2; exit 1; }
+  external_gateway_state="$ECS_DEPLOY_STATE_DIR/${RELEASE_ID}.external-gateway.json"
+  gateway_descriptor=$(docker compose -p "$project" -f "$verified_compose" config --format json | node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8"));const g=c.services?.["pilot-gateway"],a=c.services?.["api-replica"],n=c.networks?.default?.name,i=g?.image;if(!i||!/@sha256:[0-9a-f]{64}$/.test(i)||!n||!Object.hasOwn(g.networks??{},"default")||!Object.hasOwn(a?.networks??{},"default"))process.exit(1);process.stdout.write(i+"\n"+n)')
+  candidate_gateway_image=$(printf '%s\n' "$gateway_descriptor" | sed -n '1p')
+  candidate_gateway_network=$(printf '%s\n' "$gateway_descriptor" | sed -n '2p')
+  # Snapshot before any mutation, with the inherited production lock held.
+  external_gateway_action snapshot
+  # A cross-project rollback must not attempt to bind the old listener's ports.
+  docker compose -p "$project" -f "$ECS_ROLLBACK_COMPOSE_PATH" config --format json | node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8"));for(const s of Object.values(c.services??{}))for(const p of s.ports??[]){if(typeof p!=="object"||["80","443"].includes(String(p.published)))process.exit(1)}' || { echo 'external gateway handoff requires a rollback Compose without public 80/443 bindings' >&2; exit 1; }
+else
+  node "$root/infra/scripts/ecs-external-gateway-handoff.mjs" check-ports --candidate-project "$project"
+fi
 release_images=$(docker compose -p "$project" -f "$verified_compose" config --images) || {
   echo 'could not enumerate verified release images' >&2; exit 1;
 }
@@ -292,6 +340,10 @@ MIGRATION_CHAIN_MODE=complete sh "$root/infra/scripts/verify-database-migration-
 assert_inputs_unchanged
 "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase runtime_cutover_started
 runtime_cutover_started=true
+if [ -n "$external_gateway_state" ]; then
+  external_gateway_handoff_started=true
+  external_gateway_action stop
+fi
 docker compose -p "$project" -f "$verified_compose" up -d --no-build --pull never --remove-orphans --wait --wait-timeout "${ECS_COMPOSE_WAIT_TIMEOUT_SECONDS:-300}" \
   api api-replica ui ops-ui payment-gateway worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan clamav pilot-gateway
 

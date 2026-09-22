@@ -1,5 +1,5 @@
-import { execFileSync } from 'node:child_process'
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -8,6 +8,28 @@ const path = 'infra/scripts/deploy-verified-ecs-compose.sh'
 const source = () => readFileSync(path, 'utf8')
 
 describe('verified ECS Compose deployment runner', () => {
+  it('captures an external gateway before nonce consumption and recovers it before unlocking for business rollback', () => {
+    const script = source()
+    expect(script.indexOf('external_gateway_action snapshot')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
+    expect(script.indexOf('external_gateway_action stop')).toBeLessThan(script.indexOf('up -d --no-build --pull never --remove-orphans'))
+    expect(script.indexOf('restore_external_gateway ||')).toBeLessThan(script.indexOf('flock -u 9'))
+    expect(script).toContain('check-ports --candidate-project "$project"')
+    expect(script).toContain('rollback Compose without public 80/443 bindings')
+  })
+
+  it.each([0, 23])('does not restore the external gateway after candidate cleanup exit %s unless cleanup succeeded', exitCode => {
+    const script = source()
+    const fn = script.slice(script.indexOf('restore_external_gateway() {'), script.indexOf('\nrollback_on_failure() {'))
+    const directory = mkdtempSync(join(tmpdir(), 'gateway-trap-'))
+    const marker = join(directory, 'restored')
+    const node = join(directory, 'node')
+    writeFileSync(node, `#!/bin/sh\nexit ${exitCode}\n`); chmodSync(node, 0o700)
+    const result = spawnSync('sh', ['-c', `set -eu\nproject=candidate\nRELEASE_ID=release-test\ncandidate_gateway_image=fixture\nexternal_gateway_action() { touch "$MARKER"; }\n${fn}\nif restore_external_gateway; then exit 0; else exit $?; fi`], {
+      env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, MARKER: marker }, encoding: 'utf8',
+    })
+    expect(result.status).toBe(exitCode === 0 ? 0 : 1)
+    expect(existsSync(marker)).toBe(exitCode === 0)
+  })
   it('is valid shell and requires an explicit operator boundary', () => {
     expect(execFileSync('sh', ['-n', path], { encoding: 'utf8' })).toBe('')
     const script = source()

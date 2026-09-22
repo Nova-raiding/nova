@@ -76,6 +76,9 @@ infra/scripts/build-ecs-release-images.sh
 infra/scripts/prepare-ecs-eight-image-set.mjs
 infra/scripts/capture-manual-operations-evidence.sh
 infra/scripts/deploy-verified-ecs-compose.sh
+infra/scripts/ecs-external-gateway-handoff.mjs
+infra/scripts/ecs-external-gateway-handoff.d.mts
+tests/ecs-external-gateway-handoff.test.ts
 infra/scripts/rollback-ecs-compose.sh
 infra/scripts/invoke-ecs-automatic-rollback.sh
 infra/scripts/install-ecs-release-controls.mjs

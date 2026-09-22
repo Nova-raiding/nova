@@ -107,6 +107,16 @@ ECS preflight 会以只读查询分别使用目标 `DATABASE_URL` 和 `OPS_DATAB
 
 ## ECS Compose 回滚
 
+### 已有独立公网网关的首次接管
+
+如果 80/443 由目标 Compose project 外的旧网关占用，部署器默认拒绝继续。先只读核验容器完整 ID、镜像、端口、只读证书挂载及网络，再在受保护发布配置中明确设置 `ECS_EXTERNAL_GATEWAY_ID` 和 `ECS_EXTERNAL_GATEWAY_PROJECT`。只有确认旧容器确实没有任何 Compose project/service 标签时，后者才设置为 `legacy-unmanaged`；这不是允许忽略已有标签的开关。
+
+部署器在同一生产锁内保存 root-only 快照，记录配置与证书内容摘要而非原始凭据。迁移完成后才停止这个精确旧容器，再启动候选服务。旧容器不删除、不重建。启动失败时，仅在候选网关的 project/service/release/image 身份全部一致后停止候选网关，然后核对快照并启动原旧容器。
+
+快照还要求旧网关已经连接候选 API 与网关共享的 production network；不能只依据旧网关曾经通过 demo network 访问旧 API 就认为回退可达。按 Compose 重建 API 会丢失手工添加的旧网络 attachment。缺少共同网络时部署在 nonce 消费和停机之前阻断，先审查并准备可恢复的过渡网络拓扑，再重新捕获快照。
+
+恢复旧公网监听不等于恢复旧业务版本。API/worker 仍走原有 signed rollback 和 release identity 核验；失败会明确保留现场，不绕过身份门禁。此接管模式的回滚 Compose 不得发布宿主 80/443，以免与恢复的旧监听争用端口。必须按真实旧拓扑准备回滚输入，不能为了通过检查删改一个本应发布这些端口的回滚定义。接管前还需验证候选 nginx 配置、证书、upstream 与内部 HTTPS healthcheck；快照成功不能替代这些验证。
+
 现网只有 ECS/Docker Compose 环境时使用 `infra/scripts/rollback-ecs-compose.sh`，不要使用 Kubernetes `rollback.sh`。回滚输入必须是发布前保存并审核的单一渲染 Compose、其完整镜像摘要 JSON 和回滚计划。计划格式如下；四个身份字段必须来自切换前 `/releasez` 和目标发布的 ECS release gate，不能现场猜测或改写：
 
 ```json
