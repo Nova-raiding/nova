@@ -235,8 +235,10 @@ export function parseS3CompatibleObjectStorageConfig(input: unknown, options: { 
 function isCloudNotFound(error: unknown): boolean {
   if (error instanceof CloudObjectNotFoundError) return true
   if (!error || typeof error !== 'object') return false
-  const value = error as { code?: unknown; status?: unknown; statusCode?: unknown }
-  return value.code === 'NoSuchKey' || value.code === 'NotFound' || value.code === 'OBJECT_NOT_FOUND' || value.status === 404 || value.statusCode === 404
+  const value = error as { code?: unknown; name?: unknown; status?: unknown; statusCode?: unknown; $metadata?: { httpStatusCode?: unknown } }
+  return value.code === 'NoSuchKey' || value.code === 'NotFound' || value.code === 'OBJECT_NOT_FOUND'
+    || value.name === 'NotFound' || value.name === 'NoSuchKey'
+    || value.status === 404 || value.statusCode === 404 || value.$metadata?.httpStatusCode === 404
 }
 
 export class ObjectStorageError extends Error {

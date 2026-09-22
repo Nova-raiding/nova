@@ -314,6 +314,25 @@ describe('S3CompatibleObjectStorage', () => {
     await expect(store.get('ws_cloud', 'clean/ws_cloud/asset_1/logo.png')).rejects.toMatchObject({ code: 'OBJECT_STORAGE_UNAVAILABLE', status: 503 })
   })
 
+  it('recognizes AWS SDK and Aliyun OSS not-found shapes while probing metadata', async () => {
+    const notFoundShapes = [
+      { name: 'NotFound', $metadata: { httpStatusCode: 404 } },
+      { name: 'NoSuchKey', $metadata: { httpStatusCode: 404 } },
+      { code: 'NotFound', statusCode: 404 },
+    ]
+    for (const shape of notFoundShapes) {
+      const transport: CloudObjectTransport = {
+        async head() { return null },
+        async get() { throw Object.assign(new Error('missing'), shape) },
+        async put() {},
+        async delete() {},
+      }
+      const store = new S3CompatibleObjectStorage(transport)
+      await expect(store.putQuarantine({ workspaceId: 'ws_cloud', assetId: `asset_${notFoundShapes.indexOf(shape)}`, fileName: 'x.txt', contentType: 'text/plain', body: new TextEncoder().encode('body') }))
+        .resolves.toMatchObject({ zone: 'quarantine' })
+    }
+  })
+
   it('keeps the same quarantine, tenant and integrity contract over a cloud transport', async () => {
     const objects = new Map<string, { body: Uint8Array; contentType: string; metadata: Record<string, string> }>()
     const transport: CloudObjectTransport = {
