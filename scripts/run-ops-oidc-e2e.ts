@@ -243,6 +243,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     const uiEnvironment = opsChildEnvironment(source, {
       NODE_ENV: 'production', VITE_API_BASE: '/api', VITE_API_PROXY_TARGET: baseUrl,
       VITE_OPS_AUTH_MODE: 'oidc', VITE_OPS_BUILD_MODE: 'oidc', VITE_OPS_TRACE: 'true', VITE_OPS_E2E: 'true',
+      VITE_OPS_LOGIN_URL: `${baseUrl}/login`,
     })
     const uiOutput = resolve(evidenceDir, 'ui-dist')
     const build = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'build', 'apps/ops-console', '--config', 'apps/ops-console/vite.config.ts', '--outDir', uiOutput], uiEnvironment, 'ui-build')
