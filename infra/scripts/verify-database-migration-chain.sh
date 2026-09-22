@@ -66,11 +66,11 @@ verify_target() {
       v=$1
       if (fail == "" && v != version[actual_count]) fail="migration history is missing or has an unexpected version at " version[actual_count]
       legacy_name=(v == 14 && $2 == "read_only_schedules" && $3 == "")
-      if (fail == "" && $2 != name[v] && !legacy_name) fail="migration " v " name mismatch"
+      if (fail == "" && $2 != name[v] && !(baseline_accepted == 1 && legacy_name)) fail="migration " v " name mismatch"
       legacy_checksum=(v == 144 && $3 == "9519b2dbee21371a0bc7429c50e61ab3a677a4fd3965707328bd18489f2ad2e7") ||
         (v == 168 && $3 == "37f633fb25a7d1536f65a644a1adee3611c36ed416ac9a1bf3a10a1e92ab1ef1") ||
         (v == 191 && $3 == "36f8c9669ba99a392a874a76fa8d28b658211376a0e7e3131281247926202ba2")
-      if (fail == "" && $3 != checksum[v] && !legacy_name && !(baseline_accepted == 1 && legacy_checksum)) fail="migration " v " checksum mismatch"
+      if (fail == "" && $3 != checksum[v] && !(baseline_accepted == 1 && legacy_name) && !(baseline_accepted == 1 && legacy_checksum)) fail="migration " v " checksum mismatch"
       if (fail != "") { print target ": " fail > "/dev/stderr"; exit 1 }
     }
     END {

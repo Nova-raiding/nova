@@ -46,15 +46,15 @@ accepted_checksums() {
       168) approved="$approved 37f633fb25a7d1536f65a644a1adee3611c36ed416ac9a1bf3a10a1e92ab1ef1" ;;
       191) approved="$approved 36f8c9669ba99a392a874a76fa8d28b658211376a0e7e3131281247926202ba2" ;;
     esac
+    for entry in $(printf '%s' "${MIGRATION_BASELINE_CHECKSUMS:-}" | tr ',' ' '); do
+      case "$entry" in
+        "$version"=*)
+          candidate=${entry#*=}
+          if printf '%s' "$candidate" | grep -Eq '^[a-f0-9]{64}$'; then approved="$approved $candidate"; fi
+          ;;
+      esac
+    done
   fi
-  for entry in $(printf '%s' "${MIGRATION_BASELINE_CHECKSUMS:-}" | tr ',' ' '); do
-    case "$entry" in
-      "$version"=*)
-        candidate=${entry#*=}
-        if printf '%s' "$candidate" | grep -Eq '^[a-f0-9]{64}$'; then approved="$approved $candidate"; fi
-        ;;
-    esac
-  done
   printf '|'
   for checksum in $approved; do printf '%s|' "$checksum"; done
 }
