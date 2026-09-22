@@ -57,6 +57,11 @@ const dash = (value: string | number | null | undefined) => value === null || va
 const time = (value: string | null | undefined) => value ? new Date(value).toLocaleString() : "—";
 const point = (value: number | null | undefined) => value === null || value === undefined ? "待确认" : value.toLocaleString();
 
+export const platformCatalogGovernanceTarget = {
+  id: "ops-platform-catalog",
+  href: "?workbench=platform#ops-platform-catalog",
+} as const;
+
 const commercialStateLabels: Record<string, string> = {
   paid: "已核验支付",
   pending: "待处理",
@@ -333,7 +338,7 @@ function LedgerTable({ state, controller }: { state: CommercialOperationsControl
   ]} /> : null}</Drawer></>}</DataBoundary>;
 }
 
-function CatalogTable({ state, controller }: { state: CommercialOperationsController["data"]["catalog"]; controller: CommercialOperationsController }) {
+function CatalogTable({ state, controller, catalogGovernanceHref }: { state: CommercialOperationsController["data"]["catalog"]; controller: CommercialOperationsController; catalogGovernanceHref: string }) {
   const typeLabel = (value: string) => ({ plan: "订阅套餐", trial: "试用套餐", point_pack: "点数包", onboarding_once: "一次性开通" }[value] ?? value);
   const visibilityLabel = (value: string) => ({ public: "公开售卖", private: "私测专用" }[value] ?? value);
   const approvalLabel = (value: string) => ({ active: "在售", approved: "已批准", draft: "草稿", archived: "已归档" }[value] ?? value);
@@ -360,7 +365,13 @@ function CatalogTable({ state, controller }: { state: CommercialOperationsContro
     { key: "benefits", label: "套餐权益", children: readableBenefits(selection.selected) },
     { key: "unresolved", label: "未决项", children: selection.selected.unresolved.length ? selection.selected.unresolved.join("、") : "无" },
   ]} /> : null}</Drawer>
-  {!controller.permissions.canDraftCatalog ? <Alert type="info" showIcon title="目录只读" description="当前会话缺少 commercial.catalog.draft；不会渲染编辑表单。" /> : <Alert type="warning" showIcon title="目录写入 API 尚未接入" description="草稿、校验和发布命令在具备独立 capability、revision 与审计契约前保持 BLOCKED。" />}</>}</DataBoundary>;
+  {!controller.permissions.canDraftCatalog ? <Alert type="info" showIcon title="目录只读" description="当前会话缺少 commercial.catalog.draft；不会渲染编辑表单。" /> : <Alert
+    type="success"
+    showIcon
+    title="套餐目录治理已可用"
+    description="当前 Workspace 视图用于核对目录版本；草稿、审批、发布和停售统一在平台财务中心的套餐管理中执行，并保留版本与审计记录。"
+    action={<Button type="link" href={catalogGovernanceHref}>打开套餐管理</Button>}
+  />}</>}</DataBoundary>;
 }
 
 function OrdersTable({ state, controller }: { state: CommercialOperationsController["data"]["orders"]; controller: CommercialOperationsController }) {
@@ -436,11 +447,11 @@ function TimelineTable({ state, controller }: { state: CommercialOperationsContr
   ]} /> : null}</Drawer></>}</DataBoundary>;
 }
 
-function renderView(view: CommercialView, controller: CommercialOperationsController) {
+function renderView(view: CommercialView, controller: CommercialOperationsController, catalogGovernanceHref: string) {
   if (view === "blocks") return <BlockTable state={controller.data.blocks} controller={controller} />;
   if (view === "entitlements") return <EntitlementTable state={controller.data.entitlements} controller={controller} />;
   if (view === "ledger") return <LedgerTable state={controller.data.ledger} controller={controller} />;
-  if (view === "catalog") return <CatalogTable state={controller.data.catalog} controller={controller} />;
+  if (view === "catalog") return <CatalogTable state={controller.data.catalog} controller={controller} catalogGovernanceHref={catalogGovernanceHref} />;
   if (view === "orders") return <OrdersTable state={controller.data.orders} controller={controller} />;
   if (view === "rates") return <RatesTable state={controller.data.rates} controller={controller} />;
   if (view === "timeline") return <TimelineTable state={controller.data.timeline} controller={controller} />;
@@ -691,7 +702,7 @@ function CommercialRefundOperationsPanel({ controller }: { controller: Commercia
   </section>;
 }
 
-export function CommercialOperationsWorkspace({ controller }: { controller: CommercialOperationsController }) {
+export function CommercialOperationsWorkspace({ controller, catalogGovernanceHref = platformCatalogGovernanceTarget.href }: { controller: CommercialOperationsController; catalogGovernanceHref?: string }) {
   const viewHeadingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => { viewHeadingRef.current?.focus({ preventScroll: true }); }, [controller.view]);
   return (
@@ -710,7 +721,7 @@ export function CommercialOperationsWorkspace({ controller }: { controller: Comm
       <Tabs activeKey={controller.view} onChange={key => controller.setView(key as CommercialView)} items={commercialViews.map(view => ({ key: view, label: commercialViewLabels[view] }))} />
       <section className="commercial-view" aria-labelledby={`commercial-view-${controller.view}`}>
         <Typography.Title ref={viewHeadingRef} tabIndex={-1} id={`commercial-view-${controller.view}`} level={4}>{commercialViewLabels[controller.view]}</Typography.Title>
-        {renderView(controller.view, controller)}
+        {renderView(controller.view, controller, catalogGovernanceHref)}
       </section>
     </Space>
   );

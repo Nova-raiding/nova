@@ -1,4 +1,4 @@
-import { CommercialOperationsWorkspace } from "../components/commercial/CommercialOperationsWorkspace.js";
+import { CommercialOperationsWorkspace, platformCatalogGovernanceTarget } from "../components/commercial/CommercialOperationsWorkspace.js";
 import { OpsPage } from "../components/OpsPage";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { commercialViewCapability, useCommercialOperations } from "../hooks/useCommercialOperations.js";
@@ -125,6 +125,7 @@ function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
   };
   return (
     <Card
+      id={platformCatalogGovernanceTarget.id}
       className="ops-finance-secondary-panel"
       title="套餐管理"
       extra={<Space wrap>

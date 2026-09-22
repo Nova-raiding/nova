@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { CommercialOperationsController } from "../../hooks/useCommercialOperations.js";
-import { commercialBlockDisplayState, CommercialAccessStatusBar, CommercialErrorSummary, CommercialOperationsWorkspace } from "./CommercialOperationsWorkspace.js";
+import { commercialBlockDisplayState, CommercialAccessStatusBar, CommercialErrorSummary, CommercialOperationsWorkspace, platformCatalogGovernanceTarget } from "./CommercialOperationsWorkspace.js";
 import { parseCommercialReadiness } from "../../api/commercialOperationsClient.js";
 
 const query = { view: "blocks", record: "", status: "", query: "", page: 1, sort: "", order: "" } as const;
@@ -76,12 +76,17 @@ describe("CommercialOperationsWorkspace", () => {
         ] } },
         orders: { status: "idle" }, rates: { status: "idle" }, services: { status: "idle" },
       },
-      permissions: { privateSkuReadable: false, canRecover: false, canAdjustPoints: false, canDraftCatalog: false, canPublishCatalog: false, canGrantPrivateSku: false, canReconcilePayment: false, canDraftRate: false, canApproveRate: false, canWriteService: false },
+      permissions: { privateSkuReadable: false, canRecover: false, canAdjustPoints: false, canDraftCatalog: true, canPublishCatalog: false, canGrantPrivateSku: false, canReconcilePayment: false, canDraftRate: false, canApproveRate: false, canWriteService: false },
     } as unknown as CommercialOperationsController;
     const html = renderToStaticMarkup(<CommercialOperationsWorkspace controller={controller} />);
     expect(html).toContain("public_sku");
     expect(html).not.toContain("secret_private_sku");
     expect(html).not.toContain("不得泄露");
+    expect(html).toContain("套餐目录治理已可用");
+    expect(html).toContain("打开套餐管理");
+    expect(html).toContain(platformCatalogGovernanceTarget.href);
+    expect(platformCatalogGovernanceTarget.href).toContain(`#${platformCatalogGovernanceTarget.id}`);
+    expect(html).not.toContain("目录写入 API 尚未接入");
   });
 
   it("keeps payment success blocked until a grant is present", () => {
