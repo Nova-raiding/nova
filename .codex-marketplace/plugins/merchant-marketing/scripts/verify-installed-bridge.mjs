@@ -43,9 +43,21 @@ const fixedRuntimeFiles = [
   'mcp/bridge.mjs',
   'mcp/relay-evidence.mjs',
   'mcp/managed-token.mjs',
+  'mcp/installation-identity.mjs',
+  'mcp/windows-credential.mjs',
   'mcp/keychain-credential.mjs',
   'mcp/keychain-credential-helper.swift',
+  'macos/store-nova-connect-helper.swift',
+  'scripts/build-connect-helper.mjs',
+  'scripts/connect-local-macos.mjs',
+  'windows/StoreNovaConnectHelper.cs',
+  'windows/StoreNovaCredentialHelper.cs',
+  'windows/StoreNovaCredentialHelper.csproj',
+  'scripts/build-connect-helper-windows.mjs',
+  'scripts/build-windows-credential-helper.mjs',
+  'scripts/verify-connect-helper-windows.ps1',
   'scripts/login-local-macos.mjs',
+  'scripts/login-local-windows.mjs',
   'scripts/build-keychain-helper.mjs',
   'scheduled/daily-store-risk-scan.json',
   'scheduled/weekly-six-platform-digest.json',
@@ -149,6 +161,12 @@ const toolCacheDrift = mismatchedFiles.some(path => path === 'mcp/bridge.mjs' ||
   || duplicateTools.length > 0
   || Boolean(sourceDiscovery.error)
   || Boolean(installedDiscovery.error)
+const connectHelperSourcePaths = [
+  'macos/store-nova-connect-helper.swift', 'scripts/build-connect-helper.mjs', 'scripts/connect-local-macos.mjs',
+  'windows/StoreNovaConnectHelper.cs', 'scripts/build-connect-helper-windows.mjs', 'scripts/verify-connect-helper-windows.ps1',
+]
+const connectHelperSourceVerified = !missingRuntimeFiles.some(path => connectHelperSourcePaths.includes(path))
+  && !mismatchedFiles.some(path => connectHelperSourcePaths.includes(path))
 const ok = mismatchedFiles.length === 0
   && missingRuntimeFiles.length === 0
   && unexpectedRuntimeFiles.length === 0
@@ -200,6 +218,17 @@ const evidence = {
   current_conversation_refresh: {
     verified: false,
     reason: 'The installed bridge can be verified, but an already-running ChatGPT conversation may retain its original tool snapshot.',
+  },
+  connect_helper: {
+    source_verified: connectHelperSourceVerified,
+    app_bundle_verified: false,
+    custom_scheme: 'development_recovery_only',
+    production_ready: false,
+    reason: 'Unsigned custom-scheme platform binaries are not a production connection path; require trusted signing and installation-instance binding.',
+    platforms: {
+      darwin: { source_verified: connectHelperSourceVerified, signed_bundle_verified: false, production_ready: false },
+      win32: { source_verified: connectHelperSourceVerified, sha256_verified: false, authenticode_verified: false, production_ready: false },
+    },
   },
 }
 process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`)

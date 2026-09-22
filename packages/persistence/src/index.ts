@@ -1,5 +1,6 @@
 export * from './repository.js'
 export * from './password-auth-repository.js'
+export * from './local-plugin-connection-repository.js'
 export * from './migration.js'
 export * from './business-repository.js'
 export * from './product-brand-visibility.js'
@@ -65,3 +66,4 @@ export * from './creative-point-lifecycle-repository.js'
 
 export * from "./customer-delivery-repository.js"
 export * from './job-queue-metrics-repository.js'
+export * from './local-plugin-install-instance-repository.js'

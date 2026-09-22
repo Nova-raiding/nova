@@ -90,6 +90,7 @@ import {
   confirmAssetFacts,
   confirmPublish,
   confirmTaskPlan,
+  createCommercialPurchaseOrder,
   createRechargeOrder,
   createCampaignBatch,
   createTask,
@@ -124,6 +125,7 @@ import {
   fetchPublishJobPage,
   fetchRulePacks,
   fetchRechargeOrder,
+  fetchCommercialPurchaseOrder,
   fetchSyncJobs,
   fetchTask,
   fetchTaskFeedback,
@@ -2793,6 +2795,8 @@ export function aggregatePointUsage(entries: CreativePointStatementEntry[], mode
 
 type PointPackageOption = {
   id: string
+  skuCode: string
+  purchaseKind: 'purchase' | 'point_pack'
   name: string
   amountLabel: string
   priceLabel: string
@@ -2860,11 +2864,31 @@ function resolvePointPackages(catalog: CommercialCatalogItem[]): PointPackageOpt
       const points = item.benefits.find((benefit) => /point/iu.test(benefit.code))?.quantity ?? null
       return {
         id: item.id,
+        skuCode: item.sku_code,
+        purchaseKind: 'point_pack' as const,
         name: item.name,
         amountLabel: item.benefits_summary || item.cycle_label || '权益以服务端目录为准',
         priceLabel: item.price_label,
         priceCny: Number.isFinite(price) && price > 0 ? price : null,
         note: item.cycle_label ?? '服务端商业目录',
+        pointsPerUnit: typeof points === 'number' && points > 0 ? points : null,
+        blockedReason: item.executable ? '' : (item.unresolved.join('；') || '服务端未将该套餐标记为可下单'),
+      }
+    })
+}
+
+/** Monthly plans are purchasable from the same server-owned catalog, but are
+ * deliberately separate from one-time creative-point packs. */
+function resolveMonthlyPackages(catalog: CommercialCatalogItem[]): PointPackageOption[] {
+  return selectMerchantCatalogItems(catalog)
+    .filter((item) => item.type === 'monthly')
+    .map((item) => {
+      const price = Number(item.price_label.replace(/[^0-9.]/gu, ''))
+      const points = item.benefits.find((benefit) => /point/iu.test(benefit.code))?.quantity ?? null
+      return {
+        id: item.id, skuCode: item.sku_code, purchaseKind: 'purchase' as const,
+        name: item.name, amountLabel: item.benefits_summary || '权益以服务端目录为准', priceLabel: item.price_label,
+        priceCny: Number.isFinite(price) && price > 0 ? price : null, note: item.cycle_label ?? '每月',
         pointsPerUnit: typeof points === 'number' && points > 0 ? points : null,
         blockedReason: item.executable ? '' : (item.unresolved.join('；') || '服务端未将该套餐标记为可下单'),
       }
@@ -3022,8 +3046,10 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
     return () => { active = false }
   }, [baseUrl])
   const pointPackages = useMemo(() => (catalogItems ? resolvePointPackages(catalogItems) : []), [catalogItems])
-  const selectedPackage = pointPackages.find((item) => item.id === selectedPointPackage) ?? null
-  const selectedPointCount = selectedPackage?.pointsPerUnit ? selectedPackage.pointsPerUnit * purchaseQuantity : null
+  const monthlyPackages = useMemo(() => (catalogItems ? resolveMonthlyPackages(catalogItems) : []), [catalogItems])
+  const selectedPackage = [...monthlyPackages, ...pointPackages].find((item) => item.id === selectedPointPackage) ?? null
+  const effectivePurchaseQuantity = selectedPackage?.purchaseKind === 'purchase' ? 1 : purchaseQuantity
+  const selectedPointCount = selectedPackage?.pointsPerUnit ? selectedPackage.pointsPerUnit * effectivePurchaseQuantity : null
   const purchaseBlockNotice = resolvePurchaseBlockNotice(selectedPackage)
   const dailyUsage = useMemo(() => aggregatePointUsage(statementEntries ?? [], 'day'), [statementEntries])
   const monthlyUsage = useMemo(() => aggregatePointUsage(statementEntries ?? [], 'month'), [statementEntries])
@@ -3048,14 +3074,16 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
     if (selectedPackage.blockedReason) { setRechargeError(selectedPackage.blockedReason); return }
     if (selectedPackage.priceCny === null) { setRechargeError('服务端目录未给出可下单价格，无法创建充值订单。'); return }
     setRechargeLoading(true); setRechargeError('')
-    const amount = formatAmountCny(rechargeAmountFen(selectedPackage.priceCny, purchaseQuantity))
-    const intent = [selectedPackage.id, amount, paymentMethod, purchaseQuantity].join('|')
+    const amount = formatAmountCny(rechargeAmountFen(selectedPackage.priceCny, effectivePurchaseQuantity))
+    const intent = [selectedPackage.id, amount, paymentMethod, effectivePurchaseQuantity].join('|')
     const resolved = resolveRechargeIdempotency(intent, { intent: rechargeIntent.current, key: rechargeIdempotencyKey.current })
     rechargeIntent.current = resolved.intent
     rechargeIdempotencyKey.current = resolved.key
     const idempotencyKey = resolved.key
     try {
-      const order = await createRechargeOrder(baseUrl, amount, paymentMethod, idempotencyKey)
+      const order = selectedPackage.purchaseKind === 'purchase'
+        ? await createCommercialPurchaseOrder(baseUrl, selectedPackage.purchaseKind, selectedPackage.skuCode, 'merchant_monthly_subscription', idempotencyKey)
+        : await createRechargeOrder(baseUrl, amount, paymentMethod, idempotencyKey)
       // The intent is settled: the next click is a new purchase and must not be
       // collapsed into this order by the server's dedupe.
       rechargeIntent.current = ''
@@ -3070,7 +3098,11 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
   }
   const refreshRecharge = async () => {
     if (!rechargeOrder?.id || !baseUrl) return
-    try { setRechargeOrder(await fetchRechargeOrder(baseUrl, rechargeOrder.id)) } catch (error) { setRechargeError(error instanceof Error ? error.message : '查询充值订单失败') }
+    try {
+      setRechargeOrder(await (selectedPackage?.purchaseKind === 'purchase'
+        ? fetchCommercialPurchaseOrder(baseUrl, rechargeOrder.id)
+        : fetchRechargeOrder(baseUrl, rechargeOrder.id)))
+    } catch (error) { setRechargeError(error instanceof Error ? error.message : '查询订单失败') }
   }
   const resetUsage = () => {
     setRangeMode('day')
@@ -3128,10 +3160,15 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport }: { 
       <Modal title={pricingDialog === 'points' ? '创意点套餐' : '储存空间购买'} open={Boolean(pricingDialog)} footer={null} width={720} onCancel={() => { setPricingDialog(null); setSelectedPointPackage(''); setPurchaseQuantity(1); setAgreementAccepted(false) }}>
         {pricingDialog === 'points' ? <>
           <p className="finance-pricing-dialog-note">以下套餐来自服务端商业目录，价格与权益以服务端返回为准。</p>
-          {catalogItems === null ? <p className="muted" role="status">{catalogNote}</p> : pointPackages.length === 0 ? <p className="muted" role="status">服务端商业目录未返回可购买的创意点套餐。</p> : (
-            <div className="finance-price-table dialog" role="table" aria-label="创意点价格表"><div className="finance-price-row header has-action" role="row"><span>套餐</span><span>创意点</span><span>价格</span><span>说明</span><span>操作</span></div>{pointPackages.map((item) => <div className="finance-price-row has-action" role="row" key={item.id}><strong>{item.name}</strong><span>{item.amountLabel}</span><b>{item.priceLabel}</b><small>{item.note}</small><button className="primary" type="button" disabled={Boolean(item.blockedReason)} onClick={() => { setSelectedPointPackage(item.id); setPurchaseQuantity(1); setAgreementAccepted(false) }}>{selectedPointPackage === item.id ? '已选择' : '选择'}</button></div>)}</div>
+          {catalogItems === null ? <p className="muted" role="status">{catalogNote}</p> : (
+            <>
+              <h3>月度套餐</h3>
+              {monthlyPackages.length === 0 ? <p className="muted" role="status">服务端商业目录未返回可购买的月度套餐。</p> : <div className="finance-price-table dialog" role="table" aria-label="月度套餐价格表"><div className="finance-price-row header has-action" role="row"><span>套餐</span><span>权益</span><span>价格</span><span>周期</span><span>操作</span></div>{monthlyPackages.map((item) => <div className="finance-price-row has-action" role="row" key={item.id}><strong>{item.name}</strong><span>{item.amountLabel}</span><b>{item.priceLabel}</b><small>{item.note}</small><button className="primary" type="button" disabled={Boolean(item.blockedReason)} onClick={() => { setSelectedPointPackage(item.id); setPurchaseQuantity(1); setAgreementAccepted(false) }}>{selectedPointPackage === item.id ? '已选择' : item.blockedReason ? '联系客服' : '选择'}</button></div>)}</div>}
+              <h3>创意点包</h3>
+              {pointPackages.length === 0 ? <p className="muted" role="status">服务端商业目录未返回可购买的创意点套餐。</p> : <div className="finance-price-table dialog" role="table" aria-label="创意点价格表"><div className="finance-price-row header has-action" role="row"><span>套餐</span><span>创意点</span><span>价格</span><span>说明</span><span>操作</span></div>{pointPackages.map((item) => <div className="finance-price-row has-action" role="row" key={item.id}><strong>{item.name}</strong><span>{item.amountLabel}</span><b>{item.priceLabel}</b><small>{item.note}</small><button className="primary" type="button" disabled={Boolean(item.blockedReason)} onClick={() => { setSelectedPointPackage(item.id); setPurchaseQuantity(1); setAgreementAccepted(false) }}>{selectedPointPackage === item.id ? '已选择' : item.blockedReason ? '联系客服' : '选择'}</button></div>)}</div>}
+            </>
           )}
-          {selectedPackage && <section className="finance-checkout" aria-label="创意点购买确认"><div className="finance-checkout-qr">{rechargeOrder?.payment_url || rechargeOrder?.paymentUrl ? <a href={(rechargeOrder.payment_url ?? rechargeOrder.paymentUrl) || '#'} target="_blank" rel="noreferrer">打开支付页面</a> : <strong>确认后生成真实支付订单</strong>}<span>支付完成后由服务端回调或查单入账，未支付不会增加创意点。</span><div className="finance-payment-methods" role="group" aria-label="支付方式"><button className="selected" type="button" disabled>支付宝</button></div></div><div className="finance-checkout-details"><div><span>购买套餐</span><strong>{selectedPackage.name} · {selectedPackage.amountLabel}</strong></div><label><span>购买数量</span><div className="finance-quantity-stepper"><button type="button" aria-label="减少购买数量" onClick={() => setPurchaseQuantity((value) => Math.max(1, value - 1))}>−</button><InputNumber controls={false} min={1} max={99} value={purchaseQuantity} onChange={(value) => setPurchaseQuantity(value || 1)} /><button type="button" aria-label="增加购买数量" onClick={() => setPurchaseQuantity((value) => Math.min(99, value + 1))}>＋</button></div></label><div><span>本次购买创意点</span><strong>{selectedPointCount === null ? '以服务端订单为准' : `共 ${selectedPointCount.toLocaleString()} 点`}</strong></div><div><span>应付金额</span><b>{selectedPackage.priceCny === null ? '以服务端订单为准' : `¥${formatAmountCny(rechargeAmountFen(selectedPackage.priceCny, purchaseQuantity))}`}</b></div><div className="finance-checkout-action"><Checkbox checked={agreementAccepted} onChange={(event) => setAgreementAccepted(event.target.checked)}>我已阅读并同意《创意点购买协议》，确认虚拟权益到账后不支持无理由退款。</Checkbox><button className="primary finance-confirm-purchase" type="button" disabled={!agreementAccepted || rechargeLoading || Boolean(selectedPackage.blockedReason) || selectedPackage.priceCny === null} onClick={() => void submitRecharge()}>{rechargeLoading ? '创建订单中…' : '确认购买'}</button></div>{selectedPackage.blockedReason && <p className="error-text" role="alert">{selectedPackage.blockedReason}</p>}{purchaseBlockNotice && <p className="muted" role="status">{purchaseBlockNotice}</p>}{rechargeOrder && <div className="finance-recharge-order" role="status"><strong>充值订单：{rechargeOrder.id}</strong><span>状态：{rechargeOrder.state}{rechargeOrder.warning ? ` · ${rechargeOrder.warning}` : ''}</span><button type="button" onClick={() => void refreshRecharge()}>查询订单</button></div>}{rechargeError && <p className="error-text" role="alert">{rechargeError}</p>}</div></section>}
+          {selectedPackage && <section className="finance-checkout" aria-label="套餐购买确认"><div className="finance-checkout-qr">{rechargeOrder?.payment_url || rechargeOrder?.paymentUrl ? <a href={(rechargeOrder.payment_url ?? rechargeOrder.paymentUrl) || '#'} target="_blank" rel="noreferrer">打开支付页面</a> : <strong>确认后生成真实支付订单</strong>}<span>支付完成后由服务端回调或查单入账，未支付不会增加权益或创意点。</span><div className="finance-payment-methods" role="group" aria-label="支付方式"><button className="selected" type="button" disabled>支付宝</button></div></div><div className="finance-checkout-details"><div><span>购买套餐</span><strong>{selectedPackage.name} · {selectedPackage.amountLabel}</strong></div><label><span>购买数量</span><div className="finance-quantity-stepper"><button type="button" aria-label="减少购买数量" onClick={() => setPurchaseQuantity((value) => Math.max(1, value - 1))}>−</button><InputNumber controls={false} min={1} max={99} value={purchaseQuantity} onChange={(value) => setPurchaseQuantity(value || 1)} /><button type="button" aria-label="增加购买数量" onClick={() => setPurchaseQuantity((value) => Math.min(99, value + 1))}>＋</button></div></label><div><span>本次购买创意点</span><strong>{selectedPointCount === null ? '以服务端订单为准' : `共 ${selectedPointCount.toLocaleString()} 点`}</strong></div><div><span>应付金额</span><b>{selectedPackage.priceCny === null ? '以服务端订单为准' : `¥${formatAmountCny(rechargeAmountFen(selectedPackage.priceCny, purchaseQuantity))}`}</b></div><div className="finance-checkout-action"><Checkbox checked={agreementAccepted} onChange={(event) => setAgreementAccepted(event.target.checked)}>我已阅读并同意《套餐购买协议》，确认虚拟权益按服务端回调到账。</Checkbox><button className="primary finance-confirm-purchase" type="button" disabled={!agreementAccepted || rechargeLoading || Boolean(selectedPackage.blockedReason) || selectedPackage.priceCny === null} onClick={() => void submitRecharge()}>{rechargeLoading ? '创建订单中…' : '确认购买'}</button></div>{selectedPackage.blockedReason && <p className="error-text" role="alert">{selectedPackage.blockedReason}</p>}{purchaseBlockNotice && <p className="muted" role="status">{purchaseBlockNotice}</p>}{rechargeOrder && <div className="finance-recharge-order" role="status"><strong>订单：{rechargeOrder.id}</strong><span>状态：{rechargeOrder.state}{rechargeOrder.warning ? ` · ${rechargeOrder.warning}` : ''}</span><button type="button" onClick={() => void refreshRecharge()}>查询订单</button></div>}{rechargeError && <p className="error-text" role="alert">{rechargeError}</p>}</div></section>}
         </> : <div className="finance-storage-contact"><Boxes size={28} /><strong>请咨询客服</strong></div>}
       </Modal>
     </section>

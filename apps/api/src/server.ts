@@ -58,6 +58,9 @@ import { verifyScannerRequestProof } from '../../../packages/security/src/scanne
 import { verifyWorkerRequestProof, WORKER_ROLES, type WorkerRequestRole } from '../../../packages/security/src/worker-request-proof.js'
 import { bindOidcDisplayLoginProof } from '../../../packages/security/src/oidc-login-proof.js'
 import { LOCAL_PLUGIN_CLIENT_ID, LocalPluginAuthorizationRequestError, localPluginAuthorizationHtml, localPluginLoginRequiredHtml, parseLocalPluginAuthorizationRequest, parseLocalPluginTokenRequest } from './local-plugin-auth.js'
+import { LocalPluginConnectionError, MemoryLocalPluginConnectionRepository, PostgresLocalPluginConnectionRepository, type LocalPluginConnectionRepository } from '../../../packages/persistence/src/local-plugin-connection-repository.js'
+import { LocalPluginInstallInstanceError, MemoryLocalPluginInstallInstanceRepository, PostgresLocalPluginInstallInstanceRepository, type LocalPluginInstallInstanceRepository } from '../../../packages/persistence/src/local-plugin-install-instance-repository.js'
+import { localPluginInstanceProofMessage } from './local-plugin-instance-proof.js'
 import { ConnectorFailure, createVaultCredentialProviderFromEnv, isProductionCanaryReady, RedisCredentialRefreshLock, validatePlatformCapabilityEvidence } from '../../../packages/connectors/src/index.js'
 import { platformWriteAllowed } from '../../../packages/connectors/src/write-boundary.js'
 import { runFencedSinglePublish, PublishCommitStatusUnknownError } from './publish-fenced-orchestrator.js'
@@ -1335,10 +1338,22 @@ const memoryContextSnapshots = new MemoryContextSnapshotRepository()
 const memoryIdentities = new MemoryIdentityLifecycleRepository()
 const memoryPasswordAuth = new MemoryPasswordAuthRepository()
 let passwordAuthRepository: PasswordAuthRepository = memoryPasswordAuth
+const memoryLocalPluginConnections = new MemoryLocalPluginConnectionRepository()
+let localPluginConnections: LocalPluginConnectionRepository = memoryLocalPluginConnections
+const memoryLocalPluginInstallInstances = new MemoryLocalPluginInstallInstanceRepository()
+let localPluginInstallInstances: LocalPluginInstallInstanceRepository = memoryLocalPluginInstallInstances
 
 export function setPasswordAuthRepositoryForTests(repository?: PasswordAuthRepository) {
   if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('PASSWORD_AUTH_REPOSITORY_OVERRIDE_TEST_ONLY')
   passwordAuthRepository = repository ?? memoryPasswordAuth
+}
+export function setLocalPluginConnectionRepositoryForTests(repository?: LocalPluginConnectionRepository) {
+  if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('LOCAL_PLUGIN_CONNECTION_REPOSITORY_OVERRIDE_TEST_ONLY')
+  localPluginConnections = repository ?? memoryLocalPluginConnections
+}
+export function setLocalPluginInstallInstanceRepositoryForTests(repository?: LocalPluginInstallInstanceRepository) {
+  if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('LOCAL_PLUGIN_INSTALL_INSTANCE_REPOSITORY_OVERRIDE_TEST_ONLY')
+  localPluginInstallInstances = repository ?? memoryLocalPluginInstallInstances
 }
 const memoryAuthorization = new MemoryAuthorizationRepository()
 let authorizationRepositoryOverride: AuthorizationRepository | undefined
@@ -3731,6 +3746,8 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const identities = new PostgresIdentityLifecycleRepository(opsSqlPool)
     const passwordAuth = new PostgresPasswordAuthRepository(opsSqlPool)
     passwordAuthRepository = passwordAuth
+    localPluginConnections = new PostgresLocalPluginConnectionRepository(opsSqlPool)
+    localPluginInstallInstances = new PostgresLocalPluginInstallInstanceRepository(opsSqlPool)
     const authorization = new PostgresAuthorizationRepository(opsSqlPool)
     // Bootstrap validates the observed identity against `platform_identities`,
     // which migrations 091/186 and `infra/local/ensure-app-role.sql` keep on the
@@ -19435,7 +19452,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const action = awaitingAutomaticScan ? null : display.nextAction ? { method: display.nextAction.method, label: display.nextAction.label, required_inputs: [ 'asset_id' ], confirmation: 'interactive_confirmation' } : null
         return { ...base, display, action, next_step: awaitingAutomaticScan ? '系统正在自动检查，通过后自动继续；无需操作' : display.nextAction?.label ?? '素材已满足当前 readiness 条件', ...(awaitingAutomaticScan ? { scan_automation: conversationalAssetScanWaitingState() } : {}) }
       })
-      const quotaSnapshot = await persistence.storageQuota?.getSnapshot(workspaceId)
+      const quotaSnapshot = (await persistence.storageQuota?.getSnapshot(workspaceId)) ?? { limitBytes: configuredStorageQuotaLimit(), usedBytes: 0, reservedBytes: 0 }
       const storageQuota = quotaSnapshot
         ? (() => {
             const usedBytes = Math.max(0, quotaSnapshot.usedBytes)
@@ -21163,7 +21180,8 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
 async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', `${publicRequestOrigin(req)}/`)
   const path = url.pathname
-  const isPasswordAuthRoute = path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm' || path === '/v1/auth/password/change' || path === '/v1/auth/mcp-token' || path === '/v1/auth/mcp-token/refresh' || path === '/v1/auth/mcp-token/revoke' || path === '/v1/auth/local-plugin/authorize' || path === '/v1/auth/local-plugin/token'
+  const isLocalPluginConnectionRoute = path === '/v1/auth/local-plugin/connect-requests' || path === '/v1/auth/local-plugin/install-instances/register' || path === '/v1/auth/local-plugin/install-instances/pair' || /^\/v1\/auth\/local-plugin\/connect-requests\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/status$/iu.test(path)
+  const isPasswordAuthRoute = isLocalPluginConnectionRoute || path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm' || path === '/v1/auth/password/change' || path === '/v1/auth/mcp-token' || path === '/v1/auth/mcp-token/refresh' || path === '/v1/auth/mcp-token/revoke' || path === '/v1/auth/local-plugin/authorize' || path === '/v1/auth/local-plugin/token'
   const passwordSessionToken = () => {
     const encoded = (header(req, 'cookie') ?? '').split(';').map(value => value.trim()).find(value => value.startsWith('damai_session='))?.slice('damai_session='.length)
     if (!encoded) return ''
@@ -21218,6 +21236,57 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       if (!current) throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请重新登录', 401)
       return send(res, 200, 'unknown', { account: current.account, session_id: current.sessionId, issued_at: current.issuedAt, expires_at: current.expiresAt, workspaces: current.account.workspaceIds, roles: current.account.roles }, null, req)
     }
+    if (req.method === 'POST' && path === '/v1/auth/local-plugin/install-instances/register') {
+      if (process.env.LOCAL_PLUGIN_ONE_CLICK_ENABLED !== 'true') throw new DomainError('LOCAL_PLUGIN_ONE_CLICK_UNAVAILABLE', '本地插件一键连接尚未启用', 503)
+      const input = await body(req, 16 * 1024)
+      try {
+        const registered = await localPluginInstallInstances.register({ platform: input.platform === 'windows' ? 'windows' : input.platform === 'macos' ? 'macos' : '' as never, publicKey: String(input.installation_public_key_spki ?? '') })
+        return send(res, 201, 'unknown', { installation_id: registered.instance.id, key_id: registered.instance.publicKeyFingerprint, platform: registered.instance.platform, pairing_token: registered.pairingToken, pairing_expires_at: registered.pairingExpiresAt }, null, req)
+      } catch (error) { if (error instanceof LocalPluginInstallInstanceError) throw new DomainError(error.code, '安装实例注册信息无效', 400); throw error }
+    }
+    if (req.method === 'POST' && path === '/v1/auth/local-plugin/install-instances/pair') {
+      if (process.env.LOCAL_PLUGIN_ONE_CLICK_ENABLED !== 'true') throw new DomainError('LOCAL_PLUGIN_ONE_CLICK_UNAVAILABLE', '本地插件一键连接尚未启用', 503)
+      const origin = publicRequestOrigin(req); if (header(req, 'origin')?.trim() !== origin) throw new DomainError('AUTH_CSRF_ORIGIN_INVALID', '安装实例配对来源无效', 403)
+      const current = await passwordAuthRepository.authenticate(passwordSessionToken())
+      if (!current || current.account.accountType !== 'merchant' || current.account.status !== 'active') throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请重新登录商家后台', 401)
+      const input = await body(req, 16 * 1024), workspaceIds = [...new Set(current.account.workspaceIds.filter(Boolean))], workspaceId = String(input.workspace_id ?? '').trim()
+      if (workspaceIds.length !== 1 || workspaceId !== workspaceIds[0]) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '安装实例与当前账号工作区不一致', 409)
+      try { const instance = await localPluginInstallInstances.pair({ instanceId: String(input.installation_id ?? ''), pairingToken: String(input.pairing_token ?? ''), accountId: current.account.id, identityId: current.account.identityId, workspaceId }); return send(res, 200, workspaceId, { installation_id: instance.id, key_id: instance.publicKeyFingerprint, platform: instance.platform, paired: true }, null, req) }
+      catch (error) { if (error instanceof LocalPluginInstallInstanceError) throw new DomainError(error.code, '安装实例配对无效或已过期', 409); throw error }
+    }
+    if (req.method === 'POST' && path === '/v1/auth/local-plugin/connect-requests') {
+      if (isProduction() && mcpIntegrationMode() !== 'local_stdio') throw new DomainError('MCP_LOCAL_TOKEN_FLOW_DISABLED', '当前部署未启用本地插件凭据', 409)
+      if (process.env.LOCAL_PLUGIN_ONE_CLICK_ENABLED !== 'true') throw new DomainError('LOCAL_PLUGIN_ONE_CLICK_UNAVAILABLE', '本地插件一键连接尚未启用', 503)
+      const origin = publicRequestOrigin(req)
+      const requestOrigin = header(req, 'origin')?.trim()
+      if (requestOrigin !== origin) throw new DomainError('AUTH_CSRF_ORIGIN_INVALID', '本地插件连接来源无效', 403)
+      const current = await passwordAuthRepository.authenticate(passwordSessionToken())
+      if (!current || current.account.accountType !== 'merchant' || current.account.status !== 'active') throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请重新登录商家后台', 401)
+      const input = await body(req, 16 * 1024)
+      const workspaceIds = [...new Set(current.account.workspaceIds.filter(Boolean))]
+      const workspaceId = String(input.workspace_id ?? input.workspaceId ?? '').trim()
+      if (workspaceIds.length !== 1 || workspaceId !== workspaceIds[0]) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '连接请求与当前账号工作区不一致', 409)
+      const installationId = String(input.installation_id ?? '').trim()
+      if ((isProduction() || process.env.LOCAL_PLUGIN_INSTANCE_BINDING_REQUIRED === 'true') && !installationId) throw new DomainError('LOCAL_PLUGIN_INSTALL_INSTANCE_REQUIRED', '生产一键连接必须绑定已配对的安装实例', 409)
+      if (installationId && !await localPluginInstallInstances.getForOwner({ id: installationId, accountId: current.account.id, identityId: current.account.identityId, workspaceId })) throw new DomainError('LOCAL_PLUGIN_INSTALL_INSTANCE_INVALID', '安装实例未配对或不属于当前工作区', 409)
+      const request = await localPluginConnections.create({ accountId: current.account.id, identityId: current.account.identityId, workspaceId })
+      const challenge = installationId ? await localPluginInstallInstances.issueChallenge({ instanceId: installationId, requestId: request.id, accountId: current.account.id, identityId: current.account.identityId, workspaceId }) : undefined
+      const launch = new URL('storenova://connect')
+      launch.searchParams.set('api_origin', origin); launch.searchParams.set('workspace', workspaceId); launch.searchParams.set('request_id', request.id)
+      if (challenge) { launch.searchParams.set('installation_id', installationId); launch.searchParams.set('challenge_id', challenge.id); launch.searchParams.set('server_nonce', challenge.nonce); launch.searchParams.set('challenge_issued_at', challenge.createdAt); launch.searchParams.set('challenge_expires_at', challenge.expiresAt) }
+      return send(res, 201, workspaceId, { request_id: request.id, status: request.status, expires_at: request.expiresAt, launch_url: launch.toString(), ...(challenge ? { installation_id: installationId, challenge_id: challenge.id, server_nonce: challenge.nonce, challenge_issued_at: challenge.createdAt, challenge_expires_at: challenge.expiresAt } : {}) }, null, req)
+    }
+    const connectionStatusMatch = path.match(/^\/v1\/auth\/local-plugin\/connect-requests\/([^/]+)\/status$/u)
+    if (req.method === 'GET' && connectionStatusMatch) {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(connectionStatusMatch[1]!)) throw new DomainError('LOCAL_PLUGIN_CONNECTION_NOT_FOUND', '连接请求不存在', 404)
+      const current = await passwordAuthRepository.authenticate(passwordSessionToken())
+      if (!current || current.account.accountType !== 'merchant' || current.account.status !== 'active') throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请重新登录商家后台', 401)
+      const workspaceIds = [...new Set(current.account.workspaceIds.filter(Boolean))]
+      if (workspaceIds.length !== 1) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '当前账号必须绑定且只能绑定一个工作区', 409)
+      const request = await localPluginConnections.getForAccount({ id: connectionStatusMatch[1]!, accountId: current.account.id, workspaceId: workspaceIds[0]! })
+      if (!request) throw new DomainError('LOCAL_PLUGIN_CONNECTION_NOT_FOUND', '连接请求不存在', 404)
+      return send(res, 200, request.workspaceId, { request_id: request.id, status: request.status, expires_at: request.expiresAt, ...(request.exchangedAt ? { connected_at: request.exchangedAt } : {}) }, null, req)
+    }
     if (path === '/v1/auth/local-plugin/authorize' && (req.method === 'GET' || req.method === 'POST')) {
       if (isProduction() && mcpIntegrationMode() !== 'local_stdio') throw new DomainError('MCP_LOCAL_TOKEN_FLOW_DISABLED', '当前部署未启用本地插件凭据', 409)
       const contentType = header(req, 'content-type')?.split(';')[0]?.trim().toLowerCase()
@@ -21243,10 +21312,27 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const workspaceId = workspaceIds[0]!
       const origin = publicRequestOrigin(req)
       if (authorization.resource !== `${origin}/mcp` || authorization.workspaceId !== workspaceId) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '本地插件请求与当前账号工作区不一致', 409)
+      if (authorization.requestId && (isProduction() || process.env.LOCAL_PLUGIN_INSTANCE_BINDING_REQUIRED === 'true') && !authorization.installInstanceId) throw new DomainError('LOCAL_PLUGIN_INSTALL_INSTANCE_REQUIRED', '生产一键连接必须提供安装实例持有证明', 409)
+      if (authorization.installInstanceId && (!authorization.requestId || !authorization.instanceChallengeId || !authorization.instanceSignature)) throw new DomainError('LOCAL_PLUGIN_INSTALL_INSTANCE_INVALID', '安装实例持有证明不完整', 400)
+      const proofInstance = authorization.installInstanceId ? await localPluginInstallInstances.getForOwner({ id: authorization.installInstanceId, accountId: current.account.id, identityId: current.account.identityId, workspaceId }) : undefined
+      if (authorization.installInstanceId && !proofInstance) throw new DomainError('LOCAL_PLUGIN_INSTALL_INSTANCE_INVALID', '安装实例不属于当前账号或工作区', 409)
+      if (authorization.requestId) {
+        const pending = await localPluginConnections.getForAccount({ id: authorization.requestId, accountId: current.account.id, workspaceId })
+        if (!pending || pending.status !== 'pending') throw new DomainError('LOCAL_PLUGIN_CONNECTION_INVALID', '连接请求无效、已过期或已使用', 409)
+      }
       if (req.method === 'GET') {
         res.statusCode = 200; res.setHeader('content-type', 'text/html; charset=utf-8'); res.setHeader('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"); res.end(localPluginAuthorizationHtml(authorization, { login: current.account.login, workspaceId })); return
       }
       const context = { clientId: LOCAL_PLUGIN_CLIENT_ID, issuer: origin, audience: `${origin}/mcp`, resource: `${origin}/mcp`, scope: ['merchant'] }
+      if (authorization.installInstanceId && proofInstance) {
+        const message = localPluginInstanceProofMessage({ method: 'POST', path: '/v1/auth/local-plugin/authorize', apiOrigin: origin, requestId: authorization.requestId!, challengeId: authorization.instanceChallengeId!, accountId: current.account.id, workspaceId, installationId: proofInstance.id, keyId: proofInstance.publicKeyFingerprint, platform: proofInstance.platform, pkceChallenge: authorization.codeChallenge, redirectUri: authorization.redirectUri, clientNonce: authorization.clientNonce!, serverNonce: authorization.serverNonce!, issuedAt: authorization.challengeIssuedAt!, expiresAt: authorization.challengeExpiresAt! }).toString('utf8')
+        try { await localPluginInstallInstances.verifyAndConsumeChallenge({ id: authorization.instanceChallengeId!, instanceId: proofInstance.id, requestId: authorization.requestId!, nonce: authorization.serverNonce!, issuedAt: authorization.challengeIssuedAt!, expiresAt: authorization.challengeExpiresAt!, message, signature: authorization.instanceSignature!, accountId: current.account.id, identityId: current.account.identityId, workspaceId }) }
+        catch (error) { if (error instanceof LocalPluginInstallInstanceError) throw new DomainError(error.code, '安装实例签名无效、已过期或已使用', 409); throw error }
+      }
+      if (authorization.requestId) {
+        try { await localPluginConnections.authorize({ id: authorization.requestId, accountId: current.account.id, identityId: current.account.identityId, workspaceId }) }
+        catch (error) { if (error instanceof LocalPluginConnectionError) throw new DomainError(error.code, '连接请求无效、已过期或已使用', 409); throw error }
+      }
       const issued = await passwordAuthRepository.issueMcpAuthorizationCode({ ...context, account: current.account, redirectUri: authorization.redirectUri, codeChallenge: authorization.codeChallenge })
       const target = new URL(authorization.redirectUri)
       target.searchParams.set('code', issued.code)
@@ -21272,8 +21358,16 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
           await passwordAuthRepository.revokeMcpOAuthToken({ ...context, token: pair.refreshToken, tokenTypeHint: 'refresh_token' })
           throw new Error('MCP_OAUTH_INVALID_GRANT')
         }
+        if (input.requestId) {
+          try { await localPluginConnections.markExchanged({ id: input.requestId, accountId: principal.accountId, workspaceId: principal.workspaceId }) }
+          catch (error) {
+            await passwordAuthRepository.revokeMcpOAuthToken({ ...context, token: pair.refreshToken, tokenTypeHint: 'refresh_token' })
+            if (error instanceof LocalPluginConnectionError) throw new DomainError(error.code, '连接请求无效、已过期或已使用', 409)
+            throw error
+          }
+        }
         return send(res, 200, principal.workspaceId, { access_token: pair.accessToken, refresh_token: pair.refreshToken, token_type: 'Bearer', expires_in: pair.expiresIn, scope: pair.scope.join(' '), workspace_id: principal.workspaceId, account_login: principal.accountLogin }, null, req)
-      } catch { throw new DomainError('MCP_OAUTH_INVALID_GRANT', '本地插件授权码无效、已使用或已过期', 400) }
+      } catch (error) { if (error instanceof DomainError) throw error; throw new DomainError('MCP_OAUTH_INVALID_GRANT', '本地插件授权码无效、已使用或已过期', 400) }
     }
     if (req.method === 'POST' && path === '/v1/auth/mcp-token') {
       if (isProduction() && mcpIntegrationMode() !== 'local_stdio') throw new DomainError('MCP_LOCAL_TOKEN_FLOW_DISABLED', '当前部署未启用本地插件凭据', 409)
@@ -22961,7 +23055,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   if (req.method === 'GET' && path === '/v1/assets') {
     const workspaceId = resolveWorkspace(req)
     const accessibleIds = await accessibleAssetIds(req, workspaceId)
-    const quotaSnapshot = await persistence.storageQuota?.getSnapshot(workspaceId)
+    const quotaSnapshot = (await persistence.storageQuota?.getSnapshot(workspaceId)) ?? { limitBytes: configuredStorageQuotaLimit(), usedBytes: 0, reservedBytes: 0 }
     const storageQuota = quotaSnapshot
       ? (() => {
           const usedBytes = Math.max(0, quotaSnapshot.usedBytes)

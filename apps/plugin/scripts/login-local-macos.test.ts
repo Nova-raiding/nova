@@ -14,6 +14,11 @@ describe('local plugin login installer runtime', () => {
     expect(() => credentialFromResponse({ data: { access_token: 'a', refresh_token: 'b', token_type: 'Bearer', scope: 'merchant', expires_in: 600, workspace_id: 'ws_other', account_login: 'test@example.test' } }, { apiOrigin: 'https://example.test', workspaceId: 'ws_test' })).toThrow('RESPONSE_INVALID')
   })
 
+  it('rejects malformed connection request identifiers before opening the browser', async () => {
+    await expect(loginLocalPlugin({ baseUrl: 'https://example.test', workspaceId: 'ws_test', requestId: 'secret in url',
+      openBrowser: () => {}, storeCredential: () => {}, configureSession: () => {} })).rejects.toThrow('REQUEST_ID_INVALID')
+  })
+
   it('drives the real listener and HTTP exchange, rejects forged callback, then persists before configuring', async () => {
     let authorization: URL
     let exchanges = 0
@@ -35,10 +40,11 @@ describe('local plugin login installer runtime', () => {
     await new Promise<void>(resolve => provider.listen(0, '127.0.0.1', resolve))
     try {
       const address = provider.address() as { port: number }
-      const result = await loginLocalPlugin({ baseUrl: `http://127.0.0.1:${address.port}`, workspaceId: 'ws_test',
+      const result = await loginLocalPlugin({ baseUrl: `http://127.0.0.1:${address.port}`, workspaceId: 'ws_test', requestId: 'req_1234567890abcdef',
         openBrowser: async (url: string) => {
           authorization = new URL(url)
           expect(authorization.searchParams.get('code_challenge_method')).toBe('S256')
+          expect(authorization.searchParams.get('connection_request_id')).toBe('req_1234567890abcdef')
           expect(authorization.searchParams.has('code_verifier')).toBe(false)
           const callback = new URL(authorization.searchParams.get('redirect_uri')!)
           callback.searchParams.set('code', 'one-time-code-long-enough')

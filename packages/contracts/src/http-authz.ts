@@ -267,6 +267,10 @@ export const HTTP_ROUTE_COVERAGE_EXEMPTIONS: readonly HttpRouteCoverageExemption
   { pathTemplate: '/v1/auth/mcp-token/revoke', methods: AUTH_FORM_METHODS, reason: 'local desktop MCP token revocation; authenticated by the token being revoked' },
   { pathTemplate: '/v1/auth/local-plugin/authorize', methods: AUTH_FORM_METHODS, reason: 'local desktop PKCE consent; GET renders explicit consent and POST requires the existing same-origin merchant session' },
   { pathTemplate: '/v1/auth/local-plugin/token', methods: ['POST'], reason: 'local desktop PKCE code exchange; authenticates the one-time code and verifier, not a ChatGPT OAuth client' },
+  { pathTemplate: '/v1/auth/local-plugin/connect-requests', methods: ['POST'], reason: 'creates a browser-session-bound one-click local plugin request after same-origin validation' },
+  { pathTemplate: '/v1/auth/local-plugin/connect-requests/{requestId}/status', methods: ['GET'], reason: 'polls only the current merchant session account and workspace request; never returns credentials' },
+  { pathTemplate: '/v1/auth/local-plugin/install-instances/register', methods: ['POST'], reason: 'registers an untrusted P-256 public installation key and short-lived pairing capability without tenant access' },
+  { pathTemplate: '/v1/auth/local-plugin/install-instances/pair', methods: ['POST'], reason: 'pairs an installation through an authenticated same-origin merchant session and one-time capability' },
   // Local Ops Console bootstrap. Disabled unless OPS_LOCAL_SESSION_ENABLED is
   // set outside production, answers 404 otherwise, requires a loopback host and
   // loopback origin, and gets its bearer from the API environment. The dispatch

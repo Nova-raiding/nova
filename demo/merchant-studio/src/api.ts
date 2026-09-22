@@ -1088,6 +1088,11 @@ export const fetchWorkspaceMetrics = (baseUrl: string) => requestMcp<WorkspaceMe
  */
 export const createRechargeOrder = (baseUrl: string, amountCny: string, channel: 'alipay' | 'wechat', idempotencyKey: string) => requestMcp<RechargeOrder>(baseUrl, 'billing.recharge.create', { amount_cny: amountCny, channel, idempotency_key: idempotencyKey })
 export const fetchRechargeOrder = (baseUrl: string, orderId: string) => requestMcp<RechargeOrder>(baseUrl, 'billing.recharge.get', { order_id: orderId })
+export type CommercialPurchaseOrder = RechargeOrder & { sku_code?: string; purchase_kind?: string }
+type CommercialPurchaseOrderWire = Omit<CommercialPurchaseOrder, 'id'> & { id?: string; order_id?: string }
+const normalizeCommercialPurchaseOrder = (value: CommercialPurchaseOrderWire): CommercialPurchaseOrder => ({ ...value, id: value.id ?? value.order_id ?? '' })
+export const createCommercialPurchaseOrder = async (baseUrl: string, purchaseKind: 'purchase' | 'point_pack', skuCode: string, reason: string, idempotencyKey: string) => normalizeCommercialPurchaseOrder(await requestMcp<CommercialPurchaseOrderWire>(baseUrl, 'commercial.order.create', { purchase_kind: purchaseKind, sku_code: skuCode, reason, idempotency_key: idempotencyKey }))
+export const fetchCommercialPurchaseOrder = async (baseUrl: string, orderId: string) => normalizeCommercialPurchaseOrder(await requestMcp<CommercialPurchaseOrderWire>(baseUrl, 'commercial.order.payment.get', { order_id: orderId }))
 export const optimizeProductTitle = (baseUrl: string, input: { product_id: string; platform?: PlatformId; keyword?: string; objective?: string }) => requestMcp<{ product_id: string; platform: PlatformId; suggestions: Array<{ title: string; score: { seo: number; geo: number; total: number }; keywords: string[]; evidence: Array<{ source: string; value: string }>; risks: string[]; rankingGuarantee: false }>; humanConfirmationRequired: boolean; rankingGuarantee: false }>(baseUrl, 'catalog.title.optimize', input)
 
 export const fetchPlatformAccounts = (baseUrl: string) => requestApi<{ items: PlatformAccount[] }>(baseUrl, '/v1/platform-accounts')

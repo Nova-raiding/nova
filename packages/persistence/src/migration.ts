@@ -693,6 +693,8 @@ export async function loadMigrations(): Promise<Migration[]> {
   const revokeMcpOauthAppAcl = await readFile(new URL('./migrations/240_revoke_mcp_oauth_app_acl.sql', import.meta.url), 'utf8')
   const repairOpsDirectoryFinanceReadAcl = await readFile(new URL('./migrations/241_repair_ops_directory_finance_read_acl.sql', import.meta.url), 'utf8')
   const repairCreativePointAllocationReservationIndex = await readFile(new URL('./migrations/242_repair_creative_point_allocation_reservation_index.sql', import.meta.url), 'utf8')
+  const localPluginConnectionRequests = await readFile(new URL('./migrations/243_local_plugin_connection_requests.sql', import.meta.url), 'utf8')
+  const localPluginInstallInstances = await readFile(new URL('./migrations/244_local_plugin_install_instances.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -936,6 +938,8 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 240, name: 'revoke_mcp_oauth_app_acl', sql: revokeMcpOauthAppAcl },
     { version: 241, name: 'repair_ops_directory_finance_read_acl', sql: repairOpsDirectoryFinanceReadAcl },
     { version: 242, name: 'repair_creative_point_allocation_reservation_index', sql: repairCreativePointAllocationReservationIndex, transactional: false },
+    { version: 243, name: 'local_plugin_connection_requests', sql: localPluginConnectionRequests },
+    { version: 244, name: 'local_plugin_install_instances', sql: localPluginInstallInstances },
   ]
 }
 

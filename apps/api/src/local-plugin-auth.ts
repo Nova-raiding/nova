@@ -9,6 +9,15 @@ export type LocalPluginAuthorizationRequest = {
   scope: 'merchant'
   resource: string
   workspaceId: string
+  /** Correlates a browser-initiated one-click request. It is not a credential. */
+  requestId?: string
+  installInstanceId?: string
+  instanceChallengeId?: string
+  instanceSignature?: string
+  clientNonce?: string
+  serverNonce?: string
+  challengeIssuedAt?: string
+  challengeExpiresAt?: string
 }
 
 export class LocalPluginAuthorizationRequestError extends Error {
@@ -46,13 +55,25 @@ export function parseLocalPluginAuthorizationRequest(params: URLSearchParams): L
   const scope = single(params, 'scope')
   const resource = single(params, 'resource')
   const workspaceId = single(params, 'workspace_id')
+  const requestId = single(params, 'connection_request_id')
+  const installInstanceId = single(params, 'installation_id')
+  const instanceChallengeId = single(params, 'challenge_id')
+  const instanceSignature = single(params, 'instance_signature')
+  const clientNonce = single(params, 'client_nonce'), serverNonce = single(params, 'server_nonce'), challengeIssuedAt = single(params, 'challenge_issued_at'), challengeExpiresAt = single(params, 'challenge_expires_at')
   if (responseType !== 'code' || clientId !== LOCAL_PLUGIN_CLIENT_ID || !redirectUri || !state || !/^[A-Za-z0-9_-]{43}$/u.test(state)
     || !codeChallenge || !/^[A-Za-z0-9_-]{43}$/u.test(codeChallenge)
     || codeChallengeMethod !== 'S256' || scope !== 'merchant' || !resource
     || !workspaceId || workspaceId.length > 128 || !/^(?:ws|workspace)_[A-Za-z0-9_-]+$/u.test(workspaceId)) {
     throw new LocalPluginAuthorizationRequestError('INVALID_REQUEST')
   }
-  return { clientId, redirectUri: validateLocalPluginRedirectUri(redirectUri), state, codeChallenge, scope, resource, workspaceId }
+  if (requestId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(requestId)) throw new LocalPluginAuthorizationRequestError('INVALID_REQUEST')
+  const instanceFields = [installInstanceId, instanceChallengeId, instanceSignature, clientNonce, serverNonce, challengeIssuedAt, challengeExpiresAt]
+  if (instanceFields.some(Boolean) && !instanceFields.every(Boolean)) throw new LocalPluginAuthorizationRequestError('INVALID_REQUEST')
+  if (installInstanceId && !/^[0-9a-f-]{36}$/iu.test(installInstanceId)) throw new LocalPluginAuthorizationRequestError('INVALID_REQUEST')
+  if (instanceChallengeId && !/^[0-9a-f-]{36}$/iu.test(instanceChallengeId)) throw new LocalPluginAuthorizationRequestError('INVALID_REQUEST')
+  if (instanceSignature && !/^[A-Za-z0-9_-]{80,128}$/u.test(instanceSignature)) throw new LocalPluginAuthorizationRequestError('INVALID_REQUEST')
+  if (clientNonce && !/^[A-Za-z0-9_-]{43}$/u.test(clientNonce) || serverNonce && !/^[A-Za-z0-9_-]{43}$/u.test(serverNonce) || challengeIssuedAt && !Number.isFinite(Date.parse(challengeIssuedAt)) || challengeExpiresAt && !Number.isFinite(Date.parse(challengeExpiresAt))) throw new LocalPluginAuthorizationRequestError('INVALID_REQUEST')
+  return { clientId, redirectUri: validateLocalPluginRedirectUri(redirectUri), state, codeChallenge, scope, resource, workspaceId, ...(requestId ? { requestId } : {}), ...(installInstanceId ? { installInstanceId, instanceChallengeId: instanceChallengeId!, instanceSignature: instanceSignature!, clientNonce: clientNonce!, serverNonce: serverNonce!, challengeIssuedAt: challengeIssuedAt!, challengeExpiresAt: challengeExpiresAt! } : {}) }
 }
 
 export type LocalPluginTokenRequest = {
@@ -62,6 +83,8 @@ export type LocalPluginTokenRequest = {
   codeVerifier: string
   resource: string
   workspaceId: string
+  requestId?: string
+  installInstanceId?: string
 }
 
 export function parseLocalPluginTokenRequest(params: URLSearchParams): LocalPluginTokenRequest {
@@ -72,12 +95,16 @@ export function parseLocalPluginTokenRequest(params: URLSearchParams): LocalPlug
   const codeVerifier = single(params, 'code_verifier')
   const resource = single(params, 'resource')
   const workspaceId = single(params, 'workspace_id')
+  const requestId = single(params, 'connection_request_id')
+  const installInstanceId = single(params, 'installation_id')
   if (clientId !== LOCAL_PLUGIN_CLIENT_ID || grantType !== 'authorization_code' || !redirectUri
     || !code || code.length > 16_384 || !codeVerifier || !/^[A-Za-z0-9._~-]{43,128}$/u.test(codeVerifier)
     || !resource || !workspaceId || workspaceId.length > 128 || !/^(?:ws|workspace)_[A-Za-z0-9_-]+$/u.test(workspaceId)) {
     throw new LocalPluginAuthorizationRequestError('INVALID_REQUEST')
   }
-  return { clientId, redirectUri: validateLocalPluginRedirectUri(redirectUri), code, codeVerifier, resource, workspaceId }
+  if (requestId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(requestId)) throw new LocalPluginAuthorizationRequestError('INVALID_REQUEST')
+  if (installInstanceId !== undefined && !/^[0-9a-f-]{36}$/iu.test(installInstanceId)) throw new LocalPluginAuthorizationRequestError('INVALID_REQUEST')
+  return { clientId, redirectUri: validateLocalPluginRedirectUri(redirectUri), code, codeVerifier, resource, workspaceId, ...(requestId ? { requestId } : {}), ...(installInstanceId ? { installInstanceId } : {}) }
 }
 
 export function escapeLocalPluginHtml(value: string): string {
@@ -88,12 +115,12 @@ export function localPluginAuthorizationHtml(input: LocalPluginAuthorizationRequ
   const hidden = [
     ['response_type', 'code'], ['client_id', input.clientId], ['redirect_uri', input.redirectUri], ['state', input.state],
     ['code_challenge', input.codeChallenge], ['code_challenge_method', 'S256'], ['scope', input.scope],
-    ['resource', input.resource], ['workspace_id', input.workspaceId],
+    ['resource', input.resource], ['workspace_id', input.workspaceId], ...(input.requestId ? [['connection_request_id', input.requestId]] : []), ...(input.installInstanceId ? [['installation_id', input.installInstanceId], ['challenge_id', input.instanceChallengeId!], ['instance_signature', input.instanceSignature!], ['client_nonce', input.clientNonce!], ['server_nonce', input.serverNonce!], ['challenge_issued_at', input.challengeIssuedAt!], ['challenge_expires_at', input.challengeExpiresAt!]] : []),
   ].map(([name, value]) => `<input type="hidden" name="${name}" value="${escapeLocalPluginHtml(value!)}">`).join('')
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>授权 Store Nova 本地插件</title></head><body><main><h1>授权 Store Nova 本地插件</h1><p>登录账号：${escapeLocalPluginHtml(account.login)}</p><p>工作区：${escapeLocalPluginHtml(account.workspaceId)}</p><p>仅允许本机安装器连接当前工作区。授权不会绑定第三方店铺，也不会执行扣费或发布。</p><form method="post" action="/v1/auth/local-plugin/authorize">${hidden}<button type="submit">确认授权本地插件</button></form><p><a href="/">取消并返回商家后台</a></p></main></body></html>`
 }
 
 export function localPluginLoginRequiredHtml(input: LocalPluginAuthorizationRequest): string {
-  const query = new URLSearchParams({ response_type: 'code', client_id: input.clientId, redirect_uri: input.redirectUri, state: input.state, code_challenge: input.codeChallenge, code_challenge_method: 'S256', scope: input.scope, resource: input.resource, workspace_id: input.workspaceId }).toString()
+  const query = new URLSearchParams({ response_type: 'code', client_id: input.clientId, redirect_uri: input.redirectUri, state: input.state, code_challenge: input.codeChallenge, code_challenge_method: 'S256', scope: input.scope, resource: input.resource, workspace_id: input.workspaceId, ...(input.requestId ? { connection_request_id: input.requestId } : {}), ...(input.installInstanceId ? { installation_id: input.installInstanceId, challenge_id: input.instanceChallengeId!, instance_signature: input.instanceSignature!, client_nonce: input.clientNonce!, server_nonce: input.serverNonce!, challenge_issued_at: input.challengeIssuedAt!, challenge_expires_at: input.challengeExpiresAt! } : {}) }).toString()
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>请先登录</title></head><body><main><h1>需要商家登录</h1><p>请先在新标签页登录 Store Nova 商家后台。登录完成后回到本页继续；PKCE challenge 和 state 会保留在当前授权地址中。</p><p><a href="/" target="_blank" rel="noopener noreferrer">新标签页打开商家后台登录</a></p><p><a href="/v1/auth/local-plugin/authorize?${escapeLocalPluginHtml(query)}">我已登录，继续授权</a></p></main></body></html>`
 }

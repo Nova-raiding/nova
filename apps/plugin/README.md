@@ -1,6 +1,6 @@
 # Store Nova Codex 插件
 
-macOS 新安装默认使用本地登录：CLI 在 `127.0.0.1` 随机端口接收 PKCE S256 回调，服务端签发的工作区 access/refresh token 作为一个绑定 API origin 与 workspace 的原子包写入 macOS Keychain。launchd 只保存非敏感连接配置。旧 `install-local-macos.sh` 仅用于既有 launchd token 部署的兼容维护，不推荐新用户使用。
+macOS 新安装当前仍使用本地登录 CLI：它在 `127.0.0.1` 随机端口接收 PKCE S256 回调，服务端签发的工作区 access/refresh token 作为一个绑定 API origin 与 workspace 的原子包写入 macOS Keychain。`storenova://` Helper 目前仅为开发与恢复原型，不能作为生产默认入口。launchd 只保存非敏感连接配置。旧 `install-local-macos.sh` 仅用于既有 launchd token 部署的兼容维护，不推荐新用户使用。
 
 当前商家主流程为：**公开链接/手工资料 → 内容生产 → 工具支持时审核、导出**。这是产品范围与目标顺序，每个阶段以实际工具支持和服务端结果为准；未绑定候选的审核/导出缺口见下文。实际工具以当前连接的 `tools/list` 与运行态契约测试为准，不在文档中固化工具数量，也不以数量证明生产就绪。
 
@@ -15,7 +15,11 @@ macOS 新安装默认使用本地登录：CLI 在 `127.0.0.1` 随机端口接收
 
 ### 生成独立本地安装包
 
-在仓库根目录执行 `node apps/plugin/scripts/package-local-plugin.mjs`。脚本只打包本目录的 manifest、stdio bridge、skills、登录/安装脚本、Keychain helper、scheduled 配置和本地 UI，输出到 `artifacts/local-plugin/`；API、数据库迁移、worker、运营后台、Docker 配置和测试不会进入该包。安装包中的 bridge 通过 `https://yxsona.com` 请求云端 API，数据和权限始终由服务端处理。
+在仓库根目录执行 `node apps/plugin/scripts/package-local-plugin.mjs`。脚本只打包本目录的 manifest、stdio bridge、skills、登录/安装脚本、Keychain helper、连接助手源码、scheduled 配置和本地 UI，输出到 `artifacts/local-plugin/`；API、数据库迁移、worker、运营后台、Docker 配置和测试不会进入该包。安装包中的 bridge 通过 `https://yxsona.com` 请求云端 API，数据和权限始终由服务端处理。
+
+当前 `storenova://` 连接助手只作为开发与故障恢复原型随包提供源码和本机构建脚本，独立包不会携带 `.app`。在完成签名/公证、安装实例密码学绑定和抗 scheme 劫持验收前，安装与升级脚本不会自动注册该 scheme，也不得把它作为生产“一键连接”路径。生产页面继续使用受约束的手工登录流程；验收器会明确返回 `production_ready=false`，避免把源码存在误报成可发布能力。
+
+独立包的平台无关部分同时包含 macOS Swift 与 Windows C# Helper 源码，但不包含平台二进制。Windows 开发机可设置 `STORENOVA_WINDOWS_CSC_PATH` 后运行 `node scripts/build-connect-helper-windows.mjs`，它只生成未签名 EXE 和 SHA-256 文件，不会写注册表、安装协议或访问 Credential Manager。`verify-connect-helper-windows.ps1` 会核对 SHA-256、Authenticode `Valid` 状态及固定的 `STORENOVA_WINDOWS_SIGNER_THUMBPRINT`；任一证据缺失即失败。即使签名通过，在安装实例绑定完成前脚本仍以退出码 78 返回 `production_ready=false`，不会安装或注册 `storenova://`。这不是 Windows 正式安装说明，而是发布门禁和开发构建说明。
 
 ### 本地安装（不使用 ChatGPT OAuth）
 
@@ -59,7 +63,8 @@ node apps/plugin/scripts/install-local-plugin.mjs
 Codex CLI 将本地源码适配器放在 `plugin marketplace` 命令组下，这是本机发现和缓存安装协议，
 不等于发布到公共或团队插件市场。脚本不会上传插件。
 
-在安装后的插件目录中构建本机 Keychain helper，然后发起登录：
+安装完成后，在安装后的插件目录使用 CLI 登录。商家后台的一键连接按钮与 Helper 尚未通过生产
+签名、公证、安装实例绑定和 scheme 劫持验收，不作为正式安装路径：
 
 ```bash
 cd /absolute/path/to/installed/merchant-marketing/<version>
@@ -69,7 +74,7 @@ node scripts/login-local-macos.mjs \
   --workspace ws_<平台分配的工作区>
 ```
 
-浏览器打开后，先登录对应商家账号并确认当前工作区授权。CLI 成功只证明凭据已写入
+浏览器打开后，先登录对应商家账号并确认当前工作区授权。CLI 成功同样只证明凭据已写入
 Keychain 且非敏感连接配置已设置，不代表 ChatGPT 已加载插件。完全退出并重新打开
 ChatGPT/Codex，新建对话后调用只读 `onboarding.status` 验证真实宿主、身份与工作区。
 

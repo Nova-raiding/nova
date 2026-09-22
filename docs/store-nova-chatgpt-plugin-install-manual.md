@@ -26,10 +26,10 @@ stdio bridge，由 bridge 连接 Store Nova API/MCP。这条链路不使用 Chat
 
 ### 本地桌面模式（推荐给本地安装用户）
 
-先完成 A2 的本地源码安装，再从实际已安装的插件目录执行 Keychain helper 构建与本地登录。
-CLI 会打开浏览器；商家登录 Store Nova 并确认工作区后，短期 access/refresh token 作为一个
-绑定 API origin 与 workspace 的原子包写入当前 macOS 用户的 Keychain。token 不进入命令行、
-launchd、仓库或聊天。
+先完成 A2 的本地安装，再按 A3 使用本地 CLI 完成浏览器授权和 Keychain 写入。商家后台的
+“连接 ChatGPT 本地插件”按钮及 Helper 已有原型，但在 Helper 完成签名、公证、安装实例绑定和
+抗协议劫持验收前，生产环境必须保持关闭。短期 access/refresh token 只写入当前 macOS 用户的
+Keychain，不进入 URL、命令行、launchd、仓库或聊天。
 
 本地模式的请求路径是：
 
@@ -84,9 +84,21 @@ Codex CLI 目前把本地插件源也归在 `plugin marketplace` 命令组下；
 
 应看到 `merchant-marketing@merchant-local` 为 `installed, enabled`。插件更新后重新执行本地安装脚本，再重启 ChatGPT；已经打开的对话不会自动刷新旧的 MCP 工具快照。
 
-### A3. 构建 Keychain helper 并登录
+### A3. 在商家后台一键连接（安全预览，生产默认关闭）
 
-进入 A2 实际安装得到的插件目录，而不是继续使用源码路径示例：
+1. 使用将要运行 ChatGPT 的同一个 macOS 用户登录商家后台。
+2. 打开“连接本地插件”，确认页面显示的账号与目标工作区正确。
+3. 点击“连接 ChatGPT 本地插件”，并在 macOS/浏览器提示中允许打开 Store Nova Helper。
+4. 在 Store Nova 授权页确认工作区。页面显示“已连接”只证明 Helper 已完成授权、钥匙串写入和本地
+   bridge 检查；它不代表 ChatGPT 已重新加载插件。
+5. 按 A4 **完全退出并重新打开 ChatGPT**，新建会话后按 A5 调用 `onboarding.status` 验证。
+
+如果页面显示“需安装”，先重新执行 A2；如果显示“已过期”“被拒绝”或“验证失败”，按页面提示
+重试。一次性连接链接不得复制到聊天、配置文件或另一台电脑，也不要把页面状态当作最终宿主验收。
+
+#### CLI 正式路径
+
+进入 A2 实际安装得到的插件目录：
 
     cd /absolute/path/to/installed/merchant-marketing/<version>
     node scripts/build-keychain-helper.mjs
@@ -95,7 +107,7 @@ Codex CLI 目前把本地插件源也归在 `plugin marketplace` 命令组下；
       --workspace ws_<管理员分配的工作区>
 
 第一条命令只在本机构建 Keychain helper，不读取凭据；构建失败时不会降级到文件或环境变量
-存储。第二条命令打开浏览器，商家登录并确认工作区后才交换凭据。成功输出不包含 token，
+存储。第二条命令使用浏览器授权和钥匙串边界。成功输出不包含 token，
 并明确 `credential_source=keychain`、`host_verified=false`：这表示本地凭据配置完成，不表示
 ChatGPT 宿主已经加载或验收通过。
 
@@ -204,10 +216,10 @@ ChatGPT 宿主已经加载或验收通过。
 
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
-| `MCP_CONFIGURATION_REQUIRED`，缺少 `MERCHANT_MCP_BASE_URL` | 本地登录未完成，或 ChatGPT 尚未重启读取非敏感连接配置 | 重新执行 A3，完全退出并重启 ChatGPT 后开启新会话 |
-| `MERCHANT_WORKSPACE_ID is required` | 未分配工作区，或登录 CLI 配置到错误用户 | 让管理员确认工作区，在启动 ChatGPT 的同一 macOS 用户会话重新执行 A3 |
+| `MCP_CONFIGURATION_REQUIRED`，缺少 `MERCHANT_MCP_BASE_URL` | 本地连接未完成，或 ChatGPT 尚未重启读取非敏感连接配置 | 重新执行 A3 CLI，完全退出并重启 ChatGPT 后开启新会话 |
+| `MERCHANT_WORKSPACE_ID is required` | 未分配工作区，或连接到了错误用户 | 让管理员确认工作区，在启动 ChatGPT 的同一 macOS 用户会话重新连接 |
 | `401/403`、角色无权限 | OIDC/Bearer 映射失败或 token 过期 | 管理员检查网关身份映射和 token，不要改客户端角色变量 |
-| `MCP_STRICT_AUTH_REQUIRED` | 本地登录配置未完成或旧 launchd 配置仍在生效 | 重新执行 A3；不要手工注入 token，完全退出并重启 ChatGPT |
+| `MCP_STRICT_AUTH_REQUIRED` | 本地连接未完成或旧 launchd 配置仍在生效 | 重新执行 A3 CLI；不要手工注入 token，完全退出并重启 ChatGPT |
 | 工具列表少、旧入口仍出现 | 本地插件缓存未更新，或对话保存了旧快照 | 重新执行本地安装脚本，重启 ChatGPT，开启新会话 |
 | `Selected model is at capacity` | 宿主模型尚未把消息交给插件 | 在 ChatGPT 模型选择器切换可用宿主模型后重试 |
 | `Codex host relay /models 未声明当前 host model` | `CODEX_RELAY_MODEL` 不是中转站实际提供的模型 ID，或缺少 Responses 能力声明 | 管理员先检查 `/v1/models`，用真实 ID 重新执行 `codex:relay:configure`，再通过 `codex:relay:validate` |
@@ -234,8 +246,8 @@ ChatGPT 宿主已经加载或验收通过。
 
 - [ ] `codex plugin list` 显示插件 `installed, enabled`。
 - [ ] `install-local-plugin.mjs` 返回 `ok: true`、`mode: local_stdio`、`public_marketplace_required: false`；安装缓存与源码版本一致。
-- [ ] 在实际安装包目录运行 `build-keychain-helper.mjs` 成功。
-- [ ] `login-local-macos.mjs` 完成浏览器确认并返回 `credential_source=keychain`；输出中没有 token。
+- [ ] 在实际安装包目录运行 `build-keychain-helper.mjs` 成功，且 `login-local-macos.mjs` 返回 `credential_source=keychain`；输出中没有 token。
+- [ ] 如果测试安全预览按钮：生产门禁保持关闭，且测试环境仅显示“本地凭据已就绪”，不冒充 ChatGPT 宿主已验证。
 - [ ] 生产没有开启 `MERCHANT_ALLOW_FIXTURE_FALLBACK=true` 或全局 `MERCHANT_MCP_WRITE_ENABLED=true`。
 - [ ] ChatGPT 已完全重启，并在新会话中重新加载工具。
 - [ ] 新会话调用 `onboarding.status` 能返回真实工作区/引导状态，而不是 MCP 配置缺失。

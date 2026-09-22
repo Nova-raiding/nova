@@ -32,6 +32,40 @@ const inheritedRuntimeEnv = [
 ]
 
 describe('Codex plugin installation package', () => {
+  it('packages the connection helper source without shipping an unsigned custom-scheme app', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-local-package-'))
+    const artifact = resolve(directory, 'merchant-marketing.tar.gz')
+    try {
+      const packaged = spawnSync(process.execPath, [resolve(root, 'scripts/package-local-plugin.mjs'), artifact], { encoding: 'utf8' })
+      expect(packaged.status, packaged.stderr).toBe(0)
+      expect(JSON.parse(packaged.stdout)).toMatchObject({
+        ok: true,
+        connect_helper: {
+          source_included: true,
+          app_bundle_included: false,
+          custom_scheme: 'development_recovery_only',
+          production_ready: false,
+          platforms: {
+            darwin: { source_included: true, binary_included: false },
+            win32: { source_included: true, binary_included: false, authenticode_required: true },
+          },
+        },
+      })
+      const listing = spawnSync('tar', ['-tzf', artifact], { encoding: 'utf8' })
+      expect(listing.status, listing.stderr).toBe(0)
+      expect(listing.stdout).toContain('macos/store-nova-connect-helper.swift')
+      expect(listing.stdout).toContain('scripts/build-connect-helper.mjs')
+      expect(listing.stdout).toContain('scripts/connect-local-macos.mjs')
+      expect(listing.stdout).toContain('windows/StoreNovaConnectHelper.cs')
+      expect(listing.stdout).toContain('scripts/build-connect-helper-windows.mjs')
+      expect(listing.stdout).toContain('scripts/verify-connect-helper-windows.ps1')
+      expect(listing.stdout).not.toContain('Store Nova Connect.app')
+      expect(listing.stdout).not.toContain('StoreNovaConnectHelper.exe')
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   it('contains the required manifest, skill entry, and MCP companion file', () => {
     const manifest = readJson('.codex-plugin/plugin.json')
     expect(manifest.name).toBe('merchant-marketing')
@@ -458,9 +492,61 @@ esac
         cache_drift: { detected: false, automatic_reuse: false, automatic_deletion: false },
       },
       current_conversation_refresh: { verified: false },
+      connect_helper: {
+        source_verified: true,
+        app_bundle_verified: false,
+        custom_scheme: 'development_recovery_only',
+        production_ready: false,
+        platforms: {
+          darwin: { source_verified: true, signed_bundle_verified: false, production_ready: false },
+          win32: { source_verified: true, sha256_verified: false, authenticode_verified: false, production_ready: false },
+        },
+      },
     })
     expect(evidence.tools.count).toBeGreaterThanOrEqual(5)
     expect(evidence.runtime_files.every((file: { matches: boolean }) => file.matches)).toBe(true)
+  })
+
+  it('keeps Windows helper installation fail-closed behind hash, Authenticode, signer, and instance binding gates', () => {
+    const build = readFileSync(resolve(root, 'scripts/build-connect-helper-windows.mjs'), 'utf8')
+    const verify = readFileSync(resolve(root, 'scripts/verify-connect-helper-windows.ps1'), 'utf8')
+    const helper = readFileSync(resolve(root, 'windows/StoreNovaConnectHelper.cs'), 'utf8')
+    expect(build).toContain("process.platform !== 'win32'")
+    expect(build).toContain('signed: false, production_ready: false')
+    expect(verify).toContain('Get-FileHash')
+    expect(verify).toContain('Get-AuthenticodeSignature')
+    expect(verify).toContain('STORENOVA_WINDOWS_SIGNER_THUMBPRINT')
+    expect(verify).toContain("protocol_registered = $false")
+    expect(verify).toContain("installed = $false")
+    expect(verify).toContain("production_ready = $false")
+    expect(verify).toContain("blocker = 'installation_instance_binding_missing'")
+    expect(verify).toContain('exit 78')
+    expect(verify).not.toMatch(/New-ItemProperty|HKCU:|HKLM:|CredentialManager/iu)
+    expect(helper).toContain('STORE_NOVA_CONNECT_WINDOWS_NOT_PRODUCTION_READY')
+    expect(helper).not.toMatch(/Microsoft\.Win32|CredentialManager/iu)
+  })
+
+  it.each([
+    'scripts/connect-local-macos.mjs',
+    'windows/StoreNovaConnectHelper.cs',
+  ])('fails upgrade verification when installed connection helper source %s is stale', helperRelativePath => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-connect-helper-drift-'))
+    const installed = resolve(directory, 'installed')
+    try {
+      cpSync(root, installed, { recursive: true })
+      const helperPath = resolve(installed, helperRelativePath)
+      writeFileSync(helperPath, `${readFileSync(helperPath, 'utf8')}\n// stale installed helper\n`)
+      const result = spawnSync(process.execPath, [resolve(root, 'scripts/verify-installed-bridge.mjs'), '--source', root, '--installed', installed], {
+        encoding: 'utf8',
+        env: { ...process.env, MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8790', MERCHANT_WORKSPACE_ID: 'ws_install_verify' },
+      })
+      expect(result.status).toBe(1)
+      const evidence = JSON.parse(result.stdout)
+      expect(evidence.connect_helper).toMatchObject({ source_verified: false, production_ready: false })
+      expect(evidence.runtime_files).toContainEqual(expect.objectContaining({ path: helperRelativePath, matches: false }))
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 
   it('classifies an installed tool-surface mismatch as cache drift without deleting or reusing it', () => {
