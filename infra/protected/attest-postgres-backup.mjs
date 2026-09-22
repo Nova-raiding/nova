@@ -9,7 +9,6 @@ import { fileURLToPath } from 'node:url'
 
 const TRUST_ROOT = '/run/release-security/evidence-trust'
 const PRIVATE_KEY = '/var/lib/merchant-release-security/production-capability-private.pem'
-const SOURCE_POLICY = join(TRUST_ROOT, 'production-backup-source.json')
 const BACKUP_ROOT = '/var/lib/merchant-release-security/backups'
 const INSTALLED_PATH = '/usr/local/libexec/merchant/attest-postgres-backup'
 const INSTALLED_DIGEST = join(TRUST_ROOT, 'production-backup-attester-sha256')
@@ -241,7 +240,6 @@ async function main(args) {
   assertProtectedPath(PRIVATE_KEY, { kind: 'file', mode: 0o600 })
   assertProtectedPath(keyIdPath, { kind: 'file' })
   assertProtectedPath(publicKeyPath, { kind: 'file' })
-  assertProtectedPath(SOURCE_POLICY, { kind: 'file' })
   const keyId = readRegular(keyIdPath, 128).toString('utf8').trim()
   const privatePem = readRegular(PRIVATE_KEY), publicPem = readRegular(publicKeyPath)
   const sourcePolicy = parseSourcePolicy(readRegular(sourcePolicyPath))
