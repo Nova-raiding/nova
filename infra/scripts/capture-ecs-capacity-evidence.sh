@@ -24,6 +24,12 @@ case "$CAPACITY_CAPTURE_OUTPUT" in /*) ;; *) echo 'CAPACITY_CAPTURE_OUTPUT must 
 
 output_parent=$(dirname "$CAPACITY_CAPTURE_OUTPUT")
 [ -d "$output_parent" ] && [ ! -L "$output_parent" ] || { echo 'capacity capture output parent must be an existing non-symlink directory' >&2; exit 2; }
+canonical_parent=$(CDPATH='' cd -- "$output_parent" && pwd -P)
+[ "$canonical_parent" = "$output_parent" ] || { echo 'capacity capture output parent must be absolute and canonical' >&2; exit 2; }
+owner_of() { if stat -c '%u' "$1" >/dev/null 2>&1; then stat -c '%u' "$1"; else stat -f '%u' "$1"; fi; }
+mode_of() { if stat -c '%a' "$1" >/dev/null 2>&1; then stat -c '%a' "$1"; else stat -f '%Lp' "$1"; fi; }
+[ "$(owner_of "$output_parent")" = "$(id -u)" ] || { echo 'capacity capture output parent must be owned by the invoking user' >&2; exit 2; }
+output_mode=$(mode_of "$output_parent"); case "$output_mode" in *[2367][0-7]|*[2367]) echo 'capacity capture output parent must not be writable by group or other users' >&2; exit 2 ;; esac
 [ ! -L "$CAPACITY_CAPTURE_OUTPUT" ] || { echo 'capacity capture output must not be a symlink' >&2; exit 2; }
 [ "$action" = validate ] || [ ! -e "$CAPACITY_CAPTURE_OUTPUT" ] || { echo 'capacity capture output already exists; evidence is append-only' >&2; exit 2; }
 
@@ -69,6 +75,8 @@ fi
 [ "${CAPACITY_CAPTURE_CONFIRM:-}" = "$RELEASE_ID" ] || { echo "capture requires CAPACITY_CAPTURE_CONFIRM=$RELEASE_ID" >&2; exit 2; }
 : "${CAPACITY_WORKLOAD_TOKEN:?CAPACITY_WORKLOAD_TOKEN is required for capture}"
 
+# The raw report declares api_http_and_job_admission coverage, so the isolated
+# target must actually exercise job admission instead of recording zero jobs.
 CAPACITY_WORKLOAD_MODE=real_cloud \
 CAPACITY_WORKLOAD_CONFIRM_REAL_CLOUD=true \
 CAPACITY_WORKLOAD_URL="$CAPACITY_CAPTURE_TARGET_URL" \
@@ -76,7 +84,7 @@ CAPACITY_WORKLOAD_PROFILE="$CAPACITY_PROFILE" \
 CAPACITY_WORKLOAD_RELEASE_ID="$RELEASE_ID" \
 CAPACITY_WORKLOAD_SOFTWARE_VERSION="$RELEASE_ID" \
 CAPACITY_WORKLOAD_OUTPUT="$CAPACITY_CAPTURE_OUTPUT" \
-CAPACITY_WORKLOAD_SETUP_JOBS=false \
+CAPACITY_WORKLOAD_SETUP_JOBS=true \
 CAPACITY_WORKLOAD_TOKEN="$CAPACITY_WORKLOAD_TOKEN" \
   npx --no-install tsx "$root/tests/capacity-workload.ts"
 

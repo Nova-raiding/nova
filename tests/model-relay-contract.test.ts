@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
 import { OpenAICompatibleVideoGenerator } from '../packages/ai/src/video-generator.js'
-import { blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, requireProductionReleaseBinding, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact } from '../scripts/model-relay-canary.js'
+import { blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, readRelayErrorRecovery, requireProductionReleaseBinding, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact } from '../scripts/model-relay-canary.js'
 import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
 describe('production model relay contract', () => {
@@ -22,6 +22,16 @@ describe('production model relay contract', () => {
     costSource: 'provider_receipt' as const,
     costCny: 0.01,
     responseValid: true,
+  })
+
+  it('loads an operator-captured recovery object without inventing recovery evidence', () => {
+    expect(readRelayErrorRecovery(undefined)).toBeUndefined()
+    const directory = mkdtempSync(join(tmpdir(), 'relay-recovery-'))
+    const path = join(directory, 'recovery.json')
+    writeFileSync(path, JSON.stringify({ verified: true, failure_status: 503 }))
+    expect(readRelayErrorRecovery(path)).toEqual({ verified: true, failure_status: 503 })
+    writeFileSync(path, '[]')
+    expect(() => readRelayErrorRecovery(path)).toThrow('must contain one JSON object')
   })
 
   it.each(['image', 'image_edit', 'video'] as const)('requires explicit cost confirmation before billable %s probes', modality => {

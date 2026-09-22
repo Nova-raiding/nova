@@ -14,6 +14,14 @@ function release(root: string, id: string, age: number) {
   return path
 }
 
+function candidate(root: string, name: string, gitSha: string, age: number) {
+  const path = join(root, name)
+  mkdirSync(path)
+  writeFileSync(join(path, 'candidate-identity.txt'), `git_sha=${gitSha}\nsource_sha256=sha256:${'d'.repeat(64)}\n`)
+  execFileSync('touch', ['-t', `202609${String(age).padStart(2, '0')}0000`, path])
+  return path
+}
+
 describe('ECS one-click deployment storage policy', () => {
   it('is valid shell and deploys before applying cleanup', () => {
     expect(execFileSync('sh', ['-n', script], { encoding: 'utf8' })).toBe('')
@@ -67,6 +75,33 @@ describe('ECS one-click deployment storage policy', () => {
     expect(result.stdout).toContain('DELETE\trelease-stale')
     expect(spawnSync('test', ['-e', stale]).status).not.toBe(0)
     expect(readFileSync(join(unknown, 'keep'), 'utf8')).toBe('business data')
+  })
+
+  it('bounds verified candidate bundles while preserving protected rollback inputs', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-release-retention-')))
+    const bundles = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-candidate-retention-')))
+    chmodSync(root, 0o700); chmodSync(bundles, 0o700)
+    const staleGit = '1'.repeat(40); const protectedGit = '2'.repeat(40); const currentGit = '3'.repeat(40)
+    const stale = candidate(bundles, 'ecs-stale', staleGit, 1)
+    const protectedBundle = candidate(bundles, 'ecs-protected', protectedGit, 2)
+    candidate(bundles, 'ecs-current', currentGit, 3)
+    const protectedRelease = release(root, 'release-protected', 2)
+    writeFileSync(join(protectedRelease, '.candidate-identity'), `release_id=release-protected\ngit_sha=${protectedGit}\n`)
+    const unmanaged = join(bundles, 'notes'); mkdirSync(unmanaged); writeFileSync(join(unmanaged, 'keep'), 'operator data')
+    const bin = join(root, 'bin'); mkdirSync(bin)
+    writeFileSync(join(bin, 'docker'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    writeFileSync(join(bin, 'flock'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+
+    const result = spawnSync('sh', [script, 'cleanup'], {
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ECS_RELEASES_ROOT: root, ECS_CANDIDATES_ROOT: bundles, ECS_CANDIDATE_KEEP_COUNT: '1', ECS_PROTECTED_RELEASE_IDS: 'release-protected', CONFIRM_ECS_STORAGE_CLEANUP: 'YES' },
+      encoding: 'utf8',
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain(`DELETE_CANDIDATE\t${staleGit}`)
+    expect(result.stdout).toContain(`KEEP_CANDIDATE\t${protectedGit}`)
+    expect(spawnSync('test', ['-e', stale]).status).not.toBe(0)
+    expect(readFileSync(join(protectedBundle, 'candidate-identity.txt'), 'utf8')).toContain(protectedGit)
+    expect(readFileSync(join(unmanaged, 'keep'), 'utf8')).toBe('operator data')
   })
 
   it('serializes cleanup across the full one-click mutation workflow', () => {

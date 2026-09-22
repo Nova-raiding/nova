@@ -80,6 +80,35 @@ describe('model relay evidence gate', () => {
     expect(validateModelRelayEvidence(stale, { requireProduction: true, now: new Date('2026-08-27T02:00:00Z') })).toContain('relay evidence is stale')
   })
 
+  it('requires a distinct, immutable 503 recovery trace for production evidence', () => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-recovery-binding-'))
+    mkdirSync(join(root, 'relay'), { recursive: true })
+    const body = JSON.stringify({ release_id: 'release-1', failure_status: 503, failed_request_id: 'req-failed', recovery_request_id: 'req-recovered' })
+    const digest = createHash('sha256').update(body).digest('hex')
+    writeFileSync(join(root, 'relay', 'recovery.json'), body)
+    const complete = {
+      ...structuredClone(evidence),
+      expires_at: '2026-08-27T01:00:00Z',
+      error_recovery: {
+        verified: true,
+        failure_status: 503,
+        failure_observed_at: '2026-08-26T00:58:00Z',
+        recovered_at: '2026-08-26T00:59:00Z',
+        failed_request_id: 'req-failed',
+        recovery_request_id: 'req-recovered',
+        evidence_ref: `artifact://production/relay/recovery.json#${digest}`,
+      },
+    }
+    // Result receipts are intentionally absent in this focused fixture; the
+    // recovery contract itself must add no error.
+    expect(validateModelRelayEvidence(complete, { requireProduction: true, artifactRoot: root, now: new Date('2026-08-26T02:00:00Z') }))
+      .not.toEqual(expect.arrayContaining([expect.stringContaining('error_recovery')]))
+    expect(validateModelRelayEvidence({ ...complete, error_recovery: { ...complete.error_recovery, recovery_request_id: 'req-failed' } }, { requireProduction: true, artifactRoot: root, now: new Date('2026-08-26T02:00:00Z') }))
+      .toContain('error_recovery request ids must be distinct')
+    expect(validateModelRelayEvidence({ ...complete, error_recovery: undefined }, { requireProduction: true, artifactRoot: root, now: new Date('2026-08-26T02:00:00Z') }))
+      .toContain('error_recovery is required for production relay evidence')
+  })
+
   it('rejects a summary that claims observed cost when the immutable receipt disagrees', () => {
     const root = mkdtempSync(join(tmpdir(), 'relay-cost-binding-'))
     mkdirSync(join(root, 'relay'), { recursive: true })

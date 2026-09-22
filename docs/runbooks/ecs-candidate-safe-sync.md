@@ -37,7 +37,9 @@ PRODUCTION_API_BASE_URL=https://yxsona.com/api \
 sh infra/scripts/ecs-one-click-deploy.sh deploy
 ```
 
-其余鉴权、数据库、证据、镜像摘要和回滚变量沿用 `deploy-verified-ecs-compose.sh` 的受保护宿主配置。自动化不降低任何发布门禁：只有部署器完整成功后才执行回收；失败候选保留用于诊断。默认保留最近 2 个完整 release，并自动保护线上 `/releasez` 返回的当前版本、回滚计划的目标版本、当前候选、含 `.keep` 标记的目录以及 `ECS_PROTECTED_RELEASE_IDS` 指定的版本。清理只接受 `.candidate-identity` 与目录名一致的 release，拒绝符号链接，不触碰 Docker volume、数据库、对象存储和运行容器引用的镜像。
+其余鉴权、数据库、证据、镜像摘要和回滚变量沿用 `deploy-verified-ecs-compose.sh` 的受保护宿主配置。自动化不降低任何发布门禁：只有部署器完整成功后才执行回收；失败候选保留用于诊断。默认保留最近 2 个完整 release 和最近 2 个经身份文件验证的 `/srv/release-candidates` 候选包，并自动保护线上 `/releasez` 返回的当前版本、回滚计划的目标版本、当前候选、含 `.keep` 标记的目录以及 `ECS_PROTECTED_RELEASE_IDS` 指定的版本。候选包用 `candidate-identity.txt` 的完整 Git SHA 与受保护 release/容器关联；未知目录保持不动。release 清理只接受 `.candidate-identity` 与目录名一致的目录。两类清理都拒绝符号链接，不触碰 Docker volume、数据库、对象存储和运行容器引用的镜像。
+
+本机 Registry 必须单独治理。当前自动清理不会运行 `docker image prune`，也不会调用 Registry garbage collection，因为只按磁盘年龄删除 blob 会破坏摘要固定的线上或回滚镜像。先从现网容器、回滚计划与保留 release 的镜像清单生成受保护 digest 集，再通过启用 delete 的 Registry API 删除未保护 manifest，最后在停止写入的维护窗口运行 Registry GC；缺少完整 digest 集时只报告占用，不删除。
 
 部署前可只读查看回收计划：
 

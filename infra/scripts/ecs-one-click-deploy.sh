@@ -10,11 +10,14 @@ action=${1:-deploy}
 
 : "${ECS_RELEASES_ROOT:=/srv/merchant-releases}"
 : "${ECS_RELEASE_KEEP_COUNT:=2}"
+: "${ECS_CANDIDATE_KEEP_COUNT:=$ECS_RELEASE_KEEP_COUNT}"
+: "${ECS_CANDIDATES_ROOT:=/srv/release-candidates}"
 : "${ECS_BUILD_CACHE_KEEP_STORAGE:=2GB}"
 : "${ECS_BUILD_CACHE_UNTIL:=24h}"
 
 case "$action" in deploy|cleanup|report) ;; *) echo 'usage: ecs-one-click-deploy.sh [deploy|cleanup|report]' >&2; exit 2 ;; esac
 printf '%s' "$ECS_RELEASE_KEEP_COUNT" | grep -Eq '^[1-9][0-9]?$' || { echo 'ECS_RELEASE_KEEP_COUNT must be an integer from 1 to 99' >&2; exit 2; }
+printf '%s' "$ECS_CANDIDATE_KEEP_COUNT" | grep -Eq '^[1-9][0-9]?$' || { echo 'ECS_CANDIDATE_KEEP_COUNT must be an integer from 1 to 99' >&2; exit 2; }
 if [ "$action" = deploy ]; then
   : "${RELEASE_ID:?RELEASE_ID is required}"
   printf '%s' "$RELEASE_ID" | grep -Eq '^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' || { echo 'unsafe RELEASE_ID' >&2; exit 2; }
@@ -29,10 +32,21 @@ mode_of() { if stat -c '%a' "$1" >/dev/null 2>&1; then stat -c '%a' "$1"; else s
 release_mode=$(mode_of "$releases"); case "$release_mode" in *[2367][0-7]|*[2367]) echo 'ECS_RELEASES_ROOT must not be writable by group or other users' >&2; exit 2 ;; esac
 
 protected_file=$(mktemp "${TMPDIR:-/tmp}/merchant-protected-releases.XXXXXXXX")
+protected_git_file=$(mktemp "${TMPDIR:-/tmp}/merchant-protected-git-shas.XXXXXXXX")
 candidates_file=$(mktemp "${TMPDIR:-/tmp}/merchant-release-candidates.XXXXXXXX")
+candidate_bundles_file=$(mktemp "${TMPDIR:-/tmp}/merchant-candidate-bundles.XXXXXXXX")
 cleanup_temp() {
-  rm -f -- "$protected_file" "$candidates_file"
+  rm -f -- "$protected_file" "$protected_git_file" "$candidates_file" "$candidate_bundles_file"
 }
+
+candidate_root=
+if [ -e "$ECS_CANDIDATES_ROOT" ]; then
+  [ -d "$ECS_CANDIDATES_ROOT" ] && [ ! -L "$ECS_CANDIDATES_ROOT" ] || { echo 'ECS_CANDIDATES_ROOT must be an existing non-symlink directory' >&2; exit 2; }
+  candidate_root=$(CDPATH='' cd -- "$ECS_CANDIDATES_ROOT" && pwd -P)
+  [ "$candidate_root" = "$ECS_CANDIDATES_ROOT" ] || { echo 'ECS_CANDIDATES_ROOT must be absolute and canonical' >&2; exit 2; }
+  [ "$(owner_of "$candidate_root")" = "$(id -u)" ] || { echo 'ECS_CANDIDATES_ROOT must be owned by the invoking user' >&2; exit 2; }
+  candidate_mode=$(mode_of "$candidate_root"); case "$candidate_mode" in *[2367][0-7]|*[2367]) echo 'ECS_CANDIDATES_ROOT must not be writable by group or other users' >&2; exit 2 ;; esac
+fi
 trap cleanup_temp EXIT HUP INT TERM
 
 # Serialize the complete mutating workflow, not just the Compose cutover. The
@@ -65,8 +79,11 @@ if command -v docker >/dev/null 2>&1; then
   # Compose metadata still points at its release checkout. Preserve those
   # forensic and recovery inputs just like a running release.
   for container in $(docker ps -aq 2>/dev/null || true); do
-    container_release=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" 2>/dev/null | sed -n 's/^RELEASE_ID=//p' | head -1)
+    container_env=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" 2>/dev/null || true)
+    container_release=$(printf '%s\n' "$container_env" | sed -n 's/^RELEASE_ID=//p' | head -1)
+    container_git=$(printf '%s\n' "$container_env" | sed -n 's/^RELEASE_GIT_SHA=//p' | head -1)
     protect "$container_release"
+    printf '%s' "$container_git" | grep -Eq '^[a-f0-9]{40}$' && printf '%s\n' "$container_git" >> "$protected_git_file"
   done
 fi
 if [ -n "${PRODUCTION_API_BASE_URL:-}" ] && command -v curl >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
@@ -87,6 +104,13 @@ if [ -n "${ECS_ROLLBACK_PLAN_PATH:-}" ] && [ -f "$ECS_ROLLBACK_PLAN_PATH" ] && c
 fi
 [ -z "${RELEASE_ID:-}" ] || protect "$RELEASE_ID"
 sort -u "$protected_file" -o "$protected_file"
+while IFS= read -r protected_id; do
+  identity="$releases/$protected_id/.candidate-identity"
+  [ -f "$identity" ] && [ ! -L "$identity" ] || continue
+  protected_git=$(sed -n 's/^git_sha=//p' "$identity")
+  printf '%s' "$protected_git" | grep -Eq '^[a-f0-9]{40}$' && printf '%s\n' "$protected_git" >> "$protected_git_file"
+done < "$protected_file"
+sort -u "$protected_git_file" -o "$protected_git_file"
 
 enumerate_releases() {
   find "$releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -exec sh -c '
@@ -123,6 +147,42 @@ prune_releases() {
   done < "$candidates_file"
 }
 
+enumerate_candidate_bundles() {
+  [ -n "$candidate_root" ] || return 0
+  find "$candidate_root" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -exec sh -c '
+    for path do
+      identity="$path/candidate-identity.txt"
+      [ -f "$identity" ] && [ ! -L "$identity" ] || continue
+      git_sha=$(sed -n "s/^git_sha=//p" "$identity")
+      [ "$(printf "%s\n" "$git_sha" | wc -l | tr -d " ")" = 1 ] || continue
+      printf "%s" "$git_sha" | grep -Eq "^[a-f0-9]{40}$" || continue
+      mtime=$(if stat -c %Y "$path" >/dev/null 2>&1; then stat -c %Y "$path"; else stat -f %m "$path"; fi)
+      printf "%s\t%s\t%s\n" "$mtime" "$git_sha" "$path"
+    done
+  ' sh {} + | sort -rn
+}
+
+prune_candidate_bundles() {
+  enumerate_candidate_bundles > "$candidate_bundles_file"
+  kept=0
+  while IFS="$(printf '\t')" read -r mtime git_sha path; do
+    [ -n "$git_sha" ] || continue
+    if grep -Fqx "$git_sha" "$protected_git_file" || [ -f "$path/.keep" ] || [ "$kept" -lt "$ECS_CANDIDATE_KEEP_COUNT" ]; then
+      kept=$((kept + 1))
+      printf 'KEEP_CANDIDATE\t%s\t%s\n' "$git_sha" "$path"
+      continue
+    fi
+    if [ "${CONFIRM_ECS_STORAGE_CLEANUP:-NO}" = YES ]; then
+      case "$path" in "$candidate_root"/*) ;; *) echo "refusing path outside candidates root: $path" >&2; exit 2 ;; esac
+      [ ! -L "$path" ] || { echo "refusing symlink candidate: $path" >&2; exit 2; }
+      rm -rf -- "$path"
+      printf 'DELETE_CANDIDATE\t%s\t%s\n' "$git_sha" "$path"
+    else
+      printf 'WOULD_DELETE_CANDIDATE\t%s\t%s\n' "$git_sha" "$path"
+    fi
+  done < "$candidate_bundles_file"
+}
+
 prune_build_cache() {
   command -v docker >/dev/null 2>&1 || return 0
   if [ "${CONFIRM_ECS_STORAGE_CLEANUP:-NO}" = YES ]; then
@@ -135,6 +195,7 @@ prune_build_cache() {
 if [ "$action" = report ] || [ "$action" = cleanup ]; then
   echo "protected release IDs: $(tr '\n' ' ' < "$protected_file")"
   prune_releases
+  prune_candidate_bundles
   prune_build_cache
   exit 0
 fi
@@ -173,5 +234,6 @@ echo "deploying verified release $RELEASE_ID from $destination"
 CONFIRM_ECS_STORAGE_CLEANUP=YES
 export CONFIRM_ECS_STORAGE_CLEANUP
 prune_releases
+prune_candidate_bundles
 prune_build_cache
 echo "verified deployment and bounded storage cleanup completed: $RELEASE_ID"

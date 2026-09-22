@@ -6,7 +6,8 @@ export const REQUIRED_RELAY_MODALITIES = ['text', 'image', 'image_edit', 'ocr', 
 type Modality = typeof REQUIRED_RELAY_MODALITIES[number]
 type RelayUsage = { inputTokens?: number; outputTokens?: number; totalTokens?: number; billingUnits?: number; durationSeconds?: number }
 type RelayResult = { modality?: Modality; state?: string; endpoint?: string; model?: string; providerRequestId?: string; providerJobId?: string; usageObserved?: boolean; usage?: RelayUsage; usageProviderRequestId?: string; costObserved?: boolean; costSource?: string; costCny?: number; pricingVersion?: string; pricingGroup?: string; evidence_ref?: string }
-type RelayEvidence = { schema_version?: string; release_id?: string; generated_at?: string; expires_at?: string; environment?: string; simulated?: boolean; relay?: string; results?: RelayResult[] }
+type RelayErrorRecovery = { verified?: boolean; failure_status?: number; failure_observed_at?: string; recovered_at?: string; failed_request_id?: string; recovery_request_id?: string; evidence_ref?: string }
+type RelayEvidence = { schema_version?: string; release_id?: string; generated_at?: string; expires_at?: string; environment?: string; simulated?: boolean; relay?: string; results?: RelayResult[]; error_recovery?: RelayErrorRecovery }
 
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 const isIsoInstant = (value: unknown): value is string => nonEmpty(value) && !Number.isNaN(Date.parse(value)) && /^\d{4}-\d{2}-\d{2}T/.test(value)
@@ -118,6 +119,21 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
       if (!nonEmpty(result.pricingGroup)) errors.push(`${modality}.pricingGroup is required for relay_pricing_snapshot`)
     }
     if (options.requireProduction || options.artifactRoot) errors.push(...validateArtifact(result.evidence_ref, options.artifactRoot ?? '', `${modality}.evidence_ref`, { releaseId: value.release_id, result }))
+  }
+  if (options.requireProduction) {
+    const recovery = value.error_recovery
+    if (!recovery || typeof recovery !== 'object') errors.push('error_recovery is required for production relay evidence')
+    else {
+      if (recovery.verified !== true) errors.push('error_recovery.verified must be true')
+      if (recovery.failure_status !== 503) errors.push('error_recovery.failure_status must be 503')
+      if (!isIsoInstant(recovery.failure_observed_at)) errors.push('error_recovery.failure_observed_at must be an ISO instant')
+      if (!isIsoInstant(recovery.recovered_at)) errors.push('error_recovery.recovered_at must be an ISO instant')
+      if (isIsoInstant(recovery.failure_observed_at) && isIsoInstant(recovery.recovered_at) && Date.parse(recovery.recovered_at) <= Date.parse(recovery.failure_observed_at)) errors.push('error_recovery.recovered_at must be after failure_observed_at')
+      if (!nonEmpty(recovery.failed_request_id)) errors.push('error_recovery.failed_request_id is required')
+      if (!nonEmpty(recovery.recovery_request_id)) errors.push('error_recovery.recovery_request_id is required')
+      if (nonEmpty(recovery.failed_request_id) && recovery.failed_request_id === recovery.recovery_request_id) errors.push('error_recovery request ids must be distinct')
+      errors.push(...validateArtifact(recovery.evidence_ref, options.artifactRoot ?? '', 'error_recovery.evidence_ref'))
+    }
   }
   return errors
 }

@@ -9413,11 +9413,11 @@ function evidenceReadiness(kind: 'capability' | 'capacity'): EvidenceReadiness {
   base.verifiedBy = typeof value.sign_off?.verified_by === 'string' ? value.sign_off.verified_by : undefined
   base.verifiedAt = typeof value.sign_off?.verified_at === 'string' ? value.sign_off.verified_at : (typeof value.generated_at === 'string' ? value.generated_at : undefined)
   if (kind === 'capability') {
-    const errors = isManualPlatformOperationsMode()
+    const errors = manualPlatformOperationsMode
       ? validateManualOperationsEvidenceRuntime(document, { expectedReleaseId: process.env.RELEASE_ID?.trim() || undefined })
       : validatePlatformCapabilityEvidence(document, { requireCanary: true, expectedReleaseId: process.env.RELEASE_ID?.trim() || undefined })
     base.reasons.push(...errors)
-    if (!isManualPlatformOperationsMode() && value.environment !== 'preproduction' && value.environment !== 'production') base.reasons.push('environment must be preproduction or production')
+    if (!manualPlatformOperationsMode && value.environment !== 'preproduction' && value.environment !== 'production') base.reasons.push('environment must be preproduction or production')
   } else {
     base.reasons.push(...validateCapacityEvidenceRuntime(value, { expectedReleaseId: process.env.RELEASE_ID?.trim() || undefined }))
   }

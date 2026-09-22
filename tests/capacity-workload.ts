@@ -191,7 +191,10 @@ function headers(config: CapacityWorkloadConfig, workspace: string, extra: Recor
 async function request(config: CapacityWorkloadConfig, workspace: string, path: string, init: RequestInit, phase: string, timings: CapacityWorkloadTiming[]) {
   const started = performance.now()
   try {
-    const response = await fetch(`${config.baseUrl}${path}`, { ...init, headers: headers(config, workspace, Object.fromEntries(new Headers(init.headers).entries())) })
+    // Never follow a redirect during a capacity run. A seemingly isolated
+    // preproduction endpoint must not be able to redirect load to production
+    // (or to any other unreviewed host).
+    const response = await fetch(`${config.baseUrl}${path}`, { ...init, redirect: 'manual', headers: headers(config, workspace, Object.fromEntries(new Headers(init.headers).entries())) })
     timings.push({ workspace, phase, elapsedMs: performance.now() - started, ok: response.ok, status: response.status })
     return response
   } catch {

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, readdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -228,7 +228,8 @@ describe('deployment operation scripts', () => {
 
   it('plans ECS capacity capture without network activity and blocks production load', () => {
     const script = 'infra/scripts/capture-ecs-capacity-evidence.sh'
-    const directory = mkdtempSync(join(tmpdir(), 'capacity-capture-'))
+    const directory = realpathSync(mkdtempSync(join(tmpdir(), 'capacity-capture-')))
+    chmodSync(directory, 0o700)
     const output = join(directory, 'raw.json')
     const env = {
       RELEASE_ID: 'release-9df84aa1',
@@ -246,10 +247,14 @@ describe('deployment operation scripts', () => {
     expect(existsSync(output)).toBe(false)
     expect(() => run(script, ['capture'], env)).toThrow(/CAPACITY_CAPTURE_TARGET_KIND/)
     expect(() => run(script, ['plan'], { ...env, CAPACITY_CAPTURE_TARGET_URL: 'https://yxsona.com/api' })).toThrow(/forbidden against the production domains/)
+    const brokenLink = join(directory, 'broken.json')
+    symlinkSync(join(directory, 'missing.json'), brokenLink)
+    expect(() => run(script, ['plan'], { ...env, CAPACITY_CAPTURE_OUTPUT: brokenLink })).toThrow(/must not be a symlink/)
     const source = readFileSync(script, 'utf8')
     expect(source).toContain('[ "${CAPACITY_CAPTURE_CONFIRM:-}" = "$RELEASE_ID" ]')
-    expect(source).toContain('CAPACITY_WORKLOAD_SETUP_JOBS=false')
+    expect(source).toContain('CAPACITY_WORKLOAD_SETUP_JOBS=true')
     expect(source).toContain('cloud_gate !== false')
+    expect(readFileSync('tests/capacity-workload.ts', 'utf8')).toContain("redirect: 'manual'")
     expect(execFileSync('sh', ['-n', script], { encoding: 'utf8' })).toBe('')
   })
 

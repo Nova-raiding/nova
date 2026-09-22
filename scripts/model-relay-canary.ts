@@ -94,6 +94,14 @@ export function requireProductionReleaseBinding(input: { environment?: string; r
   }
 }
 
+export function readRelayErrorRecovery(path: string | undefined): Record<string, unknown> | undefined {
+  const sourcePath = path?.trim()
+  if (!sourcePath) return undefined
+  const value = JSON.parse(readFileSync(sourcePath, 'utf8')) as unknown
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('MODEL_RELAY_ERROR_RECOVERY_PATH must contain one JSON object')
+  return value as Record<string, unknown>
+}
+
 function modelFor(modality: ProbeResult['modality']) {
   if (modality === 'text') return process.env.AI_MODEL?.trim() || process.env.MODEL_ID?.trim() || ''
   if (modality === 'image') return process.env.IMAGE_MODEL?.trim() || process.env.AI_IMAGE_MODEL?.trim() || ''
@@ -521,16 +529,19 @@ export async function main() {
         const relayOrigin = new URL(base).origin
         const generatedAt = new Date()
         const ttlSeconds = resolveBoundedInteger(process.env.MODEL_RELAY_EVIDENCE_TTL_SECONDS, 24 * 60 * 60, 60, 7 * 24 * 60 * 60, 'MODEL_RELAY_EVIDENCE_TTL_SECONDS')
+        const errorRecovery = readRelayErrorRecovery(process.env.MODEL_RELAY_ERROR_RECOVERY_PATH)
         const evidence = {
           schema_version: '1', release_id: releaseId, generated_at: generatedAt.toISOString(),
           expires_at: new Date(generatedAt.getTime() + ttlSeconds * 1000).toISOString(),
           environment: process.env.NODE_ENV?.trim() || '', simulated: false, relay: relayOrigin, results,
+          ...(errorRecovery ? { error_recovery: errorRecovery } : {}),
         }
         const evidencePath = process.env.MODEL_RELAY_EVIDENCE_PATH?.trim()
         if (evidencePath) writeFileSync(evidencePath, JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600 })
         console.log(JSON.stringify(evidence, null, 2))
         if (results.some(result => result.state !== 'ready' || result.providerRequestId === undefined || result.usageObserved !== true || result.costObserved !== true)) process.exitCode = 1
         if (process.env.NODE_ENV?.trim() === 'production' && (!artifactRoot || results.some(result => !result.evidence_ref))) process.exitCode = 1
+        if (process.env.NODE_ENV?.trim() === 'production' && !errorRecovery) process.exitCode = 1
       } catch (error) {
         console.error(JSON.stringify({ state: 'blocked', reason: error instanceof Error ? error.message : 'relay_probe_failed' }))
         process.exitCode = 1

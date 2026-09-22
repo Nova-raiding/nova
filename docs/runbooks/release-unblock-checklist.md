@@ -37,6 +37,11 @@
 - model relay、Codex app host、object storage、payment、restore evidence；
 - release manifest 和 evidence bundle，全部绑定同一 release identity。
 
+模型中转 evidence 除五模态成功请求外，还必须包含同一 release 的真实 503→恢复
+轨迹：失败与恢复请求 ID 必须不同、时间有序，并引用受保护 evidence root 下带
+SHA-256 的不可变原始 artifact。配置存在、鉴权 key 已注入或一次直连成功均不等价
+于 request/usage/cost/error 闭环；不得人为让生产 relay 故障来补证据。
+
 ### 4.1 容量采集入口（默认不联网）
 
 容量采集只允许针对隔离预发环境。默认 `plan` 仅输出不可执行计划，不发送请求；
@@ -53,6 +58,7 @@ sh infra/scripts/capture-ecs-capacity-evidence.sh plan
 经容量窗口、隔离预发资源和影响范围人工批准后，才可额外设置
 `CAPACITY_CAPTURE_TARGET_KIND=isolated_preproduction`、
 `CAPACITY_CAPTURE_CONFIRM=release-9df84aa1` 与受保护 token，并把动作改为 `capture`。
+隔离环境必须预先创建该 profile 所需的 `ws_capacity_0..N` 工作区，并为每个工作区绑定淘宝测试账号；采集会真实执行任务创建与 job admission，缺少账号时必须失败，不能把零任务报告当作覆盖证据。
 该入口只采集 API HTTP 与 job admission 原始观测，强制保留 `cloud_gate=false`，
 不能替代平台真实流量、故障注入、租户噪声隔离、六小时稳态和人工签署；最终
 capacity evidence 仍必须独立生成并通过 `deploy-preflight-ecs.sh` 的 cloud gate。
