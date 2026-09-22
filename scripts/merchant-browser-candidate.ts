@@ -150,9 +150,17 @@ async function command(binary: string, args: string[], env: Environment): Promis
 }
 
 export async function verifyBrowserIdentity(candidate: BrowserCandidate, signal?: AbortSignal): Promise<void> {
+  // The local browser candidate is fronted by the UI proxy and exposes the
+  // API probe below `/api/releasez`; the deployed ECS gateway exposes the
+  // canonical release probe at the public root `/releasez`. Keep the two
+  // paths explicit so external production QA does not parse the UI index as
+  // JSON and fail before any browser interaction starts.
+  const releaseUrl = (base: string) => candidate.mode === 'external'
+    ? new URL('/releasez', base).href
+    : new URL('api/releasez', base).href
   const probes: Array<[string, 'api' | 'ui', string?]> = [
-    [new URL('api/releasez', candidate.merchantUrl).href, 'api'],
-    [new URL('api/releasez', candidate.opsUrl).href, 'api'],
+    [releaseUrl(candidate.merchantUrl), 'api'],
+    [releaseUrl(candidate.opsUrl), 'api'],
     [new URL('build-meta.json', candidate.merchantUrl).href, 'ui', 'merchant-ui'],
     [new URL('build-meta.json', candidate.opsUrl).href, 'ui', 'ops-ui'],
   ]
