@@ -17,6 +17,30 @@ releases=$(CDPATH='' cd -- "$ECS_RELEASES_ROOT" && pwd -P)
 [ "$bundle" = "$ECS_CANDIDATE_BUNDLE_DIR" ] || { echo 'candidate bundle path must be absolute and canonical' >&2; exit 2; }
 [ "$releases" = "$ECS_RELEASES_ROOT" ] || { echo 'releases root path must be absolute and canonical' >&2; exit 2; }
 case "$releases/" in "$root/"*) echo 'release checkout must be staged outside the mutable repository' >&2; exit 2 ;; esac
+# The candidate controls package.json and therefore the build command.  Hashes
+# only bind the files to candidate-identity.txt; they do not make an
+# attacker-writable bundle trustworthy.  Refuse bundles that another local
+# principal can replace before the verified archive is copied into staging.
+BUNDLE="$bundle" python3 <<'PY'
+import os, pathlib, stat
+
+bundle = pathlib.Path(os.environ['BUNDLE'])
+expected_uid = os.geteuid()
+cursor = bundle
+while True:
+    value = cursor.stat(follow_symlinks=False)
+    if stat.S_ISLNK(value.st_mode) or not stat.S_ISDIR(value.st_mode):
+        raise SystemExit(f'candidate bundle path component is not a real directory: {cursor}')
+    if cursor == bundle and value.st_uid != expected_uid:
+        raise SystemExit('candidate bundle must be owned by the staging user')
+    writable_by_others = value.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+    sticky_directory = value.st_mode & stat.S_ISVTX
+    if writable_by_others and not sticky_directory:
+        raise SystemExit(f'candidate bundle path is replaceable by another user: {cursor}')
+    if cursor.parent == cursor:
+        break
+    cursor = cursor.parent
+PY
 owner_of() { if stat -c '%u' "$1" >/dev/null 2>&1; then stat -c '%u' "$1"; else stat -f '%u' "$1"; fi; }
 mode_of() { if stat -c '%a' "$1" >/dev/null 2>&1; then stat -c '%a' "$1"; else stat -f '%Lp' "$1"; fi; }
 [ "$(owner_of "$releases")" = "$(id -u)" ] || { echo 'releases root must be owned by the staging user' >&2; exit 2; }

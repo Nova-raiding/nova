@@ -96,4 +96,13 @@ describe('verified ECS release staging', () => {
     expect(result.status).not.toBe(0)
     expect(result.stderr).toContain('must not be writable by group or other users')
   })
+
+  it('rejects a candidate bundle that another local user can replace', () => {
+    const value = fixture()
+    execFileSync('chmod', ['0777', value.bundle])
+    const result = run(value)
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('candidate bundle path is replaceable by another user')
+    expect(existsSync(join(value.releases, 'release-1'))).toBe(false)
+  })
 })
