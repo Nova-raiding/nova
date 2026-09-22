@@ -1,6 +1,6 @@
-import { Alert, Button, Card, Input, Modal, Space, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
-import type { Platform, StoreDirectory } from "../../types/ops";
+import { platformLabels, platforms, type Platform, type StoreDirectory, type WorkspaceSummary } from "../../types/ops";
 
 interface StoreDirectorySectionProps {
   storeDirectory: StoreDirectory[];
@@ -10,6 +10,8 @@ interface StoreDirectorySectionProps {
   onRetry?: () => void;
   onSaveAlias: (store: StoreDirectory, alias: string) => Promise<boolean>;
   onRevoke: (store: StoreDirectory) => Promise<void>;
+  workspaces?: WorkspaceSummary[];
+  onRegisterManualStore?: (input: { workspaceId: string; platform: Platform; accountId: string; storeAlias?: string; reason: string }) => Promise<void>;
 }
 
 // Every value `platform_accounts.token_state` can hold needs an honest label here.
@@ -37,12 +39,21 @@ export function StoreDirectorySection({
   onRetry,
   onSaveAlias,
   onRevoke,
+  workspaces = [],
+  onRegisterManualStore,
 }: StoreDirectorySectionProps) {
   const [aliasTarget, setAliasTarget] = useState<StoreDirectory>();
   const [alias, setAlias] = useState("");
   const [savingAlias, setSavingAlias] = useState(false);
   const [revokingKey, setRevokingKey] = useState<string>();
   const [revokeTarget, setRevokeTarget] = useState<StoreDirectory>();
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const [manualWorkspaceId, setManualWorkspaceId] = useState("");
+  const [manualPlatform, setManualPlatform] = useState<Platform>();
+  const [manualAccountId, setManualAccountId] = useState("");
+  const [manualAlias, setManualAlias] = useState("");
+  const [manualReason, setManualReason] = useState("");
   const errorRef = useRef<HTMLDivElement>(null);
   const closeAlias = () => { if (!savingAlias) { setAliasTarget(undefined); setAlias(""); } };
   const submitAlias = async () => {
@@ -66,6 +77,18 @@ export function StoreDirectorySection({
     setRevokeTarget(undefined);
   };
   const initialLoadFailed = Boolean(error && storeDirectory.length === 0 && !loading);
+  const resetManualForm = () => {
+    setRegisterOpen(false); setManualWorkspaceId(""); setManualPlatform(undefined);
+    setManualAccountId(""); setManualAlias(""); setManualReason("");
+  };
+  const submitManualStore = async () => {
+    if (!onRegisterManualStore || !manualWorkspaceId || !manualPlatform || !manualAccountId.trim() || !manualReason.trim()) return;
+    setRegistering(true);
+    try {
+      await onRegisterManualStore({ workspaceId: manualWorkspaceId, platform: manualPlatform, accountId: manualAccountId.trim(), ...(manualAlias.trim() ? { storeAlias: manualAlias.trim() } : {}), reason: manualReason.trim() });
+      resetManualForm();
+    } finally { setRegistering(false); }
+  };
 
   useEffect(() => {
     if (error) errorRef.current?.focus({ preventScroll: true });
@@ -77,9 +100,10 @@ export function StoreDirectorySection({
       className="ops-section-anchor"
       title="平台连接与授权健康"
       extra={
-        <Tag color={storeDirectory.length ? "blue" : "orange"}>
-          {loading || error ? "状态待确认" : `${storeDirectory.length} 个已登记店铺`}
-        </Tag>
+        <Space>
+          {canPlatformOps && onRegisterManualStore ? <Button type="primary" onClick={() => setRegisterOpen(true)}>登记人工店铺</Button> : null}
+          <Tag color={storeDirectory.length ? "blue" : "orange"}>{loading || error ? "状态待确认" : `${storeDirectory.length} 个已登记店铺`}</Tag>
+        </Space>
       }
     >
       <Table
@@ -208,6 +232,23 @@ export function StoreDirectorySection({
       <Typography.Text type="secondary">
         此处仅展示平台连接元数据，不读取客户商品、素材或营销内容；别名只用于展示，撤销或重新授权都会留下审计记录。
       </Typography.Text>
+      <Modal title="登记人工店铺" open={registerOpen} okText="确认登记" cancelText="取消" confirmLoading={registering}
+        okButtonProps={{ disabled: !manualWorkspaceId || !manualPlatform || !manualAccountId.trim() || !manualReason.trim() }}
+        onCancel={() => { if (!registering) resetManualForm(); }} onOk={() => void submitManualStore()}>
+        <Alert type="warning" showIcon title="这不是平台授权" description="仅建立人工运营的店铺边界，不保存 OAuth 凭据，不会自动同步或发布。" style={{ marginBottom: 16 }} />
+        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          <label htmlFor="manual-store-workspace">商家工作区</label>
+          <Select id="manual-store-workspace" value={manualWorkspaceId || undefined} onChange={setManualWorkspaceId} options={workspaces.filter(item => item.status === "active").map(item => ({ value: item.workspaceId, label: `${item.enterpriseName ?? "未命名企业主体"} · ${item.workspaceId}` }))} placeholder="选择已启用商家工作区" showSearch optionFilterProp="label" />
+          <label htmlFor="manual-store-platform">平台</label>
+          <Select id="manual-store-platform" value={manualPlatform} onChange={setManualPlatform} options={platforms.map(platform => ({ value: platform, label: platformLabels[platform] }))} placeholder="选择平台" />
+          <label htmlFor="manual-store-account">平台店铺账号 ID</label>
+          <Input id="manual-store-account" value={manualAccountId} onChange={event => setManualAccountId(event.target.value)} maxLength={256} />
+          <label htmlFor="manual-store-alias">店铺别名（可选）</label>
+          <Input id="manual-store-alias" value={manualAlias} onChange={event => setManualAlias(event.target.value)} maxLength={200} />
+          <label htmlFor="manual-store-reason">登记理由</label>
+          <Input.TextArea id="manual-store-reason" value={manualReason} onChange={event => setManualReason(event.target.value)} maxLength={500} showCount />
+        </Space>
+      </Modal>
       <Modal title="修改店铺展示别名" open={Boolean(aliasTarget)} okText="保存别名" cancelText="取消" confirmLoading={savingAlias} okButtonProps={{ disabled: alias.trim().length < 1 }} onCancel={closeAlias} onOk={() => void submitAlias()}>
         <Typography.Paragraph>仅修改运营后台展示名称，不会修改平台店铺真实名称。</Typography.Paragraph>
         <label htmlFor="store-display-alias">店铺展示别名</label>

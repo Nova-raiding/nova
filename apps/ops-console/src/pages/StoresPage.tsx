@@ -8,7 +8,7 @@ import { BrandTreeSection } from "../components/stores/BrandTreeSection";
 import { BrandGovernanceSummary } from "../components/stores/BrandGovernanceSummary";
 import { CanonicalProductConsistencySection } from "../components/stores/CanonicalProductConsistencySection";
 import { CanonicalBackfillConflictSection } from "../components/stores/CanonicalBackfillConflictSection";
-import { opsRestPost, rpc } from "../api/opsClient.js";
+import { opsRestPost, rpc, rpcForWorkspace } from "../api/opsClient.js";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { platformLabels, platforms, type Platform } from "../types/ops";
 import type { OpsDomain } from "../navigation/opsNavigation";
@@ -116,6 +116,16 @@ export function StoresPage({ model, onNavigate }: StoresPageProps & { onNavigate
         onRetry={() => void model.load()}
         onSaveAlias={model.saveStoreAlias}
         onRevoke={model.revokeStore}
+        workspaces={model.workspaceDirectory?.items ?? []}
+        onRegisterManualStore={async ({ workspaceId, platform, accountId, storeAlias, reason }) => {
+          const response = await rpcForWorkspace<{ connection?: { mode?: string; token_state?: string; credential_free?: boolean; authorization_receipt?: unknown }; applies_to_store_boundary?: boolean }>(workspaceId, "ops.platform.store.record.create", {
+            workspace_id: workspaceId, platform, account_id: accountId, ...(storeAlias ? { store_alias: storeAlias } : {}), reason,
+          });
+          if (response?.connection?.mode !== "manual_store_record" || response?.connection?.token_state !== "manually_registered" || response?.connection?.credential_free !== true || response?.connection?.authorization_receipt !== null || response?.applies_to_store_boundary !== true) {
+            throw new Error("人工店铺登记未返回可用于人工运营边界的确认结果");
+          }
+          await model.load();
+        }}
       />
       <AutomationPolicySection
         automationPolicies={model.automationPolicies}
