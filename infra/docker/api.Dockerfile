@@ -12,6 +12,7 @@ COPY scripts ./scripts
 # into the runtime image.
 COPY infra/protected ./infra/protected
 COPY infra/scripts/install-ecs-release-controls.mjs infra/scripts/install-ecs-release-controls.d.mts ./infra/scripts/
+COPY infra/scripts/ecs-external-gateway-handoff.mjs infra/scripts/ecs-external-gateway-handoff.d.mts ./infra/scripts/
 COPY tsconfig.json vitest*.config.ts ./
 COPY infra/scripts/generate-container-source-manifest.mjs ./infra/scripts/generate-container-source-manifest.mjs
 # Host-side incremental state must never control which checked-in source is
