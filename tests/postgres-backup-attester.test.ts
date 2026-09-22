@@ -15,6 +15,17 @@ const sourcePolicy = { system_identifier_sha256: createHash('sha256').update(sys
 const snapshotIdentity = { systemIdentifier, databaseOid: sourcePolicy.database_oid, databaseName: sourcePolicy.database_name, migrationVersion: 233, snapshot: '00000003-0000001B-1' }
 
 describe('synthetic protected postgres backup attester', () => {
+  it('requires the live backup producer to bind an explicit migration version', () => {
+    const source = readFileSync('infra/protected/produce-protected-live-backup.mjs', 'utf8')
+    expect(source).toContain('process.env.EXPECTED_MIGRATION_VERSION')
+    expect(source).toContain('process.env.PRODUCTION_POSTGRES_CONTAINER')
+    expect(source).toContain('merchant-production-postgres-')
+    expect(source).toContain('EXPECTED_MIGRATION_VERSION must be a positive integer')
+    expect(source).toContain('before-upgrade-${expectedMigrationVersion}.dump')
+    expect(source).not.toContain('assert.equal(value.migration_version, 219)')
+    expect(source).not.toContain("['inspect', 'local-postgres-1']")
+  })
+
   it('signs synthetic bytes with matching Ed25519 keys and the existing restore verifier rejects tampering', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'synthetic-backup-attester-'))), backupPath = join(root, 'merchant.dump')
     const backupBytes = Buffer.from('synthetic-custom-format-dump'); writeFileSync(backupPath, backupBytes)

@@ -10,6 +10,8 @@ Provision the final executable bytes outside the repository, root-owned and not 
 
 Install the reviewed bytes from the exact release commit before loading any private key. The production runtime is fixed at `/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node`; do not substitute `/usr/bin/node`. Verify and record that runtime's SHA-256 before installing controls. The backup attester likewise invokes only `/usr/pgsql-16/bin/psql` and `/usr/pgsql-16/bin/pg_dump`. PostgreSQL 13 may remain installed for existing server duties, but it must not replace or be placed in front of these fixed PostgreSQL 16 paths.
 
+The protected live-backup producer requires `EXPECTED_MIGRATION_VERSION` and `PRODUCTION_POSTGRES_CONTAINER` on every invocation. It only accepts the reviewed `merchant-production-postgres-N` container naming contract, compares the explicit operator-reviewed version with the migration version observed from that source before creating any dump, and derives the backup filename from that value. A missing, non-positive, mismatched, or local-development source fails closed; an older backup must never be relabeled as evidence for a newer release. For a release whose reviewed chain ends at 242, invoke the producer with `EXPECTED_MIGRATION_VERSION=242 PRODUCTION_POSTGRES_CONTAINER=merchant-production-postgres-1` and require the resulting attestation and isolated restore evidence to bind the same release identity.
+
 Use this installation order from the root-owned reviewed release checkout:
 
 1. Provision and independently verify the fixed Node runtime and the PostgreSQL 16 client binaries.
