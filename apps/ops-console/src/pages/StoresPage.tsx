@@ -12,6 +12,7 @@ import { opsRestPost, rpc } from "../api/opsClient.js";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { platformLabels, platforms, type Platform } from "../types/ops";
 import type { OpsDomain } from "../navigation/opsNavigation";
+import type { CanonicalProductConsistencyReport } from "../types/ops";
 import { Button } from "antd";
 
 interface StoresPageProps {
@@ -37,6 +38,33 @@ export async function openBrandStore(
  * workspace roles may create the brand-unit aggregate itself. */
 export function canCreateBrandUnit(roles: readonly string[]) {
   return roles.some((role) => ["workspace_owner", "merchant_admin", "platform_ops"].includes(role));
+}
+
+type CanonicalFinding = CanonicalProductConsistencyReport["findings"][number];
+
+export function canonicalNextActionCommand(finding: CanonicalFinding, inputs: Record<string, string>): { method: string; params: Record<string, string> } {
+  const method = finding.nextAction?.method;
+  const required = (key: string) => {
+    const value = inputs[key]?.trim();
+    if (!value) throw new Error(`服务端动作缺少必填输入：${key}`);
+    return value;
+  };
+  if (method === "canonical.product.consistency") return { method, params: {} };
+  if (method === "brand-unit.product.create") return {
+    method,
+    params: { brand_id: required("brand_id"), source_product_id: required("source_product_id"), title: required("title") },
+  };
+  if (method === "brand-unit.listing.create") return {
+    method,
+    params: {
+      brand_id: required("brand_id"),
+      canonical_product_id: required("canonical_product_id"),
+      platform: required("platform"),
+      account_id: required("account_id"),
+      reason: finding.nextAction?.reason ?? "运营台按一致性报告补齐 listing 映射",
+    },
+  };
+  throw new Error(`不支持的一致性动作：${method ?? "未提供"}`);
 }
 
 export function StoresPage({ model, onNavigate }: StoresPageProps & { onNavigate: (domain: OpsDomain) => void }) {
@@ -65,7 +93,15 @@ export function StoresPage({ model, onNavigate }: StoresPageProps & { onNavigate
         return true;
       }} />}
       <BrandGovernanceSummary summary={model.platformBrandUnitSummary} />
-      <CanonicalProductConsistencySection report={model.canonicalProductConsistency} onRefresh={() => void model.load()} loading={model.loading} canRead={canCanonicalRead} />
+      <CanonicalProductConsistencySection report={model.canonicalProductConsistency} onRefresh={() => void model.load()} onNextAction={async (finding, inputs) => {
+        const command = canonicalNextActionCommand(finding, inputs);
+        if (command.method === "canonical.product.consistency") {
+          await model.load();
+          return;
+        }
+        await rpc(command.method, command.params);
+        await model.load();
+      }} loading={model.loading} canRead={canCanonicalRead} />
       <CanonicalBackfillConflictSection enabled={platformScope && model.authorization.can("canonical.backfill.read")} canUpdate={platformScope && model.authorization.can("canonical.backfill.update")} brands={model.brandNavigation} onScan={platformScope && canCanonicalRead ? async () => {
         const run = await rpc<{ id: string }>("ops.canonical.backfill.create", { dry_run: "true", reason: "刷新 canonical 冲突队列前创建扫描审计批次" });
         if (!run?.id) throw new Error("扫描审计批次创建失败");

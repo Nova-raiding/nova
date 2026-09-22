@@ -133,6 +133,12 @@ describe("CanonicalProductConsistencySection", () => {
     expect(markup).toContain('aria-disabled="true"');
   });
 
+  it("exposes an authorized server action when the Stores page wires an executor", () => {
+    const markup = renderToStaticMarkup(<CanonicalProductConsistencySection report={{ ...report, findings: [{ ...report.findings[0]!, nextAction: { ...report.findings[0]!.nextAction!, permission: { allowed: true, requiredRole: null } } }] }} onNextAction={vi.fn()} />);
+    expect(markup).toContain('aria-label="执行：补齐规范商品映射"');
+    expect(markup).not.toContain("补齐规范商品映射（待接入）");
+  });
+
   it("distinguishes a server-confirmed empty result from a filtered empty result", () => {
     const emptyReport = { ...report, status: "clean" as const, counts: { verified: 0, legacy_only: 0, conflict: 0, blocked: 0 }, findings: [], orphanFindings: [], freshness: "fresh" as const };
     const markup = renderToStaticMarkup(<CanonicalProductConsistencySection report={emptyReport} />);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button, Card, Col, Descriptions, Drawer, Empty, Row, Segmented, Space, Statistic, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Descriptions, Drawer, Empty, Input, Modal, Row, Segmented, Space, Statistic, Table, Tag, Typography } from "antd";
 import { CheckCircleOutlined, ExclamationCircleOutlined, ReloadOutlined, WarningOutlined } from "@ant-design/icons";
 import type { CanonicalProductConsistencyReport } from "../../types/ops.js";
 
@@ -104,10 +104,35 @@ export function CanonicalRelationChain({ finding }: { finding: ConsistencyFindin
   </div>;
 }
 
-export function CanonicalProductConsistencySection({ report, onRefresh, onNextAction, loading = false, canRead = true }: { report?: PresentationReport; onRefresh?: () => void; onNextAction?: (finding: CanonicalProductConsistencyReport["findings"][number]) => void; loading?: boolean; canRead?: boolean }) {
+const actionInputLabel: Record<string, string> = {
+  workspace_id: "工作区 ID",
+  brand_id: "品牌 ID",
+  source_product_id: "旧商品 ID",
+  canonical_product_id: "规范商品 ID",
+  platform: "平台",
+  account_id: "店铺账号 ID",
+  title: "规范商品标题",
+};
+
+function nextActionInputDefaults(report: PresentationReport, finding: ConsistencyFinding) {
+  return {
+    workspace_id: report.workspaceId,
+    brand_id: finding.scope?.brandId ?? "",
+    source_product_id: finding.productId ?? finding.legacyProductId,
+    canonical_product_id: finding.canonicalProductId ?? "",
+    platform: finding.scope?.platform ?? "",
+    account_id: finding.scope?.accountId ?? "",
+  } satisfies Record<string, string>;
+}
+
+export function CanonicalProductConsistencySection({ report, onRefresh, onNextAction, loading = false, canRead = true }: { report?: PresentationReport; onRefresh?: () => void; onNextAction?: (finding: CanonicalProductConsistencyReport["findings"][number], inputs: Record<string, string>) => Promise<void> | void; loading?: boolean; canRead?: boolean }) {
   const [filter, setFilter] = useState<"all" | Status>("all");
   const [selected, setSelected] = useState<CanonicalProductConsistencyReport["findings"][number]>();
   const [selectedOrphan, setSelectedOrphan] = useState<CanonicalProductConsistencyReport["orphanFindings"][number]>();
+  const [pendingAction, setPendingAction] = useState<ConsistencyFinding>();
+  const [actionInputs, setActionInputs] = useState<Record<string, string>>({});
+  const [actionError, setActionError] = useState("");
+  const [actionSubmitting, setActionSubmitting] = useState(false);
   const selectedTriggerRef = useRef<HTMLButtonElement>(null);
   const selectedOrphanTriggerRef = useRef<HTMLButtonElement>(null);
   const errorSummaryRef = useRef<HTMLDivElement>(null);
@@ -139,6 +164,31 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
   const closeSelectedOrphan = () => {
     setSelectedOrphan(undefined);
     window.requestAnimationFrame(() => selectedOrphanTriggerRef.current?.focus({ preventScroll: true }));
+  };
+  const openNextAction = (finding: ConsistencyFinding) => {
+    if (!report || !finding.nextAction) return;
+    setActionInputs(nextActionInputDefaults(report, finding));
+    setActionError("");
+    setPendingAction(finding);
+  };
+  const submitNextAction = async () => {
+    const action = pendingAction?.nextAction;
+    if (!pendingAction || !action || !onNextAction) return;
+    const missing = action.requiredInputs.filter((key) => !(actionInputs[key] ?? "").trim());
+    if (missing.length > 0) {
+      setActionError(`请补齐：${missing.map((key) => actionInputLabel[key] ?? key).join("、")}`);
+      return;
+    }
+    setActionSubmitting(true);
+    setActionError("");
+    try {
+      await onNextAction(pendingAction, actionInputs);
+      setPendingAction(undefined);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "服务端动作执行失败");
+    } finally {
+      setActionSubmitting(false);
+    }
   };
   if (!canRead) return <Card className="canonical-consistency-card" title="规范商品一致性"><Alert type="info" showIcon title="当前会话无权读取一致性证据" description="这不是空结果；当前账号缺少 customer.content.read，服务端不会返回商品关系数据，也不能通过本页面发起重新检查。" /></Card>;
   if (!report) return <Card className="canonical-consistency-card" title="规范商品一致性" extra={<Button className="canonical-consistency-action" aria-label="重新检查一致性报告" icon={<ReloadOutlined />} loading={loading} onClick={onRefresh}>重新检查</Button>}><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可验证的一致性报告；当前不能视为已通过" /></Card>;
@@ -178,7 +228,7 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
           { title: "证据时间", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => row.evidence?.generatedAt ?? "未返回" },
           { title: "原因", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => row.codes.length ? row.codes.map(codeMessage).join("、") : "关系链已验证" },
           { title: "状态", dataIndex: "status", render: (value: Status) => <Tag color={statusMeta[value].color} icon={value === "verified" ? <CheckCircleOutlined /> : <WarningOutlined />}>{statusMeta[value].label}</Tag> },
-          { title: "下一步", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => <NextActionEvidence finding={row} onExecute={onNextAction} /> },
+          { title: "下一步", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => <NextActionEvidence finding={row} onExecute={onNextAction ? openNextAction : undefined} /> },
           { title: "操作", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => <Button className="canonical-consistency-action" type="link" aria-label={`查看 ${row.legacyProductId} 一致性详情`} onClick={(event) => { selectedTriggerRef.current = event.currentTarget as HTMLButtonElement; setSelected(row); }}>查看详情</Button> },
         ]} /> : report.findings.length === 0 && report.orphanFindings.length === 0 ? <Alert
           type={report.status === "clean" && !hasAttention ? "success" : "warning"}
@@ -228,7 +278,7 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
           <Descriptions.Item label="检查证据">{selected.evidence ? `${selected.evidence.generatedAt} · revision ${selected.evidence.revision ?? "—"}` : "服务端未返回证据摘要"}</Descriptions.Item>
         </Descriptions>
         <CanonicalRelationChain finding={selected} />
-        <Alert type={selected.status === "verified" ? "info" : "warning"} showIcon title="下一步" description={<NextActionEvidence finding={selected} onExecute={onNextAction} />} />
+        <Alert type={selected.status === "verified" ? "info" : "warning"} showIcon title="下一步" description={<NextActionEvidence finding={selected} onExecute={onNextAction ? openNextAction : undefined} />} />
         {selected.blocking && <Alert type="error" showIcon title={`阻断：${selected.blocking.code}`} description={`${selected.blocking.message} ${selected.blocking.impact}`} />}
         {selected.codes.length ? <Alert type="error" showIcon title="阻断原因" description={<ul>{selected.codes.map(code => <li key={code}><Typography.Text code>{code}</Typography.Text>：{codeMessage(code)}</li>)}</ul>} /> : selected.evidence ? <Alert type="success" showIcon title="关系链已验证" /> : <Alert type="warning" showIcon title="验证证据不完整" description="服务端未返回该商品的证据摘要，当前不能作为发布依据。" />}
       </Space>}
@@ -257,5 +307,28 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
         <Alert type="error" showIcon title="阻断原因" description={<ul>{selectedOrphan.codes.map(code => <li key={code}><Typography.Text code>{code}</Typography.Text>：{codeMessage(code)}</li>)}</ul>} />
       </Space>}
     </Drawer>
+    <Modal
+      title={pendingAction?.nextAction?.label ?? "执行服务端动作"}
+      open={Boolean(pendingAction)}
+      okText="确认执行"
+      cancelText="取消"
+      confirmLoading={actionSubmitting}
+      onCancel={() => { if (!actionSubmitting) setPendingAction(undefined); }}
+      onOk={() => void submitNextAction()}
+    >
+      {pendingAction?.nextAction && <Space orientation="vertical" style={{ width: "100%" }} size={12}>
+        <Alert type="warning" showIcon title="将执行服务端受控动作" description={pendingAction.nextAction.reason} />
+        {pendingAction.nextAction.requiredInputs.map((key) => <label key={key}>
+          <Typography.Text strong>{actionInputLabel[key] ?? key}</Typography.Text>
+          <Input
+            aria-label={actionInputLabel[key] ?? key}
+            value={actionInputs[key] ?? ""}
+            disabled={key === "workspace_id"}
+            onChange={(event) => setActionInputs((current) => ({ ...current, [key]: event.target.value }))}
+          />
+        </label>)}
+        {actionError && <Alert role="alert" type="error" showIcon title="动作未执行" description={actionError} />}
+      </Space>}
+    </Modal>
   </>;
 }
