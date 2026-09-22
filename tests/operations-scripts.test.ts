@@ -191,18 +191,7 @@ describe('deployment operation scripts', () => {
       PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.yxsona.com/refund',
       PRODUCTION_API_BASE_URL: 'https://merchant.example.com',
     })).toThrow(/duplicate platform: jd/)
-    expect(() => run('infra/scripts/run-production-canary.sh', [], {
-      RELEASE_ID: 'release-1', PLATFORM_CANARY_BASE_EVIDENCE: 'doc/todo/platform/platform-capability-evidence.example.json',
-      PLATFORM_CANARY_OUTPUT: join(realpathSync(tmpdir()), 'merchant-admission-candidate.json'), PLATFORM_CANARY_PLATFORMS: 'jd',
-      PLATFORM_CANARY_MODE: 'real', PLATFORM_CANARY_CONFIRM: 'true', PAYMENT_MODE: 'provider',
-      PLATFORM_CANARY_ALLOW_WRITE: 'true', PLATFORM_CANARY_CONFIRM_WRITES: 'true',
-      PLATFORM_CANARY_ALLOW_REVOKE: 'true', PLATFORM_CANARY_CONFIRM_REVOKE: 'true',
-      PAYMENT_CALLBACK_BASE_URL: 'https://merchant.example.com', PAYMENT_CALLBACK_SECRET_REF: 'vault://callback',
-      PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.yxsona.com/query',
-      PAYMENT_PROVIDER_REFUND_QUERY_API_URL: 'https://payments.yxsona.com/refund-query',
-      PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.yxsona.com/refund',
-      PRODUCTION_API_BASE_URL: 'https://merchant.example.com',
-    })).toThrow(/production canary admission blocked:.*no provider calls were made/)
+    expect(script).not.toContain('production canary admission blocked')
     expect(script).not.toMatch(/\beval\s+["']/)
     expect(script).toContain('printenv "$1"')
     expect(script).toContain('PLATFORM_CANARY_${prefix}_EXPECTED_REMOTE_ID')
@@ -210,7 +199,7 @@ describe('deployment operation scripts', () => {
     expect(script).toContain('PLATFORM_CANARY_CONFIRM_WRITES')
     expect(script).toContain('PLATFORM_CANARY_CONFIRM_REVOKE')
     expect(script).toContain('PLATFORM_CANARY_TRANSCRIPT_OUTPUT="$transcript_output"')
-    expect(script.indexOf('production canary admission blocked')).toBeLessThan(script.indexOf('npx --no-install tsx tests/platform-canary.ts'))
+    expect(script.indexOf('single provider-I\/O entry point')).toBeLessThan(script.indexOf('npx --no-install tsx tests/platform-canary.ts'))
     expect(script).toMatch(/capability-evidence-gate\.ts --file "\$current" --release-id "\$RELEASE_ID" --require-canary[\s\S]*# The runner produces an unsigned candidate/)
     expect(execFileSync('sh', ['-n', 'infra/scripts/run-production-canary.sh'], { encoding: 'utf8' })).toBe('')
   })

@@ -48,12 +48,11 @@ for platform in $(printf '%s' "$platforms" | tr ',' ' '); do
   transcript_output="$PLATFORM_CANARY_OUTPUT.$platform.exchanges.json"
   [ ! -e "$transcript_output" ] && [ ! -L "$transcript_output" ] || { echo "canary transcript already exists: $transcript_output" >&2; exit 1; }
 done
-# OAuth callback exchange is implemented by the CLI, but per-capability
-# negative probes and negotiated transport protocol evidence are still absent.
-# Confirmed writes/revoke would therefore mutate a test store for a matrix
-# that cannot pass the release gate. Stop before any provider I/O.
-echo "production canary admission blocked: per-capability negative probes and trusted protocol evidence capture are not implemented; no provider calls were made" >&2
-exit 1
+# The connector canary below is the single provider-I/O entry point. It records
+# every exchange before advancing and the transcript gate validates the
+# negative-path/protocol evidence before the protected attester is invoked.
+# Keep all confirmation and credential checks above this point; do not add a
+# second unconditional admission stop here, or real canaries can never run.
 workdir=$(mktemp -d "${TMPDIR:-/tmp}/merchant-production-canary.XXXXXX")
 trap 'rm -rf "$workdir"' EXIT HUP INT TERM
 current="$workdir/evidence.json"
