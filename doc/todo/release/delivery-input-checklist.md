@@ -16,7 +16,7 @@
 |---|---|---|
 | `commercial_payment_provider` | 平台运营 | `commercial.order.create` 直接 503 且**订单不落库**；运营的 `ops.commercial.order.payment.verify` 因查不到订单返回 404 |
 | `payment_mode` | 平台运营 | 生产门禁强制 `provider` |
-| `payment_provider_adapters` | 平台运营 | 目前只实现了 `alipay`；`wechat` 返回 `provider_adapter_not_implemented` |
+| `payment_provider_adapters` | 平台运营 | 固定为 `alipay`；微信支付不在当前产品范围内 |
 | `payment_provider_api_key_ref` | 支付服务商 → 密钥系统 | 网关就绪判定失败，在线支付不可用 |
 | `payment_provider_merchant_id` | 支付服务商 | 同上 |
 | `payment_callback_secret_ref` | 平台运营（与网关同源） | 回调验签无人可验，到账无法确认 |

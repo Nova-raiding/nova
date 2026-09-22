@@ -584,9 +584,9 @@ export function fixturePaymentAllowed(source: NodeJS.ProcessEnv = process.env) {
   return paymentFixturePolicy(source).fixtureAllowed
 }
 function paymentChannel(params: Record<string, unknown>): PaymentChannel {
-  if (params.channel !== 'alipay' && params.channel !== 'wechat') throw new DomainError('BILLING_CHANNEL_INVALID', '订阅支付渠道必须是支付宝或微信', 400)
+  if (params.channel !== 'alipay' && params.channel !== 'wechat') throw new DomainError('BILLING_CHANNEL_INVALID', '当前仅支持支付宝支付', 400)
   if (paymentChannelDisabled(params.channel, process.env)) {
-    throw new DomainError('PAYMENT_CHANNEL_DISABLED', '当前仅开放支付宝支付，微信支付暂未开放', 409, { channel: 'wechat', enabled_channels: ['alipay'] })
+    throw new DomainError('PAYMENT_CHANNEL_DISABLED', '当前仅支持支付宝支付，微信支付不在产品范围内', 409, { channel: 'wechat', enabled_channels: ['alipay'] })
   }
   return params.channel
 }
@@ -2699,14 +2699,14 @@ function paymentProviderReadiness(source: NodeJS.ProcessEnv = process.env) {
   if (source.PAYMENT_RECONCILIATION_ENABLED !== 'true') reasons.push('reconciliation_disabled')
   if (source.PAYMENT_REFUND_ENABLED !== 'true') reasons.push('refund_disabled')
   if (!createPaymentProviderFromEnv(source)) reasons.push('provider_configuration_invalid')
+  const channelReadiness: Partial<Record<PaymentChannel, { ready: boolean; reasons: string[] }>> = {
+    alipay: { ready: supportedChannels.includes('alipay'), reasons: supportedChannels.includes('alipay') ? [] : ['provider_adapter_not_configured'] },
+  }
   return {
     ready: reasons.length === 0,
     reasons,
     supportedChannels,
-    channelReadiness: {
-      alipay: { ready: supportedChannels.includes('alipay'), reasons: supportedChannels.includes('alipay') ? [] : ['provider_adapter_not_configured'] },
-      wechat: { ready: false, reasons: ['provider_adapter_not_implemented'] },
-    },
+    channelReadiness,
   }
 }
 
@@ -2714,8 +2714,8 @@ function requirePaymentChannelReady(channel: PaymentChannel, source: NodeJS.Proc
   if (source.PAYMENT_MODE !== 'provider') return
   const readiness = paymentProviderReadiness(source)
   const channelStatus = readiness.channelReadiness[channel]
-  if (!readiness.ready || !channelStatus.ready) {
-    const reasons = [...readiness.reasons, ...channelStatus.reasons]
+  if (!readiness.ready || !channelStatus?.ready) {
+    const reasons = [...readiness.reasons, ...(channelStatus?.reasons ?? ['payment_channel_not_offered'])]
     throw new DomainError('PAYMENT_CHANNEL_NOT_READY', `支付渠道 ${channel} 未就绪：${reasons.join(', ')}`, 503, { channel, reasons })
   }
 }
@@ -2734,7 +2734,7 @@ export function paymentCapabilityStatus(input: {
   productionGate: boolean
   reasons?: string[]
   supportedChannels?: readonly PaymentChannel[]
-  channelReadiness?: Record<PaymentChannel, { ready: boolean; reasons: string[] }>
+  channelReadiness?: Partial<Record<PaymentChannel, { ready: boolean; reasons: string[] }>>
 }) {
   const providerConfigured = input.mode === 'provider' && input.providerReady
   // `configured` is intentionally false in fixture mode.  A complete set of
@@ -2753,7 +2753,6 @@ export function paymentCapabilityStatus(input: {
     supported_channels: productionEnabled ? [...(input.supportedChannels ?? [])] : [],
     channel_readiness: input.channelReadiness ?? {
       alipay: { ready: false, reasons: ['provider_readiness_unknown'] },
-      wechat: { ready: false, reasons: ['provider_adapter_not_implemented'] },
     },
     reasons: [...new Set(reasons)],
   }
@@ -17582,9 +17581,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'billing.recharge.create': {
       const actorId = requestActor(req, 'actor_demo')
       const channel = params.channel === 'alipay' || params.channel === 'wechat' ? params.channel : undefined
-      if (!channel) throw new DomainError('BILLING_CHANNEL_INVALID', '充值渠道必须是支付宝或微信', 400)
+      if (!channel) throw new DomainError('BILLING_CHANNEL_INVALID', '当前仅支持支付宝支付', 400)
       if (paymentChannelDisabled(channel, process.env)) {
-        throw new DomainError('PAYMENT_CHANNEL_DISABLED', '当前仅开放支付宝支付，微信支付暂未开放', 409, { channel, enabled_channels: ['alipay'] })
+        throw new DomainError('PAYMENT_CHANNEL_DISABLED', '当前仅支持支付宝支付，微信支付不在产品范围内', 409, { channel, enabled_channels: ['alipay'] })
       }
       const idempotencyKey = typeof params.idempotency_key === 'string' && params.idempotency_key.trim() ? params.idempotency_key.trim() : `recharge-${workspaceId}-${actorId}-${randomUUID()}`
       const oneFenTestAllowed = process.env.PAYMENT_ONE_FEN_TEST_ENABLED === 'true'

@@ -107,6 +107,22 @@ const productionEvidenceMethods = [
 const campaignControlMethods = ['campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed'] as const
 
 describe('MCP surface coverage', () => {
+  it('offers Alipay as the only payment channel on every purchasing tool', async () => {
+    const paymentMethods = ['subscription.order.create', 'subscription.change', 'billing.recharge.create'] as const
+    for (const method of paymentMethods) {
+      expect(MCP_METHOD_SCHEMAS[method].properties?.channel).toEqual({ type: 'string', enum: ['alipay'] })
+    }
+
+    const runtime = new Map((await runtimeTools(new URL('../apps/plugin/', import.meta.url))).map(tool => [tool.name, tool]))
+    for (const method of paymentMethods) {
+      if (commercialDisabledMethods.has(method) || merchantHiddenMethods.has(method)) {
+        expect(runtime.has(method)).toBe(false)
+      } else {
+        expect(runtime.get(method)?.inputSchema.properties?.channel).toEqual({ type: 'string', enum: ['alipay'] })
+      }
+    }
+  })
+
   it('keeps merchant.start intent fields optional, bounded, and fail-closed', () => {
     // The shared contract keeps the integer wire string canonical: the API
     // parses only that shape (apps/api/src/server.ts merchant.start), so

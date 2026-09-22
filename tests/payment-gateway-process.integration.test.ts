@@ -129,7 +129,6 @@ describe('payment gateway process contract', () => {
       supported_channels: ['alipay'],
       channel_readiness: {
         alipay: { ready: true },
-        wechat: { ready: false, reason: 'provider_adapter_not_implemented' },
       },
     })
 

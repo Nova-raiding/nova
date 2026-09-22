@@ -535,8 +535,8 @@ const METHODS = {
   'ops.member.suspend': { description: '停用工作区成员并保留审计。', inputSchema: { type: 'object', properties: { external_subject: { type: 'string' }, reason: { type: 'string' } }, required: ['external_subject', 'reason'], additionalProperties: false } },
   'subscription.get': { description: '查看当前工作区订阅状态和周期。只读。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   'subscription.orders.list': { description: '默认查看本人订阅订单；工作区范围需要账务管理权限。只读。', inputSchema: { type: 'object', properties: { limit: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] } }, additionalProperties: false } },
-  'subscription.order.create': { description: '创建订阅支付订单；价格、店铺数和任务额度由服务端套餐目录决定。', inputSchema: { type: 'object', properties: { plan_code: { type: 'string' }, billing_cycle: { type: 'string', enum: ['monthly', 'annual'] }, channel: { type: 'string', enum: ['alipay', 'wechat'] }, coupon_code: { type: 'string' }, addon_codes_json: { type: 'string' }, source_channel: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['plan_code', 'billing_cycle', 'channel', 'idempotency_key'], additionalProperties: false } },
-  'subscription.change': { description: '按服务端套餐目录升级或降级；价格由服务端计算。', inputSchema: { type: 'object', properties: { to_plan_code: { type: 'string' }, billing_cycle: { type: 'string', enum: ['monthly', 'annual'] }, channel: { type: 'string', enum: ['alipay', 'wechat'] }, effective_at: { type: 'string' }, reason: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['to_plan_code', 'billing_cycle', 'channel', 'reason', 'idempotency_key'], additionalProperties: false } },
+  'subscription.order.create': { description: '创建订阅支付订单；价格、店铺数和任务额度由服务端套餐目录决定。', inputSchema: { type: 'object', properties: { plan_code: { type: 'string' }, billing_cycle: { type: 'string', enum: ['monthly', 'annual'] }, channel: { type: 'string', enum: ['alipay'] }, coupon_code: { type: 'string' }, addon_codes_json: { type: 'string' }, source_channel: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['plan_code', 'billing_cycle', 'channel', 'idempotency_key'], additionalProperties: false } },
+  'subscription.change': { description: '按服务端套餐目录升级或降级；价格由服务端计算。', inputSchema: { type: 'object', properties: { to_plan_code: { type: 'string' }, billing_cycle: { type: 'string', enum: ['monthly', 'annual'] }, channel: { type: 'string', enum: ['alipay'] }, effective_at: { type: 'string' }, reason: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['to_plan_code', 'billing_cycle', 'channel', 'reason', 'idempotency_key'], additionalProperties: false } },
   'billing.usage.consume': {
     description: '幂等消耗一个任务额度。',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['task_id', 'idempotency_key'], additionalProperties: false },
@@ -597,8 +597,8 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { from_at: { type: 'string' }, to_at: { type: 'string' }, limit: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] } }, additionalProperties: false },
   },
   'billing.recharge.create': {
-    description: '创建支付宝或微信充值订单；生产环境必须等待支付服务商回调确认后才入账。',
-    inputSchema: { type: 'object', properties: { channel: { type: 'string', enum: ['alipay', 'wechat'] }, amount_cny: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['channel', 'amount_cny'], additionalProperties: false },
+    description: '创建支付宝充值订单；生产环境必须等待支付服务商回调确认后才入账。',
+    inputSchema: { type: 'object', properties: { channel: { type: 'string', enum: ['alipay'] }, amount_cny: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['channel', 'amount_cny'], additionalProperties: false },
   },
   'billing.recharge.get': {
     description: '默认查询本人的充值订单；工作区范围需要账务管理权限。正式订单只接受支付服务商回调。只读。',

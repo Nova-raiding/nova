@@ -67,6 +67,6 @@ Codex MCP 支持单文件 50MB 以内素材的 base64 上传；超过该大小�
 
 ## 充值与账单
 
-Codex 插件提供 `billing.status`、`billing.recharge.create`、`billing.recharge.get` 和 `billing.transactions`。商家可以在 Codex 对话中说“查看余额”或“充值 10 元”，选择支付宝或微信。插件必须把 `pending` 和 `paid` 分开展示，待支付订单不能当作已到账。
+Codex 插件提供 `billing.status`、`billing.recharge.create`、`billing.recharge.get` 和 `billing.transactions`。商家可以在 Codex 对话中说“查看余额”或“充值 10 元”，支付渠道固定为支付宝。插件必须把 `pending` 和 `paid` 分开展示，待支付订单不能当作已到账。
 
-本地 `PAYMENT_MODE=fixture` 只生成演练订单，不会产生真实扣款。生产接入支付宝/微信前必须配置服务端 checkout provider adapter、商户号、应用标识、签名私钥、微信 API v3 密钥、HTTPS 回调地址和回调验签/解密；服务端先向 provider 下单取得真实支付链接/二维码数据，支付成功只能以服务商签名回调或查单结果入账。微信 Native 支付的官方流程是下单获取 `code_url`、用户扫码、接收支付回调、查单和对账，不能用前端“支付成功”按钮直接加余额。
+本地 `PAYMENT_MODE=fixture` 只生成演练订单，不会产生真实扣款。生产支付宝必须配置服务端 checkout provider adapter、商户号、应用标识、签名私钥、HTTPS 回调地址和回调验签；服务端先向 provider 下单取得真实支付链接，支付成功只能以服务商签名回调或查单结果入账，不能用前端“支付成功”按钮直接加余额。微信支付不在当前产品范围内。

@@ -12,7 +12,6 @@ describe('payment capability status', () => {
     supportedChannels: ['alipay'] as const,
     channelReadiness: {
       alipay: { ready: true, reasons: [] },
-      wechat: { ready: false, reasons: ['provider_adapter_not_implemented'] },
     },
   }
 
@@ -48,7 +47,6 @@ describe('payment capability status', () => {
       supported_channels: ['alipay'],
       channel_readiness: {
         alipay: { ready: true, reasons: [] },
-        wechat: { ready: false, reasons: ['provider_adapter_not_implemented'] },
       },
       reasons: [],
     })
