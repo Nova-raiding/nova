@@ -9839,10 +9839,14 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
   }
   if (production && !commercialReadiness.ready) nextActions.push(`商业目录/费率未通过生产准入：${commercialReadiness.reasons?.join('、') || 'commercial_readiness_not_checked'}`)
   if (platformOperationsMode === 'official_api' && !capabilityEvidence.configured) nextActions.push('official_api 模式未检测到通过发布门禁的平台 capability 证据（六平台范围）；example、fixture 或 test_e2e 证据不能标记生产可写')
-  if (!capacityEvidence.configured) nextActions.push('运营后台未检测到通过真实云门禁的容量报告；必须绑定 release、profile、云环境、零 mock 和签署人')
+  // Capacity evidence is retained as an observable production-evidence field,
+  // but it is no longer a runtime admission gate. This deployment intentionally
+  // has no separate preproduction environment; async workers must be able to
+  // operate on the live ECS installation while capacity evidence is collected
+  // as a follow-up operational artifact.
   if (!production) nextActions.push('当前不是生产模式；上线前还需完成 TLS/DNS/WAF、备份恢复、容量压测及所选运营模式验收')
   const platformOperationsReady = manualPlatformOperations || (platformOperationsMode === 'official_api' && Object.values(platformDiagnostics).every(item => item.ready) && vaultConfigured && capabilityEvidence.configured)
-  const productionGate = production && !fixtureMode && platformOperationsMode !== 'invalid' && platformOperationsReady && commercialReadiness.ready && controlPlaneReadiness.ready && relayGate.ready && paymentReadiness.ready && contentProviderConfigured && imageProviderConfigured && imageEditProviderConfigured && imageFactsConfigured && videoProviderConfigured && modelCostGateConfigured && objectStorageConfigured && dataLifecycle.configured && alertNotifications.ready && capacityEvidence.configured
+  const productionGate = production && !fixtureMode && platformOperationsMode !== 'invalid' && platformOperationsReady && commercialReadiness.ready && controlPlaneReadiness.ready && relayGate.ready && paymentReadiness.ready && contentProviderConfigured && imageProviderConfigured && imageEditProviderConfigured && imageFactsConfigured && videoProviderConfigured && modelCostGateConfigured && objectStorageConfigured && dataLifecycle.configured && alertNotifications.ready
   const payment = paymentCapabilityStatus({
     mode: process.env.PAYMENT_MODE,
     providerReady: paymentReadiness.ready,
