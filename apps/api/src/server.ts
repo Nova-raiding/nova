@@ -4711,7 +4711,7 @@ const STORE_BOUNDARY_EXEMPT_METHODS = new Set([
   'asset.generation.confirm', 'asset.rights.update', 'asset.preference.update',
   // Read-only views of the merchant's own catalog, content and work history.
   'catalog.search', 'catalog.categories', 'deliverable.list', 'task.history', 'task.timeline',
-  'content.versions', 'content.diff', 'feedback.list',
+  'content.versions', 'content.diff', 'feedback.list', 'publish.manual.get', 'publish.manual.list',
   // Balance, pricing and the commercial recovery entry points. These carry the
   // `RECOVERY_CONTROL` classification, so they are usable at a zero balance —
   // which is what makes the store-less path self-recoverable: a new account can
@@ -4803,7 +4803,9 @@ function requireStoreOnboarding(workspaceId: string, method: string) {
   // The guidance must name only methods the merchant plugin actually exposes.
   // `platform.connect` is hidden from `tools/list` and rejected as an unknown
   // tool, so recommending it left the merchant with no actionable next step.
-  if (!hasBoundStore) throw new DomainError('STORE_ONBOARDING_REQUIRED', '请先完成至少一个平台店铺授权绑定，再继续使用商品同步、正式任务与发布能力', 428, {
+  if (!hasBoundStore) throw new DomainError('STORE_ONBOARDING_REQUIRED', manualPlatformOperations()
+    ? '请先由平台运营为你的商家建立人工店铺记录，再继续使用商品同步、正式任务与发布能力'
+    : '请先完成至少一个平台店铺授权绑定，再继续使用商品同步、正式任务与发布能力', 428, {
     onboarding_required: true,
     // These are merchant-facing prose, not method names: the previous third step
     // told the merchant to call `platform.connect`, which the plugin does not
