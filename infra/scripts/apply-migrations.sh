@@ -168,7 +168,7 @@ SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = :migration_versio
        COALESCE((SELECT name FROM schema_migrations WHERE version = :migration_version), '') AS applied_name,
        COALESCE((SELECT checksum FROM schema_migrations WHERE version = :migration_version), '') AS applied_checksum \\gset
 \\if :migration_already_applied
-SELECT (:'applied_name' <> :'migration_name' AND NOT (:migration_version = 14 AND :'applied_name' = 'read_only_schedules')) AS migration_name_mismatch \gset
+SELECT (:'applied_name' <> :'migration_name' AND NOT (:migration_version = 14 AND :'applied_name' = 'read_only_schedules' AND :'applied_checksum' = '' AND :'baseline_accepted' = '1')) AS migration_name_mismatch \gset
 \if :migration_name_mismatch
 \echo MIGRATION_NAME_MISMATCH version :migration_version
 SELECT 1 / 0;
@@ -183,7 +183,7 @@ SELECT (:'applied_checksum' = '' AND position(('|' || :'migration_checksum' || '
 \echo MIGRATION_CHECKSUM_UNVERIFIED version :migration_version has no approved checksum baseline
 SELECT 1 / 0;
 \endif
-UPDATE schema_migrations SET checksum = :'migration_checksum' WHERE version = :migration_version AND checksum IS NULL AND NOT (:migration_version = 14 AND :'applied_name' = 'read_only_schedules');
+UPDATE schema_migrations SET checksum = :'migration_checksum' WHERE version = :migration_version AND checksum IS NULL AND NOT (:migration_version = 14 AND :'applied_name' = 'read_only_schedules' AND :'baseline_accepted' = '1');
 \\echo migration :migration_version already applied
 \\else
 \\echo applying migration :migration_version (:migration_name)
@@ -201,7 +201,7 @@ SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = :migration_versio
        COALESCE((SELECT name FROM schema_migrations WHERE version = :migration_version), '') AS applied_name,
        COALESCE((SELECT checksum FROM schema_migrations WHERE version = :migration_version), '') AS applied_checksum \\gset
 \\if :migration_already_applied
-SELECT (:'applied_name' <> :'migration_name' AND NOT (:migration_version = 14 AND :'applied_name' = 'read_only_schedules')) AS migration_name_mismatch \gset
+SELECT (:'applied_name' <> :'migration_name' AND NOT (:migration_version = 14 AND :'applied_name' = 'read_only_schedules' AND :'applied_checksum' = '' AND :'baseline_accepted' = '1')) AS migration_name_mismatch \gset
 \if :migration_name_mismatch
 \echo MIGRATION_NAME_MISMATCH version :migration_version
 SELECT 1 / 0;
@@ -216,7 +216,7 @@ SELECT (:'applied_checksum' = '' AND position(('|' || :'migration_checksum' || '
 \echo MIGRATION_CHECKSUM_UNVERIFIED version :migration_version has no approved checksum baseline
 SELECT 1 / 0;
 \endif
-UPDATE schema_migrations SET checksum = :'migration_checksum' WHERE version = :migration_version AND checksum IS NULL AND NOT (:migration_version = 14 AND :'applied_name' = 'read_only_schedules');
+UPDATE schema_migrations SET checksum = :'migration_checksum' WHERE version = :migration_version AND checksum IS NULL AND NOT (:migration_version = 14 AND :'applied_name' = 'read_only_schedules' AND :'baseline_accepted' = '1');
 \\echo migration :migration_version already applied
 \\else
 \\echo applying migration :migration_version (:migration_name)
