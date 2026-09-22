@@ -288,6 +288,10 @@ services:
       PLUGIN_WRITE_ENABLED: ${PLUGIN_WRITE_ENABLED:-false}
       CAPABILITY_EVIDENCE_PATH: /run/release-evidence/platform-capability.json
       CAPACITY_REPORT_PATH: /run/release-evidence/capacity-report.json
+      # ECS production is currently a single-node deployment. Keep the
+      # scanner quorum explicit for that topology; Kubernetes retains its
+      # separate two-instance contract.
+      SCANNER_MINIMUM_READY_INSTANCES: ${SCANNER_MINIMUM_READY_INSTANCES:-1}
       VAULT_ADDR: ${VAULT_ADDR:-}
       VAULT_TOKEN: ${VAULT_TOKEN:-}
       VAULT_NAMESPACE: ${VAULT_NAMESPACE:-}
@@ -611,6 +615,7 @@ services:
       ASSET_SCAN_POLICY_VERSION: ${ASSET_SCAN_POLICY_VERSION:?ASSET_SCAN_POLICY_VERSION is required}
       SCANNER_DEFINITIONS_MAX_AGE_SECONDS: "86400"
       CLAMAV_DEFINITIONS_MAX_AGE_SECONDS: "86400"
+      SCANNER_MINIMUM_READY_INSTANCES: ${SCANNER_MINIMUM_READY_INSTANCES:-1}
 
   pilot-gateway:
     <<: *ecs-nginx-hardening
