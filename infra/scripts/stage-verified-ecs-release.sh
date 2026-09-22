@@ -4,6 +4,7 @@ set -eu
 # Materialize one reviewed candidate archive as a new, repository-external
 # release checkout. Deployment remains a separate operator action.
 root=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd -P)
+. "$root/infra/scripts/ecs-build-lock.sh"
 : "${ECS_CANDIDATE_BUNDLE_DIR:?ECS_CANDIDATE_BUNDLE_DIR is required}"
 : "${ECS_RELEASES_ROOT:?ECS_RELEASES_ROOT is required}"
 : "${RELEASE_ID:?RELEASE_ID is required}"
@@ -49,6 +50,7 @@ mode_of() { if stat -c '%a' "$1" >/dev/null 2>&1; then stat -c '%a' "$1"; else s
 [ "$(owner_of "$releases")" = "$(id -u)" ] || { echo 'releases root must be owned by the staging user' >&2; exit 2; }
 release_mode=$(mode_of "$releases"); case "$release_mode" in *[2367][0-7]|*[2367]) echo 'releases root must not be writable by group or other users' >&2; exit 2 ;; esac
 destination="$releases/$RELEASE_ID"
+ecs_build_lock_acquire
 [ ! -e "$destination" ] && [ ! -L "$destination" ] || { echo 'release destination already exists; refusing to overwrite' >&2; exit 2; }
 stage_lock="$releases/.${RELEASE_ID}.staging.lock"
 mkdir -m 0700 "$stage_lock" 2>/dev/null || { echo 'release staging is already in progress for this RELEASE_ID' >&2; exit 2; }
@@ -56,6 +58,7 @@ stage=
 cleanup() {
   [ -z "$stage" ] || rm -rf -- "$stage"
   rmdir "$stage_lock" 2>/dev/null || true
+  ecs_build_lock_cleanup
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -143,4 +146,5 @@ mv "$stage" "$destination"
 stage=
 trap - EXIT HUP INT TERM
 rmdir "$stage_lock"
+ecs_build_lock_cleanup
 printf 'verified ECS release staged: %s git_sha=%s source_sha256=%s\n' "$destination" "$git_sha" "$source_sha"

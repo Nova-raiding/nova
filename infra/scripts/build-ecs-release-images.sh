@@ -7,6 +7,7 @@ set -eu
 # explicitly named release repositories to the configured registry.
 
 root=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd -P)
+. "$root/infra/scripts/ecs-build-lock.sh"
 revision=${ECS_RELEASE_GIT_SHA:-}
 release_id=${RELEASE_ID:-}
 repository=${ECS_RELEASE_IMAGE_REPOSITORY:-}
@@ -51,6 +52,8 @@ fi
 for command_name in docker shasum tar node; do
   command -v "$command_name" >/dev/null 2>&1 || { echo "$command_name is required" >&2; exit 2; }
 done
+[ ! -e "$output_dir" ] && [ ! -L "$output_dir" ] || { echo 'ECS release image output directory must not already exist' >&2; exit 2; }
+ecs_build_lock_acquire
 # Refuse a pre-created target and validate every existing ancestor before any
 # registry write. This prevents a privileged build account from following a
 # planted symlink or writing through a group/world-writable handoff directory.
@@ -86,7 +89,7 @@ process.stdout.write(canonicalOutput)
 NODE
 )
 
-archive=$(mktemp "${TMPDIR:-/tmp}/ecs-release-source.XXXXXXXX.tar")
+archive=$(mktemp "${TMPDIR:-/tmp}/ecs-release-source.XXXXXXXX")
 context=$(mktemp -d "${TMPDIR:-/tmp}/ecs-release-context.XXXXXXXX")
 records=$(mktemp "${TMPDIR:-/tmp}/ecs-release-images.XXXXXXXX.tsv")
 built_tags=''
@@ -100,6 +103,7 @@ cleanup() {
     docker image rm $built_tags >/dev/null 2>&1 || true
   fi
   docker builder prune -f --keep-storage "$cache_limit" >/dev/null 2>&1 || true
+  ecs_build_lock_cleanup
 }
 trap cleanup EXIT HUP INT TERM
 

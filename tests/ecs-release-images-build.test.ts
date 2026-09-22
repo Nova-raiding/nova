@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -99,7 +99,7 @@ describe('bounded ECS release image builder', () => {
   })
 
   it('publishes immutable references and an atomic six-image digest manifest', () => {
-    const directory = mkdtempSync(join(tmpdir(), 'ecs-release-image-build-'))
+    const directory = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-release-image-build-')))
     const root = join(directory, 'repo')
     const bin = join(directory, 'bin')
     const output = join(directory, 'output')
@@ -107,6 +107,7 @@ describe('bounded ECS release image builder', () => {
     mkdirSync(join(root, 'infra/docker'), { recursive: true })
     mkdirSync(join(root, 'services/payment-gateway'), { recursive: true })
     mkdirSync(bin)
+    cpSync(resolve('infra/scripts/ecs-build-lock.sh'), join(root, 'infra/scripts/ecs-build-lock.sh'))
     writeFileSync(join(root, 'infra/scripts/build-ecs-release-images.sh'), readFileSync(script))
     chmodSync(join(root, 'infra/scripts/build-ecs-release-images.sh'), 0o755)
     for (const path of ['infra/docker/api.Dockerfile', 'infra/docker/worker.Dockerfile', 'infra/docker/ui.Dockerfile', 'infra/docker/ops-console.Dockerfile', 'infra/docker/pilot-gateway-https.Dockerfile', 'services/payment-gateway/Dockerfile']) {
@@ -133,6 +134,7 @@ describe('bounded ECS release image builder', () => {
         RELEASE_ID: 'release-test',
         ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
         ECS_RELEASE_IMAGE_OUTPUT_DIR: output,
+        ECS_BUILD_LOCK_PATH: join(directory, 'build.lock'),
         ECS_BUILD_CACHE_KEEP_STORAGE: '1GB',
         ECS_OPS_AUTH_MODE: 'oidc',
         ECS_OPS_UI_LOGIN_URL: 'https://sso.example.test/authorize?client_id=ops',

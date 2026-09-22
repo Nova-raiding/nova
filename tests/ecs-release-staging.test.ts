@@ -12,6 +12,7 @@ function fixture() {
   const repo = join(base, 'repo'); const bundle = join(base, 'bundle'); const releases = join(base, 'releases'); const bin = join(base, 'bin')
   mkdirSync(join(repo, 'infra/scripts'), { recursive: true }); mkdirSync(bundle); mkdirSync(releases); mkdirSync(bin)
   cpSync(resolve('infra/scripts/stage-verified-ecs-release.sh'), join(repo, 'infra/scripts/stage-verified-ecs-release.sh'))
+  cpSync(resolve('infra/scripts/ecs-build-lock.sh'), join(repo, 'infra/scripts/ecs-build-lock.sh'))
   writeFileSync(join(repo, 'package.json'), '{"name":"fixture","version":"1.0.0"}\n')
   writeFileSync(join(repo, 'package-lock.json'), '{"name":"fixture","version":"1.0.0","lockfileVersion":3,"packages":{"":{"name":"fixture","version":"1.0.0"}}}\n')
   writeFileSync(join(repo, 'source.txt'), 'committed release bytes\n')
@@ -35,7 +36,7 @@ function fixture() {
 
 function run(value: ReturnType<typeof fixture>, releaseId = 'release-1') {
   return spawnSync('sh', [join(value.repo, 'infra/scripts/stage-verified-ecs-release.sh')], {
-    env: { ...process.env, PATH: `${value.bin}:${process.env.PATH}`, ECS_CANDIDATE_BUNDLE_DIR: value.bundle, ECS_RELEASES_ROOT: value.releases, RELEASE_ID: releaseId },
+    env: { ...process.env, PATH: `${value.bin}:${process.env.PATH}`, ECS_BUILD_LOCK_PATH: join(value.base, 'build.lock'), ECS_CANDIDATE_BUNDLE_DIR: value.bundle, ECS_RELEASES_ROOT: value.releases, RELEASE_ID: releaseId },
     encoding: 'utf8',
   })
 }
@@ -62,14 +63,14 @@ describe('verified ECS release staging', () => {
     writeFileSync(join(value.bin, 'npm'), '#!/bin/sh\nsleep 1\n', { mode: 0o755 })
     const invoke = () => new Promise<{ status: number | null; stderr: string }>((resolveResult) => {
       const child = spawn('sh', [join(value.repo, 'infra/scripts/stage-verified-ecs-release.sh')], {
-        env: { ...process.env, PATH: `${value.bin}:${process.env.PATH}`, ECS_CANDIDATE_BUNDLE_DIR: value.bundle, ECS_RELEASES_ROOT: value.releases, RELEASE_ID: 'release-1' },
+        env: { ...process.env, PATH: `${value.bin}:${process.env.PATH}`, ECS_BUILD_LOCK_PATH: join(value.base, 'build.lock'), ECS_CANDIDATE_BUNDLE_DIR: value.bundle, ECS_RELEASES_ROOT: value.releases, RELEASE_ID: 'release-1' },
       })
       let stderr = ''; child.stderr.setEncoding('utf8'); child.stderr.on('data', chunk => { stderr += chunk })
       child.on('close', status => resolveResult({ status, stderr }))
     })
     const [first, second] = await Promise.all([invoke(), invoke()])
-    expect([first.status, second.status].sort()).toEqual([0, 2])
-    expect(first.stderr + second.stderr).toContain('staging is already in progress')
+    expect([first.status, second.status].sort()).toEqual([0, 1])
+    expect(first.stderr + second.stderr).toMatch(/staging is already in progress|another ECS source build is in progress/u)
     expect(existsSync(join(value.releases, 'release-1/.candidate-identity'))).toBe(true)
   })
 
