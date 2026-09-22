@@ -67,6 +67,7 @@ export interface ApiEnvelope<T> {
 export interface ApiPage<T> { items: T[]; total: number; limit: number; offset: number }
 
 export const MERCHANT_TASK_PAGE_SIZE = 50
+export const MERCHANT_PUBLISH_PAGE_SIZE = 20
 
 export function normalizeApiPage<T>(value: ApiPage<T> | T[], limit: number, offset: number): ApiPage<T> {
   if (Array.isArray(value)) return { items: value, total: value.length, limit, offset }
@@ -1253,7 +1254,12 @@ export const retryImageGeneration = (baseUrl: string, jobId: string, expectedRev
 export const importProduct = (baseUrl: string, input: { platform: PlatformId; account_id: string; title: string; local_product_key?: string; remote_id?: string; category?: string; price?: number; stock?: number; sku_count?: number; store_name?: string; asset_ids?: string[] }) => requestApi<Product>(baseUrl, '/v1/products/import', { method: 'POST', body: JSON.stringify(input) })
 export const catalogImportBatch = (baseUrl: string, input: { source_asset_id: string; products_json: string; draft_only?: 'true' }) => requestApi<{ batchId?: string; count?: number; products: Array<{ id?: string; product_id?: string }>; factsConfirmationRequired?: boolean; draft_only?: boolean; knowledge?: { indexState?: string; approvalStatus?: string } }>(baseUrl, '/v1/products/import/batch', { method: 'POST', body: JSON.stringify(input) })
 export const confirmProductFacts = (baseUrl: string, productId: string) => requestMcp<Product>(baseUrl, 'catalog.facts.confirm', { product_id: productId })
-export const fetchPublishJobs = (baseUrl: string) => fetchAllPages<PublishJob>(baseUrl, '/v1/publish-jobs')
+export const fetchPublishJobPage = (baseUrl: string, options: { limit?: number; offset?: number } = {}) => {
+  const limit = options.limit ?? MERCHANT_PUBLISH_PAGE_SIZE
+  const offset = options.offset ?? 0
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  return requestApi<ApiPage<PublishJob> | PublishJob[]>(baseUrl, `/v1/publish-jobs?${params.toString()}`).then(value => normalizeApiPage(value, limit, offset))
+}
 export const fetchManualPublishRecords = async (baseUrl: string) => normalizeApiItems(await requestMcp<ApiPage<ManualPublishRecord> | ManualPublishRecord[]>(baseUrl, 'publish.manual.list', { limit: '100', offset: '0' }))
 export const createTask = (baseUrl: string, input: { product_id: string; platform: PlatformId; account_id?: string; request_text?: string; idempotency_key?: string }) => requestApi<Task>(baseUrl, '/v1/tasks', { method: 'POST', body: JSON.stringify(input) })
 export const fetchTask = (baseUrl: string, taskId: string) => requestApi<Task>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}`)

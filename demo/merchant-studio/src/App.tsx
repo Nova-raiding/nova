@@ -121,7 +121,7 @@ import {
   fetchProductsByAsset,
   fetchProductPage,
   fetchProducts,
-  fetchPublishJobs,
+  fetchPublishJobPage,
   fetchRulePacks,
   fetchRechargeOrder,
   fetchSyncJobs,
@@ -129,6 +129,7 @@ import {
   fetchTaskFeedback,
   fetchTaskPage,
   MERCHANT_TASK_PAGE_SIZE,
+  MERCHANT_PUBLISH_PAGE_SIZE,
   fetchTaskTimeline,
   fetchWorkspaceMetrics,
   generateProductImages,
@@ -11499,6 +11500,8 @@ function PublishCenter({
   const [refreshError, setRefreshError] = useState('')
   const [loading, setLoading] = useState(Boolean(baseUrl))
   const [reloadKey, setReloadKey] = useState(0)
+  const [jobPage, setJobPage] = useState(0)
+  const [jobTotal, setJobTotal] = useState<number | null>(null)
   const jobsSourceRef = useRef<string | undefined>(undefined)
   const lastSuccessfulJobsRef = useRef<PublishJob[]>([])
   useEffect(() => {
@@ -11510,28 +11513,42 @@ function PublishCenter({
       setManualRecords(null)
       setInitialError('')
       setRefreshError('')
+      setJobPage(0)
+      setJobTotal(null)
       return
     }
     let cancelled = false
     let inFlight = false
-    const hasCachedJobs = jobsSourceRef.current === baseUrl && jobs !== null
+    const sourceKey = `${baseUrl}:${jobPage}`
+    const hasCachedJobs = jobsSourceRef.current === sourceKey && jobs !== null
     let hasLoadedJobs = hasCachedJobs
     // Keep the last successful list visible during both background refresh and
     // manual retry. A transient request must never create a false empty state.
-    jobsSourceRef.current = baseUrl
+    if (!hasCachedJobs) lastSuccessfulJobsRef.current = []
+    jobsSourceRef.current = sourceKey
     const load = (showLoading: boolean) => {
       if (inFlight) return
       inFlight = true
       if (showLoading && !hasLoadedJobs) setLoading(true)
       setInitialError('')
       setRefreshError('')
-      Promise.all([fetchPublishJobs(baseUrl), fetchManualPublishRecords(baseUrl)])
-        .then(([next, nextManualRecords]) => {
+      Promise.all([
+        fetchPublishJobPage(baseUrl, {
+          limit: MERCHANT_PUBLISH_PAGE_SIZE,
+          offset: jobPage * MERCHANT_PUBLISH_PAGE_SIZE,
+        }),
+        fetchManualPublishRecords(baseUrl),
+      ])
+        .then(([nextPage, nextManualRecords]) => {
           if (!cancelled) {
             hasLoadedJobs = true
-            const safeJobs = projectPublishJobRows(next)
+            const safeJobs = projectPublishJobRows(nextPage.items)
             lastSuccessfulJobsRef.current = safeJobs
             setJobs(safeJobs)
+            setJobTotal(nextPage.total)
+            if (jobPage > 0 && jobPage * MERCHANT_PUBLISH_PAGE_SIZE >= nextPage.total) {
+              setJobPage(Math.max(0, Math.ceil(nextPage.total / MERCHANT_PUBLISH_PAGE_SIZE) - 1))
+            }
             setManualRecords(nextManualRecords)
             setInitialError('')
             setRefreshError('')
@@ -11558,7 +11575,7 @@ function PublishCenter({
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [baseUrl, reloadKey])
+  }, [baseUrl, jobPage, reloadKey])
   const statusLabel = (state: string) =>
     ({
       queued: '排队中',
@@ -11576,6 +11593,7 @@ function PublishCenter({
         ? 'amber'
         : 'blue'
   const listReady = !loading && jobs !== null && manualRecords !== null
+  const jobPageCount = Math.max(1, Math.ceil((jobTotal ?? 0) / MERCHANT_PUBLISH_PAGE_SIZE))
   return (
     <div className="page-stack">
       <section className="page-intro">
@@ -11705,6 +11723,15 @@ function PublishCenter({
               <b>暂无人工发布任务</b>
               <span>完成内容审核并二次确认后，待运营处理的任务会显示在这里。</span>
             </div>
+          )}
+          {listReady && jobTotal !== null && jobTotal > 0 && (
+            <nav className="catalog-product-pagination" aria-label="发布任务分页">
+              <span>共 {jobTotal} 个任务 · 第 {jobPage + 1} / {jobPageCount} 页</span>
+              <div>
+                <button type="button" disabled={jobPage === 0 || loading} onClick={() => setJobPage((page) => Math.max(0, page - 1))}>上一页</button>
+                <button type="button" disabled={jobPage >= jobPageCount - 1 || loading} onClick={() => setJobPage((page) => Math.min(jobPageCount - 1, page + 1))}>下一页</button>
+              </div>
+            </nav>
           )}
         </div>
         <div className="panel receipt-panel">
