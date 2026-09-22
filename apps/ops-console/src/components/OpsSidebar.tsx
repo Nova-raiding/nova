@@ -8,6 +8,7 @@ import {
 import { Layout } from "antd";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { OpsDomain } from "../navigation/opsNavigation";
+import { storeNovaLogoUrl } from "../assets.js";
 
 interface StoreNavItem {
   platform: string;
@@ -93,7 +94,7 @@ export function OpsSidebar({
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }} className="ops-sider">
       <div className="brand-mark">
-        <img src="/assets/store-nova-primary-horizontal.png" alt="Store Nova" />
+        <img src={storeNovaLogoUrl} alt="Store Nova" />
       </div>
       <nav className="ops-nav-groups" aria-label="平台运营功能导航">
         {navigationGroups.map((group) => {

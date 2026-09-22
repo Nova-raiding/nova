@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Alert, Button, Card, Form, Input, Typography } from "antd";
 import { describeOpsError, loginPlatformOps } from "../api/opsClient.js";
+import { storeNovaLogoUrl } from "../assets.js";
 
 type PlatformOpsLoginPageProps = {
   managedSession: boolean;
@@ -106,7 +107,7 @@ export function PlatformOpsLoginPage({
           </Form>
 
           <div className="ops-login-footer" aria-label="Store Nova">
-            <img src="/assets/store-nova-primary-horizontal.png" alt="Store Nova" />
+            <img src={storeNovaLogoUrl} alt="Store Nova" />
           </div>
         </Card>
       </section>

@@ -1,4 +1,5 @@
 import { Button, Card, Typography } from "antd";
+import { storeNovaLogoUrl } from "../assets.js";
 
 /**
  * Recovery surface for a managed (OIDC) deployment whose ops session is gone.
@@ -50,7 +51,7 @@ export function ManagedOpsReauthentication({ detail, loading, onReauthenticate }
             </details>
           ) : null}
           <div className="ops-login-footer" aria-label="Store Nova">
-            <img src="/assets/store-nova-primary-horizontal.png" alt="Store Nova" />
+            <img src={storeNovaLogoUrl} alt="Store Nova" />
           </div>
         </Card>
       </section>
