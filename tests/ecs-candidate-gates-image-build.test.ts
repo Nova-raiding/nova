@@ -5,6 +5,11 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 describe('ECS candidate gate image construction', () => {
+  it('uses a portable mktemp template with trailing placeholders', () => {
+    const source = readFileSync('infra/scripts/build-ecs-candidate-gates-image.sh', 'utf8')
+    expect(source).toContain('archive=$(mktemp "${TMPDIR:-/tmp}/candidate-source.XXXXXXXX")')
+    expect(source).not.toContain('candidate-source.XXXXXXXX.tar')
+  })
   it('pins the toolchain, installs from the root lockfile, and runs as the gate user', () => {
     const dockerfile = readFileSync('infra/docker/candidate-gates.Dockerfile', 'utf8')
     expect(dockerfile).toMatch(/^FROM node:22-alpine@sha256:[a-f0-9]{64}$/m)

@@ -24,7 +24,7 @@ case "$tag" in
   *@sha256:*|*:latest) echo 'build tag must be a local non-latest tag' >&2; exit 2 ;;
 esac
 
-archive=$(mktemp "${TMPDIR:-/tmp}/candidate-source.XXXXXXXX.tar")
+archive=$(mktemp "${TMPDIR:-/tmp}/candidate-source.XXXXXXXX")
 context=$(mktemp -d "${TMPDIR:-/tmp}/candidate-context.XXXXXXXX")
 trap 'rm -f "$archive"; rm -rf "$context"' EXIT HUP INT TERM
 git -C "$root" archive --format=tar "$revision" \
