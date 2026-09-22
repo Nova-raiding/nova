@@ -120,7 +120,10 @@ describe("commercial operation confirmation gate", () => {
 
   it("covers every command the two panels can send", () => {
     const usedIds = [...workspaceSource.matchAll(/run\("([^"]+)"/gu)].map((match) => match[1]);
-    const confirmedIds = [...workspaceSource.matchAll(/\bid: "([^"]+)"/gu)].map((match) => match[1]);
+    // Scope `id` extraction to the confirmation payload. The workspace also
+    // contains navigation descriptors with ordinary DOM/section IDs; those
+    // are not commercial commands and must not expand this safety contract.
+    const confirmedIds = [...workspaceSource.matchAll(/requestConfirmation\(\{\s*id: "([^"]+)"/gu)].map((match) => match[1]);
     expect(new Set([...usedIds, ...confirmedIds])).toEqual(
       new Set([...irreversibleCommercialOperations, ...reversibleOperations]),
     );

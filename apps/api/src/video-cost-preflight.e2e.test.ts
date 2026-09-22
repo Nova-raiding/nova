@@ -152,7 +152,7 @@ describe('video cost preflight over the real HTTP boundary', () => {
     api.grantContinuousFeatureEntitlementForTests(workspaceId)
 
     const recharge = resultOf<any>(await callMcp<any>(token, workspaceId, 'billing.recharge.create', {
-      channel: 'wechat',
+      channel: 'alipay',
       amount_cny: '20.00',
       idempotency_key: `video-cost-recharge-${suffix}`,
     }))
