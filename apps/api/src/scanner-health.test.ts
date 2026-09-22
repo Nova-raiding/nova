@@ -53,6 +53,15 @@ describe('scanner heartbeat API readiness', () => {
     expect(result).toMatchObject({ ready: false, code: 'SCANNER_READY_REPLICA_QUORUM_UNMET', summary: { live_instances: 1, ready_instances: 1, minimum_ready_instances: 2 } })
   })
 
+  it('accepts the reviewed single-node ECS production profile with one scanner', async () => {
+    const result = await evaluateScannerHeartbeatReadiness({
+      redis: { scannerHeartbeats: async () => [heartbeat('scanner-ecs-1')] },
+      env: environment({ DEPLOYMENT_PROFILE: 'ecs', SCANNER_MINIMUM_READY_INSTANCES: '1' }),
+      now,
+    })
+    expect(result).toMatchObject({ ready: true, summary: { live_instances: 1, ready_instances: 1, minimum_ready_instances: 1 } })
+  })
+
   it('accepts two fresh, independent ready replicas and returns only aggregate evidence', async () => {
     const result = await evaluateScannerHeartbeatReadiness({
       redis: { scannerHeartbeats: async () => [heartbeat('scanner-secret-pod-1'), heartbeat('scanner-secret-pod-2')] },

@@ -9585,7 +9585,10 @@ export function scannerHeartbeatRequiredForProbe(path: string, source: NodeJS.Pr
 function scannerMinimumReadyInstances(source: NodeJS.ProcessEnv): number {
   const configured = Number(source.SCANNER_MINIMUM_READY_INSTANCES)
   const minimum = Number.isSafeInteger(configured) && configured > 0 ? configured : 1
-  return source.NODE_ENV === 'production' ? Math.max(2, minimum) : minimum
+  // Kubernetes production keeps a two-instance quorum. The current ECS
+  // production topology is explicitly single-node, so its reviewed runtime
+  // configuration may opt into one scanner without weakening Kubernetes.
+  return source.NODE_ENV === 'production' && source.DEPLOYMENT_PROFILE !== 'ecs' ? Math.max(2, minimum) : minimum
 }
 
 function isScannerHeartbeat(value: unknown): value is ScannerHeartbeat {
