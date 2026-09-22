@@ -49,7 +49,7 @@ describe('release manifest', () => {
         codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(30)
+    expect(manifest.artifacts).toHaveLength(31)
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining([
       'services/payment-gateway/index.mjs',
       'services/payment-gateway/alipay.mjs',
@@ -59,6 +59,7 @@ describe('release manifest', () => {
       'services/payment-gateway/Dockerfile',
       'infra/scripts/render-ecs-production-compose.sh',
       'infra/scripts/stage-verified-ecs-release.sh',
+      'infra/scripts/ecs-one-click-deploy.sh',
       'infra/scripts/deploy-verified-ecs-compose.sh',
       'infra/scripts/rollback-ecs-compose.sh',
       'infra/scripts/invoke-ecs-automatic-rollback.sh',

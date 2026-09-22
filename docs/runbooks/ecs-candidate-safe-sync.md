@@ -23,6 +23,41 @@ sh infra/scripts/stage-verified-ecs-release.sh
 
 staging 执行器会重新校验身份文件中源码归档、比较清单和同步计划的 SHA-256，并核对 Git archive 内嵌提交 SHA；含路径穿越、链接或特殊文件的归档会被拒绝。它只在 releases 根目录内创建随机临时目录，以 `npm ci --ignore-scripts` 从锁文件安装，保留只读的 `.candidate-source.tar` 和 `.candidate-identity` 供部署器重新核验，最后原子改名为全新的 release 目录。目标已存在时拒绝覆盖。生产 `.env`、密钥和运行时凭据不得进入候选包或 release checkout，仍由受保护的主机路径在渲染和部署阶段注入。
 
+## 一键部署与磁盘上限
+
+生产镜像、rendered Compose、回滚 capsule 和真实证据准备完毕后，在 ECS 宿主执行一条命令完成安全 staging、受验证切换、健康验收和成功后的空间回收：
+
+```sh
+ECS_CANDIDATE_BUNDLE_DIR=/srv/release-candidates/<candidate> \
+ECS_RELEASES_ROOT=/srv/merchant-releases \
+RELEASE_ID=<release-id> \
+RENDERED_COMPOSE_PATH=/受保护路径/rendered-compose.json \
+PRODUCTION_CONFIG_PATH=/etc/merchant/production.yml \
+PRODUCTION_API_BASE_URL=https://yxsona.com/api \
+sh infra/scripts/ecs-one-click-deploy.sh deploy
+```
+
+其余鉴权、数据库、证据、镜像摘要和回滚变量沿用 `deploy-verified-ecs-compose.sh` 的受保护宿主配置。自动化不降低任何发布门禁：只有部署器完整成功后才执行回收；失败候选保留用于诊断。默认保留最近 2 个完整 release，并自动保护线上 `/releasez` 返回的当前版本、回滚计划的目标版本、当前候选、含 `.keep` 标记的目录以及 `ECS_PROTECTED_RELEASE_IDS` 指定的版本。清理只接受 `.candidate-identity` 与目录名一致的 release，拒绝符号链接，不触碰 Docker volume、数据库、对象存储和运行容器引用的镜像。
+
+部署前可只读查看回收计划：
+
+```sh
+PRODUCTION_API_BASE_URL=https://yxsona.com/api \
+ECS_RELEASES_ROOT=/srv/merchant-releases \
+sh infra/scripts/ecs-one-click-deploy.sh report
+```
+
+单独执行清理时必须显式确认；脚本同时把 BuildKit 缓存限制为默认 2GB，并只删除 dangling 镜像：
+
+```sh
+CONFIRM_ECS_STORAGE_CLEANUP=YES \
+PRODUCTION_API_BASE_URL=https://yxsona.com/api \
+ECS_RELEASES_ROOT=/srv/merchant-releases \
+sh infra/scripts/ecs-one-click-deploy.sh cleanup
+```
+
+可用 `ECS_RELEASE_KEEP_COUNT`、`ECS_BUILD_CACHE_KEEP_STORAGE` 和 `ECS_BUILD_CACHE_UNTIL` 调整保留策略。生产推荐保持 `2`、`2GB`、`24h`，磁盘稳定占用约为两个完整 checkout（当前与回滚）加 2GB 构建缓存，不再随部署次数线性增长。
+
 ## 合并原则
 
 - `review_required`：必须基于服务器文件进行三方合并，禁止整文件覆盖。

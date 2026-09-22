@@ -97,6 +97,7 @@ export function buildReleaseManifest(input: {
     resolve(root, 'services/payment-gateway/Dockerfile'),
     resolve(root, 'infra/scripts/render-ecs-production-compose.sh'),
     resolve(root, 'infra/scripts/stage-verified-ecs-release.sh'),
+    resolve(root, 'infra/scripts/ecs-one-click-deploy.sh'),
     resolve(root, 'infra/scripts/deploy-verified-ecs-compose.sh'),
     resolve(root, 'infra/scripts/rollback-ecs-compose.sh'),
     resolve(root, 'infra/scripts/invoke-ecs-automatic-rollback.sh'),
