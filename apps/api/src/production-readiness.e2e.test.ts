@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { productionCommercialReadiness, productionReadinessDiagnostics, route, validateCapacityEvidenceRuntime } from './server.js'
+import { productionCommercialReadiness, productionReadinessDiagnostics, route, validateCapacityEvidenceRuntime, validateManualOperationsEvidenceRuntime } from './server.js'
 import { MemoryCommercialCatalogRepository } from '../../../packages/persistence/src/commercial-catalog-repository.js'
 
 type Envelope = {
@@ -125,6 +125,19 @@ afterEach(async () => {
 })
 
 describe('production readiness fail-closed', () => {
+  it('validates the manual operations evidence contract independently of the official API canary', () => {
+    const evidence = {
+      schema_version: 'manual-operations-evidence/1', release_id: 'release-current', environment: 'production',
+      workflow: 'public_import_manual_publish', official_api_receipt: false, tenant_isolation_verified: true, simulated: false,
+      generated_at: '2026-09-22T01:00:00Z', expires_at: '2026-09-23T01:00:00Z',
+      checks: [{ name: 'tenant_scope', status: 'pass' }, { name: 'manual_report', status: 'pass' }, { name: 'merchant_visibility', status: 'pass' }],
+    }
+    expect(validateManualOperationsEvidenceRuntime(evidence, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') })).toEqual([])
+    expect(validateManualOperationsEvidenceRuntime({ ...evidence, release_id: 'release-other', simulated: true }, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') })).toEqual(expect.arrayContaining([
+      'release_id must match RELEASE_ID', 'simulated must be false',
+    ]))
+  })
+
   it('rejects stale or differently-bound capacity evidence at runtime', () => {
     const base = {
       schema_version: '1', status: 'pass', cloud_gate: true, environment: 'preproduction', release_id: 'release-other',
@@ -142,8 +155,22 @@ describe('production readiness fail-closed', () => {
     expect(blocked.ready).toBe(false)
     expect(blocked.reasons).toEqual([
       'commercial_executable_catalog_missing',
+      'commercial_executable_monthly_plan_missing',
       'commercial_approved_rate_missing',
     ])
+
+    const pointPackOnly = await productionCommercialReadiness(new MemoryCommercialCatalogRepository([{
+      id: 'sku-points', code: 'points_500', kind: 'point_pack', visibility: 'public', requiredCapability: null,
+      versionId: 'sku-points-v1', version: 1, lifecycle: 'approved', executable: true, priceFen: 100,
+      currency: 'CNY', priceMode: 'fixed', durationDays: 30, payload: {}, checksum: 'points-checksum',
+      effectiveAt: new Date().toISOString(), benefits: [],
+    }], [{
+      rateCardId: 'rate-v1', version: 1, actionCode: 'image.generate.standard', unit: 'image',
+      integerPoints: 1, checksum: 'rate-checksum', effectiveAt: new Date().toISOString(),
+    }]))
+    expect(pointPackOnly.ready).toBe(false)
+    expect(pointPackOnly.reasons).toEqual(['commercial_executable_monthly_plan_missing'])
+    expect(pointPackOnly.catalog).toEqual({ executable: 1, executable_monthly: 0 })
 
     const executable = await productionCommercialReadiness(new MemoryCommercialCatalogRepository([{
       id: 'sku-1', code: 'basic', kind: 'monthly', visibility: 'public', requiredCapability: null,
@@ -156,6 +183,7 @@ describe('production readiness fail-closed', () => {
     }]))
     expect(executable.ready).toBe(true)
     expect(executable.reasons).toEqual([])
+    expect(executable.catalog).toEqual({ executable: 1, executable_monthly: 1 })
   })
 
   it('requires every critical production gate without leaking configured secrets', () => {

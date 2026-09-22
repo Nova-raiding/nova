@@ -9364,6 +9364,36 @@ export function validateCapacityEvidenceRuntime(document: unknown, options: { ex
   return errors
 }
 
+/** Manual operations use a different evidence contract from the official API
+ * canary. Keep live readiness aligned with the deploy preflight. */
+export function validateManualOperationsEvidenceRuntime(document: unknown, options: { expectedReleaseId?: string; now?: Date } = {}): string[] {
+  const errors: string[] = []
+  const now = options.now ?? new Date()
+  const isIsoInstant = (value: unknown): value is string => typeof value === 'string'
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u.test(value)
+    && Number.isFinite(Date.parse(value))
+  if (!document || typeof document !== 'object' || Array.isArray(document)) return ['manual operations evidence must be a JSON object']
+  const value = document as Record<string, unknown>
+  if (value.schema_version !== 'manual-operations-evidence/1') errors.push('schema_version must be manual-operations-evidence/1')
+  if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push('release_id must match RELEASE_ID')
+  if (value.environment !== 'production') errors.push('environment must be production')
+  if (value.workflow !== 'public_import_manual_publish') errors.push('workflow must be public_import_manual_publish')
+  if (value.official_api_receipt !== false) errors.push('official_api_receipt must be false')
+  if (value.tenant_isolation_verified !== true) errors.push('tenant_isolation_verified must be true')
+  if (value.simulated !== false) errors.push('simulated must be false')
+  const generatedAt = isIsoInstant(value.generated_at) ? Date.parse(value.generated_at) : Number.NaN
+  const expiresAt = isIsoInstant(value.expires_at) ? Date.parse(value.expires_at) : Number.NaN
+  if (!Number.isFinite(generatedAt)) errors.push('generated_at must be a strict UTC ISO timestamp')
+  else if (generatedAt > now.getTime() + 300_000 || now.getTime() - generatedAt > 86_400_000) errors.push('manual operations evidence is outside its valid generation window')
+  if (!Number.isFinite(expiresAt)) errors.push('expires_at must be a strict UTC ISO timestamp')
+  else if (expiresAt <= now.getTime() || (Number.isFinite(generatedAt) && (expiresAt <= generatedAt || expiresAt > generatedAt + 86_400_000))) errors.push('manual operations evidence is expired or has an invalid validity window')
+  const checks = Array.isArray(value.checks) ? value.checks : []
+  const required = ['tenant_scope', 'manual_report', 'merchant_visibility']
+  const names = checks.map(check => check && typeof check === 'object' ? (check as Record<string, unknown>).name : undefined)
+  if (checks.some(check => !check || typeof check !== 'object' || (check as Record<string, unknown>).status !== 'pass') || required.some(name => !names.includes(name))) errors.push('required manual workflow checks must pass')
+  return errors
+}
+
 function evidenceReadiness(kind: 'capability' | 'capacity'): EvidenceReadiness {
   const pathKey = kind === 'capability' ? 'CAPABILITY_EVIDENCE_PATH' : 'CAPACITY_REPORT_PATH'
   const sourceRef = process.env[pathKey]?.trim()
@@ -9383,9 +9413,11 @@ function evidenceReadiness(kind: 'capability' | 'capacity'): EvidenceReadiness {
   base.verifiedBy = typeof value.sign_off?.verified_by === 'string' ? value.sign_off.verified_by : undefined
   base.verifiedAt = typeof value.sign_off?.verified_at === 'string' ? value.sign_off.verified_at : (typeof value.generated_at === 'string' ? value.generated_at : undefined)
   if (kind === 'capability') {
-    const errors = validatePlatformCapabilityEvidence(document, { requireCanary: true, expectedReleaseId: process.env.RELEASE_ID?.trim() || undefined })
+    const errors = isManualPlatformOperationsMode()
+      ? validateManualOperationsEvidenceRuntime(document, { expectedReleaseId: process.env.RELEASE_ID?.trim() || undefined })
+      : validatePlatformCapabilityEvidence(document, { requireCanary: true, expectedReleaseId: process.env.RELEASE_ID?.trim() || undefined })
     base.reasons.push(...errors)
-    if (value.environment !== 'preproduction' && value.environment !== 'production') base.reasons.push('environment must be preproduction or production')
+    if (!isManualPlatformOperationsMode() && value.environment !== 'preproduction' && value.environment !== 'production') base.reasons.push('environment must be preproduction or production')
   } else {
     base.reasons.push(...validateCapacityEvidenceRuntime(value, { expectedReleaseId: process.env.RELEASE_ID?.trim() || undefined }))
   }
@@ -9706,19 +9738,24 @@ export async function productionCommercialReadiness(repository: CommercialCatalo
   const reasons: string[] = []
   if (!repository) {
     reasons.push('commercial_catalog_repository_missing')
-    return { ready: false, reasons, catalog: { executable: 0 }, rates: { executable: 0 }, charged_methods: { enabled: 0 } }
+    return { ready: false, reasons, catalog: { executable: 0, executable_monthly: 0 }, rates: { executable: 0 }, charged_methods: { enabled: 0 } }
   }
   const [catalog, rates] = await Promise.all([repository.list({ includePrivate: false, capabilities: [] }), repository.listRates()])
   const executableCatalog = catalog.filter(item => item.lifecycle === 'approved' && item.executable && item.effectiveAt !== null)
+  // Point packs add balance but do not create the entitlement snapshot required
+  // by CommercialAccessService.  Treating a point-pack-only catalog as ready
+  // would advertise a purchase path that still cannot use the product.
+  const executableMonthlyCatalog = executableCatalog.filter(item => item.kind === 'monthly')
   const executableRates = rates.filter(rate => rate.lifecycle === 'approved' && rate.approvalStatus === 'approved' && rate.executable && rate.ruleExecutable && Number.isSafeInteger(rate.integerPoints) && (rate.integerPoints ?? 0) > 0 && rate.effectiveAt !== null)
   const enabledChargedMethods = COMMERCIAL_OPERATION_REGISTRY.filter(policy => policy.surface === 'MCP' && policy.classification === 'POINT_CHARGED' && policy.enabled)
   if (executableCatalog.length === 0) reasons.push('commercial_executable_catalog_missing')
+  if (executableMonthlyCatalog.length === 0) reasons.push('commercial_executable_monthly_plan_missing')
   if (executableRates.length === 0) reasons.push('commercial_approved_rate_missing')
   if (enabledChargedMethods.length === 0) reasons.push('commercial_charged_methods_disabled')
   return {
     ready: reasons.length === 0,
     reasons,
-    catalog: { executable: executableCatalog.length },
+    catalog: { executable: executableCatalog.length, executable_monthly: executableMonthlyCatalog.length },
     rates: { executable: executableRates.length },
     charged_methods: { enabled: enabledChargedMethods.length },
   }
