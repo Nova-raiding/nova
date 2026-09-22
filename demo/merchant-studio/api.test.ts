@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { assertProductTargetIdentity, fetchImageGenerationJobs, fetchManualPublishRecords, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTasks, generateCampaignBatch, importProduct, registerMerchantAccount, requestApi, type Product } from './src/api.js'
+import { assertProductTargetIdentity, fetchImageGenerationJobs, fetchManualPublishRecords, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTaskPage, fetchTasks, generateCampaignBatch, importProduct, MERCHANT_TASK_PAGE_SIZE, registerMerchantAccount, requestApi, type Product } from './src/api.js'
 import { resolveLibraryData } from './src/library-data.js'
 import { resolveTaskDirections } from './src/task-evidence.js'
 
@@ -73,6 +73,27 @@ describe('merchant product response normalization', () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/v1/products?limit=50&offset=0')
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/v1/products?limit=50&offset=1')
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/v1/tasks?limit=50&offset=0')
+  })
+
+  it('uses the desktop task page size for task page requests and offsets', async () => {
+    vi.stubGlobal('window', globalThis)
+    const fetchMock = vi.fn().mockResolvedValueOnce(envelope({
+      items: [{ id: 't51' }],
+      total: 51,
+      limit: MERCHANT_TASK_PAGE_SIZE,
+      offset: MERCHANT_TASK_PAGE_SIZE,
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchTaskPage('/api', { offset: MERCHANT_TASK_PAGE_SIZE })).resolves.toEqual({
+      items: [{ id: 't51' }],
+      total: 51,
+      limit: MERCHANT_TASK_PAGE_SIZE,
+      offset: MERCHANT_TASK_PAGE_SIZE,
+    })
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+      `/v1/tasks?limit=${MERCHANT_TASK_PAGE_SIZE}&offset=${MERCHANT_TASK_PAGE_SIZE}`,
+    )
   })
 
   it('reads tenant-scoped manual publish reports without treating them as platform receipts', async () => {

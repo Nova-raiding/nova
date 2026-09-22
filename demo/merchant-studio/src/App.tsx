@@ -128,6 +128,7 @@ import {
   fetchTask,
   fetchTaskFeedback,
   fetchTaskPage,
+  MERCHANT_TASK_PAGE_SIZE,
   fetchTaskTimeline,
   fetchWorkspaceMetrics,
   generateProductImages,
@@ -9199,7 +9200,10 @@ function TaskWorkspace({
     setTaskListLoading(true)
     setTaskListError('')
     setTaskList(null)
-    fetchTaskPage(baseUrl, { limit: 12, offset: taskPage * 12 })
+    fetchTaskPage(baseUrl, {
+      limit: MERCHANT_TASK_PAGE_SIZE,
+      offset: taskPage * MERCHANT_TASK_PAGE_SIZE,
+    })
       .then((result) => {
         if (requestId === taskListRequestId.current) {
           setTaskList(result.items)
@@ -9778,7 +9782,7 @@ function TaskWorkspace({
     if (taskStateBlocked && !error)
       setError('任务状态暂时无法确认，已暂停当前操作。请重新读取任务状态。')
   }, [taskStateBlocked, error])
-  const taskPageSize = 12
+  const taskPageSize = MERCHANT_TASK_PAGE_SIZE
   const taskPageCount = Math.max(1, Math.ceil(taskTotal / taskPageSize))
   const visibleTasks = useMemo(
     () => groupTasksForRecovery(taskList ?? []),
