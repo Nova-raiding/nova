@@ -67,6 +67,53 @@ describe('production renderer real-gate contract regressions', () => {
       expect(JSON.parse(String(result.stdout)).ready).toBe(false)
     })
   })
+  it('allows lexical-only production config without optional embedding fields', () => {
+    const env = completeEnvironment()
+    delete env.EMBEDDING_MODEL
+    delete env.EMBEDDING_DIMENSIONS
+    delete env.EMBEDDING_MAX_REQUEST_CNY
+    env.KNOWLEDGE_VECTOR_INDEX_ENABLED = 'false'
+    withRendered(env, (_result, config, dir) => {
+      const validated = validate(config, dir)
+      expect(validated.status, String(validated.stderr)).toBe(0)
+      expect(config).not.toContain('embedding_model:')
+    })
+  })
+  it('still blocks enabled vector indexing when embedding fields are missing', () => {
+    const env = completeEnvironment()
+    delete env.EMBEDDING_MODEL
+    delete env.EMBEDDING_DIMENSIONS
+    delete env.EMBEDDING_MAX_REQUEST_CNY
+    env.KNOWLEDGE_VECTOR_INDEX_ENABLED = 'true'
+    withRendered(env, (_result, config, dir) => {
+      expect(_result.status).toBe(2)
+      expect(JSON.parse(String(_result.stdout)).missingKeys).toEqual(expect.arrayContaining(['embedding_model', 'embedding_dimensions', 'embedding_max_request_cny']))
+      const validated = validate(config, dir)
+      expect(validated.status).not.toBe(0)
+      expect(`${validated.stderr}${validated.stdout}`).toMatch(/embedding_(model|dimensions)|embedding_max_request_cny/u)
+    })
+  })
+  it.each(['false', 'null', '""'])('rejects %s as an embedding model when vector indexing is enabled', (value) => {
+    withRendered(completeEnvironment(), (_result, config, dir) => {
+      const invalid = config.replace(/embedding_model:.*\n/u, `embedding_model: ${value}\n`)
+      const validated = validate(invalid, dir)
+      expect(validated.status).not.toBe(0)
+      expect(`${validated.stderr}${validated.stdout}`).toMatch(/embedding_model/u)
+    })
+  })
+  it.each(['"true"', '"false"', 'invalid', '0'])('rejects non-boolean vector flag %s', (value) => {
+    withRendered(completeEnvironment(), (_result, config, dir) => {
+      const invalid = config.replace(/knowledge_vector_index_enabled:.*\n/u, `knowledge_vector_index_enabled: ${value}\n`)
+      expect(validate(invalid, dir).status).not.toBe(0)
+    })
+  })
+  it('requires embedding fields for a true vector flag with an inline comment', () => {
+    withRendered(completeEnvironment(), (_result, config, dir) => {
+      const invalid = config.replace('knowledge_vector_index_enabled: true', 'knowledge_vector_index_enabled: true # enabled')
+        .replace(/^embedding_model:.*\n/mu, '')
+      expect(validate(invalid, dir).status).not.toBe(0)
+    })
+  })
   it('satisfies the real Store Nova password-mode contract', () => {
     withRendered(completeEnvironment(), (_result, config, dir) => {
       // Isolate the OIDC check from the preceding legacy secret-reference grep.
@@ -118,6 +165,26 @@ describe('production renderer real-gate contract regressions', () => {
     env.PUBLIC_APP_BASE_URL = env.APP_BASE_URL!; delete env.APP_BASE_URL
     env.ASSET_STORAGE_BUCKET = env.OBJECT_STORAGE_BUCKET!
     withRendered(env, (result, config, dir) => { expect(result.status).toBe(0); expect(validate(config, dir).status).toBe(0) })
+  })
+  it('accepts host-protected references without treating ASSET or DATASET names as placeholders', () => {
+    withRendered({ ...completeEnvironment(),
+      SESSION_ID_HASH_SECRET_REF: 'ecs-protected-env:DATASET_SESSION_SECRET',
+      ASSET_DISPLAY_URL_SIGNING_SECRET_REF: 'ecs-protected-env:ASSET_DISPLAY_URL_SIGNING_SECRET',
+      ASSET_SCAN_TRUSTED_PUBLIC_KEYS_REF: 'ecs-protected-env:ASSET_SCAN_TRUSTED_PUBLIC_KEYS',
+    }, (result, config, dir) => {
+      expect(result.status, String(result.stderr)).toBe(0)
+      expect(config).toContain('ecs-protected-env:ASSET_DISPLAY_URL_SIGNING_SECRET')
+      expect(config).toContain('ecs-protected-env:DATASET_SESSION_SECRET')
+      expect(config).toContain('ecs-protected-env:ASSET_SCAN_TRUSTED_PUBLIC_KEYS')
+      expect(validate(config, dir).status).toBe(0)
+    })
+  })
+  it('rejects a standalone SET placeholder while allowing SET inside variable names', () => {
+    withRendered({ ...completeEnvironment(), SESSION_ID_HASH_SECRET_REF: 'SET_PLACEHOLDER' }, (result, config) => {
+      expect(result.status).toBe(2)
+      expect(JSON.parse(String(result.stdout)).missingKeys).toContain('session_id_hash_secret_ref')
+      expect(config).toContain('session_id_hash_secret_ref: null')
+    })
   })
   it('rejects inconsistent aliases before writing and does not disclose values', () => {
     withRendered({ ...completeEnvironment(), MCP_AUTHZ_MODE: 'private-conflicting-value' }, (result, config) => {

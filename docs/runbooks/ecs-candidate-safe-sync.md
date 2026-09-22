@@ -70,11 +70,13 @@ sh infra/scripts/ecs-one-click-deploy.sh cleanup
 
 生产渲染必须显式设置 `ECS_PRODUCTION_ENV_FILE`，指向仓库外的 canonical、root-owned、`0600` 普通文件；父目录链不得允许其他用户写入。渲染出的 Compose 也含解析后的凭据，必须以 `umask 077` 保存到受保护路径，不打印、不上传、不提交。下面提及的 `.env.example` 仅是变量名模板；默认 `.env` 读取只用于本地测试，不是生产 secret 的存放位置。
 
+当 `secret_provider=ecs-protected-env` 时，配置中 `*_ref` 使用 `ecs-protected-env:VARIABLE_NAME` 标识该发布受保护 env 中的具体键。它是本机配置绑定标识，不是 Vault URI，也不会发起任何远程取密请求。准备配置时必须先确认对应键确实存在且非空，并记录 env 文件的 canonical 路径、SHA-256 和引用键名清单；不能只填写引用来掩盖缺失凭据。生产 Compose 从同一个受保护 env 文件读取实际值，冻结后的 rendered Compose SHA 继续纳入发布身份。原始值与 env 文件不能进入仓库、候选源码包或诊断输出。
+
 - `review_required`：必须基于服务器文件进行三方合并，禁止整文件覆盖。
 - `missing_remote`：确认是当前候选版本的新增文件后，才可放入隔离发布目录。
 - `.env`、密钥、OAuth/支付凭据、告警 Webhook 密钥及签名私钥不得进入候选包。
 - `docker-compose.ecs-pilot.yml` 在服务器上可能保留六平台连接器、Vault 和生产安全配置；本地版本不能直接替换它。
-- 最终层顺序只由 `infra/local/ecs-production-compose.layers` 定义：基础 Compose → ECS pilot → OSS cutover → 生产迁移 → release identity。禁止加入开发用途的 `deploy/runtime/auth-hardening.yml`；最终渲染必须通过 `validate-ecs-production-compose.mjs` 的服务器生产安全校验。OSS overlay 仅包含 `api`、`api-replica` 的存储、生命周期和配额字段，不修改六平台、Vault、支付、证据或告警配置；当前候选不启用 `--profile alerts`。
+- 最终层顺序只由 `infra/local/ecs-production-compose.layers` 定义：基础 Compose → ECS pilot → OSS cutover → 生产迁移 → HTTPS gateway → release identity。HTTPS 层发布宿主 80/443 到容器 8080/8443，并只读挂载受保护证书目录；网关使用同项目服务别名解析 upstream。禁止加入开发用途的 `deploy/runtime/auth-hardening.yml`；最终渲染必须通过 `validate-ecs-production-compose.mjs` 的服务器生产安全校验。OSS overlay 仅包含 `api`、`api-replica` 的存储、生命周期和配额字段，不修改六平台、Vault、支付、证据或告警配置；当前候选不启用 `--profile alerts`。
 - 生产证据不得从开发机复制充数，必须绑定最终 release ID、Git SHA、镜像摘要、配置摘要和 deployment nonce，并由服务器信任边界签名。
 
 ## 切换前门禁

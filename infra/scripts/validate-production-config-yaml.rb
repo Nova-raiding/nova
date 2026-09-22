@@ -52,6 +52,9 @@ unless config.is_a?(Hash)
 end
 
 required_keys = ENV.fetch('REQUIRED_PRODUCTION_CONFIG_KEYS', '').split
+if config['knowledge_vector_index_enabled'] == true
+  required_keys.concat(%w[embedding_model embedding_dimensions embedding_max_request_cny])
+end
 missing_required_key = required_keys.find { |key| !config.key?(key) }
 if missing_required_key
   warn "required production config key is missing: #{missing_required_key}"
@@ -65,6 +68,30 @@ end
 if invalid_required_value
   warn "required production config value is missing: #{invalid_required_value}"
   exit 1
+end
+
+unless [true, false].include?(config['knowledge_vector_index_enabled'])
+  warn 'knowledge_vector_index_enabled must be a boolean'
+  exit 1
+end
+
+if config['knowledge_vector_index_enabled'] == true
+  model = config['embedding_model']
+  dimensions = config['embedding_dimensions']
+  cost = config['embedding_max_request_cny']
+  unless model.is_a?(String) && !model.strip.empty? && !%w[false null ~].include?(model.strip.downcase)
+    warn 'embedding_model must be a non-empty string when vector indexing is enabled'
+    exit 1
+  end
+  unless dimensions.to_s.match?(/\A[1-9][0-9]*\z/)
+    warn 'embedding_dimensions must be a positive integer when vector indexing is enabled'
+    exit 1
+  end
+  amount = Float(cost, exception: false)
+  unless amount && amount.finite? && amount.positive?
+    warn 'embedding_max_request_cny must be a positive number when vector indexing is enabled'
+    exit 1
+  end
 end
 
 if config.key?('OPS_AUTH_MODE') && !%w[password oidc].include?(config['OPS_AUTH_MODE'])
@@ -84,7 +111,7 @@ if invalid_reference
   exit 1
 end
 
-unsafe_placeholder = /(?:SET_[A-Z0-9_]+|BLOCKED_UNTIL_|\$\{[^}]+\}|\b(?:REPLACE_ME|CHANGE_ME|TODO|TBD)\b)/
+unsafe_placeholder = /(?:\bSET_[A-Z0-9_]+\b|BLOCKED_UNTIL_|\$\{[^}]+\}|\b(?:REPLACE_ME|CHANGE_ME|TODO|TBD)\b)/
 contains_unsafe_scalar = lambda do |value|
   case value
   when Hash

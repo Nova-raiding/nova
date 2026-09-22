@@ -69,9 +69,7 @@ image_model: null
 image_edit_model: null
 ocr_model: null
 video_model: null
-embedding_model: null
-embedding_dimensions: null
-embedding_max_request_cny: null
+# Optional: required only when knowledge_vector_index_enabled is true.
 knowledge_vector_index_enabled: null
 approved_requests_per_minute: null
 approved_tokens_per_minute: null

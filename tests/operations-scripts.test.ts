@@ -52,6 +52,7 @@ describe('deployment operation scripts', () => {
       'infra/local/docker-compose.ecs-pilot.yml',
       'infra/local/docker-compose.ecs-oss-cutover.yml',
       'infra/local/docker-compose.ecs-production-migration.yml',
+      'infra/local/docker-compose.ecs-pilot-https.yml',
       'infra/local/docker-compose.ecs-pilot-release.yml',
     ])
     const renderer = readFileSync('infra/scripts/render-ecs-production-compose.sh', 'utf8')

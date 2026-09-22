@@ -20,6 +20,17 @@ describe('alert receiver deployment contract', () => {
     expect(dockerfile).toContain('https://127.0.0.1:8443/healthz')
   })
 
+  it('uses stable production Compose aliases for every HTTPS upstream', async () => {
+    const nginx = await text('infra/nginx/pilot-gateway-https.conf')
+    expect(nginx).toContain('server api-replica:8787 resolve;')
+    expect(nginx).toContain('server ui:8080 resolve;')
+    expect(nginx).toContain('server ops-ui:8080 resolve;')
+    expect(nginx).toContain('server payment-gateway:8790 resolve;')
+    expect(nginx).not.toContain('merchant-production-api-replica-1')
+    expect(nginx).not.toContain('storenova-demo-ui-e0')
+    expect(nginx).not.toContain('local-ops-ui-1')
+  })
+
   it('keeps ECS secrets file-mounted and the receiver off host ports', async () => {
     const compose = await text('infra/local/docker-compose.ecs-pilot.yml')
     const receiver = compose.slice(compose.indexOf('  alert-receiver:'), compose.indexOf('\n  payment-gateway:'))

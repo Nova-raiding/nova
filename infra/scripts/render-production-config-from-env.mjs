@@ -22,10 +22,11 @@ try {
     mcp_authorization_mode: 'MCP_AUTHZ_MODE',
     durable_platform_assignments_required: 'AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED',
     app_base_url: 'PUBLIC_APP_BASE_URL',
+    embedding_model: 'EMBEDDING_MODEL', embedding_dimensions: 'EMBEDDING_DIMENSIONS', embedding_max_request_cny: 'MODEL_EMBEDDING_MAX_REQUEST_CNY',
   };
   const socialGroups = ['xiaohongshu', 'douyin'].map(platform =>
     ['auth', 'read', 'write'].map(capability => `${platform}_${capability}_enabled`));
-  const optionalKeys = ['alert_channel_secret_ref', 'object_storage_kms_key', ...socialGroups.flat()];
+  const optionalKeys = ['alert_channel_secret_ref', 'object_storage_kms_key', 'embedding_model', 'embedding_dimensions', 'embedding_max_request_cny', ...socialGroups.flat()];
   const allKeys = [...requiredKeys, ...optionalKeys];
   const wanted = new Set(allKeys.flatMap(key => [key.toUpperCase(), aliases[key]].filter(Boolean)));
   const values = new Map();
@@ -46,7 +47,7 @@ try {
   const resolved = new Map(allKeys.map(key => {
     const primary = values.get(key.toUpperCase()), alias = values.get(aliases[key]);
     if (primary !== undefined && alias !== undefined && primary !== alias) throw new Error('conflicting environment aliases');
-    return [key, primary ?? alias];
+    return [key, primary ?? alias ?? (key === 'embedding_max_request_cny' ? values.get('EMBEDDING_MAX_REQUEST_CNY') : undefined)];
   }));
   // Manual platform operations are intentionally credential-free: rules are
   // uploaded and published by platform operators, so the production config
@@ -58,6 +59,9 @@ try {
     resolved.set('platform_rule_sync_interval_hours', '0');
   }
   const required = new Set(requiredKeys);
+  if (resolved.get('knowledge_vector_index_enabled') === 'true') {
+    for (const key of ['embedding_model', 'embedding_dimensions', 'embedding_max_request_cny']) required.add(key);
+  }
   if (resolved.get('alert_notifications_enabled') === 'true') required.add('alert_channel_secret_ref');
   if (resolved.get('object_storage_sse_mode') === 'aws:kms') required.add('object_storage_kms_key');
   const enabledSocial = new Set();
@@ -75,7 +79,7 @@ try {
   const missing = [];
   const entries = allKeys.flatMap(key => {
     const value = resolved.get(key);
-    const invalid = !value || /^(?:null|~)$/i.test(value) || /\$\{|\$\(|`|SET_[A-Z_]+|BLOCKED_UNTIL_|\b(?:REPLACE_ME|CHANGE_ME|TODO|TBD)\b|localhost|127\.0\.0\.1|example\.com/i.test(value)
+    const invalid = !value || /^(?:null|~)$/i.test(value) || /\$\{|\$\(|`|\bSET_[A-Z_]+\b|BLOCKED_UNTIL_|\b(?:REPLACE_ME|CHANGE_ME|TODO|TBD)\b|localhost|127\.0\.0\.1|example\.com/i.test(value)
       || (enabledSocial.has(key) && value !== 'true')
       || (plainKeys.has(key) && !/^[A-Za-z0-9_./][A-Za-z0-9._:/@%?&=+~#-]*$/.test(value));
     if (invalid) {

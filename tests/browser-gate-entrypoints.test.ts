@@ -113,6 +113,7 @@ const DECLARED_BROWSER_ENTRYPOINTS_UNINVOKED_BY_CHECK = [
 const CONFIG_ONLY_BROWSER_SPECS = [
   spec('canonical-product-desktop.spec.js'),
   spec('image-generation-desktop.spec.js'),
+  spec('merchant-production-readonly.spec.js'),
   spec('merchant-workspace-roles.spec.js'),
   spec('ops-account-label-isolated.spec.js'),
   spec('ops-delivery-account-access.spec.js'),

@@ -40,6 +40,7 @@ const paymentEnvironment = {
   ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM_B64: 'dGVzdC1wcml2YXRlLWtleQ==',
   ASSET_SCANNER_SERVICE_ID: 'merchant-asset-scanner-production',
   API_AUTH_TOKENS: '{"production-test":{"workspaces":["ws_production_test"],"actor_id":"actor_production_test","bootstrap":false,"workbenches":["workspace"],"roles":["merchant_admin"]}}',
+  OPS_AUTH_MODE: 'password',
   SESSION_ID_HASH_SECRET: 'test-production-session-hash-secret',
   WORKER_API_CREDENTIALS: '{"sync":{"token":"prod-sync","signing_secret":"prod-sync-signing"}}',
   ASSET_DISPLAY_URL_SIGNING_SECRET: 'test-production-display-signing-secret',
@@ -164,6 +165,8 @@ describe('ECS pilot API replica parity', () => {
         OPS_LOCAL_SESSION_WORKSPACE_ID: '',
         PLATFORM_ACCOUNT_LOGIN: '', PLATFORM_ACCOUNT_PASSWORD_HASH: '',
         ALLOW_WILDCARD_WORKSPACE_GRANT: 'false',
+        OPS_AUTH_MODE: 'password',
+        OIDC_PROXY_SIGNING_SECRET: '',
         SESSION_ID_HASH_SECRET: 'test-production-session-hash-secret',
         ASSET_DISPLAY_URL_SIGNING_SECRET: 'test-production-display-signing-secret',
         ASSET_DISPLAY_URL_SIGNING_KEY_ID: 'display-production',
@@ -186,7 +189,7 @@ describe('ECS pilot API replica parity', () => {
   })
 
   it.each([
-    'API_AUTH_TOKENS', 'SESSION_ID_HASH_SECRET', 'WORKER_API_CREDENTIALS',
+    'API_AUTH_TOKENS', 'OPS_AUTH_MODE', 'SESSION_ID_HASH_SECRET', 'WORKER_API_CREDENTIALS',
     'ASSET_DISPLAY_URL_SIGNING_SECRET', 'ASSET_DISPLAY_URL_SIGNING_KEY_ID', 'WORKER_WORKSPACES',
     'DATABASE_URL', 'OPS_DATABASE_URL', 'MODEL_COST_ESTIMATE_VERSION',
     'WORKER_SYNC_API_TOKEN', 'WORKER_SYNC_API_SIGNING_SECRET',
@@ -314,6 +317,8 @@ describe('ECS pilot API replica parity', () => {
     const replica = services['api-replica']?.environment
     const invariantKeys = [
       'PUBLIC_APP_BASE_URL',
+      'OPS_AUTH_MODE',
+      'OIDC_PROXY_SIGNING_SECRET',
       'MCP_OAUTH_REQUIRED',
       'MCP_OAUTH_ISSUER',
       'MCP_OAUTH_AUTHORIZATION_ENDPOINT',

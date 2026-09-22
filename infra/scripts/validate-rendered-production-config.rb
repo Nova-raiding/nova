@@ -177,7 +177,7 @@ begin
   runtime = runtimes.first['data']
   raise ProductionManifestBindingError, 'ConfigMap/merchant-runtime.data must be a mapping' unless runtime.is_a?(Hash)
 
-  {
+  bindings = {
     'merchant_bearer_hostname' => 'MERCHANT_BEARER_HOSTNAME',
     'mcp_authorization_mode' => 'MCP_AUTHZ_MODE',
     'durable_platform_assignments_required' => 'AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED',
@@ -226,7 +226,15 @@ begin
     'commercial_payment_provider' => 'COMMERCIAL_PAYMENT_PROVIDER',
     'platform_rule_sync_manifest_url' => 'PLATFORM_RULE_SYNC_MANIFEST_URL',
     'platform_rule_sync_interval_hours' => 'PLATFORM_RULE_SYNC_INTERVAL_HOURS',
-  }.each { |config_key, runtime_key| require_binding(config, runtime, config_key, runtime_key) }
+  }
+  vector_index_enabled = required_config_leaf(config, 'knowledge_vector_index_enabled').strip.downcase
+  raise ProductionManifestBindingError, 'knowledge_vector_index_enabled must be true or false' unless %w[true false].include?(vector_index_enabled)
+  unless vector_index_enabled == 'true'
+    bindings.delete('embedding_model')
+    bindings.delete('embedding_dimensions')
+    bindings.delete('embedding_max_request_cny')
+  end
+  bindings.each { |config_key, runtime_key| require_binding(config, runtime, config_key, runtime_key) }
 
   relay_url = URI.parse(required_config_leaf(config, 'model_relay_base_url'))
   unless relay_url.is_a?(URI::HTTPS) && relay_url.host && relay_url.userinfo.nil? && relay_url.fragment.nil? && relay_url.query.nil?

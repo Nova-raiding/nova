@@ -207,7 +207,7 @@ else
     --build-arg "RELEASE_ID=$release_id" --build-arg "RELEASE_GIT_SHA=$revision"
 fi
 build_image payment-gateway services/payment-gateway/Dockerfile
-build_image pilot-gateway infra/docker/pilot-gateway.Dockerfile
+build_image pilot-gateway infra/docker/pilot-gateway-https.Dockerfile
 
 RECORDS_PATH=$records OUTPUT_DIR=$output_dir RELEASE_REVISION=$revision RELEASE_NAME=$release_id SOURCE_DIGEST="sha256:$source_sha" node <<'NODE'
 const fs = require('node:fs')

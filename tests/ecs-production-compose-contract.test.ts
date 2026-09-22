@@ -87,6 +87,7 @@ function renderFinalProductionCompose() {
     ASSET_SCANNER_WORKSPACE_SIGNING_SECRET: credentials.scan.signing_secret,
     CAPABILITY_EVIDENCE_PATH: '/tmp/production-capability-evidence.json',
     CAPACITY_REPORT_PATH: '/tmp/production-capacity-report.json',
+    PILOT_GATEWAY_IMAGE_REF: `registry.example/pilot-gateway@sha256:${'a'.repeat(64)}`,
   })
   for (const role of roles.filter(role => role !== 'scan')) {
     env[`WORKER_${role.toUpperCase()}_API_TOKEN`] = credentials[role].token
@@ -131,15 +132,39 @@ describe('ECS production Compose contract', () => {
     }
   })
 
+  it('rejects production rendering without the external env before invoking Docker', () => {
+    const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs' }
+    delete env.ECS_PRODUCTION_ENV_FILE
+    try {
+      execFileSync('sh', ['infra/scripts/render-ecs-production-compose.sh'], {
+        cwd: process.cwd(), env, stdio: 'pipe',
+      })
+      throw new Error('expected production env requirement')
+    } catch (error) {
+      const stderr = error && typeof error === 'object' && 'stderr' in error ? String((error as { stderr?: Buffer }).stderr ?? '') : ''
+      expect(stderr).toContain('ECS_PRODUCTION_ENV_FILE is required for production Compose rendering')
+      expect(stderr).not.toContain('docker compose')
+    }
+  })
+
   it('accepts a production render without demo seeding', () => {
     expect(validate(valid)).toContain('contract passed')
   })
 
-  it('accepts the real final five-layer production render and proves demo seed removal', () => {
+  it('accepts the real final six-layer production render and proves demo seed removal', () => {
     const rendered = renderFinalProductionCompose()
     const migrate = rendered.services.migrate
     expect(JSON.stringify(migrate.entrypoint)).not.toContain('seed-demo.sql')
     expect(JSON.stringify(migrate.volumes)).not.toContain('seed-demo.sql')
+    const gateway = rendered.services['pilot-gateway']
+    expect(gateway.image).toBe(`registry.example/pilot-gateway@sha256:${'a'.repeat(64)}`)
+    expect(gateway.ports).toEqual(expect.arrayContaining([
+      expect.objectContaining({ published: '80', target: 8080 }),
+      expect.objectContaining({ published: '443', target: 8443 }),
+    ]))
+    expect(gateway.volumes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: '/opt/merchant-deploy/deploy/certs', target: '/etc/nginx/certs', read_only: true }),
+    ]))
     expect(validate(rendered)).toContain('contract passed')
   })
 

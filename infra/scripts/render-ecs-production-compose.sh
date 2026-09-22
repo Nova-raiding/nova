@@ -15,9 +15,12 @@ esac
 cd "$root"
 [ -f "$layers_file" ] || { echo "ECS production Compose layers file not found: $layers_file" >&2; exit 1; }
 
-# Production credentials must live outside the mutable checkout.  Keep the
-# historical .env fallback for local contract tests only; the ECS operator
-# must always pass an explicit root-owned 0600 file.
+# Production credentials must live outside the mutable checkout. Keep the
+# historical .env fallback only for non-production local contract renders.
+production_context=false
+[ "${NODE_ENV:-}" = production ] && production_context=true
+[ "${DEPLOYMENT_PROFILE:-}" = ecs ] && production_context=true
+[ -f "$root/.candidate-identity" ] && production_context=true
 if [ "${ECS_PRODUCTION_ENV_FILE+x}" = x ]; then
   production_env=$ECS_PRODUCTION_ENV_FILE
   case "$production_env" in
@@ -63,6 +66,10 @@ if [ "${ECS_PRODUCTION_ENV_FILE+x}" = x ]; then
     "$root_real"|"$root_real"/*) echo 'ECS_PRODUCTION_ENV_FILE must be outside the mutable repository' >&2; exit 1 ;;
   esac
 else
+  [ "$production_context" = false ] || {
+    echo 'ECS_PRODUCTION_ENV_FILE is required for production Compose rendering' >&2
+    exit 1
+  }
   production_env=.env
 fi
 

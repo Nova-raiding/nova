@@ -20,6 +20,7 @@ function fixture() {
     PILOT_RELEASE_GIT_SHA: 'a'.repeat(40), PILOT_RELEASE_MANIFEST_SHA256: 'b'.repeat(64),
     PILOT_RELEASE_IMAGE_SET_DIGEST: `sha256:${'c'.repeat(64)}`,
     PILOT_RELEASE_CONFIG_SHA256: 'd'.repeat(64), DEPLOYMENT_NONCE: 'ecs_deployment_nonce_123456',
+    ECS_PRODUCTION_ENV_FILE: '/tmp/ecs-production-test.env',
     OBJECT_STORAGE_EVIDENCE_PATH: evidence, PRODUCTION_EVIDENCE_ARTIFACT_ROOT: root,
     ASSET_STORAGE_BUCKET: 'merchant-assets', ASSET_STORAGE_ENDPOINT: 'https://merchant-assets.oss-cn-hangzhou.aliyuncs.com',
     ASSET_SCANNER_SERVICE_ID: 'merchant-asset-scanner-production',

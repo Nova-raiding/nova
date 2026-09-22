@@ -55,6 +55,8 @@ packages/persistence/src/migration-210-release.postgres.test.ts
 release-metadata.json
 infra/docker/api.Dockerfile
 infra/docker/worker.Dockerfile
+infra/docker/pilot-gateway-https.Dockerfile
+infra/nginx/pilot-gateway-https.conf
 infra/scripts/apply-migrations.sh
 infra/scripts/verify-runtime-db-role.sh
 infra/scripts/generate-container-source-manifest.mjs
@@ -62,6 +64,7 @@ infra/local/ensure-app-role.sql
 infra/local/docker-compose.ecs-pilot.yml
 infra/local/docker-compose.ecs-oss-cutover.yml
 infra/local/docker-compose.ecs-production-migration.yml
+infra/local/docker-compose.ecs-pilot-https.yml
 infra/local/docker-compose.ecs-pilot-release.yml
 infra/local/ecs-production-compose.layers
 infra/scripts/pilot-compose-preflight.sh

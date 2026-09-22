@@ -109,7 +109,7 @@ describe('bounded ECS release image builder', () => {
     mkdirSync(bin)
     writeFileSync(join(root, 'infra/scripts/build-ecs-release-images.sh'), readFileSync(script))
     chmodSync(join(root, 'infra/scripts/build-ecs-release-images.sh'), 0o755)
-    for (const path of ['infra/docker/api.Dockerfile', 'infra/docker/worker.Dockerfile', 'infra/docker/ui.Dockerfile', 'infra/docker/ops-console.Dockerfile', 'infra/docker/pilot-gateway.Dockerfile', 'services/payment-gateway/Dockerfile']) {
+    for (const path of ['infra/docker/api.Dockerfile', 'infra/docker/worker.Dockerfile', 'infra/docker/ui.Dockerfile', 'infra/docker/ops-console.Dockerfile', 'infra/docker/pilot-gateway-https.Dockerfile', 'services/payment-gateway/Dockerfile']) {
       writeFileSync(join(root, path), 'FROM scratch\n')
     }
     spawnSync('git', ['init', '-q'], { cwd: root })
@@ -148,6 +148,7 @@ describe('bounded ECS release image builder', () => {
     expect(dockerLog.match(/builder prune -f --keep-storage 1GB/gu)).toHaveLength(2)
     expect(dockerLog).toContain('--label org.opencontainers.image.revision=')
     expect(dockerLog).toContain('--build-arg VITE_OPS_LOGIN_URL=https://sso.example.test/authorize?client_id=ops')
+    expect(dockerLog).toContain('infra/docker/pilot-gateway-https.Dockerfile')
     expect(dockerLog).not.toMatch(/compose| run /u)
   })
 })
