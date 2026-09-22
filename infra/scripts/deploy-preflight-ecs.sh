@@ -49,7 +49,6 @@ if [ "$DEPLOYMENT_SCOPE" = full ]; then
   : "${RELEASE_EVIDENCE_BUNDLE_PATH:?RELEASE_EVIDENCE_BUNDLE_PATH is required for full production acceptance}"
 fi
 : "${RENDERED_COMPOSE_PATH:?RENDERED_COMPOSE_PATH is required}"
-: "${PRODUCTION_EVIDENCE_ARTIFACT_ROOT:?PRODUCTION_EVIDENCE_ARTIFACT_ROOT is required}"
 : "${EXPECTED_MIGRATION_VERSION:?EXPECTED_MIGRATION_VERSION is required}"
 : "${API_IMAGE_REF:?API_IMAGE_REF is required}"
 : "${WORKER_IMAGE_REF:?WORKER_IMAGE_REF is required}"
@@ -163,6 +162,7 @@ for file in "$RENDERED_COMPOSE_PATH"; do
   [ -f "$file" ] || { echo "evidence file not found: $file" >&2; exit 1; }
 done
 if [ "$DEPLOYMENT_SCOPE" = full ]; then
+  : "${PRODUCTION_EVIDENCE_ARTIFACT_ROOT:?PRODUCTION_EVIDENCE_ARTIFACT_ROOT is required for full production acceptance}"
   for file in "$CAPABILITY_EVIDENCE_PATH" "$CAPACITY_REPORT_PATH" "$MODEL_RELAY_EVIDENCE_PATH" "$CODEX_APP_HOST_EVIDENCE_PATH" "$OBJECT_STORAGE_EVIDENCE_PATH" "$CANONICAL_CUTOVER_EVIDENCE_PATH" "$RELEASE_MANIFEST_PATH" "$PAYMENT_EVIDENCE_PATH" "$RESTORE_EVIDENCE_PATH" "$RELEASE_EVIDENCE_BUNDLE_PATH"; do
     [ -f "$file" ] || { echo "evidence file not found: $file" >&2; exit 1; }
   done
