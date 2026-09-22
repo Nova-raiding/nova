@@ -100,7 +100,24 @@ export function resolveManagedOpsSession(environment: OpsAuthEnvironment): boole
   return false;
 }
 
+export function resolveManagedOpsLoginUrl(
+  environment: OpsAuthEnvironment,
+  origin = typeof window === "undefined" ? "https://ops.invalid" : window.location.origin,
+): string | undefined {
+  const configured = environment.VITE_OPS_LOGIN_URL;
+  if (typeof configured !== "string" || !configured.trim()) return undefined;
+  try {
+    const target = new URL(configured.trim(), origin);
+    const loopbackHttp = target.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(target.hostname);
+    if ((target.protocol !== "https:" && !loopbackHttp) || target.username || target.password) return undefined;
+    return target.href;
+  } catch {
+    return undefined;
+  }
+}
+
 export const managedOpsSession = resolveManagedOpsSession(viteEnv);
+export const managedOpsLoginUrl = resolveManagedOpsLoginUrl(viteEnv);
 export const localOpsSessionEnabled = viteEnv.VITE_OPS_LOCAL_SESSION === "true" && !managedOpsSession;
 const LOCAL_SESSION_DISABLED_KEY = "ops_local_session_disabled";
 const PASSWORD_SESSION_ACTIVE_KEY = "ops_password_session_active";

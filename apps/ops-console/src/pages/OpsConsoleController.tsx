@@ -8,7 +8,7 @@ import { useOpsConsoleModel, type OpsConsoleModel } from "../hooks/useOpsConsole
 import { useOpsNavigation } from "../navigation/useOpsNavigation";
 import { opsPageRegistry } from "../navigation/opsPageRegistry.js";
 import { platformLabels } from "../types/ops";
-import { abortOpsRequests, hasOpsConnection, managedOpsSession, readOpsConnectionConfig, setOpsWorkbenchContext } from "../api/opsClient";
+import { abortOpsRequests, hasOpsConnection, managedOpsLoginUrl, managedOpsSession, readOpsConnectionConfig, setOpsWorkbenchContext } from "../api/opsClient";
 import { OpsPageBoundary } from "../components/OpsPageBoundary";
 import { canViewOpsDomain, domainFromLocation, requiredWorkbenchForDomain, urlForDomain, visibleOpsDomains, type OpsDomain } from "../navigation/opsNavigation.js";
 import { AuthorizationProvider } from "../authz/AuthorizationProvider.js";
@@ -305,7 +305,7 @@ function Dashboard({
       <ManagedOpsReauthentication
         detail={sessionDiagnostic}
         loading={model.loading}
-        onReauthenticate={() => window.location.reload()}
+        onReauthenticate={managedOpsLoginUrl ? () => window.location.assign(managedOpsLoginUrl!) : undefined}
       />
     );
   }

@@ -128,6 +128,7 @@ describe('production readiness fail-closed', () => {
   it('validates the manual operations evidence contract independently of the official API canary', () => {
     const evidence = {
       schema_version: 'manual-operations-evidence/1', release_id: 'release-current', environment: 'production',
+      workspace_id: 'workspace-current', manual_publish_report_id: 'manual-report-current', verified_by: 'release-operator',
       workflow: 'public_import_manual_publish', official_api_receipt: false, tenant_isolation_verified: true, simulated: false,
       generated_at: '2026-09-22T01:00:00Z', expires_at: '2026-09-23T01:00:00Z',
       checks: [{ name: 'tenant_scope', status: 'pass' }, { name: 'manual_report', status: 'pass' }, { name: 'merchant_visibility', status: 'pass' }],

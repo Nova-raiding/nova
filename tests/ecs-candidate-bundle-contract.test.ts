@@ -36,7 +36,10 @@ describe('ECS candidate bundle contract', () => {
     for (const path of [
       'infra/scripts/render-ecs-production-compose.sh',
       'infra/scripts/stage-verified-ecs-release.sh',
+      'infra/scripts/check-ecs-storage-budget.sh',
       'infra/scripts/build-ecs-release-images.sh',
+      'infra/scripts/prepare-ecs-eight-image-set.mjs',
+      'infra/scripts/capture-manual-operations-evidence.sh',
       'infra/scripts/deploy-verified-ecs-compose.sh',
       'infra/scripts/rollback-ecs-compose.sh',
       'infra/scripts/invoke-ecs-automatic-rollback.sh',
@@ -60,6 +63,7 @@ describe('ECS candidate bundle contract', () => {
       'tests/fixtures/ecs-preidentity-isolated/psql.mjs',
       'tests/fixtures/ecs-preidentity-isolated/setup.mjs',
       'tests/worker-apk-repository.test.ts',
+      'scripts/model-relay-recovery-evidence.ts',
       'docs/runbooks/ecs-verified-compose-deploy.md',
       'docs/runbooks/ecs-release-evidence-bundle-attester.md',
       'docs/runbooks/ecs-release-image-build.md',
@@ -70,6 +74,7 @@ describe('ECS candidate bundle contract', () => {
     for (const path of [
       'infra/scripts/render-ecs-production-compose.sh',
       'infra/scripts/stage-verified-ecs-release.sh',
+      'infra/scripts/check-ecs-storage-budget.sh',
       'infra/scripts/deploy-verified-ecs-compose.sh',
       'infra/scripts/rollback-ecs-compose.sh',
       'infra/scripts/invoke-ecs-automatic-rollback.sh',

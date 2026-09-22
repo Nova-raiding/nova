@@ -9,12 +9,16 @@ import {
   opsRestPost,
   purgeLocalOpsCredentialsForManagedSession,
   readOpsConnectionConfig,
+  resolveManagedOpsLoginUrl,
   resolveManagedOpsSession,
   rpcForWorkspace,
   rpcWithMeta,
   saveOpsConnectionConfig,
 } from "./opsClient.js";
 import type { OpsRequestError } from "../types/ops.js";
+import { renderToStaticMarkup } from "react-dom/server";
+import { createElement } from "react";
+import { ManagedOpsReauthentication } from "../components/ManagedOpsReauthentication.js";
 
 const storage = () => ({ getItem: (_key: string) => "", setItem: (_key: string, _value: string) => undefined, removeItem: (_key: string) => undefined, clear: () => undefined });
 
@@ -27,6 +31,27 @@ describe("workspace RPC boundary", () => {
     expect(resolveManagedOpsSession({ PROD: true, VITE_OPS_AUTH_MODE: "oidc" })).toBe(true);
     expect(resolveManagedOpsSession({ PROD: false, VITE_OPS_AUTH_MODE: "oidc" })).toBe(true);
     expect(resolveManagedOpsSession({ PROD: false, VITE_OPS_AUTH_MODE: "local" })).toBe(false);
+  });
+
+  it("uses only an explicitly configured safe SSO entry and fails closed when it is absent", () => {
+    expect(resolveManagedOpsLoginUrl({}, "https://ops.yxsona.com")).toBeUndefined();
+    expect(resolveManagedOpsLoginUrl({ VITE_OPS_LOGIN_URL: "/auth/login?return_to=%2Fops%2Foverview" }, "https://ops.yxsona.com"))
+      .toBe("https://ops.yxsona.com/auth/login?return_to=%2Fops%2Foverview");
+    expect(resolveManagedOpsLoginUrl({ VITE_OPS_LOGIN_URL: "https://idp.example.test/authorize?client_id=ops" }, "https://ops.yxsona.com"))
+      .toBe("https://idp.example.test/authorize?client_id=ops");
+    expect(resolveManagedOpsLoginUrl({ VITE_OPS_LOGIN_URL: "http://idp.example.test/authorize" }, "https://ops.yxsona.com")).toBeUndefined();
+    expect(resolveManagedOpsLoginUrl({ VITE_OPS_LOGIN_URL: "https://user:secret@idp.example.test/authorize" }, "https://ops.yxsona.com")).toBeUndefined();
+  });
+
+  it("does not offer a reload loop when the managed SSO entry is missing", () => {
+    const blocked = renderToStaticMarkup(createElement(ManagedOpsReauthentication, { detail: "UNAUTHENTICATED" }));
+    expect(blocked).toContain("组织登录入口未配置");
+    expect(blocked).toContain("当前发布未配置可验证的组织 SSO 登录地址");
+    expect(blocked).toContain("disabled");
+
+    const configured = renderToStaticMarkup(createElement(ManagedOpsReauthentication, { onReauthenticate: () => undefined }));
+    expect(configured).toContain("重新登录组织账号");
+    expect(configured).not.toContain("当前发布未配置");
   });
 
   it("removes persisted local bearer credentials when the managed bundle starts", () => {

@@ -74,6 +74,28 @@ fi
 [ "${CAPACITY_CAPTURE_TARGET_KIND:-}" = isolated_preproduction ] || { echo 'capture requires CAPACITY_CAPTURE_TARGET_KIND=isolated_preproduction' >&2; exit 2; }
 [ "${CAPACITY_CAPTURE_CONFIRM:-}" = "$RELEASE_ID" ] || { echo "capture requires CAPACITY_CAPTURE_CONFIRM=$RELEASE_ID" >&2; exit 2; }
 : "${CAPACITY_WORKLOAD_TOKEN:?CAPACITY_WORKLOAD_TOKEN is required for capture}"
+: "${CAPACITY_CAPTURE_EXPECTED_GIT_SHA:?CAPACITY_CAPTURE_EXPECTED_GIT_SHA is required for capture}"
+printf '%s' "$CAPACITY_CAPTURE_EXPECTED_GIT_SHA" | grep -Eq '^[0-9a-f]{40}$' || { echo 'CAPACITY_CAPTURE_EXPECTED_GIT_SHA must be a full lowercase Git SHA' >&2; exit 2; }
+
+# Bind the target to the exact reviewed release before sending any load. The
+# identity probe is a single GET, does not follow redirects, and fails closed.
+CAPACITY_CAPTURE_TARGET_URL="$CAPACITY_CAPTURE_TARGET_URL" \
+CAPACITY_CAPTURE_RELEASE_ID="$RELEASE_ID" \
+CAPACITY_CAPTURE_EXPECTED_GIT_SHA="$CAPACITY_CAPTURE_EXPECTED_GIT_SHA" \
+CAPACITY_WORKLOAD_TOKEN="$CAPACITY_WORKLOAD_TOKEN" node --input-type=module <<'NODE'
+const base = new URL(process.env.CAPACITY_CAPTURE_TARGET_URL)
+const response = await fetch(new URL('/releasez', base), {
+  redirect: 'manual',
+  headers: { authorization: `Bearer ${process.env.CAPACITY_WORKLOAD_TOKEN}` },
+})
+if (!response.ok) throw new Error(`capacity target release identity probe failed with HTTP ${response.status}`)
+const body = await response.json()
+const release = body?.data?.release
+if (release?.release_id !== process.env.CAPACITY_CAPTURE_RELEASE_ID) throw new Error('capacity target release_id does not match the requested release')
+if (release?.release_git_sha !== process.env.CAPACITY_CAPTURE_EXPECTED_GIT_SHA) throw new Error('capacity target release_git_sha does not match the reviewed commit')
+if (release?.ready !== true && body?.data?.ready !== true) throw new Error('capacity target release identity is not ready')
+console.log(`capacity target identity verified: ${release.release_id} ${release.release_git_sha}`)
+NODE
 
 # The raw report declares api_http_and_job_admission coverage, so the isolated
 # target must actually exercise job admission instead of recording zero jobs.

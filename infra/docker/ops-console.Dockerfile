@@ -4,6 +4,7 @@ ARG OPS_CONSOLE_BUILD_MODE=production
 ARG VITE_API_BASE
 ARG VITE_BASE=/
 ARG VITE_OPS_LOCAL_SESSION=false
+ARG VITE_OPS_LOGIN_URL
 RUN set -eu; \
     api_base="${VITE_API_BASE:-}"; \
     test -n "$api_base" || { echo >&2 "VITE_API_BASE is required"; exit 1; }; \
@@ -26,6 +27,7 @@ ARG OPS_CONSOLE_BUILD_MODE
 ARG VITE_API_BASE
 ARG VITE_BASE
 ARG VITE_OPS_LOCAL_SESSION
+ARG VITE_OPS_LOGIN_URL
 ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 ENV NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY
 COPY package.json package-lock.json ./
@@ -36,7 +38,7 @@ COPY packages/contracts packages/contracts
 COPY packages/application/src/spreadsheet-batch.ts packages/application/src/spreadsheet-batch.ts
 COPY apps/ops-console apps/ops-console
 RUN if [ "$OPS_CONSOLE_BUILD_MODE" = production ]; then auth_mode=oidc; else auth_mode=local; fi; \
-    VITE_API_BASE="$VITE_API_BASE" VITE_BASE="$VITE_BASE" VITE_OPS_AUTH_MODE="$auth_mode" VITE_OPS_BUILD_MODE="$OPS_CONSOLE_BUILD_MODE" VITE_OPS_LOCAL_SESSION="$VITE_OPS_LOCAL_SESSION" npm run build --workspace apps/ops-console
+    VITE_API_BASE="$VITE_API_BASE" VITE_BASE="$VITE_BASE" VITE_OPS_AUTH_MODE="$auth_mode" VITE_OPS_BUILD_MODE="$OPS_CONSOLE_BUILD_MODE" VITE_OPS_LOCAL_SESSION="$VITE_OPS_LOCAL_SESSION" VITE_OPS_LOGIN_URL="$VITE_OPS_LOGIN_URL" npm run build --workspace apps/ops-console
 ARG RELEASE_ID=unbound
 ARG RELEASE_GIT_SHA=unbound
 # Non-secret, build-time identity. Never infer UI freshness from its API proxy.

@@ -20,7 +20,7 @@ import { Button, Card, Typography } from "antd";
 export function ManagedOpsReauthentication({ detail, loading, onReauthenticate }: {
   detail?: string;
   loading?: boolean;
-  onReauthenticate: () => void;
+  onReauthenticate?: () => void;
 }) {
   return (
     <main className="ops-login-page" aria-labelledby="ops-sso-reauth-title">
@@ -35,9 +35,14 @@ export function ManagedOpsReauthentication({ detail, loading, onReauthenticate }
           <Typography.Paragraph>
             请通过组织登录入口重新完成认证，再回到本页继续运营操作。若重新认证后仍停留在此页，请联系平台管理员检查网关会话。
           </Typography.Paragraph>
-          <Button type="primary" size="large" block style={{ minHeight: 44 }} loading={loading} onClick={onReauthenticate}>
-            重新登录组织账号
+          <Button type="primary" size="large" block style={{ minHeight: 44 }} loading={loading} disabled={!onReauthenticate} onClick={onReauthenticate}>
+            {onReauthenticate ? "重新登录组织账号" : "组织登录入口未配置"}
           </Button>
+          {!onReauthenticate ? (
+            <Typography.Paragraph type="danger" role="alert">
+              当前发布未配置可验证的组织 SSO 登录地址，请联系平台管理员修复发布配置。
+            </Typography.Paragraph>
+          ) : null}
           {detail ? (
             <details>
               <summary>查看失败详情（供管理员排查）</summary>

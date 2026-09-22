@@ -42,6 +42,24 @@
 SHA-256 的不可变原始 artifact。配置存在、鉴权 key 已注入或一次直连成功均不等价
 于 request/usage/cost/error 闭环；不得人为让生产 relay 故障来补证据。
 
+低成本执行顺序固定为：先 `--modalities=text,ocr`；确认真实 request ID、token
+usage 和成本后，再由人工显式设置 `MODEL_RELAY_CANARY_CONFIRM=true` 执行 image、
+image_edit，最后执行最短 3 秒 video。媒体探针不得自动重跑；异步 video 优先使用
+`MODEL_RELAY_CANARY_VIDEO_TASK_ID` 轮询既有任务。503 恢复只能从自然发生或批准演练
+留下的两个真实 capture 归档：
+
+```sh
+npx tsx scripts/model-relay-recovery-evidence.ts \
+  --failure /受保护路径/relay-503.json \
+  --recovery /受保护路径/relay-recovered.json \
+  --artifact-root /受保护证据根目录 \
+  --release-id release-9df84aa1 \
+  --output /受保护路径/release-9df84aa1-relay-recovery.json
+```
+
+该命令不发网络请求，只验证并封存已有响应；随后将输出路径作为
+`MODEL_RELAY_ERROR_RECOVERY_PATH` 交给五模态 canary。
+
 ### 4.1 容量采集入口（默认不联网）
 
 容量采集只允许针对隔离预发环境。默认 `plan` 仅输出不可执行计划，不发送请求；
@@ -57,7 +75,9 @@ sh infra/scripts/capture-ecs-capacity-evidence.sh plan
 
 经容量窗口、隔离预发资源和影响范围人工批准后，才可额外设置
 `CAPACITY_CAPTURE_TARGET_KIND=isolated_preproduction`、
-`CAPACITY_CAPTURE_CONFIRM=release-9df84aa1` 与受保护 token，并把动作改为 `capture`。
+`CAPACITY_CAPTURE_CONFIRM=release-9df84aa1`、`CAPACITY_CAPTURE_EXPECTED_GIT_SHA=<完整40位提交>`
+与受保护 token，并把动作改为 `capture`。采集器会先请求 `/releasez`，且仅在
+release ID、Git SHA 和 ready 身份均与候选一致时才发送负载；身份请求与容量请求均不跟随重定向。
 隔离环境必须预先创建该 profile 所需的 `ws_capacity_0..N` 工作区，并为每个工作区绑定淘宝测试账号；采集会真实执行任务创建与 job admission，缺少账号时必须失败，不能把零任务报告当作覆盖证据。
 该入口只采集 API HTTP 与 job admission 原始观测，强制保留 `cloud_gate=false`，
 不能替代平台真实流量、故障注入、租户噪声隔离、六小时稳态和人工签署；最终

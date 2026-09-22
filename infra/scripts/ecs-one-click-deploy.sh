@@ -215,6 +215,7 @@ for name in RENDERED_COMPOSE_PATH PRODUCTION_CONFIG_PATH ECS_DEPLOY_STATE_DIR EC
   [ -n "$value" ] || missing="$missing $name"
 done
 [ -z "$missing" ] || { echo "one-click deployment configuration is incomplete; missing:$missing" >&2; exit 2; }
+sh "$root/infra/scripts/check-ecs-storage-budget.sh"
 if [ ! -d "$destination" ]; then
   ECS_CANDIDATE_BUNDLE_DIR="$ECS_CANDIDATE_BUNDLE_DIR" ECS_RELEASES_ROOT="$releases" RELEASE_ID="$RELEASE_ID" \
     sh "$root/infra/scripts/stage-verified-ecs-release.sh"

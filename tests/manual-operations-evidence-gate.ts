@@ -3,6 +3,9 @@ import { readFileSync } from 'node:fs'
 type ManualEvidence = {
   schema_version?: string
   release_id?: string
+  workspace_id?: string
+  manual_publish_report_id?: string
+  verified_by?: string
   environment?: string
   workflow?: string
   official_api_receipt?: boolean
@@ -24,6 +27,9 @@ export function validateManualOperationsEvidence(value: unknown, expectedRelease
   if (document.schema_version !== 'manual-operations-evidence/1') errors.push('schema_version must be manual-operations-evidence/1')
   if (!document.release_id) errors.push('release_id is required')
   if (expectedReleaseId && document.release_id !== expectedReleaseId) errors.push(`release_id must match ${expectedReleaseId}`)
+  if (!document.workspace_id?.trim()) errors.push('workspace_id is required')
+  if (!document.manual_publish_report_id?.trim()) errors.push('manual_publish_report_id is required')
+  if (!document.verified_by?.trim()) errors.push('verified_by is required')
   if (document.environment !== 'production') errors.push('environment must be production')
   if (document.workflow !== 'public_import_manual_publish') errors.push('workflow must be public_import_manual_publish')
   if (document.official_api_receipt !== false) errors.push('official_api_receipt must be false')

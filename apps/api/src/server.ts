@@ -9376,6 +9376,9 @@ export function validateManualOperationsEvidenceRuntime(document: unknown, optio
   const value = document as Record<string, unknown>
   if (value.schema_version !== 'manual-operations-evidence/1') errors.push('schema_version must be manual-operations-evidence/1')
   if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push('release_id must match RELEASE_ID')
+  if (typeof value.workspace_id !== 'string' || !value.workspace_id.trim()) errors.push('workspace_id is required')
+  if (typeof value.manual_publish_report_id !== 'string' || !value.manual_publish_report_id.trim()) errors.push('manual_publish_report_id is required')
+  if (typeof value.verified_by !== 'string' || !value.verified_by.trim()) errors.push('verified_by is required')
   if (value.environment !== 'production') errors.push('environment must be production')
   if (value.workflow !== 'public_import_manual_publish') errors.push('workflow must be public_import_manual_publish')
   if (value.official_api_receipt !== false) errors.push('official_api_receipt must be false')

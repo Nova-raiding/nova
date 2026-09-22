@@ -537,7 +537,7 @@ export async function main() {
           ...(errorRecovery ? { error_recovery: errorRecovery } : {}),
         }
         const evidencePath = process.env.MODEL_RELAY_EVIDENCE_PATH?.trim()
-        if (evidencePath) writeFileSync(evidencePath, JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600 })
+        if (evidencePath) writeFileSync(evidencePath, JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600, flag: 'wx' })
         console.log(JSON.stringify(evidence, null, 2))
         if (results.some(result => result.state !== 'ready' || result.providerRequestId === undefined || result.usageObserved !== true || result.costObserved !== true)) process.exitCode = 1
         if (process.env.NODE_ENV?.trim() === 'production' && (!artifactRoot || results.some(result => !result.evidence_ref))) process.exitCode = 1

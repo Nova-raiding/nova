@@ -68,7 +68,10 @@ infra/scripts/pilot-compose-preflight.sh
 infra/scripts/render-ecs-production-compose.sh
 infra/scripts/stage-verified-ecs-release.sh
 infra/scripts/ecs-one-click-deploy.sh
+infra/scripts/check-ecs-storage-budget.sh
 infra/scripts/build-ecs-release-images.sh
+infra/scripts/prepare-ecs-eight-image-set.mjs
+infra/scripts/capture-manual-operations-evidence.sh
 infra/scripts/deploy-verified-ecs-compose.sh
 infra/scripts/rollback-ecs-compose.sh
 infra/scripts/invoke-ecs-automatic-rollback.sh
@@ -97,6 +100,7 @@ infra/scripts/validate-production-config.sh
 scripts/collect-aliyun-oss-control-plane.ts
 scripts/object-storage-canary.ts
 scripts/produce-object-storage-evidence.ts
+scripts/model-relay-recovery-evidence.ts
 tests/ecs-object-storage-evidence-preflight.test.ts
 tests/ecs-pilot-api-replica-parity.test.ts
 tests/ecs-oss-cutover-overlay.test.ts

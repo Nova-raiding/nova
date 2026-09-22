@@ -690,7 +690,9 @@ export async function loadMigrations(): Promise<Migration[]> {
   const repairControlPlaneIdentityAcl = await readFile(new URL('./migrations/237_repair_control_plane_identity_acl.sql', import.meta.url), 'utf8')
   const repairDurableAuthorizationAcl = await readFile(new URL('./migrations/238_repair_durable_authorization_acl.sql', import.meta.url), 'utf8')
   const repairMcpOauthOpsAcl = await readFile(new URL('./migrations/239_repair_mcp_oauth_ops_acl.sql', import.meta.url), 'utf8')
-  const repairCreativePointAllocationReservationIndex = await readFile(new URL('./migrations/240_repair_creative_point_allocation_reservation_index.sql', import.meta.url), 'utf8')
+  const revokeMcpOauthAppAcl = await readFile(new URL('./migrations/240_revoke_mcp_oauth_app_acl.sql', import.meta.url), 'utf8')
+  const repairOpsDirectoryFinanceReadAcl = await readFile(new URL('./migrations/241_repair_ops_directory_finance_read_acl.sql', import.meta.url), 'utf8')
+  const repairCreativePointAllocationReservationIndex = await readFile(new URL('./migrations/242_repair_creative_point_allocation_reservation_index.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -931,7 +933,9 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 237, name: 'repair_control_plane_identity_acl', sql: repairControlPlaneIdentityAcl },
     { version: 238, name: 'repair_durable_authorization_acl', sql: repairDurableAuthorizationAcl },
     { version: 239, name: 'repair_mcp_oauth_ops_acl', sql: repairMcpOauthOpsAcl },
-    { version: 240, name: 'repair_creative_point_allocation_reservation_index', sql: repairCreativePointAllocationReservationIndex, transactional: false },
+    { version: 240, name: 'revoke_mcp_oauth_app_acl', sql: revokeMcpOauthAppAcl },
+    { version: 241, name: 'repair_ops_directory_finance_read_acl', sql: repairOpsDirectoryFinanceReadAcl },
+    { version: 242, name: 'repair_creative_point_allocation_reservation_index', sql: repairCreativePointAllocationReservationIndex, transactional: false },
   ]
 }
 

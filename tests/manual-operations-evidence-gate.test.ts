@@ -5,6 +5,7 @@ const now = new Date('2026-09-21T08:00:00Z')
 const evidence = {
   schema_version: 'manual-operations-evidence/1', release_id: 'release-1', environment: 'production',
   workflow: 'public_import_manual_publish', official_api_receipt: false, tenant_isolation_verified: true,
+  workspace_id: 'workspace-1', manual_publish_report_id: 'manual-report-1', verified_by: 'release-operator',
   simulated: false, generated_at: '2026-09-21T07:00:00Z', expires_at: '2026-09-22T07:00:00Z',
   checks: [{ name: 'tenant_scope', status: 'pass' }, { name: 'manual_report', status: 'pass' }, { name: 'merchant_visibility', status: 'pass' }],
 }
