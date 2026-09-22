@@ -16,6 +16,13 @@ action=${1:-deploy}
 : "${ECS_BUILD_CACHE_UNTIL:=24h}"
 
 case "$action" in deploy|cleanup|report) ;; *) echo 'usage: ecs-one-click-deploy.sh [deploy|cleanup|report]' >&2; exit 2 ;; esac
+# `report` is unconditionally read-only, even when invoked from an environment
+# that used YES for a preceding cleanup. It also intentionally does not acquire
+# the mutation lock below.
+if [ "$action" = report ]; then
+  CONFIRM_ECS_STORAGE_CLEANUP=NO
+  export CONFIRM_ECS_STORAGE_CLEANUP
+fi
 printf '%s' "$ECS_RELEASE_KEEP_COUNT" | grep -Eq '^[1-9][0-9]?$' || { echo 'ECS_RELEASE_KEEP_COUNT must be an integer from 1 to 99' >&2; exit 2; }
 printf '%s' "$ECS_CANDIDATE_KEEP_COUNT" | grep -Eq '^[1-9][0-9]?$' || { echo 'ECS_CANDIDATE_KEEP_COUNT must be an integer from 1 to 99' >&2; exit 2; }
 if [ "$action" = deploy ]; then

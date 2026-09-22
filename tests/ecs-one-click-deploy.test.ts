@@ -57,6 +57,39 @@ describe('ECS one-click deployment storage policy', () => {
     expect(readFileSync(join(protectedRelease, '.candidate-identity'), 'utf8')).toContain('release-protected')
   })
 
+  it('forces report to remain read-only even when cleanup confirmation leaks in', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-release-report-')))
+    const bundles = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-candidate-report-')))
+    chmodSync(root, 0o700); chmodSync(bundles, 0o700)
+    const stale = release(root, 'release-stale', 1)
+    release(root, 'release-current', 2)
+    const staleGit = '4'.repeat(40)
+    const staleBundle = candidate(bundles, 'ecs-stale', staleGit, 1)
+    candidate(bundles, 'ecs-current', '5'.repeat(40), 2)
+    const bin = join(root, 'bin'); mkdirSync(bin)
+    const dockerLog = join(root, 'docker.log')
+    writeFileSync(join(bin, 'docker'), `#!/bin/sh
+printf '%s\n' "$*" >> '${dockerLog}'
+case "$1 $2" in
+  'system df') exit 0 ;;
+  'builder prune') exit 99 ;;
+esac
+exit 0
+`, { mode: 0o755 })
+
+    const result = spawnSync('sh', [script, 'report'], {
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ECS_RELEASES_ROOT: root, ECS_CANDIDATES_ROOT: bundles, ECS_RELEASE_KEEP_COUNT: '1', ECS_CANDIDATE_KEEP_COUNT: '1', CONFIRM_ECS_STORAGE_CLEANUP: 'YES' },
+      encoding: 'utf8',
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('WOULD_DELETE\trelease-stale')
+    expect(result.stdout).toContain(`WOULD_DELETE_CANDIDATE\t${staleGit}`)
+    expect(spawnSync('test', ['-e', stale]).status).toBe(0)
+    expect(spawnSync('test', ['-e', staleBundle]).status).toBe(0)
+    expect(readFileSync(dockerLog, 'utf8')).toContain('system df')
+    expect(readFileSync(dockerLog, 'utf8')).not.toContain('builder prune')
+  })
+
   it('deletes only validated stale release directories after explicit confirmation', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecs-release-retention-')))
     chmodSync(root, 0o700)
