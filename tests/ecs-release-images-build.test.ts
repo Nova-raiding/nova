@@ -1,0 +1,108 @@
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
+
+const script = resolve('infra/scripts/build-ecs-release-images.sh')
+
+describe('bounded ECS release image builder', () => {
+  it('builds the complete repository-owned image set, binds source identity, and bounds cache', () => {
+    const source = readFileSync(script, 'utf8')
+    for (const artifact of ['merchant-api', 'merchant-worker', 'merchant-ui', 'merchant-ops-ui', 'payment-gateway', 'pilot-gateway']) {
+      expect(source).toContain(`build_image ${artifact} `)
+    }
+    expect(source).toContain('git -C "$root" archive --format=tar "$revision" > "$archive"')
+    expect(source).toContain('cp "$source_archive" "$archive"')
+    expect(source).toContain('candidate source archive digest mismatch')
+    expect(source).toContain('candidate identity release ID does not match RELEASE_ID')
+    expect(source).toContain('[ ! -L "$source_archive" ]')
+    expect(source).toContain('com.storenova.release.source_sha256=sha256:$source_sha')
+    expect(source).toContain('docker builder prune -f --keep-storage "$cache_limit"')
+    expect(source).toContain('docker image rm $built_tags')
+    expect(source).not.toMatch(/docker (compose|stack|run) /u)
+    expect(source).toContain("atomicWrite('repository-image-digests.json'")
+    expect(source).toContain("flag: 'wx'")
+    expect(source).toContain('ECS release image output directory must not already exist')
+  })
+
+  it('refuses mutable or unsafe release identity before Docker is invoked', () => {
+    const result = spawnSync('sh', [script], {
+      env: {
+        ...process.env,
+        ECS_RELEASE_GIT_SHA: 'a'.repeat(40),
+        RELEASE_ID: 'not-a-release',
+        ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
+      },
+      encoding: 'utf8',
+    })
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('RELEASE_ID must be a safe release-* identifier')
+  })
+
+  it('refuses a pre-created output path before pushing images', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ecs-release-existing-output-'))
+    const result = spawnSync('sh', [script], {
+      env: {
+        ...process.env,
+        ECS_RELEASE_GIT_SHA: spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(),
+        RELEASE_ID: 'release-existing',
+        ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
+        ECS_RELEASE_IMAGE_OUTPUT_DIR: directory,
+      },
+      encoding: 'utf8',
+    })
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('output directory must not already exist')
+  })
+
+  it('publishes immutable references and an atomic six-image digest manifest', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ecs-release-image-build-'))
+    const root = join(directory, 'repo')
+    const bin = join(directory, 'bin')
+    const output = join(directory, 'output')
+    mkdirSync(join(root, 'infra/scripts'), { recursive: true })
+    mkdirSync(join(root, 'infra/docker'), { recursive: true })
+    mkdirSync(join(root, 'services/payment-gateway'), { recursive: true })
+    mkdirSync(bin)
+    writeFileSync(join(root, 'infra/scripts/build-ecs-release-images.sh'), readFileSync(script))
+    chmodSync(join(root, 'infra/scripts/build-ecs-release-images.sh'), 0o755)
+    for (const path of ['infra/docker/api.Dockerfile', 'infra/docker/worker.Dockerfile', 'infra/docker/ui.Dockerfile', 'infra/docker/ops-console.Dockerfile', 'infra/docker/pilot-gateway.Dockerfile', 'services/payment-gateway/Dockerfile']) {
+      writeFileSync(join(root, path), 'FROM scratch\n')
+    }
+    spawnSync('git', ['init', '-q'], { cwd: root })
+    spawnSync('git', ['add', '.'], { cwd: root })
+    spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'release'], { cwd: root })
+    const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout.trim()
+    const log = join(directory, 'docker.log')
+    const digest = `sha256:${'d'.repeat(64)}`
+    writeFileSync(join(bin, 'docker'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\ncase "$1 $2" in\n  'builder prune'|'build --pull=false'|'push registry.example.com/storenova/merchant-api:release-test'|'push registry.example.com/storenova/merchant-worker:release-test'|'push registry.example.com/storenova/merchant-ui:release-test'|'push registry.example.com/storenova/merchant-ops-ui:release-test'|'push registry.example.com/storenova/payment-gateway:release-test'|'push registry.example.com/storenova/pilot-gateway:release-test'|'image rm') exit 0;;\n  'image inspect')\n    case "$*" in\n      *org.opencontainers.image.revision*) printf '%s\\n' '${revision}' ;;\n      *com.storenova.release.id*) printf '%s\\n' 'release-test' ;;\n      *com.storenova.release.source_sha256*) printf '%s\\n' "$SOURCE_SHA" ;;\n      *RepoDigests*) printf '%s@${digest}\\n' "${'$'}{5%:release-test}" ;;\n    esac\n    exit 0;;\nesac\nexit 1\n`)
+    chmodSync(join(bin, 'docker'), 0o755)
+    const archive = spawnSync('git', ['archive', '--format=tar', revision], { cwd: root }).stdout
+    const sha = spawnSync('shasum', ['-a', '256'], { input: archive, encoding: 'utf8' }).stdout.split(/\s/u)[0]
+
+    const result = spawnSync('sh', [join(root, 'infra/scripts/build-ecs-release-images.sh')], {
+      cwd: directory,
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH ?? ''}`,
+        SOURCE_SHA: `sha256:${sha}`,
+        ECS_RELEASE_GIT_SHA: revision,
+        RELEASE_ID: 'release-test',
+        ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
+        ECS_RELEASE_IMAGE_OUTPUT_DIR: output,
+        ECS_BUILD_CACHE_KEEP_STORAGE: '1GB',
+      },
+      encoding: 'utf8',
+    })
+    expect(result.status, result.stderr).toBe(0)
+    const manifest = JSON.parse(readFileSync(join(output, 'release-images.json'), 'utf8'))
+    expect(manifest.release_git_sha).toBe(revision)
+    expect(Object.keys(manifest.image_digests)).toHaveLength(6)
+    expect(Object.values(manifest.image_digests)).toEqual(Array(6).fill(digest))
+    const dockerLog = readFileSync(log, 'utf8')
+    expect(dockerLog.match(/builder prune -f --keep-storage 1GB/gu)).toHaveLength(2)
+    expect(dockerLog).toContain('--label org.opencontainers.image.revision=')
+    expect(dockerLog).not.toMatch(/compose| run /u)
+  })
+})

@@ -15,6 +15,10 @@ action=${1:-deploy}
 
 case "$action" in deploy|cleanup|report) ;; *) echo 'usage: ecs-one-click-deploy.sh [deploy|cleanup|report]' >&2; exit 2 ;; esac
 printf '%s' "$ECS_RELEASE_KEEP_COUNT" | grep -Eq '^[1-9][0-9]?$' || { echo 'ECS_RELEASE_KEEP_COUNT must be an integer from 1 to 99' >&2; exit 2; }
+if [ "$action" = deploy ]; then
+  : "${RELEASE_ID:?RELEASE_ID is required}"
+  printf '%s' "$RELEASE_ID" | grep -Eq '^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' || { echo 'unsafe RELEASE_ID' >&2; exit 2; }
+fi
 [ -d "$ECS_RELEASES_ROOT" ] && [ ! -L "$ECS_RELEASES_ROOT" ] || { echo 'ECS_RELEASES_ROOT must be an existing non-symlink directory' >&2; exit 2; }
 releases=$(CDPATH='' cd -- "$ECS_RELEASES_ROOT" && pwd -P)
 [ "$releases" = "$ECS_RELEASES_ROOT" ] || { echo 'ECS_RELEASES_ROOT must be absolute and canonical' >&2; exit 2; }
@@ -26,8 +30,27 @@ release_mode=$(mode_of "$releases"); case "$release_mode" in *[2367][0-7]|*[2367
 
 protected_file=$(mktemp "${TMPDIR:-/tmp}/merchant-protected-releases.XXXXXXXX")
 candidates_file=$(mktemp "${TMPDIR:-/tmp}/merchant-release-candidates.XXXXXXXX")
-cleanup_temp() { rm -f -- "$protected_file" "$candidates_file"; }
+cleanup_temp() {
+  rm -f -- "$protected_file" "$candidates_file"
+}
 trap cleanup_temp EXIT HUP INT TERM
+
+# Serialize the complete mutating workflow, not just the Compose cutover. The
+# inner deploy runner has its own production lock, but it releases that lock
+# before this wrapper prunes releases. Without this outer lock, another
+# one-click rollout could stage a release that the first process then removes.
+if [ "$action" = deploy ] || [ "$action" = cleanup ]; then
+  orchestration_lock="$releases/.ecs-one-click-mutation.lock"
+  command -v flock >/dev/null 2>&1 || { echo 'ECS one-click mutation requires flock' >&2; exit 2; }
+  if [ ! -e "$orchestration_lock" ] && [ ! -L "$orchestration_lock" ]; then
+    (umask 077; set -C; : > "$orchestration_lock") 2>/dev/null || true
+  fi
+  [ -f "$orchestration_lock" ] && [ ! -L "$orchestration_lock" ] || { echo 'ECS one-click lock must be a regular non-symlink file' >&2; exit 2; }
+  [ "$(owner_of "$orchestration_lock")" = "$(id -u)" ] || { echo 'ECS one-click lock must be owned by the invoking user' >&2; exit 2; }
+  lock_mode=$(mode_of "$orchestration_lock"); case "$lock_mode" in *[2367][0-7]|*[2367]) echo 'ECS one-click lock must not be writable by group or other users' >&2; exit 2 ;; esac
+  exec 8>>"$orchestration_lock"
+  flock -n 8 || { echo 'another ECS one-click deploy or cleanup is already in progress' >&2; exit 1; }
+fi
 
 protect() {
   value=$1
@@ -104,7 +127,6 @@ prune_build_cache() {
   command -v docker >/dev/null 2>&1 || return 0
   if [ "${CONFIRM_ECS_STORAGE_CLEANUP:-NO}" = YES ]; then
     docker builder prune -f --filter "until=$ECS_BUILD_CACHE_UNTIL" --keep-storage "$ECS_BUILD_CACHE_KEEP_STORAGE"
-    docker image prune -f
   else
     docker system df
   fi
@@ -118,15 +140,25 @@ if [ "$action" = report ] || [ "$action" = cleanup ]; then
 fi
 
 : "${ECS_CANDIDATE_BUNDLE_DIR:?ECS_CANDIDATE_BUNDLE_DIR is required}"
-: "${RELEASE_ID:?RELEASE_ID is required}"
+
 destination="$releases/$RELEASE_ID"
+case "$destination" in "$releases"/*) ;; *) echo 'release destination escaped releases root' >&2; exit 2 ;; esac
+[ ! -L "$destination" ] || { echo 'release destination must not be a symlink' >&2; exit 2; }
+
+# Fail before the expensive npm install/build staging step when the host
+# deployment contract is incomplete. The deploy runner still validates values,
+# permissions, checksums, and every downstream evidence input independently.
+missing=
+for name in RENDERED_COMPOSE_PATH PRODUCTION_CONFIG_PATH ECS_DEPLOY_STATE_DIR ECS_PREIDENTITY_SERVICE_MAP_PATH ECS_DEPLOY_LOCK_PATH ECS_ROLLBACK_ENTRYPOINT ECS_ROLLBACK_PLAN_PATH ECS_ROLLBACK_COMPOSE_PATH ECS_ROLLBACK_ENV_FILE ECS_ROLLBACK_IMAGE_DIGESTS_JSON ECS_ROLLBACK_STATE_PATH PRODUCTION_API_BASE_URL PRODUCTION_APPROVED_ORIGIN PRODUCTION_CANARY_BEARER_TOKEN PRODUCTION_CANARY_WORKSPACE_ID POST_DEPLOY_CANARY_OUTPUT IMAGE_DIGESTS_JSON DEPLOYMENT_NONCE DATABASE_URL; do
+  value=$(printenv "$name" 2>/dev/null || true)
+  [ -n "$value" ] || missing="$missing $name"
+done
+[ -z "$missing" ] || { echo "one-click deployment configuration is incomplete; missing:$missing" >&2; exit 2; }
 if [ ! -d "$destination" ]; then
   ECS_CANDIDATE_BUNDLE_DIR="$ECS_CANDIDATE_BUNDLE_DIR" ECS_RELEASES_ROOT="$releases" RELEASE_ID="$RELEASE_ID" \
     sh "$root/infra/scripts/stage-verified-ecs-release.sh"
 fi
 [ -f "$destination/.candidate-identity" ] || { echo 'staged release identity is missing' >&2; exit 2; }
-: "${RENDERED_COMPOSE_PATH:?RENDERED_COMPOSE_PATH must point to the reviewed immutable Compose file}"
-: "${PRODUCTION_CONFIG_PATH:?PRODUCTION_CONFIG_PATH is required}"
 echo "deploying verified release $RELEASE_ID from $destination"
 (
   cd "$destination"

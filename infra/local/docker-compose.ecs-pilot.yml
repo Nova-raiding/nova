@@ -125,11 +125,21 @@ x-ecs-node-hardening: &ecs-node-hardening
     - /opt/merchant-deploy/deploy/secrets/postgres_server.crt:/run/secrets/postgres_server.crt:ro
   tmpfs:
     - "/tmp:rw,nosuid,nodev,noexec,size=64m"
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
 
 x-ecs-nginx-hardening: &ecs-nginx-hardening
   user: "101:101"
   security_opt: [no-new-privileges:true]
   cap_drop: [ALL]
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
 
 services:
   alert-receiver:
@@ -167,6 +177,11 @@ services:
     read_only: true
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     tmpfs:
       - "/tmp:rw,nosuid,nodev,noexec,size=32m"
     restart: unless-stopped
@@ -272,6 +287,7 @@ services:
       ASSET_STORAGE_QUOTA_BYTES: ${ASSET_STORAGE_QUOTA_BYTES:?ASSET_STORAGE_QUOTA_BYTES is required}
       PLUGIN_WRITE_ENABLED: ${PLUGIN_WRITE_ENABLED:-false}
       CAPABILITY_EVIDENCE_PATH: /run/release-evidence/platform-capability.json
+      CAPACITY_REPORT_PATH: /run/release-evidence/capacity-report.json
       VAULT_ADDR: ${VAULT_ADDR:-}
       VAULT_TOKEN: ${VAULT_TOKEN:-}
       VAULT_NAMESPACE: ${VAULT_NAMESPACE:-}
@@ -499,6 +515,7 @@ services:
       DOUYIN_MEDIA_UPLOAD_EVIDENCE_VERIFIED_AT: ${DOUYIN_MEDIA_UPLOAD_EVIDENCE_VERIFIED_AT:-}
     volumes:
       - ${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required}:/run/release-evidence/platform-capability.json:ro
+      - ${CAPACITY_REPORT_PATH:?CAPACITY_REPORT_PATH is required}:/run/release-evidence/capacity-report.json:ro
       - /run/release-security/evidence-trust:/run/release-security/evidence-trust:ro
       - /opt/merchant-deploy/deploy/secrets/postgres_server.crt:/run/secrets/postgres_server.crt:ro
 
@@ -512,6 +529,7 @@ services:
     environment: *ecs-production-api-environment
     volumes:
       - ${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required}:/run/release-evidence/platform-capability.json:ro
+      - ${CAPACITY_REPORT_PATH:?CAPACITY_REPORT_PATH is required}:/run/release-evidence/capacity-report.json:ro
       - /run/release-security/evidence-trust:/run/release-security/evidence-trust:ro
       - /opt/merchant-deploy/deploy/secrets/postgres_server.crt:/run/secrets/postgres_server.crt:ro
 

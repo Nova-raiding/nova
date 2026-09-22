@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, readdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -224,6 +224,33 @@ describe('deployment operation scripts', () => {
     expect(source).not.toContain('eval ')
     expect(source).not.toContain('sh -c')
     expect(source).toContain('deployment/merchant-worker-automation')
+  })
+
+  it('plans ECS capacity capture without network activity and blocks production load', () => {
+    const script = 'infra/scripts/capture-ecs-capacity-evidence.sh'
+    const directory = mkdtempSync(join(tmpdir(), 'capacity-capture-'))
+    const output = join(directory, 'raw.json')
+    const env = {
+      RELEASE_ID: 'release-9df84aa1',
+      CAPACITY_PROFILE: 'pilot_50',
+      CAPACITY_CAPTURE_TARGET_URL: 'https://capacity-preprod.example.com',
+      CAPACITY_CAPTURE_OUTPUT: output,
+    }
+    const plan = JSON.parse(run(script, ['plan'], env))
+    expect(plan).toMatchObject({
+      network_activity: false,
+      release_id: 'release-9df84aa1',
+      target_kind: 'isolated_preproduction',
+      produces_cloud_gate_evidence: false,
+    })
+    expect(existsSync(output)).toBe(false)
+    expect(() => run(script, ['capture'], env)).toThrow(/CAPACITY_CAPTURE_TARGET_KIND/)
+    expect(() => run(script, ['plan'], { ...env, CAPACITY_CAPTURE_TARGET_URL: 'https://yxsona.com/api' })).toThrow(/forbidden against the production domains/)
+    const source = readFileSync(script, 'utf8')
+    expect(source).toContain('[ "${CAPACITY_CAPTURE_CONFIRM:-}" = "$RELEASE_ID" ]')
+    expect(source).toContain('CAPACITY_WORKLOAD_SETUP_JOBS=false')
+    expect(source).toContain('cloud_gate !== false')
+    expect(execFileSync('sh', ['-n', script], { encoding: 'utf8' })).toBe('')
   })
 
   it('requires an immutable rollback manifest and never executes operator-provided shell', () => {
@@ -860,6 +887,19 @@ describe('deployment operation scripts', () => {
     expect(pilot).toContain('MERCHANT_WORKSPACE_ID:?MERCHANT_WORKSPACE_ID is required for pilot preflight')
     expect(pilot).not.toContain('workspace-local-token')
     expect(pilot).not.toContain(':-ws_demo')
+  })
+
+  it('bounds Docker json-file logs for every ECS-only service class', () => {
+    const pilot = readFileSync('infra/local/docker-compose.ecs-pilot.yml', 'utf8')
+    const nodeHardening = pilot.slice(pilot.indexOf('x-ecs-node-hardening:'), pilot.indexOf('\nx-ecs-nginx-hardening:'))
+    const nginxHardening = pilot.slice(pilot.indexOf('x-ecs-nginx-hardening:'), pilot.indexOf('\nservices:'))
+    const paymentGateway = pilot.slice(pilot.indexOf('  payment-gateway:'), pilot.indexOf('\n  ui:'))
+
+    for (const serviceClass of [nodeHardening, nginxHardening, paymentGateway]) {
+      expect(serviceClass).toContain('driver: json-file')
+      expect(serviceClass).toContain('max-size: "10m"')
+      expect(serviceClass).toContain('max-file: "5"')
+    }
   })
 
   it('rejects rendered Kubernetes images without the release digest', () => {

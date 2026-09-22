@@ -36,6 +36,7 @@ describe('ECS candidate bundle contract', () => {
     for (const path of [
       'infra/scripts/render-ecs-production-compose.sh',
       'infra/scripts/stage-verified-ecs-release.sh',
+      'infra/scripts/build-ecs-release-images.sh',
       'infra/scripts/deploy-verified-ecs-compose.sh',
       'infra/scripts/rollback-ecs-compose.sh',
       'infra/scripts/invoke-ecs-automatic-rollback.sh',
@@ -61,6 +62,7 @@ describe('ECS candidate bundle contract', () => {
       'tests/worker-apk-repository.test.ts',
       'docs/runbooks/ecs-verified-compose-deploy.md',
       'docs/runbooks/ecs-release-evidence-bundle-attester.md',
+      'docs/runbooks/ecs-release-image-build.md',
     ]) expect(manifest).toContain(path)
   })
 

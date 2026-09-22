@@ -47,7 +47,7 @@ ECS_RELEASES_ROOT=/srv/merchant-releases \
 sh infra/scripts/ecs-one-click-deploy.sh report
 ```
 
-单独执行清理时必须显式确认；脚本同时把 BuildKit 缓存限制为默认 2GB，并只删除 dangling 镜像：
+单独执行清理时必须显式确认；脚本同时把 BuildKit 缓存限制为默认 2GB，但不自动删除任何镜像，避免误删离线回滚仍需的不可变镜像：
 
 ```sh
 CONFIRM_ECS_STORAGE_CLEANUP=YES \
@@ -84,7 +84,7 @@ ECS preflight 会以只读查询分别使用目标 `DATABASE_URL` 和 `OPS_DATAB
 
    渲染前必须先备齐 release 层的八个固定镜像引用。`infra/local/docker-compose.ecs-pilot-release.yml` 以 `${VAR:?}` 强校验 `MIGRATION_IMAGE_REF`、`API_IMAGE_REF`、`WORKER_IMAGE_REF`、`UI_IMAGE_REF`、`OPS_UI_IMAGE_REF`、`PAYMENT_GATEWAY_IMAGE_REF`、`PILOT_GATEWAY_IMAGE_REF`、`CLAMAV_IMAGE_REF`；渲染器用 `--env-file .env` 读取，缺任一项都会非零退出，而 Compose 最多报告 91 条插值错误，base 层的错误会掩盖 release 层自己的那条。这八个变量的生产者是 `infra/scripts/deploy-preflight-ecs.sh` 的必需清单与 `.env.example` 模板，两者缺一不可。同一条规则覆盖全部五个层（`infra/local/ecs-production-compose.layers`）：任一层里被 `${VAR:?}` 强校验的变量都必须同时出现在这两处，否则 `render-ecs-production-compose.sh` 会在 base 层就非零退出。闭环由 `tests/ecs-compose-release-gate.test.ts` 静态保证（digest 清单要求的每个服务都必须被固定，全部五个层的每个 `${VAR:?}` 变量都必须有这两处生产者），并由 `tests/release-env-closure.invariant.test.ts` 用真实 `docker compose config` 渲染整条链来验证。
 
-   其中 `PILOT_GATEWAY_IMAGE_REF` 与 `MIGRATION_IMAGE_REF` 必须由仓库外的发布流水线提供：仓库内没有任何构建或推送发布镜像的脚本（`infra/docker/pilot-gateway.Dockerfile` 只是 Dockerfile，全仓库 `docker build` 只有候选门禁测试镜像一处），本地 `build:` 只服务开发机。运维需要为 `PILOT_GATEWAY_IMAGE_REF` 提供 `repository@sha256:<digest>` 并拉到 ECS 宿主，同时在 `IMAGE_DIGESTS_JSON` 里补上 `pilot-gateway` 键（`validate-ecs-compose-release.rb` 会要求它与 release 层引用逐字节一致，缺失即拒绝发布）；`MIGRATION_IMAGE_REF` 必须是 `postgres:17-alpine@sha256:<digest>`。缺任何一项时发布链在渲染这一步就中止，没有“先用宿主上手工构建的镜像顶一下”的降级路径——部署与回滚都以 `up -d --no-build` 启动 `pilot-gateway`。
+   其中六个仓库自产镜像由 `infra/scripts/build-ecs-release-images.sh` 从同一受保护候选源码构建并输出固定摘要；`MIGRATION_IMAGE_REF` 与 `CLAMAV_IMAGE_REF` 仍必须由发布配置提供经过审核的上游固定摘要。运维需要把八个 `repository@sha256:<digest>` 合并进 `IMAGE_DIGESTS_JSON`（`validate-ecs-compose-release.rb` 会要求它们与 release 层引用逐字节一致）。缺任何一项时发布链在渲染阶段中止，没有“先用宿主手工构建的镜像顶一下”的降级路径；部署与回滚都使用 `up -d --no-build`。
 3. 以旁路容器验证 `/healthz`、`/readyz`、RAM Role 临时凭证、OSS 写读删和持久管理员授权。先在候选 API 容器的同一环境内执行 `node infra/scripts/verify-oss-access.mjs`，只读取 `merchant-assets` 前缀中的至多一个对象；ECS 模式只接受 `ASSET_STORAGE_CREDENTIAL_PROVIDER=aliyun_ecs_ram_role` 和实例角色，拒绝静态 AccessKey。不要打印容器环境或凭据。然后按 `OBJECT_STORAGE_CANARY_CONFIRM=true` 的正式对象存储 canary 流程写入随机探针、核对精确 VersionId、读取 SHA-256 与加密状态、按该 VersionId 删除；权限缺失或清理失败均阻断切换。对旁路 API 的 `/healthz` 运行 `curl -fsS "$CANDIDATE_API_BASE_URL/healthz" | node infra/scripts/verify-ecs-oss-runtime.mjs`；即使容器健康，fixture、本地存储或禁写状态也必须拒绝切换。当前候选不启动或验收告警投递。
 4. 保存现网 Compose、镜像摘要、配置摘要、对象存储模式和本地卷挂载作为回滚点。回滚只恢复原 Compose 与镜像并验证 API 健康；本地对象卷和 OSS 版本都保留，不做删除或清空。切换后的新对象写入必须记录并在回滚前核对，不能假定回滚到本地模式会自动显示这些对象。
 5. 只有上述证据全部属于同一候选版本时，才能安排切换。

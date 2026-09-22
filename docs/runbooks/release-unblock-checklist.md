@@ -37,7 +37,27 @@
 - model relay、Codex app host、object storage、payment、restore evidence；
 - release manifest 和 evidence bundle，全部绑定同一 release identity。
 
-## 4.1 告警通道（当前未成立，NO-GO 前置条件）
+### 4.1 容量采集入口（默认不联网）
+
+容量采集只允许针对隔离预发环境。默认 `plan` 仅输出不可执行计划，不发送请求；
+`yxsona.com` 与 `ops.yxsona.com` 生产域名会被脚本直接拒绝。当前候选可先执行：
+
+```sh
+RELEASE_ID=release-9df84aa1 \
+CAPACITY_PROFILE=pilot_50 \
+CAPACITY_CAPTURE_TARGET_URL=https://<isolated-preproduction-host> \
+CAPACITY_CAPTURE_OUTPUT=/受保护证据目录/release-9df84aa1-capacity-raw.json \
+sh infra/scripts/capture-ecs-capacity-evidence.sh plan
+```
+
+经容量窗口、隔离预发资源和影响范围人工批准后，才可额外设置
+`CAPACITY_CAPTURE_TARGET_KIND=isolated_preproduction`、
+`CAPACITY_CAPTURE_CONFIRM=release-9df84aa1` 与受保护 token，并把动作改为 `capture`。
+该入口只采集 API HTTP 与 job admission 原始观测，强制保留 `cloud_gate=false`，
+不能替代平台真实流量、故障注入、租户噪声隔离、六小时稳态和人工签署；最终
+capacity evidence 仍必须独立生成并通过 `deploy-preflight-ecs.sh` 的 cloud gate。
+
+## 4.2 告警通道（当前未成立，NO-GO 前置条件）
 
 发布前 Go/No-Go 清单里的「告警接收人、升级电话、值班工程师」这一项**当前不成立**，必须按未满足处理，不得勾选：
 

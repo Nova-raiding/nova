@@ -24,6 +24,7 @@ const paymentEnvironment = {
   MCP_OAUTH_CLIENTS: JSON.stringify({ 'chatgpt-test': ['https://chatgpt.example.test/oauth/callback'] }),
   OPENAI_APPS_CHALLENGE_TOKEN: 'openai-domain-token-production-123',
   CAPABILITY_EVIDENCE_PATH: '/tmp/test-capability-evidence.json',
+  CAPACITY_REPORT_PATH: '/tmp/test-capacity-report.json',
   ASSET_STORAGE_BUCKET: 'test-production-bucket',
   ASSET_STORAGE_REGION: 'cn-test',
   ASSET_STORAGE_ENDPOINT: 'https://s3.oss-cn-test.aliyuncs.com',
@@ -347,6 +348,7 @@ describe('ECS pilot API replica parity', () => {
       'CONNECTOR_FIXTURE_MODE',
       'PLUGIN_WRITE_ENABLED',
       'CAPABILITY_EVIDENCE_PATH',
+      'CAPACITY_REPORT_PATH',
       'VAULT_ADDR',
       'JD_APP_KEY',
       'JD_API_BASE_URL',
@@ -360,7 +362,7 @@ describe('ECS pilot API replica parity', () => {
     expect(api).toBeDefined()
     expect(replica).toBeDefined()
     for (const key of invariantKeys) expect(replica?.[key]).toBe(api?.[key])
-    expect(api).toMatchObject({ NODE_ENV: 'production', CONNECTOR_FIXTURE_MODE: 'false', PLUGIN_WRITE_ENABLED: 'false', CAPABILITY_EVIDENCE_PATH: '/run/release-evidence/platform-capability.json' })
+    expect(api).toMatchObject({ NODE_ENV: 'production', CONNECTOR_FIXTURE_MODE: 'false', PLUGIN_WRITE_ENABLED: 'false', CAPABILITY_EVIDENCE_PATH: '/run/release-evidence/platform-capability.json', CAPACITY_REPORT_PATH: '/run/release-evidence/capacity-report.json' })
     expect(services['payment-gateway']?.environment?.PAYMENT_GATEWAY_API_KEY)
       .toBe(api?.PAYMENT_PROVIDER_API_KEY)
   })

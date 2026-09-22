@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 const nodeHardening = { user: '10001:10001', read_only: true, security_opt: ['no-new-privileges:true'], cap_drop: ['ALL'], tmpfs: ['/tmp'] }
 const valid = {
   services: {
-    api: { ...nodeHardening, environment: {
+    api: { ...nodeHardening, volumes: ['/evidence/capacity.json:/run/release-evidence/capacity-report.json:ro'], environment: {
       NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', LOCAL_COMPOSE: 'false',
       CONNECTOR_FIXTURE_MODE: 'false', PLATFORM_OPERATIONS_MODE: 'manual', MERCHANT_TEST_APPROVED_RATES: 'false',
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
@@ -22,8 +22,9 @@ const valid = {
       OPS_LOCAL_SESSION_WORKSPACE_ID: '', DATABASE_URL: 'postgres://app:opaque@db/merchant',
       OPS_DATABASE_URL: 'postgres://ops:opaque@db/merchant', MODEL_COST_ESTIMATE_VERSION: 'production-v1',
       MCP_INTEGRATION_MODE: 'local_stdio', MCP_OAUTH_REQUIRED: 'false',
+      CAPACITY_REPORT_PATH: '/run/release-evidence/capacity-report.json',
     } },
-    'api-replica': { ...nodeHardening, environment: {
+    'api-replica': { ...nodeHardening, volumes: ['/evidence/capacity.json:/run/release-evidence/capacity-report.json:ro'], environment: {
       NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs', LOCAL_COMPOSE: 'false',
       CONNECTOR_FIXTURE_MODE: 'false', PLATFORM_OPERATIONS_MODE: 'manual', MERCHANT_TEST_APPROVED_RATES: 'false',
       ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: 'false',
@@ -38,6 +39,7 @@ const valid = {
       OPS_LOCAL_SESSION_WORKSPACE_ID: '', DATABASE_URL: 'postgres://app:opaque@db/merchant',
       OPS_DATABASE_URL: 'postgres://ops:opaque@db/merchant', MODEL_COST_ESTIMATE_VERSION: 'production-v1',
       MCP_INTEGRATION_MODE: 'local_stdio', MCP_OAUTH_REQUIRED: 'false',
+      CAPACITY_REPORT_PATH: '/run/release-evidence/capacity-report.json',
     } },
     ...Object.fromEntries(['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan'].map(name => [name, { ...nodeHardening, environment: {
       NODE_ENV: 'production', DATABASE_URL: 'postgres://app:opaque@db/merchant', WORKER_WORKSPACES: 'auto', WORKER_API_TOKEN: `${name}-token`, WORKER_API_SIGNING_SECRET: `${name}-signing`,
@@ -84,6 +86,7 @@ function renderFinalProductionCompose() {
     ASSET_SCANNER_API_TOKEN: credentials.scan.token,
     ASSET_SCANNER_WORKSPACE_SIGNING_SECRET: credentials.scan.signing_secret,
     CAPABILITY_EVIDENCE_PATH: '/tmp/production-capability-evidence.json',
+    CAPACITY_REPORT_PATH: '/tmp/production-capacity-report.json',
   })
   for (const role of roles.filter(role => role !== 'scan')) {
     env[`WORKER_${role.toUpperCase()}_API_TOKEN`] = credentials[role].token

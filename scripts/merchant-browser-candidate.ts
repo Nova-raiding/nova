@@ -158,11 +158,14 @@ export async function verifyBrowserIdentity(candidate: BrowserCandidate, signal?
   const releaseUrl = (base: string) => candidate.mode === 'external'
     ? new URL('/releasez', base).href
     : new URL('api/releasez', base).href
+  const buildMetaUrl = (base: string, surface: 'merchant-ui' | 'ops-ui') => candidate.mode === 'external' && surface === 'ops-ui'
+    ? new URL('/ops/build-meta.json', base).href
+    : new URL('build-meta.json', base).href
   const probes: Array<[string, 'api' | 'ui', string?]> = [
     [releaseUrl(candidate.merchantUrl), 'api'],
     [releaseUrl(candidate.opsUrl), 'api'],
-    [new URL('build-meta.json', candidate.merchantUrl).href, 'ui', 'merchant-ui'],
-    [new URL('build-meta.json', candidate.opsUrl).href, 'ui', 'ops-ui'],
+    [buildMetaUrl(candidate.merchantUrl, 'merchant-ui'), 'ui', 'merchant-ui'],
+    [buildMetaUrl(candidate.opsUrl, 'ops-ui'), 'ui', 'ops-ui'],
   ]
   if (candidate.mode === 'candidate') probes.push([`http://127.0.0.1:${candidate.env.LOCAL_API_PORT}/releasez`, 'api'])
   for (const [url, kind, surface] of probes) {

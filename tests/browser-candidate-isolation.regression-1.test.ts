@@ -82,7 +82,7 @@ describe('browser candidate isolation', () => {
       const urls = servers.map(server => { const address = server.address(); if (!address || typeof address === 'string') throw new Error('fixture port missing'); return `http://127.0.0.1:${address.port}/` })
       const value = candidateConfiguration({ BROWSER_STACK_MODE: 'external', BROWSER_EXPECTED_RELEASE_GIT_SHA: sha, BROWSER_EXPECTED_RELEASE_ID: 'release-1', MERCHANT_STUDIO_URL: urls[0], OPS_BASE_URL: urls[1] }, '', [], '')
       await expect(verifyBrowserIdentity(value)).resolves.toBeUndefined()
-      expect(paths).toEqual(['merchant-ui:/releasez', 'ops-ui:/releasez', 'merchant-ui:/build-meta.json', 'ops-ui:/build-meta.json'])
+      expect(paths).toEqual(['merchant-ui:/releasez', 'ops-ui:/releasez', 'merchant-ui:/build-meta.json', 'ops-ui:/ops/build-meta.json'])
       staleOps = true
       await expect(verifyBrowserIdentity(value)).rejects.toThrow(/ops-ui candidate identity mismatch/)
     } finally { await Promise.all(servers.map(server => new Promise<void>(accept => server.close(() => accept())))) }

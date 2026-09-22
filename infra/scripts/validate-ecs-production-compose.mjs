@@ -11,10 +11,10 @@ function fail(message) {
 function normalizedMounts(service) {
   return (service?.volumes ?? []).map(item => {
     if (typeof item === 'string') {
-      const [source = '', target = ''] = item.split(':')
-      return { source, target, type: source.startsWith('/') || source.startsWith('.') ? 'bind' : 'volume' }
+      const [source = '', target = '', mode = ''] = item.split(':')
+      return { source, target, type: source.startsWith('/') || source.startsWith('.') ? 'bind' : 'volume', readOnly: mode.split(',').includes('ro') }
     }
-    return { source: String(item?.source ?? ''), target: String(item?.target ?? ''), type: String(item?.type ?? '') }
+    return { source: String(item?.source ?? ''), target: String(item?.target ?? ''), type: String(item?.type ?? ''), readOnly: item?.read_only === true }
   })
 }
 
@@ -93,6 +93,8 @@ for (const name of ['api', 'api-replica']) {
   }
   const mounts = (rendered.services?.[name]?.volumes ?? []).map(item => typeof item === 'string' ? item : `${item.source ?? ''}:${item.target ?? ''}`)
   if (mounts.some(item => item.includes('alert_receiver'))) fail(`${name} must not mount alert receiver secrets while alerts are disabled`)
+  if (String(environment.CAPACITY_REPORT_PATH ?? '') !== '/run/release-evidence/capacity-report.json') fail(`${name}.CAPACITY_REPORT_PATH must use the release evidence mount`)
+  if (!normalizedMounts(rendered.services?.[name]).some(item => item.target === '/run/release-evidence/capacity-report.json' && item.readOnly)) fail(`${name} must mount the release-bound capacity report read-only`)
 }
 
 for (const name of ['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan']) {

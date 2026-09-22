@@ -68,6 +68,7 @@ infra/scripts/pilot-compose-preflight.sh
 infra/scripts/render-ecs-production-compose.sh
 infra/scripts/stage-verified-ecs-release.sh
 infra/scripts/ecs-one-click-deploy.sh
+infra/scripts/build-ecs-release-images.sh
 infra/scripts/deploy-verified-ecs-compose.sh
 infra/scripts/rollback-ecs-compose.sh
 infra/scripts/invoke-ecs-automatic-rollback.sh
@@ -110,6 +111,7 @@ docs/runbooks/aliyun-oss-canary-delete-version-authorization.md
 docs/runbooks/durable-platform-authorization-bootstrap.md
 docs/runbooks/ecs-verified-compose-deploy.md
 docs/runbooks/ecs-release-evidence-bundle-attester.md
+docs/runbooks/ecs-release-image-build.md
 EOF
 
 # The migration registry loads the entire chain, so review all SQL assets
