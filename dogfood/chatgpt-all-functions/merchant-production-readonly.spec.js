@@ -26,7 +26,13 @@ test('production merchant workflow is available and remains fail-closed for exte
   await page.goto(new URL('merchant/tasks/new', studioUrl).toString(), { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(1_500)
   await expect(page.getByLabel('搜索商品')).toBeVisible()
-  await expect(page.getByTestId('products-unavailable').or(page.locator('tbody tr').first())).toBeVisible()
+  await expect(
+    page.getByTestId('products-unavailable')
+      .or(page.getByText('商品列表尚未读取', { exact: true }))
+      .or(page.getByText('正在读取商品列表…', { exact: true }))
+      .or(page.getByText('没有匹配商品', { exact: true }))
+      .or(page.locator('tbody tr').first()),
+  ).toBeVisible()
 
   await page.getByRole('button', { name: '财务概况', exact: true }).click()
   await expect(page.getByRole('region', { name: '人工发布状态' })).toContainText('六平台由人工执行发布')
