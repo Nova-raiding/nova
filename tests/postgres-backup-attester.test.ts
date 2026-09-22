@@ -80,8 +80,8 @@ describe('synthetic protected postgres backup attester', () => {
   })
 
   it('strictly parses the complete create interface and rejects ambiguity', () => {
-    const valid = ['create', '--backup', '/protected/db.dump', '--checksum', '/protected/db.sha256', '--attestation', '/protected/db.json']
-    expect(parseCreateArguments(valid)).toEqual({ backupPath: '/protected/db.dump', checksumPath: '/protected/db.sha256', attestationPath: '/protected/db.json' })
+    const valid = ['create', '--backup', '/protected/db.dump', '--checksum', '/protected/db.sha256', '--attestation', '/protected/db.json', '--source-policy', '/run/release-security/evidence-trust/production-backup-source-release-example.json']
+    expect(parseCreateArguments(valid)).toEqual({ backupPath: '/protected/db.dump', checksumPath: '/protected/db.sha256', attestationPath: '/protected/db.json', sourcePolicyPath: '/run/release-security/evidence-trust/production-backup-source-release-example.json' })
     expect(() => parseCreateArguments([...valid, '--backup', '/protected/other.dump'])).toThrow('duplicate option')
     expect(() => parseCreateArguments([...valid, '--extra', 'value'])).toThrow('unknown option')
     expect(() => parseCreateArguments(valid.slice(0, -1))).toThrow('exactly one value')

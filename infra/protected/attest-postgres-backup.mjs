@@ -213,7 +213,7 @@ export async function produceBackup({ backupPath, attestationPath, checksumPath 
 
 export function parseCreateArguments(args) {
   assert(args[0] === 'create', 'create subcommand required')
-  const allowed = new Set(['--backup', '--checksum', '--attestation']), values = new Map()
+  const allowed = new Set(['--backup', '--checksum', '--attestation', '--source-policy']), values = new Map()
   assert((args.length - 1) % 2 === 0, 'every option requires exactly one value')
   for (let index = 1; index < args.length; index += 2) {
     const name = args[index], value = args[index + 1]
@@ -223,17 +223,20 @@ export function parseCreateArguments(args) {
     values.set(name, value)
   }
   for (const name of allowed) assert(values.has(name), `${name} is required`)
-  return { backupPath: values.get('--backup'), checksumPath: values.get('--checksum'), attestationPath: values.get('--attestation') }
+  return { backupPath: values.get('--backup'), checksumPath: values.get('--checksum'), attestationPath: values.get('--attestation'), sourcePolicyPath: values.get('--source-policy') }
 }
 
 async function main(args) {
   assert(process.getuid?.() === 0 && process.geteuid?.() === 0, 'protected backup attester must run as root')
   assertInstalledIdentity()
   assert(process.env.NODE_ENV === 'production' && process.env.VITEST !== 'true' && !/(?:mock|fixture|test)/iu.test(process.env.BACKUP_ATTESTATION_MODE ?? ''), 'mock/test production attestation is forbidden')
-  const { backupPath, attestationPath, checksumPath } = parseCreateArguments(args)
+  const { backupPath, attestationPath, checksumPath, sourcePolicyPath } = parseCreateArguments(args)
   assert(new Set([resolve(backupPath), resolve(attestationPath), resolve(checksumPath)]).size === 3, 'backup outputs must be distinct')
   protectedOutput(backupPath); protectedOutput(checksumPath); protectedOutput(attestationPath)
   for (const name of ['PGHOST','PGDATABASE','PGUSER']) assert(process.env[name]?.trim(), `${name} is required`)
+  assert(/^production-backup-source-release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.json$/u.test(basename(sourcePolicyPath)), 'release-scoped source policy name is invalid')
+  assert(dirname(sourcePolicyPath) === TRUST_ROOT, 'source policy must be inside the protected trust root')
+  assertProtectedPath(sourcePolicyPath, { kind: 'file', mode: 0o444 })
   const keyIdPath = join(TRUST_ROOT, 'production-evidence-key-id'), publicKeyPath = join(TRUST_ROOT, 'production-evidence-public.pem')
   assertProtectedPath(PRIVATE_KEY, { kind: 'file', mode: 0o600 })
   assertProtectedPath(keyIdPath, { kind: 'file' })
@@ -241,7 +244,7 @@ async function main(args) {
   assertProtectedPath(SOURCE_POLICY, { kind: 'file' })
   const keyId = readRegular(keyIdPath, 128).toString('utf8').trim()
   const privatePem = readRegular(PRIVATE_KEY), publicPem = readRegular(publicKeyPath)
-  const sourcePolicy = parseSourcePolicy(readRegular(SOURCE_POLICY))
+  const sourcePolicy = parseSourcePolicy(readRegular(sourcePolicyPath))
   const old = process.umask(0o077)
   try { await produceBackup({ backupPath, checksumPath, attestationPath, privatePem, publicPem, keyId, sourcePolicy }) }
   finally { process.umask(old) }

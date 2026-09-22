@@ -13,8 +13,10 @@ const postgresContainer = process.env.PRODUCTION_POSTGRES_CONTAINER ?? ''
 assert(/^merchant-production-postgres-[1-9][0-9]*$/.test(postgresContainer), 'PRODUCTION_POSTGRES_CONTAINER must identify the reviewed production PostgreSQL container')
 const releaseId = process.env.RELEASE_ID ?? ''
 assert(/^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(releaseId), 'RELEASE_ID must identify the reviewed release')
+const attemptId = process.env.BACKUP_ATTEMPT_ID ?? ''
+assert(/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(attemptId), 'BACKUP_ATTEMPT_ID must identify this immutable backup attempt')
 const policyPath = `/run/release-security/evidence-trust/production-backup-source-${releaseId}.json`
-const outputRoot = `/var/lib/merchant-release-security/backups/${releaseId}`
+const outputRoot = `/var/lib/merchant-release-security/backups/${releaseId}-${attemptId}`
 
 function protect(path) {
   assert.equal(realpathSync(path), path)
@@ -63,7 +65,7 @@ if (mode === 'inspect') {
   assert(!existsSync(outputRoot), 'backup attempt already exists; refusing overwrite')
   mkdirSync(outputRoot, { mode: 0o700 }); protect(outputRoot)
   const backup = `${outputRoot}/before-upgrade-${expectedMigrationVersion}.dump`
-  const result = spawnSync('/usr/local/libexec/merchant/attest-postgres-backup', ['create', '--backup', backup, '--checksum', `${backup}.sha256`, '--attestation', `${backup}.attestation.json`], { encoding: 'utf8', env: { ...pg, NODE_ENV: 'production' }, timeout: 300_000 })
+  const result = spawnSync('/usr/local/libexec/merchant/attest-postgres-backup', ['create', '--backup', backup, '--checksum', `${backup}.sha256`, '--attestation', `${backup}.attestation.json`, '--source-policy', policyPath], { encoding: 'utf8', env: { ...pg, NODE_ENV: 'production' }, timeout: 300_000 })
   if (result.status !== 0) throw new Error('protected backup failed; inspect protected host diagnostics without exposing credentials')
   console.log(JSON.stringify({ backup, bytes: lstatSync(backup).size, sha256: hash(readFileSync(backup)), source_policy_sha256: policySha, database_mutations: false }))
 }
