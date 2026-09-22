@@ -59,7 +59,7 @@ WORKLOAD_SECRET_KEYS = {
     'merchant-runtime-secrets' => %w[DATABASE_URL REDIS_URL WORKER_RECONCILE_API_TOKEN WORKER_RECONCILE_API_SIGNING_SECRET VAULT_TOKEN],
   },
   'merchant-worker-automation' => {
-    'merchant-runtime-secrets' => %w[DATABASE_URL REDIS_URL WORKER_AUTOMATION_API_TOKEN WORKER_AUTOMATION_API_SIGNING_SECRET],
+    'merchant-runtime-secrets' => %w[DATABASE_URL REDIS_URL WORKER_AUTOMATION_API_TOKEN WORKER_AUTOMATION_API_SIGNING_SECRET MODEL_RELAY_API_KEY],
   },
   'merchant-worker-scan' => {
     'merchant-runtime-secrets' => %w[DATABASE_URL REDIS_URL],
