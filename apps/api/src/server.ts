@@ -9946,7 +9946,7 @@ function commercialEntitlementProjection(subscription: Awaited<ReturnType<Subscr
   })
 }
 
-function runtimeHealth() {
+export function runtimeHealth(options: { commercialReadiness?: { ready: boolean; reasons?: string[] } } = {}) {
   const base = service.health()
   const configuredRateLimit = Number(process.env.API_RATE_LIMIT_PER_MINUTE ?? DEFAULT_RATE_LIMIT)
   const configuredOpsRateLimit = Number(process.env.OPS_API_RATE_LIMIT_PER_MINUTE ?? 600)
@@ -9961,7 +9961,7 @@ function runtimeHealth() {
       jobAdmission: redisJobAdmission ? 'redis_atomic' : 'process_local',
     },
     writesEnabled: SUPPORTED_PLATFORMS.some(platform => platformWriteReady(platform)),
-      setup: setupDiagnostics(),
+    setup: setupDiagnostics(options),
     connectors: {
       ...base.connectors,
       ...(manualPlatformOperationsMode ? Object.fromEntries(SUPPORTED_PLATFORMS.map(platform => [platform, 'manual_operations'])) : {}),
@@ -21929,11 +21929,18 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     } catch {
       return send(res, 503, 'system', { ...runtimeHealth(), persistence: { mode: persistence.mode, ready: false } }, { code: ERROR_CODES.DATABASE_UNAVAILABLE, message: '数据库未就绪' }, req)
     }
+    const productionReadiness = productionReadinessDiagnostics()
+    const commercialReadiness = productionReadiness.required
+      ? await productionCommercialReadiness(persistence.commercialCatalog).catch(() => ({
+          ready: false,
+          reasons: ['commercial_readiness_unavailable'],
+          catalog: { executable: 0, executable_monthly: 0 },
+          rates: { executable: 0 },
+          charged_methods: { enabled: 0 },
+        }))
+      : { ready: true, reasons: [], catalog: { executable: 0, executable_monthly: 0 }, rates: { executable: 0 }, charged_methods: { enabled: 0 } }
+    const healthOptions = productionReadiness.required ? { commercialReadiness } : {}
     if (path === '/readyz') {
-      const productionReadiness = productionReadinessDiagnostics()
-      const commercialReadiness = productionReadiness.required
-        ? await productionCommercialReadiness(persistence.commercialCatalog)
-        : { ready: true, reasons: [], catalog: { executable: 0 }, rates: { executable: 0 }, charged_methods: { enabled: 0 } }
       const setup = productionReadiness.required ? setupDiagnostics({ commercialReadiness }) : undefined
       const setupReadiness = setup
         ? { ready: setup.productionGate, reasons: setup.productionGate ? [] : setup.nextActions }
@@ -21954,9 +21961,9 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       }
     }
     if (redisHealth) {
-      try { await redisHealth.ping() } catch { return send(res, 503, 'system', { ...runtimeHealth(), persistence: { mode: persistence.mode, ready: true }, redis: { ready: false } }, { code: 'REDIS_UNAVAILABLE', message: 'Redis 未就绪' }, req) }
+      try { await redisHealth.ping() } catch { return send(res, 503, 'system', { ...runtimeHealth(healthOptions), persistence: { mode: persistence.mode, ready: true }, redis: { ready: false } }, { code: 'REDIS_UNAVAILABLE', message: 'Redis 未就绪' }, req) }
     } else if (requiresStrictAuth()) {
-      return send(res, 503, 'system', { ...runtimeHealth(), persistence: { mode: persistence.mode, ready: true }, redis: { ready: false } }, { code: 'REDIS_UNAVAILABLE', message: '生产环境未配置 Redis', }, req)
+      return send(res, 503, 'system', { ...runtimeHealth(healthOptions), persistence: { mode: persistence.mode, ready: true }, redis: { ready: false } }, { code: 'REDIS_UNAVAILABLE', message: '生产环境未配置 Redis', }, req)
     }
     let scanner: ScannerReadinessSummary | undefined
     if (scannerHeartbeatRequiredForProbe(path, process.env)) {
@@ -21977,7 +21984,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       try {
         readiness = await evaluateScannerHeartbeatReadiness({ redis: redisHealth, env: process.env })
       } catch {
-        return send(res, 503, 'system', { ...runtimeHealth(), persistence: { mode: persistence.mode, ready: true }, redis: { ready: false } }, { code: 'REDIS_UNAVAILABLE', message: 'Redis 未就绪' }, req)
+        return send(res, 503, 'system', { ...runtimeHealth(healthOptions), persistence: { mode: persistence.mode, ready: true }, redis: { ready: false } }, { code: 'REDIS_UNAVAILABLE', message: 'Redis 未就绪' }, req)
       }
       scanner = readiness.summary
       if (!readiness.ready) {
@@ -21987,7 +21994,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         })
       }
     }
-    return send(res, 200, 'system', { ...runtimeHealth(), persistence: { mode: persistence.mode, ready: true }, redis: { ready: Boolean(redisHealth) }, ...(scanner ? { scanner } : {}) }, null, req)
+    return send(res, 200, 'system', { ...runtimeHealth(healthOptions), persistence: { mode: persistence.mode, ready: true }, redis: { ready: Boolean(redisHealth) }, ...(scanner ? { scanner } : {}) }, null, req)
   }
   try {
     await persistenceReady

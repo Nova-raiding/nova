@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { productionCommercialReadiness, productionReadinessDiagnostics, route, validateCapacityEvidenceRuntime, validateManualOperationsEvidenceRuntime } from './server.js'
+import { productionCommercialReadiness, productionReadinessDiagnostics, route, runtimeHealth, validateCapacityEvidenceRuntime, validateManualOperationsEvidenceRuntime } from './server.js'
 import { MemoryCommercialCatalogRepository } from '../../../packages/persistence/src/commercial-catalog-repository.js'
 
 type Envelope = {
@@ -492,6 +492,21 @@ describe('production readiness fail-closed', () => {
     expect(livenessResponse.status).toBe(200)
     expect(liveness.error).toBeNull()
     expect(liveness.data).toEqual({ process: { ready: true } })
+  })
+
+  it('projects persistence-backed commercial readiness into the health payload instead of an unchecked placeholder', () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('CONNECTOR_FIXTURE_MODE', 'false')
+    vi.stubEnv('DEPLOYMENT_PROFILE', '')
+    const setup = runtimeHealth({
+      commercialReadiness: {
+        ready: false,
+        reasons: ['commercial_executable_catalog_missing'],
+      },
+    }).setup
+    expect(setup.commercialReadiness.ready).toBe(false)
+    expect(setup.commercialReadiness.reasons).toContain('commercial_executable_catalog_missing')
+    expect(setup.commercialReadiness.reasons).not.toContain('commercial_readiness_not_checked')
   })
 
   it('keeps the local fixture /readyz behavior healthy', async () => {
