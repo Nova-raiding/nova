@@ -19,6 +19,14 @@ describe('merchant API error classification', () => {
     expect(describeApiError(apiError('jd OAuth missing', 'NOT_CONFIGURED', 503))).toContain('该平台尚未配置')
   })
 
+  it('surfaces commercial entitlement gates instead of mislabeling them as outages', () => {
+    const error = Object.assign(apiError('commercial access required', 'COMMERCIAL_ENTITLEMENT_UNAVAILABLE', 503), {
+      details: { classification: 'POINT_REQUIRED_NO_CHARGE' },
+    })
+    expect(describeApiError(error)).toContain('不会扣费')
+    expect(describeApiError(error)).not.toContain('服务暂不可用')
+  })
+
   it('gives a safe recovery path for closed MCP transports and unknown 503 responses', () => {
     expect(describeApiError(apiError('Transport closed', undefined, 503))).toContain('Store Nova连接已中断')
     expect(describeApiError(apiError('upstream unavailable', undefined, 503))).toContain('服务暂不可用')

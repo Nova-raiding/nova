@@ -884,6 +884,12 @@ export function describeApiError(error: unknown) {
   if (code === 'API_REQUEST_TIMEOUT') return 'API 请求超时。请检查 API、数据库和网关状态后重试。'
   if (code === 'MCP_TRANSPORT_CLOSED' || /\btransport closed\b|\beconnreset\b/iu.test(message)) return 'Store Nova连接已中断。已有任务和商品数据已保留；请重新连接后先确认任务状态，避免重复提交。'
   if (code === 'MODEL_RELAY_NO_CHANNEL') return '当前模型没有可用的中转通道。当前操作未确认完成；请切换到已验证可用的模型并新建会话。'
+  if (code === 'COMMERCIAL_ENTITLEMENT_UNAVAILABLE') {
+    const classification = apiError?.details?.classification
+    return classification === 'POINT_REQUIRED_NO_CHARGE'
+      ? '当前工作区的商业访问事实尚未通过核验；本次读取不会扣费，请先完成权益/点数核验后重试。'
+      : '当前工作区的商业访问事实尚未通过核验；当前操作未确认完成，请先联系平台运营完成权益审核。'
+  }
   if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') return '模型请求结果尚未确认，可能已经产生结果；请先查询模型状态或提交人工对账，确认前不会重复生成、扣费或发布。'
   if ([
     'MODEL_RELAY_NOT_CONFIGURED',
