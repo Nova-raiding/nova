@@ -28,7 +28,10 @@ bundle = pathlib.Path(os.environ['BUNDLE'])
 expected_uid = os.geteuid()
 cursor = bundle
 while True:
-    value = cursor.stat(follow_symlinks=False)
+    # pathlib.Path.stat(follow_symlinks=...) is unavailable on the Python
+    # version shipped by the ECS host. lstat() has the required no-follow
+    # semantics and keeps the same symlink-rejection boundary.
+    value = cursor.lstat()
     if stat.S_ISLNK(value.st_mode) or not stat.S_ISDIR(value.st_mode):
         raise SystemExit(f'candidate bundle path component is not a real directory: {cursor}')
     if cursor == bundle and value.st_uid != expected_uid:

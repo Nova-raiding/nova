@@ -41,6 +41,11 @@ function run(value: ReturnType<typeof fixture>, releaseId = 'release-1') {
 }
 
 describe('verified ECS release staging', () => {
+  it('uses Python lstat so the host Python can reject symlinks without requiring Path.stat follow_symlinks support', () => {
+    const source = readFileSync(resolve('infra/scripts/stage-verified-ecs-release.sh'), 'utf8')
+    expect(source).toContain('cursor.lstat()')
+    expect(source).not.toContain('cursor.stat(follow_symlinks=False)')
+  })
   it('verifies the archive identity, installs from the lock and atomically creates a new checkout', () => {
     const value = fixture(); const result = run(value)
     expect(result.status, result.stderr).toBe(0)
