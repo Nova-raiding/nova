@@ -94,7 +94,7 @@ describe('Merchant Studio production UI contract', () => {
   it('requires server preview and approved task context before publish confirmation', () => {
     expect(app).toContain('if (!taskContext?.task || !taskContext.version)')
     expect(app).toContain('preparePublish(apiBaseUrl, taskContext.task.id)')
-    expect(app).toContain('fetchPublishJobs(baseUrl)')
+    expect(app).toContain('fetchPublishJobPage(baseUrl, {')
     expect(app).toContain('disabled={!confirmed || loading || !preview || Boolean(identityError)}')
     expect(app).toContain("window.localStorage.setItem('merchant-studio:last-publish-task', taskContext.task.id)")
     expect(app).toContain("if (page === 'publish' && taskContext?.task)")
