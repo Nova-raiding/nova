@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 
-type Profile = 'pilot_50' | 'wave_100' | 'wave_250' | 'target_500'
+type Profile = 'no_load' | 'pilot_50' | 'wave_100' | 'wave_250' | 'target_500'
 type CapacityEvidence = {
   schema_version?: string; status?: string; release_id?: string; software_version?: string; config_version?: string; data_version?: string; environment?: string; target_url?: string
   started_at?: string; ended_at?: string; expires_at?: string; profile?: Profile; cloud_gate?: boolean; raw_metrics_ref?: string
@@ -14,13 +14,13 @@ type CapacityEvidence = {
   completeness?: { observations_valid?: boolean; accepted_jobs_valid?: boolean }
 }
 
-const minimums: Record<Profile, Record<string, number>> = {
+const minimums: Record<Exclude<Profile, 'no_load'>, Record<string, number>> = {
   pilot_50: { workspaces: 50, client_connections: 150, sustained_rps: 30, sustained_duration_minutes: 30, burst_rps: 60, burst_duration_seconds: 60, async_jobs_per_minute: 50 },
   wave_100: { workspaces: 100, client_connections: 300, sustained_rps: 60, sustained_duration_minutes: 30, burst_rps: 120, burst_duration_seconds: 60, async_jobs_per_minute: 100 },
   wave_250: { workspaces: 250, client_connections: 375, sustained_rps: 75, sustained_duration_minutes: 30, burst_rps: 150, burst_duration_seconds: 60, async_jobs_per_minute: 250 },
   target_500: { workspaces: 500, client_connections: 750, sustained_rps: 150, sustained_duration_minutes: 30, burst_rps: 300, burst_duration_seconds: 60, async_jobs_per_minute: 500 },
 }
-const p95Budgets: Record<Profile, number> = { pilot_50: 1000, wave_100: 1200, wave_250: 1600, target_500: 2000 }
+const p95Budgets: Record<Exclude<Profile, 'no_load'>, number> = { pilot_50: 1000, wave_100: 1200, wave_250: 1600, target_500: 2000 }
 
 const requiredMetrics = ['workspaces', 'client_connections', 'sustained_rps', 'sustained_duration_minutes', 'burst_rps', 'burst_duration_seconds', 'async_jobs_per_minute', 'p95_ms', 'p99_ms', 'error_count', 'duplicate_writes', 'lost_jobs', 'fairness_p95_degradation_percent', 'stability_hours'] as const
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
@@ -32,6 +32,37 @@ export function validateCapacityEvidence(document: unknown, options: { requireCl
   const errors: string[] = []
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
   const value = document as CapacityEvidence
+  if (value.profile === 'no_load') {
+    if (options.expectedProfile !== 'no_load') errors.push('no_load evidence requires explicit expected profile no_load')
+    const required = ['schema_version', 'status', 'release_id', 'software_version', 'config_version', 'data_version', 'environment', 'target_url', 'started_at', 'ended_at'] as const
+    for (const field of required) if (!nonEmpty(value[field])) errors.push(`${field} is required for no_load evidence`)
+    if (value.schema_version !== '1') errors.push('schema_version must be 1')
+    if (value.status !== 'not_performed') errors.push('status must be not_performed for no_load evidence')
+    if (options.requireCloudGate) errors.push('no_load evidence cannot satisfy cloud gate')
+    if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push(`release_id must match ${options.expectedReleaseId}`)
+    if (options.expectedProfile && value.profile !== options.expectedProfile) errors.push(`profile must match ${options.expectedProfile}`)
+    if (value.environment !== 'production') errors.push('environment must be production for no_load evidence')
+    if (value.cloud_gate !== false) errors.push('cloud_gate must be false for no_load evidence')
+    const declaration = value as Record<string, unknown>
+    if (declaration.scope !== 'no_load') errors.push('scope must be no_load')
+    if (declaration.capacity_commitment !== 'none') errors.push('capacity_commitment must be none')
+    if (declaration.reason !== 'load_testing_excluded_by_release_scope') errors.push('reason must declare load testing excluded by release scope')
+    try {
+      const target = new URL(value.target_url!)
+      if (target.protocol !== 'https:' || target.username || target.password || target.hash) errors.push('no_load target_url must be HTTPS without credentials or a fragment')
+    } catch { errors.push('target_url must be a valid URL') }
+    for (const field of ['started_at', 'ended_at'] as const) if (!isIsoInstant(value[field])) errors.push(`${field} must be an ISO instant`)
+    if (isIsoInstant(value.started_at) && isIsoInstant(value.ended_at) && Date.parse(value.ended_at) < Date.parse(value.started_at)) errors.push('ended_at must not be before started_at')
+    if (!value.sign_off || !nonEmpty(value.sign_off.verified_by) || !nonEmpty(value.sign_off.verified_at)) errors.push('sign_off.verified_by and sign_off.verified_at are required')
+    else if (!isIsoInstant(value.sign_off.verified_at)) errors.push('sign_off.verified_at must be an ISO instant')
+    else if (isIsoInstant(value.started_at) && isIsoInstant(value.ended_at) && (Date.parse(value.sign_off.verified_at) < Date.parse(value.started_at) || Date.parse(value.sign_off.verified_at) > Date.parse(value.ended_at))) errors.push('sign_off.verified_at must fall within the declaration interval')
+    const now = (options.now ?? new Date()).getTime()
+    if (isIsoInstant(value.ended_at) && Date.parse(value.ended_at) > now + 300_000) errors.push('no_load declaration must not be future dated')
+    if (!isIsoInstant(value.expires_at)) errors.push('expires_at must be an ISO instant')
+    else if (Date.parse(value.expires_at) <= now || (isIsoInstant(value.ended_at) && Date.parse(value.expires_at) <= Date.parse(value.ended_at))) errors.push('no_load declaration is expired or has an invalid validity window')
+    if (value.metrics !== undefined || value.duration !== undefined || value.tenant !== undefined || value.fault !== undefined || value.steady_state !== undefined || value.raw_metrics_ref !== undefined) errors.push('no_load evidence must not contain load measurements')
+    return errors
+  }
   for (const field of ['schema_version', 'status', 'release_id', 'config_version', 'environment', 'target_url', 'started_at', 'ended_at', 'raw_metrics_ref'] as const) if (!nonEmpty(value[field])) errors.push(`${field} is required`)
   if (options.requireEvidenceBinding || options.requireCloudGate) {
     for (const field of ['software_version', 'data_version'] as const) if (!nonEmpty(value[field])) errors.push(`${field} is required for evidence binding`)
@@ -39,7 +70,7 @@ export function validateCapacityEvidence(document: unknown, options: { requireCl
   if (value.schema_version !== '1') errors.push('schema_version must be 1')
   if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push(`release_id must match ${options.expectedReleaseId}`)
   if (options.expectedProfile && value.profile !== options.expectedProfile) errors.push(`profile must match ${options.expectedProfile}`)
-  if (!value.profile || !(value.profile in minimums)) errors.push('profile must be pilot_50, wave_100, wave_250 or target_500')
+  if (!value.profile || !(value.profile in minimums)) errors.push('profile must be no_load, pilot_50, wave_100, wave_250 or target_500')
   for (const field of ['started_at', 'ended_at'] as const) if (!isIsoInstant(value[field])) errors.push(`${field} must be an ISO instant`)
   if (isIsoInstant(value.started_at) && isIsoInstant(value.ended_at) && Date.parse(value.ended_at) < Date.parse(value.started_at)) errors.push('ended_at must not be before started_at')
   const metrics = value.metrics

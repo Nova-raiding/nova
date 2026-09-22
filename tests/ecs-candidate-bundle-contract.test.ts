@@ -20,13 +20,22 @@ describe('ECS candidate bundle contract', () => {
 
     expect(script).toContain("status --porcelain --untracked-files=normal")
     expect(script).toContain('candidate bundle requires a clean committed source tree')
-    expect(script).toContain('git -C "$root" archive --format=tar "$revision" > "$archive"')
+    expect(script).toContain("git -C \"$root\" archive --format=tar \"$revision\" \\")
+    expect(script).toContain("':(exclude)artifacts'")
+    expect(script).not.toContain("':(exclude)dogfood'")
+    expect(script).toContain("':(exclude)screenshots'")
     expect(script).not.toContain('tar -C "$root" -czf "$archive" -T "$manifest"')
     expect(script).toContain('source_sha256=sha256:$archive_sha')
     expect(script).toContain('comparison_manifest_sha256=sha256:$manifest_sha')
     expect(script).toContain('sync_plan_sha256=sha256:$report_sha')
     expect(readFileSync('infra/scripts/build-ecs-candidate-gates-image.sh', 'utf8')).toContain(
-      'git -C "$root" archive --format=tar "$revision" > "$archive"',
+      "git -C \"$root\" archive --format=tar \"$revision\" \\",
+    )
+    expect(readFileSync('infra/scripts/build-ecs-release-images.sh', 'utf8')).toContain(
+      "git -C \"$root\" archive --format=tar \"$revision\" \\",
+    )
+    expect(readFileSync('infra/scripts/deploy-verified-ecs-compose.sh', 'utf8')).toContain(
+      "git -C \"$root\" archive --format=tar \"$git_sha\" \\",
     )
   })
 

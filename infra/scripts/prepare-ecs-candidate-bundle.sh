@@ -155,7 +155,15 @@ printf '%s\n' "$revision" > "$output_dir/source-head.txt"
 # artifact is the complete committed tree, not a hand-maintained subset of the
 # current working directory. Its digest can therefore be compared directly
 # with the candidate image's source_sha256 OCI label.
-git -C "$root" archive --format=tar "$revision" > "$archive"
+# The ECS source archive is a runtime/release input, not a copy of the
+# repository's generated delivery evidence. Keep the digest algorithm identical
+# to build-ecs-candidate-gates-image.sh while excluding large non-runtime
+# material that is attested and delivered separately. Dogfood scripts and
+# contracts remain in the source archive because release verification imports
+# their markdown/spec fixtures; only their large generated media belongs in
+# the separately attested evidence bundle.
+git -C "$root" archive --format=tar "$revision" \
+  ':(exclude)artifacts' ':(exclude)screenshots' > "$archive"
 archive_sha=$(shasum -a 256 "$archive" | awk '{print $1}')
 manifest_sha=$(shasum -a 256 "$manifest" | awk '{print $1}')
 report_sha=$(shasum -a 256 "$report" | awk '{print $1}')

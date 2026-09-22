@@ -15,7 +15,7 @@ function completeEnvironment(): Record<string, string> {
     MCP_AUTHORIZATION_MODE: 'enforce', DURABLE_PLATFORM_ASSIGNMENTS_REQUIRED: 'true',
     PLATFORM_OPERATIONS_MODE: 'manual',
     APP_BASE_URL: 'https://merchant.yxsona.com', OPS_BASE_URL: 'https://ops.yxsona.com', MCP_BASE_URL: 'https://merchant.yxsona.com',
-    OPS_AUTH_MODE: 'oidc', SECRET_PROVIDER: 'vault', ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ALERT_NOTIFICATIONS_ENABLED: 'false',
+    OPS_AUTH_MODE: 'password', SECRET_PROVIDER: 'vault', ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ALERT_NOTIFICATIONS_ENABLED: 'false',
     DATABASE_MAX_BACKEND_CONNECTIONS: '300', DATABASE_CONNECTION_UTILIZATION_ALERT_PERCENT: '80',
     ASSET_SCANNER_MODE: 'clamav_worker', ASSET_SCAN_RECEIPT_KEY_ID: 'scanner-acceptance-v1', ASSET_SCAN_POLICY_VERSION: 'policy-acceptance-v1',
     CLAMAV_IMAGE_DIGEST: `sha256:${'a'.repeat(64)}`, CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440', CLAMAV_MAX_FILE_BYTES: '104857600',
@@ -67,15 +67,15 @@ describe('production renderer real-gate contract regressions', () => {
       expect(JSON.parse(String(result.stdout)).ready).toBe(false)
     })
   })
-  it('satisfies the real unquoted OIDC-mode contract', () => {
+  it('satisfies the real Store Nova password-mode contract', () => {
     withRendered(completeEnvironment(), (_result, config, dir) => {
       // Isolate the OIDC check from the preceding legacy secret-reference grep.
       const ref = completeEnvironment().SESSION_ID_HASH_SECRET_REF!
       const probe = config.replace(`session_id_hash_secret_ref: ${JSON.stringify(ref)}`, `session_id_hash_secret_ref: ${ref}`)
       const result = validate(probe, dir)
       expect(result.status, String(result.stderr)).toBe(0)
-      expect(config).toContain('OPS_AUTH_MODE: oidc\n')
-      expect(String(validate(probe.replace('OPS_AUTH_MODE: oidc', 'OPS_AUTH_MODE: "oidc"'), dir).stderr)).toContain('OIDC gateway')
+      expect(config).toContain('OPS_AUTH_MODE: password\n')
+      expect(validate(probe.replace('OPS_AUTH_MODE: password', 'OPS_AUTH_MODE: "password"'), dir).status).toBe(0)
     })
   })
   it('preserves enabled alerts, KMS and full social opt-in through the real gate', () => {

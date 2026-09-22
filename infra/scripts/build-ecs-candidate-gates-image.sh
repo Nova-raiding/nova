@@ -27,7 +27,8 @@ esac
 archive=$(mktemp "${TMPDIR:-/tmp}/candidate-source.XXXXXXXX.tar")
 context=$(mktemp -d "${TMPDIR:-/tmp}/candidate-context.XXXXXXXX")
 trap 'rm -f "$archive"; rm -rf "$context"' EXIT HUP INT TERM
-git -C "$root" archive --format=tar "$revision" > "$archive"
+git -C "$root" archive --format=tar "$revision" \
+  ':(exclude)artifacts' ':(exclude)screenshots' > "$archive"
 source_sha=$(shasum -a 256 "$archive" | awk '{print $1}')
 tar -xf "$archive" -C "$context"
 [ -f "$context/infra/docker/candidate-gates.Dockerfile" ] || {

@@ -12,7 +12,10 @@ describe('bounded ECS release image builder', () => {
     for (const artifact of ['merchant-api', 'merchant-worker', 'merchant-ui', 'merchant-ops-ui', 'payment-gateway', 'pilot-gateway']) {
       expect(source).toContain(`build_image ${artifact} `)
     }
-    expect(source).toContain('git -C "$root" archive --format=tar "$revision" > "$archive"')
+    expect(source).toContain("git -C \"$root\" archive --format=tar \"$revision\" \\")
+    expect(source).toContain("':(exclude)artifacts'")
+    expect(source).not.toContain("':(exclude)dogfood'")
+    expect(source).toContain("':(exclude)screenshots'")
     expect(source).toContain('cp "$source_archive" "$archive"')
     expect(source).toContain('candidate source archive digest mismatch')
     expect(source).toContain('candidate identity release ID does not match RELEASE_ID')
@@ -24,6 +27,10 @@ describe('bounded ECS release image builder', () => {
     expect(source).toContain("atomicWrite('repository-image-digests.json'")
     expect(source).toContain("flag: 'wx'")
     expect(source).toContain('ECS release image output directory must not already exist')
+    expect(source).toContain('ECS_OPS_UI_LOGIN_URL')
+    expect(source).toContain('ECS_OPS_AUTH_MODE')
+    expect(source).toContain('--build-arg "OPS_CONSOLE_AUTH_MODE=$ops_auth_mode"')
+    expect(source).toContain('--build-arg "VITE_OPS_LOGIN_URL=$ops_login_url"')
   })
 
   it('refuses mutable or unsafe release identity before Docker is invoked', () => {
@@ -49,11 +56,46 @@ describe('bounded ECS release image builder', () => {
         RELEASE_ID: 'release-existing',
         ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
         ECS_RELEASE_IMAGE_OUTPUT_DIR: directory,
+        ECS_OPS_AUTH_MODE: 'password',
       },
       encoding: 'utf8',
     })
     expect(result.status).not.toBe(0)
     expect(result.stderr).toContain('output directory must not already exist')
+  })
+
+  it('rejects an unsafe Ops login build URL without guessing an auth route', () => {
+    const result = spawnSync('sh', [script], {
+      env: {
+        ...process.env,
+        ECS_RELEASE_GIT_SHA: spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(),
+        RELEASE_ID: 'release-unsafe-ops-login',
+        ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
+        ECS_RELEASE_IMAGE_OUTPUT_DIR: join(mkdtempSync(join(tmpdir(), 'ecs-ops-login-parent-')), 'output'),
+        ECS_OPS_AUTH_MODE: 'oidc',
+        ECS_OPS_UI_LOGIN_URL: 'http://user:secret@idp.example.test/authorize#token',
+      },
+      encoding: 'utf8',
+    })
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('ECS_OPS_UI_LOGIN_URL must be HTTPS without credentials or a fragment')
+  })
+
+  it('rejects a contradictory password build with an SSO login URL', () => {
+    const result = spawnSync('sh', [script], {
+      env: {
+        ...process.env,
+        ECS_RELEASE_GIT_SHA: spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(),
+        RELEASE_ID: 'release-password-with-sso',
+        ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
+        ECS_RELEASE_IMAGE_OUTPUT_DIR: join(mkdtempSync(join(tmpdir(), 'ecs-password-parent-')), 'output'),
+        ECS_OPS_AUTH_MODE: 'password',
+        ECS_OPS_UI_LOGIN_URL: 'https://sso.example.test/authorize',
+      },
+      encoding: 'utf8',
+    })
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('ECS_OPS_UI_LOGIN_URL must be empty when ECS_OPS_AUTH_MODE=password')
   })
 
   it('publishes immutable references and an atomic six-image digest manifest', () => {
@@ -92,6 +134,8 @@ describe('bounded ECS release image builder', () => {
         ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
         ECS_RELEASE_IMAGE_OUTPUT_DIR: output,
         ECS_BUILD_CACHE_KEEP_STORAGE: '1GB',
+        ECS_OPS_AUTH_MODE: 'oidc',
+        ECS_OPS_UI_LOGIN_URL: 'https://sso.example.test/authorize?client_id=ops',
       },
       encoding: 'utf8',
     })
@@ -103,6 +147,7 @@ describe('bounded ECS release image builder', () => {
     const dockerLog = readFileSync(log, 'utf8')
     expect(dockerLog.match(/builder prune -f --keep-storage 1GB/gu)).toHaveLength(2)
     expect(dockerLog).toContain('--label org.opencontainers.image.revision=')
+    expect(dockerLog).toContain('--build-arg VITE_OPS_LOGIN_URL=https://sso.example.test/authorize?client_id=ops')
     expect(dockerLog).not.toMatch(/compose| run /u)
   })
 })

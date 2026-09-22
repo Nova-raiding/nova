@@ -38,6 +38,7 @@ services:
     build:
       args:
         OPS_CONSOLE_BUILD_MODE: production
+        OPS_CONSOLE_AUTH_MODE: oidc
         VITE_OPS_AUTH_MODE: oidc
   api-replica:
     ports: !override ["127.0.0.1:8788:8787"]

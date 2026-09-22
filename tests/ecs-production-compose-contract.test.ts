@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -98,6 +98,39 @@ function renderFinalProductionCompose() {
 }
 
 describe('ECS production Compose contract', () => {
+  it('requires an explicit root-owned 0600 env file when the production override is used', () => {
+    const renderer = readFileSync('infra/scripts/render-ecs-production-compose.sh', 'utf8')
+    expect(renderer).toContain('ECS_PRODUCTION_ENV_FILE must be an absolute path')
+    expect(renderer).toContain('ECS_PRODUCTION_ENV_FILE must be a regular non-symlink file')
+    expect(renderer).toContain('ECS_PRODUCTION_ENV_FILE must be root-owned with mode 600')
+    expect(renderer).toContain('ECS_PRODUCTION_ENV_FILE must be outside the mutable repository')
+    expect(renderer).toContain('docker compose --env-file "$production_env"')
+  })
+
+  it('rejects relative and symlink-parent external env paths before Compose', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ecs-production-env-'))
+    const envPath = join(dir, 'production.env')
+    writeFileSync(envPath, 'NODE_ENV=production\n')
+    expect(() => execFileSync('sh', ['infra/scripts/render-ecs-production-compose.sh'], {
+      cwd: process.cwd(), env: { ...process.env, ECS_PRODUCTION_ENV_FILE: 'relative.env' }, stdio: 'pipe',
+    })).toThrow()
+
+    const targetParent = join(dir, 'target-parent')
+    mkdirSync(targetParent)
+    writeFileSync(join(targetParent, 'production.env'), 'NODE_ENV=production\n')
+    const linkParent = join(dir, 'link-parent')
+    symlinkSync(targetParent, linkParent)
+    try {
+      execFileSync('sh', ['infra/scripts/render-ecs-production-compose.sh'], {
+        cwd: process.cwd(), env: { ...process.env, ECS_PRODUCTION_ENV_FILE: join(linkParent, 'production.env') }, stdio: 'pipe',
+      })
+      throw new Error('expected symlink-parent path to be rejected')
+    } catch (error) {
+      const stderr = error && typeof error === 'object' && 'stderr' in error ? String((error as { stderr?: Buffer }).stderr ?? '') : ''
+      expect(stderr).toContain('must not traverse symlinked or non-canonical parents')
+    }
+  })
+
   it('accepts a production render without demo seeding', () => {
     expect(validate(valid)).toContain('contract passed')
   })

@@ -94,6 +94,12 @@ config_path=${1:-${PRODUCTION_CONFIG_PATH:-}}
 : "${WORKER_SCAN_API_SIGNING_SECRET:?WORKER_SCAN_API_SIGNING_SECRET is required}"
 : "${API_AUTH_TOKENS:?API_AUTH_TOKENS is required}"
 : "${SESSION_ID_HASH_SECRET:?SESSION_ID_HASH_SECRET is required}"
+: "${OPS_AUTH_MODE:?OPS_AUTH_MODE must be password or oidc}"
+case "$OPS_AUTH_MODE" in
+  password) ;;
+  oidc) : "${OIDC_PROXY_SIGNING_SECRET:?OIDC_PROXY_SIGNING_SECRET is required when OPS_AUTH_MODE=oidc}" ;;
+  *) echo 'OPS_AUTH_MODE must be password or oidc' >&2; exit 1 ;;
+esac
 : "${MODEL_COST_ESTIMATE_VERSION:?MODEL_COST_ESTIMATE_VERSION production value is required}"
 : "${ASSET_SCANNER_API_TOKEN:?ASSET_SCANNER_API_TOKEN is required}"
 : "${ASSET_SCANNER_WORKSPACE_SIGNING_SECRET:?ASSET_SCANNER_WORKSPACE_SIGNING_SECRET is required}"
@@ -185,7 +191,12 @@ if [ "$platform_operations_mode" = manual ]; then
 else
   npx --no-install tsx tests/capability-evidence-gate.ts --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --release-id "$RELEASE_ID"
 fi
-npx --no-install tsx tests/capacity-evidence-gate.ts --file "$CAPACITY_REPORT_PATH" --require-cloud-gate --release-id "$RELEASE_ID" --profile "${CAPACITY_PROFILE:-pilot_50}"
+capacity_profile=${CAPACITY_PROFILE:-pilot_50}
+if [ "$capacity_profile" = no_load ]; then
+  npx --no-install tsx tests/capacity-evidence-gate.ts --file "$CAPACITY_REPORT_PATH" --release-id "$RELEASE_ID" --profile no_load
+else
+  npx --no-install tsx tests/capacity-evidence-gate.ts --file "$CAPACITY_REPORT_PATH" --require-cloud-gate --release-id "$RELEASE_ID" --profile "$capacity_profile"
+fi
 model_relay_url=$(awk '/^[[:space:]]*model_relay_base_url:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$config_path")
 npx --no-install tsx tests/model-relay-evidence-gate.ts --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-production --require-artifacts
 mcp_base_url=$(ruby infra/scripts/validate-production-config-yaml.rb "$config_path" --print-mcp-base-url)

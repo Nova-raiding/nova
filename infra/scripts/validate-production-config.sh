@@ -81,7 +81,7 @@ if grep -Eq '^[[:space:]]*merchant_bearer_hostname:[[:space:]]*"?[^[:space:]]*\*
   echo 'merchant_bearer_hostname must not be a wildcard' >&2
   exit 1
 fi
-if ! grep -Eq '^[[:space:]]*OPS_AUTH_MODE:[[:space:]]*(oidc|password)([[:space:]]*)$' "$config_path" && ! grep -Eq '^[[:space:]]*auth_mode:[[:space:]]*"?oidc_gateway_hmac"?([[:space:]]*)$' "$config_path"; then
+if ! grep -Eq '^[[:space:]]*OPS_AUTH_MODE:[[:space:]]*"?(oidc|password)"?([[:space:]]*)$' "$config_path" && ! grep -Eq '^[[:space:]]*auth_mode:[[:space:]]*"?oidc_gateway_hmac"?([[:space:]]*)$' "$config_path"; then
   echo 'production ops console must use OIDC gateway or Store Nova password authentication' >&2
   exit 1
 fi

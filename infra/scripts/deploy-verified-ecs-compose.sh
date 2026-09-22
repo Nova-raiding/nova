@@ -145,7 +145,8 @@ PY
 else
   git_sha=$(git -C "$root" rev-parse HEAD)
   [ -z "$(git -C "$root" status --porcelain --untracked-files=all)" ] || { echo 'ECS deployment requires a clean committed worktree' >&2; exit 2; }
-  current_source_sha=$(git -C "$root" archive --format=tar "$git_sha" | shasum -a 256 | awk '{print $1}')
+  current_source_sha=$(git -C "$root" archive --format=tar "$git_sha" \
+    ':(exclude)artifacts' ':(exclude)screenshots' | shasum -a 256 | awk '{print $1}')
 fi
 [ "$identity_git_sha" = "$git_sha" ] || { echo 'candidate identity Git SHA does not match the release checkout' >&2; exit 2; }
 [ "$identity_source_sha" = "$current_source_sha" ] || { echo 'candidate identity source digest does not match committed release bytes' >&2; exit 2; }

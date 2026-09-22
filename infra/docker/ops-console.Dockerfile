@@ -1,6 +1,7 @@
 FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS validate
 WORKDIR /app
 ARG OPS_CONSOLE_BUILD_MODE=production
+ARG OPS_CONSOLE_AUTH_MODE
 ARG VITE_API_BASE
 ARG VITE_BASE=/
 ARG VITE_OPS_LOCAL_SESSION=false
@@ -11,6 +12,7 @@ RUN set -eu; \
     case "$api_base" in *'?'*|*'#'*|*'@'*) echo >&2 "VITE_API_BASE must not contain query, fragment, or credentials"; exit 1;; esac; \
     case "$OPS_CONSOLE_BUILD_MODE" in \
       production) \
+        case "$OPS_CONSOLE_AUTH_MODE" in password|oidc) ;; *) echo >&2 "production OPS_CONSOLE_AUTH_MODE must be password or oidc"; exit 1;; esac; \
         case "$api_base" in https://*|/api) ;; *) echo >&2 "production VITE_API_BASE must be HTTPS or /api"; exit 1;; esac \
         ;; \
       local) \
@@ -24,6 +26,7 @@ FROM validate AS build
 # here so Vite receives the same `/ops/` base and API endpoint that passed the
 # validation stage instead of silently falling back to `/`.
 ARG OPS_CONSOLE_BUILD_MODE
+ARG OPS_CONSOLE_AUTH_MODE
 ARG VITE_API_BASE
 ARG VITE_BASE
 ARG VITE_OPS_LOCAL_SESSION
@@ -37,8 +40,8 @@ RUN npm ci --workspace apps/ops-console --include-workspace-root --prefer-offlin
 COPY packages/contracts packages/contracts
 COPY packages/application/src/spreadsheet-batch.ts packages/application/src/spreadsheet-batch.ts
 COPY apps/ops-console apps/ops-console
-RUN if [ "$OPS_CONSOLE_BUILD_MODE" = production ]; then auth_mode=oidc; else auth_mode=local; fi; \
-    VITE_API_BASE="$VITE_API_BASE" VITE_BASE="$VITE_BASE" VITE_OPS_AUTH_MODE="$auth_mode" VITE_OPS_BUILD_MODE="$OPS_CONSOLE_BUILD_MODE" VITE_OPS_LOCAL_SESSION="$VITE_OPS_LOCAL_SESSION" VITE_OPS_LOGIN_URL="$VITE_OPS_LOGIN_URL" npm run build --workspace apps/ops-console
+RUN if [ "$OPS_CONSOLE_BUILD_MODE" = production ]; then auth_mode="$OPS_CONSOLE_AUTH_MODE"; build_mode="$OPS_CONSOLE_AUTH_MODE"; else auth_mode=local; build_mode=local; fi; \
+    VITE_API_BASE="$VITE_API_BASE" VITE_BASE="$VITE_BASE" VITE_OPS_AUTH_MODE="$auth_mode" VITE_OPS_BUILD_MODE="$build_mode" VITE_OPS_LOCAL_SESSION="$VITE_OPS_LOCAL_SESSION" VITE_OPS_LOGIN_URL="$VITE_OPS_LOGIN_URL" npm run build --workspace apps/ops-console
 ARG RELEASE_ID=unbound
 ARG RELEASE_GIT_SHA=unbound
 # Non-secret, build-time identity. Never infer UI freshness from its API proxy.

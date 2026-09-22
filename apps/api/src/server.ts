@@ -9323,7 +9323,7 @@ function lifecycleDiagnostics(source: NodeJS.ProcessEnv = process.env) {
 }
 
 type EvidenceReadiness = {
-  state: 'not_required' | 'blocked' | 'ready'
+  state: 'not_required' | 'blocked' | 'ready' | 'not_performed'
   configured: boolean
   sourceRef?: string
   schemaVersion?: string
@@ -9347,11 +9347,25 @@ export function validateCapacityEvidenceRuntime(document: unknown, options: { ex
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['capacity evidence must be a JSON object']
   const value = document as Record<string, unknown>
   if (value.schema_version !== '1') errors.push('schema_version must be 1')
-  if (value.status !== 'pass') errors.push('status must be pass')
-  if (value.cloud_gate !== true) errors.push('cloud_gate must be true')
-  if (!['preproduction', 'production'].includes(String(value.environment))) errors.push('environment must be preproduction or production')
+  const noLoad = value.profile === 'no_load'
+  if (noLoad) {
+    for (const field of ['software_version', 'config_version', 'data_version'] as const) if (typeof value[field] !== 'string' || !value[field].trim()) errors.push(`${field} is required for no_load evidence`)
+    if (value.status !== 'not_performed') errors.push('status must be not_performed for no_load evidence')
+    if (value.environment !== 'production') errors.push('environment must be production for no_load evidence')
+    if (value.cloud_gate !== false) errors.push('cloud_gate must be false for no_load evidence')
+    if (value.scope !== 'no_load') errors.push('scope must be no_load')
+    if (value.capacity_commitment !== 'none') errors.push('capacity_commitment must be none')
+    if (value.reason !== 'load_testing_excluded_by_release_scope') errors.push('reason must declare load testing excluded by release scope')
+    for (const field of ['started_at', 'ended_at'] as const) if (!isIsoInstant(value[field])) errors.push(`${field} must be an ISO instant`)
+    if (isIsoInstant(value.started_at) && isIsoInstant(value.ended_at) && Date.parse(value.ended_at) < Date.parse(value.started_at)) errors.push('ended_at must not be before started_at')
+    if (value.metrics !== undefined || value.duration !== undefined || value.tenant !== undefined || value.fault !== undefined || value.steady_state !== undefined || value.raw_metrics_ref !== undefined) errors.push('no_load evidence must not contain load measurements')
+  } else {
+    if (value.status !== 'pass') errors.push('status must be pass')
+    if (value.cloud_gate !== true) errors.push('cloud_gate must be true')
+    if (!['preproduction', 'production'].includes(String(value.environment))) errors.push('environment must be preproduction or production')
+  }
   if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push('release_id must match RELEASE_ID')
-  if (value.platform_mock_ratio !== 0 || value.model_mock_ratio !== 0) errors.push('platform/model mock ratio must be 0')
+  if (!noLoad && (value.platform_mock_ratio !== 0 || value.model_mock_ratio !== 0)) errors.push('platform/model mock ratio must be 0')
   if (typeof value.profile !== 'string' || !value.profile.trim()) errors.push('profile is required')
   const signOff = value.sign_off
   if (!signOff || typeof signOff !== 'object' || Array.isArray(signOff) || typeof (signOff as Record<string, unknown>).verified_by !== 'string' || !isIsoInstant((signOff as Record<string, unknown>).verified_at)) errors.push('sign_off is incomplete')
@@ -9359,7 +9373,7 @@ export function validateCapacityEvidenceRuntime(document: unknown, options: { ex
   if (!Number.isFinite(expiresAt)) errors.push('expires_at must be an ISO instant')
   else if (expiresAt <= (options.now ?? new Date()).getTime()) errors.push('capacity evidence is expired')
   const metrics = value.metrics
-  if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) errors.push('metrics is required')
+  if (!noLoad && (!metrics || typeof metrics !== 'object' || Array.isArray(metrics))) errors.push('metrics is required')
   return errors
 }
 
@@ -9424,7 +9438,7 @@ function evidenceReadiness(kind: 'capability' | 'capacity'): EvidenceReadiness {
     base.reasons.push(...validateCapacityEvidenceRuntime(value, { expectedReleaseId: process.env.RELEASE_ID?.trim() || undefined }))
   }
   base.configured = base.reasons.length === 0
-  base.state = base.configured ? 'ready' : 'blocked'
+  base.state = base.configured ? (kind === 'capacity' && value.profile === 'no_load' ? 'not_performed' : 'ready') : 'blocked'
   return base
 }
 

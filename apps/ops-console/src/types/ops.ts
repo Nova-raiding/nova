@@ -735,7 +735,7 @@ export type DataLifecycle = {
 };
 export type EvidenceReadiness = {
   kind?: string;
-  state: "not_required" | "blocked" | "ready";
+  state: "not_required" | "not_performed" | "blocked" | "ready";
   configured?: boolean;
   sourceRef?: string;
   schemaVersion?: string;

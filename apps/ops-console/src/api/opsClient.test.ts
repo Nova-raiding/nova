@@ -25,9 +25,11 @@ const storage = () => ({ getItem: (_key: string) => "", setItem: (_key: string, 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("workspace RPC boundary", () => {
-  it("forces OIDC for every production bundle while allowing explicit local mode only outside production", () => {
+  it("requires an explicit production auth mode and preserves the real password-session path", () => {
     expect(resolveManagedOpsSession({ PROD: true, VITE_OPS_AUTH_MODE: "local" })).toBe(true);
     expect(resolveManagedOpsSession({ PROD: true, VITE_OPS_BUILD_MODE: "local", VITE_OPS_AUTH_MODE: "local" })).toBe(false);
+    expect(resolveManagedOpsSession({ PROD: true, VITE_OPS_BUILD_MODE: "password", VITE_OPS_AUTH_MODE: "password" })).toBe(false);
+    expect(resolveManagedOpsSession({ PROD: true, VITE_OPS_BUILD_MODE: "password", VITE_OPS_AUTH_MODE: "oidc" })).toBe(true);
     expect(resolveManagedOpsSession({ PROD: true, VITE_OPS_AUTH_MODE: "oidc" })).toBe(true);
     expect(resolveManagedOpsSession({ PROD: false, VITE_OPS_AUTH_MODE: "oidc" })).toBe(true);
     expect(resolveManagedOpsSession({ PROD: false, VITE_OPS_AUTH_MODE: "local" })).toBe(false);

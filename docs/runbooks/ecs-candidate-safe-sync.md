@@ -10,7 +10,7 @@
 sh infra/scripts/prepare-ecs-candidate-bundle.sh
 ```
 
-脚本只接受干净且已提交的工作树。产物包含远端比较文件清单、逐文件本地/远端 SHA-256、完整提交源码归档 `candidate-source.tar`、归档摘要及 `candidate-identity.txt`。身份文件绑定完整 Git SHA、源码归档 SHA-256、比较清单 SHA-256 和同步计划 SHA-256；其中源码摘要必须与候选门禁镜像的 `com.storenova.candidate.source_sha256` OCI 标签一致。脚本对 SSH 目标仅执行 `cd`、文件存在性判断和 `sha256sum`。
+脚本只接受干净且已提交的工作树。产物包含远端比较文件清单、逐文件本地/远端 SHA-256、提交源码归档 `candidate-source.tar`、归档摘要及 `candidate-identity.txt`。源码归档统一排除 `artifacts/`、`screenshots/` 中的历史交付物和验收产物，保留构建、迁移和测试输入，包括发布测试直接依赖的 `dogfood/` 脚本与退役断言记录；这些排除规则必须同时用于候选包、门禁镜像、业务镜像和部署时的源码摘要校验。此操作不删除仓库或服务器上的任何历史文件。身份文件绑定完整 Git SHA、源码归档 SHA-256、比较清单 SHA-256 和同步计划 SHA-256；其中源码摘要必须与候选门禁镜像的 `com.storenova.candidate.source_sha256` OCI 标签一致。脚本对 SSH 目标仅执行 `cd`、文件存在性判断和 `sha256sum`。
 
 审核完成后，不得把归档覆盖解压到现有 checkout。先在 ECS 主机预创建仓库外、仅发布操作者可写的 releases 根目录，然后执行：
 
@@ -24,6 +24,12 @@ sh infra/scripts/stage-verified-ecs-release.sh
 staging 执行器会重新校验身份文件中源码归档、比较清单和同步计划的 SHA-256，并核对 Git archive 内嵌提交 SHA；含路径穿越、链接或特殊文件的归档会被拒绝。它只在 releases 根目录内创建随机临时目录，以 `npm ci --ignore-scripts` 从锁文件安装，保留只读的 `.candidate-source.tar` 和 `.candidate-identity` 供部署器重新核验，最后原子改名为全新的 release 目录。目标已存在时拒绝覆盖。生产 `.env`、密钥和运行时凭据不得进入候选包或 release checkout，仍由受保护的主机路径在渲染和部署阶段注入。
 
 ## 一键部署与磁盘上限
+
+### 运营后台认证必须前后端一致
+
+本项目正式运营入口使用已有 Store Nova 平台账号密码。业务镜像构建显式设置 `ECS_OPS_AUTH_MODE=password`，受保护 API 配置设置 `OPS_AUTH_MODE=password`，不设置 `ECS_OPS_UI_LOGIN_URL`。UI 使用同源 `/api/v1/auth/login`、HttpOnly Secure 会话 Cookie 和服务端持久平台角色，不创建新账号、不改现有密码，也不使用静态 token 冒充登录。
+
+只有另行配置了真实 OIDC 网关的部署才选择 `oidc`：构建必须提供 `ECS_OPS_UI_LOGIN_URL`，API 必须提供对应签名 secret。签名 secret 本身不等于存在登录网关；不得把未实现的 `/auth/login` 猜作入口。上线验收需从匿名登录页完成真实登录，再验证平台角色、会话和退出，不能用健康端点代替。
 
 生产镜像、rendered Compose、回滚 capsule 和真实证据准备完毕后，在 ECS 宿主执行一条命令完成安全 staging、受验证切换、健康验收和成功后的空间回收：
 
@@ -58,9 +64,11 @@ ECS_RELEASES_ROOT=/srv/merchant-releases \
 sh infra/scripts/ecs-one-click-deploy.sh cleanup
 ```
 
-可用 `ECS_RELEASE_KEEP_COUNT`、`ECS_BUILD_CACHE_KEEP_STORAGE` 和 `ECS_BUILD_CACHE_UNTIL` 调整保留策略。生产推荐保持 `2`、`2GB`、`24h`，磁盘稳定占用约为两个完整 checkout（当前与回滚）加 2GB 构建缓存，不再随部署次数线性增长。
+可用 `ECS_RELEASE_KEEP_COUNT`、`ECS_BUILD_CACHE_KEEP_STORAGE` 和 `ECS_BUILD_CACHE_UNTIL` 调整保留策略。推荐值为 `2`、`2GB`、`24h`。这些参数只约束可回收 checkout、候选包和构建缓存，不代表整机磁盘上限：受保护版本、Registry 镜像、数据库、备份和业务素材仍需单独计量和保留策略，不能据此承诺磁盘不再增长。
 
 ## 合并原则
+
+生产渲染必须显式设置 `ECS_PRODUCTION_ENV_FILE`，指向仓库外的 canonical、root-owned、`0600` 普通文件；父目录链不得允许其他用户写入。渲染出的 Compose 也含解析后的凭据，必须以 `umask 077` 保存到受保护路径，不打印、不上传、不提交。下面提及的 `.env.example` 仅是变量名模板；默认 `.env` 读取只用于本地测试，不是生产 secret 的存放位置。
 
 - `review_required`：必须基于服务器文件进行三方合并，禁止整文件覆盖。
 - `missing_remote`：确认是当前候选版本的新增文件后，才可放入隔离发布目录。
@@ -80,11 +88,15 @@ ECS preflight 会以只读查询分别使用目标 `DATABASE_URL` 和 `OPS_DATAB
    合并后的 Compose 必须通过清单驱动的唯一渲染入口生成；不得手写或重排 `-f` 参数：
 
    ```sh
-   sh infra/scripts/render-ecs-production-compose.sh > /tmp/merchant-ecs-production-compose.json
-   node infra/scripts/validate-ecs-production-compose.mjs /tmp/merchant-ecs-production-compose.json
+   umask 077
+   ECS_PRODUCTION_ENV_FILE=/var/lib/merchant-release-security/config/production.env \
+     sh infra/scripts/render-ecs-production-compose.sh \
+     > /var/lib/merchant-release-security/config/rendered-compose.json
+   node infra/scripts/validate-ecs-production-compose.mjs \
+     /var/lib/merchant-release-security/config/rendered-compose.json
    ```
 
-   渲染前必须先备齐 release 层的八个固定镜像引用。`infra/local/docker-compose.ecs-pilot-release.yml` 以 `${VAR:?}` 强校验 `MIGRATION_IMAGE_REF`、`API_IMAGE_REF`、`WORKER_IMAGE_REF`、`UI_IMAGE_REF`、`OPS_UI_IMAGE_REF`、`PAYMENT_GATEWAY_IMAGE_REF`、`PILOT_GATEWAY_IMAGE_REF`、`CLAMAV_IMAGE_REF`；渲染器用 `--env-file .env` 读取，缺任一项都会非零退出，而 Compose 最多报告 91 条插值错误，base 层的错误会掩盖 release 层自己的那条。这八个变量的生产者是 `infra/scripts/deploy-preflight-ecs.sh` 的必需清单与 `.env.example` 模板，两者缺一不可。同一条规则覆盖全部五个层（`infra/local/ecs-production-compose.layers`）：任一层里被 `${VAR:?}` 强校验的变量都必须同时出现在这两处，否则 `render-ecs-production-compose.sh` 会在 base 层就非零退出。闭环由 `tests/ecs-compose-release-gate.test.ts` 静态保证（digest 清单要求的每个服务都必须被固定，全部五个层的每个 `${VAR:?}` 变量都必须有这两处生产者），并由 `tests/release-env-closure.invariant.test.ts` 用真实 `docker compose config` 渲染整条链来验证。
+   渲染前必须先备齐 release 层的八个固定镜像引用。`infra/local/docker-compose.ecs-pilot-release.yml` 以 `${VAR:?}` 强校验 `MIGRATION_IMAGE_REF`、`API_IMAGE_REF`、`WORKER_IMAGE_REF`、`UI_IMAGE_REF`、`OPS_UI_IMAGE_REF`、`PAYMENT_GATEWAY_IMAGE_REF`、`PILOT_GATEWAY_IMAGE_REF`、`CLAMAV_IMAGE_REF`；生产渲染器用 `--env-file "$ECS_PRODUCTION_ENV_FILE"` 读取受保护配置，缺任一项都会非零退出，而 Compose 最多报告 91 条插值错误，base 层的错误会掩盖 release 层自己的那条。这八个变量的生产者是 `infra/scripts/deploy-preflight-ecs.sh` 的必需清单与 `.env.example` 模板，两者缺一不可。同一条规则覆盖全部五个层（`infra/local/ecs-production-compose.layers`）：任一层里被 `${VAR:?}` 强校验的变量都必须同时出现在这两处，否则 `render-ecs-production-compose.sh` 会在 base 层就非零退出。闭环由 `tests/ecs-compose-release-gate.test.ts` 静态保证（digest 清单要求的每个服务都必须被固定，全部五个层的每个 `${VAR:?}` 变量都必须有这两处生产者），并由 `tests/release-env-closure.invariant.test.ts` 用真实 `docker compose config` 渲染整条链来验证。
 
    其中六个仓库自产镜像由 `infra/scripts/build-ecs-release-images.sh` 从同一受保护候选源码构建并输出固定摘要；`MIGRATION_IMAGE_REF` 与 `CLAMAV_IMAGE_REF` 仍必须由发布配置提供经过审核的上游固定摘要。运维需要把八个 `repository@sha256:<digest>` 合并进 `IMAGE_DIGESTS_JSON`（`validate-ecs-compose-release.rb` 会要求它们与 release 层引用逐字节一致）。缺任何一项时发布链在渲染阶段中止，没有“先用宿主手工构建的镜像顶一下”的降级路径；部署与回滚都使用 `up -d --no-build`。
 3. 以旁路容器验证 `/healthz`、`/readyz`、RAM Role 临时凭证、OSS 写读删和持久管理员授权。先在候选 API 容器的同一环境内执行 `node infra/scripts/verify-oss-access.mjs`，只读取 `merchant-assets` 前缀中的至多一个对象；ECS 模式只接受 `ASSET_STORAGE_CREDENTIAL_PROVIDER=aliyun_ecs_ram_role` 和实例角色，拒绝静态 AccessKey。不要打印容器环境或凭据。然后按 `OBJECT_STORAGE_CANARY_CONFIRM=true` 的正式对象存储 canary 流程写入随机探针、核对精确 VersionId、读取 SHA-256 与加密状态、按该 VersionId 删除；权限缺失或清理失败均阻断切换。对旁路 API 的 `/healthz` 运行 `curl -fsS "$CANDIDATE_API_BASE_URL/healthz" | node infra/scripts/verify-ecs-oss-runtime.mjs`；即使容器健康，fixture、本地存储或禁写状态也必须拒绝切换。当前候选不启动或验收告警投递。

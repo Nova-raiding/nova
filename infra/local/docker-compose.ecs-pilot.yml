@@ -248,6 +248,10 @@ services:
       CONNECTOR_FIXTURE_MODE: "false"
       MERCHANT_TEST_APPROVED_RATES: "false"
       ALLOW_LOCAL_PAYMENT_FIXTURE: "false"
+      OPS_AUTH_MODE: ${OPS_AUTH_MODE:?OPS_AUTH_MODE must be password or oidc}
+      # Empty is valid only for password mode; API readiness requires this
+      # secret when and only when OPS_AUTH_MODE=oidc.
+      OIDC_PROXY_SIGNING_SECRET: ${OIDC_PROXY_SIGNING_SECRET:-}
       OPS_LOCAL_SESSION_ENABLED: "false"
       OPS_LOCAL_SESSION_TOKEN: ""
       OPS_LOCAL_SESSION_WORKSPACE_ID: ""

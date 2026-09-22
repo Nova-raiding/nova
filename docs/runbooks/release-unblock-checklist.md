@@ -33,7 +33,7 @@
 以下证据必须由生产环境生成并签名，禁止使用 fixture/example/test_e2e 文件替代：
 
 - 平台 capability canary（当前六平台按人工运营模式记录；不虚构 OAuth/API 成功）；
-- capacity report；
+- capacity report，或显式 `CAPACITY_PROFILE=no_load` 对应的未执行声明（`status=not_performed`、`cloud_gate=false`、`capacity_commitment=none`），仍须绑定当前 release 并纳入签名 evidence bundle；
 - model relay、Codex app host、object storage、payment、restore evidence；
 - release manifest 和 evidence bundle，全部绑定同一 release identity。
 
@@ -61,6 +61,8 @@ npx tsx scripts/model-relay-recovery-evidence.ts \
 `MODEL_RELAY_ERROR_RECOVERY_PATH` 交给五模态 canary。
 
 ### 4.1 容量采集入口（默认不联网）
+
+本次发布按用户要求不执行压测，不创建 50 个工作区或测试账号。使用正式 `no_load` 声明明确记录没有容量验证、没有容量承诺；不能把它标记为 `pass` 或 `cloud_gate=true`。该范围不豁免真实登录、租户权限、业务 E2E、模型调用、支付、对象存储、备份恢复和发布身份验证。下面的容量采集流程仅供未来另行批准的负载验证使用，不属于本次部署步骤。
 
 容量采集只允许针对隔离预发环境。默认 `plan` 仅输出不可执行计划，不发送请求；
 `yxsona.com` 与 `ops.yxsona.com` 生产域名会被脚本直接拒绝。当前候选可先执行：

@@ -14,6 +14,8 @@ output_dir=${ECS_RELEASE_IMAGE_OUTPUT_DIR:-"$root/artifacts/release-images/$rele
 cache_limit=${ECS_BUILD_CACHE_KEEP_STORAGE:-2GB}
 source_archive=${ECS_RELEASE_SOURCE_ARCHIVE:-}
 source_identity=${ECS_RELEASE_SOURCE_IDENTITY:-}
+ops_login_url=${ECS_OPS_UI_LOGIN_URL:-}
+ops_auth_mode=${ECS_OPS_AUTH_MODE:-}
 
 printf '%s' "$revision" | grep -Eq '^[0-9a-f]{40}$' || {
   echo 'ECS_RELEASE_GIT_SHA must be a full commit SHA' >&2; exit 2;
@@ -30,6 +32,21 @@ printf '%s' "$cache_limit" | grep -Eq '^[1-9][0-9]*(B|KB|MB|GB|TB)$' || {
   echo 'ECS_BUILD_CACHE_KEEP_STORAGE must be a positive Docker storage size such as 2GB' >&2; exit 2;
 }
 case "$output_dir" in /*) ;; *) echo 'ECS_RELEASE_IMAGE_OUTPUT_DIR must be absolute' >&2; exit 2 ;; esac
+case "$ops_auth_mode" in
+  password) [ -z "$ops_login_url" ] || { echo 'ECS_OPS_UI_LOGIN_URL must be empty when ECS_OPS_AUTH_MODE=password' >&2; exit 2; } ;;
+  oidc) [ -n "$ops_login_url" ] || { echo 'ECS_OPS_UI_LOGIN_URL is required when ECS_OPS_AUTH_MODE=oidc' >&2; exit 2; } ;;
+  *) echo 'ECS_OPS_AUTH_MODE must be explicitly set to password or oidc' >&2; exit 2 ;;
+esac
+if [ "$ops_auth_mode" = oidc ]; then
+  OPS_LOGIN_URL=$ops_login_url node <<'NODE'
+const value = process.env.OPS_LOGIN_URL
+let url
+try { url = new URL(value) } catch { throw new Error('ECS_OPS_UI_LOGIN_URL must be an absolute HTTPS URL') }
+if (url.protocol !== 'https:' || url.username || url.password || url.hash) {
+  throw new Error('ECS_OPS_UI_LOGIN_URL must be HTTPS without credentials or a fragment')
+}
+NODE
+fi
 
 for command_name in docker shasum tar node; do
   command -v "$command_name" >/dev/null 2>&1 || { echo "$command_name is required" >&2; exit 2; }
@@ -119,7 +136,8 @@ else
   [ -z "$(git -C "$root" status --porcelain --untracked-files=normal)" ] || {
     echo 'release image build requires a clean committed source tree' >&2; exit 2;
   }
-  git -C "$root" archive --format=tar "$revision" > "$archive"
+  git -C "$root" archive --format=tar "$revision" \
+    ':(exclude)artifacts' ':(exclude)screenshots' > "$archive"
 fi
 source_sha=$(shasum -a 256 "$archive" | awk '{print $1}')
 tar -xf "$archive" -C "$context"
@@ -172,10 +190,22 @@ else
     --build-arg "RELEASE_ID=$release_id" --build-arg "RELEASE_GIT_SHA=$revision" \
     --build-arg "VITE_API_BASE_URL=${ECS_MERCHANT_UI_API_BASE_URL:-/api}"
 fi
-build_image merchant-ops-ui infra/docker/ops-console.Dockerfile \
-  --build-arg OPS_CONSOLE_BUILD_MODE=production \
-  --build-arg "VITE_API_BASE=${ECS_OPS_UI_API_BASE:-/api}" --build-arg VITE_BASE=/ops/ \
-  --build-arg "RELEASE_ID=$release_id" --build-arg "RELEASE_GIT_SHA=$revision"
+if [ "$ops_auth_mode" = oidc ]; then
+  build_image merchant-ops-ui infra/docker/ops-console.Dockerfile \
+    --build-arg OPS_CONSOLE_BUILD_MODE=production \
+    --build-arg "OPS_CONSOLE_AUTH_MODE=$ops_auth_mode" \
+    --build-arg "VITE_API_BASE=${ECS_OPS_UI_API_BASE:-/api}" --build-arg VITE_BASE=/ops/ \
+    --build-arg "VITE_OPS_LOGIN_URL=$ops_login_url" \
+    --build-arg "RELEASE_ID=$release_id" --build-arg "RELEASE_GIT_SHA=$revision"
+else
+  # The password bundle uses the real same-origin Store Nova login endpoint;
+  # no SSO route is guessed or embedded.
+  build_image merchant-ops-ui infra/docker/ops-console.Dockerfile \
+    --build-arg OPS_CONSOLE_BUILD_MODE=production \
+    --build-arg "OPS_CONSOLE_AUTH_MODE=$ops_auth_mode" \
+    --build-arg "VITE_API_BASE=${ECS_OPS_UI_API_BASE:-/api}" --build-arg VITE_BASE=/ops/ \
+    --build-arg "RELEASE_ID=$release_id" --build-arg "RELEASE_GIT_SHA=$revision"
+fi
 build_image payment-gateway services/payment-gateway/Dockerfile
 build_image pilot-gateway infra/docker/pilot-gateway.Dockerfile
 

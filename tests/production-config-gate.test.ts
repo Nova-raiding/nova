@@ -22,7 +22,7 @@ function config(overrides: Record<string, boolean> = {}) {
     'app_base_url: https://merchant.example.com',
     'ops_base_url: https://ops.merchant.example.com',
     'mcp_base_url: https://merchant.example.com',
-    'OPS_AUTH_MODE: oidc',
+    'OPS_AUTH_MODE: password',
     'auth_enforcement: strict',
     'mcp_authorization_mode: enforce',
     'durable_platform_assignments_required: true',
@@ -151,7 +151,7 @@ describe('production config gate', () => {
 
   it('accepts the nested production-config OIDC spelling used by the release document', () => {
     const nested = config()
-      .replace('OPS_AUTH_MODE: oidc', 'auth_mode: "oidc_gateway_hmac"')
+      .replace('OPS_AUTH_MODE: password', 'auth_mode: "oidc_gateway_hmac"')
       .replace('app_base_url: https://merchant.example.com\nops_base_url: https://ops.merchant.example.com\nmcp_base_url: https://merchant.example.com', 'public_endpoints:\n  app_base_url: https://merchant.example.com\n  ops_base_url: https://ops.merchant.example.com\ncodex:\n  mcp:\n    base_url: https://merchant.example.com')
     expect(run(nested)()).toContain('production config gate passed')
   })
@@ -201,7 +201,7 @@ describe('production config gate', () => {
   })
 
   it('does not treat a quoted authentication mode as a rendered setting', () => {
-    const quoted = `${config().replace('OPS_AUTH_MODE: oidc\n', '')}\nplaceholder: "OPS_AUTH_MODE: oidc"`
+    const quoted = `${config().replace('OPS_AUTH_MODE: password\n', '')}\nplaceholder: "OPS_AUTH_MODE: password"`
     expect(() => run(quoted)()).toThrow(/OIDC|auth/i)
   })
 

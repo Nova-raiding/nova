@@ -47,6 +47,35 @@ interface DeletionDecisionRunnerOptions {
   onSettled: () => void;
 }
 
+type CapacityEvidenceState = "ready" | "not_performed" | "blocked";
+
+export function capacityEvidenceState(value: EvidenceReadiness): CapacityEvidenceState {
+  if (value.state === "ready") return "ready";
+  if (value.state === "blocked") return "blocked";
+  // Legacy `not_required` and the API's explicit `not_performed` both mean
+  // that no production load result exists. They are informational, not a
+  // passing evidence state and not a business-function blocker by themselves.
+  if (value.state === "not_required" || value.state === "not_performed") return "not_performed";
+  return "blocked";
+}
+
+export function capacityEvidenceLabel(state: CapacityEvidenceState): string {
+  return state === "ready" ? "已完成" : state === "not_performed" ? "本次未压测" : "阻断";
+}
+
+export function productionEvidenceSummary(
+  capability: EvidenceReadiness,
+  capacity: CapacityEvidenceState,
+): { color: "green" | "gold" | "red"; label: string; ready: boolean } {
+  if (capability.state !== "ready" || capacity === "blocked") {
+    return { color: "red", label: "未通过门禁", ready: false };
+  }
+  if (capacity === "not_performed") {
+    return { color: "gold", label: "容量未压测", ready: false };
+  }
+  return { color: "green", label: "证据完整", ready: true };
+}
+
 export async function runDeletionDecisionOnce({
   key,
   locks,
@@ -245,6 +274,11 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
   const deletionActionsBusy = Object.keys(deletionActionLoading).length > 0;
   const deletionReasonInvalid =
     deletionReason.trim().length < DATA_DELETION_REASON_MIN_LENGTH;
+  const capacityState = capacityEvidenceState(productionEvidence.capacity);
+  const evidenceSummary = productionEvidenceSummary(
+    productionEvidence.capability,
+    capacityState,
+  );
 
   const openDeletionDecision = (
     request: DataDeletionRequest,
@@ -386,17 +420,9 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
         title="生产证据 readiness"
         extra={
           <Tag
-            color={
-              productionEvidence.capability.state === "ready" &&
-              productionEvidence.capacity.state === "ready"
-                ? "green"
-                : "red"
-            }
+            color={evidenceSummary.color}
           >
-            {productionEvidence.capability.state === "ready" &&
-            productionEvidence.capacity.state === "ready"
-              ? "证据完整"
-              : "未通过门禁"}
+            {evidenceSummary.label}
           </Tag>
         }
       >
@@ -408,7 +434,7 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
               kind: "六平台 capability",
               ...productionEvidence.capability,
             },
-            { kind: "容量压测", ...productionEvidence.capacity },
+            { kind: "容量压测", ...productionEvidence.capacity, state: capacityState },
           ]}
           columns={[
             { title: "证据类型", dataIndex: "kind" },
@@ -418,14 +444,10 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
               render: (value: string) => (
                 <Tag
                   color={
-                    value === "ready"
-                      ? "green"
-                      : value === "not_required"
-                        ? "gold"
-                        : "red"
+                    value === "ready" ? "green" : value === "not_performed" || value === "not_required" ? "gold" : "red"
                   }
                 >
-                  {value}
+                  {value === "ready" ? "ready" : value === "not_performed" || value === "not_required" ? "not_performed" : value}
                 </Tag>
               ),
             },

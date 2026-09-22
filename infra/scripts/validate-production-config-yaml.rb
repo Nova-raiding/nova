@@ -67,6 +67,11 @@ if invalid_required_value
   exit 1
 end
 
+if config.key?('OPS_AUTH_MODE') && !%w[password oidc].include?(config['OPS_AUTH_MODE'])
+  warn 'OPS_AUTH_MODE must be password or oidc'
+  exit 1
+end
+
 reference_keys = required_keys.select { |key| key.end_with?('_ref') || key == 'secret_provider' }
 reference_keys << 'asset_scan_trusted_public_keys_ref' if config.key?('asset_scan_trusted_public_keys_ref')
 reference_keys << 'alert_channel_secret_ref' if config['alert_notifications_enabled'] == true

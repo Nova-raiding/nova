@@ -58,7 +58,8 @@ describe('deployment operation scripts', () => {
     expect(renderer).toContain('ECS_PRODUCTION_COMPOSE_LAYERS_FILE override is forbidden')
     expect(renderer).toContain('development auth-hardening overlay is forbidden')
     expect(renderer).toContain("release identity layer must be last")
-    expect(renderer).toContain('docker compose --env-file .env "$@" config --format json')
+    expect(renderer).toContain('docker compose --env-file "$production_env" "$@" config --format json')
+    expect(renderer).toContain('ECS_PRODUCTION_ENV_FILE')
   })
 
   it('binds ECS object-storage evidence to the exact release, config and trust anchor', () => {
@@ -724,8 +725,9 @@ describe('deployment operation scripts', () => {
     expect(dockerfile).not.toContain('ARG VITE_API_BASE=')
     expect(dockerfile).toContain('api_base="${VITE_API_BASE:-}"')
     expect(dockerfile).toContain('test -n "$api_base"')
-    expect(dockerfile).not.toContain('ARG VITE_OPS_AUTH_MODE')
-    expect(dockerfile).toContain('auth_mode=oidc')
+    expect(dockerfile).toContain('ARG OPS_CONSOLE_AUTH_MODE')
+    expect(dockerfile).toContain('production OPS_CONSOLE_AUTH_MODE must be password or oidc')
+    expect(dockerfile).toContain('auth_mode="$OPS_CONSOLE_AUTH_MODE"')
     expect(dockerfile).toContain('auth_mode=local')
     expect(dockerfile).toContain('OPS_CONSOLE_BUILD_MODE=production')
     expect(dockerfile).toContain('http://localhost:*|http://127.0.0.1:*')

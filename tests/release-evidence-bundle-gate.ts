@@ -1,6 +1,7 @@
 import { createHash, createPublicKey, verify } from 'node:crypto'
 import { lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
+import { validateCapacityEvidence } from './capacity-evidence-gate.js'
 
 export const EVIDENCE_KINDS = ['capability','capacity','modelRelay','payment','restore','objectStorage','codexAppHost','canonicalCutover'] as const
 type Kind = typeof EVIDENCE_KINDS[number]
@@ -9,6 +10,11 @@ const REF = /^artifact:\/\/production\/([A-Za-z0-9._/-]+)#([a-f0-9]{64})$/u
 const UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u
 const canonical = (value: unknown): string => Array.isArray(value) ? `[${value.map(canonical).join(',')}]` : value && typeof value === 'object' ? `{${Object.entries(value as Record<string,unknown>).filter(([key]) => key !== 'signature_base64').sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0).map(([key,item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}` : JSON.stringify(value)
 const sha256 = (value: Buffer) => createHash('sha256').update(value).digest('hex')
+
+function validateCapacityArtifact(document: Record<string, unknown>, releaseId: string, errors: string[], now: Date) {
+  if (document.status !== 'not_performed' && document.profile !== 'no_load') return
+  errors.push(...validateCapacityEvidence(document, { expectedProfile: 'no_load', expectedReleaseId: releaseId, now }))
+}
 
 export function validateReleaseEvidenceBundle(document: unknown, options: { releaseId: string; imageSetDigest: string; manifestSha256: string; releaseGitSha: string; deploymentNonce: string; artifactRoot: string; evidenceFiles: Record<Kind,string>; trustedKeyId: string; publicKeyPem: string; releaseManifestBytes?: Buffer; now?: Date }): string[] {
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['bundle must be a JSON object']
@@ -45,6 +51,10 @@ export function validateReleaseEvidenceBundle(document: unknown, options: { rele
       const candidate = resolve(root, relative), stat = lstatSync(candidate), real = realpathSync(candidate)
       if (!candidate.startsWith(`${root}${sep}`) || !real.startsWith(`${root}${sep}`) || stat.isSymbolicLink() || !stat.isFile()) throw new Error('unsafe')
       const bytes = readFileSync(real); if (sha256(bytes) !== match[2]) errors.push(`${kind} artifact SHA-256 mismatch`)
+      if (kind === 'capacity') {
+        try { validateCapacityArtifact(JSON.parse(bytes.toString('utf8')) as Record<string, unknown>, options.releaseId, errors, new Date(now)) }
+        catch { errors.push('capacity artifact is invalid JSON') }
+      }
       const supplied = options.evidenceFiles[kind]; if (!supplied || lstatSync(supplied).isSymbolicLink() || realpathSync(supplied) !== real) errors.push(`${kind} must reference the exact evidence file passed to deployment`)
     } catch { errors.push(`${kind} artifact escapes the root, is a symlink, or cannot be read`) }
   }

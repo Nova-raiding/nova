@@ -1,5 +1,5 @@
 import { createHash, generateKeyPairSync } from 'node:crypto'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -18,14 +18,15 @@ function boundManifestFixture() {
   const publicKeyPem = pair.publicKey.export({ format: 'pem', type: 'spki' }).toString()
   const evidenceFiles = {} as Record<typeof evidenceFields[number], string>
   const refs = {} as Record<string, string>
+  mkdirSync(join(artifactRoot, 'evidence'))
   for (const field of evidenceFields) {
     const document: Record<string, unknown> = { schema_version: '2', release_id: 'release-1', generated_at: '2026-08-29T00:00:00Z', expires_at: '2026-09-02T00:00:00Z', key_id: 'release-security-test', environment: 'production', status: 'pass' }
     if (field === 'capability' || field === 'payment' || field === 'restore' || field === 'objectStorage' || field === 'codexAppHost') document.signature_base64 = signProductionEvidence(document, privateKeyPem)
     const contents = JSON.stringify(document)
-    const path = join(artifactRoot, `${field}.json`)
+    const path = join(artifactRoot, 'evidence', `${field}.json`)
     writeFileSync(path, contents)
     evidenceFiles[field] = path
-    refs[inputNames[field]] = `artifact://production/${field}.json#${digest(contents)}`
+    refs[inputNames[field]] = `artifact://production/evidence/${field}.json#${digest(contents)}`
   }
   const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1', generatedAt: '2026-08-29T01:00:00Z', ...refs })
   const options = { root: process.cwd(), expectedReleaseId: 'release-1', artifactRoot, evidenceFiles, publicKeyPem, trustedKeyId: 'release-security-test', now: new Date('2026-08-29T02:00:00Z') }
@@ -117,7 +118,7 @@ describe('release manifest production gate', () => {
     expiredDocument.expires_at = '2026-08-29T01:30:00Z'
     const expiredContents = JSON.stringify(expiredDocument)
     writeFileSync(expired.evidenceFiles.objectStorage, expiredContents)
-    expired.manifest.productionEvidence.objectStorage = `artifact://production/objectStorage.json#${digest(expiredContents)}`
+    expired.manifest.productionEvidence.objectStorage = `artifact://production/evidence/objectStorage.json#${digest(expiredContents)}`
     expect(validateReleaseManifest(expired.manifest, expired.options)).toContain('productionEvidence.objectStorage has expired')
 
     const unsigned = boundManifestFixture()
@@ -125,7 +126,7 @@ describe('release manifest production gate', () => {
     delete capability.signature_base64
     const unsignedContents = JSON.stringify(capability)
     writeFileSync(unsigned.evidenceFiles.capability, unsignedContents)
-    unsigned.manifest.productionEvidence.capability = `artifact://production/capability.json#${digest(unsignedContents)}`
+    unsigned.manifest.productionEvidence.capability = `artifact://production/evidence/capability.json#${digest(unsignedContents)}`
     expect(validateReleaseManifest(unsigned.manifest, unsigned.options)).toContain('productionEvidence.capability signature_base64 must be a canonical Ed25519 signature')
 
     const unsignedHost = boundManifestFixture()
@@ -133,7 +134,7 @@ describe('release manifest production gate', () => {
     delete host.signature_base64
     const unsignedHostContents = JSON.stringify(host)
     writeFileSync(unsignedHost.evidenceFiles.codexAppHost, unsignedHostContents)
-    unsignedHost.manifest.productionEvidence.codexAppHost = `artifact://production/codexAppHost.json#${digest(unsignedHostContents)}`
+    unsignedHost.manifest.productionEvidence.codexAppHost = `artifact://production/evidence/codexAppHost.json#${digest(unsignedHostContents)}`
     expect(validateReleaseManifest(unsignedHost.manifest, unsignedHost.options)).toContain('productionEvidence.codexAppHost signature_base64 must be a canonical Ed25519 signature')
 
     const unsignedStorage = boundManifestFixture()
@@ -141,7 +142,60 @@ describe('release manifest production gate', () => {
     delete storage.signature_base64
     const unsignedStorageContents = JSON.stringify(storage)
     writeFileSync(unsignedStorage.evidenceFiles.objectStorage, unsignedStorageContents)
-    unsignedStorage.manifest.productionEvidence.objectStorage = `artifact://production/objectStorage.json#${digest(unsignedStorageContents)}`
+    unsignedStorage.manifest.productionEvidence.objectStorage = `artifact://production/evidence/objectStorage.json#${digest(unsignedStorageContents)}`
     expect(validateReleaseManifest(unsignedStorage.manifest, unsignedStorage.options)).toContain('productionEvidence.objectStorage signature_base64 must be a canonical Ed25519 signature')
+  })
+
+  it('accepts an explicitly bound no-load capacity artifact without treating it as a capacity pass', () => {
+    const fixture = boundManifestFixture()
+    writeFileSync(fixture.evidenceFiles.capacity, JSON.stringify({
+      schema_version: '1', status: 'not_performed', profile: 'no_load', cloud_gate: false,
+      capacity_commitment: 'none', scope: 'no_load', reason: 'load_testing_excluded_by_release_scope',
+      release_id: 'release-1', environment: 'production', target_url: 'https://yxsona.com',
+      started_at: '2026-08-29T00:00:00Z', ended_at: '2026-08-29T00:30:00Z',
+      expires_at: '2026-09-02T00:00:00Z', generated_at: '2026-08-29T00:30:00Z',
+      software_version: 'release-1', config_version: 'release-1', data_version: 'release-1',
+      sign_off: { verified_by: 'test', verified_at: '2026-08-29T00:15:00Z' },
+    }))
+    const manifest = buildReleaseManifest({
+      root: process.cwd(), releaseId: 'release-1',
+      capabilityEvidenceRef: fixture.manifest.productionEvidence.capability,
+      capacityEvidenceRef: `artifact://production/evidence/capacity#${createHash('sha256').update(readFileSync(fixture.evidenceFiles.capacity)).digest('hex')}`,
+      modelRelayEvidenceRef: fixture.manifest.productionEvidence.modelRelay,
+      paymentEvidenceRef: fixture.manifest.productionEvidence.payment,
+      restoreEvidenceRef: fixture.manifest.productionEvidence.restore,
+      objectStorageEvidenceRef: fixture.manifest.productionEvidence.objectStorage,
+      codexAppHostEvidenceRef: fixture.manifest.productionEvidence.codexAppHost,
+      canonicalCutoverEvidenceRef: fixture.manifest.productionEvidence.canonicalCutover,
+    })
+    expect(validateReleaseManifest(manifest, fixture.options)).not.toEqual(expect.arrayContaining([
+      'capacity no-load evidence profile must be no_load',
+      'capacity no-load evidence cloud_gate must be false',
+      'capacity no-load evidence capacity_commitment must be none',
+    ]))
+  })
+
+  it('rejects no-load artifacts that claim pass, enable cloud gate, or omit the no-load contract', () => {
+    const fixture = boundManifestFixture()
+    const base = {
+      schema_version: '1', status: 'not_performed', profile: 'no_load', cloud_gate: false,
+      capacity_commitment: 'none', scope: 'no_load', reason: 'load_testing_excluded_by_release_scope',
+      release_id: 'release-1', environment: 'production', target_url: 'https://yxsona.com',
+      started_at: '2026-08-29T00:00:00Z', ended_at: '2026-08-29T00:30:00Z', expires_at: '2026-09-02T00:00:00Z',
+      software_version: 'release-1', config_version: 'release-1', data_version: 'release-1',
+      sign_off: { verified_by: 'test', verified_at: '2026-08-29T00:15:00Z' },
+    }
+    for (const [field, value, expected] of [
+      ['status', 'pass', 'status must be not_performed for no_load evidence'],
+      ['cloud_gate', true, 'cloud_gate must be false for no_load evidence'],
+      ['capacity_commitment', undefined, 'capacity_commitment must be none'],
+    ] as const) {
+      const document = { ...base, [field]: value }
+      writeFileSync(fixture.evidenceFiles.capacity, JSON.stringify(document))
+      const manifest = structuredClone(fixture.manifest)
+      manifest.productionEvidence!.capacity = `${fixture.manifest.productionEvidence!.capacity!.replace(/#[a-f0-9]{64}$/u, '')}#${digest(JSON.stringify(document))}`
+      const errors = validateReleaseManifest(manifest, fixture.options)
+      expect(errors).toContain(expected)
+    }
   })
 })

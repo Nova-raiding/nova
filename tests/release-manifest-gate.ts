@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 import { MCP_METHODS } from '../packages/contracts/src/mcp.js'
+import { validateCapacityEvidence } from './capacity-evidence-gate.js'
 
 type ReleaseManifest = { schemaVersion?: number; releaseId?: string; components?: { repositoryVersion?: string; releaseGitSha?: string }; mcp?: { methodCount?: number; methodListSha256?: string; bridgeSha256?: string }; artifacts?: Array<{ path?: string; sha256?: string; bytes?: number }>; productionEvidenceBundle?: { required?: boolean; schemaVersion?: string }; productionEvidence?: Record<string, string> }
 const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
@@ -17,6 +18,11 @@ const canonical = (value: unknown): string => Array.isArray(value)
   : value && typeof value === 'object'
     ? `{${Object.entries(value as Record<string, unknown>).filter(([key]) => key !== 'signature_base64').sort(compare).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}`
     : JSON.stringify(value)
+
+function validateCapacityArtifact(document: Record<string, unknown>, releaseId: string, errors: string[], now: Date) {
+  if (document.status !== 'not_performed' && document.profile !== 'no_load') return
+  errors.push(...validateCapacityEvidence(document, { expectedProfile: 'no_load', expectedReleaseId: releaseId, now }))
+}
 
 type EvidenceBindingOptions = {
   artifactRoot?: string
@@ -67,6 +73,7 @@ function validateEvidenceBindings(value: ReleaseManifest, options: EvidenceBindi
         if (!suppliedStat.isFile() || suppliedStat.isSymbolicLink() || realpathSync(supplied) !== path) errors.push(`productionEvidence.${field} must reference the exact evidence file passed to deployment`)
       }
       const document = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>
+      if (field === 'capacity') validateCapacityArtifact(document, value.releaseId!, errors, new Date(now))
       if ((document.release_id ?? document.releaseId) !== value.releaseId) errors.push(`productionEvidence.${field} release_id must match the release manifest`)
       const observedAt = document.generated_at ?? document.generatedAt ?? document.ended_at ?? document.attested_at
       validateInstant(observedAt, `productionEvidence.${field} generated timestamp`, now, maxAge, errors)

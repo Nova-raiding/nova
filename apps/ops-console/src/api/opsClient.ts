@@ -88,6 +88,10 @@ export function resolveManagedOpsSession(environment: OpsAuthEnvironment): boole
   // This is especially important for isolated Vite acceptance runners where
   // auth mode can be transformed separately from the build mode.
   if (environment.VITE_OPS_BUILD_MODE === "oidc") return true;
+  // Password-backed production is also an explicit deployment contract. It
+  // uses the durable HttpOnly damai_session cookie and must render the real
+  // Store Nova platform-account login form instead of the OIDC reauth gate.
+  if (environment.VITE_OPS_BUILD_MODE === "password" && environment.VITE_OPS_AUTH_MODE === "password") return false;
   // Local Compose builds are still Vite production bundles, but they are
   // explicitly isolated acceptance builds. Keep the local bearer adapter
   // available only when both compile-time flags agree.
@@ -117,6 +121,7 @@ export function resolveManagedOpsLoginUrl(
 }
 
 export const managedOpsSession = resolveManagedOpsSession(viteEnv);
+export const passwordOpsSession = viteEnv.VITE_OPS_BUILD_MODE === "password" && viteEnv.VITE_OPS_AUTH_MODE === "password";
 export const managedOpsLoginUrl = resolveManagedOpsLoginUrl(viteEnv);
 export const localOpsSessionEnabled = viteEnv.VITE_OPS_LOCAL_SESSION === "true" && !managedOpsSession;
 const LOCAL_SESSION_DISABLED_KEY = "ops_local_session_disabled";
@@ -444,7 +449,7 @@ export function opsApiBase(): string {
   // Managed OIDC deployments always own a same-origin /api boundary. Keep
   // the session usable when a stale connection-config entry was purged during
   // login; local bearer mode still requires an explicit configured base.
-  const resolved = configured || (managedOpsSession ? "/api" : "");
+  const resolved = configured || (managedOpsSession || passwordOpsSession ? "/api" : "");
   recordOpsBootstrapTrace("api_base", { configured: Boolean(configured), resolved, managed: managedOpsSession });
   return resolved;
 }

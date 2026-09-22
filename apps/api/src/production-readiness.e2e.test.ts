@@ -1,4 +1,7 @@
 import { createServer, type Server } from 'node:http'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { productionCommercialReadiness, productionReadinessDiagnostics, route, runtimeHealth, validateCapacityEvidenceRuntime, validateManualOperationsEvidenceRuntime } from './server.js'
 import { MemoryCommercialCatalogRepository } from '../../../packages/persistence/src/commercial-catalog-repository.js'
@@ -149,6 +152,36 @@ describe('production readiness fail-closed', () => {
       'release_id must match RELEASE_ID',
       'capacity evidence is expired',
     ]))
+  })
+
+  it('accepts only an explicitly release-bound no-load declaration and never treats it as pass', () => {
+    const noLoad = {
+      schema_version: '1', status: 'not_performed', cloud_gate: false, environment: 'production',
+      release_id: 'release-current', software_version: 'release-current', config_version: 'config-current', data_version: 'migration-242', profile: 'no_load',
+      started_at: '2026-09-22T00:00:00Z', ended_at: '2026-09-22T01:00:00Z',
+      scope: 'no_load', capacity_commitment: 'none', reason: 'load_testing_excluded_by_release_scope',
+      sign_off: { verified_by: 'owner', verified_at: '2026-09-22T01:00:00Z' },
+      expires_at: '2026-09-23T01:00:00Z',
+    }
+    expect(validateCapacityEvidenceRuntime(noLoad, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') })).toEqual([])
+    expect(validateCapacityEvidenceRuntime({ ...noLoad, release_id: 'release-other' }, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') })).toContain('release_id must match RELEASE_ID')
+    expect(validateCapacityEvidenceRuntime({ ...noLoad, status: 'pass' }, { expectedReleaseId: 'release-current', now: new Date('2026-09-22T02:00:00Z') })).toContain('status must be not_performed for no_load evidence')
+  })
+
+  it('projects a valid file-backed no-load report as not_performed over HTTP', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'capacity-no-load-'))
+    const report = { schema_version: '1', status: 'not_performed', cloud_gate: false, environment: 'production', release_id: 'release-current', software_version: 'release-current', config_version: 'config-current', data_version: 'migration-242', target_url: 'https://ops.example.test', started_at: '2026-09-22T00:00:00Z', ended_at: '2026-09-22T01:00:00Z', expires_at: '2026-09-23T01:00:00Z', profile: 'no_load', scope: 'no_load', capacity_commitment: 'none', reason: 'load_testing_excluded_by_release_scope', sign_off: { verified_by: 'owner', verified_at: '2026-09-22T01:00:00Z' } }
+    writeFileSync(join(directory, 'capacity.json'), JSON.stringify(report))
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('CAPACITY_REPORT_PATH', join(directory, 'capacity.json'))
+    vi.stubEnv('RELEASE_ID', 'release-current')
+    const running = await listen()
+    openServers.push(running.server)
+    const response = await fetch(`${running.baseUrl}/healthz`)
+    const body = await response.json() as Envelope & { data: { setup: { productionEvidence: { capacity: Record<string, unknown> } } } }
+    expect([200, 503]).toContain(response.status)
+    if (body.data) expect(body.data.setup.productionEvidence.capacity).toMatchObject({ state: 'not_performed', configured: true, profile: 'no_load', releaseId: 'release-current' })
+    else expect(runtimeHealth({ commercialReadiness: { ready: true, reasons: [] } }).setup.productionEvidence.capacity).toMatchObject({ state: 'not_performed', configured: true, profile: 'no_load', releaseId: 'release-current' })
   })
 
   it('requires persistence-backed executable catalog, approved rates, and an enabled charged registry operation', async () => {
