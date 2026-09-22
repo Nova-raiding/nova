@@ -7,13 +7,13 @@ import { describe, expect, it } from 'vitest'
 
 const script = 'infra/scripts/verify-database-migration-chain.sh'
 
-function fixture() {
+function fixture(migrationCount = 3) {
   const root = mkdtempSync(join(tmpdir(), 'migration-chain-preflight-'))
   const migrations = join(root, 'migrations')
   const bin = join(root, 'bin')
   mkdirSync(migrations)
   mkdirSync(bin)
-  const sql = ['SELECT 1;\n', 'SELECT 2;\n', 'SELECT 3;\n']
+  const sql = Array.from({ length: migrationCount }, (_, index) => `SELECT ${index + 1};\n`)
   sql.forEach((contents, index) => writeFileSync(join(migrations, `${String(index + 1).padStart(3, '0')}_migration_${index + 1}.sql`), contents))
   const rows = sql.map((contents, index) => `${index + 1}|migration_${index + 1}|${createHash('sha256').update(contents).digest('hex')}`).join('\n') + '\n'
   const psql = join(bin, 'psql')
@@ -22,8 +22,8 @@ function fixture() {
   return { migrations, bin, rows }
 }
 
-function run(extra: Record<string, string> = {}) {
-  const testFixture = fixture()
+function run(extra: Record<string, string> = {}, migrationCount = 3) {
+  const testFixture = fixture(migrationCount)
   return spawnSync('sh', [script], {
     cwd: process.cwd(),
     encoding: 'utf8',
@@ -32,7 +32,7 @@ function run(extra: Record<string, string> = {}) {
       PATH: `${testFixture.bin}:${process.env.PATH ?? ''}`,
       DATABASE_URL: 'postgresql://tenant@db.internal/merchant?sslmode=verify-full',
       OPS_DATABASE_URL: 'postgresql://ops@db.internal/merchant?sslmode=verify-full',
-      EXPECTED_MIGRATION_VERSION: '3',
+      EXPECTED_MIGRATION_VERSION: String(migrationCount),
       MIGRATIONS_DIR: testFixture.migrations,
       FAKE_TENANT_ROWS: testFixture.rows,
       FAKE_OPS_ROWS: testFixture.rows,
@@ -95,6 +95,26 @@ describe('ECS database migration-chain preflight', () => {
     const result = run({ FAKE_OPS_ROWS: tampered })
     expect(result.status).not.toBe(0)
     expect(result.stderr).toContain('OPS_DATABASE_URL: migration 3 checksum mismatch')
+  })
+
+  it('fails closed on a legacy checksum without explicit baseline acceptance', () => {
+    const baseline = fixture(144)
+    const legacyRows = baseline.rows.replace(/144\|migration_144\|[a-f0-9]{64}\n$/, '144|migration_144|9519b2dbee21371a0bc7429c50e61ab3a677a4fd3965707328bd18489f2ad2e7\n')
+    const result = run({ FAKE_TENANT_ROWS: legacyRows, FAKE_OPS_ROWS: legacyRows }, 144)
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('DATABASE_URL: migration 144 checksum mismatch')
+  })
+
+  it('accepts a built-in legacy checksum only after explicit baseline acceptance', () => {
+    const baseline = fixture(144)
+    const legacyRows = baseline.rows.replace(/144\|migration_144\|[a-f0-9]{64}\n$/, '144|migration_144|9519b2dbee21371a0bc7429c50e61ab3a677a4fd3965707328bd18489f2ad2e7\n')
+    const result = run({
+      FAKE_TENANT_ROWS: legacyRows,
+      FAKE_OPS_ROWS: legacyRows,
+      MIGRATION_BASELINE_ACCEPTED: 'true',
+    }, 144)
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('mode=complete versions=1-144 checksums=matched')
   })
 
   it('rejects a checksum-matched history that is ahead of the candidate', () => {

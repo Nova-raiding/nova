@@ -9,6 +9,10 @@ case "$migration_chain_mode" in
   prefix|complete) ;;
   *) echo 'MIGRATION_CHAIN_MODE must be prefix or complete' >&2; exit 2 ;;
 esac
+baseline_accepted=0
+case "$(printf '%s' "${MIGRATION_BASELINE_ACCEPTED:-}" | tr '[:upper:]' '[:lower:]')" in
+  true) baseline_accepted=1 ;;
+esac
 
 command -v psql >/dev/null 2>&1 || { echo 'psql is required to verify the database migration chain' >&2; exit 1; }
 command -v shasum >/dev/null 2>&1 || { echo 'shasum is required to verify the database migration chain' >&2; exit 1; }
@@ -54,7 +58,7 @@ verify_target() {
     "SELECT version, name, coalesce(checksum, '') FROM public.schema_migrations ORDER BY version" \
     > "$actual_path"
 
-  awk -F '[|\t]' -v target="$target_name" -v mode="$migration_chain_mode" '
+  awk -F '[|\t]' -v target="$target_name" -v mode="$migration_chain_mode" -v baseline_accepted="$baseline_accepted" '
     NR == FNR { version[++expected_count]=$1; name[$1]=$2; checksum[$1]=$3; next }
     {
       actual_count++
@@ -66,7 +70,7 @@ verify_target() {
       legacy_checksum=(v == 144 && $3 == "9519b2dbee21371a0bc7429c50e61ab3a677a4fd3965707328bd18489f2ad2e7") ||
         (v == 168 && $3 == "37f633fb25a7d1536f65a644a1adee3611c36ed416ac9a1bf3a10a1e92ab1ef1") ||
         (v == 191 && $3 == "36f8c9669ba99a392a874a76fa8d28b658211376a0e7e3131281247926202ba2")
-      if (fail == "" && $3 != checksum[v] && !legacy_name && !legacy_checksum) fail="migration " v " checksum mismatch"
+      if (fail == "" && $3 != checksum[v] && !legacy_name && !(baseline_accepted == 1 && legacy_checksum)) fail="migration " v " checksum mismatch"
       if (fail != "") { print target ": " fail > "/dev/stderr"; exit 1 }
     }
     END {
