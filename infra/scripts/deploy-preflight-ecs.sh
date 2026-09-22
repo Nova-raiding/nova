@@ -167,6 +167,7 @@ sh infra/scripts/validate-production-config.sh "$config_path"
 node infra/scripts/validate-ecs-production-compose.mjs "$RENDERED_COMPOSE_PATH"
 image_set_digest=$(ruby infra/scripts/validate-ecs-compose-release.rb "$RENDERED_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON" --print-image-set-digest)
 manifest_sha256=$(ruby infra/scripts/validate-ecs-compose-release.rb "$RENDERED_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON" --print-manifest-sha256)
+release_manifest_sha256=$(shasum -a 256 "$RELEASE_MANIFEST_PATH" | awk '{print $1}')
 if [ -f "$root/.candidate-identity" ] && [ ! -L "$root/.candidate-identity" ]; then
   release_git_sha=$(sed -n 's/^git_sha=//p' "$root/.candidate-identity")
   printf '%s' "$release_git_sha" | grep -Eq '^[0-9a-f]{40}$' || { echo 'staged candidate Git SHA is invalid' >&2; exit 1; }
@@ -228,7 +229,7 @@ npx --no-install tsx tests/production-evidence-gate.ts --kind payment --file "$P
 npx --no-install tsx tests/production-evidence-gate.ts --kind restore --file "$RESTORE_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
 npx --no-install tsx tests/release-evidence-bundle-gate.ts --file "$RELEASE_EVIDENCE_BUNDLE_PATH" \
   --release-manifest "$RELEASE_MANIFEST_PATH" \
-  --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" \
+  --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$release_manifest_sha256" \
   --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" \
   --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id" \
   --capability-evidence "$CAPABILITY_EVIDENCE_PATH" --capacity-evidence "$CAPACITY_REPORT_PATH" \

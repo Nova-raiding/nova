@@ -522,6 +522,8 @@ describe('deployment operation scripts', () => {
     expect(deployPreflight).toContain('--expected-mcp-base-url')
     expect(deployPreflight).toContain('--expected-bridge-sha256')
     expect(deployPreflight).toContain('release-manifest-gate.ts')
+    expect(ecsDeployPreflight).toContain('release_manifest_sha256=$(shasum -a 256 "$RELEASE_MANIFEST_PATH"')
+    expect(ecsDeployPreflight).toContain('--image-set-digest "$image_set_digest" --manifest-sha256 "$release_manifest_sha256"')
     for (const binding of ['--release-git-sha', '--manifest-sha256', '--image-set-digest', '--deployment-nonce', '--expected-config-checksum', '--public-key', '--key-id']) expect(deployPreflight).toContain(binding)
     expect(deployPreflight).toContain('validate-rendered-production-config.rb')
     expect(deployPreflight).toContain('validate-scanner-contract.rb')
