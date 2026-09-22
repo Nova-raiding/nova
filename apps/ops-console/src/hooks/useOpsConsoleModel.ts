@@ -464,7 +464,7 @@ export function useOpsConsoleModel() {
     identityCount: 0,
     workspaceCount: 0,
     offset: 0,
-    limit: 10,
+    limit: 20,
     truncated: false,
   });
   const [userDirectoryLoading, setUserDirectoryLoading] = useState(false);
@@ -670,7 +670,7 @@ export function useOpsConsoleModel() {
     setSubscription(undefined);
     setOrders([]);
     setMembers([]);
-    setUserDirectory({ items: [], total: 0, identityCount: 0, workspaceCount: 0, offset: 0, limit: 10, truncated: false });
+    setUserDirectory({ items: [], total: 0, identityCount: 0, workspaceCount: 0, offset: 0, limit: 20, truncated: false });
     setUserDirectoryError("");
     setUserDetail(undefined);
     setWorkspaceRows([]);
@@ -1549,7 +1549,7 @@ export function useOpsConsoleModel() {
     userDirectoryInFlightKeysRef.current.add(requestKey);
     const requestId = ++userDirectoryRequestRef.current;
     const page = filters.page ?? 1;
-    const pageSize = filters.pageSize ?? 10;
+    const pageSize = filters.pageSize ?? 20;
     setUserDirectoryFilters(filters);
     setUserDirectoryLoading(true);
     setUserDirectoryError("");

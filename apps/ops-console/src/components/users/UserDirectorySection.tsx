@@ -57,7 +57,7 @@ export function sortUserDirectoryRows(items: PlatformUser[], sort?: UserDirector
 
 export function userDirectoryPageRequest(filters: UserFilters, current?: number, pageSize?: number) {
   const { attribute: _attribute, ...serverFilters } = filters;
-  return { ...serverFilters, page: current ?? 1, pageSize: pageSize ?? 10 };
+  return { ...serverFilters, page: current ?? 1, pageSize: pageSize ?? 20 };
 }
 
 export function canWriteLoadedIdentity(model: Pick<OpsConsoleModel, "canUserGovernance" | "userDetail" | "userDetailLoading">) {

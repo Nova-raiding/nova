@@ -57,6 +57,11 @@ describe("UserDirectorySection sorting", () => {
     expect(source).not.toContain("total: attributeFilter ? sortedUsers.length");
   });
 
+  it("requests 20 users by default while preserving explicit server page sizes", () => {
+    expect(userDirectoryPageRequest({})).toEqual({ page: 1, pageSize: 20 });
+    expect(userDirectoryPageRequest({}, 2, 50)).toEqual({ page: 2, pageSize: 50 });
+  });
+
   it("keeps identity writes disabled until a persistent identity is fully loaded", () => {
     const state = (overrides: Partial<Pick<OpsConsoleModel, "canUserGovernance" | "userDetail" | "userDetailLoading">>) => ({
       canUserGovernance: true,
