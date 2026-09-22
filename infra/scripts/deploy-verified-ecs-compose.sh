@@ -358,22 +358,26 @@ EXPECTED_RELEASE_ID="$RELEASE_ID" EXPECTED_RELEASE_GIT_SHA="$git_sha" EXPECTED_M
   node -e 'const body=JSON.parse(require("fs").readFileSync(0,"utf8"));const got=body.data?.release??body.release;const expected={release_id:process.env.EXPECTED_RELEASE_ID,release_git_sha:process.env.EXPECTED_RELEASE_GIT_SHA,manifest_sha256:process.env.EXPECTED_MANIFEST_SHA256,image_set_digest:process.env.EXPECTED_IMAGE_SET_DIGEST};if(!got||Object.entries(expected).some(([key,value])=>got[key]!==value)){throw new Error("releasez does not match the verified ECS candidate")}' <<EOF
 $release_payload
 EOF
-curl --fail --silent --show-error --max-time 20 \
-  -H "authorization: Bearer $PRODUCTION_CANARY_BEARER_TOKEN" \
-  -H "x-workspace-id: $PRODUCTION_CANARY_WORKSPACE_ID" \
-  "${PRODUCTION_API_BASE_URL%/}/v1/products?limit=1&offset=0" >/dev/null
-if [ "${PLATFORM_OPERATIONS_MODE:-}" = manual ]; then
-  sh "$root/infra/scripts/run-manual-operations-canary.sh"
+if [ "${DEPLOYMENT_SCOPE:-full}" = full ]; then
+  curl --fail --silent --show-error --max-time 20 \
+    -H "authorization: Bearer $PRODUCTION_CANARY_BEARER_TOKEN" \
+    -H "x-workspace-id: $PRODUCTION_CANARY_WORKSPACE_ID" \
+    "${PRODUCTION_API_BASE_URL%/}/v1/products?limit=1&offset=0" >/dev/null
+  if [ "${PLATFORM_OPERATIONS_MODE:-}" = manual ]; then
+    sh "$root/infra/scripts/run-manual-operations-canary.sh"
+  else
+    [ "${PLATFORM_OPERATIONS_MODE:-}" = official_api ] || { echo 'PLATFORM_OPERATIONS_MODE must be manual or official_api' >&2; exit 1; }
+    PLATFORM_CANARY_BASE_EVIDENCE="$CAPABILITY_EVIDENCE_PATH" PLATFORM_CANARY_OUTPUT="$POST_DEPLOY_CANARY_OUTPUT" \
+    PRODUCTION_API_BASE_URL="$PRODUCTION_API_BASE_URL" RELEASE_GIT_SHA="$git_sha" RELEASE_MANIFEST_SHA256="$manifest_sha256" \
+    RELEASE_IMAGE_SET_DIGEST="$image_set_digest" sh "$root/infra/scripts/run-production-canary.sh"
+    trust_root=/run/release-security/evidence-trust/production-evidence-public.pem
+    trusted_key_id=$(sed -n '1p' /run/release-security/evidence-trust/production-evidence-key-id)
+    npx --no-install tsx "$root/tests/capability-evidence-gate.ts" --file "$POST_DEPLOY_CANARY_OUTPUT" --require-canary --require-signed-production \
+      --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$git_sha" \
+      --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_root" --key-id "$trusted_key_id"
+  fi
 else
-  [ "${PLATFORM_OPERATIONS_MODE:-}" = official_api ] || { echo 'PLATFORM_OPERATIONS_MODE must be manual or official_api' >&2; exit 1; }
-  PLATFORM_CANARY_BASE_EVIDENCE="$CAPABILITY_EVIDENCE_PATH" PLATFORM_CANARY_OUTPUT="$POST_DEPLOY_CANARY_OUTPUT" \
-  PRODUCTION_API_BASE_URL="$PRODUCTION_API_BASE_URL" RELEASE_GIT_SHA="$git_sha" RELEASE_MANIFEST_SHA256="$manifest_sha256" \
-  RELEASE_IMAGE_SET_DIGEST="$image_set_digest" sh "$root/infra/scripts/run-production-canary.sh"
-  trust_root=/run/release-security/evidence-trust/production-evidence-public.pem
-  trusted_key_id=$(sed -n '1p' /run/release-security/evidence-trust/production-evidence-key-id)
-  npx --no-install tsx "$root/tests/capability-evidence-gate.ts" --file "$POST_DEPLOY_CANARY_OUTPUT" --require-canary --require-signed-production \
-    --release-id "$RELEASE_ID" --image-set-digest "$image_set_digest" --manifest-sha256 "$manifest_sha256" --release-git-sha "$git_sha" \
-    --deployment-nonce "$DEPLOYMENT_NONCE" --public-key "$trust_root" --key-id "$trusted_key_id"
+  echo "post-deploy business acceptance deferred: deployment_scope=${DEPLOYMENT_SCOPE}"
 fi
 "$ECS_PREIDENTITY_RECOVERY_ENTRYPOINT" phase --state "$state_path" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase runtime_identity_verified
 

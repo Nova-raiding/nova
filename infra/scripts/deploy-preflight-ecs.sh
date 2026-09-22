@@ -12,6 +12,11 @@ root=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd -P)
 config_path=${1:-${PRODUCTION_CONFIG_PATH:-}}
 [ -f "$config_path" ] || { echo 'PRODUCTION_CONFIG_PATH or config path is required' >&2; exit 2; }
 : "${RELEASE_ID:?RELEASE_ID is required}"
+: "${DEPLOYMENT_SCOPE:=full}"
+case "$DEPLOYMENT_SCOPE" in
+  infra|full) ;;
+  *) echo 'DEPLOYMENT_SCOPE must be infra or full' >&2; exit 1 ;;
+esac
 : "${IMAGE_DIGESTS_JSON:?IMAGE_DIGESTS_JSON is required}"
 : "${DATABASE_URL:?DATABASE_URL is required}"
 : "${OPS_DATABASE_URL:?OPS_DATABASE_URL is required}"
@@ -31,16 +36,18 @@ config_path=${1:-${PRODUCTION_CONFIG_PATH:-}}
 : "${PGPASSWORD:?PGPASSWORD is required so the migration runs as the schema owner}"
 : "${ALERT_RECEIVER_DATABASE_URL:?ALERT_RECEIVER_DATABASE_URL is required so the migration can verify the receiver role}"
 : "${SECRET_PROVIDER:?SECRET_PROVIDER is required}"
-: "${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required}"
-: "${CAPACITY_REPORT_PATH:?CAPACITY_REPORT_PATH is required}"
-: "${MODEL_RELAY_EVIDENCE_PATH:?MODEL_RELAY_EVIDENCE_PATH is required}"
-: "${CODEX_APP_HOST_EVIDENCE_PATH:?CODEX_APP_HOST_EVIDENCE_PATH is required}"
-: "${OBJECT_STORAGE_EVIDENCE_PATH:?OBJECT_STORAGE_EVIDENCE_PATH is required}"
-: "${CANONICAL_CUTOVER_EVIDENCE_PATH:?CANONICAL_CUTOVER_EVIDENCE_PATH is required}"
-: "${RELEASE_MANIFEST_PATH:?RELEASE_MANIFEST_PATH is required}"
-: "${PAYMENT_EVIDENCE_PATH:?PAYMENT_EVIDENCE_PATH is required}"
-: "${RESTORE_EVIDENCE_PATH:?RESTORE_EVIDENCE_PATH is required}"
-: "${RELEASE_EVIDENCE_BUNDLE_PATH:?RELEASE_EVIDENCE_BUNDLE_PATH is required}"
+if [ "$DEPLOYMENT_SCOPE" = full ]; then
+  : "${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required for full production acceptance}"
+  : "${CAPACITY_REPORT_PATH:?CAPACITY_REPORT_PATH is required for full production acceptance}"
+  : "${MODEL_RELAY_EVIDENCE_PATH:?MODEL_RELAY_EVIDENCE_PATH is required for full production acceptance}"
+  : "${CODEX_APP_HOST_EVIDENCE_PATH:?CODEX_APP_HOST_EVIDENCE_PATH is required for full production acceptance}"
+  : "${OBJECT_STORAGE_EVIDENCE_PATH:?OBJECT_STORAGE_EVIDENCE_PATH is required for full production acceptance}"
+  : "${CANONICAL_CUTOVER_EVIDENCE_PATH:?CANONICAL_CUTOVER_EVIDENCE_PATH is required for full production acceptance}"
+  : "${RELEASE_MANIFEST_PATH:?RELEASE_MANIFEST_PATH is required for full production acceptance}"
+  : "${PAYMENT_EVIDENCE_PATH:?PAYMENT_EVIDENCE_PATH is required for full production acceptance}"
+  : "${RESTORE_EVIDENCE_PATH:?RESTORE_EVIDENCE_PATH is required for full production acceptance}"
+  : "${RELEASE_EVIDENCE_BUNDLE_PATH:?RELEASE_EVIDENCE_BUNDLE_PATH is required for full production acceptance}"
+fi
 : "${RENDERED_COMPOSE_PATH:?RENDERED_COMPOSE_PATH is required}"
 : "${PRODUCTION_EVIDENCE_ARTIFACT_ROOT:?PRODUCTION_EVIDENCE_ARTIFACT_ROOT is required}"
 : "${EXPECTED_MIGRATION_VERSION:?EXPECTED_MIGRATION_VERSION is required}"
@@ -152,10 +159,15 @@ case "${ASSET_STORAGE_SSE_MODE:-AES256}" in
   aws:kms) [ -n "${ASSET_STORAGE_KMS_KEY_ID:-}" ] || { echo 'ASSET_STORAGE_KMS_KEY_ID is required when aws:kms is selected' >&2; exit 1; } ;;
   *) echo 'ASSET_STORAGE_SSE_MODE must be AES256 or aws:kms' >&2; exit 1 ;;
 esac
-for file in "$CAPABILITY_EVIDENCE_PATH" "$CAPACITY_REPORT_PATH" "$MODEL_RELAY_EVIDENCE_PATH" "$CODEX_APP_HOST_EVIDENCE_PATH" "$OBJECT_STORAGE_EVIDENCE_PATH" "$CANONICAL_CUTOVER_EVIDENCE_PATH" "$RELEASE_MANIFEST_PATH" "$PAYMENT_EVIDENCE_PATH" "$RESTORE_EVIDENCE_PATH" "$RELEASE_EVIDENCE_BUNDLE_PATH" "$RENDERED_COMPOSE_PATH"; do
+for file in "$RENDERED_COMPOSE_PATH"; do
   [ -f "$file" ] || { echo "evidence file not found: $file" >&2; exit 1; }
 done
-[ -d "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" ] || { echo 'production evidence artifact root not found' >&2; exit 1; }
+if [ "$DEPLOYMENT_SCOPE" = full ]; then
+  for file in "$CAPABILITY_EVIDENCE_PATH" "$CAPACITY_REPORT_PATH" "$MODEL_RELAY_EVIDENCE_PATH" "$CODEX_APP_HOST_EVIDENCE_PATH" "$OBJECT_STORAGE_EVIDENCE_PATH" "$CANONICAL_CUTOVER_EVIDENCE_PATH" "$RELEASE_MANIFEST_PATH" "$PAYMENT_EVIDENCE_PATH" "$RESTORE_EVIDENCE_PATH" "$RELEASE_EVIDENCE_BUNDLE_PATH"; do
+    [ -f "$file" ] || { echo "evidence file not found: $file" >&2; exit 1; }
+  done
+  [ -d "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" ] || { echo 'production evidence artifact root not found' >&2; exit 1; }
+fi
 cd "$root"
 : "${MCP_INTEGRATION_MODE:?MCP_INTEGRATION_MODE is required}"
 case "$MCP_INTEGRATION_MODE" in
@@ -212,6 +224,10 @@ sh infra/scripts/verify-runtime-db-role.sh
 api_digest=$(IMAGE_DIGESTS_JSON="$IMAGE_DIGESTS_JSON" node -e 'const x=JSON.parse(process.env.IMAGE_DIGESTS_JSON);process.stdout.write(x["merchant-api"]||"")')
 worker_digest=$(IMAGE_DIGESTS_JSON="$IMAGE_DIGESTS_JSON" node -e 'const x=JSON.parse(process.env.IMAGE_DIGESTS_JSON);process.stdout.write(x["merchant-worker"]||"")')
 sh infra/scripts/verify-container-source-freshness.sh "$API_IMAGE_REF" "$WORKER_IMAGE_REF" "$api_digest" "$worker_digest"
+if [ "$DEPLOYMENT_SCOPE" = infra ]; then
+  echo "ecs infra preflight passed: release_id=$RELEASE_ID scope=infra (business acceptance evidence deferred)"
+  exit 0
+fi
 if [ "$platform_operations_mode" = manual ]; then
   npx --no-install tsx tests/manual-operations-evidence-gate.ts --file "$CAPABILITY_EVIDENCE_PATH" --release-id "$RELEASE_ID"
 else
