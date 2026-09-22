@@ -23,6 +23,8 @@ describe('ECS one-click deployment storage policy', () => {
     expect(source).toContain('docker builder prune')
     expect(source).toContain('docker image prune -f')
     expect(source).not.toMatch(/docker (?:volume prune|system prune)|down -v/u)
+    expect(source).toContain('docker ps -aq')
+    expect(source).toContain("sed -n 's/^RELEASE_ID=//p'")
   })
 
   it('dry-runs by default, keeps the newest two, and protects explicit releases', () => {

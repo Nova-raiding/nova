@@ -37,6 +37,15 @@ protect() {
 }
 
 for value in ${ECS_PROTECTED_RELEASE_IDS:-}; do protect "$value"; done
+if command -v docker >/dev/null 2>&1; then
+  # A failed or interrupted rollout can leave a created/stopped container whose
+  # Compose metadata still points at its release checkout. Preserve those
+  # forensic and recovery inputs just like a running release.
+  for container in $(docker ps -aq 2>/dev/null || true); do
+    container_release=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" 2>/dev/null | sed -n 's/^RELEASE_ID=//p' | head -1)
+    protect "$container_release"
+  done
+fi
 if [ -n "${PRODUCTION_API_BASE_URL:-}" ] && command -v curl >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
   attempt=0
   while [ "$attempt" -lt 5 ]; do
