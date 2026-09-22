@@ -19,11 +19,15 @@ describe('synthetic protected postgres backup attester', () => {
     const source = readFileSync('infra/protected/produce-protected-live-backup.mjs', 'utf8')
     expect(source).toContain('process.env.EXPECTED_MIGRATION_VERSION')
     expect(source).toContain('process.env.PRODUCTION_POSTGRES_CONTAINER')
+    expect(source).toContain('process.env.RELEASE_ID')
+    expect(source).toContain('production-backup-source-${releaseId}.json')
+    expect(source).toContain('backups/${releaseId}')
     expect(source).toContain('merchant-production-postgres-')
     expect(source).toContain('EXPECTED_MIGRATION_VERSION must be a positive integer')
     expect(source).toContain('before-upgrade-${expectedMigrationVersion}.dump')
     expect(source).not.toContain('assert.equal(value.migration_version, 219)')
     expect(source).not.toContain("['inspect', 'local-postgres-1']")
+    expect(source).not.toContain("production-backup-source.json'")
   })
 
   it('signs synthetic bytes with matching Ed25519 keys and the existing restore verifier rejects tampering', () => {

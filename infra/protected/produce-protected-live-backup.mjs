@@ -11,8 +11,10 @@ const expectedMigrationVersion = Number(process.env.EXPECTED_MIGRATION_VERSION ?
 assert(Number.isSafeInteger(expectedMigrationVersion) && expectedMigrationVersion > 0, 'EXPECTED_MIGRATION_VERSION must be a positive integer')
 const postgresContainer = process.env.PRODUCTION_POSTGRES_CONTAINER ?? ''
 assert(/^merchant-production-postgres-[1-9][0-9]*$/.test(postgresContainer), 'PRODUCTION_POSTGRES_CONTAINER must identify the reviewed production PostgreSQL container')
-const policyPath = '/run/release-security/evidence-trust/production-backup-source.json'
-const outputRoot = `/var/lib/merchant-release-security/backups/controls-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}`
+const releaseId = process.env.RELEASE_ID ?? ''
+assert(/^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(releaseId), 'RELEASE_ID must identify the reviewed release')
+const policyPath = `/run/release-security/evidence-trust/production-backup-source-${releaseId}.json`
+const outputRoot = `/var/lib/merchant-release-security/backups/${releaseId}`
 
 function protect(path) {
   assert.equal(realpathSync(path), path)
