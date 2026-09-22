@@ -21430,8 +21430,9 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   }
   if (req.method === 'GET' && path === '/v1/ops/merchant-registration-applications') {
     requireOperationsRole(req, ['platform_ops', 'platform_admin', 'ops_admin'])
-    const accounts = (await passwordAuthRepository.listAccounts()).filter(account => account.accountType === 'merchant')
-    return send(res, 200, 'unknown', { items: accounts.map(account => ({ application_id: account.id, login: account.login, enterprise_name: account.enterpriseName ?? null, contact_name: account.contactName ?? null, status: account.status, workspace_ids: account.workspaceIds, created_at: account.createdAt, updated_at: account.updatedAt, revision: account.revision })) }, null, req)
+    const pagination = paginationRequest(url)
+    const page = await passwordAuthRepository.listMerchantRegistrationApplications(pagination)
+    return send(res, 200, 'unknown', { ...page, items: page.items.map(account => ({ application_id: account.id, login: account.login, enterprise_name: account.enterpriseName ?? null, contact_name: account.contactName ?? null, status: account.status, workspace_ids: account.workspaceIds, created_at: account.createdAt, updated_at: account.updatedAt, revision: account.revision })) }, null, req)
   }
   if (req.method === 'POST' && path === '/v1/ops/merchant-registration-applications/review') {
     requireOperationsRole(req, ['platform_ops', 'platform_admin', 'ops_admin'])

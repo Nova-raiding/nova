@@ -9,6 +9,20 @@ describe('password authentication', () => {
     await expect(auth.register({ login: 'valid@example.com', password: 'test1234', enterpriseName: '企业', contactName: '管理员', termsAgreed: true })).resolves.toMatchObject({ account: { login: 'valid@example.com' } })
   })
 
+  it('pages only merchant registration applications with a stable total', async () => {
+    const auth = new MemoryPasswordAuthRepository()
+    await auth.ensurePlatformAccount({ login: 'ops@example.com', passwordHash: 'unused' })
+    await auth.register({ login: 'first@example.com', password: 'CorrectHorse123', enterpriseName: '甲企业', contactName: '甲', termsAgreed: true })
+    await auth.register({ login: 'second@example.com', password: 'CorrectHorse123', enterpriseName: '乙企业', contactName: '乙', termsAgreed: true })
+
+    const page = await auth.listMerchantRegistrationApplications({ limit: 1, offset: 1 })
+
+    expect(page).toMatchObject({ total: 2, limit: 1, offset: 1 })
+    expect(page.items).toHaveLength(1)
+    expect(page.items[0]?.accountType).toBe('merchant')
+    expect(page.items[0]).not.toHaveProperty('passwordHash')
+  })
+
   it('registers with an Argon2id hash, logs in with an opaque session, and rotates refresh', async () => {
     const auth = new MemoryPasswordAuthRepository()
     const registered = await auth.register({ login: 'merchant@example.com', password: 'CorrectHorse123', enterpriseName: '示例企业', contactName: '张三', termsAgreed: true })

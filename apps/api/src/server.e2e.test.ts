@@ -2571,6 +2571,11 @@ describe('API HTTP vertical slice', () => {
       const cookie = login.headers.get('set-cookie')!.split(';', 1)[0]!
       const listed = await fetch(`${base}/v1/ops/merchant-registration-applications`, { headers: { cookie, 'x-ops-workbench': 'platform' } }).then(json)
       expect(listed.data.items).toEqual(expect.arrayContaining([expect.objectContaining({ login: 'applicant@example.com', status: 'merchant_pending' })]))
+      expect(listed.data).toMatchObject({ total: 1, limit: 20, offset: 0 })
+      const emptyPage = await fetch(`${base}/v1/ops/merchant-registration-applications?limit=1&offset=1`, { headers: { cookie, 'x-ops-workbench': 'platform' } }).then(json)
+      expect(emptyPage.data).toMatchObject({ items: [], total: 1, limit: 1, offset: 1 })
+      const invalidPage = await fetch(`${base}/v1/ops/merchant-registration-applications?limit=101&offset=0`, { headers: { cookie, 'x-ops-workbench': 'platform' } }).then(json)
+      expect(invalidPage.error?.code).toBe('INVALID_REQUEST')
       const reviewed = await fetch(`${base}/v1/ops/merchant-registration-applications/review`, { method: 'POST', headers: { cookie, 'x-ops-workbench': 'platform', 'content-type': 'application/json' }, body: JSON.stringify({ login: 'applicant@example.com', decision: 'approved', workspace_ids: ['ws_demo'], reason: '资料核验通过' }) }).then(json)
       expect(reviewed.error).toBeNull(); expect(reviewed.data).toMatchObject({ login: 'applicant@example.com', status: 'active', workspace_ids: ['ws_demo'] })
       const replay = await fetch(`${base}/v1/ops/merchant-registration-applications/review`, { method: 'POST', headers: { cookie, 'x-ops-workbench': 'platform', 'content-type': 'application/json' }, body: JSON.stringify({ login: 'applicant@example.com', decision: 'rejected', reason: '重复审核' }) }).then(json)

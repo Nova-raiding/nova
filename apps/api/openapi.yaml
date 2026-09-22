@@ -31,6 +31,9 @@ paths:
       operationId: listMerchantRegistrationApplications
       description: Lists merchant registration applications for platform operations.
       security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
       responses:
         '200': { $ref: '#/components/responses/Envelope' }
         '401': { $ref: '#/components/responses/ErrorEnvelope' }

@@ -63,6 +63,7 @@ export interface PasswordAuthRepository {
   register(input: { login: string; password: string; enterpriseName: string; contactName: string; termsAgreed: boolean }): Promise<{ account: PasswordAccount; applicationId: string }>
   createMerchantAccount(input: { login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string[]; actorId: string; reason: string }): Promise<PasswordAccount>
   listAccounts(): Promise<PasswordAccount[]>
+  listMerchantRegistrationApplications(input: { limit: number; offset: number }): Promise<{ items: PasswordAccount[]; total: number; limit: number; offset: number }>
   login(input: { login: string; password: string; ip?: string; userAgent?: string }): Promise<{ token: string; principal: PasswordSessionPrincipal }>
   authenticate(token: string): Promise<PasswordSessionPrincipal | undefined>
   changePassword(input: { token: string; currentPassword: string; newPassword: string }): Promise<void>
@@ -173,6 +174,18 @@ export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
 
   async listAccounts() {
     return [...this.accounts.values()].map(accountPublic)
+  }
+
+  async listMerchantRegistrationApplications(input: { limit: number; offset: number }) {
+    const items = [...this.accounts.values()]
+      .filter(account => account.accountType === 'merchant')
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id))
+    return {
+      items: items.slice(input.offset, input.offset + input.limit).map(accountPublic),
+      total: items.length,
+      limit: input.limit,
+      offset: input.offset,
+    }
   }
 
   async activateMerchantAccount(input: { login: string; workspaceIds: string[]; actorId?: string; reason?: string }) {
@@ -337,6 +350,20 @@ export class PostgresPasswordAuthRepository implements PasswordAuthRepository {
     })
   }
   async listAccounts() { return this.withClient(async client => { const result = await client.query<AccountRecord>(`SELECT a.id, a.identity_id AS "identityId", a.login_identifier AS login, a.account_type AS "accountType", a.enterprise_name AS "enterpriseName", a.contact_name AS "contactName", a.password_hash AS "passwordHash", a.status, a.roles, a.workspace_ids AS "workspaceIds", a.failed_attempts AS "failedAttempts", a.locked_until AS "lockedUntil", a.auth_epoch AS "authEpoch", a.revision, a.created_at AS "createdAt", a.updated_at AS "updatedAt" FROM platform_password_accounts a ORDER BY a.updated_at DESC, a.id ASC`); return result.rows.map(row => this.public(row)) }) }
+  async listMerchantRegistrationApplications(input: { limit: number; offset: number }) {
+    return this.withClient(async client => {
+      const count = await client.query<{ total: string }>(`SELECT count(*)::text AS total FROM platform_password_accounts WHERE account_type='merchant'`)
+      const result = await client.query<AccountRecord>(
+        `SELECT a.id, a.identity_id AS "identityId", a.login_identifier AS login, a.account_type AS "accountType", a.enterprise_name AS "enterpriseName", a.contact_name AS "contactName", a.password_hash AS "passwordHash", a.status, a.roles, a.workspace_ids AS "workspaceIds", a.failed_attempts AS "failedAttempts", a.locked_until AS "lockedUntil", a.auth_epoch AS "authEpoch", a.revision, a.created_at AS "createdAt", a.updated_at AS "updatedAt"
+           FROM platform_password_accounts a
+          WHERE a.account_type='merchant'
+          ORDER BY a.updated_at DESC, a.id ASC
+          LIMIT $1 OFFSET $2`,
+        [input.limit, input.offset],
+      )
+      return { items: result.rows.map(row => this.public(row)), total: Number(count.rows[0]?.total ?? 0), limit: input.limit, offset: input.offset }
+    })
+  }
   async reviewMerchantRegistration(input: { login: string; decision: 'approved' | 'rejected'; workspaceIds?: string[]; actorId?: string; reason: string }) {
     const login = assertLogin(input.login)
     const workspaceIds = [...new Set((input.workspaceIds ?? []).map(value => value.trim()).filter(Boolean))]

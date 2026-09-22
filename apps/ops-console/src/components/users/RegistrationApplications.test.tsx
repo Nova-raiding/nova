@@ -28,7 +28,7 @@ describe("registration applications error state", () => {
   let vite: ViteDevServer | undefined;
   let cacheDirectory: string | undefined;
   let baseUrl: string;
-  const applicationsUrl = () => `${baseUrl}/api/v1/ops/merchant-registration-applications`;
+  const applicationsUrl = () => `${baseUrl}/api/v1/ops/merchant-registration-applications?limit=20&offset=0`;
 
   beforeAll(async () => {
     cacheDirectory = await mkdtemp(join(tmpdir(), "ops-registration-apps-"));
@@ -95,9 +95,9 @@ describe("registration applications error state", () => {
     contentType: "application/json",
     body: JSON.stringify({ error: { code: "INTERNAL_ERROR", message: "入驻申请仓储不可用" } }),
   });
-  const succeed = (route: Route, items: unknown[]) => route.fulfill({
+  const succeed = (route: Route, items: unknown[], page = { total: items.length, limit: 20, offset: 0 }) => route.fulfill({
     contentType: "application/json",
-    body: JSON.stringify({ jsonrpc: "2.0", id: "registrations-1", data: { items } }),
+    body: JSON.stringify({ jsonrpc: "2.0", id: "registrations-1", data: { items, ...page } }),
   });
 
   // The card is mounted by text, not by the refresh button's accessible name:
@@ -149,6 +149,24 @@ describe("registration applications error state", () => {
       await expect.poll(() => page.getByText("暂无入驻申请", { exact: false }).count()).toBe(1);
       expect(await page.locator('.ops-page-error[data-state="error"]').count()).toBe(0);
       expect(await page.getByText(/这不是空表/u).count()).toBe(0);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("requests the next server page instead of paginating a partial client result", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    const requestedOffsets: string[] = [];
+    try {
+      await page.route(`${baseUrl}/api/v1/ops/merchant-registration-applications?*`, route => {
+        const offset = new URL(route.request().url()).searchParams.get("offset") ?? "missing";
+        requestedOffsets.push(offset);
+        const item = offset === "20" ? { ...application, application_id: "application-21", login: "page-two@example.com" } : application;
+        return succeed(route, [item], { total: 21, limit: 20, offset: Number(offset) });
+      });
+      await open(page);
+      await expect.poll(() => page.getByText("new-customer@example.com", { exact: false }).count()).toBe(1);
+      await page.getByTitle("Next Page").click();
+      await expect.poll(() => page.getByText("page-two@example.com", { exact: false }).count()).toBe(1);
+      expect(requestedOffsets).toEqual(["0", "20"]);
     } finally { await page.close(); }
   }, 45_000);
 });
