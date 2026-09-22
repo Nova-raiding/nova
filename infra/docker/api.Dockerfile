@@ -43,7 +43,6 @@ COPY --from=build /app/dist ./dist
 # TypeScript does not emit SQL assets; the migration loader resolves this
 # path relative to the compiled module at runtime.
 COPY packages/persistence/src/migrations ./dist/packages/persistence/src/migrations
-COPY --from=build /app/apps/plugin ./apps/plugin
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/dist/packages/contracts/src ./packages/contracts/dist
 # Billing callback signing is intentionally kept as a checked-in ESM asset

@@ -13,6 +13,10 @@ macOS 新安装默认使用本地登录：CLI 在 `127.0.0.1` 随机端口接收
 
 交给技术安装人员或商家时，先阅读仓库根目录的[安装与配置手册](../../docs/store-nova-chatgpt-plugin-install-manual.md)。手册包含本地源码安装、macOS Keychain 登录、工作区绑定、模型中转边界、重启验收和 `MCP_CONFIGURATION_REQUIRED` 排障；不要把开发环境示例直接复制到生产商家电脑。
 
+### 生成独立本地安装包
+
+在仓库根目录执行 `node apps/plugin/scripts/package-local-plugin.mjs`。脚本只打包本目录的 manifest、stdio bridge、skills、登录/安装脚本、Keychain helper、scheduled 配置和本地 UI，输出到 `artifacts/local-plugin/`；API、数据库迁移、worker、运营后台、Docker 配置和测试不会进入该包。安装包中的 bridge 通过 `https://yxsona.com` 请求云端 API，数据和权限始终由服务端处理。
+
 ### 本地安装（不使用 ChatGPT OAuth）
 
 本插件支持本地桌面模式：ChatGPT/Codex 启动已安装包中的 stdio bridge，bridge 通过 HTTPS

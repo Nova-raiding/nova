@@ -298,7 +298,7 @@ describe('MCP surface coverage', () => {
     const installedBridge = readFileSync(new URL('../.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs', import.meta.url), 'utf8')
     const apiDockerfile = readFileSync(new URL('../infra/docker/api.Dockerfile', import.meta.url), 'utf8')
     expect(installedBridge).toBe(bridge)
-    expect(apiDockerfile).toContain('COPY --from=build /app/apps/plugin ./apps/plugin')
+    expect(apiDockerfile).not.toContain('COPY --from=build /app/apps/plugin ./apps/plugin')
     expect(new Set(MCP_METHODS).size).toBe(MCP_METHODS.length)
     for (const method of productionEvidenceMethods) {
       expect(methodsFromAllowlist(contracts).filter(candidate => candidate === method), `${method} duplicated in allowlist`).toHaveLength(1)

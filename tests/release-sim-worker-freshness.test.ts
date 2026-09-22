@@ -57,7 +57,7 @@ function buildFixture() {
   ] as const) put(source, path, contents);
 
   const manifests = {
-    api: ["apps/api/src/server.ts", "apps/plugin/mcp/bridge.mjs", "package-lock.json", "package.json", "packages/shared/src/index.ts", "tsconfig.json"],
+    api: ["apps/api/src/server.ts", "package-lock.json", "package.json", "packages/shared/src/index.ts", "tsconfig.json"],
     worker: ["apps/worker/src/main.ts", "package-lock.json", "package.json", "packages/shared/src/index.ts", "tsconfig.json"],
   } as const;
   for (const [profile, paths] of Object.entries(manifests)) {

@@ -3324,6 +3324,16 @@ function getAssetStorage(): ObjectStoragePort {
       throw new DomainError('ASSET_STORAGE_CREDENTIAL_PROVIDER_INVALID', '生产对象存储凭证提供方必须与 ECS 或 ACK 部署目标匹配', 503)
     }
     const client = new S3Client({ region, endpoint, forcePathStyle: process.env.ASSET_STORAGE_FORCE_PATH_STYLE === 'true', credentials })
+    // Aliyun OSS rejects the AWS conditional `If-None-Match: *` header with
+    // NotImplemented.  Its equivalent is the provider-specific
+    // `x-oss-forbid-overwrite` header.  Keep the AWS conditional for other
+    // S3-compatible providers, but use the native atomic no-overwrite
+    // contract for OSS so quarantine/body and metadata writes remain
+    // idempotent and fail closed on a conflicting key.
+    const aliYunOssEndpoint = (() => {
+      try { return /(?:^|\.)oss-[^./]+\.aliyuncs\.com$/iu.test(new URL(endpoint).hostname) || /\.aliyuncs\.com$/iu.test(new URL(endpoint).hostname) }
+      catch { return false }
+    })()
     const request = (key: string) => ({ Bucket: bucket, Key: key })
     const transport: CloudObjectTransport = {
       async head(key) {
@@ -3351,7 +3361,15 @@ function getAssetStorage(): ObjectStoragePort {
         return { body: new Uint8Array(await result.Body.transformToByteArray()), contentType: result.ContentType, metadata: result.Metadata }
       },
       async put(key, input) {
-        await client.send(new PutObjectCommand({ ...request(key), Body: input.body, ContentType: input.contentType, Metadata: input.metadata, ...(input.ifAbsent ? { IfNoneMatch: '*' } : {}), ServerSideEncryption: sseMode === 'aws:kms' ? 'aws:kms' : 'AES256', ...(sseMode === 'aws:kms' ? { SSEKMSKeyId: kmsKeyId } : {}) }))
+        const command = new PutObjectCommand({ ...request(key), Body: input.body, ContentType: input.contentType, Metadata: input.metadata, ...(!input.ifAbsent || aliYunOssEndpoint ? {} : { IfNoneMatch: '*' }), ServerSideEncryption: sseMode === 'aws:kms' ? 'aws:kms' : 'AES256', ...(sseMode === 'aws:kms' ? { SSEKMSKeyId: kmsKeyId } : {}) })
+        if (input.ifAbsent && aliYunOssEndpoint) {
+          command.middlewareStack.add(next => async args => {
+            const request = args.request as { headers?: Record<string, string> }
+            if (request.headers) request.headers['x-oss-forbid-overwrite'] = 'true'
+            return next(args)
+          }, { step: 'build', name: 'aliyunOssForbidOverwrite', override: true })
+        }
+        await client.send(command)
       },
       async delete(key) { await client.send(new DeleteObjectCommand(request(key))) },
     }

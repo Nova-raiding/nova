@@ -58,7 +58,7 @@ function generateSourceMetadataPair(
     "tsconfig.json",
   ];
   const profiles = {
-    api: ["apps/api/src/server.ts", "apps/plugin/mcp/bridge.mjs", ...shared],
+    api: ["apps/api/src/server.ts", ...shared],
     worker: ["apps/worker/src/main.ts", ...shared],
   } as const;
   for (const [profile, paths] of Object.entries(profiles)) {
@@ -120,11 +120,6 @@ function fixture(): Fixture {
     migration(directory, "064_current.sql", "SELECT 64;\n");
   }
   sourceFile(source, "apps/api/src/server.ts", "export const api = true\n");
-  sourceFile(
-    source,
-    "apps/plugin/mcp/bridge.mjs",
-    "export const plugin = true\n",
-  );
   sourceFile(source, "apps/worker/src/main.ts", "export const worker = true\n");
   sourceFile(
     source,

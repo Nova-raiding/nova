@@ -52,7 +52,7 @@ describe('deterministic container source manifest', () => {
     const gateway = readFileSync(generate(root, 'gateway').manifest, 'utf8')
 
     expect(api).toContain('apps/api/src/server.ts')
-    expect(api).toContain('apps/plugin/mcp/bridge.mjs')
+    expect(api).not.toContain('apps/plugin/mcp/bridge.mjs')
     expect(api).not.toContain('apps/worker/src/main.ts')
     expect(worker).toContain('apps/worker/src/main.ts')
     expect(worker).not.toContain('apps/api/src/server.ts')

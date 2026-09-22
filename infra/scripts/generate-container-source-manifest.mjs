@@ -13,7 +13,10 @@ import { dirname, resolve, sep } from 'node:path'
 
 const profiles = Object.freeze({
   api: Object.freeze({
-    scopes: Object.freeze(['apps/api', 'apps/plugin', 'packages']),
+    // The local ChatGPT plugin is a separately delivered desktop artifact.
+    // Cloud API images contain the server-side auth/data contract, never the
+    // local stdio bridge, installer, Keychain helper, or plugin UI assets.
+    scopes: Object.freeze(['apps/api', 'packages']),
     includeRootMetadata: true,
     requiredRootMetadata: Object.freeze(['package.json', 'package-lock.json', 'tsconfig.json']),
   }),
