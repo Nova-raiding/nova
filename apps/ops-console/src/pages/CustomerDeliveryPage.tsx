@@ -80,6 +80,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   // commercial-overview selector is no longer mounted in the converged console.
   const targetWorkspaceId = model.authorizationTargetWorkspaceId?.trim() ?? "";
   const [records, setRecords] = useState<import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryRecord[]>([]);
+  const [listQuery, setListQuery] = useState({ page: 1, pageSize: 20, keyword: "", owner: "", afterSalesOwner: "" });
+  const [listTotal, setListTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [mutationError, setMutationError] = useState("");
@@ -139,16 +141,17 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       isCurrent: () => !controller.signal.aborted && hasCurrentReadAccess(workspaceId, generation),
     };
   };
-  const load = async () => {
+  const load = async (query = listQuery) => {
     // A completed mutation may call an older load closure. Its payload remains
     // unchanged, but any follow-up read must use today's permission/lifecycle.
     const request = startCurrentRead(targetWorkspaceId);
     if (!request) return;
     setLoading(true); setError("");
     try {
-      const result = await customerDeliveryClient.list(targetWorkspaceId, request.controller.signal);
+      const result = await customerDeliveryClient.list({ targetWorkspaceId, offset: (query.page - 1) * query.pageSize, limit: query.pageSize,
+        query: query.keyword, projectOwner: query.owner, supportOwner: query.afterSalesOwner }, request.controller.signal);
       if (result === null) throw new Error("客户交付 API 未返回数据");
-      if (request.isCurrent()) setRecords(result);
+      if (request.isCurrent()) { setRecords(result.items); setListTotal(result.total); }
     }
     catch (cause) { if (request.isCurrent()) { setRecords([]); setError(describeOpsError(cause)); } }
     finally { if (request.isCurrent()) setLoading(false); }
@@ -164,9 +167,12 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   }, [canRead]);
   useEffect(() => {
     setRecords([]);
+    setListTotal(0);
+    const initialQuery = { page: 1, pageSize: 20, keyword: "", owner: "", afterSalesOwner: "" };
+    setListQuery(initialQuery);
     setError("");
     setMutationError("");
-    void load();
+    void load(initialQuery);
     return () => { loadRequest.current.controller?.abort(); loadRequest.current.generation++; };
   }, [canRead, targetWorkspaceId]);
   const saveChecklist = async (payload: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryChecklistSave) => {
@@ -452,6 +458,11 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         disabled={!canRead || !targetWorkspaceId}
         readOnly={canRead && !canUpdate}
         records={records}
+        total={listTotal}
+        page={listQuery.page}
+        pageSize={listQuery.pageSize}
+        onPageChange={(page) => { const next = { ...listQuery, page }; setListQuery(next); void load(next); }}
+        onFiltersChange={(filters) => { const next = { ...listQuery, page: 1, keyword: filters.keyword ?? "", owner: filters.owner ?? "", afterSalesOwner: filters.afterSalesOwner ?? "" }; setListQuery(next); void load(next); }}
         onCreate={canUpdate && canRead ? createRecord : undefined}
         onCreateNavigate={() => { setMutationError(""); pendingCreate.current = undefined; setCreateDraftDirty(false); setCreatePage(true); }}
         onSave={canUpdate && canRead ? saveProfile : undefined}

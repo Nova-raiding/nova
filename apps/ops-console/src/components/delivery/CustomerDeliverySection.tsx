@@ -263,6 +263,11 @@ export function CustomerDeliverySection({
   operatorName,
   onAccountList,
   onAccountBind,
+  total = records.length,
+  page = 1,
+  pageSize = 20,
+  onPageChange,
+  onFiltersChange,
 }: {
   readOnly?: boolean;
   disabled?: boolean;
@@ -296,6 +301,11 @@ export function CustomerDeliverySection({
   operatorName?: string;
   onAccountList?: (input: { search?: string; cursor?: string }, signal: AbortSignal) => Promise<CustomerDeliveryAccountPage>;
   onAccountBind?: (record: CustomerDeliveryRecord, account: CustomerDeliveryAccount, reason: string, signal: AbortSignal) => Promise<CustomerDeliveryRecord>;
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  onPageChange?: (page: number) => void;
+  onFiltersChange?: (filters: CustomerDeliveryFilters) => void;
 }) {
   const [selected, setSelected] = useState<CustomerDeliveryRecord>();
   const [detailsRecord, setDetailsRecord] = useState<CustomerDeliveryRecord>();
@@ -310,7 +320,6 @@ export function CustomerDeliverySection({
   const [createDirty, setCreateDirty] = useState(false);
   useUnsavedChanges(showCreate && createDirty, "客户快速建档表单");
   const [filters, setFilters] = useState<CustomerDeliveryFilters>({});
-  const [currentPage, setCurrentPage] = useState(1);
   const [filterForm] = Form.useForm<CustomerDeliveryFilters>();
   const [createForm] = Form.useForm();
   const [form] = Form.useForm();
@@ -611,7 +620,7 @@ export function CustomerDeliverySection({
             owner: values.owner,
             afterSalesOwner: values.afterSalesOwner,
           });
-          setCurrentPage(1);
+          onFiltersChange?.({ keyword: values.keyword?.trim(), owner: values.owner, afterSalesOwner: values.afterSalesOwner });
         }}
       >
         <Form.Item name="keyword" label="搜索">
@@ -646,13 +655,15 @@ export function CustomerDeliverySection({
           scroll={{ x: 1140 }}
           tableLayout="fixed"
           columns={columns}
-          dataSource={filteredRecords}
+          dataSource={onFiltersChange ? records : filteredRecords}
           pagination={{
-            current: currentPage,
-            pageSize: 10,
+            current: page,
+            pageSize,
+            total,
             showSizeChanger: false,
+            showTotal: (count) => `共 ${count} 条`,
             placement: ["bottomCenter"],
-            onChange: setCurrentPage,
+            onChange: onPageChange,
           }}
           locale={{
             emptyText: (records?.length ?? 0) > 0

@@ -97,6 +97,21 @@ export interface CustomerDeliveryAccountPage {
   items: CustomerDeliveryBindableAccount[];
   nextCursor?: string;
 }
+export interface CustomerDeliveryListInput {
+  workspaceId: string;
+  offset?: number;
+  limit?: number;
+  query?: string;
+  projectOwner?: string;
+  supportOwner?: string;
+}
+export interface CustomerDeliveryPage {
+  items: CustomerDelivery[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+}
 export interface CustomerDeliveryAccountDirectory {
   /** Returns only active merchant / identity / membership / workspace intersections. */
   list(input: CustomerDeliveryAccountListInput): Promise<CustomerDeliveryAccountPage>;
@@ -142,7 +157,7 @@ export const CUSTOMER_DELIVERY_CHECKLIST_ITEM_KEYS = {
   ],
 } as const;
 export interface CustomerDeliveryRepository {
-  list(workspaceId: string): Promise<CustomerDelivery[]>;
+  list(input: CustomerDeliveryListInput): Promise<CustomerDeliveryPage>;
   get(workspaceId: string, id: string): Promise<CustomerDelivery | null>;
   getByIdentity(workspaceId: string, identityId: string): Promise<CustomerDelivery | null>;
   listBindableAccounts(input: CustomerDeliveryAccountListInput): Promise<CustomerDeliveryAccountPage>;
@@ -206,6 +221,19 @@ export class CustomerDeliveryError extends Error {
   }
 }
 const clone = <T>(v: T): T => structuredClone(v);
+export function normalizeCustomerDeliveryListInput(input: CustomerDeliveryListInput): Required<CustomerDeliveryListInput> {
+  const workspaceId = requireWorkspaceScope(input.workspaceId);
+  const offset = input.offset ?? 0;
+  const limit = input.limit ?? 20;
+  if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+    throw new CustomerDeliveryError("INVALID_INPUT", "客户交付分页参数无效");
+  const query = input.query?.trim() ?? "";
+  const projectOwner = input.projectOwner?.trim() ?? "";
+  const supportOwner = input.supportOwner?.trim() ?? "";
+  if ([query, projectOwner, supportOwner].some(value => value.length > 200 || /[\u0000-\u001f\u007f]/u.test(value)))
+    throw new CustomerDeliveryError("INVALID_INPUT", "客户交付筛选参数无效");
+  return { workspaceId, offset, limit, query, projectOwner, supportOwner };
+}
 export function customerDeliveryEvidenceRefs(value: unknown): string[] {
   if (!Array.isArray(value) || value.some(ref => typeof ref !== "string" || !ref.trim())) return [];
   return [...new Set(value.map((ref: string) => ref.trim()))];
@@ -357,12 +385,16 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
     if (this.pendingBindings.has(`${workspaceId}:${deliveryId}`))
       throw new CustomerDeliveryError("REVISION_CONFLICT", "账号绑定正在保存，请刷新后重试");
   }
-  async list(workspaceId: string) {
-    const s = requireWorkspaceScope(workspaceId);
-    return Promise.all([...this.rows.values()]
-      .filter((x) => x.workspaceId === s && !x.archivedAt)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      .map(row => this.readable(row)));
+  async list(input: CustomerDeliveryListInput) {
+    const { workspaceId, offset, limit, query, projectOwner, supportOwner } = normalizeCustomerDeliveryListInput(input);
+    const rows = [...this.rows.values()]
+      .filter((x) => x.workspaceId === workspaceId && !x.archivedAt)
+      .filter((x) => !query || x.companyName.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+      .filter((x) => !projectOwner || x.projectOwner === projectOwner)
+      .filter((x) => !supportOwner || x.supportOwner === supportOwner)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id));
+    return { items: await Promise.all(rows.slice(offset, offset + limit).map(row => this.readable(row))),
+      total: rows.length, offset, limit, hasMore: offset + limit < rows.length };
   }
   async get(workspaceId: string, id: string) {
     const r = this.rows.get(`${requireWorkspaceScope(workspaceId)}:${id}`);
@@ -1224,21 +1256,28 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
       [workspaceId, deliveryId, ready],
     );
   }
-  async list(workspaceId: string) {
-    const scope = requireWorkspaceScope(workspaceId);
-    const ids = await withWorkspaceTransaction(this.pool, scope, async c =>
-      (await c.query<{ id: string }>(
-        `SELECT id FROM workspace_customer_deliveries WHERE workspace_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC,id DESC /* delivery_evidence_list_ids */`,
-        [scope],
-      )).rows);
+  async list(input: CustomerDeliveryListInput) {
+    const { workspaceId, offset, limit, query, projectOwner, supportOwner } = normalizeCustomerDeliveryListInput(input);
+    const page = await withWorkspaceTransaction(this.pool, workspaceId, async c => {
+      const total = Number((await c.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM workspace_customer_deliveries WHERE workspace_id=$1 AND archived_at IS NULL
+           AND ($2='' OR strpos(lower(company_name),lower($2))>0) AND ($3='' OR project_owner=$3) AND ($4='' OR support_owner=$4) /* delivery_evidence_list_count */`,
+        [workspaceId, query, projectOwner, supportOwner])).rows[0]?.count ?? 0);
+      const ids = (await c.query<{ id: string }>(
+        `SELECT id FROM workspace_customer_deliveries WHERE workspace_id=$1 AND archived_at IS NULL
+           AND ($2='' OR strpos(lower(company_name),lower($2))>0) AND ($3='' OR project_owner=$3) AND ($4='' OR support_owner=$4)
+         ORDER BY updated_at DESC,id DESC LIMIT $5 OFFSET $6 /* delivery_evidence_list_ids */`,
+        [workspaceId, query, projectOwner, supportOwner, limit, offset])).rows;
+      return { ids, total };
+    });
     const result: CustomerDelivery[] = [];
     // Do not keep one delivery's shared parent lock while checking the next
     // delivery's assets: that would reintroduce a cross-delivery lock inversion.
-    for (const { id } of ids) {
-      const delivery = await this.readWithEvidence(scope, id);
+    for (const { id } of page.ids) {
+      const delivery = await this.readWithEvidence(workspaceId, id);
       if (delivery) result.push(delivery);
     }
-    return result;
+    return { items: result, total: page.total, offset, limit, hasMore: offset + limit < page.total };
   }
   async get(workspaceId: string, id: string) {
     const scope = requireWorkspaceScope(workspaceId);

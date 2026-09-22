@@ -135,7 +135,7 @@ async function probeInvalidation(context: OpsE2eContext, beforeSources: Awaited<
     assert(current)
     assert.equal(current.effectiveAt, null); assert.equal(current.projectOwner, original.projectOwner)
     assert.equal(current.revision, original.revision + 1)
-    assert.equal((await repository.list(fixture.workspaceId)).find(row => row.id === deliveryId)?.effectiveAt, null)
+    assert.equal((await repository.list({ workspaceId: fixture.workspaceId })).items.find(row => row.id === deliveryId)?.effectiveAt, null)
     await assert.rejects(repository.update({ workspaceId: fixture.workspaceId, id: deliveryId, expectedRevision: current.revision,
       actorId: fixture.actorSubject, patch: { companyName: `${original.companyName} invalid retry` } }), { code: '23514' })
     assert.equal(await auditCount(), initialAudits + 1)

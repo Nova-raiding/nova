@@ -6,7 +6,7 @@ export interface CustomerDeliveryClient {
   bindAccount(input: { targetWorkspaceId: string; deliveryId: string; targetAccountId: string; expectedRevision: number; reason: string }, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
   uploadAsset(input: CustomerDeliveryAssetUploadInput, signal?: AbortSignal): Promise<CustomerDeliveryAsset>;
   getAsset(input: { targetWorkspaceId: string; deliveryId: string; purpose: CustomerDeliveryAssetPurpose; assetRef: string }, signal?: AbortSignal): Promise<CustomerDeliveryAsset>;
-  list(targetWorkspaceId: string, signal?: AbortSignal): Promise<CustomerDeliveryRecord[] | null>;
+  list(input: { targetWorkspaceId: string; offset?: number; limit?: number; query?: string; projectOwner?: string; supportOwner?: string }, signal?: AbortSignal): Promise<CustomerDeliveryPage | null>;
   get(targetWorkspaceId: string, deliveryId: string, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
   create(targetWorkspaceId: string, companyName: string, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
   update(input: { targetWorkspaceId: string; deliveryId: string; patch: Record<string, unknown>; expectedRevision: number }, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
@@ -32,6 +32,7 @@ export interface CustomerDeliveryClient {
   addVideo(input: { targetWorkspaceId: string; deliveryId: string; title: string; assetRef: string; sortOrder?: number }, signal?: AbortSignal): Promise<unknown>;
   downloadAsset(input: { targetWorkspaceId: string; deliveryId: string; purpose: "contract" | "video"; assetRef: string }, signal?: AbortSignal): Promise<{ blob: Blob; fileName: string }>;
 }
+export interface CustomerDeliveryPage { items: CustomerDeliveryRecord[]; total: number; offset: number; limit: number; hasMore: boolean }
 
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 const text = (value: unknown): value is string => typeof value === "string";
@@ -188,8 +189,8 @@ export function buildChecklistUpdateParams(input: {
 }
 
 function parseRecord(value: unknown): CustomerDeliveryRecord {
-  const rows = parseCustomerDeliveryList({ items: [value] });
-  const row = rows[0];
+  const rows = parseCustomerDeliveryList({ items: [value], total: 1, offset: 0, limit: 1, hasMore: false });
+  const row = rows.items[0];
   if (!row) throw new Error("客户交付接口返回了空记录");
   return row;
 }
@@ -224,10 +225,13 @@ export function parseCustomerDeliveryVideos(value: unknown): Array<{ id: string;
 
 /** Parse the server's snake_case aggregate without allowing malformed data to
  * silently appear as an empty customer list. */
-export function parseCustomerDeliveryList(value: unknown): CustomerDeliveryRecord[] {
-  const rows = Array.isArray(value) ? value : object(value) && Array.isArray(value.items) ? value.items : null;
-  if (!rows) throw new Error("客户交付接口返回了无效响应（items）");
-  return rows.map((row, index) => {
+export function parseCustomerDeliveryList(value: unknown): CustomerDeliveryPage {
+  if (!object(value) || !Array.isArray(value.items) || !Number.isSafeInteger(value.total) || Number(value.total) < 0
+    || !Number.isSafeInteger(value.offset) || Number(value.offset) < 0 || !Number.isSafeInteger(value.limit)
+    || Number(value.limit) < 1 || Number(value.limit) > 100 || typeof value.hasMore !== "boolean"
+    || value.items.length > Number(value.limit) || value.hasMore !== (Number(value.offset) + Number(value.limit) < Number(value.total)))
+    throw new Error("客户交付接口返回了无效响应（分页）");
+  const items: CustomerDeliveryRecord[] = value.items.map((row, index): CustomerDeliveryRecord => {
     if (!object(row) || !text(row.id) || !text(row.companyName ?? row.company_name)) throw new Error(`客户交付接口返回了无效响应（第 ${index + 1} 条）`);
     const status = row.paymentStatus ?? row.payment_status;
     if (status !== "paid" && status !== "unpaid") throw new Error(`客户交付接口返回了无效响应（付款状态，第 ${index + 1} 条）`);
@@ -275,6 +279,7 @@ export function parseCustomerDeliveryList(value: unknown): CustomerDeliveryRecor
       ...(object(row.acceptanceEvidence) ? { acceptanceEvidence: Object.fromEntries(Object.entries(row.acceptanceEvidence).filter(([,v]) => text(v)).map(([k,v]) => [k, String(v)])) } : {}),
     };
   });
+  return { items, total: Number(value.total), offset: Number(value.offset), limit: Number(value.limit), hasMore: value.hasMore };
 }
 
 export const customerDeliveryClient: CustomerDeliveryClient = {
@@ -344,8 +349,16 @@ export const customerDeliveryClient: CustomerDeliveryClient = {
     if (asset.assetRef !== input.assetRef) throw new Error("安全检查返回了其他素材，请重新检查当前文件");
     return asset;
   },
-  async list(targetWorkspaceId, signal) {
-    const value = await rpc<unknown>("ops.customer-delivery.list", { target_workspace_id: targetWorkspaceId }, { signal });
+  async list(input, signal) {
+    const offset = input.offset ?? 0;
+    const limit = input.limit ?? 20;
+    if (!input.targetWorkspaceId.trim() || !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+      throw new Error("请选择有效企业工作区，分页参数须在允许范围内");
+    const value = await rpc<unknown>("ops.customer-delivery.list", { target_workspace_id: input.targetWorkspaceId,
+      ...(input.query?.trim() ? { query: input.query.trim() } : {}),
+      ...(input.projectOwner?.trim() ? { project_owner: input.projectOwner.trim() } : {}),
+      ...(input.supportOwner?.trim() ? { support_owner: input.supportOwner.trim() } : {}),
+      offset: String(offset), limit: String(limit) }, { signal });
     return value === null ? null : parseCustomerDeliveryList(value);
   },
   async get(targetWorkspaceId, deliveryId, signal) {

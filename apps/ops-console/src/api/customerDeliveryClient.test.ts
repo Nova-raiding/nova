@@ -5,6 +5,7 @@ import { rpc } from "./opsClient.js";
 vi.mock("./opsClient.js", () => ({ rpc: vi.fn() }));
 afterEach(() => vi.clearAllMocks());
 const delivery = { id: "cd_1", companyName: "Acme", paymentStatus: "paid", profile: true, integration: true, acceptance: true, training: false, videos: 0 };
+const deliveryPage = (items: unknown[]) => ({ items, total: items.length, offset: 0, limit: 20, hasMore: false });
 
 describe("customer delivery client", () => {
   const account = { workspaceId: "workspace-1", accountId: "account-1", identityId: "identity-1", login: "merchant@example.test" };
@@ -13,7 +14,7 @@ describe("customer delivery client", () => {
   it("parses legacy unbound records without interpreting completion as account activation", () => {
     expect(parseCustomerDeliveryAccountBinding({ effectiveAt: "2026-09-15T00:00:00Z" })).toEqual({ targetAccountId: null, targetIdentityId: null, targetAccountLogin: null });
     expect(parseCustomerDeliveryAccountBinding({ targetAccountId: null, targetIdentityId: null, targetAccountLogin: null })).toEqual({ targetAccountId: null, targetIdentityId: null, targetAccountLogin: null });
-    expect(parseCustomerDeliveryList({ items: [bound] })[0]).toMatchObject({ targetAccountId: account.accountId, targetIdentityId: account.identityId, targetAccountLogin: account.login });
+    expect(parseCustomerDeliveryList(deliveryPage([bound])).items[0]).toMatchObject({ targetAccountId: account.accountId, targetIdentityId: account.identityId, targetAccountLogin: account.login });
   });
   it.each([
     { targetAccountId: "account-1" }, { targetIdentityId: "identity-1" }, { targetAccountLogin: "merchant@example.test" },
@@ -28,6 +29,13 @@ describe("customer delivery client", () => {
     const signal = new AbortController().signal;
     await expect(customerDeliveryClient.listAccounts({ targetWorkspaceId: "workspace-1", search: " merchant ", cursor: "page-1", limit: 50 }, signal)).resolves.toEqual({ items: [account], nextCursor: "page-2" });
     expect(rpc).toHaveBeenCalledExactlyOnceWith("ops.customer-delivery.accounts.list", { target_workspace_id: "workspace-1", search: "merchant", cursor: "page-1", limit: "50" }, { signal });
+  });
+  it("requests one bounded delivery page with server filters and rejects inconsistent metadata", async () => {
+    vi.mocked(rpc).mockResolvedValue({ items: [delivery], total: 21, offset: 20, limit: 20, hasMore: false });
+    await expect(customerDeliveryClient.list({ targetWorkspaceId: "workspace-1", offset: 20, limit: 20, query: " Acme ", projectOwner: " 姜伟 " })).resolves.toMatchObject({ total: 21, offset: 20, items: [expect.objectContaining({ id: "cd_1" })] });
+    expect(rpc).toHaveBeenCalledWith("ops.customer-delivery.list", { target_workspace_id: "workspace-1", query: "Acme", project_owner: "姜伟", offset: "20", limit: "20" }, { signal: undefined });
+    vi.mocked(rpc).mockResolvedValue({ items: [], total: 21, offset: 0, limit: 20, hasMore: false });
+    await expect(customerDeliveryClient.list({ targetWorkspaceId: "workspace-1" })).rejects.toThrow("分页");
   });
   it.each([null, {}, { items: null }, { items: [], nextCursor: "" }, { items: [{ ...account, workspaceId: "other" }] }, { items: [{ ...account, login: "" }] }, { items: [account, account] }, { items: [account, { ...account, accountId: "other" }] }])("rejects unsafe directory responses %j", (value) => {
     expect(() => parseCustomerDeliveryAccounts(value, "workspace-1")).toThrow();
@@ -112,10 +120,10 @@ describe("customer delivery client", () => {
   });
 
   it("parses aggregate snake_case response", () => {
-    expect(parseCustomerDeliveryList({ items: [{ id: "cd_1", company_name: "Acme", payment_status: "paid", customerProfileStatus: "complete", systemIntegrationStatus: "complete", functionalAcceptanceStatus: "incomplete", trainingCompleted: false, videos: [{ id: "v" }], created_at: "2026-09-16T00:01:02.000Z" }] })).toMatchObject([{ id: "cd_1", companyName: "Acme", paymentStatus: "paid", profile: true, integration: true, acceptance: false, training: false, videos: 1, createdAt: "2026-09-16T00:01:02.000Z" }]);
+    expect(parseCustomerDeliveryList(deliveryPage([{ id: "cd_1", company_name: "Acme", payment_status: "paid", customerProfileStatus: "complete", systemIntegrationStatus: "complete", functionalAcceptanceStatus: "incomplete", trainingCompleted: false, videos: [{ id: "v" }], created_at: "2026-09-16T00:01:02.000Z" }])).items).toMatchObject([{ id: "cd_1", companyName: "Acme", paymentStatus: "paid", profile: true, integration: true, acceptance: false, training: false, videos: 1, createdAt: "2026-09-16T00:01:02.000Z" }]);
   });
   it("rejects malformed rows instead of returning empty state", () => {
-    expect(() => parseCustomerDeliveryList({ items: [{ id: "cd_1" }] })).toThrow("客户交付接口返回了无效响应");
+    expect(() => parseCustomerDeliveryList(deliveryPage([{ id: "cd_1" }]))).toThrow("客户交付接口返回了无效响应");
   });
   it("sends exactly one checklist update mode", () => {
     const params = buildChecklistUpdateParams({
@@ -161,14 +169,14 @@ describe("customer delivery client", () => {
   });
 
   it("preserves payment, training and per-item evidence in aggregate responses", () => {
-    expect(parseCustomerDeliveryList({ items: [{ ...delivery, payment_evidence_refs: ["asset:payment"], training_evidence_refs: ["asset:training"], integrationEvidenceAssetRefs: { 插件账号: ["asset:integration"] }, acceptanceEvidenceAssetRefs: { 文案生成: ["asset:acceptance"] } }] })[0]).toMatchObject({ paymentEvidenceRefs: ["asset:payment"], trainingEvidenceRefs: ["asset:training"], integrationEvidenceAssetRefs: { 插件账号: ["asset:integration"] }, acceptanceEvidenceAssetRefs: { 文案生成: ["asset:acceptance"] } });
+    expect(parseCustomerDeliveryList(deliveryPage([{ ...delivery, payment_evidence_refs: ["asset:payment"], training_evidence_refs: ["asset:training"], integrationEvidenceAssetRefs: { 插件账号: ["asset:integration"] }, acceptanceEvidenceAssetRefs: { 文案生成: ["asset:acceptance"] } }])).items[0]).toMatchObject({ paymentEvidenceRefs: ["asset:payment"], trainingEvidenceRefs: ["asset:training"], integrationEvidenceAssetRefs: { 插件账号: ["asset:integration"] }, acceptanceEvidenceAssetRefs: { 文案生成: ["asset:acceptance"] } });
   });
 
   it("does not silently drop malformed evidence and later overwrite the saved set", () => {
     for (const refs of ["asset:existing", ["asset:existing", 7], [" "], ["https://example.test/file"], ["asset:invalid ref"]]) {
       expect(() => parseCustomerDeliveryEvidenceRefs(refs)).toThrow("有效素材编号数组");
-      expect(() => parseCustomerDeliveryList({ items: [{ ...delivery, paymentEvidenceRefs: refs }] })).toThrow("付款凭证");
-      expect(() => parseCustomerDeliveryList({ items: [{ ...delivery, trainingEvidenceRefs: refs }] })).toThrow("培训凭证");
+      expect(() => parseCustomerDeliveryList(deliveryPage([{ ...delivery, paymentEvidenceRefs: refs }]))).toThrow("付款凭证");
+      expect(() => parseCustomerDeliveryList(deliveryPage([{ ...delivery, trainingEvidenceRefs: refs }]))).toThrow("培训凭证");
       expect(() => parseCustomerDeliveryChecklistItems([{ itemKey: "插件账号", completed: true, evidence: { asset_refs: refs } }])).toThrow("交付凭证");
     }
     expect(parseCustomerDeliveryEvidenceRefs(undefined)).toEqual([]);

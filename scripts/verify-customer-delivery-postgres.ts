@@ -209,7 +209,7 @@ try {
   let legacy = (await legacyRepository.get(legacyWorkspace, legacyId))!
   assert.equal(legacy.paymentStatus, 'paid'); assert.equal(legacy.trainingCompleted, true)
   assert.equal(legacy.effectiveAt, null, 'historical effective_at plus nonexistent refs must not appear ready')
-  assert.equal((await legacyRepository.list(legacyWorkspace)).find(item => item.id === legacyId)?.effectiveAt, null)
+  assert.equal((await legacyRepository.list({ workspaceId: legacyWorkspace })).items.find(item => item.id === legacyId)?.effectiveAt, null)
   assert.deepEqual(await footprint(legacyAdmin, legacyWorkspace), beforeLegacyReads)
   const rawLegacy = (await legacyAdmin.query('SELECT payment_status,training_completed,effective_at FROM workspace_customer_deliveries WHERE workspace_id=$1 AND id=$2', [legacyWorkspace, legacyId])).rows[0]
   assert.equal(new Date(rawLegacy.effective_at).toISOString(), historicalEffective)

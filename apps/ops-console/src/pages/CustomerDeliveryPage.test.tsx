@@ -241,7 +241,7 @@ describe("customer delivery read-only desktop interaction", () => {
       const request = route.request().postDataJSON() as { id: string; method: string; params: Record<string, string> };
       methods.push(request.method);
       let result: unknown;
-      if (request.method === "ops.customer-delivery.list") result = { items: options.onList?.(request.params.target_workspace_id!) ?? [{ ...record, videos, paymentStatus: options.unpaid ? "unpaid" : "paid" }] };
+      if (request.method === "ops.customer-delivery.list") { const items = options.onList?.(request.params.target_workspace_id!) ?? [{ ...record, videos, paymentStatus: options.unpaid ? "unpaid" : "paid" }]; result = { items, total: items.length, offset: Number(request.params.offset), limit: Number(request.params.limit), hasMore: false }; }
       else if (request.method === "ops.customer-delivery.checklist-items.list") result = { items: [{ itemKey: request.params.checklist_key === "system_integration" ? "插件账号" : "文案生成", completed: true, evidence: { note: "已保存的检查记录", asset_refs: ["asset:checklist"] } }] };
       else if (request.method === "ops.customer-delivery.videos.list") result = { items: videos };
       else if (request.method === "ops.customer-delivery.get" && options.failVideoRefresh) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "SERVICE_UNAVAILABLE", message: "测试中的详情读取暂时不可用" } }) });

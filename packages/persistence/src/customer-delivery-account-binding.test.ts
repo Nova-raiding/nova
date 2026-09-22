@@ -88,7 +88,7 @@ describe('customer delivery single-account binding', () => {
     const b = await repo.create({ workspaceId: 'ws-a', companyName: 'B', actorId: 'operator' })
     const results = await Promise.allSettled([repo.bindAccount(bind(a.id, account.accountId)), repo.bindAccount(bind(b.id, account.accountId))])
     expect(results.map(result => result.status).sort()).toEqual(['fulfilled', 'rejected'])
-    expect((await repo.list('ws-a')).filter(row => row.targetIdentityId)).toHaveLength(1)
+    expect((await repo.list({ workspaceId: 'ws-a' })).items.filter(row => row.targetIdentityId)).toHaveLength(1)
     expect(events.filter(event => event.action === 'customer_delivery.account.bind')).toHaveLength(1)
   })
   it('rolls back binding and releases the mutation boundary when the audit fails', async () => {

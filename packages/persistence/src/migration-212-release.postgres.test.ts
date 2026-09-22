@@ -210,7 +210,7 @@ describe('migration 212 customer delivery account binding release acceptance', (
       try {
         expect(await repo.getByIdentity(workspaceId, target.identityId)).toMatchObject({ id: historicalId,
           targetAccountLogin: renamedLogin, targetAccountId: target.accountId, effectiveAt: null, paymentStatus: 'unpaid', revision: 8 })
-        expect((await repo.list(workspaceId)).find(delivery => delivery.id === historicalId))
+        expect((await repo.list({ workspaceId })).items.find(delivery => delivery.id === historicalId))
           .toMatchObject({ targetAccountLogin: renamedLogin, targetIdentityId: target.identityId, effectiveAt: null, revision: 8 })
         expect((await database.query('SELECT status FROM platform_password_accounts WHERE id=$1', [target.accountId])).rows)
           .toEqual([{ status: 'suspended' }])

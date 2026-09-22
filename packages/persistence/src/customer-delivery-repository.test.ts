@@ -462,7 +462,7 @@ describe('PostgreSQL delivery evidence read protocol', () => {
     client.assertionFailure = Object.assign(new Error('customer delivery evidence is unavailable'), { code: '23514' })
     const repo = new PostgresCustomerDeliveryRepository(new RecordingPool(client))
     const result = operation === 'get' ? await repo.get('ws_pg', 'cd_pg')
-      : operation === 'list' ? (await repo.list('ws_pg'))[0]
+      : operation === 'list' ? (await repo.list({ workspaceId: 'ws_pg' })).items[0]
         : await repo.update({ workspaceId: 'ws_pg', id: 'cd_pg', actorId: 'operator-1', expectedRevision: 4, patch: {} })
     expect(result).toMatchObject({ effectiveAt: null, revision: 4 })
     expect(client.calls.some(call => call.text === 'ROLLBACK TO SAVEPOINT customer_delivery_read_evidence')).toBe(true)
@@ -555,7 +555,7 @@ describe('PostgreSQL delivery evidence read protocol', () => {
 
   it('releases the first list delivery parent before the next delivery asset validation transaction', async () => {
     const listing = new RecordingClient()
-    listing.enqueue(); listing.enqueue(); listing.enqueue({ id: 'cd_pg' }, { id: 'cd_second' }); listing.enqueue()
+    listing.enqueue(); listing.enqueue(); listing.enqueue({ count: '2' }); listing.enqueue({ id: 'cd_pg' }, { id: 'cd_second' }); listing.enqueue()
     const first = activeClient()
     const second = activeClient()
     second.row.id = 'cd_second'
@@ -568,8 +568,8 @@ describe('PostgreSQL delivery evidence read protocol', () => {
       if (!client) throw new Error('unexpected additional read transaction')
       return client
     } }
-    const result = await new PostgresCustomerDeliveryRepository(pool).list('ws_pg')
-    expect(result.map(delivery => delivery.id)).toEqual(['cd_pg', 'cd_second'])
+    const result = await new PostgresCustomerDeliveryRepository(pool).list({ workspaceId: 'ws_pg' })
+    expect(result.items.map(delivery => delivery.id)).toEqual(['cd_pg', 'cd_second'])
     expect(connection).toBe(3)
     for (const client of [first, second]) {
       expect(evidenceTuples(client)).toHaveLength(22)
@@ -593,7 +593,7 @@ describe('PostgreSQL delivery evidence read protocol', () => {
     const client = activeClient()
     client.queryFailures.set('delivery_evidence_read_recheck */', Object.assign(new Error('read parent is locked'), { code: '55P03' }))
     const repo = new PostgresCustomerDeliveryRepository(new RecordingPool(client))
-    await expect(operation === 'get' ? repo.get('ws_pg', 'cd_pg') : repo.list('ws_pg'))
+    await expect(operation === 'get' ? repo.get('ws_pg', 'cd_pg') : repo.list({ workspaceId: 'ws_pg' }))
       .rejects.toMatchObject({ code: 'REVISION_CONFLICT' })
     expect(evidenceTuples(client)).toHaveLength(22)
     expectNoAssetSqlUnderParentLock(client)
@@ -751,20 +751,35 @@ describe('Canonical evidence writes and profile withdrawal', () => {
 })
 
 describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
+  it('returns bounded server pages with stable metadata and scoped filters', async () => {
+    const repo = new MemoryCustomerDeliveryRepository()
+    await repo.create({ workspaceId: 'ws_page', companyName: 'Alpha', actorId: 'creator' })
+    await repo.create({ workspaceId: 'ws_page', companyName: 'Beta', actorId: 'creator' })
+    await repo.create({ workspaceId: 'ws_other', companyName: 'Alpha other', actorId: 'creator' })
+    const first = await repo.list({ workspaceId: 'ws_page', limit: 1 })
+    const second = await repo.list({ workspaceId: 'ws_page', offset: 1, limit: 1 })
+    expect(first).toMatchObject({ total: 2, offset: 0, limit: 1, hasMore: true })
+    expect(second).toMatchObject({ total: 2, offset: 1, limit: 1, hasMore: false })
+    expect(first.items[0]?.id).not.toBe(second.items[0]?.id)
+    await expect(repo.list({ workspaceId: 'ws_page', limit: 101 })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    await expect(repo.list({ workspaceId: 'ws_page', offset: -1 })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    expect(await repo.list({ workspaceId: 'ws_page', query: 'alp' })).toMatchObject({ total: 1, items: [expect.objectContaining({ companyName: 'Alpha' })] })
+  })
+
   it('archives records recoverably and permits a replacement with the same company name', async () => {
     const repo = new MemoryCustomerDeliveryRepository()
     const original = await repo.create({ workspaceId: 'ws_archive', companyName: 'Acme', actorId: 'creator' })
     const archived = await repo.update({ workspaceId: original.workspaceId, id: original.id, actorId: 'operator', expectedRevision: original.revision, patch: { archivedAt: '2026-09-15T12:00:00.000Z' } })
     expect(archived).toMatchObject({ archivedAt: '2026-09-15T12:00:00.000Z', archivedByActorId: 'operator', updatedByActorId: 'operator' })
-    expect(await repo.list(original.workspaceId)).toEqual([])
+    expect((await repo.list({ workspaceId: original.workspaceId })).items).toEqual([])
     await expect(repo.create({ workspaceId: original.workspaceId, companyName: 'Acme', actorId: 'creator-2' })).resolves.toMatchObject({ companyName: 'Acme', archivedAt: null })
   })
 
   it('excludes archived PostgreSQL records from the active delivery list', async () => {
     const client = new EvidenceTransactionClient()
     client.row.archived_at = '2026-09-15T12:00:00.000Z'
-    const result = await new PostgresCustomerDeliveryRepository(new RecordingPool(client)).list('ws_pg')
-    expect(result).toEqual([])
+    const result = await new PostgresCustomerDeliveryRepository(new RecordingPool(client)).list({ workspaceId: 'ws_pg' })
+    expect(result.items).toEqual([])
     expect(client.calls.find(call => call.text.includes('delivery_evidence_list_ids'))?.text)
       .toContain('archived_at IS NULL')
   })
@@ -843,9 +858,9 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     const repo = new MemoryCustomerDeliveryRepository(event => { events.push(event) })
     const draft = await repo.create({ workspaceId: 'ws_video_actor', companyName: 'Video actors', actorId: 'profile-creator' })
     const video = await repo.addVideo({ workspaceId: draft.workspaceId, deliveryId: draft.id, actorId: 'video-uploader', title: '交付视频', assetRef: 'asset_video_actor' })
-    const added = { get: await repo.get(draft.workspaceId, draft.id), list: (await repo.list(draft.workspaceId))[0] }
+    const added = { get: await repo.get(draft.workspaceId, draft.id), list: (await repo.list({ workspaceId: draft.workspaceId })).items[0] }
     await repo.removeVideo!({ workspaceId: draft.workspaceId, deliveryId: draft.id, videoId: video.id, actorId: 'video-remover' })
-    const removed = { get: await repo.get(draft.workspaceId, draft.id), list: (await repo.list(draft.workspaceId))[0] }
+    const removed = { get: await repo.get(draft.workspaceId, draft.id), list: (await repo.list({ workspaceId: draft.workspaceId })).items[0] }
 
     expect(added).toMatchObject({
       get: { createdByActorId: 'profile-creator', updatedByActorId: 'video-uploader', revision: draft.revision + 1 },
@@ -968,7 +983,7 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     const stored = legacyRow(repo, draft)
     const storedBefore = structuredClone(stored)
     expect((await repo.get(draft.workspaceId, draft.id))!.effectiveAt).toBeNull()
-    expect((await repo.list(draft.workspaceId))[0]!.effectiveAt).toBeNull()
+    expect((await repo.list({ workspaceId: draft.workspaceId })).items[0]!.effectiveAt).toBeNull()
     expect(stored).toEqual(storedBefore)
     let current = await repo.update({ workspaceId: draft.workspaceId, id: draft.id, actorId: 'operator-1',
       expectedRevision: draft.revision, patch: { companyName: 'Legacy metadata repair' } })
@@ -1098,11 +1113,11 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     const client = new EvidenceTransactionClient()
     client.row.effective_at = '2026-09-13T00:00:00.000Z'
     client.items = []
-    const result = await new PostgresCustomerDeliveryRepository(new RecordingPool(client)).list('ws_pg')
-    expect(result[0]?.effectiveAt).toBeNull()
-    expect(client.calls[2]!.text).toContain('delivery_evidence_list_ids')
-    expect(client.calls[3]!.text).toBe('COMMIT')
-    expect(client.calls[4]!.text).toBe('BEGIN')
+    const result = await new PostgresCustomerDeliveryRepository(new RecordingPool(client)).list({ workspaceId: 'ws_pg' })
+    expect(result.items[0]?.effectiveAt).toBeNull()
+    expect(client.calls[3]!.text).toContain('delivery_evidence_list_ids')
+    expect(client.calls[4]!.text).toBe('COMMIT')
+    expect(client.calls[5]!.text).toBe('BEGIN')
     const lock = client.calls.findIndex(call => call.text.includes('FOR SHARE'))
     expect(client.calls[lock]!.text).toContain('delivery_evidence_read_recheck')
     expect(client.calls[lock + 1]!.text).toContain('delivery_evidence_read_recheck_videos')
