@@ -6708,6 +6708,20 @@ function publicRequestOrigin(req: IncomingMessage) {
   return new URL('/', `${protocol}://${host}`).origin
 }
 
+function configuredAllowedOrigins(): Set<string> {
+  return new Set((process.env.ALLOWED_ORIGINS ?? process.env.ALLOWED_ORIGIN ?? '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(value => value && value !== '*'))
+}
+
+function isTrustedPlatformBrowserOrigin(req: IncomingMessage, origin: string | undefined): boolean {
+  if (!origin) return false
+  const allowed = configuredAllowedOrigins()
+  allowed.add(publicRequestOrigin(req))
+  return allowed.has(origin)
+}
+
 function localFixtureOAuthAllowed(req: IncomingMessage): boolean {
   if (isProduction() || process.env.MCP_OAUTH_REQUIRED === 'true') return false
   const loopback = (host: string) => host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1'
@@ -8283,7 +8297,7 @@ async function authenticate(req: IncomingMessage) {
         } else {
           if (isMcpRequest && platform && isProduction()) {
             const requestOrigin = header(req, 'origin')?.trim()
-            if (!requestOrigin || requestOrigin !== publicRequestOrigin(req)) throw new DomainError('AUTH_CSRF_ORIGIN_INVALID', '运营工作台请求来源无效', 403)
+            if (!isTrustedPlatformBrowserOrigin(req, requestOrigin)) throw new DomainError('AUTH_CSRF_ORIGIN_INVALID', '运营工作台请求来源无效', 403)
           }
           const requestedWorkspace = header(req, 'x-workspace-id')?.trim()
           if (!platform && requestedWorkspace && !session.account.workspaceIds.includes(requestedWorkspace)) {
