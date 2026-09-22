@@ -205,6 +205,8 @@ export interface ApiError extends Error {
 }
 
 let authExpired = false
+let merchantMcpToken: { value: string; expiresAt: number } | undefined
+let merchantMcpTokenPromise: Promise<string> | undefined
 
 function isSessionAuthFailure(status: number, code?: string, message?: string) {
   if (status === 401) return true
@@ -909,6 +911,7 @@ export function describeApiError(error: unknown) {
 
 export async function loginMerchantAccount(baseUrl: string, input: { login: string; password: string }): Promise<MerchantAuthAccount> {
   authExpired = false
+  merchantMcpToken = undefined
   const result = await requestApi<{ account: MerchantAuthAccount }>(baseUrl, '/v1/auth/login', {
     method: 'POST',
     body: JSON.stringify({ login: input.login.trim(), password: input.password, account_type: 'merchant' }),
@@ -944,6 +947,7 @@ export async function logoutMerchantAccount(baseUrl: string): Promise<void> {
     method: 'POST',
     body: '{}',
   })
+  merchantMcpToken = undefined
 }
 
 export async function changeMerchantPassword(
@@ -968,8 +972,34 @@ export async function fetchApiHealth(baseUrl = runtimeEnv.VITE_API_BASE_URL): Pr
   return requestApi<ApiHealth>(baseUrl, '/healthz')
 }
 
+async function merchantMcpBearer(baseUrl: string): Promise<string> {
+  const now = Date.now()
+  if (merchantMcpToken && merchantMcpToken.expiresAt > now + 30_000) return merchantMcpToken.value
+  if (!merchantMcpTokenPromise) {
+    merchantMcpTokenPromise = requestApi<{ access_token?: unknown; expires_in?: unknown }>(baseUrl, '/v1/auth/mcp-token', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }).then(result => {
+      const value = typeof result.access_token === 'string' ? result.access_token.trim() : ''
+      const expiresIn = typeof result.expires_in === 'number' && Number.isFinite(result.expires_in) ? result.expires_in : 0
+      if (!value || expiresIn <= 0) throw new Error('商家 MCP 连接凭据响应无效')
+      merchantMcpToken = { value, expiresAt: Date.now() + expiresIn * 1_000 }
+      return value
+    }).finally(() => { merchantMcpTokenPromise = undefined })
+  }
+  return merchantMcpTokenPromise
+}
+
 export async function requestMcp<T>(baseUrl: string, method: string, params: Record<string, unknown> = {}) {
-  const response = await requestApi<{ result: T }>(baseUrl, '/mcp', { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: `studio-${Date.now()}`, method, params }) })
+  // Vitest's in-process API fixtures intentionally exercise the raw MCP
+  // contract with their own test auth repository. The deployed browser bundle
+  // has no test MODE and must exchange its HttpOnly session for a bearer.
+  const bearer = runtimeEnv.MODE === 'test' ? undefined : await merchantMcpBearer(baseUrl)
+  const response = await requestApi<{ result: T }>(baseUrl, '/mcp', {
+    method: 'POST',
+    ...(bearer ? { headers: { authorization: `Bearer ${bearer}` } } : {}),
+    body: JSON.stringify({ jsonrpc: '2.0', id: `studio-${Date.now()}`, method, params }),
+  })
   return response.result
 }
 
