@@ -21,8 +21,8 @@ describe('NewApiSelfLogClient', () => {
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
       const url = new URL(String(input))
       if (url.pathname === '/api/user/auth/refresh') {
-        expect(init?.headers).toMatchObject({ cookie: 'new_api_refresh=refresh-session' })
-        return new Response(JSON.stringify({ data: { access_token: 'fresh-token' } }), { headers: { 'content-type': 'application/json', 'set-cookie': 'new_api_refresh=rotated-session; Path=/api/user/auth; HttpOnly' } })
+        expect(init?.headers).toMatchObject({ cookie: 'new_api_refresh=refresh-session', origin: 'https://relay.example.test' })
+        return new Response(JSON.stringify({ data: { access_token: 'fresh-token', user: { id: 'u1' } } }), { headers: { 'content-type': 'application/json', 'set-cookie': 'new_api_refresh=rotated-session; Path=/api/user/auth; HttpOnly; Secure' } })
       }
       const authorization = (init?.headers as Record<string, string>)?.authorization
       if (authorization === 'Bearer expired-token') return new Response('{}', { status: 401 })
@@ -40,7 +40,7 @@ describe('NewApiSelfLogClient', () => {
     try {
       const firstFetcher = vi.fn<typeof fetch>(async (input) => {
         const url = new URL(String(input))
-        if (url.pathname === '/api/user/auth/refresh') return new Response(JSON.stringify({ data: { access_token: 'fresh-token' } }), { headers: { 'content-type': 'application/json', 'set-cookie': 'new_api_refresh=rotated-session; Path=/api/user/auth; HttpOnly' } })
+        if (url.pathname === '/api/user/auth/refresh') return new Response(JSON.stringify({ data: { access_token: 'fresh-token', user: { id: 'u1' } } }), { headers: { 'content-type': 'application/json', 'set-cookie': 'new_api_refresh=rotated-session; Path=/api/user/auth; HttpOnly; Secure' } })
         return new Response(JSON.stringify({ data: { items: [{ id: 'r1', total_tokens: 5 }], total: 1 } }), { headers: { 'content-type': 'application/json' } })
       })
       const first = new NewApiSelfLogClient({ baseUrl: 'https://relay.example.test', refreshCookie: 'new_api_refresh=initial-session', sessionFile, userId: 'u1', fetcher: firstFetcher })
@@ -57,6 +57,23 @@ describe('NewApiSelfLogClient', () => {
     } finally {
       await rm(directory, { recursive: true, force: true })
     }
+  })
+
+  it('does not persist a refreshed session for the wrong user or missing secure rotation', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'provider-usage-session-'))
+    const sessionFile = join(directory, 'session.json')
+    try {
+      for (const response of [
+        new Response(JSON.stringify({ data: { access_token: 'other-token', user: { id: 'u2' } } }), { headers: { 'set-cookie': 'new_api_refresh=other; Path=/api/user/auth; HttpOnly; Secure' } }),
+        new Response(JSON.stringify({ data: { access_token: 'fresh-token', user: { id: 'u1' } } }), { headers: { 'set-cookie': 'new_api_refresh=rotated; Path=/api/user/auth; HttpOnly' } }),
+      ]) {
+        const fetcher = vi.fn<typeof fetch>(async () => response)
+        const client = new NewApiSelfLogClient({ baseUrl: 'https://relay.example.test', refreshCookie: 'new_api_refresh=initial', sessionFile, userId: 'u1', fetcher })
+        await expect(client.listPage()).rejects.toThrow(/PROVIDER_USAGE_REFRESH_(IDENTITY|ROTATION)_INVALID/u)
+        await expect(readFile(sessionFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+        expect(fetcher).toHaveBeenCalledTimes(1)
+      }
+    } finally { await rm(directory, { recursive: true, force: true }) }
   })
 
   it('fails closed on malformed records and non-https remote origins', async () => {

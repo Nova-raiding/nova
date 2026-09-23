@@ -143,16 +143,19 @@ export class NewApiSelfLogClient {
   private async performRefresh() {
     if (!this.refreshCookie) throw new Error('PROVIDER_USAGE_USER_TOKEN_EXPIRED')
     const url = new URL('/api/user/auth/refresh', this.origin)
-    const response = await this.fetcher(url, { method: 'POST', headers: { accept: 'application/json', cookie: this.refreshCookie }, redirect: 'error', signal: AbortSignal.timeout(10_000) })
+    const response = await this.fetcher(url, { method: 'POST', headers: { accept: 'application/json', cookie: this.refreshCookie, origin: this.origin.origin }, redirect: 'error', signal: AbortSignal.timeout(10_000) })
     if (!response.ok) throw new Error(`PROVIDER_USAGE_REFRESH_HTTP_${response.status}`)
     const payload = await boundedJson(response)
     const root = payload && typeof payload === 'object' ? payload as Record<string, unknown> : undefined
     const data = root?.data && typeof root.data === 'object' ? root.data as Record<string, unknown> : undefined
     const accessToken = text(data?.access_token)
-    if (!accessToken) throw new Error('PROVIDER_USAGE_REFRESH_RESPONSE_INVALID')
+    const user = data?.user && typeof data.user === 'object' ? data.user as Record<string, unknown> : undefined
+    if (!accessToken || String(user?.id ?? '') !== this.options.userId.trim()) throw new Error('PROVIDER_USAGE_REFRESH_IDENTITY_INVALID')
+    const cookies = response.headers.getSetCookie().filter(value => value.startsWith('new_api_refresh='))
+    const rotated = cookies.length === 1 ? cookies[0] : undefined
+    if (!rotated || !/^new_api_refresh=[^;\s]+(?:;|$)/u.test(rotated) || !/;\s*HttpOnly(?:;|$)/iu.test(rotated) || !/;\s*Secure(?:;|$)/iu.test(rotated) || !/;\s*Path=\/api\/user\/auth(?:;|$)/iu.test(rotated)) throw new Error('PROVIDER_USAGE_REFRESH_ROTATION_INVALID')
     this.userToken = accessToken
-    const rotated = response.headers.getSetCookie?.().find(value => value.startsWith('new_api_refresh='))
-    if (rotated) this.refreshCookie = rotated.split(';', 1)[0] ?? this.refreshCookie
+    this.refreshCookie = rotated.split(';', 1)[0]!
     await this.persistSession()
   }
 
