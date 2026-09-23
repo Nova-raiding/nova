@@ -47,6 +47,12 @@ describe('verified ECS release staging', () => {
     expect(source).toContain('cursor.lstat()')
     expect(source).not.toContain('cursor.stat(follow_symlinks=False)')
   })
+
+  it('loads the lock helper beside the entrypoint for standalone ECS installation', () => {
+    const source = readFileSync(resolve('infra/scripts/stage-verified-ecs-release.sh'), 'utf8')
+    expect(source).toContain('script_dir/ecs-build-lock.sh')
+    expect(source).toContain('script_dir/../..')
+  })
   it('verifies the archive identity, installs from the lock and atomically creates a new checkout', () => {
     const value = fixture(); const result = run(value)
     expect(result.status, result.stderr).toBe(0)
