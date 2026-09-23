@@ -44,3 +44,13 @@
 - 运营桌面退款面板经隔离 OIDC/Chrome 验证了平台角色可指定工作区读取记录、工作区角色不发起退款请求，以及不存在记录时服务端拒绝写操作。完整双人退款、真实支付和正式 ECS release 尚未验收。owner 整合后的 `npm run typecheck` 与 `git diff --check` 通过。
 
 上述开发改动尚未重新生成绑定当前干净提交的 Mac/Windows 候选，旧 r5 的哈希和旧 CI 不覆盖这些改动。正式结论仍为 **NO-GO**。
+
+## 07:01 UTC 候选与剩余链路更新
+
+- 安装入口与扣点门禁提交为 `651e85a45fb882f052381a493e5c26b93970aa64`。此提交的 [Windows 原生 CI](https://github.com/Nova-raiding/nova/actions/runs/35828068646) 与 [Intel Mac 原生 CI](https://github.com/Nova-raiding/nova/actions/runs/35828068871) 均通过；通用 CI 仍在运行，不能算通过。
+- 从独立干净源码生成新的 Mac arm64 内部候选 `artifacts/local-plugin/merchant-marketing-0.1.0+codex.20260923132700-darwin-arm64-candidate-651e85a4.tar.gz`，SHA-256 `ce6d32b01e5010c012eb884280ae05bd5cb7beeaa3148eefbe203bbb4825312b`；逐文件来源校验 72/72，`source_dirty=false`，`authenticity_verified=false`，`ready_to_install=false`。临时构建工作树已清理。它仍不能发给客户。
+- 多工作区连接的后续开发现已在工作树中完成定向验证：用户显式选工作区；API、授权码、刷新和访问令牌按当前账号绑定及成员状态重验；撤销工作区后旧令牌失效。目标单元/API、隔离 PostgreSQL、类型检查及桌面 Chromium 选择流程通过。生产网页没有安装实例 ID 时明确禁用一键按钮；包内 CLI 登录仍需用户完成授权。该改动尚未形成新的干净提交或生产证据。
+- 宿主 Responses 网关仅有**未挂载**的隔离安全框架。真实 Codex CLI 默认发送数组输入、工具字段且没有 `max_output_tokens`，该框架会在发出中转请求前拒绝它。项目也没有已批准的宿主对话创意点费率、专属工作区短期凭据和持久预算适配；不能把此框架当成可使用的 ChatGPT 宿主模型链路。
+- 扫描容器只读复核：生产定义已更新到 28132，ClamAV 与 EICAR 检查通过；正式扫描 worker 仍因最近签名 callback 过期而不就绪，公网 `/api/readyz` 仍为 503 `SCANNER_NOT_READY`。须通过受控隔离工作区的真实素材扫描恢复签名回调，不能合成心跳。
+
+这些事实均不改变正式 **NO-GO** 结论。上节 06:42 快照的“尚未重新生成”描述只适用于当时；本节记录了其后的新内部候选。

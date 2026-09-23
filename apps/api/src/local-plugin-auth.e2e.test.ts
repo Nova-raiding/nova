@@ -88,4 +88,37 @@ describe('local plugin browser PKCE', () => {
     expect(replay.status).toBe(400)
     await expect(replay.json()).resolves.toMatchObject({ error: { code: 'MCP_OAUTH_INVALID_GRANT' } })
   })
+
+  it('binds a multi-workspace authorization code to the selected workspace through token exchange', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
+    const repository = new MemoryPasswordAuthRepository()
+    setPasswordAuthRepositoryForTests(repository)
+    const login = `multi-pkce-${Date.now()}@example.test`
+    const password = 'LocalPkce1234!'
+    await repository.createMerchantAccount({ login, password, enterpriseName: 'Local Multi PKCE', contactName: 'Owner', workspaceIds: ['ws_first', 'ws_second'], actorId: 'platform-operator', reason: 'multi local PKCE e2e' })
+    const base = await start()
+    vi.stubEnv('PUBLIC_APP_BASE_URL', base)
+    const logged = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'merchant' }) })
+    const cookie = logged.headers.get('set-cookie')?.split(';')[0]
+    const redirectUri = 'http://127.0.0.1:18991/merchant-mcp-callback'
+    const verifier = 'multi-local-pkce-verifier-00000000000000000000000000000'
+    const authorization = new URLSearchParams({ response_type: 'code', client_id: 'local-desktop', redirect_uri: redirectUri, state: 'x'.repeat(43), code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256', scope: 'merchant', resource: `${base}/mcp`, workspace_id: 'ws_second' })
+    const approved = await fetch(`${base}/v1/auth/local-plugin/authorize`, { method: 'POST', redirect: 'manual', headers: { cookie: cookie!, origin: base, 'content-type': 'application/x-www-form-urlencoded' }, body: authorization })
+    expect(approved.status).toBe(303)
+    const code = new URL(approved.headers.get('location')!).searchParams.get('code')!
+    const tokenForm = new URLSearchParams({ grant_type: 'authorization_code', client_id: 'local-desktop', redirect_uri: redirectUri, code, code_verifier: verifier, resource: `${base}/mcp`, workspace_id: 'ws_first' })
+    const swapped = await fetch(`${base}/v1/auth/local-plugin/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: tokenForm })
+    expect(swapped.status).toBe(400)
+    await expect(swapped.json()).resolves.toMatchObject({ error: { code: 'MCP_OAUTH_INVALID_GRANT' } })
+    tokenForm.set('workspace_id', 'ws_second')
+    const replay = await fetch(`${base}/v1/auth/local-plugin/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: tokenForm })
+    expect(replay.status).toBe(400)
+    const approvedAgain = await fetch(`${base}/v1/auth/local-plugin/authorize`, { method: 'POST', redirect: 'manual', headers: { cookie: cookie!, origin: base, 'content-type': 'application/x-www-form-urlencoded' }, body: authorization })
+    expect(approvedAgain.status).toBe(303)
+    tokenForm.set('code', new URL(approvedAgain.headers.get('location')!).searchParams.get('code')!)
+    const selected = await fetch(`${base}/v1/auth/local-plugin/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: tokenForm })
+    expect(selected.status).toBe(200)
+    await expect(selected.json()).resolves.toMatchObject({ data: { workspace_id: 'ws_second' } })
+  })
 })

@@ -33,8 +33,8 @@ describe('local plugin guidance never signs browser credentials', () => {
   })
 
   it('does not generate executable guidance from an unsafe origin or workspace', () => {
-    expect(localPluginLoginCommand('https://yxsona.com/api', ['ws_safe-1'])).toBe('node scripts/login-local-macos.mjs --base-url https://yxsona.com --workspace ws_safe-1')
-    expect(localPluginLoginCommand('http://127.0.0.1:8787/api', ['workspace_safe_2'])).toBe('node scripts/login-local-macos.mjs --base-url http://127.0.0.1:8787 --workspace workspace_safe_2')
+    expect(localPluginLoginCommand('https://yxsona.com/api', ['ws_safe-1'])).toBe('./runtime/node scripts/login-local-macos.mjs --base-url https://yxsona.com --workspace ws_safe-1')
+    expect(localPluginLoginCommand('http://127.0.0.1:8787/api', ['workspace_safe_2'])).toBe('./runtime/node scripts/login-local-macos.mjs --base-url http://127.0.0.1:8787 --workspace workspace_safe_2')
     expect(localPluginLoginCommand('http://yxsona.com/api', ['ws_safe'])).toBeNull()
     expect(localPluginLoginCommand('https://user:secret@yxsona.com/api', ['ws_safe'])).toBeNull()
     expect(localPluginLoginCommand('https://evil;id.example/api', ['ws_safe'])).toBeNull()

@@ -255,6 +255,18 @@ describe('password registration and enterprise projection PostgreSQL acceptance'
       await expect(oauthA.refreshMcpOAuthToken({ ...context, refreshToken: exchanged[0]!.value.refreshToken })).rejects.toMatchObject({ code: 'MCP_OAUTH_INVALID_GRANT' })
       await expect(oauthA.authenticateMcpAccessToken({ ...context, accessToken: refreshed[0]!.value.accessToken })).resolves.toBeUndefined()
 
+      // Explicit selection must be checked again for every token operation,
+      // including after the account loses one of several workspace bindings.
+      await database.query(`INSERT INTO workspace_members (id,workspace_id,external_subject,display_name,role,status,invited_by) VALUES ($1,$2,$3,'Second workspace owner','workspace_owner','active','postgres-multi-workspace')`, [randomUUID(), untouchedWorkspaceId, login])
+      const multiAccount = await repository.activateMerchantAccount({ login, workspaceIds: [workspaceId, untouchedWorkspaceId], actorId: 'platform-reviewer-e2e', reason: 'add second workspace' })
+      await expect(oauthA.issueMcpAuthorizationCode({ ...context, account: multiAccount, redirectUri, codeChallenge: createHash('sha256').update(verifier).digest('base64url') })).rejects.toMatchObject({ code: 'MCP_OAUTH_WORKSPACE_AMBIGUOUS' })
+      const selectedCode = await oauthA.issueMcpAuthorizationCode({ ...context, account: multiAccount, workspaceId: untouchedWorkspaceId, redirectUri, codeChallenge: createHash('sha256').update(verifier).digest('base64url') })
+      const selectedPair = await oauthA.exchangeMcpAuthorizationCode({ ...context, redirectUri, code: selectedCode.code, codeVerifier: verifier })
+      await expect(oauthA.authenticateMcpAccessToken({ ...context, accessToken: selectedPair.accessToken })).resolves.toMatchObject({ workspaceId: untouchedWorkspaceId })
+      await repository.activateMerchantAccount({ login, workspaceIds: [workspaceId], actorId: 'platform-reviewer-e2e', reason: 'remove second workspace' })
+      await expect(oauthA.authenticateMcpAccessToken({ ...context, accessToken: selectedPair.accessToken })).resolves.toBeUndefined()
+      await expect(oauthA.refreshMcpOAuthToken({ ...context, refreshToken: selectedPair.refreshToken })).rejects.toMatchObject({ code: 'MCP_OAUTH_INVALID_GRANT' })
+
       // Scope and target validation are fail-closed and leave the committed
       // projection untouched.
       const negativeClient = await ops.connect()

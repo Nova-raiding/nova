@@ -21289,7 +21289,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const current = await passwordAuthRepository.authenticate(passwordSessionToken())
       if (!current || current.account.accountType !== 'merchant' || current.account.status !== 'active') throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请重新登录商家后台', 401)
       const input = await body(req, 16 * 1024), workspaceIds = [...new Set(current.account.workspaceIds.filter(Boolean))], workspaceId = String(input.workspace_id ?? '').trim()
-      if (workspaceIds.length !== 1 || workspaceId !== workspaceIds[0]) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '安装实例与当前账号工作区不一致', 409)
+      if (!workspaceId || !workspaceIds.includes(workspaceId)) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '安装实例与当前账号工作区不一致', 409)
       try { const instance = await localPluginInstallInstances.pair({ instanceId: String(input.installation_id ?? ''), pairingToken: String(input.pairing_token ?? ''), accountId: current.account.id, identityId: current.account.identityId, workspaceId }); return send(res, 200, workspaceId, { installation_id: instance.id, key_id: instance.publicKeyFingerprint, platform: instance.platform, paired: true }, null, req) }
       catch (error) { if (error instanceof LocalPluginInstallInstanceError) throw new DomainError(error.code, '安装实例配对无效或已过期', 409); throw error }
     }
@@ -21304,7 +21304,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const input = await body(req, 16 * 1024)
       const workspaceIds = [...new Set(current.account.workspaceIds.filter(Boolean))]
       const workspaceId = String(input.workspace_id ?? input.workspaceId ?? '').trim()
-      if (workspaceIds.length !== 1 || workspaceId !== workspaceIds[0]) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '连接请求与当前账号工作区不一致', 409)
+      if (!workspaceId || !workspaceIds.includes(workspaceId)) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '连接请求与当前账号工作区不一致', 409)
       const installationId = String(input.installation_id ?? '').trim()
       if ((isProduction() || process.env.LOCAL_PLUGIN_INSTANCE_BINDING_REQUIRED === 'true') && !installationId) throw new DomainError('LOCAL_PLUGIN_INSTALL_INSTANCE_REQUIRED', '生产一键连接必须绑定已配对的安装实例', 409)
       if (installationId && !await localPluginInstallInstances.getForOwner({ id: installationId, accountId: current.account.id, identityId: current.account.identityId, workspaceId })) throw new DomainError('LOCAL_PLUGIN_INSTALL_INSTANCE_INVALID', '安装实例未配对或不属于当前工作区', 409)
@@ -21321,8 +21321,9 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const current = await passwordAuthRepository.authenticate(passwordSessionToken())
       if (!current || current.account.accountType !== 'merchant' || current.account.status !== 'active') throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请重新登录商家后台', 401)
       const workspaceIds = [...new Set(current.account.workspaceIds.filter(Boolean))]
-      if (workspaceIds.length !== 1) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '当前账号必须绑定且只能绑定一个工作区', 409)
-      const request = await localPluginConnections.getForAccount({ id: connectionStatusMatch[1]!, accountId: current.account.id, workspaceId: workspaceIds[0]! })
+      const workspaceId = url.searchParams.get('workspace_id')?.trim() || (workspaceIds.length === 1 ? workspaceIds[0] : undefined)
+      if (!workspaceId || !workspaceIds.includes(workspaceId)) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '请指定当前账号已授权的工作区', 409)
+      const request = await localPluginConnections.getForAccount({ id: connectionStatusMatch[1]!, accountId: current.account.id, workspaceId })
       if (!request) throw new DomainError('LOCAL_PLUGIN_CONNECTION_NOT_FOUND', '连接请求不存在', 404)
       return send(res, 200, request.workspaceId, { request_id: request.id, status: request.status, expires_at: request.expiresAt, ...(request.exchangedAt ? { connected_at: request.exchangedAt } : {}) }, null, req)
     }
@@ -21353,8 +21354,8 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请先登录商家后台再重新授权', 401)
       }
       const workspaceIds = [...new Set(current.account.workspaceIds.filter(Boolean))]
-      if (workspaceIds.length !== 1) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '当前账号必须绑定且只能绑定一个工作区', 409)
-      const workspaceId = workspaceIds[0]!
+      const workspaceId = authorization.workspaceId
+      if (!workspaceId || !workspaceIds.includes(workspaceId)) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '本地插件请求与当前账号工作区不一致', 409)
       const origin = publicRequestOrigin(req)
       if (authorization.resource !== `${origin}/mcp` || authorization.workspaceId !== workspaceId) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '本地插件请求与当前账号工作区不一致', 409)
       if (authorization.requestId && (isProduction() || process.env.LOCAL_PLUGIN_INSTANCE_BINDING_REQUIRED === 'true') && !authorization.installInstanceId) throw new DomainError('LOCAL_PLUGIN_INSTALL_INSTANCE_REQUIRED', '生产一键连接必须提供安装实例持有证明', 409)
@@ -21378,7 +21379,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         try { await localPluginConnections.authorize({ id: authorization.requestId, accountId: current.account.id, identityId: current.account.identityId, workspaceId }) }
         catch (error) { if (error instanceof LocalPluginConnectionError) throw new DomainError(error.code, '连接请求无效、已过期或已使用', 409); throw error }
       }
-      const issued = await passwordAuthRepository.issueMcpAuthorizationCode({ ...context, account: current.account, redirectUri: authorization.redirectUri, codeChallenge: authorization.codeChallenge })
+      const issued = await passwordAuthRepository.issueMcpAuthorizationCode({ ...context, account: current.account, redirectUri: authorization.redirectUri, codeChallenge: authorization.codeChallenge, workspaceId })
       const target = new URL(authorization.redirectUri)
       target.searchParams.set('code', issued.code)
       target.searchParams.set('state', authorization.state)
@@ -21428,13 +21429,13 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const input = await body(req, 16 * 1024)
       const workspaceIds = [...new Set(current.account.workspaceIds.filter(Boolean))]
       const requestedWorkspace = String(input.workspace_id ?? input.workspaceId ?? '').trim()
-      if (workspaceIds.length !== 1 || (requestedWorkspace && requestedWorkspace !== workspaceIds[0])) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '当前账号必须绑定且只能绑定一个工作区', 409)
-      const workspaceId = workspaceIds[0]!
+      const workspaceId = requestedWorkspace || (workspaceIds.length === 1 ? workspaceIds[0] : undefined)
+      if (!workspaceId || !workspaceIds.includes(workspaceId)) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '请指定当前账号已授权的工作区', 409)
       const clientId = 'local-desktop'
       const redirectUri = 'http://127.0.0.1/merchant-mcp-callback'
       const codeVerifier = randomBytes(48).toString('base64url')
       const context = { clientId, issuer: origin, audience: `${origin}/mcp`, resource: `${origin}/mcp`, scope: ['merchant'] }
-      const issued = await passwordAuthRepository.issueMcpAuthorizationCode({ ...context, account: current.account, redirectUri, codeChallenge: createHash('sha256').update(codeVerifier).digest('base64url') })
+      const issued = await passwordAuthRepository.issueMcpAuthorizationCode({ ...context, account: current.account, redirectUri, codeChallenge: createHash('sha256').update(codeVerifier).digest('base64url'), workspaceId })
       const pair = await passwordAuthRepository.exchangeMcpAuthorizationCode({ ...context, redirectUri, code: issued.code, codeVerifier })
       return send(res, 200, workspaceId, { access_token: pair.accessToken, refresh_token: pair.refreshToken, token_type: 'Bearer', expires_in: pair.expiresIn, scope: pair.scope.join(' '), workspace_id: workspaceId, account_login: current.account.login }, null, req)
     }

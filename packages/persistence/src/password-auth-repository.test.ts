@@ -154,4 +154,28 @@ describe('password authentication', () => {
     await expect(auth.refreshMcpOAuthToken({ ...context, refreshToken: family.refreshToken })).rejects.toMatchObject({ code: 'MCP_OAUTH_INVALID_GRANT' })
     await expect(auth.revokeMcpOAuthToken({ ...context, token: 'unknown-token', tokenTypeHint: 'access_token' })).resolves.toBeUndefined()
   })
+
+  it('binds multi-workspace PKCE grants and tokens to the selected workspace and invalidates removed bindings', async () => {
+    const auth = new MemoryPasswordAuthRepository()
+    const account = await auth.createMerchantAccount({ login: 'multi-pkce@example.com', password: 'InitialPass123', enterpriseName: '企业', contactName: '管理员', workspaceIds: ['ws_first', 'ws_second'], actorId: 'platform_ops', reason: 'multi workspace auth' })
+    const context = { clientId: 'local-desktop', issuer: 'https://merchant.example', audience: 'https://merchant.example/mcp', resource: 'https://merchant.example/mcp', scope: ['merchant'] }
+    const redirectUri = 'http://127.0.0.1:12345/merchant-mcp-callback'
+    const verifier = 'multi-workspace-pkce-verifier-000000000000000000000000000'
+    const codeChallenge = createHash('sha256').update(verifier).digest('base64url')
+    const issue = (workspaceId?: string) => auth.issueMcpAuthorizationCode({ ...context, account, redirectUri, codeChallenge, ...(workspaceId ? { workspaceId } : {}) })
+    await expect(issue()).rejects.toMatchObject({ code: 'MCP_OAUTH_WORKSPACE_AMBIGUOUS' })
+    await expect(issue('ws_foreign')).rejects.toMatchObject({ code: 'MCP_OAUTH_WORKSPACE_AMBIGUOUS' })
+    const first = await issue('ws_first')
+    const second = await issue('ws_second')
+    const unexchangedSecond = await issue('ws_second')
+    expect(first.workspaceId).toBe('ws_first')
+    expect(second.workspaceId).toBe('ws_second')
+    const pair = await auth.exchangeMcpAuthorizationCode({ ...context, redirectUri, code: second.code, codeVerifier: verifier })
+    await expect(auth.authenticateMcpAccessToken({ ...context, accessToken: pair.accessToken })).resolves.toMatchObject({ workspaceId: 'ws_second' })
+    await auth.activateMerchantAccount({ login: account.login, workspaceIds: ['ws_first'], actorId: 'platform_ops', reason: 'remove second workspace' })
+    await expect(auth.exchangeMcpAuthorizationCode({ ...context, redirectUri, code: first.code, codeVerifier: verifier })).resolves.toBeDefined()
+    await expect(auth.exchangeMcpAuthorizationCode({ ...context, redirectUri, code: unexchangedSecond.code, codeVerifier: verifier })).rejects.toMatchObject({ code: 'MCP_OAUTH_INVALID_GRANT' })
+    await expect(auth.authenticateMcpAccessToken({ ...context, accessToken: pair.accessToken })).resolves.toBeUndefined()
+    await expect(auth.refreshMcpOAuthToken({ ...context, refreshToken: pair.refreshToken })).rejects.toMatchObject({ code: 'MCP_OAUTH_INVALID_GRANT' })
+  })
 })

@@ -2,7 +2,7 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { detectLocalPluginPlatform, LocalPluginConnection, localPluginConnectUrl } from './LocalPluginConnection'
+import { detectLocalPluginPlatform, LocalPluginConnection, localPluginConnectUrl, localPluginLoginCommand } from './LocalPluginConnection'
 import type { MerchantAuthAccount } from './api'
 
 const account: MerchantAuthAccount = {
@@ -18,6 +18,7 @@ describe('local plugin connection entry', () => {
     expect(markup).toContain('<button')
     expect(markup).not.toContain('access_token')
     expect(markup).not.toContain('refresh_token')
+    expect(markup).toContain('disabled=""')
     expect(renderToStaticMarkup(React.createElement(LocalPluginConnection, { apiBaseUrl: '/api', account: { ...account, status: 'suspended' } }))).toBe('')
     expect(renderToStaticMarkup(React.createElement(LocalPluginConnection, { apiBaseUrl: '/api', account: { ...account, accountType: 'platform' } }))).toBe('')
   })
@@ -33,8 +34,8 @@ describe('local plugin connection entry', () => {
 
   it('points to the installed local CLI without claiming installation or connection', () => {
     const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
-    expect(component).toContain('node scripts/login-local-macos.mjs --base-url ${apiOrigin} --workspace ${workspaceId}')
-    expect(component).toContain('node scripts/build-keychain-helper.mjs')
+    expect(component).toContain('./runtime/node scripts/login-local-macos.mjs --base-url ${apiOrigin} --workspace ${workspaceId}')
+    expect(component).toContain('login.cmd --workspace ${workspaceId}')
     expect(component).toContain('一键连接需要已安装的 Store Nova Helper')
     expect(component).toContain('不代表插件已经安装或连接成功')
     expect(component).toContain('macOS 钥匙串（Keychain）')
@@ -58,6 +59,23 @@ describe('local plugin connection entry', () => {
     expect(url).not.toMatch(/token|password|code=/u)
     expect(localPluginConnectUrl('http://yxsona.com/api', ['ws_safe-1'])).toBeNull()
     expect(localPluginConnectUrl('https://yxsona.com/api', ['ws_safe-1'], 'unsafe')).toBeNull()
+  })
+
+  it('requires explicit selection for multiple authorized workspaces', () => {
+    const workspaces = ['ws_first', 'ws_second']
+    expect(localPluginConnectUrl('https://yxsona.com/api', workspaces)).toBeNull()
+    expect(localPluginConnectUrl('https://yxsona.com/api', workspaces, undefined, 'ws_foreign')).toBeNull()
+    expect(localPluginConnectUrl('https://yxsona.com/api', workspaces, undefined, 'ws_second')).toContain('workspace=ws_second')
+    const markup = renderToStaticMarkup(React.createElement(LocalPluginConnection, { apiBaseUrl: '/api', account: { ...account, workspaceIds: workspaces } }))
+    expect(markup).toContain('选择插件工作区')
+    expect(markup).toContain('disabled=""')
+  })
+
+  it('shows platform-specific commands from the bundled runtime', () => {
+    expect(localPluginLoginCommand('https://yxsona.com/api', ['ws_first', 'ws_second'], 'ws_second', 'macos')).toBe('./runtime/node scripts/login-local-macos.mjs --base-url https://yxsona.com --workspace ws_second')
+    expect(localPluginLoginCommand('https://yxsona.com/api', ['ws_first', 'ws_second'], 'ws_second', 'windows')).toBe('login.cmd --workspace ws_second')
+    expect(localPluginLoginCommand('http://127.0.0.1:8787/api', ['ws_first'], undefined, 'windows')).toBe('runtime\\node.exe scripts\\login-local-windows.mjs --base-url http://127.0.0.1:8787 --workspace ws_first')
+    expect(localPluginLoginCommand('https://yxsona.com/api', ['ws_first'], 'ws_foreign', 'windows')).toBeNull()
   })
 
   it('keeps account and workspace guidance isolated when identity changes', () => {

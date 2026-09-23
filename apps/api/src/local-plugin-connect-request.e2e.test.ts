@@ -92,6 +92,35 @@ describe('local plugin connect request HTTP contract', () => {
     await expect(response.json()).resolves.toMatchObject({ error: { code: 'MCP_OAUTH_WORKSPACE_AMBIGUOUS' } })
   })
 
+  it('requires an explicit owned workspace for multi-workspace requests and status polling', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
+    vi.stubEnv('LOCAL_PLUGIN_ONE_CLICK_ENABLED', 'true')
+    const auth = new MemoryPasswordAuthRepository()
+    setPasswordAuthRepositoryForTests(auth)
+    const login = 'connect-multi@example.test'
+    const password = 'ConnectMulti1234!'
+    await auth.createMerchantAccount({ login, password, enterpriseName: 'Connect Multi', contactName: 'Owner', workspaceIds: ['ws_first', 'ws_second'], actorId: 'platform', reason: 'connect multi e2e' })
+    const base = await startApi()
+    const logged = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'merchant' }) })
+    const cookie = logged.headers.get('set-cookie')?.split(';')[0]
+    const create = (workspaceId?: string) => fetch(`${base}/v1/auth/local-plugin/connect-requests`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify(workspaceId ? { workspace_id: workspaceId } : {}) })
+    expect((await create()).status).toBe(409)
+    expect((await create('ws_foreign')).status).toBe(409)
+    const created = await create('ws_second')
+    expect(created.status).toBe(201)
+    const envelope = await created.json() as Envelope<{ request_id: string; launch_url: string }>
+    expect(new URL(envelope.data!.launch_url).searchParams.get('workspace')).toBe('ws_second')
+    const statusUrl = `${base}/v1/auth/local-plugin/connect-requests/${envelope.data!.request_id}/status`
+    expect((await fetch(statusUrl, { headers: { cookie: cookie! } })).status).toBe(409)
+    expect((await fetch(`${statusUrl}?workspace_id=ws_first`, { headers: { cookie: cookie! } })).status).toBe(404)
+    const status = await fetch(`${statusUrl}?workspace_id=ws_second`, { headers: { cookie: cookie! } })
+    expect(status.status).toBe(200)
+    await expect(status.json()).resolves.toMatchObject({ data: { status: 'pending' } })
+    await auth.activateMerchantAccount({ login, workspaceIds: ['ws_first'], actorId: 'platform', reason: 'remove plugin workspace' })
+    expect((await fetch(`${statusUrl}?workspace_id=ws_second`, { headers: { cookie: cookie! } })).status).toBe(409)
+  })
+
   it('rejects creation when the browser Origin header is missing', async () => {
     vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
     vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
