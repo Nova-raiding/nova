@@ -15,10 +15,12 @@ const plan = { schema_version: '1', kind: 'ecs-compose-rollback-capsule', databa
 fs.writeFileSync('/state/plan.json', JSON.stringify(plan), { mode: 0o600 })
 const bridgeRows = Array.from({ length: 242 }, (_, index) => [index + 1, `m${index + 1}`, crypto.createHash('sha256').update(`m${index + 1}`).digest('hex')])
 const bridgeHistory = crypto.createHash('sha256').update(canonical(bridgeRows)).digest('hex')
-const bridgeCompose = 'services:\n  api:\n    image: old-api\n  worker-sync:\n    image: old-worker\n'
+const bridgeCompose = `services:\n  api:\n    image: old-api@sha256:${sha('1')}\n  worker-sync:\n    image: old-worker@sha256:${sha('3')}\n`
+const bridgeCandidateCompose = `services:\n  api:\n    image: new-api@sha256:${sha('c')}\n  worker-sync:\n    image: new-worker@sha256:${sha('d')}\n`
 const bridgeEnv = 'BRIDGE_TEST=old\n'
 const oldDigests = JSON.stringify({ api: `old-api@sha256:${sha('1')}`, 'worker-sync': `old-worker@sha256:${sha('3')}` })
 fs.writeFileSync('/state/bridge-compose.yml', bridgeCompose, { mode: 0o600 })
+fs.writeFileSync('/state/bridge-candidate-compose.yml', bridgeCandidateCompose, { mode: 0o600 })
 fs.writeFileSync('/state/bridge-env', bridgeEnv, { mode: 0o600 })
 fs.writeFileSync('/state/bridge-old-digests.json', oldDigests, { mode: 0o600 })
 fs.writeFileSync('/state/bridge-candidate.json', JSON.stringify({ api: `new-api@sha256:${sha('c')}`, 'worker-sync': `new-worker@sha256:${sha('d')}` }), { mode: 0o600 })

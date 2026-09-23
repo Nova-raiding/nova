@@ -24,6 +24,11 @@ if (fs.existsSync('/state/bridge-mode')) {
   } else if (args[0] === 'image' && args[1] === 'inspect') {
     const ref = args.at(-1)
     process.stdout.write(`${ref.startsWith('new-api@') ? candidate : ref.startsWith('new-worker@') ? `sha256:${'d'.repeat(64)}` : ref.startsWith('old-api@') ? imageA : imageB}\n`)
+  } else if (args[0] === 'compose' && args.includes('config')) {
+    const candidateCompose = args.includes('/state/bridge-candidate-compose.yml')
+    process.stdout.write(JSON.stringify({ services: candidateCompose
+      ? { api: { image: `new-api@sha256:${'c'.repeat(64)}` }, 'worker-sync': { image: `new-worker@sha256:${'d'.repeat(64)}` } }
+      : { api: { image: `old-api@sha256:${'1'.repeat(64)}` }, 'worker-sync': { image: `old-worker@sha256:${'3'.repeat(64)}` } } }))
   } else if (args[0] === 'compose' && args.includes('up')) {
     if (fs.existsSync('/state/bridge-up-fail')) { fs.writeFileSync('/state/bridge-partial-restore', ''); process.exit(17) }
     fs.writeFileSync('/state/bridge-restored', '')
