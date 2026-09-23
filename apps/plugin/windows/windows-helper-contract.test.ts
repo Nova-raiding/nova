@@ -17,4 +17,17 @@ describe('Windows helper source contract', () => {
     expect(source).toContain('return 78')
     expect(source).not.toContain('Process.Start')
   })
+
+  it('requires an external signed installer to bind the full ZIP before extraction', () => {
+    const bootstrap = readFileSync('apps/plugin/scripts/install-signed-windows-package.template.ps1', 'utf8')
+    const builder = readFileSync('apps/plugin/scripts/build-signed-windows-package.ps1', 'utf8')
+    const packaging = readFileSync('apps/plugin/scripts/package-local-plugin.mjs', 'utf8')
+    expect(bootstrap).toContain('Get-AuthenticodeSignature -LiteralPath $PSCommandPath')
+    expect(bootstrap).toContain('__STORENOVA_PACKAGE_SHA256__')
+    expect(bootstrap).toContain('[System.IO.FileShare]::Read')
+    expect(bootstrap.indexOf('if ($actualHash -ne $expectedHash)')).toBeLessThan(bootstrap.indexOf('ExtractToDirectory'))
+    expect(builder).toContain("throw 'A timestamp server is required for a production Windows package'")
+    expect(builder).toContain('Set-AuthenticodeSignature @bootstrapSigningArguments')
+    expect(packaging).toContain('direct ZIP installation is not trusted')
+  })
 })

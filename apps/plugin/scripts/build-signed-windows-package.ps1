@@ -33,6 +33,8 @@ $helper = if ([string]::IsNullOrWhiteSpace($HelperDirectory)) {
 }
 $ownsHelper = [string]::IsNullOrWhiteSpace($HelperDirectory)
 $extract = Join-Path $env:TEMP ('storenova-package-check-' + [guid]::NewGuid().ToString('N'))
+$bootstrap = $output.Substring(0, $output.Length - 4) + '.install.ps1'
+if (Test-Path -LiteralPath $bootstrap) { throw 'Signed installer output already exists' }
 $verified = $false
 
 try {
@@ -112,13 +114,31 @@ try {
   if ($LASTEXITCODE -ne 0 -or $nodeVersion -ne 'v22.16.0') { throw 'Bundled Windows Node runtime failed verification' }
   $packageHash = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToUpperInvariant()
   [System.IO.File]::WriteAllText("$output.sha256", "$packageHash`n", [System.Text.Encoding]::ASCII)
+  $template = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'install-signed-windows-package.template.ps1') -Raw
+  foreach ($marker in @('__STORENOVA_PACKAGE_SHA256__', '__STORENOVA_SIGNER_THUMBPRINT__', '__STORENOVA_CI_TEST_ONLY__')) {
+    if ($template.IndexOf($marker) -lt 0 -or $template.IndexOf($marker) -ne $template.LastIndexOf($marker)) { throw "Signed installer template marker is invalid: $marker" }
+  }
+  $bootstrapText = $template.Replace('__STORENOVA_PACKAGE_SHA256__', $packageHash)
+  $bootstrapText = $bootstrapText.Replace('__STORENOVA_SIGNER_THUMBPRINT__', $thumbprint)
+  $bootstrapText = $bootstrapText.Replace('__STORENOVA_CI_TEST_ONLY__', $(if ($CiTestCertificate) { '$true' } else { '$false' }))
+  [System.IO.File]::WriteAllText($bootstrap, $bootstrapText, [System.Text.UTF8Encoding]::new($false))
+  $bootstrapSigningArguments = @{ FilePath = $bootstrap; Certificate = $certificate[0]; HashAlgorithm = 'SHA256' }
+  if (-not [string]::IsNullOrWhiteSpace($TimestampServer)) { $bootstrapSigningArguments.TimestampServer = $TimestampServer }
+  $signedBootstrap = Set-AuthenticodeSignature @bootstrapSigningArguments
+  if ($null -eq $signedBootstrap.SignerCertificate -or $signedBootstrap.SignerCertificate.Thumbprint.Replace(' ', '').ToUpperInvariant() -ne $thumbprint) {
+    throw 'External installer signature was not attached by the expected certificate'
+  }
+  $bootstrapSignature = Get-AuthenticodeSignature -LiteralPath $bootstrap
+  if ($bootstrapSignature.Status -ne 'Valid') { throw "External installer signature is not trusted: $($bootstrapSignature.Status)" }
+  if (-not $CiTestCertificate -and $null -eq $bootstrapSignature.TimeStamperCertificate) { throw 'Production external installer has no trusted timestamp' }
   $verified = $true
-  [pscustomobject]@{ ok = $true; artifact = $output; sha256 = $packageHash; signer = $thumbprint; bundled_node = $nodeVersion; release_status = $expectedStatus; ready_to_install = $expectedReady; ci_test_certificate = [bool]$CiTestCertificate } |
+  [pscustomobject]@{ ok = $true; artifact = $output; installer = $bootstrap; sha256 = $packageHash; signer = $thumbprint; bundled_node = $nodeVersion; release_status = $expectedStatus; ready_to_install = $expectedReady; ci_test_certificate = [bool]$CiTestCertificate } |
     ConvertTo-Json -Compress | Write-Output
 } finally {
   if (-not $verified) {
     if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output -Force }
     if (Test-Path -LiteralPath "$output.sha256") { Remove-Item -LiteralPath "$output.sha256" -Force }
+    if (Test-Path -LiteralPath $bootstrap) { Remove-Item -LiteralPath $bootstrap -Force }
   }
   if (Test-Path -LiteralPath $extract) { Remove-Item -LiteralPath $extract -Recurse -Force }
   if ($ownsHelper -and (Test-Path -LiteralPath $helper)) { Remove-Item -LiteralPath $helper -Recurse -Force }

@@ -222,8 +222,9 @@ try {
     'Write-Host "Restart ChatGPT, enable Merchant Marketing, then verify onboarding.status in a new conversation."',
     'exit 0',
   ].join('\r\n')
-  writeFileSync(resolve(staging, 'install-plugin.ps1'), windowsPluginPowerShell)
-  writeFileSync(resolve(staging, 'install-chatgpt.ps1'), [
+  const directWindowsInstallDenied = 'throw "Run the separately signed .install.ps1 beside the ZIP; direct ZIP installation is not trusted."\r\n'
+  writeFileSync(resolve(staging, 'install-plugin.ps1'), platform === 'win32' ? directWindowsInstallDenied : windowsPluginPowerShell)
+  writeFileSync(resolve(staging, 'install-chatgpt.ps1'), platform === 'win32' ? directWindowsInstallDenied : [
     '$ErrorActionPreference = "Stop"',
     '$root = Split-Path -Parent $MyInvocation.MyCommand.Path',
     '& (Join-Path $root "scripts\\ensure-chatgpt-windows.ps1")',
@@ -245,12 +246,8 @@ try {
   writeFileSync(resolve(staging, '.agents/plugins/marketplace.json'), `${JSON.stringify(chatgptMarketplace, null, 2)}\n`)
   const windowsInstaller = [
     '@echo off',
-    'setlocal',
-    'cd /d "%~dp0"',
-    'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install-chatgpt.ps1"',
-    'if errorlevel 1 (echo Store Nova installation failed. & pause & exit /b 1)',
-    'echo Store Nova local plugin installed. Restart ChatGPT, confirm Merchant Marketing is enabled, then complete workspace login.',
-    'pause',
+    'echo This ZIP cannot install itself. Run the separately signed .install.ps1 beside the ZIP.',
+    'exit /b 1',
     '',
   ].join('\r\n')
   writeFileSync(resolve(staging, 'install.cmd'), windowsInstaller)
