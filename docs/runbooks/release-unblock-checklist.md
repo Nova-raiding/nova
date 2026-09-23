@@ -26,7 +26,7 @@
 2. 先确认 scanner 的 API endpoint、签名私钥、公钥指纹、workspace 绑定和 ClamAV 配置来自受保护的运行时 secret。
 3. 通过真实隔离素材产生一次扫描任务，使 API 接受签名 callback。
 4. 必须同时观察到：`callback_accepted_at`、heartbeat `callback.capable=true`、heartbeat 未过期、`ready=true`、backlog/dead-letter 为零。
-5. `local-worker-scan-1` 只有在上述证据齐全后才能进入 healthy；没有 callback 证据时保持发布阻断。
+5. 先以当前 release 的 Compose 项目和镜像身份确认目标容器；2026-09-23 的 101 正式扫描容器是 `merchant-production-worker-scan-1`，不能把同机旧 `local-worker-scan-1` 的日志或健康状态当作生产证据。正式扫描实例只有在上述证据齐全后才能进入 ready；没有 callback 证据时保持发布阻断。
 
 ## 4. 发布证据
 
