@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, w
 import { dirname, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { writeBundleProvenance } from './bundle-provenance.mjs'
+import { verifyBundleProvenance, writeBundleProvenance } from './bundle-provenance.mjs'
 
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const repositoryRoot = resolve(pluginRoot, '..', '..')
@@ -114,6 +114,15 @@ try {
   mkdirSync(mounted)
   run('/usr/bin/hdiutil', ['attach', '-quiet', '-readonly', '-nobrowse', '-mountpoint', mounted, image], 300_000)
   try {
+    const shipped = verifyBundleProvenance(mounted)
+    if (!shipped.ok || shipped.git_commit !== candidateProvenance.git_commit || shipped.source_dirty) {
+      throw new Error(`DMG payload provenance is invalid: ${shipped.errors?.join('; ') || 'source identity differs'}`)
+    }
+    const shippedStatus = JSON.parse(readFileSync(resolve(mounted, 'bundle-status.json'), 'utf8'))
+    if (shippedStatus.release_status !== 'signed_notarized' || shippedStatus.ready_to_install !== true ||
+        shippedStatus.ci_test_certificate !== false || shippedStatus.source_dirty !== false) {
+      throw new Error('DMG payload is not a signed, notarized production release')
+    }
     const shippedNode = resolve(mounted, 'runtime/node')
     const shippedHelper = resolve(mounted, 'mcp/keychain-credential-helper')
     assertDeveloperIdExecutable(shippedNode, 'DMG bundled Node')

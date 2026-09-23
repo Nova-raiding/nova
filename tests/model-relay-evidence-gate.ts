@@ -58,7 +58,7 @@ function validateArtifact(reference: string | undefined, root: string, label: st
           || failure.relay !== expected.relay || recovery.relay !== expected.relay
           || !nonEmpty(failure.endpoint) || failure.endpoint !== recovery.endpoint
           || !failure.endpoint.startsWith('/') || failure.endpoint.startsWith('//') || failure.endpoint.includes('\\')
-          || failure.endpoint.includes('?') || failure.endpoint.includes('#') || failure.endpoint.split('/').some(segment => segment === '.' || segment === '..')
+          || failure.endpoint.includes('?') || failure.endpoint.includes('#') || failure.endpoint.includes('%') || failure.endpoint.split('/').some(segment => segment === '.' || segment === '..')
           || /[\u0000-\u001f\u007f]/u.test(failure.endpoint)) {
           return [`${label} capture pair must match the summarized 503 MODEL_PROVIDER_OUTCOME_UNKNOWN recovery, release, relay, endpoint, times and request ids`]
         }
@@ -123,7 +123,7 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
     if (!result) { errors.push(`${modality} result is required`); continue }
     if (result.state !== 'ready') errors.push(`${modality} state must be ready`)
     if (!nonEmpty(result.endpoint)) errors.push(`${modality}.endpoint is required`)
-    else if (!result.endpoint.startsWith('/') || result.endpoint.startsWith('//') || result.endpoint.includes('\\') || result.endpoint.includes('?') || result.endpoint.includes('#') || result.endpoint.split('/').some(segment => segment === '.' || segment === '..') || /[\u0000-\u001f\u007f]/u.test(result.endpoint)) errors.push(`${modality}.endpoint must be a safe relative path`)
+    else if (!result.endpoint.startsWith('/') || result.endpoint.startsWith('//') || result.endpoint.includes('\\') || result.endpoint.includes('?') || result.endpoint.includes('#') || result.endpoint.includes('%') || result.endpoint.split('/').some(segment => segment === '.' || segment === '..') || /[\u0000-\u001f\u007f]/u.test(result.endpoint)) errors.push(`${modality}.endpoint must be a safe relative path`)
     if (!nonEmpty(result.model)) errors.push(`${modality}.model is required`)
     if (!nonEmpty(result.providerRequestId)) errors.push(`${modality}.providerRequestId is required`)
     if (nonEmpty(result.providerJobId) && result.providerJobId === result.providerRequestId) errors.push(`${modality}.providerRequestId must not reuse providerJobId`)

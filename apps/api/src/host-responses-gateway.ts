@@ -66,13 +66,19 @@ function observedUsage(value: unknown, model: string): HostUsage | null {
   return { inputTokens: Number(inputTokens), outputTokens: Number(outputTokens), totalTokens: Number(totalTokens), providerRequestId: value.id }
 }
 
-function parseEvent(frame: string): { event: string; data: unknown } | null {
+function parseEvent(frame: string): { event: string; data: unknown } | null | undefined {
   let event = ''
   const data: string[] = []
+  let commentOnly = true
   for (const line of frame.split(/\r?\n/u)) {
+    if (!line || line.startsWith(':')) continue
+    commentOnly = false
     if (line.startsWith('event:')) event = line.slice(6).trim()
     else if (line.startsWith('data:')) data.push(line.slice(5).trimStart())
   }
+  // SSE comment frames are legal relay keepalives and do not indicate an
+  // incomplete Responses event. They carry no billable usage themselves.
+  if (commentOnly) return undefined
   if (!event || data.length === 0) return null
   try { return { event, data: JSON.parse(data.join('\n')) } } catch { return null }
 }
@@ -172,6 +178,7 @@ export async function handleHostResponses(request: Request, deps: HostResponsesD
             pending = pending.slice(boundary.index + boundary[0].length)
             if (Buffer.byteLength(frame) > MAX_EVENT_BYTES) throw new Error('EVENT_TOO_LARGE')
             const event = parseEvent(frame)
+            if (event === undefined) continue
             if (!event) throw new Error('INVALID_EVENT')
             if (event.event === 'response.completed') {
               const response = isRecord(event.data) ? event.data.response : undefined

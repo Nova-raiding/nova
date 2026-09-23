@@ -140,6 +140,10 @@ jobs:
           $rejected = $false
           try { & $bootstrap -PackagePath $tampered } catch { $rejected = $_.Exception.Message -match 'ZIP hash does not match' }
           if (-not $rejected) { throw 'Tampered Windows ZIP was not rejected before extraction' }
+          $invalidWorkspaceRejected = $false
+          try { & $bootstrap -PackagePath $artifact -WorkspaceId 'wrong-workspace' }
+          catch { $invalidWorkspaceRejected = $_.Exception.Message -match 'workspace ID is invalid' }
+          if (-not $invalidWorkspaceRejected) { throw 'Invalid workspace was not rejected before official-host or plugin installation' }
       - name: Verify a clean Windows install
         timeout-minutes: 3
         shell: powershell

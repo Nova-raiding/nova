@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryLocalPluginConnectionRepository } from '../../../packages/persistence/src/local-plugin-connection-repository.js'
+import { MemoryLocalPluginInstallInstanceRepository } from '../../../packages/persistence/src/local-plugin-install-instance-repository.js'
 import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
-import { server, setLocalPluginConnectionRepositoryForTests, setPasswordAuthRepositoryForTests } from './server.js'
+import { server, setLocalPluginConnectionRepositoryForTests, setLocalPluginInstallInstanceRepositoryForTests, setPasswordAuthRepositoryForTests } from './server.js'
 
 async function startApi() {
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
@@ -17,6 +19,7 @@ describe('local plugin connect request HTTP contract', () => {
     if (server.listening) { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())) }
     setPasswordAuthRepositoryForTests()
     setLocalPluginConnectionRepositoryForTests()
+    setLocalPluginInstallInstanceRepositoryForTests()
     vi.unstubAllEnvs()
   })
 
@@ -136,5 +139,44 @@ describe('local plugin connect request HTTP contract', () => {
     const response = await fetch(`${base}/v1/auth/local-plugin/connect-requests`, { method: 'POST', headers: { cookie: cookie!, 'content-type': 'application/json' }, body: JSON.stringify({ workspace_id: 'ws_origin' }) })
     expect(response.status).toBe(403)
     await expect(response.json()).resolves.toMatchObject({ error: { code: 'AUTH_CSRF_ORIGIN_INVALID' } })
+  })
+
+  it('keeps the same connection request pending when issuing its PKCE code fails, then permits retry', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
+    vi.stubEnv('LOCAL_PLUGIN_ONE_CLICK_ENABLED', 'true')
+    const auth = new MemoryPasswordAuthRepository()
+    const connections = new MemoryLocalPluginConnectionRepository()
+    const instances = new MemoryLocalPluginInstallInstanceRepository()
+    setPasswordAuthRepositoryForTests(auth)
+    setLocalPluginConnectionRepositoryForTests(connections)
+    setLocalPluginInstallInstanceRepositoryForTests(instances)
+    const workspaceId = 'ws_code_retry'
+    const login = 'connect-code-retry@example.test'
+    const password = 'ConnectCodeRetry1234!'
+    const account = await auth.createMerchantAccount({ login, password, enterpriseName: 'Code Retry', contactName: 'Owner', workspaceIds: [workspaceId], actorId: 'platform', reason: 'code issuance failure retry' })
+    const base = await startApi()
+    const logged = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'merchant' }) })
+    const cookie = logged.headers.get('set-cookie')?.split(';')[0]
+    const created = await fetch(`${base}/v1/auth/local-plugin/connect-requests`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ workspace_id: workspaceId }) })
+    const request = await created.json() as Envelope<{ request_id: string }>
+    expect(created.status).toBe(201)
+    const instance = { id: '11111111-1111-4111-8111-111111111111', accountId: account.id, identityId: account.identityId, workspaceId, platform: 'macos' as const, publicKey: 'test', publicKeyFingerprint: 'test', createdAt: new Date().toISOString(), lastSeenAt: new Date().toISOString() }
+    vi.spyOn(instances, 'getForOwner').mockResolvedValue(instance)
+    const consumed = vi.spyOn(instances, 'verifyAndConsumeChallenge').mockResolvedValue(instance)
+    const verifier = 'code-issuance-retry-verifier-00000000000000000000000'
+    const form = new URLSearchParams({ response_type: 'code', client_id: 'local-desktop', redirect_uri: 'http://127.0.0.1:18992/merchant-mcp-callback', state: 'x'.repeat(43), code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256', scope: 'merchant', resource: `${base}/mcp`, workspace_id: workspaceId, connection_request_id: request.data!.request_id, installation_id: instance.id, challenge_id: '22222222-2222-4222-8222-222222222222', instance_signature: 's'.repeat(86), client_nonce: 'c'.repeat(43), server_nonce: 'n'.repeat(43), challenge_issued_at: new Date().toISOString(), challenge_expires_at: new Date(Date.now() + 120_000).toISOString() })
+    vi.spyOn(auth, 'issueMcpAuthorizationCode').mockRejectedValueOnce(new Error('injected issuance failure'))
+    const authorize = () => fetch(`${base}/v1/auth/local-plugin/authorize`, { method: 'POST', redirect: 'manual', headers: { cookie: cookie!, origin: base, 'content-type': 'application/x-www-form-urlencoded' }, body: form })
+    const failed = await authorize()
+    expect(failed.status).toBe(500)
+    expect(failed.headers.get('location')).toBeNull()
+    expect(consumed).not.toHaveBeenCalled()
+    expect(await connections.getForAccount({ id: request.data!.request_id, accountId: account.id, workspaceId })).toMatchObject({ status: 'pending' })
+    const retried = await authorize()
+    expect(retried.status).toBe(303)
+    expect(new URL(retried.headers.get('location')!).searchParams.get('code')).toBeTruthy()
+    expect(consumed).toHaveBeenCalledOnce()
+    expect(await connections.getForAccount({ id: request.data!.request_id, accountId: account.id, workspaceId })).toMatchObject({ status: 'authorized' })
   })
 })

@@ -22,6 +22,15 @@ function at(value: string): string { const parsed = new Date(value); if (Number.
 function points(value: number, field = 'points'): number { if (!Number.isSafeInteger(value) || value <= 0) throw new TypeError(`${field} must be a positive integer`); return value }
 function evidence(value: Record<string, unknown>): Record<string, unknown> { if (!value || Object.keys(value).length === 0) throw new TypeError('evidence is required'); return value }
 function integer(value: string | number): number { const parsed = Number(value); if (!Number.isSafeInteger(parsed) || parsed < 0) throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN', 'creative point value is invalid'); return parsed }
+function validateAdjustment(input: CreativePointAdjustmentInput) {
+  const workspaceId = requireWorkspaceScope(input.workspaceId); const observedAt = at(input.at)
+  if (!Number.isSafeInteger(input.pointsDelta) || input.pointsDelta === 0) throw new TypeError('pointsDelta must be a non-zero integer')
+  if (!Number.isSafeInteger(input.expectedAccessRevision) || input.expectedAccessRevision < 0) throw new TypeError('expectedAccessRevision is invalid')
+  required(input.approvalId, 'approvalId'); required(input.idempotencyKey, 'idempotencyKey'); required(input.actorId, 'actorId'); required(input.approvedByActorId, 'approvedByActorId'); required(input.reason, 'reason'); evidence(input.evidence)
+  if (input.actorId === input.approvedByActorId) throw new CommercialAdjustmentApprovalError('adjustment maker and approver must be different actors')
+  const request = { approval_id: input.approvalId, points_delta: input.pointsDelta, expected_access_revision: input.expectedAccessRevision, actor_id: input.actorId, approved_by_actor_id: input.approvedByActorId, reason: input.reason, evidence: input.evidence }
+  return { workspaceId, observedAt, request }
+}
 
 type StateRow = { available: string | number; reserved: string | number; settled: string | number; revision: string | number }
 const balance = (workspaceId: string, row: StateRow): CreativePointBalance => ({ workspaceId, availablePoints: integer(row.available), reservedPoints: integer(row.reserved), settledPoints: integer(row.settled), revision: integer(row.revision) })
@@ -84,13 +93,13 @@ export class PostgresCreativePointLifecycleRepository {
   }
 
   async adjust(input: CreativePointAdjustmentInput): Promise<CreativePointBalance> {
-    const workspaceId = requireWorkspaceScope(input.workspaceId); const observedAt = at(input.at)
-    if (!Number.isSafeInteger(input.pointsDelta) || input.pointsDelta === 0) throw new TypeError('pointsDelta must be a non-zero integer')
-    if (!Number.isSafeInteger(input.expectedAccessRevision) || input.expectedAccessRevision < 0) throw new TypeError('expectedAccessRevision is invalid')
-    required(input.approvalId, 'approvalId'); required(input.idempotencyKey, 'idempotencyKey'); required(input.actorId, 'actorId'); required(input.approvedByActorId, 'approvedByActorId'); required(input.reason, 'reason'); evidence(input.evidence)
-    if (input.actorId === input.approvedByActorId) throw new CommercialAdjustmentApprovalError('adjustment maker and approver must be different actors')
-    const request = { approval_id: input.approvalId, points_delta: input.pointsDelta, expected_access_revision: input.expectedAccessRevision, actor_id: input.actorId, approved_by_actor_id: input.approvedByActorId, reason: input.reason, evidence: input.evidence }
-    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+    const { workspaceId } = validateAdjustment(input)
+    return withWorkspaceTransaction(this.pool, workspaceId, client => this.adjustInTransaction(client, input))
+  }
+
+  /** Use only inside an existing workspace-scoped transaction. The caller owns commit/rollback. */
+  async adjustInTransaction(client: SqlClient, input: CreativePointAdjustmentInput): Promise<CreativePointBalance> {
+    const { workspaceId, observedAt, request } = validateAdjustment(input)
       // Lock first, then replay (the order `expireGrant` uses). With the replay
       // lookup first, a retry that raced the original blocked on the lock here
       // and then failed its revision fence with `CREATIVE_POINT_IDEMPOTENCY_CONFLICT`
@@ -116,7 +125,6 @@ export class PostgresCreativePointLifecycleRepository {
       await this.ledger(client, workspaceId, operationId, 'adjusted', input.pointsDelta, result, { approval_id: input.approvalId, before_available: before, after_available: result.availablePoints, actor_id: input.actorId, approved_by_actor_id: input.approvedByActorId, reason: input.reason }, observedAt)
       await this.complete(client, workspaceId, operationId, result, observedAt)
       return result
-    })
   }
 
   async recordProviderReceipt(input: CreativePointProviderReceiptInput): Promise<void> {

@@ -9000,6 +9000,10 @@ function assertCampaignLifecycleParams(method: string, params: JsonObject) {
  */
 function refundError(error: unknown): never {
   if (error instanceof CommercialRefundRepositoryError) throw new DomainError(error.code, error.message, 409)
+  const pointCode = error && typeof error === 'object' && 'code' in error ? (error as { code?: unknown }).code : null
+  if (pointCode === 'CREATIVE_POINT_INSUFFICIENT') throw new DomainError(pointCode, '可用创意点不足，已拒绝登记退款；请先核对已使用与待回滚点数', 409)
+  if (pointCode === 'CREATIVE_POINT_BALANCE_UNKNOWN') throw new DomainError(pointCode, '创意点余额暂不可确认，已拒绝登记退款', 503)
+  if (pointCode === 'CREATIVE_POINT_IDEMPOTENCY_CONFLICT') throw new DomainError(pointCode, '创意点账本状态已变化，请刷新后重新核对退款', 409)
   if (error && typeof error === 'object' && 'code' in error && (error as { code?: unknown }).code === '23514') throw new DomainError('COMMERCIAL_REFUND_STATE_INVALID', '退款金额超过订单实付金额，已拒绝', 409)
   throw error
 }
@@ -16409,17 +16413,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       } catch (error) { refundError(error) }
     }
     case 'ops.commercial.order.refund.complete': {
-      if (!persistence.commercialRefunds || !persistence.creativePoints || !persistence.creativePointLifecycle) throw new DomainError('COMMERCIAL_REFUND_REPOSITORY_UNAVAILABLE', '商业退款与创意点生命周期仓储尚未配置', 503)
+      if (!persistence.commercialRefunds || !persistence.creativePointLifecycle) throw new DomainError('COMMERCIAL_REFUND_REPOSITORY_UNAVAILABLE', '商业退款与创意点生命周期仓储尚未配置', 503)
       const workspaceId = required(params, 'target_workspace_id'); const requestId = required(params, 'request_id')
       try {
-        const history = await persistence.commercialRefunds.history(workspaceId, requestId); const approved = history.find(item => item.eventType === 'approved'); const requested = history.find(item => item.eventType === 'requested')
-        if (!approved || !requested) throw new DomainError('COMMERCIAL_REFUND_STATE_INVALID', '退款申请尚未完成双人审批', 409)
-        if (requested.pointsToRevoke > 0) {
-          const balance = await persistence.creativePoints.getBalance(workspaceId)
-          if (balance.availablePoints === null) throw new DomainError('CREATIVE_POINT_BALANCE_UNKNOWN', '退款前无法确认创意点余额', 503)
-          await persistence.creativePointLifecycle.adjust({ workspaceId, approvalId: `refund:${requestId}`, pointsDelta: -requested.pointsToRevoke, expectedAccessRevision: balance.revision, actorId: requested.actorId, approvedByActorId: approved.actorId, reason: required(params, 'reason'), evidence: { refund_request_id: requestId, external_refund_id: required(params, 'external_refund_id'), refund: parseJsonObjectParameter(params, 'evidence_json') }, idempotencyKey: `commercial.refund.points:${requestId}`, at: new Date().toISOString() })
-        }
-        return result(await persistence.commercialRefunds.complete({ workspaceId, requestId, actorId: requestActor(req), reason: required(params, 'reason'), externalRefundId: required(params, 'external_refund_id'), evidence: parseJsonObjectParameter(params, 'evidence_json'), at: new Date().toISOString() }))
+        return result(await persistence.commercialRefunds.completeWithPointRevoke({ workspaceId, requestId, actorId: requestActor(req), reason: required(params, 'reason'), externalRefundId: required(params, 'external_refund_id'), evidence: parseJsonObjectParameter(params, 'evidence_json'), at: new Date().toISOString() }, persistence.creativePointLifecycle))
       } catch (error) { if (error instanceof DomainError) throw error; refundError(error) }
     }
     case 'ops.commercial.service-fulfillment.list': {
@@ -21370,6 +21367,10 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         res.statusCode = 200; res.setHeader('content-type', 'text/html; charset=utf-8'); res.setHeader('content-security-policy', localPluginAuthorizationCsp()); res.end(localPluginAuthorizationHtml(authorization, { login: current.account.login, workspaceId })); return
       }
       const context = { clientId: LOCAL_PLUGIN_CLIENT_ID, issuer: origin, audience: `${origin}/mcp`, resource: `${origin}/mcp`, scope: ['merchant'] }
+      // Check and persist the account/workspace grant before consuming the
+      // one-time installation proof or advancing the connection request.
+      // A later failure leaves only an undisclosed, short-lived code hash.
+      const issued = await passwordAuthRepository.issueMcpAuthorizationCode({ ...context, account: current.account, redirectUri: authorization.redirectUri, codeChallenge: authorization.codeChallenge, workspaceId })
       if (authorization.installInstanceId && proofInstance) {
         const message = localPluginInstanceProofMessage({ method: 'POST', path: '/v1/auth/local-plugin/authorize', apiOrigin: origin, requestId: authorization.requestId!, challengeId: authorization.instanceChallengeId!, accountId: current.account.id, workspaceId, installationId: proofInstance.id, keyId: proofInstance.publicKeyFingerprint, platform: proofInstance.platform, pkceChallenge: authorization.codeChallenge, redirectUri: authorization.redirectUri, clientNonce: authorization.clientNonce!, serverNonce: authorization.serverNonce!, issuedAt: authorization.challengeIssuedAt!, expiresAt: authorization.challengeExpiresAt! }).toString('utf8')
         try { await localPluginInstallInstances.verifyAndConsumeChallenge({ id: authorization.instanceChallengeId!, instanceId: proofInstance.id, requestId: authorization.requestId!, nonce: authorization.serverNonce!, issuedAt: authorization.challengeIssuedAt!, expiresAt: authorization.challengeExpiresAt!, message, signature: authorization.instanceSignature!, accountId: current.account.id, identityId: current.account.identityId, workspaceId }) }
@@ -21379,7 +21380,6 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         try { await localPluginConnections.authorize({ id: authorization.requestId, accountId: current.account.id, identityId: current.account.identityId, workspaceId }) }
         catch (error) { if (error instanceof LocalPluginConnectionError) throw new DomainError(error.code, '连接请求无效、已过期或已使用', 409); throw error }
       }
-      const issued = await passwordAuthRepository.issueMcpAuthorizationCode({ ...context, account: current.account, redirectUri: authorization.redirectUri, codeChallenge: authorization.codeChallenge, workspaceId })
       const target = new URL(authorization.redirectUri)
       target.searchParams.set('code', issued.code)
       target.searchParams.set('state', authorization.state)

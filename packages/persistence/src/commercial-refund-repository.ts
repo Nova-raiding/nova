@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { requireWorkspaceScope, type SqlClient, type SqlPool, withWorkspaceTransaction } from './repository.js'
+import { CreativePointRepositoryError } from './creative-point-repository.js'
+import type { PostgresCreativePointLifecycleRepository } from './creative-point-lifecycle-repository.js'
 
 export type CommercialRefundKind = 'onboarding_pre_deployment' | 'monthly_unused_points' | 'point_pack_unused_points' | 'outage_compensation' | 'custom_milestone'
 export type CommercialRefundEventType = 'requested' | 'approved' | 'rejected' | 'completed' | 'reconciliation_required'
@@ -33,6 +35,7 @@ export interface CommercialRefundRepository {
   approve(input: { workspaceId: string; requestId: string; actorId: string; reason: string; policyApproval: Record<string, unknown>; at: string }): Promise<CommercialRefundEvent>
   reject(input: { workspaceId: string; requestId: string; actorId: string; reason: string; evidence: Record<string, unknown>; at: string }): Promise<CommercialRefundEvent>
   complete(input: { workspaceId: string; requestId: string; actorId: string; reason: string; externalRefundId: string; evidence: Record<string, unknown>; at: string }): Promise<CommercialRefundEvent>
+  completeWithPointRevoke(input: Parameters<CommercialRefundRepository['complete']>[0], lifecycle: PostgresCreativePointLifecycleRepository): Promise<CommercialRefundEvent>
   latest(workspaceId: string, requestId: string): Promise<CommercialRefundEvent | null>
   history(workspaceId: string, requestId: string): Promise<CommercialRefundEvent[]>
   list(workspaceId: string, limit?: number): Promise<CommercialRefundEvent[]>
@@ -101,7 +104,25 @@ export class PostgresCommercialRefundRepository implements CommercialRefundRepos
 
   async complete(input: Parameters<CommercialRefundRepository['complete']>[0]): Promise<CommercialRefundEvent> {
     const workspaceId = requireWorkspaceScope(input.workspaceId); const requestId = text(input.requestId, 'requestId'); const actorId = text(input.actorId, 'actorId'); const reason = text(input.reason, 'reason'); const externalRefundId = text(input.externalRefundId, 'externalRefundId'); const completionEvidence = evidence(input.evidence); const createdAt = at(input.at)
-    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+    return withWorkspaceTransaction(this.pool, workspaceId, client => this.completeIn(client, { workspaceId, requestId, actorId, reason, externalRefundId, completionEvidence, createdAt }))
+  }
+
+  async completeWithPointRevoke(input: Parameters<CommercialRefundRepository['complete']>[0], lifecycle: PostgresCreativePointLifecycleRepository): Promise<CommercialRefundEvent> {
+    const workspaceId = requireWorkspaceScope(input.workspaceId); const requestId = text(input.requestId, 'requestId'); const actorId = text(input.actorId, 'actorId'); const reason = text(input.reason, 'reason'); const externalRefundId = text(input.externalRefundId, 'externalRefundId'); const completionEvidence = evidence(input.evidence); const createdAt = at(input.at)
+    return withWorkspaceTransaction(this.pool, workspaceId, client => this.completeIn(client, { workspaceId, requestId, actorId, reason, externalRefundId, completionEvidence, createdAt }, async approved => {
+      const requested = await client.query<EventRow>(`SELECT ${projection} FROM commercial_refund_events_v2 WHERE workspace_id=$1 AND request_id=$2 AND event_type='requested' ORDER BY revision ASC LIMIT 1`, [workspaceId, requestId])
+      const maker = requested.rows[0] ? map(requested.rows[0]) : null
+      if (!maker || maker.orderId !== approved.orderId || maker.pointsToRevoke !== approved.pointsToRevoke || maker.actorId === approved.actorId) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'refund is missing a consistent request and distinct approver')
+      if (approved.pointsToRevoke === 0) return
+      const state = await client.query<{ revision: string | number; available: string | number | null }>(`SELECT revision,available_points AS available FROM creative_point_access_state WHERE workspace_id=$1`, [workspaceId])
+      const current = state.rows[0]
+      if (!current || current.available === null || !Number.isSafeInteger(Number(current.revision))) throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN', 'creative point balance is unknown')
+      await lifecycle.adjustInTransaction(client, { workspaceId, approvalId: `refund:${requestId}`, pointsDelta: -approved.pointsToRevoke, expectedAccessRevision: Number(current.revision), actorId: maker.actorId, approvedByActorId: approved.actorId, reason, evidence: { refund_request_id: requestId, external_refund_id: externalRefundId, refund: completionEvidence }, idempotencyKey: `commercial.refund.points:${requestId}`, at: createdAt })
+    }))
+  }
+
+  private async completeIn(client: SqlClient, input: { workspaceId: string; requestId: string; actorId: string; reason: string; externalRefundId: string; completionEvidence: Record<string, unknown>; createdAt: string }, beforeInsert?: (approved: CommercialRefundEvent) => Promise<void>): Promise<CommercialRefundEvent> {
+      const { workspaceId, requestId, actorId, reason, externalRefundId, completionEvidence, createdAt } = input
       const prior = await this.latestIn(client, workspaceId, requestId)
       if (!prior || prior.eventType !== 'approved') throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'refund request is not approved')
       const order = await client.query<{ amountFen: string | number; status: string }>('SELECT amount_fen AS "amountFen",status FROM commercial_orders_v2 WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [workspaceId, prior.orderId])
@@ -110,6 +131,7 @@ export class PostgresCommercialRefundRepository implements CommercialRefundRepos
       // same order still fits inside the amount the customer actually paid.
       const committedFen = await this.committedIn(client, workspaceId, prior.orderId, requestId)
       if (order.rows[0].status !== 'paid' || prior.amountFen + committedFen > Number(order.rows[0].amountFen)) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'commercial order is no longer refundable within its paid amount')
+      await beforeInsert?.(prior)
       const event = await this.insert(client, workspaceId, { ...prior, revision: prior.revision + 1, eventType: 'completed', actorId, reason, evidence: { ...prior.evidence, completion: completionEvidence }, externalRefundId, at: createdAt })
       // The order leaves 'paid' only once the money actually paid out equals
       // what the customer paid. A first partial refund must keep the order
@@ -125,7 +147,6 @@ export class PostgresCommercialRefundRepository implements CommercialRefundRepos
         if (settled.rowCount !== 1) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'commercial order was already refunded')
       }
       return event
-    })
   }
 
   async latest(workspaceIdInput: string, requestIdInput: string): Promise<CommercialRefundEvent | null> { const workspaceId = requireWorkspaceScope(workspaceIdInput); const requestId = text(requestIdInput, 'requestId'); return withWorkspaceTransaction(this.pool, workspaceId, client => this.latestIn(client, workspaceId, requestId)) }

@@ -1,4 +1,4 @@
-param([string]$PackagePath)
+param([string]$PackagePath, [string]$WorkspaceId)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -43,6 +43,13 @@ try {
       -not (Test-Path -LiteralPath $helperHashPath -PathType Leaf)) {
     throw 'Verified Windows package is missing its runtime, official-host preflight, credential helper, or installer'
   }
+  if (-not $ciTestOnly -and [string]::IsNullOrWhiteSpace($WorkspaceId)) {
+    $WorkspaceId = Read-Host 'Enter your assigned Store Nova workspace ID (ws_...), or press Enter to bind later'
+  }
+  if (-not [string]::IsNullOrWhiteSpace($WorkspaceId) -and
+      $WorkspaceId -cnotmatch '^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$') {
+    throw 'Store Nova workspace ID is invalid; plugin files were not changed'
+  }
   # The signed bootstrap authenticates the whole ZIP before invoking this included preflight.
   & $preflight
   $helperSignature = Get-AuthenticodeSignature -LiteralPath $helper
@@ -57,9 +64,8 @@ try {
   & $runtime $installer
   if ($LASTEXITCODE -ne 0) { throw 'Store Nova local plugin installation failed' }
   if (-not $ciTestOnly) {
-    $workspace = Read-Host 'Enter your assigned Store Nova workspace ID (ws_...), or press Enter to bind later'
-    if (-not [string]::IsNullOrWhiteSpace($workspace)) {
-      & $runtime (Join-Path $extract 'scripts\login-local-windows.mjs') --base-url https://yxsona.com --workspace $workspace
+    if (-not [string]::IsNullOrWhiteSpace($WorkspaceId)) {
+      & $runtime (Join-Path $extract 'scripts\login-local-windows.mjs') --base-url https://yxsona.com --workspace $WorkspaceId
       if ($LASTEXITCODE -ne 0) { throw 'Store Nova local plugin login failed' }
     } else {
       Write-Host 'Login pending. Run login.cmd --workspace <assigned-workspace> when available.'

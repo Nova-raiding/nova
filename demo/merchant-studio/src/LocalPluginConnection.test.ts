@@ -76,6 +76,14 @@ describe('local plugin connection entry', () => {
     expect(localPluginLoginCommand('https://yxsona.com/api', ['ws_first', 'ws_second'], 'ws_second', 'windows')).toBe('login.cmd --workspace ws_second')
     expect(localPluginLoginCommand('http://127.0.0.1:8787/api', ['ws_first'], undefined, 'windows')).toBe('runtime\\node.exe scripts\\login-local-windows.mjs --base-url http://127.0.0.1:8787 --workspace ws_first')
     expect(localPluginLoginCommand('https://yxsona.com/api', ['ws_first'], 'ws_foreign', 'windows')).toBeNull()
+    expect(localPluginLoginCommand('https://yxsona.com/api', ['ws_first'], undefined, 'other')).toBeNull()
+  })
+
+  it('offers an explicit installer platform choice when browser detection cannot identify the target OS', () => {
+    const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
+    expect(component).toContain('aria-label="选择安装包系统"')
+    expect(component).toContain('请先选择 macOS 或 Windows 安装包系统')
+    expect(component).toContain('查看安装与登录步骤')
   })
 
   it('keeps account and workspace guidance isolated when identity changes', () => {

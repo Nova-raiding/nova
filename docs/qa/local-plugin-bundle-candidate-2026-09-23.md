@@ -54,3 +54,11 @@
 - 扫描容器只读复核：生产定义已更新到 28132，ClamAV 与 EICAR 检查通过；正式扫描 worker 仍因最近签名 callback 过期而不就绪，公网 `/api/readyz` 仍为 503 `SCANNER_NOT_READY`。须通过受控隔离工作区的真实素材扫描恢复签名回调，不能合成心跳。
 
 这些事实均不改变正式 **NO-GO** 结论。上节 06:42 快照的“尚未重新生成”描述只适用于当时；本节记录了其后的新内部候选。
+
+## 07:20 UTC 当前候选发布身份只读复核
+
+- 分支 `codex/windows-plugin-bundle` 的本地与远端提交均为 `5db6d72f9374ed6a76e28c685d6a27b5616cea6a`；本机仅有主 Git worktree。`AGENTS.md` 有未提交的本地改动，本次审计没有修改或纳入候选源码。
+- 当前 Mac arm64 内部候选为 `artifacts/local-plugin/merchant-marketing-0.1.0+codex.20260923132700-darwin-arm64-candidate-5db6d72f.tar.gz`，SHA-256 `b6a7da722e7b63c70c0e09fb7a37bd554c5191f0caf03c8ce03b60be0ccd23d2`。包内 `bundle-provenance.json` 的完整 Git SHA 与分支一致，`source_dirty=false`；`bundle-status.json` 明示 `release_status=unsigned_candidate`、`ready_to_install=false`，来源文件也明示 `authenticity_verified=false`。此包不能改标或直接交付客户。
+- 该提交的 [通用 CI](https://github.com/Nova-raiding/nova/actions/runs/35830715664) 在本次只读检查时为 `In progress`，不能记为通过。较早提交的 CI 结果不能代替当前身份；本次没有重复执行已通过的定向测试。
+- 公网 `/api/releasez` 仍是旧 release `qa-merchant-ec3d69e3`、Git SHA `ec3d69e37809c0d622c8f38057a072245217004f`，与候选不一致。`/api/readyz` 返回 HTTP 503 `SCANNER_NOT_READY`，`ready_instances=0`、`latest_callback_accepted_at=null`；定义版本为 28132，最近 EICAR 检查时间为 `2026-09-23T07:18:35.191Z`。运营 `/healthz` 为 200，但 `writesEnabled=false`、capability evidence 不可读、capacity report 未配置。健康接口中的中转配置或支付 enabled 字段不构成真实用量、成本或支付回执。
+- ECS runbook 要求生产证据绑定同一 release ID、完整 Git SHA、manifest SHA-256、镜像集摘要及部署 nonce，并在切流后核对公网 `/releasez`。当前候选还没有这一组同一身份的签名生产证据，也没有生产切流。本次结论仍为 **NO-GO**。

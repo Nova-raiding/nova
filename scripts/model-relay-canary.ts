@@ -149,8 +149,10 @@ export function buildVideoProbeRequest(input: {
   }
 }
 
-function assertSafeRelativePath(path: string) {
-  if (!path.startsWith('/') || path.includes('\\') || /^https?:\/\//iu.test(path) || /[\u0000-\u001f\u007f]/u.test(path)) throw new Error('relay canary path must be a safe relative path')
+export function assertSafeRelativePath(path: string) {
+  if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\') || path.includes('?') || path.includes('#') || path.includes('%')
+    || path.split('/').some(segment => segment === '.' || segment === '..')
+    || /[\u0000-\u001f\u007f]/u.test(path)) throw new Error('relay canary path must be a safe relative path')
   return path
 }
 
@@ -474,7 +476,18 @@ async function probe(modality: ProbeResult['modality']): Promise<ProbeResult> {
     try { measured = await evaluateRelayUsageEvidence(payload, response.headers, modality, model, { resolution: process.env.VIDEO_RESOLUTION?.trim().toUpperCase() }) }
     catch (error) {
       measured = { usageObserved: false, costObserved: false }
-      return { ...common, state: 'blocked', httpStatus: response.status, ...measured, detail: `pricing evidence failed: ${(error as { code?: string })?.code ?? (error instanceof Error ? error.message : 'unknown')}` }
+      const blocked: ProbeResult = {
+        ...common, state: 'blocked', httpStatus: response.status,
+        ...(providerRequestId ? { providerRequestId } : {}),
+        ...measured,
+        detail: `pricing evidence failed: ${(error as { code?: string })?.code ?? (error instanceof Error ? error.message : 'unknown')}`,
+      }
+      if (artifactRoot) {
+        blocked.evidence_ref = writeRelayResponseArtifact(artifactRoot, releaseId, modality, {
+          status: response.status, headers: response.headers, payload, result: blocked,
+        })
+      }
+      return blocked
     }
     const videoEvaluation = modality === 'video' ? evaluateVideoProbePayload(payload) : undefined
     const valid = modality === 'text' || modality === 'ocr'

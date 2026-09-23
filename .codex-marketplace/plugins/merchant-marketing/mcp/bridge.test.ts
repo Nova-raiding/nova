@@ -2787,6 +2787,49 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('keeps zero-point blocking through recovery-control reads and releases it only after a funded balance read', async () => {
+    const methods: string[] = []
+    let points = 0
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      const { method } = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      methods.push(method)
+      res.setHeader('content-type', 'application/json')
+      const result = method === 'commercial.access.get'
+        ? { decision: { classification: 'RECOVERY_CONTROL', allowed: true, balance_state: 'unknown', available_points: null } }
+        : method === 'billing.status'
+          ? { schema_version: 'commercial.billing-status.v2', balance_state: 'known', available_points: points, allowed: points > 0, access_revision: String(points + 1), next_actions: ['commercial.catalog.get'] }
+          : { accepted: true }
+      res.end(JSON.stringify({ data: { jsonrpc: '2.0', id: 1, result }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: {
+      ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
+      MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true',
+    }, stdio: ['pipe', 'pipe', 'pipe'] })
+    const call = async (id: number, name: string, args: Record<string, unknown> = {}) => {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } })}\n`)
+      return nextLine(child.stdout)
+    }
+    try {
+      const zero = await call(1, 'billing.status')
+      expect(zero.result.structuredContent).toMatchObject({ balance_state: 'known', available_points: 0, availability: 'exhausted' })
+      await call(2, 'commercial.access.get')
+      expect((await call(3, 'creative.brief', { product_id: 'product_1', asset_type: 'banner' })).result).toMatchObject({ isError: true, structuredContent: { recovery_only: true } })
+      expect((await call(31, 'merchant.start')).result).toMatchObject({ isError: true, structuredContent: { recovery_only: true } })
+      expect(methods).toEqual(['billing.status', 'commercial.access.get'])
+      points = 3 // Simulate an independently confirmed server-side recharge grant.
+      const funded = await call(4, 'billing.status')
+      expect(funded.result.structuredContent).toMatchObject({ balance_state: 'known', available_points: 3, availability: 'available' })
+      expect((await call(5, 'creative.brief', { product_id: 'product_1', asset_type: 'banner' })).result.isError).toBe(false)
+      expect(methods).toEqual(['billing.status', 'commercial.access.get', 'billing.status', 'creative.brief'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('preserves redacted authorization decision evidence for ChatGPT', async () => {
     const server = createServer((_req, res) => {
       res.writeHead(403, { 'content-type': 'application/json' })

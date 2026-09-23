@@ -49,6 +49,8 @@ describe('model relay evidence gate', () => {
     invalid.results[0]!.endpoint = '//other-host/probe'
     invalid.results[1]!.endpoint = '/v1/../probe'
     expect(validateModelRelayEvidence(invalid)).toEqual(expect.arrayContaining(['text.endpoint must be a safe relative path', 'image.endpoint must be a safe relative path']))
+    invalid.results[1]!.endpoint = '/v1/%2e%2e/probe'
+    expect(validateModelRelayEvidence(invalid)).toContain('image.endpoint must be a safe relative path')
   })
 
   it('binds relay evidence to the rendered production relay origin', () => {

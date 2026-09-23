@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
 import { OpenAICompatibleVideoGenerator } from '../packages/ai/src/video-generator.js'
-import { blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, readRelayErrorRecovery, requireProductionReleaseBinding, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact } from '../scripts/model-relay-canary.js'
+import { assertSafeRelativePath, blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, readRelayErrorRecovery, requireProductionReleaseBinding, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact } from '../scripts/model-relay-canary.js'
 import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
 describe('production model relay contract', () => {
@@ -57,6 +57,13 @@ describe('production model relay contract', () => {
   it('rejects unsafe production release identities before writing evidence', () => {
     for (const releaseId of ['../release', 'release/child', 'release\nspoofed']) {
       expect(() => requireProductionReleaseBinding({ environment: 'production', releaseId })).toThrow('safe production evidence identifier')
+    }
+  })
+
+  it('rejects relay endpoint paths that the production evidence gate cannot accept', () => {
+    expect(assertSafeRelativePath('/chat/completions')).toBe('/chat/completions')
+    for (const path of ['//other-host/probe', '/v1/../probe', '/v1/./probe', '/v1/%2e%2e/probe', '/probe?model=other', '/probe#fragment', '/probe\\child']) {
+      expect(() => assertSafeRelativePath(path)).toThrow('safe relative path')
     }
   })
 

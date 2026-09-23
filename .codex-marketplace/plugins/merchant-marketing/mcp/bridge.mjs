@@ -1576,7 +1576,7 @@ function merchantBillingProjection(method, result) {
     return Object.fromEntries(allowedKeys.filter(key => Object.prototype.hasOwnProperty.call(result, key) || key === 'availability').map(key => [key, key === 'availability' ? availability : result[key]]))
   }
   if (method === 'billing.status') {
-    const allowedKeys = ['schema_version', 'balance_state', 'availability', 'allowed', 'access_revision', 'updated_at', 'next_actions', 'point_reservation_status', 'settlement_status', 'viewer']
+    const allowedKeys = ['schema_version', 'balance_state', 'availability', 'available_points', 'allowed', 'access_revision', 'updated_at', 'next_actions', 'point_reservation_status', 'settlement_status', 'viewer']
     const available = Number.isSafeInteger(result.available_points) ? result.available_points : undefined
     const availability = result.availability ?? (result.balance_state !== 'known' || available === undefined
       ? 'unknown'
@@ -1828,9 +1828,23 @@ function commercialAccessErrorProjection(code, details) {
 
 function rememberCommercialAccessResult(method, result) {
   if (!['commercial.access.get', 'creative-points.balance.get', 'billing.status', 'merchant.start'].includes(method) || !result || typeof result !== 'object' || Array.isArray(result)) return
+  // The recovery-control decision returned by commercial.access.get is always
+  // allowed, even at zero points. Only a fresh authoritative balance can
+  // release the local recovery-only latch after a recharge grant lands.
+  if (method === 'billing.status' || method === 'creative-points.balance.get') {
+    const points = result.balance_state === 'known' && Number.isSafeInteger(result.available_points) && result.available_points >= 0
+      ? result.available_points : null
+    if (points > 0 && (method !== 'billing.status' || result.allowed === true)) {
+      commercialRecoveryOnlySnapshot = undefined
+    } else if (points === 0 || result.balance_state === 'unknown') {
+      const code = points === 0 ? 'CREATIVE_POINTS_EXHAUSTED' : 'CREATIVE_POINTS_UNAVAILABLE'
+      commercialRecoveryOnlySnapshot = { code, ...commercialAccessErrorProjection(code, result) }
+    }
+    return
+  }
   const candidate = result.commercial_access ?? result.commercialAccess ?? result.access_decision ?? result.accessDecision ?? result.decision ?? (method === 'commercial.access.get' ? result : undefined)
   if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return
-  if (candidate.allowed === true) {
+  if (candidate.allowed === true && candidate.classification !== 'RECOVERY_CONTROL' && method === 'merchant.start') {
     commercialRecoveryOnlySnapshot = undefined
     return
   }
@@ -1841,7 +1855,7 @@ function rememberCommercialAccessResult(method, result) {
 }
 
 function recoveryOnlyResult(id, name) {
-  if (!commercialRecoveryOnlySnapshot || COMMERCIAL_RECOVERY_METHODS.has(name) || ['merchant.start', 'workspace.interactive.confirm'].includes(name)) return undefined
+  if (!commercialRecoveryOnlySnapshot || COMMERCIAL_RECOVERY_METHODS.has(name) || name === 'workspace.interactive.confirm') return undefined
   const structuredContent = {
     ...commercialRecoveryOnlySnapshot,
     message: '服务端已将当前会话限制为商业恢复操作；bridge 未转发本次业务请求。请先通过服务端授权的入口恢复并重新读取准入状态。',

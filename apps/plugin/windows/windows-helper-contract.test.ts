@@ -28,6 +28,7 @@ describe('Windows helper source contract', () => {
     expect(bootstrap).toContain('[System.IO.FileShare]::Read')
     expect(bootstrap.indexOf('if ($actualHash -ne $expectedHash)')).toBeLessThan(bootstrap.indexOf('ExtractToDirectory'))
     expect(bootstrap.indexOf('ExtractToDirectory')).toBeLessThan(bootstrap.indexOf('& $preflight'))
+    expect(bootstrap.indexOf("$WorkspaceId -cnotmatch '^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$'")).toBeLessThan(bootstrap.indexOf('& $preflight'))
     expect(bootstrap.indexOf('& $preflight')).toBeLessThan(bootstrap.indexOf('& $runtime $installer'))
     expect(workflow).toContain("$signedEntry.IndexOf('& $runtime $installer') -le $signedEntry.IndexOf('& $preflight')")
     expect(bootstrap).toContain('Get-AuthenticodeSignature -LiteralPath $helper')

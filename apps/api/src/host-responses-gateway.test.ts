@@ -105,6 +105,25 @@ describe('host Responses gateway isolated transport', () => {
     expect(h2.settle).not.toHaveBeenCalled()
   })
 
+  it('accepts fragmented SSE comment keepalives before observed completion', async () => {
+    const encoder = new TextEncoder()
+    const chunks = [': relay keep', 'alive\n\n', 'event: response.created\ndata: {"response":{"id":"resp-1"}}\n\n', completed()]
+    const upstream = new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk))
+        controller.close()
+      },
+    }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    const h = harness(upstream)
+    const result = await handleHostResponses(request(body()), h.deps)
+    expect(result.status).toBe(200)
+    const events = await result.text()
+    expect(events).toContain('event: response.completed')
+    expect(events).not.toContain('HOST_OUTCOME_UNCONFIRMED')
+    expect(h.settle).toHaveBeenCalledOnce()
+    expect(h.hold).not.toHaveBeenCalled()
+  })
+
   it('does not refund an ambiguous upstream rejection and never forwards its raw error', async () => {
     const h = harness(new Response('secret upstream failure', { status: 500, headers: { 'content-type': 'text/plain' } }))
     const response = await handleHostResponses(request(body()), h.deps)

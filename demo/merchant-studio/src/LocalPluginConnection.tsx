@@ -77,6 +77,7 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
   const [openScope, setOpenScope] = useState<string | null>(null)
   const [connectionState, setConnectionState] = useState<ConnectionUiState>('idle')
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | undefined>(account.workspaceIds.length === 1 ? account.workspaceIds[0] : undefined)
+  const [selectedPlatform, setSelectedPlatform] = useState<LocalPluginPlatform | null>(null)
   const launchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const connectionAttempt = useRef(0)
   const scope = JSON.stringify([apiBaseUrl, account.id, account.login, account.status, account.workspaceIds])
@@ -89,10 +90,11 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
   // available only against the loopback development API.
   const localPrototypeAvailable = localLoginOrigin(apiBaseUrl)?.startsWith('http://127.0.0.1') === true
   const presentation = connectionStatePresentation[connectionState]
-  const platform = detectLocalPluginPlatform(
+  const detectedPlatform = detectLocalPluginPlatform(
     typeof navigator === 'undefined' ? '' : navigator.userAgent,
     typeof navigator === 'undefined' ? '' : navigator.platform,
   )
+  const platform = selectedPlatform ?? detectedPlatform
   const command = localPluginLoginCommand(apiBaseUrl, account.workspaceIds, workspaceId ?? undefined, platform)
   const platformLabel = platform === 'macos' ? 'macOS 本地安装版' : platform === 'windows' ? 'Windows 本地安装版' : 'macOS 或 Windows 本地安装版'
   const credentialStore = platform === 'macos' ? 'macOS 钥匙串（Keychain）'
@@ -154,26 +156,30 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
         options={account.workspaceIds.filter(id => /^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(id)).map(id => ({ label: id, value: id }))}
         onChange={id => { connectionAttempt.current += 1; if (launchTimer.current) clearTimeout(launchTimer.current); setSelectedWorkspaceId(id); setConnectionState('idle') }}
       />}
-      <Button type="primary" disabled={!connectTargetAvailable || !localPrototypeAvailable || connectionState === 'requesting' || connectionState === 'launching' || connectionState === 'install_required'} loading={connectionState === 'requesting'} onClick={beginConnection}>连接 ChatGPT 本地插件</Button>
+      <Button type={localPrototypeAvailable ? 'primary' : 'default'} disabled={!connectTargetAvailable || !localPrototypeAvailable || connectionState === 'requesting' || connectionState === 'launching' || connectionState === 'install_required'} loading={connectionState === 'requesting'} onClick={beginConnection}>连接 ChatGPT 本地插件</Button>
       <Tag color={presentation.color}>{stateLabel}</Tag>
-      <Button type="link" onClick={() => setOpenScope(scope)}>安装与故障帮助</Button>
+      <Button type={localPrototypeAvailable ? 'link' : 'primary'} onClick={() => setOpenScope(scope)}>{localPrototypeAvailable ? '安装与故障帮助' : '查看安装与登录步骤'}</Button>
     </Space>
     <Modal title="连接本地插件" wrapClassName="merchant-local-plugin-modal" open={openScope === scope} onCancel={() => setOpenScope(null)} destroyOnHidden footer={
       <Button onClick={(event) => { event.stopPropagation(); setOpenScope(null) }}>关闭</Button>
     }>
       <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
         <Alert type={localPrototypeAvailable ? 'info' : 'warning'} title={localPrototypeAvailable ? '一键连接需要已安装的 Store Nova Helper' : '生产一键连接尚未开放'} showIcon description={localPrototypeAvailable ? '主按钮只会通过 storenova:// 协议唤起本机助手；链接中没有密码、token 或授权码。点击按钮不代表插件已经安装或连接成功。' : '生产连接必须由已配对的安装实例提供持有证明；当前网页没有安装实例 ID，因此连接按钮已禁用。请在可信插件目录使用下方本地登录命令完成工作区授权，并在 ChatGPT 内验证连接。'} />
+        <Space orientation="vertical" size={4} style={{ width: '100%' }}>
+          <Typography.Text>安装包系统</Typography.Text>
+          <Select aria-label="选择安装包系统" placeholder="选择 macOS 或 Windows" style={{ width: '100%' }} value={platform === 'other' ? undefined : platform} options={[{ label: 'macOS', value: 'macos' }, { label: 'Windows', value: 'windows' }]} onChange={(value: LocalPluginPlatform) => setSelectedPlatform(value)} />
+        </Space>
         <Descriptions size="small" column={1} items={[
           { key: 'account', label: '当前登录账号', children: account.login },
           { key: 'workspace', label: '目标工作区', children: workspaceId ?? '请先选择当前账号已授权的工作区' },
-          { key: 'platform', label: '当前系统指引', children: platformLabel },
+          { key: 'platform', label: '安装包系统指引', children: platformLabel },
           { key: 'credential-store', label: '凭据保存位置', children: credentialStore },
         ]} />
         {command ? <>
           <Typography.Paragraph style={{ margin: 0 }}>请先确认本地插件来自可信安装包，再在安装包目录运行工作区登录命令：</Typography.Paragraph>
           <Typography.Paragraph copyable={false} style={{ margin: 0 }}><Typography.Text code>{command}</Typography.Text></Typography.Paragraph>
           <Typography.Paragraph style={{ margin: 0 }}>命令会打开商家浏览器完成授权，并把凭据写入{credentialStore}。完成后仍需重启 ChatGPT，并在新会话中调用 <Typography.Text code>onboarding.status</Typography.Text> 验证；验证通过前不要视为已连接。</Typography.Paragraph>
-        </> : <Alert type="warning" showIcon title="无法生成安全的本地登录命令" description="请选择已授权的工作区，并确认 HTTPS API 地址有效。" />}
+        </> : <Alert type="warning" showIcon title="无法生成安全的本地登录命令" description={platform === 'other' ? '请先选择 macOS 或 Windows 安装包系统，再选择已授权的工作区。' : '请选择已授权的工作区，并确认 HTTPS API 地址有效。'} />}
         <Typography.Text type="secondary">不要从此页面下载脚本，不要执行远程 curl 管道命令，也不要把 token、密码或授权地址粘贴到聊天或配置文件。</Typography.Text>
       </Space>
     </Modal>
