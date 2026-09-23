@@ -37,6 +37,8 @@ jobs:
           $helperDir = Join-Path $env:RUNNER_TEMP 'storenova-helper'
           node apps/plugin/scripts/build-windows-credential-helper.mjs $helperDir
           if ($LASTEXITCODE -ne 0) { throw 'Credential helper build failed' }
+          $sourceChanges = git status --porcelain --untracked-files=all
+          if ($LASTEXITCODE -ne 0 -or $sourceChanges) { throw "Credential helper build modified the release source tree: $sourceChanges" }
       - name: Create a runner-local test certificate
         timeout-minutes: 3
         shell: pwsh
