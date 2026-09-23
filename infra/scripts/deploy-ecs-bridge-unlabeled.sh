@@ -51,7 +51,7 @@ protected() {
     parent=$(dirname "$parent")
   done
 }
-for path in "$control_root" "$control_root/infra/scripts/deploy-ecs-bridge-unlabeled.sh" "$control_root/infra/scripts/verify-ecs-bridge-control-install.mjs" "$control_root/infra/scripts/validate-ecs-bridge-scoped-compose.mjs" "$control_root/infra/scripts/create-ecs-bridge-candidate-map.mjs" "$control_root/infra/protected/ecs-preidentity-recovery.mjs" "$helper" /run/release-security/evidence-trust/production-preidentity-recovery-sha256 "$ECS_PREIDENTITY_SERVICE_MAP_PATH" "$ECS_ROLLBACK_PLAN_PATH" "$ECS_ROLLBACK_COMPOSE_PATH" "$ECS_ROLLBACK_ENV_FILE" "$ECS_ROLLBACK_IMAGE_DIGESTS_PATH" "$ECS_DEPLOY_STATE_DIR" "$ECS_DEPLOY_LOCK_PATH" "$ECS_BRIDGE_FULL_COMPOSE_PATH" "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" "$ECS_CANDIDATE_IDENTITY_PATH" "$ECS_CANDIDATE_SOURCE_ARCHIVE" "$ECS_RELEASE_IMAGES_PATH" "$ECS_EIGHT_IMAGE_SET_PATH" "$PRODUCTION_CONFIG_PATH"; do protected "$path"; done
+for path in "$control_root" "$control_root/infra/scripts/deploy-ecs-bridge-unlabeled.sh" "$control_root/infra/scripts/verify-ecs-bridge-control-install.mjs" "$control_root/infra/scripts/validate-ecs-bridge-scoped-compose.mjs" "$control_root/infra/scripts/verify-ecs-cloud-only-artifacts.mjs" "$control_root/infra/scripts/create-ecs-bridge-candidate-map.mjs" "$control_root/infra/protected/ecs-preidentity-recovery.mjs" "$helper" /run/release-security/evidence-trust/production-preidentity-recovery-sha256 "$ECS_PREIDENTITY_SERVICE_MAP_PATH" "$ECS_ROLLBACK_PLAN_PATH" "$ECS_ROLLBACK_COMPOSE_PATH" "$ECS_ROLLBACK_ENV_FILE" "$ECS_ROLLBACK_IMAGE_DIGESTS_PATH" "$ECS_DEPLOY_STATE_DIR" "$ECS_DEPLOY_LOCK_PATH" "$ECS_BRIDGE_FULL_COMPOSE_PATH" "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" "$ECS_CANDIDATE_IDENTITY_PATH" "$ECS_CANDIDATE_SOURCE_ARCHIVE" "$ECS_RELEASE_IMAGES_PATH" "$ECS_EIGHT_IMAGE_SET_PATH" "$PRODUCTION_CONFIG_PATH"; do protected "$path"; done
 [ -x "$helper" ] && [ -f "$helper" ] && [ -d "$ECS_DEPLOY_STATE_DIR" ] && [ -f "$ECS_DEPLOY_LOCK_PATH" ] || { echo 'B protected release controls are incomplete' >&2; exit 2; }
 node_path=$(sed -n '1s/^#!//p' "$helper")
 case "$node_path" in /*) protected "$node_path" ;; *) echo 'protected helper shebang does not name a reviewed runtime' >&2; exit 2 ;; esac
@@ -116,6 +116,11 @@ node "$b_source/infra/scripts/verify-bridge-b-package.mjs" \
   --rollback-compose "$ECS_ROLLBACK_COMPOSE_PATH" --rollback-env "$ECS_ROLLBACK_ENV_FILE" \
   --rollback-image-digests-json "$ECS_ROLLBACK_IMAGE_DIGESTS_PATH"
 node "$control_root/infra/scripts/validate-ecs-bridge-scoped-compose.mjs" "$ECS_BRIDGE_FULL_COMPOSE_PATH" "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" "$ECS_BRIDGE_CANDIDATE_PROJECT"
+# The v1 B package still carries the desktop plugin.  A source archive or
+# runtime image with local ChatGPT frontend bytes is not an authorized cloud
+# artifact, even when the API/worker migration bridge itself is compatible.
+# This guard deliberately blocks old B packages before nonce consumption.
+node "$control_root/infra/scripts/verify-ecs-cloud-only-artifacts.mjs" "$ECS_CANDIDATE_SOURCE_ARCHIVE" "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" "$ECS_BRIDGE_CANDIDATE_PROJECT"
 assert_frozen_compose
 image_set_digest=$(ruby "$b_source/infra/scripts/validate-ecs-compose-release.rb" "$ECS_BRIDGE_FULL_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON" --print-image-set-digest)
 manifest_sha256=$(ruby "$b_source/infra/scripts/validate-ecs-compose-release.rb" "$ECS_BRIDGE_FULL_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON" --print-manifest-sha256)
