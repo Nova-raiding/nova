@@ -104,6 +104,7 @@ describe('ECS candidate bundle contract', () => {
       'infra/scripts/verify-ecs-ops-auth-mode.sh',
       'infra/scripts/build-ecs-release-images.sh',
       'infra/scripts/deploy-preflight-ecs.sh',
+      'infra/scripts/deploy-preflight.sh',
       'apps/plugin/scripts/upgrade-installed-plugin.mjs',
       'apps/plugin/scripts/upgrade-installed-plugin.test.ts',
       '.codex-marketplace/plugins/merchant-marketing/scripts/upgrade-installed-plugin.mjs',
