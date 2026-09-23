@@ -7,6 +7,7 @@ import { assertCandidateRelease, installCandidateFetchRoute, readCandidateRoute,
 const route = {
   origin: 'https://yxsona.com', loopback_host: '127.0.0.1', loopback_port: 18443,
   expected_release_id: 'release-20260923-abcdef', expected_git_sha: 'a'.repeat(40),
+  expected_manifest_sha256: 'c'.repeat(64),
   expected_image_set_digest: `sha256:${'b'.repeat(64)}`,
 }
 
@@ -19,6 +20,7 @@ describe('candidate-only ChatGPT HTTPS route', () => {
       { ...route, origin: 'https://yxsona.com/mcp' },
       { ...route, loopback_host: '0.0.0.0' },
       { ...route, loopback_port: 443 },
+      { ...route, expected_manifest_sha256: 'sha256:broken' },
       { ...route, expected_image_set_digest: 'sha256:broken' },
     ]) expect(() => validateCandidateRoute(invalid, route.origin)).toThrow()
     expect(() => validateCandidateRoute(route, 'https://other.example.com')).toThrow(/does not match/u)
@@ -27,7 +29,7 @@ describe('candidate-only ChatGPT HTTPS route', () => {
   it('rejects stale or incomplete candidate release responses', () => {
     const valid = { data: { ready: true, release: {
       release_id: route.expected_release_id, release_git_sha: route.expected_git_sha,
-      image_set_digest: route.expected_image_set_digest,
+      manifest_sha256: route.expected_manifest_sha256, image_set_digest: route.expected_image_set_digest,
     } } }
     expect(() => assertCandidateRelease(valid, route)).not.toThrow()
     expect(() => assertCandidateRelease({ ...valid, data: { ...valid.data, ready: false } }, route)).toThrow(/wrong release/u)
@@ -55,6 +57,23 @@ describe('candidate-only ChatGPT HTTPS route', () => {
     const transport = async (_route: typeof candidate, url: string) => {
       calls.push(url)
       return Response.json({ data: { ready: true, release: { release_id: 'old-release' } } })
+    }
+    const restore = installCandidateFetchRoute(candidate, transport)
+    try {
+      await expect(fetch(`${route.origin}/mcp`, { method: 'POST', headers: { authorization: 'Bearer must-not-leak' }, body: '{}' })).rejects.toThrow(/wrong release/u)
+      expect(calls).toEqual([`${route.origin}/releasez`])
+    } finally { restore() }
+  })
+
+  it('rejects a manifest SHA mismatch before forwarding a Bearer token', async () => {
+    const calls: string[] = []
+    const candidate = validateCandidateRoute(route, route.origin)
+    const transport = async (_route: typeof candidate, url: string) => {
+      calls.push(url)
+      return Response.json({ data: { ready: true, release: {
+        release_id: route.expected_release_id, release_git_sha: route.expected_git_sha,
+        manifest_sha256: 'd'.repeat(64), image_set_digest: route.expected_image_set_digest,
+      } } })
     }
     const restore = installCandidateFetchRoute(candidate, transport)
     try {

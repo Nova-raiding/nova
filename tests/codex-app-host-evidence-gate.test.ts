@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -7,7 +8,7 @@ import { validateCodexAppHostEvidence } from './codex-app-host-evidence-gate.js'
 
 const artifact = (name: string) => `artifact://production/codex-host/${name}#${'a'.repeat(64)}`
 const evidence = {
-  schema_version: '2', release_id: 'release-1', environment: 'preproduction', generated_at: '2026-08-29T01:00:00Z',
+  schema_version: '2', release_id: 'release-1', manifest_sha256: '9'.repeat(64), environment: 'preproduction', generated_at: '2026-08-29T01:00:00Z',
   host: 'codex-app-macos-arm64', app_version: '0.150.1', plugin_version: '0.1.0', simulated: false,
   mcp_base_url: 'https://merchant.example.com', bridge_sha256: 'b'.repeat(64),
   scenarios: [
@@ -55,12 +56,12 @@ describe('Codex App host evidence gate', () => {
     const capturePath = join(root, 'capture.json')
     const outputPath = join(root, 'evidence.json')
     const probePath = join(captureDir, 'releasez.json')
-    writeFileSync(probePath, JSON.stringify({ data: { ready: true, release: { release_id: 'release-1', release_git_sha: 'c'.repeat(40), image_set_digest: `sha256:${'d'.repeat(64)}` } } }))
+    writeFileSync(probePath, JSON.stringify({ data: { ready: true, release: { release_id: 'release-1', release_git_sha: 'c'.repeat(40), manifest_sha256: '9'.repeat(64), image_set_digest: `sha256:${'d'.repeat(64)}` } } }))
     writeFileSync(capturePath, JSON.stringify({
-      release_id: 'release-1', environment: 'preproduction', generated_at: '2026-08-29T01:00:00Z',
+      release_id: 'release-1', manifest_sha256: '9'.repeat(64), environment: 'preproduction', generated_at: '2026-08-29T01:00:00Z',
       host: 'codex-app-macos-arm64', app_version: '0.150.1', plugin_version: '0.1.0', simulated: false,
       mcp_base_url: 'https://merchant.example.com', bridge_sha256: 'b'.repeat(64), scenarios,
-      candidate_route: { expected_git_sha: 'c'.repeat(40), expected_image_set_digest: `sha256:${'d'.repeat(64)}`, candidate_api_container_id: 'e'.repeat(64), gateway_container_id: 'f'.repeat(64), mcp_config_sha256: '1'.repeat(64), route_file_sha256: '2'.repeat(64), release_probe_artifact_path: probePath },
+      candidate_route: { expected_git_sha: 'c'.repeat(40), expected_manifest_sha256: '9'.repeat(64), expected_image_set_digest: `sha256:${'d'.repeat(64)}`, candidate_api_container_id: 'e'.repeat(64), gateway_container_id: 'f'.repeat(64), mcp_config_sha256: '1'.repeat(64), route_file_sha256: '2'.repeat(64), release_probe_artifact_path: probePath },
     }))
 
     const run = spawnSync(process.execPath, [
@@ -71,14 +72,26 @@ describe('Codex App host evidence gate', () => {
     const collected = JSON.parse(readFileSync(outputPath, 'utf8'))
     expect(collected.scenarios[0].evidence_ref).toMatch(/^artifact:\/\/production\/real-host-captures\//u)
     expect(collected.candidate_route.release_probe_evidence_ref).toMatch(/^artifact:\/\/production\/real-host-captures\/releasez\.json#/u)
+    expect(collected.manifest_sha256).toBe('9'.repeat(64))
+    expect(collected.candidate_route.expected_manifest_sha256).toBe('9'.repeat(64))
     expect(validateCodexAppHostEvidence(collected, {
       expectedReleaseId: 'release-1', expectedMcpBaseUrl: 'https://merchant.example.com',
-      expectedBridgeSha256: 'b'.repeat(64), expectedGitSha: 'c'.repeat(40), expectedImageSetDigest: `sha256:${'d'.repeat(64)}`, artifactRoot: root,
+      expectedManifestSha256: '9'.repeat(64), expectedBridgeSha256: 'b'.repeat(64), expectedGitSha: 'c'.repeat(40), expectedImageSetDigest: `sha256:${'d'.repeat(64)}`, artifactRoot: root,
     })).toEqual([])
     expect(validateCodexAppHostEvidence(collected, { requireFresh: true, artifactRoot: root, now: new Date('2026-08-29T02:00:00Z'), expectedGitSha: 'a'.repeat(40) })).toContain('candidate_route.expected_git_sha must match the release candidate')
     const oldProbe = structuredClone(collected)
     oldProbe.candidate_route.expected_git_sha = 'a'.repeat(40)
     expect(validateCodexAppHostEvidence(oldProbe, { requireFresh: true, artifactRoot: root, now: new Date('2026-08-29T02:00:00Z') })).toContain('candidate_route.release_probe_evidence_ref must contain the frozen candidate /releasez identity')
+
+    const releaseProbeBytes = readFileSync(probePath)
+    writeFileSync(probePath, JSON.stringify({ data: { ready: true, release: { release_id: 'release-1', release_git_sha: 'c'.repeat(40), manifest_sha256: '8'.repeat(64), image_set_digest: `sha256:${'d'.repeat(64)}` } } }))
+    const mismatchedRun = spawnSync(process.execPath, [
+      resolve('scripts/collect-codex-app-host-evidence.mjs'), '--capture', capturePath,
+      '--output', join(root, 'mismatched-evidence.json'), '--artifact-root', root,
+    ], { encoding: 'utf8' })
+    expect(mismatchedRun.status).toBe(1)
+    expect(mismatchedRun.stderr).toContain('candidate route probe does not match the frozen release')
+    writeFileSync(probePath, releaseProbeBytes)
   })
 
   it('rejects missing candidate route and reused scenario or reconciliation files', () => {
@@ -94,6 +107,23 @@ describe('Codex App host evidence gate', () => {
 
   it('accepts only release-bound external host evidence', () => {
     expect(validateCodexAppHostEvidence(evidence, { expectedReleaseId: 'release-1', expectedMcpBaseUrl: 'https://merchant.example.com', expectedBridgeSha256: 'b'.repeat(64) })).toEqual([])
+  })
+
+  it('requires and matches the expected release manifest SHA in host evidence', () => {
+    expect(validateCodexAppHostEvidence({ ...evidence, manifest_sha256: undefined }, { expectedManifestSha256: '9'.repeat(64) })).toContain('manifest_sha256 must be a SHA-256 digest')
+    expect(validateCodexAppHostEvidence(evidence, { expectedManifestSha256: '8'.repeat(64) })).toContain(`manifest_sha256 must match ${'8'.repeat(64)}`)
+  })
+
+  it('requires candidate release probe manifest SHA to match the frozen expected identity', () => {
+    const root = mkdtempSync(join(tmpdir(), 'codex-host-manifest-'))
+    const captureDir = join(root, 'captures')
+    mkdirSync(captureDir)
+    const probePath = join(captureDir, 'releasez.json')
+    writeFileSync(probePath, JSON.stringify({ data: { ready: true, release: { release_id: 'release-1', release_git_sha: 'c'.repeat(40), image_set_digest: `sha256:${'d'.repeat(64)}` } } }))
+    const probeHash = createHash('sha256').update(readFileSync(probePath)).digest('hex')
+    const probeRef = `artifact://production/captures/releasez.json#${probeHash}`
+    const invalid = { ...evidence, candidate_route: { expected_git_sha: 'c'.repeat(40), expected_manifest_sha256: '9'.repeat(64), expected_image_set_digest: `sha256:${'d'.repeat(64)}`, candidate_api_container_id: 'e'.repeat(64), gateway_container_id: 'f'.repeat(64), mcp_config_sha256: '1'.repeat(64), route_file_sha256: '2'.repeat(64), release_probe_evidence_ref: probeRef } }
+    expect(validateCodexAppHostEvidence(invalid, { requireFresh: true, artifactRoot: root, expectedManifestSha256: '9'.repeat(64), now: new Date('2026-08-29T02:00:00Z') })).toContain('candidate_route.release_probe_evidence_ref must contain the frozen candidate /releasez identity')
   })
 
   it('rejects evidence captured against another MCP origin or bridge', () => {
@@ -128,7 +158,7 @@ describe('Codex App host evidence gate', () => {
       '--expected-bridge-sha256', 'b'.repeat(64),
     ], { encoding: 'utf8' })
     expect(run.status).toBe(2)
-    expect(run.stderr).toContain('--release-id, --expected-mcp-base-url, --expected-bridge-sha256, --expected-git-sha and --expected-image-set-digest are required')
+    expect(run.stderr).toContain('--release-id, --expected-mcp-base-url, --expected-bridge-sha256, --expected-git-sha, --expected-manifest-sha256 and --expected-image-set-digest are required')
   })
 
   it('rejects local/fixture evidence and non-clean scenarios', () => {

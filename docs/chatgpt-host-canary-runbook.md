@@ -9,6 +9,7 @@
 - 宿主必须标识为真实 macOS ChatGPT.app；`simulated=false`。
 - 每个场景保存不可变 artifact 引用，且 console/network errors 均为 0。
 - 预生产验收必须另外保存隔离 `/releasez` 的原始 JSON；记录候选 API 与 TLS gateway 的完整 Docker ID、临时 `.mcp.json` 与 route 文件的 SHA-256，并与冻结 Git SHA、image-set digest 一起写入 `candidate_route`。每个场景和错误恢复对账使用不同的 artifact 文件。
+- `manifest_sha256` 使用本次冻结 rendered ECS Compose contract 的 SHA-256（由 `validate-ecs-compose-release.rb --print-manifest-sha256` 计算）；capture、`candidate_route.expected_manifest_sha256`、隔离 `/releasez` 和 preflight `--expected-manifest-sha256` 必须完全相同。不要使用 `release-metadata.json` 文件摘要、source comparison manifest 或 evidence manifest 的文件摘要替代。
 
 ## 必测场景
 
@@ -38,6 +39,7 @@
 ```json
 {
   "release_id": "当前发布 ID",
+  "manifest_sha256": "64 位冻结 rendered Compose manifest SHA-256",
   "environment": "preproduction",
   "generated_at": "2026-09-23T02:00:00Z",
   "host": "chatgpt",
@@ -48,6 +50,7 @@
   "simulated": false,
   "candidate_route": {
     "expected_git_sha": "40 位冻结 Git SHA",
+    "expected_manifest_sha256": "与顶层及 /releasez 相同的 64 位 Compose manifest SHA-256",
     "expected_image_set_digest": "sha256:64 位镜像集摘要",
     "candidate_api_container_id": "64 位候选 API Docker ID",
     "gateway_container_id": "64 位隔离 TLS gateway Docker ID",
@@ -93,6 +96,7 @@ npx tsx tests/codex-app-host-evidence-gate.ts \
   --expected-mcp-base-url "$MCP_BASE_URL" \
   --expected-bridge-sha256 "$BRIDGE_SHA256" \
   --expected-git-sha "$RELEASE_GIT_SHA" \
+  --expected-manifest-sha256 "$RELEASE_MANIFEST_SHA256" \
   --expected-image-set-digest "$IMAGE_SET_DIGEST" \
   --artifact-root artifacts \
   --require-artifacts

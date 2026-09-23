@@ -4,6 +4,7 @@ export interface CandidateRoute {
   loopback_port: number
   expected_release_id: string
   expected_git_sha: string
+  expected_manifest_sha256: string
   expected_image_set_digest: string
   hostname: string
 }

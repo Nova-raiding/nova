@@ -129,6 +129,15 @@ describe('ECS candidate bundle contract', () => {
       'tests/ecs-candidate-bundle-contract.test.ts',
       'tests/test-entrypoint-coverage.ts',
       'tests/scanner-callback-canary-evidence.test.ts',
+      'docs/chatgpt-host-canary-runbook.md',
+      'docs/runbooks/chatgpt-candidate-host-route.md',
+      'infra/scripts/chatgpt-candidate-fetch-route.d.mts',
+      'infra/scripts/chatgpt-candidate-fetch-route.mjs',
+      'scripts/collect-codex-app-host-evidence.mjs',
+      'tests/chatgpt-candidate-fetch-route.test.ts',
+      'tests/codex-app-host-evidence-gate.test.ts',
+      'tests/codex-app-host-evidence-gate.ts',
+      'tests/operations-scripts.test.ts',
     ]) expect(manifest, `${path} must be compared with the remote checkout`).toContain(path)
   })
 

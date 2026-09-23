@@ -16,13 +16,13 @@ export function validateCandidateRoute(value, mcpBaseUrl) {
   if (origin.protocol !== 'https:' || origin.origin !== value.origin || origin.pathname !== '/' || origin.username || origin.password || origin.search || origin.hash || origin.port) throw new Error('candidate route requires a canonical HTTPS origin')
   if (mcpBaseUrl !== value.origin) throw new Error('candidate route origin does not match MERCHANT_MCP_BASE_URL')
   if (value.loopback_host !== '127.0.0.1' || !Number.isInteger(value.loopback_port) || value.loopback_port < 1024 || value.loopback_port > 65535) throw new Error('candidate route requires a non-privileged loopback tunnel')
-  if (!releaseId.test(value.expected_release_id ?? '') || !gitSha.test(value.expected_git_sha ?? '') || !sha.test(value.expected_image_set_digest ?? '')) throw new Error('candidate route requires frozen release identity')
+  if (!releaseId.test(value.expected_release_id ?? '') || !gitSha.test(value.expected_git_sha ?? '') || !/^[0-9a-f]{64}$/u.test(value.expected_manifest_sha256 ?? '') || !sha.test(value.expected_image_set_digest ?? '')) throw new Error('candidate route requires frozen release identity')
   return Object.freeze({ ...value, hostname: origin.hostname })
 }
 
 export function assertCandidateRelease(value, route) {
   const observed = value?.data?.release
-  if (value?.data?.ready !== true || observed?.release_id !== route.expected_release_id || observed?.release_git_sha !== route.expected_git_sha || observed?.image_set_digest !== route.expected_image_set_digest) throw new Error('candidate TLS route returned the wrong release identity')
+  if (value?.data?.ready !== true || observed?.release_id !== route.expected_release_id || observed?.release_git_sha !== route.expected_git_sha || observed?.manifest_sha256 !== route.expected_manifest_sha256 || observed?.image_set_digest !== route.expected_image_set_digest) throw new Error('candidate TLS route returned the wrong release identity')
 }
 
 export function readCandidateRoute(path, mcpBaseUrl) {

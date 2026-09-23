@@ -80,7 +80,8 @@ let candidateRoute
 if (capture.environment === 'preproduction') {
   const route = capture.candidate_route
   if (!route || typeof route !== 'object') throw new Error('preproduction capture requires candidate_route from the isolated TLS host run')
-  if (!/^[a-f0-9]{40}$/u.test(route.expected_git_sha ?? '') || !/^sha256:[a-f0-9]{64}$/u.test(route.expected_image_set_digest ?? '')) throw new Error('candidate_route requires frozen Git and image-set identities')
+  if (!/^[a-f0-9]{40}$/u.test(route.expected_git_sha ?? '') || !/^[a-f0-9]{64}$/u.test(route.expected_manifest_sha256 ?? '') || !/^sha256:[a-f0-9]{64}$/u.test(route.expected_image_set_digest ?? '')) throw new Error('candidate_route requires frozen Git, manifest, and image-set identities')
+  if (capture.manifest_sha256 !== route.expected_manifest_sha256) throw new Error('manifest_sha256 must match the frozen candidate route identity')
   for (const field of ['candidate_api_container_id', 'gateway_container_id', 'mcp_config_sha256', 'route_file_sha256']) {
     if (!/^[a-f0-9]{64}$/u.test(route[field] ?? '')) throw new Error(`candidate_route.${field} requires a full Docker ID or SHA-256`)
   }
@@ -88,9 +89,10 @@ if (capture.environment === 'preproduction') {
   if (lstatSync(probe.absolute).size > 64 * 1024) throw new Error('candidate route probe must be a bounded /releasez JSON response')
   let observed
   try { observed = JSON.parse(readFileSync(probe.absolute, 'utf8'))?.data } catch { throw new Error('candidate_route.release_probe_artifact_path must contain /releasez JSON') }
-  if (observed?.ready !== true || observed.release?.release_id !== capture.release_id || observed.release?.release_git_sha !== route.expected_git_sha || observed.release?.image_set_digest !== route.expected_image_set_digest) throw new Error('candidate route probe does not match the frozen release')
+  if (observed?.ready !== true || observed.release?.release_id !== capture.release_id || observed.release?.release_git_sha !== route.expected_git_sha || observed.release?.manifest_sha256 !== route.expected_manifest_sha256 || observed.release?.image_set_digest !== route.expected_image_set_digest) throw new Error('candidate route probe does not match the frozen release')
   candidateRoute = {
     expected_git_sha: route.expected_git_sha,
+    expected_manifest_sha256: route.expected_manifest_sha256,
     expected_image_set_digest: route.expected_image_set_digest,
     candidate_api_container_id: route.candidate_api_container_id,
     gateway_container_id: route.gateway_container_id,
@@ -99,6 +101,8 @@ if (capture.environment === 'preproduction') {
     release_probe_evidence_ref: evidenceRef(probe),
   }
 }
+
+if (!/^[a-f0-9]{64}$/u.test(capture.manifest_sha256 ?? '')) throw new Error('manifest_sha256 must be a frozen release SHA-256')
 
 const seenScenarioIds = new Set()
 const usedArtifacts = new Set(candidateRoute ? [realpathSync(resolve(capture.candidate_route.release_probe_artifact_path))] : [])
@@ -137,6 +141,7 @@ for (const id of REQUIRED_SCENARIOS) if (!seenScenarioIds.has(id)) throw new Err
 const evidence = {
   schema_version: '2',
   release_id: String(capture.release_id ?? ''),
+  manifest_sha256: capture.manifest_sha256,
   environment: capture.environment,
   generated_at: capture.generated_at,
   host,

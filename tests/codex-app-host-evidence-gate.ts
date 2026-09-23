@@ -34,8 +34,8 @@ type ErrorRecoveryEvidence = {
   outcome_evidence_ref?: string
 }
 type Scenario = { id?: ScenarioId; state?: string; evidence_ref?: string; console_errors?: number; network_errors?: number; error_recovery?: ErrorRecoveryEvidence }
-type CandidateRoute = { expected_git_sha?: string; expected_image_set_digest?: string; candidate_api_container_id?: string; gateway_container_id?: string; mcp_config_sha256?: string; route_file_sha256?: string; release_probe_evidence_ref?: string }
-type HostEvidence = { schema_version?: string; release_id?: string; environment?: string; generated_at?: string; host?: string; app_version?: string; plugin_version?: string; mcp_base_url?: string; bridge_sha256?: string; simulated?: boolean; candidate_route?: CandidateRoute; scenarios?: Scenario[] }
+type CandidateRoute = { expected_git_sha?: string; expected_manifest_sha256?: string; expected_image_set_digest?: string; candidate_api_container_id?: string; gateway_container_id?: string; mcp_config_sha256?: string; route_file_sha256?: string; release_probe_evidence_ref?: string }
+type HostEvidence = { schema_version?: string; release_id?: string; manifest_sha256?: string; environment?: string; generated_at?: string; host?: string; app_version?: string; plugin_version?: string; mcp_base_url?: string; bridge_sha256?: string; simulated?: boolean; candidate_route?: CandidateRoute; scenarios?: Scenario[] }
 
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 const forbidden = /(?:fixture|mock|local|localhost|127\.0\.0\.1|test_e2e)/iu
@@ -87,20 +87,22 @@ function validateReleaseProbe(reference: string | undefined, root: string, relea
     const relative = reference!.slice('artifact://production/'.length).split('#')[0]!
     const path = resolve(realpathSync(root), relative)
     if (lstatSync(path).size > 64 * 1024) return ['candidate_route.release_probe_evidence_ref must be a bounded /releasez JSON response']
-    const probe = JSON.parse(readFileSync(path, 'utf8')) as { data?: { ready?: boolean; release?: { release_id?: string; release_git_sha?: string; image_set_digest?: string } } }
+    const probe = JSON.parse(readFileSync(path, 'utf8')) as { data?: { ready?: boolean; release?: { release_id?: string; release_git_sha?: string; manifest_sha256?: string; image_set_digest?: string } } }
     const observed = probe.data?.release
-    if (probe.data?.ready !== true || observed?.release_id !== releaseId || observed?.release_git_sha !== route.expected_git_sha || observed?.image_set_digest !== route.expected_image_set_digest) return ['candidate_route.release_probe_evidence_ref must contain the frozen candidate /releasez identity']
+    if (probe.data?.ready !== true || observed?.release_id !== releaseId || observed?.release_git_sha !== route.expected_git_sha || observed?.manifest_sha256 !== route.expected_manifest_sha256 || observed?.image_set_digest !== route.expected_image_set_digest) return ['candidate_route.release_probe_evidence_ref must contain the frozen candidate /releasez identity']
   } catch { return ['candidate_route.release_probe_evidence_ref must contain a readable /releasez JSON response'] }
   return []
 }
 
-export function validateCodexAppHostEvidence(document: unknown, options: { expectedReleaseId?: string; expectedMcpBaseUrl?: string; expectedBridgeSha256?: string; expectedGitSha?: string; expectedImageSetDigest?: string; artifactRoot?: string; requireFresh?: boolean; now?: Date } = {}): string[] {
+export function validateCodexAppHostEvidence(document: unknown, options: { expectedReleaseId?: string; expectedManifestSha256?: string; expectedMcpBaseUrl?: string; expectedBridgeSha256?: string; expectedGitSha?: string; expectedImageSetDigest?: string; artifactRoot?: string; requireFresh?: boolean; now?: Date } = {}): string[] {
   const errors: string[] = []
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
   const value = document as HostEvidence
   if (value.schema_version !== '2') errors.push('schema_version must be 2')
   if (!nonEmpty(value.release_id)) errors.push('release_id is required')
   if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push(`release_id must match ${options.expectedReleaseId}`)
+  if (!sha256.test(value.manifest_sha256 ?? '')) errors.push('manifest_sha256 must be a SHA-256 digest')
+  if (options.expectedManifestSha256 && value.manifest_sha256 !== options.expectedManifestSha256) errors.push(`manifest_sha256 must match ${options.expectedManifestSha256}`)
   if (value.environment !== 'preproduction' && value.environment !== 'production') errors.push('environment must be preproduction or production')
   if (!nonEmpty(value.generated_at) || !strictUtcInstant.test(value.generated_at) || Number.isNaN(Date.parse(value.generated_at))) errors.push('generated_at must be a strict UTC ISO timestamp')
   else if (options.requireFresh) {
@@ -125,8 +127,10 @@ export function validateCodexAppHostEvidence(document: unknown, options: { expec
     if (!route || typeof route !== 'object') errors.push('candidate_route is required for preproduction host evidence')
     else {
       if (!gitSha.test(route.expected_git_sha ?? '')) errors.push('candidate_route.expected_git_sha must be a full Git SHA')
+      if (!sha256.test(route.expected_manifest_sha256 ?? '')) errors.push('candidate_route.expected_manifest_sha256 must be a SHA-256 digest')
       if (!imageSetDigest.test(route.expected_image_set_digest ?? '')) errors.push('candidate_route.expected_image_set_digest must be a SHA-256 digest')
       if (options.expectedGitSha && route.expected_git_sha !== options.expectedGitSha) errors.push('candidate_route.expected_git_sha must match the release candidate')
+      if (options.expectedManifestSha256 && route.expected_manifest_sha256 !== options.expectedManifestSha256) errors.push('candidate_route.expected_manifest_sha256 must match the release candidate')
       if (options.expectedImageSetDigest && route.expected_image_set_digest !== options.expectedImageSetDigest) errors.push('candidate_route.expected_image_set_digest must match the release candidate')
       for (const field of ['candidate_api_container_id', 'gateway_container_id', 'mcp_config_sha256', 'route_file_sha256'] as const) {
         if (!sha256.test(route[field] ?? '')) errors.push(`candidate_route.${field} must be a SHA-256 or full Docker ID`)
@@ -194,12 +198,14 @@ function main() {
   const expectedGitSha = gitIndex >= 0 ? args[gitIndex + 1] : undefined
   const imageIndex = args.indexOf('--expected-image-set-digest')
   const expectedImageSetDigest = imageIndex >= 0 ? args[imageIndex + 1] : undefined
+  const manifestIndex = args.indexOf('--expected-manifest-sha256')
+  const expectedManifestSha256 = manifestIndex >= 0 ? args[manifestIndex + 1] : undefined
   if (!path) { console.error('--file is required'); process.exit(2) }
   if (args.includes('--require-artifacts') && !artifactRoot) { console.error('--artifact-root is required for independent host evidence validation'); process.exit(2) }
-  if (args.includes('--require-artifacts') && (!expectedReleaseId || !expectedMcpBaseUrl || !expectedBridgeSha256 || !expectedGitSha || !expectedImageSetDigest)) { console.error('--release-id, --expected-mcp-base-url, --expected-bridge-sha256, --expected-git-sha and --expected-image-set-digest are required for host evidence validation'); process.exit(2) }
+  if (args.includes('--require-artifacts') && (!expectedReleaseId || !expectedMcpBaseUrl || !expectedBridgeSha256 || !expectedGitSha || !expectedImageSetDigest || !expectedManifestSha256 || !sha256.test(expectedManifestSha256))) { console.error('--release-id, --expected-mcp-base-url, --expected-bridge-sha256, --expected-git-sha, --expected-manifest-sha256 and --expected-image-set-digest are required for host evidence validation'); process.exit(2) }
   let document: unknown
   try { document = JSON.parse(readFileSync(path, 'utf8')) } catch (error) { console.error(`unable to read Codex App host evidence: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
-  const errors = validateCodexAppHostEvidence(document, { expectedReleaseId, expectedMcpBaseUrl, expectedBridgeSha256, expectedGitSha, expectedImageSetDigest, artifactRoot, requireFresh: args.includes('--require-artifacts') })
+  const errors = validateCodexAppHostEvidence(document, { expectedReleaseId, expectedManifestSha256, expectedMcpBaseUrl, expectedBridgeSha256, expectedGitSha, expectedImageSetDigest, artifactRoot, requireFresh: args.includes('--require-artifacts') })
   if (errors.length) { console.error(errors.map(error => `- ${error}`).join('\n')); process.exit(1) }
   console.log(`Codex App host evidence consistency gate passed: ${path} (real ChatGPT/Codex host provenance still requires operator review)`)
 }
