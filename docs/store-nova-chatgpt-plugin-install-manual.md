@@ -68,7 +68,15 @@ access token 过期时 bridge 沿用 `POST /v1/auth/mcp-token/refresh` 轮换并
   - 管理员分配的工作区标识，例如 `ws_xxx`。
 - 已拿到 Store Nova 插件源码目录。本项目直接本地部署，不发布到公开插件市场。
 
-### A2. 从当前源码直接本地安装插件
+### A2. 安装包含运行环境的平台包
+
+平台交付两个独立包：macOS `darwin-arm64` 或 `darwin-x64`，Windows `win32-x64`。包内包括对应平台的 Node 运行时；macOS 还包括已编译的 Keychain helper，Windows 包必须包括已签名、单文件且自带 .NET 运行时的 Credential Manager helper。用户电脑不需要预装 Node、Swift、.NET SDK 或 Codex CLI。ChatGPT 桌面应用、Store Nova 商家账号、管理员分配的工作区和网络连接仍需具备。
+
+macOS 解压后双击 `install.command`，按提示输入分配的工作区；也可运行 `sh install.sh`，然后运行 `sh login.sh --workspace ws_<管理员分配的工作区>`。Windows 解压后运行 `install.cmd` 并输入工作区；也可稍后运行 `login.cmd --workspace ws_<管理员分配的工作区>`。登录时在浏览器核对商家账号与工作区并确认授权。最后完全退出并重新打开 ChatGPT，在新对话调用 `onboarding.status` 核验真实宿主身份和工作区。安装器写入本机个人插件源、安装缓存和启用配置，不发布到公开或团队市场。
+
+Windows 包必须在 Windows x64 发布机上构建，凭据 helper 先用 `scripts/build-windows-credential-helper.mjs` 生成自包含 EXE，再由可信发布签名流程签名、计算 SHA-256，并通过 `--windows-helper-dir` 提供。缺少签名或哈希时打包失败。当前 macOS 构建机不能代替 Windows 实机安装验收。
+
+#### 开发人员从源码安装
 
 在目标仓库根目录执行：
 

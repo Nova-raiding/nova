@@ -30,4 +30,16 @@ describe('local plugin cross-platform helper package contract', () => {
     expect(builder).toContain('signed: false')
     expect(builder).toContain('production_ready: false')
   })
+
+  it('bundles the Windows credential helper runtime and requires a signed installable package', () => {
+    const builder = read('../apps/plugin/scripts/build-windows-credential-helper.mjs')
+    const project = read('../apps/plugin/windows/StoreNovaCredentialHelper.csproj')
+    const packager = read('../apps/plugin/scripts/package-local-plugin.mjs')
+    expect(builder).toContain("'--self-contained', 'true'")
+    expect(project).toContain('<SelfContained>true</SelfContained>')
+    expect(packager).toContain('Windows package requires a signed credential helper')
+    expect(packager).toContain('Windows credential helper Authenticode signature or signer mismatch')
+    expect(packager).toContain('windows/credential-signer.txt')
+    expect(packager).toContain("'runtime'")
+  })
 })

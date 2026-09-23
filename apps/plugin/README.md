@@ -13,15 +13,19 @@ macOS 新安装当前仍使用本地登录 CLI：它在 `127.0.0.1` 随机端口
 
 交给技术安装人员或商家时，先阅读仓库根目录的[安装与配置手册](../../docs/store-nova-chatgpt-plugin-install-manual.md)。手册包含本地源码安装、macOS Keychain 登录、工作区绑定、模型中转边界、重启验收和 `MCP_CONFIGURATION_REQUIRED` 排障；不要把开发环境示例直接复制到生产商家电脑。
 
-### 生成独立本地安装包
+### 生成包含本地运行环境的安装包
 
-在仓库根目录执行 `node apps/plugin/scripts/package-local-plugin.mjs`。脚本只打包本目录的 manifest、stdio bridge、skills、登录/安装脚本、Keychain helper、连接助手源码、scheduled 配置和本地 UI，输出到 `artifacts/local-plugin/`；API、数据库迁移、worker、运营后台、Docker 配置和测试不会进入该包。安装包中的 bridge 通过 `https://yxsona.com` 请求云端 API，数据和权限始终由服务端处理。
+在仓库根目录执行 `node apps/plugin/scripts/package-local-plugin.mjs`。打包机会下载并校验 nodejs.org 官方 Node v22.16.0 归档的 SHA-256，按当前操作系统及架构生成独立包。macOS 构建还会编译 Keychain helper，并把源码、二进制及哈希证明一起放进包。macOS 输出 `.tar.gz`，Windows 输出可直接解压的 `.zip`；文件名包含 `darwin-arm64`、`darwin-x64` 或 `win32-x64` 等平台标识。Windows 构建必须在 Windows 上提供已签名且哈希匹配的 Credential Manager helper，否则直接失败。API、数据库、worker、运营后台不进入用户包；bridge 通过 HTTPS 使用云端服务。
+
+macOS 用户解压对应包后可双击 `install.command`，输入管理员分配的工作区并在浏览器确认授权。也可依次运行 `sh install.sh` 与 `sh login.sh --workspace ws_平台分配的工作区`。安装器使用包内 `runtime/node`，写入个人插件源、安装缓存和启用配置，不要求用户安装 Node、Swift 或 Codex CLI。最后完全重启 ChatGPT，在新对话调用 `onboarding.status` 验证。商家账号、工作区、网络以及 ChatGPT 桌面应用仍是使用服务的必要条件。
+
+Windows 发布机使用 `node apps/plugin/scripts/package-local-plugin.mjs <输出包路径> --windows-helper-dir <已签名组件目录>`。组件签名者指纹由发布环境的 `STORENOVA_WINDOWS_SIGNER_THUMBPRINT` 提供并在构建时核验，安装包保存已核验的指纹。用户解压后运行 `install.cmd`，输入管理员分配的工作区并在浏览器确认授权；也可稍后运行 `login.cmd --workspace ws_平台分配的工作区`。重启 ChatGPT 后做同样的宿主验证。Windows 包仅能在真实 Windows 构建及安装环境完成发布验收。
 
 当前 `storenova://` 连接助手只作为开发与故障恢复原型随包提供源码和本机构建脚本，独立包不会携带 `.app`。在完成签名/公证、安装实例密码学绑定和抗 scheme 劫持验收前，安装与升级脚本不会自动注册该 scheme，也不得把它作为生产“一键连接”路径。生产页面继续使用受约束的手工登录流程；验收器会明确返回 `production_ready=false`，避免把源码存在误报成可发布能力。
 
-独立包的平台无关部分同时包含 macOS Swift 与 Windows C# Helper 源码，但不包含平台二进制。Windows 开发机可设置 `STORENOVA_WINDOWS_CSC_PATH` 后运行 `node scripts/build-connect-helper-windows.mjs`，它只生成未签名 EXE 和 SHA-256 文件，不会写注册表、安装协议或访问 Credential Manager。`verify-connect-helper-windows.ps1` 会核对 SHA-256、Authenticode `Valid` 状态及固定的 `STORENOVA_WINDOWS_SIGNER_THUMBPRINT`；任一证据缺失即失败。即使签名通过，在安装实例绑定完成前脚本仍以退出码 78 返回 `production_ready=false`，不会安装或注册 `storenova://`。这不是 Windows 正式安装说明，而是发布门禁和开发构建说明。
+`storenova://` 连接助手仍只有源码；它与正式登录所需的凭据 helper 是不同组件。Windows 开发机可设置 `STORENOVA_WINDOWS_CSC_PATH` 后运行 `node scripts/build-connect-helper-windows.mjs`，它只生成未签名的连接助手 EXE 和 SHA-256 文件，不会写注册表、安装协议或访问 Credential Manager。`verify-connect-helper-windows.ps1` 会核对 SHA-256、Authenticode 和签名者；即使签名通过，在安装实例绑定完成前仍返回 `production_ready=false`，不会注册 `storenova://`。
 
-Windows 包内的 `install-chatgpt.ps1` 在复制任何文件前，还会检查登录必需的 `windows/StoreNovaCredentialHelper.exe`、同名 `.sha256` 文件、有效 Authenticode 签名和预先配置的 `STORENOVA_WINDOWS_SIGNER_THUMBPRINT`。当前独立包不携带该签名二进制，因此直接运行安装器会明确失败；需要由可信 Windows 发布流程提供并验证后，才能完成本地安装与登录。此检查不代表 `storenova://` 连接助手已通过其独立的安装实例绑定门禁。
+Windows 包内的 `install-chatgpt.ps1` 在复制任何文件前核对登录必需的 `windows/StoreNovaCredentialHelper.exe`、同名 `.sha256` 文件、有效 Authenticode 签名和包内的发布签名者指纹。打包流程缺少这些证据会直接失败，不产生可交付 Windows 包。此检查不代表 `storenova://` 连接助手已通过其独立的安装实例绑定门禁。
 
 ### 本地安装（不使用 ChatGPT OAuth）
 

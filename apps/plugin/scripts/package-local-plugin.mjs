@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync, chmodSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,12 +15,41 @@ if (!version || version !== String(packageJson.version ?? '')) {
   throw new Error('plugin manifest and package versions must match before packaging')
 }
 
-const output = resolve(process.argv[2] ?? resolve(repositoryRoot, 'artifacts', 'local-plugin', `${manifest.id}-${version}.tar.gz`))
+const output = resolve(process.argv[2] ?? resolve(repositoryRoot, 'artifacts', 'local-plugin', `${manifest.id}-${version}-${process.platform}-${process.arch}.${process.platform === 'win32' ? 'zip' : 'tar.gz'}`))
 const windowsHelperArg = process.argv.indexOf('--windows-helper-dir')
 if (windowsHelperArg !== -1 && (!process.argv[windowsHelperArg + 1] || windowsHelperArg !== 3)) {
   throw new Error('usage: package-local-plugin.mjs [output.tar.gz] [--windows-helper-dir signed-binary-directory]')
 }
 const windowsHelperDir = windowsHelperArg === -1 ? null : resolve(process.argv[windowsHelperArg + 1])
+const platform = process.platform
+if (!['darwin', 'win32'].includes(platform)) throw new Error('desktop packages require macOS or Windows')
+if (platform === 'win32' && !windowsHelperDir) throw new Error('Windows package requires a signed credential helper; source-only output is not installable')
+const architecture = process.arch
+if (!['arm64', 'x64'].includes(architecture)) throw new Error('unsupported desktop architecture')
+if (platform === 'win32' && architecture !== 'x64') throw new Error('Windows credential helper currently supports x64 only')
+const nodeVersion = 'v22.16.0'
+const nodeArchiveName = platform === 'win32' ? `node-${nodeVersion}-win-${architecture}.zip` : `node-${nodeVersion}-${platform}-${architecture}.tar.gz`
+const cache = resolve(repositoryRoot, 'artifacts', 'local-plugin', 'runtime-cache')
+mkdirSync(cache, { recursive: true })
+const archive = resolve(cache, nodeArchiveName)
+const sums = resolve(cache, `SHASUMS256-${nodeVersion}.txt`)
+function run(command, args, extraEnv = {}) {
+  const result = spawnSync(command, args, { encoding: 'utf8', timeout: 180_000, env: { ...process.env, ...extraEnv } })
+  if (result.error || result.status !== 0) throw new Error(`${command} failed: ${result.stderr?.trim() || result.error?.message || result.status}`)
+  return result.stdout
+}
+function downloadIfMissing(url, target) {
+  if (existsSync(target)) return
+  const temporary = `${target}.${process.pid}.tmp`
+  try { run('curl', ['--fail', '--location', '--silent', '--show-error', '--max-time', '180', url, '--output', temporary]); renameSync(temporary, target) }
+  finally { if (existsSync(temporary)) rmSync(temporary) }
+}
+downloadIfMissing(`https://nodejs.org/dist/${nodeVersion}/SHASUMS256.txt`, sums)
+downloadIfMissing(`https://nodejs.org/dist/${nodeVersion}/${nodeArchiveName}`, archive)
+const expectedNodeHash = readFileSync(sums, 'utf8').split(/\r?\n/u)
+  .map(line => line.trim().split(/\s+/u)).find(parts => parts[1] === nodeArchiveName)?.[0]
+const actualNodeHash = createHash('sha256').update(readFileSync(archive)).digest('hex')
+if (!expectedNodeHash || expectedNodeHash !== actualNodeHash) throw new Error('official Node runtime archive SHA-256 mismatch')
 let windowsHelperFiles = null
 if (windowsHelperDir) {
   if (process.platform !== 'win32') throw new Error('signed Windows helper packaging must run on Windows')
@@ -50,6 +79,7 @@ const required = [
   'scripts/build-keychain-helper.mjs', 'scripts/diagnose-workspace-binding.mjs', 'scripts/install-local-macos.sh',
   'scripts/install-local-plugin.mjs', 'scripts/login-local-macos.mjs', 'scripts/login-local-windows.mjs', 'scripts/upgrade-installed-plugin.mjs',
   'scripts/verify-installed-bridge.mjs', 'scripts/verify-marketplace-source.mjs',
+  'scripts/install-chatgpt-bundled.mjs',
   'scheduled/daily-store-risk-scan.json', 'scheduled/weekly-six-platform-digest.json',
   'skills/ecommerce-video-marketing/SKILL.md', 'skills/merchant-marketing/SKILL.md',
   'skills/six-platform-public-import/SKILL.md', 'skills/storyboard-prompt-assistant/SKILL.md',
@@ -66,60 +96,74 @@ try {
     mkdirSync(dirname(destination), { recursive: true })
     cpSync(resolve(pluginRoot, relativePath), destination, { recursive: true })
   }
+  const runtimeFolder = resolve(staging, 'runtime')
+  mkdirSync(runtimeFolder, { recursive: true })
+  const extracted = mkdtempSync(resolve(cache, '.node-extract-'))
+  try {
+    if (platform === 'win32') {
+      run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+        'Expand-Archive -LiteralPath $env:STORENOVA_NODE_ARCHIVE -DestinationPath $env:STORENOVA_NODE_EXTRACT -Force'],
+      { STORENOVA_NODE_ARCHIVE: archive, STORENOVA_NODE_EXTRACT: extracted })
+      cpSync(resolve(extracted, `node-${nodeVersion}-win-${architecture}`, 'node.exe'), resolve(runtimeFolder, 'node.exe'))
+    } else {
+      run('tar', ['-xzf', archive, '-C', extracted, `node-${nodeVersion}-${platform}-${architecture}/bin/node`])
+      cpSync(resolve(extracted, `node-${nodeVersion}-${platform}-${architecture}`, 'bin', 'node'), resolve(runtimeFolder, 'node'))
+    }
+  } finally { rmSync(extracted, { recursive: true, force: true }) }
+  chmodSync(resolve(runtimeFolder, platform === 'win32' ? 'node.exe' : 'node'), 0o755)
+  const runtimeProbe = run(resolve(runtimeFolder, platform === 'win32' ? 'node.exe' : 'node'), ['-p', '`${process.platform}/${process.arch}/${process.versions.node}`'])
+  if (runtimeProbe.trim() !== `${platform}/${architecture}/${nodeVersion.slice(1)}`) throw new Error('bundled Node runtime platform/version mismatch')
+  if (platform === 'darwin') {
+    const helperSource = resolve(staging, 'mcp/keychain-credential-helper.swift')
+    const helperBinary = resolve(staging, 'mcp/keychain-credential-helper')
+    run('/usr/bin/xcrun', ['swiftc', '-O', helperSource, '-o', helperBinary])
+    chmodSync(helperBinary, 0o700)
+    const digest = path => createHash('sha256').update(readFileSync(path)).digest('hex')
+    writeFileSync(resolve(staging, 'mcp/keychain-credential-helper.build.json'), `${JSON.stringify({ schema_version: '1', source_sha256: digest(helperSource), binary_sha256: digest(helperBinary), platform, arch: architecture })}\n`)
+  }
+  if (windowsHelperFiles) writeFileSync(resolve(staging, 'windows/credential-signer.txt'), `${String(process.env.STORENOVA_WINDOWS_SIGNER_THUMBPRINT).replace(/\s/gu, '').toUpperCase()}\n`)
+  const mcpConfig = JSON.parse(readFileSync(resolve(staging, '.mcp.json'), 'utf8'))
+  mcpConfig.mcpServers['merchant-marketing'].command = platform === 'win32' ? './runtime/node.exe' : './runtime/node'
+  writeFileSync(resolve(staging, '.mcp.json'), `${JSON.stringify(mcpConfig, null, 2)}\n`)
   if (windowsHelperFiles) {
     cpSync(windowsHelperFiles.binary, resolve(staging, 'windows/StoreNovaCredentialHelper.exe'))
     cpSync(windowsHelperFiles.hashFile, resolve(staging, 'windows/StoreNovaCredentialHelper.exe.sha256'))
   }
   writeFileSync(resolve(staging, 'marketplace.json'), `${JSON.stringify({ name: 'merchant-local', interface: { displayName: 'Merchant Local' }, plugins: [{ name: 'merchant-marketing', source: { source: 'local', path: './plugin' }, policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' }, category: 'Productivity' }] }, null, 2)}\n`)
-  const installer = `#!/bin/sh\nset -eu\nroot=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)\ncommand -v codex >/dev/null 2>&1 || { echo 'codex CLI is required' >&2; exit 2; }\ncommand -v node >/dev/null 2>&1 || { echo 'Node.js 18+ is required' >&2; exit 2; }\nversion=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).version)' "$root/.codex-plugin/plugin.json")\nlocal_root="\${CODEX_HOME:-\$HOME/.codex}/merchant-local-packages/merchant-marketing/\$version"\nmkdir -p "$local_root/plugin"\ncp -R "$root/." "$local_root/plugin/"\nprintf '%s\\n' '{"name":"merchant-local","interface":{"displayName":"Merchant Local"},"plugins":[{"name":"merchant-marketing","source":{"source":"local","path":"./plugin"},"policy":{"installation":"AVAILABLE","authentication":"ON_INSTALL"},"category":"Productivity"}]}' > "$local_root/marketplace.json"\ncodex plugin marketplace add "$local_root" --json >/dev/null 2>&1 || true\ncodex plugin add "merchant-marketing@merchant-local" --json\nprintf '%s\\n' "Store Nova installed: version=$version. Restart ChatGPT/Codex to load the local stdio plugin."\n`
+  const installer = `#!/bin/sh\nset -eu\nroot=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)\n"$root/runtime/node" "$root/scripts/install-chatgpt-bundled.mjs"\n`
   writeFileSync(resolve(staging, 'install.sh'), installer)
   chmodSync(resolve(staging, 'install.sh'), 0o755)
+  writeFileSync(resolve(staging, 'login.sh'), '#!/bin/sh\nset -eu\nroot=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)\nexec "$root/runtime/node" "$root/scripts/login-local-macos.mjs" --base-url https://yxsona.com "$@"\n')
+  chmodSync(resolve(staging, 'login.sh'), 0o755)
+  writeFileSync(resolve(staging, 'install.command'), '#!/bin/sh\nset -eu\nroot=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)\nsh "$root/install.sh"\nprintf "请输入管理员分配的工作区 ID（ws_...）："\nIFS= read -r workspace\nif [ -z "$workspace" ]; then echo "尚未登录。获得工作区后运行 login.sh --workspace ws_..."; exit 0; fi\nsh "$root/login.sh" --workspace "$workspace"\nprintf "安装与登录已完成。请完全重启 ChatGPT，在插件页启用 Merchant Marketing，并在新对话验证 onboarding.status。\\n"\n')
+  chmodSync(resolve(staging, 'install.command'), 0o755)
   const windowsPowerShell = [
     '$ErrorActionPreference = "Stop"',
     '$root = Split-Path -Parent $MyInvocation.MyCommand.Path',
     '$credentialHelper = Join-Path $root "windows\\StoreNovaCredentialHelper.exe"',
     '$credentialHashFile = Join-Path $root "windows\\StoreNovaCredentialHelper.exe.sha256"',
-    'if (-not (Test-Path -LiteralPath $credentialHelper -PathType Leaf)) { throw "Windows credential helper is missing; this source-only package cannot complete local login" }',
+    'if (-not (Test-Path -LiteralPath $credentialHelper -PathType Leaf)) { throw "Windows credential helper is missing" }',
     'if (-not (Test-Path -LiteralPath $credentialHashFile -PathType Leaf)) { throw "Windows credential helper SHA-256 evidence is missing" }',
     '$expectedHash = ((Get-Content -LiteralPath $credentialHashFile -Raw).Trim() -split "\\s+")[0].ToUpperInvariant()',
     '$actualHash = (Get-FileHash -LiteralPath $credentialHelper -Algorithm SHA256).Hash.ToUpperInvariant()',
     'if ($expectedHash -notmatch "^[0-9A-F]{64}$" -or $actualHash -ne $expectedHash) { throw "Windows credential helper SHA-256 mismatch" }',
-    '$expectedSigner = $env:STORENOVA_WINDOWS_SIGNER_THUMBPRINT',
-    'if ([string]::IsNullOrWhiteSpace($expectedSigner)) { throw "Trusted Windows signer thumbprint is not configured" }',
+    '$expectedSigner = (Get-Content -LiteralPath (Join-Path $root "windows\\credential-signer.txt") -Raw).Trim()',
+    'if ($expectedSigner -notmatch "^[0-9A-F]{40,64}$") { throw "Trusted Windows signer thumbprint is not configured" }',
     '$signature = Get-AuthenticodeSignature -LiteralPath $credentialHelper',
     'if ($signature.Status -ne "Valid" -or $null -eq $signature.SignerCertificate) { throw "Windows credential helper Authenticode signature is invalid" }',
     'if ($signature.SignerCertificate.Thumbprint.Replace(" ", "").ToUpperInvariant() -ne $expectedSigner.Replace(" ", "").ToUpperInvariant()) { throw "Windows credential helper signer mismatch" }',
-    '$pluginRoot = Join-Path $env:USERPROFILE ".codex\\plugins\\merchant-marketing"',
-    '$marketplaceRoot = Join-Path $env:USERPROFILE ".agents\\plugins"',
-    '$marketplacePath = Join-Path $marketplaceRoot "marketplace.json"',
-    '$storeNovaEntry = @{ name = "merchant-marketing"; source = @{ source = "local"; path = "../../.codex/plugins/merchant-marketing" }; policy = @{ installation = "AVAILABLE"; authentication = "ON_INSTALL" }; category = "Productivity" }',
-    '$existingMarketplace = $null',
-    'if (Test-Path -LiteralPath $marketplacePath -PathType Leaf) {',
-    '  $existingMarketplace = Get-Content -LiteralPath $marketplacePath -Raw | ConvertFrom-Json',
-    '  if ($null -eq $existingMarketplace -or $existingMarketplace -isnot [pscustomobject] -or $existingMarketplace.plugins -isnot [array]) { throw "Existing personal marketplace is invalid; refusing to overwrite it" }',
-    '  $otherPlugins = @($existingMarketplace.plugins | Where-Object { $_.name -ne "merchant-marketing" })',
-    '  $existingMarketplace | Add-Member -NotePropertyName plugins -NotePropertyValue @($otherPlugins + $storeNovaEntry) -Force',
-    '  $marketplace = $existingMarketplace',
-    '} else {',
-    '  $marketplace = @{ name = "merchant-personal"; interface = @{ displayName = "Merchant Marketing" }; plugins = @($storeNovaEntry) }',
-    '}',
-    '$marketplaceJson = $marketplace | ConvertTo-Json -Depth 32',
-    'New-Item -ItemType Directory -Force -Path $pluginRoot, $marketplaceRoot | Out-Null',
-    'Copy-Item -Path (Join-Path $root "*") -Destination $pluginRoot -Recurse -Force',
-    '$temporaryPath = Join-Path $marketplaceRoot ("marketplace.json." + [guid]::NewGuid().ToString("N") + ".tmp")',
-    'try {',
-    '  [System.IO.File]::WriteAllText($temporaryPath, $marketplaceJson, [System.Text.UTF8Encoding]::new($false))',
-    '  if (Test-Path -LiteralPath $marketplacePath -PathType Leaf) {',
-    '    $backupPath = Join-Path $marketplaceRoot ("marketplace.json." + [guid]::NewGuid().ToString("N") + ".bak")',
-    '    [System.IO.File]::Replace($temporaryPath, $marketplacePath, $backupPath)',
-    '  } else { Move-Item -LiteralPath $temporaryPath -Destination $marketplacePath }',
-    '} finally { if (Test-Path -LiteralPath $temporaryPath) { Remove-Item -LiteralPath $temporaryPath -Force } }',
-    'Write-Host "Store Nova plugin source copied to the local desktop plugin directory."',
-    'Write-Host "Fully restart the ChatGPT desktop app, open Plugins, and install Merchant Marketing."',
-    'Write-Host "A workspace must be bound through the local login flow; this installer does not select one."',
-    'Write-Host "Windows login requires the credential helper and a workspace assigned by Store Nova. Run node scripts/login-local-windows.mjs --base-url https://yxsona.com --workspace <assigned-workspace> from the installed plugin directory."',
+    '& (Join-Path $root "runtime\\node.exe") (Join-Path $root "scripts\\install-chatgpt-bundled.mjs")',
+    'if ($LASTEXITCODE -ne 0) { throw "Store Nova local installation failed" }',
+    '$workspace = Read-Host "Enter your assigned Store Nova workspace ID (ws_...)"',
+    'if (-not [string]::IsNullOrWhiteSpace($workspace)) {',
+    '  & (Join-Path $root "runtime\\node.exe") (Join-Path $root "scripts\\login-local-windows.mjs") --base-url https://yxsona.com --workspace $workspace',
+    '  if ($LASTEXITCODE -ne 0) { throw "Store Nova login failed" }',
+    '} else { Write-Host "Login pending. Run login.cmd --workspace <assigned-workspace> when available." }',
+    'Write-Host "Restart ChatGPT, enable Merchant Marketing, then verify onboarding.status in a new conversation."',
+    'exit 0',
   ].join('\r\n')
   writeFileSync(resolve(staging, 'install-chatgpt.ps1'), windowsPowerShell)
+  writeFileSync(resolve(staging, 'login.cmd'), '@echo off\r\nsetlocal\r\n"%~dp0runtime\\node.exe" "%~dp0scripts\\login-local-windows.mjs" --base-url https://yxsona.com %*\r\nexit /b %ERRORLEVEL%\r\n')
   const chatgptMarketplace = {
     name: 'merchant-personal',
     interface: { displayName: 'Merchant Marketing' },
@@ -143,15 +187,31 @@ try {
     '',
   ].join('\r\n')
   writeFileSync(resolve(staging, 'install.cmd'), windowsInstaller)
-  const packageEntries = [...required, ...(windowsHelperFiles ? ['windows/StoreNovaCredentialHelper.exe', 'windows/StoreNovaCredentialHelper.exe.sha256'] : []), 'marketplace.json', 'install.sh', 'install.cmd', 'install-chatgpt.ps1', '.agents/plugins/marketplace.json']
+  const packageEntries = [...required, 'runtime', ...(platform === 'darwin' ? ['mcp/keychain-credential-helper', 'mcp/keychain-credential-helper.build.json', 'login.sh', 'install.command'] : []), ...(windowsHelperFiles ? ['windows/StoreNovaCredentialHelper.exe', 'windows/StoreNovaCredentialHelper.exe.sha256', 'windows/credential-signer.txt', 'login.cmd'] : []), 'marketplace.json', 'install.sh', 'install.cmd', 'install-chatgpt.ps1', '.agents/plugins/marketplace.json']
   mkdirSync(dirname(output), { recursive: true })
-  const result = spawnSync('tar', ['-czf', output, '-C', staging, ...packageEntries], { encoding: 'utf8' })
-  if (result.status !== 0) throw new Error(result.stderr?.trim() || 'tar failed while creating local plugin package')
+  if (platform === 'win32') {
+    if (!output.toLowerCase().endsWith('.zip')) throw new Error('Windows deliverable must be a .zip file')
+    const temporary = `${output}.${process.pid}.tmp`
+    try {
+      run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+        'Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory($env:STORENOVA_PACKAGE_STAGING, $env:STORENOVA_PACKAGE_OUTPUT)'],
+      { STORENOVA_PACKAGE_STAGING: staging, STORENOVA_PACKAGE_OUTPUT: temporary })
+      if (existsSync(output)) rmSync(output)
+      renameSync(temporary, output)
+    } finally { if (existsSync(temporary)) rmSync(temporary) }
+  } else {
+    const result = spawnSync('tar', ['-czf', output, '-C', staging, ...packageEntries], { encoding: 'utf8' })
+    if (result.status !== 0) throw new Error(result.stderr?.trim() || 'tar failed while creating local plugin package')
+  }
   process.stdout.write(`${JSON.stringify({
     ok: true,
     artifact: output,
     plugin: manifest.id,
     version,
+    platform,
+    architecture,
+    bundled_node_version: nodeVersion,
+    ready_to_install: platform === 'darwin' || Boolean(windowsHelperFiles),
     cloud_code_included: false,
     connect_helper: {
       source_included: true,

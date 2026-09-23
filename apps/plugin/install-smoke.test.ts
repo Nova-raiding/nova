@@ -32,7 +32,7 @@ const inheritedRuntimeEnv = [
 ]
 
 describe('Codex plugin installation package', () => {
-  it('packages the connection helper source without shipping an unsigned custom-scheme app', () => {
+  it.skipIf(process.platform !== 'darwin')('packages a standalone macOS runtime and credential helper without shipping an unsigned custom-scheme app', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-local-package-'))
     const artifact = resolve(directory, 'merchant-marketing.tar.gz')
     try {
@@ -40,6 +40,10 @@ describe('Codex plugin installation package', () => {
       expect(packaged.status, packaged.stderr).toBe(0)
       expect(JSON.parse(packaged.stdout)).toMatchObject({
         ok: true,
+        platform: 'darwin',
+        architecture: process.arch,
+        bundled_node_version: 'v22.16.0',
+        ready_to_install: true,
         connect_helper: {
           source_included: true,
           app_bundle_included: false,
@@ -60,27 +64,51 @@ describe('Codex plugin installation package', () => {
       expect(listing.stdout).toContain('scripts/build-connect-helper-windows.mjs')
       expect(listing.stdout).toContain('scripts/verify-connect-helper-windows.ps1')
       expect(listing.stdout).toContain('install-chatgpt.ps1')
+      expect(listing.stdout).toContain('runtime/node')
+      expect(listing.stdout).toContain('mcp/keychain-credential-helper.build.json')
+      expect(listing.stdout).toContain('mcp/keychain-credential-helper')
+      expect(listing.stdout).toContain('scripts/install-chatgpt-bundled.mjs')
+      const packagedMcp = spawnSync('tar', ['-xOzf', artifact, '.mcp.json'], { encoding: 'utf8' })
+      expect(JSON.parse(packagedMcp.stdout).mcpServers['merchant-marketing'].command).toBe('./runtime/node')
       const installer = spawnSync('tar', ['-xOzf', artifact, 'install-chatgpt.ps1'], { encoding: 'utf8' })
       expect(installer.status, installer.stderr).toBe(0)
-      expect(installer.stdout).toContain('scripts/login-local-windows.mjs')
+      expect(installer.stdout).toContain('login.cmd --workspace')
       expect(installer.stdout).not.toContain('SetEnvironmentVariable("MERCHANT_WORKSPACE_ID"')
       expect(installer.stdout).not.toContain('ws_guirenniaoniao')
       expect(installer.stdout).toContain('StoreNovaCredentialHelper.exe')
       expect(installer.stdout).toContain('Get-FileHash')
       expect(installer.stdout).toContain('Get-AuthenticodeSignature')
-      expect(installer.stdout).toContain('STORENOVA_WINDOWS_SIGNER_THUMBPRINT')
-      expect(installer.stdout.indexOf('Get-AuthenticodeSignature')).toBeLessThan(installer.stdout.indexOf('New-Item -ItemType Directory'))
-      expect(installer.stdout).toContain('Existing personal marketplace is invalid; refusing to overwrite it')
-      expect(installer.stdout).toContain('Where-Object { $_.name -ne "merchant-marketing" }')
-      expect(installer.stdout).toContain('[System.IO.File]::Replace($temporaryPath, $marketplacePath, $backupPath)')
-      expect(installer.stdout).not.toContain('[System.IO.File]::WriteAllText((Join-Path $marketplaceRoot "marketplace.json")')
+      expect(installer.stdout).toContain('credential-signer.txt')
+      expect(installer.stdout.indexOf('Get-AuthenticodeSignature')).toBeLessThan(installer.stdout.indexOf('install-chatgpt-bundled.mjs'))
+      expect(installer.stdout).toContain('install-chatgpt-bundled.mjs')
+      expect(installer.stdout).toContain('runtime\\node.exe')
       expect(listing.stdout).not.toContain('StoreNovaCredentialHelper.exe')
       expect(listing.stdout).not.toContain('Store Nova Connect.app')
       expect(listing.stdout).not.toContain('StoreNovaConnectHelper.exe')
+      const extracted = resolve(directory, 'extracted')
+      const home = resolve(directory, 'clean-home')
+      mkdirSync(extracted)
+      mkdirSync(home)
+      expect(spawnSync('tar', ['-xzf', artifact, '-C', extracted]).status).toBe(0)
+      const installed = spawnSync('/bin/sh', [resolve(extracted, 'install.sh')], {
+        encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: home,
+          CODEX_HOME: resolve(home, '.codex'), AGENTS_HOME: resolve(home, '.agents') },
+      })
+      expect(installed.status, installed.stderr).toBe(0)
+      const installedRoot = resolve(home, 'plugins/merchant-marketing')
+      expect(existsSync(resolve(installedRoot, 'runtime/node'))).toBe(true)
+      expect(JSON.parse(readFileSync(resolve(home, '.agents/plugins/marketplace.json'), 'utf8')).plugins[0].source.path).toBe('./plugins/merchant-marketing')
+      const installedCache = resolve(home, '.codex/plugins/cache/merchant-personal/merchant-marketing', readJson('.codex-plugin/plugin.json').version)
+      expect(existsSync(resolve(installedCache, 'runtime/node'))).toBe(true)
+      expect(readFileSync(resolve(home, '.codex/config.toml'), 'utf8')).toContain('[plugins."merchant-marketing@merchant-personal"]\nenabled = true')
+      const bundledNode = spawnSync(resolve(installedRoot, 'runtime/node'), ['-p', 'process.versions.node'],
+        { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: home } })
+      expect(bundledNode.status, bundledNode.stderr).toBe(0)
+      expect(bundledNode.stdout.trim()).toBe('22.16.0')
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  })
+  }, 120_000)
 
   it('does not bundle a Windows credential binary without a Windows signing check', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-windows-package-'))

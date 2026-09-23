@@ -1,0 +1,64 @@
+name: windows-plugin-package
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/windows-plugin-bundle
+    paths:
+      - '.github/workflows/windows-plugin-package.yml'
+      - 'apps/plugin/**'
+      - 'release-metadata.json'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-package-smoke:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Build a self-contained Credential Manager helper and test-sign it
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $helperDir = Join-Path $env:RUNNER_TEMP 'storenova-helper'
+          node apps/plugin/scripts/build-windows-credential-helper.mjs $helperDir
+          if ($LASTEXITCODE -ne 0) { throw 'Credential helper build failed' }
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=Store Nova CI package test only' -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(1)
+          $cerPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-test.cer'
+          Export-Certificate -Cert $cert -FilePath $cerPath | Out-Null
+          Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+          $binary = Join-Path $helperDir 'StoreNovaCredentialHelper.exe'
+          $signature = Set-AuthenticodeSignature -FilePath $binary -Certificate $cert -HashAlgorithm SHA256
+          if ($signature.Status -ne 'Valid') { throw "Test signing failed: $($signature.Status)" }
+          (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash | Set-Content -LiteralPath "$binary.sha256" -Encoding Ascii
+          $env:STORENOVA_WINDOWS_SIGNER_THUMBPRINT = $cert.Thumbprint
+          $artifact = Join-Path $env:RUNNER_TEMP 'storenova-windows-ci-only.zip'
+          node apps/plugin/scripts/package-local-plugin.mjs $artifact --windows-helper-dir $helperDir
+          if ($LASTEXITCODE -ne 0) { throw 'Windows package build failed' }
+          $extract = Join-Path $env:RUNNER_TEMP 'storenova-extracted'
+          Expand-Archive -LiteralPath $artifact -DestinationPath $extract
+          $sandboxHome = Join-Path $env:RUNNER_TEMP 'storenova-clean-user'
+          New-Item -ItemType Directory -Force -Path $sandboxHome | Out-Null
+          $env:USERPROFILE = $sandboxHome
+          $env:CODEX_HOME = Join-Path $sandboxHome '.codex'
+          $env:AGENTS_HOME = Join-Path $sandboxHome '.agents'
+          & (Join-Path $extract 'runtime\node.exe') (Join-Path $extract 'scripts\install-chatgpt-bundled.mjs')
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled installer failed' }
+          $manifest = Get-Content -LiteralPath (Join-Path $extract '.codex-plugin\plugin.json') -Raw | ConvertFrom-Json
+          $installed = Join-Path $env:CODEX_HOME "plugins\cache\merchant-personal\merchant-marketing\$($manifest.version)"
+          if (-not (Test-Path -LiteralPath (Join-Path $installed 'runtime\node.exe') -PathType Leaf)) { throw 'Bundled Node was not installed' }
+          $mcp = Get-Content -LiteralPath (Join-Path $installed '.mcp.json') -Raw | ConvertFrom-Json
+          if ($mcp.mcpServers.'merchant-marketing'.command -ne './runtime/node.exe') { throw 'MCP does not use bundled Node' }
+          $config = Get-Content -LiteralPath (Join-Path $env:CODEX_HOME 'config.toml') -Raw
+          if ($config -notmatch 'merchant-marketing@merchant-personal' -or $config -notmatch 'enabled = true') { throw 'Plugin was not enabled' }
+          $request = '{"operation":"write","target":"com.storenova.installation-identity","account":"current-installation","data":"ci-package-smoke"}'
+          $request | & $binary
+          if ($LASTEXITCODE -ne 0) { throw 'Credential Manager write failed' }
+          $read = '{"operation":"read","target":"com.storenova.installation-identity","account":"current-installation"}' | & $binary
+          if ($LASTEXITCODE -ne 0 -or $read -ne 'ci-package-smoke') { throw 'Credential Manager read failed' }
+          Write-Host 'Windows package build, bundled install, MCP runtime, and Credential Manager passed.'
