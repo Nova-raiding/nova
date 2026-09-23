@@ -49,6 +49,7 @@
     "codex:relay:validate": "tsx scripts/validate-codex-relay.ts",
     "test:model-relay-canary": "tsx scripts/model-relay-canary.ts --probe",
     "test:object-storage-canary": "tsx scripts/object-storage-canary.ts",
+    "test:scanner-callback-canary": "node --test scripts/scanner-callback-canary.test.mjs",
     "evidence:aliyun-oss-controls": "tsx scripts/collect-aliyun-oss-control-plane.ts",
     "evidence:object-storage:produce": "tsx scripts/produce-object-storage-evidence.ts",
     "codex:relay:configure": "tsx scripts/configure-codex-relay.ts",

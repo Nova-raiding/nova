@@ -12,16 +12,17 @@ function run(script: string, args: string[] = [], env: Record<string, string> = 
 }
 
 describe('deployment operation scripts', () => {
-  it('documents a non-SQL, auditable durable-authorization bootstrap before enforcement', () => {
+  it('documents an auditable durable-authorization rotation without disabling production enforcement', () => {
     const runbook = readFileSync('docs/runbooks/durable-platform-authorization-bootstrap.md', 'utf8')
-    expect(runbook).toContain('AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED=false')
+    expect(runbook).toContain('生产保持 `AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED=true`')
     expect(runbook).toContain('ops.authorization.role.assign')
     expect(runbook).toContain('expected_authorization_revision')
     expect(runbook).toContain('platform_role_assignment_events')
     expect(runbook).toContain('platform_admin')
     expect(runbook).toContain('security_admin')
     expect(runbook).toContain('禁止直接改表')
-    expect(runbook).toContain('立即回滚本次配置发布至 `false`')
+    expect(runbook).toContain('生产不得通过切换 `AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED` 回退')
+    expect(runbook).toContain('另一名既有持久授权管理员用自己的独立会话核对')
   })
 
   it('requires an explicit pilot release identity before compose can start', () => {

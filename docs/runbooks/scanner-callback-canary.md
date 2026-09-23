@@ -1,5 +1,7 @@
 # 单工作区扫描回调 canary
 
+执行候选验收前，先运行 `npm run test:scanner-callback-canary` 检查脚本契约。
+
 `/readyz` 对扫描器要求 24 小时内真实接受的签名回调。ClamAV 容器存活、EICAR 自检通过、或将 Redis 时间戳改新，都不能代替业务素材的签名闭环。扫描 worker 的 `recoveryCapable` 状态允许在 `/readyz` 因旧回调变红时处理一个新上传；不要放宽回调时效门禁。
 
 只用一个事先存在、具有 `asset.upload` 权益的专用测试工作区。不创建批量账号，不压测，不在商家业务工作区试。先在受保护的部署配置中核对 `worker-scan` 的 `WORKER_WORKSPACES` 包含该工作区（或使用有界的自动发现），并核对该工作区的真实登录/令牌和上传权益。不要将令牌放进命令历史、证据文件或聊天。
