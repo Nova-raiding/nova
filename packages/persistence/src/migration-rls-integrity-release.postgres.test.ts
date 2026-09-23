@@ -18,6 +18,9 @@ const specialPolicyTables = [
   'authorization_execution_reservations',
   'mcp_oauth_authorization_codes',
   'mcp_oauth_tokens',
+  'local_plugin_connection_requests',
+  'local_plugin_install_instances',
+  'local_plugin_install_audit',
 ] as const
 
 describe('complete migration workspace RLS integrity gate', () => {

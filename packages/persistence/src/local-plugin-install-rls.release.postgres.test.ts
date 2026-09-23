@@ -33,6 +33,20 @@ describe('local plugin install RLS PostgreSQL release acceptance', () => {
       const migrations = await loadMigrations()
       expect(await new MigrationRunner(database, migrations).run()).toEqual(migrations.map(item => item.version))
 
+      const opsOnlyTables = ['local_plugin_connection_requests', 'local_plugin_install_instances', 'local_plugin_install_challenges', 'local_plugin_install_audit']
+      const rlsCatalog = await database.query<{ table_name: string; row_security: boolean; force_row_security: boolean; policy_count: number }>(`
+        SELECT expected.table_name, c.relrowsecurity AS row_security,
+               c.relforcerowsecurity AS force_row_security, count(p.policyname)::int AS policy_count
+          FROM unnest($1::text[]) AS expected(table_name)
+          JOIN pg_class c ON c.relname=expected.table_name
+          JOIN pg_namespace n ON n.oid=c.relnamespace AND n.nspname='public'
+          LEFT JOIN pg_policies p ON p.schemaname='public' AND p.tablename=expected.table_name
+         GROUP BY expected.table_name,c.relrowsecurity,c.relforcerowsecurity
+         ORDER BY expected.table_name
+      `, [opsOnlyTables])
+      expect(rlsCatalog.rows).toHaveLength(opsOnlyTables.length)
+      expect(rlsCatalog.rows.every(row => row.row_security && row.force_row_security && row.policy_count === 1)).toBe(true)
+
       const accountId = randomUUID()
       const identityId = randomUUID()
       const requestId = randomUUID()

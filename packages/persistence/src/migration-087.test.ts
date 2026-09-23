@@ -81,8 +81,9 @@ describe('migration 087 atomic asset promotion cleanup', () => {
 
       // Inject phase-2 deletion failure: the committed clean state remains
       // authoritative and the complete binding stays pending for retry.
-      const [leased] = await cleanup.claimPending('ws_087', { limit: 1, leaseMs: 30_000 })
-      expect(leased?.cleanupId).toBe(left.cleanupId)
+      const databaseNow = (await database.query<{ now: Date }>('SELECT clock_timestamp() AS now')).rows[0]!.now
+      const [leased] = await cleanup.claimPending('ws_087', { limit: 1, leaseMs: 30_000, now: databaseNow.toISOString() })
+      expect(leased).toMatchObject({ cleanupId: left.cleanupId })
       await cleanup.recordFailure({ workspaceId: 'ws_087', cleanupId: left.cleanupId, leaseToken: leased!.leaseToken, error: { code: 'INJECTED_DELETE_FAILURE' }, nextAttemptAt: new Date().toISOString() })
       expect((await cleanup.getByReceipt('ws_087','receipt_087'))).toMatchObject({ status: 'pending', attempts: 1, lastError: { code: 'INJECTED_DELETE_FAILURE' } })
       expect((await business.loadWorkspace('ws_087')).find(row => row.entityType === 'asset' && row.entityId === 'asset_087')?.payload).toMatchObject({ scanStatus: 'clean', storageKey: cleanKey })
