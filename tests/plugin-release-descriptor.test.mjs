@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { generateKeyPairSync } from 'node:crypto'
-import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { gunzipSync, gzipSync } from 'node:zlib'
+import { gunzipSync, gzipSync, deflateRawSync } from 'node:zlib'
 import { assertPrivateSigningKey, signPluginReleaseDescriptor, verifyPluginReleaseDescriptor, windowsSigningKeyAclProtected } from '../scripts/plugin-release-descriptor.mjs'
 
 function appendTarMember(packageBytes, name, type = '0', linkname = '') {
@@ -59,7 +59,7 @@ function fixture() {
   writeFileSync(privateKeyPath, keys.privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 })
   const options = {
     privateKeyPath, pluginRoot, packagePath, keyId: 'local-release-2026',
-    releaseId: 'release-1', gitSha, platform: 'win32-x64', mcpMethodsSha256: 'b'.repeat(64),
+    releaseId: 'release-1', gitSha, platform: 'darwin-arm64', mcpMethodsSha256: 'b'.repeat(64),
   }
   const verifyOptions = {
     publicKeyPem: keys.publicKey.export({ type: 'spki', format: 'pem' }), packagePath,
@@ -68,6 +68,120 @@ function fixture() {
   }
   return { root, pluginRoot, packagePath, privateKeyPath, options, verifyOptions }
 }
+
+function zipBytes(entries, dataDescriptor = false) {
+  const crcTable = Uint32Array.from({ length: 256 }, (_, index) => {
+    let value = index
+    for (let bit = 0; bit < 8; bit++) value = value & 1 ? (value >>> 1) ^ 0xedb88320 : value >>> 1
+    return value >>> 0
+  })
+  const crc = bytes => {
+    let value = 0xffffffff
+    for (const byte of bytes) value = crcTable[(value ^ byte) & 0xff] ^ (value >>> 8)
+    return (value ^ 0xffffffff) >>> 0
+  }
+  const locals = [], centrals = []
+  let offset = 0
+  for (const { name, content, unixMode = 0o100644, advertisedSize } of entries) {
+    const path = Buffer.from(name)
+    const body = Buffer.isBuffer(content) ? content : Buffer.from(content)
+    const compressed = deflateRawSync(body)
+    const checksum = crc(body)
+    const size = advertisedSize ?? body.length
+    const local = Buffer.alloc(30)
+    local.writeUInt32LE(0x04034b50, 0)
+    local.writeUInt16LE(20, 4)
+    local.writeUInt16LE(dataDescriptor ? 0x808 : 0x800, 6)
+    local.writeUInt16LE(8, 8)
+    if (!dataDescriptor) {
+      local.writeUInt32LE(checksum, 14)
+      local.writeUInt32LE(compressed.length, 18)
+      local.writeUInt32LE(size, 22)
+    }
+    local.writeUInt16LE(path.length, 26)
+    const central = Buffer.alloc(46)
+    central.writeUInt32LE(0x02014b50, 0)
+    central.writeUInt16LE(0x0314, 4)
+    central.writeUInt16LE(20, 6)
+    central.writeUInt16LE(dataDescriptor ? 0x808 : 0x800, 8)
+    central.writeUInt16LE(8, 10)
+    central.writeUInt32LE(checksum, 16)
+    central.writeUInt32LE(compressed.length, 20)
+    central.writeUInt32LE(size, 24)
+    central.writeUInt16LE(path.length, 28)
+    central.writeUInt32LE((unixMode << 16) >>> 0, 38)
+    central.writeUInt32LE(offset, 42)
+    const descriptor = Buffer.alloc(dataDescriptor ? 16 : 0)
+    if (dataDescriptor) {
+      descriptor.writeUInt32LE(0x08074b50, 0)
+      descriptor.writeUInt32LE(checksum, 4)
+      descriptor.writeUInt32LE(compressed.length, 8)
+      descriptor.writeUInt32LE(size, 12)
+    }
+    locals.push(local, path, compressed, descriptor)
+    centrals.push(central, path)
+    offset += local.length + path.length + compressed.length + descriptor.length
+  }
+  const central = Buffer.concat(centrals)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(entries.length, 8)
+  end.writeUInt16LE(entries.length, 10)
+  end.writeUInt32LE(central.length, 12)
+  end.writeUInt32LE(offset, 16)
+  return Buffer.concat([...locals, central, end])
+}
+
+function windowsZipFixture(extra = []) {
+  const value = fixture()
+  const entries = [
+    '.codex-plugin/plugin.json', 'package.json', 'mcp/bridge.mjs', 'skills/merchant-marketing/SKILL.md',
+  ].map(name => ({ name, content: readFileSync(join(value.pluginRoot, name)) }))
+  writeFileSync(value.packagePath, zipBytes([...entries, ...extra]))
+  value.options.platform = 'win32-x64'
+  value.verifyOptions.platform = 'win32-x64'
+  return { ...value, entries }
+}
+
+test('signs a real Windows ZIP while the old gzip-only verifier rejects its bytes', () => {
+  const f = windowsZipFixture()
+  assert.throws(() => gunzipSync(readFileSync(f.packagePath)), /incorrect header|unknown compression|Z_DATA_ERROR/u)
+  const document = signPluginReleaseDescriptor(f.options)
+  assert.equal(document.platform, 'win32-x64')
+  assert.equal(verifyPluginReleaseDescriptor(document, f.verifyOptions), document)
+  writeFileSync(f.packagePath, Buffer.concat([readFileSync(f.packagePath), Buffer.from('tampered')]))
+  assert.throws(() => verifyPluginReleaseDescriptor(document, f.verifyOptions), /package digest or size mismatch/u)
+})
+
+test('accepts a standard ZIP tool archive with the same signed source bytes', t => {
+  const f = windowsZipFixture()
+  unlinkSync(f.packagePath)
+  const zip = spawnSync('zip', ['-q', '-X', f.packagePath,
+    '.codex-plugin/plugin.json', 'package.json', 'mcp/bridge.mjs', 'skills/merchant-marketing/SKILL.md'], { cwd: f.pluginRoot })
+  if (zip.error?.code === 'ENOENT') return t.skip('zip CLI unavailable on this test host')
+  assert.equal(zip.status, 0, zip.stderr?.toString())
+  assert.equal(signPluginReleaseDescriptor(f.options).platform, 'win32-x64')
+})
+
+test('accepts Windows-style ZIP data descriptors while retaining exact byte binding', () => {
+  const f = windowsZipFixture()
+  writeFileSync(f.packagePath, zipBytes(f.entries, true))
+  const document = signPluginReleaseDescriptor(f.options)
+  assert.equal(verifyPluginReleaseDescriptor(document, f.verifyOptions), document)
+})
+
+test('rejects unsafe Windows ZIP traversal, symlink, duplicate, and oversized members before signing', () => {
+  for (const [entry, reason] of [
+    [{ name: '../escape.js', content: 'x' }, /unsafe path/u],
+    [{ name: 'nested\\escape.js', content: 'x' }, /unsafe path/u],
+    [{ name: 'PACKAGE.JSON', content: 'x' }, /duplicate path/u],
+    [{ name: 'extra-link', content: 'target', unixMode: 0o120777 }, /non-regular file/u],
+    [{ name: 'oversized.bin', content: 'x', advertisedSize: 33 * 1024 * 1024 }, /exceeds limit/u],
+  ]) {
+    const f = windowsZipFixture([entry])
+    assert.throws(() => signPluginReleaseDescriptor(f.options), reason, entry.name)
+  }
+})
 
 test('signs exact local package bytes and binds release, Git, platform, bridge and MCP identity', () => {
   const f = fixture()
@@ -87,7 +201,7 @@ test('rejects tampered package, descriptor, wrong trust anchor and wrong candida
   writeFileSync(f.packagePath, original)
   assert.throws(() => verifyPluginReleaseDescriptor({ ...document, bridge_sha256: '0'.repeat(64) }, f.verifyOptions), /signature is invalid/u)
   assert.throws(() => verifyPluginReleaseDescriptor(document, { ...f.verifyOptions, releaseId: 'release-2' }), /release_id does not match/u)
-  assert.throws(() => verifyPluginReleaseDescriptor(document, { ...f.verifyOptions, platform: 'darwin-arm64' }), /platform does not match/u)
+  assert.throws(() => verifyPluginReleaseDescriptor(document, { ...f.verifyOptions, platform: 'win32-x64' }), /platform does not match/u)
   const other = generateKeyPairSync('ed25519')
   assert.throws(() => verifyPluginReleaseDescriptor(document, { ...f.verifyOptions, publicKeyPem: other.publicKey.export({ type: 'spki', format: 'pem' }) }), /signature is invalid/u)
   assert.throws(() => verifyPluginReleaseDescriptor({ ...document, unexpected: true }, f.verifyOptions), /fields are not exact/u)

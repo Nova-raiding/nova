@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { closeSync, existsSync, fsyncSync, lstatSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { gunzipSync } from 'node:zlib'
+import { gunzipSync, inflateRawSync } from 'node:zlib'
 
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const hex = value => typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value)
@@ -95,7 +95,7 @@ function safePackagePath(name) {
     && !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(part))
 }
 
-function verifyPackageContents(packageBytes, expected) {
+function verifyTarPackageContents(packageBytes, expected) {
   let archive
   try { archive = gunzipSync(packageBytes, { maxOutputLength: 256 * 1024 * 1024 }) }
   catch { throw new Error('plugin package is not a bounded readable tar.gz archive') }
@@ -147,6 +147,119 @@ function verifyPackageContents(packageBytes, expected) {
     const actual = entries.get(entry)
     if (!actual) throw new Error(`plugin package must contain exactly one ${entry}`)
     if (!actual.equals(bytes)) throw new Error(`plugin package ${entry} differs from signed source`)
+  }
+}
+
+const ZIP_CRC_TABLE = Uint32Array.from({ length: 256 }, (_, index) => {
+  let value = index
+  for (let bit = 0; bit < 8; bit++) value = value & 1 ? (value >>> 1) ^ 0xedb88320 : value >>> 1
+  return value >>> 0
+})
+function zipCrc32(bytes) {
+  let value = 0xffffffff
+  for (const byte of bytes) value = ZIP_CRC_TABLE[(value ^ byte) & 0xff] ^ (value >>> 8)
+  return (value ^ 0xffffffff) >>> 0
+}
+function verifyZipPackageContents(bytes, expected) {
+  // The Windows publisher emits a ZIP, not a tar.gz. Parse only bounded,
+  // single-disk ZIP32 store/deflate entries; do not trust an external unzip
+  // tool's path normalization or silently accept ZIP64/overlapping members.
+  const fail = message => { throw new Error(`plugin ZIP ${message}`) }
+  const number = (offset, width) => {
+    if (offset < 0 || offset + width > bytes.length) fail('is truncated')
+    return width === 2 ? bytes.readUInt16LE(offset) : bytes.readUInt32LE(offset)
+  }
+  const safeExtras = (start, length) => {
+    const end = start + length
+    if (end > bytes.length) fail('extra field is truncated')
+    for (let at = start; at < end;) {
+      if (at + 4 > end) fail('extra field is malformed')
+      const kind = number(at, 2), size = number(at + 2, 2)
+      if (kind === 0x0001 || kind === 0x7075 || at + 4 + size > end) fail('ZIP64 or alternate path metadata is forbidden')
+      at += 4 + size
+    }
+  }
+  let eocd = -1
+  for (let offset = bytes.length - 22; offset >= Math.max(0, bytes.length - 22 - 65535); offset--) {
+    if (number(offset, 4) === 0x06054b50 && offset + 22 + number(offset + 20, 2) === bytes.length) { eocd = offset; break }
+  }
+  if (eocd < 0 || number(eocd + 4, 2) !== 0 || number(eocd + 6, 2) !== 0
+    || number(eocd + 8, 2) !== number(eocd + 10, 2)) fail('requires one complete disk')
+  const count = number(eocd + 10, 2), centralSize = number(eocd + 12, 4), centralStart = number(eocd + 16, 4)
+  if (!count || count > 10000 || count === 0xffff || centralStart === 0xffffffff || centralSize === 0xffffffff
+    || centralStart + centralSize !== eocd) fail('central directory is invalid or ZIP64')
+  const entries = new Map(), foldedNames = new Set(), segments = []
+  let cursor = centralStart, totalUncompressed = 0
+  for (let index = 0; index < count; index++) {
+    if (number(cursor, 4) !== 0x02014b50 || cursor + 46 > eocd) fail('central entry is malformed')
+    const madeBy = number(cursor + 4, 2), flags = number(cursor + 8, 2), method = number(cursor + 10, 2)
+    const crc = number(cursor + 16, 4), compressed = number(cursor + 20, 4), uncompressed = number(cursor + 24, 4)
+    const nameLength = number(cursor + 28, 2), extraLength = number(cursor + 30, 2), commentLength = number(cursor + 32, 2)
+    const disk = number(cursor + 34, 2), external = number(cursor + 38, 4), localOffset = number(cursor + 42, 4)
+    const next = cursor + 46 + nameLength + extraLength + commentLength
+    if (next > eocd || disk !== 0 || !nameLength || compressed === 0xffffffff || uncompressed === 0xffffffff
+      || localOffset === 0xffffffff || flags & ~(0x800 | 0x8) || ![0, 8].includes(method)) fail('entry uses unsupported ZIP features')
+    const nameBytes = bytes.subarray(cursor + 46, cursor + 46 + nameLength)
+    const name = nameBytes.toString('utf8')
+    if (!Buffer.from(name, 'utf8').equals(nameBytes)) fail('entry name is not valid UTF-8')
+    const directory = name.endsWith('/')
+    if (!safePackagePath(directory ? name.slice(0, -1) : name)) fail(`contains an unsafe path: ${name}`)
+    const folded = name.toLowerCase().replace(/\/$/u, '')
+    if (foldedNames.has(folded)) fail(`contains a duplicate path: ${name}`)
+    foldedNames.add(folded)
+    const unixType = (external >>> 16) & 0o170000
+    const dosDirectory = (external & 0x10) !== 0
+    if ((unixType && unixType !== (directory ? 0o040000 : 0o100000)) || (dosDirectory !== directory && dosDirectory)
+      || (external & 0x400) !== 0) fail(`contains a non-regular file: ${name}`)
+    if (directory && (compressed !== 0 || uncompressed !== 0)) fail(`directory has data: ${name}`)
+    safeExtras(cursor + 46 + nameLength, extraLength)
+    if (number(localOffset, 4) !== 0x04034b50 || localOffset + 30 > centralStart) fail('local entry is missing')
+    const localFlags = number(localOffset + 6, 2), localMethod = number(localOffset + 8, 2)
+    const localNameLength = number(localOffset + 26, 2), localExtraLength = number(localOffset + 28, 2)
+    const dataStart = localOffset + 30 + localNameLength + localExtraLength, dataEnd = dataStart + compressed
+    if (localFlags !== flags || localMethod !== method || localNameLength !== nameLength
+      || dataEnd > centralStart || !bytes.subarray(localOffset + 30, localOffset + 30 + nameLength).equals(nameBytes)) fail(`local entry differs: ${name}`)
+    safeExtras(localOffset + 30 + localNameLength, localExtraLength)
+    if (!(flags & 0x8) && (number(localOffset + 14, 4) !== crc || number(localOffset + 18, 4) !== compressed
+      || number(localOffset + 22, 4) !== uncompressed)) fail(`local size or CRC differs: ${name}`)
+    if (uncompressed > 32 * 1024 * 1024 || (totalUncompressed += uncompressed) > 256 * 1024 * 1024) fail('expanded content exceeds limit')
+    const raw = bytes.subarray(dataStart, dataEnd)
+    let content
+    try {
+      if (method === 0) content = raw
+      else {
+        const inflated = inflateRawSync(raw, { maxOutputLength: 32 * 1024 * 1024, info: true })
+        if (inflated.engine.bytesWritten !== raw.length) fail(`compressed data has hidden trailing bytes: ${name}`)
+        content = inflated.buffer
+      }
+    }
+    catch { fail(`compressed data is invalid: ${name}`) }
+    if (content.length !== uncompressed || zipCrc32(content) !== crc) fail(`size or CRC mismatch: ${name}`)
+    if (!directory) entries.set(name, content)
+    segments.push({ start: localOffset, end: dataEnd, descriptor: Boolean(flags & 0x8), crc, compressed, uncompressed })
+    cursor = next
+  }
+  if (cursor !== eocd) fail('central directory has trailing data')
+  segments.sort((a, b) => a.start - b.start)
+  if (segments[0]?.start !== 0) fail('contains an unreviewed prefix')
+  for (let index = 0; index < segments.length; index++) {
+    const item = segments[index], boundary = segments[index + 1]?.start ?? centralStart
+    const gap = boundary - item.end
+    if (!item.descriptor && gap !== 0) fail('contains overlapping or hidden entry data')
+    if (item.descriptor) {
+      const signed = gap === 16 && number(item.end, 4) === 0x08074b50
+      if (gap !== 12 && !signed) fail('data descriptor is malformed')
+      const at = item.end + (signed ? 4 : 0)
+      if (number(at, 4) !== item.crc || number(at + 4, 4) !== item.compressed || number(at + 8, 4) !== item.uncompressed) fail('data descriptor differs')
+    }
+  }
+  for (const path of entries.keys()) {
+    const parts = path.split('/')
+    for (let index = 1; index < parts.length; index++) if (entries.has(parts.slice(0, index).join('/'))) fail(`file shadows a directory: ${path}`)
+  }
+  for (const [path, expectedBytes] of Object.entries(expected)) {
+    const actual = entries.get(path)
+    if (!actual || !actual.equals(expectedBytes)) fail(`${path} differs from signed source`)
   }
 }
 
@@ -207,7 +320,8 @@ export function signPluginReleaseDescriptor(options) {
   if (packageBytes.length > 100 * 1024 * 1024) throw new Error('plugin package exceeds signing size limit')
   const bridge = regularBytes(resolve(pluginRoot, 'mcp/bridge.mjs'), 'plugin bridge')
   const skill = regularBytes(resolve(pluginRoot, 'skills/merchant-marketing/SKILL.md'), 'plugin skill')
-  verifyPackageContents(packageBytes, {
+  const verifyContents = options.platform?.startsWith('win32-') ? verifyZipPackageContents : verifyTarPackageContents
+  verifyContents(packageBytes, {
     '.codex-plugin/plugin.json': pluginManifest,
     'package.json': pluginPackage,
     'mcp/bridge.mjs': bridge,
