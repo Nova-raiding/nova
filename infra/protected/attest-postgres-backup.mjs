@@ -20,6 +20,7 @@ const SNAPSHOT_TIMEOUT_MS = 30_000
 const DUMP_TIMEOUT_MS = 6 * 60 * 60_000
 const HEX = /^[a-f0-9]{64}$/u
 const SNAPSHOT = /^[A-Za-z0-9:-]{1,256}$/u
+const UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u
 const FORWARDED_PG_ENV = new Set(['PGAPPNAME', 'PGCHANNELBINDING', 'PGCONNECT_TIMEOUT', 'PGDATABASE', 'PGHOST', 'PGHOSTADDR', 'PGPASSWORD', 'PGPORT', 'PGREQUIRESSL', 'PGSSLCERT', 'PGSSLKEY', 'PGSSLMODE', 'PGSSLROOTCERT', 'PGTARGETSESSIONATTRS', 'PGUSER'])
 
 function assert(value, message) { if (!value) throw new Error(message) }
@@ -98,6 +99,9 @@ export const SNAPSHOT_SQL = [
   "SELECT 'DATABASE_NAME_HEX=' || encode(convert_to(current_database(),'UTF8'),'hex');",
   "SELECT 'MIGRATION_VERSION=' || COALESCE(max(version),0)::text FROM public.schema_migrations;",
   "SELECT 'SNAPSHOT=' || pg_export_snapshot();",
+  // This is an observation after export in the same held transaction, not a
+  // claim that PostgreSQL exposes an exact wall-clock PITR point for an MVCC view.
+  `SELECT 'SNAPSHOT_EXPORTED_AT=' || to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');`,
 ]
 export function pgDumpArguments(snapshot, output) {
   assert(SNAPSHOT.test(snapshot), 'exported snapshot is invalid')
@@ -122,27 +126,43 @@ export function assertSourcePolicy({ systemIdentifier, databaseOid, databaseName
   return clusterHash
 }
 
-export function signBackupAttestation({ backupBytes, backupFileName, systemIdentifier, databaseOid, databaseName, migrationVersion, keyId, privatePem, publicPem, now = new Date(), validitySeconds = MAX_VALIDITY_SECONDS }) {
+function observedTime(value, label) {
+  assert(typeof value === 'string' && UTC.test(value) && Number.isFinite(Date.parse(value)), `${label} must be a strict UTC timestamp`)
+  return Date.parse(value)
+}
+
+export function signBackupAttestation({ backupBytes, backupFileName, systemIdentifier, databaseOid, databaseName, migrationVersion, snapshot, backupStartedAt, snapshotExportObservedAt, dumpCompletedAt, keyId, privatePem, publicPem, validitySeconds = MAX_VALIDITY_SECONDS }) {
   assert(Buffer.isBuffer(backupBytes) && backupBytes.length > 0, 'backup bytes are required')
   assert(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(backupFileName), 'backup file name is invalid')
   assert(/^\d{1,32}$/u.test(systemIdentifier), 'database system identifier is invalid')
   assert(Number.isInteger(databaseOid) && databaseOid > 0 && databaseOid <= 4_294_967_295, 'database OID is invalid')
   assert(typeof databaseName === 'string' && databaseName.length > 0 && Buffer.byteLength(databaseName, 'utf8') <= 63 && !databaseName.includes('\0'), 'database name is invalid')
   assert(Number.isSafeInteger(migrationVersion) && migrationVersion > 0, 'migration version is invalid')
+  assert(typeof snapshot === 'string' && SNAPSHOT.test(snapshot), 'exported snapshot identifier is invalid')
+  const started = observedTime(backupStartedAt, 'backup_started_at')
+  const observed = observedTime(snapshotExportObservedAt, 'snapshot_export_observed_at')
+  const completed = observedTime(dumpCompletedAt, 'dump_completed_at')
+  assert(started <= observed && observed <= completed, 'backup snapshot/dump chronology is invalid')
+  assert(completed <= Date.now() + 300_000, 'dump completion must not be in the future')
   assert(/^[A-Za-z0-9._:-]{1,128}$/u.test(keyId), 'trusted key ID is invalid')
   assert(Number.isSafeInteger(validitySeconds) && validitySeconds > 0 && validitySeconds <= MAX_VALIDITY_SECONDS, 'attestation validity exceeds the protected maximum')
   const privateKey = createPrivateKey(privatePem), publicKey = createPublicKey(publicPem)
   assert(privateKey.asymmetricKeyType === 'ed25519' && publicKey.asymmetricKeyType === 'ed25519', 'trust keys must be Ed25519')
   assert(createPublicKey(privateKey).export({ type: 'spki', format: 'der' }).equals(publicKey.export({ type: 'spki', format: 'der' })), 'protected private key does not match trust anchor')
   const value = {
-    schema_version: '1', kind: 'postgres_backup', environment: 'production', simulated: false,
+    schema_version: '2', kind: 'postgres_backup', environment: 'production', simulated: false,
     backup_file_name: backupFileName,
     backup_sha256: createHash('sha256').update(backupBytes).digest('hex'),
     source_database_id_sha256: createHash('sha256').update(systemIdentifier).digest('hex'),
     source_database_oid: databaseOid,
     source_database_name: databaseName,
     migration_version: migrationVersion,
-    created_at: now.toISOString(), expires_at: new Date(now.getTime() + validitySeconds * 1000).toISOString(), key_id: keyId,
+    snapshot_id_sha256: createHash('sha256').update(snapshot).digest('hex'),
+    backup_started_at: backupStartedAt, snapshot_export_observed_at: snapshotExportObservedAt,
+    dump_completed_at: dumpCompletedAt,
+    // Retained for existing consumers; v2 defines it exactly as attempt start.
+    created_at: backupStartedAt,
+    expires_at: new Date(completed + validitySeconds * 1000).toISOString(), key_id: keyId,
   }
   const payload = Buffer.from(canonical(value))
   value.signature_base64 = sign(null, payload, privateKey).toString('base64')
@@ -165,11 +185,13 @@ export function captureSnapshot() {
       const databaseNameHex = /(?:^|\n)DATABASE_NAME_HEX=([a-f0-9]{2,126})(?:\n|$)/u.exec(stdout)?.[1]
       const migration = /(?:^|\n)MIGRATION_VERSION=(\d+)(?:\n|$)/u.exec(stdout)?.[1]
       const snapshot = /(?:^|\n)SNAPSHOT=([^\n]+)(?:\n|$)/u.exec(stdout)?.[1]
-      if (system && databaseOidText && databaseNameHex && migration && snapshot && SNAPSHOT.test(snapshot)) {
+      const snapshotExportObservedAt = /(?:^|\n)SNAPSHOT_EXPORTED_AT=([^\n]+)(?:\n|$)/u.exec(stdout)?.[1]
+      if (system && databaseOidText && databaseNameHex && migration && snapshot && SNAPSHOT.test(snapshot) && snapshotExportObservedAt) {
         const databaseName = Buffer.from(databaseNameHex, 'hex').toString('utf8'), databaseOid = Number(databaseOidText)
         if (Buffer.from(databaseName, 'utf8').toString('hex') !== databaseNameHex || !Number.isInteger(databaseOid) || databaseOid <= 0 || databaseOid > 4_294_967_295) return finish(new Error('database snapshot identity is invalid'))
+        try { observedTime(snapshotExportObservedAt, 'snapshot_export_observed_at') } catch { return finish(new Error('database snapshot observation time is invalid')) }
         settled = true; clearTimeout(timer)
-        resolveSnapshot({ systemIdentifier: system, databaseOid, databaseName, migrationVersion: Number(migration), snapshot, release: () => { if (!child.stdin.destroyed) child.stdin.end('ROLLBACK;\n\\q\n') } })
+        resolveSnapshot({ systemIdentifier: system, databaseOid, databaseName, migrationVersion: Number(migration), snapshot, snapshotExportObservedAt, release: () => { if (!child.stdin.destroyed) child.stdin.end('ROLLBACK;\n\\q\n') } })
       }
     })
     child.on('error', finish)
@@ -190,18 +212,24 @@ function realDump(snapshot, path) {
   })
 }
 
-export async function produceBackup({ backupPath, attestationPath, checksumPath = `${backupPath}.sha256`, validitySeconds = MAX_VALIDITY_SECONDS, now = new Date(), privatePem, publicPem, keyId, sourcePolicy }, adapter = { snapshot: captureSnapshot, dump: realDump }) {
+export async function produceBackup({ backupPath, attestationPath, checksumPath = `${backupPath}.sha256`, validitySeconds = MAX_VALIDITY_SECONDS, privatePem, publicPem, keyId, sourcePolicy, clock = () => new Date() }, adapter = { snapshot: captureSnapshot, dump: realDump }) {
   assert(new Set([resolve(backupPath), resolve(attestationPath), resolve(checksumPath)]).size === 3, 'backup outputs must be distinct')
   const tempBackup = `${backupPath}.${process.pid}.${randomBytes(12).toString('hex')}.dump.tmp`
   try { lstatSync(tempBackup); throw new Error('temporary backup path already exists') } catch (error) { if (error?.code !== 'ENOENT') throw error }
   let held
   try {
+    const backupStartedAt = clock().toISOString()
     held = await adapter.snapshot()
     assertSourcePolicy(held, sourcePolicy)
-    await adapter.dump(held.snapshot, tempBackup)
+    const snapshot = held.snapshot
+    assert(typeof snapshot === 'string' && SNAPSHOT.test(snapshot), 'exported snapshot identifier is invalid')
+    const snapshotExportObservedAt = held.snapshotExportObservedAt
+    assert(observedTime(backupStartedAt, 'backup_started_at') <= observedTime(snapshotExportObservedAt, 'snapshot_export_observed_at'), 'snapshot observation predates backup start')
+    await adapter.dump(snapshot, tempBackup)
+    const dumpCompletedAt = clock().toISOString()
     syncPath(tempBackup)
     const bytes = readRegular(tempBackup, Number.MAX_SAFE_INTEGER)
-    const document = signBackupAttestation({ backupBytes: bytes, backupFileName: basename(backupPath), systemIdentifier: held.systemIdentifier, databaseOid: held.databaseOid, databaseName: held.databaseName, migrationVersion: held.migrationVersion, keyId, privatePem, publicPem, now, validitySeconds })
+    const document = signBackupAttestation({ backupBytes: bytes, backupFileName: basename(backupPath), systemIdentifier: held.systemIdentifier, databaseOid: held.databaseOid, databaseName: held.databaseName, migrationVersion: held.migrationVersion, snapshot, backupStartedAt, snapshotExportObservedAt, dumpCompletedAt, keyId, privatePem, publicPem, validitySeconds })
     linkSync(tempBackup, backupPath)
     syncParent(backupPath)
     atomicExclusive(checksumPath, Buffer.from(`${document.backup_sha256}  ${backupPath}\n`))
