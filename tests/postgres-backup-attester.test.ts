@@ -3,7 +3,8 @@ import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { assertSourcePolicy, createProtectedEnvironment, parseCreateArguments, parseSourcePolicy, produceBackup, pgDumpArguments, signBackupAttestation, SNAPSHOT_SQL } from '../infra/protected/attest-postgres-backup.mjs'
+import { assertSourcePolicy, createProtectedEnvironment, hashRegularFile, parseCreateArguments, parseSourcePolicy, produceBackup, pgDumpArguments, signBackupAttestation, SNAPSHOT_SQL } from '../infra/protected/attest-postgres-backup.mjs'
+import { verifyProducedBackupV2 } from '../infra/protected/produce-protected-live-backup.mjs'
 import { validateBackupAttestation } from './backup-attestation-gate.js'
 
 const keys = () => {
@@ -16,6 +17,25 @@ const snapshotIdentity = { systemIdentifier, databaseOid: sourcePolicy.database_
 const snapshotTimes = { backupStartedAt: '2026-09-21T12:00:00.000Z', snapshotExportObservedAt: snapshotIdentity.snapshotExportObservedAt, dumpCompletedAt: '2026-09-21T12:00:02.000Z' }
 
 describe('synthetic protected postgres backup attester', () => {
+  it('accepts only signed v2 producer output bound to reviewed source, migration and dump', () => {
+    const pair = keys(), bytes = Buffer.from('synthetic-dump'), now = new Date('2026-09-21T12:00:03.000Z')
+    const document = signBackupAttestation({ backupBytes: bytes, backupFileName: 'before-upgrade-233.dump', ...snapshotIdentity, ...snapshotTimes, keyId: 'synthetic-test-key', ...pair, validitySeconds: 3600 })
+    const check = (candidate: Record<string, unknown>, dumpSha = createHash('sha256').update(bytes).digest('hex'), policy = sourcePolicy, migration = 233, observedAt = now) => verifyProducedBackupV2(candidate, dumpSha, 'before-upgrade-233.dump', policy, migration, pair.publicPem, 'synthetic-test-key', observedAt)
+    expect(() => check(document)).not.toThrow()
+    expect(() => check({ ...document, schema_version: '1' })).toThrow('schema v2')
+    expect(() => check(document, createHash('sha256').update('changed').digest('hex'))).toThrow('signed dump identity')
+    expect(() => check(document, undefined, { ...sourcePolicy, database_oid: 99 })).toThrow('reviewed source')
+    expect(() => check(document, undefined, sourcePolicy, 234)).toThrow('migration/key identity')
+    expect(() => check({ ...document, snapshot_export_observed_at: '2026-09-21T11:59:59.000Z' })).toThrow('chronology')
+    expect(() => check({ ...document, signature_base64: 'A'.repeat(86) + '==' })).toThrow('signature is invalid')
+    expect(() => check(document, undefined, sourcePolicy, 233, new Date('2026-09-22T13:00:00.000Z'))).toThrow('expired')
+  })
+  it('hashes large dump files in fixed-size chunks without loading their bytes as one buffer', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'synthetic-backup-hash-'))), path = join(root, 'large.dump')
+    const chunk = Buffer.alloc(1024 * 1024, 0x5a)
+    writeFileSync(path, Buffer.concat([chunk, chunk, chunk]))
+    expect(hashRegularFile(path)).toEqual({ sha256: createHash('sha256').update(chunk).update(chunk).update(chunk).digest('hex'), bytes: chunk.length * 3 })
+  })
   it('requires the live backup producer to bind an explicit migration version', () => {
     const source = readFileSync('infra/protected/produce-protected-live-backup.mjs', 'utf8')
     expect(source).toContain('process.env.EXPECTED_MIGRATION_VERSION')

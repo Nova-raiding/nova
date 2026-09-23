@@ -3,7 +3,7 @@
 // This process owns pg_dump, the exported snapshot and the production key.
 import { createHash, createPrivateKey, createPublicKey, randomBytes, sign, verify } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { constants, closeSync, fstatSync, fsyncSync, linkSync, lstatSync, openSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs'
+import { constants, closeSync, fstatSync, fsyncSync, linkSync, lstatSync, openSync, readFileSync, readSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, parse, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -33,6 +33,18 @@ function readRegular(path, maxBytes = 8192) {
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
   try { const stat = fstatSync(fd); assert(stat.isFile() && stat.size > 0 && stat.size <= maxBytes, 'unsafe protected input'); return readFileSync(fd) }
   finally { closeSync(fd) }
+}
+export function hashRegularFile(path) {
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+  try {
+    const stat = fstatSync(fd)
+    assert(stat.isFile() && stat.size > 0, 'backup must be a nonempty regular file')
+    const digest = createHash('sha256'), chunk = Buffer.allocUnsafe(1024 * 1024)
+    let total = 0, count
+    while ((count = readSync(fd, chunk, 0, chunk.length, null)) > 0) { digest.update(chunk.subarray(0, count)); total += count }
+    assert(total === stat.size, 'backup changed while hashing')
+    return { sha256: digest.digest('hex'), bytes: total }
+  } finally { closeSync(fd) }
 }
 function syncPath(path, flags = constants.O_RDONLY) {
   const fd = openSync(path, flags | constants.O_NOFOLLOW)
@@ -131,8 +143,8 @@ function observedTime(value, label) {
   return Date.parse(value)
 }
 
-export function signBackupAttestation({ backupBytes, backupFileName, systemIdentifier, databaseOid, databaseName, migrationVersion, snapshot, backupStartedAt, snapshotExportObservedAt, dumpCompletedAt, keyId, privatePem, publicPem, validitySeconds = MAX_VALIDITY_SECONDS }) {
-  assert(Buffer.isBuffer(backupBytes) && backupBytes.length > 0, 'backup bytes are required')
+function signBackupAttestationDigest({ backupSha256, backupFileName, systemIdentifier, databaseOid, databaseName, migrationVersion, snapshot, backupStartedAt, snapshotExportObservedAt, dumpCompletedAt, keyId, privatePem, publicPem, validitySeconds = MAX_VALIDITY_SECONDS }) {
+  assert(HEX.test(backupSha256), 'backup SHA-256 is invalid')
   assert(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(backupFileName), 'backup file name is invalid')
   assert(/^\d{1,32}$/u.test(systemIdentifier), 'database system identifier is invalid')
   assert(Number.isInteger(databaseOid) && databaseOid > 0 && databaseOid <= 4_294_967_295, 'database OID is invalid')
@@ -152,7 +164,7 @@ export function signBackupAttestation({ backupBytes, backupFileName, systemIdent
   const value = {
     schema_version: '2', kind: 'postgres_backup', environment: 'production', simulated: false,
     backup_file_name: backupFileName,
-    backup_sha256: createHash('sha256').update(backupBytes).digest('hex'),
+    backup_sha256: backupSha256,
     source_database_id_sha256: createHash('sha256').update(systemIdentifier).digest('hex'),
     source_database_oid: databaseOid,
     source_database_name: databaseName,
@@ -168,6 +180,11 @@ export function signBackupAttestation({ backupBytes, backupFileName, systemIdent
   value.signature_base64 = sign(null, payload, privateKey).toString('base64')
   assert(verify(null, payload, publicKey, Buffer.from(value.signature_base64, 'base64')), 'self-verification failed')
   return value
+}
+
+export function signBackupAttestation({ backupBytes, ...metadata }) {
+  assert(Buffer.isBuffer(backupBytes) && backupBytes.length > 0, 'backup bytes are required')
+  return signBackupAttestationDigest({ ...metadata, backupSha256: createHash('sha256').update(backupBytes).digest('hex') })
 }
 
 export function captureSnapshot() {
@@ -228,8 +245,8 @@ export async function produceBackup({ backupPath, attestationPath, checksumPath 
     await adapter.dump(snapshot, tempBackup)
     const dumpCompletedAt = clock().toISOString()
     syncPath(tempBackup)
-    const bytes = readRegular(tempBackup, Number.MAX_SAFE_INTEGER)
-    const document = signBackupAttestation({ backupBytes: bytes, backupFileName: basename(backupPath), systemIdentifier: held.systemIdentifier, databaseOid: held.databaseOid, databaseName: held.databaseName, migrationVersion: held.migrationVersion, snapshot, backupStartedAt, snapshotExportObservedAt, dumpCompletedAt, keyId, privatePem, publicPem, validitySeconds })
+    const { sha256 } = hashRegularFile(tempBackup)
+    const document = signBackupAttestationDigest({ backupSha256: sha256, backupFileName: basename(backupPath), systemIdentifier: held.systemIdentifier, databaseOid: held.databaseOid, databaseName: held.databaseName, migrationVersion: held.migrationVersion, snapshot, backupStartedAt, snapshotExportObservedAt, dumpCompletedAt, keyId, privatePem, publicPem, validitySeconds })
     linkSync(tempBackup, backupPath)
     syncParent(backupPath)
     atomicExclusive(checksumPath, Buffer.from(`${document.backup_sha256}  ${backupPath}\n`))

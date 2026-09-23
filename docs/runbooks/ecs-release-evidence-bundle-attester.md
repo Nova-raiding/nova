@@ -10,13 +10,13 @@ Provision the final executable bytes outside the repository, root-owned and not 
 
 Install the reviewed bytes from the exact release commit before loading any private key. The production runtime is fixed at `/usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node`; do not substitute `/usr/bin/node`. Verify and record that runtime's SHA-256 before installing controls. The backup attester likewise invokes only `/usr/pgsql-16/bin/psql` and `/usr/pgsql-16/bin/pg_dump`. PostgreSQL 13 may remain installed for existing server duties, but it must not replace or be placed in front of these fixed PostgreSQL 16 paths.
 
-The protected live-backup producer requires `RELEASE_ID`, `BACKUP_ATTEMPT_ID`, `EXPECTED_MIGRATION_VERSION`, and `PRODUCTION_POSTGRES_CONTAINER` on every invocation. It only accepts the reviewed `merchant-production-postgres-N` container naming contract, compares the explicit operator-reviewed version with the migration version observed from that source before creating any dump, and writes both the immutable source policy and every attempt beneath release-scoped protected paths. Failed attempts remain available for diagnosis; retries use a new immutable attempt ID instead of deleting or overwriting evidence. For `release-5bc0d718`, whose reviewed chain ends at 242, invoke the producer with `RELEASE_ID=release-5bc0d718 BACKUP_ATTEMPT_ID=attempt-1 EXPECTED_MIGRATION_VERSION=242 PRODUCTION_POSTGRES_CONTAINER=merchant-production-postgres-1` and require the resulting attestation and isolated restore evidence to bind the same release identity.
+The protected live-backup producer requires `RELEASE_ID`, `BACKUP_ATTEMPT_ID`, `EXPECTED_MIGRATION_VERSION`, and `PRODUCTION_POSTGRES_CONTAINER` on every invocation. It only accepts the reviewed `merchant-production-postgres-N` container naming contract, compares the explicit operator-reviewed version with the migration version observed from that source before creating any dump, and writes both the immutable source policy and every attempt beneath release-scoped protected paths. Failed attempts remain available for diagnosis; retries use a new immutable attempt ID instead of deleting or overwriting evidence. The producer accepts success only after independently verifying a signed schema-v2 artifact against the protected public key, exact dump bytes, reviewed database source and migration, and signed snapshot chronology. The attester, producer and strict verifier hash dump files in fixed 1 MiB chunks; a large dump is never loaded whole into Node memory. The outer timeout allows the installed attester's six-hour dump limit plus one minute; expiry is still at most 24 hours from dump completion. Never reuse a prior release's attestation or attempt ID.
 
 Use this installation order from the root-owned reviewed release checkout:
 
 1. Provision and independently verify the fixed Node runtime and the PostgreSQL 16 client binaries.
 2. Pre-create `/usr/local/libexec/merchant`, `/run/release-security/evidence-trust`, and `/var/lib/merchant-release-security` as canonical root-owned paths with no group/other write access.
-3. Write and independently review the backup source policy at the fixed path `/run/release-security/evidence-trust/production-backup-source.json`. Its only fields are `system_identifier_sha256`, `database_oid`, and `database_name`; derive them from the approved production PostgreSQL source and do not accept a caller-selected policy path.
+3. Inspect the actual production source using the reviewed live-backup producer. Record its `policy_sha256`, migration version, and server version for owner review. The `create` invocation writes the exact policy bytes to `/run/release-security/evidence-trust/production-backup-source-${RELEASE_ID}.json` exclusively; its only fields are `system_identifier_sha256`, `database_oid`, and `database_name`. Do not reuse an old release-scoped policy or accept a caller-selected path.
 4. Install the capability control for `official_api`, or the manual control for `manual`, then backup, preidentity, and bundle controls with the same reviewed runtime digest. Installation does not authorize executing any control.
 5. Provision each control's keys and operational inputs separately, then run its dedicated validation before use.
 
@@ -60,6 +60,20 @@ env -i /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node /srv
   --node-sha256 REVIEWED_NODE_SHA256
 ```
 
+After installation, verify the installed backup executable digest equals the protected `production-backup-attester-sha256` value and that its install receipt names the reviewed schema-v2 source SHA. Then, with the same exact reviewed release checkout, run `inspect` before `create`. Substitute the real current release ID, attempt ID, migration version and container name. `REVIEWED_POLICY_SHA256` must be copied from the inspected output after owner review, not calculated from caller-selected data:
+
+```sh
+env -i RELEASE_ID=RELEASE_ID BACKUP_ATTEMPT_ID=ATTEMPT_ID EXPECTED_MIGRATION_VERSION=REVIEWED_VERSION PRODUCTION_POSTGRES_CONTAINER=REVIEWED_POSTGRES_CONTAINER \
+  /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
+  /srv/merchant-releases/RELEASE_ID/infra/protected/produce-protected-live-backup.mjs inspect
+
+env -i RELEASE_ID=RELEASE_ID BACKUP_ATTEMPT_ID=ATTEMPT_ID EXPECTED_MIGRATION_VERSION=REVIEWED_VERSION PRODUCTION_POSTGRES_CONTAINER=REVIEWED_POSTGRES_CONTAINER \
+  /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
+  /srv/merchant-releases/RELEASE_ID/infra/protected/produce-protected-live-backup.mjs create REVIEWED_POLICY_SHA256
+```
+
+The protected result lives under `/var/lib/merchant-release-security/backups/${RELEASE_ID}-${BACKUP_ATTEMPT_ID}/`. The JSON success line includes `schema_version: "2"` and the signed `snapshot_id_sha256`; it is not restore proof. Verify the v2 attestation through the strict backup gate and perform a real isolated PG17 restore before release approval. Failed attempts are immutable; choose a fresh attempt ID instead of deleting or overwriting one.
+
 All five options are mandatory and must use independently reviewed SHA-256 values. Run the installer as root only after its protected destination, trust and state directories exist with root ownership and no group/other write access. Invoke repository `.mjs` sources explicitly with `node`; their checkout executable bit is not a trust signal. The installer binds the reviewed source bytes to the reviewed Node runtime, installs atomically, records protected history, and does not generate keys, sign evidence, deploy containers, or provision production data.
 
 The isolated backup CLI drill is intentionally a shell runner, not a Vitest entry. Run it explicitly after the pinned Docker images are locally available:
@@ -68,7 +82,7 @@ The isolated backup CLI drill is intentionally a shell runner, not a Vitest entr
 bash tests/postgres-backup-attester-cli-e2e.sh
 ```
 
-That runner uses an isolated Docker PostgreSQL 16 instance and synthetic keys/data to exercise snapshot, dump, restore and rejection behavior. It does not validate a production restore. As of 2026-09-21, the production backup has passed independent signature verification, but release readiness still requires its separate restore acceptance and evidence review; do not report the complete release gate as passed from the signature result or this drill alone.
+That runner uses an isolated Docker PostgreSQL 16 instance and synthetic keys/data to exercise snapshot, dump, restore and rejection behavior. It does not validate a production restore. The 2026-09-21 production backup verification belongs to an older release and is not evidence for the current candidate. Release readiness requires a fresh v2 attestation and separate real isolated restore acceptance bound to the candidate; do not report the complete release gate as passed from this drill alone.
 
 The preidentity CLI/FD9 drill is also an explicit shell runner:
 

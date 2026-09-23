@@ -15,6 +15,9 @@ describe('production backup attestation gate', () => {
     const options = { backupPath, trustedKeyId: 'release-security-2026', publicKeyPem, expectedSourceDatabaseIdSha256: 'a'.repeat(64), now: new Date('2026-08-29T01:00:00Z') }
     expect(validateBackupAttestation(value, options)).toEqual([])
     expect(validateBackupAttestation(value, { ...options, requireSnapshotTime: true })).toContain('strict restore requires a v2 backup with signed snapshot time')
+    const largeDump = Buffer.alloc(3 * 1024 * 1024, 0x5a); writeFileSync(backupPath, largeDump)
+    value.backup_sha256 = createHash('sha256').update(largeDump).digest('hex'); value.signature_base64 = signProductionEvidence(value, privateKeyPem)
+    expect(validateBackupAttestation(value, options)).toEqual([])
     writeFileSync(backupPath, 'tampered')
     expect(validateBackupAttestation(value, options)).toContain('backup_sha256 does not match backup bytes')
     expect(validateBackupAttestation(value, { ...options, expectedSourceDatabaseIdSha256: 'b'.repeat(64) })).toContain('source_database_id_sha256 does not match the approved source database')
