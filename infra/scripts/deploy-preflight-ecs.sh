@@ -188,6 +188,7 @@ node infra/scripts/check-mcp-oauth-production.mjs --config
 sh infra/scripts/validate-production-config.sh "$config_path"
 node infra/scripts/validate-ecs-production-compose.mjs "$RENDERED_COMPOSE_PATH"
 image_set_digest=$(ruby infra/scripts/validate-ecs-compose-release.rb "$RENDERED_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON" --print-image-set-digest)
+sh infra/scripts/verify-ecs-ops-ui-auth-mode.sh "$OPS_UI_IMAGE_REF" "$OPS_AUTH_MODE"
 manifest_sha256=$(ruby infra/scripts/validate-ecs-compose-release.rb "$RENDERED_COMPOSE_PATH" "$IMAGE_DIGESTS_JSON" --print-manifest-sha256)
 release_manifest_sha256=$(shasum -a 256 "$RELEASE_MANIFEST_PATH" | awk '{print $1}')
 if [ -f "$root/.candidate-identity" ] && [ ! -L "$root/.candidate-identity" ]; then

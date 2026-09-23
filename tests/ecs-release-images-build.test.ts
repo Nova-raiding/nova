@@ -29,6 +29,8 @@ describe('bounded ECS release image builder', () => {
     expect(source).toContain('ECS release image output directory must not already exist')
     expect(source).toContain('ECS_OPS_UI_LOGIN_URL')
     expect(source).toContain('ECS_OPS_AUTH_MODE')
+    expect(source).toContain('OPS_AUTH_MODE must be explicitly set and match ECS_OPS_AUTH_MODE')
+    expect(source).toContain('com.storenova.ops.auth_mode')
     expect(source).toContain('--build-arg "OPS_CONSOLE_AUTH_MODE=$ops_auth_mode"')
     expect(source).toContain('--build-arg "VITE_OPS_LOGIN_URL=$ops_login_url"')
   })
@@ -57,6 +59,7 @@ describe('bounded ECS release image builder', () => {
         ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
         ECS_RELEASE_IMAGE_OUTPUT_DIR: directory,
         ECS_OPS_AUTH_MODE: 'password',
+        OPS_AUTH_MODE: 'password',
       },
       encoding: 'utf8',
     })
@@ -73,6 +76,7 @@ describe('bounded ECS release image builder', () => {
         ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
         ECS_RELEASE_IMAGE_OUTPUT_DIR: join(mkdtempSync(join(tmpdir(), 'ecs-ops-login-parent-')), 'output'),
         ECS_OPS_AUTH_MODE: 'oidc',
+        OPS_AUTH_MODE: 'oidc',
         ECS_OPS_UI_LOGIN_URL: 'http://user:secret@idp.example.test/authorize#token',
       },
       encoding: 'utf8',
@@ -90,6 +94,7 @@ describe('bounded ECS release image builder', () => {
         ECS_RELEASE_IMAGE_REPOSITORY: 'registry.example.com/storenova',
         ECS_RELEASE_IMAGE_OUTPUT_DIR: join(mkdtempSync(join(tmpdir(), 'ecs-password-parent-')), 'output'),
         ECS_OPS_AUTH_MODE: 'password',
+        OPS_AUTH_MODE: 'password',
         ECS_OPS_UI_LOGIN_URL: 'https://sso.example.test/authorize',
       },
       encoding: 'utf8',
@@ -119,7 +124,7 @@ describe('bounded ECS release image builder', () => {
     const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout.trim()
     const log = join(directory, 'docker.log')
     const digest = `sha256:${'d'.repeat(64)}`
-    writeFileSync(join(bin, 'docker'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\ncase "$1 $2" in\n  'builder prune'|'build --pull=false'|'push registry.example.com/storenova/merchant-api:release-test'|'push registry.example.com/storenova/merchant-worker:release-test'|'push registry.example.com/storenova/merchant-ui:release-test'|'push registry.example.com/storenova/merchant-ops-ui:release-test'|'push registry.example.com/storenova/payment-gateway:release-test'|'push registry.example.com/storenova/pilot-gateway:release-test'|'image rm') exit 0;;\n  'image inspect')\n    case "$*" in\n      *org.opencontainers.image.revision*) printf '%s\\n' '${revision}' ;;\n      *com.storenova.release.id*) printf '%s\\n' 'release-test' ;;\n      *com.storenova.release.source_sha256*) printf '%s\\n' "$SOURCE_SHA" ;;\n      *RepoDigests*) printf '%s@${digest}\\n' "${'$'}{5%:release-test}" ;;\n    esac\n    exit 0;;\nesac\nexit 1\n`)
+    writeFileSync(join(bin, 'docker'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\ncase "$1 $2" in\n  'builder prune'|'build --pull=false'|'push registry.example.com/storenova/merchant-api:release-test'|'push registry.example.com/storenova/merchant-worker:release-test'|'push registry.example.com/storenova/merchant-ui:release-test'|'push registry.example.com/storenova/merchant-ops-ui:release-test'|'push registry.example.com/storenova/payment-gateway:release-test'|'push registry.example.com/storenova/pilot-gateway:release-test'|'image rm') exit 0;;\n  'image inspect')\n    case "$*" in\n      *org.opencontainers.image.revision*) printf '%s\\n' '${revision}' ;;\n      *com.storenova.release.id*) printf '%s\\n' 'release-test' ;;\n      *com.storenova.release.source_sha256*) printf '%s\\n' "$SOURCE_SHA" ;;\n      *com.storenova.ops.auth_mode*) printf '%s\\n' 'oidc' ;;\n      *RepoDigests*) printf '%s@${digest}\\n' "${'$'}{5%:release-test}" ;;\n    esac\n    exit 0;;\nesac\nexit 1\n`)
     chmodSync(join(bin, 'docker'), 0o755)
     const archive = spawnSync('git', ['archive', '--format=tar', revision], { cwd: root }).stdout
     const sha = spawnSync('shasum', ['-a', '256'], { input: archive, encoding: 'utf8' }).stdout.split(/\s/u)[0]
@@ -137,6 +142,7 @@ describe('bounded ECS release image builder', () => {
         ECS_BUILD_LOCK_PATH: join(directory, 'build.lock'),
         ECS_BUILD_CACHE_KEEP_STORAGE: '1GB',
         ECS_OPS_AUTH_MODE: 'oidc',
+        OPS_AUTH_MODE: 'oidc',
         ECS_OPS_UI_LOGIN_URL: 'https://sso.example.test/authorize?client_id=ops',
       },
       encoding: 'utf8',

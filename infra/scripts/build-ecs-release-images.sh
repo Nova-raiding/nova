@@ -17,6 +17,7 @@ source_archive=${ECS_RELEASE_SOURCE_ARCHIVE:-}
 source_identity=${ECS_RELEASE_SOURCE_IDENTITY:-}
 ops_login_url=${ECS_OPS_UI_LOGIN_URL:-}
 ops_auth_mode=${ECS_OPS_AUTH_MODE:-}
+runtime_ops_auth_mode=${OPS_AUTH_MODE:-}
 
 printf '%s' "$revision" | grep -Eq '^[0-9a-f]{40}$' || {
   echo 'ECS_RELEASE_GIT_SHA must be a full commit SHA' >&2; exit 2;
@@ -38,6 +39,9 @@ case "$ops_auth_mode" in
   oidc) [ -n "$ops_login_url" ] || { echo 'ECS_OPS_UI_LOGIN_URL is required when ECS_OPS_AUTH_MODE=oidc' >&2; exit 2; } ;;
   *) echo 'ECS_OPS_AUTH_MODE must be explicitly set to password or oidc' >&2; exit 2 ;;
 esac
+[ "$runtime_ops_auth_mode" = "$ops_auth_mode" ] || {
+  echo 'OPS_AUTH_MODE must be explicitly set and match ECS_OPS_AUTH_MODE before image build' >&2; exit 2;
+}
 if [ "$ops_auth_mode" = oidc ]; then
   OPS_LOGIN_URL=$ops_login_url node <<'NODE'
 const value = process.env.OPS_LOGIN_URL
@@ -166,6 +170,12 @@ build_image() {
   [ "$image_revision" = "$revision" ] && [ "$image_release" = "$release_id" ] && [ "$image_source" = "sha256:$source_sha" ] || {
     echo "release image labels do not match committed source: $artifact" >&2; exit 1;
   }
+  if [ "$artifact" = merchant-ops-ui ]; then
+    image_ops_auth_mode=$(docker image inspect --format '{{index .Config.Labels "com.storenova.ops.auth_mode"}}' "$tag")
+    [ "$image_ops_auth_mode" = "$ops_auth_mode" ] || {
+      echo 'ops UI image auth mode label does not match the API runtime mode' >&2; exit 1;
+    }
+  fi
   immutable_ref=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$tag" | awk -v prefix="$repository/$artifact@sha256:" 'index($0, prefix) == 1 { print; exit }')
   printf '%s' "$immutable_ref" | grep -Eq '^.+@sha256:[0-9a-f]{64}$' || {
     echo "registry did not return an immutable digest for $artifact" >&2; exit 1;
