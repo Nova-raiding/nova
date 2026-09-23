@@ -145,6 +145,7 @@ demo/merchant-studio/src/App.tsx
 demo/merchant-studio/scripts/verify-production-copy.mjs
 demo/merchant-studio/scripts/verify-production-copy.test.mjs
 infra/scripts/deploy-preflight-ecs.sh
+infra/scripts/deploy-preflight.sh
 infra/scripts/verify-ecs-ops-auth-mode.sh
 packages/ai/src/embedding.ts
 packages/ai/src/generator.ts
@@ -167,7 +168,6 @@ scripts/release-manifest.ts
 scripts/scanner-callback-canary.mjs
 scripts/scanner-callback-canary.test.mjs
 scripts/scanner-callback-canary-evidence.ts
-scripts/scanner-callback-canary-evidence.test.ts
 tests/ecs-compose-deploy-runner.test.ts
 tests/ecs-release-images-build.test.ts
 tests/model-relay-contract.test.ts
