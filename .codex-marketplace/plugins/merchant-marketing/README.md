@@ -21,6 +21,8 @@ macOS 用户解压对应包后可双击 `install.command`，输入管理员分�
 
 Windows 发布机使用 `node apps/plugin/scripts/package-local-plugin.mjs <输出包路径> --windows-helper-dir <已签名组件目录>`。组件签名者指纹由发布环境的 `STORENOVA_WINDOWS_SIGNER_THUMBPRINT` 提供并在构建时核验，安装包保存已核验的指纹。用户解压后运行 `install.cmd`，输入管理员分配的工作区并在浏览器确认授权；也可稍后运行 `login.cmd --workspace ws_平台分配的工作区`。重启 ChatGPT 后做同样的宿主验证。Windows 包仅能在真实 Windows 构建及安装环境完成发布验收。
 
+有生产签名证书的 Windows 发布机可直接运行 `powershell.exe -NoProfile -File apps/plugin/scripts/build-signed-windows-package.ps1 -OutputPath <输出.zip> -CertificateThumbprint <证书指纹> -TimestampServer <可信时间戳服务地址>`。证书私钥留在 Windows 证书库或签名硬件中；脚本构建自包含 helper、签名并核对证书链与时间戳、生成 ZIP 和同名 `.sha256` 校验文件。缺少证书、时间戳或校验失败时不会留下候选 ZIP。CI 使用仅在 GitHub Actions 内允许的临时测试证书验证同一脚本，其 ZIP 不得作为用户交付物。
+
 当前 `storenova://` 连接助手只作为开发与故障恢复原型随包提供源码和本机构建脚本，独立包不会携带 `.app`。在完成签名/公证、安装实例密码学绑定和抗 scheme 劫持验收前，安装与升级脚本不会自动注册该 scheme，也不得把它作为生产“一键连接”路径。生产页面继续使用受约束的手工登录流程；验收器会明确返回 `production_ready=false`，避免把源码存在误报成可发布能力。
 
 `storenova://` 连接助手仍只有源码；它与正式登录所需的凭据 helper 是不同组件。Windows 开发机可设置 `STORENOVA_WINDOWS_CSC_PATH` 后运行 `node scripts/build-connect-helper-windows.mjs`，它只生成未签名的连接助手 EXE 和 SHA-256 文件，不会写注册表、安装协议或访问 Credential Manager。`verify-connect-helper-windows.ps1` 会核对 SHA-256、Authenticode 和签名者；即使签名通过，在安装实例绑定完成前仍返回 `production_ready=false`，不会注册 `storenova://`。
