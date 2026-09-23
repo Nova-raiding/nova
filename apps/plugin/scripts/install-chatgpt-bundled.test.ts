@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { installBundledPlugin } from './install-chatgpt-bundled.mjs'
@@ -118,6 +118,37 @@ describe('bundled ChatGPT local installer safety', () => {
       expect(readFileSync(resolve(f.cache, 'merchant-note.txt'), 'utf8')).toBe('keep this previous version')
       expect(readFileSync(f.registry, 'utf8')).toBe(before)
       expect(existsSync(f.config)).toBe(false)
+    } finally { f.cleanup() }
+  })
+
+  it('preserves concurrently replaced source and cache directories and retains the previous versions', () => {
+    const f = fixture()
+    try {
+      knownPlugin(f.destination)
+      knownPlugin(f.cache)
+      const before = registryAt(f.registry)
+      const displacedSource = resolve(f.home, 'displaced-source')
+      const displacedCache = resolve(f.home, 'displaced-cache')
+      expect(() => f.run(() => {
+        renameSync(f.destination, displacedSource)
+        renameSync(f.cache, displacedCache)
+        mkdirSync(f.destination)
+        mkdirSync(f.cache)
+        writeFileSync(resolve(f.destination, 'foreign-source.txt'), 'do not delete')
+        writeFileSync(resolve(f.cache, 'foreign-cache.txt'), 'do not delete')
+        throw new Error('injected concurrent replacement')
+      })).toThrow(/concurrent plugin directory change preserved/u)
+      expect(readFileSync(resolve(f.destination, 'foreign-source.txt'), 'utf8')).toBe('do not delete')
+      expect(readFileSync(resolve(f.cache, 'foreign-cache.txt'), 'utf8')).toBe('do not delete')
+      expect(readFileSync(resolve(displacedSource, 'mcp/bridge.mjs'), 'utf8')).toBe('new-version-bridge')
+      expect(readFileSync(resolve(displacedCache, 'mcp/bridge.mjs'), 'utf8')).toBe('new-version-bridge')
+      const sourceBackup = readdirSync(resolve(f.home, 'plugins')).find(name => name.startsWith('.merchant-marketing-previous-'))
+      const cacheBackup = readdirSync(resolve(f.codexHome, 'plugins/cache/merchant-personal/merchant-marketing'))
+        .find(name => name.startsWith('.merchant-marketing-cache-previous-'))
+      expect(readFileSync(resolve(f.home, 'plugins', sourceBackup!, 'merchant-note.txt'), 'utf8')).toBe('keep this previous version')
+      expect(readFileSync(resolve(f.codexHome, 'plugins/cache/merchant-personal/merchant-marketing', cacheBackup!, 'merchant-note.txt'), 'utf8'))
+        .toBe('keep this previous version')
+      expect(readFileSync(f.registry, 'utf8')).toBe(before)
     } finally { f.cleanup() }
   })
 

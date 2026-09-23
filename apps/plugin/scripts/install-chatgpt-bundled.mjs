@@ -21,6 +21,43 @@ function assertUnchanged(path, original) {
   if (fileContents(path) !== original) throw new Error(`Plugin configuration changed during installation: ${path}`)
 }
 
+function pathStat(path) {
+  try { return lstatSync(path) }
+  catch (error) {
+    if (error?.code === 'ENOENT') return null
+    throw error
+  }
+}
+
+function directoryIdentity(path) {
+  const stat = pathStat(path)
+  if (!stat?.isDirectory() || stat.isSymbolicLink() || !Number.isSafeInteger(stat.dev)
+    || !Number.isSafeInteger(stat.ino) || stat.ino === 0) {
+    throw new Error(`Plugin install directory identity is unavailable: ${path}`)
+  }
+  return { dev: stat.dev, ino: stat.ino }
+}
+
+function rollbackPluginDirectory({ path, previous, installed, identity, failedPath, conflicts, recoverable }) {
+  if (installed) {
+    const stat = pathStat(path)
+    if (stat && (stat.isSymbolicLink() || !stat.isDirectory()
+      || stat.dev !== identity.dev || stat.ino !== identity.ino)) {
+      conflicts.push(path)
+      return
+    }
+    if (stat) {
+      // Keep the failed candidate recoverable; never recursively delete an occupied install path.
+      renameSync(path, failedPath)
+      recoverable.push(failedPath)
+    }
+  }
+  if (previous) {
+    if (pathStat(path)) conflicts.push(path)
+    else renameSync(previous, path)
+  }
+}
+
 function assertKnownPluginDirectory(path) {
   if (!existsSync(path)) return false
   const stat = lstatSync(path)
@@ -118,9 +155,12 @@ export function installBundledPlugin(options = {}) {
   const temporaryConfig = resolve(dirname(configPath), `.config-${transactionId}.tmp`)
   const previous = sourceExists ? resolve(dirname(destination), `.merchant-marketing-previous-${transactionId}`) : null
   const previousCache = cacheExists ? resolve(dirname(cache), `.merchant-marketing-cache-previous-${transactionId}`) : null
+  const failedSource = resolve(dirname(destination), `.merchant-marketing-failed-${transactionId}`)
+  const failedCache = resolve(dirname(cache), `.merchant-marketing-cache-failed-${transactionId}`)
   const previousConfig = oldConfig === null ? null : resolve(dirname(configPath), `.config-previous-${transactionId}.bak`)
   let movedSource = false, movedCache = false, installedSource = false, installedCache = false, registryWritten = false
   let movedConfig = false
+  let stagedIdentity, stagedCacheIdentity
   const nextRegistry = `${JSON.stringify(marketplace, null, 2)}\n`
   try {
     cpSync(source, staged, { recursive: true, filter: path => !relative(source, path).split(/[\\/]/u).includes('.agents') })
@@ -130,6 +170,8 @@ export function installBundledPlugin(options = {}) {
       if (!checked.ok) throw new Error(`Installed plugin provenance check failed: ${checked.errors.join('; ')}`)
     }
     if (!existsSync(resolve(staged, 'runtime', process.platform === 'win32' ? 'node.exe' : 'node'))) throw new Error('Runtime copy failed')
+    stagedIdentity = directoryIdentity(staged)
+    stagedCacheIdentity = directoryIdentity(stagedCache)
     writeFileSync(temporaryRegistry, nextRegistry, { mode: 0o600 })
     writeFileSync(temporaryConfig, nextConfig, { mode: 0o600 })
     assertUnchanged(marketplacePath, oldRegistry)
@@ -163,10 +205,17 @@ export function installBundledPlugin(options = {}) {
         renameSync(temporaryRegistry, marketplacePath)
       }
     }
-    if (installedSource) rmSync(destination, { recursive: true, force: true })
-    if (movedSource) renameSync(previous, destination)
-    if (installedCache) rmSync(cache, { recursive: true, force: true })
-    if (movedCache) renameSync(previousCache, cache)
+    const conflicts = []
+    const recoverable = []
+    rollbackPluginDirectory({ path: destination, previous: movedSource ? previous : null,
+      installed: installedSource, identity: stagedIdentity, failedPath: failedSource, conflicts, recoverable })
+    rollbackPluginDirectory({ path: cache, previous: movedCache ? previousCache : null,
+      installed: installedCache, identity: stagedCacheIdentity, failedPath: failedCache, conflicts, recoverable })
+    if (conflicts.length || recoverable.length) {
+      const details = [conflicts.length ? `concurrent plugin directory change preserved: ${conflicts.join(', ')}` : '',
+        recoverable.length ? `failed candidate retained for recovery: ${recoverable.join(', ')}` : ''].filter(Boolean).join('; ')
+      throw new Error(`${error instanceof Error ? error.message : 'Plugin installation failed'}; ${details}`, { cause: error })
+    }
     throw error
   } finally {
     if (existsSync(staged)) rmSync(staged, { recursive: true, force: true })
