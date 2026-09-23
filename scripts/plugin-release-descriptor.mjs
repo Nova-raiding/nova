@@ -40,7 +40,7 @@ function tarOctal(header, start, length) {
     throw new Error('plugin package has unsupported tar number encoding')
   }
   const value = field.toString('ascii')
-  if (!/^[\0 ]*[0-7]+[\0 ]*$/u.test(value)) throw new Error('plugin package has unsupported tar number encoding')
+  if (!/^[ ]*[0-7]+[ ]*\0*[ ]*$/u.test(value)) throw new Error('plugin package has unsupported tar number encoding')
   const number = Number.parseInt(value.match(/[0-7]+/u)[0], 8)
   if (!Number.isSafeInteger(number)) throw new Error('plugin package tar number is unsafe')
   return number
