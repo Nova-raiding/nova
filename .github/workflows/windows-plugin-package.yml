@@ -126,6 +126,33 @@ jobs:
             Write-Host "::error file=.github/workflows/windows-plugin-package.yml,line=1::INSTALL_$($_.Exception.Message)"
             exit 1
           }
+      - name: Verify bundled MCP initialize and tool discovery
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $extract = Join-Path $env:RUNNER_TEMP 'storenova-extracted'
+          $manifest = Get-Content -LiteralPath (Join-Path $extract '.codex-plugin\plugin.json') -Raw | ConvertFrom-Json
+          $installed = Join-Path (Join-Path $env:RUNNER_TEMP 'storenova-clean-user') ".codex\plugins\cache\merchant-personal\merchant-marketing\$($manifest.version)"
+          $mcp = Get-Content -LiteralPath (Join-Path $installed '.mcp.json') -Raw | ConvertFrom-Json
+          $server = $mcp.mcpServers.'merchant-marketing'
+          $node = Join-Path $installed ($server.command -replace '^\./', '')
+          $inputPath = Join-Path $env:RUNNER_TEMP 'mcp-smoke-input.jsonl'
+          $outputPath = Join-Path $env:RUNNER_TEMP 'mcp-smoke-output.jsonl'
+          $errorPath = Join-Path $env:RUNNER_TEMP 'mcp-smoke-error.txt'
+          $requests = @(
+            '{"jsonrpc":"2.0","id":1,"method":"initialize"}',
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+          ) -join "`n"
+          [System.IO.File]::WriteAllText($inputPath, "$requests`n", [System.Text.Encoding]::ASCII)
+          $env:NODE_ENV = 'test'
+          $env:DEPLOY_ENV = 'local_desktop'
+          $process = Start-Process -FilePath $node -ArgumentList (Join-Path $installed 'mcp\bridge.mjs') -WorkingDirectory $installed -RedirectStandardInput $inputPath -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -PassThru
+          if (-not $process.WaitForExit(15000)) { $process.Kill(); throw 'Bundled MCP handshake timed out' }
+          if ($process.ExitCode -ne 0) { throw "Bundled MCP bridge exited $($process.ExitCode)" }
+          $responses = @(Get-Content -LiteralPath $outputPath | Where-Object { $_.Trim() } | ForEach-Object { $_ | ConvertFrom-Json })
+          if ($responses.Count -ne 2 -or $responses[0].result.serverInfo.version -ne $manifest.version -or $responses[1].result.tools.Count -lt 1) {
+            throw 'Bundled MCP initialize or tool discovery returned an invalid response'
+          }
       - name: Verify Credential Manager write
         shell: powershell
         run: |
