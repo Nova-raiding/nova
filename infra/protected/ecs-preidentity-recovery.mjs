@@ -19,6 +19,7 @@ const BIN = Object.freeze({ docker: '/usr/bin/docker', psql: '/usr/bin/psql', fl
 const TRANSITIONS = Object.freeze({ captured: ['nonce_consumed'], nonce_consumed: ['migration_started'], migration_started: ['migration_complete', 'recovery_started'], migration_complete: ['runtime_cutover_started', 'recovery_started'], runtime_cutover_started: ['runtime_identity_verified'], recovery_started: ['recovery_verified'], runtime_identity_verified: [], recovery_verified: [] })
 const BRIDGE_TRANSITIONS = Object.freeze({ captured: ['nonce_consumed'], nonce_consumed: ['bridge_cutover_started'], bridge_cutover_started: ['bridge_identity_verified', 'bridge_recovery_started'], bridge_recovery_started: ['bridge_recovery_verified'], bridge_identity_verified: [], bridge_recovery_verified: [] })
 const HEX = /^[a-f0-9]{64}$/u, IMAGE = /^sha256:[a-f0-9]{64}$/u, GIT = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u
+const UNLABELED_SERVICES = Object.freeze(['api-replica', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync'])
 
 function assert(value, message) { if (!value) throw new Error(message) }
 function digest(value) { return createHash('sha256').update(value).digest('hex') }
@@ -77,14 +78,27 @@ export function createSignedSnapshot(observed, binding, privatePem, publicPem, n
   assert(Number.isInteger(binding.recovery.migrationTail) && binding.recovery.migrationTail >= observed.database.version, 'recovery target cannot read the observed database prefix')
   assert(binding.recovery.allowedPrefixSha256 && Object.entries(binding.recovery.allowedPrefixSha256).every(([version, value]) => Number(version) >= observed.database.version && Number(version) <= binding.recovery.migrationTail && HEX.test(value)), 'recovery prefix allowlist is invalid')
   assert(binding.recovery.allowedPrefixSha256[observed.database.version] === observed.database.historySha256, 'observed database is not an approved recovery prefix')
-  if (binding.mode === 'bridge_code_only') assert(observed.database.version === 242 && binding.recovery.migrationTail === 242, 'bridge code cutover must preserve the exact 242 schema')
+  if (['bridge_code_only', 'bridge_unlabeled_code_only'].includes(binding.mode)) assert(observed.database.version === 242 && binding.recovery.migrationTail === 242, 'bridge code cutover must preserve the exact 242 schema')
   else assert(binding.mode === undefined, 'unknown deployment mode')
   assert(Array.isArray(binding.recovery.services) && binding.recovery.services.length > 0 && binding.recovery.services.every(value => /^[a-z0-9][a-z0-9_-]{0,62}$/u.test(value)), 'recovery service list is invalid')
   for (const field of ['composeSha256', 'envSha256', 'imageDigestsSha256']) assert(HEX.test(binding.recovery[field] ?? ''), `recovery ${field} is invalid`)
   const containers = normalizedContainers(observed.containers)
   assert(Array.isArray(observed.inventory) && observed.inventory.length > 0, 'complete Docker inventory is required')
   assert(Array.isArray(observed.candidateImageIds) && observed.candidateImageIds.length > 0 && observed.candidateImageIds.every(value => IMAGE.test(value)), 'candidate image IDs must be independently resolved')
-  if (binding.mode === 'bridge_code_only') assert(observed.candidateServiceImageIds && containers.every(item => IMAGE.test(observed.candidateServiceImageIds[item.service] ?? '')), 'bridge candidate image IDs must cover every reviewed service')
+  if (['bridge_code_only', 'bridge_unlabeled_code_only'].includes(binding.mode)) assert(observed.candidateServiceImageIds && containers.every(item => IMAGE.test(observed.candidateServiceImageIds[item.service] ?? '')), 'bridge candidate image IDs must cover every reviewed service')
+  if (binding.mode === 'bridge_unlabeled_code_only') {
+    assert(canonical(containers.map(item => item.service)) === canonical(UNLABELED_SERVICES), 'unlabeled takeover must contain only the seven reviewed API/worker services')
+    assert(Array.isArray(observed.unlabeledTakeover) && observed.unlabeledTakeover.length === UNLABELED_SERVICES.length, 'seven frozen unlabeled container pairs are required')
+    assert(canonical(observed.unlabeledTakeover.map(item => item.service)) === canonical(UNLABELED_SERVICES), 'unlabeled takeover service set changed')
+    for (const pair of observed.unlabeledTakeover) {
+      assert(pair.old.id === containers.find(item => item.service === pair.service)?.id && pair.old.image_id === containers.find(item => item.service === pair.service)?.image_id, `old unlabeled identity mismatch: ${pair.service}`)
+      assert(pair.candidate.image_id === observed.candidateServiceImageIds[pair.service], `candidate unlabeled image mismatch: ${pair.service}`)
+      for (const side of [pair.old, pair.candidate]) {
+        assert(HEX.test(side.id) && IMAGE.test(side.image_id) && HEX.test(side.config_sha256) && HEX.test(side.host_sha256), `unlabeled container fingerprint is invalid: ${pair.service}`)
+        assert(Array.isArray(side.networks) && side.networks.length > 0 && side.networks.every(net => typeof net.name === 'string' && HEX.test(net.id) && Array.isArray(net.aliases)), `unlabeled network identity is invalid: ${pair.service}`)
+      }
+    }
+  }
   const oldImageIds = new Set(containers.map(value => value.image_id))
   const candidateExclusiveImageIds = [...new Set(observed.candidateImageIds)].filter(value => !oldImageIds.has(value)).sort()
   assert(observed.candidateExclusiveRunning !== true, 'candidate-exclusive container is already running during capture')
@@ -99,14 +113,15 @@ export function createSignedSnapshot(observed, binding, privatePem, publicPem, n
     recovery_target: { release_id: binding.recovery.releaseId, release_git_sha: binding.recovery.gitSha, manifest_sha256: binding.recovery.manifestSha256, image_set_digest: binding.recovery.imageSetDigest, compose_sha256: binding.recovery.composeSha256, env_sha256: binding.recovery.envSha256, image_digests_sha256: binding.recovery.imageDigestsSha256, migration_tail: binding.recovery.migrationTail, allowed_prefix_sha256: binding.recovery.allowedPrefixSha256, services: [...new Set(binding.recovery.services)].sort() },
     database_policy: { strategy: 'forward_only', minimum_version: observed.database.version, maximum_version: binding.recovery.migrationTail, target_version: binding.recovery.migrationTail, schema_downgrade: false },
     key_id: binding.keyId,
-    ...(binding.mode === 'bridge_code_only' ? { deployment_mode: binding.mode, predeployment_inventory: observed.inventory, candidate_service_image_ids: observed.candidateServiceImageIds } : {}),
+    ...(['bridge_code_only', 'bridge_unlabeled_code_only'].includes(binding.mode) ? { deployment_mode: binding.mode, predeployment_inventory: observed.inventory, candidate_service_image_ids: observed.candidateServiceImageIds } : {}),
+    ...(binding.mode === 'bridge_unlabeled_code_only' ? { unlabeled_takeover: observed.unlabeledTakeover } : {}),
   }
   return signDocument(document, privatePem, publicPem)
 }
 
 export function transitionJournal(document, nextPhase, privatePem, publicPem, now = new Date()) {
   assert(verifyDocument(document, publicPem), 'journal signature is invalid')
-  const transitions = document.deployment_mode === 'bridge_code_only' ? BRIDGE_TRANSITIONS : TRANSITIONS
+  const transitions = ['bridge_code_only', 'bridge_unlabeled_code_only'].includes(document.deployment_mode) ? BRIDGE_TRANSITIONS : TRANSITIONS
   assert(transitions[document.phase]?.includes(nextPhase), 'journal phase transition is not monotonic')
   assert(Date.parse(document.expires_at) > now.getTime(), 'journal is expired')
   return signDocument({ ...document, phase: nextPhase, updated_at: now.toISOString(), signature_base64: undefined }, privatePem, publicPem)
@@ -114,7 +129,7 @@ export function transitionJournal(document, nextPhase, privatePem, publicPem, no
 
 export function verifyBridgeRecoveryAuthorization(document, input, publicPem, now = new Date()) {
   assert(verifyDocument(document, publicPem), 'bridge journal signature is invalid')
-  assert(document.deployment_mode === 'bridge_code_only' && ['bridge_cutover_started', 'bridge_recovery_started'].includes(document.phase), 'journal phase does not permit bridge recovery')
+  assert(['bridge_code_only', 'bridge_unlabeled_code_only'].includes(document.deployment_mode) && ['bridge_cutover_started', 'bridge_recovery_started', 'bridge_runtime_recovery_verified'].includes(document.phase), 'journal phase does not permit bridge recovery')
   assert(Date.parse(document.expires_at) > now.getTime(), 'bridge journal is expired')
   assert(digest(input.deploymentNonce) === document.deployment_nonce_sha256, 'deployment nonce does not match bridge journal')
   assert(input.observed.composeProject === document.compose_project, 'Compose project changed')
@@ -242,6 +257,79 @@ function collectBridgeContainers(mapPath) {
     return { service: mapping.service, id: inspect.Id, imageId: inspect.Image, configHash, state: inspect.State?.Running ? 'running' : 'stopped', releaseIdentity: { release_id: environment.RELEASE_ID, release_git_sha: environment.RELEASE_GIT_SHA, manifest_sha256: environment.RELEASE_MANIFEST_SHA256, image_set_digest: environment.RELEASE_IMAGE_SET_DIGEST } }
   })
 }
+function inspectExactContainer(id) {
+  assert(HEX.test(id), 'full Docker container ID is required')
+  const value = jsonCommand(BIN.docker, ['inspect', id])[0]
+  assert(value?.Id === id && IMAGE.test(value.Image ?? '') && typeof value.Name === 'string', 'Docker container ID or image drifted')
+  return value
+}
+function immutableContainerSpec(value) {
+  const networks = Object.entries(value.NetworkSettings?.Networks ?? {}).map(([name, net]) => ({
+    name, id: net.NetworkID, aliases: [...(net.Aliases ?? [])].sort(),
+  })).sort((a, b) => a.name.localeCompare(b.name))
+  assert(networks.length > 0 && networks.every(net => /^[a-zA-Z0-9_.-]+$/u.test(net.name) && HEX.test(net.id) && net.aliases.every(alias => typeof alias === 'string')), 'container network bindings are invalid')
+  return { id: value.Id, image_id: value.Image, config_sha256: digest(Buffer.from(canonical(value.Config))), host_sha256: digest(Buffer.from(canonical(value.HostConfig))), networks }
+}
+function readServiceMap(path) {
+  protectedPath(path, 'unlabeled service map')
+  const value = JSON.parse(readRegular(path).toString('utf8'))
+  assert(Array.isArray(value) && value.length === UNLABELED_SERVICES.length && canonical(value.map(item => item.service).sort()) === canonical(UNLABELED_SERVICES), 'unlabeled service map must contain exactly seven services')
+  assert(value.every(item => /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u.test(item.container ?? '')) && new Set(value.map(item => item.container)).size === value.length, 'unlabeled container names are invalid or duplicate')
+  return value.sort((a, b) => a.service.localeCompare(b.service))
+}
+function collectUnlabeledTakeover(oldMapPath, candidateMapPath, imageIds, candidate) {
+  const oldMap = readServiceMap(oldMapPath), candidateMap = readServiceMap(candidateMapPath)
+  const pairs = oldMap.map((oldMapping, index) => {
+    const nextMapping = candidateMap[index]
+    const old = jsonCommand(BIN.docker, ['inspect', oldMapping.container])[0]
+    const next = jsonCommand(BIN.docker, ['inspect', nextMapping.container])[0]
+    assert(old?.Name === `/${oldMapping.container}` && next?.Name === `/${nextMapping.container}` && HEX.test(old?.Id ?? '') && HEX.test(next?.Id ?? '') && old.Id !== next.Id, `unlabeled service identity is invalid: ${oldMapping.service}`)
+    assert(old.State?.Running === true && next.State?.Running === false, `unlabeled old/candidate running state is invalid: ${oldMapping.service}`)
+    assert(!old.Config?.Labels?.['com.docker.compose.project'] && !old.Config?.Labels?.['com.docker.compose.service'], `old service unexpectedly has Compose ownership: ${oldMapping.service}`)
+    assert(next.Image === imageIds[oldMapping.service], `candidate fixed image differs from reviewed Compose: ${oldMapping.service}`)
+    const env = Object.fromEntries((next.Config?.Env ?? []).map(item => { const at = item.indexOf('='); return [item.slice(0, at), item.slice(at + 1)] }))
+    assert(env.BRIDGE_SCHEMA_COMPATIBILITY_MODE === 'prefix_242_or_244', `candidate bridge schema mode missing: ${oldMapping.service}`)
+    if (oldMapping.service === 'api-replica') assert(env.RELEASE_ID === candidate.releaseId && env.RELEASE_GIT_SHA === candidate.gitSha && env.RELEASE_MANIFEST_SHA256 === candidate.manifestSha256 && env.RELEASE_IMAGE_SET_DIGEST === candidate.imageSetDigest, 'candidate API release identity is invalid')
+    const oldSpec = immutableContainerSpec(old), candidateSpec = immutableContainerSpec(next)
+    assert(canonical(oldSpec.networks.map(net => [net.name, net.id])) === canonical(candidateSpec.networks.map(net => [net.name, net.id])), `candidate network topology differs from old: ${oldMapping.service}`)
+    const parkedName = `${oldMapping.container}.parked.${candidate.releaseId}`
+    assert(parkedName.length <= 127 && /^[A-Za-z0-9][A-Za-z0-9_.-]+$/u.test(parkedName), 'parked container name is unsafe')
+    return { service: oldMapping.service, old_name: oldMapping.container, candidate_name: nextMapping.container, parked_name: parkedName, old: oldSpec, candidate: candidateSpec }
+  })
+  assert(new Set(pairs.flatMap(item => [item.old_name, item.candidate_name, item.parked_name])).size === pairs.length * 3, 'unlabeled takeover names must be globally unique')
+  return pairs
+}
+function validateUnlabeledPair(pair) {
+  const old = inspectExactContainer(pair.old.id), candidate = inspectExactContainer(pair.candidate.id)
+  for (const [actual, expected, label] of [[old, pair.old, 'old'], [candidate, pair.candidate, 'candidate']]) {
+    const spec = immutableContainerSpec(actual)
+    assert(spec.id === expected.id && spec.image_id === expected.image_id && spec.config_sha256 === expected.config_sha256 && spec.host_sha256 === expected.host_sha256, `${label} unlabeled container configuration drifted: ${pair.service}`)
+    assert(canonical(spec.networks) === canonical(expected.networks), `${label} unlabeled container network or alias drifted: ${pair.service}`)
+  }
+  return { old, candidate }
+}
+export function switchUnlabeledPairs(pairs, actions) {
+  for (const pair of pairs) {
+    actions.stop(pair.old.id)
+    actions.rename(pair.old.id, pair.parked_name)
+    actions.rename(pair.candidate.id, pair.old_name)
+    actions.start(pair.candidate.id)
+  }
+}
+export function recoverUnlabeledPairs(pairs, actions) {
+  for (const pair of [...pairs].reverse()) {
+    let candidate = actions.inspect(pair.candidate.id)
+    let old = actions.inspect(pair.old.id)
+    assert([pair.candidate_name, pair.old_name].includes(candidate.name) && [pair.old_name, pair.parked_name].includes(old.name) && candidate.name !== old.name, `unlabeled recovery name is outside signed pair: ${pair.service}`)
+    if (candidate.running) actions.stop(pair.candidate.id)
+    candidate = actions.inspect(pair.candidate.id)
+    if (candidate.name === pair.old_name) actions.rename(pair.candidate.id, pair.candidate_name)
+    old = actions.inspect(pair.old.id)
+    if (old.name === pair.parked_name) actions.rename(pair.old.id, pair.old_name)
+    old = actions.inspect(pair.old.id)
+    if (!old.running) actions.start(pair.old.id)
+  }
+}
 function collectInventory(allowEmpty = false) {
   const ids = cleanExec(BIN.docker, ['ps', '-q', '--no-trunc']).trim().split(/\s+/u).filter(Boolean)
   assert(allowEmpty || ids.length > 0, 'Docker running-container inventory is empty')
@@ -315,44 +403,49 @@ function assertInheritedLock(lockPath) {
 }
 const COMMON = { '--state': true, '--lock-path': true }
 const SPECS = Object.freeze({
-  capture: { ...COMMON, '--attempt-id': true, '--service-map': true, '--compose-project': true, '--candidate-release-id': true, '--candidate-git-sha': true, '--candidate-manifest-sha256': true, '--candidate-image-set-digest': true, '--candidate-image-digests': true, '--candidate-compose': false, '--deployment-nonce': true, '--recovery-plan': true, '--mode': false },
+  capture: { ...COMMON, '--attempt-id': true, '--service-map': true, '--candidate-service-map': false, '--compose-project': true, '--candidate-release-id': true, '--candidate-git-sha': true, '--candidate-manifest-sha256': true, '--candidate-image-set-digest': true, '--candidate-image-digests': true, '--candidate-compose': false, '--deployment-nonce': true, '--recovery-plan': true, '--mode': false },
   phase: { ...COMMON, '--phase': true },
   verify: { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--recovery-plan': true },
   recover: { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--recovery-plan': true, '--recovery-compose': true, '--recovery-env': true, '--recovery-image-digests': true, '--production-api-base-url': true, '--wait-timeout': false },
   'bridge-begin': { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--recovery-plan': true, '--production-api-base-url': true },
   'bridge-verify': { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--production-api-base-url': true },
   'bridge-recover': { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--recovery-plan': true, '--recovery-compose': true, '--recovery-env': true, '--recovery-image-digests': true, '--production-api-base-url': true, '--wait-timeout': false },
+  'bridge-finalize': { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--recovery-plan': true, '--production-api-base-url': true },
+  'bridge-switch-unlabeled': { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--recovery-plan': true, '--production-api-base-url': true },
+  'bridge-recover-unlabeled': { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--recovery-plan': true, '--production-api-base-url': true },
 })
 function main(args) {
   assertRuntime(); const command = args[0]; assert(Object.hasOwn(SPECS, command), 'expected capture, phase, verify, or recover'); const options = parseOptions(args.slice(1), SPECS[command]); const get = name => options[name]; const statePath = get('--state'); assertInheritedLock(get('--lock-path'))
-  const productionBase = ['recover', 'bridge-begin', 'bridge-verify', 'bridge-recover'].includes(command) ? productionApiBaseUrl(get('--production-api-base-url')) : undefined
+  const productionBase = ['recover', 'bridge-begin', 'bridge-verify', 'bridge-recover', 'bridge-finalize', 'bridge-switch-unlabeled', 'bridge-recover-unlabeled'].includes(command) ? productionApiBaseUrl(get('--production-api-base-url')) : undefined
   const privatePem = readRegular(PRIVATE_KEY_PATH, 8192), publicPem = readRegular(PUBLIC_KEY_PATH, 8192)
   if (command === 'capture') {
     const planPath = get('--recovery-plan'), mapPath = get('--service-map'), candidateDigestsPath = get('--candidate-image-digests')
     protectedPath(planPath, 'recovery plan'); protectedPath(mapPath, 'reviewed service map'); protectedPath(candidateDigestsPath, 'candidate image digests')
     const recovery = parsePlan(planPath)
     const containers = collectContainers(mapPath)
-    if (get('--mode') === 'bridge_code_only') protectedPath(get('--candidate-compose'), 'bridge candidate Compose')
-    const candidateServiceImageIds = get('--mode') === 'bridge_code_only' ? collectCandidateServiceImageIds(get('--candidate-compose'), get('--compose-project'), containers.map(item => item.service)) : undefined
+    if (['bridge_code_only', 'bridge_unlabeled_code_only'].includes(get('--mode'))) protectedPath(get('--candidate-compose'), 'bridge candidate Compose')
+    const candidateServiceImageIds = ['bridge_code_only', 'bridge_unlabeled_code_only'].includes(get('--mode')) ? collectCandidateServiceImageIds(get('--candidate-compose'), get('--compose-project'), containers.map(item => item.service)) : undefined
     const candidateImageIds = candidateServiceImageIds ? Object.values(candidateServiceImageIds) : collectCandidateImageIds(candidateDigestsPath)
     const oldImageIds = new Set(containers.map(value => value.imageId)), exclusive = candidateImageIds.filter(value => !oldImageIds.has(value))
     const binding = { attemptId: get('--attempt-id'), deploymentNonce: get('--deployment-nonce'), keyId: readRegular(KEY_ID_PATH, 128).toString('utf8').trim(), candidate: { releaseId: get('--candidate-release-id'), gitSha: get('--candidate-git-sha'), manifestSha256: get('--candidate-manifest-sha256'), imageSetDigest: get('--candidate-image-set-digest') }, recovery, ...(get('--mode') ? { mode: get('--mode') } : {}) }
     const candidateIdentity = { release_id: binding.candidate.releaseId, release_git_sha: binding.candidate.gitSha, manifest_sha256: binding.candidate.manifestSha256, image_set_digest: binding.candidate.imageSetDigest }
     assert(canonical(containers.map(value => value.service).sort()) === canonical(recovery.services), 'reviewed service map must exactly match the frozen recovery runtime services')
-    const observed = { composeProject: get('--compose-project'), containers, inventory: collectInventory(), candidateImageIds, ...(candidateServiceImageIds ? { candidateServiceImageIds } : {}), candidateExclusiveRunning: candidateContainersRunning(exclusive), candidateIdentityRunning: candidateIdentityRunning(candidateIdentity), database: collectDatabase(process.env.DATABASE_URL) }
+    const unlabeledTakeover = get('--mode') === 'bridge_unlabeled_code_only' ? collectUnlabeledTakeover(mapPath, get('--candidate-service-map'), candidateServiceImageIds, binding.candidate) : undefined
+    const observed = { composeProject: get('--compose-project'), containers, inventory: collectInventory(), candidateImageIds, ...(candidateServiceImageIds ? { candidateServiceImageIds } : {}), ...(unlabeledTakeover ? { unlabeledTakeover } : {}), candidateExclusiveRunning: candidateContainersRunning(exclusive), candidateIdentityRunning: candidateIdentityRunning(candidateIdentity), database: collectDatabase(process.env.DATABASE_URL) }
     writeAtomic(statePath, createSignedSnapshot(observed, binding, privatePem, publicPem)); process.stdout.write('preidentity snapshot captured\n'); return
   }
   protectedPath(statePath, 'preidentity journal', 0o600)
   const document = JSON.parse(readRegular(statePath).toString('utf8'))
-  if (command === 'phase') { assert(document.deployment_mode !== 'bridge_code_only' || get('--phase') === 'nonce_consumed', 'bridge transitions require observed CLI checks'); writeAtomic(statePath, transitionJournal(document, get('--phase'), privatePem, publicPem), true); process.stdout.write(`preidentity phase recorded: ${get('--phase')}\n`); return }
+  if (command === 'phase') { assert(!['bridge_code_only', 'bridge_unlabeled_code_only'].includes(document.deployment_mode) || get('--phase') === 'nonce_consumed', 'bridge transitions require observed CLI checks'); writeAtomic(statePath, transitionJournal(document, get('--phase'), privatePem, publicPem), true); process.stdout.write(`preidentity phase recorded: ${get('--phase')}\n`); return }
   if (command.startsWith('bridge-')) {
-    assert(document.deployment_mode === 'bridge_code_only' && verifyDocument(document, publicPem), 'signed bridge journal is required')
+    assert(['bridge_code_only', 'bridge_unlabeled_code_only'].includes(document.deployment_mode) && verifyDocument(document, publicPem), 'signed bridge journal is required')
     assert(Date.parse(document.expires_at) > Date.now(), 'bridge journal is expired')
     protectedPath(get('--service-map'), 'bridge reviewed service map')
     if (command !== 'bridge-verify') protectedPath(get('--recovery-plan'), 'bridge recovery plan')
     verifyNonceLedger(get('--deployment-nonce'), document.candidate)
-    const containers = command === 'bridge-recover' ? collectBridgeContainers(get('--service-map')) : collectContainers(get('--service-map'))
-    const observed = { composeProject: get('--compose-project'), containers, inventory: collectInventory(command === 'bridge-recover') }
+    const partialObservation = ['bridge-recover', 'bridge-recover-unlabeled'].includes(command)
+    const containers = partialObservation ? collectBridgeContainers(get('--service-map')) : collectContainers(get('--service-map'))
+    const observed = { composeProject: get('--compose-project'), containers, inventory: collectInventory(partialObservation) }
     const database = collectDatabase(process.env.DATABASE_URL)
     if (command === 'bridge-begin') {
       assert(document.phase === 'nonce_consumed', 'bridge cutover has already begun or nonce is not consumed')
@@ -376,6 +469,7 @@ function main(args) {
       for (const item of document.predeployment_inventory) if (!reviewedIds.has(item.id)) assert(canonical(currentByName.get(item.name)) === canonical(item), `unreviewed container changed during bridge cutover: ${item.name}`)
       for (const item of containers) {
         assert(item.imageId === document.candidate_service_image_ids[item.service], `bridge candidate image mismatch: ${item.service}`)
+        if (document.deployment_mode === 'bridge_unlabeled_code_only') assert(item.id === document.unlabeled_takeover.find(value => value.service === item.service)?.candidate.id, `bridge candidate container ID mismatch: ${item.service}`)
         if (item.service === 'api' || item.service === 'api-replica') assert(item.releaseIdentity.release_id === document.candidate.release_id && item.releaseIdentity.release_git_sha === document.candidate.release_git_sha && item.releaseIdentity.manifest_sha256 === document.candidate.manifest_sha256 && item.releaseIdentity.image_set_digest === document.candidate.image_set_digest, `bridge API identity mismatch: ${item.service}`)
       }
       cleanExec(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/livez`])
@@ -387,6 +481,66 @@ function main(args) {
       process.stdout.write('bridge code cutover verified\n'); return
     }
     const recovery = parsePlan(get('--recovery-plan'))
+    if (command === 'bridge-switch-unlabeled') {
+      assert(document.deployment_mode === 'bridge_unlabeled_code_only' && document.phase === 'bridge_cutover_started', 'signed unlabeled takeover has not been authorized')
+      verifyBridgeRecoveryAuthorization(document, { observed, database, deploymentNonce: get('--deployment-nonce'), recovery }, publicPem)
+      assert(workloadDigest(containers) === document.predeployment_workload.container_set_digest && inventoryDigest(observed.inventory) === document.predeployment_workload.inventory_digest, 'unlabeled takeover requires unchanged old workload and Docker inventory')
+      for (const pair of document.unlabeled_takeover) {
+        const { old, candidate } = validateUnlabeledPair(pair)
+        assert(old.Name === `/${pair.old_name}` && old.State?.Running === true && candidate.Name === `/${pair.candidate_name}` && candidate.State?.Running === false, `unlabeled pair is not in the captured initial state: ${pair.service}`)
+      }
+      const oldRelease = jsonCommand(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/releasez`])
+      const oldIdentity = oldRelease.data?.release ?? oldRelease.release
+      assert(oldIdentity?.release_id === recovery.releaseId && oldIdentity?.release_git_sha === recovery.gitSha && oldIdentity?.manifest_sha256 === recovery.manifestSha256 && oldIdentity?.image_set_digest === recovery.imageSetDigest, 'unlabeled takeover requires the original public release')
+      switchUnlabeledPairs(document.unlabeled_takeover, {
+        stop: id => cleanExec(BIN.docker, ['stop', '--time', '30', id]),
+        rename: (id, name) => cleanExec(BIN.docker, ['rename', id, name]),
+        start: id => cleanExec(BIN.docker, ['start', id]),
+      })
+      process.stdout.write('seven fixed B containers acquired historical names; public identity verification remains required\n'); return
+    }
+    if (command === 'bridge-recover-unlabeled') {
+      assert(document.deployment_mode === 'bridge_unlabeled_code_only', 'unlabeled recovery requires its dedicated signed journal')
+      verifyBridgeRecoveryAuthorization(document, { observed, database, deploymentNonce: get('--deployment-nonce'), recovery }, publicPem)
+      for (const pair of document.unlabeled_takeover) {
+        const { old, candidate } = validateUnlabeledPair(pair)
+        assert([`/${pair.old_name}`, `/${pair.parked_name}`].includes(old.Name) && [`/${pair.old_name}`, `/${pair.candidate_name}`].includes(candidate.Name), `unlabeled container name is outside the signed handoff: ${pair.service}`)
+        assert(!(old.Name === `/${pair.old_name}` && candidate.Name === `/${pair.old_name}`), `ambiguous unlabeled service name: ${pair.service}`)
+      }
+      if (document.phase === 'bridge_cutover_started') writeAtomic(statePath, transitionJournal(document, 'bridge_recovery_started', privatePem, publicPem), true)
+      recoverUnlabeledPairs(document.unlabeled_takeover, {
+        inspect: id => { const value = inspectExactContainer(id); return { name: value.Name.slice(1), running: value.State?.Running === true } },
+        stop: id => cleanExec(BIN.docker, ['stop', '--time', '30', id]),
+        rename: (id, name) => cleanExec(BIN.docker, ['rename', id, name]),
+        start: id => cleanExec(BIN.docker, ['start', id]),
+      })
+      const restored = collectContainers(get('--service-map')), inventory = collectInventory(), after = collectDatabase(process.env.DATABASE_URL)
+      assert(after.version === 242 && after.historySha256 === document.database_before.migration_history_sha256 && after.invalidConcurrentIndexes.length === 0, 'unlabeled recovery changed checksummed schema 242')
+      assert(restored.every(item => { const pair = document.unlabeled_takeover.find(value => value.service === item.service); return item.id === pair.old.id && item.imageId === pair.old.image_id && item.configHash === document.predeployment_workload.services.find(value => value.service === item.service)?.config_hash }), 'unlabeled recovery did not restore the original container IDs and configurations')
+      assert(inventoryDigest(inventory) === document.predeployment_workload.inventory_digest, 'unlabeled recovery did not restore the exact running Docker inventory')
+      for (const pair of document.unlabeled_takeover) validateUnlabeledPair(pair)
+      const started = JSON.parse(readRegular(statePath).toString('utf8'))
+      if (started.phase === 'bridge_recovery_started') writeAtomic(statePath, transitionJournal(started, 'bridge_runtime_recovery_verified', privatePem, publicPem), true)
+      process.stdout.write('seven historical container IDs restored; public old identity still requires finalization\n'); return
+    }
+    if (command === 'bridge-finalize') {
+      assert(document.phase === 'bridge_runtime_recovery_verified', 'bridge public recovery requires verified old runtime first')
+      verifyBridgeRecoveryAuthorization(document, { observed, database, deploymentNonce: get('--deployment-nonce'), recovery }, publicPem)
+      assert(containers.every(item => { const before = document.predeployment_workload.services.find(value => value.service === item.service); return item.imageId === before?.image_id && item.configHash === before?.config_hash }), 'bridge finalization requires original service images and runtime configuration')
+      if (document.deployment_mode === 'bridge_unlabeled_code_only') assert(containers.every(item => item.id === document.unlabeled_takeover.find(value => value.service === item.service)?.old.id), 'bridge finalization requires the original historical container IDs')
+      const originalInventory = document.predeployment_inventory, restoredInventory = observed.inventory
+      assert(canonical(restoredInventory.map(item => item.name).sort()) === canonical(originalInventory.map(item => item.name).sort()), 'bridge finalization changed running container names')
+      const reviewedIds = new Set(document.predeployment_workload.services.map(item => item.id))
+      const restoredByName = new Map(restoredInventory.map(item => [item.name, item]))
+      for (const item of originalInventory) if (!reviewedIds.has(item.id)) assert(canonical(restoredByName.get(item.name)) === canonical(item), `unreviewed container changed during bridge finalization: ${item.name}`)
+      cleanExec(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/livez`])
+      cleanExec(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/readyz`])
+      const release = jsonCommand(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/releasez`])
+      const identity = release.data?.release ?? release.release
+      assert(identity?.release_id === recovery.releaseId && identity?.release_git_sha === recovery.gitSha && identity?.manifest_sha256 === recovery.manifestSha256 && identity?.image_set_digest === recovery.imageSetDigest, 'bridge recovery public identity mismatch; signed journal remains retryable')
+      writeAtomic(statePath, transitionJournal(document, 'bridge_recovery_verified', privatePem, publicPem), true)
+      process.stdout.write('bridge public old identity verified after runtime recovery\n'); return
+    }
     verifyBridgeRecoveryAuthorization(document, { observed, database, deploymentNonce: get('--deployment-nonce'), recovery }, publicPem)
     const compose = get('--recovery-compose'), env = get('--recovery-env'), digests = get('--recovery-image-digests')
     for (const [path, label] of [[compose, 'bridge recovery Compose'], [env, 'bridge recovery environment'], [digests, 'bridge recovery image digests']]) protectedPath(path, label)
