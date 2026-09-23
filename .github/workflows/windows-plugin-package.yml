@@ -35,10 +35,21 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $helperDir = Join-Path $env:RUNNER_TEMP 'storenova-helper'
+          $beforeBuild = @(git status --porcelain --untracked-files=all)
+          if ($LASTEXITCODE -ne 0 -or $beforeBuild.Count -gt 0) {
+            Write-Host "::error title=Windows source preflight::Checkout is dirty before the credential helper build: $($beforeBuild -join ' | ')"
+            exit 1
+          }
           node apps/plugin/scripts/build-windows-credential-helper.mjs $helperDir
-          if ($LASTEXITCODE -ne 0) { throw 'Credential helper build failed' }
-          $sourceChanges = git status --porcelain --untracked-files=all
-          if ($LASTEXITCODE -ne 0 -or $sourceChanges) { throw "Credential helper build modified the release source tree: $sourceChanges" }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host '::error title=Windows credential helper build::dotnet publish failed; see preceding Node and dotnet output'
+            exit 1
+          }
+          $sourceChanges = @(git status --porcelain --untracked-files=all)
+          if ($LASTEXITCODE -ne 0 -or $sourceChanges.Count -gt 0) {
+            Write-Host "::error title=Windows source preflight::Credential helper build modified the release source tree: $($sourceChanges -join ' | ')"
+            exit 1
+          }
       - name: Create a runner-local test certificate
         timeout-minutes: 3
         shell: pwsh

@@ -22,7 +22,10 @@ try {
   cpSync(source, resolve(buildRoot, 'StoreNovaCredentialHelper.cs'))
   const result = spawnSync('dotnet', ['publish', buildProject, '--configuration', 'Release', '--runtime', 'win-x64',
     '--self-contained', 'true', '--output', output, '-p:DebugType=None', '-p:DebugSymbols=false'], { encoding: 'utf8', windowsHide: true })
-  if (result.status !== 0) throw new Error(result.stderr?.trim() || result.stdout?.trim() || result.error?.message || 'dotnet publish failed')
+  if (result.status !== 0) {
+    const detail = [result.error?.message, result.stdout?.trim(), result.stderr?.trim()].filter(Boolean).join('\n')
+    throw new Error(`dotnet publish failed (exit ${result.status ?? 'unavailable'}):\n${detail}`)
+  }
 } finally {
   rmSync(buildRoot, { recursive: true, force: true })
 }
