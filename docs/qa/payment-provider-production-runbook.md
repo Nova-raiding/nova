@@ -26,7 +26,7 @@
 - `PAYMENT_CALLBACK_BASE_URL=https://<merchant-host>/v1`
 - `PAYMENT_RECONCILIATION_ENABLED=true`
 - `PAYMENT_REFUND_ENABLED=true`
-- `PAYMENT_PROTECTED_RECEIPT_HOST_DIR=/var/lib/merchant-release-security/payment-receipts`（示例绝对路径；部署前以网关 UID 100 建立、权限 0700，且不能是符号链接）
+- `PAYMENT_PROTECTED_RECEIPT_HOST_DIR=/var/lib/merchant-release-security/payment-receipts`（示例绝对路径；必须位于 `/var/lib/merchant-release-security/` 下，部署前以网关 UID 100 建立、权限 0700，路径各级均不能经符号链接）
 
 支付网关在支付宝原生 RSA2 验签和内部 API 2xx 响应后，才向该目录以 0600、排他创建模式写一份 `payment-gateway-source-receipt.v1`。收据只包含订单号、交易号、工作区、原生签名及实际验签原文的 SHA-256、分值、时间和回调 HTTP 状态；不保存原始回调、签名、密钥或付款人资料，也不写普通日志。目录未配置或权限不符时不能产生可用收据，写入失败会让支付宝收到失败响应并按其重试语义重新通知。收据本身不等于最终支付证明，必须由受保护签发器与真实 provider 查询、数据库订单和账本记录交叉核对。
 

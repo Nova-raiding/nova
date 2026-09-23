@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash, createSign, generateKeyPairSync } from 'node:crypto'
-import { chmodSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -83,7 +83,7 @@ describe('payment gateway process contract', () => {
     const callbackSecret = 'process-contract-callback-secret'
     const gatewayApiKey = 'process-contract-gateway-key'
     const appId = 'process-contract-alipay-app'
-    const receiptDirectory = mkdtempSync(join(tmpdir(), 'gateway-notify-receipt-'))
+    const receiptDirectory = mkdtempSync(join(realpathSync(tmpdir()), 'gateway-notify-receipt-'))
     chmodSync(receiptDirectory, 0o700)
     let alipayCalls = 0
     const alipayPort = await listen(createServer((_req, res) => {

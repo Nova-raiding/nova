@@ -136,11 +136,11 @@ esac
 : "${PAYMENT_RECONCILIATION_ENABLED:?PAYMENT_RECONCILIATION_ENABLED=true is required}"
 : "${PAYMENT_REFUND_ENABLED:?PAYMENT_REFUND_ENABLED=true is required}"
 case "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" in
-  /*) ;;
-  *) echo 'PAYMENT_PROTECTED_RECEIPT_HOST_DIR must be absolute' >&2; exit 1 ;;
+  /var/lib/merchant-release-security/*) ;;
+  *) echo 'PAYMENT_PROTECTED_RECEIPT_HOST_DIR must be under /var/lib/merchant-release-security/' >&2; exit 1 ;;
 esac
-if [ ! -d "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" ] || [ -L "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" ] || [ "$(stat -c '%u:%a' "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR")" != '100:700' ]; then
-  echo 'PAYMENT_PROTECTED_RECEIPT_HOST_DIR must be a non-symlink directory owned by UID 100 with mode 0700' >&2
+if [ ! -d "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" ] || [ "$(realpath "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR")" != "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR" ] || [ "$(stat -c '%u:%a' "$PAYMENT_PROTECTED_RECEIPT_HOST_DIR")" != '100:700' ]; then
+  echo 'PAYMENT_PROTECTED_RECEIPT_HOST_DIR must be a canonical non-symlink directory owned by UID 100 with mode 0700' >&2
   exit 1
 fi
 printf '%s' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9._-]+$' || { echo 'unsafe RELEASE_ID' >&2; exit 1; }

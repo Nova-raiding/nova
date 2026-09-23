@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, statSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -22,7 +22,7 @@ const input = (directory: string) => ({
 
 describe('protected Alipay native callback source receipt', () => {
   it('stores a private, immutable, redacted source receipt after verification and API acceptance', () => {
-    const directory = mkdtempSync(join(tmpdir(), 'payment-receipt-'))
+    const directory = mkdtempSync(join(realpathSync(tmpdir()), 'payment-receipt-'))
     chmodSync(directory, 0o700)
     const first = captureVerifiedNotifyReceipt(input(directory))
     const second = captureVerifiedNotifyReceipt(input(directory))
@@ -40,7 +40,7 @@ describe('protected Alipay native callback source receipt', () => {
   })
 
   it('refuses an unverified, unsuccessful or non-private capture', () => {
-    const directory = mkdtempSync(join(tmpdir(), 'payment-receipt-'))
+    const directory = mkdtempSync(join(realpathSync(tmpdir()), 'payment-receipt-'))
     chmodSync(directory, 0o700)
     expect(() => captureVerifiedNotifyReceipt({ ...input(directory), providerSignatureVerified: false })).toThrow(/verified provider signature/u)
     expect(() => captureVerifiedNotifyReceipt({ ...input(directory), apiCallbackStatus: 502 })).toThrow(/accepted API callback/u)
@@ -52,5 +52,16 @@ describe('protected Alipay native callback source receipt', () => {
 
   it('remains disabled without an explicit protected directory', () => {
     expect(captureVerifiedNotifyReceipt({ ...input(''), directory: undefined })).toBeNull()
+  })
+
+  it('rejects a symlink in a parent path even when the final directory is private', () => {
+    const parent = mkdtempSync(join(realpathSync(tmpdir()), 'payment-receipt-parent-'))
+    const realParent = join(parent, 'real')
+    const directory = join(realParent, 'receipts')
+    mkdirSync(realParent, { mode: 0o700 })
+    mkdirSync(directory, { mode: 0o700 })
+    symlinkSync(realParent, join(parent, 'alias'))
+    expect(() => captureVerifiedNotifyReceipt(input(join(parent, 'alias', 'receipts')))).toThrow(/canonical/u)
+    expect(readdirSync(directory)).toHaveLength(0)
   })
 })
