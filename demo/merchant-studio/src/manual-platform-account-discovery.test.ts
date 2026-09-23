@@ -31,7 +31,10 @@ describe('manual platform account discovery', () => {
     expect(shouldDiscoverPlatformAccounts('/api', null)).toBe(false)
     expect(shouldDiscoverPlatformAccounts('/api', undefined)).toBe(false)
     expect(platformOperationsModeFromHealth({ status: 'ok', connectors: {}, setup: {} })).toBeNull()
-    expect(app).toContain('平台运营模式未确认，已停止自动发现店铺和读取同步任务')
+    expect(app).not.toContain('平台运营模式未确认')
+    expect(app).not.toContain('已停止自动发现店铺和读取同步任务')
+    expect(app).toContain('} else {\n      setAccounts(null)\n      setCatalogReadNote(\'\')\n    }\n    fetchProducts(baseUrl)')
+    expect(app).toContain('if (!shouldDiscoverPlatformAccounts(baseUrl, apiMode)) {\n      setSyncJobs(null)')
   })
 
   it('allows platform automation only for an explicit official_api mode', () => {

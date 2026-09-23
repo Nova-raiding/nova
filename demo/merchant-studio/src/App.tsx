@@ -2433,10 +2433,6 @@ export function Overview({
           </small>
         </div>
       )}
-      {baseUrl && !apiMode && (
-        <div className="info-notice" role="status">平台运营模式未确认，已停止自动发现店铺和读取同步任务；不会用默认模式绕过服务端权限。</div>
-      )}
-
       <TodayDashboard baseUrl={baseUrl} metrics={metrics} billing={billing} />
 
       <div className="overview-secondary-grid">
@@ -5358,7 +5354,7 @@ function StoreCatalogExperience({ baseUrl, apiMode }: { baseUrl?: string; apiMod
         .catch((cause) => { if (active) { setAccounts(null); setCatalogReadNote(`平台与店铺读取失败：${describeApiError(cause)}`) } })
     } else {
       setAccounts(null)
-      setCatalogReadNote('平台运营模式未确认，已停止自动发现店铺；商品仍从知识库读取。')
+      setCatalogReadNote('')
     }
     fetchProducts(baseUrl)
       .then((items) => { if (active) setProducts(items) })
