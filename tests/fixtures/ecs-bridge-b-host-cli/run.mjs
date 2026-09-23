@@ -160,6 +160,25 @@ assert.equal(JSON.parse(readFileSync('/state/runtime.json','utf8')).runtime, 'ol
 assert.equal(journal().database_before.migration_history_sha256, dbHistorySha())
 assert.equal(readFileSync('/state/psql-calls.jsonl','utf8').trim().split('\n').length > 0, true)
 
+// A crash after api-replica switches but while api remains on its exact
+// captured old container must allow mutation-started recovery at 242.
+const partialAttempt = 'attempt_partial_recovery_abcdefgh'
+const partialNonce = 'nonce_partialBridgeB_abcdefghijklmnopqrstuvwxyz'
+assert.match(pass('capture', partialAttempt, { '--deployment-nonce': partialNonce }), /signed baseline captured/u)
+writeFileSync('/state/fail-compose-up-partial', 'yes\n')
+const partialInstall = reject('install', /runtime-only Compose up failed/u, partialAttempt, { '--deployment-nonce': partialNonce })
+assert.match(partialInstall.stderr, /runtime-only Compose up failed/u)
+assert.equal(journal(partialAttempt).phase, 'bridge_runtime_mutation_started')
+const mixed = JSON.parse(readFileSync('/state/runtime.json', 'utf8'))
+assert.equal(mixed.runtime, 'mixed')
+assert.equal(mixed.apiRuntime, 'old')
+assert.equal(mixed.replicaRuntime, 'bridge')
+rmSync('/state/fail-compose-up-partial')
+assert.match(pass('recover', partialAttempt, { '--deployment-nonce': partialNonce }), /recovery verified at migration 242/u)
+assert.equal(journal(partialAttempt).phase, 'recovery_verified')
+assert.equal(JSON.parse(readFileSync('/state/runtime.json', 'utf8')).runtime, 'old')
+assert.equal(journal(partialAttempt).database_before.migration_history_sha256, dbHistorySha())
+
 // A legacy database with consumed_nonces but no operation-owner table may
 // continue to accept unused nonces (proven by the first install above), but
 // Bridge B must not claim an already-consumed legacy nonce.
