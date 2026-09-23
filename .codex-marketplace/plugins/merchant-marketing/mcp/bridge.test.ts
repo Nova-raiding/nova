@@ -2739,6 +2739,54 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('blocks further business calls at zero points and directs the merchant to authorized recovery', async () => {
+    const methods: string[] = []
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      const { method } = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      methods.push(method)
+      res.setHeader('content-type', 'application/json')
+      if (method === 'creative.brief') {
+        res.statusCode = 402
+        res.end(JSON.stringify({ error: { code: 'CREATIVE_POINTS_EXHAUSTED', message: 'zero points', details: {
+          balance_state: 'known', available_points: 0, access_revision: 'rev-1',
+          next_actions: ['billing.status', 'commercial.catalog.get', 'platform.connect', 'ops.finance.search'],
+        } } }))
+        return
+      }
+      res.end(JSON.stringify({ data: { jsonrpc: '2.0', id: 2, result: { balance_state: 'known', available_points: 0, allowed: false } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: {
+      ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
+      MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_RETRY_ATTEMPTS: '1',
+    }, stdio: ['pipe', 'pipe', 'pipe'] })
+    const call = async (id: number, name: string, args: Record<string, unknown> = {}) => {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } })}\n`)
+      return nextLine(child.stdout)
+    }
+    try {
+      const blocked = await call(1, 'creative.brief', { product_id: 'product_1', asset_type: 'banner' })
+      expect(blocked.result).toMatchObject({ isError: true, structuredContent: {
+        code: 'CREATIVE_POINTS_EXHAUSTED', availability: 'exhausted', recovery_only: true,
+        next_actions: ['billing.status', 'commercial.catalog.get'],
+      } })
+      expect(blocked.result.content[0].text).toContain('商家桌面，在“财务与资源”')
+      expect(blocked.result.content[0].text).toContain('支付后须等待服务端确认创意点到账')
+      expect(blocked.result.content[0].text).not.toMatch(/ops\.finance|platform\.connect|https?:\/\//u)
+      const again = await call(2, 'creative.brief', { product_id: 'product_1', asset_type: 'banner' })
+      expect(again.result).toMatchObject({ isError: true, structuredContent: { recovery_only: true } })
+      expect(methods).toEqual(['creative.brief'])
+      const balance = await call(3, 'billing.status')
+      expect(balance.result.isError).toBe(false)
+      expect(methods).toEqual(['creative.brief', 'billing.status'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('preserves redacted authorization decision evidence for ChatGPT', async () => {
     const server = createServer((_req, res) => {
       res.writeHead(403, { 'content-type': 'application/json' })

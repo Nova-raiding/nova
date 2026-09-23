@@ -1611,7 +1611,7 @@ function userFacingErrorText(code, details) {
   if (code === 'INTERACTIVE_WRITE_DISABLED' || code === 'INTERACTIVE_CONFIRMATION_REQUIRED') {
     return '这一步需要你的明确确认。确认后可以继续，未执行任何写操作。'
   }
-  if (code === 'CREATIVE_POINTS_EXHAUSTED') return '创意点已用完。当前仅可继续服务端授权的恢复操作，未执行业务写入。'
+  if (code === 'CREATIVE_POINTS_EXHAUSTED') return '创意点已用完，本次请求已阻断，未执行业务写入。请登录 Store Nova 商家桌面，在“财务与资源”查看当前工作区余额及服务端授权的创意点恢复入口；只有页面显示可购买套餐和正式支付入口时才下单，支付后须等待服务端确认创意点到账。'
   if (code === 'CREATIVE_POINTS_INSUFFICIENT') return '创意点不足，当前未执行业务写入。请使用服务端授权的充值恢复入口。'
   if (code === 'CREATIVE_POINTS_UNAVAILABLE') return '暂时无法确认创意点余额，已安全停止。待确认余额不会按 0 处理。'
   if (code === 'RATE_CARD_UNAVAILABLE') return '当前无法取得已批准的创意点费率，已安全停止，未扣点。'
