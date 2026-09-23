@@ -8,6 +8,14 @@ import { fileURLToPath } from 'node:url'
 import { verifyPluginReleaseDescriptor } from './plugin-release-descriptor.mjs'
 
 export const PLUGIN_CONTRACT_TESTS = Object.freeze([
+  'tests/mcp-integration-mode-release-gate.test.ts',
+  'tests/env-example-read-gate.test.ts',
+  'tests/quality-entrypoints.test.ts',
+  'tests/release-metadata-gate.test.ts',
+  'tests/release-manifest.test.ts',
+  'tests/release-manifest-gate.test.ts',
+  'tests/container-source-manifest.test.ts',
+  'tests/operations-scripts.test.ts',
   'tests/plugin-manifest.test.ts',
   'tests/mcp-surface-contract.test.ts',
   'apps/plugin/install-smoke.test.ts',

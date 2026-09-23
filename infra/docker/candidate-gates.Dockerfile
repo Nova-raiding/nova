@@ -2,8 +2,10 @@ FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a55
 RUN apk add --no-cache git python3
 ARG CANDIDATE_GIT_SHA
 ARG CANDIDATE_SOURCE_SHA256
+ARG CANDIDATE_CLOUD_SOURCE_V2=0
 LABEL org.opencontainers.image.revision=$CANDIDATE_GIT_SHA \
-      com.storenova.candidate.source_sha256=$CANDIDATE_SOURCE_SHA256
+      com.storenova.candidate.source_sha256=$CANDIDATE_SOURCE_SHA256 \
+      com.storenova.candidate.cloud_source_v2=$CANDIDATE_CLOUD_SOURCE_V2
 WORKDIR /workspace
 COPY . .
 # Fail closed if a local runtime secret or generated evidence reached the build
@@ -20,4 +22,5 @@ RUN npm ci --no-audit --fund=false \
     && npm ci --prefix demo/merchant-studio --no-audit --fund=false \
     && chown -R 65534:65534 /workspace
 USER 65534:65534
-CMD ["sh", "-c", "npm run typecheck && npm run test:release-gates"]
+ENV CANDIDATE_CLOUD_SOURCE_V2=$CANDIDATE_CLOUD_SOURCE_V2
+CMD ["sh", "-c", "npm run typecheck && if [ \"$CANDIDATE_CLOUD_SOURCE_V2\" = 1 ]; then npm run test:cloud-release-gates; else npm run test:release-gates; fi"]

@@ -151,6 +151,7 @@ with tarfile.open(os.environ['ARCHIVE'], 'r:') as source:
             raise SystemExit(f'staged source member differs from the verified archive: {member.name}')
 PY
 else
+  [ "$(sed -n 's/^schema_version=//p' "$ECS_CANDIDATE_IDENTITY_PATH")" != candidate-identity/2 ] || { echo 'cloud v2 deployment requires the exact staged candidate archive' >&2; exit 2; }
   git_sha=$(git -C "$root" rev-parse HEAD)
   [ -z "$(git -C "$root" status --porcelain --untracked-files=all)" ] || { echo 'ECS deployment requires a clean committed worktree' >&2; exit 2; }
   current_source_sha=$(git -C "$root" archive --format=tar "$git_sha" \

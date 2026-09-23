@@ -133,6 +133,7 @@ if [ -n "$source_archive" ] || [ -n "$source_identity" ]; then
   [ "$actual_source" = "$identity_source" ] || { echo 'candidate source archive digest mismatch' >&2; exit 2; }
   cp "$source_archive" "$archive"
 else
+  [ "${ECS_CLOUD_SOURCE_V2:-0}" != 1 ] || { echo 'cloud v2 release images require the exact staged candidate archive and identity' >&2; exit 2; }
   command -v git >/dev/null 2>&1 || { echo 'git is required when no staged candidate archive is supplied' >&2; exit 2; }
   [ "$(git -C "$root" rev-parse HEAD)" = "$revision" ] || {
     echo 'release revision does not match HEAD' >&2; exit 2;

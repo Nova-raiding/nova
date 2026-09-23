@@ -64,7 +64,7 @@ describe('ECS candidate gate image construction', () => {
     const bin = join(dir, 'bin')
     mkdirSync(bin)
     writeFileSync(join(bin, 'git'), `#!/bin/sh\ncase " $* " in *" status --porcelain "*) exit 0;; esac\nexec '${realGit}' "$@"\n`, { mode: 0o755 })
-    writeFileSync(join(bin, 'docker'), `#!/bin/sh\ncase "$1 $2" in\n  'build --pull=false') exit 0;;\n  'image inspect')\n    case "$*" in\n      *org.opencontainers.image.revision*) printf '%s\\n' '${revision}' ;;\n      *com.storenova.candidate.source_sha256*) printf '%s\\n' 'sha256:${sourceSha}' ;;\n    esac\n    exit 0;;\nesac\nexit 1\n`, { mode: 0o755 })
+    writeFileSync(join(bin, 'docker'), `#!/bin/sh\ncase "$1 $2" in\n  'build --pull=false') exit 0;;\n  'image inspect')\n    case "$*" in\n      *org.opencontainers.image.revision*) printf '%s\\n' '${revision}' ;;\n      *com.storenova.candidate.source_sha256*) printf '%s\\n' 'sha256:${sourceSha}' ;;\n      *com.storenova.candidate.cloud_source_v2*) printf '%s\\n' '0' ;;\n    esac\n    exit 0;;\nesac\nexit 1\n`, { mode: 0o755 })
 
     const result = spawnSync('sh', [join(root, 'infra/scripts/build-ecs-candidate-gates-image.sh')], {
       cwd: dir,
