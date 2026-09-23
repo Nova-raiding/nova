@@ -7,7 +7,8 @@ type Modality = typeof REQUIRED_RELAY_MODALITIES[number]
 type RelayUsage = { inputTokens?: number; outputTokens?: number; totalTokens?: number; billingUnits?: number; durationSeconds?: number }
 type RelayResult = { modality?: Modality; state?: string; endpoint?: string; model?: string; providerRequestId?: string; providerJobId?: string; usageObserved?: boolean; usage?: RelayUsage; usageProviderRequestId?: string; costObserved?: boolean; costSource?: string; costCny?: number; pricingVersion?: string; pricingGroup?: string; evidence_ref?: string }
 type RelayErrorRecovery = { verified?: boolean; failure_status?: number; failure_observed_at?: string; recovered_at?: string; failed_request_id?: string; recovery_request_id?: string; evidence_ref?: string }
-type RelayEvidence = { schema_version?: string; release_id?: string; generated_at?: string; expires_at?: string; environment?: string; simulated?: boolean; relay?: string; results?: RelayResult[]; error_recovery?: RelayErrorRecovery }
+type RelayTokenQuota = { credential?: 'model' | 'video'; observed_at?: string; total_granted?: number; total_used?: number; total_available?: number; expires_at?: number; unlimited_quota?: boolean; evidence_ref?: string }
+type RelayEvidence = { schema_version?: string; release_id?: string; generated_at?: string; expires_at?: string; environment?: string; simulated?: boolean; relay?: string; token_quota?: RelayTokenQuota[]; results?: RelayResult[]; error_recovery?: RelayErrorRecovery }
 
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 const isIsoInstant = (value: unknown): value is string => nonEmpty(value) && !Number.isNaN(Date.parse(value)) && /^\d{4}-\d{2}-\d{2}T/.test(value)
@@ -18,7 +19,7 @@ const relayOrigin = (value: string): string | undefined => {
   } catch { return undefined }
 }
 const immutableArtifact = /^artifact:\/\/production\/[A-Za-z0-9._/-]+#([a-f0-9]{64})$/u
-type ExpectedArtifact = { releaseId?: string; result?: RelayResult; recovery?: RelayErrorRecovery; relay?: string }
+type ExpectedArtifact = { releaseId?: string; result?: RelayResult; recovery?: RelayErrorRecovery; tokenQuota?: RelayTokenQuota; relay?: string }
 function validateArtifact(reference: string | undefined, root: string, label: string, expected?: ExpectedArtifact): string[] {
   const match = immutableArtifact.exec(reference ?? '')
   if (!match) return [`${label} must be an immutable production artifact with SHA-256 fragment`]
@@ -38,7 +39,14 @@ function validateArtifact(reference: string | undefined, root: string, label: st
       try { artifactValue = JSON.parse(readFileSync(realCandidate, 'utf8')) as Record<string, any> }
       catch { return [`${label} must contain a JSON relay receipt`] }
       if (!artifactValue || typeof artifactValue !== 'object' || Array.isArray(artifactValue) || artifactValue.release_id !== expected.releaseId) return [`${label} release_id must match the evidence release_id`]
-      if (expected.recovery) {
+      if (expected.tokenQuota) {
+        const captured = artifactValue.token_quota
+        const summary = expected.tokenQuota
+        if (artifactValue.schema_version !== '1' || !captured || typeof captured !== 'object' || Array.isArray(captured)
+          || ['credential', 'observed_at', 'total_granted', 'total_used', 'total_available', 'expires_at', 'unlimited_quota'].some(field => captured[field] !== summary[field as keyof RelayTokenQuota])) {
+          return [`${label} token quota receipt must match the summarized finite token evidence`]
+        }
+      } else if (expected.recovery) {
         const { failure, recovery } = artifactValue
         const summary = expected.recovery
         const validCapture = (capture: unknown): capture is Record<string, unknown> => !!capture && typeof capture === 'object' && !Array.isArray(capture)
@@ -105,6 +113,24 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
     if (relay.protocol !== 'https:' || relay.username || relay.password || relay.pathname !== '/' || relay.search || relay.hash) errors.push('relay must be a plain HTTPS origin')
     if (options.expectedRelay && relay.origin !== relayOrigin(options.expectedRelay)) errors.push('relay must match the rendered production model_relay_base_url origin')
   } catch { errors.push('relay must be a valid HTTPS URL') }
+  if (options.requireProduction) {
+    if (!Array.isArray(value.token_quota)) errors.push('token_quota is required for production relay evidence')
+    else {
+      for (const credential of ['model', 'video'] as const) {
+        const matching = value.token_quota.filter(quota => quota?.credential === credential)
+        if (matching.length !== 1) { errors.push(`token_quota.${credential} must have exactly one finite token receipt`); continue }
+        const quota = matching[0]!
+        const granted = quota.total_granted; const used = quota.total_used; const available = quota.total_available; const expires = quota.expires_at
+        if (quota.unlimited_quota !== false || ![granted, used, available, expires].every(number => typeof number === 'number' && Number.isSafeInteger(number))
+          || (granted ?? 0) <= 0 || (used ?? -1) < 0 || (available ?? 0) <= 0 || used! + available! !== granted
+          || (expires ?? -1) < 0 || (expires !== 0 && expires! <= Math.floor((options.now ?? new Date()).getTime() / 1000))) errors.push(`token_quota.${credential} must be a current finite server-enforced quota`)
+        if (!isIsoInstant(quota.observed_at)) errors.push(`token_quota.${credential}.observed_at must be an ISO instant`)
+        else if (isIsoInstant(value.generated_at) && (Date.parse(quota.observed_at) > Date.parse(value.generated_at) || Date.parse(value.generated_at) - Date.parse(quota.observed_at) > 24 * 3_600_000)) errors.push(`token_quota.${credential}.observed_at must precede generated_at by at most 24 hours`)
+        errors.push(...validateArtifact(quota.evidence_ref, options.artifactRoot ?? '', `token_quota.${credential}.evidence_ref`, { releaseId: value.release_id, tokenQuota: quota }))
+      }
+      if (value.token_quota.some(quota => quota?.credential !== 'model' && quota?.credential !== 'video')) errors.push('token_quota contains an unknown credential')
+    }
+  }
   if (!Array.isArray(value.results)) return [...errors, 'results is required']
   const byModality = new Map<string, RelayResult>()
   const byProviderRequestId = new Map<string, string>()

@@ -55,6 +55,12 @@ image_edit，最后执行最短 3 秒 video。媒体探针不得自动重跑；�
 `1080P`），不能仅凭应用运行时的 `MODEL_*_MAX_REQUEST_CNY` 额度放行。
 该请求前预算不是 relay 账户的服务端硬额度；执行前仍应核对账户级限额及
 实际定价，生成后以 provider usage/cost 收据结算，不把预估写成实付。
+生产探针现在还会以相同的模型/视频 Bearer token 只读查询
+`GET /api/usage/token/`，要求两者 `unlimited_quota=false`、有限正剩余额度和
+未过期状态；查询结果进入带 SHA-256 的不可变 artifact，并由发布证据门禁复核。
+101 当前模型和视频 token 均返回 `unlimited_quota=true`，因此在中转后台为生产
+token 配置有限的服务端额度、再重新采集证据前，五模态门禁保持 NO-GO。此步骤
+不能由本地 `MODEL_RELAY_CANARY_MAX_TOTAL_CNY` 替代，也不能靠伪造快照通过。
 
 ```sh
 npx tsx scripts/model-relay-recovery-evidence.ts \

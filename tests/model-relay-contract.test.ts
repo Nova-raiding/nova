@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
 import { OpenAICompatibleVideoGenerator } from '../packages/ai/src/video-generator.js'
-import { blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, readRelayErrorRecovery, requireCanaryBudget, requireProductionReleaseBinding, reserveCanaryCost, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact } from '../scripts/model-relay-canary.js'
+import { blockHttpProbe, buildVideoProbeRequest, canaryIdempotencyKey, canaryRetryDelayMs, canRetryCanaryResponse, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, readRelayErrorRecovery, requireCanaryBudget, requireFiniteRelayTokenQuota, requireProductionReleaseBinding, reserveCanaryCost, resolveBoundedInteger, shouldBlockForCostGuard, writeRelayResponseArtifact, writeRelayTokenQuotaArtifact } from '../scripts/model-relay-canary.js'
 import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
 describe('production model relay contract', () => {
@@ -46,6 +46,38 @@ describe('production model relay contract', () => {
   it('requires an explicit per-run budget before any model request', () => {
     for (const value of [undefined, '', '0', '-1', 'NaN', 'Infinity']) expect(() => requireCanaryBudget(value)).toThrow('MODEL_RELAY_CANARY_MAX_TOTAL_CNY')
     expect(requireCanaryBudget('1.25')).toEqual({ limitCny: 1.25, reservedCny: 0 })
+  })
+
+  it('requires a finite server-enforced relay token before any billable request', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ code: true, data: { object: 'token_usage', total_granted: 1000, total_used: 200, total_available: 800, unlimited_quota: false, expires_at: 0 } })))
+    const input = { baseUrl: 'https://relay.example.test/v1', apiKey: 'test-key', credential: 'model' as const, fetcher, now: new Date('2026-09-23T00:00:00Z') }
+    await expect(requireFiniteRelayTokenQuota(input)).resolves.toMatchObject({ credential: 'model', total_available: 800, unlimited_quota: false, observed_at: '2026-09-23T00:00:00.000Z' })
+    expect(fetcher).toHaveBeenCalledWith(new URL('https://relay.example.test/api/usage/token/'), expect.objectContaining({ redirect: 'error', headers: expect.objectContaining({ authorization: 'Bearer test-key' }) }))
+    for (const data of [
+      { object: 'token_usage', total_granted: 0, total_used: 100, total_available: -100, unlimited_quota: true, expires_at: 0 },
+      { object: 'token_usage', total_granted: 1000, total_used: 1000, total_available: 0, unlimited_quota: false, expires_at: 0 },
+      { object: 'token_usage', total_granted: 1000, total_used: 200, total_available: 900, unlimited_quota: false, expires_at: 0 },
+      { object: 'token_usage', total_granted: 1000, total_used: 200, total_available: 800, unlimited_quota: false, expires_at: 1 },
+    ]) {
+      fetcher.mockResolvedValueOnce(new Response(JSON.stringify({ code: true, data })))
+      await expect(requireFiniteRelayTokenQuota(input)).rejects.toThrow(/finite.*quota/u)
+    }
+    fetcher.mockResolvedValueOnce(new Response(JSON.stringify({ code: false, data: { object: 'token_usage' } })))
+    await expect(requireFiniteRelayTokenQuota(input)).rejects.toThrow('response is invalid')
+    fetcher.mockResolvedValueOnce(new Response('{}', { status: 401 }))
+    await expect(requireFiniteRelayTokenQuota(input)).rejects.toThrow('HTTP 401')
+  })
+
+  it('stores a finite token receipt by content hash without exposing its key', () => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-token-quota-'))
+    try {
+      const quota = { credential: 'model' as const, observed_at: '2026-09-23T00:00:00Z', total_granted: 1000, total_used: 200, total_available: 800, expires_at: 0, unlimited_quota: false as const }
+      const reference = writeRelayTokenQuotaArtifact(root, 'release-1', quota)
+      expect(reference).toMatch(/^artifact:\/\/production\/relay\/release-1\/token-model-[a-f0-9]{16}\.json#[a-f0-9]{64}$/u)
+      const path = join(root, reference.slice('artifact://production/'.length).split('#')[0]!)
+      expect(readFileSync(path, 'utf8')).toContain('"total_available": 800')
+      expect(writeRelayTokenQuotaArtifact(root, 'release-1', quota)).toBe(reference)
+    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 
   it('reserves three possible 429 attempts and rejects an over-budget probe before dispatch', async () => {
