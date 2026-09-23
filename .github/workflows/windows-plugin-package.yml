@@ -58,7 +58,8 @@ jobs:
             $serial = [byte[]]::new(16)
             [System.Security.Cryptography.RandomNumberGenerator]::Fill($serial)
             $serial[0] = $serial[0] -band 0x7f
-            $created = $request.Create($rootCert, (Get-Date).AddMinutes(-5), (Get-Date).AddDays(1), $serial).CopyWithPrivateKey($leafKey)
+            $issued = $request.Create($rootCert, (Get-Date).AddMinutes(-5), (Get-Date).AddDays(1), $serial)
+            $created = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::CopyWithPrivateKey($issued, $leafKey)
             $pfxPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-test.pfx'
             $cerPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-test.cer'
             $leafCerPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-leaf.cer'
