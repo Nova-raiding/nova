@@ -58,10 +58,12 @@ describe('MCP integration-mode release gate', () => {
     expect(remoteWithoutOAuth.stderr).toContain('client_registry_missing_or_invalid')
   })
 
-  it('requires deploy preflight to dispatch only an explicit supported mode', () => {
+  it('requires ECS production deploy preflight to enforce the adopted local_stdio mode', () => {
     const preflight = readFileSync('infra/scripts/deploy-preflight-ecs.sh', 'utf8')
     expect(preflight).toContain(': "${MCP_INTEGRATION_MODE:?MCP_INTEGRATION_MODE is required}"')
-    expect(preflight).toContain('local_stdio|remote_oauth) ;;')
+    expect(preflight).toContain('local_stdio) ;;')
+    expect(preflight).toContain('ECS production deploy requires MCP_INTEGRATION_MODE=local_stdio')
+    expect(preflight).not.toContain('local_stdio|remote_oauth')
     expect(preflight).toContain('node infra/scripts/check-mcp-oauth-production.mjs --config')
     expect(preflight.indexOf('MCP_INTEGRATION_MODE is required')).toBeLessThan(
       preflight.indexOf('check-mcp-oauth-production.mjs --config'),

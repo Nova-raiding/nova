@@ -181,8 +181,8 @@ fi
 cd "$root"
 : "${MCP_INTEGRATION_MODE:?MCP_INTEGRATION_MODE is required}"
 case "$MCP_INTEGRATION_MODE" in
-  local_stdio|remote_oauth) ;;
-  *) echo 'MCP_INTEGRATION_MODE must be local_stdio or remote_oauth' >&2; exit 1 ;;
+  local_stdio) ;;
+  *) echo 'ECS production deploy requires MCP_INTEGRATION_MODE=local_stdio' >&2; exit 1 ;;
 esac
 node infra/scripts/check-mcp-oauth-production.mjs --config
 sh infra/scripts/validate-production-config.sh "$config_path"
