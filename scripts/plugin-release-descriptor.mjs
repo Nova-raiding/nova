@@ -24,6 +24,48 @@ function regularBytes(path, label) {
   return readFileSync(path)
 }
 
+const windowsSigningKeyAclScript = `
+$ErrorActionPreference = 'Stop'
+$item = Get-Item -LiteralPath $env:STORENOVA_SIGNING_KEY_PATH -Force
+if ($item.PSIsContainer -or (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) { exit 2 }
+$acl = Get-Acl -LiteralPath $env:STORENOVA_SIGNING_KEY_PATH
+$current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier])
+if ($null -eq $current -or $owner.Value -ne $current.Value -or -not $acl.AreAccessRulesProtected) { exit 2 }
+$selfAllowed = $false
+foreach ($rule in $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])) {
+  if ($rule.AccessControlType -ne 'Allow') { continue }
+  $sid = $rule.IdentityReference.Value
+  if ($sid -eq $current.Value) { $selfAllowed = $true; continue }
+  if ($sid -ne 'S-1-5-18') { exit 2 }
+}
+if (-not $selfAllowed) { exit 2 }
+`
+
+export function windowsSigningKeyAclProtected(path, run = spawnSync) {
+  const result = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', windowsSigningKeyAclScript], {
+    env: { ...process.env, STORENOVA_SIGNING_KEY_PATH: path }, windowsHide: true,
+    encoding: 'utf8', timeout: 15_000, maxBuffer: 16 * 1024,
+  })
+  return result.status === 0 && !result.error
+}
+
+export function assertPrivateSigningKey(path, options = {}) {
+  const stat = lstatSync(path)
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('plugin signing key must be a regular non-symlink file')
+  const platform = options.platform ?? process.platform
+  if (platform === 'win32') {
+    if (!(options.windowsAclCheck ?? windowsSigningKeyAclProtected)(path)) {
+      throw new Error('plugin signing key requires a protected current-user-only Windows ACL')
+    }
+    return
+  }
+  const effectiveUid = options.effectiveUid ?? (typeof process.geteuid === 'function' ? process.geteuid() : undefined)
+  if (!Number.isSafeInteger(effectiveUid) || stat.uid !== effectiveUid || (stat.mode & 0o077) !== 0) {
+    throw new Error('plugin signing key must be owner-owned regular 0600/0400 file')
+  }
+}
+
 function tarField(header, start, length) {
   const field = header.subarray(start, start + length)
   const end = field.indexOf(0)
@@ -150,10 +192,7 @@ export function verifyPluginReleaseDescriptor(document, options) {
 
 export function signPluginReleaseDescriptor(options) {
   const privatePath = resolve(options.privateKeyPath)
-  const stat = lstatSync(privatePath)
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.geteuid() || (stat.mode & 0o077) !== 0) {
-    throw new Error('plugin signing key must be owner-owned regular 0600/0400 file')
-  }
+  assertPrivateSigningKey(privatePath)
   const privateKey = createPrivateKey(regularBytes(privatePath, 'plugin signing key'))
   if (privateKey.asymmetricKeyType !== 'ed25519') throw new Error('plugin signing key must be Ed25519')
   const pluginRoot = resolve(options.pluginRoot)

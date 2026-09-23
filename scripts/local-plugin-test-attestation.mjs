@@ -5,7 +5,7 @@ import { createHash, createPrivateKey, createPublicKey, sign, verify } from 'nod
 import { closeSync, fsyncSync, lstatSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { verifyPluginReleaseDescriptor } from './plugin-release-descriptor.mjs'
+import { assertPrivateSigningKey, verifyPluginReleaseDescriptor } from './plugin-release-descriptor.mjs'
 
 export const PLUGIN_CONTRACT_TESTS = Object.freeze([
   'tests/mcp-integration-mode-release-gate.test.ts',
@@ -73,10 +73,7 @@ export function runAndSignLocalPluginTests(options) {
   const publicKeyPem = regular(options.publicKeyPath, 'plugin public key')
   verifyPluginReleaseDescriptor(descriptor, { publicKeyPem, keyId: options.keyId, packagePath: options.packagePath,
     releaseId: options.releaseId, gitSha: options.gitSha, platform: platform() })
-  const keyStat = lstatSync(options.privateKeyPath)
-  if (!keyStat.isFile() || keyStat.isSymbolicLink() || keyStat.uid !== process.geteuid() || (keyStat.mode & 0o077) !== 0) {
-    throw new Error('plugin test signing key must be owner-only regular file')
-  }
+  assertPrivateSigningKey(options.privateKeyPath)
   const privateKey = createPrivateKey(regular(options.privateKeyPath, 'plugin test signing key'))
   if (privateKey.asymmetricKeyType !== 'ed25519') throw new Error('plugin test signing key must be Ed25519')
   const currentGit = spawnSync('git', ['-C', options.root, 'rev-parse', 'HEAD'], { encoding: 'utf8' })

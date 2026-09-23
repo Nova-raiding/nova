@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { gunzipSync, gzipSync } from 'node:zlib'
-import { signPluginReleaseDescriptor, verifyPluginReleaseDescriptor } from '../scripts/plugin-release-descriptor.mjs'
+import { assertPrivateSigningKey, signPluginReleaseDescriptor, verifyPluginReleaseDescriptor, windowsSigningKeyAclProtected } from '../scripts/plugin-release-descriptor.mjs'
 
 function appendTarMember(packageBytes, name, type = '0', linkname = '') {
   const archive = gunzipSync(packageBytes)
@@ -120,6 +120,37 @@ test('refuses symlink package and permissive private key', () => {
   const exposedKey = join(f.root, 'permissive.pem')
   writeFileSync(exposedKey, 'not a key', { mode: 0o644 })
   assert.throws(() => signPluginReleaseDescriptor({ ...f.options, privateKeyPath: exposedKey }), /0600\/0400/u)
+})
+
+test('uses protected Windows ACL semantics without weakening POSIX private-key checks', () => {
+  const f = fixture()
+  assert.doesNotThrow(() => assertPrivateSigningKey(f.privateKeyPath, { platform: 'win32', windowsAclCheck: () => true }))
+  assert.throws(() => assertPrivateSigningKey(f.privateKeyPath, { platform: 'win32', windowsAclCheck: () => false }), /protected current-user-only Windows ACL/u)
+  assert.throws(() => assertPrivateSigningKey(f.privateKeyPath, { platform: 'darwin', effectiveUid: -1 }), /0600\/0400/u)
+  const permissive = join(f.root, 'permissive-windows-test.pem')
+  writeFileSync(permissive, 'test', { mode: 0o644 })
+  assert.throws(() => assertPrivateSigningKey(permissive, { platform: 'linux', effectiveUid: process.geteuid() }), /0600\/0400/u)
+  const link = join(f.root, 'windows-key-link.pem')
+  symlinkSync(f.privateKeyPath, link)
+  assert.throws(() => assertPrivateSigningKey(link, { platform: 'win32', windowsAclCheck: () => true }), /regular non-symlink/u)
+})
+
+test('Windows ACL probe binds a literal path and fails closed on PowerShell error', () => {
+  const path = 'C:\\private dir\\key;not-a-command.pem'
+  let invocation
+  const probe = (binary, args, options) => {
+    invocation = { binary, args, options }
+    return { status: 0 }
+  }
+  assert.equal(windowsSigningKeyAclProtected(path, probe), true)
+  assert.equal(invocation.binary, 'powershell.exe')
+  assert.equal(invocation.options.env.STORENOVA_SIGNING_KEY_PATH, path)
+  assert.equal(invocation.args[3].includes(path), false)
+  assert.match(invocation.args[3], /Get-Acl -LiteralPath/u)
+  assert.match(invocation.args[3], /AreAccessRulesProtected/u)
+  assert.match(invocation.args[3], /WindowsIdentity/u)
+  assert.equal(windowsSigningKeyAclProtected(path, () => ({ status: 2 })), false)
+  assert.equal(windowsSigningKeyAclProtected(path, () => ({ status: null, error: new Error('missing PowerShell') })), false)
 })
 
 test('refuses extra links, special files, duplicate entries and Windows-unsafe archive paths before signing', () => {
