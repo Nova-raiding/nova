@@ -17,6 +17,7 @@ const PRIVATE_KEY_PATH = '/var/lib/merchant-release-security/production-capabili
 const NONCE_LEDGER = '/var/lib/merchant-release-security/production-nonces.sqlite3'
 const BIN = Object.freeze({ docker: '/usr/bin/docker', psql: '/usr/bin/psql', flock: '/usr/bin/flock', curl: '/usr/bin/curl' })
 const TRANSITIONS = Object.freeze({ captured: ['nonce_consumed'], nonce_consumed: ['migration_started'], migration_started: ['migration_complete', 'recovery_started'], migration_complete: ['runtime_cutover_started', 'recovery_started'], runtime_cutover_started: ['runtime_identity_verified'], recovery_started: ['recovery_verified'], runtime_identity_verified: [], recovery_verified: [] })
+const BRIDGE_TRANSITIONS = Object.freeze({ captured: ['nonce_consumed'], nonce_consumed: ['bridge_cutover_started'], bridge_cutover_started: ['bridge_identity_verified', 'bridge_recovery_started'], bridge_recovery_started: ['bridge_recovery_verified'], bridge_identity_verified: [], bridge_recovery_verified: [] })
 const HEX = /^[a-f0-9]{64}$/u, IMAGE = /^sha256:[a-f0-9]{64}$/u, GIT = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u
 
 function assert(value, message) { if (!value) throw new Error(message) }
@@ -76,11 +77,14 @@ export function createSignedSnapshot(observed, binding, privatePem, publicPem, n
   assert(Number.isInteger(binding.recovery.migrationTail) && binding.recovery.migrationTail >= observed.database.version, 'recovery target cannot read the observed database prefix')
   assert(binding.recovery.allowedPrefixSha256 && Object.entries(binding.recovery.allowedPrefixSha256).every(([version, value]) => Number(version) >= observed.database.version && Number(version) <= binding.recovery.migrationTail && HEX.test(value)), 'recovery prefix allowlist is invalid')
   assert(binding.recovery.allowedPrefixSha256[observed.database.version] === observed.database.historySha256, 'observed database is not an approved recovery prefix')
+  if (binding.mode === 'bridge_code_only') assert(observed.database.version === 242 && binding.recovery.migrationTail === 242, 'bridge code cutover must preserve the exact 242 schema')
+  else assert(binding.mode === undefined, 'unknown deployment mode')
   assert(Array.isArray(binding.recovery.services) && binding.recovery.services.length > 0 && binding.recovery.services.every(value => /^[a-z0-9][a-z0-9_-]{0,62}$/u.test(value)), 'recovery service list is invalid')
   for (const field of ['composeSha256', 'envSha256', 'imageDigestsSha256']) assert(HEX.test(binding.recovery[field] ?? ''), `recovery ${field} is invalid`)
   const containers = normalizedContainers(observed.containers)
   assert(Array.isArray(observed.inventory) && observed.inventory.length > 0, 'complete Docker inventory is required')
   assert(Array.isArray(observed.candidateImageIds) && observed.candidateImageIds.length > 0 && observed.candidateImageIds.every(value => IMAGE.test(value)), 'candidate image IDs must be independently resolved')
+  if (binding.mode === 'bridge_code_only') assert(observed.candidateServiceImageIds && containers.every(item => IMAGE.test(observed.candidateServiceImageIds[item.service] ?? '')), 'bridge candidate image IDs must cover every reviewed service')
   const oldImageIds = new Set(containers.map(value => value.image_id))
   const candidateExclusiveImageIds = [...new Set(observed.candidateImageIds)].filter(value => !oldImageIds.has(value)).sort()
   assert(observed.candidateExclusiveRunning !== true, 'candidate-exclusive container is already running during capture')
@@ -95,15 +99,68 @@ export function createSignedSnapshot(observed, binding, privatePem, publicPem, n
     recovery_target: { release_id: binding.recovery.releaseId, release_git_sha: binding.recovery.gitSha, manifest_sha256: binding.recovery.manifestSha256, image_set_digest: binding.recovery.imageSetDigest, compose_sha256: binding.recovery.composeSha256, env_sha256: binding.recovery.envSha256, image_digests_sha256: binding.recovery.imageDigestsSha256, migration_tail: binding.recovery.migrationTail, allowed_prefix_sha256: binding.recovery.allowedPrefixSha256, services: [...new Set(binding.recovery.services)].sort() },
     database_policy: { strategy: 'forward_only', minimum_version: observed.database.version, maximum_version: binding.recovery.migrationTail, target_version: binding.recovery.migrationTail, schema_downgrade: false },
     key_id: binding.keyId,
+    ...(binding.mode === 'bridge_code_only' ? { deployment_mode: binding.mode, predeployment_inventory: observed.inventory, candidate_service_image_ids: observed.candidateServiceImageIds } : {}),
   }
   return signDocument(document, privatePem, publicPem)
 }
 
 export function transitionJournal(document, nextPhase, privatePem, publicPem, now = new Date()) {
   assert(verifyDocument(document, publicPem), 'journal signature is invalid')
-  assert(TRANSITIONS[document.phase]?.includes(nextPhase), 'journal phase transition is not monotonic')
+  const transitions = document.deployment_mode === 'bridge_code_only' ? BRIDGE_TRANSITIONS : TRANSITIONS
+  assert(transitions[document.phase]?.includes(nextPhase), 'journal phase transition is not monotonic')
   assert(Date.parse(document.expires_at) > now.getTime(), 'journal is expired')
   return signDocument({ ...document, phase: nextPhase, updated_at: now.toISOString(), signature_base64: undefined }, privatePem, publicPem)
+}
+
+export function verifyBridgeRecoveryAuthorization(document, input, publicPem, now = new Date()) {
+  assert(verifyDocument(document, publicPem), 'bridge journal signature is invalid')
+  assert(document.deployment_mode === 'bridge_code_only' && ['bridge_cutover_started', 'bridge_recovery_started'].includes(document.phase), 'journal phase does not permit bridge recovery')
+  assert(Date.parse(document.expires_at) > now.getTime(), 'bridge journal is expired')
+  assert(digest(input.deploymentNonce) === document.deployment_nonce_sha256, 'deployment nonce does not match bridge journal')
+  assert(input.observed.composeProject === document.compose_project, 'Compose project changed')
+  const expected = document.recovery_target, actual = input.recovery
+  assert(actual.releaseId === expected.release_id && actual.gitSha === expected.release_git_sha && actual.manifestSha256 === expected.manifest_sha256 && actual.imageSetDigest === expected.image_set_digest, 'bridge recovery release identity mismatch')
+  assert(actual.composeSha256 === expected.compose_sha256 && actual.envSha256 === expected.env_sha256 && actual.imageDigestsSha256 === expected.image_digests_sha256 && actual.migrationTail === 242, 'bridge recovery capsule mismatch')
+  assert(canonical(actual.allowedPrefixSha256) === canonical(expected.allowed_prefix_sha256) && canonical([...new Set(actual.services)].sort()) === canonical(expected.services), 'bridge recovery policy changed')
+  assert(input.database.version === 242 && input.database.historySha256 === document.database_before.migration_history_sha256 && (input.database.invalidConcurrentIndexes ?? []).length === 0, 'bridge recovery requires unchanged checksummed schema 242')
+  const original = document.predeployment_workload.services
+  const current = [...input.observed.containers].sort((a, b) => a.service.localeCompare(b.service))
+  assert(canonical(current.map(item => item.service)) === canonical(original.map(item => item.service)), 'bridge reviewed service set changed')
+  for (let index = 0; index < current.length; index += 1) {
+    const before = original[index], after = current[index]
+    if (after.missing === true) continue
+    assert(/^[a-f0-9]{12,64}$/u.test(after.id ?? '') && IMAGE.test(after.imageId ?? '') && HEX.test(after.configHash ?? '') && ['running', 'stopped'].includes(after.state), `invalid bridge container observation: ${after.service}`)
+    if (after.id === before.id && after.imageId === before.image_id && after.configHash === before.config_hash) continue
+    if (document.phase === 'bridge_recovery_started' && after.imageId === before.image_id && after.configHash === before.config_hash) continue
+    assert(document.candidate_service_image_ids?.[after.service] === after.imageId, `bridge service is neither original nor its reviewed candidate: ${after.service}`)
+    if (after.service === 'api' || after.service === 'api-replica') {
+      const identity = after.releaseIdentity
+      assert(identity && identity.release_id === document.candidate.release_id && identity.release_git_sha === document.candidate.release_git_sha && identity.manifest_sha256 === document.candidate.manifest_sha256 && identity.image_set_digest === document.candidate.image_set_digest, `bridge candidate identity mismatch: ${after.service}`)
+    }
+  }
+  const beforeInventory = document.predeployment_inventory, afterInventory = input.observed.inventory
+  assert(Array.isArray(beforeInventory) && Array.isArray(afterInventory), 'complete bridge inventory is required')
+  const beforeByName = new Map(beforeInventory.map(item => [item.name, item]))
+  const afterByName = new Map(afterInventory.map(item => [item.name, item]))
+  assert(beforeByName.size === beforeInventory.length && afterByName.size === afterInventory.length, 'bridge inventory has duplicate names')
+  const reviewedIds = new Set(original.map(item => item.id))
+  const reviewedNames = new Set(beforeInventory.filter(item => reviewedIds.has(item.id)).map(item => item.name))
+  assert([...afterByName.keys()].every(name => beforeByName.has(name)), 'bridge inventory gained an unknown running container')
+  for (let index = 0; index < current.length; index += 1) {
+    const before = original[index], after = current[index]
+    const name = beforeInventory.find(item => item.id === before.id)?.name
+    assert(name && reviewedNames.has(name), `reviewed bridge container is absent from signed inventory: ${before.service}`)
+    const running = afterByName.get(name)
+    if (after.missing === true || after.state === 'stopped') assert(!running, `stopped bridge service remains in running inventory: ${before.service}`)
+    else assert(running?.id === after.id && running?.image_id === after.imageId && running?.config_hash === after.configHash, `bridge service inspection and inventory disagree: ${before.service}`)
+  }
+  for (const [name, before] of beforeByName) {
+    const after = afterByName.get(name)
+    if (reviewedNames.has(name)) continue
+    assert(after, `bridge inventory lost unreviewed container: ${name}`)
+    if (!reviewedIds.has(before.id)) assert(canonical(after) === canonical(before), `unreviewed container changed during bridge cutover: ${name}`)
+  }
+  return { authorized: true, targetMigration: 242 }
 }
 
 export function verifyRecoveryAuthorization(document, input, publicPem, now = new Date()) {
@@ -164,12 +221,30 @@ function collectContainers(mapPath) {
     const inspect = jsonCommand(BIN.docker, ['inspect', listed[0]])[0]
     assert(inspect?.State?.Running === true && inspect.Id && inspect.Image, `reviewed container is not running: ${mapping.service}`)
     const configHash = digest(Buffer.from(canonical({ image: inspect.Config?.Image, env: [...(inspect.Config?.Env ?? [])].sort(), entrypoint: inspect.Config?.Entrypoint ?? null, cmd: inspect.Config?.Cmd ?? null, mounts: (inspect.Mounts ?? []).map(({ Destination, Type, RW }) => ({ Destination, Type, RW })).sort((a, b) => a.Destination.localeCompare(b.Destination)) })))
-    return { service: mapping.service, id: inspect.Id, imageId: inspect.Image, configHash, state: 'running' }
+    const environment = Object.fromEntries((inspect.Config?.Env ?? []).map(item => { const at = item.indexOf('='); return at < 0 ? [item, ''] : [item.slice(0, at), item.slice(at + 1)] }))
+    const releaseIdentity = { release_id: environment.RELEASE_ID, release_git_sha: environment.RELEASE_GIT_SHA, manifest_sha256: environment.RELEASE_MANIFEST_SHA256, image_set_digest: environment.RELEASE_IMAGE_SET_DIGEST }
+    return { service: mapping.service, id: inspect.Id, imageId: inspect.Image, configHash, state: 'running', releaseIdentity }
   })
 }
-function collectInventory() {
+function collectBridgeContainers(mapPath) {
+  const mappings = JSON.parse(readRegular(mapPath).toString('utf8'))
+  assert(Array.isArray(mappings) && mappings.length > 0, 'bridge service map must be a non-empty array')
+  assert(new Set(mappings.map(item => item.service)).size === mappings.length, 'bridge service map contains duplicates')
+  return mappings.map(mapping => {
+    assert(/^[a-z0-9][a-z0-9_-]{0,62}$/u.test(mapping.service ?? '') && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u.test(mapping.container ?? ''), 'invalid bridge service mapping')
+    const listed = cleanExec(BIN.docker, ['ps', '--all', '--filter', `name=^/${mapping.container}$`, '--format', '{{.ID}}']).trim().split(/\s+/u).filter(Boolean)
+    assert(listed.length <= 1, `ambiguous bridge container: ${mapping.service}`)
+    if (listed.length === 0) return { service: mapping.service, missing: true }
+    const inspect = jsonCommand(BIN.docker, ['inspect', listed[0]])[0]
+    assert(inspect?.Id && IMAGE.test(inspect.Image ?? ''), `invalid bridge container: ${mapping.service}`)
+    const configHash = digest(Buffer.from(canonical({ image: inspect.Config?.Image, env: [...(inspect.Config?.Env ?? [])].sort(), entrypoint: inspect.Config?.Entrypoint ?? null, cmd: inspect.Config?.Cmd ?? null, mounts: (inspect.Mounts ?? []).map(({ Destination, Type, RW }) => ({ Destination, Type, RW })).sort((a, b) => a.Destination.localeCompare(b.Destination)) })))
+    const environment = Object.fromEntries((inspect.Config?.Env ?? []).map(item => { const at = item.indexOf('='); return at < 0 ? [item, ''] : [item.slice(0, at), item.slice(at + 1)] }))
+    return { service: mapping.service, id: inspect.Id, imageId: inspect.Image, configHash, state: inspect.State?.Running ? 'running' : 'stopped', releaseIdentity: { release_id: environment.RELEASE_ID, release_git_sha: environment.RELEASE_GIT_SHA, manifest_sha256: environment.RELEASE_MANIFEST_SHA256, image_set_digest: environment.RELEASE_IMAGE_SET_DIGEST } }
+  })
+}
+function collectInventory(allowEmpty = false) {
   const ids = cleanExec(BIN.docker, ['ps', '-q', '--no-trunc']).trim().split(/\s+/u).filter(Boolean)
-  assert(ids.length > 0, 'Docker running-container inventory is empty')
+  assert(allowEmpty || ids.length > 0, 'Docker running-container inventory is empty')
   return ids.map(id => {
     const value = jsonCommand(BIN.docker, ['inspect', id])[0]; assert(value?.Id && value?.Image && value?.State?.Running, 'Docker inventory contains an unreadable or stopped container')
     return { id: value.Id, name: String(value.Name ?? '').replace(/^\//u, ''), image_id: value.Image, config_hash: digest(Buffer.from(canonical({ image: value.Config?.Image, env: [...(value.Config?.Env ?? [])].sort(), entrypoint: value.Config?.Entrypoint ?? null, cmd: value.Config?.Cmd ?? null, mounts: (value.Mounts ?? []).map(({ Destination, Type, RW }) => ({ Destination, Type, RW })).sort((a, b) => a.Destination.localeCompare(b.Destination)) }))) }
@@ -181,6 +256,19 @@ function collectCandidateImageIds(path) {
   return [...new Set(values.map(value => {
     const id = cleanExec(BIN.docker, ['image', 'inspect', '--format', '{{.Id}}', value]).trim(); assert(IMAGE.test(id), `candidate image is unavailable locally: ${value}`); return id
   }))].sort()
+}
+function collectCandidateServiceImageIds(path, services) {
+  const mapping = JSON.parse(readRegular(path).toString('utf8'))
+  assert(mapping && Object.getPrototypeOf(mapping) === Object.prototype, 'candidate service image map is invalid')
+  const result = {}
+  for (const service of services) {
+    const ref = mapping[service]
+    assert(typeof ref === 'string' && /@sha256:[a-f0-9]{64}$/u.test(ref), `candidate image reference missing for ${service}`)
+    const imageId = cleanExec(BIN.docker, ['image', 'inspect', '--format', '{{.Id}}', ref]).trim()
+    assert(IMAGE.test(imageId), `candidate image ID invalid for ${service}`)
+    result[service] = imageId
+  }
+  return result
 }
 function candidateContainersRunning(candidateImageIds) {
   const ids = cleanExec(BIN.docker, ['ps', '-q', '--no-trunc']).trim().split(/\s+/u).filter(Boolean)
@@ -226,14 +314,17 @@ function assertInheritedLock(lockPath) {
 }
 const COMMON = { '--state': true, '--lock-path': true }
 const SPECS = Object.freeze({
-  capture: { ...COMMON, '--attempt-id': true, '--service-map': true, '--compose-project': true, '--candidate-release-id': true, '--candidate-git-sha': true, '--candidate-manifest-sha256': true, '--candidate-image-set-digest': true, '--candidate-image-digests': true, '--deployment-nonce': true, '--recovery-plan': true },
+  capture: { ...COMMON, '--attempt-id': true, '--service-map': true, '--compose-project': true, '--candidate-release-id': true, '--candidate-git-sha': true, '--candidate-manifest-sha256': true, '--candidate-image-set-digest': true, '--candidate-image-digests': true, '--deployment-nonce': true, '--recovery-plan': true, '--mode': false },
   phase: { ...COMMON, '--phase': true },
   verify: { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--recovery-plan': true },
   recover: { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--recovery-plan': true, '--recovery-compose': true, '--recovery-env': true, '--recovery-image-digests': true, '--production-api-base-url': true, '--wait-timeout': false },
+  'bridge-begin': { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--recovery-plan': true, '--production-api-base-url': true },
+  'bridge-verify': { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--production-api-base-url': true },
+  'bridge-recover': { ...COMMON, '--service-map': true, '--compose-project': true, '--deployment-nonce': true, '--recovery-plan': true, '--recovery-compose': true, '--recovery-env': true, '--recovery-image-digests': true, '--production-api-base-url': true, '--wait-timeout': false },
 })
 function main(args) {
   assertRuntime(); const command = args[0]; assert(Object.hasOwn(SPECS, command), 'expected capture, phase, verify, or recover'); const options = parseOptions(args.slice(1), SPECS[command]); const get = name => options[name]; const statePath = get('--state'); assertInheritedLock(get('--lock-path'))
-  const productionBase = command === 'recover' ? productionApiBaseUrl(get('--production-api-base-url')) : undefined
+  const productionBase = ['recover', 'bridge-begin', 'bridge-verify', 'bridge-recover'].includes(command) ? productionApiBaseUrl(get('--production-api-base-url')) : undefined
   const privatePem = readRegular(PRIVATE_KEY_PATH, 8192), publicPem = readRegular(PUBLIC_KEY_PATH, 8192)
   if (command === 'capture') {
     const planPath = get('--recovery-plan'), mapPath = get('--service-map'), candidateDigestsPath = get('--candidate-image-digests')
@@ -241,15 +332,85 @@ function main(args) {
     const recovery = parsePlan(planPath)
     const containers = collectContainers(mapPath), candidateImageIds = collectCandidateImageIds(candidateDigestsPath)
     const oldImageIds = new Set(containers.map(value => value.imageId)), exclusive = candidateImageIds.filter(value => !oldImageIds.has(value))
-    const binding = { attemptId: get('--attempt-id'), deploymentNonce: get('--deployment-nonce'), keyId: readRegular(KEY_ID_PATH, 128).toString('utf8').trim(), candidate: { releaseId: get('--candidate-release-id'), gitSha: get('--candidate-git-sha'), manifestSha256: get('--candidate-manifest-sha256'), imageSetDigest: get('--candidate-image-set-digest') }, recovery }
+    const binding = { attemptId: get('--attempt-id'), deploymentNonce: get('--deployment-nonce'), keyId: readRegular(KEY_ID_PATH, 128).toString('utf8').trim(), candidate: { releaseId: get('--candidate-release-id'), gitSha: get('--candidate-git-sha'), manifestSha256: get('--candidate-manifest-sha256'), imageSetDigest: get('--candidate-image-set-digest') }, recovery, ...(get('--mode') ? { mode: get('--mode') } : {}) }
     const candidateIdentity = { release_id: binding.candidate.releaseId, release_git_sha: binding.candidate.gitSha, manifest_sha256: binding.candidate.manifestSha256, image_set_digest: binding.candidate.imageSetDigest }
     assert(canonical(containers.map(value => value.service).sort()) === canonical(recovery.services), 'reviewed service map must exactly match the frozen recovery runtime services')
-    const observed = { composeProject: get('--compose-project'), containers, inventory: collectInventory(), candidateImageIds, candidateExclusiveRunning: candidateContainersRunning(exclusive), candidateIdentityRunning: candidateIdentityRunning(candidateIdentity), database: collectDatabase(process.env.DATABASE_URL) }
+    const observed = { composeProject: get('--compose-project'), containers, inventory: collectInventory(), candidateImageIds, ...(binding.mode === 'bridge_code_only' ? { candidateServiceImageIds: collectCandidateServiceImageIds(candidateDigestsPath, containers.map(item => item.service)) } : {}), candidateExclusiveRunning: candidateContainersRunning(exclusive), candidateIdentityRunning: candidateIdentityRunning(candidateIdentity), database: collectDatabase(process.env.DATABASE_URL) }
     writeAtomic(statePath, createSignedSnapshot(observed, binding, privatePem, publicPem)); process.stdout.write('preidentity snapshot captured\n'); return
   }
   protectedPath(statePath, 'preidentity journal', 0o600)
   const document = JSON.parse(readRegular(statePath).toString('utf8'))
-  if (command === 'phase') { writeAtomic(statePath, transitionJournal(document, get('--phase'), privatePem, publicPem), true); process.stdout.write(`preidentity phase recorded: ${get('--phase')}\n`); return }
+  if (command === 'phase') { assert(document.deployment_mode !== 'bridge_code_only' || get('--phase') === 'nonce_consumed', 'bridge transitions require observed CLI checks'); writeAtomic(statePath, transitionJournal(document, get('--phase'), privatePem, publicPem), true); process.stdout.write(`preidentity phase recorded: ${get('--phase')}\n`); return }
+  if (command.startsWith('bridge-')) {
+    assert(document.deployment_mode === 'bridge_code_only' && verifyDocument(document, publicPem), 'signed bridge journal is required')
+    assert(Date.parse(document.expires_at) > Date.now(), 'bridge journal is expired')
+    protectedPath(get('--service-map'), 'bridge reviewed service map')
+    if (command !== 'bridge-verify') protectedPath(get('--recovery-plan'), 'bridge recovery plan')
+    verifyNonceLedger(get('--deployment-nonce'), document.candidate)
+    const containers = command === 'bridge-recover' ? collectBridgeContainers(get('--service-map')) : collectContainers(get('--service-map'))
+    const observed = { composeProject: get('--compose-project'), containers, inventory: collectInventory(command === 'bridge-recover') }
+    const database = collectDatabase(process.env.DATABASE_URL)
+    if (command === 'bridge-begin') {
+      assert(document.phase === 'nonce_consumed', 'bridge cutover has already begun or nonce is not consumed')
+      const recovery = parsePlan(get('--recovery-plan'))
+      assert(database.version === 242 && database.historySha256 === document.database_before.migration_history_sha256 && database.invalidConcurrentIndexes.length === 0, 'bridge begin requires unchanged checksummed schema 242')
+      assert(workloadDigest(containers) === document.predeployment_workload.container_set_digest && inventoryDigest(observed.inventory) === document.predeployment_workload.inventory_digest, 'bridge begin requires unchanged complete Docker inventory')
+      assert(recovery.migrationTail === 242 && recovery.releaseId === document.recovery_target.release_id && recovery.gitSha === document.recovery_target.release_git_sha && recovery.manifestSha256 === document.recovery_target.manifest_sha256 && recovery.imageSetDigest === document.recovery_target.image_set_digest && recovery.composeSha256 === document.recovery_target.compose_sha256 && recovery.envSha256 === document.recovery_target.env_sha256 && recovery.imageDigestsSha256 === document.recovery_target.image_digests_sha256 && canonical(recovery.allowedPrefixSha256) === canonical(document.recovery_target.allowed_prefix_sha256) && canonical([...new Set(recovery.services)].sort()) === canonical(document.recovery_target.services), 'bridge begin recovery target changed')
+      const currentRelease = jsonCommand(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/releasez`])
+      const identity = currentRelease.data?.release ?? currentRelease.release
+      assert(identity?.release_id === recovery.releaseId && identity?.release_git_sha === recovery.gitSha && identity?.manifest_sha256 === recovery.manifestSha256 && identity?.image_set_digest === recovery.imageSetDigest, 'bridge begin requires old public release identity')
+      writeAtomic(statePath, transitionJournal(document, 'bridge_cutover_started', privatePem, publicPem), true)
+      process.stdout.write('bridge code cutover authorized; schema remains 242\n'); return
+    }
+    if (command === 'bridge-verify') {
+      assert(document.phase === 'bridge_cutover_started', 'bridge verification phase is invalid')
+      assert(database.version === 242 && database.historySha256 === document.database_before.migration_history_sha256 && database.invalidConcurrentIndexes.length === 0, 'bridge cutover changed schema 242')
+      assert(canonical(containers.map(item => item.service).sort()) === canonical(document.predeployment_workload.services.map(item => item.service)), 'bridge reviewed service set changed')
+      assert(canonical(observed.inventory.map(item => item.name).sort()) === canonical(document.predeployment_inventory.map(item => item.name).sort()), 'bridge container inventory changed')
+      const reviewedIds = new Set(document.predeployment_workload.services.map(item => item.id))
+      const currentByName = new Map(observed.inventory.map(item => [item.name, item]))
+      for (const item of document.predeployment_inventory) if (!reviewedIds.has(item.id)) assert(canonical(currentByName.get(item.name)) === canonical(item), `unreviewed container changed during bridge cutover: ${item.name}`)
+      for (const item of containers) {
+        assert(item.imageId === document.candidate_service_image_ids[item.service], `bridge candidate image mismatch: ${item.service}`)
+        if (item.service === 'api' || item.service === 'api-replica') assert(item.releaseIdentity.release_id === document.candidate.release_id && item.releaseIdentity.release_git_sha === document.candidate.release_git_sha && item.releaseIdentity.manifest_sha256 === document.candidate.manifest_sha256 && item.releaseIdentity.image_set_digest === document.candidate.image_set_digest, `bridge API identity mismatch: ${item.service}`)
+      }
+      cleanExec(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/livez`])
+      cleanExec(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/readyz`])
+      const release = jsonCommand(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/releasez`])
+      const identity = release.data?.release ?? release.release
+      assert(identity?.release_id === document.candidate.release_id && identity?.release_git_sha === document.candidate.release_git_sha && identity?.manifest_sha256 === document.candidate.manifest_sha256 && identity?.image_set_digest === document.candidate.image_set_digest, 'bridge public release identity mismatch')
+      writeAtomic(statePath, transitionJournal(document, 'bridge_identity_verified', privatePem, publicPem), true)
+      process.stdout.write('bridge code cutover verified\n'); return
+    }
+    const recovery = parsePlan(get('--recovery-plan'))
+    verifyBridgeRecoveryAuthorization(document, { observed, database, deploymentNonce: get('--deployment-nonce'), recovery }, publicPem)
+    const compose = get('--recovery-compose'), env = get('--recovery-env'), digests = get('--recovery-image-digests')
+    for (const [path, label] of [[compose, 'bridge recovery Compose'], [env, 'bridge recovery environment'], [digests, 'bridge recovery image digests']]) protectedPath(path, label)
+    assert(digest(readRegular(compose)) === recovery.composeSha256 && digest(readRegular(env)) === recovery.envSha256 && digest(readRegular(digests)) === recovery.imageDigestsSha256, 'bridge recovery artifacts changed')
+    const targetImageIds = collectCandidateImageIds(digests)
+    assert(document.predeployment_workload.services.every(item => targetImageIds.includes(item.image_id)), 'original bridge recovery image is not locally available')
+    const timeout = get('--wait-timeout') ?? '300'; assert(/^(?:[3-9][0-9]|[1-8][0-9]{2}|900)$/u.test(timeout), 'wait timeout must be 30-900 seconds')
+    if (document.phase === 'bridge_cutover_started') writeAtomic(statePath, transitionJournal(document, 'bridge_recovery_started', privatePem, publicPem), true)
+    const up = spawnSync(BIN.docker, ['compose', '-p', get('--compose-project'), '--env-file', env, '-f', compose, 'up', '-d', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', timeout, ...document.recovery_target.services], { stdio: 'inherit', env: {} })
+    assert(up.status === 0, 'bridge code recovery runtime failed; signed journal remains retryable')
+    const after = collectDatabase(process.env.DATABASE_URL)
+    assert(after.version === 242 && after.historySha256 === document.database_before.migration_history_sha256 && after.invalidConcurrentIndexes.length === 0, 'bridge code recovery changed schema 242')
+    const restored = collectContainers(get('--service-map'))
+    assert(restored.every(item => { const before = document.predeployment_workload.services.find(value => value.service === item.service); return item.imageId === before?.image_id && item.configHash === before?.config_hash }), 'bridge recovery did not restore original service images and runtime configuration')
+    const restoredInventory = collectInventory()
+    assert(canonical(restoredInventory.map(item => item.name).sort()) === canonical(document.predeployment_inventory.map(item => item.name).sort()), 'bridge recovery changed running container names')
+    const reviewedIds = new Set(document.predeployment_workload.services.map(item => item.id))
+    const restoredByName = new Map(restoredInventory.map(item => [item.name, item]))
+    for (const item of document.predeployment_inventory) if (!reviewedIds.has(item.id)) assert(canonical(restoredByName.get(item.name)) === canonical(item), `unreviewed container changed during bridge recovery: ${item.name}`)
+    cleanExec(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/livez`])
+    cleanExec(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/readyz`])
+    const release = jsonCommand(BIN.curl, ['--fail', '--silent', '--show-error', '--max-time', '15', `${productionBase}/releasez`])
+    const identity = release.data?.release ?? release.release
+    assert(identity?.release_id === recovery.releaseId && identity?.release_git_sha === recovery.gitSha && identity?.manifest_sha256 === recovery.manifestSha256 && identity?.image_set_digest === recovery.imageSetDigest, 'bridge recovery public identity mismatch; signed journal remains retryable')
+    const started = JSON.parse(readRegular(statePath).toString('utf8'))
+    writeAtomic(statePath, transitionJournal(started, 'bridge_recovery_verified', privatePem, publicPem), true)
+    process.stdout.write('bridge code recovery verified without migration\n'); return
+  }
   const planPath = get('--recovery-plan'), mapPath = get('--service-map')
   protectedPath(planPath, 'recovery plan'); protectedPath(mapPath, 'reviewed service map')
   const nonce = get('--deployment-nonce'), recovery = parsePlan(planPath)

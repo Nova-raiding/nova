@@ -19,6 +19,7 @@ export interface ObservedRecoveryState {
   containers: Array<{ service: string; id: string; imageId: string; configHash: string; state: string }>
   inventory: Array<Record<string, unknown>>
   candidateImageIds: string[]
+  candidateServiceImageIds?: Record<string, string>
   candidateExclusiveRunning?: boolean
   candidateIdentityRunning?: boolean
   database: { version: number; historySha256: string; invalidConcurrentIndexes: string[] }
@@ -27,6 +28,8 @@ export interface ObservedRecoveryState {
 export interface SignedRecoveryJournal extends Record<string, unknown> {
   phase: string
   signature_base64: string
+  deployment_mode?: 'bridge_code_only'
+  candidate_service_image_ids?: Record<string, string>
   predeployment_workload: {
     services: Array<Record<string, unknown>>
     container_set_digest: string
@@ -38,7 +41,7 @@ export interface SignedRecoveryJournal extends Record<string, unknown> {
 
 export function createSignedSnapshot(
   observed: ObservedRecoveryState,
-  binding: { attemptId: string; deploymentNonce: string; keyId: string; candidate: ReleaseBinding; recovery: RecoveryBinding },
+  binding: { attemptId: string; deploymentNonce: string; keyId: string; candidate: ReleaseBinding; recovery: RecoveryBinding; mode?: 'bridge_code_only' },
   privatePem: string | Buffer,
   publicPem: string | Buffer,
   now?: Date,
@@ -58,5 +61,21 @@ export function verifyRecoveryAuthorization(
   publicPem: string | Buffer,
   now?: Date,
 ): { authorized: true; targetMigration: number }
+
+export function verifyBridgeRecoveryAuthorization(
+  document: SignedRecoveryJournal,
+  input: {
+    observed: {
+      composeProject: string
+      containers: Array<{ service: string; id?: string; imageId?: string; configHash?: string; state?: string; missing?: boolean; releaseIdentity?: { release_id?: string; release_git_sha?: string; manifest_sha256?: string; image_set_digest?: string } }>
+      inventory: Array<Record<string, unknown>>
+    }
+    deploymentNonce: string
+    recovery: RecoveryBinding
+    database: ObservedRecoveryState['database']
+  },
+  publicPem: string | Buffer,
+  now?: Date,
+): { authorized: true; targetMigration: 242 }
 
 export function productionApiBaseUrl(value: string): string
