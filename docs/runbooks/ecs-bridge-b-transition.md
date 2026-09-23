@@ -25,12 +25,12 @@ This runbook describes the host-side `capture`, `install`, and `recover` sequenc
 
 ## Capture baseline
 
-With the exact reviewed release checkout and host configuration, set `DATABASE_URL` to the production runtime-role connection and call the fixed executable under the already-held FD 9 deployment lock. `LOCK_PATH`, project, paths, and all four candidate identity fields must match the frozen release inputs. The controller verifies live `/releasez`, complete running Docker inventory, exact migration-242 history/checksum, old-runtime capsule, candidate artifacts, and creates a signed immutable journal under `/var/lib/merchant-release-security/bridge-b/<attempt-id>.json`.
+With the exact reviewed release checkout and host configuration, set `DATABASE_URL` and `OPS_DATABASE_URL` to the production runtime-role and ops-role connections, respectively, and call the fixed executable under the already-held FD 9 deployment lock. `LOCK_PATH`, project, paths, and all four candidate identity fields must match the frozen release inputs. The controller verifies live `/releasez`, complete running Docker inventory, matching exact migration-242 history/checksum in both databases, old-runtime capsule, candidate artifacts, and creates a signed immutable journal under `/var/lib/merchant-release-security/bridge-b/<attempt-id>.json`.
 
 ```sh
 exec 9>>/var/lib/merchant-release-security/production-deploy.lock
 flock -n 9 || { echo 'production deployment lock is busy' >&2; exit 1; }
-env -i DATABASE_URL="$DATABASE_URL" /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
+env -i DATABASE_URL="$DATABASE_URL" OPS_DATABASE_URL="$OPS_DATABASE_URL" /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
   /usr/local/libexec/merchant/ecs-bridge-b-transition capture \
   --state /var/lib/merchant-release-security/bridge-b/ATTEMPT_ID.json \
   --lock-path /var/lib/merchant-release-security/production-deploy.lock \
@@ -55,7 +55,7 @@ Immediately before install, re-evaluate every normal production gate and confirm
 Run `install` with the same lock, nonce, service map, Bridge B inputs, and recovery inputs as capture. Acquire and retain FD 9 as shown above; do not reopen it per command while a different lock descriptor is held. The controller consumes the nonce with operation `bridge-b` and this journal's exact `attempt_id`; it then verifies both the immutable release binding and `nonce_owners.operation='bridge-b'` / matching `attempt_id` in the durable ledger. A nonce previously consumed by ordinary deployment, owned by another Bridge B attempt, or missing its owner row is rejected. A retry after a crash between the ledger commit and journal update is accepted only for that same attempt and release. The exact CLI contract is defined in `infra/protected/ecs-bridge-b-transition.mjs`; unknown, missing, duplicate, changed, or expired input fails closed:
 
 ```sh
-env -i DATABASE_URL="$DATABASE_URL" /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
+env -i DATABASE_URL="$DATABASE_URL" OPS_DATABASE_URL="$OPS_DATABASE_URL" /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
   /usr/local/libexec/merchant/ecs-bridge-b-transition install \
   --state /var/lib/merchant-release-security/bridge-b/ATTEMPT_ID.json \
   --lock-path /var/lib/merchant-release-security/production-deploy.lock \
@@ -68,16 +68,16 @@ env -i DATABASE_URL="$DATABASE_URL" /usr/local/libexec/merchant/runtime/node-v22
   --wait-timeout 300 9>&9
 ```
 
-On success, preserve the journal and output, then independently confirm `/releasez` matches the full candidate identity, database is still at migration 242 with the same history digest, the full Docker inventory is expected, `/healthz` and `/readyz` are healthy, and the ordinary post-deploy canary and tenant checks pass. Do not proceed to migration-bearing candidate C until those checks and all C gates independently pass.
+On success, preserve the journal and output, then independently confirm `/releasez` matches the full candidate identity, both the `merchant_app` and `merchant_ops` databases remain at migration 242 with the same respective history digests recorded in the journal, the full Docker inventory is expected, `/healthz` and `/readyz` are healthy, and the ordinary post-deploy canary and tenant checks pass. Do not proceed to migration-bearing candidate C until those checks and all C gates independently pass.
 
 ## Recover
 
 Recovery is available only after the signed journal records `bridge_runtime_mutation_started` or `bridge_runtime_verified`, the deployment nonce is already consumed and bound to the same release, the live database remains the exact captured 242 prefix, and the current container inventory is explainable by the captured baseline/candidate. Recovery reuses the signed old-runtime plan, Compose, environment, and image-digest files; it verifies their hashes, starts only the old allowlisted runtime services without migrations, and verifies old `/releasez` plus the full restored inventory.
 
-Invoke the same fixed executable with `recover` and these required parameters. Keep `DATABASE_URL` in a clean, protected process environment and FD 9 bound to the same production lock:
+Invoke the same fixed executable with `recover` and these required parameters. Keep both database URLs in a clean, protected process environment and FD 9 bound to the same production lock:
 
 ```sh
-env -i DATABASE_URL="$DATABASE_URL" /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
+env -i DATABASE_URL="$DATABASE_URL" OPS_DATABASE_URL="$OPS_DATABASE_URL" /usr/local/libexec/merchant/runtime/node-v22.23.2-linux-x64/bin/node \
   /usr/local/libexec/merchant/ecs-bridge-b-transition recover \
   --state /var/lib/merchant-release-security/bridge-b/ATTEMPT_ID.json \
   --lock-path /var/lib/merchant-release-security/production-deploy.lock \

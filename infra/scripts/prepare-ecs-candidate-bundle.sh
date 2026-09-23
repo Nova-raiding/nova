@@ -231,9 +231,22 @@ tests/fixtures/ecs-bridge-b-host-cli/run.mjs
 tests/fixtures/ecs-bridge-b-host-cli/setup.mjs
 EOF
 
-# The migration registry loads the entire chain, so review all SQL assets
-# together rather than shipping only its newest entry.
-git -C "$root" ls-files packages/persistence/src/migrations >> "$manifest"
+# The migration registry, both UI images, and their reverse-proxy configs are
+# release inputs even when a hand-curated manifest already names one of them.
+# Add every tracked input once so remote comparison cannot silently omit build
+# dependencies or produce duplicate report rows.
+scope_list=$(mktemp "${TMPDIR:-/tmp}/ecs-candidate-manifest.XXXXXX")
+trap 'rm -f "$scope_list"' 0 HUP INT TERM
+for scope in packages/persistence/src/migrations apps/ops-console demo/merchant-studio infra/docker infra/nginx; do
+  git -C "$root" ls-files -- "$scope" > "$scope_list"
+  while IFS= read -r path; do
+    if ! grep -Fxq "$path" "$manifest"; then
+      printf '%s\n' "$path" >> "$manifest"
+    fi
+  done < "$scope_list"
+done
+rm -f "$scope_list"
+trap - 0 HUP INT TERM
 
 while IFS= read -r path; do
   [ -f "$root/$path" ] || {

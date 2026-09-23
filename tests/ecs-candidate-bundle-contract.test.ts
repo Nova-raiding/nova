@@ -1,5 +1,5 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { spawnSync } from 'node:child_process'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -169,6 +169,46 @@ describe('ECS candidate bundle contract', () => {
 
     const entries = manifest.slice(manifest.indexOf("<<'EOF'\n") + "<<'EOF'\n".length).split('\n').filter(Boolean)
     expect(new Set(entries).size, 'manifest paths must not be duplicated').toBe(entries.length)
+    const dynamicInputs = [
+      'apps/ops-console/package.json',
+      'apps/ops-console/src/App.tsx',
+      'infra/docker/ui.Dockerfile',
+      'infra/docker/ops-console.Dockerfile',
+      'infra/nginx/merchant-studio.conf',
+      'infra/nginx/merchant-studio-entrypoint.sh',
+      'infra/nginx/ops-console.conf',
+      'packages/persistence/src/migrations/245_local_plugin_authorized_timestamp.sql',
+    ]
+    const dynamicLoopStart = script.indexOf('# The migration registry, both UI images, and their reverse-proxy configs are')
+    const dynamicLoopEnd = script.indexOf('\nwhile IFS= read -r path; do', dynamicLoopStart)
+    expect(dynamicLoopStart).toBeGreaterThanOrEqual(0)
+    expect(dynamicLoopEnd).toBeGreaterThan(dynamicLoopStart)
+    const dynamicLoop = script.slice(dynamicLoopStart, dynamicLoopEnd)
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'candidate-manifest-loop-'))
+    const fixtureRepo = join(fixtureRoot, 'repo')
+    const fixtureManifest = join(fixtureRoot, 'manifest.txt')
+    try {
+      mkdirSync(fixtureRepo)
+      execFileSync('git', ['init', '--quiet', fixtureRepo])
+      for (const path of dynamicInputs) {
+        const filePath = join(fixtureRepo, path)
+        mkdirSync(join(filePath, '..'), { recursive: true })
+        writeFileSync(filePath, `fixture: ${path}\n`)
+      }
+      execFileSync('git', ['-C', fixtureRepo, 'add', '--all'])
+      writeFileSync(fixtureManifest, 'apps/ops-console/package.json\ncurated/release-input.txt\n')
+      execFileSync('sh', ['-c', dynamicLoop], {
+        cwd: fixtureRepo,
+        env: { ...process.env, root: fixtureRepo, manifest: fixtureManifest },
+      })
+      const generatedEntries = readFileSync(fixtureManifest, 'utf8').trim().split('\n')
+      expect(generatedEntries).toContain('curated/release-input.txt')
+      for (const path of dynamicInputs) expect(generatedEntries, `${path} must be present in the actual generated review manifest`).toContain(path)
+      expect(generatedEntries.filter(path => path === 'apps/ops-console/package.json')).toHaveLength(1)
+      expect(new Set(generatedEntries).size, 'actual generated review manifest must not contain duplicates').toBe(generatedEntries.length)
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true })
+    }
   })
 
   it('keeps host deployment entrypoints executable while verifier modules remain data', () => {

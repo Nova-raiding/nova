@@ -114,7 +114,7 @@ export function createBridgeBSnapshot(observed, binding, privatePem, publicPem, 
   assert(/^[A-Za-z0-9_-]{16,128}$/u.test(binding.attemptId ?? ''), 'Bridge B attempt id is invalid')
   assert(/^[A-Za-z0-9_-]{22,128}$/u.test(binding.deploymentNonce ?? ''), 'Bridge B deployment nonce is invalid')
   assert(typeof binding.keyId === 'string' && /^[A-Za-z0-9._:-]{1,128}$/u.test(binding.keyId), 'Bridge B key id is invalid')
-  assert(observed.database?.version === 242 && HEX.test(observed.database.historySha256 ?? ''), 'Bridge B requires the exact approved database prefix at 242')
+  assert(observed.database?.version === 242 && HEX.test(observed.database.historySha256 ?? '') && HEX.test(observed.database.opsHistorySha256 ?? '') && observed.database.historySha256 === observed.database.opsHistorySha256, 'Bridge B requires matching exact approved runtime and ops database prefixes at 242')
   assert((observed.database.invalidConcurrentIndexes ?? []).length === 0, 'invalid concurrent index blocks Bridge B')
   assert(typeof observed.composeProject === 'string' && /^[a-z0-9][a-z0-9_-]{0,62}$/u.test(observed.composeProject), 'Bridge B Compose project is invalid')
   assert(Array.isArray(observed.containers) && observed.containers.length > 0, 'Bridge B requires a complete baseline workload')
@@ -136,7 +136,7 @@ export function createBridgeBSnapshot(observed, binding, privatePem, publicPem, 
     captured_at: now.toISOString(), expires_at: new Date(now.getTime() + 24 * 60 * 60_000).toISOString(),
     bridge: { release_id: binding.bridge.releaseId, release_git_sha: binding.bridge.gitSha, manifest_sha256: binding.bridge.manifestSha256, image_set_digest: binding.bridge.imageSetDigest, exclusive_image_ids: [...new Set(observed.bridgeImageIds)].sort() },
     deployment_nonce_sha256: sha256(binding.deploymentNonce),
-    database_before: { migration_version: 242, migration_history_sha256: observed.database.historySha256 },
+    database_before: { migration_version: 242, migration_history_sha256: observed.database.historySha256, ops_migration_history_sha256: observed.database.opsHistorySha256 },
     baseline: { services, inventory, workload_sha256: canonicalDigest(services), inventory_sha256: canonicalDigest(inventory) },
     service_map: Object.fromEntries(observed.containers.map(item => [item.service, item.containerName])),
     bridge_artifacts: structuredClone(binding.bridgeArtifacts),
@@ -171,7 +171,7 @@ export function preflightBridgeBMutation(document, input, publicPem, now = new D
   assert(canonicalDigest(input.bridgeImageIds) === canonicalDigest(document.bridge.exclusive_image_ids), 'Bridge B immutable image set changed')
   assert(input.artifacts?.composeSha256 === document.bridge_artifacts.compose_sha256 && input.artifacts?.envSha256 === document.bridge_artifacts.env_sha256 && input.artifacts?.imageDigestsSha256 === document.bridge_artifacts.image_digests_sha256, 'Bridge B fixed Compose inputs changed')
   assert(canonicalDigest(input.artifacts?.services) === canonicalDigest(document.bridge_artifacts.services), 'Bridge B target services changed')
-  assert(input.database?.version === 242 && input.database?.historySha256 === document.database_before.migration_history_sha256, 'Bridge B database changed from the captured migration-242 prefix')
+  assert(input.database?.version === 242 && input.database?.historySha256 === document.database_before.migration_history_sha256 && input.database?.opsHistorySha256 === document.database_before.ops_migration_history_sha256, 'Bridge B runtime or ops database changed from the captured migration-242 prefix')
   assert((input.database.invalidConcurrentIndexes ?? []).length === 0, 'invalid concurrent index blocks Bridge B')
   assert(input.baseline?.workloadSha256 === document.baseline.workload_sha256 && input.baseline?.inventorySha256 === document.baseline.inventory_sha256, 'baseline workload or Docker inventory changed')
   assert(input.bridgeIdentityRunning !== true, 'Bridge B identity is already running before the controlled mutation')
@@ -191,7 +191,7 @@ export function authorizeBridgeBRecovery(document, input, publicPem, now = new D
   assert(['bridge_runtime_mutation_started', 'bridge_runtime_verified'].includes(document.phase), 'Bridge B recovery requires a mutation-started phase')
   assert(typeof input.deploymentNonce === 'string' && sha256(input.deploymentNonce) === document.deployment_nonce_sha256, 'Bridge B recovery nonce mismatch')
   assert(input.composeProject === document.compose_project, 'Bridge B recovery Compose project changed')
-  assert(input.database?.version === 242 && input.database?.historySha256 === document.database_before.migration_history_sha256, 'Bridge B recovery forbidden after database leaves the captured 242 prefix')
+  assert(input.database?.version === 242 && input.database?.historySha256 === document.database_before.migration_history_sha256 && input.database?.opsHistorySha256 === document.database_before.ops_migration_history_sha256, 'Bridge B recovery forbidden after runtime or ops database leaves the captured 242 prefix')
   assert((input.database.invalidConcurrentIndexes ?? []).length === 0, 'invalid concurrent index blocks Bridge B recovery')
   const isCandidateApi = input.currentBridgeIdentity?.releaseId === document.bridge.release_id && input.currentBridgeIdentity?.gitSha === document.bridge.release_git_sha && input.currentBridgeIdentity?.manifestSha256 === document.bridge.manifest_sha256 && input.currentBridgeIdentity?.imageSetDigest === document.bridge.image_set_digest
   if (!isCandidateApi) {
@@ -316,19 +316,28 @@ function readJournal(path, publicPem) {
   verifyBridgeBJournal(journal, publicPem)
   return journal
 }
-function pgEnv(databaseUrl) {
+function pgEnv(databaseUrl, expectedRole) {
   const url = new URL(databaseUrl)
   assert(['postgres:', 'postgresql:'].includes(url.protocol) && url.hostname && url.pathname.length > 1 && !url.searchParams.has('options'), 'database URL is invalid')
-  return { PGHOST: url.hostname, PGPORT: url.port || '5432', PGUSER: decodeURIComponent(url.username), PGPASSWORD: decodeURIComponent(url.password), PGDATABASE: decodeURIComponent(url.pathname.slice(1)), PGSSLMODE: url.searchParams.get('sslmode') || 'prefer' }
+  const sslModes = url.searchParams.getAll('sslmode')
+  assert(decodeURIComponent(url.username) === expectedRole, `database URL must authenticate as ${expectedRole}`)
+  assert(sslModes.length === 1 && ['require', 'verify-ca', 'verify-full'].includes(sslModes[0]), 'database URL must require TLS')
+  return { PGHOST: url.hostname, PGPORT: url.port || '5432', PGUSER: expectedRole, PGPASSWORD: decodeURIComponent(url.password), PGDATABASE: decodeURIComponent(url.pathname.slice(1)), PGSSLMODE: sslModes[0] }
 }
-function collectDatabase(databaseUrl) {
-  const env = pgEnv(databaseUrl)
+function collectDatabase(databaseUrl, opsDatabaseUrl) {
+  assert(typeof databaseUrl === 'string' && databaseUrl.length > 0 && typeof opsDatabaseUrl === 'string' && opsDatabaseUrl.length > 0, 'DATABASE_URL and OPS_DATABASE_URL are required for Bridge B')
+  const collect = (url, role) => {
+  const env = pgEnv(url, role)
   const sql = "SELECT json_build_object('version',coalesce(max(version),0),'history',coalesce(json_agg(json_build_array(version,name,checksum) ORDER BY version),'[]'::json)) FROM schema_migrations;"
   const result = JSON.parse(cleanExec(BIN.psql, ['-X', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-c', sql], env).trim())
   assert(Number.isInteger(Number(result.version)) && Array.isArray(result.history) && result.history.length === Number(result.version) && result.history.every((row, index) => Array.isArray(row) && Number(row[0]) === index + 1 && typeof row[1] === 'string' && HEX.test(row[2] ?? '')), 'database migration history is not a checksummed contiguous prefix')
   const invalidSql = "SELECT coalesce(json_agg(c.relname ORDER BY c.relname),'[]'::json) FROM pg_class c JOIN pg_index i ON i.indexrelid=c.oid WHERE c.relname IN ('rule_audit_events_workspace_occurred_id_idx','ops_incident_timeline_workspace_created_id_idx','workspace_support_ticket_events_workspace_created_id_idx') AND NOT i.indisvalid;"
   const invalid = JSON.parse(cleanExec(BIN.psql, ['-X', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-c', invalidSql], env).trim())
   return { version: Number(result.version), historySha256: canonicalDigest(result.history), invalidConcurrentIndexes: invalid }
+  }
+  const runtime = collect(databaseUrl, 'merchant_app'), ops = collect(opsDatabaseUrl, 'merchant_ops')
+  assert(runtime.version === ops.version && runtime.historySha256 === ops.historySha256, 'runtime and ops database migration histories differ')
+  return { version: runtime.version, historySha256: runtime.historySha256, opsHistorySha256: ops.historySha256, invalidConcurrentIndexes: [...new Set([...runtime.invalidConcurrentIndexes, ...ops.invalidConcurrentIndexes])].sort() }
 }
 function configHash(value) {
   return sha256(Buffer.from(canonical({ image: value.Config?.Image, env: [...(value.Config?.Env ?? [])].sort(), entrypoint: value.Config?.Entrypoint ?? null, cmd: value.Config?.Cmd ?? null, mounts: (value.Mounts ?? []).map(({ Destination, Type, RW }) => ({ Destination, Type, RW })).sort((a, b) => a.Destination.localeCompare(b.Destination)) })))
@@ -358,6 +367,9 @@ function collectMappedServices(path, project) {
   }).sort((a, b) => a.service.localeCompare(b.service))
   assert(new Set(result.map(item => item.service)).size === result.length && new Set(result.map(item => item.containerName)).size === result.length, 'service map has duplicate services or containers')
   assert(result.some(item => item.service === 'api'), 'Bridge B service map must include api')
+  const mapped = new Set(result.map(item => item.service))
+  const runningRuntimeServices = new Set(inventory.filter(item => item.project === project && BRIDGE_B_RUNTIME_SERVICE_SET.has(item.compose_service)).map(item => item.compose_service))
+  for (const service of runningRuntimeServices) assert(mapped.has(service), `service map omits running Bridge B runtime service: ${service}`)
   return result
 }
 function composeConfig(compose, envFile, project) {
@@ -461,7 +473,7 @@ function consumeNonce(nonce, attemptId, identity) {
 }
 function journalPath(attemptId) { assert(/^[A-Za-z0-9_-]{16,128}$/u.test(attemptId), 'Bridge B attempt id is invalid'); return `${JOURNAL_ROOT}/${attemptId}.json` }
 function journalAdvance(path, journal, nextPhase, privatePem, publicPem) { const next = transitionBridgeBJournal(journal, nextPhase, privatePem, publicPem); writeAtomic(path, next, true, journal.signature_base64); return next }
-function databaseIs242(database, journal, label) { assert(database.version === 242 && database.historySha256 === journal.database_before.migration_history_sha256 && database.invalidConcurrentIndexes.length === 0, `${label}: database is not the exact valid migration-242 prefix`) }
+function databaseIs242(database, journal, label) { assert(database.version === 242 && database.historySha256 === journal.database_before.migration_history_sha256 && database.opsHistorySha256 === journal.database_before.ops_migration_history_sha256 && database.invalidConcurrentIndexes.length === 0, `${label}: runtime and ops databases are not the exact valid migration-242 prefix`) }
 function baselineInventory(inventory) { return inventory.map(({ id, name, image_id, config_hash, compose_service }) => ({ id, name, image_id, config_hash, compose_service })).sort((a, b) => a.name.localeCompare(b.name)) }
 function currentBaseline(serviceMap, project) {
   const map = JSON.parse(readRegular(serviceMap).toString('utf8'))
@@ -474,6 +486,9 @@ function currentBaseline(serviceMap, project) {
     return { service: entry.service, containerName: actual[0].name, id: actual[0].id, imageId: actual[0].image_id, configHash: actual[0].config_hash, state: 'running' }
   }).sort((a, b) => a.service.localeCompare(b.service))
   assert(new Set(services.map(item => item.service)).size === services.length && services.some(item => item.service === 'api'), 'service map must uniquely include api')
+  const mapped = new Set(services.map(item => item.service))
+  const runningRuntimeServices = new Set(inventory.filter(item => item.project === project && BRIDGE_B_RUNTIME_SERVICE_SET.has(item.compose_service)).map(item => item.compose_service))
+  for (const service of runningRuntimeServices) assert(mapped.has(service), `service map omits running Bridge B runtime service: ${service}`)
   return { services, inventory }
 }
 function currentReleaseEnv(inventory, identity) {
@@ -519,7 +534,7 @@ function composeUp(compose, envFile, project, timeout, services) {
 function capture(get, privatePem, publicPem) {
   const attemptId = get('--attempt-id'), path = journalPath(attemptId), project = get('--compose-project'), baseUrl = productionApiBaseUrl(get('--production-api-base-url'))
   assert(get('--state') === path, 'state path must be derived from the attempt id under the protected journal root')
-  const database = collectDatabase(process.env.DATABASE_URL)
+  const database = collectDatabase(process.env.DATABASE_URL, process.env.OPS_DATABASE_URL)
   assert(database.version === 242 && database.invalidConcurrentIndexes.length === 0, 'Bridge B capture requires the exact valid database migration-242 prefix')
   const old = frozenOldCapsule(get('--recovery-plan'), get('--recovery-compose'), get('--recovery-env'), get('--recovery-image-digests'), database)
   assertRelease(productionRelease(baseUrl), old.targetIdentity, 'live old runtime before Bridge B')
@@ -551,7 +566,7 @@ function install(get, privatePem, publicPem) {
   const compose = get('--bridge-compose'), envFile = get('--bridge-env'), digestsPath = get('--bridge-image-digests')
   assert(sha256(readRegular(compose)) === journal.bridge_artifacts.compose_sha256 && sha256(readRegular(envFile)) === journal.bridge_artifacts.env_sha256 && sha256(readRegular(digestsPath)) === journal.bridge_artifacts.image_digests_sha256, 'Bridge B Compose inputs changed after signed capture')
   assertUnchangedBeforeInstall(journal, get('--service-map'), project)
-  const before = collectDatabase(process.env.DATABASE_URL)
+  const before = collectDatabase(process.env.DATABASE_URL, process.env.OPS_DATABASE_URL)
   databaseIs242(before, journal, 'pre-mutation check')
   const candidate = { release_id: journal.bridge.release_id, release_git_sha: journal.bridge.release_git_sha, manifest_sha256: journal.bridge.manifest_sha256, image_set_digest: journal.bridge.image_set_digest }
   const config = validateRuntimeCompose(compose, envFile, project, digestsPath, journal.bridge_artifacts.services, candidate)
@@ -576,12 +591,12 @@ function install(get, privatePem, publicPem) {
   // also lets an exact same-attempt retry resume after a process loss between
   // the external nonce ledger commit and the journal phase replacement.
   assertUnchangedBeforeInstall(current, get('--service-map'), project)
-  const beforeMutation = collectDatabase(process.env.DATABASE_URL)
+  const beforeMutation = collectDatabase(process.env.DATABASE_URL, process.env.OPS_DATABASE_URL)
   databaseIs242(beforeMutation, current, 'final pre-mutation check')
   authorizeBridgeBMutation(current, mutationInput(beforeMutation), publicPem)
   current = journalAdvance(path, current, 'bridge_runtime_mutation_started', privatePem, publicPem)
   composeUp(compose, envFile, project, checkedTimeout(get('--wait-timeout')), current.bridge_artifacts.services)
-  const after = collectDatabase(process.env.DATABASE_URL)
+  const after = collectDatabase(process.env.DATABASE_URL, process.env.OPS_DATABASE_URL)
   databaseIs242(after, current, 'post-mutation check')
   assertBridgeInventory(current, imageIds, false)
   assertRelease(productionRelease(baseUrl), candidate, 'Bridge B live runtime')
@@ -593,7 +608,7 @@ function recover(get, privatePem, publicPem) {
   assert(path === journalPath(journal.attempt_id), 'Bridge B journal path does not match signed attempt')
   assert(['bridge_runtime_mutation_started', 'bridge_runtime_verified'].includes(journal.phase), 'recovery requires a started Bridge B runtime')
   assert(project === journal.compose_project && sha256(get('--deployment-nonce')) === journal.deployment_nonce_sha256, 'recovery binding does not match signed journal')
-  const before = collectDatabase(process.env.DATABASE_URL)
+  const before = collectDatabase(process.env.DATABASE_URL, process.env.OPS_DATABASE_URL)
   databaseIs242(before, journal, 'recovery guard')
   const recoveryIdentity = { release_id: journal.bridge.release_id, image_set_digest: journal.bridge.image_set_digest, manifest_sha256: journal.bridge.manifest_sha256, release_git_sha: journal.bridge.release_git_sha }
   assertNonceConsumed(get('--deployment-nonce'), journal.attempt_id, recoveryIdentity)
@@ -638,7 +653,7 @@ function recover(get, privatePem, publicPem) {
   }, publicPem)
   let current = journalAdvance(path, journal, 'recovery_started', privatePem, publicPem)
   composeUp(get('--recovery-compose'), get('--recovery-env'), project, checkedTimeout(get('--wait-timeout')), old.services)
-  const after = collectDatabase(process.env.DATABASE_URL)
+  const after = collectDatabase(process.env.DATABASE_URL, process.env.OPS_DATABASE_URL)
   databaseIs242(after, current, 'post-recovery check')
   const finalInventory = collectInventory()
   for (const item of finalInventory) {

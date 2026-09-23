@@ -35,7 +35,7 @@ const observed = {
   containers: [{ service: 'api', containerName: 'merchant-api-1', id: 'a'.repeat(64), imageId: image('1'), configHash: sha('2'), state: 'running' }],
   inventory: [{ id: 'a'.repeat(64), name: 'api', image_id: image('1'), config_hash: sha('2'), compose_service: 'api' }],
   bridgeImageIds: [image('3')], bridgeIdentityRunning: false, bridgeExclusiveContainersRunning: false,
-  database: { version: 242, historySha256: sha('4'), invalidConcurrentIndexes: [] },
+  database: { version: 242, historySha256: sha('4'), opsHistorySha256: sha('4'), invalidConcurrentIndexes: [] },
 }
 const binding = {
   attemptId: 'attempt_BridgeB_abcdefghijkl', deploymentNonce, bridge, keyId: 'production-release-2026',
@@ -110,6 +110,7 @@ describe('protected ECS Bridge B transition policy', () => {
     expect(journal.schema_version).toBe('ecs-bridge-b-transition/2')
     expect(journal.phase).toBe('captured')
     expect(journal.database_before.migration_version).toBe(242)
+    expect(journal.database_before.ops_migration_history_sha256).toBe(sha('4'))
     expect(journal.baseline.inventory).toEqual(observed.inventory)
     expect(journal.database_policy).toEqual({ strategy: 'no_migration', required_version: 242, schema_downgrade: false })
     expect(journal.deployment_nonce_sha256).toBeTruthy()
@@ -117,8 +118,12 @@ describe('protected ECS Bridge B transition policy', () => {
     expect(journal.signature_base64).toBeTruthy()
   })
 
+  it('rejects a runtime and ops database history mismatch at capture', () => {
+    expect(() => createBridgeBSnapshot({ ...observed, database: { ...observed.database, opsHistorySha256: sha('9') } }, binding, keys.privateKey, keys.publicKey, now)).toThrow(/matching exact approved runtime and ops/u)
+  })
+
   it.each([241, 243, 245])('refuses capture if the observed database is %i instead of 242', version => {
-    expect(() => createBridgeBSnapshot({ ...observed, database: { ...observed.database, version } }, binding, keys.privateKey, keys.publicKey, now)).toThrow(/exact approved database prefix at 242/u)
+    expect(() => createBridgeBSnapshot({ ...observed, database: { ...observed.database, version } }, binding, keys.privateKey, keys.publicKey, now)).toThrow(/exact approved runtime and ops database prefixes at 242/u)
   })
 
   it('requires the consumed phase, exact nonce, frozen release identity, images, baseline and exact 242 prefix before mutation', () => {
@@ -133,6 +138,7 @@ describe('protected ECS Bridge B transition policy', () => {
       { artifacts: { ...mutationInput().artifacts, services: ['api', 'worker'] } },
       { database: { ...observed.database, version: 243 } },
       { database: { ...observed.database, historySha256: sha('9') } },
+      { database: { ...observed.database, opsHistorySha256: sha('9') } },
       { baseline: { ...baseline, inventorySha256: 'changed-inventory' } },
       { bridgeIdentityRunning: true },
     ]) expect(() => authorizeBridgeBMutation(consumed(), mutationInput(override), keys.publicKey, now)).toThrow()
@@ -155,6 +161,7 @@ describe('protected ECS Bridge B transition policy', () => {
     for (const [index, override] of [
       { database: { ...observed.database, version: 243 } },
       { database: { ...observed.database, historySha256: sha('9') } },
+      { database: { ...observed.database, opsHistorySha256: sha('9') } },
       { deploymentNonce: 'nonce_wrong_abcdefghijklmnopqrstuvwxyz' },
       { currentBridgeIdentity: { ...bridge, manifestSha256: sha('9') } },
       { recovery: { ...recoveryInput().recovery, composeSha256: sha('9') } },

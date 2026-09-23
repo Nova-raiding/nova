@@ -24,7 +24,9 @@ function args(command, id = attempt, changes = {}) {
 const quote = value => `'${String(value).replaceAll("'", "'\\''")}'`
 function run(command, id = attempt, changes = {}, lockFd = '/state/lock') {
   const argv = args(command, id, changes).map(quote).join(' ')
-  const script = `exec 9>${quote(lockFd)}; /usr/bin/flock -n 9 || exit $?; export DATABASE_URL='postgres://fixture:secret@db/merchant'; exec /usr/local/bin/node ${quote(helper)} ${argv}`
+  const runtimeUrl = changes.__runtimeUrl ?? 'postgres://merchant_app:secret@db/merchant?sslmode=require'
+  const opsUrl = changes.__opsUrl ?? 'postgres://merchant_ops:secret@db/merchant_ops?sslmode=require'
+  const script = `exec 9>${quote(lockFd)}; /usr/bin/flock -n 9 || exit $?; export DATABASE_URL=${quote(runtimeUrl)} OPS_DATABASE_URL=${quote(opsUrl)}; exec /usr/local/bin/node ${quote(helper)} ${argv}`
   return spawnSync('/bin/sh', ['-c', script], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } })
 }
 function pass(command, id = attempt, changes = {}) {
@@ -46,6 +48,18 @@ function reject(command, expected, id = attempt, changes = {}, lockFd = '/state/
 function journal(id = attempt) { return JSON.parse(readFileSync(statePath(id), 'utf8')) }
 function dbHistorySha() { return sha(JSON.stringify(JSON.parse(readFileSync('/state/history.json', 'utf8')))) }
 function dockerCalls() { const value = (() => { try { return readFileSync('/state/docker-calls.jsonl','utf8') } catch (error) { if (error?.code === 'ENOENT') return '' ; throw error } })(); return value.trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) }
+
+// Supplying the runtime credential for both pools must not masquerade as
+// independent merchant_app/merchant_ops migration evidence.
+const sameRoleAttempt = 'attempt_same_db_role_abcdefgh'
+const sameRoleUrl = 'postgres://merchant_app:secret@db/merchant?sslmode=require'
+const sameRole = reject('capture', /database URL must authenticate as merchant_ops/u, sameRoleAttempt, { __runtimeUrl: sameRoleUrl, __opsUrl: sameRoleUrl })
+assert.equal(existsSync(statePath(sameRoleAttempt)), false)
+assert.match(sameRole.stderr, /database URL must authenticate as merchant_ops/u)
+const insecureUrlAttempt = 'attempt_insecure_db_url_abcdefgh'
+const insecureUrl = reject('capture', /database URL must require TLS/u, insecureUrlAttempt, { __runtimeUrl: 'postgres://merchant_app:secret@db/merchant' })
+assert.equal(existsSync(statePath(insecureUrlAttempt)), false)
+assert.match(insecureUrl.stderr, /database URL must require TLS/u)
 
 assert.match(pass('capture'), /signed baseline captured at migration 242/u)
 const captured = journal()
@@ -92,6 +106,15 @@ nonceLedgerAfterWrongService.close()
 const consumerCallsAfterWrongService = existsSync('/state/nonce-calls.jsonl') ? readFileSync('/state/nonce-calls.jsonl', 'utf8').trim().split('\n').filter(Boolean).length : 0
 assert.equal(consumerCallsAfterWrongService, consumerCallsBeforeWrongService)
 rmSync('/state/wrong-service-label')
+
+// Every running API/worker service must be in the reviewed map; a valid api
+// entry alone cannot leave the replica on the previous release.
+const completeServiceMap = readFileSync('/state/service-map.json', 'utf8')
+writeFileSync('/state/service-map.json', '[{"service":"api","container":"merchant-api-1"}]\n')
+const omittedReplicaAttempt = 'attempt_omitted_replica_abcdefgh'
+const omittedReplica = reject('capture', /service map omits running Bridge B runtime service: api-replica/u, omittedReplicaAttempt)
+assert.match(omittedReplica.stderr, /service map omits running Bridge B runtime service: api-replica/u)
+writeFileSync('/state/service-map.json', completeServiceMap)
 
 // Every selected migration-capable API process must explicitly disable
 // startup migrations. Capture rejects a replica with the setting missing or
