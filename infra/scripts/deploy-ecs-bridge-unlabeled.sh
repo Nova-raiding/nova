@@ -21,6 +21,8 @@ helper=/usr/local/libexec/merchant/ecs-preidentity-recovery
 : "${ECS_DEPLOY_STATE_DIR:?protected deployment state directory is required}"
 : "${ECS_DEPLOY_LOCK_PATH:?protected deployment lock is required}"
 : "${ECS_EXTERNAL_GATEWAY_ID:?exact old external gateway ID is required}"
+: "${ECS_OLD_RUNTIME_EVIDENCE_PATH:?root-only frozen old runtime evidence is required}"
+: "${ECS_OLD_IMAGE_ARCHIVE_PATH:?root-only old API/worker/gateway image archive is required}"
 : "${ECS_BRIDGE_CANDIDATE_PROJECT:?dedicated candidate Compose project is required}"
 : "${PRODUCTION_CONFIG_PATH:?production config is required}"
 : "${PRODUCTION_API_BASE_URL:?production API HTTPS base URL is required}"
@@ -51,7 +53,7 @@ protected() {
     parent=$(dirname "$parent")
   done
 }
-for path in "$control_root" "$control_root/infra/scripts/deploy-ecs-bridge-unlabeled.sh" "$control_root/infra/scripts/verify-ecs-bridge-control-install.mjs" "$control_root/infra/scripts/validate-ecs-bridge-scoped-compose.mjs" "$control_root/infra/scripts/verify-ecs-cloud-only-artifacts.mjs" "$control_root/infra/scripts/create-ecs-bridge-candidate-map.mjs" "$control_root/infra/protected/ecs-preidentity-recovery.mjs" "$helper" /run/release-security/evidence-trust/production-preidentity-recovery-sha256 "$ECS_PREIDENTITY_SERVICE_MAP_PATH" "$ECS_ROLLBACK_PLAN_PATH" "$ECS_ROLLBACK_COMPOSE_PATH" "$ECS_ROLLBACK_ENV_FILE" "$ECS_ROLLBACK_IMAGE_DIGESTS_PATH" "$ECS_DEPLOY_STATE_DIR" "$ECS_DEPLOY_LOCK_PATH" "$ECS_BRIDGE_FULL_COMPOSE_PATH" "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" "$ECS_CANDIDATE_IDENTITY_PATH" "$ECS_CANDIDATE_SOURCE_ARCHIVE" "$ECS_RELEASE_IMAGES_PATH" "$ECS_EIGHT_IMAGE_SET_PATH" "$PRODUCTION_CONFIG_PATH"; do protected "$path"; done
+for path in "$control_root" "$control_root/infra/scripts/deploy-ecs-bridge-unlabeled.sh" "$control_root/infra/scripts/ecs-bridge-old-runtime-evidence.mjs" "$control_root/infra/scripts/verify-ecs-bridge-control-install.mjs" "$control_root/infra/scripts/validate-ecs-bridge-scoped-compose.mjs" "$control_root/infra/scripts/verify-ecs-cloud-only-artifacts.mjs" "$control_root/infra/scripts/create-ecs-bridge-candidate-map.mjs" "$control_root/infra/protected/ecs-preidentity-recovery.mjs" "$helper" /run/release-security/evidence-trust/production-preidentity-recovery-sha256 "$ECS_PREIDENTITY_SERVICE_MAP_PATH" "$ECS_ROLLBACK_PLAN_PATH" "$ECS_ROLLBACK_COMPOSE_PATH" "$ECS_ROLLBACK_ENV_FILE" "$ECS_ROLLBACK_IMAGE_DIGESTS_PATH" "$ECS_OLD_RUNTIME_EVIDENCE_PATH" "$ECS_OLD_IMAGE_ARCHIVE_PATH" "$ECS_DEPLOY_STATE_DIR" "$ECS_DEPLOY_LOCK_PATH" "$ECS_BRIDGE_FULL_COMPOSE_PATH" "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" "$ECS_CANDIDATE_IDENTITY_PATH" "$ECS_CANDIDATE_SOURCE_ARCHIVE" "$ECS_RELEASE_IMAGES_PATH" "$ECS_EIGHT_IMAGE_SET_PATH" "$PRODUCTION_CONFIG_PATH"; do protected "$path"; done
 [ -x "$helper" ] && [ -f "$helper" ] && [ -d "$ECS_DEPLOY_STATE_DIR" ] && [ -f "$ECS_DEPLOY_LOCK_PATH" ] || { echo 'B protected release controls are incomplete' >&2; exit 2; }
 node_path=$(sed -n '1s/^#!//p' "$helper")
 case "$node_path" in /*) protected "$node_path" ;; *) echo 'protected helper shebang does not name a reviewed runtime' >&2; exit 2 ;; esac
@@ -59,6 +61,13 @@ case "$node_path" in /*) protected "$node_path" ;; *) echo 'protected helper she
 node "$control_root/infra/scripts/verify-ecs-bridge-control-install.mjs" "$control_root/infra/protected/ecs-preidentity-recovery.mjs" "$helper" /run/release-security/evidence-trust/production-preidentity-recovery-sha256
 exec 9>>"$ECS_DEPLOY_LOCK_PATH"
 flock -n 9 || { echo 'another release holds the production mutation lock' >&2; exit 1; }
+# The old archive is mandatory, not optional review material. Reobserve the
+# seven original IDs, external gateway and every archived image before nonce
+# consumption or candidate container creation. The signed helper recaptures
+# the same live topology later; this precheck does not replace that signature.
+node "$control_root/infra/scripts/ecs-bridge-old-runtime-evidence.mjs" verify \
+  --evidence "$ECS_OLD_RUNTIME_EVIDENCE_PATH" --archive "$ECS_OLD_IMAGE_ARCHIVE_PATH" \
+  --recovery-plan "$ECS_ROLLBACK_PLAN_PATH" --gateway-id "$ECS_EXTERNAL_GATEWAY_ID"
 full_compose_digest=$(shasum -a 256 "$ECS_BRIDGE_FULL_COMPOSE_PATH" | awk '{print $1}')
 scoped_compose_digest=$(shasum -a 256 "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" | awk '{print $1}')
 assert_frozen_compose() {
