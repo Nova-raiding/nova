@@ -80,18 +80,20 @@ case "$identity_schema" in
   '') ;;
   candidate-identity/2)
     [ "$(field release_id)" = "$RELEASE_ID" ] || { echo 'candidate v2 release ID mismatch' >&2; exit 2; }
-    plugin_sha=$(field plugin_descriptor_sha256)
-    plugin_test_sha=$(field plugin_test_attestation_sha256)
     plugin_key_id=$(field plugin_key_id)
-    printf '%s' "$plugin_sha" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo 'candidate plugin descriptor digest is invalid' >&2; exit 2; }
-    printf '%s' "$plugin_test_sha" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo 'candidate plugin test digest is invalid' >&2; exit 2; }
     printf '%s' "$plugin_key_id" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' || { echo 'candidate plugin key ID is invalid' >&2; exit 2; }
-    plugin_descriptor="$bundle/plugin-release-descriptor.json"
-    plugin_test="$bundle/local-plugin-test-attestation.json"
-    [ -f "$plugin_descriptor" ] && [ ! -L "$plugin_descriptor" ] || { echo 'candidate v2 plugin descriptor is missing or unsafe' >&2; exit 2; }
-    [ -f "$plugin_test" ] && [ ! -L "$plugin_test" ] || { echo 'candidate v2 plugin test attestation is missing or unsafe' >&2; exit 2; }
-    [ "$(shasum -a 256 "$plugin_descriptor" | awk '{print $1}')" = "${plugin_sha#sha256:}" ] || { echo 'candidate v2 plugin descriptor digest mismatch' >&2; exit 2; }
-    [ "$(shasum -a 256 "$plugin_test" | awk '{print $1}')" = "${plugin_test_sha#sha256:}" ] || { echo 'candidate v2 plugin test attestation digest mismatch' >&2; exit 2; }
+    for os in darwin win32; do
+      plugin_sha=$(field "plugin_${os}_descriptor_sha256")
+      plugin_test_sha=$(field "plugin_${os}_test_sha256")
+      printf '%s' "$plugin_sha" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "candidate $os plugin descriptor digest is invalid" >&2; exit 2; }
+      printf '%s' "$plugin_test_sha" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "candidate $os plugin test digest is invalid" >&2; exit 2; }
+      plugin_descriptor="$bundle/plugin-release-descriptor-${os}.json"
+      plugin_test="$bundle/local-plugin-test-attestation-${os}.json"
+      [ -f "$plugin_descriptor" ] && [ ! -L "$plugin_descriptor" ] || { echo "candidate v2 $os plugin descriptor is missing or unsafe" >&2; exit 2; }
+      [ -f "$plugin_test" ] && [ ! -L "$plugin_test" ] || { echo "candidate v2 $os plugin test attestation is missing or unsafe" >&2; exit 2; }
+      [ "$(shasum -a 256 "$plugin_descriptor" | awk '{print $1}')" = "${plugin_sha#sha256:}" ] || { echo "candidate v2 $os plugin descriptor digest mismatch" >&2; exit 2; }
+      [ "$(shasum -a 256 "$plugin_test" | awk '{print $1}')" = "${plugin_test_sha#sha256:}" ] || { echo "candidate v2 $os plugin test attestation digest mismatch" >&2; exit 2; }
+    done
     plugin_public_key=/run/release-security/plugin-trust/plugin-release-public.pem
     plugin_trusted_key_id_path=/run/release-security/plugin-trust/key-id
     [ -f "$plugin_public_key" ] && [ ! -L "$plugin_public_key" ] || { echo 'candidate v2 trusted plugin public key is missing or unsafe' >&2; exit 2; }
@@ -106,13 +108,18 @@ for name in ('plugin-release-public.pem', 'key-id'):
             raise SystemExit(f'candidate v2 plugin trust path is not root-owned and protected: {entry}')
 PY
     [ "$plugin_key_id" = "$(sed -n '1p' "$plugin_trusted_key_id_path")" ] || { echo 'candidate v2 plugin key ID does not match trusted key' >&2; exit 2; }
-    node "$root/scripts/plugin-release-descriptor.mjs" verify-cloud \
-      --descriptor "$plugin_descriptor" --public-key "$plugin_public_key" \
-      --key-id "$plugin_key_id" --release-id "$RELEASE_ID" --git-sha "$git_sha"
-    plugin_platform=$(node -e 'const x=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(x.platform)' "$plugin_descriptor")
-    node "$root/scripts/local-plugin-test-attestation.mjs" verify \
-      --record "$plugin_test" --descriptor "$plugin_descriptor" --public-key "$plugin_public_key" \
-      --key-id "$plugin_key_id" --release-id "$RELEASE_ID" --git-sha "$git_sha" --platform "$plugin_platform"
+    for os in darwin win32; do
+      plugin_descriptor="$bundle/plugin-release-descriptor-${os}.json"
+      plugin_test="$bundle/local-plugin-test-attestation-${os}.json"
+      node "$root/scripts/plugin-release-descriptor.mjs" verify-cloud \
+        --descriptor "$plugin_descriptor" --public-key "$plugin_public_key" \
+        --key-id "$plugin_key_id" --release-id "$RELEASE_ID" --git-sha "$git_sha"
+      plugin_platform=$(node -e 'const x=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(x.platform)' "$plugin_descriptor")
+      case "$plugin_platform" in "$os"-x64|"$os"-arm64) ;; *) echo "candidate v2 $os plugin platform mismatch" >&2; exit 2 ;; esac
+      node "$root/scripts/local-plugin-test-attestation.mjs" verify \
+        --record "$plugin_test" --descriptor "$plugin_descriptor" --public-key "$plugin_public_key" \
+        --key-id "$plugin_key_id" --release-id "$RELEASE_ID" --git-sha "$git_sha" --platform "$plugin_platform"
+    done
     ;;
   *) echo 'candidate identity schema is unsupported' >&2; exit 2 ;;
 esac
@@ -168,10 +175,11 @@ umask 077
 stage=$(mktemp -d "$releases/.${RELEASE_ID}.staging.XXXXXXXX")
 cp "$archive" "$stage/.candidate-source.tar"; chmod 0400 "$stage/.candidate-source.tar"
 if [ "$identity_schema" = candidate-identity/2 ]; then
-  cp "$plugin_descriptor" "$stage/.plugin-release-descriptor.json"
-  cp "$plugin_test" "$stage/.local-plugin-test-attestation.json"
-  chmod 0400 "$stage/.plugin-release-descriptor.json"
-  chmod 0400 "$stage/.local-plugin-test-attestation.json"
+  for os in darwin win32; do
+    cp "$bundle/plugin-release-descriptor-${os}.json" "$stage/.plugin-release-descriptor-${os}.json"
+    cp "$bundle/local-plugin-test-attestation-${os}.json" "$stage/.local-plugin-test-attestation-${os}.json"
+    chmod 0400 "$stage/.plugin-release-descriptor-${os}.json" "$stage/.local-plugin-test-attestation-${os}.json"
+  done
 fi
 [ "$actual_archive" = "$(shasum -a 256 "$stage/.candidate-source.tar" | awk '{print $1}')" ] || { echo 'candidate archive changed while staging' >&2; exit 1; }
 tar -xf "$stage/.candidate-source.tar" -C "$stage"
@@ -190,7 +198,9 @@ comparison_manifest_sha256=$comparison_sha
 sync_plan_sha256=$sync_plan_sha
 EOF
 if [ "$identity_schema" = candidate-identity/2 ]; then
-  printf 'schema_version=candidate-identity/2\nplugin_descriptor_sha256=%s\nplugin_test_attestation_sha256=%s\nplugin_key_id=%s\n' "$plugin_sha" "$plugin_test_sha" "$plugin_key_id" >> "$stage/.candidate-identity"
+  printf 'schema_version=candidate-identity/2\nplugin_darwin_descriptor_sha256=%s\nplugin_darwin_test_sha256=%s\nplugin_win32_descriptor_sha256=%s\nplugin_win32_test_sha256=%s\nplugin_key_id=%s\n' \
+    "$(field plugin_darwin_descriptor_sha256)" "$(field plugin_darwin_test_sha256)" \
+    "$(field plugin_win32_descriptor_sha256)" "$(field plugin_win32_test_sha256)" "$plugin_key_id" >> "$stage/.candidate-identity"
 fi
 chmod 0400 "$stage/.candidate-identity"
 [ ! -e "$destination" ] && [ ! -L "$destination" ] || { echo 'release destination appeared during staging; refusing to overwrite' >&2; exit 2; }

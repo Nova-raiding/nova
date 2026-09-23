@@ -21,34 +21,37 @@ function fixture() {
   const publicKeyPem = pair.publicKey.export({ type: 'spki', format: 'pem' }).toString()
   const publicKeyPath = join(dir, 'plugin-public.pem')
   writeFileSync(publicKeyPath, publicKeyPem)
-  const packagePath = join(dir, 'plugin.tar.gz')
-  writeFileSync(packagePath, 'test-only package fixture')
-  const fields = {
-    schema_version: 'plugin-release/2', release_id: legacy.releaseId, git_sha: legacy.components.releaseGitSha,
-    plugin_id: 'merchant-marketing', plugin_version: legacy.components.pluginVersion, platform: 'darwin-arm64',
-    package_sha256: sha(readFileSync(packagePath)), package_bytes: readFileSync(packagePath).length,
-    bridge_sha256: legacy.mcp.bridgeSha256,
-    manifest_sha256: sha(readFileSync('apps/plugin/.codex-plugin/plugin.json')),
-    skill_sha256: sha(readFileSync('apps/plugin/skills/merchant-marketing/SKILL.md')),
-    mcp_methods_sha256: legacy.mcp.methodListSha256, key_id: 'plugin-test-key',
-  }
-  const descriptorPath = join(dir, 'plugin-descriptor.json')
-  const descriptor = { ...fields, signature_base64: sign(null, Buffer.from(JSON.stringify(fields)), pair.privateKey).toString('base64') }
-  writeFileSync(descriptorPath, `${JSON.stringify(descriptor)}\n`)
-  const testNow = Date.now()
-  const testFields = {
-    schema_version: 'local-plugin-tests/2', release_id: legacy.releaseId, git_sha: legacy.components.releaseGitSha,
-    platform: descriptor.platform, descriptor_sha256: sha(readFileSync(descriptorPath)),
-    suite_sha256: sha(JSON.stringify(PLUGIN_CONTRACT_TESTS)), status: 'pass',
-    generated_at: new Date(testNow).toISOString(), expires_at: new Date(testNow + 86_400_000).toISOString(),
-    key_id: 'plugin-test-key',
-  }
-  const pluginTestAttestationPath = join(dir, 'local-plugin-test-attestation.json')
-  writeFileSync(pluginTestAttestationPath, `${JSON.stringify({ ...testFields,
-    signature_base64: sign(null, Buffer.from(JSON.stringify(testFields)), pair.privateKey).toString('base64') })}\n`)
-  const manifest = buildCloudReleaseManifest({ root, releaseId: legacy.releaseId, pluginDescriptorPath: descriptorPath,
-    pluginPublicKeyPath: publicKeyPath, pluginKeyId: 'plugin-test-key', pluginPackagePath: packagePath,
-    pluginTestAttestationPath })
+  const pluginArtifacts = Object.fromEntries((['darwin', 'win32'] as const).map(os => {
+    const platform = os === 'darwin' ? 'darwin-arm64' : 'win32-x64'
+    const packagePath = join(dir, `${os}-plugin.tar.gz`)
+    writeFileSync(packagePath, `test-only ${os} package fixture`)
+    const fields = {
+      schema_version: 'plugin-release/2', release_id: legacy.releaseId, git_sha: legacy.components.releaseGitSha,
+      plugin_id: 'merchant-marketing', plugin_version: legacy.components.pluginVersion, platform,
+      package_sha256: sha(readFileSync(packagePath)), package_bytes: readFileSync(packagePath).length,
+      bridge_sha256: legacy.mcp.bridgeSha256,
+      manifest_sha256: sha(readFileSync('apps/plugin/.codex-plugin/plugin.json')),
+      skill_sha256: sha(readFileSync('apps/plugin/skills/merchant-marketing/SKILL.md')),
+      mcp_methods_sha256: legacy.mcp.methodListSha256, key_id: 'plugin-test-key',
+    }
+    const descriptorPath = join(dir, `${os}-plugin-descriptor.json`)
+    const descriptor = { ...fields, signature_base64: sign(null, Buffer.from(JSON.stringify(fields)), pair.privateKey).toString('base64') }
+    writeFileSync(descriptorPath, `${JSON.stringify(descriptor)}\n`)
+    const testNow = Date.now()
+    const testFields = {
+      schema_version: 'local-plugin-tests/2', release_id: legacy.releaseId, git_sha: legacy.components.releaseGitSha,
+      platform, descriptor_sha256: sha(readFileSync(descriptorPath)),
+      suite_sha256: sha(JSON.stringify(PLUGIN_CONTRACT_TESTS)), status: 'pass',
+      generated_at: new Date(testNow).toISOString(), expires_at: new Date(testNow + 86_400_000).toISOString(),
+      key_id: 'plugin-test-key',
+    }
+    const testAttestationPath = join(dir, `${os}-local-plugin-test-attestation.json`)
+    writeFileSync(testAttestationPath, `${JSON.stringify({ ...testFields,
+      signature_base64: sign(null, Buffer.from(JSON.stringify(testFields)), pair.privateKey).toString('base64') })}\n`)
+    return [os, { descriptorPath, packagePath, testAttestationPath }]
+  })) as { darwin: { descriptorPath: string; packagePath: string; testAttestationPath: string }; win32: { descriptorPath: string; packagePath: string; testAttestationPath: string } }
+  const manifest = buildCloudReleaseManifest({ root, releaseId: legacy.releaseId,
+    pluginPublicKeyPath: publicKeyPath, pluginKeyId: 'plugin-test-key', pluginArtifacts })
   manifest.productionEvidence = evidence as typeof manifest.productionEvidence
   const staged = join(dir, 'staged')
   mkdirSync(staged)
@@ -63,8 +66,8 @@ function fixture() {
     `sync_plan_sha256=sha256:${'c'.repeat(64)}`, '',
   ].join('\n'))
   const options = { root: staged, expectedReleaseId: manifest.releaseId,
-    pluginDescriptorPath: descriptorPath, pluginTestAttestationPath, pluginPublicKeyPem: publicKeyPem, pluginKeyId: 'plugin-test-key' }
-  return { manifest, staged, descriptorPath, pluginTestAttestationPath, options }
+    pluginArtifactPaths: pluginArtifacts, pluginPublicKeyPem: publicKeyPem, pluginKeyId: 'plugin-test-key' }
+  return { manifest, staged, pluginArtifacts, options }
 }
 
 describe('cloud-only release manifest v2', () => {
@@ -78,11 +81,13 @@ describe('cloud-only release manifest v2', () => {
   it('fails closed on missing trust, tampered descriptor, or plugin artifact leakage', () => {
     const f = fixture()
     expect(validateReleaseManifest(f.manifest, { root: f.staged, expectedReleaseId: f.manifest.releaseId }))
-      .toContain('plugin-release/2 requires a trusted descriptor, local test attestation, public key and key ID')
-    const bytes = readFileSync(f.descriptorPath, 'utf8')
-    writeFileSync(f.descriptorPath, bytes.replace('darwin-arm64', 'win32-x64'))
+      .toContain('plugin-release/2 requires both platform descriptors, local test attestations, public key and key ID')
+    const bytes = readFileSync(f.pluginArtifacts.darwin.descriptorPath, 'utf8')
+    writeFileSync(f.pluginArtifacts.darwin.descriptorPath, bytes.replace('darwin-arm64', 'win32-x64'))
     expect(validateReleaseManifest(f.manifest, f.options).some(error => error.includes('descriptor SHA-256 mismatch'))).toBe(true)
-    writeFileSync(f.descriptorPath, bytes)
+    writeFileSync(f.pluginArtifacts.darwin.descriptorPath, bytes)
+    f.manifest.pluginReleases.pop()
+    expect(validateReleaseManifest(f.manifest, f.options).some(error => error.includes('both macOS and Windows'))).toBe(true)
     f.manifest.artifacts.push({ path: 'apps/plugin/mcp/bridge.mjs', sha256: '0'.repeat(64), bytes: 1 })
     expect(validateReleaseManifest(f.manifest, f.options)).toContain('cloud manifest must not contain local plugin source artifacts')
   })

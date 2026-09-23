@@ -228,11 +228,15 @@ case "$plugin_source_schema" in
   '') bridge_sha256=$(shasum -a 256 apps/plugin/mcp/bridge.mjs | awk '{print $1}') ;;
   candidate-identity/2)
     bridge_sha256=$(sh "$root/infra/scripts/verify-staged-plugin-release-v2.sh" "$root" "$RELEASE_ID" "$release_git_sha")
-    PLUGIN_RELEASE_DESCRIPTOR_PATH="$root/.plugin-release-descriptor.json"
-    PLUGIN_RELEASE_TEST_ATTESTATION_PATH="$root/.local-plugin-test-attestation.json"
+    PLUGIN_RELEASE_DARWIN_DESCRIPTOR_PATH="$root/.plugin-release-descriptor-darwin.json"
+    PLUGIN_RELEASE_DARWIN_TEST_ATTESTATION_PATH="$root/.local-plugin-test-attestation-darwin.json"
+    PLUGIN_RELEASE_WIN32_DESCRIPTOR_PATH="$root/.plugin-release-descriptor-win32.json"
+    PLUGIN_RELEASE_WIN32_TEST_ATTESTATION_PATH="$root/.local-plugin-test-attestation-win32.json"
     PLUGIN_RELEASE_PUBLIC_KEY_PATH=/run/release-security/plugin-trust/plugin-release-public.pem
     PLUGIN_RELEASE_KEY_ID=$(sed -n '1p' /run/release-security/plugin-trust/key-id)
-    export PLUGIN_RELEASE_DESCRIPTOR_PATH PLUGIN_RELEASE_TEST_ATTESTATION_PATH PLUGIN_RELEASE_PUBLIC_KEY_PATH PLUGIN_RELEASE_KEY_ID
+    export PLUGIN_RELEASE_DARWIN_DESCRIPTOR_PATH PLUGIN_RELEASE_DARWIN_TEST_ATTESTATION_PATH
+    export PLUGIN_RELEASE_WIN32_DESCRIPTOR_PATH PLUGIN_RELEASE_WIN32_TEST_ATTESTATION_PATH
+    export PLUGIN_RELEASE_PUBLIC_KEY_PATH PLUGIN_RELEASE_KEY_ID
     ;;
   *) echo 'candidate plugin source schema is unsupported' >&2; exit 2 ;;
 esac

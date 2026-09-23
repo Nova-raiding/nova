@@ -40,20 +40,29 @@ cloud_source_v2=${ECS_CLOUD_SOURCE_V2:-0}
 case "$cloud_source_v2" in 0|1) ;; *) echo 'ECS_CLOUD_SOURCE_V2 must be 0 or 1' >&2; exit 2 ;; esac
 if [ "$cloud_source_v2" = 1 ]; then
   : "${RELEASE_ID:?cloud-only candidate requires RELEASE_ID}"
-  : "${ECS_PLUGIN_DESCRIPTOR_PATH:?cloud-only candidate requires signed plugin descriptor}"
-  : "${ECS_PLUGIN_PACKAGE_PATH:?cloud-only candidate requires local plugin package}"
+  : "${ECS_PLUGIN_DARWIN_DESCRIPTOR_PATH:?cloud-only candidate requires signed macOS plugin descriptor}"
+  : "${ECS_PLUGIN_DARWIN_PACKAGE_PATH:?cloud-only candidate requires macOS plugin package}"
+  : "${ECS_PLUGIN_DARWIN_TEST_PATH:?cloud-only candidate requires signed macOS plugin tests}"
+  : "${ECS_PLUGIN_WIN32_DESCRIPTOR_PATH:?cloud-only candidate requires signed Windows plugin descriptor}"
+  : "${ECS_PLUGIN_WIN32_PACKAGE_PATH:?cloud-only candidate requires Windows plugin package}"
+  : "${ECS_PLUGIN_WIN32_TEST_PATH:?cloud-only candidate requires signed Windows plugin tests}"
   : "${ECS_PLUGIN_PUBLIC_KEY_PATH:?cloud-only candidate requires trusted plugin public key}"
   : "${ECS_PLUGIN_KEY_ID:?cloud-only candidate requires trusted plugin key ID}"
-  : "${ECS_PLUGIN_TEST_ATTESTATION_PATH:?cloud-only candidate requires signed local plugin tests}"
-  node "$root/scripts/plugin-release-descriptor.mjs" verify \
-    --descriptor "$ECS_PLUGIN_DESCRIPTOR_PATH" --package "$ECS_PLUGIN_PACKAGE_PATH" \
-    --public-key "$ECS_PLUGIN_PUBLIC_KEY_PATH" --key-id "$ECS_PLUGIN_KEY_ID" \
-    --release-id "$RELEASE_ID" --git-sha "$revision"
-  plugin_platform=$(node -e 'const x=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(x.platform)' "$ECS_PLUGIN_DESCRIPTOR_PATH")
-  node "$root/scripts/local-plugin-test-attestation.mjs" verify \
-    --record "$ECS_PLUGIN_TEST_ATTESTATION_PATH" --descriptor "$ECS_PLUGIN_DESCRIPTOR_PATH" \
-    --public-key "$ECS_PLUGIN_PUBLIC_KEY_PATH" --key-id "$ECS_PLUGIN_KEY_ID" \
-    --release-id "$RELEASE_ID" --git-sha "$revision" --platform "$plugin_platform"
+  verify_plugin_platform() {
+    os=$1 descriptor=$2 package=$3 tests=$4
+    node "$root/scripts/plugin-release-descriptor.mjs" verify \
+      --descriptor "$descriptor" --package "$package" \
+      --public-key "$ECS_PLUGIN_PUBLIC_KEY_PATH" --key-id "$ECS_PLUGIN_KEY_ID" \
+      --release-id "$RELEASE_ID" --git-sha "$revision"
+    plugin_platform=$(node -e 'const x=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(x.platform)' "$descriptor")
+    case "$plugin_platform" in "$os"-x64|"$os"-arm64) ;; *) echo "signed $os package platform mismatch" >&2; exit 2 ;; esac
+    node "$root/scripts/local-plugin-test-attestation.mjs" verify \
+      --record "$tests" --descriptor "$descriptor" \
+      --public-key "$ECS_PLUGIN_PUBLIC_KEY_PATH" --key-id "$ECS_PLUGIN_KEY_ID" \
+      --release-id "$RELEASE_ID" --git-sha "$revision" --platform "$plugin_platform"
+  }
+  verify_plugin_platform darwin "$ECS_PLUGIN_DARWIN_DESCRIPTOR_PATH" "$ECS_PLUGIN_DARWIN_PACKAGE_PATH" "$ECS_PLUGIN_DARWIN_TEST_PATH"
+  verify_plugin_platform win32 "$ECS_PLUGIN_WIN32_DESCRIPTOR_PATH" "$ECS_PLUGIN_WIN32_PACKAGE_PATH" "$ECS_PLUGIN_WIN32_TEST_PATH"
 fi
 
 mkdir -p "$output_dir"
@@ -205,10 +214,14 @@ printf '%s\n' "$revision" > "$output_dir/source-head.txt"
 if [ "$cloud_source_v2" = 1 ]; then
   git -C "$root" archive --format=tar "$revision" \
     ':(exclude)artifacts' ':(exclude)screenshots' ':(exclude)apps/plugin' ':(exclude).codex-marketplace' > "$archive"
-  cp "$ECS_PLUGIN_DESCRIPTOR_PATH" "$output_dir/plugin-release-descriptor.json"
-  cp "$ECS_PLUGIN_TEST_ATTESTATION_PATH" "$output_dir/local-plugin-test-attestation.json"
-  plugin_descriptor_sha=$(shasum -a 256 "$output_dir/plugin-release-descriptor.json" | awk '{print $1}')
-  plugin_test_sha=$(shasum -a 256 "$output_dir/local-plugin-test-attestation.json" | awk '{print $1}')
+  cp "$ECS_PLUGIN_DARWIN_DESCRIPTOR_PATH" "$output_dir/plugin-release-descriptor-darwin.json"
+  cp "$ECS_PLUGIN_DARWIN_TEST_PATH" "$output_dir/local-plugin-test-attestation-darwin.json"
+  cp "$ECS_PLUGIN_WIN32_DESCRIPTOR_PATH" "$output_dir/plugin-release-descriptor-win32.json"
+  cp "$ECS_PLUGIN_WIN32_TEST_PATH" "$output_dir/local-plugin-test-attestation-win32.json"
+  darwin_descriptor_sha=$(shasum -a 256 "$output_dir/plugin-release-descriptor-darwin.json" | awk '{print $1}')
+  darwin_test_sha=$(shasum -a 256 "$output_dir/local-plugin-test-attestation-darwin.json" | awk '{print $1}')
+  win32_descriptor_sha=$(shasum -a 256 "$output_dir/plugin-release-descriptor-win32.json" | awk '{print $1}')
+  win32_test_sha=$(shasum -a 256 "$output_dir/local-plugin-test-attestation-win32.json" | awk '{print $1}')
 else
   git -C "$root" archive --format=tar "$revision" \
     ':(exclude)artifacts' ':(exclude)screenshots' > "$archive"
@@ -224,14 +237,14 @@ comparison_manifest_sha256=sha256:$manifest_sha
 sync_plan_sha256=sha256:$report_sha
 EOF
 if [ "$cloud_source_v2" = 1 ]; then
-  printf 'schema_version=candidate-identity/2\nrelease_id=%s\nplugin_descriptor_sha256=sha256:%s\nplugin_test_attestation_sha256=sha256:%s\nplugin_key_id=%s\n' \
-    "$RELEASE_ID" "$plugin_descriptor_sha" "$plugin_test_sha" "$ECS_PLUGIN_KEY_ID" >> "$output_dir/candidate-identity.txt"
+  printf 'schema_version=candidate-identity/2\nrelease_id=%s\nplugin_darwin_descriptor_sha256=sha256:%s\nplugin_darwin_test_sha256=sha256:%s\nplugin_win32_descriptor_sha256=sha256:%s\nplugin_win32_test_sha256=sha256:%s\nplugin_key_id=%s\n' \
+    "$RELEASE_ID" "$darwin_descriptor_sha" "$darwin_test_sha" "$win32_descriptor_sha" "$win32_test_sha" "$ECS_PLUGIN_KEY_ID" >> "$output_dir/candidate-identity.txt"
 fi
 
 cat > "$output_dir/README.txt" <<'EOF'
 This review candidate must be materialized by
 infra/scripts/stage-verified-ecs-release.sh before deployment. candidate-source.tar
-is the complete committed source tree. candidate-identity.txt binds its Git SHA,
+is the committed source tree (v2 excludes local plugin code). candidate-identity.txt binds its Git SHA,
 source digest, comparison manifest and sync plan; the source digest must equal
 the candidate gate image's com.storenova.candidate.source_sha256 label.
 
