@@ -38,7 +38,7 @@ function fixture() {
   writeFileSync(source, 'fixture-only-not-an-archive')
   const sourceSha = `sha256:${sha(readFileSync(source))}`
   const identity = path('identity.txt')
-  writeFileSync(identity, `release_id=release-bridge-b\ngit_sha=${gitSha}\nsource_sha256=${sourceSha}\n`)
+  writeFileSync(identity, `schema_version=candidate-identity/2\nrelease_id=release-bridge-b\ngit_sha=${gitSha}\nsource_sha256=${sourceSha}\nplugin_darwin_descriptor_sha256=${digest('a')}\nplugin_darwin_test_sha256=${digest('b')}\nplugin_win32_descriptor_sha256=${digest('c')}\nplugin_win32_test_sha256=${digest('d')}\nplugin_key_id=plugin-test-key\n`)
   const releaseImages = path('release-images.json')
   writeFileSync(releaseImages, JSON.stringify({ schema_version: 1, release_id: 'release-bridge-b', release_git_sha: gitSha, source_sha256: sourceSha, image_digests: Object.fromEntries(owned.map(name => [name, digests[name]])), image_references: Object.fromEntries(owned.map(name => [name, refs[name]])) }))
   const eightImages = path('eight-image-set.json')
@@ -100,6 +100,11 @@ describe('bridge B code-only package gate', () => {
   it('rejects a source archive changed after identity creation', () => {
     const item = fixture()
     writeFileSync(item.source, 'tampered')
+    expect(item.run).toThrow()
+  })
+  it('rejects a legacy identity without the separate signed local plugin contract', () => {
+    const item = fixture()
+    writeFileSync(item.identity, readFileSync(item.identity, 'utf8').replace('schema_version=candidate-identity/2\n', ''))
     expect(item.run).toThrow()
   })
   it('rejects a bridge Compose missing one worker compatibility mode', () => {

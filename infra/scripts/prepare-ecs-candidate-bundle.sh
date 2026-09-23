@@ -107,6 +107,12 @@ infra/scripts/check-ecs-storage-budget.sh
 infra/scripts/build-ecs-release-images.sh
 infra/scripts/prepare-ecs-eight-image-set.mjs
 infra/scripts/verify-bridge-b-package.mjs
+infra/scripts/deploy-ecs-bridge-unlabeled.sh
+infra/scripts/create-ecs-bridge-old-map.mjs
+infra/scripts/create-ecs-bridge-candidate-map.mjs
+infra/scripts/validate-ecs-bridge-scoped-compose.mjs
+infra/scripts/verify-ecs-bridge-control-install.mjs
+infra/scripts/verify-ecs-cloud-only-artifacts.mjs
 infra/scripts/capture-manual-operations-evidence.sh
 infra/scripts/candidate-api-docker-request.mjs
 infra/scripts/launch-ecs-candidate-api.mjs
@@ -138,6 +144,8 @@ tests/postgres-backup-attester.test.ts
 tests/postgres-backup-attester-cli-e2e.sh
 tests/ecs-preidentity-recovery.test.ts
 tests/bridge-b-package.test.ts
+tests/ecs-bridge-unlabeled-runner.test.ts
+tests/ecs-cloud-only-artifacts.test.ts
 tests/run-ecs-preidentity-isolated-cli.sh
 tests/fixtures/ecs-preidentity-isolated/docker.mjs
 tests/fixtures/ecs-preidentity-isolated/psql.mjs
@@ -168,6 +176,7 @@ tests/restore-pg17-isolated.test.ts
 docs/runbooks/ecs-release-image-build.md
 docs/runbooks/ecs-candidate-api-sidecar.md
 docs/runbooks/ecs-bridge-b-package.md
+docs/runbooks/ecs-bridge-b-unlabeled-rollback.md
 EOF
 
 # The migration registry loads the entire chain, so review all SQL assets

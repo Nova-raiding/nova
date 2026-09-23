@@ -63,8 +63,13 @@ try {
   const input = args()
   const paths = Object.fromEntries(Object.entries(input).map(([key, value]) => [key, file(value, key)]))
   const candidate = identity(paths['--candidate-identity'])
+  same(candidate.schema_version, 'candidate-identity/2', 'cloud-only candidate identity schema')
   if (!/^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u.test(candidate.release_id ?? '')) fail('bridge release ID is invalid')
   if (!/^[0-9a-f]{40}$/u.test(candidate.git_sha ?? '') || candidate.git_sha === OLD_GIT_SHA) fail('bridge Git SHA must be a new full commit')
+  for (const field of ['plugin_darwin_descriptor_sha256', 'plugin_darwin_test_sha256', 'plugin_win32_descriptor_sha256', 'plugin_win32_test_sha256']) {
+    if (!DIGEST.test(candidate[field] ?? '')) fail(`cloud-only ${field} is missing or invalid`)
+  }
+  if (!/^[A-Za-z0-9._-]{1,128}$/u.test(candidate.plugin_key_id ?? '')) fail('cloud-only plugin trust key ID is missing or invalid')
   same(candidate.source_sha256, `sha256:${fileHash(paths['--source-archive'])}`, 'candidate source digest')
 
   const images = json(paths['--release-images'], 'six-image metadata')
