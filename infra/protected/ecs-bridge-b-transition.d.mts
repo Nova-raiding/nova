@@ -1,6 +1,6 @@
 import type { SQLInputValue, SQLOutputValue } from 'node:sqlite';
 export type BridgeBIdentity = { releaseId: string; gitSha: string; manifestSha256: string; imageSetDigest: string };
-export type BridgeBJournal = Record<string, any> & { schema_version: 'ecs-bridge-b-transition/1'; phase: string; signature_base64: string };
+export type BridgeBJournal = Record<string, any> & { schema_version: 'ecs-bridge-b-transition/2'; phase: string; signature_base64: string };
 export const BRIDGE_B_PHASES: readonly string[];
 export const BRIDGE_B_RUNTIME_SERVICES: readonly string[];
 export function productionApiBaseUrl(value: string): 'https://yxsona.com';

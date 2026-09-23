@@ -33,7 +33,7 @@ const bridge = { releaseId: 'bridge-b-242', gitSha: git('a'), manifestSha256: sh
 const observed = {
   composeProject: 'merchant-production',
   containers: [{ service: 'api', containerName: 'merchant-api-1', id: 'a'.repeat(64), imageId: image('1'), configHash: sha('2'), state: 'running' }],
-  inventory: [{ id: 'a'.repeat(64), name: 'api', image_id: image('1'), config_hash: sha('2') }],
+  inventory: [{ id: 'a'.repeat(64), name: 'api', image_id: image('1'), config_hash: sha('2'), compose_service: 'api' }],
   bridgeImageIds: [image('3')], bridgeIdentityRunning: false, bridgeExclusiveContainersRunning: false,
   database: { version: 242, historySha256: sha('4'), invalidConcurrentIndexes: [] },
 }
@@ -50,7 +50,7 @@ function canonical(value: unknown): string {
 const digest = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex')
 const baseline = {
   workloadSha256: digest([{ service: 'api', id: 'a'.repeat(64), image_id: image('1'), config_hash: sha('2'), state: 'running' }]),
-  inventorySha256: digest([{ id: 'a'.repeat(64), name: 'api', image_id: image('1'), config_hash: sha('2') }]),
+  inventorySha256: digest([{ id: 'a'.repeat(64), name: 'api', image_id: image('1'), config_hash: sha('2'), compose_service: 'api' }]),
 }
 function snapshot() { return createBridgeBSnapshot(observed, binding, keys.privateKey, keys.publicKey, now) }
 function consumed() { return transitionBridgeBJournal(snapshot(), 'nonce_consumed', keys.privateKey, keys.publicKey, now) }
@@ -107,7 +107,7 @@ describe('protected ECS Bridge B transition policy', () => {
 
   it('captures and signs only a migration-242 baseline, without retaining the nonce', () => {
     const journal = snapshot()
-    expect(journal.schema_version).toBe('ecs-bridge-b-transition/1')
+    expect(journal.schema_version).toBe('ecs-bridge-b-transition/2')
     expect(journal.phase).toBe('captured')
     expect(journal.database_before.migration_version).toBe(242)
     expect(journal.baseline.inventory).toEqual(observed.inventory)

@@ -13,7 +13,7 @@ for (const path of [root, trust, bin, '/state']) chmodSync(path, path === root |
 // Preserve controller behavior but expose the caught stack for fixture diagnosis.
 const controllerPath = `${bin}/ecs-bridge-b-transition`
 let controllerBytes = readFileSync(controllerPath, 'utf8')
-const verifyNeedle = "  assert(document?.schema_version === 'ecs-bridge-b-transition/1' && verifyDocument(document, publicPem), 'Bridge B journal signature is invalid')"
+const verifyNeedle = "  assert(document?.schema_version === 'ecs-bridge-b-transition/2' && verifyDocument(document, publicPem), 'Bridge B journal signature is invalid')"
 if (!controllerBytes.includes(verifyNeedle)) throw new Error('fixture diagnostic could not locate the journal verifier')
 controllerBytes = controllerBytes
   .replace(verifyNeedle, "  process.stderr.write('VERIFY ' + document.phase + ' sha=' + sha256(Buffer.from(canonical(document))) + ' pub=' + sha256(Buffer.from(publicPem)) + ' expires=' + document.expires_at + ' now=' + new Date().toISOString() + ' sig=' + document.signature_base64 + ' valid=' + verifyDocument(document, publicPem) + '\\n')\n" + verifyNeedle)

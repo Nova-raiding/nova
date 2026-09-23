@@ -75,7 +75,7 @@ function validateBridgeServiceList(services) {
 }
 function canonicalDigest(value) { return sha256(Buffer.from(canonical(value))) }
 function verifyActive(document, publicPem, now) {
-  assert(document?.schema_version === 'ecs-bridge-b-transition/1' && verifyDocument(document, publicPem), 'Bridge B journal signature is invalid')
+  assert(document?.schema_version === 'ecs-bridge-b-transition/2' && verifyDocument(document, publicPem), 'Bridge B journal signature is invalid')
   assert(Date.parse(document.expires_at) > now.getTime(), 'Bridge B journal is expired')
 }
 
@@ -129,9 +129,9 @@ export function createBridgeBSnapshot(observed, binding, privatePem, publicPem, 
   }).sort((a, b) => a.service.localeCompare(b.service))
   assert(new Set(services.map(item => item.service)).size === services.length, 'baseline service names must be unique')
   const inventory = [...observed.inventory].sort((a, b) => String(a.name).localeCompare(String(b.name)))
-  assert(inventory.every(item => /^[a-f0-9]{12,64}$/u.test(item.id ?? '') && IMAGE.test(item.image_id ?? '') && HEX.test(item.config_hash ?? '') && typeof item.name === 'string'), 'Docker inventory is incomplete or malformed')
+  assert(inventory.every(item => /^[a-f0-9]{12,64}$/u.test(item.id ?? '') && IMAGE.test(item.image_id ?? '') && HEX.test(item.config_hash ?? '') && typeof item.name === 'string' && typeof item.compose_service === 'string'), 'Docker inventory is incomplete or malformed')
   const document = {
-    schema_version: 'ecs-bridge-b-transition/1', phase: 'captured',
+    schema_version: 'ecs-bridge-b-transition/2', phase: 'captured',
     attempt_id: binding.attemptId, compose_project: observed.composeProject,
     captured_at: now.toISOString(), expires_at: new Date(now.getTime() + 24 * 60 * 60_000).toISOString(),
     bridge: { release_id: binding.bridge.releaseId, release_git_sha: binding.bridge.gitSha, manifest_sha256: binding.bridge.manifestSha256, image_set_digest: binding.bridge.imageSetDigest, exclusive_image_ids: [...new Set(observed.bridgeImageIds)].sort() },
@@ -339,7 +339,7 @@ function collectInventory() {
   return ids.map(id => {
     const item = jsonCommand(BIN.docker, ['inspect', id])[0]
     assert(item?.Id && /^[a-f0-9]{64}$/u.test(item.Id) && item.Image && item.State?.Running === true, 'Docker inventory contains an unreadable or stopped container')
-    return { id: item.Id, name: String(item.Name ?? '').replace(/^\//u, ''), image_id: item.Image, config_hash: configHash(item), project: item.Config?.Labels?.['com.docker.compose.project'] ?? '', env: Object.fromEntries((item.Config?.Env ?? []).map(value => { const index = value.indexOf('='); return index < 0 ? [value, ''] : [value.slice(0, index), value.slice(index + 1)] })) }
+    return { id: item.Id, name: String(item.Name ?? '').replace(/^\//u, ''), image_id: item.Image, config_hash: configHash(item), project: item.Config?.Labels?.['com.docker.compose.project'] ?? '', compose_service: item.Config?.Labels?.['com.docker.compose.service'] ?? '', env: Object.fromEntries((item.Config?.Env ?? []).map(value => { const index = value.indexOf('='); return index < 0 ? [value, ''] : [value.slice(0, index), value.slice(index + 1)] })) }
   }).sort((a, b) => a.name.localeCompare(b.name))
 }
 function collectMappedServices(path, project) {
@@ -353,6 +353,7 @@ function collectMappedServices(path, project) {
     assert(matches.length === 1, `service must map to exactly one running container: ${entry.service}`)
     const item = matches[0]
     assert(item.project === project, `baseline container is not part of the expected Compose project: ${entry.service}`)
+    assert(item.compose_service === entry.service, `baseline container Compose service label does not match the reviewed service map: ${entry.service}`)
     return { service: entry.service, containerName: item.name, id: item.id, imageId: item.image_id, configHash: item.config_hash, state: 'running' }
   }).sort((a, b) => a.service.localeCompare(b.service))
   assert(new Set(result.map(item => item.service)).size === result.length && new Set(result.map(item => item.containerName)).size === result.length, 'service map has duplicate services or containers')
@@ -461,7 +462,7 @@ function consumeNonce(nonce, attemptId, identity) {
 function journalPath(attemptId) { assert(/^[A-Za-z0-9_-]{16,128}$/u.test(attemptId), 'Bridge B attempt id is invalid'); return `${JOURNAL_ROOT}/${attemptId}.json` }
 function journalAdvance(path, journal, nextPhase, privatePem, publicPem) { const next = transitionBridgeBJournal(journal, nextPhase, privatePem, publicPem); writeAtomic(path, next, true, journal.signature_base64); return next }
 function databaseIs242(database, journal, label) { assert(database.version === 242 && database.historySha256 === journal.database_before.migration_history_sha256 && database.invalidConcurrentIndexes.length === 0, `${label}: database is not the exact valid migration-242 prefix`) }
-function baselineInventory(inventory) { return inventory.map(({ id, name, image_id, config_hash }) => ({ id, name, image_id, config_hash })).sort((a, b) => a.name.localeCompare(b.name)) }
+function baselineInventory(inventory) { return inventory.map(({ id, name, image_id, config_hash, compose_service }) => ({ id, name, image_id, config_hash, compose_service })).sort((a, b) => a.name.localeCompare(b.name)) }
 function currentBaseline(serviceMap, project) {
   const map = JSON.parse(readRegular(serviceMap).toString('utf8'))
   assert(Array.isArray(map) && map.length > 0, 'reviewed service map is empty')
@@ -469,6 +470,7 @@ function currentBaseline(serviceMap, project) {
   const services = map.map(entry => {
     const actual = inventory.filter(item => item.name === entry.container)
     assert(actual.length === 1 && actual[0].project === project, `baseline service does not resolve uniquely in the expected project: ${entry.service}`)
+    assert(actual[0].compose_service === entry.service, `baseline container Compose service label does not match the reviewed service map: ${entry.service}`)
     return { service: entry.service, containerName: actual[0].name, id: actual[0].id, imageId: actual[0].image_id, configHash: actual[0].config_hash, state: 'running' }
   }).sort((a, b) => a.service.localeCompare(b.service))
   assert(new Set(services.map(item => item.service)).size === services.length && services.some(item => item.service === 'api'), 'service map must uniquely include api')
@@ -490,8 +492,12 @@ function assertBridgeInventory(journal, candidateImageIds, permitOldDuringRecove
   for (const item of current) {
     const previous = baseline.get(item.name)
     assert(previous, `unexpected running container blocks Bridge B: ${item.name}`)
-    if (!managed.has(item.name)) assert(item.id === previous.id && item.image_id === previous.image_id && item.config_hash === previous.config_hash, `unmanaged container changed during Bridge B: ${item.name}`)
-    else assert(candidateImageIds.includes(item.image_id) || permitOldDuringRecovery && item.image_id === previous.image_id, `managed service is running an unapproved image: ${item.name}`)
+    if (!managed.has(item.name)) assert(item.id === previous.id && item.image_id === previous.image_id && item.config_hash === previous.config_hash && item.compose_service === previous.compose_service, `unmanaged container changed during Bridge B: ${item.name}`)
+    else {
+      const expectedService = Object.entries(journal.service_map).find(([, containerName]) => containerName === item.name)?.[0]
+      assert(expectedService && item.compose_service === expectedService, `managed container Compose service label changed: ${item.name}`)
+      assert(candidateImageIds.includes(item.image_id) || permitOldDuringRecovery && item.image_id === previous.image_id, `managed service is running an unapproved image: ${item.name}`)
+    }
   }
   return current
 }
@@ -597,8 +603,11 @@ function recover(get, privatePem, publicPem) {
   for (const item of actual) {
     const old = oldByName.get(item.name)
     assert(old, `unexpected running container blocks recovery: ${item.name}`)
-    if (managed.has(item.name)) assert(candidateIds.includes(item.image_id) || item.image_id === old.image_id, `unrecognized managed runtime blocks recovery: ${item.name}`)
-    else assert(item.id === old.id && item.image_id === old.image_id && item.config_hash === old.config_hash, `unmanaged runtime changed; recovery blocked: ${item.name}`)
+    if (managed.has(item.name)) {
+      const expectedService = Object.entries(journal.service_map).find(([, containerName]) => containerName === item.name)?.[0]
+      assert(expectedService && item.compose_service === expectedService, `managed container Compose service label changed; recovery blocked: ${item.name}`)
+      assert(candidateIds.includes(item.image_id) || item.image_id === old.image_id, `unrecognized managed runtime blocks recovery: ${item.name}`)
+    } else assert(item.id === old.id && item.image_id === old.image_id && item.config_hash === old.config_hash && item.compose_service === old.compose_service, `unmanaged runtime changed; recovery blocked: ${item.name}`)
   }
   const old = frozenOldCapsule(get('--recovery-plan'), get('--recovery-compose'), get('--recovery-env'), get('--recovery-image-digests'), before)
   assert(old.planSha256 === journal.recovery_capsule.plan_sha256 && canonical(old.targetIdentity) === canonical(journal.recovery_capsule.target) && canonical(old.services) === canonical(journal.recovery_capsule.services), 'signed frozen old-runtime capsule changed')
@@ -634,7 +643,7 @@ function recover(get, privatePem, publicPem) {
   const finalInventory = collectInventory()
   for (const item of finalInventory) {
     const previous = oldByName.get(item.name)
-    assert(previous && item.image_id === previous.image_id && item.config_hash === previous.config_hash, `recovered runtime differs from captured old image/configuration: ${item.name}`)
+    assert(previous && item.image_id === previous.image_id && item.config_hash === previous.config_hash && item.compose_service === previous.compose_service, `recovered runtime differs from captured old image/configuration: ${item.name}`)
     if (!managed.has(item.name)) assert(item.id === previous.id, `unmanaged runtime changed during recovery: ${item.name}`)
   }
   assertRelease(productionRelease(get('--production-api-base-url')), old.targetIdentity, 'restored old runtime')

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
+import { createHash, createPrivateKey, sign } from 'node:crypto'
 import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { verifyBridgeBJournal } from '/infra/protected/ecs-bridge-b-transition.mjs'
@@ -57,6 +57,41 @@ assert.equal(captured.bridge.release_id, 'bridge-release-242')
 assert.equal(captured.bridge.manifest_sha256, 'e'.repeat(64))
 assert.deepEqual(captured.baseline.services.map(item => item.service), ['api', 'api-replica'])
 assert.deepEqual(captured.baseline.inventory.map(item => item.name), ['merchant-api-1', 'merchant-api-replica-1'])
+assert.deepEqual(captured.baseline.inventory.map(item => item.compose_service), ['api', 'api-replica'])
+
+// A genuinely signed legacy v1 journal has no compose_service baseline field.
+// It must be rejected during journal verification before recovery can mutate.
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
+  if (value && typeof value === 'object') return `{${Object.entries(value).filter(([key]) => key !== 'signature_base64').sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}`
+  return JSON.stringify(value)
+}
+const legacyJournalAttempt = 'attempt_legacy_v1_abcdefgh'
+const legacyJournal = { ...captured, schema_version: 'ecs-bridge-b-transition/1' }
+legacyJournal.signature_base64 = sign(null, Buffer.from(canonical(legacyJournal)), createPrivateKey(readFileSync('/var/lib/merchant-release-security/production-capability-private.pem'))).toString('base64')
+writeFileSync(statePath(legacyJournalAttempt), `${JSON.stringify(legacyJournal)}\n`, { mode: 0o400 })
+const dockerBeforeLegacyJournal = dockerCalls().length
+const psqlBeforeLegacyJournal = readFileSync('/state/psql-calls.jsonl', 'utf8').trim().split('\n').filter(Boolean).length
+reject('recover', /Bridge B journal signature is invalid/u, legacyJournalAttempt)
+assert.equal(dockerCalls().length, dockerBeforeLegacyJournal)
+assert.equal(readFileSync('/state/psql-calls.jsonl', 'utf8').trim().split('\n').filter(Boolean).length, psqlBeforeLegacyJournal)
+
+// The name and project can remain plausible while the Compose service label
+// proves the reviewed API mapping is stale. Capture must fail before signing.
+const wrongServiceAttempt = 'attempt_wrong_service_abcdefgh'
+const nonceLedgerBeforeWrongService = new DatabaseSync('/var/lib/merchant-release-security/production-nonces.sqlite3')
+const nonceCountBeforeWrongService = nonceLedgerBeforeWrongService.prepare('SELECT count(*) AS count FROM consumed_nonces').get().count
+nonceLedgerBeforeWrongService.close()
+const consumerCallsBeforeWrongService = existsSync('/state/nonce-calls.jsonl') ? readFileSync('/state/nonce-calls.jsonl', 'utf8').trim().split('\n').filter(Boolean).length : 0
+writeFileSync('/state/wrong-service-label', 'yes\n')
+const wrongService = reject('capture', /Compose service label does not match the reviewed service map: api/u, wrongServiceAttempt)
+assert.equal(existsSync(statePath(wrongServiceAttempt)), false)
+const nonceLedgerAfterWrongService = new DatabaseSync('/var/lib/merchant-release-security/production-nonces.sqlite3')
+assert.equal(nonceLedgerAfterWrongService.prepare('SELECT count(*) AS count FROM consumed_nonces').get().count, nonceCountBeforeWrongService)
+nonceLedgerAfterWrongService.close()
+const consumerCallsAfterWrongService = existsSync('/state/nonce-calls.jsonl') ? readFileSync('/state/nonce-calls.jsonl', 'utf8').trim().split('\n').filter(Boolean).length : 0
+assert.equal(consumerCallsAfterWrongService, consumerCallsBeforeWrongService)
+rmSync('/state/wrong-service-label')
 
 // Every selected migration-capable API process must explicitly disable
 // startup migrations. Capture rejects a replica with the setting missing or
