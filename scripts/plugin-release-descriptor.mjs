@@ -426,9 +426,9 @@ export function signPluginReleaseDescriptor(options) {
     'mcp/bridge.mjs': bridge,
     'skills/merchant-marketing/SKILL.md': skill,
   }, options.platform)
-  if (verifyTrackedPackageSources(entries, pluginRoot, options.platform)) {
-    verifyRebuiltPackage(entries, pluginRoot, options.platform, verifyContents)
-  }
+  const hasBuilder = verifyTrackedPackageSources(entries, pluginRoot, options.platform)
+  if (!hasBuilder && !options.testOnlySkipRebuild) throw new Error('plugin clean-source package builder is missing')
+  if (hasBuilder) verifyRebuiltPackage(entries, pluginRoot, options.platform, verifyContents)
   const payload = {
     schema_version: 'plugin-release/2', release_id: options.releaseId, git_sha: options.gitSha,
     plugin_id: manifest.id, plugin_version: manifest.version, platform: options.platform,

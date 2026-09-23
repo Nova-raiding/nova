@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { createHash, generateKeyPairSync } from 'node:crypto'
 import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { gunzipSync, gzipSync, deflateRawSync } from 'node:zlib'
 import { assertPrivateSigningKey, signPluginReleaseDescriptor, verifyPluginReleaseDescriptor, windowsSigningKeyAclProtected } from '../scripts/plugin-release-descriptor.mjs'
@@ -30,6 +30,25 @@ function appendTarMember(packageBytes, name, type = '0', linkname = '') {
   const checksum = header.reduce((sum, byte) => sum + byte, 0)
   header.write(checksum.toString(8).padStart(6, '0') + '\0 ', 148, 'ascii')
   return gzipSync(Buffer.concat([archive.subarray(0, offset), header, Buffer.alloc(1024)]))
+}
+
+function replaceTarMemberBytes(packageBytes, target, replacement) {
+  const archive = gunzipSync(packageBytes)
+  let offset = 0
+  while (offset + 512 <= archive.length && archive.subarray(offset, offset + 512).some(byte => byte !== 0)) {
+    const header = archive.subarray(offset, offset + 512)
+    const name = header.subarray(0, 100).toString('utf8').split('\0')[0]
+    const size = Number.parseInt(header.subarray(124, 136).toString('ascii'), 8)
+    if (name === target) {
+      const current = archive.subarray(offset + 512, offset + 512 + size)
+      const changed = replacement(Buffer.from(current))
+      assert.equal(changed.length, size)
+      changed.copy(archive, offset + 512)
+      return gzipSync(archive)
+    }
+    offset += 512 + Math.ceil(size / 512) * 512
+  }
+  throw new Error(`tar fixture member missing: ${target}`)
 }
 
 function fixture() {
@@ -60,6 +79,7 @@ function fixture() {
   const options = {
     privateKeyPath, pluginRoot, packagePath, keyId: 'local-release-2026',
     releaseId: 'release-1', gitSha, platform: 'darwin-arm64', mcpMethodsSha256: 'b'.repeat(64),
+    testOnlySkipRebuild: true,
   }
   const verifyOptions = {
     publicKeyPem: keys.publicKey.export({ type: 'spki', format: 'pem' }), packagePath,
@@ -269,6 +289,29 @@ test('signs exact local package bytes and binds release, Git, platform, bridge a
   assert.equal(document.plugin_version, '0.1.0+codex.1')
   assert.equal(verifyPluginReleaseDescriptor(document, f.verifyOptions), document)
   assert.match(document.signature_base64, /^[A-Za-z0-9+/]{86}==$/u)
+})
+
+test('production signing refuses a package without its clean-source builder', () => {
+  const f = fixture()
+  assert.throws(() => signPluginReleaseDescriptor({ ...f.options, testOnlySkipRebuild: false }), /clean-source package builder is missing/u)
+})
+
+test('a real macOS package rebuild binds generated installer bytes before signing', t => {
+  const packagePath = process.env.STORENOVA_TEST_REAL_MAC_PACKAGE
+  if (!packagePath) return t.skip('set STORENOVA_TEST_REAL_MAC_PACKAGE to a clean-source macOS package')
+  const f = fixture()
+  f.options.pluginRoot = resolve('apps/plugin')
+  f.options.packagePath = packagePath
+  f.options.platform = `darwin-${process.arch}`
+  f.options.gitSha = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim()
+  f.options.testOnlySkipRebuild = false
+  assert.equal(signPluginReleaseDescriptor(f.options).platform, f.options.platform)
+  const tampered = join(f.root, 'tampered-real.tar.gz')
+  writeFileSync(tampered, replaceTarMemberBytes(readFileSync(packagePath), 'install.command', bytes => {
+    bytes[0] ^= 1
+    return bytes
+  }))
+  assert.throws(() => signPluginReleaseDescriptor({ ...f.options, packagePath: tampered }), /install\.command differs from clean-source rebuild/u)
 })
 
 test('rejects tampered package, descriptor, wrong trust anchor and wrong candidate identity', () => {
