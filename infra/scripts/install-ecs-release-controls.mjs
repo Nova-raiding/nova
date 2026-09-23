@@ -13,6 +13,7 @@ export const CONTROLS = Object.freeze({
   capability: Object.freeze({ executable: 'attest-capability-evidence', digest: 'production-capability-attester-sha256' }),
   manual: Object.freeze({ executable: 'attest-manual-operations-evidence', digest: 'production-manual-operations-attester-sha256' }),
   bundle: Object.freeze({ executable: 'attest-release-evidence-bundle', digest: 'production-evidence-bundle-attester-sha256' }),
+  bridgeB: Object.freeze({ executable: 'ecs-bridge-b-transition', digest: 'production-bridge-b-transition-sha256' }),
 });
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const ensure = (condition, message) => { if (!condition) throw new Error(message); };

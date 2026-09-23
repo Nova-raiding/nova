@@ -1,0 +1,13 @@
+import type { SQLInputValue, SQLOutputValue } from 'node:sqlite';
+export type BridgeBIdentity = { releaseId: string; gitSha: string; manifestSha256: string; imageSetDigest: string };
+export type BridgeBJournal = Record<string, any> & { schema_version: 'ecs-bridge-b-transition/1'; phase: string; signature_base64: string };
+export const BRIDGE_B_PHASES: readonly string[];
+export const BRIDGE_B_RUNTIME_SERVICES: readonly string[];
+export function productionApiBaseUrl(value: string): 'https://yxsona.com';
+export function recordBridgeBAttemptBinding(ledger: { exec(sql: string): void; prepare(sql: string): { get(...args: SQLInputValue[]): Record<string, SQLOutputValue> | undefined; run(...args: SQLInputValue[]): unknown } }, nonce: string, attemptId: string, identity: { release_id: string; image_set_digest: string; manifest_sha256: string; release_git_sha: string }): true;
+export function createBridgeBSnapshot(observed: Record<string, any>, binding: { attemptId: string; deploymentNonce: string; keyId: string; bridge: BridgeBIdentity; bridgeArtifacts: Record<string, any>; recoveryCapsule: Record<string, any> }, privatePem: string, publicPem: string, now?: Date): BridgeBJournal;
+export function transitionBridgeBJournal(document: BridgeBJournal, nextPhase: string, privatePem: string, publicPem: string, now?: Date): BridgeBJournal;
+export function verifyBridgeBJournal(document: BridgeBJournal, publicPem: string, now?: Date): true;
+export function authorizeBridgeBMutation(document: BridgeBJournal, input: Record<string, any>, publicPem: string, now?: Date): Readonly<{ authorized: true; operation: 'compose_up_runtime_only'; migrationVersion: 242; migrationCommandAllowed: false }>;
+export function preflightBridgeBMutation(document: BridgeBJournal, input: Record<string, any>, publicPem: string, now?: Date): Readonly<{ authorized: true; operation: 'preflight_only'; migrationVersion: 242; migrationCommandAllowed: false }>;
+export function authorizeBridgeBRecovery(document: BridgeBJournal, input: Record<string, any>, publicPem: string, now?: Date): Readonly<{ authorized: true; operation: 'compose_up_old_runtime_only'; migrationVersion: 242; migrationCommandAllowed: false }>;

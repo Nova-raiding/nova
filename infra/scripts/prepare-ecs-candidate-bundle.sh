@@ -98,6 +98,11 @@ infra/scripts/invoke-ecs-automatic-rollback.sh
 infra/scripts/install-ecs-release-controls.mjs
 infra/scripts/install-ecs-release-controls.d.mts
 infra/scripts/test-ecs-release-control-installer.sh
+infra/scripts/consume-production-evidence-nonce.sh
+infra/protected/consume-production-evidence-nonce.py
+tests/protected-nonce-consumer-smoke.py
+docs/runbooks/ecs-production-nonce-consumer.md
+docs/runbooks/ecs-bridge-b-transition.md
 infra/protected/attest-release-evidence-bundle.mjs
 infra/protected/attest-release-evidence-bundle.d.mts
 infra/protected/attest-postgres-backup.mjs
@@ -216,6 +221,14 @@ packages/workers/src/scanner-heartbeat.test.ts
 tests/ecs-compose-rollback.test.ts
 tests/mcp-integration-mode-release-gate.test.ts
 tests/ecs-bridge-b-transition.test.ts
+tests/run-ecs-bridge-b-isolated-cli.sh
+tests/run-ecs-bridge-b-host-cli.sh
+tests/fixtures/ecs-bridge-b-host-cli/curl.mjs
+tests/fixtures/ecs-bridge-b-host-cli/docker.mjs
+tests/fixtures/ecs-bridge-b-host-cli/nonce-consumer.mjs
+tests/fixtures/ecs-bridge-b-host-cli/psql.mjs
+tests/fixtures/ecs-bridge-b-host-cli/run.mjs
+tests/fixtures/ecs-bridge-b-host-cli/setup.mjs
 EOF
 
 # The migration registry loads the entire chain, so review all SQL assets

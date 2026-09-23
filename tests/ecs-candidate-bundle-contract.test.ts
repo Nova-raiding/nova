@@ -56,6 +56,11 @@ describe('ECS candidate bundle contract', () => {
       'infra/scripts/install-ecs-release-controls.mjs',
       'infra/scripts/install-ecs-release-controls.d.mts',
       'infra/scripts/test-ecs-release-control-installer.sh',
+      'infra/scripts/consume-production-evidence-nonce.sh',
+      'infra/protected/consume-production-evidence-nonce.py',
+      'tests/protected-nonce-consumer-smoke.py',
+      'docs/runbooks/ecs-production-nonce-consumer.md',
+      'docs/runbooks/ecs-bridge-b-transition.md',
       'infra/protected/attest-release-evidence-bundle.mjs',
       'infra/protected/attest-release-evidence-bundle.d.mts',
       'infra/protected/attest-postgres-backup.mjs',
@@ -151,6 +156,14 @@ describe('ECS candidate bundle contract', () => {
       'tests/ecs-compose-rollback.test.ts',
       'tests/mcp-integration-mode-release-gate.test.ts',
       'tests/ecs-bridge-b-transition.test.ts',
+      'tests/run-ecs-bridge-b-isolated-cli.sh',
+      'tests/run-ecs-bridge-b-host-cli.sh',
+      'tests/fixtures/ecs-bridge-b-host-cli/curl.mjs',
+      'tests/fixtures/ecs-bridge-b-host-cli/docker.mjs',
+      'tests/fixtures/ecs-bridge-b-host-cli/nonce-consumer.mjs',
+      'tests/fixtures/ecs-bridge-b-host-cli/psql.mjs',
+      'tests/fixtures/ecs-bridge-b-host-cli/run.mjs',
+      'tests/fixtures/ecs-bridge-b-host-cli/setup.mjs',
     ]) expect(manifest, `${path} must be compared with the remote checkout`).toContain(path)
 
     const entries = manifest.slice(manifest.indexOf("<<'EOF'\n") + "<<'EOF'\n".length).split('\n').filter(Boolean)
@@ -165,9 +178,34 @@ describe('ECS candidate bundle contract', () => {
       'infra/scripts/deploy-verified-ecs-compose.sh',
       'infra/scripts/rollback-ecs-compose.sh',
       'infra/scripts/invoke-ecs-automatic-rollback.sh',
+      'tests/run-ecs-bridge-b-isolated-cli.sh',
+      'tests/run-ecs-bridge-b-host-cli.sh',
       'infra/protected/attest-release-evidence-bundle.mjs',
     ]) expect(statSync(path).mode & 0o111, `${path} must be executable in the release tree`).not.toBe(0)
     expect(statSync('tests/release-evidence-bundle-gate.ts').mode & 0o111).toBe(0)
+  })
+
+  it('documents Bridge B as a gated runtime-only transition and includes its shared nonce trust source', () => {
+    const runbook = readFileSync('docs/runbooks/ecs-bridge-b-transition.md', 'utf8')
+    const nonceRunbook = readFileSync('docs/runbooks/ecs-production-nonce-consumer.md', 'utf8')
+    const controller = readFileSync('infra/protected/ecs-bridge-b-transition.mjs', 'utf8')
+    const nonceConsumer = readFileSync('infra/protected/consume-production-evidence-nonce.py', 'utf8')
+
+    expect(runbook).toContain('## Preconditions and installation')
+    expect(runbook).toContain('## Capture baseline')
+    expect(runbook).toContain('## Install Bridge B')
+    expect(runbook).toContain('## Recover')
+    expect(runbook).toContain('exec 9>>/var/lib/merchant-release-security/production-deploy.lock')
+    expect(runbook).toContain('flock -n 9')
+    expect(runbook).toContain('Bridge B does not override any gate')
+    expect(runbook).toContain('NO-GO')
+    expect(runbook).toContain('migration-242')
+    expect(runbook).toContain('never')
+    expect(controller).toContain("'/usr/local/libexec/merchant/consume-production-evidence-nonce'")
+    expect(controller).toContain('migrationCommandAllowed: false')
+    expect(nonceConsumer).toContain('BEGIN IMMEDIATE')
+    expect(nonceConsumer).toContain('production-nonces.sqlite3')
+    expect(nonceRunbook).toContain('production-evidence-nonce-consumer-sha256')
   })
 
   it('fails before remote access when the candidate repository has uncommitted input', () => {

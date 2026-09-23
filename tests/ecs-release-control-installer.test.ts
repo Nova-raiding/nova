@@ -21,7 +21,10 @@ describe('protected release-control installation', () => {
     expect(() => prepareControlBytes('backup', source, sha, node)).toThrow('canonical');
   });
   it('does not accept arbitrary destinations or trust directories', () => {
-    expect(Object.keys(CONTROLS).sort()).toEqual(['backup', 'bundle', 'capability', 'manual', 'preidentity', 'restore']);
+    expect(Object.keys(CONTROLS).sort()).toEqual(['backup', 'bridgeB', 'bundle', 'capability', 'manual', 'preidentity', 'restore']);
+    expect(CONTROLS.bridgeB).toEqual({ executable: 'ecs-bridge-b-transition', digest: 'production-bridge-b-transition-sha256' });
+    expect(prepareControlBytes('bridgeB', source, sha, '/usr/bin/node').toString())
+      .toBe('#!/usr/bin/node\nconsole.log("reviewed control");\n');
     expect(() => parseInstallArguments(['--destination', '/tmp/evil'])).toThrow();
   });
   it('requires all exact non-duplicated CLI arguments', () => {
