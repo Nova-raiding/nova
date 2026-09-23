@@ -37,7 +37,8 @@ jobs:
           $helperDir = Join-Path $env:RUNNER_TEMP 'storenova-helper'
           node apps/plugin/scripts/build-windows-credential-helper.mjs $helperDir
           if ($LASTEXITCODE -ne 0) { throw 'Credential helper build failed' }
-      - name: Test-sign the helper for runner-local verification
+      - name: Create a runner-local test certificate
+        timeout-minutes: 3
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -46,11 +47,18 @@ jobs:
           $cerPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-test.cer'
           Export-Certificate -Cert $cert -FilePath $cerPath | Out-Null
           Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+          [System.IO.File]::AppendAllText($env:GITHUB_ENV, "STORENOVA_WINDOWS_SIGNER_THUMBPRINT=$($cert.Thumbprint)`n", [System.Text.UTF8Encoding]::new($false))
+      - name: Sign and validate the helper with the test certificate
+        timeout-minutes: 3
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $helperDir = Join-Path $env:RUNNER_TEMP 'storenova-helper'
           $binary = Join-Path $helperDir 'StoreNovaCredentialHelper.exe'
+          $cert = Get-Item "Cert:\CurrentUser\My\$env:STORENOVA_WINDOWS_SIGNER_THUMBPRINT"
           $signature = Set-AuthenticodeSignature -FilePath $binary -Certificate $cert -HashAlgorithm SHA256
           if ($signature.Status -ne 'Valid') { throw "Test signing failed: $($signature.Status)" }
           (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash | Set-Content -LiteralPath "$binary.sha256" -Encoding Ascii
-          [System.IO.File]::AppendAllText($env:GITHUB_ENV, "STORENOVA_WINDOWS_SIGNER_THUMBPRINT=$($cert.Thumbprint)`n", [System.Text.UTF8Encoding]::new($false))
       - name: Package and verify a clean Windows install
         shell: powershell
         run: |
