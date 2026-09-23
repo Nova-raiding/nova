@@ -4,6 +4,8 @@
 
 脚本只构建和推送镜像，不渲染 Compose、不启动容器、不切流，也不修改数据库。PostgreSQL 迁移镜像与 ClamAV 镜像仍必须由发布配置提供经过审核的上游固定摘要，不能用本脚本输出的六镜像清单冒充完整发布清单。
 
+候选源码归档不是运行镜像：它为发布门禁保留 `apps/plugin` 和 `.codex-marketplace` 的插件契约测试输入，但排除已跟踪的 `artifacts/` 与 `screenshots/` 历史交付物。API、worker 的最终运行镜像只复制各自编译入口和共享包，不复制本地插件的编译树；商家及平台桌面 UI 镜像也各自从独立前端目录构建。因而不能把裸 `git archive HEAD` 的体积、或服务器上供门禁使用的源码目录，等同于实际生产运行镜像内容。若要求服务器连插件源码都不暂存，须先拆分门禁输入与业务源码身份，并同步改造候选包、镜像标签、发布清单及证据校验，不可单方面排除目录。
+
 staging 和镜像构建共用 `infra/scripts/ecs-build-lock.sh`，避免不同 release 的 TypeScript 编译与 Docker build 同时耗尽宿主内存。ECS 上须预建 root-owned、0700、canonical 的 `/var/lib/merchant-release-security/locks`；默认锁为其中的 `ecs-source-build.lock`，与生产切换 FD9 锁独立。Linux 使用 FD7/flock，退出释放；无 flock 的本地环境使用 mkdir 锁。已有构建时立即拒绝，不等待、不停止其他进程。异常断电留下的 mkdir 锁必须先核对没有构建进程再由 owner 处理，不自动删除。旧版本脚本或其他会话不会自动遵守此锁，首次启用仍须确认它们已结束。
 
 本地构建显式设置 `ECS_BUILD_LOCK_PATH`，其父目录必须预先存在、归当前用户所有、不可被其他用户写入且使用真实路径（macOS 可先用 `pwd -P` 确认）。复制 staging/build 脚本到宿主控制目录时，须同时复制经审核的共用 helper。此锁降低并发峰值，不代替磁盘预算或保证单个构建一定有足够内存；不自动创建 swap、停止业务容器或删卷。

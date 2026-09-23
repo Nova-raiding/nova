@@ -36,7 +36,10 @@ RUN set -eu; \
 RUN addgroup -g 10001 -S merchant && adduser -u 10001 -S -D -H -G merchant merchant
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --prefer-offline --no-audit --fund=false
-COPY --from=build /app/dist ./dist
+# The worker runtime needs only its own compiled entrypoints and shared
+# packages. Do not ship compiled local-plugin or host-side test code.
+COPY --from=build /app/dist/apps/worker ./dist/apps/worker
+COPY --from=build /app/dist/packages ./dist/packages
 # Keep the release migration inventory at the same stable path as the API
 # image so the freshness gate can inspect both images without starting them.
 COPY packages/persistence/src/migrations ./dist/packages/persistence/src/migrations
