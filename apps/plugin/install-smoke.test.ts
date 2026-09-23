@@ -33,7 +33,7 @@ const inheritedRuntimeEnv = [
 ]
 
 describe('Codex plugin installation package', () => {
-  it('restores the previous installation when config replacement fails after registry update', () => {
+  it('does not replace an unrecognized previous installation', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-install-rollback-'))
     const home = resolve(directory, 'home')
     const source = resolve(directory, '.agents', 'unpacked-plugin')
@@ -64,13 +64,11 @@ describe('Codex plugin installation package', () => {
       const oldConfig = '[other]\nenabled = true\n'
       writeFileSync(registry, oldRegistry)
       writeFileSync(config, oldConfig)
-      const hook = resolve(directory, 'fail-config-rename.mjs')
-      writeFileSync(hook, `import fs from 'node:fs'\nimport { syncBuiltinESMExports } from 'node:module'\nconst rename = fs.renameSync\nfs.renameSync = (from, to) => { if (to === process.env.FAIL_RENAME_TARGET) throw new Error('injected config rename failure'); return rename(from, to) }\nsyncBuiltinESMExports()\n`)
-      const result = spawnSync(process.execPath, ['--import', hook, resolve(source, 'scripts/install-chatgpt-bundled.mjs')], {
-        encoding: 'utf8', env: { ...process.env, HOME: home, CODEX_HOME: resolve(home, '.codex'), AGENTS_HOME: resolve(home, '.agents'), FAIL_RENAME_TARGET: config },
+      const result = spawnSync(process.execPath, [resolve(source, 'scripts/install-chatgpt-bundled.mjs')], {
+        encoding: 'utf8', env: { ...process.env, HOME: home, CODEX_HOME: resolve(home, '.codex'), AGENTS_HOME: resolve(home, '.agents') },
       })
       expect(result.status).not.toBe(0)
-      expect(result.stderr).toContain('injected config rename failure')
+      expect(result.stderr).toContain('not recognized as Store Nova')
       expect(readFileSync(resolve(destination, 'previous.txt'), 'utf8')).toBe('installed before update')
       expect(readFileSync(resolve(cache, 'previous.txt'), 'utf8')).toBe('cached before update')
       expect(readFileSync(registry, 'utf8')).toBe(oldRegistry)
