@@ -98,7 +98,7 @@ export function createSignedSnapshot(observed, binding, privatePem, publicPem, n
         assert(Array.isArray(side.networks) && side.networks.length > 0 && side.networks.every(net => typeof net.name === 'string' && HEX.test(net.id) && Array.isArray(net.aliases)), `unlabeled network identity is invalid: ${pair.service}`)
       }
     }
-    assert(observed.unlabeledGateway && HEX.test(observed.unlabeledGateway.id) && observed.inventory.some(item => item.id === observed.unlabeledGateway.id) && !containers.some(item => item.id === observed.unlabeledGateway.id), 'running external gateway must be distinct and frozen in the signed Docker inventory')
+    assert(observed.unlabeledGateway && HEX.test(observed.unlabeledGateway.id) && HEX.test(observed.unlabeledGateway.nginx_config_sha256) && observed.inventory.some(item => item.id === observed.unlabeledGateway.id) && !containers.some(item => item.id === observed.unlabeledGateway.id), 'running external gateway and its effective routing configuration must be distinct and frozen in the signed Docker inventory')
   }
   const oldImageIds = new Set(containers.map(value => value.image_id))
   const candidateExclusiveImageIds = [...new Set(observed.candidateImageIds)].filter(value => !oldImageIds.has(value)).sort()
@@ -282,6 +282,7 @@ function collectUnlabeledTakeover(oldMapPath, candidateMapPath, imageIds, candid
   const oldMap = readServiceMap(oldMapPath), candidateMap = readServiceMap(candidateMapPath)
   const pairs = oldMap.map((oldMapping, index) => {
     const nextMapping = candidateMap[index]
+    assert(oldMapping.container === `merchant-production-${oldMapping.service}-1`, `historical gateway/API service graph name changed: ${oldMapping.service}`)
     const old = jsonCommand(BIN.docker, ['inspect', oldMapping.container])[0]
     const next = jsonCommand(BIN.docker, ['inspect', nextMapping.container])[0]
     assert(old?.Name === `/${oldMapping.container}` && next?.Name === `/${nextMapping.container}` && HEX.test(old?.Id ?? '') && HEX.test(next?.Id ?? '') && old.Id !== next.Id, `unlabeled service identity is invalid: ${oldMapping.service}`)
@@ -316,7 +317,11 @@ function collectUnlabeledGateway(id) {
   assert(bindings.includes('80') && bindings.includes('443'), 'external gateway does not own public 80/443')
   const spec = immutableContainerSpec(gateway)
   assert(spec.networks.some(net => net.name === 'merchant-production_default'), 'external gateway is not attached to the reviewed API network')
-  return spec
+  const config = cleanExec(BIN.docker, ['exec', id, 'nginx', '-T'])
+  const upstream = /^\s*upstream\s+pilot_api\s*\{([^}]*)\}/mu.exec(config)?.[1]
+  const servers = [...(upstream ?? '').matchAll(/^\s*server\s+([^;]+);\s*$/gmu)].map(match => match[1].trim())
+  assert(servers.length === 1 && servers[0] === 'merchant-production-api-replica-1:8787 resolve' && /^\s*proxy_pass\s+http:\/\/pilot_api(?:\/[^;\s]*)?;\s*$/mu.test(config), 'external gateway does not route to the reviewed historical API DNS name')
+  return { ...spec, nginx_config_sha256: digest(Buffer.from(config)) }
 }
 function validateUnlabeledGateway(document) {
   if (document.deployment_mode !== 'bridge_unlabeled_code_only') return

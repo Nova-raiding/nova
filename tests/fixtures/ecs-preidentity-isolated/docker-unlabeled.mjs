@@ -29,6 +29,11 @@ if (args[0] === 'ps') {
   const row = rows.find(value => value.Config.Image === ref)
   if (!row) fail('unlabeled image not found')
   process.stdout.write(`${row.Image}\n`)
+} else if (args[0] === 'exec' && args[2] === 'nginx' && args[3] === '-T') {
+  const gateway = byIdOrName(args[1])
+  if (!gateway?.State.Running || gateway.Name !== '/old-external-gateway') fail('external Nginx gateway is not running')
+  const upstream = fs.existsSync('/state/gateway-upstream-drift') ? 'wrong-api:8787 resolve' : 'merchant-production-api-replica-1:8787 resolve'
+  process.stdout.write(`upstream pilot_api {\n  server ${upstream};\n}\nserver {\n  location /api/ { proxy_pass http://pilot_api; }\n  proxy_pass http://pilot_api;\n}\n`)
 } else if (args[0] === 'compose' && args.includes('config')) {
   const services = Object.fromEntries(rows.filter(row => row.Name.startsWith('/bridge-')).map(row => [row.Name.slice('/bridge-'.length, -2), { image: row.Config.Image }]))
   process.stdout.write(JSON.stringify({ services }))
