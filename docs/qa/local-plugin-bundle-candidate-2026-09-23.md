@@ -4,11 +4,10 @@
 
 ## 已验证
 
-- macOS arm64 内部候选包：`artifacts/local-plugin/merchant-marketing-0.1.0+codex.20260923132700-darwin-arm64.tar.gz`，SHA-256 `c137967fea80563ac1d270440967545cdbce6c6315a275dd1a02cd8d15452823`。内置 Node 22.16.0；Keychain helper 最低 macOS 11；45 个运行时文件与源码清单一致；隔离安装、MCP 初始化与工具发现通过。该 tarball **未完成 Developer ID 签名和公证**。
-- 本轮加固后的 macOS arm64 内部候选包：`artifacts/local-plugin/merchant-marketing-0.1.0+codex.20260923132700-darwin-arm64-candidate-r2.tar.gz`，SHA-256 `bedf8b71b6e8c3aa5c0dfa8f0f4f816ef066375f703abfa0afdb90db49c750c7`。固定校验官方 Node 发行摘要，包含更新后的本地安装与 MCP 验证脚本；打包器明确报告 `ready_to_install=false`、`release_status=unsigned_candidate`。它仍不是用户交付包。
-- [Intel Mac 原生 CI](https://github.com/Nova-raiding/nova/actions/runs/35824073916)：在提交 `0f97223d` 的 `macos-15-intel` 上通过 x64 构建、Node 与 Keychain helper 的 macOS 11 最低版本检查、隔离安装，并从实际 `local` 安装缓存完成 MCP 初始化和工具发现。上传的工件仅供 CI 验收。
-- [Windows 原生 CI](https://github.com/Nova-raiding/nova/actions/runs/35824073917)：在提交 `0f97223d` 的 Windows runner 上，以临时测试证书完成自包含 .NET helper 签名和 ZIP 校验，执行用户入口 `install.cmd`，核对个人 marketplace、安装源与缓存，使用缓存内 Node 完成 MCP 初始化、工具发现与缺配置 `onboarding.status` 失败关闭；Credential Manager 读写及安装后 JS 适配器的长令牌往返通过。临时测试证书不可用于用户交付。
-- 前一轮受影响的本地 121 项测试通过；本轮加固后重跑安装、macOS 发布门禁、安装后 MCP 验证共 31 项，全部通过，类型检查通过。原有发布门禁测试此前为 1042 通过、16 项按现有规则跳过，本次未因无关代码重跑整个门禁集。CodeGraph 索引已同步，用于定位打包链路及定向测试范围。
+- 本轮 macOS arm64 内部候选包：`artifacts/local-plugin/merchant-marketing-0.1.0+codex.20260923132700-darwin-arm64-candidate-r4.tar.gz`，SHA-256 `e3ff839495a63e2bc1f9246a80c8c1087d1e6afc4c2e776021415b6efe301bf5`，绑定源码提交 `1d60449ea3b31d3c977831bcd0e23afae9b38622` 且 `source_dirty=false`。固定校验官方 Node 22.16.0 摘要，包含 Keychain helper 与 67 个逐文件 SHA-256 证明；解包后来源校验、MCP 131 个工具发现、缺配置 `workspace.health` 失败关闭通过。包状态为 `unsigned_candidate`、`ready_to_install=false`、`authenticity_verified=false`，**不能交付用户**。早期未绑定源码证明的候选包已被此候选取代。
+- [Intel Mac 原生 CI](https://github.com/Nova-raiding/nova/actions/runs/35825489086)：提交 `621f1765` 的 `macos-15-intel` 上通过 x64 构建、隔离安装和实际缓存 MCP 验证。后续提交 `702b472e` 的 [Intel Mac 原生 CI](https://github.com/Nova-raiding/nova/actions/runs/35825892045) 也已通过。
+- [Windows 原生 CI](https://github.com/Nova-raiding/nova/actions/runs/35825998752)：提交 `844dc3fb` 的 Windows runner 完成干净长路径 checkout、自包含 .NET helper、临时 CI 证书签名与 ZIP 校验、隔离安装、MCP 初始化与工具发现、Credential Manager 读写及长令牌往返，全部通过。前两轮失败由公开 CI 注解定位：Windows checkout 未启用长路径，导致历史跟踪附件缺失；`core.longpaths=true` 与 checkout 后完整性检查修复了该问题。helper 也移入临时目录构建，避免未来 `obj/bin` 污染源码。CI 临时测试证书不可用于用户交付。
+- 本轮 owner 复核受影响本地测试 102/102 通过、`npm run typecheck` 通过；定向隔离 PostgreSQL/RLS 实际断言 6/6 通过，证据保存在 `artifacts/isolated-postgres/run-D25TKV/run-result.json`。`node --check`、`git diff --check` 通过。原有发布门禁测试此前为 1042 通过、16 项按现有规则跳过；未修改的模块不重复运行整个门禁集。CodeGraph 索引已同步，用于定位链路及定向测试范围。
 - 公网 API 和运营后台 `/healthz` 返回 `ok`；这不代替生产 readiness 或桌面宿主验收。
 
 ## 正式交付阻断
