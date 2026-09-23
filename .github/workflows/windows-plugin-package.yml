@@ -22,11 +22,20 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           git init .
+          # Tracked release evidence includes paths beyond Win32 MAX_PATH.
+          # Without this Git reports checkout success while leaving those files deleted.
+          git config core.longpaths true
+          if ($LASTEXITCODE -ne 0) { throw 'Windows long-path Git configuration failed' }
           git remote add origin https://github.com/Nova-raiding/nova.git
           git fetch --depth=1 origin $env:GITHUB_SHA
           if ($LASTEXITCODE -ne 0) { throw 'Checkout fetch failed' }
           git checkout --detach FETCH_HEAD
           if ($LASTEXITCODE -ne 0) { throw 'Checkout failed' }
+          $checkoutChanges = @(git status --porcelain --untracked-files=all)
+          if ($LASTEXITCODE -ne 0 -or $checkoutChanges.Count -gt 0) {
+            Write-Host "::error title=Windows checkout::Checkout left tracked or untracked source changes: $($checkoutChanges -join ' | ')"
+            exit 1
+          }
           node --version
           dotnet --version
       - name: Build a self-contained Credential Manager helper
