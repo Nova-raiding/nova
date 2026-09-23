@@ -116,7 +116,7 @@ jobs:
           $helperDir = Join-Path $env:RUNNER_TEMP 'storenova-helper'
           $artifact = Join-Path $env:RUNNER_TEMP 'storenova-windows-ci-only.zip'
           $output = & node apps/plugin/scripts/package-local-plugin.mjs $artifact --windows-helper-dir $helperDir 2>&1 | Out-String
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error file=.github/workflows/windows-plugin-package.yml,line=1::PACKAGE_BUILD_$output"; exit 1 }
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error file=.github/workflows/windows-plugin-package.yml,line=1::PACKAGE_BUILD_$(($output -replace '[\r\n]+', ' | ').Trim())"; exit 1 }
       - name: Verify a clean Windows install and Credential Manager
         shell: powershell
         run: |

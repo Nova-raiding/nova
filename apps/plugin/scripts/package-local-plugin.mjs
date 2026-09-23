@@ -62,9 +62,9 @@ if (windowsHelperDir) {
   const actualHash = createHash('sha256').update(readFileSync(binary)).digest('hex').toUpperCase()
   if (!/^[0-9A-F]{64}$/u.test(expectedHash ?? '') || expectedHash !== actualHash) throw new Error('Windows credential helper SHA-256 mismatch')
   const signatureCheck = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-    '$s=Get-AuthenticodeSignature -LiteralPath $env:STORENOVA_VERIFY_BINARY; if ($s.Status -ne "Valid" -or $null -eq $s.SignerCertificate -or $s.SignerCertificate.Thumbprint.Replace(" ", "").ToUpperInvariant() -ne $env:STORENOVA_WINDOWS_SIGNER_THUMBPRINT.Replace(" ", "").ToUpperInvariant()) { exit 1 }'],
-  { encoding: 'utf8', windowsHide: true, env: { ...process.env, STORENOVA_VERIFY_BINARY: binary } })
-  if (signatureCheck.status !== 0) throw new Error('Windows credential helper Authenticode signature or signer mismatch')
+    '$s=Get-AuthenticodeSignature -LiteralPath $env:STORENOVA_VERIFY_BINARY; if ($s.Status -ne "Valid") { [Console]::Error.WriteLine("signature_status=" + $s.Status); exit 1 }; if ($null -eq $s.SignerCertificate) { [Console]::Error.WriteLine("signer_missing"); exit 1 }; if ($s.SignerCertificate.Thumbprint.Replace(" ", "").ToUpperInvariant() -ne $env:STORENOVA_VERIFY_SIGNER) { [Console]::Error.WriteLine("signer_mismatch"); exit 1 }'],
+  { encoding: 'utf8', windowsHide: true, env: { ...process.env, STORENOVA_VERIFY_BINARY: binary, STORENOVA_VERIFY_SIGNER: expectedSigner } })
+  if (signatureCheck.status !== 0) throw new Error(`Windows credential helper Authenticode signature or signer mismatch: ${signatureCheck.stderr?.trim() || signatureCheck.error?.message || signatureCheck.status}`)
   windowsHelperFiles = { binary, hashFile }
 }
 const required = [
