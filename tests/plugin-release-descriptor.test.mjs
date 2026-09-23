@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { generateKeyPairSync } from 'node:crypto'
+import { createHash, generateKeyPairSync } from 'node:crypto'
 import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -143,6 +143,32 @@ function windowsZipFixture(extra = []) {
   return { ...value, entries }
 }
 
+function trackedScriptFixture(platform) {
+  const f = platform === 'win32-x64' ? windowsZipFixture() : fixture()
+  const script = 'scripts/login-local-windows.mjs'
+  mkdirSync(join(f.pluginRoot, 'scripts'), { recursive: true })
+  writeFileSync(join(f.pluginRoot, script), 'console.log("trusted")\n')
+  const git = spawnSync('git', ['add', script], { cwd: f.pluginRoot })
+  assert.equal(git.status, 0)
+  const commit = spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'add installer'], { cwd: f.pluginRoot })
+  assert.equal(commit.status, 0, commit.stderr?.toString())
+  f.options.gitSha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: f.pluginRoot, encoding: 'utf8' }).stdout.trim()
+  const sourceEntries = [
+    '.codex-plugin/plugin.json', 'package.json', 'mcp/bridge.mjs', 'skills/merchant-marketing/SKILL.md',
+  ].map(name => ({ name, content: readFileSync(join(f.pluginRoot, name)) }))
+  if (platform === 'win32-x64') writeFileSync(f.packagePath, zipBytes([...sourceEntries, { name: script, content: 'console.log("replaced")\n' }]))
+  else {
+    const altered = join(f.root, 'altered')
+    mkdirSync(join(altered, 'scripts'), { recursive: true })
+    writeFileSync(join(altered, script), 'console.log("replaced")\n')
+    const tar = spawnSync('tar', ['-czf', f.packagePath, '-C', f.pluginRoot,
+      '.codex-plugin/plugin.json', 'package.json', 'mcp/bridge.mjs', 'skills/merchant-marketing/SKILL.md',
+      '-C', altered, script])
+    assert.equal(tar.status, 0, tar.stderr?.toString())
+  }
+  return f
+}
+
 test('signs a real Windows ZIP while the old gzip-only verifier rejects its bytes', () => {
   const f = windowsZipFixture()
   assert.throws(() => gunzipSync(readFileSync(f.packagePath)), /incorrect header|unknown compression|Z_DATA_ERROR/u)
@@ -181,6 +207,37 @@ test('rejects unsafe Windows ZIP traversal, symlink, duplicate, and oversized me
     const f = windowsZipFixture([entry])
     assert.throws(() => signPluginReleaseDescriptor(f.options), reason, entry.name)
   }
+})
+
+test('rejects a substituted tracked installer script before signing on both package formats', () => {
+  for (const platform of ['win32-x64', 'darwin-arm64']) {
+    const f = trackedScriptFixture(platform)
+    assert.throws(() => signPluginReleaseDescriptor(f.options), /scripts\/login-local-windows\.mjs differs from clean Git source/u)
+  }
+})
+
+test('fails closed on generated installer executables without independent expected hashes', () => {
+  const windows = windowsZipFixture([{ name: 'install-plugin.ps1', content: 'Write-Host malicious' }])
+  assert.throws(() => signPluginReleaseDescriptor(windows.options), /install-plugin\.ps1 lacks an independently trusted build hash/u)
+  const mac = fixture()
+  writeFileSync(mac.packagePath, appendTarMember(readFileSync(mac.packagePath), 'install.command'))
+  assert.throws(() => signPluginReleaseDescriptor(mac.options), /install\.command lacks an independently trusted build hash/u)
+})
+
+test('rejects an equally large but non-pinned Windows runtime executable', () => {
+  const f = windowsZipFixture([{ name: 'runtime/node.exe', content: Buffer.alloc(85_119_640) }])
+  assert.throws(() => signPluginReleaseDescriptor(f.options), /runtime\/node\.exe differs from the pinned Windows Node executable/u)
+})
+
+test('accepts the real pinned Windows Node executable from a verified system archive', t => {
+  const archive = process.env.STORENOVA_TEST_NODE_WIN_X64_ARCHIVE
+  if (!archive) return t.skip('set STORENOVA_TEST_NODE_WIN_X64_ARCHIVE to the official pinned Node ZIP')
+  const zipArchive = readFileSync(archive)
+  assert.equal(createHash('sha256').update(zipArchive).digest('hex'), '21c2d9735c80b8f86dab19305aa6a9f6f59bbc808f68de3eef09d5832e3bfbbd')
+  const extraction = spawnSync('unzip', ['-p', archive, 'node-v22.16.0-win-x64/node.exe'], { maxBuffer: 100 * 1024 * 1024 })
+  assert.equal(extraction.status, 0, extraction.stderr?.toString())
+  const f = windowsZipFixture([{ name: 'runtime/node.exe', content: extraction.stdout }])
+  assert.equal(signPluginReleaseDescriptor(f.options).platform, 'win32-x64')
 })
 
 test('signs exact local package bytes and binds release, Git, platform, bridge and MCP identity', () => {

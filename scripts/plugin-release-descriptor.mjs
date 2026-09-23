@@ -17,6 +17,12 @@ const payloadKeys = [
   'platform', 'package_sha256', 'package_bytes', 'bridge_sha256',
   'manifest_sha256', 'skill_sha256', 'mcp_methods_sha256', 'key_id',
 ]
+// Extracted from the SHA-256-pinned node-v22.16.0-win-x64.zip used by the
+// local package builder. No other ZIP member receives the large-file limit.
+const WINDOWS_NODE_EXE = Object.freeze({
+  path: 'runtime/node.exe', bytes: 85_119_640,
+  sha256: 'c5ff4c736112dd483c750fd4149d30c8a116db1a49b8b3ec88be4b65e6c86c19',
+})
 
 function regularBytes(path, label) {
   const stat = lstatSync(path)
@@ -148,6 +154,7 @@ function verifyTarPackageContents(packageBytes, expected) {
     if (!actual) throw new Error(`plugin package must contain exactly one ${entry}`)
     if (!actual.equals(bytes)) throw new Error(`plugin package ${entry} differs from signed source`)
   }
+  return entries
 }
 
 const ZIP_CRC_TABLE = Uint32Array.from({ length: 256 }, (_, index) => {
@@ -222,19 +229,23 @@ function verifyZipPackageContents(bytes, expected) {
     safeExtras(localOffset + 30 + localNameLength, localExtraLength)
     if (!(flags & 0x8) && (number(localOffset + 14, 4) !== crc || number(localOffset + 18, 4) !== compressed
       || number(localOffset + 22, 4) !== uncompressed)) fail(`local size or CRC differs: ${name}`)
-    if (uncompressed > 32 * 1024 * 1024 || (totalUncompressed += uncompressed) > 256 * 1024 * 1024) fail('expanded content exceeds limit')
+    const memberLimit = name === WINDOWS_NODE_EXE.path ? WINDOWS_NODE_EXE.bytes : 32 * 1024 * 1024
+    if (uncompressed > memberLimit || (totalUncompressed += uncompressed) > 256 * 1024 * 1024) fail('expanded content exceeds limit')
     const raw = bytes.subarray(dataStart, dataEnd)
     let content
     try {
       if (method === 0) content = raw
       else {
-        const inflated = inflateRawSync(raw, { maxOutputLength: 32 * 1024 * 1024, info: true })
+        const inflated = inflateRawSync(raw, { maxOutputLength: memberLimit, info: true })
         if (inflated.engine.bytesWritten !== raw.length) fail(`compressed data has hidden trailing bytes: ${name}`)
         content = inflated.buffer
       }
     }
     catch { fail(`compressed data is invalid: ${name}`) }
     if (content.length !== uncompressed || zipCrc32(content) !== crc) fail(`size or CRC mismatch: ${name}`)
+    if (name === WINDOWS_NODE_EXE.path && (content.length !== WINDOWS_NODE_EXE.bytes || digest(content) !== WINDOWS_NODE_EXE.sha256)) {
+      fail('runtime/node.exe differs from the pinned Windows Node executable')
+    }
     if (!directory) entries.set(name, content)
     segments.push({ start: localOffset, end: dataEnd, descriptor: Boolean(flags & 0x8), crc, compressed, uncompressed })
     cursor = next
@@ -261,12 +272,42 @@ function verifyZipPackageContents(bytes, expected) {
     const actual = entries.get(path)
     if (!actual || !actual.equals(expectedBytes)) fail(`${path} differs from signed source`)
   }
+  return entries
 }
 
 function gitOutput(root, args) {
   const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', maxBuffer: 1024 * 1024 })
   if (result.status !== 0) throw new Error('plugin source must be in a readable Git checkout')
   return result.stdout.trim()
+}
+
+function verifyTrackedPackageSources(entries, pluginRoot, platform) {
+  const result = spawnSync('git', ['-C', pluginRoot, 'ls-files', '-z', '--cached'], { maxBuffer: 1024 * 1024 })
+  if (result.status !== 0 || result.error) throw new Error('plugin tracked source inventory is unavailable')
+  const tracked = new Set(result.stdout.toString('utf8').split('\0').filter(Boolean))
+  if (tracked.has('scripts/package-local-plugin.mjs')) {
+    const builder = regularBytes(resolve(pluginRoot, 'scripts/package-local-plugin.mjs'), 'plugin package builder').toString('utf8')
+    const declaration = builder.match(/const required = \[([\s\S]*?)\]\nfor \(const relativePath of required\)/u)
+    if (!declaration || declaration[1].replace(/'[^']+'|[\s,]/gu, '') !== '') {
+      throw new Error('plugin package builder required-file list cannot be verified')
+    }
+    for (const match of declaration[1].matchAll(/'([^']+)'/gu)) {
+      if (!entries.has(match[1])) throw new Error(`plugin package is missing required source: ${match[1]}`)
+    }
+  }
+  for (const [path, bytes] of entries) {
+    // The packager rewrites .mcp.json to use its bundled local Node runtime.
+    if (path === '.mcp.json') continue
+    if (!tracked.has(path)) {
+      if (platform?.startsWith('win32-') && path === WINDOWS_NODE_EXE.path) continue // fixed upstream digest was checked by ZIP parser
+      if (/(?:\.(?:mjs|js|cjs|sh|command|cmd|ps1|exe|dll)|\/node|\/keychain-credential-helper)$/iu.test(path)) {
+        throw new Error(`plugin package executable ${path} lacks an independently trusted build hash`)
+      }
+      continue
+    }
+    const source = regularBytes(resolve(pluginRoot, path), `plugin source ${path}`)
+    if (!bytes.equals(source)) throw new Error(`plugin package ${path} differs from clean Git source`)
+  }
 }
 
 function canonicalPayload(document) {
@@ -321,12 +362,13 @@ export function signPluginReleaseDescriptor(options) {
   const bridge = regularBytes(resolve(pluginRoot, 'mcp/bridge.mjs'), 'plugin bridge')
   const skill = regularBytes(resolve(pluginRoot, 'skills/merchant-marketing/SKILL.md'), 'plugin skill')
   const verifyContents = options.platform?.startsWith('win32-') ? verifyZipPackageContents : verifyTarPackageContents
-  verifyContents(packageBytes, {
+  const entries = verifyContents(packageBytes, {
     '.codex-plugin/plugin.json': pluginManifest,
     'package.json': pluginPackage,
     'mcp/bridge.mjs': bridge,
     'skills/merchant-marketing/SKILL.md': skill,
   })
+  verifyTrackedPackageSources(entries, pluginRoot, options.platform)
   const payload = {
     schema_version: 'plugin-release/2', release_id: options.releaseId, git_sha: options.gitSha,
     plugin_id: manifest.id, plugin_version: manifest.version, platform: options.platform,
