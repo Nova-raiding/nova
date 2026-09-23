@@ -1,7 +1,10 @@
 import { createHash, generateKeyPairSync, sign } from 'node:crypto'
-import { readdirSync } from 'node:fs'
+import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { validateContainerInspection, validateMigrationAssets, validateRestoreInputs } from '../infra/protected/restore-pg17-isolated.mjs'
+import { readArchiveCommit, retainedNonceBinding, validateArchiveCommit, validateContainerInspection, validateMigrationAssets, validateRestoreInputs } from '../infra/protected/restore-pg17-isolated.mjs'
 
 const sha = (value: string) => createHash('sha256').update(value).digest('hex')
 const canonical = (value: unknown): string => Array.isArray(value) ? `[${value.map(canonical).join(',')}]` : value && typeof value === 'object' ? `{${Object.entries(value).filter(([key]) => key !== 'signature_base64').sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}` : JSON.stringify(value)
@@ -13,7 +16,8 @@ function fixture() {
   const references = Object.fromEntries(names.map(name => [name, name === 'postgres-migration' ? `registry.example/library/postgres:17-alpine@${digests[name]}` : `registry.example/${name}@${digests[name]}`]))
   const imageSetDigest = `sha256:${sha(names.map(name => `${name}=${digests[name]}\n`).join(''))}`
   const backupSha256 = sha('real backup bytes')
-  const attestation: Record<string, unknown> = { schema_version: '1', kind: 'postgres_backup', environment: 'production', simulated: false, backup_file_name: 'before-upgrade-242.dump', backup_sha256: backupSha256, source_database_id_sha256: sha('source-system-id'), migration_version: 242, created_at: new Date(Date.now() - 60_000).toISOString(), expires_at: new Date(Date.now() + 60_000).toISOString(), key_id: 'prod-test-key' }
+  const started = new Date(Date.now() - 60_000).toISOString(), observed = new Date(Date.now() - 55_000).toISOString(), completed = new Date(Date.now() - 50_000).toISOString()
+  const attestation: Record<string, unknown> = { schema_version: '2', kind: 'postgres_backup', environment: 'production', simulated: false, backup_file_name: 'before-upgrade-242.dump', backup_sha256: backupSha256, source_database_id_sha256: sha('source-system-id'), source_database_oid: 123, source_database_name: 'merchant', migration_version: 242, snapshot_id_sha256: sha('1:1'), backup_started_at: started, snapshot_export_observed_at: observed, dump_completed_at: completed, created_at: started, expires_at: new Date(Date.now() + 60_000).toISOString(), key_id: 'prod-test-key' }
   const resign = () => { attestation.signature_base64 = sign(null, Buffer.from(canonical(attestation)), privateKey).toString('base64') }
   resign()
   return { backupSha256, backupName: 'before-upgrade-242.dump', attestation, publicPem: publicKey.export({ type: 'spki', format: 'pem' }).toString(), keyId: 'prod-test-key', identity: { release_id: releaseId, git_sha: gitSha, source_sha256: sourceSha }, imageSet: { schema_version: 1, release_id: releaseId, release_git_sha: gitSha, source_sha256: sourceSha, image_digests: digests, image_references: references }, releaseId, gitSha, imageSetDigest, manifestSha256: 'c'.repeat(64), deploymentNonce: 'nonce_abcdefghijklmnopqrstuvwxyz', resign }
@@ -30,9 +34,36 @@ describe('protected PostgreSQL 17 isolated restore input contract', () => {
     const forged = fixture(); forged.attestation.source_database_id_sha256 = sha('other')
     expect(() => validateRestoreInputs(forged)).toThrow(/signature/)
     const expired = fixture(); expired.attestation.expires_at = new Date(Date.now() - 1).toISOString(); expired.resign()
-    expect(() => validateRestoreInputs(expired)).toThrow(/stale/)
+    expect(() => validateRestoreInputs(expired)).toThrow(/chronology or validity/)
     const wrongBytes = fixture(); wrongBytes.backupSha256 = sha('different backup')
     expect(() => validateRestoreInputs(wrongBytes)).toThrow(/242 snapshot/)
+  })
+  it('rejects signed v1, missing snapshot identity, reversed chronology and long validity', () => {
+    const legacy = fixture(); legacy.attestation.schema_version = '1'; legacy.resign()
+    expect(() => validateRestoreInputs(legacy)).toThrow(/signed v2/)
+    const missingSnapshot = fixture(); delete missingSnapshot.attestation.snapshot_id_sha256; missingSnapshot.resign()
+    expect(() => validateRestoreInputs(missingSnapshot)).toThrow(/snapshot_id_sha256/)
+    const reversed = fixture(); reversed.attestation.snapshot_export_observed_at = new Date(Date.now() - 70_000).toISOString(); reversed.resign()
+    expect(() => validateRestoreInputs(reversed)).toThrow(/chronology/)
+    const createdMismatch = fixture(); createdMismatch.attestation.created_at = new Date(Date.now() - 59_000).toISOString(); createdMismatch.resign()
+    expect(() => validateRestoreInputs(createdMismatch)).toThrow(/chronology/)
+    const tooLong = fixture(); tooLong.attestation.expires_at = new Date(Date.now() + 48 * 60 * 60_000).toISOString(); tooLong.resign()
+    expect(() => validateRestoreInputs(tooLong)).toThrow(/chronology/)
+  })
+  it('reads the embedded Git commit from the archive header and rejects another SHA', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'pg17-archive-'))
+    const archive = join(directory, 'source.tar')
+    writeFileSync(archive, execFileSync('git', ['archive', '--format=tar', 'HEAD', 'package.json']))
+    const embedded = readArchiveCommit(archive)
+    expect(embedded).toBe(execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim())
+    expect(() => validateArchiveCommit(embedded, embedded)).not.toThrow()
+    expect(() => validateArchiveCommit(embedded, 'f'.repeat(40))).toThrow(/embedded Git commit/)
+  })
+  it('retains only a one-way digest of the deployment nonce', () => {
+    const nonce = 'nonce_abcdefghijklmnopqrstuvwxyz'
+    const value = retainedNonceBinding(nonce)
+    expect(value).toEqual({ deployment_nonce_sha256: sha(nonce) })
+    expect(JSON.stringify(value)).not.toContain(nonce)
   })
   it('rejects missing or mutable image identity and release mismatch', () => {
     const missing = fixture(); delete (missing.imageSet.image_digests as Record<string, string>)['merchant-api']

@@ -14,4 +14,7 @@ export function validateRestoreInputs(input: {
   now?: Date
 }): { backupSha256: string; sourceDatabaseIdSha256: string; postgresImage: string }
 export function validateMigrationAssets(names: string[]): void
+export function validateArchiveCommit(actual: string, expected: string): void
+export function retainedNonceBinding(nonce: string): { deployment_nonce_sha256: string }
+export function readArchiveCommit(path: string): string
 export function validateContainerInspection(value: Record<string, unknown>, options: { id: string; expectedImageId: string; expectedNetwork: string; expectedVolume: string }): Record<string, unknown>

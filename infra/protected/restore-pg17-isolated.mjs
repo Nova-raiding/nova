@@ -3,7 +3,7 @@
 // not issue production restore evidence or touch the live database.
 import { createHash, createPublicKey, randomBytes, verify } from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
-import { constants, closeSync, createReadStream, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { constants, closeSync, createReadStream, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -60,12 +60,16 @@ function exactArgs(args) {
 export function validateRestoreInputs({ backupSha256, backupName, attestation, publicPem, keyId, identity, imageSet, releaseId, gitSha, imageSetDigest, manifestSha256, deploymentNonce, now = new Date() }) {
   requireValue(RELEASE.test(releaseId) && GIT.test(gitSha) && /^sha256:[a-f0-9]{64}$/u.test(imageSetDigest) && HEX.test(manifestSha256) && /^[A-Za-z0-9_-]{22,128}$/u.test(deploymentNonce), 'release binding is invalid')
   requireValue(HEX.test(backupSha256 ?? ''), 'backup checksum is invalid')
-  requireValue(attestation?.schema_version === '1' && attestation.kind === 'postgres_backup' && attestation.environment === 'production' && attestation.simulated === false, 'backup attestation contract is invalid')
+  requireValue(attestation?.schema_version === '2' && attestation.kind === 'postgres_backup' && attestation.environment === 'production' && attestation.simulated === false, 'strict restore requires a signed v2 backup attestation')
   requireValue(attestation.backup_file_name === backupName && attestation.backup_sha256 === backupSha256 && attestation.migration_version === 242, 'signed backup does not identify a verified 242 snapshot')
   requireValue(HEX.test(attestation.source_database_id_sha256 ?? '') && attestation.key_id === keyId, 'backup source/key identity is invalid')
+  requireValue(Number.isInteger(attestation.source_database_oid) && attestation.source_database_oid > 0 && attestation.source_database_oid <= 4_294_967_295 && typeof attestation.source_database_name === 'string' && attestation.source_database_name.length > 0 && Buffer.byteLength(attestation.source_database_name, 'utf8') <= 63 && !attestation.source_database_name.includes('\0'), 'backup source database metadata is invalid')
   requireValue(/^[A-Za-z0-9._:-]{1,128}$/u.test(keyId), 'trusted key ID is invalid')
-  const utc = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u
-  requireValue(utc.test(attestation.created_at ?? '') && utc.test(attestation.expires_at ?? '') && Number.isFinite(Date.parse(attestation.created_at)) && Date.parse(attestation.created_at) <= now.getTime() + 300_000 && Date.parse(attestation.created_at) < Date.parse(attestation.expires_at) && Date.parse(attestation.expires_at) > now.getTime(), 'backup attestation is stale or invalid')
+  const utc = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u
+  const started = Date.parse(attestation.backup_started_at ?? ''), observed = Date.parse(attestation.snapshot_export_observed_at ?? ''), completed = Date.parse(attestation.dump_completed_at ?? ''), expires = Date.parse(attestation.expires_at ?? '')
+  requireValue(['backup_started_at', 'snapshot_export_observed_at', 'dump_completed_at', 'created_at', 'expires_at'].every(field => utc.test(attestation[field] ?? '') && Number.isFinite(Date.parse(attestation[field]))), 'v2 backup timestamps must be strict UTC')
+  requireValue(HEX.test(attestation.snapshot_id_sha256 ?? ''), 'v2 snapshot_id_sha256 is invalid')
+  requireValue(attestation.created_at === attestation.backup_started_at && started <= observed && observed <= completed && completed <= now.getTime() + 300_000 && expires > now.getTime() && expires > completed && expires <= completed + 24 * 60 * 60_000, 'v2 backup snapshot chronology or validity is invalid')
   requireValue(/^[A-Za-z0-9+/]{86}==$/u.test(attestation.signature_base64 ?? ''), 'backup signature is malformed')
   const key = createPublicKey(publicPem)
   requireValue(key.asymmetricKeyType === 'ed25519' && verify(null, Buffer.from(canonical(attestation)), key, Buffer.from(attestation.signature_base64, 'base64')), 'backup signature is invalid')
@@ -78,6 +82,18 @@ export function validateRestoreInputs({ backupSha256, backupName, attestation, p
   const canonicalImages = EXPECTED_IMAGES.map(name => `${name}=${digests[name]}\n`).join('')
   requireValue(imageSetDigest === `sha256:${sha(canonicalImages)}`, 'canonical eight-image digest mismatch')
   return { backupSha256: attestation.backup_sha256, sourceDatabaseIdSha256: attestation.source_database_id_sha256, postgresImage: references['postgres-migration'] }
+}
+export function validateArchiveCommit(actual, expected) { requireValue(GIT.test(actual ?? '') && actual === expected, 'candidate archive embedded Git commit does not match staged identity') }
+export function retainedNonceBinding(nonce) { requireValue(/^[A-Za-z0-9_-]{22,128}$/u.test(nonce ?? ''), 'deployment nonce is invalid'); return { deployment_nonce_sha256: sha(nonce) } }
+export function readArchiveCommit(path) {
+  const header = Buffer.alloc(4096)
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+  let bytes
+  try { bytes = readSync(fd, header, 0, header.length, 0) } finally { closeSync(fd) }
+  requireValue(bytes >= 1024, 'candidate source archive header is incomplete')
+  const result = spawnSync('/usr/bin/git', ['get-tar-commit-id'], { input: header.subarray(0, bytes), encoding: 'utf8', timeout: 10_000, maxBuffer: 1024, env: { PATH: '/usr/bin:/bin' } })
+  requireValue(!result.error && result.status === 0 && GIT.test(result.stdout.trim()), 'candidate archive has no embedded Git commit')
+  return result.stdout.trim()
 }
 function lines(text) { return Object.fromEntries(text.trim().split('\n').map(line => { const at = line.indexOf('='); requireValue(at > 0, 'candidate identity malformed'); return [line.slice(0, at), line.slice(at + 1)] })) }
 export function validateMigrationAssets(names) {
@@ -142,6 +158,8 @@ async function main(args) {
   protectedPath(options['--eight-image-set']); protectedPath(options['--image-digests']); protectedPath(options['--rendered-compose'])
   const identity = lines(readRegular(join(root, '.candidate-identity'), 1024).toString())
   requireValue(await hashFile(join(root, '.candidate-source.tar'), 4 * 1024 * 1024 * 1024) === identity.source_sha256?.slice(7), 'staged source archive changed')
+  protectedPath('/usr/bin/git')
+  validateArchiveCommit(readArchiveCommit(join(root, '.candidate-source.tar')), identity.git_sha)
   const imageSet = JSON.parse(readRegular(options['--eight-image-set'], 16 * 1024).toString())
   const digestFile = JSON.parse(readRegular(options['--image-digests'], 16 * 1024).toString())
   requireValue(JSON.stringify(digestFile) === JSON.stringify(imageSet.image_digests), 'eight-image digest sidecar mismatch')
@@ -200,7 +218,7 @@ async function main(args) {
     requireValue(migrationRows.split('\n')[version - 1]?.split('|')[2] === sha(fileName), `migration ${version} checksum mismatch`)
   }
   inspectContainer(containerId, imageId, network, volume)
-  record(output, { schema_version: 'pg17-isolated-restore-capture/1', status: 'pass', simulated: false, release_id: options['--release-id'], release_git_sha: options['--git-sha'], image_set_digest: options['--image-set-digest'], manifest_sha256: options['--manifest-sha256'], deployment_nonce: options['--deployment-nonce'], source_archive_sha256: identity.source_sha256, migration_script_sha256: sha(readRegular(script, 256 * 1024)), backup_sha256: binding.backupSha256, source_database_id_sha256: binding.sourceDatabaseIdSha256, target_database_id_sha256: sha(dbIdentity), postgres_image_ref: binding.postgresImage, postgres_image_id: imageId, network_id: networkId, container_id: containerId, volume_name: volume, restored_migration_prefix: before, migrated_prefix: after, migration_chain_sha256: sha(migrationRows), migration_chain_rows: migrationRows.split('\n'), migration_command_output_sha256: sha(migrationContainer), captured_at: new Date().toISOString() })
+  record(output, { schema_version: 'pg17-isolated-restore-capture/1', status: 'pass', simulated: false, release_id: options['--release-id'], release_git_sha: options['--git-sha'], image_set_digest: options['--image-set-digest'], manifest_sha256: options['--manifest-sha256'], ...retainedNonceBinding(options['--deployment-nonce']), source_archive_sha256: identity.source_sha256, migration_script_sha256: sha(readRegular(script, 256 * 1024)), backup_sha256: binding.backupSha256, source_database_id_sha256: binding.sourceDatabaseIdSha256, target_database_id_sha256: sha(dbIdentity), postgres_image_ref: binding.postgresImage, postgres_image_id: imageId, network_id: networkId, container_id: containerId, volume_name: volume, restored_migration_prefix: before, migrated_prefix: after, migration_chain_sha256: sha(migrationRows), migration_chain_rows: migrationRows.split('\n'), migration_command_output_sha256: sha(migrationContainer), captured_at: new Date().toISOString() })
   process.stdout.write(`PG17 isolated restore captured: ${output}\n`)
   } catch (error) {
     if (containerId && /^[a-f0-9]{64}$/u.test(containerId)) { try { docker(['stop', '--time', '3', containerId], undefined, 10_000) } catch {} }
