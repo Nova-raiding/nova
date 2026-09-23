@@ -352,6 +352,7 @@ export function refundQueryResponseMatchesRequest(response, orderId, refundReque
   }
   const returnedAmountFen = alipayAmountFen(response.refund_amount)
   if (response.refund_amount !== undefined && returnedAmountFen === undefined) return false
+  if (normalizeRefundQueryState(response) === 'succeeded' && returnedAmountFen === undefined) return false
   if (returnedAmountFen !== undefined && returnedAmountFen !== amountFen) return false
   return true
 }

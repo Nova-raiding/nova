@@ -126,6 +126,7 @@ describe('payment gateway Alipay protocol helpers', () => {
     expect(refundQueryResponseMatchesRequest({ code: '10000', out_trade_no: 'order-2', out_request_no: 'refund-order-1', refund_amount: '10.00' }, 'order-1', 'refund-order-1', 1000)).toBe(false)
     expect(refundQueryResponseMatchesRequest({ code: '10000', out_trade_no: 'order-1', out_request_no: 'refund-other', refund_amount: '10.00' }, 'order-1', 'refund-order-1', 1000)).toBe(false)
     expect(refundQueryResponseMatchesRequest({ code: '10000', out_trade_no: 'order-1', out_request_no: 'refund-order-1', refund_amount: '10.01' }, 'order-1', 'refund-order-1', 1000)).toBe(false)
+    expect(refundQueryResponseMatchesRequest({ code: '10000', out_trade_no: 'order-1', out_request_no: 'refund-order-1', refund_status: 'REFUND_SUCCESS' }, 'order-1', 'refund-order-1', 1000)).toBe(false)
     expect(refundQueryResponseMatchesRequest({ code: '10000', out_trade_no: 'order-1', refund_amount: '10.00' }, 'order-1', 'refund-order-1', 1000)).toBe(false)
   })
 
