@@ -69,7 +69,7 @@ function recoveryInput(overrides: Record<string, unknown> = {}) {
   return {
     deploymentNonce, composeProject: observed.composeProject,
     currentBridgeIdentity: bridge, database: observed.database, baseline,
-    currentApiContainer: { id: observed.containers[0].id, imageId: observed.containers[0].imageId, configHash: observed.containers[0].configHash },
+    currentApiContainer: { id: observed.containers[0]!.id, imageId: observed.containers[0]!.imageId, configHash: observed.containers[0]!.configHash },
     recovery: { composeSha256: sha('8'), envSha256: sha('9'), imageDigestsSha256: sha('a'), targetServices: ['api'] },
     ...overrides,
   }
