@@ -20,6 +20,7 @@ describe('signed seven-container B takeover runner', () => {
     expect(execFileSync('sh', ['-n', runner], { encoding: 'utf8' })).toBe('')
     expect(script.indexOf('installed protected helper is not the reviewed seven-container version')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
     expect(script.indexOf('verify-bridge-b-package.mjs')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
+    expect(script.indexOf('verify-ecs-cloud-only-artifacts.mjs" "$ECS_CANDIDATE_SOURCE_ARCHIVE"')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
     expect(script.indexOf('B API failed livez/readyz')).toBeGreaterThan(script.indexOf('bridge-switch-unlabeled'))
     expect(script.indexOf('curl --fail --silent --show-error --max-time 15 "${PRODUCTION_API_BASE_URL%/}/readyz"')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
     expect(script.indexOf('--external-gateway-id "$ECS_EXTERNAL_GATEWAY_ID"')).toBeLessThan(script.indexOf('bridge-switch-unlabeled'))
