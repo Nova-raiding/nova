@@ -11,6 +11,7 @@ export interface PluginReleaseDescriptor {
   manifest_sha256: string
   skill_sha256: string
   mcp_methods_sha256: string
+  release_readiness: 'signed_installable'
   key_id: string
   signature_base64: string
 }

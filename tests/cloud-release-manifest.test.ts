@@ -32,7 +32,7 @@ function fixture() {
       bridge_sha256: legacy.mcp.bridgeSha256,
       manifest_sha256: sha(readFileSync('apps/plugin/.codex-plugin/plugin.json')),
       skill_sha256: sha(readFileSync('apps/plugin/skills/merchant-marketing/SKILL.md')),
-      mcp_methods_sha256: legacy.mcp.methodListSha256, key_id: 'plugin-test-key',
+      mcp_methods_sha256: legacy.mcp.methodListSha256, release_readiness: 'signed_installable', key_id: 'plugin-test-key',
     }
     const descriptorPath = join(dir, `${os}-plugin-descriptor.json`)
     const descriptor = { ...fields, signature_base64: sign(null, Buffer.from(JSON.stringify(fields)), pair.privateKey).toString('base64') }
@@ -67,7 +67,7 @@ function fixture() {
   ].join('\n'))
   const options = { root: staged, expectedReleaseId: manifest.releaseId,
     pluginArtifactPaths: pluginArtifacts, pluginPublicKeyPem: publicKeyPem, pluginKeyId: 'plugin-test-key' }
-  return { manifest, staged, pluginArtifacts, options }
+  return { manifest, staged, pluginArtifacts, options, pair }
 }
 
 describe('cloud-only release manifest v2', () => {
@@ -90,5 +90,18 @@ describe('cloud-only release manifest v2', () => {
     expect(validateReleaseManifest(f.manifest, f.options).some(error => error.includes('both macOS and Windows'))).toBe(true)
     f.manifest.artifacts.push({ path: 'apps/plugin/mcp/bridge.mjs', sha256: '0'.repeat(64), bytes: 1 })
     expect(validateReleaseManifest(f.manifest, f.options)).toContain('cloud manifest must not contain local plugin source artifacts')
+  })
+
+  it('rejects a correctly signed legacy descriptor without installable readiness', () => {
+    const f = fixture()
+    const path = f.pluginArtifacts.darwin.descriptorPath
+    const current = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+    delete current.release_readiness
+    delete current.signature_base64
+    const legacy = { ...current, signature_base64: sign(null, Buffer.from(JSON.stringify(current)), f.pair.privateKey).toString('base64') }
+    const bytes = Buffer.from(`${JSON.stringify(legacy)}\n`)
+    writeFileSync(path, bytes)
+    f.manifest.pluginReleases[0]!.descriptorSha256 = sha(bytes)
+    expect(validateReleaseManifest(f.manifest, f.options).some(error => error.includes('descriptor fields are not exact'))).toBe(true)
   })
 })

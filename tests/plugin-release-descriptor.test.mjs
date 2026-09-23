@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { createHash, generateKeyPairSync } from 'node:crypto'
+import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { gunzipSync, gzipSync, deflateRawSync } from 'node:zlib'
-import { assertPrivateSigningKey, signPluginReleaseDescriptor, verifyPluginReleaseDescriptor, windowsSigningKeyAclProtected } from '../scripts/plugin-release-descriptor.mjs'
+import { assertPrivateSigningKey, signPluginReleaseDescriptor, verifyBuildAttestation, verifyPluginPackageBuild, verifyPluginReleaseDescriptor, windowsSigningKeyAclProtected } from '../scripts/plugin-release-descriptor.mjs'
 
 function appendTarMember(packageBytes, name, type = '0', linkname = '') {
   const archive = gunzipSync(packageBytes)
@@ -293,7 +293,7 @@ test('signs exact local package bytes and binds release, Git, platform, bridge a
 
 test('production signing refuses a package without its clean-source builder', () => {
   const f = fixture()
-  assert.throws(() => signPluginReleaseDescriptor({ ...f.options, testOnlySkipRebuild: false }), /clean-source package builder is missing/u)
+  assert.throws(() => signPluginReleaseDescriptor({ ...f.options, testOnlySkipRebuild: false }), /bundle status is missing|clean-source package builder is missing/u)
 })
 
 test('a real macOS package rebuild binds generated installer bytes before signing', t => {
@@ -305,13 +305,43 @@ test('a real macOS package rebuild binds generated installer bytes before signin
   f.options.platform = `darwin-${process.arch}`
   f.options.gitSha = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim()
   f.options.testOnlySkipRebuild = false
-  assert.equal(signPluginReleaseDescriptor(f.options).platform, f.options.platform)
+  assert.equal(verifyPluginPackageBuild(f.options).result, 'pass')
   const tampered = join(f.root, 'tampered-real.tar.gz')
   writeFileSync(tampered, replaceTarMemberBytes(readFileSync(packagePath), 'install.command', bytes => {
     bytes[0] ^= 1
     return bytes
   }))
-  assert.throws(() => signPluginReleaseDescriptor({ ...f.options, packagePath: tampered }), /install\.command differs from clean-source rebuild/u)
+  assert.throws(() => verifyPluginPackageBuild({ ...f.options, packagePath: tampered }), /install\.command differs from clean-source rebuild/u)
+  assert.throws(() => signPluginReleaseDescriptor(f.options), /not signed and installable/u)
+})
+
+test('production signer refuses in-process builder execution and forged build evidence', () => {
+  const f = fixture()
+  assert.throws(() => signPluginReleaseDescriptor({ ...f.options, testOnlySkipRebuild: false }), /bundle status is missing|not signed and installable/u)
+  const signed = signPluginReleaseDescriptor(f.options)
+  assert.throws(() => verifyPluginReleaseDescriptor({ ...signed, release_readiness: 'unsigned_candidate' }, f.verifyOptions), /not signed and installable/u)
+  const legacy = { ...signed }
+  delete legacy.release_readiness
+  assert.throws(() => verifyPluginReleaseDescriptor(legacy, f.verifyOptions), /fields are not exact/u)
+})
+
+test('separate sandbox build attestation rejects forgery, stale time and package mismatch', () => {
+  const f = fixture()
+  const bytes = readFileSync(f.packagePath)
+  const key = generateKeyPairSync('ed25519')
+  const payload = {
+    schema_version: 'plugin-build/1', git_sha: f.options.gitSha, platform: f.options.platform,
+    package_sha256: createHash('sha256').update(bytes).digest('hex'), package_bytes: bytes.length,
+    result: 'pass', generated_at: new Date(Date.now() - 60_000).toISOString(),
+    expires_at: new Date(Date.now() + 60_000).toISOString(), key_id: 'sandbox-test-key',
+  }
+  const attestation = { ...payload, signature_base64: sign(null, Buffer.from(JSON.stringify(payload)), key.privateKey).toString('base64') }
+  const options = { gitSha: f.options.gitSha, platform: f.options.platform, buildAttestationKeyId: 'sandbox-test-key',
+    buildAttestationPublicKeyPem: key.publicKey.export({ type: 'spki', format: 'pem' }) }
+  assert.doesNotThrow(() => verifyBuildAttestation(attestation, options, bytes))
+  assert.throws(() => verifyBuildAttestation({ ...attestation, signature_base64: 'A'.repeat(86) + '==' }, options, bytes), /signature is invalid/u)
+  assert.throws(() => verifyBuildAttestation(attestation, options, Buffer.from('different')), /does not match/u)
+  assert.throws(() => verifyBuildAttestation({ ...attestation, expires_at: new Date(Date.now() - 1000).toISOString() }, options, bytes), /does not match/u)
 })
 
 test('rejects tampered package, descriptor, wrong trust anchor and wrong candidate identity', () => {

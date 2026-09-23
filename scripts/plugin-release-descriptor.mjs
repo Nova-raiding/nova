@@ -16,7 +16,7 @@ const safeVersion = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-
 const payloadKeys = [
   'schema_version', 'release_id', 'git_sha', 'plugin_id', 'plugin_version',
   'platform', 'package_sha256', 'package_bytes', 'bridge_sha256',
-  'manifest_sha256', 'skill_sha256', 'mcp_methods_sha256', 'key_id',
+  'manifest_sha256', 'skill_sha256', 'mcp_methods_sha256', 'release_readiness', 'key_id',
 ]
 // Extracted from the SHA-256-pinned node-v22.16.0-win-x64.zip used by the
 // local package builder. No other ZIP member receives the large-file limit.
@@ -368,6 +368,44 @@ function verifyRebuiltPackage(entries, pluginRoot, platform, verifyContents) {
   } finally { rmSync(isolated, { recursive: true, force: true }) }
 }
 
+export function verifyPluginPackageBuild(options) {
+  const pluginRoot = resolve(options.pluginRoot)
+  if (gitOutput(pluginRoot, ['rev-parse', 'HEAD']) !== options.gitSha) throw new Error('plugin source Git SHA differs from release identity')
+  if (gitOutput(pluginRoot, ['status', '--porcelain', '--untracked-files=normal'])) throw new Error('plugin source must be clean and committed')
+  const packageBytes = regularBytes(options.packagePath, 'plugin package')
+  if (packageBytes.length > 100 * 1024 * 1024) throw new Error('plugin package exceeds signing size limit')
+  const verifyContents = options.platform?.startsWith('win32-') ? verifyZipPackageContents : verifyTarPackageContents
+  const expected = Object.fromEntries([
+    '.codex-plugin/plugin.json', 'package.json', 'mcp/bridge.mjs', 'skills/merchant-marketing/SKILL.md',
+  ].map(path => [path, regularBytes(resolve(pluginRoot, path), `plugin source ${path}`)]))
+  const entries = verifyContents(packageBytes, expected, options.platform)
+  if (!verifyTrackedPackageSources(entries, pluginRoot, options.platform)) throw new Error('plugin clean-source package builder is missing')
+  verifyRebuiltPackage(entries, pluginRoot, options.platform, verifyContents)
+  return { schema_version: 'plugin-build/1', git_sha: options.gitSha, platform: options.platform,
+    package_sha256: digest(packageBytes), package_bytes: packageBytes.length, result: 'pass' }
+}
+
+export function verifyBuildAttestation(document, options, packageBytes) {
+  if (!document || typeof document !== 'object' || Array.isArray(document)) throw new Error('trusted build attestation is required')
+  const fields = ['schema_version', 'git_sha', 'platform', 'package_sha256', 'package_bytes', 'result', 'generated_at', 'expires_at', 'key_id']
+  if (Object.keys(document).sort().join('\0') !== [...fields, 'signature_base64'].sort().join('\0')) throw new Error('trusted build attestation fields are invalid')
+  const payload = Object.fromEntries(fields.map(field => [field, document[field]]))
+  const now = Date.now(), generated = Date.parse(payload.generated_at), expires = Date.parse(payload.expires_at)
+  if (payload.schema_version !== 'plugin-build/1' || payload.result !== 'pass'
+    || payload.git_sha !== options.gitSha || payload.platform !== options.platform
+    || payload.package_sha256 !== digest(packageBytes) || payload.package_bytes !== packageBytes.length
+    || payload.key_id !== options.buildAttestationKeyId
+    || !Number.isFinite(generated) || !Number.isFinite(expires) || generated > now + 300_000
+    || expires <= now || expires - generated > 86_400_000) throw new Error('trusted build attestation does not match current installable package')
+  const key = createPublicKey(options.buildAttestationPublicKeyPem)
+  if (key.asymmetricKeyType !== 'ed25519'
+    || typeof document.signature_base64 !== 'string'
+    || !/^[A-Za-z0-9+/]{86}==$/u.test(document.signature_base64)
+    || !verify(null, Buffer.from(JSON.stringify(payload)), key, Buffer.from(document.signature_base64, 'base64'))) {
+    throw new Error('trusted build attestation signature is invalid')
+  }
+}
+
 function canonicalPayload(document) {
   if (!document || typeof document !== 'object' || Array.isArray(document)) throw new Error('descriptor must be an object')
   const keys = Object.keys(document).sort()
@@ -381,6 +419,7 @@ function canonicalPayload(document) {
     if (!hex(payload[key])) throw new Error(`${key} is invalid`)
   }
   if (!Number.isSafeInteger(payload.package_bytes) || payload.package_bytes <= 0) throw new Error('package_bytes is invalid')
+  if (payload.release_readiness !== 'signed_installable') throw new Error('plugin release is not signed and installable')
   if (typeof document.signature_base64 !== 'string' || !/^[A-Za-z0-9+/]{86}==$/u.test(document.signature_base64)) throw new Error('signature_base64 is invalid')
   return Buffer.from(JSON.stringify(payload))
 }
@@ -403,10 +442,6 @@ export function verifyPluginReleaseDescriptor(document, options) {
 }
 
 export function signPluginReleaseDescriptor(options) {
-  const privatePath = resolve(options.privateKeyPath)
-  assertPrivateSigningKey(privatePath)
-  const privateKey = createPrivateKey(regularBytes(privatePath, 'plugin signing key'))
-  if (privateKey.asymmetricKeyType !== 'ed25519') throw new Error('plugin signing key must be Ed25519')
   const pluginRoot = resolve(options.pluginRoot)
   if (gitOutput(pluginRoot, ['rev-parse', 'HEAD']) !== options.gitSha) throw new Error('plugin source Git SHA differs from release identity')
   if (gitOutput(pluginRoot, ['status', '--porcelain', '--untracked-files=normal'])) throw new Error('plugin source must be clean and committed')
@@ -426,9 +461,31 @@ export function signPluginReleaseDescriptor(options) {
     'mcp/bridge.mjs': bridge,
     'skills/merchant-marketing/SKILL.md': skill,
   }, options.platform)
+  if (!options.testOnlySkipRebuild) {
+    let status
+    try { status = JSON.parse(entries.get('bundle-status.json')?.toString('utf8') ?? '') }
+    catch { throw new Error('plugin release bundle status is missing or invalid') }
+    if (status.release_status !== 'signed_candidate' || status.ready_to_install !== true
+      || status.source_dirty !== false || status.ci_test_certificate !== false) {
+      throw new Error('plugin release package is not signed and installable')
+    }
+  }
   const hasBuilder = verifyTrackedPackageSources(entries, pluginRoot, options.platform)
   if (!hasBuilder && !options.testOnlySkipRebuild) throw new Error('plugin clean-source package builder is missing')
-  if (hasBuilder) verifyRebuiltPackage(entries, pluginRoot, options.platform, verifyContents)
+  if (!options.testOnlySkipRebuild) {
+    if (!options.buildAttestation || !options.buildAttestationPublicKeyPem || !options.buildAttestationKeyId) {
+      throw new Error('production signing requires a separate trusted sandbox build attestation')
+    }
+    verifyBuildAttestation(options.buildAttestation, options, packageBytes)
+  }
+  const privatePath = resolve(options.privateKeyPath)
+  assertPrivateSigningKey(privatePath)
+  const privateKey = createPrivateKey(regularBytes(privatePath, 'plugin signing key'))
+  if (privateKey.asymmetricKeyType !== 'ed25519') throw new Error('plugin signing key must be Ed25519')
+  if (!options.testOnlySkipRebuild && createPublicKey(privateKey).export({ type: 'spki', format: 'der' })
+    .equals(createPublicKey(options.buildAttestationPublicKeyPem).export({ type: 'spki', format: 'der' }))) {
+    throw new Error('build attestation and release descriptor must use separate trust keys')
+  }
   const payload = {
     schema_version: 'plugin-release/2', release_id: options.releaseId, git_sha: options.gitSha,
     plugin_id: manifest.id, plugin_version: manifest.version, platform: options.platform,
@@ -436,7 +493,7 @@ export function signPluginReleaseDescriptor(options) {
     bridge_sha256: digest(bridge),
     manifest_sha256: digest(pluginManifest),
     skill_sha256: digest(skill),
-    mcp_methods_sha256: options.mcpMethodsSha256, key_id: options.keyId,
+    mcp_methods_sha256: options.mcpMethodsSha256, release_readiness: 'signed_installable', key_id: options.keyId,
   }
   // Validate every field before signing. The temporary signature has the same
   // canonical shape, but is never emitted.
@@ -477,15 +534,28 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (mode === 'sign') {
       const output = arg('--output')
       if (!packagePath || !output || !arg('--private-key') || !arg('--plugin-root')) throw new Error('sign requires --package, --output, --private-key and --plugin-root')
-      const document = signPluginReleaseDescriptor({ packagePath, pluginRoot: arg('--plugin-root'), privateKeyPath: arg('--private-key'), keyId, releaseId: arg('--release-id'), gitSha: arg('--git-sha'), platform: arg('--platform'), mcpMethodsSha256: arg('--mcp-methods-sha256') })
+      const attestationPath = arg('--build-attestation'), attestationPublicKeyPath = arg('--build-attestation-public-key')
+      if (!attestationPath || !attestationPublicKeyPath || !arg('--build-attestation-key-id')) {
+        throw new Error('sign requires a separately signed sandbox build attestation and pinned verifier key')
+      }
+      const document = signPluginReleaseDescriptor({ packagePath, pluginRoot: arg('--plugin-root'), privateKeyPath: arg('--private-key'), keyId, releaseId: arg('--release-id'), gitSha: arg('--git-sha'), platform: arg('--platform'), mcpMethodsSha256: arg('--mcp-methods-sha256'),
+        buildAttestation: JSON.parse(regularBytes(attestationPath, 'trusted build attestation').toString('utf8')),
+        buildAttestationPublicKeyPem: regularBytes(attestationPublicKeyPath, 'trusted build attestation public key'),
+        buildAttestationKeyId: arg('--build-attestation-key-id') })
       writeNew(resolve(output), `${JSON.stringify(document, null, 2)}\n`)
       console.log(`plugin descriptor signed: ${basename(output)} package_sha256=${document.package_sha256}`)
+    } else if (mode === 'verify-build') {
+      if (!packagePath || !arg('--plugin-root') || !arg('--git-sha') || !arg('--platform') || arg('--private-key')) {
+        throw new Error('verify-build requires --package, --plugin-root, --git-sha and --platform, without a private key')
+      }
+      const evidence = verifyPluginPackageBuild({ packagePath, pluginRoot: arg('--plugin-root'), gitSha: arg('--git-sha'), platform: arg('--platform') })
+      console.log(JSON.stringify(evidence))
     } else if (mode === 'verify' || mode === 'verify-cloud') {
       if (!descriptorPath || !publicKeyPath || !keyId || (mode === 'verify' && !packagePath)) throw new Error('verify requires --descriptor, --public-key, --key-id and a package unless using verify-cloud')
       if (mode === 'verify-cloud' && (!arg('--release-id') || !arg('--git-sha'))) throw new Error('verify-cloud requires release and Git identity')
       const document = JSON.parse(regularBytes(descriptorPath, 'plugin descriptor').toString('utf8'))
       verifyPluginReleaseDescriptor(document, { publicKeyPem: regularBytes(publicKeyPath, 'trusted public key'), keyId, packagePath, releaseId: arg('--release-id'), gitSha: arg('--git-sha'), platform: arg('--platform'), mcpMethodsSha256: arg('--mcp-methods-sha256') })
       console.log(`plugin descriptor verified: ${basename(descriptorPath)}`)
-    } else throw new Error('usage: plugin-release-descriptor.mjs sign|verify [options]')
+    } else throw new Error('usage: plugin-release-descriptor.mjs verify-build|sign|verify [options]')
   } catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1 }
 }
