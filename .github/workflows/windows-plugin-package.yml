@@ -209,3 +209,23 @@ jobs:
             exit 1
           }
           Write-Host 'Windows package build, bundled install, MCP runtime, and Credential Manager passed.'
+      - name: Verify a realistic credential bundle through installed Node and helper
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installed = Join-Path $env:RUNNER_TEMP 'storenova-clean-user\.codex\plugins\cache\merchant-personal\merchant-marketing\local'
+          $node = Join-Path $installed 'runtime\node.exe'
+          $module = Join-Path $installed 'mcp\windows-credential.mjs'
+          $script = Join-Path $env:RUNNER_TEMP 'storenova-credential-bundle-smoke.mjs'
+          @'
+          import { pathToFileURL } from 'node:url'
+          const { writeWindowsCredential, readWindowsCredential } = await import(pathToFileURL(process.argv[2]).href)
+          const binding = { apiOrigin: 'https://yxsona.com', workspaceId: 'ws_ci_bundle' }
+          const bundle = { schema_version: '1', api_origin: binding.apiOrigin, workspace_id: binding.workspaceId,
+            access_token: 'a'.repeat(900), refresh_token: 'r'.repeat(900), expires_at: '2030-01-01T00:00:00.000Z' }
+          writeWindowsCredential(binding, bundle)
+          const stored = readWindowsCredential(binding)
+          if (stored.access_token !== bundle.access_token || stored.refresh_token !== bundle.refresh_token) process.exit(1)
+          '@ | Set-Content -LiteralPath $script -Encoding Ascii
+          & $node $script $module
+          if ($LASTEXITCODE -ne 0) { Write-Host '::error file=.github/workflows/windows-plugin-package.yml,line=1::CREDENTIAL_BUNDLE_ROUNDTRIP_FAILED'; exit 1 }
