@@ -16,6 +16,8 @@ const resolve = () => docker('run', '--rm', '--pull=never', '--network', network
 let networkCreated = false
 let oldId
 let candidateId
+let oldAliases
+let candidateAliases
 const restoreOld = () => {
   if (!oldId) return
   const old = inspect(oldId)
@@ -27,7 +29,7 @@ const restoreOld = () => {
   if (old.Name !== `/${name}`) docker('rename', oldId, name)
   if (!inspect(oldId).State.Running) docker('start', oldId)
   const restored = inspect(oldId)
-  if (restored.Id !== oldId || !restored.State.Running || restored.Name !== `/${name}` || resolve() !== restored.NetworkSettings.Networks[network].IPAddress) {
+  if (restored.Id !== oldId || !restored.State.Running || restored.Name !== `/${name}` || resolve() !== restored.NetworkSettings.Networks[network].IPAddress || JSON.stringify(restored.NetworkSettings.Networks[network].Aliases ?? []) !== oldAliases) {
     throw new Error('original label-free container identity or Docker DNS was not restored')
   }
 }
@@ -38,6 +40,8 @@ try {
   oldId = docker('run', '-d', '--pull=never', '--name', name, '--network', network, image, 'sleep', '300')
   candidateId = docker('create', '--pull=never', '--name', candidateName, '--network', network, image, 'sleep', '300')
   const old = inspect(oldId), candidate = inspect(candidateId)
+  oldAliases = JSON.stringify(old.NetworkSettings.Networks[network].Aliases ?? [])
+  candidateAliases = JSON.stringify(candidate.NetworkSettings.Networks[network].Aliases ?? [])
   if (old.Config.Labels?.['com.docker.compose.project'] || old.Config.Labels?.['com.docker.compose.service']) throw new Error('old fixture unexpectedly has Compose ownership labels')
   if (old.Name !== `/${name}` || !old.State.Running || candidate.State.Running || resolve() !== old.NetworkSettings.Networks[network].IPAddress) throw new Error('old unlabeled DNS fixture is invalid')
 
@@ -53,7 +57,7 @@ try {
   docker('rename', candidateId, name)
   docker('start', candidateId)
   const switched = inspect(candidateId)
-  if (switched.Id !== candidateId || resolve() !== switched.NetworkSettings.Networks[network].IPAddress) throw new Error('candidate did not acquire the old Docker DNS name')
+  if (switched.Id !== candidateId || resolve() !== switched.NetworkSettings.Networks[network].IPAddress || JSON.stringify(switched.NetworkSettings.Networks[network].Aliases ?? []) !== candidateAliases) throw new Error('candidate did not acquire the old Docker DNS name without alias drift')
   restoreOld()
   console.log('PASS: unlabeled same-name Docker handoff and two partial-failure restorations preserve old ID and DNS')
 } finally {

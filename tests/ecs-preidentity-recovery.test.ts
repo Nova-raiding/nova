@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest'
 import {
   createSignedSnapshot,
   productionApiBaseUrl,
+  recoverUnlabeledPairs,
+  switchUnlabeledPairs,
   transitionJournal,
   verifyBridgeRecoveryAuthorization,
   verifyRecoveryAuthorization,
@@ -39,6 +41,61 @@ const binding = {
 }
 
 describe('protected ECS pre-identity recovery', () => {
+  it('signs only the bounded seven-container unlabeled takeover and recovers every partial action', () => {
+    const services = ['api-replica', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync']
+    const pairs = services.map((service, index) => {
+      const oldId = (index + 1).toString(16).padStart(64, '0')
+      const candidateId = (index + 17).toString(16).padStart(64, '0')
+      const oldName = `merchant-production-${service}-1`
+      return { service, old_name: oldName, candidate_name: `bridge-${service}-1`, parked_name: `${oldName}.parked.release-a9`,
+        old: { id: oldId, image_id: image('1'), config_sha256: sha('2'), host_sha256: sha('3'), networks: [{ name: 'merchant-production_default', id: sha('4'), aliases: [] }] },
+        candidate: { id: candidateId, image_id: image('c'), config_sha256: sha('5'), host_sha256: sha('6'), networks: [{ name: 'merchant-production_default', id: sha('4'), aliases: [] }] } }
+    })
+    const sevenObserved = {
+      ...observed, database: { version: 242, historySha256: sha('5'), invalidConcurrentIndexes: [] },
+      containers: pairs.map(pair => ({ service: pair.service, id: pair.old.id, imageId: pair.old.image_id, configHash: sha('2'), state: 'running' })),
+      inventory: pairs.map(pair => ({ id: pair.old.id, name: pair.old_name, image_id: pair.old.image_id, config_hash: sha('2') })),
+      candidateImageIds: [image('c')], candidateServiceImageIds: Object.fromEntries(services.map(service => [service, image('c')])), unlabeledTakeover: pairs,
+    }
+    const sevenBinding = { ...binding, mode: 'bridge_unlabeled_code_only' as const,
+      recovery: { ...binding.recovery, migrationTail: 242, allowedPrefixSha256: { 242: sha('5') }, services } }
+    const snapshot = createSignedSnapshot(sevenObserved, sevenBinding, keys.privateKey, keys.publicKey, now)
+    expect(snapshot.unlabeled_takeover).toEqual(pairs)
+    expect(() => createSignedSnapshot({ ...sevenObserved, unlabeledTakeover: pairs.slice(1) }, sevenBinding, keys.privateKey, keys.publicKey, now)).toThrow(/seven frozen/u)
+    const state = () => new Map(pairs.flatMap(pair => [[pair.old.id, { name: pair.old_name, running: true }], [pair.candidate.id, { name: pair.candidate_name, running: false }]]))
+    const actions = (containers: ReturnType<typeof state>, faultAt = Infinity, after = false) => {
+      let count = 0
+      const apply = (fn: () => void) => {
+        count += 1
+        if (!after && count === faultAt) throw new Error('injected Docker fault')
+        fn()
+        if (after && count === faultAt) throw new Error('injected Docker fault after mutation')
+      }
+      return {
+        inspect: (id: string) => ({ ...containers.get(id)! }),
+        stop: (id: string) => apply(() => { containers.get(id)!.running = false }),
+        start: (id: string) => apply(() => { containers.get(id)!.running = true }),
+        rename: (id: string, name: string) => apply(() => {
+          if ([...containers].some(([other, value]) => other !== id && value.name === name)) throw new Error('Docker name conflict')
+          containers.get(id)!.name = name
+        }),
+      }
+    }
+    for (const after of [false, true]) for (let position = 1; position <= 28; position += 1) {
+      const containers = state()
+      expect(() => switchUnlabeledPairs(pairs, actions(containers, position, after))).toThrow(/injected Docker fault/u)
+      recoverUnlabeledPairs(pairs, actions(containers))
+      for (const pair of pairs) {
+        expect(containers.get(pair.old.id)).toEqual({ name: pair.old_name, running: true })
+        expect(containers.get(pair.candidate.id)).toEqual({ name: pair.candidate_name, running: false })
+      }
+    }
+    const switched = state()
+    switchUnlabeledPairs(pairs, actions(switched))
+    expect(switched.get(pairs[0]!.candidate.id)).toEqual({ name: pairs[0]!.old_name, running: true })
+    recoverUnlabeledPairs(pairs, actions(switched))
+    expect(switched.get(pairs[0]!.old.id)).toEqual({ name: pairs[0]!.old_name, running: true })
+  })
   it('signs a separate code-only 242 bridge state machine and authorizes bounded partial restore', () => {
     const bridgeObserved = {
       ...observed,
