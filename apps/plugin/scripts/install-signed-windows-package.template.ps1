@@ -37,10 +37,11 @@ try {
   $installer = Join-Path $extract 'scripts\install-chatgpt-bundled.mjs'
   $preflight = Join-Path $extract 'scripts\ensure-chatgpt-windows.ps1'
   $helper = Join-Path $extract 'windows\StoreNovaCredentialHelper.exe'
+  $bindingScript = Join-Path $extract 'scripts\windows-installation-binding.mjs'
   $helperHashPath = "$helper.sha256"
   if (-not (Test-Path -LiteralPath $runtime -PathType Leaf) -or -not (Test-Path -LiteralPath $installer -PathType Leaf) -or
       -not (Test-Path -LiteralPath $preflight -PathType Leaf) -or -not (Test-Path -LiteralPath $helper -PathType Leaf) -or
-      -not (Test-Path -LiteralPath $helperHashPath -PathType Leaf)) {
+      -not (Test-Path -LiteralPath $helperHashPath -PathType Leaf) -or -not (Test-Path -LiteralPath $bindingScript -PathType Leaf)) {
     throw 'Verified Windows package is missing its runtime, official-host preflight, credential helper, or installer'
   }
   if (-not $ciTestOnly -and [string]::IsNullOrWhiteSpace($WorkspaceId)) {
@@ -61,6 +62,11 @@ try {
   if ((Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash.ToUpperInvariant() -ne $expectedHelperHash) {
     throw 'Windows credential helper digest differs from the verified ZIP record'
   }
+  $pluginVersion = (Get-Content -LiteralPath (Join-Path $extract 'package.json') -Raw | ConvertFrom-Json).version
+  $bindingCandidate = & $runtime $bindingScript prepare --package-sha256 $expectedHash --plugin-version $pluginVersion --signer-thumbprint $expectedSigner
+  if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace(($bindingCandidate -join ''))) {
+    throw 'Windows installation identity binding preflight failed; plugin files were not changed'
+  }
   & $runtime $installer
   if ($LASTEXITCODE -ne 0) { throw 'Store Nova local plugin installation failed' }
   if (-not $ciTestOnly) {
@@ -70,6 +76,10 @@ try {
     } else {
       Write-Host 'Login pending. Run login.cmd --workspace <assigned-workspace> when available.'
     }
+  }
+  ($bindingCandidate -join "`n") | & $runtime $bindingScript commit
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Windows installation binding commit failed; previous binding remains the last-known-good upgrade receipt'
   }
   Write-Host 'Store Nova plugin installed. Restart ChatGPT and verify onboarding.status in a new conversation.'
 } finally {

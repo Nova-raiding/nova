@@ -41,6 +41,18 @@ export function createWindowsInstallationIdentityStore(options = {}) {
   }
 }
 
+export function createWindowsInstallationBindingStore(options = {}) {
+  const runHelper = options.runHelper ?? runWindowsCredentialHelper
+  const request = { target: 'com.storenova.installation-binding', account: 'current-installation' }
+  return {
+    load() {
+      try { return JSON.parse(String(runHelper({ operation: 'read', ...request })).trim()) }
+      catch { return undefined }
+    },
+    save(binding) { runHelper({ operation: 'write', ...request, data: JSON.stringify(binding) }) },
+  }
+}
+
 export function writeWindowsCredential({ apiOrigin, workspaceId }, bundle, options = {}) {
   const { origin, workspace, account } = binding(apiOrigin, workspaceId)
   const record = { schema_version: '1', api_origin: origin, workspace_id: workspace,
