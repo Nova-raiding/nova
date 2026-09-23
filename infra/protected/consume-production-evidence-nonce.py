@@ -53,10 +53,17 @@ def verify_opened_ledger(connection, path, before):
         raise RuntimeError('nonce ledger opened at an unexpected path')
 
 
-def consume(ledger_path, namespace, nonce, release_id, image_digest, manifest_sha256, release_git_sha):
-    """Atomically insert a nonce; any repeat fails, even with different bindings."""
+def consume(ledger_path, namespace, nonce, release_id, image_digest, manifest_sha256,
+            release_git_sha, operation='deployment', attempt_id=''):
+    """Atomically consume a nonce and bind it to exactly one operation/attempt."""
     if os.geteuid() != 0:
         raise RuntimeError('nonce consumer must run as root')
+    if operation not in ('deployment', 'bridge-b'):
+        raise RuntimeError('operation must be deployment or bridge-b')
+    if operation == 'deployment' and attempt_id:
+        raise RuntimeError('deployment operation must not include an attempt ID')
+    if operation == 'bridge-b' and not re.fullmatch(r'[A-Za-z0-9_-]{16,128}', attempt_id):
+        raise RuntimeError('bridge-b operation requires a valid attempt ID')
     secure_parent('/var')
     secure_parent('/var/lib')
     secure_directory(os.path.dirname(ledger_path))
@@ -77,10 +84,21 @@ def consume(ledger_path, namespace, nonce, release_id, image_digest, manifest_sh
             release_git_sha TEXT NOT NULL, consumed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (namespace, nonce)
         )''')
+        # Keep operation ownership separate from the historical consumption
+        # table. Existing rows intentionally have no owner and cannot be
+        # adopted by Bridge B based only on a matching release identity.
+        connection.execute('''CREATE TABLE IF NOT EXISTS nonce_owners (
+            namespace TEXT NOT NULL, nonce TEXT NOT NULL,
+            operation TEXT NOT NULL, attempt_id TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (namespace, nonce)
+        )''')
         connection.execute('''INSERT INTO consumed_nonces
             (namespace, nonce, release_id, image_digest, manifest_sha256, release_git_sha)
             VALUES (?, ?, ?, ?, ?, ?)''',
             (namespace, nonce, release_id, image_digest, manifest_sha256, release_git_sha))
+        connection.execute('''INSERT INTO nonce_owners
+            (namespace, nonce, operation, attempt_id) VALUES (?, ?, ?, ?)''',
+            (namespace, nonce, operation, attempt_id))
         connection.execute('COMMIT')
     except Exception:
         if connection.in_transaction:
@@ -96,6 +114,8 @@ def parse_args(argv):
     command = subcommands.add_parser('consume')
     for name in ('namespace', 'nonce', 'release-id', 'image-digest', 'manifest-sha256', 'release-git-sha'):
         command.add_argument('--' + name, required=True)
+    command.add_argument('--operation', choices=('deployment', 'bridge-b'))
+    command.add_argument('--attempt-id')
     args = parser.parse_args(argv)
     if args.command != 'consume':
         parser.error('consume subcommand is required')
@@ -116,8 +136,13 @@ def main(argv):
         raise RuntimeError('manifest SHA-256 is invalid')
     if not re.fullmatch(r'(?:[0-9a-f]{40}|[0-9a-f]{64})', args.release_git_sha):
         raise RuntimeError('Git SHA is invalid')
+    operation = args.operation or 'deployment'
+    attempt_id = args.attempt_id or ''
+    if args.operation is None and args.attempt_id is not None:
+        raise RuntimeError('--attempt-id requires --operation bridge-b')
     consume(LEDGER_PATH, args.namespace, args.nonce, args.release_id,
-            args.image_digest, args.manifest_sha256, args.release_git_sha)
+            args.image_digest, args.manifest_sha256, args.release_git_sha,
+            operation, attempt_id)
     print('nonce accepted')
 
 

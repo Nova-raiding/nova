@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { chmodSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { verifyBridgeBJournal } from '/infra/protected/ecs-bridge-b-transition.mjs'
 import { DatabaseSync } from 'node:sqlite'
@@ -55,8 +55,35 @@ assert.equal(captured.database_before.migration_version, 242)
 assert.equal(captured.database_before.migration_history_sha256, dbHistorySha())
 assert.equal(captured.bridge.release_id, 'bridge-release-242')
 assert.equal(captured.bridge.manifest_sha256, 'e'.repeat(64))
-assert.deepEqual(captured.baseline.services.map(item => item.service), ['api'])
-assert.deepEqual(captured.baseline.inventory.map(item => item.name), ['merchant-api-1'])
+assert.deepEqual(captured.baseline.services.map(item => item.service), ['api', 'api-replica'])
+assert.deepEqual(captured.baseline.inventory.map(item => item.name), ['merchant-api-1', 'merchant-api-replica-1'])
+
+// Every selected migration-capable API process must explicitly disable
+// startup migrations. Capture rejects a replica with the setting missing or
+// enabled before consuming the shared nonce or issuing Compose up.
+for (const [label, value] of [['missing', undefined], ['enabled', 'true']]) {
+  const invalidComposePath = `/state/bridge-replica-${label}.json`
+  const invalidDigestPath = `/state/bridge-replica-${label}-digests.json`
+  const invalidCompose = JSON.parse(readFileSync('/state/bridge-compose.json', 'utf8'))
+  if (value === undefined) delete invalidCompose.services['api-replica'].environment.RUN_MIGRATIONS_ON_STARTUP
+  else invalidCompose.services['api-replica'].environment.RUN_MIGRATIONS_ON_STARTUP = value
+  writeFileSync(invalidComposePath, JSON.stringify(invalidCompose), { mode: 0o600 })
+  writeFileSync(invalidDigestPath, readFileSync('/state/bridge-digests.json'), { mode: 0o600 })
+  const invalidAttempt = `attempt_replica_${label}_abcdefghijkl`
+  const ledger = new DatabaseSync('/var/lib/merchant-release-security/production-nonces.sqlite3')
+  const nonceCountBefore = ledger.prepare('SELECT count(*) AS count FROM consumed_nonces').get().count
+  ledger.close()
+  const composeUpCountBefore = dockerCalls().filter(call => call[0] === 'compose' && call.includes('up')).length
+  const invalid = reject('capture', /api-replica must explicitly disable startup migrations/u, invalidAttempt, {
+    '--bridge-compose': invalidComposePath, '--bridge-image-digests': invalidDigestPath,
+  })
+  assert.match(invalid.stderr, /api-replica must explicitly disable startup migrations/u)
+  assert.equal(existsSync(statePath(invalidAttempt)), false)
+  const afterLedger = new DatabaseSync('/var/lib/merchant-release-security/production-nonces.sqlite3')
+  assert.equal(afterLedger.prepare('SELECT count(*) AS count FROM consumed_nonces').get().count, nonceCountBefore)
+  afterLedger.close()
+  assert.equal(dockerCalls().filter(call => call[0] === 'compose' && call.includes('up')).length, composeUpCountBefore)
+}
 
 // FD 9 must name the canonical protected lock inode. No psql/Docker calls may happen first.
 const dockerBeforeLockMismatch = dockerCalls().length
@@ -69,6 +96,24 @@ assert.equal(readFileSync('/state/psql-calls.jsonl','utf8').trim().split('\n').l
 const badNonce = reject('install', /nonce mismatch/u, attempt, { '--deployment-nonce': 'nonce_wrong_abcdefghijklmnopqrstuvwxyz' })
 assert.match(badNonce.stderr, /deployment nonce mismatch/u)
 assert.equal(journal().phase, 'captured')
+
+// A nonce consumed by the ordinary deployment operation cannot be reclaimed
+// by Bridge B even when every release identity field is identical. Omitted
+// operation flags retain the historical deployment consumer behavior.
+const deploymentOwnedNonce = 'nonce_deploymentOwned_abcdefghijklmnopqrstuvwxyz'
+const bridgeIdentity = JSON.parse(readFileSync('/state/bridge-identity.json', 'utf8'))
+const nonceConsumer = '/usr/local/libexec/merchant/consume-production-evidence-nonce'
+const deploymentConsume = spawnSync('/usr/local/bin/node', [nonceConsumer, 'consume', '--namespace', 'merchant-production-deploy', '--nonce', deploymentOwnedNonce, '--release-id', bridgeIdentity.release_id, '--image-digest', bridgeIdentity.image_set_digest, '--manifest-sha256', bridgeIdentity.manifest_sha256, '--release-git-sha', bridgeIdentity.release_git_sha], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } })
+assert.equal(deploymentConsume.status, 0, `legacy deployment nonce consumer invocation failed: status=${deploymentConsume.status} signal=${deploymentConsume.signal} error=${deploymentConsume.error?.message} stderr=${deploymentConsume.stderr}`)
+const deploymentOwnerAttempt = 'attempt_deployment_owner_abcdefgh'
+assert.match(pass('capture', deploymentOwnerAttempt, { '--deployment-nonce': deploymentOwnedNonce }), /signed baseline captured/u)
+const callsBeforeOwnerReject = dockerCalls().filter(call => call[0] === 'compose' && call.includes('up')).length
+const consumerCallsBeforeOwnerReject = readFileSync('/state/nonce-calls.jsonl', 'utf8').trim().split('\n').length
+const ownerReject = reject('install', /different operation or attempt/u, deploymentOwnerAttempt, { '--deployment-nonce': deploymentOwnedNonce })
+assert.match(ownerReject.stderr, /different operation or attempt/u)
+assert.equal(journal(deploymentOwnerAttempt).phase, 'captured')
+assert.equal(dockerCalls().filter(call => call[0] === 'compose' && call.includes('up')).length, callsBeforeOwnerReject)
+assert.equal(readFileSync('/state/nonce-calls.jsonl', 'utf8').trim().split('\n').length, consumerCallsBeforeOwnerReject)
 
 // Simulate process loss after the shared one-use ledger commits but before
 // the signed journal phase update. Same-attempt retry must resume without
@@ -92,11 +137,11 @@ assert.equal(journal().database_before.migration_history_sha256, dbHistorySha())
 
 // A distinct attempt reuses the accepted nonce: the actual SQLite consumer must reject it.
 const runtime = JSON.parse(readFileSync('/state/runtime.json','utf8'))
-writeFileSync('/state/runtime.json', JSON.stringify({ ...runtime, runtime: 'old', containerId: 'a'.repeat(64) }))
+writeFileSync('/state/runtime.json', JSON.stringify({ ...runtime, runtime: 'old', apiId: 'a'.repeat(64), replicaId: 'c'.repeat(64) }))
 const replayAttempt = 'attempt_BridgeB_replay_abcdefgh'
 assert.match(pass('capture', replayAttempt), /signed baseline captured/u)
 const callsBeforeReplay = dockerCalls().length
-const replay = reject('install', /nonce was already bound to a different attempt or release/u, replayAttempt)
+const replay = reject('install', /different operation or attempt/u, replayAttempt)
 assert.equal(journal(replayAttempt).phase, 'captured')
 const replayDockerCalls = dockerCalls().slice(callsBeforeReplay)
 assert.equal(replayDockerCalls.some(call => call[0] === 'compose' && call.includes('up')), false, `nonce attempt replay must be rejected before Docker Compose mutation: ${JSON.stringify(replayDockerCalls)}`)
@@ -106,11 +151,28 @@ assert(!replay.stderr.includes('nonce consumer'), 'same-release replay must be r
 // The first successful install already consumed this nonce, so create a fresh isolated nonce and capture.
 const recoverNonce = 'nonce_BridgeB_recovery_abcdefghijklmnopqrstuvwxyz'
 const recoveryAttempt = 'attempt_BridgeB_recovery_abcdefgh'
-// Rewrite helper fixture's captured binding through a fresh isolated setup is intentionally avoided;
-// replay path above proves the common nonce-consumption fence. Recover the signed successful attempt.
+// Restore the simulated Bridge B runtime after the replay test's baseline reset;
+// recovery authorization must observe the exact captured candidate identity.
+writeFileSync('/state/runtime.json', JSON.stringify({ ...runtime, runtime: 'bridge', apiId: 'b'.repeat(64), replicaId: 'd'.repeat(64) }))
 assert.match(pass('recover'), /recovery verified at migration 242/u)
 assert.equal(journal().phase, 'recovery_verified')
 assert.equal(JSON.parse(readFileSync('/state/runtime.json','utf8')).runtime, 'old')
 assert.equal(journal().database_before.migration_history_sha256, dbHistorySha())
 assert.equal(readFileSync('/state/psql-calls.jsonl','utf8').trim().split('\n').length > 0, true)
+
+// A legacy database with consumed_nonces but no operation-owner table may
+// continue to accept unused nonces (proven by the first install above), but
+// Bridge B must not claim an already-consumed legacy nonce.
+const legacyLedger = new DatabaseSync('/var/lib/merchant-release-security/production-nonces.sqlite3')
+legacyLedger.exec('DROP TABLE nonce_owners')
+legacyLedger.close()
+const legacyAttempt = 'attempt_legacy_nonce_abcdefghijk'
+assert.match(pass('capture', legacyAttempt), /signed baseline captured/u)
+const legacyConsumerCalls = readFileSync('/state/nonce-calls.jsonl', 'utf8').trim().split('\n').length
+const legacyComposeUps = dockerCalls().filter(call => call[0] === 'compose' && call.includes('up')).length
+const legacyReject = reject('install', /legacy consumed nonce has no operation owner/u, legacyAttempt)
+assert.match(legacyReject.stderr, /legacy consumed nonce has no operation owner/u)
+assert.equal(journal(legacyAttempt).phase, 'captured')
+assert.equal(readFileSync('/state/nonce-calls.jsonl', 'utf8').trim().split('\n').length, legacyConsumerCalls)
+assert.equal(dockerCalls().filter(call => call[0] === 'compose' && call.includes('up')).length, legacyComposeUps)
 console.log('PASS: fixed-path host CLI capture/install/recover; FD9 mismatch; nonce mismatch/replay; signed release and Docker inventory; migration 242 history unchanged; migrate never invoked')

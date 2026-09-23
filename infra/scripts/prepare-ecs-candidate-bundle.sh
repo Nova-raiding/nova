@@ -101,6 +101,7 @@ infra/scripts/test-ecs-release-control-installer.sh
 infra/scripts/consume-production-evidence-nonce.sh
 infra/protected/consume-production-evidence-nonce.py
 tests/protected-nonce-consumer-smoke.py
+tests/run-protected-nonce-consumer-isolated.sh
 docs/runbooks/ecs-production-nonce-consumer.md
 docs/runbooks/ecs-bridge-b-transition.md
 infra/protected/attest-release-evidence-bundle.mjs
@@ -221,7 +222,6 @@ packages/workers/src/scanner-heartbeat.test.ts
 tests/ecs-compose-rollback.test.ts
 tests/mcp-integration-mode-release-gate.test.ts
 tests/ecs-bridge-b-transition.test.ts
-tests/run-ecs-bridge-b-isolated-cli.sh
 tests/run-ecs-bridge-b-host-cli.sh
 tests/fixtures/ecs-bridge-b-host-cli/curl.mjs
 tests/fixtures/ecs-bridge-b-host-cli/docker.mjs

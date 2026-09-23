@@ -59,6 +59,7 @@ describe('ECS candidate bundle contract', () => {
       'infra/scripts/consume-production-evidence-nonce.sh',
       'infra/protected/consume-production-evidence-nonce.py',
       'tests/protected-nonce-consumer-smoke.py',
+      'tests/run-protected-nonce-consumer-isolated.sh',
       'docs/runbooks/ecs-production-nonce-consumer.md',
       'docs/runbooks/ecs-bridge-b-transition.md',
       'infra/protected/attest-release-evidence-bundle.mjs',
@@ -156,7 +157,7 @@ describe('ECS candidate bundle contract', () => {
       'tests/ecs-compose-rollback.test.ts',
       'tests/mcp-integration-mode-release-gate.test.ts',
       'tests/ecs-bridge-b-transition.test.ts',
-      'tests/run-ecs-bridge-b-isolated-cli.sh',
+      'tests/run-protected-nonce-consumer-isolated.sh',
       'tests/run-ecs-bridge-b-host-cli.sh',
       'tests/fixtures/ecs-bridge-b-host-cli/curl.mjs',
       'tests/fixtures/ecs-bridge-b-host-cli/docker.mjs',
@@ -178,7 +179,6 @@ describe('ECS candidate bundle contract', () => {
       'infra/scripts/deploy-verified-ecs-compose.sh',
       'infra/scripts/rollback-ecs-compose.sh',
       'infra/scripts/invoke-ecs-automatic-rollback.sh',
-      'tests/run-ecs-bridge-b-isolated-cli.sh',
       'tests/run-ecs-bridge-b-host-cli.sh',
       'infra/protected/attest-release-evidence-bundle.mjs',
     ]) expect(statSync(path).mode & 0o111, `${path} must be executable in the release tree`).not.toBe(0)
@@ -206,6 +206,32 @@ describe('ECS candidate bundle contract', () => {
     expect(nonceConsumer).toContain('BEGIN IMMEDIATE')
     expect(nonceConsumer).toContain('production-nonces.sqlite3')
     expect(nonceRunbook).toContain('production-evidence-nonce-consumer-sha256')
+  })
+
+  it('documents a locked, digest-checked atomic nonce-consumer upgrade without ledger replacement', () => {
+    const runbook = readFileSync('docs/runbooks/ecs-production-nonce-consumer.md', 'utf8')
+    const upgradeStart = runbook.indexOf('### 已有环境升级（保护旧 consumer 和 ledger）')
+    const upgrade = runbook.slice(upgradeStart)
+    const codeStart = upgrade.indexOf('```sh\n') + '```sh\n'.length
+    const code = upgrade.slice(codeStart, upgrade.indexOf('\n```', codeStart))
+
+    expect(upgradeStart).toBeGreaterThanOrEqual(0)
+    expect(runbook).toContain('### 首次安装（只有目标不存在时）')
+    expect(runbook).toContain('test ! -e /var/lib/merchant-release-security/production-nonces.sqlite3')
+    expect(upgrade).toContain('EXPECTED_OLD_NONCE_CONSUMER_SHA256')
+    expect(upgrade).toContain('REVIEWED_NEW_NONCE_CONSUMER_SHA256')
+    expect(upgrade).toContain('不得打开、迁移、复制覆盖、删除或重建 `production-nonces.sqlite3`')
+    expect(upgrade).toContain('旧 ledger 中已有 `consumed_nonces` 记录但尚无 `nonce_owners` 记录时，Bridge B 必须视为来源未知并拒绝使用')
+    expect(code).not.toContain('production-nonces.sqlite3')
+    expect(code).toContain('exec 9>>"$lock"')
+    expect(code).toContain('flock -n 9')
+    expect(code).toContain('test "$old_actual" = "$EXPECTED_OLD_NONCE_CONSUMER_SHA256"')
+    expect(code).toContain('test "$old_trusted" = "$EXPECTED_OLD_NONCE_CONSUMER_SHA256"')
+    expect(code).toContain('install -o root -g root -m 0400 "$consumer" "$backup"')
+    expect(code).toContain('mktemp /usr/local/libexec/merchant/.nonce-consumer.XXXXXX')
+    expect(code).toContain('mktemp "$trust_dir/.nonce-consumer-digest.XXXXXX"')
+    expect(code.indexOf('mv -f -- "$consumer_tmp" "$consumer"')).toBeLessThan(code.indexOf('mv -f -- "$digest_tmp" "$digest_file"'))
+    expect(code).toContain('test "$(sha256sum "$consumer" | awk \'{print $1}\')" = "$(cat "$digest_file")"')
   })
 
   it('fails before remote access when the candidate repository has uncommitted input', () => {

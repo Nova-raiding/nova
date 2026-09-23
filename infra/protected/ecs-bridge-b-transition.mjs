@@ -35,6 +35,7 @@ export const BRIDGE_B_RUNTIME_SERVICES = Object.freeze([
   'worker-reconcile', 'worker-automation', 'worker-scan',
 ])
 const BRIDGE_B_RUNTIME_SERVICE_SET = new Set(BRIDGE_B_RUNTIME_SERVICES)
+const BRIDGE_B_MIGRATION_CAPABLE_API_SERVICES = new Set(['api', 'api-replica'])
 
 function assert(value, message) { if (!value) throw new Error(message) }
 function sha256(value) { return createHash('sha256').update(value).digest('hex') }
@@ -370,9 +371,12 @@ function validateRuntimeCompose(compose, envFile, project, imagePath, services, 
     const dependencies = Array.isArray(service.depends_on) ? service.depends_on : Object.keys(service.depends_on ?? {})
     assert(!dependencies.includes('migrate'), `runtime service depends on migrate: ${name}`)
   }
+  for (const name of services.filter(serviceName => BRIDGE_B_MIGRATION_CAPABLE_API_SERVICES.has(serviceName))) {
+    const environment = document.services[name]?.environment ?? {}
+    assert(environment.RUN_MIGRATIONS_ON_STARTUP === 'false' || environment.RUN_MIGRATIONS_ON_STARTUP === false, `${name} must explicitly disable startup migrations for the Bridge B migration-242 transition`)
+  }
   const api = document.services.api
   const environment = api?.environment ?? {}
-  assert(environment.RUN_MIGRATIONS_ON_STARTUP === 'false' || environment.RUN_MIGRATIONS_ON_STARTUP === false, 'API must explicitly disable startup migrations for the Bridge B migration-242 transition')
   const expected = { RELEASE_ID: identity.release_id, RELEASE_GIT_SHA: identity.release_git_sha, RELEASE_MANIFEST_SHA256: identity.manifest_sha256, RELEASE_IMAGE_SET_DIGEST: identity.image_set_digest }
   assert(services.includes('api') && Object.entries(expected).every(([key, value]) => environment[key] === value), 'API Compose release identity does not match the reviewed runtime')
   return { digests, document }
@@ -413,23 +417,26 @@ function frozenOldCapsule(planPath, composePath, envPath, digestPath, database) 
   validateBridgeServiceList(target.services)
   return { plan, planSha256: sha256(planBytes), targetIdentity, services: [...target.services].sort(), artifactHashes: { compose_sha256: target.compose_sha256, env_sha256: target.env_sha256, image_digests_sha256: target.image_digests_sha256 } }
 }
-function assertNonceConsumed(nonce, identity) {
-  protectedPath(NONCE_LEDGER, 'nonce ledger', 0o600)
-  const ledger = new DatabaseSync(NONCE_LEDGER, { readOnly: true })
-  try {
-    const row = ledger.prepare('SELECT release_id,image_digest,manifest_sha256,release_git_sha FROM consumed_nonces WHERE namespace=? AND nonce=?').get('merchant-production-deploy', nonce)
-    assert(row && row.release_id === identity.release_id && row.image_digest === identity.image_set_digest && row.manifest_sha256 === identity.manifest_sha256 && row.release_git_sha === identity.release_git_sha, 'one-use deployment nonce ledger binding is missing or mismatched')
-  } finally { ledger.close() }
+function assertNonceConsumed(nonce, attemptId, identity) {
+  assert(nonceLedgerHasBinding(nonce, attemptId, identity), 'one-use deployment nonce ledger binding is not owned by this Bridge B attempt')
 }
-function nonceLedgerHasBinding(nonce, identity) {
+function nonceLedgerHasBinding(nonce, attemptId, identity) {
   protectedPath(NONCE_LEDGER, 'nonce ledger', 0o600)
   const ledger = new DatabaseSync(NONCE_LEDGER, { readOnly: true })
   try {
-    const table = ledger.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='consumed_nonces'").get()
-    if (!table) return false
+    const consumedTable = ledger.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='consumed_nonces'").get()
+    const ownerTable = ledger.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='nonce_owners'").get()
+    assert(consumedTable, 'nonce ledger is missing its consumption table')
     const row = ledger.prepare('SELECT release_id,image_digest,manifest_sha256,release_git_sha FROM consumed_nonces WHERE namespace=? AND nonce=?').get('merchant-production-deploy', nonce)
-    if (!row) return false
+    if (!ownerTable) {
+      assert(!row, 'legacy consumed nonce has no operation owner; Bridge B cannot take it over')
+      return false
+    }
+    const owner = ledger.prepare('SELECT operation,attempt_id FROM nonce_owners WHERE namespace=? AND nonce=?').get('merchant-production-deploy', nonce)
+    if (!row && !owner) return false
+    assert(row && owner, 'nonce ledger consumption and ownership records disagree')
     assert(row.release_id === identity.release_id && row.image_digest === identity.image_set_digest && row.manifest_sha256 === identity.manifest_sha256 && row.release_git_sha === identity.release_git_sha, 'Bridge B nonce is already consumed by another release identity')
+    assert(owner.operation === 'bridge-b' && owner.attempt_id === attemptId, 'Bridge B nonce is owned by a different operation or attempt')
     return true
   } finally { ledger.close() }
 }
@@ -438,8 +445,9 @@ function recordNonceAttempt(nonce, attemptId, identity) {
   const ledger = new DatabaseSync(NONCE_LEDGER)
   try { recordBridgeBAttemptBinding(ledger, nonce, attemptId, identity) } finally { ledger.close() }
 }
-function consumeNonce(nonce, identity) {
-  const result = spawnSync(NONCE_CONSUMER, ['consume', '--namespace', 'merchant-production-deploy', '--nonce', nonce, '--release-id', identity.release_id, '--image-digest', identity.image_set_digest, '--manifest-sha256', identity.manifest_sha256, '--release-git-sha', identity.release_git_sha], { encoding: 'utf8', env: {} })
+function consumeNonce(nonce, attemptId, identity) {
+  assert(typeof attemptId === 'string' && /^[A-Za-z0-9_-]{16,128}$/u.test(attemptId), 'Bridge B nonce attempt id is invalid')
+  const result = spawnSync(NONCE_CONSUMER, ['consume', '--namespace', 'merchant-production-deploy', '--nonce', nonce, '--release-id', identity.release_id, '--image-digest', identity.image_set_digest, '--manifest-sha256', identity.manifest_sha256, '--release-git-sha', identity.release_git_sha, '--operation', 'bridge-b', '--attempt-id', attemptId], { encoding: 'utf8', env: {} })
   assert(result.status === 0, `shared one-use production nonce consumer rejected the Bridge B nonce: ${(result.stderr ?? '').trim()}`)
   assert(result.stdout.trim() === 'nonce accepted', 'shared production nonce consumer returned an unexpected result')
 }
@@ -542,12 +550,12 @@ function install(get, privatePem, publicPem) {
   assertRelease(productionRelease(baseUrl), old.targetIdentity, 'live old runtime immediately before Bridge B')
   let current = journal
   if (current.phase === 'captured') {
-    if (!nonceLedgerHasBinding(nonce, candidate)) consumeNonce(nonce, candidate)
-    assertNonceConsumed(nonce, candidate)
+    if (!nonceLedgerHasBinding(nonce, current.attempt_id, candidate)) consumeNonce(nonce, current.attempt_id, candidate)
+    assertNonceConsumed(nonce, current.attempt_id, candidate)
     recordNonceAttempt(nonce, current.attempt_id, candidate)
     current = journalAdvance(path, current, 'nonce_consumed', privatePem, publicPem)
   } else {
-    assertNonceConsumed(nonce, candidate)
+    assertNonceConsumed(nonce, current.attempt_id, candidate)
     recordNonceAttempt(nonce, current.attempt_id, candidate)
   }
   // Recheck all mutable deployment observations after durable nonce binding,
@@ -575,7 +583,7 @@ function recover(get, privatePem, publicPem) {
   const before = collectDatabase(process.env.DATABASE_URL)
   databaseIs242(before, journal, 'recovery guard')
   const recoveryIdentity = { release_id: journal.bridge.release_id, image_set_digest: journal.bridge.image_set_digest, manifest_sha256: journal.bridge.manifest_sha256, release_git_sha: journal.bridge.release_git_sha }
-  assertNonceConsumed(get('--deployment-nonce'), recoveryIdentity)
+  assertNonceConsumed(get('--deployment-nonce'), journal.attempt_id, recoveryIdentity)
   recordNonceAttempt(get('--deployment-nonce'), journal.attempt_id, recoveryIdentity)
   const actual = collectInventory(), candidateIds = journal.bridge.exclusive_image_ids, oldByName = new Map(journal.baseline.inventory.map(item => [item.name, item])), managed = new Set(Object.values(journal.service_map))
   assert(actual.length === journal.baseline.inventory.length, 'runtime inventory changed; recovery requires manual review')
@@ -590,6 +598,27 @@ function recover(get, privatePem, publicPem) {
   const config = validateRuntimeCompose(get('--recovery-compose'), get('--recovery-env'), project, get('--recovery-image-digests'), old.services, old.targetIdentity)
   const imageIds = resolveImageIds(config.document, old.services)
   assert(old.services.every(name => journal.baseline.services.some(item => item.service === name)), 'frozen recovery services differ from captured old runtime')
+  const currentApi = actual.find(item => item.name === journal.service_map.api)
+  assert(currentApi, 'Bridge B API container is missing during recovery authorization')
+  const currentBridgeIdentity = {
+    releaseId: currentApi.env.RELEASE_ID,
+    gitSha: currentApi.env.RELEASE_GIT_SHA,
+    manifestSha256: currentApi.env.RELEASE_MANIFEST_SHA256,
+    imageSetDigest: currentApi.env.RELEASE_IMAGE_SET_DIGEST,
+  }
+  authorizeBridgeBRecovery(journal, {
+    deploymentNonce: get('--deployment-nonce'),
+    composeProject: project,
+    database: before,
+    currentBridgeIdentity,
+    baseline: { workloadSha256: journal.baseline.workload_sha256, inventorySha256: journal.baseline.inventory_sha256 },
+    recovery: {
+      composeSha256: old.artifactHashes.compose_sha256,
+      envSha256: old.artifactHashes.env_sha256,
+      imageDigestsSha256: old.artifactHashes.image_digests_sha256,
+      targetServices: old.services,
+    },
+  }, publicPem)
   let current = journalAdvance(path, journal, 'recovery_started', privatePem, publicPem)
   composeUp(get('--recovery-compose'), get('--recovery-env'), project, checkedTimeout(get('--wait-timeout')), old.services)
   const after = collectDatabase(process.env.DATABASE_URL)
