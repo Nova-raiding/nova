@@ -48,6 +48,14 @@ image_edit，最后执行最短 3 秒 video。媒体探针不得自动重跑；�
 `MODEL_RELAY_CANARY_VIDEO_TASK_ID` 轮询既有任务。503 恢复只能从自然发生或批准演练
 留下的两个真实 capture 归档：
 
+每次 `--probe` 均须显式设置 `MODEL_RELAY_CANARY_MAX_TOTAL_CNY`，它是该次进程的
+人民币预算。canary 会先从已鉴权 relay 获取价格快照，按最多三次 429 尝试预留
+预算；未知或零价格、预算不足时不会发送生成请求。视频新任务还须显式设置
+`VIDEO_DURATION_SECONDS=3` 与 relay 定价支持的 `VIDEO_RESOLUTION=720P`（或
+`1080P`），不能仅凭应用运行时的 `MODEL_*_MAX_REQUEST_CNY` 额度放行。
+该请求前预算不是 relay 账户的服务端硬额度；执行前仍应核对账户级限额及
+实际定价，生成后以 provider usage/cost 收据结算，不把预估写成实付。
+
 ```sh
 npx tsx scripts/model-relay-recovery-evidence.ts \
   --failure /受保护路径/relay-503.json \

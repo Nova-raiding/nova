@@ -3,8 +3,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { readBoundedResponseText } from '../packages/connectors/src/bounded-response.js'
-import { createRelayPricingClientFromEnv } from '../packages/ai/src/relay-pricing.js'
-import { parseRelayUsage } from '../packages/ai/src/relay-usage.js'
+import { createRelayPricingClientFromEnv, type RelayPricingMetadata } from '../packages/ai/src/relay-pricing.js'
+import { parseRelayUsage, type RelayUsageRecord } from '../packages/ai/src/relay-usage.js'
 import { retryAfterMilliseconds } from '../packages/ai/src/provider-request.js'
 import { assertRelayUrl, relaySecurityFromEnv } from '../packages/ai/src/relay-security.js'
 
@@ -50,6 +50,59 @@ const pricingClient = createRelayPricingClientFromEnv(process.env)
 const relaySecurity = relaySecurityFromEnv(process.env)
 const artifactRoot = process.env.MODEL_RELAY_ARTIFACT_ROOT?.trim()
 const releaseId = process.env.RELEASE_ID?.trim() || ''
+
+type CanaryPricing = { estimateRequestCost: (usage: RelayUsageRecord) => Promise<{ costCny: number; metadata: Pick<RelayPricingMetadata, 'pricing_version' | 'pricing_group' | 'quota_type' | 'formula_version'> }> }
+type CanaryBudget = { limitCny: number; reservedCny: number }
+
+export function requireCanaryBudget(value: string | undefined): CanaryBudget {
+  const limitCny = value?.trim() && /^\d+(?:\.\d+)?$/u.test(value.trim()) ? Number(value) : NaN
+  if (!Number.isFinite(limitCny) || limitCny <= 0) throw new Error('MODEL_RELAY_CANARY_MAX_TOTAL_CNY must be an explicit positive CNY budget')
+  return { limitCny, reservedCny: 0 }
+}
+
+/** Reserve the worst case of three 429 attempts before any billable relay request. */
+export async function reserveCanaryCost(input: {
+  pricing: CanaryPricing | undefined
+  budget: CanaryBudget
+  modality: ProbeResult['modality']
+  model: string
+  requestBody: Record<string, unknown>
+  durationSeconds?: number
+  resolution?: string
+}): Promise<number> {
+  if (!input.pricing) throw new Error('relay pricing snapshot is required before a canary request')
+  const { modality, model, requestBody } = input
+  if (modality === 'video' && (!['720P', '1080P'].includes(input.resolution ?? '') || !Number.isSafeInteger(input.durationSeconds) || (input.durationSeconds ?? 0) < 3 || (input.durationSeconds ?? 0) > 15)) {
+    throw new Error('video canary requires explicit 720P/1080P resolution and 3-15 second duration before pricing')
+  }
+  const estimate = await input.pricing.estimateRequestCost({
+    modality, model, observedAt: new Date().toISOString(),
+    ...(modality === 'text' || modality === 'ocr'
+      ? { inputTokens: Buffer.byteLength(JSON.stringify(requestBody), 'utf8'), outputTokens: Number(requestBody.max_tokens) }
+      : {}),
+    metadata: modality === 'image' || modality === 'image_edit'
+      ? { billing_units: 1 }
+      : modality === 'video'
+        ? { preauthorization_estimate: true, preauthorization_duration_seconds: input.durationSeconds, resolution: input.resolution }
+        : {},
+  })
+  if (!estimate.metadata.pricing_version || !estimate.metadata.pricing_group || !Number.isFinite(estimate.costCny) || estimate.costCny <= 0) {
+    throw new Error('relay canary price is unknown or zero')
+  }
+  if ((modality === 'image' || modality === 'image_edit') && estimate.metadata.quota_type !== 1) {
+    throw new Error('image canary requires an explicit fixed-unit relay price')
+  }
+  if (modality === 'video' && !['relay-video-resolution-v1', 'relay-video-cny-per-second-v1'].includes(estimate.metadata.formula_version)) {
+    throw new Error('video canary requires an explicit duration/resolution relay price')
+  }
+  // Round up, never down: a fractional micro-yuan must not escape the cap.
+  const reservation = Math.ceil(Number((estimate.costCny * 3 * 1_000_000).toFixed(6))) / 1_000_000
+  if (!Number.isFinite(reservation) || reservation <= 0 || input.budget.reservedCny + reservation > input.budget.limitCny) {
+    throw new Error('relay canary request exceeds MODEL_RELAY_CANARY_MAX_TOTAL_CNY')
+  }
+  input.budget.reservedCny += reservation
+  return reservation
+}
 
 export function resolveBoundedInteger(value: string | undefined, fallback: number, minimum: number, maximum: number, name: string): number {
   const text = value?.trim()
@@ -397,7 +450,7 @@ function hasHttpsOutput(value: unknown, depth = 0): boolean {
   return ['result_url', 'video_url', 'output_url', 'url', 'output'].some(key => hasHttpsOutput(output[key], depth + 1))
 }
 
-async function probe(modality: ProbeResult['modality']): Promise<ProbeResult> {
+async function probe(modality: ProbeResult['modality'], budget: CanaryBudget): Promise<ProbeResult> {
   const model = modelFor(modality)
   const existingVideoTaskId = modality === 'video' ? process.env.MODEL_RELAY_CANARY_VIDEO_TASK_ID?.trim() : undefined
   const endpoint = existingVideoTaskId ? process.env.VIDEO_STATUS_PATH?.trim() || '/video/generations/{job_id}' : endpointFor(modality)
@@ -430,6 +483,12 @@ async function probe(modality: ProbeResult['modality']): Promise<ProbeResult> {
         ...(process.env.VIDEO_REQUEST_FORMAT?.trim() ? { requestFormat: process.env.VIDEO_REQUEST_FORMAT.trim() } : {}),
       })
       : undefined
+    if (!existingVideoTaskId) {
+      await reserveCanaryCost({
+        pricing: pricingClient, budget, modality, model, requestBody: body,
+        ...(modality === 'video' ? { durationSeconds: videoDurationSeconds, resolution: process.env.VIDEO_RESOLUTION?.trim().toUpperCase() } : {}),
+      })
+    }
     const requestBody = !existingVideoTaskId ? videoRequest?.body ?? JSON.stringify(body) : usesVideoStatusPath ? undefined : JSON.stringify({ job_id: existingVideoTaskId })
     const idempotencyKey = canaryIdempotencyKey({ releaseId, modality, model, ...(existingVideoTaskId ? { existingVideoTaskId } : {}) })
     let response: Response | undefined
@@ -522,7 +581,8 @@ export async function main() {
       try {
         requireProductionReleaseBinding({ environment: process.env.NODE_ENV, releaseId })
         if (!relaySecurity) throw new Error('MODEL_RELAY_BASE_URL/ALLOWED_HOSTS 不满足 relay 安全配置')
-        for (const modality of modalities) results.push(await probe(modality))
+        const budget = requireCanaryBudget(process.env.MODEL_RELAY_CANARY_MAX_TOTAL_CNY)
+        for (const modality of modalities) results.push(await probe(modality, budget))
         // The evidence contract stores the relay origin; each result carries its
         // endpoint path. This keeps /v1 configuration paths out of the origin
         // field and makes generated evidence compatible with its validator.
