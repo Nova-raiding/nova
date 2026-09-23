@@ -4,6 +4,7 @@ import { dirname, resolve, relative } from 'node:path'
 import { MCP_METHODS } from '../packages/contracts/src/mcp.js'
 import { countMerchantBridgeTools } from './merchant-bridge-surface.js'
 import { releaseGitShaForRoot } from './release-identity.js'
+import { verifyPluginReleaseDescriptor } from './plugin-release-descriptor.mjs'
 
 export interface ReleaseManifest {
   schemaVersion: 1
@@ -23,6 +24,11 @@ export interface ReleaseManifest {
   artifacts: Array<{ path: string; sha256: string; bytes: number }>
   productionEvidenceBundle: { required: true; schemaVersion: 'release-evidence-bundle/1' }
   productionEvidence: { capability: string; capacity: string; modelRelay: string; payment: string; restore: string; objectStorage: string; codexAppHost: string; canonicalCutover: string }
+}
+
+export type CloudReleaseManifest = Omit<ReleaseManifest, 'schemaVersion'> & {
+  schemaVersion: 2
+  pluginRelease: { descriptorSha256: string; packageSha256: string; keyId: string; platform: string }
 }
 
 const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
@@ -149,6 +155,43 @@ export function buildReleaseManifest(input: {
   }
 }
 
+export function buildCloudReleaseManifest(input: Parameters<typeof buildReleaseManifest>[0] & {
+  pluginDescriptorPath: string
+  pluginPublicKeyPath: string
+  pluginKeyId: string
+  pluginPackagePath: string
+}): CloudReleaseManifest {
+  const root = resolve(input.root ?? process.cwd())
+  const legacy = buildReleaseManifest(input)
+  const descriptorBytes = readFileSync(input.pluginDescriptorPath)
+  const descriptor = verifyPluginReleaseDescriptor(JSON.parse(descriptorBytes.toString('utf8')), {
+    publicKeyPem: readFileSync(input.pluginPublicKeyPath), keyId: input.pluginKeyId,
+    releaseId: legacy.releaseId, gitSha: legacy.components.releaseGitSha,
+    mcpMethodsSha256: legacy.mcp.methodListSha256, packagePath: input.pluginPackagePath,
+  })
+  if (descriptor.plugin_id !== 'merchant-marketing'
+    || descriptor.plugin_version !== legacy.components.pluginVersion
+    || descriptor.bridge_sha256 !== legacy.mcp.bridgeSha256
+    || descriptor.manifest_sha256 !== sha256(readFileSync(resolve(root, 'apps/plugin/.codex-plugin/plugin.json')))
+    || descriptor.skill_sha256 !== sha256(readFileSync(resolve(root, 'apps/plugin/skills/merchant-marketing/SKILL.md')))) {
+    throw new Error('signed plugin descriptor does not match committed plugin source')
+  }
+  const artifacts = legacy.artifacts.filter(item => !item.path.startsWith('apps/plugin/') && !item.path.startsWith('.codex-marketplace/'))
+  for (const path of ['scripts/plugin-release-descriptor.mjs', 'scripts/plugin-release-descriptor.d.mts']) {
+    const bytes = readFileSync(resolve(root, path))
+    artifacts.push({ path, sha256: sha256(bytes), bytes: bytes.byteLength })
+  }
+  return {
+    ...legacy,
+    schemaVersion: 2,
+    artifacts,
+    pluginRelease: {
+      descriptorSha256: sha256(descriptorBytes), packageSha256: descriptor.package_sha256,
+      keyId: descriptor.key_id, platform: descriptor.platform,
+    },
+  }
+}
+
 function argument(name: string): string | undefined {
   const index = process.argv.indexOf(name)
   return index >= 0 ? process.argv[index + 1] : undefined
@@ -158,7 +201,12 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.url.repl
   const output = argument('--output')
   const releaseId = argument('--release-id') ?? process.env.RELEASE_ID?.trim()
   if (!output || !releaseId) throw new Error('usage: tsx scripts/release-manifest.ts --release-id <id> --output <path>')
-  const manifest = buildReleaseManifest({ root: process.cwd(), releaseId })
+  const descriptor = argument('--plugin-descriptor')
+  const manifest = descriptor
+    ? buildCloudReleaseManifest({ root: process.cwd(), releaseId, pluginDescriptorPath: descriptor,
+      pluginPublicKeyPath: argument('--plugin-public-key') ?? '', pluginKeyId: argument('--plugin-key-id') ?? '',
+      pluginPackagePath: argument('--plugin-package') ?? '' })
+    : buildReleaseManifest({ root: process.cwd(), releaseId })
   const target = resolve(output)
   mkdirSync(dirname(target), { recursive: true })
   writeFileSync(target, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
