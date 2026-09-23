@@ -170,7 +170,7 @@ async function main(args) {
     assert(SHA.test(input['--gateway-id']), 'full external gateway ID is required')
     protectedPath(input['--recovery-plan'])
     const plan = JSON.parse(readFileSync(input['--recovery-plan'], 'utf8'))
-    assert(plan.kind === 'ecs-compose-rollback-capsule' && plan.database?.strategy === 'forward_only' && plan.database?.target_migration_tail === 242 && /^[0-9a-f]{40}$/u.test(plan.target?.git_sha ?? ''), 'reviewed old recovery plan is required')
+    assert(plan.kind === 'ecs-unlabeled-id-recovery-capsule' && plan.database?.strategy === 'forward_only' && plan.database?.live_migration_version === 242 && plan.database?.target_migration_tail === 242 && /^[0-9a-f]{40}$/u.test(plan.target?.git_sha ?? ''), 'reviewed old unlabeled recovery plan is required')
     const evidence = readEvidence(input['--evidence'])
     assert(evidence.schema_version === 'ecs-bridge-old-runtime/1' && evidence.signed === false && evidence.cutover_authorized === false, 'unexpected old runtime evidence schema/authority')
     assert(evidence.runtime?.gateway?.id === input['--gateway-id'] && evidence.runtime?.source_git_sha === plan.target.git_sha, 'frozen old gateway or Git SHA differs from recovery plan')
@@ -178,6 +178,9 @@ async function main(args) {
     assert(canonical(runtime) === canonical(evidence.runtime), 'old running containers or gateway drifted since freeze')
     const backup = await verifyDockerSaveArchive(input['--archive'], runtime.preserved_image_ids)
     assert(canonical(backup) === canonical(evidence.backup), 'old Docker save backup differs from frozen evidence')
+    assert(plan.old_runtime?.evidence_sha256 === digest(readFileSync(input['--evidence'])) && plan.old_runtime?.archive_sha256 === backup.archive_sha256, 'old runtime evidence/archive differs from recovery plan')
+    assert(canonical(plan.old_runtime?.container_ids) === canonical(Object.fromEntries(runtime.services.map(item => [item.service, item.id]))) && canonical(plan.old_runtime?.config_sha256) === canonical(Object.fromEntries(runtime.services.map(item => [item.service, item.config_sha256]))), 'old IDs/configurations differ from recovery plan')
+    assert(plan.old_runtime?.gateway_id === runtime.gateway.id && canonical(plan.old_runtime?.image_ids) === canonical(runtime.preserved_image_ids), 'old gateway/images differ from recovery plan')
     process.stdout.write('old B runtime and three-image backup precheck passed; signed journal, DB 242 and public readiness still required\n')
   } else throw new Error('expected freeze or verify')
 }

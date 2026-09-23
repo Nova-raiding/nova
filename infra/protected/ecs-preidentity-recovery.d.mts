@@ -6,9 +6,11 @@ export interface ReleaseBinding {
 }
 
 export interface RecoveryBinding extends ReleaseBinding {
-  composeSha256: string
-  envSha256: string
-  imageDigestsSha256: string
+  composeSha256?: string
+  envSha256?: string
+  imageDigestsSha256?: string
+  evidenceSha256?: string
+  archiveSha256?: string
   migrationTail: number
   allowedPrefixSha256: Record<number, string>
   services: string[]
@@ -50,6 +52,7 @@ export interface SignedRecoveryJournal extends Record<string, unknown> {
   }
   database_before: { migration_version: number; migration_history_sha256: string }
   deployment_nonce_sha256: string
+  recovery_target: { evidence_sha256?: string; archive_sha256?: string; compose_sha256?: string; env_sha256?: string; image_digests_sha256?: string }
 }
 
 export function createSignedSnapshot(

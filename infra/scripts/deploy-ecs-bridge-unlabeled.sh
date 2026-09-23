@@ -15,9 +15,6 @@ helper=/usr/local/libexec/merchant/ecs-preidentity-recovery
 : "${ECS_EIGHT_IMAGE_SET_PATH:?B eight-image set is required}"
 : "${ECS_PREIDENTITY_SERVICE_MAP_PATH:?protected old seven-service map is required}"
 : "${ECS_ROLLBACK_PLAN_PATH:?protected old rollback plan is required}"
-: "${ECS_ROLLBACK_COMPOSE_PATH:?protected old Compose/spec capsule is required}"
-: "${ECS_ROLLBACK_ENV_FILE:?protected old environment capsule is required}"
-: "${ECS_ROLLBACK_IMAGE_DIGESTS_PATH:?protected old image digests are required}"
 : "${ECS_DEPLOY_STATE_DIR:?protected deployment state directory is required}"
 : "${ECS_DEPLOY_LOCK_PATH:?protected deployment lock is required}"
 : "${ECS_EXTERNAL_GATEWAY_ID:?exact old external gateway ID is required}"
@@ -53,7 +50,7 @@ protected() {
     parent=$(dirname "$parent")
   done
 }
-for path in "$control_root" "$control_root/infra/scripts/deploy-ecs-bridge-unlabeled.sh" "$control_root/infra/scripts/ecs-bridge-old-runtime-evidence.mjs" "$control_root/infra/scripts/verify-ecs-bridge-control-install.mjs" "$control_root/infra/scripts/validate-ecs-bridge-scoped-compose.mjs" "$control_root/infra/scripts/verify-ecs-cloud-only-artifacts.mjs" "$control_root/infra/scripts/create-ecs-bridge-candidate-map.mjs" "$control_root/infra/protected/ecs-preidentity-recovery.mjs" "$helper" /run/release-security/evidence-trust/production-preidentity-recovery-sha256 "$ECS_PREIDENTITY_SERVICE_MAP_PATH" "$ECS_ROLLBACK_PLAN_PATH" "$ECS_ROLLBACK_COMPOSE_PATH" "$ECS_ROLLBACK_ENV_FILE" "$ECS_ROLLBACK_IMAGE_DIGESTS_PATH" "$ECS_OLD_RUNTIME_EVIDENCE_PATH" "$ECS_OLD_IMAGE_ARCHIVE_PATH" "$ECS_DEPLOY_STATE_DIR" "$ECS_DEPLOY_LOCK_PATH" "$ECS_BRIDGE_FULL_COMPOSE_PATH" "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" "$ECS_CANDIDATE_IDENTITY_PATH" "$ECS_CANDIDATE_SOURCE_ARCHIVE" "$ECS_RELEASE_IMAGES_PATH" "$ECS_EIGHT_IMAGE_SET_PATH" "$PRODUCTION_CONFIG_PATH"; do protected "$path"; done
+for path in "$control_root" "$control_root/infra/scripts/deploy-ecs-bridge-unlabeled.sh" "$control_root/infra/scripts/ecs-bridge-old-runtime-evidence.mjs" "$control_root/infra/scripts/verify-ecs-bridge-control-install.mjs" "$control_root/infra/scripts/validate-ecs-bridge-scoped-compose.mjs" "$control_root/infra/scripts/verify-ecs-cloud-only-artifacts.mjs" "$control_root/infra/scripts/create-ecs-bridge-candidate-map.mjs" "$control_root/infra/protected/ecs-preidentity-recovery.mjs" "$helper" /run/release-security/evidence-trust/production-preidentity-recovery-sha256 "$ECS_PREIDENTITY_SERVICE_MAP_PATH" "$ECS_ROLLBACK_PLAN_PATH" "$ECS_OLD_RUNTIME_EVIDENCE_PATH" "$ECS_OLD_IMAGE_ARCHIVE_PATH" "$ECS_DEPLOY_STATE_DIR" "$ECS_DEPLOY_LOCK_PATH" "$ECS_BRIDGE_FULL_COMPOSE_PATH" "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" "$ECS_CANDIDATE_IDENTITY_PATH" "$ECS_CANDIDATE_SOURCE_ARCHIVE" "$ECS_RELEASE_IMAGES_PATH" "$ECS_EIGHT_IMAGE_SET_PATH" "$PRODUCTION_CONFIG_PATH"; do protected "$path"; done
 [ -x "$helper" ] && [ -f "$helper" ] && [ -d "$ECS_DEPLOY_STATE_DIR" ] && [ -f "$ECS_DEPLOY_LOCK_PATH" ] || { echo 'B protected release controls are incomplete' >&2; exit 2; }
 node_path=$(sed -n '1s/^#!//p' "$helper")
 case "$node_path" in /*) protected "$node_path" ;; *) echo 'protected helper shebang does not name a reviewed runtime' >&2; exit 2 ;; esac
@@ -122,8 +119,7 @@ node "$b_source/infra/scripts/verify-bridge-b-package.mjs" \
   --candidate-identity "$ECS_CANDIDATE_IDENTITY_PATH" --source-archive "$ECS_CANDIDATE_SOURCE_ARCHIVE" \
   --release-images "$ECS_RELEASE_IMAGES_PATH" --eight-image-set "$ECS_EIGHT_IMAGE_SET_PATH" \
   --rendered-compose "$ECS_BRIDGE_FULL_COMPOSE_PATH" --rollback-plan "$ECS_ROLLBACK_PLAN_PATH" \
-  --rollback-compose "$ECS_ROLLBACK_COMPOSE_PATH" --rollback-env "$ECS_ROLLBACK_ENV_FILE" \
-  --rollback-image-digests-json "$ECS_ROLLBACK_IMAGE_DIGESTS_PATH"
+  --old-runtime-evidence "$ECS_OLD_RUNTIME_EVIDENCE_PATH" --old-image-archive "$ECS_OLD_IMAGE_ARCHIVE_PATH"
 node "$control_root/infra/scripts/validate-ecs-bridge-scoped-compose.mjs" "$ECS_BRIDGE_FULL_COMPOSE_PATH" "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" "$ECS_BRIDGE_CANDIDATE_PROJECT"
 # The v1 B package still carries the desktop plugin.  A source archive or
 # runtime image with local ChatGPT frontend bytes is not an authorized cloud
@@ -160,7 +156,8 @@ DATABASE_URL="$DATABASE_URL" "$helper" capture --mode bridge_unlabeled_code_only
   --external-gateway-id "$ECS_EXTERNAL_GATEWAY_ID" --compose-project merchant-production \
   --candidate-release-id "$RELEASE_ID" --candidate-git-sha "$release_git_sha" --candidate-manifest-sha256 "$manifest_sha256" \
   --candidate-image-set-digest "$image_set_digest" --candidate-image-digests "$ECS_EIGHT_IMAGE_SET_PATH" \
-  --candidate-compose "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH"
+  --candidate-compose "$ECS_BRIDGE_SCOPED_COMPOSE_PATH" --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH" \
+  --old-runtime-evidence "$ECS_OLD_RUNTIME_EVIDENCE_PATH" --old-image-archive "$ECS_OLD_IMAGE_ARCHIVE_PATH"
 "$helper" phase --state "$state" --lock-path "$ECS_DEPLOY_LOCK_PATH" --phase nonce_consumed
 mutation_started=false
 rollback_on_failure() {
@@ -169,11 +166,13 @@ rollback_on_failure() {
   if [ "$mutation_started" = true ]; then
     if DATABASE_URL="$DATABASE_URL" "$helper" bridge-recover-unlabeled --state "$state" --lock-path "$ECS_DEPLOY_LOCK_PATH" \
       --service-map "$ECS_PREIDENTITY_SERVICE_MAP_PATH" --compose-project merchant-production \
-      --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH" --production-api-base-url "$PRODUCTION_API_BASE_URL"; then
+      --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH" --production-api-base-url "$PRODUCTION_API_BASE_URL" \
+      --old-runtime-evidence "$ECS_OLD_RUNTIME_EVIDENCE_PATH" --old-image-archive "$ECS_OLD_IMAGE_ARCHIVE_PATH"; then
       finalization_deadline=$(( $(date +%s) + 45 ))
       while ! DATABASE_URL="$DATABASE_URL" "$helper" bridge-finalize --state "$state" --lock-path "$ECS_DEPLOY_LOCK_PATH" \
         --service-map "$ECS_PREIDENTITY_SERVICE_MAP_PATH" --compose-project merchant-production \
-        --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH" --production-api-base-url "$PRODUCTION_API_BASE_URL"; do
+        --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH" --production-api-base-url "$PRODUCTION_API_BASE_URL" \
+        --old-runtime-evidence "$ECS_OLD_RUNTIME_EVIDENCE_PATH" --old-image-archive "$ECS_OLD_IMAGE_ARCHIVE_PATH"; do
         if [ "$(date +%s)" -ge "$finalization_deadline" ]; then
           echo 'B original container IDs restored but old public identity is not verified; signed journal remains retryable' >&2
           break
@@ -187,11 +186,13 @@ rollback_on_failure() {
 trap rollback_on_failure EXIT HUP INT TERM
 DATABASE_URL="$DATABASE_URL" "$helper" bridge-begin --state "$state" --lock-path "$ECS_DEPLOY_LOCK_PATH" \
   --service-map "$ECS_PREIDENTITY_SERVICE_MAP_PATH" --compose-project merchant-production \
-  --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH" --production-api-base-url "$PRODUCTION_API_BASE_URL"
+  --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH" --production-api-base-url "$PRODUCTION_API_BASE_URL" \
+  --old-runtime-evidence "$ECS_OLD_RUNTIME_EVIDENCE_PATH" --old-image-archive "$ECS_OLD_IMAGE_ARCHIVE_PATH"
 mutation_started=true
 DATABASE_URL="$DATABASE_URL" "$helper" bridge-switch-unlabeled --state "$state" --lock-path "$ECS_DEPLOY_LOCK_PATH" \
   --service-map "$ECS_PREIDENTITY_SERVICE_MAP_PATH" --compose-project merchant-production \
-  --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH" --production-api-base-url "$PRODUCTION_API_BASE_URL"
+  --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH" --production-api-base-url "$PRODUCTION_API_BASE_URL" \
+  --old-runtime-evidence "$ECS_OLD_RUNTIME_EVIDENCE_PATH" --old-image-archive "$ECS_OLD_IMAGE_ARCHIVE_PATH"
 deadline=$(( $(date +%s) + ${ECS_POST_DEPLOY_HEALTH_TIMEOUT_SECONDS:-300} ))
 while ! curl --fail --silent --show-error --max-time 15 "${PRODUCTION_API_BASE_URL%/}/livez" >/dev/null 2>&1 || \
       ! curl --fail --silent --show-error --max-time 15 "${PRODUCTION_API_BASE_URL%/}/readyz" >/dev/null 2>&1; do
@@ -221,7 +222,8 @@ else
 fi
 DATABASE_URL="$DATABASE_URL" "$helper" bridge-verify --state "$state" --lock-path "$ECS_DEPLOY_LOCK_PATH" \
   --service-map "$ECS_PREIDENTITY_SERVICE_MAP_PATH" --compose-project merchant-production \
-  --deployment-nonce "$DEPLOYMENT_NONCE" --production-api-base-url "$PRODUCTION_API_BASE_URL"
+  --deployment-nonce "$DEPLOYMENT_NONCE" --recovery-plan "$ECS_ROLLBACK_PLAN_PATH" --production-api-base-url "$PRODUCTION_API_BASE_URL" \
+  --old-runtime-evidence "$ECS_OLD_RUNTIME_EVIDENCE_PATH" --old-image-archive "$ECS_OLD_IMAGE_ARCHIVE_PATH"
 mutation_started=false
 trap - EXIT HUP INT TERM
 echo "B code-only takeover verified: release=$RELEASE_ID schema=242 gateway_unchanged=true"
