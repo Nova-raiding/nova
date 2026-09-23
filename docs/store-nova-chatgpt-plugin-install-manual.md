@@ -73,7 +73,7 @@ access token 过期时 bridge 沿用 `POST /v1/auth/mcp-token/refresh` 轮换并
 
 macOS 解压后双击 `install.command`，按提示输入分配的工作区；也可运行 `sh install.sh`，然后运行 `sh login.sh --workspace ws_<管理员分配的工作区>`。Windows 解压后运行 `install.cmd` 并输入工作区；也可稍后运行 `login.cmd --workspace ws_<管理员分配的工作区>`。登录时在浏览器核对商家账号与工作区并确认授权。最后完全退出并重新打开 ChatGPT，在新对话调用 `onboarding.status` 核验真实宿主身份和工作区。安装器写入本机个人插件源、安装缓存和启用配置，不发布到公开或团队市场。
 
-Windows 包必须在 Windows x64 发布机上构建，凭据 helper 先用 `scripts/build-windows-credential-helper.mjs` 生成自包含 EXE，再由可信发布签名流程签名、计算 SHA-256，并通过 `--windows-helper-dir` 提供。缺少签名或哈希时打包失败。当前 macOS 构建机不能代替 Windows 实机安装验收。
+Windows 包必须在 Windows x64 发布机上构建。发布机安装构建工具并持有可信 Authenticode 签名证书后，运行 `apps/plugin/scripts/build-signed-windows-package.ps1`，提供输出 ZIP、证书指纹和可信时间戳服务地址。脚本构建自包含凭据 helper、签名、校验并生成 ZIP 与同名 `.sha256` 文件；任何门禁失败都不会留下候选 ZIP。构建工具只属于发布机环境，用户电脑无需安装。当前 macOS 构建机不能代替 Windows 实机安装验收。
 
 #### 开发人员从源码安装
 

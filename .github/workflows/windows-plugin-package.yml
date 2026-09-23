@@ -89,34 +89,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Test certificate trust import failed' }
           certutil.exe -f -addstore TrustedPublisher (Join-Path $env:RUNNER_TEMP 'storenova-ci-leaf.cer')
           if ($LASTEXITCODE -ne 0) { throw 'Test publisher trust import failed' }
-      - name: Sign and validate the helper with the test certificate
-        timeout-minutes: 3
+      - name: Build and verify the Windows ZIP through the release script
+        timeout-minutes: 8
         shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $helperDir = Join-Path $env:RUNNER_TEMP 'storenova-helper'
-          $binary = Join-Path $helperDir 'StoreNovaCredentialHelper.exe'
-          $cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Thumbprint -eq $env:STORENOVA_WINDOWS_SIGNER_THUMBPRINT } | Select-Object -First 1
-          if ($null -eq $cert -or -not $cert.HasPrivateKey) { throw 'Imported test signing key is unavailable' }
-          $signature = Set-AuthenticodeSignature -FilePath $binary -Certificate $cert -HashAlgorithm SHA256
-          if ($null -eq $signature.SignerCertificate -or $signature.SignerCertificate.Thumbprint -ne $cert.Thumbprint) { throw 'Test signature was not attached' }
-          (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash | Set-Content -LiteralPath "$binary.sha256" -Encoding Ascii
-      - name: Verify the test signature trust chain
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $binary = Join-Path (Join-Path $env:RUNNER_TEMP 'storenova-helper') 'StoreNovaCredentialHelper.exe'
-          $signature = Get-AuthenticodeSignature -LiteralPath $binary
-          if ($signature.Status -ne 'Valid') { Write-Host "::error file=.github/workflows/windows-plugin-package.yml,line=1::SIGNATURE_STATUS_$($signature.Status)"; exit 1 }
-      - name: Build the signed Windows ZIP with bundled Node
-        timeout-minutes: 5
-        shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $helperDir = Join-Path $env:RUNNER_TEMP 'storenova-helper'
           $artifact = Join-Path $env:RUNNER_TEMP 'storenova-windows-ci-only.zip'
-          $output = & node apps/plugin/scripts/package-local-plugin.mjs $artifact --windows-helper-dir $helperDir 2>&1 | Out-String
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error file=.github/workflows/windows-plugin-package.yml,line=1::PACKAGE_BUILD_$(($output -replace '[\r\n]+', ' | ').Trim())"; exit 1 }
+          & ./apps/plugin/scripts/build-signed-windows-package.ps1 -OutputPath $artifact -CertificateThumbprint $env:STORENOVA_WINDOWS_SIGNER_THUMBPRINT -HelperDirectory $helperDir -CiTestCertificate
+          if (-not (Test-Path -LiteralPath "$artifact.sha256" -PathType Leaf)) { throw 'Package checksum is missing' }
       - name: Verify a clean Windows install
         shell: powershell
         run: |
