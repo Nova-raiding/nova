@@ -39,6 +39,7 @@ describe('authorization policy registry', () => {
       'platform.media.spec.approve', 'content.export', 'content.approve',
       'publish.prepare', 'publish.batch.prepare', 'publish.batch.pause',
       'publish.batch.resume', 'publish.batch.retry_failed', 'delivery.bundle.verify',
+      'ops.commercial.order.refund.list',
     ]))
   })
 
@@ -53,6 +54,9 @@ describe('authorization policy registry', () => {
       expect(getMcpMethodPolicy(method)?.audit).toBeTruthy()
     }
     expect(getMcpMethodPolicy('ops.feature-flag.emergency.set')).toMatchObject({ capability: 'feature_flag.administer', effect: 'write', audit: 'allow_and_deny', obligations: ['reason', 'idempotency', 'mfa'] })
+    expect(getMcpMethodPolicy('ops.commercial.order.refund.list')).toMatchObject({ capability: 'commercial.payment.reconcile', scope: 'platform', workbench: 'platform', effect: 'read', audit: 'allow_and_deny', obligations: [] })
+    for (const method of ['ops.commercial.order.refund.request', 'ops.commercial.order.refund.approve', 'ops.commercial.order.refund.complete'] as const)
+      expect(getMcpMethodPolicy(method)).toMatchObject({ capability: 'commercial.payment.reconcile', effect: 'write', obligations: ['reason', 'idempotency'] })
     expect(getMcpMethodPolicy('ops.marketing.queue')).toMatchObject({ capability: 'marketing.queue.read', dataClass: 'customer_metadata' })
     expect(getMcpMethodPolicy('ops.marketing.asset_scan.retry')).toMatchObject({ capability: 'marketing.queue.update', scope: 'workspace', dataClass: 'customer_content', effect: 'write', audit: 'allow_and_deny', obligations: ['reason', 'revision', 'idempotency'] })
     expect(getMcpMethodPolicy('billing.refund')).toMatchObject({ capability: 'billing.refund.execute', effect: 'write' })

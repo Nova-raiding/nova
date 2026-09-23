@@ -200,6 +200,8 @@ export interface OpsRpcOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
   maxResponseBytes?: number;
+  /** Stable operation key for the API's idempotency authorization obligation. */
+  idempotencyKey?: string;
   /**
    * Server-issued maker-checker approval token for the `approval`
    * authorization obligation on JIT privilege grants.
@@ -607,6 +609,10 @@ async function rpcAtWorkspace<T>(
   // that this transport option exists to replace.
   const approvalToken = options.authorizationApprovalToken?.trim();
   if (approvalToken) headers["x-authorization-approval-token"] = approvalToken;
+  if (options.idempotencyKey !== undefined) {
+    if (!/^[A-Za-z0-9._:-]{8,256}$/u.test(options.idempotencyKey)) throw new Error("运营幂等键无效");
+    headers["idempotency-key"] = options.idempotencyKey;
+  }
   // Same reason as the authorization token above, and a distinct header key so
   // the two grants can ride the same request without overwriting each other:
   // the rule approver is resolved from the server-issued grant, not a body

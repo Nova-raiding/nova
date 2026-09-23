@@ -1,4 +1,4 @@
-import { CommercialOperationsWorkspace, platformCatalogGovernanceTarget } from "../components/commercial/CommercialOperationsWorkspace.js";
+import { CommercialOperationsWorkspace, CommercialRefundOperationsPanel, platformCatalogGovernanceTarget } from "../components/commercial/CommercialOperationsWorkspace.js";
 import { OpsPage } from "../components/OpsPage";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { commercialViewCapability, useCommercialOperations } from "../hooks/useCommercialOperations.js";
@@ -206,7 +206,8 @@ export function FinancePage({ model }: FinancePageProps) {
   const isPlatformWorkbench = model.opsSession?.workbench
     ? model.opsSession.workbench === "platform"
     : model.authorization.scope.kind === "platform";
-  const commercial = useCommercialOperations(model.authorization, undefined, !isPlatformWorkbench);
+  const canReconcileCommercialRefund = isPlatformWorkbench && model.authorization.can("commercial.payment.reconcile");
+  const commercial = useCommercialOperations(model.authorization, undefined, !isPlatformWorkbench, canReconcileCommercialRefund);
   const [workspaceDraft, setWorkspaceDraft] = useState(commercial.targetWorkspaceId);
   useEffect(() => setWorkspaceDraft(commercial.targetWorkspaceId), [commercial.targetWorkspaceId]);
   const canRefresh = model.authorization.can("commercial.access.read") && model.authorization.can(commercialViewCapability[commercial.view]);
@@ -228,6 +229,10 @@ export function FinancePage({ model }: FinancePageProps) {
       actions={isPlatformWorkbench ? (
         <Space wrap>
           <Button type="primary" icon={<ReloadOutlined />} loading={financeSearch.loading} disabled={!canSearchFinance} onClick={() => void Promise.all([financeSearch.search(), model.load()])}>刷新平台账务</Button>
+          {canReconcileCommercialRefund ? <>
+            <Input aria-label="退款目标企业主体 Workspace ID" placeholder="目标 Workspace ID" value={workspaceDraft} onChange={event => setWorkspaceDraft(event.target.value)} onPressEnter={() => commercial.setTargetWorkspace(workspaceDraft)} style={{ width: 210 }} />
+            <Button disabled={!workspaceDraft.trim()} onClick={() => commercial.setTargetWorkspace(workspaceDraft)}>应用退款范围</Button>
+          </> : null}
         </Space>
       ) : (
         <Space wrap>
@@ -259,6 +264,7 @@ export function FinancePage({ model }: FinancePageProps) {
             <Typography.Text type="secondary">仅在核对 SKU、商业规则和费率证据时展开；它不会影响平台账务检索。</Typography.Text>
             {showCommercialReadiness ? <div style={{ marginTop: 12 }}><CommercialReadinessPanel authorization={model.authorization} /></div> : null}
           </Card>
+          {canReconcileCommercialRefund ? <CommercialRefundOperationsPanel controller={commercial} /> : null}
         </> : <>
           <ReconciliationSection model={model} />
           <RechargeOrdersSection model={model} />

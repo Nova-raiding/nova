@@ -8,10 +8,18 @@ import {
   parseCommercialRefunds,
   commercialRefundEvidence,
   refundPolicyApproval,
+  refundOperationKey,
   provisionableCatalogItems,
 } from "./commercialOperationsClient.js";
 
 describe("commercial operations DTO parsers", () => {
+  it("keeps refund authorization keys stable for retries and distinct by scope and transition", async () => {
+    const requestId = "refund-request-1";
+    expect(await refundOperationKey("request", "ws_1", requestId)).toBe(await refundOperationKey("request", "ws_1", requestId));
+    expect(new Set(await Promise.all(["request", "approve", "complete"].map(action => refundOperationKey(action as "request" | "approve" | "complete", "ws_1", requestId)))).size).toBe(3);
+    expect(await refundOperationKey("request", "ws_2", requestId)).not.toBe(await refundOperationKey("request", "ws_1", requestId));
+    expect(await refundOperationKey("request", "ws_1", "refund-request-2")).not.toBe(await refundOperationKey("request", "ws_1", requestId));
+  });
   it("preserves an unknown balance instead of manufacturing zero", () => {
     const result = parseCommercialAccessSummary({
       decision_id: "cad_1", workspace_id: "ws_1", balance_state: "unknown",

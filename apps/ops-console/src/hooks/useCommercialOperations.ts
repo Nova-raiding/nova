@@ -189,6 +189,7 @@ export function useCommercialOperations(
   authorization: AuthorizationProjection,
   client: CommercialOperationsClient = commercialOperationsClient,
   enabled = true,
+  platformRefundReadEnabled = false,
 ) {
   const [queryState, setQueryState] = useState<CommercialQueryState>(() => typeof window === "undefined"
     ? readCommercialQuery("") : readCommercialQuery(window.location.search));
@@ -311,7 +312,7 @@ export function useCommercialOperations(
   const loadRefunds = useCallback(async () => {
     refundControllerRef.current?.abort();
     const request = ++refundRequestRef.current;
-    if (!enabled || !authorization.can(commercialCapabilities.paymentReconcile) || !targetWorkspaceId) {
+    if (!(enabled || platformRefundReadEnabled) || !authorization.can(commercialCapabilities.paymentReconcile) || !targetWorkspaceId) {
       setRefunds({ status: "forbidden" });
       return null;
     }
@@ -329,7 +330,7 @@ export function useCommercialOperations(
       if (request === refundRequestRef.current) setRefunds({ status: isForbiddenError(error) ? "forbidden" : "error", error });
       return null;
     }
-  }, [authorization, client, enabled, targetWorkspaceId]);
+  }, [authorization, client, enabled, platformRefundReadEnabled, targetWorkspaceId]);
 
   useEffect(() => {
     void loadSummary();

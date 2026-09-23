@@ -594,7 +594,7 @@ export function matchingRefundEvent(
   return latest;
 }
 
-function CommercialRefundOperationsPanel({ controller }: { controller: CommercialOperationsController }) {
+export function CommercialRefundOperationsPanel({ controller }: { controller: CommercialOperationsController }) {
   const [workspace, setWorkspace] = useState(controller.targetWorkspaceId);
   const [orderId, setOrderId] = useState("");
   const [requestId, setRequestId] = useState("");
@@ -610,6 +610,10 @@ function CommercialRefundOperationsPanel({ controller }: { controller: Commercia
   const [pendingReason, setPendingReason] = useState("");
   const [pendingError, setPendingError] = useState("");
   const confirmTriggerRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    setWorkspace(controller.targetWorkspaceId);
+    setOrderId(""); setRequestId(""); setAmountYuan(""); setPoints("0");
+  }, [controller.targetWorkspaceId]);
   let policyApprovalReady = false;
   try { refundPolicyApproval(policyApproval); policyApprovalReady = true; } catch { /* invalid evidence stays disabled */ }
   if (!controller.permissions.canReconcilePayment) return null;
@@ -667,7 +671,8 @@ function CommercialRefundOperationsPanel({ controller }: { controller: Commercia
   };
   const refundKindLabel = (kind: CommercialRefundKind) => ({ onboarding_pre_deployment: "部署前实施费", monthly_unused_points: "月费未使用点数", point_pack_unused_points: "点数包未使用点数", outage_compensation: "故障补偿", custom_milestone: "定制里程碑" }[kind]);
   const refundEventLabel = (eventType: string) => ({ requested: "已申请", approved: "已审批", rejected: "已拒绝", completed: "已完成", reconciliation_required: "待对账" }[eventType] ?? eventType);
-  const refundList = refundState.status === "forbidden" ? <Alert type="info" showIcon title="退款记录不可读" description="当前会话没有 commercial.payment.reconcile；不会发起退款记录请求。" />
+  const refundList = !controller.targetWorkspaceId ? <Alert type="info" showIcon title="请先指定目标企业主体 Workspace" description="选择范围后才会读取服务端退款记录。" />
+    : refundState.status === "forbidden" ? <Alert type="info" showIcon title="退款记录不可读" description="当前会话没有 commercial.payment.reconcile；不会发起退款记录请求。" />
     : refundState.status === "error" ? <Alert type="error" showIcon title="退款记录读取失败" description={refundState.error?.message ?? "服务端未返回退款记录"} action={<Button onClick={refreshRefunds}>重试</Button>} />
       : refundState.status === "loading" && !refundState.data ? <Skeleton active paragraph={{ rows: 3 }} />
         : <>

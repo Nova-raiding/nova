@@ -61,7 +61,7 @@ access token 过期时 bridge 沿用 `POST /v1/auth/mcp-token/refresh` 轮换并
 
 ### A1. 准备条件
 
-- 对应平台的桌面端 ChatGPT 已安装并能启动，安装人员有该电脑的当前用户权限。
+- 安装人员有该电脑的当前用户权限；单入口会检查原版 ChatGPT 桌面端，缺失时引导从官方渠道安装。
 - 已从平台管理员拿到以下非敏感配置：
   - 商家 API 根地址，例如 `https://merchant.example.com`；地址不能带 `/mcp`、查询参数或凭据。
   - 管理员分配的工作区标识，例如 `ws_xxx`。
@@ -69,9 +69,9 @@ access token 过期时 bridge 沿用 `POST /v1/auth/mcp-token/refresh` 轮换并
 
 ### A2. 安装包含运行环境的平台包
 
-平台交付两个独立包：macOS `darwin-arm64` 或 `darwin-x64`，Windows `win32-x64`。包内包括对应平台的 Node 运行时；macOS 还包括已编译的 Keychain helper，Windows 包必须包括已签名、单文件且自带 .NET 运行时的 Credential Manager helper。用户电脑不需要预装 Node、Swift、.NET SDK 或 Codex CLI。ChatGPT 桌面应用、Store Nova 商家账号、管理员分配的工作区和网络连接仍需具备。
+平台交付两个独立包：macOS `darwin-arm64` 或 `darwin-x64`，Windows `win32-x64`。包内包括对应平台的 Node 运行时；macOS 还包括已编译的 Keychain helper，Windows 包必须包括已签名、单文件且自带 .NET 运行时的 Credential Manager helper。用户电脑不需要预装 Node、Swift、.NET SDK 或 Codex CLI。包内不含 OpenAI 客户端二进制；安装时需从 OpenAI 或 Microsoft 官方渠道获取原版客户端。Store Nova 商家账号、管理员分配的工作区和网络连接仍需具备。
 
-macOS 用户打开已签名、公证并装订票据的正式 DMG 后运行 `install.command`，按提示输入分配的工作区；也可运行 `sh install.sh`，然后运行 `sh login.sh --workspace ws_<管理员分配的工作区>`。直接打包产生的 `.tar.gz` 只用于内部验收，不交付用户。Windows 用户解压正式 ZIP 后运行 `install.cmd` 并输入工作区；也可稍后运行 `login.cmd --workspace ws_<管理员分配的工作区>`。登录时在浏览器核对商家账号与工作区并确认授权。最后完全退出并重新打开 ChatGPT，在新对话调用 `onboarding.status` 核验真实宿主身份和工作区。安装器写入本机个人插件源、安装缓存和启用配置，不发布到公开或团队市场。
+macOS 用户打开已签名、公证并装订票据的正式 DMG 后运行 `install-all.command`。入口先核验本机原版 ChatGPT.app 的签名与公证；缺失时打开 OpenAI 官方下载页，待用户完成原版安装后继续。随后按提示输入分配的工作区；也可运行 `sh install.sh`，然后运行 `sh login.sh --workspace ws_<管理员分配的工作区>`。工作区留空时安装器会明确报告“已安装、待绑定”，不会报告可用。直接打包产生的 `.tar.gz` 只用于内部验收，不交付用户。Windows 用户解压正式 ZIP 后运行 `install.cmd`：入口先检查官方 Microsoft Store 应用身份，缺失时从官方渠道安装，然后安装插件并输入工作区；也可稍后运行 `login.cmd --workspace ws_<管理员分配的工作区>`。登录时在浏览器核对商家账号与工作区并确认授权。最后完全退出并重新打开 ChatGPT，在新对话调用 `onboarding.status` 核验真实宿主身份和工作区。安装器写入本机个人插件源、安装缓存和启用配置，不发布到公开或团队市场。
 
 macOS 正式 DMG 在持有 Developer ID Application 证书和 Apple 公证 Keychain profile 的发布机上运行 `apps/plugin/scripts/build-signed-macos-package.mjs` 生成。缺少签名身份、公证接受结果、装订票据或 Gatekeeper 验证时不产生可交付包。发布机凭据不进入用户包。
 

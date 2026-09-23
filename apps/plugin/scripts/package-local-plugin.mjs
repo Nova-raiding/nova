@@ -117,10 +117,11 @@ const required = [
   'scripts/build-connect-helper.mjs', 'scripts/connect-local-macos.mjs',
   'windows/StoreNovaConnectHelper.cs', 'windows/StoreNovaCredentialHelper.cs', 'windows/StoreNovaCredentialHelper.csproj',
   'scripts/build-connect-helper-windows.mjs', 'scripts/build-windows-credential-helper.mjs', 'scripts/verify-connect-helper-windows.ps1',
+  'scripts/ensure-chatgpt-windows.ps1',
   'scripts/build-keychain-helper.mjs', 'scripts/diagnose-workspace-binding.mjs', 'scripts/install-local-macos.sh',
   'scripts/install-local-plugin.mjs', 'scripts/login-local-macos.mjs', 'scripts/login-local-windows.mjs', 'scripts/upgrade-installed-plugin.mjs',
   'scripts/verify-installed-bridge.mjs', 'scripts/verify-marketplace-source.mjs',
-  'scripts/install-chatgpt-bundled.mjs',
+  'scripts/install-chatgpt-bundled.mjs', 'scripts/install-all-macos.mjs', 'scripts/verify-chatgpt-macos.mjs',
   'scripts/bundle-provenance.mjs', 'scripts/verify-bundle-provenance.mjs',
   'scheduled/daily-store-risk-scan.json', 'scheduled/weekly-six-platform-digest.json',
   'skills/ecommerce-video-marketing/SKILL.md', 'skills/merchant-marketing/SKILL.md',
@@ -190,9 +191,13 @@ try {
   chmodSync(resolve(staging, 'install.sh'), 0o755)
   writeFileSync(resolve(staging, 'login.sh'), '#!/bin/sh\nset -eu\nroot=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)\nexec "$root/runtime/node" "$root/scripts/login-local-macos.mjs" --base-url https://yxsona.com "$@"\n')
   chmodSync(resolve(staging, 'login.sh'), 0o755)
-  writeFileSync(resolve(staging, 'install.command'), '#!/bin/sh\nset -eu\nroot=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)\nsh "$root/install.sh"\nprintf "请输入管理员分配的工作区 ID（ws_...）："\nIFS= read -r workspace\nif [ -z "$workspace" ]; then echo "尚未登录。获得工作区后运行 login.sh --workspace ws_..."; exit 0; fi\nsh "$root/login.sh" --workspace "$workspace"\nprintf "安装与登录已完成。请完全重启 ChatGPT，在插件页启用 Merchant Marketing，并在新对话验证 onboarding.status。\\n"\n')
+  writeFileSync(resolve(staging, 'install.command'), '#!/bin/sh\nset -eu\nroot=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)\nsh "$root/install.sh"\nprintf "请输入管理员分配的工作区 ID（ws_...）："\nIFS= read -r workspace || workspace=""\nif [ -z "$workspace" ]; then echo "插件已安装，但工作区绑定未完成。获得工作区后运行 login.sh --workspace ws_..."; exit 42; fi\nsh "$root/login.sh" --workspace "$workspace"\nprintf "安装与登录已完成。请完全重启 ChatGPT，在插件页启用 Merchant Marketing，并在新对话验证 onboarding.status。\\n"\n')
   chmodSync(resolve(staging, 'install.command'), 0o755)
-  const windowsPowerShell = [
+  if (platform === 'darwin') {
+    writeFileSync(resolve(staging, 'install-all.command'), '#!/bin/sh\nset -eu\nroot=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)\nexec "$root/runtime/node" "$root/scripts/install-all-macos.mjs"\n')
+    chmodSync(resolve(staging, 'install-all.command'), 0o755)
+  }
+  const windowsPluginPowerShell = [
     '$ErrorActionPreference = "Stop"',
     '$root = Split-Path -Parent $MyInvocation.MyCommand.Path',
     '$credentialHelper = Join-Path $root "windows\\StoreNovaCredentialHelper.exe"',
@@ -217,7 +222,14 @@ try {
     'Write-Host "Restart ChatGPT, enable Merchant Marketing, then verify onboarding.status in a new conversation."',
     'exit 0',
   ].join('\r\n')
-  writeFileSync(resolve(staging, 'install-chatgpt.ps1'), windowsPowerShell)
+  writeFileSync(resolve(staging, 'install-plugin.ps1'), windowsPluginPowerShell)
+  writeFileSync(resolve(staging, 'install-chatgpt.ps1'), [
+    '$ErrorActionPreference = "Stop"',
+    '$root = Split-Path -Parent $MyInvocation.MyCommand.Path',
+    '& (Join-Path $root "scripts\\ensure-chatgpt-windows.ps1")',
+    '& (Join-Path $root "install-plugin.ps1")',
+    'exit 0',
+  ].join('\r\n'))
   writeFileSync(resolve(staging, 'login.cmd'), '@echo off\r\nsetlocal\r\n"%~dp0runtime\\node.exe" "%~dp0scripts\\login-local-windows.mjs" --base-url https://yxsona.com %*\r\nexit /b %ERRORLEVEL%\r\n')
   const chatgptMarketplace = {
     name: 'merchant-personal',
@@ -252,7 +264,7 @@ try {
   if (sourceDirty) bundleStatus.release_status = 'dirty_source_candidate'
   writeFileSync(resolve(staging, 'bundle-status.json'), `${JSON.stringify(bundleStatus, null, 2)}\n`)
   writeBundleProvenance(staging, { plugin: manifest.id, version, platform, architecture, gitCommit, sourceDirty })
-  const packageEntries = [...required, 'runtime', ...(platform === 'darwin' ? ['mcp/keychain-credential-helper', 'mcp/keychain-credential-helper.build.json', 'login.sh', 'install.command'] : []), ...(windowsHelperFiles ? ['windows/StoreNovaCredentialHelper.exe', 'windows/StoreNovaCredentialHelper.exe.sha256', 'windows/credential-signer.txt'] : []), 'marketplace.json', 'install.sh', 'install.cmd', 'login.cmd', 'install-chatgpt.ps1', '.agents/plugins/marketplace.json', 'bundle-status.json', provenanceFile]
+  const packageEntries = [...required, 'runtime', ...(platform === 'darwin' ? ['mcp/keychain-credential-helper', 'mcp/keychain-credential-helper.build.json', 'login.sh', 'install.command', 'install-all.command'] : []), ...(windowsHelperFiles ? ['windows/StoreNovaCredentialHelper.exe', 'windows/StoreNovaCredentialHelper.exe.sha256', 'windows/credential-signer.txt'] : []), 'marketplace.json', 'install.sh', 'install.cmd', 'login.cmd', 'install-plugin.ps1', 'install-chatgpt.ps1', '.agents/plugins/marketplace.json', 'bundle-status.json', provenanceFile]
   mkdirSync(dirname(output), { recursive: true })
   if (platform === 'win32') {
     if (!output.toLowerCase().endsWith('.zip')) throw new Error('Windows deliverable must be a .zip file')

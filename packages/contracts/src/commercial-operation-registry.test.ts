@@ -156,8 +156,8 @@ describe('complete commercial operation registry E1 totality', () => {
     expect(resolveMcp('ops.marketing.generation.retry')).toMatchObject({ outcome: 'DENY_DISABLED', policy: { domain: 'COMMERCIAL', classification: 'POINT_CHARGED' } })
   })
 
-  it('exposes only the four charged generation methods with persisted rate and reservation evidence', () => {
-    expect(MCP_POINT_CHARGED_ENABLED_METHODS).toEqual(['catalog.image.generate', 'multimodal.image.edit', 'content.generate', 'multimodal.generate', 'multimodal.video.request'])
+  it('exposes charged generation methods with persisted rate and reservation evidence', () => {
+    expect(MCP_POINT_CHARGED_ENABLED_METHODS).toEqual(['catalog.image.generate', 'multimodal.image.edit', 'content.generate', 'content.draft.generate', 'multimodal.generate', 'multimodal.video.request'])
     for (const method of MCP_POINT_CHARGED_ENABLED_METHODS) {
       const rateAction = method === 'catalog.image.generate' ? 'image.generate.standard' : method === 'multimodal.image.edit' ? 'image.edit.annotation' : method === 'multimodal.video.request' ? 'video.generate.standard_15s' : 'text.generate'
       expect(resolveMcp(method)).toMatchObject({ outcome: 'REGISTERED', policy: { classification: 'POINT_CHARGED', rate_action: rateAction } })

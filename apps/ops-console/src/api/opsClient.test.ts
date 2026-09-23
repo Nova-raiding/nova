@@ -101,6 +101,12 @@ describe("workspace RPC boundary", () => {
     }));
     const request = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(request[1].headers).not.toHaveProperty("x-workspace-id");
+    await rpcWithMeta("ops.session", {}, { idempotencyKey: "commercial.refund.request:refund-1" });
+    expect(fetchMock).toHaveBeenLastCalledWith("http://127.0.0.1:8787/mcp", expect.objectContaining({
+      headers: expect.objectContaining({ "idempotency-key": "commercial.refund.request:refund-1" }),
+    }));
+    await expect(rpcWithMeta("ops.session", {}, { idempotencyKey: "bad\nkey" })).rejects.toThrow("运营幂等键无效");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("opens a platform session without inventing or sending a tenant workspace", async () => {

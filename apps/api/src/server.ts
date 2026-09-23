@@ -3560,7 +3560,9 @@ async function parseAssetFacts(input: { name: string; mimeType: string; body: Ui
   } catch (error) {
     const image = input.mimeType.toLowerCase().startsWith('image/')
     if (!(error instanceof DocumentParseError) || !image || !imageFactsExtractor) throw error
-    return { facts: await imageFactsExtractor.extract(input), source: 'model_ocr' as const }
+    // Local parsing is free. OCR has no approved creative-point rate yet, so
+    // never dispatch its provider with only a positive-balance check.
+    throw new DomainError('OCR_CREATIVE_POINT_RATE_UNAVAILABLE', '图片 OCR 尚无已批准的创意点费率，已阻断模型调用；请人工确认素材事实', 503, { next_actions: ['asset.facts.confirm', 'commercial.catalog.get'] })
   }
 }
 
@@ -3631,7 +3633,7 @@ async function executeDurableAssetParse(workspaceId: string, assetId: string, re
           throw error
         }
       },
-      classifyFailure: error => ({ code: error instanceof AssetParseRepositoryError && error.code === 'ASSET_PARSE_EMPTY' ? error.code : 'ASSET_PARSE_FAILED', message: error instanceof AssetParseRepositoryError && error.code === 'ASSET_PARSE_EMPTY' ? 'asset parser returned no facts' : error instanceof Error ? error.message.slice(0, 1_000) : '素材解析失败', retryable: true }),
+      classifyFailure: error => ({ code: error instanceof DomainError && error.code === 'OCR_CREATIVE_POINT_RATE_UNAVAILABLE' ? error.code : error instanceof AssetParseRepositoryError && error.code === 'ASSET_PARSE_EMPTY' ? error.code : 'ASSET_PARSE_FAILED', message: error instanceof AssetParseRepositoryError && error.code === 'ASSET_PARSE_EMPTY' ? 'asset parser returned no facts' : error instanceof Error ? error.message.slice(0, 1_000) : '素材解析失败', retryable: !(error instanceof DomainError && error.code === 'OCR_CREATIVE_POINT_RATE_UNAVAILABLE') }),
     })
     await assertDurableParseRecordCurrent(repository, executed.record)
     const source = extraction?.source ?? (asset.extractedFactsSource === 'model_ocr' ? 'model_ocr' : 'parser')
@@ -3664,7 +3666,7 @@ async function executeDurableAssetParse(workspaceId: string, assetId: string, re
         await persistSnapshot(workspaceId, 'asset', failed, failed as unknown as Record<string, unknown>)
         await persistEvent(workspaceId, asset.id, 'asset.parse_failed', failed.revision, { asset_id: asset.id, error_code: error.code, retryable: error.record.retryable, attempts: error.record.attempts })
       }
-      const status = error.code === 'ASSET_PARSE_TIMEOUT' ? 504 : 422
+      const status = error.code === 'ASSET_PARSE_TIMEOUT' ? 504 : error.code === 'OCR_CREATIVE_POINT_RATE_UNAVAILABLE' ? 503 : 422
       throw new DomainError(error.code, error.message, status, { asset_id: asset.id, asset_persisted: true, retryable: error.record.retryable, attempts: error.record.attempts, next_actions: error.record.retryable ? ['asset.parse', 'asset.facts.confirm'] : ['asset.facts.confirm'] })
     }
     throw error
@@ -12233,17 +12235,29 @@ function firstValueNextActions(product: import('../../../packages/application/sr
   return actions
 }
 
-async function merchantFirstValuePreview(workspaceId: string, params: JsonObject) {
+async function merchantFirstValuePreview(workspaceId: string, params: JsonObject, req: IncomingMessage) {
   if (params.draft === 'true') {
     const idempotencyKey = typeof params.idempotency_key === 'string' ? params.idempotency_key.trim() : ''
     if (!idempotencyKey) throw new DomainError(ERROR_CODES.IDEMPOTENCY_KEY_REQUIRED, '中转草稿生成必须携带幂等键', 400)
     if (!contentGenerator) throw new DomainError('AI_GENERATION_NOT_CONFIGURED', '平台文案模型中转未就绪，当前只能查看静态示例；请联系平台运营配置模型', 503, { provider_executed: false, candidate_only: true })
+    requirePlatformModelCostGate('text')
     const title = typeof params.draft_title === 'string' && params.draft_title.trim() ? params.draft_title.trim() : '未绑定商品内容候选'
     const prompt = typeof params.draft_prompt === 'string' && params.draft_prompt.trim() ? params.draft_prompt.trim() : '生成一个结构化商品文案候选，仅使用创意表达，不作任何未经确认的商品事实或效果宣称。'
     const platform = typeof params.platform === 'string' && params.platform.trim() ? params.platform.trim() : 'general'
     const actionId = `content-draft:${createHash('sha256').update(`${workspaceId}:${idempotencyKey}`).digest('hex')}`
-    await recordOperationAudit({ workspaceId, actorId: 'merchant-draft', action: 'content.draft.generate', resourceType: 'content_draft_candidate', resourceId: actionId, before: {}, after: { candidate_only: true, platform, title }, reason: '生成未绑定内容候选；不创建正式版本、不允许发布' })
-    const generated = await contentGenerator.generate({ platform, directionId: prompt, product: { title, stock: 0, skuCount: 0 }, usageContext: { workspaceId, actionId, runKey: actionId } })
+    const decision = await enforceMcpCommercialAccess(req, workspaceId, 'content.draft.generate')
+    await assertProviderActionCanStart(workspaceId, actionId)
+    await reserveCreativePointsForModel(workspaceId, actionId, decision)
+    let generated
+    try {
+      await recordActionSettlement({ workspaceId, actionKey: actionId, actionKind: 'model_text', settlement: 'included_quota', amountFen: 0, actorId: requestActor(req), description: '未绑定商品文案候选生成', settlementStatus: 'authorized' })
+      await recordOperationAudit({ workspaceId, actorId: requestActor(req), action: 'content.draft.generate', resourceType: 'content_draft_candidate', resourceId: actionId, before: {}, after: { candidate_only: true, platform, title }, reason: '生成未绑定内容候选；不创建正式版本、不允许发布' })
+      generated = await contentGenerator.generate({ platform, directionId: prompt, product: { title, stock: 0, skuCount: 0 }, usageContext: { workspaceId, actionId, runKey: actionId } })
+    } catch (error) {
+      if (!providerSucceededButSettlementPending(error)) await releaseReservedModelPoints(workspaceId, actionId, '文案候选生成失败')
+      throw error
+    }
+    await requireSettledContentExecutionEvidence(workspaceId, actionId)
     const body = validateContentSchema(generated, 'content.draft.generate')
     return { readOnly: true, previewOnly: true, candidateOnly: true, publishable: false, formalVersionCreated: false, product: { id: null, title, platform, factsConfirmed: false }, contentPreview: { id: actionId, taskId: null, version: null, state: 'candidate', body }, execution: { mode: 'platform_relay_candidate', simulated: false, providerExecuted: true, modelCalled: true, label: '平台中转模型已生成内容候选', message: '仅供预览；未创建正式内容版本，未批准、未发布' }, nextActions: ['绑定已授权店铺并确认商品事实后，创建正式任务', '正式商品内容必须通过 content.generate 生成并审核'] }
   }
@@ -14018,7 +14032,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       } catch (error) { rethrowCommercialPurchaseError(error) }
     }
     case 'merchant.first_value':
-      return result(await merchantFirstValuePreview(workspaceId, params))
+      return result(await merchantFirstValuePreview(workspaceId, params, req))
     case 'brand-unit.list': {
       const brandId = typeof params.brand_id === 'string' && params.brand_id.trim() ? params.brand_id.trim() : undefined
       const platform = typeof params.platform === 'string' ? params.platform as Platform : undefined
@@ -20087,8 +20101,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result({ ...confirmed, task_id: confirmed.id, expected_version: confirmed.version })
     }
     case 'content.draft.generate': {
-      await enforceMcpCommercialAccess(req, workspaceId, method)
-      return result(await merchantFirstValuePreview(workspaceId, { ...params, draft: 'true' }))
+      return result(await merchantFirstValuePreview(workspaceId, { ...params, draft: 'true' }, req))
     }
     case 'content.generate': {
       const task = scopeTask(req, required(params, 'task_id'))

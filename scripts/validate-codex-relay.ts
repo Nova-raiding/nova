@@ -5,7 +5,7 @@ import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 
 export type RelayEnvironment = Record<string, string | undefined>
-export interface CodexRelayValidationResult { errors: string[]; provider?: string; model?: string; envKey?: string; hostBaseUrl?: string; businessBaseUrl?: string; subscriptionAuth?: boolean }
+export interface CodexRelayValidationResult { errors: string[]; provider?: string; model?: string; envKey?: string; hostBaseUrl?: string; businessBaseUrl?: string }
 
 const LEGACY = ['AI_BASE_URL', 'IMAGE_BASE_URL', 'VIDEO_BASE_URL', 'AI_API_KEY', 'IMAGE_API_KEY', 'VIDEO_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY'] as const
 const BUSINESS_MODELS = ['AI_MODEL', 'IMAGE_MODEL', 'IMAGE_EDIT_MODEL', 'OCR_MODEL', 'VIDEO_MODEL'] as const
@@ -31,29 +31,20 @@ export function validateCodexRelay(config: string, env: RelayEnvironment = proce
   const provider = field(config, 'model_provider')
   const model = field(config, 'model')
   const section = provider ? config.match(new RegExp(`\\[model_providers\\.${regexLiteral(provider)}\\]([\\s\\S]*?)(?=\\n\\[|$)`, 'u'))?.[1] ?? '' : ''
-  // Codex's built-in `openai` provider uses the ChatGPT subscription when
-  // credentials are stored by the CLI. It is valid for a custom provider
-  // section (for example damai_relay) to coexist with that built-in provider;
-  // absence of [model_providers.openai] is not a mismatch in this mode.
-  const subscriptionAuth = !/^\s*(?:model_provider|model)\s*=/mu.test(config)
-    || (provider === 'openai' && !section && field(config, 'cli_auth_credentials_store') === 'file')
-  const hasHostOverride = !subscriptionAuth
   const baseUrl = field(section, 'base_url')
   const envKey = field(section, 'env_key')
-  if (hasHostOverride) {
-    if (placeholder(provider)) errors.push('Codex 配置缺少有效的 model_provider')
-    if (placeholder(model)) errors.push('Codex 配置缺少有效的 host model')
-    if (provider && !section) {
-      errors.push(`Codex 配置缺少 model_providers.${provider} section`)
-      const available = providerSectionNames(config)
-      if (available.length) errors.push(`Codex 配置的 model_provider=${provider} 与可用 provider section 不一致：${available.join(', ')}`)
-    }
-    if (placeholder(baseUrl)) errors.push('Codex host relay 缺少有效的 base_url')
-    else https(baseUrl!, 'Codex host relay base_url', errors)
-    if (field(section, 'wire_api') !== 'responses') errors.push('Codex host relay 必须配置 wire_api = "responses"')
-    if (placeholder(envKey) || !/^[A-Z][A-Z0-9_]*$/u.test(envKey ?? '')) errors.push('Codex host relay 缺少有效的 env_key（必须是环境变量名）')
-    else if (placeholder(env[envKey!])) errors.push(`Codex host relay 环境变量未注入：${envKey}`)
+  if (placeholder(provider)) errors.push('Codex 配置缺少有效的 model_provider')
+  if (placeholder(model)) errors.push('Codex 配置缺少有效的 host model')
+  if (provider && !section) {
+    errors.push(`Codex 配置缺少 model_providers.${provider} section`)
+    const available = providerSectionNames(config)
+    if (available.length) errors.push(`Codex 配置的 model_provider=${provider} 与可用 provider section 不一致：${available.join(', ')}`)
   }
+  if (placeholder(baseUrl)) errors.push('Codex host relay 缺少有效的 base_url')
+  else https(baseUrl!, 'Codex host relay base_url', errors)
+  if (field(section, 'wire_api') !== 'responses') errors.push('Codex host relay 必须配置 wire_api = "responses"')
+  if (placeholder(envKey) || !/^[A-Z][A-Z0-9_]*$/u.test(envKey ?? '')) errors.push('Codex host relay 缺少有效的 env_key（必须是环境变量名）')
+  else if (placeholder(env[envKey!])) errors.push(`Codex host relay 环境变量未注入：${envKey}`)
 
   const businessBaseUrl = env.MODEL_RELAY_BASE_URL?.trim()
   if (placeholder(businessBaseUrl)) errors.push('业务模型 relay 缺少有效的 MODEL_RELAY_BASE_URL')
@@ -61,72 +52,13 @@ export function validateCodexRelay(config: string, env: RelayEnvironment = proce
   if (placeholder(env.MODEL_RELAY_API_KEY)) errors.push('业务模型 relay 缺少 MODEL_RELAY_API_KEY')
   for (const variable of BUSINESS_MODELS) if (placeholder(env[variable]?.trim())) errors.push(`业务模型 relay 缺少有效的 ${variable}`)
   for (const variable of LEGACY) if (env[variable]?.trim()) errors.push(`检测到不允许的直连模型配置：${variable}；请移除并仅使用 MODEL_RELAY_*`)
-  return { errors, ...(provider ? { provider } : {}), ...(model ? { model } : {}), ...(envKey ? { envKey } : {}), ...(baseUrl ? { hostBaseUrl: baseUrl } : {}), businessBaseUrl, subscriptionAuth }
+  return { errors, ...(provider ? { provider } : {}), ...(model ? { model } : {}), ...(envKey ? { envKey } : {}), ...(baseUrl ? { hostBaseUrl: baseUrl } : {}), businessBaseUrl }
 }
 
 export function runCodexRelayValidation(configPath: string, env: RelayEnvironment = process.env) {
   const exists = existsSync(configPath)
   const result = validateCodexRelay(exists ? readFileSync(configPath, 'utf8') : '', env)
   if (!exists) result.errors.unshift(`Codex 用户配置不存在：${configPath}`)
-  return result
-}
-
-function objectEntries(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value) ? value.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)) : []
-}
-
-function supportsResponses(entry: Record<string, unknown>) {
-  const endpointTypes = entry.supported_endpoint_types
-  // Relays in the wild use two catalog dialects.  Some expose the Codex
-  // specific `openai-response` capability, while OpenAI-compatible relays
-  // advertise the same model simply as `openai` and route `/responses` based
-  // on the provider's wire_api setting.  Treat both as admissible catalog
-  // evidence; the actual `/responses` probe remains the runtime authority.
-  return Array.isArray(endpointTypes) && (endpointTypes.includes('openai-response') || endpointTypes.includes('openai'))
-}
-
-export async function probeCodexRelayCatalog(
-  result: CodexRelayValidationResult,
-  env: RelayEnvironment = process.env,
-  fetcher: typeof fetch = fetch,
-) {
-  if (result.errors.length || !result.hostBaseUrl || !result.envKey || !result.model) return result
-  const secret = env[result.envKey]?.trim()
-  if (!secret) return result
-  try {
-    const endpoint = `${result.hostBaseUrl.replace(/\/+$/u, '')}/models`
-    const response = await fetcher(endpoint, {
-      headers: { accept: 'application/json', authorization: `Bearer ${secret}` },
-      redirect: 'error',
-      signal: AbortSignal.timeout(10_000),
-    })
-    const text = await response.text()
-    if (!response.ok) {
-      result.errors.push(`Codex host relay /models 返回 HTTP ${response.status}`)
-      return result
-    }
-    if (Buffer.byteLength(text, 'utf8') > 2 * 1024 * 1024) {
-      result.errors.push('Codex host relay /models 响应超过 2MB 安全上限')
-      return result
-    }
-    let payload: unknown
-    try { payload = JSON.parse(text) } catch {
-      result.errors.push('Codex host relay /models 未返回合法 JSON')
-      return result
-    }
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-      result.errors.push('Codex host relay /models 返回的目录不是对象')
-      return result
-    }
-    const catalog = payload as Record<string, unknown>
-    if (!Array.isArray(catalog.data)) result.errors.push('Codex host relay /models 缺少 OpenAI data 数组')
-    const openAiModel = objectEntries(catalog.data).find(entry => entry.id === result.model)
-    if (!openAiModel) result.errors.push(`Codex host relay OpenAI data[] 未声明当前 host model：${result.model}`)
-    else if (!supportsResponses(openAiModel)) result.errors.push(`Codex host relay 当前 host model 未声明 openai-response 能力：${result.model}`)
-    if (Array.isArray(catalog.models) && !objectEntries(catalog.models).some(entry => entry.slug === result.model)) result.errors.push(`Codex host relay Codex models[] 未声明当前 host model slug：${result.model}`)
-  } catch (error) {
-    result.errors.push(`Codex host relay /models 探测失败：${error instanceof Error && error.name === 'TimeoutError' ? '请求超时' : '连接失败'}`)
-  }
   return result
 }
 
@@ -167,11 +99,10 @@ function resolveCliEnvironment(): RelayEnvironment {
 if (resolve(process.argv[1] ?? '') === resolve(fileURLToPath(import.meta.url))) {
   const path = resolve(process.env.CODEX_CONFIG_PATH?.trim() || `${homedir()}/.codex/config.toml`)
   const environment = resolveCliEnvironment()
-  const result = await probeCodexRelayCatalog(runCodexRelayValidation(path, environment), environment)
+  const result = runCodexRelayValidation(path, environment)
   if (result.errors.length) {
     console.error('codex relay validation failed')
     for (const error of result.errors) console.error(`- ${error}`)
     process.exitCode = 1
-  } else if (result.subscriptionAuth) console.log(`codex relay ready: host_auth=chatgpt_subscription business_relay=${new URL(result.businessBaseUrl!).host}`)
-  else console.log(`codex relay ready: host_provider=${result.provider} host_endpoint=${new URL(result.hostBaseUrl!).host} business_relay=${new URL(result.businessBaseUrl!).host}`)
+  } else console.log(`codex relay config validated: host_provider=${result.provider} host_endpoint=${new URL(result.hostBaseUrl!).host} business_relay=${new URL(result.businessBaseUrl!).host} runtime=unverified`)
 }

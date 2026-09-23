@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { renderCodexRelayCatalog, renderCodexRelayConfig } from '../scripts/configure-codex-relay.js'
-import { probeCodexRelayCatalog, validateCodexRelay } from '../scripts/validate-codex-relay.js'
+import { validateCodexRelay } from '../scripts/validate-codex-relay.js'
 
 describe('Codex relay configuration renderer', () => {
   it('uses an OCR canary image large enough for production vision model constraints', () => {
@@ -82,22 +85,27 @@ describe('Codex relay configuration renderer', () => {
     }).errors).toEqual([])
   })
 
-  it('accepts ChatGPT subscription authentication when no host override is configured', () => {
+  it('fails closed when only a business relay is configured', () => {
     const result = validateCodexRelay('approval_policy = "never"\n', {
       MODEL_RELAY_BASE_URL: 'https://business-relay.example/v1', MODEL_RELAY_API_KEY: 'business-secret',
       AI_MODEL: 'text', IMAGE_MODEL: 'image', IMAGE_EDIT_MODEL: 'edit', OCR_MODEL: 'ocr', VIDEO_MODEL: 'video',
     })
-    expect(result.errors).toEqual([])
-    expect(result.subscriptionAuth).toBe(true)
+    expect(result.errors).toEqual(expect.arrayContaining([
+      'Codex 配置缺少有效的 model_provider',
+      'Codex 配置缺少有效的 host model',
+      'Codex host relay 缺少有效的 base_url',
+    ]))
   })
 
-  it('accepts the built-in OpenAI provider when Codex stores ChatGPT subscription credentials', () => {
+  it('does not treat a credential storage setting as proof of ChatGPT authentication or active relay routing', () => {
     const result = validateCodexRelay('model_provider = "openai"\nmodel = "gpt-5.6-luna"\ncli_auth_credentials_store = "file"\n\n[model_providers.damai_relay]\nbase_url = "https://host-relay.example/v1"\nwire_api = "responses"\nenv_key = "WORMHOLE_API_KEY"\n', {
       MODEL_RELAY_BASE_URL: 'https://business-relay.example/v1', MODEL_RELAY_API_KEY: 'business-secret',
       AI_MODEL: 'text', IMAGE_MODEL: 'image', IMAGE_EDIT_MODEL: 'edit', OCR_MODEL: 'ocr', VIDEO_MODEL: 'video',
     })
-    expect(result.errors).toEqual([])
-    expect(result.subscriptionAuth).toBe(true)
+    expect(result.errors).toEqual(expect.arrayContaining([
+      'Codex 配置缺少 model_providers.openai section',
+      'Codex 配置的 model_provider=openai 与可用 provider section 不一致：damai_relay',
+    ]))
   })
 
   it('fails closed when host wire_api and env_key are absent', () => {
@@ -120,55 +128,24 @@ describe('Codex relay configuration renderer', () => {
     ]))
   })
 
-  it('accepts a standard OpenAI catalog without the optional Codex mirror', async () => {
+  it('validates configuration without contacting /models or claiming a runtime request succeeded', () => {
     const environment = {
       DAMAI_CODEX_RELAY_API_KEY: 'host-secret', MODEL_RELAY_BASE_URL: 'https://business-relay.example/v1', MODEL_RELAY_API_KEY: 'business-secret',
       AI_MODEL: 'text', IMAGE_MODEL: 'image', IMAGE_EDIT_MODEL: 'edit', OCR_MODEL: 'ocr', VIDEO_MODEL: 'video',
     }
-    const config = renderCodexRelayConfig({ existing: '', provider: 'damai_relay', model: 'responses-model', baseUrl: 'https://host-relay.example/v1', apiKeyEnv: 'DAMAI_CODEX_RELAY_API_KEY' })
-    const result = validateCodexRelay(config, environment)
-    await probeCodexRelayCatalog(result, environment, async () => new Response(JSON.stringify({ object: 'list', data: [{ id: 'responses-model', supported_endpoint_types: ['openai-response'] }] })))
-    expect(result.errors).toEqual([])
-  })
-
-  it('accepts relays that advertise Responses-compatible models as generic openai', async () => {
-    const environment = {
-      DAMAI_CODEX_RELAY_API_KEY: 'host-secret', MODEL_RELAY_BASE_URL: 'https://business-relay.example/v1', MODEL_RELAY_API_KEY: 'business-secret',
-      AI_MODEL: 'text', IMAGE_MODEL: 'image', IMAGE_EDIT_MODEL: 'edit', OCR_MODEL: 'ocr', VIDEO_MODEL: 'video',
+    const directory = mkdtempSync(join(tmpdir(), 'relay-validator-'))
+    try {
+      const configPath = join(directory, 'config.toml')
+      writeFileSync(configPath, renderCodexRelayConfig({ existing: '', provider: 'damai_relay', model: 'responses-model', baseUrl: 'https://127.0.0.1:1/v1', apiKeyEnv: 'DAMAI_CODEX_RELAY_API_KEY' }))
+      const output = execFileSync(process.execPath, ['--import', 'tsx', 'scripts/validate-codex-relay.ts'], {
+        cwd: process.cwd(), encoding: 'utf8', timeout: 10_000,
+        env: { ...process.env, ...environment, CODEX_CONFIG_PATH: configPath },
+      })
+      expect(output).toContain('codex relay config validated:')
+      expect(output).toContain('runtime=unverified')
+      expect(output).not.toContain('ready')
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
     }
-    const config = renderCodexRelayConfig({ existing: '', provider: 'damai_relay', model: 'responses-model', baseUrl: 'https://host-relay.example/v1', apiKeyEnv: 'DAMAI_CODEX_RELAY_API_KEY' })
-    const result = validateCodexRelay(config, environment)
-    await probeCodexRelayCatalog(result, environment, async () => new Response(JSON.stringify({ object: 'list', data: [{ id: 'responses-model', supported_endpoint_types: ['openai'] }] })))
-    expect(result.errors).toEqual([])
-  })
-
-  it('accepts a catalog that declares the selected model in both supported directory shapes', async () => {
-    const environment = {
-      DAMAI_CODEX_RELAY_API_KEY: 'host-secret', MODEL_RELAY_BASE_URL: 'https://business-relay.example/v1', MODEL_RELAY_API_KEY: 'business-secret',
-      AI_MODEL: 'text', IMAGE_MODEL: 'image', IMAGE_EDIT_MODEL: 'edit', OCR_MODEL: 'ocr', VIDEO_MODEL: 'video',
-    }
-    const config = renderCodexRelayConfig({ existing: '', provider: 'damai_relay', model: 'responses-model', baseUrl: 'https://host-relay.example/v1', apiKeyEnv: 'DAMAI_CODEX_RELAY_API_KEY' })
-    const result = validateCodexRelay(config, environment)
-    await probeCodexRelayCatalog(result, environment, async () => new Response(JSON.stringify({
-      object: 'list',
-      data: [{ id: 'responses-model', supported_endpoint_types: ['openai-response'] }],
-      models: [{ slug: 'responses-model', context_window: 128_000 }],
-    })))
-    expect(result.errors).toEqual([])
-  })
-
-  it('rejects an id-only pseudo Codex catalog or a model without Responses routing', async () => {
-    const environment = {
-      DAMAI_CODEX_RELAY_API_KEY: 'host-secret', MODEL_RELAY_BASE_URL: 'https://business-relay.example/v1', MODEL_RELAY_API_KEY: 'business-secret',
-      AI_MODEL: 'text', IMAGE_MODEL: 'image', IMAGE_EDIT_MODEL: 'edit', OCR_MODEL: 'ocr', VIDEO_MODEL: 'video',
-    }
-    const config = renderCodexRelayConfig({ existing: '', provider: 'damai_relay', model: 'responses-model', baseUrl: 'https://host-relay.example/v1', apiKeyEnv: 'DAMAI_CODEX_RELAY_API_KEY' })
-    const result = validateCodexRelay(config, environment)
-    await probeCodexRelayCatalog(result, environment, async () => new Response(JSON.stringify({
-      object: 'list', data: [{ id: 'responses-model' }], models: [{ id: 'responses-model' }],
-    })))
-    expect(result.errors).toEqual(expect.arrayContaining([
-      'Codex host relay 当前 host model 未声明 openai-response 能力：responses-model',
-    ]))
   })
 })

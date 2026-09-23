@@ -20,3 +20,27 @@
 6. **全站生产发布证据：** 当前公网 `/api/releasez` 绑定旧提交 `ec3d69e3`，不能代表本分支候选。最终候选还需模型中转五模态的真实鉴权、请求、用量、成本和错误证据，以及现有生产发布门禁要求的商家、运营、支付、数据库/RLS、worker、审计证据，全部绑定同一 release identity。参见[生产差距审计](production-launch-gap-manual-local-chatgpt-payment-relay-2026-09-21.md)。
 
 包的安装路径仅使用本地个人 marketplace 与 stdio MCP；没有公开或团队插件市场发布，也没有 ChatGPT OAuth 配置。
+
+## 2026-09-23 06:28 UTC 只读复核与解阻顺序
+
+本节是当时的状态快照，不是后续发布可复用的证据。`/api/releasez` 返回旧 release `qa-merchant-ec3d69e3`、Git SHA `ec3d69e37809c0d622c8f38057a072245217004f`、`ready=true`；同一分钟 `/api/readyz` 返回 HTTP 503 `SCANNER_NOT_READY`，扫描实例 `live_instances=1`、`ready_instances=0`、`backlog=0`、`dead_letter=0`，最近接受的回调仍为 `2026-09-22T02:48:35.858Z`。`releasez.ready` 不能替代服务 readiness，更不能证明本分支候选已部署。正式扫描 worker 容器仍运行，API replica 容器显示 unhealthy，ClamAV 容器显示 healthy。运营 `/healthz` 为 `ok`，但同时显示 `writesEnabled=false`、capability evidence 文件不可读、capacity report 未配置；支付 `provider` enabled 和中转 configured 只是配置状态，不是六类支付回执或五模态实际用量/成本证据。现场没有改动容器、数据库或生产素材。
+
+| 门禁 | 当前缺口 | 最小可核验下一步 |
+| --- | --- | --- |
+| 候选身份与包 | 本地 Git 当前有并行开发改动；r5 是绑定旧提交的内部未签名候选 | 冻结干净完整提交和 release ID；重新生成 Mac/Windows 包，逐项核对 `bundle-provenance`、逐文件哈希、Node 官方摘要和候选源码身份。旧 r5 不得改标为正式包。 |
+| Mac/Windows 客户安装包 | 缺生产 Mac 签名/公证和 Windows 生产 Authenticode/时间戳 | 在各平台受控发布机执行现有签名脚本；验收 Gatekeeper/Authenticode、安装后插件缓存、MCP 工具发现和无配置失败关闭，并通过可信渠道发布包 SHA-256。 |
+| ChatGPT 真实宿主 | 当前 release/bridge 的 15 场景证据缺失 | 在真实桌面宿主安装正式包，按[宿主清单](../chatgpt-host-canary-runbook.md)采集所有截图、日志、请求摘要和 503 恢复轨迹，再运行 `--require-artifacts` 门禁。 |
+| Scanner 与定义 | `/readyz` 为 503；旧签名 callback 过期；定义 28131 发布时间已超过默认 24 小时门槛，是否出现 `definitions_stale` 须读取最新 heartbeat 核定 | 先核实真实定义更新与 worker 读取版本，再在隔离 workspace 发起真实素材扫描，核对签名 callback、heartbeat `ready=true` 和 `/readyz` 200；不改写状态或放宽阈值。 |
+| 中转、支付、商家/运营 | 当前 release 的五模态 usage/cost/错误恢复、支付六回执、租户与业务运行证据未齐 | 使用同一候选 release、受保护 artifact root 和真实 provider/宿主采集；依[解阻清单](../runbooks/release-unblock-checklist.md)和[支付 runbook](payment-provider-production-runbook.md)签署证据，缺项保持阻断。 |
+| ECS 切换 | 公网仍是旧 Git SHA；候选不可变镜像和签名证据未部署 | 在上述证据齐全后运行 `npm run typecheck && npm run test:release-gates`、ECS preflight；按[安全同步 runbook](../runbooks/ecs-candidate-safe-sync.md)执行受控发布，并核对 `/api/releasez` 全量身份、`/api/readyz`、运营健康与回滚状态。 |
+
+源码已通过且未修改的定向测试不因这次只读复核重复执行；任何后续代码修改须由 owner 按受影响范围重新验收。上述任一项缺失时判定仍为 **NO-GO**。
+
+## 06:42 UTC 后续开发验收（尚非用户交付包）
+
+- Mac DMG 增加 `install-all.command`，校验本机原版 ChatGPT.app 的签名、公证和架构；缺失时引导到 OpenAI 官方下载页。真实本机原版校验通过，临时未签名 DMG 的挂载布局通过；空工作区明确返回待绑定状态。Windows ZIP 的 `install.cmd` 增加 Microsoft Store 官方应用身份校验与官方安装入口。这两个包均不包含 OpenAI 客户端二进制，也不能替代真实用户机的 ChatGPT 宿主验收。新 Mac 定向测试 3/3、插件安装测试 27/27 通过；新版 Windows 入口的原生 CI 尚未运行。
+- 文案草稿生成改为中转调用前按已批准 `text.generate` 费率预留 1 创意点，写入同一 action 的持久授权；确定失败释放、结果未知保持预留。OCR 尚无已批准创意点费率，只有在本地解析失败、即将进入模型 OCR 时返回 503，测试观测中转请求为零。新增 HTTP 定向测试 5/5，相关测试 158/158 通过；OCR 模型能力仍属发布阻断，待费率决策与真实结算验收。
+- 中转配置校验不再把配置当作宿主运行成功，也不强制实际 Codex CLI 不发送的 `/models` 请求。隔离 Codex CLI 对自定义 Responses provider 的 SSE 探针通过；尚无工作区计费 Responses 网关，也没有 ChatGPT 桌面 UI 继承该配置的真实证据，不能承诺宿主基础模型请求按创意点扣费或免订阅。
+- 运营桌面退款面板经隔离 OIDC/Chrome 验证了平台角色可指定工作区读取记录、工作区角色不发起退款请求，以及不存在记录时服务端拒绝写操作。完整双人退款、真实支付和正式 ECS release 尚未验收。owner 整合后的 `npm run typecheck` 与 `git diff --check` 通过。
+
+上述开发改动尚未重新生成绑定当前干净提交的 Mac/Windows 候选，旧 r5 的哈希和旧 CI 不覆盖这些改动。正式结论仍为 **NO-GO**。

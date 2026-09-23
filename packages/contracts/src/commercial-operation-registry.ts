@@ -206,6 +206,7 @@ export const MCP_POINT_CHARGED_ENABLED_METHODS = [
   'catalog.image.generate',
   'multimodal.image.edit',
   'content.generate',
+  'content.draft.generate',
   'multimodal.generate',
   'multimodal.video.request',
 ] as const satisfies readonly McpMethod[]
@@ -226,7 +227,6 @@ export const MCP_POINT_CHARGED_DISABLED_METHODS = [
 
 export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
   'merchant.first_value',
-  'content.draft.generate',
   'brand.extract',
   'creative.brief',
   'creative.preview',

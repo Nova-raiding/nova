@@ -502,7 +502,8 @@ describe('API application wiring', () => {
   it('exposes relay-backed content draft as candidate-only without formal task bypass', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     const handler = source.slice(source.indexOf("case 'content.draft.generate':"), source.indexOf("case 'content.generate':"))
-    expect(handler).toContain("await enforceMcpCommercialAccess(req, workspaceId, method)")
+    expect(handler).toContain('merchantFirstValuePreview(workspaceId')
+    expect(source).toContain("enforceMcpCommercialAccess(req, workspaceId, 'content.draft.generate')")
     expect(handler).toContain("draft: 'true'")
     expect(source).toContain("candidateOnly: true")
     expect(source).toContain("formalVersionCreated: false")

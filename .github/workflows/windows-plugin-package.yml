@@ -136,6 +136,23 @@ jobs:
             if ($expectedPackageHash -ne $actualPackageHash) { throw 'Package checksum does not match the ZIP' }
             $extract = Join-Path $env:RUNNER_TEMP 'storenova-extracted'
             Expand-Archive -LiteralPath $artifact -DestinationPath $extract
+            $entry = Get-Content -LiteralPath (Join-Path $extract 'install-chatgpt.ps1') -Raw
+            if ($entry.IndexOf('ensure-chatgpt-windows.ps1') -lt 0 -or $entry.IndexOf('install-plugin.ps1') -le $entry.IndexOf('ensure-chatgpt-windows.ps1')) {
+              throw 'Single-entry installer does not verify the official ChatGPT app before the plugin install'
+            }
+            $preflight = Join-Path $extract 'scripts\ensure-chatgpt-windows.ps1'
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($preflight, [ref]$tokens, [ref]$parseErrors)
+            if ($parseErrors.Count -ne 0) { throw "Official ChatGPT preflight has PowerShell syntax errors: $parseErrors" }
+            function Get-AppxPackage { [CmdletBinding()]param([string]$Name) return @() }
+            try { & $preflight -VerifyOnly; throw 'Missing official ChatGPT app was accepted' }
+            catch { if ($_.Exception.Message -notmatch 'CHATGPT_APP_REQUIRED') { throw } }
+            function Get-AppxPackage { [CmdletBinding()]param([string]$Name)
+              [pscustomobject]@{ Publisher = 'CN=Untrusted'; SignatureKind = 'Store'; Architecture = 'X64'; PackageFullName = 'OpenAI.Codex_fake' }
+            }
+            try { & $preflight -VerifyOnly; throw 'Untrusted ChatGPT publisher was accepted' }
+            catch { if ($_.Exception.Message -notmatch 'untrusted') { throw } }
             $bundleStatus = Get-Content -LiteralPath (Join-Path $extract 'bundle-status.json') -Raw | ConvertFrom-Json
             if ($bundleStatus.release_status -ne 'ci_test_only' -or $bundleStatus.ready_to_install -ne $false -or $bundleStatus.ci_test_certificate -ne $true) {
               throw 'Archived CI test-certificate package is mislabeled as releasable'
@@ -149,8 +166,8 @@ jobs:
             $outputPath = Join-Path $env:RUNNER_TEMP 'storenova-install-output.txt'
             $errorPath = Join-Path $env:RUNNER_TEMP 'storenova-install-error.txt'
             [System.IO.File]::WriteAllText($inputPath, "`n`n", [System.Text.Encoding]::ASCII)
-            $installCommand = 'call "' + (Join-Path $extract 'install.cmd') + '"'
-            $process = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/d', '/c', $installCommand) -RedirectStandardInput $inputPath -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -Wait -PassThru
+            $pluginInstaller = Join-Path $extract 'install-plugin.ps1'
+            $process = Start-Process -FilePath 'powershell.exe' -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$pluginInstaller`"" -RedirectStandardInput $inputPath -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -Wait -PassThru
             if ($process.ExitCode -ne 0) { throw "Packaged installer failed: $((Get-Content -LiteralPath $errorPath -Raw).Trim())" }
             $manifest = Get-Content -LiteralPath (Join-Path $extract '.codex-plugin\plugin.json') -Raw | ConvertFrom-Json
             $installed = Join-Path $env:CODEX_HOME 'plugins\cache\merchant-personal\merchant-marketing\local'
