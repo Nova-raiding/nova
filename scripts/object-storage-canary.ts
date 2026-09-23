@@ -45,7 +45,7 @@ export type ObjectStorageCanaryEvidence = {
   object_key_sha256: string
   payload_sha256: string
   encryption: 'AES256' | 'aws:kms'
-  checks: Array<{ id: 'put' | 'head' | 'get_hash' | 'encryption' | 'delete'; state: 'passed' }>
+  checks: Array<{ id: 'put' | 'head' | 'get_hash' | 'encryption' | 'delete' | 'delete_verified'; state: 'passed' }>
   observed_at: string
   artifact_ref?: string
 }
@@ -54,6 +54,13 @@ function required(source: NodeJS.ProcessEnv, key: string) {
   const value = source[key]?.trim()
   if (!value) throw new Error(`${key}_REQUIRED`)
   return value
+}
+
+function canaryKeyPrefix(value: string) {
+  const prefix = value.trim().replace(/^\/+|\/+$/gu, '')
+  const parts = prefix.split('/')
+  if (!prefix || prefix.length > 128 || parts.some(part => !part || part === '.' || part === '..' || !/^[A-Za-z0-9._-]+$/u.test(part))) throw new Error('ASSET_STORAGE_PREFIX_INVALID')
+  return prefix
 }
 
 export function objectStorageCanaryConfig(source: NodeJS.ProcessEnv) {
@@ -75,7 +82,7 @@ export function objectStorageCanaryConfig(source: NodeJS.ProcessEnv) {
     region: required(source, 'ASSET_STORAGE_REGION'),
     endpoint: parsedEndpoint.toString().replace(/\/$/u, ''),
     roleName: required(source, 'ASSET_STORAGE_ECS_RAM_ROLE'),
-    keyPrefix: required(source, 'ASSET_STORAGE_PREFIX').replace(/^\/+|\/+$/gu, ''),
+    keyPrefix: canaryKeyPrefix(required(source, 'ASSET_STORAGE_PREFIX')),
     encryption: mode === 'aws:kms' ? 'aws:kms' as const : 'AES256' as const,
     kmsKeyId,
     forcePathStyle: source.ASSET_STORAGE_FORCE_PATH_STYLE === 'true',
@@ -107,7 +114,8 @@ export async function runObjectStorageCanary(input: {
 }): Promise<ObjectStorageCanaryEvidence> {
   const runId = (input.uuid ?? randomUUID)()
   if (!/^[a-f0-9-]{36}$/iu.test(runId)) throw new Error('CANARY_RUN_ID_INVALID')
-  const keyPrefix = (input.keyPrefix ?? 'merchant-assets').replace(/^\/+|\/+$/gu, '')
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(input.releaseId)) throw new Error('RELEASE_ID_INVALID')
+  const keyPrefix = canaryKeyPrefix(input.keyPrefix ?? 'merchant-assets')
   const prefix = `${keyPrefix}/canary/${input.releaseId}/${runId}/`
   const key = `${prefix}probe.bin`
   const payload = input.payload ?? randomBytes(64)
@@ -122,10 +130,12 @@ export async function runObjectStorageCanary(input: {
     versionId = typeof put.VersionId === 'string' && put.VersionId ? put.VersionId : undefined
     if (!versionId) throw new Error('OBJECT_VERSION_ID_MISSING')
     checks.push({ id: 'put', state: 'passed' })
-    const head = await input.client.send(new HeadObjectCommand({ Bucket: input.bucket, Key: key }))
+    const head = await input.client.send(new HeadObjectCommand({ Bucket: input.bucket, Key: key, VersionId: versionId }))
+    if (head.VersionId !== versionId) throw new Error('HEAD_VERSION_ID_MISMATCH')
     if (Number(head.ContentLength) !== payload.byteLength) throw new Error('HEAD_CONTENT_LENGTH_MISMATCH')
     checks.push({ id: 'head', state: 'passed' })
-    const get = await input.client.send(new GetObjectCommand({ Bucket: input.bucket, Key: key }))
+    const get = await input.client.send(new GetObjectCommand({ Bucket: input.bucket, Key: key, VersionId: versionId }))
+    if (get.VersionId !== versionId) throw new Error('GET_VERSION_ID_MISMATCH')
     const downloadedHash = createHash('sha256').update(await bodyBytes(get.Body)).digest('hex')
     if (downloadedHash !== payloadHash) throw new Error('GET_HASH_MISMATCH')
     checks.push({ id: 'get_hash', state: 'passed' })
@@ -143,8 +153,17 @@ export async function runObjectStorageCanary(input: {
     }
     if (putAttempted && versionId) {
       try {
-        await input.client.send(new DeleteObjectCommand({ Bucket: input.bucket, Key: key, ...(versionId ? { VersionId: versionId } : {}) }))
+        const deleted = await input.client.send(new DeleteObjectCommand({ Bucket: input.bucket, Key: key, VersionId: versionId }))
+        if (deleted.DeleteMarker === true) throw new Error('DELETE_CREATED_MARKER')
         checks.push({ id: 'delete', state: 'passed' })
+        try {
+          await input.client.send(new HeadObjectCommand({ Bucket: input.bucket, Key: key, VersionId: versionId }))
+          throw new Error('OBJECT_VERSION_STILL_READABLE_AFTER_DELETE')
+        } catch (verificationError) {
+          const status = (verificationError as { $metadata?: { httpStatusCode?: unknown } })?.$metadata?.httpStatusCode
+          if (status !== 404) throw verificationError
+        }
+        checks.push({ id: 'delete_verified', state: 'passed' })
       } catch (cleanupError) {
         throw new ObjectStorageCanaryCleanupError({ cause: cleanupError, ...(primaryError ? { primaryError } : {}), checks, bucket: input.bucket, key, versionId })
       }

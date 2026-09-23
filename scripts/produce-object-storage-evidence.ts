@@ -72,7 +72,7 @@ export function produceObjectStorageEvidence(input: ObjectStorageEvidenceProduce
   requireValue(canary.release_id === input.releaseId && canary.bucket === input.bucket && canary.endpoint === input.endpoint && canary.encryption === input.encryption, 'CANARY_BINDING_MISMATCH')
   requireValue(canary.region === input.region, 'CANARY_REGION_MISMATCH')
   requireFreshInstant(canary.observed_at, nowMs, 'CANARY')
-  requireValue(Array.isArray(canary.checks) && ['put', 'head', 'get_hash', 'encryption', 'delete'].every(id => canary.checks.some(check => check.id === id && check.state === 'passed')), 'CANARY_CHECKS_INCOMPLETE')
+  requireValue(Array.isArray(canary.checks) && ['put', 'head', 'get_hash', 'encryption', 'delete', 'delete_verified'].every(id => canary.checks.some(check => check.id === id && check.state === 'passed')), 'CANARY_CHECKS_INCOMPLETE')
 
   const controlArtifact = readArtifact(input.artifactRoot, input.controlPlanePath)
   const control = controlArtifact.value as AliyunOssControlPlaneResult
