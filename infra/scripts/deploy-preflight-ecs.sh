@@ -12,6 +12,7 @@ root=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd -P)
 config_path=${1:-${PRODUCTION_CONFIG_PATH:-}}
 [ -f "$config_path" ] || { echo 'PRODUCTION_CONFIG_PATH or config path is required' >&2; exit 2; }
 : "${RELEASE_ID:?RELEASE_ID is required}"
+: "${CAPACITY_PROFILE:?CAPACITY_PROFILE must be explicit: no_load for this release, or an approved load profile}"
 : "${DEPLOYMENT_SCOPE:=full}"
 case "$DEPLOYMENT_SCOPE" in
   infra|full) ;;
@@ -213,7 +214,7 @@ if [ "$platform_operations_mode" = manual ]; then
 else
   npx --no-install tsx tests/capability-evidence-gate.ts --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --release-id "$RELEASE_ID"
 fi
-capacity_profile=${CAPACITY_PROFILE:-pilot_50}
+capacity_profile=$CAPACITY_PROFILE
 if [ "$capacity_profile" = no_load ]; then
   npx --no-install tsx tests/capacity-evidence-gate.ts --file "$CAPACITY_REPORT_PATH" --release-id "$RELEASE_ID" --profile no_load
 else

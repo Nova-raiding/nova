@@ -31,4 +31,4 @@ echo 'launch preflight: checking local deployment and operations contracts'
 
 echo 'launch preflight: checking ECS Compose release, production evidence and cloud capacity'
 PRODUCTION_CONFIG_PATH="$config_path" sh "$root/infra/scripts/deploy-preflight-ecs.sh" "$config_path"
-echo "launch preflight passed: release_id=${RELEASE_ID} profile=${CAPACITY_PROFILE:-pilot_50}"
+echo "launch preflight passed: release_id=${RELEASE_ID} profile=${CAPACITY_PROFILE}"
