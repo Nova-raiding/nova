@@ -27,6 +27,7 @@ import type {
   CommercialTimelineEvent,
   CommercialRefundKind,
   CommercialRefundEvent,
+  CommercialPage,
 } from "../../api/commercialOperationsClient.js";
 import {
   commercialViewCapability,
@@ -581,6 +582,18 @@ function PrivateTrialOperationsPanel({ controller }: { controller: CommercialOpe
   </section>;
 }
 
+export function matchingRefundEvent(
+  page: CommercialPage<CommercialRefundEvent> | undefined,
+  input: { workspace: string; orderId: string; requestId: string; amountFen: number; points: number; kind: CommercialRefundKind; expectedState: "requested" | "approved" },
+): CommercialRefundEvent | null {
+  if (!page || !input.workspace || !input.orderId || !input.requestId || !Number.isSafeInteger(input.amountFen) || !Number.isSafeInteger(input.points)) return null;
+  const rows = page.items.filter(row => row.workspaceId === input.workspace && row.requestId === input.requestId);
+  const latest = rows.reduce<CommercialRefundEvent | null>((current, row) => !current || row.revision > current.revision ? row : current, null);
+  if (!latest || rows.filter(row => row.revision === latest.revision).length !== 1) return null;
+  if (latest.eventType !== input.expectedState || latest.orderId !== input.orderId || latest.amountFen !== input.amountFen || latest.pointsToRevoke !== input.points || latest.refundKind !== input.kind) return null;
+  return latest;
+}
+
 function CommercialRefundOperationsPanel({ controller }: { controller: CommercialOperationsController }) {
   const [workspace, setWorkspace] = useState(controller.targetWorkspaceId);
   const [orderId, setOrderId] = useState("");
@@ -631,6 +644,27 @@ function CommercialRefundOperationsPanel({ controller }: { controller: Commercia
   const refundState = controller.refunds;
   const refundItems = refundState.data?.items ?? [];
   const refreshRefunds = () => void controller.loadRefunds();
+  const refundInput = (expectedState: "requested" | "approved") => ({
+    workspace, orderId, requestId,
+    amountFen: /^\d+(?:\.\d{1,2})?$/u.test(amountYuan) ? yuanToFen(amountYuan) : NaN,
+    points: /^\d+$/u.test(points) ? Number(points) : NaN,
+    kind: refundKind, expectedState,
+  });
+  const loadedRefund = (expectedState: "requested" | "approved") => refundState.status === "ready" && workspace === controller.targetWorkspaceId
+    ? matchingRefundEvent(refundState.data, refundInput(expectedState)) : null;
+  const requestedRefund = loadedRefund("requested");
+  const approvedRefund = loadedRefund("approved");
+  const requireFreshRefund = async (expectedState: "requested" | "approved") => {
+    if (workspace !== controller.targetWorkspaceId) throw new Error("退款 Workspace 与当前读取范围不一致，请刷新后重试");
+    const latest = await controller.loadRefunds();
+    const matched = matchingRefundEvent(latest ?? undefined, refundInput(expectedState));
+    if (!matched) throw new Error("服务端退款记录或状态已变化，请刷新记录并重新选择");
+    return matched;
+  };
+  const selectRefund = (row: CommercialRefundEvent) => {
+    setWorkspace(row.workspaceId); setOrderId(row.orderId); setRequestId(row.requestId);
+    setAmountYuan((row.amountFen / 100).toFixed(2)); setPoints(String(row.pointsToRevoke)); setRefundKind(row.refundKind);
+  };
   const refundKindLabel = (kind: CommercialRefundKind) => ({ onboarding_pre_deployment: "部署前实施费", monthly_unused_points: "月费未使用点数", point_pack_unused_points: "点数包未使用点数", outage_compensation: "故障补偿", custom_milestone: "定制里程碑" }[kind]);
   const refundEventLabel = (eventType: string) => ({ requested: "已申请", approved: "已审批", rejected: "已拒绝", completed: "已完成", reconciliation_required: "待对账" }[eventType] ?? eventType);
   const refundList = refundState.status === "forbidden" ? <Alert type="info" showIcon title="退款记录不可读" description="当前会话没有 commercial.payment.reconcile；不会发起退款记录请求。" />
@@ -648,6 +682,7 @@ function CommercialRefundOperationsPanel({ controller }: { controller: Commercia
             { title: "回滚点数", dataIndex: "pointsToRevoke", width: 100, align: "right", render: point },
             { title: "操作者", dataIndex: "actorId", width: 150, render: (value: string) => <Typography.Text code>{value}</Typography.Text> },
             { title: "外部退款凭证", dataIndex: "externalRefundId", width: 210, render: dash },
+            { title: "操作", width: 100, render: (_, row) => <Button size="small" onClick={() => selectRefund(row)}>选择记录</Button> },
           ]} />
         </>;
   return <section aria-label="商业订单退款" className="commercial-manual-operations">
@@ -667,9 +702,9 @@ function CommercialRefundOperationsPanel({ controller }: { controller: Commercia
       <Input aria-label="退款申请证据引用" placeholder={refundKind === "monthly_unused_points" ? "补充协议编号" : refundKind === "point_pack_unused_points" ? "到期政策编号" : refundKind === "outage_compensation" ? "事故 ID" : refundKind === "custom_milestone" ? "里程碑 ID" : "部署前自动记录 not_started"} value={requestEvidenceRef} disabled={refundKind === "onboarding_pre_deployment"} onChange={event => setRequestEvidenceRef(event.target.value)} />
       <Button loading={busy} disabled={!workspace || !orderId || !requestId || !amountYuan || (refundKind !== "onboarding_pre_deployment" && !requestEvidenceRef.trim())} onClick={() => void run("requestCommercialRefund", () => controller.client.requestCommercialRefund({ workspace, orderId, requestId, kind: refundKind, amountFen: yuanToFen(amountYuan), pointsToRevoke: Number(points || "0"), reason, evidenceRef: requestEvidenceRef }))}>提交退款申请</Button>
       <Input aria-label="政策审批证据 JSON" placeholder="政策审批证据 JSON" value={policyApproval} onChange={event => setPolicyApproval(event.target.value)} />
-      <Button loading={busy} disabled={!workspace || !requestId || !policyApprovalReady} onClick={() => void run("approveCommercialRefund", () => controller.client.approveCommercialRefund(workspace, requestId, policyApproval, reason))}>双人审批</Button>
+      <Button loading={busy} disabled={!requestedRefund || !policyApprovalReady || busy} onClick={() => void run("approveCommercialRefund", async () => { await requireFreshRefund("requested"); return controller.client.approveCommercialRefund(workspace, requestId, policyApproval, reason); })}>双人审批</Button>
       <Input aria-label="外部退款凭证" placeholder="外部退款凭证 / 转账流水号" value={externalRefundId} onChange={event => setExternalRefundId(event.target.value)} />
-      <Button type="primary" loading={busy} disabled={!workspace || !requestId || !externalRefundId} onClick={event => requestConfirmation({
+      <Button type="primary" loading={busy} disabled={!approvedRefund || !externalRefundId || busy} onClick={event => requestConfirmation({
         id: "completeCommercialRefund",
         title: "登记退款并回滚点数",
         objectLabel: "退款请求 ID",
@@ -677,7 +712,7 @@ function CommercialRefundOperationsPanel({ controller }: { controller: Commercia
         scope: `workspace:${workspace} · 订单 ${dash(orderId)} · 退款 ${dash(amountYuan)} 元 · 外部凭证 ${dash(externalRefundId)}`,
         impact: `登记后该项退款被视为已完成，并回滚 ${dash(points || "0")} 创意点；不可撤销。`,
         defaultReason: reason,
-        run: confirmedReason => controller.client.completeCommercialRefund(workspace, requestId, externalRefundId, JSON.stringify({ source: "ops_console", action: "external_refund_verified" }), confirmedReason),
+        run: async confirmedReason => { await requireFreshRefund("approved"); return controller.client.completeCommercialRefund(workspace, requestId, externalRefundId, JSON.stringify({ source: "ops_console", action: "external_refund_verified" }), confirmedReason); },
       }, event.currentTarget)}>登记退款并回滚点数</Button>
     </Space>
     </Space>

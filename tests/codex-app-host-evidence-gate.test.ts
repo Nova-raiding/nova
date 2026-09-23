@@ -92,8 +92,22 @@ describe('Codex App host evidence gate', () => {
     expect(validateCodexAppHostEvidence({ ...evidence, generated_at: '2026-08-30T02:05:01Z' }, { requireFresh: true, now })).toContain('generated_at must not be more than five minutes in the future')
   })
 
-  it.each(['http://merchant.example.com', 'https://user@merchant.example.com', 'https://merchant.example.com/mcp', 'https://merchant.example.com?token=secret', 'https://localhost', 'https://10.0.0.1', 'https://192.168.1.5'])('rejects unsafe MCP origin %s', mcp_base_url => {
+  it.each(['http://merchant.example.com', 'https://user@merchant.example.com', 'https://merchant.example.com/mcp', 'https://merchant.example.com?token=secret', 'https://localhost', 'https://127.0.0.2', 'https://0.0.0.0', 'https://10.0.0.1', 'https://100.64.1.2', 'https://192.168.1.5', 'https://8.8.8.8', 'https://[::ffff:127.0.0.1]'])('rejects unsafe MCP origin %s', mcp_base_url => {
     expect(validateCodexAppHostEvidence({ ...evidence, mcp_base_url })).toContain('mcp_base_url must be a canonical public HTTPS root origin')
+  })
+
+  it('requires a release ID when independently validating production artifacts', () => {
+    const root = mkdtempSync(join(tmpdir(), 'codex-host-required-release-'))
+    const file = join(root, 'evidence.json')
+    writeFileSync(file, JSON.stringify(evidence))
+    const run = spawnSync(process.execPath, [
+      '--import', 'tsx', resolve('tests/codex-app-host-evidence-gate.ts'), '--file', file,
+      '--artifact-root', root, '--require-artifacts',
+      '--expected-mcp-base-url', 'https://merchant.example.com',
+      '--expected-bridge-sha256', 'b'.repeat(64),
+    ], { encoding: 'utf8' })
+    expect(run.status).toBe(2)
+    expect(run.stderr).toContain('--release-id is required')
   })
 
   it('rejects local/fixture evidence and non-clean scenarios', () => {

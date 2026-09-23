@@ -23,6 +23,9 @@ $outputDirectory = Split-Path -Parent $output
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 
 $pluginRoot = Split-Path -Parent $PSScriptRoot
+$repoRoot = Split-Path -Parent (Split-Path -Parent $pluginRoot)
+$dirty = & git -C $repoRoot status --porcelain --untracked-files=all
+if ($LASTEXITCODE -ne 0 -or $dirty) { throw 'Production Windows package requires a clean Git source tree' }
 $helper = if ([string]::IsNullOrWhiteSpace($HelperDirectory)) {
   Join-Path $env:TEMP ('storenova-helper-' + [guid]::NewGuid().ToString('N'))
 } else {
@@ -75,10 +78,22 @@ try {
   $helperHash = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToUpperInvariant()
   [System.IO.File]::WriteAllText("$binary.sha256", "$helperHash`n", [System.Text.Encoding]::ASCII)
   $env:STORENOVA_WINDOWS_SIGNER_THUMBPRINT = $thumbprint
-  & node (Join-Path $PSScriptRoot 'package-local-plugin.mjs') $output --windows-helper-dir $helper
+  $packageArguments = @((Join-Path $PSScriptRoot 'package-local-plugin.mjs'), $output, '--windows-helper-dir', $helper)
+  if ($CiTestCertificate) { $packageArguments += '--ci-test-certificate' }
+  $packageResultText = & node @packageArguments
   if ($LASTEXITCODE -ne 0) { throw 'Windows plugin packaging failed' }
+  $packageResult = ($packageResultText -join "`n") | ConvertFrom-Json
+  $expectedStatus = if ($CiTestCertificate) { 'ci_test_only' } else { 'signed_candidate' }
+  $expectedReady = -not [bool]$CiTestCertificate
+  if ($packageResult.release_status -ne $expectedStatus -or $packageResult.ready_to_install -ne $expectedReady -or $packageResult.ci_test_certificate -ne [bool]$CiTestCertificate) {
+    throw 'Windows package release status does not match its signing certificate mode'
+  }
 
   Expand-Archive -LiteralPath $output -DestinationPath $extract
+  $bundleStatus = Get-Content -LiteralPath (Join-Path $extract 'bundle-status.json') -Raw | ConvertFrom-Json
+  if ($bundleStatus.release_status -ne $expectedStatus -or $bundleStatus.ready_to_install -ne $expectedReady -or $bundleStatus.ci_test_certificate -ne [bool]$CiTestCertificate) {
+    throw 'Archived Windows bundle status does not match its signing certificate mode'
+  }
   $packagedHelper = Join-Path $extract 'windows\StoreNovaCredentialHelper.exe'
   $packagedHash = (Get-FileHash -LiteralPath $packagedHelper -Algorithm SHA256).Hash.ToUpperInvariant()
   if ($packagedHash -ne $helperHash) { throw 'Packaged credential helper differs from the signed executable' }
@@ -98,7 +113,7 @@ try {
   $packageHash = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToUpperInvariant()
   [System.IO.File]::WriteAllText("$output.sha256", "$packageHash`n", [System.Text.Encoding]::ASCII)
   $verified = $true
-  [pscustomobject]@{ ok = $true; artifact = $output; sha256 = $packageHash; signer = $thumbprint; bundled_node = $nodeVersion } |
+  [pscustomobject]@{ ok = $true; artifact = $output; sha256 = $packageHash; signer = $thumbprint; bundled_node = $nodeVersion; release_status = $expectedStatus; ready_to_install = $expectedReady; ci_test_certificate = [bool]$CiTestCertificate } |
     ConvertTo-Json -Compress | Write-Output
 } finally {
   if (-not $verified) {

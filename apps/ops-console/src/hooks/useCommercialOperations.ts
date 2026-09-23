@@ -313,18 +313,21 @@ export function useCommercialOperations(
     const request = ++refundRequestRef.current;
     if (!enabled || !authorization.can(commercialCapabilities.paymentReconcile) || !targetWorkspaceId) {
       setRefunds({ status: "forbidden" });
-      return;
+      return null;
     }
     const controller = new AbortController();
     refundControllerRef.current = controller;
     setRefunds({ status: "loading" });
     try {
       const result = await client.listCommercialRefunds(targetWorkspaceId, controller.signal);
-      if (request === refundRequestRef.current) setRefunds({ status: "ready", data: result });
+      if (request !== refundRequestRef.current) return null;
+      setRefunds({ status: "ready", data: result });
+      return result;
     } catch (cause) {
-      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      if (cause instanceof DOMException && cause.name === "AbortError") return null;
       const error = errorEvidence(cause);
       if (request === refundRequestRef.current) setRefunds({ status: isForbiddenError(error) ? "forbidden" : "error", error });
+      return null;
     }
   }, [authorization, client, enabled, targetWorkspaceId]);
 

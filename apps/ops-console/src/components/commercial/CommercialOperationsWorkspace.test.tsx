@@ -1,12 +1,41 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { CommercialOperationsController } from "../../hooks/useCommercialOperations.js";
-import { commercialBlockDisplayState, CommercialAccessStatusBar, CommercialErrorSummary, CommercialOperationsWorkspace, platformCatalogGovernanceTarget } from "./CommercialOperationsWorkspace.js";
+import { commercialBlockDisplayState, CommercialAccessStatusBar, CommercialErrorSummary, CommercialOperationsWorkspace, matchingRefundEvent, platformCatalogGovernanceTarget } from "./CommercialOperationsWorkspace.js";
 import { parseCommercialReadiness } from "../../api/commercialOperationsClient.js";
 
 const query = { view: "blocks", record: "", status: "", query: "", page: 1, sort: "", order: "" } as const;
 
 describe("CommercialOperationsWorkspace", () => {
+  it("permits only the latest matching server refund state for approval or completion", () => {
+    const requested = { id: "event-1", workspaceId: "ws_1", orderId: "order-1", requestId: "refund-1", revision: 1, eventType: "requested", refundKind: "monthly_unused_points", amountFen: 2000, pointsToRevoke: 10, reason: "policy", actorId: "finance-1", evidence: {}, externalRefundId: null, createdAt: "2026-09-23T00:00:00.000Z" } as const;
+    const approved = { ...requested, id: "event-2", revision: 2, eventType: "approved", actorId: "finance-2" };
+    const input = { workspace: "ws_1", orderId: "order-1", requestId: "refund-1", amountFen: 2000, points: 10, kind: "monthly_unused_points" } as const;
+    expect(matchingRefundEvent({ total: 1, items: [requested] }, { ...input, expectedState: "requested" })).toEqual(requested);
+    expect(matchingRefundEvent({ total: 2, items: [requested, approved] }, { ...input, expectedState: "requested" })).toBeNull();
+    expect(matchingRefundEvent({ total: 2, items: [requested, approved] }, { ...input, expectedState: "approved" })).toEqual(approved);
+    expect(matchingRefundEvent({ total: 1, items: [requested] }, { ...input, orderId: "wrong", expectedState: "requested" })).toBeNull();
+    expect(matchingRefundEvent({ total: 1, items: [requested] }, { ...input, amountFen: 2100, expectedState: "requested" })).toBeNull();
+    expect(matchingRefundEvent({ total: 1, items: [requested] }, { ...input, workspace: "other", expectedState: "requested" })).toBeNull();
+    expect(matchingRefundEvent({ total: 2, items: [approved, { ...approved, id: "duplicate" }] }, { ...input, expectedState: "approved" })).toBeNull();
+    expect(matchingRefundEvent(undefined, { ...input, expectedState: "approved" })).toBeNull();
+  });
+
+  it("keeps refund approval and completion disabled when the server read failed", () => {
+    const controller = {
+      view: "blocks", setView: vi.fn(), loadSummary: vi.fn(), loadView: vi.fn(), loadRefunds: vi.fn(),
+      targetWorkspaceId: "ws_1", query, setQuery: vi.fn(),
+      summary: { status: "forbidden" }, refunds: { status: "error", error: { code: "UPSTREAM_UNAVAILABLE", message: "读取失败" } },
+      data: { blocks: { status: "forbidden" }, entitlements: { status: "idle" }, ledger: { status: "idle" }, catalog: { status: "idle" }, orders: { status: "idle" }, rates: { status: "idle" }, services: { status: "idle" } },
+      permissions: { privateSkuReadable: false, canRecover: false, canAdjustPoints: false, canDraftCatalog: false, canPublishCatalog: false, canGrantPrivateSku: false, canReconcilePayment: true, canDraftRate: false, canApproveRate: false, canWriteService: false },
+    } as unknown as CommercialOperationsController;
+    const html = renderToStaticMarkup(<CommercialOperationsWorkspace controller={controller} />);
+    for (const label of ["双人审批", "登记退款并回滚点数"]) {
+      const before = html.slice(0, html.indexOf(`>${label}<`));
+      expect(before.slice(before.lastIndexOf("<button"))).toContain("disabled");
+    }
+    expect(html).toContain("退款记录读取失败");
+  });
   it("parses the read-only production readiness report and preserves blockers", () => {
     const report = parseCommercialReadiness({
       schema_version: "commercial.readiness.v1", ready: false, environment: "production", message: "仍被阻断",

@@ -3,8 +3,11 @@ import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, re
 import { homedir } from 'node:os'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { verifyBundleProvenance } from './bundle-provenance.mjs'
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const provenance = verifyBundleProvenance(source)
+if (!provenance.ok) throw new Error(`Bundled plugin provenance check failed: ${provenance.errors.join('; ')}`)
 const manifest = JSON.parse(readFileSync(resolve(source, '.codex-plugin/plugin.json'), 'utf8'))
 const runtime = resolve(source, 'runtime', process.platform === 'win32' ? 'node.exe' : 'node')
 if (!existsSync(runtime)) throw new Error('Bundled Node runtime is missing')
@@ -55,6 +58,10 @@ const copyPluginFile = path => !relative(source, path).split(/[\\/]/u).includes(
 try {
   cpSync(source, staged, { recursive: true, filter: copyPluginFile })
   cpSync(source, stagedCache, { recursive: true, filter: copyPluginFile })
+  for (const copied of [staged, stagedCache]) {
+    const checked = verifyBundleProvenance(copied, { installed: true })
+    if (!checked.ok) throw new Error(`Installed plugin provenance check failed: ${checked.errors.join('; ')}`)
+  }
   // The copied runtime must be able to start without the developer's PATH.
   if (!existsSync(resolve(staged, 'runtime', process.platform === 'win32' ? 'node.exe' : 'node'))) throw new Error('Runtime copy failed')
   const previous = existsSync(destination) ? resolve(dirname(destination), `.merchant-marketing-previous-${process.pid}`) : null

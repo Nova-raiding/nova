@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 
@@ -48,8 +49,15 @@ describe('Codex plugin installation package', () => {
       mkdirSync(cache, { recursive: true })
       mkdirSync(resolve(home, '.agents/plugins'), { recursive: true })
       cpSync(resolve(root, 'scripts/install-chatgpt-bundled.mjs'), resolve(source, 'scripts/install-chatgpt-bundled.mjs'))
-      writeFileSync(resolve(source, '.codex-plugin/plugin.json'), JSON.stringify({ name: 'merchant-marketing', version: '1.0.0' }))
+      cpSync(resolve(root, 'scripts/bundle-provenance.mjs'), resolve(source, 'scripts/bundle-provenance.mjs'))
+      writeFileSync(resolve(source, '.codex-plugin/plugin.json'), JSON.stringify({ id: 'merchant-marketing', name: 'merchant-marketing', version: '1.0.0' }))
       writeFileSync(resolve(source, 'runtime/node'), 'bundled runtime marker')
+      const bundlePaths = ['.codex-plugin/plugin.json', 'runtime/node', 'scripts/bundle-provenance.mjs', 'scripts/install-chatgpt-bundled.mjs']
+      writeFileSync(resolve(source, 'bundle-provenance.json'), `${JSON.stringify({
+        schema_version: '1', plugin: 'merchant-marketing', version: '1.0.0', platform: process.platform,
+        architecture: process.arch, git_commit: 'a'.repeat(40), source_dirty: false, authenticity_verified: false,
+        files: bundlePaths.map(path => ({ path, sha256: createHash('sha256').update(readFileSync(resolve(source, path))).digest('hex') })),
+      })}\n`)
       writeFileSync(resolve(destination, 'previous.txt'), 'installed before update')
       writeFileSync(resolve(cache, 'previous.txt'), 'cached before update')
       const oldRegistry = JSON.stringify({ name: 'merchant-personal', plugins: [{ name: 'another-plugin' }] })
@@ -79,13 +87,13 @@ describe('Codex plugin installation package', () => {
     try {
       const packaged = spawnSync(process.execPath, [resolve(root, 'scripts/package-local-plugin.mjs'), artifact], { encoding: 'utf8' })
       expect(packaged.status, packaged.stderr).toBe(0)
-      expect(JSON.parse(packaged.stdout)).toMatchObject({
+      const packageMetadata = JSON.parse(packaged.stdout)
+      expect(packageMetadata).toMatchObject({
         ok: true,
         platform: 'darwin',
         architecture: process.arch,
         bundled_node_version: 'v22.16.0',
         ready_to_install: false,
-        release_status: 'unsigned_candidate',
         connect_helper: {
           source_included: true,
           app_bundle_included: false,
@@ -97,6 +105,7 @@ describe('Codex plugin installation package', () => {
           },
         },
       })
+      expect(packageMetadata.release_status).toBe(packageMetadata.source_dirty ? 'dirty_source_candidate' : 'unsigned_candidate')
       const listing = spawnSync('tar', ['-tzf', artifact], { encoding: 'utf8' })
       expect(listing.status, listing.stderr).toBe(0)
       const skillFiles: string[] = []
@@ -118,6 +127,9 @@ describe('Codex plugin installation package', () => {
       expect(listing.stdout).toContain('scripts/verify-connect-helper-windows.ps1')
       expect(listing.stdout).toContain('install-chatgpt.ps1')
       expect(listing.stdout).toContain('runtime/node')
+      expect(listing.stdout).toContain('bundle-provenance.json')
+      expect(listing.stdout).toContain('scripts/bundle-provenance.mjs')
+      expect(listing.stdout).toContain('scripts/verify-bundle-provenance.mjs')
       expect(listing.stdout).toContain('mcp/keychain-credential-helper.build.json')
       expect(listing.stdout).toContain('mcp/keychain-credential-helper')
       expect(listing.stdout).toContain('scripts/install-chatgpt-bundled.mjs')
@@ -176,6 +188,18 @@ describe('Codex plugin installation package', () => {
       const responses = mcp.stdout.trim().split('\n').map(line => JSON.parse(line))
       expect(responses[0].result.serverInfo.version).toBe(readJson('.codex-plugin/plugin.json').version)
       expect(responses[1].result.tools.length).toBeGreaterThan(0)
+      const tamperedHome = resolve(directory, 'tampered-home')
+      mkdirSync(tamperedHome)
+      writeFileSync(resolve(extracted, 'mcp/bridge.mjs'), `${readFileSync(resolve(extracted, 'mcp/bridge.mjs'), 'utf8')}\n`)
+      const rejected = spawnSync('/bin/sh', [resolve(extracted, 'install.sh')], {
+        encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: tamperedHome,
+          CODEX_HOME: resolve(tamperedHome, '.codex'), AGENTS_HOME: resolve(tamperedHome, '.agents') },
+      })
+      expect(rejected.status).not.toBe(0)
+      expect(rejected.stderr).toContain('file digest differs: mcp/bridge.mjs')
+      expect(existsSync(resolve(tamperedHome, '.agents/plugins/marketplace.json'))).toBe(false)
+      expect(existsSync(resolve(tamperedHome, '.codex/config.toml'))).toBe(false)
+      expect(existsSync(resolve(tamperedHome, 'plugins/merchant-marketing'))).toBe(false)
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

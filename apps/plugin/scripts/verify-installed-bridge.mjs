@@ -5,6 +5,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
+import { provenanceFile, verifyBundleProvenance } from './bundle-provenance.mjs'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const defaultSourceRoot = resolve(scriptDirectory, '..')
@@ -21,6 +22,11 @@ const installedRoot = resolve(argumentsByName.get('installed') ?? process.env.ME
 if (!argumentsByName.get('installed') && !process.env.MERCHANT_INSTALLED_PLUGIN_DIR) {
   throw new Error('installed plugin path is required via --installed or MERCHANT_INSTALLED_PLUGIN_DIR')
 }
+const packagedSource = existsSync(resolve(sourceRoot, provenanceFile))
+const packagedInstall = existsSync(resolve(installedRoot, provenanceFile))
+const provenance = packagedSource || packagedInstall
+  ? verifyBundleProvenance(installedRoot, { installed: installedRoot !== sourceRoot })
+  : { ok: true, errors: [], checked_files: 0, verification_scope: 'unpackaged_development_source' }
 
 const semverPattern = /^\d+\.\d+\.\d+(?:[+-][0-9A-Za-z.-]+)?$/u
 const sourceManifest = JSON.parse(readFileSync(resolve(sourceRoot, '.codex-plugin/plugin.json'), 'utf8'))
@@ -55,6 +61,8 @@ const fixedRuntimeFiles = [
   'windows/StoreNovaCredentialHelper.csproj',
   'scripts/build-connect-helper-windows.mjs',
   'scripts/build-windows-credential-helper.mjs',
+  'scripts/bundle-provenance.mjs',
+  'scripts/verify-bundle-provenance.mjs',
   'scripts/verify-connect-helper-windows.ps1',
   'scripts/login-local-macos.mjs',
   'scripts/login-local-windows.mjs',
@@ -216,6 +224,7 @@ const connectHelperSourcePaths = [
 const connectHelperSourceVerified = !missingRuntimeFiles.some(path => connectHelperSourcePaths.includes(path))
   && !mismatchedFiles.some(path => connectHelperSourcePaths.includes(path))
 const ok = mismatchedFiles.length === 0
+  && provenance.ok
   && missingRuntimeFiles.length === 0
   && unexpectedRuntimeFiles.length === 0
   && manifestErrors.length === 0
@@ -231,6 +240,7 @@ const ok = mismatchedFiles.length === 0
 
 const evidence = {
   ok,
+  bundle_provenance: provenance,
   plugin_version: manifest.version,
   expected_plugin_version: expectedVersion,
   source_manifest: { version: sourceManifestVersion, package_version: sourcePackageVersion, errors: sourceVersionErrors },

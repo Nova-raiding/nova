@@ -5,9 +5,17 @@ import { createHash } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
+import { writeBundleProvenance, provenanceFile } from './bundle-provenance.mjs'
 
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const repositoryRoot = resolve(pluginRoot, '..', '..')
+const git = (args) => {
+  const result = spawnSync('git', args, { cwd: repositoryRoot, encoding: 'utf8' })
+  if (result.error || result.status !== 0) throw new Error(`Git source provenance unavailable: ${result.stderr?.trim() || result.error?.message || result.status}`)
+  return result.stdout.trim()
+}
+const gitCommit = git(['rev-parse', '--verify', 'HEAD'])
+const sourceDirty = Boolean(git(['status', '--porcelain', '--untracked-files=all']))
 const manifest = JSON.parse(readFileSync(resolve(pluginRoot, '.codex-plugin/plugin.json'), 'utf8'))
 const packageJson = JSON.parse(readFileSync(resolve(pluginRoot, 'package.json'), 'utf8'))
 const version = String(manifest.version ?? '')
@@ -23,6 +31,10 @@ if (windowsHelperArg !== -1 && (!process.argv[windowsHelperArg + 1] || windowsHe
 const windowsHelperDir = windowsHelperArg === -1 ? null : resolve(process.argv[windowsHelperArg + 1])
 const platform = process.platform
 if (!['darwin', 'win32'].includes(platform)) throw new Error('desktop packages require macOS or Windows')
+const ciTestCertificate = process.argv.includes('--ci-test-certificate')
+if (ciTestCertificate && (platform !== 'win32' || !windowsHelperDir || process.env.GITHUB_ACTIONS !== 'true')) {
+  throw new Error('CI test-certificate packages require a signed Windows helper on GitHub Actions')
+}
 if (platform === 'win32' && !windowsHelperDir) throw new Error('Windows package requires a signed credential helper; source-only output is not installable')
 const architecture = process.arch
 if (!['arm64', 'x64'].includes(architecture)) throw new Error('unsupported desktop architecture')
@@ -109,6 +121,7 @@ const required = [
   'scripts/install-local-plugin.mjs', 'scripts/login-local-macos.mjs', 'scripts/login-local-windows.mjs', 'scripts/upgrade-installed-plugin.mjs',
   'scripts/verify-installed-bridge.mjs', 'scripts/verify-marketplace-source.mjs',
   'scripts/install-chatgpt-bundled.mjs',
+  'scripts/bundle-provenance.mjs', 'scripts/verify-bundle-provenance.mjs',
   'scheduled/daily-store-risk-scan.json', 'scheduled/weekly-six-platform-digest.json',
   'skills/ecommerce-video-marketing/SKILL.md', 'skills/merchant-marketing/SKILL.md',
   'skills/six-platform-public-import/SKILL.md', 'skills/storyboard-prompt-assistant/SKILL.md',
@@ -229,7 +242,17 @@ try {
     '',
   ].join('\r\n')
   writeFileSync(resolve(staging, 'install.cmd'), windowsInstaller)
-  const packageEntries = [...required, 'runtime', ...(platform === 'darwin' ? ['mcp/keychain-credential-helper', 'mcp/keychain-credential-helper.build.json', 'login.sh', 'install.command'] : []), ...(windowsHelperFiles ? ['windows/StoreNovaCredentialHelper.exe', 'windows/StoreNovaCredentialHelper.exe.sha256', 'windows/credential-signer.txt', 'login.cmd'] : []), 'marketplace.json', 'install.sh', 'install.cmd', 'install-chatgpt.ps1', '.agents/plugins/marketplace.json']
+  const bundleStatus = {
+    schema_version: '1',
+    release_status: platform === 'darwin' ? 'unsigned_candidate' : ciTestCertificate ? 'ci_test_only' : 'signed_candidate',
+    ready_to_install: platform === 'win32' && Boolean(windowsHelperFiles) && !ciTestCertificate && !sourceDirty,
+    ci_test_certificate: ciTestCertificate,
+    source_dirty: sourceDirty,
+  }
+  if (sourceDirty) bundleStatus.release_status = 'dirty_source_candidate'
+  writeFileSync(resolve(staging, 'bundle-status.json'), `${JSON.stringify(bundleStatus, null, 2)}\n`)
+  writeBundleProvenance(staging, { plugin: manifest.id, version, platform, architecture, gitCommit, sourceDirty })
+  const packageEntries = [...required, 'runtime', ...(platform === 'darwin' ? ['mcp/keychain-credential-helper', 'mcp/keychain-credential-helper.build.json', 'login.sh', 'install.command'] : []), ...(windowsHelperFiles ? ['windows/StoreNovaCredentialHelper.exe', 'windows/StoreNovaCredentialHelper.exe.sha256', 'windows/credential-signer.txt'] : []), 'marketplace.json', 'install.sh', 'install.cmd', 'login.cmd', 'install-chatgpt.ps1', '.agents/plugins/marketplace.json', 'bundle-status.json', provenanceFile]
   mkdirSync(dirname(output), { recursive: true })
   if (platform === 'win32') {
     if (!output.toLowerCase().endsWith('.zip')) throw new Error('Windows deliverable must be a .zip file')
@@ -252,10 +275,10 @@ try {
     platform,
     architecture,
     bundled_node_version: nodeVersion,
+    git_commit: gitCommit,
     // The macOS tarball is a locally runnable candidate. Gatekeeper-ready
     // distribution requires Developer ID signing and Apple notarization.
-    ready_to_install: platform === 'win32' && Boolean(windowsHelperFiles),
-    release_status: platform === 'darwin' ? 'unsigned_candidate' : 'signed_candidate',
+    ...bundleStatus,
     cloud_code_included: false,
     connect_helper: {
       source_included: true,

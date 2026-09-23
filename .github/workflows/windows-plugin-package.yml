@@ -96,7 +96,11 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $helperDir = Join-Path $env:RUNNER_TEMP 'storenova-helper'
           $artifact = Join-Path $env:RUNNER_TEMP 'storenova-windows-ci-only.zip'
-          & ./apps/plugin/scripts/build-signed-windows-package.ps1 -OutputPath $artifact -CertificateThumbprint $env:STORENOVA_WINDOWS_SIGNER_THUMBPRINT -HelperDirectory $helperDir -CiTestCertificate
+          $releaseResultText = & ./apps/plugin/scripts/build-signed-windows-package.ps1 -OutputPath $artifact -CertificateThumbprint $env:STORENOVA_WINDOWS_SIGNER_THUMBPRINT -HelperDirectory $helperDir -CiTestCertificate
+          $releaseResult = $releaseResultText | ConvertFrom-Json
+          if ($releaseResult.release_status -ne 'ci_test_only' -or $releaseResult.ready_to_install -ne $false -or $releaseResult.ci_test_certificate -ne $true) {
+            throw 'CI test-certificate output is mislabeled as a releasable package'
+          }
           if (-not (Test-Path -LiteralPath "$artifact.sha256" -PathType Leaf)) { throw 'Package checksum is missing' }
       - name: Verify a clean Windows install
         timeout-minutes: 3
@@ -110,6 +114,10 @@ jobs:
             if ($expectedPackageHash -ne $actualPackageHash) { throw 'Package checksum does not match the ZIP' }
             $extract = Join-Path $env:RUNNER_TEMP 'storenova-extracted'
             Expand-Archive -LiteralPath $artifact -DestinationPath $extract
+            $bundleStatus = Get-Content -LiteralPath (Join-Path $extract 'bundle-status.json') -Raw | ConvertFrom-Json
+            if ($bundleStatus.release_status -ne 'ci_test_only' -or $bundleStatus.ready_to_install -ne $false -or $bundleStatus.ci_test_certificate -ne $true) {
+              throw 'Archived CI test-certificate package is mislabeled as releasable'
+            }
             $sandboxHome = Join-Path $env:RUNNER_TEMP 'storenova-clean-user'
             New-Item -ItemType Directory -Force -Path $sandboxHome | Out-Null
             $env:USERPROFILE = $sandboxHome
@@ -133,6 +141,10 @@ jobs:
               throw 'Personal plugin marketplace source does not point to the installed source'
             }
             foreach ($pluginPath in @($installed, $installedSource)) {
+              $installedStatus = Get-Content -LiteralPath (Join-Path $pluginPath 'bundle-status.json') -Raw | ConvertFrom-Json
+              if ($installedStatus.release_status -ne 'ci_test_only' -or $installedStatus.ready_to_install -ne $false) {
+                throw "Installed CI package lost its test-only label: $pluginPath"
+              }
               $pluginManifest = Join-Path $pluginPath '.codex-plugin\plugin.json'
               if (-not (Test-Path -LiteralPath $pluginManifest -PathType Leaf)) { throw "Installed plugin manifest is missing: $pluginPath" }
               if ((Get-FileHash -LiteralPath $pluginManifest -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath (Join-Path $extract '.codex-plugin\plugin.json') -Algorithm SHA256).Hash) {

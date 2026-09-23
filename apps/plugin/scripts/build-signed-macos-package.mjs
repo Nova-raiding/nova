@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, w
 import { dirname, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { writeBundleProvenance } from './bundle-provenance.mjs'
 
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const repositoryRoot = resolve(pluginRoot, '..', '..')
@@ -26,6 +27,10 @@ function run(command, args, timeout = 180_000, includeStderr = false) {
 }
 
 function sha256(path) { return createHash('sha256').update(readFileSync(path)).digest('hex') }
+function assertCleanSource() {
+  const result = spawnSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: repositoryRoot, encoding: 'utf8' })
+  if (result.error || result.status !== 0 || result.stdout.trim()) throw new Error('production macOS package requires a clean Git source tree')
+}
 
 function assertDeveloperIdExecutable(path, label) {
   run('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', path])
@@ -49,6 +54,7 @@ const identities = run('/usr/bin/security', ['find-identity', '-v', '-p', 'codes
 if (!identities.split(/\r?\n/u).some(line => line.includes(signer) && line.includes('Developer ID Application:'))) {
   throw new Error('configured Developer ID Application identity is unavailable on this release Mac')
 }
+assertCleanSource()
 
 const scratch = mkdtempSync(resolve(tmpdir(), 'storenova-macos-release-'))
 try {
@@ -80,6 +86,12 @@ try {
   }
   record.binary_sha256 = sha256(helper)
   writeFileSync(buildRecord, `${JSON.stringify(record)}\n`)
+  writeFileSync(resolve(staged, 'bundle-status.json'), `${JSON.stringify({ schema_version: '1', release_status: 'signed_notarized', ready_to_install: true,
+    ci_test_certificate: false, source_dirty: false }, null, 2)}\n`)
+  const candidateProvenance = JSON.parse(readFileSync(resolve(staged, 'bundle-provenance.json'), 'utf8'))
+  if (candidateProvenance.source_dirty) throw new Error('production macOS package has dirty source provenance')
+  writeBundleProvenance(staged, { plugin: manifest.id, version: manifest.version,
+    platform: 'darwin', architecture: process.arch, gitCommit: candidateProvenance.git_commit, sourceDirty: false })
 
   run('/usr/bin/hdiutil', ['create', '-quiet', '-srcfolder', staged, '-volname', 'Merchant Marketing', '-format', 'UDZO', '-ov', image], 300_000)
   run('/usr/bin/codesign', ['--force', '--sign', signer, '--timestamp', image])

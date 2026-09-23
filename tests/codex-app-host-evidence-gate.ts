@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { closeSync, lstatSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs'
+import { isIP } from 'node:net'
 import { resolve, sep } from 'node:path'
 
 const REQUIRED_SCENARIOS = [
@@ -52,8 +53,7 @@ function canonicalPublicOrigin(value: unknown): string | undefined {
     const parsed = new URL(value)
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.search || parsed.hash || (parsed.pathname !== '/' && parsed.pathname !== '')) return undefined
     const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/gu, '')
-    const privateLiteral = hostname === '::1' || /^10\./u.test(hostname) || /^169\.254\./u.test(hostname) || /^192\.168\./u.test(hostname) || /^172\.(?:1[6-9]|2\d|3[01])\./u.test(hostname) || /^(?:fc|fd)[0-9a-f]{2}:/u.test(hostname) || /^fe[89ab][0-9a-f]:/u.test(hostname)
-    if (parsed.hostname !== parsed.hostname.toLowerCase() || forbidden.test(parsed.hostname) || privateLiteral) return undefined
+    if (parsed.hostname !== parsed.hostname.toLowerCase() || forbidden.test(parsed.hostname) || isIP(hostname) !== 0) return undefined
     return parsed.origin
   } catch { return undefined }
 }
@@ -150,6 +150,7 @@ function main() {
   const expectedBridgeSha256 = bridgeIndex >= 0 ? args[bridgeIndex + 1] : undefined
   if (!path) { console.error('--file is required'); process.exit(2) }
   if (args.includes('--require-artifacts') && !artifactRoot) { console.error('--artifact-root is required for independent host evidence validation'); process.exit(2) }
+  if (args.includes('--require-artifacts') && !expectedReleaseId) { console.error('--release-id is required for production host evidence validation'); process.exit(2) }
   if (args.includes('--require-artifacts') && (!expectedMcpBaseUrl || !expectedBridgeSha256)) { console.error('--expected-mcp-base-url and --expected-bridge-sha256 are required for production host evidence validation'); process.exit(2) }
   let document: unknown
   try { document = JSON.parse(readFileSync(path, 'utf8')) } catch (error) { console.error(`unable to read Codex App host evidence: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }

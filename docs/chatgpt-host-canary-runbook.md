@@ -5,7 +5,7 @@
 ## 前置绑定
 
 - 记录正式 `release_id`、插件版本、已安装 bridge 的 SHA-256。
-- `mcp_base_url` 必须是正式公网 HTTPS 根 origin，不含 `/mcp`、凭据、query、localhost 或内网 IP。
+- `mcp_base_url` 必须是正式公网 DNS 域名的 HTTPS 根 origin，不含 `/mcp`、凭据、query、localhost 或 IP 字面量。
 - 宿主必须标识为真实 macOS ChatGPT.app；`simulated=false`。
 - 每个场景保存不可变 artifact 引用，且 console/network errors 均为 0。
 
@@ -27,6 +27,8 @@
 ## 通过标准
 
 使用 `tests/codex-app-host-evidence-gate.ts` 校验最终 evidence JSON；只有校验通过且与当前 release、MCP origin、bridge SHA 一致，才能移除“真实 ChatGPT 宿主验收”上线阻断。
+
+执行生产门禁前，从当前发布清单取得 `RELEASE_ID`、`MCP_BASE_URL`、`BRIDGE_SHA256` 三个值。`--require-artifacts` 要求显式提供这三个非空绑定参数；空的 `RELEASE_ID` 会被拒绝。
 
 ## 采集文件
 
