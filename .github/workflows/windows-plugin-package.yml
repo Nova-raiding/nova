@@ -154,7 +154,8 @@ jobs:
           $env:NODE_ENV = 'test'
           $env:DEPLOY_ENV = 'local_desktop'
           $process = Start-Process -FilePath $node -ArgumentList (Join-Path $installed 'mcp\bridge.mjs') -WorkingDirectory $installed -RedirectStandardInput $inputPath -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw "Bundled MCP bridge exited $($process.ExitCode)" }
+          if ($null -ne $process.ExitCode -and $process.ExitCode -ne 0) { throw "Bundled MCP bridge exited $($process.ExitCode)" }
+          if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) { throw 'Bundled MCP bridge produced no response file' }
           $responses = @(Get-Content -LiteralPath $outputPath | Where-Object { $_.Trim() } | ForEach-Object { $_ | ConvertFrom-Json })
           if ($responses.Count -ne 2 -or $responses[0].result.serverInfo.version -ne $manifest.version -or $responses[1].result.tools.Count -lt 1) {
             throw 'Bundled MCP initialize or tool discovery returned an invalid response'
