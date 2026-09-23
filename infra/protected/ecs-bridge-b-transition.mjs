@@ -419,7 +419,7 @@ function assertRelease(response, expected, label) {
   const actual = response?.data?.release ?? response?.release
   assert(actual && actual.release_id === expected.release_id && actual.release_git_sha === expected.release_git_sha && actual.manifest_sha256 === expected.manifest_sha256 && actual.image_set_digest === expected.image_set_digest, `${label} release identity mismatch`)
 }
-function frozenOldCapsule(planPath, composePath, envPath, digestPath, database) {
+function frozenOldCapsule(planPath, composePath, envPath, digestPath, database, project) {
   const planBytes = readRegular(planPath), plan = JSON.parse(planBytes.toString('utf8'))
   const created = Date.parse(plan.created_at), expires = Date.parse(plan.expires_at), now = Date.now()
   assert(plan.schema_version === '1' && plan.kind === 'ecs-compose-rollback-capsule', 'frozen old-runtime capsule schema is invalid')
@@ -435,6 +435,9 @@ function frozenOldCapsule(planPath, composePath, envPath, digestPath, database) 
     assert(HEX.test(expected ?? '') && actual === expected, `${label} checksum does not match the frozen capsule`)
   }
   validateBridgeServiceList(target.services)
+  const renderedServices = Object.keys(composeConfig(composePath, envPath, project).services)
+    .filter(name => BRIDGE_B_RUNTIME_SERVICE_SET.has(name)).sort()
+  assert(canonical(renderedServices) === canonical([...target.services].sort()), 'frozen old-runtime Compose runtime services must match the signed service list')
   return { plan, planSha256: sha256(planBytes), targetIdentity, services: [...target.services].sort(), artifactHashes: { compose_sha256: target.compose_sha256, env_sha256: target.env_sha256, image_digests_sha256: target.image_digests_sha256 } }
 }
 function assertNonceConsumed(nonce, attemptId, identity) {
@@ -536,7 +539,7 @@ function capture(get, privatePem, publicPem) {
   assert(get('--state') === path, 'state path must be derived from the attempt id under the protected journal root')
   const database = collectDatabase(process.env.DATABASE_URL, process.env.OPS_DATABASE_URL)
   assert(database.version === 242 && database.invalidConcurrentIndexes.length === 0, 'Bridge B capture requires the exact valid database migration-242 prefix')
-  const old = frozenOldCapsule(get('--recovery-plan'), get('--recovery-compose'), get('--recovery-env'), get('--recovery-image-digests'), database)
+  const old = frozenOldCapsule(get('--recovery-plan'), get('--recovery-compose'), get('--recovery-env'), get('--recovery-image-digests'), database, project)
   assertRelease(productionRelease(baseUrl), old.targetIdentity, 'live old runtime before Bridge B')
   const { services, inventory } = currentBaseline(get('--service-map'), project)
   assert(canonical(services.map(item => item.service)) === canonical(old.services), 'service map differs from frozen old-runtime capsule')
@@ -573,7 +576,7 @@ function install(get, privatePem, publicPem) {
   const imageIds = resolveImageIds(config.document, journal.bridge_artifacts.services)
   const mutationInput = database => ({ deploymentNonce: nonce, composeProject: project, bridgeIdentity: { releaseId: candidate.release_id, gitSha: candidate.release_git_sha, manifestSha256: candidate.manifest_sha256, imageSetDigest: candidate.image_set_digest }, bridgeImageIds: imageIds, artifacts: { composeSha256: journal.bridge_artifacts.compose_sha256, envSha256: journal.bridge_artifacts.env_sha256, imageDigestsSha256: journal.bridge_artifacts.image_digests_sha256, services: journal.bridge_artifacts.services }, database, baseline: { workloadSha256: journal.baseline.workload_sha256, inventorySha256: journal.baseline.inventory_sha256 }, bridgeIdentityRunning: currentReleaseEnv(collectInventory(), candidate) })
   preflightBridgeBMutation(journal, mutationInput(before), publicPem)
-  const old = frozenOldCapsule(get('--recovery-plan'), get('--recovery-compose'), get('--recovery-env'), get('--recovery-image-digests'), before)
+  const old = frozenOldCapsule(get('--recovery-plan'), get('--recovery-compose'), get('--recovery-env'), get('--recovery-image-digests'), before, project)
   assert(old.planSha256 === journal.recovery_capsule.plan_sha256 && canonical(old.targetIdentity) === canonical(journal.recovery_capsule.target), 'signed old-runtime capsule changed')
   assertRelease(productionRelease(baseUrl), old.targetIdentity, 'live old runtime immediately before Bridge B')
   let current = journal
@@ -624,7 +627,7 @@ function recover(get, privatePem, publicPem) {
       assert(candidateIds.includes(item.image_id) || item.image_id === old.image_id, `unrecognized managed runtime blocks recovery: ${item.name}`)
     } else assert(item.id === old.id && item.image_id === old.image_id && item.config_hash === old.config_hash && item.compose_service === old.compose_service, `unmanaged runtime changed; recovery blocked: ${item.name}`)
   }
-  const old = frozenOldCapsule(get('--recovery-plan'), get('--recovery-compose'), get('--recovery-env'), get('--recovery-image-digests'), before)
+  const old = frozenOldCapsule(get('--recovery-plan'), get('--recovery-compose'), get('--recovery-env'), get('--recovery-image-digests'), before, project)
   assert(old.planSha256 === journal.recovery_capsule.plan_sha256 && canonical(old.targetIdentity) === canonical(journal.recovery_capsule.target) && canonical(old.services) === canonical(journal.recovery_capsule.services), 'signed frozen old-runtime capsule changed')
   const config = validateRuntimeCompose(get('--recovery-compose'), get('--recovery-env'), project, get('--recovery-image-digests'), old.services, old.targetIdentity)
   const imageIds = resolveImageIds(config.document, old.services)

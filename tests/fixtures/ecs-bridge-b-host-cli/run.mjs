@@ -116,6 +116,28 @@ const omittedReplica = reject('capture', /service map omits running Bridge B run
 assert.match(omittedReplica.stderr, /service map omits running Bridge B runtime service: api-replica/u)
 writeFileSync('/state/service-map.json', completeServiceMap)
 
+// A mislabeled replica must also fail when the reviewed map still includes it.
+const badReplicaLabelAttempt = 'attempt_bad_replica_label_abcdefgh'
+writeFileSync('/state/replica-service-label-wrong', 'yes\n')
+const badReplicaLabel = reject('capture', /baseline container Compose service label does not match the reviewed service map: api-replica/u, badReplicaLabelAttempt)
+assert.equal(existsSync(statePath(badReplicaLabelAttempt)), false)
+assert.match(badReplicaLabel.stderr, /baseline container Compose service label does not match the reviewed service map: api-replica/u)
+rmSync('/state/replica-service-label-wrong')
+
+// Even if both the map and recovery capsule omit a runtime service, the
+// rendered frozen Compose is the independent source of the expected set.
+const omittedComposeReplicaAttempt = 'attempt_omitted_compose_replica_abcd'
+const originalPlan = readFileSync('/state/recovery-plan.json', 'utf8')
+writeFileSync('/state/service-map.json', '[{"service":"api","container":"merchant-api-1"}]\n')
+const incompletePlan = JSON.parse(originalPlan)
+incompletePlan.target.services = ['api']
+writeFileSync('/state/recovery-plan.json', `${JSON.stringify(incompletePlan)}\n`)
+const omittedComposeReplica = reject('capture', /frozen old-runtime Compose runtime services must match the signed service list/u, omittedComposeReplicaAttempt)
+assert.equal(existsSync(statePath(omittedComposeReplicaAttempt)), false)
+assert.match(omittedComposeReplica.stderr, /frozen old-runtime Compose runtime services must match the signed service list/u)
+writeFileSync('/state/service-map.json', completeServiceMap)
+writeFileSync('/state/recovery-plan.json', originalPlan)
+
 // Every selected migration-capable API process must explicitly disable
 // startup migrations. Capture rejects a replica with the setting missing or
 // enabled before consuming the shared nonce or issuing Compose up.

@@ -15,7 +15,9 @@ if (args[0] === 'inspect' && args[1] !== 'image') {
   const runtime = state.runtime === 'mixed' ? state[replica ? 'replicaRuntime' : 'apiRuntime'] : state.runtime
   const document = JSON.parse(readFileSync(`/state/${runtime}-compose.json`, 'utf8'))
   const service = document.services[serviceName]
-  const composeService = existsSync('/state/wrong-service-label') && !replica ? 'api-replica' : serviceName
+  const composeService = existsSync('/state/wrong-service-label') && !replica ? 'api-replica'
+    : existsSync('/state/replica-service-label-wrong') && replica ? 'ops-ui'
+      : serviceName
   const item = { Id: args[1], Name: replica ? '/merchant-api-replica-1' : '/merchant-api-1', Image: runtime === 'bridge' ? bridgeId : oldId,
     State: { Running: true }, Config: { Image: service.image, Env: Object.entries(service.environment).map(([k,v]) => `${k}=${v}`), Entrypoint: null, Cmd: null,
       Labels: { 'com.docker.compose.project': 'merchant-production', 'com.docker.compose.service': composeService } }, Mounts: [] }
