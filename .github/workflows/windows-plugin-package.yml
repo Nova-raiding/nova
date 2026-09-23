@@ -145,14 +145,19 @@ jobs:
             Write-Host "::error file=.github/workflows/windows-plugin-package.yml,line=1::INSTALL_$($_.Exception.Message)"
             exit 1
           }
-      - name: Verify Credential Manager read and write
+      - name: Verify Credential Manager write
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $binary = Join-Path (Join-Path $env:RUNNER_TEMP 'storenova-helper') 'StoreNovaCredentialHelper.exe'
           $request = '{"operation":"write","target":"com.storenova.installation-identity","account":"current-installation","data":"ci-package-smoke"}'
           $request | & $binary
-          if ($LASTEXITCODE -ne 0) { throw 'Credential Manager write failed' }
+          if ($LASTEXITCODE -ne 0) { Write-Host '::error file=.github/workflows/windows-plugin-package.yml,line=1::CREDENTIAL_WRITE_FAILED'; exit 1 }
+      - name: Verify Credential Manager read
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $binary = Join-Path (Join-Path $env:RUNNER_TEMP 'storenova-helper') 'StoreNovaCredentialHelper.exe'
           $read = '{"operation":"read","target":"com.storenova.installation-identity","account":"current-installation"}' | & $binary
-          if ($LASTEXITCODE -ne 0 -or $read -ne 'ci-package-smoke') { throw 'Credential Manager read failed' }
+          if ($LASTEXITCODE -ne 0 -or $read -ne 'ci-package-smoke') { Write-Host '::error file=.github/workflows/windows-plugin-package.yml,line=1::CREDENTIAL_READ_FAILED'; exit 1 }
           Write-Host 'Windows package build, bundled install, MCP runtime, and Credential Manager passed.'
