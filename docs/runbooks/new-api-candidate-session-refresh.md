@@ -59,3 +59,27 @@ or crash leaves the lock in place and blocks further automatic refreshes. Do
 not delete a retained lock or replay an old cookie without inspecting the
 upstream session and the protected file together. A local process mutex, a
 per-replica file, or a model `sk-` key is not an equivalent substitute.
+
+Before considering a candidate key ready, run the **read-only** preflight from
+each API replica as its runtime UID:
+
+```text
+tsx scripts/new-api-candidate-preflight.ts inspect <shared-session-file> <expected-management-user-id>
+```
+
+This emits only a container identifier, ownership, permissions, path and directory device/inode, a
+one-way digest of the expected user ID, and presence/match booleans. It never
+prints or refreshes credentials. Assemble at least two replica reports with a
+fresh authenticated `GET /api/user/self` response and each candidate key's
+authenticated `GET /api/token/:id` response. Keep that input bundle in a
+protected location because New API's token readback can contain `key`. Run
+`tsx scripts/new-api-candidate-preflight.ts validate <protected-bundle.json>`.
+The output is limited to `contract_passed` or `blocked` plus error categories;
+it never echoes token values. The bundle must include the rendered model ID for
+each of the five modalities. The validator requires enabled, finite-quota,
+at-most-24-hour, exact-model-limited keys, exact coverage of those five model
+assignments, distinct replica identifiers and identical directory identity.
+Without the management self readback it returns `blocked`. An offline JSON
+bundle is a contract check, **not** authentication or proof that the captures
+were produced by the live relay; preserve the actual protected HTTP and audit
+evidence separately. Do not create any keys if the management login is absent.
