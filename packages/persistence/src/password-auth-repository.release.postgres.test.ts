@@ -199,6 +199,11 @@ describe('password registration and enterprise projection PostgreSQL acceptance'
         actorId: 'platform-reviewer-e2e', reason: '核验首次工作区引导',
       })
       expect(bootstrapAccount.workspaceIds).toEqual([])
+      await database.query(`UPDATE platform_identities SET risk_decision='block' WHERE id=$1`, [bootstrapAccount.identityId])
+      await expect(repository.assertBootstrapEligible({ login: bootstrapLogin, identityId: bootstrapAccount.identityId })).rejects.toMatchObject({ code: 'AUTH_BOOTSTRAP_PRINCIPAL_INVALID' })
+      expect((await database.query(`SELECT count(*)::int AS count FROM workspace_identity_bindings WHERE identity_id=$1`, [bootstrapAccount.identityId])).rows[0]?.count).toBe(0)
+      await database.query(`UPDATE platform_identities SET risk_decision='allow' WHERE id=$1`, [bootstrapAccount.identityId])
+      await repository.assertBootstrapEligible({ login: bootstrapLogin, identityId: bootstrapAccount.identityId })
       const bootstrapRepository = new PostgresWorkspaceBootstrapRepository(app, ops)
       const first = await bootstrapRepository.bootstrap({
         issuer: 'damai-password', externalSubject: bootstrapLogin, identityId: bootstrapAccount.identityId,
@@ -206,6 +211,12 @@ describe('password registration and enterprise projection PostgreSQL acceptance'
         displayName: '专用测试工作区', actorId: bootstrapAccount.identityId,
       })
       expect(first.created).toBe(true)
+      await database.query(`UPDATE platform_identities SET access_status='suspended', suspended_at=now(), suspended_by='security-e2e', suspension_reason='first workspace gate test' WHERE id=$1`, [bootstrapAccount.identityId])
+      await expect(repository.bindBootstrappedWorkspace({ login: bootstrapLogin, identityId: bootstrapAccount.identityId, workspaceId: first.workspaceId })).rejects.toMatchObject({ code: 'AUTH_BOOTSTRAP_PRINCIPAL_INVALID' })
+      expect((await repository.listAccounts()).find(account => account.login === bootstrapLogin)?.workspaceIds).toEqual([])
+      await database.query(`UPDATE platform_identities SET access_status='active', suspended_at=NULL, suspended_by=NULL, suspension_reason=NULL, risk_decision='block' WHERE id=$1`, [bootstrapAccount.identityId])
+      await expect(repository.bindBootstrappedWorkspace({ login: bootstrapLogin, identityId: bootstrapAccount.identityId, workspaceId: first.workspaceId })).rejects.toMatchObject({ code: 'AUTH_BOOTSTRAP_PRINCIPAL_INVALID' })
+      await database.query(`UPDATE platform_identities SET risk_decision='allow' WHERE id=$1`, [bootstrapAccount.identityId])
       const bound = await repository.bindBootstrappedWorkspace({ login: bootstrapLogin, identityId: bootstrapAccount.identityId, workspaceId: first.workspaceId })
       expect(bound.workspaceIds).toEqual([first.workspaceId])
       expect((await repository.bindBootstrappedWorkspace({ login: bootstrapLogin, identityId: bootstrapAccount.identityId, workspaceId: first.workspaceId })).workspaceIds).toEqual([first.workspaceId])

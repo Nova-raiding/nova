@@ -62,6 +62,7 @@ export interface McpOAuthTokenPair {
 export interface PasswordAuthRepository {
   register(input: { login: string; password: string; enterpriseName: string; contactName: string; termsAgreed: boolean }): Promise<{ account: PasswordAccount; applicationId: string }>
   createMerchantAccount(input: { login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string[]; actorId: string; reason: string; bootstrapWorkspace?: boolean }): Promise<PasswordAccount>
+  assertBootstrapEligible(input: { login: string; identityId: string }): Promise<void>
   bindBootstrappedWorkspace(input: { login: string; identityId: string; workspaceId: string }): Promise<PasswordAccount>
   listAccounts(): Promise<PasswordAccount[]>
   listMerchantRegistrationApplications(input: { limit: number; offset: number }): Promise<{ items: PasswordAccount[]; total: number; limit: number; offset: number }>
@@ -183,6 +184,11 @@ export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
       auditMemory(this.events, 'auth.merchant_workspace_bootstrapped', account.id, { workspace_id: input.workspaceId, actor_id: input.identityId })
     }
     return accountPublic(account)
+  }
+
+  async assertBootstrapEligible(input: { login: string; identityId: string }) {
+    const account = this.accounts.get(normalizeLogin(input.login))
+    if (!account || account.identityId !== input.identityId || account.accountType !== 'merchant' || account.status !== 'active' || account.workspaceIds.length !== 0) throw Object.assign(new Error('BOOTSTRAP_PRINCIPAL_INVALID'), { code: 'AUTH_BOOTSTRAP_PRINCIPAL_INVALID' })
   }
 
   async listAccounts() {
@@ -372,6 +378,11 @@ export class PostgresPasswordAuthRepository implements PasswordAuthRepository {
       await client.query('SELECT id FROM platform_password_accounts WHERE login_identifier=$1 FOR UPDATE', [login])
       const current = await this.find(client, login)
       if (!current || current.identityId !== input.identityId || current.accountType !== 'merchant' || current.status !== 'active' || (current.workspaceIds.length > 0 && (current.workspaceIds.length !== 1 || current.workspaceIds[0] !== input.workspaceId))) throw Object.assign(new Error('BOOTSTRAP_ACCOUNT_CHANGED'), { code: 'AUTH_BOOTSTRAP_ACCOUNT_CHANGED' })
+      // Control-plane identity risk may change after the session/preflight
+      // read. Hold its row through the account bind so a blocked identity can
+      // never complete the first-workspace transition.
+      const identity = await client.query<{ accessStatus: string; riskDecision: string }>(`SELECT access_status AS "accessStatus", risk_decision AS "riskDecision" FROM platform_identities WHERE id=$1 AND issuer='damai-password' AND external_subject=$2 FOR UPDATE`, [input.identityId, login])
+      if (identity.rows[0]?.accessStatus !== 'active' || identity.rows[0]?.riskDecision !== 'allow') throw Object.assign(new Error('BOOTSTRAP_PRINCIPAL_INVALID'), { code: 'AUTH_BOOTSTRAP_PRINCIPAL_INVALID' })
       if (current.workspaceIds.length === 0) {
         const bound = await client.query<{ id: string }>(`SELECT m.id FROM workspace_members m JOIN workspaces w ON w.id=m.workspace_id WHERE m.workspace_id=$1 AND m.identity_id=$2 AND m.external_subject=$3 AND m.role='workspace_owner' AND m.status='active' AND w.status='active'`, [input.workspaceId, input.identityId, login])
         if (bound.rows.length !== 1) throw Object.assign(new Error('BOOTSTRAP_MEMBERSHIP_INVALID'), { code: 'AUTH_BOOTSTRAP_MEMBERSHIP_INVALID' })
@@ -381,6 +392,13 @@ export class PostgresPasswordAuthRepository implements PasswordAuthRepository {
         await client.query(`INSERT INTO platform_identity_events (id,identity_id,event_type,actor_id,reason,evidence_json) VALUES ($1,$2,'auth.merchant_workspace_bootstrapped',$3,'first workspace bootstrap',$4)`, [randomUUID(), input.identityId, input.identityId, { workspace_id: input.workspaceId }])
       }
       return this.public((await this.find(client, login))!)
+    })
+  }
+  async assertBootstrapEligible(input: { login: string; identityId: string }) {
+    const login = assertLogin(input.login)
+    return this.withClient(async client => {
+      const eligible = await client.query<{ id: string }>(`SELECT a.id FROM platform_password_accounts a JOIN platform_identities i ON i.id=a.identity_id WHERE a.login_identifier=$1 AND a.identity_id=$2 AND a.account_type='merchant' AND a.status='active' AND cardinality(a.workspace_ids)=0 AND i.issuer='damai-password' AND i.external_subject=$1 AND i.access_status='active' AND i.risk_decision='allow'`, [login, input.identityId])
+      if (eligible.rows.length !== 1) throw Object.assign(new Error('BOOTSTRAP_PRINCIPAL_INVALID'), { code: 'AUTH_BOOTSTRAP_PRINCIPAL_INVALID' })
     })
   }
   async listAccounts() { return this.withClient(async client => { const result = await client.query<AccountRecord>(`SELECT a.id, a.identity_id AS "identityId", a.login_identifier AS login, a.account_type AS "accountType", a.enterprise_name AS "enterpriseName", a.contact_name AS "contactName", a.password_hash AS "passwordHash", a.status, a.roles, a.workspace_ids AS "workspaceIds", a.failed_attempts AS "failedAttempts", a.locked_until AS "lockedUntil", a.auth_epoch AS "authEpoch", a.revision, a.created_at AS "createdAt", a.updated_at AS "updatedAt" FROM platform_password_accounts a ORDER BY a.updated_at DESC, a.id ASC`); return result.rows.map(row => this.public(row)) }) }

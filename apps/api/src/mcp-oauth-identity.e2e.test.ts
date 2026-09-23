@@ -49,6 +49,11 @@ describe('canonical password identity MCP OAuth', () => {
     expect(beforeToken.status).not.toBe(200)
     const csrf = await fetch(`${base}/v1/auth/workspace-bootstrap`, { method: 'POST', headers: { cookie: cookie!, origin: 'https://wrong.example', 'content-type': 'application/json' }, body: JSON.stringify({ display_name: '首次工作区' }) })
     expect(csrf.status).toBe(403)
+    const blockedIdentity = vi.spyOn(repository, 'assertBootstrapEligible').mockRejectedValueOnce(Object.assign(new Error('BOOTSTRAP_PRINCIPAL_INVALID'), { code: 'AUTH_BOOTSTRAP_PRINCIPAL_INVALID' }))
+    const blocked = await fetch(`${base}/v1/auth/workspace-bootstrap`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ display_name: '首次工作区' }) })
+    expect(blocked.status).toBe(403)
+    await expect(blocked.json()).resolves.toMatchObject({ error: { code: 'AUTH_BOOTSTRAP_PRINCIPAL_INVALID' } })
+    blockedIdentity.mockRestore()
     const bootstrap = await fetch(`${base}/v1/auth/workspace-bootstrap`, { method: 'POST', headers: { cookie: cookie!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ display_name: '首次工作区' }) })
     expect(bootstrap.status).toBe(201)
     const payload = await bootstrap.json() as { data?: { workspace_id?: string } }

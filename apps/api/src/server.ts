@@ -21275,6 +21275,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const displayName = String(input.display_name ?? '').normalize('NFKC').trim()
       if (!displayName || displayName.length > 120 || /[\u0000-\u001f\u007f\u200b-\u200f]/u.test(displayName)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '工作区名称无效', 400)
       try {
+        await passwordAuthRepository.assertBootstrapEligible({ login: current.account.login, identityId: current.account.identityId })
         const workspace = await (persistence.workspaceBootstrap ?? memoryWorkspaceBootstrap).bootstrap({
           issuer: 'damai-password', externalSubject: current.account.login, identityId: current.account.identityId,
           candidateWorkspaceId: `ws_${randomUUID().replaceAll('-', '').slice(0, 24)}`,
@@ -21285,6 +21286,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
         return send(res, 201, workspace.workspaceId, { workspace_id: workspace.workspaceId, status: 'active', reused: !workspace.created, next_action: 'local_plugin_connect' }, null, req)
       } catch (error) {
         if (error instanceof WorkspaceBootstrapError) throw new DomainError(error.code, '商家身份与首次工作区绑定无效，请联系管理员核查', error.code === 'WORKSPACE_BOOTSTRAP_BINDING_INACTIVE' ? 409 : 403)
+        if ((error as { code?: string }).code === 'AUTH_BOOTSTRAP_PRINCIPAL_INVALID') throw new DomainError('AUTH_BOOTSTRAP_PRINCIPAL_INVALID', '商家身份状态或风控校验未通过，不能创建工作区', 403)
         if (['AUTH_BOOTSTRAP_ACCOUNT_CHANGED', 'AUTH_BOOTSTRAP_MEMBERSHIP_INVALID'].includes((error as { code?: string }).code ?? '')) throw new DomainError((error as { code: string }).code, '首次工作区绑定未完成，请重新登录或联系管理员', 409)
         throw error
       }
