@@ -6,6 +6,7 @@ import {
   createSignedSnapshot,
   productionApiBaseUrl,
   transitionJournal,
+  verifyBridgeRecoveryAuthorization,
   verifyRecoveryAuthorization,
 } from '../infra/protected/ecs-preidentity-recovery.mjs'
 
@@ -38,6 +39,45 @@ const binding = {
 }
 
 describe('protected ECS pre-identity recovery', () => {
+  it('signs a separate code-only 242 bridge state machine and authorizes bounded partial restore', () => {
+    const bridgeObserved = {
+      ...observed,
+      database: { version: 242, historySha256: sha('5'), invalidConcurrentIndexes: [] },
+      candidateServiceImageIds: { api: image('c'), 'worker-sync': image('d') },
+      candidateImageIds: [image('c'), image('d')],
+    }
+    const bridgeBinding = { ...binding, mode: 'bridge_code_only' as const, recovery: { ...binding.recovery, migrationTail: 242, allowedPrefixSha256: { 242: sha('5') } } }
+    let journal = createSignedSnapshot(bridgeObserved, bridgeBinding, keys.privateKey, keys.publicKey, now)
+    expect(journal.deployment_mode).toBe('bridge_code_only')
+    expect(journal.candidate_service_image_ids).toEqual(bridgeObserved.candidateServiceImageIds)
+    journal = transitionJournal(journal, 'nonce_consumed', keys.privateKey, keys.publicKey, now)
+    expect(() => transitionJournal(journal, 'migration_started', keys.privateKey, keys.publicKey, now)).toThrow(/transition/u)
+    journal = transitionJournal(journal, 'bridge_cutover_started', keys.privateKey, keys.publicKey, now)
+    const partial = {
+      composeProject: 'merchant-production',
+      containers: [
+        { service: 'api', id: 'e'.repeat(64), imageId: image('c'), configHash: sha('a'), state: 'running', releaseIdentity: { release_id: binding.candidate.releaseId, release_git_sha: binding.candidate.gitSha, manifest_sha256: binding.candidate.manifestSha256, image_set_digest: binding.candidate.imageSetDigest } },
+        observed.containers[1]!,
+      ],
+      inventory: [
+        { ...observed.inventory[0], id: 'e'.repeat(64), image_id: image('c'), config_hash: sha('a') },
+        observed.inventory[1]!,
+      ],
+    }
+    const input = { observed: partial, database: bridgeObserved.database, deploymentNonce: binding.deploymentNonce, recovery: bridgeBinding.recovery }
+    expect(verifyBridgeRecoveryAuthorization(journal, input, keys.publicKey, now)).toEqual({ authorized: true, targetMigration: 242 })
+    expect(verifyBridgeRecoveryAuthorization(journal, { ...input, observed: { ...partial, containers: [{ service: 'api', missing: true }, observed.containers[1]!], inventory: [observed.inventory[1]!] } }, keys.publicKey, now)).toEqual({ authorized: true, targetMigration: 242 })
+    expect(() => verifyBridgeRecoveryAuthorization(journal, { ...input, database: { ...bridgeObserved.database, version: 243 } }, keys.publicKey, now)).toThrow(/schema 242/u)
+    expect(() => verifyBridgeRecoveryAuthorization(journal, { ...input, observed: { ...partial, containers: [{ ...partial.containers[0]!, imageId: image('9') }, partial.containers[1]!] } }, keys.publicKey, now)).toThrow(/neither original nor/u)
+    expect(() => verifyBridgeRecoveryAuthorization(journal, { ...input, observed: { ...partial, inventory: [...partial.inventory, { id: 'f'.repeat(64), name: 'unknown', image_id: image('f'), config_hash: sha('f') }] } }, keys.publicKey, now)).toThrow(/unknown running/u)
+    const recovering = transitionJournal(journal, 'bridge_recovery_started', keys.privateKey, keys.publicKey, now)
+    expect(verifyBridgeRecoveryAuthorization(recovering, input, keys.publicKey, now)).toEqual({ authorized: true, targetMigration: 242 })
+    const partiallyRestored = { ...input, observed: { ...partial, containers: [{ ...observed.containers[0]!, id: 'f'.repeat(64) }, observed.containers[1]!], inventory: [{ ...observed.inventory[0]!, id: 'f'.repeat(64) }, observed.inventory[1]!] } }
+    expect(verifyBridgeRecoveryAuthorization(recovering, partiallyRestored, keys.publicKey, now)).toEqual({ authorized: true, targetMigration: 242 })
+    expect(() => verifyBridgeRecoveryAuthorization(journal, partiallyRestored, keys.publicKey, now)).toThrow(/neither original nor/u)
+    const verified = transitionJournal(recovering, 'bridge_recovery_verified', keys.privateKey, keys.publicKey, now)
+    expect(() => verifyBridgeRecoveryAuthorization(verified, input, keys.publicKey, now)).toThrow(/phase/u)
+  })
   it('normalizes safe HTTPS API prefixes and rejects unsafe URLs before recovery mutation', () => {
     expect(productionApiBaseUrl('https://yxsona.com/api')).toBe('https://yxsona.com/api')
     expect(productionApiBaseUrl('https://yxsona.com/api/')).toBe('https://yxsona.com/api')
@@ -82,7 +122,7 @@ describe('protected ECS pre-identity recovery', () => {
     expect(replay).toContain("node@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32")
     expect(replay).toContain('--network none')
     expect(replay).not.toContain('/var/run/docker.sock')
-    expect(replay).toContain('Docker/psql deterministic stubs; no real Docker recovery claimed')
+    expect(replay).toContain('Docker/psql stubs; no real Docker recovery claimed')
   })
   it('signs only independently observed workload and database state', () => {
     const snapshot = createSignedSnapshot(observed, binding, keys.privateKey, keys.publicKey, now)
