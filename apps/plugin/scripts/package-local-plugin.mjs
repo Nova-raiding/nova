@@ -133,7 +133,7 @@ try {
   if (platform === 'darwin') {
     const helperSource = resolve(staging, 'mcp/keychain-credential-helper.swift')
     const helperBinary = resolve(staging, 'mcp/keychain-credential-helper')
-    run('/usr/bin/xcrun', ['swiftc', '-O', helperSource, '-o', helperBinary])
+    run('/usr/bin/xcrun', ['swiftc', '-O', '-target', `${architecture}-apple-macos11.0`, helperSource, '-o', helperBinary])
     chmodSync(helperBinary, 0o700)
     const digest = path => createHash('sha256').update(readFileSync(path)).digest('hex')
     writeFileSync(resolve(staging, 'mcp/keychain-credential-helper.build.json'), `${JSON.stringify({ schema_version: '1', source_sha256: digest(helperSource), binary_sha256: digest(helperBinary), platform, arch: architecture })}\n`)
