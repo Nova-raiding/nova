@@ -34,6 +34,10 @@ docker exec "$container" mv /state/bridge-unlabeled-plan.json /state/bridge-unla
 if docker exec "$container" sh -lc "$capture --state /state/missing-capsule.json --attempt-id attempt_missing_plan_abcdefghijklmnop"; then echo 'missing protected old capsule unexpectedly signed takeover' >&2; exit 1; fi
 docker exec "$container" mv /state/bridge-unlabeled-plan.saved /state/bridge-unlabeled-plan.json
 docker exec "$container" sh -lc 'test ! -e /state/missing-map.json && test ! -e /state/missing-capsule.json'
+docker exec "$container" cp /state/unlabeled-old-map.json /state/unlabeled-old-map.saved
+docker exec "$container" node -e 'const fs=require("fs"),p="/state/unlabeled-old-map.json",x=JSON.parse(fs.readFileSync(p));x[0].config_sha256="0".repeat(64);fs.writeFileSync(p,JSON.stringify(x))'
+if docker exec "$container" sh -lc "$capture --state /state/drifted-old-map.json --attempt-id attempt_drifted_map_abcdefghijklmnop"; then echo 'drifted old container fingerprint unexpectedly signed takeover' >&2; exit 1; fi
+docker exec "$container" mv /state/unlabeled-old-map.saved /state/unlabeled-old-map.json
 docker exec "$container" sh -lc "$capture --state /state/unlabeled-failure.json --attempt-id attempt_unlabeled_abcdefghijklmnop"
 docker exec "$container" sh -lc "$base phase --state /state/unlabeled-failure.json --lock-path /state/lock --phase nonce_consumed"
 docker exec "$container" touch /state/bridge-db243
