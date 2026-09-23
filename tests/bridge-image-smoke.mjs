@@ -23,6 +23,7 @@ const evidenceDir = await mkdtemp(join(tmpdir(), 'merchant-bridge-image-'))
 let fixture
 let networkCreated = false
 let apiId
+const workerIds = []
 const docker = async (...args) => (await run('docker', args, { encoding: 'utf8', timeout: 60_000, maxBuffer: 1024 * 1024 })).stdout.trim()
 const containerUrl = (value, host, port) => { const url = new URL(value); url.hostname = host; url.port = String(port); return url.toString() }
 
@@ -69,8 +70,24 @@ try {
     '-e', 'WORKER_ROLE=sync', '-e', `WORKER_WORKSPACES=${fixture.workspaceId}`,
     '-e', 'WORKER_API_BASE_URL=http://bridge-api:8787', '-e', 'WORKER_ONCE=true',
     '-e', 'BRIDGE_SCHEMA_COMPATIBILITY_MODE=prefix_242_or_244', imageWorker)
-  console.log(`PASS: exact B API/worker images healthy on isolated PG17 schema 242; api=${imageApi} worker=${imageWorker}`)
+  for (const role of ['sync', 'generation', 'publish', 'reconcile', 'automation', 'scan']) {
+    const id = await docker('run', '-d', '--pull=never', '--name', `merchant-bridge-worker-${role}-${marker}`, '--network', network,
+      '--label', `merchant.bridge-smoke=${marker}`, '-e', 'NODE_ENV=development', '-e', `DATABASE_URL=${internalDb}`,
+      '-e', `REDIS_URL=${internalRedis}`, '-e', `WORKER_ROLE=${role}`, '-e', `WORKER_WORKSPACES=${fixture.workspaceId}`,
+      '-e', 'WORKER_API_BASE_URL=http://bridge-api:8787', '-e', 'BRIDGE_SCHEMA_COMPATIBILITY_MODE=prefix_242_or_244', imageWorker)
+    if (!/^[0-9a-f]{64}$/.test(id)) throw new Error(`fixed B ${role} worker ID is invalid`)
+    workerIds.push(id)
+  }
+  await new Promise(resolve => setTimeout(resolve, 2500))
+  for (const [index, id] of workerIds.entries()) {
+    const running = await docker('inspect', '--format', '{{.State.Running}}', id)
+    if (running !== 'true') throw new Error(`fixed B ${['sync', 'generation', 'publish', 'reconcile', 'automation', 'scan'][index]} worker exited on PG17 schema 242`)
+  }
+  console.log(`PASS: exact B API plus six persistent worker containers healthy on isolated PG17 schema 242; api=${imageApi} worker=${imageWorker}`)
 } finally {
+  for (const id of workerIds) {
+    try { await docker('rm', '-f', id) } catch { console.error(`worker fixture cleanup requires inspection: ${id}`) }
+  }
   if (apiId) {
     try { await docker('rm', '-f', apiId) } catch { console.error(`API fixture cleanup requires inspection: ${apiId}`) }
   }
