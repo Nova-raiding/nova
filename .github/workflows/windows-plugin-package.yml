@@ -50,19 +50,22 @@ jobs:
           $request.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($true, $false, 0, $true))
           $request.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new([System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature -bor [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::KeyCertSign, $true))
           $created = $request.CreateSelfSigned((Get-Date).AddMinutes(-5), (Get-Date).AddDays(1))
-          $password = [guid]::NewGuid().ToString('N')
-          $pfx = $created.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $password)
-          $flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::PersistKeySet -bor [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::UserKeySet
-          $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($pfx, $password, $flags)
-          $my = [System.Security.Cryptography.X509Certificates.X509Store]::new('My', 'CurrentUser')
-          $my.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-          $my.Add($cert)
-          $my.Close()
-          $root = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root', 'CurrentUser')
-          $root.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-          $root.Add([System.Security.Cryptography.X509Certificates.X509Certificate2]::new($cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)))
-          $root.Close()
-          [System.IO.File]::AppendAllText($env:GITHUB_ENV, "STORENOVA_WINDOWS_SIGNER_THUMBPRINT=$($cert.Thumbprint)`n", [System.Text.UTF8Encoding]::new($false))
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-test.pfx'
+          $cerPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-test.cer'
+          [System.IO.File]::WriteAllBytes($pfxPath, $created.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, 'ci-test-only'))
+          [System.IO.File]::WriteAllBytes($cerPath, $created.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+          [System.IO.File]::AppendAllText($env:GITHUB_ENV, "STORENOVA_WINDOWS_SIGNER_THUMBPRINT=$($created.Thumbprint)`n", [System.Text.UTF8Encoding]::new($false))
+      - name: Import the runner-local test certificate
+        timeout-minutes: 3
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-test.pfx'
+          $cerPath = Join-Path $env:RUNNER_TEMP 'storenova-ci-test.cer'
+          certutil.exe -user -f -p ci-test-only -importPFX My $pfxPath NoRoot
+          if ($LASTEXITCODE -ne 0) { throw 'Test certificate private key import failed' }
+          certutil.exe -user -f -addstore Root $cerPath
+          if ($LASTEXITCODE -ne 0) { throw 'Test certificate trust import failed' }
       - name: Sign and validate the helper with the test certificate
         timeout-minutes: 3
         shell: powershell
