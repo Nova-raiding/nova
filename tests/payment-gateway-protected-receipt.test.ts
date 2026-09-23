@@ -74,8 +74,9 @@ describe('protected Alipay gateway operation source receipts', () => {
     const checkout = captureGatewayOperationReceipt({ ...common, operation: 'checkout', signedCheckoutParams: 'sensitive-signed-params', outcome: 'created' })
     const query = captureGatewayOperationReceipt({ ...common, operation: 'provider_query', providerResponseSignatureVerified: true, providerTradeId: 'sensitive-trade', providerResponseReference: 'sensitive-request', outcome: 'paid' })
     const refund = captureGatewayOperationReceipt({ ...common, operation: 'refund', providerResponseSignatureVerified: true, providerTradeId: 'sensitive-trade', providerResponseReference: 'sensitive-request', refundRequestId: 'sensitive-refund', outcome: 'processing' })
-    expect(readdirSync(directory)).toHaveLength(3)
-    for (const receipt of [checkout, query, refund]) {
+    const refundQuery = captureGatewayOperationReceipt({ ...common, operation: 'refund_query', providerResponseSignatureVerified: true, providerTradeId: 'sensitive-trade', providerResponseReference: 'sensitive-request', refundRequestId: 'sensitive-refund', signedResponseSha256: digest('sensitive-signed-response'), providerNativeStatus: 'REFUND_SUCCESS', outcome: 'succeeded' })
+    expect(readdirSync(directory)).toHaveLength(4)
+    for (const receipt of [checkout, query, refund, refundQuery]) {
       if (!receipt) throw new Error('protected capture unexpectedly disabled')
       const stored = readFileSync(join(directory, `${receipt.request_id}.json`), 'utf8')
       expect(stored).not.toContain('sensitive-')
@@ -86,6 +87,7 @@ describe('protected Alipay gateway operation source receipts', () => {
     expect(checkout?.source).toBe('alipay_signed_checkout')
     expect(query?.source).toBe('alipay_verified_response')
     expect(refund?.outcome).toBe('processing')
+    expect(refundQuery).toMatchObject({ operation: 'refund_query', provider_native_status: 'REFUND_SUCCESS', signed_response_sha256: digest('sensitive-signed-response'), ledger_state_observed: false, final_evidence: false })
   })
 
   it('refuses unsupported or unverified operation claims', () => {
@@ -95,6 +97,10 @@ describe('protected Alipay gateway operation source receipts', () => {
     expect(() => captureGatewayOperationReceipt({ ...common, operation: 'provider_query', providerTradeId: 'trade', providerResponseReference: 'request', outcome: 'paid' })).toThrow(/verified response/u)
     expect(() => captureGatewayOperationReceipt({ ...common, operation: 'provider_query', providerResponseSignatureVerified: true, providerTradeId: 'trade', providerResponseReference: 'request', outcome: 'pending' })).toThrow(/paid result/u)
     expect(() => captureGatewayOperationReceipt({ ...common, operation: 'checkout', signedCheckoutParams: 'signed', outcome: 'paid' })).toThrow(/signed checkout/u)
+    const refundQuery = { ...common, operation: 'refund_query' as const, providerResponseSignatureVerified: true, providerTradeId: 'trade', providerResponseReference: 'request', refundRequestId: 'refund', signedResponseSha256: digest('response'), providerNativeStatus: 'REFUND_SUCCESS', outcome: 'succeeded' }
+    expect(() => captureGatewayOperationReceipt({ ...refundQuery, providerNativeStatus: 'SUCCESS' })).toThrow(/native success/u)
+    expect(() => captureGatewayOperationReceipt({ ...refundQuery, signedResponseSha256: undefined })).toThrow(/signed response/u)
+    expect(() => captureGatewayOperationReceipt({ ...refundQuery, refundRequestId: undefined })).toThrow(/refund request/u)
     expect(readdirSync(directory)).toHaveLength(0)
   })
 })
