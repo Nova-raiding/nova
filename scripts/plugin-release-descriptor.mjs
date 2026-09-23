@@ -23,6 +23,10 @@ const WINDOWS_NODE_EXE = Object.freeze({
   path: 'runtime/node.exe', bytes: 85_119_640,
   sha256: 'c5ff4c736112dd483c750fd4149d30c8a116db1a49b8b3ec88be4b65e6c86c19',
 })
+const MAC_NODE = Object.freeze({
+  'darwin-arm64': { bytes: 110_503_408, sha256: 'a45751fbfe88440bebff63cd44814e4ed6deb642bc3e3c4a14c4f8ae0ed9e019' },
+  'darwin-x64': { bytes: 113_613_056, sha256: '2e95af03362db552f1fa606cc20f95ec47cf6e8e564674a5262633933af1de66' },
+})
 
 function regularBytes(path, label) {
   const stat = lstatSync(path)
@@ -101,7 +105,7 @@ function safePackagePath(name) {
     && !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(part))
 }
 
-function verifyTarPackageContents(packageBytes, expected) {
+function verifyTarPackageContents(packageBytes, expected, platform) {
   let archive
   try { archive = gunzipSync(packageBytes, { maxOutputLength: 256 * 1024 * 1024 }) }
   catch { throw new Error('plugin package is not a bounded readable tar.gz archive') }
@@ -119,7 +123,7 @@ function verifyTarPackageContents(packageBytes, expected) {
       terminated = true
       break
     }
-    if (entries.size >= 10_000) throw new Error('plugin package contains too many files')
+    if (foldedNames.size >= 10_000) throw new Error('plugin package contains too many files')
     const checksum = tarOctal(header, 148, 8)
     let actualChecksum = 0
     for (let i = 0; i < 512; i++) actualChecksum += i >= 148 && i < 156 ? 32 : header[i]
@@ -128,25 +132,36 @@ function verifyTarPackageContents(packageBytes, expected) {
     const name = tarField(header, 0, 100)
     const prefix = tarField(header, 345, 155)
     const path = prefix ? `${prefix}/${name}` : name
-    if (!safePackagePath(path)) throw new Error(`plugin package contains an unsafe path: ${path}`)
-    const folded = path.toLowerCase()
+    const type = header[156]
+    const directory = type === 53
+    const normalizedPath = directory && path.endsWith('/') ? path.slice(0, -1) : path
+    if (!safePackagePath(normalizedPath)) throw new Error(`plugin package contains an unsafe path: ${path}`)
+    const folded = normalizedPath.toLowerCase()
     if (foldedNames.has(folded)) throw new Error(`plugin package contains a duplicate path: ${path}`)
     foldedNames.add(folded)
-    const type = header[156]
-    if (type !== 0 && type !== 48) throw new Error(`plugin package contains a non-regular file: ${path}`)
-    if (header.subarray(157, 257).some(byte => byte !== 0)) throw new Error(`plugin package regular file has a link target: ${path}`)
+    if (type !== 0 && type !== 48 && !directory) throw new Error(`plugin package contains a non-regular file: ${path}`)
+    if (header.subarray(157, 257).some(byte => byte !== 0)) throw new Error(`plugin package file has a link target: ${path}`)
     if ((tarOctal(header, 100, 8) & 0o7000) !== 0) throw new Error(`plugin package contains a privileged file mode: ${path}`)
     const size = tarOctal(header, 124, 12)
     const end = offset + 512 + size
-    if (end > archive.length || size > 32 * 1024 * 1024) throw new Error(`plugin package file size is unsafe: ${path}`)
-    entries.set(path, archive.subarray(offset + 512, end))
+    const pinnedRuntime = path === 'runtime/node' ? MAC_NODE[platform] : undefined
+    const limit = pinnedRuntime?.bytes ?? 32 * 1024 * 1024
+    if (end > archive.length || size > limit || (directory && size !== 0)) throw new Error(`plugin package file size is unsafe: ${path}`)
+    if (!directory) {
+      const contents = archive.subarray(offset + 512, end)
+      if (pinnedRuntime && (size !== pinnedRuntime.bytes || digest(contents) !== pinnedRuntime.sha256)) {
+        throw new Error('plugin package runtime/node differs from the pinned macOS Node executable')
+      }
+      entries.set(path, contents)
+    }
     offset += 512 + Math.ceil(size / 512) * 512
   }
   if (!terminated || entries.size === 0) throw new Error('plugin package tar terminator or files are missing')
+  const fileFoldedNames = new Set([...entries.keys()].map(path => path.toLowerCase()))
   for (const path of entries.keys()) {
     const parts = path.split('/')
     for (let i = 1; i < parts.length; i++) {
-      if (foldedNames.has(parts.slice(0, i).join('/').toLowerCase())) throw new Error(`plugin package file shadows a directory: ${path}`)
+      if (fileFoldedNames.has(parts.slice(0, i).join('/').toLowerCase())) throw new Error(`plugin package file shadows a directory: ${path}`)
     }
   }
   for (const [entry, bytes] of Object.entries(expected)) {
@@ -285,6 +300,12 @@ function verifyTrackedPackageSources(entries, pluginRoot, platform) {
   const result = spawnSync('git', ['-C', pluginRoot, 'ls-files', '-z', '--cached'], { maxBuffer: 1024 * 1024 })
   if (result.status !== 0 || result.error) throw new Error('plugin tracked source inventory is unavailable')
   const tracked = new Set(result.stdout.toString('utf8').split('\0').filter(Boolean))
+  if (entries.has('.mcp.json')) {
+    const config = JSON.parse(regularBytes(resolve(pluginRoot, '.mcp.json'), 'plugin MCP config').toString('utf8'))
+    config.mcpServers['merchant-marketing'].command = platform?.startsWith('win32-') ? './runtime/node.exe' : './runtime/node'
+    const expected = Buffer.from(`${JSON.stringify(config, null, 2)}\n`)
+    if (!entries.get('.mcp.json').equals(expected)) throw new Error('plugin package .mcp.json differs from clean Git-derived config')
+  }
   if (tracked.has('scripts/package-local-plugin.mjs')) {
     const builder = regularBytes(resolve(pluginRoot, 'scripts/package-local-plugin.mjs'), 'plugin package builder').toString('utf8')
     const declaration = builder.match(/const required = \[([\s\S]*?)\]\nfor \(const relativePath of required\)/u)
@@ -300,10 +321,11 @@ function verifyTrackedPackageSources(entries, pluginRoot, platform) {
     if (path === '.mcp.json') continue
     if (!tracked.has(path)) {
       if (platform?.startsWith('win32-') && path === WINDOWS_NODE_EXE.path) continue // fixed upstream digest was checked by ZIP parser
-      if (/(?:\.(?:mjs|js|cjs|sh|command|cmd|ps1|exe|dll)|\/node|\/keychain-credential-helper)$/iu.test(path)) {
+      if (MAC_NODE[platform] && path === 'runtime/node') continue // fixed upstream digest was checked by tar parser
+      if (/(?:\.(?:mjs|js|cjs|sh|command|cmd|ps1|exe|dll|zip)|\/node|\/keychain-credential-helper)$/iu.test(path)) {
         throw new Error(`plugin package executable ${path} lacks an independently trusted build hash`)
       }
-      continue
+      throw new Error(`plugin package generated file ${path} lacks an independently trusted build hash`)
     }
     const source = regularBytes(resolve(pluginRoot, path), `plugin source ${path}`)
     if (!bytes.equals(source)) throw new Error(`plugin package ${path} differs from clean Git source`)
@@ -367,7 +389,7 @@ export function signPluginReleaseDescriptor(options) {
     'package.json': pluginPackage,
     'mcp/bridge.mjs': bridge,
     'skills/merchant-marketing/SKILL.md': skill,
-  })
+  }, options.platform)
   verifyTrackedPackageSources(entries, pluginRoot, options.platform)
   const payload = {
     schema_version: 'plugin-release/2', release_id: options.releaseId, git_sha: options.gitSha,

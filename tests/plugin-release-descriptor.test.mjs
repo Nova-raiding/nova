@@ -240,6 +240,28 @@ test('accepts the real pinned Windows Node executable from a verified system arc
   assert.equal(signPluginReleaseDescriptor(f.options).platform, 'win32-x64')
 })
 
+for (const [arch, archiveDigest, runtimeDigest] of [
+  ['arm64', '1d7f34ec4c03e12d8b33481e5c4560432d7dc31a0ef3ff5a4d9a8ada7cf6ecc9', 'a45751fbfe88440bebff63cd44814e4ed6deb642bc3e3c4a14c4f8ae0ed9e019'],
+  ['x64', '838d400f7e66c804e5d11e2ecb61d6e9e878611146baff69d6a2def3cc23f4ac', '2e95af03362db552f1fa606cc20f95ec47cf6e8e564674a5262633933af1de66'],
+]) test(`accepts a real tar directory and pinned macOS ${arch} Node executable`, t => {
+  const archive = process.env[`STORENOVA_TEST_NODE_DARWIN_${arch.toUpperCase()}_ARCHIVE`]
+  if (!archive) return t.skip(`set STORENOVA_TEST_NODE_DARWIN_${arch.toUpperCase()}_ARCHIVE to the official pinned Node tarball`)
+  assert.equal(createHash('sha256').update(readFileSync(archive)).digest('hex'), archiveDigest)
+  const extraction = spawnSync('tar', ['-xOf', archive, `node-v22.16.0-darwin-${arch}/bin/node`], { maxBuffer: 130 * 1024 * 1024 })
+  assert.equal(extraction.status, 0, extraction.stderr?.toString())
+  assert.equal(createHash('sha256').update(extraction.stdout).digest('hex'), runtimeDigest)
+  const f = fixture()
+  const runtimeRoot = join(f.root, 'runtime-source')
+  mkdirSync(join(runtimeRoot, 'runtime'), { recursive: true })
+  writeFileSync(join(runtimeRoot, 'runtime', 'node'), extraction.stdout)
+  const tar = spawnSync('tar', ['-czf', f.packagePath, '-C', f.pluginRoot,
+    '.codex-plugin/plugin.json', 'package.json', 'mcp/bridge.mjs', 'skills/merchant-marketing/SKILL.md',
+    '-C', runtimeRoot, 'runtime'])
+  assert.equal(tar.status, 0, tar.stderr?.toString())
+  f.options.platform = `darwin-${arch}`
+  assert.equal(signPluginReleaseDescriptor(f.options).platform, `darwin-${arch}`)
+})
+
 test('signs exact local package bytes and binds release, Git, platform, bridge and MCP identity', () => {
   const f = fixture()
   const document = signPluginReleaseDescriptor(f.options)
